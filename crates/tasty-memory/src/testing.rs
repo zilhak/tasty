@@ -1,0 +1,179 @@
+//! `testing::InMemoryStorage` — HashMap 기반 mock. test 시 SQLite 우회.
+//!
+//! 현재는 stub — Phase D.3.C 의 test 작성 시 필요한 메서드 부터 채운다.
+//! 미구현 메서드는 `unimplemented!()` — 호출 시 panic 으로 알려준다.
+
+use std::collections::HashMap;
+
+use crate::port::MemoryStorage;
+use crate::{
+    ImportStats, ListOpts, MemoryChange, MemoryConfig, MemoryEntry, MemoryStats, MemoryValue,
+    PurgeStats, PutOpts, Result, Scope,
+};
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct InMemoryStorage {
+    config: MemoryConfig,
+    regular: HashMap<(String, String), MemoryEntry>,
+    secret: HashMap<(String, String, String), MemoryEntry>, // (owner, scope, key) → entry
+    pending: Vec<MemoryChange>,
+}
+
+impl InMemoryStorage {
+    pub fn new() -> Self {
+        Self::with_config(MemoryConfig::default())
+    }
+
+    pub fn with_config(config: MemoryConfig) -> Self {
+        Self {
+            config,
+            regular: HashMap::new(),
+            secret: HashMap::new(),
+            pending: Vec::new(),
+        }
+    }
+}
+
+impl Default for InMemoryStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MemoryStorage for InMemoryStorage {
+    fn config(&self) -> &MemoryConfig {
+        &self.config
+    }
+
+    fn put(
+        &mut self,
+        _owner: &str,
+        _scope: &Scope,
+        _key: &str,
+        _value: &MemoryValue,
+        _opts: &PutOpts,
+    ) -> Result<u64> {
+        // stub — 실제 보관 없음. version 항상 1. D.3.C 의 test 작성 시 확장.
+        Ok(1)
+    }
+
+    fn get(&self, _scope: &Scope, _key: &str) -> Result<Option<MemoryEntry>> {
+        Ok(None)
+    }
+
+    fn exists(&self, _scope: &Scope, _key: &str) -> Result<bool> {
+        Ok(false)
+    }
+
+    fn delete(
+        &mut self,
+        _owner: &str,
+        _scope: &Scope,
+        _key: &str,
+        _cas: Option<u64>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn list(&self, _scope: &Scope, _opts: &ListOpts) -> Result<Vec<MemoryEntry>> {
+        Ok(Vec::new())
+    }
+
+    fn count(&self, _scope: &Scope, _prefix: Option<&str>) -> Result<u64> {
+        Ok(0)
+    }
+
+    fn scopes(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    fn stats(&self, _scope: Option<&Scope>) -> Result<MemoryStats> {
+        unimplemented!("InMemoryStorage::stats — fill in when first test needs it")
+    }
+
+    fn query(
+        &self,
+        _scope: &Scope,
+        _path: &str,
+        _expected: &serde_json::Value,
+        _opts: &ListOpts,
+    ) -> Result<Vec<MemoryEntry>> {
+        Ok(Vec::new())
+    }
+
+    fn export_regular(&self, _scope: Option<&Scope>) -> Result<Vec<MemoryEntry>> {
+        Ok(Vec::new())
+    }
+
+    fn import_regular(
+        &mut self,
+        _caller_owner: &str,
+        _entries: &[MemoryEntry],
+        _replace: bool,
+    ) -> Result<ImportStats> {
+        unimplemented!("InMemoryStorage::import_regular — fill in when first test needs it")
+    }
+
+    fn put_secret(
+        &mut self,
+        _owner: &str,
+        _scope: &Scope,
+        _key: &str,
+        _value: &MemoryValue,
+        _opts: &PutOpts,
+    ) -> Result<u64> {
+        Ok(1)
+    }
+
+    fn get_secret(&self, _owner: &str, _scope: &Scope, _key: &str) -> Result<Option<MemoryEntry>> {
+        Ok(None)
+    }
+
+    fn exists_secret(&self, _owner: &str, _scope: &Scope, _key: &str) -> Result<bool> {
+        Ok(false)
+    }
+
+    fn delete_secret(
+        &mut self,
+        _owner: &str,
+        _scope: &Scope,
+        _key: &str,
+        _cas: Option<u64>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn list_secret(
+        &self,
+        _owner: &str,
+        _scope: &Scope,
+        _opts: &ListOpts,
+    ) -> Result<Vec<MemoryEntry>> {
+        Ok(Vec::new())
+    }
+
+    fn count_secret(&self, _owner: &str, _scope: &Scope, _prefix: Option<&str>) -> Result<u64> {
+        Ok(0)
+    }
+
+    fn scopes_secret(&self, _owner: &str) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    fn stats_secret(&self, _owner: &str, _scope: Option<&Scope>) -> Result<MemoryStats> {
+        unimplemented!("InMemoryStorage::stats_secret — fill in when first test needs it")
+    }
+
+    fn purge_expired(&mut self) -> Result<PurgeStats> {
+        unimplemented!("InMemoryStorage::purge_expired — fill in when first test needs it")
+    }
+
+    fn purge_scope(&mut self, _scope: &Scope) -> Result<PurgeStats> {
+        unimplemented!("InMemoryStorage::purge_scope — fill in when first test needs it")
+    }
+
+    fn take_pending_changes(&mut self) -> Vec<MemoryChange> {
+        std::mem::take(&mut self.pending)
+    }
+}
