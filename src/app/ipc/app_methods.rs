@@ -239,9 +239,11 @@ impl App {
                 // 첫 main window 의 state 를 빌려 사용 (모든 window 가 같은 approval_store
                 // Arc 공유). main 이 하나도 없으면 elevation popup 표시 자체가 의미 없으므로
                 // internal_error.
+                let core = &mut self.core;
                 let main = self.windows.values_mut().find_map(|w| w.as_main_mut());
                 match main {
                     Some(m) => host_ipc::handler::session::handle_request_permission(
+                        core,
                         &mut m.state,
                         &mut m.engine_state,
                         caller,

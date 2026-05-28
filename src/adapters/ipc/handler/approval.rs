@@ -126,6 +126,7 @@ pub(super) fn record_to_json(record: &ApprovalRecord) -> Value {
 
 /// `approval.request` — 새 요청 생성. 응답: `{ id, state, record }`.
 pub(crate) fn publish_capability_elevation(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     agent_id: &str,
@@ -198,7 +199,7 @@ pub(crate) fn publish_capability_elevation(
         metadata,
     };
 
-    match engine.approval_store.request(req) {
+    match core.request_approval(engine, req) {
         Ok(change) => {
             persist_record(&change.record);
             crate::ui::popup::approval::enqueue_approval(state, engine, &change.record);

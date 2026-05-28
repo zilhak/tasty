@@ -353,6 +353,7 @@ pub fn handle_list_agent_permissions(id: Value, params: &Value) -> JsonRpcRespon
 /// 응답: `{ approval_id }`. dedupe 로직 (같은 agent+permission Pending 재사용)
 /// 은 publish_capability_elevation 안에서 처리.
 pub fn handle_request_permission(
+    core: &mut crate::core::Core,
     state: &mut crate::state::AppState,
     engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
@@ -396,6 +397,7 @@ pub fn handle_request_permission(
         .and_then(|v| v.as_str())
         .unwrap_or("(self-request)");
     match crate::ipc::handler::approval::publish_capability_elevation(
+        core,
         state,
         engine,
         &agent_id,

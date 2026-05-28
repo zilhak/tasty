@@ -58,9 +58,11 @@ impl App {
             let agent_id = agent_id.clone();
             let perm_token = permission.as_token();
             let method = cmd.request.method.clone();
+            let core = &mut self.core;
             let main = self.windows.values_mut().find_map(|w| w.as_main_mut());
             if let Some(m) = main {
                 if let Some(rec) = host_ipc::handler::approval::publish_capability_elevation(
+                    core,
                     &mut m.state,
                     &mut m.engine_state,
                     &agent_id,
