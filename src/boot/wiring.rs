@@ -22,13 +22,17 @@ use crate::core::builder::CoreBuilder;
 
 /// Production `Core` 빌드. winit proxy 가 필요한 `WinitWaker` 때문에 인자 1 개.
 ///
-/// Memory: production 시 `tasty_memory::with_store` 의 전역 static 과 *별 instance*
-/// 가 잠시 공존 (D.3.A.4 의 호환 layer). D.3.C 에서 host 호출처 마이그레이션 시
-/// 전역 static 폐기 + 본 instance 가 유일 owner.
+/// Memory: boot 가 `tasty_memory::init_with_config` 로 전역 STORE 를 init 한 뒤
+/// `tasty_memory::store_arc()` 로 받은 Arc 를 본 함수에 전달. Core.memory 와
+/// `tasty_memory::with_store` 가 *같은 allocation* 의 store 를 가리킨다 — 향후
+/// 도메인별 callsite 마이그레이션이 끝나면 전역 with_store 폐기 + Core 가 유일 owner.
 ///
-/// 현재 단계 — 호출처 0 (placeholder). D.3.A.7 또는 D.3.C 에서 사용.
-#[allow(dead_code)]
-pub(crate) fn build_production_core(proxy: EventLoopProxy<AppEvent>) -> anyhow::Result<Core> {
+/// `memory` 가 `None` 이면 (homedir 미확인 등 boot fail), in-memory placeholder
+/// 로 fallback 해 앱 자체는 기동시킨다 — handler 가 자체적으로 store 의 가용성을 평가.
+pub(crate) fn build_production_core(
+    proxy: EventLoopProxy<AppEvent>,
+    memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
+) -> anyhow::Result<Core> {
     let pty: Arc<dyn crate::ports::pty::PtyService> = Arc::new(PortablePtyService);
     let waker: Arc<dyn crate::ports::pty::TerminalWaker> = Arc::new(WinitWaker::new(proxy));
     let fs: Arc<dyn crate::ports::fs::FileSystem> = Arc::new(StdFileSystem);
@@ -37,11 +41,14 @@ pub(crate) fn build_production_core(proxy: EventLoopProxy<AppEvent>) -> anyhow::
     let process: Arc<dyn crate::ports::process::ProcessSpawner> = Arc::new(StdProcessSpawner);
     let home: Arc<dyn crate::ports::home::HomeDirectory> = Arc::new(DirectoriesHome);
 
-    // Memory: in-memory 인스턴스 임시 생성. 실 SQLite 사용은 D.3.C 에서 `MemoryStore::open_with_config`.
-    let memory: Arc<Mutex<dyn MemoryStorage>> = {
-        let store = tasty_memory::MemoryStore::open_in_memory()
-            .map_err(|e| anyhow::anyhow!("placeholder memory store: {e:?}"))?;
-        Arc::new(Mutex::new(store))
+    // Memory: boot 에서 받은 Arc 를 dyn coerce. 실패 시 in-memory fallback.
+    let memory: Arc<Mutex<dyn MemoryStorage>> = match memory_arc {
+        Some(arc) => arc,
+        None => {
+            let store = tasty_memory::MemoryStore::open_in_memory()
+                .map_err(|e| anyhow::anyhow!("fallback memory store: {e:?}"))?;
+            Arc::new(Mutex::new(store))
+        }
     };
 
     let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());

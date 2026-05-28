@@ -86,10 +86,11 @@ impl App {
     pub(crate) fn new(
         proxy: EventLoopProxy<AppEvent>,
         port_file: Option<String>,
+        memory: Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>>,
         #[cfg(debug_assertions)] input_simulation_enabled: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            core: crate::boot::wiring::build_production_core(proxy.clone())?,
+            core: crate::boot::wiring::build_production_core(proxy.clone(), memory)?,
             hub: Hub::new(port_file),
             view: View::new(proxy.clone()),
             windows: std::collections::HashMap::new(),

@@ -57,9 +57,33 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
     // CWD는 OSC 7 시퀀스에만 의존한다. 모든 플랫폼 공통.
     // zsh/fish는 기본 지원, bash는 PROMPT_COMMAND 설정 필요.
 
+    // Phase D.3.C.M.1 — Settings 와 Memory store 를 App 생성 *이전* 에 초기화.
+    // Core 가 처음부터 실 Memory store 의 Arc 를 보유하기 위함. window_lifecycle
+    // 의 init_with_config 호출은 idempotent 라 그대로 두어도 no-op.
+    let boot_settings = crate::settings::Settings::load();
+    let memory_config = tasty_memory::MemoryConfig {
+        entry_max_bytes: boot_settings
+            .memory
+            .entry_max_mb
+            .saturating_mul(1024 * 1024),
+        secret_quota_per_owner_bytes: boot_settings
+            .memory
+            .secret_quota_mb_per_plugin
+            .saturating_mul(1024 * 1024),
+        regular_quota_total_bytes: boot_settings
+            .memory
+            .regular_quota_mb_total
+            .saturating_mul(1024 * 1024),
+    };
+    if let Err(e) = tasty_memory::init_with_config(memory_config) {
+        tracing::warn!("memory.db init at boot failed: {e}");
+    }
+    let memory_arc = tasty_memory::store_arc();
+
     let mut app = App::new(
         proxy,
         cli.port_file,
+        memory_arc,
         #[cfg(debug_assertions)]
         cli.enable_input_simulation,
     )?;

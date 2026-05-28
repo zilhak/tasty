@@ -185,6 +185,24 @@ impl Core {
         engine.approval_store.cancel(req_id)
     }
 
+    // ─── Memory (영속 store) ───
+
+    /// Memory store 의 lock 안에서 함수를 실행한다. Mutex poisoning 시
+    /// poison 해제 후 inner 사용 (host 부팅이 store 의 Arc 를 항상 inject
+    /// 하므로 None 반환 분기는 없다 — 옛 `tasty_memory::with_store` 의
+    /// `Option<R>` 패턴과 달라 호출처가 `Result<R, _>` 만 처리하면 된다).
+    #[allow(dead_code)] // M.1 단계에서 noop — 후속 도메인별 callsite 변환에서 사용 시작
+    pub(crate) fn with_memory<R>(
+        &self,
+        f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,
+    ) -> R {
+        let mut guard = match self.memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        f(&mut *guard)
+    }
+
     // ─── Clipboard (외부 시스템 clipboard) ───
 
     /// 시스템 clipboard 에 text 쓰기. 옛 `arboard::Clipboard::new().set_text` 의 Core 진입점.
