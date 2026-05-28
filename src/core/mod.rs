@@ -65,7 +65,12 @@ impl Core {
     #[allow(dead_code)]
     pub(crate) fn apply(&mut self, intent: CoreIntent) -> anyhow::Result<Vec<CoreEvent>> {
         match intent {
-            // Phase D 진행 중. variant 추가 시 본 match 도 채워진다.
+            CoreIntent::UpdateSettings(new_settings) => {
+                // Phase D 진행 중 — 본 stub 은 *이벤트만 발행*. cascade
+                // (Theme apply / Scrollback limit / clipboard max / notification
+                // coalesce) 는 후속 sub-step (호출처 전환과 함께) 에서 통합.
+                Ok(vec![CoreEvent::SettingsUpdated(new_settings)])
+            }
         }
     }
 }
