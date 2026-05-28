@@ -33,6 +33,7 @@ impl App {
         }
 
         for (window_id, batch) in per_state_batches {
+            let core = &self.core;
             let Some(main) = self
                 .windows
                 .get_mut(&window_id)
@@ -43,24 +44,26 @@ impl App {
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
-                Self::dispatch_one_intent(&mut main.state, &mut main.engine_state, &intent);
+                Self::dispatch_one_intent(core, &mut main.state, &mut main.engine_state, &intent);
             }
             main.mark_dirty();
         }
         for (idx, batch) in parked_batches {
+            let core = &self.core;
             let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                 continue;
             };
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
-                Self::dispatch_one_intent(state, engine, &intent);
+                Self::dispatch_one_intent(core, state, engine, &intent);
             }
         }
     }
 
     /// 단일 Intent 를 도메인 핸들러로 분기한다.
     fn dispatch_one_intent(
+        core: &crate::core::Core,
         state: &mut crate::state::AppState,
         engine: &mut crate::engine_state::CoreState,
         intent: &crate::intent::DispatchedIntent,
@@ -74,7 +77,7 @@ impl App {
             | Intent::SavePreset { .. }
             | Intent::DeletePreset { .. }
             | Intent::RenamePreset { .. } => {
-                crate::intent::preset::handle(state, engine, intent);
+                crate::intent::preset::handle(core, state, engine, intent);
             }
             Intent::SplitSurface { .. }
             | Intent::CloseSurface { .. }

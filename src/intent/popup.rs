@@ -48,7 +48,10 @@ mod tests {
     fn make_state() -> AppState {
         let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
         let mut engine = crate::engine_state::CoreState::new(80, 24, waker).unwrap();
-        let mut state = AppState::new(&mut engine);
+        let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
+            tasty_presets::PresetStore::load_default(),
+        ));
+        let mut state = AppState::new(&mut engine, preset_store);
         // 테스트 대상 popup 을 PopupManager 에 등록.
         state.popups.register(PopupState::new(
             "test_popup",

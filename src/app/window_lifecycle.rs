@@ -73,13 +73,13 @@ impl App {
             // file 동작이 두번째 윈도우에서 누락 안 되도록.
             //
             // 첫 부팅 시점에는 source 없음 → CoreState::new 의 기본 Arc 사용.
+            // preset_store 는 Core 가 유일 owner (D.3.C.M.2) — engine 에는 더 이상 없다.
             let shared = self.any_main_engine().map(|src| {
                 (
                     src.surface_registry.clone(),
                     src.file_format.clone(),
                     src.file_handler.clone(),
                     src.identify_worker.clone(),
-                    src.preset_store.clone(),
                     src.approval_store.clone(),
                     src.telemetry_seq.clone(),
                     src.anomaly_detector.clone(),
@@ -91,7 +91,7 @@ impl App {
             // IdGenerator 는 CoreState::new 시점에 default workspace 만들면서
             // 첫 ID 들 발급하므로, **생성 전에** source 의 next_ids 를 주입해야
             // workspace_id/pane_id/tab_id/surface_id 충돌이 안 난다.
-            let shared_ids = shared.as_ref().map(|s| s.9.clone());
+            let shared_ids = shared.as_ref().map(|s| s.8.clone());
             let mut engine =
                 crate::engine_state::CoreState::new_with_ids(cols, rows, waker.clone(), shared_ids)
                     .expect("failed to create engine state");
@@ -101,7 +101,6 @@ impl App {
                 file_format,
                 file_handler,
                 identify_worker,
-                preset_store,
                 approval_store,
                 telemetry_seq,
                 anomaly_detector,
@@ -113,20 +112,18 @@ impl App {
                 engine.file_format = file_format;
                 engine.file_handler = file_handler;
                 engine.identify_worker = identify_worker;
-                engine.preset_store = preset_store;
                 engine.approval_store = approval_store;
                 engine.telemetry_seq = telemetry_seq;
                 engine.anomaly_detector = anomaly_detector;
                 engine.agent_seq = agent_seq;
                 // next_ids 는 위에서 이미 생성 시점에 주입됨.
             } else {
-                // 첫 부팅 — identify_worker 와 preset_store 는 App proxy 가 필요.
+                // 첫 부팅 — identify_worker 는 App proxy 가 필요.
                 engine.identify_worker =
                     Some(Arc::new(crate::identify_worker::IdentifyWorker::new(
                         engine.file_format.clone(),
                         self.view.proxy.clone(),
                     )));
-                engine.preset_store = Some(self.core.preset_store.clone());
             }
             #[cfg(debug_assertions)]
             {
@@ -186,7 +183,8 @@ impl App {
             None
         };
 
-        let mut state = crate::state::AppState::new(self.engine_state_mut());
+        let preset_store = self.core.preset_store.clone();
+        let mut state = crate::state::AppState::new(self.engine_state_mut(), preset_store);
         if let Some(restored_idx) = restored_idx_after_layout {
             state.switch_workspace(self.engine_state_mut(), restored_idx);
         }

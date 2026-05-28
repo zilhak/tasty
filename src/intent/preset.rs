@@ -51,18 +51,20 @@ use tasty_presets::{CapturedSurfaceMeta, PresetError, PresetKind};
 
 /// preset 도메인 분기 핸들러. `dispatch_pending_intents` 에서 호출.
 pub fn handle(
+    core: &crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     intent: &DispatchedIntent,
 ) {
     match &intent.body {
-        Intent::ApplyPreset { kind, name } => apply(state, engine, intent, *kind, name),
+        Intent::ApplyPreset { kind, name } => apply(core, state, engine, intent, *kind, name),
         Intent::SavePreset {
             base_name,
             explicit_name,
             overwrite,
             preset,
         } => save(
+            core,
             state,
             engine,
             intent,
@@ -71,13 +73,14 @@ pub fn handle(
             *overwrite,
             preset,
         ),
-        Intent::DeletePreset { kind, name } => delete(state, engine, *kind, name),
-        Intent::RenamePreset { kind, from, to } => rename(state, engine, *kind, from, to),
+        Intent::DeletePreset { kind, name } => delete(core, state, engine, *kind, name),
+        Intent::RenamePreset { kind, from, to } => rename(core, state, engine, *kind, from, to),
         _ => {}
     }
 }
 
 fn apply(
+    core: &crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     intent: &DispatchedIntent,
@@ -88,7 +91,7 @@ fn apply(
     let focus = intent.origin.is_user();
     let options = ApplyOptions { focus };
 
-    if let Err(e) = apply_inner(state, engine, kind, name, None, None, options) {
+    if let Err(e) = apply_inner(core, state, engine, kind, name, None, None, options) {
         tracing::warn!("preset apply failed: {e}");
         state.toasts.push(
             crate::i18n::t("preset.toast.apply_failed"),
@@ -99,8 +102,9 @@ fn apply(
 }
 
 fn save(
+    core: &crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::engine_state::CoreState,
     intent: &DispatchedIntent,
     base_name: &str,
     explicit_name: Option<&str>,
@@ -109,8 +113,8 @@ fn save(
 ) {
     let kind = preset.kind();
     let save_result = save_inner(
+        core,
         state,
-        engine,
         base_name,
         explicit_name,
         overwrite,
@@ -152,24 +156,26 @@ fn save(
 }
 
 fn delete(
+    core: &crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::engine_state::CoreState,
     kind: PresetKind,
     name: &str,
 ) {
-    if let Err(e) = delete_inner(state, engine, kind, name) {
+    if let Err(e) = delete_inner(core, state, kind, name) {
         tracing::warn!("preset delete failed: {e}");
     }
 }
 
 fn rename(
+    core: &crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::engine_state::CoreState,
     kind: PresetKind,
     from: &str,
     to: &str,
 ) {
-    if let Err(e) = rename_inner(state, engine, kind, from, to) {
+    if let Err(e) = rename_inner(core, state, kind, from, to) {
         tracing::warn!("preset rename failed: {e}");
     }
 }
@@ -195,7 +201,6 @@ pub enum SaveOutcome {
 /// 공유 mutation API: 발생 가능한 실패를 모두 enum 으로 노출.
 #[derive(Debug)]
 pub enum PresetMutationError {
-    StoreUnavailable,
     NotFound { kind: PresetKind, name: String },
     Apply(ApplyError),
     Store(PresetError),
@@ -204,7 +209,6 @@ pub enum PresetMutationError {
 impl std::fmt::Display for PresetMutationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::StoreUnavailable => write!(f, "preset_store unavailable"),
             Self::NotFound { kind, name } => {
                 write!(f, "preset not found: {}/{name}", kind.as_str())
             }
@@ -219,15 +223,11 @@ impl std::error::Error for PresetMutationError {}
 /// preset_store 잠금 + clone. lock 안 ↔ apply 본체를 분리해 critical section 을 짧게 유지.
 fn clone_preset_from_store(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    core: &crate::core::Core,
     kind: PresetKind,
     name: &str,
 ) -> Result<Option<ClonedPreset>, PresetMutationError> {
-    let arc = engine
-        .preset_store
-        .as_ref()
-        .ok_or(PresetMutationError::StoreUnavailable)?;
-    let guard = match arc.lock() {
+    let guard = match core.preset_store.lock() {
         Ok(g) => g,
         Err(p) => {
             tracing::warn!("preset_store mutex poisoned; recovering");
@@ -248,6 +248,7 @@ fn clone_preset_from_store(
 /// Preset 적용. store 에서 clone 후 lock 해제하고 본체를 호출한다.
 /// `target_pane_id` / `target_workspace_id` 는 tab/pane apply 시에만 의미가 있다.
 pub fn apply_inner(
+    core: &crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     kind: PresetKind,
@@ -256,7 +257,7 @@ pub fn apply_inner(
     target_workspace_id: Option<u32>,
     options: ApplyOptions,
 ) -> Result<ApplyOutcome, PresetMutationError> {
-    let cloned = clone_preset_from_store(state, engine, kind, name)?.ok_or_else(|| {
+    let cloned = clone_preset_from_store(state, core, kind, name)?.ok_or_else(|| {
         PresetMutationError::NotFound {
             kind,
             name: name.to_string(),
@@ -289,18 +290,14 @@ pub fn apply_inner(
 /// Preset 저장. `explicit_name` 이 있으면 사용 (overwrite=false 면 충돌 시 skip),
 /// 없으면 `base_name` 기반 unique_name 자동 부여.
 pub fn save_inner(
+    core: &crate::core::Core,
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
     base_name: &str,
     explicit_name: Option<&str>,
     overwrite: bool,
     preset: ClonedPreset,
 ) -> Result<SaveOutcome, PresetMutationError> {
-    let arc = engine
-        .preset_store
-        .as_ref()
-        .ok_or(PresetMutationError::StoreUnavailable)?;
-    let mut store = match arc.lock() {
+    let mut store = match core.preset_store.lock() {
         Ok(g) => g,
         Err(p) => {
             tracing::warn!("preset_store mutex poisoned; recovering");
@@ -360,16 +357,12 @@ pub fn save_inner(
 }
 
 pub fn delete_inner(
+    core: &crate::core::Core,
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
     kind: PresetKind,
     name: &str,
 ) -> Result<(), PresetMutationError> {
-    let arc = engine
-        .preset_store
-        .as_ref()
-        .ok_or(PresetMutationError::StoreUnavailable)?;
-    let mut store = match arc.lock() {
+    let mut store = match core.preset_store.lock() {
         Ok(g) => g,
         Err(p) => {
             tracing::warn!("preset_store mutex poisoned; recovering");
@@ -380,17 +373,13 @@ pub fn delete_inner(
 }
 
 pub fn rename_inner(
+    core: &crate::core::Core,
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
     kind: PresetKind,
     from: &str,
     to: &str,
 ) -> Result<(), PresetMutationError> {
-    let arc = engine
-        .preset_store
-        .as_ref()
-        .ok_or(PresetMutationError::StoreUnavailable)?;
-    let mut store = match arc.lock() {
+    let mut store = match core.preset_store.lock() {
         Ok(g) => g,
         Err(p) => {
             tracing::warn!("preset_store mutex poisoned; recovering");

@@ -241,6 +241,10 @@ pub struct AppState {
     /// Updated each frame by PopupManager::draw(). Mouse handlers check this
     /// to block events from reaching lower layers (terminal, dividers).
     pub popup_hovered: bool,
+    /// Preset store 의 Arc clone — Core 가 owner. UI popup 이 draw 흐름에서
+    /// core 인자 없이 lock 으로 read 할 수 있도록 AppState 에 *clone 보유* 만
+    /// 한다 (allocation 동일, owner 는 Core). `create_app_state` 가 inject.
+    pub preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub captured_double_tap: Option<String>,
     /// Keyboard events for non-terminal surfaces, consumed during egui rendering.
@@ -538,10 +542,14 @@ impl RenameTarget {
 
 impl AppState {
     /// Creates initial state with one workspace, one pane, one tab, one terminal.
-    pub fn new(engine: &mut CoreState) -> Self {
+    pub fn new(
+        engine: &mut CoreState,
+        preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
+    ) -> Self {
         let sidebar_width = engine.settings.appearance.sidebar_width;
         let active_workspace = engine.restored_active_workspace.take().unwrap_or(0);
         Self {
+            preset_store,
             active_workspace,
             settings_open: false,
             plugins_open: false,

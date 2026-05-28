@@ -62,31 +62,25 @@ fn require_u32(
         })
 }
 
-/// `engine.preset_store` 가 None 이면 internal_error.
+/// Core.preset_store 잠금 후 클로저 실행. Core 가 항상 보유하므로 실패 분기 없음.
 fn with_store<R>(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
-    id: &serde_json::Value,
+    core: &crate::core::Core,
     f: impl FnOnce(&tasty_presets::PresetStore) -> R,
-) -> Result<R, JsonRpcResponse> {
-    let arc = engine
-        .preset_store
-        .as_ref()
-        .ok_or_else(|| JsonRpcResponse::internal_error(id.clone(), "preset_store unavailable"))?;
-    let guard = match arc.lock() {
+) -> R {
+    let guard = match core.preset_store.lock() {
         Ok(g) => g,
         Err(p) => {
             tracing::warn!("preset_store mutex poisoned; recovering");
             p.into_inner()
         }
     };
-    Ok(f(&guard))
+    f(&guard)
 }
 
 /// PresetMutationError → JsonRpcResponse 매핑.
 fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcResponse {
     match &e {
-        PresetMutationError::StoreUnavailable => JsonRpcResponse::internal_error(id, e.to_string()),
         PresetMutationError::NotFound { .. }
         | PresetMutationError::Apply(_)
         | PresetMutationError::Store(_) => JsonRpcResponse::invalid_params(id, e.to_string()),
@@ -96,8 +90,8 @@ fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcRespo
 // ── handlers ──────────────────────────────────────────────────────────
 
 pub fn handle_list(
+    core: &crate::core::Core,
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -105,16 +99,13 @@ pub fn handle_list(
         Ok(k) => k,
         Err(e) => return e,
     };
-    let names = match with_store(state, engine, &id, |s| s.list(kind)) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    let names = with_store(state, core, |s| s.list(kind));
     JsonRpcResponse::success(id, json!({ "kind": kind.as_str(), "presets": names }))
 }
 
 pub fn handle_get(
+    core: &crate::core::Core,
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -127,30 +118,24 @@ pub fn handle_get(
         Err(e) => return e,
     };
 
-    let data = match with_store(
-        state,
-        engine,
-        &id,
-        |s| -> Result<serde_json::Value, String> {
-            match kind {
-                PresetKind::Workspace => s
-                    .get_workspace(&name)
-                    .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
-                    .ok_or_else(|| format!("preset not found: workspace/{name}"))?,
-                PresetKind::Tab => s
-                    .get_tab(&name)
-                    .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
-                    .ok_or_else(|| format!("preset not found: tab/{name}"))?,
-                PresetKind::Pane => s
-                    .get_pane(&name)
-                    .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
-                    .ok_or_else(|| format!("preset not found: pane/{name}"))?,
-            }
-        },
-    ) {
-        Ok(Ok(v)) => v,
-        Ok(Err(msg)) => return JsonRpcResponse::invalid_params(id, msg),
-        Err(e) => return e,
+    let data = match with_store(state, core, |s| -> Result<serde_json::Value, String> {
+        match kind {
+            PresetKind::Workspace => s
+                .get_workspace(&name)
+                .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
+                .ok_or_else(|| format!("preset not found: workspace/{name}"))?,
+            PresetKind::Tab => s
+                .get_tab(&name)
+                .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
+                .ok_or_else(|| format!("preset not found: tab/{name}"))?,
+            PresetKind::Pane => s
+                .get_pane(&name)
+                .map(|p| serde_json::to_value(p).map_err(|e| e.to_string()))
+                .ok_or_else(|| format!("preset not found: pane/{name}"))?,
+        }
+    }) {
+        Ok(v) => v,
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
     };
 
     JsonRpcResponse::success(
@@ -164,8 +149,8 @@ pub fn handle_get(
 }
 
 pub fn handle_save(
+    core: &crate::core::Core,
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -212,7 +197,7 @@ pub fn handle_save(
     };
 
     // 2. 공유 save_inner 호출.
-    match save_inner(state, engine, "", Some(&name), overwrite, cloned) {
+    match save_inner(core, state, "", Some(&name), overwrite, cloned) {
         Ok(SaveOutcome::Saved(saved_name)) => {
             JsonRpcResponse::success(id, json!({ "name": saved_name }))
         }
@@ -225,8 +210,8 @@ pub fn handle_save(
 }
 
 pub fn handle_delete(
+    core: &crate::core::Core,
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -239,15 +224,15 @@ pub fn handle_delete(
         Err(e) => return e,
     };
 
-    match delete_inner(state, engine, kind, &name) {
+    match delete_inner(core, state, kind, &name) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
         Err(e) => mutation_error(id, e),
     }
 }
 
 pub fn handle_rename(
+    core: &crate::core::Core,
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -264,13 +249,14 @@ pub fn handle_rename(
         Err(e) => return e,
     };
 
-    match rename_inner(state, engine, kind, &from, &to) {
+    match rename_inner(core, state, kind, &from, &to) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "renamed": to })),
         Err(e) => mutation_error(id, e),
     }
 }
 
 pub fn handle_capture(
+    core: &crate::core::Core,
     state: &AppState,
     engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -297,8 +283,8 @@ pub fn handle_capture(
 
     // 2. save (overwrite=false; explicit_name=Some 이면 충돌 시 SkippedExists).
     match save_inner(
+        core,
         state,
-        engine,
         &base_name,
         explicit_name.as_deref(),
         false,
@@ -314,6 +300,7 @@ pub fn handle_capture(
 }
 
 pub fn handle_apply(
+    core: &crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -339,6 +326,7 @@ pub fn handle_apply(
     // CLI/IPC 포커스 독립 원칙 — focus 항상 false.
     let opts = ApplyOptions { focus: false };
     match apply_inner(
+        core,
         state,
         engine,
         kind,

@@ -4,8 +4,8 @@
 //! Enter 로 적용하면 `DialogState::pending_preset_apply` 에 enqueue 한다.
 //! App 메인 루프가 drain 해 `state.apply_*_preset` 를 호출한다.
 //!
-//! preset 목록 자체는 `engine.preset_store: Option<Arc<Mutex<PresetStore>>>` 에서
-//! 매 프레임 lock 으로 읽는다.
+//! preset 목록 자체는 `state.preset_store: Arc<Mutex<PresetStore>>` (Core 의 Arc clone)
+//! 에서 매 프레임 lock 으로 읽는다.
 
 use tasty_presets::PresetKind;
 
@@ -46,7 +46,7 @@ pub fn draw_apply_pane_popup(
 fn draw_apply_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::engine_state::CoreState,
     kind: PresetKind,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -55,12 +55,9 @@ fn draw_apply_popup(
     }
 
     let th = theme::theme();
-    let names: Vec<String> = match engine.preset_store.as_ref() {
-        Some(arc) => match arc.lock() {
-            Ok(g) => g.list(kind),
-            Err(poisoned) => poisoned.into_inner().list(kind),
-        },
-        None => Vec::new(),
+    let names: Vec<String> = match state.preset_store.lock() {
+        Ok(g) => g.list(kind),
+        Err(poisoned) => poisoned.into_inner().list(kind),
     };
 
     let selected = state.dialogs.preset_picker_selected.clone();

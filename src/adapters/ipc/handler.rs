@@ -185,13 +185,13 @@ fn route_engine_handler(
         "tab.close" => tab::handle_tab_close(state, engine, id, &request.params),
         "tab.move" => tab::handle_tab_move(state, engine, id, &request.params),
         // preset (layout preset CRUD + apply)
-        "preset.list" => preset::handle_list(state, engine, id, &request.params),
-        "preset.get" => preset::handle_get(state, engine, id, &request.params),
-        "preset.save" => preset::handle_save(state, engine, id, &request.params),
-        "preset.delete" => preset::handle_delete(state, engine, id, &request.params),
-        "preset.rename" => preset::handle_rename(state, engine, id, &request.params),
-        "preset.capture" => preset::handle_capture(state, engine, id, &request.params),
-        "preset.apply" => preset::handle_apply(state, engine, id, &request.params),
+        "preset.list" => preset::handle_list(core, state, id, &request.params),
+        "preset.get" => preset::handle_get(core, state, id, &request.params),
+        "preset.save" => preset::handle_save(core, state, id, &request.params),
+        "preset.delete" => preset::handle_delete(core, state, id, &request.params),
+        "preset.rename" => preset::handle_rename(core, state, id, &request.params),
+        "preset.capture" => preset::handle_capture(core, state, engine, id, &request.params),
+        "preset.apply" => preset::handle_apply(core, state, engine, id, &request.params),
         // surface
         "surface.close" => surface::handle_surface_close(state, engine, id, &request.params),
         "surface.close_self" => {

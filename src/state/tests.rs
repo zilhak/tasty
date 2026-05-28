@@ -4,7 +4,10 @@ use crate::model::SplitDirection;
 fn test_state() -> (AppState, crate::engine_state::CoreState) {
     let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::engine_state::CoreState::new(80, 24, waker).unwrap();
-    let state = AppState::new(&mut engine);
+    let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
+        tasty_presets::PresetStore::load_default(),
+    ));
+    let state = AppState::new(&mut engine, preset_store);
     (state, engine)
 }
 

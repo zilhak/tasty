@@ -192,7 +192,10 @@ fn named_key_without_mapping_never_matches_empty() {
 fn fresh_state() -> (crate::state::AppState, crate::engine_state::CoreState) {
     let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::engine_state::CoreState::new(80, 24, waker).unwrap();
-    let state = crate::state::AppState::new(&mut engine);
+    let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
+        tasty_presets::PresetStore::load_default(),
+    ));
+    let state = crate::state::AppState::new(&mut engine, preset_store);
     (state, engine)
 }
 
