@@ -14,9 +14,6 @@ use crate::ipc::server::IpcServer;
 /// fully extracted in a later phase when IPC handlers are updated.
 pub struct Engine {
     pub ipc_server: Option<IpcServer>,
-    /// When Some, a modal window is active and all other windows should ignore input.
-    /// At most one modal can exist at a time.
-    pub active_modal_id: Option<winit::window::WindowId>,
     /// The window that currently has focus (receives IPC commands targeting "focused" window).
     pub focused_window_id: Option<winit::window::WindowId>,
     pub port_file: Option<String>,
@@ -26,7 +23,6 @@ impl Engine {
     pub(crate) fn new(port_file: Option<String>) -> Self {
         Self {
             ipc_server: None,
-            active_modal_id: None,
             focused_window_id: None,
             port_file,
         }
@@ -47,10 +43,5 @@ impl Engine {
                 tracing::warn!("Failed to start IPC server: {}", e);
             }
         }
-    }
-
-    /// Check if a modal is active.
-    pub fn is_modal_active(&self) -> bool {
-        self.active_modal_id.is_some()
     }
 }

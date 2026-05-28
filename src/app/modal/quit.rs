@@ -9,7 +9,7 @@ impl App {
     pub(crate) fn handle_quit_requested(&mut self, event_loop: &ActiveEventLoop) {
         // If a quit modal is already open, treat as immediate quit
         let quit_modal_open = self
-            .engine
+            .view
             .active_modal_id
             .and_then(|id| self.windows.get(&id))
             .map(|m| {

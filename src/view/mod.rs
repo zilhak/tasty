@@ -8,6 +8,7 @@
 //! - C.4.x — windows HashMap, View trait
 
 use winit::event_loop::EventLoopProxy;
+use winit::window::WindowId;
 
 use crate::AppEvent;
 
@@ -15,10 +16,21 @@ pub(crate) struct View {
     /// winit event loop 의 proxy. AppEvent 를 enqueue 하기 위한 채널.
     /// View 영역은 GUI 어댑터로서 winit 과 직접 결합되어 있다.
     pub proxy: EventLoopProxy<AppEvent>,
+    /// When Some, a modal window is active and all other windows should ignore input.
+    /// At most one modal can exist at a time.
+    pub active_modal_id: Option<WindowId>,
 }
 
 impl View {
     pub(crate) fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
-        Self { proxy }
+        Self {
+            proxy,
+            active_modal_id: None,
+        }
+    }
+
+    /// Check if a modal is active.
+    pub fn is_modal_active(&self) -> bool {
+        self.active_modal_id.is_some()
     }
 }

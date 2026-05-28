@@ -1,7 +1,7 @@
 //! 모달 윈도우 관리.
 //!
-//! 모달은 일반 윈도우와 같은 `windows` 맵에 저장되고 `engine.active_modal_id`
-//! 로 식별된다. 한 번에 최대 1개만 활성 (engine 전역 불변식).
+//! 모달은 일반 윈도우와 같은 `windows` 맵에 저장되고 `view.active_modal_id`
+//! 로 식별된다. 한 번에 최대 1개만 활성 (App 전역 불변식).
 
 pub(crate) mod plugins;
 pub(crate) mod preset;
@@ -20,12 +20,12 @@ impl App {
     /// 모달도 일반 윈도우와 같은 `windows` 맵에 저장되며, `active_modal_id`로 식별된다.
     pub(crate) fn open_modal(&mut self, modal: Box<dyn window::Window>, window_id: WindowId) {
         self.windows.insert(window_id, modal);
-        self.engine.active_modal_id = Some(window_id);
+        self.view.active_modal_id = Some(window_id);
     }
 
     /// Close the active modal and handle modal-specific cleanup.
     pub(crate) fn close_active_modal(&mut self) {
-        let Some(modal_id) = self.engine.active_modal_id.take() else {
+        let Some(modal_id) = self.view.active_modal_id.take() else {
             return;
         };
         let Some(mut modal) = self.windows.remove(&modal_id) else {

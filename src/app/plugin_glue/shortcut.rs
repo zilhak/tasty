@@ -108,7 +108,7 @@ impl App {
             return false;
         }
         // Modal이 활성화되면 plugin shortcut은 동작하지 않는다.
-        if self.engine.is_modal_active() {
+        if self.view.is_modal_active() {
             return false;
         }
         let Some(w) = self.windows.get(&id) else {

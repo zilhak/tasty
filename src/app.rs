@@ -36,7 +36,7 @@ pub(crate) struct App {
     /// 및 `windows` HashMap 이 이쪽으로 이동.
     pub(crate) view: View,
     pub(crate) engine: engine::Engine,
-    /// 모든 윈도우(모달 포함). `engine.active_modal_id`로 현재 활성 모달을 식별한다.
+    /// 모든 윈도우(모달 포함). `view.active_modal_id`로 현재 활성 모달을 식별한다.
     /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
     pub(crate) windows: std::collections::HashMap<WindowId, Box<dyn window::Window>>,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.

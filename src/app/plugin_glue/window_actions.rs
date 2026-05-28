@@ -7,7 +7,7 @@ impl App {
     /// Drain pending actions from the plugins modal and apply them to the manager.
     /// Refreshes the modal's snapshot after applying.
     pub(crate) fn process_plugins_window_actions(&mut self) {
-        let Some(modal_id) = self.engine.active_modal_id else {
+        let Some(modal_id) = self.view.active_modal_id else {
             return;
         };
         let Some(modal) = self.windows.get_mut(&modal_id) else {

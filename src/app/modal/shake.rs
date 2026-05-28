@@ -8,7 +8,7 @@ impl App {
         if self.modal_shake.is_some() {
             return;
         }
-        let modal_id = match self.engine.active_modal_id {
+        let modal_id = match self.view.active_modal_id {
             Some(id) => id,
             None => return,
         };
@@ -39,7 +39,7 @@ impl App {
         if elapsed_ms >= SHAKE_DURATION_MS {
             // Animation done — restore original position
             let origin = shake.origin;
-            let modal_id = self.engine.active_modal_id;
+            let modal_id = self.view.active_modal_id;
             self.modal_shake = None;
             if let Some(id) = modal_id {
                 if let Some(w) = self.windows.get(&id) {
@@ -57,7 +57,7 @@ impl App {
             * (t * SHAKE_FREQUENCY * 2.0 * std::f64::consts::PI).sin()
             * (1.0 - t)) as i32;
         let origin = shake.origin;
-        if let Some(id) = self.engine.active_modal_id {
+        if let Some(id) = self.view.active_modal_id {
             if let Some(w) = self.windows.get(&id) {
                 w.base()
                     .winit

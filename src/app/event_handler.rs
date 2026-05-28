@@ -98,7 +98,7 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                     self.engine.focused_window_id = None;
-                    self.engine.active_modal_id = None;
+                    self.view.active_modal_id = None;
                     tracing::info!(
                         "minimized to background ({} states parked)",
                         self.parked_states.len()
@@ -309,7 +309,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // Modal handling — 활성 모달을 대상으로 한 이벤트
-        if let Some(modal_id) = self.engine.active_modal_id {
+        if let Some(modal_id) = self.view.active_modal_id {
             if id == modal_id {
                 let action = if let Some(modal) = self.windows.get_mut(&id) {
                     let mut ctx = WindowCtx {
@@ -395,7 +395,7 @@ impl ApplicationHandler<AppEvent> for App {
                 mgr.emit_host_event("window.focused", &payload, EventScope::System);
             }
             // If a modal is active, bring it to the front so it's not buried
-            if let Some(modal_id) = self.engine.active_modal_id {
+            if let Some(modal_id) = self.view.active_modal_id {
                 if let Some(modal) = self.windows.get(&modal_id) {
                     modal.base().winit.focus_window();
                 }
@@ -403,7 +403,7 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // Trigger modal shake when clicking on a non-modal window while modal is active
-        if self.engine.is_modal_active() {
+        if self.view.is_modal_active() {
             let is_mouse_press = matches!(
                 &event,
                 WindowEvent::MouseInput {
@@ -428,7 +428,7 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        let modal_active = self.engine.is_modal_active();
+        let modal_active = self.view.is_modal_active();
         let action = {
             if let Some(w) = self.windows.get_mut(&id) {
                 let mut ctx = WindowCtx {

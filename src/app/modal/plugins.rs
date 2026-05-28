@@ -8,7 +8,7 @@ use crate::window;
 impl App {
     /// Open the plugins modal window.
     pub(crate) fn open_plugins_modal(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.engine.is_modal_active() {
+        if self.view.is_modal_active() {
             return;
         }
 
