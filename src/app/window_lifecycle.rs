@@ -302,7 +302,7 @@ impl App {
             );
         }
 
-        self.engine.start_ipc(&self.view.proxy);
+        self.hub.start_ipc(&self.view.proxy);
         let engine_state = self
             .engine_state
             .take()

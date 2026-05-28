@@ -23,19 +23,16 @@ use crate::core::Core;
 use crate::gpu::GpuState;
 use crate::hub::Hub;
 use crate::view::View;
-use crate::{AppEvent, engine, plugin, state, window};
+use crate::{AppEvent, plugin, state, window};
 
 pub(crate) struct App {
     /// Phase C — 도메인 본체. 마이그레이션 중에는 빈 골격, sub-step 마다 한 필드씩
-    /// `Engine` / `EngineState` 에서 이쪽으로 이동한다.
+    /// `EngineState` 에서 이쪽으로 이동한다.
     pub(crate) core: Core,
-    /// Phase C — 외부 통신 표면. `Engine.{ipc_server, port_file}` 가 이쪽으로 이동.
-    #[allow(dead_code)]
+    /// Phase C — 외부 통신 표면. ipc_server, port_file 보유.
     pub(crate) hub: Hub,
-    /// Phase C — GUI 어댑터. `Engine.{proxy, active_modal_id, focused_window_id}`
-    /// 및 `windows` HashMap 이 이쪽으로 이동.
+    /// Phase C — GUI 어댑터. proxy, modal/focus 식별자, windows HashMap (예정) 보유.
     pub(crate) view: View,
-    pub(crate) engine: engine::Engine,
     /// 모든 윈도우(모달 포함). `view.active_modal_id`로 현재 활성 모달을 식별한다.
     /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
     pub(crate) windows: std::collections::HashMap<WindowId, Box<dyn window::Window>>,
@@ -92,9 +89,8 @@ impl App {
     ) -> Self {
         Self {
             core: Core::new(),
-            hub: Hub::new(),
+            hub: Hub::new(port_file),
             view: View::new(proxy.clone()),
-            engine: engine::Engine::new(port_file),
             windows: std::collections::HashMap::new(),
             parked_states: Vec::new(),
             shell_setup_mode: false,

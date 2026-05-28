@@ -42,7 +42,7 @@ impl App {
         // `ipc` 참조를 짧게 유지: 큐가 빌 때까지 cmd 들을 한 번에 drain.
         // try_recv 결과는 owned `IpcCommand` 이므로 borrow 가 cmd 안으로 따라 가지 않는다.
         let mut pending: Vec<crate::ipc::server::IpcCommand> = Vec::new();
-        let Some(ipc) = self.engine.ipc_server.as_ref() else {
+        let Some(ipc) = self.hub.ipc_server.as_ref() else {
             return false;
         };
         while let Ok(cmd) = ipc.try_recv() {
