@@ -53,6 +53,7 @@ use tasty_terminal as terminal;
 pub use tasty_themes as theme;
 pub use tasty_utils::path as paths;
 
+pub(crate) use adapters::ipc;
 pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;
 pub(crate) use boot::waker as waker_factory_winit;
@@ -67,7 +68,6 @@ pub(crate) use gfx::renderer;
 pub(crate) use host_api::cli;
 pub(crate) use host_api::hooks;
 pub(crate) use host_api::hooks::global as global_hooks;
-pub(crate) use host_api::ipc;
 pub(crate) use host_api::plugin;
 pub(crate) use host_api::webview;
 pub(crate) use input::click_cursor;

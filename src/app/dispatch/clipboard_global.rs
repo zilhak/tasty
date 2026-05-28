@@ -6,7 +6,7 @@
 use serde_json::{Value, json};
 
 use crate::app::App;
-use crate::host_api::ipc as host_ipc;
+use crate::ipc as host_ipc;
 use crate::ipc::protocol::JsonRpcResponse;
 
 impl App {

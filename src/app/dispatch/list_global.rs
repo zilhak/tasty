@@ -5,8 +5,8 @@
 use serde_json::json;
 
 use crate::app::App;
-use crate::host_api::ipc as host_ipc;
-use crate::host_api::ipc::handler::{pane, surface, workspace};
+use crate::ipc as host_ipc;
+use crate::ipc::handler::{pane, surface, workspace};
 use crate::ipc::protocol::JsonRpcResponse;
 
 impl App {

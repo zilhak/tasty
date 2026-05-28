@@ -13,6 +13,5 @@
 
 pub mod cli;
 pub mod hooks;
-pub mod ipc;
 pub mod plugin;
 pub mod webview;
