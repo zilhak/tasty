@@ -16,7 +16,11 @@
 //! Phase D 진행 중. 현재는 골격 — EngineState 의 데이터를 점진 흡수해 가며
 //! 외부 노출 어휘를 `CoreState` 로, mutate 어휘를 `Core` 로 분리한다.
 
+pub(crate) mod intent;
+
 use std::sync::{Arc, Mutex};
+
+use intent::{CoreEvent, CoreIntent};
 
 /// 도메인 데이터 — handler 가 받는 read-only 인터페이스.
 ///
@@ -62,5 +66,17 @@ impl Core {
     #[allow(dead_code)]
     pub(crate) fn state_mut(&mut self) -> &mut CoreState {
         &mut self.state
+    }
+
+    /// 도메인 변경의 단일 진입점. handler 가 발행한 `CoreIntent` 를 받아
+    /// `self.state` 를 자기 메서드로만 mutate. 결과 이벤트 목록을 반환해
+    /// dispatcher 가 observer / replay 로 전파한다.
+    ///
+    /// Phase D 진행 중 — `CoreIntent` variant 가 점진 추가됨.
+    #[allow(dead_code)]
+    pub(crate) fn apply(&mut self, intent: CoreIntent) -> anyhow::Result<Vec<CoreEvent>> {
+        match intent {
+            // Phase D 진행 중. variant 추가 시 본 match 도 채워진다.
+        }
     }
 }
