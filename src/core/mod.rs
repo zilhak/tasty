@@ -185,6 +185,21 @@ impl Core {
         engine.approval_store.cancel(req_id)
     }
 
+    // ─── Clipboard (외부 시스템 clipboard) ───
+
+    /// 시스템 clipboard 에 text 쓰기. 옛 `arboard::Clipboard::new().set_text` 의 Core 진입점.
+    pub(crate) fn clipboard_write_text(&self, text: &str) -> anyhow::Result<()> {
+        self.clipboard.write_text(text)
+    }
+
+    /// 시스템 clipboard 에 image 쓰기. 옛 `arboard::Clipboard::new().set_image` 의 Core 진입점.
+    pub(crate) fn clipboard_write_image(
+        &self,
+        image: &crate::ports::clipboard::ClipboardImage,
+    ) -> anyhow::Result<()> {
+        self.clipboard.write_image(image)
+    }
+
     /// 도메인 변경의 단일 진입점. handler 가 발행한 `CoreIntent` 를 받아
     /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
     #[allow(dead_code)]

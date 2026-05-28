@@ -264,7 +264,7 @@ fn route_engine_handler(
         // 처리하므로 본 router 에는 도달하지 않는다.
         "tool.clipboard.list" => clipboard::handle_list(engine, id, &request.params),
         "tool.clipboard.get" => clipboard::handle_get(engine, id, &request.params),
-        "tool.clipboard.paste" => clipboard::handle_paste(engine, id, &request.params),
+        "tool.clipboard.paste" => clipboard::handle_paste(core, engine, id, &request.params),
         // input source (macOS)
         #[cfg(target_os = "macos")]
         "surface.switch_input_source" => {

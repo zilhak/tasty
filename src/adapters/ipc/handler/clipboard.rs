@@ -60,8 +60,14 @@ pub fn handle_get(engine: &CoreState, id: Value, params: &Value) -> JsonRpcRespo
     }
 }
 
-pub fn handle_paste(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_paste(
+    core: &crate::core::Core,
+    engine: &mut CoreState,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     use crate::clipboard_history::ClipboardContent;
+    use crate::ports::clipboard::ClipboardImage;
 
     let idx = match params.get("index").and_then(|v| v.as_u64()) {
         Some(n) => n as usize,
@@ -72,27 +78,25 @@ pub fn handle_paste(engine: &mut CoreState, id: Value, params: &Value) -> JsonRp
         None => return JsonRpcResponse::invalid_params(id, format!("Index {idx} out of range")),
     };
     match content {
-        ClipboardContent::Text(text) => {
-            match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
-                Ok(()) => {
-                    engine.record_internal_copy(&text);
-                    JsonRpcResponse::success(id, json!({ "ok": true, "index": idx }))
-                }
-                Err(e) => {
-                    JsonRpcResponse::internal_error(id, format!("clipboard set_text failed: {e}"))
-                }
+        ClipboardContent::Text(text) => match core.clipboard_write_text(&text) {
+            Ok(()) => {
+                engine.record_internal_copy(&text);
+                JsonRpcResponse::success(id, json!({ "ok": true, "index": idx }))
             }
-        }
+            Err(e) => {
+                JsonRpcResponse::internal_error(id, format!("clipboard set_text failed: {e}"))
+            }
+        },
         ClipboardContent::Image(img) => {
             match image::load_from_memory_with_format(&img.png_bytes, image::ImageFormat::Png) {
                 Ok(dyn_img) => {
                     let rgba = dyn_img.to_rgba8();
-                    let arboard_img = arboard::ImageData {
-                        width: rgba.width() as usize,
-                        height: rgba.height() as usize,
-                        bytes: rgba.into_raw().into(),
+                    let port_img = ClipboardImage {
+                        width: rgba.width(),
+                        height: rgba.height(),
+                        pixels: rgba.into_raw(),
                     };
-                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_image(arboard_img)) {
+                    match core.clipboard_write_image(&port_img) {
                         Ok(()) => {
                             engine.clipboard_history.record_image(
                                 img,
