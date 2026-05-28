@@ -4,6 +4,7 @@
 /// for the controlling terminal of the given shell PID.
 
 /// Info about the foreground process.
+#[derive(Debug, Clone)]
 pub struct ForegroundProcessInfo {
     pub name: String,
     pub pid: u32,

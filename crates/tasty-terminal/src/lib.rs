@@ -15,6 +15,7 @@ pub mod disk_scrollback;
 pub mod foreground_process;
 pub mod search;
 pub mod test_helpers;
+pub mod testing;
 
 use std::io::{Read, Write};
 use std::sync::mpsc;
