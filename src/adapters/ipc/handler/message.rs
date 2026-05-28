@@ -32,6 +32,7 @@ pub fn handle_message_send(
 }
 
 pub fn handle_message_read(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -49,7 +50,7 @@ pub fn handle_message_read(
         .get("peek")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let messages = engine.read_messages(surface_id, from, peek);
+    let messages = core.read_surface_messages(engine, surface_id, from, peek);
     let result: Vec<_> = messages
         .iter()
         .map(|m| json!({ "id": m.id, "from_surface_id": m.from_surface_id, "content": m.content }))
@@ -72,6 +73,7 @@ pub fn handle_message_count(
 }
 
 pub fn handle_message_clear(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -81,6 +83,6 @@ pub fn handle_message_clear(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    engine.clear_messages(surface_id);
+    core.clear_surface_messages(engine, surface_id);
     JsonRpcResponse::success(id, json!({ "cleared": true, "surface_id": surface_id }))
 }

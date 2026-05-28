@@ -250,9 +250,9 @@ fn route_engine_handler(
         "tree" => handle_tree(state, engine, id),
         // message
         "message.send" => message::handle_message_send(core, state, engine, id, &request.params),
-        "message.read" => message::handle_message_read(state, engine, id, &request.params),
+        "message.read" => message::handle_message_read(core, state, engine, id, &request.params),
         "message.count" => message::handle_message_count(state, engine, id, &request.params),
-        "message.clear" => message::handle_message_clear(state, engine, id, &request.params),
+        "message.clear" => message::handle_message_clear(core, state, engine, id, &request.params),
         // tool.clipboard (read/write only — viewer_open is GUI)
         "tool.clipboard.list" => clipboard::handle_list(engine, id, &request.params),
         "tool.clipboard.get" => clipboard::handle_get(engine, id, &request.params),

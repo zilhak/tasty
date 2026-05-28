@@ -77,6 +77,26 @@ impl Core {
         engine.send_message(from, to, content)
     }
 
+    /// Surface message 큐 read (peek/consume). 옛 `engine.read_messages` 의 Core 진입점.
+    pub(crate) fn read_surface_messages(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        sid: u32,
+        from: Option<u32>,
+        peek: bool,
+    ) -> Vec<crate::state::SurfaceMessage> {
+        engine.read_messages(sid, from, peek)
+    }
+
+    /// Surface message 큐 clear. 옛 `engine.clear_messages` 의 Core 진입점.
+    pub(crate) fn clear_surface_messages(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        sid: u32,
+    ) {
+        engine.clear_messages(sid);
+    }
+
     /// 도메인 변경의 단일 진입점. handler 가 발행한 `CoreIntent` 를 받아
     /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
     #[allow(dead_code)]
