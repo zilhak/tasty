@@ -6,6 +6,7 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
 pub(crate) fn handle_hook_set(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -44,9 +45,7 @@ pub(crate) fn handle_hook_set(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let hook_id = engine
-        .hook_manager
-        .add_hook(surface_id, event, command, once);
+    let hook_id = core.register_surface_hook(engine, surface_id, event, command, once);
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
@@ -80,6 +79,7 @@ pub(crate) fn handle_hook_list(
 }
 
 pub(crate) fn handle_hook_unset(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -90,11 +90,12 @@ pub(crate) fn handle_hook_unset(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'hook_id' parameter"),
     };
 
-    let removed = engine.hook_manager.remove_hook(hook_id);
+    let removed = core.unregister_surface_hook(engine, hook_id);
     JsonRpcResponse::success(id, json!({ "removed": removed }))
 }
 
 pub(crate) fn handle_global_hook_set(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -128,7 +129,7 @@ pub(crate) fn handle_global_hook_set(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let hook_id = engine.global_hook_manager.add(condition, command, label);
+    let hook_id = core.register_global_hook(engine, condition, command, label);
     JsonRpcResponse::success(id, json!({ "hook_id": hook_id }))
 }
 
@@ -154,6 +155,7 @@ pub(crate) fn handle_global_hook_list(
 }
 
 pub(crate) fn handle_global_hook_unset(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -164,11 +166,12 @@ pub(crate) fn handle_global_hook_unset(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'hook_id' parameter"),
     };
 
-    let removed = engine.global_hook_manager.remove(hook_id);
+    let removed = core.unregister_global_hook(engine, hook_id);
     JsonRpcResponse::success(id, json!({ "removed": removed }))
 }
 
 pub(crate) fn handle_surface_fire_hook(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -194,9 +197,7 @@ pub(crate) fn handle_surface_fire_hook(
         }
     };
 
-    let fired = engine
-        .hook_manager
-        .check_and_fire(surface_id, &[event.clone()]);
+    let fired = core.fire_surface_hooks(engine, surface_id, &[event.clone()]);
     let event_kind = event.to_display_string();
     for hook_id in &fired {
         state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {

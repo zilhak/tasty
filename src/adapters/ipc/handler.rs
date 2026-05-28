@@ -232,18 +232,24 @@ fn route_engine_handler(
         }
         "surface.is_typing" => handle_is_typing(state, engine, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(state, engine, id, &request.params),
-        "surface.fire_hook" => hooks::handle_surface_fire_hook(state, engine, id, &request.params),
+        "surface.fire_hook" => {
+            hooks::handle_surface_fire_hook(core, state, engine, id, &request.params)
+        }
         "surface.meta.set" => meta::handle_surface_meta_set(state, engine, id, &request.params),
         "surface.meta.get" => meta::handle_surface_meta_get(state, engine, id, &request.params),
         "surface.meta.unset" => meta::handle_surface_meta_unset(state, engine, id, &request.params),
         "surface.meta.list" => meta::handle_surface_meta_list(state, engine, id, &request.params),
         // hooks
-        "hook.set" => hooks::handle_hook_set(state, engine, id, &request.params),
+        "hook.set" => hooks::handle_hook_set(core, state, engine, id, &request.params),
         "hook.list" => hooks::handle_hook_list(state, engine, id, &request.params),
-        "hook.unset" => hooks::handle_hook_unset(state, engine, id, &request.params),
-        "global_hook.set" => hooks::handle_global_hook_set(state, engine, id, &request.params),
+        "hook.unset" => hooks::handle_hook_unset(core, state, engine, id, &request.params),
+        "global_hook.set" => {
+            hooks::handle_global_hook_set(core, state, engine, id, &request.params)
+        }
         "global_hook.list" => hooks::handle_global_hook_list(state, engine, id),
-        "global_hook.unset" => hooks::handle_global_hook_unset(state, engine, id, &request.params),
+        "global_hook.unset" => {
+            hooks::handle_global_hook_unset(core, state, engine, id, &request.params)
+        }
         // webview (plugin 이 webview-enabled surface 의 URL/navigation 제어)
         "webview.set_url" => webview::handle_set_url(state, engine, id, &request.params),
         // tree

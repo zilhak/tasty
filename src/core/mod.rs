@@ -97,6 +97,62 @@ impl Core {
         engine.clear_messages(sid);
     }
 
+    // ─── Hooks ───
+
+    /// surface hook 등록. 반환: 새 hook id.
+    pub(crate) fn register_surface_hook(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        surface_id: u32,
+        event: tasty_hooks::HookEvent,
+        command: String,
+        once: bool,
+    ) -> u64 {
+        engine
+            .hook_manager
+            .add_hook(surface_id, event, command, once)
+    }
+
+    /// surface hook 해제. 반환: 실제 제거 여부.
+    pub(crate) fn unregister_surface_hook(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        hook_id: u64,
+    ) -> bool {
+        engine.hook_manager.remove_hook(hook_id)
+    }
+
+    /// global hook 등록. 반환: 새 hook id.
+    pub(crate) fn register_global_hook(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        condition: crate::global_hooks::HookCondition,
+        command: String,
+        label: Option<String>,
+    ) -> u32 {
+        engine.global_hook_manager.add(condition, command, label)
+    }
+
+    /// global hook 해제. 반환: 실제 제거 여부.
+    pub(crate) fn unregister_global_hook(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        hook_id: u32,
+    ) -> bool {
+        engine.global_hook_manager.remove(hook_id)
+    }
+
+    /// surface 의 hook 들 중 event 매칭 시 fire — 발사된 hook id 들 반환.
+    /// AppState 의 enqueue_host_event 는 호출처 (handler) 에서 처리.
+    pub(crate) fn fire_surface_hooks(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        surface_id: u32,
+        events: &[tasty_hooks::HookEvent],
+    ) -> Vec<u64> {
+        engine.hook_manager.check_and_fire(surface_id, events)
+    }
+
     /// 도메인 변경의 단일 진입점. handler 가 발행한 `CoreIntent` 를 받아
     /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
     #[allow(dead_code)]
