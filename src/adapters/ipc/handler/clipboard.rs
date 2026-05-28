@@ -111,19 +111,3 @@ pub fn handle_paste(engine: &mut CoreState, id: Value, params: &Value) -> JsonRp
         }
     }
 }
-
-pub fn handle_remove(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
-    let idx = match params.get("index").and_then(|v| v.as_u64()) {
-        Some(n) => n as usize,
-        None => return JsonRpcResponse::invalid_params(id, "Missing 'index'"),
-    };
-    match engine.clipboard_history.remove_at(idx) {
-        Some(_) => JsonRpcResponse::success(id, json!({ "ok": true, "index": idx })),
-        None => JsonRpcResponse::invalid_params(id, format!("Index {idx} out of range")),
-    }
-}
-
-pub fn handle_clear(engine: &mut CoreState, id: Value) -> JsonRpcResponse {
-    engine.clipboard_history.clear();
-    JsonRpcResponse::success(id, json!({ "ok": true }))
-}

@@ -260,11 +260,11 @@ fn route_engine_handler(
         "message.count" => message::handle_message_count(state, engine, id, &request.params),
         "message.clear" => message::handle_message_clear(core, state, engine, id, &request.params),
         // tool.clipboard (read/write only — viewer_open is GUI)
+        // clear/remove 는 App::dispatch_clipboard_global 가 broadcast 로 먼저
+        // 처리하므로 본 router 에는 도달하지 않는다.
         "tool.clipboard.list" => clipboard::handle_list(engine, id, &request.params),
         "tool.clipboard.get" => clipboard::handle_get(engine, id, &request.params),
         "tool.clipboard.paste" => clipboard::handle_paste(engine, id, &request.params),
-        "tool.clipboard.remove" => clipboard::handle_remove(engine, id, &request.params),
-        "tool.clipboard.clear" => clipboard::handle_clear(engine, id),
         // input source (macOS)
         #[cfg(target_os = "macos")]
         "surface.switch_input_source" => {
