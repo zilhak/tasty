@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// Condition that triggers a global hook.
@@ -9,15 +8,12 @@ pub enum HookCondition {
     Interval(Duration),
     /// Fires once after `Duration` has elapsed since the hook was added.
     Once(Duration),
-    /// Fires when the file at the given path is modified.
-    FileModified(PathBuf),
 }
 
 impl HookCondition {
     /// Parse a condition string of the form:
     /// - `"interval:SECS"` → Interval
     /// - `"once:SECS"` → Once
-    /// - `"file:/path/to/watch"` → FileModified
     pub fn parse(s: &str) -> Option<Self> {
         if let Some(rest) = s.strip_prefix("interval:") {
             let secs: f64 = rest.parse().ok()?;
@@ -25,8 +21,6 @@ impl HookCondition {
         } else if let Some(rest) = s.strip_prefix("once:") {
             let secs: f64 = rest.parse().ok()?;
             Some(HookCondition::Once(Duration::from_secs_f64(secs)))
-        } else if let Some(rest) = s.strip_prefix("file:") {
-            Some(HookCondition::FileModified(PathBuf::from(rest)))
         } else {
             None
         }
@@ -37,7 +31,6 @@ impl HookCondition {
         match self {
             HookCondition::Interval(d) => format!("interval:{}", d.as_secs_f64()),
             HookCondition::Once(d) => format!("once:{}", d.as_secs_f64()),
-            HookCondition::FileModified(p) => format!("file:{}", p.display()),
         }
     }
 }
@@ -51,12 +44,10 @@ pub struct GlobalHook {
     pub label: Option<String>,
 }
 
-/// Manages global (non-surface-bound) hooks driven by timers and file changes.
+/// Manages global (non-surface-bound) hooks driven by timers.
 pub struct GlobalHookManager {
     hooks: HashMap<u32, GlobalHook>,
     next_id: u32,
-    /// Last known modification time for FileModified hooks.
-    file_mtimes: HashMap<u32, Option<std::time::SystemTime>>,
     /// When each Interval/Once hook last fired (or was created).
     last_fired: HashMap<u32, Instant>,
     /// Creation time for Once hooks, to measure elapsed time.
@@ -70,7 +61,6 @@ impl GlobalHookManager {
         Self {
             hooks: HashMap::new(),
             next_id: 0,
-            file_mtimes: HashMap::new(),
             last_fired: HashMap::new(),
             created_at: HashMap::new(),
             fired_once: Vec::new(),
@@ -84,10 +74,6 @@ impl GlobalHookManager {
         let now = Instant::now();
 
         match &condition {
-            HookCondition::FileModified(path) => {
-                let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
-                self.file_mtimes.insert(id, mtime);
-            }
             HookCondition::Interval(_) => {
                 self.last_fired.insert(id, now);
             }
@@ -110,7 +96,6 @@ impl GlobalHookManager {
 
     /// Remove a hook by ID. Returns `true` if it existed.
     pub fn remove(&mut self, id: u32) -> bool {
-        self.file_mtimes.remove(&id);
         self.last_fired.remove(&id);
         self.created_at.remove(&id);
         self.hooks.remove(&id).is_some()
@@ -148,14 +133,6 @@ impl GlobalHookManager {
                         self.fired_once.push(*id);
                     }
                 }
-                HookCondition::FileModified(path) => {
-                    let current_mtime =
-                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
-                    let prev_mtime = self.file_mtimes.get(id).cloned().flatten();
-                    if current_mtime.is_some() && current_mtime != prev_mtime {
-                        to_fire.push((*id, hook.command.clone()));
-                    }
-                }
             }
         }
 
@@ -164,10 +141,6 @@ impl GlobalHookManager {
             if let Some(hook) = self.hooks.get(id) {
                 if matches!(hook.condition, HookCondition::Interval(_)) {
                     self.last_fired.insert(*id, now);
-                }
-                if let HookCondition::FileModified(path) = &hook.condition {
-                    let new_mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
-                    self.file_mtimes.insert(*id, new_mtime);
                 }
             }
         }

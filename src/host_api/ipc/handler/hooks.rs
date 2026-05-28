@@ -111,7 +111,7 @@ pub(crate) fn handle_global_hook_set(
             return JsonRpcResponse::invalid_params(
                 id,
                 format!(
-                    "Invalid condition '{}'. Use: interval:SECS, once:SECS, file:/path",
+                    "Invalid condition '{}'. Use: interval:SECS, once:SECS",
                     condition_str
                 ),
             );

@@ -8,9 +8,9 @@
 //!
 //! ## 위치 분기
 //!
-//! - **External crate 의존 (10 port)** — 본 모듈 (`src/ports/`).
+//! - **External crate 의존** — 본 모듈 (`src/ports/`).
 //!   PtyService, FileSystem, Clock, ClipboardSystem, ProcessSpawner, HomeDirectory,
-//!   FileWatcher, NotificationBackend, IpcServerPort, TerminalWaker.
+//!   NotificationBackend, IpcServerPort, TerminalWaker.
 //!
 //! - **Internal crate trait (4 port)** — 각 워크스페이스 crate 안.
 //!   `tasty_memory::MemoryStorage`, `tasty_presets::PresetStorage`,
@@ -23,7 +23,6 @@
 
 pub mod clipboard;
 pub mod clock;
-pub mod file_watcher;
 pub mod fs;
 pub mod home;
 pub mod inbound;

@@ -78,9 +78,9 @@ pub enum SetCommands {
         #[arg(long)]
         description: Option<String>,
     },
-    /// Set a global hook (timer or file-watching)
+    /// Set a global hook (timer-based)
     GlobalHook {
-        /// Condition: interval:SECS, once:SECS, file:/path/to/watch
+        /// Condition: interval:SECS, once:SECS
         #[arg(long)]
         condition: String,
         /// Shell command to execute when the condition fires
