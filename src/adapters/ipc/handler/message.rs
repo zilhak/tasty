@@ -6,6 +6,7 @@ use crate::state::AppState;
 use super::require_surface_id;
 
 pub fn handle_message_send(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -23,7 +24,7 @@ pub fn handle_message_send(
         Some(f) => f as u32,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'from_surface_id'"),
     };
-    let msg_id = engine.send_message(from, to, content);
+    let msg_id = core.send_surface_message(engine, from, to, content);
     JsonRpcResponse::success(
         id,
         json!({ "id": msg_id, "from_surface_id": from, "to_surface_id": to }),

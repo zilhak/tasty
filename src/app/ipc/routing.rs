@@ -46,12 +46,14 @@ impl App {
             .find_request_owner(&cmd.request.params)
             .or(self.view.focused_window_id);
         if let Some(id) = target_id {
+            let core = &mut self.core;
             let resp_opt = self
                 .windows
                 .get_mut(&id)
                 .and_then(|w| w.as_main_mut())
                 .map(|w| {
                     let r = host_ipc::handler::handle_with_caller(
+                        core,
                         &mut w.state,
                         &mut w.engine_state,
                         &cmd.request,
@@ -76,15 +78,25 @@ impl App {
                 })
             });
         if let Some((state, engine)) = owner_in_parked {
-            let response =
-                host_ipc::handler::handle_with_caller(state, engine, &cmd.request, caller);
+            let response = host_ipc::handler::handle_with_caller(
+                &mut self.core,
+                state,
+                engine,
+                &cmd.request,
+                caller,
+            );
             send_response(&cmd.response_tx, response);
             self.dispatch_pending_core_intents();
             return IpcStep::Handled;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
-            let response =
-                host_ipc::handler::handle_with_caller(state, engine, &cmd.request, caller);
+            let response = host_ipc::handler::handle_with_caller(
+                &mut self.core,
+                state,
+                engine,
+                &cmd.request,
+                caller,
+            );
             send_response(&cmd.response_tx, response);
             self.dispatch_pending_core_intents();
         }

@@ -60,6 +60,23 @@ pub(crate) struct Core {
 }
 
 impl Core {
+    // ─── Domain wrapper methods ───
+    //
+    // sync 결과 반환이 필요한 mutate 는 본 wrapper 들로 노출 (handler 가 직접
+    // 호출). Phase D 진행 중에는 wrapper 가 `engine` 도 함께 받아 그쪽을 mutate
+    // 한다 — 도메인 데이터의 Core 흡수가 완료되면 `engine` 인자 제거 예정.
+
+    /// Surface message 전송. 옛 `engine.send_message` 의 Core 진입점.
+    pub(crate) fn send_surface_message(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        from: u32,
+        to: u32,
+        content: String,
+    ) -> u32 {
+        engine.send_message(from, to, content)
+    }
+
     /// 도메인 변경의 단일 진입점. handler 가 발행한 `CoreIntent` 를 받아
     /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
     #[allow(dead_code)]

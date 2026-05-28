@@ -57,11 +57,14 @@ use crate::state::AppState;
 /// 권한 게이트는 라우터의 가장 바깥에서 한 번만 실행된다. plugin이 호출한
 /// 명령이 권한을 통과하지 못하면 `permission_denied` 에러로 즉시 회신.
 pub fn handle_with_caller(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     request: &JsonRpcRequest,
     caller: &CallerContext,
 ) -> JsonRpcResponse {
+    let _ = core; // Phase D 진행 중 — 본 인자는 향후 도메인 핸들러 마이그레이션
+    // 에서 점진 사용. 현재는 *시그니처 통과* 만.
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
 
     let canonical = alias::canonicalize(&request.method);
@@ -136,7 +139,7 @@ pub fn handle_with_caller(
     };
     let request = routed.as_ref();
 
-    if let Some(resp) = route_engine_handler(state, engine, caller, request, id.clone()) {
+    if let Some(resp) = route_engine_handler(core, state, engine, caller, request, id.clone()) {
         return resp;
     }
 
@@ -154,6 +157,7 @@ pub fn handle_with_caller(
 /// AppState 메서드들이 `CoreState`로 이전되면 시그니처를 `&mut CoreState`로
 /// 좁힐 예정 (별도 작업).
 fn route_engine_handler(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
@@ -245,7 +249,7 @@ fn route_engine_handler(
         // tree
         "tree" => handle_tree(state, engine, id),
         // message
-        "message.send" => message::handle_message_send(state, engine, id, &request.params),
+        "message.send" => message::handle_message_send(core, state, engine, id, &request.params),
         "message.read" => message::handle_message_read(state, engine, id, &request.params),
         "message.count" => message::handle_message_count(state, engine, id, &request.params),
         "message.clear" => message::handle_message_clear(state, engine, id, &request.params),
