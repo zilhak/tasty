@@ -46,15 +46,23 @@ impl App {
             .find_request_owner(&cmd.request.params)
             .or(self.view.focused_window_id);
         if let Some(id) = target_id {
-            if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
-                let response = host_ipc::handler::handle_with_caller(
-                    &mut w.state,
-                    &mut w.engine_state,
-                    &cmd.request,
-                    caller,
-                );
+            let resp_opt = self
+                .windows
+                .get_mut(&id)
+                .and_then(|w| w.as_main_mut())
+                .map(|w| {
+                    let r = host_ipc::handler::handle_with_caller(
+                        &mut w.state,
+                        &mut w.engine_state,
+                        &cmd.request,
+                        caller,
+                    );
+                    w.base.dirty = true;
+                    r
+                });
+            if let Some(response) = resp_opt {
                 send_response(&cmd.response_tx, response);
-                w.base.dirty = true;
+                self.dispatch_pending_core_intents();
                 return IpcStep::Handled;
             }
         }
@@ -71,12 +79,14 @@ impl App {
             let response =
                 host_ipc::handler::handle_with_caller(state, engine, &cmd.request, caller);
             send_response(&cmd.response_tx, response);
+            self.dispatch_pending_core_intents();
             return IpcStep::Handled;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
             let response =
                 host_ipc::handler::handle_with_caller(state, engine, &cmd.request, caller);
             send_response(&cmd.response_tx, response);
+            self.dispatch_pending_core_intents();
         }
         IpcStep::Handled
     }

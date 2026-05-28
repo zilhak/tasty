@@ -327,6 +327,11 @@ pub struct AppState {
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. 설계: `docs/design/action-dispatch.md`.
     pub pending_intents: Vec<crate::intent::DispatchedIntent>,
+
+    /// Core 도메인 변경 요청 큐 (`CoreIntent`). handler 가 read 후 push,
+    /// `App::dispatch_pending_core_intents` 가 메인 루프 / handler 호출 종료 후
+    /// drain → `core.apply` 호출 → cascade event 처리. Phase D 진행 중.
+    pub(crate) pending_core_intents: Vec<crate::core::intent::CoreIntent>,
 }
 
 /// A pending native context menu request.
@@ -587,12 +592,24 @@ impl AppState {
             plugin_popup_events: Vec::new(),
             plugin_popup_closes: Vec::new(),
             pending_intents: Vec::new(),
+            pending_core_intents: Vec::new(),
         }
     }
 
     /// Intent 발화. `App::dispatch_pending_intents` 가 메인 루프에서 drain.
     pub fn dispatch_intent(&mut self, intent: crate::intent::DispatchedIntent) {
         self.pending_intents.push(intent);
+    }
+
+    /// CoreIntent 발화. handler 가 read 후 본 메서드로 push,
+    /// `App::dispatch_pending_core_intents` 가 drain → `core.apply` 호출.
+    pub(crate) fn enqueue_core_intent(&mut self, intent: crate::core::intent::CoreIntent) {
+        self.pending_core_intents.push(intent);
+    }
+
+    /// 현재까지 발화된 CoreIntent 를 모두 꺼내고 큐를 비운다.
+    pub(crate) fn take_pending_core_intents(&mut self) -> Vec<crate::core::intent::CoreIntent> {
+        std::mem::take(&mut self.pending_core_intents)
     }
 
     /// 현재까지 발화된 Intent 를 모두 꺼내고 큐를 비운다.

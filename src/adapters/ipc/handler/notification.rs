@@ -85,16 +85,14 @@ pub fn handle_notification_create(
             }
         }
     };
-    let created_id = engine
-        .notifications
-        .add(ws_id, surface_id, title.clone(), body.clone());
-    if let Some(nid) = created_id {
-        state.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
-            id: nid,
-            title,
-            body,
-            source: "host".to_string(),
-        });
-    }
+    // mutate 는 Core::apply 단일 진입점 — handler 는 read 후 enqueue.
+    // cascade (notifications.add + host event enqueue) 는
+    // App.cascade_notification_pushed 가 처리.
+    state.enqueue_core_intent(crate::core::intent::CoreIntent::PushNotification {
+        ws_id,
+        surface_id,
+        title,
+        body,
+    });
     JsonRpcResponse::success(id, json!({ "created": true }))
 }

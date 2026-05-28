@@ -23,6 +23,26 @@ impl App {
         Ok(())
     }
 
+    /// 모든 windows + parked 의 `AppState.pending_core_intents` 를 drain →
+    /// 각 intent 를 `dispatch_core_intent` 로 처리. handler 호출 직후 호출되어
+    /// handler 가 enqueue 한 intent 를 즉시 cascade 시킨다.
+    pub(crate) fn dispatch_pending_core_intents(&mut self) {
+        let mut batch: Vec<CoreIntent> = Vec::new();
+        for w in self.windows.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                batch.append(&mut main.state.take_pending_core_intents());
+            }
+        }
+        for (s, _) in self.parked_states.iter_mut() {
+            batch.append(&mut s.take_pending_core_intents());
+        }
+        for intent in batch {
+            if let Err(e) = self.dispatch_core_intent(intent) {
+                tracing::warn!("dispatch_core_intent failed: {e}");
+            }
+        }
+    }
+
     /// `CoreEvent` 처리 — Phase D 진행 중에는 *옛 cascade 코드의 위치 이동*.
     fn handle_core_event(&mut self, event: CoreEvent) {
         match event {

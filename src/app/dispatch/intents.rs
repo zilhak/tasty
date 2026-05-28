@@ -121,14 +121,22 @@ impl App {
             .find_request_owner(&request.params)
             .or(self.view.focused_window_id);
         if let Some(id) = target_id {
-            if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
-                let response = ipc::handler::handle_with_caller(
-                    &mut w.state,
-                    &mut w.engine_state,
-                    request,
-                    caller,
-                );
-                w.base.dirty = true;
+            let resp_opt = self
+                .windows
+                .get_mut(&id)
+                .and_then(|w| w.as_main_mut())
+                .map(|w| {
+                    let r = ipc::handler::handle_with_caller(
+                        &mut w.state,
+                        &mut w.engine_state,
+                        request,
+                        caller,
+                    );
+                    w.base.dirty = true;
+                    r
+                });
+            if let Some(response) = resp_opt {
+                self.dispatch_pending_core_intents();
                 return response;
             }
         }
@@ -142,10 +150,14 @@ impl App {
                 })
             });
         if let Some((state, engine)) = owner_in_parked {
-            return ipc::handler::handle_with_caller(state, engine, request, caller);
+            let response = ipc::handler::handle_with_caller(state, engine, request, caller);
+            self.dispatch_pending_core_intents();
+            return response;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
-            return ipc::handler::handle_with_caller(state, engine, request, caller);
+            let response = ipc::handler::handle_with_caller(state, engine, request, caller);
+            self.dispatch_pending_core_intents();
+            return response;
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
         ipc::protocol::JsonRpcResponse::error(id, -32000, "no application state available")
