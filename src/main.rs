@@ -3,10 +3,12 @@
 mod app;
 mod boot;
 mod clipboard;
+mod core;
 mod db;
 mod file;
 mod gfx;
 mod host_api;
+mod hub;
 mod i18n;
 mod input;
 mod intent;
@@ -15,6 +17,7 @@ mod platform;
 mod state;
 mod store;
 mod ui;
+mod view;
 mod waker;
 
 /// `Surface::as_any` / `as_any_mut` 구현을 한 줄로 채우는 매크로.

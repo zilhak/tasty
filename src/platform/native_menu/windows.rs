@@ -17,7 +17,7 @@ pub fn show_context_menu(
     items: &[MenuItem],
 ) -> Option<u32> {
     let hwnd = match window.window_handle().ok()?.as_raw() {
-        RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut core::ffi::c_void),
+        RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut std::ffi::c_void),
         _ => return None,
     };
 

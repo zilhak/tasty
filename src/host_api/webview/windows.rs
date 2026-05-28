@@ -28,7 +28,7 @@ impl PlatformWebView {
         scale_factor: f64,
     ) -> std::result::Result<Self, String> {
         let parent = match window.window_handle().map_err(|e| e.to_string())?.as_raw() {
-            RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut core::ffi::c_void),
+            RawWindowHandle::Win32(w) => HWND(w.hwnd.get() as *mut std::ffi::c_void),
             _ => return Err("Not a Win32 window".to_string()),
         };
 
