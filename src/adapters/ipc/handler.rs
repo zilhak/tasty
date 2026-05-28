@@ -94,7 +94,7 @@ pub fn handle_with_caller(
     // Phase 4.3c 텔레메트리 cap 차단: triggered + (Stop|Pause) 인 cap 이 있는
     // plugin agent 는 모든 IPC 가 거부된다. CLI/Local 은 검사 대상이 아니므로
     // `telemetry.cap.reset` 으로 해제 가능.
-    if let Some(reason) = telemetry::check_cap_block(caller, canonical) {
+    if let Some(reason) = telemetry::check_cap_block(core, caller, canonical) {
         tracing::warn!("ipc cap blocked: {reason}");
         let seq = engine.telemetry_seq.next();
         crate::ipc::audit::record(
@@ -111,7 +111,7 @@ pub fn handle_with_caller(
     // Phase 4.2 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
     // `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
     // 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다 (Phase 4.3b).
-    telemetry::record_ipc_call(state, engine, caller, canonical);
+    telemetry::record_ipc_call(core, state, engine, caller, canonical);
 
     // Phase 6.5a audit: allow 경로도 기록. cap_blocked 와 마찬가지로 host 자신은
     // 기록 의미가 적지만 일관성을 위해 전부 기록 (운영자가 query 시 filter).
@@ -414,40 +414,42 @@ fn route_engine_handler(
             approval::handle_summary_get(state, engine, caller, id, &request.params)
         }
         // telemetry (관측 / 비용) — 단계 4.1
-        "telemetry.record" => telemetry::handle_record(state, engine, caller, id, &request.params),
+        "telemetry.record" => {
+            telemetry::handle_record(core, state, engine, caller, id, &request.params)
+        }
         "telemetry.record_batch" => {
-            telemetry::handle_record_batch(state, engine, caller, id, &request.params)
+            telemetry::handle_record_batch(core, state, engine, caller, id, &request.params)
         }
         "telemetry.summary" => {
-            telemetry::handle_summary(state, engine, caller, id, &request.params)
+            telemetry::handle_summary(core, state, engine, caller, id, &request.params)
         }
         "telemetry.timeseries" => {
-            telemetry::handle_timeseries(state, engine, caller, id, &request.params)
+            telemetry::handle_timeseries(core, state, engine, caller, id, &request.params)
         }
-        "telemetry.top" => telemetry::handle_top(state, engine, caller, id, &request.params),
+        "telemetry.top" => telemetry::handle_top(core, state, engine, caller, id, &request.params),
         // telemetry.cap — Phase 4.3 (CRUD; eval/action wiring 은 후속)
         "telemetry.cap.set" => {
-            telemetry::handle_cap_set(state, engine, caller, id, &request.params)
+            telemetry::handle_cap_set(core, state, engine, caller, id, &request.params)
         }
         "telemetry.cap.list" => {
-            telemetry::handle_cap_list(state, engine, caller, id, &request.params)
+            telemetry::handle_cap_list(core, state, engine, caller, id, &request.params)
         }
         "telemetry.cap.remove" => {
-            telemetry::handle_cap_remove(state, engine, caller, id, &request.params)
+            telemetry::handle_cap_remove(core, state, engine, caller, id, &request.params)
         }
         "telemetry.cap.status" => {
-            telemetry::handle_cap_status(state, engine, caller, id, &request.params)
+            telemetry::handle_cap_status(core, state, engine, caller, id, &request.params)
         }
         "telemetry.cap.reset" => {
-            telemetry::handle_cap_reset(state, engine, caller, id, &request.params)
+            telemetry::handle_cap_reset(core, state, engine, caller, id, &request.params)
         }
         // telemetry.anomaly — Phase 4.4 (영속 anomaly 조회만; 검출은 dispatcher 후크)
         "telemetry.anomaly.list" => {
-            telemetry::handle_anomaly_list(state, engine, caller, id, &request.params)
+            telemetry::handle_anomaly_list(core, state, engine, caller, id, &request.params)
         }
         // telemetry.session_summary — Phase 4.5 (메트릭/승인/이상 집계)
         "telemetry.session_summary" => {
-            telemetry::handle_session_summary(state, engine, caller, id, &request.params)
+            telemetry::handle_session_summary(core, state, engine, caller, id, &request.params)
         }
         // agent.task_* — Phase 5.1 (DAG + state 머신)
         "agent.task_create" => {

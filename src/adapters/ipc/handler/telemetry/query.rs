@@ -1,12 +1,13 @@
 //! `telemetry.summary` / `telemetry.timeseries` / `telemetry.top` 핸들러.
 
 use serde_json::{Map, Value, json};
-use tasty_memory::{ListOpts, MemoryValue, Scope, with_store};
+use tasty_memory::{ListOpts, MemoryValue, Scope};
 use tasty_telemetry::{
     EVENT_KEY_PREFIX, TelemetryEvent, Window, aggregate_into_buckets, summarize_events, top_n,
     validate_agent_id, validate_metric,
 };
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
@@ -83,14 +84,15 @@ impl QueryFilter {
 
 /// 모든 (또는 지정된) scope 에서 telemetry 이벤트를 수집해 필터링한다.
 pub(super) fn collect_events(
+    core: &Core,
     filter: &QueryFilter,
 ) -> std::result::Result<Vec<TelemetryEvent>, String> {
     // workspace_id 가 명시되면 해당 scope 만, 아니면 모든 scope 순회.
     let scopes: Vec<Scope> = if let Some(w) = filter.workspace_id {
         vec![Scope::Workspace(w)]
     } else {
-        let scope_strs = with_store(|s| s.scopes())
-            .ok_or_else(|| "memory store unavailable".to_string())?
+        let scope_strs = core
+            .with_memory(|s| s.scopes())
             .map_err(|e| format!("memory scopes failed: {e}"))?;
         scope_strs
             .into_iter()
@@ -110,10 +112,7 @@ pub(super) fn collect_events(
     };
     let mut out = Vec::new();
     for scope in scopes {
-        let Some(list_result) = with_store(|s| s.list(&scope, &list_opts)) else {
-            continue;
-        };
-        let entries = match list_result {
+        let entries = match core.with_memory(|s| s.list(&scope, &list_opts)) {
             Ok(es) => es,
             Err(e) => {
                 tracing::warn!("telemetry: list failed in scope {}: {e}", scope.as_token());
@@ -137,6 +136,7 @@ pub(super) fn collect_events(
 
 /// `telemetry.summary` — (metric, agent) 별 합/카운트/min/max/last.
 pub fn handle_summary(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -147,7 +147,7 @@ pub fn handle_summary(
         Ok(f) => f,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let events = match collect_events(&filter) {
+    let events = match collect_events(core, &filter) {
         Ok(e) => e,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
@@ -172,6 +172,7 @@ pub fn handle_summary(
 /// 입력: `metric` (필수), `agent` (선택), `workspace_id` (선택), `window` (1m|1h|1d),
 /// `since` / `until` (선택, unix ms).
 pub fn handle_timeseries(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -202,7 +203,7 @@ pub fn handle_timeseries(
     // since/until 을 window 경계로 정렬 보존하지는 않는다 — 도메인 함수가 align 처리.
     // (재할당하지 않더라도 의미 없음 — 필터링 후 aggregate.)
     let _ = &mut filter;
-    let events = match collect_events(&filter) {
+    let events = match collect_events(core, &filter) {
         Ok(e) => e,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
@@ -223,6 +224,7 @@ pub fn handle_timeseries(
 
 /// `telemetry.top` — agent 또는 workspace 기준 sum 내림차순.
 pub fn handle_top(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -242,7 +244,7 @@ pub fn handle_top(
         Ok(f) => f,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let events = match collect_events(&filter) {
+    let events = match collect_events(core, &filter) {
         Ok(e) => e,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };

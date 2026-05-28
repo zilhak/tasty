@@ -17,11 +17,12 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-use tasty_memory::{MemoryValue, PutOpts, Scope, with_store};
+use tasty_memory::{MemoryValue, PutOpts, Scope};
 use tasty_telemetry::{
     CapAction, Op, TelemetryEvent, event_key, validate_agent_id, validate_metric,
 };
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::state::AppState;
 
@@ -42,13 +43,17 @@ fn now_ms() -> u64 {
 /// 차단되지 않는다.
 ///
 /// 차단 메시지는 cap_id / metric / action 을 포함해 디버깅을 돕는다.
-pub(crate) fn check_cap_block(caller: &CallerContext, _method: &str) -> Option<String> {
+pub(crate) fn check_cap_block(
+    core: &Core,
+    caller: &CallerContext,
+    _method: &str,
+) -> Option<String> {
     if !caller.is_plugin() {
         return None;
     }
     let agent_id = caller.agent_id();
     let agent = agent_id.as_str();
-    let caps = match load_all_caps() {
+    let caps = match load_all_caps(core) {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("cap block check: load failed: {e}");
@@ -85,6 +90,7 @@ pub(crate) fn check_cap_block(caller: &CallerContext, _method: &str) -> Option<S
 ///
 /// 모든 실패는 best-effort. 호스트 stdout 의 IPC 정상 동작을 막지 않는다.
 pub(crate) fn record_ipc_call(
+    core: &mut Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
@@ -110,17 +116,18 @@ pub(crate) fn record_ipc_call(
     if let Some(w) = ws {
         ev = ev.with_workspace(w);
     }
-    if let Err(e) = persist_event(engine, &ev) {
+    if let Err(e) = persist_event(core, engine, &ev) {
         tracing::warn!("telemetry middleware: record failed: {e}");
         return;
     }
-    evaluate_caps_after_record(state, engine, &ev);
-    detect_anomalies_after_ipc(state, engine, agent.as_str(), method, ts);
+    evaluate_caps_after_record(core, state, engine, &ev);
+    detect_anomalies_after_ipc(core, state, engine, agent.as_str(), method, ts);
 }
 
 /// IPC 호출 후 anomaly 검출 (Phase 4.4). `AnomalyDetector::record_call` 이 burst
 /// 임계를 넘는다고 보고하면 host 가 영속 + notification 으로 알린다.
 fn detect_anomalies_after_ipc(
+    core: &Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     agent: &str,
@@ -132,7 +139,7 @@ fn detect_anomalies_after_ipc(
     let Some(anomaly) = detector.record_call(agent, method, ts, seq) else {
         return;
     };
-    if let Err(e) = persist_anomaly(&anomaly) {
+    if let Err(e) = persist_anomaly(core, &anomaly) {
         tracing::warn!("anomaly persist failed: {e}");
     }
     fire_anomaly_notification(state, engine, &anomaly);
@@ -208,6 +215,7 @@ fn build_event(
 /// 이벤트를 memory store 에 저장. seq 가 매 이벤트마다 새로 발급되어 동일
 /// ms 안에서 key 가 충돌하지 않는다.
 fn persist_event(
+    core: &Core,
     engine: &mut crate::engine_state::CoreState,
     ev: &TelemetryEvent,
 ) -> std::result::Result<String, String> {
@@ -219,12 +227,9 @@ fn persist_event(
         expires_at: None,
         cas: None,
     };
-    let result = with_store(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts));
-    match result {
-        Some(Ok(_)) => Ok(key),
-        Some(Err(e)) => Err(format!("memory put failed: {e}")),
-        None => Err("memory store unavailable".into()),
-    }
+    core.with_memory(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts))
+        .map_err(|e| format!("memory put failed: {e}"))?;
+    Ok(key)
 }
 
 pub mod anomaly;

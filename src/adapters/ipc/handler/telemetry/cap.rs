@@ -1,12 +1,13 @@
 //! `telemetry.cap.*` — cost cap (예산) 관리 + cap 평가/발동.
 
 use serde_json::{Value, json};
-use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope, with_store};
+use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
 use tasty_telemetry::{
     CAP_KEY_PREFIX, CapAction, CapWindow, CostCap, TelemetryEvent, cap_key, summarize_events,
     validate_agent_id, validate_metric,
 };
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
@@ -21,7 +22,7 @@ pub(super) fn generate_cap_id(engine: &mut crate::engine_state::CoreState) -> St
 }
 
 /// 모든 cap 을 memory 에서 읽어온다. cap 은 global scope 에만 저장.
-pub(super) fn load_all_caps() -> std::result::Result<Vec<CostCap>, String> {
+pub(super) fn load_all_caps(core: &Core) -> std::result::Result<Vec<CostCap>, String> {
     let list_opts = ListOpts {
         prefix: Some(CAP_KEY_PREFIX.to_string()),
         limit: None,
@@ -29,10 +30,9 @@ pub(super) fn load_all_caps() -> std::result::Result<Vec<CostCap>, String> {
         until: None,
         offset: None,
     };
-    let Some(list_result) = with_store(|s| s.list(&Scope::Global, &list_opts)) else {
-        return Err("memory store unavailable".into());
-    };
-    let entries = list_result.map_err(|e| format!("memory list failed: {e}"))?;
+    let entries = core
+        .with_memory(|s| s.list(&Scope::Global, &list_opts))
+        .map_err(|e| format!("memory list failed: {e}"))?;
     let mut out = Vec::new();
     for entry in entries {
         let MemoryValue::Json(v) = entry.value else {
@@ -45,14 +45,14 @@ pub(super) fn load_all_caps() -> std::result::Result<Vec<CostCap>, String> {
     Ok(out)
 }
 
-pub(super) fn save_cap(cap: &CostCap) -> std::result::Result<(), String> {
+pub(super) fn save_cap(core: &Core, cap: &CostCap) -> std::result::Result<(), String> {
     let key = cap_key(&cap.id);
     let value = MemoryValue::Json(serde_json::to_value(cap).map_err(|e| e.to_string())?);
     let opts = PutOpts {
         expires_at: None,
         cas: None,
     };
-    let result = with_store(|s| {
+    core.with_memory(|s| {
         s.put(
             tasty_memory::HOST_OWNER,
             &Scope::Global,
@@ -60,12 +60,9 @@ pub(super) fn save_cap(cap: &CostCap) -> std::result::Result<(), String> {
             &value,
             &opts,
         )
-    });
-    match result {
-        Some(Ok(_)) => Ok(()),
-        Some(Err(e)) => Err(format!("memory put failed: {e}")),
-        None => Err("memory store unavailable".into()),
-    }
+    })
+    .map(|_| ())
+    .map_err(|e| format!("memory put failed: {e}"))
 }
 
 pub(super) fn cap_to_json(cap: &CostCap) -> Value {
@@ -74,6 +71,7 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 
 /// `telemetry.cap.set` — cap 등록.
 pub fn handle_cap_set(
+    core: &Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -137,7 +135,7 @@ pub fn handle_cap_set(
         created_at: now_ms(),
         triggered: None,
     };
-    if let Err(e) = save_cap(&cap) {
+    if let Err(e) = save_cap(core, &cap) {
         return JsonRpcResponse::error(id, -32603, e);
     }
     JsonRpcResponse::success(id, cap_to_json(&cap))
@@ -145,6 +143,7 @@ pub fn handle_cap_set(
 
 /// `telemetry.cap.list` — 전체 cap. 필터: `agent`.
 pub fn handle_cap_list(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -155,7 +154,7 @@ pub fn handle_cap_list(
         .get("agent")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let mut caps = match load_all_caps() {
+    let mut caps = match load_all_caps(core) {
         Ok(c) => c,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
@@ -169,6 +168,7 @@ pub fn handle_cap_list(
 
 /// `telemetry.cap.remove` — cap 삭제.
 pub fn handle_cap_remove(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -180,14 +180,14 @@ pub fn handle_cap_remove(
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
     let key = cap_key(&cap_id_str);
-    let result = with_store(|s| s.delete(tasty_memory::HOST_OWNER, &Scope::Global, &key, None));
+    let result =
+        core.with_memory(|s| s.delete(tasty_memory::HOST_OWNER, &Scope::Global, &key, None));
     match result {
-        Some(Ok(())) => JsonRpcResponse::success(id, json!({ "removed": true, "id": cap_id_str })),
-        Some(Err(tasty_memory::MemoryError::NotFound { .. })) => {
+        Ok(()) => JsonRpcResponse::success(id, json!({ "removed": true, "id": cap_id_str })),
+        Err(tasty_memory::MemoryError::NotFound { .. }) => {
             JsonRpcResponse::error(id, -32004, format!("not_found: {cap_id_str}"))
         }
-        Some(Err(e)) => JsonRpcResponse::error(id, -32603, format!("memory delete failed: {e}")),
-        None => JsonRpcResponse::error(id, -32603, "memory store unavailable"),
+        Err(e) => JsonRpcResponse::error(id, -32603, format!("memory delete failed: {e}")),
     }
 }
 
@@ -195,7 +195,10 @@ pub fn handle_cap_remove(
 ///
 /// `Op::Set` 은 sum 을 통째 교체. `Op::Inc/Dec` 는 누적. 4.1 의 `summarize_events`
 /// 와 동일 정책.
-pub(super) fn compute_current_value(cap: &CostCap) -> std::result::Result<f64, String> {
+pub(super) fn compute_current_value(
+    core: &Core,
+    cap: &CostCap,
+) -> std::result::Result<f64, String> {
     let now = now_ms();
     let (since, until) = match cap.window.span_ms() {
         Some(span) => (Some(now.saturating_sub(span)), Some(now)),
@@ -208,7 +211,7 @@ pub(super) fn compute_current_value(cap: &CostCap) -> std::result::Result<f64, S
         since,
         until,
     };
-    let events = collect_events(&filter)?;
+    let events = collect_events(core, &filter)?;
     if events.is_empty() {
         return Ok(0.0);
     }
@@ -220,6 +223,7 @@ pub(super) fn compute_current_value(cap: &CostCap) -> std::result::Result<f64, S
 
 /// `telemetry.cap.status` — agent 별 cap 들의 현재 값/임계/triggered 상태.
 pub fn handle_cap_status(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -230,7 +234,7 @@ pub fn handle_cap_status(
         .get("agent")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let caps = match load_all_caps() {
+    let caps = match load_all_caps(core) {
         Ok(c) => c,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
@@ -241,7 +245,7 @@ pub fn handle_cap_status(
         {
             continue;
         }
-        let current = match compute_current_value(cap) {
+        let current = match compute_current_value(core, cap) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("cap status: compute failed for {}: {e}", cap.id);
@@ -271,6 +275,7 @@ pub fn handle_cap_status(
 
 /// `telemetry.cap.reset` — `triggered` 상태 제거. `id` 또는 `agent` 둘 중 하나 필수.
 pub fn handle_cap_reset(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -285,7 +290,7 @@ pub fn handle_cap_reset(
     if by_id.is_none() && by_agent.is_none() {
         return JsonRpcResponse::invalid_params(id, "Provide 'id' or 'agent'");
     }
-    let mut caps = match load_all_caps() {
+    let mut caps = match load_all_caps(core) {
         Ok(c) => c,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
@@ -300,7 +305,7 @@ pub fn handle_cap_reset(
             continue;
         }
         cap.triggered = None;
-        if let Err(e) = save_cap(cap) {
+        if let Err(e) = save_cap(core, cap) {
             tracing::warn!("cap reset: save failed for {}: {e}", cap.id);
             continue;
         }
@@ -324,11 +329,12 @@ pub fn handle_cap_reset(
 /// Phase 4.3b: `Notify` 만 발화 (단순 알림 + 차단 없음). `Stop`/`Pause`/`RequireApproval`
 /// 는 후속 sub-phase (호출 전 evaluator + dispatcher 거부) 에서 결합한다.
 pub(super) fn evaluate_caps_after_record(
+    core: &mut Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     ev: &TelemetryEvent,
 ) {
-    let caps = match load_all_caps() {
+    let caps = match load_all_caps(core) {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("cap eval: load failed: {e}");
@@ -342,7 +348,7 @@ pub(super) fn evaluate_caps_after_record(
         if cap.triggered.is_some() {
             continue;
         }
-        let current = match compute_current_value(&cap) {
+        let current = match compute_current_value(core, &cap) {
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!("cap eval: compute failed for {}: {e}", cap.id);
@@ -357,11 +363,11 @@ pub(super) fn evaluate_caps_after_record(
             at: now_ms(),
             value: current,
         });
-        if let Err(e) = save_cap(&cap) {
+        if let Err(e) = save_cap(core, &cap) {
             tracing::warn!("cap eval: save failed for {}: {e}", cap.id);
             continue;
         }
-        fire_cap_action(state, engine, &cap, current);
+        fire_cap_action(core, state, engine, &cap, current);
     }
 }
 
@@ -369,6 +375,7 @@ pub(super) fn evaluate_caps_after_record(
 /// 미래 sub-phase 에서 결합되며 현재는 로그만 남긴다 (memory 상의 `triggered` 필드는
 /// 이미 기록됐으므로 status 조회로 확인 가능).
 pub(super) fn fire_cap_action(
+    core: &mut Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     cap: &CostCap,
@@ -376,7 +383,7 @@ pub(super) fn fire_cap_action(
 ) {
     match cap.action {
         CapAction::Notify => fire_notify(state, engine, cap, current),
-        CapAction::RequireApproval => fire_require_approval(state, engine, cap, current),
+        CapAction::RequireApproval => fire_require_approval(core, state, engine, cap, current),
         CapAction::Stop | CapAction::Pause => {
             // 차단은 dispatcher 의 check_cap_block 이 담당. 여기서는 사용자에게
             // 사실을 알리는 알림만 함께 띄운다 — 차단된 plugin 이 침묵 속에 멈춰
@@ -404,6 +411,7 @@ pub(super) fn fire_cap_action(
 /// 비어 있을 때만 fire_cap_action 가 호출되므로 자연스럽게 단발). 추가 발행이
 /// 필요하면 `cap.reset` 후 다음 record 가 임계를 다시 넘을 때 fire 된다.
 pub(super) fn fire_require_approval(
+    core: &mut Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     cap: &CostCap,
@@ -439,7 +447,7 @@ pub(super) fn fire_require_approval(
             "threshold": cap.threshold,
         }),
     };
-    match engine.approval_store.request(req) {
+    match core.request_approval(engine, req) {
         Ok(change) => {
             crate::ipc::handler::approval::persist_record(&change.record);
             crate::ui::popup::approval::enqueue_approval(state, engine, &change.record);

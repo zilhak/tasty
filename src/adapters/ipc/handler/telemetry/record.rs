@@ -2,6 +2,7 @@
 
 use serde_json::{Value, json};
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
@@ -9,6 +10,7 @@ use crate::state::AppState;
 use super::{build_event, evaluate_caps_after_record, now_ms, persist_event};
 
 pub fn handle_record(
+    core: &mut Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
@@ -25,7 +27,7 @@ pub fn handle_record(
         Ok(ev) => ev,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let response = match persist_event(engine, &ev) {
+    let response = match persist_event(core, engine, &ev) {
         Ok(key) => JsonRpcResponse::success(
             id,
             json!({
@@ -37,7 +39,7 @@ pub fn handle_record(
         ),
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
     };
-    evaluate_caps_after_record(state, engine, &ev);
+    evaluate_caps_after_record(core, state, engine, &ev);
     response
 }
 
@@ -46,6 +48,7 @@ pub fn handle_record(
 /// 입력: `{ events: [<event-params>, ...] }`. 각 항목은 record 와 동일한 스키마.
 /// 모든 이벤트는 동일한 호출 ts 를 공유하며, seq 만 단조 증가하여 정렬을 보장한다.
 pub fn handle_record_batch(
+    core: &mut Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
@@ -76,13 +79,13 @@ pub fn handle_record_batch(
     }
     let mut keys = Vec::with_capacity(events.len());
     for ev in &events {
-        match persist_event(engine, ev) {
+        match persist_event(core, engine, ev) {
             Ok(k) => keys.push(k),
             Err(e) => return JsonRpcResponse::error(id, -32603, e),
         }
     }
     for ev in &events {
-        evaluate_caps_after_record(state, engine, ev);
+        evaluate_caps_after_record(core, state, engine, ev);
     }
     JsonRpcResponse::success(
         id,

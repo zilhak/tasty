@@ -1,21 +1,22 @@
 //! `telemetry.anomaly.*` — anomaly 영속/조회/발동.
 
 use serde_json::{Value, json};
-use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope, with_store};
+use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
 use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, anomaly_key};
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-pub(super) fn persist_anomaly(anomaly: &Anomaly) -> std::result::Result<(), String> {
+pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Result<(), String> {
     let key = anomaly_key(anomaly.detected_at, &anomaly.id);
     let value = MemoryValue::Json(serde_json::to_value(anomaly).map_err(|e| e.to_string())?);
     let opts = PutOpts {
         expires_at: None,
         cas: None,
     };
-    let result = with_store(|s| {
+    core.with_memory(|s| {
         s.put(
             tasty_memory::HOST_OWNER,
             &Scope::Global,
@@ -23,12 +24,9 @@ pub(super) fn persist_anomaly(anomaly: &Anomaly) -> std::result::Result<(), Stri
             &value,
             &opts,
         )
-    });
-    match result {
-        Some(Ok(_)) => Ok(()),
-        Some(Err(e)) => Err(format!("memory put failed: {e}")),
-        None => Err("memory store unavailable".into()),
-    }
+    })
+    .map(|_| ())
+    .map_err(|e| format!("memory put failed: {e}"))
 }
 
 pub(super) fn fire_anomaly_notification(
@@ -74,6 +72,7 @@ pub(super) fn fire_anomaly_notification(
 /// `telemetry.anomaly.list` — 영속된 anomaly 레코드 조회. 필터: `agent`, `kind`,
 /// `since`, `until` (unix ms). 응답은 `detected_at` 오름차순.
 pub fn handle_anomaly_list(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -98,10 +97,7 @@ pub fn handle_anomaly_list(
         until: until.map(|v| v as i64),
         offset: None,
     };
-    let Some(list_result) = with_store(|s| s.list(&Scope::Global, &list_opts)) else {
-        return JsonRpcResponse::error(id, -32603, "memory store unavailable");
-    };
-    let entries = match list_result {
+    let entries = match core.with_memory(|s| s.list(&Scope::Global, &list_opts)) {
         Ok(e) => e,
         Err(e) => return JsonRpcResponse::error(id, -32603, format!("memory list failed: {e}")),
     };
