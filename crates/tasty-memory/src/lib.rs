@@ -257,13 +257,11 @@ impl MemoryStore {
         Self::prepare(conn, path, config)
     }
 
-    /// 인메모리 (테스트 전용).
-    #[cfg(test)]
+    /// 인메모리. test + production 의 placeholder (D.3.A 진행 중) 양쪽 사용.
     pub fn open_in_memory() -> std::result::Result<Self, MemoryInitError> {
         Self::open_in_memory_with_config(MemoryConfig::default())
     }
 
-    #[cfg(test)]
     pub fn open_in_memory_with_config(
         config: MemoryConfig,
     ) -> std::result::Result<Self, MemoryInitError> {

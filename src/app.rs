@@ -86,9 +86,9 @@ impl App {
         proxy: EventLoopProxy<AppEvent>,
         port_file: Option<String>,
         #[cfg(debug_assertions)] input_simulation_enabled: bool,
-    ) -> Self {
-        Self {
-            core: Core::new(),
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            core: crate::boot::wiring::build_production_core(proxy.clone())?,
             hub: Hub::new(port_file),
             view: View::new(proxy.clone()),
             windows: std::collections::HashMap::new(),
@@ -108,7 +108,7 @@ impl App {
             engine_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             preset_window_id: None,
-        }
+        })
     }
 
     /// EngineState 접근자. 부팅 시 `App.engine_state` 에 들어 있다가 첫 MainWindow

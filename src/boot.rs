@@ -16,6 +16,7 @@ pub(crate) mod event_loop;
 pub(crate) mod locale;
 pub(crate) mod os;
 pub(crate) mod waker;
+pub(crate) mod wiring;
 
 use crate::{App, cli, clipboard, hooks};
 
@@ -61,7 +62,7 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
         cli.port_file,
         #[cfg(debug_assertions)]
         cli.enable_input_simulation,
-    );
+    )?;
     hooks::lua::fire(
         app.lua_engine.as_ref(),
         "tasty.startup.post",
