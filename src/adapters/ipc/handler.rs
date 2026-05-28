@@ -395,9 +395,15 @@ fn route_engine_handler(
             memory::handle_cache_list(state, engine, caller, id, &request.params)
         }
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
-        "approval.request" => approval::handle_request(state, engine, caller, id, &request.params),
-        "approval.respond" => approval::handle_respond(state, engine, caller, id, &request.params),
-        "approval.cancel" => approval::handle_cancel(state, engine, caller, id, &request.params),
+        "approval.request" => {
+            approval::handle_request(core, state, engine, caller, id, &request.params)
+        }
+        "approval.respond" => {
+            approval::handle_respond(core, state, engine, caller, id, &request.params)
+        }
+        "approval.cancel" => {
+            approval::handle_cancel(core, state, engine, caller, id, &request.params)
+        }
         "approval.get" => approval::handle_get(state, engine, caller, id, &request.params),
         "approval.list" => approval::handle_list(state, engine, caller, id, &request.params),
         "approval.history" => approval::handle_history(state, engine, caller, id, &request.params),

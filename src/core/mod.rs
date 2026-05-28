@@ -153,6 +153,38 @@ impl Core {
         engine.hook_manager.check_and_fire(surface_id, events)
     }
 
+    // ─── Approval (휴먼 핸드오프) ───
+
+    /// approval 요청 생성. 옛 `engine.approval_store.request` 의 Core 진입점.
+    pub(crate) fn request_approval(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        req: tasty_approval::ApprovalRequest,
+    ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
+        engine.approval_store.request(req)
+    }
+
+    /// approval 응답 적용. 옛 `engine.approval_store.respond` 의 Core 진입점.
+    pub(crate) fn respond_approval(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        req_id: &tasty_approval::ApprovalId,
+        choice: String,
+        by: tasty_approval::Responder,
+        comment: Option<String>,
+    ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
+        engine.approval_store.respond(req_id, choice, by, comment)
+    }
+
+    /// approval 취소. 옛 `engine.approval_store.cancel` 의 Core 진입점.
+    pub(crate) fn cancel_approval(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        req_id: &tasty_approval::ApprovalId,
+    ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
+        engine.approval_store.cancel(req_id)
+    }
+
     /// 도메인 변경의 단일 진입점. handler 가 발행한 `CoreIntent` 를 받아
     /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
     #[allow(dead_code)]

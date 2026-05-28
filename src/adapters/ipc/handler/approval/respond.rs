@@ -3,6 +3,7 @@
 use super::*;
 
 pub fn handle_respond(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
@@ -23,10 +24,7 @@ pub fn handle_respond(
         .map(str::to_string);
     let by = responder_from_caller(caller);
 
-    match engine
-        .approval_store
-        .respond(&req_id, choice.clone(), by, comment)
-    {
+    match core.respond_approval(engine, &req_id, choice.clone(), by, comment) {
         Ok(change) => {
             persist_record(&change.record);
             // Phase 6.4b — capability_elevation 이 approve* 로 응답되면 대상

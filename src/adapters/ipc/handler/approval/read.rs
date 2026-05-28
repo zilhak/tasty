@@ -3,6 +3,7 @@
 use super::*;
 
 pub fn handle_cancel(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -13,7 +14,7 @@ pub fn handle_cancel(
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(id, "Missing 'id'"),
     };
-    match engine.approval_store.cancel(&req_id) {
+    match core.cancel_approval(engine, &req_id) {
         Ok(change) => {
             persist_record(&change.record);
             JsonRpcResponse::success(id, record_to_json(&change.record))

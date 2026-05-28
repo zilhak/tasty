@@ -3,6 +3,7 @@
 use super::*;
 
 pub fn handle_request(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
@@ -106,7 +107,7 @@ pub fn handle_request(
         metadata,
     };
 
-    match engine.approval_store.request(req) {
+    match core.request_approval(engine, req) {
         Ok(change) => {
             persist_record(&change.record);
             crate::ui::popup::approval::enqueue_approval(state, engine, &change.record);
