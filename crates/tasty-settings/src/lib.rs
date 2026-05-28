@@ -1,8 +1,11 @@
 mod appearance;
 mod keybindings;
+mod port;
+mod port_impl;
 mod types;
 
 pub mod general;
+pub mod testing;
 
 use std::collections::HashSet;
 use std::fs;
@@ -15,6 +18,8 @@ use tasty_utils::path::tasty_home;
 pub use appearance::{AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor};
 pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
+pub use port::SettingsStorage;
+pub use port_impl::FileSettingsStorage;
 pub use types::{
     AccessibilitySettings, ClipboardSettings, MemorySettings, NotificationSettings,
     PerformanceSettings,

@@ -8,13 +8,18 @@
 //! `intent::preset_capture` 모듈이 담당. 즉 presets crate 는 `tasty-core::model` /
 //! `Surface` trait 에 의존하지 않는다.
 
+mod port;
+mod port_impl;
+
 pub mod model;
 pub mod storage;
+pub mod testing;
 
 pub use model::{
     LayoutPreset, PanePreset, PresetKind, PresetPane, PresetPaneNode, PresetSplitDirection,
     PresetSurface, PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
+pub use port::PresetStorage;
 pub use storage::{PresetError, PresetResult, PresetStore};
 
 // ── Capture 콜백 표면 (capture 로직은 본 바이너리 측) ────────────────────
