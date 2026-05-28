@@ -126,7 +126,7 @@ impl App {
                         engine.file_format.clone(),
                         self.view.proxy.clone(),
                     )));
-                engine.preset_store = Some(self.core.state().preset_store.clone());
+                engine.preset_store = Some(self.core.preset_store.clone());
             }
             #[cfg(debug_assertions)]
             {

@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use tasty_memory::MemoryStorage;
-use tasty_presets::{PresetStorage, PresetStore};
+use tasty_presets::PresetStore;
 use tasty_settings::{FileSettingsStorage, SettingsStorage};
 use tasty_themes::{ThemeStorage, ThemeStore};
 use winit::event_loop::EventLoopProxy;
@@ -45,7 +45,7 @@ pub(crate) fn build_production_core(proxy: EventLoopProxy<AppEvent>) -> anyhow::
     };
 
     let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
-    let presets: Arc<Mutex<dyn PresetStorage>> = Arc::new(Mutex::new(PresetStore::load_default()));
+    let preset_store: Arc<Mutex<PresetStore>> = Arc::new(Mutex::new(PresetStore::load_default()));
     let settings_storage: Arc<dyn SettingsStorage> = Arc::new(FileSettingsStorage);
 
     CoreBuilder::new()
@@ -58,7 +58,7 @@ pub(crate) fn build_production_core(proxy: EventLoopProxy<AppEvent>) -> anyhow::
         .with_home(home)
         .with_memory(memory)
         .with_themes(themes)
-        .with_presets(presets)
+        .with_preset_store(preset_store)
         .with_settings_storage(settings_storage)
         .build()
 }

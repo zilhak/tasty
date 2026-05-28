@@ -52,7 +52,7 @@ impl App {
             }
         };
 
-        let store = std::sync::Arc::clone(&self.core.state().preset_store);
+        let store = std::sync::Arc::clone(&self.core.preset_store);
         let window_id = window.id();
         let mut preset = window::PresetWindow::new(gpu, window, store);
         #[cfg(windows)]

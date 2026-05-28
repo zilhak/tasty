@@ -3,8 +3,8 @@
 //! IPC / UI / CLI / Plugin adapter 가 본 trait 을 통해 Core 에 명령 발행.
 //! Core 자체가 본 trait 들을 구현한다.
 
-use crate::core::CoreState;
 use crate::core::intent::{CoreEvent, CoreIntent};
+use crate::engine_state::CoreState;
 
 /// Intent 발행 진입점.
 ///
