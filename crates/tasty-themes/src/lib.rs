@@ -18,9 +18,13 @@ mod apply_context;
 mod fallback;
 mod file;
 mod global;
+mod port;
 mod scan;
 mod state;
 mod store;
+mod store_instance;
+
+pub mod testing;
 
 // 공개 표면 — 외부 사용자(본 바이너리, settings) 는 여기 재수출만 본다.
 
@@ -28,12 +32,14 @@ pub use apply_context::ThemeApplyContext;
 pub use fallback::{mocha_fallback, mocha_fallback_colors};
 pub use file::{ParseError, ThemeFile};
 pub use global::{mutate_theme, set_theme, theme};
+pub use port::ThemeStorage;
 pub use scan::{ThemeEntry, rescan, scan_themes};
 pub use state::{apply_theme, install_global, resolve};
 pub use store::{
     BUILTIN_LATTE_ID, BUILTIN_MOCHA_ID, ThemeStoreError, ensure_mocha_exists, first_run_init,
     rewrite_mocha_fallback, themes_dir,
 };
+pub use store_instance::ThemeStore;
 
 /// type-appearance 의 theme schema 를 themes 경로로도 재수출.
 /// 본 바이너리의 `crate::theme::*` 호출처가 schema 와 IO 양쪽을 한 모듈에서 보는

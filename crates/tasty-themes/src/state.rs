@@ -13,14 +13,14 @@ use tasty_type_appearance::theme::Theme;
 
 /// 두 레이어를 합쳐 실제 적용될 `Theme` 인스턴스를 만든다.
 /// `theme_base` 위에 `theme_overrides` 의 `Some` 필드만 덮어쓴 결과.
-pub fn resolve<C: ThemeApplyContext>(ctx: &C) -> Theme {
+pub fn resolve<C: ThemeApplyContext + ?Sized>(ctx: &C) -> Theme {
     let mut colors = ctx.theme_base().clone();
     colors.apply_partial(ctx.theme_overrides());
     Theme::with_colors(colors, ctx.theme_is_light())
 }
 
 /// `resolve()` 결과를 전역 `Theme` 에 박는다.
-pub fn install_global<C: ThemeApplyContext>(ctx: &C) {
+pub fn install_global<C: ThemeApplyContext + ?Sized>(ctx: &C) {
     set_theme(resolve(ctx));
 }
 
@@ -30,13 +30,17 @@ pub fn install_global<C: ThemeApplyContext>(ctx: &C) {
 ///   + `rewrite_mocha_fallback()` 으로 디스크 복구.
 /// - 찾은 partial 을 `theme_base` 에 apply (누락 필드는 base 유지).
 /// - `theme_overrides` 클리어, `theme_id` 갱신, `is_light` 가 파일에 있으면 갱신.
-pub fn apply_theme<C: ThemeApplyContext>(ctx: &mut C, id: &str) {
+pub fn apply_theme<C: ThemeApplyContext + ?Sized>(ctx: &mut C, id: &str) {
     let resolved_id = apply_inner(ctx, id, /* allow_mocha_recursion */ true);
     ctx.set_theme_id(&resolved_id);
     ctx.theme_overrides_mut().clear();
 }
 
-fn apply_inner<C: ThemeApplyContext>(ctx: &mut C, id: &str, allow_recursion: bool) -> String {
+fn apply_inner<C: ThemeApplyContext + ?Sized>(
+    ctx: &mut C,
+    id: &str,
+    allow_recursion: bool,
+) -> String {
     let entries = scan_themes();
     if let Some(entry) = entries.iter().find(|e| e.id == id) {
         let (partial, is_light) = entry.file.to_partial();
