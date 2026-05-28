@@ -97,7 +97,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 .push((main_box.state, main_box.engine_state));
                         }
                     }
-                    self.engine.focused_window_id = None;
+                    self.view.focused_window_id = None;
                     self.view.active_modal_id = None;
                     tracing::info!(
                         "minimized to background ({} states parked)",
@@ -361,8 +361,8 @@ impl ApplicationHandler<AppEvent> for App {
                         &payload,
                     );
                 }
-                if self.engine.focused_window_id == Some(id) {
-                    self.engine.focused_window_id = self
+                if self.view.focused_window_id == Some(id) {
+                    self.view.focused_window_id = self
                         .windows
                         .iter()
                         .find(|(_, w)| w.as_main().is_some())
@@ -384,7 +384,7 @@ impl ApplicationHandler<AppEvent> for App {
                 .map(|w| w.as_main().is_some())
                 .unwrap_or(false);
             if is_main {
-                self.engine.focused_window_id = Some(id);
+                self.view.focused_window_id = Some(id);
             }
             if let Some(mgr) = self.plugin_manager.as_mut() {
                 use tasty_plugin_protocol::EventScope;
@@ -483,8 +483,8 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 }
-                if self.engine.focused_window_id == Some(id) {
-                    self.engine.focused_window_id = self
+                if self.view.focused_window_id == Some(id) {
+                    self.view.focused_window_id = self
                         .windows
                         .iter()
                         .find(|(_, w)| w.as_main().is_some())

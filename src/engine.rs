@@ -14,8 +14,6 @@ use crate::ipc::server::IpcServer;
 /// fully extracted in a later phase when IPC handlers are updated.
 pub struct Engine {
     pub ipc_server: Option<IpcServer>,
-    /// The window that currently has focus (receives IPC commands targeting "focused" window).
-    pub focused_window_id: Option<winit::window::WindowId>,
     pub port_file: Option<String>,
 }
 
@@ -23,7 +21,6 @@ impl Engine {
     pub(crate) fn new(port_file: Option<String>) -> Self {
         Self {
             ipc_server: None,
-            focused_window_id: None,
             port_file,
         }
     }

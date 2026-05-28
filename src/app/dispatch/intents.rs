@@ -119,7 +119,7 @@ impl App {
         }
         let target_id = self
             .find_request_owner(&request.params)
-            .or(self.engine.focused_window_id);
+            .or(self.view.focused_window_id);
         if let Some(id) = target_id {
             if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
                 let response = ipc::handler::handle_with_caller(

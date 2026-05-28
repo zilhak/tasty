@@ -24,7 +24,7 @@ impl App {
         if !is_window_required {
             return IpcStep::NotHandled;
         }
-        let focused_id = match self.engine.focused_window_id {
+        let focused_id = match self.view.focused_window_id {
             Some(id) => id,
             None => {
                 let response = host_ipc::protocol::JsonRpcResponse::error(

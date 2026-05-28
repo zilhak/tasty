@@ -19,6 +19,8 @@ pub(crate) struct View {
     /// When Some, a modal window is active and all other windows should ignore input.
     /// At most one modal can exist at a time.
     pub active_modal_id: Option<WindowId>,
+    /// The window that currently has focus (receives IPC commands targeting "focused" window).
+    pub focused_window_id: Option<WindowId>,
 }
 
 impl View {
@@ -26,6 +28,7 @@ impl View {
         Self {
             proxy,
             active_modal_id: None,
+            focused_window_id: None,
         }
     }
 

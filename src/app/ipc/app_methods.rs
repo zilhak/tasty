@@ -79,8 +79,8 @@ impl App {
                     match target {
                         Some(tid) => {
                             self.windows.remove(&tid);
-                            if self.engine.focused_window_id == Some(tid) {
-                                self.engine.focused_window_id = self.windows.keys().next().copied();
+                            if self.view.focused_window_id == Some(tid) {
+                                self.view.focused_window_id = self.windows.keys().next().copied();
                             }
                             host_ipc::protocol::JsonRpcResponse::success(
                                 response_id,
@@ -119,7 +119,7 @@ impl App {
                         }
                         if u64::from(*id) == id_u64 {
                             w.base().winit.focus_window();
-                            self.engine.focused_window_id = Some(*id);
+                            self.view.focused_window_id = Some(*id);
                             found = true;
                             break;
                         }
@@ -134,7 +134,7 @@ impl App {
             return IpcStep::Handled;
         }
         if cmd.request.method == "window.list" {
-            let focused_id = self.engine.focused_window_id;
+            let focused_id = self.view.focused_window_id;
             let list: Vec<_> = self
                 .windows
                 .iter()

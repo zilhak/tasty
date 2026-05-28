@@ -44,7 +44,7 @@ impl App {
         // (CLAUDE.md "포커스 독립" 원칙).
         let target_id = self
             .find_request_owner(&cmd.request.params)
-            .or(self.engine.focused_window_id);
+            .or(self.view.focused_window_id);
         if let Some(id) = target_id {
             if let Some(w) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
                 let response = host_ipc::handler::handle_with_caller(
