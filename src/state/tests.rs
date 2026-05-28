@@ -1,9 +1,9 @@
 use super::*;
 use crate::model::SplitDirection;
 
-fn test_state() -> (AppState, crate::engine_state::EngineState) {
+fn test_state() -> (AppState, crate::engine_state::CoreState) {
     let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-    let mut engine = crate::engine_state::EngineState::new(80, 24, waker).unwrap();
+    let mut engine = crate::engine_state::CoreState::new(80, 24, waker).unwrap();
     let state = AppState::new(&mut engine);
     (state, engine)
 }
@@ -11,7 +11,7 @@ fn test_state() -> (AppState, crate::engine_state::EngineState) {
 /// 현재 활성 워크스페이스의 모든 surface ID를 수집한다.
 fn collect_surface_ids(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
 ) -> Vec<u32> {
     let mut ids = Vec::new();
     let ws = state.active_workspace_mut(engine);
@@ -24,7 +24,7 @@ fn collect_surface_ids(
 /// 모든 워크스페이스에 걸쳐 surface ID를 수집한다.
 fn collect_all_surface_ids(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
 ) -> Vec<u32> {
     let mut ids = Vec::new();
     for ws in &mut engine.workspaces {

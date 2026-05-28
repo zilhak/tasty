@@ -29,7 +29,7 @@ impl App {
                 drained.extend(main.state.take_pending_host_events());
             }
         }
-        // parked (AppState, EngineState) 쌍은 자기 짝의 engine 으로 detect.
+        // parked (AppState, CoreState) 쌍은 자기 짝의 engine 으로 detect.
         for (s, engine) in self.parked_states.iter_mut() {
             s.detect_focus_change(engine);
             s.detect_workspace_activation(engine);

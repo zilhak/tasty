@@ -189,9 +189,9 @@ fn named_key_without_mapping_never_matches_empty() {
 
 // ── handle_zoom_shortcut: surface별 override 갱신 ──────────────────
 
-fn fresh_state() -> (crate::state::AppState, crate::engine_state::EngineState) {
+fn fresh_state() -> (crate::state::AppState, crate::engine_state::CoreState) {
     let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-    let mut engine = crate::engine_state::EngineState::new(80, 24, waker).unwrap();
+    let mut engine = crate::engine_state::CoreState::new(80, 24, waker).unwrap();
     let state = crate::state::AppState::new(&mut engine);
     (state, engine)
 }

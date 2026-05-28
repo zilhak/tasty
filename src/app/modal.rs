@@ -59,7 +59,7 @@ impl App {
             // INVARIANT: settings 는 main + parked 두 곳 모두 갱신해야 한다.
             // parked 만 있는 상태에서 settings 변경 후 윈도우가 복원되면 옛
             // settings 로 살아나는 버그. main_windows_iter_mut() 만 보면 누락.
-            // App 의 모든 EngineState (main / parked) 가 SoT 동기화 대상.
+            // App 의 모든 CoreState (main / parked) 가 SoT 동기화 대상.
             for main in self.main_windows_iter_mut() {
                 main.engine_state.settings = new_settings.clone();
                 main.state.settings_open = false;

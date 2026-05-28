@@ -1,9 +1,9 @@
 //! Surface scrollback 의 디스크 dump (capture) + deferred restore queue.
 
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 
 pub(super) fn queue_scrollback_for_surface(
-    engine: &mut EngineState,
+    engine: &mut CoreState,
     surface_id: u32,
     persist_id: &str,
 ) {

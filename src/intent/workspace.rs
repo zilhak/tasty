@@ -10,10 +10,10 @@
 //!   원칙. 사용자 단축키/클릭으로만 가능.
 
 use super::{DispatchedIntent, Intent};
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::state::AppState;
 
-pub fn handle(state: &mut AppState, engine: &mut EngineState, intent: &DispatchedIntent) {
+pub fn handle(state: &mut AppState, engine: &mut CoreState, intent: &DispatchedIntent) {
     if let Intent::NewWorkspace { kind, params } = &intent.body {
         new_workspace(state, engine, kind.as_deref(), params);
     }
@@ -21,7 +21,7 @@ pub fn handle(state: &mut AppState, engine: &mut EngineState, intent: &Dispatche
 
 fn new_workspace(
     state: &mut AppState,
-    engine: &mut EngineState,
+    engine: &mut CoreState,
     kind: Option<&str>,
     params: &serde_json::Value,
 ) {

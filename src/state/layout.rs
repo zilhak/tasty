@@ -1,4 +1,4 @@
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 
 use super::AppState;
@@ -6,7 +6,7 @@ use super::AppState;
 impl AppState {
     /// Process all terminals in ALL workspaces to drain PTY channels.
     /// Returns true if the active workspace had any changes (for redraw).
-    pub fn process_all(&mut self, engine: &mut EngineState) -> bool {
+    pub fn process_all(&mut self, engine: &mut CoreState) -> bool {
         let active_idx = self.active_workspace;
         let mut active_changed = false;
         for (i, workspace) in engine.workspaces.iter_mut().enumerate() {
@@ -22,7 +22,7 @@ impl AppState {
     /// Returns: for each pane, the pane rect and all surface regions within it.
     pub fn surface_regions<'a>(
         &self,
-        engine: &'a EngineState,
+        engine: &'a CoreState,
         terminal_rect: PhysicalRect,
     ) -> Vec<(PaneId, PhysicalRect, Vec<SurfaceRegion<'a>>)> {
         let ws = self.active_workspace(engine);
@@ -52,7 +52,7 @@ impl AppState {
     /// Returns None if no surface is focused.
     pub fn focused_surface_rect(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         terminal_rect: PhysicalRect,
     ) -> Option<PhysicalRect> {
         let surface_id = self.focused_surface_id(engine)?;
@@ -69,7 +69,7 @@ impl AppState {
     /// Get the physical pixel rect of a specific terminal cell within a surface.
     pub fn surface_cell_rect(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         terminal_rect: PhysicalRect,
         surface_id: u32,
         col: usize,
@@ -95,7 +95,7 @@ impl AppState {
     /// Get the rect of a specific surface by id.
     pub fn surface_rect_by_id(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         surface_id: u32,
         terminal_rect: PhysicalRect,
     ) -> Option<PhysicalRect> {
@@ -112,7 +112,7 @@ impl AppState {
     /// Find the surface ID at the given physical pixel position.
     pub fn surface_id_at_position(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
@@ -130,7 +130,7 @@ impl AppState {
     /// Resize all terminals in all workspaces and all tabs to match a given terminal rect.
     pub fn resize_all(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         terminal_rect: PhysicalRect,
         cell_width: f32,
         cell_height: f32,

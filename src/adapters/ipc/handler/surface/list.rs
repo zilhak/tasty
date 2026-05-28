@@ -5,7 +5,7 @@ use crate::state::AppState;
 
 pub(crate) fn handle_surface_list(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let mut surfaces = Vec::new();
@@ -31,7 +31,7 @@ pub(crate) fn handle_surface_list(
 
 fn collect_tab_surface_info(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     tab: &crate::model::Tab,
     pane_id: u32,
     workspace_id: u32,
@@ -94,7 +94,7 @@ fn collect_tab_surface_info(
 
 fn collect_surface_layout_info(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     layout: &crate::model::SurfaceLayout,
     pane_id: u32,
     workspace_id: u32,

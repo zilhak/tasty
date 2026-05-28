@@ -12,7 +12,7 @@ use crate::state::AppState;
 /// `webview.set_url(surface_id, url)` — webview-enabled kind 의 RemoteSurface 에 URL 설정.
 pub fn handle_set_url(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {

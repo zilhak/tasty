@@ -1,6 +1,6 @@
 //! `WakerFactory` 의 winit 구현.
 //!
-//! `main.rs`에서 EventLoop 준비 후 생성하여 `EngineState`에 주입한다.
+//! `main.rs`에서 EventLoop 준비 후 생성하여 `CoreState`에 주입한다.
 //! `tasty-core`는 winit 의존이 0건이므로 어댑터는 본체에만 둔다.
 
 use std::sync::Arc;

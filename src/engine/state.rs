@@ -12,7 +12,7 @@ use tasty_terminal::Waker;
 
 /// ID generator for workspaces, panes, tabs, and surfaces.
 ///
-/// 각 카운터는 `Arc<AtomicU32>` 로, 여러 EngineState 가 같은 ID 공간을 공유한다.
+/// 각 카운터는 `Arc<AtomicU32>` 로, 여러 CoreState 가 같은 ID 공간을 공유한다.
 /// multi-window 시 두 engine 이 동일 ID 를 발급하면 IPC routing 이 불정확해지므로
 /// 글로벌 유니크가 필요. `Clone` 으로 새 engine 에 같은 Arc 를 넘긴다.
 #[derive(Clone)]
@@ -82,7 +82,7 @@ impl ShellConfig {
 
 /// Engine-level state shared across all windows.
 /// Contains all data that is not specific to a single window's UI.
-pub struct EngineState {
+pub struct CoreState {
     // ── Workspace / Terminal management ──
     pub workspaces: Vec<Workspace>,
     pub next_ids: IdGenerator,
@@ -135,7 +135,7 @@ pub struct EngineState {
 
     /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
     /// 추상화하여 헤드리스/플러그인 호스트 컨텍스트에서도 동일 인터페이스를 쓴다.
-    /// `App`이 EngineState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
+    /// `App`이 CoreState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
     pub waker_factory: Option<crate::waker::SharedWakerFactory>,
 
     // ── CWD polling (round-robin) ──
@@ -181,13 +181,13 @@ pub struct EngineState {
     pub preset_store: Option<std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>>,
 }
 
-impl EngineState {
-    /// Create a new EngineState with default settings.
+impl CoreState {
+    /// Create a new CoreState with default settings.
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
         Self::new_with_ids(cols, rows, waker, None)
     }
 
-    /// 새 EngineState 를 만들 때 기존 ID 공간(Arc<AtomicU32> 들)을 공유받는 변형.
+    /// 새 CoreState 를 만들 때 기존 ID 공간(Arc<AtomicU32> 들)을 공유받는 변형.
     /// multi-window 시 두 번째 main 의 첫 workspace 가 첫 engine 과 ID 충돌하지
     /// 않게 한다. `shared_ids=None` 이면 새 IdGenerator 로 1부터 시작.
     pub fn new_with_ids(
@@ -333,7 +333,7 @@ impl EngineState {
     /// Otherwise, returns the shared waker (all terminals polled).
     pub fn make_waker(&self, surface_id: u32) -> Waker {
         // targeted_pty_polling이 켜져 있고 factory가 주입되어 있으면 surface별 waker 생성.
-        // 그 외에는 EngineState 생성 시 받은 base waker(`TerminalOutput(None)`)를 그대로 공유.
+        // 그 외에는 CoreState 생성 시 받은 base waker(`TerminalOutput(None)`)를 그대로 공유.
         if self.settings.performance.targeted_pty_polling {
             if let Some(factory) = &self.waker_factory {
                 return factory.make_targeted_waker(surface_id);
@@ -392,7 +392,7 @@ impl EngineState {
     }
 }
 
-impl EngineState {
+impl CoreState {
     /// Refresh the cached display name of the tab containing a given surface ID.
     pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
         for workspace in &mut self.workspaces {

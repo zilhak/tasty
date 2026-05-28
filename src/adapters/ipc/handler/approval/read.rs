@@ -4,7 +4,7 @@ use super::*;
 
 pub fn handle_cancel(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -73,7 +73,7 @@ pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> J
 /// `approval.get` — 단일 record 조회.
 pub fn handle_get(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -92,7 +92,7 @@ pub fn handle_get(
 /// `workspace_id`.
 pub fn handle_list(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -136,7 +136,7 @@ pub fn handle_list(
 /// 응답: `{ entries: [...], count, returned }`.
 pub fn handle_history(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

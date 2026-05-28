@@ -1,9 +1,9 @@
 //! Surface 의 "busy" 상태 폴링/조회. `refresh_busy_surfaces` 는 매 tick 에 호출되어
 //! 각 PTY 의 foreground process 를 비교해 `busy_surfaces` 를 갱신한다.
 
-use super::EngineState;
+use super::CoreState;
 
-impl EngineState {
+impl CoreState {
     /// Recompute `busy_surfaces` by polling every PTY's foreground
     /// process. Returns true if the set changed (caller should redraw).
     pub fn refresh_busy_surfaces(&mut self) -> bool {

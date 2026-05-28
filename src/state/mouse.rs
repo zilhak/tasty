@@ -1,14 +1,14 @@
 use crate::model::{DividerInfo, PhysicalPx, PhysicalRect, SplitDirection};
 
 use super::AppState;
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 
 impl AppState {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.
     /// Checks dividers first, then asks the surface. Returns None if not over any winit area.
     pub fn winit_cursor_icon_at(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
@@ -51,7 +51,7 @@ impl AppState {
     /// Find a pane-level divider at the given position.
     pub fn find_pane_divider_at(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
@@ -65,7 +65,7 @@ impl AppState {
     /// Find a surface-level divider at the given position (within the focused pane's panel).
     pub fn find_surface_divider_at(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         x: f32,
         y: f32,
         terminal_rect: PhysicalRect,
@@ -97,7 +97,7 @@ impl AppState {
     /// Update a pane-level split ratio based on a divider drag.
     pub fn update_pane_divider(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         divider: &DividerInfo,
         x: f32,
         y: f32,
@@ -126,7 +126,7 @@ impl AppState {
     /// Update a surface-level split ratio based on a divider drag.
     pub fn update_surface_divider(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         divider: &DividerInfo,
         x: f32,
         y: f32,

@@ -29,7 +29,7 @@ where
 
 pub fn handle_semaphore_create(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -59,7 +59,7 @@ pub fn handle_semaphore_create(
 
 pub fn handle_semaphore_acquire(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -81,7 +81,7 @@ pub fn handle_semaphore_acquire(
 
 pub fn handle_semaphore_release(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

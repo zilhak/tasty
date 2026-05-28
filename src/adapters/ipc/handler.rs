@@ -36,7 +36,7 @@ use std::borrow::Cow;
 
 use serde_json::json;
 
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::ipc::alias;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
@@ -58,7 +58,7 @@ use crate::state::AppState;
 /// 명령이 권한을 통과하지 못하면 `permission_denied` 에러로 즉시 회신.
 pub fn handle_with_caller(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     request: &JsonRpcRequest,
     caller: &CallerContext,
 ) -> JsonRpcResponse {
@@ -151,11 +151,11 @@ pub fn handle_with_caller(
 /// engine-substate handlers — UI에 의존하지 않음. 단계 07 권한 게이트 대상.
 ///
 /// 현재는 시그니처가 `&mut AppState`이지만 본문이 GUI를 만지지 않는다. 향후
-/// AppState 메서드들이 `EngineState`로 이전되면 시그니처를 `&mut EngineState`로
+/// AppState 메서드들이 `CoreState`로 이전되면 시그니처를 `&mut CoreState`로
 /// 좁힐 예정 (별도 작업).
 fn route_engine_handler(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     request: &JsonRpcRequest,
     id: serde_json::Value,
@@ -503,7 +503,7 @@ fn route_engine_handler(
 #[cfg(debug_assertions)]
 fn route_debug_handler(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
@@ -563,7 +563,7 @@ pub(super) fn caller_surface_id(params: &serde_json::Value) -> Option<u32> {
 }
 
 /// Check if a surface belongs to a pane (directly or in any tab).
-fn surface_belongs_to_pane(engine: &EngineState, surface_id: u32, pane_id: u32) -> bool {
+fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) -> bool {
     engine.find_pane_for_surface(surface_id) == Some(pane_id)
 }
 
@@ -584,7 +584,7 @@ fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json:
 
 fn handle_system_info(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     JsonRpcResponse::success(
@@ -600,7 +600,7 @@ fn handle_system_info(
 #[cfg(debug_assertions)]
 fn handle_ui_state(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let ws = state.active_workspace(engine);
@@ -626,7 +626,7 @@ fn handle_ui_state(
 
 fn handle_tree(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let tree: Vec<_> = engine
@@ -646,7 +646,7 @@ fn handle_tree(
 
 /// Walk a workspace tree JSON value and annotate every node that owns surface
 /// ids with a `busy_count` field. Surface-leaf nodes also get a `busy` boolean.
-fn annotate_tree_busy(node: &mut serde_json::Value, engine: &EngineState) {
+fn annotate_tree_busy(node: &mut serde_json::Value, engine: &CoreState) {
     if let Some(obj) = node.as_object_mut() {
         // Surface leaf: has "id" but no "tabs"/"panes"/"first"/"second"
         let is_leaf = !obj.contains_key("tabs")
@@ -714,7 +714,7 @@ fn annotate_tree_busy(node: &mut serde_json::Value, engine: &EngineState) {
 
 fn handle_is_typing(
     _state: &AppState,
-    engine: &EngineState,
+    engine: &CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -744,7 +744,7 @@ fn handle_is_typing(
 
 fn handle_send_wait_idle(
     _state: &mut AppState,
-    engine: &mut EngineState,
+    engine: &mut CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

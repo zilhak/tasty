@@ -1,4 +1,4 @@
-//! `SavedLayout` → live `EngineState` 복원.
+//! `SavedLayout` → live `CoreState` 복원.
 //!
 //! Plugin surface (`SavedSurface::Generic`) 는 그 kind 가 registry 에 등록된 후에만
 //! 복원 가능. 호출자가 `required_plugin_kinds()` 로 미리 필요한 kind 목록을 받아 plugin
@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use crate::engine_state::{EngineState, ShellConfig};
+use crate::engine_state::{CoreState, ShellConfig};
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace};
 
 use super::schema::{
@@ -105,7 +105,7 @@ impl SavedLayout {
 
     /// Restore layout into engine state. Returns true on success.
     /// On failure, engine state is left unchanged (caller should create default workspace).
-    pub fn restore(self, engine: &mut EngineState) -> bool {
+    pub fn restore(self, engine: &mut CoreState) -> bool {
         if self.workspaces.is_empty() {
             return false;
         }
@@ -135,7 +135,7 @@ impl SavedLayout {
 }
 
 impl SavedWorkspace {
-    fn restore(self, engine: &mut EngineState, is_active: bool) -> Option<Workspace> {
+    fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<Workspace> {
         let ws_id = engine.next_ids.next_workspace();
         let pane_layout = self.pane_layout.restore(engine, is_active)?;
 
@@ -158,7 +158,7 @@ impl SavedWorkspace {
 }
 
 impl SavedPaneNode {
-    fn restore(self, engine: &mut EngineState, is_active: bool) -> Option<PaneNode> {
+    fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<PaneNode> {
         match self {
             SavedPaneNode::Leaf(saved_pane) => {
                 let pane = saved_pane.restore(engine, is_active)?;
@@ -184,7 +184,7 @@ impl SavedPaneNode {
 }
 
 impl SavedPane {
-    fn restore(self, engine: &mut EngineState, is_active_workspace: bool) -> Option<Pane> {
+    fn restore(self, engine: &mut CoreState, is_active_workspace: bool) -> Option<Pane> {
         let pane_id = engine.next_ids.next_pane();
         let saved_active_tab = self.active_tab.min(self.tabs.len().saturating_sub(1));
         let mut tabs = Vec::new();
@@ -213,7 +213,7 @@ impl SavedPane {
 }
 
 impl SavedTab {
-    fn restore(self, engine: &mut EngineState, is_active: bool) -> Option<Tab> {
+    fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<Tab> {
         let tab_id = engine.next_ids.next_tab();
         let layout = self.surface.restore(engine, is_active)?;
         let focused_surface = layout.first_surface_id().unwrap_or(0);
@@ -232,7 +232,7 @@ impl SavedSurfaceLayout {
     /// is_active=false면 Terminal leaf를 deferred EmptySurface placeholder로 변환한다.
     /// is_active=true면 모든 leaf를 즉시 spawn한다. Split 노드는 재귀적으로 처리해
     /// 비활성 split 내부의 Terminal들도 deferred로 남는다.
-    fn restore(self, engine: &mut EngineState, is_active: bool) -> Option<SurfaceLayout> {
+    fn restore(self, engine: &mut CoreState, is_active: bool) -> Option<SurfaceLayout> {
         match self {
             SavedSurfaceLayout::Leaf(saved) => {
                 let surface = saved.restore_leaf(engine, is_active)?;
@@ -261,7 +261,7 @@ impl SavedSurfaceLayout {
 impl SavedSurface {
     /// 단일 leaf 복원. Terminal이면 is_active에 따라 즉시 spawn 또는 deferred placeholder.
     /// Generic surface는 is_active와 관계없이 즉시 복원 (PTY가 아니므로 cheap).
-    fn restore_leaf(self, engine: &mut EngineState, is_active: bool) -> Option<Box<dyn Surface>> {
+    fn restore_leaf(self, engine: &mut CoreState, is_active: bool) -> Option<Box<dyn Surface>> {
         let surface_id = engine.next_ids.next_surface();
         match self {
             SavedSurface::Terminal {
@@ -312,7 +312,7 @@ impl SavedSurface {
     /// 항상 즉시 PTY를 spawn하거나 generic surface를 만들어 반환.
     fn restore_immediate_inner(
         self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         surface_id: u32,
     ) -> Option<Box<dyn Surface>> {
         match self {

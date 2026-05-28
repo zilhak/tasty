@@ -33,7 +33,7 @@ impl App {
     where
         F: Fn(
             &crate::state::AppState,
-            &crate::engine_state::EngineState,
+            &crate::engine_state::CoreState,
             serde_json::Value,
         ) -> JsonRpcResponse,
     {

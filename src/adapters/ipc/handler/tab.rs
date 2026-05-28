@@ -20,7 +20,7 @@ fn require_tab_id(
 
 pub fn handle_tab_list(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -58,7 +58,7 @@ pub fn handle_tab_list(
 
 pub fn handle_tab_create(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -128,7 +128,7 @@ pub fn handle_tab_create(
 
 pub fn handle_tab_close(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -164,7 +164,7 @@ pub fn handle_tab_close(
 
 pub fn handle_tab_move(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

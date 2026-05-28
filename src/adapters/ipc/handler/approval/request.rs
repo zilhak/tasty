@@ -4,7 +4,7 @@ use super::*;
 
 pub fn handle_request(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

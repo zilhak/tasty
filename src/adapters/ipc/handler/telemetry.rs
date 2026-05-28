@@ -86,7 +86,7 @@ pub(crate) fn check_cap_block(caller: &CallerContext, _method: &str) -> Option<S
 /// 모든 실패는 best-effort. 호스트 stdout 의 IPC 정상 동작을 막지 않는다.
 pub(crate) fn record_ipc_call(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     method: &str,
 ) {
@@ -122,7 +122,7 @@ pub(crate) fn record_ipc_call(
 /// 임계를 넘는다고 보고하면 host 가 영속 + notification 으로 알린다.
 fn detect_anomalies_after_ipc(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     agent: &str,
     method: &str,
     ts: u64,
@@ -208,7 +208,7 @@ fn build_event(
 /// 이벤트를 memory store 에 저장. seq 가 매 이벤트마다 새로 발급되어 동일
 /// ms 안에서 key 가 충돌하지 않는다.
 fn persist_event(
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     ev: &TelemetryEvent,
 ) -> std::result::Result<String, String> {
     let seq = engine.telemetry_seq.next();

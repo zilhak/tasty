@@ -47,7 +47,7 @@ fn holder_param(params: &Value, id: &Value) -> Result<String, JsonRpcResponse> {
 
 pub fn handle_lease_acquire(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -87,7 +87,7 @@ pub fn handle_lease_acquire(
 
 pub fn handle_lease_release(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -111,7 +111,7 @@ pub fn handle_lease_release(
 
 pub fn handle_lease_list(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

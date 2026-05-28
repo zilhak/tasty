@@ -88,7 +88,7 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
 
 pub(crate) fn handle_surface_send(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -111,7 +111,7 @@ pub(crate) fn handle_surface_send(
 
 pub(crate) fn handle_surface_send_key(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -185,7 +185,7 @@ pub(crate) fn handle_surface_send_key(
 /// deferred placeholder.
 pub(crate) fn handle_surface_wake(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -206,7 +206,7 @@ pub(crate) fn handle_surface_wake(
 
 pub(crate) fn handle_surface_send_combo(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -267,7 +267,7 @@ pub(crate) fn handle_surface_send_combo(
 
 pub(crate) fn handle_surface_send_to(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

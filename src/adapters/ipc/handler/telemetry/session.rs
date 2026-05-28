@@ -14,7 +14,7 @@ use crate::state::AppState;
 
 pub fn handle_session_summary(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

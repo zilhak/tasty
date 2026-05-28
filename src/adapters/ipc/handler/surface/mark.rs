@@ -7,7 +7,7 @@ use super::require_surface_id;
 
 pub(crate) fn handle_set_mark(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -22,7 +22,7 @@ pub(crate) fn handle_set_mark(
 
 pub(crate) fn handle_read_since_mark(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -46,7 +46,7 @@ pub(crate) fn handle_read_since_mark(
 /// (strip_ansi=false) 를 항상 입력으로 한다.
 pub(crate) fn handle_parse_since_mark(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

@@ -11,7 +11,7 @@ use crate::state::AppState;
 
 pub fn handle_observe_start(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -33,7 +33,7 @@ pub fn handle_observe_start(
 
 pub fn handle_observe_stop(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -49,7 +49,7 @@ pub fn handle_observe_stop(
 
 pub fn handle_observe_list(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: Value,
 ) -> JsonRpcResponse {
     let items = engine.observer_router.list();
@@ -58,7 +58,7 @@ pub fn handle_observe_list(
 
 pub fn handle_observe_info(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {

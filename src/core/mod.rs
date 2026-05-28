@@ -31,7 +31,7 @@ use crate::ports::pty::{PtyService, TerminalWaker};
 /// 도메인 데이터 — handler 가 받는 read-only 인터페이스.
 pub(crate) struct CoreState {
     /// Layout preset 디스크 캐시 (`~/.tasty/presets/`). App 전역 단일 인스턴스.
-    /// `Arc<Mutex<>>` 로 MainWindow / PresetWindow / EngineState 모두에 공유한다 —
+    /// `Arc<Mutex<>>` 로 MainWindow / PresetWindow / CoreState 모두에 공유한다 —
     /// 단일 source of truth.
     pub preset_store: Arc<Mutex<tasty_presets::PresetStore>>,
     // sub-step 마다 더 추가됨 (plan 참조).

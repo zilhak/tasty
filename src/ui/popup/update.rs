@@ -14,7 +14,7 @@ pub const UPDATE_POPUP_ID: &str = "update_check";
 pub fn draw_update_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;

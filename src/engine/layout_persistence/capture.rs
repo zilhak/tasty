@@ -1,4 +1,4 @@
-//! Live model (`EngineState`) → `SavedLayout` 캡처.
+//! Live model (`CoreState`) → `SavedLayout` 캡처.
 //!
 //! `capture_scrollback_to_disk` 가 fresh persist_id 발급 + scrollback 디스크 dump 까지
 //! 책임지므로 SeenRefs 추적으로 같은 capture 사이클의 중복 ID 를 self-heal.
@@ -6,7 +6,7 @@
 use serde_json::json;
 
 use crate::engine::surface_registry::SurfaceKindRegistry;
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
 
 use super::LAYOUT_VERSION;
@@ -25,10 +25,10 @@ type SeenRefs = std::collections::HashSet<String>;
 impl SavedLayout {
     /// Capture current layout from engine state.
     ///
-    /// `&mut EngineState` 인 이유: `capture_scrollback_to_disk` 가 새 persist_id 를
+    /// `&mut CoreState` 인 이유: `capture_scrollback_to_disk` 가 새 persist_id 를
     /// 발급한 경우 surface 인스턴스의 `scrollback_persist_id` 필드에 기록해야
     /// 다음 capture 가 같은 ID 를 재사용한다 (orphan 누적 방지).
-    pub fn capture(engine: &mut EngineState, active_workspace: usize) -> Self {
+    pub fn capture(engine: &mut CoreState, active_workspace: usize) -> Self {
         let registry = engine.surface_registry.clone();
         let capture_scrollback = engine.settings.general.restore_terminal_content;
         let mut seen_refs = SeenRefs::new();

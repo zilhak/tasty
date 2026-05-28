@@ -13,7 +13,7 @@ use super::{
 
 pub fn handle_cache_put(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -51,7 +51,7 @@ pub fn handle_cache_put(
 
 pub fn handle_cache_get(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -78,7 +78,7 @@ pub fn handle_cache_get(
 
 pub fn handle_cache_invalidate(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -105,7 +105,7 @@ pub fn handle_cache_invalidate(
 
 pub fn handle_cache_clear(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -128,7 +128,7 @@ pub fn handle_cache_clear(
 
 pub fn handle_cache_list(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

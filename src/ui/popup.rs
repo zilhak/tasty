@@ -41,11 +41,11 @@ pub struct PopupDef {
     pub title_key: &'static str,
     /// 동적 타이틀. 매 프레임 호출. `title_key` 대신 사용된다. (예: rename popup의
     /// 대상별 제목)
-    pub title_fn: Option<fn(&AppState, &crate::engine_state::EngineState) -> String>,
+    pub title_fn: Option<fn(&AppState, &crate::engine_state::CoreState) -> String>,
     /// 기본 크기. 동적 크기가 필요하면 `sizer`로 덮어쓸 수 있다.
     pub default_size: egui::Vec2,
     /// 선택적 동적 크기 계산. popup open 시점에 1회 호출되어 `PopupState.size`에 반영.
-    pub sizer: Option<fn(&AppState, &crate::engine_state::EngineState) -> egui::Vec2>,
+    pub sizer: Option<fn(&AppState, &crate::engine_state::CoreState) -> egui::Vec2>,
     pub default_scope: PopupScope,
     pub close_on_outside_click: bool,
     /// true면 타이틀바·닫기 버튼 없이 콘텐츠만 렌더링한다 (컨텍스트 메뉴 스타일).
@@ -55,7 +55,7 @@ pub struct PopupDef {
     pub sticky_focus: bool,
     /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
     pub draw_fn:
-        fn(&mut egui::Ui, &mut AppState, &mut crate::engine_state::EngineState) -> PopupAction,
+        fn(&mut egui::Ui, &mut AppState, &mut crate::engine_state::CoreState) -> PopupAction,
 }
 
 /// Scope determines where a popup is anchored and when it's visible.

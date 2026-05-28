@@ -7,7 +7,7 @@ use super::require_surface_id;
 
 pub(crate) fn handle_surface_close(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -41,7 +41,7 @@ pub(crate) fn handle_surface_close(
 /// Close the calling surface itself. Only way for a surface to close itself.
 pub(crate) fn handle_surface_close_self(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

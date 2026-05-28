@@ -89,7 +89,7 @@ pub(crate) fn physical_key_to_logical(physical: &PhysicalKey) -> Option<Key> {
 /// Returns the surface ID of the focused image surface, if any.
 fn focused_image_surface_id(
     state: &crate::state::AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
 ) -> Option<u32> {
     let pane = state.focused_pane(engine)?;
     let tab = pane.tabs.get(pane.active_tab)?;

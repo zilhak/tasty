@@ -276,7 +276,7 @@ pub struct PluginManager {
     /// 다음 popup `instance_id`. 1부터 시작해 단조 증가.
     pub(super) next_popup_instance_id: u64,
     /// 파일 형식 식별 시스템. plugin enable/disable 시 detector 추가/제거.
-    /// 호스트 본문이 EngineState 와 같은 Arc 를 공유.
+    /// 호스트 본문이 CoreState 와 같은 Arc 를 공유.
     pub file_format: Arc<crate::file::format::FileFormatRegistry>,
     /// 파일 핸들러 시스템. plugin enable/disable 시 handler 추가/제거.
     pub file_handler: Arc<crate::file::handler::FileHandlerRegistry>,

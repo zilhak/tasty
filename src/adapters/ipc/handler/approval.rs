@@ -127,7 +127,7 @@ pub(super) fn record_to_json(record: &ApprovalRecord) -> Value {
 /// `approval.request` — 새 요청 생성. 응답: `{ id, state, record }`.
 pub(crate) fn publish_capability_elevation(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     agent_id: &str,
     method: &str,
     permission: &str,

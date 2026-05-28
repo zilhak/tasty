@@ -7,13 +7,13 @@
 use tasty_terminal::Terminal;
 
 use super::AppState;
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 
 impl AppState {
     /// Invariant: caller must ensure `engine.workspaces` is non-empty.
     /// Parked states (after the last window closes) can have zero workspaces —
     /// such callers must use `engine.workspaces.is_empty()` checks instead.
-    pub fn active_workspace<'a>(&self, engine: &'a EngineState) -> &'a crate::model::Workspace {
+    pub fn active_workspace<'a>(&self, engine: &'a CoreState) -> &'a crate::model::Workspace {
         debug_assert!(
             !engine.workspaces.is_empty(),
             "active_workspace called with empty workspaces"
@@ -26,7 +26,7 @@ impl AppState {
 
     pub fn active_workspace_mut<'a>(
         &self,
-        engine: &'a mut EngineState,
+        engine: &'a mut CoreState,
     ) -> &'a mut crate::model::Workspace {
         debug_assert!(
             !engine.workspaces.is_empty(),
@@ -40,7 +40,7 @@ impl AppState {
 
     /// Get the focused pane in the active workspace, or the first pane as fallback.
     /// Returns `None` if no workspaces exist (parked state after last-window close).
-    pub fn focused_pane<'a>(&self, engine: &'a EngineState) -> Option<&'a crate::model::Pane> {
+    pub fn focused_pane<'a>(&self, engine: &'a CoreState) -> Option<&'a crate::model::Pane> {
         if engine.workspaces.is_empty() {
             return None;
         }
@@ -55,7 +55,7 @@ impl AppState {
     /// Returns `None` if no workspaces exist (parked state after last-window close).
     pub fn focused_pane_mut<'a>(
         &self,
-        engine: &'a mut EngineState,
+        engine: &'a mut CoreState,
     ) -> Option<&'a mut crate::model::Pane> {
         if engine.workspaces.is_empty() {
             return None;
@@ -74,22 +74,19 @@ impl AppState {
     }
 
     /// Get the focused surface ID (the surface that currently receives input).
-    pub fn focused_surface_id(&self, engine: &EngineState) -> Option<u32> {
+    pub fn focused_surface_id(&self, engine: &CoreState) -> Option<u32> {
         let pane = self.focused_pane(engine)?;
         let tab = pane.tabs.get(pane.active_tab)?;
         tab.focused_surface_id()
     }
 
     /// Get the ultimately focused terminal.
-    pub fn focused_terminal<'a>(&self, engine: &'a EngineState) -> Option<&'a Terminal> {
+    pub fn focused_terminal<'a>(&self, engine: &'a CoreState) -> Option<&'a Terminal> {
         self.focused_pane(engine).and_then(|p| p.active_terminal())
     }
 
     /// Get the ultimately focused terminal (mutable).
-    pub fn focused_terminal_mut<'a>(
-        &self,
-        engine: &'a mut EngineState,
-    ) -> Option<&'a mut Terminal> {
+    pub fn focused_terminal_mut<'a>(&self, engine: &'a mut CoreState) -> Option<&'a mut Terminal> {
         self.focused_pane_mut(engine)
             .and_then(|p| p.active_terminal_mut())
     }
@@ -97,7 +94,7 @@ impl AppState {
     /// Get the focused image panel (mutable).
     pub fn focused_image_mut<'a>(
         &self,
-        engine: &'a mut EngineState,
+        engine: &'a mut CoreState,
     ) -> Option<&'a mut crate::model::ImagePanel> {
         let pane = self.focused_pane_mut(engine)?;
         let tab = pane.tabs.get_mut(pane.active_tab)?;
@@ -112,7 +109,7 @@ impl AppState {
     /// Used by IPC handlers that target a specific surface — focus-independent.
     pub fn image_panel_mut<'a>(
         &self,
-        engine: &'a mut EngineState,
+        engine: &'a mut CoreState,
         surface_id: u32,
     ) -> Option<&'a mut crate::model::ImagePanel> {
         let (ws_idx, pid) = engine.find_workspace_index_for_surface(surface_id)?;
@@ -131,7 +128,7 @@ impl AppState {
     }
 
     /// Get the focused pane ID.
-    pub fn focused_pane_id(&self, engine: &EngineState) -> crate::model::PaneId {
+    pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {
         self.active_workspace(engine).focused_pane
     }
 }

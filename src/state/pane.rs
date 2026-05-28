@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::model::SplitDirection;
 
 use super::AppState;
@@ -9,7 +9,7 @@ impl AppState {
     /// Split the focused pane into two (new independent tab bar).
     pub fn split_pane(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         direction: SplitDirection,
     ) -> anyhow::Result<()> {
         let cwd = self.resolve_inherit_cwd(engine);
@@ -53,7 +53,7 @@ impl AppState {
     /// Only terminal panels support surface-level splitting; others fall back to pane split.
     pub fn split_surface(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         direction: SplitDirection,
     ) -> anyhow::Result<()> {
         let target_surface_id = self.focused_surface_id(engine);
@@ -84,7 +84,7 @@ impl AppState {
     /// 그 외 kind는 `engine.surface_registry`의 create 함수를 호출한다.
     pub fn split_pane_targeted(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         target_pane_id: Option<u32>,
         direction: SplitDirection,
         explicit_cwd: Option<std::path::PathBuf>,
@@ -156,7 +156,7 @@ impl AppState {
     /// Supports all surface kinds via SurfaceKindRegistry. `"terminal"`은 PTY spawn 경로를 사용한다.
     pub fn split_surface_targeted(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         target_surface_id: Option<u32>,
         direction: SplitDirection,
         explicit_cwd: Option<std::path::PathBuf>,
@@ -219,7 +219,7 @@ impl AppState {
     }
 
     /// Close the focused pane (unsplit). Returns true if a pane was removed.
-    pub fn close_active_pane(&mut self, engine: &mut EngineState) -> bool {
+    pub fn close_active_pane(&mut self, engine: &mut CoreState) -> bool {
         let ws = self.active_workspace_mut(engine);
         let target_id = ws.focused_pane;
 
@@ -249,7 +249,7 @@ impl AppState {
     /// Close the focused surface. For split tabs, closes the focused surface
     /// within the tab. For single-surface tabs, delegates to close_surface_by_id
     /// which handles tab/pane/workspace cascading.
-    pub fn close_active_surface(&mut self, engine: &mut EngineState) -> bool {
+    pub fn close_active_surface(&mut self, engine: &mut CoreState) -> bool {
         let surface_id;
         let persist_id;
         if let Some(pane) = self.focused_pane(engine) {
@@ -292,7 +292,7 @@ impl AppState {
     /// surface -> tab -> pane -> workspace as needed.
     /// When `save_snapshot` is true, the closed item is saved for user restore (Ctrl+Shift+T).
     /// Agent/IPC closures should pass false to avoid polluting the user's undo stack.
-    pub fn close_surface_by_id(&mut self, engine: &mut EngineState, surface_id: u32) -> bool {
+    pub fn close_surface_by_id(&mut self, engine: &mut CoreState, surface_id: u32) -> bool {
         self.close_surface_by_id_inner(engine, surface_id, true)
     }
 
@@ -305,7 +305,7 @@ impl AppState {
     /// 를 만들어 invariant 를 유지한다.
     pub fn close_surface_by_id_no_snapshot(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         surface_id: u32,
     ) -> bool {
         let closed = self.close_surface_by_id_inner(engine, surface_id, false);
@@ -321,7 +321,7 @@ impl AppState {
 
     fn close_surface_by_id_inner(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         surface_id: u32,
         save_snapshot: bool,
     ) -> bool {
@@ -532,7 +532,7 @@ impl AppState {
     /// This is like `split_pane` but returns the new surface_id for callers that need it.
     pub fn split_pane_get_surface(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         direction: SplitDirection,
     ) -> anyhow::Result<u32> {
         let new_pane_id = engine.next_ids.next_pane();
@@ -573,7 +573,7 @@ impl AppState {
 
     /// Close a specific pane by its ID (across all workspaces).
     /// Returns true if the pane was found and removed.
-    pub fn close_pane_by_id(&mut self, engine: &mut EngineState, pane_id: u32) -> bool {
+    pub fn close_pane_by_id(&mut self, engine: &mut CoreState, pane_id: u32) -> bool {
         let ws_idx = match engine.find_workspace_index_for_pane(pane_id) {
             Some(idx) => idx,
             None => return false,
@@ -607,7 +607,7 @@ impl AppState {
     /// `"terminal"`은 호출자가 PTY spawn 경로로 분기 처리해야 하므로 여기서는 처리하지 않는다.
     pub(crate) fn create_surface_via_registry(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         kind: &str,
         surface_id: u32,
         params: &Value,

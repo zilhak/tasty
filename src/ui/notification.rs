@@ -9,7 +9,7 @@ use crate::theme;
 pub(crate) fn draw_notification_content_inner(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
 ) {
     let th = theme::theme();
 
@@ -149,7 +149,7 @@ pub(crate) fn draw_notification_content_inner(
 pub fn draw_popups(
     ctx: &egui::Context,
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     pane_rects: &[(u32, crate::model::PhysicalRect)],
     terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,
@@ -271,7 +271,7 @@ pub fn draw_popups(
 /// Build LayoutContext from current AppState and layout info.
 fn build_layout_context(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     pane_rects: &[(u32, crate::model::PhysicalRect)],
     terminal_rect: crate::model::PhysicalRect,
     scale_factor: f32,
@@ -336,7 +336,7 @@ fn build_layout_context(
 pub fn draw_notification_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
 ) -> crate::ui::popup::PopupAction {
     draw_notification_content_inner(ui, state, engine);
     crate::ui::popup::PopupAction::None

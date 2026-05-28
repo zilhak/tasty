@@ -19,7 +19,7 @@ pub mod update_check;
 
 use std::collections::VecDeque;
 
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::model::{LogicalPx, PhysicalPx};
 use crate::settings_ui::SettingsUiState;
 use crate::ui::info_modal::InfoModal;
@@ -533,7 +533,7 @@ impl RenameTarget {
 
 impl AppState {
     /// Creates initial state with one workspace, one pane, one tab, one terminal.
-    pub fn new(engine: &mut EngineState) -> Self {
+    pub fn new(engine: &mut CoreState) -> Self {
         let sidebar_width = engine.settings.appearance.sidebar_width;
         let active_workspace = engine.restored_active_workspace.take().unwrap_or(0);
         Self {
@@ -642,7 +642,7 @@ impl AppState {
     /// 삭제된다.
     pub(crate) fn cleanup_surface(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         surface_id: u32,
         persist_id: Option<String>,
     ) {
@@ -671,7 +671,7 @@ impl AppState {
     }
 
     /// Determine the type of the currently focused surface.
-    pub fn focused_surface_type(&self, engine: &EngineState) -> FocusedSurfaceType {
+    pub fn focused_surface_type(&self, engine: &CoreState) -> FocusedSurfaceType {
         let pane = match self.focused_pane(engine) {
             Some(p) => p,
             None => return FocusedSurfaceType::None,
@@ -702,7 +702,7 @@ impl AppState {
 
     /// Surface가 close되기 직전에 `kind` 식별자를 얻는다. plugin lifecycle 알림에
     /// payload로 채워 보낸다. None이면 lifecycle 알림을 발행하지 않는다.
-    pub fn surface_kind(&self, engine: &EngineState, surface_id: u32) -> Option<&'static str> {
+    pub fn surface_kind(&self, engine: &CoreState, surface_id: u32) -> Option<&'static str> {
         engine.find_surface_by_id(surface_id).map(|s| s.kind())
     }
 
@@ -740,7 +740,7 @@ impl AppState {
     ///
     /// 사용자가 현재 포커스한 surface 본인의 `source_cwd()`를 사용한다.
     /// (terminal/explorer/markdown/html → 자체 cwd, image/empty/clipboard → None)
-    pub(crate) fn resolve_inherit_cwd(&self, engine: &EngineState) -> Option<std::path::PathBuf> {
+    pub(crate) fn resolve_inherit_cwd(&self, engine: &CoreState) -> Option<std::path::PathBuf> {
         if !engine.settings.general.inherit_cwd || engine.workspaces.is_empty() {
             return None;
         }
@@ -751,7 +751,7 @@ impl AppState {
     /// Get the working directory to inherit from a specific surface, if enabled.
     pub(crate) fn resolve_inherit_cwd_from_surface(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         surface_id: u32,
     ) -> Option<std::path::PathBuf> {
         if !engine.settings.general.inherit_cwd {

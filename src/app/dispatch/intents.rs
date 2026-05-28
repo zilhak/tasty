@@ -62,7 +62,7 @@ impl App {
     /// 단일 Intent 를 도메인 핸들러로 분기한다.
     fn dispatch_one_intent(
         state: &mut crate::state::AppState,
-        engine: &mut crate::engine_state::EngineState,
+        engine: &mut crate::engine_state::CoreState,
         intent: &crate::intent::DispatchedIntent,
     ) {
         use crate::intent::Intent;

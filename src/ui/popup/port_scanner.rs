@@ -22,7 +22,7 @@ pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
 pub fn draw_port_scanner_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
@@ -143,7 +143,7 @@ fn open_in_browser(port: &ListeningPort) {
 
 fn refresh_if_stale(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     surface_id: u32,
 ) {
     let now = Instant::now();
@@ -166,14 +166,14 @@ fn refresh_if_stale(
 
 fn shell_pid_for_surface(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     surface_id: u32,
 ) -> Option<u32> {
     let terminal = engine.find_terminal_by_id(surface_id)?;
     terminal.process_id()
 }
 
-fn focused_terminal_surface_id(state: &AppState, engine: &crate::engine_state::EngineState) -> u32 {
+fn focused_terminal_surface_id(state: &AppState, engine: &crate::engine_state::CoreState) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = ws.focused_pane;
     ws.pane_layout()

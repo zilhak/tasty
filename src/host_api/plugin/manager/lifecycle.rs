@@ -27,7 +27,7 @@ impl PluginManager {
         )
     }
 
-    /// EngineState 와 같은 Arc 를 공유하기 위한 생성자.
+    /// CoreState 와 같은 Arc 를 공유하기 위한 생성자.
     pub fn with_registries(
         waker: crate::waker::SharedWakerFactory,
         file_format: Arc<crate::file::format::FileFormatRegistry>,

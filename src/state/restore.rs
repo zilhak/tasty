@@ -1,4 +1,4 @@
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::model::closed_item::*;
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace};
 
@@ -32,7 +32,7 @@ impl RebuildResult {
 impl AppState {
     /// Restore the most recently closed item. Returns true if something was restored.
     /// Focus moves to the restored item.
-    pub fn restore_closed_item(&mut self, engine: &mut EngineState) -> bool {
+    pub fn restore_closed_item(&mut self, engine: &mut CoreState) -> bool {
         let item = match engine.closed_items.pop() {
             Some(item) => item,
             None => return false,
@@ -59,7 +59,7 @@ impl AppState {
 
     fn restore_surface(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         closed: ClosedSurface,
         tab_name: String,
     ) -> bool {
@@ -80,7 +80,7 @@ impl AppState {
         true
     }
 
-    fn restore_tab(&mut self, engine: &mut EngineState, closed_tab: ClosedTab) -> bool {
+    fn restore_tab(&mut self, engine: &mut CoreState, closed_tab: ClosedTab) -> bool {
         let result = match self.rebuild_surface(engine, closed_tab.panel) {
             Some(r) => r,
             None => return false,
@@ -100,7 +100,7 @@ impl AppState {
 
     fn restore_workspace(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         name: String,
         subtitle: String,
         closed_layout: ClosedPaneNode,
@@ -130,7 +130,7 @@ impl AppState {
 
     fn rebuild_surface(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         closed: ClosedPanel,
     ) -> Option<RebuildResult> {
         match closed {
@@ -162,7 +162,7 @@ impl AppState {
 
     fn rebuild_surface_node(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         closed: ClosedSurface,
     ) -> Option<TerminalSurface> {
         let surface_id = engine.next_ids.next_surface();
@@ -227,7 +227,7 @@ impl AppState {
 
     fn rebuild_surface_layout(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         closed: ClosedSurfaceLayout,
     ) -> Option<SurfaceLayout> {
         match closed {
@@ -256,7 +256,7 @@ impl AppState {
 
     fn rebuild_pane_node(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         closed: ClosedPaneNode,
     ) -> Option<PaneNode> {
         match closed {
@@ -282,7 +282,7 @@ impl AppState {
         }
     }
 
-    fn rebuild_pane(&mut self, engine: &mut EngineState, closed: ClosedPane) -> Option<Pane> {
+    fn rebuild_pane(&mut self, engine: &mut CoreState, closed: ClosedPane) -> Option<Pane> {
         let pane_id = engine.next_ids.next_pane();
         let mut tabs = Vec::new();
         for closed_tab in closed.tabs {

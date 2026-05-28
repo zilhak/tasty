@@ -6,7 +6,7 @@
 use serde_json::{Value, json};
 
 use crate::clipboard_history::ClipboardSource;
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::ipc::protocol::JsonRpcResponse;
 
 fn source_str(s: ClipboardSource) -> &'static str {
@@ -16,7 +16,7 @@ fn source_str(s: ClipboardSource) -> &'static str {
     }
 }
 
-pub fn handle_list(engine: &EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_list(engine: &CoreState, id: Value, params: &Value) -> JsonRpcResponse {
     let limit = params
         .get("limit")
         .and_then(|v| v.as_u64())
@@ -40,7 +40,7 @@ pub fn handle_list(engine: &EngineState, id: Value, params: &Value) -> JsonRpcRe
     JsonRpcResponse::success(id, json!({ "total": total, "entries": entries }))
 }
 
-pub fn handle_get(engine: &EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_get(engine: &CoreState, id: Value, params: &Value) -> JsonRpcResponse {
     let idx = match params.get("index").and_then(|v| v.as_u64()) {
         Some(n) => n as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index'"),
@@ -60,7 +60,7 @@ pub fn handle_get(engine: &EngineState, id: Value, params: &Value) -> JsonRpcRes
     }
 }
 
-pub fn handle_paste(engine: &mut EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_paste(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
     use crate::clipboard_history::ClipboardContent;
 
     let idx = match params.get("index").and_then(|v| v.as_u64()) {
@@ -112,7 +112,7 @@ pub fn handle_paste(engine: &mut EngineState, id: Value, params: &Value) -> Json
     }
 }
 
-pub fn handle_remove(engine: &mut EngineState, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_remove(engine: &mut CoreState, id: Value, params: &Value) -> JsonRpcResponse {
     let idx = match params.get("index").and_then(|v| v.as_u64()) {
         Some(n) => n as usize,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index'"),
@@ -123,7 +123,7 @@ pub fn handle_remove(engine: &mut EngineState, id: Value, params: &Value) -> Jso
     }
 }
 
-pub fn handle_clear(engine: &mut EngineState, id: Value) -> JsonRpcResponse {
+pub fn handle_clear(engine: &mut CoreState, id: Value) -> JsonRpcResponse {
     engine.clipboard_history.clear();
     JsonRpcResponse::success(id, json!({ "ok": true }))
 }

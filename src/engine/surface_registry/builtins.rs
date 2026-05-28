@@ -11,7 +11,7 @@ use crate::model::{DiffPanel, EmptySurface, ImagePanel, MarkdownPanel, Surface};
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
 
-/// 부팅 시 호출. EngineState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
+/// 부팅 시 호출. CoreState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
 ///
 /// 등록되지 않는 kind:
 /// - `"explorer"`: `com.tasty.explorer` plugin이 hello 시 remote kind로 등록.

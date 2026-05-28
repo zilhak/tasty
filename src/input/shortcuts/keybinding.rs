@@ -15,7 +15,7 @@ use super::{focused_image_surface_id, matches_any_binding, send_app_event};
 impl MainWindow {
     pub(super) fn handle_keybinding_shortcuts(
         state: &mut crate::state::AppState,
-        engine: &mut crate::engine_state::EngineState,
+        engine: &mut crate::engine_state::CoreState,
         kb: &crate::settings::KeybindingSettings,
         key: &Key,
         mods: ModifiersState,

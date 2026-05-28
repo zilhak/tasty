@@ -1,11 +1,11 @@
 use serde_json::{Value, json};
 
 use super::AppState;
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 
 impl AppState {
     /// Add a new tab in the focused pane.
-    pub fn add_tab(&mut self, engine: &mut EngineState) -> anyhow::Result<()> {
+    pub fn add_tab(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
         let cwd = self.resolve_inherit_cwd(engine);
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
@@ -35,7 +35,7 @@ impl AppState {
     /// Add a new tab in the focused pane without switching to it, with optional explicit cwd.
     pub fn add_tab_background(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         explicit_cwd: Option<std::path::PathBuf>,
     ) -> anyhow::Result<()> {
         let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd(engine));
@@ -86,7 +86,7 @@ impl AppState {
     /// 포커스된 pane에 부착한다. Returns (tab_id, surface_id) on success.
     pub fn add_kind_tab(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         kind: &str,
         params: &Value,
     ) -> anyhow::Result<(u32, u32)> {
@@ -106,7 +106,7 @@ impl AppState {
     /// kind+params 탭을 특정 pane에 추가 (cross-workspace).
     pub fn add_kind_tab_to_pane(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         pane_id: u32,
         kind: &str,
         params: &Value,
@@ -127,7 +127,7 @@ impl AppState {
     /// Add a Markdown viewer tab in the focused pane.
     pub fn add_markdown_tab(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         file_path: String,
     ) -> anyhow::Result<()> {
         self.add_kind_tab(engine, "markdown", &json!({"file": file_path}))
@@ -135,14 +135,14 @@ impl AppState {
     }
 
     /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
-    pub fn add_empty_tab(&mut self, engine: &mut EngineState) -> Option<(u32, u32)> {
+    pub fn add_empty_tab(&mut self, engine: &mut CoreState) -> Option<(u32, u32)> {
         self.add_kind_tab(engine, "empty", &Value::Null).ok()
     }
 
     /// Add a new tab in the specified pane (by ID, cross-workspace) without switching active tab.
     pub fn add_tab_to_pane(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         pane_id: u32,
         explicit_cwd: Option<std::path::PathBuf>,
     ) -> anyhow::Result<()> {
@@ -198,7 +198,7 @@ impl AppState {
     /// Add a tab with a Surface trait object in the specified pane (by ID, cross-workspace).
     pub fn add_surface_tab_to_pane(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         pane_id: u32,
         name: String,
         surface: Box<dyn crate::model::Surface>,
@@ -211,7 +211,7 @@ impl AppState {
     }
 
     /// Close a specific tab by its TabId (cross-workspace). Returns true if closed.
-    pub fn close_tab_by_tab_id(&mut self, engine: &mut EngineState, tab_id: u32) -> bool {
+    pub fn close_tab_by_tab_id(&mut self, engine: &mut CoreState, tab_id: u32) -> bool {
         // Find the tab and collect (surface_id, persist_id) for cleanup
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut found_pane_id = None;
@@ -250,21 +250,21 @@ impl AppState {
     }
 
     /// Next tab in the focused pane.
-    pub fn next_tab_in_pane(&mut self, engine: &mut EngineState) {
+    pub fn next_tab_in_pane(&mut self, engine: &mut CoreState) {
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.next_tab();
         }
     }
 
     /// Previous tab in the focused pane.
-    pub fn prev_tab_in_pane(&mut self, engine: &mut EngineState) {
+    pub fn prev_tab_in_pane(&mut self, engine: &mut CoreState) {
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.prev_tab();
         }
     }
 
     /// Go to tab by index (0-based) in the focused pane.
-    pub fn goto_tab_in_pane(&mut self, engine: &mut EngineState, index: usize) -> bool {
+    pub fn goto_tab_in_pane(&mut self, engine: &mut CoreState, index: usize) -> bool {
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.goto_tab(index)
         } else {
@@ -273,7 +273,7 @@ impl AppState {
     }
 
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
-    pub fn close_active_tab(&mut self, engine: &mut EngineState) -> bool {
+    pub fn close_active_tab(&mut self, engine: &mut CoreState) -> bool {
         // Capture tab snapshot + collect persist_ids (immutable borrow).
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let snapshot_opt = if let Some(pane) = self.focused_pane(engine) {
@@ -307,11 +307,7 @@ impl AppState {
     }
 
     /// Convert a surface to Terminal type. Creates a new PTY.
-    pub fn convert_surface_to_terminal(
-        &mut self,
-        engine: &mut EngineState,
-        surface_id: u32,
-    ) -> bool {
+    pub fn convert_surface_to_terminal(&mut self, engine: &mut CoreState, surface_id: u32) -> bool {
         let cwd = self.resolve_inherit_cwd(engine);
         let cols = engine.default_cols;
         let rows = engine.default_rows;
@@ -353,7 +349,7 @@ impl AppState {
     /// Convert a surface to Markdown type.
     pub fn convert_surface_to_markdown(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         surface_id: u32,
         file_path: String,
     ) -> bool {
@@ -370,7 +366,7 @@ impl AppState {
     /// Add an image viewer tab in the focused pane.
     pub fn add_image_tab(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         file_path: String,
     ) -> anyhow::Result<()> {
         self.add_kind_tab(engine, "image", &json!({"file": file_path}))
@@ -378,7 +374,7 @@ impl AppState {
     }
 
     /// Convert a surface to Image type (blank canvas).
-    pub fn convert_surface_to_image(&mut self, engine: &mut EngineState, surface_id: u32) -> bool {
+    pub fn convert_surface_to_image(&mut self, engine: &mut CoreState, surface_id: u32) -> bool {
         let surface: Box<dyn crate::model::Surface> =
             Box::new(crate::model::ImagePanel::new_blank(surface_id));
         self.replace_surface_for_id(engine, surface_id, surface, Some(Some("Image".to_string())))
@@ -390,7 +386,7 @@ impl AppState {
     /// 를 사용해야 한다.
     pub fn convert_surface_to_kind(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         surface_id: u32,
         kind: &str,
         params: &Value,
@@ -413,7 +409,7 @@ impl AppState {
     /// Pass `Some(None)` to clear explicit_name (e.g., when converting back to Terminal).
     fn replace_surface_for_id(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         surface_id: u32,
         new_surface: Box<dyn crate::model::Surface>,
         new_name: Option<Option<String>>,
@@ -464,7 +460,7 @@ impl AppState {
     }
 
     /// Get the current surface type name for the focused surface.
-    pub fn focused_panel_type_name(&self, engine: &EngineState) -> Option<&'static str> {
+    pub fn focused_panel_type_name(&self, engine: &CoreState) -> Option<&'static str> {
         let pane = self.focused_pane(engine)?;
         let tab = pane.tabs.get(pane.active_tab)?;
         Some(tab.surface().type_name())

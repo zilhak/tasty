@@ -52,7 +52,7 @@ use tasty_presets::{CapturedSurfaceMeta, PresetError, PresetKind};
 /// preset 도메인 분기 핸들러. `dispatch_pending_intents` 에서 호출.
 pub fn handle(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     intent: &DispatchedIntent,
 ) {
     match &intent.body {
@@ -79,7 +79,7 @@ pub fn handle(
 
 fn apply(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     intent: &DispatchedIntent,
     kind: PresetKind,
     name: &str,
@@ -100,7 +100,7 @@ fn apply(
 
 fn save(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     intent: &DispatchedIntent,
     base_name: &str,
     explicit_name: Option<&str>,
@@ -153,7 +153,7 @@ fn save(
 
 fn delete(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     kind: PresetKind,
     name: &str,
 ) {
@@ -164,7 +164,7 @@ fn delete(
 
 fn rename(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     kind: PresetKind,
     from: &str,
     to: &str,
@@ -219,7 +219,7 @@ impl std::error::Error for PresetMutationError {}
 /// preset_store 잠금 + clone. lock 안 ↔ apply 본체를 분리해 critical section 을 짧게 유지.
 fn clone_preset_from_store(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     kind: PresetKind,
     name: &str,
 ) -> Result<Option<ClonedPreset>, PresetMutationError> {
@@ -249,7 +249,7 @@ fn clone_preset_from_store(
 /// `target_pane_id` / `target_workspace_id` 는 tab/pane apply 시에만 의미가 있다.
 pub fn apply_inner(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     kind: PresetKind,
     name: &str,
     target_pane_id: Option<u32>,
@@ -290,7 +290,7 @@ pub fn apply_inner(
 /// 없으면 `base_name` 기반 unique_name 자동 부여.
 pub fn save_inner(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     base_name: &str,
     explicit_name: Option<&str>,
     overwrite: bool,
@@ -361,7 +361,7 @@ pub fn save_inner(
 
 pub fn delete_inner(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     kind: PresetKind,
     name: &str,
 ) -> Result<(), PresetMutationError> {
@@ -381,7 +381,7 @@ pub fn delete_inner(
 
 pub fn rename_inner(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     kind: PresetKind,
     from: &str,
     to: &str,
@@ -407,7 +407,7 @@ pub fn rename_inner(
 /// `Intent::SavePreset { preset: ClonedPreset, .. }` 로 발화하므로 별도 경로.
 pub fn capture_inner(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     kind: PresetKind,
     source_id: u32,
 ) -> Result<(ClonedPreset, String), String> {

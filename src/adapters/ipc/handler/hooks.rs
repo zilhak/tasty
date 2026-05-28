@@ -7,7 +7,7 @@ use crate::state::AppState;
 
 pub(crate) fn handle_hook_set(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -52,7 +52,7 @@ pub(crate) fn handle_hook_set(
 
 pub(crate) fn handle_hook_list(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -81,7 +81,7 @@ pub(crate) fn handle_hook_list(
 
 pub(crate) fn handle_hook_unset(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -96,7 +96,7 @@ pub(crate) fn handle_hook_unset(
 
 pub(crate) fn handle_global_hook_set(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -134,7 +134,7 @@ pub(crate) fn handle_global_hook_set(
 
 pub(crate) fn handle_global_hook_list(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let hooks: Vec<_> = engine
@@ -155,7 +155,7 @@ pub(crate) fn handle_global_hook_list(
 
 pub(crate) fn handle_global_hook_unset(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -170,7 +170,7 @@ pub(crate) fn handle_global_hook_unset(
 
 pub(crate) fn handle_surface_fire_hook(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

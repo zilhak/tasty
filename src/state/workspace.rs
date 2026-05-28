@@ -1,13 +1,13 @@
 use serde_json::Value;
 
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::model::Workspace;
 
 use super::AppState;
 
 impl AppState {
     /// Add a new workspace with one pane, one tab, one terminal.
-    pub fn add_workspace(&mut self, engine: &mut EngineState) -> anyhow::Result<()> {
+    pub fn add_workspace(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
         let cwd = self.resolve_inherit_cwd(engine);
         let ws_id = engine.next_ids.next_workspace();
         let pane_id = engine.next_ids.next_pane();
@@ -50,7 +50,7 @@ impl AppState {
     /// Returns the new workspace index.
     pub fn add_workspace_background(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         explicit_cwd: Option<std::path::PathBuf>,
         kind: &str,
         params: &Value,
@@ -106,7 +106,7 @@ impl AppState {
     }
 
     /// Switch to workspace by index (0-based).
-    pub fn switch_workspace(&mut self, engine: &mut EngineState, index: usize) {
+    pub fn switch_workspace(&mut self, engine: &mut CoreState, index: usize) {
         if index < engine.workspaces.len() {
             self.active_workspace = index;
             self.ensure_active_workspace_initialized(engine);
@@ -115,7 +115,7 @@ impl AppState {
 
     /// Move a workspace from one index to another, adjusting active_workspace accordingly.
     /// Returns false if indices are out of bounds or equal.
-    pub fn move_workspace(&mut self, engine: &mut EngineState, from: usize, to: usize) -> bool {
+    pub fn move_workspace(&mut self, engine: &mut CoreState, from: usize, to: usize) -> bool {
         let len = engine.workspaces.len();
         if from == to || from >= len || to >= len {
             return false;
@@ -136,7 +136,7 @@ impl AppState {
     /// 활성 workspace에서 사용자가 보고 있는 active_tab의 deferred surface(들)만 PTY를
     /// spawn. 같은 pane의 비활성 tab은 deferred로 남았다가 tab 전환 시 깨어난다.
     /// active_tab이 split layout이면 그 안의 모든 deferred placeholder를 한번에 spawn한다.
-    fn ensure_active_workspace_initialized(&mut self, engine: &mut EngineState) {
+    fn ensure_active_workspace_initialized(&mut self, engine: &mut CoreState) {
         let mut spawned_ids = Vec::new();
         {
             let ws = &mut engine.workspaces[self.active_workspace];
@@ -159,7 +159,7 @@ impl AppState {
 
     /// Close the active workspace. Returns true if the workspace was removed.
     /// Cleans up all surfaces (surface meta + per-surface view state) in the workspace.
-    pub fn close_active_workspace(&mut self, engine: &mut EngineState) -> bool {
+    pub fn close_active_workspace(&mut self, engine: &mut CoreState) -> bool {
         if engine.workspaces.is_empty() {
             return false;
         }
@@ -212,7 +212,7 @@ impl AppState {
 
     /// Ensure at least one workspace exists. If none exist, create a new one.
     /// Returns true if a new workspace was created.
-    pub fn ensure_workspace_exists(&mut self, engine: &mut EngineState) -> bool {
+    pub fn ensure_workspace_exists(&mut self, engine: &mut CoreState) -> bool {
         if !engine.workspaces.is_empty() {
             return false;
         }

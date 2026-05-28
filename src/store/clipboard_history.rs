@@ -1,7 +1,7 @@
 //! 시스템 클립보드 히스토리 저장소. 메모리 전용 (재시작 시 휘발).
 //!
 //! 동작:
-//! - `EngineState`에 `ClipboardHistory` 소유.
+//! - `CoreState`에 `ClipboardHistory` 소유.
 //! - 메인 스레드의 `AppEvent::ClipboardTick` 수신 시 `record`로 시스템 값 기록.
 //! - Tasty 내부 복사(텍스트 선택 복사 등)는 `record`에 `ClipboardSource::Internal`.
 //! - 연속 중복은 자동 제거(`last_seen`).

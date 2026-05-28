@@ -18,7 +18,7 @@ use std::time::Instant;
 
 pub use schema::SavedLayout;
 
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 
 const DEBOUNCE_MS: u128 = 500;
 pub(super) const LAYOUT_VERSION: u32 = 2;
@@ -31,10 +31,10 @@ fn layout_path() -> Option<PathBuf> {
 
 /// Save layout to disk. Non-blocking best-effort.
 ///
-/// `&mut EngineState` 인 이유: `SavedLayout::capture` 가 새 persist_id 를 발급하면
+/// `&mut CoreState` 인 이유: `SavedLayout::capture` 가 새 persist_id 를 발급하면
 /// 해당 surface 인스턴스의 `scrollback_persist_id` 필드에 기록해 다음 capture 가
 /// 같은 ID 를 재사용한다.
-pub fn save_to_disk(engine: &mut EngineState, active_workspace: usize) {
+pub fn save_to_disk(engine: &mut CoreState, active_workspace: usize) {
     let path = match layout_path() {
         Some(p) => p,
         None => {

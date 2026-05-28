@@ -70,7 +70,7 @@ pub struct SurfaceKindDef {
     pub snapshot: Arc<dyn Fn(&dyn Surface) -> Option<serde_json::Value> + Send + Sync>,
 }
 
-/// surface 종류 lookup 테이블. `Arc<SurfaceKindRegistry>` 단위로 EngineState에 보관되어
+/// surface 종류 lookup 테이블. `Arc<SurfaceKindRegistry>` 단위로 CoreState에 보관되어
 /// 매 프레임 dispatch에 사용된다.
 ///
 /// 내부적으로 `RwLock`을 사용하여 plugin이 부팅 후 동적으로 kind를 등록할 수 있게

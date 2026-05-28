@@ -10,7 +10,7 @@ use tasty_presets::{
     PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
 
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::model::{
     Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace,
 };
@@ -79,7 +79,7 @@ impl AppState {
     /// 반환은 새 워크스페이스의 인덱스.
     pub fn apply_workspace_preset(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         preset: &WorkspacePreset,
         opts: ApplyOptions,
     ) -> Result<usize, ApplyError> {
@@ -112,7 +112,7 @@ impl AppState {
     /// 의 focused_pane 에 새 탭을 push. 반환은 새 tab_id.
     pub fn apply_tab_preset(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         preset: &TabPreset,
         target_pane_id: Option<u32>,
         opts: ApplyOptions,
@@ -142,7 +142,7 @@ impl AppState {
     /// 반환은 새 pane_id.
     pub fn apply_pane_preset(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         preset: &PanePreset,
         target_workspace_id: Option<u32>,
         opts: ApplyOptions,
@@ -196,7 +196,7 @@ impl AppState {
 
     fn resolve_target_pane(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         target_pane_id: Option<u32>,
     ) -> Result<(usize, u32), ApplyError> {
         if engine.workspaces.is_empty() {
@@ -224,7 +224,7 @@ impl AppState {
 
     fn build_pane_node(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         node: &PresetPaneNode,
     ) -> Result<PaneNode, ApplyError> {
         match node {
@@ -252,7 +252,7 @@ impl AppState {
 
     fn build_pane(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         preset: &PresetPane,
     ) -> Result<Pane, ApplyError> {
         if preset.tabs.is_empty() {
@@ -272,11 +272,7 @@ impl AppState {
         })
     }
 
-    fn build_tab(
-        &mut self,
-        engine: &mut EngineState,
-        preset: &PresetTab,
-    ) -> Result<Tab, ApplyError> {
+    fn build_tab(&mut self, engine: &mut CoreState, preset: &PresetTab) -> Result<Tab, ApplyError> {
         let tab_id = engine.next_ids.next_tab();
         let layout = self.build_surface_layout(engine, &preset.layout)?;
         let focused_surface = layout.first_surface_id().ok_or(ApplyError::Empty)?;
@@ -306,7 +302,7 @@ impl AppState {
 
     fn build_surface_layout(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         preset: &PresetSurfaceLayout,
     ) -> Result<SurfaceLayout, ApplyError> {
         match preset {
@@ -335,7 +331,7 @@ impl AppState {
 
     fn build_leaf_surface(
         &mut self,
-        engine: &mut EngineState,
+        engine: &mut CoreState,
         preset: &PresetSurface,
     ) -> Result<Box<dyn Surface>, ApplyError> {
         let surface_id = engine.next_ids.next_surface();
@@ -359,7 +355,7 @@ impl AppState {
 
     fn build_terminal(
         &self,
-        engine: &EngineState,
+        engine: &CoreState,
         surface_id: u32,
         preset: &PresetSurface,
     ) -> Result<tasty_terminal::Terminal, ApplyError> {

@@ -9,7 +9,7 @@ use crate::theme;
 pub fn draw_pane_tab_bars(
     ctx: &egui::Context,
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
 ) {

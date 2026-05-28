@@ -58,7 +58,7 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
 
 pub(super) fn run_store<F, R>(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: Value,
     f: F,
 ) -> JsonRpcResponse

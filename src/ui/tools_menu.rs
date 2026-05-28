@@ -59,7 +59,7 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
 pub fn draw_tools_menu(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
@@ -166,7 +166,7 @@ pub fn draw_tools_menu(
 /// 추가). IPC 경유 `debug.tool.invoke`는 별도 경로로 pane/tab id를 명시한다.
 pub fn invoke_tool(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     item: &ToolItem,
 ) {
     match &item.action {

@@ -64,7 +64,7 @@ impl App {
         );
         let waker: crate::terminal::Waker = factory.make_default_waker();
 
-        // EngineState를 App 직속에 1회 init.
+        // CoreState를 App 직속에 1회 init.
         if self.engine_state.is_none() {
             // 두 번째 main window 생성 시: 첫 engine 의 글로벌 Arc 들을 공유한다.
             // surface_registry 는 plugin_manager 가 첫 부팅 시 set 한 것과 같은
@@ -72,7 +72,7 @@ impl App {
             // 보임. file_format / file_handler 도 동일 — plugin contribute 한
             // file 동작이 두번째 윈도우에서 누락 안 되도록.
             //
-            // 첫 부팅 시점에는 source 없음 → EngineState::new 의 기본 Arc 사용.
+            // 첫 부팅 시점에는 source 없음 → CoreState::new 의 기본 Arc 사용.
             let shared = self.any_main_engine().map(|src| {
                 (
                     src.surface_registry.clone(),
@@ -88,17 +88,13 @@ impl App {
                 )
             });
 
-            // IdGenerator 는 EngineState::new 시점에 default workspace 만들면서
+            // IdGenerator 는 CoreState::new 시점에 default workspace 만들면서
             // 첫 ID 들 발급하므로, **생성 전에** source 의 next_ids 를 주입해야
             // workspace_id/pane_id/tab_id/surface_id 충돌이 안 난다.
             let shared_ids = shared.as_ref().map(|s| s.9.clone());
-            let mut engine = crate::engine_state::EngineState::new_with_ids(
-                cols,
-                rows,
-                waker.clone(),
-                shared_ids,
-            )
-            .expect("failed to create engine state");
+            let mut engine =
+                crate::engine_state::CoreState::new_with_ids(cols, rows, waker.clone(), shared_ids)
+                    .expect("failed to create engine state");
             engine.waker_factory = Some(factory.clone());
             if let Some((
                 surface_registry,
@@ -207,7 +203,7 @@ impl App {
         &mut self,
         gpu: GpuState,
         state: crate::state::AppState,
-        engine_state: crate::engine_state::EngineState,
+        engine_state: crate::engine_state::CoreState,
         window: Arc<Window>,
     ) {
         let window_id = window.id();

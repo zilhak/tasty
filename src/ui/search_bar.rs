@@ -7,7 +7,7 @@ use tasty_terminal::search::{SearchError, SearchOptions};
 pub fn draw_search_bar(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
 ) -> PopupAction {
     let theme = crate::theme::theme();
 
@@ -149,7 +149,7 @@ fn toggle_button(
 }
 
 /// Run search, working around borrow checker by using search fields directly.
-fn run_search(state: &mut AppState, engine: &crate::engine_state::EngineState) {
+fn run_search(state: &mut AppState, engine: &crate::engine_state::CoreState) {
     let surface_id = state.search.surface_id;
     let query = state.search.query.clone();
     let options = SearchOptions {
@@ -178,7 +178,7 @@ fn run_search(state: &mut AppState, engine: &crate::engine_state::EngineState) {
     }
 }
 
-fn focused_terminal_surface_id(state: &AppState, engine: &crate::engine_state::EngineState) -> u32 {
+fn focused_terminal_surface_id(state: &AppState, engine: &crate::engine_state::CoreState) -> u32 {
     let ws = state.active_workspace(engine);
     let pane_id = ws.focused_pane;
     ws.pane_layout()
@@ -188,7 +188,7 @@ fn focused_terminal_surface_id(state: &AppState, engine: &crate::engine_state::E
         .unwrap_or(0)
 }
 
-fn scroll_to_current_match(state: &mut AppState, engine: &mut crate::engine_state::EngineState) {
+fn scroll_to_current_match(state: &mut AppState, engine: &mut crate::engine_state::CoreState) {
     let surface_id = state.search.surface_id;
     if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
         let scrollback_len = terminal.scrollback_len();

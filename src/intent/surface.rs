@@ -12,11 +12,11 @@
 //!     없으면 generic `convert_surface_to_kind` 호출.
 
 use super::{ConvertTarget, DispatchedIntent, Intent};
-use crate::engine_state::EngineState;
+use crate::engine_state::CoreState;
 use crate::model::SplitDirection;
 use crate::state::AppState;
 
-pub fn handle(state: &mut AppState, engine: &mut EngineState, intent: &DispatchedIntent) {
+pub fn handle(state: &mut AppState, engine: &mut CoreState, intent: &DispatchedIntent) {
     match &intent.body {
         Intent::SplitSurface { direction } => split(state, engine, *direction),
         Intent::CloseSurface { surface_id } => close(state, engine, intent, *surface_id),
@@ -27,18 +27,13 @@ pub fn handle(state: &mut AppState, engine: &mut EngineState, intent: &Dispatche
     }
 }
 
-fn split(state: &mut AppState, engine: &mut EngineState, direction: SplitDirection) {
+fn split(state: &mut AppState, engine: &mut CoreState, direction: SplitDirection) {
     if let Err(e) = state.split_surface(engine, direction) {
         tracing::warn!("split_surface failed: {e}");
     }
 }
 
-fn close(
-    state: &mut AppState,
-    engine: &mut EngineState,
-    intent: &DispatchedIntent,
-    surface_id: u32,
-) {
+fn close(state: &mut AppState, engine: &mut CoreState, intent: &DispatchedIntent, surface_id: u32) {
     // C1=B / C2: 사용자 동작만 closed-tab restore stack (snapshot) 에 push.
     if intent.origin.is_user() {
         state.close_surface_by_id(engine, surface_id);
@@ -47,12 +42,7 @@ fn close(
     }
 }
 
-fn convert(
-    state: &mut AppState,
-    engine: &mut EngineState,
-    surface_id: u32,
-    target: &ConvertTarget,
-) {
+fn convert(state: &mut AppState, engine: &mut CoreState, surface_id: u32, target: &ConvertTarget) {
     match target {
         ConvertTarget::Terminal => {
             state.convert_surface_to_terminal(engine, surface_id);

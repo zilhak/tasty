@@ -354,7 +354,7 @@ pub fn handle_list_agent_permissions(id: Value, params: &Value) -> JsonRpcRespon
 /// 은 publish_capability_elevation 안에서 처리.
 pub fn handle_request_permission(
     state: &mut crate::state::AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

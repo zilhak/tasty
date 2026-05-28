@@ -1,8 +1,8 @@
 use tasty_terminal::{Terminal, TerminalEvent};
 
-use super::EngineState;
+use super::CoreState;
 
-impl EngineState {
+impl CoreState {
     pub fn send_fast_init(&mut self, surface_id: u32) {
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::ensure_created(surface_id) {
             tracing::warn!("surface_meta ensure_created failed for surface {surface_id}: {e}");

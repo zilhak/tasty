@@ -8,7 +8,7 @@ use super::{apply_meta, require_pane_id};
 
 pub fn handle_pane_list(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let mut panes = Vec::new();
@@ -35,7 +35,7 @@ pub fn handle_pane_list(
 
 pub fn handle_pane_close(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -96,7 +96,7 @@ fn resolve_surface_target(params: &serde_json::Value) -> Option<u32> {
 
 pub fn handle_split(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

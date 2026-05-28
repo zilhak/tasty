@@ -90,7 +90,7 @@ fn hex_val(b: u8) -> Option<u8> {
 ///   으로 main thread 에 도착, `apply_identify_result` 가 동일 흐름으로 재진입.
 pub fn dispatch_file_target(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     target: FileTarget,
     depth: DetectDepth,
 ) {
@@ -117,7 +117,7 @@ pub fn dispatch_file_target(
 /// `AppEvent::IdentifyDone` 핸들러 양쪽이 호출.
 pub fn apply_identify_result(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     target: FileTarget,
     detector: Option<DetectorId>,
 ) {
@@ -137,7 +137,7 @@ pub fn apply_identify_result(
 /// Picker popup 을 띄운다. 후보가 비어도 호출 — empty-state UI 가 보여진다.
 fn open_picker(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     target: FileTarget,
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
@@ -192,7 +192,7 @@ fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
 /// webbrowser 위임.
 pub fn execute_handler_action(
     state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     handler: &FileHandler,
     target: &FileTarget,
 ) {
@@ -235,7 +235,7 @@ fn path_to_file_uri(abs: &std::path::Path) -> String {
 
 /// Picker 결과를 소비해 handler 실행 + recent 기록. App 메인 루프 (frame end) 가
 /// 매 frame 호출. 결과가 없으면 no-op.
-pub fn consume_picker_result(state: &mut AppState, engine: &mut crate::engine_state::EngineState) {
+pub fn consume_picker_result(state: &mut AppState, engine: &mut crate::engine_state::CoreState) {
     let Some(data) = state.dialogs.file_handler_picker.as_mut() else {
         return;
     };
@@ -261,7 +261,7 @@ pub fn consume_picker_result(state: &mut AppState, engine: &mut crate::engine_st
 
 fn dispatch_by_handler_id(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: &HandlerId,
     target: &FileTarget,
 ) {

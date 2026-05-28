@@ -1,7 +1,7 @@
-use super::EngineState;
+use super::CoreState;
 use crate::state::SurfaceMessage;
 
-impl EngineState {
+impl CoreState {
     /// Send a message from one surface to another. Returns the assigned message ID.
     pub fn send_message(&mut self, from: u32, to: u32, content: String) -> u32 {
         self.surface_next_message_id += 1;

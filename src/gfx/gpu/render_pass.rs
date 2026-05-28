@@ -9,7 +9,7 @@ impl GpuState {
         &self,
         view: &wgpu::TextureView,
         _state: &AppState,
-        engine: &crate::engine_state::EngineState,
+        engine: &crate::engine_state::CoreState,
     ) {
         let bg_alpha = engine.settings.appearance.background_opacity as f64;
         let th = crate::theme::theme();

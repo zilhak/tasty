@@ -5,7 +5,7 @@ use crate::state::AppState;
 
 pub fn handle_workspace_list(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let workspaces: Vec<_> = engine
@@ -30,7 +30,7 @@ pub fn handle_workspace_list(
 
 pub fn handle_workspace_create(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -117,7 +117,7 @@ pub fn handle_workspace_create(
 
 pub fn handle_workspace_update(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -197,7 +197,7 @@ pub fn handle_workspace_update(
 
 pub fn handle_workspace_move(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

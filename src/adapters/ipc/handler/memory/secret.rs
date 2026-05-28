@@ -14,7 +14,7 @@ use super::{
 
 pub fn handle_secret_put(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -50,7 +50,7 @@ pub fn handle_secret_put(
 
 pub fn handle_secret_get(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -77,7 +77,7 @@ pub fn handle_secret_get(
 
 pub fn handle_secret_delete(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -105,7 +105,7 @@ pub fn handle_secret_delete(
 
 pub fn handle_secret_list(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -147,7 +147,7 @@ pub fn handle_secret_list(
 
 pub fn handle_secret_exists(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -174,7 +174,7 @@ pub fn handle_secret_exists(
 
 pub fn handle_secret_count(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -198,7 +198,7 @@ pub fn handle_secret_count(
 
 pub fn handle_secret_scopes(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -216,7 +216,7 @@ pub fn handle_secret_scopes(
 
 pub fn handle_secret_stats(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

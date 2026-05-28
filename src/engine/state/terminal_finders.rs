@@ -1,8 +1,8 @@
 use tasty_terminal::Terminal;
 
-use super::EngineState;
+use super::CoreState;
 
-impl EngineState {
+impl CoreState {
     /// Check if this engine owns a surface with the given id (any kind, not just terminal).
     pub fn has_surface(&self, surface_id: u32) -> bool {
         self.workspaces

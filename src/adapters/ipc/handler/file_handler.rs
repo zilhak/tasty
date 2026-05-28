@@ -15,7 +15,7 @@ use crate::state::AppState;
 
 pub fn handle_reload(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let path = user_config_path();
@@ -59,7 +59,7 @@ fn default_depth() -> String {
 ///   handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
 pub fn handle_dispatch(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: serde_json::Value,
 ) -> JsonRpcResponse {

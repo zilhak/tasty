@@ -65,7 +65,7 @@ fn require_u32(
 /// `engine.preset_store` 가 None 이면 internal_error.
 fn with_store<R>(
     _state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: &serde_json::Value,
     f: impl FnOnce(&tasty_presets::PresetStore) -> R,
 ) -> Result<R, JsonRpcResponse> {
@@ -97,7 +97,7 @@ fn mutation_error(id: serde_json::Value, e: PresetMutationError) -> JsonRpcRespo
 
 pub fn handle_list(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -114,7 +114,7 @@ pub fn handle_list(
 
 pub fn handle_get(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -165,7 +165,7 @@ pub fn handle_get(
 
 pub fn handle_save(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -226,7 +226,7 @@ pub fn handle_save(
 
 pub fn handle_delete(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -247,7 +247,7 @@ pub fn handle_delete(
 
 pub fn handle_rename(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -272,7 +272,7 @@ pub fn handle_rename(
 
 pub fn handle_capture(
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -315,7 +315,7 @@ pub fn handle_capture(
 
 pub fn handle_apply(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

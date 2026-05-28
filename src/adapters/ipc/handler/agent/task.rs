@@ -15,7 +15,7 @@ use super::{
 
 pub fn handle_task_create(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -72,7 +72,7 @@ pub fn handle_task_create(
 
 pub fn handle_task_list(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -115,7 +115,7 @@ pub fn handle_task_list(
 
 pub fn handle_task_get(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -149,7 +149,7 @@ pub fn handle_task_get(
 
 pub fn handle_task_cancel(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -178,7 +178,7 @@ pub fn handle_task_cancel(
 
 pub fn handle_task_retry(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -210,7 +210,7 @@ pub fn handle_task_retry(
 // scheduler 도입 시 별도 구현.
 pub fn handle_task_await(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -224,7 +224,7 @@ pub fn handle_task_await(
 
 pub fn handle_task_graph(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -324,7 +324,7 @@ pub fn handle_task_graph(
 
 pub fn handle_task_reduce(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

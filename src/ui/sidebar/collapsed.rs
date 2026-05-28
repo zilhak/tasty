@@ -17,7 +17,7 @@ pub struct CollapsedSidebarResult {
 pub fn draw_collapsed_sidebar(
     ctx: &egui::Context,
     state: &AppState,
-    engine: &crate::engine_state::EngineState,
+    engine: &crate::engine_state::CoreState,
     sidebar_width: f32,
 ) -> CollapsedSidebarResult {
     let th = theme::theme();

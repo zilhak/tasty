@@ -14,7 +14,7 @@ use crate::state::AppState;
 use super::now_ms;
 use super::query::{QueryFilter, collect_events};
 
-pub(super) fn generate_cap_id(engine: &mut crate::engine_state::EngineState) -> String {
+pub(super) fn generate_cap_id(engine: &mut crate::engine_state::CoreState) -> String {
     let ts = now_ms();
     let seq = engine.telemetry_seq.next();
     format!("cap_{ts:013}{seq:04}", ts = ts, seq = seq % 10_000)
@@ -75,7 +75,7 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 /// `telemetry.cap.set` — cap 등록.
 pub fn handle_cap_set(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -146,7 +146,7 @@ pub fn handle_cap_set(
 /// `telemetry.cap.list` — 전체 cap. 필터: `agent`.
 pub fn handle_cap_list(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -170,7 +170,7 @@ pub fn handle_cap_list(
 /// `telemetry.cap.remove` — cap 삭제.
 pub fn handle_cap_remove(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -221,7 +221,7 @@ pub(super) fn compute_current_value(cap: &CostCap) -> std::result::Result<f64, S
 /// `telemetry.cap.status` — agent 별 cap 들의 현재 값/임계/triggered 상태.
 pub fn handle_cap_status(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -272,7 +272,7 @@ pub fn handle_cap_status(
 /// `telemetry.cap.reset` — `triggered` 상태 제거. `id` 또는 `agent` 둘 중 하나 필수.
 pub fn handle_cap_reset(
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::EngineState,
+    _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -325,7 +325,7 @@ pub fn handle_cap_reset(
 /// 는 후속 sub-phase (호출 전 evaluator + dispatcher 거부) 에서 결합한다.
 pub(super) fn evaluate_caps_after_record(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     ev: &TelemetryEvent,
 ) {
     let caps = match load_all_caps() {
@@ -370,7 +370,7 @@ pub(super) fn evaluate_caps_after_record(
 /// 이미 기록됐으므로 status 조회로 확인 가능).
 pub(super) fn fire_cap_action(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     cap: &CostCap,
     current: f64,
 ) {
@@ -405,7 +405,7 @@ pub(super) fn fire_cap_action(
 /// 필요하면 `cap.reset` 후 다음 record 가 임계를 다시 넘을 때 fire 된다.
 pub(super) fn fire_require_approval(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     cap: &CostCap,
     current: f64,
 ) {
@@ -462,7 +462,7 @@ pub(super) fn fire_require_approval(
 /// notification.create 핸들러의 단순 경로와 동등하나 IPC 를 거치지 않는다.
 pub(super) fn fire_notify(
     state: &mut AppState,
-    engine: &mut crate::engine_state::EngineState,
+    engine: &mut crate::engine_state::CoreState,
     cap: &CostCap,
     current: f64,
 ) {

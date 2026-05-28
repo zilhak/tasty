@@ -13,7 +13,7 @@ use tasty_terminal::Waker;
 
 /// surface별 / 일반 waker 생성 인터페이스.
 ///
-/// 본체는 `WinitWakerFactory`로 구현하여 `EngineState`에 주입한다. 헤드리스
+/// 본체는 `WinitWakerFactory`로 구현하여 `CoreState`에 주입한다. 헤드리스
 /// 테스트나 surface가 PTY 이벤트를 무시해도 되는 컨텍스트는 `NoopWakerFactory`를
 /// 쓸 수 있다.
 pub trait WakerFactory: Send + Sync + 'static {
@@ -25,7 +25,7 @@ pub trait WakerFactory: Send + Sync + 'static {
     fn make_default_waker(&self) -> Waker;
 }
 
-/// 공용 핸들 — `EngineState`에 보관되며 `Arc::clone`으로 PTY 리더 스레드에 분배된다.
+/// 공용 핸들 — `CoreState`에 보관되며 `Arc::clone`으로 PTY 리더 스레드에 분배된다.
 pub type SharedWakerFactory = Arc<dyn WakerFactory>;
 
 /// 깨움이 필요 없는 컨텍스트(헤드리스 테스트 등)용 no-op 구현.
