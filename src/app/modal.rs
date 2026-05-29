@@ -39,7 +39,7 @@ impl App {
 
             // Settings cascade 는 Core 발행 → handle_core_event 통해 처리
             // (main/parked 갱신 + save + theme install + plugin event).
-            // cascade 는 동일 frame 의 dispatch_pending_domain_intents 단계에서
+            // cascade 는 동일 frame 의 dispatch_pending_intents 의 domain_batch 단계에서
             // 적용 — modal 닫힌 직후 후속 코드 (settings_open=false / plugin
             // shortcut draft 적용) 는 cascade 결과를 보지 않으므로 지연 안전.
             //

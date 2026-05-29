@@ -334,13 +334,10 @@ pub struct AppState {
     pub(crate) plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
 
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
-    /// 가 메인 루프에서 drain 한다. 설계: `docs/design/action-dispatch.md`.
+    /// 가 메인 루프에서 drain 한다. UI Intent (`Intent::Ui`) 와 Domain Intent
+    /// (`Intent::Domain`) 가 한 큐 위에서 처리됨 (D.3.I.3 통합). 설계:
+    /// `docs/design/action-dispatch.md`, `intent-ui-vs-domain.md`.
     pub(crate) pending_intents: Vec<crate::intent::DispatchedIntent>,
-
-    /// Core 도메인 변경 요청 큐 (`DomainIntent`). handler 가 read 후 push,
-    /// `App::dispatch_pending_domain_intents` 가 메인 루프 / handler 호출 종료 후
-    /// drain → `core.apply` 호출 → cascade event 처리. Phase D 진행 중.
-    pub(crate) pending_domain_intents: Vec<crate::core::intent::DomainIntent>,
 }
 
 /// A pending native context menu request.
@@ -611,24 +608,13 @@ impl AppState {
             plugin_popup_events: Vec::new(),
             plugin_popup_closes: Vec::new(),
             pending_intents: Vec::new(),
-            pending_domain_intents: Vec::new(),
         }
     }
 
     /// Intent 발화. `App::dispatch_pending_intents` 가 메인 루프에서 drain.
+    /// UI Intent / Domain Intent 모두 본 큐로 발화 (D.3.I.3 두 큐 통합).
     pub fn dispatch_intent(&mut self, intent: crate::intent::DispatchedIntent) {
         self.pending_intents.push(intent);
-    }
-
-    /// DomainIntent 발화. handler 가 read 후 본 메서드로 push,
-    /// `App::dispatch_pending_domain_intents` 가 drain → `core.apply` 호출.
-    pub(crate) fn enqueue_domain_intent(&mut self, intent: crate::core::intent::DomainIntent) {
-        self.pending_domain_intents.push(intent);
-    }
-
-    /// 현재까지 발화된 DomainIntent 를 모두 꺼내고 큐를 비운다.
-    pub(crate) fn take_pending_domain_intents(&mut self) -> Vec<crate::core::intent::DomainIntent> {
-        std::mem::take(&mut self.pending_domain_intents)
     }
 
     /// 현재까지 발화된 Intent 를 모두 꺼내고 큐를 비운다.

@@ -10,7 +10,14 @@ impl App {
     /// 호스트 내부 Intent 큐를 모든 AppState 에서 drain 해 도메인별 핸들러로 분기한다.
     /// 설계: `docs/design/action-dispatch.md`. 처리 순서 = 발화 순서.
     /// drain 중 새로 발화된 Intent 는 다음 프레임에 처리 (재진입 방지).
+    ///
+    /// D.3.I.3 두 큐 통합 — `Intent::Domain(DomainIntent)` 도 본 메서드에서
+    /// 처리한다. per-state batch 안의 `Intent::Domain` 항목은 따로 모아 본 loop
+    /// 끝난 후 `dispatch_domain_intent` (App-level cascade) 로 일괄 처리. 두
+    /// 단계 분리 이유: `dispatch_domain_intent` 가 `&mut self` 필요하지만 per-state
+    /// loop 는 `&mut self.windows[id]` 를 잡고 있어 동시 borrow 불가.
     pub(crate) fn dispatch_pending_intents(&mut self) {
+        use crate::intent::Intent;
         // 모든 windows + parked_states 에서 드레인한 뒤 일괄 처리.
         // 각 state 마다 독립적으로 처리해야 — popup mutation 은 그 state.popups 대상이므로.
         let mut per_state_batches: Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)> =
@@ -32,6 +39,10 @@ impl App {
             }
         }
 
+        // Domain intents 는 separate batch — main loop 가 끝난 후 처리
+        // (dispatch_domain_intent 가 &mut self 필요).
+        let mut domain_batch: Vec<crate::core::intent::DomainIntent> = Vec::new();
+
         for (window_id, batch) in per_state_batches {
             let core = &self.core;
             let Some(main) = self
@@ -44,6 +55,10 @@ impl App {
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
+                if let Intent::Domain(d) = &intent.body {
+                    domain_batch.push(d.clone());
+                    continue;
+                }
                 Self::dispatch_one_intent(core, &mut main.state, &mut main.engine_state, &intent);
             }
             main.mark_dirty();
@@ -56,7 +71,18 @@ impl App {
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
+                if let Intent::Domain(d) = &intent.body {
+                    domain_batch.push(d.clone());
+                    continue;
+                }
                 Self::dispatch_one_intent(core, state, engine, &intent);
+            }
+        }
+
+        // Domain cascade — handle_core_event 가 App 메서드라 &mut self 필요.
+        for d in domain_batch {
+            if let Err(e) = self.dispatch_domain_intent(d) {
+                tracing::warn!("dispatch_domain_intent failed: {e}");
             }
         }
     }
@@ -93,11 +119,13 @@ impl App {
             Intent::NewWorkspace { .. } => {
                 crate::intent::workspace::handle(state, engine, intent);
             }
-            Intent::Domain(domain) => {
-                // 본 분기는 D.3.I.3 의 *두 큐 통합* 과도기 — DomainIntent 를
-                // pending_intents 큐로 발화하면 본 분기가 domain 큐로 forwarding.
-                // 실제 cascade 는 직후의 dispatch_pending_domain_intents 가 처리.
-                state.enqueue_domain_intent(domain.clone());
+            Intent::Domain(_) => {
+                // unreachable — dispatch_pending_intents 가 본 variant 를
+                // domain_batch 로 분리해 본 함수를 우회하므로 들어올 수 없다.
+                // defensive — 로그만 남기고 무시.
+                tracing::error!(
+                    "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"
+                );
             }
             Intent::Noop => {}
         }
@@ -147,7 +175,7 @@ impl App {
                     r
                 });
             if let Some(response) = resp_opt {
-                self.dispatch_pending_domain_intents();
+                self.dispatch_pending_intents();
                 return response;
             }
         }
@@ -163,13 +191,13 @@ impl App {
         if let Some((state, engine)) = owner_in_parked {
             let response =
                 ipc::handler::handle_with_caller(&mut self.core, state, engine, request, caller);
-            self.dispatch_pending_domain_intents();
+            self.dispatch_pending_intents();
             return response;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
             let response =
                 ipc::handler::handle_with_caller(&mut self.core, state, engine, request, caller);
-            self.dispatch_pending_domain_intents();
+            self.dispatch_pending_intents();
             return response;
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);

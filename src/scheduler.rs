@@ -7,9 +7,9 @@
 //!   / priority 같은 필드 없음.
 //! - **별 crate 아님** — 본 파일 한 장.
 //!
-//! 사용처: D.3.I.3 이후 `state.pending_intents` + `state.pending_domain_intents`
-//! 두 필드가 단일 `Scheduler<Intent>` 로 통합되며 이 모듈을 사용한다. 현재는
-//! 도구만 정의돼 있고 호출처가 0 이다.
+//! 사용처: D.3.I.3 에서 두 큐가 `state.pending_intents` 하나로 통합됐고
+//! 추후 본 모듈의 `Scheduler<Intent>` 자료구조 위로 표준화될 예정.
+//! 현재는 도구만 정의돼 있고 호출처가 0 이다.
 
 use std::collections::VecDeque;
 

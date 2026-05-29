@@ -64,7 +64,7 @@ impl App {
                 });
             if let Some(response) = resp_opt {
                 send_response(&cmd.response_tx, response);
-                self.dispatch_pending_domain_intents();
+                self.dispatch_pending_intents();
                 return IpcStep::Handled;
             }
         }
@@ -86,7 +86,7 @@ impl App {
                 caller,
             );
             send_response(&cmd.response_tx, response);
-            self.dispatch_pending_domain_intents();
+            self.dispatch_pending_intents();
             return IpcStep::Handled;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
@@ -98,7 +98,7 @@ impl App {
                 caller,
             );
             send_response(&cmd.response_tx, response);
-            self.dispatch_pending_domain_intents();
+            self.dispatch_pending_intents();
         }
         IpcStep::Handled
     }

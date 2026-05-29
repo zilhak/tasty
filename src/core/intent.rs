@@ -5,13 +5,11 @@
 //! 타입) 중 하나다. `DomainIntent` 는 headless 빌드에서도 그대로 실행된다.
 //!
 //! 현재 큐 구조 (Phase D 진행 중):
-//! - `AppState.pending_intents`: `crate::intent::Intent` (UI + 진행 중 도메인
-//!   variant 혼합) 큐. `App::dispatch_pending_intents` drain.
-//! - `AppState.pending_domain_intents`: `DomainIntent` 큐. `App::dispatch_pending_domain_intents`
-//!   drain → `core.apply` → `handle_core_event` cascade.
-//!
-//! D.3.I.3 의 *후속 단계* 에서 위 두 큐는 단일 `Intent::Domain(DomainIntent)`
-//! variant 통합을 거쳐 한 `Scheduler<Intent>` 로 합쳐질 예정.
+//! - `AppState.pending_intents`: 통합 Intent 큐. UI Intent (`Intent::Ui`) 와
+//!   Domain Intent (`Intent::Domain(DomainIntent)`) 가 같은 큐 위에서 처리됨.
+//!   `App::dispatch_pending_intents` 가 매 frame drain — UI 항목은 popup handler
+//!   분기, Domain 항목은 별 batch 로 모아 `dispatch_domain_intent` (core.apply +
+//!   handle_core_event cascade) 일괄 처리.
 
 use tasty_settings::Settings;
 
