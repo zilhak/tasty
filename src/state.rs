@@ -47,16 +47,16 @@ impl FocusedSurfaceType {
 /// Stored in a queue and consumed during the next egui render frame.
 #[derive(Debug, Clone)]
 pub struct PendingKeyEvent {
-    pub key: winit::keyboard::Key,
-    pub modifiers: winit::keyboard::ModifiersState,
-    pub text: Option<winit::keyboard::SmolStr>,
+    pub(crate) key: winit::keyboard::Key,
+    pub(crate) modifiers: winit::keyboard::ModifiersState,
+    pub(crate) text: Option<winit::keyboard::SmolStr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct SurfaceMessage {
-    pub id: u32,
-    pub from_surface_id: u32,
-    pub content: String,
+    pub(crate) id: u32,
+    pub(crate) from_surface_id: u32,
+    pub(crate) content: String,
 }
 
 /// Surface가 닫혔다는 사실을 plugin 측에 broadcast하기 위해 메인 루프가 소비할
@@ -64,9 +64,9 @@ pub struct SurfaceMessage {
 /// reason을 담고, App 메인 루프에서 `SurfaceCloseReason`으로 매핑한다.
 #[derive(Debug, Clone)]
 pub struct PendingSurfaceClosed {
-    pub surface_id: u32,
-    pub kind: &'static str,
-    pub is_user_close: bool,
+    pub(crate) surface_id: u32,
+    pub(crate) kind: &'static str,
+    pub(crate) is_user_close: bool,
 }
 
 /// Event Bus 1.0 호스트 자동 발화용 큐 항목. `state/`가 `plugin/`/`tasty-plugin-protocol`
@@ -365,74 +365,74 @@ pub enum PendingNativeMenu {
 /// New dialogs should be added here, not as top-level AppState fields.
 pub struct DialogState {
     /// Unified rename dialog: target + edit buffer.
-    pub rename: Option<(RenameTarget, String)>,
+    pub(crate) rename: Option<(RenameTarget, String)>,
     /// Convert to markdown: target surface id
-    pub markdown_convert_surface_id: Option<u32>,
+    pub(crate) markdown_convert_surface_id: Option<u32>,
     /// Surface convert popup: target surface_id (None = closed)
-    pub convert_popup: Option<u32>,
+    pub(crate) convert_popup: Option<u32>,
     /// Keyboard-selected index in the convert popup menu
-    pub convert_popup_selected: Option<usize>,
+    pub(crate) convert_popup_selected: Option<usize>,
     /// Pending native context menu
-    pub pending_native_menu: Option<PendingNativeMenu>,
+    pub(crate) pending_native_menu: Option<PendingNativeMenu>,
     /// Markdown open popup: path buffer
-    pub markdown_open_buffer: String,
+    pub(crate) markdown_open_buffer: String,
     /// Which pane the file open popup was triggered from
-    pub file_open_pane_id: Option<u32>,
+    pub(crate) file_open_pane_id: Option<u32>,
     /// Internal flag for cancel button in file open popups
-    pub file_popup_cancel: bool,
+    pub(crate) file_popup_cancel: bool,
     /// Error message for file open popup validation
-    pub file_open_error: Option<String>,
+    pub(crate) file_open_error: Option<String>,
     /// Pending file drag request (paths to drag to external apps).
-    pub pending_file_drag: Option<Vec<String>>,
+    pub(crate) pending_file_drag: Option<Vec<String>>,
     /// Tab drag-and-drop state.
-    pub tab_drag: Option<TabDragState>,
+    pub(crate) tab_drag: Option<TabDragState>,
     /// Workspace drag-and-drop state.
-    pub ws_drag: Option<WsDragState>,
+    pub(crate) ws_drag: Option<WsDragState>,
     /// 부팅 시점 정보/에러 알림용 modal 큐. 큐 head를 [확인] 버튼으로 처리한다.
     /// `crate::ui::info_modal::show_info_modal()`로 push.
-    pub info_modal_queue: VecDeque<InfoModal>,
+    pub(crate) info_modal_queue: VecDeque<InfoModal>,
     /// 휴먼 핸드오프 — 응답 대기 중인 approval 큐. popup 의 head 가 현재 화면.
     /// `approval.request` IPC 가 push하고, 선택지 클릭 시 pop.
-    pub pending_approval_ids: VecDeque<tasty_approval::ApprovalId>,
+    pub(crate) pending_approval_ids: VecDeque<tasty_approval::ApprovalId>,
     /// approval popup 의 코멘트 입력 버퍼 (현재 head용 임시 상태).
-    pub approval_comment_buffer: String,
+    pub(crate) approval_comment_buffer: String,
     /// file_handler_picker popup 의 입력/선택 상태. `None` 이면 popup 미오픈.
-    pub file_handler_picker: Option<FileHandlerPickerData>,
+    pub(crate) file_handler_picker: Option<FileHandlerPickerData>,
     /// 도구 메뉴 클릭 / preset save 후속 — PresetWindow 를 열어달라는 요청.
     /// `selection` 이 `Some` 이면 PresetWindow 가 열린 뒤 해당 preset 을 선택한다.
     /// App 메인 루프 `process_pending_open_preset_window` 가 drain.
-    pub pending_open_preset_window: bool,
+    pub(crate) pending_open_preset_window: bool,
     /// PresetWindow 가 열린 뒤 자동 선택할 preset. `pending_open_preset_window` 와 함께 사용.
-    pub pending_preset_window_selection: Option<(tasty_presets::PresetKind, String)>,
+    pub(crate) pending_preset_window_selection: Option<(tasty_presets::PresetKind, String)>,
     /// 프리셋 적용 picker popup 의 현재 하이라이트 (preset name). popup 닫힘 시 None.
-    pub preset_picker_selected: Option<String>,
+    pub(crate) preset_picker_selected: Option<String>,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
 #[derive(Clone)]
 pub struct TabDragState {
-    pub pane_id: u32,
-    pub tab_index: usize,
+    pub(crate) pane_id: u32,
+    pub(crate) tab_index: usize,
     /// Current mouse x in logical pixels (for insert position calculation).
-    pub current_x: f32,
+    pub(crate) current_x: f32,
 }
 
 /// 외부 drag&drop hover 중 누적되는 파일 경로 + 시작 cursor 좌표.
 /// winit `HoveredFile` 이 N 파일에 대해 N번 발화하므로 `paths` 에 누적.
 #[derive(Debug, Clone, Default)]
 pub struct DropHoverState {
-    pub paths: Vec<std::path::PathBuf>,
+    pub(crate) paths: Vec<std::path::PathBuf>,
     /// hover 시작 시점의 cursor position (physical pixels). `CursorLeft` 또는
     /// `CursorMoved` 가 drag 중에 발화되지 않을 수 있어 보수적으로 시작점만 기록.
-    pub cursor: Option<(f32, f32)>,
+    pub(crate) cursor: Option<(f32, f32)>,
 }
 
 /// Workspace drag-and-drop state (UI-only, not persisted).
 #[derive(Clone)]
 pub struct WsDragState {
-    pub ws_idx: usize,
+    pub(crate) ws_idx: usize,
     /// Current mouse y in logical pixels (for insert position calculation).
-    pub current_y: f32,
+    pub(crate) current_y: f32,
 }
 
 impl DialogState {
@@ -474,9 +474,9 @@ impl DialogState {
 /// file_handler picker popup 의 한 행 — handler 요약.
 #[derive(Debug, Clone)]
 pub struct PickerHandlerSummary {
-    pub id: crate::file::handler::HandlerId,
+    pub(crate) id: crate::file::handler::HandlerId,
     /// 표시용 라벨. i18n key 가 있으면 번역된 값, 없으면 handler id.
-    pub display: String,
+    pub(crate) display: String,
 }
 
 /// file_handler picker popup 의 상태.
@@ -488,19 +488,19 @@ pub struct PickerHandlerSummary {
 pub struct FileHandlerPickerData {
     /// 원본 dispatch target. picker 가 닫힌 뒤 host 가 handler 를 실행할 때
     /// 사용한다 — `target_display` 는 화면용이라 escape/축약이 들어갈 수 있다.
-    pub target: crate::file::format::FileTarget,
+    pub(crate) target: crate::file::format::FileTarget,
     /// 표시용 — picker 헤더에 보일 대상 (예: 파일 경로).
-    pub target_display: String,
+    pub(crate) target_display: String,
     /// 탐지된 detector — 없을 수도 있음 ($unknown 등 unmatched).
-    pub detector: Option<crate::file::format::DetectorId>,
+    pub(crate) detector: Option<crate::file::format::DetectorId>,
     /// 좌측 list 의 후보들 — handler id 사전순.
-    pub candidates: Vec<PickerHandlerSummary>,
+    pub(crate) candidates: Vec<PickerHandlerSummary>,
     /// 우측 list 의 recent handler ids — 현재 등록된 것만, 저장 파일 순서.
-    pub recent: Vec<PickerHandlerSummary>,
+    pub(crate) recent: Vec<PickerHandlerSummary>,
     /// 현재 선택된 handler. 더블클릭/[열기]로 dispatch.
-    pub selected: Option<crate::file::handler::HandlerId>,
+    pub(crate) selected: Option<crate::file::handler::HandlerId>,
     /// dispatch 결과. host 본체 layer 가 frame 끝에서 소비.
-    pub result: Option<FileHandlerPickerResult>,
+    pub(crate) result: Option<FileHandlerPickerResult>,
 }
 
 /// picker 의 닫기 사유.
