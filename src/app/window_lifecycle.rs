@@ -184,7 +184,8 @@ impl App {
         };
 
         let preset_store = self.core.preset_store.clone();
-        let mut state = crate::state::AppState::new(self.engine_state_mut(), preset_store);
+        let memory = self.core.memory_arc();
+        let mut state = crate::state::AppState::new(self.engine_state_mut(), preset_store, memory);
         if let Some(restored_idx) = restored_idx_after_layout {
             state.switch_workspace(self.engine_state_mut(), restored_idx);
         }

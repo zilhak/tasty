@@ -263,7 +263,11 @@ mod tests {
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
             tasty_presets::PresetStore::load_default(),
         ));
-        let state = AppState::new(&mut engine, preset_store);
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::testing::InMemoryStorage::new(),
+            ));
+        let state = AppState::new(&mut engine, preset_store, memory);
         // image kind는 본래 com.tasty.image plugin이 hello 시 등록한다. 단위 테스트는
         // plugin 프로세스를 띄우지 않으므로 host whitelist 등록을 직접 호출한다.
         crate::engine::surface_registry::builtins::register_image(&engine.surface_registry);

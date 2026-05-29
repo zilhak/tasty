@@ -245,6 +245,10 @@ pub struct AppState {
     /// core 인자 없이 lock 으로 read 할 수 있도록 AppState 에 *clone 보유* 만
     /// 한다 (allocation 동일, owner 는 Core). `create_app_state` 가 inject.
     pub preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
+    /// Memory store 의 Arc clone — Core 가 owner. UI thread (popup draw_fn) 와
+    /// engine state cleanup 이 dispatcher cascade 없이 직접 영속할 때 사용한다.
+    /// `Core::with_memory` 와 같은 lock 정책 (poisoning 시 inner 사용).
+    pub memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub captured_double_tap: Option<String>,
     /// Keyboard events for non-terminal surfaces, consumed during egui rendering.
@@ -545,11 +549,13 @@ impl AppState {
     pub fn new(
         engine: &mut CoreState,
         preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
+        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> Self {
         let sidebar_width = engine.settings.appearance.sidebar_width;
         let active_workspace = engine.restored_active_workspace.take().unwrap_or(0);
         Self {
             preset_store,
+            memory,
             active_workspace,
             settings_open: false,
             plugins_open: false,
@@ -683,7 +689,11 @@ impl AppState {
         engine.command_index.drop_surface(surface_id);
         engine.observer_router.drop_surface(surface_id);
         let scope = tasty_memory::Scope::Surface(surface_id);
-        tasty_memory::with_store(|s| match s.purge_scope(&scope) {
+        let mut guard = match self.memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        match guard.purge_scope(&scope) {
             Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
                 surface_id,
                 regular = stats.regular,
@@ -692,7 +702,7 @@ impl AppState {
             ),
             Ok(_) => {}
             Err(e) => tracing::warn!(surface_id, "memory: purge_scope failed: {e}"),
-        });
+        }
     }
 
     /// Determine the type of the currently focused surface.

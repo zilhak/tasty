@@ -187,11 +187,19 @@ impl Core {
 
     // ─── Memory (영속 store) ───
 
+    /// Memory port 의 Arc clone. AppState 등 *Core 인자가 cascade 로 도달하지
+    /// 못하는 표면* (UI popup draw_fn, state cleanup 등) 에 inject 해 동일
+    /// allocation 의 port 를 공유시킨다.
+    pub(crate) fn memory_arc(
+        &self,
+    ) -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
+        self.memory.clone()
+    }
+
     /// Memory store 의 lock 안에서 함수를 실행한다. Mutex poisoning 시
     /// poison 해제 후 inner 사용 (host 부팅이 store 의 Arc 를 항상 inject
     /// 하므로 None 반환 분기는 없다 — 옛 `tasty_memory::with_store` 의
     /// `Option<R>` 패턴과 달라 호출처가 `Result<R, _>` 만 처리하면 된다).
-    #[allow(dead_code)] // M.1 단계에서 noop — 후속 도메인별 callsite 변환에서 사용 시작
     pub(crate) fn with_memory<R>(
         &self,
         f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,

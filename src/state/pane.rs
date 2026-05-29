@@ -511,16 +511,22 @@ impl AppState {
         }
         // Workspace scope 의 memory entry 정리 (마지막 surface 가 닫혀 workspace 도 사라지는 경로).
         let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
-        tasty_memory::with_store(|s| match s.purge_scope(&ws_scope) {
-            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-                workspace_id,
-                regular = stats.regular,
-                secret = stats.secret,
-                "memory: purged closed-workspace scope",
-            ),
-            Ok(_) => {}
-            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
-        });
+        {
+            let mut guard = match self.memory.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            match guard.purge_scope(&ws_scope) {
+                Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
+                    workspace_id,
+                    regular = stats.regular,
+                    secret = stats.secret,
+                    "memory: purged closed-workspace scope",
+                ),
+                Ok(_) => {}
+                Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
+            }
+        }
         for (sid, pid) in targets {
             self.cleanup_surface(engine, sid, pid);
         }

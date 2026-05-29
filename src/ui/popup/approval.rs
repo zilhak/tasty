@@ -193,7 +193,7 @@ pub fn draw_approval_popup(
         let store = engine.approval_store.clone();
         match store.respond(&current_id, choice_key, Responder::User, comment) {
             Ok(change) => {
-                persist_after_respond(&change.record);
+                persist_after_respond(state, &change.record);
                 state.dialogs.pending_approval_ids.pop_front();
                 state.dialogs.approval_comment_buffer.clear();
                 if state.dialogs.pending_approval_ids.is_empty() {
@@ -211,8 +211,10 @@ pub fn draw_approval_popup(
 
 /// 응답이 store 에 반영된 직후, IPC 핸들러와 같은 영속 경로를 호출한다.
 /// (도메인 layer 는 영속을 호스트에게 위임하므로 직접 호출해야 한다.)
-fn persist_after_respond(record: &ApprovalRecord) {
-    use tasty_memory::{MemoryValue, PutOpts, Scope, with_store};
+/// `state.memory` 의 Arc clone (Core 와 같은 allocation) 으로 영속한다 — UI
+/// thread 가 dispatcher cascade 없이 단발 호출.
+fn persist_after_respond(state: &AppState, record: &ApprovalRecord) {
+    use tasty_memory::{MemoryValue, PutOpts, Scope};
     let scope = match record.request.workspace_id {
         Some(wid) => Scope::Workspace(wid),
         None => Scope::Global,
@@ -229,9 +231,11 @@ fn persist_after_respond(record: &ApprovalRecord) {
         expires_at: None,
         cas: None,
     };
-    if let Some(Err(e)) =
-        with_store(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts))
-    {
+    let mut guard = match state.memory.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    if let Err(e) = guard.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts) {
         tracing::warn!("approval popup: memory put failed: {e}");
     }
 }

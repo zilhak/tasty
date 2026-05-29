@@ -51,7 +51,11 @@ mod tests {
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
             tasty_presets::PresetStore::load_default(),
         ));
-        let mut state = AppState::new(&mut engine, preset_store);
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::testing::InMemoryStorage::new(),
+            ));
+        let mut state = AppState::new(&mut engine, preset_store, memory);
         // 테스트 대상 popup 을 PopupManager 에 등록.
         state.popups.register(PopupState::new(
             "test_popup",

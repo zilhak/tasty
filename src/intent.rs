@@ -254,7 +254,11 @@ mod tests {
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
             tasty_presets::PresetStore::load_default(),
         ));
-        AppState::new(&mut engine, preset_store)
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::testing::InMemoryStorage::new(),
+            ));
+        AppState::new(&mut engine, preset_store, memory)
     }
 
     #[test]
