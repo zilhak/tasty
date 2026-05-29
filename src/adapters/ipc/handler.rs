@@ -386,16 +386,20 @@ fn route_engine_handler(
             memory::handle_plan_update_step(state, engine, caller, id, &request.params)
         }
         // memory: cache (Phase 7.3 — workspace-scoped TTL 캐시)
-        "memory.cache_put" => memory::handle_cache_put(state, engine, caller, id, &request.params),
-        "memory.cache_get" => memory::handle_cache_get(state, engine, caller, id, &request.params),
+        "memory.cache_put" => {
+            memory::handle_cache_put(core, state, engine, caller, id, &request.params)
+        }
+        "memory.cache_get" => {
+            memory::handle_cache_get(core, state, engine, caller, id, &request.params)
+        }
         "memory.cache_invalidate" => {
-            memory::handle_cache_invalidate(state, engine, caller, id, &request.params)
+            memory::handle_cache_invalidate(core, state, engine, caller, id, &request.params)
         }
         "memory.cache_clear" => {
-            memory::handle_cache_clear(state, engine, caller, id, &request.params)
+            memory::handle_cache_clear(core, state, engine, caller, id, &request.params)
         }
         "memory.cache_list" => {
-            memory::handle_cache_list(state, engine, caller, id, &request.params)
+            memory::handle_cache_list(core, state, engine, caller, id, &request.params)
         }
         // approval (휴먼 핸드오프) — await 는 process_ipc 에서 worker thread 로 분리 처리.
         "approval.request" => {

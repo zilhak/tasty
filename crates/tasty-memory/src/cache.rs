@@ -11,7 +11,9 @@
 //! 문자열). 검증은 일반 memory key 와 동일 (`[a-z0-9._-]+`, ≤200 chars —
 //! `tasty.cache.` prefix 와 합쳐 256 한도 안에 들어오도록).
 
-use crate::{ListOpts, MemoryEntry, MemoryError, MemoryStore, MemoryValue, PutOpts, Result, Scope};
+use crate::{
+    ListOpts, MemoryEntry, MemoryError, MemoryStorage, MemoryValue, PutOpts, Result, Scope,
+};
 
 pub const CACHE_KEY_PREFIX: &str = "tasty.cache.";
 pub const CACHE_KEY_MAX: usize = 200;
@@ -45,7 +47,7 @@ fn storage_key(key: &str) -> String {
 
 /// 캐시 entry 쓰기. `ttl_secs` 는 양수 — 0 은 의미가 없어 거부 (`InvalidKey`).
 pub fn cache_put(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     key: &str,
@@ -73,14 +75,18 @@ pub fn cache_put(
 }
 
 /// 캐시 entry 조회. 만료 / 미존재 → `Ok(None)`.
-pub fn cache_get(store: &MemoryStore, workspace_id: u32, key: &str) -> Result<Option<MemoryEntry>> {
+pub fn cache_get(
+    store: &dyn MemoryStorage,
+    workspace_id: u32,
+    key: &str,
+) -> Result<Option<MemoryEntry>> {
     validate_cache_key(key)?;
     store.get(&Scope::Workspace(workspace_id), &storage_key(key))
 }
 
 /// 단일 entry 무효화. 없으면 `Ok(())` (idempotent).
 pub fn cache_invalidate(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     key: &str,
@@ -98,7 +104,7 @@ pub fn cache_invalidate(
 /// workspace 의 모든 캐시 entry 삭제 (owner 가 modify 권한 있는 entry 만).
 ///
 /// Returns: 삭제된 entry 수.
-pub fn cache_clear(store: &mut MemoryStore, owner: &str, workspace_id: u32) -> Result<usize> {
+pub fn cache_clear(store: &mut dyn MemoryStorage, owner: &str, workspace_id: u32) -> Result<usize> {
     let scope = Scope::Workspace(workspace_id);
     let opts = ListOpts {
         prefix: Some(CACHE_KEY_PREFIX.to_string()),
@@ -114,7 +120,7 @@ pub fn cache_clear(store: &mut MemoryStore, owner: &str, workspace_id: u32) -> R
 }
 
 /// workspace 의 캐시 키 목록 (정렬, prefix 제거된 형태).
-pub fn cache_list(store: &MemoryStore, workspace_id: u32) -> Result<Vec<String>> {
+pub fn cache_list(store: &dyn MemoryStorage, workspace_id: u32) -> Result<Vec<String>> {
     let opts = ListOpts {
         prefix: Some(CACHE_KEY_PREFIX.to_string()),
         ..Default::default()
