@@ -43,7 +43,7 @@ pub mod testing;
 pub use port::MemoryStorage;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, ErrorCode, OptionalExtension, params};
@@ -1349,56 +1349,25 @@ pub fn default_db_path() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty").join("memory.db"))
 }
 
-// ---- 싱글톤 ----
+// ---- Init helper ----
 //
-// Phase D.3.C.M.1 — STORE 를 `Arc<Mutex<MemoryStore>>` 로 보유. `with_store` 는
-// 호환 layer 로 그대로 유지하되, 외부 (host bin 의 `Core.memory`) 가 *같은
-// allocation* 의 Arc clone 을 보유할 수 있도록 `store_arc()` 노출. 이후
-// 도메인별 callsite 마이그레이션에서 `Core.with_memory(...)` 로 점진 치환되며
-// 모두 옮겨지면 본 싱글톤 폐기.
-
-static STORE: OnceLock<Arc<Mutex<MemoryStore>>> = OnceLock::new();
+// Phase D.3.C.M.19 — 글로벌 `OnceLock<STORE>` + `with_store` 인프라 폐기.
+// host 가 `init_with_config` 로 Arc 를 받아 `Core.memory` 에 직접 inject 한다.
 
 /// 앱 시작 시 1회. 기본 config 로 연다.
-pub fn init() -> std::result::Result<(), MemoryInitError> {
+pub fn init() -> std::result::Result<Arc<Mutex<MemoryStore>>, MemoryInitError> {
     init_with_config(MemoryConfig::default())
 }
 
 /// 앱 시작 시 1회. Settings.memory 에서 도출한 [`MemoryConfig`] 로 연다.
-/// 이미 초기화된 상태면 no-op (덮어쓰기 안 함).
-pub fn init_with_config(config: MemoryConfig) -> std::result::Result<(), MemoryInitError> {
-    if STORE.get().is_some() {
-        return Ok(());
-    }
+/// 새 `Arc<Mutex<MemoryStore>>` 를 반환 — caller (host bin 의 boot) 가 Core 에 inject.
+pub fn init_with_config(
+    config: MemoryConfig,
+) -> std::result::Result<Arc<Mutex<MemoryStore>>, MemoryInitError> {
     let path = default_db_path().ok_or(MemoryInitError::HomeDirMissing)?;
     let store = MemoryStore::open_with_config(&path, config)?;
     tracing::info!("opened memory.db at {}", path.display());
-    if STORE.set(Arc::new(Mutex::new(store))).is_err() {
-        // race: 다른 스레드가 우리보다 먼저 set. 그 store 가 유지되므로 동작 무결성 유지.
-        tracing::debug!("memory STORE race: another thread initialized first");
-    }
-    Ok(())
-}
-
-/// 테스트: 이미 열린 store 를 싱글톤으로 등록.
-#[cfg(test)]
-pub fn init_with(store: MemoryStore) {
-    if STORE.set(Arc::new(Mutex::new(store))).is_err() {
-        tracing::debug!("memory STORE race in test: already initialized");
-    }
-}
-
-/// 싱글톤 접근. `init()` 전이면 `None`.
-pub fn with_store<T>(f: impl FnOnce(&mut MemoryStore) -> T) -> Option<T> {
-    let arc = STORE.get()?;
-    let mut guard: MutexGuard<'_, MemoryStore> = arc.lock().ok()?;
-    Some(f(&mut guard))
-}
-
-/// 싱글톤의 Arc clone. host 가 `Core.memory` 에 inject 해 *같은 allocation* 의
-/// store 를 공유한다. `init()` 전이면 `None`.
-pub fn store_arc() -> Option<Arc<Mutex<MemoryStore>>> {
-    STORE.get().cloned()
+    Ok(Arc::new(Mutex::new(store)))
 }
 
 pub(crate) fn unix_ms_now() -> i64 {

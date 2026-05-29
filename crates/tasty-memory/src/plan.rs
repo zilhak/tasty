@@ -446,7 +446,7 @@ fn now_ms_local() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::HOST_OWNER;
+    use crate::{HOST_OWNER, MemoryStore};
 
     fn open() -> MemoryStore {
         MemoryStore::open_in_memory().expect("open in memory")
