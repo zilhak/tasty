@@ -34,7 +34,10 @@ fn layout_path() -> Option<PathBuf> {
 /// `&mut CoreState` 인 이유: `SavedLayout::capture` 가 새 persist_id 를 발급하면
 /// 해당 surface 인스턴스의 `scrollback_persist_id` 필드에 기록해 다음 capture 가
 /// 같은 ID 를 재사용한다.
-pub fn save_to_disk(engine: &mut CoreState, active_workspace: usize) {
+///
+/// 호출자는 항상 `Core::save_layout` wrapper 를 경유한다 — module 외부에서
+/// 본 fn 을 직접 부르지 않도록 `pub(crate)` 로 제한.
+pub(crate) fn save_to_disk(engine: &mut CoreState, active_workspace: usize) {
     let path = match layout_path() {
         Some(p) => p,
         None => {
