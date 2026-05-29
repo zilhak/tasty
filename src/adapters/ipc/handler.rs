@@ -215,9 +215,13 @@ fn route_engine_handler(
         "surface.parse_since_mark" => {
             surface::handle_parse_since_mark(state, engine, id, &request.params)
         }
-        "surface.commands" => surface::handle_commands(state, engine, id, &request.params),
-        "surface.last_command" => surface::handle_last_command(state, engine, id, &request.params),
-        "surface.command_at" => surface::handle_command_at(state, engine, id, &request.params),
+        "surface.commands" => surface::handle_commands(core, state, engine, id, &request.params),
+        "surface.last_command" => {
+            surface::handle_last_command(core, state, engine, id, &request.params)
+        }
+        "surface.command_at" => {
+            surface::handle_command_at(core, state, engine, id, &request.params)
+        }
         "output.observe_start" => output::handle_observe_start(state, engine, id, &request.params),
         "output.observe_stop" => output::handle_observe_stop(state, engine, id, &request.params),
         "output.observe_list" => output::handle_observe_list(state, engine, id),

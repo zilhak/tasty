@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use crate::core::Core;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
@@ -8,6 +9,7 @@ use super::require_surface_id;
 /// `surface.commands` — OSC 133 으로 인덱싱된 명령 record 들 (오름차순 시간).
 /// `limit` (기본 50), `since` (unix ms updated_at 하한) 지원.
 pub(crate) fn handle_commands(
+    core: &Core,
     _state: &AppState,
     _engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -22,7 +24,7 @@ pub(crate) fn handle_commands(
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
     let since = params.get("since").and_then(|v| v.as_i64());
-    let entries = match read_command_entries(surface_id, limit, since) {
+    let entries = match read_command_entries(core, surface_id, limit, since) {
         Ok(v) => v,
         Err(e) => return e.into_response(id),
     };
@@ -31,6 +33,7 @@ pub(crate) fn handle_commands(
 
 /// `surface.last_command` — 가장 최근 record. 없으면 `null`.
 pub(crate) fn handle_last_command(
+    core: &Core,
     _state: &AppState,
     _engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -40,7 +43,7 @@ pub(crate) fn handle_last_command(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-    let entries = match read_command_entries(surface_id, None, None) {
+    let entries = match read_command_entries(core, surface_id, None, None) {
         Ok(v) => v,
         Err(e) => return e.into_response(id),
     };
@@ -50,6 +53,7 @@ pub(crate) fn handle_last_command(
 
 /// `surface.command_at` — 0-based 인덱스 (음수면 끝에서부터). 범위 밖이면 `null`.
 pub(crate) fn handle_command_at(
+    core: &Core,
     _state: &AppState,
     _engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -63,7 +67,7 @@ pub(crate) fn handle_command_at(
         Some(i) => i,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
     };
-    let entries = match read_command_entries(surface_id, None, None) {
+    let entries = match read_command_entries(core, surface_id, None, None) {
         Ok(v) => v,
         Err(e) => return e.into_response(id),
     };
@@ -92,6 +96,7 @@ impl CommandsReadError {
 }
 
 fn read_command_entries(
+    core: &Core,
     surface_id: u32,
     limit: Option<usize>,
     since: Option<i64>,
@@ -103,21 +108,15 @@ fn read_command_entries(
         until: None,
         offset: None,
     };
-    let entries = match tasty_memory::with_store(|s| {
-        s.list(&tasty_memory::Scope::Surface(surface_id), &opts)
-    }) {
-        Some(Ok(v)) => v,
-        Some(Err(e)) => {
-            return Err(CommandsReadError {
-                message: format!("memory.list failed: {e}"),
-            });
-        }
-        None => {
-            return Err(CommandsReadError {
-                message: "memory store not initialised".to_string(),
-            });
-        }
-    };
+    let entries =
+        match core.with_memory(|s| s.list(&tasty_memory::Scope::Surface(surface_id), &opts)) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(CommandsReadError {
+                    message: format!("memory.list failed: {e}"),
+                });
+            }
+        };
     let out = entries
         .into_iter()
         .filter_map(|e| match e.value {
