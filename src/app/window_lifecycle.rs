@@ -237,25 +237,9 @@ impl App {
         gpu: GpuState,
         mut settings: crate::settings::Settings,
     ) {
-        // state.db / memory.db 초기화는 create_app_state 이전에 반드시 호출.
-        // 첫 윈도우는 `create_new_window` 를 거치지 않고 곧장 이 함수로 진입하므로
-        // 여기서도 호출이 필요하다. 두 init 모두 OnceLock 기반 idempotent.
+        // state.db 초기화는 create_app_state 이전에 반드시 호출. memory.db 는
+        // boot 가 App::new 이전에 이미 초기화함 (D.3.C.M.1) — 여기서 별도 호출하지 않는다.
         let db_init_error = crate::db::init().err();
-
-        let memory_config = tasty_memory::MemoryConfig {
-            entry_max_bytes: settings.memory.entry_max_mb.saturating_mul(1024 * 1024),
-            secret_quota_per_owner_bytes: settings
-                .memory
-                .secret_quota_mb_per_plugin
-                .saturating_mul(1024 * 1024),
-            regular_quota_total_bytes: settings
-                .memory
-                .regular_quota_mb_total
-                .saturating_mul(1024 * 1024),
-        };
-        if let Err(e) = tasty_memory::init_with_config(memory_config) {
-            tracing::warn!("memory.db init failed: {e}");
-        }
 
         // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
         let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
@@ -353,24 +337,7 @@ impl App {
             }
         }
 
-        // memory.db 초기화. state.db와 독립 파일(~/.tasty/memory.db). 현재는
-        // 에이전트 memory.* IPC만 의존하므로 실패해도 앱을 종료시키지 않는다 —
-        // 핸들러가 호출 시점에 "store not initialized"를 응답한다. 1.5에서
-        // surface.meta.* 포워딩이 들어가면 정책 재검토.
-        let memory_config = tasty_memory::MemoryConfig {
-            entry_max_bytes: settings.memory.entry_max_mb.saturating_mul(1024 * 1024),
-            secret_quota_per_owner_bytes: settings
-                .memory
-                .secret_quota_mb_per_plugin
-                .saturating_mul(1024 * 1024),
-            regular_quota_total_bytes: settings
-                .memory
-                .regular_quota_mb_total
-                .saturating_mul(1024 * 1024),
-        };
-        if let Err(e) = tasty_memory::init_with_config(memory_config) {
-            tracing::warn!("memory.db init failed: {e}");
-        }
+        // memory.db 는 boot 가 App::new 이전에 초기화함 (D.3.C.M.1).
 
         // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
         let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
