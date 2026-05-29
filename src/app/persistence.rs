@@ -18,9 +18,10 @@ impl App {
                 }
             }
         }
+        let core = &self.core;
         for (state, engine) in self.parked_states.iter_mut() {
             if engine.settings.general.restore_layout && engine.layout_dirty.should_flush() {
-                crate::engine::layout_persistence::save_to_disk(engine, state.active_workspace);
+                core.save_layout(engine, state.active_workspace);
                 engine.layout_dirty.clear();
             }
         }
@@ -45,12 +46,13 @@ impl App {
                 }
             }
         }
+        let core = &self.core;
         for (state, engine) in self.parked_states.iter_mut() {
             let g = &engine.settings.general;
             let should_save =
                 g.restore_layout && (engine.layout_dirty.is_dirty() || g.restore_terminal_content);
             if should_save {
-                crate::engine::layout_persistence::save_to_disk(engine, state.active_workspace);
+                core.save_layout(engine, state.active_workspace);
                 engine.layout_dirty.clear();
             }
         }
