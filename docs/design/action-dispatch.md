@@ -114,12 +114,56 @@ fn handle_some_intent(...) -> Option<Intent> {  // ❌ 시그니처 자체가 �
 경로로 새 Intent 가 흘러나오면 호출 cascade 가 *재귀적 함수 호출 트리* 가
 되어 큐 모델이 깨진다. 새 Intent 는 항상 *별개의 흐름* 으로 시작되어야 한다.
 
-#### 우선순위 끼어들기 — coroutine pattern (별 문서)
+#### 사용자 입력 대기 — *반드시* 2 Intent 로 분리
 
-Intent A 처리 중 *"내 로직 잠깐 중단하고 이 Intent 부터 먼저 처리해야 하는"*
-케이스는 별 thread 의 coroutine runtime 으로 처리. main thread 와 mpsc 로
-통신하며, A 가 yield → main 의 mutate 적용 → A resume 패턴. 별도 설계 문서에서
-다룬다 (예정: `docs/design/intent-coroutine.md`).
+"확인 popup → 사용자 응답 → 후속 작업" 같은 *사용자 입력 대기* 흐름은
+**한 개의 Intent 처리 안에서 wait 하지 않는다**. 반드시 두 개의 Intent 로 분리.
+
+```rust
+// ✓ OK — 2 event 분리
+// 1차 Intent: popup 띄움 + 관련 정보를 state 에 저장 + 종료
+Intent::PresetApplyRequest { kind, name } 
+    → handler 가 처리:
+        state.dialogs.pending_preset_apply = Some(PresetApplyContext { kind, name });
+        state.dispatch_intent(Intent::OpenPopup { id: "confirm_preset_apply", ... });
+    → 1차 처리 끝.
+
+// 2차 Intent: 사용자 응답 → state 에서 정보 읽어 진행 또는 폐기
+Intent::PresetApplyConfirmed
+    → handler 가 처리:
+        let Some(ctx) = state.dialogs.pending_preset_apply.take() else { return; };
+        // ctx 로 실제 작업.
+
+Intent::PresetApplyCancelled
+    → handler 가 처리:
+        state.dialogs.pending_preset_apply = None;  // 정보 폐기.
+```
+
+```rust
+// ✗ 금지 — 한 Intent 가 사용자 응답을 *기다림*
+fn handle_preset_apply(state: &mut AppState, kind, name) {
+    let confirmed = wait_for_user_confirmation();  // ❌
+    if confirmed { apply(kind, name); }
+}
+```
+
+이유:
+- 사용자 응답 시간이 *무한정* — 한 Intent 가 메모리에 lock 되어 있으면
+  *그 동안의 state 변경* 에 취약 (windowclose, settings change 등).
+- 큐 모델의 일관성: Intent 는 *발화 시점에 결정된 모든 정보* 로 시작되어
+  *유한 시간에 종료* 한다. 사용자 응답이 *Intent 의 일부* 가 되면 큐 정체.
+- 명시적 분리는 state 에 *진행 중인 컨텍스트* 가 보이게 만들어 디버깅 용이.
+
+#### "프로세스 내부 cascade 대기" — coroutine pattern (별 문서)
+
+사용자 입력이 아닌 *시스템 내부* 의 multi-step 흐름 (예: 다른 workflow 의
+acquire 완료, 시스템 자동 step 의 cascade 진행) 은 *경량 thread + coroutine*
+으로 처리할 수 있다. main thread 와 mpsc 로 통신. 별도 설계 문서:
+[`intent-coroutine.md`](./intent-coroutine.md).
+
+**중요**: coroutine 도 *사용자 입력을 yield 로 기다리면 안 된다* — 사용자
+입력은 위의 *2 event 분리* 로만 처리. coroutine 의 yield 는 *시스템 내부의
+유한 시간 cascade 대기* 에만 쓴다.
 
 ## Intent 자료형
 

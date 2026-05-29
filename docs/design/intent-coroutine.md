@@ -7,15 +7,34 @@
 ## 개요
 
 Tasty 의 일반 Intent 는 *fire-and-forget* 모델로 큐를 통과한다 ([action-dispatch.md](./action-dispatch.md)).
-대부분의 경우 이걸로 충분하지만, 다음 같은 흐름은 *명시적 yield* 가 더 자연:
+대부분의 경우 이걸로 충분하지만, *시스템 내부* 의 multi-step 흐름은
+*명시적 yield* 가 더 자연:
 
-- 사용자 확인 popup 발화 → 응답 대기 → 응답 후 후속 작업
-- 다른 Intent 의 *완료를 기다린 후* 자기 로직 계속
-- 다단계 workflow 의 *중간 점에서 다른 Intent 가 끼어들고* 완료된 후 resume
+- 다른 시스템 Intent 의 *mutate 완료를 기다린 후* 자기 로직 계속
+- 다른 workflow 의 lock 획득 / 자원 ready 대기
+- chain workflow: A 완료 → B 시작 → ...
 
 이런 흐름은 *명시적 state machine* 으로도 구현 가능하지만 *코드 가독성* 이
 떨어진다 (step1/step2/step3 분리 + state 안 어디까지 진행됐는지 flag).
 coroutine yield/resume 으로 *직선 코드* 처럼 표현할 수 있으면 유지보수가 쉽다.
+
+### 사용 금지 case — 사용자 입력 대기
+
+**사용자 입력 대기는 coroutine yield 가 아닌 *2 Intent 분리* 로 처리한다**
+([action-dispatch.md 의 "사용자 입력 대기" 절](./action-dispatch.md#사용자-입력-대기--반드시-2-intent-로-분리)).
+
+| 패턴 | 처리 방식 |
+|------|----------|
+| 사용자 확인 popup → 응답 대기 | **2 Intent 분리** (1차 = popup 띄움+state 저장, 2차 = 응답 처리). coroutine 사용 ✗ |
+| popup A → A 안에서 popup B → B 응답 후 A 갱신 | **N Intent 분리**. 매 응답마다 별 시작점 |
+| keyboard 입력 / focus change / window close 등 외부 트리거 대기 | **별 Intent**. 외부 트리거가 *새 시작점* |
+| 다른 시스템 Intent 의 mutate 완료 대기 | **coroutine yield OK** |
+| chain workflow: A 완료 → B 시작 | **coroutine yield OK** |
+| 자원 lock 획득 대기 (semaphore 등) | **coroutine yield OK** |
+
+원칙: **yield 는 *유한 시간 안에 시스템 자체가 완료시키는* 경우에만**. 사용자
+입력처럼 *무한정 외부 트리거를 기다리는* 흐름은 yield 부적합 — coroutine 이
+메모리에 lock 되어 그동안의 state 변화에 취약하고, 큐 정체를 유발한다.
 
 ## 핵심 원칙
 
@@ -72,76 +91,92 @@ main ↔ intent thread 간 3 개 mpsc 채널:
 
 추가로 양쪽 모두 `CoreIntent` 큐와 연결됨 (cascade 발화용).
 
-## 흐름 예시 — preset apply with confirmation
+## 흐름 예시 — chain workflow (사용자 입력 없는 multi-step)
 
-워크플로우: 사용자가 preset 적용 → confirmation popup → "확인" 클릭 → preset 적용.
+워크플로우: 시스템 자동으로 여러 step 을 *순차 적용* 하되, 각 step 마다
+main 의 mutate 완료를 기다림. 사용자 input 없음.
+
+예: *"workspace 전체 surface 의 cwd 정보를 한 번에 갱신 + 그 결과로 file
+watcher 재구성"* 같은 multi-step 시스템 작업.
 
 ```
-시간      main thread                  intent thread (coroutine A)
-                                                                
-t0        user click → 큐에 Apply       
-t1        drain: Apply intent 발견                              
-            ├─ workflow 식별: A         
-            │  (multi-step)             
-            ├─ intent_tx.send(A)  ──►   recv: A 시작            
-                                          │                     
-t2                                        ├─ step1: validate    
-                                          │  preset 존재 확인   
-                                          │  (state read만)    
-                                          │                     
-t3                                        ├─ yield_!(           
-                                          │    OpenPopup        
-                                          │      "confirm_      
-                                          │       preset_apply" 
-                                          │  )                  
-                                          │                     
-                                          ├─ mutate_cmd_rx.send(
-            mutate_cmd_rx.recv() ◄────────┤    OpenPopup + 큐    
-                                          │    enqueue          
-            ├─ Intent::OpenPopup           │   workflow_id=A     
-            │  큐에 enqueue (cascade)      │  )                  
-            ├─ drain 다음 라운드           │                     
-                                          │  (yield 중. resume  
-t4        popup draw_fn 처리             │   대기.)            
-          사용자 "확인" 클릭             │                     
-                                          │                     
-t5        drain: ApplyConfirmed intent   │                     
-            ├─ workflow_id=A 확인         │                     
-            │  ack_tx.send(A, true) ──►   resume               
-                                          │                     
-t6                                        ├─ step2: apply      
-                                          │   preset           
-                                          │                     
-                                          ├─ mutate_cmd_rx.send(
-            mutate_cmd_rx.recv() ◄────────┤    ApplyPreset      
-                                          │  )                  
-            ├─ engine.apply_preset()       │                     
-            ├─ ack_tx.send(A, done) ──►   coroutine return    
-                                          │                     
-t7        workflow 종료                                          
+시간      main thread                       intent thread (coroutine A)
+
+t0        Intent::RefreshAllCwds 큐 도착
+t1        drain: workflow Intent 발견
+            ├─ workflow 식별: A
+            │  (multi-step)
+            ├─ intent_tx.send(A) ──────►    recv: A 시작
+                                              │
+t2                                            ├─ step1: snapshot 현재
+                                              │  cwd 상태 (state read)
+                                              │
+t3                                            ├─ yield_!(
+                                              │    RefreshWorkspace0
+                                              │  )
+                                              │
+                                              ├─ mutate_cmd_rx.send(
+            mutate_cmd_rx.recv() ◄────────────┤    RefreshWorkspace0
+                                              │    workflow_id=A
+            ├─ engine.refresh_ws_cwd(0)        │  )
+            ├─ ack_tx.send(A, done) ──────►   resume
+                                              │
+t4                                            ├─ step2: yield_!(
+                                              │    RefreshWorkspace1
+                                              │  )
+                                              ├─ (mutate_cmd send)
+            mutate_cmd_rx.recv() ◄────────────┤
+            ├─ engine.refresh_ws_cwd(1)        │
+            ├─ ack_tx.send(A, done) ──────►   resume
+                                              │
+t5                                            ├─ stepN: 모든 ws 완료
+                                              │  → file watcher 재구성
+                                              ├─ yield_!(
+                                              │    RebuildFileWatcher
+                                              │  )
+            mutate_cmd_rx.recv() ◄────────────┤
+            ├─ engine.rebuild_watcher()        │
+            ├─ ack_tx.send(A, done) ──────►   coroutine return
+                                              │
+t6        workflow 종료
 ```
+
+각 step 사이가 *유한 시간 안에 system 이 완료시키는* mutate 만 — 사용자
+input 없음. 따라서 coroutine 으로 *직선 코드* 처럼 표현 가능.
 
 ### yield 의 의미 (timeline)
 
 ```
 coroutine A 의 time line:
 
-  ─── step1 ───┬─── (yield) ───┬─── step2 ───┬─── (yield) ───┬── done
-              │                 │              │
-              ▼                 ▲              ▼
-          OpenPopup           ack            ApplyPreset
-          mutate_cmd        (popup           mutate_cmd
-                            응답 후
-                            main 이 send)
+  ─ step1 ─┬─ (yield) ─┬─ step2 ─┬─ (yield) ─┬─ ... ─┬─ stepN ─┬─ (yield) ─┬─ done
+            │           │          │                          │            │
+            ▼           ▲          ▼                          ▼            ▲
+       Refresh0       ack       Refresh1                  RebuildWatcher  ack
+       mutate        (main 이   mutate                    mutate          (main 이
+                     적용 후                                                적용 후
+                     send)                                                  send)
 
 main thread 의 timeline:
 
-  ─── drain ─┬─ recv mutate ─┬─── popup ─┬─ drain ─┬─ ack send ─┬─ recv mutate ─┬─ apply ─┬─ ack send
-             │                │            │         │            │              │         │
-             ▼                ▼            ▼         ▼            ▼              ▼         ▼
-        OpenPopup          popup        user      ApplyConfirmed              engine    workflow
-        enqueue            display      click     intent dispatch             mutate    cleanup
+  ─ drain ─┬─ recv mutate ─┬─ apply ─┬─ ack send ─┬─ recv mutate ─┬─ apply ─┬─ ack send ─┬─ ...
+           │                │          │            │              │          │
+           ▼                ▼          ▼            ▼              ▼          ▼
+       workflow         Refresh0   engine        Refresh1       engine     workflow
+       시작 명령        cmd        mutate        cmd            mutate     계속 진행
+       전송             수신                     수신
 ```
+
+### 사용자 입력이 *없는* 이유 — 위의 흐름은 안전
+
+각 yield 의 *resume 시점* 은 *main 이 mutate 적용을 끝낸* 직후. mutate
+자체는 *유한 시간* 안에 끝남 (외부 트리거 없음). 따라서 coroutine 이
+영구 메모리 lock 되지 않음.
+
+**만약 step 사이에 사용자 input 이 필요하다면?** 그 흐름은 *coroutine 으로
+표현하면 안 된다.* 대신 *N 개의 별도 Intent* 로 분리하고, 각 Intent 가 *완전
+종료* 한 후 사용자 응답이 새 Intent 를 발화한다 (action-dispatch.md 의
+"사용자 입력 대기 — 반드시 2 Intent 로 분리" 절 참조).
 
 ## genawaiter 사용 방식
 
@@ -196,31 +231,30 @@ pub fn run_intent_thread(
 
 ### workflow 작성 예
 
-```rust
-// src/intent_coroutine/workflows/preset_apply.rs
+사용자 입력 *없는* multi-step 시스템 작업 — 위 timeline 의 RefreshAllCwds.
 
-pub struct PresetApplyWorkflow {
-    pub kind: PresetKind,
-    pub name: String,
+```rust
+// src/intent_coroutine/workflows/refresh_all_cwds.rs
+
+pub struct RefreshAllCwdsWorkflow {
+    pub workspace_ids: Vec<u32>,
 }
 
 #[async_trait::async_trait(?Send)]
-impl Workflow for PresetApplyWorkflow {
+impl Workflow for RefreshAllCwdsWorkflow {
     async fn run(self, co: Co<MutateCommand>) {
-        // step1: popup 표시
-        co.yield_(MutateCommand::EnqueueIntent(
-            Intent::OpenPopup {
-                id: "confirm_preset_apply",
-                mode: OpenPopupMode::CenteredFocused,
-            }.from_user_menu("preset_apply_workflow"),
-        )).await;
-        // ← 여기까지 main 이 popup 까지 처리. resume 시 ack 수신.
+        // step1..N: 각 workspace 의 cwd 를 순차 갱신.
+        for ws_id in self.workspace_ids {
+            co.yield_(MutateCommand::Apply(
+                CoreIntent::RefreshWorkspaceCwd { ws_id }
+            )).await;
+            // ← main 이 refresh 완료. resume 시 ack 수신. 사용자 input 없음.
+        }
 
-        // step2: confirm 응답 후 실제 apply
+        // stepFinal: 전체 ws 갱신 후 file watcher 재구성.
         co.yield_(MutateCommand::Apply(
-            CoreIntent::ApplyPresetConfirmed { kind: self.kind, name: self.name }
+            CoreIntent::RebuildFileWatcher
         )).await;
-        // ← main 이 apply 완료. resume.
 
         // workflow 종료.
     }
@@ -229,6 +263,11 @@ impl Workflow for PresetApplyWorkflow {
 
 `Co::yield_().await` 가 *intent thread* 안에서만 일어남 — main thread 의
 winit event loop 는 영향 없음.
+
+**참고 — workflow 가 *아닌* 예**: preset apply 의 confirmation popup. 사용자
+응답 대기는 N 개의 별도 Intent (`PresetApplyRequest` →  state 저장 + popup 발화,
+`PresetApplyConfirmed` → state 읽고 apply, `PresetApplyCancelled` → state 폐기)
+로 분리. coroutine 사용 ✗.
 
 ## main thread 통합
 
@@ -241,11 +280,26 @@ winit event loop 는 영향 없음.
 fn dispatch_one(&mut self, intent: DispatchedIntent) {
     match &intent.body {
         Intent::OpenPopup { .. } => { ... }
-        Intent::ApplyPreset { kind, name } => {
-            // workflow 로 분기
-            self.intent_thread_tx.send(Box::new(PresetApplyWorkflow {
-                kind: *kind, name: name.clone(),
+        Intent::RefreshAllCwds { workspace_ids } => {
+            // workflow 로 분기 — 사용자 input 없는 multi-step.
+            self.intent_thread_tx.send(Box::new(RefreshAllCwdsWorkflow {
+                workspace_ids: workspace_ids.clone(),
             }));
+        }
+        Intent::PresetApplyRequest { kind, name } => {
+            // workflow ✗ — 사용자 입력 대기는 2 Intent 분리. 일반 flat 처리.
+            state.dialogs.pending_preset_apply = Some(PresetApplyContext { kind, name });
+            state.dispatch_intent(
+                Intent::OpenPopup { id: "confirm_preset_apply", ... }
+                    .cascaded_from(intent),
+            );
+        }
+        Intent::PresetApplyConfirmed => {
+            let Some(ctx) = state.dialogs.pending_preset_apply.take() else { return; };
+            apply_preset(state, engine, ctx.kind, ctx.name);
+        }
+        Intent::PresetApplyCancelled => {
+            state.dialogs.pending_preset_apply = None;
         }
         Intent::Noop => {}
     }
@@ -312,25 +366,24 @@ fn poll_intent_thread_commands(&mut self) {
 ## API 예시
 
 ```rust
-// 사용자 코드 (handler)
-fn handle_preset_apply_request(state: &mut AppState, params: ...) {
-    state.dispatch_workflow(PresetApplyWorkflow {
-        kind: params.kind,
-        name: params.name,
-    });
+// 사용자 코드 (handler) — 시스템 multi-step (사용자 입력 없음)
+fn handle_refresh_all_cwds(state: &mut AppState, engine: &CoreState) {
+    let workspace_ids: Vec<u32> = engine.workspaces.iter().map(|w| w.id).collect();
+    state.dispatch_workflow(RefreshAllCwdsWorkflow { workspace_ids });
     // 이 함수는 즉시 return. workflow 는 intent thread 에서 비동기 진행.
 }
 ```
 
 ## PoC 단계 (예정)
 
-1. **단일 workflow PoC** — `PresetApplyWorkflow` 만 구현. main ↔ intent thread
-   mpsc + ack. 동작 확인.
+1. **단일 workflow PoC** — `RefreshAllCwdsWorkflow` 같은 시스템 multi-step
+   하나만 구현. main ↔ intent thread mpsc + ack. 동작 확인.
 2. **multi-workflow 지원** — HashMap 기반 workflow_id 추적.
 3. **timeout / cancel 메커니즘** — Drop 시 workflow cleanup.
 4. **query 패턴 도입** — coroutine 이 main 의 state read 요청.
-5. **production migration** — preset/approval/agent task 같은 multi-step 도메인
-   하나씩 이전.
+5. **production migration** — *사용자 입력이 없는* multi-step 도메인 하나씩
+   이전 (chain workflow, lock acquire wait 등). 사용자 입력 대기 도메인
+   (preset confirm, approval popup 등) 은 *workflow 가 아닌* N Intent 분리로 처리.
 
 ## 비범위 (out of scope)
 
