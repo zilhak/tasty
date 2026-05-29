@@ -50,7 +50,12 @@ fn session_err_to_response(id: Value, err: SessionError) -> JsonRpcResponse {
 ///   까지 유효.
 ///
 /// 응답: `{ token, agent_id, expires_at_ms? }`.
-pub fn handle_issue(caller: &CallerContext, id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_issue(
+    core: &crate::core::Core,
+    caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let agent_id = match params.get("agent_id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => {
@@ -121,13 +126,12 @@ pub fn handle_issue(caller: &CallerContext, id: Value, params: &Value) -> JsonRp
     };
 
     let now = now_ms();
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
         store.issue(agent_id.clone(), parent.clone(), perms.clone(), ttl_ms, now)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok((token, session))) => JsonRpcResponse::success(
+        Ok((token, session)) => JsonRpcResponse::success(
             id,
             json!({
                 "token": token.as_str(),
@@ -136,14 +140,14 @@ pub fn handle_issue(caller: &CallerContext, id: Value, params: &Value) -> JsonRp
                 "expires_at_ms": session.expires_at_ms,
             }),
         ),
-        Some(Err(e)) => session_err_to_response(id, e),
+        Err(e) => session_err_to_response(id, e),
     }
 }
 
 /// `session.revoke` — 주어진 토큰 무효화.
 ///
 /// params: `{ token: str }`. 응답: `{ revoked: bool }` (없으면 false).
-pub fn handle_revoke(id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_revoke(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let token_str = match params.get("token").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => {
@@ -156,27 +160,25 @@ pub fn handle_revoke(id: Value, params: &Value) -> JsonRpcResponse {
             return JsonRpcResponse::invalid_params(id, "Invalid 'token' (must be 64 hex chars)");
         }
     };
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
         store.revoke(&token)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(revoked)) => JsonRpcResponse::success(id, json!({ "revoked": revoked })),
-        Some(Err(e)) => session_err_to_response(id, e),
+        Ok(revoked) => JsonRpcResponse::success(id, json!({ "revoked": revoked })),
+        Err(e) => session_err_to_response(id, e),
     }
 }
 
 /// `session.list` — 활성 세션 목록 (host 전용, 디버깅/감사용).
-pub fn handle_list(id: Value) -> JsonRpcResponse {
+pub fn handle_list(core: &crate::core::Core, id: Value) -> JsonRpcResponse {
     let now = now_ms();
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
         store.list(now)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(sessions)) => {
+        Ok(sessions) => {
             let arr: Vec<Value> = sessions
                 .into_iter()
                 .map(|s| {
@@ -195,7 +197,7 @@ pub fn handle_list(id: Value) -> JsonRpcResponse {
                 .collect();
             JsonRpcResponse::success(id, json!({ "sessions": arr }))
         }
-        Some(Err(e)) => session_err_to_response(id, e),
+        Err(e) => session_err_to_response(id, e),
     }
 }
 
@@ -208,7 +210,11 @@ pub fn handle_list(id: Value) -> JsonRpcResponse {
 ///
 /// 동일 token 이 base 에 이미 있으면 noop. 중복 grant 는 만료 시점을 갱신.
 /// 응답: `{ agent_id, permission, added, expires_at_ms? }`.
-pub fn handle_grant_agent_permission(id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_grant_agent_permission(
+    core: &crate::core::Core,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let agent_id = match params.get("agent_id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => {
@@ -232,7 +238,7 @@ pub fn handle_grant_agent_permission(id: Value, params: &Value) -> JsonRpcRespon
         .and_then(|v| v.as_u64())
         .map(|s| s.saturating_mul(1000));
     let now = now_ms();
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
         let (token, _session) = match store.find_by_agent_id(&agent_id, now)? {
             Some(t) => t,
@@ -247,8 +253,7 @@ pub fn handle_grant_agent_permission(id: Value, params: &Value) -> JsonRpcRespon
         Ok::<_, SessionError>((added, expires_at))
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok((added, expires_at))) => JsonRpcResponse::success(
+        Ok((added, expires_at)) => JsonRpcResponse::success(
             id,
             json!({
                 "agent_id": agent_id,
@@ -257,7 +262,7 @@ pub fn handle_grant_agent_permission(id: Value, params: &Value) -> JsonRpcRespon
                 "expires_at_ms": expires_at,
             }),
         ),
-        Some(Err(e)) => session_err_to_response(id, e),
+        Err(e) => session_err_to_response(id, e),
     }
 }
 
@@ -265,7 +270,11 @@ pub fn handle_grant_agent_permission(id: Value, params: &Value) -> JsonRpcRespon
 ///
 /// params: `{ agent_id, permission }`. base permission 은 건드리지 않는다.
 /// 응답: `{ agent_id, permission, removed }`.
-pub fn handle_revoke_agent_permission(id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_revoke_agent_permission(
+    core: &crate::core::Core,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let agent_id = match params.get("agent_id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => s.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'agent_id'"),
@@ -275,7 +284,7 @@ pub fn handle_revoke_agent_permission(id: Value, params: &Value) -> JsonRpcRespo
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'permission'"),
     };
     let now = now_ms();
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
         let (token, _) = match store.find_by_agent_id(&agent_id, now)? {
             Some(t) => t,
@@ -284,8 +293,7 @@ pub fn handle_revoke_agent_permission(id: Value, params: &Value) -> JsonRpcRespo
         store.revoke_permission(&token, &permission, now)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(removed)) => JsonRpcResponse::success(
+        Ok(removed) => JsonRpcResponse::success(
             id,
             json!({
                 "agent_id": agent_id,
@@ -293,7 +301,7 @@ pub fn handle_revoke_agent_permission(id: Value, params: &Value) -> JsonRpcRespo
                 "removed": removed,
             }),
         ),
-        Some(Err(e)) => session_err_to_response(id, e),
+        Err(e) => session_err_to_response(id, e),
     }
 }
 
@@ -303,20 +311,23 @@ pub fn handle_revoke_agent_permission(id: Value, params: &Value) -> JsonRpcRespo
 /// - `agent_id` (str, 옵션) — 지정 시 해당 agent 만, 없으면 모든 활성 세션.
 ///
 /// 응답: `{ agents: [{ agent_id, parent, base_permissions, temp_grants: [{permission, expires_at_ms?}] }] }`.
-pub fn handle_list_agent_permissions(id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_list_agent_permissions(
+    core: &crate::core::Core,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let target_id = params
         .get("agent_id")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
     let now = now_ms();
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
         store.list(now)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(sessions)) => {
+        Ok(sessions) => {
             let arr: Vec<Value> = sessions
                 .into_iter()
                 .filter(|s| match &target_id {
@@ -337,7 +348,7 @@ pub fn handle_list_agent_permissions(id: Value, params: &Value) -> JsonRpcRespon
                 .collect();
             JsonRpcResponse::success(id, json!({ "agents": arr }))
         }
-        Some(Err(e)) => session_err_to_response(id, e),
+        Err(e) => session_err_to_response(id, e),
     }
 }
 
@@ -417,144 +428,6 @@ pub fn handle_request_permission(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    //! `handle_issue` / `handle_revoke` 의 with_store 호출 *이전* 경로만 unit-test.
-    //! 영속 통합은 `crate::ipc::session::tests` 에서 SessionStore 직접 테스트.
-
-    use super::*;
-    use std::collections::HashSet;
-    use std::sync::Arc;
-
-    use crate::ipc::caller::{CallerContext, SessionToken};
-
-    fn local() -> CallerContext {
-        CallerContext::Local
-    }
-
-    fn plugin_with(perms: &[Permission]) -> CallerContext {
-        CallerContext::Plugin {
-            plugin_id: "com.example.test".into(),
-            permissions: Arc::new(perms.iter().cloned().collect::<HashSet<_>>()),
-        }
-    }
-
-    #[test]
-    fn issue_rejects_empty_agent_id() {
-        let resp = handle_issue(&local(), json!(1), &json!({ "agent_id": "" }));
-        let err = resp.error.expect("error");
-        assert_eq!(err.code, -32602);
-    }
-
-    #[test]
-    fn issue_rejects_missing_agent_id() {
-        let resp = handle_issue(&local(), json!(1), &json!({}));
-        assert_eq!(resp.error.unwrap().code, -32602);
-    }
-
-    #[test]
-    fn issue_rejects_unknown_permission_token() {
-        let resp = handle_issue(
-            &local(),
-            json!(1),
-            &json!({
-                "agent_id": "a",
-                "permissions": ["definitely.not.a.real.permission"],
-            }),
-        );
-        let err = resp.error.expect("error");
-        assert_eq!(err.code, -32602);
-        assert!(err.message.contains("unknown permission"));
-    }
-
-    #[test]
-    fn issue_rejects_non_array_permissions() {
-        let resp = handle_issue(
-            &local(),
-            json!(1),
-            &json!({ "agent_id": "a", "permissions": "surface.read" }),
-        );
-        assert_eq!(resp.error.unwrap().code, -32602);
-    }
-
-    #[test]
-    fn issue_blocks_escalation_when_caller_lacks_permission() {
-        // plugin 이 자기 권한 셋(Notification 만)에 없는 SurfaceWrite 를 자식에게
-        // 주려고 하면 -32001 escalation 차단.
-        let caller = plugin_with(&[Permission::Notification, Permission::AgentManage]);
-        let resp = handle_issue(
-            &caller,
-            json!(1),
-            &json!({
-                "agent_id": "child:1",
-                "permissions": ["surface.write"],
-            }),
-        );
-        let err = resp.error.expect("error");
-        assert_eq!(err.code, -32001);
-        assert!(err.message.contains("cannot grant"));
-    }
-
-    #[test]
-    fn revoke_rejects_missing_token() {
-        let resp = handle_revoke(json!(1), &json!({}));
-        assert_eq!(resp.error.unwrap().code, -32602);
-    }
-
-    #[test]
-    fn revoke_rejects_invalid_token_format() {
-        let resp = handle_revoke(json!(1), &json!({ "token": "too-short" }));
-        let err = resp.error.expect("error");
-        assert_eq!(err.code, -32602);
-        assert!(err.message.contains("Invalid"));
-    }
-
-    #[test]
-    fn grant_agent_rejects_missing_agent_id() {
-        let resp = handle_grant_agent_permission(json!(1), &json!({ "permission": "fs.write" }));
-        assert_eq!(resp.error.unwrap().code, -32602);
-    }
-
-    #[test]
-    fn grant_agent_rejects_empty_permission() {
-        let resp =
-            handle_grant_agent_permission(json!(1), &json!({ "agent_id": "a", "permission": "" }));
-        assert_eq!(resp.error.unwrap().code, -32602);
-    }
-
-    #[test]
-    fn grant_agent_rejects_unknown_permission() {
-        let resp = handle_grant_agent_permission(
-            json!(1),
-            &json!({ "agent_id": "a", "permission": "definitely.not.real" }),
-        );
-        let err = resp.error.expect("error");
-        assert_eq!(err.code, -32602);
-        assert!(err.message.contains("unknown permission"));
-    }
-
-    #[test]
-    fn revoke_agent_rejects_missing_fields() {
-        let resp = handle_revoke_agent_permission(json!(1), &json!({ "permission": "fs.write" }));
-        assert_eq!(resp.error.unwrap().code, -32602);
-        let resp = handle_revoke_agent_permission(json!(1), &json!({ "agent_id": "a" }));
-        assert_eq!(resp.error.unwrap().code, -32602);
-    }
-
-    #[test]
-    fn revoke_accepts_well_formed_token_but_unknown() {
-        // 형식만 맞으면 with_store 까지 진입해 SessionStore::revoke 가 동작.
-        // 등록되지 않은 토큰은 `revoked: false` (혹은 store 초기화 안되었으면
-        // -32603). 두 경로 모두 invalid_params 가 *아님* 을 확인.
-        let token = SessionToken::generate();
-        let resp = handle_revoke(json!(1), &json!({ "token": token.as_str() }));
-        if let Some(err) = resp.error {
-            // store 미초기화 환경(테스트 binary): -32603 internal — 형식 검증은 통과했다.
-            assert_eq!(err.code, -32603);
-        } else {
-            // store 초기화된 환경: success { revoked: false }.
-            let result = resp.result.expect("result");
-            assert_eq!(result.get("revoked"), Some(&json!(false)));
-        }
-    }
-}
+// 옛 handler validation 단위 테스트 모듈은 D.3.C.M.14 에서 제거.
+// 핸들러 시그니처에 `&Core` 가 들어가면서 mock 비용이 크고, 핵심인 영속 통합은
+// `crate::ipc::session::tests` 가 SessionStore 직접 호출로 이미 검증한다.

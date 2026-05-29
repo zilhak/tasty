@@ -268,7 +268,7 @@ pub(crate) fn elevation_grant_decision(
 }
 
 /// I/O wrapper — `elevation_grant_decision` 결과를 SessionStore 에 적용.
-pub(super) fn apply_elevation_grant_if_any(record: &ApprovalRecord, choice: &str) {
+pub(super) fn apply_elevation_grant_if_any(core: &Core, record: &ApprovalRecord, choice: &str) {
     let Some((agent_id, permission, ttl_ms)) = elevation_grant_decision(record, choice) else {
         return;
     };
@@ -276,10 +276,7 @@ pub(super) fn apply_elevation_grant_if_any(record: &ApprovalRecord, choice: &str
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    // SessionStore 는 구체 `MemoryStore` 타입만 받으므로 trait-object 인
-    // `core.with_memory` 로 옮길 수 없다. M.4 잔여 — SessionStore 에 trait
-    // 시그니처를 도입하거나 SessionStore 본체를 trait 기반으로 옮길 때 함께 처리.
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = crate::ipc::session::SessionStore::new(mem, tasty_memory::HOST_OWNER);
         let token = match store.find_by_agent_id(&agent_id, now_ms)? {
             Some((t, _)) => t,
@@ -292,7 +289,7 @@ pub(super) fn apply_elevation_grant_if_any(record: &ApprovalRecord, choice: &str
         store.grant_permission(&token, &permission, ttl_ms, now_ms)
     });
     match result {
-        Some(Ok(added)) => {
+        Ok(added) => {
             tracing::info!(
                 agent_id,
                 permission,
@@ -301,15 +298,12 @@ pub(super) fn apply_elevation_grant_if_any(record: &ApprovalRecord, choice: &str
                 "capability_elevation grant applied"
             );
         }
-        Some(Err(e)) => {
+        Err(e) => {
             tracing::warn!(
                 agent_id,
                 permission,
                 "capability_elevation grant failed: {e}"
             );
-        }
-        None => {
-            tracing::warn!("capability_elevation grant skipped: memory store not initialized");
         }
     }
 }

@@ -544,9 +544,9 @@ fn route_engine_handler(
             agent::handle_rate_limit_status(core, state, engine, caller, id, &request.params)
         }
         // session.* — Phase 6.2c (자식 agent 신원 토큰 관리)
-        "session.issue" => session::handle_issue(caller, id, &request.params),
-        "session.revoke" => session::handle_revoke(id, &request.params),
-        "session.list" => session::handle_list(id),
+        "session.issue" => session::handle_issue(core, caller, id, &request.params),
+        "session.revoke" => session::handle_revoke(core, id, &request.params),
+        "session.list" => session::handle_list(core, id),
         _ => return None,
     })
 }

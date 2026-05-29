@@ -3,6 +3,7 @@
 #![cfg(test)]
 
 use super::*;
+use tasty_memory::MemoryStore;
 use tempfile::TempDir;
 
 fn fresh() -> (TempDir, MemoryStore) {

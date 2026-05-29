@@ -21,7 +21,7 @@
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
-use tasty_memory::{ListOpts, MemoryError, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_memory::{ListOpts, MemoryError, MemoryStorage, MemoryValue, PutOpts, Scope};
 
 use crate::ipc::caller::SessionToken;
 use crate::plugin::manifest::Permission;
@@ -137,12 +137,12 @@ impl From<serde_json::Error> for SessionError {
 pub type Result<T> = std::result::Result<T, SessionError>;
 
 pub struct SessionStore<'a> {
-    mem: &'a mut MemoryStore,
+    mem: &'a mut dyn MemoryStorage,
     owner: String,
 }
 
 impl<'a> SessionStore<'a> {
-    pub fn new(mem: &'a mut MemoryStore, owner: impl Into<String>) -> Self {
+    pub fn new(mem: &'a mut dyn MemoryStorage, owner: impl Into<String>) -> Self {
         Self {
             mem,
             owner: owner.into(),

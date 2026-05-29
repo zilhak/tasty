@@ -15,7 +15,7 @@ impl App {
         &mut self,
         cmd: &IpcCommand,
     ) -> Option<host_ipc::caller::CallerContext> {
-        let caller = match resolve_caller_from_envelope(&cmd.request) {
+        let caller = match resolve_caller_from_envelope(&self.core, &cmd.request) {
             Ok(c) => c,
             Err(resp) => {
                 send_response(&cmd.response_tx, resp);

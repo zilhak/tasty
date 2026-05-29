@@ -219,13 +219,25 @@ impl App {
                 &cmd.request.params,
             ),
             "plugin.grant_agent_permission" => {
-                host_ipc::handler::session::handle_grant_agent_permission(id, &cmd.request.params)
+                host_ipc::handler::session::handle_grant_agent_permission(
+                    &self.core,
+                    id,
+                    &cmd.request.params,
+                )
             }
             "plugin.revoke_agent_permission" => {
-                host_ipc::handler::session::handle_revoke_agent_permission(id, &cmd.request.params)
+                host_ipc::handler::session::handle_revoke_agent_permission(
+                    &self.core,
+                    id,
+                    &cmd.request.params,
+                )
             }
             "plugin.list_agent_permissions" => {
-                host_ipc::handler::session::handle_list_agent_permissions(id, &cmd.request.params)
+                host_ipc::handler::session::handle_list_agent_permissions(
+                    &self.core,
+                    id,
+                    &cmd.request.params,
+                )
             }
             "plugin.audit_query" => {
                 host_ipc::handler::audit::handle_query(&self.core, id, &cmd.request.params)

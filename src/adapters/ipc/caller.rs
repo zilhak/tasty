@@ -381,6 +381,7 @@ mod tests {
 /// memory store 가 초기화되지 않은 경우 (`with_store` 가 `None`): 토큰이 있어도
 /// 검증 불가이므로 `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
 pub(crate) fn resolve_caller_from_envelope(
+    core: &crate::core::Core,
     request: &crate::ipc::protocol::JsonRpcRequest,
 ) -> Result<CallerContext, crate::ipc::protocol::JsonRpcResponse> {
     use std::collections::HashSet;
@@ -407,15 +408,14 @@ pub(crate) fn resolve_caller_from_envelope(
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let resolved = tasty_memory::with_store(|mem| {
+    let resolved = core.with_memory(|mem| {
         let mut store = crate::ipc::session::SessionStore::new(mem, tasty_memory::HOST_OWNER);
         store.resolve(&token, now_ms)
     });
     let session = match resolved {
-        None => return Err(deny("memory store not initialized")),
-        Some(Err(e)) => return Err(deny(&format!("session lookup failed: {e}"))),
-        Some(Ok(None)) => return Err(deny("session_token unknown/expired/revoked")),
-        Some(Ok(Some(s))) => s,
+        Err(e) => return Err(deny(&format!("session lookup failed: {e}"))),
+        Ok(None) => return Err(deny("session_token unknown/expired/revoked")),
+        Ok(Some(s)) => s,
     };
     let perms: HashSet<crate::plugin::manifest::Permission> = session.permission_set();
     Ok(CallerContext::Agent {
