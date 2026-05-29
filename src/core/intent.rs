@@ -33,6 +33,12 @@ pub(crate) enum DomainIntent {
         body: String,
         source: String,
     },
+    /// 특정 알림 읽음 처리. cascade 가 알림을 보유한 main/parked engine 의
+    /// `notifications.mark_read(id)` 호출.
+    MarkNotificationRead { id: u64 },
+    /// 모든 알림 읽음 처리. cascade 가 main/parked 모두의
+    /// `notifications.mark_all_read()` 호출.
+    MarkAllNotificationsRead,
 
     // ─── Surface lifecycle (D.3.C.E.6) ───
     /// Terminal 이 OSC 7 등으로 cwd 변경을 알림. cascade 가
@@ -69,6 +75,10 @@ pub(crate) enum CoreEvent {
         body: String,
         source: String,
     },
+    /// 특정 알림 읽음 처리 요청.
+    NotificationReadRequested { id: u64 },
+    /// 모든 알림 읽음 처리 요청.
+    AllNotificationsReadRequested,
 
     // ─── Surface lifecycle (D.3.C.E.6) ───
     /// Surface 의 cwd 변경 알림. cascade 가 tab display name / layout dirty 갱신.

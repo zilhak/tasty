@@ -272,6 +272,12 @@ impl Core {
                 body,
                 source,
             }]),
+            DomainIntent::MarkNotificationRead { id } => {
+                Ok(vec![CoreEvent::NotificationReadRequested { id }])
+            }
+            DomainIntent::MarkAllNotificationsRead => {
+                Ok(vec![CoreEvent::AllNotificationsReadRequested])
+            }
             DomainIntent::SurfaceCwdChanged { surface_id } => {
                 Ok(vec![CoreEvent::SurfaceCwdChanged { surface_id }])
             }

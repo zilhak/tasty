@@ -26,7 +26,10 @@ pub(crate) fn draw_notification_content_inner(
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.small_button(t("button.mark_all_read")).clicked() {
-                engine.notifications.mark_all_read();
+                state.dispatch_intent(
+                    crate::core::intent::DomainIntent::MarkAllNotificationsRead
+                        .from_user_menu("notification_panel.mark_all_read"),
+                );
             }
         });
     });
@@ -135,7 +138,10 @@ pub(crate) fn draw_notification_content_inner(
             }
 
             if let Some(id) = mark_read_id {
-                engine.notifications.mark_read(id);
+                state.dispatch_intent(
+                    crate::core::intent::DomainIntent::MarkNotificationRead { id }
+                        .from_user_menu("notification_panel.mark_read"),
+                );
             }
             if let Some(ws_id) = jump_to_ws {
                 if let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id) {

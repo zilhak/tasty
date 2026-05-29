@@ -38,6 +38,12 @@ impl App {
             } => {
                 self.cascade_notification_pushed(ws_id, surface_id, title, body, source);
             }
+            CoreEvent::NotificationReadRequested { id } => {
+                self.cascade_notification_read(id);
+            }
+            CoreEvent::AllNotificationsReadRequested => {
+                self.cascade_all_notifications_read();
+            }
             CoreEvent::SurfaceCwdChanged { surface_id } => {
                 self.cascade_surface_cwd_changed(surface_id);
             }
@@ -199,6 +205,29 @@ impl App {
                     body,
                     source,
                 });
+        }
+    }
+
+    /// 특정 알림 읽음 처리 cascade — 알림을 보유한 첫 main/parked engine 에 적용.
+    /// NotificationId 는 모든 engine 에 걸쳐 unique 라 첫 매칭만 처리.
+    fn cascade_notification_read(&mut self, id: u64) {
+        for main in self.main_windows_iter_mut() {
+            main.engine_state.notifications.mark_read(id);
+            main.mark_dirty();
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            engine.notifications.mark_read(id);
+        }
+    }
+
+    /// 모든 알림 읽음 처리 cascade — main/parked 모두 적용.
+    fn cascade_all_notifications_read(&mut self) {
+        for main in self.main_windows_iter_mut() {
+            main.engine_state.notifications.mark_all_read();
+            main.mark_dirty();
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            engine.notifications.mark_all_read();
         }
     }
 }

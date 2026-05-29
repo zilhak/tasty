@@ -91,7 +91,10 @@ impl MainWindow {
                     .from_user_shortcut("toggle_notifications"),
                 );
                 if will_open {
-                    engine.notifications.mark_all_read();
+                    state.dispatch_intent(
+                        crate::core::intent::DomainIntent::MarkAllNotificationsRead
+                            .from_user_shortcut("toggle_notifications"),
+                    );
                 }
             }
             "toggle_clipboard_viewer" => {

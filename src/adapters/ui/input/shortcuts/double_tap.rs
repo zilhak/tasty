@@ -33,7 +33,10 @@ impl MainWindow {
                 .from_user_shortcut("toggle_notifications_double_tap"),
             );
             if will_open {
-                self.engine_state.notifications.mark_all_read();
+                self.state.dispatch_intent(
+                    crate::core::intent::DomainIntent::MarkAllNotificationsRead
+                        .from_user_shortcut("toggle_notifications_double_tap"),
+                );
             }
             return true;
         }
