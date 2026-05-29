@@ -623,11 +623,17 @@ fn surface_belongs_to_pane(engine: &CoreState, surface_id: u32, pane_id: u32) ->
 }
 
 /// Apply metadata key-value pairs to a surface.
-fn apply_meta(surface_id: u32, meta: Option<&serde_json::Map<String, serde_json::Value>>) {
+pub(crate) fn apply_meta(
+    state: &AppState,
+    surface_id: u32,
+    meta: Option<&serde_json::Map<String, serde_json::Value>>,
+) {
     if let Some(map) = meta {
         for (key, value) in map {
             if let Some(v) = value.as_str() {
-                if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(surface_id, key, v) {
+                if let Err(e) =
+                    crate::surface_meta::SurfaceMetaStore::set(&state.memory, surface_id, key, v)
+                {
                     tracing::warn!(
                         "surface_meta set failed for surface {surface_id} key '{key}': {e}"
                     );

@@ -681,7 +681,7 @@ impl AppState {
             crate::scrollback_store::delete(&pid);
         }
         engine.pending_scrollback_inject.remove(&surface_id);
-        if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(surface_id) {
+        if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(&self.memory, surface_id) {
             tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
         }
         self.markdown_views.drop_view(surface_id);

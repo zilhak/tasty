@@ -129,6 +129,7 @@ impl App {
             {
                 engine.input_simulation_enabled = self.input_simulation_enabled;
             }
+            engine.memory = Some(self.core.memory_arc());
             self.engine_state = Some(engine);
         }
 

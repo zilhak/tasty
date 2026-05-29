@@ -22,6 +22,8 @@ use super::scrollback::capture_scrollback_to_disk;
 /// `capture_scrollback_to_disk` 가 자동으로 fresh ID 를 재발급해 self-heal.
 type SeenRefs = std::collections::HashSet<String>;
 
+type MemArc = std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>;
+
 impl SavedLayout {
     /// Capture current layout from engine state.
     ///
@@ -31,12 +33,19 @@ impl SavedLayout {
     pub fn capture(engine: &mut CoreState, active_workspace: usize) -> Self {
         let registry = engine.surface_registry.clone();
         let capture_scrollback = engine.settings.general.restore_terminal_content;
+        let memory = engine.memory.clone();
         let mut seen_refs = SeenRefs::new();
         let workspaces: Vec<SavedWorkspace> = engine
             .workspaces
             .iter_mut()
             .map(|ws| {
-                SavedWorkspace::capture(ws, registry.as_ref(), capture_scrollback, &mut seen_refs)
+                SavedWorkspace::capture(
+                    ws,
+                    registry.as_ref(),
+                    capture_scrollback,
+                    memory.as_ref(),
+                    &mut seen_refs,
+                )
             })
             .collect();
         Self {
@@ -52,6 +61,7 @@ impl SavedWorkspace {
         ws: &mut Workspace,
         registry: &SurfaceKindRegistry,
         capture_scrollback: bool,
+        memory: Option<&MemArc>,
         seen_refs: &mut SeenRefs,
     ) -> Self {
         // Find the index of the focused pane BEFORE taking mut borrow of pane_layout.
@@ -64,6 +74,7 @@ impl SavedWorkspace {
             ws.pane_layout_mut(),
             registry,
             capture_scrollback,
+            memory,
             seen_refs,
         );
         Self {
@@ -81,6 +92,7 @@ impl SavedPaneNode {
         node: &mut PaneNode,
         registry: &SurfaceKindRegistry,
         capture_scrollback: bool,
+        memory: Option<&MemArc>,
         seen_refs: &mut SeenRefs,
     ) -> Self {
         match node {
@@ -88,6 +100,7 @@ impl SavedPaneNode {
                 pane,
                 registry,
                 capture_scrollback,
+                memory,
                 seen_refs,
             )),
             PaneNode::Split {
@@ -102,12 +115,14 @@ impl SavedPaneNode {
                     first,
                     registry,
                     capture_scrollback,
+                    memory,
                     seen_refs,
                 )),
                 second: Box::new(SavedPaneNode::capture(
                     second,
                     registry,
                     capture_scrollback,
+                    memory,
                     seen_refs,
                 )),
             },
@@ -120,13 +135,14 @@ impl SavedPane {
         pane: &mut Pane,
         registry: &SurfaceKindRegistry,
         capture_scrollback: bool,
+        memory: Option<&MemArc>,
         seen_refs: &mut SeenRefs,
     ) -> Self {
         let active_tab = pane.active_tab;
         let tabs = pane
             .tabs
             .iter_mut()
-            .map(|t| SavedTab::capture(t, registry, capture_scrollback, seen_refs))
+            .map(|t| SavedTab::capture(t, registry, capture_scrollback, memory, seen_refs))
             .collect();
         Self { tabs, active_tab }
     }
@@ -137,6 +153,7 @@ impl SavedTab {
         tab: &mut Tab,
         registry: &SurfaceKindRegistry,
         capture_scrollback: bool,
+        memory: Option<&MemArc>,
         seen_refs: &mut SeenRefs,
     ) -> Self {
         let name = tab.name.clone();
@@ -146,6 +163,7 @@ impl SavedTab {
                 tab.layout_mut(),
                 registry,
                 capture_scrollback,
+                memory,
                 seen_refs,
             )
         } else {
@@ -153,6 +171,7 @@ impl SavedTab {
                 tab.surface_mut(),
                 registry,
                 capture_scrollback,
+                memory,
                 seen_refs,
             ))
         };
@@ -169,6 +188,7 @@ impl SavedSurfaceLayout {
         layout: &mut SurfaceLayout,
         registry: &SurfaceKindRegistry,
         capture_scrollback: bool,
+        memory: Option<&MemArc>,
         seen_refs: &mut SeenRefs,
     ) -> Self {
         match layout {
@@ -177,6 +197,7 @@ impl SavedSurfaceLayout {
                     surface.as_mut(),
                     registry,
                     capture_scrollback,
+                    memory,
                     seen_refs,
                 ))
             }
@@ -193,12 +214,14 @@ impl SavedSurfaceLayout {
                     first,
                     registry,
                     capture_scrollback,
+                    memory,
                     seen_refs,
                 )),
                 second: Box::new(SavedSurfaceLayout::capture_layout(
                     second,
                     registry,
                     capture_scrollback,
+                    memory,
                     seen_refs,
                 )),
             },
@@ -213,11 +236,13 @@ impl SavedSurface {
         surface: &mut dyn Surface,
         registry: &SurfaceKindRegistry,
         capture_scrollback: bool,
+        memory: Option<&MemArc>,
         seen_refs: &mut SeenRefs,
     ) -> Self {
         if let Some(ts) = surface.as_terminal_surface_mut() {
-            let restore_command =
-                crate::surface_meta::SurfaceMetaStore::get(ts.id, "restore.command");
+            let restore_command = memory.and_then(|m| {
+                crate::surface_meta::SurfaceMetaStore::get(m, ts.id, "restore.command")
+            });
 
             let cwd = ts
                 .terminal
@@ -254,7 +279,11 @@ impl SavedSurface {
                 .deferred_spawn
                 .as_ref()
                 .and_then(|s| s.restore_command.clone())
-                .or_else(|| crate::surface_meta::SurfaceMetaStore::get(es.id, "restore.command"));
+                .or_else(|| {
+                    memory.and_then(|m| {
+                        crate::surface_meta::SurfaceMetaStore::get(m, es.id, "restore.command")
+                    })
+                });
             // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
             // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →
             //  파일은 startup GC 가 청소한다.)

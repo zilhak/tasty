@@ -72,7 +72,7 @@ pub fn handle_pane_close(
 
 /// Resolve a surface target from params.
 /// Supports numeric ID and nickname string.
-fn resolve_surface_target(params: &serde_json::Value) -> Option<u32> {
+fn resolve_surface_target(state: &AppState, params: &serde_json::Value) -> Option<u32> {
     let val = params.get("target_surface");
     let val = val?;
     if val.is_null() {
@@ -89,7 +89,7 @@ fn resolve_surface_target(params: &serde_json::Value) -> Option<u32> {
             return Some(n);
         }
         // Try nickname lookup
-        return crate::surface_meta::SurfaceMetaStore::find_by_value("nickname", s);
+        return crate::surface_meta::SurfaceMetaStore::find_by_value(&state.memory, "nickname", s);
     }
     None
 }
@@ -117,7 +117,7 @@ pub fn handle_split(
         _ => SplitDirection::Vertical,
     };
 
-    let target_surface_id = resolve_surface_target(params);
+    let target_surface_id = resolve_surface_target(state, params);
     let target_pane_id = params
         .get("target_pane")
         .and_then(|v| v.as_u64())
@@ -181,7 +181,7 @@ pub fn handle_split(
             match state.split_pane_targeted(engine, resolved_pane_id, direction, cwd, kind, params)
             {
                 Ok((new_pane_id, new_surface_id)) => {
-                    apply_meta(new_surface_id, meta);
+                    apply_meta(state, new_surface_id, meta);
                     JsonRpcResponse::success(
                         id,
                         json!({
@@ -207,7 +207,7 @@ pub fn handle_split(
 
             match state.split_surface_targeted(engine, Some(sid), direction, cwd, kind, params) {
                 Ok(new_surface_id) => {
-                    apply_meta(new_surface_id, meta);
+                    apply_meta(state, new_surface_id, meta);
                     JsonRpcResponse::success(
                         id,
                         json!({

@@ -175,6 +175,12 @@ pub struct CoreState {
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
     pub input_simulation_enabled: bool,
+
+    /// Memory port 의 Arc clone — Core 가 owner. `CoreState::new` 직후에는 빈
+    /// 상태이며 `App::create_app_state` 가 `core.memory_arc()` 로 주입한다.
+    /// engine 내부 (SurfaceMetaStore, layout persistence, pty surface init 등)
+    /// cascade 없이 직접 영속할 때 사용.
+    pub memory: Option<std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>>,
 }
 
 impl CoreState {
@@ -254,6 +260,7 @@ impl CoreState {
             pending_layout_restore: None,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
+            memory: None,
         };
 
         // (Phase E) FileHandler 가 detector 메타 (광고 확장자 등) 를 조회할 수 있게
@@ -340,8 +347,10 @@ impl CoreState {
     /// Push a closed item, automatically injecting restore commands from surface metadata.
     /// Plugins write the `restore.command` meta key directly (host stays agent-agnostic).
     pub fn push_closed_item(&mut self, mut item: crate::model::ClosedItem) {
+        let mem = self.memory.clone();
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
-            crate::surface_meta::SurfaceMetaStore::get(sid, "restore.command")
+            mem.as_ref()
+                .and_then(|m| crate::surface_meta::SurfaceMetaStore::get(m, sid, "restore.command"))
         });
         self.closed_items.push(item);
     }
