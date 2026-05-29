@@ -15,6 +15,7 @@ mod intent;
 mod model;
 mod platform;
 mod ports;
+mod scheduler;
 mod state;
 mod store;
 mod view;
