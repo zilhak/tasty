@@ -21,7 +21,7 @@
 //! - `release` 는 점유 holder 만 가능; 다른 holder 가 `release` 호출하면 no-op.
 
 use serde::{Deserialize, Serialize};
-use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_memory::{ListOpts, MemoryStorage, MemoryValue, PutOpts, Scope};
 use tasty_utils::id::WorkspaceId;
 
 use crate::{AgentError, Result};
@@ -101,12 +101,12 @@ pub struct ReleaseOutcome {
 }
 
 pub struct LeaseStore<'a> {
-    mem: &'a mut MemoryStore,
+    mem: &'a mut dyn MemoryStorage,
     owner: String,
 }
 
 impl<'a> LeaseStore<'a> {
-    pub fn new(mem: &'a mut MemoryStore, owner: impl Into<String>) -> Self {
+    pub fn new(mem: &'a mut dyn MemoryStorage, owner: impl Into<String>) -> Self {
         Self {
             mem,
             owner: owner.into(),

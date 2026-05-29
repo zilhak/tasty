@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_memory::{ListOpts, MemoryStorage, MemoryValue, PutOpts, Scope};
 use tasty_utils::id::WorkspaceId;
 
 use super::{
@@ -13,7 +13,7 @@ use super::{
 use crate::{AgentError, Result};
 
 pub struct TaskStore<'a> {
-    mem: &'a mut MemoryStore,
+    mem: &'a mut dyn MemoryStorage,
     owner: String,
     seq: &'a AtomicU64,
 }
@@ -34,7 +34,11 @@ pub struct TaskCreateOpts {
 
 impl<'a> TaskStore<'a> {
     /// `owner`는 memory의 owner 필드로 들어간다. 호스트는 보통 `"_host"`를 쓴다.
-    pub fn new(mem: &'a mut MemoryStore, owner: impl Into<String>, seq: &'a AtomicU64) -> Self {
+    pub fn new(
+        mem: &'a mut dyn MemoryStorage,
+        owner: impl Into<String>,
+        seq: &'a AtomicU64,
+    ) -> Self {
         Self {
             mem,
             owner: owner.into(),

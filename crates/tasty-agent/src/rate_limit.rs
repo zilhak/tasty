@@ -20,7 +20,7 @@
 //!   만큼 차감. 부족하면 `allowed=false`, 차감 안 함.
 
 use serde::{Deserialize, Serialize};
-use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_memory::{ListOpts, MemoryStorage, MemoryValue, PutOpts, Scope};
 
 use crate::{AgentError, Result};
 
@@ -71,12 +71,12 @@ pub struct ConsumeOutcome {
 }
 
 pub struct RateLimitStore<'a> {
-    mem: &'a mut MemoryStore,
+    mem: &'a mut dyn MemoryStorage,
     owner: String,
 }
 
 impl<'a> RateLimitStore<'a> {
-    pub fn new(mem: &'a mut MemoryStore, owner: impl Into<String>) -> Self {
+    pub fn new(mem: &'a mut dyn MemoryStorage, owner: impl Into<String>) -> Self {
         Self {
             mem,
             owner: owner.into(),

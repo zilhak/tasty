@@ -10,8 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use tasty_agent::{AgentError, TaskId, TaskStore};
-use tasty_memory::with_store;
 
+use crate::core::Core;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
@@ -57,6 +57,7 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
 }
 
 pub(super) fn run_store<F, R>(
+    core: &Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: Value,
@@ -67,17 +68,16 @@ where
     R: serde::Serialize,
 {
     let seq = engine.agent_seq.clone();
-    let result = with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         f(&mut store)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(v)) => match serde_json::to_value(v) {
+        Ok(v) => match serde_json::to_value(v) {
             Ok(json) => JsonRpcResponse::success(id, json),
             Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
         },
-        Some(Err(e)) => agent_err_to_response(id, e),
+        Err(e) => agent_err_to_response(id, e),
     }
 }
 

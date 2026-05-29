@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
@@ -7,13 +8,13 @@ use tasty_agent::{
     AgentError, OnFailure, ReducerInput, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId,
     TaskState, TaskStore, reduce_with_custom,
 };
-use tasty_memory::with_store;
 
 use super::{
     agent_err_to_response, escape_dot, now_ms, run_store, task_id_param, workspace_id_param,
 };
 
 pub fn handle_task_create(
+    core: &Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -53,7 +54,7 @@ pub fn handle_task_create(
     let metadata = params.get("metadata").cloned().unwrap_or(Value::Null);
 
     let ts = now_ms();
-    run_store(state, engine, id, move |store| {
+    run_store(core, state, engine, id, move |store| {
         store.create(tasty_agent::task::TaskCreateOpts {
             workspace_id,
             name,
@@ -71,6 +72,7 @@ pub fn handle_task_create(
 // ============================================================
 
 pub fn handle_task_list(
+    core: &Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -87,14 +89,13 @@ pub fn handle_task_list(
         .map(|s| s.to_string());
 
     let seq = engine.agent_seq.clone();
-    let result: Option<Result<Vec<Task>, AgentError>> = with_store(|mem| {
+    let result: Result<Vec<Task>, AgentError> = core.with_memory(|mem| {
         let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         store.list(workspace_id)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Err(e)) => agent_err_to_response(id, e),
-        Some(Ok(mut tasks)) => {
+        Err(e) => agent_err_to_response(id, e),
+        Ok(mut tasks) => {
             if let Some(filter) = state_filter {
                 tasks.retain(|t| t.state.name() == filter);
             }
@@ -114,6 +115,7 @@ pub fn handle_task_list(
 // ============================================================
 
 pub fn handle_task_get(
+    core: &Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -129,17 +131,14 @@ pub fn handle_task_get(
         Err(e) => return e,
     };
     let seq = engine.agent_seq.clone();
-    let result = with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         store.get(workspace_id, &task_id)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Err(e)) => agent_err_to_response(id, e),
-        Some(Ok(None)) => JsonRpcResponse::error(id, -32004, &format!("task not found: {task_id}")),
-        Some(Ok(Some(t))) => {
-            JsonRpcResponse::success(id, serde_json::to_value(t).unwrap_or(Value::Null))
-        }
+        Err(e) => agent_err_to_response(id, e),
+        Ok(None) => JsonRpcResponse::error(id, -32004, &format!("task not found: {task_id}")),
+        Ok(Some(t)) => JsonRpcResponse::success(id, serde_json::to_value(t).unwrap_or(Value::Null)),
     }
 }
 
@@ -148,6 +147,7 @@ pub fn handle_task_get(
 // ============================================================
 
 pub fn handle_task_cancel(
+    core: &Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -163,7 +163,7 @@ pub fn handle_task_cancel(
         Err(e) => return e,
     };
     let ts = now_ms();
-    run_store(state, engine, id, move |store| {
+    run_store(core, state, engine, id, move |store| {
         let (task, cascaded) = store.cancel(workspace_id, &task_id, ts)?;
         Ok::<_, AgentError>(json!({
             "task": task,
@@ -177,6 +177,7 @@ pub fn handle_task_cancel(
 // ============================================================
 
 pub fn handle_task_retry(
+    core: &Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -196,7 +197,7 @@ pub fn handle_task_retry(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let ts = now_ms();
-    run_store(state, engine, id, move |store| {
+    run_store(core, state, engine, id, move |store| {
         store.retry(workspace_id, &task_id, reset_downstream, ts)
     })
 }
@@ -209,13 +210,14 @@ pub fn handle_task_retry(
 // terminal 상태가 아니면 다시 호출해 폴링한다. 실제 long-poll/wakeup 은
 // scheduler 도입 시 별도 구현.
 pub fn handle_task_await(
+    core: &Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    handle_task_get(state, engine, caller, id, params)
+    handle_task_get(core, state, engine, caller, id, params)
 }
 
 // ============================================================
@@ -223,6 +225,7 @@ pub fn handle_task_await(
 // ============================================================
 
 pub fn handle_task_graph(
+    core: &Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -240,14 +243,13 @@ pub fn handle_task_graph(
         .to_string();
 
     let seq = engine.agent_seq.clone();
-    let result = with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         store.list(workspace_id)
     });
     let tasks = match result {
-        None => return JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Err(e)) => return agent_err_to_response(id, e),
-        Some(Ok(t)) => t,
+        Err(e) => return agent_err_to_response(id, e),
+        Ok(t) => t,
     };
 
     // 사이클은 detection 만 — graph 그리기는 그대로 한다.
@@ -323,6 +325,7 @@ pub fn handle_task_graph(
 }
 
 pub fn handle_task_reduce(
+    core: &Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -358,7 +361,7 @@ pub fn handle_task_reduce(
 
     // 1단계: task 결과 수집 (memory access 안에서).
     let seq = engine.agent_seq.clone();
-    let collected: Option<Result<Vec<ReducerInput>, AgentError>> = with_store(|mem| {
+    let collected: Result<Vec<ReducerInput>, AgentError> = core.with_memory(|mem| {
         let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
         let mut out: Vec<ReducerInput> = Vec::with_capacity(inputs.len());
         for tid in &inputs {
@@ -374,9 +377,8 @@ pub fn handle_task_reduce(
         Ok(out)
     });
     let collected = match collected {
-        None => return JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Err(e)) => return agent_err_to_response(id, e),
-        Some(Ok(v)) => v,
+        Err(e) => return agent_err_to_response(id, e),
+        Ok(v) => v,
     };
 
     // 2단계: reducer 실행 (memory lock 바깥에서; custom shell 은 stdin/stdout I/O).

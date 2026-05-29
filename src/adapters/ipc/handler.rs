@@ -458,62 +458,74 @@ fn route_engine_handler(
         }
         // agent.task_* — Phase 5.1 (DAG + state 머신)
         "agent.task_create" => {
-            agent::handle_task_create(state, engine, caller, id, &request.params)
+            agent::handle_task_create(core, state, engine, caller, id, &request.params)
         }
-        "agent.task_list" => agent::handle_task_list(state, engine, caller, id, &request.params),
-        "agent.task_get" => agent::handle_task_get(state, engine, caller, id, &request.params),
-        "agent.task_await" => agent::handle_task_await(state, engine, caller, id, &request.params),
+        "agent.task_list" => {
+            agent::handle_task_list(core, state, engine, caller, id, &request.params)
+        }
+        "agent.task_get" => {
+            agent::handle_task_get(core, state, engine, caller, id, &request.params)
+        }
+        "agent.task_await" => {
+            agent::handle_task_await(core, state, engine, caller, id, &request.params)
+        }
         "agent.task_cancel" => {
-            agent::handle_task_cancel(state, engine, caller, id, &request.params)
+            agent::handle_task_cancel(core, state, engine, caller, id, &request.params)
         }
-        "agent.task_retry" => agent::handle_task_retry(state, engine, caller, id, &request.params),
-        "agent.task_graph" => agent::handle_task_graph(state, engine, caller, id, &request.params),
+        "agent.task_retry" => {
+            agent::handle_task_retry(core, state, engine, caller, id, &request.params)
+        }
+        "agent.task_graph" => {
+            agent::handle_task_graph(core, state, engine, caller, id, &request.params)
+        }
         // agent.barrier_* / semaphore_* — Phase 5.2 (poll-based 동기화 primitive)
         "agent.barrier_create" => {
-            agent::handle_barrier_create(state, engine, caller, id, &request.params)
+            agent::handle_barrier_create(core, state, engine, caller, id, &request.params)
         }
         "agent.barrier_signal" => {
-            agent::handle_barrier_signal(state, engine, caller, id, &request.params)
+            agent::handle_barrier_signal(core, state, engine, caller, id, &request.params)
         }
         "agent.barrier_await" => {
-            agent::handle_barrier_await(state, engine, caller, id, &request.params)
+            agent::handle_barrier_await(core, state, engine, caller, id, &request.params)
         }
         "agent.barrier_state" => {
-            agent::handle_barrier_state(state, engine, caller, id, &request.params)
+            agent::handle_barrier_state(core, state, engine, caller, id, &request.params)
         }
         "agent.semaphore_create" => {
-            agent::handle_semaphore_create(state, engine, caller, id, &request.params)
+            agent::handle_semaphore_create(core, state, engine, caller, id, &request.params)
         }
         "agent.semaphore_acquire" => {
-            agent::handle_semaphore_acquire(state, engine, caller, id, &request.params)
+            agent::handle_semaphore_acquire(core, state, engine, caller, id, &request.params)
         }
         "agent.semaphore_release" => {
-            agent::handle_semaphore_release(state, engine, caller, id, &request.params)
+            agent::handle_semaphore_release(core, state, engine, caller, id, &request.params)
         }
         // agent.lease_* — Phase 5.3 (협조적 점유 마커 + TTL)
         "agent.lease_acquire" => {
-            agent::handle_lease_acquire(state, engine, caller, id, &request.params)
+            agent::handle_lease_acquire(core, state, engine, caller, id, &request.params)
         }
         "agent.lease_release" => {
-            agent::handle_lease_release(state, engine, caller, id, &request.params)
+            agent::handle_lease_release(core, state, engine, caller, id, &request.params)
         }
-        "agent.lease_list" => agent::handle_lease_list(state, engine, caller, id, &request.params),
+        "agent.lease_list" => {
+            agent::handle_lease_list(core, state, engine, caller, id, &request.params)
+        }
         // agent.task_reduce — Phase 5.4 (결과 합성: first_success / all / merge_json / concat_text / custom)
         "agent.task_reduce" => {
-            agent::handle_task_reduce(state, engine, caller, id, &request.params)
+            agent::handle_task_reduce(core, state, engine, caller, id, &request.params)
         }
         // agent.rate_limit_* — Phase 5.5 (token bucket 시간당 비율 제한)
         "agent.rate_limit_set" => {
-            agent::handle_rate_limit_set(state, engine, caller, id, &request.params)
+            agent::handle_rate_limit_set(core, state, engine, caller, id, &request.params)
         }
         "agent.rate_limit_list" => {
-            agent::handle_rate_limit_list(state, engine, caller, id, &request.params)
+            agent::handle_rate_limit_list(core, state, engine, caller, id, &request.params)
         }
         "agent.rate_limit_remove" => {
-            agent::handle_rate_limit_remove(state, engine, caller, id, &request.params)
+            agent::handle_rate_limit_remove(core, state, engine, caller, id, &request.params)
         }
         "agent.rate_limit_status" => {
-            agent::handle_rate_limit_status(state, engine, caller, id, &request.params)
+            agent::handle_rate_limit_status(core, state, engine, caller, id, &request.params)
         }
         // session.* — Phase 6.2c (자식 agent 신원 토큰 관리)
         "session.issue" => session::handle_issue(caller, id, &request.params),

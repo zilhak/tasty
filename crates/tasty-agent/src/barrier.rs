@@ -14,7 +14,7 @@
 //! - `Closed/TimedOut`: 종착 상태. signal 거부.
 
 use serde::{Deserialize, Serialize};
-use tasty_memory::{ListOpts, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_memory::{ListOpts, MemoryStorage, MemoryValue, PutOpts, Scope};
 use tasty_utils::id::WorkspaceId;
 
 use crate::{AgentError, Result};
@@ -75,12 +75,12 @@ impl Barrier {
 }
 
 pub struct BarrierStore<'a> {
-    mem: &'a mut MemoryStore,
+    mem: &'a mut dyn MemoryStorage,
     owner: String,
 }
 
 impl<'a> BarrierStore<'a> {
-    pub fn new(mem: &'a mut MemoryStore, owner: impl Into<String>) -> Self {
+    pub fn new(mem: &'a mut dyn MemoryStorage, owner: impl Into<String>) -> Self {
         Self {
             mem,
             owner: owner.into(),

@@ -1,33 +1,33 @@
 use serde_json::{Value, json};
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 use tasty_agent::{AgentError, RateLimitStore};
-use tasty_memory::with_store;
 
 use super::{agent_err_to_response, now_ms};
 
-fn run_rate_limit<F, R>(id: Value, f: F) -> JsonRpcResponse
+fn run_rate_limit<F, R>(core: &Core, id: Value, f: F) -> JsonRpcResponse
 where
     F: FnOnce(&mut RateLimitStore<'_>) -> Result<R, AgentError>,
     R: serde::Serialize,
 {
-    let result = with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = RateLimitStore::new(mem, tasty_memory::HOST_OWNER);
         f(&mut store)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(v)) => match serde_json::to_value(v) {
+        Ok(v) => match serde_json::to_value(v) {
             Ok(json) => JsonRpcResponse::success(id, json),
             Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
         },
-        Some(Err(e)) => agent_err_to_response(id, e),
+        Err(e) => agent_err_to_response(id, e),
     }
 }
 
 pub fn handle_rate_limit_set(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -68,12 +68,13 @@ pub fn handle_rate_limit_set(
         None => None,
     };
     let now = now_ms();
-    run_rate_limit(id, move |store| {
+    run_rate_limit(core, id, move |store| {
         store.set(agent, metric, limit, per_ms, burst, now)
     })
 }
 
 pub fn handle_rate_limit_list(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -81,13 +82,14 @@ pub fn handle_rate_limit_list(
     _params: &Value,
 ) -> JsonRpcResponse {
     let now = now_ms();
-    run_rate_limit(id, move |store| {
+    run_rate_limit(core, id, move |store| {
         let all = store.status(now)?;
         Ok(json!({ "total": all.len(), "rate_limits": all }))
     })
 }
 
 pub fn handle_rate_limit_remove(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -98,13 +100,14 @@ pub fn handle_rate_limit_remove(
         Some(s) if !s.is_empty() => s.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'id'"),
     };
-    run_rate_limit(id, move |store| {
+    run_rate_limit(core, id, move |store| {
         store.remove(&rl_id)?;
         Ok(json!({ "ok": true }))
     })
 }
 
 pub fn handle_rate_limit_status(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -120,7 +123,7 @@ pub fn handle_rate_limit_status(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
     let now = now_ms();
-    run_rate_limit(id, move |store| {
+    run_rate_limit(core, id, move |store| {
         let all = store.status(now)?;
         let filtered: Vec<_> = all
             .into_iter()
