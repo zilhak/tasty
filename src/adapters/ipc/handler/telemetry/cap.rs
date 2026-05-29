@@ -484,17 +484,13 @@ pub(super) fn fire_notify(
         "agent={} metric={} value={} ≥ threshold={} (window={:?}, cap={})",
         cap.agent, cap.metric, current, cap.threshold, cap.window, cap.id,
     );
-    let created = engine
-        .notifications
-        .add(ws_id, 0, title.clone(), body.clone());
-    if let Some(nid) = created {
-        state.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
-            id: nid,
-            title,
-            body,
-            source: "telemetry.cap".to_string(),
-        });
-    }
+    state.enqueue_core_intent(crate::core::intent::CoreIntent::PushNotification {
+        ws_id,
+        surface_id: 0,
+        title,
+        body,
+        source: "telemetry.cap".to_string(),
+    });
 }
 
 // ============================================================

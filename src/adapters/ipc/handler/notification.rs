@@ -93,6 +93,7 @@ pub fn handle_notification_create(
         surface_id,
         title,
         body,
+        source: "host".to_string(),
     });
     JsonRpcResponse::success(id, json!({ "created": true }))
 }

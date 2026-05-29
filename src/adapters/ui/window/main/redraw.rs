@@ -45,6 +45,7 @@ impl MainWindow {
                                 surface_id,
                                 title: title.clone(),
                                 body: body.clone(),
+                                source: "host".to_string(),
                             },
                         );
                     }
@@ -69,6 +70,7 @@ impl MainWindow {
                                 surface_id,
                                 title: "Bell".to_string(),
                                 body: String::new(),
+                                source: "host".to_string(),
                             },
                         );
                     }

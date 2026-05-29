@@ -286,10 +286,12 @@ pub fn enqueue_approval(
         .unwrap_or_else(|| t("approval.notification.body_fallback").to_string());
     let workspace = record.request.workspace_id.unwrap_or(0);
     let surface = record.request.surface_id.unwrap_or(0);
-    let _ = engine.notifications.add(
-        workspace,
-        surface,
-        format!("{severity_prefix}{}", record.request.title),
+    let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄 처리.
+    state.enqueue_core_intent(crate::core::intent::CoreIntent::PushNotification {
+        ws_id: workspace,
+        surface_id: surface,
+        title: format!("{severity_prefix}{}", record.request.title),
         body,
-    );
+        source: "host".to_string(),
+    });
 }

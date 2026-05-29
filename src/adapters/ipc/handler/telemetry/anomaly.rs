@@ -56,17 +56,14 @@ pub(super) fn fire_anomaly_notification(
         tasty_telemetry::CALL_BURST_WINDOW_MS / 1000,
         anomaly.id,
     );
-    let created = engine
-        .notifications
-        .add(ws_id, 0, title.clone(), body.clone());
-    if let Some(nid) = created {
-        state.enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
-            id: nid,
-            title,
-            body,
-            source: "telemetry.anomaly".to_string(),
-        });
-    }
+    let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄.
+    state.enqueue_core_intent(crate::core::intent::CoreIntent::PushNotification {
+        ws_id,
+        surface_id: 0,
+        title,
+        body,
+        source: "telemetry.anomaly".to_string(),
+    });
 }
 
 /// `telemetry.anomaly.list` — 영속된 anomaly 레코드 조회. 필터: `agent`, `kind`,

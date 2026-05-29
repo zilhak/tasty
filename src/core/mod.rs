@@ -264,11 +264,13 @@ impl Core {
                 surface_id,
                 title,
                 body,
+                source,
             } => Ok(vec![CoreEvent::NotificationPushRequested {
                 ws_id,
                 surface_id,
                 title,
                 body,
+                source,
             }]),
         }
     }

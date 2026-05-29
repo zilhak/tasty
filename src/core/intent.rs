@@ -20,11 +20,13 @@ pub(crate) enum CoreIntent {
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
     /// notifications store 에 add (coalesce 자동) + host event enqueue.
+    /// `source` 는 host event 의 source 태그 ("host" / "telemetry.cap" 등).
     PushNotification {
         ws_id: u32,
         surface_id: u32,
         title: String,
         body: String,
+        source: String,
     },
 }
 
@@ -44,5 +46,6 @@ pub(crate) enum CoreEvent {
         surface_id: u32,
         title: String,
         body: String,
+        source: String,
     },
 }

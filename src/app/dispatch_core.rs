@@ -54,8 +54,9 @@ impl App {
                 surface_id,
                 title,
                 body,
+                source,
             } => {
-                self.cascade_notification_pushed(ws_id, surface_id, title, body);
+                self.cascade_notification_pushed(ws_id, surface_id, title, body, source);
             }
         }
     }
@@ -132,6 +133,7 @@ impl App {
         surface_id: u32,
         title: String,
         body: String,
+        source: String,
     ) {
         let Some(wid) = self.find_main_with_workspace(ws_id) else {
             tracing::warn!(
@@ -157,7 +159,7 @@ impl App {
                     id: nid,
                     title,
                     body,
-                    source: "host".to_string(),
+                    source,
                 });
         }
     }
