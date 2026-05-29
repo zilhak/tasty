@@ -51,6 +51,7 @@ use tasty_terminal as terminal;
 pub use tasty_themes as theme;
 pub use tasty_utils::path as paths;
 
+pub(crate) use adapters::cli;
 pub(crate) use adapters::ipc;
 pub(crate) use adapters::ui;
 pub(crate) use adapters::ui::preset as preset_ui;
@@ -74,7 +75,6 @@ pub(crate) use file::dispatch as file_dispatch;
 pub(crate) use file::identify_worker;
 pub(crate) use gfx::gpu;
 pub(crate) use gfx::renderer;
-pub(crate) use host_api::cli;
 pub(crate) use host_api::hooks;
 pub(crate) use host_api::hooks::global as global_hooks;
 pub(crate) use host_api::plugin;
