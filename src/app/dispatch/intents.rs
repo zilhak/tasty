@@ -93,6 +93,12 @@ impl App {
             Intent::NewWorkspace { .. } => {
                 crate::intent::workspace::handle(state, engine, intent);
             }
+            Intent::Domain(domain) => {
+                // 본 분기는 D.3.I.3 의 *두 큐 통합* 과도기 — DomainIntent 를
+                // pending_intents 큐로 발화하면 본 분기가 domain 큐로 forwarding.
+                // 실제 cascade 는 직후의 dispatch_pending_domain_intents 가 처리.
+                state.enqueue_domain_intent(domain.clone());
+            }
             Intent::Noop => {}
         }
     }

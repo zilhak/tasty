@@ -46,6 +46,13 @@ pub enum Intent {
     Noop,
     /// UI Intent (popup 발화). 별 enum `UiIntent` 로 분리되어 분류축이 명시된다.
     Ui(UiIntent),
+    /// Domain Intent (영속 도메인 mutate). `crate::core::intent::DomainIntent` 를
+    /// 래핑하므로 같은 큐 (`pending_intents`) 로 발화 가능. dispatch_one_intent
+    /// 에서 `core.apply` 경로로 분기된다.
+    ///
+    /// 마이그레이션 진행: 현재 도메인 variant (ApplyPreset / SavePreset / ...)
+    /// 가 점진적으로 `DomainIntent` 안으로 흡수될 예정.
+    Domain(crate::core::intent::DomainIntent),
 
     // ---- Preset 도메인 ----
     /// Preset 적용. focus 정책은 origin 으로 자동 분기 (User=true, Agent=false).
