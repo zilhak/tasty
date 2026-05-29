@@ -202,139 +202,140 @@ pub enum PendingHostEvent {
 
 pub struct AppState {
     // ── Window-level UI state ──
-    pub active_workspace: usize,
+    pub(crate) active_workspace: usize,
     /// Whether the settings window is open.
-    pub settings_open: bool,
+    pub(crate) settings_open: bool,
     /// Whether the plugins window is open.
-    pub plugins_open: bool,
+    pub(crate) plugins_open: bool,
     /// Persistent UI state for the settings window.
-    pub settings_ui_state: SettingsUiState,
+    pub(crate) settings_ui_state: SettingsUiState,
     /// Cached sidebar width from settings (logical pixels).
-    pub sidebar_width: LogicalPx,
+    pub(crate) sidebar_width: LogicalPx,
     /// Sidebar visibility: false = completely hidden.
-    pub sidebar_visible: bool,
+    pub(crate) sidebar_visible: bool,
     /// Sidebar collapsed: true = compact mode (narrow width, icons only).
-    pub sidebar_collapsed: bool,
+    pub(crate) sidebar_collapsed: bool,
     /// All transient dialog/popup state.
-    pub dialogs: DialogState,
+    pub(crate) dialogs: DialogState,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
-    pub tab_bar_height: PhysicalPx,
+    pub(crate) tab_bar_height: PhysicalPx,
     /// Popup manager for internal popups (notification panel, etc.).
-    pub popups: crate::ui::PopupManager,
+    pub(crate) popups: crate::ui::PopupManager,
     /// Terminal text search state.
-    pub search: crate::search_state::SearchState,
+    pub(crate) search: crate::search_state::SearchState,
     /// TCP listening port scan cache, keyed by surface_id.
     /// Refreshed lazily when the ports popup is opened or visible.
-    pub port_scan: tasty_portscan::PortScanCache,
+    pub(crate) port_scan: tasty_portscan::PortScanCache,
     /// Shared snapshot of background update-check state. Polled hourly.
-    pub update_status: std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
+    pub(crate) update_status:
+        std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
     /// Command palette UI state — query buffer, selection cursor, and a pending
     /// dispatch slot that MainWindow drains each frame.
-    pub command_palette: crate::state::command_palette::CommandPaletteState,
+    pub(crate) command_palette: crate::state::command_palette::CommandPaletteState,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
-    pub toasts: crate::ui::ToastManager,
+    pub(crate) toasts: crate::ui::ToastManager,
     /// Cached recent files list (markdown/html open popups). Loaded from disk at
     /// startup and mutated in-place; each mutation saves back to disk.
-    pub recent_files: crate::recent_files::RecentFiles,
+    pub(crate) recent_files: crate::recent_files::RecentFiles,
     /// Whether the mouse is currently over an open popup (input layer state).
     /// Updated each frame by PopupManager::draw(). Mouse handlers check this
     /// to block events from reaching lower layers (terminal, dividers).
-    pub popup_hovered: bool,
+    pub(crate) popup_hovered: bool,
     /// Preset store 의 Arc clone — Core 가 owner. UI popup 이 draw 흐름에서
     /// core 인자 없이 lock 으로 read 할 수 있도록 AppState 에 *clone 보유* 만
     /// 한다 (allocation 동일, owner 는 Core). `create_app_state` 가 inject.
-    pub preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
+    pub(crate) preset_store: std::sync::Arc<std::sync::Mutex<tasty_presets::PresetStore>>,
     /// Memory store 의 Arc clone — Core 가 owner. UI thread (popup draw_fn) 와
     /// engine state cleanup 이 dispatcher cascade 없이 직접 영속할 때 사용한다.
     /// `Core::with_memory` 와 같은 lock 정책 (poisoning 시 inner 사용).
-    pub memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
-    pub captured_double_tap: Option<String>,
+    pub(crate) captured_double_tap: Option<String>,
     /// Keyboard events for non-terminal surfaces, consumed during egui rendering.
-    pub pending_surface_keys: Vec<PendingKeyEvent>,
+    pub(crate) pending_surface_keys: Vec<PendingKeyEvent>,
     /// Surface close lifecycle 알림 큐. close 직후 enqueue되고, App 메인 루프가
     /// drain하여 `PluginManager::notify_surface_closed`로 dispatch한다.
     /// `state/`는 `plugin/` 의존이 없어 별도 plain struct로 둔다.
-    pub pending_lifecycle_events: Vec<PendingSurfaceClosed>,
+    pub(crate) pending_lifecycle_events: Vec<PendingSurfaceClosed>,
     /// Event Bus 1.0 호스트 자동 발화 큐. 호스트 코드 곳곳에서 `enqueue_host_event`로
     /// push하고, App 메인 루프가 drain해 wire payload로 변환·발화한다.
-    pub pending_host_events: Vec<PendingHostEvent>,
+    pub(crate) pending_host_events: Vec<PendingHostEvent>,
     /// `surface.focused` 발화용 변화 감지 상태. tick마다 `focused_surface_id()`와
     /// 비교해 달라졌으면 `SurfaceFocused`를 enqueue한다. focus 전환 경로가 많아
     /// (키보드/마우스/IPC/탭전환/워크스페이스전환) 각각을 hook하기보다 polling이 단순.
-    pub last_focused_surface_id: Option<u32>,
+    pub(crate) last_focused_surface_id: Option<u32>,
     /// `workspace.activated` 발화용 변화 감지 상태. `active_workspace` 인덱스가
     /// 가리키는 워크스페이스 ID를 기록해 두고, 다음 tick에서 달라졌다면
     /// `WorkspaceActivated`를 enqueue한다.
-    pub last_active_workspace_id: Option<u32>,
+    pub(crate) last_active_workspace_id: Option<u32>,
     /// `tab.focused` 발화용 변화 감지 상태. 활성 워크스페이스의 focused pane이 보유한
     /// 현재 active tab의 (pane_id, tab_id)를 기록. 다음 tick에서 달라졌다면
     /// `TabFocused`를 enqueue한다. pane 전환·in-pane tab 전환을 한꺼번에 다룬다.
-    pub last_focused_tab: Option<(u32, u32)>,
+    pub(crate) last_focused_tab: Option<(u32, u32)>,
     /// `tab.created`/`tab.closed`/`tab.moved` 발화용 polling 상태. tab_id →
     /// (pane_id, workspace_id, kind) 스냅샷. `None`은 아직 한 번도 polling하지
     /// 않은 상태(초기 로드된 탭에 대해 spurious `tab.created`가 발화되는 것을 막기
     /// 위해 첫 호출에서는 스냅샷만 만들고 이벤트를 enqueue하지 않는다).
-    pub last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
+    pub(crate) last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
     /// `pane.created`/`pane.closed` polling 상태. pane_id → workspace_id 스냅샷.
     /// `last_tab_locations`와 동일한 초기 베이스라인 정책 적용.
-    pub last_pane_locations: Option<std::collections::HashMap<u32, u32>>,
+    pub(crate) last_pane_locations: Option<std::collections::HashMap<u32, u32>>,
     /// `workspace.created`/`workspace.closed` polling 상태. workspace_id → name
     /// 스냅샷. 첫 호출에서는 베이스라인만 기록.
-    pub last_workspace_snapshot: Option<std::collections::HashMap<u32, String>>,
+    pub(crate) last_workspace_snapshot: Option<std::collections::HashMap<u32, String>>,
     /// `surface.created` polling 상태. surface_id → (tab_id, pane_id, ws_id, kind)
     /// 스냅샷. 첫 호출은 베이스라인만 기록. `surface.closed`는 별도 큐로
     /// 이미 발화하므로 여기서는 신규 생성만 감지한다.
-    pub last_surface_locations:
+    pub(crate) last_surface_locations:
         Option<std::collections::HashMap<u32, (u32, u32, u32, &'static str)>>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
-    pub markdown_views: crate::ui::surface::markdown::view::MarkdownViewStore,
+    pub(crate) markdown_views: crate::ui::surface::markdown::view::MarkdownViewStore,
 
     /// Per-surface host view state for `ImagePanel` (pixel buffer, textures, edit state,
     /// undo history, brush settings, popup buffers).
-    pub image_views: crate::ui::surface::image::view::ImageViewStore,
+    pub(crate) image_views: crate::ui::surface::image::view::ImageViewStore,
 
     /// 사이드바 도구 메뉴 항목. 활성 plugin의 `[[contributes.tool]]`
     /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시
     /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
-    pub tool_registry: crate::plugin::tool_registry::ToolRegistry,
+    pub(crate) tool_registry: crate::plugin::tool_registry::ToolRegistry,
 
     /// 도구 메뉴 항목 클릭 시 publish해야 할 이벤트 큐. tools_menu가 `&mut AppState`만
     /// 가지므로 PluginManager에 직접 접근할 수 없어, 클릭 시점에 enqueue하고 App 메인
     /// 루프가 drain해 `PluginManager::emit_host_event`로 발화한다.
-    pub pending_tool_events: Vec<(String, serde_json::Value)>,
+    pub(crate) pending_tool_events: Vec<(String, serde_json::Value)>,
 
     /// `ToolAction::OpenPopup` 클릭 시 열어야 할 popup 큐.
     /// (plugin_id, popup_id, context). App 메인 루프가 drain해
     /// `PluginManager::open_popup_instance`로 dispatch.
-    pub pending_popup_opens: Vec<(String, String, serde_json::Value)>,
+    pub(crate) pending_popup_opens: Vec<(String, String, serde_json::Value)>,
 
     /// file_handler 디스패치 결과가 plugin IPC method 일 때의 호출 큐.
     /// `(ipc_method, target)`. App 메인 루프가 drain 해 `PluginManager` 로 forward.
-    pub pending_handler_ipc: Vec<(String, crate::file::format::FileTarget)>,
+    pub(crate) pending_handler_ipc: Vec<(String, crate::file::format::FileTarget)>,
 
     /// 외부 drag&drop 으로 파일이 hover 중인 상태. `HoveredFile` 마다 path 누적,
     /// `HoveredFileCancelled` / `DroppedFile` 시 해제. 비주얼 overlay 의 입력.
-    pub drop_hover: Option<DropHoverState>,
+    pub(crate) drop_hover: Option<DropHoverState>,
 
     /// `DroppedFile` 이벤트로 받은 경로 큐. frame end 에서 drain 해
     /// `file_dispatch::dispatch_file_target` 으로 보낸다.
-    pub pending_file_drops: Vec<std::path::PathBuf>,
+    pub(crate) pending_file_drops: Vec<std::path::PathBuf>,
 
     /// plugin popup 렌더 중 수집된 사용자 입력. App 메인 루프가 drain해
     /// `PluginManager::send_popup_event`로 forward한다.
-    pub plugin_popup_events: Vec<(u64, tasty_plugin_protocol::ui_tree::UiEvent)>,
+    pub(crate) plugin_popup_events: Vec<(u64, tasty_plugin_protocol::ui_tree::UiEvent)>,
 
     /// plugin popup 렌더 중 감지된 close 사유 (outside-click / Escape).
     /// App 메인 루프가 drain해 `PluginManager::close_popup_instance`를 호출한다.
-    pub plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
+    pub(crate) plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
 
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. 설계: `docs/design/action-dispatch.md`.
-    pub pending_intents: Vec<crate::intent::DispatchedIntent>,
+    pub(crate) pending_intents: Vec<crate::intent::DispatchedIntent>,
 
     /// Core 도메인 변경 요청 큐 (`CoreIntent`). handler 가 read 후 push,
     /// `App::dispatch_pending_core_intents` 가 메인 루프 / handler 호출 종료 후
