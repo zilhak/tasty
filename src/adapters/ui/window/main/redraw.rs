@@ -96,11 +96,11 @@ impl MainWindow {
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::CwdChanged(_) => {
-                    engine.refresh_tab_display_name(surface_id);
-                    // 사용자가 `cd` 로 디렉토리를 옮기면 다음 layout 저장 (debounce
-                    // 또는 종료) 가 새 cwd 를 디스크에 반영하도록 dirty 마킹. 이게
-                    // 빠지면 split 직후의 cwd 가 영원히 stale 로 남는다.
-                    engine.mark_layout_dirty();
+                    // 사용자가 `cd` 로 디렉토리를 옮기면 cascade 가 tab display
+                    // name 갱신 + layout dirty 마킹을 한다. handler 는 enqueue 만.
+                    self.state.enqueue_core_intent(
+                        crate::core::intent::CoreIntent::SurfaceCwdChanged { surface_id },
+                    );
                     self.base.dirty = true;
                 }
                 crate::terminal::TerminalEventKind::ClipboardSet(data) => {

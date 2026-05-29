@@ -58,6 +58,30 @@ impl App {
             } => {
                 self.cascade_notification_pushed(ws_id, surface_id, title, body, source);
             }
+            CoreEvent::SurfaceCwdChanged { surface_id } => {
+                self.cascade_surface_cwd_changed(surface_id);
+            }
+        }
+    }
+
+    /// Surface 의 cwd 가 바뀌었을 때 cascade. 모든 main window 를 순회해 해당
+    /// surface 를 보유한 main 의 engine 에 적용 — `refresh_tab_display_name`
+    /// (탭 이름 prefix 갱신) + `mark_layout_dirty` (다음 capture 가 새 cwd 반영).
+    fn cascade_surface_cwd_changed(&mut self, surface_id: u32) {
+        for main in self.main_windows_iter_mut() {
+            if main.engine_state.has_surface(surface_id) {
+                main.engine_state.refresh_tab_display_name(surface_id);
+                main.engine_state.mark_layout_dirty();
+                main.mark_dirty();
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.has_surface(surface_id) {
+                engine.refresh_tab_display_name(surface_id);
+                engine.mark_layout_dirty();
+                return;
+            }
         }
     }
 

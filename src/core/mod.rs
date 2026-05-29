@@ -272,6 +272,9 @@ impl Core {
                 body,
                 source,
             }]),
+            CoreIntent::SurfaceCwdChanged { surface_id } => {
+                Ok(vec![CoreEvent::SurfaceCwdChanged { surface_id }])
+            }
         }
     }
 }
