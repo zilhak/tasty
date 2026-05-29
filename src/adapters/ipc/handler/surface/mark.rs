@@ -15,8 +15,8 @@ pub(crate) fn handle_set_mark(
         Ok(sid) => sid,
         Err(e) => return e,
     };
-
-    state.set_mark(engine, Some(surface_id));
+    let _ = engine; // handler 는 enqueue 만. cascade 가 적용.
+    state.enqueue_core_intent(crate::core::intent::CoreIntent::SetTerminalMark { surface_id });
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id }))
 }
 

@@ -275,6 +275,9 @@ impl Core {
             CoreIntent::SurfaceCwdChanged { surface_id } => {
                 Ok(vec![CoreEvent::SurfaceCwdChanged { surface_id }])
             }
+            CoreIntent::SetTerminalMark { surface_id } => {
+                Ok(vec![CoreEvent::TerminalMarkSet { surface_id }])
+            }
         }
     }
 }

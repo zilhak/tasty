@@ -33,6 +33,11 @@ pub(crate) enum CoreIntent {
     /// Terminal 이 OSC 7 등으로 cwd 변경을 알림. cascade 가
     /// `refresh_tab_display_name` + `mark_layout_dirty` 수행.
     SurfaceCwdChanged { surface_id: u32 },
+
+    // ─── Terminal control (D.3.C.C.3) ───
+    /// 특정 surface 의 read mark 설정. cascade 가 main/parked 의 engine
+    /// 순회 후 terminal.set_mark() 호출. surface_id 가 None 이면 focused.
+    SetTerminalMark { surface_id: u32 },
 }
 
 /// `Core::apply` 의 결과 — 도메인이 *변경 후 알리는* 이벤트.
@@ -57,4 +62,8 @@ pub(crate) enum CoreEvent {
     // ─── Surface lifecycle (D.3.C.E.6) ───
     /// Surface 의 cwd 변경 알림. cascade 가 tab display name / layout dirty 갱신.
     SurfaceCwdChanged { surface_id: u32 },
+
+    // ─── Terminal control (D.3.C.C.3) ───
+    /// Terminal read mark 설정 요청. cascade 가 surface 보유 engine 에 적용.
+    TerminalMarkSet { surface_id: u32 },
 }

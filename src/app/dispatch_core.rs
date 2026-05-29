@@ -61,6 +61,26 @@ impl App {
             CoreEvent::SurfaceCwdChanged { surface_id } => {
                 self.cascade_surface_cwd_changed(surface_id);
             }
+            CoreEvent::TerminalMarkSet { surface_id } => {
+                self.cascade_terminal_mark_set(surface_id);
+            }
+        }
+    }
+
+    /// 특정 surface 의 read mark 를 설정한다. 응답 없는 fire-and-forget.
+    /// surface 보유 engine (main/parked) 의 첫 매칭에 적용.
+    fn cascade_terminal_mark_set(&mut self, surface_id: u32) {
+        for main in self.main_windows_iter_mut() {
+            if let Some(t) = main.engine_state.find_terminal_by_id_mut(surface_id) {
+                t.set_mark();
+                return;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if let Some(t) = engine.find_terminal_by_id_mut(surface_id) {
+                t.set_mark();
+                return;
+            }
         }
     }
 
