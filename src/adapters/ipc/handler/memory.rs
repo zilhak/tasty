@@ -41,9 +41,9 @@ pub(super) fn require_str<'a>(
 use serde_json::{Value, json};
 use tasty_memory::{
     ListOpts, MemoryArea, MemoryEntry, MemoryError, MemoryStats, MemoryValue, PutOpts, Scope,
-    with_store,
 };
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
@@ -288,7 +288,10 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
     }
 }
 
-fn require_store(id: &Value) -> Result<(), JsonRpcResponse> {
+/// 옛 글로벌 store 검사 — sub-module 들의 `require_store(&id)?` 호출이
+/// 아직 변환되지 않은 상태에서 호환. M.5+ 에서 sub-module 들도 `core.with_memory`
+/// 로 옮기면 본 함수와 호출처가 함께 사라진다.
+pub(super) fn require_store(id: &Value) -> Result<(), JsonRpcResponse> {
     if tasty_memory::with_store(|_| ()).is_some() {
         Ok(())
     } else {
@@ -304,15 +307,13 @@ fn require_store(id: &Value) -> Result<(), JsonRpcResponse> {
 // ============================================================
 
 pub fn handle_put(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match require_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
@@ -331,24 +332,20 @@ pub fn handle_put(
     };
     let owner = caller.owner().to_string();
 
-    let result = with_store(|s| s.put(&owner, &scope, &key, &value, &opts))
-        .expect("memory store presence verified");
-    match result {
+    match core.with_memory(|s| s.put(&owner, &scope, &key, &value, &opts)) {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_get(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match require_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
@@ -357,8 +354,7 @@ pub fn handle_get(
         Ok(k) => k.to_string(),
         Err(e) => return e,
     };
-    let result = with_store(|s| s.get(&scope, &key)).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.get(&scope, &key)) {
         Ok(Some(entry)) => JsonRpcResponse::success(id, entry_to_json(&entry)),
         Ok(None) => JsonRpcResponse::success(id, Value::Null),
         Err(e) => map_error(id, e),
@@ -366,15 +362,13 @@ pub fn handle_get(
 }
 
 pub fn handle_delete(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match require_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
@@ -385,23 +379,20 @@ pub fn handle_delete(
     };
     let cas = params.get("cas").and_then(|v| v.as_u64());
     let owner = caller.owner().to_string();
-    let result = with_store(|s| s.delete(&owner, &scope, &key, cas)).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.delete(&owner, &scope, &key, cas)) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_list(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match require_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
@@ -422,8 +413,7 @@ pub fn handle_list(
             .and_then(|v| v.as_u64())
             .map(|v| v as usize),
     };
-    let result = with_store(|s| s.list(&scope, &opts)).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.list(&scope, &opts)) {
         Ok(entries) => {
             let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
             JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
@@ -433,15 +423,13 @@ pub fn handle_list(
 }
 
 pub fn handle_exists(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match require_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
@@ -450,68 +438,58 @@ pub fn handle_exists(
         Ok(k) => k.to_string(),
         Err(e) => return e,
     };
-    let result = with_store(|s| s.exists(&scope, &key)).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.exists(&scope, &key)) {
         Ok(b) => JsonRpcResponse::success(id, json!({ "exists": b })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_count(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match require_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
     };
     let prefix = params.get("prefix").and_then(|v| v.as_str());
-    let result = with_store(|s| s.count(&scope, prefix)).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.count(&scope, prefix)) {
         Ok(n) => JsonRpcResponse::success(id, json!({ "count": n })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_scopes(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
-    let result = with_store(|s| s.scopes()).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.scopes()) {
         Ok(list) => JsonRpcResponse::success(id, json!({ "scopes": list })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_stats(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match optional_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
     };
-    let result = with_store(|s| s.stats(scope.as_ref())).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.stats(scope.as_ref())) {
         Ok(stats) => JsonRpcResponse::success(id, stats_to_json(&stats)),
         Err(e) => map_error(id, e),
     }
