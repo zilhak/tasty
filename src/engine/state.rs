@@ -82,105 +82,109 @@ impl ShellConfig {
 
 /// Engine-level state shared across all windows.
 /// Contains all data that is not specific to a single window's UI.
+///
+/// struct 자체는 `pub` — pub fn 시그니처에 노출되기 때문 (e.g. `AppState::active_workspace`).
+/// 다만 모든 필드는 `pub(crate)` 로 좁혀, 외부 (crate dependency 측) 가 내부
+/// 도메인 데이터를 직접 두드리는 것을 막는다. Core boundary 강화.
 pub struct CoreState {
     // ── Workspace / Terminal management ──
-    pub workspaces: Vec<Workspace>,
-    pub next_ids: IdGenerator,
-    pub default_cols: usize,
-    pub default_rows: usize,
-    pub waker: Waker,
+    pub(crate) workspaces: Vec<Workspace>,
+    pub(crate) next_ids: IdGenerator,
+    pub(crate) default_cols: usize,
+    pub(crate) default_rows: usize,
+    pub(crate) waker: Waker,
 
     // ── Settings ──
-    pub settings: Settings,
+    pub(crate) settings: Settings,
 
     // ── Notifications / Hooks ──
-    pub notifications: NotificationStore,
-    pub hook_manager: HookManager,
-    pub global_hook_manager: GlobalHookManager,
+    pub(crate) notifications: NotificationStore,
+    pub(crate) hook_manager: HookManager,
+    pub(crate) global_hook_manager: GlobalHookManager,
 
     // ── Closed item history ──
-    pub closed_items: crate::model::ClosedItemStore,
+    pub(crate) closed_items: crate::model::ClosedItemStore,
 
     // ── System clipboard history (memory-only) ──
-    pub clipboard_history: crate::clipboard_history::ClipboardHistory,
+    pub(crate) clipboard_history: crate::clipboard_history::ClipboardHistory,
 
     /// OSC 133 기반 명령 인덱서. PromptBoundary 이벤트가 도달할 때마다 호스트가
     /// 호출해 per-surface 상태를 업데이트하고, D phase 에서 memory 에 record 영속.
-    pub command_index: crate::engine::command_index::CommandIndex,
+    pub(crate) command_index: crate::engine::command_index::CommandIndex,
 
     /// 출력 옵저버 라우터. OutputAppended 이벤트마다 dispatch 호출.
-    pub observer_router: crate::output_observer::ObserverRouter,
+    pub(crate) observer_router: crate::output_observer::ObserverRouter,
 
     /// 휴먼 핸드오프 — approval 요청/응답 큐 + 대기자 채널.
-    pub approval_store: std::sync::Arc<tasty_approval::ApprovalStore>,
+    pub(crate) approval_store: std::sync::Arc<tasty_approval::ApprovalStore>,
 
     /// Telemetry 이벤트 시퀀스 — 같은 ms 안에서 event_key 충돌 방지용 단조 증가 카운터.
-    pub telemetry_seq: std::sync::Arc<tasty_telemetry::TelemetrySeq>,
+    pub(crate) telemetry_seq: std::sync::Arc<tasty_telemetry::TelemetrySeq>,
 
     /// Telemetry 이상 탐지 — 호스트 singleton. in-memory sliding window 만 보관
     /// (Phase 4.4). 검출된 anomaly 레코드는 호스트가 memory store 에 영속.
-    pub anomaly_detector: std::sync::Arc<tasty_telemetry::AnomalyDetector>,
+    pub(crate) anomaly_detector: std::sync::Arc<tasty_telemetry::AnomalyDetector>,
 
     /// Agent task ID 시퀀스 — 같은 ms 안에서 task_id 충돌 방지용 단조 증가 카운터.
-    pub agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    pub(crate) agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
 
     // ── Messaging / Typing detection ──
-    pub surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
+    pub(crate) surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
-    pub last_key_input: HashMap<u32, std::time::Instant>,
+    pub(crate) last_key_input: HashMap<u32, std::time::Instant>,
 
     // ── Busy state cache (foreground process != shell). Updated by BusyPoll.
     // Set membership = busy. Surfaces missing from the set are treated as idle.
-    pub busy_surfaces: std::collections::HashSet<u32>,
+    pub(crate) busy_surfaces: std::collections::HashSet<u32>,
 
     /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
     /// 추상화하여 헤드리스/플러그인 호스트 컨텍스트에서도 동일 인터페이스를 쓴다.
     /// `App`이 CoreState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
-    pub waker_factory: Option<crate::waker::SharedWakerFactory>,
+    pub(crate) waker_factory: Option<crate::waker::SharedWakerFactory>,
 
     // ── CWD polling (round-robin) ──
     // macOS/Linux 전용. Windows에서는 폴링을 돌지 않아 필드 자체가 없음.
     // ── Surface kind registry ──
     /// Surface 종류별 메타·동작 lookup. 단계 03C에서는 빈 레지스트리만 보유한다 —
     /// 03D에서 본체 7종이 등록되며, 단계 05에서 plugin이 추가될 예정.
-    pub surface_registry: Arc<SurfaceKindRegistry>,
+    pub(crate) surface_registry: Arc<SurfaceKindRegistry>,
 
     // ── File format / handler registries (file-handler-system) ──
     /// 파일 식별기 — host default + plugin contribute + user config 통합.
     /// `PluginManager` 와 같은 Arc 를 공유한다.
-    pub file_format: Arc<crate::file::format::FileFormatRegistry>,
+    pub(crate) file_format: Arc<crate::file::format::FileFormatRegistry>,
     /// 파일 핸들러 디스패치 테이블. `PluginManager` 와 같은 Arc 를 공유한다.
-    pub file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
+    pub(crate) file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     /// 사용자가 picker 에서 직접 고른 handler 의 LRU 기록 (보조 신호).
     /// 부팅 시 디스크에서 로드, 매 선택마다 atomic save.
-    pub file_handler_recent: crate::file::handler::recent::RecentPicks,
+    pub(crate) file_handler_recent: crate::file::handler::recent::RecentPicks,
     /// 비동기 파일 식별 worker. `App` 이 EventLoopProxy 를 가진 시점에
     /// `create_app_state` 에서 주입한다 — waker_factory 와 동일 패턴.
     /// Phase C 의 mouse.rs 콜사이트가 이걸 호출해 deep identify 를 띄운다.
-    pub identify_worker: Option<std::sync::Arc<crate::identify_worker::IdentifyWorker>>,
+    pub(crate) identify_worker: Option<std::sync::Arc<crate::identify_worker::IdentifyWorker>>,
 
     // ── Layout persistence ──
-    pub layout_dirty: crate::engine::layout_persistence::LayoutDirtyTracker,
+    pub(crate) layout_dirty: crate::engine::layout_persistence::LayoutDirtyTracker,
     /// Active workspace index restored from layout.json. Consumed once by AppState::new().
-    pub restored_active_workspace: Option<usize>,
+    pub(crate) restored_active_workspace: Option<usize>,
     /// Deferred terminal surface 의 scrollback 복원 대기 큐. 값은
     /// `scrollback_store::read` 결과(없으면 entry 자체가 생략됨). PTY 가
     /// 실제로 spawn 된 직후 (`ensure_surface_initialized` 또는 즉시 복원
     /// 경로) entry 를 꺼내 `inject_scrollback` 호출.
-    pub pending_scrollback_inject: HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
+    pub(crate) pending_scrollback_inject: HashMap<u32, Vec<tasty_terminal::ScrollbackLine>>,
     /// 첫 plugin pump 후 적용할 layout. plugin이 제공하는 surface kind가
     /// 등록되기 전에 복원하면 사라지므로 한 번 미뤄둔다. `App::apply_pending_layout_restore`가 소비.
-    pub pending_layout_restore: Option<crate::engine::layout_persistence::SavedLayout>,
+    pub(crate) pending_layout_restore: Option<crate::engine::layout_persistence::SavedLayout>,
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
-    pub input_simulation_enabled: bool,
+    pub(crate) input_simulation_enabled: bool,
 
     /// Memory port 의 Arc clone — Core 가 owner. `CoreState::new` 직후에는 빈
     /// 상태이며 `App::create_app_state` 가 `core.memory_arc()` 로 주입한다.
     /// engine 내부 (SurfaceMetaStore, layout persistence, pty surface init 등)
     /// cascade 없이 직접 영속할 때 사용.
-    pub memory: Option<std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>>,
+    pub(crate) memory: Option<std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>>,
 }
 
 impl CoreState {
