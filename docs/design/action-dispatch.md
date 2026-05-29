@@ -25,6 +25,67 @@
 3. **진입점은 Intent를 발화할 뿐, 핸들러를 직접 호출하지 않는다.**
 4. **Intent 처리 후 결과 변화는 Event Bus 1.0을 통해 plugin/hook에 알린다.** 변환은 중앙 bridge 한 곳에서만.
 
+### 핵심 원칙 — Intent 의 위치
+
+> **Intent 는 "의도" 다 — 로직의 *시작점* 에만 존재할 수 있고, 동작의 *결과* 로 나올 수 없다.**
+
+흐름은 항상 한 방향:
+
+```
+이벤트 (발화지점) → 해석된 의도 (Intent) → 로직 → 결과 (Event/응답/cascade)
+```
+
+따라서 다음은 모두 **잘못된 패턴**:
+
+1. **Intent 가 응답 데이터를 가짐** (`ApplyResult { data }` 같은 패턴)
+   — Intent 는 결과를 반환할 수 없다. fire-and-forget 만.
+2. **로직 중간 단계에서 Intent 가 생성됨**
+   — Intent 가 *원래 발화* 에 대한 응답으로 나오지 않는다. 새로운 Intent
+   는 *별도의 의도* 일 뿐 (cascade 라면 origin 을 전파하는 *새 발화*).
+3. **Intent 를 정보 전달 매개체로 사용**
+   — 정보 전달이 필요하면 그건 Intent 가 아니라 다른 개념 (Method call,
+   Query, oneshot channel 등). Intent enum 에 응답 필드를 넣지 않는다.
+
+응답이 필요한 mutate (예: 새 ID 발급, 분기 결정용 status) 는 *Intent 가 아니라*
+**Core method 호출** (sync 리턴) 또는 **Query (read)** 로 처리한다 — Intent 와는
+다른 개념의 메커니즘.
+
+#### 분류표
+
+| 유형 | 메커니즘 | 응답 |
+|------|----------|------|
+| Query | `&CoreReader` / `&CoreState` 직접 read | 데이터 |
+| **Intent** (fire-and-forget) | enqueue → cascade | **없음** |
+| Core method | `core.create_workspace(...) -> WorkspaceCreated` | sync 리턴 |
+| Long-poll | worker thread blocking | 별개 패턴 |
+
+#### Cascade — Intent 처리 중 새 Intent 발화
+
+Intent A 의 핸들러가 *처리 도중* 새 Intent B 를 발화하는 것은 허용된다.
+**단, 반드시 큐를 통해서**:
+
+```rust
+// ✓ OK — 새 Intent 를 큐로 발화. 다음 drain cycle 또는 같은 drain 의 다음
+// 라운드에서 별도 흐름으로 처리.
+fn handle_some_intent(state: &mut AppState, intent: &DispatchedIntent) {
+    // ... A 처리 ...
+    state.dispatch_intent(
+        Intent::OpenPopup { id: "approval_result", mode: ... }
+            .cascaded_from(intent),  // origin 전파
+    );
+}
+
+// ✗ 금지 — Intent A 의 처리 결과를 Result/return value 에 새 Intent 로
+// 담는 것. 호출자가 그 Intent 를 *다시* 큐에 넣는 패턴도 같은 죄.
+fn handle_some_intent(...) -> Option<Intent> {  // ❌
+    Some(Intent::OpenPopup { ... })
+}
+```
+
+이유: Intent 는 *발화* 와 *처리* 가 분리된 큐 모델이다. 처리 흐름의 *반환*
+경로로 새 Intent 가 흘러나오면 호출 cascade 가 *재귀적 함수 호출 트리* 가
+되어 큐 모델이 깨진다. 새 Intent 는 항상 *별개의 흐름* 으로 시작되어야 한다.
+
 ## Intent 자료형
 
 ### 구조
