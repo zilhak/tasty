@@ -278,6 +278,9 @@ impl Core {
             CoreIntent::SetTerminalMark { surface_id } => {
                 Ok(vec![CoreEvent::TerminalMarkSet { surface_id }])
             }
+            CoreIntent::RecordInternalClipboardCopy { text } => {
+                Ok(vec![CoreEvent::InternalClipboardCopyRecorded { text }])
+            }
         }
     }
 }

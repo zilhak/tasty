@@ -38,6 +38,12 @@ pub(crate) enum CoreIntent {
     /// 특정 surface 의 read mark 설정. cascade 가 main/parked 의 engine
     /// 순회 후 terminal.set_mark() 호출. surface_id 가 None 이면 focused.
     SetTerminalMark { surface_id: u32 },
+
+    // ─── Clipboard history (D.3.C.E.3) ───
+    /// Terminal 내부 selection copy 같은 *internal* 클립보드 copy 를 history 에
+    /// 기록. `Source::Internal` 태그로 일관. settings.clipboard.history_enabled=false
+    /// 이면 cascade 가 no-op.
+    RecordInternalClipboardCopy { text: String },
 }
 
 /// `Core::apply` 의 결과 — 도메인이 *변경 후 알리는* 이벤트.
@@ -66,4 +72,8 @@ pub(crate) enum CoreEvent {
     // ─── Terminal control (D.3.C.C.3) ───
     /// Terminal read mark 설정 요청. cascade 가 surface 보유 engine 에 적용.
     TerminalMarkSet { surface_id: u32 },
+
+    // ─── Clipboard history (D.3.C.E.3) ───
+    /// Internal clipboard copy 가 발생. cascade 가 모든 engine 의 history 에 기록.
+    InternalClipboardCopyRecorded { text: String },
 }

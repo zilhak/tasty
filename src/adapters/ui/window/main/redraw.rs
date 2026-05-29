@@ -107,7 +107,12 @@ impl MainWindow {
                     if let Some(cb) = &mut self.clipboard {
                         cb.set_text(data);
                     }
-                    engine.record_internal_copy(data);
+                    // 모든 main + parked engine 의 clipboard history 에 기록 — broadcast.
+                    self.state.enqueue_core_intent(
+                        crate::core::intent::CoreIntent::RecordInternalClipboardCopy {
+                            text: data.clone(),
+                        },
+                    );
                 }
                 crate::terminal::TerminalEventKind::PromptBoundary { phase, payload } => {
                     let mem = engine.memory.clone();

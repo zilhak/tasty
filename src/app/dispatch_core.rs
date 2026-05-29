@@ -64,6 +64,20 @@ impl App {
             CoreEvent::TerminalMarkSet { surface_id } => {
                 self.cascade_terminal_mark_set(surface_id);
             }
+            CoreEvent::InternalClipboardCopyRecorded { text } => {
+                self.cascade_internal_clipboard_copy(text);
+            }
+        }
+    }
+
+    /// Internal clipboard copy 를 모든 main + parked engine 의 history 에 기록.
+    /// `clipboard_record::record_clipboard_data` 의 broadcast 패턴과 동일.
+    fn cascade_internal_clipboard_copy(&mut self, text: String) {
+        for main in self.main_windows_iter_mut() {
+            main.engine_state.record_internal_copy(&text);
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            engine.record_internal_copy(&text);
         }
     }
 
