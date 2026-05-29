@@ -14,7 +14,7 @@ impl App {
             .and_then(|id| self.windows.get(&id))
             .map(|m| {
                 m.as_any()
-                    .downcast_ref::<crate::window::QuitWindow>()
+                    .downcast_ref::<crate::adapters::ui::window::QuitWindow>()
                     .is_some()
             })
             .unwrap_or(false);
@@ -87,18 +87,18 @@ impl App {
         .expect("failed to initialize GPU for quit modal");
 
         let window_id = window.id();
-        let mut modal = crate::window::QuitWindow::new(gpu, window);
+        let mut modal = crate::adapters::ui::window::QuitWindow::new(gpu, window);
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately to make the modal visible.
         // On other platforms, mark_dirty() + request_redraw() is sufficient.
         #[cfg(windows)]
         {
-            use crate::window::Window as _;
+            use crate::adapters::ui::window::Window as _;
             modal.render();
         }
         #[cfg(not(windows))]
         {
-            use crate::window::Window as _;
+            use crate::adapters::ui::window::Window as _;
             modal.mark_dirty();
         }
         self.open_modal(Box::new(modal), window_id);

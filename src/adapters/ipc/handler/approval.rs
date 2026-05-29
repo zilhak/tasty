@@ -225,7 +225,7 @@ pub(crate) fn publish_capability_elevation(
     match core.request_approval(engine, req) {
         Ok(change) => {
             persist_record(core, &change.record);
-            crate::ui::popup::approval::enqueue_approval(state, engine, &change.record);
+            crate::adapters::ui::popup::approval::enqueue_approval(state, engine, &change.record);
             Some(change.record)
         }
         Err(e) => {

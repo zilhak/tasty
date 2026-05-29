@@ -110,7 +110,7 @@ pub fn handle_request(
     match core.request_approval(engine, req) {
         Ok(change) => {
             persist_record(core, &change.record);
-            crate::ui::popup::approval::enqueue_approval(state, engine, &change.record);
+            crate::adapters::ui::popup::approval::enqueue_approval(state, engine, &change.record);
             JsonRpcResponse::success(
                 id,
                 json!({

@@ -264,24 +264,24 @@ impl App {
                 1 => crate::i18n::t_fmt(key, &args[0]),
                 _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
             };
-            crate::ui::info_modal::show_info_modal(
+            crate::adapters::ui::info_modal::show_info_modal(
                 &mut state,
-                crate::ui::info_modal::InfoModal {
+                crate::adapters::ui::info_modal::InfoModal {
                     title: crate::i18n::t("db_error.title").to_string(),
                     body,
-                    on_close: crate::ui::info_modal::InfoModalAction::Exit(1),
+                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
                 },
             );
         }
 
         // Theme fallback 알림 — normalize 가 잘못된 theme 이름을 정정한 경우.
         if let Some(invalid) = invalid_theme_name {
-            crate::ui::info_modal::show_info_modal(
+            crate::adapters::ui::info_modal::show_info_modal(
                 &mut state,
-                crate::ui::info_modal::InfoModal {
+                crate::adapters::ui::info_modal::InfoModal {
                     title: crate::i18n::t("theme_error.title").to_string(),
                     body: crate::i18n::t_fmt("theme_error.body", &invalid),
-                    on_close: crate::ui::info_modal::InfoModalAction::Continue,
+                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                 },
             );
         }
@@ -397,24 +397,24 @@ impl App {
                 1 => crate::i18n::t_fmt(key, &args[0]),
                 _ => crate::i18n::t_fmt2(key, &args[0], &args[1]),
             };
-            crate::ui::info_modal::show_info_modal(
+            crate::adapters::ui::info_modal::show_info_modal(
                 &mut state,
-                crate::ui::info_modal::InfoModal {
+                crate::adapters::ui::info_modal::InfoModal {
                     title: crate::i18n::t("db_error.title").to_string(),
                     body,
-                    on_close: crate::ui::info_modal::InfoModalAction::Exit(1),
+                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Exit(1),
                 },
             );
         }
 
         // Theme fallback 알림 (잘못된 theme 이름이었던 경우).
         if let Some(invalid) = invalid_theme_name {
-            crate::ui::info_modal::show_info_modal(
+            crate::adapters::ui::info_modal::show_info_modal(
                 &mut state,
-                crate::ui::info_modal::InfoModal {
+                crate::adapters::ui::info_modal::InfoModal {
                     title: crate::i18n::t("theme_error.title").to_string(),
                     body: crate::i18n::t_fmt("theme_error.body", &invalid),
-                    on_close: crate::ui::info_modal::InfoModalAction::Continue,
+                    on_close: crate::adapters::ui::info_modal::InfoModalAction::Continue,
                 },
             );
         }

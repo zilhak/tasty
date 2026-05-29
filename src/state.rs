@@ -19,10 +19,10 @@ pub mod update_check;
 
 use std::collections::VecDeque;
 
+use crate::adapters::ui::info_modal::InfoModal;
 use crate::engine_state::CoreState;
 use crate::model::{LogicalPx, PhysicalPx};
 use crate::settings_ui::SettingsUiState;
-use crate::ui::info_modal::InfoModal;
 
 /// Type of the currently focused surface, used for keyboard routing.
 ///
@@ -220,7 +220,7 @@ pub struct AppState {
     /// Measured tab bar height in physical pixels, updated each frame by egui.
     pub(crate) tab_bar_height: PhysicalPx,
     /// Popup manager for internal popups (notification panel, etc.).
-    pub(crate) popups: crate::ui::PopupManager,
+    pub(crate) popups: crate::adapters::ui::PopupManager,
     /// Terminal text search state.
     pub(crate) search: crate::search_state::SearchState,
     /// TCP listening port scan cache, keyed by surface_id.
@@ -234,7 +234,7 @@ pub struct AppState {
     pub(crate) command_palette: crate::state::command_palette::CommandPaletteState,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
-    pub(crate) toasts: crate::ui::ToastManager,
+    pub(crate) toasts: crate::adapters::ui::ToastManager,
     /// Cached recent files list (markdown/html open popups). Loaded from disk at
     /// startup and mutated in-place; each mutation saves back to disk.
     pub(crate) recent_files: crate::recent_files::RecentFiles,
@@ -292,11 +292,11 @@ pub struct AppState {
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
-    pub(crate) markdown_views: crate::ui::surface::markdown::view::MarkdownViewStore,
+    pub(crate) markdown_views: crate::adapters::ui::surface::markdown::view::MarkdownViewStore,
 
     /// Per-surface host view state for `ImagePanel` (pixel buffer, textures, edit state,
     /// undo history, brush settings, popup buffers).
-    pub(crate) image_views: crate::ui::surface::image::view::ImageViewStore,
+    pub(crate) image_views: crate::adapters::ui::surface::image::view::ImageViewStore,
 
     /// 사이드바 도구 메뉴 항목. 활성 plugin의 `[[contributes.tool]]`
     /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시
@@ -389,7 +389,7 @@ pub struct DialogState {
     /// Workspace drag-and-drop state.
     pub(crate) ws_drag: Option<WsDragState>,
     /// 부팅 시점 정보/에러 알림용 modal 큐. 큐 head를 [확인] 버튼으로 처리한다.
-    /// `crate::ui::info_modal::show_info_modal()`로 push.
+    /// `crate::adapters::ui::info_modal::show_info_modal()`로 push.
     pub(crate) info_modal_queue: VecDeque<InfoModal>,
     /// 휴먼 핸드오프 — 응답 대기 중인 approval 큐. popup 의 head 가 현재 화면.
     /// `approval.request` IPC 가 push하고, 선택지 클릭 시 pop.
@@ -534,12 +534,16 @@ impl RenameTarget {
     }
 
     /// Popup scope matching the rename target.
-    pub fn popup_scope(&self) -> crate::ui::popup::PopupScope {
+    pub fn popup_scope(&self) -> crate::adapters::ui::popup::PopupScope {
         match self {
-            Self::WorkspaceName { ws_idx } => crate::ui::popup::PopupScope::Workspace(*ws_idx),
-            Self::WorkspaceSubtitle { ws_idx } => crate::ui::popup::PopupScope::Workspace(*ws_idx),
+            Self::WorkspaceName { ws_idx } => {
+                crate::adapters::ui::popup::PopupScope::Workspace(*ws_idx)
+            }
+            Self::WorkspaceSubtitle { ws_idx } => {
+                crate::adapters::ui::popup::PopupScope::Workspace(*ws_idx)
+            }
             Self::TabName { pane_id, tab_index } => {
-                crate::ui::popup::PopupScope::Tab(*pane_id, *tab_index)
+                crate::adapters::ui::popup::PopupScope::Tab(*pane_id, *tab_index)
             }
         }
     }
@@ -580,8 +584,8 @@ impl AppState {
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
-                let mut pm = crate::ui::PopupManager::new();
-                for def in crate::ui::popup::defs::all_defs() {
+                let mut pm = crate::adapters::ui::PopupManager::new();
+                for def in crate::adapters::ui::popup::defs::all_defs() {
                     pm.register_def(def);
                 }
                 pm
@@ -595,7 +599,7 @@ impl AppState {
                 std::time::Duration::from_secs(60 * 60),
             ),
             command_palette: crate::state::command_palette::CommandPaletteState::default(),
-            toasts: crate::ui::ToastManager::new(),
+            toasts: crate::adapters::ui::ToastManager::new(),
             markdown_views: Default::default(),
             image_views: Default::default(),
             tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),

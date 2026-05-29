@@ -3,7 +3,7 @@
 use winit::keyboard::{Key, ModifiersState};
 
 use super::binding::matches_any_binding;
-use crate::window::main::MainWindow;
+use crate::adapters::ui::window::main::MainWindow;
 
 impl MainWindow {
     pub(super) fn handle_zoom_shortcut(

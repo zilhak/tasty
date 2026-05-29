@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use crate::adapters::ui::window;
 use crate::app::App;
-use crate::window;
 
 impl App {
     /// Open the plugins modal window.

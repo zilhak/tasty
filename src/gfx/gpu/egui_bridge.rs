@@ -1,8 +1,8 @@
 use winit::window::Window;
 
+use crate::adapters::ui;
 use crate::model::PhysicalRect;
 use crate::state::AppState;
-use crate::ui;
 
 use super::GpuState;
 

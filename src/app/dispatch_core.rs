@@ -9,9 +9,9 @@
 
 use tasty_settings::Settings;
 
+use crate::adapters::ui::window::Window as _;
 use crate::app::App;
 use crate::core::intent::{CoreEvent, CoreIntent};
-use crate::window::Window as _;
 
 impl App {
     /// `CoreIntent` 발행. Core 가 *이벤트 목록* 반환 → 각 이벤트 cascade 처리.

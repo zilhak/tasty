@@ -2,7 +2,7 @@
 
 use winit::keyboard::Key;
 
-use crate::window::main::MainWindow;
+use crate::adapters::ui::window::main::MainWindow;
 
 impl MainWindow {
     pub(super) fn handle_numeric_switch_shortcuts(

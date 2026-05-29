@@ -26,7 +26,7 @@ impl App {
             return;
         };
 
-        let mut pending_toasts: Vec<(String, crate::ui::ToastKind)> = Vec::new();
+        let mut pending_toasts: Vec<(String, crate::adapters::ui::ToastKind)> = Vec::new();
 
         for action in actions {
             match action {
@@ -92,7 +92,7 @@ impl App {
                     pending_toasts.push(match (resp.error, resp.result) {
                         (Some(err), _) => (
                             crate::i18n::t_fmt("plugins.add_install_failed", &err.message),
-                            crate::ui::ToastKind::Error,
+                            crate::adapters::ui::ToastKind::Error,
                         ),
                         (None, Some(result)) => {
                             let installed = result
@@ -102,12 +102,12 @@ impl App {
                                 .to_string();
                             (
                                 crate::i18n::t_fmt("plugins.add_installed", &installed),
-                                crate::ui::ToastKind::Success,
+                                crate::adapters::ui::ToastKind::Success,
                             )
                         }
                         (None, None) => (
                             crate::i18n::t_fmt("plugins.add_install_failed", "unknown error"),
-                            crate::ui::ToastKind::Error,
+                            crate::adapters::ui::ToastKind::Error,
                         ),
                     });
                 }

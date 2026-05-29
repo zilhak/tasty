@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use winit::window::WindowId;
 
+use crate::adapters::ui::window;
 use crate::app::App;
-use crate::window;
 
 impl App {
     /// PresetWindow 를 연다. 이미 열려 있으면 새 윈도우를 만들지 않고 기존 윈도우에

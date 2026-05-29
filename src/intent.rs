@@ -16,8 +16,8 @@ pub mod tab;
 pub mod watch;
 pub mod workspace;
 
+use crate::adapters::ui::popup::{PopupId, PopupScope};
 use crate::model::SplitDirection;
-use crate::ui::popup::{PopupId, PopupScope};
 
 pub use preset::ClonedPreset;
 

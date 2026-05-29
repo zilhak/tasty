@@ -3,7 +3,7 @@
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use super::binding::{matches_binding, parse_binding};
-use crate::window::main::MainWindow;
+use crate::adapters::ui::window::main::MainWindow;
 
 fn mods_ctrl() -> ModifiersState {
     ModifiersState::CONTROL

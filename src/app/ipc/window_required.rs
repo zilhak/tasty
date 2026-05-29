@@ -4,12 +4,12 @@
 //! - `debug.info` (debug only)
 //! - `ui.screenshot` (debug only)
 
+#[cfg(debug_assertions)]
+use crate::adapters::ui::window::Window as _;
 use crate::app::App;
 use crate::app::ipc::IpcStep;
 use crate::ipc as host_ipc;
 use crate::ipc::server::{IpcCommand, send_response};
-#[cfg(debug_assertions)]
-use crate::window::Window as _;
 
 impl App {
     pub(crate) fn ipc_step_window_required(&mut self, cmd: &IpcCommand) -> IpcStep {

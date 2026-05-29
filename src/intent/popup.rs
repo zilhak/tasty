@@ -43,7 +43,7 @@ fn open(state: &mut AppState, id: &'static str, mode: &OpenPopupMode) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::popup::{PopupScope, PopupState};
+    use crate::adapters::ui::popup::{PopupScope, PopupState};
 
     fn make_state() -> AppState {
         let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});

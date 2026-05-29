@@ -5,8 +5,8 @@
 
 use winit::window::WindowId;
 
+use crate::adapters::ui::window;
 use crate::app::App;
-use crate::window;
 
 impl App {
     /// Get the focused main window, if any.

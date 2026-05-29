@@ -3,8 +3,8 @@
 
 use winit::keyboard::{Key, ModifiersState};
 
+use crate::adapters::ui::window::main::MainWindow;
 use crate::intent::{Intent, OpenPopupMode};
-use crate::window::main::MainWindow;
 
 use super::{focused_image_surface_id, send_app_event};
 
@@ -14,8 +14,8 @@ impl MainWindow {
     ///
     /// Returns true if the action was recognized and dispatched. Unknown action_id는 false.
     pub(crate) fn dispatch_action_by_id(&mut self, action_id: &str) -> bool {
+        use crate::adapters::ui::popup::PopupScope;
         use crate::model::SplitDirection;
-        use crate::ui::popup::PopupScope;
 
         let terminal_rect = self.compute_terminal_rect();
         let cell_w = self.base.gpu.cell_width();

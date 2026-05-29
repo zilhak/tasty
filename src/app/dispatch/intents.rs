@@ -2,9 +2,9 @@
 
 use winit::window::WindowId;
 
+use crate::adapters::ui::window::Window as _;
 use crate::app::App;
 use crate::ipc;
-use crate::window::Window as _;
 
 impl App {
     /// 호스트 내부 Intent 큐를 모든 AppState 에서 drain 해 도메인별 핸들러로 분기한다.

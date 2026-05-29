@@ -95,8 +95,8 @@ fn apply(
         tracing::warn!("preset apply failed: {e}");
         state.toasts.push(
             crate::i18n::t("preset.toast.apply_failed"),
-            crate::ui::ToastKind::Error,
-            crate::ui::ToastScope::Window,
+            crate::adapters::ui::ToastKind::Error,
+            crate::adapters::ui::ToastScope::Window,
         );
     }
 }
@@ -128,14 +128,14 @@ fn save(
         (Err(_), _) => "preset.toast.save_failed",
     };
     let toast_kind = if save_result.is_ok() {
-        crate::ui::ToastKind::Info
+        crate::adapters::ui::ToastKind::Info
     } else {
-        crate::ui::ToastKind::Error
+        crate::adapters::ui::ToastKind::Error
     };
     state.toasts.push(
         crate::i18n::t(toast_key),
         toast_kind,
-        crate::ui::ToastScope::Window,
+        crate::adapters::ui::ToastScope::Window,
     );
 
     let saved_name = match save_result {

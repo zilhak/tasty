@@ -3,8 +3,8 @@
 use winit::keyboard::{Key, ModifiersState};
 
 use super::binding::matches_any_binding;
-use crate::window::Window as _;
-use crate::window::main::MainWindow;
+use crate::adapters::ui::window::Window as _;
+use crate::adapters::ui::window::main::MainWindow;
 
 impl MainWindow {
     pub(super) fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
@@ -16,8 +16,8 @@ impl MainWindow {
         // 오타(옆 키 누름)로 간주하고 통째로 무시한다. SIGINT도, 클립보드 복사도
         // 일어나지 않으며 toast로만 알린다.
         if let Some(t) = self.last_terminal_paste_at {
-            if t.elapsed() < crate::window::main::PASTE_CTRL_C_COOLDOWN {
-                let scope = crate::ui::ToastScope::Surface(
+            if t.elapsed() < crate::adapters::ui::window::main::PASTE_CTRL_C_COOLDOWN {
+                let scope = crate::adapters::ui::ToastScope::Surface(
                     self.state
                         .focused_surface_id(&self.engine_state)
                         .unwrap_or(0),

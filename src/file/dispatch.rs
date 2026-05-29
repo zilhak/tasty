@@ -166,7 +166,7 @@ fn open_picker(
     });
     state
         .popups
-        .open_centered_focused(crate::ui::popup::file_handler_picker::PICKER_POPUP_ID);
+        .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
 }
 
 fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {

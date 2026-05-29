@@ -1,8 +1,8 @@
 //! Double-tap modifier (Shift+Shift / Ctrl+Ctrl / Alt+Alt) 단축키 처리.
 
+use crate::adapters::ui::window::main::MainWindow;
 use crate::intent::{Intent, OpenPopupMode};
 use crate::model::SplitDirection;
-use crate::window::main::MainWindow;
 
 use super::send_app_event;
 
@@ -204,7 +204,7 @@ impl MainWindow {
                                 Intent::OpenPopup {
                                     id: "convert_surface",
                                     mode: OpenPopupMode::WithScope(
-                                        crate::ui::popup::PopupScope::Surface(sid),
+                                        crate::adapters::ui::popup::PopupScope::Surface(sid),
                                     ),
                                 }
                                 .from_user_shortcut("convert_surface_double_tap"),
@@ -221,7 +221,7 @@ impl MainWindow {
                                 Intent::OpenPopup {
                                     id: "markdown_open",
                                     mode: OpenPopupMode::WithScope(
-                                        crate::ui::popup::PopupScope::Surface(sid),
+                                        crate::adapters::ui::popup::PopupScope::Surface(sid),
                                     ),
                                 }
                                 .from_user_shortcut("convert_to_markdown_double_tap"),

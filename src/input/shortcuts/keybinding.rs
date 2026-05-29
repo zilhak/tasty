@@ -6,9 +6,9 @@
 
 use winit::keyboard::{Key, ModifiersState};
 
+use crate::adapters::ui::window::main::MainWindow;
 use crate::intent::{Intent, OpenPopupMode};
 use crate::model::SplitDirection;
-use crate::window::main::MainWindow;
 
 use super::{focused_image_surface_id, matches_any_binding, send_app_event};
 
@@ -109,9 +109,9 @@ impl MainWindow {
                 state.dispatch_intent(
                     Intent::OpenPopup {
                         id: "search_bar",
-                        mode: OpenPopupMode::AtTopOfScope(crate::ui::popup::PopupScope::Surface(
-                            sid,
-                        )),
+                        mode: OpenPopupMode::AtTopOfScope(
+                            crate::adapters::ui::popup::PopupScope::Surface(sid),
+                        ),
                     }
                     .from_user_shortcut("find_open"),
                 );
@@ -219,7 +219,9 @@ impl MainWindow {
                 state.dispatch_intent(
                     Intent::OpenPopup {
                         id: "convert_surface",
-                        mode: OpenPopupMode::WithScope(crate::ui::popup::PopupScope::Surface(sid)),
+                        mode: OpenPopupMode::WithScope(
+                            crate::adapters::ui::popup::PopupScope::Surface(sid),
+                        ),
                     }
                     .from_user_shortcut("convert_surface"),
                 );
@@ -235,7 +237,9 @@ impl MainWindow {
                 state.dispatch_intent(
                     Intent::OpenPopup {
                         id: "markdown_open",
-                        mode: OpenPopupMode::WithScope(crate::ui::popup::PopupScope::Surface(sid)),
+                        mode: OpenPopupMode::WithScope(
+                            crate::adapters::ui::popup::PopupScope::Surface(sid),
+                        ),
                     }
                     .from_user_shortcut("convert_to_markdown"),
                 );
@@ -329,7 +333,7 @@ impl MainWindow {
             state.command_palette.reset();
             state.dispatch_intent(
                 Intent::TogglePopup {
-                    id: crate::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID,
+                    id: crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
                 .from_user_shortcut("toggle_command_palette"),
@@ -340,7 +344,7 @@ impl MainWindow {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
                 Intent::OpenPopup {
-                    id: crate::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
+                    id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
                 .from_user_shortcut("apply_workspace_preset"),
@@ -351,7 +355,7 @@ impl MainWindow {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
                 Intent::OpenPopup {
-                    id: crate::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
+                    id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
                 .from_user_shortcut("apply_tab_preset"),
@@ -362,7 +366,7 @@ impl MainWindow {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
                 Intent::OpenPopup {
-                    id: crate::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
+                    id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
                 .from_user_shortcut("apply_pane_preset"),

@@ -18,7 +18,6 @@ mod platform;
 mod ports;
 mod state;
 mod store;
-mod ui;
 mod view;
 mod waker;
 
@@ -43,7 +42,6 @@ macro_rules! impl_surface_any {
 }
 
 pub mod engine;
-pub mod window;
 
 use anyhow::Result;
 
@@ -54,6 +52,17 @@ pub use tasty_themes as theme;
 pub use tasty_utils::path as paths;
 
 pub(crate) use adapters::ipc;
+pub(crate) use adapters::ui;
+pub(crate) use adapters::ui::preset as preset_ui;
+pub(crate) use adapters::ui::surface::diff as diff_ui;
+pub(crate) use adapters::ui::surface::empty as empty_ui;
+pub(crate) use adapters::ui::surface::image as image_ui;
+pub(crate) use adapters::ui::surface::markdown as markdown_ui;
+pub(crate) use adapters::ui::terminal_link;
+pub(crate) use adapters::ui::theme_bridge;
+pub(crate) use adapters::ui::window;
+pub(crate) use adapters::ui::window::plugins::ui as plugins_ui;
+pub(crate) use adapters::ui::window::settings::ui as settings_ui;
 pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;
 pub(crate) use boot::waker as waker_factory_winit;
@@ -89,15 +98,6 @@ pub(crate) use store::clipboard_history;
 pub(crate) use store::notification;
 pub(crate) use store::recent_files;
 pub(crate) use store::scrollback as scrollback_store;
-pub(crate) use ui::preset as preset_ui;
-pub(crate) use ui::surface::diff as diff_ui;
-pub(crate) use ui::surface::empty as empty_ui;
-pub(crate) use ui::surface::image as image_ui;
-pub(crate) use ui::surface::markdown as markdown_ui;
-pub(crate) use ui::terminal_link;
-pub(crate) use ui::theme_bridge;
-pub(crate) use window::plugins::ui as plugins_ui;
-pub(crate) use window::settings::ui as settings_ui;
 
 fn main() -> Result<()> {
     boot::run()

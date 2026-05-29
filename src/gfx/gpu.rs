@@ -47,7 +47,7 @@ pub struct GpuState {
     pub(super) egui_renderer: egui_wgpu::Renderer,
     pub(super) scale_factor: f32,
     /// Tracks per-surface egui font signatures so we re-register only on change.
-    pub(super) surface_font_state: crate::ui::font_registry::SurfaceFontState,
+    pub(super) surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState,
     /// Plugin Canvas SharedBuffer → wgpu texture cache.
     pub(super) canvas_textures: canvas_texture::CanvasTextureCache,
     /// When set, the next render will capture the frame to this path as PNG.
@@ -187,7 +187,7 @@ impl GpuState {
             egui_state,
             egui_renderer,
             scale_factor,
-            surface_font_state: crate::ui::font_registry::SurfaceFontState::default(),
+            surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState::default(),
             canvas_textures: canvas_texture::CanvasTextureCache::new(),
             pending_screenshot: None,
         })
@@ -259,7 +259,7 @@ impl GpuState {
         // be registered before run_egui_frame, or the first frame panics with
         // "FontFamily::Name(...) is not bound to any fonts".
         let prev_theme = engine.settings.appearance.theme.clone();
-        crate::ui::font_registry::refresh_surface_fonts(
+        crate::adapters::ui::font_registry::refresh_surface_fonts(
             &self.egui_ctx,
             &engine.settings.appearance,
             &mut self.surface_font_state,
