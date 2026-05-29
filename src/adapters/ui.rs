@@ -19,6 +19,7 @@ pub mod theme_bridge;
 pub mod toast;
 pub(crate) mod tools_menu;
 
+pub mod input;
 pub mod window;
 
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
