@@ -425,6 +425,14 @@ impl CoreState {
     }
 }
 
+// CoreReader port — read-only 진입점. handler 가 점진적으로 `&dyn CoreReader`
+// 받게 마이그레이션 (D.3.C 의 각 도메인 step).
+impl crate::ports::inbound::CoreReader for CoreState {
+    fn state(&self) -> &CoreState {
+        self
+    }
+}
+
 /// `~/.tasty/file-handlers.toml` — 사용자 detector/handler 설정. 부팅 시 1회 로드.
 fn file_handler_user_config_path() -> Option<std::path::PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"))
