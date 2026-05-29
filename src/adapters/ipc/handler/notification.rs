@@ -88,12 +88,15 @@ pub fn handle_notification_create(
     // mutate 는 Core::apply 단일 진입점 — handler 는 read 후 enqueue.
     // cascade (notifications.add + host event enqueue) 는
     // App.cascade_notification_pushed 가 처리.
-    state.enqueue_domain_intent(crate::core::intent::DomainIntent::PushNotification {
-        ws_id,
-        surface_id,
-        title,
-        body,
-        source: "host".to_string(),
-    });
+    state.dispatch_intent(
+        crate::core::intent::DomainIntent::PushNotification {
+            ws_id,
+            surface_id,
+            title,
+            body,
+            source: "host".to_string(),
+        }
+        .from_agent_ipc(),
+    );
     JsonRpcResponse::success(id, json!({ "created": true }))
 }

@@ -57,13 +57,16 @@ pub(super) fn fire_anomaly_notification(
         anomaly.id,
     );
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄.
-    state.enqueue_domain_intent(crate::core::intent::DomainIntent::PushNotification {
-        ws_id,
-        surface_id: 0,
-        title,
-        body,
-        source: "telemetry.anomaly".to_string(),
-    });
+    state.dispatch_intent(
+        crate::core::intent::DomainIntent::PushNotification {
+            ws_id,
+            surface_id: 0,
+            title,
+            body,
+            source: "telemetry.anomaly".to_string(),
+        }
+        .from_system(),
+    );
 }
 
 /// `telemetry.anomaly.list` — 영속된 anomaly 레코드 조회. 필터: `agent`, `kind`,
