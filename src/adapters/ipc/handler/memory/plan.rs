@@ -1,13 +1,14 @@
 //! `memory.plan.*` IPC handlers.
 
 use serde_json::{Value, json};
-use tasty_memory::{plan as plan_mod, with_store};
+use tasty_memory::plan as plan_mod;
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-use super::{map_error, require_store, require_str, require_workspace_id};
+use super::{map_error, require_str, require_workspace_id};
 
 fn parse_plan_step(v: &Value, id: &Value) -> Result<plan_mod::PlanStep, JsonRpcResponse> {
     serde_json::from_value(v.clone())
@@ -25,15 +26,13 @@ fn parse_plan_step_state(s: &str, id: &Value) -> Result<plan_mod::PlanStepState,
 }
 
 pub fn handle_plan_create(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let workspace_id = match require_workspace_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -63,25 +62,22 @@ pub fn handle_plan_create(
         }
     };
     let owner = caller.owner().to_string();
-    let result =
-        with_store(|s| plan_mod::plan_create(s, &owner, workspace_id, &plan_id, &title, steps))
-            .expect("memory store present");
-    match result {
+    match core
+        .with_memory(|s| plan_mod::plan_create(s, &owner, workspace_id, &plan_id, &title, steps))
+    {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_plan_get(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let workspace_id = match require_workspace_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -90,9 +86,7 @@ pub fn handle_plan_get(
         Ok(s) => s.to_string(),
         Err(e) => return e,
     };
-    let result = with_store(|s| plan_mod::plan_get(s, workspace_id, &plan_id))
-        .expect("memory store present");
-    match result {
+    match core.with_memory(|s| plan_mod::plan_get(s, workspace_id, &plan_id)) {
         Ok(Some(plan)) => match serde_json::to_value(&plan) {
             Ok(v) => JsonRpcResponse::success(id, v),
             Err(e) => JsonRpcResponse::internal_error(id, format!("serialize: {e}")),
@@ -103,37 +97,31 @@ pub fn handle_plan_get(
 }
 
 pub fn handle_plan_list(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let workspace_id = match require_workspace_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let result =
-        with_store(|s| plan_mod::plan_list(s, workspace_id)).expect("memory store present");
-    match result {
+    match core.with_memory(|s| plan_mod::plan_list(s, workspace_id)) {
         Ok(plans) => JsonRpcResponse::success(id, json!({ "plans": plans, "count": plans.len() })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_plan_delete(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let workspace_id = match require_workspace_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -143,24 +131,20 @@ pub fn handle_plan_delete(
         Err(e) => return e,
     };
     let owner = caller.owner().to_string();
-    let result = with_store(|s| plan_mod::plan_delete(s, &owner, workspace_id, &plan_id))
-        .expect("memory store present");
-    match result {
+    match core.with_memory(|s| plan_mod::plan_delete(s, &owner, workspace_id, &plan_id)) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_plan_add_step(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let workspace_id = match require_workspace_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -183,26 +167,22 @@ pub fn handle_plan_add_step(
         .map(|n| n as usize);
     let cas = params.get("cas").and_then(|v| v.as_u64());
     let owner = caller.owner().to_string();
-    let result = with_store(|s| {
+    match core.with_memory(|s| {
         plan_mod::plan_add_step(s, &owner, workspace_id, &plan_id, step, position, cas)
-    })
-    .expect("memory store present");
-    match result {
+    }) {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_plan_remove_step(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let workspace_id = match require_workspace_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -217,26 +197,22 @@ pub fn handle_plan_remove_step(
     };
     let cas = params.get("cas").and_then(|v| v.as_u64());
     let owner = caller.owner().to_string();
-    let result = with_store(|s| {
+    match core.with_memory(|s| {
         plan_mod::plan_remove_step(s, &owner, workspace_id, &plan_id, &step_id, cas)
-    })
-    .expect("memory store present");
-    match result {
+    }) {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }
 }
 
 pub fn handle_plan_update_step(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let workspace_id = match require_workspace_id(params, &id) {
         Ok(v) => v,
         Err(e) => return e,
@@ -276,7 +252,7 @@ pub fn handle_plan_update_step(
     };
     let cas = params.get("cas").and_then(|v| v.as_u64());
     let owner = caller.owner().to_string();
-    let result = with_store(|s| {
+    match core.with_memory(|s| {
         plan_mod::plan_update_step(
             s,
             plan_mod::PlanUpdateStepOpts {
@@ -289,9 +265,7 @@ pub fn handle_plan_update_step(
                 cas,
             },
         )
-    })
-    .expect("memory store present");
-    match result {
+    }) {
         Ok(version) => JsonRpcResponse::success(id, json!({ "ok": true, "version": version })),
         Err(e) => map_error(id, e),
     }

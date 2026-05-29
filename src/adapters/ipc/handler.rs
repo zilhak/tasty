@@ -369,21 +369,25 @@ fn route_engine_handler(
         }
         // memory: plan (Phase 7.2 — workspace-scoped 선언적 work breakdown)
         "memory.plan_create" => {
-            memory::handle_plan_create(state, engine, caller, id, &request.params)
+            memory::handle_plan_create(core, state, engine, caller, id, &request.params)
         }
-        "memory.plan_get" => memory::handle_plan_get(state, engine, caller, id, &request.params),
-        "memory.plan_list" => memory::handle_plan_list(state, engine, caller, id, &request.params),
+        "memory.plan_get" => {
+            memory::handle_plan_get(core, state, engine, caller, id, &request.params)
+        }
+        "memory.plan_list" => {
+            memory::handle_plan_list(core, state, engine, caller, id, &request.params)
+        }
         "memory.plan_delete" => {
-            memory::handle_plan_delete(state, engine, caller, id, &request.params)
+            memory::handle_plan_delete(core, state, engine, caller, id, &request.params)
         }
         "memory.plan_add_step" => {
-            memory::handle_plan_add_step(state, engine, caller, id, &request.params)
+            memory::handle_plan_add_step(core, state, engine, caller, id, &request.params)
         }
         "memory.plan_remove_step" => {
-            memory::handle_plan_remove_step(state, engine, caller, id, &request.params)
+            memory::handle_plan_remove_step(core, state, engine, caller, id, &request.params)
         }
         "memory.plan_update_step" => {
-            memory::handle_plan_update_step(state, engine, caller, id, &request.params)
+            memory::handle_plan_update_step(core, state, engine, caller, id, &request.params)
         }
         // memory: cache (Phase 7.3 — workspace-scoped TTL 캐시)
         "memory.cache_put" => {

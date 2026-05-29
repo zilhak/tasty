@@ -18,7 +18,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use crate::{MemoryEntry, MemoryError, MemoryStore, MemoryValue, PutOpts, Result, Scope};
+use crate::{MemoryEntry, MemoryError, MemoryStorage, MemoryValue, PutOpts, Result, Scope};
 
 pub const PLAN_KEY_PREFIX: &str = "tasty.plan.";
 pub const PLAN_ID_MAX: usize = 64;
@@ -220,7 +220,7 @@ enum Mark {
 
 /// 새 plan 생성. 이미 같은 id 가 있으면 `AlreadyExists`.
 pub fn plan_create(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     plan_id: &str,
@@ -253,7 +253,11 @@ pub fn plan_create(
 }
 
 /// plan 조회.
-pub fn plan_get(store: &MemoryStore, workspace_id: u32, plan_id: &str) -> Result<Option<Plan>> {
+pub fn plan_get(
+    store: &dyn MemoryStorage,
+    workspace_id: u32,
+    plan_id: &str,
+) -> Result<Option<Plan>> {
     validate_plan_id(plan_id)?;
     let Some(entry) = store.get(&Scope::Workspace(workspace_id), &plan_key(plan_id))? else {
         return Ok(None);
@@ -274,7 +278,7 @@ fn plan_from_entry(entry: &MemoryEntry) -> Result<Plan> {
 }
 
 /// 워크스페이스의 plan id 목록 (정렬).
-pub fn plan_list(store: &MemoryStore, workspace_id: u32) -> Result<Vec<String>> {
+pub fn plan_list(store: &dyn MemoryStorage, workspace_id: u32) -> Result<Vec<String>> {
     let opts = crate::ListOpts {
         prefix: Some(PLAN_KEY_PREFIX.to_string()),
         ..Default::default()
@@ -288,7 +292,7 @@ pub fn plan_list(store: &MemoryStore, workspace_id: u32) -> Result<Vec<String>> 
 
 /// plan 삭제.
 pub fn plan_delete(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     plan_id: &str,
@@ -305,7 +309,7 @@ pub fn plan_delete(
 /// step 추가. `position` = None 이면 끝에 append, Some(i) 이면 인덱스 i 에 insert.
 /// step id 중복/총 step 수 초과 시 에러.
 pub fn plan_add_step(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     plan_id: &str,
@@ -322,7 +326,7 @@ pub fn plan_add_step(
 
 /// step 제거. 다른 step 이 `depends_on` 으로 참조 중이면 에러.
 pub fn plan_remove_step(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     plan_id: &str,
@@ -363,7 +367,10 @@ pub struct PlanUpdateStepOpts<'a> {
 }
 
 /// step state 갱신 (+ notes 옵션).
-pub fn plan_update_step(store: &mut MemoryStore, opts: PlanUpdateStepOpts<'_>) -> Result<u64> {
+pub fn plan_update_step(
+    store: &mut dyn MemoryStorage,
+    opts: PlanUpdateStepOpts<'_>,
+) -> Result<u64> {
     let PlanUpdateStepOpts {
         owner,
         workspace_id,
@@ -394,7 +401,7 @@ pub fn plan_update_step(store: &mut MemoryStore, opts: PlanUpdateStepOpts<'_>) -
 
 /// 공통: plan 을 읽어 mutate 한 뒤 다시 put. CAS 는 entry version 에 적용.
 fn update_plan<F>(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     plan_id: &str,
