@@ -173,8 +173,12 @@ impl App {
                     std::thread::sleep(Duration::from_millis(20));
                 }
             }
-            let engine = self.engine_state_mut();
-            if saved.restore(engine) {
+            let core = &self.core;
+            let engine = self
+                .engine_state
+                .as_mut()
+                .expect("engine_state must be initialized before layout restore");
+            if core.restore_layout(engine, saved) {
                 tracing::info!("Layout restored from layout.json (deferred)");
                 engine.restored_active_workspace.take()
             } else {

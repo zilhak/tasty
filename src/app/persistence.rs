@@ -13,7 +13,7 @@ impl App {
                 let active_ws = main.state.active_workspace;
                 let engine = &mut main.engine_state;
                 if engine.settings.general.restore_layout && engine.layout_dirty.should_flush() {
-                    crate::engine::layout_persistence::save_to_disk(engine, active_ws);
+                    self.core.save_layout(engine, active_ws);
                     engine.layout_dirty.clear();
                 }
             }
@@ -40,7 +40,7 @@ impl App {
                 let should_save = g.restore_layout
                     && (engine.layout_dirty.is_dirty() || g.restore_terminal_content);
                 if should_save {
-                    crate::engine::layout_persistence::save_to_disk(engine, active_ws);
+                    self.core.save_layout(engine, active_ws);
                     engine.layout_dirty.clear();
                 }
             }

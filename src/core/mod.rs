@@ -210,6 +210,29 @@ impl Core {
         f(&mut *guard)
     }
 
+    // ─── Layout persistence (~/.tasty/layout.json) ───
+
+    /// 현재 layout 을 디스크에 저장한다. debounce / shutdown flush 의 진입점.
+    /// 호출자는 (engine, active_workspace_index) 를 넘긴다.
+    pub(crate) fn save_layout(
+        &self,
+        engine: &mut crate::engine_state::CoreState,
+        active_workspace: usize,
+    ) {
+        crate::engine::layout_persistence::save_to_disk(engine, active_workspace);
+    }
+
+    /// 저장된 layout 을 live engine 으로 복원한다. plugin 이 register 한 surface
+    /// kind 가 준비된 후에만 호출해야 한다 — engine boot 시점이 아닌, 첫 plugin
+    /// pump 이후 호출.
+    pub(crate) fn restore_layout(
+        &self,
+        engine: &mut crate::engine_state::CoreState,
+        saved: crate::engine::layout_persistence::SavedLayout,
+    ) -> bool {
+        saved.restore(engine)
+    }
+
     // ─── Clipboard (외부 시스템 clipboard) ───
 
     /// 시스템 clipboard 에 text 쓰기. 옛 `arboard::Clipboard::new().set_text` 의 Core 진입점.
