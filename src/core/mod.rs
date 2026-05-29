@@ -198,8 +198,7 @@ impl Core {
 
     /// Memory store 의 lock 안에서 함수를 실행한다. Mutex poisoning 시
     /// poison 해제 후 inner 사용 (host 부팅이 store 의 Arc 를 항상 inject
-    /// 하므로 None 반환 분기는 없다 — 옛 `tasty_memory::with_store` 의
-    /// `Option<R>` 패턴과 달라 호출처가 `Result<R, _>` 만 처리하면 된다).
+    /// 하므로 None 반환 분기는 없다 — 호출처는 `Result<R, _>` 만 처리하면 된다).
     pub(crate) fn with_memory<R>(
         &self,
         f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,

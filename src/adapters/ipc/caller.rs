@@ -378,8 +378,8 @@ mod tests {
 /// - 유효 형식이지만 store 에 없음/만료/revoked → `Err(deny)` (Local fallback 금지)
 /// - 유효 → `CallerContext::Agent { ... }`
 ///
-/// memory store 가 초기화되지 않은 경우 (`with_store` 가 `None`): 토큰이 있어도
-/// 검증 불가이므로 `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
+/// memory store 가 초기화되지 않은 경우: 토큰이 있어도 검증 불가이므로
+/// `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
 pub(crate) fn resolve_caller_from_envelope(
     core: &crate::core::Core,
     request: &crate::ipc::protocol::JsonRpcRequest,

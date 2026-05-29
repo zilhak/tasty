@@ -22,10 +22,9 @@ use crate::core::builder::CoreBuilder;
 
 /// Production `Core` 빌드. winit proxy 가 필요한 `WinitWaker` 때문에 인자 1 개.
 ///
-/// Memory: boot 가 `tasty_memory::init_with_config` 로 전역 STORE 를 init 한 뒤
-/// `tasty_memory::store_arc()` 로 받은 Arc 를 본 함수에 전달. Core.memory 와
-/// `tasty_memory::with_store` 가 *같은 allocation* 의 store 를 가리킨다 — 향후
-/// 도메인별 callsite 마이그레이션이 끝나면 전역 with_store 폐기 + Core 가 유일 owner.
+/// Memory: boot 가 `tasty_memory::init_with_config` 로 새 `Arc<Mutex<MemoryStore>>`
+/// 를 만들어 본 함수에 전달. Core 가 그 Arc 의 유일 owner — 모든 하위 표면
+/// (AppState.memory, CoreState.memory, worker thread capture) 은 Core 의 Arc clone 을 공유한다.
 ///
 /// `memory` 가 `None` 이면 (homedir 미확인 등 boot fail), in-memory placeholder
 /// 로 fallback 해 앱 자체는 기동시킨다 — handler 가 자체적으로 store 의 가용성을 평가.

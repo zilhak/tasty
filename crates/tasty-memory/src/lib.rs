@@ -26,9 +26,11 @@
 //! ## 동기 모델
 //!
 //! Tasty 본 바이너리는 winit 이벤트 루프 + sync 코드 베이스다 (tokio 사용 안 함).
-//! `MemoryStore` 는 `OnceLock<Mutex<MemoryStore>>` 싱글톤 + `with_store(...)`
-//! 동기 콜백. IPC dispatch 는 메인 스레드에서 순차 호출되고, plugin process 호출도
-//! 별도 스레드의 mpsc 경로를 거쳐 결국 메인에서 처리되므로 단일 mutex 로 충분.
+//! `MemoryStore` 는 호스트 boot 가 `init_with_config` 로 만들어
+//! `Arc<Mutex<dyn MemoryStorage>>` 로 `Core` 에 inject 한다. IPC dispatch 는 메인
+//! 스레드에서 순차 호출되고, plugin process 호출도 별도 스레드의 mpsc 경로를 거쳐
+//! 결국 메인에서 처리되므로 단일 mutex 로 충분. worker thread (approval.await,
+//! output observer Memory sink) 는 Arc clone 을 capture 해 자기 수명에서 lock.
 
 mod migrations;
 mod port;

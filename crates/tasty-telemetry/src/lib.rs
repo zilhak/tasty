@@ -9,7 +9,7 @@
 //!
 //! ## 비-책임 (호스트가 처리)
 //!
-//! - **영속 IO**: 호스트가 `tasty_memory::with_store` 로 read/write
+//! - **영속 IO**: 호스트가 `Core.with_memory` 로 read/write
 //! - **rollup task**: 호스트가 tokio interval 로 주기 호출
 //! - **dispatcher 통합 / cap 평가 캐시**: 호스트 `src/ipc/handler` 측
 //! - **agent 식별**: 호스트가 [`AgentId::from_caller`] 등으로 도출
