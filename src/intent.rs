@@ -174,6 +174,49 @@ impl UiIntent {
     }
 }
 
+/// `DomainIntent` 발화 ergonomics — `UiIntent` 와 동일 패턴. 단 `from_system()`
+/// 은 *Domain 한정* 으로 본 impl 에만 존재한다 — UI Intent 의 자동 발화 차단.
+impl crate::core::intent::DomainIntent {
+    pub(crate) fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
+        Intent::Domain(self).from_user_shortcut(id)
+    }
+
+    pub(crate) fn from_user_menu(self, id: &'static str) -> DispatchedIntent {
+        Intent::Domain(self).from_user_menu(id)
+    }
+
+    pub(crate) fn from_user_context_menu(self) -> DispatchedIntent {
+        Intent::Domain(self).from_user_context_menu()
+    }
+
+    pub(crate) fn from_agent_ipc(self) -> DispatchedIntent {
+        Intent::Domain(self).from_agent_ipc()
+    }
+
+    pub(crate) fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
+        Intent::Domain(self).from_agent_plugin(plugin_id)
+    }
+
+    pub(crate) fn from_agent_cli(self) -> DispatchedIntent {
+        Intent::Domain(self).from_agent_cli()
+    }
+
+    /// 시스템 내부 cascade 발화 — PTY escape sequence 가 trigger 한 자동 cascade
+    /// 등. UI Intent 의 system 발화는 type-level 로 차단되므로 본 method 는
+    /// `DomainIntent` 에만 존재한다.
+    pub(crate) fn from_system(self) -> DispatchedIntent {
+        DispatchedIntent {
+            body: Intent::Domain(self),
+            origin: IntentOrigin::System,
+            trace_id: None,
+        }
+    }
+
+    pub(crate) fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
+        Intent::Domain(self).cascaded_from(parent)
+    }
+}
+
 /// Surface 변환 타깃. Terminal 은 host 내장 special case, 나머지는 surface_registry
 /// 의 kind 로 통합. plugin 이 등록한 kind 도 모두 이 경로로 처리한다.
 #[derive(Debug, Clone)]
@@ -201,10 +244,22 @@ pub enum OpenPopupMode {
 }
 
 /// Intent 를 발화한 주체. 핸들러가 정책 분기에 사용.
+///
+/// `System` variant 는 *사용자도 에이전트도 아닌 시스템 내부 cascade* 를 표현 —
+/// PTY 가 출력한 escape sequence 가 trigger 한 cascade (OSC 9 알림, OSC 7 cwd
+/// 변경, OSC 52 클립보드 등) 와 같이 *사용자/에이전트의 직접 발화가 아닌
+/// 자동 cascade*. focus 정책상 `User` 도 `Agent` 도 아닌 *제3 카테고리* —
+/// focus 가져가지 않고, closed-tab restore 스택에도 push 하지 않는다 (기존
+/// `is_user()` 가 false 인 경로와 동일 동작).
+///
+/// `System` 발화는 *Domain Intent 한정* — UI Intent (`Intent::Ui`) 의 자동
+/// 발화는 release 표면에서 금지되므로 `UiIntent` 위에는 `from_system()` 을
+/// 두지 않는다 (`popup-system.md` "Popup 발화 정책").
 #[derive(Debug, Clone)]
 pub enum IntentOrigin {
     User { source: UserSource },
     Agent { source: AgentSource },
+    System,
 }
 
 #[derive(Debug, Clone)]
@@ -228,6 +283,10 @@ impl IntentOrigin {
 
     pub fn is_agent(&self) -> bool {
         matches!(self, IntentOrigin::Agent { .. })
+    }
+
+    pub fn is_system(&self) -> bool {
+        matches!(self, IntentOrigin::System)
     }
 }
 
