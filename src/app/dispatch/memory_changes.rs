@@ -11,9 +11,7 @@ impl App {
         use tasty_plugin_protocol::events::payloads::{
             MemoryChangeKind as ProtoKind, MemoryChanged,
         };
-        let Some(changes) = tasty_memory::with_store(|s| s.take_pending_changes()) else {
-            return;
-        };
+        let changes = self.core.with_memory(|s| s.take_pending_changes());
         if changes.is_empty() {
             return;
         }

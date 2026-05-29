@@ -25,15 +25,17 @@ pub fn handle_cancel(
 }
 
 /// `approval.await` 의 실제 본문 — 메인 스레드를 막지 않도록 워커 스레드에서
-/// 호출한다. main.rs::process_ipc 가 Arc<ApprovalStore> 를 클론해 thread::spawn
-/// 안에서 이 함수를 호출하고, 응답을 `response_tx` 로 보낸다.
+/// 호출한다. `ipc_dispatch_approval_await` 가 Arc<ApprovalStore> + memory port
+/// Arc 를 클론해 thread::spawn 안에서 이 함수를 호출하고, 응답을 `response_tx`
+/// 로 보낸다.
 ///
 /// `timeout_ms` 가 0 또는 null 이면 record 의 `timeout_ms` 사용, 그것도 없으면 무한 대기.
-///
-/// 워커 스레드는 `Core` 를 갖지 못하므로 영속은 글로벌 `with_store` 헬퍼를
-/// 그대로 사용한다 (Phase D.3.C.M.4 의 잔여 — UI popup 의 `persist_after_respond`
-/// 와 함께 다음 단계에서 memory port Arc 를 thread 간 capture 하는 방식으로 변환).
-pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> JsonRpcResponse {
+pub fn await_blocking(
+    store: &ApprovalStore,
+    memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    rpc_id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
     let req_id = match params.get("id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
         _ => return JsonRpcResponse::invalid_params(rpc_id, "Missing 'id'"),
@@ -44,10 +46,10 @@ pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> J
         None => store.get(&req_id).and_then(|r| r.request.timeout_ms),
     };
     let outcome = store.await_response(&req_id, timeout_ms);
-    // 상태 전이(timeout 자동 전이 포함) 가 있었으면 영속 — worker thread 의 잔여
-    // with_store 경로. M.4 에서 thread-capturable port 로 옮길 예정.
+    // 상태 전이(timeout 자동 전이 포함) 가 있었으면 영속. worker thread 의
+    // memory port arc 로 lock 후 한 번에 처리.
     if let Some(record) = store.get(&req_id) {
-        persist_record_via_global_store(&record);
+        persist_record_via_arc(memory, &record);
     }
     match outcome {
         Ok(WaitOutcome::Responded {

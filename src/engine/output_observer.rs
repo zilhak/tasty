@@ -148,7 +148,14 @@ impl ObserverRouter {
     }
 
     /// 옵저버 등록. id 반환.
-    pub fn register(&mut self, spec: ObserverSpec) -> Result<ObserverId, ObserverError> {
+    ///
+    /// `memory` 는 Memory sink 용 — Core memory port 의 Arc clone. None 이면
+    /// Memory sink 등록을 거부한다 (File sink 만 등록 가능).
+    pub fn register(
+        &mut self,
+        spec: ObserverSpec,
+        memory: Option<std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>>,
+    ) -> Result<ObserverId, ObserverError> {
         // 파서 lookup
         let parser_ids: Vec<String> = if spec.parsers.is_empty() {
             DEFAULT_PARSER_IDS.iter().map(|s| s.to_string()).collect()
@@ -186,10 +193,15 @@ impl ObserverRouter {
             SinkView::Memory { max_records } => {
                 let cap = *max_records;
                 let worker_id = id;
+                let Some(mem) = memory.clone() else {
+                    return Err(ObserverError::FileOpen(
+                        "memory port not injected; cannot register Memory sink".to_string(),
+                    ));
+                };
                 Some(
                     thread::Builder::new()
                         .name(format!("tasty-observer-mem-{worker_id}"))
-                        .spawn(move || run_memory_sink(worker_id, cap, rx))
+                        .spawn(move || run_memory_sink(worker_id, cap, rx, mem))
                         .expect("spawn memory sink thread"),
                 )
             }
@@ -405,8 +417,9 @@ fn run_memory_sink(
     observer_id: ObserverId,
     max_records: usize,
     rx: std::sync::mpsc::Receiver<ParsedItem>,
+    memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
 ) {
-    use tasty_memory::{HOST_OWNER, MemoryValue, PutOpts, Scope, with_store};
+    use tasty_memory::{HOST_OWNER, MemoryValue, PutOpts, Scope};
     let mut written_keys: std::collections::VecDeque<String> =
         std::collections::VecDeque::with_capacity(max_records.min(1024));
     while let Ok(item) = rx.recv() {
@@ -420,35 +433,31 @@ fn run_memory_sink(
             "data": item.data,
             "at_ms": now,
         });
-        let result = with_store(|s| {
-            s.put(
-                HOST_OWNER,
-                &Scope::Global,
-                &key,
-                &MemoryValue::Json(record),
-                &PutOpts::default(),
-            )
-        });
-        match result {
-            Some(Ok(_)) => {
+        let mut guard = match memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let put_result = guard.put(
+            HOST_OWNER,
+            &Scope::Global,
+            &key,
+            &MemoryValue::Json(record),
+            &PutOpts::default(),
+        );
+        match put_result {
+            Ok(_) => {
                 if max_records > 0 {
                     written_keys.push_back(key);
                     while written_keys.len() > max_records {
                         let Some(old) = written_keys.pop_front() else {
                             break;
                         };
-                        let _ = with_store(|s| s.delete(HOST_OWNER, &Scope::Global, &old, None));
+                        let _ = guard.delete(HOST_OWNER, &Scope::Global, &old, None); // best-effort evict — 실패해도 다음 put 의 누적 효과로 보정.
                     }
                 }
             }
-            Some(Err(e)) => {
+            Err(e) => {
                 tracing::warn!("observer {observer_id} memory put failed: {e}");
-            }
-            None => {
-                tracing::warn!(
-                    "observer {observer_id} memory store not initialised; stopping sink"
-                );
-                return;
             }
         }
     }
@@ -503,12 +512,15 @@ mod tests {
     fn register_unknown_parser_rejects() {
         let mut r = ObserverRouter::new();
         let err = r
-            .register(ObserverSpec {
-                surface_id: None,
-                parsers: vec!["bogus".to_string()],
-                kinds: None,
-                sink: SinkSpec::Memory { max_records: 10 },
-            })
+            .register(
+                ObserverSpec {
+                    surface_id: None,
+                    parsers: vec!["bogus".to_string()],
+                    kinds: None,
+                    sink: SinkSpec::Memory { max_records: 10 },
+                },
+                None,
+            )
             .unwrap_err();
         assert!(matches!(err, ObserverError::UnknownParser(_)));
     }

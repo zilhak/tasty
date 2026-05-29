@@ -85,11 +85,13 @@ pub(super) fn scope_for(record: &ApprovalRecord) -> Scope {
     }
 }
 
-/// 상태 전이마다 호출. memory store 가 초기화되지 않은 환경(테스트 등)에서는
-/// silent 통과 — 도메인 상태는 in-memory 에 이미 있다.
-/// Worker thread 잔여 — `core` 없이 글로벌 `with_store` 헬퍼로 영속.
-/// `await_blocking` 만 사용. 메인 스레드는 `persist_record(core, ...)` 사용.
-pub(super) fn persist_record_via_global_store(record: &ApprovalRecord) {
+/// Worker thread 용 — `core` 가 도달하지 못하는 thread 에서, memory port 의
+/// Arc clone 으로 직접 영속한다. `await_blocking` 전용. 메인 스레드는
+/// `persist_record(core, ...)` 사용.
+pub(super) fn persist_record_via_arc(
+    memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    record: &ApprovalRecord,
+) {
     let scope = scope_for(record);
     let key = format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id);
     let value = match serde_json::to_value(record) {
@@ -103,12 +105,12 @@ pub(super) fn persist_record_via_global_store(record: &ApprovalRecord) {
         expires_at: None,
         cas: None,
     };
-    match tasty_memory::with_store(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts))
-    {
-        Some(Ok(_)) | None => {}
-        Some(Err(e)) => {
-            tracing::warn!("approval: memory put failed for {}: {e}", record.request.id);
-        }
+    let mut guard = match memory.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    if let Err(e) = guard.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts) {
+        tracing::warn!("approval: memory put failed for {}: {e}", record.request.id);
     }
 }
 

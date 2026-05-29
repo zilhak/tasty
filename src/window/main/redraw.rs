@@ -124,9 +124,10 @@ impl MainWindow {
                     engine.record_internal_copy(data);
                 }
                 crate::terminal::TerminalEventKind::PromptBoundary { phase, payload } => {
+                    let mem = engine.memory.clone();
                     engine
                         .command_index
-                        .on_boundary(surface_id, *phase, payload);
+                        .on_boundary(mem.as_ref(), surface_id, *phase, payload);
                 }
                 crate::terminal::TerminalEventKind::OutputAppended { text } => {
                     engine.observer_router.dispatch_text(surface_id, text);

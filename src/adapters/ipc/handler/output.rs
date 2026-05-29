@@ -19,7 +19,8 @@ pub fn handle_observe_start(
         Ok(s) => s,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    match engine.observer_router.register(spec) {
+    let memory = engine.memory.clone();
+    match engine.observer_router.register(spec, memory) {
         Ok(observer_id) => {
             let info = engine
                 .observer_router

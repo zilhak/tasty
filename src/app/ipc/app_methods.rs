@@ -292,7 +292,8 @@ impl App {
         }
     }
 
-    /// `approval.await`: blocking. Arc<ApprovalStore> 만 worker thread 로 클론.
+    /// `approval.await`: blocking. Arc<ApprovalStore> + memory port arc 를
+    /// worker thread 로 클론해 cascade 없이 자기 수명에서 영속한다.
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         let store_opt = self
             .windows
@@ -304,13 +305,16 @@ impl App {
                     .map(|(_, e)| e.approval_store.clone())
             })
             .or_else(|| self.engine_state.as_ref().map(|e| e.approval_store.clone()));
+        let memory = self.core.memory_arc();
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match store_opt {
             Some(store) => {
                 let params = cmd.request.params.clone();
                 let response_tx = cmd.response_tx.clone();
                 std::thread::spawn(move || {
-                    let resp = host_ipc::handler::approval::await_blocking(&store, rpc_id, &params);
+                    let resp = host_ipc::handler::approval::await_blocking(
+                        &store, &memory, rpc_id, &params,
+                    );
                     send_response(&response_tx, resp);
                 });
             }

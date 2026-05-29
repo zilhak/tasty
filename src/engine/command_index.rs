@@ -13,10 +13,13 @@
 //! - `D` 페이로드의 첫 token (`;` 가 아닌 경우) 은 exit code
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use tasty_memory::{HOST_OWNER, MemoryValue, PutOpts, Scope, with_store};
+use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
+
+type MemArc = Arc<Mutex<dyn MemoryStorage>>;
 
 /// Per-surface 명령 인덱서 상태.
 #[derive(Default)]
@@ -47,7 +50,16 @@ impl CommandIndex {
 
     /// OSC 133 phase 도착 시 호출. `payload` 는 phase 문자 뒤의 `;`-분리 토큰들.
     /// D phase 가 도착하면 memory 에 record 저장 후 per-surface 상태 reset.
-    pub fn on_boundary(&mut self, surface_id: u32, phase: char, payload: &str) {
+    ///
+    /// `memory` 가 None 이면 D phase 영속을 skip — 호출자가 `engine.memory` 를
+    /// inject 한 다음에만 record 가 쌓인다.
+    pub fn on_boundary(
+        &mut self,
+        memory: Option<&MemArc>,
+        surface_id: u32,
+        phase: char,
+        payload: &str,
+    ) {
         let now = unix_ms_now();
         let entry = self.surfaces.entry(surface_id).or_default();
         match phase {
@@ -82,23 +94,26 @@ impl CommandIndex {
                     "command": entry.command_text,
                 });
                 let key = format!("tasty.commands.{key_ts}");
-                let result = with_store(|s| {
-                    s.put(
+                if let Some(mem) = memory {
+                    let mut guard = match mem.lock() {
+                        Ok(g) => g,
+                        Err(p) => p.into_inner(),
+                    };
+                    if let Err(e) = guard.put(
                         HOST_OWNER,
                         &Scope::Surface(surface_id),
                         &key,
                         &MemoryValue::Json(record),
                         &PutOpts::default(),
-                    )
-                });
-                match result {
-                    Some(Ok(_)) => {}
-                    Some(Err(e)) => tracing::warn!(
-                        "command_index: memory.put for surface {surface_id} '{key}' failed: {e}"
-                    ),
-                    None => tracing::warn!(
-                        "command_index: memory store not initialised; dropping command record"
-                    ),
+                    ) {
+                        tracing::warn!(
+                            "command_index: memory.put for surface {surface_id} '{key}' failed: {e}"
+                        );
+                    }
+                } else {
+                    tracing::warn!(
+                        "command_index: memory port not injected; dropping command record"
+                    );
                 }
                 *entry = Pending::default();
             }
