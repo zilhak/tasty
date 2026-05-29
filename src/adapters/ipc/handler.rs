@@ -310,28 +310,28 @@ fn route_engine_handler(
         "memory.import" => memory::handle_import(core, state, engine, caller, id, &request.params),
         // memory: secret (plugin 별 사전 분할)
         "memory.secret.put" => {
-            memory::handle_secret_put(state, engine, caller, id, &request.params)
+            memory::handle_secret_put(core, state, engine, caller, id, &request.params)
         }
         "memory.secret.get" => {
-            memory::handle_secret_get(state, engine, caller, id, &request.params)
+            memory::handle_secret_get(core, state, engine, caller, id, &request.params)
         }
         "memory.secret.delete" => {
-            memory::handle_secret_delete(state, engine, caller, id, &request.params)
+            memory::handle_secret_delete(core, state, engine, caller, id, &request.params)
         }
         "memory.secret.list" => {
-            memory::handle_secret_list(state, engine, caller, id, &request.params)
+            memory::handle_secret_list(core, state, engine, caller, id, &request.params)
         }
         "memory.secret.exists" => {
-            memory::handle_secret_exists(state, engine, caller, id, &request.params)
+            memory::handle_secret_exists(core, state, engine, caller, id, &request.params)
         }
         "memory.secret.count" => {
-            memory::handle_secret_count(state, engine, caller, id, &request.params)
+            memory::handle_secret_count(core, state, engine, caller, id, &request.params)
         }
         "memory.secret.scopes" => {
-            memory::handle_secret_scopes(state, engine, caller, id, &request.params)
+            memory::handle_secret_scopes(core, state, engine, caller, id, &request.params)
         }
         "memory.secret.stats" => {
-            memory::handle_secret_stats(state, engine, caller, id, &request.params)
+            memory::handle_secret_stats(core, state, engine, caller, id, &request.params)
         }
         // memory: 유지 보수 (host 전용)
         "memory.gc" => memory::handle_gc(core, state, engine, caller, id, &request.params),
