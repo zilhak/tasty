@@ -97,6 +97,44 @@ impl Core {
         engine.clear_messages(sid);
     }
 
+    // ─── Output observers (D.3.C.E.5) ───
+
+    /// Observer 등록. 반환: 새 observer id.
+    pub(crate) fn observer_register(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        spec: crate::output_observer::ObserverSpec,
+    ) -> Result<u64, crate::output_observer::ObserverError> {
+        let memory = engine.memory.clone();
+        engine.observer_router.register(spec, memory)
+    }
+
+    /// Observer 해제.
+    pub(crate) fn observer_unregister(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        observer_id: u64,
+    ) -> Result<(), crate::output_observer::ObserverError> {
+        engine.observer_router.unregister(observer_id)
+    }
+
+    /// Observer 목록 — read 인터페이스.
+    pub(crate) fn observer_list(
+        &self,
+        engine: &crate::engine_state::CoreState,
+    ) -> Vec<crate::output_observer::ObserverInfo> {
+        engine.observer_router.list()
+    }
+
+    /// 특정 observer 의 info — read 인터페이스.
+    pub(crate) fn observer_info(
+        &self,
+        engine: &crate::engine_state::CoreState,
+        observer_id: u64,
+    ) -> Option<crate::output_observer::ObserverInfo> {
+        engine.observer_router.info(observer_id)
+    }
+
     // ─── Hooks ───
 
     /// surface hook 등록. 반환: 새 hook id.

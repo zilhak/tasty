@@ -222,10 +222,16 @@ fn route_engine_handler(
         "surface.command_at" => {
             surface::handle_command_at(core, state, engine, id, &request.params)
         }
-        "output.observe_start" => output::handle_observe_start(state, engine, id, &request.params),
-        "output.observe_stop" => output::handle_observe_stop(state, engine, id, &request.params),
-        "output.observe_list" => output::handle_observe_list(state, engine, id),
-        "output.observe_info" => output::handle_observe_info(state, engine, id, &request.params),
+        "output.observe_start" => {
+            output::handle_observe_start(core, state, engine, id, &request.params)
+        }
+        "output.observe_stop" => {
+            output::handle_observe_stop(core, state, engine, id, &request.params)
+        }
+        "output.observe_list" => output::handle_observe_list(core, state, engine, id),
+        "output.observe_info" => {
+            output::handle_observe_info(core, state, engine, id, &request.params)
+        }
         "surface.screen_text" => surface::handle_screen_text(state, engine, id, &request.params),
         "surface.cursor_position" => {
             surface::handle_cursor_position(state, engine, id, &request.params)

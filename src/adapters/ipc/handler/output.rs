@@ -1,15 +1,17 @@
-//! `output.observe_*` IPC 핸들러. 옵저버 라우터 (`engine.observer_router`) 의
-//! thin wrapper.
+//! `output.observe_*` IPC 핸들러. 모든 mutate / read 는 `Core` wrapper 를 거친다
+//! (`core.observer_*`) — handler 는 *engine 직접 mutate 금지* (Phase D 원칙).
 
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
 
+use crate::core::Core;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::output_observer::{ObserverError, ObserverSpec, SinkSpec};
 use crate::state::AppState;
 
 pub fn handle_observe_start(
+    core: &mut Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: Value,
@@ -19,12 +21,10 @@ pub fn handle_observe_start(
         Ok(s) => s,
         Err(e) => return JsonRpcResponse::invalid_params(id, e),
     };
-    let memory = engine.memory.clone();
-    match engine.observer_router.register(spec, memory) {
+    match core.observer_register(engine, spec) {
         Ok(observer_id) => {
-            let info = engine
-                .observer_router
-                .info(observer_id)
+            let info = core
+                .observer_info(engine, observer_id)
                 .expect("just-registered observer must exist");
             JsonRpcResponse::success(id, json!({ "observer_id": observer_id, "info": info }))
         }
@@ -33,6 +33,7 @@ pub fn handle_observe_start(
 }
 
 pub fn handle_observe_stop(
+    core: &mut Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: Value,
@@ -42,22 +43,24 @@ pub fn handle_observe_stop(
         Some(v) => v,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'observer_id'"),
     };
-    match engine.observer_router.unregister(observer_id) {
+    match core.observer_unregister(engine, observer_id) {
         Ok(()) => JsonRpcResponse::success(id, json!({ "observer_id": observer_id })),
         Err(e) => observer_error_to_response(id, e),
     }
 }
 
 pub fn handle_observe_list(
+    core: &Core,
     _state: &AppState,
     engine: &crate::engine_state::CoreState,
     id: Value,
 ) -> JsonRpcResponse {
-    let items = engine.observer_router.list();
+    let items = core.observer_list(engine);
     JsonRpcResponse::success(id, json!({ "observers": items }))
 }
 
 pub fn handle_observe_info(
+    core: &Core,
     _state: &AppState,
     engine: &crate::engine_state::CoreState,
     id: Value,
@@ -67,7 +70,7 @@ pub fn handle_observe_info(
         Some(v) => v,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'observer_id'"),
     };
-    match engine.observer_router.info(observer_id) {
+    match core.observer_info(engine, observer_id) {
         Some(info) => JsonRpcResponse::success(id, json!(info)),
         None => observer_error_to_response(id, ObserverError::NotFound(observer_id)),
     }
