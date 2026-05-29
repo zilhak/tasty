@@ -449,7 +449,7 @@ pub(super) fn fire_require_approval(
     };
     match core.request_approval(engine, req) {
         Ok(change) => {
-            crate::ipc::handler::approval::persist_record(&change.record);
+            crate::ipc::handler::approval::persist_record(core, &change.record);
             crate::ui::popup::approval::enqueue_approval(state, engine, &change.record);
             tracing::info!(
                 "cap require_approval: issued approval id={} for cap={}",

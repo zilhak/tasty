@@ -404,14 +404,16 @@ fn route_engine_handler(
         "approval.cancel" => {
             approval::handle_cancel(core, state, engine, caller, id, &request.params)
         }
-        "approval.get" => approval::handle_get(state, engine, caller, id, &request.params),
-        "approval.list" => approval::handle_list(state, engine, caller, id, &request.params),
-        "approval.history" => approval::handle_history(state, engine, caller, id, &request.params),
+        "approval.get" => approval::handle_get(core, state, engine, caller, id, &request.params),
+        "approval.list" => approval::handle_list(core, state, engine, caller, id, &request.params),
+        "approval.history" => {
+            approval::handle_history(core, state, engine, caller, id, &request.params)
+        }
         "approval.summary.set" => {
-            approval::handle_summary_set(state, engine, caller, id, &request.params)
+            approval::handle_summary_set(core, state, engine, caller, id, &request.params)
         }
         "approval.summary.get" => {
-            approval::handle_summary_get(state, engine, caller, id, &request.params)
+            approval::handle_summary_get(core, state, engine, caller, id, &request.params)
         }
         // telemetry (관측 / 비용) — 단계 4.1
         "telemetry.record" => {

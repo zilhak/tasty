@@ -1,8 +1,10 @@
 //! `approval` IPC: summary 도메인.
 
 use super::*;
+use crate::core::Core;
 
 pub fn handle_summary_set(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -23,15 +25,16 @@ pub fn handle_summary_set(
         expires_at: None,
         cas: None,
     };
-    match with_store(|s| s.put(tasty_memory::HOST_OWNER, &scope, SUMMARY_KEY, &value, &opts)) {
-        Some(Ok(_)) => JsonRpcResponse::success(id, json!({ "workspace_id": workspace_id })),
-        Some(Err(e)) => JsonRpcResponse::error(id, -32603, format!("summary set failed: {e}")),
-        None => JsonRpcResponse::error(id, -32603, "memory store unavailable"),
+    match core.with_memory(|s| s.put(tasty_memory::HOST_OWNER, &scope, SUMMARY_KEY, &value, &opts))
+    {
+        Ok(_) => JsonRpcResponse::success(id, json!({ "workspace_id": workspace_id })),
+        Err(e) => JsonRpcResponse::error(id, -32603, format!("summary set failed: {e}")),
     }
 }
 
 /// `approval.summary.get` — workspace 의 요약을 반환. 없으면 `content: null`.
 pub fn handle_summary_get(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -43,9 +46,8 @@ pub fn handle_summary_get(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'workspace_id'"),
     };
     let scope = Scope::Workspace(workspace_id);
-    let entry = with_store(|s| s.get(&scope, SUMMARY_KEY));
-    match entry {
-        Some(Ok(Some(e))) => {
+    match core.with_memory(|s| s.get(&scope, SUMMARY_KEY)) {
+        Ok(Some(e)) => {
             let content = match e.value {
                 MemoryValue::Text(t) => Some(t),
                 MemoryValue::Json(v) => v.as_str().map(str::to_string),
@@ -60,10 +62,9 @@ pub fn handle_summary_get(
                 }),
             )
         }
-        Some(Ok(None)) => {
+        Ok(None) => {
             JsonRpcResponse::success(id, json!({ "workspace_id": workspace_id, "content": null }))
         }
-        Some(Err(e)) => JsonRpcResponse::error(id, -32603, format!("summary get failed: {e}")),
-        None => JsonRpcResponse::error(id, -32603, "memory store unavailable"),
+        Err(e) => JsonRpcResponse::error(id, -32603, format!("summary get failed: {e}")),
     }
 }

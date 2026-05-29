@@ -1,6 +1,7 @@
 //! `approval` IPC: read 도메인.
 
 use super::*;
+use crate::core::Core;
 
 pub fn handle_cancel(
     core: &mut crate::core::Core,
@@ -16,7 +17,7 @@ pub fn handle_cancel(
     };
     match core.cancel_approval(engine, &req_id) {
         Ok(change) => {
-            persist_record(&change.record);
+            persist_record(core, &change.record);
             JsonRpcResponse::success(id, record_to_json(&change.record))
         }
         Err(e) => map_error(id, e),
@@ -28,6 +29,10 @@ pub fn handle_cancel(
 /// 안에서 이 함수를 호출하고, 응답을 `response_tx` 로 보낸다.
 ///
 /// `timeout_ms` 가 0 또는 null 이면 record 의 `timeout_ms` 사용, 그것도 없으면 무한 대기.
+///
+/// 워커 스레드는 `Core` 를 갖지 못하므로 영속은 글로벌 `with_store` 헬퍼를
+/// 그대로 사용한다 (Phase D.3.C.M.4 의 잔여 — UI popup 의 `persist_after_respond`
+/// 와 함께 다음 단계에서 memory port Arc 를 thread 간 capture 하는 방식으로 변환).
 pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> JsonRpcResponse {
     let req_id = match params.get("id").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => ApprovalId(s.to_string()),
@@ -39,9 +44,10 @@ pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> J
         None => store.get(&req_id).and_then(|r| r.request.timeout_ms),
     };
     let outcome = store.await_response(&req_id, timeout_ms);
-    // 상태 전이(timeout 자동 전이 포함) 가 있었으면 영속.
+    // 상태 전이(timeout 자동 전이 포함) 가 있었으면 영속 — worker thread 의 잔여
+    // with_store 경로. M.4 에서 thread-capturable port 로 옮길 예정.
     if let Some(record) = store.get(&req_id) {
-        persist_record(&record);
+        persist_record_via_global_store(&record);
     }
     match outcome {
         Ok(WaitOutcome::Responded {
@@ -73,6 +79,7 @@ pub fn await_blocking(store: &ApprovalStore, rpc_id: Value, params: &Value) -> J
 
 /// `approval.get` — 단일 record 조회.
 pub fn handle_get(
+    _core: &Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -92,6 +99,7 @@ pub fn handle_get(
 /// `approval.list` — 전체 record. 필터: `state` (pending|responded|timed_out|cancelled|terminal),
 /// `workspace_id`.
 pub fn handle_list(
+    _core: &Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -136,6 +144,7 @@ pub fn handle_list(
 ///
 /// 응답: `{ entries: [...], count, returned }`.
 pub fn handle_history(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
@@ -165,17 +174,10 @@ pub fn handle_history(
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
 
-    let scopes_result = with_store(|s| s.scopes());
-    let scopes: Vec<String> = match scopes_result {
-        Some(Ok(s)) => s,
-        Some(Err(e)) => {
+    let scopes: Vec<String> = match core.with_memory(|s| s.scopes()) {
+        Ok(s) => s,
+        Err(e) => {
             return JsonRpcResponse::error(id, -32603, format!("memory scopes failed: {e}"));
-        }
-        None => {
-            return JsonRpcResponse::success(
-                id,
-                json!({ "entries": [], "count": 0, "returned": 0 }),
-            );
         }
     };
 
@@ -196,7 +198,7 @@ pub fn handle_history(
             until,
             offset: None,
         };
-        let Some(Ok(entries)) = with_store(|s| s.list(&scope, &list_opts)) else {
+        let Ok(entries) = core.with_memory(|s| s.list(&scope, &list_opts)) else {
             continue;
         };
         for entry in entries {

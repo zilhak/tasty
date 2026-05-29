@@ -10,8 +10,9 @@ use tasty_approval::{
     ApprovalChoice, ApprovalError, ApprovalId, ApprovalRecord, ApprovalRequest, ApprovalStore,
     Requester, Responder, Severity, WaitOutcome,
 };
-use tasty_memory::{MemoryValue, PutOpts, Scope, with_store};
+use tasty_memory::{MemoryValue, PutOpts, Scope};
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
@@ -86,7 +87,9 @@ pub(super) fn scope_for(record: &ApprovalRecord) -> Scope {
 
 /// 상태 전이마다 호출. memory store 가 초기화되지 않은 환경(테스트 등)에서는
 /// silent 통과 — 도메인 상태는 in-memory 에 이미 있다.
-pub(crate) fn persist_record(record: &ApprovalRecord) {
+/// Worker thread 잔여 — `core` 없이 글로벌 `with_store` 헬퍼로 영속.
+/// `await_blocking` 만 사용. 메인 스레드는 `persist_record(core, ...)` 사용.
+pub(super) fn persist_record_via_global_store(record: &ApprovalRecord) {
     let scope = scope_for(record);
     let key = format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id);
     let value = match serde_json::to_value(record) {
@@ -100,15 +103,33 @@ pub(crate) fn persist_record(record: &ApprovalRecord) {
         expires_at: None,
         cas: None,
     };
-    let result = with_store(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts));
-    match result {
-        Some(Ok(_)) => {}
+    match tasty_memory::with_store(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts))
+    {
+        Some(Ok(_)) | None => {}
         Some(Err(e)) => {
             tracing::warn!("approval: memory put failed for {}: {e}", record.request.id);
         }
-        None => {
-            // store 미초기화 — 테스트 환경.
+    }
+}
+
+pub(crate) fn persist_record(core: &Core, record: &ApprovalRecord) {
+    let scope = scope_for(record);
+    let key = format!("{}{}", APPROVAL_KEY_PREFIX, record.request.id);
+    let value = match serde_json::to_value(record) {
+        Ok(v) => MemoryValue::Json(v),
+        Err(e) => {
+            tracing::warn!("approval: serialize failed for {}: {e}", record.request.id);
+            return;
         }
+    };
+    let opts = PutOpts {
+        expires_at: None,
+        cas: None,
+    };
+    if let Err(e) =
+        core.with_memory(|s| s.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts))
+    {
+        tracing::warn!("approval: memory put failed for {}: {e}", record.request.id);
     }
 }
 
@@ -201,7 +222,7 @@ pub(crate) fn publish_capability_elevation(
 
     match core.request_approval(engine, req) {
         Ok(change) => {
-            persist_record(&change.record);
+            persist_record(core, &change.record);
             crate::ui::popup::approval::enqueue_approval(state, engine, &change.record);
             Some(change.record)
         }
@@ -255,7 +276,10 @@ pub(super) fn apply_elevation_grant_if_any(record: &ApprovalRecord, choice: &str
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let result = with_store(|mem| {
+    // SessionStore 는 구체 `MemoryStore` 타입만 받으므로 trait-object 인
+    // `core.with_memory` 로 옮길 수 없다. M.4 잔여 — SessionStore 에 trait
+    // 시그니처를 도입하거나 SessionStore 본체를 trait 기반으로 옮길 때 함께 처리.
+    let result = tasty_memory::with_store(|mem| {
         let mut store = crate::ipc::session::SessionStore::new(mem, tasty_memory::HOST_OWNER);
         let token = match store.find_by_agent_id(&agent_id, now_ms)? {
             Some((t, _)) => t,

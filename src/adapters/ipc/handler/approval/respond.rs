@@ -26,7 +26,7 @@ pub fn handle_respond(
 
     match core.respond_approval(engine, &req_id, choice.clone(), by, comment) {
         Ok(change) => {
-            persist_record(&change.record);
+            persist_record(core, &change.record);
             // Phase 6.4b — capability_elevation 이 approve* 로 응답되면 대상
             // agent 에 임시 grant 를 적용한다. 실패해도 응답 자체는 유지
             // (grant 가 실패해도 agent 는 retry 시 다시 elevation 을 받게 됨).
