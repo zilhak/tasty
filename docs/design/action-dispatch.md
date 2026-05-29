@@ -313,13 +313,23 @@ Tasty의 개발 정책상 다음 차이를 둔다. **dispatcher가 강제 거부
 
 | 동작 | User Intent | Agent Intent |
 |------|-------------|--------------|
-| popup focus 셋팅 | 가능 (`open_centered_focused`) | 금지 (`open_centered`로 대체) |
+| **popup open 자체 (UI Intent 발화)** | **가능** | **금지** (debug 빌드의 사용자 입력 재현 IPC 제외) |
+| popup focus 셋팅 | 가능 (`open_centered_focused`) | 금지 (release 표면에 agent popup 자체 없음) |
 | closed-tab restore 스택 push | 가능 | 금지 |
 | OS 윈도우 focus API 호출 | 가능 | 금지 (focus 독립성 원칙) |
 | Workspace activate | 가능 | 금지 (focus 독립성 원칙) |
 | Window 생성 (PresetWindow 등) | 가능 | 금지 |
 
 분기 위치는 핸들러 본문의 `origin.is_user()`. enum variant로 분기하지 않는다.
+
+> **UI Intent vs Domain Intent** (제1 분류축): 모든 Intent 는 *시각 상태 변경*
+> (UI: popup open/close/toggle 3개) 또는 *영속 도메인 mutate* (Domain: 나머지)
+> 중 하나. release 빌드의 Domain Intent 처리 흐름은 UI Intent 를 발화할 수 없으며,
+> 이는 *타입 차원에서 강제* 한다 (Core 가 `UiIntent` 를 모름). GUI adapter
+> 안에서만 UI Intent 발화 가능. 자동 popup / 자동 toast / 자동 dialog 는 release
+> 빌드에 존재하지 않는다. 상세: `../../.claude-workspace/plans/phase-d/intent-ui-vs-domain.md`,
+> 자매 정책: `toast-system.md` "트리거 정책 (CRITICAL)", `popup-system.md`
+> "Popup 발화 정책 (CRITICAL)".
 
 > `CLAUDE.md`의 "사용자 입력 재현은 debug 한정" 원칙은 IPC/CLI 표면에 적용된다. 호스트 popup 자체에는 release 빌드의 IPC가 없다. debug 빌드에서 사용자 입력 재현용 IPC를 추가할 경우 `#[cfg(debug_assertions)]`로 격리한다.
 
@@ -437,19 +447,24 @@ if matches_any_binding(&kb.toggle_command_palette, key, mods) {
 
 ### Agent IPC → popup open (debug 빌드만)
 
+release 빌드에는 agent 가 popup 을 발화하는 경로가 *전혀 존재하지 않는다*.
+debug 빌드에서 *사용자 입력 재현* 용도의 IPC 가 한정적으로 popup 을 발화할 수
+있을 뿐.
+
 ```rust
-// src/ipc/handler/debug_popup.rs (cfg debug_assertions)
-// agent origin 은 focus 를 가져가지 않는 것이 정책 — Default 또는 focus 없는 변형 사용.
+// src/adapters/ipc/handler/debug/popup.rs (모듈 전체 #![cfg(debug_assertions)])
 state.dispatch_intent(
-    Intent::OpenPopup {
+    Intent::Ui(UiIntent::OpenPopup {
         id: params.popup_id,
-        mode: OpenPopupMode::Default,
-    }
+        mode: OpenPopupMode::Default,  // focus 없는 변형 — focus 독립성 원칙
+    })
     .from_agent_ipc(),
 );
 ```
 
-dispatcher 는 강제 분기를 하지 않으므로, 호출자가 정책에 맞는 `OpenPopupMode` 를 선택할 책임이 있다 (PR 리뷰에서 강제).
+release 빌드에서는 `Intent::Ui` variant 자체가 GUI feature 에 종속되며,
+Domain handler 는 `UiIntent` 를 모르므로 *type level* 에서 agent 발화가 차단된다.
+debug 빌드의 위 경로는 *유일한 예외* — 사용자 입력 시뮬레이션 용도로만 사용.
 
 ## 관련 문서
 

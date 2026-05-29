@@ -134,16 +134,31 @@ pub struct PopupDef {
 | `.from_user_shortcut(name)` | 키보드 단축키 발화 |
 | `.from_user_menu(name)` | 메뉴/사이드바 버튼/사이드 메뉴 발화 |
 | `.from_user_context_menu()` | 우클릭 컨텍스트 메뉴 발화 |
-| `.from_agent_ipc()` | IPC handler / 시스템 부트스트랩 |
-| `.from_agent_plugin(id)` | plugin 발화 |
-| `.from_agent_cli()` | CLI 서브커맨드 발화 |
+| `.from_agent_ipc()` | **debug 빌드 한정** (`debug.popup.*` 의 사용자 입력 재현) |
+| `.from_agent_plugin(id)` | **debug 빌드 한정** |
+| `.from_agent_cli()` | **debug 빌드 한정** |
 | `.cascaded_from(parent)` | 직전 Intent 의 origin 전파 (cascade 처리) |
 
-#### Agent origin 정책
+#### Popup 발화 정책 (CRITICAL)
 
-dispatcher 는 origin 정책을 강제하지 않는다. **개발 규약상** agent origin 발화는
-focus 를 가져가지 않아야 하므로 `CenteredFocused` 대신 `Default` 또는 focus 없는
-변형을 발화해야 한다 (PR 리뷰에서 강제). 자세한 정책 표는 `action-dispatch.md` 참조.
+**Popup 은 사용자 행동 (키보드 단축키 / 마우스 / 메뉴) 에서만 발사된다.**
+release 빌드의 시스템 / 에이전트 / 도메인 cascade 어느 경로도 popup 을 자동으로
+띄울 수 없다. `toast-system.md` 의 "트리거 정책 (CRITICAL)" 과 동일한 원칙이
+popup 에도 적용된다.
+
+- ✅ 단축키 / 마우스 / 메뉴 → `OpenPopup` 발화
+- ✅ popup A 의 *사용자 액션* 결과 cascade → popup B (origin 전파)
+- ❌ IPC / CLI / Plugin 의 release 표면에서 popup 발화 — **금지**
+- ❌ 시스템 조건 (PTY 종료, 시간 경과 등) 으로 자동 popup — **금지**.
+  필요하면 *Domain Intent 로 데이터만 변경* (NotificationStore push 등) 하고
+  UI 는 그 데이터를 *수동으로* 표시.
+- ✅ Debug 빌드의 `debug.popup.*` IPC — *사용자 입력 재현* 용도로 한정
+  (CLAUDE.md "사용자 입력 재현은 debug 한정" 원칙).
+
+이 정책은 *타입 차원에서 강제* 한다 — Core / Domain handler 는 `UiIntent`
+(즉 `OpenPopup` / `ClosePopup` / `TogglePopup`) 를 발화하는 메서드를 갖지 않는다.
+GUI adapter (단축키 핸들러, 메뉴 콜백, popup draw 함수) 에서만 발화 가능.
+상세: [`../plans/phase-d/intent-ui-vs-domain.md`](../../.claude-workspace/plans/phase-d/intent-ui-vs-domain.md).
 
 상세 설계: [action-dispatch.md](action-dispatch.md)
 
