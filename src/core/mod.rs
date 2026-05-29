@@ -16,7 +16,7 @@ pub(crate) mod intent;
 
 use std::sync::{Arc, Mutex};
 
-use intent::{CoreEvent, CoreIntent};
+use intent::{CoreEvent, DomainIntent};
 use tasty_memory::MemoryStorage;
 use tasty_presets::{PresetStorage, PresetStore};
 use tasty_settings::SettingsStorage;
@@ -248,18 +248,18 @@ impl Core {
         self.clipboard.write_image(image)
     }
 
-    /// 도메인 변경의 단일 진입점. handler 가 발행한 `CoreIntent` 를 받아
+    /// 도메인 변경의 단일 진입점. handler 가 발행한 `DomainIntent` 를 받아
     /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
     #[allow(dead_code)]
-    pub(crate) fn apply(&mut self, intent: CoreIntent) -> anyhow::Result<Vec<CoreEvent>> {
+    pub(crate) fn apply(&mut self, intent: DomainIntent) -> anyhow::Result<Vec<CoreEvent>> {
         match intent {
-            CoreIntent::UpdateSettings(new_settings) => {
+            DomainIntent::UpdateSettings(new_settings) => {
                 // Phase D 진행 중 — 본 stub 은 *이벤트만 발행*. cascade
                 // (Theme apply / Scrollback limit / clipboard max / notification
                 // coalesce) 는 후속 sub-step (호출처 전환과 함께) 에서 통합.
                 Ok(vec![CoreEvent::SettingsUpdated(new_settings)])
             }
-            CoreIntent::PushNotification {
+            DomainIntent::PushNotification {
                 ws_id,
                 surface_id,
                 title,
@@ -272,13 +272,13 @@ impl Core {
                 body,
                 source,
             }]),
-            CoreIntent::SurfaceCwdChanged { surface_id } => {
+            DomainIntent::SurfaceCwdChanged { surface_id } => {
                 Ok(vec![CoreEvent::SurfaceCwdChanged { surface_id }])
             }
-            CoreIntent::SetTerminalMark { surface_id } => {
+            DomainIntent::SetTerminalMark { surface_id } => {
                 Ok(vec![CoreEvent::TerminalMarkSet { surface_id }])
             }
-            CoreIntent::RecordInternalClipboardCopy { text } => {
+            DomainIntent::RecordInternalClipboardCopy { text } => {
                 Ok(vec![CoreEvent::InternalClipboardCopyRecorded { text }])
             }
         }

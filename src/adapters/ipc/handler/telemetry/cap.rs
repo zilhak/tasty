@@ -484,7 +484,7 @@ pub(super) fn fire_notify(
         "agent={} metric={} value={} ≥ threshold={} (window={:?}, cap={})",
         cap.agent, cap.metric, current, cap.threshold, cap.window, cap.id,
     );
-    state.enqueue_core_intent(crate::core::intent::CoreIntent::PushNotification {
+    state.enqueue_domain_intent(crate::core::intent::DomainIntent::PushNotification {
         ws_id,
         surface_id: 0,
         title,

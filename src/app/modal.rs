@@ -39,8 +39,8 @@ impl App {
 
             // Settings cascade 는 Core 발행 → handle_core_event 통해 처리
             // (main/parked 갱신 + save + theme install + plugin event).
-            if let Err(e) = self.dispatch_core_intent(
-                crate::core::intent::CoreIntent::UpdateSettings(new_settings),
+            if let Err(e) = self.dispatch_domain_intent(
+                crate::core::intent::DomainIntent::UpdateSettings(new_settings),
             ) {
                 tracing::warn!("dispatch UpdateSettings failed: {e}");
             }

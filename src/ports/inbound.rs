@@ -3,7 +3,7 @@
 //! IPC / UI / CLI / Plugin adapter 가 본 trait 을 통해 Core 에 명령 발행.
 //! Core 자체가 본 trait 들을 구현한다.
 
-use crate::core::intent::{CoreEvent, CoreIntent};
+use crate::core::intent::{CoreEvent, DomainIntent};
 use crate::engine_state::CoreState;
 
 /// Intent 발행 진입점.
@@ -13,8 +13,8 @@ use crate::engine_state::CoreState;
 /// - `drain_queue`: dispatcher loop 가 enqueue 된 Intent 들을 dispatch.
 #[allow(dead_code)]
 pub trait IntentDispatcher: Send + Sync {
-    fn dispatch(&mut self, intent: CoreIntent) -> anyhow::Result<ApplyResult>;
-    fn enqueue(&mut self, intent: CoreIntent);
+    fn dispatch(&mut self, intent: DomainIntent) -> anyhow::Result<ApplyResult>;
+    fn enqueue(&mut self, intent: DomainIntent);
     fn drain_queue(&mut self) -> anyhow::Result<Vec<CoreEvent>>;
 }
 

@@ -287,7 +287,7 @@ pub fn enqueue_approval(
     let workspace = record.request.workspace_id.unwrap_or(0);
     let surface = record.request.surface_id.unwrap_or(0);
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄 처리.
-    state.enqueue_core_intent(crate::core::intent::CoreIntent::PushNotification {
+    state.enqueue_domain_intent(crate::core::intent::DomainIntent::PushNotification {
         ws_id: workspace,
         surface_id: surface,
         title: format!("{severity_prefix}{}", record.request.title),

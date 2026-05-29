@@ -57,7 +57,7 @@ pub(super) fn fire_anomaly_notification(
         anomaly.id,
     );
     let _ = engine; // 옛 직접 add 경로 제거 — cascade 가 라우팅 + add + host event 일괄.
-    state.enqueue_core_intent(crate::core::intent::CoreIntent::PushNotification {
+    state.enqueue_domain_intent(crate::core::intent::DomainIntent::PushNotification {
         ws_id,
         surface_id: 0,
         title,

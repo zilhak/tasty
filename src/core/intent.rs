@@ -1,17 +1,24 @@
-//! `CoreIntent` — `Core::apply` 의 입력. 도메인 변경 요청.
+//! `DomainIntent` — `Core::apply` 의 입력. 영속 도메인 mutate 요청.
 //!
-//! 기존 `crate::intent::Intent` 와 *역할이 다르다*:
-//! - `Intent` (AppState dispatch): UI + 도메인 혼합. AppState.pending_intents 큐로 push.
-//! - `CoreIntent` (Core::apply): *순수 도메인 mutate*. handler 가 read 후 발행, dispatcher 가 drain.
+//! 분류축 (intent-ui-vs-domain.md): 모든 Intent 는 *UI Intent* (시각 상태
+//! 변경, `crate::intent::UiIntent`) 또는 *Domain Intent* (도메인 mutate, 본
+//! 타입) 중 하나다. `DomainIntent` 는 headless 빌드에서도 그대로 실행된다.
 //!
-//! Phase D 진행 중. variant 는 점진 추가된다.
+//! 현재 큐 구조 (Phase D 진행 중):
+//! - `AppState.pending_intents`: `crate::intent::Intent` (UI + 진행 중 도메인
+//!   variant 혼합) 큐. `App::dispatch_pending_intents` drain.
+//! - `AppState.pending_domain_intents`: `DomainIntent` 큐. `App::dispatch_pending_domain_intents`
+//!   drain → `core.apply` → `handle_core_event` cascade.
+//!
+//! D.3.I.3 의 *후속 단계* 에서 위 두 큐는 단일 `Intent::Domain(DomainIntent)`
+//! variant 통합을 거쳐 한 `Scheduler<Intent>` 로 합쳐질 예정.
 
 use tasty_settings::Settings;
 
 /// 도메인 변경 요청. Core 만이 자기 메서드로 적용한다.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub(crate) enum CoreIntent {
+pub(crate) enum DomainIntent {
     // ─── Settings (D.3.C.A.2) ───
     /// Settings 전체 교체. cascade — Theme apply / Scrollback limit / clipboard
     /// max / notification coalesce 가 Core 내부에서 자동 발동.

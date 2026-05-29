@@ -7,7 +7,7 @@
 //!   / priority 같은 필드 없음.
 //! - **별 crate 아님** — 본 파일 한 장.
 //!
-//! 사용처: D.3.I.3 이후 `state.pending_intents` + `state.pending_core_intents`
+//! 사용처: D.3.I.3 이후 `state.pending_intents` + `state.pending_domain_intents`
 //! 두 필드가 단일 `Scheduler<Intent>` 로 통합되며 이 모듈을 사용한다. 현재는
 //! 도구만 정의돼 있고 호출처가 0 이다.
 

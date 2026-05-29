@@ -39,8 +39,8 @@ impl MainWindow {
                 crate::terminal::TerminalEventKind::Notification { title, body } => {
                     if engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace(engine).id;
-                        self.state.enqueue_core_intent(
-                            crate::core::intent::CoreIntent::PushNotification {
+                        self.state.enqueue_domain_intent(
+                            crate::core::intent::DomainIntent::PushNotification {
                                 ws_id,
                                 surface_id,
                                 title: title.clone(),
@@ -64,8 +64,8 @@ impl MainWindow {
                 crate::terminal::TerminalEventKind::BellRing => {
                     if engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace(engine).id;
-                        self.state.enqueue_core_intent(
-                            crate::core::intent::CoreIntent::PushNotification {
+                        self.state.enqueue_domain_intent(
+                            crate::core::intent::DomainIntent::PushNotification {
                                 ws_id,
                                 surface_id,
                                 title: "Bell".to_string(),
@@ -98,8 +98,8 @@ impl MainWindow {
                 crate::terminal::TerminalEventKind::CwdChanged(_) => {
                     // 사용자가 `cd` 로 디렉토리를 옮기면 cascade 가 tab display
                     // name 갱신 + layout dirty 마킹을 한다. handler 는 enqueue 만.
-                    self.state.enqueue_core_intent(
-                        crate::core::intent::CoreIntent::SurfaceCwdChanged { surface_id },
+                    self.state.enqueue_domain_intent(
+                        crate::core::intent::DomainIntent::SurfaceCwdChanged { surface_id },
                     );
                     self.base.dirty = true;
                 }
@@ -108,8 +108,8 @@ impl MainWindow {
                         cb.set_text(data);
                     }
                     // 모든 main + parked engine 의 clipboard history 에 기록 — broadcast.
-                    self.state.enqueue_core_intent(
-                        crate::core::intent::CoreIntent::RecordInternalClipboardCopy {
+                    self.state.enqueue_domain_intent(
+                        crate::core::intent::DomainIntent::RecordInternalClipboardCopy {
                             text: data.clone(),
                         },
                     );

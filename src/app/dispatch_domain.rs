@@ -1,4 +1,4 @@
-//! `CoreIntent` 발행 진입점 + `CoreEvent` cascade dispatcher.
+//! `DomainIntent` 발행 진입점 + `CoreEvent` cascade dispatcher.
 //!
 //! Phase D 의 *Strangler Fig* 단계:
 //! - `Core::apply` 는 *순수 이벤트 발행* (Core 가 도메인 데이터 보유 안 함, 진행 중)
@@ -11,11 +11,11 @@ use tasty_settings::Settings;
 
 use crate::adapters::ui::window::Window as _;
 use crate::app::App;
-use crate::core::intent::{CoreEvent, CoreIntent};
+use crate::core::intent::{CoreEvent, DomainIntent};
 
 impl App {
-    /// `CoreIntent` 발행. Core 가 *이벤트 목록* 반환 → 각 이벤트 cascade 처리.
-    pub(crate) fn dispatch_core_intent(&mut self, intent: CoreIntent) -> anyhow::Result<()> {
+    /// `DomainIntent` 발행. Core 가 *이벤트 목록* 반환 → 각 이벤트 cascade 처리.
+    pub(crate) fn dispatch_domain_intent(&mut self, intent: DomainIntent) -> anyhow::Result<()> {
         let events = self.core.apply(intent)?;
         for event in events {
             self.handle_core_event(event);
@@ -23,22 +23,22 @@ impl App {
         Ok(())
     }
 
-    /// 모든 windows + parked 의 `AppState.pending_core_intents` 를 drain →
-    /// 각 intent 를 `dispatch_core_intent` 로 처리. handler 호출 직후 호출되어
+    /// 모든 windows + parked 의 `AppState.pending_domain_intents` 를 drain →
+    /// 각 intent 를 `dispatch_domain_intent` 로 처리. handler 호출 직후 호출되어
     /// handler 가 enqueue 한 intent 를 즉시 cascade 시킨다.
-    pub(crate) fn dispatch_pending_core_intents(&mut self) {
-        let mut batch: Vec<CoreIntent> = Vec::new();
+    pub(crate) fn dispatch_pending_domain_intents(&mut self) {
+        let mut batch: Vec<DomainIntent> = Vec::new();
         for w in self.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
-                batch.append(&mut main.state.take_pending_core_intents());
+                batch.append(&mut main.state.take_pending_domain_intents());
             }
         }
         for (s, _) in self.parked_states.iter_mut() {
-            batch.append(&mut s.take_pending_core_intents());
+            batch.append(&mut s.take_pending_domain_intents());
         }
         for intent in batch {
-            if let Err(e) = self.dispatch_core_intent(intent) {
-                tracing::warn!("dispatch_core_intent failed: {e}");
+            if let Err(e) = self.dispatch_domain_intent(intent) {
+                tracing::warn!("dispatch_domain_intent failed: {e}");
             }
         }
     }

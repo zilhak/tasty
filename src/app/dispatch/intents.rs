@@ -141,7 +141,7 @@ impl App {
                     r
                 });
             if let Some(response) = resp_opt {
-                self.dispatch_pending_core_intents();
+                self.dispatch_pending_domain_intents();
                 return response;
             }
         }
@@ -157,13 +157,13 @@ impl App {
         if let Some((state, engine)) = owner_in_parked {
             let response =
                 ipc::handler::handle_with_caller(&mut self.core, state, engine, request, caller);
-            self.dispatch_pending_core_intents();
+            self.dispatch_pending_domain_intents();
             return response;
         }
         if let Some((state, engine)) = self.parked_states.first_mut() {
             let response =
                 ipc::handler::handle_with_caller(&mut self.core, state, engine, request, caller);
-            self.dispatch_pending_core_intents();
+            self.dispatch_pending_domain_intents();
             return response;
         }
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);

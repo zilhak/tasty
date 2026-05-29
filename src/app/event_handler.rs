@@ -519,12 +519,12 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_tool_events();
         // 호스트 내부 Intent 큐 drain (plugin popup 큐 발화 가능하므로 plugin drain 앞).
         self.dispatch_pending_intents();
-        // CoreIntent 큐 drain — 매 frame 일관 처리. 기존엔 IPC handler 직후만
-        // drain 되어 redraw / shortcut / observer 가 enqueue 한 CoreIntent 가
+        // DomainIntent 큐 drain — 매 frame 일관 처리. 기존엔 IPC handler 직후만
+        // drain 되어 redraw / shortcut / observer 가 enqueue 한 DomainIntent 가
         // 다음 IPC 까지 대기하는 버그가 있었다 (intent-ui-vs-domain.md D.3.I.4).
-        // 위 dispatch_pending_intents 의 핸들러 cascade 가 enqueue 한 CoreIntent
+        // 위 dispatch_pending_intents 의 핸들러 cascade 가 enqueue 한 DomainIntent
         // 도 같은 frame 안에 처리.
-        self.dispatch_pending_core_intents();
+        self.dispatch_pending_domain_intents();
         // 도구 메뉴 ToolAction::OpenPopup 클릭으로 enqueue된 popup open dispatch.
         self.dispatch_pending_popup_opens();
         // 파일 핸들러 IPC action 큐 drain (Phase C1: warn 로그만, Phase C3: 본격 dispatch).
