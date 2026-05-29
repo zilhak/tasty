@@ -302,9 +302,9 @@ fn route_engine_handler(
         "memory.count" => memory::handle_count(core, state, engine, caller, id, &request.params),
         "memory.scopes" => memory::handle_scopes(core, state, engine, caller, id, &request.params),
         "memory.stats" => memory::handle_stats(core, state, engine, caller, id, &request.params),
-        "memory.query" => memory::handle_query(state, engine, caller, id, &request.params),
-        "memory.export" => memory::handle_export(state, engine, caller, id, &request.params),
-        "memory.import" => memory::handle_import(state, engine, caller, id, &request.params),
+        "memory.query" => memory::handle_query(core, state, engine, caller, id, &request.params),
+        "memory.export" => memory::handle_export(core, state, engine, caller, id, &request.params),
+        "memory.import" => memory::handle_import(core, state, engine, caller, id, &request.params),
         // memory: secret (plugin 별 사전 분할)
         "memory.secret.put" => {
             memory::handle_secret_put(state, engine, caller, id, &request.params)
@@ -331,7 +331,7 @@ fn route_engine_handler(
             memory::handle_secret_stats(state, engine, caller, id, &request.params)
         }
         // memory: 유지 보수 (host 전용)
-        "memory.gc" => memory::handle_gc(state, engine, caller, id, &request.params),
+        "memory.gc" => memory::handle_gc(core, state, engine, caller, id, &request.params),
         // memory: blackboard (Phase 7.1 — workspace-scoped 키-값 컬렉션)
         "memory.bb_create" => memory::handle_bb_create(state, engine, caller, id, &request.params),
         "memory.bb_put" => memory::handle_bb_put(state, engine, caller, id, &request.params),

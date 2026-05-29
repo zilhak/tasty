@@ -1,29 +1,27 @@
 //! 메모리 도메인 IPC 핸들러의 advanced 그룹: gc / query / export / import.
 
 use serde_json::{Value, json};
-use tasty_memory::{ListOpts, MemoryEntry, MemoryValue, with_store};
+use tasty_memory::{ListOpts, MemoryEntry, MemoryValue};
 
+use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
-use super::{decode_b64, entry_to_json, map_error, optional_scope, require_scope, require_store};
+use super::{decode_b64, entry_to_json, map_error, optional_scope, require_scope};
 
 /// `memory.gc` — local_only. 만료 entry 일괄 DELETE (regular + secret).
 /// 응답: `{ regular: N, secret: M }`. read 경로는 항상 만료 필터를 거치므로
 /// 사용자에게 보이는 동작은 변하지 않고, 디스크 정리 + quota 회복만 일어난다.
 pub fn handle_gc(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
-    let result = with_store(|s| s.purge_expired()).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.purge_expired()) {
         Ok(stats) => JsonRpcResponse::success(
             id,
             json!({ "regular": stats.regular, "secret": stats.secret }),
@@ -36,15 +34,13 @@ pub fn handle_gc(
 /// 파라미터: `scope`, `path` (예: `"task.status"`), `equals` (임의 JSON value),
 /// 그리고 list 와 동일한 `prefix`/`since`/`until`/`limit`/`offset`.
 pub fn handle_query(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match require_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
@@ -75,9 +71,7 @@ pub fn handle_query(
             .and_then(|v| v.as_u64())
             .map(|v| v as usize),
     };
-    let result =
-        with_store(|s| s.query(&scope, &path, &equals, &opts)).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.query(&scope, &path, &equals, &opts)) {
         Ok(entries) => {
             let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
             JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
@@ -89,21 +83,18 @@ pub fn handle_query(
 /// `memory.export` — regular 영역 entry 를 dump. `scope` 가 옵션 (없으면 전체).
 /// Secret 은 export 하지 않는다. 응답: `{ entries: [...], count: N }`.
 pub fn handle_export(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let scope = match optional_scope(params, &id) {
         Ok(s) => s,
         Err(e) => return e,
     };
-    let result = with_store(|s| s.export_regular(scope.as_ref())).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.export_regular(scope.as_ref())) {
         Ok(entries) => {
             let arr: Vec<Value> = entries.iter().map(entry_to_json).collect();
             JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
@@ -116,15 +107,13 @@ pub fn handle_export(
 /// 형태의 배열. `replace` (기본 false) 면 기존 key 덮어쓰기. CAS 는 적용하지 않는다.
 /// 응답: `{ applied: N, skipped: M }`.
 pub fn handle_import(
+    core: &Core,
     _state: &mut AppState,
     _engine: &mut crate::engine_state::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
-    if let Err(e) = require_store(&id) {
-        return e;
-    }
     let entries_json = match params.get("entries").and_then(|v| v.as_array()) {
         Some(arr) => arr.clone(),
         None => {
@@ -144,9 +133,7 @@ pub fn handle_import(
         }
     }
     let owner = caller.owner().to_string();
-    let result =
-        with_store(|s| s.import_regular(&owner, &entries, replace)).expect("memory store present");
-    match result {
+    match core.with_memory(|s| s.import_regular(&owner, &entries, replace)) {
         Ok(stats) => JsonRpcResponse::success(
             id,
             json!({ "applied": stats.applied, "skipped": stats.skipped }),
