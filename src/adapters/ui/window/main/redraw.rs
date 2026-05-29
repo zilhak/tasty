@@ -39,22 +39,14 @@ impl MainWindow {
                 crate::terminal::TerminalEventKind::Notification { title, body } => {
                     if engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace(engine).id;
-                        let created_id = engine.notifications.add(
-                            ws_id,
-                            surface_id,
-                            title.clone(),
-                            body.clone(),
+                        self.state.enqueue_core_intent(
+                            crate::core::intent::CoreIntent::PushNotification {
+                                ws_id,
+                                surface_id,
+                                title: title.clone(),
+                                body: body.clone(),
+                            },
                         );
-                        if let Some(nid) = created_id {
-                            self.state.enqueue_host_event(
-                                crate::state::PendingHostEvent::NotificationCreated {
-                                    id: nid,
-                                    title: title.clone(),
-                                    body: body.clone(),
-                                    source: "host".to_string(),
-                                },
-                            );
-                        }
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Notification];
                     let fired = engine.hook_manager.check_and_fire(surface_id, &hook_events);
@@ -71,22 +63,14 @@ impl MainWindow {
                 crate::terminal::TerminalEventKind::BellRing => {
                     if engine.settings.notification.enabled {
                         let ws_id = self.state.active_workspace(engine).id;
-                        let created_id = engine.notifications.add(
-                            ws_id,
-                            surface_id,
-                            "Bell".to_string(),
-                            String::new(),
+                        self.state.enqueue_core_intent(
+                            crate::core::intent::CoreIntent::PushNotification {
+                                ws_id,
+                                surface_id,
+                                title: "Bell".to_string(),
+                                body: String::new(),
+                            },
                         );
-                        if let Some(nid) = created_id {
-                            self.state.enqueue_host_event(
-                                crate::state::PendingHostEvent::NotificationCreated {
-                                    id: nid,
-                                    title: "Bell".to_string(),
-                                    body: String::new(),
-                                    source: "host".to_string(),
-                                },
-                            );
-                        }
                     }
                     let hook_events = vec![tasty_hooks::HookEvent::Bell];
                     let fired = engine.hook_manager.check_and_fire(surface_id, &hook_events);
