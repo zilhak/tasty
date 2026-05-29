@@ -227,14 +227,18 @@ impl App {
             "plugin.list_agent_permissions" => {
                 host_ipc::handler::session::handle_list_agent_permissions(id, &cmd.request.params)
             }
-            "plugin.audit_query" => host_ipc::handler::audit::handle_query(id, &cmd.request.params),
+            "plugin.audit_query" => {
+                host_ipc::handler::audit::handle_query(&self.core, id, &cmd.request.params)
+            }
             "plugin.audit_summary" => {
-                host_ipc::handler::audit::handle_summary(id, &cmd.request.params)
+                host_ipc::handler::audit::handle_summary(&self.core, id, &cmd.request.params)
             }
             "plugin.audit_follow" => {
-                host_ipc::handler::audit::handle_follow(id, &cmd.request.params)
+                host_ipc::handler::audit::handle_follow(&self.core, id, &cmd.request.params)
             }
-            "plugin.audit_clear" => host_ipc::handler::audit::handle_clear(id, &cmd.request.params),
+            "plugin.audit_clear" => {
+                host_ipc::handler::audit::handle_clear(&self.core, id, &cmd.request.params)
+            }
             "plugin.request_permission" => {
                 // 첫 main window 의 state 를 빌려 사용 (모든 window 가 같은 approval_store
                 // Arc 공유). main 이 하나도 없으면 elevation popup 표시 자체가 의미 없으므로

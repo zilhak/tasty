@@ -39,6 +39,7 @@ impl App {
                 .map(|w| w.id);
             let seq = main.engine_state.telemetry_seq.next();
             host_ipc::audit::record(
+                &self.core,
                 &caller,
                 &cmd.request.method,
                 host_ipc::audit::AuditDecision::Deny,

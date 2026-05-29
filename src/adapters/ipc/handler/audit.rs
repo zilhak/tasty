@@ -82,19 +82,18 @@ fn build_query(params: &Value, id: &Value) -> std::result::Result<AuditQuery, Js
 }
 
 /// `plugin.audit_query` — 필터된 audit record 목록.
-pub fn handle_query(id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_query(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
         Err(resp) => return resp,
     };
     let now = now_ms();
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
         store.query(&q, DEFAULT_RETENTION_MS, now)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(records)) => {
+        Ok(records) => {
             let arr: Vec<Value> = records.iter().map(record_to_json).collect();
             JsonRpcResponse::success(
                 id,
@@ -104,13 +103,13 @@ pub fn handle_query(id: Value, params: &Value) -> JsonRpcResponse {
                 }),
             )
         }
-        Some(Err(e)) => audit_err_to_response(id, e),
+        Err(e) => audit_err_to_response(id, e),
     }
 }
 
 /// `plugin.audit_summary` — 필터된 record 의 집계.
 /// `top_n` (옵션, 기본 10) 으로 by_caller / by_method 상위 개수 제한.
-pub fn handle_summary(id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_summary(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
         Err(resp) => return resp,
@@ -121,13 +120,12 @@ pub fn handle_summary(id: Value, params: &Value) -> JsonRpcResponse {
         .map(|n| n as usize)
         .unwrap_or(10);
     let now = now_ms();
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
         store.summary(&q, DEFAULT_RETENTION_MS, now, top_n)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(s)) => JsonRpcResponse::success(
+        Ok(s) => JsonRpcResponse::success(
             id,
             json!({
                 "total": s.total,
@@ -137,14 +135,14 @@ pub fn handle_summary(id: Value, params: &Value) -> JsonRpcResponse {
                 "by_method": s.by_method.into_iter().map(|(k, v)| json!({"method": k, "count": v})).collect::<Vec<_>>(),
             }),
         ),
-        Some(Err(e)) => audit_err_to_response(id, e),
+        Err(e) => audit_err_to_response(id, e),
     }
 }
 
 /// `plugin.audit_follow` — `after_ts_ms` / `after_seq` 커서 이후의 새 record.
 /// 커서 미지정 시 빈 배열 + 현재 latest 커서를 반환해 호출자가 그 다음부터
 /// 폴링하게 한다 (`tail -f -n 0` 시멘틱).
-pub fn handle_follow(id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_follow(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let q = match build_query(params, &id) {
         Ok(q) => q,
         Err(resp) => return resp,
@@ -156,13 +154,12 @@ pub fn handle_follow(id: Value, params: &Value) -> JsonRpcResponse {
         .and_then(|v| v.as_u64())
         .map(|n| n as usize);
     let now = now_ms();
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
         store.follow(&q, after_ts_ms, after_seq, DEFAULT_RETENTION_MS, now, limit)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok((records, next_ts, next_seq))) => {
+        Ok((records, next_ts, next_seq)) => {
             let arr: Vec<Value> = records.iter().map(record_to_json).collect();
             JsonRpcResponse::success(
                 id,
@@ -174,22 +171,21 @@ pub fn handle_follow(id: Value, params: &Value) -> JsonRpcResponse {
                 }),
             )
         }
-        Some(Err(e)) => audit_err_to_response(id, e),
+        Err(e) => audit_err_to_response(id, e),
     }
 }
 
 /// `plugin.audit_clear` — `before_ms` 이전 record 삭제 (생략 시 전체).
 /// 반환: `{ removed: N }`.
-pub fn handle_clear(id: Value, params: &Value) -> JsonRpcResponse {
+pub fn handle_clear(core: &crate::core::Core, id: Value, params: &Value) -> JsonRpcResponse {
     let before_ms = params.get("before_ms").and_then(|v| v.as_u64());
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
         store.clear(before_ms)
     });
     match result {
-        None => JsonRpcResponse::error(id, -32603, "memory store not initialized"),
-        Some(Ok(n)) => JsonRpcResponse::success(id, json!({ "removed": n })),
-        Some(Err(e)) => audit_err_to_response(id, e),
+        Ok(n) => JsonRpcResponse::success(id, json!({ "removed": n })),
+        Err(e) => audit_err_to_response(id, e),
     }
 }
 
@@ -197,27 +193,24 @@ pub fn handle_clear(id: Value, params: &Value) -> JsonRpcResponse {
 mod tests {
     use super::*;
 
-    #[test]
-    fn query_rejects_unknown_caller_kind() {
-        let r = handle_query(json!(1), &json!({"caller_kind": "nope"}));
-        assert_eq!(r.error.unwrap().code, -32602);
+    // build_query 단독 테스트 — 옛 handle_* 호출 테스트는 Core 의존성이
+    // 생기면서 build_query 자체의 validation 만 검사하도록 좁힘.
+
+    fn err_resp_code(resp: &JsonRpcResponse) -> i32 {
+        resp.error.as_ref().expect("expected error").code
     }
 
     #[test]
-    fn query_rejects_unknown_decision() {
-        let r = handle_query(json!(1), &json!({"decision": "maybe"}));
-        assert_eq!(r.error.unwrap().code, -32602);
+    fn build_query_rejects_unknown_caller_kind() {
+        let id = json!(1);
+        let r = build_query(&json!({"caller_kind": "nope"}), &id).unwrap_err();
+        assert_eq!(err_resp_code(&r), -32602);
     }
 
     #[test]
-    fn summary_rejects_unknown_caller_kind() {
-        let r = handle_summary(json!(1), &json!({"caller_kind": "x"}));
-        assert_eq!(r.error.unwrap().code, -32602);
-    }
-
-    #[test]
-    fn follow_rejects_unknown_decision() {
-        let r = handle_follow(json!(1), &json!({"decision": "perhaps"}));
-        assert_eq!(r.error.unwrap().code, -32602);
+    fn build_query_rejects_unknown_decision() {
+        let id = json!(1);
+        let r = build_query(&json!({"decision": "maybe"}), &id).unwrap_err();
+        assert_eq!(err_resp_code(&r), -32602);
     }
 }

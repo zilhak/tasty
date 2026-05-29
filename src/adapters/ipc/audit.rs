@@ -10,7 +10,7 @@
 //! workspace_id 는 record 안에 함께 기록.
 
 use serde::{Deserialize, Serialize};
-use tasty_memory::{ListOpts, MemoryError, MemoryStore, MemoryValue, PutOpts, Scope};
+use tasty_memory::{ListOpts, MemoryError, MemoryValue, PutOpts, Scope};
 
 use crate::ipc::caller::CallerContext;
 
@@ -157,12 +157,12 @@ pub struct AuditSummary {
 }
 
 pub struct AuditStore<'a> {
-    mem: &'a mut MemoryStore,
+    mem: &'a mut dyn tasty_memory::MemoryStorage,
     owner: String,
 }
 
 impl<'a> AuditStore<'a> {
-    pub fn new(mem: &'a mut MemoryStore, owner: impl Into<String>) -> Self {
+    pub fn new(mem: &'a mut dyn tasty_memory::MemoryStorage, owner: impl Into<String>) -> Self {
         Self {
             mem,
             owner: owner.into(),
@@ -338,8 +338,9 @@ fn top_counts(map: std::collections::BTreeMap<String, u64>, top_n: usize) -> Vec
 
 /// Phase 6.5a dispatcher hook — IPC call 한 건을 audit log 에 기록한다.
 /// `record_ipc_call` (telemetry) 와 짝을 이루며 dispatcher 경로의 모든 진입점에서
-/// 호출된다. `with_store` 가 `None` 인 환경(테스트)에서는 silent skip.
+/// 호출된다.
 pub fn record(
+    core: &crate::core::Core,
     caller: &CallerContext,
     method: &str,
     decision: AuditDecision,
@@ -361,20 +362,19 @@ pub fn record(
         reason: reason.map(|s| s.to_string()),
         workspace_id,
     };
-    let result = tasty_memory::with_store(|mem| {
+    let result = core.with_memory(|mem| {
         let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
         store.append(&record)
     });
-    match result {
-        Some(Ok(())) => {}
-        Some(Err(e)) => tracing::warn!("audit: append failed: {e}"),
-        None => {} // memory store 미초기화 환경 — 무시.
+    if let Err(e) = result {
+        tracing::warn!("audit: append failed: {e}");
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tasty_memory::MemoryStore;
     use tempfile::TempDir;
 
     fn fresh() -> (TempDir, MemoryStore) {

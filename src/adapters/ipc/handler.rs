@@ -81,6 +81,7 @@ pub fn handle_with_caller(
         tracing::warn!("ipc permission denied: {e}");
         let seq = engine.telemetry_seq.next();
         crate::ipc::audit::record(
+            core,
             caller,
             canonical,
             crate::ipc::audit::AuditDecision::Deny,
@@ -98,6 +99,7 @@ pub fn handle_with_caller(
         tracing::warn!("ipc cap blocked: {reason}");
         let seq = engine.telemetry_seq.next();
         crate::ipc::audit::record(
+            core,
             caller,
             canonical,
             crate::ipc::audit::AuditDecision::Deny,
@@ -117,6 +119,7 @@ pub fn handle_with_caller(
     // 기록 의미가 적지만 일관성을 위해 전부 기록 (운영자가 query 시 filter).
     let seq = engine.telemetry_seq.next();
     crate::ipc::audit::record(
+        core,
         caller,
         canonical,
         crate::ipc::audit::AuditDecision::Allow,
