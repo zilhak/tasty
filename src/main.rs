@@ -53,6 +53,7 @@ pub use tasty_utils::path as paths;
 
 pub(crate) use adapters::cli;
 pub(crate) use adapters::ipc;
+pub(crate) use adapters::plugin;
 pub(crate) use adapters::ui;
 pub(crate) use adapters::ui::preset as preset_ui;
 pub(crate) use adapters::ui::surface::diff as diff_ui;
@@ -77,7 +78,6 @@ pub(crate) use gfx::gpu;
 pub(crate) use gfx::renderer;
 pub(crate) use host_api::hooks;
 pub(crate) use host_api::hooks::global as global_hooks;
-pub(crate) use host_api::plugin;
 pub(crate) use host_api::webview;
 pub(crate) use input::click_cursor;
 pub(crate) use input::double_tap;
