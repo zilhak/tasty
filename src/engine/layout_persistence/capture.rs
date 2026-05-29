@@ -24,6 +24,18 @@ type SeenRefs = std::collections::HashSet<String>;
 
 type MemArc = std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>;
 
+/// Capture cascade 의 공통 인자 묶음. cascade 모든 레벨이 동일한 set 을 가져야
+/// 하므로 ctx struct 하나로 묶어 7 개 fn signature 의 보일러플레이트를 제거.
+///
+/// `seen_refs` 는 mut 누적, 나머지는 immut clone 한 reference 들 — 깊은 트리에
+/// 같은 4-tuple 을 매번 풀어 넘기지 않도록 한다.
+struct CaptureCtx<'a> {
+    registry: &'a SurfaceKindRegistry,
+    capture_scrollback: bool,
+    memory: Option<&'a MemArc>,
+    seen_refs: &'a mut SeenRefs,
+}
+
 impl SavedLayout {
     /// Capture current layout from engine state.
     ///
@@ -35,18 +47,16 @@ impl SavedLayout {
         let capture_scrollback = engine.settings.general.restore_terminal_content;
         let memory = engine.memory.clone();
         let mut seen_refs = SeenRefs::new();
+        let mut ctx = CaptureCtx {
+            registry: registry.as_ref(),
+            capture_scrollback,
+            memory: memory.as_ref(),
+            seen_refs: &mut seen_refs,
+        };
         let workspaces: Vec<SavedWorkspace> = engine
             .workspaces
             .iter_mut()
-            .map(|ws| {
-                SavedWorkspace::capture(
-                    ws,
-                    registry.as_ref(),
-                    capture_scrollback,
-                    memory.as_ref(),
-                    &mut seen_refs,
-                )
-            })
+            .map(|ws| SavedWorkspace::capture(ws, &mut ctx))
             .collect();
         Self {
             version: LAYOUT_VERSION,
@@ -57,26 +67,14 @@ impl SavedLayout {
 }
 
 impl SavedWorkspace {
-    fn capture(
-        ws: &mut Workspace,
-        registry: &SurfaceKindRegistry,
-        capture_scrollback: bool,
-        memory: Option<&MemArc>,
-        seen_refs: &mut SeenRefs,
-    ) -> Self {
+    fn capture(ws: &mut Workspace, ctx: &mut CaptureCtx<'_>) -> Self {
         // Find the index of the focused pane BEFORE taking mut borrow of pane_layout.
         let all_ids = ws.pane_layout().all_pane_ids();
         let focused_pane_index = all_ids
             .iter()
             .position(|&id| id == ws.focused_pane)
             .unwrap_or(0);
-        let pane_layout = SavedPaneNode::capture(
-            ws.pane_layout_mut(),
-            registry,
-            capture_scrollback,
-            memory,
-            seen_refs,
-        );
+        let pane_layout = SavedPaneNode::capture(ws.pane_layout_mut(), ctx);
         Self {
             name: ws.name.clone(),
             subtitle: ws.subtitle.clone(),
@@ -88,21 +86,9 @@ impl SavedWorkspace {
 }
 
 impl SavedPaneNode {
-    fn capture(
-        node: &mut PaneNode,
-        registry: &SurfaceKindRegistry,
-        capture_scrollback: bool,
-        memory: Option<&MemArc>,
-        seen_refs: &mut SeenRefs,
-    ) -> Self {
+    fn capture(node: &mut PaneNode, ctx: &mut CaptureCtx<'_>) -> Self {
         match node {
-            PaneNode::Leaf(pane) => SavedPaneNode::Leaf(SavedPane::capture(
-                pane,
-                registry,
-                capture_scrollback,
-                memory,
-                seen_refs,
-            )),
+            PaneNode::Leaf(pane) => SavedPaneNode::Leaf(SavedPane::capture(pane, ctx)),
             PaneNode::Split {
                 direction,
                 ratio,
@@ -111,69 +97,33 @@ impl SavedPaneNode {
             } => SavedPaneNode::Split {
                 direction: (*direction).into(),
                 ratio: *ratio,
-                first: Box::new(SavedPaneNode::capture(
-                    first,
-                    registry,
-                    capture_scrollback,
-                    memory,
-                    seen_refs,
-                )),
-                second: Box::new(SavedPaneNode::capture(
-                    second,
-                    registry,
-                    capture_scrollback,
-                    memory,
-                    seen_refs,
-                )),
+                first: Box::new(SavedPaneNode::capture(first, ctx)),
+                second: Box::new(SavedPaneNode::capture(second, ctx)),
             },
         }
     }
 }
 
 impl SavedPane {
-    fn capture(
-        pane: &mut Pane,
-        registry: &SurfaceKindRegistry,
-        capture_scrollback: bool,
-        memory: Option<&MemArc>,
-        seen_refs: &mut SeenRefs,
-    ) -> Self {
+    fn capture(pane: &mut Pane, ctx: &mut CaptureCtx<'_>) -> Self {
         let active_tab = pane.active_tab;
         let tabs = pane
             .tabs
             .iter_mut()
-            .map(|t| SavedTab::capture(t, registry, capture_scrollback, memory, seen_refs))
+            .map(|t| SavedTab::capture(t, ctx))
             .collect();
         Self { tabs, active_tab }
     }
 }
 
 impl SavedTab {
-    fn capture(
-        tab: &mut Tab,
-        registry: &SurfaceKindRegistry,
-        capture_scrollback: bool,
-        memory: Option<&MemArc>,
-        seen_refs: &mut SeenRefs,
-    ) -> Self {
+    fn capture(tab: &mut Tab, ctx: &mut CaptureCtx<'_>) -> Self {
         let name = tab.name.clone();
         let explicit_name = tab.explicit_name.clone();
         let surface = if tab.is_split() {
-            SavedSurfaceLayout::capture_layout(
-                tab.layout_mut(),
-                registry,
-                capture_scrollback,
-                memory,
-                seen_refs,
-            )
+            SavedSurfaceLayout::capture_layout(tab.layout_mut(), ctx)
         } else {
-            SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(
-                tab.surface_mut(),
-                registry,
-                capture_scrollback,
-                memory,
-                seen_refs,
-            ))
+            SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(tab.surface_mut(), ctx))
         };
         Self {
             name,
@@ -184,22 +134,10 @@ impl SavedTab {
 }
 
 impl SavedSurfaceLayout {
-    fn capture_layout(
-        layout: &mut SurfaceLayout,
-        registry: &SurfaceKindRegistry,
-        capture_scrollback: bool,
-        memory: Option<&MemArc>,
-        seen_refs: &mut SeenRefs,
-    ) -> Self {
+    fn capture_layout(layout: &mut SurfaceLayout, ctx: &mut CaptureCtx<'_>) -> Self {
         match layout {
             SurfaceLayout::Leaf(surface) => {
-                SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(
-                    surface.as_mut(),
-                    registry,
-                    capture_scrollback,
-                    memory,
-                    seen_refs,
-                ))
+                SavedSurfaceLayout::Leaf(SavedSurface::capture_surface(surface.as_mut(), ctx))
             }
             SurfaceLayout::Split {
                 direction,
@@ -210,20 +148,8 @@ impl SavedSurfaceLayout {
             } => SavedSurfaceLayout::Split {
                 direction: (*direction).into(),
                 ratio: *ratio,
-                first: Box::new(SavedSurfaceLayout::capture_layout(
-                    first,
-                    registry,
-                    capture_scrollback,
-                    memory,
-                    seen_refs,
-                )),
-                second: Box::new(SavedSurfaceLayout::capture_layout(
-                    second,
-                    registry,
-                    capture_scrollback,
-                    memory,
-                    seen_refs,
-                )),
+                first: Box::new(SavedSurfaceLayout::capture_layout(first, ctx)),
+                second: Box::new(SavedSurfaceLayout::capture_layout(second, ctx)),
             },
         }
     }
@@ -232,13 +158,11 @@ impl SavedSurfaceLayout {
 /// Deferred terminal 의 scrollback 복원을 큐에 적재. PTY 가 spawn 되는 시점에
 /// `apply_pending_scrollback_inject` 가 꺼내 inject 한다.
 impl SavedSurface {
-    fn capture_surface(
-        surface: &mut dyn Surface,
-        registry: &SurfaceKindRegistry,
-        capture_scrollback: bool,
-        memory: Option<&MemArc>,
-        seen_refs: &mut SeenRefs,
-    ) -> Self {
+    fn capture_surface(surface: &mut dyn Surface, ctx: &mut CaptureCtx<'_>) -> Self {
+        let registry = ctx.registry;
+        let capture_scrollback = ctx.capture_scrollback;
+        let memory = ctx.memory;
+        let seen_refs = &mut *ctx.seen_refs;
         if let Some(ts) = surface.as_terminal_surface_mut() {
             let restore_command = memory.and_then(|m| {
                 crate::surface_meta::SurfaceMetaStore::get(m, ts.id, "restore.command")
