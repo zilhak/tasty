@@ -96,6 +96,7 @@
 | [design/key-mapping.md](design/key-mapping.md) | 키 매핑 설계 — OS별 물리적 키 위치 매핑, 프리셋, 캡처/매칭 규칙 |
 | [design/popup-system.md](design/popup-system.md) | 내부 팝업 시스템 — 공통 규칙 7가지, PopupManager 구조 |
 | [design/action-dispatch.md](design/action-dispatch.md) | Action Dispatch (Intent 큐) — 호스트 내부 동작 디스패치, User/Agent origin, Event Bus bridge |
+| [design/intent-coroutine.md](design/intent-coroutine.md) | Intent Coroutine Runtime — 경량 thread + genawaiter 기반 multi-step workflow. 일반 Intent 큐 모델의 보강 |
 | [design/toast-system.md](design/toast-system.md) | 토스트 시스템 — 휘발성 인앱 알림, 스코프, 사용자 행동 트리거 정책 |
 | [design/settings-system.md](design/settings-system.md) | 설정 시스템 — 탭/서브탭 구조, 항목 순서 규칙, 배치 판단 기준 |
 | [design/input-layer.md](design/input-layer.md) | 마우스 입력 계층 — z-order 기반 이벤트 소비/버블링 설계 |

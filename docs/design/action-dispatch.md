@@ -27,28 +27,56 @@
 
 ### 핵심 원칙 — Intent 의 위치
 
-> **Intent 는 "의도" 다 — 로직의 *시작점* 에만 존재할 수 있고, 동작의 *결과* 로 나올 수 없다.**
+> **Intent 는 "의도" 다 — 이벤트 처리 흐름의 *시작점* 에만 존재할 수 있다.
+> 끝부분에서 *결과로써* 나오거나, 중간에서 *정보 전달용도로* 쓰이면 안 된다.**
 
 흐름은 항상 한 방향:
 
 ```
-이벤트 (발화지점) → 해석된 의도 (Intent) → 로직 → 결과 (Event/응답/cascade)
+이벤트 (발화지점) → 해석된 의도 (Intent → 큐로) → 처리 (drain) → 결과 (state mutate / cascade)
+```
+
+**Intent 의 형식적 위치 vs 의미적 위치 — 헷갈리기 쉬운 부분**
+
+함수가 `-> Intent` 또는 `-> Option<Intent>` 를 반환해도, 그 함수가 호출되는
+*위치* 에 따라 합법/불법이 갈린다:
+
+```rust
+// ✓ OK — 이벤트 해석 함수. 시작점에서 호출됨.
+fn parse_user_input(event: WindowEvent) -> Option<Intent> {
+    // 이벤트 → Intent 변환. 리턴된 Intent 는 곧장 큐로 발화된다.
+}
+
+// ✗ 금지 — Intent 처리 핸들러의 *리턴 경로* 로 새 Intent 가 흘러나옴.
+fn handle_intent(intent: &DispatchedIntent) -> Option<Intent> {
+    // 처리 결과로 Intent 를 반환하는 시그니처 자체가 잘못된 디자인.
+    // cascade 가 필요하면 함수 본문 안에서 `state.dispatch_intent(...)` 로 *큐 발화*.
+}
 ```
 
 따라서 다음은 모두 **잘못된 패턴**:
 
-1. **Intent 가 응답 데이터를 가짐** (`ApplyResult { data }` 같은 패턴)
-   — Intent 는 결과를 반환할 수 없다. fire-and-forget 만.
-2. **로직 중간 단계에서 Intent 가 생성됨**
-   — Intent 가 *원래 발화* 에 대한 응답으로 나오지 않는다. 새로운 Intent
-   는 *별도의 의도* 일 뿐 (cascade 라면 origin 을 전파하는 *새 발화*).
-3. **Intent 를 정보 전달 매개체로 사용**
-   — 정보 전달이 필요하면 그건 Intent 가 아니라 다른 개념 (Method call,
-   Query, oneshot channel 등). Intent enum 에 응답 필드를 넣지 않는다.
+1. **처리 핸들러가 새 Intent 를 *리턴 경로로* 흘려보냄**
+   — 형식이 어떻게 생겼든, Intent context *안* 에서 흘러나오면 안 된다.
+   cascade 는 *큐에 enqueue* 만 (함수 본문 안에서).
+2. **Intent 가 응답 데이터를 가짐** (`Result<Intent, _>`, `ApplyResult { data }` 등)
+   — Intent 는 데이터 전달 매개체가 아니다.
+3. **Intent enum 에 응답 필드를 넣음**
+   — 응답이 필요한 mutate 는 *Intent 가 아니다*.
 
 응답이 필요한 mutate (예: 새 ID 발급, 분기 결정용 status) 는 *Intent 가 아니라*
 **Core method 호출** (sync 리턴) 또는 **Query (read)** 로 처리한다 — Intent 와는
 다른 개념의 메커니즘.
+
+#### 허용되는 패턴
+
+- **이벤트 → Intent 변환 함수 리턴**: `fn parse(e) -> Option<Intent>` — 시작점.
+- **Intent 처리 후 결과를 보고 추가 행동**: 처리 함수 본문 끝에서 state 를
+  다시 query 해 새 Intent 발화 (큐에).
+- **cascade 발화**: Intent A 의 핸들러가 *본문 안에서* `state.dispatch_intent`
+  로 Intent B 를 큐에 던짐.
+- **coroutine yield**: Intent A 처리 중 *큐 우선순위* 로 다른 Intent 가 끼어들고
+  완료된 후 A resume. 별 thread 의 coroutine runtime 이 host (별 문서 참조).
 
 #### 분류표
 
@@ -62,22 +90,22 @@
 #### Cascade — Intent 처리 중 새 Intent 발화
 
 Intent A 의 핸들러가 *처리 도중* 새 Intent B 를 발화하는 것은 허용된다.
-**단, 반드시 큐를 통해서**:
+**단, 반드시 함수 본문 안에서 큐로**:
 
 ```rust
-// ✓ OK — 새 Intent 를 큐로 발화. 다음 drain cycle 또는 같은 drain 의 다음
-// 라운드에서 별도 흐름으로 처리.
+// ✓ OK — 핸들러 본문 안에서 큐 발화. B 는 별도 흐름.
 fn handle_some_intent(state: &mut AppState, intent: &DispatchedIntent) {
     // ... A 처리 ...
     state.dispatch_intent(
         Intent::OpenPopup { id: "approval_result", mode: ... }
             .cascaded_from(intent),  // origin 전파
     );
+    // A 의 흐름은 여기서 끝. B 는 다음 drain 라운드에서 처리.
 }
 
-// ✗ 금지 — Intent A 의 처리 결과를 Result/return value 에 새 Intent 로
-// 담는 것. 호출자가 그 Intent 를 *다시* 큐에 넣는 패턴도 같은 죄.
-fn handle_some_intent(...) -> Option<Intent> {  // ❌
+// ✗ 금지 — Intent A 의 핸들러가 *리턴 경로* 로 새 Intent 를 흘려보냄.
+// 호출자가 그 Intent 를 다시 큐에 넣는 패턴 (`dispatch(handle(intent)?)`) 도 같은 죄.
+fn handle_some_intent(...) -> Option<Intent> {  // ❌ 시그니처 자체가 잘못.
     Some(Intent::OpenPopup { ... })
 }
 ```
@@ -85,6 +113,13 @@ fn handle_some_intent(...) -> Option<Intent> {  // ❌
 이유: Intent 는 *발화* 와 *처리* 가 분리된 큐 모델이다. 처리 흐름의 *반환*
 경로로 새 Intent 가 흘러나오면 호출 cascade 가 *재귀적 함수 호출 트리* 가
 되어 큐 모델이 깨진다. 새 Intent 는 항상 *별개의 흐름* 으로 시작되어야 한다.
+
+#### 우선순위 끼어들기 — coroutine pattern (별 문서)
+
+Intent A 처리 중 *"내 로직 잠깐 중단하고 이 Intent 부터 먼저 처리해야 하는"*
+케이스는 별 thread 의 coroutine runtime 으로 처리. main thread 와 mpsc 로
+통신하며, A 가 yield → main 의 mutate 적용 → A resume 패턴. 별도 설계 문서에서
+다룬다 (예정: `docs/design/intent-coroutine.md`).
 
 ## Intent 자료형
 
