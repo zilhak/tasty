@@ -1,6 +1,8 @@
 //! Blackboard CRUD — create / get_meta / exists / put / get / get_all / delete_field / delete.
 
-use crate::{ListOpts, MemoryEntry, MemoryError, MemoryStore, MemoryValue, PutOpts, Result, Scope};
+use crate::{
+    ListOpts, MemoryEntry, MemoryError, MemoryStorage, MemoryValue, PutOpts, Result, Scope,
+};
 
 use super::{
     BB_KEY_PREFIX, BlackboardMeta, bb_snapshot_list, field_key, meta_key, now_ms_local,
@@ -8,7 +10,7 @@ use super::{
 };
 
 pub fn bb_create(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     bb: &str,
@@ -38,7 +40,7 @@ pub fn bb_create(
 
 /// `_meta` entry 조회. bb 가 없으면 `Ok(None)`.
 pub fn bb_get_meta(
-    store: &MemoryStore,
+    store: &dyn MemoryStorage,
     workspace_id: u32,
     bb: &str,
 ) -> Result<Option<MemoryEntry>> {
@@ -47,13 +49,13 @@ pub fn bb_get_meta(
 }
 
 /// bb 존재 여부 (= `_meta` 존재 여부).
-pub fn bb_exists(store: &MemoryStore, workspace_id: u32, bb: &str) -> Result<bool> {
+pub fn bb_exists(store: &dyn MemoryStorage, workspace_id: u32, bb: &str) -> Result<bool> {
     Ok(bb_get_meta(store, workspace_id, bb)?.is_some())
 }
 
 /// 필드 쓰기. `_meta` 가 없으면 `NotFound` 반환.
 pub fn bb_put(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     bb: &str,
@@ -80,7 +82,7 @@ pub fn bb_put(
 
 /// 단일 필드 조회. 만료/미존재면 `Ok(None)`.
 pub fn bb_get(
-    store: &MemoryStore,
+    store: &dyn MemoryStorage,
     workspace_id: u32,
     bb: &str,
     field: &str,
@@ -91,7 +93,11 @@ pub fn bb_get(
 }
 
 /// bb 의 모든 필드 (meta 제외) 를 `key ASC` 순서로 반환.
-pub fn bb_get_all(store: &MemoryStore, workspace_id: u32, bb: &str) -> Result<Vec<MemoryEntry>> {
+pub fn bb_get_all(
+    store: &dyn MemoryStorage,
+    workspace_id: u32,
+    bb: &str,
+) -> Result<Vec<MemoryEntry>> {
     validate_bb_name(bb)?;
     let prefix = format!("{BB_KEY_PREFIX}{bb}.fields.");
     let opts = ListOpts {
@@ -103,7 +109,7 @@ pub fn bb_get_all(store: &MemoryStore, workspace_id: u32, bb: &str) -> Result<Ve
 
 /// 단일 필드 삭제. CAS 지원.
 pub fn bb_delete_field(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     bb: &str,
@@ -127,7 +133,7 @@ pub fn bb_delete_field(
 ///
 /// Returns: 삭제된 entry 총 개수.
 pub fn bb_delete(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     bb: &str,

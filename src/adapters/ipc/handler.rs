@@ -336,36 +336,44 @@ fn route_engine_handler(
         // memory: 유지 보수 (host 전용)
         "memory.gc" => memory::handle_gc(core, state, engine, caller, id, &request.params),
         // memory: blackboard (Phase 7.1 — workspace-scoped 키-값 컬렉션)
-        "memory.bb_create" => memory::handle_bb_create(state, engine, caller, id, &request.params),
-        "memory.bb_put" => memory::handle_bb_put(state, engine, caller, id, &request.params),
-        "memory.bb_get" => memory::handle_bb_get(state, engine, caller, id, &request.params),
+        "memory.bb_create" => {
+            memory::handle_bb_create(core, state, engine, caller, id, &request.params)
+        }
+        "memory.bb_put" => memory::handle_bb_put(core, state, engine, caller, id, &request.params),
+        "memory.bb_get" => memory::handle_bb_get(core, state, engine, caller, id, &request.params),
         "memory.bb_get_all" => {
-            memory::handle_bb_get_all(state, engine, caller, id, &request.params)
+            memory::handle_bb_get_all(core, state, engine, caller, id, &request.params)
         }
         "memory.bb_get_meta" => {
-            memory::handle_bb_get_meta(state, engine, caller, id, &request.params)
+            memory::handle_bb_get_meta(core, state, engine, caller, id, &request.params)
         }
         "memory.bb_delete_field" => {
-            memory::handle_bb_delete_field(state, engine, caller, id, &request.params)
+            memory::handle_bb_delete_field(core, state, engine, caller, id, &request.params)
         }
-        "memory.bb_delete" => memory::handle_bb_delete(state, engine, caller, id, &request.params),
-        "memory.bb_list" => memory::handle_bb_list(state, engine, caller, id, &request.params),
-        "memory.bb_exists" => memory::handle_bb_exists(state, engine, caller, id, &request.params),
+        "memory.bb_delete" => {
+            memory::handle_bb_delete(core, state, engine, caller, id, &request.params)
+        }
+        "memory.bb_list" => {
+            memory::handle_bb_list(core, state, engine, caller, id, &request.params)
+        }
+        "memory.bb_exists" => {
+            memory::handle_bb_exists(core, state, engine, caller, id, &request.params)
+        }
         // memory: bb snapshot (Phase 7.4)
         "memory.bb_snapshot" => {
-            memory::handle_bb_snapshot(state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot(core, state, engine, caller, id, &request.params)
         }
         "memory.bb_snapshot_get" => {
-            memory::handle_bb_snapshot_get(state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot_get(core, state, engine, caller, id, &request.params)
         }
         "memory.bb_snapshot_list" => {
-            memory::handle_bb_snapshot_list(state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot_list(core, state, engine, caller, id, &request.params)
         }
         "memory.bb_snapshot_delete" => {
-            memory::handle_bb_snapshot_delete(state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot_delete(core, state, engine, caller, id, &request.params)
         }
         "memory.bb_snapshot_restore" => {
-            memory::handle_bb_snapshot_restore(state, engine, caller, id, &request.params)
+            memory::handle_bb_snapshot_restore(core, state, engine, caller, id, &request.params)
         }
         // memory: plan (Phase 7.2 — workspace-scoped 선언적 work breakdown)
         "memory.plan_create" => {

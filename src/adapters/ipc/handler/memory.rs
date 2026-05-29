@@ -288,20 +288,6 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
     }
 }
 
-/// 옛 글로벌 store 검사 — sub-module 들의 `require_store(&id)?` 호출이
-/// 아직 변환되지 않은 상태에서 호환. M.5+ 에서 sub-module 들도 `core.with_memory`
-/// 로 옮기면 본 함수와 호출처가 함께 사라진다.
-pub(super) fn require_store(id: &Value) -> Result<(), JsonRpcResponse> {
-    if tasty_memory::with_store(|_| ()).is_some() {
-        Ok(())
-    } else {
-        Err(JsonRpcResponse::internal_error(
-            id.clone(),
-            "memory store not initialized",
-        ))
-    }
-}
-
 // ============================================================
 // Regular `memory.*`
 // ============================================================

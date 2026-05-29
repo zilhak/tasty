@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ListOpts, MemoryError, MemoryStore, MemoryValue, PutOpts, Result, Scope};
+use crate::{ListOpts, MemoryError, MemoryStorage, MemoryValue, PutOpts, Result, Scope};
 
 use super::{
     BB_KEY_PREFIX, BB_NAME_MAX, bb_exists, bb_get_all, bb_get_meta, field_key, meta_key,
@@ -149,7 +149,7 @@ fn snapshot_prefix(bb: &str) -> String {
 /// 현재 bb 상태로 새 snapshot 생성. bb 가 없으면 `NotFound`. 이미 같은 sid 가
 /// 있으면 `AlreadyExists`.
 pub fn bb_snapshot(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     bb: &str,
@@ -206,7 +206,7 @@ pub fn bb_snapshot(
 
 /// 단일 snapshot 조회.
 pub fn bb_snapshot_get(
-    store: &MemoryStore,
+    store: &dyn MemoryStorage,
     workspace_id: u32,
     bb: &str,
     snapshot_id: &str,
@@ -232,7 +232,11 @@ pub fn bb_snapshot_get(
 }
 
 /// bb 의 snapshot id 목록 (정렬).
-pub fn bb_snapshot_list(store: &MemoryStore, workspace_id: u32, bb: &str) -> Result<Vec<String>> {
+pub fn bb_snapshot_list(
+    store: &dyn MemoryStorage,
+    workspace_id: u32,
+    bb: &str,
+) -> Result<Vec<String>> {
     validate_bb_name(bb)?;
     let prefix = snapshot_prefix(bb);
     let opts = ListOpts {
@@ -248,7 +252,7 @@ pub fn bb_snapshot_list(store: &MemoryStore, workspace_id: u32, bb: &str) -> Res
 
 /// snapshot 삭제. 없으면 `NotFound`.
 pub fn bb_snapshot_delete(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     bb: &str,
@@ -275,7 +279,7 @@ pub fn bb_snapshot_delete(
 ///
 /// Returns: 복원 후 bb 의 field 개수.
 pub fn bb_snapshot_restore(
-    store: &mut MemoryStore,
+    store: &mut dyn MemoryStorage,
     owner: &str,
     workspace_id: u32,
     bb: &str,
@@ -332,7 +336,7 @@ pub fn bb_snapshot_restore(
 }
 
 /// 워크스페이스에 존재하는 bb 이름 목록 (정렬). `_meta` 존재로 판단.
-pub fn bb_list(store: &MemoryStore, workspace_id: u32) -> Result<Vec<String>> {
+pub fn bb_list(store: &dyn MemoryStorage, workspace_id: u32) -> Result<Vec<String>> {
     let opts = ListOpts {
         prefix: Some(BB_KEY_PREFIX.to_string()),
         ..Default::default()
