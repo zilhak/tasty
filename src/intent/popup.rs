@@ -7,22 +7,24 @@
 //!
 //! Dedup: 같은 popup id 에 OpenPopup 이 중복 들어오면 이미 열려있을 때 무시.
 
-use super::{DispatchedIntent, Intent, OpenPopupMode};
+use super::{DispatchedIntent, Intent, OpenPopupMode, UiIntent};
 use crate::state::AppState;
 
 /// popup 도메인 분기 핸들러. `dispatch_pending_intents` 에서 호출.
 pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
-    match &intent.body {
-        Intent::OpenPopup { id, mode } => open(state, id, mode),
-        Intent::ClosePopup { id } => state.popups.close(id),
-        Intent::TogglePopup { id, mode } => {
+    let Intent::Ui(ui) = &intent.body else {
+        return;
+    };
+    match ui {
+        UiIntent::OpenPopup { id, mode } => open(state, id, mode),
+        UiIntent::ClosePopup { id } => state.popups.close(id),
+        UiIntent::TogglePopup { id, mode } => {
             if state.popups.is_open(id) {
                 state.popups.close(id);
             } else {
                 open(state, id, mode);
             }
         }
-        _ => {}
     }
 }
 
@@ -66,11 +68,11 @@ mod tests {
     }
 
     fn dispatched_open(id: &'static str, mode: OpenPopupMode) -> DispatchedIntent {
-        Intent::OpenPopup { id, mode }.from_user_shortcut("test")
+        UiIntent::OpenPopup { id, mode }.from_user_shortcut("test")
     }
 
     fn dispatched_close(id: &'static str) -> DispatchedIntent {
-        Intent::ClosePopup { id }.from_user_shortcut("test")
+        UiIntent::ClosePopup { id }.from_user_shortcut("test")
     }
 
     #[test]
@@ -104,7 +106,7 @@ mod tests {
     #[test]
     fn toggle_opens_when_closed_closes_when_open() {
         let mut state = make_state();
-        let toggle = Intent::TogglePopup {
+        let toggle = UiIntent::TogglePopup {
             id: "test_popup",
             mode: OpenPopupMode::Default,
         }

@@ -12,7 +12,7 @@
 
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
-use crate::intent::{Intent, OpenPopupMode};
+use crate::intent::{OpenPopupMode, UiIntent};
 use crate::plugin::manifest::ToolAction;
 use crate::plugin::tool_registry::ToolItem;
 use crate::state::AppState;
@@ -100,7 +100,7 @@ pub fn draw_tools_menu(
         // CenteredFocused 로 발화. 기존 코드는 raw `open` 만 호출해 중앙 정렬/포커스가
         // 빠져 있던 버그를 함께 해결한다.
         state.dispatch_intent(
-            Intent::OpenPopup {
+            UiIntent::OpenPopup {
                 id: popup_id,
                 mode: OpenPopupMode::CenteredFocused,
             }

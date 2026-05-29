@@ -1,7 +1,7 @@
 //! Double-tap modifier (Shift+Shift / Ctrl+Ctrl / Alt+Alt) 단축키 처리.
 
 use crate::adapters::ui::window::main::MainWindow;
-use crate::intent::{Intent, OpenPopupMode};
+use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
 
 use super::send_app_event;
@@ -26,7 +26,7 @@ impl MainWindow {
             // 에 popup 이 열릴 예정이면 미리 읽음 처리.
             let will_open = !self.state.popups.is_open("notifications");
             self.state.dispatch_intent(
-                Intent::TogglePopup {
+                UiIntent::TogglePopup {
                     id: "notifications",
                     mode: OpenPopupMode::Default,
                 }
@@ -189,7 +189,7 @@ impl MainWindow {
                         self.state.dialogs.file_open_pane_id = Some(pane_id);
                         self.state.dialogs.markdown_open_buffer.clear();
                         self.state.dispatch_intent(
-                            Intent::OpenPopup {
+                            UiIntent::OpenPopup {
                                 id: "markdown_open",
                                 mode: OpenPopupMode::CenteredFocused,
                             }
@@ -201,7 +201,7 @@ impl MainWindow {
                             self.state.dialogs.convert_popup = Some(sid);
                             self.state.dialogs.convert_popup_selected = None;
                             self.state.dispatch_intent(
-                                Intent::OpenPopup {
+                                UiIntent::OpenPopup {
                                     id: "convert_surface",
                                     mode: OpenPopupMode::WithScope(
                                         crate::adapters::ui::popup::PopupScope::Surface(sid),
@@ -218,7 +218,7 @@ impl MainWindow {
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.markdown_open_buffer.clear();
                             self.state.dispatch_intent(
-                                Intent::OpenPopup {
+                                UiIntent::OpenPopup {
                                     id: "markdown_open",
                                     mode: OpenPopupMode::WithScope(
                                         crate::adapters::ui::popup::PopupScope::Surface(sid),

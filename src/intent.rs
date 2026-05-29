@@ -31,16 +31,21 @@ pub struct DispatchedIntent {
 }
 
 /// 호스트 내부 명령. flat enum — variant 가 늘어나도 nested 하지 않는다.
+///
+/// **분류축** (D.3.I — `intent-ui-vs-domain.md`):
+/// - `Ui(UiIntent)`: 사용자 시각 상태 변경 (popup open/close/toggle). headless
+///   빌드에서는 컴파일 타임에 사라진다 (Phase E).
+/// - 그 외 variant: Domain Intent — 영속 도메인 mutate. headless 빌드에서도 동작.
+///
+/// release 빌드에서 *시스템/Core/Domain handler 가 자동으로 `Ui` variant 를
+/// 발화* 하는 것은 금지된다 (`docs/design/popup-system.md` "Popup 발화 정책").
+/// debug 빌드의 `debug.popup.*` IPC 만 예외.
 #[derive(Debug, Clone)]
 pub enum Intent {
     /// 첫 단계의 placeholder. 핸들러는 아무 일도 하지 않는다.
     Noop,
-    /// popup 열기.
-    OpenPopup { id: PopupId, mode: OpenPopupMode },
-    /// popup 닫기.
-    ClosePopup { id: PopupId },
-    /// popup toggle (열려있으면 닫고, 닫혀있으면 열기).
-    TogglePopup { id: PopupId, mode: OpenPopupMode },
+    /// UI Intent (popup 발화). 별 enum `UiIntent` 로 분리되어 분류축이 명시된다.
+    Ui(UiIntent),
 
     // ---- Preset 도메인 ----
     /// Preset 적용. focus 정책은 origin 으로 자동 분기 (User=true, Agent=false).
@@ -106,6 +111,62 @@ pub enum Intent {
     },
 }
 
+/// UI Intent — 사용자 시각 상태 변경. release 표면에서는 사용자 행동 (단축키 /
+/// 마우스 / 메뉴) 에서만 발화되며, 자동 발화는 금지된다 (`popup-system.md`,
+/// `toast-system.md`, `debug-ipc.md` 의 자매 정책 — `intent-ui-vs-domain.md` 2절).
+///
+/// Phase E 의 headless 빌드 (`--no-default-features` 또는 `feature = "gui"` off)
+/// 에서는 본 enum 자체가 컴파일 타임에 사라질 예정 — 그때 `Intent::Ui` variant
+/// 도 `#[cfg(feature = "gui")]` 가드된다. 본 commit 에서는 분류축 표시 + builder
+/// 도입만, cfg 가드는 후속.
+#[derive(Debug, Clone)]
+pub enum UiIntent {
+    /// popup 열기.
+    OpenPopup { id: PopupId, mode: OpenPopupMode },
+    /// popup 닫기.
+    ClosePopup { id: PopupId },
+    /// popup toggle (열려있으면 닫고, 닫혀있으면 열기).
+    TogglePopup { id: PopupId, mode: OpenPopupMode },
+}
+
+impl From<UiIntent> for Intent {
+    fn from(ui: UiIntent) -> Self {
+        Intent::Ui(ui)
+    }
+}
+
+/// `UiIntent` 발화 ergonomics — `Intent` 의 builder 들을 그대로 갖춰 호출처가
+/// `UiIntent::OpenPopup{...}.from_user_shortcut(...)` 형태로 발화할 수 있게 한다.
+impl UiIntent {
+    pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
+        Intent::Ui(self).from_user_shortcut(id)
+    }
+
+    pub fn from_user_menu(self, id: &'static str) -> DispatchedIntent {
+        Intent::Ui(self).from_user_menu(id)
+    }
+
+    pub fn from_user_context_menu(self) -> DispatchedIntent {
+        Intent::Ui(self).from_user_context_menu()
+    }
+
+    pub fn from_agent_ipc(self) -> DispatchedIntent {
+        Intent::Ui(self).from_agent_ipc()
+    }
+
+    pub fn from_agent_plugin(self, plugin_id: impl Into<String>) -> DispatchedIntent {
+        Intent::Ui(self).from_agent_plugin(plugin_id)
+    }
+
+    pub fn from_agent_cli(self) -> DispatchedIntent {
+        Intent::Ui(self).from_agent_cli()
+    }
+
+    pub fn cascaded_from(self, parent: &DispatchedIntent) -> DispatchedIntent {
+        Intent::Ui(self).cascaded_from(parent)
+    }
+}
+
 /// Surface 변환 타깃. Terminal 은 host 내장 special case, 나머지는 surface_registry
 /// 의 kind 로 통합. plugin 이 등록한 kind 도 모두 이 경로로 처리한다.
 #[derive(Debug, Clone)]
@@ -163,7 +224,8 @@ impl IntentOrigin {
     }
 }
 
-/// 발화 ergonomics. `Intent::OpenPopup { ... }.from_user_shortcut("id")` 형태.
+/// 발화 ergonomics. `UiIntent::OpenPopup { ... }.from_user_shortcut("id")` 또는
+/// 도메인 variant 에서 `Intent::ApplyPreset { ... }.from_user_menu("id")` 형태.
 impl Intent {
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         DispatchedIntent {

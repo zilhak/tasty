@@ -305,7 +305,7 @@ pub fn apply_convert_action(
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.markdown_open_buffer.clear();
             state.dispatch_intent(
-                crate::intent::Intent::OpenPopup {
+                crate::intent::UiIntent::OpenPopup {
                     id: "markdown_open",
                     mode: crate::intent::OpenPopupMode::WithScope(popup::PopupScope::Surface(
                         surface_id,

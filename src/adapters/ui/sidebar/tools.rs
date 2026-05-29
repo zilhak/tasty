@@ -11,7 +11,7 @@ pub(crate) fn open_tools_menu(state: &mut AppState, btn_rect: egui::Rect) {
     // 버튼 좌측에 맞추고, 버튼 위쪽으로 올라가도록 배치
     let pos = egui::pos2(btn_rect.min.x, btn_rect.min.y - menu_size.y);
     state.dispatch_intent(
-        crate::intent::Intent::OpenPopup {
+        crate::intent::UiIntent::OpenPopup {
             id: "tools_menu",
             mode: crate::intent::OpenPopupMode::AtFocused(pos),
         }

@@ -253,7 +253,7 @@ pub fn draw_popups(
             // 다음 approval head 를 위해 popup 재발화. Intent dedup 이 이미 열려 있을
             // 때 무시하므로 안전.
             state.dispatch_intent(
-                crate::intent::Intent::OpenPopup {
+                crate::intent::UiIntent::OpenPopup {
                     id: crate::adapters::ui::popup::approval::APPROVAL_POPUP_ID,
                     mode: crate::intent::OpenPopupMode::WithScope(
                         crate::adapters::ui::popup::PopupScope::Window,

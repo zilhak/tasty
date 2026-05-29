@@ -264,7 +264,7 @@ pub fn enqueue_approval(
     // 첫 항목이면 popup 을 즉시 연다. 이미 열려 있으면 Intent dedup 으로 무시.
     // approval 큐는 agent/plugin 발화이므로 origin 은 agent_ipc 로 통일.
     state.dispatch_intent(
-        crate::intent::Intent::OpenPopup {
+        crate::intent::UiIntent::OpenPopup {
             id: APPROVAL_POPUP_ID,
             mode: crate::intent::OpenPopupMode::WithScope(
                 crate::adapters::ui::popup::PopupScope::Window,

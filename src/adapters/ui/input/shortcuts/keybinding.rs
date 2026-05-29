@@ -7,7 +7,7 @@
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::adapters::ui::window::main::MainWindow;
-use crate::intent::{Intent, OpenPopupMode};
+use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
 
 use super::{focused_image_surface_id, matches_any_binding, send_app_event};
@@ -87,7 +87,7 @@ impl MainWindow {
         if matches_any_binding(&kb.toggle_notifications, key, mods) {
             let will_open = !state.popups.is_open("notifications");
             state.dispatch_intent(
-                Intent::TogglePopup {
+                UiIntent::TogglePopup {
                     id: "notifications",
                     mode: OpenPopupMode::Default,
                 }
@@ -102,12 +102,12 @@ impl MainWindow {
             if state.popups.is_open("search_bar") {
                 state.search.clear();
                 state.dispatch_intent(
-                    Intent::ClosePopup { id: "search_bar" }.from_user_shortcut("find_close"),
+                    UiIntent::ClosePopup { id: "search_bar" }.from_user_shortcut("find_close"),
                 );
             } else if let Some(sid) = state.focused_surface_id(engine) {
                 state.search.surface_id = sid;
                 state.dispatch_intent(
-                    Intent::OpenPopup {
+                    UiIntent::OpenPopup {
                         id: "search_bar",
                         mode: OpenPopupMode::AtTopOfScope(
                             crate::adapters::ui::popup::PopupScope::Surface(sid),
@@ -204,7 +204,7 @@ impl MainWindow {
             state.dialogs.file_open_pane_id = Some(pane_id);
             state.dialogs.markdown_open_buffer.clear();
             state.dispatch_intent(
-                Intent::OpenPopup {
+                UiIntent::OpenPopup {
                     id: "markdown_open",
                     mode: OpenPopupMode::CenteredFocused,
                 }
@@ -217,7 +217,7 @@ impl MainWindow {
                 state.dialogs.convert_popup = Some(sid);
                 state.dialogs.convert_popup_selected = None;
                 state.dispatch_intent(
-                    Intent::OpenPopup {
+                    UiIntent::OpenPopup {
                         id: "convert_surface",
                         mode: OpenPopupMode::WithScope(
                             crate::adapters::ui::popup::PopupScope::Surface(sid),
@@ -235,7 +235,7 @@ impl MainWindow {
                 state.dialogs.file_open_pane_id = Some(pane_id);
                 state.dialogs.markdown_open_buffer.clear();
                 state.dispatch_intent(
-                    Intent::OpenPopup {
+                    UiIntent::OpenPopup {
                         id: "markdown_open",
                         mode: OpenPopupMode::WithScope(
                             crate::adapters::ui::popup::PopupScope::Surface(sid),
@@ -283,7 +283,7 @@ impl MainWindow {
                     let scope = target.popup_scope();
                     state.dialogs.rename = Some((target, current_name));
                     state.dispatch_intent(
-                        Intent::OpenPopup {
+                        UiIntent::OpenPopup {
                             id: "rename",
                             mode: OpenPopupMode::WithScope(scope),
                         }
@@ -300,7 +300,7 @@ impl MainWindow {
                 let scope = target.popup_scope();
                 state.dialogs.rename = Some((target, ws.name.clone()));
                 state.dispatch_intent(
-                    Intent::OpenPopup {
+                    UiIntent::OpenPopup {
                         id: "rename",
                         mode: OpenPopupMode::WithScope(scope),
                     }
@@ -332,7 +332,7 @@ impl MainWindow {
         if matches_any_binding(&kb.toggle_command_palette, key, mods) {
             state.command_palette.reset();
             state.dispatch_intent(
-                Intent::TogglePopup {
+                UiIntent::TogglePopup {
                     id: crate::adapters::ui::popup::command_palette::COMMAND_PALETTE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
@@ -343,7 +343,7 @@ impl MainWindow {
         if matches_any_binding(&kb.apply_workspace_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
-                Intent::OpenPopup {
+                UiIntent::OpenPopup {
                     id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
@@ -354,7 +354,7 @@ impl MainWindow {
         if matches_any_binding(&kb.apply_tab_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
-                Intent::OpenPopup {
+                UiIntent::OpenPopup {
                     id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
@@ -365,7 +365,7 @@ impl MainWindow {
         if matches_any_binding(&kb.apply_pane_preset, key, mods) {
             state.dialogs.preset_picker_selected = None;
             state.dispatch_intent(
-                Intent::OpenPopup {
+                UiIntent::OpenPopup {
                     id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
                     mode: OpenPopupMode::CenteredFocused,
                 }
@@ -380,7 +380,7 @@ impl MainWindow {
                 let scope = target.popup_scope();
                 state.dialogs.rename = Some((target, ws.subtitle.clone()));
                 state.dispatch_intent(
-                    Intent::OpenPopup {
+                    UiIntent::OpenPopup {
                         id: "rename",
                         mode: OpenPopupMode::WithScope(scope),
                     }

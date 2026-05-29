@@ -41,7 +41,7 @@ impl MainWindow {
             }
             if self.state.popups.is_open("notifications") {
                 self.state.dispatch_intent(
-                    crate::intent::Intent::ClosePopup {
+                    crate::intent::UiIntent::ClosePopup {
                         id: "notifications",
                     }
                     .from_user_shortcut("escape_close_notifications"),

@@ -38,6 +38,8 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/tasty-utils/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.worktree" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/.claude" />
+      <excludeFolder url="file://$MODULE_DIR$/.claude-workspace" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

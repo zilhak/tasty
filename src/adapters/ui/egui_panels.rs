@@ -226,7 +226,7 @@ pub fn draw_egui_panels(
         state.dialogs.convert_popup = Some(sid);
         state.dialogs.convert_popup_selected = None;
         state.dispatch_intent(
-            crate::intent::Intent::OpenPopup {
+            crate::intent::UiIntent::OpenPopup {
                 id: "convert_surface",
                 mode: crate::intent::OpenPopupMode::WithScope(
                     crate::adapters::ui::popup::PopupScope::Surface(sid),

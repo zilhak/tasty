@@ -453,7 +453,7 @@ impl MainWindow {
                         let scope = target.popup_scope();
                         self.state.dialogs.rename = Some((target, current_name));
                         self.state.dispatch_intent(
-                            crate::intent::Intent::OpenPopup {
+                            crate::intent::UiIntent::OpenPopup {
                                 id: "rename",
                                 mode: crate::intent::OpenPopupMode::WithScope(scope),
                             }
@@ -562,7 +562,7 @@ impl MainWindow {
                             self.state.dialogs.file_open_pane_id = Some(pane_id);
                             self.state.dialogs.markdown_open_buffer.clear();
                             self.state.dispatch_intent(
-                                crate::intent::Intent::OpenPopup {
+                                crate::intent::UiIntent::OpenPopup {
                                     id: "markdown_open",
                                     mode: crate::intent::OpenPopupMode::WithScope(
                                         crate::adapters::ui::popup::PopupScope::Surface(surface_id),
@@ -638,7 +638,7 @@ impl MainWindow {
                             let scope = target.popup_scope();
                             self.state.dialogs.rename = Some((target, name));
                             self.state.dispatch_intent(
-                                crate::intent::Intent::OpenPopup {
+                                crate::intent::UiIntent::OpenPopup {
                                     id: "rename",
                                     mode: crate::intent::OpenPopupMode::WithScope(scope),
                                 }
@@ -651,7 +651,7 @@ impl MainWindow {
                             let scope = target.popup_scope();
                             self.state.dialogs.rename = Some((target, subtitle));
                             self.state.dispatch_intent(
-                                crate::intent::Intent::OpenPopup {
+                                crate::intent::UiIntent::OpenPopup {
                                     id: "rename",
                                     mode: crate::intent::OpenPopupMode::WithScope(scope),
                                 }

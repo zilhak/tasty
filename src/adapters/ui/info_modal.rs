@@ -48,7 +48,7 @@ const BODY_FONT_SIZE: f32 = 13.0;
 pub fn show_info_modal(state: &mut AppState, modal: InfoModal) {
     state.dialogs.info_modal_queue.push_back(modal);
     state.dispatch_intent(
-        crate::intent::Intent::OpenPopup {
+        crate::intent::UiIntent::OpenPopup {
             id: INFO_MODAL_ID,
             mode: crate::intent::OpenPopupMode::CenteredFocused,
         }
