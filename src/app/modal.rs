@@ -39,10 +39,22 @@ impl App {
 
             // Settings cascade 는 Core 발행 → handle_core_event 통해 처리
             // (main/parked 갱신 + save + theme install + plugin event).
-            if let Err(e) = self.dispatch_domain_intent(
-                crate::core::intent::DomainIntent::UpdateSettings(new_settings),
-            ) {
-                tracing::warn!("dispatch UpdateSettings failed: {e}");
+            // cascade 는 동일 frame 의 dispatch_pending_domain_intents 단계에서
+            // 적용 — modal 닫힌 직후 후속 코드 (settings_open=false / plugin
+            // shortcut draft 적용) 는 cascade 결과를 보지 않으므로 지연 안전.
+            //
+            // 첫 main window 의 state 를 통해 발화. parked-only 상태에서도 modal
+            // 은 열릴 수 있으나, parked-only 시에는 본 분기에 들어오지 않는다
+            // (Settings modal 은 main window 가 있어야 열 수 있음).
+            if let Some(main) = self.main_windows_iter_mut().next() {
+                main.state.dispatch_intent(
+                    crate::core::intent::DomainIntent::UpdateSettings(new_settings)
+                        .from_user_menu("settings_save"),
+                );
+            } else {
+                tracing::warn!(
+                    "Settings modal closed but no main window to dispatch UpdateSettings"
+                );
             }
 
             // modal-specific close 처리 — settings_open=false + plugin shortcut 반영.
