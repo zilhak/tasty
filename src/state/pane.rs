@@ -133,7 +133,7 @@ impl AppState {
                 },
             )?
         } else {
-            let surface = self.create_surface_via_registry(engine, kind, new_surface_id, params)?;
+            let surface = engine.create_surface_via_registry(kind, new_surface_id, params)?;
             let name = default_tab_name_for_kind(kind, params);
             crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, name, surface)
         };
@@ -193,7 +193,7 @@ impl AppState {
                 scrollback_persist_id: None,
             })
         } else {
-            self.create_surface_via_registry(engine, kind, new_surface_id, params)?
+            engine.create_surface_via_registry(kind, new_surface_id, params)?
         };
 
         match target_surface_id {
@@ -607,22 +607,6 @@ impl AppState {
             engine.mark_layout_dirty();
         }
         removed
-    }
-
-    /// SurfaceKindRegistry를 통해 새 surface 인스턴스를 만든다.
-    /// `"terminal"`은 호출자가 PTY spawn 경로로 분기 처리해야 하므로 여기서는 처리하지 않는다.
-    pub(crate) fn create_surface_via_registry(
-        &self,
-        engine: &CoreState,
-        kind: &str,
-        surface_id: u32,
-        params: &Value,
-    ) -> anyhow::Result<Box<dyn crate::model::Surface>> {
-        let def = engine
-            .surface_registry
-            .get(kind)
-            .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
-        (def.create)(surface_id, params)
     }
 }
 

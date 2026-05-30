@@ -90,7 +90,7 @@ impl AppState {
         } else if kind == "empty" {
             anyhow::bail!("Cannot create workspace with empty surface kind");
         } else {
-            let surface = self.create_surface_via_registry(engine, kind, surface_id, params)?;
+            let surface = engine.create_surface_via_registry(kind, surface_id, params)?;
             let tab_name = super::pane::default_tab_name_for_kind(kind, params);
             let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
             Workspace::new_with_pane(ws_id, name, pane)

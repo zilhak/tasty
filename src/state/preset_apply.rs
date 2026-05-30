@@ -349,7 +349,8 @@ impl AppState {
         if !engine.surface_registry.contains(&preset.kind) {
             return Err(ApplyError::UnknownKind(preset.kind.clone()));
         }
-        self.create_surface_via_registry(engine, &preset.kind, surface_id, &preset.params)
+        engine
+            .create_surface_via_registry(&preset.kind, surface_id, &preset.params)
             .map_err(ApplyError::Other)
     }
 

@@ -401,6 +401,26 @@ impl CoreState {
 }
 
 impl CoreState {
+    /// SurfaceKindRegistry를 통해 새 surface 인스턴스를 만든다.
+    /// `"terminal"`은 호출자가 PTY spawn 경로로 분기 처리해야 하므로 여기서는 처리하지 않는다.
+    ///
+    /// AppState 가 아닌 CoreState 의 메서드 — surface_registry 는 engine 의 일.
+    /// D.3.C.B.1 step 1 에서 AppState::create_surface_via_registry 를 옮김.
+    pub(crate) fn create_surface_via_registry(
+        &self,
+        kind: &str,
+        surface_id: u32,
+        params: &serde_json::Value,
+    ) -> anyhow::Result<Box<dyn crate::model::Surface>> {
+        let def = self
+            .surface_registry
+            .get(kind)
+            .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
+        (def.create)(surface_id, params)
+    }
+}
+
+impl CoreState {
     /// Refresh the cached display name of the tab containing a given surface ID.
     pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
         for workspace in &mut self.workspaces {
