@@ -1121,6 +1121,8 @@ impl Core {
             closed: false,
             cascade_level: CascadeLevel::Surface,
             cleanup_targets: vec![],
+            closed_tab_ids: vec![],
+            closed_pane_ids: vec![],
             workspace_id_purged: None,
             workspaces_now_empty: false,
         };
@@ -1196,6 +1198,8 @@ impl Core {
                     closed: true,
                     cascade_level: CascadeLevel::Surface,
                     cleanup_targets: vec![(surface_id, persist_id)],
+                    closed_tab_ids: vec![],
+                    closed_pane_ids: vec![],
                     workspace_id_purged: None,
                     workspaces_now_empty: false,
                 };
@@ -1237,6 +1241,7 @@ impl Core {
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             if pane.tabs.len() > 1 {
+                let closed_tab_id = pane.tabs[tab_idx].id;
                 pane.tabs.remove(tab_idx);
                 if pane.active_tab >= pane.tabs.len() {
                     pane.active_tab = pane.tabs.len() - 1;
@@ -1247,6 +1252,8 @@ impl Core {
                     closed: true,
                     cascade_level: CascadeLevel::Tab,
                     cleanup_targets: targets,
+                    closed_tab_ids: vec![closed_tab_id],
+                    closed_pane_ids: vec![],
                     workspace_id_purged: None,
                     workspaces_now_empty: false,
                 };
@@ -1256,12 +1263,14 @@ impl Core {
         // Case 3: last tab in pane, ws 안 pane >1 — pane close
         {
             let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+            let mut closed_tab_ids: Vec<u32> = Vec::new();
             {
                 let ws = &engine.workspaces[ws_idx];
                 if ws.pane_layout().all_pane_ids().len() > 1 {
                     if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                         for tab in &pane.tabs {
                             crate::state::AppState::collect_close_targets(tab, &mut targets);
+                            closed_tab_ids.push(tab.id);
                         }
                     }
                 }
@@ -1278,6 +1287,8 @@ impl Core {
                     closed: true,
                     cascade_level: CascadeLevel::Pane,
                     cleanup_targets: targets,
+                    closed_tab_ids,
+                    closed_pane_ids: vec![pane_id],
                     workspace_id_purged: None,
                     workspaces_now_empty: false,
                 };
@@ -1295,12 +1306,16 @@ impl Core {
             engine.push_closed_item(item);
         }
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        let mut closed_tab_ids: Vec<u32> = Vec::new();
+        let mut closed_pane_ids: Vec<u32> = Vec::new();
         {
             let ws = &engine.workspaces[ws_idx];
             for pid in ws.pane_layout().all_pane_ids() {
+                closed_pane_ids.push(pid);
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
                         crate::state::AppState::collect_close_targets(tab, &mut targets);
+                        closed_tab_ids.push(tab.id);
                     }
                 }
             }
@@ -1315,6 +1330,8 @@ impl Core {
             closed: true,
             cascade_level: CascadeLevel::Workspace,
             cleanup_targets: targets,
+            closed_tab_ids,
+            closed_pane_ids,
             workspace_id_purged: Some(workspace_id),
             workspaces_now_empty,
         }

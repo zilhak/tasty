@@ -224,6 +224,8 @@ impl App {
                 closed,
                 cascade_level,
                 cleanup_targets,
+                closed_tab_ids,
+                closed_pane_ids,
                 workspace_id_purged,
                 workspaces_now_empty: _,
             } => {
@@ -232,6 +234,8 @@ impl App {
                         source,
                         cascade_level,
                         cleanup_targets,
+                        closed_tab_ids,
+                        closed_pane_ids,
                         workspace_id_purged,
                     );
                 }
@@ -571,6 +575,8 @@ impl App {
         source: DispatchSource,
         cascade_level: crate::core::intent::CascadeLevel,
         cleanup_targets: Vec<(u32, Option<String>)>,
+        closed_tab_ids: Vec<u32>,
+        closed_pane_ids: Vec<u32>,
         workspace_id_purged: Option<u32>,
     ) {
         match source {
@@ -583,6 +589,8 @@ impl App {
                     &mut main.engine_state,
                     cascade_level,
                     cleanup_targets,
+                    closed_tab_ids,
+                    closed_pane_ids,
                     workspace_id_purged,
                 );
                 main.mark_dirty();
@@ -596,6 +604,8 @@ impl App {
                     engine,
                     cascade_level,
                     cleanup_targets,
+                    closed_tab_ids,
+                    closed_pane_ids,
                     workspace_id_purged,
                 );
             }
@@ -1150,17 +1160,45 @@ pub(crate) fn cascade_closed_item_restored(
 
 /// `CoreEvent::SurfaceClosed` 의 외부 cascade.
 /// 1. 각 cleanup_target 에 `AppState::cleanup_surface` 호출
-/// 2. workspace_id_purged 가 Some 이면 memory scope purge
-/// 3. cascade_level == Workspace 면 active_workspace 보정
+/// 2. cascade_level 별 host event (`tab.closed` / `pane.closed` / `workspace.closed`)
+///    enqueue + baseline 동기화. `surface.closed` 자체는 별 큐
+///    (`pending_lifecycle_events`) 가 처리하므로 여기선 안 다룸.
+/// 3. workspace_id_purged 가 Some 이면 memory scope purge
+/// 4. cascade_level == Workspace 면 active_workspace 보정
 pub(crate) fn cascade_surface_closed(
     state: &mut crate::state::AppState,
     engine: &mut crate::engine_state::CoreState,
     cascade_level: crate::core::intent::CascadeLevel,
     cleanup_targets: Vec<(u32, Option<String>)>,
+    closed_tab_ids: Vec<u32>,
+    closed_pane_ids: Vec<u32>,
     workspace_id_purged: Option<u32>,
 ) {
     for (sid, pid) in cleanup_targets {
         state.cleanup_surface(engine, sid, pid);
+    }
+
+    for tab_id in &closed_tab_ids {
+        // pane_id 는 close 후 못 찾으므로 closed_pane_ids 의 첫 항목 사용
+        // (Tab level cascade 는 pane 안 닫혀 closed_pane_ids 비어 있음 — 이때는
+        // baseline 에서 lookup).
+        let pane_id = closed_pane_ids.first().copied().unwrap_or_else(|| {
+            state
+                .last_tab_locations
+                .as_ref()
+                .and_then(|m| m.get(tab_id))
+                .map(|(p, _, _)| *p)
+                .unwrap_or(0)
+        });
+        state.enqueue_host_event(crate::state::PendingHostEvent::TabClosed {
+            tab_id: *tab_id,
+            pane_id,
+        });
+        state.lifecycle_baseline_remove_tab(*tab_id);
+    }
+    for pane_id in &closed_pane_ids {
+        state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id: *pane_id });
+        state.lifecycle_baseline_remove_pane(*pane_id);
     }
 
     if let Some(workspace_id) = workspace_id_purged {

@@ -105,6 +105,8 @@ fn close(
             closed,
             cascade_level,
             cleanup_targets,
+            closed_tab_ids,
+            closed_pane_ids,
             workspace_id_purged,
             workspaces_now_empty,
             ..
@@ -116,6 +118,8 @@ fn close(
                     engine,
                     cascade_level,
                     cleanup_targets,
+                    closed_tab_ids,
+                    closed_pane_ids,
                     workspace_id_purged,
                 );
                 if workspaces_now_empty {

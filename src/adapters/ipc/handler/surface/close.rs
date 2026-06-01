@@ -28,6 +28,8 @@ fn close_surface_via_intent(
         closed,
         cascade_level,
         cleanup_targets,
+        closed_tab_ids,
+        closed_pane_ids,
         workspace_id_purged,
         workspaces_now_empty,
     }) = events.into_iter().next()
@@ -47,6 +49,8 @@ fn close_surface_via_intent(
         engine,
         cascade_level,
         cleanup_targets,
+        closed_tab_ids,
+        closed_pane_ids,
         workspace_id_purged,
     );
 

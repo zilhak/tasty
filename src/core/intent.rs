@@ -289,11 +289,17 @@ pub(crate) enum CoreEvent {
     /// (Surface/Tab/Pane/Workspace). `workspace_id_purged` 는 Case 4 (workspace
     /// 자체 닫힘) 시 cascade 가 memory scope purge 할 workspace_id.
     /// `workspaces_now_empty` 가 true 면 caller 가 auto-recreate.
+    /// `closed_tab_ids` / `closed_pane_ids` 는 cascade 가 host event
+    /// (`tab.closed` / `pane.closed`) 를 발화할 때 사용 — Surface level 은 비어
+    /// 있고, Tab level 은 닫힌 tab 1 개, Pane level 은 tab + pane, Workspace
+    /// level 은 workspace 안 모든 tab + pane.
     SurfaceClosed {
         surface_id: u32,
         closed: bool,
         cascade_level: CascadeLevel,
         cleanup_targets: Vec<(u32, Option<String>)>,
+        closed_tab_ids: Vec<u32>,
+        closed_pane_ids: Vec<u32>,
         workspace_id_purged: Option<u32>,
         workspaces_now_empty: bool,
     },
