@@ -108,7 +108,7 @@ impl App {
             CoreEvent::WorkspaceCreated {
                 id,
                 index,
-                surface_id: _,
+                surface_id,
                 renamed_name,
                 renamed_subtitle,
                 renamed_description,
@@ -118,6 +118,7 @@ impl App {
                     origin,
                     id,
                     index,
+                    surface_id,
                     renamed_name,
                     renamed_subtitle,
                     renamed_description,
@@ -150,11 +151,11 @@ impl App {
             CoreEvent::TabCreated {
                 pane_id,
                 tab_id,
-                surface_id: _,
+                surface_id,
                 tab_count: _,
                 active_tab: _,
             } => {
-                self.dispatch_tab_created_cascade(source, pane_id, tab_id);
+                self.dispatch_tab_created_cascade(source, pane_id, tab_id, surface_id);
             }
             CoreEvent::TabClosed {
                 tab_id,
@@ -182,7 +183,7 @@ impl App {
                 workspace_index,
                 original_pane_id,
                 new_pane_id,
-                new_surface_id: _,
+                new_surface_id,
                 direction,
             } => {
                 self.dispatch_pane_split_cascade(
@@ -191,6 +192,7 @@ impl App {
                     workspace_index,
                     original_pane_id,
                     new_pane_id,
+                    new_surface_id,
                     direction,
                 );
             }
@@ -615,6 +617,7 @@ impl App {
                     return;
                 };
                 cascade_surface_split(
+                    &mut main.state,
                     &mut main.engine_state,
                     origin,
                     workspace_index,
@@ -624,10 +627,17 @@ impl App {
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
-                let Some((_, engine)) = self.parked_states.get_mut(idx) else {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
-                cascade_surface_split(engine, origin, workspace_index, pane_id, new_surface_id);
+                cascade_surface_split(
+                    state,
+                    engine,
+                    origin,
+                    workspace_index,
+                    pane_id,
+                    new_surface_id,
+                );
             }
         }
     }
@@ -640,6 +650,7 @@ impl App {
         workspace_index: usize,
         original_pane_id: u32,
         new_pane_id: u32,
+        new_surface_id: u32,
         direction: crate::model::SplitDirection,
     ) {
         match source {
@@ -654,6 +665,7 @@ impl App {
                     workspace_index,
                     original_pane_id,
                     new_pane_id,
+                    new_surface_id,
                     direction,
                 );
                 main.mark_dirty();
@@ -669,29 +681,42 @@ impl App {
                     workspace_index,
                     original_pane_id,
                     new_pane_id,
+                    new_surface_id,
                     direction,
                 );
             }
         }
     }
 
-    /// `TabCreated` cascade — host event (`tab.created`) enqueue + polling
-    /// baseline 동기화 + main.mark_dirty. workspace_id / kind 는 engine 에서
-    /// 직접 lookup.
-    fn dispatch_tab_created_cascade(&mut self, source: DispatchSource, pane_id: u32, tab_id: u32) {
+    /// `TabCreated` cascade — host event (`tab.created` + `surface.created`)
+    /// enqueue + polling baseline 동기화 + main.mark_dirty. workspace_id / kind
+    /// 는 engine 에서 직접 lookup.
+    fn dispatch_tab_created_cascade(
+        &mut self,
+        source: DispatchSource,
+        pane_id: u32,
+        tab_id: u32,
+        surface_id: u32,
+    ) {
         match source {
             DispatchSource::Main(wid) => {
                 let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     return;
                 };
-                cascade_tab_created(&mut main.state, &main.engine_state, pane_id, tab_id);
+                cascade_tab_created(
+                    &mut main.state,
+                    &main.engine_state,
+                    pane_id,
+                    tab_id,
+                    surface_id,
+                );
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
-                cascade_tab_created(state, engine, pane_id, tab_id);
+                cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
             }
         }
     }
@@ -826,6 +851,7 @@ impl App {
         origin: &IntentOrigin,
         workspace_id: u32,
         index: usize,
+        surface_id: Option<u32>,
         renamed_name: Option<String>,
         renamed_subtitle: Option<String>,
         renamed_description: Option<String>,
@@ -841,6 +867,7 @@ impl App {
                     origin,
                     workspace_id,
                     index,
+                    surface_id,
                     renamed_name,
                     renamed_subtitle,
                     renamed_description,
@@ -857,6 +884,7 @@ impl App {
                     origin,
                     workspace_id,
                     index,
+                    surface_id,
                     renamed_name,
                     renamed_subtitle,
                     renamed_description,
@@ -1056,11 +1084,11 @@ pub(crate) fn cascade_workspace_created(
     origin: &IntentOrigin,
     workspace_id: u32,
     index: usize,
+    surface_id: Option<u32>,
     renamed_name: Option<String>,
     renamed_subtitle: Option<String>,
     renamed_description: Option<String>,
 ) {
-    let _ = engine; // host event 발화 + active 전환만 — engine 은 Core::apply 가 이미 mutate.
     if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some() {
         state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
             workspace_id,
@@ -1069,6 +1097,9 @@ pub(crate) fn cascade_workspace_created(
             description: renamed_description,
             user_direct: false,
         });
+    }
+    if let Some(surface_id) = surface_id {
+        cascade_surface_created(state, engine, surface_id);
     }
     if origin.is_user() {
         state.active_workspace = index;
@@ -1142,16 +1173,18 @@ pub(crate) fn cascade_surface_closed(
     }
 }
 
-/// `CoreEvent::SurfaceSplit` 의 외부 cascade. (User origin 이면) 해당 pane 의
-/// active tab 의 focused_surface 를 new_surface_id 로 변경. host event 없음
-/// (옛 `split_surface_targeted` 도 발화 안 했음).
+/// `CoreEvent::SurfaceSplit` 의 외부 cascade. host event (`surface.created`)
+/// 발화 + (User origin 이면) 해당 pane 의 active tab 의 focused_surface 를
+/// new_surface_id 로 변경.
 pub(crate) fn cascade_surface_split(
+    state: &mut crate::state::AppState,
     engine: &mut crate::engine_state::CoreState,
     origin: &IntentOrigin,
     workspace_index: usize,
     pane_id: u32,
     new_surface_id: u32,
 ) {
+    cascade_surface_created(state, engine, new_surface_id);
     if !origin.is_user() {
         return;
     }
@@ -1174,6 +1207,7 @@ pub(crate) fn cascade_pane_split(
     workspace_index: usize,
     original_pane_id: u32,
     new_pane_id: u32,
+    new_surface_id: u32,
     direction: crate::model::SplitDirection,
 ) {
     state.enqueue_host_event(crate::state::PendingHostEvent::PaneSplit {
@@ -1189,6 +1223,7 @@ pub(crate) fn cascade_pane_split(
         });
         state.lifecycle_baseline_insert_pane(new_pane_id, workspace_id);
     }
+    cascade_surface_created(state, engine, new_surface_id);
     if origin.is_user() {
         if let Some(ws) = engine.workspaces.get_mut(workspace_index) {
             ws.focused_pane = new_pane_id;
@@ -1201,6 +1236,55 @@ pub(crate) fn cascade_pane_split(
 pub(crate) fn cascade_pane_closed(state: &mut crate::state::AppState, pane_id: u32) {
     state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id });
     state.lifecycle_baseline_remove_pane(pane_id);
+}
+
+/// 새 surface 생성 시 공통 host event 발화 — TabCreated / PaneSplit / SurfaceSplit
+/// / WorkspaceCreated cascade 가 모두 사용. `surface_id` 의 위치 정보를 engine
+/// 에서 lookup 해 `PendingHostEvent::SurfaceCreated` enqueue + baseline 동기화.
+pub(crate) fn cascade_surface_created(
+    state: &mut crate::state::AppState,
+    engine: &crate::engine_state::CoreState,
+    surface_id: u32,
+) {
+    let Some((tab_id, pane_id, workspace_id, kind)) = find_surface_location(engine, surface_id)
+    else {
+        return;
+    };
+    state.enqueue_host_event(crate::state::PendingHostEvent::SurfaceCreated {
+        surface_id,
+        kind,
+        tab_id,
+        pane_id,
+        workspace_id,
+        created_by_plugin: None,
+    });
+    state.lifecycle_baseline_insert_surface(surface_id, tab_id, pane_id, workspace_id, kind);
+}
+
+/// `surface_id` 의 host event 발화에 필요한 위치 + kind 를 모든 workspace 순회로
+/// 찾는다 (focused 의존 없음). 못 찾으면 `None` — surface 가 아직 layout 에 안
+/// 들어가 있거나 lazy init 인 케이스.
+fn find_surface_location(
+    engine: &crate::engine_state::CoreState,
+    surface_id: u32,
+) -> Option<(u32, u32, u32, &'static str)> {
+    for ws in &engine.workspaces {
+        let workspace_id = ws.id;
+        for pane_id in ws.pane_layout().all_pane_ids() {
+            let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
+                continue;
+            };
+            for tab in &pane.tabs {
+                let Some(layout) = tab.layout_if_initialized() else {
+                    continue;
+                };
+                if let Some(s) = layout.find_surface(surface_id) {
+                    return Some((tab.id, pane_id, workspace_id, s.kind()));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// `CoreEvent::WorkspaceMoved` 의 외부 cascade. 사용자 포커스 보존을 위해
@@ -1228,13 +1312,15 @@ pub(crate) fn cascade_workspace_moved(
     }
 }
 
-/// `CoreEvent::TabCreated` 의 외부 cascade. host event (`tab.created`) enqueue +
-/// polling baseline 동기화. workspace_id / kind 는 engine lookup.
+/// `CoreEvent::TabCreated` 의 외부 cascade. host events (`tab.created` +
+/// `surface.created`) enqueue + polling baseline 동기화. workspace_id / kind 는
+/// engine lookup.
 pub(crate) fn cascade_tab_created(
     state: &mut crate::state::AppState,
     engine: &crate::engine_state::CoreState,
     pane_id: u32,
     tab_id: u32,
+    surface_id: u32,
 ) {
     let workspace_id = engine
         .workspaces
@@ -1257,6 +1343,7 @@ pub(crate) fn cascade_tab_created(
         });
         state.lifecycle_baseline_insert_tab(tab_id, pane_id, workspace_id, kind);
     }
+    cascade_surface_created(state, engine, surface_id);
 }
 
 /// `CoreEvent::TabClosed` 의 외부 cascade. host event (`tab.closed`) enqueue +

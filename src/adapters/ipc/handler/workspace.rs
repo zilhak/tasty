@@ -118,6 +118,7 @@ pub fn handle_workspace_create(
         &agent_origin,
         workspace_id,
         index,
+        surface_id,
         renamed_name.clone(),
         renamed_subtitle.clone(),
         renamed_description.clone(),

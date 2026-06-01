@@ -51,8 +51,8 @@ fn split(
             workspace_index,
             original_pane_id,
             new_pane_id,
+            new_surface_id,
             direction,
-            ..
         } = ev
         {
             crate::app::dispatch_domain::cascade_pane_split(
@@ -62,6 +62,7 @@ fn split(
                 workspace_index,
                 original_pane_id,
                 new_pane_id,
+                new_surface_id,
                 direction,
             );
         }

@@ -253,6 +253,7 @@ pub fn handle_split(
                 workspace_index,
                 original_pane_id,
                 new_pane_id,
+                new_surface_id,
                 direction,
             );
 
@@ -312,6 +313,7 @@ pub fn handle_split(
                 source: crate::intent::AgentSource::Ipc,
             };
             crate::app::dispatch_domain::cascade_surface_split(
+                state,
                 engine,
                 &agent_origin,
                 workspace_index,

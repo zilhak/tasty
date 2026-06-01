@@ -175,14 +175,18 @@ impl AppState {
         self.last_workspace_snapshot = Some(current);
     }
 
-    /// Surface 생성을 polling으로 감지. 신규 surface_id가 발견되면 `SurfaceCreated`를
-    /// `created_by_plugin: None` (User)로 enqueue한다. Plugin이 spawn한 surface는
-    /// 향후 plugin spawn IPC 핸들러에서 별도로 `Agent { source_plugin }` 컨텍스트를
-    /// 채워 직접 enqueue하는 경로를 둘 예정. surface.closed는 별도 큐가 처리하므로
-    /// 여기서는 생성만 감지.
+    /// Surface lifecycle baseline 만 갱신 (D.3.C.B.10.3 이후). 실제
+    /// `surface.created` 발화는 cascade 시점에 `cascade_surface_created`
+    /// (TabCreated / PaneSplit / SurfaceSplit / WorkspaceCreated) 가 enqueue 한다.
+    /// baseline 은 cascade 가 `lifecycle_baseline_insert_surface` 헬퍼로 동기화하며,
+    /// 본 함수는 첫 호출 시 baseline 만 잡는다. B.10.6 에서 호출처 제거 후 함수
+    /// 자체 제거 예정.
     pub fn detect_surface_lifecycle(&mut self, engine: &CoreState) {
         use std::collections::HashMap;
 
+        if self.last_surface_locations.is_some() {
+            return;
+        }
         let mut current: HashMap<u32, (u32, u32, u32, &'static str)> = HashMap::new();
         for ws in &engine.workspaces {
             let workspace_id = ws.id;
@@ -203,29 +207,6 @@ impl AppState {
                 }
             }
         }
-
-        let prev = match self.last_surface_locations.take() {
-            Some(p) => p,
-            None => {
-                self.last_surface_locations = Some(current);
-                return;
-            }
-        };
-
-        for (surface_id, (tab_id, pane_id, workspace_id, kind)) in &current {
-            if !prev.contains_key(surface_id) {
-                self.pending_host_events
-                    .push(PendingHostEvent::SurfaceCreated {
-                        surface_id: *surface_id,
-                        kind,
-                        tab_id: *tab_id,
-                        pane_id: *pane_id,
-                        workspace_id: *workspace_id,
-                        created_by_plugin: None,
-                    });
-            }
-        }
-
         self.last_surface_locations = Some(current);
     }
 }

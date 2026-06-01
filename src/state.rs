@@ -801,6 +801,22 @@ impl AppState {
         }
     }
 
+    /// Surface lifecycle baseline 동기화 — cascade 가 새 surface 를 enqueue 한
+    /// 직후 `detect_surface_lifecycle` 이 중복 발화 못하도록 baseline 에 미리
+    /// 넣는다.
+    pub fn lifecycle_baseline_insert_surface(
+        &mut self,
+        surface_id: u32,
+        tab_id: u32,
+        pane_id: u32,
+        workspace_id: u32,
+        kind: &'static str,
+    ) {
+        if let Some(map) = self.last_surface_locations.as_mut() {
+            map.insert(surface_id, (tab_id, pane_id, workspace_id, kind));
+        }
+    }
+
     /// Get the working directory to inherit from the focused surface, if enabled.
     ///
     /// 사용자가 현재 포커스한 surface 본인의 `source_cwd()`를 사용한다.

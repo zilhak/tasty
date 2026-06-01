@@ -69,7 +69,7 @@ fn new_workspace(
         if let crate::core::intent::CoreEvent::WorkspaceCreated {
             id: workspace_id,
             index,
-            surface_id: _,
+            surface_id,
             renamed_name,
             renamed_subtitle,
             renamed_description,
@@ -81,6 +81,7 @@ fn new_workspace(
                 origin,
                 workspace_id,
                 index,
+                surface_id,
                 renamed_name,
                 renamed_subtitle,
                 renamed_description,
