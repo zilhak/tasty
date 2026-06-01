@@ -950,6 +950,44 @@ impl App {
     // `dispatch/host_events.rs` 가 drain → `misc::emit_plugin_*` helper 호출 →
     // PluginManager.event_bus broadcast. 단일 발화점.
 
+    /// `App::plugin_<op>` 가 반환한 CoreEvent 목록을 cascade 로 dispatch.
+    /// Plugin lifecycle 은 `DispatchSource` 와 무관하므로 (PluginManager 가
+    /// App-level singleton) 본 helper 가 source 결정 없이 cascade 직접 호출.
+    pub(crate) fn cascade_plugin_events(&mut self, events: Vec<CoreEvent>) {
+        for ev in events {
+            match ev {
+                CoreEvent::PluginLoaded { plugin_id, version } => {
+                    self.cascade_plugin_loaded(plugin_id, version)
+                }
+                CoreEvent::PluginEnableToggled { plugin_id, enabled } => {
+                    self.cascade_plugin_enable_toggled(plugin_id, enabled)
+                }
+                CoreEvent::PluginUnloaded { plugin_id, reason } => {
+                    self.cascade_plugin_unloaded(plugin_id, reason)
+                }
+                CoreEvent::PluginError {
+                    plugin_id,
+                    error_kind,
+                    message,
+                } => self.cascade_plugin_error(plugin_id, error_kind, message),
+                CoreEvent::PluginSurfaceKindRegistered {
+                    plugin_id,
+                    kind,
+                    rendering,
+                } => self.cascade_plugin_surface_kind_registered(plugin_id, kind, rendering),
+                CoreEvent::PluginRegistryChanged { plugin_id, change } => {
+                    self.cascade_plugin_registry_changed(plugin_id, change)
+                }
+                other => {
+                    tracing::warn!(
+                        "cascade_plugin_events: non-plugin CoreEvent received: {:?}",
+                        std::mem::discriminant(&other)
+                    );
+                }
+            }
+        }
+    }
+
     fn enqueue_plugin_host_event(&mut self, ev: crate::state::PendingHostEvent) {
         let Some(main) = self.windows.values_mut().find_map(|w| w.as_main_mut()) else {
             return;

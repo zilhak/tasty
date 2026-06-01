@@ -183,41 +183,237 @@ impl App {
             "plugin.extension.list" => {
                 host_ipc::handler::plugin::handle_extension_list(self.plugin_manager.as_ref(), id)
             }
-            "plugin.install" => host_ipc::handler::plugin::handle_install(
-                self.plugin_manager.as_mut(),
-                id,
-                &cmd.request.params,
-            ),
-            "plugin.remove" => host_ipc::handler::plugin::handle_remove(
-                self.plugin_manager.as_mut(),
-                id,
-                &cmd.request.params,
-            ),
-            "plugin.enable" => host_ipc::handler::plugin::handle_enable(
-                self.plugin_manager.as_mut(),
-                id,
-                &cmd.request.params,
-            ),
-            "plugin.disable" => host_ipc::handler::plugin::handle_disable(
-                self.plugin_manager.as_mut(),
-                id,
-                &cmd.request.params,
-            ),
+            "plugin.install" => {
+                let path = match cmd.request.params.get("path").and_then(|v| v.as_str()) {
+                    Some(p) => std::path::PathBuf::from(p),
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            host_ipc::protocol::JsonRpcResponse::invalid_params(
+                                id,
+                                "Missing 'path' parameter",
+                            ),
+                        );
+                        return IpcStep::Handled;
+                    }
+                };
+                match self.plugin_install(path) {
+                    Ok(events) => {
+                        // 첫 event 의 plugin_id 가 응답 페이로드용 (Installed CoreEvent).
+                        let installed_id = events
+                            .iter()
+                            .find_map(|ev| match ev {
+                                crate::core::intent::CoreEvent::PluginRegistryChanged {
+                                    plugin_id,
+                                    ..
+                                } => Some(plugin_id.clone()),
+                                _ => None,
+                            })
+                            .unwrap_or_default();
+                        self.cascade_plugin_events(events);
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({ "installed": installed_id }),
+                        )
+                    }
+                    Err(e) => {
+                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
+                    }
+                }
+            }
+            "plugin.remove" => {
+                let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            host_ipc::protocol::JsonRpcResponse::invalid_params(
+                                id,
+                                "Missing 'id' parameter",
+                            ),
+                        );
+                        return IpcStep::Handled;
+                    }
+                };
+                let pid_for_response = plugin_id.clone();
+                match self.plugin_remove(plugin_id) {
+                    Ok(events) => {
+                        self.cascade_plugin_events(events);
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({ "removed": pid_for_response }),
+                        )
+                    }
+                    Err(e) => {
+                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
+                    }
+                }
+            }
+            "plugin.enable" => {
+                let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            host_ipc::protocol::JsonRpcResponse::invalid_params(
+                                id,
+                                "Missing 'id' parameter",
+                            ),
+                        );
+                        return IpcStep::Handled;
+                    }
+                };
+                let pid_for_response = plugin_id.clone();
+                match self.plugin_enable(plugin_id) {
+                    Ok(events) => {
+                        self.cascade_plugin_events(events);
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({ "enabled": pid_for_response }),
+                        )
+                    }
+                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(
+                        id,
+                        -32000,
+                        &format!("enable failed: {e}"),
+                    ),
+                }
+            }
+            "plugin.disable" => {
+                let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            host_ipc::protocol::JsonRpcResponse::invalid_params(
+                                id,
+                                "Missing 'id' parameter",
+                            ),
+                        );
+                        return IpcStep::Handled;
+                    }
+                };
+                let pid_for_response = plugin_id.clone();
+                match self.plugin_disable(plugin_id) {
+                    Ok(events) => {
+                        self.cascade_plugin_events(events);
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({ "disabled": pid_for_response }),
+                        )
+                    }
+                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(
+                        id,
+                        -32000,
+                        &format!("disable failed: {e}"),
+                    ),
+                }
+            }
             "plugin.permissions" => host_ipc::handler::plugin::handle_permissions(
                 self.plugin_manager.as_ref(),
                 id,
                 &cmd.request.params,
             ),
-            "plugin.grant" => host_ipc::handler::plugin::handle_grant(
-                self.plugin_manager.as_mut(),
-                id,
-                &cmd.request.params,
-            ),
-            "plugin.revoke" => host_ipc::handler::plugin::handle_revoke(
-                self.plugin_manager.as_mut(),
-                id,
-                &cmd.request.params,
-            ),
+            "plugin.grant" => {
+                let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            host_ipc::protocol::JsonRpcResponse::invalid_params(
+                                id,
+                                "Missing 'id' parameter",
+                            ),
+                        );
+                        return IpcStep::Handled;
+                    }
+                };
+                let token = match cmd
+                    .request
+                    .params
+                    .get("permission")
+                    .and_then(|v| v.as_str())
+                {
+                    Some(s) => s.to_string(),
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            host_ipc::protocol::JsonRpcResponse::invalid_params(
+                                id,
+                                "Missing 'permission' parameter",
+                            ),
+                        );
+                        return IpcStep::Handled;
+                    }
+                };
+                let pid_for_response = plugin_id.clone();
+                let perm_for_response = token.clone();
+                match self.plugin_grant(plugin_id, token) {
+                    Ok(events) => {
+                        self.cascade_plugin_events(events);
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({
+                                "id": pid_for_response,
+                                "permission": perm_for_response,
+                            }),
+                        )
+                    }
+                    Err(e) => {
+                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
+                    }
+                }
+            }
+            "plugin.revoke" => {
+                let plugin_id = match cmd.request.params.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            host_ipc::protocol::JsonRpcResponse::invalid_params(
+                                id,
+                                "Missing 'id' parameter",
+                            ),
+                        );
+                        return IpcStep::Handled;
+                    }
+                };
+                let token = match cmd
+                    .request
+                    .params
+                    .get("permission")
+                    .and_then(|v| v.as_str())
+                {
+                    Some(s) => s.to_string(),
+                    None => {
+                        send_response(
+                            &cmd.response_tx,
+                            host_ipc::protocol::JsonRpcResponse::invalid_params(
+                                id,
+                                "Missing 'permission' parameter",
+                            ),
+                        );
+                        return IpcStep::Handled;
+                    }
+                };
+                let pid_for_response = plugin_id.clone();
+                let perm_for_response = token.clone();
+                match self.plugin_revoke(plugin_id, token) {
+                    Ok(events) => {
+                        self.cascade_plugin_events(events);
+                        host_ipc::protocol::JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({
+                                "id": pid_for_response,
+                                "permission": perm_for_response,
+                            }),
+                        )
+                    }
+                    Err(e) => {
+                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
+                    }
+                }
+            }
             "plugin.grant_agent_permission" => {
                 host_ipc::handler::session::handle_grant_agent_permission(
                     &self.core,
