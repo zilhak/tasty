@@ -53,6 +53,10 @@ impl App {
             CoreEvent::InternalClipboardCopyRecorded { text } => {
                 self.cascade_internal_clipboard_copy(text);
             }
+            CoreEvent::WorkspaceCreated { .. } => {
+                // Step 2 placeholder — Step 4 에서 cascade_workspace_created 구현.
+                tracing::warn!("CoreEvent::WorkspaceCreated cascade not yet implemented (Step 4)");
+            }
         }
     }
 

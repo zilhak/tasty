@@ -11,6 +11,9 @@
 //!   분기, Domain 항목은 별 batch 로 모아 `dispatch_domain_intent` (core.apply +
 //!   handle_core_event cascade) 일괄 처리.
 
+use std::path::PathBuf;
+
+use serde_json::Value;
 use tasty_settings::Settings;
 
 /// 도메인 변경 요청. Core 만이 자기 메서드로 적용한다.
@@ -21,6 +24,20 @@ pub(crate) enum DomainIntent {
     /// Settings 전체 교체. cascade — Theme apply / Scrollback limit / clipboard
     /// max / notification coalesce 가 Core 내부에서 자동 발동.
     UpdateSettings(Settings),
+
+    // ─── Workspace lifecycle (D.3.C.B.1) ───
+    /// 새 workspace 를 생성. focused 의존 없음 — `cwd` 는 호출자가 미리
+    /// 결정해 payload 로 넘긴다 (terminal kind 에서 사용). `kind="empty"` 는
+    /// 거부. `name` 이 None 이면 자동 ("Workspace N"). cascade 가 host event
+    /// (WorkspaceRenamed) 발화 + (User origin 이면) active 전환.
+    CreateWorkspace {
+        cwd: Option<PathBuf>,
+        kind: String,
+        surface_params: Value,
+        name: Option<String>,
+        subtitle: Option<String>,
+        description: Option<String>,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -65,6 +82,19 @@ pub(crate) enum CoreEvent {
     // ─── Settings (D.3.C.A.2) ───
     /// Settings 가 갱신됨. 새 값 동봉.
     SettingsUpdated(Settings),
+
+    // ─── Workspace lifecycle (D.3.C.B.1) ───
+    /// 새 workspace 생성 완료. cascade 가 host event (WorkspaceRenamed —
+    /// name/subtitle/description 이 설정된 경우) 발화 + (User origin 이면)
+    /// active 전환. `surface_id` 는 focused tab 의 surface.
+    WorkspaceCreated {
+        id: u32,
+        index: usize,
+        surface_id: Option<u32>,
+        renamed_name: Option<String>,
+        renamed_subtitle: Option<String>,
+        renamed_description: Option<String>,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push 요청. cascade 가 라우팅 + store.add + host event enqueue.

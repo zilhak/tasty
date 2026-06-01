@@ -325,6 +325,12 @@ impl Core {
             DomainIntent::RecordInternalClipboardCopy { text } => {
                 Ok(vec![CoreEvent::InternalClipboardCopyRecorded { text }])
             }
+            DomainIntent::CreateWorkspace { .. } => {
+                // Step 2 placeholder — Step 3 에서 engine 인자 추가 + 실제 mutate.
+                Err(anyhow::anyhow!(
+                    "DomainIntent::CreateWorkspace not yet wired through Core::apply (Step 3)"
+                ))
+            }
         }
     }
 }
