@@ -17,6 +17,17 @@ impl CoreState {
                 });
         }
         let changed = self.busy_surfaces != busy;
+        // D.3.E.4.b — dual-write: TerminalStore 의 busy 캐시도 동기 갱신.
+        // E.4.d 에서 source of truth 가 store 로 cutover 되면 본 dual-write 는
+        // 제거되고 store 만 owner 가 된다.
+        for sid in busy.iter() {
+            self.terminals.set_busy(*sid, true);
+        }
+        for sid in self.busy_surfaces.iter() {
+            if !busy.contains(sid) {
+                self.terminals.set_busy(*sid, false);
+            }
+        }
         self.busy_surfaces = busy;
         changed
     }
