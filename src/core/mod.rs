@@ -359,6 +359,38 @@ impl Core {
             } => {
                 self.apply_update_workspace_meta(engine, workspace_id, name, subtitle, description)
             }
+            DomainIntent::MoveWorkspace {
+                from_index,
+                to_index,
+            } => Ok(vec![
+                self.apply_move_workspace(engine, from_index, to_index),
+            ]),
+        }
+    }
+
+    /// `DomainIntent::MoveWorkspace` 본문. workspaces 벡터의 from→to 이동.
+    /// active_workspace 보정은 cascade 에서 처리 (Core 는 state 모름).
+    fn apply_move_workspace(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        from_index: usize,
+        to_index: usize,
+    ) -> CoreEvent {
+        let len = engine.workspaces.len();
+        if from_index == to_index || from_index >= len || to_index >= len {
+            return CoreEvent::WorkspaceMoved {
+                from_index,
+                to_index,
+                moved: false,
+            };
+        }
+        let ws = engine.workspaces.remove(from_index);
+        engine.workspaces.insert(to_index, ws);
+        engine.mark_layout_dirty();
+        CoreEvent::WorkspaceMoved {
+            from_index,
+            to_index,
+            moved: true,
         }
     }
 

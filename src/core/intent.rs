@@ -46,6 +46,10 @@ pub(crate) enum DomainIntent {
         subtitle: Option<String>,
         description: Option<String>,
     },
+    /// workspace 순서 이동 (from_index → to_index). out-of-range 또는
+    /// from==to 면 no-op. cascade 가 발화 source 의 active_workspace 를
+    /// *사용자가 보던 동일 ws 가 계속 active 유지* 되도록 보정.
+    MoveWorkspace { from_index: usize, to_index: usize },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -110,6 +114,13 @@ pub(crate) enum CoreEvent {
         name: Option<String>,
         subtitle: Option<String>,
         description: Option<String>,
+    },
+    /// workspace 가 이동됨. cascade 가 발화 source 의 active_workspace 보정.
+    /// `moved=false` 면 no-op (out-of-range / from==to).
+    WorkspaceMoved {
+        from_index: usize,
+        to_index: usize,
+        moved: bool,
     },
 
     // ─── Notifications (D.3.C.E.2) ───

@@ -225,6 +225,7 @@ pub fn handle_workspace_update(
 }
 
 pub fn handle_workspace_move(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -239,9 +240,21 @@ pub fn handle_workspace_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
-    let moved = state.move_workspace(engine, from, to);
+    let intent = crate::core::intent::DomainIntent::MoveWorkspace {
+        from_index: from,
+        to_index: to,
+    };
+    let events = match core.apply(engine, intent) {
+        Ok(events) => events,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+
+    let moved = matches!(
+        events.iter().next(),
+        Some(crate::core::intent::CoreEvent::WorkspaceMoved { moved: true, .. })
+    );
     if moved {
-        engine.mark_layout_dirty();
+        crate::app::dispatch_domain::cascade_workspace_moved(state, from, to);
     }
     JsonRpcResponse::success(id, json!({ "moved": moved }))
 }

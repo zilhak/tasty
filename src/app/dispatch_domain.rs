@@ -131,6 +131,40 @@ impl App {
                     description,
                 );
             }
+            CoreEvent::WorkspaceMoved {
+                from_index,
+                to_index,
+                moved,
+            } => {
+                if moved {
+                    self.dispatch_workspace_moved_cascade(source, from_index, to_index);
+                }
+            }
+        }
+    }
+
+    /// `WorkspaceMoved` cascade — 발화 source 의 `active_workspace` 보정.
+    /// 사용자가 보던 ws 가 계속 active 유지되도록 인덱스만 조정한다.
+    fn dispatch_workspace_moved_cascade(
+        &mut self,
+        source: DispatchSource,
+        from_index: usize,
+        to_index: usize,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_workspace_moved(&mut main.state, from_index, to_index);
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_workspace_moved(state, from_index, to_index);
+            }
         }
     }
 
@@ -422,6 +456,31 @@ pub(crate) fn cascade_workspace_created(
     }
     if origin.is_user() {
         state.active_workspace = index;
+    }
+}
+
+/// `CoreEvent::WorkspaceMoved` 의 외부 cascade. 사용자 포커스 보존을 위해
+/// active_workspace 인덱스를 보정한다.
+/// - 이동한 ws 가 active 였으면 따라간다 (`active = to`).
+/// - from 과 to 사이를 자기 위치가 통과하면 shift 보정.
+/// IPC handler 도 직접 호출 가능.
+pub(crate) fn cascade_workspace_moved(
+    state: &mut crate::state::AppState,
+    from_index: usize,
+    to_index: usize,
+) {
+    if state.active_workspace == from_index {
+        state.active_workspace = to_index;
+    } else if from_index < to_index
+        && state.active_workspace > from_index
+        && state.active_workspace <= to_index
+    {
+        state.active_workspace -= 1;
+    } else if from_index > to_index
+        && state.active_workspace >= to_index
+        && state.active_workspace < from_index
+    {
+        state.active_workspace += 1;
     }
 }
 
