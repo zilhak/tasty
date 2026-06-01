@@ -24,7 +24,24 @@ use winit::event::Ime;
 
 use super::MainWindow;
 use crate::adapters::ui::window::Window as _;
+use crate::core::intent::{DomainIntent, SendPayload};
 use crate::gpu::ImePreeditState;
+
+/// IME 입력의 preedit/commit text 를 Intent 큐로 보낸다. surface_id 가
+/// None 이거나 text 가 비어있으면 no-op.
+fn dispatch_send_text(w: &mut MainWindow, surface_id: Option<u32>, text: &str) {
+    let Some(sid) = surface_id else { return };
+    if text.is_empty() {
+        return;
+    }
+    w.state.dispatch_intent(
+        DomainIntent::SendToSurface {
+            surface_id: sid,
+            payload: SendPayload::Text(text.to_string()),
+        }
+        .from_user_shortcut("ime_commit"),
+    );
+}
 
 // =============================================================================
 // Public entry points
@@ -112,9 +129,7 @@ pub(super) fn flush_preedit(w: &mut MainWindow) {
             return;
         }
     };
-    if let Some(terminal) = w.engine_state.find_terminal_by_id_mut(preedit.surface_id) {
-        terminal.send_key(&preedit.text);
-    }
+    dispatch_send_text(w, Some(preedit.surface_id), &preedit.text);
     w.engine_state.record_typing(preedit.surface_id);
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
@@ -198,9 +213,7 @@ pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
     }
     w.ime_preedit = None;
     let sid = w.state.focused_surface_id(engine);
-    if let Some(terminal) = w.state.focused_terminal_mut(engine) {
-        terminal.send_key(text);
-    }
+    dispatch_send_text(w, sid, text);
     if let Some(sid) = sid {
         w.engine_state.record_typing(sid);
     }
@@ -280,9 +293,7 @@ fn on_commit(w: &mut MainWindow, text: String) {
     w.ime_preedit = None;
 
     let sid = w.state.focused_surface_id(engine);
-    if let Some(terminal) = w.state.focused_terminal_mut(engine) {
-        terminal.send_key(&text);
-    }
+    dispatch_send_text(w, sid, &text);
     if let Some(sid) = sid {
         w.engine_state.record_typing(sid);
     }
