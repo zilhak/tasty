@@ -19,7 +19,7 @@ const MAX_HEIGHT: f32 = 480.0;
 const BODY_FONT_SIZE: f32 = 13.0;
 
 /// PopupDef.title_fn — 큐 head 의 title 을 popup 타이틀로 사용.
-pub fn approval_popup_title(state: &AppState, engine: &crate::engine_state::CoreState) -> String {
+pub fn approval_popup_title(state: &AppState, engine: &crate::core::CoreState) -> String {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return t("approval.popup.title").to_string();
     };
@@ -31,10 +31,7 @@ pub fn approval_popup_title(state: &AppState, engine: &crate::engine_state::Core
 }
 
 /// PopupDef.sizer — body 길이 + 선택지 수에 따라 height 추정.
-pub fn approval_popup_sizer(
-    state: &AppState,
-    engine: &crate::engine_state::CoreState,
-) -> egui::Vec2 {
+pub fn approval_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
     let Some(id) = state.dialogs.pending_approval_ids.front() else {
         return egui::vec2(DEFAULT_WIDTH, MIN_HEIGHT);
     };
@@ -60,7 +57,7 @@ pub fn approval_popup_sizer(
 pub fn draw_approval_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
@@ -245,7 +242,7 @@ fn persist_after_respond(state: &AppState, record: &ApprovalRecord) {
 /// 없으므로 동일 popup_id 로 처리 — 추후 popup-implementation 확장 시 분기.
 pub fn enqueue_approval(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     record: &ApprovalRecord,
 ) {
     // 같은 id 가 이미 큐에 있으면 중복 push 회피.

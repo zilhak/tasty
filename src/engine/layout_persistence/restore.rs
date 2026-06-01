@@ -6,7 +6,8 @@
 
 use std::path::PathBuf;
 
-use crate::engine_state::{CoreState, ShellConfig};
+use crate::core::CoreState;
+use crate::core::state::ShellConfig;
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace};
 
 use super::schema::{

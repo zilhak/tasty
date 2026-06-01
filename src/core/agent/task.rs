@@ -6,7 +6,7 @@ use tasty_agent::{AgentError, ReducerInput, Task, TaskId, TaskState, TaskStore};
 use tasty_memory::HOST_OWNER;
 
 use crate::core::Core;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 
 impl Core {
     /// Task 생성 — `TaskStore::create` wrapper.

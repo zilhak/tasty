@@ -8,7 +8,7 @@ use crate::state::AppState;
 pub(crate) fn handle_hook_set(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -51,7 +51,7 @@ pub(crate) fn handle_hook_set(
 
 pub(crate) fn handle_hook_list(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -81,7 +81,7 @@ pub(crate) fn handle_hook_list(
 pub(crate) fn handle_hook_unset(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -97,7 +97,7 @@ pub(crate) fn handle_hook_unset(
 pub(crate) fn handle_global_hook_set(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -135,7 +135,7 @@ pub(crate) fn handle_global_hook_set(
 
 pub(crate) fn handle_global_hook_list(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let hooks: Vec<_> = engine
@@ -157,7 +157,7 @@ pub(crate) fn handle_global_hook_list(
 pub(crate) fn handle_global_hook_unset(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -173,7 +173,7 @@ pub(crate) fn handle_global_hook_unset(
 pub(crate) fn handle_surface_fire_hook(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

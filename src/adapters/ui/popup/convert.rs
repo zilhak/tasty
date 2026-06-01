@@ -14,10 +14,7 @@ const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "image"];
 /// Sizer: 등록된 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// notification.rs가 프레임마다 호출하므로 plugin이 새 kind를 등록한 직후
 /// 자동으로 popup 높이가 맞춰진다.
-pub fn convert_popup_sizer(
-    state: &AppState,
-    engine: &crate::engine_state::CoreState,
-) -> egui::Vec2 {
+pub fn convert_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
     let count = enumerate_convertible_kinds(state, engine).len();
     convert_popup_size_for(count)
 }
@@ -42,7 +39,7 @@ fn convert_popup_size_for(count: usize) -> egui::Vec2 {
 pub fn draw_convert_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     match draw_convert_content(ui, state, engine) {
         Some(ConvertResult::Close) => PopupAction::Close,
@@ -69,7 +66,7 @@ struct ConvertItem {
 /// - shortcut: kind 첫 글자(영문)을 대문자 단축키로. 충돌 시 뒷 항목은 단축키 없음.
 fn enumerate_convertible_kinds(
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
 ) -> Vec<ConvertItem> {
     let snapshot = engine.surface_registry.kinds_snapshot();
     let mut kinds: Vec<&'static str> = snapshot
@@ -110,7 +107,7 @@ fn enumerate_convertible_kinds(
     items
 }
 
-fn resolve_label(_state: &AppState, engine: &crate::engine_state::CoreState, kind: &str) -> String {
+fn resolve_label(_state: &AppState, engine: &crate::core::CoreState, kind: &str) -> String {
     let popup_key = format!("convert_popup.{kind}");
     let tr = t(&popup_key);
     if tr != popup_key.as_str() {
@@ -146,7 +143,7 @@ pub enum ConvertResult {
 pub fn draw_convert_content(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> Option<ConvertResult> {
     let surface_id = state.dialogs.convert_popup?;
 
@@ -282,7 +279,7 @@ pub fn draw_convert_content(
 /// Apply the convert action to the state.
 pub fn apply_convert_action(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     action: ConvertAction,
 ) {
     let Some(surface_id) = state.dialogs.convert_popup else {
@@ -396,7 +393,7 @@ fn letter_key_to_char(key: &egui::Key) -> Option<char> {
 /// Split tab의 leaf surface도 정확히 식별한다.
 fn current_surface_kind(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     surface_id: u32,
 ) -> Option<&'static str> {
     for ws in &engine.workspaces {

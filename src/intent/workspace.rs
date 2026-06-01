@@ -11,7 +11,7 @@
 
 use super::{DispatchedIntent, Intent};
 use crate::core::Core;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::state::AppState;
 
 pub fn handle(

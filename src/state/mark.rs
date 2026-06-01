@@ -1,5 +1,5 @@
 use super::AppState;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 
 impl AppState {
     /// Set a read mark on the focused terminal (or a specific surface).

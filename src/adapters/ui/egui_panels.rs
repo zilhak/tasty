@@ -24,7 +24,7 @@ struct EguiPanelInfo {
 pub fn draw_egui_panels(
     ctx: &egui::Context,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
     canvas_cache: &crate::gpu::canvas_texture::CanvasTextureCache,

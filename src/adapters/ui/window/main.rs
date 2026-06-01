@@ -34,7 +34,7 @@ pub struct MainWindow {
     pub(crate) state: AppState,
     /// 본 윈도우 전용 CoreState. self.state 와 disjoint 한 field 로 두어
     /// `let engine = &mut self.engine_state;` 식 접근을 가능하게 한다.
-    pub(crate) engine_state: crate::engine_state::CoreState,
+    pub(crate) engine_state: crate::core::CoreState,
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) dragging_divider: Option<DividerDrag>,
     pub(crate) clipboard: Option<ClipboardContext>,
@@ -83,7 +83,7 @@ impl MainWindow {
     pub(crate) fn new(
         gpu: GpuState,
         state: AppState,
-        engine_state: crate::engine_state::CoreState,
+        engine_state: crate::core::CoreState,
         window: Arc<winit::window::Window>,
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     ) -> Self {

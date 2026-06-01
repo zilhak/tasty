@@ -258,7 +258,7 @@ pub fn handle_rename(
 pub fn handle_capture(
     core: &crate::core::Core,
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -302,7 +302,7 @@ pub fn handle_capture(
 pub fn handle_apply(
     core: &crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

@@ -53,7 +53,7 @@ use tasty_presets::{CapturedSurfaceMeta, PresetError, PresetKind};
 pub fn handle(
     core: &crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
 ) {
     match &intent.body {
@@ -82,7 +82,7 @@ pub fn handle(
 fn apply(
     core: &crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
     kind: PresetKind,
     name: &str,
@@ -104,7 +104,7 @@ fn apply(
 fn save(
     core: &crate::core::Core,
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     intent: &DispatchedIntent,
     base_name: &str,
     explicit_name: Option<&str>,
@@ -158,7 +158,7 @@ fn save(
 fn delete(
     core: &crate::core::Core,
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     kind: PresetKind,
     name: &str,
 ) {
@@ -170,7 +170,7 @@ fn delete(
 fn rename(
     core: &crate::core::Core,
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     kind: PresetKind,
     from: &str,
     to: &str,
@@ -250,7 +250,7 @@ fn clone_preset_from_store(
 pub fn apply_inner(
     core: &crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     kind: PresetKind,
     name: &str,
     target_pane_id: Option<u32>,
@@ -396,7 +396,7 @@ pub fn rename_inner(
 /// `Intent::SavePreset { preset: ClonedPreset, .. }` 로 발화하므로 별도 경로.
 pub fn capture_inner(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     kind: PresetKind,
     source_id: u32,
 ) -> Result<(ClonedPreset, String), String> {

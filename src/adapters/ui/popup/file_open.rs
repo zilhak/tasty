@@ -11,10 +11,7 @@ const HORIZONTAL_MARGIN: f32 = 8.0;
 const ITEM_SPACING_Y: f32 = 4.0;
 
 /// Sizer for markdown open popup — uses AppState.recent_files cache (no disk IO).
-pub fn markdown_popup_sizer(
-    state: &AppState,
-    _engine: &crate::engine_state::CoreState,
-) -> egui::Vec2 {
+pub fn markdown_popup_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     compute_popup_size(state.recent_files.markdown.len())
 }
 
@@ -22,7 +19,7 @@ pub fn markdown_popup_sizer(
 pub fn draw_markdown_open_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     draw_file_open_content(ui, state, engine)
 }
@@ -47,7 +44,7 @@ fn compute_popup_size(recent_count: usize) -> egui::Vec2 {
 fn draw_file_open_content(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
@@ -204,7 +201,7 @@ fn draw_file_open_content(
     PopupAction::None
 }
 
-fn apply_open(state: &mut AppState, engine: &mut crate::engine_state::CoreState, path: &str) {
+fn apply_open(state: &mut AppState, engine: &mut crate::core::CoreState, path: &str) {
     let file_path = file_uri_to_local_path(path).unwrap_or_else(|| path.to_string());
     state.recent_files.add_markdown(file_path.clone());
     if let Some(convert_sid) = state.dialogs.markdown_convert_surface_id.take() {

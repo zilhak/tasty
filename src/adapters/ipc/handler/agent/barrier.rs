@@ -17,7 +17,7 @@ fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
 pub fn handle_barrier_create(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -49,7 +49,7 @@ pub fn handle_barrier_create(
 pub fn handle_barrier_signal(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -71,7 +71,7 @@ pub fn handle_barrier_signal(
 pub fn handle_barrier_state(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -94,7 +94,7 @@ pub fn handle_barrier_state(
 pub fn handle_barrier_await(
     core: &Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

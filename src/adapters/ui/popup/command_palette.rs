@@ -15,7 +15,7 @@ pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 pub fn draw_command_palette_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let th = theme::theme();
 
@@ -156,7 +156,7 @@ fn label_for(cmd: &PaletteCommand) -> String {
 
 fn first_binding(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     action_id: &str,
 ) -> Option<String> {
     let bindings = engine.settings.keybindings.get_bindings(action_id)?;

@@ -15,7 +15,7 @@ use crate::state::AppState;
 use super::now_ms;
 use super::query::{QueryFilter, collect_events};
 
-pub(super) fn generate_cap_id(engine: &mut crate::engine_state::CoreState) -> String {
+pub(super) fn generate_cap_id(engine: &mut crate::core::CoreState) -> String {
     let ts = now_ms();
     let seq = engine.telemetry_seq.next();
     format!("cap_{ts:013}{seq:04}", ts = ts, seq = seq % 10_000)
@@ -73,7 +73,7 @@ pub(super) fn cap_to_json(cap: &CostCap) -> Value {
 pub fn handle_cap_set(
     core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -145,7 +145,7 @@ pub fn handle_cap_set(
 pub fn handle_cap_list(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -170,7 +170,7 @@ pub fn handle_cap_list(
 pub fn handle_cap_remove(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -225,7 +225,7 @@ pub(super) fn compute_current_value(
 pub fn handle_cap_status(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -277,7 +277,7 @@ pub fn handle_cap_status(
 pub fn handle_cap_reset(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -331,7 +331,7 @@ pub fn handle_cap_reset(
 pub(super) fn evaluate_caps_after_record(
     core: &mut Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     ev: &TelemetryEvent,
 ) {
     let caps = match load_all_caps(core) {
@@ -377,7 +377,7 @@ pub(super) fn evaluate_caps_after_record(
 pub(super) fn fire_cap_action(
     core: &mut Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
 ) {
@@ -413,7 +413,7 @@ pub(super) fn fire_cap_action(
 pub(super) fn fire_require_approval(
     core: &mut Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
 ) {
@@ -470,7 +470,7 @@ pub(super) fn fire_require_approval(
 /// notification.create 핸들러의 단순 경로와 동등하나 IPC 를 거치지 않는다.
 pub(super) fn fire_notify(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     cap: &CostCap,
     current: f64,
 ) {

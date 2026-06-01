@@ -12,7 +12,7 @@ use super::{build_event, evaluate_caps_after_record, now_ms, persist_event};
 pub fn handle_record(
     core: &mut Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -50,7 +50,7 @@ pub fn handle_record(
 pub fn handle_record_batch(
     core: &mut Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

@@ -295,7 +295,7 @@ fn map_error(id: Value, err: MemoryError) -> JsonRpcResponse {
 pub fn handle_put(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -327,7 +327,7 @@ pub fn handle_put(
 pub fn handle_get(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -350,7 +350,7 @@ pub fn handle_get(
 pub fn handle_delete(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -374,7 +374,7 @@ pub fn handle_delete(
 pub fn handle_list(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -411,7 +411,7 @@ pub fn handle_list(
 pub fn handle_exists(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -433,7 +433,7 @@ pub fn handle_exists(
 pub fn handle_count(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -452,7 +452,7 @@ pub fn handle_count(
 pub fn handle_scopes(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -466,7 +466,7 @@ pub fn handle_scopes(
 pub fn handle_stats(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

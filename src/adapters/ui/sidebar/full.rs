@@ -14,7 +14,7 @@ pub struct FullSidebarResult {
 pub fn draw_full_sidebar(
     ctx: &egui::Context,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     sidebar_width: f32,
 ) -> FullSidebarResult {
     let th = theme::theme();

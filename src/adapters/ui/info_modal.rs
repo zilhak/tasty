@@ -57,7 +57,7 @@ pub fn show_info_modal(state: &mut AppState, modal: InfoModal) {
 }
 
 /// PopupDef.title_fn — 큐 head의 title을 popup 타이틀로 사용.
-pub fn info_modal_title(state: &AppState, _engine: &crate::engine_state::CoreState) -> String {
+pub fn info_modal_title(state: &AppState, _engine: &crate::core::CoreState) -> String {
     state
         .dialogs
         .info_modal_queue
@@ -67,7 +67,7 @@ pub fn info_modal_title(state: &AppState, _engine: &crate::engine_state::CoreSta
 }
 
 /// PopupDef.sizer — body 길이에 따라 height를 조정.
-pub fn info_modal_sizer(state: &AppState, _engine: &crate::engine_state::CoreState) -> egui::Vec2 {
+pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let body_len = state
         .dialogs
         .info_modal_queue
@@ -87,7 +87,7 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::engine_state::CoreSta
 pub fn draw_info_modal(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();

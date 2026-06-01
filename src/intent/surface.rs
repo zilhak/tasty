@@ -12,7 +12,7 @@
 
 use super::{ConvertTarget, DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::model::SplitDirection;
 use crate::state::AppState;
 

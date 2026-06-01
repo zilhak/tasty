@@ -219,7 +219,7 @@ impl GpuState {
     pub fn render(
         &mut self,
         state: &mut AppState,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         window: &Window,
         preedit: Option<&ImePreeditState>,
         selection: Option<&crate::selection::TextSelection>,
@@ -417,7 +417,7 @@ impl GpuState {
     fn prepare_layout(
         &self,
         state: &AppState,
-        engine: &crate::engine_state::CoreState,
+        engine: &crate::core::CoreState,
         terminal_rect: PhysicalRect,
     ) -> (Vec<(u32, PhysicalRect)>, Vec<PhysicalRect>, Option<u32>) {
         let pane_layout = state.active_workspace(engine).pane_layout();

@@ -18,7 +18,7 @@ use crate::state::AppState;
 
 pub fn handle_reload(
     core: &Core,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let outcome = core.reload_file_handlers(engine);

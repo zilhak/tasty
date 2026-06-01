@@ -14,7 +14,7 @@ use super::require_surface_id;
 pub fn handle_open(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -53,7 +53,7 @@ pub fn handle_open(
 /// `ImagePanel::save_path()` 사용 (열려 있는 파일의 `.png` 확장자 버전).
 pub fn handle_save(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -106,7 +106,7 @@ pub fn handle_save(
 /// `image.export_png { surface_id, path }` — `save`와 동일하되 path 필수.
 pub fn handle_export_png(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -119,7 +119,7 @@ pub fn handle_export_png(
 /// `image.next { surface_id }` — 디렉터리 내 다음 이미지로 이동.
 pub fn handle_next(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -129,7 +129,7 @@ pub fn handle_next(
 /// `image.prev { surface_id }` — 디렉터리 내 이전 이미지로 이동.
 pub fn handle_prev(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -138,7 +138,7 @@ pub fn handle_prev(
 
 fn step_navigation(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
     forward: bool,
@@ -178,7 +178,7 @@ fn step_navigation(
 /// `image.paste { surface_id }` — 시스템 클립보드의 이미지를 floating selection으로 paste.
 pub fn handle_paste(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
@@ -232,7 +232,7 @@ pub fn handle_paste(
 /// `image.list` — 열린 모든 image surface 목록.
 pub fn handle_list(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: Value,
 ) -> JsonRpcResponse {
     let mut entries: Vec<Value> = Vec::new();
@@ -272,9 +272,9 @@ mod tests {
     use super::*;
     use crate::state::AppState;
 
-    fn make_state() -> (AppState, crate::engine_state::CoreState) {
+    fn make_state() -> (AppState, crate::core::CoreState) {
         let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = crate::engine_state::CoreState::new(80, 24, waker).unwrap();
+        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
         let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
             tasty_presets::PresetStore::load_default(),
         ));
@@ -289,7 +289,7 @@ mod tests {
         (state, engine)
     }
 
-    fn first_surface_id(state: &mut AppState, engine: &mut crate::engine_state::CoreState) -> u32 {
+    fn first_surface_id(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
         let mut ids = Vec::new();
         state
             .active_workspace_mut(engine)

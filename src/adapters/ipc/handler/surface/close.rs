@@ -10,7 +10,7 @@ use super::require_surface_id;
 fn close_surface_via_intent(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     surface_id: u32,
 ) -> JsonRpcResponse {
@@ -66,7 +66,7 @@ fn close_surface_via_intent(
 pub(crate) fn handle_surface_close(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -90,7 +90,7 @@ pub(crate) fn handle_surface_close(
 pub(crate) fn handle_surface_close_self(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

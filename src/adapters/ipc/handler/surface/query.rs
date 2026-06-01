@@ -7,7 +7,7 @@ use super::require_surface_id;
 
 pub(crate) fn handle_screen_text(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -31,7 +31,7 @@ pub(crate) fn handle_screen_text(
 
 pub(crate) fn handle_cursor_position(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -52,7 +52,7 @@ pub(crate) fn handle_cursor_position(
 /// 터미널이 없으면 `name`/`pid`가 모두 `null`로 반환된다.
 pub(crate) fn handle_foreground_process(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -84,7 +84,7 @@ pub(crate) fn handle_foreground_process(
 pub(crate) fn handle_surface_respawn_terminal(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -121,7 +121,7 @@ pub(crate) fn handle_surface_respawn_terminal(
 /// 살아있는지 확인하기 위해 사용한다.
 pub(crate) fn handle_surface_locate(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

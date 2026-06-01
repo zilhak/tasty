@@ -5,7 +5,7 @@
 //! 있으면 `pending_host_events` 큐에 `PendingHostEvent` 를 enqueue 한다.
 
 use super::{AppState, PendingHostEvent};
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 
 impl AppState {
     /// 현재 focused surface id를 마지막 기록과 비교해 달라졌다면 `SurfaceFocused`

@@ -93,7 +93,7 @@ impl App {
             // workspace_id/pane_id/tab_id/surface_id 충돌이 안 난다.
             let shared_ids = shared.as_ref().map(|s| s.8.clone());
             let mut engine =
-                crate::engine_state::CoreState::new_with_ids(cols, rows, waker.clone(), shared_ids)
+                crate::core::CoreState::new_with_ids(cols, rows, waker.clone(), shared_ids)
                     .expect("failed to create engine state");
             engine.waker_factory = Some(factory.clone());
             if let Some((
@@ -238,7 +238,7 @@ impl App {
         &mut self,
         gpu: GpuState,
         state: crate::state::AppState,
-        engine_state: crate::engine_state::CoreState,
+        engine_state: crate::core::CoreState,
         window: Arc<Window>,
     ) {
         let window_id = window.id();

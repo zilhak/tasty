@@ -138,7 +138,7 @@ pub(super) fn collect_events(
 pub fn handle_summary(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -174,7 +174,7 @@ pub fn handle_summary(
 pub fn handle_timeseries(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -226,7 +226,7 @@ pub fn handle_timeseries(
 pub fn handle_top(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

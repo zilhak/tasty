@@ -17,7 +17,7 @@ fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
 pub fn handle_rate_limit_set(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -64,7 +64,7 @@ pub fn handle_rate_limit_set(
 pub fn handle_rate_limit_list(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -78,7 +78,7 @@ pub fn handle_rate_limit_list(
 pub fn handle_rate_limit_remove(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -96,7 +96,7 @@ pub fn handle_rate_limit_remove(
 pub fn handle_rate_limit_status(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

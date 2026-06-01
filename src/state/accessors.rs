@@ -7,7 +7,7 @@
 use tasty_terminal::Terminal;
 
 use super::AppState;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 
 impl AppState {
     /// Invariant: caller must ensure `engine.workspaces` is non-empty.

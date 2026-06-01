@@ -16,7 +16,7 @@ use super::{decode_b64, entry_to_json, map_error, optional_scope, require_scope}
 pub fn handle_gc(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     _params: &Value,
@@ -36,7 +36,7 @@ pub fn handle_gc(
 pub fn handle_query(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -85,7 +85,7 @@ pub fn handle_query(
 pub fn handle_export(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -109,7 +109,7 @@ pub fn handle_export(
 pub fn handle_import(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

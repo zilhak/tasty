@@ -28,7 +28,7 @@ const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
 pub fn draw_plugin_popups(
     ctx: &Context,
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     plugin_manager: Option<&PluginManager>,
     canvas_cache: &CanvasTextureCache,
 ) {

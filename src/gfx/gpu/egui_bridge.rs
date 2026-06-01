@@ -10,7 +10,7 @@ impl GpuState {
     pub(super) fn run_egui_frame(
         &mut self,
         state: &mut AppState,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         window: &Window,
         pane_rects: &[(u32, PhysicalRect)],
         dividers: &[PhysicalRect],
@@ -44,11 +44,7 @@ impl GpuState {
         })
     }
 
-    pub(super) fn post_egui_update(
-        &mut self,
-        engine: &crate::engine_state::CoreState,
-        prev_theme: &str,
-    ) {
+    pub(super) fn post_egui_update(&mut self, engine: &crate::core::CoreState, prev_theme: &str) {
         let ui_scale = engine.settings.appearance.ui_scale_factor();
         if engine.settings.appearance.theme != prev_theme {
             self.refresh_theme(&engine.settings.appearance.theme, ui_scale);

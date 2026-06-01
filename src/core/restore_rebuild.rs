@@ -8,7 +8,7 @@
 //! 구성한다. 호출 측 (state.rs 또는 Core::apply) 은 결과를 받아 적절한
 //! 위치 (pane.tabs / engine.workspaces 등) 에 attach 한다.
 
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::model::closed_item::*;
 use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, TerminalSurface};
 

@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::model::SplitDirection;
 
 use super::AppState;
@@ -19,7 +19,7 @@ impl AppState {
         let cols = engine.default_cols;
         let rows = engine.default_rows;
 
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let new_pane = crate::model::Pane::new_with_shell(
             new_pane_id,
             new_tab_id,
@@ -118,7 +118,7 @@ impl AppState {
             });
             let cols = engine.default_cols;
             let rows = engine.default_rows;
-            let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+            let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
             crate::model::Pane::new_with_shell(
                 new_pane_id,
                 new_tab_id,
@@ -172,7 +172,7 @@ impl AppState {
             });
             let cols = engine.default_cols;
             let rows = engine.default_rows;
-            let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+            let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
             let waker = engine.make_waker(new_surface_id);
             let terminal = tasty_terminal::Terminal::new(
                 tasty_terminal::TerminalConfig {
@@ -563,7 +563,7 @@ impl AppState {
         let cols = engine.default_cols;
         let rows = engine.default_rows;
 
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let new_pane = crate::model::Pane::new_with_shell(
             new_pane_id,
             new_tab_id,

@@ -8,7 +8,7 @@
 //! ```
 //!
 //! Phase D 진행 중. 본 Core 는 11 outbound port + preset_store 직속 보유만.
-//! 도메인 데이터 (`CoreState`) 는 `crate::engine_state` 에 — App.engine_state
+//! 도메인 데이터 (`CoreState`) 는 `crate::core::state` 에 — App.engine_state
 //! 가 main owner. D.3.C 의 도메인 마이그레이션으로 점진 흡수 예정.
 
 pub(crate) mod agent;
@@ -38,7 +38,7 @@ use crate::ports::pty::{PtyService, TerminalWaker};
 
 /// 도메인 본체. 11 outbound port (7 external + 4 internal) + preset_store 직속.
 ///
-/// 도메인 데이터 (`crate::engine_state::CoreState`) 는 본 struct 가 아닌
+/// 도메인 데이터 (`crate::core::CoreState`) 는 본 struct 가 아닌
 /// `App.engine_state` 가 main owner — Phase D 진행 중의 *공존 layer*. D.3.C
 /// 에서 점진 흡수.
 #[allow(dead_code)]
@@ -76,7 +76,7 @@ impl Core {
     /// Surface message 전송. 옛 `engine.send_message` 의 Core 진입점.
     pub(crate) fn send_surface_message(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         from: u32,
         to: u32,
         content: String,
@@ -87,7 +87,7 @@ impl Core {
     /// Surface message 큐 read (peek/consume). 옛 `engine.read_messages` 의 Core 진입점.
     pub(crate) fn read_surface_messages(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         sid: u32,
         from: Option<u32>,
         peek: bool,
@@ -96,11 +96,7 @@ impl Core {
     }
 
     /// Surface message 큐 clear. 옛 `engine.clear_messages` 의 Core 진입점.
-    pub(crate) fn clear_surface_messages(
-        &mut self,
-        engine: &mut crate::engine_state::CoreState,
-        sid: u32,
-    ) {
+    pub(crate) fn clear_surface_messages(&mut self, engine: &mut crate::core::CoreState, sid: u32) {
         engine.clear_messages(sid);
     }
 
@@ -109,7 +105,7 @@ impl Core {
     /// Observer 등록. 반환: 새 observer id.
     pub(crate) fn observer_register(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         spec: crate::output_observer::ObserverSpec,
     ) -> Result<u64, crate::output_observer::ObserverError> {
         let memory = engine.memory.clone();
@@ -119,7 +115,7 @@ impl Core {
     /// Observer 해제.
     pub(crate) fn observer_unregister(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         observer_id: u64,
     ) -> Result<(), crate::output_observer::ObserverError> {
         engine.observer_router.unregister(observer_id)
@@ -128,7 +124,7 @@ impl Core {
     /// Observer 목록 — read 인터페이스.
     pub(crate) fn observer_list(
         &self,
-        engine: &crate::engine_state::CoreState,
+        engine: &crate::core::CoreState,
     ) -> Vec<crate::output_observer::ObserverInfo> {
         engine.observer_router.list()
     }
@@ -136,7 +132,7 @@ impl Core {
     /// 특정 observer 의 info — read 인터페이스.
     pub(crate) fn observer_info(
         &self,
-        engine: &crate::engine_state::CoreState,
+        engine: &crate::core::CoreState,
         observer_id: u64,
     ) -> Option<crate::output_observer::ObserverInfo> {
         engine.observer_router.info(observer_id)
@@ -147,7 +143,7 @@ impl Core {
     /// surface hook 등록. 반환: 새 hook id.
     pub(crate) fn register_surface_hook(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         event: tasty_hooks::HookEvent,
         command: String,
@@ -161,7 +157,7 @@ impl Core {
     /// surface hook 해제. 반환: 실제 제거 여부.
     pub(crate) fn unregister_surface_hook(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         hook_id: u64,
     ) -> bool {
         engine.hook_manager.remove_hook(hook_id)
@@ -170,7 +166,7 @@ impl Core {
     /// global hook 등록. 반환: 새 hook id.
     pub(crate) fn register_global_hook(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         condition: crate::global_hooks::HookCondition,
         command: String,
         label: Option<String>,
@@ -181,7 +177,7 @@ impl Core {
     /// global hook 해제. 반환: 실제 제거 여부.
     pub(crate) fn unregister_global_hook(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         hook_id: u32,
     ) -> bool {
         engine.global_hook_manager.remove(hook_id)
@@ -191,7 +187,7 @@ impl Core {
     /// AppState 의 enqueue_host_event 는 호출처 (handler) 에서 처리.
     pub(crate) fn fire_surface_hooks(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         events: &[tasty_hooks::HookEvent],
     ) -> Vec<u64> {
@@ -203,7 +199,7 @@ impl Core {
     /// approval 요청 생성. 옛 `engine.approval_store.request` 의 Core 진입점.
     pub(crate) fn request_approval(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         req: tasty_approval::ApprovalRequest,
     ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
         engine.approval_store.request(req)
@@ -212,7 +208,7 @@ impl Core {
     /// approval 응답 적용. 옛 `engine.approval_store.respond` 의 Core 진입점.
     pub(crate) fn respond_approval(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         req_id: &tasty_approval::ApprovalId,
         choice: String,
         by: tasty_approval::Responder,
@@ -224,7 +220,7 @@ impl Core {
     /// approval 취소. 옛 `engine.approval_store.cancel` 의 Core 진입점.
     pub(crate) fn cancel_approval(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         req_id: &tasty_approval::ApprovalId,
     ) -> Result<tasty_approval::StateChange, tasty_approval::ApprovalError> {
         engine.approval_store.cancel(req_id)
@@ -296,7 +292,7 @@ impl Core {
     /// terminal event 는 outcome.events 로 cascade dispatcher 에 전달.
     pub(crate) fn process_pty_output(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
     ) -> ProcessPtyOutcome {
         let processed = engine.process_surface(surface_id);
@@ -308,7 +304,7 @@ impl Core {
     /// CoreEvent 목록 + 어느 surface 든 데이터 drain 했는지.
     pub(crate) fn process_all_pty_output(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
     ) -> ProcessPtyOutcome {
         let processed = engine.process_all();
         let events = self.drain_terminal_events(engine);
@@ -318,10 +314,7 @@ impl Core {
     /// `engine.collect_events()` 결과를 CoreEvent 로 변환. observer_router /
     /// command_index / system clipboard 의 *직접 부수효과* 는 본 함수가 처리하고,
     /// cascade 가 필요한 event 만 Vec<CoreEvent> 로 반환.
-    fn drain_terminal_events(
-        &mut self,
-        engine: &mut crate::engine_state::CoreState,
-    ) -> Vec<CoreEvent> {
+    fn drain_terminal_events(&mut self, engine: &mut crate::core::CoreState) -> Vec<CoreEvent> {
         use tasty_terminal::TerminalEventKind;
         let raw = engine.collect_events();
         let mut out = Vec::with_capacity(raw.len());
@@ -372,13 +365,13 @@ impl Core {
 
     /// throttle 적용 PTY resize flush. 옛 `engine.flush_all_pty_resizes()` 의 진입점.
     /// 반환: 여전히 pending 이 남았는지 (redraw 재요청 신호).
-    pub(crate) fn flush_pty_resizes(engine: &mut crate::engine_state::CoreState) -> bool {
+    pub(crate) fn flush_pty_resizes(engine: &mut crate::core::CoreState) -> bool {
         engine.flush_all_pty_resizes()
     }
 
     /// throttle 무시 강제 flush. 옛 `engine.force_flush_all_pty_resizes()` 의 진입점.
     /// split / close 같은 *이산 이벤트* 직후 호출.
-    pub(crate) fn force_flush_pty_resizes(engine: &mut crate::engine_state::CoreState) {
+    pub(crate) fn force_flush_pty_resizes(engine: &mut crate::core::CoreState) {
         engine.force_flush_all_pty_resizes();
     }
 
@@ -387,7 +380,7 @@ impl Core {
     /// 있어 `state` 도 인자로 받는다 (도메인 흡수 후 제거 예정).
     pub(crate) fn resize_all_terminals(
         state: &crate::state::AppState,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         terminal_rect: crate::model::PhysicalRect,
         cell_width: f32,
         cell_height: f32,
@@ -414,7 +407,7 @@ impl Core {
     /// busy surface 집합 갱신. 옛 `engine.refresh_busy_surfaces()` 의 진입점.
     /// `AppEvent::BusyPoll` (1Hz 타이머) 에서 호출. 반환: 집합이 변했는지
     /// (window mark_dirty 결정 신호).
-    pub(crate) fn update_busy_surfaces(engine: &mut crate::engine_state::CoreState) -> bool {
+    pub(crate) fn update_busy_surfaces(engine: &mut crate::core::CoreState) -> bool {
         engine.refresh_busy_surfaces()
     }
 
@@ -429,7 +422,7 @@ impl Core {
     #[allow(dead_code)]
     pub(crate) fn apply(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         intent: DomainIntent,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         match intent {
@@ -600,7 +593,7 @@ impl Core {
     /// 통과하면 디스크에 저장 + `layout_dirty.clear()`. 옛 `App::flush_layout_persistence`
     /// 의 조건 분기 + 옛 `Core::save_layout` wrapper 본문을 흡수.
     fn apply_save_layout_now(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         active_workspace: usize,
         force: bool,
     ) -> CoreEvent {
@@ -623,9 +616,7 @@ impl Core {
     /// `restored_active_workspace` 도 take 해 CoreEvent payload 로 caller 에게 넘김.
     /// caller (window_lifecycle.rs::create_app_state) 가 결과 받아
     /// `state.switch_workspace` 수행.
-    fn apply_apply_pending_layout_restore(
-        engine: &mut crate::engine_state::CoreState,
-    ) -> CoreEvent {
+    fn apply_apply_pending_layout_restore(engine: &mut crate::core::CoreState) -> CoreEvent {
         let Some(saved) = engine.pending_layout_restore.take() else {
             return CoreEvent::LayoutRestored {
                 restored: false,
@@ -649,7 +640,7 @@ impl Core {
     /// rebuild + engine attach. AppState 의존 부분 (active_workspace 변경) 은
     /// cascade 가 처리하므로 본 함수는 *engine mutate* 만.
     fn apply_restore_closed_item(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         target_pane_id: Option<u32>,
     ) -> CoreEvent {
         use crate::core::intent::RestoredKind;
@@ -737,7 +728,7 @@ impl Core {
     /// workspace 에서 검색 (포커스 독립) → `osc_title` 필드 set. explicit_name
     /// 은 건드리지 않는다 — 사용자가 직접 이름 지은 tab 보존.
     fn apply_update_tab_name(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         name: String,
     ) -> CoreEvent {
@@ -783,13 +774,13 @@ impl Core {
 
     /// `DomainIntent::RespawnTerminal` 본문. 새 Terminal 생성 → engine.replace_terminal_by_id.
     fn apply_respawn_terminal(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         cwd: Option<std::path::PathBuf>,
     ) -> CoreEvent {
         let cols = engine.default_cols;
         let rows = engine.default_rows;
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
         let new_terminal = match tasty_terminal::Terminal::new(
             tasty_terminal::TerminalConfig {
@@ -826,7 +817,7 @@ impl Core {
     /// `DomainIntent::SendToSurface` 본문. ensure_surface_initialized → terminal
     /// lookup → send_bytes / send_key 분기.
     fn apply_send_to_surface(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         payload: crate::core::intent::SendPayload,
     ) -> CoreEvent {
@@ -849,7 +840,7 @@ impl Core {
 
     /// `DomainIntent::SplitPane` 본문. 4-phase borrow 분리.
     fn apply_split_pane(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         target_pane_id: u32,
         direction: crate::model::SplitDirection,
         cwd: Option<std::path::PathBuf>,
@@ -868,7 +859,7 @@ impl Core {
         // Phase 1: engine 의 불변 의존 추출
         let cols = engine.default_cols;
         let rows = engine.default_rows;
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(new_surface_id);
 
         // Phase 2: 새 pane 구성
@@ -913,7 +904,7 @@ impl Core {
 
     /// `DomainIntent::SplitSurface` 본문. tab 안에서 surface 추가 (pane tree 변경 X).
     fn apply_split_surface(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         target_surface_id: u32,
         direction: crate::model::SplitDirection,
         cwd: Option<std::path::PathBuf>,
@@ -927,7 +918,7 @@ impl Core {
         let new_surface: Box<dyn crate::model::Surface> = if is_terminal {
             let cols = engine.default_cols;
             let rows = engine.default_rows;
-            let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+            let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
             let waker = engine.make_waker(new_surface_id);
             let terminal = tasty_terminal::Terminal::new(
                 tasty_terminal::TerminalConfig {
@@ -979,7 +970,7 @@ impl Core {
     /// `DomainIntent::ClosePane` 본문. pane_id 로 모든 workspace 순회.
     /// cleanup_targets 수집 → pane tree close → workspace 안 focused_pane 보정
     /// (닫힌 곳의 자연 이동, 원칙 위반 아님). cleanup_surface 는 cascade.
-    fn apply_close_pane(engine: &mut crate::engine_state::CoreState, pane_id: u32) -> CoreEvent {
+    fn apply_close_pane(engine: &mut crate::core::CoreState, pane_id: u32) -> CoreEvent {
         let ws_idx = match engine.find_workspace_index_for_pane(pane_id) {
             Some(idx) => idx,
             None => {
@@ -1020,7 +1011,7 @@ impl Core {
     /// surface tab 전체 교체. 옛 `replace_surface_for_id` + 4 variant 의
     /// surface 생성 로직 흡수.
     fn apply_convert_surface(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         target: crate::core::intent::ConvertSurfaceTarget,
     ) -> CoreEvent {
@@ -1034,7 +1025,7 @@ impl Core {
                 ConvertSurfaceTarget::Terminal { cwd } => {
                     let cols = engine.default_cols;
                     let rows = engine.default_rows;
-                    let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+                    let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
                     let waker = engine.make_waker(surface_id);
                     let terminal = match tasty_terminal::Terminal::new(
                         tasty_terminal::TerminalConfig {
@@ -1170,7 +1161,7 @@ impl Core {
     /// 코드 이동. cleanup_surface / memory purge / active_workspace 보정 /
     /// auto-recreate 는 cascade + caller 책임.
     fn apply_close_surface(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         surface_id: u32,
         save_snapshot: bool,
     ) -> CoreEvent {
@@ -1400,7 +1391,7 @@ impl Core {
     /// `DomainIntent::MoveTab` 본문. pane_id 로 모든 workspace 순회
     /// (focused 의존 없음 — 포커스 독립 원칙).
     fn apply_move_tab(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         pane_id: u32,
         from_index: usize,
         to_index: usize,
@@ -1418,7 +1409,7 @@ impl Core {
     /// `DomainIntent::CloseTab` 본문. tab 위치 + cleanup_targets 수집 →
     /// pane.close_tab_by_id → mark_layout_dirty. cleanup_surface (AppState
     /// 데이터) 는 cascade 가 처리한다.
-    fn apply_close_tab(engine: &mut crate::engine_state::CoreState, tab_id: u32) -> CoreEvent {
+    fn apply_close_tab(engine: &mut crate::core::CoreState, tab_id: u32) -> CoreEvent {
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         let mut found_pane_id = None;
         for workspace in &engine.workspaces {
@@ -1468,7 +1459,7 @@ impl Core {
     /// 2) scope block 으로 pane mutate (engine 의 가변 borrow 좁힘)
     /// 3) send_fast_init / mark_layout_dirty (pane borrow 끝난 후)
     fn apply_create_tab(
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         pane_id: u32,
         cwd: Option<std::path::PathBuf>,
         kind: String,
@@ -1481,7 +1472,7 @@ impl Core {
         let cols = engine.default_cols;
         let rows = engine.default_rows;
         let lazy_init = engine.settings.performance.lazy_pty_init;
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
 
         let prepared_non_terminal = if !is_terminal {
@@ -1539,7 +1530,7 @@ impl Core {
     /// active_workspace 보정은 cascade 에서 처리 (Core 는 state 모름).
     fn apply_move_workspace(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         from_index: usize,
         to_index: usize,
     ) -> CoreEvent {
@@ -1566,7 +1557,7 @@ impl Core {
     /// event 발화.
     fn apply_update_workspace_meta(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         workspace_id: u32,
         name: Option<String>,
         subtitle: Option<String>,
@@ -1607,7 +1598,7 @@ impl Core {
     /// cascade (`cascade_workspace_created`) 에서 처리한다.
     fn apply_create_workspace(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
         cwd: Option<std::path::PathBuf>,
         kind: String,
         surface_params: serde_json::Value,
@@ -1637,7 +1628,7 @@ impl Core {
     /// 반환: 새 workspace 의 index (`engine.workspaces.len() - 1`).
     pub(crate) fn create_default_workspace(
         &mut self,
-        engine: &mut crate::engine_state::CoreState,
+        engine: &mut crate::core::CoreState,
     ) -> anyhow::Result<usize> {
         let event = apply_create_workspace_inner(
             engine,
@@ -1661,7 +1652,7 @@ impl Core {
 /// 반환: `CoreEvent::WorkspaceCreated`. host event (WorkspaceRenamed) +
 /// (User origin 이면) active 전환은 호출 측 cascade 책임.
 pub(crate) fn apply_create_workspace_inner(
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     cwd: Option<std::path::PathBuf>,
     kind: String,
     surface_params: serde_json::Value,
@@ -1752,7 +1743,7 @@ pub(crate) fn apply_create_workspace_inner(
 /// `RestoreClosedItem` 의 helper. pane_id 에 tab attach + active_tab 갱신.
 /// *모든* workspace 순회 (포커스 독립).
 fn push_tab_to_pane(
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     pane_id: u32,
     tab: crate::model::Tab,
 ) -> bool {

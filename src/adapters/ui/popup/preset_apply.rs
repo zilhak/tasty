@@ -22,7 +22,7 @@ pub const APPLY_PANE_POPUP_ID: &str = "apply_pane_preset";
 pub fn draw_apply_workspace_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Workspace)
 }
@@ -30,7 +30,7 @@ pub fn draw_apply_workspace_popup(
 pub fn draw_apply_tab_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Tab)
 }
@@ -38,7 +38,7 @@ pub fn draw_apply_tab_popup(
 pub fn draw_apply_pane_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     draw_apply_popup(ui, state, engine, PresetKind::Pane)
 }
@@ -46,7 +46,7 @@ pub fn draw_apply_pane_popup(
 fn draw_apply_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     kind: PresetKind,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {

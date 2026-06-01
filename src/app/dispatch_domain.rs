@@ -1262,7 +1262,7 @@ impl App {
 ///   이미 처리됐다.
 pub(crate) fn cascade_workspace_created(
     state: &mut crate::state::AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     workspace_id: u32,
     index: usize,
@@ -1311,7 +1311,7 @@ pub(crate) fn cascade_workspace_created(
 /// 다른 cascade 와 시그니처 정렬을 위해 Parked 분기 유지).
 pub(crate) fn cascade_closed_item_restored(
     state: &mut crate::state::AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     kind: crate::core::intent::RestoredKind,
 ) {
     use crate::core::intent::RestoredKind;
@@ -1336,7 +1336,7 @@ pub(crate) fn cascade_closed_item_restored(
 pub(crate) fn cascade_surface_closed(
     core: &mut crate::core::Core,
     state: &mut crate::state::AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     cascade_level: crate::core::intent::CascadeLevel,
     cleanup_targets: Vec<(u32, Option<String>)>,
     closed_tab_ids: Vec<u32>,
@@ -1413,7 +1413,7 @@ pub(crate) fn cascade_surface_closed(
 /// new_surface_id 로 변경.
 pub(crate) fn cascade_surface_split(
     state: &mut crate::state::AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     workspace_index: usize,
     pane_id: u32,
@@ -1437,7 +1437,7 @@ pub(crate) fn cascade_surface_split(
 /// workspace 의 focused_pane 을 new_pane_id 로 변경.
 pub(crate) fn cascade_pane_split(
     state: &mut crate::state::AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     origin: &IntentOrigin,
     workspace_index: usize,
     original_pane_id: u32,
@@ -1475,7 +1475,7 @@ pub(crate) fn cascade_pane_closed(state: &mut crate::state::AppState, pane_id: u
 /// 에서 lookup 해 `PendingHostEvent::SurfaceCreated` enqueue.
 pub(crate) fn cascade_surface_created(
     state: &mut crate::state::AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     surface_id: u32,
 ) {
     let Some((tab_id, pane_id, workspace_id, kind)) = find_surface_location(engine, surface_id)
@@ -1496,7 +1496,7 @@ pub(crate) fn cascade_surface_created(
 /// 찾는다 (focused 의존 없음). 못 찾으면 `None` — surface 가 아직 layout 에 안
 /// 들어가 있거나 lazy init 인 케이스.
 fn find_surface_location(
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     surface_id: u32,
 ) -> Option<(u32, u32, u32, &'static str)> {
     for ws in &engine.workspaces {
@@ -1548,7 +1548,7 @@ pub(crate) fn cascade_workspace_moved(
 /// engine lookup.
 pub(crate) fn cascade_tab_created(
     state: &mut crate::state::AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     pane_id: u32,
     tab_id: u32,
     surface_id: u32,

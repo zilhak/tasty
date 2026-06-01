@@ -18,7 +18,7 @@ use std::time::Instant;
 
 pub use schema::SavedLayout;
 
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 
 const DEBOUNCE_MS: u128 = 500;
 pub(super) const LAYOUT_VERSION: u32 = 2;

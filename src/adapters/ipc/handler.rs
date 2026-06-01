@@ -36,7 +36,7 @@ use std::borrow::Cow;
 
 use serde_json::json;
 
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::ipc::alias;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
@@ -59,7 +59,7 @@ use crate::state::AppState;
 pub fn handle_with_caller(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     request: &JsonRpcRequest,
     caller: &CallerContext,
 ) -> JsonRpcResponse {
@@ -162,7 +162,7 @@ pub fn handle_with_caller(
 fn route_engine_handler(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     request: &JsonRpcRequest,
     id: serde_json::Value,
@@ -568,7 +568,7 @@ fn route_engine_handler(
 #[cfg(debug_assertions)]
 fn route_debug_handler(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     request: &JsonRpcRequest,
     id: serde_json::Value,
 ) -> Option<JsonRpcResponse> {
@@ -655,7 +655,7 @@ pub(crate) fn apply_meta(
 
 fn handle_system_info(
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     JsonRpcResponse::success(
@@ -671,7 +671,7 @@ fn handle_system_info(
 #[cfg(debug_assertions)]
 fn handle_ui_state(
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let ws = state.active_workspace(engine);
@@ -697,7 +697,7 @@ fn handle_ui_state(
 
 fn handle_tree(
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
     let tree: Vec<_> = engine

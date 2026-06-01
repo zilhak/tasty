@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 
 use crate::core::Core;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::file::format::{DetectorId, FileTarget};
 use crate::state::{AppState, FileHandlerPickerResult};
 

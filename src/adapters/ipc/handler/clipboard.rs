@@ -6,7 +6,7 @@
 use serde_json::{Value, json};
 
 use crate::clipboard_history::ClipboardSource;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::ipc::protocol::JsonRpcResponse;
 
 fn source_str(s: ClipboardSource) -> &'static str {

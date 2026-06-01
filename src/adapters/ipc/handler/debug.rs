@@ -15,7 +15,7 @@ use super::require_surface_id;
 
 pub(super) fn handle_debug_cell_info(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -67,7 +67,7 @@ pub(super) fn cell_info_to_json(info: &tasty_terminal::CellInfo) -> serde_json::
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_screen_attrs(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -106,7 +106,7 @@ pub(super) fn handle_debug_screen_attrs(
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_feed_bytes(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -149,7 +149,7 @@ pub(super) fn handle_debug_feed_bytes(
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_glyph_color(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -237,7 +237,7 @@ pub(super) fn rgba_to_json(rgba: tasty_type_appearance::color::GpuRgba) -> serde
 #[cfg(debug_assertions)]
 pub(super) fn require_input_simulation(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: &serde_json::Value,
 ) -> Result<(), JsonRpcResponse> {
     if !engine.input_simulation_enabled {
@@ -256,7 +256,7 @@ pub(super) fn require_input_simulation(
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_inject_mouse(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -307,7 +307,7 @@ pub(super) fn handle_debug_inject_mouse(
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_inject_key(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

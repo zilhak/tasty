@@ -6,7 +6,7 @@ use crate::core::Core;
 pub fn handle_cancel(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -83,7 +83,7 @@ pub fn await_blocking(
 pub fn handle_get(
     _core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -103,7 +103,7 @@ pub fn handle_get(
 pub fn handle_list(
     _core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -148,7 +148,7 @@ pub fn handle_list(
 pub fn handle_history(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

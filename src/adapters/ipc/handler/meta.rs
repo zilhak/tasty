@@ -7,7 +7,7 @@ use super::require_surface_id;
 
 pub fn handle_surface_meta_set(
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -33,7 +33,7 @@ pub fn handle_surface_meta_set(
 
 pub fn handle_surface_meta_get(
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -51,7 +51,7 @@ pub fn handle_surface_meta_get(
 
 pub fn handle_surface_meta_unset(
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -71,7 +71,7 @@ pub fn handle_surface_meta_unset(
 
 pub fn handle_surface_meta_list(
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

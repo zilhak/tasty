@@ -10,7 +10,7 @@ use tasty_presets::{
     PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
 
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::model::{
     Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface, Workspace,
 };

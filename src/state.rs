@@ -19,7 +19,7 @@ pub mod update_check;
 use std::collections::VecDeque;
 
 use crate::adapters::ui::info_modal::InfoModal;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::model::{LogicalPx, PhysicalPx};
 use crate::settings_ui::SettingsUiState;
 

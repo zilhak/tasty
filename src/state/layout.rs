@@ -1,4 +1,4 @@
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 
 use super::AppState;

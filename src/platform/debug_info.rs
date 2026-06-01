@@ -17,7 +17,7 @@ use crate::state::AppState;
 /// Modify this function freely — add whatever you need to diagnose issues.
 pub fn collect(
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     gpu: Option<&GpuState>,
     ime_active: bool,
 ) -> Value {

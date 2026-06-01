@@ -92,7 +92,7 @@ pub(crate) fn check_cap_block(
 pub(crate) fn record_ipc_call(
     core: &mut Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     method: &str,
 ) {
@@ -129,7 +129,7 @@ pub(crate) fn record_ipc_call(
 fn detect_anomalies_after_ipc(
     core: &Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     agent: &str,
     method: &str,
     ts: u64,
@@ -216,7 +216,7 @@ fn build_event(
 /// ms 안에서 key 가 충돌하지 않는다.
 fn persist_event(
     core: &Core,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     ev: &TelemetryEvent,
 ) -> std::result::Result<String, String> {
     let seq = engine.telemetry_seq.next();

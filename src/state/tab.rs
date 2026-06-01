@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
 use super::AppState;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 
 impl AppState {
     /// Add a new tab in the focused pane.
@@ -11,7 +11,7 @@ impl AppState {
         let surface_id = engine.next_ids.next_surface();
         let cols = engine.default_cols;
         let rows = engine.default_rows;
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_tab_with_shell(
@@ -43,7 +43,7 @@ impl AppState {
         let surface_id = engine.next_ids.next_surface();
         let cols = engine.default_cols;
         let rows = engine.default_rows;
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
 
         if engine.settings.performance.lazy_pty_init {
@@ -156,7 +156,7 @@ impl AppState {
         let surface_id = engine.next_ids.next_surface();
         let cols = engine.default_cols;
         let rows = engine.default_rows;
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
 
         if engine.settings.performance.lazy_pty_init {
@@ -272,7 +272,7 @@ impl AppState {
         let cwd = self.resolve_inherit_cwd(engine);
         let cols = engine.default_cols;
         let rows = engine.default_rows;
-        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
 
         let terminal = match tasty_terminal::Terminal::new(

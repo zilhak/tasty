@@ -5,7 +5,7 @@ use super::*;
 pub fn handle_request(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

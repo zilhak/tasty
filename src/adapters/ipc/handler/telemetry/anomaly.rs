@@ -31,7 +31,7 @@ pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Re
 
 pub(super) fn fire_anomaly_notification(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     anomaly: &Anomaly,
 ) {
     let Some(ws) = engine.workspaces.get(state.active_workspace) else {
@@ -74,7 +74,7 @@ pub(super) fn fire_anomaly_notification(
 pub fn handle_anomaly_list(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

@@ -89,7 +89,7 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
 /// 공용 dispatch — DomainIntent::SendToSurface 발화 후 sent 결과 반환.
 fn dispatch_send(
     core: &mut crate::core::Core,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     surface_id: u32,
     payload: crate::core::intent::SendPayload,
 ) -> bool {
@@ -110,7 +110,7 @@ fn dispatch_send(
 pub(crate) fn handle_surface_send(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -137,7 +137,7 @@ pub(crate) fn handle_surface_send(
 pub(crate) fn handle_surface_send_key(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -220,7 +220,7 @@ pub(crate) fn handle_surface_send_key(
 /// deferred placeholder.
 pub(crate) fn handle_surface_wake(
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -242,7 +242,7 @@ pub(crate) fn handle_surface_wake(
 pub(crate) fn handle_surface_send_combo(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -304,7 +304,7 @@ pub(crate) fn handle_surface_send_combo(
 pub(crate) fn handle_surface_send_to(
     core: &mut crate::core::Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

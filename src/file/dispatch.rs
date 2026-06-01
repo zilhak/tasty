@@ -86,7 +86,7 @@ fn hex_val(b: u8) -> Option<u8> {
 /// Picker popup 을 띄운다. 후보가 비어도 호출 — empty-state UI 가 보여진다.
 pub(crate) fn open_picker(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     target: FileTarget,
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
@@ -141,7 +141,7 @@ fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
 /// webbrowser 위임.
 pub fn execute_handler_action(
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     handler: &FileHandler,
     target: &FileTarget,
 ) {

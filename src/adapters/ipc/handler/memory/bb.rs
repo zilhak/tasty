@@ -13,7 +13,7 @@ use super::{entry_to_json, map_error, parse_value, require_str, require_workspac
 pub fn handle_bb_create(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -37,7 +37,7 @@ pub fn handle_bb_create(
 pub fn handle_bb_put(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -71,7 +71,7 @@ pub fn handle_bb_put(
 pub fn handle_bb_get(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -98,7 +98,7 @@ pub fn handle_bb_get(
 pub fn handle_bb_get_all(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -123,7 +123,7 @@ pub fn handle_bb_get_all(
 pub fn handle_bb_get_meta(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -146,7 +146,7 @@ pub fn handle_bb_get_meta(
 pub fn handle_bb_delete_field(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -176,7 +176,7 @@ pub fn handle_bb_delete_field(
 pub fn handle_bb_delete(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -199,7 +199,7 @@ pub fn handle_bb_delete(
 pub fn handle_bb_list(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -217,7 +217,7 @@ pub fn handle_bb_list(
 pub fn handle_bb_exists(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -241,7 +241,7 @@ pub fn handle_bb_exists(
 pub fn handle_bb_snapshot(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -270,7 +270,7 @@ pub fn handle_bb_snapshot(
 pub fn handle_bb_snapshot_get(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -300,7 +300,7 @@ pub fn handle_bb_snapshot_get(
 pub fn handle_bb_snapshot_list(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -322,7 +322,7 @@ pub fn handle_bb_snapshot_list(
 pub fn handle_bb_snapshot_delete(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -351,7 +351,7 @@ pub fn handle_bb_snapshot_delete(
 pub fn handle_bb_snapshot_restore(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,

@@ -43,7 +43,7 @@ pub(crate) struct App {
     /// 통째로 보관한다. dock reopen / 트레이 복귀 시 짝지어 꺼내 새 MainWindow 에
     /// 재주입한다. engine 만 분리해 보관하면 워크스페이스/설정/scrollback 등이
     /// 사라지므로 반드시 쌍으로 보존한다.
-    pub(crate) parked_states: Vec<(state::AppState, crate::engine_state::CoreState)>,
+    pub(crate) parked_states: Vec<(state::AppState, crate::core::CoreState)>,
     // Shell setup mode (before terminal is created)
     pub(crate) shell_setup_mode: bool,
     pub(crate) shell_setup_path: String,
@@ -65,7 +65,7 @@ pub(crate) struct App {
     pub(crate) plugin_manager: Option<plugin::PluginManager>,
     /// Sessionwide engine state — workspaces, settings, hooks, registries.
     /// None until the first MainWindow lifecycle initializes it; Some after.
-    pub(crate) engine_state: Option<crate::engine_state::CoreState>,
+    pub(crate) engine_state: Option<crate::core::CoreState>,
     /// 사용자 init.lua 기반 Lua hook 엔진. 부팅 시 1회 생성, `~/.tasty/init.lua` 가
     /// 있으면 로드. observe-only — 호스트 동작에는 영향 없음. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
@@ -116,7 +116,7 @@ impl App {
     /// CoreState 접근자. 부팅 시 `App.engine_state` 에 들어 있다가 첫 MainWindow
     /// 등록 시 그쪽으로 이동한다. 이 헬퍼는 두 위치 중 살아있는 쪽을 찾아 반환한다.
     /// 어디에도 없으면 panic — 호출 경로가 invariant 를 깬 것.
-    pub(crate) fn engine_state(&self) -> &crate::engine_state::CoreState {
+    pub(crate) fn engine_state(&self) -> &crate::core::CoreState {
         if let Some(e) = self.engine_state.as_ref() {
             return e;
         }
@@ -128,7 +128,7 @@ impl App {
         panic!("App.engine_state accessed before initialization");
     }
 
-    pub(crate) fn engine_state_mut(&mut self) -> &mut crate::engine_state::CoreState {
+    pub(crate) fn engine_state_mut(&mut self) -> &mut crate::core::CoreState {
         if self.engine_state.is_some() {
             return self.engine_state.as_mut().unwrap();
         }

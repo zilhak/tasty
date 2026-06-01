@@ -14,7 +14,7 @@ use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_
 pub fn handle_task_create(
     core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -76,7 +76,7 @@ pub fn handle_task_create(
 pub fn handle_task_list(
     core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -114,7 +114,7 @@ pub fn handle_task_list(
 pub fn handle_task_get(
     core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -141,7 +141,7 @@ pub fn handle_task_get(
 pub fn handle_task_cancel(
     core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -173,7 +173,7 @@ pub fn handle_task_cancel(
 pub fn handle_task_retry(
     core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -209,7 +209,7 @@ pub fn handle_task_retry(
 pub fn handle_task_await(
     core: &Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -224,7 +224,7 @@ pub fn handle_task_await(
 pub fn handle_task_graph(
     core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -319,7 +319,7 @@ pub fn handle_task_graph(
 pub fn handle_task_reduce(
     core: &Core,
     _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

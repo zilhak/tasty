@@ -32,7 +32,7 @@ const VERTICAL_PADDING: f32 = 8.0;
 const HORIZONTAL_MARGIN: f32 = 8.0;
 
 /// PopupDef.title_fn — 타이틀바: 대상 파일/디렉토리 짧은 이름 포함.
-pub fn picker_title(state: &AppState, _engine: &crate::engine_state::CoreState) -> String {
+pub fn picker_title(state: &AppState, _engine: &crate::core::CoreState) -> String {
     match &state.dialogs.file_handler_picker {
         Some(p) => format!(
             "{}: {}",
@@ -44,7 +44,7 @@ pub fn picker_title(state: &AppState, _engine: &crate::engine_state::CoreState) 
 }
 
 /// PopupDef.sizer — 후보/recent list 길이에 따라 높이 조절.
-pub fn picker_sizer(state: &AppState, _engine: &crate::engine_state::CoreState) -> egui::Vec2 {
+pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
     let (cand_n, recent_n) = match &state.dialogs.file_handler_picker {
         Some(p) => (p.candidates.len(), p.recent.len()),
         None => (0, 0),
@@ -66,7 +66,7 @@ pub fn picker_sizer(state: &AppState, _engine: &crate::engine_state::CoreState) 
 pub fn draw_file_handler_picker(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let ctx = ui.ctx().clone();
 
@@ -299,7 +299,7 @@ fn draw_handler_list(
     items: &[PickerHandlerSummary],
     col_w: f32,
     state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     double_click_dispatch: &mut Option<crate::file::handler::HandlerId>,
 ) {
     for entry in items {

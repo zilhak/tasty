@@ -16,7 +16,7 @@ use crate::state::AppState;
 /// (interior-mut `&self` 메서드) 만 호출. `handle_tree` 와 동일 패턴 (D.3.C.H.2).
 pub fn handle_set_url(
     _state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {

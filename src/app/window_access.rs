@@ -36,7 +36,7 @@ impl App {
     /// 순으로 찾는다. 두 번째 main window 생성 시 첫 engine 의 Arc 들 (surface_registry /
     /// file_format / file_handler / preset_store / identify_worker / approval_store /
     /// telemetry_seq / anomaly_detector / agent_seq) 을 공유시키기 위해 사용.
-    pub(crate) fn any_main_engine(&self) -> Option<&crate::engine_state::CoreState> {
+    pub(crate) fn any_main_engine(&self) -> Option<&crate::core::CoreState> {
         for w in self.windows.values() {
             if let Some(m) = w.as_main() {
                 return Some(&m.engine_state);

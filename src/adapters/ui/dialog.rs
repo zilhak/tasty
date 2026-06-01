@@ -9,7 +9,7 @@ pub fn rename_popup_default_size() -> egui::Vec2 {
 }
 
 /// Dynamic title for the rename popup (based on RenameTarget).
-pub fn rename_popup_title(state: &AppState, _engine: &crate::engine_state::CoreState) -> String {
+pub fn rename_popup_title(state: &AppState, _engine: &crate::core::CoreState) -> String {
     state
         .dialogs
         .rename
@@ -22,7 +22,7 @@ pub fn rename_popup_title(state: &AppState, _engine: &crate::engine_state::CoreS
 pub fn draw_rename_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let th = theme::theme();
     let ctx = ui.ctx().clone();
@@ -122,7 +122,7 @@ pub fn draw_rename_popup(
 
 fn apply_rename(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     target: RenameTarget,
     buffer: String,
 ) {

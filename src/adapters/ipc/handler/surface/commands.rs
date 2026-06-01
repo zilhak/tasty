@@ -11,7 +11,7 @@ use super::require_surface_id;
 pub(crate) fn handle_commands(
     core: &Core,
     _state: &AppState,
-    _engine: &crate::engine_state::CoreState,
+    _engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -35,7 +35,7 @@ pub(crate) fn handle_commands(
 pub(crate) fn handle_last_command(
     core: &Core,
     _state: &AppState,
-    _engine: &crate::engine_state::CoreState,
+    _engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
@@ -55,7 +55,7 @@ pub(crate) fn handle_last_command(
 pub(crate) fn handle_command_at(
     core: &Core,
     _state: &AppState,
-    _engine: &crate::engine_state::CoreState,
+    _engine: &crate::core::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {

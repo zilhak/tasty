@@ -59,7 +59,7 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
 pub fn draw_tools_menu(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
         return PopupAction::Close;
@@ -164,11 +164,7 @@ pub fn draw_tools_menu(
 ///
 /// 이 함수는 사용자 클릭에서만 호출된다 (포커스 의존 동작 — focused pane에 surface
 /// 추가). IPC 경유 `debug.tool.invoke`는 별도 경로로 pane/tab id를 명시한다.
-pub fn invoke_tool(
-    state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
-    item: &ToolItem,
-) {
+pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, item: &ToolItem) {
     match &item.action {
         ToolAction::Event { event_key } => {
             let payload = serde_json::json!({ "tool_id": item.key });

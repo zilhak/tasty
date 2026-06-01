@@ -1,7 +1,7 @@
 use crate::model::{DividerInfo, PhysicalPx, PhysicalRect, SplitDirection};
 
 use super::AppState;
-use crate::engine_state::CoreState;
+use crate::core::CoreState;
 
 impl AppState {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.

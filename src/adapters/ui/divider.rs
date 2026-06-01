@@ -32,7 +32,7 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[PhysicalRect], scale_
 pub fn draw_surface_highlights(
     ctx: &egui::Context,
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     terminal_rect: PhysicalRect,
     scale_factor: f32,
 ) {

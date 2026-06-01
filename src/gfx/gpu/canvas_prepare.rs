@@ -46,7 +46,7 @@ impl GpuState {
     pub(super) fn prepare_plugin_canvases(
         &mut self,
         state: &AppState,
-        engine: &crate::engine_state::CoreState,
+        engine: &crate::core::CoreState,
         plugin_manager: &PluginManager,
     ) {
         let pending = collect_canvas_requests(state, engine, plugin_manager);
@@ -145,7 +145,7 @@ impl GpuState {
 /// 본 함수는 GPU 자원에 손대지 않는다 — 순수 데이터 수집. 다음 단계에서 ensure + upload.
 fn collect_canvas_requests(
     state: &AppState,
-    engine: &crate::engine_state::CoreState,
+    engine: &crate::core::CoreState,
     plugin_manager: &PluginManager,
 ) -> Vec<PendingCanvas> {
     let mut out: Vec<PendingCanvas> = Vec::new();

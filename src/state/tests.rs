@@ -1,9 +1,9 @@
 use super::*;
 use crate::model::SplitDirection;
 
-fn test_state() -> (AppState, crate::engine_state::CoreState) {
+fn test_state() -> (AppState, crate::core::CoreState) {
     let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-    let mut engine = crate::engine_state::CoreState::new(80, 24, waker).unwrap();
+    let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
@@ -16,10 +16,7 @@ fn test_state() -> (AppState, crate::engine_state::CoreState) {
 }
 
 /// 현재 활성 워크스페이스의 모든 surface ID를 수집한다.
-fn collect_surface_ids(
-    state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
-) -> Vec<u32> {
+fn collect_surface_ids(state: &mut AppState, engine: &mut crate::core::CoreState) -> Vec<u32> {
     let mut ids = Vec::new();
     let ws = state.active_workspace_mut(engine);
     ws.pane_layout_mut().for_each_terminal_mut(&mut |sid, _| {
@@ -29,10 +26,7 @@ fn collect_surface_ids(
 }
 
 /// 모든 워크스페이스에 걸쳐 surface ID를 수집한다.
-fn collect_all_surface_ids(
-    _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
-) -> Vec<u32> {
+fn collect_all_surface_ids(_state: &mut AppState, engine: &mut crate::core::CoreState) -> Vec<u32> {
     let mut ids = Vec::new();
     for ws in &mut engine.workspaces {
         ws.pane_layout_mut().for_each_terminal_mut(&mut |sid, _| {
@@ -282,7 +276,7 @@ fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
 
 // ---- workspace operations ----
 
-fn add_test_workspace(state: &mut AppState, engine: &mut crate::engine_state::CoreState) {
+fn add_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState) {
     let event = crate::core::apply_create_workspace_inner(
         engine,
         None,

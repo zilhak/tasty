@@ -17,7 +17,7 @@ fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
 pub fn handle_semaphore_create(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -48,7 +48,7 @@ pub fn handle_semaphore_create(
 pub fn handle_semaphore_acquire(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,
@@ -74,7 +74,7 @@ pub fn handle_semaphore_acquire(
 pub fn handle_semaphore_release(
     core: &Core,
     _state: &mut AppState,
-    _engine: &mut crate::engine_state::CoreState,
+    _engine: &mut crate::core::CoreState,
     _caller: &CallerContext,
     id: Value,
     params: &Value,

@@ -151,7 +151,7 @@ pub(super) fn record_to_json(record: &ApprovalRecord) -> Value {
 pub(crate) fn publish_capability_elevation(
     core: &mut crate::core::Core,
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    engine: &mut crate::core::CoreState,
     agent_id: &str,
     method: &str,
     permission: &str,
