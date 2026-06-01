@@ -116,6 +116,55 @@ impl App {
                     renamed_description,
                 );
             }
+            CoreEvent::WorkspaceMetaUpdated {
+                workspace_id,
+                index: _,
+                name,
+                subtitle,
+                description,
+            } => {
+                self.dispatch_workspace_meta_updated_cascade(
+                    source,
+                    workspace_id,
+                    name,
+                    subtitle,
+                    description,
+                );
+            }
+        }
+    }
+
+    /// `WorkspaceMetaUpdated` cascade 의 source 라우터. host event 발화만
+    /// 처리하므로 origin 무시 (Update 는 Agent 가 IPC 로만 발화 — 사용자
+    /// 단축키 경로 없음).
+    fn dispatch_workspace_meta_updated_cascade(
+        &mut self,
+        source: DispatchSource,
+        workspace_id: u32,
+        name: Option<String>,
+        subtitle: Option<String>,
+        description: Option<String>,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_workspace_meta_updated(
+                    &mut main.state,
+                    workspace_id,
+                    name,
+                    subtitle,
+                    description,
+                );
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_workspace_meta_updated(state, workspace_id, name, subtitle, description);
+            }
         }
     }
 
@@ -373,5 +422,26 @@ pub(crate) fn cascade_workspace_created(
     }
     if origin.is_user() {
         state.active_workspace = index;
+    }
+}
+
+/// `CoreEvent::WorkspaceMetaUpdated` 의 외부 cascade. host event 발화 (rename
+/// 필드 하나라도 Some 이면 `WorkspaceRenamed` enqueue). IPC handler 도 직접
+/// 호출 가능.
+pub(crate) fn cascade_workspace_meta_updated(
+    state: &mut crate::state::AppState,
+    workspace_id: u32,
+    name: Option<String>,
+    subtitle: Option<String>,
+    description: Option<String>,
+) {
+    if name.is_some() || subtitle.is_some() || description.is_some() {
+        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+            workspace_id,
+            name,
+            subtitle,
+            description,
+            user_direct: false,
+        });
     }
 }

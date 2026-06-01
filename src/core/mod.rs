@@ -351,7 +351,55 @@ impl Core {
                 subtitle,
                 description,
             ),
+            DomainIntent::UpdateWorkspaceMeta {
+                workspace_id,
+                name,
+                subtitle,
+                description,
+            } => {
+                self.apply_update_workspace_meta(engine, workspace_id, name, subtitle, description)
+            }
         }
+    }
+
+    /// `DomainIntent::UpdateWorkspaceMeta` 본문. `workspace_id` 로 찾고 None
+    /// 아닌 필드만 갱신. cascade (`cascade_workspace_meta_updated`) 가 host
+    /// event 발화.
+    fn apply_update_workspace_meta(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        workspace_id: u32,
+        name: Option<String>,
+        subtitle: Option<String>,
+        description: Option<String>,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        let Some(index) = engine
+            .workspaces
+            .iter()
+            .position(|ws| ws.id == workspace_id)
+        else {
+            anyhow::bail!("Workspace id {} not found", workspace_id);
+        };
+
+        let ws = &mut engine.workspaces[index];
+        if let Some(ref n) = name {
+            ws.name = n.clone();
+        }
+        if let Some(ref s) = subtitle {
+            ws.subtitle = s.clone();
+        }
+        if let Some(ref d) = description {
+            ws.description = d.clone();
+        }
+        engine.mark_layout_dirty();
+
+        Ok(vec![CoreEvent::WorkspaceMetaUpdated {
+            workspace_id,
+            index,
+            name,
+            subtitle,
+            description,
+        }])
     }
 
     /// `DomainIntent::CreateWorkspace` 본문. engine 에 새 workspace + pane +

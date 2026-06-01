@@ -38,6 +38,14 @@ pub(crate) enum DomainIntent {
         subtitle: Option<String>,
         description: Option<String>,
     },
+    /// 기존 workspace 의 메타 (name/subtitle/description) 부분 갱신. None
+    /// 필드는 변경 없음. cascade 가 host event (WorkspaceRenamed) 발화.
+    UpdateWorkspaceMeta {
+        workspace_id: u32,
+        name: Option<String>,
+        subtitle: Option<String>,
+        description: Option<String>,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -94,6 +102,14 @@ pub(crate) enum CoreEvent {
         renamed_name: Option<String>,
         renamed_subtitle: Option<String>,
         renamed_description: Option<String>,
+    },
+    /// workspace 메타 갱신 완료. cascade 가 host event (WorkspaceRenamed) 발화.
+    WorkspaceMetaUpdated {
+        workspace_id: u32,
+        index: usize,
+        name: Option<String>,
+        subtitle: Option<String>,
+        description: Option<String>,
     },
 
     // ─── Notifications (D.3.C.E.2) ───
