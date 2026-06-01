@@ -5,15 +5,18 @@
 //! 5.1 범위 밖** — 호스트가 `Ready` task 를 골라 실제 IPC dispatch 를 트리거하는
 //! 스케줄러 루프는 후속 5.x 에서 붙는다. 본 단계는 state 머신 / DAG / 영속
 //! 정확성만 보장한다.
+//!
+//! handler 는 param 파싱과 응답 직렬화만 담당. `with_memory + ...Store::new`
+//! 의 store 조립은 `src/core/agent/` 의 Core extension 메서드 (`Core::task_*`,
+//! `Core::barrier_*`, `Core::lease_*`, `Core::rate_limit_*`,
+//! `Core::semaphore_*`) 가 책임진다.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-use tasty_agent::{AgentError, TaskId, TaskStore};
+use tasty_agent::{AgentError, TaskId};
 
-use crate::core::Core;
 use crate::ipc::protocol::JsonRpcResponse;
-use crate::state::AppState;
 
 pub(super) fn now_ms() -> u64 {
     SystemTime::now()
@@ -56,43 +59,9 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
     }
 }
 
-#[allow(dead_code)] // 본 헬퍼는 F.4.b~F.4.e 진행 중 단계적으로 폐기. F.4.e 에서 제거.
-pub(super) fn run_store<F, R>(
-    core: &Core,
-    _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
-    id: Value,
-    f: F,
-) -> JsonRpcResponse
-where
-    F: FnOnce(&mut TaskStore<'_>) -> Result<R, AgentError>,
-    R: serde::Serialize,
-{
-    let seq = engine.agent_seq.clone();
-    let result = core.with_memory(|mem| {
-        let mut store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
-        f(&mut store)
-    });
-    match result {
-        Ok(v) => match serde_json::to_value(v) {
-            Ok(json) => JsonRpcResponse::success(id, json),
-            Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
-        },
-        Err(e) => agent_err_to_response(id, e),
-    }
-}
-
-// ============================================================
-// agent.task_create
-// ============================================================
-
 pub(super) fn escape_dot(s: &str) -> String {
     s.replace('"', "\\\"").replace('\n', " ")
 }
-
-// ============================================================
-// agent.barrier_*
-// ============================================================
 
 pub(super) fn name_param(params: &Value, id: &Value) -> Result<String, JsonRpcResponse> {
     params
