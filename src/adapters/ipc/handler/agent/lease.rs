@@ -4,27 +4,9 @@ use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
-use tasty_agent::{AgentError, LeaseMode, LeaseStore};
+use tasty_agent::LeaseMode;
 
 use super::{agent_err_to_response, now_ms, workspace_id_param};
-
-fn run_lease<F, R>(core: &Core, id: Value, f: F) -> JsonRpcResponse
-where
-    F: FnOnce(&mut LeaseStore<'_>) -> Result<R, AgentError>,
-    R: serde::Serialize,
-{
-    let result = core.with_memory(|mem| {
-        let mut store = LeaseStore::new(mem, tasty_memory::HOST_OWNER);
-        f(&mut store)
-    });
-    match result {
-        Ok(v) => match serde_json::to_value(v) {
-            Ok(json) => JsonRpcResponse::success(id, json),
-            Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
-        },
-        Err(e) => agent_err_to_response(id, e),
-    }
-}
 
 fn resource_param(params: &Value, id: &Value) -> Result<String, JsonRpcResponse> {
     params
@@ -42,6 +24,13 @@ fn holder_param(params: &Value, id: &Value) -> Result<String, JsonRpcResponse> {
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing or empty 'holder'"))
+}
+
+fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
+    match serde_json::to_value(value) {
+        Ok(v) => JsonRpcResponse::success(id, v),
+        Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
+    }
 }
 
 pub fn handle_lease_acquire(
@@ -79,10 +68,10 @@ pub fn handle_lease_acquire(
             );
         }
     };
-    let now = now_ms();
-    run_lease(core, id, move |store| {
-        store.acquire(workspace_id, &resource, &holder, ttl_ms, mode, now)
-    })
+    match core.lease_acquire(workspace_id, &resource, &holder, ttl_ms, mode, now_ms()) {
+        Ok(outcome) => serialize(id, outcome),
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
 
 pub fn handle_lease_release(
@@ -105,9 +94,10 @@ pub fn handle_lease_release(
         Ok(h) => h,
         Err(e) => return e,
     };
-    run_lease(core, id, move |store| {
-        store.release(workspace_id, &resource, &holder)
-    })
+    match core.lease_release(workspace_id, &resource, &holder) {
+        Ok(outcome) => serialize(id, outcome),
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
 
 pub fn handle_lease_list(
@@ -122,11 +112,12 @@ pub fn handle_lease_list(
         Ok(w) => w,
         Err(e) => return e,
     };
-    let now = now_ms();
-    run_lease(core, id, move |store| {
-        let leases = store.list(workspace_id, Some(now))?;
-        Ok(json!({ "total": leases.len(), "leases": leases }))
-    })
+    match core.lease_list(workspace_id, now_ms()) {
+        Ok(leases) => {
+            JsonRpcResponse::success(id, json!({ "total": leases.len(), "leases": leases }))
+        }
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
 
 // ============================================================
