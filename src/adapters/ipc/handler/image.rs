@@ -12,6 +12,7 @@ use super::require_surface_id;
 
 /// `image.open { surface_id, path }` — surface를 image kind로 (재)설정 + 파일 로드.
 pub fn handle_open(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: Value,
@@ -25,8 +26,22 @@ pub fn handle_open(
         Some(p) => p.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter"),
     };
-    let ok = state.convert_surface_to_kind(engine, sid, "image", &json!({ "file": path.clone() }));
-    if !ok {
+    let intent = crate::core::intent::DomainIntent::ConvertSurface {
+        surface_id: sid,
+        target: crate::core::intent::ConvertSurfaceTarget::Kind {
+            kind: "image".to_string(),
+            params: json!({ "file": path.clone() }),
+        },
+    };
+    let events = match core.apply(engine, intent) {
+        Ok(e) => e,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+    let replaced = matches!(
+        events.into_iter().next(),
+        Some(crate::core::intent::CoreEvent::SurfaceConverted { replaced: true, .. })
+    );
+    if !replaced {
         return JsonRpcResponse::invalid_params(id, format!("Surface {sid} not found"));
     }
     // 이전 ImageView가 남아 있으면 다음 렌더에서 새 path 픽셀이 로드되지 않을 수 있다.

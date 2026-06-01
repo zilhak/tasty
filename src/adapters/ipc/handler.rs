@@ -301,7 +301,7 @@ fn route_engine_handler(
         }
         // image surface 조작 — com.tasty.image plugin이 외부에 노출하는 namespace의
         // 호스트 어댑터. plugin 비활성 상태에서도 CLI/직접 IPC로 호출 가능.
-        "image.open" => image::handle_open(state, engine, id, &request.params),
+        "image.open" => image::handle_open(core, state, engine, id, &request.params),
         "image.save" => image::handle_save(state, engine, id, &request.params),
         "image.export_png" => image::handle_export_png(state, engine, id, &request.params),
         "image.next" => image::handle_next(state, engine, id, &request.params),
