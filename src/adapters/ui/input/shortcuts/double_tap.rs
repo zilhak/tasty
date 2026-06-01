@@ -175,7 +175,10 @@ impl MainWindow {
                         }
                     }
                     "restore_closed" => {
-                        self.state.restore_closed_item(engine);
+                        self.state.dispatch_intent(
+                            crate::intent::Intent::RestoreClosedItem
+                                .from_user_shortcut("restore_closed"),
+                        );
                         self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                     }
                     "quit" => {

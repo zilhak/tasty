@@ -5,7 +5,6 @@ mod layout;
 mod mark;
 mod mouse;
 pub(crate) mod pane;
-mod restore;
 mod tab;
 #[cfg(test)]
 mod tests;

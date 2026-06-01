@@ -186,7 +186,9 @@ impl MainWindow {
             return true;
         }
         if matches_any_binding(&kb.restore_closed, key, mods) {
-            state.restore_closed_item(engine);
+            state.dispatch_intent(
+                crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
+            );
             state.resize_all(engine, terminal_rect, cell_w, cell_h);
             return true;
         }

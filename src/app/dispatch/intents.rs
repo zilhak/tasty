@@ -130,6 +130,9 @@ impl App {
             Intent::NewWorkspace { .. } => {
                 crate::intent::workspace::handle(core, state, engine, intent);
             }
+            Intent::RestoreClosedItem => {
+                crate::intent::closed_item::handle(core, state, engine, intent);
+            }
             Intent::Domain(_) => {
                 // unreachable — dispatch_pending_intents 가 본 variant 를
                 // domain_batch 로 분리해 본 함수를 우회하므로 들어올 수 없다.

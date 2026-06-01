@@ -165,7 +165,9 @@ impl MainWindow {
             "next_tab" => state.next_tab_in_pane(engine),
             "prev_tab" => state.prev_tab_in_pane(engine),
             "restore_closed" => {
-                state.restore_closed_item(engine);
+                state.dispatch_intent(
+                    crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
+                );
                 state.resize_all(engine, terminal_rect, cell_w, cell_h);
             }
             "quit" => send_app_event(proxy, crate::AppEvent::QuitRequested),

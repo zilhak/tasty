@@ -6,6 +6,7 @@
 //! 메인 루프의 `App::dispatch_pending_intents`가 drain 하여 도메인별 핸들러
 //! (`intent::popup`, `intent::preset`, ...)로 분기한다. fire-and-forget.
 
+pub mod closed_item;
 pub mod pane;
 pub mod popup;
 pub mod preset;
@@ -116,6 +117,11 @@ pub enum Intent {
         kind: Option<String>,
         params: serde_json::Value,
     },
+
+    // ---- Closed items 도메인 ----
+    /// closed_items 스택 top 복원. focused pane 의존 (사용자 단축키 전용).
+    /// handler 가 focused pane / workspace 비어있음 사전처리 후 DomainIntent 발화.
+    RestoreClosedItem,
 }
 
 /// UI Intent — 사용자 시각 상태 변경. release 표면에서는 사용자 행동 (단축키 /
