@@ -2,6 +2,7 @@ use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 
 use super::{DividerDrag, DividerDragKind, HoveredLink, MainWindow};
 use crate::adapters::ui::window::Window;
+use crate::core::intent::{DomainIntent, SendPayload};
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
 use crate::theme;
@@ -360,40 +361,59 @@ impl MainWindow {
         if !egui_consumed && !overlay_open && !self.state.popup_hovered {
             // Find the surface under the cursor, falling back to the focused surface
             let terminal_rect = self.compute_terminal_rect();
-            let engine = &mut self.engine_state;
             let target_id = self
                 .cursor_position
                 .and_then(|pos| {
                     let (x, y) = (pos.x as f32, pos.y as f32);
                     self.state
-                        .surface_id_at_position(engine, x, y, terminal_rect)
+                        .surface_id_at_position(&self.engine_state, x, y, terminal_rect)
                 })
-                .or_else(|| self.state.focused_surface_id(engine));
+                .or_else(|| self.state.focused_surface_id(&self.engine_state));
 
             if let Some(surface_id) = target_id {
-                if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-                    let lines = match delta {
-                        MouseScrollDelta::LineDelta(_, y) => y as i32,
-                        MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
-                    };
-                    if terminal.is_alternate_screen() {
-                        if lines > 0 {
-                            for _ in 0..lines.unsigned_abs() {
-                                terminal.send_bytes(b"\x1b[A");
+                let lines = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y as i32,
+                    MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
+                };
+                let is_alt = self
+                    .engine_state
+                    .find_terminal_by_id(surface_id)
+                    .map(|t| t.is_alternate_screen());
+                match is_alt {
+                    Some(true) => {
+                        // PTY send 경로 — alt screen 에서 휠을 arrow key 로 변환.
+                        // lines 만큼 sequence 를 *한 Vec<u8> 에 concat 후 1 Intent*
+                        // 발행 (큐 폭증 회피).
+                        if lines != 0 {
+                            let seq: &[u8] = if lines > 0 { b"\x1b[A" } else { b"\x1b[B" };
+                            let count = lines.unsigned_abs() as usize;
+                            let mut bytes = Vec::with_capacity(seq.len() * count);
+                            for _ in 0..count {
+                                bytes.extend_from_slice(seq);
                             }
-                        } else if lines < 0 {
-                            for _ in 0..lines.unsigned_abs() {
-                                terminal.send_bytes(b"\x1b[B");
-                            }
+                            self.state.dispatch_intent(
+                                DomainIntent::SendToSurface {
+                                    surface_id,
+                                    payload: SendPayload::Bytes(bytes),
+                                }
+                                .from_user_shortcut("mouse_wheel"),
+                            );
                         }
-                    } else {
-                        if lines > 0 {
-                            terminal.scroll_up(lines as usize);
-                        } else if lines < 0 {
-                            terminal.scroll_down((-lines) as usize);
+                    }
+                    Some(false) => {
+                        // 일반 화면 — scrollback (UI 자체 mutate, PTY 와 무관).
+                        if let Some(terminal) =
+                            self.engine_state.find_terminal_by_id_mut(surface_id)
+                        {
+                            if lines > 0 {
+                                terminal.scroll_up(lines as usize);
+                            } else if lines < 0 {
+                                terminal.scroll_down((-lines) as usize);
+                            }
                         }
                         self.base.dirty = true;
                     }
+                    None => {}
                 }
             }
         }
