@@ -183,6 +183,14 @@ pub(crate) enum DomainIntent {
     /// 기록. `Source::Internal` 태그로 일관. settings.clipboard.history_enabled=false
     /// 이면 cascade 가 no-op.
     RecordInternalClipboardCopy { text: String },
+
+    // ─── Closed items (D.3.C.D.5) ───
+    /// closed_items stack top 을 pop 해 복원. `target_pane_id` 는 *호출자가
+    /// 결정한* attach 대상 (focused pane). Workspace 복원 시에는 사용 안 함.
+    /// `target_pane_id == None` 이면 (engine.workspaces 비어있는 상태에서
+    /// Surface/Tab 을 복원 요청한 경우) 복원은 Workspace 인 경우만 가능.
+    /// 이 경우 caller 가 사전에 ensure_workspace_exists 처리하는 것을 권장.
+    RestoreClosedItem { target_pane_id: Option<u32> },
 }
 
 /// `Core::apply` 의 결과 — 도메인이 *변경 후 알리는* 이벤트.
@@ -318,6 +326,27 @@ pub(crate) enum CoreEvent {
     // ─── Clipboard history (D.3.C.E.3) ───
     /// Internal clipboard copy 가 발생. cascade 가 모든 engine 의 history 에 기록.
     InternalClipboardCopyRecorded { text: String },
+
+    // ─── Closed items (D.3.C.D.5) ───
+    /// closed_items pop + 복원 완료. cascade 가 (Workspace kind 인 경우)
+    /// active_workspace 를 새 인덱스로 옮긴다.
+    /// - `restored=false`: closed_items 가 비었거나 rebuild 실패.
+    /// - `kind`: 어떤 종류가 복원되었는지 + cascade 가 알아야 할 인덱스.
+    ClosedItemRestored { restored: bool, kind: RestoredKind },
+}
+
+/// `CoreEvent::ClosedItemRestored` 의 복원 결과 분류.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) enum RestoredKind {
+    /// 비어있는 스택 또는 rebuild 실패.
+    Nothing,
+    /// Workspace 복원 — cascade 가 `state.active_workspace = new_ws_index` 적용.
+    Workspace { new_ws_index: usize },
+    /// Surface 또는 Tab 이 기존 pane 의 tab 으로 attach 됨.
+    /// cascade 가 별도 mutate 없이 mark_dirty 만 발화 (Core::apply 가 이미
+    /// mark_layout_dirty 처리).
+    TabIntoPane { pane_id: u32 },
 }
 
 /// `CoreEvent::SurfaceClosed` 의 cascade 깊이 정보.

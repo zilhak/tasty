@@ -249,6 +249,9 @@ impl App {
             CoreEvent::TerminalRespawned { .. } => {
                 // 추가 cascade 없음. handler 가 events 직접 받아서 response 처리.
             }
+            CoreEvent::ClosedItemRestored { .. } => {
+                // D.3.C.D.5.b: stub. 실제 cascade 는 D.3.C.D.5.c 에서 구현.
+            }
         }
     }
 

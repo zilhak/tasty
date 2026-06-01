@@ -428,6 +428,13 @@ impl Core {
             DomainIntent::RespawnTerminal { surface_id, cwd } => {
                 Ok(vec![Self::apply_respawn_terminal(engine, surface_id, cwd)])
             }
+            DomainIntent::RestoreClosedItem { target_pane_id: _ } => {
+                // D.3.C.D.5.b: 타입 stub. 실제 본문은 D.3.C.D.5.c 에서 구현.
+                Ok(vec![CoreEvent::ClosedItemRestored {
+                    restored: false,
+                    kind: crate::core::intent::RestoredKind::Nothing,
+                }])
+            }
         }
     }
 
