@@ -9,5 +9,4 @@
 pub mod command_index;
 pub mod layout_persistence;
 pub mod output_observer;
-pub mod state;
 pub mod surface_registry;
