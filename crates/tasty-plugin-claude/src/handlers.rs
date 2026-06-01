@@ -9,13 +9,8 @@ use crate::error_scan::ErrorScanner;
 use crate::state::{ChildEntry, ClaudeState};
 
 pub(crate) fn require_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
-    // CLI dynamic dispatcher 는 `--surface` flag 를 `surface` 키로 채우고,
-    // IPC 직접 호출은 `surface_id` 또는 `caller_surface_id` 를 쓴다. 세 가지를
-    // 모두 받아 키 이름 미스매치로 인한 invalid_params 를 방지한다.
     params
-        .get("surface")
-        .or_else(|| params.get("surface_id"))
-        .or_else(|| params.get("caller_surface_id"))
+        .get("surface_id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
         .ok_or_else(|| IpcMethodError::invalid_params("Missing required 'surface_id' parameter"))
@@ -608,9 +603,7 @@ pub(crate) fn handle_spawn(
     host: &HostHandle,
     params: &Value,
 ) -> Result<Value, IpcMethodError> {
-    let parent_surface_id = require_surface_id(params).map_err(|_| {
-        IpcMethodError::invalid_params("Cannot determine parent surface. Set TASTY_SURFACE_ID.")
-    })?;
+    let parent_surface_id = require_surface_id(params)?;
     let workspace_param = params
         .get("workspace")
         .and_then(|v| v.as_str())
