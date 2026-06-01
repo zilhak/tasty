@@ -187,18 +187,9 @@ impl PluginManager {
                 tracing::info!("plugin started: {}", p.plugin_id);
                 self.processes.insert(pkg.manifest.id.clone(), p);
                 self.spawn_failures.remove(&pkg.manifest.id);
-                // Event Bus 1.0: `plugin.loaded` 발화. spawn 성공 시점에서 broadcast.
-                // 핸드셰이크 완료 전에 발화하지만, plugin이 실제로 stable한지 판정하기
-                // 어려워 spawn-success를 단일 기준으로 잡는다.
-                {
-                    use tasty_plugin_protocol::EventScope;
-                    use tasty_plugin_protocol::events::payloads::PluginLoaded;
-                    let payload = PluginLoaded {
-                        plugin_id: pkg.manifest.id.clone(),
-                        version: pkg.manifest.version.clone(),
-                    };
-                    self.emit_host_event("plugin.loaded", &payload, EventScope::System);
-                }
+                // `plugin.loaded` 발화 위치 — D.3.C.G.2.e 부터 hello 수신 후 호출자
+                // (App::finalize_plugin_hello) 가 cascade 로 발화. spawn-time 직접
+                // 발화는 제거 (이중 발화 회피).
                 // manifest의 ipc_namespace contribute를 registry에 흡수.
                 for ns in &pkg.manifest.contributes.ipc_namespace {
                     if let Err(e) = self.ipc_namespaces.register(&pkg.manifest.id, &ns.prefix) {
@@ -278,16 +269,8 @@ impl PluginManager {
                 self.start_plugin_internal(&pkg);
             }
         }
-        // Event Bus 1.0: `plugin.enabled` 발화. spawn 결과와 별개로 enable 상태 변경
-        // 그 자체를 알린다 (plugin.loaded는 process spawn 성공 시 별도 발화).
-        {
-            use tasty_plugin_protocol::EventScope;
-            use tasty_plugin_protocol::events::payloads::PluginEnableToggled;
-            let payload = PluginEnableToggled {
-                plugin_id: plugin_id.to_string(),
-            };
-            self.emit_host_event("plugin.enabled", &payload, EventScope::System);
-        }
+        // `plugin.enabled` 발화는 D.3.C.G.2.b cascade 가 처리 (App::plugin_enable
+        // 의 CoreEvent::PluginEnableToggled → cascade).
         Ok(())
     }
 
@@ -304,30 +287,14 @@ impl PluginManager {
         // file_format / file_handler 두 registry 에서 plugin 의 contribute 제거.
         self.file_format.uninstall_plugin(plugin_id);
         self.file_handler.uninstall_plugin(plugin_id);
-        // disable로 인한 unload 이벤트는 event_bus.clear_plugin 직전에 발화 — 본인의
-        // 구독도 들어와 있을 수 있어 broadcast 우선 후 정리.
-        if was_running {
-            use tasty_plugin_protocol::EventScope;
-            use tasty_plugin_protocol::events::LifecycleReason;
-            use tasty_plugin_protocol::events::payloads::PluginUnloaded;
-            let payload = PluginUnloaded {
-                plugin_id: plugin_id.to_string(),
-                reason: LifecycleReason::Ipc,
-            };
-            self.emit_host_event("plugin.unloaded", &payload, EventScope::System);
-        }
+        // `plugin.unloaded` / `plugin.disabled` 발화는 D.3.C.G.2.b cascade 가 처리
+        // (App::plugin_disable 의 CoreEvent::PluginEnableToggled + PluginUnloaded
+        // → cascade). was_running 분기는 App::plugin_disable 가 사전 캡처하므로 본
+        // 메서드 안에서는 사용 안 함.
+        let _ = was_running; // 의도적으로 무시 — 발화는 cascade 가 담당.
         self.event_bus.clear_plugin(plugin_id);
         self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
         self.plugin_buffers.remove(plugin_id);
-        // Event Bus 1.0: `plugin.disabled` 발화. plugin.unloaded와 짝.
-        {
-            use tasty_plugin_protocol::EventScope;
-            use tasty_plugin_protocol::events::payloads::PluginEnableToggled;
-            let payload = PluginEnableToggled {
-                plugin_id: plugin_id.to_string(),
-            };
-            self.emit_host_event("plugin.disabled", &payload, EventScope::System);
-        }
         Ok(())
     }
 

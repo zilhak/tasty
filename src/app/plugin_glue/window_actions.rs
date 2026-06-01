@@ -1,7 +1,7 @@
 //! Plugins 모달이 큐에 쌓아둔 lifecycle 액션 (install/enable/grant/...) 을 매니저에 적용.
 
 use crate::app::App;
-use crate::{ipc, plugin, plugins_ui, window};
+use crate::{plugin, plugins_ui, window};
 
 impl App {
     /// Drain pending actions from the plugins modal and apply them to the manager.
@@ -22,9 +22,9 @@ impl App {
             return;
         }
 
-        let Some(mgr) = self.plugin_manager.as_mut() else {
+        if self.plugin_manager.is_none() {
             return;
-        };
+        }
 
         let mut pending_toasts: Vec<(String, crate::adapters::ui::ToastKind)> = Vec::new();
 
@@ -32,50 +32,44 @@ impl App {
             match action {
                 plugins_ui::PluginsAction::SetEnabled { id, enabled } => {
                     let result = if enabled {
-                        mgr.enable(&id)
+                        self.plugin_enable(id.clone())
                     } else {
-                        mgr.disable(&id)
+                        self.plugin_disable(id.clone())
                     };
-                    if let Err(e) = result {
-                        tracing::warn!("plugins modal: set_enabled({id}, {enabled}) failed: {e}");
+                    match result {
+                        Ok(events) => self.cascade_plugin_events(events),
+                        Err(e) => tracing::warn!(
+                            "plugins modal: set_enabled({id}, {enabled}) failed: {e}"
+                        ),
                     }
                 }
                 plugins_ui::PluginsAction::Grant { id, permission } => {
-                    let resp = ipc::handler::plugin::handle_grant(
-                        Some(mgr),
-                        serde_json::json!(0),
-                        &serde_json::json!({ "id": id, "permission": permission }),
-                    );
-                    if resp.error.is_some() {
-                        tracing::warn!(
-                            "plugins modal: grant({id}, {permission}) failed: {:?}",
-                            resp.error
-                        );
+                    match self.plugin_grant(id.clone(), permission.clone()) {
+                        Ok(events) => self.cascade_plugin_events(events),
+                        Err(e) => {
+                            tracing::warn!("plugins modal: grant({id}, {permission}) failed: {e}")
+                        }
                     }
                 }
                 plugins_ui::PluginsAction::Revoke { id, permission } => {
-                    let resp = ipc::handler::plugin::handle_revoke(
-                        Some(mgr),
-                        serde_json::json!(0),
-                        &serde_json::json!({ "id": id, "permission": permission }),
-                    );
-                    if resp.error.is_some() {
-                        tracing::warn!(
-                            "plugins modal: revoke({id}, {permission}) failed: {:?}",
-                            resp.error
-                        );
+                    match self.plugin_revoke(id.clone(), permission.clone()) {
+                        Ok(events) => self.cascade_plugin_events(events),
+                        Err(e) => {
+                            tracing::warn!("plugins modal: revoke({id}, {permission}) failed: {e}")
+                        }
                     }
                 }
                 plugins_ui::PluginsAction::Uninstall { id } => {
-                    let resp = ipc::handler::plugin::handle_remove(
-                        Some(mgr),
-                        serde_json::json!(0),
-                        &serde_json::json!({ "id": id }),
-                    );
-                    if resp.error.is_some() {
-                        tracing::warn!("plugins modal: uninstall({id}) failed: {:?}", resp.error);
-                    } else {
-                        plugin::mark_builtin_removed(mgr, &id);
+                    match self.plugin_remove(id.clone()) {
+                        Ok(events) => {
+                            self.cascade_plugin_events(events);
+                            if let Some(mgr) = self.plugin_manager.as_mut() {
+                                plugin::mark_builtin_removed(mgr, &id);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("plugins modal: uninstall({id}) failed: {e}");
+                        }
                     }
                 }
                 plugins_ui::PluginsAction::OpenInstallDir { path } => {
@@ -84,32 +78,31 @@ impl App {
                     }
                 }
                 plugins_ui::PluginsAction::Install { src_path } => {
-                    let resp = ipc::handler::plugin::handle_install(
-                        Some(mgr),
-                        serde_json::json!(0),
-                        &serde_json::json!({ "path": src_path }),
-                    );
-                    pending_toasts.push(match (resp.error, resp.result) {
-                        (Some(err), _) => (
-                            crate::i18n::t_fmt("plugins.add_install_failed", &err.message),
-                            crate::adapters::ui::ToastKind::Error,
-                        ),
-                        (None, Some(result)) => {
-                            let installed = result
-                                .get("installed")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
+                    let toast = match self.plugin_install(std::path::PathBuf::from(&src_path)) {
+                        Ok(events) => {
+                            // CoreEvent::PluginRegistryChanged 의 plugin_id 추출.
+                            let installed = events
+                                .iter()
+                                .find_map(|ev| match ev {
+                                    crate::core::intent::CoreEvent::PluginRegistryChanged {
+                                        plugin_id,
+                                        ..
+                                    } => Some(plugin_id.clone()),
+                                    _ => None,
+                                })
+                                .unwrap_or_default();
+                            self.cascade_plugin_events(events);
                             (
                                 crate::i18n::t_fmt("plugins.add_installed", &installed),
                                 crate::adapters::ui::ToastKind::Success,
                             )
                         }
-                        (None, None) => (
-                            crate::i18n::t_fmt("plugins.add_install_failed", "unknown error"),
+                        Err(e) => (
+                            crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
                             crate::adapters::ui::ToastKind::Error,
                         ),
-                    });
+                    };
+                    pending_toasts.push(toast);
                 }
             }
         }
