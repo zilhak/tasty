@@ -10,9 +10,13 @@ use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
 /// `webview.set_url(surface_id, url)` — webview-enabled kind 의 RemoteSurface 에 URL 설정.
+///
+/// 시그니처는 *read-only* (`&AppState + &CoreState`) — `_state` 는 미사용,
+/// `engine` 도 `&engine.workspaces` 순회 + `RemoteSurface::set_webview_url`
+/// (interior-mut `&self` 메서드) 만 호출. `handle_tree` 와 동일 패턴 (D.3.C.H.2).
 pub fn handle_set_url(
-    _state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
+    _state: &AppState,
+    engine: &crate::engine_state::CoreState,
     id: Value,
     params: &Value,
 ) -> JsonRpcResponse {
