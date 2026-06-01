@@ -310,10 +310,26 @@ impl AppState {
     ) -> bool {
         let closed = self.close_surface_by_id_inner(engine, surface_id, false);
         if closed && engine.workspaces.is_empty() {
-            if let Err(e) = self.add_workspace(engine) {
-                tracing::warn!(
+            // free fn 으로 직접 호출 — Core 통과 없이 invariant 복구 (apply_create_workspace_inner
+            // 은 engine-only 라 self/Core 의존 없음). 본 호출처는 PTY exit cleanup
+            // (cascade_terminal_process_exited) 과 egui 의 diff close 두 곳에서 도달 — 둘 다
+            // *시스템 invariant restorer* 라 host event 발화 불필요.
+            match crate::core::apply_create_workspace_inner(
+                engine,
+                None,
+                "terminal".to_string(),
+                serde_json::Value::Null,
+                None,
+                None,
+                None,
+            ) {
+                Ok(crate::core::intent::CoreEvent::WorkspaceCreated { index, .. }) => {
+                    self.active_workspace = index;
+                }
+                Ok(_) => unreachable!("apply_create_workspace_inner 는 WorkspaceCreated 만 반환"),
+                Err(e) => tracing::warn!(
                     "close_surface_by_id_no_snapshot: auto-recreate workspace failed: {e}"
-                );
+                ),
             }
         }
         closed

@@ -30,7 +30,12 @@ pub fn handle(
         )
     };
     if top_needs_workspace && engine.workspaces.is_empty() {
-        let _ = state.ensure_workspace_exists(engine); // 실패해도 아래 core.apply 가 target_pane_id=None 으로 Nothing 반환. 내부에서 tracing::error 이미 로깅.
+        match core.create_default_workspace(engine) {
+            Ok(idx) => state.active_workspace = idx,
+            Err(e) => {
+                tracing::warn!("RestoreClosedItem precondition workspace failed: {e}");
+            }
+        }
     }
     let target_pane_id = state.focused_pane(engine).map(|p| p.id);
     let domain_intent = crate::core::intent::DomainIntent::RestoreClosedItem { target_pane_id };

@@ -386,7 +386,12 @@ impl App {
         };
 
         // Ensure at least one workspace exists for the new window
-        state.ensure_workspace_exists(&mut engine_state);
+        if engine_state.workspaces.is_empty() {
+            match self.core.create_default_workspace(&mut engine_state) {
+                Ok(idx) => state.active_workspace = idx,
+                Err(e) => tracing::error!("bootstrap workspace failed: {e}"),
+            }
+        }
 
         // DB 초기화 실패 알림. 가장 먼저 푸시해서 큐 head에 둠 → [확인] 시 Exit(1).
         if let Some(err) = db_init_error {
