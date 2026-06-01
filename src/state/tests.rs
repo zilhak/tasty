@@ -282,18 +282,35 @@ fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
 
 // ---- workspace operations ----
 
+fn add_test_workspace(state: &mut AppState, engine: &mut crate::engine_state::CoreState) {
+    let event = crate::core::apply_create_workspace_inner(
+        engine,
+        None,
+        "terminal".to_string(),
+        serde_json::Value::Null,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+        panic!("apply_create_workspace_inner 가 WorkspaceCreated 외 반환");
+    };
+    state.active_workspace = index;
+}
+
 #[test]
 fn add_workspace_increments_count() {
     let (mut state, mut engine) = test_state();
     assert_eq!(engine.workspaces.len(), 1);
-    state.add_workspace(&mut engine).unwrap();
+    add_test_workspace(&mut state, &mut engine);
     assert_eq!(engine.workspaces.len(), 2);
 }
 
 #[test]
 fn switch_workspace_valid() {
     let (mut state, mut engine) = test_state();
-    state.add_workspace(&mut engine).unwrap();
+    add_test_workspace(&mut state, &mut engine);
     assert_eq!(state.active_workspace, 1);
 
     state.switch_workspace(&mut engine, 0);

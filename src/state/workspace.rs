@@ -1,47 +1,8 @@
 use crate::engine_state::CoreState;
-use crate::model::Workspace;
 
 use super::AppState;
 
 impl AppState {
-    /// Add a new workspace with one pane, one tab, one terminal.
-    pub fn add_workspace(&mut self, engine: &mut CoreState) -> anyhow::Result<()> {
-        let cwd = self.resolve_inherit_cwd(engine);
-        let ws_id = engine.next_ids.next_workspace();
-        let pane_id = engine.next_ids.next_pane();
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
-
-        let name = format!("Workspace {}", engine.workspaces.len() + 1);
-        let shell = if engine.settings.general.shell.is_empty() {
-            None
-        } else {
-            Some(engine.settings.general.shell.as_str())
-        };
-        let shell_args_owned = engine.settings.general.effective_shell_args();
-        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        let ws = Workspace::new_with_shell(
-            ws_id,
-            name,
-            pane_id,
-            tab_id,
-            surface_id,
-            crate::model::ShellSpawnOpts {
-                cols: engine.default_cols,
-                rows: engine.default_rows,
-                shell: shell,
-                shell_args: &shell_args,
-                waker: engine.make_waker(surface_id),
-                working_dir: cwd.as_deref(),
-            },
-        )?;
-        engine.workspaces.push(ws);
-        self.active_workspace = engine.workspaces.len() - 1;
-        engine.send_fast_init(surface_id);
-        engine.mark_layout_dirty();
-        Ok(())
-    }
-
     /// Switch to workspace by index (0-based).
     pub fn switch_workspace(&mut self, engine: &mut CoreState, index: usize) {
         if index < engine.workspaces.len() {
@@ -151,20 +112,5 @@ impl AppState {
         }
         engine.mark_layout_dirty();
         true
-    }
-
-    /// Ensure at least one workspace exists. If none exist, create a new one.
-    /// Returns true if a new workspace was created.
-    pub fn ensure_workspace_exists(&mut self, engine: &mut CoreState) -> bool {
-        if !engine.workspaces.is_empty() {
-            return false;
-        }
-        match self.add_workspace(engine) {
-            Ok(()) => true,
-            Err(e) => {
-                tracing::error!("Failed to create workspace: {}", e);
-                false
-            }
-        }
     }
 }
