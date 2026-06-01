@@ -191,6 +191,14 @@ pub(crate) enum DomainIntent {
     /// Surface/Tab 을 복원 요청한 경우) 복원은 Workspace 인 경우만 가능.
     /// 이 경우 caller 가 사전에 ensure_workspace_exists 처리하는 것을 권장.
     RestoreClosedItem { target_pane_id: Option<u32> },
+
+    // ─── Tab name (D.3.C.C.8) ───
+    /// Terminal 의 OSC 0/2 title 변경 등으로 tab 표시명을 갱신. surface_id 가
+    /// 속한 tab 을 모든 workspace 에서 찾아 `osc_title` 필드 set. explicit_name
+    /// 은 *건드리지 않음* — 사용자가 직접 이름 지은 tab 의 이름은 OSC title 에
+    /// 의해 덮어쓰여지지 않는다 (display_name 우선순위: explicit_name >
+    /// osc_title > cached_display_name > name).
+    UpdateTabName { surface_id: u32, name: String },
 }
 
 /// `Core::apply` 의 결과 — 도메인이 *변경 후 알리는* 이벤트.
@@ -333,6 +341,44 @@ pub(crate) enum CoreEvent {
     /// - `restored=false`: closed_items 가 비었거나 rebuild 실패.
     /// - `kind`: 어떤 종류가 복원되었는지 + cascade 가 알아야 할 인덱스.
     ClosedItemRestored { restored: bool, kind: RestoredKind },
+
+    // ─── Terminal cascade (D.3.C.C.8) — PTY emit 발화 ───
+    /// PTY child process exit. cascade 가 hook 발화 + ProcessExited host event
+    /// enqueue + closed_items snapshot 분류 + 후속 `DomainIntent::CloseSurface
+    /// { save_snapshot: true }` 발행.
+    TerminalProcessExited { surface_id: u32 },
+
+    /// OSC 0/2 로 받은 terminal window title. cascade 가 SurfaceTitleChanged
+    /// host event 발화 (plugin 호환) + 후속 `DomainIntent::UpdateTabName` 발행.
+    TerminalTitleChanged { surface_id: u32, title: String },
+
+    /// OSC 9 / OSC 99 / OSC 777 알림. cascade 가 settings.notification gate
+    /// 적용 + `DomainIntent::PushNotification` 발행 + hook 발화.
+    TerminalNotification {
+        surface_id: u32,
+        title: String,
+        body: String,
+    },
+
+    /// Bell (\\a) 수신. cascade 가 settings.notification gate 적용 +
+    /// `DomainIntent::PushNotification { title: "Bell" }` 발행 + hook 발화.
+    TerminalBellRing { surface_id: u32 },
+
+    /// OSC 7 cwd 변경. cascade 가 후속 `DomainIntent::SurfaceCwdChanged` 발행.
+    TerminalCwdChanged { surface_id: u32 },
+
+    /// OSC 52 clipboard set. cascade 가 후속
+    /// `DomainIntent::RecordInternalClipboardCopy` 발행. 시스템 clipboard 쓰기는
+    /// Core::process_pty_output 이 self.clipboard 로 직접 처리한다.
+    TerminalClipboardSet { text: String },
+
+    /// `DomainIntent::UpdateTabName` 적용 결과. cascade 가 mark_dirty 만.
+    /// `osc_title` 은 layout.json 영속 대상 아님 — mark_layout_dirty 호출 안 함.
+    TabNameUpdated {
+        surface_id: u32,
+        tab_id: Option<u32>,
+        skipped_explicit: bool,
+    },
 }
 
 /// `CoreEvent::ClosedItemRestored` 의 복원 결과 분류.
@@ -357,4 +403,16 @@ pub(crate) enum CascadeLevel {
     Tab,
     Pane,
     Workspace,
+}
+
+/// `Core::process_pty_output` 의 반환. PTY drain 의 부수효과를 *데이터로* 표현
+/// — 호출자 (event_handler) 가 cascade dispatch + state queue 분배.
+///
+/// `events` 는 cascade dispatcher 가 처리할 CoreEvent. `processed` 는 어느
+/// surface 든 데이터를 실제 drain 했는지 (mark_dirty 결정 신호).
+#[derive(Debug, Default)]
+#[allow(dead_code)]
+pub(crate) struct ProcessPtyOutcome {
+    pub events: Vec<CoreEvent>,
+    pub processed: bool,
 }

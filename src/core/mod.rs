@@ -18,7 +18,7 @@ pub(crate) mod restore_rebuild;
 
 use std::sync::{Arc, Mutex};
 
-use intent::{CoreEvent, DomainIntent};
+use intent::{CoreEvent, DomainIntent, ProcessPtyOutcome};
 use tasty_memory::MemoryStorage;
 use tasty_presets::{PresetStorage, PresetStore};
 use tasty_settings::SettingsStorage;
@@ -288,32 +288,100 @@ impl Core {
         self.clipboard.write_image(image)
     }
 
-    // ─── PTY pipeline (D.3.C.C.6) — system loop wrapper ───
+    // ─── PTY pipeline (D.3.C.C.6 / .8) — system loop wrapper ───
     //
-    // 본 6 wrapper 는 *system loop* (event_handler / about_to_wait / redraw /
+    // 본 wrapper 들은 *system loop* (event_handler / about_to_wait / redraw /
     // busy poll) 의 PTY drain · resize · busy 갱신 경로의 Core 진입점.
     // *Intent 아님* — PTY 출력 / OS 타이머 / window resize 같은 *외부 trigger*
-    // 에서 호출. 6 wrapper 모두 port 접근이 없어 *associated fn* 으로 노출 —
-    // MainWindow 안 redraw / shortcuts dispatch 에서 `self.core` 없이 호출
-    // 가능하다 (인접 `apply_close_pane` 등과 동일 패턴).
+    // 에서 호출.
     //
-    // C.6 단계: terminal.process() 만 위임. take_events 는 C.8 에서 추가.
-    // 즉 현재 단계는 *호출 경로 변경만* 으로 옛 redraw collect_events 흐름과
-    // 충돌이 없도록 한다.
+    // 시그니처 정책:
+    // - `process_pty_output` / `process_all_pty_output` 은 `&mut self` 메서드 —
+    //   ClipboardSet (OSC 52) 처리 시 self.clipboard port 접근이 필요하다.
+    //   App 컨텍스트에서만 호출되므로 (event_handler / about_to_wait) self.core
+    //   접근 가능.
+    // - 나머지 4 wrapper (flush / force_flush / resize_all / update_busy) 는
+    //   port 접근이 없어 associated fn — MainWindow 안 redraw / shortcuts
+    //   dispatch 에서 `self.core` 없이 호출 가능하다.
 
-    /// 특정 surface 의 PTY 출력 drain. 옛 `engine.process_surface(sid)` 의 진입점.
-    /// 반환: 데이터를 실제 처리했는지 (mark_dirty 결정 신호).
+    /// 특정 surface 의 PTY 출력 drain + TerminalEvent → CoreEvent 변환.
+    /// observer_router (OutputAppended) / command_index (PromptBoundary) /
+    /// 시스템 clipboard (OSC 52) 의 부수효과는 본 함수가 직접 처리. 나머지
+    /// terminal event 는 outcome.events 로 cascade dispatcher 에 전달.
     pub(crate) fn process_pty_output(
+        &mut self,
         engine: &mut crate::engine_state::CoreState,
         surface_id: u32,
-    ) -> bool {
-        engine.process_surface(surface_id)
+    ) -> ProcessPtyOutcome {
+        let processed = engine.process_surface(surface_id);
+        let events = self.drain_terminal_events(engine);
+        ProcessPtyOutcome { events, processed }
     }
 
-    /// 모든 workspace 의 모든 terminal 을 drain. 옛 `engine.process_all()` 의 진입점.
-    /// 반환: 어느 surface 든 처리됐는지 (전역 mark_dirty 결정 신호).
-    pub(crate) fn process_all_pty_output(engine: &mut crate::engine_state::CoreState) -> bool {
-        engine.process_all()
+    /// 모든 workspace 의 모든 terminal 을 drain + 변환. 반환: cascade 가 처리할
+    /// CoreEvent 목록 + 어느 surface 든 데이터 drain 했는지.
+    pub(crate) fn process_all_pty_output(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+    ) -> ProcessPtyOutcome {
+        let processed = engine.process_all();
+        let events = self.drain_terminal_events(engine);
+        ProcessPtyOutcome { events, processed }
+    }
+
+    /// `engine.collect_events()` 결과를 CoreEvent 로 변환. observer_router /
+    /// command_index / system clipboard 의 *직접 부수효과* 는 본 함수가 처리하고,
+    /// cascade 가 필요한 event 만 Vec<CoreEvent> 로 반환.
+    fn drain_terminal_events(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+    ) -> Vec<CoreEvent> {
+        use tasty_terminal::TerminalEventKind;
+        let raw = engine.collect_events();
+        let mut out = Vec::with_capacity(raw.len());
+        for ev in raw {
+            let sid = ev.surface_id;
+            match ev.kind {
+                TerminalEventKind::OutputAppended { text } => {
+                    engine.observer_router.dispatch_text(sid, &text);
+                }
+                TerminalEventKind::PromptBoundary { phase, payload } => {
+                    let mem = engine.memory.clone();
+                    engine
+                        .command_index
+                        .on_boundary(mem.as_ref(), sid, phase, &payload);
+                }
+                TerminalEventKind::ClipboardSet(text) => {
+                    if let Err(e) = self.clipboard.write_text(&text) {
+                        tracing::warn!("OSC 52 clipboard write failed: {e}");
+                    }
+                    out.push(CoreEvent::TerminalClipboardSet { text });
+                }
+                TerminalEventKind::Notification { title, body } => {
+                    out.push(CoreEvent::TerminalNotification {
+                        surface_id: sid,
+                        title,
+                        body,
+                    });
+                }
+                TerminalEventKind::BellRing => {
+                    out.push(CoreEvent::TerminalBellRing { surface_id: sid });
+                }
+                TerminalEventKind::TitleChanged(title) => {
+                    out.push(CoreEvent::TerminalTitleChanged {
+                        surface_id: sid,
+                        title,
+                    });
+                }
+                TerminalEventKind::CwdChanged(_cwd) => {
+                    out.push(CoreEvent::TerminalCwdChanged { surface_id: sid });
+                }
+                TerminalEventKind::ProcessExited => {
+                    out.push(CoreEvent::TerminalProcessExited { surface_id: sid });
+                }
+            }
+        }
+        out
     }
 
     /// throttle 적용 PTY resize flush. 옛 `engine.flush_all_pty_resizes()` 의 진입점.
@@ -511,6 +579,9 @@ impl Core {
                     target_pane_id,
                 )])
             }
+            DomainIntent::UpdateTabName { surface_id, name } => {
+                Ok(vec![Self::apply_update_tab_name(engine, surface_id, name)])
+            }
         }
     }
 
@@ -599,6 +670,54 @@ impl Core {
         CoreEvent::ClosedItemRestored {
             restored: true,
             kind,
+        }
+    }
+
+    /// `DomainIntent::UpdateTabName` 본문. surface_id 가 속한 tab 을 *모든*
+    /// workspace 에서 검색 (포커스 독립) → `osc_title` 필드 set. explicit_name
+    /// 은 건드리지 않는다 — 사용자가 직접 이름 지은 tab 보존.
+    fn apply_update_tab_name(
+        engine: &mut crate::engine_state::CoreState,
+        surface_id: u32,
+        name: String,
+    ) -> CoreEvent {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return CoreEvent::TabNameUpdated {
+                surface_id,
+                tab_id: None,
+                skipped_explicit: false,
+            };
+        }
+        for ws in &mut engine.workspaces {
+            let pane_ids = ws.pane_layout().all_pane_ids();
+            for pane_id in pane_ids {
+                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+                    for tab in &mut pane.tabs {
+                        if tab.all_surface_ids().contains(&surface_id) {
+                            let tab_id = tab.id;
+                            if tab.explicit_name.is_some() {
+                                return CoreEvent::TabNameUpdated {
+                                    surface_id,
+                                    tab_id: Some(tab_id),
+                                    skipped_explicit: true,
+                                };
+                            }
+                            tab.osc_title = Some(name);
+                            return CoreEvent::TabNameUpdated {
+                                surface_id,
+                                tab_id: Some(tab_id),
+                                skipped_explicit: false,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+        CoreEvent::TabNameUpdated {
+            surface_id,
+            tab_id: None,
+            skipped_explicit: false,
         }
     }
 

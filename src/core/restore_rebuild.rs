@@ -29,6 +29,7 @@ impl RebuildResult {
                 id: tab_id,
                 name,
                 explicit_name: None,
+                osc_title: None,
                 layout_opt: Some(layout),
                 focused_surface,
                 cached_display_name: None,

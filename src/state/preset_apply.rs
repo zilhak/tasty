@@ -295,6 +295,7 @@ impl AppState {
                 explicit_name: preset.explicit_name.clone(),
                 layout_opt: Some(split),
                 focused_surface,
+                osc_title: None,
                 cached_display_name: None,
             }),
         }

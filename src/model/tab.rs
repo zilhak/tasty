@@ -8,8 +8,13 @@ pub struct Tab {
     pub id: TabId,
     /// Auto-generated name (e.g. "Shell"). Used as fallback when explicit_name is None.
     pub name: String,
-    /// Explicitly set tab name. When Some, overrides the auto-generated name.
+    /// Explicitly set tab name. When Some, overrides everything else.
     pub explicit_name: Option<String>,
+    /// OSC 0/2 로 받은 terminal window title. `explicit_name` 보다 낮고
+    /// `cached_display_name` 보다 높은 우선순위. cwd 변경 시 shell prompt 가
+    /// 새 OSC title 을 자연 발화하므로 cwd 도 자연 반영된다. layout.json
+    /// 영속 대상 아님 — runtime only.
+    pub osc_title: Option<String>,
     /// The layout tree of surfaces. Always a binary tree; a single leaf = unsplit state.
     /// Temporarily `None` during structural mutations (take_layout/put_layout pattern).
     /// Deferred terminals live inside the layout as `EmptySurface { deferred_spawn: Some(..) }`
@@ -29,6 +34,7 @@ impl Tab {
             id,
             name,
             explicit_name: None,
+            osc_title: None,
             layout_opt: Some(SurfaceLayout::Leaf(surface)),
             focused_surface: surface_id,
             cached_display_name: None,
@@ -36,10 +42,13 @@ impl Tab {
     }
 
     /// Get the display name for this tab (cached, no syscalls).
-    /// Priority: explicit_name > cached CWD-derived name > fallback "name" field.
+    /// Priority: explicit_name > osc_title > cached CWD-derived name > fallback "name" field.
     pub fn display_name(&self) -> String {
         if let Some(ref explicit) = self.explicit_name {
             return explicit.clone();
+        }
+        if let Some(ref osc) = self.osc_title {
+            return osc.clone();
         }
         if let Some(ref cached) = self.cached_display_name {
             return cached.clone();

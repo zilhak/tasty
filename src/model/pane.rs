@@ -182,6 +182,7 @@ impl Pane {
             explicit_name: None,
             layout_opt: Some(super::SurfaceLayout::Leaf(surface)),
             focused_surface: surface_id,
+            osc_title: None,
             cached_display_name: None,
         };
         self.tabs.push(tab);

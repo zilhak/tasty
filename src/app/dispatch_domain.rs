@@ -60,6 +60,13 @@ impl App {
         Ok(())
     }
 
+    /// `Core::process_pty_output` 의 결과 (CoreEvent) 를 *System origin* 으로
+    /// cascade dispatch. PTY emit 은 사용자/에이전트 발화가 아니므로 항상 System.
+    pub(crate) fn handle_core_event_system(&mut self, source: DispatchSource, event: CoreEvent) {
+        let origin = IntentOrigin::System;
+        self.handle_core_event(source, &origin, event);
+    }
+
     /// `CoreEvent` 처리 — Phase D 진행 중에는 *옛 cascade 코드의 위치 이동*.
     /// `source` / `origin` 은 *발화 컨텍스트가 필요한 cascade* (workspace.create
     /// 의 host event + active 전환 등) 에서만 사용. 전역 cascade (settings,
@@ -254,6 +261,43 @@ impl App {
                     self.dispatch_closed_item_restored_cascade(source, kind);
                 }
             }
+
+            // ─── Terminal cascade (D.3.C.C.8) — PTY emit 변환 ───
+            CoreEvent::TerminalNotification {
+                surface_id,
+                title,
+                body,
+            } => {
+                self.cascade_terminal_notification(source, surface_id, title, body);
+            }
+            CoreEvent::TerminalBellRing { surface_id } => {
+                self.cascade_terminal_bell_ring(source, surface_id);
+            }
+            CoreEvent::TerminalTitleChanged { surface_id, title } => {
+                self.cascade_terminal_title_changed(source, surface_id, title);
+            }
+            CoreEvent::TerminalCwdChanged { surface_id } => {
+                self.cascade_terminal_pty_cwd_changed(source, surface_id);
+            }
+            CoreEvent::TerminalClipboardSet { text } => {
+                self.cascade_terminal_clipboard_set(source, text);
+            }
+            CoreEvent::TerminalProcessExited { surface_id } => {
+                self.cascade_terminal_process_exited(source, surface_id);
+            }
+            CoreEvent::TabNameUpdated {
+                surface_id: _,
+                tab_id: _,
+                skipped_explicit: _,
+            } => {
+                // osc_title 은 layout.json 영속 대상 아님 → mark_layout_dirty 호출 X.
+                // tab bar 표시 갱신을 위한 mark_dirty 만.
+                if let DispatchSource::Main(wid) = source {
+                    if let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) {
+                        main.mark_dirty();
+                    }
+                }
+            }
         }
     }
 
@@ -278,6 +322,241 @@ impl App {
                 };
                 cascade_closed_item_restored(state, engine, kind);
             }
+        }
+    }
+
+    /// `TerminalNotification` cascade — settings.notification gate 체크 → ws_id
+    /// 추출 후 `PushNotification` Intent 큐잉 + hook 발화.
+    fn cascade_terminal_notification(
+        &mut self,
+        source: DispatchSource,
+        surface_id: u32,
+        title: String,
+        body: String,
+    ) {
+        let (state, engine, dirty_main) = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                (
+                    &mut main.state,
+                    &mut main.engine_state,
+                    Some(&mut main.base),
+                )
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                (state, engine, None)
+            }
+        };
+        if engine.settings.notification.enabled {
+            let ws_id = state.active_workspace(engine).id;
+            state.dispatch_intent(
+                crate::core::intent::DomainIntent::PushNotification {
+                    ws_id,
+                    surface_id,
+                    title,
+                    body,
+                    source: "host".to_string(),
+                }
+                .from_system(),
+            );
+        }
+        let fired = engine
+            .hook_manager
+            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::Notification]);
+        for hook_id in fired {
+            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+                hook_id,
+                event_kind: "notification".to_string(),
+                surface_id,
+            });
+        }
+        if let Some(base) = dirty_main {
+            base.dirty = true;
+        }
+    }
+
+    /// `TerminalBellRing` cascade — settings.notification gate + Bell hook 발화.
+    fn cascade_terminal_bell_ring(&mut self, source: DispatchSource, surface_id: u32) {
+        let (state, engine, dirty_main) = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                (
+                    &mut main.state,
+                    &mut main.engine_state,
+                    Some(&mut main.base),
+                )
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                (state, engine, None)
+            }
+        };
+        if engine.settings.notification.enabled {
+            let ws_id = state.active_workspace(engine).id;
+            state.dispatch_intent(
+                crate::core::intent::DomainIntent::PushNotification {
+                    ws_id,
+                    surface_id,
+                    title: "Bell".to_string(),
+                    body: String::new(),
+                    source: "host".to_string(),
+                }
+                .from_system(),
+            );
+        }
+        let fired = engine
+            .hook_manager
+            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::Bell]);
+        for hook_id in fired {
+            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+                hook_id,
+                event_kind: "bell".to_string(),
+                surface_id,
+            });
+        }
+        if let Some(base) = dirty_main {
+            base.dirty = true;
+        }
+    }
+
+    /// `TerminalTitleChanged` cascade — SurfaceTitleChanged host event 발화
+    /// (옛 동작 보존, plugin 호환) + 후속 `UpdateTabName` Intent 큐잉.
+    fn cascade_terminal_title_changed(
+        &mut self,
+        source: DispatchSource,
+        surface_id: u32,
+        title: String,
+    ) {
+        let (state, dirty_main) = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                (&mut main.state, Some(&mut main.base))
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                (state, None)
+            }
+        };
+        state.enqueue_host_event(crate::state::PendingHostEvent::SurfaceTitleChanged {
+            surface_id,
+            title: title.clone(),
+        });
+        state.dispatch_intent(
+            crate::core::intent::DomainIntent::UpdateTabName {
+                surface_id,
+                name: title,
+            }
+            .from_system(),
+        );
+        if let Some(base) = dirty_main {
+            base.dirty = true;
+        }
+    }
+
+    /// `TerminalCwdChanged` cascade — `SurfaceCwdChanged` Intent 큐잉. 본 Intent
+    /// 의 cascade 가 refresh_tab_display_name + mark_layout_dirty 처리.
+    fn cascade_terminal_pty_cwd_changed(&mut self, source: DispatchSource, surface_id: u32) {
+        let (state, dirty_main) = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                (&mut main.state, Some(&mut main.base))
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                (state, None)
+            }
+        };
+        state.dispatch_intent(
+            crate::core::intent::DomainIntent::SurfaceCwdChanged { surface_id }.from_system(),
+        );
+        if let Some(base) = dirty_main {
+            base.dirty = true;
+        }
+    }
+
+    /// `TerminalClipboardSet` cascade — `RecordInternalClipboardCopy` Intent 큐잉.
+    /// 시스템 clipboard 쓰기는 `Core::process_pty_output` 이 이미 처리.
+    fn cascade_terminal_clipboard_set(&mut self, source: DispatchSource, text: String) {
+        let state = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                &mut main.state
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, _)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                state
+            }
+        };
+        state.dispatch_intent(
+            crate::core::intent::DomainIntent::RecordInternalClipboardCopy { text }.from_system(),
+        );
+    }
+
+    /// `TerminalProcessExited` cascade — 옛 redraw.rs:130-160 의 PTY exit 처리를
+    /// 그대로 이동. hook 발화 + ProcessExited host event + close + plugin
+    /// lifecycle. *Intent 우회* — closed_items snapshot 은 push 하지 않고
+    /// (옛 close_surface_by_id_no_snapshot 과 동등) lifecycle 큐만 push.
+    /// is_user_close=true 분류는 옛 주석 (redraw.rs:155) 정책 그대로.
+    fn cascade_terminal_process_exited(&mut self, source: DispatchSource, surface_id: u32) {
+        let (state, engine, dirty_main) = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                (
+                    &mut main.state,
+                    &mut main.engine_state,
+                    Some(&mut main.base),
+                )
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                (state, engine, None)
+            }
+        };
+        let fired = engine
+            .hook_manager
+            .check_and_fire(surface_id, &[tasty_hooks::HookEvent::ProcessExit]);
+        for hook_id in fired {
+            state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {
+                hook_id,
+                event_kind: "process-exit".to_string(),
+                surface_id,
+            });
+        }
+        state.enqueue_host_event(crate::state::PendingHostEvent::ProcessExited { surface_id });
+        let kind = state.surface_kind(engine, surface_id);
+        if state.close_surface_by_id_no_snapshot(engine, surface_id) {
+            // intent-exempt: PTY/process exit cleanup
+            if let Some(k) = kind {
+                state.enqueue_surface_closed(surface_id, k, true);
+            }
+        }
+        if let Some(base) = dirty_main {
+            base.dirty = true;
         }
     }
 

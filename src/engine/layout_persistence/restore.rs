@@ -223,6 +223,7 @@ impl SavedTab {
             explicit_name: self.explicit_name,
             layout_opt: Some(layout),
             focused_surface,
+            osc_title: None,
             cached_display_name: None,
         })
     }

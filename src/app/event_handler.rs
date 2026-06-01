@@ -19,15 +19,24 @@ impl ApplicationHandler<AppEvent> for App {
                 self.open_plugins_modal(event_loop);
             }
             AppEvent::TerminalOutput(surface_id) => {
+                use crate::app::dispatch_domain::DispatchSource;
+                use crate::core::intent::CoreEvent;
+                let core = &mut self.core;
+                let windows = &mut self.windows;
+                let parked_states = &mut self.parked_states;
+                let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
                 if let Some(sid) = surface_id {
                     // Targeted polling: 모든 window 의 engine 을 순회하며 해당 surface 보유 시 process
                     let mut found = false;
-                    for w in self.windows.values_mut() {
+                    for (wid, w) in windows.iter_mut() {
                         let Some(main) = w.as_main_mut() else {
                             continue;
                         };
                         if main.engine_state.find_terminal_by_id(sid).is_some() {
-                            crate::core::Core::process_pty_output(&mut main.engine_state, sid);
+                            let outcome = core.process_pty_output(&mut main.engine_state, sid);
+                            if !outcome.events.is_empty() {
+                                pending.push((DispatchSource::Main(*wid), outcome.events));
+                            }
                             main.recalc_ime_preedit_anchor();
                             main.mark_dirty();
                             found = true;
@@ -35,23 +44,38 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                     if !found {
-                        for (_, engine) in self.parked_states.iter_mut() {
+                        for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
                             if engine.find_terminal_by_id(sid).is_some() {
-                                crate::core::Core::process_pty_output(engine, sid);
+                                let outcome = core.process_pty_output(engine, sid);
+                                if !outcome.events.is_empty() {
+                                    pending.push((DispatchSource::Parked(idx), outcome.events));
+                                }
                                 break;
                             }
                         }
                     }
                 } else {
                     // Fallback: wake all windows and process all terminals across engines
-                    for w in self.windows.values_mut() {
+                    for (wid, w) in windows.iter_mut() {
                         if let Some(main) = w.as_main_mut() {
-                            crate::core::Core::process_all_pty_output(&mut main.engine_state);
+                            let outcome = core.process_all_pty_output(&mut main.engine_state);
+                            if !outcome.events.is_empty() {
+                                pending.push((DispatchSource::Main(*wid), outcome.events));
+                            }
                         }
                         w.mark_dirty();
                     }
-                    for (_, engine) in self.parked_states.iter_mut() {
-                        crate::core::Core::process_all_pty_output(engine);
+                    for (idx, (_, engine)) in parked_states.iter_mut().enumerate() {
+                        let outcome = core.process_all_pty_output(engine);
+                        if !outcome.events.is_empty() {
+                            pending.push((DispatchSource::Parked(idx), outcome.events));
+                        }
+                    }
+                }
+                // borrow scope 종료 후 cascade dispatch.
+                for (source, events) in pending {
+                    for ev in events {
+                        self.handle_core_event_system(source, ev);
                     }
                 }
             }
