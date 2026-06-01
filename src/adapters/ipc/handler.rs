@@ -175,7 +175,7 @@ fn route_engine_handler(
             workspace::handle_workspace_create(core, state, engine, id, &request.params)
         }
         "workspace.update" => {
-            workspace::handle_workspace_update(state, engine, id, &request.params)
+            workspace::handle_workspace_update(core, state, engine, id, &request.params)
         }
         "workspace.move" => workspace::handle_workspace_move(state, engine, id, &request.params),
         // pane / split

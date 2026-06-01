@@ -138,73 +138,80 @@ pub fn handle_workspace_create(
 }
 
 pub fn handle_workspace_update(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let idx = if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
-        i as usize
-    } else if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
-        match engine
-            .workspaces
-            .iter()
-            .position(|ws| ws.id == ws_id as u32)
-        {
-            Some(i) => i,
-            None => {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    format!("Workspace id {} not found", ws_id),
-                );
-            }
+    // workspace_id resolve — `id` 우선, 없으면 `index` 로 lookup.
+    let workspace_id = if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
+        ws_id as u32
+    } else if let Some(i) = params.get("index").and_then(|v| v.as_u64()) {
+        let idx = i as usize;
+        if idx >= engine.workspaces.len() {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!(
+                    "Workspace index {} out of range (0..{})",
+                    idx,
+                    engine.workspaces.len()
+                ),
+            );
         }
+        engine.workspaces[idx].id
     } else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'id' or 'index' parameter");
     };
 
-    if idx >= engine.workspaces.len() {
-        return JsonRpcResponse::invalid_params(
-            id,
-            format!(
-                "Workspace index {} out of range (0..{})",
-                idx,
-                engine.workspaces.len()
-            ),
-        );
-    }
+    let name = params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let subtitle = params
+        .get("subtitle")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let description = params
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
 
-    let mut renamed_name: Option<String> = None;
-    let mut renamed_subtitle: Option<String> = None;
-    let mut renamed_description: Option<String> = None;
-    let workspace_id;
-    {
-        let ws = &mut engine.workspaces[idx];
-        workspace_id = ws.id;
-        if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
-            ws.name = name.to_string();
-            renamed_name = Some(name.to_string());
-        }
-        if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
-            ws.subtitle = subtitle.to_string();
-            renamed_subtitle = Some(subtitle.to_string());
-        }
-        if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
-            ws.description = desc.to_string();
-            renamed_description = Some(desc.to_string());
-        }
-    }
-    if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some() {
-        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-            workspace_id,
-            name: renamed_name,
-            subtitle: renamed_subtitle,
-            description: renamed_description,
-            user_direct: false,
-        });
-    }
-    engine.mark_layout_dirty();
-    let ws = &engine.workspaces[idx];
+    let intent = crate::core::intent::DomainIntent::UpdateWorkspaceMeta {
+        workspace_id,
+        name,
+        subtitle,
+        description,
+    };
+
+    let events = match core.apply(engine, intent) {
+        Ok(events) => events,
+        Err(e) => return JsonRpcResponse::invalid_params(id, e.to_string()),
+    };
+
+    let Some(crate::core::intent::CoreEvent::WorkspaceMetaUpdated {
+        workspace_id,
+        index,
+        name,
+        subtitle,
+        description,
+    }) = events.into_iter().next()
+    else {
+        return JsonRpcResponse::internal_error(
+            id,
+            "Core::apply returned no WorkspaceMetaUpdated event",
+        );
+    };
+
+    crate::app::dispatch_domain::cascade_workspace_meta_updated(
+        state,
+        workspace_id,
+        name,
+        subtitle,
+        description,
+    );
+
+    let ws = &engine.workspaces[index];
     JsonRpcResponse::success(
         id,
         json!({
@@ -212,7 +219,7 @@ pub fn handle_workspace_update(
             "name": ws.name,
             "subtitle": ws.subtitle,
             "description": ws.description,
-            "index": idx,
+            "index": index,
         }),
     )
 }
