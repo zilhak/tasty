@@ -26,7 +26,7 @@ pub fn handle(
         Intent::SplitSurface { direction } => {
             split(core, state, engine, *direction, &intent.origin)
         }
-        Intent::CloseSurface { surface_id } => close(state, engine, intent, *surface_id),
+        Intent::CloseSurface { surface_id } => close(core, state, engine, intent, *surface_id),
         Intent::ConvertSurface { surface_id, target } => {
             convert(state, engine, *surface_id, target)
         }
@@ -79,12 +79,51 @@ fn split(
     }
 }
 
-fn close(state: &mut AppState, engine: &mut CoreState, intent: &DispatchedIntent, surface_id: u32) {
+fn close(
+    core: &mut Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    intent: &DispatchedIntent,
+    surface_id: u32,
+) {
     // C1=B / C2: 사용자 동작만 closed-tab restore stack (snapshot) 에 push.
-    if intent.origin.is_user() {
-        state.close_surface_by_id(engine, surface_id);
-    } else {
-        state.close_surface_by_id_no_snapshot(engine, surface_id);
+    let save_snapshot = intent.origin.is_user();
+    let domain_intent = crate::core::intent::DomainIntent::CloseSurface {
+        surface_id,
+        save_snapshot,
+    };
+    let events = match core.apply(engine, domain_intent) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("CloseSurface failed: {e}");
+            return;
+        }
+    };
+    for ev in events {
+        if let crate::core::intent::CoreEvent::SurfaceClosed {
+            closed,
+            cascade_level,
+            cleanup_targets,
+            workspace_id_purged,
+            workspaces_now_empty,
+            ..
+        } = ev
+        {
+            if closed {
+                crate::app::dispatch_domain::cascade_surface_closed(
+                    state,
+                    engine,
+                    cascade_level,
+                    cleanup_targets,
+                    workspace_id_purged,
+                );
+                if workspaces_now_empty {
+                    if let Err(e) = state.add_workspace(engine) {
+                        tracing::warn!("auto-recreate workspace after CloseSurface failed: {e}");
+                    }
+                }
+            }
+        }
     }
 }
 
