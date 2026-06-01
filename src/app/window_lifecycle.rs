@@ -151,12 +151,25 @@ impl App {
             self.plugin_manager = Some(mgr);
         }
 
-        let saved_layout = self.engine_state_mut().pending_layout_restore.take();
-        let restored_idx_after_layout = if let Some(saved) = saved_layout {
+        // pending_layout_restore 가 있으면: wait-for-plugin loop 를 거쳐 등록
+        // 대기 → `DomainIntent::ApplyPendingLayoutRestore` 발화. Intent 본문
+        // (Core::apply) 안에서 take + restore + restored_active_workspace 추출이
+        // 한 번에 일어난다 — caller 는 events 만 검사.
+        //
+        // Intent 큐 우회 직접 apply — bootstrap context (main loop 진입 전) 라
+        // 큐 drain 이 일어나지 않는다. D.3.C.D.4.c 결정.
+        let restored_idx_after_layout = if self.engine_state().pending_layout_restore.is_some() {
+            // wait-for-plugin: required_plugin_kinds 만 peek (take 안 함).
+            // Intent 본문이 단일 take 를 보장.
             {
                 use std::time::{Duration, Instant};
+                let needed: Vec<String> = self
+                    .engine_state()
+                    .pending_layout_restore
+                    .as_ref()
+                    .map(|s| s.required_plugin_kinds())
+                    .unwrap_or_default();
                 let deadline = Instant::now() + Duration::from_millis(300);
-                let needed: Vec<String> = saved.required_plugin_kinds();
                 while Instant::now() < deadline {
                     if let Some(mgr) = self.plugin_manager.as_mut() {
                         mgr.pump();
@@ -173,16 +186,31 @@ impl App {
                     std::thread::sleep(Duration::from_millis(20));
                 }
             }
-            let core = &self.core;
+
             let engine = self
                 .engine_state
                 .as_mut()
                 .expect("engine_state must be initialized before layout restore");
-            if core.restore_layout(engine, saved) {
-                tracing::info!("Layout restored from layout.json (deferred)");
-                engine.restored_active_workspace.take()
-            } else {
-                None
+            match self.core.apply(
+                engine,
+                crate::core::intent::DomainIntent::ApplyPendingLayoutRestore,
+            ) {
+                Ok(events) => events.into_iter().find_map(|e| {
+                    if let crate::core::intent::CoreEvent::LayoutRestored {
+                        restored: true,
+                        active_workspace,
+                    } = e
+                    {
+                        tracing::info!("Layout restored from layout.json (deferred)");
+                        active_workspace
+                    } else {
+                        None
+                    }
+                }),
+                Err(e) => {
+                    tracing::warn!("ApplyPendingLayoutRestore failed: {e}");
+                    None
+                }
             }
         } else {
             None

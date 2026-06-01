@@ -250,21 +250,9 @@ impl Core {
         f(&mut *guard)
     }
 
-    // ─── Layout persistence (~/.tasty/layout.json) ───
-    //
-    // save_layout 은 D.3.C.D.4.b 에서 `DomainIntent::SaveLayoutNow` 경로로 통합되어
-    // 제거됨. restore_layout 은 D.3.C.D.4.c 까지 잠시 유지.
-
-    /// 저장된 layout 을 live engine 으로 복원한다. plugin 이 register 한 surface
-    /// kind 가 준비된 후에만 호출해야 한다 — engine boot 시점이 아닌, 첫 plugin
-    /// pump 이후 호출.
-    pub(crate) fn restore_layout(
-        &self,
-        engine: &mut crate::engine_state::CoreState,
-        saved: crate::engine::layout_persistence::SavedLayout,
-    ) -> bool {
-        saved.restore(engine)
-    }
+    // Layout persistence wrapper (옛 `Core::save_layout` / `Core::restore_layout`)
+    // 은 D.3.C.D.4 에서 `DomainIntent::SaveLayoutNow` /
+    // `ApplyPendingLayoutRestore` 경로로 통합되어 제거됨.
 
     // ─── Clipboard (외부 시스템 clipboard) ───
 
