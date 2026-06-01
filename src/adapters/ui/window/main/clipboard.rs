@@ -1,6 +1,46 @@
 use egui::ColorImage;
 
 use super::MainWindow;
+use crate::core::intent::{DomainIntent, SendPayload};
+
+/// Bracketed paste 분기 후 SendPayload 묶음 발행. FIFO 순서 보장 (큐 push 순서
+/// 그대로 Core::apply 가 처리하므로 200~ → text → 201~ 순서로 PTY write).
+fn dispatch_paste(w: &mut MainWindow, surface_id: u32, bracketed: bool, text: String) {
+    if text.is_empty() {
+        return;
+    }
+    if bracketed {
+        w.state.dispatch_intent(
+            DomainIntent::SendToSurface {
+                surface_id,
+                payload: SendPayload::Bytes(b"\x1b[200~".to_vec()),
+            }
+            .from_user_shortcut("paste"),
+        );
+        w.state.dispatch_intent(
+            DomainIntent::SendToSurface {
+                surface_id,
+                payload: SendPayload::Text(text),
+            }
+            .from_user_shortcut("paste"),
+        );
+        w.state.dispatch_intent(
+            DomainIntent::SendToSurface {
+                surface_id,
+                payload: SendPayload::Bytes(b"\x1b[201~".to_vec()),
+            }
+            .from_user_shortcut("paste"),
+        );
+    } else {
+        w.state.dispatch_intent(
+            DomainIntent::SendToSurface {
+                surface_id,
+                payload: SendPayload::Text(text),
+            }
+            .from_user_shortcut("paste"),
+        );
+    }
+}
 
 impl MainWindow {
     /// Paste a clipboard image into the focused ImagePanel as a floating selection.
@@ -47,7 +87,6 @@ impl MainWindow {
     }
 
     pub fn paste_to_terminal(&mut self) {
-        let engine = &mut self.engine_state;
         // Try text first
         let text = match &mut self.clipboard {
             Some(cb) => cb.get_text(),
@@ -55,14 +94,13 @@ impl MainWindow {
         };
         if let Some(text) = text {
             if !text.is_empty() {
-                if let Some(terminal) = self.state.focused_terminal_mut(engine) {
-                    if terminal.bracketed_paste() {
-                        terminal.send_bytes(b"\x1b[200~");
-                        terminal.send_key(&text);
-                        terminal.send_bytes(b"\x1b[201~");
-                    } else {
-                        terminal.send_key(&text);
-                    }
+                let surface_id = self.state.focused_surface_id(&self.engine_state);
+                let bracketed = self
+                    .state
+                    .focused_terminal(&self.engine_state)
+                    .map(|t| t.bracketed_paste());
+                if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
+                    dispatch_paste(self, sid, bracketed, text);
                     self.last_terminal_paste_at = Some(std::time::Instant::now());
                 }
                 return;
@@ -77,14 +115,13 @@ impl MainWindow {
         if let Some(image) = image {
             match save_clipboard_image_as_png(&image) {
                 Ok(path) => {
-                    if let Some(terminal) = self.state.focused_terminal_mut(engine) {
-                        if terminal.bracketed_paste() {
-                            terminal.send_bytes(b"\x1b[200~");
-                            terminal.send_key(&path);
-                            terminal.send_bytes(b"\x1b[201~");
-                        } else {
-                            terminal.send_key(&path);
-                        }
+                    let surface_id = self.state.focused_surface_id(&self.engine_state);
+                    let bracketed = self
+                        .state
+                        .focused_terminal(&self.engine_state)
+                        .map(|t| t.bracketed_paste());
+                    if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
+                        dispatch_paste(self, sid, bracketed, path);
                         self.last_terminal_paste_at = Some(std::time::Instant::now());
                     }
                 }
