@@ -6,20 +6,20 @@ use super::CoreState;
 impl CoreState {
     /// Recompute `busy_surfaces` by polling every PTY's foreground
     /// process. Returns true if the set changed (caller should redraw).
+    ///
+    /// **D.3.E.4.f** — store iter 로 cutover. busy 의 source of truth 는
+    /// `self.busy_surfaces` (frontend 용) 와 `self.terminals.busy_surfaces`
+    /// (store 내부, 향후 단일화) 의 dual — frontend caller (`is_surface_busy`,
+    /// `any_busy`, `busy_count`) 가 self.busy_surfaces 만 사용하므로 본 메서드가
+    /// owner.
     pub fn refresh_busy_surfaces(&mut self) -> bool {
         let mut busy: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        for ws in &mut self.workspaces {
-            ws.pane_layout_mut()
-                .for_each_terminal_mut(&mut |sid, terminal| {
-                    if terminal.is_busy() {
-                        busy.insert(sid);
-                    }
-                });
+        for (sid, terminal) in self.terminals.iter() {
+            if terminal.is_busy() {
+                busy.insert(sid);
+            }
         }
         let changed = self.busy_surfaces != busy;
-        // D.3.E.4.b — dual-write: TerminalStore 의 busy 캐시도 동기 갱신.
-        // E.4.d 에서 source of truth 가 store 로 cutover 되면 본 dual-write 는
-        // 제거되고 store 만 owner 가 된다.
         for sid in busy.iter() {
             self.terminals.set_busy(*sid, true);
         }

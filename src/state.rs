@@ -694,6 +694,12 @@ impl AppState {
             crate::scrollback_store::delete(&pid);
         }
         engine.pending_scrollback_inject.remove(&surface_id);
+        // **D.3.E.4.f** — TerminalStore 의 Terminal/부속 데이터 cascade 정리.
+        // store.remove 가 Terminal drop → PTY SIGHUP 발사 + busy/scrollback_persist
+        // /deferred/pending_scrollback_inject 까지 함께 정리.
+        if let Some(old_terminal) = engine.terminals.remove(surface_id) {
+            drop(old_terminal); // SIGHUP — 명시 drop.
+        }
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(&self.memory, surface_id) {
             tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
         }

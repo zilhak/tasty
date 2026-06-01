@@ -106,56 +106,37 @@ impl CoreState {
     /// Replace the terminal in a TerminalSurface, keeping the surface/layout intact.
     /// The old terminal's PTY process is dropped (SIGHUP sent).
     /// Returns Ok(()) on success, Err if the surface was not found.
+    ///
+    /// **D.3.E.4.f** — `TerminalStore::replace` 로 cutover. layout 트리의 옛
+    /// Terminal owner 경로는 더 이상 사용 안 함.
     pub fn replace_terminal_by_id(
         &mut self,
         surface_id: u32,
-        mut new_terminal: Terminal,
+        new_terminal: Terminal,
     ) -> anyhow::Result<()> {
-        if let Some(old) = self.find_terminal_by_id_mut(surface_id) {
-            std::mem::swap(old, &mut new_terminal);
-            // old terminal (now in new_terminal) is dropped here, sending SIGHUP
-            drop(new_terminal);
-            Ok(())
-        } else {
-            anyhow::bail!("Surface {} not found", surface_id)
+        // store 우선 — install_orphan_terminals 가 매 frame 호출되므로 새 Terminal
+        // 도 곧 store 로 이전. 즉시 store.replace 가 더 안전.
+        if let Some(old) = self.terminals.replace(surface_id, new_terminal) {
+            drop(old); // SIGHUP
+            return Ok(());
         }
+        anyhow::bail!("Surface {} not found", surface_id)
     }
 
-    /// Process all terminals (read PTY output).
+    /// Process all terminals (read PTY output). **D.3.E.4.f** — store 가 owner.
     pub fn process_all(&mut self) -> bool {
-        let mut any = false;
-        for ws in &mut self.workspaces {
-            if ws.pane_layout_mut().process_all() {
-                any = true;
-            }
-        }
-        any
+        self.terminals.process_all()
     }
 
     /// Process a single terminal by surface ID (read PTY output).
     /// Returns true if data was processed.
     pub fn process_surface(&mut self, surface_id: u32) -> bool {
-        if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
-            terminal.process()
-        } else {
-            false
-        }
+        self.terminals.process_surface(surface_id)
     }
 
     /// Flush deferred PTY resizes (throttled). Returns true if any terminal still has pending resize.
     pub fn flush_all_pty_resizes(&mut self) -> bool {
-        let mut any_pending = false;
-        for workspace in &mut self.workspaces {
-            workspace
-                .pane_layout_mut()
-                .for_each_terminal_mut(&mut |_sid, terminal| {
-                    terminal.flush_pty_resize();
-                    if terminal.has_pending_pty_resize() {
-                        any_pending = true;
-                    }
-                });
-        }
-        any_pending
+        self.terminals.flush_pty_resizes()
     }
 
     /// Mark layout as dirty for persistence.
@@ -166,28 +147,18 @@ impl CoreState {
     /// Force flush deferred PTY resizes (ignores throttle).
     /// Used after discrete events like pane split/close.
     pub fn force_flush_all_pty_resizes(&mut self) {
-        for workspace in &mut self.workspaces {
-            workspace
-                .pane_layout_mut()
-                .for_each_terminal_mut(&mut |_sid, terminal| {
-                    terminal.force_flush_pty_resize();
-                });
-        }
+        self.terminals.force_flush_pty_resizes();
     }
 
-    /// Collect events from all terminals.
+    /// Collect events from all terminals. **D.3.E.4.f** — store iter.
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();
-        for workspace in &mut self.workspaces {
-            workspace
-                .pane_layout_mut()
-                .for_each_terminal_mut(&mut |sid, terminal| {
-                    let mut events = terminal.take_events();
-                    for event in &mut events {
-                        event.surface_id = sid;
-                    }
-                    all_events.extend(events);
-                });
+        for (sid, terminal) in self.terminals.iter_mut() {
+            let mut events = terminal.take_events();
+            for event in &mut events {
+                event.surface_id = sid;
+            }
+            all_events.extend(events);
         }
         all_events
     }
@@ -196,14 +167,6 @@ impl CoreState {
     /// 현재는 CWD 폴링(macOS/Linux)에서만 사용된다.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub fn all_terminal_surface_ids(&mut self) -> Vec<u32> {
-        let mut ids = Vec::new();
-        for workspace in &mut self.workspaces {
-            workspace
-                .pane_layout_mut()
-                .for_each_terminal_mut(&mut |sid, _terminal| {
-                    ids.push(sid);
-                });
-        }
-        ids
+        self.terminals.iter().map(|(id, _)| id).collect()
     }
 }
