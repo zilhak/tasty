@@ -4,18 +4,16 @@ use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_agent::task::TaskCreateOpts;
 use tasty_agent::{
-    AgentError, OnFailure, ReducerInput, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId,
-    TaskState, TaskStore, reduce_with_custom,
+    OnFailure, ReducerStrategy, TaskCommand, TaskGraph, TaskId, TaskState, reduce_with_custom,
 };
 
-use super::{
-    agent_err_to_response, escape_dot, now_ms, run_store, task_id_param, workspace_id_param,
-};
+use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_id_param};
 
 pub fn handle_task_create(
     core: &Core,
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -53,18 +51,22 @@ pub fn handle_task_create(
         .unwrap_or_default();
     let metadata = params.get("metadata").cloned().unwrap_or(Value::Null);
 
-    let ts = now_ms();
-    run_store(core, state, engine, id, move |store| {
-        store.create(tasty_agent::task::TaskCreateOpts {
-            workspace_id,
-            name,
-            command,
-            depends_on,
-            on_failure,
-            metadata,
-            now_ms: ts,
-        })
-    })
+    let opts = TaskCreateOpts {
+        workspace_id,
+        name,
+        command,
+        depends_on,
+        on_failure,
+        metadata,
+        now_ms: now_ms(),
+    };
+    match core.task_create(engine, opts) {
+        Ok(task) => match serde_json::to_value(task) {
+            Ok(v) => JsonRpcResponse::success(id, v),
+            Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
+        },
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
 
 // ============================================================
@@ -88,12 +90,7 @@ pub fn handle_task_list(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let seq = engine.agent_seq.clone();
-    let result: Result<Vec<Task>, AgentError> = core.with_memory(|mem| {
-        let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
-        store.list(workspace_id)
-    });
-    match result {
+    match core.task_list(engine, workspace_id) {
         Err(e) => agent_err_to_response(id, e),
         Ok(mut tasks) => {
             if let Some(filter) = state_filter {
@@ -130,12 +127,7 @@ pub fn handle_task_get(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let seq = engine.agent_seq.clone();
-    let result = core.with_memory(|mem| {
-        let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
-        store.get(workspace_id, &task_id)
-    });
-    match result {
+    match core.task_get(engine, workspace_id, &task_id) {
         Err(e) => agent_err_to_response(id, e),
         Ok(None) => JsonRpcResponse::error(id, -32004, &format!("task not found: {task_id}")),
         Ok(Some(t)) => JsonRpcResponse::success(id, serde_json::to_value(t).unwrap_or(Value::Null)),
@@ -148,7 +140,7 @@ pub fn handle_task_get(
 
 pub fn handle_task_cancel(
     core: &Core,
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -162,14 +154,16 @@ pub fn handle_task_cancel(
         Ok(t) => t,
         Err(e) => return e,
     };
-    let ts = now_ms();
-    run_store(core, state, engine, id, move |store| {
-        let (task, cascaded) = store.cancel(workspace_id, &task_id, ts)?;
-        Ok::<_, AgentError>(json!({
-            "task": task,
-            "cascaded": cascaded,
-        }))
-    })
+    match core.task_cancel(engine, workspace_id, &task_id, now_ms()) {
+        Err(e) => agent_err_to_response(id, e),
+        Ok((task, cascaded)) => JsonRpcResponse::success(
+            id,
+            json!({
+                "task": task,
+                "cascaded": cascaded,
+            }),
+        ),
+    }
 }
 
 // ============================================================
@@ -178,7 +172,7 @@ pub fn handle_task_cancel(
 
 pub fn handle_task_retry(
     core: &Core,
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     _caller: &CallerContext,
     id: Value,
@@ -196,10 +190,13 @@ pub fn handle_task_retry(
         .get("reset_downstream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let ts = now_ms();
-    run_store(core, state, engine, id, move |store| {
-        store.retry(workspace_id, &task_id, reset_downstream, ts)
-    })
+    match core.task_retry(engine, workspace_id, &task_id, reset_downstream, now_ms()) {
+        Err(e) => agent_err_to_response(id, e),
+        Ok(task) => match serde_json::to_value(task) {
+            Ok(v) => JsonRpcResponse::success(id, v),
+            Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
+        },
+    }
 }
 
 // ============================================================
@@ -242,12 +239,7 @@ pub fn handle_task_graph(
         .unwrap_or("json")
         .to_string();
 
-    let seq = engine.agent_seq.clone();
-    let result = core.with_memory(|mem| {
-        let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
-        store.list(workspace_id)
-    });
-    let tasks = match result {
+    let tasks = match core.task_list(engine, workspace_id) {
         Err(e) => return agent_err_to_response(id, e),
         Ok(t) => t,
     };
@@ -359,24 +351,8 @@ pub fn handle_task_reduce(
         }
     };
 
-    // 1단계: task 결과 수집 (memory access 안에서).
-    let seq = engine.agent_seq.clone();
-    let collected: Result<Vec<ReducerInput>, AgentError> = core.with_memory(|mem| {
-        let store = TaskStore::new(mem, tasty_memory::HOST_OWNER, seq.as_ref());
-        let mut out: Vec<ReducerInput> = Vec::with_capacity(inputs.len());
-        for tid in &inputs {
-            let task = match store.get(workspace_id, tid) {
-                Ok(Some(t)) => t,
-                Ok(None) => return Err(AgentError::TaskNotFound(tid.clone())),
-                Err(e) => return Err(e),
-            };
-            let succeeded = matches!(task.state, TaskState::Succeeded);
-            let output = task.result.and_then(|r| r.output).unwrap_or(Value::Null);
-            out.push(ReducerInput { succeeded, output });
-        }
-        Ok(out)
-    });
-    let collected = match collected {
+    // 1단계: task 결과 수집 (memory access 안에서). Core 가 lock + store 조립을 담당.
+    let collected = match core.task_reduce_collect(engine, workspace_id, &inputs) {
         Err(e) => return agent_err_to_response(id, e),
         Ok(v) => v,
     };

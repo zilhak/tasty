@@ -11,6 +11,7 @@
 //! 도메인 데이터 (`CoreState`) 는 `crate::engine_state` 에 — App.engine_state
 //! 가 main owner. D.3.C 의 도메인 마이그레이션으로 점진 흡수 예정.
 
+pub(crate) mod agent;
 pub(crate) mod builder;
 pub(crate) mod intent;
 pub(crate) mod restore_rebuild;

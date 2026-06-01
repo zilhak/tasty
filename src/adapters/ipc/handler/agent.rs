@@ -56,6 +56,7 @@ pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcRespon
     }
 }
 
+#[allow(dead_code)] // 본 헬퍼는 F.4.b~F.4.e 진행 중 단계적으로 폐기. F.4.e 에서 제거.
 pub(super) fn run_store<F, R>(
     core: &Core,
     _state: &mut AppState,
