@@ -13,6 +13,7 @@
 
 pub(crate) mod builder;
 pub(crate) mod intent;
+pub(crate) mod restore_rebuild;
 
 use std::sync::{Arc, Mutex};
 
