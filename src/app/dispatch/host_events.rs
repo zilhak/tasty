@@ -15,17 +15,13 @@ use crate::state::PendingHostEvent;
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         let mut drained: Vec<PendingHostEvent> = Vec::new();
-        for (win_id, w) in self.windows.iter_mut() {
+        for (_win_id, w) in self.windows.iter_mut() {
             if let Some(main) = w.as_main_mut() {
                 let engine = &mut main.engine_state;
                 main.state.detect_focus_change(engine);
                 main.state.detect_workspace_activation(engine);
                 main.state.detect_tab_focus_change(engine);
                 main.state.detect_tab_lifecycle(engine);
-                main.state.detect_pane_lifecycle(engine);
-                main.state
-                    .detect_workspace_lifecycle(engine, u64::from(*win_id));
-                main.state.detect_surface_lifecycle(engine);
                 drained.extend(main.state.take_pending_host_events());
             }
         }
@@ -35,9 +31,6 @@ impl App {
             s.detect_workspace_activation(engine);
             s.detect_tab_focus_change(engine);
             s.detect_tab_lifecycle(engine);
-            s.detect_pane_lifecycle(engine);
-            s.detect_workspace_lifecycle(engine, 0);
-            s.detect_surface_lifecycle(engine);
             drained.extend(s.take_pending_host_events());
         }
         if drained.is_empty() {

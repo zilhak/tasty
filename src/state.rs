@@ -277,17 +277,6 @@ pub struct AppState {
     /// 않은 상태(초기 로드된 탭에 대해 spurious `tab.created`가 발화되는 것을 막기
     /// 위해 첫 호출에서는 스냅샷만 만들고 이벤트를 enqueue하지 않는다).
     pub(crate) last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
-    /// `pane.created`/`pane.closed` polling 상태. pane_id → workspace_id 스냅샷.
-    /// `last_tab_locations`와 동일한 초기 베이스라인 정책 적용.
-    pub(crate) last_pane_locations: Option<std::collections::HashMap<u32, u32>>,
-    /// `workspace.created`/`workspace.closed` polling 상태. workspace_id → name
-    /// 스냅샷. 첫 호출에서는 베이스라인만 기록.
-    pub(crate) last_workspace_snapshot: Option<std::collections::HashMap<u32, String>>,
-    /// `surface.created` polling 상태. surface_id → (tab_id, pane_id, ws_id, kind)
-    /// 스냅샷. 첫 호출은 베이스라인만 기록. `surface.closed`는 별도 큐로
-    /// 이미 발화하므로 여기서는 신규 생성만 감지한다.
-    pub(crate) last_surface_locations:
-        Option<std::collections::HashMap<u32, (u32, u32, u32, &'static str)>>,
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
@@ -574,9 +563,6 @@ impl AppState {
             last_active_workspace_id: None,
             last_focused_tab: None,
             last_tab_locations: None,
-            last_pane_locations: None,
-            last_workspace_snapshot: None,
-            last_surface_locations: None,
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             popups: {
@@ -783,53 +769,6 @@ impl AppState {
     pub fn lifecycle_baseline_remove_tab(&mut self, tab_id: u32) {
         if let Some(map) = self.last_tab_locations.as_mut() {
             map.remove(&tab_id);
-        }
-    }
-
-    /// Pane lifecycle baseline 동기화 — `detect_pane_lifecycle` 호출이 더 이상
-    /// `PaneCreated` 를 push 하지 않도록 baseline 에 새 pane 을 미리 넣는다.
-    pub fn lifecycle_baseline_insert_pane(&mut self, pane_id: u32, workspace_id: u32) {
-        if let Some(map) = self.last_pane_locations.as_mut() {
-            map.insert(pane_id, workspace_id);
-        }
-    }
-
-    /// Pane lifecycle baseline 동기화 — 닫힌 pane 을 baseline 에서 제거.
-    pub fn lifecycle_baseline_remove_pane(&mut self, pane_id: u32) {
-        if let Some(map) = self.last_pane_locations.as_mut() {
-            map.remove(&pane_id);
-        }
-    }
-
-    /// Surface lifecycle baseline 동기화 — cascade 가 새 surface 를 enqueue 한
-    /// 직후 `detect_surface_lifecycle` 이 중복 발화 못하도록 baseline 에 미리
-    /// 넣는다.
-    pub fn lifecycle_baseline_insert_surface(
-        &mut self,
-        surface_id: u32,
-        tab_id: u32,
-        pane_id: u32,
-        workspace_id: u32,
-        kind: &'static str,
-    ) {
-        if let Some(map) = self.last_surface_locations.as_mut() {
-            map.insert(surface_id, (tab_id, pane_id, workspace_id, kind));
-        }
-    }
-
-    /// Workspace lifecycle baseline 동기화 — cascade 가 새 workspace 를 enqueue
-    /// 한 직후 `detect_workspace_lifecycle` 이 중복 발화 못하도록 baseline 에
-    /// 미리 넣는다.
-    pub fn lifecycle_baseline_insert_workspace(&mut self, workspace_id: u32, name: String) {
-        if let Some(map) = self.last_workspace_snapshot.as_mut() {
-            map.insert(workspace_id, name);
-        }
-    }
-
-    /// Workspace lifecycle baseline 동기화 — 닫힌 workspace 를 baseline 에서 제거.
-    pub fn lifecycle_baseline_remove_workspace(&mut self, workspace_id: u32) {
-        if let Some(map) = self.last_workspace_snapshot.as_mut() {
-            map.remove(&workspace_id);
         }
     }
 

@@ -1111,9 +1111,8 @@ pub(crate) fn cascade_workspace_created(
     state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceCreated {
         workspace_id,
         window_id,
-        name: name.clone(),
+        name,
     });
-    state.lifecycle_baseline_insert_workspace(workspace_id, name);
 
     if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some() {
         state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
@@ -1198,12 +1197,10 @@ pub(crate) fn cascade_surface_closed(
     }
     for pane_id in &closed_pane_ids {
         state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id: *pane_id });
-        state.lifecycle_baseline_remove_pane(*pane_id);
     }
 
     if let Some(workspace_id) = workspace_id_purged {
         state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
-        state.lifecycle_baseline_remove_workspace(workspace_id);
         let scope = tasty_memory::Scope::Workspace(workspace_id);
         let mut guard = match state.memory.lock() {
             Ok(g) => g,
@@ -1277,7 +1274,6 @@ pub(crate) fn cascade_pane_split(
             pane_id: new_pane_id,
             workspace_id,
         });
-        state.lifecycle_baseline_insert_pane(new_pane_id, workspace_id);
     }
     cascade_surface_created(state, engine, new_surface_id);
     if origin.is_user() {
@@ -1287,16 +1283,14 @@ pub(crate) fn cascade_pane_split(
     }
 }
 
-/// `CoreEvent::PaneClosed` 의 외부 cascade. host event (`pane.closed`) enqueue +
-/// polling baseline 동기화.
+/// `CoreEvent::PaneClosed` 의 외부 cascade. host event (`pane.closed`) enqueue.
 pub(crate) fn cascade_pane_closed(state: &mut crate::state::AppState, pane_id: u32) {
     state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id });
-    state.lifecycle_baseline_remove_pane(pane_id);
 }
 
 /// 새 surface 생성 시 공통 host event 발화 — TabCreated / PaneSplit / SurfaceSplit
 /// / WorkspaceCreated cascade 가 모두 사용. `surface_id` 의 위치 정보를 engine
-/// 에서 lookup 해 `PendingHostEvent::SurfaceCreated` enqueue + baseline 동기화.
+/// 에서 lookup 해 `PendingHostEvent::SurfaceCreated` enqueue.
 pub(crate) fn cascade_surface_created(
     state: &mut crate::state::AppState,
     engine: &crate::engine_state::CoreState,
@@ -1314,7 +1308,6 @@ pub(crate) fn cascade_surface_created(
         workspace_id,
         created_by_plugin: None,
     });
-    state.lifecycle_baseline_insert_surface(surface_id, tab_id, pane_id, workspace_id, kind);
 }
 
 /// `surface_id` 의 host event 발화에 필요한 위치 + kind 를 모든 workspace 순회로
