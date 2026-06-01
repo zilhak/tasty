@@ -2,9 +2,9 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::MainWindow;
-use crate::adapters::ui::window::Window;
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::state::{FocusedSurfaceType, PendingKeyEvent};
+use crate::view::ui::View;
 
 /// `decide_key_to_terminal` 의 입력 — 현재 focused terminal 의 read-only 상태.
 /// UI 가 sequence 결정에 필요한 정보만 추출. terminal mut borrow 불필요.

@@ -1,9 +1,9 @@
 use serde_json::json;
 
-use crate::adapters::ui::window::Window as _;
 use crate::adapters::ui::window::main::MainWindow;
 use crate::adapters::ui::window::main::ime as window_ime;
 use crate::ipc::protocol::JsonRpcResponse;
+use crate::view::ui::View as _;
 
 /// Handle IME simulation IPC methods.
 /// These require window-local state (ime_active, ime_preedit) so they are

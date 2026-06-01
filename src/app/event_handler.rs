@@ -3,7 +3,8 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use crate::adapters::ui::window::{ViewAction, ViewCtx, Window};
+use crate::adapters::ui::window::{ViewAction, ViewCtx};
+use crate::view::ui::View;
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {

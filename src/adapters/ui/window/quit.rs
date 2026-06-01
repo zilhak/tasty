@@ -4,10 +4,11 @@ use winit::event::WindowEvent;
 
 use crate::AppEvent;
 use crate::adapters::ui::window::{
-    ModalView, Modality, ViewAction, ViewCtx, Window, WindowBase, modal::MODAL_MODALITY, sealed,
+    ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY,
 };
 use crate::gpu::GpuState;
 use crate::i18n::t;
+use crate::view::ui::{View, sealed};
 
 /// 종료 확인 다이얼로그. 사용자에게 종료/최소화를 묻는다.
 pub struct QuitWindow {
@@ -26,7 +27,7 @@ impl QuitWindow {
     }
 }
 
-impl Window for QuitWindow {
+impl View for QuitWindow {
     fn base(&self) -> &WindowBase {
         &self.base
     }

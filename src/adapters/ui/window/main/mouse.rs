@@ -1,11 +1,11 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 
 use super::{DividerDrag, DividerDragKind, HoveredLink, MainWindow};
-use crate::adapters::ui::window::Window;
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
 use crate::theme;
+use crate::view::ui::View;
 use tasty_type_geometry::length::PhysicalPx;
 
 impl MainWindow {

@@ -23,9 +23,9 @@
 use winit::event::Ime;
 
 use super::MainWindow;
-use crate::adapters::ui::window::Window as _;
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::gpu::ImePreeditState;
+use crate::view::ui::View as _;
 
 /// IME 입력의 preedit/commit text 를 Intent 큐로 보낸다. surface_id 가
 /// None 이거나 text 가 비어있으면 no-op.

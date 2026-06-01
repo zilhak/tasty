@@ -13,13 +13,13 @@ use winit::event::WindowEvent;
 use tasty_presets::{PresetKind, PresetStore};
 
 use crate::adapters::ui::window::{
-    Modality, ViewAction, ViewCtx, Window, WindowBase,
+    Modality, ViewAction, ViewCtx, WindowBase,
     editor::{EDITOR_MODALITY, EditorView},
-    sealed,
 };
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
 use crate::gpu::GpuState;
 use crate::i18n::t;
+use crate::view::ui::{View, sealed};
 
 pub struct PresetWindow {
     pub base: WindowBase,
@@ -62,7 +62,7 @@ impl PresetWindow {
     }
 }
 
-impl Window for PresetWindow {
+impl View for PresetWindow {
     fn base(&self) -> &WindowBase {
         &self.base
     }

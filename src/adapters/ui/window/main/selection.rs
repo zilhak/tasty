@@ -1,7 +1,7 @@
-use crate::adapters::ui::window::Window;
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::model::PhysicalRect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
+use crate::view::ui::View;
 
 use super::MainWindow;
 

@@ -94,12 +94,12 @@ impl App {
         // On other platforms, mark_dirty() + request_redraw() is sufficient.
         #[cfg(windows)]
         {
-            use crate::adapters::ui::window::Window as _;
+            use crate::view::ui::View as _;
             modal.render();
         }
         #[cfg(not(windows))]
         {
-            use crate::adapters::ui::window::Window as _;
+            use crate::view::ui::View as _;
             modal.mark_dirty();
         }
         self.open_modal(Box::new(modal), window_id);

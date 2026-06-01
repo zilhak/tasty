@@ -57,12 +57,12 @@ impl App {
         let mut preset = window::PresetWindow::new(gpu, window, store);
         #[cfg(windows)]
         {
-            use window::Window as _;
+            use crate::view::ui::View as _;
             preset.render();
         }
         #[cfg(not(windows))]
         {
-            use window::Window as _;
+            use crate::view::ui::View as _;
             preset.mark_dirty();
         }
         self.view.windows.insert(window_id, Box::new(preset));

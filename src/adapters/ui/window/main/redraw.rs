@@ -1,7 +1,7 @@
 use winit::event_loop::ActiveEventLoop;
 
-use crate::adapters::ui::window::Window;
 use crate::plugin::PluginManager;
+use crate::view::ui::View;
 
 use super::MainWindow;
 

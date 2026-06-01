@@ -1,4 +1,5 @@
-use crate::adapters::ui::window::{Modality, Window};
+use crate::adapters::ui::window::Modality;
+use crate::view::ui::View;
 
 /// 터미널 계열 콘텐츠를 호스팅하는 윈도우가 공유하는 동작.
 ///
@@ -17,7 +18,7 @@ use crate::adapters::ui::window::{Modality, Window};
 /// 도메인 계열 표현과 미래 StandaloneSurfaceWindow/StandaloneWorkspaceWindow
 /// placeholder로 보존.
 #[allow(dead_code)]
-pub(crate) trait TerminalHostView: Window {
+pub(crate) trait TerminalHostView: View {
     /// 사이드바(워크스페이스 목록)를 가지는지. 기본 true.
     /// StandaloneSurfaceWindow 등은 override.
     fn has_sidebar(&self) -> bool {

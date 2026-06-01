@@ -10,10 +10,10 @@
 use tasty_settings::Settings;
 use winit::window::WindowId;
 
-use crate::adapters::ui::window::Window as _;
 use crate::app::App;
 use crate::core::intent::CoreEvent;
 use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
+use crate::view::ui::View as _;
 
 /// Domain intent 발화 source. `dispatch_pending_intents` 가 per-window /
 /// per-parked 분리해 origin 과 함께 보존한다. cascade 가 *어느 engine 에

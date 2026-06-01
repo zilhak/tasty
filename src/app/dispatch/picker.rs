@@ -5,8 +5,8 @@
 //! 채워져 있으면 슬롯 해제 + `Core::apply_file_picker_result` Method 호출.
 //! Phase D D.3.C.G.3.c — 옛 `file_dispatch::consume_picker_result` 의 자리.
 
-use crate::adapters::ui::window::Window;
 use crate::app::App;
+use crate::view::ui::View;
 
 impl App {
     /// 모든 main window 의 picker result 슬롯 drain. parked state 는 *focused

@@ -1,14 +1,7 @@
-//! Window 트레잇 계층.
+//! Window 트레잇 *구현체* 모듈 + 보조 타입 (`Modality`, `ViewCtx`, `ViewAction`).
 //!
-//! ```text
-//! Window (sealed trait)
-//! ├── ModalView (supertrait)         — Settings, Quit, ...
-//! └── TerminalHostView (supertrait)  — Main, StandaloneSurface, ...
-//! ```
-//!
-//! 모든 구현체는 `WindowBase`를 composition하여 공통 필드를 공유한다.
-//! `Window`는 sealed이므로 크레이트 외부에서 직접 구현할 수 없다.
-//! 실제 구현체는 반드시 `ModalView` 또는 `TerminalHostView` 중 하나를 거쳐야 한다.
+//! D.3.E.3.c — `View` trait 본체 + `sealed` 모듈은 `src/view/ui.rs` 로 이동.
+//! 구현체 모듈 (main / settings / quit / preset / plugins) 의 위치 이동은 .d.
 
 pub mod base;
 pub mod editor;
@@ -29,9 +22,11 @@ pub(crate) use quit::QuitWindow;
 pub(crate) use settings::SettingsWindow;
 pub(crate) use terminal_host::TerminalHostView;
 
-/// `Box<dyn Window>`에서 `MainWindow` 소유권을 추출한다.
+use crate::view::ui::View;
+
+/// `Box<dyn View>`에서 `MainWindow` 소유권을 추출한다.
 /// 인자가 MainWindow가 아니면 `None` — 호출자가 인지 후 다르게 처리.
-pub(crate) fn unbox_main(w: Box<dyn Window>) -> Option<Box<MainWindow>> {
+pub(crate) fn unbox_main(w: Box<dyn View>) -> Option<Box<MainWindow>> {
     if !w.as_any().is::<MainWindow>() {
         return None;
     }
@@ -39,15 +34,14 @@ pub(crate) fn unbox_main(w: Box<dyn Window>) -> Option<Box<MainWindow>> {
     any.downcast::<MainWindow>().ok()
 }
 
-use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 
 use crate::AppEvent;
 
 /// 윈도우의 모달리티.
 ///
-/// 도메인 용어(`docs/design/ubiquitous-language.md`): Window는 modality
-/// (Modeless/Modal)와 계열(ModalView/TerminalHostView)을 속성으로 갖는다.
+/// 도메인 용어(`docs/design/ubiquitous-language.md`): View는 modality
+/// (Modeless/Modal)와 계열(ModalView/TerminalHostView/EditorView)을 속성으로 갖는다.
 /// 현재 trait dispatch 경로에서 호출 0이지만 5개 구현체가 `fn modality()`로
 /// 반환하는 도메인 표현이라 보존한다. modal 활성 판정 dispatch가 도입되면 활성화.
 #[allow(dead_code)]
@@ -79,54 +73,4 @@ pub(crate) struct ViewCtx<'a> {
     /// 현재 active plugin manager. 메인 윈도우가 frame prepare 시 plugin canvas의
     /// SharedMemory와 dirty rect에 접근하기 위해 사용한다. plugin 비활성 빌드/초기 시점에는 None.
     pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
-}
-
-/// Sealed 모듈 — 외부에서 `Window`를 직접 구현하지 못하게 차단한다.
-/// `ModalView` 또는 `TerminalHostView` 중 하나의 supertrait 체인을 경유해야 한다.
-pub(crate) mod sealed {
-    pub(crate) trait Sealed {}
-}
-
-/// 모든 윈도우 타입이 공유하는 최상위 트레잇.
-///
-/// 직접 구현하지 말고 `ModalView` 또는 `TerminalHostView` 중 하나를 구현하라.
-/// 각 구현체는 `impl sealed::Sealed for MyWindow {}`를 별도로 추가해야 한다.
-pub(crate) trait Window: sealed::Sealed + std::any::Any {
-    fn base(&self) -> &WindowBase;
-    fn base_mut(&mut self) -> &mut WindowBase;
-    /// 도메인 표현 보존. trait dispatch 호출 0이지만 5개 구현체가 채워둠.
-    /// modal 활성 판정 dispatch가 도입되면 활성화.
-    #[allow(dead_code)]
-    fn modality(&self) -> Modality;
-
-    fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction;
-    fn render(&mut self);
-
-    /// 모달 계열 다운캐스트. 모달이 아니면 `None`.
-    /// 도메인 placeholder — `ModalView` 다운캐스트 dispatch가 도입되면 활성화.
-    #[allow(dead_code)]
-    fn as_modal(&self) -> Option<&dyn ModalView> {
-        None
-    }
-    #[allow(dead_code)]
-    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
-        None
-    }
-
-    /// MainWindow 다운캐스트. MainWindow가 아니면 `None`.
-    fn as_main(&self) -> Option<&MainWindow> {
-        self.as_any().downcast_ref::<MainWindow>()
-    }
-    fn as_main_mut(&mut self) -> Option<&mut MainWindow> {
-        self.as_any_mut().downcast_mut::<MainWindow>()
-    }
-
-    /// `std::any::Any` 다운캐스트용.
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-
-    fn mark_dirty(&mut self) {
-        self.base_mut().dirty = true;
-        self.base().winit.request_redraw();
-    }
 }

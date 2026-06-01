@@ -7,6 +7,8 @@
 //! - C.1.4 — focused_window_id
 //! - C.4.x — windows HashMap, View trait
 
+pub(crate) mod ui;
+
 use std::collections::HashMap;
 
 use winit::event_loop::EventLoopProxy;
@@ -26,7 +28,7 @@ pub(crate) struct View {
     /// 모든 윈도우(모달 포함). `active_modal_id`로 현재 활성 모달을 식별한다.
     /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
     /// D.3.E.3.a — 옛 `App.windows` 가 이쪽으로 이동.
-    pub windows: HashMap<WindowId, Box<dyn crate::adapters::ui::window::Window>>,
+    pub windows: HashMap<WindowId, Box<dyn crate::view::ui::View>>,
 }
 
 impl View {

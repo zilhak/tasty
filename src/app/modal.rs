@@ -12,13 +12,17 @@ pub(crate) mod shake;
 use winit::window::WindowId;
 
 use crate::adapters::ui::window;
-use crate::adapters::ui::window::Window as _;
 use crate::app::App;
+use crate::view::ui::View as _;
 
 impl App {
     /// Open a modal, registering it in the unified window map.
     /// 모달도 일반 윈도우와 같은 `windows` 맵에 저장되며, `active_modal_id`로 식별된다.
-    pub(crate) fn open_modal(&mut self, modal: Box<dyn window::Window>, window_id: WindowId) {
+    pub(crate) fn open_modal(
+        &mut self,
+        modal: Box<dyn crate::view::ui::View>,
+        window_id: WindowId,
+    ) {
         self.view.windows.insert(window_id, modal);
         self.view.active_modal_id = Some(window_id);
     }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use winit::event::WindowEvent;
 
 use crate::adapters::ui::window::{
-    ModalView, Modality, ViewAction, ViewCtx, Window, WindowBase, modal::MODAL_MODALITY, sealed,
+    ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY,
 };
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
 use crate::file::format::FileFormatRegistry;
@@ -14,6 +14,7 @@ use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::settings::Settings;
 use crate::settings_ui::{self, PluginShortcutSnapshot, SettingsUiState};
+use crate::view::ui::{View, sealed};
 
 /// 설정 모달 윈도우. egui 기반 설정 UI를 렌더한다.
 pub struct SettingsWindow {
@@ -79,7 +80,7 @@ impl SettingsWindow {
     }
 }
 
-impl Window for SettingsWindow {
+impl View for SettingsWindow {
     fn base(&self) -> &WindowBase {
         &self.base
     }
