@@ -12,14 +12,14 @@ use winit::event::WindowEvent;
 
 use tasty_presets::{PresetKind, PresetStore};
 
-use crate::adapters::ui::window::{
-    Modality, ViewAction, ViewCtx, WindowBase,
-    editor::{EDITOR_MODALITY, EditorView},
-};
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
+use crate::view::{
+    Modality, ViewAction, ViewCtx, WindowBase,
+    editor::{EDITOR_MODALITY, EditorView},
+};
 
 pub struct PresetWindow {
     pub base: WindowBase,

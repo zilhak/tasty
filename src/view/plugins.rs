@@ -11,13 +11,11 @@ use std::sync::Arc;
 
 use winit::event::WindowEvent;
 
-use crate::adapters::ui::window::{
-    ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY,
-};
 use crate::adapters::ui::{LayoutContext, ToastManager};
 use crate::gpu::GpuState;
 use crate::plugins_ui::{self, PluginsAction, PluginsSnapshot, PluginsUiState};
 use crate::view::ui::{View, sealed};
+use crate::view::{ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY};
 
 pub struct PluginsWindow {
     pub base: WindowBase,

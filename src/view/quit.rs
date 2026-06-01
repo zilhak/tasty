@@ -3,12 +3,10 @@ use std::sync::Arc;
 use winit::event::WindowEvent;
 
 use crate::AppEvent;
-use crate::adapters::ui::window::{
-    ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY,
-};
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
+use crate::view::{ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY};
 
 /// 종료 확인 다이얼로그. 사용자에게 종료/최소화를 묻는다.
 pub struct QuitWindow {

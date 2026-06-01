@@ -65,9 +65,6 @@ pub(crate) use adapters::ui::surface::image as image_ui;
 pub(crate) use adapters::ui::surface::markdown as markdown_ui;
 pub(crate) use adapters::ui::terminal_link;
 pub(crate) use adapters::ui::theme_bridge;
-pub(crate) use adapters::ui::window;
-pub(crate) use adapters::ui::window::plugins::ui as plugins_ui;
-pub(crate) use adapters::ui::window::settings::ui as settings_ui;
 pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;
 pub(crate) use boot::waker as waker_factory_winit;
@@ -97,6 +94,9 @@ pub(crate) use store::clipboard_history;
 pub(crate) use store::notification;
 pub(crate) use store::recent_files;
 pub(crate) use store::scrollback as scrollback_store;
+pub(crate) use view as window;
+pub(crate) use view::plugins::ui as plugins_ui;
+pub(crate) use view::settings::ui as settings_ui;
 
 fn main() -> Result<()> {
     boot::run()

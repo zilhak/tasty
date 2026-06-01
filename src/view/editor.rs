@@ -9,7 +9,7 @@
 //!
 //! 단순 supertrait — `Window` 를 통한 다운캐스트 hook 만 제공한다.
 
-use crate::adapters::ui::window::Modality;
+use crate::view::Modality;
 use crate::view::ui::View;
 
 /// `impl EditorView for PresetWindow {}` 가 존재하지만 trait object 사용 0.

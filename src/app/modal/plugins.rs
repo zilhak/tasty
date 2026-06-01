@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::adapters::ui::window;
 use crate::app::App;
+use crate::view;
 
 impl App {
     /// Open the plugins modal window.
@@ -43,7 +43,7 @@ impl App {
 
         let snapshot = self.snapshot_plugins();
         let modal_window_id = window.id();
-        let mut modal = window::PluginsWindow::new(gpu, window, snapshot);
+        let mut modal = view::PluginsWindow::new(gpu, window, snapshot);
         #[cfg(windows)]
         {
             use crate::view::ui::View as _;

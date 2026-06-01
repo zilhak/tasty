@@ -17,14 +17,14 @@ use winit::event::WindowEvent;
 use winit::keyboard::ModifiersState;
 use winit::window::CursorIcon;
 
-use crate::adapters::ui::window::{
-    Modality, TerminalHostView, ViewAction, ViewCtx, WindowBase, terminal_host::MODELESS_MODALITY,
-};
 use crate::gpu::{GpuState, ImePreeditState};
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::selection::TextSelection;
 use crate::state::{AppState, FocusedSurfaceType};
 use crate::view::ui::{View, sealed};
+use crate::view::{
+    Modality, TerminalHostView, ViewAction, ViewCtx, WindowBase, terminal_host::MODELESS_MODALITY,
+};
 use crate::{AppEvent, ClipboardContext};
 
 /// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.

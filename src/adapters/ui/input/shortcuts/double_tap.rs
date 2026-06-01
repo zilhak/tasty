@@ -1,8 +1,8 @@
 //! Double-tap modifier (Shift+Shift / Ctrl+Ctrl / Alt+Alt) 단축키 처리.
 
-use crate::adapters::ui::window::main::MainWindow;
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
+use crate::view::main::MainWindow;
 
 use super::send_app_event;
 

@@ -5,20 +5,20 @@
 
 use winit::window::WindowId;
 
-use crate::adapters::ui::window;
 use crate::app::App;
+use crate::view;
 
 impl App {
     /// Get the focused main window, if any.
     /// 모달이 아닌 MainWindow만 반환한다 — IPC/키보드 라우팅의 일반적 대상.
-    pub(crate) fn focused_window(&self) -> Option<&window::main::MainWindow> {
+    pub(crate) fn focused_window(&self) -> Option<&view::main::MainWindow> {
         self.view
             .focused_window_id
             .and_then(|id| self.view.windows.get(&id))
             .and_then(|w| w.as_main())
     }
 
-    pub(crate) fn focused_window_mut(&mut self) -> Option<&mut window::main::MainWindow> {
+    pub(crate) fn focused_window_mut(&mut self) -> Option<&mut view::main::MainWindow> {
         self.view
             .focused_window_id
             .and_then(|id| self.view.windows.get_mut(&id))
@@ -28,7 +28,7 @@ impl App {
     /// 모든 MainWindow를 순회. 모달은 제외된다.
     pub(crate) fn main_windows_iter_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut window::main::MainWindow> {
+    ) -> impl Iterator<Item = &mut view::main::MainWindow> {
         self.view
             .windows
             .values_mut()

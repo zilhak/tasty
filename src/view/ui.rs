@@ -15,17 +15,15 @@
 //! D.3.E.3.c — 옛 `src/adapters/ui/window.rs::Window` trait 가 본 파일로 이동.
 //! 구현체 모듈 (main/settings/quit/preset/plugins) 의 위치 이동은 D.3.E.3.d.
 
-use winit::event::WindowEvent;
-
-use crate::adapters::ui::window::{
-    MainWindow, ModalView, Modality, ViewAction, ViewCtx, WindowBase,
-};
-
 /// Sealed 모듈 — 외부에서 `View` 를 직접 구현하지 못하게 차단한다.
 /// `ModalView` / `TerminalHostView` / `EditorView` 중 하나의 supertrait 체인을 경유해야 한다.
 pub(crate) mod sealed {
     pub(crate) trait Sealed {}
 }
+
+use winit::event::WindowEvent;
+
+use crate::view::{MainWindow, ModalView, Modality, ViewAction, ViewCtx, WindowBase};
 
 /// 모든 윈도우 타입이 공유하는 최상위 트레잇.
 ///

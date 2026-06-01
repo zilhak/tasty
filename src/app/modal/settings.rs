@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::adapters::ui::window;
 use crate::app::App;
+use crate::view;
 
 impl App {
     /// Open settings as a modal window.
@@ -58,7 +58,7 @@ impl App {
         };
         let user_config_path =
             tasty_utils::path::tasty_home().map(|d| d.join("file-handlers.toml"));
-        let mut modal = window::SettingsWindow::new(
+        let mut modal = view::SettingsWindow::new(
             gpu,
             window,
             settings,

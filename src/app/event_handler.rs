@@ -3,8 +3,8 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use crate::adapters::ui::window::{ViewAction, ViewCtx};
 use crate::view::ui::View;
+use crate::view::{ViewAction, ViewCtx};
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
@@ -117,7 +117,7 @@ impl ApplicationHandler<AppEvent> for App {
                     // 모달은 파킹 대상이 아니므로 그냥 drop.
                     let drained: Vec<_> = self.view.windows.drain().map(|(_, w)| w).collect();
                     for w in drained {
-                        if let Some(main_box) = crate::adapters::ui::window::unbox_main(w) {
+                        if let Some(main_box) = crate::view::unbox_main(w) {
                             self.parked_states
                                 .push((main_box.state, main_box.engine_state));
                         }
@@ -514,7 +514,7 @@ impl ApplicationHandler<AppEvent> for App {
             if close_requested {
                 if let Some(w) = self.view.windows.remove(&id) {
                     if self.view.windows.values().all(|w| w.as_main().is_none()) {
-                        if let Some(main_box) = crate::adapters::ui::window::unbox_main(w) {
+                        if let Some(main_box) = crate::view::unbox_main(w) {
                             tracing::info!("last main window closed via request, parking state");
                             self.parked_states
                                 .push((main_box.state, main_box.engine_state));

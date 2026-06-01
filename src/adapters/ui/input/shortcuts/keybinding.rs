@@ -6,9 +6,9 @@
 
 use winit::keyboard::{Key, ModifiersState};
 
-use crate::adapters::ui::window::main::MainWindow;
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
+use crate::view::main::MainWindow;
 
 use super::{focused_image_surface_id, matches_any_binding, send_app_event};
 

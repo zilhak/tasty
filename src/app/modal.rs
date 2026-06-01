@@ -11,8 +11,8 @@ pub(crate) mod shake;
 
 use winit::window::WindowId;
 
-use crate::adapters::ui::window;
 use crate::app::App;
+use crate::view;
 use crate::view::ui::View as _;
 
 impl App {
@@ -36,7 +36,7 @@ impl App {
             return;
         };
         // If it was a settings modal, apply settings to all main windows
-        if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<window::SettingsWindow>() {
+        if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<view::SettingsWindow>() {
             let new_settings = settings_modal.settings.clone();
             // Plugin shortcut override draft 회수 — modal-specific (settings 와 별 경로).
             let plugin_draft = settings_modal.take_plugin_shortcut_draft();
@@ -66,7 +66,7 @@ impl App {
                 main.state.settings_open = false;
             }
             self.apply_plugin_shortcut_draft(plugin_draft);
-        } else if modal.as_any().is::<window::PluginsWindow>() {
+        } else if modal.as_any().is::<view::PluginsWindow>() {
             for main in self.main_windows_iter_mut() {
                 main.state.plugins_open = false;
                 main.mark_dirty();

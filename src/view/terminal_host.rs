@@ -1,4 +1,4 @@
-use crate::adapters::ui::window::Modality;
+use crate::view::Modality;
 use crate::view::ui::View;
 
 /// 터미널 계열 콘텐츠를 호스팅하는 윈도우가 공유하는 동작.

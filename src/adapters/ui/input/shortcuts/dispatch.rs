@@ -3,8 +3,8 @@
 
 use winit::keyboard::{Key, ModifiersState};
 
-use crate::adapters::ui::window::main::MainWindow;
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
+use crate::view::main::MainWindow;
 
 use super::{focused_image_surface_id, send_app_event};
 

@@ -1,5 +1,5 @@
-use crate::adapters::ui::window::{Modality, ViewAction};
 use crate::view::ui::View;
+use crate::view::{Modality, ViewAction};
 
 /// 모달 계열 윈도우가 공유하는 동작.
 ///

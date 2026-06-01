@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use winit::window::WindowId;
 
-use crate::adapters::ui::window;
 use crate::app::App;
+use crate::view;
 
 impl App {
     /// PresetWindow 를 연다. 이미 열려 있으면 새 윈도우를 만들지 않고 기존 윈도우에
@@ -54,7 +54,7 @@ impl App {
 
         let store = std::sync::Arc::clone(&self.core.preset_store);
         let window_id = window.id();
-        let mut preset = window::PresetWindow::new(gpu, window, store);
+        let mut preset = view::PresetWindow::new(gpu, window, store);
         #[cfg(windows)]
         {
             use crate::view::ui::View as _;
@@ -108,7 +108,7 @@ impl App {
                     .view
                     .windows
                     .get_mut(&pwid)
-                    .and_then(|w| w.as_any_mut().downcast_mut::<window::PresetWindow>())
+                    .and_then(|w| w.as_any_mut().downcast_mut::<view::PresetWindow>())
                 {
                     pw.select(kind, name);
                 }

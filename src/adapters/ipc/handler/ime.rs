@@ -1,8 +1,8 @@
 use serde_json::json;
 
-use crate::adapters::ui::window::main::MainWindow;
-use crate::adapters::ui::window::main::ime as window_ime;
 use crate::ipc::protocol::JsonRpcResponse;
+use crate::view::main::MainWindow;
+use crate::view::main::ime as window_ime;
 use crate::view::ui::View as _;
 
 /// Handle IME simulation IPC methods.
