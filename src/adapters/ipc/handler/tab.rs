@@ -195,7 +195,8 @@ pub fn handle_tab_close(
 }
 
 pub fn handle_tab_move(
-    state: &mut AppState,
+    core: &mut crate::core::Core,
+    _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
@@ -213,16 +214,20 @@ pub fn handle_tab_move(
         None => return JsonRpcResponse::invalid_params(id, "Missing 'to_index' parameter"),
     };
 
-    if let Some(pane) = state
-        .active_workspace_mut(engine)
-        .pane_layout_mut()
-        .find_pane_mut(pane_id)
-    {
-        let moved = pane.move_tab(from, to);
-        JsonRpcResponse::success(id, json!({ "moved": moved, "pane_id": pane_id }))
-    } else {
-        JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id))
-    }
+    let intent = crate::core::intent::DomainIntent::MoveTab {
+        pane_id,
+        from_index: from,
+        to_index: to,
+    };
+    let events = match core.apply(engine, intent) {
+        Ok(events) => events,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+    let moved = matches!(
+        events.into_iter().next(),
+        Some(crate::core::intent::CoreEvent::TabMoved { moved: true, .. })
+    );
+    JsonRpcResponse::success(id, json!({ "moved": moved, "pane_id": pane_id }))
 }
 
 // handle_open_markdown / handle_open_explorer removed: use handle_tab_create with type parameter

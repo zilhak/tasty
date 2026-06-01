@@ -372,7 +372,32 @@ impl Core {
                 surface_params,
             } => Self::apply_create_tab(engine, pane_id, cwd, kind, surface_params),
             DomainIntent::CloseTab { tab_id } => Ok(vec![Self::apply_close_tab(engine, tab_id)]),
+            DomainIntent::MoveTab {
+                pane_id,
+                from_index,
+                to_index,
+            } => Ok(vec![Self::apply_move_tab(
+                engine, pane_id, from_index, to_index,
+            )]),
         }
+    }
+
+    /// `DomainIntent::MoveTab` 본문. pane_id 로 모든 workspace 순회
+    /// (focused 의존 없음 — 포커스 독립 원칙).
+    fn apply_move_tab(
+        engine: &mut crate::engine_state::CoreState,
+        pane_id: u32,
+        from_index: usize,
+        to_index: usize,
+    ) -> CoreEvent {
+        let moved = engine
+            .find_pane_by_id_mut(pane_id)
+            .map(|p| p.move_tab(from_index, to_index))
+            .unwrap_or(false);
+        if moved {
+            engine.mark_layout_dirty();
+        }
+        CoreEvent::TabMoved { pane_id, moved }
     }
 
     /// `DomainIntent::CloseTab` 본문. tab 위치 + cleanup_targets 수집 →

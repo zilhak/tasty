@@ -64,6 +64,13 @@ pub(crate) enum DomainIntent {
     /// cleanup (markdown_views / image_views / surface_meta / memory purge) 은
     /// cascade 에서 처리 — Core 가 AppState 데이터 모름.
     CloseTab { tab_id: u32 },
+    /// pane 안 tab 순서 이동 (from_index → to_index). out-of-range 면 no-op.
+    /// pane_id 로 *모든* workspace 순회 — focused 의존 없음.
+    MoveTab {
+        pane_id: u32,
+        from_index: usize,
+        to_index: usize,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -153,6 +160,8 @@ pub(crate) enum CoreEvent {
         closed: bool,
         cleanup_targets: Vec<(u32, Option<String>)>,
     },
+    /// tab 이동 완료. `moved=false` 면 no-op (pane 없음 / from==to / out-of-range).
+    TabMoved { pane_id: u32, moved: bool },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push 요청. cascade 가 라우팅 + store.add + host event enqueue.

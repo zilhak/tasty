@@ -157,6 +157,18 @@ impl App {
                     self.dispatch_tab_closed_cascade(source, cleanup_targets);
                 }
             }
+            CoreEvent::TabMoved { pane_id: _, moved } => {
+                // 추가 cascade 없음 — mark_layout_dirty 는 Core::apply 가 이미 처리.
+                // main.mark_dirty 만 redraw 위해.
+                if moved {
+                    if let DispatchSource::Main(wid) = source {
+                        if let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut())
+                        {
+                            main.mark_dirty();
+                        }
+                    }
+                }
+            }
         }
     }
 
