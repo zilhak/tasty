@@ -49,7 +49,7 @@ impl App {
         )> = Vec::new();
 
         for (window_id, batch) in per_state_batches {
-            let core = &self.core;
+            let core = &mut self.core;
             let Some(main) = self
                 .windows
                 .get_mut(&window_id)
@@ -72,7 +72,7 @@ impl App {
             main.mark_dirty();
         }
         for (idx, batch) in parked_batches {
-            let core = &self.core;
+            let core = &mut self.core;
             let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                 continue;
             };
@@ -100,7 +100,7 @@ impl App {
 
     /// 단일 Intent 를 도메인 핸들러로 분기한다.
     fn dispatch_one_intent(
-        core: &crate::core::Core,
+        core: &mut crate::core::Core,
         state: &mut crate::state::AppState,
         engine: &mut crate::engine_state::CoreState,
         intent: &crate::intent::DispatchedIntent,
@@ -128,7 +128,7 @@ impl App {
                 crate::intent::pane::handle(state, engine, intent);
             }
             Intent::NewWorkspace { .. } => {
-                crate::intent::workspace::handle(state, engine, intent);
+                crate::intent::workspace::handle(core, state, engine, intent);
             }
             Intent::Domain(_) => {
                 // unreachable — dispatch_pending_intents 가 본 variant 를
