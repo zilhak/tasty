@@ -288,13 +288,23 @@ impl Core {
 
     /// 도메인 변경의 단일 진입점. handler 가 발행한 `DomainIntent` 를 받아
     /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
+    ///
+    /// `engine` 인자: 발화 대상 engine. 현재 *이벤트만 발행* 패턴인 variant
+    /// 들은 인자를 사용하지 않으나 (점진적 흡수 진행 중), workspace.create
+    /// 처럼 *결과 정보가 필요한* variant 는 본 메서드 안에서 직접 mutate 후
+    /// event 에 결과를 담아 반환한다. CreateWorkspace 분기만 engine 을
+    /// 사용하므로 rustc 는 unused 경고를 내지 않는다.
     #[allow(dead_code)]
-    pub(crate) fn apply(&mut self, intent: DomainIntent) -> anyhow::Result<Vec<CoreEvent>> {
+    pub(crate) fn apply(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        intent: DomainIntent,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
         match intent {
+            // Phase D 진행 중 — 본 stub 들은 *이벤트만 발행*. cascade
+            // (Theme apply / Scrollback limit / clipboard max / notification
+            // coalesce 등) 는 후속 sub-step (호출처 전환과 함께) 에서 통합.
             DomainIntent::UpdateSettings(new_settings) => {
-                // Phase D 진행 중 — 본 stub 은 *이벤트만 발행*. cascade
-                // (Theme apply / Scrollback limit / clipboard max / notification
-                // coalesce) 는 후속 sub-step (호출처 전환과 함께) 에서 통합.
                 Ok(vec![CoreEvent::SettingsUpdated(new_settings)])
             }
             DomainIntent::PushNotification {
@@ -325,12 +335,116 @@ impl Core {
             DomainIntent::RecordInternalClipboardCopy { text } => {
                 Ok(vec![CoreEvent::InternalClipboardCopyRecorded { text }])
             }
-            DomainIntent::CreateWorkspace { .. } => {
-                // Step 2 placeholder — Step 3 에서 engine 인자 추가 + 실제 mutate.
-                Err(anyhow::anyhow!(
-                    "DomainIntent::CreateWorkspace not yet wired through Core::apply (Step 3)"
-                ))
-            }
+            DomainIntent::CreateWorkspace {
+                cwd,
+                kind,
+                surface_params,
+                name,
+                subtitle,
+                description,
+            } => self.apply_create_workspace(
+                engine,
+                cwd,
+                kind,
+                surface_params,
+                name,
+                subtitle,
+                description,
+            ),
         }
+    }
+
+    /// `DomainIntent::CreateWorkspace` 본문. engine 에 새 workspace + pane +
+    /// tab + surface 를 생성하고 `WorkspaceCreated` event 를 반환한다.
+    /// host event 발화 (WorkspaceRenamed) + (User origin 이면) active 전환은
+    /// cascade (`cascade_workspace_created`) 에서 처리한다.
+    fn apply_create_workspace(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        cwd: Option<std::path::PathBuf>,
+        kind: String,
+        surface_params: serde_json::Value,
+        name: Option<String>,
+        subtitle: Option<String>,
+        description: Option<String>,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        if kind == "empty" {
+            anyhow::bail!("Cannot create workspace with empty surface kind");
+        }
+
+        let ws_id = engine.next_ids.next_workspace();
+        let pane_id = engine.next_ids.next_pane();
+        let tab_id = engine.next_ids.next_tab();
+        let surface_id = engine.next_ids.next_surface();
+        let auto_name = name
+            .clone()
+            .unwrap_or_else(|| format!("Workspace {}", engine.workspaces.len() + 1));
+        let is_terminal = kind == "terminal";
+
+        let ws = if is_terminal {
+            let shell = if engine.settings.general.shell.is_empty() {
+                None
+            } else {
+                Some(engine.settings.general.shell.as_str())
+            };
+            let shell_args_owned = engine.settings.general.effective_shell_args();
+            let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+            crate::model::Workspace::new_with_shell(
+                ws_id,
+                auto_name,
+                pane_id,
+                tab_id,
+                surface_id,
+                crate::model::ShellSpawnOpts {
+                    cols: engine.default_cols,
+                    rows: engine.default_rows,
+                    shell,
+                    shell_args: &shell_args,
+                    waker: engine.make_waker(surface_id),
+                    working_dir: cwd.as_deref(),
+                },
+            )?
+        } else {
+            let surface = engine.create_surface_via_registry(&kind, surface_id, &surface_params)?;
+            let tab_name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
+            let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
+            crate::model::Workspace::new_with_pane(ws_id, auto_name, pane)
+        };
+
+        engine.workspaces.push(ws);
+        let idx = engine.workspaces.len() - 1;
+
+        let renamed_name = name;
+        let renamed_subtitle = subtitle.map(|s| {
+            engine.workspaces[idx].subtitle = s.clone();
+            s
+        });
+        let renamed_description = description.map(|d| {
+            engine.workspaces[idx].description = d.clone();
+            d
+        });
+
+        if is_terminal {
+            engine.send_fast_init(surface_id);
+        }
+        engine.mark_layout_dirty();
+
+        let final_surface_id = {
+            let ws = &engine.workspaces[idx];
+            let pane_id = ws.focused_pane;
+            ws.pane_layout()
+                .find_pane(pane_id)
+                .and_then(|pane| pane.tabs.get(pane.active_tab))
+                .and_then(|tab| tab.focused_surface_id())
+        };
+
+        Ok(vec![CoreEvent::WorkspaceCreated {
+            id: ws_id,
+            index: idx,
+            surface_id: final_surface_id,
+            renamed_name,
+            renamed_subtitle,
+            renamed_description,
+        }])
     }
 }

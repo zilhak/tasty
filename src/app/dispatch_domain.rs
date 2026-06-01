@@ -15,8 +15,19 @@ use crate::core::intent::{CoreEvent, DomainIntent};
 
 impl App {
     /// `DomainIntent` 발행. Core 가 *이벤트 목록* 반환 → 각 이벤트 cascade 처리.
+    ///
+    /// Step 3 임시: `Core::apply` 가 engine 인자를 요구해 *첫 main window* 의
+    /// engine 으로 폴백. Step 4 에서 발화 source (window_id / parked idx) 를
+    /// `domain_batch` 가 보존하도록 확장해 정확한 engine 을 전달한다.
     pub(crate) fn dispatch_domain_intent(&mut self, intent: DomainIntent) -> anyhow::Result<()> {
-        let events = self.core.apply(intent)?;
+        let core = &mut self.core;
+        let events = if let Some(main) = self.windows.values_mut().find_map(|w| w.as_main_mut()) {
+            core.apply(&mut main.engine_state, intent)?
+        } else if let Some((_, engine)) = self.parked_states.first_mut() {
+            core.apply(engine, intent)?
+        } else {
+            anyhow::bail!("dispatch_domain_intent: no main or parked engine available");
+        };
         for event in events {
             self.handle_core_event(event);
         }

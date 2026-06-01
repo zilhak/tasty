@@ -4,7 +4,7 @@ mod focus;
 mod layout;
 mod mark;
 mod mouse;
-mod pane;
+pub(crate) mod pane;
 mod restore;
 mod tab;
 #[cfg(test)]
