@@ -17,12 +17,12 @@ use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
 use crate::view::{
-    Modality, ViewAction, ViewCtx, WindowBase,
+    Modality, ViewAction, ViewBase, ViewCtx,
     editor::{EDITOR_MODALITY, EditorView},
 };
 
 pub struct PresetWindow {
-    pub base: WindowBase,
+    pub base: ViewBase,
     store: Arc<Mutex<PresetStore>>,
     active_kind: PresetKind,
     selected_workspace: Option<String>,
@@ -39,7 +39,7 @@ impl PresetWindow {
         store: Arc<Mutex<PresetStore>>,
     ) -> Self {
         Self {
-            base: WindowBase::new(gpu, winit),
+            base: ViewBase::new(gpu, winit),
             store,
             active_kind: PresetKind::Workspace,
             selected_workspace: None,
@@ -63,10 +63,10 @@ impl PresetWindow {
 }
 
 impl View for PresetWindow {
-    fn base(&self) -> &WindowBase {
+    fn base(&self) -> &ViewBase {
         &self.base
     }
-    fn base_mut(&mut self) -> &mut WindowBase {
+    fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
     fn modality(&self) -> Modality {

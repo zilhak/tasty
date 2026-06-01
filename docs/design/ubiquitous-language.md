@@ -34,40 +34,64 @@ TerminalHostWindow)을 갖는다. Modal은 별개의 엔티티가 아니라 Wind
 
 프로그램의 진입점이자 서버. IPC 포트를 소유하고, 모든 윈도우의 생명주기를 관리한다. `tasty` CLI 명령의 요청을 받아 처리하는 주체.
 
-### Window (윈도우)
+### Window (윈도우) vs View (뷰)
 
-엔진이 관리하는 독립 OS 윈도우. Tasty의 최상위 UI 엔티티이며, `Window` trait
-구현체로 표현된다. 모든 Window는 공통 필드(gpu, winit, dirty, modifiers, focused,
-close_requested)를 담은 `WindowBase`를 composition하며, **modality**와 **계열**을
-속성으로 갖는다.
+- **Window** — 엔진이 관리하는 독립 OS 윈도우 (winit `winit::window::Window`
+  기반). 사용자에게 보이는 *OS-level frame*. 식별자는 `WindowId` (winit struct).
+- **View** — Tasty 의 *render target* 추상화 (`crate::view::ui::View` trait).
+  현재는 OS 윈도우와 1:1 매핑되지만 Phase E (headless) / Phase F (remote attach)
+  에서는 OS 윈도우 없이 존재하는 View 도 도입 예정.
 
-- **Modality**: `Modeless` 또는 `Modal`. 한 엔진에서 `Modal` modality를 가진 Window는
-  최대 1개.
-- **계열(supertrait)**: `ModalWindow`(모달 전용 공통 동작) 또는
-  `TerminalHostWindow`(터미널 계열 Surface를 호스팅하는 일반 윈도우).
+코드 레벨에서:
+- `Window` 어휘는 *winit OS-level concept* 전용 (`winit::window::Window`,
+  `winit::event::WindowEvent`, `WindowId`).
+- Tasty 의 trait/struct 이름은 모두 *View* — `View` trait, `ViewBase` struct,
+  `ViewAction` enum, `ViewCtx` struct, `ModalView` / `TerminalHostView` /
+  `EditorView` 의 3 supertrait.
 
-구현 레벨에서 `Window`는 sealed trait이며, 외부에서 직접 구현할 수 없다. 반드시
-`ModalWindow` 또는 `TerminalHostWindow` 중 하나를 거쳐야 한다.
+모든 View 구현체는 공통 필드 (gpu, winit, dirty, modifiers, focused,
+close_requested) 를 담은 `ViewBase`를 composition 하며, **modality** 와
+**계열** 을 속성으로 갖는다.
 
-### Modal modality / ModalWindow (모달)
+- **Modality**: `Modeless` 또는 `Modal`. 한 엔진에서 `Modal` modality 를 가진
+  View 는 최대 1개.
+- **계열 (supertrait)**: `ModalView` (모달 전용 공통 동작) / `TerminalHostView`
+  (터미널 계열 Surface 를 호스팅하는 일반 윈도우) / `EditorView` (modeless
+  에디터 윈도우).
 
-설정창·종료 다이얼로그 등 전역적으로 최대 1개만 존재하는 Window의 특수 상태.
-Modal modality를 가진 Window(= `ModalWindow` 구현체)가 활성화되면 다른 모든 Window의
-입력이 차단되며, 닫아야만 다시 입력이 재개된다.
+구현 레벨에서 `View` 는 sealed trait 이며, 외부에서 직접 구현할 수 없다. 반드시
+`ModalView` / `TerminalHostView` / `EditorView` 중 하나를 거쳐야 한다.
 
-- 구현체: `SettingsWindow`, `QuitWindow`
-- 공통 default 동작: 첫 프레임 렌더 후 가시화, Esc로 닫기, 포커스 탈취
+**과도기 상태 (Phase D)**: 구현체 struct 이름은 여전히 `*Window` (예:
+`MainWindow`, `SettingsWindow`, `QuitWindow`, `PresetWindow`, `PluginsWindow`).
+`View` trait ↔ `*Window` 구현체 의 어휘 비일관은 Phase E 의 별 substep 에서 완성.
 
-Modal은 별개의 엔티티가 아니라 Window의 한 형태라는 점에 주의한다.
+### Modal modality / ModalView (모달)
 
-### TerminalHostWindow (터미널 호스트 윈도우)
+설정창·종료 다이얼로그 등 전역적으로 최대 1개만 존재하는 View 의 특수 상태.
+Modal modality 를 가진 View (= `ModalView` 구현체) 가 활성화되면 다른 모든
+View 의 입력이 차단되며, 닫아야만 다시 입력이 재개된다.
 
-터미널 계열 Surface(Terminal / Markdown / Explorer / Html / Empty)를 호스팅하는
-Window 계열. Modal이 아닌 모든 일반 윈도우가 여기에 속한다.
+- 구현체: `SettingsWindow`, `QuitWindow`, `PluginsWindow`
+- 공통 default 동작: 첫 프레임 렌더 후 가시화, Esc 로 닫기, 포커스 탈취
+
+Modal 은 별개의 엔티티가 아니라 View 의 한 형태라는 점에 주의한다.
+
+### TerminalHostView (터미널 호스트 뷰)
+
+터미널 계열 Surface (Terminal / Markdown / Explorer / Html / Empty) 를 호스팅
+하는 View 계열. Modal 이 아닌 *터미널 계열* 윈도우가 여기에 속한다.
 
 - 현재 구현체: `MainWindow` (워크스페이스/사이드바/탭 전체를 가진 메인 윈도우)
-- 미래 구현체 (계획): `StandaloneSurfaceWindow`(독립 Surface 하나만 가진 윈도우),
-  `StandaloneWorkspaceWindow`(워크스페이스 1개 고정).
+- 미래 구현체 (계획): `StandaloneSurfaceWindow` (독립 Surface 하나만 가진 윈도우),
+  `StandaloneWorkspaceWindow` (워크스페이스 1개 고정).
+
+### EditorView (에디터 뷰)
+
+Modeless 에디터 계열 View. modal 입력 차단 / Esc auto-close 가 없는 별 윈도우.
+
+- 현재 구현체: `PresetWindow` (workspace/tab/pane preset 편집기)
+- 미래 구현체 (계획): 키바인딩 에디터, 테마 에디터 등.
 
 ### Popup (팝업)
 

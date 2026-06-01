@@ -12,11 +12,11 @@ use crate::i18n::t;
 use crate::settings::Settings;
 use crate::settings_ui::{self, PluginShortcutSnapshot, SettingsUiState};
 use crate::view::ui::{View, sealed};
-use crate::view::{ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY};
+use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
 
 /// 설정 모달 윈도우. egui 기반 설정 UI를 렌더한다.
 pub struct SettingsWindow {
-    pub base: WindowBase,
+    pub base: ViewBase,
     pub settings: Settings,
     settings_ui_state: SettingsUiState,
     /// `FileHandler` 탭의 Extension Mapping sub-tab 에서 사용. Save 시 user TOML 에 직접 저장.
@@ -43,7 +43,7 @@ impl SettingsWindow {
         user_config_path: Option<std::path::PathBuf>,
     ) -> Self {
         Self {
-            base: WindowBase::new(gpu, winit),
+            base: ViewBase::new(gpu, winit),
             settings,
             settings_ui_state: SettingsUiState::new(),
             file_format,
@@ -79,10 +79,10 @@ impl SettingsWindow {
 }
 
 impl View for SettingsWindow {
-    fn base(&self) -> &WindowBase {
+    fn base(&self) -> &ViewBase {
         &self.base
     }
-    fn base_mut(&mut self) -> &mut WindowBase {
+    fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
     fn modality(&self) -> Modality {

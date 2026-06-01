@@ -15,10 +15,10 @@ use crate::adapters::ui::{LayoutContext, ToastManager};
 use crate::gpu::GpuState;
 use crate::plugins_ui::{self, PluginsAction, PluginsSnapshot, PluginsUiState};
 use crate::view::ui::{View, sealed};
-use crate::view::{ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY};
+use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
 
 pub struct PluginsWindow {
-    pub base: WindowBase,
+    pub base: ViewBase,
     pub snapshot: PluginsSnapshot,
     pub pending_actions: Vec<PluginsAction>,
     ui_state: PluginsUiState,
@@ -34,7 +34,7 @@ impl PluginsWindow {
         snapshot: PluginsSnapshot,
     ) -> Self {
         Self {
-            base: WindowBase::new(gpu, winit),
+            base: ViewBase::new(gpu, winit),
             snapshot,
             pending_actions: Vec::new(),
             ui_state: PluginsUiState::default(),
@@ -59,10 +59,10 @@ impl PluginsWindow {
 }
 
 impl View for PluginsWindow {
-    fn base(&self) -> &WindowBase {
+    fn base(&self) -> &ViewBase {
         &self.base
     }
-    fn base_mut(&mut self) -> &mut WindowBase {
+    fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
     fn modality(&self) -> Modality {

@@ -6,11 +6,11 @@ use crate::AppEvent;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
-use crate::view::{ModalView, Modality, ViewAction, ViewCtx, WindowBase, modal::MODAL_MODALITY};
+use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
 
 /// 종료 확인 다이얼로그. 사용자에게 종료/최소화를 묻는다.
 pub struct QuitWindow {
-    pub base: WindowBase,
+    pub base: ViewBase,
     shown: bool,
     pending_action: ViewAction,
 }
@@ -18,7 +18,7 @@ pub struct QuitWindow {
 impl QuitWindow {
     pub fn new(gpu: GpuState, winit: Arc<winit::window::Window>) -> Self {
         Self {
-            base: WindowBase::new(gpu, winit),
+            base: ViewBase::new(gpu, winit),
             shown: false,
             pending_action: ViewAction::None,
         }
@@ -26,10 +26,10 @@ impl QuitWindow {
 }
 
 impl View for QuitWindow {
-    fn base(&self) -> &WindowBase {
+    fn base(&self) -> &ViewBase {
         &self.base
     }
-    fn base_mut(&mut self) -> &mut WindowBase {
+    fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
     fn modality(&self) -> Modality {

@@ -16,7 +16,7 @@ pub(crate) mod settings;
 pub(crate) mod terminal_host;
 pub(crate) mod ui;
 
-pub(crate) use base::WindowBase;
+pub(crate) use base::ViewBase;
 pub(crate) use main::MainWindow;
 pub(crate) use modal::ModalView;
 pub(crate) use plugins::PluginsWindow;
@@ -31,7 +31,6 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
 use crate::AppEvent;
-use crate::view::ui::View as _View;
 
 /// `Box<dyn View>`에서 `MainWindow` 소유권을 추출한다.
 /// 인자가 MainWindow가 아니면 `None` — 호출자가 인지 후 다르게 처리.
@@ -110,7 +109,3 @@ impl View {
         self.active_modal_id.is_some()
     }
 }
-
-// _View 가 미사용 — alias 만 두면 unused warning. 사용처는 호출자 측.
-#[allow(unused_imports)]
-use _View as _;

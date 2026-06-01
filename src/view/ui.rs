@@ -7,7 +7,7 @@
 //! └── EditorView (supertrait)        — Preset, (키바인딩/테마 에디터 등 미래)
 //! ```
 //!
-//! 모든 구현체는 `WindowBase` (D.3.E.3.e 에서 `ViewBase` rename 예정) 를
+//! 모든 구현체는 `ViewBase` (D.3.E.3.e 에서 옛 `WindowBase` 에서 rename 완료) 를
 //! composition 하여 공통 필드를 공유한다. `View` 는 sealed 이므로 크레이트
 //! 외부에서 직접 구현할 수 없다 — 실제 구현체는 반드시 `ModalView` /
 //! `TerminalHostView` / `EditorView` 중 하나의 supertrait 체인을 거쳐야 한다.
@@ -23,7 +23,7 @@ pub(crate) mod sealed {
 
 use winit::event::WindowEvent;
 
-use crate::view::{MainWindow, ModalView, Modality, ViewAction, ViewCtx, WindowBase};
+use crate::view::{MainWindow, ModalView, Modality, ViewAction, ViewBase, ViewCtx};
 
 /// 모든 윈도우 타입이 공유하는 최상위 트레잇.
 ///
@@ -31,8 +31,8 @@ use crate::view::{MainWindow, ModalView, Modality, ViewAction, ViewCtx, WindowBa
 /// 하나를 구현하라. 각 구현체는 `impl sealed::Sealed for MyWindow {}` 를 별도로
 /// 추가해야 한다.
 pub(crate) trait View: sealed::Sealed + std::any::Any {
-    fn base(&self) -> &WindowBase;
-    fn base_mut(&mut self) -> &mut WindowBase;
+    fn base(&self) -> &ViewBase;
+    fn base_mut(&mut self) -> &mut ViewBase;
     /// 도메인 표현 보존. trait dispatch 호출 0이지만 5개 구현체가 `fn modality()`로
     /// 반환하는 도메인 표현이라 보존한다. modal 활성 판정 dispatch가 도입되면 활성화.
     #[allow(dead_code)]

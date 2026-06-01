@@ -23,14 +23,14 @@ use crate::selection::TextSelection;
 use crate::state::{AppState, FocusedSurfaceType};
 use crate::view::ui::{View, sealed};
 use crate::view::{
-    Modality, TerminalHostView, ViewAction, ViewCtx, WindowBase, terminal_host::MODELESS_MODALITY,
+    Modality, TerminalHostView, ViewAction, ViewBase, ViewCtx, terminal_host::MODELESS_MODALITY,
 };
 use crate::{AppEvent, ClipboardContext};
 
 /// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.
 /// `TerminalHostView` 계열의 대표 구현체.
 pub struct MainWindow {
-    pub base: WindowBase,
+    pub base: ViewBase,
     pub(crate) state: AppState,
     /// 본 윈도우 전용 CoreState. self.state 와 disjoint 한 field 로 두어
     /// `let engine = &mut self.engine_state;` 식 접근을 가능하게 한다.
@@ -88,7 +88,7 @@ impl MainWindow {
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     ) -> Self {
         Self {
-            base: WindowBase::new(gpu, window),
+            base: ViewBase::new(gpu, window),
             state,
             engine_state,
             cursor_position: None,
@@ -175,10 +175,10 @@ impl MainWindow {
 }
 
 impl View for MainWindow {
-    fn base(&self) -> &WindowBase {
+    fn base(&self) -> &ViewBase {
         &self.base
     }
-    fn base_mut(&mut self) -> &mut WindowBase {
+    fn base_mut(&mut self) -> &mut ViewBase {
         &mut self.base
     }
     fn modality(&self) -> Modality {
