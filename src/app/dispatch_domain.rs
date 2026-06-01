@@ -306,6 +306,14 @@ impl App {
                     }
                 }
             }
+            CoreEvent::LayoutSaved { saved: _ } => {
+                // 추가 cascade 없음 — disk I/O + layout_dirty.clear() 는 Core::apply 에서 완료.
+            }
+            CoreEvent::LayoutRestored { .. } => {
+                // caller 가 events 직접 검사하는 패턴 (D.3.C.D.4) — bootstrap context
+                // 에서 active_workspace 추출해 state.switch_workspace 수행. 큐 경로
+                // 라우팅이 아닌 직접 Core::apply 호출이라 본 arm 은 비워둔다.
+            }
         }
     }
 

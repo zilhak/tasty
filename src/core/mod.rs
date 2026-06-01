@@ -582,6 +582,66 @@ impl Core {
             DomainIntent::UpdateTabName { surface_id, name } => {
                 Ok(vec![Self::apply_update_tab_name(engine, surface_id, name)])
             }
+            DomainIntent::SaveLayoutNow {
+                active_workspace,
+                force,
+            } => Ok(vec![Self::apply_save_layout_now(
+                engine,
+                active_workspace,
+                force,
+            )]),
+            DomainIntent::ApplyPendingLayoutRestore => {
+                Ok(vec![Self::apply_apply_pending_layout_restore(engine)])
+            }
+        }
+    }
+
+    /// `DomainIntent::SaveLayoutNow` 본문. settings + debounce + force gate 를
+    /// 통과하면 디스크에 저장 + `layout_dirty.clear()`. 옛 `App::flush_layout_persistence`
+    /// 의 조건 분기 + 옛 `Core::save_layout` wrapper 본문을 흡수.
+    fn apply_save_layout_now(
+        engine: &mut crate::engine_state::CoreState,
+        active_workspace: usize,
+        force: bool,
+    ) -> CoreEvent {
+        let g = &engine.settings.general;
+        let should_save = if force {
+            g.restore_layout && (engine.layout_dirty.is_dirty() || g.restore_terminal_content)
+        } else {
+            g.restore_layout && engine.layout_dirty.should_flush()
+        };
+        if !should_save {
+            return CoreEvent::LayoutSaved { saved: false };
+        }
+        crate::engine::layout_persistence::save_to_disk(engine, active_workspace);
+        engine.layout_dirty.clear();
+        CoreEvent::LayoutSaved { saved: true }
+    }
+
+    /// `DomainIntent::ApplyPendingLayoutRestore` 본문. engine 의
+    /// `pending_layout_restore` 를 take 해 `SavedLayout::restore` 호출. 성공 시
+    /// `restored_active_workspace` 도 take 해 CoreEvent payload 로 caller 에게 넘김.
+    /// caller (window_lifecycle.rs::create_app_state) 가 결과 받아
+    /// `state.switch_workspace` 수행.
+    fn apply_apply_pending_layout_restore(
+        engine: &mut crate::engine_state::CoreState,
+    ) -> CoreEvent {
+        let Some(saved) = engine.pending_layout_restore.take() else {
+            return CoreEvent::LayoutRestored {
+                restored: false,
+                active_workspace: None,
+            };
+        };
+        if !saved.restore(engine) {
+            return CoreEvent::LayoutRestored {
+                restored: false,
+                active_workspace: None,
+            };
+        }
+        let active = engine.restored_active_workspace.take();
+        CoreEvent::LayoutRestored {
+            restored: true,
+            active_workspace: active,
         }
     }
 

@@ -199,6 +199,26 @@ pub(crate) enum DomainIntent {
     /// 의해 덮어쓰여지지 않는다 (display_name 우선순위: explicit_name >
     /// osc_title > cached_display_name > name).
     UpdateTabName { surface_id: u32, name: String },
+
+    // ─── Layout persistence (D.3.C.D.4) ───
+    /// 현재 layout 을 ~/.tasty/layout.json 에 저장.
+    /// - `active_workspace`: 호출자가 결정한 active workspace 인덱스 (AppState 가
+    ///   들고 있는 정보이므로 Intent 발화 시 동봉).
+    /// - `force=true`: shutdown 경로용. debounce 무시 + `restore_terminal_content`
+    ///   설정이 켜져 있으면 layout_dirty 가 false 여도 저장.
+    /// - `force=false`: main loop tick 경로. debounce 통과 시에만 저장.
+    ///
+    /// settings.restore_layout=false 면 skip. cascade 없음. host event 없음.
+    SaveLayoutNow {
+        active_workspace: usize,
+        force: bool,
+    },
+
+    /// `engine.pending_layout_restore` 를 take 해 live engine 으로 복원.
+    /// 호출 전에 *호출자* 가 wait-for-plugin loop 를 끝내 둬야 함 — Intent 본문
+    /// 안에서 plugin manager 를 못 만진다 (Core 의존 없음).
+    /// pending_layout_restore 가 None 이면 no-op (`restored=false`).
+    ApplyPendingLayoutRestore,
 }
 
 /// `Core::apply` 의 결과 — 도메인이 *변경 후 알리는* 이벤트.
@@ -387,6 +407,19 @@ pub(crate) enum CoreEvent {
         surface_id: u32,
         tab_id: Option<u32>,
         skipped_explicit: bool,
+    },
+
+    // ─── Layout persistence (D.3.C.D.4) ───
+    /// `SaveLayoutNow` 결과. `saved=false` 면 settings.restore_layout=false 또는
+    /// debounce 미만 + force=false → skip. cascade 없음.
+    LayoutSaved { saved: bool },
+
+    /// `ApplyPendingLayoutRestore` 결과. `restored=true` 면 caller 가
+    /// `active_workspace` 로 `state.switch_workspace` 수행. `restored=false` 면
+    /// pending 없거나 schema 미스매치. cascade 없음 — caller 가 events 직접 검사.
+    LayoutRestored {
+        restored: bool,
+        active_workspace: Option<usize>,
     },
 }
 
