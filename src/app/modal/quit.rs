@@ -20,7 +20,7 @@ impl App {
             .unwrap_or(false);
         if quit_modal_open {
             self.close_active_modal();
-            self.flush_layout_persistence_final();
+            self.flush_layout_persistence(true);
             event_loop.exit();
             return;
         }
@@ -47,7 +47,7 @@ impl App {
 
         match behavior.as_str() {
             "quit" => {
-                self.flush_layout_persistence_final();
+                self.flush_layout_persistence(true);
                 event_loop.exit();
             }
             "minimize" => {

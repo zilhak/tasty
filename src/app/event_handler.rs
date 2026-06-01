@@ -92,7 +92,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::Shutdown => {
-                self.flush_layout_persistence_final();
+                self.flush_layout_persistence(true);
                 if let Some(ref mut mgr) = self.plugin_manager {
                     // Event Bus 1.0: `system.shutdown_initiated`는 plugin 종료 전에
                     // broadcast해 구독자가 cleanup hook을 돌릴 시간을 준다.
@@ -575,7 +575,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.tick_modal_shake();
 
         // Flush layout persistence (debounced).
-        self.flush_layout_persistence();
+        self.flush_layout_persistence(false);
 
         // Flush deferred PTY resizes (throttled to 100ms intervals).
         // If any terminal still has a pending resize (throttled), request a redraw
