@@ -1,7 +1,12 @@
-//! 도메인별로 묶기 애매한 잡종 — process / notification / hook / raw.
+//! 도메인별로 묶기 애매한 잡종 — process / notification / hook / raw + plugin lifecycle.
 
+use serde_json::json;
 use tasty_plugin_protocol::EventScope;
-use tasty_plugin_protocol::events::payloads::{HookFired, NotificationCreated, ProcessExited};
+use tasty_plugin_protocol::events::LifecycleReason;
+use tasty_plugin_protocol::events::payloads::{
+    HookFired, NotificationCreated, PluginEnableToggled, PluginError, PluginLoaded, PluginUnloaded,
+    ProcessExited,
+};
 
 use crate::plugin::PluginManager;
 
@@ -55,4 +60,96 @@ pub(super) fn emit_hook_fired(
 
 pub(super) fn emit_raw(mgr: &mut PluginManager, key: String, payload: serde_json::Value) {
     mgr.emit_host_event(&key, &payload, EventScope::System);
+}
+
+// ─── Plugin lifecycle (D.3.C.G.2.b) ───
+
+pub(super) fn emit_plugin_loaded(mgr: &mut PluginManager, plugin_id: String, version: String) {
+    let payload = PluginLoaded { plugin_id, version };
+    mgr.emit_host_event("plugin.loaded", &payload, EventScope::System);
+}
+
+pub(super) fn emit_plugin_enable_toggled(
+    mgr: &mut PluginManager,
+    plugin_id: String,
+    enabled: bool,
+) {
+    let payload = PluginEnableToggled { plugin_id };
+    let key = if enabled {
+        "plugin.enabled"
+    } else {
+        "plugin.disabled"
+    };
+    mgr.emit_host_event(key, &payload, EventScope::System);
+}
+
+pub(super) fn emit_plugin_unloaded(mgr: &mut PluginManager, plugin_id: String, reason: String) {
+    let lr = match reason.as_str() {
+        "ipc" => LifecycleReason::Ipc,
+        "crash" => LifecycleReason::Crash,
+        _ => LifecycleReason::User,
+    };
+    let payload = PluginUnloaded {
+        plugin_id,
+        reason: lr,
+    };
+    mgr.emit_host_event("plugin.unloaded", &payload, EventScope::System);
+}
+
+pub(super) fn emit_plugin_error(
+    mgr: &mut PluginManager,
+    plugin_id: String,
+    error_kind: String,
+    message: String,
+) {
+    let payload = PluginError {
+        plugin_id,
+        error_kind,
+        message,
+    };
+    mgr.emit_host_event("plugin.error", &payload, EventScope::System);
+}
+
+/// install / remove / grant / revoke 4종을 단일 helper 로. `change_kind` 가
+/// raw event key 결정. 옛 lifecycle.rs 에는 대응 호출 없었음 — 본 substep 의
+/// 신규 가시성.
+pub(super) fn emit_plugin_registry_changed(
+    mgr: &mut PluginManager,
+    plugin_id: String,
+    change_kind: String,
+    detail: serde_json::Value,
+) {
+    let key = match change_kind.as_str() {
+        "installed" => "plugin.installed",
+        "removed" => "plugin.removed",
+        "permission_granted" => "plugin.permission_granted",
+        "permission_revoked" => "plugin.permission_revoked",
+        other => {
+            tracing::warn!("emit_plugin_registry_changed: unknown change_kind '{other}'");
+            return;
+        }
+    };
+    let payload = json!({
+        "plugin_id": plugin_id,
+        "detail": detail,
+    });
+    mgr.emit_host_event(key, &payload, EventScope::System);
+}
+
+pub(super) fn emit_plugin_surface_kind_registered(
+    mgr: &mut PluginManager,
+    plugin_id: String,
+    kind: String,
+    rendering: String,
+) {
+    let payload = json!({
+        "plugin_id": plugin_id,
+        "kind": kind,
+        "rendering": rendering,
+    });
+    mgr.emit_host_event(
+        "plugin.surface_kind_registered",
+        &payload,
+        EventScope::System,
+    );
 }

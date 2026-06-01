@@ -147,14 +147,31 @@ impl App {
                     surface_id,
                 } => misc::emit_hook_fired(mgr, hook_id, event_kind, surface_id),
                 PendingHostEvent::Raw { key, payload } => misc::emit_raw(mgr, key, payload),
-                // ─── Plugin lifecycle (D.3.C.G.2) — stub ───
-                // D.3.C.G.2.b 에서 emit_plugin_* helper 로 연결. 현재는 무시.
-                PendingHostEvent::PluginLoaded { .. }
-                | PendingHostEvent::PluginEnableToggled { .. }
-                | PendingHostEvent::PluginUnloaded { .. }
-                | PendingHostEvent::PluginError { .. }
-                | PendingHostEvent::PluginRegistryChanged { .. }
-                | PendingHostEvent::PluginSurfaceKindRegistered { .. } => {}
+                // ─── Plugin lifecycle (D.3.C.G.2.b) ───
+                PendingHostEvent::PluginLoaded { plugin_id, version } => {
+                    misc::emit_plugin_loaded(mgr, plugin_id, version)
+                }
+                PendingHostEvent::PluginEnableToggled { plugin_id, enabled } => {
+                    misc::emit_plugin_enable_toggled(mgr, plugin_id, enabled)
+                }
+                PendingHostEvent::PluginUnloaded { plugin_id, reason } => {
+                    misc::emit_plugin_unloaded(mgr, plugin_id, reason)
+                }
+                PendingHostEvent::PluginError {
+                    plugin_id,
+                    error_kind,
+                    message,
+                } => misc::emit_plugin_error(mgr, plugin_id, error_kind, message),
+                PendingHostEvent::PluginRegistryChanged {
+                    plugin_id,
+                    change_kind,
+                    detail,
+                } => misc::emit_plugin_registry_changed(mgr, plugin_id, change_kind, detail),
+                PendingHostEvent::PluginSurfaceKindRegistered {
+                    plugin_id,
+                    kind,
+                    rendering,
+                } => misc::emit_plugin_surface_kind_registered(mgr, plugin_id, kind, rendering),
             }
         }
     }

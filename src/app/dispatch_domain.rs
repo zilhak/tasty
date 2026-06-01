@@ -315,14 +315,27 @@ impl App {
                 // 라우팅이 아닌 직접 Core::apply 호출이라 본 arm 은 비워둔다.
             }
             // ─── Plugin lifecycle (D.3.C.G.2) ───
-            // 본 substep 의 stub 분기. 실제 cascade 는 D.3.C.G.2.b 에서 구현.
-            CoreEvent::PluginLoaded { .. }
-            | CoreEvent::PluginEnableToggled { .. }
-            | CoreEvent::PluginUnloaded { .. }
-            | CoreEvent::PluginError { .. }
-            | CoreEvent::PluginSurfaceKindRegistered { .. }
-            | CoreEvent::PluginRegistryChanged { .. } => {
-                // D.3.C.G.2.a stub — no-op.
+            CoreEvent::PluginLoaded { plugin_id, version } => {
+                self.cascade_plugin_loaded(plugin_id, version)
+            }
+            CoreEvent::PluginEnableToggled { plugin_id, enabled } => {
+                self.cascade_plugin_enable_toggled(plugin_id, enabled)
+            }
+            CoreEvent::PluginUnloaded { plugin_id, reason } => {
+                self.cascade_plugin_unloaded(plugin_id, reason)
+            }
+            CoreEvent::PluginError {
+                plugin_id,
+                error_kind,
+                message,
+            } => self.cascade_plugin_error(plugin_id, error_kind, message),
+            CoreEvent::PluginSurfaceKindRegistered {
+                plugin_id,
+                kind,
+                rendering,
+            } => self.cascade_plugin_surface_kind_registered(plugin_id, kind, rendering),
+            CoreEvent::PluginRegistryChanged { plugin_id, change } => {
+                self.cascade_plugin_registry_changed(plugin_id, change)
             }
         }
     }
@@ -929,6 +942,99 @@ impl App {
                 );
             }
         }
+    }
+
+    // ─── Plugin lifecycle cascade (D.3.C.G.2.b) ───
+    //
+    // 모두 *첫 main window* 의 state 에 PendingHostEvent 를 enqueue. 본 큐는
+    // `dispatch/host_events.rs` 가 drain → `misc::emit_plugin_*` helper 호출 →
+    // PluginManager.event_bus broadcast. 단일 발화점.
+
+    fn enqueue_plugin_host_event(&mut self, ev: crate::state::PendingHostEvent) {
+        let Some(main) = self.windows.values_mut().find_map(|w| w.as_main_mut()) else {
+            return;
+        };
+        main.state.enqueue_host_event(ev);
+    }
+
+    fn cascade_plugin_loaded(&mut self, plugin_id: String, version: String) {
+        self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginLoaded {
+            plugin_id,
+            version,
+        });
+    }
+
+    fn cascade_plugin_enable_toggled(&mut self, plugin_id: String, enabled: bool) {
+        self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginEnableToggled {
+            plugin_id,
+            enabled,
+        });
+    }
+
+    fn cascade_plugin_unloaded(
+        &mut self,
+        plugin_id: String,
+        reason: tasty_plugin_protocol::events::LifecycleReason,
+    ) {
+        let reason_str = match reason {
+            tasty_plugin_protocol::events::LifecycleReason::User => "user",
+            tasty_plugin_protocol::events::LifecycleReason::Ipc => "ipc",
+            tasty_plugin_protocol::events::LifecycleReason::Crash => "crash",
+        };
+        self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginUnloaded {
+            plugin_id,
+            reason: reason_str.to_string(),
+        });
+    }
+
+    fn cascade_plugin_error(&mut self, plugin_id: String, error_kind: String, message: String) {
+        self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginError {
+            plugin_id,
+            error_kind,
+            message,
+        });
+    }
+
+    fn cascade_plugin_surface_kind_registered(
+        &mut self,
+        plugin_id: String,
+        kind: String,
+        rendering: String,
+    ) {
+        self.enqueue_plugin_host_event(
+            crate::state::PendingHostEvent::PluginSurfaceKindRegistered {
+                plugin_id,
+                kind,
+                rendering,
+            },
+        );
+    }
+
+    fn cascade_plugin_registry_changed(
+        &mut self,
+        plugin_id: String,
+        change: crate::core::intent::PluginRegistryChange,
+    ) {
+        use crate::core::intent::PluginRegistryChange;
+        let (change_kind, detail) = match change {
+            PluginRegistryChange::Installed { version } => {
+                ("installed", serde_json::json!({ "version": version }))
+            }
+            PluginRegistryChange::Removed => ("removed", serde_json::Value::Null),
+            PluginRegistryChange::PermissionGranted { permission } => (
+                "permission_granted",
+                serde_json::json!({ "permission": permission }),
+            ),
+            PluginRegistryChange::PermissionRevoked { permission } => (
+                "permission_revoked",
+                serde_json::json!({ "permission": permission }),
+            ),
+        };
+        self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginRegistryChanged {
+            plugin_id,
+            change_kind: change_kind.to_string(),
+            detail,
+        });
     }
 
     /// Internal clipboard copy 를 모든 main + parked engine 의 history 에 기록.
