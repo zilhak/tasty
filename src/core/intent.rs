@@ -433,6 +433,58 @@ pub(crate) enum CoreEvent {
         restored: bool,
         active_workspace: Option<usize>,
     },
+
+    // ─── Plugin lifecycle (D.3.C.G.2) ───
+    /// Plugin process 가 spawn 되어 hello 까지 완료. cascade 가
+    /// PendingHostEvent::PluginLoaded enqueue + plugin event_bus broadcast.
+    PluginLoaded { plugin_id: String, version: String },
+
+    /// Plugin 활성화 상태 변경 (enable/disable). PluginManager.config 변경
+    /// 직후 발화. `enabled=false` 인 경우 cascade 가 `PluginUnloaded` 도 함께
+    /// 발화 (옛 lifecycle.rs:317 의 was_running 분기를 cascade 가 흡수).
+    PluginEnableToggled { plugin_id: String, enabled: bool },
+
+    /// Plugin process 가 graceful shutdown 또는 abnormal terminate.
+    /// `reason` 은 `LifecycleReason::{User, Ipc, Crash}` 3종. 본 substep 에서는
+    /// (결정 §7.2) 항상 `User` — caller context 추적 단순화.
+    PluginUnloaded {
+        plugin_id: String,
+        reason: tasty_plugin_protocol::events::LifecycleReason,
+    },
+
+    /// Plugin 실패 — spawn/runtime/pump 등 모든 error 통합. cascade 가 host
+    /// event + event_bus broadcast.
+    PluginError {
+        plugin_id: String,
+        error_kind: String,
+        message: String,
+    },
+
+    /// Plugin 의 surface_kind 가 registry 에 등록됨. hello 처리 시 매 kind 마다
+    /// 발화. cascade 가 PendingHostEvent 로 라우팅 (외부 가시성). `rendering` 은
+    /// "remote" / "host" / "webview" 중 하나.
+    PluginSurfaceKindRegistered {
+        plugin_id: String,
+        kind: String,
+        rendering: String,
+    },
+
+    /// Plugin install / remove / grant / revoke 완료. 정적 상태 변경 (config /
+    /// packages / permissions). cascade 가 host event 라우팅.
+    PluginRegistryChanged {
+        plugin_id: String,
+        change: PluginRegistryChange,
+    },
+}
+
+/// `CoreEvent::PluginRegistryChanged` 의 변경 종류.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) enum PluginRegistryChange {
+    Installed { version: String },
+    Removed,
+    PermissionGranted { permission: String },
+    PermissionRevoked { permission: String },
 }
 
 /// `CoreEvent::ClosedItemRestored` 의 복원 결과 분류.

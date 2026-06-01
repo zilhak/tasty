@@ -195,6 +195,43 @@ pub enum PendingHostEvent {
         key: String,
         payload: serde_json::Value,
     },
+
+    // ─── Plugin lifecycle (D.3.C.G.2) ───
+    /// Plugin spawn 성공 후 hello 까지 완료.
+    PluginLoaded {
+        plugin_id: String,
+        version: String,
+    },
+    /// Plugin 활성화 상태 변경 (enable=true / disable=false).
+    PluginEnableToggled {
+        plugin_id: String,
+        enabled: bool,
+    },
+    /// Plugin process 가 종료됨. `reason` 은 LifecycleReason 의 serde rename
+    /// (snake_case) — "user" / "ipc" / "crash".
+    PluginUnloaded {
+        plugin_id: String,
+        reason: String,
+    },
+    /// Plugin spawn 실패 또는 runtime error.
+    PluginError {
+        plugin_id: String,
+        error_kind: String,
+        message: String,
+    },
+    /// Plugin install / remove / grant / revoke 완료. `change_kind` 는
+    /// "installed" / "removed" / "permission_granted" / "permission_revoked".
+    PluginRegistryChanged {
+        plugin_id: String,
+        change_kind: String,
+        detail: serde_json::Value,
+    },
+    /// Plugin 의 surface_kind 가 hello 처리 직후 registry 에 등록됨.
+    PluginSurfaceKindRegistered {
+        plugin_id: String,
+        kind: String,
+        rendering: String,
+    },
 }
 
 // IdGenerator is now in engine_state.rs

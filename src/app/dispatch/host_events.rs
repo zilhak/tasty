@@ -147,6 +147,14 @@ impl App {
                     surface_id,
                 } => misc::emit_hook_fired(mgr, hook_id, event_kind, surface_id),
                 PendingHostEvent::Raw { key, payload } => misc::emit_raw(mgr, key, payload),
+                // ─── Plugin lifecycle (D.3.C.G.2) — stub ───
+                // D.3.C.G.2.b 에서 emit_plugin_* helper 로 연결. 현재는 무시.
+                PendingHostEvent::PluginLoaded { .. }
+                | PendingHostEvent::PluginEnableToggled { .. }
+                | PendingHostEvent::PluginUnloaded { .. }
+                | PendingHostEvent::PluginError { .. }
+                | PendingHostEvent::PluginRegistryChanged { .. }
+                | PendingHostEvent::PluginSurfaceKindRegistered { .. } => {}
             }
         }
     }

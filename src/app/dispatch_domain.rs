@@ -314,6 +314,16 @@ impl App {
                 // 에서 active_workspace 추출해 state.switch_workspace 수행. 큐 경로
                 // 라우팅이 아닌 직접 Core::apply 호출이라 본 arm 은 비워둔다.
             }
+            // ─── Plugin lifecycle (D.3.C.G.2) ───
+            // 본 substep 의 stub 분기. 실제 cascade 는 D.3.C.G.2.b 에서 구현.
+            CoreEvent::PluginLoaded { .. }
+            | CoreEvent::PluginEnableToggled { .. }
+            | CoreEvent::PluginUnloaded { .. }
+            | CoreEvent::PluginError { .. }
+            | CoreEvent::PluginSurfaceKindRegistered { .. }
+            | CoreEvent::PluginRegistryChanged { .. } => {
+                // D.3.C.G.2.a stub — no-op.
+            }
         }
     }
 
