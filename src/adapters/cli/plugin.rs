@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 use crate::cli::transport::IpcConnection;
 use crate::file::format::config::DetectorRuleDecl;
 use crate::file::handler::config::PluginHandlerActionDecl;
-use crate::ipc::server::IpcServer;
+use crate::ipc::port_file;
 use crate::plugin::manifest::Manifest;
 
 fn log_dir() -> Result<PathBuf> {
@@ -29,7 +29,7 @@ pub fn run_audit_follow(
     batch: u64,
     interval_ms: u64,
 ) -> Result<()> {
-    let port = IpcServer::read_port_file()?;
+    let port = port_file::read_port_file()?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",

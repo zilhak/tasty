@@ -1,13 +1,17 @@
 //! `Hub` — 외부 통신 표면. IPC 서버, 포트 파일 등 *프로세스 외부* 와 주고받는
 //! 인프라를 모은다.
+//!
+//! D.3.D.2 — `ipc_server` 는 `Option<Box<dyn IpcServerPort>>` 로 보유. production
+//! 은 `TcpIpcServer` (옛 `IpcServer` 의 type alias).
 
 use winit::event_loop::EventLoopProxy;
 
 use crate::AppEvent;
-use crate::ipc::server::IpcServer;
+use crate::adapters::production::tcp_ipc_server::TcpIpcServer;
+use crate::ports::ipc_server::IpcServerPort;
 
 pub(crate) struct Hub {
-    pub ipc_server: Option<IpcServer>,
+    pub ipc_server: Option<Box<dyn IpcServerPort>>,
     pub port_file: Option<String>,
 }
 
@@ -25,10 +29,10 @@ impl Hub {
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
             crate::shortcuts::send_app_event(&ipc_proxy, AppEvent::IpcReady);
         });
-        match IpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
+        match TcpIpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
             Ok(ipc) => {
                 tracing::info!("IPC server started on port {}", ipc.port());
-                self.ipc_server = Some(ipc);
+                self.ipc_server = Some(Box::new(ipc));
             }
             Err(e) => {
                 tracing::warn!("Failed to start IPC server: {}", e);

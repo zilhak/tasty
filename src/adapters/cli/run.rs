@@ -4,7 +4,7 @@ use std::net::TcpStream;
 
 use anyhow::Result;
 
-use crate::ipc::server::IpcServer;
+use crate::ipc::port_file;
 
 use super::Commands;
 use super::commands::PluginCommands;
@@ -53,7 +53,7 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
 }
 
 fn run_dynamic_client(request: crate::ipc::protocol::JsonRpcRequest) -> Result<()> {
-    let port = IpcServer::read_port_file()?;
+    let port = port_file::read_port_file()?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",
@@ -121,7 +121,7 @@ pub fn run_client(command: Commands) -> Result<()> {
         );
     }
 
-    let port = IpcServer::read_port_file()?;
+    let port = port_file::read_port_file()?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",
