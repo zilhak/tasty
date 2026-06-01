@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
-use crate::ipc::session::{SessionError, SessionStore};
+use crate::ipc::session::SessionError;
 use crate::plugin::manifest::Permission;
 
 fn now_ms() -> u64 {
@@ -126,10 +126,7 @@ pub fn handle_issue(
     };
 
     let now = now_ms();
-    let result = core.with_memory(|mem| {
-        let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
-        store.issue(agent_id.clone(), parent.clone(), perms.clone(), ttl_ms, now)
-    });
+    let result = core.session_issue(agent_id.clone(), parent.clone(), perms.clone(), ttl_ms, now);
     match result {
         Ok((token, session)) => JsonRpcResponse::success(
             id,
@@ -160,10 +157,7 @@ pub fn handle_revoke(core: &crate::core::Core, id: Value, params: &Value) -> Jso
             return JsonRpcResponse::invalid_params(id, "Invalid 'token' (must be 64 hex chars)");
         }
     };
-    let result = core.with_memory(|mem| {
-        let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
-        store.revoke(&token)
-    });
+    let result = core.session_revoke(&token);
     match result {
         Ok(revoked) => JsonRpcResponse::success(id, json!({ "revoked": revoked })),
         Err(e) => session_err_to_response(id, e),
@@ -173,10 +167,7 @@ pub fn handle_revoke(core: &crate::core::Core, id: Value, params: &Value) -> Jso
 /// `session.list` — 활성 세션 목록 (host 전용, 디버깅/감사용).
 pub fn handle_list(core: &crate::core::Core, id: Value) -> JsonRpcResponse {
     let now = now_ms();
-    let result = core.with_memory(|mem| {
-        let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
-        store.list(now)
-    });
+    let result = core.session_list(now);
     match result {
         Ok(sessions) => {
             let arr: Vec<Value> = sessions
@@ -238,22 +229,9 @@ pub fn handle_grant_agent_permission(
         .and_then(|v| v.as_u64())
         .map(|s| s.saturating_mul(1000));
     let now = now_ms();
-    let result = core.with_memory(|mem| {
-        let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
-        let (token, _session) = match store.find_by_agent_id(&agent_id, now)? {
-            Some(t) => t,
-            None => {
-                return Err(SessionError::InvalidArgument(format!(
-                    "no active session for agent_id '{agent_id}'"
-                )));
-            }
-        };
-        let added = store.grant_permission(&token, &permission, ttl_ms, now)?;
-        let expires_at = ttl_ms.map(|t| now.saturating_add(t));
-        Ok::<_, SessionError>((added, expires_at))
-    });
+    let result = core.session_grant_permission_for_agent(&agent_id, &permission, ttl_ms, now);
     match result {
-        Ok((added, expires_at)) => JsonRpcResponse::success(
+        Ok(Some((added, expires_at))) => JsonRpcResponse::success(
             id,
             json!({
                 "agent_id": agent_id,
@@ -261,6 +239,10 @@ pub fn handle_grant_agent_permission(
                 "added": added,
                 "expires_at_ms": expires_at,
             }),
+        ),
+        Ok(None) => session_err_to_response(
+            id,
+            SessionError::InvalidArgument(format!("no active session for agent_id '{agent_id}'")),
         ),
         Err(e) => session_err_to_response(id, e),
     }
@@ -284,14 +266,7 @@ pub fn handle_revoke_agent_permission(
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'permission'"),
     };
     let now = now_ms();
-    let result = core.with_memory(|mem| {
-        let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
-        let (token, _) = match store.find_by_agent_id(&agent_id, now)? {
-            Some(t) => t,
-            None => return Ok::<bool, SessionError>(false),
-        };
-        store.revoke_permission(&token, &permission, now)
-    });
+    let result = core.session_revoke_permission_for_agent(&agent_id, &permission, now);
     match result {
         Ok(removed) => JsonRpcResponse::success(
             id,
@@ -322,10 +297,7 @@ pub fn handle_list_agent_permissions(
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
     let now = now_ms();
-    let result = core.with_memory(|mem| {
-        let mut store = SessionStore::new(mem, tasty_memory::HOST_OWNER);
-        store.list(now)
-    });
+    let result = core.session_list(now);
     match result {
         Ok(sessions) => {
             let arr: Vec<Value> = sessions

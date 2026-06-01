@@ -408,10 +408,7 @@ pub(crate) fn resolve_caller_from_envelope(
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let resolved = core.with_memory(|mem| {
-        let mut store = crate::ipc::session::SessionStore::new(mem, tasty_memory::HOST_OWNER);
-        store.resolve(&token, now_ms)
-    });
+    let resolved = core.session_resolve(&token, now_ms);
     let session = match resolved {
         Err(e) => return Err(deny(&format!("session lookup failed: {e}"))),
         Ok(None) => return Err(deny("session_token unknown/expired/revoked")),
