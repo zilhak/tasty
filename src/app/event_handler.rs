@@ -182,9 +182,11 @@ impl ApplicationHandler<AppEvent> for App {
                     detector = ?detector.as_ref().map(|d| d.as_str()),
                     "IdentifyDone",
                 );
-                if let Some(w) = self.focused_window_mut() {
-                    if let Some(main) = w.as_main_mut() {
-                        crate::file_dispatch::apply_identify_result(
+                // Split borrow — focused_window_mut 는 &mut self 전체를 잡아
+                // self.core 와 충돌하므로 인덱스로 직접 접근.
+                if let Some(id) = self.view.focused_window_id {
+                    if let Some(main) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
+                        self.core.apply_identify_result(
                             &mut main.state,
                             &mut main.engine_state,
                             target,

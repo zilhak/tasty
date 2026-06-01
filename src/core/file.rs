@@ -12,6 +12,8 @@ use std::path::PathBuf;
 
 use crate::core::Core;
 use crate::engine_state::CoreState;
+use crate::file::format::{DetectorId, FileTarget};
+use crate::state::AppState;
 
 /// `Core::reload_file_handlers` 응답.
 pub(crate) struct ReloadFileHandlersOutcome {
@@ -28,6 +30,30 @@ impl Core {
         engine.file_handler.reload_user_config(&path);
         let exists = path.exists();
         ReloadFileHandlersOutcome { path, exists }
+    }
+
+    /// IdentifyWorker 의 비동기 detect 결과 적용. `event_handler` 가
+    /// `AppEvent::IdentifyDone` 수신 시 직접 호출. detector 매칭 handler 가
+    /// 있으면 1순위 자동 실행, 없으면 picker popup 오픈 (state.dialogs +
+    /// state.popups mutate). 옛 `file_dispatch::apply_identify_result` 본문 흡수.
+    pub(crate) fn apply_identify_result(
+        &self,
+        state: &mut AppState,
+        engine: &mut CoreState,
+        target: FileTarget,
+        detector: Option<DetectorId>,
+    ) {
+        let handlers = match &detector {
+            Some(d) => engine.file_handler.handlers_for(d),
+            None => Vec::new(),
+        };
+        if handlers.is_empty() {
+            crate::file::dispatch::open_picker(state, engine, target, detector, Vec::new());
+            return;
+        }
+        // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
+        let first = handlers.into_iter().next().expect("non-empty checked");
+        crate::file::dispatch::execute_handler_action(state, engine, &first, &target);
     }
 }
 

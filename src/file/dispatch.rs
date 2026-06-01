@@ -83,29 +83,8 @@ fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
-/// identify 결과를 받아 handler 선택 (auto 또는 picker) 후 실행.
-/// `AppEvent::IdentifyDone` 콜사이트만 사용. G.3.b 에서 Core method 로 이동 예정.
-pub fn apply_identify_result(
-    state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
-    target: FileTarget,
-    detector: Option<DetectorId>,
-) {
-    let handlers = match &detector {
-        Some(d) => engine.file_handler.handlers_for(d),
-        None => Vec::new(),
-    };
-    if handlers.is_empty() {
-        open_picker(state, engine, target, detector, Vec::new());
-        return;
-    }
-    // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
-    let first = handlers.into_iter().next().expect("non-empty checked");
-    execute_handler_action(state, engine, &first, &target);
-}
-
 /// Picker popup 을 띄운다. 후보가 비어도 호출 — empty-state UI 가 보여진다.
-fn open_picker(
+pub(crate) fn open_picker(
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     target: FileTarget,
