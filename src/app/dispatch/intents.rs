@@ -40,8 +40,13 @@ impl App {
         }
 
         // Domain intents 는 separate batch — main loop 가 끝난 후 처리
-        // (dispatch_domain_intent 가 &mut self 필요).
-        let mut domain_batch: Vec<crate::core::intent::DomainIntent> = Vec::new();
+        // (dispatch_domain_intent 가 &mut self 필요). 발화 source (Main(wid) /
+        // Parked(idx)) 와 origin 을 보존해 cascade 가 정확한 engine/state 에
+        // 접근하고 User/Agent/System 분기를 결정한다.
+        let mut domain_batch: Vec<(
+            crate::app::dispatch_domain::DispatchSource,
+            crate::intent::DispatchedIntent,
+        )> = Vec::new();
 
         for (window_id, batch) in per_state_batches {
             let core = &self.core;
@@ -55,8 +60,11 @@ impl App {
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
-                if let Intent::Domain(d) = &intent.body {
-                    domain_batch.push(d.clone());
+                if matches!(intent.body, Intent::Domain(_)) {
+                    domain_batch.push((
+                        crate::app::dispatch_domain::DispatchSource::Main(window_id),
+                        intent,
+                    ));
                     continue;
                 }
                 Self::dispatch_one_intent(core, &mut main.state, &mut main.engine_state, &intent);
@@ -71,8 +79,11 @@ impl App {
             for intent in batch {
                 #[cfg(debug_assertions)]
                 crate::intent::watch::observe(&intent);
-                if let Intent::Domain(d) = &intent.body {
-                    domain_batch.push(d.clone());
+                if matches!(intent.body, Intent::Domain(_)) {
+                    domain_batch.push((
+                        crate::app::dispatch_domain::DispatchSource::Parked(idx),
+                        intent,
+                    ));
                     continue;
                 }
                 Self::dispatch_one_intent(core, state, engine, &intent);
@@ -80,8 +91,8 @@ impl App {
         }
 
         // Domain cascade — handle_core_event 가 App 메서드라 &mut self 필요.
-        for d in domain_batch {
-            if let Err(e) = self.dispatch_domain_intent(d) {
+        for (source, dispatched) in domain_batch {
+            if let Err(e) = self.dispatch_domain_intent(source, dispatched) {
                 tracing::warn!("dispatch_domain_intent failed: {e}");
             }
         }

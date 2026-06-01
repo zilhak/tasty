@@ -8,34 +8,68 @@
 //! 도메인 마이그레이션 진행에 따라 점진 *Core::apply 안으로 이동* 한다.
 
 use tasty_settings::Settings;
+use winit::window::WindowId;
 
 use crate::adapters::ui::window::Window as _;
 use crate::app::App;
 use crate::core::intent::{CoreEvent, DomainIntent};
+use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
+
+/// Domain intent 발화 source. `dispatch_pending_intents` 가 per-window /
+/// per-parked 분리해 origin 과 함께 보존한다. cascade 가 *어느 engine 에
+/// 발화됐는지* 알아야 하는 경우 (예: workspace.create) 에 사용한다.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum DispatchSource {
+    Main(WindowId),
+    Parked(usize),
+}
 
 impl App {
     /// `DomainIntent` 발행. Core 가 *이벤트 목록* 반환 → 각 이벤트 cascade 처리.
     ///
-    /// Step 3 임시: `Core::apply` 가 engine 인자를 요구해 *첫 main window* 의
-    /// engine 으로 폴백. Step 4 에서 발화 source (window_id / parked idx) 를
-    /// `domain_batch` 가 보존하도록 확장해 정확한 engine 을 전달한다.
-    pub(crate) fn dispatch_domain_intent(&mut self, intent: DomainIntent) -> anyhow::Result<()> {
+    /// `source` 는 발화 origin engine (main window 또는 parked state). Core::apply
+    /// 가 해당 engine 을 mutate 하고, cascade 도 같은 engine/state 컨텍스트에서
+    /// 후처리한다.
+    pub(crate) fn dispatch_domain_intent(
+        &mut self,
+        source: DispatchSource,
+        dispatched: DispatchedIntent,
+    ) -> anyhow::Result<()> {
+        let Intent::Domain(intent) = dispatched.body else {
+            anyhow::bail!("dispatch_domain_intent: non-Domain Intent");
+        };
+        let origin = dispatched.origin;
         let core = &mut self.core;
-        let events = if let Some(main) = self.windows.values_mut().find_map(|w| w.as_main_mut()) {
-            core.apply(&mut main.engine_state, intent)?
-        } else if let Some((_, engine)) = self.parked_states.first_mut() {
-            core.apply(engine, intent)?
-        } else {
-            anyhow::bail!("dispatch_domain_intent: no main or parked engine available");
+        let events = match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    anyhow::bail!("dispatch_domain_intent: main window {wid:?} not found");
+                };
+                core.apply(&mut main.engine_state, intent)?
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((_, engine)) = self.parked_states.get_mut(idx) else {
+                    anyhow::bail!("dispatch_domain_intent: parked state {idx} not found");
+                };
+                core.apply(engine, intent)?
+            }
         };
         for event in events {
-            self.handle_core_event(event);
+            self.handle_core_event(source, &origin, event);
         }
         Ok(())
     }
 
     /// `CoreEvent` 처리 — Phase D 진행 중에는 *옛 cascade 코드의 위치 이동*.
-    fn handle_core_event(&mut self, event: CoreEvent) {
+    /// `source` / `origin` 은 *발화 컨텍스트가 필요한 cascade* (workspace.create
+    /// 의 host event + active 전환 등) 에서만 사용. 전역 cascade (settings,
+    /// clipboard 등) 는 무시한다.
+    fn handle_core_event(
+        &mut self,
+        source: DispatchSource,
+        origin: &IntentOrigin,
+        event: CoreEvent,
+    ) {
         match event {
             CoreEvent::SettingsUpdated(new_settings) => {
                 self.cascade_settings_updated(new_settings);
@@ -45,9 +79,9 @@ impl App {
                 surface_id,
                 title,
                 body,
-                source,
+                source: src,
             } => {
-                self.cascade_notification_pushed(ws_id, surface_id, title, body, source);
+                self.cascade_notification_pushed(ws_id, surface_id, title, body, src);
             }
             CoreEvent::NotificationReadRequested { id } => {
                 self.cascade_notification_read(id);
@@ -64,9 +98,70 @@ impl App {
             CoreEvent::InternalClipboardCopyRecorded { text } => {
                 self.cascade_internal_clipboard_copy(text);
             }
-            CoreEvent::WorkspaceCreated { .. } => {
-                // Step 2 placeholder — Step 4 에서 cascade_workspace_created 구현.
-                tracing::warn!("CoreEvent::WorkspaceCreated cascade not yet implemented (Step 4)");
+            CoreEvent::WorkspaceCreated {
+                id,
+                index,
+                surface_id: _,
+                renamed_name,
+                renamed_subtitle,
+                renamed_description,
+            } => {
+                self.dispatch_workspace_created_cascade(
+                    source,
+                    origin,
+                    id,
+                    index,
+                    renamed_name,
+                    renamed_subtitle,
+                    renamed_description,
+                );
+            }
+        }
+    }
+
+    /// `WorkspaceCreated` cascade 의 source 라우터. main/parked 분기 후
+    /// `cascade_workspace_created` (free function) 호출.
+    fn dispatch_workspace_created_cascade(
+        &mut self,
+        source: DispatchSource,
+        origin: &IntentOrigin,
+        workspace_id: u32,
+        index: usize,
+        renamed_name: Option<String>,
+        renamed_subtitle: Option<String>,
+        renamed_description: Option<String>,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_workspace_created(
+                    &mut main.state,
+                    &mut main.engine_state,
+                    origin,
+                    workspace_id,
+                    index,
+                    renamed_name,
+                    renamed_subtitle,
+                    renamed_description,
+                );
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_workspace_created(
+                    state,
+                    engine,
+                    origin,
+                    workspace_id,
+                    index,
+                    renamed_name,
+                    renamed_subtitle,
+                    renamed_description,
+                );
             }
         }
     }
@@ -244,5 +339,39 @@ impl App {
         for (_, engine) in self.parked_states.iter_mut() {
             engine.notifications.mark_all_read();
         }
+    }
+}
+
+/// `CoreEvent::WorkspaceCreated` 의 외부 cascade. *해당 engine + state*
+/// 만 만지므로 App 메서드가 아닌 free function — IPC handler 도 events
+/// 받아서 직접 호출 가능 (Step 6).
+///
+/// - `renamed_*` 가 하나라도 `Some` 이면 `PendingHostEvent::WorkspaceRenamed`
+///   enqueue (plugin event bus 발화 경로).
+/// - `origin` 이 User 면 `state.active_workspace = index` 로 active 전환.
+/// - engine 의 `mark_layout_dirty` / `send_fast_init` 는 `Core::apply` 안에서
+///   이미 처리됐다.
+pub(crate) fn cascade_workspace_created(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::engine_state::CoreState,
+    origin: &IntentOrigin,
+    workspace_id: u32,
+    index: usize,
+    renamed_name: Option<String>,
+    renamed_subtitle: Option<String>,
+    renamed_description: Option<String>,
+) {
+    let _ = engine; // host event 발화 + active 전환만 — engine 은 Core::apply 가 이미 mutate.
+    if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some() {
+        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
+            workspace_id,
+            name: renamed_name,
+            subtitle: renamed_subtitle,
+            description: renamed_description,
+            user_direct: false,
+        });
+    }
+    if origin.is_user() {
+        state.active_workspace = index;
     }
 }
