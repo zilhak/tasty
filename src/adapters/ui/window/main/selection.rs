@@ -1,4 +1,5 @@
 use crate::adapters::ui::window::Window;
+use crate::core::intent::{DomainIntent, SendPayload};
 use crate::model::PhysicalRect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
 
@@ -208,10 +209,22 @@ impl MainWindow {
             return;
         }
 
-        // Commit any in-progress IME composition before moving cursor
+        let surface_id = match self.state.focused_surface_id(&self.engine_state) {
+            Some(sid) => sid,
+            None => return,
+        };
+
+        // Commit any in-progress IME composition before moving cursor.
+        // preedit text 도 Intent 큐로 — Intent FIFO 라 arrow 보다 먼저 처리.
         if let Some(preedit) = self.ime_preedit.take() {
-            if let Some(terminal) = self.state.focused_terminal_mut(&mut self.engine_state) {
-                terminal.send_key(&preedit.text);
+            if !preedit.text.is_empty() {
+                self.state.dispatch_intent(
+                    DomainIntent::SendToSurface {
+                        surface_id: preedit.surface_id,
+                        payload: SendPayload::Text(preedit.text),
+                    }
+                    .from_user_shortcut("click_cursor"),
+                );
             }
         }
 
@@ -268,11 +281,6 @@ impl MainWindow {
             return;
         }
 
-        // Determine arrow escape sequence
-        let terminal = self
-            .state
-            .focused_terminal_mut(&mut self.engine_state)
-            .unwrap();
         let app_cursor = terminal.application_cursor_keys();
         let arrow: &'static [u8] = if going_right {
             if app_cursor { b"\x1bOC" } else { b"\x1b[C" }
@@ -280,9 +288,19 @@ impl MainWindow {
             if app_cursor { b"\x1bOD" } else { b"\x1b[D" }
         };
 
+        // arrow_count 만큼 sequence 를 한 Vec<u8> 에 concat 후 1 Intent 발행
+        // (큐 폭증 회피).
+        let mut bytes = Vec::with_capacity(arrow.len() * arrow_count);
         for _ in 0..arrow_count {
-            terminal.send_bytes(arrow);
+            bytes.extend_from_slice(arrow);
         }
+        self.state.dispatch_intent(
+            DomainIntent::SendToSurface {
+                surface_id,
+                payload: SendPayload::Bytes(bytes),
+            }
+            .from_user_shortcut("click_cursor"),
+        );
     }
 
     /// Convert mouse physical coordinates to a grid SelectionPoint for the focused terminal.
