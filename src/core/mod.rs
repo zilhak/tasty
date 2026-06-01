@@ -428,13 +428,100 @@ impl Core {
             DomainIntent::RespawnTerminal { surface_id, cwd } => {
                 Ok(vec![Self::apply_respawn_terminal(engine, surface_id, cwd)])
             }
-            DomainIntent::RestoreClosedItem { target_pane_id: _ } => {
-                // D.3.C.D.5.b: 타입 stub. 실제 본문은 D.3.C.D.5.c 에서 구현.
-                Ok(vec![CoreEvent::ClosedItemRestored {
-                    restored: false,
-                    kind: crate::core::intent::RestoredKind::Nothing,
-                }])
+            DomainIntent::RestoreClosedItem { target_pane_id } => {
+                Ok(vec![Self::apply_restore_closed_item(
+                    engine,
+                    target_pane_id,
+                )])
             }
+        }
+    }
+
+    /// `DomainIntent::RestoreClosedItem` 본문. closed_items stack pop → kind 별
+    /// rebuild + engine attach. AppState 의존 부분 (active_workspace 변경) 은
+    /// cascade 가 처리하므로 본 함수는 *engine mutate* 만.
+    fn apply_restore_closed_item(
+        engine: &mut crate::engine_state::CoreState,
+        target_pane_id: Option<u32>,
+    ) -> CoreEvent {
+        use crate::core::intent::RestoredKind;
+        use crate::core::restore_rebuild;
+        use crate::model::Surface;
+        use crate::model::Tab;
+        use crate::model::Workspace;
+        use crate::model::closed_item::ClosedItem;
+
+        let nothing = || CoreEvent::ClosedItemRestored {
+            restored: false,
+            kind: RestoredKind::Nothing,
+        };
+
+        let Some(item) = engine.closed_items.pop() else {
+            return nothing();
+        };
+
+        let kind = match item {
+            ClosedItem::Surface { surface, tab_name } => {
+                let Some(node) = restore_rebuild::rebuild_surface_node(engine, surface) else {
+                    return nothing();
+                };
+                let Some(pane_id) = target_pane_id else {
+                    return nothing();
+                };
+                let tab_id = engine.next_ids.next_tab();
+                let surface_box: Box<dyn Surface> = Box::new(node);
+                let tab = Tab::new_with_surface(tab_id, tab_name, surface_box);
+                if !push_tab_to_pane(engine, pane_id, tab) {
+                    return nothing();
+                }
+                RestoredKind::TabIntoPane { pane_id }
+            }
+            ClosedItem::Tab(closed_tab) => {
+                let Some(result) = restore_rebuild::rebuild_surface(engine, closed_tab.panel)
+                else {
+                    return nothing();
+                };
+                let Some(pane_id) = target_pane_id else {
+                    return nothing();
+                };
+                let tab_id = engine.next_ids.next_tab();
+                let name = closed_tab.explicit_name.unwrap_or(closed_tab.name);
+                let tab = result.into_tab(tab_id, name);
+                if !push_tab_to_pane(engine, pane_id, tab) {
+                    return nothing();
+                }
+                RestoredKind::TabIntoPane { pane_id }
+            }
+            ClosedItem::Workspace {
+                name,
+                subtitle,
+                pane_layout,
+                focused_pane,
+                ..
+            } => {
+                let ws_id = engine.next_ids.next_workspace();
+                let Some(pane_node) = restore_rebuild::rebuild_pane_node(engine, pane_layout)
+                else {
+                    return nothing();
+                };
+                let all_pane_ids = pane_node.all_pane_ids();
+                let actual_focused = if all_pane_ids.contains(&focused_pane) {
+                    focused_pane
+                } else {
+                    *all_pane_ids.first().unwrap_or(&0)
+                };
+                let ws = Workspace::from_restored(ws_id, name, subtitle, pane_node, actual_focused);
+                engine.workspaces.push(ws);
+                RestoredKind::Workspace {
+                    new_ws_index: engine.workspaces.len() - 1,
+                }
+            }
+        };
+
+        engine.mark_layout_dirty();
+        CoreEvent::ClosedItemRestored {
+            restored: true,
+            kind,
         }
     }
 
@@ -1332,4 +1419,21 @@ impl Core {
             renamed_description,
         }])
     }
+}
+
+/// `RestoreClosedItem` 의 helper. pane_id 에 tab attach + active_tab 갱신.
+/// *모든* workspace 순회 (포커스 독립).
+fn push_tab_to_pane(
+    engine: &mut crate::engine_state::CoreState,
+    pane_id: u32,
+    tab: crate::model::Tab,
+) -> bool {
+    for ws in engine.workspaces.iter_mut() {
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            pane.tabs.push(tab);
+            pane.active_tab = pane.tabs.len() - 1;
+            return true;
+        }
+    }
+    false
 }

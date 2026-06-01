@@ -249,8 +249,34 @@ impl App {
             CoreEvent::TerminalRespawned { .. } => {
                 // 추가 cascade 없음. handler 가 events 직접 받아서 response 처리.
             }
-            CoreEvent::ClosedItemRestored { .. } => {
-                // D.3.C.D.5.b: stub. 실제 cascade 는 D.3.C.D.5.c 에서 구현.
+            CoreEvent::ClosedItemRestored { restored, kind } => {
+                if restored {
+                    self.dispatch_closed_item_restored_cascade(source, kind);
+                }
+            }
+        }
+    }
+
+    /// `ClosedItemRestored` cascade — (Workspace kind 이면) active_workspace 갱신.
+    /// TabIntoPane 은 engine 안 이미 attach 되었으므로 mark_dirty 만.
+    fn dispatch_closed_item_restored_cascade(
+        &mut self,
+        source: DispatchSource,
+        kind: crate::core::intent::RestoredKind,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_closed_item_restored(&mut main.state, &mut main.engine_state, kind);
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_closed_item_restored(state, engine, kind);
             }
         }
     }
@@ -710,6 +736,32 @@ pub(crate) fn cascade_workspace_created(
     }
     if origin.is_user() {
         state.active_workspace = index;
+    }
+}
+
+/// `CoreEvent::ClosedItemRestored` 의 외부 cascade.
+/// - `Workspace`: `state.active_workspace = new_ws_index` (사용자가 복원한 ws 로
+///   포커스 이동 — restore 는 사용자 단축키 only 라 origin 분기 불요).
+/// - `TabIntoPane`: 별도 mutate 없음 (engine 안 이미 push 완료).
+/// - `Nothing`: no-op.
+///
+/// Parked 경로도 동일 함수 호출 — Parked engine 의 `state.active_workspace` 도
+/// 같은 의미라 일관 처리 (현재 호출처는 사용자 단축키 only 라 Main 만 도달하지만
+/// 다른 cascade 와 시그니처 정렬을 위해 Parked 분기 유지).
+pub(crate) fn cascade_closed_item_restored(
+    state: &mut crate::state::AppState,
+    _engine: &mut crate::engine_state::CoreState,
+    kind: crate::core::intent::RestoredKind,
+) {
+    use crate::core::intent::RestoredKind;
+    match kind {
+        RestoredKind::Nothing => {}
+        RestoredKind::Workspace { new_ws_index } => {
+            state.active_workspace = new_ws_index;
+        }
+        RestoredKind::TabIntoPane { .. } => {
+            // engine 안에서 이미 attach 완료. AppState 측 변경 없음.
+        }
     }
 }
 
