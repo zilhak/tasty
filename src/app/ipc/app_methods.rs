@@ -72,15 +72,17 @@ impl App {
                 ),
                 Some(id_u64) => {
                     let target = self
+                        .view
                         .windows
                         .keys()
                         .copied()
                         .find(|w| u64::from(*w) == id_u64);
                     match target {
                         Some(tid) => {
-                            self.windows.remove(&tid);
+                            self.view.windows.remove(&tid);
                             if self.view.focused_window_id == Some(tid) {
-                                self.view.focused_window_id = self.windows.keys().next().copied();
+                                self.view.focused_window_id =
+                                    self.view.windows.keys().next().copied();
                             }
                             host_ipc::protocol::JsonRpcResponse::success(
                                 response_id,
@@ -113,7 +115,7 @@ impl App {
                 ),
                 Some(id_u64) => {
                     let mut found = false;
-                    for (id, w) in &self.windows {
+                    for (id, w) in &self.view.windows {
                         if w.as_main().is_none() {
                             continue;
                         }
@@ -136,6 +138,7 @@ impl App {
         if cmd.request.method == "window.list" {
             let focused_id = self.view.focused_window_id;
             let list: Vec<_> = self
+                .view
                 .windows
                 .iter()
                 .filter_map(|(id, w)| {
@@ -452,7 +455,7 @@ impl App {
                 // Arc 공유). main 이 하나도 없으면 elevation popup 표시 자체가 의미 없으므로
                 // internal_error.
                 let core = &mut self.core;
-                let main = self.windows.values_mut().find_map(|w| w.as_main_mut());
+                let main = self.view.windows.values_mut().find_map(|w| w.as_main_mut());
                 match main {
                     Some(m) => host_ipc::handler::session::handle_request_permission(
                         core,
@@ -492,6 +495,7 @@ impl App {
     /// worker thread 로 클론해 cascade 없이 자기 수명에서 영속한다.
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         let store_opt = self
+            .view
             .windows
             .values()
             .find_map(|w| w.as_main().map(|w| w.engine_state.approval_store.clone()))

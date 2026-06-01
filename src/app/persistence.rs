@@ -15,7 +15,7 @@ impl App {
     /// Intent 큐 우회 — *system loop tick / shutdown* 의 부수효과 (D.3.C.D.4 §8.H).
     pub(crate) fn flush_layout_persistence(&mut self, force: bool) {
         let label = if force { "final" } else { "tick" };
-        for w in self.windows.values_mut() {
+        for w in self.view.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 let intent = DomainIntent::SaveLayoutNow {
                     active_workspace: main.state.active_workspace,

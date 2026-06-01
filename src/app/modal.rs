@@ -19,7 +19,7 @@ impl App {
     /// Open a modal, registering it in the unified window map.
     /// 모달도 일반 윈도우와 같은 `windows` 맵에 저장되며, `active_modal_id`로 식별된다.
     pub(crate) fn open_modal(&mut self, modal: Box<dyn window::Window>, window_id: WindowId) {
-        self.windows.insert(window_id, modal);
+        self.view.windows.insert(window_id, modal);
         self.view.active_modal_id = Some(window_id);
     }
 
@@ -28,7 +28,7 @@ impl App {
         let Some(modal_id) = self.view.active_modal_id.take() else {
             return;
         };
-        let Some(mut modal) = self.windows.remove(&modal_id) else {
+        let Some(mut modal) = self.view.windows.remove(&modal_id) else {
             return;
         };
         // If it was a settings modal, apply settings to all main windows

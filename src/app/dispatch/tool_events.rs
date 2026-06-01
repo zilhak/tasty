@@ -8,7 +8,7 @@ impl App {
     /// JSON value를 그대로 전달 (현재 `{ "tool_id": "<plugin_id>/<tool_id>" }`).
     pub(crate) fn dispatch_pending_tool_events(&mut self) {
         let mut drained: Vec<(String, serde_json::Value)> = Vec::new();
-        for w in self.windows.values_mut() {
+        for w in self.view.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 drained.append(&mut main.state.pending_tool_events);
             }

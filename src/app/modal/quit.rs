@@ -11,7 +11,7 @@ impl App {
         let quit_modal_open = self
             .view
             .active_modal_id
-            .and_then(|id| self.windows.get(&id))
+            .and_then(|id| self.view.windows.get(&id))
             .map(|m| {
                 m.as_any()
                     .downcast_ref::<crate::adapters::ui::window::QuitWindow>()
@@ -27,6 +27,7 @@ impl App {
 
         // Get close behavior from settings
         let behavior = self
+            .view
             .windows
             .values()
             .find_map(|w| {

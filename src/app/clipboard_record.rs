@@ -7,6 +7,7 @@ impl App {
     pub(crate) fn record_clipboard_data(&mut self, data: crate::ClipboardData) {
         let source = crate::clipboard_history::ClipboardSource::System;
         let engines = self
+            .view
             .windows
             .values_mut()
             .filter_map(|w| w.as_main_mut())

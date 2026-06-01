@@ -8,7 +8,7 @@ impl App {
     pub(crate) fn dispatch_plugin_popup_events(&mut self) {
         let mut drained_events: Vec<(u64, tasty_plugin_protocol::ui_tree::UiEvent)> = Vec::new();
         let mut drained_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)> = Vec::new();
-        for w in self.windows.values_mut() {
+        for w in self.view.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 drained_events.append(&mut main.state.plugin_popup_events);
                 drained_closes.append(&mut main.state.plugin_popup_closes);

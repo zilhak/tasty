@@ -12,8 +12,9 @@ impl App {
     /// 모든 main window 의 picker result 슬롯 drain. parked state 는 *focused
     /// 윈도우가 아니므로 popup 미오픈* 가정 — main window 만 순회.
     pub(crate) fn dispatch_pending_picker_results(&mut self) {
-        // self.core 와 self.windows 동시 borrow 회피 — id 만 먼저 모은다.
+        // self.core 와 self.view.windows 동시 borrow 회피 — id 만 먼저 모은다.
         let pending: Vec<winit::window::WindowId> = self
+            .view
             .windows
             .iter()
             .filter_map(|(id, w)| {
@@ -24,7 +25,7 @@ impl App {
             .collect();
         for id in pending {
             let core = &mut self.core;
-            let Some(main) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) else {
+            let Some(main) = self.view.windows.get_mut(&id).and_then(|w| w.as_main_mut()) else {
                 continue;
             };
             let Some(data) = main.state.dialogs.file_handler_picker.as_mut() else {

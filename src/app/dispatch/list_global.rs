@@ -38,7 +38,7 @@ impl App {
         ) -> JsonRpcResponse,
     {
         let mut combined: Vec<serde_json::Value> = Vec::new();
-        for w in self.windows.values() {
+        for w in self.view.windows.values() {
             if let Some(m) = w.as_main() {
                 let resp = f(&m.state, &m.engine_state, id.clone());
                 if let Some(arr) = resp.result.as_ref().and_then(|v| v.as_array()) {

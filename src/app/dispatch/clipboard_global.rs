@@ -18,7 +18,7 @@ impl App {
         let id = request.id.clone().unwrap_or(Value::Null);
         match request.method.as_str() {
             "tool.clipboard.clear" => {
-                for w in self.windows.values_mut() {
+                for w in self.view.windows.values_mut() {
                     if let Some(m) = w.as_main_mut() {
                         m.engine_state.clipboard_history.clear();
                     }
@@ -38,7 +38,7 @@ impl App {
                 // 모든 engine 의 같은 idx entry 제거. record_clipboard_data 가 모든
                 // engine 에 동일 순서로 push 하므로 idx 도 동일 entry 가리킴.
                 let mut removed_any = false;
-                for w in self.windows.values_mut() {
+                for w in self.view.windows.values_mut() {
                     if let Some(m) = w.as_main_mut() {
                         if m.engine_state.clipboard_history.remove_at(idx).is_some() {
                             removed_any = true;

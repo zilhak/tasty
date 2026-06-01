@@ -12,7 +12,7 @@ impl App {
             Some(id) => id,
             None => return,
         };
-        let origin = match self.windows.get(&modal_id) {
+        let origin = match self.view.windows.get(&modal_id) {
             Some(w) => match w.base().winit.outer_position() {
                 Ok(pos) => pos,
                 Err(_) => return,
@@ -42,7 +42,7 @@ impl App {
             let modal_id = self.view.active_modal_id;
             self.modal_shake = None;
             if let Some(id) = modal_id {
-                if let Some(w) = self.windows.get(&id) {
+                if let Some(w) = self.view.windows.get(&id) {
                     w.base()
                         .winit
                         .set_outer_position(winit::dpi::PhysicalPosition::new(origin.x, origin.y));
@@ -58,7 +58,7 @@ impl App {
             * (1.0 - t)) as i32;
         let origin = shake.origin;
         if let Some(id) = self.view.active_modal_id {
-            if let Some(w) = self.windows.get(&id) {
+            if let Some(w) = self.view.windows.get(&id) {
                 w.base()
                     .winit
                     .set_outer_position(winit::dpi::PhysicalPosition::new(

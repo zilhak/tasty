@@ -14,14 +14,14 @@ impl App {
     pub(crate) fn focused_window(&self) -> Option<&window::main::MainWindow> {
         self.view
             .focused_window_id
-            .and_then(|id| self.windows.get(&id))
+            .and_then(|id| self.view.windows.get(&id))
             .and_then(|w| w.as_main())
     }
 
     pub(crate) fn focused_window_mut(&mut self) -> Option<&mut window::main::MainWindow> {
         self.view
             .focused_window_id
-            .and_then(|id| self.windows.get_mut(&id))
+            .and_then(|id| self.view.windows.get_mut(&id))
             .and_then(|w| w.as_main_mut())
     }
 
@@ -29,7 +29,10 @@ impl App {
     pub(crate) fn main_windows_iter_mut(
         &mut self,
     ) -> impl Iterator<Item = &mut window::main::MainWindow> {
-        self.windows.values_mut().filter_map(|w| w.as_main_mut())
+        self.view
+            .windows
+            .values_mut()
+            .filter_map(|w| w.as_main_mut())
     }
 
     /// 살아있는 CoreState 중 하나(아무거나)를 참조로 반환. windows main → parked
@@ -37,7 +40,7 @@ impl App {
     /// file_format / file_handler / preset_store / identify_worker / approval_store /
     /// telemetry_seq / anomaly_detector / agent_seq) 을 공유시키기 위해 사용.
     pub(crate) fn any_main_engine(&self) -> Option<&crate::core::CoreState> {
-        for w in self.windows.values() {
+        for w in self.view.windows.values() {
             if let Some(m) = w.as_main() {
                 return Some(&m.engine_state);
             }
@@ -48,7 +51,7 @@ impl App {
     /// Surface 를 가진 MainWindow 의 WindowId 를 반환. windows main 순회 후 못 찾으면
     /// None (parked 는 별도로 fallback 처리).
     pub(crate) fn find_main_with_surface(&self, surface_id: u32) -> Option<WindowId> {
-        for (wid, w) in &self.windows {
+        for (wid, w) in &self.view.windows {
             if let Some(m) = w.as_main() {
                 if m.engine_state.has_surface(surface_id) {
                     return Some(*wid);
@@ -60,7 +63,7 @@ impl App {
 
     /// Workspace 를 가진 MainWindow 의 WindowId 를 반환.
     pub(crate) fn find_main_with_workspace(&self, workspace_id: u32) -> Option<WindowId> {
-        for (wid, w) in &self.windows {
+        for (wid, w) in &self.view.windows {
             if let Some(m) = w.as_main() {
                 if m.engine_state.has_workspace(workspace_id) {
                     return Some(*wid);
@@ -72,7 +75,7 @@ impl App {
 
     /// Pane 을 가진 MainWindow 의 WindowId 를 반환.
     pub(crate) fn find_main_with_pane(&self, pane_id: u32) -> Option<WindowId> {
-        for (wid, w) in &self.windows {
+        for (wid, w) in &self.view.windows {
             if let Some(m) = w.as_main() {
                 if m.engine_state.has_pane(pane_id) {
                     return Some(*wid);

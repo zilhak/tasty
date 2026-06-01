@@ -48,6 +48,7 @@ impl App {
         if let Some(id) = target_id {
             let core = &mut self.core;
             let resp_opt = self
+                .view
                 .windows
                 .get_mut(&id)
                 .and_then(|w| w.as_main_mut())

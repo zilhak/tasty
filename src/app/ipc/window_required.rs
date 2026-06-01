@@ -37,6 +37,7 @@ impl App {
             }
         };
         let w = match self
+            .view
             .windows
             .get_mut(&focused_id)
             .and_then(|w| w.as_main_mut())

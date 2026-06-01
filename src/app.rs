@@ -34,9 +34,6 @@ pub(crate) struct App {
     pub(crate) hub: Hub,
     /// Phase C — GUI 어댑터. proxy, modal/focus 식별자, windows HashMap (예정) 보유.
     pub(crate) view: View,
-    /// 모든 윈도우(모달 포함). `view.active_modal_id`로 현재 활성 모달을 식별한다.
-    /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
-    pub(crate) windows: std::collections::HashMap<WindowId, Box<dyn window::Window>>,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
     /// Moved into new windows when created, or used directly for IPC.
     /// 윈도우가 파킹되면 그 MainWindow 가 갖고 있던 (AppState, CoreState) 쌍을
@@ -93,7 +90,6 @@ impl App {
             core: crate::boot::wiring::build_production_core(proxy.clone(), memory)?,
             hub: Hub::new(port_file),
             view: View::new(proxy.clone()),
-            windows: std::collections::HashMap::new(),
             parked_states: Vec::new(),
             shell_setup_mode: false,
             shell_setup_path: String::new(),
@@ -120,7 +116,7 @@ impl App {
         if let Some(e) = self.engine_state.as_ref() {
             return e;
         }
-        for w in self.windows.values() {
+        for w in self.view.windows.values() {
             if let Some(main) = w.as_main() {
                 return &main.engine_state;
             }
@@ -132,7 +128,7 @@ impl App {
         if self.engine_state.is_some() {
             return self.engine_state.as_mut().unwrap();
         }
-        for w in self.windows.values_mut() {
+        for w in self.view.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 return &mut main.engine_state;
             }

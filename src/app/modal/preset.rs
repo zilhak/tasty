@@ -12,7 +12,7 @@ impl App {
     /// 포커스만 옮긴다 (엔진 전역 단일 인스턴스).
     pub(crate) fn open_preset_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if let Some(id) = self.preset_window_id {
-            if let Some(w) = self.windows.get(&id) {
+            if let Some(w) = self.view.windows.get(&id) {
                 w.base().winit.focus_window();
                 return;
             }
@@ -65,7 +65,7 @@ impl App {
             use window::Window as _;
             preset.mark_dirty();
         }
-        self.windows.insert(window_id, Box::new(preset));
+        self.view.windows.insert(window_id, Box::new(preset));
         self.preset_window_id = Some(window_id);
         tracing::info!("opened preset window {:?}", window_id);
     }
@@ -76,7 +76,7 @@ impl App {
             return;
         }
         self.preset_window_id = None;
-        self.windows.remove(&window_id);
+        self.view.windows.remove(&window_id);
     }
 
     /// 도구 메뉴 클릭 / Intent::SavePreset 후속 — PresetWindow 열기 + (있다면) selection.
@@ -105,6 +105,7 @@ impl App {
         if let Some((kind, name)) = pending_selection {
             if let Some(pwid) = self.preset_window_id {
                 if let Some(pw) = self
+                    .view
                     .windows
                     .get_mut(&pwid)
                     .and_then(|w| w.as_any_mut().downcast_mut::<window::PresetWindow>())

@@ -42,7 +42,12 @@ impl App {
         let core = &mut self.core;
         let events = match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     anyhow::bail!("dispatch_domain_intent: main window {wid:?} not found");
                 };
                 core.apply(&mut main.engine_state, intent)?
@@ -172,7 +177,11 @@ impl App {
                 // main.mark_dirty 만 redraw 위해.
                 if moved {
                     if let DispatchSource::Main(wid) = source {
-                        if let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut())
+                        if let Some(main) = self
+                            .view
+                            .windows
+                            .get_mut(&wid)
+                            .and_then(|w| w.as_main_mut())
                         {
                             main.mark_dirty();
                         }
@@ -250,7 +259,11 @@ impl App {
                 // Core::apply 가 이미 처리. main.mark_dirty 만.
                 if replaced {
                     if let DispatchSource::Main(wid) = source {
-                        if let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut())
+                        if let Some(main) = self
+                            .view
+                            .windows
+                            .get_mut(&wid)
+                            .and_then(|w| w.as_main_mut())
                         {
                             main.mark_dirty();
                         }
@@ -301,7 +314,12 @@ impl App {
                 // osc_title 은 layout.json 영속 대상 아님 → mark_layout_dirty 호출 X.
                 // tab bar 표시 갱신을 위한 mark_dirty 만.
                 if let DispatchSource::Main(wid) = source {
-                    if let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) {
+                    if let Some(main) = self
+                        .view
+                        .windows
+                        .get_mut(&wid)
+                        .and_then(|w| w.as_main_mut())
+                    {
                         main.mark_dirty();
                     }
                 }
@@ -349,7 +367,12 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_closed_item_restored(&mut main.state, &mut main.engine_state, kind);
@@ -375,7 +398,12 @@ impl App {
     ) {
         let (state, engine, dirty_main) = match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 (
@@ -423,7 +451,12 @@ impl App {
     fn cascade_terminal_bell_ring(&mut self, source: DispatchSource, surface_id: u32) {
         let (state, engine, dirty_main) = match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 (
@@ -477,7 +510,12 @@ impl App {
     ) {
         let (state, dirty_main) = match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 (&mut main.state, Some(&mut main.base))
@@ -510,7 +548,12 @@ impl App {
     fn cascade_terminal_pty_cwd_changed(&mut self, source: DispatchSource, surface_id: u32) {
         let (state, dirty_main) = match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 (&mut main.state, Some(&mut main.base))
@@ -535,7 +578,12 @@ impl App {
     fn cascade_terminal_clipboard_set(&mut self, source: DispatchSource, text: String) {
         let state = match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 &mut main.state
@@ -560,7 +608,12 @@ impl App {
     fn cascade_terminal_process_exited(&mut self, source: DispatchSource, surface_id: u32) {
         let (state, engine, dirty_main) = match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 (
@@ -615,7 +668,12 @@ impl App {
         let core = &mut self.core;
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_surface_closed(
@@ -661,7 +719,12 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_surface_split(
@@ -703,7 +766,12 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_pane_split(
@@ -748,7 +816,12 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_tab_created(
@@ -779,7 +852,12 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_pane_closed(&mut main.state, pane_id);
@@ -811,7 +889,12 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_tab_closed(&mut main.state, tab_id, pane_id);
@@ -842,7 +925,12 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_workspace_moved(&mut main.state, from_index, to_index);
@@ -870,7 +958,12 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_workspace_meta_updated(
@@ -907,7 +1000,12 @@ impl App {
         match source {
             DispatchSource::Main(wid) => {
                 let window_id = u64::from(wid);
-                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                let Some(main) = self
+                    .view
+                    .windows
+                    .get_mut(&wid)
+                    .and_then(|w| w.as_main_mut())
+                else {
                     return;
                 };
                 cascade_workspace_created(
@@ -989,7 +1087,7 @@ impl App {
     }
 
     fn enqueue_plugin_host_event(&mut self, ev: crate::state::PendingHostEvent) {
-        let Some(main) = self.windows.values_mut().find_map(|w| w.as_main_mut()) else {
+        let Some(main) = self.view.windows.values_mut().find_map(|w| w.as_main_mut()) else {
             return;
         };
         main.state.enqueue_host_event(ev);
@@ -1205,7 +1303,7 @@ impl App {
             );
             return;
         };
-        let Some(window) = self.windows.get_mut(&wid) else {
+        let Some(window) = self.view.windows.get_mut(&wid) else {
             return;
         };
         let Some(main) = window.as_main_mut() else {

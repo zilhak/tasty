@@ -10,7 +10,7 @@ impl App {
         let Some(modal_id) = self.view.active_modal_id else {
             return;
         };
-        let Some(modal) = self.windows.get_mut(&modal_id) else {
+        let Some(modal) = self.view.windows.get_mut(&modal_id) else {
             return;
         };
         let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
@@ -113,7 +113,7 @@ impl App {
         self.refresh_tool_registry();
 
         let snapshot = self.snapshot_plugins();
-        if let Some(modal) = self.windows.get_mut(&modal_id) {
+        if let Some(modal) = self.view.windows.get_mut(&modal_id) {
             if let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
             {
                 plugins_window.refresh_snapshot(snapshot);

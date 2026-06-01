@@ -249,7 +249,7 @@ impl App {
             window,
             self.view.proxy.clone(),
         );
-        self.windows.insert(window_id, Box::new(main));
+        self.view.windows.insert(window_id, Box::new(main));
         self.view.focused_window_id = Some(window_id);
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;

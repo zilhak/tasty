@@ -22,7 +22,7 @@ impl ApplicationHandler<AppEvent> for App {
                 use crate::app::dispatch_domain::DispatchSource;
                 use crate::core::intent::CoreEvent;
                 let core = &mut self.core;
-                let windows = &mut self.windows;
+                let windows = &mut self.view.windows;
                 let parked_states = &mut self.parked_states;
                 let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
                 if let Some(sid) = surface_id {
@@ -87,7 +87,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::EguiRepaint => {
-                for w in self.windows.values_mut() {
+                for w in self.view.windows.values_mut() {
                     w.mark_dirty();
                 }
             }
@@ -114,7 +114,7 @@ impl ApplicationHandler<AppEvent> for App {
                 {
                     // macOS: destroy windows, park all MainWindow states (dock reopen restores).
                     // 모달은 파킹 대상이 아니므로 그냥 drop.
-                    let drained: Vec<_> = self.windows.drain().map(|(_, w)| w).collect();
+                    let drained: Vec<_> = self.view.windows.drain().map(|(_, w)| w).collect();
                     for w in drained {
                         if let Some(main_box) = crate::adapters::ui::window::unbox_main(w) {
                             self.parked_states
@@ -132,25 +132,28 @@ impl ApplicationHandler<AppEvent> for App {
                 {
                     if self.tray_icon.is_some() {
                         // Windows with tray: hide windows to tray (keep alive)
-                        for w in self.windows.values() {
+                        for w in self.view.windows.values() {
                             w.base().winit.set_visible(false);
                         }
-                        tracing::info!("hid {} window(s) to system tray", self.windows.len());
+                        tracing::info!("hid {} window(s) to system tray", self.view.windows.len());
                     } else {
                         // Windows without tray: minimize to taskbar
-                        for w in self.windows.values() {
+                        for w in self.view.windows.values() {
                             w.base().winit.set_minimized(true);
                         }
-                        tracing::info!("minimized {} window(s) to taskbar", self.windows.len());
+                        tracing::info!(
+                            "minimized {} window(s) to taskbar",
+                            self.view.windows.len()
+                        );
                     }
                 }
                 #[cfg(not(any(target_os = "macos", windows)))]
                 {
                     // Linux: minimize windows to taskbar (keep alive)
-                    for w in self.windows.values() {
+                    for w in self.view.windows.values() {
                         w.base().winit.set_minimized(true);
                     }
-                    tracing::info!("minimized {} window(s) to taskbar", self.windows.len());
+                    tracing::info!("minimized {} window(s) to taskbar", self.view.windows.len());
                 }
             }
             AppEvent::QuitRequested => {
@@ -158,12 +161,15 @@ impl ApplicationHandler<AppEvent> for App {
             }
             #[cfg(windows)]
             AppEvent::TrayShowWindow => {
-                for w in self.windows.values() {
+                for w in self.view.windows.values() {
                     w.base().winit.set_visible(true);
                     w.base().winit.set_minimized(false);
                     w.base().winit.focus_window();
                 }
-                tracing::info!("restored {} window(s) from system tray", self.windows.len());
+                tracing::info!(
+                    "restored {} window(s) from system tray",
+                    self.view.windows.len()
+                );
             }
             AppEvent::ClipboardChanged(data) => {
                 self.record_clipboard_data(data);
@@ -185,7 +191,8 @@ impl ApplicationHandler<AppEvent> for App {
                 // Split borrow — focused_window_mut 는 &mut self 전체를 잡아
                 // self.core 와 충돌하므로 인덱스로 직접 접근.
                 if let Some(id) = self.view.focused_window_id {
-                    if let Some(main) = self.windows.get_mut(&id).and_then(|w| w.as_main_mut()) {
+                    if let Some(main) = self.view.windows.get_mut(&id).and_then(|w| w.as_main_mut())
+                    {
                         self.core.apply_identify_result(
                             &mut main.state,
                             &mut main.engine_state,
@@ -199,7 +206,7 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if !self.windows.is_empty() || self.shell_setup_gpu.is_some() {
+        if !self.view.windows.is_empty() || self.shell_setup_gpu.is_some() {
             return;
         }
 
@@ -337,7 +344,7 @@ impl ApplicationHandler<AppEvent> for App {
         // Modal handling — 활성 모달을 대상으로 한 이벤트
         if let Some(modal_id) = self.view.active_modal_id {
             if id == modal_id {
-                let action = if let Some(modal) = self.windows.get_mut(&id) {
+                let action = if let Some(modal) = self.view.windows.get_mut(&id) {
                     let mut ctx = WindowCtx {
                         event_loop,
                         modal_active: false,
@@ -366,13 +373,14 @@ impl ApplicationHandler<AppEvent> for App {
         if let WindowEvent::CloseRequested = &event {
             // MainWindow 개수 기준으로 판단 (모달은 수에 포함되지 않음)
             let main_window_count = self
+                .view
                 .windows
                 .values()
                 .filter(|w| w.as_main().is_some())
                 .count();
             if main_window_count > 1 {
                 // Multiple windows: just close this one
-                self.windows.remove(&id);
+                self.view.windows.remove(&id);
                 if let Some(mgr) = self.plugin_manager.as_mut() {
                     use tasty_plugin_protocol::events::payloads::WindowClosed;
                     use tasty_plugin_protocol::{EventScope, LifecycleReason};
@@ -389,6 +397,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 if self.view.focused_window_id == Some(id) {
                     self.view.focused_window_id = self
+                        .view
                         .windows
                         .iter()
                         .find(|(_, w)| w.as_main().is_some())
@@ -405,6 +414,7 @@ impl ApplicationHandler<AppEvent> for App {
         if let WindowEvent::Focused(true) = &event {
             // 모달이 focus 이벤트를 받아도 focused_window_id는 MainWindow 전용
             let is_main = self
+                .view
                 .windows
                 .get(&id)
                 .map(|w| w.as_main().is_some())
@@ -422,7 +432,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
             // If a modal is active, bring it to the front so it's not buried
             if let Some(modal_id) = self.view.active_modal_id {
-                if let Some(modal) = self.windows.get(&modal_id) {
+                if let Some(modal) = self.view.windows.get(&modal_id) {
                     modal.base().winit.focus_window();
                 }
             }
@@ -456,7 +466,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         let modal_active = self.view.is_modal_active();
         let action = {
-            if let Some(w) = self.windows.get_mut(&id) {
+            if let Some(w) = self.view.windows.get_mut(&id) {
                 let mut ctx = WindowCtx {
                     event_loop,
                     modal_active,
@@ -470,7 +480,7 @@ impl ApplicationHandler<AppEvent> for App {
                 WindowAction::None
             }
         };
-        if self.windows.contains_key(&id) {
+        if self.view.windows.contains_key(&id) {
             match action {
                 WindowAction::None => {}
                 WindowAction::Close => {
@@ -495,13 +505,14 @@ impl ApplicationHandler<AppEvent> for App {
 
             // Check if the window requested to close (e.g. last workspace removed)
             let close_requested = self
+                .view
                 .windows
                 .get(&id)
                 .map(|w| w.base().close_requested)
                 .unwrap_or(false);
             if close_requested {
-                if let Some(w) = self.windows.remove(&id) {
-                    if self.windows.values().all(|w| w.as_main().is_none()) {
+                if let Some(w) = self.view.windows.remove(&id) {
+                    if self.view.windows.values().all(|w| w.as_main().is_none()) {
                         if let Some(main_box) = crate::adapters::ui::window::unbox_main(w) {
                             tracing::info!("last main window closed via request, parking state");
                             self.parked_states
@@ -511,6 +522,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 if self.view.focused_window_id == Some(id) {
                     self.view.focused_window_id = self
+                        .view
                         .windows
                         .iter()
                         .find(|(_, w)| w.as_main().is_some())
@@ -590,7 +602,7 @@ impl ApplicationHandler<AppEvent> for App {
         // If any terminal still has a pending resize (throttled), request a redraw
         // so we retry on the next frame.
         let mut any_pending = false;
-        for w in self.windows.values_mut() {
+        for w in self.view.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 if crate::core::Core::flush_pty_resizes(&mut main.engine_state) {
                     any_pending = true;
@@ -603,7 +615,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
         }
         if any_pending {
-            for w in self.windows.values() {
+            for w in self.view.windows.values() {
                 w.base().winit.request_redraw();
             }
         }

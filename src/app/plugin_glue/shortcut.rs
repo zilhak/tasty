@@ -111,7 +111,7 @@ impl App {
         if self.view.is_modal_active() {
             return false;
         }
-        let Some(w) = self.windows.get(&id) else {
+        let Some(w) = self.view.windows.get(&id) else {
             return false;
         };
         let Some(main) = w.as_main() else {
