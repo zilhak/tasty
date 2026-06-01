@@ -227,7 +227,7 @@ impl App {
                 closed_tab_ids,
                 closed_pane_ids,
                 workspace_id_purged,
-                workspaces_now_empty: _,
+                workspaces_now_empty,
             } => {
                 if closed {
                     self.dispatch_surface_closed_cascade(
@@ -237,6 +237,7 @@ impl App {
                         closed_tab_ids,
                         closed_pane_ids,
                         workspace_id_purged,
+                        workspaces_now_empty,
                     );
                 }
             }
@@ -568,8 +569,8 @@ impl App {
     }
 
     /// `SurfaceClosed` cascade — cleanup_surface 각각 + (Case 4 면) workspace
-    /// memory scope purge + active_workspace 보정. `workspaces_now_empty` 후처리
-    /// (auto-recreate) 는 caller 책임이라 본 cascade 에서 무시.
+    /// memory scope purge + active_workspace 보정 + (workspaces_now_empty 면)
+    /// 새 default workspace 자동 생성.
     fn dispatch_surface_closed_cascade(
         &mut self,
         source: DispatchSource,
@@ -578,13 +579,16 @@ impl App {
         closed_tab_ids: Vec<u32>,
         closed_pane_ids: Vec<u32>,
         workspace_id_purged: Option<u32>,
+        workspaces_now_empty: bool,
     ) {
+        let core = &mut self.core;
         match source {
             DispatchSource::Main(wid) => {
                 let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     return;
                 };
                 cascade_surface_closed(
+                    core,
                     &mut main.state,
                     &mut main.engine_state,
                     cascade_level,
@@ -592,6 +596,7 @@ impl App {
                     closed_tab_ids,
                     closed_pane_ids,
                     workspace_id_purged,
+                    workspaces_now_empty,
                 );
                 main.mark_dirty();
             }
@@ -600,6 +605,7 @@ impl App {
                     return;
                 };
                 cascade_surface_closed(
+                    core,
                     state,
                     engine,
                     cascade_level,
@@ -607,6 +613,7 @@ impl App {
                     closed_tab_ids,
                     closed_pane_ids,
                     workspace_id_purged,
+                    workspaces_now_empty,
                 );
             }
         }
@@ -1165,6 +1172,7 @@ pub(crate) fn cascade_closed_item_restored(
 /// 3. workspace_id_purged 가 Some 이면 memory scope purge
 /// 4. cascade_level == Workspace 면 active_workspace 보정
 pub(crate) fn cascade_surface_closed(
+    core: &mut crate::core::Core,
     state: &mut crate::state::AppState,
     engine: &mut crate::engine_state::CoreState,
     cascade_level: crate::core::intent::CascadeLevel,
@@ -1172,6 +1180,7 @@ pub(crate) fn cascade_surface_closed(
     closed_tab_ids: Vec<u32>,
     closed_pane_ids: Vec<u32>,
     workspace_id_purged: Option<u32>,
+    workspaces_now_empty: bool,
 ) {
     for (sid, pid) in cleanup_targets {
         state.cleanup_surface(engine, sid, pid);
@@ -1223,6 +1232,17 @@ pub(crate) fn cascade_surface_closed(
         && !engine.workspaces.is_empty()
     {
         state.active_workspace = engine.workspaces.len() - 1;
+    }
+
+    // 마지막 surface 가 닫혀 workspaces 가 비면 invariant 복구 위해 새 workspace
+    // 자동 생성. 사용자/에이전트/시스템 누구의 close 든 origin 분기 없이 동일 처리
+    // — 빈 화면 redraw panic 방지가 목적. 옛 *세 호출처* (intent/surface.rs, ipc/close.rs,
+    // pane.rs::close_surface_by_id_no_snapshot) 의 중복 분기를 단일 지점으로 통합.
+    if workspaces_now_empty {
+        match core.create_default_workspace(engine) {
+            Ok(idx) => state.active_workspace = idx,
+            Err(e) => tracing::warn!("auto-recreate workspace after SurfaceClosed failed: {e}"),
+        }
     }
 }
 

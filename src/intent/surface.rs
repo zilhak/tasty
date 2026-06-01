@@ -114,6 +114,7 @@ fn close(
         {
             if closed {
                 crate::app::dispatch_domain::cascade_surface_closed(
+                    core,
                     state,
                     engine,
                     cascade_level,
@@ -121,12 +122,8 @@ fn close(
                     closed_tab_ids,
                     closed_pane_ids,
                     workspace_id_purged,
+                    workspaces_now_empty,
                 );
-                if workspaces_now_empty {
-                    if let Err(e) = state.add_workspace(engine) {
-                        tracing::warn!("auto-recreate workspace after CloseSurface failed: {e}");
-                    }
-                }
             }
         }
     }

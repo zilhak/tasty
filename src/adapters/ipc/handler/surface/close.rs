@@ -45,6 +45,7 @@ fn close_surface_via_intent(
     }
 
     crate::app::dispatch_domain::cascade_surface_closed(
+        core,
         state,
         engine,
         cascade_level,
@@ -52,18 +53,11 @@ fn close_surface_via_intent(
         closed_tab_ids,
         closed_pane_ids,
         workspace_id_purged,
+        workspaces_now_empty,
     );
 
     if let Some(k) = kind {
         state.enqueue_surface_closed(surface_id, k, false);
-    }
-
-    // Agent 가 마지막 workspace 까지 닫아버리면 다음 redraw 가 패닉 — invariant
-    // 보존 위해 즉시 새 workspace 생성. 옛 close_surface_by_id_no_snapshot 동작.
-    if workspaces_now_empty {
-        if let Err(e) = state.add_workspace(engine) {
-            tracing::warn!("auto-recreate workspace after surface close failed: {e}");
-        }
     }
 
     JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
