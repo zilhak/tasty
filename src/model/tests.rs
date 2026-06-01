@@ -694,7 +694,7 @@ fn test_surface_node(id: SurfaceId) -> TerminalSurface {
     .unwrap();
     TerminalSurface {
         id,
-        terminal,
+        terminal: Some(terminal),
         deferred_spawn: None,
         scrollback_persist_id: None,
     }

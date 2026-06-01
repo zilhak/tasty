@@ -139,9 +139,11 @@ fn capture_surface(surface: &dyn Surface, capture_fn: CaptureFn<'_>) -> Option<P
     let meta = capture_fn(surface)?;
     // terminal kind 면 cwd 추출. 다른 kind 는 params 만.
     let (cwd, startup_command) = if let Some(ts) = surface.as_terminal_surface() {
+        // D.3.E.4 — terminal: Option. None 이면 cwd 추출 불가.
         let cwd = ts
             .terminal
-            .get_cwd()
+            .as_ref()
+            .and_then(|t| t.get_cwd())
             .map(|p| p.to_string_lossy().to_string());
         (cwd, None)
     } else {

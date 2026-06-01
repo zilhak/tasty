@@ -59,12 +59,16 @@ fn collect_tab_surface_info(
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
                 "type": "Terminal",
-                "cols": node.terminal.cols(),
-                "rows": node.terminal.rows(),
+                "cols": node.terminal.as_ref().map(|t| t.cols()).unwrap_or(0),
+                "rows": node.terminal.as_ref().map(|t| t.rows()).unwrap_or(0),
                 "busy": engine.is_surface_busy(node.id),
-                "pty_ready": true,
+                "pty_ready": node.terminal.is_some(),
             });
-            if let Some(fg) = node.terminal.foreground_process_info() {
+            if let Some(fg) = node
+                .terminal
+                .as_ref()
+                .and_then(|t| t.foreground_process_info())
+            {
                 entry["foreground_process"] = json!(fg.name);
                 entry["foreground_pid"] = json!(fg.pid);
             }

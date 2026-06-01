@@ -341,7 +341,7 @@ impl AppState {
             engine.send_fast_init(surface_id);
             return Ok(Box::new(TerminalSurface {
                 id: surface_id,
-                terminal,
+                terminal: Some(terminal),
                 deferred_spawn: None,
                 scrollback_persist_id: None,
             }));

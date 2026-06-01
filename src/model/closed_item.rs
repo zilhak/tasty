@@ -108,7 +108,17 @@ impl ClosedSurface {
         node: &super::TerminalSurface,
         restore_command: Option<String>,
     ) -> Self {
-        let terminal = &node.terminal;
+        // D.3.E.4 — TerminalSurface.terminal: Option. None 이면 *이미 closed/store
+        // 이전된 상태* — empty snapshot 만 만들고 반환 (legacy compat).
+        let Some(terminal) = node.terminal.as_ref() else {
+            return Self {
+                id: node.id,
+                cwd: None,
+                restore_command,
+                screen: Vec::new(),
+                scrollback: VecDeque::new(),
+            };
+        };
         let surface = terminal.surface();
         let lines = surface.screen_lines();
 

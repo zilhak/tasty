@@ -341,7 +341,7 @@ impl Tab {
             Some(terminal) => {
                 let ts: Box<dyn Surface> = Box::new(TerminalSurface {
                     id: surface_id,
-                    terminal,
+                    terminal: Some(terminal),
                     deferred_spawn: None,
                     scrollback_persist_id: persist_id,
                 });
@@ -412,7 +412,7 @@ impl Tab {
     ) {
         let new_node = TerminalSurface {
             id: new_surface_id,
-            terminal: new_terminal,
+            terminal: Some(new_terminal),
             deferred_spawn: None,
             scrollback_persist_id: None,
         };
@@ -433,7 +433,7 @@ impl Tab {
     ) -> bool {
         let new_node = TerminalSurface {
             id: new_surface_id,
-            terminal: new_terminal,
+            terminal: Some(new_terminal),
             deferred_spawn: None,
             scrollback_persist_id: None,
         };

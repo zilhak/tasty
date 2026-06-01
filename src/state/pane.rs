@@ -188,7 +188,7 @@ impl AppState {
             )?;
             Box::new(crate::model::TerminalSurface {
                 id: new_surface_id,
-                terminal,
+                terminal: Some(terminal),
                 deferred_spawn: None,
                 scrollback_persist_id: None,
             })

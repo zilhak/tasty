@@ -38,14 +38,18 @@ pub(super) fn capture_scrollback_to_disk(
     ts: &mut crate::model::TerminalSurface,
     seen_refs: &mut std::collections::HashSet<String>,
 ) -> Option<String> {
-    let total = ts.terminal.scrollback_len();
-    let screen = ts.terminal.screen_snapshot_lines();
+    // D.3.E.4 — terminal: Option. None 이면 capture 불가 → None 반환.
+    let Some(terminal) = ts.terminal.as_ref() else {
+        return None;
+    };
+    let total = terminal.scrollback_len();
+    let screen = terminal.screen_snapshot_lines();
     if total == 0 && screen.is_empty() {
         return None;
     }
     let mut lines = Vec::with_capacity(total + screen.len());
     for i in 0..total {
-        if let Some(line) = ts.terminal.scrollback_line_full(i) {
+        if let Some(line) = terminal.scrollback_line_full(i) {
             lines.push(line);
         }
     }

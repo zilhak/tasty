@@ -127,7 +127,7 @@ pub(crate) fn rebuild_surface_node(
 
     Some(TerminalSurface {
         id: surface_id,
-        terminal,
+        terminal: Some(terminal),
         deferred_spawn: None,
         scrollback_persist_id: None,
     })

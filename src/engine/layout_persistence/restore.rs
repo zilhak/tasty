@@ -369,7 +369,7 @@ impl SavedSurface {
                 engine.send_fast_init(surface_id);
                 Some(Box::new(TerminalSurface {
                     id: surface_id,
-                    terminal,
+                    terminal: Some(terminal),
                     deferred_spawn: None,
                     scrollback_persist_id: scrollback_ref,
                 }))

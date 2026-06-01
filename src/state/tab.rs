@@ -293,7 +293,7 @@ impl AppState {
 
         let node = crate::model::TerminalSurface {
             id: surface_id,
-            terminal,
+            terminal: Some(terminal),
             deferred_spawn: None,
             scrollback_persist_id: None,
         };

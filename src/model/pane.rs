@@ -77,7 +77,7 @@ impl Pane {
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
-            terminal,
+            terminal: Some(terminal),
             deferred_spawn: None,
             scrollback_persist_id: None,
         });
@@ -111,7 +111,7 @@ impl Pane {
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
-            terminal,
+            terminal: Some(terminal),
             deferred_spawn: None,
             scrollback_persist_id: None,
         });
@@ -142,7 +142,7 @@ impl Pane {
         )?;
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
             id: surface_id,
-            terminal,
+            terminal: Some(terminal),
             deferred_spawn: None,
             scrollback_persist_id: None,
         });

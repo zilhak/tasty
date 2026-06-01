@@ -168,9 +168,11 @@ impl SavedSurface {
                 crate::surface_meta::SurfaceMetaStore::get(m, ts.id, "restore.command")
             });
 
+            // D.3.E.4 — terminal: Option. None 이면 cwd 없음.
             let cwd = ts
                 .terminal
-                .get_cwd()
+                .as_ref()
+                .and_then(|t| t.get_cwd())
                 .map(|p| p.to_string_lossy().to_string());
             let scrollback_ref = if capture_scrollback {
                 capture_scrollback_to_disk(ts, seen_refs)
