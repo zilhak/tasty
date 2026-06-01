@@ -41,6 +41,31 @@ impl SurfaceLayout {
             .expect("BUG: Leaf surface must have an ID")
     }
 
+    /// **D.3.E.4.e** — 트리 안 모든 TerminalSurface 에서 terminal 을 take 해서
+    /// store 에 옮긴다. Pane/Tab 생성 직후 *caller (engine 보유) 가 한 번 호출* —
+    /// 이후 surface 트리의 TerminalSurface 는 *marker (id only)* 가 된다.
+    pub fn drain_terminals_into_store(
+        &mut self,
+        store: &mut crate::core::terminal_store::TerminalStore,
+    ) {
+        match self {
+            SurfaceLayout::Leaf(surface) => {
+                if let Some(ts) = surface.as_terminal_surface_mut() {
+                    if let Some(t) = ts.terminal.take() {
+                        store.insert(ts.id, t);
+                    }
+                    if let Some(persist_id) = ts.scrollback_persist_id.take() {
+                        store.set_scrollback_persist_id(ts.id, persist_id);
+                    }
+                }
+            }
+            SurfaceLayout::Split { first, second, .. } => {
+                first.drain_terminals_into_store(store);
+                second.drain_terminals_into_store(store);
+            }
+        }
+    }
+
     /// Split a specific surface by taking ownership (infallible structural mutation).
     /// Accepts any Surface type (Terminal, Markdown, Explorer, Html, etc.).
     pub fn split_with_surface(
