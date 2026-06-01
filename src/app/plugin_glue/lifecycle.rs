@@ -11,7 +11,7 @@
 
 use crate::app::App;
 use crate::core::intent::{CoreEvent, PluginRegistryChange};
-use crate::plugin::manifest::Permission;
+use crate::plugin::manifest::{Permission, SurfaceKindRendering};
 use crate::plugin::{Manifest, PluginManager};
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
@@ -228,5 +228,90 @@ impl App {
             plugin_id,
             change: PluginRegistryChange::PermissionRevoked { permission: token },
         }])
+    }
+
+    /// `PluginManager::pump` 가 반환한 (plugin_id, version) 쌍 리스트로부터
+    /// surface_kind registry 등록 + `registered_plugins.insert` + CoreEvent
+    /// (PluginLoaded / PluginSurfaceKindRegistered) 발화 처리. surface_registry
+    /// 가 set 안 된 상태 (test/headless) 면 등록 skip — 다음 pump tick 에서 다시
+    /// 시도하지 못하므로 (hello_pairs 는 1회성) 본 substep 범위에서는 그대로
+    /// 옛 pump.rs 동작과 일치 (deferred 등록 없이 무시).
+    pub(crate) fn finalize_plugin_hello(&mut self, hello_pairs: Vec<(String, String)>) {
+        if hello_pairs.is_empty() {
+            return;
+        }
+        let Some(mgr) = self.plugin_manager.as_mut() else {
+            return;
+        };
+        let mut events: Vec<CoreEvent> = Vec::new();
+
+        if let Some(registry) = mgr.surface_registry.clone() {
+            let tx = mgr.host_cmd_tx.clone();
+            for (plugin_id, version) in &hello_pairs {
+                if let Some(pkg) = mgr
+                    .packages
+                    .iter()
+                    .find(|p| &p.manifest.id == plugin_id)
+                    .cloned()
+                {
+                    for decl in &pkg.manifest.surface_kinds {
+                        let rendering = match decl.rendering {
+                            SurfaceKindRendering::Remote => {
+                                crate::plugin::remote_kind::register_remote_kind(
+                                    &registry,
+                                    plugin_id,
+                                    decl,
+                                    tx.clone(),
+                                );
+                                "remote"
+                            }
+                            SurfaceKindRendering::Host => {
+                                crate::engine::surface_registry::host_rendered::register_host_rendered_kind(
+                                    &registry, plugin_id, &decl.kind,
+                                );
+                                "host"
+                            }
+                            SurfaceKindRendering::Webview => {
+                                crate::engine::surface_registry::webview_kind::register_webview_kind(
+                                    plugin_id, &decl.kind,
+                                );
+                                crate::plugin::remote_kind::register_remote_kind(
+                                    &registry,
+                                    plugin_id,
+                                    decl,
+                                    tx.clone(),
+                                );
+                                "webview"
+                            }
+                        };
+                        events.push(CoreEvent::PluginSurfaceKindRegistered {
+                            plugin_id: plugin_id.clone(),
+                            kind: decl.kind.clone(),
+                            rendering: rendering.to_string(),
+                        });
+                    }
+                }
+                mgr.registered_plugins.insert(plugin_id.clone());
+                events.push(CoreEvent::PluginLoaded {
+                    plugin_id: plugin_id.clone(),
+                    version: version.clone(),
+                });
+            }
+        } else {
+            tracing::debug!(
+                "plugin manager has no surface_registry; deferring registration of {} plugin(s)",
+                hello_pairs.len()
+            );
+            // surface_registry 없으면 surface_kind 등록은 skip — 옛 pump.rs 동작.
+            // PluginLoaded 는 그래도 발화 (process spawn 자체는 성공).
+            for (plugin_id, version) in &hello_pairs {
+                events.push(CoreEvent::PluginLoaded {
+                    plugin_id: plugin_id.clone(),
+                    version: version.clone(),
+                });
+            }
+        }
+
+        self.cascade_plugin_events(events);
     }
 }

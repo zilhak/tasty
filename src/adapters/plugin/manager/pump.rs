@@ -21,7 +21,13 @@ use super::{
 };
 
 impl PluginManager {
-    pub fn pump(&mut self) {
+    /// 매 tick 호출. plugin 이벤트 처리 + 헬스체크 + 비응답 재시작.
+    ///
+    /// 반환: 본 tick 에서 *처음 hello 받은 plugin* 의 `(plugin_id, version)`
+    /// 리스트. 호출자 (App) 가 `finalize_plugin_hello` 로 surface_kind registry
+    /// 등록 + CoreEvent (PluginLoaded / PluginSurfaceKindRegistered) 발화를
+    /// 처리한다 (D.3.C.G.2.e). 비어있으면 finalize 안 호출.
+    pub fn pump(&mut self) -> Vec<(String, String)> {
         // 1. plugin → 호스트 이벤트 처리
         let mut hello_log: Vec<(String, String)> = Vec::new();
         let mut to_register: Vec<String> = Vec::new();
@@ -86,9 +92,11 @@ impl PluginManager {
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);
         }
-        // hello를 처음 받은 plugin의 surface_kinds를 registry에 등록 + 권한 set 초기화.
+        // hello 를 처음 받은 plugin 의 권한 set / event_bus 패턴 동기화.
+        // surface_kind registry 등록 + `registered_plugins.insert` 는 호출자
+        // (App::finalize_plugin_hello) 가 처리 — CoreEvent 발화 위치 정렬.
+        let mut hello_pairs: Vec<(String, String)> = Vec::new();
         if !to_register.is_empty() {
-            // 권한 — registry 유무와 무관하게 항상 갱신.
             for plugin_id in &to_register {
                 if let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == plugin_id) {
                     let granted = self.config.granted_permissions(plugin_id);
@@ -101,56 +109,13 @@ impl PluginManager {
                         .collect();
                     self.plugin_permissions
                         .insert(plugin_id.clone(), Arc::new(perms));
-                    // Event Bus subscribe/publish 패턴 동기화.
                     self.event_bus.set_plugin_permissions(
                         plugin_id,
                         pkg.manifest.event_subscribe.clone(),
                         pkg.manifest.event_publish.clone(),
                     );
+                    hello_pairs.push((plugin_id.clone(), pkg.manifest.version.clone()));
                 }
-            }
-            if let Some(registry) = self.surface_registry.clone() {
-                let tx = self.host_cmd_tx.clone();
-                for plugin_id in &to_register {
-                    if let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == plugin_id) {
-                        for decl in &pkg.manifest.surface_kinds {
-                            match decl.rendering {
-                                crate::plugin::manifest::SurfaceKindRendering::Remote => {
-                                    crate::plugin::remote_kind::register_remote_kind(
-                                        &registry,
-                                        plugin_id,
-                                        decl,
-                                        tx.clone(),
-                                    );
-                                }
-                                crate::plugin::manifest::SurfaceKindRendering::Host => {
-                                    crate::engine::surface_registry::host_rendered::register_host_rendered_kind(
-                                        &registry, plugin_id, &decl.kind,
-                                    );
-                                }
-                                crate::plugin::manifest::SurfaceKindRendering::Webview => {
-                                    // webview-enabled flag 등록 + remote_kind 로 surface 자체 등록
-                                    // (host 는 surface struct 정의 없음 — generic RemoteSurface)
-                                    crate::engine::surface_registry::webview_kind::register_webview_kind(
-                                        plugin_id, &decl.kind,
-                                    );
-                                    crate::plugin::remote_kind::register_remote_kind(
-                                        &registry,
-                                        plugin_id,
-                                        decl,
-                                        tx.clone(),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    self.registered_plugins.insert(plugin_id.clone());
-                }
-            } else {
-                tracing::debug!(
-                    "plugin manager has no surface_registry; deferring registration of {} plugin(s)",
-                    to_register.len()
-                );
             }
         }
 
@@ -237,6 +202,8 @@ impl PluginManager {
                 self.start_plugin_internal(&pkg);
             }
         }
+
+        hello_pairs
     }
 
     pub(super) fn drain_host_cmds(&mut self) {

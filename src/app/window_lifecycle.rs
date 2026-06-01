@@ -171,9 +171,12 @@ impl App {
                     .unwrap_or_default();
                 let deadline = Instant::now() + Duration::from_millis(300);
                 while Instant::now() < deadline {
-                    if let Some(mgr) = self.plugin_manager.as_mut() {
-                        mgr.pump();
-                    }
+                    let hello_pairs = if let Some(mgr) = self.plugin_manager.as_mut() {
+                        mgr.pump()
+                    } else {
+                        Vec::new()
+                    };
+                    self.finalize_plugin_hello(hello_pairs);
                     let registered_all = {
                         let engine = self.engine_state();
                         needed

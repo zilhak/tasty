@@ -230,9 +230,9 @@ pub struct PluginManager {
     /// registry 등록 동작이 비활성 (헤드리스/테스트).
     pub surface_registry: Option<Arc<SurfaceKindRegistry>>,
     /// 이미 registry에 등록된 plugin id (hello를 여러 번 받아도 1회만 등록).
-    pub(super) registered_plugins: std::collections::HashSet<String>,
+    pub(crate) registered_plugins: std::collections::HashSet<String>,
     /// registry create/restore closure가 새 RemoteSurface 등록을 보내는 채널.
-    pub(super) host_cmd_tx: Sender<HostCmd>,
+    pub(crate) host_cmd_tx: Sender<HostCmd>,
     pub(super) host_cmd_rx: Receiver<HostCmd>,
     /// surface_id → RemoteSurface handle. 라이프사이클 동안 유지.
     pub(super) surfaces: HashMap<u32, RemoteSurfaceEntry>,

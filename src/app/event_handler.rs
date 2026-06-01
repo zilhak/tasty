@@ -530,9 +530,14 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // Plugin host pump — process plugin events, run health checks, restart unresponsive.
-        if let Some(ref mut mgr) = self.plugin_manager {
-            mgr.pump();
-        }
+        let hello_pairs = if let Some(ref mut mgr) = self.plugin_manager {
+            mgr.pump()
+        } else {
+            Vec::new()
+        };
+        // hello 직후 surface_kind 등록 + PluginLoaded / PluginSurfaceKindRegistered
+        // CoreEvent 발화. 큐 우회 sync 호출 (cascade 즉시).
+        self.finalize_plugin_hello(hello_pairs);
         // plugin이 보낸 IPC 호출들을 라우터로 디스패치 (권한 게이트 적용).
         self.process_plugin_ipc_calls();
         // surface close lifecycle 알림 drain → 구독 plugin에 broadcast.
