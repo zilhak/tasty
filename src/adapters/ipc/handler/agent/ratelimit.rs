@@ -4,25 +4,13 @@ use crate::core::Core;
 use crate::ipc::caller::CallerContext;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
-use tasty_agent::{AgentError, RateLimitStore};
 
 use super::{agent_err_to_response, now_ms};
 
-fn run_rate_limit<F, R>(core: &Core, id: Value, f: F) -> JsonRpcResponse
-where
-    F: FnOnce(&mut RateLimitStore<'_>) -> Result<R, AgentError>,
-    R: serde::Serialize,
-{
-    let result = core.with_memory(|mem| {
-        let mut store = RateLimitStore::new(mem, tasty_memory::HOST_OWNER);
-        f(&mut store)
-    });
-    match result {
-        Ok(v) => match serde_json::to_value(v) {
-            Ok(json) => JsonRpcResponse::success(id, json),
-            Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
-        },
-        Err(e) => agent_err_to_response(id, e),
+fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
+    match serde_json::to_value(value) {
+        Ok(v) => JsonRpcResponse::success(id, v),
+        Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
     }
 }
 
@@ -67,10 +55,10 @@ pub fn handle_rate_limit_set(
         }
         None => None,
     };
-    let now = now_ms();
-    run_rate_limit(core, id, move |store| {
-        store.set(agent, metric, limit, per_ms, burst, now)
-    })
+    match core.rate_limit_set(agent, metric, limit, per_ms, burst, now_ms()) {
+        Ok(rl) => serialize(id, rl),
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
 
 pub fn handle_rate_limit_list(
@@ -81,11 +69,10 @@ pub fn handle_rate_limit_list(
     id: Value,
     _params: &Value,
 ) -> JsonRpcResponse {
-    let now = now_ms();
-    run_rate_limit(core, id, move |store| {
-        let all = store.status(now)?;
-        Ok(json!({ "total": all.len(), "rate_limits": all }))
-    })
+    match core.rate_limit_status(now_ms()) {
+        Ok(all) => JsonRpcResponse::success(id, json!({ "total": all.len(), "rate_limits": all })),
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
 
 pub fn handle_rate_limit_remove(
@@ -100,10 +87,10 @@ pub fn handle_rate_limit_remove(
         Some(s) if !s.is_empty() => s.to_string(),
         _ => return JsonRpcResponse::invalid_params(id, "Missing or empty 'id'"),
     };
-    run_rate_limit(core, id, move |store| {
-        store.remove(&rl_id)?;
-        Ok(json!({ "ok": true }))
-    })
+    match core.rate_limit_remove(&rl_id) {
+        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true })),
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
 
 pub fn handle_rate_limit_status(
@@ -122,14 +109,18 @@ pub fn handle_rate_limit_status(
         .get("metric")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    let now = now_ms();
-    run_rate_limit(core, id, move |store| {
-        let all = store.status(now)?;
-        let filtered: Vec<_> = all
-            .into_iter()
-            .filter(|r| agent.as_ref().is_none_or(|a| &r.agent == a))
-            .filter(|r| metric.as_ref().is_none_or(|m| &r.metric == m))
-            .collect();
-        Ok(json!({ "total": filtered.len(), "rate_limits": filtered }))
-    })
+    match core.rate_limit_status(now_ms()) {
+        Ok(all) => {
+            let filtered: Vec<_> = all
+                .into_iter()
+                .filter(|r| agent.as_ref().is_none_or(|a| &r.agent == a))
+                .filter(|r| metric.as_ref().is_none_or(|m| &r.metric == m))
+                .collect();
+            JsonRpcResponse::success(
+                id,
+                json!({ "total": filtered.len(), "rate_limits": filtered }),
+            )
+        }
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
