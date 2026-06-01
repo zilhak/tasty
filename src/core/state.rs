@@ -137,6 +137,13 @@ pub struct CoreState {
     // Set membership = busy. Surfaces missing from the set are treated as idle.
     pub(crate) busy_surfaces: std::collections::HashSet<u32>,
 
+    /// **Phase D D.3.E.4** — Terminal/PTY 데이터 owner (Surface 트리와 분리).
+    /// 신설 단계 (E.4.a) 에서는 *빈 store* 만 보유, 호출처 0. 후속 E.4.b ~ f 에서
+    /// 점진적으로 *Terminal 인스턴스 / deferred / scrollback_persist / pending
+    /// scrollback inject / busy_surfaces* 가 이쪽으로 이전된다. cutover (E.4.f)
+    /// 시 위 `busy_surfaces` 필드는 store 안 동일 이름 필드로 통합 폐기 예정.
+    pub(crate) terminals: crate::core::terminal_store::TerminalStore,
+
     /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
     /// 추상화하여 헤드리스/플러그인 호스트 컨텍스트에서도 동일 인터페이스를 쓴다.
     /// `App`이 CoreState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
@@ -228,6 +235,7 @@ impl CoreState {
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
+            terminals: crate::core::terminal_store::TerminalStore::new(),
             waker_factory: None,
             surface_registry: {
                 let reg = SurfaceKindRegistry::new();

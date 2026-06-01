@@ -18,6 +18,7 @@ pub(crate) mod intent;
 pub(crate) mod restore_rebuild;
 pub(crate) mod session;
 pub(crate) mod state;
+pub(crate) mod terminal_store;
 
 pub(crate) use state::CoreState;
 
