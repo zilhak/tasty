@@ -212,8 +212,11 @@ scope=global인 command의 단축키는 **조합키만** 허용 (`Ctrl`/`Alt`/`C
 | 키 | 시점 | Payload (요약) | scope | 등급 |
 |---|---|---|---|---|
 | `notification.created` | 호스트가 알림 생성 | `id, title, body, source` | system | Stable |
-| `notification.dismissed` | 알림 닫힘 | `id` | system | Stable |
+| `notification.dismissed` | 알림 닫힘 (dismiss) | `id` | system | Planned |
 | `hook.fired` | `tasty-hooks`의 surface/global hook 발화 | `hook_id, event_kind, surface_id?, payload` | surface (surface_id 있음) / system (global hook) | Experimental |
+
+- `notification.dismissed` 의 등급은 **Planned** — payload 와 키는 1.0 에 예약됐지만 *현재 호스트 코드에서 발화하지 않는다*. 알림 dismiss 동작이 도입될 때 발화한다.
+- 알림 *read* 처리 (`DomainIntent::MarkNotificationRead` / `MarkAllNotificationsRead`) 는 호스트 event 를 발화하지 않는다. read flag 는 단순 표시 상태 (notification panel 의 시각 강조) 이고 dismiss 와 의미가 다르므로, plugin 관심사가 아닌 것으로 본다. 만약 plugin 이 read 추이를 알아야 한다면 별 이벤트 (`notification.read`) 신규 추가가 필요하다.
 
 ### Process (PTY)
 
