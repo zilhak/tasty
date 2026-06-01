@@ -31,5 +31,6 @@ pub mod clock;
 pub mod fs;
 pub mod home;
 pub mod inbound;
+pub mod ipc_server;
 pub mod process;
 pub mod pty;

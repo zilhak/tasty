@@ -11,4 +11,5 @@ pub mod portable_pty;
 pub mod std_clock;
 pub mod std_fs;
 pub mod std_process;
+pub mod tcp_ipc_server;
 pub mod winit_waker;
