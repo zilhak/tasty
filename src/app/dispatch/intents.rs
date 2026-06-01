@@ -125,7 +125,7 @@ impl App {
                 crate::intent::tab::handle(core, state, engine, intent);
             }
             Intent::SplitPane { .. } => {
-                crate::intent::pane::handle(state, engine, intent);
+                crate::intent::pane::handle(core, state, engine, intent);
             }
             Intent::NewWorkspace { .. } => {
                 crate::intent::workspace::handle(core, state, engine, intent);

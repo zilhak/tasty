@@ -183,7 +183,7 @@ fn route_engine_handler(
         // pane / split
         "pane.list" => pane::handle_pane_list(state, engine, id),
         "pane.close" => pane::handle_pane_close(state, engine, id, &request.params),
-        "split" => pane::handle_split(state, engine, id, &request.params),
+        "split" => pane::handle_split(core, state, engine, id, &request.params),
         // tab
         "tab.list" => tab::handle_tab_list(state, engine, id, &request.params),
         "tab.create" => tab::handle_tab_create(core, state, engine, id, &request.params),

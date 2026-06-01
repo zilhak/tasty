@@ -379,7 +379,80 @@ impl Core {
             } => Ok(vec![Self::apply_move_tab(
                 engine, pane_id, from_index, to_index,
             )]),
+            DomainIntent::SplitPane {
+                target_pane_id,
+                direction,
+                cwd,
+                kind,
+                surface_params,
+            } => {
+                Self::apply_split_pane(engine, target_pane_id, direction, cwd, kind, surface_params)
+            }
         }
+    }
+
+    /// `DomainIntent::SplitPane` 본문. 4-phase borrow 분리.
+    fn apply_split_pane(
+        engine: &mut crate::engine_state::CoreState,
+        target_pane_id: u32,
+        direction: crate::model::SplitDirection,
+        cwd: Option<std::path::PathBuf>,
+        kind: String,
+        surface_params: serde_json::Value,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        let ws_idx = engine
+            .find_workspace_index_for_pane(target_pane_id)
+            .ok_or_else(|| anyhow::anyhow!("pane {} not found", target_pane_id))?;
+
+        let new_pane_id = engine.next_ids.next_pane();
+        let new_tab_id = engine.next_ids.next_tab();
+        let new_surface_id = engine.next_ids.next_surface();
+        let is_terminal = kind == "terminal";
+
+        // Phase 1: engine 의 불변 의존 추출
+        let cols = engine.default_cols;
+        let rows = engine.default_rows;
+        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let waker = engine.make_waker(new_surface_id);
+
+        // Phase 2: 새 pane 구성
+        let new_pane = if is_terminal {
+            crate::model::Pane::new_with_shell(
+                new_pane_id,
+                new_tab_id,
+                new_surface_id,
+                crate::model::ShellSpawnOpts {
+                    cols,
+                    rows,
+                    shell: sh.shell_ref(),
+                    shell_args: &sh.args_ref(),
+                    waker,
+                    working_dir: cwd.as_deref(),
+                },
+            )?
+        } else {
+            let surface =
+                engine.create_surface_via_registry(&kind, new_surface_id, &surface_params)?;
+            let name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
+            crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, name, surface)
+        };
+
+        // Phase 3: workspace pane tree mutate
+        engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .split_pane_in_place(target_pane_id, direction, new_pane);
+
+        // Phase 4: engine mutate (pane borrow 끝)
+        engine.send_fast_init(new_surface_id);
+        engine.mark_layout_dirty();
+
+        Ok(vec![CoreEvent::PaneSplit {
+            workspace_index: ws_idx,
+            original_pane_id: target_pane_id,
+            new_pane_id,
+            new_surface_id,
+            direction,
+        }])
     }
 
     /// `DomainIntent::MoveTab` 본문. pane_id 로 모든 workspace 순회

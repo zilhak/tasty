@@ -169,6 +169,65 @@ impl App {
                     }
                 }
             }
+            CoreEvent::PaneSplit {
+                workspace_index,
+                original_pane_id,
+                new_pane_id,
+                new_surface_id: _,
+                direction,
+            } => {
+                self.dispatch_pane_split_cascade(
+                    source,
+                    origin,
+                    workspace_index,
+                    original_pane_id,
+                    new_pane_id,
+                    direction,
+                );
+            }
+        }
+    }
+
+    /// `PaneSplit` cascade — host event 발화 + (User origin 이면) focused_pane 변경.
+    fn dispatch_pane_split_cascade(
+        &mut self,
+        source: DispatchSource,
+        origin: &IntentOrigin,
+        workspace_index: usize,
+        original_pane_id: u32,
+        new_pane_id: u32,
+        direction: crate::model::SplitDirection,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_pane_split(
+                    &mut main.state,
+                    &mut main.engine_state,
+                    origin,
+                    workspace_index,
+                    original_pane_id,
+                    new_pane_id,
+                    direction,
+                );
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_pane_split(
+                    state,
+                    engine,
+                    origin,
+                    workspace_index,
+                    original_pane_id,
+                    new_pane_id,
+                    direction,
+                );
+            }
         }
     }
 
@@ -513,6 +572,29 @@ pub(crate) fn cascade_workspace_created(
     }
     if origin.is_user() {
         state.active_workspace = index;
+    }
+}
+
+/// `CoreEvent::PaneSplit` 의 외부 cascade. host event (PaneSplit) 발화 +
+/// (User origin 이면) workspace 의 focused_pane 을 new_pane_id 로 변경.
+pub(crate) fn cascade_pane_split(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::engine_state::CoreState,
+    origin: &IntentOrigin,
+    workspace_index: usize,
+    original_pane_id: u32,
+    new_pane_id: u32,
+    direction: crate::model::SplitDirection,
+) {
+    state.enqueue_host_event(crate::state::PendingHostEvent::PaneSplit {
+        original_pane: original_pane_id,
+        new_pane: new_pane_id,
+        direction,
+    });
+    if origin.is_user() {
+        if let Some(ws) = engine.workspaces.get_mut(workspace_index) {
+            ws.focused_pane = new_pane_id;
+        }
     }
 }
 

@@ -72,6 +72,19 @@ pub(crate) enum DomainIntent {
         to_index: usize,
     },
 
+    // ─── Pane lifecycle (D.3.C.B.3) ───
+    /// 특정 pane 을 split. focused 의존 없음 — 호출자가 target_pane_id 결정.
+    /// cwd 는 terminal kind 에서만 사용 (호출자가 inherit 결정).
+    /// cascade 가 host event (PaneSplit) 발화 + (User origin 이면) focused_pane
+    /// 을 new_pane_id 로 변경.
+    SplitPane {
+        target_pane_id: u32,
+        direction: crate::model::SplitDirection,
+        cwd: Option<PathBuf>,
+        kind: String,
+        surface_params: Value,
+    },
+
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
     /// notifications store 에 add (coalesce 자동) + host event enqueue.
@@ -162,6 +175,17 @@ pub(crate) enum CoreEvent {
     },
     /// tab 이동 완료. `moved=false` 면 no-op (pane 없음 / from==to / out-of-range).
     TabMoved { pane_id: u32, moved: bool },
+
+    // ─── Pane lifecycle (D.3.C.B.3) ───
+    /// pane split 완료. cascade 가 host event (PaneSplit) 발화 + (User origin
+    /// 이면) focused_pane 변경.
+    PaneSplit {
+        workspace_index: usize,
+        original_pane_id: u32,
+        new_pane_id: u32,
+        new_surface_id: u32,
+        direction: crate::model::SplitDirection,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push 요청. cascade 가 라우팅 + store.add + host event enqueue.
