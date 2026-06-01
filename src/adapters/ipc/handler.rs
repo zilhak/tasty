@@ -203,12 +203,16 @@ fn route_engine_handler(
             surface::handle_surface_close_self(core, state, engine, id, &request.params)
         }
         "surface.list" => surface::handle_surface_list(state, engine, id),
-        "surface.send" => surface::handle_surface_send(state, engine, id, &request.params),
-        "surface.send_key" => surface::handle_surface_send_key(state, engine, id, &request.params),
-        "surface.send_combo" => {
-            surface::handle_surface_send_combo(state, engine, id, &request.params)
+        "surface.send" => surface::handle_surface_send(core, state, engine, id, &request.params),
+        "surface.send_key" => {
+            surface::handle_surface_send_key(core, state, engine, id, &request.params)
         }
-        "surface.send_to" => surface::handle_surface_send_to(state, engine, id, &request.params),
+        "surface.send_combo" => {
+            surface::handle_surface_send_combo(core, state, engine, id, &request.params)
+        }
+        "surface.send_to" => {
+            surface::handle_surface_send_to(core, state, engine, id, &request.params)
+        }
         "surface.wake" => surface::handle_surface_wake(state, engine, id, &request.params),
         "surface.set_mark" => surface::handle_set_mark(state, engine, id, &request.params),
         "surface.read_since_mark" => {

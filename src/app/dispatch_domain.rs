@@ -242,6 +242,10 @@ impl App {
                     }
                 }
             }
+            CoreEvent::SurfaceSent { .. } => {
+                // terminal output 은 PTY → AppEvent 경로로 자동 redraw 유도.
+                // 추가 cascade 없음.
+            }
         }
     }
 

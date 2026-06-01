@@ -28,6 +28,17 @@ pub(crate) enum ConvertSurfaceTarget {
     Kind { kind: String, params: Value },
 }
 
+/// `DomainIntent::SendToSurface` 의 payload. 호출자가 *어느 메서드 호출* 할지
+/// 결정해 전달 — Core 는 받아서 그대로 dispatch.
+/// - `Bytes`: 변환 완료된 raw bytes (control sequences 포함). `send_bytes` 호출.
+/// - `Text`: raw text. `send_key` 호출 (escape 처리 없음 — UTF-8 그대로).
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) enum SendPayload {
+    Bytes(Vec<u8>),
+    Text(String),
+}
+
 /// 도메인 변경 요청. Core 만이 자기 메서드로 적용한다.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -123,6 +134,14 @@ pub(crate) enum DomainIntent {
     ConvertSurface {
         surface_id: u32,
         target: ConvertSurfaceTarget,
+    },
+
+    // ─── Terminal send (D.3.C.C.1) ───
+    /// terminal surface 에 입력 전송. payload 의 종류에 따라 send_bytes 또는
+    /// send_key 호출. ensure_surface_initialized 도 Core 가 처리.
+    SendToSurface {
+        surface_id: u32,
+        payload: SendPayload,
     },
 
     // ─── Notifications (D.3.C.E.2) ───
@@ -259,6 +278,8 @@ pub(crate) enum CoreEvent {
         replaced: bool,
         is_terminal: bool, // cascade 에서 send_fast_init 결정용
     },
+    /// terminal send 완료. `sent=false` 면 surface 가 terminal 이 아니거나 없음.
+    SurfaceSent { surface_id: u32, sent: bool },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push 요청. cascade 가 라우팅 + store.add + host event enqueue.

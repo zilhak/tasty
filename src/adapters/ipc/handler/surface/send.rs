@@ -86,7 +86,29 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
     None
 }
 
+/// 공용 dispatch — DomainIntent::SendToSurface 발화 후 sent 결과 반환.
+fn dispatch_send(
+    core: &mut crate::core::Core,
+    engine: &mut crate::engine_state::CoreState,
+    surface_id: u32,
+    payload: crate::core::intent::SendPayload,
+) -> bool {
+    let intent = crate::core::intent::DomainIntent::SendToSurface {
+        surface_id,
+        payload,
+    };
+    let events = match core.apply(engine, intent) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    matches!(
+        events.into_iter().next(),
+        Some(crate::core::intent::CoreEvent::SurfaceSent { sent: true, .. })
+    )
+}
+
 pub(crate) fn handle_surface_send(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -97,12 +119,15 @@ pub(crate) fn handle_surface_send(
         Err(e) => return e,
     };
     let text = match params.get("text").and_then(|v| v.as_str()) {
-        Some(t) => t,
+        Some(t) => t.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
-    engine.ensure_surface_initialized(surface_id);
-    if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-        terminal.send_key(text);
+    if dispatch_send(
+        core,
+        engine,
+        surface_id,
+        crate::core::intent::SendPayload::Text(text),
+    ) {
         JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
@@ -110,6 +135,7 @@ pub(crate) fn handle_surface_send(
 }
 
 pub(crate) fn handle_surface_send_key(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -123,8 +149,6 @@ pub(crate) fn handle_surface_send_key(
         Some(k) => k,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'key' parameter"),
     };
-
-    engine.ensure_surface_initialized(surface_id);
 
     let bytes: Vec<u8> = match key {
         "enter" => b"\r".to_vec(),
@@ -157,23 +181,34 @@ pub(crate) fn handle_surface_send_key(
             // Parse modifier+key combos like "ctrl+c", "alt+x"
             if let Some(combo_bytes) = parse_key_combo(other) {
                 combo_bytes
-            } else if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-                terminal.send_key(other);
-                return JsonRpcResponse::success(
-                    id,
-                    json!({ "sent": true, "surface_id": surface_id }),
-                );
             } else {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    format!("Surface {} not found", surface_id),
-                );
+                // 알 수 없는 key 식별자 — raw text 로 fallback (옛 동작).
+                if dispatch_send(
+                    core,
+                    engine,
+                    surface_id,
+                    crate::core::intent::SendPayload::Text(other.to_string()),
+                ) {
+                    return JsonRpcResponse::success(
+                        id,
+                        json!({ "sent": true, "surface_id": surface_id }),
+                    );
+                } else {
+                    return JsonRpcResponse::invalid_params(
+                        id,
+                        format!("Surface {} not found", surface_id),
+                    );
+                }
             }
         }
     };
-    if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-        terminal.send_bytes(&bytes);
-    }
+    // sent 여부와 무관하게 response 는 success — 옛 동작 보존.
+    let _sent = dispatch_send(
+        core,
+        engine,
+        surface_id,
+        crate::core::intent::SendPayload::Bytes(bytes),
+    );
     JsonRpcResponse::success(id, json!({ "sent": true, "surface_id": surface_id }))
 }
 
@@ -205,6 +240,7 @@ pub(crate) fn handle_surface_wake(
 }
 
 pub(crate) fn handle_surface_send_combo(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -231,8 +267,6 @@ pub(crate) fn handle_surface_send_combo(
     let has_ctrl = modifiers.iter().any(|m| m == "ctrl");
     let has_alt = modifiers.iter().any(|m| m == "alt");
 
-    engine.ensure_surface_initialized(surface_id);
-
     let mut bytes_to_send: Vec<u8> = Vec::new();
 
     if has_ctrl && key.len() == 1 {
@@ -253,10 +287,12 @@ pub(crate) fn handle_surface_send_combo(
         bytes_to_send.extend_from_slice(key.as_bytes());
     }
 
-    let terminal = engine.find_terminal_by_id_mut(surface_id);
-
-    if let Some(terminal) = terminal {
-        terminal.send_bytes(&bytes_to_send);
+    if dispatch_send(
+        core,
+        engine,
+        surface_id,
+        crate::core::intent::SendPayload::Bytes(bytes_to_send),
+    ) {
         JsonRpcResponse::success(id, json!({ "sent": true }))
     } else {
         JsonRpcResponse::internal_error(id, "No terminal found".to_string())
@@ -266,22 +302,26 @@ pub(crate) fn handle_surface_send_combo(
 // handle_pane_focus / handle_surface_focus removed: focus is user-only.
 
 pub(crate) fn handle_surface_send_to(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
     let text = match params.get("text").and_then(|v| v.as_str()) {
-        Some(t) => t,
+        Some(t) => t.to_string(),
         None => return JsonRpcResponse::invalid_params(id, "Missing 'text' parameter"),
     };
     let surface_id = match params.get("surface_id").and_then(|v| v.as_u64()) {
         Some(sid) => sid as u32,
         None => return JsonRpcResponse::invalid_params(id, "Missing 'surface_id' parameter"),
     };
-    engine.ensure_surface_initialized(surface_id);
-    if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-        terminal.send_key(text);
+    if dispatch_send(
+        core,
+        engine,
+        surface_id,
+        crate::core::intent::SendPayload::Text(text),
+    ) {
         JsonRpcResponse::success(id, json!({ "sent": true }))
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))

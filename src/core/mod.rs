@@ -418,7 +418,37 @@ impl Core {
                     engine, surface_id, target,
                 )])
             }
+            DomainIntent::SendToSurface {
+                surface_id,
+                payload,
+            } => Ok(vec![Self::apply_send_to_surface(
+                engine, surface_id, payload,
+            )]),
         }
+    }
+
+    /// `DomainIntent::SendToSurface` 본문. ensure_surface_initialized → terminal
+    /// lookup → send_bytes / send_key 분기.
+    fn apply_send_to_surface(
+        engine: &mut crate::engine_state::CoreState,
+        surface_id: u32,
+        payload: crate::core::intent::SendPayload,
+    ) -> CoreEvent {
+        engine.ensure_surface_initialized(surface_id);
+        let sent = if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
+            match payload {
+                crate::core::intent::SendPayload::Bytes(bytes) => {
+                    terminal.send_bytes(&bytes);
+                }
+                crate::core::intent::SendPayload::Text(text) => {
+                    terminal.send_key(&text);
+                }
+            }
+            true
+        } else {
+            false
+        };
+        CoreEvent::SurfaceSent { surface_id, sent }
     }
 
     /// `DomainIntent::SplitPane` 본문. 4-phase borrow 분리.
