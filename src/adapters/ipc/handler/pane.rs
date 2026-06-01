@@ -34,6 +34,7 @@ pub fn handle_pane_list(
 }
 
 pub fn handle_pane_close(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -44,7 +45,6 @@ pub fn handle_pane_close(
         Err(e) => return e,
     };
 
-    // Prevent closing a pane that contains the caller
     if let Some(caller) = super::caller_surface_id(params) {
         if super::surface_belongs_to_pane(engine, caller, pane_id) {
             return JsonRpcResponse::invalid_params(
@@ -58,9 +58,24 @@ pub fn handle_pane_close(
         return JsonRpcResponse::invalid_params(id, format!("Pane {} not found", pane_id));
     }
 
-    let closed = state.close_pane_by_id(engine, pane_id);
+    let intent = crate::core::intent::DomainIntent::ClosePane { pane_id };
+    let events = match core.apply(engine, intent) {
+        Ok(events) => events,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+    let Some(crate::core::intent::CoreEvent::PaneClosed {
+        pane_id,
+        closed,
+        cleanup_targets,
+    }) = events.into_iter().next()
+    else {
+        return JsonRpcResponse::internal_error(id, "Core::apply returned no PaneClosed event");
+    };
 
     if closed {
+        for (sid, pid) in cleanup_targets {
+            state.cleanup_surface(engine, sid, pid);
+        }
         JsonRpcResponse::success(id, json!({ "closed": true, "pane_id": pane_id }))
     } else {
         JsonRpcResponse::success(

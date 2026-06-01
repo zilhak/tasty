@@ -402,6 +402,9 @@ impl Core {
                 kind,
                 surface_params,
             ),
+            DomainIntent::ClosePane { pane_id } => {
+                Ok(vec![Self::apply_close_pane(engine, pane_id)])
+            }
         }
     }
 
@@ -532,6 +535,46 @@ impl Core {
             target_surface_id,
             new_surface_id,
         }])
+    }
+
+    /// `DomainIntent::ClosePane` 본문. pane_id 로 모든 workspace 순회.
+    /// cleanup_targets 수집 → pane tree close → workspace 안 focused_pane 보정
+    /// (닫힌 곳의 자연 이동, 원칙 위반 아님). cleanup_surface 는 cascade.
+    fn apply_close_pane(engine: &mut crate::engine_state::CoreState, pane_id: u32) -> CoreEvent {
+        let ws_idx = match engine.find_workspace_index_for_pane(pane_id) {
+            Some(idx) => idx,
+            None => {
+                return CoreEvent::PaneClosed {
+                    pane_id,
+                    closed: false,
+                    cleanup_targets: vec![],
+                };
+            }
+        };
+
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        if let Some(pane) = engine.workspaces[ws_idx].pane_layout().find_pane(pane_id) {
+            for tab in &pane.tabs {
+                crate::state::AppState::collect_close_targets(tab, &mut targets);
+            }
+        }
+
+        let ws = &mut engine.workspaces[ws_idx];
+        let was_focused = ws.focused_pane == pane_id;
+        let removed = ws.pane_layout_mut().close_pane(pane_id);
+        if removed {
+            if was_focused {
+                if let Some(first) = ws.pane_layout().first_pane() {
+                    ws.focused_pane = first.id;
+                }
+            }
+            engine.mark_layout_dirty();
+        }
+        CoreEvent::PaneClosed {
+            pane_id,
+            closed: removed,
+            cleanup_targets: if removed { targets } else { vec![] },
+        }
     }
 
     /// `DomainIntent::MoveTab` 본문. pane_id 로 모든 workspace 순회

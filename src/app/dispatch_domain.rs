@@ -199,6 +199,16 @@ impl App {
                     new_surface_id,
                 );
             }
+            CoreEvent::PaneClosed {
+                pane_id: _,
+                closed,
+                cleanup_targets,
+            } => {
+                if closed {
+                    // Tab.Close 와 같은 cleanup cascade — surface 정리.
+                    self.dispatch_tab_closed_cascade(source, cleanup_targets);
+                }
+            }
         }
     }
 

@@ -94,6 +94,10 @@ pub(crate) enum DomainIntent {
         kind: String,
         surface_params: Value,
     },
+    /// pane_id 로 pane 제거. workspace 안 invariant (focused_pane 보존) 는
+    /// Core::apply 가 직접 처리 (workspace 안 *닫힌 곳* 의 자연 이동 — 원칙 1
+    /// 위반 아님). cleanup_surface (markdown/image/memory) 는 cascade.
+    ClosePane { pane_id: u32 },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -203,6 +207,13 @@ pub(crate) enum CoreEvent {
         pane_id: u32,
         target_surface_id: u32,
         new_surface_id: u32,
+    },
+    /// pane close 완료. cleanup_targets 는 닫힌 pane 안의 (surface_id,
+    /// persist_id) — cascade 가 cleanup_surface 호출.
+    PaneClosed {
+        pane_id: u32,
+        closed: bool,
+        cleanup_targets: Vec<(u32, Option<String>)>,
     },
 
     // ─── Notifications (D.3.C.E.2) ───
