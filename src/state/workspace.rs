@@ -1,5 +1,3 @@
-use serde_json::Value;
-
 use crate::engine_state::CoreState;
 use crate::model::Workspace;
 
@@ -42,67 +40,6 @@ impl AppState {
         engine.send_fast_init(surface_id);
         engine.mark_layout_dirty();
         Ok(())
-    }
-
-    /// Add a new workspace without switching to it. Used by IPC/CLI.
-    /// `kind`은 SurfaceKindRegistry 식별자. `"terminal"`은 PTY spawn 경로,
-    /// 그 외는 registry.create로 생성한다. `"empty"`로 워크스페이스를 만들 수는 없다.
-    /// Returns the new workspace index.
-    pub fn add_workspace_background(
-        &mut self,
-        engine: &mut CoreState,
-        explicit_cwd: Option<std::path::PathBuf>,
-        kind: &str,
-        params: &Value,
-    ) -> anyhow::Result<usize> {
-        let ws_id = engine.next_ids.next_workspace();
-        let pane_id = engine.next_ids.next_pane();
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
-
-        let name = format!("Workspace {}", engine.workspaces.len() + 1);
-        let is_terminal = kind == "terminal";
-
-        let ws = if kind == "terminal" {
-            let cwd = explicit_cwd.or_else(|| self.resolve_inherit_cwd(engine));
-            let shell = if engine.settings.general.shell.is_empty() {
-                None
-            } else {
-                Some(engine.settings.general.shell.as_str())
-            };
-            let shell_args_owned = engine.settings.general.effective_shell_args();
-            let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-            Workspace::new_with_shell(
-                ws_id,
-                name,
-                pane_id,
-                tab_id,
-                surface_id,
-                crate::model::ShellSpawnOpts {
-                    cols: engine.default_cols,
-                    rows: engine.default_rows,
-                    shell: shell,
-                    shell_args: &shell_args,
-                    waker: engine.make_waker(surface_id),
-                    working_dir: cwd.as_deref(),
-                },
-            )?
-        } else if kind == "empty" {
-            anyhow::bail!("Cannot create workspace with empty surface kind");
-        } else {
-            let surface = engine.create_surface_via_registry(kind, surface_id, params)?;
-            let tab_name = super::pane::default_tab_name_for_kind(kind, params);
-            let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
-            Workspace::new_with_pane(ws_id, name, pane)
-        };
-
-        engine.workspaces.push(ws);
-        let idx = engine.workspaces.len() - 1;
-        if is_terminal {
-            engine.send_fast_init(surface_id);
-        }
-        engine.mark_layout_dirty();
-        Ok(idx)
     }
 
     /// Switch to workspace by index (0-based).

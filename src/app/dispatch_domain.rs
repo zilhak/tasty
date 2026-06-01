@@ -12,7 +12,7 @@ use winit::window::WindowId;
 
 use crate::adapters::ui::window::Window as _;
 use crate::app::App;
-use crate::core::intent::{CoreEvent, DomainIntent};
+use crate::core::intent::CoreEvent;
 use crate::intent::{DispatchedIntent, Intent, IntentOrigin};
 
 /// Domain intent 발화 source. `dispatch_pending_intents` 가 per-window /
