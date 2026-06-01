@@ -198,9 +198,9 @@ fn route_engine_handler(
         "preset.capture" => preset::handle_capture(core, state, engine, id, &request.params),
         "preset.apply" => preset::handle_apply(core, state, engine, id, &request.params),
         // surface
-        "surface.close" => surface::handle_surface_close(state, engine, id, &request.params),
+        "surface.close" => surface::handle_surface_close(core, state, engine, id, &request.params),
         "surface.close_self" => {
-            surface::handle_surface_close_self(state, engine, id, &request.params)
+            surface::handle_surface_close_self(core, state, engine, id, &request.params)
         }
         "surface.list" => surface::handle_surface_list(state, engine, id),
         "surface.send" => surface::handle_surface_send(state, engine, id, &request.params),
