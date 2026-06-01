@@ -143,6 +143,12 @@ pub(crate) enum DomainIntent {
         surface_id: u32,
         payload: SendPayload,
     },
+    /// 특정 surface 의 PTY 를 새 terminal 로 교체 (respawn). cwd 가 주어지면
+    /// 새 PTY 의 working_dir 로 사용. plugin `claude.respawn` 의 진입점.
+    RespawnTerminal {
+        surface_id: u32,
+        cwd: Option<PathBuf>,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -280,6 +286,12 @@ pub(crate) enum CoreEvent {
     },
     /// terminal send 완료. `sent=false` 면 surface 가 terminal 이 아니거나 없음.
     SurfaceSent { surface_id: u32, sent: bool },
+    /// terminal respawn 완료. `error` 가 Some 이면 spawn 실패 또는 surface
+    /// 가 terminal 이 아님 — handler 가 invalid_params 반환.
+    TerminalRespawned {
+        surface_id: u32,
+        error: Option<String>,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push 요청. cascade 가 라우팅 + store.add + host event enqueue.

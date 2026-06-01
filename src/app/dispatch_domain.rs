@@ -246,6 +246,9 @@ impl App {
                 // terminal output 은 PTY → AppEvent 경로로 자동 redraw 유도.
                 // 추가 cascade 없음.
             }
+            CoreEvent::TerminalRespawned { .. } => {
+                // 추가 cascade 없음. handler 가 events 직접 받아서 response 처리.
+            }
         }
     }
 

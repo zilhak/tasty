@@ -82,6 +82,7 @@ pub(crate) fn handle_foreground_process(
 /// 플러그인이 claude.respawn에서 사용. 그 핸들러는 본 IPC로 PTY를 갈아끼운 뒤
 /// surface.send로 `claude` 명령을 재송신한다.
 pub(crate) fn handle_surface_respawn_terminal(
+    core: &mut crate::core::Core,
     _state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -96,29 +97,22 @@ pub(crate) fn handle_surface_respawn_terminal(
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from);
 
-    let cols = engine.default_cols;
-    let rows = engine.default_rows;
-    let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
-    let waker = engine.make_waker(surface_id);
-    let new_terminal = match tasty_terminal::Terminal::new(
-        tasty_terminal::TerminalConfig {
-            cols,
-            rows,
-            shell: sh.shell_ref(),
-            args: &sh.args_ref(),
-            surface_id,
-            working_dir: cwd.as_deref(),
-            initial_input: None,
-        },
-        waker,
-    ) {
-        Ok(t) => t,
+    let intent = crate::core::intent::DomainIntent::RespawnTerminal { surface_id, cwd };
+    let events = match core.apply(engine, intent) {
+        Ok(e) => e,
         Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
     };
-
-    match engine.replace_terminal_by_id(surface_id, new_terminal) {
-        Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id })),
-        Err(e) => JsonRpcResponse::invalid_params(id, e.to_string()),
+    let Some(crate::core::intent::CoreEvent::TerminalRespawned { surface_id, error }) =
+        events.into_iter().next()
+    else {
+        return JsonRpcResponse::internal_error(
+            id,
+            "Core::apply returned no TerminalRespawned event",
+        );
+    };
+    match error {
+        None => JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": surface_id })),
+        Some(e) => JsonRpcResponse::invalid_params(id, e),
     }
 }
 

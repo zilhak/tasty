@@ -247,7 +247,7 @@ fn route_engine_handler(
         }
         "surface.locate" => surface::handle_surface_locate(state, engine, id, &request.params),
         "surface.respawn_terminal" => {
-            surface::handle_surface_respawn_terminal(state, engine, id, &request.params)
+            surface::handle_surface_respawn_terminal(core, state, engine, id, &request.params)
         }
         "surface.is_typing" => handle_is_typing(state, engine, id, &request.params),
         "surface.send_wait_idle" => handle_send_wait_idle(state, engine, id, &request.params),

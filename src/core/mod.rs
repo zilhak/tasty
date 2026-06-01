@@ -424,6 +424,51 @@ impl Core {
             } => Ok(vec![Self::apply_send_to_surface(
                 engine, surface_id, payload,
             )]),
+            DomainIntent::RespawnTerminal { surface_id, cwd } => {
+                Ok(vec![Self::apply_respawn_terminal(engine, surface_id, cwd)])
+            }
+        }
+    }
+
+    /// `DomainIntent::RespawnTerminal` 본문. 새 Terminal 생성 → engine.replace_terminal_by_id.
+    fn apply_respawn_terminal(
+        engine: &mut crate::engine_state::CoreState,
+        surface_id: u32,
+        cwd: Option<std::path::PathBuf>,
+    ) -> CoreEvent {
+        let cols = engine.default_cols;
+        let rows = engine.default_rows;
+        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let waker = engine.make_waker(surface_id);
+        let new_terminal = match tasty_terminal::Terminal::new(
+            tasty_terminal::TerminalConfig {
+                cols,
+                rows,
+                shell: sh.shell_ref(),
+                args: &sh.args_ref(),
+                surface_id,
+                working_dir: cwd.as_deref(),
+                initial_input: None,
+            },
+            waker,
+        ) {
+            Ok(t) => t,
+            Err(e) => {
+                return CoreEvent::TerminalRespawned {
+                    surface_id,
+                    error: Some(e.to_string()),
+                };
+            }
+        };
+        match engine.replace_terminal_by_id(surface_id, new_terminal) {
+            Ok(()) => CoreEvent::TerminalRespawned {
+                surface_id,
+                error: None,
+            },
+            Err(e) => CoreEvent::TerminalRespawned {
+                surface_id,
+                error: Some(e.to_string()),
+            },
         }
     }
 
