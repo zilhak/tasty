@@ -3,7 +3,35 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::MainWindow;
 use crate::adapters::ui::window::Window;
+use crate::core::intent::{DomainIntent, SendPayload};
 use crate::state::{FocusedSurfaceType, PendingKeyEvent};
+
+/// `decide_key_to_terminal` 의 입력 — 현재 focused terminal 의 read-only 상태.
+/// UI 가 sequence 결정에 필요한 정보만 추출. terminal mut borrow 불필요.
+struct KeyboardReadState {
+    app_cursor: bool,
+    is_alt_screen: bool,
+    scroll_offset: usize,
+    rows: usize,
+}
+
+/// 키 처리 후 UI 가 직접 수행해야 하는 *터미널 자체 mutate* 동작. PTY input 과
+/// 무관 (옛 코드의 `terminal.scroll_*` / `scroll_to_bottom` 호출 분리).
+enum KeyboardScrollAction {
+    None,
+    ScrollUp(usize),
+    ScrollDown(usize),
+    ScrollToBottom,
+}
+
+/// `decide_key_to_terminal` 의 반환. PTY input 은 `payloads` 로 Intent 큐잉,
+/// 터미널 자체 mutate 는 `scroll_action` 으로 호출자가 처리.
+struct KeyboardSendOutcome {
+    payloads: Vec<SendPayload>,
+    scroll_action: KeyboardScrollAction,
+    dirty: bool,
+    sent: bool,
+}
 
 impl MainWindow {
     pub(super) fn handle_keyboard_input(
@@ -106,30 +134,78 @@ impl MainWindow {
                 } else {
                     &event.text
                 };
-                if let Some(terminal) = self.state.focused_terminal_mut(&mut self.engine_state) {
-                    // When modifiers are held, prefer the physical key for Ctrl+letter
-                    // handling so that IME composition (e.g. Korean 'ㅊ' for 'c') doesn't
-                    // prevent control characters from being sent.
-                    let terminal_key = if self.base.modifiers.control_key()
-                        || self.base.modifiers.super_key()
-                        || self.base.modifiers.alt_key()
-                    {
-                        crate::shortcuts::physical_key_to_logical(&event.physical_key)
-                            .unwrap_or_else(|| event.logical_key.clone())
-                    } else {
-                        event.logical_key.clone()
-                    };
-                    let (dirty, sent) = Self::send_key_to_terminal(
-                        terminal,
+                // When modifiers are held, prefer the physical key for Ctrl+letter
+                // handling so that IME composition (e.g. Korean 'ㅊ' for 'c') doesn't
+                // prevent control characters from being sent.
+                let terminal_key = if self.base.modifiers.control_key()
+                    || self.base.modifiers.super_key()
+                    || self.base.modifiers.alt_key()
+                {
+                    crate::shortcuts::physical_key_to_logical(&event.physical_key)
+                        .unwrap_or_else(|| event.logical_key.clone())
+                } else {
+                    event.logical_key.clone()
+                };
+
+                let read_state =
+                    self.state
+                        .focused_terminal(&self.engine_state)
+                        .map(|t| KeyboardReadState {
+                            app_cursor: t.application_cursor_keys(),
+                            is_alt_screen: t.is_alternate_screen(),
+                            scroll_offset: t.scroll_offset(),
+                            rows: t.rows(),
+                        });
+                let surface_id = self.state.focused_surface_id(&self.engine_state);
+
+                if let (Some(rs), Some(sid)) = (read_state, surface_id) {
+                    let outcome = Self::decide_key_to_terminal(
+                        rs,
                         &terminal_key,
                         text_for_terminal,
                         self.base.modifiers,
                     );
-                    if dirty {
+
+                    for payload in outcome.payloads {
+                        self.state.dispatch_intent(
+                            DomainIntent::SendToSurface {
+                                surface_id: sid,
+                                payload,
+                            }
+                            .from_user_shortcut("keyboard_input"),
+                        );
+                    }
+
+                    match outcome.scroll_action {
+                        KeyboardScrollAction::None => {}
+                        KeyboardScrollAction::ScrollUp(n) => {
+                            if let Some(terminal) =
+                                self.state.focused_terminal_mut(&mut self.engine_state)
+                            {
+                                terminal.scroll_up(n);
+                            }
+                        }
+                        KeyboardScrollAction::ScrollDown(n) => {
+                            if let Some(terminal) =
+                                self.state.focused_terminal_mut(&mut self.engine_state)
+                            {
+                                terminal.scroll_down(n);
+                            }
+                        }
+                        KeyboardScrollAction::ScrollToBottom => {
+                            if let Some(terminal) =
+                                self.state.focused_terminal_mut(&mut self.engine_state)
+                            {
+                                terminal.scroll_to_bottom();
+                            }
+                        }
+                    }
+
+                    if outcome.dirty {
                         self.base.dirty = true;
                     }
 
-                    if sent {
+                    if outcome.sent {
                         self.ime_cursor_advance = 0;
                         if self.text_selection.is_some() {
                             self.text_selection = None;
@@ -160,163 +236,181 @@ impl MainWindow {
         }
     }
 
-    /// Send a key to the terminal. Returns (dirty, sent) where `sent` indicates
-    /// whether any bytes were actually written to the terminal PTY.
-    fn send_key_to_terminal(
-        terminal: &mut tasty_terminal::Terminal,
+    /// 키 입력을 PTY payload + scroll action 으로 변환. terminal mutate 0 —
+    /// 호출자가 `KeyboardSendOutcome` 으로 받아 dispatch_intent + scroll_action
+    /// 분리 처리. application_cursor_keys / is_alternate_screen / scroll_offset
+    /// / rows 는 호출자가 미리 read 해서 `KeyboardReadState` 로 전달.
+    fn decide_key_to_terminal(
+        state: KeyboardReadState,
         key: &Key,
         text: &Option<winit::keyboard::SmolStr>,
         modifiers: ModifiersState,
-    ) -> (bool, bool) {
-        let app_cursor = terminal.application_cursor_keys();
-        let is_alt_screen = terminal.is_alternate_screen();
+    ) -> KeyboardSendOutcome {
+        let mut payloads: Vec<SendPayload> = Vec::new();
+        let mut scroll_action = KeyboardScrollAction::None;
         let mut dirty = false;
         let mut sent = false;
 
-        let is_scrollback_key = !is_alt_screen
+        let is_scrollback_key = !state.is_alt_screen
             && matches!(
                 key.as_ref(),
                 Key::Named(NamedKey::PageUp) | Key::Named(NamedKey::PageDown)
             );
 
+        let push_bytes = |payloads: &mut Vec<SendPayload>, bytes: &[u8]| {
+            payloads.push(SendPayload::Bytes(bytes.to_vec()));
+        };
+
         match key.as_ref() {
             Key::Named(NamedKey::Enter) => {
                 if modifiers.shift_key() {
                     // Kitty keyboard protocol: CSI 13 ; 2 u (Shift+Enter)
-                    terminal.send_bytes(b"\x1b[13;2u");
+                    push_bytes(&mut payloads, b"\x1b[13;2u");
                 } else {
-                    terminal.send_bytes(b"\r");
+                    push_bytes(&mut payloads, b"\r");
                 }
                 sent = true;
             }
             Key::Named(NamedKey::Backspace) => {
-                terminal.send_bytes(b"\x7f");
+                push_bytes(&mut payloads, b"\x7f");
                 sent = true;
             }
             Key::Named(NamedKey::Tab) => {
                 if modifiers.shift_key() {
-                    terminal.send_bytes(b"\x1b[Z");
+                    push_bytes(&mut payloads, b"\x1b[Z");
                 } else {
-                    terminal.send_bytes(b"\t");
+                    push_bytes(&mut payloads, b"\t");
                 }
                 sent = true;
             }
             Key::Named(NamedKey::Escape) => {
-                terminal.send_bytes(b"\x1b");
+                push_bytes(&mut payloads, b"\x1b");
                 sent = true;
             }
             Key::Named(NamedKey::ArrowUp) => {
-                if app_cursor {
-                    terminal.send_bytes(b"\x1bOA")
-                } else {
-                    terminal.send_bytes(b"\x1b[A")
-                }
+                push_bytes(
+                    &mut payloads,
+                    if state.app_cursor {
+                        b"\x1bOA"
+                    } else {
+                        b"\x1b[A"
+                    },
+                );
                 sent = true;
             }
             Key::Named(NamedKey::ArrowDown) => {
-                if app_cursor {
-                    terminal.send_bytes(b"\x1bOB")
-                } else {
-                    terminal.send_bytes(b"\x1b[B")
-                }
+                push_bytes(
+                    &mut payloads,
+                    if state.app_cursor {
+                        b"\x1bOB"
+                    } else {
+                        b"\x1b[B"
+                    },
+                );
                 sent = true;
             }
             Key::Named(NamedKey::ArrowRight) => {
-                if app_cursor {
-                    terminal.send_bytes(b"\x1bOC")
-                } else {
-                    terminal.send_bytes(b"\x1b[C")
-                }
+                push_bytes(
+                    &mut payloads,
+                    if state.app_cursor {
+                        b"\x1bOC"
+                    } else {
+                        b"\x1b[C"
+                    },
+                );
                 sent = true;
             }
             Key::Named(NamedKey::ArrowLeft) => {
-                if app_cursor {
-                    terminal.send_bytes(b"\x1bOD")
-                } else {
-                    terminal.send_bytes(b"\x1b[D")
-                }
+                push_bytes(
+                    &mut payloads,
+                    if state.app_cursor {
+                        b"\x1bOD"
+                    } else {
+                        b"\x1b[D"
+                    },
+                );
                 sent = true;
             }
             Key::Named(NamedKey::Home) => {
-                terminal.send_bytes(b"\x1b[H");
+                push_bytes(&mut payloads, b"\x1b[H");
                 sent = true;
             }
             Key::Named(NamedKey::End) => {
-                terminal.send_bytes(b"\x1b[F");
+                push_bytes(&mut payloads, b"\x1b[F");
                 sent = true;
             }
             Key::Named(NamedKey::PageUp) => {
-                if is_alt_screen {
-                    terminal.send_bytes(b"\x1b[5~");
+                if state.is_alt_screen {
+                    push_bytes(&mut payloads, b"\x1b[5~");
                     sent = true;
                 } else {
-                    terminal.scroll_up(terminal.rows());
+                    scroll_action = KeyboardScrollAction::ScrollUp(state.rows);
                     dirty = true;
                 }
             }
             Key::Named(NamedKey::PageDown) => {
-                if is_alt_screen {
-                    terminal.send_bytes(b"\x1b[6~");
+                if state.is_alt_screen {
+                    push_bytes(&mut payloads, b"\x1b[6~");
                     sent = true;
                 } else {
-                    terminal.scroll_down(terminal.rows());
+                    scroll_action = KeyboardScrollAction::ScrollDown(state.rows);
                     dirty = true;
                 }
             }
             Key::Named(NamedKey::Insert) => {
-                terminal.send_bytes(b"\x1b[2~");
+                push_bytes(&mut payloads, b"\x1b[2~");
                 sent = true;
             }
             Key::Named(NamedKey::Delete) => {
-                terminal.send_bytes(b"\x1b[3~");
+                push_bytes(&mut payloads, b"\x1b[3~");
                 sent = true;
             }
             Key::Named(NamedKey::F1) => {
-                terminal.send_bytes(b"\x1bOP");
+                push_bytes(&mut payloads, b"\x1bOP");
                 sent = true;
             }
             Key::Named(NamedKey::F2) => {
-                terminal.send_bytes(b"\x1bOQ");
+                push_bytes(&mut payloads, b"\x1bOQ");
                 sent = true;
             }
             Key::Named(NamedKey::F3) => {
-                terminal.send_bytes(b"\x1bOR");
+                push_bytes(&mut payloads, b"\x1bOR");
                 sent = true;
             }
             Key::Named(NamedKey::F4) => {
-                terminal.send_bytes(b"\x1bOS");
+                push_bytes(&mut payloads, b"\x1bOS");
                 sent = true;
             }
             Key::Named(NamedKey::F5) => {
-                terminal.send_bytes(b"\x1b[15~");
+                push_bytes(&mut payloads, b"\x1b[15~");
                 sent = true;
             }
             Key::Named(NamedKey::F6) => {
-                terminal.send_bytes(b"\x1b[17~");
+                push_bytes(&mut payloads, b"\x1b[17~");
                 sent = true;
             }
             Key::Named(NamedKey::F7) => {
-                terminal.send_bytes(b"\x1b[18~");
+                push_bytes(&mut payloads, b"\x1b[18~");
                 sent = true;
             }
             Key::Named(NamedKey::F8) => {
-                terminal.send_bytes(b"\x1b[19~");
+                push_bytes(&mut payloads, b"\x1b[19~");
                 sent = true;
             }
             Key::Named(NamedKey::F9) => {
-                terminal.send_bytes(b"\x1b[20~");
+                push_bytes(&mut payloads, b"\x1b[20~");
                 sent = true;
             }
             Key::Named(NamedKey::F10) => {
-                terminal.send_bytes(b"\x1b[21~");
+                push_bytes(&mut payloads, b"\x1b[21~");
                 sent = true;
             }
             Key::Named(NamedKey::F11) => {
-                terminal.send_bytes(b"\x1b[23~");
+                push_bytes(&mut payloads, b"\x1b[23~");
                 sent = true;
             }
             Key::Named(NamedKey::F12) => {
-                terminal.send_bytes(b"\x1b[24~");
+                push_bytes(&mut payloads, b"\x1b[24~");
                 sent = true;
             }
             _ => {
@@ -326,9 +420,15 @@ impl MainWindow {
                         if let Some(ch) = c.chars().next() {
                             if ch.is_ascii_alphabetic() {
                                 let ctrl_char = (ch.to_ascii_lowercase() as u8) - b'a' + 1;
-                                terminal.send_bytes(&[ctrl_char]);
+                                push_bytes(&mut payloads, &[ctrl_char]);
                                 sent = true;
-                                return (dirty, sent);
+                                // 옛 코드의 early return (scroll_to_bottom 분기 우회).
+                                return KeyboardSendOutcome {
+                                    payloads,
+                                    scroll_action,
+                                    dirty,
+                                    sent,
+                                };
                             }
                         }
                     }
@@ -336,7 +436,7 @@ impl MainWindow {
                 if let Some(text) = text {
                     let s = text.as_str();
                     if !s.is_empty() {
-                        terminal.send_key(s);
+                        payloads.push(SendPayload::Text(s.to_string()));
                         sent = true;
                     }
                 }
@@ -344,12 +444,22 @@ impl MainWindow {
         }
         // Scroll to bottom only when actual content was sent to the terminal,
         // not on modifier-only keypresses (Ctrl, Cmd, Shift, Alt).
-        if sent && !is_scrollback_key && terminal.scroll_offset() > 0 {
-            terminal.scroll_to_bottom();
+        // PageUp/PageDown (scrollback) 의 scroll_action 을 덮어쓰지 않도록 None 일 때만.
+        if sent
+            && !is_scrollback_key
+            && state.scroll_offset > 0
+            && matches!(scroll_action, KeyboardScrollAction::None)
+        {
+            scroll_action = KeyboardScrollAction::ScrollToBottom;
             dirty = true;
         }
 
-        (dirty, sent)
+        KeyboardSendOutcome {
+            payloads,
+            scroll_action,
+            dirty,
+            sent,
+        }
     }
 
     pub(super) fn handle_ime(&mut self, ime_event: winit::event::Ime, egui_consumed: bool) {
