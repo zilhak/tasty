@@ -84,6 +84,16 @@ pub(crate) enum DomainIntent {
         kind: String,
         surface_params: Value,
     },
+    /// 특정 surface 를 split (같은 tab 안에서). focused 의존 없음 — 호출자가
+    /// target_surface_id 결정. cascade 가 (User origin 이면) tab 의
+    /// focused_surface 를 new_surface_id 로 변경.
+    SplitSurface {
+        target_surface_id: u32,
+        direction: crate::model::SplitDirection,
+        cwd: Option<PathBuf>,
+        kind: String,
+        surface_params: Value,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -185,6 +195,14 @@ pub(crate) enum CoreEvent {
         new_pane_id: u32,
         new_surface_id: u32,
         direction: crate::model::SplitDirection,
+    },
+    /// surface split 완료. cascade 가 (User origin 이면) tab 의 focused_surface
+    /// 를 new_surface_id 로 변경.
+    SurfaceSplit {
+        workspace_index: usize,
+        pane_id: u32,
+        target_surface_id: u32,
+        new_surface_id: u32,
     },
 
     // ─── Notifications (D.3.C.E.2) ───

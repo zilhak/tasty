@@ -388,6 +388,20 @@ impl Core {
             } => {
                 Self::apply_split_pane(engine, target_pane_id, direction, cwd, kind, surface_params)
             }
+            DomainIntent::SplitSurface {
+                target_surface_id,
+                direction,
+                cwd,
+                kind,
+                surface_params,
+            } => Self::apply_split_surface(
+                engine,
+                target_surface_id,
+                direction,
+                cwd,
+                kind,
+                surface_params,
+            ),
         }
     }
 
@@ -452,6 +466,71 @@ impl Core {
             new_pane_id,
             new_surface_id,
             direction,
+        }])
+    }
+
+    /// `DomainIntent::SplitSurface` 본문. tab 안에서 surface 추가 (pane tree 변경 X).
+    fn apply_split_surface(
+        engine: &mut crate::engine_state::CoreState,
+        target_surface_id: u32,
+        direction: crate::model::SplitDirection,
+        cwd: Option<std::path::PathBuf>,
+        kind: String,
+        surface_params: serde_json::Value,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        let new_surface_id = engine.next_ids.next_surface();
+        let is_terminal = kind == "terminal";
+
+        // Phase 1: 새 surface 생성. terminal 은 직접 Box::new, 그 외는 registry.
+        let new_surface: Box<dyn crate::model::Surface> = if is_terminal {
+            let cols = engine.default_cols;
+            let rows = engine.default_rows;
+            let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+            let waker = engine.make_waker(new_surface_id);
+            let terminal = tasty_terminal::Terminal::new(
+                tasty_terminal::TerminalConfig {
+                    cols,
+                    rows,
+                    shell: sh.shell_ref(),
+                    args: &sh.args_ref(),
+                    surface_id: new_surface_id,
+                    working_dir: cwd.as_deref(),
+                    initial_input: None,
+                },
+                waker,
+            )?;
+            Box::new(crate::model::TerminalSurface {
+                id: new_surface_id,
+                terminal,
+                deferred_spawn: None,
+                scrollback_persist_id: None,
+            })
+        } else {
+            engine.create_surface_via_registry(&kind, new_surface_id, &surface_params)?
+        };
+
+        // Phase 2: tab 안 split
+        let (ws_idx, pane_id) = engine
+            .find_workspace_index_for_surface(target_surface_id)
+            .ok_or_else(|| anyhow::anyhow!("surface {} not found", target_surface_id))?;
+        {
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = ws
+                .pane_layout_mut()
+                .find_pane_mut(pane_id)
+                .ok_or_else(|| anyhow::anyhow!("pane {} not found", pane_id))?;
+            pane.split_surface_by_id_with_surface(target_surface_id, direction, new_surface)?;
+        }
+
+        // Phase 3: engine mutate (pane borrow 끝)
+        engine.send_fast_init(new_surface_id);
+        engine.mark_layout_dirty();
+
+        Ok(vec![CoreEvent::SurfaceSplit {
+            workspace_index: ws_idx,
+            pane_id,
+            target_surface_id,
+            new_surface_id,
         }])
     }
 

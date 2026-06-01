@@ -119,7 +119,7 @@ impl App {
             Intent::SplitSurface { .. }
             | Intent::CloseSurface { .. }
             | Intent::ConvertSurface { .. } => {
-                crate::intent::surface::handle(state, engine, intent);
+                crate::intent::surface::handle(core, state, engine, intent);
             }
             Intent::NewTab { .. } | Intent::CloseTab { .. } => {
                 crate::intent::tab::handle(core, state, engine, intent);

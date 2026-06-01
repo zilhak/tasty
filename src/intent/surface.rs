@@ -1,9 +1,8 @@
 //! Surface 도메인 Intent 핸들러.
 //!
 //! 정책:
-//! - **SplitSurface**: focused 의존 (사용자 단축키 전용). Intent 발화로 통일.
-//!   origin 검사는 하지 않는다 — Agent 가 dispatch 해도 동작은 동일하지만 현재
-//!   외부 표면 (IPC/CLI) 에서는 발화되지 않는다.
+//! - **SplitSurface**: `DomainIntent::SplitSurface` forward. focused
+//!   surface_id 는 handler 안에서 결정. cascade 가 origin 보고 focus 이동.
 //! - **CloseSurface**: origin.is_user() 면 snapshot 푸시 (Undo 가능),
 //!   Agent 면 no_snapshot. C1=B / C2 결정.
 //! - **ConvertSurface**: target 분기.
@@ -11,14 +10,22 @@
 //!   - `Kind { kind, params }` → 빌트인 wrapper (markdown/image/html) 가 있으면 그쪽,
 //!     없으면 generic `convert_surface_to_kind` 호출.
 
-use super::{ConvertTarget, DispatchedIntent, Intent};
+use super::{ConvertTarget, DispatchedIntent, Intent, IntentOrigin};
+use crate::core::Core;
 use crate::engine_state::CoreState;
 use crate::model::SplitDirection;
 use crate::state::AppState;
 
-pub fn handle(state: &mut AppState, engine: &mut CoreState, intent: &DispatchedIntent) {
+pub fn handle(
+    core: &mut Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    intent: &DispatchedIntent,
+) {
     match &intent.body {
-        Intent::SplitSurface { direction } => split(state, engine, *direction),
+        Intent::SplitSurface { direction } => {
+            split(core, state, engine, *direction, &intent.origin)
+        }
         Intent::CloseSurface { surface_id } => close(state, engine, intent, *surface_id),
         Intent::ConvertSurface { surface_id, target } => {
             convert(state, engine, *surface_id, target)
@@ -27,9 +34,48 @@ pub fn handle(state: &mut AppState, engine: &mut CoreState, intent: &DispatchedI
     }
 }
 
-fn split(state: &mut AppState, engine: &mut CoreState, direction: SplitDirection) {
-    if let Err(e) = state.split_surface(engine, direction) {
-        tracing::warn!("split_surface failed: {e}");
+fn split(
+    core: &mut Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    direction: SplitDirection,
+    origin: &IntentOrigin,
+) {
+    let Some(sid) = state.focused_surface_id(engine) else {
+        tracing::warn!("SplitSurface: no focused surface");
+        return;
+    };
+    let cwd = state.resolve_inherit_cwd_from_surface(engine, sid);
+    let intent = crate::core::intent::DomainIntent::SplitSurface {
+        target_surface_id: sid,
+        direction,
+        cwd,
+        kind: "terminal".to_string(),
+        surface_params: serde_json::json!({}),
+    };
+    let events = match core.apply(engine, intent) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("SplitSurface failed: {e}");
+            return;
+        }
+    };
+    for ev in events {
+        if let crate::core::intent::CoreEvent::SurfaceSplit {
+            workspace_index,
+            pane_id,
+            new_surface_id,
+            ..
+        } = ev
+        {
+            crate::app::dispatch_domain::cascade_surface_split(
+                engine,
+                origin,
+                workspace_index,
+                pane_id,
+                new_surface_id,
+            );
+        }
     }
 }
 

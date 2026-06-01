@@ -251,7 +251,6 @@ pub fn handle_split(
             )
         }
         "surface" => {
-            // Surface-level splits require a surface target
             let sid = match target_surface_id {
                 Some(sid) => sid,
                 None => {
@@ -262,18 +261,56 @@ pub fn handle_split(
                 }
             };
 
-            match state.split_surface_targeted(engine, Some(sid), direction, cwd, kind, params) {
-                Ok(new_surface_id) => {
-                    apply_meta(state, new_surface_id, meta);
-                    JsonRpcResponse::success(
-                        id,
-                        json!({
-                            "new_surface_id": new_surface_id,
-                        }),
-                    )
-                }
-                Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-            }
+            // terminal cwd inherit — 호출자가 미리 결정.
+            let resolved_cwd = if kind == "terminal" {
+                cwd.or_else(|| state.resolve_inherit_cwd_from_surface(engine, sid))
+            } else {
+                None
+            };
+
+            let intent = crate::core::intent::DomainIntent::SplitSurface {
+                target_surface_id: sid,
+                direction,
+                cwd: resolved_cwd,
+                kind: kind.to_string(),
+                surface_params: params.clone(),
+            };
+            let events = match core.apply(engine, intent) {
+                Ok(events) => events,
+                Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+            };
+            let Some(crate::core::intent::CoreEvent::SurfaceSplit {
+                workspace_index,
+                pane_id,
+                target_surface_id: _,
+                new_surface_id,
+            }) = events.into_iter().next()
+            else {
+                return JsonRpcResponse::internal_error(
+                    id,
+                    "Core::apply returned no SurfaceSplit event",
+                );
+            };
+
+            // IPC = Agent — focus 이동 안 함.
+            let agent_origin = crate::intent::IntentOrigin::Agent {
+                source: crate::intent::AgentSource::Ipc,
+            };
+            crate::app::dispatch_domain::cascade_surface_split(
+                engine,
+                &agent_origin,
+                workspace_index,
+                pane_id,
+                new_surface_id,
+            );
+
+            apply_meta(state, new_surface_id, meta);
+            JsonRpcResponse::success(
+                id,
+                json!({
+                    "new_surface_id": new_surface_id,
+                }),
+            )
         }
         _ => unreachable!(),
     }

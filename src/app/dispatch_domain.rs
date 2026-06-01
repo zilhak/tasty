@@ -185,6 +185,52 @@ impl App {
                     direction,
                 );
             }
+            CoreEvent::SurfaceSplit {
+                workspace_index,
+                pane_id,
+                target_surface_id: _,
+                new_surface_id,
+            } => {
+                self.dispatch_surface_split_cascade(
+                    source,
+                    origin,
+                    workspace_index,
+                    pane_id,
+                    new_surface_id,
+                );
+            }
+        }
+    }
+
+    /// `SurfaceSplit` cascade — (User origin 이면) tab 의 focused_surface 변경.
+    fn dispatch_surface_split_cascade(
+        &mut self,
+        source: DispatchSource,
+        origin: &IntentOrigin,
+        workspace_index: usize,
+        pane_id: u32,
+        new_surface_id: u32,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_surface_split(
+                    &mut main.engine_state,
+                    origin,
+                    workspace_index,
+                    pane_id,
+                    new_surface_id,
+                );
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((_, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_surface_split(engine, origin, workspace_index, pane_id, new_surface_id);
+            }
         }
     }
 
@@ -572,6 +618,28 @@ pub(crate) fn cascade_workspace_created(
     }
     if origin.is_user() {
         state.active_workspace = index;
+    }
+}
+
+/// `CoreEvent::SurfaceSplit` 의 외부 cascade. (User origin 이면) 해당 pane 의
+/// active tab 의 focused_surface 를 new_surface_id 로 변경. host event 없음
+/// (옛 `split_surface_targeted` 도 발화 안 했음).
+pub(crate) fn cascade_surface_split(
+    engine: &mut crate::engine_state::CoreState,
+    origin: &IntentOrigin,
+    workspace_index: usize,
+    pane_id: u32,
+    new_surface_id: u32,
+) {
+    if !origin.is_user() {
+        return;
+    }
+    if let Some(ws) = engine.workspaces.get_mut(workspace_index) {
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            if let Some(tab) = pane.active_tab_mut() {
+                tab.focused_surface = new_surface_id;
+            }
+        }
     }
 }
 
