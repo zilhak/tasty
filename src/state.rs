@@ -817,6 +817,22 @@ impl AppState {
         }
     }
 
+    /// Workspace lifecycle baseline 동기화 — cascade 가 새 workspace 를 enqueue
+    /// 한 직후 `detect_workspace_lifecycle` 이 중복 발화 못하도록 baseline 에
+    /// 미리 넣는다.
+    pub fn lifecycle_baseline_insert_workspace(&mut self, workspace_id: u32, name: String) {
+        if let Some(map) = self.last_workspace_snapshot.as_mut() {
+            map.insert(workspace_id, name);
+        }
+    }
+
+    /// Workspace lifecycle baseline 동기화 — 닫힌 workspace 를 baseline 에서 제거.
+    pub fn lifecycle_baseline_remove_workspace(&mut self, workspace_id: u32) {
+        if let Some(map) = self.last_workspace_snapshot.as_mut() {
+            map.remove(&workspace_id);
+        }
+    }
+
     /// Get the working directory to inherit from the focused surface, if enabled.
     ///
     /// 사용자가 현재 포커스한 surface 본인의 `source_cwd()`를 사용한다.

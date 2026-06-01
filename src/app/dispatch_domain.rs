@@ -858,6 +858,7 @@ impl App {
     ) {
         match source {
             DispatchSource::Main(wid) => {
+                let window_id = u64::from(wid);
                 let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     return;
                 };
@@ -867,6 +868,7 @@ impl App {
                     origin,
                     workspace_id,
                     index,
+                    window_id,
                     surface_id,
                     renamed_name,
                     renamed_subtitle,
@@ -884,6 +886,7 @@ impl App {
                     origin,
                     workspace_id,
                     index,
+                    0,
                     surface_id,
                     renamed_name,
                     renamed_subtitle,
@@ -1084,11 +1087,24 @@ pub(crate) fn cascade_workspace_created(
     origin: &IntentOrigin,
     workspace_id: u32,
     index: usize,
+    window_id: u64,
     surface_id: Option<u32>,
     renamed_name: Option<String>,
     renamed_subtitle: Option<String>,
     renamed_description: Option<String>,
 ) {
+    let name = engine
+        .workspaces
+        .get(index)
+        .map(|w| w.name.clone())
+        .unwrap_or_default();
+    state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceCreated {
+        workspace_id,
+        window_id,
+        name: name.clone(),
+    });
+    state.lifecycle_baseline_insert_workspace(workspace_id, name);
+
     if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some() {
         state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
             workspace_id,
@@ -1148,6 +1164,8 @@ pub(crate) fn cascade_surface_closed(
     }
 
     if let Some(workspace_id) = workspace_id_purged {
+        state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceClosed { workspace_id });
+        state.lifecycle_baseline_remove_workspace(workspace_id);
         let scope = tasty_memory::Scope::Workspace(workspace_id);
         let mut guard = match state.memory.lock() {
             Ok(g) => g,

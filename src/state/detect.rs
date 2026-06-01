@@ -134,44 +134,21 @@ impl AppState {
         self.last_pane_locations = Some(current);
     }
 
-    /// Workspace 생성/종료를 polling으로 감지. `window_id`는 caller가 전달하며
-    /// (이 `AppState`가 속한 main window의 winit::WindowId를 u64로 변환), 신규
-    /// workspace가 발견되면 `WorkspaceCreated`에 채워 넣는다.
-    pub fn detect_workspace_lifecycle(&mut self, engine: &CoreState, window_id: u64) {
+    /// Workspace lifecycle baseline 만 갱신 (D.3.C.B.10.4 이후). 실제
+    /// `workspace.created`/`workspace.closed` 발화는 cascade 시점에
+    /// `cascade_workspace_created` / `cascade_surface_closed` (Workspace level)
+    /// 에서 enqueue 한다. baseline 은 cascade 가 `lifecycle_baseline_insert_workspace`
+    /// / `_remove_workspace` 헬퍼로 동기화. B.10.6 에서 함수 제거 예정.
+    pub fn detect_workspace_lifecycle(&mut self, engine: &CoreState, _window_id: u64) {
         use std::collections::HashMap;
 
+        if self.last_workspace_snapshot.is_some() {
+            return;
+        }
         let mut current: HashMap<u32, String> = HashMap::new();
         for ws in &engine.workspaces {
             current.insert(ws.id, ws.name.clone());
         }
-
-        let prev = match self.last_workspace_snapshot.take() {
-            Some(p) => p,
-            None => {
-                self.last_workspace_snapshot = Some(current);
-                return;
-            }
-        };
-
-        for (workspace_id, name) in &current {
-            if !prev.contains_key(workspace_id) {
-                self.pending_host_events
-                    .push(PendingHostEvent::WorkspaceCreated {
-                        workspace_id: *workspace_id,
-                        window_id,
-                        name: name.clone(),
-                    });
-            }
-        }
-        for workspace_id in prev.keys() {
-            if !current.contains_key(workspace_id) {
-                self.pending_host_events
-                    .push(PendingHostEvent::WorkspaceClosed {
-                        workspace_id: *workspace_id,
-                    });
-            }
-        }
-
         self.last_workspace_snapshot = Some(current);
     }
 

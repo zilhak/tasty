@@ -81,6 +81,7 @@ fn new_workspace(
                 origin,
                 workspace_id,
                 index,
+                0,
                 surface_id,
                 renamed_name,
                 renamed_subtitle,
