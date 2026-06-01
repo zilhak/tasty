@@ -2,6 +2,7 @@
 //!
 //! 핫 패스(IPC dispatch) 가 아닌, 모달/단축키/스냅샷 같은 보조 경로.
 
+pub(crate) mod lifecycle;
 pub(crate) mod shortcut;
 pub(crate) mod snapshot;
 pub(crate) mod tool_registry;
