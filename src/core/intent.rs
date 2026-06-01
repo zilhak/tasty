@@ -249,8 +249,11 @@ pub(crate) enum CoreEvent {
     },
     /// tab close 완료. `cleanup_targets` 는 닫힌 tab 안의 (surface_id,
     /// persist_id) — cascade 가 각각에 `AppState::cleanup_surface` 호출.
+    /// `pane_id` 는 닫힌 tab 이 속해 있던 pane (host event 발화용). 못 찾은
+    /// 경우 `None`.
     TabClosed {
         tab_id: u32,
+        pane_id: Option<u32>,
         closed: bool,
         cleanup_targets: Vec<(u32, Option<String>)>,
     },

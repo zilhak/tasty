@@ -1364,6 +1364,7 @@ impl Core {
             None => {
                 return CoreEvent::TabClosed {
                     tab_id,
+                    pane_id: None,
                     closed: false,
                     cleanup_targets: vec![],
                 };
@@ -1379,6 +1380,7 @@ impl Core {
         }
         CoreEvent::TabClosed {
             tab_id,
+            pane_id: Some(pane_id),
             closed,
             cleanup_targets: if closed { targets } else { vec![] },
         }

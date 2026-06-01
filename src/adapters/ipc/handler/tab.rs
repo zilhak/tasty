@@ -172,6 +172,7 @@ pub fn handle_tab_close(
         tab_id,
         closed,
         cleanup_targets,
+        ..
     }) = events.into_iter().next()
     else {
         return JsonRpcResponse::internal_error(id, "Core::apply returned no TabClosed event");

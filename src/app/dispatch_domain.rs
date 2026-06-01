@@ -147,21 +147,23 @@ impl App {
                     self.dispatch_workspace_moved_cascade(source, from_index, to_index);
                 }
             }
-            CoreEvent::TabCreated { .. } => {
-                // 추가 cascade 없음 — main.mark_dirty 만 발화 source 에 적용.
-                if let DispatchSource::Main(wid) = source {
-                    if let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) {
-                        main.mark_dirty();
-                    }
-                }
+            CoreEvent::TabCreated {
+                pane_id,
+                tab_id,
+                surface_id: _,
+                tab_count: _,
+                active_tab: _,
+            } => {
+                self.dispatch_tab_created_cascade(source, pane_id, tab_id);
             }
             CoreEvent::TabClosed {
-                tab_id: _,
+                tab_id,
+                pane_id,
                 closed,
                 cleanup_targets,
             } => {
                 if closed {
-                    self.dispatch_tab_closed_cascade(source, cleanup_targets);
+                    self.dispatch_tab_closed_cascade(source, tab_id, pane_id, cleanup_targets);
                 }
             }
             CoreEvent::TabMoved { pane_id: _, moved } => {
@@ -212,8 +214,7 @@ impl App {
                 cleanup_targets,
             } => {
                 if closed {
-                    // Tab.Close 와 같은 cleanup cascade — surface 정리.
-                    self.dispatch_tab_closed_cascade(source, cleanup_targets);
+                    self.dispatch_cleanup_surfaces(source, cleanup_targets);
                 }
             }
             CoreEvent::SurfaceClosed {
@@ -674,9 +675,31 @@ impl App {
         }
     }
 
-    /// `TabClosed` cascade — 발화 source 의 (state, engine) 으로 각 cleanup_target
-    /// 에 `AppState::cleanup_surface` 호출.
-    fn dispatch_tab_closed_cascade(
+    /// `TabCreated` cascade — host event (`tab.created`) enqueue + polling
+    /// baseline 동기화 + main.mark_dirty. workspace_id / kind 는 engine 에서
+    /// 직접 lookup.
+    fn dispatch_tab_created_cascade(&mut self, source: DispatchSource, pane_id: u32, tab_id: u32) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_tab_created(&mut main.state, &main.engine_state, pane_id, tab_id);
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_tab_created(state, engine, pane_id, tab_id);
+            }
+        }
+    }
+
+    /// Generic surface cleanup loop — `(surface_id, persist_id)` 목록을 받아
+    /// 발화 source 의 (state, engine) 에 `cleanup_surface` 적용. host event
+    /// 발화는 별도. `PaneClosed` cascade 등 surface 정리만 필요한 경우 호출.
+    fn dispatch_cleanup_surfaces(
         &mut self,
         source: DispatchSource,
         cleanup_targets: Vec<(u32, Option<String>)>,
@@ -695,6 +718,38 @@ impl App {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
+                for (sid, pid) in cleanup_targets {
+                    state.cleanup_surface(engine, sid, pid);
+                }
+            }
+        }
+    }
+
+    /// `TabClosed` cascade — host event (`tab.closed`) enqueue + polling
+    /// baseline 동기화 + cleanup_target 각각에 `AppState::cleanup_surface` 호출.
+    fn dispatch_tab_closed_cascade(
+        &mut self,
+        source: DispatchSource,
+        tab_id: u32,
+        pane_id: Option<u32>,
+        cleanup_targets: Vec<(u32, Option<String>)>,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_tab_closed(&mut main.state, tab_id, pane_id);
+                for (sid, pid) in cleanup_targets {
+                    main.state.cleanup_surface(&mut main.engine_state, sid, pid);
+                }
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_tab_closed(state, tab_id, pane_id);
                 for (sid, pid) in cleanup_targets {
                     state.cleanup_surface(engine, sid, pid);
                 }
@@ -1153,6 +1208,52 @@ pub(crate) fn cascade_workspace_moved(
     {
         state.active_workspace += 1;
     }
+}
+
+/// `CoreEvent::TabCreated` 의 외부 cascade. host event (`tab.created`) enqueue +
+/// polling baseline 동기화. workspace_id / kind 는 engine lookup.
+pub(crate) fn cascade_tab_created(
+    state: &mut crate::state::AppState,
+    engine: &crate::engine_state::CoreState,
+    pane_id: u32,
+    tab_id: u32,
+) {
+    let workspace_id = engine
+        .workspaces
+        .iter()
+        .find(|w| w.pane_layout().find_pane(pane_id).is_some())
+        .map(|w| w.id);
+    let kind = engine
+        .find_pane_by_id(pane_id)
+        .and_then(|p| p.tabs.iter().find(|t| t.id == tab_id))
+        .and_then(|t| t.focused_surface_id())
+        .and_then(|sid| engine.find_surface_by_id(sid))
+        .map(|s| s.kind().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    if let Some(workspace_id) = workspace_id {
+        state.enqueue_host_event(crate::state::PendingHostEvent::TabCreated {
+            tab_id,
+            pane_id,
+            workspace_id,
+            kind: kind.clone(),
+        });
+        state.lifecycle_baseline_insert_tab(tab_id, pane_id, workspace_id, kind);
+    }
+}
+
+/// `CoreEvent::TabClosed` 의 외부 cascade. host event (`tab.closed`) enqueue +
+/// polling baseline 동기화. `pane_id` 가 `None` 이면 close 가 실패한 케이스
+/// (find 못 함) — 아무것도 안 함.
+pub(crate) fn cascade_tab_closed(
+    state: &mut crate::state::AppState,
+    tab_id: u32,
+    pane_id: Option<u32>,
+) {
+    let Some(pane_id) = pane_id else {
+        return;
+    };
+    state.enqueue_host_event(crate::state::PendingHostEvent::TabClosed { tab_id, pane_id });
+    state.lifecycle_baseline_remove_tab(tab_id);
 }
 
 /// `CoreEvent::WorkspaceMetaUpdated` 의 외부 cascade. host event 발화 (rename

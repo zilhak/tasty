@@ -761,6 +761,31 @@ impl AppState {
         std::mem::take(&mut self.pending_host_events)
     }
 
+    /// Cascade 가 host event 를 enqueue 한 직후 polling baseline 을 동기화한다.
+    /// 다음 `detect_tab_lifecycle` 호출이 같은 변경을 중복 enqueue 하지 않도록
+    /// baseline 을 *현재 engine 상태* 와 일치시키는 역할. baseline 이 아직 `None`
+    /// (한 번도 polling 안 함) 이면 no-op — 첫 detect 가 알아서 현재 상태를
+    /// 베이스라인으로 잡는다.
+    pub fn lifecycle_baseline_insert_tab(
+        &mut self,
+        tab_id: u32,
+        pane_id: u32,
+        workspace_id: u32,
+        kind: String,
+    ) {
+        if let Some(map) = self.last_tab_locations.as_mut() {
+            map.insert(tab_id, (pane_id, workspace_id, kind));
+        }
+    }
+
+    /// `lifecycle_baseline_insert_tab` 의 close 대응. 닫힌 tab 을 baseline 에서
+    /// 제거해 polling 이 중복 `TabClosed` 발화하지 않도록 한다.
+    pub fn lifecycle_baseline_remove_tab(&mut self, tab_id: u32) {
+        if let Some(map) = self.last_tab_locations.as_mut() {
+            map.remove(&tab_id);
+        }
+    }
+
     /// Get the working directory to inherit from the focused surface, if enabled.
     ///
     /// 사용자가 현재 포커스한 surface 본인의 `source_cwd()`를 사용한다.
