@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use crate::core::Core;
 use crate::engine_state::CoreState;
 use crate::file::format::{DetectorId, FileTarget};
-use crate::state::AppState;
+use crate::state::{AppState, FileHandlerPickerResult};
 
 /// `Core::reload_file_handlers` 응답.
 pub(crate) struct ReloadFileHandlersOutcome {
@@ -54,6 +54,37 @@ impl Core {
         // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
         let first = handlers.into_iter().next().expect("non-empty checked");
         crate::file::dispatch::execute_handler_action(state, engine, &first, &target);
+    }
+
+    /// Picker popup 결과를 적용 — `redraw.rs` frame end 가 직접 호출.
+    /// `Selected(id)` 면 handler 실행 + recent 기록, `Cancelled` 면 no-op.
+    /// 옛 `file_dispatch::consume_picker_result` 본문 흡수. dialogs 슬롯 해제는
+    /// caller (redraw) 가 본 method 호출 *전에* 처리한다 — 빠른 popup 재오픈
+    /// 시에도 결과 중복 처리 없음을 보장하기 위함.
+    pub(crate) fn apply_file_picker_result(
+        &self,
+        state: &mut AppState,
+        engine: &mut CoreState,
+        target: FileTarget,
+        result: FileHandlerPickerResult,
+    ) {
+        match result {
+            FileHandlerPickerResult::Selected(handler_id) => {
+                match engine.file_handler.get(&handler_id) {
+                    Some(handler) => crate::file::dispatch::execute_handler_action(
+                        state, engine, &handler, &target,
+                    ),
+                    None => tracing::warn!(
+                        handler_id = %handler_id,
+                        "apply_file_picker_result: handler id from picker no longer in registry",
+                    ),
+                }
+                engine.record_file_handler_pick(&handler_id);
+            }
+            FileHandlerPickerResult::Cancelled => {
+                // recent 갱신 없음.
+            }
+        }
     }
 }
 

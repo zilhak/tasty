@@ -111,9 +111,8 @@ impl MainWindow {
         // Process pending native context menu (after egui frame, before webview sync)
         self.process_pending_native_menu();
 
-        // Process file handler picker result (after egui frame — popup may have
-        // written `result` this frame).
-        crate::file_dispatch::consume_picker_result(&mut self.state, &mut self.engine_state);
+        // file handler picker result 슬롯은 App::dispatch_pending_picker_results
+        // 가 다음 frame begin 에 drain (D.3.C.G.3.c) — redraw 인라인 호출 폐기.
 
         // 외부 drag&drop 으로 받은 파일 큐 처리.
         self.process_pending_file_drops();

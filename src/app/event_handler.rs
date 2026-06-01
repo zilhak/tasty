@@ -551,6 +551,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_popup_opens();
         // 파일 핸들러 IPC action 큐 drain (Phase C1: warn 로그만, Phase C3: 본격 dispatch).
         self.dispatch_pending_handler_ipc();
+        // 파일 handler picker popup 의 result 슬롯 drain (D.3.C.G.3.c).
+        self.dispatch_pending_picker_results();
         // 직전 프레임 plugin popup 렌더로 수집된 사용자 입력 / close 사유 forward.
         self.dispatch_plugin_popup_events();
         // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.

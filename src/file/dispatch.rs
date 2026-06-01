@@ -1,13 +1,13 @@
-//! 파일 디스패치 공통 진입점 (D.3.C.G.3 — 점진 폐기 중).
+//! 파일 디스패치 helper 잔존 모듈 (D.3.C.G.3 완료 후).
 //!
 //! mouse.rs ctrl+click, drag&drop, explorer plugin, IPC `file_handler.dispatch`
 //! 가 모두 `DomainIntent::DispatchFile` 발화로 통일된다. Core::apply 가
 //! `engine.identify_worker.spawn(...)` 호출 → 비동기 detect → AppEvent::IdentifyDone
-//! → `event_handler` 가 `Core::apply_identify_result` Method 호출.
+//! → `Core::apply_identify_result` Method 호출. picker 결과는
+//! `App::dispatch_pending_picker_results` → `Core::apply_file_picker_result`.
 //!
-//! 본 모듈에는 *parse_link* (URI 분류) 와 `apply_identify_result` /
-//! `consume_picker_result` 가 남아 있다. G.3.b/G.3.c 에서 후자 둘은 Core 안으로
-//! 흡수 + free function 폐기 예정.
+//! 본 모듈에는 *parse_link* (URI 분류) 와 Core method 가 호출하는 helper
+//! (`open_picker`, `execute_handler_action`) 만 남아 있다.
 
 use std::path::PathBuf;
 
@@ -179,49 +179,6 @@ fn path_to_file_uri(abs: &std::path::Path) -> String {
         format!("file://{s}")
     } else {
         format!("file:///{s}")
-    }
-}
-
-/// Picker 결과를 소비해 handler 실행 + recent 기록. App 메인 루프 (frame end) 가
-/// 매 frame 호출. 결과가 없으면 no-op.
-pub fn consume_picker_result(state: &mut AppState, engine: &mut crate::engine_state::CoreState) {
-    let Some(data) = state.dialogs.file_handler_picker.as_mut() else {
-        return;
-    };
-    let Some(result) = data.result.take() else {
-        return;
-    };
-    let target = data.target.clone();
-    // 데이터 슬롯 즉시 해제 — 사용자가 picker 닫는 사이 빠르게 같은 popup 재개
-    // 한 경우에도 결과 중복 처리 안 됨.
-    state.dialogs.file_handler_picker = None;
-
-    use crate::state::FileHandlerPickerResult;
-    match result {
-        FileHandlerPickerResult::Selected(handler_id) => {
-            dispatch_by_handler_id(state, engine, &handler_id, &target);
-            engine.record_file_handler_pick(&handler_id);
-        }
-        FileHandlerPickerResult::Cancelled => {
-            // recent 갱신 없음.
-        }
-    }
-}
-
-fn dispatch_by_handler_id(
-    state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
-    id: &HandlerId,
-    target: &FileTarget,
-) {
-    match engine.file_handler.get(id) {
-        Some(handler) => execute_handler_action(state, engine, &handler, target),
-        None => {
-            tracing::warn!(
-                handler_id = %id,
-                "file_dispatch: handler id from picker no longer in registry",
-            );
-        }
     }
 }
 
