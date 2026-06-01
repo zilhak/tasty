@@ -413,6 +413,11 @@ impl Core {
                 surface_id,
                 save_snapshot,
             )]),
+            DomainIntent::ConvertSurface { surface_id, target } => {
+                Ok(vec![Self::apply_convert_surface(
+                    engine, surface_id, target,
+                )])
+            }
         }
     }
 
@@ -582,6 +587,155 @@ impl Core {
             pane_id,
             closed: removed,
             cleanup_targets: if removed { targets } else { vec![] },
+        }
+    }
+
+    /// `DomainIntent::ConvertSurface` 본문. tab 안 split leaf 만 교체 / sole
+    /// surface tab 전체 교체. 옛 `replace_surface_for_id` + 4 variant 의
+    /// surface 생성 로직 흡수.
+    fn apply_convert_surface(
+        engine: &mut crate::engine_state::CoreState,
+        surface_id: u32,
+        target: crate::core::intent::ConvertSurfaceTarget,
+    ) -> CoreEvent {
+        use crate::core::intent::ConvertSurfaceTarget;
+
+        let is_terminal = matches!(target, ConvertSurfaceTarget::Terminal { .. });
+
+        // Phase 1: 새 surface 생성 (실패 가능)
+        let (new_surface, new_name): (Box<dyn crate::model::Surface>, Option<Option<String>>) =
+            match target {
+                ConvertSurfaceTarget::Terminal { cwd } => {
+                    let cols = engine.default_cols;
+                    let rows = engine.default_rows;
+                    let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+                    let waker = engine.make_waker(surface_id);
+                    let terminal = match tasty_terminal::Terminal::new(
+                        tasty_terminal::TerminalConfig {
+                            cols,
+                            rows,
+                            shell: sh.shell_ref(),
+                            args: &sh.args_ref(),
+                            surface_id,
+                            working_dir: cwd.as_deref(),
+                            initial_input: None,
+                        },
+                        waker,
+                    ) {
+                        Ok(t) => t,
+                        Err(_) => {
+                            return CoreEvent::SurfaceConverted {
+                                surface_id,
+                                replaced: false,
+                                is_terminal,
+                            };
+                        }
+                    };
+                    let node = crate::model::TerminalSurface {
+                        id: surface_id,
+                        terminal,
+                        deferred_spawn: None,
+                        scrollback_persist_id: None,
+                    };
+                    // Terminal 변환은 explicit_name 클리어 (auto-derived from CWD).
+                    (Box::new(node), Some(None))
+                }
+                ConvertSurfaceTarget::Markdown { file_path } => {
+                    let surface = Box::new(crate::model::MarkdownPanel::new(
+                        surface_id,
+                        file_path.clone(),
+                    ));
+                    let name = std::path::Path::new(&file_path)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().to_string());
+                    (surface, Some(name))
+                }
+                ConvertSurfaceTarget::Image => {
+                    let surface = Box::new(crate::model::ImagePanel::new_blank(surface_id));
+                    (surface, Some(Some("Image".to_string())))
+                }
+                ConvertSurfaceTarget::Kind { kind, params } => {
+                    let new_surface =
+                        match engine.create_surface_via_registry(&kind, surface_id, &params) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                tracing::warn!("ConvertSurface kind='{}' failed: {}", kind, e);
+                                return CoreEvent::SurfaceConverted {
+                                    surface_id,
+                                    replaced: false,
+                                    is_terminal,
+                                };
+                            }
+                        };
+                    // 변환 시 explicit_name 은 클리어 (surface 자체의 display_name).
+                    (new_surface, Some(None))
+                }
+            };
+
+        // Phase 2: location 찾기 (workspace index, pane id, tab index)
+        let mut location: Option<(usize, u32, usize)> = None;
+        'outer: for (ws_idx, workspace) in engine.workspaces.iter().enumerate() {
+            for &pid in &workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    for (tab_idx, tab) in pane.tabs.iter().enumerate() {
+                        if tab.contains_surface(surface_id) {
+                            location = Some((ws_idx, pid, tab_idx));
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+        let (ws_idx, pane_id, tab_idx) = match location {
+            Some(loc) => loc,
+            None => {
+                return CoreEvent::SurfaceConverted {
+                    surface_id,
+                    replaced: false,
+                    is_terminal,
+                };
+            }
+        };
+
+        // Phase 3: replace
+        let replaced = {
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = match ws.pane_layout_mut().find_pane_mut(pane_id) {
+                Some(p) => p,
+                None => {
+                    return CoreEvent::SurfaceConverted {
+                        surface_id,
+                        replaced: false,
+                        is_terminal,
+                    };
+                }
+            };
+            let tab = &mut pane.tabs[tab_idx];
+            if tab.is_split() {
+                // Tab has split layout — replace just the leaf. Tab name 은 변경 X.
+                tab.layout_mut().replace_surface(surface_id, new_surface)
+            } else {
+                // Tab's sole surface — replace whole tab surface.
+                tab.put_surface(new_surface);
+                if let Some(name_opt) = new_name {
+                    tab.explicit_name = name_opt;
+                }
+                true
+            }
+        };
+
+        // Phase 4: engine mutate (pane borrow 끝)
+        if replaced {
+            engine.mark_layout_dirty();
+            if is_terminal {
+                engine.send_fast_init(surface_id);
+            }
+        }
+
+        CoreEvent::SurfaceConverted {
+            surface_id,
+            replaced,
+            is_terminal,
         }
     }
 

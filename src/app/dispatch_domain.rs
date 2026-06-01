@@ -226,6 +226,22 @@ impl App {
                     );
                 }
             }
+            CoreEvent::SurfaceConverted {
+                surface_id: _,
+                replaced,
+                is_terminal: _,
+            } => {
+                // 추가 cascade 없음 — mark_layout_dirty 와 send_fast_init 은
+                // Core::apply 가 이미 처리. main.mark_dirty 만.
+                if replaced {
+                    if let DispatchSource::Main(wid) = source {
+                        if let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut())
+                        {
+                            main.mark_dirty();
+                        }
+                    }
+                }
+            }
         }
     }
 

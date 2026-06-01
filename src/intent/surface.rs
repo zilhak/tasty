@@ -28,7 +28,7 @@ pub fn handle(
         }
         Intent::CloseSurface { surface_id } => close(core, state, engine, intent, *surface_id),
         Intent::ConvertSurface { surface_id, target } => {
-            convert(state, engine, *surface_id, target)
+            convert(core, state, engine, *surface_id, target)
         }
         _ => {}
     }
@@ -127,34 +127,48 @@ fn close(
     }
 }
 
-fn convert(state: &mut AppState, engine: &mut CoreState, surface_id: u32, target: &ConvertTarget) {
-    match target {
+fn convert(
+    core: &mut Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    surface_id: u32,
+    target: &ConvertTarget,
+) {
+    use crate::core::intent::ConvertSurfaceTarget;
+
+    let domain_target = match target {
         ConvertTarget::Terminal => {
-            state.convert_surface_to_terminal(engine, surface_id);
+            // 옛 convert_surface_to_terminal 의 cwd inherit — handler 가 결정.
+            let cwd = state.resolve_inherit_cwd(engine);
+            ConvertSurfaceTarget::Terminal { cwd }
         }
-        ConvertTarget::Kind { kind, params } => {
-            // 빌트인 wrapper: 파라미터 모양이 정해진 변환은 전용 메서드로.
-            match kind.as_str() {
-                "markdown" => {
-                    let Some(file_path) = params
-                        .get("file_path")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string)
-                    else {
-                        tracing::warn!(
-                            "convert markdown: missing or invalid 'file_path' param: {params}"
-                        );
-                        return;
-                    };
-                    state.convert_surface_to_markdown(engine, surface_id, file_path);
-                }
-                "image" => {
-                    state.convert_surface_to_image(engine, surface_id);
-                }
-                _ => {
-                    state.convert_surface_to_kind(engine, surface_id, kind, params);
-                }
+        ConvertTarget::Kind { kind, params } => match kind.as_str() {
+            "markdown" => {
+                let Some(file_path) = params
+                    .get("file_path")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                else {
+                    tracing::warn!(
+                        "convert markdown: missing or invalid 'file_path' param: {params}"
+                    );
+                    return;
+                };
+                ConvertSurfaceTarget::Markdown { file_path }
             }
-        }
+            "image" => ConvertSurfaceTarget::Image,
+            _ => ConvertSurfaceTarget::Kind {
+                kind: kind.clone(),
+                params: params.clone(),
+            },
+        },
+    };
+
+    let intent = crate::core::intent::DomainIntent::ConvertSurface {
+        surface_id,
+        target: domain_target,
+    };
+    if let Err(e) = core.apply(engine, intent) {
+        tracing::warn!("ConvertSurface failed: {e}");
     }
 }

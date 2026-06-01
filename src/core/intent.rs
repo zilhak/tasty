@@ -16,6 +16,18 @@ use std::path::PathBuf;
 use serde_json::Value;
 use tasty_settings::Settings;
 
+/// `DomainIntent::ConvertSurface` 의 target. variant 별로 새 surface 생성
+/// 경로가 다름 (terminal: PTY spawn, markdown/image: builtin 패널, kind:
+/// registry).
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) enum ConvertSurfaceTarget {
+    Terminal { cwd: Option<PathBuf> },
+    Markdown { file_path: String },
+    Image,
+    Kind { kind: String, params: Value },
+}
+
 /// 도메인 변경 요청. Core 만이 자기 메서드로 적용한다.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -105,6 +117,12 @@ pub(crate) enum DomainIntent {
     CloseSurface {
         surface_id: u32,
         save_snapshot: bool,
+    },
+    /// 기존 surface 를 다른 kind 로 변환. tab 의 split 안 leaf 만 교체 / sole
+    /// surface tab 전체 교체. terminal 변환은 호출자가 cwd 미리 결정.
+    ConvertSurface {
+        surface_id: u32,
+        target: ConvertSurfaceTarget,
     },
 
     // ─── Notifications (D.3.C.E.2) ───
@@ -234,6 +252,12 @@ pub(crate) enum CoreEvent {
         cleanup_targets: Vec<(u32, Option<String>)>,
         workspace_id_purged: Option<u32>,
         workspaces_now_empty: bool,
+    },
+    /// surface 변환 완료. `replaced=false` 면 surface 못 찾음 또는 변환 실패.
+    SurfaceConverted {
+        surface_id: u32,
+        replaced: bool,
+        is_terminal: bool, // cascade 에서 send_fast_init 결정용
     },
 
     // ─── Notifications (D.3.C.E.2) ───
