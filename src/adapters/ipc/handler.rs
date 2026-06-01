@@ -172,7 +172,7 @@ fn route_engine_handler(
         // workspace
         "workspace.list" => workspace::handle_workspace_list(state, engine, id),
         "workspace.create" => {
-            workspace::handle_workspace_create(state, engine, id, &request.params)
+            workspace::handle_workspace_create(core, state, engine, id, &request.params)
         }
         "workspace.update" => {
             workspace::handle_workspace_update(state, engine, id, &request.params)

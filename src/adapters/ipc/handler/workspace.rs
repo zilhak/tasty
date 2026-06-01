@@ -29,12 +29,13 @@ pub fn handle_workspace_list(
 }
 
 pub fn handle_workspace_create(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
-    let cwd = params
+    let explicit_cwd = params
         .get("cwd")
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from);
@@ -44,75 +45,96 @@ pub fn handle_workspace_create(
         .unwrap_or("terminal");
 
     // 필수 파라미터 검증 (registry create 함수도 검사하지만, 명확한 에러 메시지를 위해 선검증)
-    match kind {
-        "markdown" => {
-            if params
-                .get("file")
-                .and_then(|v| v.as_str())
-                .map(str::is_empty)
-                .unwrap_or(true)
-            {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    "Missing 'file' parameter for markdown type",
-                );
-            }
-        }
-        _ => {}
+    if kind == "markdown"
+        && params
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(str::is_empty)
+            .unwrap_or(true)
+    {
+        return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type");
     }
-    match state.add_workspace_background(engine, cwd, kind, params) {
-        Ok(idx) => {
-            let mut renamed_name: Option<String> = None;
-            let mut renamed_subtitle: Option<String> = None;
-            let mut renamed_description: Option<String> = None;
-            if let Some(name) = params.get("name").and_then(|v| v.as_str()) {
-                if !name.is_empty() {
-                    engine.workspaces[idx].name = name.to_string();
-                    renamed_name = Some(name.to_string());
-                }
-            }
-            if let Some(subtitle) = params.get("subtitle").and_then(|v| v.as_str()) {
-                engine.workspaces[idx].subtitle = subtitle.to_string();
-                renamed_subtitle = Some(subtitle.to_string());
-            }
-            if let Some(desc) = params.get("description").and_then(|v| v.as_str()) {
-                engine.workspaces[idx].description = desc.to_string();
-                renamed_description = Some(desc.to_string());
-            }
-            engine.mark_layout_dirty();
-            let workspace_id = engine.workspaces[idx].id;
-            if renamed_name.is_some() || renamed_subtitle.is_some() || renamed_description.is_some()
-            {
-                state.enqueue_host_event(crate::state::PendingHostEvent::WorkspaceRenamed {
-                    workspace_id,
-                    name: renamed_name,
-                    subtitle: renamed_subtitle,
-                    description: renamed_description,
-                    user_direct: false,
-                });
-            }
-            let ws = &engine.workspaces[idx];
-            let surface_id = {
-                let pane_id = ws.focused_pane;
-                ws.pane_layout()
-                    .find_pane(pane_id)
-                    .and_then(|pane| pane.tabs.get(pane.active_tab))
-                    .and_then(|tab| tab.focused_surface_id())
-            };
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "id": ws.id,
-                    "name": ws.name,
-                    "subtitle": ws.subtitle,
-                    "description": ws.description,
-                    "index": idx,
-                    "surface_id": surface_id,
-                }),
-            )
-        }
-        Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-    }
+
+    // terminal 의 cwd inherit 은 호출자가 미리 결정해 payload 로 넘긴다 (Core 는
+    // focus state 모름). 그 외 kind 는 cwd 미사용.
+    let resolved_cwd = if kind == "terminal" {
+        explicit_cwd.or_else(|| state.resolve_inherit_cwd(engine))
+    } else {
+        None
+    };
+
+    let name = params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let subtitle = params
+        .get("subtitle")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let description = params
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
+    let intent = crate::core::intent::DomainIntent::CreateWorkspace {
+        cwd: resolved_cwd,
+        kind: kind.to_string(),
+        surface_params: params.clone(),
+        name,
+        subtitle,
+        description,
+    };
+
+    let events = match core.apply(engine, intent) {
+        Ok(events) => events,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+
+    // events 안에 정확히 하나의 WorkspaceCreated 가 들어있다.
+    let Some(crate::core::intent::CoreEvent::WorkspaceCreated {
+        id: workspace_id,
+        index,
+        surface_id,
+        renamed_name,
+        renamed_subtitle,
+        renamed_description,
+    }) = events.into_iter().next()
+    else {
+        return JsonRpcResponse::internal_error(
+            id,
+            "Core::apply returned no WorkspaceCreated event",
+        );
+    };
+
+    // cascade: host event 발화 (rename 필드 있을 때). IPC 는 Agent origin 이므로
+    // active 전환은 하지 않는다 (`cascade_workspace_created` 가 origin 보고 분기).
+    let agent_origin = crate::intent::IntentOrigin::Agent {
+        source: crate::intent::AgentSource::Ipc,
+    };
+    crate::app::dispatch_domain::cascade_workspace_created(
+        state,
+        engine,
+        &agent_origin,
+        workspace_id,
+        index,
+        renamed_name.clone(),
+        renamed_subtitle.clone(),
+        renamed_description.clone(),
+    );
+
+    let ws = &engine.workspaces[index];
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "id": ws.id,
+            "name": ws.name,
+            "subtitle": ws.subtitle,
+            "description": ws.description,
+            "index": index,
+            "surface_id": surface_id,
+        }),
+    )
 }
 
 pub fn handle_workspace_update(
