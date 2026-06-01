@@ -288,6 +288,92 @@ impl Core {
         self.clipboard.write_image(image)
     }
 
+    // ─── PTY pipeline (D.3.C.C.6) — system loop wrapper ───
+    //
+    // 본 6 wrapper 는 *system loop* (event_handler / about_to_wait / redraw /
+    // busy poll) 의 PTY drain · resize · busy 갱신 경로의 Core 진입점.
+    // *Intent 아님* — PTY 출력 / OS 타이머 / window resize 같은 *외부 trigger*
+    // 에서 호출. Phase D 진행 중에는 본 wrapper 도 `engine` 인자를 받는다 —
+    // 도메인 흡수 완료 후 제거 예정.
+    //
+    // C.6 단계: terminal.process() 만 위임. take_events 는 C.8 에서 추가.
+    // 즉 현재 단계는 *호출 경로 변경만* 으로 옛 redraw collect_events 흐름과
+    // 충돌이 없도록 한다.
+
+    /// 특정 surface 의 PTY 출력 drain. 옛 `engine.process_surface(sid)` 의 진입점.
+    /// 반환: 데이터를 실제 처리했는지 (mark_dirty 결정 신호).
+    pub(crate) fn process_pty_output(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+        surface_id: u32,
+    ) -> bool {
+        engine.process_surface(surface_id)
+    }
+
+    /// 모든 workspace 의 모든 terminal 을 drain. 옛 `engine.process_all()` 의 진입점.
+    /// 반환: 어느 surface 든 처리됐는지 (전역 mark_dirty 결정 신호).
+    pub(crate) fn process_all_pty_output(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+    ) -> bool {
+        engine.process_all()
+    }
+
+    /// throttle 적용 PTY resize flush. 옛 `engine.flush_all_pty_resizes()` 의 진입점.
+    /// 반환: 여전히 pending 이 남았는지 (redraw 재요청 신호).
+    pub(crate) fn flush_pty_resizes(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+    ) -> bool {
+        engine.flush_all_pty_resizes()
+    }
+
+    /// throttle 무시 강제 flush. 옛 `engine.force_flush_all_pty_resizes()` 의 진입점.
+    /// split / close 같은 *이산 이벤트* 직후 호출.
+    pub(crate) fn force_flush_pty_resizes(&mut self, engine: &mut crate::engine_state::CoreState) {
+        engine.force_flush_all_pty_resizes();
+    }
+
+    /// 모든 workspace 의 모든 terminal 을 layout 에 맞춰 resize. 옛
+    /// `state.resize_all(engine, ...)` 의 진입점. tab_bar_height 가 AppState 에
+    /// 있어 `state` 도 인자로 받는다 (도메인 흡수 후 제거 예정).
+    pub(crate) fn resize_all_terminals(
+        &mut self,
+        state: &crate::state::AppState,
+        engine: &mut crate::engine_state::CoreState,
+        terminal_rect: crate::model::PhysicalRect,
+        cell_width: f32,
+        cell_height: f32,
+    ) {
+        let tab_bar_h = state.tab_bar_height;
+        for ws in &mut engine.workspaces {
+            let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+            for (pane_id, pane_rect) in pane_rects {
+                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+                    let content_rect = crate::model::PhysicalRect {
+                        x: pane_rect.x,
+                        y: pane_rect.y + tab_bar_h,
+                        width: pane_rect.width,
+                        height: (pane_rect.height - tab_bar_h).max(crate::model::PhysicalPx(1.0)),
+                    };
+                    for tab in &mut pane.tabs {
+                        tab.resize_all(content_rect, cell_width, cell_height);
+                    }
+                }
+            }
+        }
+    }
+
+    /// busy surface 집합 갱신. 옛 `engine.refresh_busy_surfaces()` 의 진입점.
+    /// `AppEvent::BusyPoll` (1Hz 타이머) 에서 호출. 반환: 집합이 변했는지
+    /// (window mark_dirty 결정 신호).
+    pub(crate) fn update_busy_surfaces(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+    ) -> bool {
+        engine.refresh_busy_surfaces()
+    }
+
     /// 도메인 변경의 단일 진입점. handler 가 발행한 `DomainIntent` 를 받아
     /// 결과 이벤트 목록을 반환. Phase D 진행 중 — variant 추가 시 본 match 도 채움.
     ///
