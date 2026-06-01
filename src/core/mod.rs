@@ -251,16 +251,9 @@ impl Core {
     }
 
     // ─── Layout persistence (~/.tasty/layout.json) ───
-
-    /// 현재 layout 을 디스크에 저장한다. debounce / shutdown flush 의 진입점.
-    /// 호출자는 (engine, active_workspace_index) 를 넘긴다.
-    pub(crate) fn save_layout(
-        &self,
-        engine: &mut crate::engine_state::CoreState,
-        active_workspace: usize,
-    ) {
-        crate::engine::layout_persistence::save_to_disk(engine, active_workspace);
-    }
+    //
+    // save_layout 은 D.3.C.D.4.b 에서 `DomainIntent::SaveLayoutNow` 경로로 통합되어
+    // 제거됨. restore_layout 은 D.3.C.D.4.c 까지 잠시 유지.
 
     /// 저장된 layout 을 live engine 으로 복원한다. plugin 이 register 한 surface
     /// kind 가 준비된 후에만 호출해야 한다 — engine boot 시점이 아닌, 첫 plugin
