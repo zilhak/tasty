@@ -98,6 +98,14 @@ pub(crate) enum DomainIntent {
     /// Core::apply 가 직접 처리 (workspace 안 *닫힌 곳* 의 자연 이동 — 원칙 1
     /// 위반 아님). cleanup_surface (markdown/image/memory) 는 cascade.
     ClosePane { pane_id: u32 },
+    /// surface 제거. cascading close — surface→tab→pane→workspace 단계까지
+    /// 자동 cascade. `save_snapshot=true` 면 각 단계에서 ClosedItem snapshot
+    /// 푸시 (Ctrl+Shift+T 복원). cleanup_surface / workspace scope memory purge /
+    /// active_workspace 보정 / auto-recreate empty workspace 는 cascade + handler.
+    CloseSurface {
+        surface_id: u32,
+        save_snapshot: bool,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -215,6 +223,18 @@ pub(crate) enum CoreEvent {
         closed: bool,
         cleanup_targets: Vec<(u32, Option<String>)>,
     },
+    /// surface close 완료 (cascading). `cascade_level` 은 어디까지 닫혔는지
+    /// (Surface/Tab/Pane/Workspace). `workspace_id_purged` 는 Case 4 (workspace
+    /// 자체 닫힘) 시 cascade 가 memory scope purge 할 workspace_id.
+    /// `workspaces_now_empty` 가 true 면 caller 가 auto-recreate.
+    SurfaceClosed {
+        surface_id: u32,
+        closed: bool,
+        cascade_level: CascadeLevel,
+        cleanup_targets: Vec<(u32, Option<String>)>,
+        workspace_id_purged: Option<u32>,
+        workspaces_now_empty: bool,
+    },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push 요청. cascade 가 라우팅 + store.add + host event enqueue.
@@ -241,4 +261,14 @@ pub(crate) enum CoreEvent {
     // ─── Clipboard history (D.3.C.E.3) ───
     /// Internal clipboard copy 가 발생. cascade 가 모든 engine 의 history 에 기록.
     InternalClipboardCopyRecorded { text: String },
+}
+
+/// `CoreEvent::SurfaceClosed` 의 cascade 깊이 정보.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum CascadeLevel {
+    Surface,
+    Tab,
+    Pane,
+    Workspace,
 }

@@ -405,6 +405,14 @@ impl Core {
             DomainIntent::ClosePane { pane_id } => {
                 Ok(vec![Self::apply_close_pane(engine, pane_id)])
             }
+            DomainIntent::CloseSurface {
+                surface_id,
+                save_snapshot,
+            } => Ok(vec![Self::apply_close_surface(
+                engine,
+                surface_id,
+                save_snapshot,
+            )]),
         }
     }
 
@@ -574,6 +582,221 @@ impl Core {
             pane_id,
             closed: removed,
             cleanup_targets: if removed { targets } else { vec![] },
+        }
+    }
+
+    /// `DomainIntent::CloseSurface` 본문. cascading close — surface→tab→pane→
+    /// workspace 단계까지 자동 cascade. 옛 `close_surface_by_id_inner` 의 4-case
+    /// 코드 이동. cleanup_surface / memory purge / active_workspace 보정 /
+    /// auto-recreate 는 cascade + caller 책임.
+    fn apply_close_surface(
+        engine: &mut crate::engine_state::CoreState,
+        surface_id: u32,
+        save_snapshot: bool,
+    ) -> CoreEvent {
+        use crate::core::intent::CascadeLevel;
+
+        let not_found = || CoreEvent::SurfaceClosed {
+            surface_id,
+            closed: false,
+            cascade_level: CascadeLevel::Surface,
+            cleanup_targets: vec![],
+            workspace_id_purged: None,
+            workspaces_now_empty: false,
+        };
+
+        let (ws_idx, pane_id) = match engine.find_workspace_index_for_surface(surface_id) {
+            Some(v) => v,
+            None => return not_found(),
+        };
+
+        // Step 1: tab_idx + sole/split 판정
+        let tab_idx;
+        let surface_is_sole_in_tab;
+        let can_close_surface_in_group;
+        {
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = match ws.pane_layout_mut().find_pane_mut(pane_id) {
+                Some(p) => p,
+                None => return not_found(),
+            };
+            let mut found_tab = None;
+            for (i, tab) in pane.tabs.iter().enumerate() {
+                if tab.contains_surface(surface_id) {
+                    found_tab = Some(i);
+                    break;
+                }
+            }
+            tab_idx = match found_tab {
+                Some(i) => i,
+                None => return not_found(),
+            };
+            let tab = &pane.tabs[tab_idx];
+            if tab.is_split() {
+                surface_is_sole_in_tab = false;
+                can_close_surface_in_group =
+                    !matches!(tab.layout(), crate::model::SurfaceLayout::Leaf(_));
+            } else if tab.contains_surface(surface_id) {
+                surface_is_sole_in_tab = true;
+                can_close_surface_in_group = false;
+            } else {
+                return not_found();
+            }
+        }
+
+        // Case 1: split tab 안 surface 다중 close
+        if !surface_is_sole_in_tab && can_close_surface_in_group {
+            if save_snapshot {
+                let ws = &engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                let tab = &pane.tabs[tab_idx];
+                if let Some(node) = tab.find_terminal_surface(surface_id) {
+                    let snapshot =
+                        crate::model::closed_item::ClosedSurface::from_surface_node(node);
+                    engine.push_closed_item(crate::model::ClosedItem::Surface {
+                        surface: snapshot,
+                        tab_name: tab.display_name().to_string(),
+                    });
+                }
+            }
+            let persist_id = {
+                let ws = &engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                let tab = &pane.tabs[tab_idx];
+                tab.find_terminal_surface(surface_id)
+                    .and_then(|ts| ts.scrollback_persist_id.clone())
+            };
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
+            let tab = &mut pane.tabs[tab_idx];
+            if tab.close_surface(surface_id) {
+                engine.mark_layout_dirty();
+                return CoreEvent::SurfaceClosed {
+                    surface_id,
+                    closed: true,
+                    cascade_level: CascadeLevel::Surface,
+                    cleanup_targets: vec![(surface_id, persist_id)],
+                    workspace_id_purged: None,
+                    workspaces_now_empty: false,
+                };
+            }
+            return not_found();
+        }
+
+        // Case 2: sole surface tab, pane.tabs.len() > 1 — tab close
+        {
+            if save_snapshot {
+                let ws = &engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                if pane.tabs.len() > 1 {
+                    let snapshot_opt = {
+                        let mut snap_fn = crate::engine::surface_registry::snapshot_fn_for(
+                            &engine.surface_registry,
+                        );
+                        crate::model::closed_item::ClosedTab::from_tab(
+                            &pane.tabs[tab_idx],
+                            &mut snap_fn,
+                        )
+                    };
+                    if let Some(snapshot) = snapshot_opt {
+                        engine.push_closed_item(crate::model::ClosedItem::Tab(snapshot));
+                    }
+                }
+            }
+            let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+            {
+                let ws = &engine.workspaces[ws_idx];
+                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                if pane.tabs.len() > 1 {
+                    crate::state::AppState::collect_close_targets(
+                        &pane.tabs[tab_idx],
+                        &mut targets,
+                    );
+                }
+            }
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
+            if pane.tabs.len() > 1 {
+                pane.tabs.remove(tab_idx);
+                if pane.active_tab >= pane.tabs.len() {
+                    pane.active_tab = pane.tabs.len() - 1;
+                }
+                engine.mark_layout_dirty();
+                return CoreEvent::SurfaceClosed {
+                    surface_id,
+                    closed: true,
+                    cascade_level: CascadeLevel::Tab,
+                    cleanup_targets: targets,
+                    workspace_id_purged: None,
+                    workspaces_now_empty: false,
+                };
+            }
+        }
+
+        // Case 3: last tab in pane, ws 안 pane >1 — pane close
+        {
+            let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+            {
+                let ws = &engine.workspaces[ws_idx];
+                if ws.pane_layout().all_pane_ids().len() > 1 {
+                    if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                        for tab in &pane.tabs {
+                            crate::state::AppState::collect_close_targets(tab, &mut targets);
+                        }
+                    }
+                }
+            }
+            let ws = &mut engine.workspaces[ws_idx];
+            if ws.pane_layout().all_pane_ids().len() > 1 {
+                ws.pane_layout_mut().close_pane(pane_id);
+                if let Some(first) = ws.pane_layout().first_pane() {
+                    ws.focused_pane = first.id;
+                }
+                engine.mark_layout_dirty();
+                return CoreEvent::SurfaceClosed {
+                    surface_id,
+                    closed: true,
+                    cascade_level: CascadeLevel::Pane,
+                    cleanup_targets: targets,
+                    workspace_id_purged: None,
+                    workspaces_now_empty: false,
+                };
+            }
+        }
+
+        // Case 4: last pane in workspace — workspace close
+        if save_snapshot {
+            let item = {
+                let mut snap_fn =
+                    crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                let ws = &engine.workspaces[ws_idx];
+                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn)
+            };
+            engine.push_closed_item(item);
+        }
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        {
+            let ws = &engine.workspaces[ws_idx];
+            for pid in ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        crate::state::AppState::collect_close_targets(tab, &mut targets);
+                    }
+                }
+            }
+        }
+        let workspace_id = engine.workspaces[ws_idx].id;
+        engine.workspaces.remove(ws_idx);
+        let workspaces_now_empty = engine.workspaces.is_empty();
+        engine.mark_layout_dirty();
+
+        CoreEvent::SurfaceClosed {
+            surface_id,
+            closed: true,
+            cascade_level: CascadeLevel::Workspace,
+            cleanup_targets: targets,
+            workspace_id_purged: Some(workspace_id),
+            workspaces_now_empty,
         }
     }
 

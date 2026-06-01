@@ -209,6 +209,62 @@ impl App {
                     self.dispatch_tab_closed_cascade(source, cleanup_targets);
                 }
             }
+            CoreEvent::SurfaceClosed {
+                surface_id: _,
+                closed,
+                cascade_level,
+                cleanup_targets,
+                workspace_id_purged,
+                workspaces_now_empty: _,
+            } => {
+                if closed {
+                    self.dispatch_surface_closed_cascade(
+                        source,
+                        cascade_level,
+                        cleanup_targets,
+                        workspace_id_purged,
+                    );
+                }
+            }
+        }
+    }
+
+    /// `SurfaceClosed` cascade — cleanup_surface 각각 + (Case 4 면) workspace
+    /// memory scope purge + active_workspace 보정. `workspaces_now_empty` 후처리
+    /// (auto-recreate) 는 caller 책임이라 본 cascade 에서 무시.
+    fn dispatch_surface_closed_cascade(
+        &mut self,
+        source: DispatchSource,
+        cascade_level: crate::core::intent::CascadeLevel,
+        cleanup_targets: Vec<(u32, Option<String>)>,
+        workspace_id_purged: Option<u32>,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                cascade_surface_closed(
+                    &mut main.state,
+                    &mut main.engine_state,
+                    cascade_level,
+                    cleanup_targets,
+                    workspace_id_purged,
+                );
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                cascade_surface_closed(
+                    state,
+                    engine,
+                    cascade_level,
+                    cleanup_targets,
+                    workspace_id_purged,
+                );
+            }
         }
     }
 
@@ -628,6 +684,47 @@ pub(crate) fn cascade_workspace_created(
     }
     if origin.is_user() {
         state.active_workspace = index;
+    }
+}
+
+/// `CoreEvent::SurfaceClosed` 의 외부 cascade.
+/// 1. 각 cleanup_target 에 `AppState::cleanup_surface` 호출
+/// 2. workspace_id_purged 가 Some 이면 memory scope purge
+/// 3. cascade_level == Workspace 면 active_workspace 보정
+pub(crate) fn cascade_surface_closed(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::engine_state::CoreState,
+    cascade_level: crate::core::intent::CascadeLevel,
+    cleanup_targets: Vec<(u32, Option<String>)>,
+    workspace_id_purged: Option<u32>,
+) {
+    for (sid, pid) in cleanup_targets {
+        state.cleanup_surface(engine, sid, pid);
+    }
+
+    if let Some(workspace_id) = workspace_id_purged {
+        let scope = tasty_memory::Scope::Workspace(workspace_id);
+        let mut guard = match state.memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        match guard.purge_scope(&scope) {
+            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
+                workspace_id,
+                regular = stats.regular,
+                secret = stats.secret,
+                "memory: purged closed-workspace scope",
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
+        }
+    }
+
+    if matches!(cascade_level, crate::core::intent::CascadeLevel::Workspace)
+        && state.active_workspace >= engine.workspaces.len()
+        && !engine.workspaces.is_empty()
+    {
+        state.active_workspace = engine.workspaces.len() - 1;
     }
 }
 
