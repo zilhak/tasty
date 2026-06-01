@@ -27,7 +27,7 @@ impl ApplicationHandler<AppEvent> for App {
                             continue;
                         };
                         if main.engine_state.find_terminal_by_id(sid).is_some() {
-                            main.engine_state.process_surface(sid);
+                            crate::core::Core::process_pty_output(&mut main.engine_state, sid);
                             main.recalc_ime_preedit_anchor();
                             main.mark_dirty();
                             found = true;
@@ -37,7 +37,7 @@ impl ApplicationHandler<AppEvent> for App {
                     if !found {
                         for (_, engine) in self.parked_states.iter_mut() {
                             if engine.find_terminal_by_id(sid).is_some() {
-                                engine.process_surface(sid);
+                                crate::core::Core::process_pty_output(engine, sid);
                                 break;
                             }
                         }
@@ -46,12 +46,12 @@ impl ApplicationHandler<AppEvent> for App {
                     // Fallback: wake all windows and process all terminals across engines
                     for w in self.windows.values_mut() {
                         if let Some(main) = w.as_main_mut() {
-                            main.engine_state.process_all();
+                            crate::core::Core::process_all_pty_output(&mut main.engine_state);
                         }
                         w.mark_dirty();
                     }
                     for (_, engine) in self.parked_states.iter_mut() {
-                        engine.process_all();
+                        crate::core::Core::process_all_pty_output(engine);
                     }
                 }
             }
@@ -559,13 +559,13 @@ impl ApplicationHandler<AppEvent> for App {
         let mut any_pending = false;
         for w in self.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
-                if main.engine_state.flush_all_pty_resizes() {
+                if crate::core::Core::flush_pty_resizes(&mut main.engine_state) {
                     any_pending = true;
                 }
             }
         }
         for (_, engine) in self.parked_states.iter_mut() {
-            if engine.flush_all_pty_resizes() {
+            if crate::core::Core::flush_pty_resizes(engine) {
                 any_pending = true;
             }
         }

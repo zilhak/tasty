@@ -293,8 +293,9 @@ impl Core {
     // 본 6 wrapper 는 *system loop* (event_handler / about_to_wait / redraw /
     // busy poll) 의 PTY drain · resize · busy 갱신 경로의 Core 진입점.
     // *Intent 아님* — PTY 출력 / OS 타이머 / window resize 같은 *외부 trigger*
-    // 에서 호출. Phase D 진행 중에는 본 wrapper 도 `engine` 인자를 받는다 —
-    // 도메인 흡수 완료 후 제거 예정.
+    // 에서 호출. 6 wrapper 모두 port 접근이 없어 *associated fn* 으로 노출 —
+    // MainWindow 안 redraw / shortcuts dispatch 에서 `self.core` 없이 호출
+    // 가능하다 (인접 `apply_close_pane` 등과 동일 패턴).
     //
     // C.6 단계: terminal.process() 만 위임. take_events 는 C.8 에서 추가.
     // 즉 현재 단계는 *호출 경로 변경만* 으로 옛 redraw collect_events 흐름과
@@ -303,7 +304,6 @@ impl Core {
     /// 특정 surface 의 PTY 출력 drain. 옛 `engine.process_surface(sid)` 의 진입점.
     /// 반환: 데이터를 실제 처리했는지 (mark_dirty 결정 신호).
     pub(crate) fn process_pty_output(
-        &mut self,
         engine: &mut crate::engine_state::CoreState,
         surface_id: u32,
     ) -> bool {
@@ -312,25 +312,19 @@ impl Core {
 
     /// 모든 workspace 의 모든 terminal 을 drain. 옛 `engine.process_all()` 의 진입점.
     /// 반환: 어느 surface 든 처리됐는지 (전역 mark_dirty 결정 신호).
-    pub(crate) fn process_all_pty_output(
-        &mut self,
-        engine: &mut crate::engine_state::CoreState,
-    ) -> bool {
+    pub(crate) fn process_all_pty_output(engine: &mut crate::engine_state::CoreState) -> bool {
         engine.process_all()
     }
 
     /// throttle 적용 PTY resize flush. 옛 `engine.flush_all_pty_resizes()` 의 진입점.
     /// 반환: 여전히 pending 이 남았는지 (redraw 재요청 신호).
-    pub(crate) fn flush_pty_resizes(
-        &mut self,
-        engine: &mut crate::engine_state::CoreState,
-    ) -> bool {
+    pub(crate) fn flush_pty_resizes(engine: &mut crate::engine_state::CoreState) -> bool {
         engine.flush_all_pty_resizes()
     }
 
     /// throttle 무시 강제 flush. 옛 `engine.force_flush_all_pty_resizes()` 의 진입점.
     /// split / close 같은 *이산 이벤트* 직후 호출.
-    pub(crate) fn force_flush_pty_resizes(&mut self, engine: &mut crate::engine_state::CoreState) {
+    pub(crate) fn force_flush_pty_resizes(engine: &mut crate::engine_state::CoreState) {
         engine.force_flush_all_pty_resizes();
     }
 
@@ -338,7 +332,6 @@ impl Core {
     /// `state.resize_all(engine, ...)` 의 진입점. tab_bar_height 가 AppState 에
     /// 있어 `state` 도 인자로 받는다 (도메인 흡수 후 제거 예정).
     pub(crate) fn resize_all_terminals(
-        &mut self,
         state: &crate::state::AppState,
         engine: &mut crate::engine_state::CoreState,
         terminal_rect: crate::model::PhysicalRect,
@@ -367,10 +360,7 @@ impl Core {
     /// busy surface 집합 갱신. 옛 `engine.refresh_busy_surfaces()` 의 진입점.
     /// `AppEvent::BusyPoll` (1Hz 타이머) 에서 호출. 반환: 집합이 변했는지
     /// (window mark_dirty 결정 신호).
-    pub(crate) fn update_busy_surfaces(
-        &mut self,
-        engine: &mut crate::engine_state::CoreState,
-    ) -> bool {
+    pub(crate) fn update_busy_surfaces(engine: &mut crate::engine_state::CoreState) -> bool {
         engine.refresh_busy_surfaces()
     }
 

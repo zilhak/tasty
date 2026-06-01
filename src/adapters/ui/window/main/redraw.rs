@@ -182,8 +182,13 @@ impl MainWindow {
             let terminal_rect = self.compute_terminal_rect();
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
-            self.state
-                .resize_all(&mut self.engine_state, terminal_rect, cell_w, cell_h);
+            crate::core::Core::resize_all_terminals(
+                &self.state,
+                &mut self.engine_state,
+                terminal_rect,
+                cell_w,
+                cell_h,
+            );
         }
 
         // Render

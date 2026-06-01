@@ -9,7 +9,7 @@ impl App {
     pub(crate) fn poll_busy_states(&mut self) {
         for w in self.windows.values_mut() {
             let changed = match w.as_main_mut() {
-                Some(main) => main.engine_state.refresh_busy_surfaces(),
+                Some(main) => crate::core::Core::update_busy_surfaces(&mut main.engine_state),
                 None => false,
             };
             if changed {
@@ -18,7 +18,7 @@ impl App {
         }
         for (_, engine) in self.parked_states.iter_mut() {
             // parked 는 window 가 없어 redraw 의미가 없다. 반환값은 무시.
-            engine.refresh_busy_surfaces();
+            crate::core::Core::update_busy_surfaces(engine);
         }
     }
 }

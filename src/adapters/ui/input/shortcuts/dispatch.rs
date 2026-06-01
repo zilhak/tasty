@@ -34,13 +34,25 @@ impl MainWindow {
                     }
                     .from_user_shortcut("new_workspace"),
                 );
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                crate::core::Core::resize_all_terminals(
+                    state,
+                    engine,
+                    terminal_rect,
+                    cell_w,
+                    cell_h,
+                );
             }
             "new_tab" => {
                 if let Err(e) = state.add_tab(engine) {
                     tracing::warn!("add_tab failed: {e}");
                 }
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                crate::core::Core::resize_all_terminals(
+                    state,
+                    engine,
+                    terminal_rect,
+                    cell_w,
+                    cell_h,
+                );
             }
             "split_pane_vertical" => {
                 state.dispatch_intent(
@@ -49,7 +61,13 @@ impl MainWindow {
                     }
                     .from_user_shortcut("split_pane_vertical"),
                 );
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                crate::core::Core::resize_all_terminals(
+                    state,
+                    engine,
+                    terminal_rect,
+                    cell_w,
+                    cell_h,
+                );
             }
             "split_pane_horizontal" => {
                 state.dispatch_intent(
@@ -58,7 +76,13 @@ impl MainWindow {
                     }
                     .from_user_shortcut("split_pane_horizontal"),
                 );
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                crate::core::Core::resize_all_terminals(
+                    state,
+                    engine,
+                    terminal_rect,
+                    cell_w,
+                    cell_h,
+                );
             }
             "split_surface_vertical" => {
                 state.dispatch_intent(
@@ -67,7 +91,13 @@ impl MainWindow {
                     }
                     .from_user_shortcut("split_surface_vertical"),
                 );
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                crate::core::Core::resize_all_terminals(
+                    state,
+                    engine,
+                    terminal_rect,
+                    cell_w,
+                    cell_h,
+                );
             }
             "split_surface_horizontal" => {
                 state.dispatch_intent(
@@ -76,7 +106,13 @@ impl MainWindow {
                     }
                     .from_user_shortcut("split_surface_horizontal"),
                 );
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                crate::core::Core::resize_all_terminals(
+                    state,
+                    engine,
+                    terminal_rect,
+                    cell_w,
+                    cell_h,
+                );
             }
             "toggle_settings" => {
                 send_app_event(proxy, crate::AppEvent::OpenSettings);
@@ -114,7 +150,13 @@ impl MainWindow {
                 if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                    crate::core::Core::resize_all_terminals(
+                        &self.state,
+                        engine,
+                        terminal_rect,
+                        cell_w,
+                        cell_h,
+                    );
                 }
                 return true;
             }
@@ -125,7 +167,13 @@ impl MainWindow {
                 if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                    crate::core::Core::resize_all_terminals(
+                        &self.state,
+                        engine,
+                        terminal_rect,
+                        cell_w,
+                        cell_h,
+                    );
                 }
                 return true;
             }
@@ -143,7 +191,13 @@ impl MainWindow {
                 if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                    crate::core::Core::resize_all_terminals(
+                        &self.state,
+                        engine,
+                        terminal_rect,
+                        cell_w,
+                        cell_h,
+                    );
                 }
                 return true;
             }
@@ -154,7 +208,13 @@ impl MainWindow {
                 if engine.workspaces.is_empty() {
                     self.request_close();
                 } else {
-                    self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                    crate::core::Core::resize_all_terminals(
+                        &self.state,
+                        engine,
+                        terminal_rect,
+                        cell_w,
+                        cell_h,
+                    );
                 }
                 return true;
             }
@@ -168,7 +228,13 @@ impl MainWindow {
                 state.dispatch_intent(
                     crate::intent::Intent::RestoreClosedItem.from_user_shortcut("restore_closed"),
                 );
-                state.resize_all(engine, terminal_rect, cell_w, cell_h);
+                crate::core::Core::resize_all_terminals(
+                    state,
+                    engine,
+                    terminal_rect,
+                    cell_w,
+                    cell_h,
+                );
             }
             "quit" => send_app_event(proxy, crate::AppEvent::QuitRequested),
             "quit_immediate" => send_app_event(proxy, crate::AppEvent::Shutdown),
