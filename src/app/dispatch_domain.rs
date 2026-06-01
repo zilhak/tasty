@@ -140,6 +140,14 @@ impl App {
                     self.dispatch_workspace_moved_cascade(source, from_index, to_index);
                 }
             }
+            CoreEvent::TabCreated { .. } => {
+                // 추가 cascade 없음 — main.mark_dirty 만 발화 source 에 적용.
+                if let DispatchSource::Main(wid) = source {
+                    if let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) {
+                        main.mark_dirty();
+                    }
+                }
+            }
         }
     }
 

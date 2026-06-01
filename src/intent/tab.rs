@@ -1,38 +1,57 @@
 //! Tab 도메인 Intent 핸들러.
 //!
 //! 정책:
-//! - **NewTab**: `kind` None → "terminal" fallback. terminal kind 는 host PTY spawn
-//!   경로 (`state.add_tab_to_pane`), 그 외는 `state.add_kind_tab` (focused pane).
-//!   focused 의존이므로 사용자 동작 전용 (단축키/메뉴/파일 드롭). agent 가 명시
-//!   pane 에 추가하려면 IPC `tab.new` (`add_kind_tab_to_pane`) 를 사용한다.
+//! - **NewTab**: `DomainIntent::CreateTab` 으로 forward. focused pane 의 id 는
+//!   handler 안에서 결정 (`state.active_workspace(engine).focused_pane`).
+//!   terminal kind 면 cwd 도 handler 가 inherit 결정.
 //! - **CloseTab**: ID 지정. close_tab_by_tab_id 호출. fire-and-forget.
+//!   (B.5.2 에서 DomainIntent 로 마이그레이션 예정.)
 
 use super::{DispatchedIntent, Intent};
+use crate::core::Core;
 use crate::engine_state::CoreState;
 use crate::state::AppState;
 
-pub fn handle(state: &mut AppState, engine: &mut CoreState, intent: &DispatchedIntent) {
+pub fn handle(
+    core: &mut Core,
+    state: &mut AppState,
+    engine: &mut CoreState,
+    intent: &DispatchedIntent,
+) {
     match &intent.body {
-        Intent::NewTab { kind, params } => new_tab(state, engine, kind.as_deref(), params),
+        Intent::NewTab { kind, params } => new_tab(core, state, engine, kind.as_deref(), params),
         Intent::CloseTab { tab_id } => close_tab(state, engine, *tab_id),
         _ => {}
     }
 }
 
 fn new_tab(
+    core: &mut Core,
     state: &mut AppState,
     engine: &mut CoreState,
     kind: Option<&str>,
     params: &serde_json::Value,
 ) {
     let kind = kind.unwrap_or("terminal");
-    if kind == "terminal" {
-        // terminal 은 host PTY spawn 경로 (cwd None → 기본 inherit).
-        let pane_id = state.active_workspace(engine).focused_pane;
-        if let Err(e) = state.add_tab_to_pane(engine, pane_id, None) {
-            tracing::warn!("NewTab terminal failed: {e}");
-        }
-    } else if let Err(e) = state.add_kind_tab(engine, kind, params) {
+    let pane_id = state.active_workspace(engine).focused_pane;
+    let cwd = if kind == "terminal" {
+        state.resolve_inherit_cwd(engine)
+    } else {
+        None
+    };
+    let surface_params = if params.is_null() {
+        serde_json::json!({})
+    } else {
+        params.clone()
+    };
+
+    let intent = crate::core::intent::DomainIntent::CreateTab {
+        pane_id,
+        cwd,
+        kind: kind.to_string(),
+        surface_params,
+    };
+    if let Err(e) = core.apply(engine, intent) {
         tracing::warn!("NewTab kind={kind} failed: {e}");
     }
 }

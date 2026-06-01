@@ -51,6 +51,16 @@ pub(crate) enum DomainIntent {
     /// *사용자가 보던 동일 ws 가 계속 active 유지* 되도록 보정.
     MoveWorkspace { from_index: usize, to_index: usize },
 
+    // ─── Tab lifecycle (D.3.C.B.5) ───
+    /// 특정 pane 에 새 tab 생성. focused pane 의존 없음 — 호출자가 pane_id
+    /// 미리 결정. `cwd` 는 terminal kind 에서만 사용 (호출자가 inherit 결정).
+    CreateTab {
+        pane_id: u32,
+        cwd: Option<PathBuf>,
+        kind: String,
+        surface_params: Value,
+    },
+
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
     /// notifications store 에 add (coalesce 자동) + host event enqueue.
@@ -121,6 +131,16 @@ pub(crate) enum CoreEvent {
         from_index: usize,
         to_index: usize,
         moved: bool,
+    },
+
+    // ─── Tab lifecycle (D.3.C.B.5) ───
+    /// 새 tab 생성 완료. cascade 추가 처리 없음 (main.mark_dirty 만).
+    TabCreated {
+        pane_id: u32,
+        tab_id: u32,
+        surface_id: u32,
+        tab_count: usize,
+        active_tab: usize,
     },
 
     // ─── Notifications (D.3.C.E.2) ───

@@ -365,7 +365,85 @@ impl Core {
             } => Ok(vec![
                 self.apply_move_workspace(engine, from_index, to_index),
             ]),
+            DomainIntent::CreateTab {
+                pane_id,
+                cwd,
+                kind,
+                surface_params,
+            } => Self::apply_create_tab(engine, pane_id, cwd, kind, surface_params),
         }
+    }
+
+    /// `DomainIntent::CreateTab` 본문. borrow 분리:
+    /// 1) settings / waker / surface 미리 추출 (engine 의 *불변* 의존)
+    /// 2) scope block 으로 pane mutate (engine 의 가변 borrow 좁힘)
+    /// 3) send_fast_init / mark_layout_dirty (pane borrow 끝난 후)
+    fn apply_create_tab(
+        engine: &mut crate::engine_state::CoreState,
+        pane_id: u32,
+        cwd: Option<std::path::PathBuf>,
+        kind: String,
+        surface_params: serde_json::Value,
+    ) -> anyhow::Result<Vec<CoreEvent>> {
+        let tab_id = engine.next_ids.next_tab();
+        let surface_id = engine.next_ids.next_surface();
+        let is_terminal = kind == "terminal";
+
+        let cols = engine.default_cols;
+        let rows = engine.default_rows;
+        let lazy_init = engine.settings.performance.lazy_pty_init;
+        let sh = crate::engine_state::ShellConfig::from_settings(&engine.settings);
+        let waker = engine.make_waker(surface_id);
+
+        let prepared_non_terminal = if !is_terminal {
+            let surface = engine.create_surface_via_registry(&kind, surface_id, &surface_params)?;
+            let name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
+            Some((surface, name))
+        } else {
+            None
+        };
+
+        {
+            let pane = engine
+                .find_pane_by_id_mut(pane_id)
+                .ok_or_else(|| anyhow::anyhow!("pane {pane_id} not found"))?;
+            if is_terminal {
+                let spawn = crate::model::ShellSpawnOpts {
+                    cols,
+                    rows,
+                    shell: sh.shell_ref(),
+                    shell_args: &sh.args_ref(),
+                    waker,
+                    working_dir: cwd.as_deref(),
+                };
+                if lazy_init {
+                    pane.add_tab_deferred(tab_id, surface_id, spawn);
+                } else {
+                    pane.add_tab_background_with_shell(tab_id, surface_id, spawn)?;
+                }
+            } else {
+                let (surface, name) = prepared_non_terminal.unwrap();
+                pane.add_surface_tab(tab_id, name, surface);
+            }
+        }
+
+        if is_terminal && !lazy_init {
+            engine.send_fast_init(surface_id);
+        }
+        engine.mark_layout_dirty();
+
+        let (tab_count, active_tab) = engine
+            .find_pane_by_id(pane_id)
+            .map(|p| (p.tabs.len(), p.active_tab))
+            .unwrap_or((0, 0));
+
+        Ok(vec![CoreEvent::TabCreated {
+            pane_id,
+            tab_id,
+            surface_id,
+            tab_count,
+            active_tab,
+        }])
     }
 
     /// `DomainIntent::MoveWorkspace` 본문. workspaces 벡터의 from→to 이동.

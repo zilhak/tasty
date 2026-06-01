@@ -122,7 +122,7 @@ impl App {
                 crate::intent::surface::handle(state, engine, intent);
             }
             Intent::NewTab { .. } | Intent::CloseTab { .. } => {
-                crate::intent::tab::handle(state, engine, intent);
+                crate::intent::tab::handle(core, state, engine, intent);
             }
             Intent::SplitPane { .. } => {
                 crate::intent::pane::handle(state, engine, intent);

@@ -57,6 +57,7 @@ pub fn handle_tab_list(
 }
 
 pub fn handle_tab_create(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -76,7 +77,7 @@ pub fn handle_tab_create(
         .and_then(|v| v.as_str())
         .unwrap_or("terminal");
 
-    // explorer는 path 미지정 시 home으로 보정 (외부 plugin이 path를 받음).
+    // explorer는 path 미지정 시 home으로 보정 (Core 가 home dir 정책 모름 — handler 잔존).
     let mut params = params.clone();
     if surface_type == "explorer" && params.get("path").and_then(|v| v.as_str()).is_none() {
         let home = directories::BaseDirs::new()
@@ -89,41 +90,52 @@ pub fn handle_tab_create(
         }
     }
 
-    let result = match surface_type {
-        "terminal" => {
-            let cwd = params
-                .get("cwd")
-                .and_then(|v| v.as_str())
-                .map(std::path::PathBuf::from);
-            state.add_tab_to_pane(engine, pane_id, cwd)
-        }
-        other => {
-            // markdown/html/explorer/image/empty + plugin remote_kind
-            // 모두 SurfaceKindRegistry로 일원화. 등록되지 않은 kind면 Err 반환되어
-            // 사용자에게 unknown surface kind 메시지가 전달된다.
-            state
-                .add_kind_tab_to_pane(engine, pane_id, other, &params)
-                .map(|_| ())
-        }
+    // cwd resolve — terminal 만. explicit > pane active surface 의 inherit.
+    let cwd = if surface_type == "terminal" {
+        let explicit = params
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .map(std::path::PathBuf::from);
+        explicit.or_else(|| {
+            let sid = engine
+                .find_pane_by_id(pane_id)
+                .and_then(|p| p.tabs.get(p.active_tab))
+                .and_then(|t| t.focused_surface_id())?;
+            state.resolve_inherit_cwd_from_surface(engine, sid)
+        })
+    } else {
+        None
     };
 
-    match result {
-        Ok(_) => {
-            let (tab_count, active_tab) = engine
-                .find_pane_by_id(pane_id)
-                .map(|p| (p.tabs.len(), p.active_tab))
-                .unwrap_or((0, 0));
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "pane_id": pane_id,
-                    "tab_count": tab_count,
-                    "active_tab": active_tab,
-                }),
-            )
-        }
-        Err(e) => JsonRpcResponse::internal_error(id, e.to_string()),
-    }
+    let intent = crate::core::intent::DomainIntent::CreateTab {
+        pane_id,
+        cwd,
+        kind: surface_type.to_string(),
+        surface_params: params,
+    };
+    let events = match core.apply(engine, intent) {
+        Ok(events) => events,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+
+    let Some(crate::core::intent::CoreEvent::TabCreated {
+        pane_id,
+        tab_count,
+        active_tab,
+        ..
+    }) = events.into_iter().next()
+    else {
+        return JsonRpcResponse::internal_error(id, "Core::apply returned no TabCreated event");
+    };
+
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "pane_id": pane_id,
+            "tab_count": tab_count,
+            "active_tab": active_tab,
+        }),
+    )
 }
 
 pub fn handle_tab_close(
