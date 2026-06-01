@@ -72,7 +72,6 @@ pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;
 pub(crate) use boot::waker as waker_factory_winit;
 pub(crate) use clipboard::{ClipboardContext, ClipboardData};
-pub(crate) use core::state as engine_state;
 pub(crate) use engine::output_observer;
 pub(crate) use engine::surface_registry::meta as surface_meta;
 pub(crate) use file::dispatch as file_dispatch;
