@@ -1555,85 +1555,138 @@ impl Core {
         subtitle: Option<String>,
         description: Option<String>,
     ) -> anyhow::Result<Vec<CoreEvent>> {
-        if kind == "empty" {
-            anyhow::bail!("Cannot create workspace with empty surface kind");
-        }
-
-        let ws_id = engine.next_ids.next_workspace();
-        let pane_id = engine.next_ids.next_pane();
-        let tab_id = engine.next_ids.next_tab();
-        let surface_id = engine.next_ids.next_surface();
-        let auto_name = name
-            .clone()
-            .unwrap_or_else(|| format!("Workspace {}", engine.workspaces.len() + 1));
-        let is_terminal = kind == "terminal";
-
-        let ws = if is_terminal {
-            let shell = if engine.settings.general.shell.is_empty() {
-                None
-            } else {
-                Some(engine.settings.general.shell.as_str())
-            };
-            let shell_args_owned = engine.settings.general.effective_shell_args();
-            let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-            crate::model::Workspace::new_with_shell(
-                ws_id,
-                auto_name,
-                pane_id,
-                tab_id,
-                surface_id,
-                crate::model::ShellSpawnOpts {
-                    cols: engine.default_cols,
-                    rows: engine.default_rows,
-                    shell,
-                    shell_args: &shell_args,
-                    waker: engine.make_waker(surface_id),
-                    working_dir: cwd.as_deref(),
-                },
-            )?
-        } else {
-            let surface = engine.create_surface_via_registry(&kind, surface_id, &surface_params)?;
-            let tab_name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
-            let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
-            crate::model::Workspace::new_with_pane(ws_id, auto_name, pane)
-        };
-
-        engine.workspaces.push(ws);
-        let idx = engine.workspaces.len() - 1;
-
-        let renamed_name = name;
-        let renamed_subtitle = subtitle.map(|s| {
-            engine.workspaces[idx].subtitle = s.clone();
-            s
-        });
-        let renamed_description = description.map(|d| {
-            engine.workspaces[idx].description = d.clone();
-            d
-        });
-
-        if is_terminal {
-            engine.send_fast_init(surface_id);
-        }
-        engine.mark_layout_dirty();
-
-        let final_surface_id = {
-            let ws = &engine.workspaces[idx];
-            let pane_id = ws.focused_pane;
-            ws.pane_layout()
-                .find_pane(pane_id)
-                .and_then(|pane| pane.tabs.get(pane.active_tab))
-                .and_then(|tab| tab.focused_surface_id())
-        };
-
-        Ok(vec![CoreEvent::WorkspaceCreated {
-            id: ws_id,
-            index: idx,
-            surface_id: final_surface_id,
-            renamed_name,
-            renamed_subtitle,
-            renamed_description,
-        }])
+        Ok(vec![apply_create_workspace_inner(
+            engine,
+            cwd,
+            kind,
+            surface_params,
+            name,
+            subtitle,
+            description,
+        )?])
     }
+
+    /// 시스템 내부 invariant restorer — bootstrap / close 후 자동 재생성 /
+    /// closed_item precondition 용. `kind="terminal"` + auto name + cwd 미지정.
+    /// Intent 큐를 우회하므로 cascade 도중 호출해도 재진입 위험 없음.
+    ///
+    /// 옛 `AppState::add_workspace` 의 의미를 그대로 유지 — *동작 보존* 위해
+    /// host event (WorkspaceCreated/Renamed) 발화하지 않는다. plugin 알림은
+    /// 사용자/에이전트 의도 경로 (`DomainIntent::CreateWorkspace`) 만.
+    ///
+    /// 반환: 새 workspace 의 index (`engine.workspaces.len() - 1`).
+    pub(crate) fn create_default_workspace(
+        &mut self,
+        engine: &mut crate::engine_state::CoreState,
+    ) -> anyhow::Result<usize> {
+        let event = apply_create_workspace_inner(
+            engine,
+            None,
+            "terminal".to_string(),
+            serde_json::Value::Null,
+            None,
+            None,
+            None,
+        )?;
+        match event {
+            CoreEvent::WorkspaceCreated { index, .. } => Ok(index),
+            _ => unreachable!("apply_create_workspace_inner 는 WorkspaceCreated 만 반환"),
+        }
+    }
+}
+
+/// `DomainIntent::CreateWorkspace` 의 *순수 engine* 구현. `Core::apply_create_workspace`
+/// 와 `Core::create_default_workspace` 양쪽이 공유.
+///
+/// 반환: `CoreEvent::WorkspaceCreated`. host event (WorkspaceRenamed) +
+/// (User origin 이면) active 전환은 호출 측 cascade 책임.
+pub(crate) fn apply_create_workspace_inner(
+    engine: &mut crate::engine_state::CoreState,
+    cwd: Option<std::path::PathBuf>,
+    kind: String,
+    surface_params: serde_json::Value,
+    name: Option<String>,
+    subtitle: Option<String>,
+    description: Option<String>,
+) -> anyhow::Result<CoreEvent> {
+    if kind == "empty" {
+        anyhow::bail!("Cannot create workspace with empty surface kind");
+    }
+
+    let ws_id = engine.next_ids.next_workspace();
+    let pane_id = engine.next_ids.next_pane();
+    let tab_id = engine.next_ids.next_tab();
+    let surface_id = engine.next_ids.next_surface();
+    let auto_name = name
+        .clone()
+        .unwrap_or_else(|| format!("Workspace {}", engine.workspaces.len() + 1));
+    let is_terminal = kind == "terminal";
+
+    let ws = if is_terminal {
+        let shell = if engine.settings.general.shell.is_empty() {
+            None
+        } else {
+            Some(engine.settings.general.shell.as_str())
+        };
+        let shell_args_owned = engine.settings.general.effective_shell_args();
+        let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
+        crate::model::Workspace::new_with_shell(
+            ws_id,
+            auto_name,
+            pane_id,
+            tab_id,
+            surface_id,
+            crate::model::ShellSpawnOpts {
+                cols: engine.default_cols,
+                rows: engine.default_rows,
+                shell,
+                shell_args: &shell_args,
+                waker: engine.make_waker(surface_id),
+                working_dir: cwd.as_deref(),
+            },
+        )?
+    } else {
+        let surface = engine.create_surface_via_registry(&kind, surface_id, &surface_params)?;
+        let tab_name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
+        let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
+        crate::model::Workspace::new_with_pane(ws_id, auto_name, pane)
+    };
+
+    engine.workspaces.push(ws);
+    let idx = engine.workspaces.len() - 1;
+
+    let renamed_name = name;
+    let renamed_subtitle = subtitle.map(|s| {
+        engine.workspaces[idx].subtitle = s.clone();
+        s
+    });
+    let renamed_description = description.map(|d| {
+        engine.workspaces[idx].description = d.clone();
+        d
+    });
+
+    if is_terminal {
+        engine.send_fast_init(surface_id);
+    }
+    engine.mark_layout_dirty();
+
+    let final_surface_id = {
+        let ws = &engine.workspaces[idx];
+        let pane_id = ws.focused_pane;
+        ws.pane_layout()
+            .find_pane(pane_id)
+            .and_then(|pane| pane.tabs.get(pane.active_tab))
+            .and_then(|tab| tab.focused_surface_id())
+    };
+
+    Ok(CoreEvent::WorkspaceCreated {
+        id: ws_id,
+        index: idx,
+        surface_id: final_surface_id,
+        renamed_name,
+        renamed_subtitle,
+        renamed_description,
+    })
 }
 
 /// `RestoreClosedItem` 의 helper. pane_id 에 tab attach + active_tab 갱신.
