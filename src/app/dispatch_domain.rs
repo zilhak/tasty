@@ -209,12 +209,12 @@ impl App {
                 );
             }
             CoreEvent::PaneClosed {
-                pane_id: _,
+                pane_id,
                 closed,
                 cleanup_targets,
             } => {
                 if closed {
-                    self.dispatch_cleanup_surfaces(source, cleanup_targets);
+                    self.dispatch_pane_closed_cascade(source, pane_id, cleanup_targets);
                 }
             }
             CoreEvent::SurfaceClosed {
@@ -696,12 +696,12 @@ impl App {
         }
     }
 
-    /// Generic surface cleanup loop — `(surface_id, persist_id)` 목록을 받아
-    /// 발화 source 의 (state, engine) 에 `cleanup_surface` 적용. host event
-    /// 발화는 별도. `PaneClosed` cascade 등 surface 정리만 필요한 경우 호출.
-    fn dispatch_cleanup_surfaces(
+    /// `PaneClosed` cascade — host event (`pane.closed`) enqueue + cleanup_target
+    /// surface 정리 + main.mark_dirty.
+    fn dispatch_pane_closed_cascade(
         &mut self,
         source: DispatchSource,
+        pane_id: u32,
         cleanup_targets: Vec<(u32, Option<String>)>,
     ) {
         match source {
@@ -709,6 +709,7 @@ impl App {
                 let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     return;
                 };
+                cascade_pane_closed(&mut main.state, pane_id);
                 for (sid, pid) in cleanup_targets {
                     main.state.cleanup_surface(&mut main.engine_state, sid, pid);
                 }
@@ -718,6 +719,7 @@ impl App {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
+                cascade_pane_closed(state, pane_id);
                 for (sid, pid) in cleanup_targets {
                     state.cleanup_surface(engine, sid, pid);
                 }
@@ -1162,8 +1164,9 @@ pub(crate) fn cascade_surface_split(
     }
 }
 
-/// `CoreEvent::PaneSplit` 의 외부 cascade. host event (PaneSplit) 발화 +
-/// (User origin 이면) workspace 의 focused_pane 을 new_pane_id 로 변경.
+/// `CoreEvent::PaneSplit` 의 외부 cascade. host events (`pane.split` +
+/// `pane.created`) 발화 + polling baseline 동기화 + (User origin 이면)
+/// workspace 의 focused_pane 을 new_pane_id 로 변경.
 pub(crate) fn cascade_pane_split(
     state: &mut crate::state::AppState,
     engine: &mut crate::engine_state::CoreState,
@@ -1178,11 +1181,26 @@ pub(crate) fn cascade_pane_split(
         new_pane: new_pane_id,
         direction,
     });
+    let workspace_id = engine.workspaces.get(workspace_index).map(|w| w.id);
+    if let Some(workspace_id) = workspace_id {
+        state.enqueue_host_event(crate::state::PendingHostEvent::PaneCreated {
+            pane_id: new_pane_id,
+            workspace_id,
+        });
+        state.lifecycle_baseline_insert_pane(new_pane_id, workspace_id);
+    }
     if origin.is_user() {
         if let Some(ws) = engine.workspaces.get_mut(workspace_index) {
             ws.focused_pane = new_pane_id;
         }
     }
+}
+
+/// `CoreEvent::PaneClosed` 의 외부 cascade. host event (`pane.closed`) enqueue +
+/// polling baseline 동기화.
+pub(crate) fn cascade_pane_closed(state: &mut crate::state::AppState, pane_id: u32) {
+    state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id });
+    state.lifecycle_baseline_remove_pane(pane_id);
 }
 
 /// `CoreEvent::WorkspaceMoved` 의 외부 cascade. 사용자 포커스 보존을 위해

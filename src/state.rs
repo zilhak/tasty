@@ -786,6 +786,21 @@ impl AppState {
         }
     }
 
+    /// Pane lifecycle baseline 동기화 — `detect_pane_lifecycle` 호출이 더 이상
+    /// `PaneCreated` 를 push 하지 않도록 baseline 에 새 pane 을 미리 넣는다.
+    pub fn lifecycle_baseline_insert_pane(&mut self, pane_id: u32, workspace_id: u32) {
+        if let Some(map) = self.last_pane_locations.as_mut() {
+            map.insert(pane_id, workspace_id);
+        }
+    }
+
+    /// Pane lifecycle baseline 동기화 — 닫힌 pane 을 baseline 에서 제거.
+    pub fn lifecycle_baseline_remove_pane(&mut self, pane_id: u32) {
+        if let Some(map) = self.last_pane_locations.as_mut() {
+            map.remove(&pane_id);
+        }
+    }
+
     /// Get the working directory to inherit from the focused surface, if enabled.
     ///
     /// 사용자가 현재 포커스한 surface 본인의 `source_cwd()`를 사용한다.

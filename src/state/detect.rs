@@ -113,42 +113,24 @@ impl AppState {
         self.last_tab_locations = Some(current);
     }
 
-    /// Pane 생성/종료를 polling으로 감지. `last_tab_locations`와 동일하게 첫 호출
-    /// 에서는 베이스라인만 기록한다.
+    /// Pane lifecycle baseline 만 갱신 (D.3.C.B.10.2 이후). 실제 `pane.created`/
+    /// `pane.closed` 발화는 cascade 시점에 `cascade_pane_split` /
+    /// `cascade_pane_closed` 에서 enqueue 한다. baseline 은 cascade 가 직접
+    /// `lifecycle_baseline_insert_pane` / `_remove_pane` 헬퍼로 동기화하며, 본
+    /// 함수는 첫 호출 시 baseline 만 잡고 이후엔 polling 으로 push 하지 않는다.
+    /// B.10.6 에서 호출처 제거 후 함수 자체를 제거할 예정.
     pub fn detect_pane_lifecycle(&mut self, engine: &CoreState) {
         use std::collections::HashMap;
 
+        if self.last_pane_locations.is_some() {
+            return;
+        }
         let mut current: HashMap<u32, u32> = HashMap::new();
         for ws in &engine.workspaces {
             for pane_id in ws.pane_layout().all_pane_ids() {
                 current.insert(pane_id, ws.id);
             }
         }
-
-        let prev = match self.last_pane_locations.take() {
-            Some(p) => p,
-            None => {
-                self.last_pane_locations = Some(current);
-                return;
-            }
-        };
-
-        for (pane_id, workspace_id) in &current {
-            if !prev.contains_key(pane_id) {
-                self.pending_host_events
-                    .push(PendingHostEvent::PaneCreated {
-                        pane_id: *pane_id,
-                        workspace_id: *workspace_id,
-                    });
-            }
-        }
-        for pane_id in prev.keys() {
-            if !current.contains_key(pane_id) {
-                self.pending_host_events
-                    .push(PendingHostEvent::PaneClosed { pane_id: *pane_id });
-            }
-        }
-
         self.last_pane_locations = Some(current);
     }
 
