@@ -371,6 +371,53 @@ impl Core {
                 kind,
                 surface_params,
             } => Self::apply_create_tab(engine, pane_id, cwd, kind, surface_params),
+            DomainIntent::CloseTab { tab_id } => Ok(vec![Self::apply_close_tab(engine, tab_id)]),
+        }
+    }
+
+    /// `DomainIntent::CloseTab` 본문. tab 위치 + cleanup_targets 수집 →
+    /// pane.close_tab_by_id → mark_layout_dirty. cleanup_surface (AppState
+    /// 데이터) 는 cascade 가 처리한다.
+    fn apply_close_tab(engine: &mut crate::engine_state::CoreState, tab_id: u32) -> CoreEvent {
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        let mut found_pane_id = None;
+        for workspace in &engine.workspaces {
+            for &pid in &workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    if let Some(tab) = pane.tabs.iter().find(|t| t.id == tab_id) {
+                        crate::state::AppState::collect_close_targets(tab, &mut targets);
+                        found_pane_id = Some(pid);
+                        break;
+                    }
+                }
+            }
+            if found_pane_id.is_some() {
+                break;
+            }
+        }
+
+        let pane_id = match found_pane_id {
+            Some(pid) => pid,
+            None => {
+                return CoreEvent::TabClosed {
+                    tab_id,
+                    closed: false,
+                    cleanup_targets: vec![],
+                };
+            }
+        };
+
+        let closed = engine
+            .find_pane_by_id_mut(pane_id)
+            .map(|p| p.close_tab_by_id(tab_id))
+            .unwrap_or(false);
+        if closed {
+            engine.mark_layout_dirty();
+        }
+        CoreEvent::TabClosed {
+            tab_id,
+            closed,
+            cleanup_targets: if closed { targets } else { vec![] },
         }
     }
 

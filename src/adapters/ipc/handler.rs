@@ -187,7 +187,7 @@ fn route_engine_handler(
         // tab
         "tab.list" => tab::handle_tab_list(state, engine, id, &request.params),
         "tab.create" => tab::handle_tab_create(core, state, engine, id, &request.params),
-        "tab.close" => tab::handle_tab_close(state, engine, id, &request.params),
+        "tab.close" => tab::handle_tab_close(core, state, engine, id, &request.params),
         "tab.move" => tab::handle_tab_move(state, engine, id, &request.params),
         // preset (layout preset CRUD + apply)
         "preset.list" => preset::handle_list(core, state, id, &request.params),

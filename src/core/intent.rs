@@ -60,6 +60,10 @@ pub(crate) enum DomainIntent {
         kind: String,
         surface_params: Value,
     },
+    /// tab_id 로 tab close. *모든* workspace 의 pane 순회 (포커스 독립).
+    /// cleanup (markdown_views / image_views / surface_meta / memory purge) 은
+    /// cascade 에서 처리 — Core 가 AppState 데이터 모름.
+    CloseTab { tab_id: u32 },
 
     // ─── Notifications (D.3.C.E.2) ───
     /// 알림 push. ws_id 가 라우팅 키 — 해당 workspace 가 속한 main window 의
@@ -141,6 +145,13 @@ pub(crate) enum CoreEvent {
         surface_id: u32,
         tab_count: usize,
         active_tab: usize,
+    },
+    /// tab close 완료. `cleanup_targets` 는 닫힌 tab 안의 (surface_id,
+    /// persist_id) — cascade 가 각각에 `AppState::cleanup_surface` 호출.
+    TabClosed {
+        tab_id: u32,
+        closed: bool,
+        cleanup_targets: Vec<(u32, Option<String>)>,
     },
 
     // ─── Notifications (D.3.C.E.2) ───

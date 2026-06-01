@@ -139,6 +139,7 @@ pub fn handle_tab_create(
 }
 
 pub fn handle_tab_close(
+    core: &mut crate::core::Core,
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
@@ -149,9 +150,8 @@ pub fn handle_tab_close(
         Err(e) => return e,
     };
 
-    // Prevent closing a tab that contains the caller
+    // Prevent closing a tab that contains the caller — handler 잔존 (caller 정보 params).
     if let Some(caller) = super::caller_surface_id(params) {
-        // Find which pane contains this tab
         if let Some(pane_id) = engine.find_pane_for_tab(tab_id) {
             if super::surface_belongs_to_pane(engine, caller, pane_id) {
                 return JsonRpcResponse::invalid_params(
@@ -162,14 +162,34 @@ pub fn handle_tab_close(
         }
     }
 
-    let closed = state.close_tab_by_tab_id(engine, tab_id);
+    let intent = crate::core::intent::DomainIntent::CloseTab { tab_id };
+    let events = match core.apply(engine, intent) {
+        Ok(events) => events,
+        Err(e) => return JsonRpcResponse::internal_error(id, e.to_string()),
+    };
+
+    let Some(crate::core::intent::CoreEvent::TabClosed {
+        tab_id,
+        closed,
+        cleanup_targets,
+    }) = events.into_iter().next()
+    else {
+        return JsonRpcResponse::internal_error(id, "Core::apply returned no TabClosed event");
+    };
 
     if closed {
+        for (sid, pid) in cleanup_targets {
+            state.cleanup_surface(engine, sid, pid);
+        }
         JsonRpcResponse::success(id, json!({ "closed": true, "tab_id": tab_id }))
     } else {
         JsonRpcResponse::success(
             id,
-            json!({ "closed": false, "tab_id": tab_id, "reason": "tab not found or cannot close the last tab" }),
+            json!({
+                "closed": false,
+                "tab_id": tab_id,
+                "reason": "tab not found or cannot close the last tab",
+            }),
         )
     }
 }

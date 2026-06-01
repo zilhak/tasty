@@ -4,8 +4,8 @@
 //! - **NewTab**: `DomainIntent::CreateTab` 으로 forward. focused pane 의 id 는
 //!   handler 안에서 결정 (`state.active_workspace(engine).focused_pane`).
 //!   terminal kind 면 cwd 도 handler 가 inherit 결정.
-//! - **CloseTab**: ID 지정. close_tab_by_tab_id 호출. fire-and-forget.
-//!   (B.5.2 에서 DomainIntent 로 마이그레이션 예정.)
+//! - **CloseTab**: `DomainIntent::CloseTab` 으로 forward. cascade 가
+//!   `cleanup_surface` 호출 (markdown/image views, surface_meta, memory purge).
 
 use super::{DispatchedIntent, Intent};
 use crate::core::Core;
@@ -20,7 +20,7 @@ pub fn handle(
 ) {
     match &intent.body {
         Intent::NewTab { kind, params } => new_tab(core, state, engine, kind.as_deref(), params),
-        Intent::CloseTab { tab_id } => close_tab(state, engine, *tab_id),
+        Intent::CloseTab { tab_id } => close_tab(core, state, engine, *tab_id),
         _ => {}
     }
 }
@@ -56,6 +56,27 @@ fn new_tab(
     }
 }
 
-fn close_tab(state: &mut AppState, engine: &mut CoreState, tab_id: u32) {
-    state.close_tab_by_tab_id(engine, tab_id);
+fn close_tab(core: &mut Core, state: &mut AppState, engine: &mut CoreState, tab_id: u32) {
+    let intent = crate::core::intent::DomainIntent::CloseTab { tab_id };
+    let events = match core.apply(engine, intent) {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("CloseTab failed: {e}");
+            return;
+        }
+    };
+    for ev in events {
+        if let crate::core::intent::CoreEvent::TabClosed {
+            closed,
+            cleanup_targets,
+            ..
+        } = ev
+        {
+            if closed {
+                for (sid, pid) in cleanup_targets {
+                    state.cleanup_surface(engine, sid, pid);
+                }
+            }
+        }
+    }
 }

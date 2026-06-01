@@ -210,45 +210,6 @@ impl AppState {
         }
     }
 
-    /// Close a specific tab by its TabId (cross-workspace). Returns true if closed.
-    pub fn close_tab_by_tab_id(&mut self, engine: &mut CoreState, tab_id: u32) -> bool {
-        // Find the tab and collect (surface_id, persist_id) for cleanup
-        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        let mut found_pane_id = None;
-        for workspace in &engine.workspaces {
-            for &pid in &workspace.pane_layout().all_pane_ids() {
-                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    if let Some(tab) = pane.tabs.iter().find(|t| t.id == tab_id) {
-                        super::AppState::collect_close_targets(tab, &mut targets);
-                        found_pane_id = Some(pid);
-                        break;
-                    }
-                }
-            }
-            if found_pane_id.is_some() {
-                break;
-            }
-        }
-
-        let pane_id = match found_pane_id {
-            Some(pid) => pid,
-            None => return false,
-        };
-
-        let closed = if let Some(pane) = engine.find_pane_by_id_mut(pane_id) {
-            pane.close_tab_by_id(tab_id)
-        } else {
-            false
-        };
-        if closed {
-            for (sid, pid) in targets {
-                self.cleanup_surface(engine, sid, pid);
-            }
-            engine.mark_layout_dirty();
-        }
-        closed
-    }
-
     /// Next tab in the focused pane.
     pub fn next_tab_in_pane(&mut self, engine: &mut CoreState) {
         if let Some(pane) = self.focused_pane_mut(engine) {

@@ -148,6 +148,43 @@ impl App {
                     }
                 }
             }
+            CoreEvent::TabClosed {
+                tab_id: _,
+                closed,
+                cleanup_targets,
+            } => {
+                if closed {
+                    self.dispatch_tab_closed_cascade(source, cleanup_targets);
+                }
+            }
+        }
+    }
+
+    /// `TabClosed` cascade — 발화 source 의 (state, engine) 으로 각 cleanup_target
+    /// 에 `AppState::cleanup_surface` 호출.
+    fn dispatch_tab_closed_cascade(
+        &mut self,
+        source: DispatchSource,
+        cleanup_targets: Vec<(u32, Option<String>)>,
+    ) {
+        match source {
+            DispatchSource::Main(wid) => {
+                let Some(main) = self.windows.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
+                    return;
+                };
+                for (sid, pid) in cleanup_targets {
+                    main.state.cleanup_surface(&mut main.engine_state, sid, pid);
+                }
+                main.mark_dirty();
+            }
+            DispatchSource::Parked(idx) => {
+                let Some((state, engine)) = self.parked_states.get_mut(idx) else {
+                    return;
+                };
+                for (sid, pid) in cleanup_targets {
+                    state.cleanup_surface(engine, sid, pid);
+                }
+            }
         }
     }
 
