@@ -1,42 +1,34 @@
 //! `file_handler.*` IPC 메서드 — reload + dispatch.
 //!
 //! - `file_handler.reload`: user TOML 재로드. host/plugin 영향 없음.
+//!   Method call wrapper (`Core::reload_file_handlers`) 직접 호출.
 //! - `file_handler.dispatch`: 임의 경로를 file_handler 시스템에 진입시킴.
-//!   explorer plugin 등에서 더블클릭 처리에 사용.
+//!   `DomainIntent::DispatchFile` 발화 — Core::apply 가 worker spawn,
+//!   결과는 `AppEvent::IdentifyDone` 경로로 비동기 적용.
 
 use std::path::PathBuf;
 
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::core::Core;
 use crate::file::format::{DetectDepth, FileTarget};
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 
 pub fn handle_reload(
-    _state: &AppState,
+    core: &Core,
     engine: &crate::engine_state::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    let path = user_config_path();
-    engine.file_format.reload_user_config(&path);
-    engine.file_handler.reload_user_config(&path);
-    let exists = path.exists();
+    let outcome = core.reload_file_handlers(engine);
     JsonRpcResponse::success(
         id,
         json!({
-            "path": path.display().to_string(),
-            "exists": exists,
+            "path": outcome.path.display().to_string(),
+            "exists": outcome.exists,
         }),
     )
-}
-
-/// `~/.tasty/file-handlers.toml`. 홈 디렉토리 결정 실패 시 임시 경로 — 그 경우
-/// `exists` 가 false 로 돌아오므로 caller 가 인지 가능.
-fn user_config_path() -> std::path::PathBuf {
-    tasty_utils::path::tasty_home()
-        .map(|d| d.join("file-handlers.toml"))
-        .unwrap_or_else(|| std::env::temp_dir().join("tasty-file-handlers.toml"))
 }
 
 #[derive(Deserialize)]
@@ -55,11 +47,10 @@ fn default_depth() -> String {
 ///
 /// - `params.path`: 절대 경로 권장. 상대 경로는 caller cwd 기준이라 비결정적.
 /// - `params.depth`: `"cheap"` (확장자/glob 만) 또는 `"deep"` (magic/MIME 포함).
-///   기본 `"deep"`. Deep 은 IdentifyWorker 로 비동기 — 응답은 즉시 돌아오고
-///   handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
+///   기본 `"deep"`. 두 경우 모두 worker thread 경유 (통일된 경로) — 응답은
+///   즉시 돌아오고 handler 실행은 `AppEvent::IdentifyDone` 경로로 진행.
 pub fn handle_dispatch(
     state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
     id: serde_json::Value,
     params: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -81,7 +72,9 @@ pub fn handle_dispatch(
         }
     };
     let target = FileTarget::new(PathBuf::from(&req.path));
-    crate::file_dispatch::dispatch_file_target(state, engine, target, depth);
+    state.dispatch_intent(
+        crate::core::intent::DomainIntent::DispatchFile { target, depth }.from_agent_ipc(),
+    );
     JsonRpcResponse::success(
         id,
         json!({

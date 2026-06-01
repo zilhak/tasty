@@ -219,6 +219,18 @@ pub(crate) enum DomainIntent {
     /// 안에서 plugin manager 를 못 만진다 (Core 의존 없음).
     /// pending_layout_restore 가 None 이면 no-op (`restored=false`).
     ApplyPendingLayoutRestore,
+
+    // ─── File dispatch (D.3.C.G.3) ───
+    /// 파일 dispatch 진입점. mouse ctrl+click / drag&drop / IPC `file_handler.dispatch`
+    /// 가 발화. apply 분기에서 `engine.identify_worker.spawn(target, depth)` 호출 —
+    /// Cheap/Deep 모두 worker thread 경유 (통일된 경로). 결과는
+    /// `AppEvent::IdentifyDone` 으로 main thread 도착 후 `event_handler` 가
+    /// `Core::apply_identify_result` Method 를 직접 호출. worker 미주입 시 drop
+    /// + warn.
+    DispatchFile {
+        target: crate::file::format::FileTarget,
+        depth: crate::file::format::DetectDepth,
+    },
 }
 
 /// `Core::apply` 의 결과 — 도메인이 *변경 후 알리는* 이벤트.

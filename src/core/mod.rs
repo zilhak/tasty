@@ -13,6 +13,7 @@
 
 pub(crate) mod agent;
 pub(crate) mod builder;
+pub(crate) mod file;
 pub(crate) mod intent;
 pub(crate) mod restore_rebuild;
 
@@ -573,6 +574,20 @@ impl Core {
             )]),
             DomainIntent::ApplyPendingLayoutRestore => {
                 Ok(vec![Self::apply_apply_pending_layout_restore(engine)])
+            }
+            DomainIntent::DispatchFile { target, depth } => {
+                match engine.identify_worker.as_ref() {
+                    Some(worker) => {
+                        let _id = worker.spawn(target, depth);
+                    }
+                    None => {
+                        tracing::warn!(
+                            target = %target.display(),
+                            "DispatchFile: identify_worker not injected — drop",
+                        );
+                    }
+                }
+                Ok(vec![])
             }
         }
     }

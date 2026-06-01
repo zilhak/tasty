@@ -5,7 +5,7 @@
 //!
 //! - hover 단계: `state.drop_hover` 에 path 누적 (overlay 렌더용).
 //! - drop 단계: `state.pending_file_drops` 큐에 push. frame end 에서 drain →
-//!   `file_dispatch::dispatch_file_target` 으로 보낸다.
+//!   `DomainIntent::DispatchFile` 발화로 보낸다.
 //!
 //! winit `DroppedFile` 은 좌표를 주지 않으므로 `MainWindow.cursor_position` 을
 //! frame end 라우팅 시점에 활용한다.
@@ -48,8 +48,8 @@ impl MainWindow {
         self.base.dirty = true;
     }
 
-    /// frame end 에서 호출. 큐를 비우고 각 파일을 `dispatch_file_target(Deep)` 으로
-    /// 보낸다. 좌표는 `cursor_position` 기준 — terminal_rect 외부면 toast 후 무시.
+    /// frame end 에서 호출. 큐를 비우고 각 파일을 `DispatchFile(Deep)` Intent 로
+    /// 발화. 좌표는 `cursor_position` 기준 — terminal_rect 외부면 toast 후 무시.
     pub(crate) fn process_pending_file_drops(&mut self) {
         let drops = std::mem::take(&mut self.state.pending_file_drops);
         if drops.is_empty() {
@@ -81,11 +81,12 @@ impl MainWindow {
                 .focus_surface_at_position(engine, x, y, terminal_rect);
         }
         for path in drops {
-            crate::file_dispatch::dispatch_file_target(
-                &mut self.state,
-                &mut self.engine_state,
-                crate::file::format::FileTarget::new(path),
-                crate::file::format::DetectDepth::Deep,
+            self.state.dispatch_intent(
+                crate::core::intent::DomainIntent::DispatchFile {
+                    target: crate::file::format::FileTarget::new(path),
+                    depth: crate::file::format::DetectDepth::Deep,
+                }
+                .from_user_menu("file_drop"),
             );
         }
     }

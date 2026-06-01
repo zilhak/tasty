@@ -310,7 +310,7 @@ pub struct AppState {
     pub(crate) drop_hover: Option<DropHoverState>,
 
     /// `DroppedFile` 이벤트로 받은 경로 큐. frame end 에서 drain 해
-    /// `file_dispatch::dispatch_file_target` 으로 보낸다.
+    /// `DomainIntent::DispatchFile` 으로 발화.
     pub(crate) pending_file_drops: Vec<std::path::PathBuf>,
 
     /// plugin popup 렌더 중 수집된 사용자 입력. App 메인 루프가 drain해

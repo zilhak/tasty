@@ -1,13 +1,13 @@
-//! 파일 디스패치 공통 진입점.
+//! 파일 디스패치 공통 진입점 (D.3.C.G.3 — 점진 폐기 중).
 //!
-//! mouse.rs ctrl+click, drag&drop (Phase C2), explorer plugin 더블클릭 (Phase C3)
-//! 이 모두 같은 흐름:
-//! 1. `parse_link(uri)` 로 `FileTarget` vs `External` URI 구분
-//! 2. `dispatch_file_target` 로 두 registry 조회 → handler 선택 (auto / picker)
-//! 3. `execute_handler_action` 으로 OpenSurface / Ipc / System 실행
+//! mouse.rs ctrl+click, drag&drop, explorer plugin, IPC `file_handler.dispatch`
+//! 가 모두 `DomainIntent::DispatchFile` 발화로 통일된다. Core::apply 가
+//! `engine.identify_worker.spawn(...)` 호출 → 비동기 detect → AppEvent::IdentifyDone
+//! → `event_handler` 가 `Core::apply_identify_result` Method 호출.
 //!
-//! Deep identify 는 `IdentifyWorker` 로 비동기 — 결과가 `AppEvent::IdentifyDone`
-//! 으로 도착하면 `apply_identify_result` 가 같은 길로 들어온다.
+//! 본 모듈에는 *parse_link* (URI 분류) 와 `apply_identify_result` /
+//! `consume_picker_result` 가 남아 있다. G.3.b/G.3.c 에서 후자 둘은 Core 안으로
+//! 흡수 + free function 폐기 예정.
 
 use std::path::PathBuf;
 
@@ -83,38 +83,8 @@ fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
-/// 파일 디스패치 진입점. depth 에 따라 sync 또는 worker 비동기.
-///
-/// - `Cheap`: 호출 thread 에서 즉시 식별 → handler 실행.
-/// - `Deep`: `IdentifyWorker::spawn` 으로 thread 분리. 결과는 `AppEvent::IdentifyDone`
-///   으로 main thread 에 도착, `apply_identify_result` 가 동일 흐름으로 재진입.
-pub fn dispatch_file_target(
-    state: &mut AppState,
-    engine: &mut crate::engine_state::CoreState,
-    target: FileTarget,
-    depth: DetectDepth,
-) {
-    match depth {
-        DetectDepth::Cheap => {
-            let detector = engine.file_format.identify(&target, depth);
-            apply_identify_result(state, engine, target, detector);
-        }
-        DetectDepth::Deep => {
-            if let Some(worker) = engine.identify_worker.clone() {
-                let _id = worker.spawn(target, depth);
-            } else {
-                tracing::warn!(
-                    "file_dispatch: identify_worker not injected — falling back to cheap",
-                );
-                let detector = engine.file_format.identify(&target, DetectDepth::Cheap);
-                apply_identify_result(state, engine, target, detector);
-            }
-        }
-    }
-}
-
-/// identify 결과를 받아 handler 선택 (auto 또는 picker) 후 실행. mouse 콜사이트와
-/// `AppEvent::IdentifyDone` 핸들러 양쪽이 호출.
+/// identify 결과를 받아 handler 선택 (auto 또는 picker) 후 실행.
+/// `AppEvent::IdentifyDone` 콜사이트만 사용. G.3.b 에서 Core method 로 이동 예정.
 pub fn apply_identify_result(
     state: &mut AppState,
     engine: &mut crate::engine_state::CoreState,

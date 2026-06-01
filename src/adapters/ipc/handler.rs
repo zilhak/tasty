@@ -297,12 +297,10 @@ fn route_engine_handler(
             notification::handle_notification_create(state, engine, id, &request.params)
         }
         // file handler: 사용자 설정 reload (host 전용 — plugin 비노출).
-        "file_handler.reload" => file_handler::handle_reload(state, engine, id),
+        "file_handler.reload" => file_handler::handle_reload(core, engine, id),
         // file handler: 임의 경로를 dispatch 흐름에 진입시킴. plugin (예: explorer)
         // 또는 CLI 가 호출. plugin 호출은 FsRead 권한 요구.
-        "file_handler.dispatch" => {
-            file_handler::handle_dispatch(state, engine, id, request.params.clone())
-        }
+        "file_handler.dispatch" => file_handler::handle_dispatch(state, id, request.params.clone()),
         // image surface 조작 — com.tasty.image plugin이 외부에 노출하는 namespace의
         // 호스트 어댑터. plugin 비활성 상태에서도 CLI/직접 IPC로 호출 가능.
         "image.open" => image::handle_open(core, state, engine, id, &request.params),

@@ -260,11 +260,12 @@ impl MainWindow {
                     if let Some(hovered) = self.hovered_link.clone() {
                         match crate::file_dispatch::parse_link(&hovered.uri) {
                             crate::file_dispatch::LinkKind::FileTarget(path) => {
-                                crate::file_dispatch::dispatch_file_target(
-                                    &mut self.state,
-                                    &mut self.engine_state,
-                                    crate::file::format::FileTarget::new(path),
-                                    crate::file::format::DetectDepth::Deep,
+                                self.state.dispatch_intent(
+                                    crate::core::intent::DomainIntent::DispatchFile {
+                                        target: crate::file::format::FileTarget::new(path),
+                                        depth: crate::file::format::DetectDepth::Deep,
+                                    }
+                                    .from_user_menu("terminal_link_click"),
                                 );
                             }
                             crate::file_dispatch::LinkKind::External(uri) => {
