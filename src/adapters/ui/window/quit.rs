@@ -4,8 +4,7 @@ use winit::event::WindowEvent;
 
 use crate::AppEvent;
 use crate::adapters::ui::window::{
-    ModalWindow, Modality, Window, WindowAction, WindowBase, WindowCtx, modal::MODAL_MODALITY,
-    sealed,
+    ModalView, Modality, ViewAction, ViewCtx, Window, WindowBase, modal::MODAL_MODALITY, sealed,
 };
 use crate::gpu::GpuState;
 use crate::i18n::t;
@@ -14,7 +13,7 @@ use crate::i18n::t;
 pub struct QuitWindow {
     pub base: WindowBase,
     shown: bool,
-    pending_action: WindowAction,
+    pending_action: ViewAction,
 }
 
 impl QuitWindow {
@@ -22,7 +21,7 @@ impl QuitWindow {
         Self {
             base: WindowBase::new(gpu, winit),
             shown: false,
-            pending_action: WindowAction::None,
+            pending_action: ViewAction::None,
         }
     }
 }
@@ -38,10 +37,10 @@ impl Window for QuitWindow {
         MODAL_MODALITY
     }
 
-    fn as_modal(&self) -> Option<&dyn ModalWindow> {
+    fn as_modal(&self) -> Option<&dyn ModalView> {
         Some(self)
     }
-    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
+    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
         Some(self)
     }
 
@@ -52,14 +51,14 @@ impl Window for QuitWindow {
         self
     }
 
-    fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
+    fn handle_event(&mut self, event: WindowEvent, _ctx: &mut ViewCtx<'_>) -> ViewAction {
         let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
         if egui_repaint {
             self.mark_dirty();
         }
 
         match event {
-            WindowEvent::CloseRequested => return WindowAction::Close,
+            WindowEvent::CloseRequested => return ViewAction::Close,
             WindowEvent::Resized(new_size) => {
                 self.base.gpu.resize(new_size);
                 self.mark_dirty();
@@ -83,8 +82,8 @@ impl Window for QuitWindow {
         }
 
         match &self.pending_action {
-            WindowAction::None => WindowAction::None,
-            _ => std::mem::replace(&mut self.pending_action, WindowAction::None),
+            ViewAction::None => ViewAction::None,
+            _ => std::mem::replace(&mut self.pending_action, ViewAction::None),
         }
     }
 
@@ -113,7 +112,7 @@ impl Window for QuitWindow {
                             )
                             .clicked()
                         {
-                            *pending = WindowAction::CloseWithEvent(AppEvent::Shutdown);
+                            *pending = ViewAction::CloseWithEvent(AppEvent::Shutdown);
                         }
                         ui.add_space(8.0);
                         if ui
@@ -123,7 +122,7 @@ impl Window for QuitWindow {
                             )
                             .clicked()
                         {
-                            *pending = WindowAction::CloseWithEvent(AppEvent::Minimize);
+                            *pending = ViewAction::CloseWithEvent(AppEvent::Minimize);
                         }
                     });
                 });
@@ -156,7 +155,7 @@ impl Window for QuitWindow {
     }
 }
 
-impl ModalWindow for QuitWindow {
+impl ModalView for QuitWindow {
     fn shown(&self) -> bool {
         self.shown
     }

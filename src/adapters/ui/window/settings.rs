@@ -5,8 +5,7 @@ use std::sync::Arc;
 use winit::event::WindowEvent;
 
 use crate::adapters::ui::window::{
-    ModalWindow, Modality, Window, WindowAction, WindowBase, WindowCtx, modal::MODAL_MODALITY,
-    sealed,
+    ModalView, Modality, ViewAction, ViewCtx, Window, WindowBase, modal::MODAL_MODALITY, sealed,
 };
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
 use crate::file::format::FileFormatRegistry;
@@ -91,10 +90,10 @@ impl Window for SettingsWindow {
         MODAL_MODALITY
     }
 
-    fn as_modal(&self) -> Option<&dyn ModalWindow> {
+    fn as_modal(&self) -> Option<&dyn ModalView> {
         Some(self)
     }
-    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
+    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
         Some(self)
     }
 
@@ -105,7 +104,7 @@ impl Window for SettingsWindow {
         self
     }
 
-    fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
+    fn handle_event(&mut self, event: WindowEvent, _ctx: &mut ViewCtx<'_>) -> ViewAction {
         // 녹화 중이면 키보드 이벤트를 egui에 전달하지 않는다.
         // egui가 Cmd+C 등을 시맨틱 커맨드(Copy)로 소비하면 캡처가 안 되기 때문.
         let is_recording = self.settings_ui_state.is_recording();
@@ -121,7 +120,7 @@ impl Window for SettingsWindow {
         match event {
             WindowEvent::CloseRequested => {
                 self.should_close = true;
-                return WindowAction::Close;
+                return ViewAction::Close;
             }
             WindowEvent::Resized(new_size) => {
                 self.base.gpu.resize(new_size);
@@ -162,9 +161,9 @@ impl Window for SettingsWindow {
         }
 
         if self.should_close {
-            WindowAction::Close
+            ViewAction::Close
         } else {
-            WindowAction::None
+            ViewAction::None
         }
     }
 
@@ -232,7 +231,7 @@ impl Window for SettingsWindow {
     }
 }
 
-impl ModalWindow for SettingsWindow {
+impl ModalView for SettingsWindow {
     fn shown(&self) -> bool {
         self.shown
     }

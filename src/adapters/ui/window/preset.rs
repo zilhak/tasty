@@ -13,8 +13,8 @@ use winit::event::WindowEvent;
 use tasty_presets::{PresetKind, PresetStore};
 
 use crate::adapters::ui::window::{
-    Modality, Window, WindowAction, WindowBase, WindowCtx,
-    editor::{EDITOR_MODALITY, EditorWindow},
+    Modality, ViewAction, ViewCtx, Window, WindowBase,
+    editor::{EDITOR_MODALITY, EditorView},
     sealed,
 };
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
@@ -80,7 +80,7 @@ impl Window for PresetWindow {
         self
     }
 
-    fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
+    fn handle_event(&mut self, event: WindowEvent, _ctx: &mut ViewCtx<'_>) -> ViewAction {
         let (_, repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
         if repaint {
             self.mark_dirty();
@@ -88,7 +88,7 @@ impl Window for PresetWindow {
 
         match event {
             WindowEvent::CloseRequested => {
-                return WindowAction::Close;
+                return ViewAction::Close;
             }
             WindowEvent::Resized(size) => {
                 self.base.gpu.resize(size);
@@ -105,7 +105,7 @@ impl Window for PresetWindow {
             }
             _ => {}
         }
-        WindowAction::None
+        ViewAction::None
     }
 
     fn render(&mut self) {
@@ -174,5 +174,5 @@ impl Window for PresetWindow {
     }
 }
 
-impl EditorWindow for PresetWindow {}
+impl EditorView for PresetWindow {}
 impl sealed::Sealed for PresetWindow {}

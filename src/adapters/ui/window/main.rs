@@ -18,7 +18,7 @@ use winit::keyboard::ModifiersState;
 use winit::window::CursorIcon;
 
 use crate::adapters::ui::window::{
-    Modality, TerminalHostWindow, Window, WindowAction, WindowBase, WindowCtx, sealed,
+    Modality, TerminalHostView, ViewAction, ViewCtx, Window, WindowBase, sealed,
     terminal_host::MODELESS_MODALITY,
 };
 use crate::gpu::{GpuState, ImePreeditState};
@@ -28,7 +28,7 @@ use crate::state::{AppState, FocusedSurfaceType};
 use crate::{AppEvent, ClipboardContext};
 
 /// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.
-/// `TerminalHostWindow` 계열의 대표 구현체.
+/// `TerminalHostView` 계열의 대표 구현체.
 pub struct MainWindow {
     pub base: WindowBase,
     pub(crate) state: AppState,
@@ -192,7 +192,7 @@ impl Window for MainWindow {
         self
     }
 
-    fn handle_event(&mut self, event: WindowEvent, ctx: &mut WindowCtx<'_>) -> WindowAction {
+    fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction {
         // If a modal is active, block all input events before they reach egui.
         // Only allow non-input events (resize, redraw, scale factor, focus) through.
         if ctx.modal_active {
@@ -202,7 +202,7 @@ impl Window for MainWindow {
                 | WindowEvent::ScaleFactorChanged { .. }
                 | WindowEvent::ModifiersChanged(_)
                 | WindowEvent::Focused(_) => {}
-                _ => return WindowAction::None,
+                _ => return ViewAction::None,
             }
         }
 
@@ -330,7 +330,7 @@ impl Window for MainWindow {
             self.base.winit.request_redraw();
         }
 
-        WindowAction::None
+        ViewAction::None
     }
 
     fn render(&mut self) {
@@ -340,6 +340,6 @@ impl Window for MainWindow {
     }
 }
 
-impl TerminalHostWindow for MainWindow {}
+impl TerminalHostView for MainWindow {}
 
 impl sealed::Sealed for MainWindow {}

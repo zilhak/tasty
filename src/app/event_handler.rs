@@ -3,7 +3,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-use crate::adapters::ui::window::{Window, WindowAction, WindowCtx};
+use crate::adapters::ui::window::{ViewAction, ViewCtx, Window};
 use crate::{App, AppEvent};
 
 impl ApplicationHandler<AppEvent> for App {
@@ -345,22 +345,22 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(modal_id) = self.view.active_modal_id {
             if id == modal_id {
                 let action = if let Some(modal) = self.view.windows.get_mut(&id) {
-                    let mut ctx = WindowCtx {
+                    let mut ctx = ViewCtx {
                         event_loop,
                         modal_active: false,
                         plugin_manager: self.plugin_manager.as_ref(),
                     };
                     modal.handle_event(event, &mut ctx)
                 } else {
-                    WindowAction::None
+                    ViewAction::None
                 };
 
                 match action {
-                    WindowAction::None => {}
-                    WindowAction::Close => {
+                    ViewAction::None => {}
+                    ViewAction::Close => {
                         self.close_active_modal();
                     }
-                    WindowAction::CloseWithEvent(app_event) => {
+                    ViewAction::CloseWithEvent(app_event) => {
                         self.close_active_modal();
                         crate::shortcuts::send_app_event(&self.view.proxy, app_event);
                     }
@@ -467,30 +467,30 @@ impl ApplicationHandler<AppEvent> for App {
         let modal_active = self.view.is_modal_active();
         let action = {
             if let Some(w) = self.view.windows.get_mut(&id) {
-                let mut ctx = WindowCtx {
+                let mut ctx = ViewCtx {
                     event_loop,
                     modal_active,
                     plugin_manager: self.plugin_manager.as_ref(),
                 };
-                // MainWindow.handle_event는 항상 WindowAction::None을 반환한다.
+                // MainWindow.handle_event는 항상 ViewAction::None을 반환한다.
                 // PresetWindow (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
                 // 이 경로에서 처리한다. 그 외 modal Close 는 위쪽 모달 경로에서 소비된다.
                 w.handle_event(event, &mut ctx)
             } else {
-                WindowAction::None
+                ViewAction::None
             }
         };
         if self.view.windows.contains_key(&id) {
             match action {
-                WindowAction::None => {}
-                WindowAction::Close => {
+                ViewAction::None => {}
+                ViewAction::Close => {
                     if self.preset_window_id == Some(id) {
                         self.on_preset_window_closed(id);
                         return;
                     }
                     debug_assert!(false, "non-modal window returned Close unexpectedly");
                 }
-                WindowAction::CloseWithEvent(app_event) => {
+                ViewAction::CloseWithEvent(app_event) => {
                     if self.preset_window_id == Some(id) {
                         self.on_preset_window_closed(id);
                         crate::shortcuts::send_app_event(&self.view.proxy, app_event);

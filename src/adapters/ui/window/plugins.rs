@@ -12,8 +12,7 @@ use std::sync::Arc;
 use winit::event::WindowEvent;
 
 use crate::adapters::ui::window::{
-    ModalWindow, Modality, Window, WindowAction, WindowBase, WindowCtx, modal::MODAL_MODALITY,
-    sealed,
+    ModalView, Modality, ViewAction, ViewCtx, Window, WindowBase, modal::MODAL_MODALITY, sealed,
 };
 use crate::adapters::ui::{LayoutContext, ToastManager};
 use crate::gpu::GpuState;
@@ -71,10 +70,10 @@ impl Window for PluginsWindow {
         MODAL_MODALITY
     }
 
-    fn as_modal(&self) -> Option<&dyn ModalWindow> {
+    fn as_modal(&self) -> Option<&dyn ModalView> {
         Some(self)
     }
-    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
+    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
         Some(self)
     }
 
@@ -85,7 +84,7 @@ impl Window for PluginsWindow {
         self
     }
 
-    fn handle_event(&mut self, event: WindowEvent, _ctx: &mut WindowCtx<'_>) -> WindowAction {
+    fn handle_event(&mut self, event: WindowEvent, _ctx: &mut ViewCtx<'_>) -> ViewAction {
         let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
         if egui_repaint {
             self.mark_dirty();
@@ -94,7 +93,7 @@ impl Window for PluginsWindow {
         match event {
             WindowEvent::CloseRequested => {
                 self.should_close = true;
-                return WindowAction::Close;
+                return ViewAction::Close;
             }
             WindowEvent::Resized(new_size) => {
                 self.base.gpu.resize(new_size);
@@ -113,9 +112,9 @@ impl Window for PluginsWindow {
         }
 
         if self.should_close {
-            WindowAction::Close
+            ViewAction::Close
         } else {
-            WindowAction::None
+            ViewAction::None
         }
     }
 
@@ -160,7 +159,7 @@ impl Window for PluginsWindow {
     }
 }
 
-impl ModalWindow for PluginsWindow {
+impl ModalView for PluginsWindow {
     fn shown(&self) -> bool {
         self.shown
     }

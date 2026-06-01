@@ -2,13 +2,13 @@
 //!
 //! ```text
 //! Window (sealed trait)
-//! ├── ModalWindow (supertrait)         — Settings, Quit, ...
-//! └── TerminalHostWindow (supertrait)  — Main, StandaloneSurface, ...
+//! ├── ModalView (supertrait)         — Settings, Quit, ...
+//! └── TerminalHostView (supertrait)  — Main, StandaloneSurface, ...
 //! ```
 //!
 //! 모든 구현체는 `WindowBase`를 composition하여 공통 필드를 공유한다.
 //! `Window`는 sealed이므로 크레이트 외부에서 직접 구현할 수 없다.
-//! 실제 구현체는 반드시 `ModalWindow` 또는 `TerminalHostWindow` 중 하나를 거쳐야 한다.
+//! 실제 구현체는 반드시 `ModalView` 또는 `TerminalHostView` 중 하나를 거쳐야 한다.
 
 pub mod base;
 pub mod editor;
@@ -22,12 +22,12 @@ pub mod terminal_host;
 
 pub(crate) use base::WindowBase;
 pub(crate) use main::MainWindow;
-pub(crate) use modal::ModalWindow;
+pub(crate) use modal::ModalView;
 pub(crate) use plugins::PluginsWindow;
 pub(crate) use preset::PresetWindow;
 pub(crate) use quit::QuitWindow;
 pub(crate) use settings::SettingsWindow;
-pub(crate) use terminal_host::TerminalHostWindow;
+pub(crate) use terminal_host::TerminalHostView;
 
 /// `Box<dyn Window>`에서 `MainWindow` 소유권을 추출한다.
 /// 인자가 MainWindow가 아니면 `None` — 호출자가 인지 후 다르게 처리.
@@ -47,7 +47,7 @@ use crate::AppEvent;
 /// 윈도우의 모달리티.
 ///
 /// 도메인 용어(`docs/design/ubiquitous-language.md`): Window는 modality
-/// (Modeless/Modal)와 계열(ModalWindow/TerminalHostWindow)을 속성으로 갖는다.
+/// (Modeless/Modal)와 계열(ModalView/TerminalHostView)을 속성으로 갖는다.
 /// 현재 trait dispatch 경로에서 호출 0이지만 5개 구현체가 `fn modality()`로
 /// 반환하는 도메인 표현이라 보존한다. modal 활성 판정 dispatch가 도입되면 활성화.
 #[allow(dead_code)]
@@ -62,7 +62,7 @@ pub(crate) enum Modality {
 
 /// 이벤트 처리 결과로 윈도우가 요청하는 동작.
 #[must_use]
-pub(crate) enum WindowAction {
+pub(crate) enum ViewAction {
     /// 아무 일도 하지 않음.
     None,
     /// 이 윈도우를 닫음.
@@ -72,7 +72,7 @@ pub(crate) enum WindowAction {
 }
 
 /// 이벤트 핸들러에 함께 전달되는 맥락.
-pub(crate) struct WindowCtx<'a> {
+pub(crate) struct ViewCtx<'a> {
     pub(crate) event_loop: &'a ActiveEventLoop,
     /// 현재 모달 윈도우가 활성 상태인지. true면 비모달 윈도우는 입력을 차단해야 한다.
     pub(crate) modal_active: bool,
@@ -82,14 +82,14 @@ pub(crate) struct WindowCtx<'a> {
 }
 
 /// Sealed 모듈 — 외부에서 `Window`를 직접 구현하지 못하게 차단한다.
-/// `ModalWindow` 또는 `TerminalHostWindow` 중 하나의 supertrait 체인을 경유해야 한다.
+/// `ModalView` 또는 `TerminalHostView` 중 하나의 supertrait 체인을 경유해야 한다.
 pub(crate) mod sealed {
     pub(crate) trait Sealed {}
 }
 
 /// 모든 윈도우 타입이 공유하는 최상위 트레잇.
 ///
-/// 직접 구현하지 말고 `ModalWindow` 또는 `TerminalHostWindow` 중 하나를 구현하라.
+/// 직접 구현하지 말고 `ModalView` 또는 `TerminalHostView` 중 하나를 구현하라.
 /// 각 구현체는 `impl sealed::Sealed for MyWindow {}`를 별도로 추가해야 한다.
 pub(crate) trait Window: sealed::Sealed + std::any::Any {
     fn base(&self) -> &WindowBase;
@@ -99,17 +99,17 @@ pub(crate) trait Window: sealed::Sealed + std::any::Any {
     #[allow(dead_code)]
     fn modality(&self) -> Modality;
 
-    fn handle_event(&mut self, event: WindowEvent, ctx: &mut WindowCtx<'_>) -> WindowAction;
+    fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction;
     fn render(&mut self);
 
     /// 모달 계열 다운캐스트. 모달이 아니면 `None`.
-    /// 도메인 placeholder — `ModalWindow` 다운캐스트 dispatch가 도입되면 활성화.
+    /// 도메인 placeholder — `ModalView` 다운캐스트 dispatch가 도입되면 활성화.
     #[allow(dead_code)]
-    fn as_modal(&self) -> Option<&dyn ModalWindow> {
+    fn as_modal(&self) -> Option<&dyn ModalView> {
         None
     }
     #[allow(dead_code)]
-    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalWindow> {
+    fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
         None
     }
 
