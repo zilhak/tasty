@@ -5,6 +5,7 @@
 
 #![allow(dead_code)]
 
+#[cfg(feature = "gui")]
 pub mod arboard_clip;
 pub mod directories_home;
 pub mod portable_pty;
@@ -12,4 +13,5 @@ pub mod std_clock;
 pub mod std_fs;
 pub mod std_process;
 pub mod tcp_ipc_server;
+#[cfg(feature = "gui")]
 pub mod winit_waker;
