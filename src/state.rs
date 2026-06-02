@@ -317,10 +317,12 @@ pub struct AppState {
 
     /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
+    #[cfg(feature = "gui")]
     pub(crate) markdown_views: crate::adapters::ui::surface::markdown::view::MarkdownViewStore,
 
     /// Per-surface host view state for `ImagePanel` (pixel buffer, textures, edit state,
     /// undo history, brush settings, popup buffers).
+    #[cfg(feature = "gui")]
     pub(crate) image_views: crate::adapters::ui::surface::image::view::ImageViewStore,
 
     /// 사이드바 도구 메뉴 항목. 활성 plugin의 `[[contributes.tool]]`
@@ -626,7 +628,9 @@ impl AppState {
             command_palette: crate::state::command_palette::CommandPaletteState::default(),
             #[cfg(feature = "gui")]
             toasts: crate::adapters::ui::ToastManager::new(),
+            #[cfg(feature = "gui")]
             markdown_views: Default::default(),
+            #[cfg(feature = "gui")]
             image_views: Default::default(),
             tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),
             pending_tool_events: Vec::new(),
@@ -717,8 +721,11 @@ impl AppState {
         if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(&self.memory, surface_id) {
             tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
         }
-        self.markdown_views.drop_view(surface_id);
-        self.image_views.drop_view(surface_id);
+        #[cfg(feature = "gui")]
+        {
+            self.markdown_views.drop_view(surface_id);
+            self.image_views.drop_view(surface_id);
+        }
         engine.command_index.drop_surface(surface_id);
         engine.observer_router.drop_surface(surface_id);
         let scope = tasty_memory::Scope::Surface(surface_id);
