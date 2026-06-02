@@ -36,7 +36,7 @@ GUI 휘발성 상태(콘텐츠 캐시, 텍스처, 편집 세션, 스크롤 오�
 |-------|------|-----------|
 | `MarkdownPanel` (file_path + mtime) | `MarkdownView` (content, scroll_offset, commonmark_cache) | `AppState::markdown_views` |
 | `ImagePanel` (file_path, dir_images) | `ImageView` (original_image, texture, edit_state, undo history, brush, popup buffers) | `AppState::image_views` |
-| `HtmlPanel` (url) | (없음 — 모델이 충분히 슬림. native WebView는 `MainWindow::webviews`에서 직접 관리) | — |
+| `HtmlPanel` (url) | (없음 — 모델이 충분히 슬림. native WebView는 `MainView::webviews`에서 직접 관리) | — |
 
 이 분리로 모델은 직렬화 친화적인 식별 정보만 남고, GUI 라이브러리(egui)에 묶이지 않는다 → 향후 플러그인 프로세스에서 동일한 모델을 그대로 사용 가능.
 
@@ -142,27 +142,36 @@ pipeline.rs는 wgpu RenderPipelineDescriptor의 장황한 선언 코드가 대�
 
 ---
 
-## window/ — Window 트레잇 계층과 구현체
+## view/ — View 트레잇 계층과 구현체
 
-**책임:** 모든 윈도우 타입의 trait 계층 정의 및 구현체 관리.
+**책임:** 모든 View 타입의 trait 계층 정의 및 구현체 관리.
 
-`Window` sealed trait을 최상위로 두고, `ModalWindow`/`TerminalHostWindow` supertrait으로
-계열을 분리한다. 모든 구현체는 `WindowBase` 구조체를 composition하여 공통 필드를 공유한다.
+`View` sealed trait을 최상위로 두고, `ModalView`/`TerminalHostView`/`EditorView`
+supertrait 으로 계열을 분리한다. 모든 구현체는 `ViewBase` 구조체를 composition 하여
+공통 필드를 공유한다. Window 어휘는 winit OS-level concept 에만 사용.
 
 | 파일/디렉토리 | 역할 |
 |---------------|------|
-| `mod.rs` | `Window` sealed trait, `Modality`, `WindowAction`, `WindowCtx`, `sealed::Sealed`, `unbox_main()` |
-| `base.rs` | `WindowBase`: gpu, winit, dirty, modifiers, focused, close_requested 공통 필드 |
-| `modal.rs` | `ModalWindow` supertrait (reveal_after_first_render, on_escape default method) |
-| `terminal_host.rs` | `TerminalHostWindow` supertrait (has_sidebar default method) |
-| `settings.rs` | `SettingsWindow` (impl Window + ModalWindow) |
-| `quit.rs` | `QuitWindow` (impl Window + ModalWindow) |
-| `main/mod.rs` | `MainWindow` 구조체, new(), `handle_event` dispatch (impl Window + TerminalHostWindow) |
+| `mod.rs` | `Modality`, `ViewAction`, `ViewCtx`, `ViewRegistry` (proxy + 모든 view HashMap + focused/active_modal id), `unbox_main()` |
+| `ui.rs` | `View` sealed trait, `sealed::Sealed` |
+| `base.rs` | `ViewBase`: gpu, winit, dirty, modifiers, focused, close_requested 공통 필드 |
+| `modal.rs` | `ModalView` supertrait (reveal_after_first_render, on_escape default method) |
+| `terminal_host.rs` | `TerminalHostView` supertrait (has_sidebar default method) |
+| `editor.rs` | `EditorView` supertrait (modeless 에디터 marker) |
+| `settings.rs` | `SettingsView` (impl View + ModalView) |
+| `quit.rs` | `QuitView` (impl View + ModalView) |
+| `plugins.rs` | `PluginsView` (impl View + ModalView) — plugin manager 모달 |
+| `preset.rs` | `PresetView` (impl View + EditorView) — workspace/tab/pane preset 편집기 |
+| `main.rs` (+ `main/`) | `MainView` 구조체, new(), `handle_event` dispatch (impl View + TerminalHostView) |
 | `main/keyboard.rs` | handle_keyboard_input(), send_key_to_terminal(), handle_ime() |
 | `main/mouse.rs` | handle_cursor_moved(), handle_mouse_input(), handle_mouse_wheel() |
 | `main/selection.rs` | 텍스트 선택 (다중 클릭 감지, 단어/줄 경계, 그리드 변환) |
 | `main/redraw.rs` | handle_redraw(): arrow queue + 터미널 이벤트 + 훅 실행 + 렌더 |
 | `main/clipboard.rs` | paste_to_terminal(), 이미지 저장 |
+| `main/ime.rs` | IME 핸들러 (preedit, commit, anchor) |
+| `main/file_drop.rs` | winit DroppedFile 라우팅 |
+| `main/divider_drag.rs` | divider 드래그 상태 |
+| `main/preset_actions.rs` | preset 트리거 처리 |
 
 ---
 
@@ -258,7 +267,7 @@ keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 �
 |------|-----|------|
 | `main.rs` | 402 | App 구조체, 윈도우 생성/관리, process_ipc, winit 이벤트 루프 |
 | `event_handler.rs` | 182 | ApplicationHandler impl (winit 이벤트 → App 메서드 위임) |
-| `engine.rs` | ~60 | Engine 구조체 (IPC 서버, 윈도우 ID, EventLoopProxy) |
+| `engine.rs` | ~60 | Engine 구조체 (IPC 서버, View ID, EventLoopProxy) |
 | `engine_state.rs` | 270 | EngineState (워크스페이스 Vec, 설정, HookManager, 알림, waker factory) |
 | `shortcuts.rs` | 439 | 키보드 단축키: physical→logical 변환, binding 매칭, 카테고리별 핸들러 |
 | `font.rs` | 408 | FontConfig (cosmic-text 측정) + GlyphAtlas (shelf packing + 래스터라이징) |
@@ -268,12 +277,16 @@ keybindings_tab.rs의 egui_key_to_string 매핑 테이블은 키 목록을 1:1 �
 | `notification.rs` | 248 | NotificationStore (FIFO, 병합, 읽음 추적) + OS 네이티브 알림 |
 | `global_hooks.rs` | 209 | GlobalHookManager (interval/once/file 조건 기반 훅) |
 | `surface_meta.rs` | ~90 | Surface별 key-value 메타데이터 (OnceLock + Mutex HashMap) |
-| `window/mod.rs` | ~90 | Window sealed trait, Modality, WindowAction, WindowCtx, unbox_main |
-| `window/base.rs` | ~30 | WindowBase (모든 윈도우 공통 필드 composition struct) |
-| `window/modal.rs` | ~30 | ModalWindow supertrait (모달 계열 공통 default method) |
-| `window/terminal_host.rs` | ~25 | TerminalHostWindow supertrait (일반 윈도우 계열) |
-| `window/settings.rs` | ~160 | SettingsWindow (설정 모달, impl Window + ModalWindow) |
-| `window/quit.rs` | ~170 | QuitWindow (종료 확인 모달, impl Window + ModalWindow) |
+| `view/mod.rs` | ~110 | Modality, ViewAction, ViewCtx, ViewRegistry, unbox_main |
+| `view/ui.rs` | ~70 | View sealed trait + sealed::Sealed |
+| `view/base.rs` | ~30 | ViewBase (모든 View 공통 필드 composition struct) |
+| `view/modal.rs` | ~30 | ModalView supertrait (모달 계열 공통 default method) |
+| `view/terminal_host.rs` | ~25 | TerminalHostView supertrait (터미널 호스트 계열) |
+| `view/editor.rs` | ~20 | EditorView supertrait (modeless 에디터 marker) |
+| `view/settings.rs` | ~160 | SettingsView (설정 모달, impl View + ModalView) |
+| `view/quit.rs` | ~170 | QuitView (종료 확인 모달, impl View + ModalView) |
+| `view/plugins.rs` | ~110 | PluginsView (plugin 매니저 모달, impl View + ModalView) |
+| `view/preset.rs` | ~140 | PresetView (preset 편집기, impl View + EditorView) |
 | `i18n.rs` | ~100 | TOML 기반 번역 (en/ko/ja 내장 + 사용자 오버라이드) |
 | `crash_report.rs` | 243 | panic hook + 크래시 로그 수집 |
 | `markdown_ui.rs` | ~100 | egui 마크다운 렌더링 (제목/목록/코드블록/테이블). 시그니처: `(ui, &mut MarkdownView, scroll_delta, id, font)` |
