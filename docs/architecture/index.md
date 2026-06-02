@@ -102,13 +102,15 @@ src/
 ├── engine_state.rs         # EngineState (공유 상태: 워크스페이스/설정/훅/알림)
 ├── waker_factory_winit.rs  # winit EventLoopProxy 기반 Waker 팩토리
 │
-├── state/                  # AppState (윈도우당 1개) — workspace/tab/pane/focus/layout/mouse/mark/restore/message
-├── window/                 # Window sealed trait + 구현체
-│   ├── mod.rs              # Window/Modality/WindowAction
-│   ├── base.rs             # WindowBase 공통 필드
-│   ├── modal.rs / terminal_host.rs   # supertrait
-│   ├── settings.rs / quit.rs / plugins.rs  # 모달 윈도우
-│   └── main/               # MainWindow (TerminalHostWindow): keyboard/mouse/ime/selection/redraw/clipboard
+├── state/                  # AppState (MainView 당 1개) — workspace/tab/pane/focus/layout/mouse/mark/restore/message
+├── view/                   # View sealed trait + 구현체
+│   ├── mod.rs              # Modality/ViewAction/ViewCtx/ViewRegistry/unbox_main
+│   ├── ui.rs               # View sealed trait
+│   ├── base.rs             # ViewBase 공통 필드
+│   ├── modal.rs / terminal_host.rs / editor.rs   # supertrait
+│   ├── settings.rs / quit.rs / plugins.rs  # ModalView 구현체
+│   ├── preset.rs           # EditorView 구현체 (PresetView)
+│   └── main.rs (+ main/)   # MainView (TerminalHostView): keyboard/mouse/ime/selection/redraw/clipboard
 │
 ├── gpu/                    # GPU 상태 (GpuState/render_pass/egui_bridge/fonts/screenshot/shell_setup/
 │                           #   canvas_prepare/canvas_texture)
@@ -167,12 +169,12 @@ src/
 ```
 main.rs
 ├── engine / engine_state           ← IPC 서버, 공유 상태
-├── window/                          ← Window 트레잇 + 구현체
-│   ├── main/                        ← MainWindow (TerminalHostWindow)
+├── view/                            ← View 트레잇 + 구현체
+│   ├── main/                        ← MainView (TerminalHostView)
 │   │   ├── gpu/ → renderer/ → tasty-font
 │   │   ├── ui/ → state/
 │   │   └── shortcuts
-│   ├── settings.rs / quit.rs / plugins.rs   ← ModalWindow
+│   ├── settings.rs / quit.rs / plugins.rs   ← ModalView
 │   └── modal.rs / terminal_host.rs / base.rs
 ├── plugin/                          ← plugin 호스트 (manifest/process/manager/registry/...)
 ├── ipc/                             ← IPC 서버 + handler/
@@ -228,7 +230,7 @@ tasty (binary) ← 모든 위 크레이트
 
 ## 데이터 흐름
 
-1. **키보드 입력 → 화면**: winit KeyEvent → MainWindow → shortcuts/send_key → tasty-terminal → PTY → 리더 스레드 → EventLoopProxy → CellRenderer → wgpu
+1. **키보드 입력 → 화면**: winit KeyEvent → MainView → shortcuts/send_key → tasty-terminal → PTY → 리더 스레드 → EventLoopProxy → CellRenderer → wgpu
 2. **PTY 출력 → 렌더링**: PTY 리더 → Terminal::process → termwiz Parser → Surface → CellRenderer::prepare → 2-pass 렌더
 3. **IPC 요청 → 응답**: TCP → IpcServer → mpsc → main process_ipc → handler::handle (또는 main.rs 직접 dispatch) → AppState → JsonRpcResponse → TCP
 4. **Plugin 호출**: handler/plugin.rs → plugin/manager → plugin process (stdio) → tasty-plugin-sdk → 응답

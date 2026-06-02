@@ -26,18 +26,18 @@ Engine
 
 Modal modality를 가진 Window가 열리면, 엔진이 `active_modal_id`를 설정한다.
 
-- **모든 Modeless Window**는 키보드/마우스 입력을 무시한다 (`WindowCtx.modal_active`)
+- **모든 Modeless Window**는 키보드/마우스 입력을 무시한다 (`ViewCtx.modal_active`)
 - Modal Window만 입력을 받는다
 - Modal을 닫아야만 다른 Window에 다시 포커스가 간다
 - `engine.focused_window_id`는 Modeless Window 전용이며, Modal이 활성 중에도
-  기존 focused MainWindow ID가 보존된다 (Modal 닫히면 자연 복귀)
+  기존 focused MainView ID가 보존된다 (Modal 닫히면 자연 복귀)
 
 ### 3. Modality별 차이
 
 | Modality | 구현체 | 동작 |
 |----------|--------|------|
-| Modal | `SettingsWindow`, `QuitWindow` | 전체 입력 차단, 닫기 전까지 다른 조작 불가 |
-| Modeless | `MainWindow` (+ 미래 StandaloneSurface/Workspace) | 독립 포커스, 다른 윈도우와 공존 |
+| Modal | `SettingsView`, `QuitView` | 전체 입력 차단, 닫기 전까지 다른 조작 불가 |
+| Modeless | `MainView` (+ 미래 StandaloneSurface/Workspace) | 독립 포커스, 다른 윈도우와 공존 |
 
 ### 4. 포커스 차단 구현
 
@@ -46,7 +46,7 @@ OS 네이티브 윈도우 비활성화(Win32 `EnableWindow` 등)를 사용하지
 대신 앱 레벨에서 처리:
 
 - 엔진이 `active_modal_id: Option<WindowId>`를 보유
-- 이벤트 디스패처가 각 Window에 `WindowCtx { modal_active: bool }`을 전달
+- 이벤트 디스패처가 각 Window에 `ViewCtx { modal_active: bool }`을 전달
 - `Window::handle_event` 구현체는 `ctx.modal_active == true`이면 입력 이벤트를
   `Resized/RedrawRequested/ScaleFactorChanged/ModifiersChanged/Focused`만 허용
 - Modal 자신은 `modal_active: false`로 받아 정상 동작

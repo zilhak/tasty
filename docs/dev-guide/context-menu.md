@@ -39,7 +39,7 @@ if resp.secondary_clicked() {
 }
 ```
 
-### 2단계: MainWindow에서 네이티브 메뉴 표시 + 결과 처리
+### 2단계: MainView에서 네이티브 메뉴 표시 + 결과 처리
 
 `window/main/redraw.rs`의 `process_pending_native_menu()`에서 `PendingNativeMenu`를 꺼내 OS 네이티브 메뉴를 표시하고, 선택 결과를 즉시 처리한다.
 

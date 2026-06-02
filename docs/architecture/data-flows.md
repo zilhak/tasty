@@ -9,19 +9,19 @@
 ```
 winit KeyEvent
   → event_handler.rs (ApplicationHandler::window_event)
-  → window/main/mod.rs (Window::handle_event)
+  → view/main.rs (View::handle_event)
   → gpu/mod.rs (handle_egui_event) — egui가 소비하면 여기서 종료
-  → tasty_window/keyboard.rs (handle_keyboard_input)
+  → view/main/keyboard.rs (handle_keyboard_input)
       ├── Escape → 설정/알림 패널 닫기
       ├── shortcuts.rs (handle_shortcut) → 단축키 매칭 시 종료
-      └── tasty_window/keyboard.rs (send_key_to_terminal)
+      └── view/main/keyboard.rs (send_key_to_terminal)
           → tasty-terminal crate (Terminal::send_key)
           → PTY stdin
               → 셸 프로세스 처리
               → PTY stdout
           → 리더 스레드 (Terminal 내부, 8KB 청크)
           → EventLoopProxy::send_event(TerminalOutput)
-  → tasty_window/redraw.rs (handle_redraw)
+  → view/main/redraw.rs (handle_redraw)
       → state/layout.rs (process_all) — 모든 터미널 process()
       → gpu/mod.rs (render)
           → renderer/mod.rs (prepare_terminal_viewport)
@@ -87,12 +87,12 @@ CLI 클라이언트 (cli/mod.rs run_client)
   └── tasty-terminal lib.rs (프로세스 종료) → TerminalEvent::ProcessExited
 
 수집 + 저장:
-  → tasty_window/redraw.rs (handle_redraw)
+  → view/main/redraw.rs (handle_redraw)
       → state/mod.rs (collect_events) — 모든 워크스페이스 순회
       → notification.rs (NotificationStore::add)
           ├── 병합: 같은 소스에서 coalesce_ms 이내 → body 합치기
           └── FIFO: 100개 초과 시 pop_front
-      → notify-rust (OS 네이티브 알림, 비활성 윈도우 + 초당 1회 제한)
+      → notify-rust (OS 네이티브 알림, 비활성 view + 초당 1회 제한)
       → tasty-hooks (HookManager::check_and_fire) — Notification 이벤트 훅 실행
 
 UI 표시:
@@ -116,11 +116,11 @@ UI 표시:
 
 런타임 변경:
   → shortcuts.rs (toggle_settings) → AppEvent::OpenSettings
-  → main.rs (open_settings_modal) → window/settings.rs (SettingsWindow, 별도 OS 윈도우)
+  → main.rs (open_settings_modal) → view/settings.rs (SettingsView, 별도 OS 윈도우)
       → settings_ui/mod.rs (draw_settings_panel) — 드래프트 편집
       → Save: settings = draft + settings.save() (TOML 직렬화 → 파일 쓰기)
   → main.rs (close_active_modal)
-      → SettingsWindow downcast → 모든 MainWindow에 새 설정 적용
+      → SettingsView downcast → 모든 MainView에 새 설정 적용
 
 런타임 즉시 반영되는 항목:
   - font_size/font_family: gpu/egui_bridge.rs (post_egui_update)에서 변경 감지 → 렌더러 재초기화

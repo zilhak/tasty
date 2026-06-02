@@ -318,7 +318,7 @@ Tasty의 개발 정책상 다음 차이를 둔다. **dispatcher가 강제 거부
 | closed-tab restore 스택 push | 가능 | 금지 |
 | OS 윈도우 focus API 호출 | 가능 | 금지 (focus 독립성 원칙) |
 | Workspace activate | 가능 | 금지 (focus 독립성 원칙) |
-| Window 생성 (PresetWindow 등) | 가능 | 금지 |
+| Window 생성 (PresetView 등) | 가능 | 금지 |
 
 분기 위치는 핸들러 본문의 `origin.is_user()`. enum variant로 분기하지 않는다.
 

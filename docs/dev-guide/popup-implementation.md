@@ -7,7 +7,7 @@
 | 개념 | 정의 | 입력 차단 | 동시 열기 | 구현 |
 |------|------|----------|----------|------|
 | **Window** | 독립 OS 윈도우 | OS 네이티브 포커스 | 여러 개 가능 | `winit::window::Window` + sealed trait |
-| **Modal** | Window의 특수 modality. 전역 입력 독점 | 닫기 전 다른 조작 불가 | 엔진 전역 최대 1개 | 별도 OS 윈도우 (SettingsWindow, QuitWindow 등) |
+| **Modal** | Window의 특수 modality. 전역 입력 독점 | 닫기 전 다른 조작 불가 | 엔진 전역 최대 1개 | 별도 OS 윈도우 (SettingsView, QuitView 등) |
 | **Popup** | Window 내부 가상 창 | 키보드: 포커스 시 차단. 마우스: 입력 계층에 따라 소비 | 여러 개 가능 | `PopupManager` + `PopupDef` |
 
 상세 정의: `docs/design/ubiquitous-language.md`

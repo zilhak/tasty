@@ -354,12 +354,12 @@ Workspace / Tab / Pane 레이아웃과 각 leaf surface 의 초기화 파라미�
 - 사이드바 워크스페이스 카드 우클릭 → "워크스페이스 프리셋으로 저장"
 - 탭 타이틀 우클릭 → "탭 프리셋으로 저장" 또는 "페인 프리셋으로 저장"
 - 탭바 빈 공간 우클릭 → "페인 프리셋으로 저장"
-- 좌측 하단 도구 메뉴 → "프리셋" 으로 PresetWindow 직접 오픈
+- 좌측 하단 도구 메뉴 → "프리셋" 으로 PresetView 직접 오픈
 
 저장 위치: `~/.tasty/presets/{workspace,tab,pane}/<name>.toml`. 파일명이 정본 — 같은 kind 내 이름 중복 불가. 충돌 시 `unique_name`이 `-N` suffix 를 자동 부여.
 
 ### 편집
-PresetWindow(EditorWindow 계열, modeless, 종류별 1개 인스턴스)에서 좌측 리스트로 항목을 고르고 우측에서 이름, subtitle(workspace), 레이아웃 트리, 각 leaf surface 의 (kind, cwd, 시작 명령어, kind 별 파라미터)를 편집한다. 시작 명령어 입력 폼은 surface kind 가 `terminal` 일 때만 표시된다.
+PresetView(EditorView 계열, modeless, 종류별 1개 인스턴스)에서 좌측 리스트로 항목을 고르고 우측에서 이름, subtitle(workspace), 레이아웃 트리, 각 leaf surface 의 (kind, cwd, 시작 명령어, kind 별 파라미터)를 편집한다. 시작 명령어 입력 폼은 surface kind 가 `terminal` 일 때만 표시된다.
 
 ### 적용
 - 단축키(`apply_workspace_preset` / `apply_tab_preset` / `apply_pane_preset` — 기본 빈 칸, 사용자 할당): 적용 popup 을 열고 항목 선택 → Enter → 새 워크스페이스/탭/페인 생성 + 포커스 이동
@@ -1515,7 +1515,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - **권한 자동 복구**: builtin plugin이 사용자 디렉터리에는 있지만 `plugins.toml`에 grant 엔트리가 없는 경우(예: 이전 버전에서 builtin으로 인식되지 않은 채 외부 plugin처럼 설치됨), 부팅 시 매니페스트의 모든 권한을 자동 grant. `granted = []`로 명시 비워둔 경우는 entry가 있으니 건드리지 않음
 
 ### Plugin 관리 모달
-- 사이드바 좌측 메뉴의 🧩 버튼으로 PluginsWindow 모달 진입 (Settings 모달과 동일 패턴)
+- 사이드바 좌측 메뉴의 🧩 버튼으로 PluginsView 모달 진입 (Settings 모달과 동일 패턴)
 - 상단 탭: **Installed**(설치된 플러그인 목록 + 상세) / **Add plugin**(외부 디렉터리에서 import)
 - Installed 탭: 좌측 plugin 목록 + 우측 상세 — 이름/버전/설명/저자/홈페이지, 활성 토글, 등록 surface kinds, 매니페스트 권한 / grant 상태, 설치 경로(폴더 열기 버튼 포함), 로그 파일 경로
 - 권한 grant/revoke 버튼으로 즉시 반영 (process 재시작 없이)
@@ -1803,7 +1803,7 @@ VS Code 스타일의 모든 단축키 명령을 쿼리로 검색하여 실행할
 - 매칭 알고리즘: 정확 substring (단어 시작 보너스) → 부분 시퀀스 (gap 페널티) 순으로 점수화
 - `↑/↓` 이동, `Enter` 실행, `Esc` 닫기, 클릭으로도 실행
 - 우측에 첫 번째 바인딩(예: `ctrl+w`)을 회색으로 표시
-- Enter 시 `state.command_palette.pending_run` 에 `field_id` 를 적재 → MainWindow가 다음 프레임 render 직후 drain하여 `dispatch_action_by_id` 호출
+- Enter 시 `state.command_palette.pending_run` 에 `field_id` 를 적재 → MainView가 다음 프레임 render 직후 drain하여 `dispatch_action_by_id` 호출
 - dispatch는 동일한 action body를 사용하므로 단축키와 정확히 같은 효과
 
 ### 지원 명령
@@ -1815,7 +1815,7 @@ VS Code 스타일의 모든 단축키 명령을 쿼리로 검색하여 실행할
 ### 구현
 - 상태: `src/command_palette.rs` — `CommandPaletteState { query, selected, pending_run }`, `search()`, `match_score()`
 - popup: `src/ui/command_palette_popup.rs` (`command_palette` ID, 520x360, sticky_focus, close_on_outside_click)
-- dispatch: `src/shortcuts.rs::MainWindow::dispatch_action_by_id(action_id: &str) -> bool`
+- dispatch: `src/shortcuts.rs::MainView::dispatch_action_by_id(action_id: &str) -> bool`
 - 단축키: `KeybindingSettings::toggle_command_palette` (`ctrl+shift+p`)
 - drain: `src/view/main/redraw.rs` 의 render 직후
 - i18n: `command_palette.*` (en/ko/ja)

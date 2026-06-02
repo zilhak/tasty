@@ -139,7 +139,7 @@ state.foo_views = foo_views;  // 반드시 복원 (이후 state 접근 전에)
 | `MarkdownPanel` (file_path + mtime) | `MarkdownView` (content, scroll_offset, commonmark_cache) | `AppState::markdown_views` |
 | `ImagePanel` (file_path, dir_images, current_index) | `ImageView` (original_image, texture, edit_state, brush, popup buffers) | `AppState::image_views` |
 | `ExplorerPanel` (root_path, root_node) | `ExplorerView` (selection, scroll, address bar 버퍼, focus 추적, refresh 타이머, preview 캐시) | `AppState::explorer_views` |
-| `HtmlPanel` (url) | (없음 — 모델 자체가 슬림. native WebView는 `MainWindow::webviews`) | — |
+| `HtmlPanel` (url) | (없음 — 모델 자체가 슬림. native WebView는 `MainView::webviews`) | — |
 | `TerminalSurface` | (없음 — 터미널 자체가 호스트와 분리되어 있고 GPU 렌더링) | — |
 | `EmptySurface` | (없음 — id만 보유) | — |
 
