@@ -742,7 +742,9 @@ impl AppState {
         if let Some(old_terminal) = engine.terminals.remove(surface_id) {
             drop(old_terminal); // SIGHUP — 명시 drop.
         }
-        if let Err(e) = crate::surface_meta::SurfaceMetaStore::remove(&self.memory, surface_id) {
+        let remove_result =
+            self.with_memory(|m| crate::surface_meta::SurfaceMetaStore::remove(m, surface_id));
+        if let Err(e) = remove_result {
             tracing::warn!("surface_meta remove failed for surface {surface_id}: {e}");
         }
         #[cfg(feature = "gui")]

@@ -104,7 +104,9 @@ fn resolve_surface_target(state: &AppState, params: &serde_json::Value) -> Optio
             return Some(n);
         }
         // Try nickname lookup
-        return crate::surface_meta::SurfaceMetaStore::find_by_value(&state.memory, "nickname", s);
+        return state.with_memory(|m| {
+            crate::surface_meta::SurfaceMetaStore::find_by_value(m, "nickname", s)
+        });
     }
     None
 }

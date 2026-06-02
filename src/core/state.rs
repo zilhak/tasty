@@ -374,7 +374,11 @@ impl CoreState {
     pub fn push_closed_item(&mut self, mut item: crate::model::ClosedItem) {
         let mem = self.memory.clone();
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
-            crate::surface_meta::SurfaceMetaStore::get(&mem, sid, "restore.command")
+            let mut guard = match mem.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            crate::surface_meta::SurfaceMetaStore::get(&mut *guard, sid, "restore.command")
         });
         self.closed_items.push(item);
     }

@@ -175,8 +175,17 @@ impl SavedSurface {
             .downcast_ref::<crate::model::TerminalSurface>()
         {
             let surface_id = ts.id;
-            let restore_command =
-                crate::surface_meta::SurfaceMetaStore::get(memory, surface_id, "restore.command");
+            let restore_command = {
+                let mut guard = match memory.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                crate::surface_meta::SurfaceMetaStore::get(
+                    &mut *guard,
+                    surface_id,
+                    "restore.command",
+                )
+            };
             let cwd = ctx
                 .terminals
                 .get(surface_id)
@@ -214,7 +223,15 @@ impl SavedSurface {
                 .as_ref()
                 .and_then(|s| s.restore_command.clone())
                 .or_else(|| {
-                    crate::surface_meta::SurfaceMetaStore::get(memory, es.id, "restore.command")
+                    let mut guard = match memory.lock() {
+                        Ok(g) => g,
+                        Err(p) => p.into_inner(),
+                    };
+                    crate::surface_meta::SurfaceMetaStore::get(
+                        &mut *guard,
+                        es.id,
+                        "restore.command",
+                    )
                 });
             // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
             // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →

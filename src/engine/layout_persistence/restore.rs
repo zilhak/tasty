@@ -277,8 +277,12 @@ impl SavedSurface {
                 // (capture_surface 의 deferred 분기 참조), DeferredSpawn 으로 옮기기
                 // 전에 동일 값을 meta 에도 mirror 한다.
                 if let Some(cmd) = restore_command.as_deref() {
+                    let mut guard = match engine.memory.lock() {
+                        Ok(g) => g,
+                        Err(p) => p.into_inner(),
+                    };
                     if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
-                        &engine.memory,
+                        &mut *guard,
                         surface_id,
                         "restore.command",
                         cmd,

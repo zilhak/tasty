@@ -670,9 +670,10 @@ pub(crate) fn apply_meta(
     if let Some(map) = meta {
         for (key, value) in map {
             if let Some(v) = value.as_str() {
-                if let Err(e) =
-                    crate::surface_meta::SurfaceMetaStore::set(&state.memory, surface_id, key, v)
-                {
+                let result = state.with_memory(|m| {
+                    crate::surface_meta::SurfaceMetaStore::set(m, surface_id, key, v)
+                });
+                if let Err(e) = result {
                     tracing::warn!(
                         "surface_meta set failed for surface {surface_id} key '{key}': {e}"
                     );
