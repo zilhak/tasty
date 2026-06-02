@@ -34,14 +34,10 @@ fn wildcard_matches_same_namespace() {
 }
 
 #[test]
-fn host_publish_fans_out_to_host_subscriber() {
+fn host_publish_with_no_plugin_subscriber_returns_empty() {
     let bus = EventBus::new();
-    let (tx, rx) = mpsc::channel();
-    bus.subscribe_host("surface.*", tx);
     let dispatches = bus.publish_from_host(env("surface.created", EventOrigin::Host));
-    assert!(dispatches.is_empty()); // plugin 구독자 없음
-    let got = rx.try_recv().expect("host subscriber should receive");
-    assert_eq!(got.key, "surface.created");
+    assert!(dispatches.is_empty());
 }
 
 #[test]
@@ -189,16 +185,12 @@ fn debug_trace_returns_recent_envelopes_by_id() {
 
 #[test]
 fn unicast_to_plugin_bypasses_subscribers_and_uses_zero_sub_id() {
-    // unicast는 fan-out과 별개 경로. 호스트/다른 plugin이 구독해도 envelope를 받지 않는다.
+    // unicast는 fan-out과 별개 경로. 다른 plugin이 구독해도 envelope를 받지 않는다.
     let bus = EventBus::new();
-    let (tx, rx) = mpsc::channel();
-    bus.subscribe_host("command.*", tx);
     bus.set_plugin_permissions("p2", vec!["command.*".into()], vec![]);
     bus.subscribe_plugin("p2", 1, "command.*".into()).unwrap();
     let envelope = env("command.invoked", EventOrigin::Host);
     let dispatch = bus.unicast_to_plugin("p1", envelope);
     assert_eq!(dispatch.plugin_id, "p1");
     assert_eq!(dispatch.sub_id, 0);
-    // 호스트/p2 구독자는 아무것도 받지 않는다.
-    assert!(rx.try_recv().is_err());
 }

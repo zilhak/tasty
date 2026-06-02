@@ -20,8 +20,6 @@
 use std::collections::HashMap;
 #[cfg(debug_assertions)]
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use tasty_plugin_protocol::{
@@ -42,14 +40,6 @@ fn pattern_matches(pattern: &str, key: &str) -> bool {
     }
 }
 
-/// 호스트 측 구독자. 토픽이 매칭되면 mpsc로 envelope를 받아간다.
-/// 호스트 본문이 자기 화면/스토어 갱신용으로 listen할 때 사용.
-pub struct HostSubscription {
-    sub_id: u64,
-    pattern: String,
-    tx: mpsc::Sender<EventEnvelope>,
-}
-
 struct PluginSubscription {
     plugin_id: String,
     sub_id: u64,
@@ -58,8 +48,6 @@ struct PluginSubscription {
 
 /// EventBus 내부 상태. 락 하나로 모든 구독 테이블을 보호.
 struct Inner {
-    next_sub_id: AtomicU64,
-    host_subs: Vec<HostSubscription>,
     plugin_subs: Vec<PluginSubscription>,
     /// 매니페스트의 `event_subscribe` 패턴 (plugin_id → 패턴 목록).
     plugin_subscribe_perms: HashMap<String, Vec<String>>,
@@ -92,8 +80,6 @@ impl EventBus {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
-                next_sub_id: AtomicU64::new(1),
-                host_subs: Vec::new(),
                 plugin_subs: Vec::new(),
                 plugin_subscribe_perms: HashMap::new(),
                 plugin_publish_perms: HashMap::new(),
@@ -125,22 +111,6 @@ impl EventBus {
         inner.plugin_subscribe_perms.remove(plugin_id);
         inner.plugin_publish_perms.remove(plugin_id);
         inner.plugin_subs.retain(|s| s.plugin_id != plugin_id);
-    }
-
-    /// 호스트 본문이 자기 listener를 등록할 때 사용. 반환된 `sub_id`로 `unsubscribe_host` 가능.
-    pub fn subscribe_host(
-        &self,
-        pattern: impl Into<String>,
-        tx: mpsc::Sender<EventEnvelope>,
-    ) -> u64 {
-        let mut inner = self.inner.lock().expect("event bus poisoned");
-        let sub_id = inner.next_sub_id.fetch_add(1, Ordering::Relaxed);
-        inner.host_subs.push(HostSubscription {
-            sub_id,
-            pattern: pattern.into(),
-            tx,
-        });
-        sub_id
     }
 
     /// plugin이 `event.subscribe` IPC로 등록한 구독. 매니페스트 권한과 매칭되지 않으면 `Err`.
@@ -258,15 +228,6 @@ impl EventBus {
             }
             inner.trace_ring.push_back(envelope.clone());
         }
-        // 호스트 구독자.
-        let mut dead_host: Vec<u64> = Vec::new();
-        for sub in &inner.host_subs {
-            if pattern_matches(&sub.pattern, &envelope.key) {
-                if sub.tx.send(envelope.clone()).is_err() {
-                    dead_host.push(sub.sub_id);
-                }
-            }
-        }
         // plugin 구독자.
         let mut dispatches: Vec<PluginDispatch> = Vec::new();
         for sub in &inner.plugin_subs {
@@ -280,11 +241,6 @@ impl EventBus {
                     envelope: envelope.clone(),
                 });
             }
-        }
-        drop(inner);
-        if !dead_host.is_empty() {
-            let mut inner = self.inner.lock().expect("event bus poisoned");
-            inner.host_subs.retain(|s| !dead_host.contains(&s.sub_id));
         }
         dispatches
     }
