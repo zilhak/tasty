@@ -45,7 +45,7 @@ use crate::hub::Hub;
 #[cfg(not(feature = "gui"))]
 use crate::plugin;
 #[cfg(feature = "gui")]
-use crate::view::View;
+use crate::view::ViewRegistry;
 #[cfg(feature = "gui")]
 use crate::{AppEvent, plugin, state};
 
@@ -57,7 +57,7 @@ pub(crate) struct App {
     pub(crate) hub: Hub,
     /// Phase C — GUI 어댑터. proxy, modal/focus 식별자, windows HashMap (예정) 보유.
     #[cfg(feature = "gui")]
-    pub(crate) view: View,
+    pub(crate) view: ViewRegistry,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.
     /// Moved into new windows when created, or used directly for IPC.
     #[cfg(feature = "gui")]
@@ -118,7 +118,7 @@ impl App {
         Ok(Self {
             core: crate::boot::wiring::build_production_core(proxy.clone(), memory)?,
             hub: Hub::new(port_file),
-            view: View::new(proxy.clone()),
+            view: ViewRegistry::new(proxy.clone()),
             parked_states: Vec::new(),
             shell_setup_mode: false,
             shell_setup_path: String::new(),

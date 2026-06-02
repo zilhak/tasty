@@ -79,22 +79,22 @@ pub(crate) struct ViewCtx<'a> {
     pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
 }
 
-pub(crate) struct View {
+pub(crate) struct ViewRegistry {
     /// winit event loop 의 proxy. AppEvent 를 enqueue 하기 위한 채널.
     /// View 영역은 GUI 어댑터로서 winit 과 직접 결합되어 있다.
     pub proxy: EventLoopProxy<AppEvent>,
-    /// When Some, a modal window is active and all other windows should ignore input.
+    /// When Some, a modal view is active and all other views should ignore input.
     /// At most one modal can exist at a time.
     pub active_modal_id: Option<WindowId>,
-    /// The window that currently has focus (receives IPC commands targeting "focused" window).
+    /// The view that currently has focus (receives IPC commands targeting "focused" view).
     pub focused_window_id: Option<WindowId>,
-    /// 모든 윈도우(모달 포함). `active_modal_id`로 현재 활성 모달을 식별한다.
+    /// 모든 View(모달 포함). `active_modal_id`로 현재 활성 모달을 식별한다.
     /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
-    /// D.3.E.3.a — 옛 `App.windows` 가 이쪽으로 이동.
+    /// D.3.E.3.a — 옛 `App.windows` 가 이쪽으로 이동. key 는 winit `WindowId`.
     pub windows: HashMap<WindowId, Box<dyn ui::View>>,
 }
 
-impl View {
+impl ViewRegistry {
     pub(crate) fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
         Self {
             proxy,
