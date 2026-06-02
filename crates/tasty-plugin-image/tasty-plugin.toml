@@ -10,6 +10,8 @@ permissions = [
     "clipboard.read",
     "fs.read",
     "fs.write",
+    "file_handler.define",
+    "file_handler.handle:image",
 ]
 lang_dir = "lang"
 
@@ -26,6 +28,26 @@ rendering = "host"
 [[contributes.ipc_namespace]]
 prefix = "image"
 description_i18n_key = "image.namespace.desc"
+
+# 이미지 확장자 매핑. install 단계가 전역 id 를 "com.tasty.image/image" 로 자동 prefix.
+[[contributes.detector]]
+id = "image"
+display_name_i18n_key = "file_handler.format.image"
+[[contributes.detector.rule]]
+kind = "extension"
+values = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif"]
+
+# id 는 short name (lowercase + 숫자 + `-`, 1~32자). 전역 id 는 install 단계가
+# "com.tasty.image/viewer" 로 자동 prefix.
+[[contributes.handler]]
+id = "viewer"
+detector = "image"
+priority = 50
+display_name_i18n_key = "file_handler.host.image-viewer"
+[contributes.handler.action]
+kind = "open_surface"
+surface_kind = "image"
+param_key = "file"
 
 [[contributes.cli]]
 name = "image"
