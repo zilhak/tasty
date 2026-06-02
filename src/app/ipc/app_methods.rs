@@ -51,7 +51,7 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        if cmd.request.method == "window.create" {
+        if cmd.request.method == "window.create" || cmd.request.method == "view.create" {
             crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
@@ -60,7 +60,7 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        if cmd.request.method == "window.close" {
+        if cmd.request.method == "window.close" || cmd.request.method == "view.close" {
             // CLAUDE.md "포커스 독립": id 로 직접 지정. focused 의존 금지.
             let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
             let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
@@ -103,7 +103,7 @@ impl App {
         // CLAUDE.md: "CLI/IPC로 포커스·활성 탭·활성 워크스페이스를 전환하는 명령은
         // 존재하지 않는다." → release 빌드에 노출 안 함. debug 빌드만 유지.
         #[cfg(debug_assertions)]
-        if cmd.request.method == "window.focus" {
+        if cmd.request.method == "window.focus" || cmd.request.method == "view.focus" {
             let target_id = cmd.request.params.get("id").and_then(|v| v.as_u64());
             let response_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
             let response = match target_id {
@@ -134,7 +134,7 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
-        if cmd.request.method == "window.list" {
+        if cmd.request.method == "window.list" || cmd.request.method == "view.list" {
             let focused_id = self.view.focused_view_id;
             let list: Vec<_> = self
                 .view

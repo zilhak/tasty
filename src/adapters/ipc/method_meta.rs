@@ -286,7 +286,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("window.create", local_only()),
         ("window.close", local_only()),
         ("window.list", local_only()),
-        // window.focus 는 debug 빌드 전용 (DEBUG_METHODS 참조).
+        // E.C.e (D1=b) — Tasty 내부 어휘 통일에 따른 view.* alias. 동작은 window.* 와 동등.
+        // wire format 호환을 위해 양쪽 메서드 명 모두 살림. payload 의 `window_id`
+        // 필드는 외부 wire format 이라 변경 X.
+        ("view.create", local_only()),
+        ("view.close", local_only()),
+        ("view.list", local_only()),
+        // window.focus / view.focus 는 debug 빌드 전용 (DEBUG_METHODS 참조).
         // CLAUDE.md: 포커스 전환은 사용자 단축키/마우스 입력 영역.
         // ── Lua user-script reload — Local only (사용자가 자기 init.lua 를
         //    재로딩하는 동작). plugin이 다른 사용자의 스크립트를 reload 시킬
@@ -326,7 +332,9 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.event_bus.trace", local_only()),
     ("debug.extension.invoke_hook", local_only()),
     // 사용자 입력 재현 — 포커스 전환은 단축키/마우스 영역.
+    // view.focus 는 window.focus 의 alias (E.C.e, D1=b). debug 빌드 only.
     ("window.focus", local_only()),
+    ("view.focus", local_only()),
 ];
 #[cfg(not(debug_assertions))]
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
