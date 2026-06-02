@@ -288,6 +288,11 @@ pub struct SurfaceKindDecl {
     /// `Host`를 허용한다. 기본 `Remote`.
     #[serde(default)]
     pub rendering: SurfaceKindRendering,
+    /// plugin 이 권장하는 surface 기본 색. 사용자 theme TOML 의
+    /// `[surfaces.<kind>]` 정의가 있으면 *그쪽이 우선*.
+    /// fallback chain: 사용자 TOML > plugin default > FALLBACK_SURFACE.
+    #[serde(default)]
+    pub default_colors: Option<tasty_type_appearance::theme::PartialSurfaceTheme>,
 }
 
 /// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "host" | "remote" | "webview"`.

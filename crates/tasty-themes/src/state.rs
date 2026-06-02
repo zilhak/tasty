@@ -20,8 +20,11 @@ pub fn resolve<C: ThemeApplyContext + ?Sized>(ctx: &C) -> Theme {
 }
 
 /// `resolve()` 결과를 전역 `Theme` 에 박는다.
+/// 등록된 plugin surface defaults 도 함께 머지 (사용자 정의 kind 는 보존).
 pub fn install_global<C: ThemeApplyContext + ?Sized>(ctx: &C) {
-    set_theme(resolve(ctx));
+    let mut t = resolve(ctx);
+    crate::plugin_defaults::apply_plugin_defaults_to(&mut t);
+    set_theme(t);
 }
 
 /// id 로 테마를 적용한다.
@@ -44,6 +47,9 @@ fn apply_inner<C: ThemeApplyContext + ?Sized>(
     let entries = scan_themes();
     if let Some(entry) = entries.iter().find(|e| e.id == id) {
         let (partial, is_light) = entry.file.to_partial();
+        let user_kinds: std::collections::HashSet<String> =
+            entry.file.surfaces.keys().cloned().collect();
+        crate::plugin_defaults::record_user_defined_surface_kinds(user_kinds);
         ctx.theme_base_mut().apply_partial(&partial);
         if let Some(l) = is_light {
             ctx.set_theme_is_light(l);
@@ -62,6 +68,9 @@ fn apply_inner<C: ThemeApplyContext + ?Sized>(
         }
         let const_file = ThemeFile::parse(crate::MOCHA_TOML_TEXT)
             .expect("embedded mocha.toml must parse (compile-time guaranteed)");
+        let user_kinds: std::collections::HashSet<String> =
+            const_file.surfaces.keys().cloned().collect();
+        crate::plugin_defaults::record_user_defined_surface_kinds(user_kinds);
         let (partial, is_light) = const_file.to_partial();
         // mocha 는 풀 세트라 base 가 통째로 덮어쓰여진다 — 안전을 위해 먼저 fallback 로 초기화.
         *ctx.theme_base_mut() = mocha_fallback_colors();

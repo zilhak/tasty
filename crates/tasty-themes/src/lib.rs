@@ -18,6 +18,7 @@ mod apply_context;
 mod fallback;
 mod file;
 mod global;
+mod plugin_defaults;
 mod port;
 mod scan;
 mod state;
@@ -32,6 +33,9 @@ pub use apply_context::ThemeApplyContext;
 pub use fallback::{mocha_fallback, mocha_fallback_colors};
 pub use file::{ParseError, ThemeFile};
 pub use global::{mutate_theme, set_theme, theme};
+pub use plugin_defaults::{
+    add_plugin_surface_default, apply_plugin_defaults_to, record_user_defined_surface_kinds,
+};
 pub use port::ThemeStorage;
 pub use scan::{ThemeEntry, rescan, scan_themes};
 pub use state::{apply_theme, install_global, resolve};

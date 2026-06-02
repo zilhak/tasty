@@ -255,6 +255,9 @@ impl App {
                     .cloned()
                 {
                     for decl in &pkg.manifest.surface_kinds {
+                        if let Some(default) = &decl.default_colors {
+                            tasty_themes::add_plugin_surface_default(&decl.kind, default.clone());
+                        }
                         let rendering = match decl.rendering {
                             SurfaceKindRendering::Remote => {
                                 crate::plugin::remote_kind::register_remote_kind(
