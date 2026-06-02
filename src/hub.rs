@@ -4,10 +4,8 @@
 //! D.3.D.2 — `ipc_server` 는 `Option<Box<dyn IpcServerPort>>` 로 보유. production
 //! 은 `TcpIpcServer` (옛 `IpcServer` 의 type alias).
 
-use winit::event_loop::EventLoopProxy;
-
-use crate::AppEvent;
 use crate::adapters::production::tcp_ipc_server::TcpIpcServer;
+use crate::ipc::server::IpcWaker;
 use crate::ports::ipc_server::IpcServerPort;
 
 pub(crate) struct Hub {
@@ -23,12 +21,10 @@ impl Hub {
         }
     }
 
-    /// Start the IPC server. `proxy` 는 View 가 보유한 EventLoopProxy.
-    pub(crate) fn start_ipc(&mut self, proxy: &EventLoopProxy<AppEvent>) {
-        let ipc_proxy = proxy.clone();
-        let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
-            crate::shortcuts::send_app_event(&ipc_proxy, AppEvent::IpcReady);
-        });
+    /// IPC 서버 시작. `IpcWaker` 는 호출자가 직접 만든다 — gui 빌드는
+    /// `EventLoopProxy<AppEvent>` 에서 변환, headless 는 `mpsc::Sender<AppEvent>`
+    /// 에서 변환 (`adapters::production::{winit_waker, headless_waker}`).
+    pub(crate) fn start_ipc(&mut self, ipc_waker: IpcWaker) {
         match TcpIpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
             Ok(ipc) => {
                 tracing::info!("IPC server started on port {}", ipc.port());
