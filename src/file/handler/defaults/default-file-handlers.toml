@@ -25,16 +25,6 @@ priority = 50
 kind = "system"
 
 [[handler]]
-id = "image-viewer"
-detector = "image"
-priority = 50
-
-[handler.action]
-kind = "open_surface"
-surface_kind = "image"
-param_key = "file"
-
-[[handler]]
 id = "directory-system"
 detector = "$directory"
 priority = 50

@@ -24,14 +24,6 @@ kind = "extension"
 values = ["html", "htm"]
 
 [[detector]]
-id = "image"
-display_name_i18n_key = "file_handler.format.image"
-
-[[detector.rule]]
-kind = "extension"
-values = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif"]
-
-[[detector]]
 id = "$directory"
 display_name_i18n_key = "file_handler.format.directory"
 
