@@ -116,8 +116,8 @@ impl MainWindow {
         }
 
         // ── Central keyboard dispatch: route to exactly one surface ──
-        let surface_type = self.state.focused_surface_type(&self.engine_state);
-        let typing_surface_id = self.state.focused_surface_id(&self.engine_state);
+        let surface_type = self.state.focused_surface_type(&self.core_state);
+        let typing_surface_id = self.state.focused_surface_id(&self.core_state);
 
         match surface_type {
             FocusedSurfaceType::Terminal => {
@@ -149,14 +149,14 @@ impl MainWindow {
 
                 let read_state =
                     self.state
-                        .focused_terminal(&self.engine_state)
+                        .focused_terminal(&self.core_state)
                         .map(|t| KeyboardReadState {
                             app_cursor: t.application_cursor_keys(),
                             is_alt_screen: t.is_alternate_screen(),
                             scroll_offset: t.scroll_offset(),
                             rows: t.rows(),
                         });
-                let surface_id = self.state.focused_surface_id(&self.engine_state);
+                let surface_id = self.state.focused_surface_id(&self.core_state);
 
                 if let (Some(rs), Some(sid)) = (read_state, surface_id) {
                     let outcome = Self::decide_key_to_terminal(
@@ -180,21 +180,21 @@ impl MainWindow {
                         KeyboardScrollAction::None => {}
                         KeyboardScrollAction::ScrollUp(n) => {
                             if let Some(terminal) =
-                                self.state.focused_terminal_mut(&mut self.engine_state)
+                                self.state.focused_terminal_mut(&mut self.core_state)
                             {
                                 terminal.scroll_up(n);
                             }
                         }
                         KeyboardScrollAction::ScrollDown(n) => {
                             if let Some(terminal) =
-                                self.state.focused_terminal_mut(&mut self.engine_state)
+                                self.state.focused_terminal_mut(&mut self.core_state)
                             {
                                 terminal.scroll_down(n);
                             }
                         }
                         KeyboardScrollAction::ScrollToBottom => {
                             if let Some(terminal) =
-                                self.state.focused_terminal_mut(&mut self.engine_state)
+                                self.state.focused_terminal_mut(&mut self.core_state)
                             {
                                 terminal.scroll_to_bottom();
                             }
@@ -232,7 +232,7 @@ impl MainWindow {
         }
 
         if let Some(sid) = typing_surface_id {
-            self.engine_state.record_typing(sid);
+            self.core_state.record_typing(sid);
         }
     }
 

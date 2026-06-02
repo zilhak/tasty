@@ -12,7 +12,7 @@ impl MainWindow {
         &mut self,
         dt: crate::double_tap::DoubleTapKey,
     ) -> bool {
-        let kb = self.engine_state.settings.keybindings.clone();
+        let kb = self.core_state.settings.keybindings.clone();
         let dt_str = dt.binding_str();
 
         let has_dt = |bindings: &[String]| bindings.iter().any(|b| b == dt_str);
@@ -70,7 +70,7 @@ impl MainWindow {
             (&kb.prev_tab, "prev_tab"),
         ];
 
-        let engine = &mut self.engine_state;
+        let engine = &mut self.core_state;
         for (bindings, action) in &bindings_to_check {
             if has_dt(bindings) {
                 match *action {

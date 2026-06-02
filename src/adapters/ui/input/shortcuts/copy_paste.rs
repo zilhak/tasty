@@ -8,7 +8,7 @@ use crate::view::ui::View as _;
 
 impl MainWindow {
     pub(super) fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let bindings = self.engine_state.settings.keybindings.copy.clone();
+        let bindings = self.core_state.settings.keybindings.copy.clone();
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }
@@ -18,9 +18,7 @@ impl MainWindow {
         if let Some(t) = self.last_terminal_paste_at {
             if t.elapsed() < crate::view::main::PASTE_CTRL_C_COOLDOWN {
                 let scope = crate::adapters::ui::ToastScope::Surface(
-                    self.state
-                        .focused_surface_id(&self.engine_state)
-                        .unwrap_or(0),
+                    self.state.focused_surface_id(&self.core_state).unwrap_or(0),
                 );
                 self.state
                     .toasts
@@ -33,7 +31,7 @@ impl MainWindow {
             self.mark_dirty();
             return true;
         }
-        let st = self.state.focused_surface_type(&self.engine_state);
+        let st = self.state.focused_surface_type(&self.core_state);
         if st.is_kind("markdown") {
             self.base
                 .gpu
@@ -46,11 +44,11 @@ impl MainWindow {
     }
 
     pub(super) fn handle_paste_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
-        let bindings = self.engine_state.settings.keybindings.paste.clone();
+        let bindings = self.core_state.settings.keybindings.paste.clone();
         if !matches_any_binding(&bindings, key, mods) {
             return false;
         }
-        let st = self.state.focused_surface_type(&self.engine_state);
+        let st = self.state.focused_surface_type(&self.core_state);
         if st.is_kind("image") {
             if self.paste_to_image() {
                 self.mark_dirty();

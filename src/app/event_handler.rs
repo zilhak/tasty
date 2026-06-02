@@ -33,8 +33,8 @@ impl ApplicationHandler<AppEvent> for App {
                         let Some(main) = w.as_main_mut() else {
                             continue;
                         };
-                        if main.engine_state.find_terminal_by_id(sid).is_some() {
-                            let outcome = core.process_pty_output(&mut main.engine_state, sid);
+                        if main.core_state.find_terminal_by_id(sid).is_some() {
+                            let outcome = core.process_pty_output(&mut main.core_state, sid);
                             if !outcome.events.is_empty() {
                                 pending.push((DispatchSource::Main(*wid), outcome.events));
                             }
@@ -59,7 +59,7 @@ impl ApplicationHandler<AppEvent> for App {
                     // Fallback: wake all windows and process all terminals across engines
                     for (wid, w) in windows.iter_mut() {
                         if let Some(main) = w.as_main_mut() {
-                            let outcome = core.process_all_pty_output(&mut main.engine_state);
+                            let outcome = core.process_all_pty_output(&mut main.core_state);
                             if !outcome.events.is_empty() {
                                 pending.push((DispatchSource::Main(*wid), outcome.events));
                             }
@@ -119,7 +119,7 @@ impl ApplicationHandler<AppEvent> for App {
                     for w in drained {
                         if let Some(main_box) = crate::view::unbox_main(w) {
                             self.parked_states
-                                .push((main_box.state, main_box.engine_state));
+                                .push((main_box.state, main_box.core_state));
                         }
                     }
                     self.view.focused_window_id = None;
@@ -196,7 +196,7 @@ impl ApplicationHandler<AppEvent> for App {
                     {
                         self.core.apply_identify_result(
                             &mut main.state,
-                            &mut main.engine_state,
+                            &mut main.core_state,
                             target,
                             detector,
                         );
@@ -517,7 +517,7 @@ impl ApplicationHandler<AppEvent> for App {
                         if let Some(main_box) = crate::view::unbox_main(w) {
                             tracing::info!("last main window closed via request, parking state");
                             self.parked_states
-                                .push((main_box.state, main_box.engine_state));
+                                .push((main_box.state, main_box.core_state));
                         }
                     }
                 }
@@ -543,7 +543,7 @@ impl ApplicationHandler<AppEvent> for App {
         // 본 helper 가 안전망. E.4.f cutover 후 본 호출 제거 예정.
         for w in self.view.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
-                main.engine_state.install_orphan_terminals();
+                main.core_state.install_orphan_terminals();
             }
         }
         for (_, engine) in self.parked_states.iter_mut() {
@@ -619,7 +619,7 @@ impl ApplicationHandler<AppEvent> for App {
         let mut any_pending = false;
         for w in self.view.windows.values_mut() {
             if let Some(main) = w.as_main_mut() {
-                if crate::core::Core::flush_pty_resizes(&mut main.engine_state) {
+                if crate::core::Core::flush_pty_resizes(&mut main.core_state) {
                     any_pending = true;
                 }
             }

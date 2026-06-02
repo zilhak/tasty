@@ -50,7 +50,7 @@ impl App {
                 else {
                     anyhow::bail!("dispatch_domain_intent: main window {wid:?} not found");
                 };
-                core.apply(&mut main.engine_state, intent)?
+                core.apply(&mut main.core_state, intent)?
             }
             DispatchSource::Parked(idx) => {
                 let Some((_, engine)) = self.parked_states.get_mut(idx) else {
@@ -375,7 +375,7 @@ impl App {
                 else {
                     return;
                 };
-                cascade_closed_item_restored(&mut main.state, &mut main.engine_state, kind);
+                cascade_closed_item_restored(&mut main.state, &mut main.core_state, kind);
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
@@ -406,11 +406,7 @@ impl App {
                 else {
                     return;
                 };
-                (
-                    &mut main.state,
-                    &mut main.engine_state,
-                    Some(&mut main.base),
-                )
+                (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
@@ -459,11 +455,7 @@ impl App {
                 else {
                     return;
                 };
-                (
-                    &mut main.state,
-                    &mut main.engine_state,
-                    Some(&mut main.base),
-                )
+                (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
@@ -616,11 +608,7 @@ impl App {
                 else {
                     return;
                 };
-                (
-                    &mut main.state,
-                    &mut main.engine_state,
-                    Some(&mut main.base),
-                )
+                (&mut main.state, &mut main.core_state, Some(&mut main.base))
             }
             DispatchSource::Parked(idx) => {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
@@ -679,7 +667,7 @@ impl App {
                 cascade_surface_closed(
                     core,
                     &mut main.state,
-                    &mut main.engine_state,
+                    &mut main.core_state,
                     cascade_level,
                     cleanup_targets,
                     closed_tab_ids,
@@ -729,7 +717,7 @@ impl App {
                 };
                 cascade_surface_split(
                     &mut main.state,
-                    &mut main.engine_state,
+                    &mut main.core_state,
                     origin,
                     workspace_index,
                     pane_id,
@@ -776,7 +764,7 @@ impl App {
                 };
                 cascade_pane_split(
                     &mut main.state,
-                    &mut main.engine_state,
+                    &mut main.core_state,
                     origin,
                     workspace_index,
                     original_pane_id,
@@ -826,7 +814,7 @@ impl App {
                 };
                 cascade_tab_created(
                     &mut main.state,
-                    &main.engine_state,
+                    &main.core_state,
                     pane_id,
                     tab_id,
                     surface_id,
@@ -862,7 +850,7 @@ impl App {
                 };
                 cascade_pane_closed(&mut main.state, pane_id);
                 for (sid, pid) in cleanup_targets {
-                    main.state.cleanup_surface(&mut main.engine_state, sid, pid);
+                    main.state.cleanup_surface(&mut main.core_state, sid, pid);
                 }
                 main.mark_dirty();
             }
@@ -899,7 +887,7 @@ impl App {
                 };
                 cascade_tab_closed(&mut main.state, tab_id, pane_id);
                 for (sid, pid) in cleanup_targets {
-                    main.state.cleanup_surface(&mut main.engine_state, sid, pid);
+                    main.state.cleanup_surface(&mut main.core_state, sid, pid);
                 }
                 main.mark_dirty();
             }
@@ -1010,7 +998,7 @@ impl App {
                 };
                 cascade_workspace_created(
                     &mut main.state,
-                    &mut main.engine_state,
+                    &mut main.core_state,
                     origin,
                     workspace_id,
                     index,
@@ -1177,7 +1165,7 @@ impl App {
     /// `clipboard_record::record_clipboard_data` 의 broadcast 패턴과 동일.
     fn cascade_internal_clipboard_copy(&mut self, text: String) {
         for main in self.main_windows_iter_mut() {
-            main.engine_state.record_internal_copy(&text);
+            main.core_state.record_internal_copy(&text);
         }
         for (_, engine) in self.parked_states.iter_mut() {
             engine.record_internal_copy(&text);
@@ -1188,7 +1176,7 @@ impl App {
     /// surface 보유 engine (main/parked) 의 첫 매칭에 적용.
     fn cascade_terminal_mark_set(&mut self, surface_id: u32) {
         for main in self.main_windows_iter_mut() {
-            if let Some(t) = main.engine_state.find_terminal_by_id_mut(surface_id) {
+            if let Some(t) = main.core_state.find_terminal_by_id_mut(surface_id) {
                 t.set_mark();
                 return;
             }
@@ -1206,9 +1194,9 @@ impl App {
     /// (탭 이름 prefix 갱신) + `mark_layout_dirty` (다음 capture 가 새 cwd 반영).
     fn cascade_surface_cwd_changed(&mut self, surface_id: u32) {
         for main in self.main_windows_iter_mut() {
-            if main.engine_state.has_surface(surface_id) {
-                main.engine_state.refresh_tab_display_name(surface_id);
-                main.engine_state.mark_layout_dirty();
+            if main.core_state.has_surface(surface_id) {
+                main.core_state.refresh_tab_display_name(surface_id);
+                main.core_state.mark_layout_dirty();
                 main.mark_dirty();
                 return;
             }
@@ -1232,7 +1220,7 @@ impl App {
         let prev_theme = self
             .main_windows_iter_mut()
             .next()
-            .map(|w| w.engine_state.settings.appearance.theme.clone());
+            .map(|w| w.core_state.settings.appearance.theme.clone());
         let prev_theme = prev_theme.or_else(|| {
             self.parked_states
                 .first()
@@ -1241,7 +1229,7 @@ impl App {
         let prev_language = self
             .main_windows_iter_mut()
             .next()
-            .map(|w| w.engine_state.settings.general.language.clone());
+            .map(|w| w.core_state.settings.general.language.clone());
         let prev_language = prev_language.or_else(|| {
             self.parked_states
                 .first()
@@ -1249,7 +1237,7 @@ impl App {
         });
 
         for main in self.main_windows_iter_mut() {
-            main.engine_state.settings = new_settings.clone();
+            main.core_state.settings = new_settings.clone();
             main.mark_dirty();
         }
         for (_, engine) in self.parked_states.iter_mut() {
@@ -1311,7 +1299,7 @@ impl App {
         };
 
         let created_id =
-            main.engine_state
+            main.core_state
                 .notifications
                 .add(ws_id, surface_id, title.clone(), body.clone());
         if let Some(nid) = created_id {
@@ -1329,7 +1317,7 @@ impl App {
     /// NotificationId 는 모든 engine 에 걸쳐 unique 라 첫 매칭만 처리.
     fn cascade_notification_read(&mut self, id: u64) {
         for main in self.main_windows_iter_mut() {
-            main.engine_state.notifications.mark_read(id);
+            main.core_state.notifications.mark_read(id);
             main.mark_dirty();
         }
         for (_, engine) in self.parked_states.iter_mut() {
@@ -1340,7 +1328,7 @@ impl App {
     /// 모든 알림 읽음 처리 cascade — main/parked 모두 적용.
     fn cascade_all_notifications_read(&mut self) {
         for main in self.main_windows_iter_mut() {
-            main.engine_state.notifications.mark_all_read();
+            main.core_state.notifications.mark_all_read();
             main.mark_dirty();
         }
         for (_, engine) in self.parked_states.iter_mut() {

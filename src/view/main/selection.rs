@@ -80,7 +80,7 @@ impl MainWindow {
                 SelectionMode::Line => {
                     let cols = self
                         .state
-                        .focused_terminal(&self.engine_state)
+                        .focused_terminal(&self.core_state)
                         .map(|t| t.surface().dimensions().0)
                         .unwrap_or(80);
                     (
@@ -117,7 +117,7 @@ impl MainWindow {
 
     /// Find word boundaries around the given column in the given absolute row.
     fn find_word_bounds(&self, col: usize, absolute_row: usize) -> (usize, usize) {
-        let engine = &self.engine_state;
+        let engine = &self.core_state;
         let terminal = match self.state.focused_terminal(engine) {
             Some(t) => t,
             None => return (col, col),
@@ -191,7 +191,7 @@ impl MainWindow {
 
     /// Move the terminal cursor to the clicked position using the click_cursor module.
     pub(super) fn move_cursor_to_click(&mut self, x: f32, y: f32, terminal_rect: &PhysicalRect) {
-        let engine = &mut self.engine_state;
+        let engine = &mut self.core_state;
         if !engine.settings.general.click_to_move_cursor {
             return;
         }
@@ -201,7 +201,7 @@ impl MainWindow {
         // terminal grid positions, so arrow-key injection would be incorrect.
         let is_shell = self
             .state
-            .focused_terminal(&self.engine_state)
+            .focused_terminal(&self.core_state)
             .and_then(|t| t.foreground_process_info())
             .map(|info| crate::click_cursor::is_shell_process(&info.name))
             .unwrap_or(false);
@@ -209,7 +209,7 @@ impl MainWindow {
             return;
         }
 
-        let surface_id = match self.state.focused_surface_id(&self.engine_state) {
+        let surface_id = match self.state.focused_surface_id(&self.core_state) {
             Some(sid) => sid,
             None => return,
         };
@@ -228,7 +228,7 @@ impl MainWindow {
             }
         }
 
-        let terminal = match self.state.focused_terminal(&self.engine_state) {
+        let terminal = match self.state.focused_terminal(&self.core_state) {
             Some(t) => t,
             None => return,
         };
@@ -242,7 +242,7 @@ impl MainWindow {
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = match self
             .state
-            .focused_surface_rect(&self.engine_state, *terminal_rect)
+            .focused_surface_rect(&self.core_state, *terminal_rect)
         {
             Some(r) => r,
             None => return,
@@ -310,7 +310,7 @@ impl MainWindow {
         y: f32,
         terminal_rect: &PhysicalRect,
     ) -> Option<(SelectionPoint, u32)> {
-        let engine = &self.engine_state;
+        let engine = &self.core_state;
         let terminal = self.state.focused_terminal(engine)?;
         let surface_id = self.state.focused_surface_id(engine)?;
         // Use the actual content rect (after tab bar) instead of the raw pane rect
@@ -332,7 +332,7 @@ impl MainWindow {
 
     /// Copy the current selection to clipboard. Selection is preserved.
     pub fn copy_selection_to_clipboard(&mut self) -> bool {
-        let engine = &mut self.engine_state;
+        let engine = &mut self.core_state;
         let sel = match &self.text_selection {
             Some(s) if !s.is_empty() => s.clone(),
             _ => return false,

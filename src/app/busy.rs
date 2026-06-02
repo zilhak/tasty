@@ -9,7 +9,7 @@ impl App {
     pub(crate) fn poll_busy_states(&mut self) {
         for w in self.view.windows.values_mut() {
             let changed = match w.as_main_mut() {
-                Some(main) => crate::core::Core::update_busy_surfaces(&mut main.engine_state),
+                Some(main) => crate::core::Core::update_busy_surfaces(&mut main.core_state),
                 None => false,
             };
             if changed {

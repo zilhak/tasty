@@ -53,7 +53,7 @@ impl App {
         if cmd.request.method == "debug.info" {
             let debug_data = crate::debug_info::collect(
                 &w.state,
-                &w.engine_state,
+                &w.core_state,
                 Some(&w.base.gpu),
                 w.ime_active,
             );

@@ -17,7 +17,7 @@ impl App {
         let mut drained: Vec<PendingHostEvent> = Vec::new();
         for (_win_id, w) in self.view.windows.iter_mut() {
             if let Some(main) = w.as_main_mut() {
-                let engine = &mut main.engine_state;
+                let engine = &mut main.core_state;
                 main.state.detect_focus_change(engine);
                 main.state.detect_workspace_activation(engine);
                 main.state.detect_tab_focus_change(engine);

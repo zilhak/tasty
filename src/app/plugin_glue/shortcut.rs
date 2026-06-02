@@ -125,7 +125,7 @@ impl App {
             return false;
         }
         let Some((plugin_id, surface_id)) =
-            plugin::key_dispatch::focused_plugin_surface(&main.state, &main.engine_state)
+            plugin::key_dispatch::focused_plugin_surface(&main.state, &main.core_state)
         else {
             return false;
         };
@@ -137,7 +137,7 @@ impl App {
         } else {
             ke.logical_key.clone()
         };
-        let host_kb = main.engine_state.settings.keybindings.clone();
+        let host_kb = main.core_state.settings.keybindings.clone();
         let cmd_id = {
             let Some(mgr) = self.plugin_manager.as_ref() else {
                 return false;

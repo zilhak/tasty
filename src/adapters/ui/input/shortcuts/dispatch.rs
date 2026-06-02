@@ -23,7 +23,7 @@ impl MainWindow {
         let proxy = self.proxy.clone();
         let proxy = &proxy;
         let state = &mut self.state;
-        let engine = &mut self.engine_state;
+        let engine = &mut self.core_state;
 
         match action_id {
             "new_workspace" => {
@@ -395,12 +395,12 @@ impl MainWindow {
             return true;
         }
 
-        let kb = self.engine_state.settings.keybindings.clone();
+        let kb = self.core_state.settings.keybindings.clone();
 
         // Configurable keybinding shortcuts
         if Self::handle_keybinding_shortcuts(
             &mut self.state,
-            &mut self.engine_state,
+            &mut self.core_state,
             &kb,
             key,
             mods,
@@ -409,7 +409,7 @@ impl MainWindow {
             cell_h,
             &self.proxy,
         ) {
-            if self.engine_state.workspaces.is_empty() {
+            if self.core_state.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
@@ -419,14 +419,14 @@ impl MainWindow {
         // Numeric tab/workspace switching (Ctrl+1..9 / Alt+1..9)
         if Self::handle_numeric_switch_shortcuts(
             &mut self.state,
-            &mut self.engine_state,
+            &mut self.core_state,
             &kb,
             key,
             ctrl,
             shift,
             alt,
         ) {
-            if self.engine_state.workspaces.is_empty() {
+            if self.core_state.workspaces.is_empty() {
                 self.request_close();
             }
             self.base.dirty = true;
@@ -439,7 +439,7 @@ impl MainWindow {
         }
 
         // Zoom
-        if Self::handle_zoom_shortcut(&mut self.state, &mut self.engine_state, key, mods) {
+        if Self::handle_zoom_shortcut(&mut self.state, &mut self.core_state, key, mods) {
             self.base.dirty = true;
             return true;
         }

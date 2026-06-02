@@ -42,7 +42,7 @@ impl App {
     pub(crate) fn any_main_engine(&self) -> Option<&crate::core::CoreState> {
         for w in self.view.windows.values() {
             if let Some(m) = w.as_main() {
-                return Some(&m.engine_state);
+                return Some(&m.core_state);
             }
         }
         self.parked_states.first().map(|(_, e)| e)
@@ -53,7 +53,7 @@ impl App {
     pub(crate) fn find_main_with_surface(&self, surface_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.windows {
             if let Some(m) = w.as_main() {
-                if m.engine_state.has_surface(surface_id) {
+                if m.core_state.has_surface(surface_id) {
                     return Some(*wid);
                 }
             }
@@ -65,7 +65,7 @@ impl App {
     pub(crate) fn find_main_with_workspace(&self, workspace_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.windows {
             if let Some(m) = w.as_main() {
-                if m.engine_state.has_workspace(workspace_id) {
+                if m.core_state.has_workspace(workspace_id) {
                     return Some(*wid);
                 }
             }
@@ -77,7 +77,7 @@ impl App {
     pub(crate) fn find_main_with_pane(&self, pane_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.windows {
             if let Some(m) = w.as_main() {
-                if m.engine_state.has_pane(pane_id) {
+                if m.core_state.has_pane(pane_id) {
                     return Some(*wid);
                 }
             }

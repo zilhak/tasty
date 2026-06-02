@@ -25,7 +25,7 @@ impl MainWindow {
         // When targeted_pty_polling is off, process all terminals every frame.
         // When on, individual terminals are processed via TerminalOutput(Some(id)) events,
         // but we still call process_all() as a safety net (it's a no-op if channels are empty).
-        if self.state.process_all(&mut self.engine_state) {
+        if self.state.process_all(&mut self.core_state) {
             self.recalc_ime_preedit_anchor();
             self.base.dirty = true;
         }
@@ -41,7 +41,7 @@ impl MainWindow {
             self.base.gpu.resize(new_size);
             let terminal_rect = self.compute_terminal_rect();
             let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-            self.engine_state.update_grid_size(cols, rows);
+            self.core_state.update_grid_size(cols, rows);
             // Schedule another redraw to verify scale factor has stabilized.
             self.base.dirty = true;
         }
@@ -56,7 +56,7 @@ impl MainWindow {
             let cell_h = self.base.gpu.cell_height();
             crate::core::Core::resize_all_terminals(
                 &self.state,
-                &mut self.engine_state,
+                &mut self.core_state,
                 terminal_rect,
                 cell_w,
                 cell_h,
@@ -73,7 +73,7 @@ impl MainWindow {
                 .map(|h| (h.surface_id, &h.highlight));
             match self.base.gpu.render(
                 &mut self.state,
-                &mut self.engine_state,
+                &mut self.core_state,
                 &self.base.winit,
                 self.ime_preedit.as_ref(),
                 self.text_selection.as_ref(),
@@ -140,7 +140,7 @@ impl MainWindow {
         let terminal_rect = self.compute_terminal_rect();
         let scale_factor = self.base.gpu.scale_factor() as f64;
         let tab_bar_h = self.state.tab_bar_height.value() as f64;
-        let engine = &mut self.engine_state;
+        let engine = &mut self.core_state;
 
         // Collect all Html surface IDs and their visibility/bounds
         let active_ws = self.state.active_workspace;
@@ -248,7 +248,7 @@ impl MainWindow {
 
     /// Find the URL for an Html panel by surface ID.
     fn find_webview_url(&self, surface_id: u32) -> Option<String> {
-        let engine = &self.engine_state;
+        let engine = &self.core_state;
         for ws in &engine.workspaces {
             for &pid in &ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
@@ -269,7 +269,7 @@ impl MainWindow {
     /// Process pending native context menu request.
     /// Called after egui frame so we have access to the window handle.
     fn process_pending_native_menu(&mut self) {
-        let engine = &mut self.engine_state;
+        let engine = &mut self.core_state;
         use crate::platform::native_menu::{MenuItem, show_context_menu};
         use crate::state::PendingNativeMenu;
 
@@ -371,7 +371,7 @@ impl MainWindow {
                         if tab_index > 0 {
                             if let Some(pane) = self
                                 .state
-                                .active_workspace_mut(&mut self.engine_state)
+                                .active_workspace_mut(&mut self.core_state)
                                 .pane_layout_mut()
                                 .find_pane_mut(pane_id)
                             {
@@ -383,7 +383,7 @@ impl MainWindow {
                         // Move Right
                         if let Some(pane) = self
                             .state
-                            .active_workspace_mut(&mut self.engine_state)
+                            .active_workspace_mut(&mut self.core_state)
                             .pane_layout_mut()
                             .find_pane_mut(pane_id)
                         {

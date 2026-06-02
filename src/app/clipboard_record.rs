@@ -11,7 +11,7 @@ impl App {
             .windows
             .values_mut()
             .filter_map(|w| w.as_main_mut())
-            .map(|m| &mut m.engine_state)
+            .map(|m| &mut m.core_state)
             .chain(self.parked_states.iter_mut().map(|(_, e)| e));
         for engine in engines {
             if !engine.settings.clipboard.history_enabled {

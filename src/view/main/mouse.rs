@@ -12,7 +12,7 @@ impl MainWindow {
     /// 현재 마우스 좌표와 수식키 상태로 hovered_link를 갱신한다.
     /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
     pub(crate) fn update_hovered_link(&mut self) -> bool {
-        let engine = &mut self.engine_state;
+        let engine = &mut self.core_state;
         let prev = self.hovered_link.as_ref().map(|h| {
             (
                 h.surface_id,
@@ -48,7 +48,7 @@ impl MainWindow {
     }
 
     fn compute_hovered_link(&self) -> Option<HoveredLink> {
-        let engine = &self.engine_state;
+        let engine = &self.core_state;
         let pos = self.cursor_position?;
         let terminal_rect = self.compute_terminal_rect();
         let x = pos.x as f32;
@@ -135,7 +135,7 @@ impl MainWindow {
             let cell_w = self.base.gpu.cell_width();
             let cell_h = self.base.gpu.cell_height();
             let changed = {
-                let engine = &mut self.engine_state;
+                let engine = &mut self.core_state;
                 let changed = match drag.kind {
                     DividerDragKind::Pane => {
                         self.state
@@ -177,7 +177,7 @@ impl MainWindow {
                 if let Some(pos) = self.cursor_position {
                     let (x, y) = (pos.x as f32, pos.y as f32);
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                        let engine = &mut self.engine_state;
+                        let engine = &mut self.core_state;
                         let changed_pane =
                             self.state
                                 .focus_pane_at_position(engine, x, y, terminal_rect);
@@ -207,7 +207,7 @@ impl MainWindow {
                     return;
                 }
                 let sf = self.base.gpu.scale_factor() as f32;
-                let engine = &mut self.engine_state;
+                let engine = &mut self.core_state;
                 let Some(surface_id) =
                     self.state
                         .surface_id_at_position(engine, x, y, terminal_rect)
@@ -240,13 +240,13 @@ impl MainWindow {
                 // 수식키+클릭은 무조건 링크 클릭 동작으로 라우팅.
                 // 링크 위면 열고, 링크 위가 아니면 아무것도 안 함 (selection 시작 안 함).
                 let modifier =
-                    LinkModifier::parse(&self.engine_state.settings.general.link_click_modifier);
+                    LinkModifier::parse(&self.core_state.settings.general.link_click_modifier);
                 let mods = &self.base.modifiers;
                 let link_mods_match = !matches!(modifier, LinkModifier::None)
                     && modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
                 if link_mods_match && button_state == ElementState::Pressed {
                     if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                        let engine = &mut self.engine_state;
+                        let engine = &mut self.core_state;
                         let changed_pane =
                             self.state
                                 .focus_pane_at_position(engine, x, y, terminal_rect);
@@ -278,7 +278,7 @@ impl MainWindow {
                 }
                 if button_state == ElementState::Pressed {
                     let threshold = 4.0;
-                    let engine = &mut self.engine_state;
+                    let engine = &mut self.core_state;
                     let pane_div =
                         self.state
                             .find_pane_divider_at(engine, x, y, terminal_rect, threshold);
@@ -335,7 +335,7 @@ impl MainWindow {
                         self.dragging_divider = None;
                         let cell_w = self.base.gpu.cell_width();
                         let cell_h = self.base.gpu.cell_height();
-                        let engine = &mut self.engine_state;
+                        let engine = &mut self.core_state;
                         self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                         self.base.dirty = true;
                     }
@@ -367,9 +367,9 @@ impl MainWindow {
                 .and_then(|pos| {
                     let (x, y) = (pos.x as f32, pos.y as f32);
                     self.state
-                        .surface_id_at_position(&self.engine_state, x, y, terminal_rect)
+                        .surface_id_at_position(&self.core_state, x, y, terminal_rect)
                 })
-                .or_else(|| self.state.focused_surface_id(&self.engine_state));
+                .or_else(|| self.state.focused_surface_id(&self.core_state));
 
             if let Some(surface_id) = target_id {
                 let lines = match delta {
@@ -377,7 +377,7 @@ impl MainWindow {
                     MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
                 };
                 let is_alt = self
-                    .engine_state
+                    .core_state
                     .find_terminal_by_id(surface_id)
                     .map(|t| t.is_alternate_screen());
                 match is_alt {
@@ -403,8 +403,7 @@ impl MainWindow {
                     }
                     Some(false) => {
                         // 일반 화면 — scrollback (UI 자체 mutate, PTY 와 무관).
-                        if let Some(terminal) =
-                            self.engine_state.find_terminal_by_id_mut(surface_id)
+                        if let Some(terminal) = self.core_state.find_terminal_by_id_mut(surface_id)
                         {
                             if lines > 0 {
                                 terminal.scroll_up(lines as usize);

@@ -48,7 +48,7 @@ fn dispatch_send_text(w: &mut MainWindow, surface_id: Option<u32>, text: &str) {
 // =============================================================================
 
 pub(super) fn handle_event(w: &mut MainWindow, event: Ime, egui_consumed: bool) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     if egui_consumed {
         w.mark_dirty();
@@ -85,7 +85,7 @@ pub(super) fn handle_event(w: &mut MainWindow, event: Ime, egui_consumed: bool) 
 /// 때 호출. advance가 차감되어 0이 되거나, fake cursor가 최신 위치로 갱신된 순간을
 /// 포착해 preedit anchor를 재계산한다.
 pub(super) fn recalc_anchor(w: &mut MainWindow) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     if w.ime_cursor_advance == 0 {
         return;
@@ -94,7 +94,7 @@ pub(super) fn recalc_anchor(w: &mut MainWindow) {
         return;
     };
     let surface_id = preedit.surface_id;
-    let Some(terminal) = w.engine_state.find_terminal_by_id(surface_id) else {
+    let Some(terminal) = w.core_state.find_terminal_by_id(surface_id) else {
         return;
     };
 
@@ -119,7 +119,7 @@ pub(super) fn recalc_anchor(w: &mut MainWindow) {
 
 /// 현재 preedit이 있으면 확정해서 PTY로 보낸다 (단축키 소비 전 호출).
 pub(super) fn flush_preedit(w: &mut MainWindow) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     let preedit = match w.ime_preedit.take() {
         Some(p) if !p.text.is_empty() => p,
@@ -130,7 +130,7 @@ pub(super) fn flush_preedit(w: &mut MainWindow) {
         }
     };
     dispatch_send_text(w, Some(preedit.surface_id), &preedit.text);
-    w.engine_state.record_typing(preedit.surface_id);
+    w.core_state.record_typing(preedit.surface_id);
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
     w.mark_dirty();
@@ -139,7 +139,7 @@ pub(super) fn flush_preedit(w: &mut MainWindow) {
 /// 현재 preedit을 PTY로 보내지 않고 버린다.
 /// 팝업/오버레이가 열릴 때 조합 중 문자가 터미널로 전달되지 않도록 사용.
 pub(super) fn clear_preedit(w: &mut MainWindow) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     w.ime_preedit = None;
     w.ime_cursor_advance = 0;
@@ -151,7 +151,7 @@ pub(super) fn clear_preedit(w: &mut MainWindow) {
 /// macOS만 호출한다 (Windows/Linux는 매 글자마다 빈 시그널이 들어와 advance를 보존해야 함).
 #[cfg(target_os = "macos")]
 fn clear_all(w: &mut MainWindow) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     w.ime_preedit = None;
     w.ime_cursor_advance = 0;
@@ -167,7 +167,7 @@ pub(crate) fn ipc_set_preedit(
     text: String,
     cursor: Option<(usize, usize)>,
 ) -> Option<(usize, usize, u32)> {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     let surface_id = w.state.focused_surface_id(engine)?;
     let (col, row, cols) = {
@@ -201,7 +201,7 @@ pub(crate) fn ipc_set_preedit(
 }
 
 pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     if w.ime_cursor_advance == 0 {
         if let Some(terminal) = w.state.focused_terminal(engine) {
@@ -215,7 +215,7 @@ pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
     let sid = w.state.focused_surface_id(engine);
     dispatch_send_text(w, sid, text);
     if let Some(sid) = sid {
-        w.engine_state.record_typing(sid);
+        w.core_state.record_typing(sid);
     }
     w.mark_dirty();
 }
@@ -230,7 +230,7 @@ pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
 /// 다음 글자의 PTY 에코 보정을 위해 유지한다.
 /// macOS: 실제 IME 세션 종료이므로 advance/base까지 완전 리셋.
 fn on_composition_end(w: &mut MainWindow) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     #[cfg(windows)]
     {
@@ -247,14 +247,14 @@ fn on_composition_end(w: &mut MainWindow) {
 }
 
 fn on_disabled(w: &mut MainWindow) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     w.ime_active = false;
     on_composition_end(w);
 }
 
 fn on_preedit(w: &mut MainWindow, text: String, cursor: Option<(usize, usize)>) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     if text.is_empty() {
         on_composition_end(w);
@@ -280,7 +280,7 @@ fn on_preedit(w: &mut MainWindow, text: String, cursor: Option<(usize, usize)>) 
 }
 
 fn on_commit(w: &mut MainWindow, text: String) {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     if w.ime_cursor_advance == 0 {
         if let Some(terminal) = w.state.focused_terminal(engine) {
@@ -295,7 +295,7 @@ fn on_commit(w: &mut MainWindow, text: String) {
     let sid = w.state.focused_surface_id(engine);
     dispatch_send_text(w, sid, &text);
     if let Some(sid) = sid {
-        w.engine_state.record_typing(sid);
+        w.core_state.record_typing(sid);
     }
     w.mark_dirty();
 }
@@ -330,7 +330,7 @@ fn advanced_anchor(col: usize, row: usize, cols: usize, advance: usize) -> (usiz
 }
 
 fn reconcile_and_compute_anchor(w: &mut MainWindow) -> Option<(usize, usize)> {
-    let engine = &mut w.engine_state;
+    let engine = &mut w.core_state;
     let _ = &mut *engine;
     let terminal = w.state.focused_terminal(engine)?;
     let cols = terminal.cols();

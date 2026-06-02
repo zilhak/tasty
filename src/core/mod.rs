@@ -8,7 +8,7 @@
 //! ```
 //!
 //! Phase D 진행 중. 본 Core 는 11 outbound port + preset_store 직속 보유만.
-//! 도메인 데이터 (`CoreState`) 는 `crate::core::state` 에 — App.engine_state
+//! 도메인 데이터 (`CoreState`) 는 `crate::core::state` 에 — App.core_state
 //! 가 main owner. D.3.C 의 도메인 마이그레이션으로 점진 흡수 예정.
 
 pub(crate) mod agent;
@@ -40,7 +40,7 @@ use crate::ports::pty::{PtyService, TerminalWaker};
 /// 도메인 본체. 11 outbound port (7 external + 4 internal) + preset_store 직속.
 ///
 /// 도메인 데이터 (`crate::core::CoreState`) 는 본 struct 가 아닌
-/// `App.engine_state` 가 main owner — Phase D 진행 중의 *공존 layer*. D.3.C
+/// `App.core_state` 가 main owner — Phase D 진행 중의 *공존 layer*. D.3.C
 /// 에서 점진 흡수.
 #[allow(dead_code)]
 pub(crate) struct Core {

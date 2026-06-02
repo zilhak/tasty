@@ -37,7 +37,7 @@ impl App {
             let target = data.target.clone();
             // 데이터 슬롯 즉시 해제 — 빠른 popup 재오픈 시에도 중복 처리 방지.
             main.state.dialogs.file_handler_picker = None;
-            core.apply_file_picker_result(&mut main.state, &mut main.engine_state, target, result);
+            core.apply_file_picker_result(&mut main.state, &mut main.core_state, target, result);
             main.mark_dirty();
         }
     }

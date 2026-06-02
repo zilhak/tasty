@@ -234,7 +234,7 @@ pub enum PendingHostEvent {
     },
 }
 
-// IdGenerator is now in engine_state.rs
+// IdGenerator is now in core_state.rs
 
 pub struct AppState {
     // ── Window-level UI state ──

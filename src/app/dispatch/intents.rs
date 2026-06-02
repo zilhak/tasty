@@ -68,7 +68,7 @@ impl App {
                     ));
                     continue;
                 }
-                Self::dispatch_one_intent(core, &mut main.state, &mut main.engine_state, &intent);
+                Self::dispatch_one_intent(core, &mut main.state, &mut main.core_state, &intent);
             }
             main.mark_dirty();
         }
@@ -183,7 +183,7 @@ impl App {
                     let r = ipc::handler::handle_with_caller(
                         core,
                         &mut w.state,
-                        &mut w.engine_state,
+                        &mut w.core_state,
                         request,
                         caller,
                     );

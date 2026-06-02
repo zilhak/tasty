@@ -146,7 +146,7 @@ impl App {
                     Some(serde_json::json!({
                         "id": u64::from(*id),
                         "focused": focused_id == Some(*id),
-                        "title": main.state.active_workspace(&main.engine_state).name,
+                        "title": main.state.active_workspace(&main.core_state).name,
                     }))
                 })
                 .collect();
@@ -460,7 +460,7 @@ impl App {
                     Some(m) => host_ipc::handler::session::handle_request_permission(
                         core,
                         &mut m.state,
-                        &mut m.engine_state,
+                        &mut m.core_state,
                         caller,
                         id,
                         &cmd.request.params,
@@ -498,13 +498,13 @@ impl App {
             .view
             .windows
             .values()
-            .find_map(|w| w.as_main().map(|w| w.engine_state.approval_store.clone()))
+            .find_map(|w| w.as_main().map(|w| w.core_state.approval_store.clone()))
             .or_else(|| {
                 self.parked_states
                     .first()
                     .map(|(_, e)| e.approval_store.clone())
             })
-            .or_else(|| self.engine_state.as_ref().map(|e| e.approval_store.clone()));
+            .or_else(|| self.core_state.as_ref().map(|e| e.approval_store.clone()));
         let memory = self.core.memory_arc();
         let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
         match store_opt {

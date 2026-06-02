@@ -56,7 +56,7 @@ impl App {
                     let r = host_ipc::handler::handle_with_caller(
                         core,
                         &mut w.state,
-                        &mut w.engine_state,
+                        &mut w.core_state,
                         &cmd.request,
                         caller,
                     );

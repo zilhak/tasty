@@ -20,7 +20,7 @@ impl App {
             "tool.clipboard.clear" => {
                 for w in self.view.windows.values_mut() {
                     if let Some(m) = w.as_main_mut() {
-                        m.engine_state.clipboard_history.clear();
+                        m.core_state.clipboard_history.clear();
                     }
                 }
                 for (_, e) in self.parked_states.iter_mut() {
@@ -40,7 +40,7 @@ impl App {
                 let mut removed_any = false;
                 for w in self.view.windows.values_mut() {
                     if let Some(m) = w.as_main_mut() {
-                        if m.engine_state.clipboard_history.remove_at(idx).is_some() {
+                        if m.core_state.clipboard_history.remove_at(idx).is_some() {
                             removed_any = true;
                         }
                     }

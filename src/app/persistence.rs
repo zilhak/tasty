@@ -21,7 +21,7 @@ impl App {
                     active_workspace: main.state.active_workspace,
                     force,
                 };
-                if let Err(e) = self.core.apply(&mut main.engine_state, intent) {
+                if let Err(e) = self.core.apply(&mut main.core_state, intent) {
                     tracing::warn!("SaveLayoutNow({label}) failed (main): {e}");
                 }
             }

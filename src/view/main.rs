@@ -33,8 +33,8 @@ pub struct MainWindow {
     pub base: ViewBase,
     pub(crate) state: AppState,
     /// 본 윈도우 전용 CoreState. self.state 와 disjoint 한 field 로 두어
-    /// `let engine = &mut self.engine_state;` 식 접근을 가능하게 한다.
-    pub(crate) engine_state: crate::core::CoreState,
+    /// `let engine = &mut self.core_state;` 식 접근을 가능하게 한다.
+    pub(crate) core_state: crate::core::CoreState,
     pub(crate) cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
     pub(crate) dragging_divider: Option<DividerDrag>,
     pub(crate) clipboard: Option<ClipboardContext>,
@@ -83,14 +83,14 @@ impl MainWindow {
     pub(crate) fn new(
         gpu: GpuState,
         state: AppState,
-        engine_state: crate::core::CoreState,
+        core_state: crate::core::CoreState,
         window: Arc<winit::window::Window>,
         proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, window),
             state,
-            engine_state,
+            core_state,
             cursor_position: None,
             dragging_divider: None,
             clipboard: ClipboardContext::new(),
@@ -149,7 +149,7 @@ impl MainWindow {
         };
         let terminal_rect = self.compute_terminal_rect();
         let Some(cell_rect) = self.state.surface_cell_rect(
-            &self.engine_state,
+            &self.core_state,
             terminal_rect,
             preedit.surface_id,
             preedit.anchor_col,
@@ -224,7 +224,7 @@ impl View for MainWindow {
         // Non-terminal surfaces (Explorer, Markdown) use egui widgets (TextEdit etc.)
         // that need direct keyboard events from egui's input system.
         let egui_surface = matches!(
-            self.state.focused_surface_type(&self.engine_state),
+            self.state.focused_surface_type(&self.core_state),
             FocusedSurfaceType::Kind(ref k) if k == "explorer" || k == "markdown"
         );
 
@@ -262,11 +262,11 @@ impl View for MainWindow {
                 self.base.gpu.resize(new_size);
                 let terminal_rect = self.compute_terminal_rect();
                 let (cols, rows) = self.base.gpu.grid_size_for_rect(&terminal_rect);
-                self.engine_state.update_grid_size(cols, rows);
+                self.core_state.update_grid_size(cols, rows);
                 let cell_w = self.base.gpu.cell_width();
                 let cell_h = self.base.gpu.cell_height();
                 self.state
-                    .resize_all(&mut self.engine_state, terminal_rect, cell_w, cell_h);
+                    .resize_all(&mut self.core_state, terminal_rect, cell_w, cell_h);
                 self.mark_dirty();
             }
             WindowEvent::Focused(focused) => {

@@ -33,11 +33,11 @@ impl App {
         // Phase 6.5a audit: app-level dispatcher 의 deny 도 기록.
         if let Some(main) = self.view.windows.values_mut().find_map(|w| w.as_main_mut()) {
             let ws = main
-                .engine_state
+                .core_state
                 .workspaces
                 .get(main.state.active_workspace)
                 .map(|w| w.id);
-            let seq = main.engine_state.telemetry_seq.next();
+            let seq = main.core_state.telemetry_seq.next();
             host_ipc::audit::record(
                 &self.core,
                 &caller,
@@ -65,7 +65,7 @@ impl App {
                 if let Some(rec) = host_ipc::handler::approval::publish_capability_elevation(
                     core,
                     &mut m.state,
-                    &mut m.engine_state,
+                    &mut m.core_state,
                     &agent_id,
                     &method,
                     &perm_token,

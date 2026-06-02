@@ -46,7 +46,7 @@ impl MainWindow {
     /// Paste a clipboard image into the focused ImagePanel as a floating selection.
     /// Returns true if an image was pasted.
     pub fn paste_to_image(&mut self) -> bool {
-        let engine = &mut self.engine_state;
+        let engine = &mut self.core_state;
         let image = match &mut self.clipboard {
             Some(cb) => cb.get_image(),
             None => return false,
@@ -94,10 +94,10 @@ impl MainWindow {
         };
         if let Some(text) = text {
             if !text.is_empty() {
-                let surface_id = self.state.focused_surface_id(&self.engine_state);
+                let surface_id = self.state.focused_surface_id(&self.core_state);
                 let bracketed = self
                     .state
-                    .focused_terminal(&self.engine_state)
+                    .focused_terminal(&self.core_state)
                     .map(|t| t.bracketed_paste());
                 if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
                     dispatch_paste(self, sid, bracketed, text);
@@ -115,10 +115,10 @@ impl MainWindow {
         if let Some(image) = image {
             match save_clipboard_image_as_png(&image) {
                 Ok(path) => {
-                    let surface_id = self.state.focused_surface_id(&self.engine_state);
+                    let surface_id = self.state.focused_surface_id(&self.core_state);
                     let bracketed = self
                         .state
-                        .focused_terminal(&self.engine_state)
+                        .focused_terminal(&self.core_state)
                         .map(|t| t.bracketed_paste());
                     if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
                         dispatch_paste(self, sid, bracketed, path);

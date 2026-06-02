@@ -65,7 +65,7 @@ impl App {
         let waker: crate::terminal::Waker = factory.make_default_waker();
 
         // CoreState를 App 직속에 1회 init.
-        if self.engine_state.is_none() {
+        if self.core_state.is_none() {
             // 두 번째 main window 생성 시: 첫 engine 의 글로벌 Arc 들을 공유한다.
             // surface_registry 는 plugin_manager 가 첫 부팅 시 set 한 것과 같은
             // Arc 여야 plugin 이 register 한 surface kind 가 두 번째 윈도우에서도
@@ -130,12 +130,12 @@ impl App {
                 engine.input_simulation_enabled = self.input_simulation_enabled;
             }
             engine.memory = Some(self.core.memory_arc());
-            self.engine_state = Some(engine);
+            self.core_state = Some(engine);
         }
 
         if self.plugin_manager.is_none() {
             let (file_format, file_handler, surface_registry) = {
-                let engine = self.engine_state();
+                let engine = self.core_state();
                 (
                     engine.file_format.clone(),
                     engine.file_handler.clone(),
@@ -158,13 +158,13 @@ impl App {
         //
         // Intent 큐 우회 직접 apply — bootstrap context (main loop 진입 전) 라
         // 큐 drain 이 일어나지 않는다. D.3.C.D.4.c 결정.
-        let restored_idx_after_layout = if self.engine_state().pending_layout_restore.is_some() {
+        let restored_idx_after_layout = if self.core_state().pending_layout_restore.is_some() {
             // wait-for-plugin: required_plugin_kinds 만 peek (take 안 함).
             // Intent 본문이 단일 take 를 보장.
             {
                 use std::time::{Duration, Instant};
                 let needed: Vec<String> = self
-                    .engine_state()
+                    .core_state()
                     .pending_layout_restore
                     .as_ref()
                     .map(|s| s.required_plugin_kinds())
@@ -178,7 +178,7 @@ impl App {
                     };
                     self.finalize_plugin_hello(hello_pairs);
                     let registered_all = {
-                        let engine = self.engine_state();
+                        let engine = self.core_state();
                         needed
                             .iter()
                             .all(|k| engine.surface_registry.get(k).is_some())
@@ -191,9 +191,9 @@ impl App {
             }
 
             let engine = self
-                .engine_state
+                .core_state
                 .as_mut()
-                .expect("engine_state must be initialized before layout restore");
+                .expect("core_state must be initialized before layout restore");
             match self.core.apply(
                 engine,
                 crate::core::intent::DomainIntent::ApplyPendingLayoutRestore,
@@ -238,17 +238,12 @@ impl App {
         &mut self,
         gpu: GpuState,
         state: crate::state::AppState,
-        engine_state: crate::core::CoreState,
+        core_state: crate::core::CoreState,
         window: Arc<Window>,
     ) {
         let window_id = window.id();
-        let main = window::main::MainWindow::new(
-            gpu,
-            state,
-            engine_state,
-            window,
-            self.view.proxy.clone(),
-        );
+        let main =
+            window::main::MainWindow::new(gpu, state, core_state, window, self.view.proxy.clone());
         self.view.windows.insert(window_id, Box::new(main));
         self.view.focused_window_id = Some(window_id);
         if let Some(mgr) = self.plugin_manager.as_mut() {
@@ -318,11 +313,11 @@ impl App {
         }
 
         self.hub.start_ipc(&self.view.proxy);
-        let engine_state = self
-            .engine_state
+        let core_state = self
+            .core_state
             .take()
-            .expect("App.engine_state must be present to register a main window");
-        self.register_window(gpu, state, engine_state, window);
+            .expect("App.core_state must be present to register a main window");
+        self.register_window(gpu, state, core_state, window);
         // Event Bus 1.0: `system.startup_complete`는 부팅 완료 직후 1회 발화.
         // init_app_state는 첫 윈도우 등록 시 한 번만 호출되므로 별도 once 가드 불필요.
         if let Some(mgr) = self.plugin_manager.as_mut() {
@@ -404,21 +399,21 @@ impl App {
             (st, None)
         };
 
-        // 새 윈도우의 engine: parked 가 있으면 그쪽을 재사용, 없으면 App.engine_state
-        // 를 take. create_app_state 가 항상 self.engine_state 를 set 하므로
+        // 새 윈도우의 engine: parked 가 있으면 그쪽을 재사용, 없으면 App.core_state
+        // 를 take. create_app_state 가 항상 self.core_state 를 set 하므로
         // 두 번째 main window 생성 시에도 새 engine 이 만들어져 들어와 있음
         // (글로벌 Arc 들은 첫 engine 과 공유 — create_app_state 의 shared 분기 참조).
-        let mut engine_state = if let Some(e) = parked_engine {
+        let mut core_state = if let Some(e) = parked_engine {
             e
         } else {
-            self.engine_state
+            self.core_state
                 .take()
-                .expect("App.engine_state must be present to register a main window")
+                .expect("App.core_state must be present to register a main window")
         };
 
         // Ensure at least one workspace exists for the new window
-        if engine_state.workspaces.is_empty() {
-            match self.core.create_default_workspace(&mut engine_state) {
+        if core_state.workspaces.is_empty() {
+            match self.core.create_default_workspace(&mut core_state) {
                 Ok(idx) => state.active_workspace = idx,
                 Err(e) => tracing::error!("bootstrap workspace failed: {e}"),
             }
@@ -455,7 +450,7 @@ impl App {
             );
         }
 
-        self.register_window(gpu, state, engine_state, window);
+        self.register_window(gpu, state, core_state, window);
         tracing::info!("created new window {:?}", self.view.focused_window_id);
     }
 }
