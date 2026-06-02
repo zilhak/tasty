@@ -1356,11 +1356,6 @@ pub fn default_db_path() -> Option<PathBuf> {
 // Phase D.3.C.M.19 — 글로벌 `OnceLock<STORE>` + `with_store` 인프라 폐기.
 // host 가 `init_with_config` 로 Arc 를 받아 `Core.memory` 에 직접 inject 한다.
 
-/// 앱 시작 시 1회. 기본 config 로 연다.
-pub fn init() -> std::result::Result<Arc<Mutex<MemoryStore>>, MemoryInitError> {
-    init_with_config(MemoryConfig::default())
-}
-
 /// 앱 시작 시 1회. Settings.memory 에서 도출한 [`MemoryConfig`] 로 연다.
 /// 새 `Arc<Mutex<MemoryStore>>` 를 반환 — caller (host bin 의 boot) 가 Core 에 inject.
 pub fn init_with_config(
