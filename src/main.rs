@@ -55,15 +55,25 @@ pub use tasty_utils::path as paths;
 pub(crate) use adapters::cli;
 pub(crate) use adapters::ipc;
 pub(crate) use adapters::plugin;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::input::click_cursor;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::input::double_tap;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::input::shortcuts;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::preset as preset_ui;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::diff as diff_ui;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::empty as empty_ui;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::image as image_ui;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::markdown as markdown_ui;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::terminal_link;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::theme_bridge;
 pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;

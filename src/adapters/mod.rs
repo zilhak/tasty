@@ -13,4 +13,5 @@ pub mod plugin;
 pub mod production;
 #[cfg(test)]
 pub mod test;
+#[cfg(feature = "gui")]
 pub mod ui;
