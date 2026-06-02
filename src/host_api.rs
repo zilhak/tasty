@@ -10,4 +10,5 @@
 //! 시스템의 부속 인프라라 host_api 에 유지 (B.5 에서 input 도 ui/input 으로 이동 예정).
 
 pub mod hooks;
+#[cfg(feature = "gui")]
 pub mod webview;

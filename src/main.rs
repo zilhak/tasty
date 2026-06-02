@@ -71,11 +71,13 @@ pub(crate) use clipboard::{ClipboardContext, ClipboardData};
 pub(crate) use engine::output_observer;
 pub(crate) use engine::surface_registry::meta as surface_meta;
 pub(crate) use file::dispatch as file_dispatch;
+#[cfg(feature = "gui")]
 pub(crate) use file::identify_worker;
 pub(crate) use gfx::gpu;
 pub(crate) use gfx::renderer;
 pub(crate) use host_api::hooks;
 pub(crate) use host_api::hooks::global as global_hooks;
+#[cfg(feature = "gui")]
 pub(crate) use host_api::webview;
 pub(crate) use platform::app_icon;
 pub(crate) use platform::crash_report;
