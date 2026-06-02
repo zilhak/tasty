@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
@@ -50,8 +50,6 @@ pub struct PluginProcess {
     pub resp_rx: mpsc::Receiver<PluginResponse>,
     pub event_rx: mpsc::Receiver<PluginEvent>,
     last_pong: Arc<Mutex<Instant>>,
-    /// 자식 stdout/stderr가 redirect된 파일 경로. 디버깅/검증 시 직접 참조.
-    pub log_path: PathBuf,
     /// 보조 핸들 채널 상태. 첫 사용 시 Pending → Ready 전이하며 reader 스레드 시작.
     handle_state: Mutex<HandleStreamState>,
     /// reader 스레드가 누적하는 dirty rect. `Some(rect)`는 union된 영역, `None`은
@@ -75,7 +73,6 @@ impl PluginProcess {
             resp_rx,
             event_rx,
             last_pong: Arc::new(Mutex::new(Instant::now())),
-            log_path: PathBuf::new(),
             handle_state: Mutex::new(HandleStreamState::Unavailable),
             dirty_rects: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -234,7 +231,6 @@ impl PluginProcess {
             resp_rx,
             event_rx,
             last_pong,
-            log_path,
             handle_state: Mutex::new(initial_state),
             dirty_rects: Arc::new(Mutex::new(HashMap::new())),
         })
