@@ -15,7 +15,7 @@ impl App {
     /// 처리한다. per-state batch 안의 `Intent::Domain` 항목은 따로 모아 본 loop
     /// 끝난 후 `dispatch_domain_intent` (App-level cascade) 로 일괄 처리. 두
     /// 단계 분리 이유: `dispatch_domain_intent` 가 `&mut self` 필요하지만 per-state
-    /// loop 는 `&mut self.view.windows[id]` 를 잡고 있어 동시 borrow 불가.
+    /// loop 는 `&mut self.view.views[id]` 를 잡고 있어 동시 borrow 불가.
     pub(crate) fn dispatch_pending_intents(&mut self) {
         use crate::intent::Intent;
         // 모든 windows + parked_states 에서 드레인한 뒤 일괄 처리.
@@ -24,7 +24,7 @@ impl App {
             Vec::new();
         let mut parked_batches: Vec<(usize, Vec<crate::intent::DispatchedIntent>)> = Vec::new();
 
-        for (id, w) in self.view.windows.iter_mut() {
+        for (id, w) in self.view.views.iter_mut() {
             if let Some(main) = w.as_main_mut() {
                 let batch = main.state.take_pending_intents();
                 if !batch.is_empty() {
@@ -52,7 +52,7 @@ impl App {
             let core = &mut self.core;
             let Some(main) = self
                 .view
-                .windows
+                .views
                 .get_mut(&window_id)
                 .and_then(|w| w.as_main_mut())
             else {
@@ -171,12 +171,12 @@ impl App {
         }
         let target_id = self
             .find_request_owner(&request.params)
-            .or(self.view.focused_window_id);
+            .or(self.view.focused_view_id);
         if let Some(id) = target_id {
             let core = &mut self.core;
             let resp_opt = self
                 .view
-                .windows
+                .views
                 .get_mut(&id)
                 .and_then(|w| w.as_main_mut())
                 .map(|w| {

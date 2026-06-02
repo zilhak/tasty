@@ -87,11 +87,11 @@ pub(crate) struct ViewRegistry {
     /// At most one modal can exist at a time.
     pub active_modal_id: Option<WindowId>,
     /// The view that currently has focus (receives IPC commands targeting "focused" view).
-    pub focused_window_id: Option<WindowId>,
+    pub focused_view_id: Option<WindowId>,
     /// 모든 View(모달 포함). `active_modal_id`로 현재 활성 모달을 식별한다.
     /// 모달도 여기에 들어가며, 모달은 엔진 전역에 최대 1개라는 불변식을 유지한다.
     /// D.3.E.3.a — 옛 `App.windows` 가 이쪽으로 이동. key 는 winit `WindowId`.
-    pub windows: HashMap<WindowId, Box<dyn ui::View>>,
+    pub views: HashMap<WindowId, Box<dyn ui::View>>,
 }
 
 impl ViewRegistry {
@@ -99,8 +99,8 @@ impl ViewRegistry {
         Self {
             proxy,
             active_modal_id: None,
-            focused_window_id: None,
-            windows: HashMap::new(),
+            focused_view_id: None,
+            views: HashMap::new(),
         }
     }
 

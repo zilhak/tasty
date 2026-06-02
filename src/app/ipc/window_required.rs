@@ -24,7 +24,7 @@ impl App {
         if !is_window_required {
             return IpcStep::NotHandled;
         }
-        let focused_id = match self.view.focused_window_id {
+        let focused_id = match self.view.focused_view_id {
             Some(id) => id,
             None => {
                 let response = host_ipc::protocol::JsonRpcResponse::error(
@@ -38,7 +38,7 @@ impl App {
         };
         let w = match self
             .view
-            .windows
+            .views
             .get_mut(&focused_id)
             .and_then(|w| w.as_main_mut())
         {

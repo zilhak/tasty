@@ -7,7 +7,7 @@ impl App {
     /// from the background ticker via `AppEvent::BusyPoll`. Marks any window
     /// whose set actually changed as dirty so the indicators redraw.
     pub(crate) fn poll_busy_states(&mut self) {
-        for w in self.view.windows.values_mut() {
+        for w in self.view.views.values_mut() {
             let changed = match w.as_main_mut() {
                 Some(main) => crate::core::Core::update_busy_surfaces(&mut main.core_state),
                 None => false,

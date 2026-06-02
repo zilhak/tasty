@@ -23,7 +23,7 @@ impl App {
         modal: Box<dyn crate::view::ui::View>,
         window_id: WindowId,
     ) {
-        self.view.windows.insert(window_id, modal);
+        self.view.views.insert(window_id, modal);
         self.view.active_modal_id = Some(window_id);
     }
 
@@ -32,7 +32,7 @@ impl App {
         let Some(modal_id) = self.view.active_modal_id.take() else {
             return;
         };
-        let Some(mut modal) = self.view.windows.remove(&modal_id) else {
+        let Some(mut modal) = self.view.views.remove(&modal_id) else {
             return;
         };
         // If it was a settings modal, apply settings to all main windows

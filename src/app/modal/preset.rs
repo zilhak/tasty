@@ -11,12 +11,12 @@ impl App {
     /// PresetView 를 연다. 이미 열려 있으면 새 윈도우를 만들지 않고 기존 윈도우에
     /// 포커스만 옮긴다 (엔진 전역 단일 인스턴스).
     pub(crate) fn open_preset_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if let Some(id) = self.preset_window_id {
-            if let Some(w) = self.view.windows.get(&id) {
+        if let Some(id) = self.preset_view_id {
+            if let Some(w) = self.view.views.get(&id) {
                 w.base().winit.focus_window();
                 return;
             }
-            self.preset_window_id = None;
+            self.preset_view_id = None;
         }
 
         use winit::window::WindowAttributes;
@@ -65,18 +65,18 @@ impl App {
             use crate::view::ui::View as _;
             preset.mark_dirty();
         }
-        self.view.windows.insert(window_id, Box::new(preset));
-        self.preset_window_id = Some(window_id);
+        self.view.views.insert(window_id, Box::new(preset));
+        self.preset_view_id = Some(window_id);
         tracing::info!("opened preset window {:?}", window_id);
     }
 
     /// PresetView close 시 정리. store 는 Arc<Mutex<>> 공유라 별도 회수 불필요.
     pub(crate) fn on_preset_window_closed(&mut self, window_id: WindowId) {
-        if self.preset_window_id != Some(window_id) {
+        if self.preset_view_id != Some(window_id) {
             return;
         }
-        self.preset_window_id = None;
-        self.view.windows.remove(&window_id);
+        self.preset_view_id = None;
+        self.view.views.remove(&window_id);
     }
 
     /// 도구 메뉴 클릭 / Intent::SavePreset 후속 — PresetView 열기 + (있다면) selection.
@@ -103,10 +103,10 @@ impl App {
         }
         self.open_preset_window(event_loop);
         if let Some((kind, name)) = pending_selection {
-            if let Some(pwid) = self.preset_window_id {
+            if let Some(pwid) = self.preset_view_id {
                 if let Some(pw) = self
                     .view
-                    .windows
+                    .views
                     .get_mut(&pwid)
                     .and_then(|w| w.as_any_mut().downcast_mut::<view::PresetView>())
                 {

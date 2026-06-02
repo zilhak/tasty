@@ -15,7 +15,7 @@ use crate::state::PendingHostEvent;
 impl App {
     pub(crate) fn dispatch_pending_host_events(&mut self) {
         let mut drained: Vec<PendingHostEvent> = Vec::new();
-        for (_win_id, w) in self.view.windows.iter_mut() {
+        for (_win_id, w) in self.view.views.iter_mut() {
             if let Some(main) = w.as_main_mut() {
                 let engine = &mut main.core_state;
                 main.state.detect_focus_change(engine);

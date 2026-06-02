@@ -92,11 +92,11 @@ pub(crate) struct App {
     /// 사용자 init.lua 기반 Lua hook 엔진. 부팅 시 1회 생성, `~/.tasty/init.lua` 가
     /// 있으면 로드. observe-only — 호스트 동작에는 영향 없음. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
-    /// 현재 열려 있는 `PresetView` 의 winit window id. modeless editor 윈도우는
-    /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 윈도우를 만들지 않고
-    /// 이 id 의 윈도우로 포커스만 이동한다.
+    /// 현재 열려 있는 `PresetView` 의 winit window id. modeless editor view 는
+    /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 view 를 만들지 않고
+    /// 이 id 의 view 로 포커스만 이동한다.
     #[cfg(feature = "gui")]
-    pub(crate) preset_window_id: Option<WindowId>,
+    pub(crate) preset_view_id: Option<WindowId>,
 }
 
 /// State for the modal window shake animation.
@@ -134,7 +134,7 @@ impl App {
             plugin_manager: None,
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
-            preset_window_id: None,
+            preset_view_id: None,
         })
     }
 
@@ -164,7 +164,7 @@ impl App {
             return e;
         }
         #[cfg(feature = "gui")]
-        for w in self.view.windows.values() {
+        for w in self.view.views.values() {
             if let Some(main) = w.as_main() {
                 return &main.core_state;
             }
@@ -177,7 +177,7 @@ impl App {
             return self.core_state.as_mut().unwrap();
         }
         #[cfg(feature = "gui")]
-        for w in self.view.windows.values_mut() {
+        for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 return &mut main.core_state;
             }

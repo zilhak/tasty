@@ -8,7 +8,7 @@ impl App {
         let source = crate::clipboard_history::ClipboardSource::System;
         let engines = self
             .view
-            .windows
+            .views
             .values_mut()
             .filter_map(|w| w.as_main_mut())
             .map(|m| &mut m.core_state)

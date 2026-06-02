@@ -10,7 +10,7 @@ impl App {
         let Some(modal_id) = self.view.active_modal_id else {
             return;
         };
-        let Some(modal) = self.view.windows.get_mut(&modal_id) else {
+        let Some(modal) = self.view.views.get_mut(&modal_id) else {
             return;
         };
         let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsView>() else {
@@ -112,7 +112,7 @@ impl App {
         self.refresh_tool_registry();
 
         let snapshot = self.snapshot_plugins();
-        if let Some(modal) = self.view.windows.get_mut(&modal_id) {
+        if let Some(modal) = self.view.views.get_mut(&modal_id) {
             if let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsView>() {
                 plugins_window.refresh_snapshot(snapshot);
                 for (msg, kind) in pending_toasts {

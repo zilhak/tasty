@@ -9,7 +9,7 @@ impl App {
     /// 로그/이벤트로 관찰.
     pub(crate) fn dispatch_pending_handler_ipc(&mut self) {
         let mut drained: Vec<(String, crate::file::format::FileTarget)> = Vec::new();
-        for w in self.view.windows.values_mut() {
+        for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 drained.append(&mut main.state.pending_handler_ipc);
             }

@@ -73,16 +73,15 @@ impl App {
                 Some(id_u64) => {
                     let target = self
                         .view
-                        .windows
+                        .views
                         .keys()
                         .copied()
                         .find(|w| u64::from(*w) == id_u64);
                     match target {
                         Some(tid) => {
-                            self.view.windows.remove(&tid);
-                            if self.view.focused_window_id == Some(tid) {
-                                self.view.focused_window_id =
-                                    self.view.windows.keys().next().copied();
+                            self.view.views.remove(&tid);
+                            if self.view.focused_view_id == Some(tid) {
+                                self.view.focused_view_id = self.view.views.keys().next().copied();
                             }
                             host_ipc::protocol::JsonRpcResponse::success(
                                 response_id,
@@ -115,13 +114,13 @@ impl App {
                 ),
                 Some(id_u64) => {
                     let mut found = false;
-                    for (id, w) in &self.view.windows {
+                    for (id, w) in &self.view.views {
                         if w.as_main().is_none() {
                             continue;
                         }
                         if u64::from(*id) == id_u64 {
                             w.base().winit.focus_window();
-                            self.view.focused_window_id = Some(*id);
+                            self.view.focused_view_id = Some(*id);
                             found = true;
                             break;
                         }
@@ -136,10 +135,10 @@ impl App {
             return IpcStep::Handled;
         }
         if cmd.request.method == "window.list" {
-            let focused_id = self.view.focused_window_id;
+            let focused_id = self.view.focused_view_id;
             let list: Vec<_> = self
                 .view
-                .windows
+                .views
                 .iter()
                 .filter_map(|(id, w)| {
                     let main = w.as_main()?;
@@ -455,7 +454,7 @@ impl App {
                 // Arc 공유). main 이 하나도 없으면 elevation popup 표시 자체가 의미 없으므로
                 // internal_error.
                 let core = &mut self.core;
-                let main = self.view.windows.values_mut().find_map(|w| w.as_main_mut());
+                let main = self.view.views.values_mut().find_map(|w| w.as_main_mut());
                 match main {
                     Some(m) => host_ipc::handler::session::handle_request_permission(
                         core,
@@ -496,7 +495,7 @@ impl App {
     fn ipc_dispatch_approval_await(&mut self, cmd: &IpcCommand) {
         let store_opt = self
             .view
-            .windows
+            .views
             .values()
             .find_map(|w| w.as_main().map(|w| w.core_state.approval_store.clone()))
             .or_else(|| {

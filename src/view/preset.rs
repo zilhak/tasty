@@ -3,7 +3,7 @@
 //! `SettingsView` 구조를 따르되 modal 이 아닌 modeless 로 동작:
 //! - 다른 윈도우 입력을 차단하지 않음
 //! - Esc 로 닫히지 않음
-//! - 엔진 전역 단일 인스턴스는 `App.preset_window_id` 가 관리
+//! - 엔진 전역 단일 인스턴스는 `App.preset_view_id` 가 관리
 //! - 편집 즉시 store 가 디스크 동기화 (별도 save 버튼 없음)
 
 use std::sync::{Arc, Mutex};

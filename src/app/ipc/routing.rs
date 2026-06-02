@@ -44,12 +44,12 @@ impl App {
         // (CLAUDE.md "포커스 독립" 원칙).
         let target_id = self
             .find_request_owner(&cmd.request.params)
-            .or(self.view.focused_window_id);
+            .or(self.view.focused_view_id);
         if let Some(id) = target_id {
             let core = &mut self.core;
             let resp_opt = self
                 .view
-                .windows
+                .views
                 .get_mut(&id)
                 .and_then(|w| w.as_main_mut())
                 .map(|w| {

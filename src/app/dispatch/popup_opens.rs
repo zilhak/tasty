@@ -8,7 +8,7 @@ impl App {
     /// `open_popup_instance`가 자체적으로 warn 후 무시.
     pub(crate) fn dispatch_pending_popup_opens(&mut self) {
         let mut drained: Vec<(String, String, serde_json::Value)> = Vec::new();
-        for w in self.view.windows.values_mut() {
+        for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 drained.append(&mut main.state.pending_popup_opens);
             }

@@ -244,8 +244,8 @@ impl App {
         let window_id = window.id();
         let main =
             window::main::MainView::new(gpu, state, core_state, window, self.view.proxy.clone());
-        self.view.windows.insert(window_id, Box::new(main));
-        self.view.focused_window_id = Some(window_id);
+        self.view.views.insert(window_id, Box::new(main));
+        self.view.focused_view_id = Some(window_id);
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
             use tasty_plugin_protocol::events::payloads::{WindowCreated, WindowModality};
@@ -455,6 +455,6 @@ impl App {
         }
 
         self.register_window(gpu, state, core_state, window);
-        tracing::info!("created new window {:?}", self.view.focused_window_id);
+        tracing::info!("created new window {:?}", self.view.focused_view_id);
     }
 }
