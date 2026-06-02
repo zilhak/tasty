@@ -7,6 +7,8 @@ api_version = "1"
 permissions = [
     "surface.read",
     "surface.write",
+    "file_handler.define",
+    "file_handler.handle:html",
 ]
 lang_dir = "lang"
 
@@ -23,6 +25,20 @@ rendering = "webview"
 [[contributes.ipc_namespace]]
 prefix = "html"
 description_i18n_key = "html.namespace.desc"
+
+# detector 는 호스트가 유지 (default-file-format.toml). plugin disabled 시에도
+# .html 확장자가 식별되어 host html-system handler 가 fallback 으로 동작.
+# 본 plugin 은 handler 만 contribute — owner tiebreak (user > plugin > host)
+# 에 의해 priority 동순위면 plugin handler 가 우선.
+[[contributes.handler]]
+id = "viewer"
+detector = "html"
+priority = 50
+display_name_i18n_key = "file_handler.host.html-viewer"
+[contributes.handler.action]
+kind = "open_surface"
+surface_kind = "html"
+param_key = "url"
 
 [[contributes.cli]]
 name = "html"
