@@ -44,6 +44,7 @@ impl FocusedSurfaceType {
 
 /// A keyboard event destined for a non-terminal surface (Explorer, Markdown, etc.).
 /// Stored in a queue and consumed during the next egui render frame.
+#[cfg(feature = "gui")]
 #[derive(Debug, Clone)]
 pub struct PendingKeyEvent {
     pub(crate) key: winit::keyboard::Key,
@@ -284,6 +285,7 @@ pub struct AppState {
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub(crate) captured_double_tap: Option<String>,
     /// Keyboard events for non-terminal surfaces, consumed during egui rendering.
+    #[cfg(feature = "gui")]
     pub(crate) pending_surface_keys: Vec<PendingKeyEvent>,
     /// Surface close lifecycle 알림 큐. close 직후 enqueue되고, App 메인 루프가
     /// drain하여 `PluginManager::notify_surface_closed`로 dispatch한다.
@@ -590,6 +592,7 @@ impl AppState {
             dialogs: DialogState::new(),
             tab_bar_height: PhysicalPx(24.0),
             captured_double_tap: None,
+            #[cfg(feature = "gui")]
             pending_surface_keys: Vec::new(),
             pending_lifecycle_events: Vec::new(),
             pending_host_events: Vec::new(),
