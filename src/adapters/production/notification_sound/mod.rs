@@ -9,13 +9,17 @@
 
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub mod macos;
+#[cfg(windows)]
+pub mod windows;
 
 #[cfg(all(target_os = "macos", not(feature = "gui")))]
 pub use crate::ports::notification_sound::NoopPlayer as PlatformPlayer;
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub use macos::MacBeepPlayer as PlatformPlayer;
+#[cfg(windows)]
+pub use windows::WinBeepPlayer as PlatformPlayer;
 
-// Windows / Linux / 그 외 — 후속 substep 에서 platform 별 impl 추가 전까지
+// 그 외 OS (Linux/BSD 등) — 후속 substep 에서 Linux impl 추가 전까지
 // NoopPlayer fallback.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub use crate::ports::notification_sound::NoopPlayer as PlatformPlayer;
