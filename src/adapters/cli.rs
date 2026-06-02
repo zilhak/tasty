@@ -32,6 +32,11 @@ pub struct Cli {
     #[arg(long)]
     pub launch: bool,
 
+    /// Run as headless terminal emulator (no GUI, IPC + PTY + plugin only).
+    /// Default-features 빌드에서는 GUI 부팅을 skip. no-default-features 빌드는 항상 headless.
+    #[arg(long, default_value_t = false)]
+    pub headless: bool,
+
     /// Show all commands in a tree (use with -h)
     #[arg(short = 'a', long = "all")]
     pub all: bool,
