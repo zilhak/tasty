@@ -31,12 +31,6 @@ impl PluginManager {
         self.plugin_buffers.get(plugin_id)?.get(&buffer_id)
     }
 
-    /// 활성 plugin 목록 (`SharedBuffer`를 보유 중인 plugin만). canvas prepare가 iterating
-    /// 시 사용.
-    pub fn plugin_ids_with_buffers(&self) -> Vec<String> {
-        self.plugin_buffers.keys().cloned().collect()
-    }
-
     /// `host.shared_buffer.create` 처리. 새 공유 메모리 영역을 만들어
     /// 메인 채널 결과(`SharedBufferCreateResult`)와 보조 채널 핸들(`HandleAttach`)을
     /// 양쪽 모두 전송한다.
