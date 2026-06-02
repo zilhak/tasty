@@ -26,4 +26,8 @@ pub(crate) struct GlyphInstance {
     pub fg_color: GpuRgba,
     pub glyph_offset: [f32; 2],
     pub glyph_size: [f32; 2],
+    /// Atlas page (D2Array layer) the glyph lives on.
+    pub page: u32,
+    /// Padding to keep the next instance 8-byte aligned.
+    pub _pad: u32,
 }

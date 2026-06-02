@@ -120,10 +120,12 @@ impl CellRenderer {
     }
 
     /// Reset per-frame accumulators. Call once at the start of `render_terminals`.
+    /// Bumps the atlas frame counter so per-page LRU stamps stay coherent.
     pub fn begin_frame(&mut self) {
         self.bg_instances.clear();
         self.glyph_instances.clear();
         self.surface_ranges.clear();
+        self.atlas.begin_frame();
     }
 
     /// Append a terminal viewport's instances to the frame accumulator.
@@ -388,6 +390,8 @@ impl CellRenderer {
                             fg_color,
                             glyph_offset: [entry.offset_x, entry.offset_y],
                             glyph_size: [entry.width, entry.height],
+                            page: entry.page,
+                            _pad: 0,
                         });
                     }
                 }
@@ -482,6 +486,8 @@ impl CellRenderer {
                         fg_color: preedit.fg_color,
                         glyph_offset: [entry.offset_x, entry.offset_y],
                         glyph_size: [entry.width, entry.height],
+                        page: entry.page,
+                        _pad: 0,
                     });
                 }
             }

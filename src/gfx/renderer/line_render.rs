@@ -91,6 +91,8 @@ impl CellRenderer {
                     fg_color,
                     glyph_offset: [entry.offset_x, entry.offset_y],
                     glyph_size: [entry.width, entry.height],
+                    page: entry.page,
+                    _pad: 0,
                 });
             }
         }

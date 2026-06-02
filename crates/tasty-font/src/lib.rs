@@ -206,24 +206,94 @@ pub struct AtlasEntry {
     /// Pixel size of the glyph bitmap
     pub width: f32,
     pub height: f32,
+    /// Atlas page (D2Array layer) the glyph lives on.
+    pub page: u32,
 }
 
-/// GPU texture atlas for glyph bitmaps.
-/// Uses a simple shelf-based row packer.
+/// Per-page shelf-packing state. Pure-Rust — no wgpu dependency, so it
+/// can be unit-tested without a device.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AtlasPage {
+    pub shelf_x: u32,
+    pub shelf_y: u32,
+    pub shelf_height: u32,
+    /// Number of cache entries currently allocated on this page (diagnostic).
+    pub entry_count: u32,
+    /// Frame index when this page was last touched (cache hit OR insertion).
+    /// Used as the LRU tiebreaker when picking an eviction victim.
+    pub last_access_frame: u64,
+}
+
+impl AtlasPage {
+    /// Try to reserve a (w × h) box on this page.
+    /// Returns the (x, y) origin if there is room; mutates the shelf cursor.
+    pub fn try_allocate(&mut self, w: u32, h: u32, atlas_size: u32) -> Option<(u32, u32)> {
+        if w == 0 || h == 0 || w > atlas_size || h > atlas_size {
+            return None;
+        }
+        // Advance shelf if the current row can't fit horizontally.
+        if self.shelf_x + w > atlas_size {
+            self.shelf_y = self.shelf_y.saturating_add(self.shelf_height + 1);
+            self.shelf_x = 0;
+            self.shelf_height = 0;
+        }
+        if self.shelf_y + h > atlas_size {
+            return None;
+        }
+        let origin = (self.shelf_x, self.shelf_y);
+        self.shelf_x += w + 1;
+        self.shelf_height = self.shelf_height.max(h);
+        self.entry_count += 1;
+        Some(origin)
+    }
+
+    /// Reset this page's packing state (used after eviction).
+    pub fn reset(&mut self) {
+        self.shelf_x = 0;
+        self.shelf_y = 0;
+        self.shelf_height = 0;
+        self.entry_count = 0;
+    }
+}
+
+/// Pick the eviction victim across `pages`, excluding the currently active
+/// page. The victim is the page with the smallest `last_access_frame` (true
+/// per-page LRU). Returns `None` if there is no non-active page.
+pub fn pick_lru_victim(pages: &[AtlasPage], active_page: u32) -> Option<u32> {
+    pages
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| (*i as u32) != active_page)
+        .min_by_key(|(_, p)| p.last_access_frame)
+        .map(|(i, _)| i as u32)
+}
+
+/// GPU texture atlas for glyph bitmaps, backed by a `D2Array` texture with
+/// `MAX_PAGES` layers. Uses a simple shelf-based row packer per page. Once
+/// all pages are full, the least-recently-used non-active page is evicted
+/// (cache entries dropped + layer zero-cleared) and reused.
 pub struct GlyphAtlas {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
     atlas_size: u32,
     cache: HashMap<GlyphKey, AtlasEntry>,
-    /// Current shelf (row) packing state
-    shelf_x: u32,
-    shelf_y: u32,
-    shelf_height: u32,
+    pages: Vec<AtlasPage>,
+    /// Page where new glyphs are currently being packed.
+    active_page: u32,
+    /// Monotonic frame counter; bumped by `begin_frame()`. Used to stamp
+    /// `last_access_frame` on each page touch.
+    current_frame: u64,
+    /// Set to `current_frame` when a page eviction happens; ensures we
+    /// never evict more than once per frame to avoid thrashing.
+    last_evict_frame: Option<u64>,
 }
 
 impl GlyphAtlas {
     pub const ATLAS_SIZE: u32 = 2048;
+    /// Maximum number of atlas pages (D2Array layers). Fixed at construction:
+    /// 4 × 2048² R8Unorm = 32 MiB resident memory.
+    pub const MAX_PAGES: u32 = 4;
 
     pub fn new(device: &wgpu::Device) -> Self {
         let atlas_size = Self::ATLAS_SIZE;
@@ -233,7 +303,7 @@ impl GlyphAtlas {
             size: wgpu::Extent3d {
                 width: atlas_size,
                 height: atlas_size,
-                depth_or_array_layers: 1,
+                depth_or_array_layers: Self::MAX_PAGES,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -243,7 +313,11 @@ impl GlyphAtlas {
             view_formats: &[],
         });
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("glyph_atlas_view"),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("glyph_sampler"),
@@ -260,10 +334,17 @@ impl GlyphAtlas {
             sampler,
             atlas_size,
             cache: HashMap::new(),
-            shelf_x: 0,
-            shelf_y: 0,
-            shelf_height: 0,
+            pages: vec![AtlasPage::default(); Self::MAX_PAGES as usize],
+            active_page: 0,
+            current_frame: 0,
+            last_evict_frame: None,
         }
+    }
+
+    /// Bump the frame counter. Call once per render frame, before any
+    /// `get_or_insert` calls, so LRU stamps are coherent.
+    pub fn begin_frame(&mut self) {
+        self.current_frame = self.current_frame.wrapping_add(1);
     }
 
     /// Get or rasterize a glyph, returning its atlas entry.
@@ -273,11 +354,77 @@ impl GlyphAtlas {
         font_config: &mut FontConfig,
         queue: &wgpu::Queue,
     ) -> Option<AtlasEntry> {
-        if let Some(entry) = self.cache.get(&key) {
-            return Some(*entry);
+        if let Some(entry) = self.cache.get(&key).copied() {
+            self.pages[entry.page as usize].last_access_frame = self.current_frame;
+            return Some(entry);
         }
-
         self.rasterize_glyph(key, font_config, queue)
+    }
+
+    /// Try to reserve a glyph box on some page, possibly evicting one if all
+    /// pages are full. Returns `(page_index, x, y)` on success.
+    fn allocate_box(&mut self, w: u32, h: u32, queue: &wgpu::Queue) -> Option<(u32, u32, u32)> {
+        if w > self.atlas_size || h > self.atlas_size {
+            return None;
+        }
+        let max_pages = self.pages.len() as u32;
+        // Walk from active page through all pages once.
+        for step in 0..max_pages {
+            let idx = (self.active_page + step) % max_pages;
+            if let Some((x, y)) = self.pages[idx as usize].try_allocate(w, h, self.atlas_size) {
+                self.active_page = idx;
+                self.pages[idx as usize].last_access_frame = self.current_frame;
+                return Some((idx, x, y));
+            }
+        }
+        // All pages full — evict the LRU non-active page (at most once per frame).
+        if self.last_evict_frame == Some(self.current_frame) {
+            tracing::warn!(
+                "glyph atlas: second eviction skipped in frame {}; glyph deferred",
+                self.current_frame
+            );
+            return None;
+        }
+        let victim = pick_lru_victim(&self.pages, self.active_page)?;
+        tracing::warn!(
+            "evicting atlas page {} ({} entries, last_access_frame={})",
+            victim,
+            self.pages[victim as usize].entry_count,
+            self.pages[victim as usize].last_access_frame
+        );
+        // Drop cache entries that lived on this page.
+        self.cache.retain(|_, e| e.page != victim);
+        self.pages[victim as usize].reset();
+        // Zero-clear the layer so stale glyph pixels don't bleed into new UVs.
+        let empty = vec![0u8; (self.atlas_size * self.atlas_size) as usize];
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: victim,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &empty,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.atlas_size),
+                rows_per_image: Some(self.atlas_size),
+            },
+            wgpu::Extent3d {
+                width: self.atlas_size,
+                height: self.atlas_size,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.last_evict_frame = Some(self.current_frame);
+        let (x, y) = self.pages[victim as usize].try_allocate(w, h, self.atlas_size)?;
+        self.active_page = victim;
+        self.pages[victim as usize].last_access_frame = self.current_frame;
+        Some((victim, x, y))
     }
 
     /// Try to rasterize a builtin block/box character programmatically.
@@ -299,38 +446,25 @@ impl GlyphAtlas {
             return None;
         }
 
-        self.upload_builtin_bitmap(&bitmap, cw, ch_px, queue)
+        self.upload_bitmap(&bitmap, cw, ch_px, 0.0, 0.0, queue)
     }
 
-    /// Upload a programmatically-generated bitmap to the atlas.
-    fn upload_builtin_bitmap(
+    /// Pack a bitmap into the next available page and upload it.
+    fn upload_bitmap(
         &mut self,
         bitmap: &[u8],
         glyph_width: u32,
         glyph_height: u32,
+        offset_x: f32,
+        offset_y: f32,
         queue: &wgpu::Queue,
     ) -> Option<AtlasEntry> {
-        // Pack into atlas using shelf algorithm
-        if self.shelf_x + glyph_width > self.atlas_size {
-            self.shelf_y += self.shelf_height + 1;
-            self.shelf_x = 0;
-            self.shelf_height = 0;
-        }
-
-        if self.shelf_y + glyph_height > self.atlas_size {
-            // Atlas full - fall back to swash
-            return None;
-        }
-
+        let (page, x, y) = self.allocate_box(glyph_width, glyph_height, queue)?;
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d {
-                    x: self.shelf_x,
-                    y: self.shelf_y,
-                    z: 0,
-                },
+                origin: wgpu::Origin3d { x, y, z: page },
                 aspect: wgpu::TextureAspect::All,
             },
             bitmap,
@@ -347,21 +481,17 @@ impl GlyphAtlas {
         );
 
         let atlas_f = self.atlas_size as f32;
-        let entry = AtlasEntry {
-            uv_x: self.shelf_x as f32 / atlas_f,
-            uv_y: self.shelf_y as f32 / atlas_f,
+        Some(AtlasEntry {
+            uv_x: x as f32 / atlas_f,
+            uv_y: y as f32 / atlas_f,
             uv_w: glyph_width as f32 / atlas_f,
             uv_h: glyph_height as f32 / atlas_f,
-            offset_x: 0.0,
-            offset_y: 0.0,
+            offset_x,
+            offset_y,
             width: glyph_width as f32,
             height: glyph_height as f32,
-        };
-
-        self.shelf_x += glyph_width + 1;
-        self.shelf_height = self.shelf_height.max(glyph_height);
-
-        Some(entry)
+            page,
+        })
     }
 
     fn rasterize_glyph(
@@ -427,7 +557,7 @@ impl GlyphAtlas {
         let glyph_height = image.placement.height;
 
         if glyph_width == 0 || glyph_height == 0 {
-            // Space or invisible character - cache an empty entry
+            // Space or invisible character - cache an empty entry on the active page.
             let entry = AtlasEntry {
                 uv_x: 0.0,
                 uv_y: 0.0,
@@ -437,6 +567,7 @@ impl GlyphAtlas {
                 offset_y: 0.0,
                 width: 0.0,
                 height: 0.0,
+                page: self.active_page,
             };
             self.cache.insert(key, entry);
             return Some(entry);
@@ -459,79 +590,6 @@ impl GlyphAtlas {
             }
         };
 
-        // Pack into atlas using shelf algorithm
-        if self.shelf_x + glyph_width > self.atlas_size {
-            // Move to next shelf
-            self.shelf_y += self.shelf_height + 1;
-            self.shelf_x = 0;
-            self.shelf_height = 0;
-        }
-
-        if self.shelf_y + glyph_height > self.atlas_size {
-            // Atlas full - reset and rebuild. Existing glyphs will be re-rasterized on demand.
-            tracing::warn!(
-                "glyph atlas full, resetting ({} cached glyphs cleared)",
-                self.cache.len()
-            );
-            self.cache.clear();
-            self.shelf_x = 0;
-            self.shelf_y = 0;
-            self.shelf_height = 0;
-
-            // Clear the texture by uploading zeroes
-            let empty = vec![0u8; (self.atlas_size * self.atlas_size) as usize];
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &empty,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(self.atlas_size),
-                    rows_per_image: Some(self.atlas_size),
-                },
-                wgpu::Extent3d {
-                    width: self.atlas_size,
-                    height: self.atlas_size,
-                    depth_or_array_layers: 1,
-                },
-            );
-
-            // Try again - if single glyph is too large, give up
-            if glyph_height > self.atlas_size || glyph_width > self.atlas_size {
-                tracing::warn!("glyph '{}' too large for atlas", key.ch);
-                return None;
-            }
-        }
-
-        // Upload glyph bitmap to texture
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d {
-                    x: self.shelf_x,
-                    y: self.shelf_y,
-                    z: 0,
-                },
-                aspect: wgpu::TextureAspect::All,
-            },
-            &grayscale_data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(glyph_width),
-                rows_per_image: Some(glyph_height),
-            },
-            wgpu::Extent3d {
-                width: glyph_width,
-                height: glyph_height,
-                depth_or_array_layers: 1,
-            },
-        );
-
         // Glyph offset relative to cell origin:
         // placement.left is the horizontal bearing (distance from cell left to glyph left)
         // placement.top is the vertical bearing (distance from baseline to glyph top)
@@ -539,21 +597,14 @@ impl GlyphAtlas {
         let offset_x = image.placement.left as f32;
         let offset_y = font_config.metrics.baseline - image.placement.top as f32;
 
-        let atlas_f = self.atlas_size as f32;
-        let entry = AtlasEntry {
-            uv_x: self.shelf_x as f32 / atlas_f,
-            uv_y: self.shelf_y as f32 / atlas_f,
-            uv_w: glyph_width as f32 / atlas_f,
-            uv_h: glyph_height as f32 / atlas_f,
+        let entry = self.upload_bitmap(
+            &grayscale_data,
+            glyph_width,
+            glyph_height,
             offset_x,
             offset_y,
-            width: glyph_width as f32,
-            height: glyph_height as f32,
-        };
-
-        self.shelf_x += glyph_width + 1;
-        self.shelf_height = self.shelf_height.max(glyph_height);
-
+            queue,
+        )?;
         self.cache.insert(key, entry);
         Some(entry)
     }
@@ -792,5 +843,93 @@ mod tests {
         let small = FontConfig::new(10.0, "");
         let large = FontConfig::new(24.0, "");
         assert!(large.metrics.cell_height > small.metrics.cell_height);
+    }
+
+    // --- Atlas shelf packer + LRU page selection (device-free) ---
+
+    #[test]
+    fn atlas_page_first_alloc_lands_at_origin() {
+        let mut page = AtlasPage::default();
+        let (x, y) = page.try_allocate(32, 32, 2048).unwrap();
+        assert_eq!((x, y), (0, 0));
+        assert_eq!(page.shelf_x, 33);
+        assert_eq!(page.shelf_height, 32);
+        assert_eq!(page.entry_count, 1);
+    }
+
+    #[test]
+    fn atlas_page_wraps_to_next_shelf_when_row_full() {
+        let mut page = AtlasPage::default();
+        // 2048 / 100 = 20 glyphs per shelf row; the 21st must wrap.
+        for _ in 0..20 {
+            page.try_allocate(100, 50, 2048).unwrap();
+        }
+        let before_y = page.shelf_y;
+        let (_, y) = page.try_allocate(100, 50, 2048).unwrap();
+        assert!(y > before_y, "expected wrap to next shelf, got y={y}");
+        assert_eq!(page.shelf_x, 101);
+    }
+
+    #[test]
+    fn atlas_page_returns_none_when_full() {
+        let mut page = AtlasPage::default();
+        // First shelf occupies y=0..1024. Anything taller than ~1023 in the
+        // next shelf no longer fits within the 2048 atlas height.
+        page.try_allocate(2000, 1024, 2048).unwrap();
+        assert!(page.try_allocate(100, 1100, 2048).is_none());
+    }
+
+    #[test]
+    fn atlas_page_rejects_oversized_glyph() {
+        let mut page = AtlasPage::default();
+        assert!(page.try_allocate(3000, 32, 2048).is_none());
+        assert!(page.try_allocate(32, 3000, 2048).is_none());
+        // State must not have advanced.
+        assert_eq!(page.shelf_x, 0);
+        assert_eq!(page.entry_count, 0);
+    }
+
+    #[test]
+    fn lru_victim_picks_oldest_non_active_page() {
+        let mut pages = vec![AtlasPage::default(); 4];
+        pages[0].last_access_frame = 100;
+        pages[1].last_access_frame = 50; // oldest
+        pages[2].last_access_frame = 200;
+        pages[3].last_access_frame = 75;
+        let victim = pick_lru_victim(&pages, 2).unwrap();
+        assert_eq!(victim, 1);
+    }
+
+    #[test]
+    fn lru_victim_excludes_active_page() {
+        let mut pages = vec![AtlasPage::default(); 4];
+        pages[0].last_access_frame = 10; // would be oldest…
+        pages[1].last_access_frame = 50;
+        pages[2].last_access_frame = 200;
+        pages[3].last_access_frame = 75;
+        // …but 0 is the active page, so pick the next oldest.
+        let victim = pick_lru_victim(&pages, 0).unwrap();
+        assert_eq!(victim, 1);
+    }
+
+    #[test]
+    fn lru_victim_returns_none_when_only_active_page_exists() {
+        let pages = vec![AtlasPage::default(); 1];
+        assert!(pick_lru_victim(&pages, 0).is_none());
+    }
+
+    #[test]
+    fn atlas_page_reset_clears_state() {
+        let mut page = AtlasPage::default();
+        page.try_allocate(100, 100, 2048).unwrap();
+        page.last_access_frame = 42;
+        page.reset();
+        assert_eq!(page.shelf_x, 0);
+        assert_eq!(page.shelf_y, 0);
+        assert_eq!(page.shelf_height, 0);
+        assert_eq!(page.entry_count, 0);
+        // last_access_frame intentionally preserved so the just-evicted page
+        // doesn't immediately re-evict itself in the same frame.
+        assert_eq!(page.last_access_frame, 42);
     }
 }
