@@ -12,7 +12,10 @@ use crate::engine::surface_registry::{SurfaceKindRegistry, builtins};
 
 /// `(kind, plugin_id)` 쌍이 host-rendered로 허용된 조합인지 확인.
 fn is_host_rendered_allowed(kind: &str, plugin_id: &str) -> bool {
-    matches!((kind, plugin_id), ("image", "com.tasty.image"))
+    matches!(
+        (kind, plugin_id),
+        ("image", "com.tasty.image") | ("markdown", "com.tasty.markdown")
+    )
 }
 
 /// plugin manager가 hello 직후 매니페스트에 `rendering = "host"` 선언이 있을 때 호출.
@@ -47,6 +50,7 @@ pub fn register_host_rendered_kind(
     }
     match kind {
         "image" => builtins::register_image(registry),
+        "markdown" => builtins::register_markdown(registry),
         _ => unreachable!("whitelist guard ensures only known kinds reach here"),
     }
     tracing::info!(
@@ -97,6 +101,24 @@ mod tests {
             "image"
         ));
         assert!(reg.contains("image"));
+    }
+
+    #[test]
+    fn markdown_kind_allowed_for_markdown_plugin() {
+        assert!(is_host_rendered_allowed("markdown", "com.tasty.markdown"));
+        assert!(!is_host_rendered_allowed("markdown", "com.example.evil"));
+        assert!(!is_host_rendered_allowed("foo", "com.tasty.markdown"));
+    }
+
+    #[test]
+    fn register_succeeds_for_markdown_plugin() {
+        let reg = SurfaceKindRegistry::new();
+        assert!(register_host_rendered_kind(
+            &reg,
+            "com.tasty.markdown",
+            "markdown"
+        ));
+        assert!(reg.contains("markdown"));
     }
 
     #[test]

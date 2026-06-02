@@ -46,7 +46,7 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
 
 // ── Markdown ────────────────────────────────────────────────────────────────
 
-fn register_markdown(registry: &SurfaceKindRegistry) {
+pub(crate) fn register_markdown(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "markdown",
         display_name_i18n_key: "surface.kind.markdown",
