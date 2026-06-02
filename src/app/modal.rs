@@ -36,7 +36,7 @@ impl App {
             return;
         };
         // If it was a settings modal, apply settings to all main windows
-        if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<view::SettingsWindow>() {
+        if let Some(settings_modal) = modal.as_any_mut().downcast_mut::<view::SettingsView>() {
             let new_settings = settings_modal.settings.clone();
             // Plugin shortcut override draft 회수 — modal-specific (settings 와 별 경로).
             let plugin_draft = settings_modal.take_plugin_shortcut_draft();

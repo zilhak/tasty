@@ -1216,7 +1216,7 @@ impl App {
     /// INVARIANT: settings 는 main + parked 두 곳 모두 갱신해야 한다. parked 만
     /// 있는 상태에서 settings 변경 후 윈도우가 복원되면 옛 settings 로 살아나는 버그.
     fn cascade_settings_updated(&mut self, new_settings: Settings) {
-        // SettingsWindow 는 단일 SoT — prev/new 글로벌 비교로 충분.
+        // SettingsView 는 단일 SoT — prev/new 글로벌 비교로 충분.
         let prev_theme = self
             .main_windows_iter_mut()
             .next()

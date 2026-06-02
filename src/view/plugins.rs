@@ -1,4 +1,4 @@
-//! Plugins modal window. Mirrors `SettingsWindow` structure.
+//! Plugins modal window. Mirrors `SettingsView` structure.
 //!
 //! `App`이 `PluginManager`를 소유하므로, 모달은 직접 manager를 들고 있지 않고
 //! 읽기 전용 `PluginsSnapshot` + `pending_actions` 큐만 보유한다. 매 tick에서

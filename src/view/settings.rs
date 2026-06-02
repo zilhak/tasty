@@ -15,7 +15,7 @@ use crate::view::ui::{View, sealed};
 use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
 
 /// 설정 모달 윈도우. egui 기반 설정 UI를 렌더한다.
-pub struct SettingsWindow {
+pub struct SettingsView {
     pub base: ViewBase,
     pub settings: Settings,
     settings_ui_state: SettingsUiState,
@@ -33,7 +33,7 @@ pub struct SettingsWindow {
     toasts: ToastManager,
 }
 
-impl SettingsWindow {
+impl SettingsView {
     pub fn new(
         gpu: GpuState,
         winit: Arc<winit::window::Window>,
@@ -80,7 +80,7 @@ impl SettingsWindow {
     }
 }
 
-impl View for SettingsWindow {
+impl View for SettingsView {
     fn base(&self) -> &ViewBase {
         &self.base
     }
@@ -232,7 +232,7 @@ impl View for SettingsWindow {
     }
 }
 
-impl ModalView for SettingsWindow {
+impl ModalView for SettingsView {
     fn shown(&self) -> bool {
         self.shown
     }
@@ -241,4 +241,4 @@ impl ModalView for SettingsWindow {
     }
 }
 
-impl sealed::Sealed for SettingsWindow {}
+impl sealed::Sealed for SettingsView {}

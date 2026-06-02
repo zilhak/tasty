@@ -5,7 +5,7 @@ use crate::plugin::registry_state::shortcut_override_display;
 use crate::{plugin, settings_ui, shortcuts};
 
 impl App {
-    /// SettingsWindow가 회수해 온 plugin shortcut override draft를 PluginsConfig에
+    /// SettingsView가 회수해 온 plugin shortcut override draft를 PluginsConfig에
     /// 반영하고 디스크에 저장. 값이 `Some(ov)`이면 set, `None`이면 clear.
     pub(crate) fn apply_plugin_shortcut_draft(
         &mut self,

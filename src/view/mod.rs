@@ -22,7 +22,7 @@ pub(crate) use modal::ModalView;
 pub(crate) use plugins::PluginsWindow;
 pub(crate) use preset::PresetView;
 pub(crate) use quit::QuitWindow;
-pub(crate) use settings::SettingsWindow;
+pub(crate) use settings::SettingsView;
 pub(crate) use terminal_host::TerminalHostView;
 
 use std::collections::HashMap;
