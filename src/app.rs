@@ -124,7 +124,7 @@ impl App {
         panic!("App.core_state accessed before initialization");
     }
 
-    pub(crate) fn engine_state_mut(&mut self) -> &mut crate::core::CoreState {
+    pub(crate) fn core_state_mut(&mut self) -> &mut crate::core::CoreState {
         if self.core_state.is_some() {
             return self.core_state.as_mut().unwrap();
         }
