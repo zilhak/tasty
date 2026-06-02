@@ -1,0 +1,27 @@
+# 본 매니페스트는 F.H schema 확장 (default_colors + [[contributes.window]]) 의
+# 데모용 예시이다. 실행 가능한 plugin binary 는 존재하지 않으며 `BUILTINS` 디스커버리
+# 에도 등록되지 않는다. 향후 markdown surface 의 본격 plugin 화 시점에 본 매니페스트
+# 를 시작점으로 사용한다.
+
+manifest_version = 1
+id = "com.tasty.markdown"
+name = "Markdown Viewer"
+version = "0.1.0"
+api_version = "1"
+permissions = []
+
+[entry]
+type = "process"
+command = "tasty-plugin-markdown"
+
+[[surface_kinds]]
+kind = "markdown"
+display_name_i18n_key = "surface.kind.markdown"
+icon = "📄"
+rendering = "host"
+
+[surface_kinds.default_colors]
+focused_bg = "#1e1e2e"
+focused_fg = "#cdd6f4"
+unfocused_bg = "#181825"
+unfocused_fg = "#a6adc8"
