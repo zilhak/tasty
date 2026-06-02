@@ -261,21 +261,36 @@ pub enum OpenPopupMode {
 /// `System` 발화는 *Domain Intent 한정* — UI Intent (`Intent::Ui`) 의 자동
 /// 발화는 release 표면에서 금지되므로 `UiIntent` 위에는 `from_system()` 을
 /// 두지 않는다 (`popup-system.md` "Popup 발화 정책").
+///
+/// `source` 페이로드는 audit/debug trace 용 — match arm 에서 destructure 하지
+/// 않으나 `Debug` derive 로 노출. D.3.C.F.3 Audit log 가 본 정보를 읽기
+/// 시작 예정.
 #[derive(Debug, Clone)]
 pub enum IntentOrigin {
-    User { source: UserSource },
-    Agent { source: AgentSource },
+    User {
+        #[allow(dead_code)]
+        source: UserSource,
+    },
+    Agent {
+        #[allow(dead_code)]
+        source: AgentSource,
+    },
     System,
 }
 
+/// 사용자 발화의 정확한 origin (shortcut id, menu id 등). 페이로드는 audit
+/// trace 전용으로 destructure 되지 않으나 Debug 출력에 노출.
 #[derive(Debug, Clone)]
 pub enum UserSource {
-    Shortcut(&'static str),
-    Menu(&'static str),
+    Shortcut(#[allow(dead_code)] &'static str),
+    Menu(#[allow(dead_code)] &'static str),
     ContextMenu,
 }
 
+/// 에이전트 발화의 channel + plugin id. audit trace 용 — Plugin/Cli variant
+/// 자체는 추후 plugin/CLI dispatch chain 통합 시 활성화 예정 (E.B 영역).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum AgentSource {
     Ipc,
     Plugin(String),
@@ -287,10 +302,13 @@ impl IntentOrigin {
         matches!(self, IntentOrigin::User { .. })
     }
 
+    /// audit/branch helper — origin 분기 시 IntentOrigin 패턴 매칭 대신 사용.
+    #[allow(dead_code)]
     pub fn is_agent(&self) -> bool {
         matches!(self, IntentOrigin::Agent { .. })
     }
 
+    #[allow(dead_code)]
     pub fn is_system(&self) -> bool {
         matches!(self, IntentOrigin::System)
     }
@@ -370,7 +388,9 @@ impl Intent {
 }
 
 impl DispatchedIntent {
-    /// `trace_id` 명시 지정 (IPC chain 등).
+    /// `trace_id` 명시 지정 (IPC chain 등). Audit trace 용 helper — IPC
+    /// 핸들러가 외부에서 발급한 trace_id 를 chain 시작 시점에 주입할 때 호출.
+    #[allow(dead_code)]
     pub fn with_trace_id(mut self, trace_id: impl Into<String>) -> Self {
         self.trace_id = Some(trace_id.into());
         self
