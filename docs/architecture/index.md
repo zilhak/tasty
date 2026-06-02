@@ -1,7 +1,7 @@
 # 아키텍처 개요
 
 Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다.
-본 바이너리(`src/`)와 14개의 라이브러리 크레이트(`crates/*`)로 구성된다.
+본 바이너리(`src/`)와 28개의 라이브러리 크레이트(`crates/*`)로 구성된다.
 
 ## 기술 스택
 
@@ -21,34 +21,77 @@ Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 
 ## 워크스페이스 크레이트
 
+크레이트 분류는 4 계층 + 테스트 도구 계층:
+
+### type-\* layer (leaf, primitive/schema)
+
 | 크레이트 | 책임 |
 |----------|------|
-| `tasty` (본 바이너리, `src/`) | 윈도우/Engine/Window 계층, UI/GPU, IPC 라우터, CLI |
-| `tasty-core` | **GUI-free** 공용 도메인 데이터 (`model`, `i18n`, `paths`, `agent_id`, `waker`) |
-| `tasty-type-geometry` | 길이/도형 primitive (LogicalPx, PhysicalPx, Rect 등). type-\* layer leaf |
-| `tasty-type-appearance` | appearance schema/primitive: HexColor/GpuRgba/GpuRgb, ThemeColors/PartialColors/ThemeSizing/Theme + impl, SurfaceTheme/PartialSurfaceTheme + FALLBACK_SURFACE, derive_overlays. type-\* layer |
+| `tasty-type-geometry` | 길이/도형 primitive (LogicalPx, PhysicalPx, Rect 등). 의존 0 (serde 만) |
+| `tasty-type-appearance` | appearance schema/primitive: HexColor/GpuRgba/GpuRgb, ThemeColors/PartialColors/ThemeSizing/Theme + impl, SurfaceTheme/PartialSurfaceTheme + FALLBACK_SURFACE, derive_overlays |
+| `tasty-utils` | 공용 path helper (directories). leaf |
+
+type-\* 끼리만 의존 가능 (`type-appearance → type-geometry`). 도메인/IO crate 의존 금지.
+
+### 도메인-IO layer
+
+| 크레이트 | 책임 |
+|----------|------|
 | `tasty-themes` | 빌트인 mocha fallback const, 전역 `RwLock<Theme>` + `theme()/set_theme()`, `ThemeApplyContext` trait, TOML 로딩/스캔/저장 |
 | `tasty-settings` | 설정 스키마/직렬화 (appearance/keybindings/general/...) |
-| `tasty-font` | 폰트 atlas, 글리프 래스터라이징, 내장 D2Coding |
-| `tasty-terminal` | PTY + termwiz VTE 래퍼 |
+| `tasty-font` | 폰트 atlas, 글리프 래스터라이징, 내장 D2Coding (cosmic-text + wgpu) |
+| `tasty-terminal` | PTY + termwiz VTE 래퍼 (cross-platform pty) |
 | `tasty-hooks` | Surface Hook 매니저 (process-exit, output-match, idle-timeout 등) |
 | `tasty-memory` | 에이전트 영속 키-값 저장소 (`~/.tasty/memory.db`, SQLite WAL) |
+| `tasty-telemetry` | 메트릭/이벤트 추적 (memory 의존) |
+| `tasty-output` | 출력 파서 카탈로그 (10 종 빌트인) |
+| `tasty-approval` | Approval 게이트 도메인 |
+| `tasty-agent` | 에이전트 세션/lifecycle |
+| `tasty-presets` | preset 정의/저장 |
 | `tasty-shm` | 크로스 플랫폼 공유 메모리 + 핸들 전달 |
-| `tasty-plugin-protocol` | 호스트↔plugin 와이어 프로토콜 (envelope, 메서드 enum) |
-| `tasty-plugin-sdk` | 외부 plugin 제작용 SDK (Plugin trait, transport, snapshot 헬퍼) |
-| `tasty-plugin-claude` | 번들 plugin: Claude Code (claude.* IPC/CLI, hook 4종 설치) |
-| `tasty-plugin-codex` | 번들 plugin: Codex CLI (codex.* IPC/CLI) |
-| `tasty-plugin-image` | 번들 plugin: 이미지 뷰어 surface kind (`rendering = "host"`) + image.* IPC |
-| `tasty-plugin-explorer` | 번들 plugin: 파일 탐색기 surface kind |
-| `tasty-plugin-clipboard-history` | 번들 plugin: 클립보드 히스토리 (tool.clipboard.*) |
-| `tasty-tui-simulator` | E2E TUI 테스트용 시뮬레이터 |
+| `tasty-portscan` | 포트 스캐너 (포트 사용 감지) |
+| `tasty-update` | 업데이트 체커 (ureq + semver) |
+| `tasty-lua` | Lua sandbox (file_format detector, mlua) |
 
-본 바이너리는 `pub use tasty_core::{model, i18n, paths};`,
-`pub use tasty_themes as theme;`, `pub use tasty_settings as settings;`,
-`pub use tasty_font as font;` 식으로 재수출하므로
-`crate::model::X` / `crate::theme::theme()` 같은 기존 경로가 그대로 동작한다.
+### Plugin layer
+
+| 크레이트 | 책임 |
+|----------|------|
+| `tasty-plugin-protocol` | 호스트↔plugin 와이어 프로토콜 (envelope, 메서드 enum) |
+| `tasty-plugin-sdk` | 외부 plugin 제작용 SDK (Plugin trait, transport, snapshot 헬퍼). `plugin-protocol + shm` 의존 |
+
+### 번들 Plugin layer (모두 `tasty-plugin-sdk` 의존)
+
+| 크레이트 | 책임 |
+|----------|------|
+| `tasty-plugin-claude` | Claude Code (claude.* IPC/CLI, hook 4종 설치) |
+| `tasty-plugin-codex` | Codex CLI (codex.* IPC/CLI) |
+| `tasty-plugin-image` | 이미지 뷰어 surface kind (`rendering = "host"`) + image.* IPC |
+| `tasty-plugin-html` | HTML 뷰어 surface kind (얇은 wrapper) |
+| `tasty-plugin-explorer` | 파일 탐색기 surface kind |
+| `tasty-plugin-clipboard-history` | 클립보드 히스토리 (tool.clipboard.*) |
+| `tasty-plugin-git-viewer` | git diff/log 뷰어 |
+
+### 테스트/dev 도구
+
+| 크레이트 | 책임 |
+|----------|------|
+| `tasty-tui-simulator` | E2E TUI 테스트용 시뮬레이터 (crossterm + clap, binary 산출) |
+
+### 본 바이너리 (`src/`)
+
+`tasty` 본 바이너리는 위 28 크레이트를 직접 의존하며 윈도우/Engine/Window 계층, UI/GPU,
+IPC 라우터, CLI 를 제공한다. `src/i18n.rs`, `src/waker.rs`, `src/model/` (디렉토리 분할 완료),
+`src/core/agent/`, `src/file/paths.rs` 등 *옛 분리 계획에서 "GUI-free 공용 도메인" crate 후보* 였던
+모듈은 별도 crate 로 분리되지 않고 *본 바이너리 안에 그대로 존재* 한다
+(옛 계획의 가공 crate 명은 [`library-separation/index.md`](library-separation/index.md) 참조).
 
 ## 본 바이너리 모듈 (`src/`)
+
+> **참고**: 아래 트리는 부분적으로 옛 디렉토리 구조 기반이다. 현재는
+> `src/app/`, `src/core/`, `src/adapters/`, `src/view/`, `src/gfx/`,
+> `src/host_api/`, `src/engine/`, `src/store/`, `src/intent/` 등으로 layering 됨.
+> 정확한 디렉토리별 책임은 [`modules.md`](modules.md) 참조 (모듈별 상세는 별도 갱신 작업 대상).
 
 ```
 src/
@@ -104,7 +147,10 @@ src/
 ├── selection.rs            # 텍스트 선택 좌표 정규화
 ├── click_cursor.rs         # 클릭→커서 이동
 ├── double_tap.rs           # 더블탭 수식키
-├── notification.rs         # NotificationStore + OS 알림
+│                           # notification: `src/store/notification.rs` (NotificationStore) +
+│                           #   `src/adapters/ui/notification.rs` (OS 알림) +
+│                           #   `src/adapters/ipc/handler/notification.rs` (IPC) +
+│                           #   `src/view/settings/ui/tabs/notifications.rs` (UI) — 분산
 ├── global_hooks.rs         # GlobalHookManager (타이머/파일 감시)
 ├── surface_meta.rs         # Surface별 메타데이터 저장소
 ├── crash_report.rs         # 크래시 리포트 수집
@@ -132,30 +178,53 @@ main.rs
 ├── ipc/                             ← IPC 서버 + handler/
 └── cli/                             ← CLI 클라이언트 (GUI와 독립)
 
-workspace 크레이트:
+workspace 크레이트 (4 계층 + 테스트 도구):
 
-# type-* layer (primitive/schema, leaf 그룹)
-tasty-type-geometry  ← (의존 없음)
+# type-* layer (primitive/schema, leaf)
+tasty-type-geometry  ← (외부 deps 만: serde)
 tasty-type-appearance ← tasty-type-geometry
+tasty-utils          ← (외부 deps 만: directories)
    ※ type-* 끼리만 의존 가능. 도메인/IO crate 의존 금지. 그룹 내 순환 금지.
 
 # 도메인/IO layer
-tasty-core      ← tasty-terminal, tasty-type-geometry  (GUI-free; appearance 모름)
-tasty-themes    ← tasty-core, tasty-type-appearance    (전역 Theme + TOML IO)
-tasty-settings  ← tasty-core, tasty-themes, tasty-type-*
-tasty-font      ← tasty-core
-tasty-terminal  ← (외부 deps 만)
-tasty-hooks     ← tasty-core
-tasty-memory    ← (rusqlite + serde, OS 의존 없음)
-tasty-shm       ← (OS API만)
-tasty-plugin-protocol ← tasty-core, tasty-shm
+tasty-themes    ← tasty-type-appearance, tasty-utils      (전역 Theme + TOML IO)
+tasty-settings  ← tasty-themes, tasty-type-appearance, tasty-type-geometry, tasty-utils
+tasty-font      ← (외부 deps 만: cosmic-text, wgpu)
+tasty-terminal  ← (외부 deps 만: termwiz, portable-pty, unicode-width + cfg-별 libc/windows)
+tasty-hooks     ← (외부 deps 만: regex)
+tasty-memory    ← (외부 deps 만: rusqlite, directories)
+tasty-telemetry ← tasty-memory
+tasty-output    ← (외부 deps 만: regex, serde)
+tasty-approval  ← (외부 deps 만)
+tasty-agent     ← tasty-memory, tasty-utils
+tasty-presets   ← tasty-utils
+tasty-shm       ← (cfg-별 libc/windows-sys)
+tasty-portscan  ← (cfg-별 windows-sys)
+tasty-update    ← (외부 deps 만: ureq, semver)
+tasty-lua       ← (외부 deps 만: mlua)
+
+# Plugin layer
+tasty-plugin-protocol ← (외부 deps 만: serde)
 tasty-plugin-sdk      ← tasty-plugin-protocol, tasty-shm
-tasty-plugin-{claude,codex,image,explorer,clipboard-history}
-              ← tasty-plugin-sdk
+
+# 번들 Plugin layer (모두 tasty-plugin-sdk 의존)
+tasty-plugin-claude  ← tasty-plugin-sdk
+tasty-plugin-codex   ← tasty-plugin-sdk
+tasty-plugin-image   ← tasty-plugin-sdk
+tasty-plugin-html    ← tasty-plugin-sdk
+tasty-plugin-explorer ← tasty-plugin-sdk
+tasty-plugin-clipboard-history ← tasty-plugin-sdk
+tasty-plugin-git-viewer ← tasty-plugin-sdk
+
+# 테스트/dev 도구
+tasty-tui-simulator  ← (외부 deps 만: crossterm, clap, binary 산출)
+
 tasty (binary) ← 모든 위 크레이트
 ```
 
-순환 의존 없음. type-\* 가 leaf 그룹, tasty-core 가 도메인 leaf, 본 바이너리가 최상위.
+순환 의존 없음. type-\* 가 leaf 그룹. 도메인-IO layer 는 type-\* 만 / 다른 도메인-IO 만 의존 가능
+(예: `agent → memory`, `telemetry → memory`, `themes → type-appearance`). Plugin layer 는 도메인-IO 와
+*직접* 의존하지 않고 `plugin-protocol` / `plugin-sdk` 만 통과 (sandbox 경계). 본 바이너리가 최상위.
 
 ## 데이터 흐름
 
@@ -167,8 +236,9 @@ tasty (binary) ← 모든 위 크레이트
 
 ## 코드 규모
 
-본 바이너리 약 160개 `.rs` (~49k 줄) + 워크스페이스 크레이트 78개 `.rs` (~24k 줄).
-정확한 수치는 `find src crates -name '*.rs' -not -path '*/target/*' | wc -l` 참조.
+실측 (2026-06-02): 본 바이너리 약 479 `.rs` (~91k 줄) + 워크스페이스 크레이트 160 `.rs` (~38k 줄).
+재측정: `find src -name '*.rs' | wc -l` / `find src -name '*.rs' -print0 | xargs -0 wc -l | tail -1` /
+`find crates -name '*.rs' -path '*/src/*' | wc -l` 식으로 산출.
 
 ## 하위 문서
 
