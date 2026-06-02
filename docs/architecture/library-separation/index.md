@@ -1,94 +1,97 @@
-# 라이브러리 분리 분석 — 다관점 종합
+# 라이브러리 분리 — 현황 + 옛 분석 회고
 
-## 분석 배경
+## 본 디렉토리 구성
 
-Tasty는 현재 17개 소스 파일, 약 8,870줄의 단일 바이너리 크레이트다. 코드베이스가 성장함에 따라 일부 모듈을 독립 라이브러리 크레이트로 분리할지 판단이 필요하다. 이 문서는 8개 분리 후보를 7개 관점에서 분석한 결과를 종합한다.
+| 시제 | 문서 | 성격 |
+|------|------|------|
+| **현재** | [`index.md`](index.md) (본 문서) | 28 crate 현황 매트릭스 + 옛 8 후보 도달 상태 |
+| **현재** | [`execution-plan.md`](execution-plan.md) | 완료 회고 + 미분리 항목 (model / renderer / notification) 권고 |
+| **현재** | [`workspace-design.md`](workspace-design.md) | 현 워크스페이스 구조 / 의존 그래프 / Cargo.toml 발췌 |
+| **역사** | `technical-feasibility.md` / `ecosystem-value.md` / `maintainability.md` / `performance.md` / `developer-experience.md` / `strategic.md` | 옛 분리 계획 시점 (2025) 의 7 관점 분석 보존본. 신규 crate 추가/제거 판단 framework 로 재사용 가능 |
 
-## 분리 후보 8개
+신규 독자는 현황부터 (본 문서 → execution-plan.md → workspace-design.md), 옛 의사결정 맥락 검토 시 6 분석 문서 참조.
 
-| # | 후보 | 현재 파일 | 분리 크레이트명 | 줄 수 |
-|---|------|-----------|----------------|-------|
-| 1 | 터미널 엔진 | `terminal.rs` | `tasty-terminal` | 1,358 |
-| 2 | GPU 렌더러 | `font.rs` + `renderer.rs` | `tasty-renderer` | 1,108 |
-| 3 | IPC 프로토콜 | `ipc/protocol.rs` | `tasty-ipc-protocol` | 131 |
-| 4 | IPC 서버 | `ipc/server.rs` | `tasty-ipc-server` | 196 |
-| 5 | 알림 저장소 | `notification.rs` | `tasty-notification` | 239 |
-| 6 | 이벤트 훅 | `hooks.rs` | `tasty-hooks` | 290 |
-| 7 | 데이터 모델 | `model.rs` | `tasty-model` | 1,775 |
-| 8 | 설정 | `settings.rs` | `tasty-settings` | 326 |
+---
 
-## 7개 분석 관점
+## 분석 배경 (현 시점, 2026-06)
 
-| 관점 | 문서 | 핵심 질문 |
-|------|------|-----------|
-| 기술적 분리 가능성 | [technical-feasibility.md](technical-feasibility.md) | 물리적으로 분리할 수 있는가? |
-| 생태계 가치 | [ecosystem-value.md](ecosystem-value.md) | 외부에서 재사용할 가치가 있는가? |
-| 유지보수 | [maintainability.md](maintainability.md) | 분리가 유지보수를 돕는가 해치는가? |
-| 성능 | [performance.md](performance.md) | 런타임/컴파일 성능에 어떤 영향인가? |
-| 개발자 경험 | [developer-experience.md](developer-experience.md) | 기여자와 사용자에게 어떤 변화인가? |
-| 전략 | [strategic.md](strategic.md) | 프로젝트 비전과 정합하는가? |
-| 실행 계획 | [execution-plan.md](execution-plan.md) | 어떤 순서로, 어떻게 실행하는가? |
+Tasty 워크스페이스는 본 바이너리 (`src/`, 479 `.rs` / ~91k LOC) + **28 개의 라이브러리 크레이트** (`crates/*`) 로 구성된다.
 
-추가 설계 문서:
+본 문서는 다음을 종합한다:
+1. *현재 28 crate 의 layering 매트릭스* (4 계층 + 테스트/dev 도구).
+2. *2025 년 분리 계획 8 후보의 현재 도달 상태* (4 완료 / 2 결정 반전 / 2 장기 과제 유지).
+3. *남은 미분리 영역* (model / renderer / notification) 에 대한 현 시점 권고.
+
+옛 7 관점 framework (technical-feasibility / ecosystem-value / maintainability / performance / developer-experience / strategic / execution-plan) 는 보존본에 그대로 남아 있으며, 신규 crate 추가/제거 판단 시 재사용 가능.
+
+---
+
+## 옛 8 후보 도달 상태
+
+| 후보 | 2025 판정 | 현재 | 현 위치 / LOC | 비고 |
+|------|-----------|------|----------------|------|
+| `tasty-hooks` | 즉시 분리 | ✅ 분리 | `crates/tasty-hooks/` (344) | 예측 적중 |
+| `tasty-terminal` | 즉시 분리 | ✅ 분리 | `crates/tasty-terminal/` (4,824) | cross-platform pty 흡수 후 3.5× 성장 |
+| `tasty-ipc-protocol` | 비권장 | ❌ 본 바이너리 잔존 | `src/app/ipc/` + `src/adapters/ipc/` + `src/ports/ipc_server.rs` (분산) | 권고 유지 |
+| `tasty-ipc-server` | 비권장 | ❌ 본 바이너리 잔존 | `src/adapters/ipc/server.rs` + `session*.rs` + `handler/` (분산) | 권고 유지 |
+| `tasty-notification` | 비권장 | ❌ 본 바이너리 잔존 | `src/store/notification.rs` + `src/adapters/{ui,ipc/handler}/notification.rs` + `src/view/settings/ui/tabs/notifications.rs` (분산) | 권고 유지 (재검토 필요) |
+| `tasty-settings` | 비권장 | ✅ **분리 (반전)** | `crates/tasty-settings/` (2,244) | type-\* layer + themes 공통 의존으로 plugin/sdk 외부 노출 필요 |
+| `tasty-model` | 장기 과제 | ❌ 본 바이너리 잔존 | `src/model/` (디렉토리 분할 완료) | 파일 분할은 완료, crate 분리는 미완 |
+| `tasty-renderer` | 장기 과제 | ❌ 본 바이너리 잔존 | `src/gfx/renderer/` + `src/gfx/gpu/` | 예측 적중 (분리 trigger 미도달) |
+
+**판정 반전 1 건**: `tasty-settings` — `type-*` schema layer 가 plugin SDK 와 themes 양쪽에서 공통 참조되며 본 바이너리 의존을 끊기 위해 분리.
+
+**예측 적중**: `tasty-renderer`/`tasty-model` 둘 다 *장기 과제* 라 했고 지금도 분리 안 됨. *비권장* 이었던 ipc 2 건 + notification 도 분리 안 됨.
+
+옛 비권장이 분리된 사례 (`tasty-settings`) 는 *옛 분석의 오류* 가 아니라 *분기점 추가* — 외부 plugin SDK 요구가 *plugin-protocol 의 분리 외부 가치* 를 만들어 비권장 판정을 뒤집은 것. 옛 분석 시점에 plugin 시스템 자체가 미존재.
+
+---
+
+## 현재 28 crate 4 계층 매트릭스
+
+권위 본문은 [`../index.md`](../index.md) 의 "워크스페이스 크레이트" 절. 본 표는 *분리 의사결정 분류* 시점.
+
+| 계층 | 크레이트 | 비고 |
+|------|----------|------|
+| **type-\*** (leaf) | `tasty-type-geometry` (334), `tasty-type-appearance` (1,561), `tasty-utils` (52) | 의존 0 또는 type-\* 끼리만 |
+| **도메인-IO** | `tasty-themes` (1,096), `tasty-settings` (2,244), `tasty-font` (1,186), `tasty-terminal` (4,824), `tasty-hooks` (344), `tasty-memory` (5,125), `tasty-telemetry` (1,152), `tasty-output` (1,425), `tasty-approval` (815), `tasty-agent` (3,086), `tasty-presets` (1,069), `tasty-shm` (1,075), `tasty-portscan` (806), `tasty-update` (165), `tasty-lua` (541) | type-\* + 다른 도메인-IO 만 의존 가능 |
+| **Plugin** | `tasty-plugin-protocol` (2,026), `tasty-plugin-sdk` (3,563) | 도메인-IO 직접 의존 금지 (sandbox 경계) |
+| **번들 Plugin** | `tasty-plugin-claude` (3,035), `tasty-plugin-codex` (901), `tasty-plugin-explorer` (529), `tasty-plugin-git-viewer` (730), `tasty-plugin-clipboard-history` (289), `tasty-plugin-image` (67), `tasty-plugin-html` (94) | 모두 `tasty-plugin-sdk` 만 의존 |
+| **테스트/dev 도구** | `tasty-tui-simulator` (577) | E2E TUI 시뮬레이터, crossterm + clap 의존, binary 산출 |
+| **본 바이너리** | `tasty` (`src/`, 479 `.rs` / ~91k LOC) | 위 28 crate 직접 의존 |
+
+총 28 = 옛 권장 2 (terminal, hooks) + 옛 비권장 반전 2 (settings, plugin-protocol) + 신규 24.
+
+LOC 합계 (workspace, 실측 2026-06-02): 38,711.
+
+---
+
+## 옛 분석 외 영역 (신규 추가)
+
+- **type-\* layer** (geometry / appearance) — `LogicalPx`/`PhysicalPx` typed-length 시스템 ([`../../design/typed-length.md`](../../design/typed-length.md)). 옛 분석 당시 미존재.
+- **Plugin 생태계** — protocol/sdk + 7 개 번들 plugin. 옛 분석 시 plugin 자체 미존재.
+- **Agent / Memory / Approval / Presets / Telemetry / Output** — Phase 6.x 부터 추가된 에이전트 도메인.
+- **type-\* 계층 규칙** — "type-\* 끼리만 의존 가능. 도메인/IO crate 의존 금지. 그룹 내 순환 금지." 옛 분석에 없던 새 *layering invariant*.
+
+---
+
+## 미분리 항목 현 시점 권고
+
+상세는 [`execution-plan.md`](execution-plan.md) 의 각 Phase 회고 참조.
+
+| 항목 | 현 위치 | 권고 |
+|------|----------|------|
+| `tasty-model` | `src/model/` (디렉토리 분할 완료) | **유지**. 옛 *제네릭 전파 8 단계* 문제는 그대로. 분리 trigger 미도달 (외부 재사용 use case 0) |
+| `tasty-renderer` | `src/gfx/renderer/` + `src/gfx/gpu/` | **유지**. `TerminalSurface` trait 설계 부담 그대로. 본 바이너리 91k LOC 임에도 trigger 미도달 — 옛 *15k LOC* 기준이 무관함 입증 → 다른 trigger (다중 VTE 백엔드 / 외부 wgpu 사용자) 가 진짜 결정 요인 |
+| `tasty-notification` | 4 곳 분산 | **재검토 필요**. *분리 가치* 가 옛 판정과 달라졌을 가능성 (plugin 이 알림 IPC 를 호출하는 use case 발생 시 도메인 crate 화 가치 ↑) |
+
+---
+
+## 인접 문서
 
 | 문서 | 설명 |
 |------|------|
-| [workspace-design.md](workspace-design.md) | Cargo workspace 구조 설계, 의존성 그래프, feature flags |
-
----
-
-## 최종 판정 매트릭스
-
-각 관점에서 분리를 **권장(O)**, **중립(△)**, **비권장(X)** 으로 판정한 결과:
-
-| 후보 | 기술 | 생태계 | 유지보수 | 성능 | DX | 전략 | **종합** |
-|------|------|--------|----------|------|-----|------|----------|
-| `tasty-hooks` | O | O | O | O | O | O | **즉시 분리** |
-| `tasty-terminal` | O | O | O | O | O | O | **즉시 분리** |
-| `tasty-ipc-protocol` | O | △ | △ | O | △ | △ | **비권장** |
-| `tasty-ipc-server` | O | △ | △ | O | △ | △ | **비권장** |
-| `tasty-notification` | O | △ | △ | O | △ | △ | **비권장** |
-| `tasty-settings` | △ | X | X | O | X | X | **비권장** |
-| `tasty-model` | △ | X | △ | △ | △ | O | **장기 과제** |
-| `tasty-renderer` | △ | O | △ | △ | △ | O | **장기 과제** |
-
----
-
-## 핵심 결론
-
-### 즉시 분리 권장 (2개)
-
-1. **`tasty-hooks`** — `hooks.rs` (290줄). tasty 내부 타입 참조 0개. `regex`만 의존. 이미 16개 테스트 보유. 5분 내 분리 가능. AI 에이전트 생태계에 고유 가치.
-
-2. **`tasty-terminal`** — `terminal.rs` (1,358줄). PTY + VTE 파싱 + 이벤트 발생 엔진. `model.rs`에 의존하지 않고 반대로 `model.rs`가 이것에 의존. 헤드리스 터미널, 독립 테스트, 다른 프로젝트 재사용 가능.
-
-### 비권장 (3개)
-
-3. **`tasty-ipc-protocol`** — 131줄짜리 파일을 별도 크레이트로 관리하는 오버헤드가 이점을 초과. 이미 `jsonrpc-core` 등 기존 크레이트가 있어 외부 가치 미미.
-
-4. **`tasty-ipc-server`** — `directories` 크레이트의 포트 파일 경로 하드코딩 등 tasty 고유 로직이 섞여 있어 범용화 비용 대비 이점 부족.
-
-5. **`tasty-notification`** / **`tasty-settings`** — 각각 239줄, 326줄. tasty 고유 설정/알림 구조이므로 외부 재사용 가치 없음. 분리 시 관리 부담만 증가.
-
-### 장기 과제 (2개)
-
-6. **`tasty-model`** — `Terminal` 타입에 직접 의존 (`model.rs:1`, `model.rs:840`). 분리하려면 `TerminalBackend` trait 추상화가 필요하고, 제네릭 파라미터가 8단계 (`SurfaceNode<T>` → `SurfaceLayout<T>` → `SurfaceLayout<T>` → `Panel<T>` → `Tab<T>` → `Pane<T>` → `PaneNode<T>` → `Workspace<T>`) 전파됨. 현재 시점에서는 비용이 이점을 초과하나, 코드베이스 15,000줄 이상 성장 시 재검토.
-
-7. **`tasty-renderer`** — `termwiz::surface::Surface`에 직접 의존 (`renderer.rs:3`, `renderer.rs:515`). `TerminalSurface` trait 설계가 필요하고, wgpu 공개 API 안정성 문제. 다른 VTE 백엔드 지원이 필요해지는 시점에 분리.
-
----
-
-## 기존 library-separation.md와의 차이점
-
-| 항목 | 기존 문서 | 이 문서 |
-|------|-----------|---------|
-| 관점 | 단일 (기술 중심) | 7개 관점 |
-| 후보 수 | 7개 | 8개 (`tasty-settings` 추가) |
-| 판정 | 우선순위 목록 | 관점별 매트릭스 + 종합 판정 |
-| 제네릭 전파 문제 | 언급만 | 8단계 전파 경로 상세 분석 |
-| 렌더러 trait 설계 | 간략 | TerminalSurface trait 복잡도 상세 분석 |
-| 생태계 분석 | 없음 | 기존 크레이트 비교, 고유 가치 분석 |
-| 성능 분석 | 없음 | dynamic dispatch, 증분 컴파일, binary size |
-| 실행 계획 | 간략 단계 | Phase별 상세 로드맵 + 롤백 계획 |
-| workspace 설계 | 없음 | Cargo.toml 전문, 의존성 그래프, feature flags |
-| model.rs 분할 대안 | 없음 | 크레이트 분리 없이 파일 분할하는 실용적 대안 |
+| [`../index.md`](../index.md) | 워크스페이스 / 모듈 / 의존성 DAG 권위본 |
+| [`../refactoring.md`](../refactoring.md) | 본 바이너리 내부 리팩토링 우선순위 (crate 분리 후보 절 포함) |
+| [`execution-plan.md`](execution-plan.md) | Phase 별 완료 회고 + 미완 Phase 의 trigger 재정의 |
+| [`workspace-design.md`](workspace-design.md) | Cargo workspace 구조 / Cargo.toml 발췌 / 의존성 그래프 |
