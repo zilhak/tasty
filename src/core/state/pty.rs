@@ -114,8 +114,6 @@ impl CoreState {
         surface_id: u32,
         new_terminal: Terminal,
     ) -> anyhow::Result<()> {
-        // store 우선 — install_orphan_terminals 가 매 frame 호출되므로 새 Terminal
-        // 도 곧 store 로 이전. 즉시 store.replace 가 더 안전.
         if let Some(old) = self.terminals.replace(surface_id, new_terminal) {
             drop(old); // SIGHUP
             return Ok(());
