@@ -32,5 +32,6 @@ pub mod fs;
 pub mod home;
 pub mod inbound;
 pub mod ipc_server;
+pub mod notification_sound;
 pub mod process;
 pub mod pty;
