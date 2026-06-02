@@ -58,11 +58,14 @@ impl CellRenderer {
             }
         }
 
+        let off = self.current_viewport_offset;
+
         // Push bg for main cell and continuation cells of wide characters
         for i in 0..width {
             if col_idx + i < cols {
                 self.bg_instances.push(BgInstance {
                     pos: [(col_idx + i) as f32, row_idx as f32],
+                    viewport_offset: off,
                     bg_color,
                 });
             }
@@ -82,6 +85,7 @@ impl CellRenderer {
             if entry.width > 0.0 && entry.height > 0.0 {
                 self.glyph_instances.push(GlyphInstance {
                     pos: [col_idx as f32, row_idx as f32],
+                    viewport_offset: off,
                     uv_offset: [entry.uv_x, entry.uv_y],
                     uv_size: [entry.uv_w, entry.uv_h],
                     fg_color,
@@ -135,9 +139,11 @@ impl CellRenderer {
             col_idx += width;
         }
         // Fill remaining columns with default_bg
+        let off = self.current_viewport_offset;
         for c in col_idx..cols {
             self.bg_instances.push(BgInstance {
                 pos: [c as f32, row_idx as f32],
+                viewport_offset: off,
                 bg_color: default_bg,
             });
         }
@@ -192,9 +198,11 @@ impl CellRenderer {
             last_col = col_idx + width;
         }
         // Fill remaining columns with default_bg
+        let off = self.current_viewport_offset;
         for c in last_col..cols {
             self.bg_instances.push(BgInstance {
                 pos: [c as f32, row_idx as f32],
+                viewport_offset: off,
                 bg_color: default_bg,
             });
         }

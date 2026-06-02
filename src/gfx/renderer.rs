@@ -4,6 +4,8 @@ mod pipeline;
 mod shaders;
 mod types;
 
+use std::ops::Range;
+
 use tasty_type_appearance::color::{GpuRgb, GpuRgba};
 use termwiz::surface::Surface;
 
@@ -86,35 +88,192 @@ pub struct CellRenderer {
     glyph_bind_group: wgpu::BindGroup,
     bg_instance_buffer: wgpu::Buffer,
     glyph_instance_buffer: wgpu::Buffer,
-    bg_instance_count: u32,
-    glyph_instance_count: u32,
+    /// Current GPU buffer capacity in instances. Grows dynamically when
+    /// the accumulated frame exceeds it (R1: avoid silent clamp regression).
     max_instances: usize,
     pub font_config: FontConfig,
     pub atlas: GlyphAtlas,
-    /// Reusable buffer to avoid per-frame allocation.
-    bg_instances: Vec<BgInstance>,
-    /// Reusable buffer to avoid per-frame allocation.
-    glyph_instances: Vec<GlyphInstance>,
+    /// Per-frame accumulator (cleared on `begin_frame`).
+    pub(crate) bg_instances: Vec<BgInstance>,
+    pub(crate) glyph_instances: Vec<GlyphInstance>,
+    /// Per-surface instance ranges recorded during accumulation:
+    /// (scissor rect, bg range, glyph range).
+    surface_ranges: Vec<(PhysicalRect, Range<u32>, Range<u32>)>,
+    /// viewport_offset baked into instances pushed during the current
+    /// `append_terminal_viewport` call. Set at the start of accumulation
+    /// for a surface and read by per-cell push helpers.
+    pub(crate) current_viewport_offset: [f32; 2],
 }
 
 impl CellRenderer {
-    /// Update uniforms when viewport is resized.
+    /// Update viewport-size uniforms when the window resizes. Per-surface
+    /// offset lives on each instance, so we only refresh the global size here.
     pub fn resize(&self, queue: &wgpu::Queue, width: u32, height: u32) {
         let uniforms = Uniforms {
             cell_size: [
                 self.font_config.metrics.cell_width,
                 self.font_config.metrics.cell_height,
             ],
-            grid_offset: [4.0, 4.0],
             viewport_size: [width as f32, height as f32],
-            _padding: [0.0; 2],
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }
 
-    /// Build instance data from the terminal surface with a custom default background.
+    /// Reset per-frame accumulators. Call once at the start of `render_terminals`.
+    pub fn begin_frame(&mut self) {
+        self.bg_instances.clear();
+        self.glyph_instances.clear();
+        self.surface_ranges.clear();
+    }
+
+    /// Append a terminal viewport's instances to the frame accumulator.
+    /// `ansi` is hoisted to the caller so the theme lock is taken once per
+    /// frame, not per surface.
     #[allow(clippy::too_many_arguments)]
-    pub fn prepare_with_bg(
+    pub fn append_terminal_viewport(
+        &mut self,
+        terminal: &tasty_terminal::Terminal,
+        queue: &wgpu::Queue,
+        viewport: &PhysicalRect,
+        ansi: &[GpuRgb; 16],
+        default_bg: GpuRgba,
+        default_fg: GpuRgba,
+        show_cursor: bool,
+        selection: Option<&(NormalizedSelection, GpuRgba)>,
+        preedit: Option<&RenderPreedit>,
+        link: Option<&LinkHighlight>,
+        search: Option<&SearchHighlights<'_>>,
+    ) {
+        let bg_start = self.bg_instances.len() as u32;
+        let glyph_start = self.glyph_instances.len() as u32;
+        self.current_viewport_offset = [viewport.x.value(), viewport.y.value()];
+
+        let cursor = if show_cursor && terminal.cursor_visible() && terminal.scroll_offset() == 0 {
+            let (cx, cy) = terminal.surface().cursor_position();
+            let wide = terminal
+                .surface()
+                .screen_lines()
+                .get(cy as usize)
+                .and_then(|line| {
+                    line.visible_cells()
+                        .find(|cell| cell.cell_index() == cx)
+                        .map(|cell| {
+                            let ch = cell.str().chars().next().unwrap_or(' ');
+                            unicode_width(ch) > 1
+                        })
+                })
+                .unwrap_or(false);
+            Some((cx, cy as usize, wide))
+        } else {
+            None
+        };
+
+        let (cols, rows) = terminal.surface().dimensions();
+
+        if terminal.scroll_offset() == 0 {
+            let row_offset = terminal.scrollback_len();
+            self.fill_surface(
+                terminal.surface(),
+                queue,
+                default_bg,
+                default_fg,
+                ansi,
+                cursor,
+                selection,
+                row_offset,
+                preedit,
+                link,
+                search,
+            );
+            self.append_preedit_overlay(preedit, queue, cols, rows, 0);
+        } else {
+            let scroll_offset = terminal.scroll_offset();
+            let scrollback_len = terminal.scrollback_len();
+            let surface_lines = terminal.surface().screen_lines();
+
+            for row_idx in 0..rows {
+                let source_line =
+                    scrollback_len as isize - scroll_offset as isize + row_idx as isize;
+
+                if source_line < 0 {
+                    let off = self.current_viewport_offset;
+                    for col_idx in 0..cols {
+                        self.bg_instances.push(BgInstance {
+                            pos: [col_idx as f32, row_idx as f32],
+                            viewport_offset: off,
+                            bg_color: default_bg,
+                        });
+                    }
+                    continue;
+                }
+                let source_line = source_line as usize;
+
+                if source_line < scrollback_len {
+                    if let Some(line) = terminal.scrollback_line(source_line) {
+                        self.render_scrollback_line(
+                            line,
+                            row_idx,
+                            cols,
+                            default_bg,
+                            default_fg,
+                            ansi,
+                            queue,
+                            selection,
+                            source_line,
+                            link,
+                            search,
+                        );
+                    }
+                } else {
+                    let surface_row = source_line - scrollback_len;
+                    if surface_row < surface_lines.len() {
+                        self.render_surface_line(
+                            &surface_lines[surface_row],
+                            row_idx,
+                            cols,
+                            default_bg,
+                            default_fg,
+                            ansi,
+                            queue,
+                            selection,
+                            source_line,
+                            link,
+                            search,
+                        );
+                    }
+                }
+            }
+
+            // Right + bottom gutter.
+            let off = self.current_viewport_offset;
+            for row_idx in 0..rows {
+                self.bg_instances.push(BgInstance {
+                    pos: [cols as f32, row_idx as f32],
+                    viewport_offset: off,
+                    bg_color: default_bg,
+                });
+            }
+            for col_idx in 0..=cols {
+                self.bg_instances.push(BgInstance {
+                    pos: [col_idx as f32, rows as f32],
+                    viewport_offset: off,
+                    bg_color: default_bg,
+                });
+            }
+
+            self.append_preedit_overlay(preedit, queue, cols, rows, scroll_offset);
+        }
+
+        let bg_range = bg_start..self.bg_instances.len() as u32;
+        let glyph_range = glyph_start..self.glyph_instances.len() as u32;
+        self.surface_ranges
+            .push((viewport.clone(), bg_range, glyph_range));
+    }
+
+    /// Append instances for the current-screen path (no scrollback).
+    /// Equivalent to the previous `prepare_with_bg`, but operates in append mode.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_surface(
         &mut self,
         surface: &Surface,
         queue: &wgpu::Queue,
@@ -130,9 +289,7 @@ impl CellRenderer {
     ) {
         let (cols, rows) = surface.dimensions();
         let lines = surface.screen_lines();
-
-        self.bg_instances.clear();
-        self.glyph_instances.clear();
+        let off = self.current_viewport_offset;
 
         for (row_idx, line) in lines.iter().enumerate() {
             if row_idx >= rows {
@@ -185,6 +342,7 @@ impl CellRenderer {
 
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],
+                    viewport_offset: off,
                     bg_color,
                 });
 
@@ -195,6 +353,7 @@ impl CellRenderer {
                     if unicode_width(ch) > 1 && col_idx + 1 < cols {
                         self.bg_instances.push(BgInstance {
                             pos: [(col_idx + 1) as f32, row_idx as f32],
+                            viewport_offset: off,
                             bg_color,
                         });
                         last_col = col_idx + 2;
@@ -209,8 +368,6 @@ impl CellRenderer {
                     continue;
                 }
 
-                // Skip glyph rendering for cells covered by IME preedit overlay.
-                // The preedit overlay will draw its own glyphs on top.
                 if preedit.is_some_and(|p| p.covers(col_idx, row_idx)) {
                     continue;
                 }
@@ -225,6 +382,7 @@ impl CellRenderer {
                     if entry.width > 0.0 && entry.height > 0.0 {
                         self.glyph_instances.push(GlyphInstance {
                             pos: [col_idx as f32, row_idx as f32],
+                            viewport_offset: off,
                             uv_offset: [entry.uv_x, entry.uv_y],
                             uv_size: [entry.uv_w, entry.uv_h],
                             fg_color,
@@ -234,63 +392,36 @@ impl CellRenderer {
                     }
                 }
             }
-            // Fill remaining columns with default_bg so the focused surface
-            // background covers the full row, not just cells with content.
-            // Also render cursor if it falls in this trailing region.
+            // Trailing cells in the row (incl. cursor on empty cell).
             for col_idx in last_col..cols {
                 let is_cursor = match cursor {
                     Some((cx, cy, _)) if row_idx == cy && col_idx == cx => true,
                     _ => false,
                 };
-                let bg = if is_cursor {
-                    // Cursor on empty cell: swap fg/bg (block cursor)
-                    default_fg
-                } else {
-                    default_bg
-                };
+                let bg = if is_cursor { default_fg } else { default_bg };
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],
+                    viewport_offset: off,
                     bg_color: bg,
                 });
             }
         }
 
-        // Fill the right and bottom gutter (fractional cell area beyond the grid)
-        // with default_bg. The extra bg instances extend beyond the grid boundary;
-        // the scissor rect clips them to exactly the remaining pixels.
+        // Right + bottom gutter (fractional cell area beyond grid).
         for row_idx in 0..rows {
             self.bg_instances.push(BgInstance {
                 pos: [cols as f32, row_idx as f32],
+                viewport_offset: off,
                 bg_color: default_bg,
             });
         }
         for col_idx in 0..=cols {
             self.bg_instances.push(BgInstance {
                 pos: [col_idx as f32, rows as f32],
+                viewport_offset: off,
                 bg_color: default_bg,
             });
         }
-
-        let bg_count = self.bg_instances.len().min(self.max_instances);
-        let glyph_count = self.glyph_instances.len().min(self.max_instances);
-
-        if bg_count > 0 {
-            queue.write_buffer(
-                &self.bg_instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.bg_instances[..bg_count]),
-            );
-        }
-        if glyph_count > 0 {
-            queue.write_buffer(
-                &self.glyph_instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.glyph_instances[..glyph_count]),
-            );
-        }
-
-        self.bg_instance_count = bg_count as u32;
-        self.glyph_instance_count = glyph_count as u32;
     }
 
     /// Compute terminal grid size from a viewport rect (physical pixels).
@@ -300,173 +431,6 @@ impl CellRenderer {
         let cols = (rect.width.value() / cell_w).floor() as usize;
         let rows = (rect.height.value() / cell_h).floor() as usize;
         (cols.max(1), rows.max(1))
-    }
-
-    /// Prepare instance data for a terminal with scrollback support.
-    #[allow(clippy::too_many_arguments)]
-    pub fn prepare_terminal_viewport(
-        &mut self,
-        terminal: &tasty_terminal::Terminal,
-        queue: &wgpu::Queue,
-        viewport: &PhysicalRect,
-        screen_width: u32,
-        screen_height: u32,
-        default_bg: GpuRgba,
-        default_fg: GpuRgba,
-        show_cursor: bool,
-        selection: Option<&(NormalizedSelection, GpuRgba)>,
-        preedit: Option<&RenderPreedit>,
-        link: Option<&LinkHighlight>,
-        search: Option<&SearchHighlights<'_>>,
-    ) {
-        // ANSI 16 팔레트는 매 프레임 1회 추출 — 셀별 lock 비용 회피.
-        let ansi = crate::theme::theme().ansi_palette();
-        let ansi = &ansi;
-        let uniforms = Uniforms {
-            cell_size: [
-                self.font_config.metrics.cell_width,
-                self.font_config.metrics.cell_height,
-            ],
-            grid_offset: [viewport.x.value(), viewport.y.value()],
-            viewport_size: [screen_width as f32, screen_height as f32],
-            _padding: [0.0; 2],
-        };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
-
-        let cursor = if show_cursor && terminal.cursor_visible() && terminal.scroll_offset() == 0 {
-            let (cx, cy) = terminal.surface().cursor_position();
-            let wide = terminal
-                .surface()
-                .screen_lines()
-                .get(cy as usize)
-                .and_then(|line| {
-                    line.visible_cells()
-                        .find(|cell| cell.cell_index() == cx)
-                        .map(|cell| {
-                            let ch = cell.str().chars().next().unwrap_or(' ');
-                            unicode_width(ch) > 1
-                        })
-                })
-                .unwrap_or(false);
-            Some((cx, cy as usize, wide))
-        } else {
-            None
-        };
-
-        let (cols, rows) = terminal.surface().dimensions();
-
-        if terminal.scroll_offset() == 0 {
-            let row_offset = terminal.scrollback_len();
-            self.prepare_with_bg(
-                terminal.surface(),
-                queue,
-                default_bg,
-                default_fg,
-                ansi,
-                cursor,
-                selection,
-                row_offset,
-                preedit,
-                link,
-                search,
-            );
-            self.append_preedit_overlay(preedit, queue, cols, rows, 0);
-            return;
-        }
-
-        // Scrolled back - mix scrollback buffer + surface lines
-        let scroll_offset = terminal.scroll_offset();
-        let scrollback_len = terminal.scrollback_len();
-        let surface_lines = terminal.surface().screen_lines();
-
-        self.bg_instances.clear();
-        self.glyph_instances.clear();
-
-        for row_idx in 0..rows {
-            let source_line = scrollback_len as isize - scroll_offset as isize + row_idx as isize;
-
-            if source_line < 0 {
-                for col_idx in 0..cols {
-                    self.bg_instances.push(BgInstance {
-                        pos: [col_idx as f32, row_idx as f32],
-                        bg_color: default_bg,
-                    });
-                }
-                continue;
-            }
-            let source_line = source_line as usize;
-
-            if source_line < scrollback_len {
-                if let Some(line) = terminal.scrollback_line(source_line) {
-                    self.render_scrollback_line(
-                        line,
-                        row_idx,
-                        cols,
-                        default_bg,
-                        default_fg,
-                        ansi,
-                        queue,
-                        selection,
-                        source_line,
-                        link,
-                        search,
-                    );
-                }
-            } else {
-                let surface_row = source_line - scrollback_len;
-                if surface_row < surface_lines.len() {
-                    self.render_surface_line(
-                        &surface_lines[surface_row],
-                        row_idx,
-                        cols,
-                        default_bg,
-                        default_fg,
-                        ansi,
-                        queue,
-                        selection,
-                        source_line,
-                        link,
-                        search,
-                    );
-                }
-            }
-        }
-
-        // Fill right and bottom gutter (same as prepare_with_bg)
-        for row_idx in 0..rows {
-            self.bg_instances.push(BgInstance {
-                pos: [cols as f32, row_idx as f32],
-                bg_color: default_bg,
-            });
-        }
-        for col_idx in 0..=cols {
-            self.bg_instances.push(BgInstance {
-                pos: [col_idx as f32, rows as f32],
-                bg_color: default_bg,
-            });
-        }
-
-        let bg_count = self.bg_instances.len().min(self.max_instances);
-        let glyph_count = self.glyph_instances.len().min(self.max_instances);
-
-        if bg_count > 0 {
-            queue.write_buffer(
-                &self.bg_instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.bg_instances[..bg_count]),
-            );
-        }
-        if glyph_count > 0 {
-            queue.write_buffer(
-                &self.glyph_instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.glyph_instances[..glyph_count]),
-            );
-        }
-
-        self.bg_instance_count = bg_count as u32;
-        self.glyph_instance_count = glyph_count as u32;
-        self.append_preedit_overlay(preedit, queue, cols, rows, scroll_offset);
     }
 
     fn append_preedit_overlay(
@@ -480,14 +444,12 @@ impl CellRenderer {
         let Some(preedit) = preedit else {
             return;
         };
-        // Convert surface-relative anchor_row to screen-relative row
-        // by accounting for scroll offset. When scrolled back, the screen
-        // shows older lines, so the cursor row shifts down by scroll_offset.
         let screen_row = preedit.anchor_row + scroll_offset;
         if preedit.text.is_empty() || screen_row >= rows || preedit.anchor_col >= cols {
             return;
         }
 
+        let off = self.current_viewport_offset;
         let mut col_idx = preedit.anchor_col;
         for ch in preedit.text.chars() {
             if col_idx >= cols {
@@ -499,6 +461,7 @@ impl CellRenderer {
                 if col_idx + i < cols {
                     self.bg_instances.push(BgInstance {
                         pos: [(col_idx + i) as f32, screen_row as f32],
+                        viewport_offset: off,
                         bg_color: preedit.bg_color,
                     });
                 }
@@ -513,6 +476,7 @@ impl CellRenderer {
                 if entry.width > 0.0 && entry.height > 0.0 {
                     self.glyph_instances.push(GlyphInstance {
                         pos: [col_idx as f32, screen_row as f32],
+                        viewport_offset: off,
                         uv_offset: [entry.uv_x, entry.uv_y],
                         uv_size: [entry.uv_w, entry.uv_h],
                         fg_color: preedit.fg_color,
@@ -524,57 +488,105 @@ impl CellRenderer {
 
             col_idx += width;
         }
+    }
 
-        let bg_count = self.bg_instances.len().min(self.max_instances);
-        let glyph_count = self.glyph_instances.len().min(self.max_instances);
+    /// Resize the per-instance GPU buffers if the accumulated frame exceeds
+    /// current capacity, then upload the frame's instance data in a single
+    /// `write_buffer` call per kind. (R1: dynamic grow avoids silent clamp.)
+    pub fn flush_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let bg_len = self.bg_instances.len();
+        let glyph_len = self.glyph_instances.len();
+        let needed = bg_len.max(glyph_len);
 
-        if bg_count > 0 {
+        if needed > self.max_instances {
+            let mut new_cap = self.max_instances.max(1);
+            while new_cap < needed {
+                new_cap = new_cap.saturating_mul(2);
+            }
+            // Hard ceiling — 16M instances ≈ 1 GiB. Above this, clamp + warn.
+            const HARD_CAP: usize = 16 * 1024 * 1024;
+            if new_cap > HARD_CAP {
+                tracing::warn!(
+                    "renderer instance count {} exceeds hard cap {}; clamping",
+                    needed,
+                    HARD_CAP
+                );
+                new_cap = HARD_CAP;
+                self.bg_instances.truncate(HARD_CAP);
+                self.glyph_instances.truncate(HARD_CAP);
+            }
+            self.bg_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("bg_instances"),
+                size: (new_cap * std::mem::size_of::<BgInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.glyph_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("glyph_instances"),
+                size: (new_cap * std::mem::size_of::<GlyphInstance>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.max_instances = new_cap;
+        }
+
+        if bg_len > 0 {
             queue.write_buffer(
                 &self.bg_instance_buffer,
                 0,
-                bytemuck::cast_slice(&self.bg_instances[..bg_count]),
+                bytemuck::cast_slice(&self.bg_instances),
             );
         }
-        if glyph_count > 0 {
+        if glyph_len > 0 {
             queue.write_buffer(
                 &self.glyph_instance_buffer,
                 0,
-                bytemuck::cast_slice(&self.glyph_instances[..glyph_count]),
+                bytemuck::cast_slice(&self.glyph_instances),
             );
         }
-
-        self.bg_instance_count = bg_count as u32;
-        self.glyph_instance_count = glyph_count as u32;
     }
 
-    /// Render with a scissor rect applied.
-    pub fn render_scissored<'a>(
+    /// Issue all accumulated draws (bg pass then glyph pass) into a single
+    /// render pass, applying per-surface scissor rects around the draw ranges.
+    pub fn render_all<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
-        viewport: &PhysicalRect,
         surface_width: u32,
         surface_height: u32,
     ) {
-        let x = (viewport.x.value().max(0.0) as u32).min(surface_width.saturating_sub(1));
-        let y = (viewport.y.value().max(0.0) as u32).min(surface_height.saturating_sub(1));
-        let max_w = surface_width.saturating_sub(x);
-        let max_h = surface_height.saturating_sub(y);
-        let w = (viewport.width.value().max(1.0) as u32).min(max_w).max(1);
-        let h = (viewport.height.value().max(1.0) as u32).min(max_h).max(1);
-        render_pass.set_scissor_rect(x, y, w, h);
+        if self.surface_ranges.is_empty() {
+            return;
+        }
 
-        if self.bg_instance_count > 0 {
+        let any_bg = self.surface_ranges.iter().any(|(_, bg, _)| !bg.is_empty());
+        let any_glyph = self.surface_ranges.iter().any(|(_, _, gl)| !gl.is_empty());
+
+        if any_bg {
             render_pass.set_pipeline(&self.bg_pipeline);
             render_pass.set_bind_group(0, &self.bg_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.bg_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..self.bg_instance_count);
+            for (rect, bg_range, _) in &self.surface_ranges {
+                if bg_range.is_empty() {
+                    continue;
+                }
+                let (x, y, w, h) = clip_scissor(rect, surface_width, surface_height);
+                render_pass.set_scissor_rect(x, y, w, h);
+                render_pass.draw(0..6, bg_range.clone());
+            }
         }
 
-        if self.glyph_instance_count > 0 {
+        if any_glyph {
             render_pass.set_pipeline(&self.glyph_pipeline);
             render_pass.set_bind_group(0, &self.glyph_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.glyph_instance_buffer.slice(..));
-            render_pass.draw(0..6, 0..self.glyph_instance_count);
+            for (rect, _, gl_range) in &self.surface_ranges {
+                if gl_range.is_empty() {
+                    continue;
+                }
+                let (x, y, w, h) = clip_scissor(rect, surface_width, surface_height);
+                render_pass.set_scissor_rect(x, y, w, h);
+                render_pass.draw(0..6, gl_range.clone());
+            }
         }
     }
 
@@ -587,4 +599,18 @@ impl CellRenderer {
     pub fn cell_height(&self) -> f32 {
         self.font_config.metrics.cell_height
     }
+}
+
+fn clip_scissor(
+    viewport: &PhysicalRect,
+    surface_width: u32,
+    surface_height: u32,
+) -> (u32, u32, u32, u32) {
+    let x = (viewport.x.value().max(0.0) as u32).min(surface_width.saturating_sub(1));
+    let y = (viewport.y.value().max(0.0) as u32).min(surface_height.saturating_sub(1));
+    let max_w = surface_width.saturating_sub(x);
+    let max_h = surface_height.saturating_sub(y);
+    let w = (viewport.width.value().max(1.0) as u32).min(max_w).max(1);
+    let h = (viewport.height.value().max(1.0) as u32).min(max_h).max(1);
+    (x, y, w, h)
 }

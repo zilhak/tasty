@@ -58,11 +58,13 @@ impl GpuState {
     ) {
         let theme = crate::theme::theme();
         let term_surface = theme.surface("terminal");
+        // ANSI 16 팔레트는 *프레임당 1회* 만 추출 — 셀별 lock 비용 제거.
+        let ansi = theme.ansi_palette();
 
-        // Each terminal needs its own encoder + submit cycle because
-        // prepare_terminal_viewport writes to shared GPU buffers via queue.write_buffer().
-        // write_buffer writes are applied at submit time, so batching multiple terminals
-        // into one encoder would cause only the last terminal's data to be visible.
+        // Accumulate instance data for every surface into the renderer's
+        // shared vecs, recording per-surface (rect, bg range, glyph range).
+        self.renderer.begin_frame();
+
         for (_pane_id, _pane_rect, surface_regions) in regions {
             for region in surface_regions {
                 let Some(terminal) = engine.terminals.get(region.id) else {
@@ -82,7 +84,6 @@ impl GpuState {
                     term_surface.unfocused_fg.to_gpu_rgba()
                 };
 
-                // Build selection info for this surface
                 let sel_info = selection
                     .filter(|s| s.surface_id == *surface_id && !s.is_empty())
                     .map(|s| (s.normalized(), theme.selection_bg.to_gpu_rgba()));
@@ -103,7 +104,6 @@ impl GpuState {
                     .filter(|(sid, _)| sid == surface_id)
                     .map(|(_, h)| h);
 
-                // Build search match highlights for this surface.
                 let search_highlights = search
                     .filter(|s| s.surface_id == *surface_id && !s.matches.is_empty())
                     .map(|s| crate::renderer::SearchHighlights {
@@ -114,12 +114,11 @@ impl GpuState {
                     });
                 let search_ref = search_highlights.as_ref();
 
-                self.renderer.prepare_terminal_viewport(
+                self.renderer.append_terminal_viewport(
                     terminal,
                     &self.queue,
                     rect,
-                    self.size.width,
-                    self.size.height,
+                    &ansi,
                     bg,
                     fg,
                     is_focused,
@@ -128,37 +127,36 @@ impl GpuState {
                     link_for_this,
                     search_ref,
                 );
-
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("terminal_pass"),
-                        });
-                {
-                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("terminal_pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view,
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                    });
-                    self.renderer.render_scissored(
-                        &mut render_pass,
-                        rect,
-                        self.size.width,
-                        self.size.height,
-                    );
-                }
-                self.queue.submit(std::iter::once(encoder.finish()));
             }
         }
+
+        // Single buffer upload (auto-grows if needed) + single encoder/submit.
+        self.renderer.flush_buffers(&self.device, &self.queue);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("terminal_pass"),
+            });
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("terminal_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            self.renderer
+                .render_all(&mut render_pass, self.size.width, self.size.height);
+        }
+        self.queue.submit(std::iter::once(encoder.finish()));
     }
 
     pub(super) fn render_egui_pass(

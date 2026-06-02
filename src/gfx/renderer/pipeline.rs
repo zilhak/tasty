@@ -149,6 +149,11 @@ impl CellRenderer {
                         wgpu::VertexAttribute {
                             offset: 8,
                             shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 2,
                             format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
@@ -216,16 +221,21 @@ impl CellRenderer {
                         wgpu::VertexAttribute {
                             offset: 24,
                             shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Float32x2,
                         },
                         wgpu::VertexAttribute {
-                            offset: 40,
+                            offset: 32,
                             shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x2,
+                            format: wgpu::VertexFormat::Float32x4,
                         },
                         wgpu::VertexAttribute {
                             offset: 48,
                             shader_location: 5,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 56,
+                            shader_location: 6,
                             format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
@@ -258,9 +268,7 @@ impl CellRenderer {
                 font_config.metrics.cell_width,
                 font_config.metrics.cell_height,
             ],
-            grid_offset: [4.0, 4.0],
             viewport_size: [1280.0, 720.0],
-            _padding: [0.0; 2],
         };
         queue.write_buffer(&uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
@@ -274,13 +282,13 @@ impl CellRenderer {
             glyph_bind_group,
             bg_instance_buffer,
             glyph_instance_buffer,
-            bg_instance_count: 0,
-            glyph_instance_count: 0,
             max_instances,
             font_config,
             atlas,
             bg_instances: Vec::with_capacity(300 * 100),
             glyph_instances: Vec::with_capacity(300 * 100),
+            surface_ranges: Vec::with_capacity(8),
+            current_viewport_offset: [0.0, 0.0],
         }
     }
 
@@ -357,9 +365,7 @@ impl CellRenderer {
                 self.font_config.metrics.cell_width,
                 self.font_config.metrics.cell_height,
             ],
-            grid_offset: [0.0, 0.0],
             viewport_size: [0.0, 0.0], // will be updated on next resize
-            _padding: [0.0, 0.0],
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
     }

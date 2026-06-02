@@ -1,16 +1,15 @@
 pub(crate) const BG_SHADER: &str = r#"
 struct Uniforms {
     cell_size: vec2<f32>,
-    grid_offset: vec2<f32>,
     viewport_size: vec2<f32>,
-    _padding: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
 struct BgInstance {
     @location(0) pos: vec2<f32>,
-    @location(1) bg_color: vec4<f32>,
+    @location(1) viewport_offset: vec2<f32>,
+    @location(2) bg_color: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -26,7 +25,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, instance: BgInstance) -> VertexOutput
     );
 
     let p = quad_pos[vi];
-    let pixel_pos = (instance.pos + p) * uniforms.cell_size + uniforms.grid_offset;
+    let pixel_pos = (instance.pos + p) * uniforms.cell_size + instance.viewport_offset;
     let ndc = pixel_pos / uniforms.viewport_size * 2.0 - 1.0;
 
     var out: VertexOutput;
@@ -44,9 +43,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 pub(crate) const GLYPH_SHADER: &str = r#"
 struct Uniforms {
     cell_size: vec2<f32>,
-    grid_offset: vec2<f32>,
     viewport_size: vec2<f32>,
-    _padding: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -55,11 +52,12 @@ struct Uniforms {
 
 struct GlyphInstance {
     @location(0) pos: vec2<f32>,
-    @location(1) uv_offset: vec2<f32>,
-    @location(2) uv_size: vec2<f32>,
-    @location(3) fg_color: vec4<f32>,
-    @location(4) glyph_offset: vec2<f32>,
-    @location(5) glyph_size: vec2<f32>,
+    @location(1) viewport_offset: vec2<f32>,
+    @location(2) uv_offset: vec2<f32>,
+    @location(3) uv_size: vec2<f32>,
+    @location(4) fg_color: vec4<f32>,
+    @location(5) glyph_offset: vec2<f32>,
+    @location(6) glyph_size: vec2<f32>,
 };
 
 struct VertexOutput {
@@ -76,7 +74,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, instance: GlyphInstance) -> VertexOut
     );
 
     let p = quad_pos[vi];
-    let pixel_pos = instance.pos * uniforms.cell_size + uniforms.grid_offset
+    let pixel_pos = instance.pos * uniforms.cell_size + instance.viewport_offset
                     + instance.glyph_offset + p * instance.glyph_size;
     let ndc = pixel_pos / uniforms.viewport_size * 2.0 - 1.0;
 
