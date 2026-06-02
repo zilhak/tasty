@@ -17,14 +17,11 @@ use serde_json::Value;
 use tasty_settings::Settings;
 
 /// `DomainIntent::ConvertSurface` 의 target. variant 별로 새 surface 생성
-/// 경로가 다름 (terminal: PTY spawn, markdown/image: builtin 패널, kind:
-/// registry).
+/// 경로가 다름 (terminal: PTY spawn, kind: SurfaceKindRegistry 경유 — markdown
+/// / image 등 모든 host/plugin kind 통합).
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) enum ConvertSurfaceTarget {
     Terminal { cwd: Option<PathBuf> },
-    Markdown { file_path: String },
-    Image,
     Kind { kind: String, params: Value },
 }
 

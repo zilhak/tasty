@@ -1057,20 +1057,6 @@ impl Core {
                     // Terminal 변환은 explicit_name 클리어 (auto-derived from CWD).
                     (Box::new(node), Some(None))
                 }
-                ConvertSurfaceTarget::Markdown { file_path } => {
-                    let surface = Box::new(crate::model::MarkdownPanel::new(
-                        surface_id,
-                        file_path.clone(),
-                    ));
-                    let name = std::path::Path::new(&file_path)
-                        .file_name()
-                        .map(|f| f.to_string_lossy().to_string());
-                    (surface, Some(name))
-                }
-                ConvertSurfaceTarget::Image => {
-                    let surface = Box::new(crate::model::ImagePanel::new_blank(surface_id));
-                    (surface, Some(Some("Image".to_string())))
-                }
                 ConvertSurfaceTarget::Kind { kind, params } => {
                     let new_surface =
                         match engine.create_surface_via_registry(&kind, surface_id, &params) {
@@ -1084,8 +1070,11 @@ impl Core {
                                 };
                             }
                         };
-                    // 변환 시 explicit_name 은 클리어 (surface 자체의 display_name).
-                    (new_surface, Some(None))
+                    // markdown 등 file 기반 kind 는 옛 Markdown variant 처럼
+                    // file basename 으로 자동 명명. 그 외 kind 는 클리어 — surface
+                    // 자체의 display_name 이 사용된다.
+                    let auto_name = derive_auto_name(&kind, &params);
+                    (new_surface, Some(auto_name))
                 }
             };
 
@@ -1771,6 +1760,21 @@ pub(crate) fn apply_create_workspace_inner(
         renamed_subtitle,
         renamed_description,
     })
+}
+
+/// `ConvertSurface` 의 Kind 분기에서 사용. file 기반 kind 는 params 의 `file`
+/// 키 basename 을 자동 명명 으로 사용. 그 외 kind 는 None — surface 의
+/// display_name 이 자동으로 적용된다. 옛 `ConvertSurfaceTarget::Markdown`
+/// arm 의 명명 동작 보존.
+fn derive_auto_name(kind: &str, params: &serde_json::Value) -> Option<String> {
+    if kind == "markdown" {
+        if let Some(p) = params.get("file").and_then(|v| v.as_str()) {
+            return std::path::Path::new(p)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string());
+        }
+    }
+    None
 }
 
 /// `RestoreClosedItem` 의 helper. pane_id 에 tab attach + active_tab 갱신.

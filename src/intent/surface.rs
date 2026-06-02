@@ -144,26 +144,25 @@ fn convert(
             let cwd = state.resolve_inherit_cwd(engine);
             ConvertSurfaceTarget::Terminal { cwd }
         }
-        ConvertTarget::Kind { kind, params } => match kind.as_str() {
-            "markdown" => {
-                let Some(file_path) = params
-                    .get("file_path")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-                else {
-                    tracing::warn!(
-                        "convert markdown: missing or invalid 'file_path' param: {params}"
-                    );
-                    return;
-                };
-                ConvertSurfaceTarget::Markdown { file_path }
+        ConvertTarget::Kind { kind, params } => {
+            // markdown 의 옛 caller 호환: SurfaceKindDef 가 기대하는 키는 `file`
+            // 이지만 옛 caller 는 `file_path` 로 넘긴다. 단일 호출 지점에서
+            // 정규화 — 별도 헬퍼 추상화 비용 > 이득.
+            let mut params = params.clone();
+            if kind == "markdown" {
+                if let Some(obj) = params.as_object_mut() {
+                    if !obj.contains_key("file") {
+                        if let Some(fp) = obj.remove("file_path") {
+                            obj.insert("file".to_string(), fp);
+                        }
+                    }
+                }
             }
-            "image" => ConvertSurfaceTarget::Image,
-            _ => ConvertSurfaceTarget::Kind {
+            ConvertSurfaceTarget::Kind {
                 kind: kind.clone(),
-                params: params.clone(),
-            },
-        },
+                params,
+            }
+        }
     };
 
     let intent = crate::core::intent::DomainIntent::ConvertSurface {
