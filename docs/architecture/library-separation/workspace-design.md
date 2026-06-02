@@ -1,337 +1,272 @@
-# Cargo Workspace 구조 설계
+# Cargo Workspace 구조 — 현 28 crate 스냅샷
 
-권장하는 2개 크레이트(`tasty-hooks`, `tasty-terminal`) 분리 후의 workspace 구조를 설계한다.
+본 문서는 *현재* 워크스페이스 구조를 기록한 스냅샷이다. 옛 *2 crate 분리 후 설계안* 은 *이미 도달한 결과* 이상으로 확장됐다 (28 crate 도달). 옛 분리 의사결정 회고는 [`index.md`](index.md), 옛 실행 절차는 [`execution-plan.md`](execution-plan.md) 참조.
+
+실측 시점: 2026-06-02 (`Cargo.toml` 기준).
 
 ---
 
-## 권장 디렉토리 구조
+## 1. 디렉토리 구조
 
 ```
 tasty/
-├── Cargo.toml                  ← workspace 루트 + 바이너리 크레이트
-├── Cargo.lock
-├── CLAUDE.md
-├── crates/
-│   ├── tasty-hooks/
-│   │   ├── Cargo.toml
-│   │   └── src/
-│   │       └── lib.rs          ← hooks.rs 내용 이동
-│   └── tasty-terminal/
-│       ├── Cargo.toml
-│       └── src/
-│           └── lib.rs          ← terminal.rs 내용 이동
-├── src/
-│   ├── main.rs                 ← mod hooks, mod terminal 제거
-│   ├── cli.rs
-│   ├── font.rs
-│   ├── gpu.rs
-│   ├── model.rs                ← use tasty_terminal::{Terminal, Waker};
-│   ├── notification.rs
-│   ├── renderer.rs
-│   ├── settings.rs
-│   ├── settings_ui.rs
-│   ├── state.rs                ← use tasty_terminal::{Terminal, TerminalEvent, Waker};
-│   ├── ui.rs
-│   └── ipc/
-│       ├── mod.rs
-│       ├── handler.rs
-│       ├── protocol.rs
-│       └── server.rs
-├── docs/
-│   └── ...
-└── target/
+├── Cargo.toml                     # 워크스페이스 + 본 바이너리 [package]
+├── src/                           # 본 바이너리 (479 .rs / ~91k LOC)
+│   ├── main.rs
+│   ├── app/  core/  adapters/  view/  gfx/  host_api/
+│   ├── engine/  store/  intent/  state/  ports/
+│   ├── boot/  file/  platform/  db/
+│   └── ...                         # 모듈 상세는 ../index.md 의 "본 바이너리 모듈" 절
+└── crates/                         # 28 라이브러리 크레이트
+    ├── tasty-type-geometry/        # type-* layer (leaf)
+    ├── tasty-type-appearance/
+    ├── tasty-utils/
+    ├── tasty-themes/               # 도메인-IO layer
+    ├── tasty-settings/
+    ├── tasty-font/
+    ├── tasty-terminal/
+    ├── tasty-hooks/
+    ├── tasty-memory/
+    ├── tasty-telemetry/
+    ├── tasty-output/
+    ├── tasty-approval/
+    ├── tasty-agent/
+    ├── tasty-presets/
+    ├── tasty-shm/
+    ├── tasty-portscan/
+    ├── tasty-update/
+    ├── tasty-lua/
+    ├── tasty-plugin-protocol/      # Plugin layer
+    ├── tasty-plugin-sdk/
+    ├── tasty-plugin-claude/        # 번들 Plugin layer
+    ├── tasty-plugin-codex/
+    ├── tasty-plugin-explorer/
+    ├── tasty-plugin-git-viewer/
+    ├── tasty-plugin-clipboard-history/
+    ├── tasty-plugin-image/
+    ├── tasty-plugin-html/
+    └── tasty-tui-simulator/        # 테스트/dev 도구
 ```
 
 ---
 
-## Workspace Cargo.toml (루트)
+## 2. 워크스페이스 Cargo.toml 핵심
 
 ```toml
 [workspace]
-members = [
-    ".",
-    "crates/tasty-hooks",
-    "crates/tasty-terminal",
-]
-resolver = "3"
+members = ["crates/*"]
+resolver = "2"
+
+# 워크스페이스 공통 lint (각 crate 의 [lints] 절에서 workspace = true 로 상속)
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "warn"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
 
 [package]
 name = "tasty"
+version = "0.6.0"
+edition = "2024"
+authors = ["zilhak <zilhak1@gmail.com>"]
+license = "MIT"
+```
+
+본 바이너리 `[dependencies]` 절에서 28 crate 모두 `path = "crates/..."` 형태로 직접 의존:
+
+```toml
+[dependencies]
+tasty-font            = { path = "crates/tasty-font" }
+tasty-hooks           = { path = "crates/tasty-hooks" }
+tasty-terminal        = { path = "crates/tasty-terminal" }
+tasty-settings        = { path = "crates/tasty-settings" }
+tasty-themes          = { path = "crates/tasty-themes" }
+tasty-type-appearance = { path = "crates/tasty-type-appearance" }
+tasty-type-geometry   = { path = "crates/tasty-type-geometry" }
+tasty-utils           = { path = "crates/tasty-utils" }
+tasty-memory          = { path = "crates/tasty-memory" }
+tasty-telemetry       = { path = "crates/tasty-telemetry" }
+tasty-output          = { path = "crates/tasty-output" }
+tasty-approval        = { path = "crates/tasty-approval" }
+tasty-agent           = { path = "crates/tasty-agent" }
+tasty-presets         = { path = "crates/tasty-presets" }
+tasty-shm             = { path = "crates/tasty-shm" }
+tasty-portscan        = { path = "crates/tasty-portscan" }
+tasty-update          = { path = "crates/tasty-update" }
+tasty-lua             = { path = "crates/tasty-lua" }
+tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }
+# 번들 plugin 7 종 + tasty-plugin-sdk + tasty-tui-simulator 도 동일 패턴
+```
+
+옛 권고였던 `[workspace.dependencies]` 공통 버전 절은 *미도입* — 현재 패턴은 *각 crate 가 자체 dep 버전 명시*. 워크스페이스 전체 통일 대상은 `[workspace.lints]` (clippy / rust) 만.
+
+---
+
+## 3. 카테고리별 Cargo.toml 발췌 (대표 4 종)
+
+### type-\* layer 예: `tasty-type-appearance`
+
+```toml
+[package]
+name = "tasty-type-appearance"
 version = "0.1.0"
 edition = "2024"
-license = "MIT"
-description = "Cross-platform GPU-accelerated terminal emulator for AI coding agents"
-repository = "https://github.com/zilhak/tasty"
+
+[features]
+default = ["egui-compat"]
+egui-compat = ["dep:egui"]   # plugin/headless 에서 default-features = false 로 제외
 
 [dependencies]
-# ---- workspace 내부 크레이트 ----
-tasty-hooks = { path = "crates/tasty-hooks" }
-tasty-terminal = { path = "crates/tasty-terminal" }
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+serde      = { version = "1", features = ["derive"] }
+bytemuck   = { version = "1", features = ["derive"] }
+egui       = { version = "0.32", optional = true }
 
-# ---- Window & Input ----
-winit = "0.30"
+[lints]
+workspace = true
+```
 
-# ---- GPU Rendering ----
-wgpu = "24"
+`egui-compat` feature 가 워크스페이스 전체에서 유일한 *실제 feature flag*. 옛 분석의 *다양한 feature 권고* (read-mark, serde-conversion 등) 는 *미도입* 상태.
 
-# ---- UI Widgets ----
-egui = "0.31"
-egui-wgpu = "0.31"
-egui-winit = "0.31"
+### 도메인-IO 예: `tasty-settings` (옛 비권장 → 분리 반전)
 
-# ---- Terminal Emulation (tasty-terminal에서도 사용, 공유) ----
-termwiz = "0.22"
+```toml
+[package]
+name = "tasty-settings"
+version = "0.1.0"
+edition = "2024"
 
-# ---- Async ----
-pollster = "0.4"
-tokio = { version = "1", features = ["full"] }
+[dependencies]
+tasty-themes          = { path = "../tasty-themes" }
+tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
+tasty-type-geometry   = { path = "../tasty-type-geometry" }
+tasty-utils           = { path = "../tasty-utils" }
 
-# ---- Logging ----
+serde  = { version = "1", features = ["derive"] }
+toml   = "0.8"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow  = "1"
 
-# ---- Error Handling ----
-anyhow = "1"
-thiserror = "2"
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
-# ---- Serialization ----
-serde = { version = "1", features = ["derive"] }
+[lints]
+workspace = true
+```
+
+`tasty-type-appearance` 를 `default-features = false` 로 가져와 egui 비의존 — *plugin 에서 settings 도메인을 import 해도 egui 가 따라오지 않게* 격리. 옛 분석에 없던 layering 규칙.
+
+### Plugin 호스트 예: `tasty-plugin-sdk`
+
+```toml
+[package]
+name = "tasty-plugin-sdk"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+tasty-shm             = { path = "../tasty-shm" }
 serde_json = "1"
-toml = "0.8"
+toml       = "0.8"
+tracing    = "0.1"
+anyhow     = "1"
+thiserror  = "1"
 
-# ---- CLI ----
-clap = { version = "4", features = ["derive"] }
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
-# ---- Font & Text ----
-cosmic-text = "0.18"
-bytemuck = { version = "1", features = ["derive"] }
+[lints]
+workspace = true
+```
 
-# ---- Notifications ----
-notify-rust = "4"
+도메인-IO layer (`tasty-settings`, `tasty-themes` 등) *직접 의존 0* — plugin sandbox 경계 invariant 준수. 도메인 타입이 필요하면 *wire format* (`tasty-plugin-protocol`) 으로 전달.
 
-# ---- Shell escaping ----
+### 번들 plugin 예: `tasty-plugin-claude`
+
+```toml
+[package]
+name = "tasty-plugin-claude"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+regex        = "1"
+directories  = "5"
 shell-escape = "0.1"
+serde        = "1"
+serde_json   = "1"
+anyhow       = "1"
+tracing      = "0.1"
 
-# ---- Clipboard ----
-arboard = "3"
-
-# ---- Utilities ----
-directories = "6"
-
-[profile.release]
-lto = true
-strip = true
-opt-level = 3
+[lints]
+workspace = true
 ```
 
-주의: `portable-pty`와 `regex`는 루트에서 제거. 각각 `tasty-terminal`과 `tasty-hooks`의 내부 의존으로 이동.
+`tasty-plugin-sdk` 만 의존 — 번들 plugin 7 종 모두 동일 패턴.
 
 ---
 
-## tasty-hooks Cargo.toml
+## 4. 의존성 그래프 (4 계층)
 
-```toml
-[package]
-name = "tasty-hooks"
-version = "0.1.0"
-edition = "2024"
-license = "MIT"
-description = "Event-driven hook system for terminal automation"
-repository = "https://github.com/zilhak/tasty"
-readme = "README.md"
-keywords = ["terminal", "hooks", "automation", "ai-agent"]
-categories = ["command-line-utilities", "development-tools"]
-
-[dependencies]
-regex = "1"
-serde = { version = "1", features = ["derive"] }
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  본 바이너리 (tasty, src/)                                      │
+└─┬───────────────────────────────────────────────────────────────┘
+  │
+  ├── Plugin layer
+  │     ├─ tasty-plugin-sdk ── tasty-plugin-protocol
+  │     │                  └── tasty-shm  (도메인-IO 중 OS 의존 0 항목 한정)
+  │     └─ 번들 plugin 7 종 ── tasty-plugin-sdk
+  │
+  ├── 도메인-IO layer
+  │     ├─ tasty-settings ── tasty-themes ── tasty-type-appearance
+  │     │                                └── tasty-utils
+  │     ├─ tasty-themes ── tasty-type-appearance ── tasty-type-geometry
+  │     │              └── tasty-utils
+  │     ├─ tasty-agent ── tasty-memory
+  │     │              └── tasty-utils
+  │     ├─ tasty-telemetry ── tasty-memory
+  │     ├─ tasty-presets ── tasty-utils
+  │     ├─ tasty-font / tasty-terminal / tasty-hooks / tasty-output /
+  │     │  tasty-approval / tasty-portscan / tasty-update / tasty-lua /
+  │     │  tasty-shm ── (모두 외부 deps 만, 워크스페이스 내 의존 0)
+  │     └─ ...
+  │
+  └── type-\* layer (leaf)
+        ├─ tasty-type-geometry  ← (외부 deps 만: serde)
+        ├─ tasty-type-appearance ← tasty-type-geometry (+ optional egui)
+        └─ tasty-utils ← directories
 ```
 
-### 의존성 설명
+### 의존 invariant
 
-| 의존 | 용도 | 필수 |
-|------|------|------|
-| `regex` | OutputMatch 이벤트의 정규식 매칭 (`hooks.rs:44`) | 필수 |
-| `serde` | HookEvent의 Serialize/Deserialize (`hooks.rs:17`) | 필수 |
+- **type-\* 끼리만 의존 가능** (type-appearance → type-geometry). 도메인/IO/plugin/본 바이너리 → type-\* OK. 역방향 ❌.
+- **plugin → 도메인-IO 직접 의존 금지** — `tasty-plugin-sdk` / `tasty-plugin-protocol` 통과 필수 (sandbox 경계). `tasty-shm` 만 plugin-sdk 가 직접 import (handle 전달용 OS primitive).
+- **번들 plugin → tasty-plugin-sdk 만** 의존 — 도메인-IO 직접 의존 금지.
+- 본 바이너리 → 모든 layer OK.
+
+순환 의존 0. 4 계층 invariant 위반 0.
 
 ---
 
-## tasty-terminal Cargo.toml
+## 5. Feature flags 현황
 
-```toml
-[package]
-name = "tasty-terminal"
-version = "0.1.0"
-edition = "2024"
-license = "MIT"
-description = "PTY-backed terminal emulation engine with Read Mark API"
-repository = "https://github.com/zilhak/tasty"
-readme = "README.md"
-keywords = ["terminal", "pty", "vte", "ai-agent"]
-categories = ["command-line-utilities", "development-tools"]
+| 위치 | feature | 효과 |
+|------|---------|------|
+| `tasty-type-appearance` | `egui-compat` (default ON) | `HexColor::to_egui()` 등 egui Color32 변환. plugin/headless 에서 `default-features = false` 로 제외 |
+| (그 외 워크스페이스 crate) | — | feature flag 미도입 |
 
-[dependencies]
-# PTY
-portable-pty = "0.8"
-
-# VTE parsing
-termwiz = "0.22"
-
-# Regex (ANSI strip in read_since_mark)
-regex = "1"
-
-# Error handling
-anyhow = "1"
-
-# Logging
-tracing = "0.1"
-```
-
-### 의존성 설명
-
-| 의존 | 용도 | 필수 |
-|------|------|------|
-| `portable-pty` | PTY 생성 및 관리 (`terminal.rs:6`) | 필수 |
-| `termwiz` | VTE 파서, Surface, Cell 타입 (`terminal.rs:7-16`) | 필수 |
-| `regex` | read_since_mark의 ANSI 이스케이프 제거 | 필수 |
-| `anyhow` | 에러 타입 (`terminal.rs:5`) | 필수 |
-| `tracing` | 로그 매크로 | 선택적이지만 유지 권장 |
+옛 분석의 권고였던 `tasty-hooks` 의 `serde` feature / `tasty-terminal` 의 `read-mark` feature 등은 *미도입* 상태. 도메인-IO crate 들이 *대부분 모놀로식 의존* 으로 사용되고 있어 feature gate 필요성 미발생.
 
 ---
 
-## 의존성 그래프
+## 6. 인접 문서
 
-```
-                 ┌──────────────────────────┐
-                 │    tasty (바이너리)        │
-                 │                          │
-                 │  winit, wgpu, egui,      │
-                 │  cosmic-text, termwiz,   │
-                 │  serde_json, clap, ...   │
-                 └───────┬──────────┬───────┘
-                         │          │
-                    path │          │ path
-                         │          │
-              ┌──────────▼──┐  ┌───▼──────────┐
-              │ tasty-hooks │  │tasty-terminal │
-              │             │  │              │
-              │  regex      │  │ portable-pty │
-              │  serde      │  │ termwiz      │
-              │             │  │ regex        │
-              └─────────────┘  │ anyhow       │
-                               │ tracing      │
-                               └──────────────┘
-
-  참고: tasty-hooks와 tasty-terminal은 서로 의존하지 않음
-```
-
-### 의존 방향 규칙
-
-```
-금지: tasty-hooks → tasty-terminal  (순환 의존 방지)
-금지: tasty-terminal → tasty-hooks  (순환 의존 방지)
-허용: tasty (바이너리) → tasty-hooks
-허용: tasty (바이너리) → tasty-terminal
-```
-
----
-
-## 공유 의존성 관리
-
-### workspace.dependencies (Cargo 1.64+)
-
-공유 의존성 버전을 workspace 루트에서 관리:
-
-```toml
-# Cargo.toml (루트)
-[workspace.dependencies]
-regex = "1"
-serde = { version = "1", features = ["derive"] }
-anyhow = "1"
-tracing = "0.1"
-termwiz = "0.22"
-
-# crates/tasty-hooks/Cargo.toml
-[dependencies]
-regex = { workspace = true }
-serde = { workspace = true }
-
-# crates/tasty-terminal/Cargo.toml
-[dependencies]
-termwiz = { workspace = true }
-regex = { workspace = true }
-anyhow = { workspace = true }
-tracing = { workspace = true }
-```
-
-장점:
-- 모든 크레이트가 동일 버전의 의존을 사용
-- 버전 업그레이드가 한 곳에서 완결
-- Cargo.lock이 중복 의존 방지
-
----
-
-## Feature Flags 설계
-
-### tasty-hooks
-
-```toml
-[features]
-default = ["serde"]
-serde = ["dep:serde"]
-```
-
-`serde` feature를 선택적으로 만들면, 직렬화가 필요 없는 사용자는 serde 의존을 제거할 수 있다. 단, 현재 `HookEvent`의 `serde(rename_all)` 속성이 IPC에서 사용되므로 기본 활성화.
-
-### tasty-terminal
-
-```toml
-[features]
-default = ["read-mark"]
-read-mark = ["regex"]
-```
-
-Read Mark API의 ANSI 제거 기능이 `regex`에 의존하므로, `regex` 없이 사용하고 싶은 경우를 위해 feature flag 제공. 단, 현재 regex는 가벼운 의존이므로 기본 활성화 권장.
-
-### 바이너리 (tasty)
-
-```toml
-[features]
-default = ["system-notification"]
-system-notification = ["notify-rust"]
-```
-
-`notify-rust`를 feature flag으로 만들면 headless 환경에서 OS 알림 없이 빌드 가능. 이것은 크레이트 분리와 무관하지만, workspace 전환 시 함께 적용하면 좋음.
-
----
-
-## 빌드 명령어 예시
-
-```bash
-# 전체 빌드
-cargo build
-
-# 전체 테스트
-cargo test
-
-# hooks만 테스트
-cargo test -p tasty-hooks
-
-# terminal만 테스트
-cargo test -p tasty-terminal
-
-# hooks만 린트
-cargo clippy -p tasty-hooks
-
-# 전체 문서 생성
-cargo doc --workspace --no-deps
-
-# 릴리스 빌드
-cargo build --release
-
-# 특정 크레이트의 의존 트리 확인
-cargo tree -p tasty-hooks
-
-# workspace 전체 의존 트리
-cargo tree --workspace
-```
+| 문서 | 설명 |
+|------|------|
+| [`index.md`](index.md) | 28 crate 현황 매트릭스 + 옛 8 후보 도달 상태 |
+| [`execution-plan.md`](execution-plan.md) | Phase 별 완료 회고 + 미완 Phase trigger 재정의 |
+| [`../index.md`](../index.md) | 워크스페이스 / 모듈 / 의존성 DAG 권위본 |
