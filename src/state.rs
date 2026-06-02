@@ -18,6 +18,7 @@ pub mod update_check;
 
 use std::collections::VecDeque;
 
+#[cfg(feature = "gui")]
 use crate::adapters::ui::info_modal::InfoModal;
 use crate::core::CoreState;
 use crate::model::{LogicalPx, PhysicalPx};
@@ -252,6 +253,7 @@ pub struct AppState {
     /// Measured tab bar height in physical pixels, updated each frame by egui.
     pub(crate) tab_bar_height: PhysicalPx,
     /// Popup manager for internal popups (notification panel, etc.).
+    #[cfg(feature = "gui")]
     pub(crate) popups: crate::adapters::ui::PopupManager,
     /// Terminal text search state.
     pub(crate) search: crate::search_state::SearchState,
@@ -266,6 +268,7 @@ pub struct AppState {
     pub(crate) command_palette: crate::state::command_palette::CommandPaletteState,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
+    #[cfg(feature = "gui")]
     pub(crate) toasts: crate::adapters::ui::ToastManager,
     /// Cached recent files list (markdown/html open popups). Loaded from disk at
     /// startup and mutated in-place; each mutation saves back to disk.
@@ -409,6 +412,7 @@ pub struct DialogState {
     pub(crate) ws_drag: Option<WsDragState>,
     /// 부팅 시점 정보/에러 알림용 modal 큐. 큐 head를 [확인] 버튼으로 처리한다.
     /// `crate::adapters::ui::info_modal::show_info_modal()`로 push.
+    #[cfg(feature = "gui")]
     pub(crate) info_modal_queue: VecDeque<InfoModal>,
     /// 휴먼 핸드오프 — 응답 대기 중인 approval 큐. popup 의 head 가 현재 화면.
     /// `approval.request` IPC 가 push하고, 선택지 클릭 시 pop.
@@ -471,6 +475,7 @@ impl DialogState {
             pending_file_drag: None,
             tab_drag: None,
             ws_drag: None,
+            #[cfg(feature = "gui")]
             info_modal_queue: VecDeque::new(),
             pending_approval_ids: VecDeque::new(),
             approval_comment_buffer: String::new(),
@@ -555,16 +560,16 @@ impl RenameTarget {
     }
 
     /// Popup scope matching the rename target.
-    pub fn popup_scope(&self) -> crate::adapters::ui::popup::PopupScope {
+    pub fn popup_scope(&self) -> crate::model::popup_kind::PopupScope {
         match self {
             Self::WorkspaceName { ws_idx } => {
-                crate::adapters::ui::popup::PopupScope::Workspace(*ws_idx)
+                crate::model::popup_kind::PopupScope::Workspace(*ws_idx)
             }
             Self::WorkspaceSubtitle { ws_idx } => {
-                crate::adapters::ui::popup::PopupScope::Workspace(*ws_idx)
+                crate::model::popup_kind::PopupScope::Workspace(*ws_idx)
             }
             Self::TabName { pane_id, tab_index } => {
-                crate::adapters::ui::popup::PopupScope::Tab(*pane_id, *tab_index)
+                crate::model::popup_kind::PopupScope::Tab(*pane_id, *tab_index)
             }
         }
     }
@@ -602,6 +607,7 @@ impl AppState {
             last_tab_locations: None,
             popup_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
+            #[cfg(feature = "gui")]
             popups: {
                 let mut pm = crate::adapters::ui::PopupManager::new();
                 for def in crate::adapters::ui::popup::defs::all_defs() {
@@ -618,6 +624,7 @@ impl AppState {
                 std::time::Duration::from_secs(60 * 60),
             ),
             command_palette: crate::state::command_palette::CommandPaletteState::default(),
+            #[cfg(feature = "gui")]
             toasts: crate::adapters::ui::ToastManager::new(),
             markdown_views: Default::default(),
             image_views: Default::default(),
