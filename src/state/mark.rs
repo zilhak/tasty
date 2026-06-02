@@ -2,28 +2,6 @@ use super::AppState;
 use crate::core::CoreState;
 
 impl AppState {
-    /// Set a read mark on the focused terminal (or a specific surface).
-    pub fn set_mark(&mut self, engine: &mut CoreState, surface_id: Option<u32>) {
-        if let Some(target_sid) = surface_id {
-            for workspace in &mut engine.workspaces {
-                let mut found = false;
-                workspace
-                    .pane_layout_mut()
-                    .for_each_terminal_mut(&mut |sid, terminal| {
-                        if sid == target_sid {
-                            terminal.set_mark();
-                            found = true;
-                        }
-                    });
-                if found {
-                    return;
-                }
-            }
-        } else if let Some(terminal) = self.focused_terminal_mut(engine) {
-            terminal.set_mark();
-        }
-    }
-
     /// Read since mark on the focused terminal (or a specific surface).
     pub fn read_since_mark(
         &mut self,
