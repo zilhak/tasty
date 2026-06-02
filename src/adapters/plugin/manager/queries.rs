@@ -62,7 +62,6 @@ impl PluginManager {
             for popup in &pkg.manifest.contributes.popup {
                 out.push(PluginPopupEntry {
                     plugin_id: pkg.manifest.id.clone(),
-                    popup_id: popup.id.clone(),
                     contribute: popup.clone(),
                 });
             }

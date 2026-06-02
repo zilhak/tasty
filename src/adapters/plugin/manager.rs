@@ -305,7 +305,6 @@ pub struct PendingPluginCall {
 #[derive(Debug, Clone)]
 pub struct PluginPopupEntry {
     pub plugin_id: String,
-    pub popup_id: String,
     pub contribute: crate::plugin::manifest::PopupContribute,
 }
 
