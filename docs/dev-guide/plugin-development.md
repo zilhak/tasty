@@ -507,6 +507,95 @@ contribute한 namespace prefix와 매칭되어야 한다 (그래야 라우팅이
 `"ipc.invoke:<prefix>"`를 선언하고 사용자가 grant해야 한다. 자기 namespace를
 자기가 호출하는 무한 forward는 호스트가 `-32001`로 거부한다.
 
+## 4-2-A. Extension 등록 (file detector + handler)
+
+Plugin 이 자기 확장자를 등록하고, 파일이 열릴 때 자기 surface_kind 로 자동
+dispatch 되도록 하는 경로. 매니페스트만으로 호스트 file_handler 시스템에
+참여한다. 자세한 detector 규칙 / handler action / picker 동작은
+[`docs/agent-guide/file-handler.md`](../agent-guide/file-handler.md) 참고.
+
+### 매니페스트 (실제 builtin 인용 — `crates/tasty-plugin-image/tasty-plugin.toml`)
+
+```toml
+permissions = [
+    "surface.read",
+    "surface.write",
+    "clipboard.read",
+    "fs.read",
+    "fs.write",
+    "file_handler.define",
+    "file_handler.handle:image",
+]
+
+[[surface_kinds]]
+kind = "image"
+display_name_i18n_key = "surface.kind.image"
+icon = "🖼️"
+rendering = "host"
+
+# 이미지 확장자 매핑. install 단계가 전역 id 를 "com.tasty.image/image" 로 자동 prefix.
+[[contributes.detector]]
+id = "image"
+display_name_i18n_key = "file_handler.format.image"
+[[contributes.detector.rule]]
+kind = "extension"
+values = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif"]
+
+# id 는 short name (lowercase + 숫자 + `-`, 1~32자). 전역 id 는 install 단계가
+# "com.tasty.image/viewer" 로 자동 prefix.
+[[contributes.handler]]
+id = "viewer"
+detector = "image"
+priority = 50
+display_name_i18n_key = "file_handler.host.image-viewer"
+[contributes.handler.action]
+kind = "open_surface"
+surface_kind = "image"
+param_key = "file"
+```
+
+### 3 단 관계
+
+```
+[[contributes.detector]] ──identifies──▶ DetectorId
+        │
+        ▼  (priority + owner tiebreak)
+[[contributes.handler]] ──dispatch──▶ HandlerAction::open_surface { surface_kind, param_key }
+        │
+        ▼
+[[surface_kinds]]  ── SurfaceKindDef ── 실제 surface 생성
+```
+
+### 권한 토큰
+
+| 토큰 | 용도 |
+|------|------|
+| `file_handler.define` | 새 detector 등록 (`[[contributes.detector]]`) |
+| `file_handler.extend:<id>` | 기존 detector 에 rule 추가 (마크다운 등에 `.mdx` 확장자 추가 등) |
+| `file_handler.handle:<id>` | 그 detector 에 handler attach (`[[contributes.handler]] detector = "<id>"`) |
+
+### handler id 규칙
+
+manifest 의 `id` 는 **short name** (lowercase 알파벳 + 숫자 + `-`, 1~32자).
+install 단계가 전역 id 를 `<plugin_id>/<short>` 로 자동 prefix.
+
+- ✅ `id = "viewer"` → 전역 `com.tasty.image/viewer`
+- ❌ `id = "com.tasty.image/viewer"` (슬래시 포함) — `is_valid_handler_short_name` validator reject + silent drop (warn 로그)
+
+### owner tiebreak
+
+priority 가 동순위일 때 owner 순서로 1순위 선택: `user > plugin > host`.
+따라서 plugin 이 priority=50 으로 contribute 하고 host TOML 에도 priority=50
+handler 가 남아 있어도 plugin 이 1순위.
+
+### 향후 markdown plugin 신설
+
+markdown 은 현재 host 가 SurfaceKindDef + detector + handler 모두 보유.
+별도 plugin (`com.tasty.markdown`) 으로 분리하고 싶다면 본 섹션의 매니페스트
+패턴이 그대로 템플릿이 된다 — `[[surface_kinds]] kind="markdown"` +
+`[[contributes.detector]]` + `[[contributes.handler]]` 추가, host TOML 에서
+같은 항목 제거.
+
 ## 4-3. Surface 닫힘 알림 (Event Bus)
 
 다른 plugin이나 사용자가 surface를 닫았을 때 알림을 받고 싶다면 매니페스트에 `event_subscribe = ["surface.closed"]`를 선언한 뒤 `on_start`에서 `bus.subscribe("surface.closed")`를 호출한다. (자기 자신이 만든 surface의 정리는 `destroy_surface`가 별도로 호출되므로 추가 구독이 필요 없다.)

@@ -195,6 +195,14 @@ plugin → PluginEvent::IpcCall { call_id, method, params }
        → plugin이 ipc.result 요청 수신
 ```
 
+## Builtin plugin 자동 grant
+
+빌트인 plugin (`com.tasty.image` / `com.tasty.html` 등) 의 매니페스트
+permissions 는 `install_builtins_if_needed` 가 자동 grant 한다:
+
+- 최초 install (`grants` map 에 plugin id 없음) — 매니페스트 권한 전체를 `set_granted`.
+- 기존 사용자 (이미 entry 보유) 에 새 버전 builtin 이 permission 을 추가했을 때 — `apply_builtin_permission_diff` helper 가 **신규 token 만 증분 grant** (기존 token 은 보존 — 사용자 명시 deny 가능성). E.G 작업으로 추가됨.
+
 ## 권한 변경 즉시 반영
 
 `PluginManager::plugin_permissions`는 `HashMap<String, Arc<HashSet<Permission>>>`이다.

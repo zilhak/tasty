@@ -1697,6 +1697,8 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
 - Recent picks 는 picker popup 내 "최근" 열에서만 노출되며, Settings UI 에서는 sub-tab 으로 분리하지 않는다 (forget 은 `~/.tasty/file-handler-recent.json` 직접 편집)
 
 ### Extension Mapping (Phase E ME4)
+- Plugin 매니페스트 등록 경로: `[[contributes.detector]]` + `[[contributes.handler]]` 로 plugin 이 자기 확장자와 핸들러를 contribute. host TOML 도 같은 구조 — last-writer-wins. 실 예시는 `crates/tasty-plugin-image/tasty-plugin.toml` (image detector + viewer handler) / `crates/tasty-plugin-html/tasty-plugin.toml` (html viewer handler, detector 는 host 유지)
+- Settings UI 의 Extension Mapping sub-tab 은 광고 detector ≥ 2 인 ext 만 기본 노출. plugin 만 광고하는 ext (예: image) 는 plugin disabled 시 UI 에서 사라짐 — 단순화 의도, plugin enable 로 즉시 복귀
 - 같은 확장자를 광고하는 detector 가 여러 개 있을 때 사용자가 직접 우선순위를 정할 수 있는 표 (`[[extension_priority]]`)
 - 호스트 default / 사용자 설정 양쪽에서 정의 가능. plugin manifest 는 이 섹션을 못 씀 — 사용자 영역
 - TOML: `[[extension_priority]] extension = "md" order = ["mdx-strict", "markdown"]`

@@ -8,6 +8,10 @@ Tasty 는 경로/URI 입력을 두 단계로 라우팅한다:
 두 registry 는 **host default + plugin contribute + user TOML** 세 출처를 통합 보관한다. plugin 을 disable/uninstall 해도 host/user 항목은 그대로 남는다.
 
 > **현재 상태:** cheap path (확장자/glob/is-directory) + deep path (magic bytes / MIME / Lua) 평가 가능. `structure_check` 는 Phase D MD2 에서 구현 예정. mouse.rs 콜사이트 (Ctrl+click 시 picker 자동 표시) 변경은 별도 작업 — 현재는 기존 `terminal_link::open_uri` 가 그대로 동작한다.
+>
+> **이관 상태 (E.G):** `com.tasty.image` 매니페스트가 image detector + viewer handler 를 contribute (host TOML 에서 제거). `com.tasty.html` 매니페스트는 viewer handler 만 contribute (detector 는 host 유지 — plugin disable 시 `html-system` fallback). plugin 의 owner tiebreak (user > plugin > host) 로 priority 동순위면 plugin 이 우선.
+>
+> **Headless 동작:** `DispatchFile` 경로의 `OpenSurface` / `Ipc` 분기는 GUI crate 의존 0 (winit/wgpu/egui import 없음). `HandlerAction::System` 만 `terminal_link::open_uri` 호출 — 이 callsite 의 GUI feature gate 는 Phase E.B 작업.
 
 ---
 
@@ -206,8 +210,10 @@ id = "csv"
 kind = "extension"
 values = ["csv", "tsv"]
 
+# id 는 short name (lowercase + 숫자 + `-`, 1~32자) — install 단계가
+# 전역 id 를 "<plugin_id>/viewer" 로 자동 prefix.
 [[contributes.handler]]
-id = "com.example.csv/viewer"
+id = "viewer"
 detector = "csv"
 priority = 40
 [contributes.handler.action]
@@ -219,7 +225,7 @@ param_key = "path"
 검증 단계:
 - detector id 가 `$` 로 시작하면 plugin 은 reject (예약 sentinel).
 - `file_handler.handle:<id>` 권한이 있어야 그 detector 에 handler attach 가능.
-- handler id 의 prefix segment 는 plugin id 와 일치해야 함 (`com.example.csv/...`).
+- handler `id` 는 short name 만 (`is_valid_handler_short_name`: lowercase + 숫자 + `-`, 1~32자). 전역 id 는 install 단계가 `<plugin_id>/<short>` 로 자동 prefix — manifest 에 `id = "com.example.csv/viewer"` 처럼 슬래시를 포함해 쓰면 validator reject + silent drop.
 - `surface_kind` 는 plugin 이 등록한 것만 (또는 host 가 미리 알려진 것), `ipc.method` 는 plugin 의 namespace prefix.
 
 ---

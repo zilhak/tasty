@@ -333,7 +333,7 @@ AI 에이전트 간 자동화 통합 기능. Claude Code 전용 런처, 멀티 �
 - DetectorRule 종류: `extension`, `path_glob`, `is_directory` (cheap) / `mime`, `magic`, `lua` (deep, 평가 구현됨) / `structure_check` (stub — Phase D MD2 예정)
 - HandlerAction: `OpenSurface { kind, param_key }`, `Ipc { method, owner_plugin_id }`, `System` (OS 기본 열기 — plugin 불가)
 - Contribution-based registry: plugin uninstall 시 그 plugin 의 entry 만 제거, host/user 유지
-- Plugin 매니페스트 `[[contributes.detector]]` / `[[contributes.handler]]` + 권한 토큰 `file_handler.define` / `extend:<id>` / `handle:<id>`
+- Plugin 매니페스트 `[[contributes.detector]]` / `[[contributes.handler]]` + 권한 토큰 `file_handler.define` / `extend:<id>` / `handle:<id>` — 빌트인 예시: `com.tasty.image` (image detector + viewer), `com.tasty.html` (viewer handler 만, detector 는 host 유지)
 - Picker popup (`file_handler_picker` PopupDef): 후보/최근 두 열, 더블클릭/[열기] dispatch, [취소]/ESC Cancelled
 - Extension Mapping (Phase E): 같은 확장자를 광고하는 detector 가 여러 개일 때 사용자가 `[[extension_priority]]` 표로 우선순위 지정. Settings UI 의 File Handler 탭 → Extension Mapping sub-tab 에서 ↑/↓ 버튼으로 편집
 - 상세: [features.md](features.md)
