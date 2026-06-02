@@ -39,6 +39,7 @@ pub fn compute_terminal_rect(
     }
 }
 
+mod binary_tree;
 pub mod closed_item;
 mod diff_panel;
 mod empty_surface;
@@ -54,6 +55,7 @@ mod terminal_surface;
 pub mod toast_kind;
 mod workspace;
 
+pub use binary_tree::BinaryTree;
 pub use closed_item::{ClosedItem, ClosedItemStore};
 pub use diff_panel::*;
 pub use empty_surface::*;
