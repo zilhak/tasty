@@ -6,27 +6,30 @@ Tasty 프로젝트에서 사용하는 용어 정의. 코드, 문서, IPC API 전
 
 ```
 Engine
-├── Window (여러 개)
+├── View (여러 개. winit Window 와 1:1 매핑된 *render target*)
 │   ├── Modality: Modal  (전역 최대 1개)
-│   │   ├── SettingsWindow
-│   │   └── QuitWindow
+│   │   ├── SettingsView
+│   │   ├── QuitView
+│   │   └── PluginsView
 │   │
-│   └── Modality: Modeless
-│       └── TerminalHostWindow 계열 (터미널 Surface 호스팅)
-│           └── MainWindow  (현재 유일한 구현체)
-│               └── Workspace
-│                   └── 상위 레이아웃 (탭과 무관하게 고정)
-│                       └── Pane (독립적인 탭 바)
-│                           └── Tab (= 탭 하나)
-│                               └── 하위 레이아웃 (탭 전환 시 함께 전환)
-│                                   └── Surface (Terminal / Markdown / Image / Html / Empty / plugin RemoteSurface)
+│   ├── Modality: Modeless / TerminalHostView 계열 (터미널 Surface 호스팅)
+│   │   └── MainView  (현재 유일한 구현체)
+│   │       └── Workspace
+│   │           └── 상위 레이아웃 (탭과 무관하게 고정)
+│   │               └── Pane (독립적인 탭 바)
+│   │                   └── Tab (= 탭 하나)
+│   │                       └── 하위 레이아웃 (탭 전환 시 함께 전환)
+│   │                           └── Surface (Terminal / Markdown / Image / Html / Empty / plugin RemoteSurface)
+│   │
+│   └── Modality: Modeless / EditorView 계열 (modeless 에디터)
+│       └── PresetView
 │
-├── Popup (window 내부 가상 창)
-└── Toast (window 내부 휘발성 알림)
+├── Popup (view 내부 가상 창)
+└── Toast (view 내부 휘발성 알림)
 ```
 
-Window는 단일 상위 개념이며 **modality**(Modeless/Modal)와 **계열**(ModalWindow/
-TerminalHostWindow)을 갖는다. Modal은 별개의 엔티티가 아니라 Window의 한 형태다.
+View 는 단일 상위 개념이며 **modality**(Modeless/Modal)와 **계열**(ModalView/
+TerminalHostView/EditorView)을 갖는다. Modal은 별개의 엔티티가 아니라 View 의 한 형태다.
 
 ## 용어 정의
 
@@ -62,9 +65,9 @@ close_requested) 를 담은 `ViewBase`를 composition 하며, **modality** 와
 구현 레벨에서 `View` 는 sealed trait 이며, 외부에서 직접 구현할 수 없다. 반드시
 `ModalView` / `TerminalHostView` / `EditorView` 중 하나를 거쳐야 한다.
 
-**과도기 상태 (Phase D)**: 구현체 struct 이름은 여전히 `*Window` (예:
-`MainWindow`, `SettingsWindow`, `QuitWindow`, `PresetWindow`, `PluginsWindow`).
-`View` trait ↔ `*Window` 구현체 의 어휘 비일관은 Phase E 의 별 substep 에서 완성.
+**Phase E.C 완료 상태**: 구현체 struct 이름은 모두 `*View` (`MainView`,
+`SettingsView`, `QuitView`, `PresetView`, `PluginsView`). View trait 와 구현체
+어휘 일치.
 
 ### Modal modality / ModalView (모달)
 
@@ -72,7 +75,7 @@ close_requested) 를 담은 `ViewBase`를 composition 하며, **modality** 와
 Modal modality 를 가진 View (= `ModalView` 구현체) 가 활성화되면 다른 모든
 View 의 입력이 차단되며, 닫아야만 다시 입력이 재개된다.
 
-- 구현체: `SettingsWindow`, `QuitWindow`, `PluginsWindow`
+- 구현체: `SettingsView`, `QuitView`, `PluginsView`
 - 공통 default 동작: 첫 프레임 렌더 후 가시화, Esc 로 닫기, 포커스 탈취
 
 Modal 은 별개의 엔티티가 아니라 View 의 한 형태라는 점에 주의한다.
@@ -82,30 +85,30 @@ Modal 은 별개의 엔티티가 아니라 View 의 한 형태라는 점에 주�
 터미널 계열 Surface (Terminal / Markdown / Explorer / Html / Empty) 를 호스팅
 하는 View 계열. Modal 이 아닌 *터미널 계열* 윈도우가 여기에 속한다.
 
-- 현재 구현체: `MainWindow` (워크스페이스/사이드바/탭 전체를 가진 메인 윈도우)
-- 미래 구현체 (계획): `StandaloneSurfaceWindow` (독립 Surface 하나만 가진 윈도우),
-  `StandaloneWorkspaceWindow` (워크스페이스 1개 고정).
+- 현재 구현체: `MainView` (워크스페이스/사이드바/탭 전체를 가진 메인 View)
+- 미래 구현체 (계획): `StandaloneSurfaceView` (독립 Surface 하나만 가진 View),
+  `StandaloneWorkspaceView` (워크스페이스 1개 고정).
 
 ### EditorView (에디터 뷰)
 
 Modeless 에디터 계열 View. modal 입력 차단 / Esc auto-close 가 없는 별 윈도우.
 
-- 현재 구현체: `PresetWindow` (workspace/tab/pane preset 편집기)
+- 현재 구현체: `PresetView` (workspace/tab/pane preset 편집기)
 - 미래 구현체 (계획): 키바인딩 에디터, 테마 에디터 등.
 
 ### Popup (팝업)
 
-Window 내부에 존재하는 가상 창. Modal/Modeless modality와 무관하게 모든 Window가
-팝업을 가질 수 있다. `PopupManager`를 통해 관리되며, 타이틀바(중앙 제목 + 우측 닫기 버튼) + 콘텐츠 영역 구조를 가진다. 타이틀바 드래그로 이동 가능하며, 다중 팝업 시 z-order로 정렬된다. 팝업은 **스코프(scope)**를 가지며, 스코프에 따라 가시성 규칙과 경계 제약이 결정된다: Window(항상 보임, 윈도우 경계), Workspace(해당 워크스페이스 활성 시), Pane(해당 페인 영역 내), Tab(해당 탭 활성 시), Surface(해당 서피스 영역 내). 팝업의 포커스 정책은 기본(바깥 클릭 시 언포커스)과 **고정(sticky, 닫기 전까지 키보드 포커스 유지)**의 두 가지가 있다. 상세 규칙은 `docs/design/popup-system.md` 참조.
+View 내부에 존재하는 가상 창. Modal/Modeless modality와 무관하게 모든 View 가
+팝업을 가질 수 있다. `PopupManager`를 통해 관리되며, 타이틀바(중앙 제목 + 우측 닫기 버튼) + 콘텐츠 영역 구조를 가진다. 타이틀바 드래그로 이동 가능하며, 다중 팝업 시 z-order로 정렬된다. 팝업은 **스코프(scope)**를 가지며, 스코프에 따라 가시성 규칙과 경계 제약이 결정된다: View(항상 보임, view 경계), Workspace(해당 워크스페이스 활성 시), Pane(해당 페인 영역 내), Tab(해당 탭 활성 시), Surface(해당 서피스 영역 내). 팝업의 포커스 정책은 기본(바깥 클릭 시 언포커스)과 **고정(sticky, 닫기 전까지 키보드 포커스 유지)**의 두 가지가 있다. 상세 규칙은 `docs/design/popup-system.md` 참조.
 
 ### Toast (토스트)
 
-Window 내부에 짧게 떠올랐다가 자동으로 사라지는 휘발성 알림. 사용자의 동작(복사 등)에 대한 즉각 피드백을 제공한다. Popup과 달리 **포커스를 받지 않으며 입력 이벤트를 소비하지 않는다.** 타이틀바·닫기 버튼 없이 본문만 표시되며 일정 시간 후 자동 소멸한다. 스코프(Window/Workspace/Pane/Surface)는 떠오를 위치 앵커 용도이며, 같은 스코프 내에서 새 토스트는 아래에서 위로 쌓인다. **사용자 행동에서만 발사**되며 CLI/IPC를 통한 에이전트 동작은 토스트를 발사하지 않는다. 상세 규칙은 `docs/design/toast-system.md` 참조.
+View 내부에 짧게 떠올랐다가 자동으로 사라지는 휘발성 알림. 사용자의 동작(복사 등)에 대한 즉각 피드백을 제공한다. Popup과 달리 **포커스를 받지 않으며 입력 이벤트를 소비하지 않는다.** 타이틀바·닫기 버튼 없이 본문만 표시되며 일정 시간 후 자동 소멸한다. 스코프(View/Workspace/Pane/Surface)는 떠오를 위치 앵커 용도이며, 같은 스코프 내에서 새 토스트는 아래에서 위로 쌓인다. **사용자 행동에서만 발사**되며 CLI/IPC를 통한 에이전트 동작은 토스트를 발사하지 않는다. 상세 규칙은 `docs/design/toast-system.md` 참조.
 
 ### Workspace (워크스페이스)
 
-`MainWindow`에만 존재하는 최상위 컨테이너. 하나의 MainWindow에 여러 워크스페이스를
-가질 수 있으며, 사이드바에서 전환한다. 미래의 `StandaloneWorkspaceWindow`는 정확히
+`MainView`에만 존재하는 최상위 컨테이너. 하나의 MainView에 여러 워크스페이스를
+가질 수 있으며, 사이드바에서 전환한다. 미래의 `StandaloneWorkspaceView`는 정확히
 1개의 워크스페이스를 고정 보유한다.
 
 ### Pane (페인)
@@ -186,38 +189,42 @@ Pane은 기존 터미널에 대응하는 개념이 없다. 이것이 Tasty의 �
 | 사용 빈도 | 1회성 (복원 후 소비) | 반복 사용 |
 | 트리거 | 단축키 / 자동 (close 시) | 단축키 + 우클릭 메뉴 + IPC/CLI |
 
-### PresetWindow / EditorWindow
+### PresetView / EditorView
 
-`EditorWindow` 는 Window 의 세 번째 supertrait 계열. ModalWindow / TerminalHostWindow 와 동등하지만 modeless 이면서 종류별 1개 인스턴스로 제한된다.
+`EditorView` 는 View 의 세 번째 supertrait 계열. ModalView / TerminalHostView 와 동등하지만 modeless 이면서 종류별 1개 인스턴스로 제한된다.
 
 | Supertrait | Modality | 인스턴스 | 예 |
 |------------|----------|---------|-----|
-| ModalWindow | Modal | 전역 1개 | SettingsWindow, QuitWindow |
-| TerminalHostWindow | Modeless | 다중 | MainWindow |
-| EditorWindow | Modeless | 종류별 1개 | PresetWindow |
+| ModalView | Modal | 전역 1개 | SettingsView, QuitView, PluginsView |
+| TerminalHostView | Modeless | 다중 | MainView |
+| EditorView | Modeless | 종류별 1개 | PresetView |
 
-PresetWindow 는 사용자가 preset 을 편집하는 EditorWindow. 엔진 전역에 최대 1개 — 두 번째 열기 요청은 기존 윈도우 포커스 이동.
+PresetView 는 사용자가 preset 을 편집하는 EditorView. 엔진 전역에 최대 1개 — 두 번째 열기 요청은 기존 view 포커스 이동.
 
 ## 코드 레벨 용어 매핑
 
 | 유비쿼터스 언어 | 코드 (Rust) | 설명 |
 |----------------|-------------|------|
-| Engine | `App` + `engine::Engine` | 메인 프로세스, IPC/윈도우 생명주기 관리 |
-| Window (상위 개념) | `window::Window` sealed trait | 모든 윈도우의 공통 인터페이스 |
-| Window 공통 필드 | `window::WindowBase` struct | gpu, winit, dirty, modifiers, focused, close_requested. 각 Window 구현체가 `pub base: WindowBase`로 composition |
-| ModalWindow 계열 | `window::ModalWindow: Window` supertrait | Esc 닫기, 첫 프레임 후 reveal 등 default method |
-| TerminalHostWindow 계열 | `window::TerminalHostWindow: Window` supertrait | has_sidebar 등 default method |
-| Modal 구현체 | `window::SettingsWindow`, `window::QuitWindow` | impl Window + ModalWindow |
-| Main Window 구현체 | `window::MainWindow` | impl Window + TerminalHostWindow |
-| Modality | `window::Modality` enum (`Modeless`/`Modal`) | Window의 modality 속성 |
-| WindowAction | `window::WindowAction` enum (`None`/`Close`/`CloseWithEvent`) | 이벤트 핸들러 반환값 |
-| Workspace | `Workspace` | MainWindow의 최상위 컨테이너 |
+| Engine | `App` + `engine::Engine` | 메인 프로세스, IPC/View 생명주기 관리 |
+| View (상위 개념) | `view::ui::View` sealed trait | 모든 View 의 공통 인터페이스 |
+| View 공통 필드 | `view::ViewBase` struct | gpu, winit, dirty, modifiers, focused, close_requested. 각 View 구현체가 `pub base: ViewBase`로 composition |
+| ModalView 계열 | `view::ModalView: View` supertrait | Esc 닫기, 첫 프레임 후 reveal 등 default method |
+| TerminalHostView 계열 | `view::TerminalHostView: View` supertrait | has_sidebar 등 default method |
+| EditorView 계열 | `view::EditorView: View` supertrait | modeless 에디터 marker |
+| Modal 구현체 | `view::SettingsView`, `view::QuitView`, `view::PluginsView` | impl View + ModalView |
+| Main View 구현체 | `view::MainView` | impl View + TerminalHostView |
+| Editor 구현체 | `view::PresetView` | impl View + EditorView |
+| Modality | `view::Modality` enum (`Modeless`/`Modal`) | View 의 modality 속성 |
+| ViewAction | `view::ViewAction` enum (`None`/`Close`/`CloseWithEvent`) | 이벤트 핸들러 반환값 |
+| ViewCtx | `view::ViewCtx<'_>` struct | 이벤트 핸들러에 전달되는 맥락 (event_loop, modal_active, plugin_manager) |
+| Workspace | `Workspace` | MainView 의 최상위 컨테이너 |
 | 상위 레이아웃 | `PaneNode` (이진 트리 enum: Leaf / Split) | Pane 배치 |
 | Pane | `Pane` | 독립적인 탭 바. 탭 목록 보유 |
 | Tab | `Tab` → `SurfaceLayout` (이진 트리) | 탭 하나의 내용물. Leaf = 단일 surface, Split = 탭 내부 분할 |
 | 하위 레이아웃 | `SurfaceLayout` (이진 트리 enum: Leaf / Split) | Surface 배치 |
 | Surface | `Surface` trait. host built-in 구현체: `TerminalSurface`, `MarkdownPanel`, `ImagePanel`, `HtmlPanel`, `EmptySurface`. plugin 제공 surface 는 `RemoteSurface` 로 host 에 보관 | 최하위 컨테이너. 타입별 콘텐츠 |
-| Popup | `PopupDef` + `PopupManager` | Window 내부 가상 창 |
-| Toast | `ToastState` + `ToastManager` | Window 내부 휘발성 알림 |
-| App.windows | `HashMap<WindowId, Box<dyn Window>>` | 모달 포함 모든 윈도우 단일 저장소 |
-| 활성 모달 식별 | `engine::Engine::active_modal_id: Option<WindowId>` | 최대 1개 불변식
+| Popup | `PopupDef` + `PopupManager` | View 내부 가상 창 |
+| Toast | `ToastState` + `ToastManager` | View 내부 휘발성 알림 |
+| ViewRegistry.views | `HashMap<WindowId, Box<dyn view::ui::View>>` | 모달 포함 모든 View 단일 저장소. key 는 winit `WindowId` |
+| 활성 모달 식별 | `ViewRegistry::active_modal_id: Option<WindowId>` | 최대 1개 불변식
+| focused View 식별 | `ViewRegistry::focused_view_id: Option<WindowId>` | IPC/단축키의 기본 라우팅 대상

@@ -238,7 +238,7 @@
 - Ctrl+Shift+I: 알림 패널 토글
 - Ctrl+,: 설정 모달 윈도우 열기 (독립 OS 윈도우, 모달 활성 시 다른 윈도우 입력 차단)
 - Ctrl+D: 터미널에 전달 (EOF). 이전에는 Surface 수직 분할이었으나, Ctrl+Shift+D로 변경
-- 호스트(`src/window/main`)에서 winit `ModifiersState`로 수정자 키를 추적. `tasty-settings`는 winit에 의존하지 않으며, `LinkModifier::matches`는 `(ctrl, alt, super)` 원시 bool을 받는다
+- 호스트(`src/view/main`)에서 winit `ModifiersState`로 수정자 키를 추적. `tasty-settings`는 winit에 의존하지 않으며, `LinkModifier::matches`는 `(ctrl, alt, super)` 원시 bool을 받는다
 
 ### 마우스 인터랙션
 - **클릭으로 Pane 포커스**: 터미널 영역 좌클릭 시 해당 Pane이 포커스됨. `cursor_position` 추적 + `focus_pane_at_position()`으로 어떤 Pane인지 판별
@@ -1817,7 +1817,7 @@ VS Code 스타일의 모든 단축키 명령을 쿼리로 검색하여 실행할
 - popup: `src/ui/command_palette_popup.rs` (`command_palette` ID, 520x360, sticky_focus, close_on_outside_click)
 - dispatch: `src/shortcuts.rs::MainWindow::dispatch_action_by_id(action_id: &str) -> bool`
 - 단축키: `KeybindingSettings::toggle_command_palette` (`ctrl+shift+p`)
-- drain: `src/window/main/redraw.rs` 의 render 직후
+- drain: `src/view/main/redraw.rs` 의 render 직후
 - i18n: `command_palette.*` (en/ko/ja)
 
 ## 자동 업데이트 확인

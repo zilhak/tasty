@@ -164,7 +164,7 @@ leading `#` 은 optional. 직렬화는 alpha=255 면 6자리, 아니면 8자리.
 
 ### 테마 선택 (settings UI > Appearance > Theme)
 
-`src/window/settings/ui/tabs/appearance.rs::draw_appearance_theme()`:
+`src/view/settings/ui/tabs/appearance.rs::draw_appearance_theme()`:
 1. `tasty_themes::rescan()` — settings 화면 진입 시 디스크 변경 반영.
 2. `scan_themes()` 결과를 `selectable_label` 로 나열.
 3. 선택 시 `tasty_themes::apply_theme(&mut settings.appearance, &entry.id)` 호출.
