@@ -2,7 +2,8 @@ use super::FocusDirection;
 use super::surface_trait::Surface;
 use super::terminal_surface::TerminalSurface;
 use super::{
-    DividerInfo, PhysicalPx, PhysicalRect, SURFACE_BORDER_WIDTH, SplitDirection, SurfaceId,
+    BinaryTree, DividerInfo, PhysicalPx, PhysicalRect, SURFACE_BORDER_WIDTH, SplitDirection,
+    SurfaceId,
 };
 use std::any::Any;
 
@@ -11,13 +12,6 @@ pub struct SurfaceRegion<'a> {
     pub id: SurfaceId,
     pub rect: PhysicalRect,
     pub surface: &'a dyn Surface,
-}
-
-/// Which side of a split we descended into while building a path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PathSide {
-    First,
-    Second,
 }
 
 pub enum SurfaceLayout {
@@ -33,9 +27,47 @@ pub enum SurfaceLayout {
     },
 }
 
+impl BinaryTree for SurfaceLayout {
+    type Id = SurfaceId;
+    const BORDER_WIDTH: PhysicalPx = SURFACE_BORDER_WIDTH;
+
+    fn split_parts(&self) -> Option<(SplitDirection, f32, &Self, &Self)> {
+        match self {
+            SurfaceLayout::Leaf(_) => None,
+            SurfaceLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => Some((*direction, *ratio, first, second)),
+        }
+    }
+
+    fn split_parts_mut(&mut self) -> Option<(SplitDirection, &mut f32, &mut Self, &mut Self)> {
+        match self {
+            SurfaceLayout::Leaf(_) => None,
+            SurfaceLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                ..
+            } => Some((*direction, ratio, &mut **first, &mut **second)),
+        }
+    }
+
+    fn leaf_id(&self) -> Option<SurfaceId> {
+        match self {
+            SurfaceLayout::Leaf(s) => s.surface_id(),
+            _ => None,
+        }
+    }
+}
+
 impl SurfaceLayout {
     /// Helper: get the surface ID of a Leaf node.
-    fn leaf_id(surface: &dyn Surface) -> SurfaceId {
+    fn leaf_surface_id(surface: &dyn Surface) -> SurfaceId {
         surface
             .surface_id()
             .expect("BUG: Leaf surface must have an ID")
@@ -50,7 +82,7 @@ impl SurfaceLayout {
         new_surface: Box<dyn Surface>,
     ) -> (Self, Option<Box<dyn Surface>>) {
         match self {
-            SurfaceLayout::Leaf(surface) if Self::leaf_id(&*surface) == target_id => (
+            SurfaceLayout::Leaf(surface) if Self::leaf_surface_id(&*surface) == target_id => (
                 SurfaceLayout::Split {
                     direction,
                     ratio: 0.5,
@@ -128,8 +160,8 @@ impl SurfaceLayout {
                 second,
                 focus_second,
             } => {
-                let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_id(&**s) == target_id);
-                let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_id(&**s) == target_id);
+                let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
+                let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
 
                 if first_is_target {
                     return (*second, true);
@@ -169,7 +201,7 @@ impl SurfaceLayout {
     pub fn replace_surface(&mut self, target_id: SurfaceId, new_surface: Box<dyn Surface>) -> bool {
         match self {
             SurfaceLayout::Leaf(surface) => {
-                if Self::leaf_id(&**surface) == target_id {
+                if Self::leaf_surface_id(&**surface) == target_id {
                     *surface = new_surface;
                     true
                 } else {
@@ -196,18 +228,11 @@ impl SurfaceLayout {
         }
     }
 
-    pub fn first_surface_id(&self) -> Option<SurfaceId> {
-        match self {
-            SurfaceLayout::Leaf(surface) => surface.surface_id(),
-            SurfaceLayout::Split { first, .. } => first.first_surface_id(),
-        }
-    }
-
     /// Find a leaf surface by ID (any type, not just Terminal).
     pub fn find_surface(&self, id: SurfaceId) -> Option<&dyn Surface> {
         match self {
             SurfaceLayout::Leaf(surface) => {
-                if Self::leaf_id(&**surface) == id {
+                if Self::leaf_surface_id(&**surface) == id {
                     Some(&**surface)
                 } else {
                     None
@@ -223,7 +248,7 @@ impl SurfaceLayout {
     pub fn find_leaf_mut(&mut self, id: SurfaceId) -> Option<&mut Box<dyn Surface>> {
         match self {
             SurfaceLayout::Leaf(surface) => {
-                if Self::leaf_id(&**surface) == id {
+                if Self::leaf_surface_id(&**surface) == id {
                     Some(surface)
                 } else {
                     None
@@ -287,17 +312,6 @@ impl SurfaceLayout {
         }
     }
 
-    pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
-        match self {
-            SurfaceLayout::Leaf(surface) => surface.surface_id().into_iter().collect(),
-            SurfaceLayout::Split { first, second, .. } => {
-                let mut result = first.all_surface_ids();
-                result.extend(second.all_surface_ids());
-                result
-            }
-        }
-    }
-
     /// Visit every leaf Surface (Terminal/Empty/Markdown/etc.) for read-only inspection.
     /// 닫기 경로에서 leaf 들의 `scrollback_persist_id` 를 추출해 디스크 정리하는 용도로
     /// 쓰인다.
@@ -309,186 +323,6 @@ impl SurfaceLayout {
                 second.for_each_surface(f);
             }
         }
-    }
-
-    pub fn collect_dividers(&self, rect: PhysicalRect) -> Vec<PhysicalRect> {
-        match self {
-            SurfaceLayout::Leaf(_) => vec![],
-            SurfaceLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-                ..
-            } => {
-                let gap = SURFACE_BORDER_WIDTH;
-                let (r1, r2) = rect.split_with_gap(*direction, *ratio, gap);
-                let divider = match direction {
-                    SplitDirection::Vertical => PhysicalRect {
-                        x: r1.x + r1.width,
-                        y: rect.y,
-                        width: gap,
-                        height: rect.height,
-                    },
-                    SplitDirection::Horizontal => PhysicalRect {
-                        x: rect.x,
-                        y: r1.y + r1.height,
-                        width: rect.width,
-                        height: gap,
-                    },
-                };
-                let mut result = vec![divider];
-                result.extend(first.collect_dividers(r1));
-                result.extend(second.collect_dividers(r2));
-                result
-            }
-        }
-    }
-
-    pub fn find_divider_at(
-        &self,
-        x: f32,
-        y: f32,
-        rect: PhysicalRect,
-        threshold: f32,
-    ) -> Option<DividerInfo> {
-        match self {
-            SurfaceLayout::Leaf(_) => None,
-            SurfaceLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-                ..
-            } => {
-                let (r1, r2) = rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
-                let divider_pos = match direction {
-                    SplitDirection::Vertical => (r1.x + r1.width).value(),
-                    SplitDirection::Horizontal => (r1.y + r1.height).value(),
-                };
-                let cursor_pos = match direction {
-                    SplitDirection::Vertical => x,
-                    SplitDirection::Horizontal => y,
-                };
-                let in_bounds = match direction {
-                    SplitDirection::Vertical => {
-                        y >= rect.y.value() && y < (rect.y + rect.height).value()
-                    }
-                    SplitDirection::Horizontal => {
-                        x >= rect.x.value() && x < (rect.x + rect.width).value()
-                    }
-                };
-                if in_bounds && (cursor_pos - divider_pos).abs() < threshold {
-                    return Some(DividerInfo {
-                        direction: *direction,
-                        split_rect: rect,
-                    });
-                }
-                first
-                    .find_divider_at(x, y, r1, threshold)
-                    .or_else(|| second.find_divider_at(x, y, r2, threshold))
-            }
-        }
-    }
-
-    pub fn update_ratio_for_rect(
-        &mut self,
-        split_rect: PhysicalRect,
-        new_ratio: f32,
-        current_rect: PhysicalRect,
-    ) -> bool {
-        match self {
-            SurfaceLayout::Leaf(_) => false,
-            SurfaceLayout::Split {
-                direction,
-                ratio,
-                first,
-                second,
-                ..
-            } => {
-                if current_rect.approx_eq(&split_rect) {
-                    *ratio = new_ratio.clamp(0.1, 0.9);
-                    return true;
-                }
-                let (r1, r2) =
-                    current_rect.split_with_gap(*direction, *ratio, SURFACE_BORDER_WIDTH);
-                first.update_ratio_for_rect(split_rect, new_ratio, r1)
-                    || second.update_ratio_for_rect(split_rect, new_ratio, r2)
-            }
-        }
-    }
-
-    pub fn directional_focus(
-        &self,
-        current_id: SurfaceId,
-        direction: FocusDirection,
-    ) -> Option<SurfaceId> {
-        let mut path: Vec<(SplitDirection, PathSide, &SurfaceLayout)> = Vec::new();
-        if !self.build_path_to(current_id, &mut path) {
-            return None;
-        }
-
-        for (split_dir, side, sibling) in path.iter().rev() {
-            if Self::direction_matches_split(*split_dir, direction) {
-                let want_first = Self::direction_wants_first(direction);
-                let currently_first = *side == PathSide::First;
-                if currently_first != want_first {
-                    return Some(sibling.edge_leaf(direction));
-                }
-            }
-        }
-        None
-    }
-
-    fn build_path_to<'a>(
-        &'a self,
-        target_id: SurfaceId,
-        path: &mut Vec<(SplitDirection, PathSide, &'a SurfaceLayout)>,
-    ) -> bool {
-        match self {
-            SurfaceLayout::Leaf(surface) => Self::leaf_id(&**surface) == target_id,
-            SurfaceLayout::Split {
-                direction,
-                first,
-                second,
-                ..
-            } => {
-                path.push((*direction, PathSide::First, second.as_ref()));
-                if first.build_path_to(target_id, path) {
-                    return true;
-                }
-                path.pop();
-
-                path.push((*direction, PathSide::Second, first.as_ref()));
-                if second.build_path_to(target_id, path) {
-                    return true;
-                }
-                path.pop();
-
-                false
-            }
-        }
-    }
-
-    fn edge_leaf(&self, direction: FocusDirection) -> SurfaceId {
-        match self {
-            SurfaceLayout::Leaf(surface) => Self::leaf_id(&**surface),
-            SurfaceLayout::Split { first, second, .. } => match direction {
-                FocusDirection::Left | FocusDirection::Up => second.edge_leaf(direction),
-                FocusDirection::Right | FocusDirection::Down => first.edge_leaf(direction),
-            },
-        }
-    }
-
-    fn direction_matches_split(split: SplitDirection, dir: FocusDirection) -> bool {
-        match dir {
-            FocusDirection::Left | FocusDirection::Right => split == SplitDirection::Vertical,
-            FocusDirection::Up | FocusDirection::Down => split == SplitDirection::Horizontal,
-        }
-    }
-
-    fn direction_wants_first(dir: FocusDirection) -> bool {
-        matches!(dir, FocusDirection::Left | FocusDirection::Up)
     }
 
     pub fn find_surface_at(&self, x: f32, y: f32, rect: PhysicalRect) -> Option<SurfaceId> {
@@ -513,5 +347,55 @@ impl SurfaceLayout {
                     .or_else(|| second.find_surface_at(x, y, r2))
             }
         }
+    }
+
+    // ─── BinaryTree alias (외부 caller 0 변경 보장) ────────────────────────
+    //
+    // 외부 호출처가 `crate::model::BinaryTree` 를 import 하지 않으므로
+    // 동명 메서드는 UFCS 위임으로 보존하고, 이름 다른 id-시리즈도
+    // alias 로 노출한다. UFCS (`<Self as BinaryTree>::method`) 필수 —
+    // `self.method(...)` 로 호출하면 inherent 가 재선택되어 무한 재귀.
+
+    pub fn first_surface_id(&self) -> Option<SurfaceId> {
+        <Self as BinaryTree>::first_id(self)
+    }
+
+    pub fn all_surface_ids(&self) -> Vec<SurfaceId> {
+        <Self as BinaryTree>::all_ids(self)
+    }
+
+    pub fn compute_rects(&self, rect: PhysicalRect) -> Vec<(SurfaceId, PhysicalRect)> {
+        <Self as BinaryTree>::compute_rects(self, rect)
+    }
+
+    pub fn collect_dividers(&self, rect: PhysicalRect) -> Vec<PhysicalRect> {
+        <Self as BinaryTree>::collect_dividers(self, rect)
+    }
+
+    pub fn find_divider_at(
+        &self,
+        x: f32,
+        y: f32,
+        rect: PhysicalRect,
+        threshold: f32,
+    ) -> Option<DividerInfo> {
+        <Self as BinaryTree>::find_divider_at(self, x, y, rect, threshold)
+    }
+
+    pub fn update_ratio_for_rect(
+        &mut self,
+        split_rect: PhysicalRect,
+        new_ratio: f32,
+        current_rect: PhysicalRect,
+    ) -> bool {
+        <Self as BinaryTree>::update_ratio_for_rect(self, split_rect, new_ratio, current_rect)
+    }
+
+    pub fn directional_focus(
+        &self,
+        current_id: SurfaceId,
+        direction: FocusDirection,
+    ) -> Option<SurfaceId> {
+        <Self as BinaryTree>::directional_focus(self, current_id, direction)
     }
 }
