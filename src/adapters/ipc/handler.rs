@@ -1,3 +1,9 @@
+// IPC handler 트리는 JSON-RPC public API surface. gui 빌드는 app::ipc::routing
+// 경유로 호출하지만, headless 빌드는 run_headless 의 IPC dispatch 와이어링이
+// 미구현이라 호출자 없음. 본질적 library API 이므로 *headless 한정* dead_code/
+// unused_imports 침묵 — gui 빌드에선 검사 그대로.
+#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
+
 #[cfg(feature = "gui")]
 mod clipboard;
 #[cfg(all(debug_assertions, feature = "gui"))]
