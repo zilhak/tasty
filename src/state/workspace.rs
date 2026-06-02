@@ -95,21 +95,15 @@ impl AppState {
         // Workspace scope 의 memory entry 정리. 안의 surface 들은 아래 cleanup_surface
         // 에서 각자 자기 scope 를 purge 한다.
         let ws_scope = tasty_memory::Scope::Workspace(workspace_id);
-        {
-            let mut guard = match self.memory.lock() {
-                Ok(g) => g,
-                Err(p) => p.into_inner(),
-            };
-            match guard.purge_scope(&ws_scope) {
-                Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
-                    workspace_id,
-                    regular = stats.regular,
-                    secret = stats.secret,
-                    "memory: purged closed-workspace scope",
-                ),
-                Ok(_) => {}
-                Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
-            }
+        match self.with_memory(|m| m.purge_scope(&ws_scope)) {
+            Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
+                workspace_id,
+                regular = stats.regular,
+                secret = stats.secret,
+                "memory: purged closed-workspace scope",
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
         }
         // Adjust active workspace index
         if self.active_workspace >= engine.workspaces.len() && !engine.workspaces.is_empty() {

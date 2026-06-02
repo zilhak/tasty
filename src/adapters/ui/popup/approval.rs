@@ -228,11 +228,9 @@ fn persist_after_respond(state: &AppState, record: &ApprovalRecord) {
         expires_at: None,
         cas: None,
     };
-    let mut guard = match state.memory.lock() {
-        Ok(g) => g,
-        Err(p) => p.into_inner(),
-    };
-    if let Err(e) = guard.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts) {
+    let result =
+        state.with_memory(|m| m.put(tasty_memory::HOST_OWNER, &scope, &key, &value, &opts));
+    if let Err(e) = result {
         tracing::warn!("approval popup: memory put failed: {e}");
     }
 }

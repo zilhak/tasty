@@ -586,6 +586,21 @@ impl RenameTarget {
 }
 
 impl AppState {
+    /// Memory store 의 lock 안에서 함수를 실행한다. Mutex poisoning 시
+    /// poison 해제 후 inner 를 사용 — `Core::with_memory` 와 동일한 정책.
+    /// state cleanup / popup draw_fn 등 Core 인자가 cascade 로 도달하지 못하는
+    /// 표면에서 동일 port handle 로 접근한다.
+    pub(crate) fn with_memory<R>(
+        &self,
+        f: impl FnOnce(&mut dyn tasty_memory::MemoryStorage) -> R,
+    ) -> R {
+        let mut guard = match self.memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        f(&mut *guard)
+    }
+
     /// Creates initial state with one workspace, one pane, one tab, one terminal.
     pub fn new(
         engine: &mut CoreState,
@@ -738,11 +753,7 @@ impl AppState {
         engine.command_index.drop_surface(surface_id);
         engine.observer_router.drop_surface(surface_id);
         let scope = tasty_memory::Scope::Surface(surface_id);
-        let mut guard = match self.memory.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        match guard.purge_scope(&scope) {
+        match self.with_memory(|m| m.purge_scope(&scope)) {
             Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(
                 surface_id,
                 regular = stats.regular,
