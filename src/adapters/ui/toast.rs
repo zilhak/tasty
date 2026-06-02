@@ -13,26 +13,7 @@ use crate::theme;
 
 use super::layout_context::LayoutContext;
 
-/// Toast의 종류. 좌측 컬러 바 색을 결정한다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToastKind {
-    Info,
-    Success,
-    /// 표준 toast kind — 향후 경고 발화 시 활성화.
-    #[allow(dead_code)]
-    Warning,
-    Error,
-}
-
-/// 어느 영역에 떠오를지를 결정하는 위치 앵커.
-#[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
-pub enum ToastScope {
-    Window,
-    Workspace(usize),
-    Pane(u32),
-    Surface(u32),
-}
+pub use crate::model::toast_kind::{ToastKind, ToastScope};
 
 /// 단일 토스트 인스턴스 상태.
 #[derive(Debug, Clone)]

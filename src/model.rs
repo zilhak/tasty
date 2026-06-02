@@ -46,6 +46,7 @@ mod surface_layout;
 mod surface_trait;
 mod tab;
 mod terminal_surface;
+pub mod toast_kind;
 mod workspace;
 
 pub use closed_item::{ClosedItem, ClosedItemStore};
