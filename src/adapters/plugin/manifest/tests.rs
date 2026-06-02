@@ -1573,3 +1573,181 @@ fn handler_system_kind_rejected_in_plugin() {
     // serde 가 PluginHandlerActionDecl 의 unknown variant 로 reject
     assert!(parse(&s).is_err());
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  F.H — Plugin manifest 확장
+// ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn window_spawn_permission_token_roundtrip() {
+    assert_eq!(
+        Permission::from_token("window.spawn"),
+        Some(Permission::WindowSpawn)
+    );
+    assert_eq!(Permission::WindowSpawn.as_token(), "window.spawn");
+}
+
+#[test]
+fn surface_kind_default_colors_parses() {
+    let s = r##"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+        [surface_kinds.default_colors]
+        focused_bg = "#000000"
+        focused_fg = "#cdd6f4"
+        unfocused_bg = "#181825"
+        unfocused_fg = "#a6adc8"
+    "##;
+    let m = parse(s).expect("surface_kinds.default_colors should parse");
+    let kind = &m.surface_kinds[0];
+    let dc = kind.default_colors.as_ref().expect("default_colors set");
+    assert!(dc.focused_bg.is_some());
+    assert!(dc.focused_fg.is_some());
+}
+
+#[test]
+fn surface_kind_default_colors_invalid_hex_rejected() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+        [surface_kinds.default_colors]
+        focused_bg = "not-a-color"
+    "#;
+    // HexColor 의 Deserialize 가 reject (parse 단계).
+    let m: Result<Manifest, _> = toml::from_str(s);
+    assert!(m.is_err());
+}
+
+fn window_skeleton(perms: &str, extra: &str) -> String {
+    format!(
+        r#"
+        manifest_version = 1
+        id = "com.example.winapp"
+        name = "WinApp"
+        version = "0.1.0"
+        api_version = "1"
+        permissions = [{perms}]
+        [entry]
+        type = "process"
+        command = "winapp"
+        [contributes]
+        {extra}
+        "#,
+    )
+}
+
+#[test]
+fn window_contribute_parses_with_defaults() {
+    let s = window_skeleton(
+        r#""window.spawn""#,
+        r#"
+            [[contributes.window]]
+            id = "editor"
+            display_name_i18n_key = "winapp.editor"
+        "#,
+    );
+    let m = parse(&s).expect("window contribute should parse");
+    assert_eq!(m.contributes.window.len(), 1);
+    let w = &m.contributes.window[0];
+    assert_eq!(w.id, "editor");
+    assert!(!w.multi_instance);
+    assert!(w.default_size.is_none());
+}
+
+#[test]
+fn window_contribute_with_size_and_multi_instance() {
+    let s = window_skeleton(
+        r#""window.spawn""#,
+        r#"
+            [[contributes.window]]
+            id = "editor"
+            display_name_i18n_key = "winapp.editor"
+            multi_instance = true
+            default_size = { width = 1024, height = 768 }
+        "#,
+    );
+    let m = parse(&s).expect("window contribute with size should parse");
+    let w = &m.contributes.window[0];
+    assert!(w.multi_instance);
+    let sz = w.default_size.expect("default_size set");
+    assert_eq!(sz.width, 1024);
+    assert_eq!(sz.height, 768);
+}
+
+#[test]
+fn window_contribute_requires_permission() {
+    let s = window_skeleton(
+        "",
+        r#"
+            [[contributes.window]]
+            id = "editor"
+            display_name_i18n_key = "winapp.editor"
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("window.spawn"), "got: {err}");
+}
+
+#[test]
+fn window_contribute_id_must_be_unique() {
+    let s = window_skeleton(
+        r#""window.spawn""#,
+        r#"
+            [[contributes.window]]
+            id = "dup"
+            display_name_i18n_key = "winapp.dup"
+            [[contributes.window]]
+            id = "dup"
+            display_name_i18n_key = "winapp.dup"
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("declared twice"), "got: {err}");
+}
+
+#[test]
+fn window_contribute_id_format_validated() {
+    let s = window_skeleton(
+        r#""window.spawn""#,
+        r#"
+            [[contributes.window]]
+            id = "Bad-Id"
+            display_name_i18n_key = "winapp.bad"
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("invalid contributes.window id"), "got: {err}");
+}
+
+#[test]
+fn window_contribute_zero_default_size_rejected() {
+    let s = window_skeleton(
+        r#""window.spawn""#,
+        r#"
+            [[contributes.window]]
+            id = "editor"
+            display_name_i18n_key = "winapp.editor"
+            default_size = { width = 0, height = 768 }
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("default_size"), "got: {err}");
+}

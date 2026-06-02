@@ -469,6 +469,44 @@ impl Manifest {
             }
         }
 
+        // [[contributes.window]] 검증.
+        if !self.contributes.window.is_empty() {
+            if !self.permissions.iter().any(|p| p == "window.spawn") {
+                anyhow::bail!(
+                    "[[contributes.window]] requires permission 'window.spawn' to be declared in manifest permissions[]"
+                );
+            }
+            let mut seen_window_ids = HashSet::new();
+            for w in &self.contributes.window {
+                if !is_valid_kind(&w.id) {
+                    anyhow::bail!(
+                        "invalid contributes.window id '{}': must be lowercase ascii + '_' + digits",
+                        w.id
+                    );
+                }
+                if !seen_window_ids.insert(w.id.clone()) {
+                    anyhow::bail!(
+                        "contributes.window id '{}' declared twice in this manifest",
+                        w.id
+                    );
+                }
+                if w.display_name_i18n_key.is_empty() {
+                    anyhow::bail!(
+                        "contributes.window '{}': display_name_i18n_key must not be empty",
+                        w.id
+                    );
+                }
+                if let Some(sz) = &w.default_size
+                    && (sz.width == 0 || sz.height == 0)
+                {
+                    anyhow::bail!(
+                        "contributes.window '{}': default_size width/height must be > 0",
+                        w.id
+                    );
+                }
+            }
+        }
+
         // [[contributes.detector]] 검증.
         let mut seen_detector_ids = HashSet::new();
         for decl in &self.contributes.detector {
