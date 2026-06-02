@@ -41,6 +41,7 @@ mod image_panel;
 mod markdown_panel;
 mod pane;
 mod pane_tree;
+pub mod popup_kind;
 mod surface_layout;
 mod surface_trait;
 mod tab;

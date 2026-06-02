@@ -14,8 +14,7 @@ use crate::state::AppState;
 // 참고: 기존 `PopupContent` trait는 PopupDef(데이터 지향)로 대체되었다. 새 popup을
 // 추가하려면 `popup::defs` 의 `all_defs()`에 항목을 추가하라.
 
-/// Unique identifier for a popup instance.
-pub type PopupId = &'static str;
+pub use crate::model::popup_kind::{PopupId, PopupScope};
 
 /// Result of a popup's draw call.
 pub enum PopupAction {
@@ -55,23 +54,6 @@ pub struct PopupDef {
     pub sticky_focus: bool,
     /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> PopupAction,
-}
-
-/// Scope determines where a popup is anchored and when it's visible.
-#[derive(Debug, Clone, PartialEq)]
-pub enum PopupScope {
-    /// Always visible, clamped to window bounds.
-    Window,
-    /// Visible only when the specified workspace is active.
-    Workspace(usize),
-    /// Visible only when the specified pane is visible, clamped to pane bounds.
-    /// Placeholder — popup 발화 시 pane-anchored popup 활성화 예정.
-    #[allow(dead_code)]
-    Pane(u32),
-    /// Visible only when the specified tab is active, clamped to pane bounds.
-    Tab(u32, usize),
-    /// Visible only when the specified surface is visible, clamped to surface bounds.
-    Surface(u32),
 }
 
 /// State for a single popup instance.
