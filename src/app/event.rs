@@ -4,6 +4,7 @@
 //! 하면 App::user_event 가 분기 처리한다. variant 별 producer/consumer 매핑은
 //! 각 doc-comment 참조.
 
+#[cfg(feature = "gui")]
 use crate::ClipboardData;
 
 /// Custom events sent to the winit event loop from background threads.
@@ -15,29 +16,36 @@ pub(crate) enum AppEvent {
     /// IPC command arrived -- wake up and process.
     IpcReady,
     /// egui requested a repaint (new window, animation, cursor blink).
+    #[cfg(feature = "gui")]
     EguiRepaint,
     /// Request to create a new window (triggered by IPC or shortcut).
+    #[cfg(feature = "gui")]
     CreateWindow,
     /// Request to open settings modal.
+    #[cfg(feature = "gui")]
     OpenSettings,
     /// Request to open plugins modal.
+    #[cfg(feature = "gui")]
     OpenPlugins,
     /// Request to shut down the entire application.
     Shutdown,
     /// Request to minimize (park state, close windows).
+    #[cfg(feature = "gui")]
     Minimize,
     /// Request quit following the close_behavior setting.
     QuitRequested,
     /// Request to show window from system tray (Windows only).
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "gui"))]
     TrayShowWindow,
     /// 백그라운드 스레드에서 클립보드 변경을 감지하여 데이터를 전달.
+    #[cfg(feature = "gui")]
     ClipboardChanged(ClipboardData),
     /// ~1초 간격 ticker. 모든 surface의 busy 상태를 다시 평가한다.
     BusyPoll,
     /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
     /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
     /// 오래된 결과를 drop 한다.
+    #[cfg(feature = "gui")]
     IdentifyDone {
         request_id: crate::identify_worker::IdentifyRequestId,
         target: crate::file::format::FileTarget,
