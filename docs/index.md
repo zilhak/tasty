@@ -53,7 +53,7 @@
 | [dev-guide/context-menu.md](dev-guide/context-menu.md) | 우클릭 컨텍스트 메뉴 (네이티브 메뉴 필수, PendingNativeMenu 패턴) |
 | [dev-guide/popup-implementation.md](dev-guide/popup-implementation.md) | Popup 구현 (PopupDef 시스템, `egui::Window` 직접 사용 금지) |
 | [dev-guide/gpu-rendering.md](dev-guide/gpu-rendering.md) | GPU 렌더링 구조 (공유 버퍼 + submit 분리 규칙) |
-| [dev-guide/model-view-split.md](dev-guide/model-view-split.md) | Model + Host View 분리 패턴 (tasty-core GUI-free 유지) |
+| [dev-guide/model-view-split.md](dev-guide/model-view-split.md) | Model + Host View 분리 패턴 (GUI-free 도메인 유지) |
 | [dev-guide/debug-ipc.md](dev-guide/debug-ipc.md) | Debug 빌드 전용 IPC 메서드 (사용자 입력 재현, popup 트리거) |
 | [dev-guide/crash-diagnostics.md](dev-guide/crash-diagnostics.md) | Crash & 에러 진단 (로그, strace, gdb) |
 | [dev-guide/tui-testing.md](dev-guide/tui-testing.md) | TUI 테스트 — 터미널 에뮬레이션 버그 재현 및 자동 검증 |
@@ -116,7 +116,7 @@
 | [모듈별 상세](architecture/modules.md) | 디렉토리 모듈별 책임, 설계 목적, 한계 |
 | [데이터 흐름](architecture/data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준) |
 | [리팩토링 분석](architecture/refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
-| [라이브러리 분리](architecture/library-separation/index.md) | 크레이트 분리 후보 다관점 분석 |
+| [라이브러리 분리](architecture/library-separation/index.md) | 워크스페이스 28 crate 현황 + 분리 의사결정 회고 |
 
 ## 구현 현황
 
