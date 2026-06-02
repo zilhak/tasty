@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::plugin::manifest::Manifest;
-use crate::plugin::{PluginManager, discovery};
+use crate::plugin::{PluginManager, PluginsConfig, discovery};
 
 /// 한 builtin plugin의 패키지 메타 — id, dev workspace crate 경로, plugin 바이너리 이름.
 struct BuiltinSpec {
@@ -373,17 +373,36 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
             }
         }
 
-        // Step 2: dest가 존재하고 grant entry가 없으면 매니페스트 권한 자동 grant.
-        if dest.exists() && !mgr.config.grants.contains_key(spec.id) {
+        // Step 2: dest가 존재하면 매니페스트 권한을 grant entry에 반영.
+        //   - grant entry 없음 → 매니페스트 권한 전체를 set (최초 install).
+        //   - grant entry 있음 → 매니페스트 신규 추가분만 증분 grant (기존 사용자
+        //     대상으로 새 버전 builtin이 추가한 permission을 자동 수용).
+        //
+        // 기존에 grant된 토큰은 *제거하지 않는다*. 사용자가 명시적 deny한 경우는
+        // 본 helper 책임 밖. 매니페스트에서 사라진 token은 다음 install 시점에
+        // set_granted로 덮어쓰일 때만 정리된다.
+        if dest.exists() {
             if let Ok(manifest) = Manifest::load(&dest) {
                 if !manifest.permissions.is_empty() {
-                    mgr.config
-                        .set_granted(spec.id, manifest.permissions.clone());
-                    config_dirty = true;
-                    tracing::info!(
-                        "auto-granted manifest permissions for builtin '{}'",
-                        spec.id
-                    );
+                    if !mgr.config.grants.contains_key(spec.id) {
+                        mgr.config
+                            .set_granted(spec.id, manifest.permissions.clone());
+                        config_dirty = true;
+                        tracing::info!(
+                            "auto-granted manifest permissions for builtin '{}'",
+                            spec.id
+                        );
+                    } else if apply_builtin_permission_diff(
+                        &mut mgr.config,
+                        spec.id,
+                        &manifest.permissions,
+                    ) {
+                        config_dirty = true;
+                        tracing::info!(
+                            "auto-granted new manifest permissions for builtin '{}'",
+                            spec.id
+                        );
+                    }
                 }
             }
         }
@@ -393,6 +412,29 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
             tracing::warn!("install_builtins: save plugins.toml failed: {e}");
         }
     }
+}
+
+/// 기존 builtin grant entry에 매니페스트 신규 permission 만 증분 추가.
+///
+/// 기존 사용자의 `plugins.toml`에 이미 plugin entry가 있는 경우 (`grants` map에
+/// 키가 있는 상태), `install_builtins_if_needed`의 step 2 첫 번째 분기 (entry
+/// 없을 때만 set_granted)는 동작하지 않는다. 새 버전 builtin이 매니페스트에
+/// permission을 추가했을 때 이 helper로 신규 token만 증분 grant 한다.
+///
+/// 기존 grant token은 제거하지 않는다 (사용자가 명시적으로 deny 했을 가능성).
+/// 반환값: 신규 token이 하나라도 추가되면 true.
+fn apply_builtin_permission_diff(
+    config: &mut PluginsConfig,
+    id: &str,
+    manifest_permissions: &[String],
+) -> bool {
+    let mut changed = false;
+    for token in manifest_permissions {
+        if config.grant(id, token) {
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// uninstall 흐름에서 호출 — built-in인 경우 `removed_builtins`에 등록하여
@@ -485,5 +527,65 @@ mod tests {
     #[test]
     fn unknown_is_not_builtin() {
         assert!(!is_builtin_plugin("com.example.foo"));
+    }
+
+    #[test]
+    fn permission_diff_appends_new_tokens_only() {
+        let mut cfg = PluginsConfig::default();
+        cfg.set_granted(
+            "com.tasty.image",
+            vec!["surface.read".into(), "surface.write".into()],
+        );
+
+        let manifest = vec![
+            "surface.read".into(),
+            "surface.write".into(),
+            "file_handler.define".into(),
+            "file_handler.handle:image".into(),
+        ];
+
+        let changed = apply_builtin_permission_diff(&mut cfg, "com.tasty.image", &manifest);
+        assert!(changed);
+
+        let granted = cfg.granted_permissions("com.tasty.image");
+        assert!(granted.contains("surface.read"));
+        assert!(granted.contains("surface.write"));
+        assert!(granted.contains("file_handler.define"));
+        assert!(granted.contains("file_handler.handle:image"));
+    }
+
+    #[test]
+    fn permission_diff_is_noop_when_manifest_already_covered() {
+        let mut cfg = PluginsConfig::default();
+        cfg.set_granted(
+            "com.tasty.image",
+            vec!["surface.read".into(), "surface.write".into()],
+        );
+
+        let manifest = vec!["surface.read".into(), "surface.write".into()];
+
+        let changed = apply_builtin_permission_diff(&mut cfg, "com.tasty.image", &manifest);
+        assert!(!changed);
+        assert_eq!(cfg.granted_permissions("com.tasty.image").len(), 2);
+    }
+
+    #[test]
+    fn permission_diff_preserves_existing_extra_tokens() {
+        // 사용자가 명시적으로 추가했을 수도 있는 매니페스트 외 토큰은 제거하지 않는다.
+        let mut cfg = PluginsConfig::default();
+        cfg.set_granted(
+            "com.tasty.image",
+            vec!["surface.read".into(), "user.extra.token".into()],
+        );
+
+        let manifest = vec!["surface.read".into(), "file_handler.define".into()];
+
+        let changed = apply_builtin_permission_diff(&mut cfg, "com.tasty.image", &manifest);
+        assert!(changed);
+
+        let granted = cfg.granted_permissions("com.tasty.image");
+        assert!(granted.contains("surface.read"));
+        assert!(granted.contains("user.extra.token")); // preserved
+        assert!(granted.contains("file_handler.define")); // newly added
     }
 }
