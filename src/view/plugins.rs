@@ -17,7 +17,7 @@ use crate::plugins_ui::{self, PluginsAction, PluginsSnapshot, PluginsUiState};
 use crate::view::ui::{View, sealed};
 use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
 
-pub struct PluginsWindow {
+pub struct PluginsView {
     pub base: ViewBase,
     pub snapshot: PluginsSnapshot,
     pub pending_actions: Vec<PluginsAction>,
@@ -27,7 +27,7 @@ pub struct PluginsWindow {
     toasts: ToastManager,
 }
 
-impl PluginsWindow {
+impl PluginsView {
     pub fn new(
         gpu: GpuState,
         winit: Arc<winit::window::Window>,
@@ -58,7 +58,7 @@ impl PluginsWindow {
     }
 }
 
-impl View for PluginsWindow {
+impl View for PluginsView {
     fn base(&self) -> &ViewBase {
         &self.base
     }
@@ -158,7 +158,7 @@ impl View for PluginsWindow {
     }
 }
 
-impl ModalView for PluginsWindow {
+impl ModalView for PluginsView {
     fn shown(&self) -> bool {
         self.shown
     }
@@ -167,4 +167,4 @@ impl ModalView for PluginsWindow {
     }
 }
 
-impl sealed::Sealed for PluginsWindow {}
+impl sealed::Sealed for PluginsView {}

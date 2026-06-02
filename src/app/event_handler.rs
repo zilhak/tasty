@@ -573,7 +573,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_picker_results();
         // 직전 프레임 plugin popup 렌더로 수집된 사용자 입력 / close 사유 forward.
         self.dispatch_plugin_popup_events();
-        // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
+        // PluginsView 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
         self.process_plugins_window_actions();
         // PresetView 열기 + (Intent::SavePreset cascade 시) 선택. preset 저장/적용/삭제/이름변경
         // 자체는 Intent 큐 (`dispatch_pending_intents`) 가 처리한다.

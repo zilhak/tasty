@@ -66,7 +66,7 @@ impl App {
                 main.state.settings_open = false;
             }
             self.apply_plugin_shortcut_draft(plugin_draft);
-        } else if modal.as_any().is::<view::PluginsWindow>() {
+        } else if modal.as_any().is::<view::PluginsView>() {
             for main in self.main_windows_iter_mut() {
                 main.state.plugins_open = false;
                 main.mark_dirty();

@@ -13,8 +13,7 @@ impl App {
         let Some(modal) = self.view.windows.get_mut(&modal_id) else {
             return;
         };
-        let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
-        else {
+        let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsView>() else {
             return;
         };
         let actions = std::mem::take(&mut plugins_window.pending_actions);
@@ -114,8 +113,7 @@ impl App {
 
         let snapshot = self.snapshot_plugins();
         if let Some(modal) = self.view.windows.get_mut(&modal_id) {
-            if let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsWindow>()
-            {
+            if let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsView>() {
                 plugins_window.refresh_snapshot(snapshot);
                 for (msg, kind) in pending_toasts {
                     plugins_window.push_toast(msg, kind);

@@ -19,7 +19,7 @@ pub(crate) mod ui;
 pub(crate) use base::ViewBase;
 pub(crate) use main::MainView;
 pub(crate) use modal::ModalView;
-pub(crate) use plugins::PluginsWindow;
+pub(crate) use plugins::PluginsView;
 pub(crate) use preset::PresetView;
 pub(crate) use quit::QuitView;
 pub(crate) use settings::SettingsView;

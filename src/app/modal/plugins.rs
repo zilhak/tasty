@@ -43,7 +43,7 @@ impl App {
 
         let snapshot = self.snapshot_plugins();
         let modal_window_id = window.id();
-        let mut modal = view::PluginsWindow::new(gpu, window, snapshot);
+        let mut modal = view::PluginsView::new(gpu, window, snapshot);
         #[cfg(windows)]
         {
             use crate::view::ui::View as _;

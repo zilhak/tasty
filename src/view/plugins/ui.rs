@@ -1,4 +1,4 @@
-//! `PluginsWindow` modal의 egui UI.
+//! `PluginsView` modal의 egui UI.
 //!
 //! 상단 — 탭 바 (`Installed` / `Add plugin`).
 //! `Installed` 탭: 좌측 plugin 목록, 우측 상세(매니페스트, enable/disable,
@@ -36,7 +36,7 @@ pub struct PluginsSnapshot {
     pub plugins: Vec<PluginEntry>,
 }
 
-/// `PluginsWindow`가 메인 루프에 발행하는 동작.
+/// `PluginsView`가 메인 루프에 발행하는 동작.
 #[derive(Debug, Clone)]
 pub enum PluginsAction {
     SetEnabled {
