@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use tasty_terminal::{Terminal, TerminalEvent};
+use tasty_terminal::Terminal;
 
 use crate::model::SurfaceId;
 
@@ -51,8 +51,7 @@ impl TerminalStore {
     }
 
     /// Terminal 제거. 반환된 Terminal 이 drop 되며 PTY SIGHUP. surface 닫힘 시
-    /// caller 가 호출. 부속 데이터 (deferred / scrollback_persist_ids /
-    /// pending_scrollback_inject / busy_surfaces) 도 함께 제거.
+    /// caller 가 호출. 부속 데이터 (scrollback_persist_ids) 도 함께 제거.
     pub(crate) fn remove(&mut self, id: SurfaceId) -> Option<Terminal> {
         self.scrollback_persist_ids.remove(&id);
         self.terminals.remove(&id)
@@ -117,17 +116,6 @@ impl TerminalStore {
         } else {
             false
         }
-    }
-
-    /// 모든 terminal 의 TerminalEvent 수집.
-    pub(crate) fn collect_events(&mut self) -> Vec<(SurfaceId, TerminalEvent)> {
-        let mut out = Vec::new();
-        for (&id, t) in self.terminals.iter_mut() {
-            for ev in t.take_events() {
-                out.push((id, ev));
-            }
-        }
-        out
     }
 
     /// PTY resize throttled flush. 한 곳이라도 pending 이면 true.
