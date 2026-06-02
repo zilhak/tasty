@@ -50,15 +50,7 @@ CJK/이모지 등 유니코드 문자가 많으면 아틀라스가 자주 리셋
 
 ---
 
-## 4. 미구현 설정
-
-| 필드 | 상태 |
-|------|------|
-| `notification.sound` | UI 체크박스만 있고, 사운드 재생 미구현 |
-
----
-
-## 5. 크레이트 분리 후보
+## 4. 크레이트 분리 후보
 
 현재 `src/` 내에 있지만 독립 크레이트로 추출 *가능* 한 모듈. **3 후보 모두 분리 trigger 미도달 — 현 시점 권고는 [`library-separation/execution-plan.md`](library-separation/execution-plan.md) 의 Phase 4~6 참조.**
 
@@ -74,7 +66,6 @@ CJK/이모지 등 유니코드 문자가 많으면 아틀라스가 자주 리셋
 
 | 순위 | 항목 | 효과 |
 |------|------|------|
-| P1 | notification.sound 구현 | 설정 UI와 동작 일치 |
 | P2 | BinaryTree trait 추출 | ~250줄 중복 제거, 새 트리 타입 추가 용이 |
 | P3 | 크레이트 분리 (model, renderer, notification) — *trigger 미도달* | 빌드 병렬화, API 경계 명확화. 권고/trigger 는 [library-separation/execution-plan.md](library-separation/execution-plan.md) |
 | P3 | 멀티 서피스 렌더 최적화 | 10+ 서피스에서 성능 개선 |

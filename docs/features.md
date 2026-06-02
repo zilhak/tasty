@@ -408,6 +408,12 @@ terminal 의 시작 명령어는 PTY 가 ready 된 직후 stdin 에 한 줄로 �
 - 초당 1회 제한(rate limiting)으로 알림 폭주 방지
 - Windows/macOS/Linux 크로스 플랫폼 지원
 
+### 알림 사운드
+- `settings.notification.sound` 가 true 일 때 신규 알림 발화 시 OS 기본 beep 1 회 재생 (cascade 진입점은 `cascade_notification_pushed`)
+- coalesce 로 묶인 알림 (동일 source + 500ms 내) 은 자동 비음 — host event 가 생성되지 않으므로 sound gate 도 통과하지 않음
+- 터미널 `\a` (Bell) 경로는 OS 가 자체 beep 할 수 있어 안전 default 로 skip — 사용자 인지 비용 0
+- 플랫폼 impl: macOS `NSBeep`, Windows `MessageBeep(MB_OK)`, Linux `paplay → aplay → stderr \a` 3 단 폴백. headless 빌드는 NoopPlayer 로 대체
+
 ### Surface 알림 하이라이트
 - 알림이 발생한 surface에 파란색 테두리 강조 표시
 - 해당 surface에 포커스하면 하이라이트 자동 해제 (매 렌더 프레임에서 focused surface의 하이라이트 제거)
