@@ -53,15 +53,6 @@ impl IpcNamespaceRegistry {
         let prefix = &method[..dot];
         self.prefix_to_plugin.get(prefix).map(|s| s.as_str())
     }
-
-    /// 디버깅/관리 UI용.
-    pub fn prefixes_of(&self, plugin_id: &str) -> &[String] {
-        static EMPTY: Vec<String> = Vec::new();
-        self.plugin_to_prefixes
-            .get(plugin_id)
-            .map(Vec::as_slice)
-            .unwrap_or(&EMPTY)
-    }
 }
 
 #[cfg(test)]
@@ -92,7 +83,7 @@ mod tests {
         let mut r = IpcNamespaceRegistry::new();
         r.register("com.example.codex", "codex").unwrap();
         r.register("com.example.codex", "codex").unwrap();
-        assert_eq!(r.prefixes_of("com.example.codex").len(), 1);
+        assert_eq!(r.resolve("codex.spawn"), Some("com.example.codex"));
     }
 
     #[test]
@@ -103,7 +94,6 @@ mod tests {
         r.unregister_plugin("com.example.codex");
         assert_eq!(r.resolve("codex.spawn"), None);
         assert_eq!(r.resolve("cdx.spawn"), None);
-        assert!(r.prefixes_of("com.example.codex").is_empty());
     }
 
     #[test]
