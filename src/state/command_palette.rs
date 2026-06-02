@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! Command palette state + 매칭 로직.
 //!
 //! 팔레트는 사용자 입력으로만 열리는 popup이다 (Ctrl+Shift+P 또는 Tools 메뉴).
