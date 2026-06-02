@@ -9,13 +9,13 @@ use crate::view::ui::{View, sealed};
 use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
 
 /// 종료 확인 다이얼로그. 사용자에게 종료/최소화를 묻는다.
-pub struct QuitWindow {
+pub struct QuitView {
     pub base: ViewBase,
     shown: bool,
     pending_action: ViewAction,
 }
 
-impl QuitWindow {
+impl QuitView {
     pub fn new(gpu: GpuState, winit: Arc<winit::window::Window>) -> Self {
         Self {
             base: ViewBase::new(gpu, winit),
@@ -25,7 +25,7 @@ impl QuitWindow {
     }
 }
 
-impl View for QuitWindow {
+impl View for QuitView {
     fn base(&self) -> &ViewBase {
         &self.base
     }
@@ -154,7 +154,7 @@ impl View for QuitWindow {
     }
 }
 
-impl ModalView for QuitWindow {
+impl ModalView for QuitView {
     fn shown(&self) -> bool {
         self.shown
     }
@@ -163,4 +163,4 @@ impl ModalView for QuitWindow {
     }
 }
 
-impl sealed::Sealed for QuitWindow {}
+impl sealed::Sealed for QuitView {}
