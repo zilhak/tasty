@@ -19,6 +19,10 @@ use crate::plugin::registry_state::PluginsConfig;
 use super::{PluginManager, RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW};
 
 impl PluginManager {
+    /// 기본 file_format/file_handler 레지스트리를 새로 발급해서 초기화.
+    /// production 경로는 `App` 가 공유 Arc 를 갖고 있어 `with_registries` 를
+    /// 직접 호출 — 본 ctor 는 내부 unit test 전용.
+    #[cfg(test)]
     pub fn new(waker: crate::waker::SharedWakerFactory) -> Self {
         Self::with_registries(
             waker,
@@ -80,16 +84,6 @@ impl PluginManager {
     pub fn set_plugin_permissions(&mut self, plugin_id: &str, perms: HashSet<Permission>) {
         self.plugin_permissions
             .insert(plugin_id.to_string(), Arc::new(perms));
-    }
-
-    /// plugin의 현재 권한 set. 등록되지 않은 plugin은 빈 set.
-    /// (외부 caller surface로 노출 — `process_plugin_ipc_calls`는 이미 PendingPluginCall에
-    /// 권한을 cache해 사용하므로 직접 호출자는 없다.)
-    pub fn plugin_permissions(&self, plugin_id: &str) -> Arc<HashSet<Permission>> {
-        self.plugin_permissions
-            .get(plugin_id)
-            .cloned()
-            .unwrap_or_else(|| Arc::new(HashSet::new()))
     }
 
     /// 호스트 main loop이 라우팅하기 위해 plugin IPC 호출을 모두 가져간다.
