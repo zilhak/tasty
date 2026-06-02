@@ -201,12 +201,4 @@ impl TerminalStore {
         }
         any_pending
     }
-
-    /// PTY resize forced flush (throttle 무시). pane split/close 같은 discrete
-    /// 이벤트 후 호출.
-    pub(crate) fn force_flush_pty_resizes(&mut self) {
-        for t in self.terminals.values_mut() {
-            t.force_flush_pty_resize();
-        }
-    }
 }

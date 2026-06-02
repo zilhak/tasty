@@ -144,12 +144,6 @@ impl CoreState {
         self.layout_dirty.mark_dirty();
     }
 
-    /// Force flush deferred PTY resizes (ignores throttle).
-    /// Used after discrete events like pane split/close.
-    pub fn force_flush_all_pty_resizes(&mut self) {
-        self.terminals.force_flush_pty_resizes();
-    }
-
     /// Collect events from all terminals. **D.3.E.4.f** — store iter.
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();

@@ -370,12 +370,6 @@ impl Core {
         engine.flush_all_pty_resizes()
     }
 
-    /// throttle 무시 강제 flush. 옛 `engine.force_flush_all_pty_resizes()` 의 진입점.
-    /// split / close 같은 *이산 이벤트* 직후 호출.
-    pub(crate) fn force_flush_pty_resizes(engine: &mut crate::core::CoreState) {
-        engine.force_flush_all_pty_resizes();
-    }
-
     /// 모든 workspace 의 모든 terminal 을 layout 에 맞춰 resize. 옛
     /// `state.resize_all(engine, ...)` 의 진입점. tab_bar_height 가 AppState 에
     /// 있어 `state` 도 인자로 받는다 (도메인 흡수 후 제거 예정).
