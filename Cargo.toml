@@ -90,15 +90,15 @@ tasty-terminal = { path = "crates/tasty-terminal" }
 tasty-portscan = { path = "crates/tasty-portscan" }
 tasty-update = { path = "crates/tasty-update" }
 # Window & Input
-winit = "0.30"
+winit = { version = "0.30", optional = true }
 
 # GPU Rendering
-wgpu = "24"
+wgpu = { version = "24", optional = true }
 
 # UI Widgets
-egui = "0.31"
-egui-wgpu = "0.31"
-egui-winit = "0.31"
+egui = { version = "0.31", optional = true }
+egui-wgpu = { version = "0.31", optional = true }
+egui-winit = { version = "0.31", optional = true }
 
 # Terminal Emulation
 termwiz = "0.22"
@@ -134,32 +134,32 @@ jsonschema = { version = "0.30", default-features = false }
 clap = { version = "4", features = ["derive"] }
 
 # Font & Text
-cosmic-text = "0.18"
-bytemuck = { version = "1", features = ["derive"] }
+cosmic-text = { version = "0.18", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
 
 # Regex
 regex = "1"
 
 # URL/파일 오픈 (터미널 내 링크 클릭 시 기본 브라우저/연결 프로그램)
-webbrowser = "1"
+webbrowser = { version = "1", optional = true }
 
 # Shell escaping
 shell-escape = "0.1"
 
 # Clipboard
-arboard = "3"
+arboard = { version = "3", optional = true }
 
 # PNG encoding (screenshots)
-png = "0.18"
+png = { version = "0.18", optional = true }
 
 # Image loading/saving (image viewer)
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp", "ico", "tiff"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp", "ico", "tiff"], optional = true }
 
 # Platform
 libc = "0.2"
 
 # File Dialogs
-rfd = "0.15"
+rfd = { version = "0.15", optional = true }
 
 # Utilities
 directories = "6"
@@ -172,19 +172,19 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 
 # RNG (Phase 6.2: agent session token)
 rand = "0.9"
-egui_commonmark = "0.20.0"
+egui_commonmark = { version = "0.20.0", optional = true }
 
 # WebView (macOS)
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"] }
-objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore", "WKNavigation"] }
-objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "libc"] }
-drag = "2.1"
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore", "WKNavigation"], optional = true }
+objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "libc"], optional = true }
+drag = { version = "2.1", optional = true }
 
 # WebView (Windows)
 [target.'cfg(windows)'.dependencies]
-webview2-com = "0.38"
+webview2-com = { version = "0.38", optional = true }
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -200,17 +200,46 @@ windows = { version = "0.61", features = [
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }
-tray-icon = "0.22"
+tray-icon = { version = "0.22", optional = true }
 
 # WebView (Linux)
 [target.'cfg(target_os = "linux")'.dependencies]
-webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
-gtk = "0.18"
-gdkx11 = "0.18"
-x11-dl = "2.21"
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"], optional = true }
+gtk = { version = "0.18", optional = true }
+gdkx11 = { version = "0.18", optional = true }
+x11-dl = { version = "2.21", optional = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
+
+[features]
+default = ["gui"]
+gui = [
+    "dep:winit",
+    "dep:wgpu",
+    "dep:egui",
+    "dep:egui-wgpu",
+    "dep:egui-winit",
+    "dep:cosmic-text",
+    "dep:bytemuck",
+    "dep:webbrowser",
+    "dep:arboard",
+    "dep:png",
+    "dep:image",
+    "dep:rfd",
+    "dep:egui_commonmark",
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-web-kit",
+    "dep:objc2-app-kit",
+    "dep:drag",
+    "dep:webview2-com",
+    "dep:tray-icon",
+    "dep:webkit2gtk",
+    "dep:gtk",
+    "dep:gdkx11",
+    "dep:x11-dl",
+]
 
 [dev-dependencies]
 serde_json = "1"
