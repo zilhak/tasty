@@ -340,6 +340,10 @@ impl App {
             CoreEvent::PluginRegistryChanged { plugin_id, change } => {
                 self.cascade_plugin_registry_changed(plugin_id, change)
             }
+            CoreEvent::PluginWindowDeclared {
+                plugin_id,
+                window_id,
+            } => self.cascade_plugin_window_declared(plugin_id, window_id),
         }
     }
 
@@ -969,6 +973,10 @@ impl App {
                 CoreEvent::PluginRegistryChanged { plugin_id, change } => {
                     self.cascade_plugin_registry_changed(plugin_id, change)
                 }
+                CoreEvent::PluginWindowDeclared {
+                    plugin_id,
+                    window_id,
+                } => self.cascade_plugin_window_declared(plugin_id, window_id),
                 other => {
                     tracing::warn!(
                         "cascade_plugin_events: non-plugin CoreEvent received: {:?}",
@@ -1063,6 +1071,13 @@ impl App {
             plugin_id,
             change_kind: change_kind.to_string(),
             detail,
+        });
+    }
+
+    fn cascade_plugin_window_declared(&mut self, plugin_id: String, window_id: String) {
+        self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginWindowDeclared {
+            plugin_id,
+            window_id,
         });
     }
 

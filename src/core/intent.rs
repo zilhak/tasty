@@ -472,6 +472,14 @@ pub(crate) enum CoreEvent {
         plugin_id: String,
         change: PluginRegistryChange,
     },
+
+    /// Plugin manifest 의 `[[contributes.window]]` 항목이 hello 시점에 등록됨.
+    /// 1.0 에서는 *stub 통지* — 실 spawn handler 는 별도 영역. cascade 가 host
+    /// event (`plugin.window_declared`) 만 발화.
+    PluginWindowDeclared {
+        plugin_id: String,
+        window_id: String,
+    },
 }
 
 /// `CoreEvent::PluginRegistryChanged` 의 변경 종류.

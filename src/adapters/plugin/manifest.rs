@@ -24,4 +24,5 @@ pub use types::{
     HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, IpcHookDecl, IpcNamespaceDecl,
     MANIFEST_VERSION, Manifest, MenuItemDecl, Permission, PopupAnchor, PopupContribute,
     PopupSizeHint, PopupTrigger, SurfaceKindDecl, SurfaceKindRendering, ToolAction, ToolContribute,
+    WindowContribute, WindowSizeHint,
 };

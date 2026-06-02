@@ -293,6 +293,17 @@ impl App {
                             rendering: rendering.to_string(),
                         });
                     }
+                    for w in &pkg.manifest.contributes.window {
+                        tracing::info!(
+                            "plugin '{}' declared window '{}' (runtime spawn: pending — schema-only in 1.0)",
+                            plugin_id,
+                            w.id
+                        );
+                        events.push(CoreEvent::PluginWindowDeclared {
+                            plugin_id: plugin_id.clone(),
+                            window_id: w.id.clone(),
+                        });
+                    }
                 }
                 mgr.registered_plugins.insert(plugin_id.clone());
                 events.push(CoreEvent::PluginLoaded {

@@ -236,6 +236,12 @@ pub enum PendingHostEvent {
         kind: String,
         rendering: String,
     },
+    /// Plugin manifest 의 `[[contributes.window]]` 항목이 hello 시점에 등록됨.
+    /// 1.0 schema-only — host event `plugin.window_declared` 로 가시화.
+    PluginWindowDeclared {
+        plugin_id: String,
+        window_id: String,
+    },
 }
 
 // IdGenerator is now in core_state.rs

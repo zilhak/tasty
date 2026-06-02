@@ -153,3 +153,17 @@ pub(super) fn emit_plugin_surface_kind_registered(
         EventScope::System,
     );
 }
+
+/// `[[contributes.window]]` 항목이 hello 시점에 등록되었음을 알리는 stub
+/// 이벤트. 1.0 에서는 실제 spawn 동작이 없고 가시성만 제공한다.
+pub(super) fn emit_plugin_window_declared(
+    mgr: &mut PluginManager,
+    plugin_id: String,
+    window_id: String,
+) {
+    let payload = json!({
+        "plugin_id": plugin_id,
+        "window_id": window_id,
+    });
+    mgr.emit_host_event("plugin.window_declared", &payload, EventScope::System);
+}

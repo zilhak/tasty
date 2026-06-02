@@ -149,6 +149,10 @@ pub enum Permission {
     /// `[[contributes.popup]]` 항목을 선언한 plugin은 매니페스트의 `permissions`에
     /// 반드시 이 토큰을 포함해야 한다.
     UiPopup,
+    /// `[[contributes.window]]` 권한. 토큰 `window.spawn`.
+    /// Plugin 이 OS-level 별도 윈도우를 contribute 하려면 이 권한이 필요하다.
+    /// 1.0 에서는 schema + stub 만 — 실제 spawn handler 는 별도 영역에서 도입.
+    WindowSpawn,
     /// 새 detector 정의 권한. 토큰 `file_handler.define`.
     /// `[[contributes.detector]]` 로 **신규** detector id 를 선언할 때 필요.
     /// 기존 id 재선언(rule 추가)은 `FileHandlerExtend` 가 담당.
@@ -184,6 +188,7 @@ impl Permission {
             "agent" => Self::AgentManage,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
+            "window.spawn" => Self::WindowSpawn,
             "file_handler.define" => Self::FileHandlerDefine,
             other => {
                 if let Some(prefix) = other.strip_prefix("ipc.invoke:") {
@@ -241,6 +246,7 @@ impl Permission {
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
             Self::UiPopup => "ui.popup".into(),
+            Self::WindowSpawn => "window.spawn".into(),
             Self::FileHandlerDefine => "file_handler.define".into(),
             Self::FileHandlerExtend(id) => format!("file_handler.extend:{id}"),
             Self::FileHandlerHandle(id) => format!("file_handler.handle:{id}"),
@@ -386,6 +392,11 @@ pub struct Contributes {
     /// surface 열기, popup 열기) 발생. 항목당 `[[contributes.tool]]` 한 블록.
     #[serde(default)]
     pub tool: Vec<ToolContribute>,
+    /// Plugin 이 contribute 하는 OS-level 윈도우 정의. 본 schema 는 1.0 에서
+    /// *등록 stub 만 동작* — 실제 spawn handler 는 별도 영역. validator + 권한
+    /// 검사 + hello 시 `CoreEvent::PluginWindowDeclared` 발화까지 수행한다.
+    #[serde(default)]
+    pub window: Vec<WindowContribute>,
     /// Plugin이 띄울 수 있는 popup 정의. trigger 종류에 따라 자동으로 열리거나
     /// 명시적인 IPC 호출로 열린다.
     #[serde(default)]
@@ -405,6 +416,36 @@ pub struct Contributes {
             crate::file::handler::config::PluginHandlerActionDecl,
         >,
     >,
+}
+
+/// Plugin 이 contribute 하는 OS-level 윈도우 정의 (`[[contributes.window]]`).
+///
+/// 1.0 에서는 *schema + 등록 stub* 까지만 동작한다. 실 spawn handler /
+/// multi-window 라우팅은 별도 영역에서 추가될 때까지 호스트는 hello 시
+/// `tracing::info!` 와 `CoreEvent::PluginWindowDeclared` 만 발화.
+///
+/// - `id`: plugin 내 고유 식별자 (`is_valid_kind` 규칙 — 소문자/숫자/`_`).
+/// - `display_name_i18n_key`: 메뉴 등에 노출될 라벨 키.
+/// - `icon`: 옵션. 아이콘 이름.
+/// - `default_size`: 옵션. LogicalPx 단위 권장 크기.
+/// - `multi_instance`: 동시 여러 인스턴스를 허용하는지. 기본 false.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WindowContribute {
+    pub id: String,
+    pub display_name_i18n_key: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub default_size: Option<WindowSizeHint>,
+    #[serde(default)]
+    pub multi_instance: bool,
+}
+
+/// `WindowContribute.default_size` 의 LogicalPx 권장 크기.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct WindowSizeHint {
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Plugin이 contribute하는 popup의 정의.

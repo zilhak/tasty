@@ -167,6 +167,10 @@ impl App {
                     kind,
                     rendering,
                 } => misc::emit_plugin_surface_kind_registered(mgr, plugin_id, kind, rendering),
+                PendingHostEvent::PluginWindowDeclared {
+                    plugin_id,
+                    window_id,
+                } => misc::emit_plugin_window_declared(mgr, plugin_id, window_id),
             }
         }
     }
