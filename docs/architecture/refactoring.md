@@ -6,23 +6,31 @@
 
 ---
 
-## 1. 코드 중복: PaneNode / SurfaceLayout
+## 1. 코드 중복: PaneNode / SurfaceLayout — **완료 (Phase F.F)**
 
-`model/pane_tree.rs`의 PaneNode과 `model/surface_layout.rs`의 SurfaceLayout은 둘 다 바이너리 트리(Leaf/Split)이고 다음 메서드가 구조적으로 동일하다:
+`model/pane_tree.rs::PaneNode` 와 `model/surface_layout.rs::SurfaceLayout` 의
+binary-tree 구조 재귀 본체가 `src/model/binary_tree.rs` 의 `BinaryTree` trait
+default 메서드로 통합되었다.
 
-| PaneNode | SurfaceLayout |
-|----------|-------------------|
-| `compute_rects()` | `surface_regions()` |
-| `find_divider_at()` | `find_divider_at()` |
-| `update_ratio_for_rect()` | `update_ratio_for_rect()` |
-| `all_pane_ids()` | `all_surface_ids()` |
-| `find_pane()` / `find_pane_mut()` | `find_terminal()` / `find_terminal_mut()` |
-| `collect_dividers()` | `collect_dividers()` |
-| `directional_focus()` | `directional_focus()` |
+**trait 표면:**
 
-공통 `BinaryTree<LeafId, Leaf>` trait로 추출하면 ~250줄 중복 제거 가능.
+- 연관: `type Id`, `const BORDER_WIDTH: PhysicalPx`
+- 필수: `split_parts(_mut)`, `leaf_id`
+- default (구조 재귀, leaf-agnostic): `first_id`, `all_ids`, `next_id` /
+  `prev_id`, `compute_rects`, `collect_dividers`, `find_divider_at`,
+  `update_ratio_for_rect`, `directional_focus`, `build_path_to`, `edge_leaf`
 
-**미착수 이유:** 리프 타입이 다르고(Pane vs SurfaceNode), 분할 간격도 다르며(PANE_BORDER_WIDTH vs SURFACE_BORDER_WIDTH), generic 도입 시 가독성이 오히려 나빠질 수 있다. 비용 대비 효과 검토 필요.
+**leaf-touching 메서드는 inherent 유지:** PaneNode 의 `split_pane_in_place`
+/ `close_pane` / `find_pane(_mut)` / `first_pane` / `all_surface_ids`,
+SurfaceLayout 의 `split_with_surface` / `close_surface` / `replace_surface`
+/ `find_surface(_mut)` / `surface_regions` / `resize_all` /
+`for_each_surface` / `find_surface_at` 등.
+
+**외부 호출처 0 변경:** 각 enum 이 trait 와 동명인 메서드 (`compute_rects`
+등 5 개) 와 이름이 다른 id-시리즈 (PaneNode 3 / SurfaceLayout 2) 를
+inherent alias 로 보존, UFCS (`<Self as BinaryTree>::method(self, ...)`)
+로 trait 본체에 위임한다. `crate::model::BinaryTree` 는 prelude 로 재노출
+되어 신규 코드가 trait method 를 직접 호출할 때 import 1 줄만 필요.
 
 ---
 
@@ -66,7 +74,7 @@ CJK/이모지 등 유니코드 문자가 많으면 아틀라스가 자주 리셋
 
 | 순위 | 항목 | 효과 |
 |------|------|------|
-| P2 | BinaryTree trait 추출 | ~250줄 중복 제거, 새 트리 타입 추가 용이 |
+| ~~P2~~ ✅ | ~~BinaryTree trait 추출~~ 완료 (§1) | ~250줄 중복 제거, 새 트리 타입 추가 용이 |
 | P3 | 크레이트 분리 (model, renderer, notification) — *trigger 미도달* | 빌드 병렬화, API 경계 명확화. 권고/trigger 는 [library-separation/execution-plan.md](library-separation/execution-plan.md) |
 | P3 | 멀티 서피스 렌더 최적화 | 10+ 서피스에서 성능 개선 |
 | P3 | 다중 아틀라스 페이지 | CJK 집약 사용 시 성능 개선 |
