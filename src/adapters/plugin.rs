@@ -11,10 +11,12 @@ pub mod host_actions;
 pub mod host_cmd;
 // (moved to surface_registry/host_rendered)
 pub mod ipc_namespace;
+#[cfg(feature = "gui")]
 pub mod key_dispatch;
 pub mod listener;
 pub mod manager;
 pub mod manifest;
+#[cfg(feature = "gui")]
 pub mod popup_render;
 pub mod process;
 pub mod protocol;
@@ -23,6 +25,7 @@ pub mod remote_kind;
 pub mod remote_surface;
 pub mod tool_registry;
 pub mod ui_tree;
+#[cfg(feature = "gui")]
 pub mod ui_tree_render;
 
 pub use builtin::{

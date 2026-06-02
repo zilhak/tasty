@@ -1,3 +1,4 @@
+#[cfg(feature = "gui")]
 mod clipboard;
 #[cfg(debug_assertions)]
 mod debug;
@@ -5,8 +6,9 @@ mod debug;
 pub(crate) mod debug_plugin;
 mod file_handler;
 mod hooks;
+#[cfg(feature = "gui")]
 mod image;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "gui"))]
 mod input_source;
 mod memory;
 mod message;
@@ -20,15 +22,17 @@ mod tab;
 mod telemetry;
 #[cfg(debug_assertions)]
 mod tool;
+#[cfg(feature = "gui")]
 mod webview;
 pub(crate) mod workspace;
 
 pub mod agent;
 pub mod approval;
 pub mod audit;
+#[cfg(feature = "gui")]
 pub mod ime;
 pub mod plugin;
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "gui"))]
 pub mod popup;
 pub mod session;
 
@@ -270,6 +274,7 @@ fn route_engine_handler(
             hooks::handle_global_hook_unset(core, state, engine, id, &request.params)
         }
         // webview (plugin 이 webview-enabled surface 의 URL/navigation 제어)
+        #[cfg(feature = "gui")]
         "webview.set_url" => webview::handle_set_url(state, engine, id, &request.params),
         // tree
         "tree" => handle_tree(state, engine, id),
@@ -281,15 +286,18 @@ fn route_engine_handler(
         // tool.clipboard (read/write only — viewer_open is GUI)
         // clear/remove 는 App::dispatch_clipboard_global 가 broadcast 로 먼저
         // 처리하므로 본 router 에는 도달하지 않는다.
+        #[cfg(feature = "gui")]
         "tool.clipboard.list" => clipboard::handle_list(engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "tool.clipboard.get" => clipboard::handle_get(engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "tool.clipboard.paste" => clipboard::handle_paste(core, engine, id, &request.params),
         // input source (macOS)
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.switch_input_source" => {
             input_source::handle_switch_input_source(id, &request.params)
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.raw_key" => input_source::handle_raw_key(id, &request.params),
         // notification (focus-independent — workspace_id/surface_id로 라우팅)
         "notification.list" => notification::handle_notification_list(state, engine, id),
@@ -303,12 +311,19 @@ fn route_engine_handler(
         "file_handler.dispatch" => file_handler::handle_dispatch(state, id, request.params.clone()),
         // image surface 조작 — com.tasty.image plugin이 외부에 노출하는 namespace의
         // 호스트 어댑터. plugin 비활성 상태에서도 CLI/직접 IPC로 호출 가능.
+        #[cfg(feature = "gui")]
         "image.open" => image::handle_open(core, state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "image.save" => image::handle_save(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "image.export_png" => image::handle_export_png(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "image.next" => image::handle_next(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "image.prev" => image::handle_prev(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "image.paste" => image::handle_paste(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "image.list" => image::handle_list(state, engine, id),
         // memory: regular (공유 네임스페이스 + owner enforcement)
         "memory.put" => memory::handle_put(core, state, engine, caller, id, &request.params),
