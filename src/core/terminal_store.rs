@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 use tasty_terminal::{ScrollbackLine, Terminal, TerminalEvent};
 
-use crate::model::{DeferredSpawn, SurfaceId};
+use crate::model::SurfaceId;
 
 /// PTY/Terminal 데이터 owner. surface_id ↔ terminal 매핑 (1:1).
 ///
@@ -30,10 +30,6 @@ use crate::model::{DeferredSpawn, SurfaceId};
 pub(crate) struct TerminalStore {
     /// spawn 완료된 Terminal 들. key = surface_id.
     terminals: HashMap<SurfaceId, Terminal>,
-
-    /// Lazy spawn 대기 중인 placeholder 의 spawn parameter. PTY 가 실제로
-    /// spawn 되는 시점에 take 되어 Terminal 로 변환된다.
-    deferred: HashMap<SurfaceId, DeferredSpawn>,
 
     /// `~/.tasty/scrollback/<id>.bin` 디스크 영속 scrollback 의 키.
     /// layout 저장/복원 시 사용. surface 별로 *Terminal 과는 별도 lifecycle* —
@@ -66,7 +62,6 @@ impl TerminalStore {
     /// caller 가 호출. 부속 데이터 (deferred / scrollback_persist_ids /
     /// pending_scrollback_inject / busy_surfaces) 도 함께 제거.
     pub(crate) fn remove(&mut self, id: SurfaceId) -> Option<Terminal> {
-        self.deferred.remove(&id);
         self.scrollback_persist_ids.remove(&id);
         self.pending_scrollback_inject.remove(&id);
         self.busy_surfaces.remove(&id);
@@ -99,20 +94,6 @@ impl TerminalStore {
 
     pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (SurfaceId, &mut Terminal)> {
         self.terminals.iter_mut().map(|(&id, t)| (id, t))
-    }
-
-    // ── Deferred spawn ──────────────────────────────────────────────
-
-    pub(crate) fn defer(&mut self, id: SurfaceId, spawn: DeferredSpawn) {
-        self.deferred.insert(id, spawn);
-    }
-
-    pub(crate) fn take_deferred(&mut self, id: SurfaceId) -> Option<DeferredSpawn> {
-        self.deferred.remove(&id)
-    }
-
-    pub(crate) fn is_deferred(&self, id: SurfaceId) -> bool {
-        self.deferred.contains_key(&id)
     }
 
     // ── Scrollback persist id ──────────────────────────────────────
