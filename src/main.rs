@@ -79,15 +79,16 @@ pub(crate) use host_api::hooks;
 pub(crate) use host_api::hooks::global as global_hooks;
 #[cfg(feature = "gui")]
 pub(crate) use host_api::webview;
+#[cfg(feature = "gui")]
 pub(crate) use platform::app_icon;
 pub(crate) use platform::crash_report;
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "gui"))]
 pub(crate) use platform::debug_info;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "gui"))]
 pub(crate) use platform::jump_list;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "gui"))]
 pub(crate) use platform::macos_delegate;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "gui"))]
 pub(crate) use platform::system_tray;
 pub(crate) use state::search as search_state;
 pub(crate) use state::selection;
