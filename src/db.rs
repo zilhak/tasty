@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! SQLite 기반 영속 상태 저장소 (`~/.tasty/state.db`).
 //!
 //! 대상 도메인:

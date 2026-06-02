@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! Internationalization (i18n) module.
 //! Loads translation strings from TOML files at startup.
 //! Language is configured in config.toml `general.language` field.

@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
+
 use std::backtrace::Backtrace;
 use std::fs;
 use std::io::Write;

@@ -1,3 +1,8 @@
+// model/* 의 image_panel / markdown_panel / popup_kind / toast_kind 등은
+// gui 컴포넌트의 API surface. headless 빌드에선 호출자 cfg(gui) 차단으로
+// 미사용 경고. *headless 한정* dead_code 침묵.
+#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
+
 // LogicalPx / PhysicalPx 는 별 leaf crate `tasty-type-geometry` 에 정의되어 있다.
 // 본 바이너리의 group import 호환성을 위해 재수출 유지.
 // 새 코드는 `tasty_type_geometry::length::*` 직접 import 권장.
