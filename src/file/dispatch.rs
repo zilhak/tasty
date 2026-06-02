@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 //! 파일 디스패치 helper 잔존 모듈 (D.3.C.G.3 완료 후).
 //!
 //! mouse.rs ctrl+click, drag&drop, explorer plugin, IPC `file_handler.dispatch`
