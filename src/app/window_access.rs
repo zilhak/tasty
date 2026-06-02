@@ -1,6 +1,6 @@
 //! 활성 윈도우 접근 헬퍼.
 //!
-//! IPC / 키보드 라우팅의 일반 대상은 모달이 아닌 `MainWindow`. 모달 활성 여부와는
+//! IPC / 키보드 라우팅의 일반 대상은 모달이 아닌 `MainView`. 모달 활성 여부와는
 //! 별개로 `view.focused_window_id` 로 추적되는 윈도우만 반환한다.
 
 use winit::window::WindowId;
@@ -10,25 +10,25 @@ use crate::view;
 
 impl App {
     /// Get the focused main window, if any.
-    /// 모달이 아닌 MainWindow만 반환한다 — IPC/키보드 라우팅의 일반적 대상.
-    pub(crate) fn focused_window(&self) -> Option<&view::main::MainWindow> {
+    /// 모달이 아닌 MainView만 반환한다 — IPC/키보드 라우팅의 일반적 대상.
+    pub(crate) fn focused_window(&self) -> Option<&view::main::MainView> {
         self.view
             .focused_window_id
             .and_then(|id| self.view.windows.get(&id))
             .and_then(|w| w.as_main())
     }
 
-    pub(crate) fn focused_window_mut(&mut self) -> Option<&mut view::main::MainWindow> {
+    pub(crate) fn focused_window_mut(&mut self) -> Option<&mut view::main::MainView> {
         self.view
             .focused_window_id
             .and_then(|id| self.view.windows.get_mut(&id))
             .and_then(|w| w.as_main_mut())
     }
 
-    /// 모든 MainWindow를 순회. 모달은 제외된다.
+    /// 모든 MainView를 순회. 모달은 제외된다.
     pub(crate) fn main_windows_iter_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut view::main::MainWindow> {
+    ) -> impl Iterator<Item = &mut view::main::MainView> {
         self.view
             .windows
             .values_mut()
@@ -48,7 +48,7 @@ impl App {
         self.parked_states.first().map(|(_, e)| e)
     }
 
-    /// Surface 를 가진 MainWindow 의 WindowId 를 반환. windows main 순회 후 못 찾으면
+    /// Surface 를 가진 MainView 의 WindowId 를 반환. windows main 순회 후 못 찾으면
     /// None (parked 는 별도로 fallback 처리).
     pub(crate) fn find_main_with_surface(&self, surface_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.windows {
@@ -61,7 +61,7 @@ impl App {
         None
     }
 
-    /// Workspace 를 가진 MainWindow 의 WindowId 를 반환.
+    /// Workspace 를 가진 MainView 의 WindowId 를 반환.
     pub(crate) fn find_main_with_workspace(&self, workspace_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.windows {
             if let Some(m) = w.as_main() {
@@ -73,7 +73,7 @@ impl App {
         None
     }
 
-    /// Pane 을 가진 MainWindow 의 WindowId 를 반환.
+    /// Pane 을 가진 MainView 의 WindowId 를 반환.
     pub(crate) fn find_main_with_pane(&self, pane_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.windows {
             if let Some(m) = w.as_main() {

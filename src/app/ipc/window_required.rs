@@ -43,7 +43,7 @@ impl App {
             .and_then(|w| w.as_main_mut())
         {
             Some(w) => w,
-            // focused id 가 있는데 MainWindow 가 아니면 (모달 등) 본 step 으로 처리 불가 —
+            // focused id 가 있는데 MainView 가 아니면 (모달 등) 본 step 으로 처리 불가 —
             // 이 케이스를 옛 코드는 `continue` (드롭) 으로 처리했다. 동일 의미를
             // Handled 로 표현 (응답 전송 없음 → client 가 timeout).
             None => return IpcStep::Handled,

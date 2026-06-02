@@ -3,9 +3,9 @@ use crate::model::PhysicalRect;
 use crate::selection::{self, SelectionMode, SelectionPoint, TextSelection};
 use crate::view::ui::View;
 
-use super::MainWindow;
+use super::MainView;
 
-impl MainWindow {
+impl MainView {
     /// Extend the current selection (or create one from last click) to the given position.
     /// Used for Shift+Click range selection.
     pub(super) fn extend_selection(&mut self, x: f32, y: f32, terminal_rect: &PhysicalRect) {

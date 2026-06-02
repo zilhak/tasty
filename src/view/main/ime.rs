@@ -22,14 +22,14 @@
 
 use winit::event::Ime;
 
-use super::MainWindow;
+use super::MainView;
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::gpu::ImePreeditState;
 use crate::view::ui::View as _;
 
 /// IME 입력의 preedit/commit text 를 Intent 큐로 보낸다. surface_id 가
 /// None 이거나 text 가 비어있으면 no-op.
-fn dispatch_send_text(w: &mut MainWindow, surface_id: Option<u32>, text: &str) {
+fn dispatch_send_text(w: &mut MainView, surface_id: Option<u32>, text: &str) {
     let Some(sid) = surface_id else { return };
     if text.is_empty() {
         return;
@@ -47,7 +47,7 @@ fn dispatch_send_text(w: &mut MainWindow, surface_id: Option<u32>, text: &str) {
 // Public entry points
 // =============================================================================
 
-pub(super) fn handle_event(w: &mut MainWindow, event: Ime, egui_consumed: bool) {
+pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     if egui_consumed {
@@ -84,7 +84,7 @@ pub(super) fn handle_event(w: &mut MainWindow, event: Ime, egui_consumed: bool) 
 /// PTY 출력이 도착해 terminal cursor(또는 TUI의 fake cursor)가 움직였을 수 있을
 /// 때 호출. advance가 차감되어 0이 되거나, fake cursor가 최신 위치로 갱신된 순간을
 /// 포착해 preedit anchor를 재계산한다.
-pub(super) fn recalc_anchor(w: &mut MainWindow) {
+pub(super) fn recalc_anchor(w: &mut MainView) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     if w.ime_cursor_advance == 0 {
@@ -118,7 +118,7 @@ pub(super) fn recalc_anchor(w: &mut MainWindow) {
 }
 
 /// 현재 preedit이 있으면 확정해서 PTY로 보낸다 (단축키 소비 전 호출).
-pub(super) fn flush_preedit(w: &mut MainWindow) {
+pub(super) fn flush_preedit(w: &mut MainView) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     let preedit = match w.ime_preedit.take() {
@@ -138,7 +138,7 @@ pub(super) fn flush_preedit(w: &mut MainWindow) {
 
 /// 현재 preedit을 PTY로 보내지 않고 버린다.
 /// 팝업/오버레이가 열릴 때 조합 중 문자가 터미널로 전달되지 않도록 사용.
-pub(super) fn clear_preedit(w: &mut MainWindow) {
+pub(super) fn clear_preedit(w: &mut MainView) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     w.ime_preedit = None;
@@ -150,7 +150,7 @@ pub(super) fn clear_preedit(w: &mut MainWindow) {
 /// 완전 리셋 — composition 세션 종료(`Disabled`/`Preedit("")`)에서 advance까지 0으로 미는 경로.
 /// macOS만 호출한다 (Windows/Linux는 매 글자마다 빈 시그널이 들어와 advance를 보존해야 함).
 #[cfg(target_os = "macos")]
-fn clear_all(w: &mut MainWindow) {
+fn clear_all(w: &mut MainView) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     w.ime_preedit = None;
@@ -163,7 +163,7 @@ fn clear_all(w: &mut MainWindow) {
 // =============================================================================
 
 pub(crate) fn ipc_set_preedit(
-    w: &mut MainWindow,
+    w: &mut MainView,
     text: String,
     cursor: Option<(usize, usize)>,
 ) -> Option<(usize, usize, u32)> {
@@ -200,7 +200,7 @@ pub(crate) fn ipc_set_preedit(
     Some((anchor_col, anchor_row, surface_id))
 }
 
-pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
+pub(crate) fn ipc_commit(w: &mut MainView, text: &str) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     if w.ime_cursor_advance == 0 {
@@ -229,7 +229,7 @@ pub(crate) fn ipc_commit(w: &mut MainWindow, text: &str) {
 /// Windows / Linux: 매 글자마다 이 시그널이 오므로 preedit overlay만 지우고 advance/base는
 /// 다음 글자의 PTY 에코 보정을 위해 유지한다.
 /// macOS: 실제 IME 세션 종료이므로 advance/base까지 완전 리셋.
-fn on_composition_end(w: &mut MainWindow) {
+fn on_composition_end(w: &mut MainView) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     #[cfg(windows)]
@@ -246,14 +246,14 @@ fn on_composition_end(w: &mut MainWindow) {
     }
 }
 
-fn on_disabled(w: &mut MainWindow) {
+fn on_disabled(w: &mut MainView) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     w.ime_active = false;
     on_composition_end(w);
 }
 
-fn on_preedit(w: &mut MainWindow, text: String, cursor: Option<(usize, usize)>) {
+fn on_preedit(w: &mut MainView, text: String, cursor: Option<(usize, usize)>) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     if text.is_empty() {
@@ -279,7 +279,7 @@ fn on_preedit(w: &mut MainWindow, text: String, cursor: Option<(usize, usize)>) 
     w.mark_dirty();
 }
 
-fn on_commit(w: &mut MainWindow, text: String) {
+fn on_commit(w: &mut MainView, text: String) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     if w.ime_cursor_advance == 0 {
@@ -329,7 +329,7 @@ fn advanced_anchor(col: usize, row: usize, cols: usize, advance: usize) -> (usiz
     }
 }
 
-fn reconcile_and_compute_anchor(w: &mut MainWindow) -> Option<(usize, usize)> {
+fn reconcile_and_compute_anchor(w: &mut MainView) -> Option<(usize, usize)> {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
     let terminal = w.state.focused_terminal(engine)?;

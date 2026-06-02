@@ -3,9 +3,9 @@ use winit::event_loop::ActiveEventLoop;
 use crate::plugin::PluginManager;
 use crate::view::ui::View;
 
-use super::MainWindow;
+use super::MainView;
 
-impl MainWindow {
+impl MainView {
     pub(super) fn handle_redraw(
         &mut self,
         _event_loop: &ActiveEventLoop,

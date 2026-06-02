@@ -29,7 +29,7 @@ use crate::{AppEvent, ClipboardContext};
 
 /// 메인 터미널 윈도우. 워크스페이스/사이드바/탭을 갖고 터미널 계열 Surface를 호스팅한다.
 /// `TerminalHostView` 계열의 대표 구현체.
-pub struct MainWindow {
+pub struct MainView {
     pub base: ViewBase,
     pub(crate) state: AppState,
     /// 본 윈도우 전용 CoreState. self.state 와 disjoint 한 field 로 두어
@@ -79,7 +79,7 @@ pub(crate) struct HoveredLink {
     pub highlight: crate::terminal_link::LinkHighlight,
 }
 
-impl MainWindow {
+impl MainView {
     pub(crate) fn new(
         gpu: GpuState,
         state: AppState,
@@ -174,7 +174,7 @@ impl MainWindow {
     }
 }
 
-impl View for MainWindow {
+impl View for MainView {
     fn base(&self) -> &ViewBase {
         &self.base
     }
@@ -340,6 +340,6 @@ impl View for MainWindow {
     }
 }
 
-impl TerminalHostView for MainWindow {}
+impl TerminalHostView for MainView {}
 
-impl sealed::Sealed for MainWindow {}
+impl sealed::Sealed for MainView {}

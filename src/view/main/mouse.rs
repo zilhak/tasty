@@ -1,6 +1,6 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 
-use super::{DividerDrag, DividerDragKind, HoveredLink, MainWindow};
+use super::{DividerDrag, DividerDragKind, HoveredLink, MainView};
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::settings::LinkModifier;
 use crate::terminal_link::{self, LinkHighlight};
@@ -8,7 +8,7 @@ use crate::theme;
 use crate::view::ui::View;
 use tasty_type_geometry::length::PhysicalPx;
 
-impl MainWindow {
+impl MainView {
     /// 현재 마우스 좌표와 수식키 상태로 hovered_link를 갱신한다.
     /// 변경이 있으면 true를 반환 (렌더 dirty 플래그를 켜기 위함).
     pub(crate) fn update_hovered_link(&mut self) -> bool {

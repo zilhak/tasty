@@ -3,10 +3,10 @@
 use winit::keyboard::{Key, ModifiersState};
 
 use super::binding::matches_any_binding;
-use crate::view::main::MainWindow;
+use crate::view::main::MainView;
 use crate::view::ui::View as _;
 
-impl MainWindow {
+impl MainView {
     pub(super) fn handle_copy_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let bindings = self.core_state.settings.keybindings.copy.clone();
         if !matches_any_binding(&bindings, key, mods) {

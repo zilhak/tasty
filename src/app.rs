@@ -87,7 +87,7 @@ pub(crate) struct App {
     /// (which provides the WakerFactory).
     pub(crate) plugin_manager: Option<plugin::PluginManager>,
     /// Sessionwide engine state — workspaces, settings, hooks, registries.
-    /// None until the first MainWindow lifecycle initializes it; Some after.
+    /// None until the first MainView lifecycle initializes it; Some after.
     pub(crate) core_state: Option<crate::core::CoreState>,
     /// 사용자 init.lua 기반 Lua hook 엔진. 부팅 시 1회 생성, `~/.tasty/init.lua` 가
     /// 있으면 로드. observe-only — 호스트 동작에는 영향 없음. 초기화 실패 시 None.
@@ -156,7 +156,7 @@ impl App {
         })
     }
 
-    /// CoreState 접근자. 부팅 시 `App.core_state` 에 들어 있다가 첫 MainWindow
+    /// CoreState 접근자. 부팅 시 `App.core_state` 에 들어 있다가 첫 MainView
     /// 등록 시 그쪽으로 이동한다. 이 헬퍼는 두 위치 중 살아있는 쪽을 찾아 반환한다.
     /// 어디에도 없으면 panic — 호출 경로가 invariant 를 깬 것.
     pub(crate) fn core_state(&self) -> &crate::core::CoreState {

@@ -1,4 +1,4 @@
-//! IPC request 에서 대상 리소스 id 를 추출해 owner MainWindow 를 찾는다.
+//! IPC request 에서 대상 리소스 id 를 추출해 owner MainView 를 찾는다.
 //!
 //! CLAUDE.md "포커스 독립" 원칙: 모든 명령은 대상 리소스를 ID 로 직접 지정한다.
 //! request.params 의 `surface_id` / `workspace_id` / `pane_id` 가 명시되면 그
@@ -39,7 +39,7 @@ pub(crate) fn params_resource_id(params: &serde_json::Value) -> Option<(&str, Re
 }
 
 impl App {
-    /// request.params 에 resource id 가 있으면 그 리소스를 가진 MainWindow 의 id 반환.
+    /// request.params 에 resource id 가 있으면 그 리소스를 가진 MainView 의 id 반환.
     pub(crate) fn find_request_owner(&self, params: &serde_json::Value) -> Option<WindowId> {
         let (_, rid) = params_resource_id(params)?;
         match rid.kind {

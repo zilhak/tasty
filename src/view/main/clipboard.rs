@@ -1,11 +1,11 @@
 use egui::ColorImage;
 
-use super::MainWindow;
+use super::MainView;
 use crate::core::intent::{DomainIntent, SendPayload};
 
 /// Bracketed paste 분기 후 SendPayload 묶음 발행. FIFO 순서 보장 (큐 push 순서
 /// 그대로 Core::apply 가 처리하므로 200~ → text → 201~ 순서로 PTY write).
-fn dispatch_paste(w: &mut MainWindow, surface_id: u32, bracketed: bool, text: String) {
+fn dispatch_paste(w: &mut MainView, surface_id: u32, bracketed: bool, text: String) {
     if text.is_empty() {
         return;
     }
@@ -42,7 +42,7 @@ fn dispatch_paste(w: &mut MainWindow, surface_id: u32, bracketed: bool, text: St
     }
 }
 
-impl MainWindow {
+impl MainView {
     /// Paste a clipboard image into the focused ImagePanel as a floating selection.
     /// Returns true if an image was pasted.
     pub fn paste_to_image(&mut self) -> bool {

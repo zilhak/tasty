@@ -8,11 +8,11 @@ use winit::keyboard::{Key, ModifiersState};
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
-use crate::view::main::MainWindow;
+use crate::view::main::MainView;
 
 use super::{focused_image_surface_id, matches_any_binding, send_app_event};
 
-impl MainWindow {
+impl MainView {
     pub(super) fn handle_keybinding_shortcuts(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,

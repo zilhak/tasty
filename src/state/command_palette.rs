@@ -2,7 +2,7 @@
 //!
 //! 팔레트는 사용자 입력으로만 열리는 popup이다 (Ctrl+Shift+P 또는 Tools 메뉴).
 //! popup이 query를 누적하고 후보를 매칭하면, Enter 시 `pending_run`에 action_id를
-//! 적재한다. `MainWindow` 메인 루프가 매 프레임 drain하여 keybinding 단축키와 동일한
+//! 적재한다. `MainView` 메인 루프가 매 프레임 drain하여 keybinding 단축키와 동일한
 //! action body를 호출한다.
 //!
 //! 후보 목록은 `tasty_settings::KeybindingSettings::GENERAL_BINDING_FIELDS`에서
@@ -37,7 +37,7 @@ pub struct CommandPaletteState {
     pub query: String,
     /// 현재 선택 인덱스 (필터링된 결과 기준).
     pub selected: usize,
-    /// Enter 시 popup이 채워두면, MainWindow가 다음 프레임에 drain하여 dispatch한다.
+    /// Enter 시 popup이 채워두면, MainView가 다음 프레임에 drain하여 dispatch한다.
     pub pending_run: Option<&'static str>,
 }
 

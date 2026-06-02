@@ -17,7 +17,7 @@ pub(crate) mod terminal_host;
 pub(crate) mod ui;
 
 pub(crate) use base::ViewBase;
-pub(crate) use main::MainWindow;
+pub(crate) use main::MainView;
 pub(crate) use modal::ModalView;
 pub(crate) use plugins::PluginsWindow;
 pub(crate) use preset::PresetWindow;
@@ -32,14 +32,14 @@ use winit::window::WindowId;
 
 use crate::AppEvent;
 
-/// `Box<dyn View>`에서 `MainWindow` 소유권을 추출한다.
-/// 인자가 MainWindow가 아니면 `None` — 호출자가 인지 후 다르게 처리.
-pub(crate) fn unbox_main(w: Box<dyn ui::View>) -> Option<Box<MainWindow>> {
-    if !w.as_any().is::<MainWindow>() {
+/// `Box<dyn View>`에서 `MainView` 소유권을 추출한다.
+/// 인자가 MainView가 아니면 `None` — 호출자가 인지 후 다르게 처리.
+pub(crate) fn unbox_main(w: Box<dyn ui::View>) -> Option<Box<MainView>> {
+    if !w.as_any().is::<MainView>() {
         return None;
     }
     let any: Box<dyn std::any::Any> = w;
-    any.downcast::<MainWindow>().ok()
+    any.downcast::<MainView>().ok()
 }
 
 /// 윈도우의 모달리티.

@@ -266,7 +266,7 @@ pub struct AppState {
     pub(crate) update_status:
         std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
     /// Command palette UI state — query buffer, selection cursor, and a pending
-    /// dispatch slot that MainWindow drains each frame.
+    /// dispatch slot that MainView drains each frame.
     pub(crate) command_palette: crate::state::command_palette::CommandPaletteState,
     /// Toast manager for transient in-app notifications (copy feedback, etc.).
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.

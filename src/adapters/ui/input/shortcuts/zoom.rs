@@ -3,9 +3,9 @@
 use winit::keyboard::{Key, ModifiersState};
 
 use super::binding::matches_any_binding;
-use crate::view::main::MainWindow;
+use crate::view::main::MainView;
 
-impl MainWindow {
+impl MainView {
     pub(super) fn handle_zoom_shortcut(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,

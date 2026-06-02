@@ -1,7 +1,7 @@
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-use super::MainWindow;
+use super::MainView;
 use crate::core::intent::{DomainIntent, SendPayload};
 use crate::state::{FocusedSurfaceType, PendingKeyEvent};
 use crate::view::ui::View;
@@ -33,7 +33,7 @@ struct KeyboardSendOutcome {
     sent: bool,
 }
 
-impl MainWindow {
+impl MainView {
     pub(super) fn handle_keyboard_input(
         &mut self,
         event: &winit::event::KeyEvent,

@@ -23,7 +23,7 @@ pub(crate) mod sealed {
 
 use winit::event::WindowEvent;
 
-use crate::view::{MainWindow, ModalView, Modality, ViewAction, ViewBase, ViewCtx};
+use crate::view::{MainView, ModalView, Modality, ViewAction, ViewBase, ViewCtx};
 
 /// 모든 윈도우 타입이 공유하는 최상위 트레잇.
 ///
@@ -52,12 +52,12 @@ pub(crate) trait View: sealed::Sealed + std::any::Any {
         None
     }
 
-    /// MainWindow 다운캐스트. MainWindow가 아니면 `None`.
-    fn as_main(&self) -> Option<&MainWindow> {
-        self.as_any().downcast_ref::<MainWindow>()
+    /// MainView 다운캐스트. MainView가 아니면 `None`.
+    fn as_main(&self) -> Option<&MainView> {
+        self.as_any().downcast_ref::<MainView>()
     }
-    fn as_main_mut(&mut self) -> Option<&mut MainWindow> {
-        self.as_any_mut().downcast_mut::<MainWindow>()
+    fn as_main_mut(&mut self) -> Option<&mut MainView> {
+        self.as_any_mut().downcast_mut::<MainView>()
     }
 
     /// `std::any::Any` 다운캐스트용.

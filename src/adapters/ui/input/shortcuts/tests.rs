@@ -3,7 +3,7 @@
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use super::binding::{matches_binding, parse_binding};
-use crate::view::main::MainWindow;
+use crate::view::main::MainView;
 
 fn mods_ctrl() -> ModifiersState {
     ModifiersState::CONTROL
@@ -211,7 +211,7 @@ fn zoom_in_increments_terminal_font_size_override_only() {
     engine.settings.appearance.terminal_font.font_size = None;
     engine.settings.appearance.markdown_font.font_size = None;
     engine.settings.appearance.explorer_font.font_size = None;
-    let consumed = MainWindow::handle_zoom_shortcut(
+    let consumed = MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
         &k_char("="),
@@ -231,7 +231,7 @@ fn zoom_in_increments_terminal_font_size_override_only() {
 fn zoom_out_decrements_terminal_font_size_override() {
     let (mut state, mut engine) = fresh_state();
     engine.settings.appearance.terminal_font.font_size = Some(20.0);
-    let consumed = MainWindow::handle_zoom_shortcut(
+    let consumed = MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
         &k_char("-"),
@@ -248,7 +248,7 @@ fn zoom_out_decrements_terminal_font_size_override() {
 fn zoom_reset_clears_terminal_font_size_override() {
     let (mut state, mut engine) = fresh_state();
     engine.settings.appearance.terminal_font.font_size = Some(20.0);
-    let consumed = MainWindow::handle_zoom_shortcut(
+    let consumed = MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
         &k_char("0"),
@@ -263,7 +263,7 @@ fn zoom_reset_clears_terminal_font_size_override() {
 fn zoom_in_clamps_at_72px() {
     let (mut state, mut engine) = fresh_state();
     engine.settings.appearance.terminal_font.font_size = Some(71.5);
-    MainWindow::handle_zoom_shortcut(
+    MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
         &k_char("="),
@@ -279,7 +279,7 @@ fn zoom_in_clamps_at_72px() {
 fn zoom_out_clamps_at_6px() {
     let (mut state, mut engine) = fresh_state();
     engine.settings.appearance.terminal_font.font_size = Some(6.5);
-    MainWindow::handle_zoom_shortcut(
+    MainView::handle_zoom_shortcut(
         &mut state,
         &mut engine,
         &k_char("-"),

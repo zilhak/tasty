@@ -4,11 +4,11 @@
 use winit::keyboard::{Key, ModifiersState};
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
-use crate::view::main::MainWindow;
+use crate::view::main::MainView;
 
 use super::{focused_image_surface_id, send_app_event};
 
-impl MainWindow {
+impl MainView {
     /// Dispatch a keybinding action by its stable `field_id` (예: `"new_workspace"`).
     /// 단축키와 정확히 같은 효과를 내며, Command Palette / 외부 자동화에서 호출한다.
     ///

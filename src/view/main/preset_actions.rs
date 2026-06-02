@@ -13,9 +13,9 @@ use crate::intent::preset_capture::{
 use crate::intent::{ClonedPreset, Intent};
 use crate::model::Surface;
 
-use super::MainWindow;
+use super::MainView;
 
-impl MainWindow {
+impl MainView {
     pub(crate) fn save_workspace_preset_from_idx(&mut self, ws_idx: usize) -> Result<()> {
         let engine = &mut self.core_state;
         let ws = engine

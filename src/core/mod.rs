@@ -74,7 +74,7 @@ pub(crate) struct Core {
     presets: Arc<Mutex<dyn PresetStorage>>,
     settings_storage: Arc<dyn SettingsStorage>,
 
-    /// Layout preset 디스크 캐시. 구체 Arc — MainWindow / PresetWindow 에 clone
+    /// Layout preset 디스크 캐시. 구체 Arc — MainView / PresetWindow 에 clone
     /// 으로 전달해 *공유 owner* 가 된다. `presets` (trait Arc) 와 같은 allocation.
     pub(crate) preset_store: Arc<Mutex<PresetStore>>,
 }
@@ -296,7 +296,7 @@ impl Core {
     //   App 컨텍스트에서만 호출되므로 (event_handler / about_to_wait) self.core
     //   접근 가능.
     // - 나머지 4 wrapper (flush / force_flush / resize_all / update_busy) 는
-    //   port 접근이 없어 associated fn — MainWindow 안 redraw / shortcuts
+    //   port 접근이 없어 associated fn — MainView 안 redraw / shortcuts
     //   dispatch 에서 `self.core` 없이 호출 가능하다.
 
     /// 특정 surface 의 PTY 출력 drain + TerminalEvent → CoreEvent 변환.

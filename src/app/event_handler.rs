@@ -113,7 +113,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Minimize => {
                 #[cfg(target_os = "macos")]
                 {
-                    // macOS: destroy windows, park all MainWindow states (dock reopen restores).
+                    // macOS: destroy windows, park all MainView states (dock reopen restores).
                     // 모달은 파킹 대상이 아니므로 그냥 drop.
                     let drained: Vec<_> = self.view.windows.drain().map(|(_, w)| w).collect();
                     for w in drained {
@@ -372,7 +372,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Normal mode — find the window by ID and delegate
         if let WindowEvent::CloseRequested = &event {
-            // MainWindow 개수 기준으로 판단 (모달은 수에 포함되지 않음)
+            // MainView 개수 기준으로 판단 (모달은 수에 포함되지 않음)
             let main_window_count = self
                 .view
                 .windows
@@ -413,7 +413,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Track focused window on focus events
         if let WindowEvent::Focused(true) = &event {
-            // 모달이 focus 이벤트를 받아도 focused_window_id는 MainWindow 전용
+            // 모달이 focus 이벤트를 받아도 focused_window_id는 MainView 전용
             let is_main = self
                 .view
                 .windows
@@ -473,7 +473,7 @@ impl ApplicationHandler<AppEvent> for App {
                     modal_active,
                     plugin_manager: self.plugin_manager.as_ref(),
                 };
-                // MainWindow.handle_event는 항상 ViewAction::None을 반환한다.
+                // MainView.handle_event는 항상 ViewAction::None을 반환한다.
                 // PresetWindow (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
                 // 이 경로에서 처리한다. 그 외 modal Close 는 위쪽 모달 경로에서 소비된다.
                 w.handle_event(event, &mut ctx)

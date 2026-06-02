@@ -2,9 +2,9 @@
 
 use winit::keyboard::Key;
 
-use crate::view::main::MainWindow;
+use crate::view::main::MainView;
 
-impl MainWindow {
+impl MainView {
     pub(super) fn handle_numeric_switch_shortcuts(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,

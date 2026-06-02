@@ -3,7 +3,7 @@
 //! - `create_app_state`: GPU 상태 + 사이드바 폭으로부터 새 `AppState` 를 만든다.
 //!   첫 호출 시 plugin manager 도 초기화하며, `pending_layout_restore` 가 있으면
 //!   plugin 등록을 짧게 기다린 뒤 layout 을 복원한다.
-//! - `register_window`: 만들어진 `MainWindow` 를 hash 에 등록 + focused 로 설정 +
+//! - `register_window`: 만들어진 `MainView` 를 hash 에 등록 + focused 로 설정 +
 //!   `window.created` host event / lua hook 발화.
 //! - `init_app_state`: shell 확정 후 첫 윈도우의 IPC server 시작 + AppState 부착.
 //! - `create_new_window`: 다중 윈도우용 — 새 winit window + GPU + AppState (parked 우선) + 모달 안내.
@@ -233,7 +233,7 @@ impl App {
         state
     }
 
-    /// Register a MainWindow and set it as focused.
+    /// Register a MainView and set it as focused.
     pub(crate) fn register_window(
         &mut self,
         gpu: GpuState,
@@ -243,7 +243,7 @@ impl App {
     ) {
         let window_id = window.id();
         let main =
-            window::main::MainWindow::new(gpu, state, core_state, window, self.view.proxy.clone());
+            window::main::MainView::new(gpu, state, core_state, window, self.view.proxy.clone());
         self.view.windows.insert(window_id, Box::new(main));
         self.view.focused_window_id = Some(window_id);
         if let Some(mgr) = self.plugin_manager.as_mut() {

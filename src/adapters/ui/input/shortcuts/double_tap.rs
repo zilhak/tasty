@@ -2,11 +2,11 @@
 
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
-use crate::view::main::MainWindow;
+use crate::view::main::MainView;
 
 use super::send_app_event;
 
-impl MainWindow {
+impl MainView {
     /// Handle double-tap modifier shortcuts. Returns true if consumed.
     pub(crate) fn handle_double_tap_shortcut(
         &mut self,

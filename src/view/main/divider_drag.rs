@@ -1,6 +1,6 @@
 //! Pane/Surface 분할 divider 의 드래그 상태.
 //!
-//! `MainWindow::dragging_divider` 가 보관. mouse 핸들러에서 사용.
+//! `MainView::dragging_divider` 가 보관. mouse 핸들러에서 사용.
 
 use crate::model::DividerInfo;
 
