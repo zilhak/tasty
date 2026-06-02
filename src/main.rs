@@ -54,7 +54,6 @@ pub use tasty_utils::path as paths;
 pub(crate) use adapters::cli;
 pub(crate) use adapters::ipc;
 pub(crate) use adapters::plugin;
-pub(crate) use adapters::ui;
 pub(crate) use adapters::ui::input::click_cursor;
 pub(crate) use adapters::ui::input::double_tap;
 pub(crate) use adapters::ui::input::shortcuts;

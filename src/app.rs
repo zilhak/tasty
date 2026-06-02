@@ -24,7 +24,7 @@ use crate::core::Core;
 use crate::gpu::GpuState;
 use crate::hub::Hub;
 use crate::view::View;
-use crate::{AppEvent, plugin, state, window};
+use crate::{AppEvent, plugin, state};
 
 pub(crate) struct App {
     /// Phase C — 도메인 본체. 마이그레이션 중에는 빈 골격, sub-step 마다 한 필드씩
