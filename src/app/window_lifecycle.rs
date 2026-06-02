@@ -92,9 +92,14 @@ impl App {
             // 첫 ID 들 발급하므로, **생성 전에** source 의 next_ids 를 주입해야
             // workspace_id/pane_id/tab_id/surface_id 충돌이 안 난다.
             let shared_ids = shared.as_ref().map(|s| s.8.clone());
-            let mut engine =
-                crate::core::CoreState::new_with_ids(cols, rows, waker.clone(), shared_ids)
-                    .expect("failed to create engine state");
+            let mut engine = crate::core::CoreState::new_with_ids(
+                cols,
+                rows,
+                waker.clone(),
+                shared_ids,
+                self.core.memory_arc(),
+            )
+            .expect("failed to create engine state");
             engine.waker_factory = Some(factory.clone());
             if let Some((
                 surface_registry,
@@ -129,7 +134,6 @@ impl App {
             {
                 engine.input_simulation_enabled = self.input_simulation_enabled;
             }
-            engine.memory = Some(self.core.memory_arc());
             self.core_state = Some(engine);
         }
 

@@ -149,12 +149,11 @@ impl ObserverRouter {
 
     /// 옵저버 등록. id 반환.
     ///
-    /// `memory` 는 Memory sink 용 — Core memory port 의 Arc clone. None 이면
-    /// Memory sink 등록을 거부한다 (File sink 만 등록 가능).
+    /// `memory` 는 Memory sink 용 — Core memory port 의 Arc clone.
     pub fn register(
         &mut self,
         spec: ObserverSpec,
-        memory: Option<std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>>,
+        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> Result<ObserverId, ObserverError> {
         // 파서 lookup
         let parser_ids: Vec<String> = if spec.parsers.is_empty() {
@@ -193,11 +192,7 @@ impl ObserverRouter {
             SinkView::Memory { max_records } => {
                 let cap = *max_records;
                 let worker_id = id;
-                let Some(mem) = memory.clone() else {
-                    return Err(ObserverError::FileOpen(
-                        "memory port not injected; cannot register Memory sink".to_string(),
-                    ));
-                };
+                let mem = memory.clone();
                 Some(
                     thread::Builder::new()
                         .name(format!("tasty-observer-mem-{worker_id}"))
@@ -511,6 +506,10 @@ mod tests {
     #[test]
     fn register_unknown_parser_rejects() {
         let mut r = ObserverRouter::new();
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::MemoryStore::open_in_memory().unwrap(),
+            ));
         let err = r
             .register(
                 ObserverSpec {
@@ -519,7 +518,7 @@ mod tests {
                     kinds: None,
                     sink: SinkSpec::Memory { max_records: 10 },
                 },
-                None,
+                memory,
             )
             .unwrap_err();
         assert!(matches!(err, ObserverError::UnknownParser(_)));

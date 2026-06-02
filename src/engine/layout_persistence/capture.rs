@@ -32,7 +32,7 @@ type MemArc = std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>;
 struct CaptureCtx<'a> {
     registry: &'a SurfaceKindRegistry,
     capture_scrollback: bool,
-    memory: Option<&'a MemArc>,
+    memory: &'a MemArc,
     seen_refs: &'a mut SeenRefs,
     terminals: &'a mut crate::core::terminal_store::TerminalStore,
 }
@@ -57,7 +57,7 @@ impl SavedLayout {
             let mut ctx = CaptureCtx {
                 registry: registry.as_ref(),
                 capture_scrollback,
-                memory: memory.as_ref(),
+                memory: &memory,
                 seen_refs: &mut seen_refs,
                 terminals,
             };
@@ -175,9 +175,8 @@ impl SavedSurface {
             .downcast_ref::<crate::model::TerminalSurface>()
         {
             let surface_id = ts.id;
-            let restore_command = memory.and_then(|m| {
-                crate::surface_meta::SurfaceMetaStore::get(m, surface_id, "restore.command")
-            });
+            let restore_command =
+                crate::surface_meta::SurfaceMetaStore::get(memory, surface_id, "restore.command");
             let cwd = ctx
                 .terminals
                 .get(surface_id)
@@ -215,9 +214,7 @@ impl SavedSurface {
                 .as_ref()
                 .and_then(|s| s.restore_command.clone())
                 .or_else(|| {
-                    memory.and_then(|m| {
-                        crate::surface_meta::SurfaceMetaStore::get(m, es.id, "restore.command")
-                    })
+                    crate::surface_meta::SurfaceMetaStore::get(memory, es.id, "restore.command")
                 });
             // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
             // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →

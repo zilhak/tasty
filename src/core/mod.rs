@@ -339,9 +339,7 @@ impl Core {
                 }
                 TerminalEventKind::PromptBoundary { phase, payload } => {
                     let mem = engine.memory.clone();
-                    engine
-                        .command_index
-                        .on_boundary(mem.as_ref(), sid, phase, &payload);
+                    engine.command_index.on_boundary(&mem, sid, phase, &payload);
                 }
                 TerminalEventKind::ClipboardSet(text) => {
                     if let Err(e) = self.clipboard.write_text(&text) {

@@ -188,17 +188,23 @@ pub struct CoreState {
     #[cfg(debug_assertions)]
     pub(crate) input_simulation_enabled: bool,
 
-    /// Memory port 의 Arc clone — Core 가 owner. `CoreState::new` 직후에는 빈
-    /// 상태이며 `App::create_app_state` 가 `core.memory_arc()` 로 주입한다.
+    /// Memory port 의 Arc clone — Core 가 owner. 생성자에서 즉시 주입되며
     /// engine 내부 (SurfaceMetaStore, layout persistence, pty surface init 등)
     /// cascade 없이 직접 영속할 때 사용.
-    pub(crate) memory: Option<std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>>,
+    pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
 }
 
 impl CoreState {
     /// Create a new CoreState with default settings.
+    ///
+    /// 테스트 / non-host 진입점용 변형. 내부에서 in-memory `MemoryStore` 를
+    /// 생성해 주입한다. host 부팅 경로는 `new_with_ids` 를 사용한다.
     pub fn new(cols: usize, rows: usize, waker: Waker) -> anyhow::Result<Self> {
-        Self::new_with_ids(cols, rows, waker, None)
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::MemoryStore::open_in_memory()?,
+            ));
+        Self::new_with_ids(cols, rows, waker, None, memory)
     }
 
     /// 새 CoreState 를 만들 때 기존 ID 공간(Arc<AtomicU32> 들)을 공유받는 변형.
@@ -209,6 +215,7 @@ impl CoreState {
         rows: usize,
         waker: Waker,
         shared_ids: Option<IdGenerator>,
+        memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     ) -> anyhow::Result<Self> {
         let settings = Settings::load();
         let restore_layout = settings.general.restore_layout;
@@ -274,7 +281,7 @@ impl CoreState {
             pending_layout_restore: None,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
-            memory: None,
+            memory,
         };
 
         // (Phase E) FileHandler 가 detector 메타 (광고 확장자 등) 를 조회할 수 있게
@@ -367,8 +374,7 @@ impl CoreState {
     pub fn push_closed_item(&mut self, mut item: crate::model::ClosedItem) {
         let mem = self.memory.clone();
         crate::model::closed_item::inject_restore_commands(&mut item, &|sid| {
-            mem.as_ref()
-                .and_then(|m| crate::surface_meta::SurfaceMetaStore::get(m, sid, "restore.command"))
+            crate::surface_meta::SurfaceMetaStore::get(&mem, sid, "restore.command")
         });
         self.closed_items.push(item);
     }

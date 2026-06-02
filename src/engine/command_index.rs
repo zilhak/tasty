@@ -50,16 +50,7 @@ impl CommandIndex {
 
     /// OSC 133 phase 도착 시 호출. `payload` 는 phase 문자 뒤의 `;`-분리 토큰들.
     /// D phase 가 도착하면 memory 에 record 저장 후 per-surface 상태 reset.
-    ///
-    /// `memory` 가 None 이면 D phase 영속을 skip — 호출자가 `engine.memory` 를
-    /// inject 한 다음에만 record 가 쌓인다.
-    pub fn on_boundary(
-        &mut self,
-        memory: Option<&MemArc>,
-        surface_id: u32,
-        phase: char,
-        payload: &str,
-    ) {
+    pub fn on_boundary(&mut self, memory: &MemArc, surface_id: u32, phase: char, payload: &str) {
         let now = unix_ms_now();
         let entry = self.surfaces.entry(surface_id).or_default();
         match phase {
@@ -94,25 +85,19 @@ impl CommandIndex {
                     "command": entry.command_text,
                 });
                 let key = format!("tasty.commands.{key_ts}");
-                if let Some(mem) = memory {
-                    let mut guard = match mem.lock() {
-                        Ok(g) => g,
-                        Err(p) => p.into_inner(),
-                    };
-                    if let Err(e) = guard.put(
-                        HOST_OWNER,
-                        &Scope::Surface(surface_id),
-                        &key,
-                        &MemoryValue::Json(record),
-                        &PutOpts::default(),
-                    ) {
-                        tracing::warn!(
-                            "command_index: memory.put for surface {surface_id} '{key}' failed: {e}"
-                        );
-                    }
-                } else {
+                let mut guard = match memory.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                if let Err(e) = guard.put(
+                    HOST_OWNER,
+                    &Scope::Surface(surface_id),
+                    &key,
+                    &MemoryValue::Json(record),
+                    &PutOpts::default(),
+                ) {
                     tracing::warn!(
-                        "command_index: memory port not injected; dropping command record"
+                        "command_index: memory.put for surface {surface_id} '{key}' failed: {e}"
                     );
                 }
                 *entry = Pending::default();

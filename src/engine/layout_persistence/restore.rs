@@ -277,17 +277,15 @@ impl SavedSurface {
                 // (capture_surface 의 deferred 분기 참조), DeferredSpawn 으로 옮기기
                 // 전에 동일 값을 meta 에도 mirror 한다.
                 if let Some(cmd) = restore_command.as_deref() {
-                    if let Some(mem) = engine.memory.as_ref() {
-                        if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
-                            mem,
-                            surface_id,
-                            "restore.command",
-                            cmd,
-                        ) {
-                            tracing::warn!(
-                                "restore: failed to mirror restore.command for surface {surface_id}: {e}"
-                            );
-                        }
+                    if let Err(e) = crate::surface_meta::SurfaceMetaStore::set(
+                        &engine.memory,
+                        surface_id,
+                        "restore.command",
+                        cmd,
+                    ) {
+                        tracing::warn!(
+                            "restore: failed to mirror restore.command for surface {surface_id}: {e}"
+                        );
                     }
                 }
                 // scrollback_ref 가 있으면 PTY spawn 시점에 inject 할 라인을 큐에 쌓고,
