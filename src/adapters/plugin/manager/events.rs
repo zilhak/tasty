@@ -102,38 +102,6 @@ impl PluginManager {
         self.send_event_dispatches(vec![dispatch]);
     }
 
-    /// 고빈도 이벤트용 throttled 발화. 윈도우 내 호출은 마지막 payload만 보관됐다가
-    /// trailing tick에서 [`Self::pump_throttled_events`]가 발화한다.
-    pub fn emit_host_event_throttled<P: serde::Serialize>(
-        &mut self,
-        key: &str,
-        scope_id: u64,
-        payload: &P,
-        scope: tasty_plugin_protocol::EventScope,
-    ) {
-        let envelope = self.build_host_envelope(key, payload, scope);
-        let throttle_key = crate::plugin::event_throttle::ThrottleKey {
-            event_key: key.to_string(),
-            scope_id,
-        };
-        match self.throttler.attempt(throttle_key, envelope) {
-            crate::plugin::event_throttle::ThrottleDecision::EmitNow(env) => {
-                self.publish_host_event(env);
-            }
-            crate::plugin::event_throttle::ThrottleDecision::Deferred => {
-                // pump 시점에 처리.
-            }
-        }
-    }
-
-    /// throttler의 만료된 pending envelope을 발화. 호스트 main tick에서 매번 호출.
-    pub fn pump_throttled_events(&mut self) {
-        let due = self.throttler.drain_due();
-        for envelope in due {
-            self.publish_host_event(envelope);
-        }
-    }
-
     /// plugin이 보낸 publish를 라우팅. 권한/origin/hop 검사 실패 시 경고 로그.
     /// 활성 extension이 있고 pre_event hook이 매칭되면 hook을 먼저 dispatch한 뒤
     /// 응답에 따라 fan-out 진행 (PR 6).

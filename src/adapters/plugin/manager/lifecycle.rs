@@ -67,7 +67,6 @@ impl PluginManager {
             extensions: crate::plugin::extension_registry::ExtensionRegistry::new(),
             hook_failures: HashMap::new(),
             event_bus: crate::plugin::event_bus::EventBus::new(),
-            throttler: crate::plugin::event_throttle::EventThrottler::new(),
             event_trace_seq: AtomicU64::new(1),
             popup_instances: HashMap::new(),
             next_popup_instance_id: 1,

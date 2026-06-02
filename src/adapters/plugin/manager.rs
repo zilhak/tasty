@@ -267,8 +267,6 @@ pub struct PluginManager {
     pub(super) hook_failures: HashMap<(String, String), HookFailureState>,
     /// Event Bus 1.0 라우터. 호스트 본문과 plugin 간 broadcast 이벤트를 fan-out.
     pub event_bus: super::event_bus::EventBus,
-    /// 고빈도 이벤트(`surface.resized`, `split.ratio_changed`)용 throttle 상태.
-    pub(super) throttler: super::event_throttle::EventThrottler,
     /// 호스트가 발화하는 envelope의 `meta.trace_id` 카운터.
     pub(super) event_trace_seq: AtomicU64,
     /// 현재 열려 있는 popup 인스턴스. host가 발급한 `instance_id`를 키로 사용.

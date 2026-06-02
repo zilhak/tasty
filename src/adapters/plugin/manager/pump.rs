@@ -147,9 +147,6 @@ impl PluginManager {
         // 4a. 타임아웃된 extension hook을 fail-open 처리.
         self.sweep_expired_hooks();
 
-        // 4b. Event Bus throttle: 만료된 pending envelope 발화.
-        self.pump_throttled_events();
-
         // 2. 주기적 ping
         if self.last_ping.elapsed() >= PING_INTERVAL {
             for proc in self.processes.values() {
