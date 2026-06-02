@@ -665,11 +665,9 @@ impl AppState {
 
     /// Returns true if any egui overlay is visible.
     pub fn has_egui_overlay_open(&self) -> bool {
-        let mut open = self.settings_open || self.plugins_open || self.dialogs.has_any_overlay();
+        let open = self.settings_open || self.plugins_open || self.dialogs.has_any_overlay();
         #[cfg(feature = "gui")]
-        {
-            open = open || self.popups.has_any_open();
-        }
+        let open = open || self.popups.has_any_open();
         open
     }
 

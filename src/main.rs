@@ -49,6 +49,7 @@ use anyhow::Result;
 
 pub use tasty_font as font;
 pub use tasty_settings as settings;
+#[cfg(feature = "gui")]
 use tasty_terminal as terminal;
 pub use tasty_themes as theme;
 pub use tasty_utils::path as paths;
@@ -76,6 +77,7 @@ pub(crate) use adapters::ui::surface::markdown as markdown_ui;
 pub(crate) use adapters::ui::terminal_link;
 #[cfg(feature = "gui")]
 pub(crate) use adapters::ui::theme_bridge;
+#[cfg(feature = "gui")]
 pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;
 #[cfg(feature = "gui")]
@@ -84,6 +86,7 @@ pub(crate) use boot::waker as waker_factory_winit;
 pub(crate) use clipboard::{ClipboardContext, ClipboardData};
 pub(crate) use engine::output_observer;
 pub(crate) use engine::surface_registry::meta as surface_meta;
+#[cfg(feature = "gui")]
 pub(crate) use file::dispatch as file_dispatch;
 #[cfg(feature = "gui")]
 pub(crate) use file::identify_worker;
@@ -107,6 +110,7 @@ pub(crate) use platform::macos_delegate;
 #[cfg(all(windows, feature = "gui"))]
 pub(crate) use platform::system_tray;
 pub(crate) use state::search as search_state;
+#[cfg(feature = "gui")]
 pub(crate) use state::selection;
 pub(crate) use store::clipboard_history;
 pub(crate) use store::notification;
