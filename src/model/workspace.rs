@@ -12,25 +12,25 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Create a workspace with a custom shell and optional working directory.
-    pub fn new_with_shell(
+    /// Create a workspace with a TerminalSurface marker. Caller must have already
+    /// `engine.terminals.insert(surface_id, terminal)` for the spawned Terminal.
+    pub fn new_with_terminal_marker(
         id: WorkspaceId,
         name: String,
         pane_id: PaneId,
         tab_id: TabId,
         surface_id: SurfaceId,
-        spawn: super::pane::ShellSpawnOpts<'_>,
-    ) -> anyhow::Result<Self> {
-        let pane = Pane::new_with_shell(pane_id, tab_id, surface_id, spawn)?;
+    ) -> Self {
+        let pane = Pane::new_with_terminal_marker(pane_id, tab_id, surface_id);
         let focused_pane = pane_id;
-        Ok(Self {
+        Self {
             id,
             name,
             subtitle: String::new(),
             description: String::new(),
             pane_layout_opt: Some(PaneNode::Leaf(pane)),
             focused_pane,
-        })
+        }
     }
 
     /// Access the pane layout (always valid during normal operation).

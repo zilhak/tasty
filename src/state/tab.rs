@@ -13,19 +13,20 @@ impl AppState {
         let rows = engine.default_rows;
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
+        let terminal = crate::model::Pane::spawn_terminal(
+            surface_id,
+            crate::model::ShellSpawnOpts {
+                cols,
+                rows,
+                shell: sh.shell_ref(),
+                shell_args: &sh.args_ref(),
+                waker,
+                working_dir: cwd.as_deref(),
+            },
+        )?;
+        engine.terminals.insert(surface_id, terminal);
         if let Some(pane) = self.focused_pane_mut(engine) {
-            pane.add_tab_with_shell(
-                tab_id,
-                surface_id,
-                crate::model::ShellSpawnOpts {
-                    cols: cols,
-                    rows: rows,
-                    shell: sh.shell_ref(),
-                    shell_args: &sh.args_ref(),
-                    waker: waker,
-                    working_dir: cwd.as_deref(),
-                },
-            )?;
+            pane.add_terminal_marker_tab(tab_id, surface_id);
         }
         engine.send_fast_init(surface_id);
         engine.mark_layout_dirty();
@@ -62,19 +63,20 @@ impl AppState {
                 );
             }
         } else {
+            let terminal = crate::model::Pane::spawn_terminal(
+                surface_id,
+                crate::model::ShellSpawnOpts {
+                    cols,
+                    rows,
+                    shell: sh.shell_ref(),
+                    shell_args: &sh.args_ref(),
+                    waker,
+                    working_dir: cwd.as_deref(),
+                },
+            )?;
+            engine.terminals.insert(surface_id, terminal);
             if let Some(pane) = self.focused_pane_mut(engine) {
-                pane.add_tab_background_with_shell(
-                    tab_id,
-                    surface_id,
-                    crate::model::ShellSpawnOpts {
-                        cols: cols,
-                        rows: rows,
-                        shell: sh.shell_ref(),
-                        shell_args: &sh.args_ref(),
-                        waker: waker,
-                        working_dir: cwd.as_deref(),
-                    },
-                )?;
+                pane.add_terminal_marker_tab_background(tab_id, surface_id);
             }
             engine.send_fast_init(surface_id);
         }
@@ -175,19 +177,20 @@ impl AppState {
                 );
             }
         } else {
+            let terminal = crate::model::Pane::spawn_terminal(
+                surface_id,
+                crate::model::ShellSpawnOpts {
+                    cols,
+                    rows,
+                    shell: sh.shell_ref(),
+                    shell_args: &sh.args_ref(),
+                    waker,
+                    working_dir: cwd.as_deref(),
+                },
+            )?;
+            engine.terminals.insert(surface_id, terminal);
             if let Some(pane) = engine.find_pane_by_id_mut(pane_id) {
-                pane.add_tab_background_with_shell(
-                    tab_id,
-                    surface_id,
-                    crate::model::ShellSpawnOpts {
-                        cols: cols,
-                        rows: rows,
-                        shell: sh.shell_ref(),
-                        shell_args: &sh.args_ref(),
-                        waker: waker,
-                        working_dir: cwd.as_deref(),
-                    },
-                )?;
+                pane.add_terminal_marker_tab_background(tab_id, surface_id);
             }
             engine.send_fast_init(surface_id);
         }
@@ -240,10 +243,13 @@ impl AppState {
         let snapshot_opt = if let Some(pane) = self.focused_pane(engine) {
             let active = pane.active_tab;
             if let Some(tab) = pane.tabs.get(active) {
-                super::AppState::collect_close_targets(tab, &mut targets);
+                super::AppState::collect_close_targets(tab, engine, &mut targets);
                 let mut snap_fn =
                     crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
-                crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn)
+                let terminals = &engine.terminals;
+                crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| {
+                    terminals.get(id)
+                })
             } else {
                 None
             }
@@ -291,13 +297,9 @@ impl AppState {
             Err(_) => return false,
         };
 
-        let node = crate::model::TerminalSurface {
-            id: surface_id,
-            terminal: Some(terminal),
-            deferred_spawn: None,
-            scrollback_persist_id: None,
-        };
-        let surface: Box<dyn crate::model::Surface> = Box::new(node);
+        engine.terminals.insert(surface_id, terminal);
+        let surface: Box<dyn crate::model::Surface> =
+            Box::new(crate::model::TerminalSurface { id: surface_id });
 
         // Clear explicit_name when converting back to Terminal (auto-derived from CWD).
         let replaced = self.replace_surface_for_id(engine, surface_id, surface, Some(None));

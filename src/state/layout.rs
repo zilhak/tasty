@@ -8,11 +8,15 @@ impl AppState {
     /// Returns true if the active workspace had any changes (for redraw).
     pub fn process_all(&mut self, engine: &mut CoreState) -> bool {
         let active_idx = self.active_workspace;
+        let active_ids: std::collections::HashSet<u32> = engine
+            .workspaces
+            .get(active_idx)
+            .map(|ws| ws.all_surface_ids().into_iter().collect())
+            .unwrap_or_default();
         let mut active_changed = false;
-        for (i, workspace) in engine.workspaces.iter_mut().enumerate() {
-            let changed = workspace.pane_layout_mut().process_all();
-            if i == active_idx {
-                active_changed = changed;
+        for (sid, t) in engine.terminals.iter_mut() {
+            if t.process() && active_ids.contains(&sid) {
+                active_changed = true;
             }
         }
         active_changed

@@ -17,23 +17,18 @@ fn test_state() -> (AppState, crate::core::CoreState) {
 
 /// 현재 활성 워크스페이스의 모든 surface ID를 수집한다.
 fn collect_surface_ids(state: &mut AppState, engine: &mut crate::core::CoreState) -> Vec<u32> {
-    let mut ids = Vec::new();
     let ws = state.active_workspace_mut(engine);
-    ws.pane_layout_mut().for_each_terminal_mut(&mut |sid, _| {
-        ids.push(sid);
-    });
-    ids
+    let ws_ids: std::collections::HashSet<u32> = ws.all_surface_ids().into_iter().collect();
+    engine
+        .terminals
+        .iter()
+        .filter_map(|(sid, _)| ws_ids.contains(&sid).then_some(sid))
+        .collect()
 }
 
 /// 모든 워크스페이스에 걸쳐 surface ID를 수집한다.
 fn collect_all_surface_ids(_state: &mut AppState, engine: &mut crate::core::CoreState) -> Vec<u32> {
-    let mut ids = Vec::new();
-    for ws in &mut engine.workspaces {
-        ws.pane_layout_mut().for_each_terminal_mut(&mut |sid, _| {
-            ids.push(sid);
-        });
-    }
-    ids
+    engine.terminals.iter().map(|(sid, _)| sid).collect()
 }
 
 // ---- find_terminal_by_id ----
@@ -171,13 +166,15 @@ fn focus_surface_changes_pane_focus() {
     // 현재 포커스는 새로 생성된 두 번째 pane에 있다 (split 후 새 pane에 포커스)
     // 첫 번째 pane의 surface를 찾아 포커스한다
     let first_pane_surface: u32 = {
-        let ws = state.active_workspace_mut(&mut engine);
-        let pane = ws.pane_layout_mut().find_pane_mut(first_pane_id).unwrap();
+        let ws = state.active_workspace(&engine);
+        let pane = ws.pane_layout().find_pane(first_pane_id).unwrap();
         let mut sid = 0u32;
-        for tab in &mut pane.tabs {
-            tab.for_each_terminal_mut(&mut |id, _| {
-                sid = id;
-            });
+        for tab in &pane.tabs {
+            for id in tab.all_surface_ids() {
+                if engine.terminals.contains(id) {
+                    sid = id;
+                }
+            }
         }
         sid
     };

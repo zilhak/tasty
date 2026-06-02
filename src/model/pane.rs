@@ -56,14 +56,15 @@ impl Pane {
         }
     }
 
-    /// Create a Pane with a custom shell and optional working directory.
-    pub fn new_with_shell(
-        id: PaneId,
-        tab_id: TabId,
+    /// Spawn a Terminal with the given shell spawn options. Caller registers the
+    /// returned Terminal into `CoreState::terminals` *before* it inserts the
+    /// returned Pane (or its surface) into a workspace — so the layout never sees
+    /// a missing-store-entry state.
+    pub fn spawn_terminal(
         surface_id: SurfaceId,
         spawn: ShellSpawnOpts<'_>,
-    ) -> anyhow::Result<Self> {
-        let terminal = Terminal::new(
+    ) -> anyhow::Result<Terminal> {
+        Terminal::new(
             tasty_terminal::TerminalConfig {
                 cols: spawn.cols,
                 rows: spawn.rows,
@@ -74,82 +75,37 @@ impl Pane {
                 initial_input: None,
             },
             spawn.waker,
-        )?;
-        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
-            id: surface_id,
-            terminal: Some(terminal),
-            deferred_spawn: None,
-            scrollback_persist_id: None,
-        });
+        )
+        .map_err(Into::into)
+    }
+
+    /// Create a Pane with a TerminalSurface marker. Caller must have already
+    /// `engine.terminals.insert(surface_id, terminal)` for the spawned Terminal.
+    pub fn new_with_terminal_marker(id: PaneId, tab_id: TabId, surface_id: SurfaceId) -> Self {
+        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
-        Ok(Self {
+        Self {
             id,
             tabs: vec![tab],
             active_tab: 0,
             tab_scroll_offset: 0.0,
-        })
+        }
     }
 
-    /// Add a new tab with a custom shell and optional working directory.
-    pub fn add_tab_with_shell(
-        &mut self,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        spawn: ShellSpawnOpts<'_>,
-    ) -> anyhow::Result<()> {
-        let terminal = Terminal::new(
-            tasty_terminal::TerminalConfig {
-                cols: spawn.cols,
-                rows: spawn.rows,
-                shell: spawn.shell,
-                args: spawn.shell_args,
-                surface_id,
-                working_dir: spawn.working_dir,
-                initial_input: None,
-            },
-            spawn.waker,
-        )?;
-        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
-            id: surface_id,
-            terminal: Some(terminal),
-            deferred_spawn: None,
-            scrollback_persist_id: None,
-        });
+    /// Add a TerminalSurface-marker tab (active). Caller must have already
+    /// inserted the spawned Terminal into the store.
+    pub fn add_terminal_marker_tab(&mut self, tab_id: TabId, surface_id: SurfaceId) {
+        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
-        Ok(())
     }
 
-    /// Add a new tab without changing the active tab, with optional working directory.
-    pub fn add_tab_background_with_shell(
-        &mut self,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        spawn: ShellSpawnOpts<'_>,
-    ) -> anyhow::Result<()> {
-        let terminal = Terminal::new(
-            tasty_terminal::TerminalConfig {
-                cols: spawn.cols,
-                rows: spawn.rows,
-                shell: spawn.shell,
-                args: spawn.shell_args,
-                surface_id,
-                working_dir: spawn.working_dir,
-                initial_input: None,
-            },
-            spawn.waker,
-        )?;
-        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface {
-            id: surface_id,
-            terminal: Some(terminal),
-            deferred_spawn: None,
-            scrollback_persist_id: None,
-        });
+    /// Same as [`add_terminal_marker_tab`] but does NOT change `active_tab`.
+    pub fn add_terminal_marker_tab_background(&mut self, tab_id: TabId, surface_id: SurfaceId) {
+        let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
         let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
         self.tabs.push(tab);
-        // Do NOT change self.active_tab
-        Ok(())
     }
 
     /// Add a deferred tab (lazy PTY init). The terminal will be spawned when the tab is first accessed.
@@ -197,8 +153,11 @@ impl Pane {
         ids
     }
 
-    /// 활성 tab 안의 모든 deferred placeholder를 spawn. 반환은 spawn된 surface_id 목록.
-    pub fn ensure_active_tab_initialized_all(&mut self) -> Vec<SurfaceId> {
+    /// 활성 tab 안의 모든 deferred placeholder를 spawn. 반환은
+    /// `(surface_id, Terminal, persist_id)` 목록 — caller 가 store insert.
+    pub fn ensure_active_tab_initialized_all(
+        &mut self,
+    ) -> Vec<(SurfaceId, Terminal, Option<String>)> {
         if self.tabs.is_empty() {
             return Vec::new();
         }
@@ -206,56 +165,31 @@ impl Pane {
         self.tabs[idx].ensure_all_initialized()
     }
 
-    /// Split the active panel's focused surface with a custom shell and optional working directory.
-    pub fn split_active_surface_with_shell(
+    /// Split the active panel's focused surface with a TerminalSurface marker.
+    /// Caller must have already inserted the spawned Terminal into the store.
+    pub fn split_active_surface_marker(
         &mut self,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
-        spawn: ShellSpawnOpts<'_>,
-    ) -> anyhow::Result<()> {
-        let new_terminal = Terminal::new(
-            tasty_terminal::TerminalConfig {
-                cols: spawn.cols,
-                rows: spawn.rows,
-                shell: spawn.shell,
-                args: spawn.shell_args,
-                surface_id: new_surface_id,
-                working_dir: spawn.working_dir,
-                initial_input: None,
-            },
-            spawn.waker,
-        )?;
+    ) {
         if self.tabs.is_empty() {
-            return Ok(()); // nothing to split
+            return;
         }
         let active = self.active_tab.min(self.tabs.len() - 1);
-        self.tabs[active].split_focused_surface(direction, new_surface_id, new_terminal);
-        Ok(())
+        self.tabs[active].split_focused_surface(direction, new_surface_id);
     }
 
-    /// Split a specific surface by ID with optional working directory.
-    pub fn split_surface_by_id_with_shell(
+    /// Split a specific surface by ID with a TerminalSurface marker. Caller must
+    /// have already inserted the spawned Terminal into the store.
+    pub fn split_surface_by_id_marker(
         &mut self,
         target_surface_id: SurfaceId,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
-        spawn: ShellSpawnOpts<'_>,
     ) -> anyhow::Result<()> {
-        let new_terminal = Terminal::new(
-            tasty_terminal::TerminalConfig {
-                cols: spawn.cols,
-                rows: spawn.rows,
-                shell: spawn.shell,
-                args: spawn.shell_args,
-                surface_id: new_surface_id,
-                working_dir: spawn.working_dir,
-                initial_input: None,
-            },
-            spawn.waker,
-        )?;
         for tab in &mut self.tabs {
-            if tab.find_terminal(target_surface_id).is_some() {
-                tab.split_surface_by_id(target_surface_id, direction, new_surface_id, new_terminal);
+            if tab.contains_surface(target_surface_id) {
+                tab.split_surface_by_id(target_surface_id, direction, new_surface_id);
                 return Ok(());
             }
         }
@@ -316,44 +250,9 @@ impl Pane {
         }
     }
 
-    /// Get the focused terminal.
-    pub fn active_terminal(&self) -> Option<&Terminal> {
-        let tab = self
-            .tabs
-            .get(self.active_tab.min(self.tabs.len().saturating_sub(1)))?;
-        tab.focused_terminal()
-    }
-
-    /// Get the focused terminal (mutable).
-    pub fn active_terminal_mut(&mut self) -> Option<&mut Terminal> {
-        let idx = self.active_tab.min(self.tabs.len().saturating_sub(1));
-        let tab = self.tabs.get_mut(idx)?;
-        tab.focused_terminal_mut()
-    }
-
     /// Check if any tab in this pane contains the given surface ID.
     pub fn contains_surface(&self, surface_id: SurfaceId) -> bool {
         self.tabs.iter().any(|tab| tab.contains_surface(surface_id))
-    }
-
-    /// Find a terminal by surface ID across all tabs (immutable).
-    pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
-        for tab in &self.tabs {
-            if let Some(t) = tab.find_terminal(surface_id) {
-                return Some(t);
-            }
-        }
-        None
-    }
-
-    /// Find a terminal by surface ID across all tabs (mutable).
-    pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
-        for tab in &mut self.tabs {
-            if let Some(t) = tab.find_terminal_mut(surface_id) {
-                return Some(t);
-            }
-        }
-        None
     }
 
     /// Switch to tab by index (0-based). Returns true if switched.
@@ -399,15 +298,6 @@ impl Pane {
         }
         let idx = self.active_tab.min(self.tabs.len() - 1);
         Some(&mut self.tabs[idx])
-    }
-
-    /// Collect all terminals (mutable) from all tabs in this Pane.
-    pub fn all_terminals_mut(&mut self) -> Vec<&mut Terminal> {
-        let mut result = Vec::new();
-        for tab in &mut self.tabs {
-            tab.collect_terminals_mut(&mut result);
-        }
-        result
     }
 
     /// Move a tab from one index to another, adjusting active_tab accordingly.

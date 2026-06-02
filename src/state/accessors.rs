@@ -82,13 +82,14 @@ impl AppState {
 
     /// Get the ultimately focused terminal.
     pub fn focused_terminal<'a>(&self, engine: &'a CoreState) -> Option<&'a Terminal> {
-        self.focused_pane(engine).and_then(|p| p.active_terminal())
+        let id = self.focused_surface_id(engine)?;
+        engine.terminals.get(id)
     }
 
     /// Get the ultimately focused terminal (mutable).
     pub fn focused_terminal_mut<'a>(&self, engine: &'a mut CoreState) -> Option<&'a mut Terminal> {
-        self.focused_pane_mut(engine)
-            .and_then(|p| p.active_terminal_mut())
+        let id = self.focused_surface_id(engine)?;
+        engine.terminals.get_mut(id)
     }
 
     /// Get the focused image panel (mutable).

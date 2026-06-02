@@ -5,6 +5,18 @@ use crate::model::SplitDirection;
 
 use super::AppState;
 
+/// Helper: tab 내 surface_id 에 해당하는 TerminalSurface 를 찾는다 (downcast).
+fn terminal_surface_in_tab(
+    tab: &crate::model::Tab,
+    surface_id: u32,
+) -> Option<&crate::model::TerminalSurface> {
+    tab.layout_opt
+        .as_ref()?
+        .find_surface(surface_id)?
+        .as_any()
+        .downcast_ref::<crate::model::TerminalSurface>()
+}
+
 impl AppState {
     /// Split the focused pane into two (new independent tab bar).
     pub fn split_pane(
@@ -20,9 +32,7 @@ impl AppState {
         let rows = engine.default_rows;
 
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-        let new_pane = crate::model::Pane::new_with_shell(
-            new_pane_id,
-            new_tab_id,
+        let terminal = crate::model::Pane::spawn_terminal(
             new_surface_id,
             crate::model::ShellSpawnOpts {
                 cols: cols,
@@ -33,6 +43,9 @@ impl AppState {
                 working_dir: cwd.as_deref(),
             },
         )?;
+        engine.terminals.insert(new_surface_id, terminal);
+        let new_pane =
+            crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id);
 
         let ws = self.active_workspace_mut(engine);
         let target_pane_id = ws.focused_pane;
@@ -119,9 +132,7 @@ impl AppState {
             let cols = engine.default_cols;
             let rows = engine.default_rows;
             let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-            crate::model::Pane::new_with_shell(
-                new_pane_id,
-                new_tab_id,
+            let terminal = crate::model::Pane::spawn_terminal(
                 new_surface_id,
                 crate::model::ShellSpawnOpts {
                     cols: cols,
@@ -131,7 +142,9 @@ impl AppState {
                     waker: engine.make_waker(new_surface_id),
                     working_dir: cwd.as_deref(),
                 },
-            )?
+            )?;
+            engine.terminals.insert(new_surface_id, terminal);
+            crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id)
         } else {
             let surface = engine.create_surface_via_registry(kind, new_surface_id, params)?;
             let name = default_tab_name_for_kind(kind, params);
@@ -186,12 +199,8 @@ impl AppState {
                 },
                 waker,
             )?;
-            Box::new(crate::model::TerminalSurface {
-                id: new_surface_id,
-                terminal: Some(terminal),
-                deferred_spawn: None,
-                scrollback_persist_id: None,
-            })
+            engine.terminals.insert(new_surface_id, terminal);
+            Box::new(crate::model::TerminalSurface { id: new_surface_id })
         } else {
             engine.create_surface_via_registry(kind, new_surface_id, params)?
         };
@@ -220,14 +229,16 @@ impl AppState {
 
     /// Close the focused pane (unsplit). Returns true if a pane was removed.
     pub fn close_active_pane(&mut self, engine: &mut CoreState) -> bool {
-        let ws = self.active_workspace_mut(engine);
-        let target_id = ws.focused_pane;
+        let target_id = self.active_workspace(engine).focused_pane;
 
         // Collect all (surface_id, persist_id) in the pane being closed for cleanup.
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
-        if let Some(pane) = ws.pane_layout().find_pane(target_id) {
-            for tab in &pane.tabs {
-                Self::collect_close_targets(tab, &mut targets);
+        {
+            let ws = self.active_workspace(engine);
+            if let Some(pane) = ws.pane_layout().find_pane(target_id) {
+                for tab in &pane.tabs {
+                    Self::collect_close_targets(tab, engine, &mut targets);
+                }
             }
         }
 
@@ -258,12 +269,13 @@ impl AppState {
                 None => return false,
             };
             surface_id = tab.focused_surface;
-            persist_id = tab
-                .find_terminal_surface(surface_id)
-                .and_then(|ts| ts.scrollback_persist_id.clone());
         } else {
             return false;
         }
+        persist_id = engine
+            .terminals
+            .scrollback_persist_id(surface_id)
+            .map(str::to_string);
         let split_handled;
         if let Some(pane) = self.focused_pane_mut(engine) {
             let tab = match pane.active_tab_mut() {
@@ -394,23 +406,23 @@ impl AppState {
                 let ws = &engine.workspaces[ws_idx];
                 let pane = ws.pane_layout().find_pane(pane_id).unwrap();
                 let tab = &pane.tabs[tab_idx];
-                if let Some(node) = tab.find_terminal_surface(surface_id) {
-                    let snapshot =
-                        crate::model::closed_item::ClosedSurface::from_surface_node(node);
+                if terminal_surface_in_tab(tab, surface_id).is_some() {
+                    let snapshot = crate::model::closed_item::ClosedSurface::from_surface_id(
+                        surface_id,
+                        engine.terminals.get(surface_id),
+                    );
+                    let tab_name = tab.display_name().to_string();
                     engine.push_closed_item(crate::model::ClosedItem::Surface {
                         surface: snapshot,
-                        tab_name: tab.display_name().to_string(),
+                        tab_name,
                     });
                 }
             }
             // close 이전에 leaf surface 의 persist_id 를 추출해 둔다.
-            let persist_id = {
-                let ws = &engine.workspaces[ws_idx];
-                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
-                let tab = &pane.tabs[tab_idx];
-                tab.find_terminal_surface(surface_id)
-                    .and_then(|ts| ts.scrollback_persist_id.clone())
-            };
+            let persist_id = engine
+                .terminals
+                .scrollback_persist_id(surface_id)
+                .map(str::to_string);
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             let tab = &mut pane.tabs[tab_idx];
@@ -434,9 +446,11 @@ impl AppState {
                         let mut snap_fn = crate::engine::surface_registry::snapshot_fn_for(
                             &engine.surface_registry,
                         );
+                        let terminals = &engine.terminals;
                         crate::model::closed_item::ClosedTab::from_tab(
                             &pane.tabs[tab_idx],
                             &mut snap_fn,
+                            &|id| terminals.get(id),
                         )
                     };
                     if let Some(snapshot) = snapshot_opt {
@@ -450,7 +464,7 @@ impl AppState {
                 let ws = &engine.workspaces[ws_idx];
                 let pane = ws.pane_layout().find_pane(pane_id).unwrap();
                 if pane.tabs.len() > 1 {
-                    Self::collect_close_targets(&pane.tabs[tab_idx], &mut targets);
+                    Self::collect_close_targets(&pane.tabs[tab_idx], engine, &mut targets);
                 }
             }
             let ws = &mut engine.workspaces[ws_idx];
@@ -478,7 +492,7 @@ impl AppState {
                 if ws.pane_layout().all_pane_ids().len() > 1 {
                     if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                         for tab in &pane.tabs {
-                            Self::collect_close_targets(tab, &mut targets);
+                            Self::collect_close_targets(tab, engine, &mut targets);
                         }
                     }
                 }
@@ -504,7 +518,8 @@ impl AppState {
                 let mut snap_fn =
                     crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
                 let ws = &engine.workspaces[ws_idx];
-                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn)
+                let terminals = &engine.terminals;
+                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
             };
             engine.push_closed_item(item);
         }
@@ -515,7 +530,7 @@ impl AppState {
             for pid in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        Self::collect_close_targets(tab, &mut targets);
+                        Self::collect_close_targets(tab, engine, &mut targets);
                     }
                 }
             }
@@ -564,9 +579,7 @@ impl AppState {
         let rows = engine.default_rows;
 
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
-        let new_pane = crate::model::Pane::new_with_shell(
-            new_pane_id,
-            new_tab_id,
+        let terminal = crate::model::Pane::spawn_terminal(
             new_surface_id,
             crate::model::ShellSpawnOpts {
                 cols: cols,
@@ -577,6 +590,9 @@ impl AppState {
                 working_dir: None,
             },
         )?;
+        engine.terminals.insert(new_surface_id, terminal);
+        let new_pane =
+            crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id);
 
         let ws = self.active_workspace_mut(engine);
         let target_pane_id = ws.focused_pane;
@@ -605,7 +621,7 @@ impl AppState {
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         if let Some(pane) = engine.workspaces[ws_idx].pane_layout().find_pane(pane_id) {
             for tab in &pane.tabs {
-                Self::collect_close_targets(tab, &mut targets);
+                Self::collect_close_targets(tab, engine, &mut targets);
             }
         }
 

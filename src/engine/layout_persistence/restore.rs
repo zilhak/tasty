@@ -366,13 +366,12 @@ impl SavedSurface {
                         }
                     }
                 }
+                engine.terminals.insert(surface_id, terminal);
+                if let Some(pid) = scrollback_ref {
+                    engine.terminals.set_scrollback_persist_id(surface_id, pid);
+                }
                 engine.send_fast_init(surface_id);
-                Some(Box::new(TerminalSurface {
-                    id: surface_id,
-                    terminal: Some(terminal),
-                    deferred_spawn: None,
-                    scrollback_persist_id: scrollback_ref,
-                }))
+                Some(Box::new(TerminalSurface { id: surface_id }))
             }
             SavedSurface::Generic { kind, data } => {
                 let registry = engine.surface_registry.clone();

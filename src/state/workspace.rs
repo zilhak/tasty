@@ -35,7 +35,7 @@ impl AppState {
     /// spawn. 같은 pane의 비활성 tab은 deferred로 남았다가 tab 전환 시 깨어난다.
     /// active_tab이 split layout이면 그 안의 모든 deferred placeholder를 한번에 spawn한다.
     fn ensure_active_workspace_initialized(&mut self, engine: &mut CoreState) {
-        let mut spawned_ids = Vec::new();
+        let mut spawned: Vec<(u32, tasty_terminal::Terminal, Option<String>)> = Vec::new();
         {
             let ws = &mut engine.workspaces[self.active_workspace];
             let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
@@ -43,13 +43,17 @@ impl AppState {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
                     let active_idx = pane.active_tab;
                     if let Some(tab) = pane.tabs.get_mut(active_idx) {
-                        let mut ids = tab.ensure_all_initialized();
-                        spawned_ids.append(&mut ids);
+                        let mut entries = tab.ensure_all_initialized();
+                        spawned.append(&mut entries);
                     }
                 }
             }
         }
-        for surface_id in spawned_ids {
+        for (surface_id, terminal, persist_id) in spawned {
+            engine.terminals.insert(surface_id, terminal);
+            if let Some(pid) = persist_id {
+                engine.terminals.set_scrollback_persist_id(surface_id, pid);
+            }
             engine.send_fast_init(surface_id);
             engine.apply_pending_scrollback_inject(surface_id);
         }
@@ -66,7 +70,12 @@ impl AppState {
         let snapshot = {
             let mut snap_fn =
                 crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
-            crate::model::ClosedItem::from_workspace(&engine.workspaces[ws_idx], &mut snap_fn)
+            let terminals = &engine.terminals;
+            crate::model::ClosedItem::from_workspace(
+                &engine.workspaces[ws_idx],
+                &mut snap_fn,
+                &|id| terminals.get(id),
+            )
         };
         engine.push_closed_item(snapshot);
         // Collect all (surface_id, persist_id) for cleanup before removing the workspace.
@@ -76,7 +85,7 @@ impl AppState {
             for pid in ws.pane_layout().all_pane_ids() {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        super::AppState::collect_close_targets(tab, &mut targets);
+                        super::AppState::collect_close_targets(tab, engine, &mut targets);
                     }
                 }
             }

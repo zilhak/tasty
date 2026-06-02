@@ -57,15 +57,14 @@ impl Tab {
     }
 
     /// Recompute and cache the display name from the focused terminal's CWD.
-    /// Call this when CWD changes (CwdChanged event) or when the tab is first created.
-    pub fn refresh_display_name(&mut self) {
+    /// Caller (CoreState::refresh_tab_display_name) lookups Terminal via
+    /// `engine.terminals.get(focused_surface).and_then(|t| t.get_cwd())` first
+    /// and passes the cwd in. Tab itself doesn't see the TerminalStore.
+    pub fn refresh_display_name(&mut self, cwd: Option<&std::path::Path>) {
         if self.explicit_name.is_some() {
             return;
         }
-        let terminal = self.focused_terminal();
-        if let Some(terminal) = terminal
-            && let Some(cwd) = terminal.get_cwd()
-        {
+        if let Some(cwd) = cwd {
             if let Some(home) = dirs_home()
                 && cwd == home
             {
@@ -200,60 +199,15 @@ impl Tab {
         }
     }
 
-    /// Get the focused terminal.
-    pub fn focused_terminal(&self) -> Option<&Terminal> {
-        let layout = self.layout_opt.as_ref()?;
-        layout
-            .find_terminal(self.focused_surface)
-            .or_else(|| layout.first_terminal())
-    }
-
-    /// Get the focused terminal mutably.
-    pub fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
-        let id = self.focused_surface;
-        let layout = self.layout_opt.as_mut()?;
-        layout.find_terminal(id)?;
-        layout.find_terminal_mut(id)
-    }
-
-    /// Find a terminal by surface ID.
-    pub fn find_terminal(&self, surface_id: SurfaceId) -> Option<&Terminal> {
-        self.layout_opt.as_ref()?.find_terminal(surface_id)
-    }
-
-    /// Find a terminal by surface ID (mutable).
-    pub fn find_terminal_mut(&mut self, surface_id: SurfaceId) -> Option<&mut Terminal> {
-        self.layout_opt.as_mut()?.find_terminal_mut(surface_id)
-    }
-
-    /// Find a TerminalSurface by surface ID.
-    pub fn find_terminal_surface(&self, surface_id: SurfaceId) -> Option<&TerminalSurface> {
-        self.layout_opt.as_ref()?.find_surface_node(surface_id)
-    }
-
     /// Get the focused surface ID.
     pub fn focused_surface_id(&self) -> Option<SurfaceId> {
         Some(self.focused_surface)
-    }
-
-    /// Visit all terminals with their surface IDs.
-    pub fn for_each_terminal_mut(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
-        if let Some(layout) = self.layout_opt.as_mut() {
-            layout.for_each_terminal_mut_dyn(f);
-        }
     }
 
     /// Visit every leaf Surface (read-only). 닫기 경로의 persist_id 수집용.
     pub fn for_each_surface(&self, f: &mut dyn FnMut(&dyn crate::model::Surface)) {
         if let Some(layout) = self.layout_opt.as_ref() {
             layout.for_each_surface(f);
-        }
-    }
-
-    /// Collect all terminals (mutable).
-    pub fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
-        if let Some(layout) = self.layout_opt.as_mut() {
-            layout.collect_terminals_mut(out);
         }
     }
 
@@ -320,46 +274,35 @@ impl Tab {
     // ── Initialization ──
 
     /// 특정 surface_id에 해당하는 deferred placeholder를 찾아 PTY를 spawn하고
-    /// `TerminalSurface`로 교체. spawn된 경우 true.
-    pub fn ensure_initialized(&mut self, surface_id: SurfaceId) -> bool {
-        let Some(layout) = self.layout_opt.as_mut() else {
-            return false;
-        };
-        let Some(leaf) = layout.find_leaf_mut(surface_id) else {
-            return false;
-        };
-        let Some(empty) = leaf.as_any_mut().downcast_mut::<super::EmptySurface>() else {
-            return false;
-        };
-        let Some(spawn) = empty.take_deferred_spawn() else {
-            return false;
-        };
-        // DeferredSpawn 의 scrollback_persist_id 를 spawn 직후 새 TerminalSurface
-        // 로 옮긴다 (spawn 함수가 spawn 을 consume 하므로 미리 빼둔다).
+    /// `TerminalSurface` marker로 교체. spawn된 경우 `Some((terminal, persist_id))`
+    /// 를 반환 — caller가 `engine.terminals.insert` + `set_scrollback_persist_id`
+    /// 로 store 에 넣는다. None 이면 spawn 실패 또는 deferred 아님.
+    pub fn ensure_initialized(
+        &mut self,
+        surface_id: SurfaceId,
+    ) -> Option<(Terminal, Option<String>)> {
+        let layout = self.layout_opt.as_mut()?;
+        let leaf = layout.find_leaf_mut(surface_id)?;
+        let empty = leaf.as_any_mut().downcast_mut::<super::EmptySurface>()?;
+        let spawn = empty.take_deferred_spawn()?;
+        // DeferredSpawn 의 scrollback_persist_id 를 spawn 직후 store 로 옮길 수
+        // 있도록 미리 빼둔다 (spawn 함수가 spawn 을 consume).
         let persist_id = spawn.scrollback_persist_id.clone();
-        match spawn_terminal_from_deferred(surface_id, spawn) {
-            Some(terminal) => {
-                let ts: Box<dyn Surface> = Box::new(TerminalSurface {
-                    id: surface_id,
-                    terminal: Some(terminal),
-                    deferred_spawn: None,
-                    scrollback_persist_id: persist_id,
-                });
-                *leaf = ts;
-                true
-            }
-            None => false,
-        }
+        let terminal = spawn_terminal_from_deferred(surface_id, spawn)?;
+        let ts: Box<dyn Surface> = Box::new(TerminalSurface { id: surface_id });
+        *leaf = ts;
+        Some((terminal, persist_id))
     }
 
     /// 이 탭의 layout 안에 deferred placeholder로 남아있는 모든 surface ID를 spawn.
-    /// 반환값은 새로 spawn된 surface_id 목록.
-    pub fn ensure_all_initialized(&mut self) -> Vec<SurfaceId> {
+    /// 반환값은 `(surface_id, Terminal, persist_id)` 의 목록 — caller 가 store 에
+    /// insert 한다.
+    pub fn ensure_all_initialized(&mut self) -> Vec<(SurfaceId, Terminal, Option<String>)> {
         let ids = self.deferred_surface_ids();
         let mut spawned = Vec::with_capacity(ids.len());
         for sid in ids {
-            if self.ensure_initialized(sid) {
-                spawned.push(sid);
+            if let Some((t, pid)) = self.ensure_initialized(sid) {
+                spawned.push((sid, t, pid));
             }
         }
         spawned
@@ -402,20 +345,11 @@ impl Tab {
 
     // ── Split operations ──
 
-    /// Split the focused surface within this tab.
-    /// Moves focus to the new surface.
-    pub fn split_focused_surface(
-        &mut self,
-        direction: SplitDirection,
-        new_surface_id: SurfaceId,
-        new_terminal: Terminal,
-    ) {
-        let new_node = TerminalSurface {
-            id: new_surface_id,
-            terminal: Some(new_terminal),
-            deferred_spawn: None,
-            scrollback_persist_id: None,
-        };
+    /// Split the focused surface within this tab with a TerminalSurface marker.
+    /// Moves focus to the new surface. Caller must have already inserted the
+    /// spawned Terminal into `CoreState::terminals`.
+    pub fn split_focused_surface(&mut self, direction: SplitDirection, new_surface_id: SurfaceId) {
+        let new_node = TerminalSurface { id: new_surface_id };
         let target = self.focused_surface;
         let old_layout = self.take_layout();
         let (new_layout, _) = old_layout.split_with_node(target, direction, new_node);
@@ -423,20 +357,16 @@ impl Tab {
         self.focused_surface = new_surface_id;
     }
 
-    /// Split a specific surface by ID. Does NOT change focused_surface.
+    /// Split a specific surface by ID with a TerminalSurface marker. Does NOT
+    /// change focused_surface. Caller must have already inserted the spawned
+    /// Terminal into `CoreState::terminals`.
     pub fn split_surface_by_id(
         &mut self,
         target_surface_id: SurfaceId,
         direction: SplitDirection,
         new_surface_id: SurfaceId,
-        new_terminal: Terminal,
     ) -> bool {
-        let new_node = TerminalSurface {
-            id: new_surface_id,
-            terminal: Some(new_terminal),
-            deferred_spawn: None,
-            scrollback_persist_id: None,
-        };
+        let new_node = TerminalSurface { id: new_surface_id };
         let old_layout = self.take_layout();
         let (new_layout, remaining) =
             old_layout.split_with_node(target_surface_id, direction, new_node);

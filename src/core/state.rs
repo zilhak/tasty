@@ -319,21 +319,25 @@ impl CoreState {
             let tab_id = engine.next_ids.next_tab();
             let surface_id = engine.next_ids.next_surface();
             let sh = ShellConfig::from_settings(&engine.settings);
-            let ws = Workspace::new_with_shell(
+            let terminal = crate::model::Pane::spawn_terminal(
+                surface_id,
+                crate::model::ShellSpawnOpts {
+                    cols,
+                    rows,
+                    shell: sh.shell_ref(),
+                    shell_args: &sh.args_ref(),
+                    waker,
+                    working_dir: None,
+                },
+            )?;
+            engine.terminals.insert(surface_id, terminal);
+            let ws = Workspace::new_with_terminal_marker(
                 ws_id,
                 "Workspace 1".to_string(),
                 pane_id,
                 tab_id,
                 surface_id,
-                crate::model::ShellSpawnOpts {
-                    cols: cols,
-                    rows: rows,
-                    shell: sh.shell_ref(),
-                    shell_args: &sh.args_ref(),
-                    waker: waker,
-                    working_dir: None,
-                },
-            )?;
+            );
             engine.workspaces = vec![ws];
             engine.send_fast_init(surface_id);
         }
@@ -431,13 +435,16 @@ impl CoreState {
 impl CoreState {
     /// Refresh the cached display name of the tab containing a given surface ID.
     pub fn refresh_tab_display_name(&mut self, surface_id: u32) {
-        for workspace in &mut self.workspaces {
+        let workspaces = &mut self.workspaces;
+        let terminals = &self.terminals;
+        for workspace in workspaces {
             let pane_ids = workspace.pane_layout().all_pane_ids();
             for pid in pane_ids {
                 if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
                     for tab in &mut pane.tabs {
                         if tab.contains_surface(surface_id) {
-                            tab.refresh_display_name();
+                            let cwd = terminals.get(tab.focused_surface).and_then(|t| t.get_cwd());
+                            tab.refresh_display_name(cwd.as_deref());
                             return;
                         }
                     }

@@ -52,23 +52,23 @@ fn collect_tab_surface_info(
     } else {
         // Single surface tab
         let surface = tab.surface();
-        if let Some(node) = surface.as_terminal_surface() {
+        if let Some(node) = surface
+            .as_any()
+            .downcast_ref::<crate::model::TerminalSurface>()
+        {
+            let t = engine.terminals.get(node.id);
             let mut entry = json!({
                 "id": node.id,
                 "pane_id": pane_id,
                 "workspace_id": workspace_id,
                 "tab_index": tab_idx,
                 "type": "Terminal",
-                "cols": node.terminal.as_ref().map(|t| t.cols()).unwrap_or(0),
-                "rows": node.terminal.as_ref().map(|t| t.rows()).unwrap_or(0),
+                "cols": t.map(|x| x.cols()).unwrap_or(0),
+                "rows": t.map(|x| x.rows()).unwrap_or(0),
                 "busy": engine.is_surface_busy(node.id),
-                "pty_ready": node.terminal.is_some(),
+                "pty_ready": engine.terminals.contains(node.id),
             });
-            if let Some(fg) = node
-                .terminal
-                .as_ref()
-                .and_then(|t| t.foreground_process_info())
-            {
+            if let Some(fg) = t.and_then(|x| x.foreground_process_info()) {
                 entry["foreground_process"] = json!(fg.name);
                 entry["foreground_pid"] = json!(fg.pid);
             }
@@ -116,7 +116,7 @@ fn collect_surface_layout_info(
                 "type": surface.type_name(),
                 "busy": engine.is_surface_busy(id),
             });
-            if let Some(terminal) = surface.focused_terminal() {
+            if let Some(terminal) = engine.terminals.get(id) {
                 entry["cols"] = json!(terminal.cols());
                 entry["rows"] = json!(terminal.rows());
                 entry["pty_ready"] = json!(true);

@@ -422,7 +422,7 @@ pub fn capture_inner(
             } else {
                 ws.name.clone()
             };
-            let preset = capture_workspace_preset(ws, None, &mut capture)
+            let preset = capture_workspace_preset(engine, ws, None, &mut capture)
                 .ok_or_else(|| "workspace capture failed".to_string())?;
             Ok((ClonedPreset::Workspace(preset), base))
         }
@@ -443,7 +443,7 @@ pub fn capture_inner(
                             } else {
                                 base
                             };
-                            let preset = capture_tab_preset(tab, None, &mut capture)
+                            let preset = capture_tab_preset(engine, tab, None, &mut capture)
                                 .ok_or_else(|| "tab capture failed".to_string())?;
                             return Ok((ClonedPreset::Tab(preset), base));
                         }
@@ -455,7 +455,7 @@ pub fn capture_inner(
         PresetKind::Pane => {
             for ws in &engine.workspaces {
                 if let Some(pane) = ws.pane_layout().find_pane(source_id) {
-                    let preset = capture_pane_preset(pane, None, &mut capture)
+                    let preset = capture_pane_preset(engine, pane, None, &mut capture)
                         .ok_or_else(|| "pane capture failed".to_string())?;
                     return Ok((ClonedPreset::Pane(preset), "pane".to_string()));
                 }

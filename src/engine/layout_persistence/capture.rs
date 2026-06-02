@@ -34,30 +34,38 @@ struct CaptureCtx<'a> {
     capture_scrollback: bool,
     memory: Option<&'a MemArc>,
     seen_refs: &'a mut SeenRefs,
+    terminals: &'a mut crate::core::terminal_store::TerminalStore,
 }
 
 impl SavedLayout {
     /// Capture current layout from engine state.
     ///
     /// `&mut CoreState` 인 이유: `capture_scrollback_to_disk` 가 새 persist_id 를
-    /// 발급한 경우 surface 인스턴스의 `scrollback_persist_id` 필드에 기록해야
-    /// 다음 capture 가 같은 ID 를 재사용한다 (orphan 누적 방지).
+    /// 발급한 경우 `TerminalStore` 의 mapping 을 갱신해야 다음 capture 가 같은
+    /// ID 를 재사용한다 (orphan 누적 방지).
     pub fn capture(engine: &mut CoreState, active_workspace: usize) -> Self {
         let registry = engine.surface_registry.clone();
         let capture_scrollback = engine.settings.general.restore_terminal_content;
         let memory = engine.memory.clone();
         let mut seen_refs = SeenRefs::new();
-        let mut ctx = CaptureCtx {
-            registry: registry.as_ref(),
-            capture_scrollback,
-            memory: memory.as_ref(),
-            seen_refs: &mut seen_refs,
+        let workspaces: Vec<SavedWorkspace> = {
+            let CoreState {
+                workspaces,
+                terminals,
+                ..
+            } = engine;
+            let mut ctx = CaptureCtx {
+                registry: registry.as_ref(),
+                capture_scrollback,
+                memory: memory.as_ref(),
+                seen_refs: &mut seen_refs,
+                terminals,
+            };
+            workspaces
+                .iter_mut()
+                .map(|ws| SavedWorkspace::capture(ws, &mut ctx))
+                .collect()
         };
-        let workspaces: Vec<SavedWorkspace> = engine
-            .workspaces
-            .iter_mut()
-            .map(|ws| SavedWorkspace::capture(ws, &mut ctx))
-            .collect();
         Self {
             version: LAYOUT_VERSION,
             workspaces,
@@ -162,20 +170,21 @@ impl SavedSurface {
         let registry = ctx.registry;
         let capture_scrollback = ctx.capture_scrollback;
         let memory = ctx.memory;
-        let seen_refs = &mut *ctx.seen_refs;
-        if let Some(ts) = surface.as_terminal_surface_mut() {
+        if let Some(ts) = surface
+            .as_any()
+            .downcast_ref::<crate::model::TerminalSurface>()
+        {
+            let surface_id = ts.id;
             let restore_command = memory.and_then(|m| {
-                crate::surface_meta::SurfaceMetaStore::get(m, ts.id, "restore.command")
+                crate::surface_meta::SurfaceMetaStore::get(m, surface_id, "restore.command")
             });
-
-            // D.3.E.4 — terminal: Option. None 이면 cwd 없음.
-            let cwd = ts
-                .terminal
-                .as_ref()
+            let cwd = ctx
+                .terminals
+                .get(surface_id)
                 .and_then(|t| t.get_cwd())
                 .map(|p| p.to_string_lossy().to_string());
             let scrollback_ref = if capture_scrollback {
-                capture_scrollback_to_disk(ts, seen_refs)
+                capture_scrollback_to_disk(surface_id, ctx.terminals, ctx.seen_refs)
             } else {
                 None
             };
@@ -187,7 +196,7 @@ impl SavedSurface {
             };
         }
         // 비활성 탭의 deferred EmptySurface 는 외부로는 Terminal 역할이지만
-        // PTY 가 아직 안 떠 있어 `as_terminal_surface()` 가 None 이다.
+        // PTY 가 아직 안 떠 있어 TerminalSurface downcast 가 None 이다.
         // `DeferredSpawn` 자체가 들고 있는 cwd / restore_command / persist_id
         // 를 그대로 옮겨 round-trip 한다.
         if let Some(es) = surface
@@ -219,8 +228,8 @@ impl SavedSurface {
                     .as_ref()
                     .and_then(|s| s.scrollback_persist_id.clone());
                 match stored {
-                    Some(existing) if !seen_refs.contains(&existing) => {
-                        seen_refs.insert(existing.clone());
+                    Some(existing) if !ctx.seen_refs.contains(&existing) => {
+                        ctx.seen_refs.insert(existing.clone());
                         Some(existing)
                     }
                     Some(stale) => {
@@ -242,7 +251,7 @@ impl SavedSurface {
                         if let Some(spawn) = es.deferred_spawn.as_mut() {
                             spawn.scrollback_persist_id = Some(new_id.clone());
                         }
-                        seen_refs.insert(new_id.clone());
+                        ctx.seen_refs.insert(new_id.clone());
                         Some(new_id)
                     }
                     None => None,

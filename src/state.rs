@@ -657,11 +657,18 @@ impl AppState {
     /// 전달한다. TerminalSurface 와 deferred EmptySurface 두 케이스를 모두 처리한다.
     pub(crate) fn collect_close_targets(
         tab: &crate::model::Tab,
+        engine: &CoreState,
         out: &mut Vec<(u32, Option<String>)>,
     ) {
         tab.for_each_surface(&mut |s| {
-            if let Some(ts) = s.as_terminal_surface() {
-                out.push((ts.id, ts.scrollback_persist_id.clone()));
+            if let Some(ts) = s.as_any().downcast_ref::<crate::model::TerminalSurface>() {
+                out.push((
+                    ts.id,
+                    engine
+                        .terminals
+                        .scrollback_persist_id(ts.id)
+                        .map(str::to_string),
+                ));
             } else if let Some(es) = s.as_any().downcast_ref::<crate::model::EmptySurface>() {
                 let pid = es
                     .deferred_spawn
@@ -819,7 +826,7 @@ impl AppState {
             return None;
         }
         let sid = self.focused_surface_id(engine)?;
-        engine.find_surface_by_id(sid).and_then(|s| s.source_cwd())
+        cwd_from_surface(engine, sid)
     }
 
     /// Get the working directory to inherit from a specific surface, if enabled.
@@ -831,8 +838,17 @@ impl AppState {
         if !engine.settings.general.inherit_cwd {
             return None;
         }
-        engine
-            .find_surface_by_id(surface_id)
-            .and_then(|s| s.source_cwd())
+        cwd_from_surface(engine, surface_id)
+    }
+}
+
+/// surface_id 의 source_cwd 를 결정. Terminal kind 는 store 의 Terminal.get_cwd(),
+/// 그 외 kind 는 Surface trait 의 default source_cwd() (markdown 은 파일 부모 등).
+fn cwd_from_surface(engine: &CoreState, surface_id: u32) -> Option<std::path::PathBuf> {
+    let surface = engine.find_surface_by_id(surface_id)?;
+    if surface.kind() == "terminal" {
+        engine.terminals.get(surface_id).and_then(|t| t.get_cwd())
+    } else {
+        surface.source_cwd()
     }
 }

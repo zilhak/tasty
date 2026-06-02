@@ -37,6 +37,18 @@ use crate::ports::home::HomeDirectory;
 use crate::ports::process::ProcessSpawner;
 use crate::ports::pty::{PtyService, TerminalWaker};
 
+/// Helper: tab 내 surface_id 에 해당하는 TerminalSurface 를 찾는다 (downcast).
+fn terminal_surface_in_tab(
+    tab: &crate::model::Tab,
+    surface_id: u32,
+) -> Option<&crate::model::TerminalSurface> {
+    tab.layout_opt
+        .as_ref()?
+        .find_surface(surface_id)?
+        .as_any()
+        .downcast_ref::<crate::model::TerminalSurface>()
+}
+
 /// 도메인 본체. 11 outbound port (7 external + 4 internal) + preset_store 직속.
 ///
 /// 도메인 데이터 (`crate::core::CoreState`) 는 본 struct 가 아닌
@@ -859,9 +871,7 @@ impl Core {
 
         // Phase 2: 새 pane 구성
         let new_pane = if is_terminal {
-            crate::model::Pane::new_with_shell(
-                new_pane_id,
-                new_tab_id,
+            let terminal = crate::model::Pane::spawn_terminal(
                 new_surface_id,
                 crate::model::ShellSpawnOpts {
                     cols,
@@ -871,7 +881,9 @@ impl Core {
                     waker,
                     working_dir: cwd.as_deref(),
                 },
-            )?
+            )?;
+            engine.terminals.insert(new_surface_id, terminal);
+            crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id)
         } else {
             let surface =
                 engine.create_surface_via_registry(&kind, new_surface_id, &surface_params)?;
@@ -909,7 +921,8 @@ impl Core {
         let new_surface_id = engine.next_ids.next_surface();
         let is_terminal = kind == "terminal";
 
-        // Phase 1: 새 surface 생성. terminal 은 직접 Box::new, 그 외는 registry.
+        // Phase 1: 새 surface 생성. terminal 은 store 에 직접 insert 후 marker leaf 만,
+        // 그 외는 registry.
         let new_surface: Box<dyn crate::model::Surface> = if is_terminal {
             let cols = engine.default_cols;
             let rows = engine.default_rows;
@@ -927,12 +940,8 @@ impl Core {
                 },
                 waker,
             )?;
-            Box::new(crate::model::TerminalSurface {
-                id: new_surface_id,
-                terminal: Some(terminal),
-                deferred_spawn: None,
-                scrollback_persist_id: None,
-            })
+            engine.terminals.insert(new_surface_id, terminal);
+            Box::new(crate::model::TerminalSurface { id: new_surface_id })
         } else {
             engine.create_surface_via_registry(&kind, new_surface_id, &surface_params)?
         };
@@ -980,7 +989,7 @@ impl Core {
         let mut targets: Vec<(u32, Option<String>)> = Vec::new();
         if let Some(pane) = engine.workspaces[ws_idx].pane_layout().find_pane(pane_id) {
             for tab in &pane.tabs {
-                crate::state::AppState::collect_close_targets(tab, &mut targets);
+                crate::state::AppState::collect_close_targets(tab, engine, &mut targets);
             }
         }
 
@@ -1043,12 +1052,8 @@ impl Core {
                             };
                         }
                     };
-                    let node = crate::model::TerminalSurface {
-                        id: surface_id,
-                        terminal: Some(terminal),
-                        deferred_spawn: None,
-                        scrollback_persist_id: None,
-                    };
+                    engine.terminals.insert(surface_id, terminal);
+                    let node = crate::model::TerminalSurface { id: surface_id };
                     // Terminal 변환은 explicit_name 클리어 (auto-derived from CWD).
                     (Box::new(node), Some(None))
                 }
@@ -1215,25 +1220,31 @@ impl Core {
         // Case 1: split tab 안 surface 다중 close
         if !surface_is_sole_in_tab && can_close_surface_in_group {
             if save_snapshot {
-                let ws = &engine.workspaces[ws_idx];
-                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
-                let tab = &pane.tabs[tab_idx];
-                if let Some(node) = tab.find_terminal_surface(surface_id) {
-                    let snapshot =
-                        crate::model::closed_item::ClosedSurface::from_surface_node(node);
+                let tab_name_opt = {
+                    let ws = &engine.workspaces[ws_idx];
+                    let pane = ws.pane_layout().find_pane(pane_id).unwrap();
+                    let tab = &pane.tabs[tab_idx];
+                    if terminal_surface_in_tab(tab, surface_id).is_some() {
+                        Some(tab.display_name().to_string())
+                    } else {
+                        None
+                    }
+                };
+                if let Some(tab_name) = tab_name_opt {
+                    let snapshot = crate::model::closed_item::ClosedSurface::from_surface_id(
+                        surface_id,
+                        engine.terminals.get(surface_id),
+                    );
                     engine.push_closed_item(crate::model::ClosedItem::Surface {
                         surface: snapshot,
-                        tab_name: tab.display_name().to_string(),
+                        tab_name,
                     });
                 }
             }
-            let persist_id = {
-                let ws = &engine.workspaces[ws_idx];
-                let pane = ws.pane_layout().find_pane(pane_id).unwrap();
-                let tab = &pane.tabs[tab_idx];
-                tab.find_terminal_surface(surface_id)
-                    .and_then(|ts| ts.scrollback_persist_id.clone())
-            };
+            let persist_id = engine
+                .terminals
+                .scrollback_persist_id(surface_id)
+                .map(str::to_string);
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             let tab = &mut pane.tabs[tab_idx];
@@ -1263,9 +1274,11 @@ impl Core {
                         let mut snap_fn = crate::engine::surface_registry::snapshot_fn_for(
                             &engine.surface_registry,
                         );
+                        let terminals = &engine.terminals;
                         crate::model::closed_item::ClosedTab::from_tab(
                             &pane.tabs[tab_idx],
                             &mut snap_fn,
+                            &|id| terminals.get(id),
                         )
                     };
                     if let Some(snapshot) = snapshot_opt {
@@ -1280,6 +1293,7 @@ impl Core {
                 if pane.tabs.len() > 1 {
                     crate::state::AppState::collect_close_targets(
                         &pane.tabs[tab_idx],
+                        engine,
                         &mut targets,
                     );
                 }
@@ -1315,7 +1329,11 @@ impl Core {
                 if ws.pane_layout().all_pane_ids().len() > 1 {
                     if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                         for tab in &pane.tabs {
-                            crate::state::AppState::collect_close_targets(tab, &mut targets);
+                            crate::state::AppState::collect_close_targets(
+                                tab,
+                                engine,
+                                &mut targets,
+                            );
                             closed_tab_ids.push(tab.id);
                         }
                     }
@@ -1347,7 +1365,8 @@ impl Core {
                 let mut snap_fn =
                     crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
                 let ws = &engine.workspaces[ws_idx];
-                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn)
+                let terminals = &engine.terminals;
+                crate::model::ClosedItem::from_workspace(ws, &mut snap_fn, &|id| terminals.get(id))
             };
             engine.push_closed_item(item);
         }
@@ -1360,7 +1379,7 @@ impl Core {
                 closed_pane_ids.push(pid);
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
-                        crate::state::AppState::collect_close_targets(tab, &mut targets);
+                        crate::state::AppState::collect_close_targets(tab, engine, &mut targets);
                         closed_tab_ids.push(tab.id);
                     }
                 }
@@ -1411,7 +1430,7 @@ impl Core {
             for &pid in &workspace.pane_layout().all_pane_ids() {
                 if let Some(pane) = workspace.pane_layout().find_pane(pid) {
                     if let Some(tab) = pane.tabs.iter().find(|t| t.id == tab_id) {
-                        crate::state::AppState::collect_close_targets(tab, &mut targets);
+                        crate::state::AppState::collect_close_targets(tab, engine, &mut targets);
                         found_pane_id = Some(pid);
                         break;
                     }
@@ -1478,23 +1497,42 @@ impl Core {
             None
         };
 
+        // Terminal spawn 은 *pane 가변 borrow 시작 전* 에 끝낸다 — store 에 insert
+        // 한 뒤 marker 만 pane 에 부착.
+        let prepared_terminal = if is_terminal && !lazy_init {
+            let spawn = crate::model::ShellSpawnOpts {
+                cols,
+                rows,
+                shell: sh.shell_ref(),
+                shell_args: &sh.args_ref(),
+                waker: waker.clone(),
+                working_dir: cwd.as_deref(),
+            };
+            let terminal = crate::model::Pane::spawn_terminal(surface_id, spawn)?;
+            engine.terminals.insert(surface_id, terminal);
+            true
+        } else {
+            false
+        };
+
         {
             let pane = engine
                 .find_pane_by_id_mut(pane_id)
                 .ok_or_else(|| anyhow::anyhow!("pane {pane_id} not found"))?;
             if is_terminal {
-                let spawn = crate::model::ShellSpawnOpts {
-                    cols,
-                    rows,
-                    shell: sh.shell_ref(),
-                    shell_args: &sh.args_ref(),
-                    waker,
-                    working_dir: cwd.as_deref(),
-                };
                 if lazy_init {
+                    let spawn = crate::model::ShellSpawnOpts {
+                        cols,
+                        rows,
+                        shell: sh.shell_ref(),
+                        shell_args: &sh.args_ref(),
+                        waker,
+                        working_dir: cwd.as_deref(),
+                    };
                     pane.add_tab_deferred(tab_id, surface_id, spawn);
                 } else {
-                    pane.add_tab_background_with_shell(tab_id, surface_id, spawn)?;
+                    debug_assert!(prepared_terminal);
+                    pane.add_terminal_marker_tab_background(tab_id, surface_id);
                 }
             } else {
                 let (surface, name) = prepared_non_terminal.unwrap();
@@ -1676,11 +1714,7 @@ pub(crate) fn apply_create_workspace_inner(
         };
         let shell_args_owned = engine.settings.general.effective_shell_args();
         let shell_args: Vec<&str> = shell_args_owned.iter().map(|s| s.as_str()).collect();
-        crate::model::Workspace::new_with_shell(
-            ws_id,
-            auto_name,
-            pane_id,
-            tab_id,
+        let terminal = crate::model::Pane::spawn_terminal(
             surface_id,
             crate::model::ShellSpawnOpts {
                 cols: engine.default_cols,
@@ -1690,7 +1724,11 @@ pub(crate) fn apply_create_workspace_inner(
                 waker: engine.make_waker(surface_id),
                 working_dir: cwd.as_deref(),
             },
-        )?
+        )?;
+        engine.terminals.insert(surface_id, terminal);
+        crate::model::Workspace::new_with_terminal_marker(
+            ws_id, auto_name, pane_id, tab_id, surface_id,
+        )
     } else {
         let surface = engine.create_surface_via_registry(&kind, surface_id, &surface_params)?;
         let tab_name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);

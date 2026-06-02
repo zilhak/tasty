@@ -4,7 +4,7 @@ use super::terminal_surface::TerminalSurface;
 use super::{
     DividerInfo, PhysicalPx, PhysicalRect, SURFACE_BORDER_WIDTH, SplitDirection, SurfaceId,
 };
-use tasty_terminal::Terminal;
+use std::any::Any;
 
 /// A surface and its screen region, returned by `surface_regions()`.
 pub struct SurfaceRegion<'a> {
@@ -39,31 +39,6 @@ impl SurfaceLayout {
         surface
             .surface_id()
             .expect("BUG: Leaf surface must have an ID")
-    }
-
-    /// **D.3.E.4.e** — 트리 안 모든 TerminalSurface 에서 terminal 을 take 해서
-    /// store 에 옮긴다. Pane/Tab 생성 직후 *caller (engine 보유) 가 한 번 호출* —
-    /// 이후 surface 트리의 TerminalSurface 는 *marker (id only)* 가 된다.
-    pub fn drain_terminals_into_store(
-        &mut self,
-        store: &mut crate::core::terminal_store::TerminalStore,
-    ) {
-        match self {
-            SurfaceLayout::Leaf(surface) => {
-                if let Some(ts) = surface.as_terminal_surface_mut() {
-                    if let Some(t) = ts.terminal.take() {
-                        store.insert(ts.id, t);
-                    }
-                    if let Some(persist_id) = ts.scrollback_persist_id.take() {
-                        store.set_scrollback_persist_id(ts.id, persist_id);
-                    }
-                }
-            }
-            SurfaceLayout::Split { first, second, .. } => {
-                first.drain_terminals_into_store(store);
-                second.drain_terminals_into_store(store);
-            }
-        }
     }
 
     /// Split a specific surface by taking ownership (infallible structural mutation).
@@ -132,7 +107,13 @@ impl SurfaceLayout {
         new_node: TerminalSurface,
     ) -> (Self, Option<TerminalSurface>) {
         let (result, remaining) = self.split_with_surface(target_id, direction, Box::new(new_node));
-        let remaining_node = remaining.and_then(|s| s.take_terminal_surface());
+        // `Box<dyn Surface>` 를 다시 TerminalSurface 로 복원 — Any downcast 사용.
+        let remaining_node = remaining.and_then(|s| {
+            (s as Box<dyn Any>)
+                .downcast::<TerminalSurface>()
+                .ok()
+                .map(|b| *b)
+        });
         (result, remaining_node)
     }
 
@@ -215,35 +196,10 @@ impl SurfaceLayout {
         }
     }
 
-    pub fn first_terminal(&self) -> Option<&Terminal> {
-        match self {
-            SurfaceLayout::Leaf(surface) => surface.focused_terminal(),
-            SurfaceLayout::Split { first, .. } => first.first_terminal(),
-        }
-    }
-
     pub fn first_surface_id(&self) -> Option<SurfaceId> {
         match self {
             SurfaceLayout::Leaf(surface) => surface.surface_id(),
             SurfaceLayout::Split { first, .. } => first.first_surface_id(),
-        }
-    }
-
-    pub fn find_terminal(&self, id: SurfaceId) -> Option<&Terminal> {
-        match self {
-            SurfaceLayout::Leaf(surface) => surface.find_terminal(id),
-            SurfaceLayout::Split { first, second, .. } => {
-                first.find_terminal(id).or_else(|| second.find_terminal(id))
-            }
-        }
-    }
-
-    pub fn find_surface_node(&self, id: SurfaceId) -> Option<&TerminalSurface> {
-        match self {
-            SurfaceLayout::Leaf(surface) => surface.find_terminal_surface(id),
-            SurfaceLayout::Split { first, second, .. } => first
-                .find_surface_node(id)
-                .or_else(|| second.find_surface_node(id)),
         }
     }
 
@@ -278,19 +234,6 @@ impl SurfaceLayout {
                     first.find_leaf_mut(id)
                 } else {
                     second.find_leaf_mut(id)
-                }
-            }
-        }
-    }
-
-    pub fn find_terminal_mut(&mut self, id: SurfaceId) -> Option<&mut Terminal> {
-        match self {
-            SurfaceLayout::Leaf(surface) => surface.find_terminal_mut(id),
-            SurfaceLayout::Split { first, second, .. } => {
-                if let Some(t) = first.find_terminal_mut(id) {
-                    Some(t)
-                } else {
-                    second.find_terminal_mut(id)
                 }
             }
         }
@@ -355,33 +298,6 @@ impl SurfaceLayout {
         }
     }
 
-    pub fn collect_terminals_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Terminal>) {
-        match self {
-            SurfaceLayout::Leaf(surface) => {
-                surface.collect_terminals_mut(out);
-            }
-            SurfaceLayout::Split { first, second, .. } => {
-                first.collect_terminals_mut(out);
-                second.collect_terminals_mut(out);
-            }
-        }
-    }
-
-    pub fn for_each_terminal_mut<F>(&mut self, f: &mut F)
-    where
-        F: FnMut(SurfaceId, &mut Terminal) + ?Sized,
-    {
-        match self {
-            SurfaceLayout::Leaf(surface) => {
-                surface.for_each_terminal_mut(&mut |id, t| f(id, t));
-            }
-            SurfaceLayout::Split { first, second, .. } => {
-                first.for_each_terminal_mut(f);
-                second.for_each_terminal_mut(f);
-            }
-        }
-    }
-
     /// Visit every leaf Surface (Terminal/Empty/Markdown/etc.) for read-only inspection.
     /// 닫기 경로에서 leaf 들의 `scrollback_persist_id` 를 추출해 디스크 정리하는 용도로
     /// 쓰인다.
@@ -391,19 +307,6 @@ impl SurfaceLayout {
             SurfaceLayout::Split { first, second, .. } => {
                 first.for_each_surface(f);
                 second.for_each_surface(f);
-            }
-        }
-    }
-
-    /// Object-safe version of for_each_terminal_mut (uses &mut dyn FnMut).
-    pub fn for_each_terminal_mut_dyn(&mut self, f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {
-        match self {
-            SurfaceLayout::Leaf(surface) => {
-                surface.for_each_terminal_mut(f);
-            }
-            SurfaceLayout::Split { first, second, .. } => {
-                first.for_each_terminal_mut_dyn(f);
-                second.for_each_terminal_mut_dyn(f);
             }
         }
     }

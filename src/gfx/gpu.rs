@@ -362,6 +362,7 @@ impl GpuState {
         self.render_terminals(
             &view,
             &regions,
+            engine,
             focused_surface_id,
             selection,
             &engine.settings.appearance,

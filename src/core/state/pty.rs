@@ -57,31 +57,31 @@ impl CoreState {
     /// active workspace, or active tab — only the target surface's underlying
     /// PTY is materialized.
     pub fn ensure_surface_initialized(&mut self, surface_id: u32) -> bool {
-        let mut spawned = false;
-        for ws in &mut self.workspaces {
+        let mut spawned: Option<(Terminal, Option<String>)> = None;
+        'outer: for ws in &mut self.workspaces {
             let pane_ids: Vec<u32> = ws.pane_layout().all_pane_ids();
             for pane_id in pane_ids {
                 if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
                     for tab in &mut pane.tabs {
-                        if tab.ensure_initialized(surface_id) {
-                            spawned = true;
-                            break;
+                        if let Some(result) = tab.ensure_initialized(surface_id) {
+                            spawned = Some(result);
+                            break 'outer;
                         }
                     }
                 }
-                if spawned {
-                    break;
-                }
-            }
-            if spawned {
-                break;
             }
         }
-        if spawned {
+        if let Some((terminal, persist_id)) = spawned {
+            self.terminals.insert(surface_id, terminal);
+            if let Some(pid) = persist_id {
+                self.terminals.set_scrollback_persist_id(surface_id, pid);
+            }
             self.send_fast_init(surface_id);
             self.apply_pending_scrollback_inject(surface_id);
+            true
+        } else {
+            false
         }
-        spawned
     }
 
     /// Deferred terminal 이 spawn 된 직후 호출. layout 복원 시 큐에 적재된

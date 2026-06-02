@@ -536,20 +536,6 @@ impl ApplicationHandler<AppEvent> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
-        // **D.3.E.4.e** — frame begin 마다 *새로 생성된 Terminal* 들을 store 로
-        // 이전. layout 트리의 TerminalSurface.terminal = Some(t) 인 모든 곳에서
-        // take 해 engine.terminals 에 insert. idempotent — 모두 None 이면 no-op.
-        // 점진 cutover 단계: spawn 콜사이트들이 store 직접 사용을 미루는 동안
-        // 본 helper 가 안전망. E.4.f cutover 후 본 호출 제거 예정.
-        for w in self.view.windows.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                main.core_state.install_orphan_terminals();
-            }
-        }
-        for (_, engine) in self.parked_states.iter_mut() {
-            engine.install_orphan_terminals();
-        }
-
         if self.process_ipc() {
             if let Some(w) = self.focused_window_mut() {
                 w.mark_dirty();

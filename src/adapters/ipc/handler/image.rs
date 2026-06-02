@@ -290,12 +290,16 @@ mod tests {
     }
 
     fn first_surface_id(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
-        let mut ids = Vec::new();
-        state
+        let ws_ids: std::collections::HashSet<u32> = state
             .active_workspace_mut(engine)
-            .pane_layout_mut()
-            .for_each_terminal_mut(&mut |sid, _| ids.push(sid));
-        ids[0]
+            .all_surface_ids()
+            .into_iter()
+            .collect();
+        engine
+            .terminals
+            .iter()
+            .find_map(|(sid, _)| ws_ids.contains(&sid).then_some(sid))
+            .expect("no terminal surface in active workspace")
     }
 
     fn write_blank_png(dir: &std::path::Path, name: &str) -> String {

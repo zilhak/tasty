@@ -1,5 +1,4 @@
 use super::{DividerInfo, FocusDirection, Pane, PaneId, PhysicalRect, SplitDirection, SurfaceId};
-use tasty_terminal::Terminal;
 
 /// Which side of a split we descended into while building a path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,47 +217,6 @@ impl PaneNode {
                 } else {
                     second.find_pane_mut(id)
                 }
-            }
-        }
-    }
-
-    /// Collect mutable references to all terminals in this tree.
-    pub fn all_terminals_mut(&mut self) -> Vec<&mut Terminal> {
-        match self {
-            PaneNode::Leaf(pane) => pane.all_terminals_mut(),
-            PaneNode::Split { first, second, .. } => {
-                let mut result = first.all_terminals_mut();
-                result.extend(second.all_terminals_mut());
-                result
-            }
-        }
-    }
-
-    /// Process all terminals. Returns true if any changed.
-    pub fn process_all(&mut self) -> bool {
-        let mut changed = false;
-        for terminal in self.all_terminals_mut() {
-            if terminal.process() {
-                changed = true;
-            }
-        }
-        changed
-    }
-
-    /// Visit all terminals (mutable) in this PaneNode tree, calling `f(surface_id, &mut terminal)` on each.
-    pub fn for_each_terminal_mut<F>(&mut self, f: &mut F)
-    where
-        F: FnMut(SurfaceId, &mut Terminal),
-    {
-        match self {
-            PaneNode::Leaf(pane) => {
-                for tab in &mut pane.tabs {
-                    tab.for_each_terminal_mut(f);
-                }
-            }
-            PaneNode::Split { first, second, .. } => {
-                first.for_each_terminal_mut(f);
-                second.for_each_terminal_mut(f);
             }
         }
     }

@@ -22,9 +22,8 @@ pub(super) fn queue_scrollback_for_surface(
 
 /// `TerminalSurface` 의 scrollback + 현재 화면(visible) 을 묶어
 /// `~/.tasty/scrollback/<id>.bin` 으로 덤프하고 `<id>` 를 반환. persist_id 는
-/// `TerminalSurface.scrollback_persist_id` 필드에 in-memory 로 보관되며 다음
-/// capture 가 같은 ID 를 재사용한다 (orphan 누적 방지). 세션 간 stale meta
-/// 가 다른 surface 에 상속되는 사고가 원천 차단된다.
+/// `TerminalStore::scrollback_persist_id` 에 보관되며 다음 capture 가 같은
+/// ID 를 재사용한다 (orphan 누적 방지).
 ///
 /// 화면 라인은 scrollback 의 뒤에 이어 붙인다 → 복원 시 위로 스크롤하면
 /// [이전 scrollback → 이전 화면 → 새 prompt] 순으로 보인다.
@@ -35,13 +34,11 @@ pub(super) fn queue_scrollback_for_surface(
 ///
 /// 실패하거나 (scrollback + screen) 양쪽 모두 비어 있으면 `None`.
 pub(super) fn capture_scrollback_to_disk(
-    ts: &mut crate::model::TerminalSurface,
+    surface_id: crate::model::SurfaceId,
+    store: &mut crate::core::terminal_store::TerminalStore,
     seen_refs: &mut std::collections::HashSet<String>,
 ) -> Option<String> {
-    // D.3.E.4 — terminal: Option. None 이면 capture 불가 → None 반환.
-    let Some(terminal) = ts.terminal.as_ref() else {
-        return None;
-    };
+    let terminal = store.get(surface_id)?;
     let total = terminal.scrollback_len();
     let screen = terminal.screen_snapshot_lines();
     if total == 0 && screen.is_empty() {
@@ -58,27 +55,27 @@ pub(super) fn capture_scrollback_to_disk(
         return None;
     }
     // 중복 가드: 다른 surface 가 같은 사이클에서 이미 쓴 ID 면 fresh 로 교체.
-    let persist_id = match ts.scrollback_persist_id.clone() {
+    let persist_id = match store.scrollback_persist_id(surface_id).map(str::to_string) {
         Some(existing) if !seen_refs.contains(&existing) => existing,
         Some(stale) => {
             tracing::warn!(
                 "scrollback capture: duplicate persist_id {stale} for surface {} — reassigning fresh",
-                ts.id
+                surface_id
             );
             let new_id = crate::scrollback_store::new_persist_id();
-            ts.scrollback_persist_id = Some(new_id.clone());
+            store.set_scrollback_persist_id(surface_id, new_id.clone());
             new_id
         }
         None => {
             let new_id = crate::scrollback_store::new_persist_id();
-            ts.scrollback_persist_id = Some(new_id.clone());
+            store.set_scrollback_persist_id(surface_id, new_id.clone());
             new_id
         }
     };
     if let Err(e) = crate::scrollback_store::write(&persist_id, &lines) {
         tracing::warn!(
             "scrollback capture: write failed for surface {} ({persist_id}): {e}",
-            ts.id
+            surface_id
         );
         return None;
     }

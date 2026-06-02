@@ -123,14 +123,10 @@ pub(crate) fn rebuild_surface_node(
         terminal.prefill_visible_from_scrollback(prefill);
     }
 
+    engine.terminals.insert(surface_id, terminal);
     engine.send_fast_init(surface_id);
 
-    Some(TerminalSurface {
-        id: surface_id,
-        terminal: Some(terminal),
-        deferred_spawn: None,
-        scrollback_persist_id: None,
-    })
+    Some(TerminalSurface { id: surface_id })
 }
 
 pub(crate) fn rebuild_surface_layout(

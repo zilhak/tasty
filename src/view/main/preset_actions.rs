@@ -37,7 +37,7 @@ impl MainWindow {
                 params,
             })
         };
-        let preset = capture_workspace_preset(ws, None, &mut capture)
+        let preset = capture_workspace_preset(engine, ws, None, &mut capture)
             .ok_or_else(|| anyhow!("workspace capture failed"))?;
 
         self.state.dispatch_intent(
@@ -86,7 +86,7 @@ impl MainWindow {
                 params,
             })
         };
-        let preset = capture_tab_preset(tab, None, &mut capture)
+        let preset = capture_tab_preset(engine, tab, None, &mut capture)
             .ok_or_else(|| anyhow!("tab capture failed"))?;
 
         self.state.dispatch_intent(
@@ -119,7 +119,7 @@ impl MainWindow {
                 params,
             })
         };
-        let preset = capture_pane_preset(pane, None, &mut capture)
+        let preset = capture_pane_preset(engine, pane, None, &mut capture)
             .ok_or_else(|| anyhow!("pane capture failed"))?;
 
         self.state.dispatch_intent(

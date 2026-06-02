@@ -1,8 +1,7 @@
 use std::any::Any;
 use std::path::PathBuf;
 
-use super::{PhysicalRect, SurfaceId, TerminalSurface};
-use tasty_terminal::Terminal;
+use super::{PhysicalRect, SurfaceId};
 
 /// Common behavior for all Surface types.
 ///
@@ -44,58 +43,10 @@ pub trait Surface: Any {
         self.all_surface_ids().contains(&surface_id)
     }
 
-    /// Get the focused terminal (immutable).
-    fn focused_terminal(&self) -> Option<&Terminal> {
-        None
-    }
-
-    /// Get the focused terminal (mutable).
-    fn focused_terminal_mut(&mut self) -> Option<&mut Terminal> {
-        None
-    }
-
-    /// Find a terminal by surface ID (immutable).
-    fn find_terminal(&self, _surface_id: SurfaceId) -> Option<&Terminal> {
-        None
-    }
-
-    /// Find a TerminalSurface by surface ID.
-    fn find_terminal_surface(&self, _surface_id: SurfaceId) -> Option<&TerminalSurface> {
-        None
-    }
-
-    /// Find a terminal by surface ID (mutable).
-    fn find_terminal_mut(&mut self, _surface_id: SurfaceId) -> Option<&mut Terminal> {
-        None
-    }
-
-    /// Resize all terminals to fit the given rect.
+    /// Resize-fitting hook. Layout 가 leaf 의 rect 를 알릴 때 호출. 기본 no-op.
+    /// 현재 모든 구현 (TerminalSurface 포함) 이 default 만 — Terminal resize 는
+    /// 별 PTY resize 경로로 분리. 본 메서드는 후속 surface kind 들의 옵션.
     fn resize_all(&mut self, _rect: PhysicalRect, _cell_width: f32, _cell_height: f32) {}
-
-    /// Collect all terminals (mutable). Object-safe signature.
-    fn collect_terminals_mut<'a>(&'a mut self, _out: &mut Vec<&'a mut Terminal>) {}
-
-    /// Visit all terminals with their surface IDs. Object-safe signature.
-    fn for_each_terminal_mut(&mut self, _f: &mut dyn FnMut(SurfaceId, &mut Terminal)) {}
-
-    // ── Terminal-only fast accessors ──
-    //
-    // PTY 입출력 경로가 별도라 Terminal만 trait 메서드로 둔다. 그 외 panel은
-    // `surface.as_any().downcast_ref::<XxxPanel>()` 또는 `surface.kind()`로 식별한다.
-
-    fn as_terminal_surface(&self) -> Option<&TerminalSurface> {
-        None
-    }
-    fn as_terminal_surface_mut(&mut self) -> Option<&mut TerminalSurface> {
-        None
-    }
-
-    /// Consume this surface and return the inner TerminalSurface if applicable.
-    /// Used when splitting a tab (converting a single surface into a split layout).
-    /// Default: None (non-terminal surfaces cannot be taken).
-    fn take_terminal_surface(self: Box<Self>) -> Option<TerminalSurface> {
-        None
-    }
 
     /// The "source" working directory associated with this surface, if any.
     ///

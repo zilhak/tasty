@@ -406,34 +406,8 @@ fn pane_node_split_pane_in_place_not_found() {
 
 #[test]
 fn pane_close_tab_removes_tab() {
-    let waker = noop_waker();
-    let mut pane = Pane::new_with_shell(
-        1,
-        10,
-        100,
-        crate::model::ShellSpawnOpts {
-            cols: 80,
-            rows: 24,
-            shell: None,
-            shell_args: &[],
-            waker: waker.clone(),
-            working_dir: None,
-        },
-    )
-    .expect("pane creation");
-    pane.add_tab_with_shell(
-        11,
-        101,
-        crate::model::ShellSpawnOpts {
-            cols: 80,
-            rows: 24,
-            shell: None,
-            shell_args: &[],
-            waker: waker,
-            working_dir: None,
-        },
-    )
-    .expect("add tab");
+    let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
+    pane.add_terminal_marker_tab_background(11, 101);
     assert_eq!(pane.tabs.len(), 2);
     assert!(pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);
@@ -441,22 +415,9 @@ fn pane_close_tab_removes_tab() {
 
 #[test]
 fn pane_close_tab_last_tab_fails() {
-    let waker = noop_waker();
-    let mut pane = Pane::new_with_shell(
-        1,
-        10,
-        100,
-        crate::model::ShellSpawnOpts {
-            cols: 80,
-            rows: 24,
-            shell: None,
-            shell_args: &[],
-            waker: waker,
-            working_dir: None,
-        },
-    )
-    .expect("pane creation");
+    let pane = Pane::new_with_terminal_marker(1, 10, 100);
     assert_eq!(pane.tabs.len(), 1);
+    let mut pane = pane;
     assert!(!pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);
 }
@@ -581,123 +542,41 @@ fn surface_layout_find_surface_at() {
 // ---- Visitor pattern tests ----
 
 #[test]
-fn for_each_terminal_visits_single_pane() {
-    let waker = noop_waker();
-    let pane = Pane::new_with_shell(
-        1,
-        1,
-        100,
-        crate::model::ShellSpawnOpts {
-            cols: 80,
-            rows: 24,
-            shell: None,
-            shell_args: &[],
-            waker: waker,
-            working_dir: None,
-        },
-    )
-    .unwrap();
-    let mut node = PaneNode::Leaf(pane);
-    let mut visited = Vec::new();
-    node.for_each_terminal_mut(&mut |sid, _terminal| {
-        visited.push(sid);
-    });
-    assert_eq!(visited, vec![100]);
+fn pane_node_visits_single_pane() {
+    let pane = Pane::new_with_terminal_marker(1, 1, 100);
+    let node = PaneNode::Leaf(pane);
+    let mut ids = Vec::new();
+    for pid in node.all_pane_ids() {
+        if let Some(p) = node.find_pane(pid) {
+            ids.extend(p.all_surface_ids());
+        }
+    }
+    assert_eq!(ids, vec![100]);
 }
 
 #[test]
-fn for_each_terminal_visits_split_panes() {
-    let waker = noop_waker();
-    let p1 = Pane::new_with_shell(
-        1,
-        1,
-        101,
-        crate::model::ShellSpawnOpts {
-            cols: 80,
-            rows: 24,
-            shell: None,
-            shell_args: &[],
-            waker: waker.clone(),
-            working_dir: None,
-        },
-    )
-    .unwrap();
-    let p2 = Pane::new_with_shell(
-        2,
-        2,
-        102,
-        crate::model::ShellSpawnOpts {
-            cols: 80,
-            rows: 24,
-            shell: None,
-            shell_args: &[],
-            waker: waker,
-            working_dir: None,
-        },
-    )
-    .unwrap();
-    let mut node = PaneNode::Split {
+fn pane_node_visits_split_panes() {
+    let p1 = Pane::new_with_terminal_marker(1, 1, 101);
+    let p2 = Pane::new_with_terminal_marker(2, 2, 102);
+    let node = PaneNode::Split {
         direction: SplitDirection::Vertical,
         ratio: 0.5,
         first: Box::new(PaneNode::Leaf(p1)),
         second: Box::new(PaneNode::Leaf(p2)),
     };
-    let mut visited = Vec::new();
-    node.for_each_terminal_mut(&mut |sid, _terminal| {
-        visited.push(sid);
-    });
-    assert_eq!(visited, vec![101, 102]);
-}
-
-#[test]
-fn for_each_terminal_mut_can_modify() {
-    let waker = noop_waker();
-    let pane = Pane::new_with_shell(
-        1,
-        1,
-        200,
-        crate::model::ShellSpawnOpts {
-            cols: 80,
-            rows: 24,
-            shell: None,
-            shell_args: &[],
-            waker: waker,
-            working_dir: None,
-        },
-    )
-    .unwrap();
-    let mut node = PaneNode::Leaf(pane);
-    let mut count = 0u32;
-    node.for_each_terminal_mut(&mut |_sid, terminal| {
-        terminal.set_mark();
-        count += 1;
-    });
-    assert_eq!(count, 1);
+    let mut ids = Vec::new();
+    for pid in node.all_pane_ids() {
+        if let Some(p) = node.find_pane(pid) {
+            ids.extend(p.all_surface_ids());
+        }
+    }
+    assert_eq!(ids, vec![101, 102]);
 }
 
 // ---- SurfaceLayout tests ----
 
 fn test_surface_node(id: SurfaceId) -> TerminalSurface {
-    let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
-    let terminal = tasty_terminal::Terminal::new(
-        tasty_terminal::TerminalConfig {
-            cols: 80,
-            rows: 24,
-            shell: None,
-            args: &[],
-            surface_id: id,
-            working_dir: None,
-            initial_input: None,
-        },
-        waker,
-    )
-    .unwrap();
-    TerminalSurface {
-        id,
-        terminal: Some(terminal),
-        deferred_spawn: None,
-        scrollback_persist_id: None,
-    }
+    TerminalSurface { id }
 }
 
 #[test]
@@ -788,8 +667,8 @@ fn surface_layout_close_nonexistent_surface() {
 fn surface_layout_find_terminal() {
     let node = test_surface_node(10);
     let layout = SurfaceLayout::Leaf(Box::new(node));
-    assert!(layout.find_terminal(10).is_some());
-    assert!(layout.find_terminal(999).is_none());
+    assert!(layout.find_surface(10).is_some());
+    assert!(layout.find_surface(999).is_none());
 }
 
 #[test]
@@ -798,9 +677,9 @@ fn surface_layout_find_terminal_in_split() {
     let node2 = test_surface_node(20);
     let layout = SurfaceLayout::Leaf(Box::new(node1));
     let (layout, _) = layout.split_with_node(10, SplitDirection::Vertical, node2);
-    assert!(layout.find_terminal(10).is_some());
-    assert!(layout.find_terminal(20).is_some());
-    assert!(layout.find_terminal(99).is_none());
+    assert!(layout.find_surface(10).is_some());
+    assert!(layout.find_surface(20).is_some());
+    assert!(layout.find_surface(99).is_none());
 }
 
 #[test]
@@ -942,7 +821,7 @@ fn tab_ensure_initialized_replaces_placeholder_in_split() {
     };
     // Only wake id=11. id=12 must remain deferred.
     let spawned = tab.ensure_initialized(11);
-    assert!(spawned);
+    assert!(spawned.is_some());
     assert!(!tab.is_surface_deferred(11));
     assert!(tab.is_surface_deferred(12));
     assert_eq!(tab.deferred_surface_ids(), vec![12]);

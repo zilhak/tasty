@@ -12,6 +12,7 @@
 //! 본 모듈에서 `terminal.get_cwd()` 로 직접 추출. startup_command 는 capture
 //! 시점에는 None — 사용자가 PresetWindow 에서 편집한다.
 
+use crate::core::CoreState;
 use crate::model::{Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace};
 use tasty_presets::{
     CapturedSurfaceMeta, PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection,
@@ -28,6 +29,7 @@ pub type CaptureFn<'a> = &'a mut dyn FnMut(&dyn Surface) -> Option<CapturedSurfa
 
 /// 라이브 Workspace 를 WorkspacePreset 으로 캡처.
 pub fn capture_workspace_preset(
+    engine: &CoreState,
     ws: &Workspace,
     name: Option<String>,
     capture_fn: CaptureFn<'_>,
@@ -36,31 +38,33 @@ pub fn capture_workspace_preset(
         name: name.unwrap_or_default(),
         subtitle: ws.subtitle.clone(),
         description: ws.description.clone(),
-        layout: capture_pane_node(ws.pane_layout(), capture_fn)?,
+        layout: capture_pane_node(engine, ws.pane_layout(), capture_fn)?,
     })
 }
 
 /// 라이브 Tab 을 TabPreset 으로 캡처.
 pub fn capture_tab_preset(
+    engine: &CoreState,
     tab: &Tab,
     name: Option<String>,
     capture_fn: CaptureFn<'_>,
 ) -> Option<TabPreset> {
     Some(TabPreset {
         name: name.unwrap_or_default(),
-        tab: capture_tab(tab, capture_fn)?,
+        tab: capture_tab(engine, tab, capture_fn)?,
     })
 }
 
 /// 라이브 Pane 을 PanePreset 으로 캡처.
 pub fn capture_pane_preset(
+    engine: &CoreState,
     pane: &Pane,
     name: Option<String>,
     capture_fn: CaptureFn<'_>,
 ) -> Option<PanePreset> {
     Some(PanePreset {
         name: name.unwrap_or_default(),
-        pane: capture_pane(pane, capture_fn)?,
+        pane: capture_pane(engine, pane, capture_fn)?,
     })
 }
 
@@ -73,10 +77,14 @@ fn to_preset_split(d: SplitDirection) -> PresetSplitDirection {
     }
 }
 
-fn capture_pane_node(node: &PaneNode, capture_fn: CaptureFn<'_>) -> Option<PresetPaneNode> {
+fn capture_pane_node(
+    engine: &CoreState,
+    node: &PaneNode,
+    capture_fn: CaptureFn<'_>,
+) -> Option<PresetPaneNode> {
     match node {
         PaneNode::Leaf(pane) => Some(PresetPaneNode::Leaf {
-            pane: capture_pane(pane, capture_fn)?,
+            pane: capture_pane(engine, pane, capture_fn)?,
         }),
         PaneNode::Split {
             direction,
@@ -86,16 +94,16 @@ fn capture_pane_node(node: &PaneNode, capture_fn: CaptureFn<'_>) -> Option<Prese
         } => Some(PresetPaneNode::Split {
             direction: to_preset_split(*direction),
             ratio: *ratio,
-            first: Box::new(capture_pane_node(first, capture_fn)?),
-            second: Box::new(capture_pane_node(second, capture_fn)?),
+            first: Box::new(capture_pane_node(engine, first, capture_fn)?),
+            second: Box::new(capture_pane_node(engine, second, capture_fn)?),
         }),
     }
 }
 
-fn capture_pane(pane: &Pane, capture_fn: CaptureFn<'_>) -> Option<PresetPane> {
+fn capture_pane(engine: &CoreState, pane: &Pane, capture_fn: CaptureFn<'_>) -> Option<PresetPane> {
     let mut tabs = Vec::with_capacity(pane.tabs.len());
     for tab in &pane.tabs {
-        tabs.push(capture_tab(tab, capture_fn)?);
+        tabs.push(capture_tab(engine, tab, capture_fn)?);
     }
     if tabs.is_empty() {
         return None;
@@ -104,8 +112,8 @@ fn capture_pane(pane: &Pane, capture_fn: CaptureFn<'_>) -> Option<PresetPane> {
     Some(PresetPane { tabs, active_tab })
 }
 
-fn capture_tab(tab: &Tab, capture_fn: CaptureFn<'_>) -> Option<PresetTab> {
-    let layout = capture_surface_layout(tab.layout(), capture_fn)?;
+fn capture_tab(engine: &CoreState, tab: &Tab, capture_fn: CaptureFn<'_>) -> Option<PresetTab> {
+    let layout = capture_surface_layout(engine, tab.layout(), capture_fn)?;
     Some(PresetTab {
         explicit_name: tab.explicit_name.clone(),
         layout,
@@ -113,12 +121,13 @@ fn capture_tab(tab: &Tab, capture_fn: CaptureFn<'_>) -> Option<PresetTab> {
 }
 
 fn capture_surface_layout(
+    engine: &CoreState,
     layout: &SurfaceLayout,
     capture_fn: CaptureFn<'_>,
 ) -> Option<PresetSurfaceLayout> {
     match layout {
         SurfaceLayout::Leaf(surface) => Some(PresetSurfaceLayout::Leaf {
-            surface: capture_surface(surface.as_ref(), capture_fn)?,
+            surface: capture_surface(engine, surface.as_ref(), capture_fn)?,
         }),
         SurfaceLayout::Split {
             direction,
@@ -129,20 +138,26 @@ fn capture_surface_layout(
         } => Some(PresetSurfaceLayout::Split {
             direction: to_preset_split(*direction),
             ratio: *ratio,
-            first: Box::new(capture_surface_layout(first, capture_fn)?),
-            second: Box::new(capture_surface_layout(second, capture_fn)?),
+            first: Box::new(capture_surface_layout(engine, first, capture_fn)?),
+            second: Box::new(capture_surface_layout(engine, second, capture_fn)?),
         }),
     }
 }
 
-fn capture_surface(surface: &dyn Surface, capture_fn: CaptureFn<'_>) -> Option<PresetSurface> {
+fn capture_surface(
+    engine: &CoreState,
+    surface: &dyn Surface,
+    capture_fn: CaptureFn<'_>,
+) -> Option<PresetSurface> {
     let meta = capture_fn(surface)?;
-    // terminal kind 면 cwd 추출. 다른 kind 는 params 만.
-    let (cwd, startup_command) = if let Some(ts) = surface.as_terminal_surface() {
-        // D.3.E.4 — terminal: Option. None 이면 cwd 추출 불가.
-        let cwd = ts
-            .terminal
-            .as_ref()
+    // terminal kind 면 cwd 추출 (store 에서). 다른 kind 는 params 만.
+    let (cwd, startup_command) = if let Some(ts) = surface
+        .as_any()
+        .downcast_ref::<crate::model::TerminalSurface>()
+    {
+        let cwd = engine
+            .terminals
+            .get(ts.id)
             .and_then(|t| t.get_cwd())
             .map(|p| p.to_string_lossy().to_string());
         (cwd, None)

@@ -48,6 +48,7 @@ impl GpuState {
         &mut self,
         view: &wgpu::TextureView,
         regions: &[(u32, PhysicalRect, Vec<crate::model::SurfaceRegion<'_>>)],
+        engine: &crate::core::CoreState,
         focused_surface_id: Option<u32>,
         selection: Option<&crate::selection::TextSelection>,
         _settings: &crate::settings::AppearanceSettings,
@@ -64,7 +65,7 @@ impl GpuState {
         // into one encoder would cause only the last terminal's data to be visible.
         for (_pane_id, _pane_rect, surface_regions) in regions {
             for region in surface_regions {
-                let Some(terminal) = region.surface.focused_terminal() else {
+                let Some(terminal) = engine.terminals.get(region.id) else {
                     continue;
                 };
                 let surface_id = &region.id;

@@ -13,6 +13,10 @@ pub type SnapshotFn<'a> = &'a mut dyn FnMut(&dyn Surface) -> Option<serde_json::
 /// Maximum number of closed items to keep.
 const MAX_CLOSED_ITEMS: usize = 10;
 
+/// `surface_id` → `&Terminal` 매핑 함수. 캡처 시점에 `TerminalStore` 가
+/// 참조로 들어오면 `&|id| store.get(id)` 같은 closure 로 wrapping 한다.
+pub type TerminalLookup<'a> = dyn Fn(SurfaceId) -> Option<&'a tasty_terminal::Terminal> + 'a;
+
 /// Snapshot of a surface's content at close time.
 pub struct ClosedSurface {
     pub id: SurfaceId,
@@ -98,21 +102,21 @@ pub enum ClosedItem {
 // ── Capture functions: live model → closed snapshot ──
 
 impl ClosedSurface {
-    /// Capture a snapshot from a live TerminalSurface.
-    pub fn from_surface_node(node: &super::TerminalSurface) -> Self {
-        Self::from_surface_node_with_restore(node, None)
+    /// Capture a snapshot from a TerminalSurface marker + its Terminal in the store.
+    /// `terminal` 가 None 이면 empty snapshot 만.
+    pub fn from_surface_id(id: SurfaceId, terminal: Option<&tasty_terminal::Terminal>) -> Self {
+        Self::from_surface_id_with_restore(id, terminal, None)
     }
 
     /// Capture a snapshot with an optional restore command (e.g. "claude -r <session-id>").
-    pub fn from_surface_node_with_restore(
-        node: &super::TerminalSurface,
+    pub fn from_surface_id_with_restore(
+        id: SurfaceId,
+        terminal: Option<&tasty_terminal::Terminal>,
         restore_command: Option<String>,
     ) -> Self {
-        // D.3.E.4 — TerminalSurface.terminal: Option. None 이면 *이미 closed/store
-        // 이전된 상태* — empty snapshot 만 만들고 반환 (legacy compat).
-        let Some(terminal) = node.terminal.as_ref() else {
+        let Some(terminal) = terminal else {
             return Self {
-                id: node.id,
+                id,
                 cwd: None,
                 restore_command,
                 screen: Vec::new(),
@@ -141,7 +145,7 @@ impl ClosedSurface {
         }
 
         Self {
-            id: node.id,
+            id,
             cwd: terminal.get_cwd(),
             restore_command,
             screen,
@@ -151,12 +155,19 @@ impl ClosedSurface {
 }
 
 impl ClosedSurfaceLayout {
-    /// Capture from a live SurfaceLayout.
-    pub fn from_layout(layout: &super::SurfaceLayout) -> Self {
+    /// Capture from a live SurfaceLayout. `terminal_lookup` 은 surface_id ↔ Terminal
+    /// 매핑 — 보통 `&engine.terminals` 의 wrapping closure.
+    pub fn from_layout(
+        layout: &super::SurfaceLayout,
+        terminal_lookup: &TerminalLookup<'_>,
+    ) -> Self {
         match layout {
             super::SurfaceLayout::Leaf(surface) => {
-                if let Some(node) = surface.as_terminal_surface() {
-                    ClosedSurfaceLayout::Single(ClosedSurface::from_surface_node(node))
+                if let Some(node) = surface.as_any().downcast_ref::<super::TerminalSurface>() {
+                    ClosedSurfaceLayout::Single(ClosedSurface::from_surface_id(
+                        node.id,
+                        terminal_lookup(node.id),
+                    ))
                 } else {
                     // Non-terminal surfaces: store minimal placeholder with the surface ID.
                     ClosedSurfaceLayout::Single(ClosedSurface {
@@ -177,39 +188,44 @@ impl ClosedSurfaceLayout {
             } => ClosedSurfaceLayout::Split {
                 direction: *direction,
                 ratio: *ratio,
-                first: Box::new(Self::from_layout(first)),
-                second: Box::new(Self::from_layout(second)),
+                first: Box::new(Self::from_layout(first, terminal_lookup)),
+                second: Box::new(Self::from_layout(second, terminal_lookup)),
             },
         }
     }
 }
 
 impl ClosedPanel {
-    /// Capture from a live Tab. Returns `None` for surfaces that are not
-    /// restorable by the host (plugin-provided RemoteSurface, Html, Empty 등).
-    ///
-    /// `snapshot`은 비-터미널 surface에 대해 `SurfaceKindRegistry.snapshot(s)`을
-    /// 호출하는 클로저. 호출자가 registry를 캡처해 넘긴다.
-    pub fn from_tab(tab: &super::tab::Tab, snapshot: SnapshotFn<'_>) -> Option<Self> {
+    /// Capture from a live Tab. `terminal_lookup` 은 surface_id ↔ Terminal 매핑.
+    pub fn from_tab(
+        tab: &super::tab::Tab,
+        snapshot: SnapshotFn<'_>,
+        terminal_lookup: &TerminalLookup<'_>,
+    ) -> Option<Self> {
         if tab.is_split() {
             return Some(ClosedPanel::Tab {
-                layout: ClosedSurfaceLayout::from_layout(tab.layout()),
+                layout: ClosedSurfaceLayout::from_layout(tab.layout(), terminal_lookup),
                 focused_surface: tab.focused_surface,
             });
         }
         // Single surface tab
         let surface = tab.surface();
-        Self::from_surface(surface, snapshot)
+        Self::from_surface(surface, snapshot, terminal_lookup)
     }
 
-    /// Capture from a single Surface (trait object). Terminal은 PTY 로직이 별도라
+    /// Capture from a single Surface (trait object). Terminal 은 PTY 로직이 별도라
     /// 직접 처리하고, 그 외는 모두 `snapshot` 클로저를 통해 registry 경로로 간다.
     /// 클로저가 `None`을 반환하면 (Html/Empty/RemoteSurface 등 휘발성)
     /// 함수도 `None`을 반환한다.
-    pub fn from_surface(surface: &dyn Surface, snapshot: SnapshotFn<'_>) -> Option<Self> {
-        if let Some(node) = surface.as_terminal_surface() {
-            return Some(ClosedPanel::Terminal(ClosedSurface::from_surface_node(
-                node,
+    pub fn from_surface(
+        surface: &dyn Surface,
+        snapshot: SnapshotFn<'_>,
+        terminal_lookup: &TerminalLookup<'_>,
+    ) -> Option<Self> {
+        if let Some(node) = surface.as_any().downcast_ref::<super::TerminalSurface>() {
+            return Some(ClosedPanel::Terminal(ClosedSurface::from_surface_id(
+                node.id,
+                terminal_lookup(node.id),
             )));
         }
         let snap = snapshot(surface)?;
@@ -223,8 +239,12 @@ impl ClosedPanel {
 impl ClosedTab {
     /// Capture from a live Tab. Returns `None` if the tab's surface is not
     /// restorable (plugin RemoteSurface 등).
-    pub fn from_tab(tab: &super::tab::Tab, snapshot: SnapshotFn<'_>) -> Option<Self> {
-        let panel = ClosedPanel::from_tab(tab, snapshot)?;
+    pub fn from_tab(
+        tab: &super::tab::Tab,
+        snapshot: SnapshotFn<'_>,
+        terminal_lookup: &TerminalLookup<'_>,
+    ) -> Option<Self> {
+        let panel = ClosedPanel::from_tab(tab, snapshot, terminal_lookup)?;
         Some(Self {
             id: tab.id,
             name: tab.name.clone(),
@@ -236,13 +256,17 @@ impl ClosedTab {
 
 impl ClosedPane {
     /// Capture from a live Pane. Tabs that are not restorable are skipped.
-    pub fn from_pane(pane: &super::Pane, snapshot: SnapshotFn<'_>) -> Self {
+    pub fn from_pane(
+        pane: &super::Pane,
+        snapshot: SnapshotFn<'_>,
+        terminal_lookup: &TerminalLookup<'_>,
+    ) -> Self {
         Self {
             id: pane.id,
             tabs: pane
                 .tabs
                 .iter()
-                .filter_map(|t| ClosedTab::from_tab(t, snapshot))
+                .filter_map(|t| ClosedTab::from_tab(t, snapshot, terminal_lookup))
                 .collect(),
             active_tab: pane.active_tab,
         }
@@ -251,10 +275,14 @@ impl ClosedPane {
 
 impl ClosedPaneNode {
     /// Capture from a live PaneNode.
-    pub fn from_pane_node(node: &super::PaneNode, snapshot: SnapshotFn<'_>) -> Self {
+    pub fn from_pane_node(
+        node: &super::PaneNode,
+        snapshot: SnapshotFn<'_>,
+        terminal_lookup: &TerminalLookup<'_>,
+    ) -> Self {
         match node {
             super::PaneNode::Leaf(pane) => {
-                ClosedPaneNode::Leaf(ClosedPane::from_pane(pane, snapshot))
+                ClosedPaneNode::Leaf(ClosedPane::from_pane(pane, snapshot, terminal_lookup))
             }
             super::PaneNode::Split {
                 direction,
@@ -265,8 +293,8 @@ impl ClosedPaneNode {
             } => ClosedPaneNode::Split {
                 direction: *direction,
                 ratio: *ratio,
-                first: Box::new(Self::from_pane_node(first, snapshot)),
-                second: Box::new(Self::from_pane_node(second, snapshot)),
+                first: Box::new(Self::from_pane_node(first, snapshot, terminal_lookup)),
+                second: Box::new(Self::from_pane_node(second, snapshot, terminal_lookup)),
             },
         }
     }
@@ -274,12 +302,20 @@ impl ClosedPaneNode {
 
 impl ClosedItem {
     /// Capture a workspace snapshot.
-    pub fn from_workspace(ws: &super::Workspace, snapshot: SnapshotFn<'_>) -> Self {
+    pub fn from_workspace(
+        ws: &super::Workspace,
+        snapshot: SnapshotFn<'_>,
+        terminal_lookup: &TerminalLookup<'_>,
+    ) -> Self {
         ClosedItem::Workspace {
             id: ws.id,
             name: ws.name.clone(),
             subtitle: ws.subtitle.clone(),
-            pane_layout: ClosedPaneNode::from_pane_node(ws.pane_layout(), snapshot),
+            pane_layout: ClosedPaneNode::from_pane_node(
+                ws.pane_layout(),
+                snapshot,
+                terminal_lookup,
+            ),
             focused_pane: ws.focused_pane,
         }
     }
