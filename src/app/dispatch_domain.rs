@@ -1208,6 +1208,12 @@ impl App {
                 .notifications
                 .add(ws_id, surface_id, title.clone(), body.clone());
         if let Some(nid) = created_id {
+            // sound gate — coalesce 가 묶지 않은 신규 발화일 때만 재생.
+            // Bell 경로는 OS 가 \a 처리 시점에 자체 beep 할 수 있어 안전 default
+            // 로 skip — 향후 실측 후 정책 완화 가능.
+            if main.core_state.settings.notification.sound && source != "TerminalBellRing" {
+                self.core.sound_player().play();
+            }
             main.state
                 .enqueue_host_event(crate::state::PendingHostEvent::NotificationCreated {
                     id: nid,

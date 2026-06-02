@@ -34,6 +34,7 @@ use crate::ports::clipboard::ClipboardSystem;
 use crate::ports::clock::Clock;
 use crate::ports::fs::FileSystem;
 use crate::ports::home::HomeDirectory;
+use crate::ports::notification_sound::NotificationSoundPlayer;
 use crate::ports::process::ProcessSpawner;
 use crate::ports::pty::{PtyService, TerminalWaker};
 
@@ -64,6 +65,7 @@ pub(crate) struct Core {
     clipboard: Arc<dyn ClipboardSystem>,
     process: Arc<dyn ProcessSpawner>,
     home: Arc<dyn HomeDirectory>,
+    sound_player: Arc<dyn NotificationSoundPlayer>,
 
     // ─── Internal crate trait ports ───
     /// `Sync` 아님 (SQLite Connection 의 `RefCell` 캐시) — `Mutex` 보호.
@@ -267,6 +269,14 @@ impl Core {
     // Layout persistence wrapper (옛 `Core::save_layout` / `Core::restore_layout`)
     // 은 D.3.C.D.4 에서 `DomainIntent::SaveLayoutNow` /
     // `ApplyPendingLayoutRestore` 경로로 통합되어 제거됨.
+
+    // ─── Notification sound (OS-level beep) ───
+
+    /// Notification sound player port 참조. cascade 가 `settings.notification.sound`
+    /// gate 통과 시 `play()` 호출.
+    pub(crate) fn sound_player(&self) -> &Arc<dyn NotificationSoundPlayer> {
+        &self.sound_player
+    }
 
     // ─── Clipboard (외부 시스템 clipboard) ───
 

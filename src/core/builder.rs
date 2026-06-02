@@ -14,6 +14,7 @@ use crate::ports::clipboard::ClipboardSystem;
 use crate::ports::clock::Clock;
 use crate::ports::fs::FileSystem;
 use crate::ports::home::HomeDirectory;
+use crate::ports::notification_sound::NotificationSoundPlayer;
 use crate::ports::process::ProcessSpawner;
 use crate::ports::pty::{PtyService, TerminalWaker};
 
@@ -31,6 +32,7 @@ pub(crate) struct CoreBuilder {
     clipboard: Option<Arc<dyn ClipboardSystem>>,
     process: Option<Arc<dyn ProcessSpawner>>,
     home: Option<Arc<dyn HomeDirectory>>,
+    sound_player: Option<Arc<dyn NotificationSoundPlayer>>,
     memory: Option<Arc<Mutex<dyn MemoryStorage>>>,
     themes: Option<Arc<dyn ThemeStorage>>,
     preset_store: Option<Arc<Mutex<PresetStore>>>,
@@ -48,6 +50,7 @@ impl CoreBuilder {
             clipboard: None,
             process: None,
             home: None,
+            sound_player: None,
             memory: None,
             themes: None,
             preset_store: None,
@@ -81,6 +84,13 @@ impl CoreBuilder {
     }
     pub(crate) fn with_home(mut self, home: Arc<dyn HomeDirectory>) -> Self {
         self.home = Some(home);
+        self
+    }
+    pub(crate) fn with_sound_player(
+        mut self,
+        sound_player: Arc<dyn NotificationSoundPlayer>,
+    ) -> Self {
+        self.sound_player = Some(sound_player);
         self
     }
     pub(crate) fn with_memory(mut self, memory: Arc<Mutex<dyn MemoryStorage>>) -> Self {
@@ -127,6 +137,9 @@ impl CoreBuilder {
             home: self
                 .home
                 .ok_or_else(|| anyhow::anyhow!("HomeDirectory missing"))?,
+            sound_player: self
+                .sound_player
+                .ok_or_else(|| anyhow::anyhow!("NotificationSoundPlayer missing"))?,
             memory: self
                 .memory
                 .ok_or_else(|| anyhow::anyhow!("MemoryStorage missing"))?,

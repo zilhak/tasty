@@ -17,8 +17,9 @@ use crate::AppEvent;
 #[cfg(feature = "gui")]
 use crate::adapters::production::{arboard_clip::ArboardClipboard, winit_waker::WinitWaker};
 use crate::adapters::production::{
-    directories_home::DirectoriesHome, portable_pty::PortablePtyService, std_clock::SystemClock,
-    std_fs::StdFileSystem, std_process::StdProcessSpawner,
+    directories_home::DirectoriesHome, notification_sound::PlatformPlayer,
+    portable_pty::PortablePtyService, std_clock::SystemClock, std_fs::StdFileSystem,
+    std_process::StdProcessSpawner,
 };
 use crate::core::Core;
 use crate::core::builder::CoreBuilder;
@@ -38,7 +39,11 @@ pub(crate) fn build_production_core(
 ) -> anyhow::Result<Core> {
     let waker: Arc<dyn crate::ports::pty::TerminalWaker> = Arc::new(WinitWaker::new(proxy));
     let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(ArboardClipboard);
-    build_production_core_inner(waker, clipboard, memory_arc)
+    // PlatformPlayer 는 OS 별 alias — macOS+gui = MacBeepPlayer, Windows =
+    // WinBeepPlayer, Linux = LinuxBeepPlayer, headless macOS / 그 외 = NoopPlayer.
+    let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
+        Arc::new(PlatformPlayer);
+    build_production_core_inner(waker, clipboard, sound_player, memory_arc)
 }
 
 /// Headless variant — gui-only adapter 의존성 (winit_waker, arboard) 을 제외.
@@ -51,12 +56,16 @@ pub(crate) fn build_production_core_headless(
     // headless 빌드는 clipboard 가 안 쓰이지만 ClipboardSystem trait 를 구현하는
     // null placeholder 로 채워 Core 시그니처를 만족시킨다.
     let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(NullClipboard);
-    build_production_core_inner(terminal_waker, clipboard, memory_arc)
+    // headless 빌드도 sound 재생 미지원 — NoopPlayer 명시 주입.
+    let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
+        Arc::new(crate::ports::notification_sound::NoopPlayer);
+    build_production_core_inner(terminal_waker, clipboard, sound_player, memory_arc)
 }
 
 fn build_production_core_inner(
     waker: Arc<dyn crate::ports::pty::TerminalWaker>,
     clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem>,
+    sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer>,
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
 ) -> anyhow::Result<Core> {
     let pty: Arc<dyn crate::ports::pty::PtyService> = Arc::new(PortablePtyService);
@@ -87,6 +96,7 @@ fn build_production_core_inner(
         .with_clipboard(clipboard)
         .with_process(process)
         .with_home(home)
+        .with_sound_player(sound_player)
         .with_memory(memory)
         .with_themes(themes)
         .with_preset_store(preset_store)
