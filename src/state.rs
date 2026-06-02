@@ -77,11 +77,6 @@ pub enum PendingHostEvent {
         surface_id: u32,
         prev_surface_id: Option<u32>,
     },
-    SurfaceResized {
-        surface_id: u32,
-        width_px: u32,
-        height_px: u32,
-    },
     SurfaceTitleChanged {
         surface_id: u32,
         title: String,

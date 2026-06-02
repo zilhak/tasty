@@ -6,7 +6,7 @@
 
 use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::events::payloads::{
-    SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceResized, SurfaceTitleChanged,
+    SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceTitleChanged,
 };
 
 use crate::plugin::PluginManager;
@@ -17,25 +17,6 @@ pub(super) fn emit_focused(mgr: &mut PluginManager, surface_id: u32, prev_surfac
         prev_surface_id,
     };
     mgr.emit_host_event("surface.focused", &payload, EventScope::Surface);
-}
-
-pub(super) fn emit_resized(
-    mgr: &mut PluginManager,
-    surface_id: u32,
-    width_px: u32,
-    height_px: u32,
-) {
-    let payload = SurfaceResized {
-        surface_id,
-        width_px,
-        height_px,
-    };
-    mgr.emit_host_event_throttled(
-        "surface.resized",
-        surface_id as u64,
-        &payload,
-        EventScope::Surface,
-    );
 }
 
 pub(super) fn emit_title_changed(mgr: &mut PluginManager, surface_id: u32, title: String) {

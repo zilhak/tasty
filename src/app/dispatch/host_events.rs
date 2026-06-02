@@ -46,11 +46,6 @@ impl App {
                     surface_id,
                     prev_surface_id,
                 } => surface::emit_focused(mgr, surface_id, prev_surface_id),
-                PendingHostEvent::SurfaceResized {
-                    surface_id,
-                    width_px,
-                    height_px,
-                } => surface::emit_resized(mgr, surface_id, width_px, height_px),
                 PendingHostEvent::SurfaceTitleChanged { surface_id, title } => {
                     surface::emit_title_changed(mgr, surface_id, title)
                 }
