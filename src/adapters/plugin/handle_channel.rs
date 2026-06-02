@@ -267,6 +267,7 @@ impl HandleListener {
     }
 
     /// 해당 token으로 connect할 plugin의 stream을 기다린다. `timeout` 안에 안 오면 `None`.
+    #[cfg(test)]
     pub fn expect_connection(&self, token: &str, timeout: Duration) -> Option<HandleStream> {
         let rx = self.register_token(token);
         match rx.recv_timeout(timeout) {
@@ -291,8 +292,8 @@ impl HandleListener {
         rx
     }
 
-    /// 미사용 mailbox 명시적 제거. plugin 종료 시 호출 가능.
-    #[allow(dead_code)]
+    /// 미사용 mailbox 명시적 제거. expect_connection 의 timeout cleanup 경로.
+    #[cfg(test)]
     pub fn cancel_token(&self, token: &str) {
         if let Ok(mut p) = self.pending.lock() {
             p.remove(token);
