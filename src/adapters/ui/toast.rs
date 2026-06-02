@@ -18,12 +18,15 @@ use super::layout_context::LayoutContext;
 pub enum ToastKind {
     Info,
     Success,
+    /// 표준 toast kind — 향후 경고 발화 시 활성화.
+    #[allow(dead_code)]
     Warning,
     Error,
 }
 
 /// 어느 영역에 떠오를지를 결정하는 위치 앵커.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ToastScope {
     Window,
     Workspace(usize),

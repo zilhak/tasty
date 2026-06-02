@@ -126,6 +126,8 @@ pub enum DragState {
         initial_position: Vec2,
     },
     Resizing {
+        /// 향후 hit-area 별 resize 동작 분기 시 사용 — debug 인식용.
+        #[allow(dead_code)]
         handle: ResizeHandle,
         drag_start_pos: Pos2,
         initial_rect: Rect,

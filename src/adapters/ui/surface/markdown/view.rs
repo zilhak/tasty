@@ -8,6 +8,8 @@ use crate::model::{MarkdownPanel, SurfaceId};
 
 pub struct MarkdownView {
     pub content: String,
+    /// 향후 scroll position persistence 시 사용 — 현 시점 read 0.
+    #[allow(dead_code)]
     pub scroll_offset: f32,
     pub commonmark_cache: egui_commonmark::CommonMarkCache,
 }

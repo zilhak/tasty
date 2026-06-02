@@ -98,10 +98,13 @@ impl PluginCommandRegistry {
             .unwrap_or(&[])
     }
 
+    /// 라이브러리 표준 accessor — 호출처 0 이지만 std-style API 일관성 위해 보존.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.by_plugin.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.by_plugin.values().map(|v| v.len()).sum()
     }

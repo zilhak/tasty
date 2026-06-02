@@ -22,6 +22,8 @@ use crate::state::AppState;
 
 pub struct ImePreeditState {
     pub text: String,
+    /// IME pre-edit composing cursor (row, col). 향후 caret 렌더링 추가 시 사용.
+    #[allow(dead_code)]
     pub cursor: Option<(usize, usize)>,
     pub anchor_col: usize,
     pub anchor_row: usize,
@@ -464,6 +466,8 @@ impl GpuState {
         self.scale_factor
     }
 
+    /// debug overlay 후보 — egui frame counter 노출용.
+    #[allow(dead_code)]
     pub fn egui_frame_nr(&self) -> u64 {
         self.egui_ctx.cumulative_pass_nr()
     }

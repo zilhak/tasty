@@ -57,6 +57,8 @@ impl SettingsWindow {
         }
     }
 
+    /// modal entry 의 일부 — view/* 재구성 시 활성화.
+    #[allow(dead_code)]
     pub fn render_settings(&mut self) {
         self.render();
     }

@@ -61,6 +61,8 @@ impl ClipboardEntry {
     }
 
     /// The raw text content, if any.
+    /// std-style accessor — UI 의 "text vs image" 분기 추가 시 호출.
+    #[allow(dead_code)]
     pub fn text(&self) -> Option<&str> {
         match &self.content {
             ClipboardContent::Text(s) => Some(s),
@@ -97,6 +99,8 @@ impl ClipboardHistory {
         self.entries.len()
     }
 
+    /// std-style accessor — UI 의 "history empty" 분기 추가 시 호출.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

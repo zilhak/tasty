@@ -27,6 +27,8 @@ pub struct UpdateStatus {
 }
 
 impl UpdateStatus {
+    /// 라이브러리 표준 helper — `latest.is_some()` 의 의미 명시화 alias.
+    #[allow(dead_code)]
     pub fn has_update(&self) -> bool {
         self.latest.is_some()
     }

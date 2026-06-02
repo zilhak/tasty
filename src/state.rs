@@ -441,6 +441,8 @@ pub struct DropHoverState {
     pub(crate) paths: Vec<std::path::PathBuf>,
     /// hover 시작 시점의 cursor position (physical pixels). `CursorLeft` 또는
     /// `CursorMoved` 가 drag 중에 발화되지 않을 수 있어 보수적으로 시작점만 기록.
+    /// 향후 drop indicator 정밀화 시 read 예정.
+    #[allow(dead_code)]
     pub(crate) cursor: Option<(f32, f32)>,
 }
 

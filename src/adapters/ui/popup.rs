@@ -65,6 +65,8 @@ pub enum PopupScope {
     /// Visible only when the specified workspace is active.
     Workspace(usize),
     /// Visible only when the specified pane is visible, clamped to pane bounds.
+    /// Placeholder — popup 발화 시 pane-anchored popup 활성화 예정.
+    #[allow(dead_code)]
     Pane(u32),
     /// Visible only when the specified tab is active, clamped to pane bounds.
     Tab(u32, usize),
@@ -224,6 +226,8 @@ impl PopupManager {
 
     /// `sizer`가 정의된 popup에 한해 open 직전 크기를 재계산한다. caller가 사이즈
     /// 갱신 후 `open*` 계열을 호출하는 규약.
+    /// popup 표준 API — context menu/단축키 통합 시 호출.
+    #[allow(dead_code)]
     pub fn refresh_size(&mut self, id: PopupId, size: egui::Vec2) {
         if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
             p.size = size;
@@ -259,6 +263,8 @@ impl PopupManager {
 
     /// Open a popup centered on screen **without** focus (agent-initiated).
     /// 사용자의 포커스를 훔치지 않는다. CLI/IPC 경유 open에 사용.
+    /// popup 표준 API — agent 발화 경로 통합 시 호출.
+    #[allow(dead_code)]
     pub fn open_centered(&mut self, id: PopupId) {
         if let Some(i) = self.popups.iter().position(|p| p.id == id) {
             self.popups[i].open = true;
@@ -317,6 +323,8 @@ impl PopupManager {
     }
 
     /// Toggle a popup open/closed.
+    /// popup 표준 API — 단축키 통합 시 호출.
+    #[allow(dead_code)]
     pub fn toggle(&mut self, id: PopupId) {
         if self.is_open(id) {
             self.close(id);
