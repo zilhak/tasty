@@ -6,12 +6,6 @@ use super::CoreState;
 impl CoreState {
     /// Recompute `busy_surfaces` by polling every PTY's foreground
     /// process. Returns true if the set changed (caller should redraw).
-    ///
-    /// **D.3.E.4.f** — store iter 로 cutover. busy 의 source of truth 는
-    /// `self.busy_surfaces` (frontend 용) 와 `self.terminals.busy_surfaces`
-    /// (store 내부, 향후 단일화) 의 dual — frontend caller (`is_surface_busy`,
-    /// `any_busy`, `busy_count`) 가 self.busy_surfaces 만 사용하므로 본 메서드가
-    /// owner.
     pub fn refresh_busy_surfaces(&mut self) -> bool {
         let mut busy: std::collections::HashSet<u32> = std::collections::HashSet::new();
         for (sid, terminal) in self.terminals.iter() {
@@ -20,14 +14,6 @@ impl CoreState {
             }
         }
         let changed = self.busy_surfaces != busy;
-        for sid in busy.iter() {
-            self.terminals.set_busy(*sid, true);
-        }
-        for sid in self.busy_surfaces.iter() {
-            if !busy.contains(sid) {
-                self.terminals.set_busy(*sid, false);
-            }
-        }
         self.busy_surfaces = busy;
         changed
     }

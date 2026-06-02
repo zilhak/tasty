@@ -14,7 +14,7 @@
 //! - **E.4.e**: Surface trait 단순화 — terminal 관련 11→8 메서드.
 //! - **E.4.f**: cutover — `TerminalSurface.terminal` 필드 + dual-write 폐기.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use tasty_terminal::{Terminal, TerminalEvent};
 
@@ -35,10 +35,6 @@ pub(crate) struct TerminalStore {
     /// layout 저장/복원 시 사용. surface 별로 *Terminal 과는 별도 lifecycle* —
     /// 생성 즉시에는 None, 첫 dump 후 Some.
     scrollback_persist_ids: HashMap<SurfaceId, String>,
-
-    /// foreground process != shell 판정 캐시. BusyPoll 로 갱신. surface 닫힘 시
-    /// store 와 함께 entry 제거 (lifecycle 동기 — TODO §4 Q4 결정).
-    busy_surfaces: HashSet<SurfaceId>,
 }
 
 impl TerminalStore {
@@ -59,7 +55,6 @@ impl TerminalStore {
     /// pending_scrollback_inject / busy_surfaces) 도 함께 제거.
     pub(crate) fn remove(&mut self, id: SurfaceId) -> Option<Terminal> {
         self.scrollback_persist_ids.remove(&id);
-        self.busy_surfaces.remove(&id);
         self.terminals.remove(&id)
     }
 
@@ -99,24 +94,6 @@ impl TerminalStore {
 
     pub(crate) fn set_scrollback_persist_id(&mut self, id: SurfaceId, persist_id: String) {
         self.scrollback_persist_ids.insert(id, persist_id);
-    }
-
-    // ── Busy surfaces (foreground process != shell) ─────────────────
-
-    pub(crate) fn busy_surfaces(&self) -> &HashSet<SurfaceId> {
-        &self.busy_surfaces
-    }
-
-    pub(crate) fn set_busy(&mut self, id: SurfaceId, busy: bool) {
-        if busy {
-            self.busy_surfaces.insert(id);
-        } else {
-            self.busy_surfaces.remove(&id);
-        }
-    }
-
-    pub(crate) fn is_busy(&self, id: SurfaceId) -> bool {
-        self.busy_surfaces.contains(&id)
     }
 
     // ── PTY operations (bulk) ───────────────────────────────────────
