@@ -98,21 +98,6 @@ impl PluginCommandRegistry {
             .unwrap_or(&[])
     }
 
-    /// plugin id 목록 (command가 1개 이상 등록된 plugin만). 정렬은 등록 순서가
-    /// 아닌 알파벳 순서로 안정화.
-    pub fn plugins_with_commands(&self) -> Vec<String> {
-        let mut v: Vec<String> = self.by_plugin.keys().cloned().collect();
-        v.sort();
-        v
-    }
-
-    /// (plugin_id, command_id)로 entry 직접 조회.
-    pub fn find(&self, plugin_id: &str, command_id: &str) -> Option<&PluginCommandEntry> {
-        self.by_plugin
-            .get(plugin_id)
-            .and_then(|v| v.iter().find(|e| e.command_id == command_id))
-    }
-
     pub fn is_empty(&self) -> bool {
         self.by_plugin.is_empty()
     }
@@ -313,21 +298,6 @@ mod tests {
         // 매니페스트가 commands를 비워서 다시 들어오면 plugin 항목 자체 제거
         reg.register_plugin(&manifest_with_commands("com.example.x", vec![]));
         assert!(reg.is_empty());
-    }
-
-    #[test]
-    fn plugins_with_commands_sorted() {
-        let mut reg = PluginCommandRegistry::new();
-        reg.register_plugin(&manifest_with_commands(
-            "com.example.zebra",
-            vec![cmd("z.a", BindingMode::Independent)],
-        ));
-        reg.register_plugin(&manifest_with_commands(
-            "com.example.alpha",
-            vec![cmd("a.a", BindingMode::Independent)],
-        ));
-        let plugins = reg.plugins_with_commands();
-        assert_eq!(plugins, vec!["com.example.alpha", "com.example.zebra"]);
     }
 
     fn entry(
