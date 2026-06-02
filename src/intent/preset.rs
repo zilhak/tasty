@@ -93,10 +93,11 @@ fn apply(
 
     if let Err(e) = apply_inner(core, state, engine, kind, name, None, None, options) {
         tracing::warn!("preset apply failed: {e}");
+        #[cfg(feature = "gui")]
         state.toasts.push(
             crate::i18n::t("preset.toast.apply_failed"),
-            crate::adapters::ui::ToastKind::Error,
-            crate::adapters::ui::ToastScope::Window,
+            crate::model::toast_kind::ToastKind::Error,
+            crate::model::toast_kind::ToastScope::Window,
         );
     }
 }
@@ -127,16 +128,23 @@ fn save(
         (Ok(_), PresetKind::Pane) => "preset.toast.saved_pane",
         (Err(_), _) => "preset.toast.save_failed",
     };
-    let toast_kind = if save_result.is_ok() {
-        crate::adapters::ui::ToastKind::Info
-    } else {
-        crate::adapters::ui::ToastKind::Error
-    };
-    state.toasts.push(
-        crate::i18n::t(toast_key),
-        toast_kind,
-        crate::adapters::ui::ToastScope::Window,
-    );
+    #[cfg(feature = "gui")]
+    {
+        let toast_kind = if save_result.is_ok() {
+            crate::model::toast_kind::ToastKind::Info
+        } else {
+            crate::model::toast_kind::ToastKind::Error
+        };
+        state.toasts.push(
+            crate::i18n::t(toast_key),
+            toast_kind,
+            crate::model::toast_kind::ToastScope::Window,
+        );
+    }
+    #[cfg(not(feature = "gui"))]
+    {
+        let _ = toast_key; // headless: toast 소비자 없음, silent drop.
+    }
 
     let saved_name = match save_result {
         Ok(SaveOutcome::Saved(n)) => n,

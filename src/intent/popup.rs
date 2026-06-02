@@ -7,27 +7,41 @@
 //!
 //! Dedup: 같은 popup id 에 OpenPopup 이 중복 들어오면 이미 열려있을 때 무시.
 
-use super::{DispatchedIntent, Intent, OpenPopupMode, UiIntent};
+use super::DispatchedIntent;
+#[cfg(feature = "gui")]
+use super::{Intent, OpenPopupMode, UiIntent};
 use crate::state::AppState;
 
 /// popup 도메인 분기 핸들러. `dispatch_pending_intents` 에서 호출.
+///
+/// Headless 빌드 (no gui): popup 소비자가 없으므로 silent drop. `Intent::Ui`
+/// variant 자체는 model::popup_kind 경로로 컴파일 되므로 발화는 가능 — 본 핸들러
+/// 에서 무시한다. (`docs/design/popup-system.md`.)
 pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
-    let Intent::Ui(ui) = &intent.body else {
-        return;
-    };
-    match ui {
-        UiIntent::OpenPopup { id, mode } => open(state, id, mode),
-        UiIntent::ClosePopup { id } => state.popups.close(id),
-        UiIntent::TogglePopup { id, mode } => {
-            if state.popups.is_open(id) {
-                state.popups.close(id);
-            } else {
-                open(state, id, mode);
+    #[cfg(feature = "gui")]
+    {
+        let Intent::Ui(ui) = &intent.body else {
+            return;
+        };
+        match ui {
+            UiIntent::OpenPopup { id, mode } => open(state, id, mode),
+            UiIntent::ClosePopup { id } => state.popups.close(id),
+            UiIntent::TogglePopup { id, mode } => {
+                if state.popups.is_open(id) {
+                    state.popups.close(id);
+                } else {
+                    open(state, id, mode);
+                }
             }
         }
     }
+    #[cfg(not(feature = "gui"))]
+    {
+        let _ = (state, intent); // headless: popup 소비자 없음, silent drop.
+    }
 }
 
+#[cfg(feature = "gui")]
 fn open(state: &mut AppState, id: &'static str, mode: &OpenPopupMode) {
     // Dedup: 이미 열려있으면 두 번째 OpenPopup 무시.
     if state.popups.is_open(id) {
