@@ -1,6 +1,6 @@
 //! Modeless 에디터 계열 윈도우 trait.
 //!
-//! 현재 구현체: `PresetWindow`. 미래 후보: 키바인딩 에디터, 테마 에디터 등.
+//! 현재 구현체: `PresetView`. 미래 후보: 키바인딩 에디터, 테마 에디터 등.
 //!
 //! 모달 (`ModalView`) 과 달리:
 //! - 다른 윈도우 입력을 차단하지 않음
@@ -12,7 +12,7 @@
 use crate::view::Modality;
 use crate::view::ui::View;
 
-/// `impl EditorView for PresetWindow {}` 가 존재하지만 trait object 사용 0.
+/// `impl EditorView for PresetView {}` 가 존재하지만 trait object 사용 0.
 /// 도메인 계열 표현(`docs/design/ubiquitous-language.md`)과 미래 에디터(키바인딩/테마)
 /// placeholder로 보존.
 #[allow(dead_code)]

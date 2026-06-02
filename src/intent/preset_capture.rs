@@ -10,7 +10,7 @@
 //!
 //! terminal surface 의 `cwd` 와 `startup_command` 는 호출자가 제공하지 않고
 //! 본 모듈에서 `terminal.get_cwd()` 로 직접 추출. startup_command 는 capture
-//! 시점에는 None — 사용자가 PresetWindow 에서 편집한다.
+//! 시점에는 None — 사용자가 PresetView 에서 편집한다.
 
 use crate::core::CoreState;
 use crate::model::{Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace};

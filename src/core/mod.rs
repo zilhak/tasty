@@ -74,7 +74,7 @@ pub(crate) struct Core {
     presets: Arc<Mutex<dyn PresetStorage>>,
     settings_storage: Arc<dyn SettingsStorage>,
 
-    /// Layout preset 디스크 캐시. 구체 Arc — MainView / PresetWindow 에 clone
+    /// Layout preset 디스크 캐시. 구체 Arc — MainView / PresetView 에 clone
     /// 으로 전달해 *공유 owner* 가 된다. `presets` (trait Arc) 와 같은 allocation.
     pub(crate) preset_store: Arc<Mutex<PresetStore>>,
 }

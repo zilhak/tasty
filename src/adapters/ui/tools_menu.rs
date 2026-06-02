@@ -28,7 +28,7 @@ struct BuiltinTool {
 enum BuiltinAction {
     /// 일반 popup 열기.
     OpenPopup(&'static str),
-    /// 별도 winit 윈도우 열기. 현재 사용처는 PresetWindow 하나.
+    /// 별도 winit 윈도우 열기. 현재 사용처는 PresetView 하나.
     OpenWindow(WindowKind),
 }
 

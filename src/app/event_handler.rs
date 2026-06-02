@@ -474,7 +474,7 @@ impl ApplicationHandler<AppEvent> for App {
                     plugin_manager: self.plugin_manager.as_ref(),
                 };
                 // MainView.handle_event는 항상 ViewAction::None을 반환한다.
-                // PresetWindow (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
+                // PresetView (modeless editor) 는 CloseRequested 에서 Close 를 반환하므로
                 // 이 경로에서 처리한다. 그 외 modal Close 는 위쪽 모달 경로에서 소비된다.
                 w.handle_event(event, &mut ctx)
             } else {
@@ -575,7 +575,7 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_plugin_popup_events();
         // PluginsWindow 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.
         self.process_plugins_window_actions();
-        // PresetWindow 열기 + (Intent::SavePreset cascade 시) 선택. preset 저장/적용/삭제/이름변경
+        // PresetView 열기 + (Intent::SavePreset cascade 시) 선택. preset 저장/적용/삭제/이름변경
         // 자체는 Intent 큐 (`dispatch_pending_intents`) 가 처리한다.
         self.process_pending_open_preset_window(event_loop);
 

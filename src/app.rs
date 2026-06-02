@@ -92,7 +92,7 @@ pub(crate) struct App {
     /// 사용자 init.lua 기반 Lua hook 엔진. 부팅 시 1회 생성, `~/.tasty/init.lua` 가
     /// 있으면 로드. observe-only — 호스트 동작에는 영향 없음. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
-    /// 현재 열려 있는 `PresetWindow` 의 winit window id. modeless editor 윈도우는
+    /// 현재 열려 있는 `PresetView` 의 winit window id. modeless editor 윈도우는
     /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 윈도우를 만들지 않고
     /// 이 id 의 윈도우로 포커스만 이동한다.
     #[cfg(feature = "gui")]

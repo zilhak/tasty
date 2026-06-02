@@ -425,11 +425,11 @@ pub struct DialogState {
     pub(crate) approval_comment_buffer: String,
     /// file_handler_picker popup 의 입력/선택 상태. `None` 이면 popup 미오픈.
     pub(crate) file_handler_picker: Option<FileHandlerPickerData>,
-    /// 도구 메뉴 클릭 / preset save 후속 — PresetWindow 를 열어달라는 요청.
-    /// `selection` 이 `Some` 이면 PresetWindow 가 열린 뒤 해당 preset 을 선택한다.
+    /// 도구 메뉴 클릭 / preset save 후속 — PresetView 를 열어달라는 요청.
+    /// `selection` 이 `Some` 이면 PresetView 가 열린 뒤 해당 preset 을 선택한다.
     /// App 메인 루프 `process_pending_open_preset_window` 가 drain.
     pub(crate) pending_open_preset_window: bool,
-    /// PresetWindow 가 열린 뒤 자동 선택할 preset. `pending_open_preset_window` 와 함께 사용.
+    /// PresetView 가 열린 뒤 자동 선택할 preset. `pending_open_preset_window` 와 함께 사용.
     pub(crate) pending_preset_window_selection: Option<(tasty_presets::PresetKind, String)>,
     /// 프리셋 적용 picker popup 의 현재 하이라이트 (preset name). popup 닫힘 시 None.
     pub(crate) preset_picker_selected: Option<String>,

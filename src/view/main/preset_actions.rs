@@ -2,7 +2,7 @@
 //!
 //! 본 모듈은 capture 만 수행한다. `PresetStore` 는 App 레벨 (engine::Engine) 에서 관리되므로
 //! `Intent::SavePreset` 으로 발화하면 `src/intent/preset.rs` 핸들러가 unique_name 부여 →
-//! save → PresetWindow 오픈 + select 까지 일괄 처리한다.
+//! save → PresetView 오픈 + select 까지 일괄 처리한다.
 
 use anyhow::{Result, anyhow};
 use tasty_presets::CapturedSurfaceMeta;

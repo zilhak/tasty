@@ -1,4 +1,4 @@
-//! `PresetWindow` (modeless editor — engine 전역 단일 인스턴스) 라이프사이클.
+//! `PresetView` (modeless editor — engine 전역 단일 인스턴스) 라이프사이클.
 
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ use crate::app::App;
 use crate::view;
 
 impl App {
-    /// PresetWindow 를 연다. 이미 열려 있으면 새 윈도우를 만들지 않고 기존 윈도우에
+    /// PresetView 를 연다. 이미 열려 있으면 새 윈도우를 만들지 않고 기존 윈도우에
     /// 포커스만 옮긴다 (엔진 전역 단일 인스턴스).
     pub(crate) fn open_preset_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if let Some(id) = self.preset_window_id {
@@ -54,7 +54,7 @@ impl App {
 
         let store = std::sync::Arc::clone(&self.core.preset_store);
         let window_id = window.id();
-        let mut preset = view::PresetWindow::new(gpu, window, store);
+        let mut preset = view::PresetView::new(gpu, window, store);
         #[cfg(windows)]
         {
             use crate::view::ui::View as _;
@@ -70,7 +70,7 @@ impl App {
         tracing::info!("opened preset window {:?}", window_id);
     }
 
-    /// PresetWindow close 시 정리. store 는 Arc<Mutex<>> 공유라 별도 회수 불필요.
+    /// PresetView close 시 정리. store 는 Arc<Mutex<>> 공유라 별도 회수 불필요.
     pub(crate) fn on_preset_window_closed(&mut self, window_id: WindowId) {
         if self.preset_window_id != Some(window_id) {
             return;
@@ -79,7 +79,7 @@ impl App {
         self.view.windows.remove(&window_id);
     }
 
-    /// 도구 메뉴 클릭 / Intent::SavePreset 후속 — PresetWindow 열기 + (있다면) selection.
+    /// 도구 메뉴 클릭 / Intent::SavePreset 후속 — PresetView 열기 + (있다면) selection.
     /// preset 저장/적용 자체는 Intent 핸들러 (`src/intent/preset.rs`) 에서 처리.
     pub(crate) fn process_pending_open_preset_window(
         &mut self,
@@ -108,7 +108,7 @@ impl App {
                     .view
                     .windows
                     .get_mut(&pwid)
-                    .and_then(|w| w.as_any_mut().downcast_mut::<view::PresetWindow>())
+                    .and_then(|w| w.as_any_mut().downcast_mut::<view::PresetView>())
                 {
                     pw.select(kind, name);
                 }

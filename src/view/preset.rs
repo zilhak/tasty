@@ -21,7 +21,7 @@ use crate::view::{
     editor::{EDITOR_MODALITY, EditorView},
 };
 
-pub struct PresetWindow {
+pub struct PresetView {
     pub base: ViewBase,
     store: Arc<Mutex<PresetStore>>,
     active_kind: PresetKind,
@@ -32,7 +32,7 @@ pub struct PresetWindow {
     shown: bool,
 }
 
-impl PresetWindow {
+impl PresetView {
     pub fn new(
         gpu: GpuState,
         winit: Arc<winit::window::Window>,
@@ -62,7 +62,7 @@ impl PresetWindow {
     }
 }
 
-impl View for PresetWindow {
+impl View for PresetView {
     fn base(&self) -> &ViewBase {
         &self.base
     }
@@ -174,5 +174,5 @@ impl View for PresetWindow {
     }
 }
 
-impl EditorView for PresetWindow {}
-impl sealed::Sealed for PresetWindow {}
+impl EditorView for PresetView {}
+impl sealed::Sealed for PresetView {}

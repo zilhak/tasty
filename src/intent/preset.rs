@@ -12,7 +12,7 @@
 //! 정책 (TODO 01 결정 P1~P5, action-dispatch.md 참조):
 //! - **ApplyPreset focus**: origin 으로 자동 분기 (User → focus=true, Agent → false).
 //! - **SavePreset naming**: `explicit_name` 우선, 없으면 `base_name` 으로 store.unique_name 자동.
-//! - **SavePreset cascade**: User origin 일 때만 save 후 PresetWindow 자동 오픈 + select.
+//! - **SavePreset cascade**: User origin 일 때만 save 후 PresetView 자동 오픈 + select.
 //!   Agent origin 은 cascade 미수행 (focus 독립성 원칙). `state.dialogs.pending_open_preset_window`
 //!   + `pending_preset_window_selection` 으로 main loop 에 신호.
 //! - **List/Get**: read-only — Intent 큐 안 거치고 IPC handler 가 직접 처리.
@@ -155,7 +155,7 @@ fn save(
         }
     };
 
-    // User origin cascade: save 후 PresetWindow 자동 오픈 + select.
+    // User origin cascade: save 후 PresetView 자동 오픈 + select.
     // Agent origin 은 cascade 미수행 (focus 독립성).
     if intent.origin.is_user() {
         state.dialogs.pending_open_preset_window = true;

@@ -20,7 +20,7 @@ pub(crate) use base::ViewBase;
 pub(crate) use main::MainView;
 pub(crate) use modal::ModalView;
 pub(crate) use plugins::PluginsWindow;
-pub(crate) use preset::PresetWindow;
+pub(crate) use preset::PresetView;
 pub(crate) use quit::QuitWindow;
 pub(crate) use settings::SettingsWindow;
 pub(crate) use terminal_host::TerminalHostView;
