@@ -22,6 +22,7 @@ use std::collections::VecDeque;
 use crate::adapters::ui::info_modal::InfoModal;
 use crate::core::CoreState;
 use crate::model::{LogicalPx, PhysicalPx};
+#[cfg(feature = "gui")]
 use crate::settings_ui::SettingsUiState;
 
 /// Type of the currently focused surface, used for keyboard routing.
@@ -241,6 +242,7 @@ pub struct AppState {
     /// Whether the plugins window is open.
     pub(crate) plugins_open: bool,
     /// Persistent UI state for the settings window.
+    #[cfg(feature = "gui")]
     pub(crate) settings_ui_state: SettingsUiState,
     /// Cached sidebar width from settings (logical pixels).
     pub(crate) sidebar_width: LogicalPx,
@@ -592,6 +594,7 @@ impl AppState {
             active_workspace,
             settings_open: false,
             plugins_open: false,
+            #[cfg(feature = "gui")]
             settings_ui_state: SettingsUiState::new(),
             sidebar_width,
             sidebar_visible: true,
@@ -662,10 +665,12 @@ impl AppState {
 
     /// Returns true if any egui overlay is visible.
     pub fn has_egui_overlay_open(&self) -> bool {
-        self.settings_open
-            || self.plugins_open
-            || self.dialogs.has_any_overlay()
-            || self.popups.has_any_open()
+        let mut open = self.settings_open || self.plugins_open || self.dialogs.has_any_overlay();
+        #[cfg(feature = "gui")]
+        {
+            open = open || self.popups.has_any_open();
+        }
+        open
     }
 
     /// 닫히는 surface 의 `(surface_id, scrollback_persist_id)` 를 추출. Tab/Pane/Workspace

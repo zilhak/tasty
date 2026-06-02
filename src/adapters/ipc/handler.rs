@@ -1,6 +1,6 @@
 #[cfg(feature = "gui")]
 mod clipboard;
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
 #[cfg(debug_assertions)]
 pub(crate) mod debug_plugin;
@@ -20,7 +20,7 @@ mod preset;
 pub(crate) mod surface;
 mod tab;
 mod telemetry;
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, feature = "gui"))]
 mod tool;
 #[cfg(feature = "gui")]
 mod webview;
@@ -589,18 +589,26 @@ fn route_debug_handler(
 ) -> Option<JsonRpcResponse> {
     Some(match request.method.as_str() {
         "ui.state" => handle_ui_state(state, engine, id),
+        #[cfg(feature = "gui")]
         "debug.cell_info" => debug::handle_debug_cell_info(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "debug.screen_attrs" => {
             debug::handle_debug_screen_attrs(state, engine, id, &request.params)
         }
+        #[cfg(feature = "gui")]
         "debug.glyph_color" => debug::handle_debug_glyph_color(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "debug.feed_bytes" => debug::handle_debug_feed_bytes(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "debug.inject_mouse" => {
             debug::handle_debug_inject_mouse(state, engine, id, &request.params)
         }
+        #[cfg(feature = "gui")]
         "debug.inject_key" => debug::handle_debug_inject_key(state, engine, id, &request.params),
         // 도구 메뉴 — 사용자 클릭 자동화. release 미노출.
+        #[cfg(feature = "gui")]
         "debug.tool.list" => tool::handle_list(state, engine, id),
+        #[cfg(feature = "gui")]
         "debug.tool.invoke" => tool::handle_invoke(state, engine, id, &request.params),
         _ => return None,
     })
@@ -697,11 +705,15 @@ fn handle_ui_state(
         .find_pane(focused_pane_id)
         .map(|p| p.tabs.len())
         .unwrap_or(0);
+    #[cfg(feature = "gui")]
+    let notification_panel_open = state.popups.is_open("notifications");
+    #[cfg(not(feature = "gui"))]
+    let notification_panel_open = false;
     JsonRpcResponse::success(
         id,
         json!({
             "settings_open": state.settings_open,
-            "notification_panel_open": state.popups.is_open("notifications"),
+            "notification_panel_open": notification_panel_open,
             "active_workspace": state.active_workspace,
             "workspace_count": engine.workspaces.len(),
             "pane_count": pane_count,

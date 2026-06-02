@@ -580,16 +580,24 @@ impl Core {
                 Ok(vec![Self::apply_apply_pending_layout_restore(engine)])
             }
             DomainIntent::DispatchFile { target, depth } => {
-                match engine.identify_worker.as_ref() {
-                    Some(worker) => {
-                        let _id = worker.spawn(target, depth);
+                #[cfg(feature = "gui")]
+                {
+                    match engine.identify_worker.as_ref() {
+                        Some(worker) => {
+                            let _id = worker.spawn(target, depth); // request id not tracked.
+                        }
+                        None => {
+                            tracing::warn!(
+                                target = %target.display(),
+                                "DispatchFile: identify_worker not injected — drop",
+                            );
+                        }
                     }
-                    None => {
-                        tracing::warn!(
-                            target = %target.display(),
-                            "DispatchFile: identify_worker not injected — drop",
-                        );
-                    }
+                }
+                #[cfg(not(feature = "gui"))]
+                {
+                    let _ = (engine, target, depth); // headless: no identify_worker.
+                    tracing::warn!("DispatchFile dropped in headless build");
                 }
                 Ok(vec![])
             }

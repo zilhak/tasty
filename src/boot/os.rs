@@ -4,8 +4,10 @@
 //! - 전 플랫폼: `crash_report::init` 으로 패닉 → 로그 파일 핸들러 등록.
 //! - macOS: `macos_delegate::store_proxy` 로 NSApplicationDelegate 에 event loop proxy 보관.
 
+#[cfg(feature = "gui")]
 use winit::event_loop::EventLoopProxy;
 
+#[cfg(feature = "gui")]
 use crate::AppEvent;
 
 /// release 빌드 Windows 에서만 `AttachConsole(ATTACH_PARENT_PROCESS)` 호출.
@@ -28,7 +30,8 @@ pub(crate) fn init_crash_report() {
 }
 
 /// macOS NSApplicationDelegate 가 dock click 등에서 본 app 으로 이벤트를 보낼 수 있도록
-/// event loop proxy 를 보관. macOS 외에서는 no-op.
+/// event loop proxy 를 보관. macOS 외에서는 no-op. gui 빌드 전용.
+#[cfg(feature = "gui")]
 #[allow(unused_variables)]
 pub(crate) fn install_macos_delegate(proxy: &EventLoopProxy<AppEvent>) {
     #[cfg(target_os = "macos")]

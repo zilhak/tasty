@@ -217,7 +217,10 @@ fn extract_scrollback_line(
     let mut col_idx: usize = 0;
     for (cell_text, _attrs) in &line {
         let ch = cell_text.chars().next().unwrap_or(' ');
+        #[cfg(feature = "gui")]
         let width = crate::renderer::unicode_width(ch);
+        #[cfg(not(feature = "gui"))]
+        let width = if ch.is_ascii() { 1 } else { 2 }; // headless fallback (no cosmic-text).
         let selected = match sel.mode {
             SelectionMode::Line => true,
             _ => is_col_in_range(col_idx, abs_row, sel),

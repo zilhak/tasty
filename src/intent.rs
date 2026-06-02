@@ -245,7 +245,8 @@ pub enum OpenPopupMode {
     WithScope(PopupScope),
     /// scope 상단 정렬.
     AtTopOfScope(PopupScope),
-    /// 지정 위치 (context menu).
+    /// 지정 위치 (context menu). egui::Pos2 — gui-only.
+    #[cfg(feature = "gui")]
     AtFocused(egui::Pos2),
 }
 

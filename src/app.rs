@@ -9,6 +9,9 @@ pub(crate) mod clipboard_record;
 pub(crate) mod dispatch;
 #[cfg(feature = "gui")]
 pub(crate) mod dispatch_domain;
+#[cfg(not(feature = "gui"))]
+#[path = "app/dispatch_domain_stubs.rs"]
+pub(crate) mod dispatch_domain;
 pub(crate) mod event;
 #[cfg(feature = "gui")]
 pub(crate) mod event_handler;

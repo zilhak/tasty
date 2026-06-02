@@ -113,9 +113,12 @@ pub(crate) fn open_picker(
         selected: None,
         result: None,
     });
+    #[cfg(feature = "gui")]
     state
         .popups
         .open_centered_focused(crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
+    #[cfg(not(feature = "gui"))]
+    let _ = state; // headless: picker popup unavailable.
 }
 
 fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
@@ -167,7 +170,10 @@ pub fn execute_handler_action(
         }
         HandlerAction::System => {
             let uri = path_to_file_uri(target.as_path());
+            #[cfg(feature = "gui")]
             crate::terminal_link::open_uri(&uri);
+            #[cfg(not(feature = "gui"))]
+            tracing::warn!("HandlerAction::System ignored in headless build: {uri}");
         }
     }
 }

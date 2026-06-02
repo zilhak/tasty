@@ -6,6 +6,7 @@ use crate::core::CoreState;
 impl AppState {
     /// Determine the cursor icon for the winit (non-egui) area at the given position.
     /// Checks dividers first, then asks the surface. Returns None if not over any winit area.
+    #[cfg(feature = "gui")]
     pub fn winit_cursor_icon_at(
         &self,
         engine: &CoreState,

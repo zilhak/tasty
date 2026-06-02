@@ -9,13 +9,16 @@ use tasty_memory::MemoryStorage;
 use tasty_presets::PresetStore;
 use tasty_settings::{FileSettingsStorage, SettingsStorage};
 use tasty_themes::{ThemeStorage, ThemeStore};
+#[cfg(feature = "gui")]
 use winit::event_loop::EventLoopProxy;
 
+#[cfg(feature = "gui")]
 use crate::AppEvent;
+#[cfg(feature = "gui")]
+use crate::adapters::production::{arboard_clip::ArboardClipboard, winit_waker::WinitWaker};
 use crate::adapters::production::{
-    arboard_clip::ArboardClipboard, directories_home::DirectoriesHome,
-    portable_pty::PortablePtyService, std_clock::SystemClock, std_fs::StdFileSystem,
-    std_process::StdProcessSpawner, winit_waker::WinitWaker,
+    directories_home::DirectoriesHome, portable_pty::PortablePtyService, std_clock::SystemClock,
+    std_fs::StdFileSystem, std_process::StdProcessSpawner,
 };
 use crate::core::Core;
 use crate::core::builder::CoreBuilder;
@@ -28,15 +31,37 @@ use crate::core::builder::CoreBuilder;
 ///
 /// `memory` 가 `None` 이면 (homedir 미확인 등 boot fail), in-memory placeholder
 /// 로 fallback 해 앱 자체는 기동시킨다 — handler 가 자체적으로 store 의 가용성을 평가.
+#[cfg(feature = "gui")]
 pub(crate) fn build_production_core(
     proxy: EventLoopProxy<AppEvent>,
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
 ) -> anyhow::Result<Core> {
-    let pty: Arc<dyn crate::ports::pty::PtyService> = Arc::new(PortablePtyService);
     let waker: Arc<dyn crate::ports::pty::TerminalWaker> = Arc::new(WinitWaker::new(proxy));
+    let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(ArboardClipboard);
+    build_production_core_inner(waker, clipboard, memory_arc)
+}
+
+/// Headless variant — gui-only adapter 의존성 (winit_waker, arboard) 을 제외.
+/// terminal_waker 는 `HeadlessWaker::terminal_waker()` 가 제공.
+#[cfg(not(feature = "gui"))]
+pub(crate) fn build_production_core_headless(
+    terminal_waker: Arc<dyn crate::ports::pty::TerminalWaker>,
+    memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
+) -> anyhow::Result<Core> {
+    // headless 빌드는 clipboard 가 안 쓰이지만 ClipboardSystem trait 를 구현하는
+    // null placeholder 로 채워 Core 시그니처를 만족시킨다.
+    let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(NullClipboard);
+    build_production_core_inner(terminal_waker, clipboard, memory_arc)
+}
+
+fn build_production_core_inner(
+    waker: Arc<dyn crate::ports::pty::TerminalWaker>,
+    clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem>,
+    memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
+) -> anyhow::Result<Core> {
+    let pty: Arc<dyn crate::ports::pty::PtyService> = Arc::new(PortablePtyService);
     let fs: Arc<dyn crate::ports::fs::FileSystem> = Arc::new(StdFileSystem);
     let clock: Arc<dyn crate::ports::clock::Clock> = Arc::new(SystemClock);
-    let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(ArboardClipboard);
     let process: Arc<dyn crate::ports::process::ProcessSpawner> = Arc::new(StdProcessSpawner);
     let home: Arc<dyn crate::ports::home::HomeDirectory> = Arc::new(DirectoriesHome);
 
@@ -67,4 +92,25 @@ pub(crate) fn build_production_core(
         .with_preset_store(preset_store)
         .with_settings_storage(settings_storage)
         .build()
+}
+
+/// Headless 빌드용 no-op ClipboardSystem. clipboard 호출은 IPC 표면에서
+/// `MethodNotFound` 로 차단되므로 실제 호출은 도달하지 않는다.
+#[cfg(not(feature = "gui"))]
+struct NullClipboard;
+
+#[cfg(not(feature = "gui"))]
+impl crate::ports::clipboard::ClipboardSystem for NullClipboard {
+    fn read_text(&self) -> anyhow::Result<String> {
+        anyhow::bail!("clipboard unavailable in headless build")
+    }
+    fn write_text(&self, _text: &str) -> anyhow::Result<()> {
+        anyhow::bail!("clipboard unavailable in headless build")
+    }
+    fn read_image(&self) -> anyhow::Result<crate::ports::clipboard::ClipboardImage> {
+        anyhow::bail!("clipboard unavailable in headless build")
+    }
+    fn write_image(&self, _image: &crate::ports::clipboard::ClipboardImage) -> anyhow::Result<()> {
+        anyhow::bail!("clipboard unavailable in headless build")
+    }
 }

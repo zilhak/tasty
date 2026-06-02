@@ -78,7 +78,9 @@ pub(crate) use adapters::ui::terminal_link;
 pub(crate) use adapters::ui::theme_bridge;
 pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;
+#[cfg(feature = "gui")]
 pub(crate) use boot::waker as waker_factory_winit;
+#[cfg(feature = "gui")]
 pub(crate) use clipboard::{ClipboardContext, ClipboardData};
 pub(crate) use engine::output_observer;
 pub(crate) use engine::surface_registry::meta as surface_meta;
