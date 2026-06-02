@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use tasty_terminal::{ScrollbackLine, Terminal, TerminalEvent};
+use tasty_terminal::{Terminal, TerminalEvent};
 
 use crate::model::SurfaceId;
 
@@ -35,10 +35,6 @@ pub(crate) struct TerminalStore {
     /// layout 저장/복원 시 사용. surface 별로 *Terminal 과는 별도 lifecycle* —
     /// 생성 즉시에는 None, 첫 dump 후 Some.
     scrollback_persist_ids: HashMap<SurfaceId, String>,
-
-    /// 복원된 scrollback line 들의 inject 대기 큐. PTY 가 spawn 된 직후
-    /// `inject_scrollback` 으로 소비.
-    pending_scrollback_inject: HashMap<SurfaceId, Vec<ScrollbackLine>>,
 
     /// foreground process != shell 판정 캐시. BusyPoll 로 갱신. surface 닫힘 시
     /// store 와 함께 entry 제거 (lifecycle 동기 — TODO §4 Q4 결정).
@@ -63,7 +59,6 @@ impl TerminalStore {
     /// pending_scrollback_inject / busy_surfaces) 도 함께 제거.
     pub(crate) fn remove(&mut self, id: SurfaceId) -> Option<Terminal> {
         self.scrollback_persist_ids.remove(&id);
-        self.pending_scrollback_inject.remove(&id);
         self.busy_surfaces.remove(&id);
         self.terminals.remove(&id)
     }
@@ -104,19 +99,6 @@ impl TerminalStore {
 
     pub(crate) fn set_scrollback_persist_id(&mut self, id: SurfaceId, persist_id: String) {
         self.scrollback_persist_ids.insert(id, persist_id);
-    }
-
-    // ── Pending scrollback inject ───────────────────────────────────
-
-    pub(crate) fn enqueue_scrollback_inject(&mut self, id: SurfaceId, lines: Vec<ScrollbackLine>) {
-        self.pending_scrollback_inject.insert(id, lines);
-    }
-
-    pub(crate) fn take_pending_scrollback_inject(
-        &mut self,
-        id: SurfaceId,
-    ) -> Option<Vec<ScrollbackLine>> {
-        self.pending_scrollback_inject.remove(&id)
     }
 
     // ── Busy surfaces (foreground process != shell) ─────────────────
