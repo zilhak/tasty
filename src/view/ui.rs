@@ -25,10 +25,10 @@ use winit::event::WindowEvent;
 
 use crate::view::{MainView, ModalView, Modality, ViewAction, ViewBase, ViewCtx};
 
-/// 모든 윈도우 타입이 공유하는 최상위 트레잇.
+/// 모든 View 타입이 공유하는 최상위 트레잇.
 ///
 /// 직접 구현하지 말고 `ModalView` / `TerminalHostView` / `EditorView` 중
-/// 하나를 구현하라. 각 구현체는 `impl sealed::Sealed for MyWindow {}` 를 별도로
+/// 하나를 구현하라. 각 구현체는 `impl sealed::Sealed for MyView {}` 를 별도로
 /// 추가해야 한다.
 pub(crate) trait View: sealed::Sealed + std::any::Any {
     fn base(&self) -> &ViewBase;

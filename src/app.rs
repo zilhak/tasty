@@ -1,4 +1,4 @@
-//! `App` — winit `ApplicationHandler` 의 본체. 다중 윈도우 + 모달 + 플러그인 매니저 +
+//! `App` — winit `ApplicationHandler` 의 본체. 다중 View + 모달 + 플러그인 매니저 +
 //! parked AppState 보관. 메서드는 도메인별 서브모듈로 분산되어 있다.
 
 #[cfg(feature = "gui")]
@@ -55,7 +55,7 @@ pub(crate) struct App {
     pub(crate) core: Core,
     /// Phase C — 외부 통신 표면. ipc_server, port_file 보유.
     pub(crate) hub: Hub,
-    /// Phase C — GUI 어댑터. proxy, modal/focus 식별자, windows HashMap (예정) 보유.
+    /// Phase C — GUI 어댑터. proxy, modal/focus 식별자, views HashMap 보유.
     #[cfg(feature = "gui")]
     pub(crate) view: ViewRegistry,
     /// Parked AppStates: preserved when all windows are closed so PTY sessions survive.

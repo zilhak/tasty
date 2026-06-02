@@ -1,5 +1,5 @@
 //! `View` — GUI 어댑터. winit 윈도우, egui, modal/focus 식별자, event loop proxy,
-//! windows HashMap 등 *사용자의 화면* 측면을 모은다.
+//! views HashMap 등 *사용자의 화면* 측면을 모은다.
 //!
 //! D.3.E.3.d — 옛 `src/adapters/ui/window/` 의 9 파일 + 3 서브디렉터리가
 //! `src/view/` 로 평탄화 이동. trait 본체는 `src/view/ui.rs`, 구현체 모듈은
@@ -42,7 +42,7 @@ pub(crate) fn unbox_main(w: Box<dyn ui::View>) -> Option<Box<MainView>> {
     any.downcast::<MainView>().ok()
 }
 
-/// 윈도우의 모달리티.
+/// View 의 모달리티.
 ///
 /// 도메인 용어(`docs/design/ubiquitous-language.md`): View는 modality
 /// (Modeless/Modal)와 계열(ModalView/TerminalHostView/EditorView)을 속성으로 갖는다.
@@ -51,30 +51,30 @@ pub(crate) fn unbox_main(w: Box<dyn ui::View>) -> Option<Box<MainView>> {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Modality {
-    /// 일반 윈도우. 다른 윈도우와 독립적으로 포커스됨.
+    /// 일반 View. 다른 View 와 독립적으로 포커스됨.
     Modeless,
-    /// 모달 윈도우. 활성 상태에선 다른 모든 윈도우의 입력이 차단됨.
+    /// 모달 View. 활성 상태에선 다른 모든 View 의 입력이 차단됨.
     /// 엔진 전역에서 최대 1개만 존재한다.
     Modal,
 }
 
-/// 이벤트 처리 결과로 윈도우가 요청하는 동작.
+/// 이벤트 처리 결과로 View 가 요청하는 동작.
 #[must_use]
 pub(crate) enum ViewAction {
     /// 아무 일도 하지 않음.
     None,
-    /// 이 윈도우를 닫음.
+    /// 이 View 를 닫음.
     Close,
-    /// 이 윈도우를 닫고 AppEvent를 발행함.
+    /// 이 View 를 닫고 AppEvent를 발행함.
     CloseWithEvent(AppEvent),
 }
 
 /// 이벤트 핸들러에 함께 전달되는 맥락.
 pub(crate) struct ViewCtx<'a> {
     pub(crate) event_loop: &'a ActiveEventLoop,
-    /// 현재 모달 윈도우가 활성 상태인지. true면 비모달 윈도우는 입력을 차단해야 한다.
+    /// 현재 모달 View 가 활성 상태인지. true면 비모달 View 는 입력을 차단해야 한다.
     pub(crate) modal_active: bool,
-    /// 현재 active plugin manager. 메인 윈도우가 frame prepare 시 plugin canvas의
+    /// 현재 active plugin manager. MainView 가 frame prepare 시 plugin canvas의
     /// SharedMemory와 dirty rect에 접근하기 위해 사용한다. plugin 비활성 빌드/초기 시점에는 None.
     pub(crate) plugin_manager: Option<&'a crate::plugin::PluginManager>,
 }
