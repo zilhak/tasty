@@ -309,44 +309,10 @@ impl AppState {
         replaced
     }
 
-    /// Convert a surface to Markdown type.
-    pub fn convert_surface_to_markdown(
-        &mut self,
-        engine: &mut CoreState,
-        surface_id: u32,
-        file_path: String,
-    ) -> bool {
-        let surface: Box<dyn crate::model::Surface> = Box::new(crate::model::MarkdownPanel::new(
-            surface_id,
-            file_path.clone(),
-        ));
-        let name = std::path::Path::new(&file_path)
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string());
-        self.replace_surface_for_id(engine, surface_id, surface, Some(name))
-    }
-
-    /// Add an image viewer tab in the focused pane.
-    pub fn add_image_tab(
-        &mut self,
-        engine: &mut CoreState,
-        file_path: String,
-    ) -> anyhow::Result<()> {
-        self.add_kind_tab(engine, "image", &json!({"file": file_path}))
-            .map(|_| ())
-    }
-
-    /// Convert a surface to Image type (blank canvas).
-    pub fn convert_surface_to_image(&mut self, engine: &mut CoreState, surface_id: u32) -> bool {
-        let surface: Box<dyn crate::model::Surface> =
-            Box::new(crate::model::ImagePanel::new_blank(surface_id));
-        self.replace_surface_for_id(engine, surface_id, surface, Some(Some("Image".to_string())))
-    }
-
     /// Convert a surface to an arbitrary registered kind via the surface registry.
-    /// Plugin이 제공하는 kind(예: "explorer") 변환에 사용된다. 빌트인 중 특수
-    /// 파라미터(파일 경로, URL 등)가 필요한 kind는 전용 메서드 (`convert_surface_to_markdown` 등)
-    /// 를 사용해야 한다.
+    /// Plugin 이 제공하는 kind (예: "explorer") + builtin kind (markdown / image
+    /// 등) 모두 같은 경로로 변환된다. 특수 파라미터 (file path, URL 등) 는
+    /// `params` 로 전달한다.
     pub fn convert_surface_to_kind(
         &mut self,
         engine: &mut CoreState,
