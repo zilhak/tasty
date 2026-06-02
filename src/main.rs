@@ -19,6 +19,7 @@ mod ports;
 mod scheduler;
 mod state;
 mod store;
+#[cfg(feature = "gui")]
 mod view;
 mod waker;
 
@@ -109,8 +110,11 @@ pub(crate) use store::clipboard_history;
 pub(crate) use store::notification;
 pub(crate) use store::recent_files;
 pub(crate) use store::scrollback as scrollback_store;
+#[cfg(feature = "gui")]
 pub(crate) use view as window;
+#[cfg(feature = "gui")]
 pub(crate) use view::plugins::ui as plugins_ui;
+#[cfg(feature = "gui")]
 pub(crate) use view::settings::ui as settings_ui;
 
 fn main() -> Result<()> {
