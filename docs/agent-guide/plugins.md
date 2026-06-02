@@ -7,7 +7,7 @@ Tasty는 외부 plugin을 별도 OS 프로세스로 실행하여 호스트를 �
 
 Plugin의 근본 역할은 다음 5가지로 분류된다.
 
-1. **새 Window 추가** — OS-level 별도 윈도우. 현재 매니페스트 schema 없음(향후 추가 예정).
+1. **새 Window 추가** — OS-level 별도 윈도우. `[[contributes.window]]` schema + 등록 stub 까지 동작 (1.0). 실 spawn handler / multi-window 라우팅은 별도 영역.
 2. **새 Surface 추가** — 탭/스플릿 안에서 생성 가능한 새 surface 종류를 등록한다.
 3. **새 Popup 추가** — Window 내부 가상 창. 포커스를 빼앗지 않고 터미널/surface 위에 떠 있는다 (`PopupDef` + `PopupManager` 기반, 상세는 `docs/design/popup-system.md`). 클립보드 히스토리, 알림 패널 같은 일시적 UI가 이 카테고리. plugin이 `[[contributes.popup]]`으로 contribute 가능.
 4. **새 Tool 추가** — 좌측 사이드바 하단의 "도구" 메뉴에 항목을 꽂는다.
@@ -17,7 +17,7 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 
 | 카테고리 | 매니페스트 키 | 상태 |
 |---------|-------------|------|
-| 새 Window | _(없음)_ | 미구현 |
+| 새 Window | `[[contributes.window]]` | 🚧 schema + 등록 stub 만 (실 spawn 별도 영역) |
 | 새 Surface | `[[surface_kinds]]` | ✅ |
 | 새 Popup | `[[contributes.popup]]` | ✅ (UI 렌더 통합 진행 중) |
 | 새 Tool (도구 메뉴 항목) | `[[contributes.tool]]` | ✅ |
@@ -46,12 +46,47 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 `description`에 사람을 위한 메모로 기입해 두는 것은 막지 않으며, 호스트는
 `description` 내용을 해석하지 않는다.
 
-### 미구현 카테고리(Window)
+### Window contribute (1.0 — schema only)
 
-Plugin이 자기 Window를 직접 띄우는 매니페스트 schema는 아직 없다. 우회로:
+Plugin 이 OS-level 별도 윈도우를 contribute 한다고 선언할 수 있다 (권한
+`window.spawn`). 1.0 에서는 *schema + 등록 stub* 까지만 동작 — 호스트가 hello
+시점에 `plugin.window_declared { plugin_id, window_id }` host event 를 발화한다.
+실 spawn handler / multi-window 라우팅은 별도 영역에서 도입된다.
 
-- **Surface로 대체**: 탭/스플릿 안의 surface로 띄운다. plugin이 UI tree를
-  완전히 소유하는 대신 포커스/배치 모델이 Window와 다르다.
+```toml
+permissions = ["window.spawn"]
+
+[[contributes.window]]
+id = "editor"
+display_name_i18n_key = "myplugin.window.editor"
+icon = "🖼"
+multi_instance = false
+default_size = { width = 1024, height = 768 }
+```
+
+당분간 실제로 윈도우를 띄우려면 surface 로 대체한다 (탭/스플릿 안에서 plugin 이
+UI tree 를 완전히 소유. 단 포커스/배치 모델이 Window 와 다름).
+
+### Surface 색 default (plugin manifest)
+
+Plugin 이 자기 surface kind 의 권장 색을 매니페스트에서 직접 선언할 수 있다.
+host 는 hello 시점에 받아 `Theme.surface_themes` 에 머지한다.
+
+```toml
+[[surface_kinds]]
+kind = "myplugin_main"
+display_name_i18n_key = "surface.kind.myplugin"
+
+[surface_kinds.default_colors]
+focused_bg = "#1e1e2e"
+focused_fg = "#cdd6f4"
+unfocused_bg = "#181825"
+unfocused_fg = "#a6adc8"
+```
+
+우선순위 (높음 → 낮음): **사용자 theme TOML 의 `[surfaces.<kind>]` > plugin
+default > FALLBACK_SURFACE**. 즉 사용자가 자기 theme 파일에서 같은 kind 의 색을
+정의했다면 plugin default 는 *덮어쓰지 않는다*.
 
 ### Popup contribute
 

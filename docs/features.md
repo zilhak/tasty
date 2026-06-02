@@ -1533,6 +1533,20 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 부팅 시 자동 스캔, 매니페스트 검증 실패한 plugin은 warn 로그 후 스킵
 - `~/.tasty/plugins.toml`로 활성/비활성 + `removed_builtins` 영속화
 
+### 매니페스트 schema 확장 (F.H)
+- `[surface_kinds.default_colors]` — plugin 이 자기 surface 의 권장 색
+  (`focused_bg/fg`, `unfocused_bg/fg`) 을 직접 노출. hello 시점에 host 가
+  `Theme.surface_themes` 에 머지하며, 사용자 theme TOML 의 `[surfaces.<kind>]`
+  가 정의돼 있으면 *그쪽이 우선* (priority: 사용자 TOML > plugin default >
+  FALLBACK_SURFACE). `crates/tasty-themes/src/plugin_defaults.rs` 가 누적 +
+  user-defined 보호 invariant 유지.
+- `[[contributes.window]]` + `permissions = ["window.spawn"]` — plugin 이
+  OS-level 별도 윈도우를 contribute. 1.0 schema-only — host 가 hello 시
+  `tracing::info!` 로그 + `plugin.window_declared` host event 발화. 실 spawn
+  handler / multi-window 라우팅은 별도 영역.
+- `docs/examples/markdown-plugin/tasty-plugin.toml` 에 schema 사용 예시 (실
+  plugin binary 는 없음 — 데모용).
+
 ### 프로세스 생명주기
 - 호스트가 `127.0.0.1:0` 으로 listen, plugin이 token 들고 connect 하는 인증 방식
 - stdout/stderr 자동 redirect → `~/.tasty/plugins-logs/<id>.log`

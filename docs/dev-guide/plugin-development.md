@@ -10,8 +10,8 @@ Plugin은 별도 OS 프로세스로 실행되어 호스트와 TCP+JSON으로 통
 
 Plugin이 호스트에 contribute하는 카테고리(상세는 `docs/agent-guide/plugins.md`):
 
-1. 새 Window 추가 — 현재 매니페스트 schema 없음(향후)
-2. 새 Surface 추가 — `[[surface_kinds]]`
+1. 새 Window 추가 — `[[contributes.window]]` + `permissions = ["window.spawn"]` (schema + 등록 stub 까지 — 실 spawn handler 는 별도 영역)
+2. 새 Surface 추가 — `[[surface_kinds]]` (옵션 `[surface_kinds.default_colors]` 로 권장 색 선언 가능)
 3. 새 Popup 추가 — `[[contributes.popup]]` + `permissions = ["ui.popup"]`. trigger는 `event`(host/plugin event 발화 시 자동 open) 또는 `ipc`(plugin 명시 호출). SDK trait의 `open_popup/handle_popup_event/on_popup_closed`로 구현한다.
 4. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.tool]]` + `permissions = ["ui.tool_item"]`. 클릭 시 dispatch는 `kind = "event"` (Event Bus 발화) / `"open_surface"` (탭 추가) / `"open_popup"` (`[[contributes.popup]]` 인스턴스 open, `popup_id`는 `<plugin_id>/<id>` 형식)
 5. 이벤트별 동작 추가 — `[[contributes.commands]]`(키 입력) / `event_subscribe`(Event Bus 구독, 예: `"surface.closed"`) / `[[contributes.ipc_namespace]]`(IPC 호출) / `[[contributes.cli]]`(CLI 호출)
@@ -463,6 +463,35 @@ impl Plugin for SearchPlugin {
 debug 빌드에서 `tasty debug popup list` / `tasty debug popup open` /
 `tasty debug popup close --instance-id <N>`로 IPC 경로를 직접 호출 가능
 (`docs/dev-guide/debug-ipc.md`).
+
+## 4-1-C. Window 항목 (Window Contribute)
+
+Plugin 이 OS-level 별도 윈도우를 contribute 한다고 선언한다. 1.0 에서는
+*schema + 등록 stub* 까지만 동작한다 — 호스트는 hello 시 `tracing::info!`
+로그를 남기고 `plugin.window_declared` host event 를 발화한다. 실 spawn
+handler / multi-window 라우팅은 별도 영역에서 도입.
+
+### 매니페스트
+
+```toml
+permissions = ["window.spawn"]
+
+[[contributes.window]]
+id = "editor"                              # 소문자 + '_' + 숫자, plugin 내 unique
+display_name_i18n_key = "myplugin.window.editor"
+icon = "🖼"                                # 옵션
+multi_instance = false                     # 옵션, 기본 false
+default_size = { width = 1024, height = 768 }   # 옵션, LogicalPx 단위
+```
+
+`window.spawn` 권한 토큰을 declare 하지 않으면 매니페스트 검증이 거부한다.
+같은 매니페스트 내 `window.id` 중복도 거부.
+
+### 1.0 동작
+
+- hello 시점에 `plugin.window_declared { plugin_id, window_id }` host event
+  발화 — 다른 plugin / Lua hook 이 구독 가능.
+- 실제 윈도우는 *열리지 않는다* — schema 잠금만.
 
 ## 4-2. IPC namespace 처리 (handle_ipc_method)
 
@@ -1125,7 +1154,7 @@ Plugin 이 자기만의 surface kind 를 등록할 때, theme TOML 의 `[surface
   unfocused_fg = "#a6adc8"
   ```
 
-- 향후 host 가 plugin 매니페스트에서 surface 색 default 를 받아 자동 등록하는 메커니즘이 도입되면 이 단계가 자동화된다 (현재는 수동).
+- 또는 plugin 매니페스트에 `[surface_kinds.default_colors]` 를 선언해 권장 색을 직접 노출할 수 있다. host 가 hello 시점에 받아 `Theme.surface_themes` 에 자동 머지한다. 사용자 theme TOML 의 `[surfaces.<kind>]` 가 우선되어, 사용자가 명시한 색은 절대 덮어쓰지 않는다 (priority: 사용자 TOML > plugin default > FALLBACK_SURFACE).
 
 Plugin 렌더링 코드에서 색에 접근하려면 호스트가 제공한 host actions 또는 IPC 를 거친다. 직접 `tasty-themes` 를 의존하면 호스트와 별도 프로세스라 의미 없으니, 호스트로부터 색을 전달받는 형태로 설계할 것.
 
