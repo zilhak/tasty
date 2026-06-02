@@ -47,6 +47,7 @@
 |------|------|
 | [dev-guide/index.md](dev-guide/index.md) | 개요 + 환경별 링크 |
 | [dev-guide/build.md](dev-guide/build.md) | 워크스페이스 구조, 빌드 프로필(dev/release/dist), LTO, 빌드 시간 측정 |
+| [dev-guide/dist-build.md](dev-guide/dist-build.md) | manual dist 빌드 명령 카탈로그 (macOS/Windows/Linux) |
 | [dev-guide/release.md](dev-guide/release.md) | 릴리스 절차 (버전 → 체인지로그 → 태그 → push) |
 | [dev-guide/release-runners.md](dev-guide/release-runners.md) | self-hosted 러너 인벤토리, 1회 도구 설치, 운영 명령 |
 | [dev-guide/linux.md](dev-guide/linux.md) | Linux 개발 환경 가이드 |
