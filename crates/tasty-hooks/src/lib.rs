@@ -32,6 +32,12 @@ pub enum HookEvent {
     ClaudeIdle,
     /// Claude Code needs user input.
     NeedsInput,
+    /// A child Claude (spawned by this surface via `claude.spawn`) became idle.
+    /// Fired on the parent surface so a conductor can react to child completion
+    /// without polling. Self-idle still fires `ClaudeIdle`.
+    ClaudeChildIdle,
+    /// A child Claude needs user input. Fired on the parent surface.
+    ClaudeChildNeedsInput,
     /// Claude child PTY emitted a known error pattern (API Error, content filter,
     /// rate limit, network failure, …). The pattern catalog lives outside this
     /// crate; this variant is matched without arguments.
@@ -46,6 +52,8 @@ impl HookEvent {
             (HookEvent::Notification, HookEvent::Notification) => true,
             (HookEvent::ClaudeIdle, HookEvent::ClaudeIdle) => true,
             (HookEvent::NeedsInput, HookEvent::NeedsInput) => true,
+            (HookEvent::ClaudeChildIdle, HookEvent::ClaudeChildIdle) => true,
+            (HookEvent::ClaudeChildNeedsInput, HookEvent::ClaudeChildNeedsInput) => true,
             (HookEvent::ClaudeError, HookEvent::ClaudeError) => true,
             (HookEvent::OutputMatch(_pattern), HookEvent::OutputMatch(text)) => {
                 // Use pre-compiled regex if available, otherwise compile on-the-fly
@@ -77,6 +85,10 @@ impl HookEvent {
             Some(HookEvent::ClaudeIdle)
         } else if s == "needs-input" {
             Some(HookEvent::NeedsInput)
+        } else if s == "claude-child-idle" {
+            Some(HookEvent::ClaudeChildIdle)
+        } else if s == "claude-child-needs-input" {
+            Some(HookEvent::ClaudeChildNeedsInput)
         } else if s == "claude-error" {
             Some(HookEvent::ClaudeError)
         } else {
@@ -94,6 +106,8 @@ impl HookEvent {
             HookEvent::IdleTimeout(secs) => format!("idle-timeout:{}", secs),
             HookEvent::ClaudeIdle => "claude-idle".to_string(),
             HookEvent::NeedsInput => "needs-input".to_string(),
+            HookEvent::ClaudeChildIdle => "claude-child-idle".to_string(),
+            HookEvent::ClaudeChildNeedsInput => "claude-child-needs-input".to_string(),
             HookEvent::ClaudeError => "claude-error".to_string(),
         }
     }
@@ -256,6 +270,45 @@ mod tests {
     fn hook_event_matches_claude_error() {
         assert!(HookEvent::ClaudeError.matches(&HookEvent::ClaudeError, None));
         assert!(!HookEvent::ClaudeError.matches(&HookEvent::ClaudeIdle, None));
+    }
+
+    #[test]
+    fn hook_event_parse_claude_child_idle() {
+        assert_eq!(
+            HookEvent::parse("claude-child-idle"),
+            Some(HookEvent::ClaudeChildIdle)
+        );
+    }
+
+    #[test]
+    fn hook_event_parse_claude_child_needs_input() {
+        assert_eq!(
+            HookEvent::parse("claude-child-needs-input"),
+            Some(HookEvent::ClaudeChildNeedsInput)
+        );
+    }
+
+    #[test]
+    fn hook_event_display_claude_child_idle() {
+        assert_eq!(
+            HookEvent::ClaudeChildIdle.to_display_string(),
+            "claude-child-idle"
+        );
+        assert_eq!(
+            HookEvent::ClaudeChildNeedsInput.to_display_string(),
+            "claude-child-needs-input"
+        );
+    }
+
+    #[test]
+    fn hook_event_child_events_distinct_from_self() {
+        // child variants must not match self variants and vice versa.
+        assert!(!HookEvent::ClaudeChildIdle.matches(&HookEvent::ClaudeIdle, None));
+        assert!(!HookEvent::ClaudeIdle.matches(&HookEvent::ClaudeChildIdle, None));
+        assert!(!HookEvent::ClaudeChildNeedsInput.matches(&HookEvent::NeedsInput, None));
+        assert!(!HookEvent::NeedsInput.matches(&HookEvent::ClaudeChildNeedsInput, None));
+        assert!(HookEvent::ClaudeChildIdle.matches(&HookEvent::ClaudeChildIdle, None));
+        assert!(HookEvent::ClaudeChildNeedsInput.matches(&HookEvent::ClaudeChildNeedsInput, None));
     }
 
     #[test]
