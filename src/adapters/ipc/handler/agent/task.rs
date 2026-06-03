@@ -4,7 +4,8 @@ use crate::core::Core;
 use crate::state::AppState;
 use tasty_agent::task::TaskCreateOpts;
 use tasty_agent::{
-    OnFailure, ReducerStrategy, TaskCommand, TaskGraph, TaskId, TaskState, reduce_with_custom,
+    OnFailure, ReducerStrategy, TaskCommand, TaskGraph, TaskId, TaskResult, TaskState,
+    reduce_with_custom,
 };
 use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
@@ -366,10 +367,86 @@ pub fn handle_task_reduce(
 }
 
 // ============================================================
+// agent.task_set_result — 외부 호출자가 task 완료 신호를 보내는 진입점
+// ============================================================
+//
+// runner 가 dispatch 하는 task 외에 *수동 / 외부 통합 task* 의 결과 보고용.
+// runner thread 는 Core 의 wrapper 를 직접 호출하므로 본 IPC 를 거치지 않는다.
+// state 인자: "succeeded" | "failed" (그 외 거부).
+pub fn handle_task_set_result(
+    core: &Core,
+    _state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let task_id = match task_id_param(params, &id) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let state_str = match params.get("state").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            return JsonRpcResponse::invalid_params(id, "Missing 'state' ('succeeded' | 'failed')");
+        }
+    };
+    let exit_code = params
+        .get("exit_code")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+    let output = params.get("output").cloned();
+    let error = params
+        .get("error")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let result = TaskResult {
+        exit_code,
+        output,
+        error: error.clone(),
+    };
+
+    // 1단계: result 영속.
+    if let Err(e) = core.task_set_result(engine, workspace_id, &task_id, result) {
+        return agent_err_to_response(id, e);
+    }
+
+    // 2단계: state 전이. "failed" 면 TaskState::Failed { error } 로.
+    let new_state = match state_str.as_str() {
+        "succeeded" => TaskState::Succeeded,
+        "failed" => TaskState::Failed {
+            error: error.unwrap_or_else(|| "(unspecified)".to_string()),
+        },
+        other => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("invalid 'state': {other} (expected 'succeeded' or 'failed')"),
+            );
+        }
+    };
+
+    match core.task_set_state(engine, workspace_id, &task_id, new_state, now_ms()) {
+        Err(e) => agent_err_to_response(id, e),
+        Ok((task, cascaded)) => JsonRpcResponse::success(
+            id,
+            json!({
+                "task": task,
+                "cascaded": cascaded,
+            }),
+        ),
+    }
+}
+
+// ============================================================
 // agent.rate_limit_*  (Phase 5.5)
 // ============================================================
 
-fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {
+pub(crate) fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Result<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 

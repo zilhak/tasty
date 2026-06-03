@@ -73,6 +73,26 @@ pub enum AgentCommands {
         #[arg(long, default_value = "json")]
         format: String,
     },
+    /// Manually report a task's terminal result (succeeded | failed).
+    /// runner thread 가 dispatch 한 task 외 *외부/수동* task 의 완료 신호용.
+    TaskSetResult {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        id: String,
+        /// Terminal state: `succeeded` | `failed`.
+        #[arg(long)]
+        state: String,
+        /// Optional output JSON. Accepts inline JSON or `@path/to/file.json`.
+        #[arg(long)]
+        output: Option<String>,
+        /// Optional error message (recommended for state=failed).
+        #[arg(long)]
+        error: Option<String>,
+        /// Optional process exit code.
+        #[arg(long)]
+        exit_code: Option<i32>,
+    },
     /// Create a barrier (N개 신호가 모일 때까지 대기).
     BarrierCreate {
         #[arg(long)]

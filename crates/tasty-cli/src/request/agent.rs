@@ -82,6 +82,30 @@ pub(super) fn agent_command_to_method_params(
             "agent.task_graph",
             serde_json::json!({ "workspace_id": *workspace_id, "format": format }),
         ),
+        TaskSetResult {
+            workspace_id,
+            id,
+            state,
+            output,
+            error,
+            exit_code,
+        } => {
+            let mut p = serde_json::json!({
+                "workspace_id": *workspace_id,
+                "id": id,
+                "state": state,
+            });
+            if let Some(o) = output {
+                p["output"] = parse_inline_or_file_json(o, "--output");
+            }
+            if let Some(e) = error {
+                p["error"] = serde_json::json!(e);
+            }
+            if let Some(c) = exit_code {
+                p["exit_code"] = serde_json::json!(*c);
+            }
+            ("agent.task_set_result", p)
+        }
         BarrierCreate {
             workspace_id,
             name,

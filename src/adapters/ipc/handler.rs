@@ -529,6 +529,10 @@ fn route_engine_handler(
         "agent.task_graph" => {
             agent::handle_task_graph(core, state, engine, caller, id, &request.params)
         }
+        // agent.task_set_result — Phase H.F (외부 task 완료 신호)
+        "agent.task_set_result" => {
+            agent::handle_task_set_result(core, state, engine, caller, id, &request.params)
+        }
         // agent.barrier_* / semaphore_* — Phase 5.2 (poll-based 동기화 primitive)
         "agent.barrier_create" => {
             agent::handle_barrier_create(core, state, engine, caller, id, &request.params)
