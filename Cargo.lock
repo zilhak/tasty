@@ -5093,6 +5093,7 @@ dependencies = [
  "shell-escape",
  "tasty-agent",
  "tasty-approval",
+ "tasty-cli",
  "tasty-font",
  "tasty-hooks",
  "tasty-host-plugin",
@@ -5148,6 +5149,26 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tasty-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+ "tasty-approval",
+ "tasty-host-plugin",
+ "tasty-ipc",
+ "tasty-plugin-manifest",
+ "tasty-plugin-protocol",
+ "tasty-utils",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml 0.8.2",
+ "tracing",
 ]
 
 [[package]]
