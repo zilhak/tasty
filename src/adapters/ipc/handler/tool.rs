@@ -6,10 +6,10 @@
 
 use serde_json::json;
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin::manifest::ToolAction;
 use crate::plugin::tool_registry::ToolSource;
 use crate::state::AppState;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 /// `debug.tool.list` — 현재 도구 메뉴에 표시되는 모든 항목을 정렬된 순서로 반환.
 pub fn handle_list(

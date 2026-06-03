@@ -3,8 +3,8 @@
 
 use serde_json::{Value, json};
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin::PluginManager;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_list(mgr: Option<&PluginManager>, id: Value) -> JsonRpcResponse {
     let arr: Vec<Value> = match mgr {

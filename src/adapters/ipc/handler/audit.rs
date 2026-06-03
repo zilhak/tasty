@@ -9,7 +9,7 @@ use crate::ipc::audit::{
     AuditCallerKind, AuditDecision, AuditError, AuditQuery, AuditRecord, AuditStore,
     DEFAULT_RETENTION_MS,
 };
-use crate::ipc::protocol::JsonRpcResponse;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()

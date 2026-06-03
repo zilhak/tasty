@@ -5,9 +5,9 @@ use tasty_memory::{ListOpts, MemoryValue, PutOpts, Scope};
 use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly, anomaly_key};
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(super) fn persist_anomaly(core: &Core, anomaly: &Anomaly) -> std::result::Result<(), String> {
     let key = anomaly_key(anomaly.detected_at, &anomaly.id);

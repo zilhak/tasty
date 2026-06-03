@@ -1,9 +1,9 @@
 use serde_json::Value;
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{agent_err_to_response, name_param, now_ms, workspace_id_param};
 

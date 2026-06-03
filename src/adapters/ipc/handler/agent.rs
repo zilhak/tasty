@@ -16,7 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use tasty_agent::{AgentError, TaskId};
 
-use crate::ipc::protocol::JsonRpcResponse;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(super) fn now_ms() -> u64 {
     SystemTime::now()

@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::ipc::protocol::JsonRpcResponse;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 /// Switch the macOS input source (e.g. "com.apple.keylayout.ABC" or
 /// "com.apple.inputmethod.Korean.2SetKorean").

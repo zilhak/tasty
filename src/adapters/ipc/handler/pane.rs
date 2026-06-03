@@ -1,8 +1,8 @@
 use serde_json::json;
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::model::SplitDirection;
 use crate::state::AppState;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{apply_meta, require_pane_id};
 

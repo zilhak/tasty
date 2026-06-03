@@ -14,9 +14,9 @@ use crate::intent::preset::{
     ApplyOutcome, PresetMutationError, SaveOutcome, apply_inner, capture_inner, delete_inner,
     rename_inner, save_inner,
 };
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 use crate::state::preset_apply::ApplyOptions;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 /// kind 문자열 → PresetKind. 잘못된 값이면 invalid_params 응답을 반환.
 fn parse_kind(

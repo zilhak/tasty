@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::clipboard_history::ClipboardSource;
 use crate::core::CoreState;
-use crate::ipc::protocol::JsonRpcResponse;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 fn source_str(s: ClipboardSource) -> &'static str {
     match s {

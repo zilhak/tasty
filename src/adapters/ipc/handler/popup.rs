@@ -5,8 +5,8 @@
 
 use serde_json::json;
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::plugin::PluginManager;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 /// `debug.popup.list` — 매니페스트로 contribute된 popup 목록 + 현재 열린 인스턴스.
 pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRpcResponse {

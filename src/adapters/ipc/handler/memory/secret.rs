@@ -4,9 +4,9 @@ use serde_json::{Value, json};
 use tasty_memory::{ListOpts, PutOpts};
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{
     map_error, optional_scope, parse_value, require_key, require_scope, secret_entry_to_json,

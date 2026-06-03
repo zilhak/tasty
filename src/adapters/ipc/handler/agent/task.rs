@@ -1,13 +1,13 @@
 use serde_json::{Value, json};
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
 use tasty_agent::task::TaskCreateOpts;
 use tasty_agent::{
     OnFailure, ReducerStrategy, TaskCommand, TaskGraph, TaskId, TaskState, reduce_with_custom,
 };
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::{agent_err_to_response, escape_dot, now_ms, task_id_param, workspace_id_param};
 

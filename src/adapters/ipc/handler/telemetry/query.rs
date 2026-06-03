@@ -8,9 +8,9 @@ use tasty_telemetry::{
 };
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 /// 공통 필터 파라미터. 핸들러 진입에서 파싱 후 events 를 수집한다.
 pub(super) struct QueryFilter {

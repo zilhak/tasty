@@ -23,8 +23,8 @@ use tasty_telemetry::{
 };
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
 
 fn now_ms() -> u64 {
     SystemTime::now()

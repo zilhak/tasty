@@ -18,10 +18,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
-use crate::ipc::session::SessionError;
 use crate::plugin::manifest::Permission;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
+use tasty_ipc::session::SessionError;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -151,7 +151,7 @@ pub fn handle_revoke(core: &crate::core::Core, id: Value, params: &Value) -> Jso
             return JsonRpcResponse::invalid_params(id, "Missing 'token'");
         }
     };
-    let token = match crate::ipc::caller::SessionToken::from_str(&token_str) {
+    let token = match tasty_ipc::caller::SessionToken::from_str(&token_str) {
         Some(t) => t,
         None => {
             return JsonRpcResponse::invalid_params(id, "Invalid 'token' (must be 64 hex chars)");

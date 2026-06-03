@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use serde_json::{Value, json};
 
 use crate::core::Core;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::output_observer::{ObserverError, ObserverSpec, SinkSpec};
 use crate::state::AppState;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_observe_start(
     core: &mut Core,

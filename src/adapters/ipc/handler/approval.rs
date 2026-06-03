@@ -13,9 +13,9 @@ use tasty_approval::{
 use tasty_memory::{MemoryValue, PutOpts, Scope};
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 // ============================================================
 // 변환 헬퍼
@@ -284,7 +284,7 @@ pub(super) fn apply_elevation_grant_if_any(core: &Core, record: &ApprovalRecord,
         let token = match store.find_by_agent_id(&agent_id, now_ms)? {
             Some((t, _)) => t,
             None => {
-                return Err(crate::ipc::session::SessionError::InvalidArgument(format!(
+                return Err(tasty_ipc::session::SessionError::InvalidArgument(format!(
                     "no active session for agent_id '{agent_id}'"
                 )));
             }

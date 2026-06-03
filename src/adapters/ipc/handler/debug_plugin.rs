@@ -5,9 +5,9 @@
 
 #![cfg(debug_assertions)]
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::server::send_response;
 use crate::plugin;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 /// `debug.event_bus.*` IPC 처리.
 pub(crate) fn handle_event_bus(

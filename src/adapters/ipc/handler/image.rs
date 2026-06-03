@@ -5,8 +5,8 @@
 
 use serde_json::{Value, json};
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::require_surface_id;
 

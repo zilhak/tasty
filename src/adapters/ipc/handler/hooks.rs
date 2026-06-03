@@ -2,8 +2,8 @@ use serde_json::json;
 use tasty_hooks::HookEvent;
 
 use crate::global_hooks::HookCondition;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(crate) fn handle_hook_set(
     core: &mut crate::core::Core,

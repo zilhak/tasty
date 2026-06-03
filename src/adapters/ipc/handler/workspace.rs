@@ -1,7 +1,7 @@
 use serde_json::json;
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_workspace_list(
     state: &AppState,

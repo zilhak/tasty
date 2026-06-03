@@ -44,9 +44,9 @@ use tasty_memory::{
 };
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 fn require_scope(params: &Value, id: &Value) -> Result<Scope, JsonRpcResponse> {
     let raw = params

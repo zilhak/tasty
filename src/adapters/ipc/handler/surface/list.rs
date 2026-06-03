@@ -1,7 +1,7 @@
 use serde_json::json;
 
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub(crate) fn handle_surface_list(
     state: &AppState,

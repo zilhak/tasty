@@ -13,8 +13,8 @@ use serde_json::json;
 
 use crate::core::Core;
 use crate::file::format::{DetectDepth, FileTarget};
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_reload(
     core: &Core,

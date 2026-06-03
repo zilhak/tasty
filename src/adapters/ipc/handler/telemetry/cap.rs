@@ -8,9 +8,9 @@ use tasty_telemetry::{
 };
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 use super::now_ms;
 use super::query::{QueryFilter, collect_events};

@@ -9,9 +9,9 @@ use super::query::{QueryFilter, collect_events};
 use tasty_telemetry::{ANOMALY_KEY_PREFIX, Anomaly};
 
 use crate::core::Core;
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
 use crate::state::AppState;
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
 
 pub fn handle_session_summary(
     core: &Core,
