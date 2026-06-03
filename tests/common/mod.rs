@@ -21,6 +21,41 @@ pub struct TastyInstance {
     stderr_drain: Option<JoinHandle<()>>,
 }
 
+fn write_isolated_config(isolated_home: &std::path::Path) {
+    let tasty_dir = isolated_home.join(".tasty");
+    std::fs::create_dir_all(&tasty_dir).expect("failed to create isolated .tasty dir");
+
+    let shell_path = if cfg!(windows) {
+        // Git Bash 표준 경로. 미설치면 host 의 auto-detect 로 떨어지지만 본 phase 의
+        // primary target 은 macOS/Linux 의 `cargo test --workspace` flaky 해소.
+        "C:/Program Files/Git/bin/bash.exe"
+    } else {
+        // /bin/sh 는 모든 POSIX 환경에서 보장 — 가장 보수적.
+        "/bin/sh"
+    };
+
+    let config = format!(
+        r#"[general]
+shell = "{shell}"
+shell_mode = "default"
+shell_args = ""
+startup_command = ""
+language = "en"
+scrollback_lines = 10000
+confirm_close_running = false
+click_to_move_cursor = true
+inherit_cwd = false
+close_behavior = "ask"
+restore_layout = false
+restore_terminal_content = false
+link_click_modifier = "ctrl"
+"#,
+        shell = shell_path
+    );
+    std::fs::write(tasty_dir.join("config.toml"), config)
+        .expect("failed to write isolated config.toml");
+}
+
 fn stderr_tail(ring: &Arc<Mutex<VecDeque<String>>>, n: usize) -> String {
     let ring = ring.lock().unwrap();
     let total = ring.len();
@@ -54,6 +89,11 @@ impl TastyInstance {
         std::fs::write(isolated_home.join(".zshrc"), "").ok();
         std::fs::write(isolated_home.join(".bashrc"), "").ok();
 
+        // 격리된 ~/.tasty/config.toml 사전 작성 — shell auto-detect 분기를 결정적으로
+        // 차단하여 host /etc/passwd 와 $SHELL 의존을 제거한다. shell_setup_mode 진입
+        // 경로를 막아 port file 이 항상 작성되도록 보장한다.
+        write_isolated_config(&isolated_home);
+
         let mut process = Command::new(env!("CARGO_BIN_EXE_tasty"))
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
@@ -61,6 +101,7 @@ impl TastyInstance {
             .env("ZDOTDIR", &isolated_home)
             .env_remove("OH_MY_ZSH")
             .env_remove("ZSH")
+            .env_remove("SHELL")
             .stderr(Stdio::piped())
             .spawn()
             .expect("failed to spawn tasty");
