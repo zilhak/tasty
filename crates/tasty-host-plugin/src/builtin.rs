@@ -29,10 +29,6 @@ struct BuiltinSpec {
     bin_name: &'static str,
 }
 
-// 의도적으로 미등록: `tasty-plugin-markdown` (`com.tasty.markdown`) — host 가
-// markdown SurfaceKindDef + detector + handler 를 유지 중이라 본 plugin 을 활성화
-// 하면 메타데이터 우선순위가 모호해진다. 향후 host 내장 분리 시 본 배열에 추가
-// (`docs/dev-guide/plugin-development.md` 의 "향후 markdown plugin 신설" 절차 참조).
 #[cfg(windows)]
 const BUILTINS: &[BuiltinSpec] = &[
     BuiltinSpec {
@@ -62,6 +58,13 @@ const BUILTINS: &[BuiltinSpec] = &[
         crate_dir: "tasty-plugin-image",
         #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-image.exe",
+    },
+    BuiltinSpec {
+        id: "com.tasty.markdown",
+        #[cfg(debug_assertions)]
+        crate_dir: "tasty-plugin-markdown",
+        #[cfg(debug_assertions)]
+        bin_name: "tasty-plugin-markdown.exe",
     },
     BuiltinSpec {
         id: "com.tasty.clipboard-history",
@@ -115,6 +118,13 @@ const BUILTINS: &[BuiltinSpec] = &[
         crate_dir: "tasty-plugin-image",
         #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-image",
+    },
+    BuiltinSpec {
+        id: "com.tasty.markdown",
+        #[cfg(debug_assertions)]
+        crate_dir: "tasty-plugin-markdown",
+        #[cfg(debug_assertions)]
+        bin_name: "tasty-plugin-markdown",
     },
     BuiltinSpec {
         id: "com.tasty.clipboard-history",
@@ -880,6 +890,11 @@ mod tests {
     #[test]
     fn image_is_builtin() {
         assert!(is_builtin_plugin("com.tasty.image"));
+    }
+
+    #[test]
+    fn markdown_is_builtin() {
+        assert!(is_builtin_plugin("com.tasty.markdown"));
     }
 
     #[test]
