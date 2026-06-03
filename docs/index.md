@@ -113,7 +113,7 @@
 
 | 문서 | 설명 |
 |------|------|
-| [아키텍처 개요](architecture/index.md) | 워크스페이스 크레이트 14개, 본 바이너리 모듈 구조, 의존성 DAG |
+| [아키텍처 개요](architecture/index.md) | 워크스페이스 크레이트 33개, 본 바이너리 모듈 구조, 의존성 DAG |
 | [모듈별 상세](architecture/modules.md) | 디렉토리 모듈별 책임, 설계 목적, 한계 |
 | [데이터 흐름](architecture/data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준) |
 | [리팩토링 분석](architecture/refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
