@@ -5172,10 +5172,13 @@ name = "tasty-ipc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "rand 0.9.4",
  "serde",
  "serde_json",
+ "tasty-memory",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
+ "tasty-telemetry",
  "tasty-utils",
  "thiserror 1.0.69",
  "tokio",

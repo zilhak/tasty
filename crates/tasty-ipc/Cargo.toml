@@ -13,9 +13,12 @@ anyhow = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "sync"] }
 tracing = "0.1"
+rand = "0.9"
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
 tasty-utils = { path = "../tasty-utils" }
+tasty-memory = { path = "../tasty-memory" }
+tasty-telemetry = { path = "../tasty-telemetry" }
 
 [lints]
 workspace = true

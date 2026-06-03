@@ -23,8 +23,8 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use tasty_memory::{ListOpts, MemoryError, MemoryStorage, MemoryValue, PutOpts, Scope};
 
-use crate::ipc::caller::SessionToken;
-use crate::plugin::manifest::Permission;
+use crate::caller::SessionToken;
+use tasty_plugin_manifest::Permission;
 
 pub const SESSION_KEY_PREFIX: &str = "tasty.session.";
 

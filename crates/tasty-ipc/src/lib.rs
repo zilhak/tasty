@@ -6,11 +6,16 @@
 //! 잔존 (AppState/Core 결합 깊음 — §4.1 of plan).
 
 pub mod alias;
+pub mod caller;
 pub mod host_port;
 pub mod method_meta;
 pub mod port_file;
+pub mod protocol;
+pub mod session;
 
 #[cfg(test)]
 mod method_meta_tests;
+#[cfg(test)]
+mod session_tests;
 
 pub use host_port::{AuditCallerMarker, AuditDecision, IpcHostFacade, SessionResolution};

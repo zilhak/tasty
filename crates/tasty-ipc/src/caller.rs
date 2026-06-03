@@ -8,8 +8,8 @@ use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::ipc::method_meta::method_meta;
-use crate::plugin::manifest::Permission;
+use crate::method_meta::method_meta;
+use tasty_plugin_manifest::Permission;
 
 /// Phase 6.2 — 자식 프로세스에 발급하는 32바이트 random session token.
 ///
@@ -380,15 +380,15 @@ mod tests {
 ///
 /// memory store 가 초기화되지 않은 경우: 토큰이 있어도 검증 불가이므로
 /// `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
-pub(crate) fn resolve_caller_from_envelope(
-    host: &dyn tasty_ipc::IpcHostFacade,
-    request: &crate::ipc::protocol::JsonRpcRequest,
-) -> Result<CallerContext, crate::ipc::protocol::JsonRpcResponse> {
+pub fn resolve_caller_from_envelope(
+    host: &dyn crate::IpcHostFacade,
+    request: &crate::protocol::JsonRpcRequest,
+) -> Result<CallerContext, crate::protocol::JsonRpcResponse> {
     use std::collections::HashSet;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use tasty_ipc::SessionResolution;
+    use crate::SessionResolution;
 
     let token_str = match request.session_token.as_deref() {
         None => return Ok(CallerContext::Local),
@@ -396,7 +396,7 @@ pub(crate) fn resolve_caller_from_envelope(
     };
     let id = request.id.clone().unwrap_or(serde_json::Value::Null);
     let deny = |msg: &str| {
-        crate::ipc::protocol::JsonRpcResponse::error(
+        crate::protocol::JsonRpcResponse::error(
             id.clone(),
             -32001,
             &format!("permission_denied: {msg}"),
@@ -416,9 +416,9 @@ pub(crate) fn resolve_caller_from_envelope(
             agent_id,
             permissions,
         } => {
-            let perms: HashSet<crate::plugin::manifest::Permission> = permissions
+            let perms: HashSet<tasty_plugin_manifest::Permission> = permissions
                 .iter()
-                .filter_map(|t| crate::plugin::manifest::Permission::from_token(t))
+                .filter_map(|t| tasty_plugin_manifest::Permission::from_token(t))
                 .collect();
             Ok(CallerContext::Agent {
                 agent_id,
@@ -431,9 +431,9 @@ pub(crate) fn resolve_caller_from_envelope(
         } => {
             // Plugin caller 케이스는 현재 본 바이너리 store 가 발급하지 않으나
             // trait 호환을 위해 처리. agent_id 로 plugin_id 사용.
-            let perms: HashSet<crate::plugin::manifest::Permission> = permissions
+            let perms: HashSet<tasty_plugin_manifest::Permission> = permissions
                 .iter()
-                .filter_map(|t| crate::plugin::manifest::Permission::from_token(t))
+                .filter_map(|t| tasty_plugin_manifest::Permission::from_token(t))
                 .collect();
             Ok(CallerContext::Agent {
                 agent_id: plugin_id,

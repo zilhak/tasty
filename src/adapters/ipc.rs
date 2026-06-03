@@ -4,10 +4,7 @@
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
 pub mod audit;
-pub mod caller;
 pub mod handler;
-pub mod protocol;
 pub mod server;
-pub mod session;
 
-pub use tasty_ipc::{alias, method_meta, port_file};
+pub use tasty_ipc::{alias, caller, method_meta, port_file, protocol, session};
