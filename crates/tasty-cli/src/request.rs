@@ -161,6 +161,52 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // env 는 process-global 이라 cargo test 의 병렬 실행에서 race 가 난다.
+    // 한 #[test] 안에 모든 env 시나리오를 순차 수행해 격리한다 (TODO §2 권고 A).
+    #[test]
+    fn notify_request_attaches_surface_id_from_env() {
+        let cmd = Commands::Notify {
+            body: "msg".to_string(),
+            title: "T".to_string(),
+        };
+
+        // case 1: env set → request 에 동일한 surface_id 포함
+        // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
+        unsafe {
+            std::env::set_var("TASTY_SURFACE_ID", "42");
+        }
+        let req = command_to_request(&cmd);
+        assert_eq!(req.method, "notification.create");
+        assert_eq!(req.params.get("title").and_then(|v| v.as_str()), Some("T"));
+        assert_eq!(req.params.get("body").and_then(|v| v.as_str()), Some("msg"));
+        assert_eq!(
+            req.params.get("surface_id").and_then(|v| v.as_u64()),
+            Some(42)
+        );
+
+        // case 2: env unset → surface_id 가 null (호스트가 fallback 처리)
+        unsafe {
+            std::env::remove_var("TASTY_SURFACE_ID");
+        }
+        let req = command_to_request(&cmd);
+        assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
+
+        // case 3: env 가 invalid → surface_id null (resolve_surface_id 안전 폴백)
+        unsafe {
+            std::env::set_var("TASTY_SURFACE_ID", "not-a-number");
+        }
+        let req = command_to_request(&cmd);
+        assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
+        unsafe {
+            std::env::remove_var("TASTY_SURFACE_ID");
+        }
+    }
+}
+
 fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_json::Value) {
     match command {
         NewCommands::Window => ("window.create", serde_json::json!({})),
