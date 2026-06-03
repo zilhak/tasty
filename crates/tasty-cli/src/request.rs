@@ -120,7 +120,11 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Read { command } => read_command_to_method_params(command),
         Commands::Notify { body, title } => (
             "notification.create",
-            serde_json::json!({ "title": title, "body": body }),
+            serde_json::json!({
+                "title": title,
+                "body": body,
+                "surface_id": resolve_surface_id(None),
+            }),
         ),
         Commands::Unset { command } => unset_command_to_method_params(command),
         Commands::SurfaceMeta { command } => surface_meta_command_to_method_params(command),
