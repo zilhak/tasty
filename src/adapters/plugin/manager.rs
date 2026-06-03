@@ -23,7 +23,6 @@ use tasty_plugin_protocol::host_port::SurfaceRegistry;
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::server::send_response;
 use crate::plugin::handle_channel::HandleListener;
-use crate::plugin::host_cmd::{HostCmd, SurfaceHandles};
 use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
 use crate::plugin::listener::HostListener;
 use crate::plugin::manifest::{EventHookDecl, HookMode, IpcHookDecl, Permission, PluginPackage};
@@ -32,6 +31,7 @@ use crate::plugin::protocol::{
     self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
 };
 use crate::plugin::registry_state::PluginsConfig;
+use crate::plugin_bridge::host_cmd::{HostCmd, SurfaceHandles};
 
 pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);

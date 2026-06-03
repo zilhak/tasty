@@ -118,8 +118,8 @@ impl RemoteSurface {
     }
 
     /// manager가 surface와 동기화하기 위해 필요한 핸들 묶음을 클론하여 반환.
-    pub fn handles(&self) -> crate::plugin::host_cmd::SurfaceHandles {
-        crate::plugin::host_cmd::SurfaceHandles {
+    pub fn handles(&self) -> crate::plugin_bridge::host_cmd::SurfaceHandles {
+        crate::plugin_bridge::host_cmd::SurfaceHandles {
             tree: self.tree.clone(),
             pending_events: self.pending_events.clone(),
             display_name: self.display_name.clone(),

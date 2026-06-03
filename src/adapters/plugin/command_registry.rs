@@ -13,7 +13,8 @@ use std::collections::HashMap;
 
 use tasty_settings::KeybindingSettings;
 
-use super::host_actions;
+use crate::plugin_bridge::host_actions;
+
 use super::manifest::{BindingMode, CommandDecl, CommandScope, Manifest};
 use super::registry_state::ShortcutOverride;
 

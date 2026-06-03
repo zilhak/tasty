@@ -12,8 +12,6 @@ pub mod discovery;
 pub mod event_bus;
 pub mod extension_registry;
 pub mod handle_channel;
-pub mod host_actions;
-pub mod host_cmd;
 // (moved to surface_registry/host_rendered)
 pub mod ipc_namespace;
 pub mod listener;

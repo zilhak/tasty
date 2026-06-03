@@ -12,8 +12,8 @@ use std::sync::mpsc::Sender;
 use crate::model::Surface;
 
 use crate::engine::surface_registry::{SurfaceKindDef, SurfaceKindRegistry};
-use crate::plugin::host_cmd::HostCmd;
 use crate::plugin::manifest::SurfaceKindDecl;
+use crate::plugin_bridge::host_cmd::HostCmd;
 use crate::plugin_bridge::remote_surface::RemoteSurface;
 
 /// kind 문자열을 정적화하여 반환. 같은 입력에 대해 leak이 반복되지 않도록

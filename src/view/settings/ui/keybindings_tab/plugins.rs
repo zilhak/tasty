@@ -1,7 +1,7 @@
 use crate::i18n::t;
-use crate::plugin::host_actions;
 use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
+use crate::plugin_bridge::host_actions;
 use crate::settings::KeybindingSettings;
 use crate::settings_ui::{PluginShortcutRow, PluginShortcutSnapshot};
 
