@@ -363,3 +363,30 @@ marketplace 출처 binary 의 OS-level 검역 대응 (code signing infrastructur
 Developer ID / Authenticode 인증서 등) 은 **별도 trigger** — marketplace 의 기본
 도입 (§8 1~6 단계) 과 분리. 도입 시점에서 publisher (§4.1 A1) 가 *각자의 code
 signing key* 를 제출하는 모델 vs *Tasty 가 통합 서명* 하는 모델 양자택일이 필요.
+
+## 6. 대안 비교 (의사결정용)
+
+다른 생태계의 marketplace 와 Tasty 권고를 같은 축으로 정렬한 표. 단독 열람으로
+yes / no / maybe 판단 가능하도록 self-contained.
+
+| 항목 | crates.io | npm | VS Code Marketplace | Homebrew tap | **Tasty (권고)** |
+|------|----------|-----|--------------------|--------------|-----------------|
+| 형식 | source crate | tarball | VSIX bundle | git formula | git tap (단기) → JSON index |
+| 인증 | crates account | npm account | MS Publisher (paid) | git PR | GH OAuth |
+| 의존성 모델 | semver tree | semver tree | extensionDependencies | brew deps | **없음** (1.0 hook 모델 유지) |
+| 권한 모델 | 없음 | 없음 | declare in package.json (best-effort) | 없음 | manifest.permissions + IPC gate |
+| sandbox | 없음 | 없음 | extension host process | 없음 | OS-level sandbox 강제 (marketplace 도입과 동시) |
+| revocation | yank | unpublish (24h 제한) | unpublish | git revert | index 제거 + opt-in online check |
+| 운영 부담 | Rust Foundation | npm Inc. | Microsoft | 커뮤니티 | **0 ~ 中** (git tap → JSON index) |
+| 외부 plugin 발견 | 검색 + 다운로드 통계 + 카테고리 | 검색 + 다운로드 통계 | 검색 + 평점 + 카테고리 | brew search (CLI 만) | tap 알아야 (단기) → 검색 (장기) |
+
+핵심 관찰:
+
+- *권한 모델* 은 Tasty 가 marketplace 도입 전부터 *유일하게* 갖는 자산. 다른 생태계
+  대부분이 *없음* 또는 *best-effort* — Tasty 는 marketplace 도입 시점에 이 자산을
+  버리지 않고 그대로 활용 (install 시점 grant prompt 와 결합).
+- *수동 review* 는 paid publisher account + 운영 인력 모델 (VS Code 만 가능). Tasty
+  는 *자동만* 으로 운영.
+- *sandbox 강제* 는 어느 생태계도 적극 채택하지 않음 — Tasty 의 *marketplace ↔
+  sandbox 묶음* 도입은 *생태계 표준에서 벗어남*. 표준화 비용 vs 신뢰 확보 vs 외부
+  plugin 작성자 진입 장벽의 trade-off 는 §8 의 trigger 발동 시점에 재평가.
