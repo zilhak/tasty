@@ -204,13 +204,15 @@ impl Permission {
                     return Some(Self::Extension(target.to_string()));
                 }
                 if let Some(id) = other.strip_prefix("file_handler.extend:") {
-                    if !crate::file::format::is_valid_detector_id(id) || id == "$unknown" {
+                    // F.B.6-2: is_valid_detector_id 의 schema 부분만 inline 검증.
+                    // host file 도메인의 추가 검증은 install 시점에 한다.
+                    if !is_valid_detector_id_local(id) || id == "$unknown" {
                         return None;
                     }
                     return Some(Self::FileHandlerExtend(id.to_string()));
                 }
                 if let Some(id) = other.strip_prefix("file_handler.handle:") {
-                    if !crate::file::format::is_valid_detector_id(id) || id == "$unknown" {
+                    if !is_valid_detector_id_local(id) || id == "$unknown" {
                         return None;
                     }
                     return Some(Self::FileHandlerHandle(id.to_string()));
@@ -220,6 +222,9 @@ impl Permission {
         })
     }
 
+    // F.B.6-2 — host 의 `file::format::is_valid_detector_id` 와 동일 규칙을 local
+    // 복제. 본 crate 가 호스트 file 도메인 결합 없이 token 파싱을 마치기 위함이며,
+    // 두 함수가 어긋나면 install 단계의 file 도메인 검증에서 reject 된다.
     /// 권한의 토큰 문자열 형태. `IpcInvoke`는 prefix를 포함하므로 owned `String`을
     /// 반환한다. 비교/저장에는 `&token`을 그대로 사용하면 된다.
     pub fn as_token(&self) -> String {
@@ -710,4 +715,23 @@ pub struct MenuItemDecl {
     pub command: String,
     #[serde(default)]
     pub when: Option<String>,
+}
+
+/// `file::format::is_valid_detector_id` 의 로컬 복제. 길이 1..=64, lowercase ascii
+/// + 숫자 + `-`, optional `$`-prefix. 호스트 측 식별기와 동일 규칙이며 schema 차원
+/// 검증 only.
+fn is_valid_detector_id_local(s: &str) -> bool {
+    if s.is_empty() || s.len() > 64 {
+        return false;
+    }
+    if let Some(rest) = s.strip_prefix('$') {
+        if rest.is_empty() {
+            return false;
+        }
+        return rest
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }

@@ -107,6 +107,10 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
         );
     }
     let manifest = Manifest::load(&plugin_dir)
+        .and_then(|m| {
+            crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
+            Ok(m)
+        })
         .map_err(|e| anyhow::anyhow!("failed to load manifest for '{}': {e}", plugin_id))?;
 
     println!("Plugin: {}", manifest.id);

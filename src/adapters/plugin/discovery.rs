@@ -34,7 +34,10 @@ pub fn discover() -> Vec<PluginPackage> {
         if !dir.join("tasty-plugin.toml").exists() {
             continue;
         }
-        match Manifest::load(&dir) {
+        match Manifest::load(&dir).and_then(|m| {
+            crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
+            Ok(m)
+        }) {
             Ok(manifest) => packages.push(PluginPackage { dir, manifest }),
             Err(e) => tracing::warn!("plugin '{}' rejected: {}", dir.display(), e),
         }

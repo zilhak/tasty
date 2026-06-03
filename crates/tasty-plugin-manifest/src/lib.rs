@@ -4,6 +4,22 @@
 //! permission 매칭 등) 만 제공한다. concrete file::format / file::handler 결합이
 //! 필요한 추가 검증 (detector rule schema 등) 은 호스트 본 바이너리의
 //! `plugin_bridge::manifest_validate` 가 담당.
-//!
-//! 모듈 본문은 F.B.6-2 에서 본 바이너리 `src/adapters/plugin/manifest/` 에서
-//! `git mv` 로 이동된다.
+#![allow(dead_code)]
+
+pub mod package;
+pub mod types;
+pub mod validate;
+pub mod validators;
+
+#[cfg(test)]
+mod tests;
+
+pub use package::PluginPackage;
+pub use types::{
+    BindingMode, CliArg, CliArgGroup, CliArgType, CliCommandDecl, CliSubcommandDecl, CommandDecl,
+    CommandScope, Contributes, Entry, EventEmittedDecl, EventHookDecl, EventStability, ExtendsDecl,
+    HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, IpcHookDecl, IpcNamespaceDecl,
+    MANIFEST_VERSION, Manifest, MenuItemDecl, Permission, PopupAnchor, PopupContribute,
+    PopupSizeHint, PopupTrigger, SurfaceKindDecl, SurfaceKindRendering, ToolAction, ToolContribute,
+    WindowContribute, WindowSizeHint,
+};

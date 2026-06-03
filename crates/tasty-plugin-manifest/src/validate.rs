@@ -25,28 +25,10 @@ impl Manifest {
         let manifest: Manifest = toml::from_str(&s)
             .map_err(|e| anyhow::anyhow!("invalid manifest at {}: {}", path.display(), e))?;
         manifest.validate()?;
-        // F.B.2 — opaque detector/handler payload 의 concrete schema 검증을 bin glue
-        // 에 위임. manifest crate 분리 (F.B.6) 후에도 본 호출은 본 바이너리 load 경로
-        // 에 남는다.
-        crate::plugin_bridge::manifest_validate::validate_detector_actual(
-            &manifest.contributes.detector,
-        )?;
-        let surface_kinds: Vec<String> = manifest
-            .surface_kinds
-            .iter()
-            .map(|k| k.kind.clone())
-            .collect();
-        let ipc_prefixes: Vec<String> = manifest
-            .contributes
-            .ipc_namespace
-            .iter()
-            .map(|n| n.prefix.clone())
-            .collect();
-        crate::plugin_bridge::manifest_validate::validate_handler_actual(
-            &manifest.contributes.handler,
-            &surface_kinds,
-            &ipc_prefixes,
-        )?;
+        // F.B.2/F.B.6 — opaque detector/handler payload 의 concrete schema 검증은
+        // crate 외부 (본 바이너리 `plugin_bridge::manifest_validate`) 에서 수행.
+        // 본 crate 의 `load` 는 schema-agnostic 검증까지만 수행하고, 호출처가 추가
+        // 검증을 chain 한다.
         Ok(manifest)
     }
 

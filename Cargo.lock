@@ -5299,11 +5299,14 @@ name = "tasty-plugin-manifest"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "semver 1.0.27",
  "serde",
  "serde_json",
  "tasty-plugin-protocol",
+ "tasty-type-appearance",
  "thiserror 1.0.69",
  "toml 0.8.2",
+ "tracing",
 ]
 
 [[package]]

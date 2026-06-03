@@ -382,7 +382,10 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
         // 본 helper 책임 밖. 매니페스트에서 사라진 token은 다음 install 시점에
         // set_granted로 덮어쓰일 때만 정리된다.
         if dest.exists() {
-            if let Ok(manifest) = Manifest::load(&dest) {
+            if let Ok(manifest) = Manifest::load(&dest).and_then(|m| {
+                crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
+                Ok(m)
+            }) {
                 if !manifest.permissions.is_empty() {
                     if !mgr.config.grants.contains_key(spec.id) {
                         mgr.config

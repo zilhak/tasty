@@ -63,6 +63,10 @@ impl App {
             anyhow::bail!("plugin manager not initialized (no main window yet)");
         };
         let manifest = Manifest::load(&src_path)
+            .and_then(|m| {
+                crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
+                Ok(m)
+            })
             .map_err(|e| anyhow::anyhow!("invalid plugin at source: {e}"))?;
         let dest_root = crate::plugin::plugin_root()
             .ok_or_else(|| anyhow::anyhow!("could not resolve plugins directory"))?;

@@ -182,7 +182,10 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
         return;
     }
     let path = std::path::PathBuf::from(&raw);
-    match crate::plugin::Manifest::load(&path) {
+    match crate::plugin::Manifest::load(&path).and_then(|m| {
+        crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
+        Ok(m)
+    }) {
         Ok(manifest) => {
             let already = snapshot
                 .plugins
