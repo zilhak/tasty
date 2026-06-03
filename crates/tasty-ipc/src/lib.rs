@@ -7,6 +7,10 @@
 
 pub mod alias;
 pub mod host_port;
+pub mod method_meta;
 pub mod port_file;
+
+#[cfg(test)]
+mod method_meta_tests;
 
 pub use host_port::{AuditCallerMarker, AuditDecision, IpcHostFacade, SessionResolution};

@@ -7,7 +7,7 @@
 //! Local caller(CLI/사용자)는 권한 검사를 거치지 않는다. 이 테이블은 **plugin이
 //! 호출했을 때**의 권한 요구사항이다.
 
-use crate::plugin::manifest::Permission;
+use tasty_plugin_manifest::Permission;
 
 /// 한 IPC 메서드에 대한 권한 메타.
 #[derive(Debug, Clone, Copy)]

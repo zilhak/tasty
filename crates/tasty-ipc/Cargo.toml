@@ -14,8 +14,8 @@ thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "sync"] }
 tracing = "0.1"
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
 tasty-utils = { path = "../tasty-utils" }
-# Phase 2 후 tasty-plugin-manifest 추가 예정 (B.7 Permission 전환 시점)
 
 [lints]
 workspace = true
