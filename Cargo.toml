@@ -10,6 +10,10 @@ resolver = "2"
 [workspace.lints.clippy]
 undocumented_unsafe_blocks = "deny"
 multiple_unsafe_ops_per_block = "warn"
+# 도메인 Error enum 이 IPC fault path / preset mutation 등과 1:1 매핑이라
+# Box 화는 hot path 영향 + 호출 사이트의 ? 흐름이 어색해진다. 22개 위치를
+# 일괄 allow. 신규 Error enum 추가 시 sizeof 확인 + Box 화 검토 필요.
+result_large_err = "allow"
 
 # `unsafe fn` 내부의 unsafe op도 명시적 unsafe block을 강제. 호출 사이트에서
 # unsafe 의도가 항상 드러난다. Rust 2024 edition에선 기본 deny지만, 워크스페이스
