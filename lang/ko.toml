@@ -509,6 +509,8 @@ copied_path = "경로 복사됨"
 copied_files = "파일 복사됨"
 cut_files = "파일 잘라냄"
 ctrl_c_ignored_after_paste = "붙여넣기 직후의 Ctrl+C가 무시되었습니다"
+vi_copy_blocked_alt_screen = "전체 화면 앱이 실행 중일 때는 복사 모드를 사용할 수 없습니다"
+vi_copy_entered = "복사 모드(vi): hjkl/wbe 이동, v 선택, y 복사, /? 검색, q 종료"
 
 [port_scanner]
 heading = "리스닝 포트"

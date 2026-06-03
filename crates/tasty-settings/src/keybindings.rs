@@ -90,6 +90,8 @@ pub struct KeybindingSettings {
     pub apply_tab_preset: Vec<String>,
     /// Open the Apply pane preset picker.
     pub apply_pane_preset: Vec<String>,
+    /// Enter vi-style keyboard copy mode in the focused terminal.
+    pub enter_copy_mode: Vec<String>,
 }
 
 impl Default for KeybindingSettings {

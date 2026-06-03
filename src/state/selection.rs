@@ -24,6 +24,8 @@ pub enum SelectionMode {
     Word,
     /// Line-level selection (triple-click).
     Line,
+    /// Rectangular block selection (vi visual block / Ctrl+v).
+    Block,
 }
 
 /// Active text selection state.
@@ -106,6 +108,11 @@ pub fn is_selected(col: usize, absolute_row: usize, sel: &NormalizedSelection) -
 
     match sel.mode {
         SelectionMode::Line => true,
+        SelectionMode::Block => {
+            let c0 = sel.start.col.min(sel.end.col);
+            let c1 = sel.start.col.max(sel.end.col);
+            col >= c0 && col <= c1
+        }
         SelectionMode::Normal | SelectionMode::Word => {
             if sel.start.absolute_row == sel.end.absolute_row {
                 // Single row selection
@@ -140,6 +147,45 @@ pub fn extract_selected_text(
     let surface = terminal.surface();
     let (cols, _) = surface.dimensions();
     let screen_lines = surface.screen_lines();
+
+    // Block (visual block) — soft-wrap join 무관, 각 row 의 [c0..=c1] 사각형을
+    // join("\n") 으로 추출. 본질적으로 visual selection.
+    if norm.mode == SelectionMode::Block {
+        let c0 = norm.start.col.min(norm.end.col);
+        let c1 = norm.start.col.max(norm.end.col);
+        let mut lines: Vec<String> = Vec::new();
+        for abs_row in norm.start.absolute_row..=norm.end.absolute_row {
+            let mut row_text = String::new();
+            if abs_row < scrollback_len {
+                if let Some(cells) = terminal.scrollback_line_owned(abs_row) {
+                    let mut col_idx: usize = 0;
+                    for (cell_text, _) in &cells {
+                        let ch = cell_text.chars().next().unwrap_or(' ');
+                        #[cfg(feature = "gui")]
+                        let width = crate::renderer::unicode_width(ch);
+                        #[cfg(not(feature = "gui"))]
+                        let width = if ch.is_ascii() { 1 } else { 2 };
+                        if col_idx >= c0 && col_idx <= c1 {
+                            row_text.push_str(cell_text);
+                        }
+                        col_idx += width.max(1);
+                    }
+                }
+            } else {
+                let screen_row = abs_row - scrollback_len;
+                if let Some(line) = screen_lines.get(screen_row) {
+                    for cell_ref in line.visible_cells() {
+                        let col_idx = cell_ref.cell_index();
+                        if col_idx >= c0 && col_idx <= c1 {
+                            row_text.push_str(cell_ref.str());
+                        }
+                    }
+                }
+            }
+            lines.push(row_text);
+        }
+        return lines.join("\n");
+    }
 
     // Collect (raw_text_without_trim, wrapped) per row in selection.
     let mut rows: Vec<(String, bool)> = Vec::new();

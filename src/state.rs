@@ -445,6 +445,8 @@ pub struct DialogState {
     pub(crate) pending_preset_window_selection: Option<(tasty_presets::PresetKind, String)>,
     /// 프리셋 적용 picker popup 의 현재 하이라이트 (preset name). popup 닫힘 시 None.
     pub(crate) preset_picker_selected: Option<String>,
+    /// `enter_copy_mode` 단축키 트리거 신호. MainView 가 다음 frame 에 소비.
+    pub(crate) pending_enter_copy_mode: bool,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -499,6 +501,7 @@ impl DialogState {
             pending_preset_window_selection: None,
             pending_open_preset_window: false,
             preset_picker_selected: None,
+            pending_enter_copy_mode: false,
         }
     }
 

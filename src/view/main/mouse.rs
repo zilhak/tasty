@@ -230,6 +230,11 @@ impl MainView {
         if button == MouseButton::Left {
             if button_state == ElementState::Pressed {
                 self.left_mouse_down = true;
+                // mouse drag 시작은 vi copy mode 와 충돌 — 자동 종료. (R7)
+                if self.vi_copy.is_some() {
+                    self.vi_copy = None;
+                    self.base.dirty = true;
+                }
             } else {
                 self.left_mouse_down = false;
             }

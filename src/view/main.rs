@@ -6,6 +6,7 @@ mod mouse;
 mod preset_actions;
 mod redraw;
 mod selection;
+pub(crate) mod vi_copy;
 
 pub(crate) mod ime;
 
@@ -41,6 +42,9 @@ pub struct MainView {
     pub(crate) ime_preedit: Option<ImePreeditState>,
     pub(crate) proxy: winit::event_loop::EventLoopProxy<AppEvent>,
     pub(crate) text_selection: Option<TextSelection>,
+    /// vi-style 키보드 복사 모드. Some 일 때 키 입력이 PTY 로 전달되지 않고
+    /// vi_copy::handle_vi_key 가 가로채 cursor/visual/yank 등을 처리.
+    pub(crate) vi_copy: Option<vi_copy::ViCopyMode>,
     pub(crate) left_mouse_down: bool,
     pub(crate) last_click_time: Option<std::time::Instant>,
     pub(crate) last_click_pos: Option<(usize, usize)>,
@@ -97,6 +101,7 @@ impl MainView {
             ime_preedit: None,
             proxy,
             text_selection: None,
+            vi_copy: None,
             left_mouse_down: false,
             last_click_time: None,
             last_click_pos: None,

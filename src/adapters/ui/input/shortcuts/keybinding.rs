@@ -378,6 +378,10 @@ impl MainView {
             );
             return true;
         }
+        if matches_any_binding(&kb.enter_copy_mode, key, mods) {
+            state.dialogs.pending_enter_copy_mode = true;
+            return true;
+        }
         if matches_any_binding(&kb.rename_workspace_subtitle, key, mods) {
             let ws_idx = state.active_workspace;
             if let Some(ws) = engine.workspaces.get(ws_idx) {

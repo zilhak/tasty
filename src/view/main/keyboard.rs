@@ -107,6 +107,22 @@ impl MainView {
                         self.flush_ime_preedit();
                     }
                 }
+                // enter_copy_mode 같은 단축키가 신호한 deferred 작업 처리.
+                self.try_enter_vi_copy_mode();
+                self.mark_dirty();
+                return;
+            }
+        }
+
+        // vi-style 키보드 복사 모드가 활성이면 키를 가로채 PTY 로 보내지 않는다.
+        if self.vi_copy.is_some() {
+            let vi_key = if self.base.modifiers.control_key() {
+                crate::shortcuts::physical_key_to_logical(&event.physical_key)
+                    .unwrap_or_else(|| event.logical_key.clone())
+            } else {
+                event.logical_key.clone()
+            };
+            if self.try_handle_vi_key(&vi_key, self.base.modifiers) {
                 self.mark_dirty();
                 return;
             }

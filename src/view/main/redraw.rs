@@ -71,12 +71,13 @@ impl MainView {
                 .hovered_link
                 .as_ref()
                 .map(|h| (h.surface_id, &h.highlight));
+            let active_sel = self.active_text_selection();
             match self.base.gpu.render(
                 &mut self.state,
                 &mut self.core_state,
                 &self.base.winit,
                 self.ime_preedit.as_ref(),
-                self.text_selection.as_ref(),
+                active_sel.as_ref(),
                 link_hover,
                 plugin_manager,
             ) {

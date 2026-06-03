@@ -94,8 +94,9 @@ impl MainView {
                         },
                     )
                 }
-                SelectionMode::Normal => {
-                    // Clear any existing selection on single click
+                SelectionMode::Normal | SelectionMode::Block => {
+                    // Clear any existing selection on single click. Block mode
+                    // is never produced by mouse click — defensive default.
                     (point, point)
                 }
             };
