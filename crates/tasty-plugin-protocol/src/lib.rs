@@ -7,6 +7,7 @@
 //! 무거운 host 의존(예: egui/wgpu) 없이 컴파일 가능해야 한다.
 
 pub mod events;
+pub mod host_port;
 pub mod ipc_method;
 pub mod protocol;
 pub mod ui_tree;
