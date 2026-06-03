@@ -5,16 +5,12 @@
 //! 1회 변환된 뒤 사라진다.
 //!
 //! deprecated 이름은 [`docs/dev-guide/cli-naming.md`](../../docs/dev-guide/cli-naming.md)에
-//! 옮긴 시점이 명시되어 있다. 실제 제거는 1.0 tag 직전에 일괄 PR로.
+//! 옮긴 시점이 명시되어 있다. 0.7.0 에서 `surface.meta_*` 4 종이 제거되어
+//! 현재 ALIASES 는 비어 있음 — 다음 alias 등장 시 본 배열에 추가하면 된다.
 
 /// 옛 이름 → 새 이름 매핑. 새 이름은 반드시 `method_meta::METHOD_TABLE`에
 /// 등록되어 있어야 한다.
-const ALIASES: &[(&str, &str)] = &[
-    ("surface.meta_set", "surface.meta.set"),
-    ("surface.meta_get", "surface.meta.get"),
-    ("surface.meta_unset", "surface.meta.unset"),
-    ("surface.meta_list", "surface.meta.list"),
-];
+const ALIASES: &[(&str, &str)] = &[];
 
 /// 옛 이름이 들어오면 새 이름으로 정규화한다. 새 이름은 그대로 반환.
 pub fn canonicalize(method: &str) -> &str {
@@ -36,22 +32,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn known_alias_normalizes() {
-        assert_eq!(canonicalize("surface.meta_set"), "surface.meta.set");
-        assert_eq!(canonicalize("surface.meta_unset"), "surface.meta.unset");
-    }
-
-    #[test]
     fn unknown_method_passthrough() {
         assert_eq!(canonicalize("surface.list"), "surface.list");
         assert_eq!(canonicalize("some.random.method"), "some.random.method");
     }
 
     #[test]
-    fn deprecated_flag_only_for_aliases() {
-        assert!(is_deprecated("surface.meta_set"));
+    fn empty_aliases_is_noop() {
+        // 0.7.0 에서 `surface.meta_*` 4 종 alias 제거 → ALIASES 빈 배열.
+        // 옛 이름은 더 이상 정규화되지 않고 그대로 통과한다 (= unknown_method).
+        assert_eq!(canonicalize("surface.meta_set"), "surface.meta_set");
+        assert!(!is_deprecated("surface.meta_set"));
         assert!(!is_deprecated("surface.meta.set"));
-        assert!(!is_deprecated("surface.list"));
     }
 
     // F.B.4-3: 본 테스트는 method_meta 가 아직 본 바이너리에 잔존하여 이 crate
