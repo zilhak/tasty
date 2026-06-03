@@ -32,6 +32,13 @@ pub struct ViCopySearch {
     pub buffer: Option<String>,
 }
 
+/// double-key 시퀀스 대기 상태 (현재는 `gg` 한정).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingOp {
+    /// 첫 'g' 입력 후 두 번째 'g' 대기.
+    G,
+}
+
 /// vi copy mode state.
 #[derive(Debug, Clone)]
 pub struct ViCopyMode {
@@ -42,6 +49,8 @@ pub struct ViCopyMode {
     /// count prefix 누적 buffer ("3", "12" 등). take_count() 시 1 이상 정수로 변환.
     pub count_buf: String,
     pub search: Option<ViCopySearch>,
+    /// `gg` 등 double-key 시퀀스 대기 상태. 다음 키가 일치하면 동작, 아니면 취소.
+    pub pending_op: Option<PendingOp>,
 }
 
 impl ViCopyMode {
@@ -61,6 +70,7 @@ impl ViCopyMode {
             anchor: None,
             count_buf: String::new(),
             search: None,
+            pending_op: None,
         }
     }
 
@@ -343,6 +353,19 @@ pub fn handle_vi_key(
         }
     }
 
+    // pending_op 분기: 직전 키로 시작된 double-key 시퀀스 대기 중.
+    // 'g' 가 두 번째로 들어오면 top 이동, 그 외 키면 pending 만 취소 + 정상 처리 계속.
+    // (`5gg` 의 경우 count_buf 는 첫 'g' 의 take_count() 에서 이미 소비됨 — §단순화 정책.)
+    if let Some(op) = vi.pending_op.take() {
+        if matches!(op, PendingOp::G) && matches!(key.as_ref(), Key::Character(s) if s == "g") {
+            vi.cursor.absolute_row = 0;
+            vi.cursor.col = 0;
+            vi.count_buf.clear();
+            return ViKeyOutcome::Moved;
+        }
+        // 그 외: pending 만 취소하고 정상 처리 계속.
+    }
+
     let cols = terminal.cols();
     let scrollback_len = terminal.scrollback_len();
     let rows = terminal.rows();
@@ -410,12 +433,9 @@ pub fn handle_vi_key(
                     ViKeyOutcome::Moved
                 }
                 'g' => {
-                    // `gg` 처리: count_buf 가 `g` 처음일 때는 따로 1 글자 buffer 가 없으므로
-                    // 간이 처리 — 한 번 `g` 누르면 top 으로 (vim 의 `gg` 와 약간 다르지만 단순).
-                    // 정확한 `gg` 시퀀스는 별도 pending state 도입이 필요. 여기는 한 번에 top.
-                    vi.cursor.absolute_row = 0;
-                    vi.cursor.col = 0;
-                    ViKeyOutcome::Moved
+                    // 첫 'g' → pending 세팅. 두 번째 'g' 가 와야 top 이동 (top-level pending 분기에서 처리).
+                    vi.pending_op = Some(PendingOp::G);
+                    ViKeyOutcome::Consumed
                 }
                 'G' => {
                     vi.cursor.absolute_row = max_row;
@@ -846,6 +866,53 @@ mod tests {
             other => panic!("expected SearchCommit, got {other:?}"),
         }
         assert!(vi.search.as_ref().unwrap().buffer.is_none());
+    }
+
+    #[test]
+    fn gg_moves_to_top() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        vi.cursor.absolute_row = 5;
+        handle_vi_key(&mut vi, &t, &key_char('g'), ModifiersState::empty());
+        assert_eq!(vi.cursor.absolute_row, 5, "first g should not move");
+        assert_eq!(vi.pending_op, Some(PendingOp::G));
+        handle_vi_key(&mut vi, &t, &key_char('g'), ModifiersState::empty());
+        assert_eq!(vi.cursor.absolute_row, 0);
+        assert_eq!(vi.cursor.col, 0);
+        assert_eq!(vi.pending_op, None);
+    }
+
+    #[test]
+    fn single_g_then_other_cancels_pending() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        vi.cursor.absolute_row = 5;
+        handle_vi_key(&mut vi, &t, &key_char('g'), ModifiersState::empty());
+        assert_eq!(vi.pending_op, Some(PendingOp::G));
+        // j → pending 취소 + 정상 j 이동.
+        handle_vi_key(&mut vi, &t, &key_char('j'), ModifiersState::empty());
+        assert_eq!(vi.pending_op, None);
+        assert_eq!(
+            vi.cursor.absolute_row, 6,
+            "j should still move after pending cancel"
+        );
+    }
+
+    #[test]
+    fn g_then_escape_cancels_pending_then_exits() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        handle_vi_key(&mut vi, &t, &key_char('g'), ModifiersState::empty());
+        assert_eq!(vi.pending_op, Some(PendingOp::G));
+        let out = handle_vi_key(
+            &mut vi,
+            &t,
+            &Key::Named(NamedKey::Escape),
+            ModifiersState::empty(),
+        );
+        // pending 취소 후 escape 정상 처리 (visual 없으므로 Exit).
+        assert!(matches!(out, ViKeyOutcome::Exit));
+        assert_eq!(vi.pending_op, None);
     }
 
     #[test]
