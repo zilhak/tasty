@@ -131,6 +131,44 @@ if [[ "$PROFILE" != "debug" ]]; then
     APPIMAGE_FILE="$DIST_DIR/$APPIMAGE_NAME"
 fi
 
+echo "==> Verifying artifacts..."
+# tar.gz: 내부에 tasty 존재 + 풀어서 --version 호출 가능
+tar -tzf "$DIST_DIR/$ARCHIVE_NAME" | grep -q "$PKG_DIR/tasty" || {
+    echo "Error: tasty not in $ARCHIVE_NAME" >&2
+    exit 1
+}
+VERIFY_TMP=$(mktemp -d)
+tar -xzf "$DIST_DIR/$ARCHIVE_NAME" -C "$VERIFY_TMP"
+"$VERIFY_TMP/$PKG_DIR/tasty" --version >/dev/null || {
+    rm -rf "$VERIFY_TMP"
+    echo "Error: tasty --version failed (from tar.gz)" >&2
+    exit 1
+}
+rm -rf "$VERIFY_TMP"
+if [[ -n "$DEB_FILE" ]]; then
+    dpkg-deb -I "$DEB_FILE" >/dev/null || {
+        echo "Error: dpkg-deb -I failed on $DEB_FILE" >&2
+        exit 1
+    }
+fi
+if [[ -n "$RPM_FILE" ]] && command -v rpm &>/dev/null; then
+    rpm -qpi "$RPM_FILE" >/dev/null 2>&1 || {
+        echo "Error: rpm -qpi failed on $RPM_FILE" >&2
+        exit 1
+    }
+fi
+# AppImage: GUI 초기화 hang 회피 — 실행 없이 파일 존재 + ELF 헤더만 확인
+if [[ -n "$APPIMAGE_FILE" ]]; then
+    [[ -f "$APPIMAGE_FILE" ]] || {
+        echo "Error: AppImage missing: $APPIMAGE_FILE" >&2
+        exit 1
+    }
+    file "$APPIMAGE_FILE" | grep -q "ELF" || {
+        echo "Error: AppImage is not an ELF binary: $APPIMAGE_FILE" >&2
+        exit 1
+    }
+fi
+
 echo ""
 echo "Done!"
 echo "  Archive:  $DIST_DIR/$ARCHIVE_NAME"
