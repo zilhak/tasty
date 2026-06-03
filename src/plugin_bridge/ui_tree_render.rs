@@ -91,7 +91,7 @@ pub fn render_remote_surface(
                 ui.label(
                     egui::RichText::new(&surface.plugin_id)
                         .small()
-                        .color(egui::Color32::DARK_GRAY),
+                        .color(crate::theme::theme().subtext0),
                 );
             });
         }
@@ -167,7 +167,7 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
                 LabelStyle::Body => rt,
                 LabelStyle::Caption => rt.small(),
                 LabelStyle::Heading => rt.heading(),
-                LabelStyle::Dim => rt.color(egui::Color32::GRAY),
+                LabelStyle::Dim => rt.color(crate::theme::theme().subtext0),
                 LabelStyle::Mono => rt.monospace(),
             };
             if let Some(c) = color.as_deref() {
