@@ -56,8 +56,6 @@ impl FocusedSurfaceType {
 #[derive(Debug, Clone)]
 pub struct PendingKeyEvent {
     pub(crate) key: winit::keyboard::Key,
-    pub(crate) modifiers: winit::keyboard::ModifiersState,
-    pub(crate) text: Option<winit::keyboard::SmolStr>,
 }
 
 #[derive(Debug, Clone)]

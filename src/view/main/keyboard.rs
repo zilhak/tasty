@@ -236,8 +236,6 @@ impl MainView {
                 if !egui_consumed {
                     self.state.pending_surface_keys.push(PendingKeyEvent {
                         key: event.logical_key.clone(),
-                        modifiers: self.base.modifiers,
-                        text: event.text.clone(),
                     });
                 }
                 self.mark_dirty();
