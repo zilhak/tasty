@@ -158,6 +158,25 @@ pub enum WordJump {
     PrevStart,
     /// `e` — 다음 word 의 끝.
     NextEnd,
+    /// `W` — 다음 WORD (whitespace-delimited) 의 시작.
+    NextStartBig,
+    /// `B` — 이전 WORD 의 시작.
+    PrevStartBig,
+    /// `E` — 다음 WORD 의 끝.
+    NextEndBig,
+}
+
+fn is_big_word_char(ch: char) -> bool {
+    !ch.is_whitespace()
+}
+
+fn class(kind: WordJump, ch: char) -> bool {
+    match kind {
+        WordJump::NextStartBig | WordJump::PrevStartBig | WordJump::NextEndBig => {
+            is_big_word_char(ch)
+        }
+        _ => is_word_char(ch),
+    }
 }
 
 /// 단어 점프. `count` 반복.
@@ -206,17 +225,17 @@ fn word_jump_once(
         })
         .unwrap_or(flat.len() - 1);
     match kind {
-        WordJump::NextStart => {
+        WordJump::NextStart | WordJump::NextStartBig => {
             // 현재 word 끝까지 진행 → 다음 word 시작까지.
             if idx >= flat.len() {
                 return start;
             }
-            let starting_word = is_word_char(flat[idx].2);
+            let starting_word = class(kind, flat[idx].2);
             let mut i = idx + 1;
-            while i < flat.len() && is_word_char(flat[i].2) == starting_word && starting_word {
+            while i < flat.len() && class(kind, flat[i].2) == starting_word && starting_word {
                 i += 1;
             }
-            while i < flat.len() && !is_word_char(flat[i].2) {
+            while i < flat.len() && !class(kind, flat[i].2) {
                 i += 1;
             }
             if i < flat.len() {
@@ -228,18 +247,18 @@ fn word_jump_once(
             }
             start
         }
-        WordJump::PrevStart => {
+        WordJump::PrevStart | WordJump::PrevStartBig => {
             if idx == 0 {
                 return start;
             }
             // 한 칸 뒤로 후 word 의 시작점까지 뒤로.
             let mut i = idx.saturating_sub(1);
             // skip non-word backward
-            while i > 0 && !is_word_char(flat[i].2) {
+            while i > 0 && !class(kind, flat[i].2) {
                 i -= 1;
             }
             // back to start of current word
-            while i > 0 && is_word_char(flat[i - 1].2) {
+            while i > 0 && class(kind, flat[i - 1].2) {
                 i -= 1;
             }
             let (r, c, _) = flat[i];
@@ -248,21 +267,21 @@ fn word_jump_once(
                 absolute_row: r,
             }
         }
-        WordJump::NextEnd => {
+        WordJump::NextEnd | WordJump::NextEndBig => {
             if idx >= flat.len() {
                 return start;
             }
             let mut i = idx;
             // 현재가 word 마지막 char 면 다음 word 의 끝으로.
-            if is_word_char(flat[i].2) && (i + 1 >= flat.len() || !is_word_char(flat[i + 1].2)) {
+            if class(kind, flat[i].2) && (i + 1 >= flat.len() || !class(kind, flat[i + 1].2)) {
                 i += 1;
             }
             // skip non-word forward
-            while i < flat.len() && !is_word_char(flat[i].2) {
+            while i < flat.len() && !class(kind, flat[i].2) {
                 i += 1;
             }
             // advance to end of word
-            while i + 1 < flat.len() && is_word_char(flat[i + 1].2) {
+            while i + 1 < flat.len() && class(kind, flat[i + 1].2) {
                 i += 1;
             }
             if i < flat.len() {
@@ -485,6 +504,18 @@ pub fn handle_vi_key(
                 }
                 'e' => {
                     vi.cursor = word_jump(terminal, vi.cursor, WordJump::NextEnd, count);
+                    ViKeyOutcome::Moved
+                }
+                'W' => {
+                    vi.cursor = word_jump(terminal, vi.cursor, WordJump::NextStartBig, count);
+                    ViKeyOutcome::Moved
+                }
+                'B' => {
+                    vi.cursor = word_jump(terminal, vi.cursor, WordJump::PrevStartBig, count);
+                    ViKeyOutcome::Moved
+                }
+                'E' => {
+                    vi.cursor = word_jump(terminal, vi.cursor, WordJump::NextEndBig, count);
                     ViKeyOutcome::Moved
                 }
                 'v' => {
@@ -962,6 +993,55 @@ mod tests {
         vi.cursor.col = 4;
         handle_vi_key(&mut vi, &t, &key_char('^'), ModifiersState::empty());
         assert_eq!(vi.cursor.col, 0);
+    }
+
+    #[test]
+    fn big_w_jumps_over_punctuation() {
+        let mut t = term(40, 10);
+        write_line(&mut t, "foo.bar baz");
+        let mut vi = ViCopyMode::enter(0, &t);
+        vi.cursor.absolute_row = t.scrollback_len();
+        vi.cursor.col = 0;
+        handle_vi_key(&mut vi, &t, &key_char('W'), ModifiersState::empty());
+        // BIG WORD treats `foo.bar` as one — next start = col 8 (`baz`).
+        assert_eq!(vi.cursor.col, 8);
+    }
+
+    #[test]
+    fn big_e_jumps_to_big_word_end() {
+        let mut t = term(40, 10);
+        write_line(&mut t, "foo.bar baz");
+        let mut vi = ViCopyMode::enter(0, &t);
+        vi.cursor.absolute_row = t.scrollback_len();
+        vi.cursor.col = 0;
+        handle_vi_key(&mut vi, &t, &key_char('E'), ModifiersState::empty());
+        // BIG word end of `foo.bar` is col 6 (last char `r`).
+        assert_eq!(vi.cursor.col, 6);
+    }
+
+    #[test]
+    fn big_b_jumps_to_prev_big_word_start() {
+        let mut t = term(40, 10);
+        write_line(&mut t, "foo.bar baz");
+        let mut vi = ViCopyMode::enter(0, &t);
+        vi.cursor.absolute_row = t.scrollback_len();
+        vi.cursor.col = 8;
+        handle_vi_key(&mut vi, &t, &key_char('B'), ModifiersState::empty());
+        // Previous BIG word start = col 0.
+        assert_eq!(vi.cursor.col, 0);
+    }
+
+    #[test]
+    fn big_w_count_repeats() {
+        let mut t = term(40, 10);
+        write_line(&mut t, "a.b c.d e.f");
+        let mut vi = ViCopyMode::enter(0, &t);
+        vi.cursor.absolute_row = t.scrollback_len();
+        vi.cursor.col = 0;
+        handle_vi_key(&mut vi, &t, &key_char('2'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('W'), ModifiersState::empty());
+        // 2W from col 0 → `e.f` at col 8.
+        assert_eq!(vi.cursor.col, 8);
     }
 
     #[test]
