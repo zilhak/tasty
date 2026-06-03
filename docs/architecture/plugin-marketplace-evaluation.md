@@ -151,3 +151,52 @@ api_version / manifest version:
 | Homebrew tap | git URL → formula | 커뮤니티 | 현재 tasty 의 manual clone 모델과 유사 |
 
 §6 에서 5 시스템 X 8 항목 비교표로 확장한다.
+
+## 2. Registry / Index 옵션 평가
+
+### 2.1 후보
+
+- (a) **단일 호스트 JSON index** (예: `plugins.tasty.dev/index.json`) — manifest 목록 +
+  tarball URL 을 한 JSON 파일에 모음. CLI 가 단일 URL fetch + parse.
+- (b) **Git-based registry (Homebrew tap 형식)** — plugin id 별 manifest 파일을 git
+  repo 에 commit. CLI 는 git URL 추론 + clone (또는 raw fetch).
+- (c) **분산 (DNS-TXT / IPFS)** — plugin id 의 reverse-DNS 가 실제 DNS 와 매핑되거나
+  content-addressed 저장소에서 fetch.
+- (d) **federation** (multiple registry, 사용자 추가) — 사용자가 신뢰한 registry 만
+  사용. 사내 mirror / fork 생태계 지원.
+
+### 2.2 비교
+
+| 후보 | 운영비 | 외부 plugin 발견 | publisher 추적 | 검열 저항 | 0.7 이후 신규 부담 |
+|------|--------|-----------------|---------------|----------|-------------------|
+| (a) 단일 JSON index | 中 (인프라 1 인 운영) | 쉬움 (검색·필터 UI 추가) | 호스트 책임 (account DB) | X | 中 |
+| (b) Git tap | 0 (git host 무료) | 中 (git URL 알아야) | PR author = publisher | X | 작음 |
+| (c) DNS / IPFS | 0 ~ 大 | 어려움 (제 3 자 색인 필요) | X (anonymous) | O | 大 (외부 의존성) |
+| (d) federation | 中 | 中 (registry 별 검색) | registry 별 책임 | 부분 | 충돌 해결 정책 추가 |
+
+FFI 부담은 모두 0 (host-side 만 추가). 비용 차이는 *운영* 과 *외부 의존성* 에서 발생.
+
+### 2.3 권고
+
+**(b) Git tap → (a) 단일 JSON index 로 점진 전환** 을 권고한다.
+
+- (b) 는 외부 plugin **5+ 자생** trigger 까지 *비용 0* 으로 충분. git host 가 이미 모든
+  publisher 의 source-of-truth.
+- (a) 는 외부 plugin **20+ 자생** 시점에 검색 / 필터 UI 가 필요해지면 도입. (b) 의
+  manifest 를 색인하여 단일 JSON 으로 정기 생성하는 가벼운 변환만 추가 가능.
+- (c) 는 *검열 저항* 이 Tasty 에 필요한 가치가 아니므로 도입 보류 — 외부 의존성 비용이
+  가치를 초과.
+- (d) 는 *사내 mirror 요구 1 건 보고 시* 재검토. 사내 환경 (외부 registry 접근 차단)
+  에서는 즉시 필요해질 수 있다. NHN / 금융권 / 정부 등 사내망 환경의 시나리오.
+
+### 2.4 plugin id ↔ source URL 매핑 (Git tap 의 경우)
+
+(b) 가 1 차 도입 형태라면 매핑 규칙은 reverse-DNS 컨벤션을 *Git tap 의 추론 규칙* 으로
+재해석할 수 있다. 예 (제안만, 강제 X):
+
+- `com.<github-user>.<plugin>` → `https://github.com/<github-user>/tasty-plugin-<plugin>`
+- `com.<github-org>.<plugin>` → 같은 host 에 `<github-org>` 경유
+
+이 규칙은 1.4 의 validator 가 강제하지 않으므로, Git tap 도입 시점에 *별도 메커니즘*
+(예: tap index 의 매핑표) 또는 *컨벤션 강제* 양자택일이 필요하다. 본 평가 시점에서는
+*추론 규칙 도입 시점에 결정* 으로 미룬다.
