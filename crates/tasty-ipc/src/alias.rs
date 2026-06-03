@@ -54,12 +54,8 @@ mod tests {
         assert!(!is_deprecated("surface.list"));
     }
 
-    #[test]
-    fn new_names_are_registered_in_method_table() {
-        use crate::ipc::method_meta::METHOD_TABLE;
-        for (_old, new) in ALIASES {
-            let found = METHOD_TABLE.iter().any(|(name, _)| name == new);
-            assert!(found, "alias target '{new}' must exist in METHOD_TABLE");
-        }
-    }
+    // F.B.4-3: 본 테스트는 method_meta 가 아직 본 바이너리에 잔존하여 이 crate
+    // 에서 직접 검증 불가. method_meta 가 tasty-ipc 로 이동한 뒤
+    // (B.6 / B.7 통과 후 후속 substep) 같은 cross-validation 을 재도입한다.
+    // (대안: 본 바이너리 alias_integration.rs 통합 테스트.)
 }

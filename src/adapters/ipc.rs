@@ -3,7 +3,6 @@
 // 미사용. library standard — *headless 한정* dead_code/unused_imports 침묵.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
-pub mod alias;
 pub mod audit;
 pub mod caller;
 pub mod handler;
@@ -12,4 +11,4 @@ pub mod protocol;
 pub mod server;
 pub mod session;
 
-pub use tasty_ipc::port_file;
+pub use tasty_ipc::{alias, port_file};

@@ -5,6 +5,7 @@
 //! 이 crate 로 이동. handler (`crate::adapters::ipc::handler`) 는 본 바이너리에
 //! 잔존 (AppState/Core 결합 깊음 — §4.1 of plan).
 
+pub mod alias;
 pub mod host_port;
 pub mod port_file;
 
