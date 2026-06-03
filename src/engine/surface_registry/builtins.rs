@@ -17,9 +17,10 @@ use super::{SurfaceKindDef, SurfaceKindRegistry};
 /// - `"explorer"`: `com.tasty.explorer` plugin이 hello 시 remote kind로 등록.
 /// - `"image"`: `com.tasty.image` plugin이 hello 시 `rendering = "host"` 매니페스트로
 ///   호스트 화이트리스트 매칭 후 [`register_image`]를 호출하여 등록.
+/// - `"markdown"`: `com.tasty.markdown` plugin이 hello 시 host_rendered whitelist
+///   매칭 후 [`register_markdown`]을 호출하여 등록.
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
-    register_markdown(registry);
     register_empty(registry);
     register_diff(registry);
 }
@@ -202,7 +203,11 @@ mod tests {
 
     #[test]
     fn markdown_create_requires_file() {
-        let reg = registry_with_builtins();
+        // markdown kind는 register_builtin_kinds가 아닌 com.tasty.markdown plugin
+        // 활성화 경로에서 등록된다. host가 제공하는 SurfaceKindDef 자체의 동작을
+        // 검증하므로 직접 register_markdown을 호출한다.
+        let reg = SurfaceKindRegistry::new();
+        register_markdown(&reg);
         let def = reg.get("markdown").unwrap();
         assert!((def.create)(1, &json!({})).is_err());
         let s = (def.create)(1, &json!({"file": "/tmp/x.md"})).unwrap();
@@ -212,7 +217,8 @@ mod tests {
 
     #[test]
     fn markdown_snapshot_round_trips() {
-        let reg = registry_with_builtins();
+        let reg = SurfaceKindRegistry::new();
+        register_markdown(&reg);
         let def = reg.get("markdown").unwrap();
         let s = (def.create)(7, &json!({"file": "/tmp/y.md"})).unwrap();
         let snap = (def.snapshot)(s.as_ref()).unwrap();
@@ -240,6 +246,15 @@ mod tests {
         assert!(
             reg.get("image").is_none(),
             "image kind must be registered via com.tasty.image plugin, not register_builtin_kinds"
+        );
+    }
+
+    #[test]
+    fn builtin_kinds_no_longer_include_markdown() {
+        let reg = registry_with_builtins();
+        assert!(
+            reg.get("markdown").is_none(),
+            "markdown kind must be registered via com.tasty.markdown plugin, not register_builtin_kinds"
         );
     }
 
