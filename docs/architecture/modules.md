@@ -4,11 +4,11 @@
 
 ---
 
-## model/ — 데이터 모델 (`tasty-core`)
+## model/ — 데이터 모델 (`tasty-model`, G.E)
 
 **책임:** Workspace → PaneNode → Pane → Tab → SurfaceLayout의 계층 데이터 구조 정의. 레이아웃 계산(Rect 분할, 디바이더 탐색), 터미널 순회, 리사이즈.
 
-**GUI-free.** `tasty-core` 크레이트는 egui/wgpu/image 등 GUI 라이브러리는 물론, 색/시각 schema (`tasty-type-appearance`) 도 의존하지 않는다. `tasty-terminal` + `tasty-type-geometry` (LogicalPx/PhysicalPx) + `serde` + `termwiz` + `directories` 정도만 참조한다. 시각 표현은 `tasty-type-appearance::theme` (schema) + `tasty-themes` (전역 인스턴스 + IO) 가 책임지고, core 는 그 결과를 모른다.
+**GUI-free.** `tasty-model` 크레이트 (G.E, `crates/tasty-model/` 16 파일 / 3,719 LOC) 는 egui/wgpu/image 등 GUI 라이브러리는 물론, 색/시각 schema (`tasty-type-appearance`) 도 의존하지 않는다. `tasty-terminal` + `tasty-type-geometry` (LogicalPx/PhysicalPx) + `tasty-utils` + `serde_json` + `termwiz` 정도만 참조한다. 본 바이너리 `src/model.rs` 는 `pub use tasty_model::*;` 단 두 줄로 축약 — 옛 callsite 회귀 0. 시각 표현은 `tasty-type-appearance::theme` (schema) + `tasty-themes` (전역 인스턴스 + IO) 가 책임지고, model 은 그 결과를 모른다.
 
 | 파일 | 역할 |
 |------|------|

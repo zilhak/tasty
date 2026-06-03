@@ -108,7 +108,7 @@
 - PaneNode: Pane의 상위 레이아웃 트리. Leaf(Pane) 또는 Split. 탭 전환과 무관하게 고정
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
-- Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-core`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
+- Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-model`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
   - `kind()`: 소문자 식별자 — 호스트 빌트인 4종(`"terminal"`, `"markdown"`, `"empty"`, `"diff"`) + plugin 등록 kind(예: `"explorer"`, `"image"`). IPC/registry/플러그인이 식별자로 사용
   - `type_name()`: 표시용 라벨. 식별 비교 금지
   - `webview_url()`: webview-enabled surface(plugin) 가 자신의 URL 을 반환. host 의 native WebView 동기화 가 다운캐스트 없이 generic 으로 사용
@@ -1650,7 +1650,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 매니페스트 `lang_dir` (기본 `"lang"`): plugin 디렉터리 내 lang 파일들이 위치
 - 호스트는 plugin 디스커버리 시 `<lang_dir>/en.toml`(fallback) + `<lang_dir>/<active>.toml`을 읽어 namespace overlay로 호스트 i18n registry에 머지
 - lookup 순서: 호스트 base → plugin namespaces. base에 동일 키가 있으면 plugin은 호스트 키를 덮어쓸 수 없음
-- plugin install 시 `register_namespace`, remove 시 `unregister_namespace` (`crates/tasty-core/src/i18n.rs`)
+- plugin install 시 `register_namespace`, remove 시 `unregister_namespace` (`src/i18n.rs` — 본 바이너리 잔존, GUI-free 도메인 crate 후보)
 
 ### 한계
 - IPC 게이트는 plugin이 호스트를 통한 호출만 막음. plugin이 직접 fs를 쓰면 호스트가 알 수 없음 — 향후 OS-level 샌드박스/WASM으로 보강

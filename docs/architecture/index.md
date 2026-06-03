@@ -1,7 +1,7 @@
 # 아키텍처 개요
 
 Tasty는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미널 에뮬레이터다.
-본 바이너리(`src/`)와 28개의 라이브러리 크레이트(`crates/*`)로 구성된다.
+본 바이너리(`src/`)와 33개의 라이브러리 크레이트(`crates/*`)로 구성된다.
 
 ## 기술 스택
 
@@ -52,6 +52,10 @@ type-\* 끼리만 의존 가능 (`type-appearance → type-geometry`). 도메인
 | `tasty-portscan` | 포트 스캐너 (포트 사용 감지) |
 | `tasty-update` | 업데이트 체커 (ureq + semver) |
 | `tasty-lua` | Lua sandbox (file_format detector, mlua) |
+| `tasty-model` | workspace / pane / pane_tree / surface_layout / tab / surface_trait / terminal_surface / popup_kind / toast_kind / closed_item / diff_panel / empty_surface / image_panel / markdown_panel 도메인 (G.E, 16 파일 / 3,719 LOC). headless / GUI 양쪽 빌드 정상 동작 |
+| `tasty-ipc` | JSON-RPC 2.0 envelope + alias + caller + audit + method_meta + port_file + session. plugin host facade trait (`IpcHostFacade`) 외부화 (Phase F.B) |
+| `tasty-plugin-manifest` | manifest 스키마 / 파서 — `SurfaceKindDecl` (+ `default_colors`), `[[contributes.*]]`, permissions, `CliSubcommandDecl` (+ `[polling]`) (Phase F.B + F.H) |
+| `tasty-host-plugin` | 호스트의 plugin 매니저 / process / handle_channel / discovery / event_bus / registry / remote_kind 등 17 모듈. `plugin-protocol` + `plugin-manifest` + `terminal` + `shm` 의존 (Phase F.B) |
 
 ### Plugin layer
 
@@ -72,6 +76,12 @@ type-\* 끼리만 의존 가능 (`type-appearance → type-geometry`). 도메인
 | `tasty-plugin-clipboard-history` | 클립보드 히스토리 (tool.clipboard.*) |
 | `tasty-plugin-git-viewer` | git diff/log 뷰어 |
 
+### CLI client layer
+
+| 크레이트 | 책임 |
+|----------|------|
+| `tasty-cli` | clap 기반 CLI 클라이언트 (request / format / transport / dynamic plugin subcommand / polling loop). 호스트 IPC port 파일 (`~/.tasty/tasty.port`) 만 의존 (Phase F.B) |
+
 ### 테스트/dev 도구
 
 | 크레이트 | 책임 |
@@ -80,11 +90,13 @@ type-\* 끼리만 의존 가능 (`type-appearance → type-geometry`). 도메인
 
 ### 본 바이너리 (`src/`)
 
-`tasty` 본 바이너리는 위 28 크레이트를 직접 의존하며 윈도우/Engine/Window 계층, UI/GPU,
-IPC 라우터, CLI 를 제공한다. `src/i18n.rs`, `src/waker.rs`, `src/model/` (디렉토리 분할 완료),
-`src/core/agent/`, `src/file/paths.rs` 등 *옛 분리 계획에서 "GUI-free 공용 도메인" crate 후보* 였던
-모듈은 별도 crate 로 분리되지 않고 *본 바이너리 안에 그대로 존재* 한다
-(옛 계획의 가공 crate 명은 [`library-separation/index.md`](library-separation/index.md) 참조).
+`tasty` 본 바이너리는 위 33 크레이트를 직접 의존하며 윈도우/Engine/Window 계층, UI/GPU,
+IPC 라우터, CLI 를 제공한다. F.B 후 `src/cli/` / `src/ipc/` / `src/host_api/plugin_manifest/`
+가 별도 crate 로 빠졌고 G.E 후 `src/model/` 도 `tasty-model` 로 분리됐다. 본 바이너리 잔존
+모듈 (`src/i18n.rs`, `src/waker.rs`, `src/core/agent/`, `src/file/paths.rs` 등 *옛 분리
+계획에서 "GUI-free 공용 도메인" crate 후보* 였던 모듈) 은 별도 crate 로 분리되지 않고
+*본 바이너리 안에 그대로 존재* 한다 (옛 계획의 가공 crate 명은 [`library-separation/index.md`](library-separation/index.md) 참조).
+`src/plugin_bridge/` 는 호스트 측 plugin 라우팅 facade 로 잔존.
 
 ## 본 바이너리 모듈 (`src/`)
 
@@ -204,6 +216,10 @@ tasty-shm       ← (cfg-별 libc/windows-sys)
 tasty-portscan  ← (cfg-별 windows-sys)
 tasty-update    ← (외부 deps 만: ureq, semver)
 tasty-lua       ← (외부 deps 만: mlua)
+tasty-model     ← tasty-terminal, tasty-type-geometry, tasty-utils   (G.E 신규)
+tasty-ipc       ← tasty-plugin-protocol (facade trait), serde_json   (F.B 신규)
+tasty-plugin-manifest ← (외부 deps 만: serde, toml)                 (F.B 신규)
+tasty-host-plugin     ← tasty-plugin-protocol, tasty-plugin-manifest, tasty-terminal, tasty-shm  (F.B 신규)
 
 # Plugin layer
 tasty-plugin-protocol ← (외부 deps 만: serde)
@@ -217,6 +233,9 @@ tasty-plugin-html    ← tasty-plugin-sdk
 tasty-plugin-explorer ← tasty-plugin-sdk
 tasty-plugin-clipboard-history ← tasty-plugin-sdk
 tasty-plugin-git-viewer ← tasty-plugin-sdk
+
+# CLI client layer
+tasty-cli           ← clap, serde_json (호스트 IPC port 파일 의존)         (F.B 신규)
 
 # 테스트/dev 도구
 tasty-tui-simulator  ← (외부 deps 만: crossterm, clap, binary 산출)
@@ -238,7 +257,7 @@ tasty (binary) ← 모든 위 크레이트
 
 ## 코드 규모
 
-실측 (2026-06-02): 본 바이너리 약 479 `.rs` (~91k 줄) + 워크스페이스 크레이트 160 `.rs` (~38k 줄).
+실측 (2026-06-03, F.B / G.E 후): 본 바이너리 394 `.rs` (~69k 줄) + 워크스페이스 크레이트 270 `.rs` (~63k 줄). F.B (cli / ipc / plugin manifest / host-plugin 4 crate 이동) + G.E (model 분리, 16 파일 / 3,719 LOC) 로 본 바이너리 LOC 가 약 22k 감소, 워크스페이스 crate 가 그만큼 증가.
 재측정: `find src -name '*.rs' | wc -l` / `find src -name '*.rs' -print0 | xargs -0 wc -l | tail -1` /
 `find crates -name '*.rs' -path '*/src/*' | wc -l` 식으로 산출.
 
