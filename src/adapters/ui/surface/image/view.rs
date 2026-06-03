@@ -204,7 +204,7 @@ impl ImageView {
             draw_layer: None,
             draw_texture: None,
             brush_size: 2.0,
-            brush_color: Color32::RED,
+            brush_color: crate::theme::theme().red.into(),
             last_draw_pos: None,
             draw_texture_dirty: false,
             new_image_popup: false,
