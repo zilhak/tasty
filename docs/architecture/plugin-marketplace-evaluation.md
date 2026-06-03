@@ -317,3 +317,49 @@ B2 의 keyless 모델은 key 분실 위험 0 이라는 운영상의 이점이 �
 VS Code 의 수동 review 는 *유료 publisher account* + Microsoft 운영 인력이 받쳐주는
 모델 — Tasty 의 single-org / 무료 publisher 모델로는 재현 불가. crates.io / npm 의
 *자동만* 모델이 현실적 참고점.
+
+## 5. 보안 — 악성 plugin 방어
+
+권한 모델 (§1.3) 의 한계: plugin 이 자기 프로세스에서 직접 fs / network 접근 = OS
+권한. 즉 marketplace 도입 = **비-trusted plugin 일상화** → `plugin-sandbox-evaluation.md
+§2.4` 의 4번째 trigger 발동.
+
+### 5.1 권한 토큰 risk score
+
+- 동작: manifest.permissions 를 install 시점 색상화 (low / mid / high).
+- 매핑 (제안): `fs.write` + `network` + `process.spawn` 동시 보유 → high. `surface.read`
+  단독 → low.
+- 비용: 토큰 → risk weight 테이블 (LOC 작음).
+- 가치: 사용자에게 *시각적 warning*. C2 (§4.3 자동 risk score) 와 동일 메커니즘을
+  install 시점에도 노출.
+
+### 5.2 OS-level sandbox 강제 (sandbox-evaluation §3 연동)
+
+- marketplace 출처 plugin 은 `sandbox = "os-strict"` **강제** (auto-grant 와 마찬가지로
+  사용자 선택권 없이 묶음).
+- 의존: `plugin-sandbox-evaluation.md §3` 의 opt-in sandbox 가 *먼저* 도입되어야 함.
+  marketplace 도입 = sandbox §3 도입의 *동반 trigger*.
+- 비용: marketplace 출처 추적 (`source = "marketplace" | "local"`) + spawn 시 source
+  검사 → sandbox profile 자동 선택. LOC 작음.
+
+### 5.3 WASM sandbox
+
+- 옵션: 모든 marketplace plugin 을 wasm32 target 으로 강제.
+- 비용: 외부 plugin 작성자가 wasm32 cross-compile 강제 → 진입 장벽 大. `plugin-sandbox-
+  evaluation.md §2.3` 의 FFI 부담 / debug 인프라 / FS preopen 등 비용 그대로.
+- 권고: marketplace 1 차 도입 시점에는 *옵션 entry type* 으로만 (`sandbox = "wasm"`
+  매니페스트 토글). 강제는 외부 plugin 자생 + 보안 이슈 누적 후로.
+
+### 5.4 OS-level 검역 (별도 trigger)
+
+크로스 플랫폼 원칙 #4 의 관점:
+
+- **macOS**: marketplace 에서 받은 unsigned binary 는 quarantine attribute
+  (`com.apple.quarantine`) 로 Gatekeeper 가 차단할 수 있다.
+- **Windows**: SmartScreen 이 알 수 없는 publisher 의 .exe 차단.
+- **Linux**: 영향 없음.
+
+marketplace 출처 binary 의 OS-level 검역 대응 (code signing infrastructure, Apple
+Developer ID / Authenticode 인증서 등) 은 **별도 trigger** — marketplace 의 기본
+도입 (§8 1~6 단계) 과 분리. 도입 시점에서 publisher (§4.1 A1) 가 *각자의 code
+signing key* 를 제출하는 모델 vs *Tasty 가 통합 서명* 하는 모델 양자택일이 필요.
