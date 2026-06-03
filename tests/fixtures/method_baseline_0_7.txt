@@ -1,10 +1,6 @@
 # Tasty IPC METHOD_TABLE baseline — frozen at v0.7.0 (2026-06-04).
 #
-# 본 파일은 0.7.0 release 표면의 IPC 메서드 셋을 박제한다.
-# - 포함: METHOD_TABLE 의 모든 엔트리 (release/debug 양쪽 등록).
-# - 제외: DEBUG_METHODS (debug 빌드 전용, SemVer 보장 대상 아님).
-# - 제외: PREFIX_RULES (prefix fallback — 메서드 이름이 아님).
-#
+# 본 파일은 0.7.0 시점의 IPC 메서드 셋을 박제한다.
 # 0.7.x 동안 *추가만 가능, 제거 금지* (SemVer 엄격 모드).
 # 메서드 제거/이름변경은 major bump (2.0.0) 가 필요하다.
 #
@@ -44,6 +40,8 @@ approval.history
 approval.list
 approval.request
 approval.respond
+approval.summary.get
+approval.summary.set
 file_handler.dispatch
 file_handler.reload
 global_hook.list
@@ -96,6 +94,14 @@ memory.plan_update_step
 memory.put
 memory.query
 memory.scopes
+memory.secret.count
+memory.secret.delete
+memory.secret.exists
+memory.secret.get
+memory.secret.list
+memory.secret.put
+memory.secret.scopes
+memory.secret.stats
 memory.stats
 message.clear
 message.count
@@ -115,6 +121,7 @@ plugin.audit_query
 plugin.audit_summary
 plugin.disable
 plugin.enable
+plugin.extension.list
 plugin.grant
 plugin.grant_agent_permission
 plugin.install
@@ -149,6 +156,10 @@ surface.is_typing
 surface.last_command
 surface.list
 surface.locate
+surface.meta.get
+surface.meta.list
+surface.meta.set
+surface.meta.unset
 surface.parse_since_mark
 surface.raw_key
 surface.read_since_mark
@@ -167,12 +178,23 @@ tab.close
 tab.create
 tab.list
 tab.move
+telemetry.anomaly.list
+telemetry.cap.list
+telemetry.cap.remove
+telemetry.cap.reset
+telemetry.cap.set
+telemetry.cap.status
 telemetry.record
 telemetry.record_batch
 telemetry.session_summary
 telemetry.summary
 telemetry.timeseries
 telemetry.top
+tool.clipboard.clear
+tool.clipboard.get
+tool.clipboard.list
+tool.clipboard.paste
+tool.clipboard.remove
 view.close
 view.create
 view.list
