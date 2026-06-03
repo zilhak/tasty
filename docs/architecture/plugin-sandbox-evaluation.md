@@ -123,7 +123,7 @@ Object 모두 없다.
 - 권한 게이트 한계에서 비롯한 보안 이슈 1 건.
 - 첫 외부 plugin 출시 직후 1 년 운영 데이터.
 - **신규**: marketplace 도입 (비-trusted plugin 일상화) — `plugin-ecosystem.md §2`
-  marketplace trigger 와 연동.
+  marketplace trigger 와 연동. 평가 상세는 [plugin-marketplace-evaluation.md](plugin-marketplace-evaluation.md) §5.2 / §8.4 — marketplace ↔ sandbox §3 묶음 의사결정.
 
 ## 3. OS-level sandbox 옵션 평가 (대안)
 

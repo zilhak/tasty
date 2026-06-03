@@ -115,7 +115,7 @@ plugin id 형식 (`crates/tasty-plugin-manifest/src/validators.rs:3` 의
 
 **권장 컨벤션은 reverse-DNS (`com.<org>.<plugin>`)** 이나 강제 규칙은 아님. 예:
 `com.tasty.image`, `com.tasty.clipboard`, `com.example.explorer`. validator 자체는 위
-3 조건만 강제하며, "소문자만 / 1~3 segment" 같은 표현은 컨벤션이지 코드 강제가 아니다.
+3 조건만 강제 — 소문자 강제 없음, segment 수 상한 없음.
 
 api_version / manifest version:
 
@@ -194,8 +194,8 @@ FFI 부담은 모두 0 (host-side 만 추가). 비용 차이는 *운영* 과 *�
 (b) 가 1 차 도입 형태라면 매핑 규칙은 reverse-DNS 컨벤션을 *Git tap 의 추론 규칙* 으로
 재해석할 수 있다. 예 (제안만, 강제 X):
 
-- `com.<github-user>.<plugin>` → `https://github.com/<github-user>/tasty-plugin-<plugin>`
-- `com.<github-org>.<plugin>` → 같은 host 에 `<github-org>` 경유
+- `com.<user>.<plugin>` → `<git-host>/<user>/tasty-plugin-<plugin>`
+- `com.<org>.<plugin>` → 같은 git-host 의 `<org>` 경유
 
 이 규칙은 1.4 의 validator 가 강제하지 않으므로, Git tap 도입 시점에 *별도 메커니즘*
 (예: tap index 의 매핑표) 또는 *컨벤션 강제* 양자택일이 필요하다. 본 평가 시점에서는
@@ -419,3 +419,60 @@ OS-level sandbox 강제) 를 모두 구현한다면 *호스트 측* 의 추정 �
 → 호스트 LOC ~490 은 0.7 까지의 plugin 시스템 (`plugin-ecosystem.md §1~6` 의 합계 추정
 ~5000 LOC) 대비 10% 미만 — 즉 *trigger 발동 후 점진 도입* 의 부담은 작다. 그러나 *지금*
 도입 시 부담 / 가치 비율은 음수 (외부 plugin 0).
+
+## 8. 권고 + 재검토 trigger
+
+### 8.1 권고
+
+- **0.7.x 동안 현 상태 유지** — `tasty plugin install <path>` + 수동 git clone. 본
+  평가 문서가 그 자체로 *결정 근거의 기록*. 향후 trigger 발동 시 어떤 비용 trade-off
+  를 평가했는지의 참조점.
+
+### 8.2 재검토 trigger
+
+`plugin-ecosystem.md §2` (기존 3 종) + 신규 1 종 = **4 종**:
+
+- 첫 외부 plugin 출시 (기존)
+- 수동 설치/업데이트 불편 사례 반복 보고 (기존)
+- 외부 plugin 5+ 자생 (기존)
+- **신규**: 첫 외부 plugin 출시 후 6 개월 자동 재검토 — *사례가 모이지 않아도* 시간
+  기준으로 한 번은 점검.
+
+sandbox 평가 (`plugin-sandbox-evaluation.md §2.4`) 의 4번째 trigger ("marketplace 도입")
+와 본 문서의 trigger 가 *상호 참조* 관계 — 한쪽 발동이 다른 쪽 재검토를 trigger.
+
+### 8.3 도입 순서 (trigger 발동 시)
+
+권고 도입 순서:
+
+1. **Git tap 정의** — `tasty plugin install <id>` 가 git URL 추론 + clone (§2.3 의 (b)).
+2. **`tasty plugin update <id>` 신설** — version compare + atomic swap (§3.4).
+3. **권한 grant prompt** — install 시점 항상 prompt, auto-grant 폐지 (§3.2).
+4. **OS-level sandbox 강제** — `plugin-sandbox-evaluation.md §3.4` 의 매니페스트 토글
+   활성화 + marketplace 출처는 자동 `sandbox = "os-strict"` (§5.2).
+5. **GH OAuth publisher verification** — A1 (§4.1).
+6. **JSON index server** — 외부 plugin 20+ 시점에 (b) → (a) 점진 전환 (§2.3).
+7. **signature** — B1 → B2 점진 (§4.2).
+8. **revocation** — D1 opt-in (§4.4).
+
+OS-level 검역 (§5.4 macOS Gatekeeper / Windows SmartScreen 대응) 은 *별도 trigger* —
+위 1~8 과 분리.
+
+### 8.4 sandbox 평가 문서와의 연동
+
+- 본 평가의 *권고 = sandbox 강제 동시 도입* (§5.2) 은 `plugin-sandbox-evaluation.md
+  §3` 의 OS-level sandbox 도입을 *전제* 로 한다.
+- 두 trigger 중 어느 쪽이 먼저 발동하더라도 *상호 trigger* 로 함께 평가한다.
+- 즉 marketplace 도입 = sandbox §3 도입 + auto-grant 폐지 + grant prompt 신설 = **묶음
+  의사결정**. 부분 도입은 권고 안 함 (false security 위험).
+
+## 9. 출처
+
+- `docs/dev-guide/plugin-ecosystem.md §2` (marketplace 결정 + 기존 trigger 3 종)
+- `docs/dev-guide/plugin-ecosystem.md §3` (신뢰 모델 + 권한 한계)
+- `docs/dev-guide/plugin-permissions.md` 「한계」 절 + 권한 토큰 일람
+- `docs/agent-guide/plugins.md:417` (CLI 표면)
+- `docs/architecture/plugin-sandbox-evaluation.md §2.4, §3` (sandbox trigger 와 연동)
+- 코드: `src/app/plugin_glue/lifecycle.rs:58` (`plugin_install` 본체)
+- 코드: `crates/tasty-plugin-manifest/src/validators.rs:3` (plugin id 형식)
+- 코드: `crates/tasty-plugin-manifest/src/types.rs:11` (`HOST_API_VERSION`)

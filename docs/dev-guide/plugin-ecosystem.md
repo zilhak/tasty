@@ -46,6 +46,9 @@ tasty plugin install ./target/release   # 또는 매니페스트 디렉터리
 - 수동 설치/업데이트 불편 사례 반복 보고
 - 외부 plugin 5+개 자생
 
+→ 평가 상세 (registry / install flow / trust / sandbox 묶음 의사결정):
+[architecture/plugin-marketplace-evaluation.md](../architecture/plugin-marketplace-evaluation.md)
+
 ## 3. 신뢰 모델
 
 **결정**: **매니페스트 `permissions[]` + 사용자 grant + IPC method_meta 게이트**. 추가 sandbox(seccomp/AppContainer)·서명·marketplace 검토는 1.0까지 미지원.

@@ -122,6 +122,7 @@
 | [리팩토링 분석](architecture/refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
 | [라이브러리 분리](architecture/library-separation/index.md) | 워크스페이스 33 crate 현황 + 분리 의사결정 회고 (G.E — tasty-model 분리, Phase F.B — tasty-ipc / tasty-plugin-manifest / tasty-host-plugin / tasty-cli 4 crate 추가, plugin_bridge/ 본 바이너리 잔존) |
 | [Plugin sandbox 평가](architecture/plugin-sandbox-evaluation.md) | WASM / OS-level / 현 상태 비교 — 1.0 보류 근거 + 재검토 trigger |
+| [Plugin marketplace 평가](architecture/plugin-marketplace-evaluation.md) | registry / install-by-id / trust / install flow 옵션 비교 — 0.7.x 보류 근거 + 도입 순서 + sandbox 와 묶음 의사결정 |
 | [성능 벤치마크](architecture/performance-benchmarks.md) | F.G GPU 최적화 실측 — terminals_ms p50/p99/max + draw call 수 (10 surface 시나리오) |
 
 ## 구현 현황
