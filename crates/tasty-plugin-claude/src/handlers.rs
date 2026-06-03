@@ -525,9 +525,15 @@ pub(crate) fn start_claude_in_surface(
 
     let agent_id = format!("claude_s{surface_id}");
     let session_token = issue_session_token(host, &agent_id);
+    // TASTY_SURFACE_ID 는 자식 셸이 `tasty claude hook` 명령을 발사할 때 자기
+    // 위치 식별에 쓰인다. ~/.claude/settings.json 의 hook entry 는
+    // `[ -n "$TASTY_SURFACE_ID" ] && tasty claude hook stop || true` 형태이므로
+    // 이 env 가 없으면 silent skip — Stop/Notification hook 전체가 사라진다.
     let agent_prefix = match session_token {
-        Some(tok) => format!("TASTY_AGENT_ID={agent_id} TASTY_SESSION_TOKEN={tok} "),
-        None => format!("TASTY_AGENT_ID={agent_id} "),
+        Some(tok) => format!(
+            "TASTY_SURFACE_ID={surface_id} TASTY_AGENT_ID={agent_id} TASTY_SESSION_TOKEN={tok} "
+        ),
+        None => format!("TASTY_SURFACE_ID={surface_id} TASTY_AGENT_ID={agent_id} "),
     };
 
     if let Some(p) = prompt {
