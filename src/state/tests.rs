@@ -59,7 +59,7 @@ fn find_terminal_by_id_after_split() {
     let original_id = original_ids[0];
 
     state
-        .split_pane(&mut engine, SplitDirection::Vertical)
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
         .unwrap();
 
     let all_ids = collect_surface_ids(&mut state, &mut engine);
@@ -98,7 +98,7 @@ fn close_active_pane_single_fails() {
 fn close_active_pane_after_split() {
     let (mut state, mut engine) = test_state();
     state
-        .split_pane(&mut engine, SplitDirection::Vertical)
+        .test_split_pane(&mut engine, SplitDirection::Vertical)
         .unwrap();
 
     assert_eq!(
