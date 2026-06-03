@@ -6,8 +6,8 @@
 
 | 단계 | 상태 | break 정책 |
 |------|------|----------|
-| **0.x (현재)** | 적극 변경 중 | break는 [CHANGELOG.md](../../CHANGELOG.md)에 `(BREAK)` 머리 표기. **한 minor 이상 deprecation 경고 우선** (보안 예외 시 즉시 제거 가능). |
-| **1.0 freeze** | 안정선 | SemVer 엄격. `api_version = "1"` 시리즈 schema는 추가만 가능. |
+| 0.x (~ 0.6.0) | 적극 변경 중 | break는 [CHANGELOG.md](../../CHANGELOG.md)에 `(BREAK)` 머리 표기. **한 minor 이상 deprecation 경고 우선** (보안 예외 시 즉시 제거 가능). |
+| **0.7 (현재)** | 안정선 | SemVer 엄격. `api_version = "1"` 시리즈 schema는 추가만 가능. |
 | **1.x** | 점진 추가 | minor에서 추가, major에서 break. |
 | **2.0** | 차세대 | `api_version = "2"` 시리즈 시작. plugin은 매니페스트로 명시 선택. |
 
@@ -47,14 +47,14 @@
 
 ## 1.0 freeze 진입 체크리스트
 
-다음 조건이 모두 충족된 시점에 1.0 tag를 검토한다. 수량보다 **사건 기반 trigger** + 일관성 지표를 우선시한다.
+0.7.0 진입 시점(2026-06-04)에 다음 6 항목을 점검했다. ④ 보안 예외 운영 경험은 0.7.x 동안 자연 축적되도록 항목 자체를 *완화* 결정 (부록 참조).
 
-- [ ] `surface.meta_*` 같은 transitional alias를 모두 제거 (`src/ipc/alias.rs::ALIASES` 비어 있음)
-- [ ] `tasty-plugin-protocol`의 baseline schema와 CHANGELOG가 안정화 (최근 1개 minor 동안 major break 0건)
-- [ ] plugin SDK(`tasty-plugin-sdk`) 문서 + `docs/agent-guide/api-reference.md` + `docs/dev-guide/plugin-development.md`가 실제 IPC와 일치
-- [ ] break 분류표와 deprecation 예외 규칙이 사건 기반으로 정착 (보안 예외 1건 이상 운영 경험)
-- [ ] 외부 plugin 1개 이상이 새 정책으로 검증됨 (`tasty-plugin-codex`가 후보)
-- [ ] [`cli-naming.md`](cli-naming.md)의 verb·namespace 화이트리스트 위반 0건
+- [x] `surface.meta_*` 같은 transitional alias를 모두 제거 (`crates/tasty-ipc/src/alias.rs::ALIASES` 비어 있음)
+- [x] `tasty-plugin-protocol`의 baseline schema와 CHANGELOG가 안정화 (최근 1개 minor 동안 major break 0건)
+- [x] plugin SDK(`tasty-plugin-sdk`) 문서 + `docs/agent-guide/api-reference.md` + `docs/dev-guide/plugin-development.md`가 실제 IPC와 일치
+- [~] break 분류표와 deprecation 예외 규칙이 사건 기반으로 정착 (보안 예외 1건 이상 운영 경험) — *0.7 진입 게이트에서 완화*. 0.7.x 동안 사건 단위로 정착시키고, 2.0 진입 전 재평가.
+- [x] 외부 plugin 1개 이상이 새 정책으로 검증됨 (`tasty-plugin-codex` 매니페스트/빌드 확인)
+- [x] [`cli-naming.md`](cli-naming.md)의 verb·namespace 화이트리스트 위반 0건
 
 ## plugin-protocol schema 변경
 

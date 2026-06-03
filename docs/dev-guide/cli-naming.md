@@ -25,7 +25,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 | `tool.clipboard` | 클립보드 (`tool` namespace 2단 안의 서브) | 5 |
 | `output` | 출력 옵저버 (`observe_start/stop/list/info`) | 4 |
 | `telemetry` | 텔레메트리 — 측정/집계/cap/이상 탐지/세션 요약 (`cap.*`, `anomaly.*` 서브 포함) | 13 |
-| `agent` | 다중 에이전트 협업 — `task_*` (Phase 5.1) + `barrier_*` / `semaphore_*` (Phase 5.2) + `lease_*` (Phase 5.3) + `task_reduce` (Phase 5.4) + `rate_limit_*` (Phase 5.5) | 22 |
+| `agent` | 다중 에이전트 협업 — `task_*` (Phase 5.1) + `barrier_*` / `semaphore_*` (Phase 5.2, list/delete 포함) + `lease_*` (Phase 5.3) + `task_reduce` (Phase 5.4) + `rate_limit_*` (Phase 5.5) | 26 |
 | `workspace`, `tab`, `message`, `window` | 레이아웃·메시지 큐·window 관리 | 각 4 |
 | `notification`, `hook`, `global_hook` | 알림·hook | 각 2-3 |
 | `system`, `ui`, `pane` | 호스트 정보·UI 상태·pane 조작 | 각 1-2 |
@@ -46,7 +46,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 - `list`: 컬렉션 조회, 항상 array 반환 (현재 등록: `surface.list`, `workspace.list`, `tab.list`, `pane.list`, `plugin.list`, `window.list`, `tool.clipboard.list`, `notification.list`, `hook.list`, `global_hook.list` — 10개)
 - `info`: 단일 객체 상세 조회 (id 필요) — `system.info`
 - `state`: 비-구조화 상태 스냅샷 (idle/active 등)
-- `get`: 단일 값 조회 — `surface.meta_get`, `tool.clipboard.get`
+- `get`: 단일 값 조회 — `surface.meta.get`, `tool.clipboard.get`
 - `count`: 컬렉션 수 — `message.count`
 - `read`: 외부 시스템에서 데이터 읽기 — `surface.read_since_mark`, `message.read`
 
@@ -123,7 +123,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 - namespace는 **단수형** (`surface`, `tab`, NOT `surfaces`)
 - list 반환값의 키는 단수형 + s (`surfaces: [...]`)
 - 보조 도메인은 `<namespace>.<sub>.<verb>` 3단으로. 예: 클립보드는 `tool.clipboard.*` (현재 패턴)
-- `surface.meta_*` (현재 underscore 합성) → `surface.meta.*`로 alias 전환 (3-3 참조)
+- `surface.meta.*` (점 표기). 0.7.0 에서 옛 underscore alias (`surface.meta_*`) 가 제거됨 — 새 호출자는 점 표기만 사용.
 
 ## 인자 규칙
 
