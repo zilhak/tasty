@@ -321,7 +321,9 @@ impl App {
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
             crate::shortcuts::send_app_event(&ipc_proxy, crate::AppEvent::IpcReady);
         });
-        self.hub.start_ipc(ipc_waker);
+        if let Some(injector) = self.hub.start_ipc(ipc_waker) {
+            self.core.set_host_ipc_injector(injector);
+        }
         let core_state = self
             .core_state
             .take()

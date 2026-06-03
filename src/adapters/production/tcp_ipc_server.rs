@@ -24,6 +24,8 @@ use crate::ports::ipc_server::IpcServerPort;
 /// `~/.tasty/tasty.port` 등 외부 통신 표면.
 pub struct TcpIpcServer {
     command_rx: mpsc::Receiver<IpcCommand>,
+    /// Sender 사본 — host→plugin sync dispatch 시 외부 thread 가 직접 push.
+    command_tx: mpsc::Sender<IpcCommand>,
     port: u16,
     /// Shutdown flag to signal the accept thread to stop.
     shutdown: Arc<AtomicBool>,
@@ -54,6 +56,7 @@ impl TcpIpcServer {
 
         // Accept connections in a background thread with non-blocking + shutdown check
         let shutdown_clone = shutdown.clone();
+        let accept_tx = cmd_tx.clone();
         listener.set_nonblocking(true)?;
         thread::spawn(move || {
             loop {
@@ -62,7 +65,7 @@ impl TcpIpcServer {
                 }
                 match listener.accept() {
                     Ok((stream, _)) => {
-                        let cmd_tx = cmd_tx.clone();
+                        let cmd_tx = accept_tx.clone();
                         let waker = waker.clone();
                         thread::spawn(move || {
                             Self::handle_connection(stream, cmd_tx, waker);
@@ -81,6 +84,7 @@ impl TcpIpcServer {
 
         Ok(Self {
             command_rx: cmd_rx,
+            command_tx: cmd_tx,
             port,
             shutdown,
             custom_port_file,
@@ -204,6 +208,10 @@ impl IpcServerPort for TcpIpcServer {
 
     fn port(&self) -> u16 {
         self.port
+    }
+
+    fn command_sender(&self) -> mpsc::Sender<IpcCommand> {
+        self.command_tx.clone()
     }
 }
 

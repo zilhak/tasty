@@ -5,6 +5,7 @@
 //! 은 `TcpIpcServer` (옛 `IpcServer` 의 type alias).
 
 use crate::adapters::production::tcp_ipc_server::TcpIpcServer;
+use crate::app::ipc::HostIpcInjector;
 use crate::ipc::server::IpcWaker;
 use crate::ports::ipc_server::IpcServerPort;
 
@@ -24,14 +25,20 @@ impl Hub {
     /// IPC 서버 시작. `IpcWaker` 는 호출자가 직접 만든다 — gui 빌드는
     /// `EventLoopProxy<AppEvent>` 에서 변환, headless 는 `mpsc::Sender<AppEvent>`
     /// 에서 변환 (`adapters::production::{winit_waker, headless_waker}`).
-    pub(crate) fn start_ipc(&mut self, ipc_waker: IpcWaker) {
-        match TcpIpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker)) {
+    ///
+    /// 반환: host→plugin sync dispatch 에 사용할 `HostIpcInjector` (서버 시작
+    /// 실패 시 `None`). 호출자가 `Core::set_host_ipc_injector` 로 등록한다.
+    pub(crate) fn start_ipc(&mut self, ipc_waker: IpcWaker) -> Option<HostIpcInjector> {
+        match TcpIpcServer::start_with_port_file(self.port_file.take(), Some(ipc_waker.clone())) {
             Ok(ipc) => {
                 tracing::info!("IPC server started on port {}", ipc.port());
+                let injector = HostIpcInjector::new(ipc.command_sender(), ipc_waker);
                 self.ipc_server = Some(Box::new(ipc));
+                Some(injector)
             }
             Err(e) => {
                 tracing::warn!("Failed to start IPC server: {}", e);
+                None
             }
         }
     }

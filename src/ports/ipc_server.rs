@@ -23,4 +23,7 @@ pub trait IpcServerPort: Send {
     fn try_recv(&self) -> Result<IpcCommand, mpsc::TryRecvError>;
     /// 서버가 listen 중인 포트 (debug/log 표시용).
     fn port(&self) -> u16;
+    /// 외부 (runner thread 등 off-main) 에서 큐에 `IpcCommand` 를 inject 할 때
+    /// 사용하는 sender 의 사본. host→plugin sync dispatch 전용.
+    fn command_sender(&self) -> mpsc::Sender<IpcCommand>;
 }

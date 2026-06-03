@@ -167,7 +167,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     };
 
     let mut app = App::new_headless(waker.terminal_waker(), cli.port_file, memory_arc)?;
-    app.hub.start_ipc(waker.ipc_waker());
+    if let Some(injector) = app.hub.start_ipc(waker.ipc_waker()) {
+        app.core.set_host_ipc_injector(injector);
+    }
 
     hooks::lua::fire(
         app.lua_engine.as_ref(),

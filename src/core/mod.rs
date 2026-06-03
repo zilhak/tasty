@@ -23,7 +23,7 @@ pub(crate) mod terminal_store;
 
 pub(crate) use state::CoreState;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(feature = "gui")]
 use intent::ProcessPtyOutcome;
@@ -82,6 +82,10 @@ pub(crate) struct Core {
     /// Layout preset 디스크 캐시. 구체 Arc — MainView / PresetView 에 clone
     /// 으로 전달해 *공유 owner* 가 된다. `presets` (trait Arc) 와 같은 allocation.
     pub(crate) preset_store: Arc<Mutex<PresetStore>>,
+
+    /// Host→plugin sync IPC dispatcher. Hub 가 IPC 서버를 띄운 직후 등록.
+    /// runner thread 가 `claude.spawn` 등을 동기 호출할 때 사용.
+    pub(crate) host_ipc_injector: Arc<OnceLock<crate::app::ipc::HostIpcInjector>>,
 }
 
 impl Core {
@@ -254,6 +258,36 @@ impl Core {
         &self,
     ) -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
         self.memory.clone()
+    }
+
+    // ─── Host→plugin sync IPC dispatch ───
+
+    /// Hub 가 IPC 서버를 시작한 직후 1회 호출. 두 번째 호출 부터는 무시.
+    pub(crate) fn set_host_ipc_injector(&self, injector: crate::app::ipc::HostIpcInjector) {
+        if self.host_ipc_injector.set(injector).is_err() {
+            tracing::warn!("host_ipc_injector already initialized");
+        }
+    }
+
+    /// runner thread 가 plugin IPC 메서드를 동기 호출. injector 미초기화 시 Err.
+    #[allow(dead_code)]
+    pub(crate) fn host_dispatch_plugin_method(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        timeout: std::time::Duration,
+    ) -> Result<serde_json::Value, String> {
+        let inj = self
+            .host_ipc_injector
+            .get()
+            .ok_or_else(|| "host IPC injector not initialized".to_string())?;
+        inj.dispatch(method, params, timeout)
+    }
+
+    /// Arc<OnceLock<HostIpcInjector>> 의 사본. runner thread 가 자체 호출 시 사용.
+    #[allow(dead_code)]
+    pub(crate) fn host_ipc_injector_arc(&self) -> Arc<OnceLock<crate::app::ipc::HostIpcInjector>> {
+        self.host_ipc_injector.clone()
     }
 
     /// Memory store 의 lock 안에서 함수를 실행한다. Mutex poisoning 시

@@ -2,7 +2,7 @@
 //!
 //! Production wiring 은 `src/boot/wiring.rs` 의 `build_production_core()`.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tasty_memory::MemoryStorage;
 use tasty_presets::{PresetStorage, PresetStore};
@@ -151,6 +151,7 @@ impl CoreBuilder {
                 .settings_storage
                 .ok_or_else(|| anyhow::anyhow!("SettingsStorage missing"))?,
             preset_store,
+            host_ipc_injector: Arc::new(OnceLock::new()),
         })
     }
 }

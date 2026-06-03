@@ -49,6 +49,10 @@ impl IpcServerPort for MockIpcServer {
     fn port(&self) -> u16 {
         self.port
     }
+
+    fn command_sender(&self) -> mpsc::Sender<IpcCommand> {
+        self.tx.clone()
+    }
 }
 
 #[cfg(test)]
