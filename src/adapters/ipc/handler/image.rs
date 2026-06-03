@@ -289,6 +289,66 @@ mod tests {
         (state, engine)
     }
 
+    /// `handle_open` 처럼 `Core::apply` 를 호출하는 test 용 4-tuple fixture.
+    /// `TempDir` 은 호출자가 명명된 binding 으로 받아 즉시 drop 되지 않게 한다.
+    #[allow(dead_code)]
+    fn make_test_core_state() -> (
+        crate::core::Core,
+        AppState,
+        crate::core::CoreState,
+        tempfile::TempDir,
+    ) {
+        use std::sync::{Arc, Mutex};
+        use tasty_memory::MemoryStorage;
+        use tasty_themes::{ThemeStorage, ThemeStore};
+
+        use crate::adapters::test::{
+            fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
+            mock_process::MockProcessSpawner, mock_pty::MockPtyService,
+            mock_waker::MockTerminalWaker, tmp_home::TmpHome,
+        };
+        use crate::core::builder::CoreBuilder;
+        use crate::ports::notification_sound::NoopPlayer;
+        use crate::ports::pty::TerminalWaker;
+
+        // CoreState 의 waker (Arc<dyn Fn() + Send + Sync>) 와 Core 의 PTY-side
+        // waker (Arc<dyn TerminalWaker>) 는 서로 다른 trait object 이므로 별 생성.
+        let term_waker: crate::terminal::Waker = Arc::new(|| {});
+        let port_waker: Arc<dyn TerminalWaker> = Arc::new(MockTerminalWaker::new());
+
+        let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
+
+        let preset_store: Arc<Mutex<tasty_presets::PresetStore>> =
+            Arc::new(Mutex::new(tasty_presets::PresetStore::load_default()));
+        let memory: Arc<Mutex<dyn MemoryStorage>> =
+            Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
+        let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
+
+        let state = AppState::new(&mut engine, preset_store.clone(), memory.clone());
+        crate::engine::surface_registry::builtins::register_image(&engine.surface_registry);
+
+        let home_tmp = tempfile::tempdir().expect("test tempdir");
+        let home = TmpHome::new(home_tmp.path().to_path_buf());
+
+        let core = CoreBuilder::new()
+            .with_pty(Arc::new(MockPtyService::new()))
+            .with_waker(port_waker)
+            .with_fs(Arc::new(MemFileSystem::new()))
+            .with_clock(Arc::new(FakeClock::default()))
+            .with_clipboard(Arc::new(MockClipboard::default()))
+            .with_process(Arc::new(MockProcessSpawner::default()))
+            .with_home(Arc::new(home))
+            .with_sound_player(Arc::new(NoopPlayer))
+            .with_memory(memory)
+            .with_themes(themes)
+            .with_preset_store(preset_store)
+            .with_settings_storage(Arc::new(tasty_settings::FileSettingsStorage))
+            .build()
+            .expect("test Core build");
+
+        (core, state, engine, home_tmp)
+    }
+
     fn first_surface_id(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
         let ws_ids: std::collections::HashSet<u32> = state
             .active_workspace_mut(engine)
