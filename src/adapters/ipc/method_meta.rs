@@ -340,8 +340,12 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
 pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
 
 /// prefix 기반 fallback. METHOD_TABLE에 없는 메서드를 prefix로 매칭한다.
-/// 현재는 IME 메서드만 (window 의존, 사용자 입력 영역).
-pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only())];
+/// - `surface.ime_*` — IME 메서드 (window 의존, 사용자 입력 영역).
+/// - `claude.*` — Claude Code plugin namespace. Agent (자식 Claude) 의 hook
+///   trigger (`claude.hook`) 를 비롯해 plugin/agent 가 호출 가능해야 한다.
+///   세부 권한은 plugin manifest 의 ipc_namespace 가 분배.
+pub const PREFIX_RULES: &[(&str, MethodMeta)] =
+    &[("surface.ime_", local_only()), ("claude.", plugin(&[]))];
 
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.
 pub fn method_meta(method: &str) -> Option<MethodMeta> {
