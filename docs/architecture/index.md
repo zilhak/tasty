@@ -270,4 +270,4 @@ tasty (binary) ← 모든 위 크레이트
 | [리팩토링 분석](refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
 | [라이브러리 분리 분석](library-separation/index.md) | 크레이트 분리 후보 다관점 분석 |
 | [Plugin sandbox 평가](plugin-sandbox-evaluation.md) | WASM / OS-level / 현 상태 비교 — 1.0 보류 근거 + 재검토 trigger |
-| [성능 벤치마크](performance-benchmarks.md) | F.G GPU 최적화 실측 — terminals_ms p50/p99/max + draw call 수 (10 surface 시나리오) |
+| [성능 벤치마크](performance-benchmarks.md) | F.G GPU 최적화 실측 — terminals_ms p50/p99/max + draw call 수 + atlas eviction 카운터 (10 surface ASCII / CJK 4 surface, release / dist 프로필) |
