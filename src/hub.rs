@@ -5,7 +5,7 @@
 //! 은 `TcpIpcServer` (옛 `IpcServer` 의 type alias).
 
 use crate::adapters::production::tcp_ipc_server::TcpIpcServer;
-use crate::app::ipc::HostIpcInjector;
+use crate::ipc::host_call::HostIpcInjector;
 use crate::ipc::server::IpcWaker;
 use crate::ports::ipc_server::IpcServerPort;
 

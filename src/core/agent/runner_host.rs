@@ -16,7 +16,7 @@ use tasty_agent::{ReducerInput, Task, TaskCommand, TaskResult, reduce_with_custo
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
 use crate::adapters::ipc::handler::agent::task::run_custom_shell;
-use crate::app::ipc::HostIpcInjector;
+use crate::ipc::host_call::HostIpcInjector;
 
 /// Host→plugin dispatch timeout — claude.spawn 은 자식 프로세스 생성/디스크 I/O
 /// 까지 포함하므로 비교적 여유. claude.wait 는 1tick 만이라 짧아도 되지만

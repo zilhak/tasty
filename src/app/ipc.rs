@@ -18,11 +18,8 @@ mod app_methods;
 mod caller_gate;
 #[cfg(debug_assertions)]
 mod debug_methods;
-pub(crate) mod host_call;
 mod routing;
 mod window_required;
-
-pub(crate) use host_call::HostIpcInjector;
 
 use crate::app::App;
 
