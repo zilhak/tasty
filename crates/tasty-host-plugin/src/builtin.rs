@@ -482,12 +482,7 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
                             }
                         }
                         BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
-                            tracing::info!(
-                                "upgrading builtin '{}' v{} → v{}",
-                                spec.id,
-                                from,
-                                to
-                            );
+                            tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
                             if let Err(e) = overwrite_builtin_dir(&src, &dest) {
                                 tracing::warn!(
                                     "install_builtins: upgrade '{}' failed: {e}",
