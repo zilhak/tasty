@@ -134,6 +134,10 @@ pub struct CoreState {
     /// Agent task ID 시퀀스 — 같은 ms 안에서 task_id 충돌 방지용 단조 증가 카운터.
     pub(crate) agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
 
+    /// `agent.task_await` blocking 용 waker hub. set_state 가 종결 전이 시 fire,
+    /// task_await 가 등록 후 recv_timeout.
+    pub(crate) task_waker_hub: std::sync::Arc<crate::core::agent::task_waker::TaskWakerHub>,
+
     // ── Messaging / Typing detection ──
     pub(crate) surface_messages: HashMap<u32, Vec<SurfaceMessage>>,
     pub(crate) surface_next_message_id: u32,
@@ -246,6 +250,7 @@ impl CoreState {
             telemetry_seq: std::sync::Arc::new(tasty_telemetry::TelemetrySeq::new()),
             anomaly_detector: std::sync::Arc::new(tasty_telemetry::AnomalyDetector::new()),
             agent_seq: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            task_waker_hub: std::sync::Arc::new(crate::core::agent::task_waker::TaskWakerHub::new()),
             surface_messages: HashMap::new(),
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),

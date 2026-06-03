@@ -201,12 +201,82 @@ pub fn handle_task_retry(
 }
 
 // ============================================================
-// agent.task_await — poll-based 단순 변형 (즉시 응답)
+// agent.task_await — 진짜 blocking (TaskWakerHub 기반)
 // ============================================================
 //
-// 본 단계에서는 blocking await 가 아닌 **현재 상태 조회**만 한다. 호출자가
-// terminal 상태가 아니면 다시 호출해 폴링한다. 실제 long-poll/wakeup 은
-// scheduler 도입 시 별도 구현.
+// J.A.S5: `await_task_blocking` 가 worker thread 안에서 호출되어 (app_methods 의
+// `ipc_dispatch_task_await` 분기), 현 state 가 종결이면 즉시 반환, 아니면 hub 에
+// waiter 등록 후 recv_timeout. `timeout_ms == None | 0` = 무한 대기 (approval 과
+// 다른 정책 — task 는 record-level timeout 없음).
+//
+// 응답 형식:
+//   { outcome: "terminal" | "timed_out" | "not_found",
+//     state: "succeeded" | "failed" | ...,  // outcome=terminal 일 때만
+//     result: { ... },                        // outcome=terminal 일 때만, 있으면
+//   }
+pub fn await_task_blocking(
+    hub: &crate::core::agent::task_waker::TaskWakerHub,
+    memory: &std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
+    agent_seq: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    rpc_id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    use crate::core::agent::task_waker::{AwaitOutcome, TerminalSnapshot};
+    use tasty_memory::HOST_OWNER;
+
+    let workspace_id = match workspace_id_param(params, &rpc_id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let task_id = match task_id_param(params, &rpc_id) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let timeout_ms = params.get("timeout_ms").and_then(|v| v.as_u64());
+
+    // 1. 현 state snapshot.
+    let snap_opt: Option<TerminalSnapshot> = {
+        let mut guard = match memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let store = tasty_agent::TaskStore::new(&mut *guard, HOST_OWNER, agent_seq.as_ref());
+        match store.get(workspace_id, &task_id) {
+            Ok(Some(t)) => Some(TerminalSnapshot {
+                state: t.state,
+                result: t.result,
+            }),
+            Ok(None) => None,
+            Err(_) => None,
+        }
+    };
+    let Some(current) = snap_opt else {
+        return JsonRpcResponse::success(rpc_id, json!({ "outcome": "not_found" }));
+    };
+
+    // 2. blocking await.
+    let outcome = hub.await_terminal(workspace_id, &task_id, timeout_ms, current);
+    match outcome {
+        AwaitOutcome::Terminal(snap) => {
+            let mut resp = json!({
+                "outcome": "terminal",
+                "state": snap.state.name(),
+            });
+            if let Some(r) = snap.result {
+                resp["result"] = serde_json::to_value(r).unwrap_or(Value::Null);
+            }
+            JsonRpcResponse::success(rpc_id, resp)
+        }
+        AwaitOutcome::TimedOut => {
+            JsonRpcResponse::success(rpc_id, json!({ "outcome": "timed_out" }))
+        }
+    }
+}
+
+/// 하위 호환을 위한 sync 진입점은 *제거* — handler.rs 의 라우터 분기는 더 이상
+/// 본 함수로 보내지 않고, app_methods 의 blocking arm 으로 흐른다. 만약 어떤
+/// 경로가 본 함수를 직접 호출하더라도 동작하도록 즉시 응답 fallback 만 제공:
+/// 현재 상태를 task_get 처럼 돌려준다.
 pub fn handle_task_await(
     core: &Core,
     state: &mut AppState,

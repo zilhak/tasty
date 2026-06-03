@@ -349,6 +349,7 @@ impl Core {
             memory: self.memory.clone(),
             agent_seq: engine.agent_seq.clone(),
             host_ipc: self.host_ipc_injector.clone(),
+            task_waker_hub: engine.task_waker_hub.clone(),
         }
     }
 

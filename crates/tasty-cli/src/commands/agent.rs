@@ -59,12 +59,15 @@ pub enum AgentCommands {
         #[arg(long)]
         id: String,
     },
-    /// Poll a task's current state (returns immediately — no blocking await yet).
+    /// Wait for a task to reach a terminal state (blocking). `--timeout-ms 0` or
+    /// omitted = wait indefinitely.
     TaskAwait {
         #[arg(long)]
         workspace_id: u32,
         #[arg(long)]
         id: String,
+        #[arg(long)]
+        timeout_ms: Option<u64>,
     },
     /// Cancel a task. Downstream is cascaded according to on_failure.
     TaskCancel {

@@ -476,11 +476,30 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
             now,
             &snapshot,
             move |ws, id, st, n| {
-                ctx_for_set.with_memory(|mem| {
+                let (res, fire_target) = ctx_for_set.with_memory(|mem| {
                     let seq = ctx_for_set.agent_seq.clone();
                     let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
-                    store.set_state(ws, id, st, n).map(|_| ())
-                })
+                    match store.set_state(ws, id, st, n) {
+                        Ok((task, _downstream)) => {
+                            // S5: 종결 전이 시 hub fire 를 위한 snapshot 채취.
+                            let fire = if task.state.is_terminal() {
+                                Some((task.state.clone(), task.result.clone()))
+                            } else {
+                                None
+                            };
+                            (Ok(()), fire)
+                        }
+                        Err(e) => (Err(e), None),
+                    }
+                });
+                if let Some((state, result)) = fire_target {
+                    ctx_for_set.task_waker_hub.fire(
+                        ws,
+                        id,
+                        crate::core::agent::task_waker::TerminalSnapshot { state, result },
+                    );
+                }
+                res
             },
             move |ws, id, r| {
                 ctx_for_res.with_memory(|mem| {
@@ -515,6 +534,7 @@ mod tests {
             memory: Arc::new(Mutex::new(mem)),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
+            task_waker_hub: Arc::new(crate::core::agent::task_waker::TaskWakerHub::new()),
         };
         (td, ctx)
     }

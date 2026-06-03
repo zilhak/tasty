@@ -41,6 +41,10 @@ pub struct RunnerContext {
     pub memory: Arc<Mutex<dyn MemoryStorage>>,
     pub agent_seq: Arc<AtomicU64>,
     pub host_ipc: Arc<OnceLock<HostIpcInjector>>,
+    /// `agent.task_await` blocking 용 waker hub. tick 의 set_state 클로저가 종결 전이
+    /// 시 fire. R-5 회피: runner_thread 가 Core wrapper 를 우회하기 때문에 RunnerContext
+    /// 에 직접 포함시켜야 누락 없음.
+    pub task_waker_hub: Arc<crate::core::agent::task_waker::TaskWakerHub>,
 }
 
 impl RunnerContext {
@@ -548,6 +552,7 @@ mod tests {
             memory: Arc::new(Mutex::new(mem)),
             agent_seq: Arc::new(AtomicU64::new(0)),
             host_ipc: Arc::new(OnceLock::new()),
+            task_waker_hub: Arc::new(crate::core::agent::task_waker::TaskWakerHub::new()),
         };
         (td, ctx)
     }

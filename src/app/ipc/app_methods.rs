@@ -163,6 +163,10 @@ impl App {
             self.ipc_dispatch_approval_await(cmd);
             return IpcStep::Handled;
         }
+        if cmd.request.method == "agent.task_await" {
+            self.ipc_dispatch_task_await(cmd);
+            return IpcStep::Handled;
+        }
         IpcStep::NotHandled
     }
 
@@ -532,6 +536,54 @@ impl App {
             IpcStep::HandledDirty
         } else {
             IpcStep::Handled
+        }
+    }
+
+    /// `agent.task_await`: blocking. Arc<TaskWakerHub> + memory port arc + agent_seq
+    /// 를 worker thread 로 클론. await_task_blocking 이 현 state snapshot → hub
+    /// recv_timeout. J.A.S5.
+    fn ipc_dispatch_task_await(&mut self, cmd: &IpcCommand) {
+        let hub_opt = self
+            .view
+            .views
+            .values()
+            .find_map(|w| w.as_main().map(|w| w.core_state.task_waker_hub.clone()))
+            .or_else(|| {
+                self.parked_states
+                    .first()
+                    .map(|(_, e)| e.task_waker_hub.clone())
+            })
+            .or_else(|| self.core_state.as_ref().map(|e| e.task_waker_hub.clone()));
+        let seq_opt = self
+            .view
+            .views
+            .values()
+            .find_map(|w| w.as_main().map(|w| w.core_state.agent_seq.clone()))
+            .or_else(|| self.parked_states.first().map(|(_, e)| e.agent_seq.clone()))
+            .or_else(|| self.core_state.as_ref().map(|e| e.agent_seq.clone()));
+        let memory = self.core.memory_arc();
+        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        match (hub_opt, seq_opt) {
+            (Some(hub), Some(seq)) => {
+                let params = cmd.request.params.clone();
+                let response_tx = cmd.response_tx.clone();
+                std::thread::spawn(move || {
+                    let resp = crate::adapters::ipc::handler::agent::task::await_task_blocking(
+                        &hub, &memory, seq, rpc_id, &params,
+                    );
+                    send_response(&response_tx, resp);
+                });
+            }
+            _ => {
+                send_response(
+                    &cmd.response_tx,
+                    host_ipc::protocol::JsonRpcResponse::error(
+                        rpc_id,
+                        -32000,
+                        "no application state available",
+                    ),
+                );
+            }
         }
     }
 

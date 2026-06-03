@@ -58,10 +58,34 @@ impl Core {
         now_ms: u64,
     ) -> Result<(Task, Vec<Task>), AgentError> {
         let seq = engine.agent_seq.clone();
-        self.with_memory(|mem| {
+        let result = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.cancel(workspace_id, task_id, now_ms)
-        })
+        });
+        if let Ok((ref task, ref downstream)) = result {
+            self.fire_waker_if_terminal(engine, workspace_id, task);
+            for d in downstream {
+                self.fire_waker_if_terminal(engine, workspace_id, d);
+            }
+        }
+        result
+    }
+
+    /// S5: task state 가 종결 (Succeeded/Failed/Cancelled/Skipped) 이면 waker hub 에
+    /// fire. set_state / cancel / runner thread 등 *모든* terminal 진입 경로에서
+    /// 호출되어야 누락 없음 (R-5 회피).
+    fn fire_waker_if_terminal(&self, engine: &CoreState, workspace_id: u32, task: &Task) {
+        if !task.state.is_terminal() {
+            return;
+        }
+        engine.task_waker_hub.fire(
+            workspace_id,
+            &task.id,
+            crate::core::agent::task_waker::TerminalSnapshot {
+                state: task.state.clone(),
+                result: task.result.clone(),
+            },
+        );
     }
 
     /// Task retry — 옵션에 따라 downstream reset.
@@ -91,10 +115,17 @@ impl Core {
         now_ms: u64,
     ) -> Result<(Task, Vec<Task>), AgentError> {
         let seq = engine.agent_seq.clone();
-        self.with_memory(|mem| {
+        let result = self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.set_state(workspace_id, task_id, new_state, now_ms)
-        })
+        });
+        if let Ok((ref task, ref downstream)) = result {
+            self.fire_waker_if_terminal(engine, workspace_id, task);
+            for d in downstream {
+                self.fire_waker_if_terminal(engine, workspace_id, d);
+            }
+        }
+        result
     }
 
     /// Task result 영속. set_state(Succeeded/Failed) 직전에 호출.

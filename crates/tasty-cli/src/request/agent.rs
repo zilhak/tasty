@@ -55,10 +55,17 @@ pub(super) fn agent_command_to_method_params(
             "agent.task_get",
             serde_json::json!({ "workspace_id": *workspace_id, "id": id }),
         ),
-        TaskAwait { workspace_id, id } => (
-            "agent.task_await",
-            serde_json::json!({ "workspace_id": *workspace_id, "id": id }),
-        ),
+        TaskAwait {
+            workspace_id,
+            id,
+            timeout_ms,
+        } => {
+            let mut p = serde_json::json!({ "workspace_id": *workspace_id, "id": id });
+            if let Some(t) = timeout_ms {
+                p["timeout_ms"] = serde_json::Value::from(*t);
+            }
+            ("agent.task_await", p)
+        }
         TaskCancel { workspace_id, id } => (
             "agent.task_cancel",
             serde_json::json!({ "workspace_id": *workspace_id, "id": id }),
