@@ -15,11 +15,12 @@ use winit::event_loop::EventLoopProxy;
 #[cfg(feature = "gui")]
 use crate::AppEvent;
 #[cfg(feature = "gui")]
+use crate::adapters::production::notification_sound::PlatformPlayer;
+#[cfg(feature = "gui")]
 use crate::adapters::production::{arboard_clip::ArboardClipboard, winit_waker::WinitWaker};
 use crate::adapters::production::{
-    directories_home::DirectoriesHome, notification_sound::PlatformPlayer,
-    portable_pty::PortablePtyService, std_clock::SystemClock, std_fs::StdFileSystem,
-    std_process::StdProcessSpawner,
+    directories_home::DirectoriesHome, portable_pty::PortablePtyService, std_clock::SystemClock,
+    std_fs::StdFileSystem, std_process::StdProcessSpawner,
 };
 use crate::core::Core;
 use crate::core::builder::CoreBuilder;

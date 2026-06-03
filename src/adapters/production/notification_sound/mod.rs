@@ -6,6 +6,7 @@
 //! NoopPlayer alias 로 fallback.
 
 #![allow(dead_code)]
+#![allow(unused_imports)]
 
 #[cfg(target_os = "linux")]
 pub mod linux;

@@ -4,4 +4,6 @@
 //! thin re-export 만 유지. `WinitWakerFactory` (boot/waker.rs) 가 winit
 //! `EventLoopProxy` 로 production impl 을 제공한다.
 
-pub use tasty_terminal::waker_factory::{NoopWakerFactory, SharedWakerFactory, WakerFactory};
+pub use tasty_terminal::waker_factory::SharedWakerFactory;
+#[cfg(feature = "gui")]
+pub use tasty_terminal::waker_factory::{NoopWakerFactory, WakerFactory};
