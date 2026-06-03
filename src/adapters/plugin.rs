@@ -9,14 +9,13 @@
 //! `manifest` 는 `tasty-plugin-manifest` 가 owning (F.B.6).
 #![allow(unused_imports)]
 
-pub mod manifest;
-
 pub use tasty_host_plugin::{
     builtin, command_registry, discovery, event_bus, extension_registry, handle_channel,
     ipc_namespace, listener, manager, process, protocol, registry_state, tool_registry, ui_tree,
 };
+pub use tasty_plugin_manifest as manifest;
+pub use tasty_plugin_manifest::{HOST_API_VERSION, Manifest};
 
-pub use manifest::{HOST_API_VERSION, Manifest};
 pub use tasty_host_plugin::protocol::{AuthMessage, PluginEvent, PluginRequest, PluginResponse};
 pub use tasty_host_plugin::{
     HostListener, PluginManager, PluginPackage, PluginProcess, PluginsConfig, bundle_root,
