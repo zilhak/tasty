@@ -165,8 +165,22 @@ if (-not $SkipMsi -and $BuildProfile -ne "debug") {
     }
 }
 
+$ShaSumsPath = Join-Path $DistDir "SHA256SUMS-windows.txt"
+$Sums = @()
+$ZipHash = (Get-FileHash $ArchivePath -Algorithm SHA256).Hash.ToLower()
+$Sums += "$ZipHash  $(Split-Path -Leaf $ArchivePath)"
+if (-not $SkipMsi -and $BuildProfile -ne "debug") {
+    $MsiPath = Join-Path $DistDir "tasty-${Version}-windows-x64.msi"
+    if (Test-Path $MsiPath) {
+        $MsiHash = (Get-FileHash $MsiPath -Algorithm SHA256).Hash.ToLower()
+        $Sums += "$MsiHash  $(Split-Path -Leaf $MsiPath)"
+    }
+}
+$Sums | Out-File -Encoding ASCII $ShaSumsPath
+
 Write-Host ""
 Write-Host "Done!"
+Write-Host "SHA: $ShaSumsPath"
 
 } finally {
     Pop-Location

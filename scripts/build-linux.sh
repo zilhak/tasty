@@ -169,9 +169,21 @@ if [[ -n "$APPIMAGE_FILE" ]]; then
     }
 fi
 
+SHASUMS_FILE="SHA256SUMS-linux-${ARCH}.txt"
+(
+    cd "$DIST_DIR"
+    {
+        sha256sum "$ARCHIVE_NAME"
+        [[ -n "$DEB_FILE" ]]      && sha256sum "$(basename "$DEB_FILE")"
+        [[ -n "$RPM_FILE" ]]      && sha256sum "$(basename "$RPM_FILE")"
+        [[ -n "$APPIMAGE_FILE" ]] && sha256sum "$(basename "$APPIMAGE_FILE")"
+    } > "$SHASUMS_FILE"
+)
+
 echo ""
 echo "Done!"
 echo "  Archive:  $DIST_DIR/$ARCHIVE_NAME"
 [[ -n "$DEB_FILE" ]]      && echo "  Deb:      $DEB_FILE"
 [[ -n "$RPM_FILE" ]]      && echo "  Rpm:      $RPM_FILE"
 [[ -n "$APPIMAGE_FILE" ]] && echo "  AppImage: $APPIMAGE_FILE"
+echo "  SHA:      $DIST_DIR/$SHASUMS_FILE"

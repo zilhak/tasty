@@ -122,7 +122,11 @@ PLIST_VER=$(plutil -extract CFBundleVersion raw "$APP_DIR/Contents/Info.plist")
     exit 1
 }
 
+SHASUMS_FILE="SHA256SUMS-macos.txt"
+(cd "$DIST_DIR" && shasum -a 256 "$DMG_NAME" > "$SHASUMS_FILE")
+
 echo ""
 echo "Done!"
 echo "  App:  $APP_DIR"
 echo "  DMG:  $DIST_DIR/$DMG_NAME"
+echo "  SHA:  $DIST_DIR/$SHASUMS_FILE"
