@@ -168,18 +168,26 @@ pub fn matches_to_request(
         }
         // claude CLI의 resolve_surface_id와 동일한 폴백 규칙. plugin이 정의한
         // `surface` (u32) 인자가 사용자 입력에 없으면 TASTY_SURFACE_ID env로 채운다.
+        // IPC handler 들은 통상 `surface_id` 키를 기대하므로, 두 키 모두 주입한다.
         let defines_surface = g
             .flags
             .iter()
             .chain(g.positional.iter())
             .any(|a| a.name == "surface" && matches!(a.ty, CliArgType::U32));
-        if defines_surface && !params.contains_key("surface") {
+        if defines_surface && !params.contains_key("surface") && !params.contains_key("surface_id")
+        {
             if let Some(sid) = std::env::var("TASTY_SURFACE_ID")
                 .ok()
                 .and_then(|s| s.parse::<u32>().ok())
             {
                 params.insert("surface".into(), Value::from(sid));
+                params.insert("surface_id".into(), Value::from(sid));
             }
+        }
+        // 사용자가 명시적으로 --surface 를 줬을 때도 surface_id 동기. (IPC handler
+        // 가 surface_id 키만 보는 경우 대응.)
+        if let Some(v) = params.get("surface").cloned() {
+            params.entry(String::from("surface_id")).or_insert(v);
         }
     }
 
