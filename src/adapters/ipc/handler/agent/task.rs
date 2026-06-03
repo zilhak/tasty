@@ -367,6 +367,60 @@ pub fn handle_task_reduce(
 }
 
 // ============================================================
+// agent.task_run — workspace 단위 runner thread 시작/중단/상태조회
+// ============================================================
+//
+// action: "start" | "stop" | "status".
+// 응답: { running, crashed, ready_count, running_count }.
+// start: 이미 실행 중이면 no-op (running=true 그대로).
+// stop:  실행 중이면 정지 후 join, 아니면 no-op.
+// status: 카운트만 갱신.
+pub fn handle_task_run(
+    core: &Core,
+    _state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let action = params
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("status");
+    let ctx = core.runner_context(engine);
+    let registry = core.agent_runner_registry();
+    match action {
+        "start" => {
+            registry.start(ctx.clone(), workspace_id);
+        }
+        "stop" => {
+            registry.stop(workspace_id);
+        }
+        "status" => {}
+        other => {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("invalid 'action': {other} (expected start|stop|status)"),
+            );
+        }
+    }
+    let status = registry.status(&ctx, workspace_id);
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "running": status.running,
+            "crashed": status.crashed,
+            "ready_count": status.ready_count,
+            "running_count": status.running_count,
+        }),
+    )
+}
+
+// ============================================================
 // agent.task_set_result — 외부 호출자가 task 완료 신호를 보내는 진입점
 // ============================================================
 //

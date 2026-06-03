@@ -82,6 +82,16 @@ pub(super) fn agent_command_to_method_params(
             "agent.task_graph",
             serde_json::json!({ "workspace_id": *workspace_id, "format": format }),
         ),
+        TaskRun {
+            workspace_id,
+            action,
+        } => (
+            "agent.task_run",
+            serde_json::json!({
+                "workspace_id": *workspace_id,
+                "action": action.as_str(),
+            }),
+        ),
         TaskSetResult {
             workspace_id,
             id,

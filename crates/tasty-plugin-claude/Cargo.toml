@@ -6,6 +6,9 @@ license = "MIT"
 description = "External Tasty plugin: Claude Code CLI integration"
 repository = "https://github.com/zilhak/tasty"
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "tasty-plugin-claude"
 path = "src/main.rs"

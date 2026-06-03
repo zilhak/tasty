@@ -75,7 +75,7 @@ mod barrier;
 mod lease;
 mod ratelimit;
 mod semaphore;
-mod task;
+pub(crate) mod task;
 
 pub use barrier::*;
 pub use lease::*;

@@ -86,6 +86,10 @@ pub(crate) struct Core {
     /// Host→plugin sync IPC dispatcher. Hub 가 IPC 서버를 띄운 직후 등록.
     /// runner thread 가 `claude.spawn` 등을 동기 호출할 때 사용.
     pub(crate) host_ipc_injector: Arc<OnceLock<crate::app::ipc::HostIpcInjector>>,
+
+    /// Agent task runner registry — workspace 별 runner thread 의 시작/중단/상태.
+    /// `agent.task_run` IPC + 통합 테스트가 사용.
+    pub(crate) runner_registry: Arc<crate::core::agent::runner_thread::RunnerRegistry>,
 }
 
 impl Core {
@@ -288,6 +292,26 @@ impl Core {
     #[allow(dead_code)]
     pub(crate) fn host_ipc_injector_arc(&self) -> Arc<OnceLock<crate::app::ipc::HostIpcInjector>> {
         self.host_ipc_injector.clone()
+    }
+
+    // ─── Agent task runner ───
+
+    /// runner thread 가 사용할 컨텍스트를 조립. CoreState 의 agent_seq 를 함께.
+    pub(crate) fn runner_context(
+        &self,
+        engine: &crate::core::CoreState,
+    ) -> crate::core::agent::runner_host::RunnerContext {
+        crate::core::agent::runner_host::RunnerContext {
+            memory: self.memory.clone(),
+            agent_seq: engine.agent_seq.clone(),
+            host_ipc: self.host_ipc_injector.clone(),
+        }
+    }
+
+    pub(crate) fn agent_runner_registry(
+        &self,
+    ) -> Arc<crate::core::agent::runner_thread::RunnerRegistry> {
+        self.runner_registry.clone()
     }
 
     /// Memory store 의 lock 안에서 함수를 실행한다. Mutex poisoning 시

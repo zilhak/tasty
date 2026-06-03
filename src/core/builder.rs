@@ -152,6 +152,7 @@ impl CoreBuilder {
                 .ok_or_else(|| anyhow::anyhow!("SettingsStorage missing"))?,
             preset_store,
             host_ipc_injector: Arc::new(OnceLock::new()),
+            runner_registry: Arc::new(crate::core::agent::runner_thread::RunnerRegistry::new()),
         })
     }
 }

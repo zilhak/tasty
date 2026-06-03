@@ -1,6 +1,24 @@
 //! `tasty agent ...` subcommand 정의.
 
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
+
+/// `agent task-run` action.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum TaskRunAction {
+    Start,
+    Stop,
+    Status,
+}
+
+impl TaskRunAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TaskRunAction::Start => "start",
+            TaskRunAction::Stop => "stop",
+            TaskRunAction::Status => "status",
+        }
+    }
+}
 
 #[derive(Subcommand)]
 pub enum AgentCommands {
@@ -72,6 +90,16 @@ pub enum AgentCommands {
         /// Format: json | dot. Default: json.
         #[arg(long, default_value = "json")]
         format: String,
+    },
+    /// Start/stop/inspect the agent task runner for a workspace.
+    /// runner 는 Ready task 를 자동 dispatch + Running task 의 완료를 감지하는
+    /// host 측 thread. 같은 workspace 에 두 번 start 호출은 idempotent.
+    TaskRun {
+        #[arg(long)]
+        workspace_id: u32,
+        /// start | stop | status. 기본: status.
+        #[arg(long, value_enum, default_value_t = TaskRunAction::Status)]
+        action: TaskRunAction,
     },
     /// Manually report a task's terminal result (succeeded | failed).
     /// runner thread 가 dispatch 한 task 외 *외부/수동* task 의 완료 신호용.

@@ -533,6 +533,10 @@ fn route_engine_handler(
         "agent.task_set_result" => {
             agent::handle_task_set_result(core, state, engine, caller, id, &request.params)
         }
+        // agent.task_run — Phase H.F (workspace runner thread 시작/중단/상태)
+        "agent.task_run" => {
+            agent::handle_task_run(core, state, engine, caller, id, &request.params)
+        }
         // agent.barrier_* / semaphore_* — Phase 5.2 (poll-based 동기화 primitive)
         "agent.barrier_create" => {
             agent::handle_barrier_create(core, state, engine, caller, id, &request.params)

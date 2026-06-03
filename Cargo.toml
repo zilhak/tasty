@@ -81,6 +81,7 @@ tasty-agent = { path = "crates/tasty-agent" }
 tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }
 tasty-plugin-manifest = { path = "crates/tasty-plugin-manifest" }
 tasty-host-plugin = { path = "crates/tasty-host-plugin" }
+tasty-plugin-claude = { path = "crates/tasty-plugin-claude" }
 tasty-ipc = { path = "crates/tasty-ipc" }
 tasty-cli = { path = "crates/tasty-cli" }
 tasty-model = { path = "crates/tasty-model" }

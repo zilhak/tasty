@@ -5102,6 +5102,7 @@ dependencies = [
  "tasty-memory",
  "tasty-model",
  "tasty-output",
+ "tasty-plugin-claude",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
  "tasty-portscan",

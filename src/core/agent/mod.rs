@@ -12,5 +12,7 @@
 pub(crate) mod barrier;
 pub(crate) mod lease;
 pub(crate) mod ratelimit;
+pub(crate) mod runner_host;
+pub(crate) mod runner_thread;
 pub(crate) mod semaphore;
 pub(crate) mod task;
