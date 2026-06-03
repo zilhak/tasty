@@ -464,6 +464,17 @@ pub fn handle_vi_key(
                     vi.cursor.col = cols.saturating_sub(1);
                     ViKeyOutcome::Moved
                 }
+                '^' => {
+                    // 현재 행의 첫 non-whitespace col. 전부 공백이거나 빈 행이면 col=0.
+                    let row = row_chars(terminal, vi.cursor.absolute_row);
+                    let first_non_ws = row
+                        .iter()
+                        .find(|(_, ch)| !ch.is_whitespace())
+                        .map(|(c, _)| *c)
+                        .unwrap_or(0);
+                    vi.cursor.col = first_non_ws;
+                    ViKeyOutcome::Moved
+                }
                 'w' => {
                     vi.cursor = word_jump(terminal, vi.cursor, WordJump::NextStart, count);
                     ViKeyOutcome::Moved
@@ -913,6 +924,44 @@ mod tests {
         // pending 취소 후 escape 정상 처리 (visual 없으므로 Exit).
         assert!(matches!(out, ViKeyOutcome::Exit));
         assert_eq!(vi.pending_op, None);
+    }
+
+    /// 터미널 첫 화면 행에 텍스트를 주입한다.
+    fn write_line(t: &mut Terminal, text: &str) {
+        t.process_bytes(text.as_bytes());
+    }
+
+    #[test]
+    fn caret_jumps_to_first_non_whitespace() {
+        let mut t = term(40, 10);
+        write_line(&mut t, "   foo");
+        let mut vi = ViCopyMode::enter(0, &t);
+        // 첫 화면 행 = scrollback_len.
+        vi.cursor.absolute_row = t.scrollback_len();
+        vi.cursor.col = 10;
+        handle_vi_key(&mut vi, &t, &key_char('^'), ModifiersState::empty());
+        assert_eq!(vi.cursor.col, 3, "should land on first non-whitespace");
+    }
+
+    #[test]
+    fn caret_on_empty_line_stays_at_zero() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        vi.cursor.absolute_row = t.scrollback_len();
+        vi.cursor.col = 5;
+        handle_vi_key(&mut vi, &t, &key_char('^'), ModifiersState::empty());
+        assert_eq!(vi.cursor.col, 0);
+    }
+
+    #[test]
+    fn caret_on_all_whitespace_line_goes_to_zero() {
+        let mut t = term(40, 10);
+        write_line(&mut t, "      ");
+        let mut vi = ViCopyMode::enter(0, &t);
+        vi.cursor.absolute_row = t.scrollback_len();
+        vi.cursor.col = 4;
+        handle_vi_key(&mut vi, &t, &key_char('^'), ModifiersState::empty());
+        assert_eq!(vi.cursor.col, 0);
     }
 
     #[test]
