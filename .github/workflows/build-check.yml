@@ -1,0 +1,74 @@
+name: Build Check
+
+# release.yml 의 build-* 잡을 빌드 검증 only 로 추출.
+# 산출물 upload 없이 빌드 성공 + sanity check 통과만 확인하고 dist/ 를 정리.
+# self-hosted runner 부하 통제를 위해 수동 트리거 only (사용자 권고 Q2).
+
+on:
+  workflow_dispatch:
+
+# R3: 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
+concurrency:
+  group: build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos:
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build DMG
+        run: bash scripts/build-macos-dmg.sh
+
+      - name: Clean up dist
+        if: always()
+        run: rm -rf dist
+
+  build-windows:
+    runs-on: [self-hosted, Windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ZIP and MSI
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+
+      - name: Clean up dist
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+
+  build-linux-x64:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build tar.gz + deb + rpm + AppImage
+        run: bash scripts/build-linux.sh
+
+      - name: Clean up dist
+        if: always()
+        run: rm -rf dist
+
+  build-linux-arm64:
+    runs-on: [self-hosted, Linux, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build tar.gz + deb + rpm + AppImage
+        run: bash scripts/build-linux.sh
+
+      - name: Clean up dist
+        if: always()
+        run: rm -rf dist
