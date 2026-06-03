@@ -10,6 +10,7 @@
 const ROOT_CHANGELOG: &str = "CHANGELOG.md";
 const PLUGIN_PROTOCOL_CHANGELOG: &str = "crates/tasty-plugin-protocol/CHANGELOG.md";
 const ROOT_CARGO: &str = "Cargo.toml";
+const PLUGIN_PROTOCOL_CARGO: &str = "crates/tasty-plugin-protocol/Cargo.toml";
 
 #[test]
 fn root_changelog_has_unreleased_section() {
@@ -32,6 +33,11 @@ fn plugin_protocol_changelog_has_unreleased_section() {
 #[test]
 fn root_unreleased_has_no_break_when_major_unchanged() {
     assert_no_break_without_major_bump(ROOT_CHANGELOG, ROOT_CARGO);
+}
+
+#[test]
+fn plugin_protocol_unreleased_has_no_break_when_major_unchanged() {
+    assert_no_break_without_major_bump(PLUGIN_PROTOCOL_CHANGELOG, PLUGIN_PROTOCOL_CARGO);
 }
 
 fn assert_no_break_without_major_bump(changelog_path: &str, cargo_path: &str) {
