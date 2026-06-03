@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 
-use tasty_agent::runner::{DispatchHandle, PollOutcome, RunnerLoop, TaskExecutor};
+use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
 use tasty_agent::task::TaskCreateOpts;
 use tasty_agent::{OnFailure, Task, TaskCommand, TaskResult, TaskState, TaskStore};
 use tasty_memory::MemoryStore;
@@ -47,11 +47,11 @@ impl ScriptedExec {
 }
 
 impl TaskExecutor for ScriptedExec {
-    fn dispatch(&mut self, task: &Task) -> Result<DispatchHandle, String> {
+    fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
         let pid = self.next_pid;
         self.next_pid += 1;
         self.handle_to_task.insert(pid, task.id.clone());
-        Ok(DispatchHandle::ShellProcess { pid })
+        DispatchOutcome::Started(DispatchHandle::ShellProcess { pid })
     }
     fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
         let pid = match handle {

@@ -38,6 +38,11 @@ pub enum DispatchHandle {
     ReduceImmediate(TaskResult),
     CustomImmediate(TaskResult),
     ImmediateFail(String),
+    /// `WaitBarrier` task 의 polling handle — poll 마다 barrier_state 재조회.
+    BarrierPoll {
+        workspace_id: u32,
+        name: String,
+    },
 }
 
 /// poll 결과.

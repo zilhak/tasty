@@ -13,7 +13,8 @@ use std::time::Duration;
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
 use tasty_agent::{
-    ReducerInput, SemaphoreStore, Task, TaskCommand, TaskId, TaskResult, reduce_with_custom,
+    BarrierState, BarrierStore, ReducerInput, SemaphoreStore, Task, TaskCommand, TaskId,
+    TaskResult, reduce_with_custom,
 };
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
@@ -261,6 +262,10 @@ impl HostExecutor {
                     error: None,
                 }))
             }
+            TaskCommand::WaitBarrier { name } => Ok(DispatchHandle::BarrierPoll {
+                workspace_id: task.workspace_id,
+                name: name.clone(),
+            }),
         }
     }
 
@@ -331,6 +336,39 @@ impl HostExecutor {
                 }
             }
             DispatchHandle::ImmediateFail(err) => PollOutcome::Failed(err.clone()),
+            DispatchHandle::BarrierPoll { workspace_id, name } => {
+                let now = now_ms();
+                let res = self.ctx.with_memory(|mem| {
+                    let mut store = BarrierStore::new(mem, HOST_OWNER);
+                    store.state(*workspace_id, name, now)
+                });
+                match res {
+                    Ok(b) => match b.state {
+                        BarrierState::Open => PollOutcome::Active,
+                        BarrierState::Closed => PollOutcome::Done(TaskResult {
+                            exit_code: Some(0),
+                            output: Some(json!({
+                                "barrier": name,
+                                "count_signaled": b.count_signaled,
+                                "count_required": b.count_required,
+                            })),
+                            error: None,
+                        }),
+                        BarrierState::TimedOut => {
+                            PollOutcome::Failed(format!("barrier '{name}' timed out"))
+                        }
+                    },
+                    Err(e) => PollOutcome::Failed(format!("barrier poll '{name}': {e}")),
+                }
+            }
         }
     }
+}
+
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }

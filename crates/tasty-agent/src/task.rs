@@ -119,6 +119,9 @@ pub enum TaskCommand {
         inputs: Vec<TaskId>,
         strategy: ReducerStrategy,
     },
+    /// 명시적 barrier 대기. barrier 가 Closed 되면 Succeeded, TimedOut 이면 Failed.
+    /// timeout 은 barrier 자체의 `timeout_ms` 가 단일 출처.
+    WaitBarrier { name: String },
 }
 
 /// Reducer 합성 전략.
