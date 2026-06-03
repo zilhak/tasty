@@ -320,6 +320,10 @@ mod pump;
 mod queries;
 mod response;
 
+// G.D.c — IpcNamespaceRegistry ↔ tasty-ipc runtime registry mirror 통합 테스트.
+#[cfg(test)]
+mod tests_namespace_mirror;
+
 #[cfg(test)]
 mod tests {
     use super::*;
