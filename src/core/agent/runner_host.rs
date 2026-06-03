@@ -11,8 +11,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::json;
-use tasty_agent::runner::{DispatchHandle, PollOutcome, TaskExecutor};
-use tasty_agent::{ReducerInput, Task, TaskCommand, TaskResult, reduce_with_custom};
+use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
+use tasty_agent::{
+    ReducerInput, SemaphoreStore, Task, TaskCommand, TaskId, TaskResult, reduce_with_custom,
+};
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
 use crate::adapters::ipc::handler::agent::task::run_custom_shell;
@@ -59,6 +61,10 @@ pub struct HostExecutor {
     /// Run task 의 child process 보관 — pid → Child. DispatchHandle 은 Clone
     /// 필요 (RunnerLoop 가 핸들을 복제), Child 는 Clone 불가이므로 분리.
     shell_children: HashMap<u32, Child>,
+    /// 본 executor 가 dispatch 시 점유한 semaphore permit — (workspace_id, name, holder).
+    /// in-memory only. 호스트 재시작 시 비어 있게 되므로 [`crate::core::agent::runner_thread`]
+    /// 의 시작 시 정화 단계가 영속 holder 를 회수.
+    held_permits: HashMap<TaskId, (u32, String, String)>,
 }
 
 impl HostExecutor {
@@ -66,12 +72,89 @@ impl HostExecutor {
         Self {
             ctx,
             shell_children: HashMap::new(),
+            held_permits: HashMap::new(),
         }
+    }
+
+    /// `task.metadata.semaphore` 컨벤션을 읽어 permit 점유 시도.
+    /// 반환: `Ok(None)` = 미사용 (semaphore metadata 없음), `Ok(Some(true))` = 점유 성공,
+    /// `Ok(Some(false))` = 부족, `Err(msg)` = store 오류 또는 invalid metadata.
+    fn try_acquire_semaphore(&mut self, task: &Task) -> Result<Option<bool>, String> {
+        let Some(meta) = task.metadata.get("semaphore").and_then(|v| v.as_object()) else {
+            return Ok(None);
+        };
+        let name = meta
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "semaphore metadata: missing 'name'".to_string())?;
+        let holder = meta
+            .get("holder")
+            .and_then(|v| v.as_str())
+            .unwrap_or(task.id.as_str());
+        let name = name.to_string();
+        let holder = holder.to_string();
+        let ws = task.workspace_id;
+        let result: Result<bool, String> = self.ctx.with_memory(|mem| {
+            let mut store = SemaphoreStore::new(mem, HOST_OWNER);
+            store
+                .acquire(ws, &name, &holder)
+                .map(|o| o.acquired)
+                .map_err(|e| e.to_string())
+        });
+        let acquired = result?;
+        if acquired {
+            self.held_permits
+                .insert(task.id.clone(), (ws, name, holder));
+        }
+        Ok(Some(acquired))
     }
 }
 
 impl TaskExecutor for HostExecutor {
-    fn dispatch(&mut self, task: &Task) -> Result<DispatchHandle, String> {
+    fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
+        // Phase I.A.3: semaphore-gated dispatch. metadata.semaphore 가 있으면 acquire
+        // 시도. 점유 실패 시 Deferred — state 전이 없이 다음 tick 재시도.
+        match self.try_acquire_semaphore(task) {
+            Ok(None) => {}
+            Ok(Some(true)) => {}
+            Ok(Some(false)) => return DispatchOutcome::Deferred,
+            Err(e) => return DispatchOutcome::PermanentFail(format!("semaphore: {e}")),
+        }
+        let result = match self.dispatch_command(task) {
+            Ok(h) => DispatchOutcome::Started(h),
+            Err(e) => DispatchOutcome::PermanentFail(e),
+        };
+        // dispatch 가 실패하면 막 점유한 permit 을 즉시 반환 (release 는 idempotent).
+        if matches!(result, DispatchOutcome::PermanentFail(_)) {
+            self.release_permit(&task.id);
+        }
+        result
+    }
+
+    fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
+        self.poll_handle(handle)
+    }
+
+    fn release_permit(&mut self, task_id: &TaskId) {
+        let Some((ws, name, holder)) = self.held_permits.remove(task_id) else {
+            return;
+        };
+        let res: Result<(), String> = self.ctx.with_memory(|mem| {
+            let mut store = SemaphoreStore::new(mem, HOST_OWNER);
+            store
+                .release(ws, &name, &holder)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        });
+        if let Err(e) = res {
+            tracing::warn!("semaphore release failed for task {task_id} ({name}/{holder}): {e}");
+        }
+    }
+}
+
+impl HostExecutor {
+    /// 내부 dispatch 본체. `?` 로 `String` 에러 흡수 후 호출자가 `DispatchOutcome` 변환.
+    fn dispatch_command(&mut self, task: &Task) -> Result<DispatchHandle, String> {
         match &task.command {
             TaskCommand::ClaudeSpawn {
                 prompt,
@@ -181,7 +264,8 @@ impl TaskExecutor for HostExecutor {
         }
     }
 
-    fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
+    /// 내부 poll 본체.
+    fn poll_handle(&mut self, handle: &DispatchHandle) -> PollOutcome {
         match handle {
             DispatchHandle::ClaudeChild {
                 parent_sid,

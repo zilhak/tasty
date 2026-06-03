@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tasty_agent::runner::RunnerLoop;
-use tasty_agent::{TaskState, TaskStore};
+use tasty_agent::{SemaphoreStore, TaskResult, TaskState, TaskStore};
 use tasty_memory::HOST_OWNER;
 
 use super::runner_host::{HostExecutor, RunnerContext};
@@ -158,7 +158,90 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// S3 보강 ①: 호스트 재시작 후 *영속된* semaphore holder 정화.
+///
+/// in-memory `held_permits` 는 재시작 시 비어 있으므로 직전에 점유 중이던
+/// permit 이 영구 leak 된다. workspace runner 시작 직전 1 회 수행:
+///
+/// 1. 해당 workspace 의 모든 Running task 를 load.
+/// 2. `metadata.semaphore.holder == task.id` (컨벤션 강제) 인 항목만 정화 대상.
+/// 3. 해당 holder 를 store 에서 release.
+/// 4. task 자체를 `Failed("host restart")` 로 마감 — handle 유실 시나리오의
+///    R3 정책과 일치 (사용자 retry).
+fn purge_stale_semaphore_holders(ctx: &RunnerContext, workspace_id: u32) {
+    let now = now_ms();
+    let candidates: Vec<(String, String, String)> = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        let Ok(tasks) = store.list(workspace_id) else {
+            return Vec::new();
+        };
+        tasks
+            .into_iter()
+            .filter(|t| matches!(t.state, TaskState::Running))
+            .filter_map(|t| {
+                let meta = t.metadata.get("semaphore")?.as_object()?;
+                let name = meta.get("name")?.as_str()?.to_string();
+                let holder = meta
+                    .get("holder")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(t.id.as_str())
+                    .to_string();
+                // task.id == holder 컨벤션을 강제: 외부 도구가 임의 holder 로
+                // acquire 한 항목은 runner 회수 대상 아님.
+                if holder != *t.id.as_str() {
+                    return None;
+                }
+                Some((t.id, name, holder))
+            })
+            .collect()
+    });
+    if candidates.is_empty() {
+        return;
+    }
+    ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        {
+            let mut sem = SemaphoreStore::new(mem, HOST_OWNER);
+            for (_task_id, name, holder) in &candidates {
+                let _ = sem.release(workspace_id, name, holder); // idempotent
+            }
+        }
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        for (task_id, _, _) in &candidates {
+            // 정화는 best-effort — task 가 이미 다른 상태로 갔거나 store 가 일시
+            // 오류 상태면 다음 사용자 retry 가 처리한다.
+            if let Err(e) = store.set_result(
+                workspace_id,
+                task_id,
+                TaskResult {
+                    exit_code: None,
+                    output: None,
+                    error: Some("host restart".to_string()),
+                },
+            ) {
+                tracing::warn!("purge set_result for {task_id} failed: {e}");
+            }
+            if let Err(e) = store.set_state(
+                workspace_id,
+                task_id,
+                TaskState::Failed {
+                    error: "host restart".to_string(),
+                },
+                now,
+            ) {
+                tracing::warn!("purge set_state for {task_id} failed: {e}");
+            }
+        }
+    });
+    tracing::info!(
+        "agent runner ws{workspace_id}: purged {} stale semaphore holder(s) on restart",
+        candidates.len()
+    );
+}
+
 fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) {
+    purge_stale_semaphore_holders(&ctx, workspace_id);
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
     loop {

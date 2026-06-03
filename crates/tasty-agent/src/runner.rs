@@ -48,12 +48,29 @@ pub enum PollOutcome {
     Failed(String),
 }
 
+/// dispatch 의 3-way 결과.
+///
+/// - `Started(h)` — dispatch 성공, Ready → Running 전이 + handle 보관.
+/// - `Deferred` — 이번 tick 의 dispatch 불가 (예: semaphore permit 미점유).
+///   state 전이 X, 다음 tick 재시도.
+/// - `PermanentFail(e)` — 즉시 실패. 기존 `Err(String)` 흡수 — `ImmediateFail` handle
+///   로 wrapping 되어 다음 tick poll 에서 Failed 로 흡수된다.
+#[derive(Debug)]
+pub enum DispatchOutcome {
+    Started(DispatchHandle),
+    Deferred,
+    PermanentFail(String),
+}
+
 /// host 가 구현하는 task 실행기. dispatch 는 *비차단*, poll 은 *비차단 1tick*.
 pub trait TaskExecutor {
-    /// task 의 command 를 분석해 실제 실행을 시작. 핸들 또는 ImmediateFail.
-    fn dispatch(&mut self, task: &Task) -> std::result::Result<DispatchHandle, String>;
+    /// task 의 command 를 분석해 실제 실행을 시작.
+    fn dispatch(&mut self, task: &Task) -> DispatchOutcome;
     /// 핸들의 현재 상태를 1 tick 확인.
     fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome;
+    /// task 가 종결(Succeeded/Failed/Cancelled) 됐을 때 permit 등을 해제.
+    /// 기본 구현은 no-op — semaphore 통합이 없는 executor 는 override 불필요.
+    fn release_permit(&mut self, _task_id: &TaskId) {}
 }
 
 /// `TaskExecutor` 를 들고 task list 를 진행시키는 루프. workspace 1개당 1 instance.
@@ -89,6 +106,17 @@ impl<E: TaskExecutor> RunnerLoop<E> {
         FS: FnMut(u32, &TaskId, TaskState, u64) -> Result<()>,
         FR: FnMut(u32, &TaskId, TaskResult) -> Result<()>,
     {
+        // 0. Cancelled 흡수 — `agent.task_cancel` 이 외부에서 store 의 Running →
+        //    Cancelled 로 직접 전이시켰을 수 있다. handle 정리 + permit 해제.
+        for task in tasks {
+            if !matches!(task.state, TaskState::Cancelled) {
+                continue;
+            }
+            if self.running.remove(&task.id).is_some() {
+                self.executor.release_permit(&task.id);
+            }
+        }
+
         // 1. Running 처리.
         for task in tasks {
             if !matches!(task.state, TaskState::Running) {
@@ -111,6 +139,7 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                         &task.id,
                     );
                     self.running.remove(&task.id);
+                    self.executor.release_permit(&task.id);
                 }
                 PollOutcome::Failed(err) => {
                     log_err(
@@ -135,13 +164,14 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                         &task.id,
                     );
                     self.running.remove(&task.id);
+                    self.executor.release_permit(&task.id);
                 }
             }
         }
 
         // 2. Ready 처리 — dispatch + Ready → Running 전이.
-        //    dispatch 실패는 ImmediateFail 핸들로 보관 후 다음 (혹은 같은 tick 의
-        //    poll 단계가 아니라 다음 tick) Running poll 에서 Failed 로 흡수.
+        //    Deferred 는 state 전이 없이 다음 tick 으로 미룬다 (semaphore 미점유 등).
+        //    PermanentFail 은 ImmediateFail 핸들로 wrapping → 다음 tick poll 에서 Failed 흡수.
         for task in tasks {
             if !matches!(task.state, TaskState::Ready) {
                 continue;
@@ -151,8 +181,9 @@ impl<E: TaskExecutor> RunnerLoop<E> {
                 continue;
             }
             let handle = match self.executor.dispatch(task) {
-                Ok(h) => h,
-                Err(e) => DispatchHandle::ImmediateFail(e),
+                DispatchOutcome::Started(h) => h,
+                DispatchOutcome::Deferred => continue,
+                DispatchOutcome::PermanentFail(e) => DispatchHandle::ImmediateFail(e),
             };
             // Ready → Running 전이 후에만 handle 보관 (전이 실패 시 보관 X).
             match set_state(workspace_id, &task.id, TaskState::Running, now_ms) {
@@ -211,10 +242,10 @@ mod tests {
     }
 
     impl TaskExecutor for MockExec {
-        fn dispatch(&mut self, task: &Task) -> std::result::Result<DispatchHandle, String> {
+        fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
             self.dispatched.push(task.id.clone());
             // 단순 ShellProcess 핸들로 가짜.
-            Ok(DispatchHandle::ShellProcess { pid: 0 })
+            DispatchOutcome::Started(DispatchHandle::ShellProcess { pid: 0 })
         }
         fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
             if let DispatchHandle::ImmediateFail(e) = handle {
@@ -346,8 +377,8 @@ mod tests {
     fn immediate_fail_dispatch_is_absorbed_next_tick() {
         struct FailExec;
         impl TaskExecutor for FailExec {
-            fn dispatch(&mut self, _t: &Task) -> std::result::Result<DispatchHandle, String> {
-                Err("dispatch error".to_string())
+            fn dispatch(&mut self, _t: &Task) -> DispatchOutcome {
+                DispatchOutcome::PermanentFail("dispatch error".to_string())
             }
             fn poll(&mut self, h: &DispatchHandle) -> PollOutcome {
                 match h {
