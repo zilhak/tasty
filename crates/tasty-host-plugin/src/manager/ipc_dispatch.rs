@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::ipc::caller::CallerContext;
-use crate::ipc::protocol::JsonRpcResponse;
-use crate::ipc::server::send_response;
-use crate::plugin::manifest::{HookMode, IpcHookDecl, Permission};
-use crate::plugin::protocol::{self, IpcCallResult, PluginRequest};
+use crate::protocol::{self, IpcCallResult, PluginRequest};
+use tasty_ipc::caller::CallerContext;
+use tasty_ipc::protocol::JsonRpcResponse;
+use tasty_ipc::server::send_response;
+use tasty_plugin_manifest::{HookMode, IpcHookDecl, Permission};
 
 use super::{
     FinalCaller, HOOK_FAIL_BACKOFF, HOOK_FAIL_LIMIT, PendingPluginCall, PendingRequestKind,

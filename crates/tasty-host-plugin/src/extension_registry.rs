@@ -25,7 +25,7 @@
 
 use std::collections::HashMap;
 
-use super::manifest::{ExtendsDecl, Manifest};
+use tasty_plugin_manifest::{ExtendsDecl, Manifest};
 
 /// 한 extension plugin의 현재 상태.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,7 +257,7 @@ impl ExtensionRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::manifest::{
+    use tasty_plugin_manifest::{
         Contributes, Entry, EventHookDecl, ExtendsDecl, HookMode, IpcHookDecl,
     };
 

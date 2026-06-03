@@ -12,7 +12,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
-use crate::plugin::protocol::{AuthAck, AuthAckEnvelope, AuthMessage};
+use crate::protocol::{AuthAck, AuthAckEnvelope, AuthMessage};
 
 const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 

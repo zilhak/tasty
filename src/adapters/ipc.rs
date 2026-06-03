@@ -5,6 +5,5 @@
 
 pub mod audit;
 pub mod handler;
-pub mod server;
 
-pub use tasty_ipc::{alias, caller, method_meta, port_file, protocol, session};
+pub use tasty_ipc::{alias, caller, method_meta, port_file, protocol, server, session};

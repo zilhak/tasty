@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::plugin::manifest::EventHookDecl;
-use crate::plugin::protocol::{self, PluginRequest};
+use crate::protocol::{self, PluginRequest};
+use tasty_plugin_manifest::EventHookDecl;
 
 use super::{PendingRequestKind, PluginManager};
 
@@ -31,8 +31,7 @@ impl PluginManager {
             .flat_map(|pkg| {
                 let plugin_id = pkg.manifest.id.clone();
                 pkg.manifest.contributes.popup.iter().filter_map(move |p| {
-                    if let crate::plugin::manifest::PopupTrigger::Event { event_key: ek } =
-                        &p.trigger
+                    if let tasty_plugin_manifest::PopupTrigger::Event { event_key: ek } = &p.trigger
                     {
                         if ek == event_key {
                             return Some((plugin_id.clone(), p.id.clone()));
@@ -261,10 +260,10 @@ impl PluginManager {
 
     pub(super) fn send_event_dispatches(
         &mut self,
-        dispatches: Vec<crate::plugin::event_bus::PluginDispatch>,
+        dispatches: Vec<crate::event_bus::PluginDispatch>,
     ) {
         for d in dispatches {
-            let mut req = crate::plugin::event_bus::EventBus::build_dispatch_request(&d);
+            let mut req = crate::event_bus::EventBus::build_dispatch_request(&d);
             req.id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
             if let Some(proc) = self.processes.get(&d.plugin_id) {
                 if let Err(e) = proc.req_tx.send(req) {

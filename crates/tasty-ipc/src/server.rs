@@ -6,7 +6,7 @@
 
 use std::sync::{Arc, mpsc};
 
-use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
+use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 
 /// A command received from an IPC client, with a channel to send the response back.
 pub struct IpcCommand {

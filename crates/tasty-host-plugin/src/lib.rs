@@ -5,5 +5,34 @@
 //! 모듈을 흡수한다. host 본 바이너리 결합은 Phase F.B.0 의 6 host_port trait
 //! (SurfaceRegistry / FileFormatRegistryPort / FileHandlerRegistryPort /
 //! I18nNamespaceRegistrar / IpcHostFacade) + plugin_bridge/ 잔존 5 모듈로 격리.
-//!
-//! 모듈 본문은 F.B.11-2 ~ F.B.11-4 에서 본 바이너리에서 `git mv` 로 이동된다.
+#![allow(dead_code)]
+
+pub mod builtin;
+pub mod command_registry;
+pub mod discovery;
+pub mod event_bus;
+pub mod extension_registry;
+pub mod handle_channel;
+pub mod host_actions;
+pub mod host_cmd;
+pub mod ipc_namespace;
+pub mod listener;
+pub mod manager;
+pub mod process;
+pub mod protocol;
+pub mod registry_state;
+pub mod tool_registry;
+pub mod ui_tree;
+
+#[cfg(test)]
+mod event_bus_tests;
+
+pub use builtin::{
+    bundle_root, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed,
+};
+pub use discovery::{discover, plugin_root};
+pub use listener::HostListener;
+pub use manager::{PluginManager, PopupInstance};
+pub use process::PluginProcess;
+pub use registry_state::PluginsConfig;
+pub use tasty_plugin_manifest::PluginPackage;

@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 use serde_json::json;
 
-use crate::plugin::protocol::{self, PluginRequest};
+use crate::protocol::{self, PluginRequest};
 
 use super::{PendingRequestKind, PluginManager, PopupInstance};
 

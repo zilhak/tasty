@@ -4,8 +4,6 @@
 //! tasty-host-plugin (manager crate) 가 본 바이너리를 역참조할 수 없으므로,
 //! 본 모듈이 *protocol port impl* 의 본 바이너리 잔존 지점 역할을 한다.
 
-pub mod host_actions;
-pub mod host_cmd;
 #[cfg(feature = "gui")]
 pub mod key_dispatch;
 pub mod manifest_validate;
@@ -15,3 +13,7 @@ pub mod remote_kind;
 pub mod remote_surface;
 #[cfg(feature = "gui")]
 pub mod ui_tree_render;
+
+// host_cmd / host_actions 는 tasty-host-plugin crate 가 owning (manager 가 채널
+// 송신자). 본 바이너리에서는 그대로 같은 경로로 노출하기 위해 re-export.
+pub use tasty_host_plugin::{host_actions, host_cmd};

@@ -1,35 +1,24 @@
-//! Plugin 시스템 — 외부 plugin 프로세스의 매니페스트 파싱·디스커버리·생명주기 관리.
+//! Plugin 시스템 — tasty-host-plugin crate 의 thin re-export.
 //!
-//! Plugin host API (lifecycle/registry/protocol) 는 gui 의 dispatcher/popup
-//! 경유로 활성화. headless 빌드에선 호출자가 cfg(gui) 차단되어 미사용 경고.
-//! library API surface 이므로 *headless 한정* dead_code 침묵.
+//! Phase F.B.11-2 ~ B.11-4 후, manager / process / listener / protocol /
+//! discovery / builtin / event_bus / ui_tree / registry_state / extension_registry
+//! / tool_registry / ipc_namespace / command_registry / handle_channel 가 모두
+//! `tasty-host-plugin` 으로 이동. 본 모듈은 기존 호출처 `crate::plugin::*` 의
+//! 하위 호환을 위해 thin re-export 만 유지한다.
+//!
+//! `manifest` 는 `tasty-plugin-manifest` 가 owning (F.B.6).
 #![allow(unused_imports)]
-#![cfg_attr(not(feature = "gui"), allow(dead_code))]
 
-pub mod builtin;
-pub mod command_registry;
-pub mod discovery;
-pub mod event_bus;
-pub mod extension_registry;
-pub mod handle_channel;
-// (moved to surface_registry/host_rendered)
-pub mod ipc_namespace;
-pub mod listener;
-pub mod manager;
 pub mod manifest;
-pub mod process;
-pub mod protocol;
-pub mod registry_state;
-pub mod tool_registry;
-pub mod ui_tree;
 
-pub use builtin::{
-    bundle_root, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed,
+pub use tasty_host_plugin::{
+    builtin, command_registry, discovery, event_bus, extension_registry, handle_channel,
+    ipc_namespace, listener, manager, process, protocol, registry_state, tool_registry, ui_tree,
 };
-pub use discovery::{discover, plugin_root};
-pub use listener::HostListener;
-pub use manager::PluginManager;
-pub use manifest::{HOST_API_VERSION, Manifest, PluginPackage};
-pub use process::PluginProcess;
-pub use protocol::{AuthMessage, PluginEvent, PluginRequest, PluginResponse};
-pub use registry_state::PluginsConfig;
+
+pub use manifest::{HOST_API_VERSION, Manifest};
+pub use tasty_host_plugin::protocol::{AuthMessage, PluginEvent, PluginRequest, PluginResponse};
+pub use tasty_host_plugin::{
+    HostListener, PluginManager, PluginPackage, PluginProcess, PluginsConfig, bundle_root,
+    discover, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed, plugin_root,
+};

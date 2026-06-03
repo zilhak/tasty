@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
-use crate::plugin::ui_tree::{UiEvent, UiNode};
+use tasty_plugin_protocol::ui_tree::{UiEvent, UiNode};
 
 /// `RemoteSurface`의 내부 상태에 manager가 외부에서 접근하기 위한 핸들.
 #[derive(Clone)]

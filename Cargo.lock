@@ -5173,6 +5173,10 @@ name = "tasty-host-plugin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hex",
+ "libc",
+ "rand 0.9.4",
+ "semver 1.0.27",
  "serde",
  "serde_json",
  "tasty-ipc",
@@ -5188,7 +5192,9 @@ dependencies = [
  "tasty-utils",
  "thiserror 1.0.69",
  "tokio",
+ "toml 0.8.2",
  "tracing",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

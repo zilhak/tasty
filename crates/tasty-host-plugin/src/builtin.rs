@@ -13,8 +13,8 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::plugin::manifest::Manifest;
-use crate::plugin::{PluginManager, PluginsConfig, discovery};
+use crate::{PluginManager, PluginsConfig, discovery};
+use tasty_plugin_manifest::Manifest;
 
 /// 한 builtin plugin의 패키지 메타 — id, dev workspace crate 경로, plugin 바이너리 이름.
 struct BuiltinSpec {
@@ -382,10 +382,9 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
         // 본 helper 책임 밖. 매니페스트에서 사라진 token은 다음 install 시점에
         // set_granted로 덮어쓰일 때만 정리된다.
         if dest.exists() {
-            if let Ok(manifest) = Manifest::load(&dest).and_then(|m| {
-                crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
-                Ok(m)
-            }) {
+            // F.B.11-4: bridge::validate_bin_extras 는 본 바이너리 chain — discover
+            // 와 동일하게 install/add 경로의 caller 가 chain 한다.
+            if let Ok(manifest) = Manifest::load(&dest) {
                 if !manifest.permissions.is_empty() {
                     if !mgr.config.grants.contains_key(spec.id) {
                         mgr.config

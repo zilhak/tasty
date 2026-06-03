@@ -11,6 +11,7 @@ pub mod host_port;
 pub mod method_meta;
 pub mod port_file;
 pub mod protocol;
+pub mod server;
 pub mod session;
 
 #[cfg(test)]

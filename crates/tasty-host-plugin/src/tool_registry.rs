@@ -8,7 +8,7 @@
 //! tools_menu UI는 `visible_items()`로 정렬된 목록을 받아 그리고, 클릭 시
 //! `ToolAction`을 보고 호스트가 적절히 실행한다.
 
-use super::manifest::ToolAction;
+use tasty_plugin_manifest::ToolAction;
 
 /// 한 도구 메뉴 항목.
 #[derive(Debug, Clone)]

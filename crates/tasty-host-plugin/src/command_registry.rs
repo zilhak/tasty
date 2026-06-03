@@ -13,10 +13,10 @@ use std::collections::HashMap;
 
 use tasty_settings::KeybindingSettings;
 
-use crate::plugin_bridge::host_actions;
+use crate::host_actions;
 
-use super::manifest::{BindingMode, CommandDecl, CommandScope, Manifest};
 use super::registry_state::ShortcutOverride;
+use tasty_plugin_manifest::{BindingMode, CommandDecl, CommandScope, Manifest};
 
 /// 한 plugin이 등록한 한 command의 메타데이터.
 #[derive(Debug, Clone)]
@@ -191,7 +191,7 @@ fn manifest_default(entry: &PluginCommandEntry, host_kb: &KeybindingSettings) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::manifest::{Contributes, Entry};
+    use tasty_plugin_manifest::{Contributes, Entry};
 
     fn manifest_with_commands(id: &str, cmds: Vec<CommandDecl>) -> Manifest {
         Manifest {

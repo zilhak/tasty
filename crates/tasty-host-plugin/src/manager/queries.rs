@@ -4,7 +4,7 @@ use super::{PluginManager, PluginPopupEntry};
 
 impl PluginManager {
     pub fn recompute_extensions(&mut self) {
-        let manifests: Vec<&crate::plugin::manifest::Manifest> =
+        let manifests: Vec<&tasty_plugin_manifest::Manifest> =
             self.packages.iter().map(|p| &p.manifest).collect();
         let cfg = &self.config;
         self.extensions.recompute(
@@ -17,8 +17,8 @@ impl PluginManager {
         );
     }
 
-    pub fn plugin_tool_items(&self) -> Vec<crate::plugin::tool_registry::ToolItem> {
-        use crate::plugin::tool_registry::{ToolItem, ToolSource};
+    pub fn plugin_tool_items(&self) -> Vec<crate::tool_registry::ToolItem> {
+        use crate::tool_registry::{ToolItem, ToolSource};
         let mut out = Vec::new();
         for pkg in &self.packages {
             if self.config.is_disabled(&pkg.manifest.id) {

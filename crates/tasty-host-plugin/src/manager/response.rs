@@ -6,10 +6,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::ipc::protocol::JsonRpcResponse;
-use crate::ipc::server::send_response;
-use crate::plugin::manifest::{EventHookDecl, HookMode, IpcHookDecl};
-use crate::plugin::protocol::{self, IpcCallResult, PluginResponse, SurfaceResult};
+use crate::protocol::{self, IpcCallResult, PluginResponse, SurfaceResult};
+use tasty_ipc::protocol::JsonRpcResponse;
+use tasty_ipc::server::send_response;
+use tasty_plugin_manifest::{EventHookDecl, HookMode, IpcHookDecl};
 
 use super::{
     FinalCaller, HookOutcome, PendingRequestKind, PluginManager, TargetOutcome, parse_hook_result,

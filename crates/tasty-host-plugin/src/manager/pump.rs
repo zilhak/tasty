@@ -10,10 +10,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::plugin::manifest::{Permission, PluginPackage};
-use crate::plugin::process::PluginProcess;
-use crate::plugin::protocol::{self, PluginEvent};
-use crate::plugin_bridge::host_cmd::HostCmd;
+use crate::host_cmd::HostCmd;
+use crate::process::PluginProcess;
+use crate::protocol::{self, PluginEvent};
+use tasty_plugin_manifest::{Permission, PluginPackage};
 
 use super::{
     HEALTHCHECK_TIMEOUT, PING_INTERVAL, PendingPluginCall, PendingRequestKind, PluginManager,

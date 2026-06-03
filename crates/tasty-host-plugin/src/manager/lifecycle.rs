@@ -10,26 +10,34 @@ use std::time::{Duration, Instant};
 
 use tasty_plugin_protocol::host_port::SurfaceRegistry;
 
-use crate::plugin::handle_channel::HandleListener;
-use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
-use crate::plugin::listener::HostListener;
-use crate::plugin::manifest::{Permission, PluginPackage};
-use crate::plugin::process::PluginProcess;
-use crate::plugin::registry_state::PluginsConfig;
+use crate::handle_channel::HandleListener;
+use crate::ipc_namespace::IpcNamespaceRegistry;
+use crate::listener::HostListener;
+use crate::process::PluginProcess;
+use crate::registry_state::PluginsConfig;
+use tasty_plugin_manifest::{Permission, PluginPackage};
 
 use super::{PluginManager, RESTART_FAILURE_LIMIT, RESTART_FAILURE_WINDOW};
 
 impl PluginManager {
-    /// 기본 file_format/file_handler 레지스트리를 새로 발급해서 초기화.
-    /// production 경로는 `App` 가 공유 Arc 를 갖고 있어 `with_registries` 를
-    /// 직접 호출 — 본 ctor 는 내부 unit test 전용.
+    /// 기본 file_format/file_handler stub 으로 초기화 — 내부 unit test 전용.
+    /// production 경로는 `App` 가 공유 Arc 를 갖고 있어 `with_registries` 를 직접
+    /// 호출. F.B.11-4 이후, host file 도메인 결합 회피를 위해 test ctor 는
+    /// no-op stub 으로 변경 — 실제 file_format/handler 검증을 거치는 test 는
+    /// 본 바이너리 통합 test 로 이전.
     #[cfg(test)]
     pub fn new(waker: tasty_terminal::waker_factory::SharedWakerFactory) -> Self {
-        Self::with_registries(
-            waker,
-            Arc::new(crate::file::format::FileFormatRegistry::new()),
-            Arc::new(crate::file::handler::FileHandlerRegistry::new()),
-        )
+        struct StubFormat;
+        impl tasty_plugin_protocol::host_port::FileFormatRegistryPort for StubFormat {
+            fn install_plugin_detectors(&self, _: &str, _: &[serde_json::Value]) {}
+            fn uninstall_plugin(&self, _: &str) {}
+        }
+        struct StubHandler;
+        impl tasty_plugin_protocol::host_port::FileHandlerRegistryPort for StubHandler {
+            fn install_plugin_handlers(&self, _: &str, _: &[serde_json::Value]) {}
+            fn uninstall_plugin(&self, _: &str) {}
+        }
+        Self::with_registries(waker, Arc::new(StubFormat), Arc::new(StubHandler))
     }
 
     /// CoreState 와 같은 Arc 를 공유하기 위한 생성자.
@@ -65,13 +73,13 @@ impl PluginManager {
             pending_requests: HashMap::new(),
             plugin_permissions: HashMap::new(),
             pending_plugin_calls: Vec::new(),
-            command_registry: crate::plugin::command_registry::PluginCommandRegistry::new(),
+            command_registry: crate::command_registry::PluginCommandRegistry::new(),
             ipc_namespaces: IpcNamespaceRegistry::new(),
             plugin_buffers: HashMap::new(),
             next_buffer_id: AtomicU64::new(1),
-            extensions: crate::plugin::extension_registry::ExtensionRegistry::new(),
+            extensions: crate::extension_registry::ExtensionRegistry::new(),
             hook_failures: HashMap::new(),
-            event_bus: crate::plugin::event_bus::EventBus::new(),
+            event_bus: crate::event_bus::EventBus::new(),
             event_trace_seq: AtomicU64::new(1),
             popup_instances: HashMap::new(),
             next_popup_instance_id: 1,
@@ -104,12 +112,12 @@ impl PluginManager {
     /// 디스커버리 + 활성 plugin 모두 spawn. listener도 여기서 한 번만 bind.
     /// plugin이 없으면 listener 자체를 만들지 않음 (포트 점유 회피).
     pub fn discover_and_start(&mut self) {
-        self.packages = crate::plugin::discovery::discover();
+        self.packages = crate::discovery::discover();
 
         // command registry에 모든 발견된 plugin의 commands를 등록.
         // disabled 여부와 무관 — 설정 UI는 비활성 plugin도 단축키 항목을
         // 보여줘야 사용자가 미리 키를 잡아둘 수 있다.
-        self.command_registry = crate::plugin::command_registry::PluginCommandRegistry::new();
+        self.command_registry = crate::command_registry::PluginCommandRegistry::new();
         for pkg in &self.packages {
             self.command_registry.register_plugin(&pkg.manifest);
             // i18n namespace 등록 — 비활성 plugin도 설정 UI에서 command title을

@@ -20,18 +20,18 @@ use tasty_shm::SharedMemory;
 
 use tasty_plugin_protocol::host_port::SurfaceRegistry;
 
-use crate::ipc::protocol::JsonRpcResponse;
-use crate::ipc::server::send_response;
-use crate::plugin::handle_channel::HandleListener;
-use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
-use crate::plugin::listener::HostListener;
-use crate::plugin::manifest::{EventHookDecl, HookMode, IpcHookDecl, Permission, PluginPackage};
-use crate::plugin::process::PluginProcess;
-use crate::plugin::protocol::{
+use crate::handle_channel::HandleListener;
+use crate::host_cmd::{HostCmd, SurfaceHandles};
+use crate::ipc_namespace::IpcNamespaceRegistry;
+use crate::listener::HostListener;
+use crate::process::PluginProcess;
+use crate::protocol::{
     self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
 };
-use crate::plugin::registry_state::PluginsConfig;
-use crate::plugin_bridge::host_cmd::{HostCmd, SurfaceHandles};
+use crate::registry_state::PluginsConfig;
+use tasty_ipc::protocol::JsonRpcResponse;
+use tasty_ipc::server::send_response;
+use tasty_plugin_manifest::{EventHookDecl, HookMode, IpcHookDecl, Permission, PluginPackage};
 
 pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);
@@ -144,7 +144,7 @@ pub(super) enum PendingRequestKind {
         extension_plugin_id: String,
         envelope: tasty_plugin_protocol::EventEnvelope,
         pre_hook_mode: HookMode,
-        post_hook: Option<super::manifest::EventHookDecl>,
+        post_hook: Option<tasty_plugin_manifest::EventHookDecl>,
         deadline: Instant,
     },
     /// extension의 post-event hook을 dispatch한 뒤 응답 대기. event는 이미 fan-out 됐으므로
@@ -231,9 +231,9 @@ pub struct PluginManager {
     /// registry 등록 동작이 비활성 (헤드리스/테스트).
     pub surface_registry: Option<Arc<dyn SurfaceRegistry>>,
     /// 이미 registry에 등록된 plugin id (hello를 여러 번 받아도 1회만 등록).
-    pub(crate) registered_plugins: std::collections::HashSet<String>,
+    pub registered_plugins: std::collections::HashSet<String>,
     /// registry create/restore closure가 새 RemoteSurface 등록을 보내는 채널.
-    pub(crate) host_cmd_tx: Sender<HostCmd>,
+    pub host_cmd_tx: Sender<HostCmd>,
     pub(super) host_cmd_rx: Receiver<HostCmd>,
     /// surface_id → RemoteSurface handle. 라이프사이클 동안 유지.
     pub(super) surfaces: HashMap<u32, RemoteSurfaceEntry>,
@@ -288,7 +288,7 @@ pub struct PluginManager {
 pub struct PopupInstance {
     pub plugin_id: String,
     pub popup_id: String,
-    pub contribute: super::manifest::PopupContribute,
+    pub contribute: tasty_plugin_manifest::PopupContribute,
     /// plugin이 마지막으로 보낸 UI 트리. 아직 open 응답 전이면 `None`.
     pub tree: Option<tasty_plugin_protocol::ui_tree::UiNode>,
 }
@@ -308,7 +308,7 @@ pub struct PendingPluginCall {
 #[derive(Debug, Clone)]
 pub struct PluginPopupEntry {
     pub plugin_id: String,
-    pub contribute: crate::plugin::manifest::PopupContribute,
+    pub contribute: tasty_plugin_manifest::PopupContribute,
 }
 
 mod buffer;
@@ -323,7 +323,7 @@ mod response;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::process::PluginProcess;
+    use crate::process::PluginProcess;
 
     fn empty_waker() -> tasty_terminal::waker_factory::SharedWakerFactory {
         // headless 환경에서 PluginManager가 사용하는 waker — 실제 wake는 no-op로 충분.

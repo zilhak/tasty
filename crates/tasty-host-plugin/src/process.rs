@@ -17,10 +17,10 @@ use std::time::{Duration, Instant};
 
 use tasty_plugin_protocol::{HandleChannelMessage, PixelRect, SharedBufferId};
 
-use crate::plugin::handle_channel::{HandleListener, HandleStream, HandleStreamReader};
-use crate::plugin::listener::HostListener;
-use crate::plugin::manifest::{HOST_API_VERSION, PluginPackage};
-use crate::plugin::protocol::{PluginEvent, PluginRequest, PluginResponse};
+use crate::handle_channel::{HandleListener, HandleStream, HandleStreamReader};
+use crate::listener::HostListener;
+use crate::protocol::{PluginEvent, PluginRequest, PluginResponse};
+use tasty_plugin_manifest::{HOST_API_VERSION, PluginPackage};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -101,7 +101,13 @@ impl PluginProcess {
             .env("TASTY_HOST_IPC_PORT", listener.port().to_string())
             .env("TASTY_PLUGIN_TOKEN", &token)
             .env("TASTY_PLUGIN_DIR", &package.dir)
-            .env("TASTY_LOCALE", crate::i18n::current_language())
+            // F.B.11-4: i18n 호스트 함수 결합 회피 — 환경변수를 그대로 전달.
+            // 호스트 본 바이너리는 부팅 시 TASTY_LOCALE 을 자신의 env 에 set 하므로
+            // 그 값을 그대로 자식 plugin process 에 propagate 한다.
+            .env(
+                "TASTY_LOCALE",
+                std::env::var("TASTY_LOCALE").unwrap_or_else(|_| "en".to_string()),
+            )
             .current_dir(&package.dir)
             .stdin(Stdio::null())
             .stdout(Stdio::from(log_file))

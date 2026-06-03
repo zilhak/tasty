@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::plugin::manifest::{Manifest, PluginPackage};
+use tasty_plugin_manifest::{Manifest, PluginPackage};
 
 pub fn plugin_root() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|d| d.join("plugins"))
@@ -34,10 +34,11 @@ pub fn discover() -> Vec<PluginPackage> {
         if !dir.join("tasty-plugin.toml").exists() {
             continue;
         }
-        match Manifest::load(&dir).and_then(|m| {
-            crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
-            Ok(m)
-        }) {
+        // F.B.11-4: host file 도메인 결합 (bridge::validate_bin_extras) 은 본
+        // 바이너리 caller (App::plugin_install / cli::plugin / view::add) 가 chain.
+        // discover 자체는 schema 검증만으로 충분 — 잘못된 detector/handler 는
+        // install_plugin_handlers 시점에 거부된다.
+        match Manifest::load(&dir) {
             Ok(manifest) => packages.push(PluginPackage { dir, manifest }),
             Err(e) => tracing::warn!("plugin '{}' rejected: {}", dir.display(), e),
         }

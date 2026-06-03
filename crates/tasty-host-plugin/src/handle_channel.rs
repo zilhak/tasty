@@ -1,6 +1,6 @@
 //! 호스트 측 보조 핸들 채널.
 //!
-//! 메인 TCP 채널([`crate::plugin::listener::HostListener`])은 fd/HANDLE을 운반할 수
+//! 메인 TCP 채널([`crate::listener::HostListener`])은 fd/HANDLE을 운반할 수
 //! 없으므로, 보조 채널을 별도로 둔다. Unix는 `AF_UNIX` socket, Windows는 Named Pipe.
 //!
 //! 02b에서 인증 핸드셰이크 + 채널 분배만 구현됐고, 02c에서 [`HandleStream::send_handle`]
@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use tasty_plugin_protocol::{AuthAck, AuthAckEnvelope, HandleChannelMessage};
 
-use crate::plugin::protocol::AuthMessage;
+use crate::protocol::AuthMessage;
 
 const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
