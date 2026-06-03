@@ -108,16 +108,35 @@ impl<'a> TaskGraph<'a> {
             match &dep.state {
                 TaskState::Succeeded => {}
                 TaskState::Failed { .. } | TaskState::Cancelled | TaskState::Skipped => {
-                    // dep 가 Fallback{f} 정책이면 f 의 상태를 본다 — f 성공 = dep 충족.
-                    if let OnFailure::Fallback { task: fb_id } = &dep.on_failure {
-                        match self.tasks.get(fb_id).map(|t| &t.state) {
+                    // dep 가 Fallback 정책이면 fallback task 의 상태를 본다 — 성공 시 dep 충족.
+                    // S4: existing(task) + inline(metadata.fallback_of == dep.id) 두 경로 모두 지원.
+                    if let OnFailure::Fallback {
+                        task: fb_id,
+                        inline,
+                    } = &dep.on_failure
+                    {
+                        let fb_state = if let Some(id) = fb_id {
+                            self.tasks.get(id).map(|t| &t.state)
+                        } else if inline.is_some() {
+                            // inline: 같은 graph 안에서 metadata.fallback_of == dep.id 인 task 찾기.
+                            self.tasks
+                                .values()
+                                .find(|t| {
+                                    t.metadata.get("fallback_of").and_then(|v| v.as_str())
+                                        == Some(dep.id.as_str())
+                                })
+                                .map(|t| &t.state)
+                        } else {
+                            None
+                        };
+                        match fb_state {
                             Some(TaskState::Succeeded) => continue,
                             Some(
                                 TaskState::Failed { .. }
                                 | TaskState::Cancelled
                                 | TaskState::Skipped,
                             ) => any_failed = true,
-                            // fallback 진행 중(또는 미존재) → 대기.
+                            // fallback 진행 중(또는 미존재 — inline 미materialize 포함) → 대기.
                             _ => return None,
                         }
                     } else {

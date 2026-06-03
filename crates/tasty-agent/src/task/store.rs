@@ -116,6 +116,27 @@ impl<'a> TaskStore<'a> {
         let id = self.new_id(now_ms);
         let mut existing = self.list(workspace_id)?;
 
+        // S4: Fallback variant 의 task/inline 정확히 하나 검증.
+        if let OnFailure::Fallback {
+            task: fb_task,
+            inline,
+        } = &on_failure
+        {
+            match (fb_task.is_some(), inline.is_some()) {
+                (false, false) => {
+                    return Err(AgentError::InvalidArgument(
+                        "OnFailure::Fallback requires either 'task' or 'inline'".into(),
+                    ));
+                }
+                (true, true) => {
+                    return Err(AgentError::InvalidArgument(
+                        "OnFailure::Fallback cannot have both 'task' and 'inline'".into(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+
         // unknown dep 검출
         let known: HashSet<&TaskId> = existing.iter().map(|t| &t.id).collect();
         for dep in &depends_on {
@@ -191,20 +212,61 @@ impl<'a> TaskStore<'a> {
 
         let mut transitioned = Vec::new();
 
-        // Failed 전이 + on_failure=Fallback{f} → f 를 자동 Ready 로 (가능하면).
+        // Failed 전이 + on_failure=Fallback → fallback task 를 자동 Ready 로 (가능하면).
+        // S4: existing(task) + inline(자동 생성) 두 경로 모두 지원.
         if matches!(new_state, TaskState::Failed { .. })
-            && let OnFailure::Fallback { task: fb_id } = task.on_failure.clone()
-            && let Some(mut fb) = self.get(workspace_id, &fb_id)?
+            && let OnFailure::Fallback {
+                task: fb_id_opt,
+                inline: inline_opt,
+            } = task.on_failure.clone()
         {
-            // fallback task 의 dep readiness 를 새로 평가.
-            let all_now = self.list(workspace_id)?;
-            if let Some(target) = TaskGraph::build(&all_now).evaluate_readiness(&fb_id)
-                && target != TaskState::Waiting
-                && is_valid_transition(&fb.state, &target)
+            // 케이스 1: existing fallback (기존 동작).
+            if let Some(fb_id) = fb_id_opt
+                && let Some(mut fb) = self.get(workspace_id, &fb_id)?
             {
-                fb.state = target;
-                self.put(&fb)?;
-                transitioned.push(fb);
+                let all_now = self.list(workspace_id)?;
+                if let Some(target) = TaskGraph::build(&all_now).evaluate_readiness(&fb_id)
+                    && target != TaskState::Waiting
+                    && is_valid_transition(&fb.state, &target)
+                {
+                    fb.state = target;
+                    self.put(&fb)?;
+                    transitioned.push(fb);
+                }
+            }
+            // 케이스 2: inline → 동적 생성.
+            if let Some(spec) = inline_opt {
+                let existing = self.list(workspace_id)?;
+                // idempotency: 같은 main 가 이미 inline fallback 을 만든 적 있는지.
+                let already = existing.iter().any(|t| {
+                    t.metadata.get("fallback_of").and_then(|v| v.as_str()) == Some(task.id.as_str())
+                });
+                if !already {
+                    let mut metadata = spec.metadata.clone();
+                    if !metadata.is_object() {
+                        metadata = serde_json::json!({});
+                    }
+                    if let Some(obj) = metadata.as_object_mut() {
+                        obj.insert(
+                            "fallback_of".into(),
+                            serde_json::Value::String(task.id.clone()),
+                        );
+                    }
+                    let opts = TaskCreateOpts {
+                        workspace_id,
+                        name: spec.name.clone(),
+                        command: spec.command.clone(),
+                        depends_on: spec
+                            .depends_on_override
+                            .clone()
+                            .unwrap_or_else(|| task.depends_on.clone()),
+                        on_failure: spec.on_failure.clone(),
+                        metadata,
+                        now_ms,
+                    };
+                    let new_fb = self.create(opts)?;
+                    transitioned.push(new_fb);
+                }
             }
         }
 
@@ -223,10 +285,26 @@ impl<'a> TaskStore<'a> {
             let all_now = self.list(workspace_id)?;
             let parent_main_ids: Vec<TaskId> = all_now
                 .iter()
-                .filter(|t| matches!(&t.on_failure, OnFailure::Fallback { task } if task == id))
+                .filter(|t| match &t.on_failure {
+                    // existing 경로: main 의 task field 가 id 를 직접 가리킴.
+                    OnFailure::Fallback {
+                        task: Some(fb_id), ..
+                    } => fb_id == id,
+                    _ => false,
+                })
                 .map(|t| t.id.clone())
                 .collect();
-            for main_id in parent_main_ids {
+            // inline 경로: self.metadata.fallback_of 가 main id — main 을 찾으려면 reverse lookup.
+            let mut inline_main_ids: Vec<TaskId> = Vec::new();
+            if let Some(self_task) = all_now.iter().find(|t| t.id == *id)
+                && let Some(main_id) = self_task
+                    .metadata
+                    .get("fallback_of")
+                    .and_then(|v| v.as_str())
+            {
+                inline_main_ids.push(main_id.to_string());
+            }
+            for main_id in parent_main_ids.into_iter().chain(inline_main_ids) {
                 transitioned.extend(self.cascade_downstream(workspace_id, &main_id)?);
             }
         }

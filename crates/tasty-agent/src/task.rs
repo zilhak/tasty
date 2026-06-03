@@ -79,8 +79,36 @@ pub enum OnFailure {
     Abort,
     /// downstream을 정상 진행 (의존성 실패를 성공처럼 취급).
     ContinueDownstream,
-    /// 다른 task를 fallback으로 실행. 그 fallback이 Succeed하면 downstream이 정상 진행.
-    Fallback { task: TaskId },
+    /// Fallback task 를 실행. 그 fallback 이 Succeed 하면 downstream 이 정상 진행.
+    ///
+    /// 두 형식 지원 (둘 중 정확히 하나):
+    /// - `task`: 사전에 존재하는 task id (기존 동작).
+    /// - `inline`: 동적 spec — main 이 Failed 가 되는 set_state 분기에서
+    ///   `TaskStore::create` 가 새 fallback task 를 생성. `metadata.fallback_of`
+    ///   에 main.id 가 자동 주입되어 idempotency 보장 + downstream 재평가 추적.
+    Fallback {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        task: Option<TaskId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inline: Option<Box<InlineFallbackSpec>>,
+    },
+}
+
+/// `OnFailure::Fallback { inline: Some(...) }` 의 동적 생성 spec.
+///
+/// `depends_on_override` 가 `None` 이면 main task 의 `depends_on` 을 그대로 복사한다.
+/// 사용자가 inline 의 `on_failure` 를 또 `Fallback{inline=...}` 으로 nested 하는
+/// 경우는 runtime 검증 안 함 — 무한 재귀 방지는 사용자 책임 (max depth 1 권고).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InlineFallbackSpec {
+    pub name: String,
+    pub command: TaskCommand,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depends_on_override: Option<Vec<TaskId>>,
+    #[serde(default)]
+    pub on_failure: OnFailure,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
 }
 
 /// Task가 실행할 동작.

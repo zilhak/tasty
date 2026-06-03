@@ -416,7 +416,8 @@ fn fallback_triggers_when_main_fails() {
             command: run_cmd(),
             depends_on: vec![],
             on_failure: OnFailure::Fallback {
-                task: a_prime.id.clone(),
+                task: Some(a_prime.id.clone()),
+                inline: None,
             },
             metadata: serde_json::Value::Null,
             now_ms: 1001,
@@ -474,7 +475,8 @@ fn fallback_success_propagates_to_main_downstream() {
             command: run_cmd(),
             depends_on: vec![],
             on_failure: OnFailure::Fallback {
-                task: a_prime.id.clone(),
+                task: Some(a_prime.id.clone()),
+                inline: None,
             },
             metadata: serde_json::Value::Null,
             now_ms: 1001,
@@ -535,7 +537,8 @@ fn fallback_failure_also_skips_main_downstream() {
             command: run_cmd(),
             depends_on: vec![],
             on_failure: OnFailure::Fallback {
-                task: a_prime.id.clone(),
+                task: Some(a_prime.id.clone()),
+                inline: None,
             },
             metadata: serde_json::Value::Null,
             now_ms: 1001,
@@ -625,4 +628,214 @@ fn list_returns_all_tasks() {
     assert_eq!(ws1.len(), 2);
     let ws2 = store.list(2).unwrap();
     assert_eq!(ws2.len(), 1);
+}
+
+#[test]
+fn fallback_inline_materializes_on_failed_transition() {
+    // A.on_failure=Fallback{inline:{A_prime}}, C depends on A.
+    // A 실패 → A_prime task 자동 생성 (metadata.fallback_of=A.id) + Ready.
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: None,
+                inline: Some(Box::new(InlineFallbackSpec {
+                    name: "A_prime".into(),
+                    command: run_cmd(),
+                    depends_on_override: None,
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::json!({}),
+                })),
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let c = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "C".to_string(),
+            command: run_cmd(),
+            depends_on: vec![a.id.clone()],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap();
+
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    store
+        .set_state(
+            1,
+            &a.id,
+            TaskState::Failed {
+                error: "boom".into(),
+            },
+            3000,
+        )
+        .unwrap();
+
+    // A_prime 가 생성되었고 Ready 인지 확인.
+    let all = store.list(1).unwrap();
+    let a_prime = all
+        .iter()
+        .find(|t| t.metadata.get("fallback_of").and_then(|v| v.as_str()) == Some(a.id.as_str()))
+        .expect("inline fallback materialized");
+    assert_eq!(a_prime.name, "A_prime");
+    assert_eq!(a_prime.state, TaskState::Ready);
+    // C 는 여전히 Waiting — A_prime 의 결과 대기.
+    let c_after = store.get(1, &c.id).unwrap().unwrap();
+    assert_eq!(c_after.state, TaskState::Waiting);
+
+    // A_prime Succeed → C Ready.
+    let a_prime_id = a_prime.id.clone();
+    store
+        .set_state(1, &a_prime_id, TaskState::Running, 3500)
+        .unwrap();
+    store
+        .set_state(1, &a_prime_id, TaskState::Succeeded, 4000)
+        .unwrap();
+    let c_after = store.get(1, &c.id).unwrap().unwrap();
+    assert_eq!(c_after.state, TaskState::Ready, "fallback 성공 → C Ready");
+}
+
+#[test]
+fn fallback_inline_idempotent_on_repeated_failed_calls() {
+    // 같은 main 의 Failed 분기를 *여러 번* 호출해도 inline fallback task 는 1개만.
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let a = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "A".to_string(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: None,
+                inline: Some(Box::new(InlineFallbackSpec {
+                    name: "A_prime".into(),
+                    command: run_cmd(),
+                    depends_on_override: None,
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::json!({}),
+                })),
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+
+    store.set_state(1, &a.id, TaskState::Running, 2000).unwrap();
+    store
+        .set_state(
+            1,
+            &a.id,
+            TaskState::Failed {
+                error: "boom".into(),
+            },
+            3000,
+        )
+        .unwrap();
+
+    let count_first = store
+        .list(1)
+        .unwrap()
+        .iter()
+        .filter(|t| t.metadata.get("fallback_of").and_then(|v| v.as_str()) == Some(a.id.as_str()))
+        .count();
+    assert_eq!(count_first, 1);
+
+    // retry 후 다시 Failed — fallback 이 중복 생성되면 안 됨.
+    // 단 retry 는 task state 를 Waiting → Ready 로 보내므로, Failed 후 retry → Failed
+    // 사이클을 시뮬레이션.
+    store.retry(1, &a.id, false, 3100).unwrap();
+    store.set_state(1, &a.id, TaskState::Running, 3200).unwrap();
+    store
+        .set_state(
+            1,
+            &a.id,
+            TaskState::Failed {
+                error: "boom2".into(),
+            },
+            3300,
+        )
+        .unwrap();
+    let count_second = store
+        .list(1)
+        .unwrap()
+        .iter()
+        .filter(|t| t.metadata.get("fallback_of").and_then(|v| v.as_str()) == Some(a.id.as_str()))
+        .count();
+    assert_eq!(count_second, 1, "inline fallback must not duplicate");
+}
+
+#[test]
+fn fallback_validation_rejects_both_task_and_inline() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    // 먼저 어떤 task 라도 만들어 task id 확보.
+    let helper = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "helper".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap();
+    let err = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "bad".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: Some(helper.id),
+                inline: Some(Box::new(InlineFallbackSpec {
+                    name: "x".into(),
+                    command: run_cmd(),
+                    depends_on_override: None,
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::json!({}),
+                })),
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1001,
+        })
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentError::InvalidArgument(_)),
+        "expected InvalidArgument, got {err:?}"
+    );
+}
+
+#[test]
+fn fallback_validation_rejects_neither_task_nor_inline() {
+    let (_td, mut mem, seq) = fresh_store();
+    let mut store = TaskStore::new(&mut mem, "_host", &seq);
+    let err = store
+        .create(TaskCreateOpts {
+            workspace_id: 1,
+            name: "bad".into(),
+            command: run_cmd(),
+            depends_on: vec![],
+            on_failure: OnFailure::Fallback {
+                task: None,
+                inline: None,
+            },
+            metadata: serde_json::Value::Null,
+            now_ms: 1000,
+        })
+        .unwrap_err();
+    assert!(
+        matches!(err, AgentError::InvalidArgument(_)),
+        "expected InvalidArgument, got {err:?}"
+    );
 }
