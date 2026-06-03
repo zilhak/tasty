@@ -141,15 +141,29 @@ flags:
   와 함께 지정 시 `--restore-removed-all` 우선. *주의*: 사용자가 직접 `tasty
   plugin remove` 한 의도를 뒤집는 동작이므로 documentation 에서 명확히 안내.
   부팅 시 자동 install 경로는 절대 unmark 하지 않는다 — 본 flag 만 진입점.
+- `--restart-running` — graceful swap. 실행 중인 builtin process 를 *config 의
+  enabled state 를 건드리지 않고* shutdown → 새 binary 로 respawn. POSIX 의
+  inode 교체 후 옛 binary 유지 문제와 Windows sharing violation 양쪽을 해소.
+  default off (보수적) — 사용자가 명시 켜야만 swap 발생. swap 동안 affected
+  plugin 의 surface 가 잠깐 missing 으로 노출되므로 작업 중 영향을 받는다.
 
-응답은 항목별 `BuiltinUpgradeReport` JSON. action: `Upgraded { from, to }` /
-`Reinstalled { version }` / `Skipped { reason }` / `NotInBundle` / `Failed`.
+응답은 항목별 `BuiltinUpgradeReport` JSON. action:
 
-실행 중 plugin 의 binary 가 교체되면 *현재 실행 process 는 옛 binary 메모리
-를 유지* 한다 (POSIX inode 교체). 새 binary 가 효과를 보려면 `plugin disable`
-→ `plugin enable` 시퀀스가 필요하다. Windows 에서는 실행 중 binary 의 in-place
-교체가 sharing violation 으로 실패 → `Failed` 항목으로 보고된다. 두 문제는
-graceful swap (E.2, 후속) 의 `--restart-running` flag 로 해소된다.
+- `Upgraded { from, to, was_restarted, restart_error? }`
+- `Reinstalled { version, was_restarted, restart_error? }`
+- `Skipped { reason }` / `NotInBundle` / `Failed`
+
+`was_restarted` 는 `--restart-running` 경로에서 swap 성공 여부. `restart_error`
+는 respawn 실패 시 메시지. respawn 실패에도 `plugins.toml::disabled` 는
+변경되지 않으므로 다음 부팅 시 자동 enable 가 다시 시도된다 (graceful swap
+helper 가 config 미수정).
+
+`--restart-running` 없이 호출하면 in-place binary 교체만 수행. 그 경우
+실행 중 plugin process 는 옛 binary 메모리를 유지하므로 새 binary 가 효과
+를 보려면 `plugin disable` → `plugin enable` 시퀀스 (또는 다음 부팅) 가
+필요하다. Windows 에서는 실행 중 binary 의 in-place 교체가 sharing violation
+으로 실패 → `Failed` 항목으로 보고된다 — 이 경우 `--restart-running` 로
+재호출하면 성공한다.
 
 ### 6.3 사용자 수정 영역
 
