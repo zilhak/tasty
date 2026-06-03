@@ -340,7 +340,7 @@ fn top_counts(map: std::collections::BTreeMap<String, u64>, top_n: usize) -> Vec
 /// `record_ipc_call` (telemetry) 와 짝을 이루며 dispatcher 경로의 모든 진입점에서
 /// 호출된다.
 pub fn record(
-    core: &crate::core::Core,
+    host: &dyn tasty_plugin_protocol::host_port::IpcHostFacade,
     caller: &CallerContext,
     method: &str,
     decision: AuditDecision,
@@ -348,27 +348,32 @@ pub fn record(
     workspace_id: Option<u32>,
     seq: u64,
 ) {
+    use tasty_plugin_protocol::host_port::{AuditCallerMarker, AuditDecision as ProtoDecision};
+
     let ts_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let record = AuditRecord {
-        ts_ms,
-        seq,
-        caller_kind: AuditCallerKind::from_caller(caller),
-        caller_id: caller.agent_id().as_str().to_string(),
-        method: method.to_string(),
-        decision,
-        reason: reason.map(|s| s.to_string()),
-        workspace_id,
+    let kind = AuditCallerKind::from_caller(caller);
+    let caller_id = caller.agent_id().as_str().to_string();
+    let marker = match kind {
+        AuditCallerKind::Local => AuditCallerMarker::Local,
+        AuditCallerKind::Agent => AuditCallerMarker::Agent(caller_id),
+        AuditCallerKind::Plugin => AuditCallerMarker::Plugin(caller_id),
     };
-    let result = core.with_memory(|mem| {
-        let mut store = AuditStore::new(mem, tasty_memory::HOST_OWNER);
-        store.append(&record)
-    });
-    if let Err(e) = result {
-        tracing::warn!("audit: append failed: {e}");
-    }
+    let proto_decision = match decision {
+        AuditDecision::Allow => ProtoDecision::Allow,
+        AuditDecision::Deny => ProtoDecision::Deny,
+    };
+    host.record_audit(
+        marker,
+        method,
+        proto_decision,
+        reason,
+        workspace_id,
+        seq,
+        ts_ms,
+    );
 }
 
 #[cfg(test)]
