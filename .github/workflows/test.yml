@@ -1,0 +1,35 @@
+name: Test
+
+# `cargo test --workspace` 만 책임. release/build-check 와 분리.
+# 본 워크플로가 J.B 의 semver guard test (api_baseline_0_7,
+# changelog_unreleased, cli_naming_count_drift) 의 자동 실행 채널이다.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
+# build-check 와 동일 정책.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-linux-x64:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build tests
+        run: cargo test --workspace --no-run --locked
+
+      - name: Run tests
+        run: cargo test --workspace --locked
