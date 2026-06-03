@@ -6,9 +6,11 @@
 
 #[cfg(feature = "gui")]
 pub mod key_dispatch;
+#[cfg(feature = "gui")]
 pub mod manifest_validate;
 #[cfg(feature = "gui")]
 pub mod popup_render;
+#[cfg(feature = "gui")]
 pub mod remote_kind;
 pub mod remote_surface;
 #[cfg(feature = "gui")]
