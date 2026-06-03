@@ -617,13 +617,28 @@ priority 가 동순위일 때 owner 순서로 1순위 선택: `user > plugin > h
 따라서 plugin 이 priority=50 으로 contribute 하고 host TOML 에도 priority=50
 handler 가 남아 있어도 plugin 이 1순위.
 
-### 향후 markdown plugin 신설
+### 향후 markdown plugin 신설 (템플릿: `crates/tasty-plugin-markdown/`)
 
-markdown 은 현재 host 가 SurfaceKindDef + detector + handler 모두 보유.
-별도 plugin (`com.tasty.markdown`) 으로 분리하고 싶다면 본 섹션의 매니페스트
-패턴이 그대로 템플릿이 된다 — `[[surface_kinds]] kind="markdown"` +
-`[[contributes.detector]]` + `[[contributes.handler]]` 추가, host TOML 에서
-같은 항목 제거.
+markdown 은 현재 host 가 SurfaceKindDef + detector + handler 모두 보유한다.
+별도 plugin 으로 분리하기 위한 *템플릿 crate* 가 `crates/tasty-plugin-markdown/`
+에 이미 존재한다 (BUILTINS 미등록 — 런타임 로드 X, 빌드/매니페스트 검증만).
+
+실제 분리 절차:
+
+1. `src/engine/surface_registry/builtins.rs` 의 `register_markdown` 호출 제거.
+   함수 자체는 plugin 로드 경로의 host-rendered hook 으로 유지 (image 와 같음).
+2. `src/file/format/defaults/default-file-format.toml` 의 `[[detector]] id = "markdown"`
+   블록 삭제. `src/file/handler/defaults/default-file-handlers.toml` 의
+   `[[handler]] id = "markdown-viewer"` 블록 삭제.
+3. `crates/tasty-host-plugin/src/builtin.rs` 의 `BUILTINS` 배열 (windows /
+   non-windows 두 곳) 에 `com.tasty.markdown` spec 추가 (image entry 복붙 후
+   id/crate_dir/bin_name 교체).
+4. `src/adapters/ui/surface/markdown.rs` view 코드는 그대로 유지 —
+   `rendering = "host"` 이므로 host 가 계속 그린다 (image plugin 과 동일 흐름).
+
+본 plugin 의 `[[surface_kinds]] kind = "markdown"` 은 `rendering = "host"` 라 host
+가 실제 GUI 를 그려준다. plugin 본체는 detector/handler 선언과 선택적 IPC
+(`markdown.reload` 같은 사용자 명령) 만 담당.
 
 ## 4-3. Surface 닫힘 알림 (Event Bus)
 

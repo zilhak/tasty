@@ -1583,8 +1583,9 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
   OS-level 별도 윈도우를 contribute. 1.0 schema-only — host 가 hello 시
   `tracing::info!` 로그 + `plugin.window_declared` host event 발화. 실 spawn
   handler / multi-window 라우팅은 별도 영역.
-- `docs/examples/markdown-plugin/tasty-plugin.toml` 에 schema 사용 예시 (실
-  plugin binary 는 없음 — 데모용).
+- `crates/tasty-plugin-markdown/tasty-plugin.toml` 에 schema 사용 예시 +
+  실 plugin binary 골격 (BUILTINS 미등록 — host 내장 markdown 유지 중인
+  템플릿 crate).
 - `[[contributes.cli]]` 의 subcommand 엔트리에 `[polling]` 옵션 — `state_field`
   / `terminal_states` (예: `["idle", "needs_input", "exited"]`) / `interval_ms`
   (default 500) / `timeout_field`. 호스트가 plugin CLI 응답을 polling 하여

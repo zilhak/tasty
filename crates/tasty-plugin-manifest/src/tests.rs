@@ -1742,10 +1742,10 @@ fn window_contribute_id_format_validated() {
 
 #[test]
 fn example_markdown_plugin_manifest_parses() {
-    // docs/examples/markdown-plugin/tasty-plugin.toml — schema 확장 데모 예시.
-    // 본 manifest 는 실제 plugin binary 가 없어 BUILTINS 디스커버리에 등록되지
-    // 않지만, 컴파일타임 include + 런타임 parse 로 schema 호환성을 잠근다.
-    let text = include_str!("../../../docs/examples/markdown-plugin/tasty-plugin.toml");
+    // crates/tasty-plugin-markdown/tasty-plugin.toml — schema 확장 데모 +
+    // 템플릿 plugin. BUILTINS 미등록이라 런타임 로드는 안 되지만, 컴파일타임
+    // include + 런타임 parse 로 schema 호환성을 잠근다.
+    let text = include_str!("../../tasty-plugin-markdown/tasty-plugin.toml");
     let m = parse(text).expect("example markdown manifest should parse and validate");
     assert_eq!(m.id, "com.tasty.markdown");
     assert_eq!(m.surface_kinds.len(), 1);
