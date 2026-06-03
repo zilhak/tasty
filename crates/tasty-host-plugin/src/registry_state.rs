@@ -128,6 +128,22 @@ impl PluginsConfig {
         }
     }
 
+    /// removed_builtins 마크를 해제. `mark_builtin_removed` 의 역동작.
+    /// graceful swap 시 자동 호출되지 않고, 명시적 `upgrade-builtins --restore-removed`
+    /// 경로에서만 호출된다.
+    pub fn unmark_builtin_removed(&mut self, id: &str) -> bool {
+        let before = self.removed_builtins.ids.len();
+        self.removed_builtins.ids.retain(|x| x != id);
+        before != self.removed_builtins.ids.len()
+    }
+
+    /// removed_builtins 전체 clear. `--restore-removed-all` 진입점.
+    pub fn clear_removed_builtins(&mut self) -> bool {
+        let before = self.removed_builtins.ids.len();
+        self.removed_builtins.ids.clear();
+        before != 0
+    }
+
     pub fn enable(&mut self, id: &str) -> bool {
         let before = self.disabled.ids.len();
         self.disabled.ids.retain(|x| x != id);
@@ -241,6 +257,29 @@ mod tests {
         assert!(cfg.enable("com.example.x"));
         assert!(!cfg.is_disabled("com.example.x"));
         assert!(!cfg.enable("com.example.x")); // 이미 enabled
+    }
+
+    #[test]
+    fn unmark_builtin_removed_after_mark() {
+        let mut cfg = PluginsConfig::default();
+        assert!(!cfg.is_builtin_removed("com.tasty.codex"));
+        assert!(cfg.mark_builtin_removed("com.tasty.codex"));
+        assert!(cfg.is_builtin_removed("com.tasty.codex"));
+        assert!(cfg.unmark_builtin_removed("com.tasty.codex"));
+        assert!(!cfg.is_builtin_removed("com.tasty.codex"));
+        // idempotent
+        assert!(!cfg.unmark_builtin_removed("com.tasty.codex"));
+    }
+
+    #[test]
+    fn clear_removed_builtins_empties_all() {
+        let mut cfg = PluginsConfig::default();
+        cfg.mark_builtin_removed("a");
+        cfg.mark_builtin_removed("b");
+        assert!(cfg.clear_removed_builtins());
+        assert!(!cfg.is_builtin_removed("a"));
+        assert!(!cfg.is_builtin_removed("b"));
+        assert!(!cfg.clear_removed_builtins());
     }
 
     #[test]
