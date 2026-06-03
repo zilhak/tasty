@@ -2,7 +2,7 @@
 //! 본 모듈로 흡수. `agent_seq` 의 시퀀스 공유는 그대로 유지.
 
 use tasty_agent::task::TaskCreateOpts;
-use tasty_agent::{AgentError, ReducerInput, Task, TaskId, TaskState, TaskStore};
+use tasty_agent::{AgentError, ReducerInput, Task, TaskId, TaskResult, TaskState, TaskStore};
 use tasty_memory::HOST_OWNER;
 
 use crate::core::Core;
@@ -77,6 +77,38 @@ impl Core {
         self.with_memory(|mem| {
             let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
             store.retry(workspace_id, task_id, reset_downstream, now_ms)
+        })
+    }
+
+    /// Task state 강제 전이 — runner 가 dispatch / poll 결과에 따라 호출.
+    /// downstream cascade 도 함께 수행. 반환: (갱신된 자기, 자동 전이된 downstream).
+    pub(crate) fn task_set_state(
+        &self,
+        engine: &CoreState,
+        workspace_id: u32,
+        task_id: &TaskId,
+        new_state: TaskState,
+        now_ms: u64,
+    ) -> Result<(Task, Vec<Task>), AgentError> {
+        let seq = engine.agent_seq.clone();
+        self.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.set_state(workspace_id, task_id, new_state, now_ms)
+        })
+    }
+
+    /// Task result 영속. set_state(Succeeded/Failed) 직전에 호출.
+    pub(crate) fn task_set_result(
+        &self,
+        engine: &CoreState,
+        workspace_id: u32,
+        task_id: &TaskId,
+        result: TaskResult,
+    ) -> Result<Task, AgentError> {
+        let seq = engine.agent_seq.clone();
+        self.with_memory(|mem| {
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.set_result(workspace_id, task_id, result)
         })
     }
 
