@@ -211,7 +211,12 @@ impl PluginManager {
                             pkg.manifest.id,
                             e
                         );
+                        continue;
                     }
+                    // G.D.b — `tasty-ipc::method_meta` runtime registry 도 mirror
+                    // 등록. host registry 실패한 prefix 는 runtime mirror 도 skip
+                    // 하여 두 registry 의 *항상 동조* 불변식 유지.
+                    tasty_ipc::method_meta::register_plugin_prefix(&ns.prefix);
                 }
             }
             Err(e) => {
@@ -297,6 +302,13 @@ impl PluginManager {
             proc.shutdown(Duration::from_secs(2));
         }
         self.ipc_namespaces.unregister_plugin(plugin_id);
+        // G.D.b — runtime registry 도 mirror 해제. packages 에서 manifest 재조회
+        // 후 그 plugin 이 점유한 prefix 들을 unregister.
+        if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id) {
+            for ns in &pkg.manifest.contributes.ipc_namespace {
+                tasty_ipc::method_meta::unregister_plugin_prefix(&ns.prefix);
+            }
+        }
         // file_format / file_handler 두 registry 에서 plugin 의 contribute 제거.
         self.file_format.uninstall_plugin(plugin_id);
         self.file_handler.uninstall_plugin(plugin_id);
