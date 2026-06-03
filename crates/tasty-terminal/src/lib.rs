@@ -16,6 +16,7 @@ pub mod foreground_process;
 pub mod search;
 pub mod test_helpers;
 pub mod testing;
+pub mod waker_factory;
 
 use std::io::{Read, Write};
 use std::sync::mpsc;
