@@ -12,7 +12,9 @@ use std::path::PathBuf;
 
 use crate::core::Core;
 use crate::core::CoreState;
+#[cfg(feature = "gui")]
 use crate::file::format::{DetectorId, FileTarget};
+#[cfg(feature = "gui")]
 use crate::state::{AppState, FileHandlerPickerResult};
 
 /// `Core::reload_file_handlers` 응답.
@@ -36,6 +38,7 @@ impl Core {
     /// `AppEvent::IdentifyDone` 수신 시 직접 호출. detector 매칭 handler 가
     /// 있으면 1순위 자동 실행, 없으면 picker popup 오픈 (state.dialogs +
     /// state.popups mutate). 옛 `file_dispatch::apply_identify_result` 본문 흡수.
+    #[cfg(feature = "gui")]
     pub(crate) fn apply_identify_result(
         &self,
         state: &mut AppState,
@@ -61,6 +64,7 @@ impl Core {
     /// 옛 `file_dispatch::consume_picker_result` 본문 흡수. dialogs 슬롯 해제는
     /// caller (redraw) 가 본 method 호출 *전에* 처리한다 — 빠른 popup 재오픈
     /// 시에도 결과 중복 처리 없음을 보장하기 위함.
+    #[cfg(feature = "gui")]
     pub(crate) fn apply_file_picker_result(
         &self,
         state: &mut AppState,
