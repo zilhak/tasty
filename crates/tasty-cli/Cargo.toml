@@ -21,6 +21,8 @@ tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 tasty-host-plugin = { path = "../tasty-host-plugin" }
 tasty-approval = { path = "../tasty-approval" }
 tasty-utils = { path = "../tasty-utils" }
+tasty-update = { path = "../tasty-update" }
+tempfile = "3"
 
 [dev-dependencies]
 tempfile = "3"

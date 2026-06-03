@@ -15,6 +15,7 @@ pub mod preset;
 pub mod read_unset;
 pub mod surface_meta;
 pub mod telemetry;
+pub mod update;
 
 pub use agent::AgentCommands;
 pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
@@ -36,3 +37,4 @@ pub use preset::PresetCommands;
 pub use read_unset::{ReadCommands, UnsetCommands};
 pub use surface_meta::SurfaceMetaCommands;
 pub use telemetry::{TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands};
+pub use update::UpdateOpts;

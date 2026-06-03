@@ -158,6 +158,14 @@ fn run_dynamic_client_polling(
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 pub fn run_client(command: Commands) -> Result<()> {
+    // `tasty update` is standalone — no host instance required.
+    if let Commands::Update(opts) = &command {
+        let code = crate::commands::update::run(opts, env!("CARGO_PKG_VERSION"));
+        if code == 0 {
+            return Ok(());
+        }
+        std::process::exit(code);
+    }
     // plugin logs is local-only — read the log file directly.
     if let Commands::Plugin {
         command: PluginCommands::Logs { id, follow },

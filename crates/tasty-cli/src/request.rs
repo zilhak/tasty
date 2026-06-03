@@ -146,6 +146,8 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),
         Commands::Script { command } => script_command_to_method_params(command),
         Commands::Preset { command } => preset_command_to_method_params(command),
+        // standalone — handled before IPC in run.rs; never reaches this match.
+        Commands::Update(_) => ("update.noop", serde_json::json!({})),
     };
 
     JsonRpcRequest {

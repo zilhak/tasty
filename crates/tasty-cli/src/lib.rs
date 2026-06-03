@@ -212,4 +212,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: PresetCommands,
     },
+    /// Check for and install a new tasty version (standalone — no host needed)
+    Update(UpdateOpts),
 }
