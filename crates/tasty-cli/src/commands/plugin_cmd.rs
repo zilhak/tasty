@@ -23,6 +23,14 @@ pub enum PluginCommands {
         /// Plugin id (e.g. com.example.explorer).
         id: String,
     },
+    /// Re-sync all built-in plugins from the bundle. By default only upgrades
+    /// plugins whose bundled manifest version is greater than the installed one.
+    /// Use --force to overwrite same-or-older versions (recovery scenarios).
+    UpgradeBuiltins {
+        /// Overwrite even when installed version >= bundle version.
+        #[arg(long)]
+        force: bool,
+    },
     /// Enable a disabled plugin and start it.
     Enable { id: String },
     /// Disable a plugin (graceful shutdown if running).

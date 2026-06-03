@@ -10,6 +10,10 @@ pub(super) fn plugin_command_to_method_params(
         PluginCommands::Show { id } => ("plugin.show", serde_json::json!({ "id": id })),
         PluginCommands::Install { path } => ("plugin.install", serde_json::json!({ "path": path })),
         PluginCommands::Remove { id } => ("plugin.remove", serde_json::json!({ "id": id })),
+        PluginCommands::UpgradeBuiltins { force } => (
+            "plugin.upgrade_builtins",
+            serde_json::json!({ "force": force }),
+        ),
         PluginCommands::Enable { id } => ("plugin.enable", serde_json::json!({ "id": id })),
         PluginCommands::Disable { id } => ("plugin.disable", serde_json::json!({ "id": id })),
         // Logs는 IPC를 거치지 않음 — run_client에서 special-case로 처리.
