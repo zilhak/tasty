@@ -79,6 +79,7 @@ tasty-approval = { path = "crates/tasty-approval" }
 tasty-telemetry = { path = "crates/tasty-telemetry" }
 tasty-agent = { path = "crates/tasty-agent" }
 tasty-plugin-protocol = { path = "crates/tasty-plugin-protocol" }
+tasty-plugin-manifest = { path = "crates/tasty-plugin-manifest" }
 tasty-ipc = { path = "crates/tasty-ipc" }
 tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }

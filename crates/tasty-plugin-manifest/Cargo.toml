@@ -1,0 +1,18 @@
+[package]
+name = "tasty-plugin-manifest"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Tasty plugin manifest schema, parse and schema-agnostic validation"
+repository = "https://github.com/zilhak/tasty"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+thiserror = "1"
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+
+[lints]
+workspace = true
