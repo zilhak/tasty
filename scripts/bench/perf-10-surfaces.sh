@@ -9,8 +9,14 @@
 set -euo pipefail
 
 PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+PROFILE="${PERF_PROFILE:-release}"
+case "$PROFILE" in
+    release) CARGO_FLAGS=(--release) ;;
+    dist)    CARGO_FLAGS=(--profile dist) ;;
+    *) echo "error: PERF_PROFILE must be release|dist (got '$PROFILE')" >&2; exit 2 ;;
+esac
 LOG_DIR=".claude-workspace/temp"
-LOG="${LOG_DIR}/perf-${PLATFORM}.log"
+LOG="${LOG_DIR}/perf-${PLATFORM}-${PROFILE}.log"
 DURATION="${PERF_DURATION_SECS:-60}"
 
 mkdir -p "$LOG_DIR"
@@ -24,11 +30,11 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 2
 fi
 
-echo "[perf-10-surfaces] platform=$PLATFORM duration=${DURATION}s log=$LOG"
+echo "[perf-10-surfaces] platform=$PLATFORM profile=$PROFILE duration=${DURATION}s log=$LOG"
 
-# 1) tasty release 실행 (perf 로그만 노출, 일반 noise 억제)
+# 1) tasty 실행 (perf 로그만 노출, 일반 noise 억제)
 RUST_LOG="tasty::gfx::perf=info,tasty=warn" \
-    cargo run --release > "$LOG" 2>&1 &
+    cargo run "${CARGO_FLAGS[@]}" > "$LOG" 2>&1 &
 TASTY_PID=$!
 cleanup() {
     kill "$TASTY_PID" 2>/dev/null || true
