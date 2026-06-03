@@ -218,6 +218,7 @@ impl GpuState {
     }
 
     /// Render the full frame: egui UI + terminal surfaces.
+    #[allow(clippy::too_many_arguments)] // reason: 프레임 렌더 컨텍스트 전체
     pub fn render(
         &mut self,
         state: &mut AppState,

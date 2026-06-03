@@ -102,6 +102,7 @@ fn apply(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // reason: preset save 컨텍스트 전체
 fn save(
     core: &crate::core::Core,
     state: &mut AppState,
@@ -255,6 +256,7 @@ fn clone_preset_from_store(
 
 /// Preset 적용. store 에서 clone 후 lock 해제하고 본체를 호출한다.
 /// `target_pane_id` / `target_workspace_id` 는 tab/pane apply 시에만 의미가 있다.
+#[allow(clippy::too_many_arguments)] // reason: preset apply 도메인 파라미터
 pub fn apply_inner(
     core: &crate::core::Core,
     state: &mut AppState,

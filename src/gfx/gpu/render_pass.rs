@@ -44,6 +44,7 @@ impl GpuState {
         self.queue.submit(std::iter::once(encoder.finish()));
     }
 
+    #[allow(clippy::too_many_arguments)] // reason: 터미널 렌더 컨텍스트 전체
     pub(super) fn render_terminals(
         &mut self,
         view: &wgpu::TextureView,

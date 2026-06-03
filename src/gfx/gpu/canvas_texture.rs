@@ -69,6 +69,7 @@ impl CanvasTextureCache {
     ///
     /// dimensions/format/filter가 바뀌었으면 기존 entry를 정리하고 새로 만들며,
     /// [`egui_wgpu::Renderer::register_native_texture`]도 재호출한다.
+    #[allow(clippy::too_many_arguments)] // reason: texture 등록 파라미터 묶음
     pub fn ensure(
         &mut self,
         key: &CanvasKey,

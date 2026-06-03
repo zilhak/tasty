@@ -73,6 +73,7 @@ impl TextSelection {
 }
 
 /// Convert mouse physical pixel coordinates to a terminal grid SelectionPoint.
+#[allow(clippy::too_many_arguments)] // reason: 마우스→grid 좌표 변환 컨텍스트
 pub fn pixel_to_grid(
     mouse_x: f32,
     mouse_y: f32,

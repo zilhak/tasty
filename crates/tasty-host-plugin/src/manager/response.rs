@@ -249,6 +249,7 @@ impl PluginManager {
     /// debug 빌드 한정 — extension에 직접 hook을 송신하고 응답을 caller에 회신.
     /// 테스트 도구. 정상 트래픽(IPC/event)이 아니라 디버그 path.
     #[cfg(debug_assertions)]
+    #[allow(clippy::too_many_arguments)] // reason: debug IPC 시그니처와 1:1 매핑
     pub fn debug_invoke_extension_hook(
         &mut self,
         extension_id: &str,
@@ -326,6 +327,7 @@ impl PluginManager {
     }
 
     /// pre-hook 응답을 처리. mode에 따라 transform/filter/observe 적용 후 target에 forward.
+    #[allow(clippy::too_many_arguments)] // reason: IPC pre-hook 컨텍스트 전체 전달
     pub(super) fn handle_pre_ipc_hook_response(
         &mut self,
         extension_plugin_id: String,

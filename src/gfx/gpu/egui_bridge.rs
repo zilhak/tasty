@@ -7,6 +7,7 @@ use crate::state::AppState;
 use super::GpuState;
 
 impl GpuState {
+    #[allow(clippy::too_many_arguments)] // reason: frame context 전체 전달
     pub(super) fn run_egui_frame(
         &mut self,
         state: &mut AppState,

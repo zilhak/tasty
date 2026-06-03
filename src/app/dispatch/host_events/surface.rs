@@ -24,6 +24,7 @@ pub(super) fn emit_title_changed(mgr: &mut PluginManager, surface_id: u32, title
     mgr.emit_host_event("surface.title_changed", &payload, EventScope::Surface);
 }
 
+#[allow(clippy::too_many_arguments)] // reason: host event payload 전체 컨텍스트
 pub(super) fn emit_created(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,

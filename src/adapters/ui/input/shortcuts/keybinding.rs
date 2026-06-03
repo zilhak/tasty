@@ -13,6 +13,7 @@ use crate::view::main::MainView;
 use super::{focused_image_surface_id, matches_any_binding, send_app_event};
 
 impl MainView {
+    #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
     pub(super) fn handle_keybinding_shortcuts(
         state: &mut crate::state::AppState,
         engine: &mut crate::core::CoreState,

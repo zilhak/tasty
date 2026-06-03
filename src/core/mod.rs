@@ -1701,6 +1701,7 @@ impl Core {
     /// tab + surface 를 생성하고 `WorkspaceCreated` event 를 반환한다.
     /// host event 발화 (WorkspaceRenamed) + (User origin 이면) active 전환은
     /// cascade (`cascade_workspace_created`) 에서 처리한다.
+    #[allow(clippy::too_many_arguments)] // reason: workspace 생성 도메인 파라미터
     fn apply_create_workspace(
         &mut self,
         engine: &mut crate::core::CoreState,

@@ -71,6 +71,7 @@ impl AppState {
     }
 
     /// Get the physical pixel rect of a specific terminal cell within a surface.
+    #[allow(clippy::too_many_arguments)] // reason: cell geometry lookup 컨텍스트
     pub fn surface_cell_rect(
         &self,
         engine: &CoreState,

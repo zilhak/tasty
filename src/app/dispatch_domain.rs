@@ -590,6 +590,7 @@ impl App {
     /// `SurfaceClosed` cascade — cleanup_surface 각각 + (Case 4 면) workspace
     /// memory scope purge + active_workspace 보정 + (workspaces_now_empty 면)
     /// 새 default workspace 자동 생성.
+    #[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
     fn dispatch_surface_closed_cascade(
         &mut self,
         source: DispatchSource,
@@ -679,6 +680,7 @@ impl App {
     }
 
     /// `PaneSplit` cascade — host event 발화 + (User origin 이면) focused_pane 변경.
+    #[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
     fn dispatch_pane_split_cascade(
         &mut self,
         source: DispatchSource,
@@ -881,6 +883,7 @@ impl App {
 
     /// `WorkspaceCreated` cascade 의 source 라우터. main/parked 분기 후
     /// `cascade_workspace_created` (free function) 호출.
+    #[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
     fn dispatch_workspace_created_cascade(
         &mut self,
         source: DispatchSource,
@@ -1265,6 +1268,7 @@ impl App {
 /// - `origin` 이 User 면 `state.active_workspace = index` 로 active 전환.
 /// - engine 의 `mark_layout_dirty` / `send_fast_init` 는 `Core::apply` 안에서
 ///   이미 처리됐다.
+#[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
 pub(crate) fn cascade_workspace_created(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
@@ -1338,6 +1342,7 @@ pub(crate) fn cascade_closed_item_restored(
 ///    (`pending_lifecycle_events`) 가 처리하므로 여기선 안 다룸.
 /// 3. workspace_id_purged 가 Some 이면 memory scope purge
 /// 4. cascade_level == Workspace 면 active_workspace 보정
+#[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
 pub(crate) fn cascade_surface_closed(
     core: &mut crate::core::Core,
     state: &mut crate::state::AppState,
@@ -1439,6 +1444,7 @@ pub(crate) fn cascade_surface_split(
 /// `CoreEvent::PaneSplit` 의 외부 cascade. host events (`pane.split` +
 /// `pane.created`) 발화 + polling baseline 동기화 + (User origin 이면)
 /// workspace 의 focused_pane 을 new_pane_id 로 변경.
+#[allow(clippy::too_many_arguments)] // reason: cascade context 전체 전달
 pub(crate) fn cascade_pane_split(
     state: &mut crate::state::AppState,
     engine: &mut crate::core::CoreState,
