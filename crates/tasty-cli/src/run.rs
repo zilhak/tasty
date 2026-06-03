@@ -4,7 +4,7 @@ use std::net::TcpStream;
 
 use anyhow::Result;
 
-use crate::ipc::port_file;
+use tasty_ipc::port_file;
 
 use super::Commands;
 use super::commands::PluginCommands;
@@ -15,7 +15,7 @@ use super::request::command_to_request;
 use super::transport::IpcConnection;
 
 pub fn try_run_plugin_cli() -> Option<Result<()>> {
-    let plugins_root = match crate::plugin::plugin_root() {
+    let plugins_root = match tasty_host_plugin::plugin_root() {
         Some(p) => p,
         None => return None,
     };
@@ -52,7 +52,7 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
     Some(run_dynamic_client(request))
 }
 
-fn run_dynamic_client(request: crate::ipc::protocol::JsonRpcRequest) -> Result<()> {
+fn run_dynamic_client(request: tasty_ipc::protocol::JsonRpcRequest) -> Result<()> {
     let port = port_file::read_port_file()?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
@@ -96,7 +96,7 @@ pub fn run_client(command: Commands) -> Result<()> {
         command: PluginCommands::Doctor { id },
     } = &command
     {
-        return crate::cli::plugin::run_plugin_doctor(id);
+        return crate::plugin::run_plugin_doctor(id);
     }
     // plugin audit-follow is a polling loop over plugin.audit_follow IPC.
     if let Commands::Plugin {
@@ -111,7 +111,7 @@ pub fn run_client(command: Commands) -> Result<()> {
             },
     } = &command
     {
-        return crate::cli::plugin::run_audit_follow(
+        return crate::plugin::run_audit_follow(
             caller_kind.as_deref(),
             caller_id.as_deref(),
             method_prefix.as_deref(),

@@ -1,6 +1,6 @@
 //! `tasty output ...` CLI → JsonRpcRequest 매핑.
 
-use crate::cli::commands::{OutputCommands, OutputObserveCommands};
+use crate::commands::{OutputCommands, OutputObserveCommands};
 
 pub(super) fn output_command_to_method_params(
     command: &OutputCommands,

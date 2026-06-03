@@ -222,7 +222,7 @@ pub fn format_parse_error(err: clap::Error) {
 /// 정적 CLI 도움말은 항상 보장한다.
 pub fn print_augmented_help() -> Result<()> {
     use clap::CommandFactory;
-    let entries = match crate::plugin::plugin_root() {
+    let entries = match tasty_host_plugin::plugin_root() {
         Some(root) => dynamic::discover_plugin_clis(&root),
         None => Vec::new(),
     };

@@ -1,6 +1,6 @@
 //! `tasty agent ...` CLI → JsonRpcRequest 매핑.
 
-use crate::cli::commands::AgentCommands;
+use crate::commands::AgentCommands;
 
 pub(super) fn agent_command_to_method_params(
     command: &AgentCommands,

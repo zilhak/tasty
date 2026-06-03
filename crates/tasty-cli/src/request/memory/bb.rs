@@ -1,4 +1,4 @@
-use crate::cli::commands::MemoryBbCommands;
+use crate::commands::MemoryBbCommands;
 
 use super::read_value_arg;
 

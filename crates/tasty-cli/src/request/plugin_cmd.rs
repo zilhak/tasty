@@ -1,6 +1,6 @@
 //! `tasty plugin ...` CLI → JsonRpcRequest 매핑.
 
-use crate::cli::commands::PluginCommands;
+use crate::commands::PluginCommands;
 
 pub(super) fn plugin_command_to_method_params(
     command: &PluginCommands,
@@ -63,7 +63,7 @@ pub(super) fn plugin_command_to_method_params(
             }),
         ),
         PluginCommands::Extension { command } => match command {
-            crate::cli::ExtensionCommands::List => ("plugin.extension.list", serde_json::json!({})),
+            crate::ExtensionCommands::List => ("plugin.extension.list", serde_json::json!({})),
         },
         PluginCommands::AuditQuery {
             caller_kind,

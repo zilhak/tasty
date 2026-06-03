@@ -24,7 +24,7 @@ use super::{
     ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands, NewCommands,
     ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
 };
-use crate::ipc::protocol::JsonRpcRequest;
+use tasty_ipc::protocol::JsonRpcRequest;
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var

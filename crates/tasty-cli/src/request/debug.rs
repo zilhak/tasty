@@ -2,7 +2,7 @@
 
 #![cfg(debug_assertions)]
 
-use crate::cli::commands::{DebugCommands, EventBusCommands};
+use crate::commands::{DebugCommands, EventBusCommands};
 
 use super::resolve_surface_id;
 
@@ -66,9 +66,9 @@ pub(super) fn debug_command_to_method_params(
 
 #[cfg(debug_assertions)]
 pub(super) fn popup_debug_command_to_method_params(
-    command: &crate::cli::PopupDebugCommands,
+    command: &crate::PopupDebugCommands,
 ) -> (&'static str, serde_json::Value) {
-    use crate::cli::PopupDebugCommands;
+    use crate::PopupDebugCommands;
     match command {
         PopupDebugCommands::List => ("debug.popup.list", serde_json::json!({})),
         PopupDebugCommands::Open {
@@ -98,9 +98,9 @@ pub(super) fn popup_debug_command_to_method_params(
 
 #[cfg(debug_assertions)]
 pub(super) fn tool_debug_command_to_method_params(
-    command: &crate::cli::ToolDebugCommands,
+    command: &crate::ToolDebugCommands,
 ) -> (&'static str, serde_json::Value) {
-    use crate::cli::ToolDebugCommands;
+    use crate::ToolDebugCommands;
     match command {
         ToolDebugCommands::List => ("debug.tool.list", serde_json::json!({})),
         ToolDebugCommands::Invoke { key } => {
@@ -111,9 +111,9 @@ pub(super) fn tool_debug_command_to_method_params(
 
 #[cfg(debug_assertions)]
 pub(super) fn extension_debug_command_to_method_params(
-    command: &crate::cli::ExtensionDebugCommands,
+    command: &crate::ExtensionDebugCommands,
 ) -> (&'static str, serde_json::Value) {
-    use crate::cli::ExtensionDebugCommands;
+    use crate::ExtensionDebugCommands;
     match command {
         ExtensionDebugCommands::InvokeHook {
             extension_id,

@@ -1,4 +1,4 @@
-use crate::cli::commands::MemoryPlanCommands;
+use crate::commands::MemoryPlanCommands;
 
 pub(super) fn memory_plan_command_to_method_params(
     command: &MemoryPlanCommands,

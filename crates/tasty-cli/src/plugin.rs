@@ -7,11 +7,9 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde_json::{Map, Value, json};
 
-use crate::cli::transport::IpcConnection;
-use crate::file::format::config::DetectorRuleDecl;
-use crate::file::handler::config::PluginHandlerActionDecl;
-use crate::ipc::port_file;
-use crate::plugin::manifest::Manifest;
+use crate::transport::IpcConnection;
+use tasty_ipc::port_file;
+use tasty_plugin_manifest::Manifest;
 
 fn log_dir() -> Result<PathBuf> {
     tasty_utils::path::tasty_home()
@@ -66,7 +64,7 @@ pub fn run_audit_follow(
         if let Some(s) = after_seq {
             params.insert("after_seq".into(), json!(s));
         }
-        let req = crate::ipc::protocol::JsonRpcRequest {
+        let req = tasty_ipc::protocol::JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: "plugin.audit_follow".to_string(),
             params: Value::Object(params),
@@ -96,7 +94,7 @@ pub fn run_audit_follow(
 /// 점검해 현재 호스트가 이해하지 못하는 rule kind (= `DetectorRuleDecl::Unknown`) 를
 /// 표시한다. 호스트가 실행 중이지 않아도 작동하는 local-only 명령.
 pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
-    let root = crate::plugin::plugin_root()
+    let root = tasty_host_plugin::plugin_root()
         .ok_or_else(|| anyhow::anyhow!("could not determine plugin root directory"))?;
     let plugin_dir = root.join(plugin_id);
     if !plugin_dir.join("tasty-plugin.toml").exists() {
@@ -106,11 +104,10 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
             plugin_dir.join("tasty-plugin.toml").display()
         );
     }
+    // F.B.13-3: host file 도메인 검증 (validate_bin_extras) 은 본 바이너리 잔존.
+    // CLI tasty-cli 단독 빌드 가능을 위해 schema 검증 (Manifest::load 내장) 까지만
+    // 수행. install/remove 경로의 daemon IPC handler 가 bin extras 를 추가 검증.
     let manifest = Manifest::load(&plugin_dir)
-        .and_then(|m| {
-            crate::plugin_bridge::manifest_validate::validate_bin_extras(&m)?;
-            Ok(m)
-        })
         .map_err(|e| anyhow::anyhow!("failed to load manifest for '{}': {e}", plugin_id))?;
 
     println!("Plugin: {}", manifest.id);

@@ -10,8 +10,8 @@ use anyhow::{Result, anyhow};
 use clap::{Arg, ArgAction, ArgMatches, Command, CommandFactory};
 use serde_json::{Map, Value};
 
-use crate::ipc::protocol::JsonRpcRequest;
-use crate::plugin::manifest::{CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest};
+use tasty_ipc::protocol::JsonRpcRequest;
+use tasty_plugin_manifest::{CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest};
 
 /// 한 plugin이 contribute한 CLI 묶음.
 #[derive(Debug, Clone)]
@@ -259,8 +259,8 @@ fn extract_value(matches: &ArgMatches, arg: &CliArg) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::manifest::{CliArg, CliArgGroup, CliArgType, CliSubcommandDecl};
     use std::collections::HashMap;
+    use tasty_plugin_manifest::{CliArg, CliArgGroup, CliArgType, CliSubcommandDecl};
 
     fn sample_entry() -> PluginCliEntry {
         let mut arg_groups: HashMap<String, CliArgGroup> = HashMap::new();

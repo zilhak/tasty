@@ -1,6 +1,6 @@
 //! `tasty telemetry ...` CLI → JsonRpcRequest 매핑.
 
-use crate::cli::commands::{TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands};
+use crate::commands::{TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands};
 
 pub(super) fn telemetry_command_to_method_params(
     command: &TelemetryCommands,

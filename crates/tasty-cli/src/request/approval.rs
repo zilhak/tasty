@@ -1,6 +1,6 @@
 //! `tasty approval ...` CLI → JsonRpcRequest 매핑.
 
-use crate::cli::commands::ApprovalCommands;
+use crate::commands::ApprovalCommands;
 
 pub(super) fn approval_command_to_method_params(
     command: &ApprovalCommands,
@@ -136,7 +136,7 @@ pub(super) fn approval_command_to_method_params(
             ("approval.history", p)
         }
         Summary { command } => {
-            use crate::cli::ApprovalSummaryCommands::*;
+            use crate::ApprovalSummaryCommands::*;
             match command {
                 Set {
                     workspace_id,

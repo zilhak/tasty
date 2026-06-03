@@ -1,4 +1,4 @@
-use crate::cli::commands::MemoryCacheCommands;
+use crate::commands::MemoryCacheCommands;
 
 use super::read_value_arg;
 

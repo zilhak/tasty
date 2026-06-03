@@ -1,6 +1,6 @@
 //! `tasty memory ...` CLI → JsonRpcRequest 매핑 + 공용 scope/value/TTL 헬퍼.
 
-use crate::cli::commands::MemoryCommands;
+use crate::commands::MemoryCommands;
 
 pub(super) fn resolve_scope(
     scope: Option<&str>,

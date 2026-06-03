@@ -1,4 +1,4 @@
-use crate::cli::commands::MemorySecretCommands;
+use crate::commands::MemorySecretCommands;
 
 use super::{read_value_arg, require_scope, resolve_scope, ttl_to_expires_at};
 
