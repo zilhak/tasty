@@ -166,11 +166,20 @@ impl MemoryStorage for InMemoryStorage {
     }
 
     fn purge_expired(&mut self) -> Result<PurgeStats> {
-        unimplemented!("InMemoryStorage::purge_expired — fill in when first test needs it")
+        // 본 in-memory mock 은 TTL/expiry 트래킹을 하지 않으므로 no-op 반환.
+        Ok(PurgeStats {
+            regular: 0,
+            secret: 0,
+        })
     }
 
     fn purge_scope(&mut self, _scope: &Scope) -> Result<PurgeStats> {
-        unimplemented!("InMemoryStorage::purge_scope — fill in when first test needs it")
+        // 본 in-memory mock 은 scope 별 entry 저장을 하지 않으므로 no-op 반환.
+        // test 가 close 동작이 purge_scope 를 호출해도 panic 하지 않도록 한다.
+        Ok(PurgeStats {
+            regular: 0,
+            secret: 0,
+        })
     }
 
     fn take_pending_changes(&mut self) -> Vec<MemoryChange> {
