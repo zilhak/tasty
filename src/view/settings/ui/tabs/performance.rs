@@ -18,7 +18,7 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.performance.targeted_pty_polling_desc"))
             .small()
-            .color(egui::Color32::GRAY),
+            .color(th.subtext0),
     );
     ui.add_space(8.0);
 
@@ -29,7 +29,7 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.performance.scrollback_disk_swap_desc"))
             .small()
-            .color(egui::Color32::GRAY),
+            .color(th.subtext0),
     );
     ui.add_space(8.0);
 
@@ -40,6 +40,6 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.performance.lazy_pty_init_desc"))
             .small()
-            .color(egui::Color32::GRAY),
+            .color(th.subtext0),
     );
 }
