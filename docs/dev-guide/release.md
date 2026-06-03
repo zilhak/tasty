@@ -24,6 +24,33 @@ version = "0.3.1"  # 패치 버전 +1
 3. `crates/tasty-plugin-protocol/CHANGELOG.md`에 schema 관련 변경이 있었다면 동일 처리.
 4. break/deprecation 항목이 있는지 한 번 더 확인. 분류 기준은 [`ipc-stability.md`](ipc-stability.md).
 
+### 패치 promotion 예시 (0.7.x)
+
+0.7.x 패치는 *fix 만* 포함한다 (Conventional Commits 의 `fix:`). 새 메서드 / break /
+`Cargo.toml` major 변경은 모두 minor 또는 major 로.
+
+CHANGELOG.md 의 변환 예 — 한 PR 로 처리:
+
+```diff
+-## [Unreleased]
+-
+-- `fix(resize)`: 터미널 그리드 재계산 누락
+-
+-## [0.7.0] - 2026-06-04
++## [Unreleased]
++
++(no changes yet)
++
++## [0.7.1] - 2026-06-12
++
++### Fixed
++- `fix(resize)`: 터미널 그리드 재계산 누락
++
++## [0.7.0] - 2026-06-04
+```
+
+`crates/tasty-plugin-protocol/CHANGELOG.md` 에 schema 변경이 *없으면* 본 파일은 건드리지 않는다 (빈 `[Unreleased]` 그대로).
+
 ## 2. 커밋 작성
 
 `Cargo.toml` + `Cargo.lock`을 함께 커밋한다. **커밋 body에 체인지로그를 작성**한다.
