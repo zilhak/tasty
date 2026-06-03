@@ -436,7 +436,24 @@ impl App {
                     .get("force")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                match self.plugin_upgrade_builtins(force) {
+                let restore_removed: Vec<String> = cmd
+                    .request
+                    .params
+                    .get("restore_removed")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let restore_all = cmd
+                    .request
+                    .params
+                    .get("restore_all")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                match self.plugin_upgrade_builtins(force, restore_removed, restore_all) {
                     Ok((report, events)) => {
                         self.cascade_plugin_events(events);
                         match serde_json::to_value(&report) {

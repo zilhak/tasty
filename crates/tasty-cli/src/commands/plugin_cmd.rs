@@ -30,6 +30,14 @@ pub enum PluginCommands {
         /// Overwrite even when installed version >= bundle version.
         #[arg(long)]
         force: bool,
+        /// Restore specific builtins from `removed_builtins` so they become
+        /// eligible for auto-install in the same call. Repeat for multiple ids.
+        #[arg(long = "restore-removed", value_name = "ID")]
+        restore_removed: Vec<String>,
+        /// Restore ALL builtins from `removed_builtins`. Overrides
+        /// `--restore-removed` when both are given.
+        #[arg(long = "restore-removed-all")]
+        restore_all: bool,
     },
     /// Enable a disabled plugin and start it.
     Enable { id: String },

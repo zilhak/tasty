@@ -601,7 +601,12 @@ pub struct BuiltinUpgradeReport {
 /// 실행 중 plugin process 의 binary 가 교체될 수 있다 (POSIX 는 inode 교체로 안전,
 /// Windows 는 sharing violation 가능). 본 함수는 *process 재시작을 수행하지 않는다*
 /// — 새 binary 는 다음 plugin restart (또는 부팅) 후 효과 발생.
-pub fn upgrade_builtins(mgr: &mut PluginManager, force: bool) -> BuiltinUpgradeReport {
+pub fn upgrade_builtins(
+    mgr: &mut PluginManager,
+    force: bool,
+    restore_removed: &[String],
+    restore_all: bool,
+) -> BuiltinUpgradeReport {
     let dest_root = match discovery::plugin_root() {
         Some(p) => p,
         None => {
@@ -619,6 +624,28 @@ pub fn upgrade_builtins(mgr: &mut PluginManager, force: bool) -> BuiltinUpgradeR
     let bundle = bundle_root();
     let mut items = Vec::with_capacity(BUILTINS.len());
     let mut changed_ids: Vec<String> = Vec::new();
+
+    // §2.E.1 의사결정: `restore_all` 이 true 이면 전체 clear (restore_removed 무시).
+    // 그렇지 않으면 명시된 id 만 unmark.
+    let mut removed_cleared = false;
+    if restore_all {
+        if mgr.config.clear_removed_builtins() {
+            removed_cleared = true;
+            tracing::info!("upgrade_builtins: cleared all removed_builtins (restore_all)");
+        }
+    } else {
+        for id in restore_removed {
+            if mgr.config.unmark_builtin_removed(id) {
+                removed_cleared = true;
+                tracing::info!("upgrade_builtins: restored '{id}' from removed_builtins");
+            }
+        }
+    }
+    if removed_cleared {
+        if let Err(e) = mgr.config.save() {
+            tracing::warn!("upgrade_builtins: save plugins.toml after unmark failed: {e}");
+        }
+    }
 
     for spec in BUILTINS {
         let dest = dest_root.join(spec.id);

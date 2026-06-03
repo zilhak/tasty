@@ -10,9 +10,17 @@ pub(super) fn plugin_command_to_method_params(
         PluginCommands::Show { id } => ("plugin.show", serde_json::json!({ "id": id })),
         PluginCommands::Install { path } => ("plugin.install", serde_json::json!({ "path": path })),
         PluginCommands::Remove { id } => ("plugin.remove", serde_json::json!({ "id": id })),
-        PluginCommands::UpgradeBuiltins { force } => (
+        PluginCommands::UpgradeBuiltins {
+            force,
+            restore_removed,
+            restore_all,
+        } => (
             "plugin.upgrade_builtins",
-            serde_json::json!({ "force": force }),
+            serde_json::json!({
+                "force": force,
+                "restore_removed": restore_removed,
+                "restore_all": restore_all,
+            }),
         ),
         PluginCommands::Enable { id } => ("plugin.enable", serde_json::json!({ "id": id })),
         PluginCommands::Disable { id } => ("plugin.disable", serde_json::json!({ "id": id })),

@@ -242,11 +242,13 @@ impl App {
     pub(crate) fn plugin_upgrade_builtins(
         &mut self,
         force: bool,
+        restore_removed: Vec<String>,
+        restore_all: bool,
     ) -> anyhow::Result<(tasty_host_plugin::BuiltinUpgradeReport, Vec<CoreEvent>)> {
         let Some(mgr) = self.plugin_manager.as_mut() else {
             anyhow::bail!("plugin manager not initialized");
         };
-        let report = tasty_host_plugin::upgrade_builtins(mgr, force);
+        let report = tasty_host_plugin::upgrade_builtins(mgr, force, &restore_removed, restore_all);
 
         let mut events = Vec::new();
         for item in &report.items {
