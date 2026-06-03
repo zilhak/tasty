@@ -67,6 +67,9 @@ impl App {
             user_config_path,
         );
         modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
+        if let Some(main) = self.focused_window() {
+            modal.set_update_status(main.state.update_status.clone());
+        }
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately instead of waiting for the event loop.
         // On other platforms, mark_dirty() + request_redraw() is sufficient.

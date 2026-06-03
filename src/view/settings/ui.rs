@@ -67,6 +67,7 @@ enum SettingsTab {
     Accessibility,
     FileHandler,
     Misc,
+    Updates,
 }
 
 /// Persistent state for the settings UI between frames.
@@ -182,6 +183,9 @@ pub fn draw_settings_panel(
     file_format: &FileFormatRegistry,
     file_handler: &FileHandlerRegistry,
     user_config_path: Option<&std::path::Path>,
+    update_status: Option<
+        &std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
+    >,
 ) -> Option<bool> {
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
@@ -280,6 +284,7 @@ pub fn draw_settings_panel(
                 (SettingsTab::Accessibility, t("settings.tab.accessibility")),
                 (SettingsTab::FileHandler, t("settings.tab.file_handler")),
                 (SettingsTab::Misc, t("settings.tab.misc")),
+                (SettingsTab::Updates, t("settings.tab.updates")),
             ];
             for (tab, label) in &tabs {
                 let selected = ui_state.active_tab == *tab;
@@ -340,6 +345,7 @@ pub fn draw_settings_panel(
                         &mut ui_state.misc_sub_tab,
                         &mut ui_state.bashrc_user_draft,
                     ),
+                    SettingsTab::Updates => draw_updates_tab(ui, update_status),
                 });
 
             // 충돌 감지 시 팝업 열기.

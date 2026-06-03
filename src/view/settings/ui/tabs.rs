@@ -10,6 +10,7 @@ mod misc;
 mod notifications;
 mod performance;
 mod terminal;
+mod updates;
 
 pub use accessibility::draw_accessibility_tab;
 pub use appearance::draw_appearance_tab;
@@ -20,3 +21,4 @@ pub use misc::draw_misc_tab;
 pub use notifications::draw_notifications_tab;
 pub use performance::draw_performance_tab;
 pub use terminal::draw_terminal_tab;
+pub use updates::draw_updates_tab;
