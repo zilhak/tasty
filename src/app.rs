@@ -49,6 +49,7 @@ use crate::view::ViewRegistry;
 #[cfg(feature = "gui")]
 use crate::{AppEvent, plugin, state};
 
+#[cfg_attr(not(feature = "gui"), allow(dead_code))]
 pub(crate) struct App {
     /// Phase C — 도메인 본체. 마이그레이션 중에는 빈 골격, sub-step 마다 한 필드씩
     /// `CoreState` 에서 이쪽으로 이동한다.
