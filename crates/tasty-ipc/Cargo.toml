@@ -1,0 +1,20 @@
+[package]
+name = "tasty-ipc"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Tasty IPC wire framing, session, caller-context and method registry"
+repository = "https://github.com/zilhak/tasty"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "sync"] }
+tracing = "0.1"
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+# Phase 2 후 tasty-plugin-manifest 추가 예정 (B.7 Permission 전환 시점)
+
+[lints]
+workspace = true

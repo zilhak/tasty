@@ -1,8 +1,8 @@
 //! IPC dispatcher 가 호스트(Core/AppState) 와 결합하지 않도록 좁힌 trait.
 //!
-//! 임시 거주지 — Phase F.B.4-1 에서 `tasty-ipc::host_port` 로 이동 예정. 본 substep
-//! 단계 (B.0e-1) 는 `caller.rs` / `audit.rs` 가 본 바이너리 `Core` 직접 결합을
-//! `&dyn IpcHostFacade` 로 끊기 위한 trait 모양만 잡는다.
+//! `caller.rs` / `audit.rs` 는 `&dyn IpcHostFacade` 만 받아 호스트 측 Core 직접
+//! 결합을 끊는다. 본 모듈은 그 trait + 보조 enum 의 단일 거주지 — 본 바이너리의
+//! `crate::core::ipc_facade` 가 유일한 impl 제공자.
 
 use std::time::Duration;
 

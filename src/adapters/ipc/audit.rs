@@ -340,7 +340,7 @@ fn top_counts(map: std::collections::BTreeMap<String, u64>, top_n: usize) -> Vec
 /// `record_ipc_call` (telemetry) 와 짝을 이루며 dispatcher 경로의 모든 진입점에서
 /// 호출된다.
 pub fn record(
-    host: &dyn tasty_plugin_protocol::host_port::IpcHostFacade,
+    host: &dyn tasty_ipc::IpcHostFacade,
     caller: &CallerContext,
     method: &str,
     decision: AuditDecision,
@@ -348,7 +348,7 @@ pub fn record(
     workspace_id: Option<u32>,
     seq: u64,
 ) {
-    use tasty_plugin_protocol::host_port::{AuditCallerMarker, AuditDecision as ProtoDecision};
+    use tasty_ipc::{AuditCallerMarker, AuditDecision as ProtoDecision};
 
     let ts_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

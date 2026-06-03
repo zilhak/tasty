@@ -381,14 +381,14 @@ mod tests {
 /// memory store 가 초기화되지 않은 경우: 토큰이 있어도 검증 불가이므로
 /// `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
 pub(crate) fn resolve_caller_from_envelope(
-    host: &dyn tasty_plugin_protocol::host_port::IpcHostFacade,
+    host: &dyn tasty_ipc::IpcHostFacade,
     request: &crate::ipc::protocol::JsonRpcRequest,
 ) -> Result<CallerContext, crate::ipc::protocol::JsonRpcResponse> {
     use std::collections::HashSet;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use tasty_plugin_protocol::host_port::SessionResolution;
+    use tasty_ipc::SessionResolution;
 
     let token_str = match request.session_token.as_deref() {
         None => return Ok(CallerContext::Local),

@@ -3,7 +3,7 @@
 //! Phase F.B.0e-2: IPC dispatcher (caller.rs / audit.rs) 가 본 바이너리 Core 직접
 //! 결합을 끊고 `&dyn IpcHostFacade` 만 받도록 한다. 본 모듈이 그 trait 의 단일 impl.
 
-use tasty_plugin_protocol::host_port::{
+use tasty_ipc::{
     AuditCallerMarker, AuditDecision as ProtoDecision, IpcHostFacade, SessionResolution,
 };
 
