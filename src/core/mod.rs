@@ -25,7 +25,9 @@ pub(crate) use state::CoreState;
 
 use std::sync::{Arc, Mutex};
 
-use intent::{CoreEvent, DomainIntent, ProcessPtyOutcome};
+#[cfg(feature = "gui")]
+use intent::ProcessPtyOutcome;
+use intent::{CoreEvent, DomainIntent};
 use tasty_memory::MemoryStorage;
 use tasty_presets::{PresetStorage, PresetStore};
 use tasty_settings::SettingsStorage;
@@ -247,6 +249,7 @@ impl Core {
     /// Memory port 의 Arc clone. AppState 등 *Core 인자가 cascade 로 도달하지
     /// 못하는 표면* (UI popup draw_fn, state cleanup 등) 에 inject 해 동일
     /// allocation 의 port 를 공유시킨다.
+    #[cfg(feature = "gui")]
     pub(crate) fn memory_arc(
         &self,
     ) -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
@@ -275,6 +278,7 @@ impl Core {
 
     /// Notification sound player port 참조. cascade 가 `settings.notification.sound`
     /// gate 통과 시 `play()` 호출.
+    #[cfg(feature = "gui")]
     pub(crate) fn sound_player(&self) -> &Arc<dyn NotificationSoundPlayer> {
         &self.sound_player
     }
@@ -282,11 +286,13 @@ impl Core {
     // ─── Clipboard (외부 시스템 clipboard) ───
 
     /// 시스템 clipboard 에 text 쓰기. 옛 `arboard::Clipboard::new().set_text` 의 Core 진입점.
+    #[cfg(feature = "gui")]
     pub(crate) fn clipboard_write_text(&self, text: &str) -> anyhow::Result<()> {
         self.clipboard.write_text(text)
     }
 
     /// 시스템 clipboard 에 image 쓰기. 옛 `arboard::Clipboard::new().set_image` 의 Core 진입점.
+    #[cfg(feature = "gui")]
     pub(crate) fn clipboard_write_image(
         &self,
         image: &crate::ports::clipboard::ClipboardImage,
@@ -314,6 +320,7 @@ impl Core {
     /// observer_router (OutputAppended) / command_index (PromptBoundary) /
     /// 시스템 clipboard (OSC 52) 의 부수효과는 본 함수가 직접 처리. 나머지
     /// terminal event 는 outcome.events 로 cascade dispatcher 에 전달.
+    #[cfg(feature = "gui")]
     pub(crate) fn process_pty_output(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -326,6 +333,7 @@ impl Core {
 
     /// 모든 workspace 의 모든 terminal 을 drain + 변환. 반환: cascade 가 처리할
     /// CoreEvent 목록 + 어느 surface 든 데이터 drain 했는지.
+    #[cfg(feature = "gui")]
     pub(crate) fn process_all_pty_output(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -338,6 +346,7 @@ impl Core {
     /// `engine.collect_events()` 결과를 CoreEvent 로 변환. observer_router /
     /// command_index / system clipboard 의 *직접 부수효과* 는 본 함수가 처리하고,
     /// cascade 가 필요한 event 만 Vec<CoreEvent> 로 반환.
+    #[cfg(feature = "gui")]
     fn drain_terminal_events(&mut self, engine: &mut crate::core::CoreState) -> Vec<CoreEvent> {
         use tasty_terminal::TerminalEventKind;
         let raw = engine.collect_events();
@@ -387,6 +396,7 @@ impl Core {
 
     /// throttle 적용 PTY resize flush. 옛 `engine.flush_all_pty_resizes()` 의 진입점.
     /// 반환: 여전히 pending 이 남았는지 (redraw 재요청 신호).
+    #[cfg(feature = "gui")]
     pub(crate) fn flush_pty_resizes(engine: &mut crate::core::CoreState) -> bool {
         engine.flush_all_pty_resizes()
     }
@@ -394,6 +404,7 @@ impl Core {
     /// 모든 workspace 의 모든 terminal 을 layout 에 맞춰 resize. 옛
     /// `state.resize_all(engine, ...)` 의 진입점. tab_bar_height 가 AppState 에
     /// 있어 `state` 도 인자로 받는다 (도메인 흡수 후 제거 예정).
+    #[cfg(feature = "gui")]
     pub(crate) fn resize_all_terminals(
         state: &crate::state::AppState,
         engine: &mut crate::core::CoreState,
@@ -423,6 +434,7 @@ impl Core {
     /// busy surface 집합 갱신. 옛 `engine.refresh_busy_surfaces()` 의 진입점.
     /// `AppEvent::BusyPoll` (1Hz 타이머) 에서 호출. 반환: 집합이 변했는지
     /// (window mark_dirty 결정 신호).
+    #[cfg(feature = "gui")]
     pub(crate) fn update_busy_surfaces(engine: &mut crate::core::CoreState) -> bool {
         engine.refresh_busy_surfaces()
     }
