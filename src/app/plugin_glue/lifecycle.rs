@@ -234,6 +234,39 @@ impl App {
         }])
     }
 
+    /// `plugin.upgrade_builtins` IPC handler 의 본문. bundle 기준으로 builtin plugin
+    /// 디렉토리를 재설치하고 디스크에 적용된 항목별 `BuiltinUpgradeAction` 리포트를
+    /// 반환한다. `Upgraded` / `Reinstalled` 항목은 *per-id N 회* `PluginRegistryChange::
+    /// Installed { version }` CoreEvent 를 발화 (verify §0 결정 1·2 반영 — 신 batch
+    /// variant 추가 없이 기존 `Installed` 재사용).
+    pub(crate) fn plugin_upgrade_builtins(
+        &mut self,
+        force: bool,
+    ) -> anyhow::Result<(tasty_host_plugin::BuiltinUpgradeReport, Vec<CoreEvent>)> {
+        let Some(mgr) = self.plugin_manager.as_mut() else {
+            anyhow::bail!("plugin manager not initialized");
+        };
+        let report = tasty_host_plugin::upgrade_builtins(mgr, force);
+
+        let mut events = Vec::new();
+        for item in &report.items {
+            let new_version = match &item.action {
+                tasty_host_plugin::BuiltinUpgradeAction::Upgraded { to, .. } => Some(to.clone()),
+                tasty_host_plugin::BuiltinUpgradeAction::Reinstalled { version } => {
+                    Some(version.clone())
+                }
+                _ => None,
+            };
+            if let Some(version) = new_version {
+                events.push(CoreEvent::PluginRegistryChanged {
+                    plugin_id: item.id.clone(),
+                    change: PluginRegistryChange::Installed { version },
+                });
+            }
+        }
+        Ok((report, events))
+    }
+
     /// `PluginManager::pump` 가 반환한 (plugin_id, version) 쌍 리스트로부터
     /// surface_kind registry 등록 + `registered_plugins.insert` + CoreEvent
     /// (PluginLoaded / PluginSurfaceKindRegistered) 발화 처리. surface_registry

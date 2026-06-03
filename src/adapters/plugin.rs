@@ -18,6 +18,7 @@ pub use tasty_plugin_manifest::{HOST_API_VERSION, Manifest};
 
 pub use tasty_host_plugin::protocol::{AuthMessage, PluginEvent, PluginRequest, PluginResponse};
 pub use tasty_host_plugin::{
-    HostListener, PluginManager, PluginPackage, PluginProcess, PluginsConfig, bundle_root,
-    discover, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed, plugin_root,
+    BuiltinUpgradeAction, BuiltinUpgradeItem, BuiltinUpgradeReport, HostListener, PluginManager,
+    PluginPackage, PluginProcess, PluginsConfig, bundle_root, discover, install_builtins_if_needed,
+    is_builtin_plugin, mark_builtin_removed, plugin_root, upgrade_builtins,
 };

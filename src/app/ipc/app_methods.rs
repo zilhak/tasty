@@ -429,6 +429,30 @@ impl App {
                     &cmd.request.params,
                 )
             }
+            "plugin.upgrade_builtins" => {
+                let force = cmd
+                    .request
+                    .params
+                    .get("force")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                match self.plugin_upgrade_builtins(force) {
+                    Ok((report, events)) => {
+                        self.cascade_plugin_events(events);
+                        match serde_json::to_value(&report) {
+                            Ok(v) => host_ipc::protocol::JsonRpcResponse::success(id, v),
+                            Err(e) => host_ipc::protocol::JsonRpcResponse::error(
+                                id,
+                                -32603,
+                                &format!("serialize report failed: {e}"),
+                            ),
+                        }
+                    }
+                    Err(e) => {
+                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
+                    }
+                }
+            }
             "plugin.audit_query" => {
                 host_ipc::handler::audit::handle_query(&self.core, id, &cmd.request.params)
             }
@@ -473,6 +497,7 @@ impl App {
                 | "plugin.disable"
                 | "plugin.grant"
                 | "plugin.revoke"
+                | "plugin.upgrade_builtins"
         );
         send_response(&cmd.response_tx, response);
         if dirty {
