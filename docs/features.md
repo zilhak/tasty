@@ -607,6 +607,8 @@ terminal 의 시작 명령어는 PTY 가 ready 된 직후 stdin 에 한 줄로 �
 | `agent.task_cancel` | AgentManage | 명시적 취소. downstream cascade |
 | `agent.task_retry` | AgentManage | Failed/Cancelled/Skipped/Unknown task 재시작. `reset_downstream?`로 downstream도 Waiting으로 |
 | `agent.task_graph` | AgentManage | DAG 출력. `format`=`json` (기본) 또는 `dot` (Graphviz) |
+| `agent.task_run` | AgentManage | Workspace runner thread 시작/중단/상태. `action` ∈ {start, stop, status}. 응답: `{running, crashed, ready_count, running_count}`. Phase H.F |
+| `agent.task_set_result` | AgentManage | 외부/수동 task 의 terminal 결과 보고. `state` ∈ {succeeded, failed}, `output?`/`error?`/`exit_code?`. Phase H.F |
 
 ### CLI
 
@@ -618,11 +620,25 @@ tasty agent task-await  --workspace-id <id> --id <T>
 tasty agent task-cancel --workspace-id <id> --id <T>
 tasty agent task-retry  --workspace-id <id> --id <T> [--reset-downstream]
 tasty agent task-graph  --workspace-id <id> [--format json|dot]
+tasty agent task-run    --workspace-id <id> [--action start|stop|status]
+tasty agent task-set-result --workspace-id <id> --id <T> --state succeeded|failed [--output @out.json] [--error <msg>] [--exit-code <n>]
 ```
 
 `--command`/`--metadata`는 인라인 JSON 또는 `@path` (파일 로드). `--on-failure fallback:<task_id>`처럼 `kind`만 단축 표기.
 
 본 sub-phase는 **state 머신 + 영속 + IPC/CLI 표면**만 책임진다. `Ready` task를 실제로 실행하는 스케줄러, blocking `task_await`, reducer 실행, lease/rate-limit는 후속 sub-phase에서 추가된다.
+
+### Task runner (Phase H.F)
+
+**executor 루프** — `Ready` task 를 자동 dispatch 하고 `Running` task 의 완료를 polling 으로 감지해 state 를 진행시키는 host 측 thread. workspace 1개당 1개, 500ms tick. 상세: [dev-guide/agent-runner.md](dev-guide/agent-runner.md).
+
+- `TaskExecutor` trait (`tasty-agent::runner`) — pure 로직. `dispatch` (비차단) + `poll` (1tick) 두 메서드. host 가 `HostExecutor` 로 구현.
+- `HostExecutor` (`src/core/agent/runner_host.rs`) — `ClaudeSpawn` → `claude.spawn` 동기 IPC + `claude.wait` polling. `Run` → `std::process::Command` + `try_wait`. `Custom` → host IPC 동기 dispatch. `Reduce` → 즉시 collect + `reduce_with_custom`.
+- `RunnerRegistry` (`src/core/agent/runner_thread.rs`) — workspace 별 thread 의 start/stop/status. 중복 start no-op (idempotent). panic 시 `catch_unwind` 흡수 + crashed 마킹.
+- `HostIpcInjector` (`src/app/ipc/host_call.rs`) — off-main thread 가 plugin IPC 메서드를 동기 호출하는 통로. `IpcCommand` 를 App 큐에 직접 push + `IpcWaker` 깨움 + `sync_channel(1)` `recv_timeout(5s)`.
+- `crates/tasty-agent/src/platform/process_alive.rs` — cross-platform pid liveness probe (Unix `kill(pid, 0)` / Windows `OpenProcess + GetExitCodeProcess`).
+
+handle 은 **runner thread 메모리에만** 보관 — 호스트 재시작 후 Running 잔여 task 는 사용자 `task-retry` 필요. barrier/semaphore 통합, blocking `task_await`, 동시성 제어 (semaphore 폭주 방지) 는 후속 phase.
 
 ### Barrier / Semaphore primitive (Phase 5.2)
 
