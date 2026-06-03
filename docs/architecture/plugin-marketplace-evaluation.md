@@ -200,3 +200,56 @@ FFI 부담은 모두 0 (host-side 만 추가). 비용 차이는 *운영* 과 *�
 이 규칙은 1.4 의 validator 가 강제하지 않으므로, Git tap 도입 시점에 *별도 메커니즘*
 (예: tap index 의 매핑표) 또는 *컨벤션 강제* 양자택일이 필요하다. 본 평가 시점에서는
 *추론 규칙 도입 시점에 결정* 으로 미룬다.
+
+## 3. 설치 flow
+
+### 3.1 목표 flow — `tasty plugin install <id>`
+
+현재 (§1.2) 의 `tasty plugin install <path>` 가 *path → id* 인 반면, marketplace
+도입 후의 목표 flow 는 *id 만으로 설치*:
+
+```
+tasty plugin install <id>
+  ↓
+1. index fetch          # registry 에서 <id> manifest 조회
+2. tarball / git clone  # registry 가 알려준 source URL
+3. dependency 해결       # 1.0 에는 plugin → plugin 의존성 미지원 (skip)
+4. 권한 grant prompt    # 사용자에게 manifest.permissions 표시 + confirm
+                         # — 현재 auto-grant (§1.2 7 단계) 와 다른 점
+5. 기존 plugin_install() # 검증 + copy + register + enable (lifecycle.rs:58 재사용)
+```
+
+핵심 변화는 **1·2·4** 의 3 단계 추가. 5 의 기존 흐름은 그대로 재사용.
+
+### 3.2 권한 grant prompt 의 형식
+
+현재 동작 (auto-grant) 을 **install 시점 항상 prompt** 로 전환:
+
+- TUI / GUI / CLI `--yes` 3 분기.
+- CLI 단독 실행 (예: e2e, CI) 에서는 `--yes` 명시 시 auto-grant. 미명시 시 reject.
+- GUI 동시 실행 중이면 popup (PopupDef 패턴) 로 fallback.
+
+이는 *비-trusted plugin 일상화* (sandbox §2.4 의 4번째 trigger) 에 정합하는 변경이며,
+auto-grant 를 *유지하면서 marketplace 만 도입* 하는 시나리오는 **거부** 한다. 둘은 묶음.
+
+### 3.3 의존성 해결
+
+1.0 의 hook (`ext:<plugin_id>`) 모델은 *의존성이 아니라 hook* — host 가 lazy 평가하므로
+target plugin 이 부재해도 동작은 가능 (효과만 사라짐).
+
+marketplace 도입 시 *진짜 의존성* (plugin A 의 동작에 plugin B 가 필요) 도입 여부는:
+
+- 권고: **보류**. 1.0 의 hook 모델 유지. marketplace 의 install 단계에서 `ext:<id>` 의
+  target 부재 시 warning + manual install 안내만.
+- 추가 가치 대비 schema 복잡도 (semver tree 해결, 충돌, 순환) 가 크다.
+
+### 3.4 update / uninstall
+
+- **update**: `tasty plugin update <id>` 신설.
+  - 현재는 `tasty plugin upgrade-builtins` 만 존재 (host 와 함께 배포되는 builtin
+    재설치). marketplace 출처 plugin 은 *별도 경로* 가 필요.
+  - 동작: version 비교 → 새 tarball 받음 → 기존 폴더 atomic swap → snapshot/restore
+    체인 (이미 hot reload 메커니즘 일부 존재, `plugin-development.md` 5절).
+  - 권한 재-grant 정책: manifest.permissions 가 *추가* 된 경우 prompt 재발. *동일 또는
+    감소* 시 silent.
+- **uninstall**: 현 `tasty plugin remove <id>` 그대로 재사용. marketplace 별도 변경 없음.
