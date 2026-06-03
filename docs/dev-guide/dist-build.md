@@ -1,9 +1,37 @@
-# Manual dist 빌드 시나리오
+# dist 빌드 명령 카탈로그
 
 [`release.md`](release.md) 는 *태그 push → GitHub Actions* 워크플로를 다룬다.
-본 문서는 **로컬 머신에서 dist 산출물을 수동으로 빌드** 할 때의 명령 카탈로그다.
+본 문서는 **로컬 머신에서 dist 산출물을 빌드** 할 때의 명령 카탈로그다.
 
 빌드 프로필 자체의 정의 (LTO, strip 등) 는 [`build.md`](build.md) 의 "빌드 프로필" 섹션을 참조.
+
+## 빠른 시작 (Justfile)
+
+호스트 OS 자동 감지:
+
+```bash
+just dist           # 호스트 OS 의 dist 빌드 실행 (자동 sanity check + SHA256SUMS 생성)
+just dist-clean     # dist/ 정리
+just dist-verify    # SHA256SUMS 재검증
+```
+
+플랫폼 명시:
+
+```bash
+just dist-macos
+just dist-linux
+just dist-windows
+```
+
+Linux 사전 도구 (`cargo-deb`, `cargo-generate-rpm`, `linuxdeploy`):
+
+```bash
+just dist-setup-linux   # 1회 실행
+```
+
+`just` 미설치: `cargo install just`.
+
+> Windows Git Bash 가 아닌 일반 PowerShell 환경에서는 `just dist` 자동 감지가 동작하지 않을 수 있다. `just dist-windows` 명시 권장.
 
 ## 공통 사전 조건
 
@@ -36,19 +64,19 @@ cargo build --profile dist
 - `dist/Tasty.app/Contents/Resources/icon.icns`
 - `dist/Tasty-{version}-macos.dmg` (~18 MB)
 
-### Sanity check
+### Sanity check **(스크립트가 자동 수행)**
+
+`build-macos-dmg.sh` 마지막 단계에서 자동 검증한다:
+- `tasty --version` 호출 성공
+- `file` 출력에 `Mach-O` 포함
+- `plutil` 로 `CFBundleVersion` == `Cargo.toml` 의 `version`
+- DMG 파일 존재
+
+검증 실패 시 빌드가 fail 한다. 추가 수동 검증이 필요한 경우:
 
 ```bash
-# 버전 출력 (clap 기본 형식: "tasty {version}")
-dist/Tasty.app/Contents/MacOS/tasty --version
-
-# 바이너리 아키텍처 확인
+# 바이너리 아키텍처 상세 확인 (arm64 / x86_64 / universal)
 file dist/Tasty.app/Contents/MacOS/tasty
-# 기대: Mach-O 64-bit executable arm64
-
-# Info.plist 버전과 Cargo.toml 버전 비교
-plutil -extract CFBundleVersion raw dist/Tasty.app/Contents/Info.plist
-grep '^version' Cargo.toml | head -1
 ```
 
 `dist` 는 `release` 를 상속하여 `strip = true` 가 적용된다. 산출물 바이너리에서 `nm` 출력이 거의 비어 보이는 것은 정상 (디버그 심볼 제거).
@@ -69,13 +97,17 @@ spctl -a -t exec dist/Tasty.app
 
 **서명 / 공증 / 배포는 본 문서의 범위 외다.** Apple Developer ID 인증서 + app-specific password 가 필요하며, 절차는 별도 (운영 문서 또는 [`release.md`](release.md) 의 GitHub Actions 잡) 에서 다룬다.
 
-### 산출물 무결성 (선택)
+### 산출물 무결성 (자동 생성됨)
 
-동일 버전 재빌드 시 silent overwrite 가 발생한다. 재현성을 확인하려면 hash 를 보존:
+빌드 스크립트가 `dist/SHA256SUMS-macos.txt` 를 자동 생성한다. 재검증:
 
 ```bash
-shasum -a 256 dist/Tasty-*-macos.dmg | tee dist/SHA256SUMS-macos.txt
+just dist-verify
+# 또는
+(cd dist && shasum -a 256 --check SHA256SUMS-macos.txt)
 ```
+
+동일 버전 재빌드 시 `SHA256SUMS-macos.txt` 도 silent overwrite 된다.
 
 ### Out-of-scope
 
@@ -111,13 +143,20 @@ cd C:\path\to\tasty
 
 - `dist\tasty-{version}-windows-x64.zip`
 - `dist\tasty-{version}-windows-x64.msi`
+- `dist\SHA256SUMS-windows.txt` (자동 생성)
 
-### 사용자 검증 체크리스트
+### Sanity check **(스크립트가 자동 수행)**
+
+`build-windows.ps1` 마지막 단계에서 자동 검증한다:
+- ZIP 풀어서 `tasty.exe --version` 호출 성공
+- MSI 파일 존재 확인 (`-SkipMsi` 미지정 시)
+
+### 사용자 검증 체크리스트 (추가 수동 검증)
 
 - [ ] `cargo build --profile dist` 가 warning 0 으로 통과
-- [ ] `dist\tasty-*-windows-x64.zip` 생성 + 내부 `tasty.exe` 실행 가능
 - [ ] `dist\tasty-*-windows-x64.msi` 설치 → 시작 메뉴 바로가기 생성 → 제어판에서 제거 가능
 - [ ] MSI 의 UpgradeCode 가 `722A590A-...` 로 유지 (`wix/main.wxs` 변경 0)
+- [ ] `dist\SHA256SUMS-windows.txt` 생성 + 사용자 검증
 
 검증 결과는 본 문서의 별도 commit 으로 반영한다.
 
@@ -126,6 +165,12 @@ cd C:\path\to\tasty
 > **사용자 검증 대기.** Claude 작성 환경 (Darwin) 에서는 직접 실행 불가.
 
 ### 사전 도구 (1회 설치)
+
+```bash
+just dist-setup-linux
+```
+
+또는 수동:
 
 ```bash
 sudo apt install cmake pkg-config libfreetype6-dev libfontconfig1-dev
@@ -152,13 +197,21 @@ cd /path/to/tasty
 - `dist/tasty_{version}-1_{amd64|arm64}.deb`
 - `dist/tasty-{version}-1.{x86_64|aarch64}.rpm`
 - `dist/Tasty-{version}-{x86_64|aarch64}.AppImage` (~83 MB)
+- `dist/SHA256SUMS-linux-{x64|arm64}.txt` (자동 생성)
 
-### 사용자 검증 체크리스트
+### Sanity check **(스크립트가 자동 수행)**
 
-- [ ] 4 종 산출물 모두 생성
-- [ ] tar.gz 압축 풀고 `./tasty --version` 동작
-- [ ] AppImage 실행 권한 부여 후 `./Tasty-*.AppImage --version` 동작
+`build-linux.sh` 마지막 단계에서 자동 검증한다:
+- tar.gz 풀어서 `tasty --version` 호출 성공
+- `dpkg-deb -I` 로 deb 메타 확인
+- `rpm -qpi` 로 rpm 메타 확인 (`rpm` 명령 가용 시)
+- AppImage 가 ELF 바이너리인지 확인 (실행은 하지 않음 — GUI 초기화 hang 회피)
+
+### 사용자 검증 체크리스트 (추가 수동 검증)
+
+- [ ] AppImage 실행 권한 부여 후 `./Tasty-*.AppImage --version` 동작 (GUI 환경)
 - [ ] `dpkg -i` 또는 `rpm -i` 설치 → `which tasty` → 제거 가능
+- [ ] `(cd dist && sha256sum --check SHA256SUMS-linux-{x64|arm64}.txt)` 통과
 
 검증 결과는 본 문서의 별도 commit 으로 반영한다.
 
