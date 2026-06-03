@@ -71,11 +71,10 @@ fn close_tab(core: &mut Core, state: &mut AppState, engine: &mut CoreState, tab_
             cleanup_targets,
             ..
         } = ev
+            && closed
         {
-            if closed {
-                for (sid, pid) in cleanup_targets {
-                    state.cleanup_surface(engine, sid, pid);
-                }
+            for (sid, pid) in cleanup_targets {
+                state.cleanup_surface(engine, sid, pid);
             }
         }
     }

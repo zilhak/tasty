@@ -44,7 +44,7 @@ impl App {
                     Err(e) => host_ipc::protocol::JsonRpcResponse::error(
                         resp_id,
                         -32603,
-                        &format!("lua reload failed: {e}"),
+                        format!("lua reload failed: {e}"),
                     ),
                 },
             };
@@ -218,9 +218,7 @@ impl App {
                             serde_json::json!({ "installed": installed_id }),
                         )
                     }
-                    Err(e) => {
-                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
-                    }
+                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
             }
             "plugin.remove" => {
@@ -246,9 +244,7 @@ impl App {
                             serde_json::json!({ "removed": pid_for_response }),
                         )
                     }
-                    Err(e) => {
-                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
-                    }
+                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
             }
             "plugin.enable" => {
@@ -277,7 +273,7 @@ impl App {
                     Err(e) => host_ipc::protocol::JsonRpcResponse::error(
                         id,
                         -32000,
-                        &format!("enable failed: {e}"),
+                        format!("enable failed: {e}"),
                     ),
                 }
             }
@@ -307,7 +303,7 @@ impl App {
                     Err(e) => host_ipc::protocol::JsonRpcResponse::error(
                         id,
                         -32000,
-                        &format!("disable failed: {e}"),
+                        format!("disable failed: {e}"),
                     ),
                 }
             }
@@ -361,9 +357,7 @@ impl App {
                             }),
                         )
                     }
-                    Err(e) => {
-                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
-                    }
+                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
             }
             "plugin.revoke" => {
@@ -411,9 +405,7 @@ impl App {
                             }),
                         )
                     }
-                    Err(e) => {
-                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
-                    }
+                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
             }
             "plugin.grant_agent_permission" => {

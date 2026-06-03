@@ -306,39 +306,39 @@ pub fn handle_vi_key(
     modifiers: ModifiersState,
 ) -> ViKeyOutcome {
     // 1) mini-prompt 가 열린 경우: 검색 buffer 입력에 우선 라우팅.
-    if let Some(search) = vi.search.as_mut() {
-        if let Some(buf) = search.buffer.as_mut() {
-            match key.as_ref() {
-                Key::Named(NamedKey::Escape) => {
+    if let Some(search) = vi.search.as_mut()
+        && let Some(buf) = search.buffer.as_mut()
+    {
+        match key.as_ref() {
+            Key::Named(NamedKey::Escape) => {
+                vi.search = None;
+                return ViKeyOutcome::Consumed;
+            }
+            Key::Named(NamedKey::Enter) => {
+                if buf.is_empty() {
                     vi.search = None;
                     return ViKeyOutcome::Consumed;
                 }
-                Key::Named(NamedKey::Enter) => {
-                    if buf.is_empty() {
-                        vi.search = None;
-                        return ViKeyOutcome::Consumed;
-                    }
-                    let query = std::mem::take(buf);
-                    let direction = search.direction;
-                    search.buffer = None;
-                    return ViKeyOutcome::SearchCommit { query, direction };
-                }
-                Key::Named(NamedKey::Backspace) => {
-                    buf.pop();
-                    return ViKeyOutcome::Consumed;
-                }
-                _ => {
-                    if let Key::Character(s) = key {
-                        // 인쇄 가능한 ASCII / 유니코드 누적.
-                        for ch in s.chars() {
-                            if !ch.is_control() {
-                                buf.push(ch);
-                            }
+                let query = std::mem::take(buf);
+                let direction = search.direction;
+                search.buffer = None;
+                return ViKeyOutcome::SearchCommit { query, direction };
+            }
+            Key::Named(NamedKey::Backspace) => {
+                buf.pop();
+                return ViKeyOutcome::Consumed;
+            }
+            _ => {
+                if let Key::Character(s) = key {
+                    // 인쇄 가능한 ASCII / 유니코드 누적.
+                    for ch in s.chars() {
+                        if !ch.is_control() {
+                            buf.push(ch);
                         }
-                        return ViKeyOutcome::Consumed;
                     }
                     return ViKeyOutcome::Consumed;
                 }
+                return ViKeyOutcome::Consumed;
             }
         }
     }
@@ -351,20 +351,19 @@ pub fn handle_vi_key(
     let ctrl = modifiers.control_key();
 
     // 2) Ctrl+v → block visual.
-    if ctrl {
-        if let Key::Character(c) = key {
-            if c.eq_ignore_ascii_case("v") {
-                if vi.visual == ViCopyVisual::Block {
-                    vi.visual = ViCopyVisual::None;
-                    vi.anchor = None;
-                } else {
-                    vi.visual = ViCopyVisual::Block;
-                    vi.anchor = Some(vi.cursor);
-                }
-                vi.count_buf.clear();
-                return ViKeyOutcome::Moved;
-            }
+    if ctrl
+        && let Key::Character(c) = key
+        && c.eq_ignore_ascii_case("v")
+    {
+        if vi.visual == ViCopyVisual::Block {
+            vi.visual = ViCopyVisual::None;
+            vi.anchor = None;
+        } else {
+            vi.visual = ViCopyVisual::Block;
+            vi.anchor = Some(vi.cursor);
         }
+        vi.count_buf.clear();
+        return ViKeyOutcome::Moved;
     }
 
     // 3) 일반 키.
@@ -376,7 +375,7 @@ pub fn handle_vi_key(
                 vi.count_buf.clear();
                 return ViKeyOutcome::Moved;
             }
-            return ViKeyOutcome::Exit;
+            ViKeyOutcome::Exit
         }
         Key::Character(s) => {
             let ch = match s.chars().next() {

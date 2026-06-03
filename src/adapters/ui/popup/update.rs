@@ -64,10 +64,10 @@ pub fn draw_update_popup(
                 ui.separator();
                 let url = info.html_url.clone();
                 ui.horizontal(|ui| {
-                    if ui.button(t("update.open_release")).clicked() {
-                        if let Err(e) = webbrowser::open(&url) {
-                            tracing::warn!("update popup: open browser failed: {e}");
-                        }
+                    if ui.button(t("update.open_release")).clicked()
+                        && let Err(e) = webbrowser::open(&url)
+                    {
+                        tracing::warn!("update popup: open browser failed: {e}");
                     }
                     if ui.button(t("update.check_now")).clicked() {
                         trigger_check(state);

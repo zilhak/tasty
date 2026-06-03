@@ -151,15 +151,14 @@ pub fn handle_tab_close(
     };
 
     // Prevent closing a tab that contains the caller — handler 잔존 (caller 정보 params).
-    if let Some(caller) = super::caller_surface_id(params) {
-        if let Some(pane_id) = engine.find_pane_for_tab(tab_id) {
-            if super::surface_belongs_to_pane(engine, caller, pane_id) {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    "Cannot close a tab that contains your own surface. Use 'tasty close self' instead.",
-                );
-            }
-        }
+    if let Some(caller) = super::caller_surface_id(params)
+        && let Some(pane_id) = engine.find_pane_for_tab(tab_id)
+        && super::surface_belongs_to_pane(engine, caller, pane_id)
+    {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Cannot close a tab that contains your own surface. Use 'tasty close self' instead.",
+        );
     }
 
     let intent = crate::core::intent::DomainIntent::CloseTab { tab_id };

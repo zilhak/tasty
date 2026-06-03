@@ -32,10 +32,9 @@ impl PluginManager {
                 let plugin_id = pkg.manifest.id.clone();
                 pkg.manifest.contributes.popup.iter().filter_map(move |p| {
                     if let tasty_plugin_manifest::PopupTrigger::Event { event_key: ek } = &p.trigger
+                        && ek == event_key
                     {
-                        if ek == event_key {
-                            return Some((plugin_id.clone(), p.id.clone()));
-                        }
+                        return Some((plugin_id.clone(), p.id.clone()));
                     }
                     None
                 })
@@ -265,10 +264,10 @@ impl PluginManager {
         for d in dispatches {
             let mut req = crate::event_bus::EventBus::build_dispatch_request(&d);
             req.id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-            if let Some(proc) = self.processes.get(&d.plugin_id) {
-                if let Err(e) = proc.req_tx.send(req) {
-                    tracing::warn!("plugin '{}' event.dispatch send failed: {}", d.plugin_id, e);
-                }
+            if let Some(proc) = self.processes.get(&d.plugin_id)
+                && let Err(e) = proc.req_tx.send(req)
+            {
+                tracing::warn!("plugin '{}' event.dispatch send failed: {}", d.plugin_id, e);
             }
         }
     }

@@ -389,10 +389,10 @@ fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
         }
         let mut hex = color.to_hex();
         let response = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(80.0));
-        if response.changed() {
-            if let Some(parsed) = HexColor::from_hex(&hex) {
-                *color = parsed;
-            }
+        if response.changed()
+            && let Some(parsed) = HexColor::from_hex(&hex)
+        {
+            *color = parsed;
         }
     });
     ui.end_row();
@@ -466,13 +466,12 @@ fn font_family_picker(
                 ui.separator();
 
                 let filter_lower = filter.to_lowercase();
-                if filter_lower.is_empty() || "monospace".contains(&filter_lower) {
-                    if ui
+                if (filter_lower.is_empty() || "monospace".contains(&filter_lower))
+                    && ui
                         .selectable_label(value.is_empty(), "monospace (default)")
                         .clicked()
-                    {
-                        value.clear();
-                    }
+                {
+                    value.clear();
                 }
 
                 if let Some(families) = font_families {

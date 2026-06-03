@@ -221,12 +221,11 @@ impl Drop for TcpIpcServer {
         self.shutdown.store(true, Ordering::Relaxed);
         // Clean up port file. 파일이 이미 사라졌거나 권한이 없는 케이스도 정상 종료
         // 흐름에서 발생 가능 — trace 레벨로만 기록한다.
-        if let Some(path) = self.effective_port_file_path() {
-            if let Err(e) = std::fs::remove_file(&path) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::trace!("port file {} remove failed: {e}", path.display());
-                }
-            }
+        if let Some(path) = self.effective_port_file_path()
+            && let Err(e) = std::fs::remove_file(&path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::trace!("port file {} remove failed: {e}", path.display());
         }
     }
 }

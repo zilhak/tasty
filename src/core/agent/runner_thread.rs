@@ -54,12 +54,12 @@ impl RunnerRegistry {
     /// 이미 실행 중이면 false (idempotent — 중복 start 는 no-op).
     pub fn start(&self, ctx: RunnerContext, workspace_id: u32) -> bool {
         let mut threads = self.threads.lock().expect("RunnerRegistry poisoned");
-        if let Some(ctrl) = threads.get(&workspace_id) {
-            if !ctrl.crashed.load(Ordering::Relaxed) {
-                return false;
-            }
-            // crashed 인 경우 정리 후 재시작 허용.
+        if let Some(ctrl) = threads.get(&workspace_id)
+            && !ctrl.crashed.load(Ordering::Relaxed)
+        {
+            return false;
         }
+        // crashed 인 경우 정리 후 재시작 허용.
         let (tx, rx) = mpsc::channel::<()>();
         let crashed = Arc::new(AtomicBool::new(false));
         let crashed_thread = crashed.clone();

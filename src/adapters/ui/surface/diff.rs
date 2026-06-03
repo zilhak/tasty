@@ -42,13 +42,12 @@ pub fn draw_diff(ui: &mut egui::Ui, panel: &DiffPanel) -> Option<DiffAction> {
                 {
                     action = Some(DiffAction::Reject);
                 }
-                if let Some(cmd) = panel.apply_action.as_ref() {
-                    if ui
+                if let Some(cmd) = panel.apply_action.as_ref()
+                    && ui
                         .button(crate::i18n::t("diff.button.apply").to_string())
                         .clicked()
-                    {
-                        action = Some(DiffAction::Apply(cmd.clone()));
-                    }
+                {
+                    action = Some(DiffAction::Apply(cmd.clone()));
                 }
             });
         });

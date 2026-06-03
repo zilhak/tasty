@@ -120,14 +120,12 @@ impl MainView {
 
         // Handle selection drag
         if self.left_mouse_down && self.dragging_divider.is_none() {
-            let is_dragging = self.text_selection.as_ref().map_or(false, |s| s.dragging);
-            if is_dragging {
-                if let Some((point, _)) = self.mouse_to_grid(x, y, &terminal_rect) {
-                    if let Some(sel) = &mut self.text_selection {
-                        sel.cursor = point;
-                    }
-                    self.mark_dirty();
+            let is_dragging = self.text_selection.as_ref().is_some_and(|s| s.dragging);
+            if is_dragging && let Some((point, _)) = self.mouse_to_grid(x, y, &terminal_rect) {
+                if let Some(sel) = &mut self.text_selection {
+                    sel.cursor = point;
                 }
+                self.mark_dirty();
             }
         }
 
@@ -206,7 +204,7 @@ impl MainView {
                 if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                     return;
                 }
-                let sf = self.base.gpu.scale_factor() as f32;
+                let sf = self.base.gpu.scale_factor();
                 let engine = &mut self.core_state;
                 let Some(surface_id) =
                     self.state

@@ -55,17 +55,16 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel, view: &mut ImageVie
         }
 
         // Upload draw layer texture if needed
-        if view.is_editing() {
-            if let Some(ref layer) = view.draw_layer {
-                if view.draw_texture.is_none() || view.draw_texture_dirty {
-                    view.draw_texture = Some(ui.ctx().load_texture(
-                        format!("image_draw_{}", panel.id),
-                        layer.clone(),
-                        egui::TextureOptions::LINEAR,
-                    ));
-                    view.draw_texture_dirty = false;
-                }
-            }
+        if view.is_editing()
+            && let Some(ref layer) = view.draw_layer
+            && (view.draw_texture.is_none() || view.draw_texture_dirty)
+        {
+            view.draw_texture = Some(ui.ctx().load_texture(
+                format!("image_draw_{}", panel.id),
+                layer.clone(),
+                egui::TextureOptions::LINEAR,
+            ));
+            view.draw_texture_dirty = false;
         }
 
         // Compute display size with zoom
@@ -95,12 +94,12 @@ pub fn draw_image(ui: &mut egui::Ui, panel: &mut ImagePanel, view: &mut ImageVie
         }
 
         // Draw the overlay layer
-        if view.is_editing() {
-            if let Some(ref tex) = view.draw_texture {
-                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                ui.painter()
-                    .image(tex.id(), img_rect, uv, egui::Color32::WHITE);
-            }
+        if view.is_editing()
+            && let Some(ref tex) = view.draw_texture
+        {
+            let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            ui.painter()
+                .image(tex.id(), img_rect, uv, egui::Color32::WHITE);
         }
 
         // ── Mouse interactions ──

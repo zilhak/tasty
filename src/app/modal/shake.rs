@@ -41,12 +41,12 @@ impl App {
             let origin = shake.origin;
             let modal_id = self.view.active_modal_id;
             self.modal_shake = None;
-            if let Some(id) = modal_id {
-                if let Some(w) = self.view.views.get(&id) {
-                    w.base()
-                        .winit
-                        .set_outer_position(winit::dpi::PhysicalPosition::new(origin.x, origin.y));
-                }
+            if let Some(id) = modal_id
+                && let Some(w) = self.view.views.get(&id)
+            {
+                w.base()
+                    .winit
+                    .set_outer_position(winit::dpi::PhysicalPosition::new(origin.x, origin.y));
             }
             return;
         }
@@ -57,16 +57,16 @@ impl App {
             * (t * SHAKE_FREQUENCY * 2.0 * std::f64::consts::PI).sin()
             * (1.0 - t)) as i32;
         let origin = shake.origin;
-        if let Some(id) = self.view.active_modal_id {
-            if let Some(w) = self.view.views.get(&id) {
-                w.base()
-                    .winit
-                    .set_outer_position(winit::dpi::PhysicalPosition::new(
-                        origin.x + offset_x,
-                        origin.y,
-                    ));
-                w.base().winit.request_redraw();
-            }
+        if let Some(id) = self.view.active_modal_id
+            && let Some(w) = self.view.views.get(&id)
+        {
+            w.base()
+                .winit
+                .set_outer_position(winit::dpi::PhysicalPosition::new(
+                    origin.x + offset_x,
+                    origin.y,
+                ));
+            w.base().winit.request_redraw();
         }
     }
 }

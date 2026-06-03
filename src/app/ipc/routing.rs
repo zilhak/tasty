@@ -15,18 +15,18 @@ impl App {
         // Plugin namespace forward: 메서드가 plugin contribute 한 prefix 에 매칭되면
         // owner plugin 으로 forward. 응답은 plugin 이 줄 때까지 보류되며 다음 tick 에서
         // `plugin_manager.handle_plugin_response` 가 client 에 회신.
-        if let Some(mgr) = self.plugin_manager.as_mut() {
-            if mgr.ipc_namespaces.resolve(&cmd.request.method).is_some() {
-                let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-                mgr.forward_namespace_call(
-                    &cmd.request.method,
-                    cmd.request.params.clone(),
-                    None, // CLI/사용자 호출. plugin → plugin 호출은 별도 경로.
-                    id,
-                    cmd.response_tx.clone(),
-                );
-                return IpcStep::Handled;
-            }
+        if let Some(mgr) = self.plugin_manager.as_mut()
+            && mgr.ipc_namespaces.resolve(&cmd.request.method).is_some()
+        {
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            mgr.forward_namespace_call(
+                &cmd.request.method,
+                cmd.request.params.clone(),
+                None, // CLI/사용자 호출. plugin → plugin 호출은 별도 경로.
+                id,
+                cmd.response_tx.clone(),
+            );
+            return IpcStep::Handled;
         }
 
         // list 류는 모든 engine 결과를 합쳐 반환 (포커스 독립 원칙).

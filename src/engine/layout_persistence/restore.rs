@@ -357,16 +357,15 @@ impl SavedSurface {
                 // 즉시 복원 경로 — scrollback 을 inline 으로 inject. persist_id 는
                 // 새 TerminalSurface 의 필드에 직접 들어가 (surface_meta mirror 없이)
                 // 다음 capture 가 같은 ID 를 재사용한다.
-                if let Some(persist_id) = scrollback_ref.as_deref() {
-                    if let Some(lines) = crate::scrollback_store::read(persist_id) {
-                        if !lines.is_empty() {
-                            terminal.inject_scrollback(lines);
-                            // 새 prompt 가 화면 중간부터 시작하도록 visible 상단
-                            // 절반에 옛 라인을 미리 그려둔다.
-                            let prefill = terminal.rows() / 2;
-                            terminal.prefill_visible_from_scrollback(prefill);
-                        }
-                    }
+                if let Some(persist_id) = scrollback_ref.as_deref()
+                    && let Some(lines) = crate::scrollback_store::read(persist_id)
+                    && !lines.is_empty()
+                {
+                    terminal.inject_scrollback(lines);
+                    // 새 prompt 가 화면 중간부터 시작하도록 visible 상단
+                    // 절반에 옛 라인을 미리 그려둔다.
+                    let prefill = terminal.rows() / 2;
+                    terminal.prefill_visible_from_scrollback(prefill);
                 }
                 engine.terminals.insert(surface_id, terminal);
                 if let Some(pid) = scrollback_ref {

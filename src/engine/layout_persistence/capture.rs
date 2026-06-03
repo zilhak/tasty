@@ -280,10 +280,10 @@ impl SavedSurface {
             };
         }
         let kind = surface.kind().to_string();
-        if let Some(def) = registry.get(&kind) {
-            if let Some(data) = (def.snapshot)(&*surface) {
-                return SavedSurface::Generic { kind, data };
-            }
+        if let Some(def) = registry.get(&kind)
+            && let Some(data) = (def.snapshot)(&*surface)
+        {
+            return SavedSurface::Generic { kind, data };
         }
         // snapshot 함수가 None을 반환했거나 registry에 없는 kind면 Empty로 fallback.
         SavedSurface::Generic {

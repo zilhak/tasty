@@ -80,7 +80,7 @@ fn path_regex() -> &'static Regex {
 /// URL 뒤에 딸려 붙기 쉬운 구두점을 잘라낸다.
 /// 예: "see https://a.com/x." → "https://a.com/x"
 fn trim_trailing_punct(s: &str) -> &str {
-    let trimmed = s.trim_end_matches(|c: char| matches!(c, '.' | ',' | ';' | ':' | '!' | '?'));
+    let trimmed = s.trim_end_matches(['.', ',', ';', ':', '!', '?']);
     // 닫는 괄호는 짝이 맞을 때만 보존.
     let mut end = trimmed.len();
     for (ch, open) in [(')', '('), (']', '['), ('}', '{'), ('>', '<')] {
@@ -111,7 +111,7 @@ pub fn detect_scrollback_line(
     let mut col: usize = 0;
     let mut current: Option<(String, usize, usize)> = None; // (uri, start_col, end_col)
     for (cell_text, attrs) in line {
-        col_of_byte.extend(std::iter::repeat(col).take(cell_text.len()));
+        col_of_byte.extend(std::iter::repeat_n(col, cell_text.len()));
         text.push_str(cell_text);
         let ch = cell_text.chars().next().unwrap_or(' ');
         let width = unicode_width(ch);
@@ -171,7 +171,7 @@ pub fn detect_screen_line(
     for cell_ref in line.visible_cells() {
         let col = cell_ref.cell_index();
         let cell_text = cell_ref.str();
-        col_of_byte.extend(std::iter::repeat(col).take(cell_text.len()));
+        col_of_byte.extend(std::iter::repeat_n(col, cell_text.len()));
         text.push_str(cell_text);
         let ch = cell_text.chars().next().unwrap_or(' ');
         let width = unicode_width(ch);

@@ -143,10 +143,10 @@ pub(crate) fn draw_notification_content_inner(
                         .from_user_menu("notification_panel.mark_read"),
                 );
             }
-            if let Some(ws_id) = jump_to_ws {
-                if let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id) {
-                    state.switch_workspace(engine, idx);
-                }
+            if let Some(ws_id) = jump_to_ws
+                && let Some(idx) = engine.workspaces.iter().position(|ws| ws.id == ws_id)
+            {
+                state.switch_workspace(engine, idx);
             }
         });
 }
@@ -189,13 +189,13 @@ pub fn draw_popups(
     let draw_result = popups.draw(
         ctx,
         &mut |id, ui| {
-            if let Some(def) = crate::adapters::ui::popup::defs::find(id) {
-                if matches!(
+            if let Some(def) = crate::adapters::ui::popup::defs::find(id)
+                && matches!(
                     (def.draw_fn)(ui, state, engine),
                     crate::adapters::ui::PopupAction::Close
-                ) {
-                    dispatch_closed.push(def.id);
-                }
+                )
+            {
+                dispatch_closed.push(def.id);
             }
         },
         Some(&draw_ctx),
@@ -237,13 +237,12 @@ pub fn draw_popups(
         || draw_result
             .closed
             .contains(&crate::adapters::ui::popup::file_handler_picker::PICKER_POPUP_ID);
-    if picker_closed {
-        if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
-            if p.result.is_none() {
-                // X 버튼 등 외부 경로로 닫힘 — Cancelled 로 명시.
-                p.result = Some(crate::state::FileHandlerPickerResult::Cancelled);
-            }
-        }
+    if picker_closed
+        && let Some(p) = state.dialogs.file_handler_picker.as_mut()
+        && p.result.is_none()
+    {
+        // X 버튼 등 외부 경로로 닫힘 — Cancelled 로 명시.
+        p.result = Some(crate::state::FileHandlerPickerResult::Cancelled);
     }
 
     // approval popup: 외부 닫기/X 발생 시 큐 head 만 비운다 (정책상 X 는 본문에서

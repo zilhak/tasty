@@ -86,8 +86,8 @@ pub(super) fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) ->
     // Modifier-only key presses must never trigger any shortcut, regardless of
     // how the binding is spelled. This is the structural guard that prevents
     // "Ctrl alone" from ever matching.
-    if let Key::Named(n) = key {
-        if matches!(
+    if let Key::Named(n) = key
+        && matches!(
             n,
             NamedKey::Control
                 | NamedKey::Shift
@@ -102,9 +102,9 @@ pub(super) fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) ->
                 | NamedKey::ScrollLock
                 | NamedKey::Symbol
                 | NamedKey::SymbolLock
-        ) {
-            return false;
-        }
+        )
+    {
+        return false;
     }
 
     // Check modifiers match exactly.
@@ -142,7 +142,7 @@ pub(super) fn matches_binding(binding: &str, key: &Key, mods: ModifiersState) ->
             // Convert back to the letter for matching.
             if parsed.ctrl && c.len() == 1 {
                 let byte = c.as_bytes()[0];
-                if byte >= 1 && byte <= 26 {
+                if (1..=26).contains(&byte) {
                     let letter = ((byte - 1) + b'a') as char;
                     return letter.to_string() == key_lower;
                 }

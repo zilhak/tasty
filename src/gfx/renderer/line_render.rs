@@ -32,17 +32,17 @@ impl CellRenderer {
         let (mut bg_color, mut fg_color) = compute_cell_colors(attrs, default_bg, default_fg, ansi);
 
         // Selection: override bg color
-        if let Some((sel, sel_bg)) = selection {
-            if crate::selection::is_selected(col_idx, absolute_row, sel) {
-                bg_color = *sel_bg;
-            }
+        if let Some((sel, sel_bg)) = selection
+            && crate::selection::is_selected(col_idx, absolute_row, sel)
+        {
+            bg_color = *sel_bg;
         }
         // Link highlight: override both bg and fg for hovered link spans
-        if let Some(link) = link {
-            if link.covers(col_idx, absolute_row) {
-                bg_color = link.bg;
-                fg_color = link.fg;
-            }
+        if let Some(link) = link
+            && link.covers(col_idx, absolute_row)
+        {
+            bg_color = link.bg;
+            fg_color = link.fg;
         }
         // Search match highlight
         if let Some(sh) = search {
@@ -81,20 +81,21 @@ impl CellRenderer {
 
         let key = GlyphKey { ch, bold, italic };
 
-        if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
-            if entry.width > 0.0 && entry.height > 0.0 {
-                self.glyph_instances.push(GlyphInstance {
-                    pos: [col_idx as f32, row_idx as f32],
-                    viewport_offset: off,
-                    uv_offset: [entry.uv_x, entry.uv_y],
-                    uv_size: [entry.uv_w, entry.uv_h],
-                    fg_color,
-                    glyph_offset: [entry.offset_x, entry.offset_y],
-                    glyph_size: [entry.width, entry.height],
-                    page: entry.page,
-                    _pad: 0,
-                });
-            }
+        if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue)
+            && entry.width > 0.0
+            && entry.height > 0.0
+        {
+            self.glyph_instances.push(GlyphInstance {
+                pos: [col_idx as f32, row_idx as f32],
+                viewport_offset: off,
+                uv_offset: [entry.uv_x, entry.uv_y],
+                uv_size: [entry.uv_w, entry.uv_h],
+                fg_color,
+                glyph_offset: [entry.offset_x, entry.offset_y],
+                glyph_size: [entry.width, entry.height],
+                page: entry.page,
+                _pad: 0,
+            });
         }
     }
 

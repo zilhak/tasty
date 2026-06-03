@@ -47,10 +47,10 @@ pub fn handle(
         }
     };
     for ev in events {
-        if let crate::core::intent::CoreEvent::ClosedItemRestored { restored, kind } = ev {
-            if restored {
-                crate::app::dispatch_domain::cascade_closed_item_restored(state, engine, kind);
-            }
+        if let crate::core::intent::CoreEvent::ClosedItemRestored { restored, kind } = ev
+            && restored
+        {
+            crate::app::dispatch_domain::cascade_closed_item_restored(state, engine, kind);
         }
     }
 }

@@ -59,7 +59,7 @@ fn parse_key_combo(input: &str) -> Option<Vec<u8>> {
 
     if has_ctrl && key.chars().count() == 1 {
         let ch = key.chars().next()?.to_ascii_lowercase();
-        if ch >= 'a' && ch <= 'z' {
+        if ch.is_ascii_lowercase() {
             if has_alt {
                 bytes.push(0x1B);
             }
@@ -271,7 +271,7 @@ pub(crate) fn handle_surface_send_combo(
 
     if has_ctrl && key.len() == 1 {
         let ch = key.chars().next().unwrap().to_ascii_lowercase();
-        if ch >= 'a' && ch <= 'z' {
+        if ch.is_ascii_lowercase() {
             bytes_to_send.push(ch as u8 - b'a' + 1);
         } else if ch == '[' {
             bytes_to_send.push(0x1B);

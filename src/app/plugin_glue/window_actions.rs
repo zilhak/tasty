@@ -112,12 +112,12 @@ impl App {
         self.refresh_tool_registry();
 
         let snapshot = self.snapshot_plugins();
-        if let Some(modal) = self.view.views.get_mut(&modal_id) {
-            if let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsView>() {
-                plugins_window.refresh_snapshot(snapshot);
-                for (msg, kind) in pending_toasts {
-                    plugins_window.push_toast(msg, kind);
-                }
+        if let Some(modal) = self.view.views.get_mut(&modal_id)
+            && let Some(plugins_window) = modal.as_any_mut().downcast_mut::<window::PluginsView>()
+        {
+            plugins_window.refresh_snapshot(snapshot);
+            for (msg, kind) in pending_toasts {
+                plugins_window.push_toast(msg, kind);
             }
         }
     }

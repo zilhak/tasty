@@ -23,6 +23,12 @@ pub struct IdGenerator {
     surface: Arc<std::sync::atomic::AtomicU32>,
 }
 
+impl Default for IdGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IdGenerator {
     pub fn new() -> Self {
         use std::sync::atomic::AtomicU32;
@@ -224,7 +230,7 @@ impl CoreState {
         // Create engine with empty workspaces first; we'll fill them below.
         let mut engine = Self {
             workspaces: Vec::new(),
-            next_ids: shared_ids.unwrap_or_else(IdGenerator::new),
+            next_ids: shared_ids.unwrap_or_default(),
             default_cols: cols,
             default_rows: rows,
             waker: waker.clone(),
@@ -362,10 +368,10 @@ impl CoreState {
     pub fn make_waker(&self, surface_id: u32) -> Waker {
         // targeted_pty_polling이 켜져 있고 factory가 주입되어 있으면 surface별 waker 생성.
         // 그 외에는 CoreState 생성 시 받은 base waker(`TerminalOutput(None)`)를 그대로 공유.
-        if self.settings.performance.targeted_pty_polling {
-            if let Some(factory) = &self.waker_factory {
-                return factory.make_targeted_waker(surface_id);
-            }
+        if self.settings.performance.targeted_pty_polling
+            && let Some(factory) = &self.waker_factory
+        {
+            return factory.make_targeted_waker(surface_id);
         }
         self.waker.clone()
     }

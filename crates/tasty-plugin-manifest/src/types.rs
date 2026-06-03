@@ -698,16 +698,11 @@ pub enum CommandScope {
 ///
 /// TOML 표기: `binding_mode = "independent"` 또는
 /// `binding_mode = "inherit:clipboard.copy"`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum BindingMode {
+    #[default]
     Independent,
     InheritHost(String),
-}
-
-impl Default for BindingMode {
-    fn default() -> Self {
-        BindingMode::Independent
-    }
 }
 
 impl<'de> Deserialize<'de> for BindingMode {

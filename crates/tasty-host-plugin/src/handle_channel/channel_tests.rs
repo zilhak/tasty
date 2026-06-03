@@ -102,7 +102,6 @@ fn send_handle_delivers_fd_via_scm_rights() {
 #[cfg(unix)]
 #[test]
 fn shared_buffer_roundtrip_via_handle_channel() {
-    use std::os::unix::io::AsRawFd;
     use tasty_plugin_protocol::{PixelRect, SharedBufferId};
 
     let (host_raw, plugin_raw) = UnixStream::pair().expect("socketpair");

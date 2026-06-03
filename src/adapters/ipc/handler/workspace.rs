@@ -252,7 +252,7 @@ pub fn handle_workspace_move(
     };
 
     let moved = matches!(
-        events.iter().next(),
+        events.first(),
         Some(crate::core::intent::CoreEvent::WorkspaceMoved { moved: true, .. })
     );
     if moved {

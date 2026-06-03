@@ -82,18 +82,17 @@ impl PopupManager {
         }
 
         // Handle drag start
-        if primary_pressed {
-            if let Some(id) = hovered_title {
-                if hovered_close.is_none() {
-                    if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
-                        popup.dragging = true;
-                        if let Some(pos) = pointer_pos {
-                            popup.drag_offset = pos - popup.pos;
-                        }
-                    }
-                    bring_front = Some(id);
+        if primary_pressed
+            && let Some(id) = hovered_title
+            && hovered_close.is_none()
+        {
+            if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
+                popup.dragging = true;
+                if let Some(pos) = pointer_pos {
+                    popup.drag_offset = pos - popup.pos;
                 }
             }
+            bring_front = Some(id);
         }
 
         // Handle drag move / release
@@ -103,21 +102,19 @@ impl PopupManager {
             }
             if primary_released {
                 popup.dragging = false;
-            } else if primary_down {
-                if let Some(pos) = pointer_pos {
-                    let bounds = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
-                    let new_pos = pos - popup.drag_offset;
-                    popup.pos = egui::pos2(
-                        new_pos.x.clamp(
-                            bounds.min.x,
-                            (bounds.max.x - popup.size.x).max(bounds.min.x),
-                        ),
-                        new_pos.y.clamp(
-                            bounds.min.y,
-                            (bounds.max.y - popup.size.y).max(bounds.min.y),
-                        ),
-                    );
-                }
+            } else if primary_down && let Some(pos) = pointer_pos {
+                let bounds = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
+                let new_pos = pos - popup.drag_offset;
+                popup.pos = egui::pos2(
+                    new_pos.x.clamp(
+                        bounds.min.x,
+                        (bounds.max.x - popup.size.x).max(bounds.min.x),
+                    ),
+                    new_pos.y.clamp(
+                        bounds.min.y,
+                        (bounds.max.y - popup.size.y).max(bounds.min.y),
+                    ),
+                );
             }
         }
 

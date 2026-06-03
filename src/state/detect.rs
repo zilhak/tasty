@@ -99,14 +99,14 @@ impl AppState {
         };
 
         for (tab_id, (pane_id, _, _)) in &current {
-            if let Some((prev_pane, _, _)) = prev.get(tab_id) {
-                if prev_pane != pane_id {
-                    self.pending_host_events.push(PendingHostEvent::TabMoved {
-                        tab_id: *tab_id,
-                        from_pane: *prev_pane,
-                        to_pane: *pane_id,
-                    });
-                }
+            if let Some((prev_pane, _, _)) = prev.get(tab_id)
+                && prev_pane != pane_id
+            {
+                self.pending_host_events.push(PendingHostEvent::TabMoved {
+                    tab_id: *tab_id,
+                    from_pane: *prev_pane,
+                    to_pane: *pane_id,
+                });
             }
         }
 

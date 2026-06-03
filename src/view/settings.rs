@@ -141,11 +141,11 @@ impl View for SettingsView {
 
                 self.double_tap
                     .on_key_event(&event.logical_key, event.state == ElementState::Pressed);
-                if event.state == ElementState::Pressed {
-                    if let Some(dt) = self.double_tap.take() {
-                        self.captured_double_tap = Some(dt.binding_str().to_string());
-                        self.mark_dirty();
-                    }
+                if event.state == ElementState::Pressed
+                    && let Some(dt) = self.double_tap.take()
+                {
+                    self.captured_double_tap = Some(dt.binding_str().to_string());
+                    self.mark_dirty();
                 }
 
                 // 녹화 중이면 winit에서 직접 키 조합 캡처

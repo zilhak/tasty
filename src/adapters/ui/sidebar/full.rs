@@ -297,14 +297,12 @@ pub fn draw_full_sidebar(
                                     .unwrap_or(0.0),
                             });
                         }
-                        if card_response.dragged_by(egui::PointerButton::Primary) {
-                            if let Some(ref mut drag) = state.dialogs.ws_drag {
-                                if drag.ws_idx == i {
-                                    if let Some(pos) = card_response.interact_pointer_pos() {
-                                        drag.current_y = pos.y;
-                                    }
-                                }
-                            }
+                        if card_response.dragged_by(egui::PointerButton::Primary)
+                            && let Some(ref mut drag) = state.dialogs.ws_drag
+                            && drag.ws_idx == i
+                            && let Some(pos) = card_response.interact_pointer_pos()
+                        {
+                            drag.current_y = pos.y;
                         }
 
                         // Store card rect for drop calculation
@@ -353,27 +351,26 @@ pub fn draw_full_sidebar(
                             // Draw ghost card at mouse position
                             if let Some(name) =
                                 engine.workspaces.get(drag.ws_idx).map(|w| w.name.clone())
+                                && let Some((_, first_rect)) = ws_card_rects.first()
                             {
-                                if let Some((_, first_rect)) = ws_card_rects.first() {
-                                    let ghost_rect = egui::Rect::from_min_size(
-                                        egui::pos2(
-                                            first_rect.min.x,
-                                            drag.current_y - first_rect.height() / 2.0,
-                                        ),
-                                        first_rect.size(),
-                                    );
-                                    // Ghost drag preview: theme 색 + ~70% alpha.
-                                    let ghost_bg = th.surface0.with_alpha(180).to_egui();
-                                    let ghost_fg = th.text.with_alpha(180).to_egui();
-                                    ui.painter().rect_filled(ghost_rect, 4.0, ghost_bg);
-                                    ui.painter().text(
-                                        ghost_rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        &name,
-                                        egui::FontId::proportional(12.0),
-                                        ghost_fg,
-                                    );
-                                }
+                                let ghost_rect = egui::Rect::from_min_size(
+                                    egui::pos2(
+                                        first_rect.min.x,
+                                        drag.current_y - first_rect.height() / 2.0,
+                                    ),
+                                    first_rect.size(),
+                                );
+                                // Ghost drag preview: theme 색 + ~70% alpha.
+                                let ghost_bg = th.surface0.with_alpha(180).to_egui();
+                                let ghost_fg = th.text.with_alpha(180).to_egui();
+                                ui.painter().rect_filled(ghost_rect, 4.0, ghost_bg);
+                                ui.painter().text(
+                                    ghost_rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    &name,
+                                    egui::FontId::proportional(12.0),
+                                    ghost_fg,
+                                );
                             }
                         }
                     }

@@ -169,10 +169,10 @@ pub(super) fn event_pattern_covers(pattern: &str, key: &str) -> bool {
     if pattern == key {
         return true;
     }
-    if let Some(prefix) = pattern.strip_suffix(".*") {
-        if let Some(rest) = key.strip_prefix(prefix) {
-            return rest.starts_with('.') && rest.len() > 1;
-        }
+    if let Some(prefix) = pattern.strip_suffix(".*")
+        && let Some(rest) = key.strip_prefix(prefix)
+    {
+        return rest.starts_with('.') && rest.len() > 1;
     }
     false
 }

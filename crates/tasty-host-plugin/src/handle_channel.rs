@@ -217,13 +217,13 @@ impl HandleListener {
 
         // stale 파일이 남아 있으면 unlink. 다음 bind를 위한 idempotent 정리.
         // NotFound는 정상 — 그 외 에러는 bind도 실패할 가능성이 높아 알린다.
-        if let Err(e) = std::fs::remove_file(&socket_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!(
-                    "stale handle socket {} unlink failed: {e}",
-                    socket_path.display()
-                );
-            }
+        if let Err(e) = std::fs::remove_file(&socket_path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                "stale handle socket {} unlink failed: {e}",
+                socket_path.display()
+            );
         }
 
         let listener = UnixListener::bind(&socket_path)?;
@@ -306,13 +306,13 @@ impl Drop for HandleListener {
     fn drop(&mut self) {
         // 임시 socket 파일 정리. listener thread는 process exit과 함께 사라진다.
         // NotFound는 race(테스트가 직접 정리한 경우 등)에서 정상.
-        if let Err(e) = std::fs::remove_file(&self._socket_path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::trace!(
-                    "handle socket {} drop unlink failed: {e}",
-                    self._socket_path.display()
-                );
-            }
+        if let Err(e) = std::fs::remove_file(&self._socket_path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::trace!(
+                "handle socket {} drop unlink failed: {e}",
+                self._socket_path.display()
+            );
         }
     }
 }
@@ -468,10 +468,7 @@ mod unix_wire {
             unsafe {
                 let cmsg_ptr = libc::CMSG_FIRSTHDR(&msg);
                 if cmsg_ptr.is_null() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "CMSG_FIRSTHDR returned null",
-                    ));
+                    return Err(io::Error::other("CMSG_FIRSTHDR returned null"));
                 }
                 (*cmsg_ptr).cmsg_level = libc::SOL_SOCKET;
                 (*cmsg_ptr).cmsg_type = libc::SCM_RIGHTS;

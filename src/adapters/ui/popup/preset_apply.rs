@@ -65,10 +65,10 @@ fn draw_apply_popup(
         if let Some(first) = names.first() {
             state.dialogs.preset_picker_selected = Some(first.clone());
         }
-    } else if let Some(sel) = &selected {
-        if !names.iter().any(|n| n == sel) {
-            state.dialogs.preset_picker_selected = names.first().cloned();
-        }
+    } else if let Some(sel) = &selected
+        && !names.iter().any(|n| n == sel)
+    {
+        state.dialogs.preset_picker_selected = names.first().cloned();
     }
 
     let enter_pressed = ui.ctx().input(|i| i.key_pressed(egui::Key::Enter));
@@ -168,14 +168,12 @@ fn draw_apply_popup(
         apply_clicked = true;
     }
 
-    if apply_clicked {
-        if let Some(name) = state.dialogs.preset_picker_selected.clone() {
-            state.dispatch_intent(
-                Intent::ApplyPreset { kind, name }.from_user_menu("preset_apply_popup"),
-            );
-            state.dialogs.preset_picker_selected = None;
-            return PopupAction::Close;
-        }
+    if apply_clicked && let Some(name) = state.dialogs.preset_picker_selected.clone() {
+        state.dispatch_intent(
+            Intent::ApplyPreset { kind, name }.from_user_menu("preset_apply_popup"),
+        );
+        state.dialogs.preset_picker_selected = None;
+        return PopupAction::Close;
     }
     if cancel_clicked {
         state.dialogs.preset_picker_selected = None;

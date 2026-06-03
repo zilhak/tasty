@@ -34,7 +34,7 @@ fn session_err_to_response(id: Value, err: SessionError) -> JsonRpcResponse {
     match err {
         SessionError::InvalidArgument(_) => JsonRpcResponse::invalid_params(id, err.to_string()),
         SessionError::Memory(_) | SessionError::Serde(_) => {
-            JsonRpcResponse::error(id, -32603, &err.to_string())
+            JsonRpcResponse::error(id, -32603, err.to_string())
         }
     }
 }
@@ -110,7 +110,7 @@ pub fn handle_issue(
                 return JsonRpcResponse::error(
                     id,
                     -32001,
-                    &format!(
+                    format!(
                         "caller cannot grant permission '{}' (not in own permissions)",
                         p.as_token()
                     ),

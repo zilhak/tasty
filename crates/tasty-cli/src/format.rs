@@ -78,13 +78,13 @@ fn format_tree(result: &serde_json::Value) {
                                     }
                                 }
                             }
-                            if let Some(t) = stype {
-                                if t != "Terminal" {
-                                    if !ids.is_empty() {
-                                        ids.push_str(", ");
-                                    }
-                                    ids.push_str(t);
+                            if let Some(t) = stype
+                                && t != "Terminal"
+                            {
+                                if !ids.is_empty() {
+                                    ids.push_str(", ");
                                 }
+                                ids.push_str(t);
                             }
 
                             if ids.is_empty() {

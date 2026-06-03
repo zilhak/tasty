@@ -64,7 +64,7 @@ pub fn handle_invoke(
         return JsonRpcResponse::invalid_params(id, "Missing required 'key' parameter");
     };
     let Some(item) = state.tool_registry.find(key) else {
-        return JsonRpcResponse::error(id, -32602, &format!("tool item '{key}' not found"));
+        return JsonRpcResponse::error(id, -32602, format!("tool item '{key}' not found"));
     };
     crate::adapters::ui::tools_menu::invoke_tool(state, engine, &item);
     JsonRpcResponse::success(id, json!({ "invoked": key }))

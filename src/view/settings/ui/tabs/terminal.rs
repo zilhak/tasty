@@ -15,10 +15,10 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
             ui.label(t("settings.terminal.shell_label"));
-            if let Some(detected) = GeneralSettings::detect_bash() {
-                if settings.general.shell.is_empty() || !settings.general.is_shell_valid() {
-                    settings.general.shell = detected;
-                }
+            if let Some(detected) = GeneralSettings::detect_bash()
+                && (settings.general.shell.is_empty() || !settings.general.is_shell_valid())
+            {
+                settings.general.shell = detected;
             }
             ui.text_edit_singleline(&mut settings.general.shell);
             ui.end_row();

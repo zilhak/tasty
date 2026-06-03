@@ -368,10 +368,10 @@ fn resolve_inherit_cwd_from_markdown_surface() {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
-                    if let Some(s) = tab.layout().find_surface(tab.focused_surface) {
-                        if s.kind() == "markdown" {
-                            sid_opt = s.surface_id();
-                        }
+                    if let Some(s) = tab.layout().find_surface(tab.focused_surface)
+                        && s.kind() == "markdown"
+                    {
+                        sid_opt = s.surface_id();
                     }
                 }
             }
@@ -402,10 +402,10 @@ fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
         for pid in ws.pane_layout().all_pane_ids() {
             if let Some(p) = ws.pane_layout().find_pane(pid) {
                 for tab in &p.tabs {
-                    if let Some(s) = tab.layout().find_surface(tab.focused_surface) {
-                        if s.kind() == "markdown" {
-                            sid_opt = s.surface_id();
-                        }
+                    if let Some(s) = tab.layout().find_surface(tab.focused_surface)
+                        && s.kind() == "markdown"
+                    {
+                        sid_opt = s.surface_id();
                     }
                 }
             }

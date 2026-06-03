@@ -431,23 +431,22 @@ impl MainView {
             }
             _ => {
                 // Ctrl+letter → send control character (0x01-0x1A)
-                if modifiers.control_key() && !modifiers.alt_key() {
-                    if let Key::Character(c) = key {
-                        if let Some(ch) = c.chars().next() {
-                            if ch.is_ascii_alphabetic() {
-                                let ctrl_char = (ch.to_ascii_lowercase() as u8) - b'a' + 1;
-                                push_bytes(&mut payloads, &[ctrl_char]);
-                                sent = true;
-                                // 옛 코드의 early return (scroll_to_bottom 분기 우회).
-                                return KeyboardSendOutcome {
-                                    payloads,
-                                    scroll_action,
-                                    dirty,
-                                    sent,
-                                };
-                            }
-                        }
-                    }
+                if modifiers.control_key()
+                    && !modifiers.alt_key()
+                    && let Key::Character(c) = key
+                    && let Some(ch) = c.chars().next()
+                    && ch.is_ascii_alphabetic()
+                {
+                    let ctrl_char = (ch.to_ascii_lowercase() as u8) - b'a' + 1;
+                    push_bytes(&mut payloads, &[ctrl_char]);
+                    sent = true;
+                    // 옛 코드의 early return (scroll_to_bottom 분기 우회).
+                    return KeyboardSendOutcome {
+                        payloads,
+                        scroll_action,
+                        dirty,
+                        sent,
+                    };
                 }
                 if let Some(text) = text {
                     let s = text.as_str();

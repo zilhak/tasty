@@ -99,7 +99,7 @@ pub fn handle_with_caller(
             workspace_id,
             seq,
         );
-        return JsonRpcResponse::error(id, -32001, &format!("permission_denied: {e}"));
+        return JsonRpcResponse::error(id, -32001, format!("permission_denied: {e}"));
     }
 
     // Phase 4.3c 텔레메트리 cap 차단: triggered + (Stop|Pause) 인 cap 이 있는
@@ -117,7 +117,7 @@ pub fn handle_with_caller(
             workspace_id,
             seq,
         );
-        return JsonRpcResponse::error(id, -32007, &format!("cap_blocked: {reason}"));
+        return JsonRpcResponse::error(id, -32007, format!("cap_blocked: {reason}"));
     }
 
     // Phase 4.2 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.

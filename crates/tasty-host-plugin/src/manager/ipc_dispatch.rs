@@ -41,10 +41,10 @@ impl PluginManager {
             .unwrap_or(serde_json::Value::Null),
             id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
         };
-        if let Some(proc) = self.processes.get(plugin_id) {
-            if let Err(e) = proc.req_tx.send(req) {
-                tracing::warn!("plugin {plugin_id}: failed to send ipc.result: {e}");
-            }
+        if let Some(proc) = self.processes.get(plugin_id)
+            && let Err(e) = proc.req_tx.send(req)
+        {
+            tracing::warn!("plugin {plugin_id}: failed to send ipc.result: {e}");
         }
     }
 
@@ -224,21 +224,19 @@ impl PluginManager {
     pub(super) fn is_hook_in_backoff(&mut self, ext_id: &str, method: &str) -> bool {
         let key = (ext_id.to_string(), method.to_string());
         let now = Instant::now();
-        if let Some(state) = self.hook_failures.get(&key) {
-            if let Some(until) = state.backoff_until {
-                if now < until {
-                    return true;
-                }
-            }
+        if let Some(state) = self.hook_failures.get(&key)
+            && let Some(until) = state.backoff_until
+            && now < until
+        {
+            return true;
         }
         // 만료 시 상태 정리.
-        if let Some(state) = self.hook_failures.get_mut(&key) {
-            if let Some(until) = state.backoff_until {
-                if now >= until {
-                    state.backoff_until = None;
-                    state.consecutive_failures = 0;
-                }
-            }
+        if let Some(state) = self.hook_failures.get_mut(&key)
+            && let Some(until) = state.backoff_until
+            && now >= until
+        {
+            state.backoff_until = None;
+            state.consecutive_failures = 0;
         }
         false
     }

@@ -135,10 +135,10 @@ impl PluginProcess {
             if let Err(e) = std::fs::create_dir_all(&data_dir) {
                 tracing::warn!("plugin data dir {} create failed: {e}", data_dir.display());
             }
-            if let Some(parent) = config_path.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    tracing::warn!("plugin config dir {} create failed: {e}", parent.display());
-                }
+            if let Some(parent) = config_path.parent()
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                tracing::warn!("plugin config dir {} create failed: {e}", parent.display());
             }
             cmd.env("TASTY_PLUGIN_DATA_DIR", &data_dir);
             cmd.env("TASTY_PLUGIN_CONFIG_PATH", &config_path);
@@ -460,10 +460,10 @@ fn aux_reader_loop(
                 merge_dirty(&dirty, id, rect);
             }
             Ok((HandleChannelMessage::Ping { seq }, _)) => {
-                if let Ok(mut w) = writer.lock() {
-                    if let Err(e) = w.send_message(&HandleChannelMessage::Pong { seq }) {
-                        tracing::warn!("plugin '{plugin_id}' aux Pong send failed: {e}");
-                    }
+                if let Ok(mut w) = writer.lock()
+                    && let Err(e) = w.send_message(&HandleChannelMessage::Pong { seq })
+                {
+                    tracing::warn!("plugin '{plugin_id}' aux Pong send failed: {e}");
                 }
             }
             Ok((HandleChannelMessage::Pong { .. }, _)) => {

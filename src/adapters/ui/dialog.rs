@@ -74,17 +74,17 @@ pub fn draw_rename_popup(
     }
 
     // 포커스를 얻은 첫 프레임에 전체 선택
-    if resp.gained_focus() {
-        if let Some(mut text_state) = egui::TextEdit::load_state(&ctx, resp.id) {
-            let len = buffer.chars().count();
-            text_state
-                .cursor
-                .set_char_range(Some(egui::text::CCursorRange::two(
-                    egui::text::CCursor::new(0),
-                    egui::text::CCursor::new(len),
-                )));
-            text_state.store(&ctx, resp.id);
-        }
+    if resp.gained_focus()
+        && let Some(mut text_state) = egui::TextEdit::load_state(&ctx, resp.id)
+    {
+        let len = buffer.chars().count();
+        text_state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(len),
+            )));
+        text_state.store(&ctx, resp.id);
     }
 
     // Enter 키로 적용
@@ -166,15 +166,14 @@ fn apply_rename(
                 .active_workspace_mut(engine)
                 .pane_layout_mut()
                 .find_pane_mut(pane_id)
+                && let Some(tab) = pane.tabs.get_mut(tab_index)
             {
-                if let Some(tab) = pane.tabs.get_mut(tab_index) {
-                    if name.is_empty() {
-                        tab.explicit_name = None;
-                    } else {
-                        tab.explicit_name = Some(name.clone());
-                    }
-                    renamed = Some((tab.id, tab.display_name().to_string()));
+                if name.is_empty() {
+                    tab.explicit_name = None;
+                } else {
+                    tab.explicit_name = Some(name.clone());
                 }
+                renamed = Some((tab.id, tab.display_name().to_string()));
             }
             if let Some((tab_id, title)) = renamed {
                 state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {

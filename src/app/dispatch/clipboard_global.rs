@@ -39,10 +39,10 @@ impl App {
                 // engine 에 동일 순서로 push 하므로 idx 도 동일 entry 가리킴.
                 let mut removed_any = false;
                 for w in self.view.views.values_mut() {
-                    if let Some(m) = w.as_main_mut() {
-                        if m.core_state.clipboard_history.remove_at(idx).is_some() {
-                            removed_any = true;
-                        }
+                    if let Some(m) = w.as_main_mut()
+                        && m.core_state.clipboard_history.remove_at(idx).is_some()
+                    {
+                        removed_any = true;
                     }
                 }
                 for (_, e) in self.parked_states.iter_mut() {

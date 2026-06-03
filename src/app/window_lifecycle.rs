@@ -374,20 +374,20 @@ impl App {
         // 모든 enum-like 필드 정규화. invalid 가 있었으면 즉시 파일에 반영해서
         // 다음 부팅에 같은 popup / 잘못된 동작이 재발하지 않게 한다.
         let normalize_report = settings.normalize();
-        if normalize_report.changed {
-            if let Err(e) = settings.save() {
-                tracing::warn!("failed to persist normalized settings: {e}");
-            }
+        if normalize_report.changed
+            && let Err(e) = settings.save()
+        {
+            tracing::warn!("failed to persist normalized settings: {e}");
         }
 
         // memory.db 는 boot 가 App::new 이전에 초기화함 (D.3.C.M.1).
 
         // Apply theme via tasty-themes (first-run init, fallback, partial accumulation, global install).
         let invalid_theme_name = boot_apply_theme(&mut settings.appearance);
-        if invalid_theme_name.is_some() || normalize_report.changed {
-            if let Err(e) = settings.save() {
-                tracing::warn!("failed to persist settings after theme apply: {e}");
-            }
+        if (invalid_theme_name.is_some() || normalize_report.changed)
+            && let Err(e) = settings.save()
+        {
+            tracing::warn!("failed to persist settings after theme apply: {e}");
         }
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
             window.clone(),

@@ -17,8 +17,8 @@ pub fn capture_winit_key_combo(
     }
 
     // modifier-only 키는 무시
-    if let Key::Named(n) = &event.logical_key {
-        if matches!(
+    if let Key::Named(n) = &event.logical_key
+        && matches!(
             n,
             NamedKey::Control
                 | NamedKey::Shift
@@ -33,9 +33,9 @@ pub fn capture_winit_key_combo(
                 | NamedKey::ScrollLock
                 | NamedKey::Symbol
                 | NamedKey::SymbolLock
-        ) {
-            return KeyCapture::None;
-        }
+        )
+    {
+        return KeyCapture::None;
     }
 
     // 물리 키에서 키 이름 결정 (IME/Option 변환에 영향받지 않도록)

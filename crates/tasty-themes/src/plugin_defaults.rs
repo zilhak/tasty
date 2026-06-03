@@ -10,7 +10,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::RwLock;
 
-use tasty_type_appearance::theme::{PartialSurfaceTheme, SurfaceTheme, Theme};
+use tasty_type_appearance::theme::{PartialSurfaceTheme, Theme};
 
 /// plugin 이 hello 직후 등록한 default 색. kind → partial.
 /// 같은 kind 로 두 번 호출되면 마지막 값으로 교체.
@@ -48,10 +48,7 @@ pub fn add_plugin_surface_default(kind: &str, partial: PartialSurfaceTheme) {
         return;
     }
     crate::global::mutate_theme(|theme| {
-        let entry = theme
-            .surface_themes
-            .entry(kind.to_string())
-            .or_insert_with(SurfaceTheme::default);
+        let entry = theme.surface_themes.entry(kind.to_string()).or_default();
         entry.apply_partial(&partial);
     });
 }
@@ -74,10 +71,7 @@ pub fn apply_plugin_defaults_to(theme: &mut Theme) {
         if user_def.as_ref().is_some_and(|set| set.contains(kind)) {
             continue;
         }
-        let entry = theme
-            .surface_themes
-            .entry(kind.clone())
-            .or_insert_with(SurfaceTheme::default);
+        let entry = theme.surface_themes.entry(kind.clone()).or_default();
         entry.apply_partial(partial);
     }
 }
@@ -86,6 +80,7 @@ pub fn apply_plugin_defaults_to(theme: &mut Theme) {
 mod tests {
     use super::*;
     use tasty_type_appearance::color::HexColor;
+    use tasty_type_appearance::theme::SurfaceTheme;
 
     fn reset() {
         PLUGIN_DEFAULTS

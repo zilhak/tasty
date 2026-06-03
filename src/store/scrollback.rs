@@ -83,13 +83,13 @@ fn gc_orphans_in(dir: &Path, known: &HashSet<String>) {
             Some(s) => s.to_string(),
             None => continue,
         };
-        if !known.contains(&stem) {
-            if let Err(e) = fs::remove_file(&path) {
-                tracing::warn!(
-                    "scrollback_store: orphan delete {} failed: {e}",
-                    path.display()
-                );
-            }
+        if !known.contains(&stem)
+            && let Err(e) = fs::remove_file(&path)
+        {
+            tracing::warn!(
+                "scrollback_store: orphan delete {} failed: {e}",
+                path.display()
+            );
         }
     }
 }

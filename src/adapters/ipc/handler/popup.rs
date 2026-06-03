@@ -71,7 +71,7 @@ pub fn handle_open(
         None => JsonRpcResponse::error(
             id,
             -32602,
-            &format!("popup '{plugin_id}/{popup_id}' not found or plugin not running"),
+            format!("popup '{plugin_id}/{popup_id}' not found or plugin not running"),
         ),
     }
 }

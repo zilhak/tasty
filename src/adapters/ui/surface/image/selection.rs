@@ -96,37 +96,35 @@ pub(super) fn draw_floating_selection(
             };
             if should_commit {
                 view.commit_floating();
-                return;
             }
         }
     } else if response.dragged() {
-        if let Some(pos) = response.interact_pointer_pos() {
-            if let EditState::FloatingSelection {
+        if let Some(pos) = response.interact_pointer_pos()
+            && let EditState::FloatingSelection {
                 ref mut selection, ..
             } = view.edit_state
-            {
-                match selection.drag_state.clone() {
-                    DragState::Moving {
-                        drag_start_pos,
-                        initial_position,
-                    } => {
-                        let delta = pos - drag_start_pos;
-                        selection.position = initial_position + delta / effective_zoom;
-                    }
-                    DragState::Resizing {
-                        handle: _,
-                        drag_start_pos,
-                        initial_rect,
-                    } => {
-                        let delta = pos - drag_start_pos;
-                        let new_w =
-                            ((initial_rect.width() + delta.x).max(10.0) / effective_zoom) as usize;
-                        let new_h =
-                            ((initial_rect.height() + delta.y).max(10.0) / effective_zoom) as usize;
-                        selection.size = [new_w.max(1), new_h.max(1)];
-                    }
-                    DragState::Idle => {}
+        {
+            match selection.drag_state.clone() {
+                DragState::Moving {
+                    drag_start_pos,
+                    initial_position,
+                } => {
+                    let delta = pos - drag_start_pos;
+                    selection.position = initial_position + delta / effective_zoom;
                 }
+                DragState::Resizing {
+                    handle: _,
+                    drag_start_pos,
+                    initial_rect,
+                } => {
+                    let delta = pos - drag_start_pos;
+                    let new_w =
+                        ((initial_rect.width() + delta.x).max(10.0) / effective_zoom) as usize;
+                    let new_h =
+                        ((initial_rect.height() + delta.y).max(10.0) / effective_zoom) as usize;
+                    selection.size = [new_w.max(1), new_h.max(1)];
+                }
+                DragState::Idle => {}
             }
         }
     } else if response.drag_stopped() {
@@ -136,12 +134,11 @@ pub(super) fn draw_floating_selection(
         {
             selection.drag_state = DragState::Idle;
         }
-    } else if response.clicked() {
-        if let Some(pos) = response.interact_pointer_pos() {
-            if !sel_screen_rect.contains(pos) {
-                view.commit_floating();
-            }
-        }
+    } else if response.clicked()
+        && let Some(pos) = response.interact_pointer_pos()
+        && !sel_screen_rect.contains(pos)
+    {
+        view.commit_floating();
     }
 }
 

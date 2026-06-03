@@ -53,11 +53,11 @@ impl AppState {
                     tab_id,
                     surface_id,
                     crate::model::ShellSpawnOpts {
-                        cols: cols,
-                        rows: rows,
+                        cols,
+                        rows,
                         shell: sh.shell_ref(),
                         shell_args: &sh.args_ref(),
-                        waker: waker,
+                        waker,
                         working_dir: cwd.as_deref(),
                     },
                 );
@@ -167,11 +167,11 @@ impl AppState {
                     tab_id,
                     surface_id,
                     crate::model::ShellSpawnOpts {
-                        cols: cols,
-                        rows: rows,
+                        cols,
+                        rows,
                         shell: sh.shell_ref(),
                         shell_args: &sh.args_ref(),
-                        waker: waker,
+                        waker,
                         working_dir: cwd.as_deref(),
                     },
                 );

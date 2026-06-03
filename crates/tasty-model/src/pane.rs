@@ -76,7 +76,6 @@ impl Pane {
             },
             spawn.waker,
         )
-        .map_err(Into::into)
     }
 
     /// Create a Pane with a TerminalSurface marker. Caller must have already

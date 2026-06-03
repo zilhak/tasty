@@ -263,12 +263,11 @@ fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// src가 dest보다 더 최신이거나 dest가 없으면 복사. 이미 같거나 dest가 더 최신이면 no-op.
 #[cfg(debug_assertions)]
 fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<()> {
-    if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(src), std::fs::metadata(dest)) {
-        if let (Ok(sm), Ok(dm)) = (src_meta.modified(), dest_meta.modified()) {
-            if sm <= dm {
-                return Ok(());
-            }
-        }
+    if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(src), std::fs::metadata(dest))
+        && let (Ok(sm), Ok(dm)) = (src_meta.modified(), dest_meta.modified())
+        && sm <= dm
+    {
+        return Ok(());
     }
     copy_atomic(src, dest)
 }
@@ -298,18 +297,18 @@ fn copy_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
 
     if let Err(e) = std::fs::copy(src, &tmp) {
         // tmp가 부분 생성됐을 수 있으니 best-effort 정리. NotFound는 정상.
-        if let Err(re) = std::fs::remove_file(&tmp) {
-            if re.kind() != std::io::ErrorKind::NotFound {
-                tracing::trace!("builtin install tmp {} cleanup failed: {re}", tmp.display());
-            }
+        if let Err(re) = std::fs::remove_file(&tmp)
+            && re.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::trace!("builtin install tmp {} cleanup failed: {re}", tmp.display());
         }
         return Err(e);
     }
     if let Err(e) = std::fs::rename(&tmp, dest) {
-        if let Err(re) = std::fs::remove_file(&tmp) {
-            if re.kind() != std::io::ErrorKind::NotFound {
-                tracing::trace!("builtin install tmp {} cleanup failed: {re}", tmp.display());
-            }
+        if let Err(re) = std::fs::remove_file(&tmp)
+            && re.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::trace!("builtin install tmp {} cleanup failed: {re}", tmp.display());
         }
         return Err(e);
     }
@@ -344,35 +343,35 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
         // 갱신을 동일 경로에서 처리한다. builtin은 호스트 소유 리소스이므로 사용자
         // 디렉터리에 있더라도 번들이 더 새것이면 덮어쓴다 (사용자가 직접 편집하는
         // 용도가 아님).
-        if !mgr.config.is_builtin_removed(spec.id) {
-            if let Some(bundle) = bundle.as_ref() {
-                let src = bundle.join(spec.id);
-                if !src.is_dir() {
-                    tracing::debug!(
-                        "builtin plugin '{}' not in bundle ({}), skipping",
-                        spec.id,
-                        src.display()
+        if !mgr.config.is_builtin_removed(spec.id)
+            && let Some(bundle) = bundle.as_ref()
+        {
+            let src = bundle.join(spec.id);
+            if !src.is_dir() {
+                tracing::debug!(
+                    "builtin plugin '{}' not in bundle ({}), skipping",
+                    spec.id,
+                    src.display()
+                );
+            } else {
+                if let Err(e) = std::fs::create_dir_all(&dest_root) {
+                    tracing::warn!(
+                        "install_builtins: mkdir {} failed: {e}",
+                        dest_root.display()
                     );
-                } else {
-                    if let Err(e) = std::fs::create_dir_all(&dest_root) {
-                        tracing::warn!(
-                            "install_builtins: mkdir {} failed: {e}",
-                            dest_root.display()
-                        );
+                    continue;
+                }
+                if already_present {
+                    if let Err(e) = sync_dir_recursive_if_newer(&src, &dest) {
+                        tracing::warn!("install_builtins: sync '{}' failed: {e}", spec.id);
                         continue;
                     }
-                    if already_present {
-                        if let Err(e) = sync_dir_recursive_if_newer(&src, &dest) {
-                            tracing::warn!("install_builtins: sync '{}' failed: {e}", spec.id);
-                            continue;
-                        }
-                    } else {
-                        if let Err(e) = copy_dir_recursive(&src, &dest) {
-                            tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
-                            continue;
-                        }
-                        tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
+                } else {
+                    if let Err(e) = copy_dir_recursive(&src, &dest) {
+                        tracing::warn!("install_builtins: copy '{}' failed: {e}", spec.id);
+                        continue;
                     }
+                    tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
                 }
             }
         }
@@ -388,35 +387,33 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
         if dest.exists() {
             // F.B.11-4: bridge::validate_bin_extras 는 본 바이너리 chain — discover
             // 와 동일하게 install/add 경로의 caller 가 chain 한다.
-            if let Ok(manifest) = Manifest::load(&dest) {
-                if !manifest.permissions.is_empty() {
-                    if !mgr.config.grants.contains_key(spec.id) {
-                        mgr.config
-                            .set_granted(spec.id, manifest.permissions.clone());
-                        config_dirty = true;
-                        tracing::info!(
-                            "auto-granted manifest permissions for builtin '{}'",
-                            spec.id
-                        );
-                    } else if apply_builtin_permission_diff(
-                        &mut mgr.config,
-                        spec.id,
-                        &manifest.permissions,
-                    ) {
-                        config_dirty = true;
-                        tracing::info!(
-                            "auto-granted new manifest permissions for builtin '{}'",
-                            spec.id
-                        );
-                    }
+            if let Ok(manifest) = Manifest::load(&dest)
+                && !manifest.permissions.is_empty()
+            {
+                if !mgr.config.grants.contains_key(spec.id) {
+                    mgr.config
+                        .set_granted(spec.id, manifest.permissions.clone());
+                    config_dirty = true;
+                    tracing::info!(
+                        "auto-granted manifest permissions for builtin '{}'",
+                        spec.id
+                    );
+                } else if apply_builtin_permission_diff(
+                    &mut mgr.config,
+                    spec.id,
+                    &manifest.permissions,
+                ) {
+                    config_dirty = true;
+                    tracing::info!(
+                        "auto-granted new manifest permissions for builtin '{}'",
+                        spec.id
+                    );
                 }
             }
         }
     }
-    if config_dirty {
-        if let Err(e) = mgr.config.save() {
-            tracing::warn!("install_builtins: save plugins.toml failed: {e}");
-        }
+    if config_dirty && let Err(e) = mgr.config.save() {
+        tracing::warn!("install_builtins: save plugins.toml failed: {e}");
     }
 }
 
@@ -450,10 +447,10 @@ pub fn mark_builtin_removed(mgr: &mut PluginManager, id: &str) {
     if !is_builtin_plugin(id) {
         return;
     }
-    if mgr.config.mark_builtin_removed(id) {
-        if let Err(e) = mgr.config.save() {
-            tracing::warn!("mark_builtin_removed: save plugins.toml failed: {e}");
-        }
+    if mgr.config.mark_builtin_removed(id)
+        && let Err(e) = mgr.config.save()
+    {
+        tracing::warn!("mark_builtin_removed: save plugins.toml failed: {e}");
     }
 }
 
@@ -491,12 +488,11 @@ fn sync_dir_recursive_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
 }
 
 fn copy_file_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if let (Ok(src_meta), Ok(dst_meta)) = (std::fs::metadata(src), std::fs::metadata(dst)) {
-        if let (Ok(sm), Ok(dm)) = (src_meta.modified(), dst_meta.modified()) {
-            if sm <= dm {
-                return Ok(());
-            }
-        }
+    if let (Ok(src_meta), Ok(dst_meta)) = (std::fs::metadata(src), std::fs::metadata(dst))
+        && let (Ok(sm), Ok(dm)) = (src_meta.modified(), dst_meta.modified())
+        && sm <= dm
+    {
+        return Ok(());
     }
     copy_atomic(src, dst)
 }

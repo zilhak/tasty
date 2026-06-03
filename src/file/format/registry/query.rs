@@ -52,12 +52,11 @@ impl FileFormatRegistry {
         let is_dir = target.is_directory();
 
         // 확장자 fast path — 파일에만 적용. 디렉토리는 IsDirectory pre-filter 로 처리.
-        if !is_dir {
-            if let Some(ext) = path_extension_lowercase(target.as_path()) {
-                if let Some(id) = identify_by_extension_priority(&inner, &ext) {
-                    return Some(id);
-                }
-            }
+        if !is_dir
+            && let Some(ext) = path_extension_lowercase(target.as_path())
+            && let Some(id) = identify_by_extension_priority(&inner, &ext)
+        {
+            return Some(id);
         }
 
         let mut deep_ctx = match depth {

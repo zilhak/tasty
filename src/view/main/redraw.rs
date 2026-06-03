@@ -255,10 +255,10 @@ impl MainView {
                 if let Some(pane) = ws.pane_layout().find_pane(pid) {
                     for tab in &pane.tabs {
                         let surface = tab.surface();
-                        if surface.surface_id() == Some(surface_id) {
-                            if let Some(url) = surface.webview_url() {
-                                return Some(url.to_string());
-                            }
+                        if surface.surface_id() == Some(surface_id)
+                            && let Some(url) = surface.webview_url()
+                        {
+                            return Some(url.to_string());
                         }
                     }
                 }
@@ -369,15 +369,14 @@ impl MainView {
                     }
                     Some(3) => {
                         // Move Left
-                        if tab_index > 0 {
-                            if let Some(pane) = self
+                        if tab_index > 0
+                            && let Some(pane) = self
                                 .state
                                 .active_workspace_mut(&mut self.core_state)
                                 .pane_layout_mut()
                                 .find_pane_mut(pane_id)
-                            {
-                                pane.move_tab(tab_index, tab_index - 1);
-                            }
+                        {
+                            pane.move_tab(tab_index, tab_index - 1);
                         }
                     }
                     Some(4) => {

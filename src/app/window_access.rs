@@ -49,10 +49,10 @@ impl App {
     /// None (parked 는 별도로 fallback 처리).
     pub(crate) fn find_main_with_surface(&self, surface_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main() {
-                if m.core_state.has_surface(surface_id) {
-                    return Some(*wid);
-                }
+            if let Some(m) = w.as_main()
+                && m.core_state.has_surface(surface_id)
+            {
+                return Some(*wid);
             }
         }
         None
@@ -61,10 +61,10 @@ impl App {
     /// Workspace 를 가진 MainView 의 WindowId 를 반환.
     pub(crate) fn find_main_with_workspace(&self, workspace_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main() {
-                if m.core_state.has_workspace(workspace_id) {
-                    return Some(*wid);
-                }
+            if let Some(m) = w.as_main()
+                && m.core_state.has_workspace(workspace_id)
+            {
+                return Some(*wid);
             }
         }
         None
@@ -73,10 +73,10 @@ impl App {
     /// Pane 을 가진 MainView 의 WindowId 를 반환.
     pub(crate) fn find_main_with_pane(&self, pane_id: u32) -> Option<WindowId> {
         for (wid, w) in &self.view.views {
-            if let Some(m) = w.as_main() {
-                if m.core_state.has_pane(pane_id) {
-                    return Some(*wid);
-                }
+            if let Some(m) = w.as_main()
+                && m.core_state.has_pane(pane_id)
+            {
+                return Some(*wid);
             }
         }
         None

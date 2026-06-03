@@ -180,12 +180,12 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
 fn find_or_create_file_menu(main_menu: &NSMenu, mtm: MainThreadMarker) -> Retained<NSMenu> {
     let count = main_menu.numberOfItems();
     for i in 0..count {
-        if let Some(item) = main_menu.itemAtIndex(i) {
-            if let Some(submenu) = item.submenu() {
-                let title = submenu.title().to_string();
-                if title == "File" {
-                    return submenu;
-                }
+        if let Some(item) = main_menu.itemAtIndex(i)
+            && let Some(submenu) = item.submenu()
+        {
+            let title = submenu.title().to_string();
+            if title == "File" {
+                return submenu;
             }
         }
     }

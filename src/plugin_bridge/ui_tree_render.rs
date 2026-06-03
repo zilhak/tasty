@@ -170,10 +170,10 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
                 LabelStyle::Dim => rt.color(crate::theme::theme().subtext0),
                 LabelStyle::Mono => rt.monospace(),
             };
-            if let Some(c) = color.as_deref() {
-                if let Some(parsed) = parse_color_token(c) {
-                    rt = rt.color(parsed);
-                }
+            if let Some(c) = color.as_deref()
+                && let Some(parsed) = parse_color_token(c)
+            {
+                rt = rt.color(parsed);
             }
             ui.label(rt);
         }
@@ -634,16 +634,16 @@ fn render_tree_node(
 }
 
 fn parse_color_token(token: &str) -> Option<egui::Color32> {
-    if let Some(stripped) = token.strip_prefix('#') {
-        if stripped.len() == 6 {
-            let r = u8::from_str_radix(&stripped[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&stripped[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&stripped[4..6], 16).ok()?;
-            // 외부 입력 (plugin 이 명시한 hex 색) — 정당한 dangerously 사용처.
-            #[allow(clippy::disallowed_methods)]
-            let color = egui::Color32::from_rgb(r, g, b);
-            return Some(color);
-        }
+    if let Some(stripped) = token.strip_prefix('#')
+        && stripped.len() == 6
+    {
+        let r = u8::from_str_radix(&stripped[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&stripped[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&stripped[4..6], 16).ok()?;
+        // 외부 입력 (plugin 이 명시한 hex 색) — 정당한 dangerously 사용처.
+        #[allow(clippy::disallowed_methods)]
+        let color = egui::Color32::from_rgb(r, g, b);
+        return Some(color);
     }
     let th = crate::theme::theme();
     Some(match token {

@@ -205,6 +205,78 @@ fn check_permissions(
     Ok(())
 }
 
+/// Phase 6.2c — envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
+///
+/// - `session_token` 가 None → `CallerContext::Local`
+/// - 형식이 잘못된 토큰(64-char hex 아님) → `Err(deny)`
+/// - 유효 형식이지만 store 에 없음/만료/revoked → `Err(deny)` (Local fallback 금지)
+/// - 유효 → `CallerContext::Agent { ... }`
+///
+/// memory store 가 초기화되지 않은 경우: 토큰이 있어도 검증 불가이므로
+/// `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
+pub fn resolve_caller_from_envelope(
+    host: &dyn crate::IpcHostFacade,
+    request: &crate::protocol::JsonRpcRequest,
+) -> Result<CallerContext, crate::protocol::JsonRpcResponse> {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::SessionResolution;
+
+    let token_str = match request.session_token.as_deref() {
+        None => return Ok(CallerContext::Local),
+        Some(s) => s,
+    };
+    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
+    let deny = |msg: &str| {
+        crate::protocol::JsonRpcResponse::error(
+            id.clone(),
+            -32001,
+            format!("permission_denied: {msg}"),
+        )
+    };
+    // 형식 위반 검증을 먼저 (trait 의 NotFound 와 invalid_format 구분 보존).
+    if SessionToken::from_str(token_str).is_none() {
+        return Err(deny("invalid session_token format (expect 64 hex chars)"));
+    }
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    match host.session_resolve(token_str, now_ms) {
+        SessionResolution::NotFound => Err(deny("session_token unknown/expired/revoked")),
+        SessionResolution::Agent {
+            agent_id,
+            permissions,
+        } => {
+            let perms: HashSet<tasty_plugin_manifest::Permission> = permissions
+                .iter()
+                .filter_map(|t| tasty_plugin_manifest::Permission::from_token(t))
+                .collect();
+            Ok(CallerContext::Agent {
+                agent_id,
+                permissions: Arc::new(perms),
+            })
+        }
+        SessionResolution::Plugin {
+            plugin_id,
+            permissions,
+        } => {
+            // Plugin caller 케이스는 현재 본 바이너리 store 가 발급하지 않으나
+            // trait 호환을 위해 처리. agent_id 로 plugin_id 사용.
+            let perms: HashSet<tasty_plugin_manifest::Permission> = permissions
+                .iter()
+                .filter_map(|t| tasty_plugin_manifest::Permission::from_token(t))
+                .collect();
+            Ok(CallerContext::Agent {
+                agent_id: plugin_id,
+                permissions: Arc::new(perms),
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,77 +440,5 @@ mod tests {
                 ..
             }
         ));
-    }
-}
-
-/// Phase 6.2c — envelope 의 `session_token` 필드를 보고 caller 를 결정한다.
-///
-/// - `session_token` 가 None → `CallerContext::Local`
-/// - 형식이 잘못된 토큰(64-char hex 아님) → `Err(deny)`
-/// - 유효 형식이지만 store 에 없음/만료/revoked → `Err(deny)` (Local fallback 금지)
-/// - 유효 → `CallerContext::Agent { ... }`
-///
-/// memory store 가 초기화되지 않은 경우: 토큰이 있어도 검증 불가이므로
-/// `Err(deny)` 로 막는다 — 부팅 초기의 가장된 호출을 막는다.
-pub fn resolve_caller_from_envelope(
-    host: &dyn crate::IpcHostFacade,
-    request: &crate::protocol::JsonRpcRequest,
-) -> Result<CallerContext, crate::protocol::JsonRpcResponse> {
-    use std::collections::HashSet;
-    use std::sync::Arc;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use crate::SessionResolution;
-
-    let token_str = match request.session_token.as_deref() {
-        None => return Ok(CallerContext::Local),
-        Some(s) => s,
-    };
-    let id = request.id.clone().unwrap_or(serde_json::Value::Null);
-    let deny = |msg: &str| {
-        crate::protocol::JsonRpcResponse::error(
-            id.clone(),
-            -32001,
-            &format!("permission_denied: {msg}"),
-        )
-    };
-    // 형식 위반 검증을 먼저 (trait 의 NotFound 와 invalid_format 구분 보존).
-    if SessionToken::from_str(token_str).is_none() {
-        return Err(deny("invalid session_token format (expect 64 hex chars)"));
-    }
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    match host.session_resolve(token_str, now_ms) {
-        SessionResolution::NotFound => Err(deny("session_token unknown/expired/revoked")),
-        SessionResolution::Agent {
-            agent_id,
-            permissions,
-        } => {
-            let perms: HashSet<tasty_plugin_manifest::Permission> = permissions
-                .iter()
-                .filter_map(|t| tasty_plugin_manifest::Permission::from_token(t))
-                .collect();
-            Ok(CallerContext::Agent {
-                agent_id,
-                permissions: Arc::new(perms),
-            })
-        }
-        SessionResolution::Plugin {
-            plugin_id,
-            permissions,
-        } => {
-            // Plugin caller 케이스는 현재 본 바이너리 store 가 발급하지 않으나
-            // trait 호환을 위해 처리. agent_id 로 plugin_id 사용.
-            let perms: HashSet<tasty_plugin_manifest::Permission> = permissions
-                .iter()
-                .filter_map(|t| tasty_plugin_manifest::Permission::from_token(t))
-                .collect();
-            Ok(CallerContext::Agent {
-                agent_id: plugin_id,
-                permissions: Arc::new(perms),
-            })
-        }
     }
 }

@@ -102,17 +102,15 @@ impl App {
             return;
         }
         self.open_preset_window(event_loop);
-        if let Some((kind, name)) = pending_selection {
-            if let Some(pwid) = self.preset_view_id {
-                if let Some(pw) = self
-                    .view
-                    .views
-                    .get_mut(&pwid)
-                    .and_then(|w| w.as_any_mut().downcast_mut::<view::PresetView>())
-                {
-                    pw.select(kind, name);
-                }
-            }
+        if let Some((kind, name)) = pending_selection
+            && let Some(pwid) = self.preset_view_id
+            && let Some(pw) = self
+                .view
+                .views
+                .get_mut(&pwid)
+                .and_then(|w| w.as_any_mut().downcast_mut::<view::PresetView>())
+        {
+            pw.select(kind, name);
         }
     }
 }

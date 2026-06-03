@@ -29,7 +29,7 @@ fn holder_param(params: &Value, id: &Value) -> Result<String, JsonRpcResponse> {
 fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
     match serde_json::to_value(value) {
         Ok(v) => JsonRpcResponse::success(id, v),
-        Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
+        Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
     }
 }
 

@@ -155,7 +155,7 @@ impl CellRenderer {
             let wide = terminal
                 .surface()
                 .screen_lines()
-                .get(cy as usize)
+                .get(cy)
                 .and_then(|line| {
                     line.visible_cells()
                         .find(|cell| cell.cell_index() == cx)
@@ -165,7 +165,7 @@ impl CellRenderer {
                         })
                 })
                 .unwrap_or(false);
-            Some((cx, cy as usize, wide))
+            Some((cx, cy, wide))
         } else {
             None
         };
@@ -268,8 +268,7 @@ impl CellRenderer {
 
         let bg_range = bg_start..self.bg_instances.len() as u32;
         let glyph_range = glyph_start..self.glyph_instances.len() as u32;
-        self.surface_ranges
-            .push((viewport.clone(), bg_range, glyph_range));
+        self.surface_ranges.push((*viewport, bg_range, glyph_range));
     }
 
     /// Append instances for the current-screen path (no scrollback).
@@ -318,16 +317,16 @@ impl CellRenderer {
                 }
 
                 let abs_row = row_offset + row_idx;
-                if let Some((sel, sel_bg)) = selection {
-                    if crate::selection::is_selected(col_idx, abs_row, sel) {
-                        bg_color = *sel_bg;
-                    }
+                if let Some((sel, sel_bg)) = selection
+                    && crate::selection::is_selected(col_idx, abs_row, sel)
+                {
+                    bg_color = *sel_bg;
                 }
-                if let Some(link) = link {
-                    if link.covers(col_idx, abs_row) {
-                        bg_color = link.bg;
-                        fg_color = link.fg;
-                    }
+                if let Some(link) = link
+                    && link.covers(col_idx, abs_row)
+                {
+                    bg_color = link.bg;
+                    fg_color = link.fg;
                 }
                 if let Some(sh) = search {
                     for (i, m) in sh.matches.iter().enumerate() {
@@ -380,20 +379,21 @@ impl CellRenderer {
 
                 let key = GlyphKey { ch, bold, italic };
 
-                if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
-                    if entry.width > 0.0 && entry.height > 0.0 {
-                        self.glyph_instances.push(GlyphInstance {
-                            pos: [col_idx as f32, row_idx as f32],
-                            viewport_offset: off,
-                            uv_offset: [entry.uv_x, entry.uv_y],
-                            uv_size: [entry.uv_w, entry.uv_h],
-                            fg_color,
-                            glyph_offset: [entry.offset_x, entry.offset_y],
-                            glyph_size: [entry.width, entry.height],
-                            page: entry.page,
-                            _pad: 0,
-                        });
-                    }
+                if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue)
+                    && entry.width > 0.0
+                    && entry.height > 0.0
+                {
+                    self.glyph_instances.push(GlyphInstance {
+                        pos: [col_idx as f32, row_idx as f32],
+                        viewport_offset: off,
+                        uv_offset: [entry.uv_x, entry.uv_y],
+                        uv_size: [entry.uv_w, entry.uv_h],
+                        fg_color,
+                        glyph_offset: [entry.offset_x, entry.offset_y],
+                        glyph_size: [entry.width, entry.height],
+                        page: entry.page,
+                        _pad: 0,
+                    });
                 }
             }
             // Trailing cells in the row (incl. cursor on empty cell).
@@ -476,20 +476,21 @@ impl CellRenderer {
                 bold: false,
                 italic: false,
             };
-            if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue) {
-                if entry.width > 0.0 && entry.height > 0.0 {
-                    self.glyph_instances.push(GlyphInstance {
-                        pos: [col_idx as f32, screen_row as f32],
-                        viewport_offset: off,
-                        uv_offset: [entry.uv_x, entry.uv_y],
-                        uv_size: [entry.uv_w, entry.uv_h],
-                        fg_color: preedit.fg_color,
-                        glyph_offset: [entry.offset_x, entry.offset_y],
-                        glyph_size: [entry.width, entry.height],
-                        page: entry.page,
-                        _pad: 0,
-                    });
-                }
+            if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue)
+                && entry.width > 0.0
+                && entry.height > 0.0
+            {
+                self.glyph_instances.push(GlyphInstance {
+                    pos: [col_idx as f32, screen_row as f32],
+                    viewport_offset: off,
+                    uv_offset: [entry.uv_x, entry.uv_y],
+                    uv_size: [entry.uv_w, entry.uv_h],
+                    fg_color: preedit.fg_color,
+                    glyph_offset: [entry.offset_x, entry.offset_y],
+                    glyph_size: [entry.width, entry.height],
+                    page: entry.page,
+                    _pad: 0,
+                });
             }
 
             col_idx += width;

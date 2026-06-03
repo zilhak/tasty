@@ -92,10 +92,10 @@ pub fn handle_save(
     };
     match result {
         Ok(()) => {
-            if let Some(panel) = state.image_panel_mut(engine, sid) {
-                if panel.is_blank() {
-                    panel.assign_file_path(final_path.clone());
-                }
+            if let Some(panel) = state.image_panel_mut(engine, sid)
+                && panel.is_blank()
+            {
+                panel.assign_file_path(final_path.clone());
             }
             JsonRpcResponse::success(id, json!({ "ok": true, "path": final_path }))
         }

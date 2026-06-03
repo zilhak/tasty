@@ -15,10 +15,10 @@ impl CoreState {
                 terminal.enable_disk_scrollback(surface_id);
             }
         }
-        if let Some(cmd) = self.settings.general.tasty_mode_init_command() {
-            if let Some(terminal) = self.find_terminal_by_id_mut(surface_id) {
-                terminal.send_key(&cmd);
-            }
+        if let Some(cmd) = self.settings.general.tasty_mode_init_command()
+            && let Some(terminal) = self.find_terminal_by_id_mut(surface_id)
+        {
+            terminal.send_key(&cmd);
         }
         let startup = self.settings.general.startup_command.trim();
         if !startup.is_empty() {

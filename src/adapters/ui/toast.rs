@@ -89,10 +89,10 @@ impl ToastManager {
 
         // 스코프당 최대 개수 초과 시 가장 오래된 것 제거.
         let count_in_scope = self.toasts.iter().filter(|t| t.scope == scope).count();
-        if count_in_scope > MAX_PER_SCOPE {
-            if let Some(idx) = self.toasts.iter().position(|t| t.scope == scope) {
-                self.toasts.remove(idx);
-            }
+        if count_in_scope > MAX_PER_SCOPE
+            && let Some(idx) = self.toasts.iter().position(|t| t.scope == scope)
+        {
+            self.toasts.remove(idx);
         }
     }
 

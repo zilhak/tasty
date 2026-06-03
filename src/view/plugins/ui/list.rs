@@ -13,10 +13,10 @@ pub(super) fn draw_list_tab(
 
     if ui_state.selected_id.is_none() {
         ui_state.selected_id = snapshot.plugins.first().map(|p| p.id.clone());
-    } else if let Some(id) = &ui_state.selected_id {
-        if !snapshot.plugins.iter().any(|p| &p.id == id) {
-            ui_state.selected_id = snapshot.plugins.first().map(|p| p.id.clone());
-        }
+    } else if let Some(id) = &ui_state.selected_id
+        && !snapshot.plugins.iter().any(|p| &p.id == id)
+    {
+        ui_state.selected_id = snapshot.plugins.first().map(|p| p.id.clone());
     }
 
     egui::SidePanel::left("plugins_list")

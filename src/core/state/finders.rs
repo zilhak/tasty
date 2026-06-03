@@ -64,10 +64,10 @@ impl CoreState {
     pub fn find_pane_for_tab(&self, tab_id: u32) -> Option<u32> {
         for workspace in &self.workspaces {
             for pid in workspace.pane_layout().all_pane_ids() {
-                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    if pane.tabs.iter().any(|t| t.id == tab_id) {
-                        return Some(pid);
-                    }
+                if let Some(pane) = workspace.pane_layout().find_pane(pid)
+                    && pane.tabs.iter().any(|t| t.id == tab_id)
+                {
+                    return Some(pid);
                 }
             }
         }

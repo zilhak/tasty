@@ -124,13 +124,13 @@ pub fn draw_info_modal(
 
     // Pop the current head and act on its on_close.
     let popped = state.dialogs.info_modal_queue.pop_front();
-    if let Some(modal) = popped {
-        if let InfoModalAction::Exit(code) = modal.on_close {
-            // 부팅 시점 fatal 알림에만 사용한다. winit destructor는 돌지 못하지만
-            // 아직 PTY/plugin 등이 떠 있지 않은 시점이라 손실이 없다.
-            tracing::info!("info modal exit requested (code={code})");
-            std::process::exit(code);
-        }
+    if let Some(modal) = popped
+        && let InfoModalAction::Exit(code) = modal.on_close
+    {
+        // 부팅 시점 fatal 알림에만 사용한다. winit destructor는 돌지 못하지만
+        // 아직 PTY/plugin 등이 떠 있지 않은 시점이라 손실이 없다.
+        tracing::info!("info modal exit requested (code={code})");
+        std::process::exit(code);
     }
 
     if state.dialogs.info_modal_queue.is_empty() {

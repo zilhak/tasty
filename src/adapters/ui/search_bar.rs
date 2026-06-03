@@ -193,10 +193,10 @@ fn scroll_to_current_match(state: &mut AppState, engine: &mut crate::core::CoreS
     if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
         let scrollback_len = terminal.scrollback_len();
         let screen_rows = terminal.rows();
-        if let Some(offset) = state.search.scroll_to_current(scrollback_len, screen_rows) {
-            if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-                terminal.set_scroll_offset(offset);
-            }
+        if let Some(offset) = state.search.scroll_to_current(scrollback_len, screen_rows)
+            && let Some(terminal) = engine.find_terminal_by_id_mut(surface_id)
+        {
+            terminal.set_scroll_offset(offset);
         }
     }
 }

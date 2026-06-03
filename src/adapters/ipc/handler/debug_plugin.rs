@@ -53,7 +53,7 @@ pub(crate) fn handle_event_bus(
                 Err(e) => {
                     return JsonRpcResponse::invalid_params(
                         id,
-                        &format!("invalid JSON payload: {e}"),
+                        format!("invalid JSON payload: {e}"),
                     );
                 }
             };
@@ -67,7 +67,7 @@ pub(crate) fn handle_event_bus(
                 other => {
                     return JsonRpcResponse::invalid_params(
                         id,
-                        &format!("unknown scope '{other}' (expected 'system' or 'surface')"),
+                        format!("unknown scope '{other}' (expected 'system' or 'surface')"),
                     );
                 }
             };

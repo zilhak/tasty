@@ -247,18 +247,15 @@ pub fn draw_settings_panel(
                             fh_touched = true;
                         }
                     }
-                    if fh_touched {
-                        if let Some(path) = user_config_path {
-                            if let Err(e) = crate::file::handler::save::save_combined_user_config(
-                                file_format,
-                                file_handler,
-                                path,
-                            ) {
-                                tracing::warn!(
-                                    "file_handler tab: save_combined_user_config failed: {e}"
-                                );
-                            }
-                        }
+                    if fh_touched
+                        && let Some(path) = user_config_path
+                        && let Err(e) = crate::file::handler::save::save_combined_user_config(
+                            file_format,
+                            file_handler,
+                            path,
+                        )
+                    {
+                        tracing::warn!("file_handler tab: save_combined_user_config failed: {e}");
                     }
                     result = Some(true);
                 }
@@ -389,37 +386,36 @@ pub fn draw_settings_panel(
         ui_state.popups.draw(
             ctx,
             &mut |id, ui| {
-                if id == "keybinding_conflict" {
-                    if let Some(pending) = &pending {
-                        let conflict_label_raw =
-                            crate::settings::KeybindingSettings::label_key_for(
-                                &pending.conflicting_field,
-                            )
-                            .map(t)
-                            .unwrap_or(pending.conflicting_field.as_str());
-                        let conflict_label =
-                            conflict_label_raw.trim_end_matches(':').trim().to_string();
-                        let combo_display =
-                            crate::settings::KeybindingSettings::format_display(&pending.combo);
+                if id == "keybinding_conflict"
+                    && let Some(pending) = &pending
+                {
+                    let conflict_label_raw = crate::settings::KeybindingSettings::label_key_for(
+                        &pending.conflicting_field,
+                    )
+                    .map(t)
+                    .unwrap_or(pending.conflicting_field.as_str());
+                    let conflict_label =
+                        conflict_label_raw.trim_end_matches(':').trim().to_string();
+                    let combo_display =
+                        crate::settings::KeybindingSettings::format_display(&pending.combo);
 
-                        ui.label(crate::i18n::t_fmt2(
-                            "settings.keybindings.conflict_message",
-                            &combo_display,
-                            &conflict_label,
-                        ));
-                        ui.add_space(8.0);
-                        ui.horizontal(|ui| {
-                            if ui.button(t("button.cancel")).clicked() {
-                                *cancelled = true;
-                            }
-                            if ui
-                                .button(t("settings.keybindings.conflict_apply"))
-                                .clicked()
-                            {
-                                *accepted = true;
-                            }
-                        });
-                    }
+                    ui.label(crate::i18n::t_fmt2(
+                        "settings.keybindings.conflict_message",
+                        &combo_display,
+                        &conflict_label,
+                    ));
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button(t("button.cancel")).clicked() {
+                            *cancelled = true;
+                        }
+                        if ui
+                            .button(t("settings.keybindings.conflict_apply"))
+                            .clicked()
+                        {
+                            *accepted = true;
+                        }
+                    });
                 }
             },
             None,

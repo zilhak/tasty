@@ -76,6 +76,12 @@ pub struct PluginDispatch {
     pub envelope: EventEnvelope,
 }
 
+impl Default for EventBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventBus {
     pub fn new() -> Self {
         Self {

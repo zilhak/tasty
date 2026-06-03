@@ -112,10 +112,10 @@ impl RecentPicks {
     /// 원자적 쓰기 — `<path>.tmp` 작성 후 rename. fsync 는 안 함 (UX 영향).
     /// 부모 디렉토리는 호출자가 미리 만들어 둠 (없으면 그대로 에러).
     pub fn save_atomic(&self, path: &Path) -> io::Result<()> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
         }
         let payload = Persisted {
             entries: self.entries.clone(),

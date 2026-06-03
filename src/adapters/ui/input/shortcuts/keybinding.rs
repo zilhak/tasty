@@ -256,10 +256,8 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.close_active, key, mods) {
-            if !state.close_active_tab(engine) {
-                if !state.close_active_pane(engine) {
-                    state.close_active_workspace(engine);
-                }
+            if !state.close_active_tab(engine) && !state.close_active_pane(engine) {
+                state.close_active_workspace(engine);
             }
             if !engine.workspaces.is_empty() {
                 state.resize_all(engine, terminal_rect, cell_w, cell_h);
@@ -314,25 +312,25 @@ impl MainView {
             }
             return true;
         }
-        if matches_any_binding(&kb.image_undo, key, mods) {
-            if state.focused_surface_type(engine).is_kind("image") {
-                if let Some(sid) = focused_image_surface_id(state, engine) {
-                    if let Some(view) = state.image_views.get_mut(sid) {
-                        view.undo();
-                    }
-                }
-                return true;
+        if matches_any_binding(&kb.image_undo, key, mods)
+            && state.focused_surface_type(engine).is_kind("image")
+        {
+            if let Some(sid) = focused_image_surface_id(state, engine)
+                && let Some(view) = state.image_views.get_mut(sid)
+            {
+                view.undo();
             }
+            return true;
         }
-        if matches_any_binding(&kb.image_redo, key, mods) {
-            if state.focused_surface_type(engine).is_kind("image") {
-                if let Some(sid) = focused_image_surface_id(state, engine) {
-                    if let Some(view) = state.image_views.get_mut(sid) {
-                        view.redo();
-                    }
-                }
-                return true;
+        if matches_any_binding(&kb.image_redo, key, mods)
+            && state.focused_surface_type(engine).is_kind("image")
+        {
+            if let Some(sid) = focused_image_surface_id(state, engine)
+                && let Some(view) = state.image_views.get_mut(sid)
+            {
+                view.redo();
             }
+            return true;
         }
         if matches_any_binding(&kb.toggle_command_palette, key, mods) {
             state.command_palette.reset();

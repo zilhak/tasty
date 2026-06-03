@@ -6,4 +6,4 @@
 
 pub use tasty_terminal::waker_factory::SharedWakerFactory;
 #[cfg(feature = "gui")]
-pub use tasty_terminal::waker_factory::{NoopWakerFactory, WakerFactory};
+pub use tasty_terminal::waker_factory::WakerFactory;

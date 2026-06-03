@@ -71,10 +71,10 @@ impl View for QuitView {
             WindowEvent::KeyboardInput { ref event, .. } => {
                 use winit::event::ElementState;
                 use winit::keyboard::{Key, NamedKey};
-                if event.state == ElementState::Pressed {
-                    if let Key::Named(NamedKey::Escape) = &event.logical_key {
-                        return self.on_escape();
-                    }
+                if event.state == ElementState::Pressed
+                    && let Key::Named(NamedKey::Escape) = &event.logical_key
+                {
+                    return self.on_escape();
                 }
             }
             _ => {}

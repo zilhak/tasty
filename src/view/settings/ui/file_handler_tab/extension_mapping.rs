@@ -133,14 +133,13 @@ fn draw_extension_row(
             ui.horizontal(|ui| {
                 ui.strong(format!(".{}", ext));
                 ui.add_space(8.0);
-                if draft_map.contains_key(ext) {
-                    if ui
+                if draft_map.contains_key(ext)
+                    && ui
                         .small_button(t("settings.file_handler.extension_mapping.reset"))
                         .on_hover_text(t("settings.file_handler.extension_mapping.reset_tooltip"))
                         .clicked()
-                    {
-                        draft_map.insert(ext.to_string(), Vec::new());
-                    }
+                {
+                    draft_map.insert(ext.to_string(), Vec::new());
                 }
             });
             ui.add_space(4.0);

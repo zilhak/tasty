@@ -426,16 +426,14 @@ impl ImageView {
             history,
             current_stroke,
         } = &mut self.edit_state
+            && let Some(stroke) = current_stroke.take()
+            && !stroke.points.is_empty()
         {
-            if let Some(stroke) = current_stroke.take() {
-                if !stroke.points.is_empty() {
-                    history.push(DrawAction::Stroke {
-                        points: stroke.points,
-                        brush_size: stroke.brush_size,
-                        color: stroke.color,
-                    });
-                }
-            }
+            history.push(DrawAction::Stroke {
+                points: stroke.points,
+                brush_size: stroke.brush_size,
+                color: stroke.color,
+            });
         }
     }
 
@@ -450,10 +448,10 @@ impl ImageView {
 
         bresenham_thick_line(layer, from, to, radius, color, w, h);
 
-        if let EditState::Drawing { current_stroke, .. } = &mut self.edit_state {
-            if let Some(stroke) = current_stroke {
-                stroke.points.push((from, to));
-            }
+        if let EditState::Drawing { current_stroke, .. } = &mut self.edit_state
+            && let Some(stroke) = current_stroke
+        {
+            stroke.points.push((from, to));
         }
 
         self.draw_texture_dirty = true;
@@ -463,13 +461,12 @@ impl ImageView {
         if matches!(self.edit_state, EditState::FloatingSelection { .. }) {
             self.commit_floating();
         }
-        if let EditState::Drawing { history, .. } = &mut self.edit_state {
-            if history.undo().is_some() {
-                if let Some(ref original) = self.original_image {
-                    self.draw_layer = Some(history.replay(original.size));
-                    self.draw_texture_dirty = true;
-                }
-            }
+        if let EditState::Drawing { history, .. } = &mut self.edit_state
+            && history.undo().is_some()
+            && let Some(ref original) = self.original_image
+        {
+            self.draw_layer = Some(history.replay(original.size));
+            self.draw_texture_dirty = true;
         }
     }
 
@@ -477,13 +474,12 @@ impl ImageView {
         if matches!(self.edit_state, EditState::FloatingSelection { .. }) {
             self.commit_floating();
         }
-        if let EditState::Drawing { history, .. } = &mut self.edit_state {
-            if history.redo().is_some() {
-                if let Some(ref original) = self.original_image {
-                    self.draw_layer = Some(history.replay(original.size));
-                    self.draw_texture_dirty = true;
-                }
-            }
+        if let EditState::Drawing { history, .. } = &mut self.edit_state
+            && history.redo().is_some()
+            && let Some(ref original) = self.original_image
+        {
+            self.draw_layer = Some(history.replay(original.size));
+            self.draw_texture_dirty = true;
         }
     }
 
@@ -552,7 +548,7 @@ pub struct ImageViewStore {
 
 impl ImageViewStore {
     pub fn get_or_init(&mut self, panel: &mut ImagePanel) -> &mut ImageView {
-        let view = self.views.entry(panel.id).or_insert_with(ImageView::new);
+        let view = self.views.entry(panel.id).or_default();
         view.ensure_loaded(panel);
         view
     }

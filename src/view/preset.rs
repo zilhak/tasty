@@ -132,7 +132,7 @@ impl View for PresetView {
             };
             crate::preset_ui::draw_preset_panel(
                 ctx,
-                &mut *store_guard,
+                &mut store_guard,
                 active_kind,
                 sel_ws,
                 sel_tab,

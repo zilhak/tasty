@@ -75,13 +75,13 @@ pub(crate) fn handle_surface_close(
         Err(e) => return e,
     };
     // Prevent closing the caller's own surface — use 'close self' instead.
-    if let Some(caller) = super::caller_surface_id(params) {
-        if caller == surface_id {
-            return JsonRpcResponse::invalid_params(
-                id,
-                "Cannot close your own surface with 'close surface'. Use 'tasty close self' instead.",
-            );
-        }
+    if let Some(caller) = super::caller_surface_id(params)
+        && caller == surface_id
+    {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Cannot close your own surface with 'close surface'. Use 'tasty close self' instead.",
+        );
     }
     close_surface_via_intent(core, state, engine, id, surface_id)
 }

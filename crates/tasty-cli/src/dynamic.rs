@@ -166,10 +166,10 @@ pub fn matches_to_request(
         // JSON 한 덩이를 읽어 CLI 로 명시되지 않은 params 필드를 채운다.
         // Claude Code 처럼 hook payload 를 stdin JSON 으로 전달하는 외부 시스템
         // 연동용. CLI 로 직접 지정된 값이 항상 우선.
-        if sub_decl.stdin_json {
-            if let Some(stdin_json) = read_stdin_json() {
-                merge_stdin_params(&mut params, g, &stdin_json);
-            }
+        if sub_decl.stdin_json
+            && let Some(stdin_json) = read_stdin_json()
+        {
+            merge_stdin_params(&mut params, g, &stdin_json);
         }
         // claude CLI의 resolve_surface_id와 동일한 폴백 규칙. plugin이 정의한
         // `surface` (u32) 인자가 사용자 입력에 없으면 TASTY_SURFACE_ID env로 채운다.
@@ -179,15 +179,15 @@ pub fn matches_to_request(
             .iter()
             .chain(g.positional.iter())
             .any(|a| a.name == "surface" && matches!(a.ty, CliArgType::U32));
-        if defines_surface && !params.contains_key("surface") && !params.contains_key("surface_id")
-        {
-            if let Some(sid) = std::env::var("TASTY_SURFACE_ID")
+        if defines_surface
+            && !params.contains_key("surface")
+            && !params.contains_key("surface_id")
+            && let Some(sid) = std::env::var("TASTY_SURFACE_ID")
                 .ok()
                 .and_then(|s| s.parse::<u32>().ok())
-            {
-                params.insert("surface".into(), Value::from(sid));
-                params.insert("surface_id".into(), Value::from(sid));
-            }
+        {
+            params.insert("surface".into(), Value::from(sid));
+            params.insert("surface_id".into(), Value::from(sid));
         }
         // 사용자가 명시적으로 --surface 를 줬을 때도 surface_id 동기. (IPC handler
         // 가 surface_id 키만 보는 경우 대응.)
@@ -239,10 +239,10 @@ fn merge_stdin_params(params: &mut Map<String, Value>, group: &CliArgGroup, stdi
             continue;
         }
         let key = arg.stdin_field.as_deref().unwrap_or(&arg.name);
-        if let Some(v) = obj.get(key) {
-            if !v.is_null() {
-                params.insert(arg.name.clone(), v.clone());
-            }
+        if let Some(v) = obj.get(key)
+            && !v.is_null()
+        {
+            params.insert(arg.name.clone(), v.clone());
         }
     }
 }

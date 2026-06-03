@@ -63,13 +63,13 @@ impl DoubleTapDetector {
                     self.contaminated = false;
 
                     // Check if this is the second tap
-                    if let Some((first_key, first_time)) = &self.first_tap {
-                        if *first_key == m && first_time.elapsed().as_millis() < self.threshold_ms {
-                            self.fired = Some(m);
-                            self.first_tap = None;
-                            self.pending_key = None;
-                            return;
-                        }
+                    if let Some((first_key, first_time)) = &self.first_tap
+                        && *first_key == m
+                        && first_time.elapsed().as_millis() < self.threshold_ms
+                    {
+                        self.fired = Some(m);
+                        self.first_tap = None;
+                        self.pending_key = None;
                     }
                 }
             } else {
@@ -79,15 +79,15 @@ impl DoubleTapDetector {
             }
         } else {
             // Key released
-            if let Some(m) = modifier {
-                if self.pending_key == Some(m) {
-                    if !self.contaminated {
-                        // Clean release → record as first tap
-                        self.first_tap = Some((m, Instant::now()));
-                    }
-                    self.pending_key = None;
-                    self.contaminated = false;
+            if let Some(m) = modifier
+                && self.pending_key == Some(m)
+            {
+                if !self.contaminated {
+                    // Clean release → record as first tap
+                    self.first_tap = Some((m, Instant::now()));
                 }
+                self.pending_key = None;
+                self.contaminated = false;
             }
         }
     }

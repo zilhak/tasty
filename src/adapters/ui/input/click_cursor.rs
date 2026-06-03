@@ -54,7 +54,7 @@ impl EditableRegion {
 
         let (cols, rows) = terminal.surface().dimensions();
         let (cursor_col, cursor_row) = terminal.surface().cursor_position();
-        let cursor_row = cursor_row as usize;
+        let cursor_row = cursor_row;
         let screen_lines = terminal.surface().screen_lines();
 
         // Walk upward from cursor_row to find the first row of the editable region.

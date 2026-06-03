@@ -26,7 +26,7 @@ impl IpcHostFacade for Core {
                 return SessionResolution::NotFound;
             }
         };
-        let mut perms: Vec<String> = resolved.permissions.iter().cloned().collect();
+        let mut perms: Vec<String> = resolved.permissions.to_vec();
         for g in &resolved.temp_grants {
             perms.push(g.permission.clone());
         }

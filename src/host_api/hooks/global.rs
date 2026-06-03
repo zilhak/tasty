@@ -138,10 +138,10 @@ impl GlobalHookManager {
 
         // Update last_fired for interval hooks that just fired.
         for (id, _) in &to_fire {
-            if let Some(hook) = self.hooks.get(id) {
-                if matches!(hook.condition, HookCondition::Interval(_)) {
-                    self.last_fired.insert(*id, now);
-                }
+            if let Some(hook) = self.hooks.get(id)
+                && matches!(hook.condition, HookCondition::Interval(_))
+            {
+                self.last_fired.insert(*id, now);
             }
         }
 

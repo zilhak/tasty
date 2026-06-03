@@ -64,7 +64,7 @@ pub fn handle_task_create(
     match core.task_create(engine, opts) {
         Ok(task) => match serde_json::to_value(task) {
             Ok(v) => JsonRpcResponse::success(id, v),
-            Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
+            Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
         },
         Err(e) => agent_err_to_response(id, e),
     }
@@ -130,7 +130,7 @@ pub fn handle_task_get(
     };
     match core.task_get(engine, workspace_id, &task_id) {
         Err(e) => agent_err_to_response(id, e),
-        Ok(None) => JsonRpcResponse::error(id, -32004, &format!("task not found: {task_id}")),
+        Ok(None) => JsonRpcResponse::error(id, -32004, format!("task not found: {task_id}")),
         Ok(Some(t)) => JsonRpcResponse::success(id, serde_json::to_value(t).unwrap_or(Value::Null)),
     }
 }
@@ -195,7 +195,7 @@ pub fn handle_task_retry(
         Err(e) => agent_err_to_response(id, e),
         Ok(task) => match serde_json::to_value(task) {
             Ok(v) => JsonRpcResponse::success(id, v),
-            Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
+            Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
         },
     }
 }
@@ -528,14 +528,11 @@ pub(crate) fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Resu
     let out = child.wait_with_output()?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "exit_code={}, stderr={}",
-                out.status.code().unwrap_or(-1),
-                stderr.trim()
-            ),
-        ));
+        return Err(std::io::Error::other(format!(
+            "exit_code={}, stderr={}",
+            out.status.code().unwrap_or(-1),
+            stderr.trim()
+        )));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }

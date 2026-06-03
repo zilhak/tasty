@@ -32,14 +32,14 @@ impl CoreState {
         if peek {
             queue
                 .iter()
-                .filter(|m| from.map_or(true, |f| m.from_surface_id == f))
+                .filter(|m| from.is_none_or(|f| m.from_surface_id == f))
                 .cloned()
                 .collect()
         } else {
             let mut retained = Vec::new();
             let mut taken = Vec::new();
             for msg in queue.drain(..) {
-                if from.map_or(true, |f| msg.from_surface_id == f) {
+                if from.is_none_or(|f| msg.from_surface_id == f) {
                     taken.push(msg);
                 } else {
                     retained.push(msg);

@@ -91,18 +91,17 @@ impl App {
             // 호스트 dispatcher로 통과시킨다. plugin이 자기 namespace 메서드의
             // 구현을 호스트 본문에 위임하는 trampoline 패턴(예: com.tasty.image)을
             // 지원하기 위함. 호스트에 동명 메서드가 없으면 일반 -32601이 떨어진다.
-            if let Some(mgr) = self.plugin_manager.as_mut() {
-                if let Some(owner) = mgr.ipc_namespaces.resolve(&call.method) {
-                    if owner != call.plugin_id {
-                        mgr.forward_namespace_call_from_plugin(
-                            &call.method,
-                            call.params.clone(),
-                            &call.plugin_id,
-                            call.call_id,
-                        );
-                        continue;
-                    }
-                }
+            if let Some(mgr) = self.plugin_manager.as_mut()
+                && let Some(owner) = mgr.ipc_namespaces.resolve(&call.method)
+                && owner != call.plugin_id
+            {
+                mgr.forward_namespace_call_from_plugin(
+                    &call.method,
+                    call.params.clone(),
+                    &call.plugin_id,
+                    call.call_id,
+                );
+                continue;
             }
             let caller = ipc::caller::CallerContext::Plugin {
                 plugin_id: call.plugin_id.clone(),

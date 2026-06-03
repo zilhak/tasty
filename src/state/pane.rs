@@ -35,8 +35,8 @@ impl AppState {
         let terminal = crate::model::Pane::spawn_terminal(
             new_surface_id,
             crate::model::ShellSpawnOpts {
-                cols: cols,
-                rows: rows,
+                cols,
+                rows,
                 shell: sh.shell_ref(),
                 shell_args: &sh.args_ref(),
                 waker: engine.make_waker(new_surface_id),
@@ -82,10 +82,10 @@ impl AppState {
         // 단축키(사용자 행위)로 split한 경우 새 surface로 포커스 이동
         let ws = self.active_workspace_mut(engine);
         let focused_pane_id = ws.focused_pane;
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(focused_pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                tab.focused_surface = new_surface_id;
-            }
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(focused_pane_id)
+            && let Some(tab) = pane.active_tab_mut()
+        {
+            tab.focused_surface = new_surface_id;
         }
         engine.mark_layout_dirty();
         Ok(())
@@ -135,8 +135,8 @@ impl AppState {
             let terminal = crate::model::Pane::spawn_terminal(
                 new_surface_id,
                 crate::model::ShellSpawnOpts {
-                    cols: cols,
-                    rows: rows,
+                    cols,
+                    rows,
                     shell: sh.shell_ref(),
                     shell_args: &sh.args_ref(),
                     waker: engine.make_waker(new_surface_id),
@@ -262,7 +262,7 @@ impl AppState {
     /// which handles tab/pane/workspace cascading.
     pub fn close_active_surface(&mut self, engine: &mut CoreState) -> bool {
         let surface_id;
-        let persist_id;
+
         if let Some(pane) = self.focused_pane(engine) {
             let tab = match pane.tabs.get(pane.active_tab) {
                 Some(t) => t,
@@ -272,7 +272,7 @@ impl AppState {
         } else {
             return false;
         }
-        persist_id = engine
+        let persist_id = engine
             .terminals
             .scrollback_persist_id(surface_id)
             .map(str::to_string);
@@ -489,11 +489,11 @@ impl AppState {
             let mut targets: Vec<(u32, Option<String>)> = Vec::new();
             {
                 let ws = &engine.workspaces[ws_idx];
-                if ws.pane_layout().all_pane_ids().len() > 1 {
-                    if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                        for tab in &pane.tabs {
-                            Self::collect_close_targets(tab, engine, &mut targets);
-                        }
+                if ws.pane_layout().all_pane_ids().len() > 1
+                    && let Some(pane) = ws.pane_layout().find_pane(pane_id)
+                {
+                    for tab in &pane.tabs {
+                        Self::collect_close_targets(tab, engine, &mut targets);
                     }
                 }
             }
@@ -576,8 +576,8 @@ impl AppState {
         let terminal = crate::model::Pane::spawn_terminal(
             new_surface_id,
             crate::model::ShellSpawnOpts {
-                cols: cols,
-                rows: rows,
+                cols,
+                rows,
                 shell: sh.shell_ref(),
                 shell_args: &sh.args_ref(),
                 waker: engine.make_waker(new_surface_id),
@@ -622,10 +622,10 @@ impl AppState {
         let ws = &mut engine.workspaces[ws_idx];
         let removed = ws.pane_layout_mut().close_pane(pane_id);
         if removed {
-            if ws.focused_pane == pane_id {
-                if let Some(first) = ws.pane_layout().first_pane() {
-                    ws.focused_pane = first.id;
-                }
+            if ws.focused_pane == pane_id
+                && let Some(first) = ws.pane_layout().first_pane()
+            {
+                ws.focused_pane = first.id;
             }
             for (sid, pid) in targets {
                 self.cleanup_surface(engine, sid, pid);
@@ -642,7 +642,7 @@ pub(crate) fn default_tab_name_for_kind(kind: &str, params: &Value) -> String {
     fn basename_or(path: &str, fallback: &str) -> String {
         path.split(['/', '\\'])
             .filter(|s| !s.is_empty())
-            .last()
+            .next_back()
             .unwrap_or(fallback)
             .to_string()
     }

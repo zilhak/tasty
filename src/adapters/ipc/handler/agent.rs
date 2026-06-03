@@ -48,14 +48,14 @@ pub(super) fn task_id_param(params: &Value, id: &Value) -> Result<TaskId, JsonRp
 pub(super) fn agent_err_to_response(id: Value, err: AgentError) -> JsonRpcResponse {
     use AgentError::*;
     match err {
-        TaskNotFound(_) => JsonRpcResponse::error(id, -32004, &err.to_string()),
+        TaskNotFound(_) => JsonRpcResponse::error(id, -32004, err.to_string()),
         DependencyCycle(_)
         | UnknownDependency(_)
         | InvalidArgument(_)
         | InvalidTransition { .. } => JsonRpcResponse::invalid_params(id, err.to_string()),
-        AlreadyTerminal(_) => JsonRpcResponse::error(id, -32008, &err.to_string()),
-        LeaseConflict { .. } => JsonRpcResponse::error(id, -32009, &err.to_string()),
-        Memory(_) | Serde(_) => JsonRpcResponse::error(id, -32603, &err.to_string()),
+        AlreadyTerminal(_) => JsonRpcResponse::error(id, -32008, err.to_string()),
+        LeaseConflict { .. } => JsonRpcResponse::error(id, -32009, err.to_string()),
+        Memory(_) | Serde(_) => JsonRpcResponse::error(id, -32603, err.to_string()),
     }
 }
 

@@ -90,6 +90,7 @@ pub fn load_from_disk() -> Option<SavedLayout> {
 // ── Dirty flag / debounce state ──
 
 /// Tracks whether the layout has been modified and needs saving.
+#[derive(Default)]
 pub struct LayoutDirtyTracker {
     dirty: bool,
     dirty_since: Option<Instant>,
@@ -98,15 +99,6 @@ pub struct LayoutDirtyTracker {
 impl LayoutDirtyTracker {
     pub fn new() -> Self {
         Self::default()
-    }
-}
-
-impl Default for LayoutDirtyTracker {
-    fn default() -> Self {
-        Self {
-            dirty: false,
-            dirty_since: None,
-        }
     }
 }
 

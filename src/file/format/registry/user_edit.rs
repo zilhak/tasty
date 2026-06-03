@@ -192,7 +192,8 @@ impl FileFormatRegistry {
         let user_keys: Vec<String> = inner
             .extension_priority
             .iter()
-            .filter_map(|(k, v)| matches!(v.origin, RuleOrigin::User).then(|| k.clone()))
+            .filter(|(_, v)| matches!(v.origin, RuleOrigin::User))
+            .map(|(k, _)| k.clone())
             .collect();
         for k in user_keys {
             inner.extension_priority.remove(&k);

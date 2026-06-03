@@ -59,15 +59,15 @@ impl PluginManager {
                     }
                 };
                 if let Some(entry) = self.surfaces.get(&surface_id) {
-                    if let Some(tree) = parsed.tree {
-                        if let Ok(mut slot) = entry.handles.tree.lock() {
-                            *slot = Some(tree);
-                        }
+                    if let Some(tree) = parsed.tree
+                        && let Ok(mut slot) = entry.handles.tree.lock()
+                    {
+                        *slot = Some(tree);
                     }
-                    if let Some(name) = parsed.display_name {
-                        if let Ok(mut slot) = entry.handles.display_name.lock() {
-                            *slot = name;
-                        }
+                    if let Some(name) = parsed.display_name
+                        && let Ok(mut slot) = entry.handles.display_name.lock()
+                    {
+                        *slot = name;
                     }
                 }
             }
@@ -105,10 +105,10 @@ impl PluginManager {
                         return;
                     }
                 };
-                if let Some(inst) = self.popup_instances.get_mut(&instance_id) {
-                    if parsed.tree.is_some() {
-                        inst.tree = parsed.tree;
-                    }
+                if let Some(inst) = self.popup_instances.get_mut(&instance_id)
+                    && parsed.tree.is_some()
+                {
+                    inst.tree = parsed.tree;
                 }
                 if parsed.close {
                     self.close_popup_instance(
@@ -266,7 +266,7 @@ impl PluginManager {
                 JsonRpcResponse::error(
                     original_id,
                     -32002,
-                    &format!("extension '{extension_id}' is not running"),
+                    format!("extension '{extension_id}' is not running"),
                 ),
             );
             return;

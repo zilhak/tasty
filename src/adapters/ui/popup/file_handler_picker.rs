@@ -339,10 +339,10 @@ fn draw_handler_list(
             },
         );
 
-        if resp.clicked() {
-            if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
-                p.selected = Some(entry.id.clone());
-            }
+        if resp.clicked()
+            && let Some(p) = state.dialogs.file_handler_picker.as_mut()
+        {
+            p.selected = Some(entry.id.clone());
         }
         if resp.double_clicked() {
             *double_click_dispatch = Some(entry.id.clone());

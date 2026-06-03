@@ -92,19 +92,19 @@ impl MainView {
             Some(cb) => cb.get_text(),
             None => None,
         };
-        if let Some(text) = text {
-            if !text.is_empty() {
-                let surface_id = self.state.focused_surface_id(&self.core_state);
-                let bracketed = self
-                    .state
-                    .focused_terminal(&self.core_state)
-                    .map(|t| t.bracketed_paste());
-                if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
-                    dispatch_paste(self, sid, bracketed, text);
-                    self.last_terminal_paste_at = Some(std::time::Instant::now());
-                }
-                return;
+        if let Some(text) = text
+            && !text.is_empty()
+        {
+            let surface_id = self.state.focused_surface_id(&self.core_state);
+            let bracketed = self
+                .state
+                .focused_terminal(&self.core_state)
+                .map(|t| t.bracketed_paste());
+            if let (Some(sid), Some(bracketed)) = (surface_id, bracketed) {
+                dispatch_paste(self, sid, bracketed, text);
+                self.last_terminal_paste_at = Some(std::time::Instant::now());
             }
+            return;
         }
 
         // Fall back to image: save as PNG and paste the file path

@@ -18,13 +18,9 @@ impl App {
     ) -> Option<JsonRpcResponse> {
         let id = request.id.clone().unwrap_or(serde_json::Value::Null);
         match request.method.as_str() {
-            "workspace.list" => {
-                Some(self.collect_list(id, |s, e, i| workspace::handle_workspace_list(s, e, i)))
-            }
-            "surface.list" => {
-                Some(self.collect_list(id, |s, e, i| surface::handle_surface_list(s, e, i)))
-            }
-            "pane.list" => Some(self.collect_list(id, |s, e, i| pane::handle_pane_list(s, e, i))),
+            "workspace.list" => Some(self.collect_list(id, workspace::handle_workspace_list)),
+            "surface.list" => Some(self.collect_list(id, surface::handle_surface_list)),
+            "pane.list" => Some(self.collect_list(id, pane::handle_pane_list)),
             _ => None,
         }
     }

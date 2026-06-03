@@ -187,15 +187,15 @@ pub(super) fn parse_hook_result(resp: &PluginResponse) -> HookOutcome {
         Some(v) => v,
         None => return HookOutcome::Pass,
     };
-    if let Some(v) = result.get("modified_payload") {
-        if !v.is_null() {
-            return HookOutcome::Modified(v.clone());
-        }
+    if let Some(v) = result.get("modified_payload")
+        && !v.is_null()
+    {
+        return HookOutcome::Modified(v.clone());
     }
-    if let Some(pass) = result.get("pass").and_then(|p| p.as_bool()) {
-        if !pass {
-            return HookOutcome::Block;
-        }
+    if let Some(pass) = result.get("pass").and_then(|p| p.as_bool())
+        && !pass
+    {
+        return HookOutcome::Block;
     }
     HookOutcome::Pass
 }

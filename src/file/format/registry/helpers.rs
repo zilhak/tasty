@@ -43,7 +43,7 @@ pub(super) fn install_one(
     let rule_kinds: Vec<DetectorRuleKind> = decl
         .rule
         .into_iter()
-        .filter_map(|r| decl_rule_to_kind(r))
+        .filter_map(decl_rule_to_kind)
         .collect();
     entry.push(DetectorContribution {
         origin,

@@ -19,7 +19,7 @@ fn now_ms() -> u64 {
 }
 
 fn audit_err_to_response(id: Value, err: AuditError) -> JsonRpcResponse {
-    JsonRpcResponse::error(id, -32603, &err.to_string())
+    JsonRpcResponse::error(id, -32603, err.to_string())
 }
 
 fn parse_caller_kind(s: &str) -> Option<AuditCallerKind> {

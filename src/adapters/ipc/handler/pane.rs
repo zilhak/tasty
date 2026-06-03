@@ -45,13 +45,13 @@ pub fn handle_pane_close(
         Err(e) => return e,
     };
 
-    if let Some(caller) = super::caller_surface_id(params) {
-        if super::surface_belongs_to_pane(engine, caller, pane_id) {
-            return JsonRpcResponse::invalid_params(
-                id,
-                "Cannot close a pane that contains your own surface. Close all other surfaces in the pane first, then use 'tasty close self'.",
-            );
-        }
+    if let Some(caller) = super::caller_surface_id(params)
+        && super::surface_belongs_to_pane(engine, caller, pane_id)
+    {
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Cannot close a pane that contains your own surface. Close all other surfaces in the pane first, then use 'tasty close self'.",
+        );
     }
 
     if engine.find_pane_by_id(pane_id).is_none() {
@@ -167,21 +167,14 @@ pub fn handle_split(
         .unwrap_or("terminal");
 
     // 필수 파라미터 선검증
-    match kind {
-        "markdown" => {
-            if params
-                .get("file")
-                .and_then(|v| v.as_str())
-                .map(str::is_empty)
-                .unwrap_or(true)
-            {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    "Missing 'file' parameter for markdown type",
-                );
-            }
-        }
-        _ => {}
+    if kind == "markdown"
+        && params
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(str::is_empty)
+            .unwrap_or(true)
+    {
+        return JsonRpcResponse::invalid_params(id, "Missing 'file' parameter for markdown type");
     }
 
     match level {

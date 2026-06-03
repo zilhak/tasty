@@ -81,10 +81,10 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::IpcReady => {
-                if self.process_ipc() {
-                    if let Some(w) = self.focused_window_mut() {
-                        w.mark_dirty();
-                    }
+                if self.process_ipc()
+                    && let Some(w) = self.focused_window_mut()
+                {
+                    w.mark_dirty();
                 }
             }
             AppEvent::EguiRepaint => {
@@ -188,15 +188,15 @@ impl ApplicationHandler<AppEvent> for App {
                 );
                 // Split borrow — focused_window_mut 는 &mut self 전체를 잡아
                 // self.core 와 충돌하므로 인덱스로 직접 접근.
-                if let Some(id) = self.view.focused_view_id {
-                    if let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) {
-                        self.core.apply_identify_result(
-                            &mut main.state,
-                            &mut main.core_state,
-                            target,
-                            detector,
-                        );
-                    }
+                if let Some(id) = self.view.focused_view_id
+                    && let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut())
+                {
+                    self.core.apply_identify_result(
+                        &mut main.state,
+                        &mut main.core_state,
+                        target,
+                        detector,
+                    );
                 }
             }
         }
@@ -235,10 +235,10 @@ impl ApplicationHandler<AppEvent> for App {
         // Validate enum-like fields up-front so GPU init and downstream consumers
         // see normalized values, and so disk reflects fallback (no recurring popups).
         let normalize_report = init_settings.normalize();
-        if normalize_report.changed {
-            if let Err(e) = init_settings.save() {
-                tracing::warn!("failed to persist normalized settings: {e}");
-            }
+        if normalize_report.changed
+            && let Err(e) = init_settings.save()
+        {
+            tracing::warn!("failed to persist normalized settings: {e}");
         }
 
         let gpu = pollster::block_on(crate::gpu::GpuState::new(
@@ -339,31 +339,31 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // Modal handling — 활성 모달을 대상으로 한 이벤트
-        if let Some(modal_id) = self.view.active_modal_id {
-            if id == modal_id {
-                let action = if let Some(modal) = self.view.views.get_mut(&id) {
-                    let mut ctx = ViewCtx {
-                        event_loop,
-                        modal_active: false,
-                        plugin_manager: self.plugin_manager.as_ref(),
-                    };
-                    modal.handle_event(event, &mut ctx)
-                } else {
-                    ViewAction::None
+        if let Some(modal_id) = self.view.active_modal_id
+            && id == modal_id
+        {
+            let action = if let Some(modal) = self.view.views.get_mut(&id) {
+                let mut ctx = ViewCtx {
+                    event_loop,
+                    modal_active: false,
+                    plugin_manager: self.plugin_manager.as_ref(),
                 };
+                modal.handle_event(event, &mut ctx)
+            } else {
+                ViewAction::None
+            };
 
-                match action {
-                    ViewAction::None => {}
-                    ViewAction::Close => {
-                        self.close_active_modal();
-                    }
-                    ViewAction::CloseWithEvent(app_event) => {
-                        self.close_active_modal();
-                        crate::shortcuts::send_app_event(&self.view.proxy, app_event);
-                    }
+            match action {
+                ViewAction::None => {}
+                ViewAction::Close => {
+                    self.close_active_modal();
                 }
-                return;
+                ViewAction::CloseWithEvent(app_event) => {
+                    self.close_active_modal();
+                    crate::shortcuts::send_app_event(&self.view.proxy, app_event);
+                }
             }
+            return;
         }
 
         // Normal mode — find the window by ID and delegate
@@ -428,10 +428,10 @@ impl ApplicationHandler<AppEvent> for App {
                 mgr.emit_host_event("window.focused", &payload, EventScope::System);
             }
             // If a modal is active, bring it to the front so it's not buried
-            if let Some(modal_id) = self.view.active_modal_id {
-                if let Some(modal) = self.view.views.get(&modal_id) {
-                    modal.base().winit.focus_window();
-                }
+            if let Some(modal_id) = self.view.active_modal_id
+                && let Some(modal) = self.view.views.get(&modal_id)
+            {
+                modal.base().winit.focus_window();
             }
         }
 
@@ -508,14 +508,13 @@ impl ApplicationHandler<AppEvent> for App {
                 .map(|w| w.base().close_requested)
                 .unwrap_or(false);
             if close_requested {
-                if let Some(w) = self.view.views.remove(&id) {
-                    if self.view.views.values().all(|w| w.as_main().is_none()) {
-                        if let Some(main_box) = crate::view::unbox_main(w) {
-                            tracing::info!("last main window closed via request, parking state");
-                            self.parked_states
-                                .push((main_box.state, main_box.core_state));
-                        }
-                    }
+                if let Some(w) = self.view.views.remove(&id)
+                    && self.view.views.values().all(|w| w.as_main().is_none())
+                    && let Some(main_box) = crate::view::unbox_main(w)
+                {
+                    tracing::info!("last main window closed via request, parking state");
+                    self.parked_states
+                        .push((main_box.state, main_box.core_state));
                 }
                 if self.view.focused_view_id == Some(id) {
                     self.view.focused_view_id = self
@@ -532,10 +531,10 @@ impl ApplicationHandler<AppEvent> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
-        if self.process_ipc() {
-            if let Some(w) = self.focused_window_mut() {
-                w.mark_dirty();
-            }
+        if self.process_ipc()
+            && let Some(w) = self.focused_window_mut()
+        {
+            w.mark_dirty();
         }
 
         // Plugin host pump — process plugin events, run health checks, restart unresponsive.
@@ -600,10 +599,10 @@ impl ApplicationHandler<AppEvent> for App {
         // so we retry on the next frame.
         let mut any_pending = false;
         for w in self.view.views.values_mut() {
-            if let Some(main) = w.as_main_mut() {
-                if crate::core::Core::flush_pty_resizes(&mut main.core_state) {
-                    any_pending = true;
-                }
+            if let Some(main) = w.as_main_mut()
+                && crate::core::Core::flush_pty_resizes(&mut main.core_state)
+            {
+                any_pending = true;
             }
         }
         for (_, engine) in self.parked_states.iter_mut() {

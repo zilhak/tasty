@@ -25,7 +25,7 @@ pub fn draw_command_palette_popup(
     }
 
     let commands = command_palette::all_commands();
-    let labels: Vec<String> = commands.iter().map(|c| label_for(c)).collect();
+    let labels: Vec<String> = commands.iter().map(label_for).collect();
     let matches = command_palette::search(&state.command_palette.query, &commands, &labels);
 
     // Clamp selection within result range.

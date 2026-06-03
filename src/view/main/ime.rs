@@ -203,10 +203,10 @@ pub(crate) fn ipc_set_preedit(
 pub(crate) fn ipc_commit(w: &mut MainView, text: &str) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
-    if w.ime_cursor_advance == 0 {
-        if let Some(terminal) = w.state.focused_terminal(engine) {
-            w.ime_advance_base = terminal.surface().cursor_position();
-        }
+    if w.ime_cursor_advance == 0
+        && let Some(terminal) = w.state.focused_terminal(engine)
+    {
+        w.ime_advance_base = terminal.surface().cursor_position();
     }
     for ch in text.chars() {
         w.ime_cursor_advance += crate::renderer::unicode_width(ch);
@@ -282,10 +282,10 @@ fn on_preedit(w: &mut MainView, text: String, cursor: Option<(usize, usize)>) {
 fn on_commit(w: &mut MainView, text: String) {
     let engine = &mut w.core_state;
     let _ = &mut *engine;
-    if w.ime_cursor_advance == 0 {
-        if let Some(terminal) = w.state.focused_terminal(engine) {
-            w.ime_advance_base = reference_cursor(terminal);
-        }
+    if w.ime_cursor_advance == 0
+        && let Some(terminal) = w.state.focused_terminal(engine)
+    {
+        w.ime_advance_base = reference_cursor(terminal);
     }
     for ch in text.chars() {
         w.ime_cursor_advance += crate::renderer::unicode_width(ch);
@@ -313,10 +313,8 @@ fn compute_raw_advance(
 ) -> usize {
     if row > base_row {
         (row - base_row) * cols + col.saturating_sub(base_col)
-    } else if col >= base_col {
-        col - base_col
     } else {
-        0
+        col.saturating_sub(base_col)
     }
 }
 
@@ -362,10 +360,10 @@ fn reconcile_and_compute_anchor(w: &mut MainView) -> Option<(usize, usize)> {
 /// Ink 기반 TUI가 `\e[?25l`로 real cursor를 숨기고 `\e[7m`으로 그린 fake cursor가
 /// 있으면 그걸 우선 사용. 없으면 real cursor.
 fn reference_cursor(terminal: &tasty_terminal::Terminal) -> (usize, usize) {
-    if !terminal.cursor_visible() {
-        if let Some(fake) = terminal.find_fake_cursor_cell() {
-            return fake;
-        }
+    if !terminal.cursor_visible()
+        && let Some(fake) = terminal.find_fake_cursor_cell()
+    {
+        return fake;
     }
     terminal.surface().cursor_position()
 }

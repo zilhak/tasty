@@ -15,10 +15,7 @@ use super::request::command_to_request;
 use super::transport::IpcConnection;
 
 pub fn try_run_plugin_cli() -> Option<Result<()>> {
-    let plugins_root = match tasty_host_plugin::plugin_root() {
-        Some(p) => p,
-        None => return None,
-    };
+    let plugins_root = tasty_host_plugin::plugin_root()?;
     let entries = dynamic::discover_plugin_clis(&plugins_root);
     if entries.is_empty() {
         return None;
@@ -146,14 +143,14 @@ fn run_dynamic_client_polling(
                 std::process::exit(1);
             }
         }
-        if let Some(d) = deadline {
-            if Instant::now() >= d {
-                // timeout — 마지막 응답을 그대로 출력. terminal 아님을 caller 가 판단.
-                if let Some(v) = last_response {
-                    println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
-                }
-                return Ok(());
+        if let Some(d) = deadline
+            && Instant::now() >= d
+        {
+            // timeout — 마지막 응답을 그대로 출력. terminal 아님을 caller 가 판단.
+            if let Some(v) = last_response {
+                println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
             }
+            return Ok(());
         }
         std::thread::sleep(interval);
     }

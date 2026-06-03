@@ -246,5 +246,5 @@ pub use query::{handle_summary, handle_timeseries, handle_top};
 pub use record::{handle_record, handle_record_batch};
 pub use session::handle_session_summary;
 
-pub(self) use anomaly::{fire_anomaly_notification, persist_anomaly};
-pub(self) use cap::{evaluate_caps_after_record, load_all_caps};
+use anomaly::{fire_anomaly_notification, persist_anomaly};
+use cap::{evaluate_caps_after_record, load_all_caps};

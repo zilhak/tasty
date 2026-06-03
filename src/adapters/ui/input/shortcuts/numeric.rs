@@ -37,13 +37,12 @@ impl MainView {
                     "ctrl" => ctrl && !shift && !alt,
                     _ => alt && !ctrl && !shift,
                 };
-                if ws_mod_matches {
-                    if let Some(digit) = ch.to_digit(10) {
-                        if digit >= 1 && digit <= 9 {
-                            state.switch_workspace(engine, (digit - 1) as usize);
-                            return true;
-                        }
-                    }
+                if ws_mod_matches
+                    && let Some(digit) = ch.to_digit(10)
+                    && (1..=9).contains(&digit)
+                {
+                    state.switch_workspace(engine, (digit - 1) as usize);
+                    return true;
                 }
             }
         }

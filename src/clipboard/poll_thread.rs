@@ -22,30 +22,30 @@ pub(crate) fn spawn(proxy: EventLoopProxy<AppEvent>) {
                 continue;
             };
             // Try text first, then image
-            if let Ok(text) = cb.get_text() {
-                if !text.is_empty() {
-                    let changed = last_text.as_ref() != Some(&text);
-                    if changed {
-                        last_text = Some(text.clone());
-                        if proxy
-                            .send_event(AppEvent::ClipboardChanged(ClipboardData::Text(text)))
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    continue;
-                }
-            }
-            if let Ok(img) = cb.get_image() {
-                if let Some(data) = encode_clipboard_image(&img) {
-                    last_text = None;
+            if let Ok(text) = cb.get_text()
+                && !text.is_empty()
+            {
+                let changed = last_text.as_ref() != Some(&text);
+                if changed {
+                    last_text = Some(text.clone());
                     if proxy
-                        .send_event(AppEvent::ClipboardChanged(ClipboardData::Image(data)))
+                        .send_event(AppEvent::ClipboardChanged(ClipboardData::Text(text)))
                         .is_err()
                     {
                         break;
                     }
+                }
+                continue;
+            }
+            if let Ok(img) = cb.get_image()
+                && let Some(data) = encode_clipboard_image(&img)
+            {
+                last_text = None;
+                if proxy
+                    .send_event(AppEvent::ClipboardChanged(ClipboardData::Image(data)))
+                    .is_err()
+                {
+                    break;
                 }
             }
         }

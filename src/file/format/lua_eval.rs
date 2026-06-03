@@ -141,7 +141,7 @@ fn build_target_table(
         let bytes = prefix.as_bytes();
         Ok(head_clone
             .as_ref()
-            .map(|h| h.starts_with(&*bytes))
+            .map(|h| h.starts_with(&bytes))
             .unwrap_or(false))
     })?;
     t.set("has_prefix", has_prefix)?;

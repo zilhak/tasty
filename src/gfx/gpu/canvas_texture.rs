@@ -79,10 +79,13 @@ impl CanvasTextureCache {
         format: PixelFormat,
         filter: PixelFilter,
     ) -> TextureId {
-        if let Some(e) = self.entries.get(key) {
-            if e.width == width && e.height == height && e.format == format && e.filter == filter {
-                return e.egui_id;
-            }
+        if let Some(e) = self.entries.get(key)
+            && e.width == width
+            && e.height == height
+            && e.format == format
+            && e.filter == filter
+        {
+            return e.egui_id;
         }
         if let Some(old) = self.entries.remove(key) {
             egui_renderer.free_texture(&old.egui_id);

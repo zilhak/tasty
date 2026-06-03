@@ -41,10 +41,10 @@ impl MainView {
             let now = std::time::Instant::now();
             let same_pos = self
                 .last_click_pos
-                .map_or(false, |(c, r)| c == point.col && r == point.absolute_row);
+                .is_some_and(|(c, r)| c == point.col && r == point.absolute_row);
             let within_time = self
                 .last_click_time
-                .map_or(false, |t| now.duration_since(t).as_millis() < 400);
+                .is_some_and(|t| now.duration_since(t).as_millis() < 400);
             if same_pos && within_time {
                 self.click_count = (self.click_count + 1).min(3);
             } else {
@@ -158,7 +158,7 @@ impl MainView {
         let is_word_char = |s: &str| -> bool {
             s.chars()
                 .next()
-                .map_or(false, |c| c.is_alphanumeric() || c == '_')
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
         };
 
         // Find the cell at col
@@ -217,16 +217,16 @@ impl MainView {
 
         // Commit any in-progress IME composition before moving cursor.
         // preedit text 도 Intent 큐로 — Intent FIFO 라 arrow 보다 먼저 처리.
-        if let Some(preedit) = self.ime_preedit.take() {
-            if !preedit.text.is_empty() {
-                self.state.dispatch_intent(
-                    DomainIntent::SendToSurface {
-                        surface_id: preedit.surface_id,
-                        payload: SendPayload::Text(preedit.text),
-                    }
-                    .from_user_shortcut("click_cursor"),
-                );
-            }
+        if let Some(preedit) = self.ime_preedit.take()
+            && !preedit.text.is_empty()
+        {
+            self.state.dispatch_intent(
+                DomainIntent::SendToSurface {
+                    surface_id: preedit.surface_id,
+                    payload: SendPayload::Text(preedit.text),
+                }
+                .from_user_shortcut("click_cursor"),
+            );
         }
 
         let terminal = match self.state.focused_terminal(&self.core_state) {
@@ -285,8 +285,10 @@ impl MainView {
         let app_cursor = terminal.application_cursor_keys();
         let arrow: &'static [u8] = if going_right {
             if app_cursor { b"\x1bOC" } else { b"\x1b[C" }
+        } else if app_cursor {
+            b"\x1bOD"
         } else {
-            if app_cursor { b"\x1bOD" } else { b"\x1b[D" }
+            b"\x1b[D"
         };
 
         // arrow_count 만큼 sequence 를 한 Vec<u8> 에 concat 후 1 Intent 발행

@@ -241,10 +241,10 @@ impl MainView {
                         // swap으로 복구할 예정.
                     }
                     "close_active" => {
-                        if !self.state.close_active_tab(engine) {
-                            if !self.state.close_active_pane(engine) {
-                                self.state.close_active_workspace(engine);
-                            }
+                        if !self.state.close_active_tab(engine)
+                            && !self.state.close_active_pane(engine)
+                        {
+                            self.state.close_active_workspace(engine);
                         }
                         if engine.workspaces.is_empty() {
                             self.request_close();

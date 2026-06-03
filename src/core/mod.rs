@@ -1086,10 +1086,8 @@ impl Core {
         let was_focused = ws.focused_pane == pane_id;
         let removed = ws.pane_layout_mut().close_pane(pane_id);
         if removed {
-            if was_focused {
-                if let Some(first) = ws.pane_layout().first_pane() {
-                    ws.focused_pane = first.id;
-                }
+            if was_focused && let Some(first) = ws.pane_layout().first_pane() {
+                ws.focused_pane = first.id;
             }
             engine.mark_layout_dirty();
         }
@@ -1404,16 +1402,12 @@ impl Core {
             let mut closed_tab_ids: Vec<u32> = Vec::new();
             {
                 let ws = &engine.workspaces[ws_idx];
-                if ws.pane_layout().all_pane_ids().len() > 1 {
-                    if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
-                        for tab in &pane.tabs {
-                            crate::state::AppState::collect_close_targets(
-                                tab,
-                                engine,
-                                &mut targets,
-                            );
-                            closed_tab_ids.push(tab.id);
-                        }
+                if ws.pane_layout().all_pane_ids().len() > 1
+                    && let Some(pane) = ws.pane_layout().find_pane(pane_id)
+                {
+                    for tab in &pane.tabs {
+                        crate::state::AppState::collect_close_targets(tab, engine, &mut targets);
+                        closed_tab_ids.push(tab.id);
                     }
                 }
             }
@@ -1506,12 +1500,12 @@ impl Core {
         let mut found_pane_id = None;
         for workspace in &engine.workspaces {
             for &pid in &workspace.pane_layout().all_pane_ids() {
-                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
-                    if let Some(tab) = pane.tabs.iter().find(|t| t.id == tab_id) {
-                        crate::state::AppState::collect_close_targets(tab, engine, &mut targets);
-                        found_pane_id = Some(pid);
-                        break;
-                    }
+                if let Some(pane) = workspace.pane_layout().find_pane(pid)
+                    && let Some(tab) = pane.tabs.iter().find(|t| t.id == tab_id)
+                {
+                    crate::state::AppState::collect_close_targets(tab, engine, &mut targets);
+                    found_pane_id = Some(pid);
+                    break;
                 }
             }
             if found_pane_id.is_some() {
@@ -1818,13 +1812,11 @@ pub(crate) fn apply_create_workspace_inner(
     let idx = engine.workspaces.len() - 1;
 
     let renamed_name = name;
-    let renamed_subtitle = subtitle.map(|s| {
+    let renamed_subtitle = subtitle.inspect(|s| {
         engine.workspaces[idx].subtitle = s.clone();
-        s
     });
-    let renamed_description = description.map(|d| {
+    let renamed_description = description.inspect(|d| {
         engine.workspaces[idx].description = d.clone();
-        d
     });
 
     if is_terminal {
@@ -1856,12 +1848,12 @@ pub(crate) fn apply_create_workspace_inner(
 /// display_name 이 자동으로 적용된다. 옛 `ConvertSurfaceTarget::Markdown`
 /// arm 의 명명 동작 보존.
 fn derive_auto_name(kind: &str, params: &serde_json::Value) -> Option<String> {
-    if kind == "markdown" {
-        if let Some(p) = params.get("file").and_then(|v| v.as_str()) {
-            return std::path::Path::new(p)
-                .file_name()
-                .map(|f| f.to_string_lossy().to_string());
-        }
+    if kind == "markdown"
+        && let Some(p) = params.get("file").and_then(|v| v.as_str())
+    {
+        return std::path::Path::new(p)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string());
     }
     None
 }

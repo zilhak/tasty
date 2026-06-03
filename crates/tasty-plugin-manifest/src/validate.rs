@@ -459,16 +459,15 @@ impl Manifest {
                 .map(|p| p.id.as_str())
                 .collect();
             for tool in &self.contributes.tool {
-                if let ToolAction::OpenPopup { popup_id } = &tool.action {
-                    if let Some(local_id) = popup_id.strip_prefix(&format!("{}/", self.id))
-                        && !popup_ids.contains(local_id)
-                    {
-                        anyhow::bail!(
-                            "contributes.tool '{}': action.popup_id '{}' references unknown popup in this plugin",
-                            tool.id,
-                            popup_id
-                        );
-                    }
+                if let ToolAction::OpenPopup { popup_id } = &tool.action
+                    && let Some(local_id) = popup_id.strip_prefix(&format!("{}/", self.id))
+                    && !popup_ids.contains(local_id)
+                {
+                    anyhow::bail!(
+                        "contributes.tool '{}': action.popup_id '{}' references unknown popup in this plugin",
+                        tool.id,
+                        popup_id
+                    );
                 }
             }
         }

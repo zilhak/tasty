@@ -10,7 +10,7 @@ use super::{agent_err_to_response, name_param, now_ms, workspace_id_param};
 fn serialize<T: serde::Serialize>(id: Value, value: T) -> JsonRpcResponse {
     match serde_json::to_value(value) {
         Ok(v) => JsonRpcResponse::success(id, v),
-        Err(e) => JsonRpcResponse::error(id, -32603, &format!("serialize: {e}")),
+        Err(e) => JsonRpcResponse::error(id, -32603, format!("serialize: {e}")),
     }
 }
 

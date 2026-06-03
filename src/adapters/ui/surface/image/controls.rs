@@ -17,23 +17,19 @@ pub(super) fn draw_viewer_controls(
             .add_sized([24.0, 20.0], egui::Button::new("\u{25C0}"))
             .on_hover_text(t("image_viewer.prev"))
             .clicked()
+            && !view.is_editing()
+            && panel.step_prev().is_some()
         {
-            if !view.is_editing() {
-                if panel.step_prev().is_some() {
-                    view.load_after_navigation(panel);
-                }
-            }
+            view.load_after_navigation(panel);
         }
         if ui
             .add_sized([24.0, 20.0], egui::Button::new("\u{25B6}"))
             .on_hover_text(t("image_viewer.next"))
             .clicked()
+            && !view.is_editing()
+            && panel.step_next().is_some()
         {
-            if !view.is_editing() {
-                if panel.step_next().is_some() {
-                    view.load_after_navigation(panel);
-                }
-            }
+            view.load_after_navigation(panel);
         }
     }
 
@@ -45,14 +41,13 @@ pub(super) fn draw_viewer_controls(
         view.reload_from_disk(panel);
     }
 
-    if view.original_image.is_some() {
-        if ui
+    if view.original_image.is_some()
+        && ui
             .add_sized([24.0, 20.0], egui::Button::new("\u{270F}"))
             .on_hover_text(t("image_viewer.edit"))
             .clicked()
-        {
-            view.enter_edit_mode();
-        }
+    {
+        view.enter_edit_mode();
     }
 
     if ui

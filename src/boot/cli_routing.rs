@@ -38,11 +38,11 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
     let cli = match cli::Cli::try_parse() {
         Ok(cli) => cli,
         Err(err) => {
-            if matches!(err.kind(), clap::error::ErrorKind::InvalidSubcommand) {
-                if let Some(result) = cli::try_run_plugin_cli() {
-                    result?; // plugin 실행 에러는 그대로 main 까지 propagate
-                    return Ok(Routed::AlreadyHandled);
-                }
+            if matches!(err.kind(), clap::error::ErrorKind::InvalidSubcommand)
+                && let Some(result) = cli::try_run_plugin_cli()
+            {
+                result?; // plugin 실행 에러는 그대로 main 까지 propagate
+                return Ok(Routed::AlreadyHandled);
             }
             cli::format_parse_error(err); // 내부 process::exit
             unreachable!();

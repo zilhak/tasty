@@ -44,7 +44,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
             return JsonRpcResponse::error(
                 id,
                 -32003,
-                &format!("plugin '{plugin_id}' not installed"),
+                format!("plugin '{plugin_id}' not installed"),
             );
         }
     };
@@ -129,7 +129,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
     let extension_state = mgr
         .extensions
         .state(&plugin_id)
-        .map(|s| extension_state_to_json(s));
+        .map(extension_state_to_json);
 
     let extends = manifest.extends.as_ref().map(|d| {
         let to_event_hook = |h: &crate::plugin::manifest::EventHookDecl| {
@@ -298,7 +298,7 @@ pub fn handle_permissions(
             return JsonRpcResponse::error(
                 id,
                 -32003,
-                &format!("plugin '{plugin_id}' not installed"),
+                format!("plugin '{plugin_id}' not installed"),
             );
         }
     };

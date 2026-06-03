@@ -61,8 +61,8 @@ impl App {
             let method = cmd.request.method.clone();
             let core = &mut self.core;
             let main = self.view.views.values_mut().find_map(|w| w.as_main_mut());
-            if let Some(m) = main {
-                if let Some(rec) = host_ipc::handler::approval::publish_capability_elevation(
+            if let Some(m) = main
+                && let Some(rec) = host_ipc::handler::approval::publish_capability_elevation(
                     core,
                     &mut m.state,
                     &mut m.core_state,
@@ -70,20 +70,20 @@ impl App {
                     &method,
                     &perm_token,
                     None,
-                ) {
-                    data = serde_json::json!({
-                        "kind": "capability_elevation",
-                        "approval_id": rec.request.id,
-                        "permission": perm_token,
-                        "method": method,
-                    });
-                }
+                )
+            {
+                data = serde_json::json!({
+                    "kind": "capability_elevation",
+                    "approval_id": rec.request.id,
+                    "permission": perm_token,
+                    "method": method,
+                });
             }
         }
         let mut response = host_ipc::protocol::JsonRpcResponse::error(
             rpc_id,
             -32001,
-            &format!("permission_denied: {e}"),
+            format!("permission_denied: {e}"),
         );
         if !data.is_null()
             && let Some(err) = response.error.as_mut()

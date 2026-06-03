@@ -10,13 +10,12 @@ impl AppState {
         let pane_id = ws.focused_pane;
 
         // Try to move within a split tab first
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                if tab.all_surface_ids().len() > 1 {
-                    tab.move_focus_forward();
-                    return;
-                }
-            }
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+            && let Some(tab) = pane.active_tab_mut()
+            && tab.all_surface_ids().len() > 1
+        {
+            tab.move_focus_forward();
+            return;
         }
 
         // Not in a multi-surface tab, move between panes
@@ -30,13 +29,12 @@ impl AppState {
         let pane_id = ws.focused_pane;
 
         // Try to move within a split tab first
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                if tab.all_surface_ids().len() > 1 {
-                    tab.move_focus_backward();
-                    return;
-                }
-            }
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+            && let Some(tab) = pane.active_tab_mut()
+            && tab.all_surface_ids().len() > 1
+        {
+            tab.move_focus_backward();
+            return;
         }
 
         // Not in a multi-surface tab, move between panes
@@ -51,13 +49,12 @@ impl AppState {
         let pane_id = ws.focused_pane;
 
         // Try to move within a split tab first
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                if let Some(new_surface_id) = tab.directional_focus(direction) {
-                    tab.focused_surface = new_surface_id;
-                    return;
-                }
-            }
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+            && let Some(tab) = pane.active_tab_mut()
+            && let Some(new_surface_id) = tab.directional_focus(direction)
+        {
+            tab.focused_surface = new_surface_id;
+            return;
         }
 
         // Try to move between panes
@@ -87,10 +84,10 @@ impl AppState {
     pub fn move_surface_focus_forward(&mut self, engine: &mut CoreState) {
         let ws = self.active_workspace_mut(engine);
         let pane_id = ws.focused_pane;
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                tab.move_focus_forward();
-            }
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+            && let Some(tab) = pane.active_tab_mut()
+        {
+            tab.move_focus_forward();
         }
     }
 
@@ -99,10 +96,10 @@ impl AppState {
     pub fn move_surface_focus_backward(&mut self, engine: &mut CoreState) {
         let ws = self.active_workspace_mut(engine);
         let pane_id = ws.focused_pane;
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                tab.move_focus_backward();
-            }
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+            && let Some(tab) = pane.active_tab_mut()
+        {
+            tab.move_focus_backward();
         }
     }
 
@@ -128,12 +125,12 @@ impl AppState {
         for (ws_idx, ws) in engine.workspaces.iter().enumerate() {
             let pane_ids = ws.pane_layout().all_pane_ids();
             for pid in pane_ids {
-                if let Some(pane) = ws.pane_layout().find_pane(pid) {
-                    if pane.contains_surface(surface_id) {
-                        found_ws_idx = Some(ws_idx);
-                        found_pane_id = Some(pid);
-                        break;
-                    }
+                if let Some(pane) = ws.pane_layout().find_pane(pid)
+                    && pane.contains_surface(surface_id)
+                {
+                    found_ws_idx = Some(ws_idx);
+                    found_pane_id = Some(pid);
+                    break;
                 }
             }
             if found_pane_id.is_some() {
@@ -150,12 +147,11 @@ impl AppState {
         let ws = self.active_workspace_mut(engine);
         ws.focused_pane = pane_id;
         // If the active tab contains this surface, focus it within the tab.
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                if tab.contains_surface(surface_id) {
-                    tab.focused_surface = surface_id;
-                }
-            }
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+            && let Some(tab) = pane.active_tab_mut()
+            && tab.contains_surface(surface_id)
+        {
+            tab.focused_surface = surface_id;
         }
         true
     }
@@ -231,11 +227,11 @@ impl AppState {
             None => return false,
         };
 
-        if let Some(surface_id) = tab.layout().find_surface_at(x, y, content_rect) {
-            if tab.focused_surface != surface_id {
-                tab.focused_surface = surface_id;
-                return true;
-            }
+        if let Some(surface_id) = tab.layout().find_surface_at(x, y, content_rect)
+            && tab.focused_surface != surface_id
+        {
+            tab.focused_surface = surface_id;
+            return true;
         }
         false
     }

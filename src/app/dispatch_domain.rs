@@ -170,14 +170,11 @@ impl App {
             CoreEvent::TabMoved { pane_id: _, moved } => {
                 // 추가 cascade 없음 — mark_layout_dirty 는 Core::apply 가 이미 처리.
                 // main.mark_dirty 만 redraw 위해.
-                if moved {
-                    if let DispatchSource::Main(wid) = source {
-                        if let Some(main) =
-                            self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                        {
-                            main.mark_dirty();
-                        }
-                    }
+                if moved
+                    && let DispatchSource::Main(wid) = source
+                    && let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
+                {
+                    main.mark_dirty();
                 }
             }
             CoreEvent::PaneSplit {
@@ -249,14 +246,11 @@ impl App {
             } => {
                 // 추가 cascade 없음 — mark_layout_dirty 와 send_fast_init 은
                 // Core::apply 가 이미 처리. main.mark_dirty 만.
-                if replaced {
-                    if let DispatchSource::Main(wid) = source {
-                        if let Some(main) =
-                            self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                        {
-                            main.mark_dirty();
-                        }
-                    }
+                if replaced
+                    && let DispatchSource::Main(wid) = source
+                    && let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
+                {
+                    main.mark_dirty();
                 }
             }
             CoreEvent::SurfaceSent { .. } => {
@@ -302,11 +296,10 @@ impl App {
             } => {
                 // osc_title 은 layout.json 영속 대상 아님 → mark_layout_dirty 호출 X.
                 // tab bar 표시 갱신을 위한 mark_dirty 만.
-                if let DispatchSource::Main(wid) = source {
-                    if let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                    {
-                        main.mark_dirty();
-                    }
+                if let DispatchSource::Main(wid) = source
+                    && let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
+                {
+                    main.mark_dirty();
                 }
             }
             CoreEvent::LayoutSaved { saved: _ } => {
@@ -1435,12 +1428,11 @@ pub(crate) fn cascade_surface_split(
     if !origin.is_user() {
         return;
     }
-    if let Some(ws) = engine.workspaces.get_mut(workspace_index) {
-        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-            if let Some(tab) = pane.active_tab_mut() {
-                tab.focused_surface = new_surface_id;
-            }
-        }
+    if let Some(ws) = engine.workspaces.get_mut(workspace_index)
+        && let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id)
+        && let Some(tab) = pane.active_tab_mut()
+    {
+        tab.focused_surface = new_surface_id;
     }
 }
 
@@ -1470,10 +1462,10 @@ pub(crate) fn cascade_pane_split(
         });
     }
     cascade_surface_created(state, engine, new_surface_id);
-    if origin.is_user() {
-        if let Some(ws) = engine.workspaces.get_mut(workspace_index) {
-            ws.focused_pane = new_pane_id;
-        }
+    if origin.is_user()
+        && let Some(ws) = engine.workspaces.get_mut(workspace_index)
+    {
+        ws.focused_pane = new_pane_id;
     }
 }
 
