@@ -186,6 +186,7 @@ pub struct CoreState {
 
     /// Whether input simulation IPC is enabled (debug builds only, --enable-input-simulation).
     #[cfg(debug_assertions)]
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) input_simulation_enabled: bool,
 
     /// Memory port 의 Arc clone — Core 가 owner. 생성자에서 즉시 주입되며
