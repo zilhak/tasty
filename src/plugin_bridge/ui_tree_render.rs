@@ -9,11 +9,11 @@ use std::cell::RefCell;
 use egui::Ui;
 
 use crate::gpu::canvas_texture::CanvasTextureCache;
-use crate::plugin::remote_surface::RemoteSurface;
 use crate::plugin::ui_tree::{
     ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, SharedBufferId, SplitDir,
     TreeNode, UiEvent, UiNode,
 };
+use crate::plugin_bridge::remote_surface::RemoteSurface;
 
 /// 렌더러가 plugin tree를 그리는 동안 사용하는 추상 sink.
 ///

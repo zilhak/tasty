@@ -202,8 +202,8 @@ pub fn draw_egui_panels(
             );
         } else if let Some(remote) = surface
             .as_any()
-            .downcast_ref::<crate::plugin::remote_surface::RemoteSurface>()
-        {
+            .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
+        ) {
             draw_panel_frame(
                 ctx,
                 &format!("remote_panel_{}", id_suffix),

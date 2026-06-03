@@ -27,7 +27,7 @@ pub fn focused_plugin_surface(
     let surface = tab.layout().find_surface(focused)?;
     let remote = surface
         .as_any()
-        .downcast_ref::<crate::plugin::remote_surface::RemoteSurface>()?;
+        .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>()?;
     Some((remote.plugin_id.clone(), remote.id))
 }
 

@@ -125,7 +125,10 @@ impl App {
             return false;
         }
         let Some((plugin_id, surface_id)) =
-            plugin::key_dispatch::focused_plugin_surface(&main.state, &main.core_state)
+            crate::plugin_bridge::key_dispatch::focused_plugin_surface(
+                &main.state,
+                &main.core_state,
+            )
         else {
             return false;
         };
@@ -142,7 +145,7 @@ impl App {
             let Some(mgr) = self.plugin_manager.as_ref() else {
                 return false;
             };
-            plugin::key_dispatch::match_plugin_shortcut(
+            crate::plugin_bridge::key_dispatch::match_plugin_shortcut(
                 mgr,
                 &plugin_id,
                 &shortcut_key,
@@ -154,7 +157,9 @@ impl App {
             return false;
         };
         if let Some(mgr) = self.plugin_manager.as_mut() {
-            plugin::key_dispatch::dispatch_plugin_command(mgr, &plugin_id, &cmd_id, surface_id);
+            crate::plugin_bridge::key_dispatch::dispatch_plugin_command(
+                mgr, &plugin_id, &cmd_id, surface_id,
+            );
         }
         true
     }

@@ -270,7 +270,7 @@ impl App {
                         }
                         let rendering = match decl.rendering {
                             SurfaceKindRendering::Remote => {
-                                crate::plugin::remote_kind::register_remote_kind(
+                                crate::plugin_bridge::remote_kind::register_remote_kind(
                                     &registry,
                                     plugin_id,
                                     decl,
@@ -288,7 +288,7 @@ impl App {
                                 crate::engine::surface_registry::webview_kind::register_webview_kind(
                                     plugin_id, &decl.kind,
                                 );
-                                crate::plugin::remote_kind::register_remote_kind(
+                                crate::plugin_bridge::remote_kind::register_remote_kind(
                                     &registry,
                                     plugin_id,
                                     decl,

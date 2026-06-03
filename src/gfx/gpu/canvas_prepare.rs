@@ -8,7 +8,7 @@
 //! # 흐름
 //!
 //! 1. 활성 workspace의 모든 pane → active tab → 모든 surface를 순회.
-//! 2. [`crate::plugin::remote_surface::RemoteSurface`]로 다운캐스트되는 surface에 대해
+//! 2. [`crate::plugin_bridge::remote_surface::RemoteSurface`]로 다운캐스트되는 surface에 대해
 //!    트리에서 [`tasty_plugin_protocol::UiNode::Canvas`] 노드를 재귀 수집.
 //! 3. plugin 별로 dirty rect를 한 번씩 drain.
 //! 4. 각 canvas에 대해 호스트 측 [`tasty_shm::SharedMemory`]를 lookup, 크기 검증, atomic
@@ -27,7 +27,7 @@ use tasty_plugin_protocol::{PixelFilter, PixelFormat, PixelRect, SharedBufferId,
 use super::GpuState;
 use super::canvas_texture::CanvasKey;
 use crate::plugin::PluginManager;
-use crate::plugin::remote_surface::RemoteSurface;
+use crate::plugin_bridge::remote_surface::RemoteSurface;
 use crate::state::AppState;
 
 struct PendingCanvas {

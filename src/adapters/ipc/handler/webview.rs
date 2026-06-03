@@ -40,8 +40,8 @@ pub fn handle_set_url(
                     }
                     if let Some(rs) = surface
                         .as_any()
-                        .downcast_ref::<crate::plugin::remote_surface::RemoteSurface>()
-                    {
+                        .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
+                    ) {
                         rs.set_webview_url(Some(url));
                         return JsonRpcResponse::success(id, serde_json::json!({ "ok": true }));
                     }
