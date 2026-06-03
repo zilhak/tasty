@@ -139,6 +139,32 @@ if (-not $SkipMsi) {
     }
 }
 
+Write-Host "==> Verifying artifacts..."
+# ZIP: 풀어서 tasty.exe --version
+$VerifyDir = Join-Path $env:TEMP "tasty-verify-$([guid]::NewGuid())"
+Expand-Archive -Path $ArchivePath -DestinationPath $VerifyDir
+$VerifyExe = Join-Path $VerifyDir "tasty.exe"
+if (-not (Test-Path $VerifyExe)) {
+    Remove-Item -Recurse -Force $VerifyDir -ErrorAction SilentlyContinue
+    Write-Error "tasty.exe not found in ZIP"
+    exit 1
+}
+& $VerifyExe --version | Out-Null
+$VersionExit = $LASTEXITCODE
+Remove-Item -Recurse -Force $VerifyDir -ErrorAction SilentlyContinue
+if ($VersionExit -ne 0) {
+    Write-Error "tasty.exe --version failed with exit code $VersionExit"
+    exit 1
+}
+# MSI: 권한 필요한 메타 검증은 skip — 파일 존재만 확인
+if (-not $SkipMsi -and $BuildProfile -ne "debug") {
+    $MsiPath = Join-Path $DistDir "tasty-${Version}-windows-x64.msi"
+    if (-not (Test-Path $MsiPath)) {
+        Write-Error "MSI missing: $MsiPath"
+        exit 1
+    }
+}
+
 Write-Host ""
 Write-Host "Done!"
 
