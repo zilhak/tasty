@@ -461,9 +461,48 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
                     continue;
                 }
                 if already_present {
-                    if let Err(e) = sync_dir_recursive_if_newer(&src, &dest) {
-                        tracing::warn!("install_builtins: sync '{}' failed: {e}", spec.id);
-                        continue;
+                    let installed_v = read_installed_version(&dest);
+                    let bundle_v = read_bundle_version(&src);
+                    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), false) {
+                        BuiltinUpgradeDecision::Skip => {
+                            tracing::debug!(
+                                "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
+                                spec.id,
+                                installed_v.as_ref().map(|v| v.to_string()),
+                                bundle_v.as_ref().map(|v| v.to_string()),
+                            );
+                        }
+                        BuiltinUpgradeDecision::ResyncSameVersion => {
+                            if let Err(e) = sync_dir_recursive_if_newer(&src, &dest) {
+                                tracing::warn!(
+                                    "install_builtins: resync '{}' failed: {e}",
+                                    spec.id
+                                );
+                                continue;
+                            }
+                        }
+                        BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
+                            tracing::info!(
+                                "upgrading builtin '{}' v{} → v{}",
+                                spec.id,
+                                from,
+                                to
+                            );
+                            if let Err(e) = overwrite_builtin_dir(&src, &dest) {
+                                tracing::warn!(
+                                    "install_builtins: upgrade '{}' failed: {e}",
+                                    spec.id
+                                );
+                                continue;
+                            }
+                        }
+                        BuiltinUpgradeDecision::ForceOverwrite => {
+                            // force 는 신 upgrade_builtins(force=true) 경로 전용 — 부팅 시 자동 갱신에선 도달 불가.
+                            tracing::warn!(
+                                "install_builtins: unexpected ForceOverwrite branch for '{}'",
+                                spec.id
+                            );
+                        }
                     }
                 } else {
                     if let Err(e) = copy_dir_recursive(&src, &dest) {
