@@ -240,12 +240,18 @@ impl App {
         if hello_pairs.is_empty() {
             return;
         }
+        // concrete registry 는 본 바이너리 CoreState 에서 직접 가져온다.
+        // (plugin manager 가 가진 surface_registry 필드는 trait object 라
+        // remote_kind/host_rendered 등 closure 등록 함수가 받지 못한다.)
+        // mgr 차용 전에 미리 추출.
+        let core_registry = self.core_state().surface_registry.clone();
         let Some(mgr) = self.plugin_manager.as_mut() else {
             return;
         };
         let mut events: Vec<CoreEvent> = Vec::new();
 
-        if let Some(registry) = mgr.surface_registry.clone() {
+        let host_registry = mgr.surface_registry.is_some().then_some(core_registry);
+        if let Some(registry) = host_registry {
             let tx = mgr.host_cmd_tx.clone();
             for (plugin_id, version) in &hello_pairs {
                 if let Some(pkg) = mgr

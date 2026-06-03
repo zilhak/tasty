@@ -18,7 +18,8 @@ use tasty_plugin_protocol::{HandleChannelMessage, SharedBufferCreateResult, Shar
 use tasty_shm::PeerPid;
 use tasty_shm::SharedMemory;
 
-use crate::engine::surface_registry::SurfaceKindRegistry;
+use tasty_plugin_protocol::host_port::SurfaceRegistry;
+
 use crate::ipc::protocol::JsonRpcResponse;
 use crate::ipc::server::send_response;
 use crate::plugin::handle_channel::HandleListener;
@@ -228,7 +229,7 @@ pub struct PluginManager {
     pub(super) auto_disabled: std::collections::HashSet<String>,
     /// hello 받은 plugin의 surface_kinds를 등록하기 위한 registry 핸들. None이면
     /// registry 등록 동작이 비활성 (헤드리스/테스트).
-    pub surface_registry: Option<Arc<SurfaceKindRegistry>>,
+    pub surface_registry: Option<Arc<dyn SurfaceRegistry>>,
     /// 이미 registry에 등록된 plugin id (hello를 여러 번 받아도 1회만 등록).
     pub(crate) registered_plugins: std::collections::HashSet<String>,
     /// registry create/restore closure가 새 RemoteSurface 등록을 보내는 채널.

@@ -8,7 +8,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crate::engine::surface_registry::SurfaceKindRegistry;
+use tasty_plugin_protocol::host_port::SurfaceRegistry;
+
 use crate::plugin::handle_channel::HandleListener;
 use crate::plugin::ipc_namespace::IpcNamespaceRegistry;
 use crate::plugin::listener::HostListener;
@@ -87,7 +88,7 @@ impl PluginManager {
     }
 
     /// 호스트 main loop이 라우팅하기 위해 plugin IPC 호출을 모두 가져간다.
-    pub fn set_surface_registry(&mut self, registry: Arc<SurfaceKindRegistry>) {
+    pub fn set_surface_registry(&mut self, registry: Arc<dyn SurfaceRegistry>) {
         self.surface_registry = Some(registry);
     }
 
