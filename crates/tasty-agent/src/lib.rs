@@ -12,6 +12,7 @@
 
 pub mod barrier;
 pub mod lease;
+pub mod platform;
 pub mod rate_limit;
 pub mod reducer;
 pub mod runner;

@@ -5136,6 +5136,7 @@ dependencies = [
 name = "tasty-agent"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "tasty-memory",
@@ -5143,6 +5144,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -4,6 +4,8 @@
 //! - `Reduce` → 즉시 collect + `reduce_with_custom`.
 //! - `Run` / `Custom` → F.6 에서 채움.
 
+use std::collections::HashMap;
+use std::process::Child;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -54,11 +56,17 @@ impl RunnerContext {
 
 pub struct HostExecutor {
     ctx: RunnerContext,
+    /// Run task 의 child process 보관 — pid → Child. DispatchHandle 은 Clone
+    /// 필요 (RunnerLoop 가 핸들을 복제), Child 는 Clone 불가이므로 분리.
+    shell_children: HashMap<u32, Child>,
 }
 
 impl HostExecutor {
     pub fn new(ctx: RunnerContext) -> Self {
-        Self { ctx }
+        Self {
+            ctx,
+            shell_children: HashMap::new(),
+        }
     }
 }
 
@@ -140,12 +148,35 @@ impl TaskExecutor for HostExecutor {
                     error: None,
                 }))
             }
-            TaskCommand::Run { .. } => {
-                // F.6 에서 채움.
-                Err("Run executor not yet implemented (Phase H.F.S6)".to_string())
+            TaskCommand::Run { command, cwd, .. } => {
+                if command.is_empty() {
+                    return Err("Run: empty command".to_string());
+                }
+                let (program, args) = command.split_first().expect("non-empty");
+                let mut cmd = std::process::Command::new(program);
+                cmd.args(args);
+                if let Some(c) = cwd {
+                    cmd.current_dir(c);
+                }
+                let child = cmd
+                    .spawn()
+                    .map_err(|e| format!("Run spawn '{program}': {e}"))?;
+                let pid = child.id();
+                self.shell_children.insert(pid, child);
+                Ok(DispatchHandle::ShellProcess { pid })
             }
-            TaskCommand::Custom { .. } => {
-                Err("Custom executor not yet implemented (Phase H.F.S6)".to_string())
+            TaskCommand::Custom { ipc_method, params } => {
+                // 동기 IPC dispatch — 즉시 완료 가정. 응답이 즉시 안 오면 timeout
+                // 으로 Failed 처리됨 (HostIpcInjector::dispatch).
+                let value = self
+                    .ctx
+                    .dispatch_plugin(ipc_method, params.clone())
+                    .map_err(|e| format!("Custom '{ipc_method}': {e}"))?;
+                Ok(DispatchHandle::CustomImmediate(TaskResult {
+                    exit_code: Some(0),
+                    output: Some(value),
+                    error: None,
+                }))
             }
         }
     }
@@ -182,9 +213,38 @@ impl TaskExecutor for HostExecutor {
             DispatchHandle::ReduceImmediate(r) | DispatchHandle::CustomImmediate(r) => {
                 PollOutcome::Done(r.clone())
             }
-            DispatchHandle::ShellProcess { .. } => {
-                // F.6 에서 채움.
-                PollOutcome::Active
+            DispatchHandle::ShellProcess { pid } => {
+                let child = match self.shell_children.get_mut(pid) {
+                    Some(c) => c,
+                    None => {
+                        // handle 은 있는데 child map 에 없음 — 호스트 재시작 후
+                        // 잔여 task 시나리오. process_alive 로 확인 후 처리.
+                        if tasty_agent::platform::process_alive::is_alive(*pid) {
+                            return PollOutcome::Active;
+                        }
+                        return PollOutcome::Failed(format!(
+                            "Run handle lost (pid {pid} no longer tracked)"
+                        ));
+                    }
+                };
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        let code = status.code();
+                        let pid_done = *pid;
+                        self.shell_children.remove(&pid_done);
+                        if status.success() {
+                            PollOutcome::Done(TaskResult {
+                                exit_code: code,
+                                output: Some(json!({ "pid": pid_done })),
+                                error: None,
+                            })
+                        } else {
+                            PollOutcome::Failed(format!("Run exited non-zero: code={:?}", code))
+                        }
+                    }
+                    Ok(None) => PollOutcome::Active,
+                    Err(e) => PollOutcome::Failed(format!("Run try_wait: {e}")),
+                }
             }
             DispatchHandle::ImmediateFail(err) => PollOutcome::Failed(err.clone()),
         }
