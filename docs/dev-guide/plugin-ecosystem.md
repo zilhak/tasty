@@ -19,6 +19,8 @@
 - 권한 게이트 한계에서 비롯한 보안 이슈 1건
 - 첫 외부 plugin 출시 직후 1년 운영 데이터
 
+→ 평가 상세: [architecture/plugin-sandbox-evaluation.md](../architecture/plugin-sandbox-evaluation.md)
+
 ## 2. 배포 채널
 
 **결정**: 1.0까지 **로컬 디렉터리 path install + 동봉 builtin**만. marketplace는 1.0 이후 RFC.

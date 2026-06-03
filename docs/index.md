@@ -118,6 +118,7 @@
 | [데이터 흐름](architecture/data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준) |
 | [리팩토링 분석](architecture/refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
 | [라이브러리 분리](architecture/library-separation/index.md) | 워크스페이스 33 crate 현황 + 분리 의사결정 회고 (G.E — tasty-model 분리, Phase F.B — tasty-ipc / tasty-plugin-manifest / tasty-host-plugin / tasty-cli 4 crate 추가, plugin_bridge/ 본 바이너리 잔존) |
+| [Plugin sandbox 평가](architecture/plugin-sandbox-evaluation.md) | WASM / OS-level / 현 상태 비교 — 1.0 보류 근거 + 재검토 trigger |
 
 ## 구현 현황
 

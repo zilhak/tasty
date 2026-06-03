@@ -1653,7 +1653,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - plugin install 시 `register_namespace`, remove 시 `unregister_namespace` (`src/i18n.rs` — 본 바이너리 잔존, GUI-free 도메인 crate 후보)
 
 ### 한계
-- IPC 게이트는 plugin이 호스트를 통한 호출만 막음. plugin이 직접 fs를 쓰면 호스트가 알 수 없음 — 향후 OS-level 샌드박스/WASM으로 보강
+- IPC 게이트는 plugin이 호스트를 통한 호출만 막음. plugin이 직접 fs를 쓰면 호스트가 알 수 없음 — 향후 OS-level 샌드박스/WASM으로 보강 ([평가](architecture/plugin-sandbox-evaluation.md))
 - 호스트의 빌트인 ExplorerPanel은 단계 08D에서 외부 plugin으로 일원화 예정 (1300+ 줄 침습적 refactor라 별도 작업으로 분리)
 
 ## 파일 핸들러 시스템 (file-handler-system)
