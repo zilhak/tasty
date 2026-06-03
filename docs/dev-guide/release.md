@@ -157,3 +157,31 @@ major bump 는 *API stability 선언* 의 성격을 가지므로 patch/minor 보
 8. **§1 ~ §3 의 일반 릴리스 절차** (Cargo.toml bump → cargo build → 커밋 → tag → 산출물 빌드) 진행.
 
 이후 minor (X.Y.0) 부터는 추가만 가능하고, break 는 다음 major 까지 보류한다.
+
+## 0.7.x 패치 release 가드
+
+0.7.0 이후 0.7.x 동안 외부 표면이 *모르게* break 되는 것을 차단하기 위해 다음
+4 개 테스트가 강제된다. 모두 `cargo test --workspace` 와 새 `.github/workflows/test.yml`
+에서 자동 실행된다.
+
+| test | 위치 | 가드 내용 |
+|------|------|---------|
+| `all_baseline_methods_still_registered` | `tests/api_baseline_0_7.rs` | `tests/fixtures/method_baseline_0_7.txt` 의 0.7.0 메서드가 `METHOD_TABLE` 에서 사라지면 fail. |
+| `root_unreleased_has_no_break_when_major_unchanged` | `tests/changelog_unreleased.rs` | `CHANGELOG.md` `[Unreleased]` 의 bullet entry 가 `(BREAK)` 토큰을 포함하면서 Cargo.toml major 가 직전 release 와 동일하면 fail. |
+| `plugin_protocol_unreleased_has_no_break_when_major_unchanged` | `tests/changelog_unreleased.rs` | plugin-protocol CHANGELOG 에 동일 가드. `HOST_API_VERSION` major 보존을 강제. |
+| `cli_naming_namespace_counts_match_method_table` | `tests/cli_naming_count_drift.rs` | `docs/dev-guide/cli-naming.md` 의 `<!-- count-table:host-namespaces -->` 표가 METHOD_TABLE 실측과 일치하지 않으면 fail. |
+
+원칙: *추가만 가능, 제거 금지*.
+
+- **메서드 추가** (patch/minor 모두 허용): `METHOD_TABLE` 에 새 row → `cli-naming.md` 표 카운트 +1 → baseline fixture 는 *건드리지 않는다* (baseline 은 *제거 금지* 만 강제 — 추가는 통과).
+- **메서드 제거 / 이름변경**: 0.7.x 에서는 baseline 가드가 차단. major bump (2.0.0) 가 필요. 만약 의도된 major 이라면 `tests/fixtures/method_baseline_0_7.txt` 를 갱신 후 같은 PR 에서 진행.
+- **break 누적**: `[Unreleased]` 에 `- (BREAK) ...` bullet 이 들어가는 순간 break guard 가 fail → minor / major bump 까지 머지 차단. 0.7.x 안에서 break 가 필요하면 *deprecation 으로 전환* 하여 0.7.x 동안 두 표면을 유지하고, 다음 major 에서 제거.
+
+분기 결정 트리:
+
+```
+변경이 새 메서드 추가만? → patch 또는 minor (사용자가 minor 가치 평가)
+변경이 동작 변경 (semantic 변경)? → minor (1.X.0)
+변경이 메서드 제거 / 시그니처 BREAK? → major (X.0.0). 0.7.x 가 아닌 1.1.0 이나 2.0.0 으로 분기.
+```
+
