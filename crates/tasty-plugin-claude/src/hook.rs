@@ -173,6 +173,10 @@ pub fn apply_hook(
     session: Option<&str>,
 ) -> Result<Vec<HostCall>, IpcMethodError> {
     let mut calls = Vec::new();
+    // tasty-hooks 는 hook.surface_id 가 fire 의 surface_id 와 정확히 일치할 때만
+    // 실행하므로, parent 가 자식 완료를 polling 없이 감지하려면 child 자기
+    // surface 외에 parent surface 에도 별도 event 를 fire 해야 한다.
+    let parent_surface_id = state.parent_of_child(surface_id);
     match event {
         "stop" | "subagent-stop" => {
             state.set_idle(surface_id, true);
@@ -180,6 +184,12 @@ pub fn apply_hook(
                 surface_id,
                 event: "claude-idle",
             });
+            if let Some(parent_sid) = parent_surface_id {
+                calls.push(HostCall::FireHook {
+                    surface_id: parent_sid,
+                    event: "claude-child-idle",
+                });
+            }
         }
         "session-end" => {
             state.set_idle(surface_id, true);
@@ -195,6 +205,12 @@ pub fn apply_hook(
                 surface_id,
                 event: "claude-idle",
             });
+            if let Some(parent_sid) = parent_surface_id {
+                calls.push(HostCall::FireHook {
+                    surface_id: parent_sid,
+                    event: "claude-child-idle",
+                });
+            }
         }
         "notification" => {
             state.set_needs_input(surface_id, true);
@@ -202,6 +218,12 @@ pub fn apply_hook(
                 surface_id,
                 event: "needs-input",
             });
+            if let Some(parent_sid) = parent_surface_id {
+                calls.push(HostCall::FireHook {
+                    surface_id: parent_sid,
+                    event: "claude-child-needs-input",
+                });
+            }
         }
         "prompt-submit" | "session-start" | "active" => {
             // set_idle(false)는 needs_input도 함께 clear (state invariant).
@@ -287,6 +309,17 @@ fn resolve_surface_id(params: &Value) -> Result<u32, IpcMethodError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::ChildEntry;
+
+    fn child_entry(child_surface_id: u32, index: u32) -> ChildEntry {
+        ChildEntry {
+            child_surface_id,
+            index,
+            cwd: None,
+            role: None,
+            nickname: None,
+        }
+    }
 
     #[test]
     fn stop_sets_idle_and_emits_fire_hook() {
@@ -393,6 +426,94 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn stop_with_parent_also_fires_claude_child_idle_on_parent() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, child_entry(100, 1));
+        let calls = apply_hook(&mut state, "stop", 100, None).unwrap();
+        assert_eq!(state.state_of(100), "idle");
+        assert_eq!(
+            calls,
+            vec![
+                HostCall::FireHook {
+                    surface_id: 100,
+                    event: "claude-idle",
+                },
+                HostCall::FireHook {
+                    surface_id: 10,
+                    event: "claude-child-idle",
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn subagent_stop_with_parent_fans_out_to_parent() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, child_entry(100, 1));
+        let calls = apply_hook(&mut state, "subagent-stop", 100, None).unwrap();
+        assert!(calls.contains(&HostCall::FireHook {
+            surface_id: 10,
+            event: "claude-child-idle",
+        }));
+    }
+
+    #[test]
+    fn session_end_with_parent_fans_out_to_parent() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, child_entry(100, 1));
+        let calls = apply_hook(&mut state, "session-end", 100, None).unwrap();
+        // 기존 meta unset + 자체 claude-idle 발사는 유지, 마지막에 parent fan-out.
+        assert_eq!(
+            calls.last(),
+            Some(&HostCall::FireHook {
+                surface_id: 10,
+                event: "claude-child-idle",
+            })
+        );
+        // 자체 claude-idle 도 여전히 발사.
+        assert!(calls.contains(&HostCall::FireHook {
+            surface_id: 100,
+            event: "claude-idle",
+        }));
+    }
+
+    #[test]
+    fn notification_with_parent_fans_out_claude_child_needs_input() {
+        let mut state = ClaudeState::default();
+        state.register_child(10, child_entry(100, 1));
+        let calls = apply_hook(&mut state, "notification", 100, None).unwrap();
+        assert_eq!(state.state_of(100), "needs_input");
+        assert_eq!(
+            calls,
+            vec![
+                HostCall::FireHook {
+                    surface_id: 100,
+                    event: "needs-input",
+                },
+                HostCall::FireHook {
+                    surface_id: 10,
+                    event: "claude-child-needs-input",
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn stop_without_parent_does_not_fan_out() {
+        let mut state = ClaudeState::default();
+        // 자체적으로 idle 이 된 top-level conductor 시나리오. parent 매핑 없음.
+        let calls = apply_hook(&mut state, "stop", 100, None).unwrap();
+        // 부모 fan-out hook 이 없어야 한다.
+        assert!(!calls.iter().any(|c| matches!(
+            c,
+            HostCall::FireHook {
+                event: "claude-child-idle",
+                ..
+            }
+        )));
     }
 
     #[test]
