@@ -1660,6 +1660,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - `crates/tasty-plugin-sdk`: plugin 작성용 SDK — `Plugin` trait 구현 후 `tasty_plugin_sdk::run(plugin)` 호출이면 핸드셰이크/메시지 루프 자동 처리
 - `ui::*` 빌더 헬퍼 (vbox/hbox/scroll/splitter/label/button/tree/addressbar)
 - `env::PluginEnv`로 호스트 환경변수 일괄 로딩
+- `crates/tasty-plugin-sdk-wasm` (POC, main workspace 외부 격리): wasi-preview2 component 형식 plugin 의 host-side runtime. clipboard-history 변환 결과는 [architecture/wasm-poc-result.md](architecture/wasm-poc-result.md) 참조
 
 ### 동봉 plugin 예시
 - `tasty-plugin-explorer`: 외부 binary로 작성된 파일 탐색기. SDK만 의존하며 호스트 코드 의존 없음

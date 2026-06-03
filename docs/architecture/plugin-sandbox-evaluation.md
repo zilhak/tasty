@@ -10,7 +10,7 @@
 
 ## 0. TL;DR
 
-- **WASM 채택은 1.0 보류 (재확인).** `dev-guide/plugin-ecosystem.md §1` 결정과 일치.
+- **WASM 채택은 0.7 보류 (재확인).** `dev-guide/plugin-ecosystem.md §1` 결정과 일치.
 - **OS-level sandbox** (macOS `sandbox-exec` / Linux `seccomp` + `landlock` /
   Windows `AppContainer`) 가 cost-effective 한 대안. 단 *opt-in* 모델 (매니페스트 토글)
   로만 가능 — plugin 작성자가 자기 plugin 의 sandbox 호환성을 검증한 뒤에만 활성화.
@@ -113,9 +113,15 @@ Object 모두 없다.
 | **i18n / asset loader** | 현재 매니페스트 `lang_dir` 는 OS FS path. WASM 에서는 plugin bundle 내장 또는 host inject 로 재설계 필요 |
 | **동적 권한 prefix → 정적 capability 매핑** | `file_handler.extend:<id>` / `file_handler.handle:<id>` 는 install 시 매니페스트 id 로 token 이 동적 결정됨. WASM capability inject 는 *정적* (host 가 startup 에 import 결정). 변환 layer 또는 schema 재설계 필요 |
 
-위 비용은 모두 *추정* 이다. 실측은 POC spike (수행하지 않음) 에서만 가능.
+위 비용은 모두 *추정* 이다. 실측은 POC spike 에서만 가능.
 
-### 2.4 1.0 이후 재검토 trigger
+> **Phase J.C POC 측정값**: clipboard-history 변환으로 위 7 항목 중 4 항목
+> (FFI 부담 / FS access 우회 / 빌드·배포 / i18n) 의 *추정* 을 *측정값* 으로
+> 교체. 결과 = [wasm-poc-result.md §5](wasm-poc-result.md#5-결론--후속).
+> 핵심 = cold-start ~142 ms (process 와 유사 또는 우월), host_call ~3 µs (process
+> TCP+JSON 보다 우월), 격리 invariant OK (default 빌드 surface 변경 0).
+
+### 2.4 0.7 이후 재검토 trigger
 
 `dev-guide/plugin-ecosystem.md §1` 재검토 trigger 재확인 + 보강:
 
@@ -193,7 +199,7 @@ TL;DR (§0) + 비교표 (§4) + 재검토 trigger (§2.4) 셋만 보면 미래�
 ## 5. 권고 (재확인)
 
 - **1.0 까지**: 현 상태 유지. `dev-guide/plugin-ecosystem.md §1` 결정 재확인.
-- **1.0 이후 (조건부)**: OS-level sandbox 를 *opt-in* 으로 우선 (FFI 부담 0). WASM 은
+- **0.7 이후 (조건부)**: OS-level sandbox 를 *opt-in* 으로 우선 (FFI 부담 0). WASM 은
   marketplace / 외부 plugin 자생 이후 별도 entry type 으로.
 - **명문화 추가**: 본 평가 문서가 그 자체로 *결정 근거의 기록*. 향후 trigger 발동
   시 어떤 비용 trade-off 를 평가했는지의 참조점.
