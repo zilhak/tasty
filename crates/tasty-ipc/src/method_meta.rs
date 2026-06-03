@@ -7,6 +7,9 @@
 //! Local caller(CLI/사용자)는 권한 검사를 거치지 않는다. 이 테이블은 **plugin이
 //! 호출했을 때**의 권한 요구사항이다.
 
+use std::collections::HashMap;
+use std::sync::{OnceLock, RwLock};
+
 use tasty_plugin_manifest::Permission;
 
 /// 한 IPC 메서드에 대한 권한 메타.
@@ -347,6 +350,51 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
 pub const PREFIX_RULES: &[(&str, MethodMeta)] =
     &[("surface.ime_", local_only()), ("claude.", plugin(&[]))];
 
+/// plugin 매니페스트의 `[[contributes.ipc_namespace]]` 가 등록한 prefix 의
+/// runtime registry. `method_meta()` 의 마지막 fallback 단계에서 조회된다.
+///
+/// host-plugin 의 plugin lifecycle (`start_plugin_internal` / `disable` /
+/// `pump`) 가 [`register_plugin_prefix`] / [`unregister_plugin_prefix`] 로
+/// 동기 갱신한다.
+static PLUGIN_PREFIXES: OnceLock<RwLock<HashMap<String, MethodMeta>>> = OnceLock::new();
+
+fn plugin_prefixes() -> &'static RwLock<HashMap<String, MethodMeta>> {
+    PLUGIN_PREFIXES.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// plugin 매니페스트의 `[[contributes.ipc_namespace]]` prefix 를 runtime 등록.
+/// 등록 후 `<prefix>.<method>` 형식의 모든 IPC 메서드가 plugin/agent caller 에게
+/// `plugin_callable=true, required=[]` 메타로 노출된다. 세부 권한은 host-plugin
+/// 의 `validate_namespace_call` (`IpcInvoke(prefix)`) 가 분배.
+///
+/// 동일 prefix 재등록은 silent no-op (entry().or_insert(...) 시맨틱 — 첫
+/// 등록자 유지). 한 번 unregister 로 완전 제거.
+pub fn register_plugin_prefix(prefix: &str) {
+    if let Ok(mut map) = plugin_prefixes().write() {
+        map.entry(prefix.to_string()).or_insert(MethodMeta {
+            plugin_callable: true,
+            required: &[],
+        });
+    }
+}
+
+/// plugin unload / disable / restart 시 호출. 미등록 prefix 입력은 noop.
+pub fn unregister_plugin_prefix(prefix: &str) {
+    if let Ok(mut map) = plugin_prefixes().write() {
+        map.remove(prefix);
+    }
+}
+
+/// **WARNING**: runtime invariant 를 강제로 비움. 운영 호출 금지 — tests-only.
+/// 외부 crate (host-plugin) 의 integration test 가 호출할 수 있도록
+/// `doc(hidden) pub` 으로 노출.
+#[doc(hidden)]
+pub fn clear_plugin_prefixes_for_tests() {
+    if let Ok(mut map) = plugin_prefixes().write() {
+        map.clear();
+    }
+}
+
 /// 알려진 메서드의 메타. 미등록 메서드는 `None`.
 pub fn method_meta(method: &str) -> Option<MethodMeta> {
     for (name, meta) in METHOD_TABLE {
@@ -361,6 +409,14 @@ pub fn method_meta(method: &str) -> Option<MethodMeta> {
     }
     for (prefix, meta) in PREFIX_RULES {
         if method.starts_with(prefix) {
+            return Some(*meta);
+        }
+    }
+    if let Some(dot) = method.find('.') {
+        let prefix = &method[..dot];
+        if let Ok(map) = plugin_prefixes().read()
+            && let Some(meta) = map.get(prefix)
+        {
             return Some(*meta);
         }
     }

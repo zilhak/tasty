@@ -2,8 +2,21 @@
 
 #![cfg(test)]
 
-use crate::method_meta::{METHOD_TABLE, PREFIX_RULES, method_meta};
+use crate::method_meta::{
+    METHOD_TABLE, PREFIX_RULES, clear_plugin_prefixes_for_tests, method_meta,
+    register_plugin_prefix, unregister_plugin_prefix,
+};
 use tasty_plugin_manifest::Permission;
+
+/// runtime registry 가 process-global 이라 동일 binary 안에서 병렬 test 가
+/// PLUGIN_PREFIXES 를 동시 변형하지 못하게 직렬화.
+static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
 
 #[test]
 fn unknown_method_returns_none() {
@@ -221,6 +234,49 @@ fn request_permission_is_plugin_callable_with_approval() {
         m.required.contains(&Permission::Approval),
         "should require Approval"
     );
+}
+
+#[test]
+fn plugin_prefix_registration_resolves() {
+    let _g = test_lock();
+    clear_plugin_prefixes_for_tests();
+    register_plugin_prefix("codex");
+    let m = method_meta("codex.spawn").expect("registered via runtime");
+    assert!(m.plugin_callable);
+    assert!(m.required.is_empty());
+    clear_plugin_prefixes_for_tests();
+}
+
+#[test]
+fn plugin_prefix_unregister_removes() {
+    let _g = test_lock();
+    clear_plugin_prefixes_for_tests();
+    register_plugin_prefix("codex");
+    unregister_plugin_prefix("codex");
+    assert!(method_meta("codex.spawn").is_none());
+}
+
+#[test]
+fn static_table_wins_over_plugin_prefix() {
+    let _g = test_lock();
+    clear_plugin_prefixes_for_tests();
+    register_plugin_prefix("image");
+    let m = method_meta("image.open").expect("static");
+    assert!(m.required.contains(&Permission::SurfaceWrite));
+    clear_plugin_prefixes_for_tests();
+}
+
+#[test]
+fn plugin_prefix_idempotent_register() {
+    let _g = test_lock();
+    clear_plugin_prefixes_for_tests();
+    register_plugin_prefix("codex");
+    register_plugin_prefix("codex");
+    let m = method_meta("codex.spawn").expect("still registered");
+    assert!(m.plugin_callable);
+    unregister_plugin_prefix("codex");
+    assert!(method_meta("codex.spawn").is_none());
+    clear_plugin_prefixes_for_tests();
 }
 
 #[test]
