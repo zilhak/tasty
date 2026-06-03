@@ -99,6 +99,12 @@ impl ClaudeState {
     }
 
     pub fn register_child(&mut self, parent: u32, child: ChildEntry) {
+        // surface_id 가 재활용되거나 호스트 재시작 사이에 옛 idle/needs_input
+        // 잔재가 남아 있을 수 있다. 새 spawn 의 초기 상태는 *active* 가 invariant
+        // 이므로 두 map 에서 명시적으로 제거한다 — 그렇지 않으면 `wait` polling
+        // 첫 호출이 옛 잔재를 보고 즉시 "idle" 응답하는 false positive 발생.
+        self.idle.remove(&child.child_surface_id);
+        self.needs_input.remove(&child.child_surface_id);
         self.parent_of.insert(child.child_surface_id, parent);
         self.children.entry(parent).or_default().push(child);
     }
