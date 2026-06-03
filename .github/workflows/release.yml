@@ -57,6 +57,7 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-macos.dmg"
+          gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-macos.txt"
 
       - name: Clean up dist
         if: always()
@@ -82,6 +83,7 @@ jobs:
           $VERSION = "${{ needs.create-release.outputs.version }}"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.zip"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-windows-x64.msi"
+          gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-windows.txt"
 
       - name: Clean up dist
         if: always()
@@ -113,6 +115,7 @@ jobs:
           gh release upload --clobber "v${VERSION}" "dist/tasty_${VERSION}-1_amd64.deb"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-1.x86_64.rpm"
           gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-x86_64.AppImage"
+          gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-linux-x64.txt"
 
       - name: Clean up dist
         if: always()
@@ -143,6 +146,7 @@ jobs:
           gh release upload --clobber "v${VERSION}" "dist/tasty_${VERSION}-1_arm64.deb"
           gh release upload --clobber "v${VERSION}" "dist/tasty-${VERSION}-1.aarch64.rpm"
           gh release upload --clobber "v${VERSION}" "dist/Tasty-${VERSION}-aarch64.AppImage"
+          gh release upload --clobber "v${VERSION}" "dist/SHA256SUMS-linux-arm64.txt"
 
       - name: Clean up dist
         if: always()
