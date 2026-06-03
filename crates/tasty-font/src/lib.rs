@@ -287,6 +287,9 @@ pub struct GlyphAtlas {
     /// Set to `current_frame` when a page eviction happens; ensures we
     /// never evict more than once per frame to avoid thrashing.
     last_evict_frame: Option<u64>,
+    /// Monotonic count of page evictions since atlas construction. Surfaced
+    /// via `eviction_count()` for perf logging; never read by atlas logic.
+    eviction_count: u64,
 }
 
 impl GlyphAtlas {
@@ -338,6 +341,7 @@ impl GlyphAtlas {
             active_page: 0,
             current_frame: 0,
             last_evict_frame: None,
+            eviction_count: 0,
         }
     }
 
@@ -345,6 +349,21 @@ impl GlyphAtlas {
     /// `get_or_insert` calls, so LRU stamps are coherent.
     pub fn begin_frame(&mut self) {
         self.current_frame = self.current_frame.wrapping_add(1);
+    }
+
+    /// Monotonic eviction count since construction. Diagnostic only.
+    pub fn eviction_count(&self) -> u64 {
+        self.eviction_count
+    }
+
+    /// Number of pages that currently hold at least one glyph entry.
+    pub fn active_page_count(&self) -> u32 {
+        self.pages.iter().filter(|p| p.entry_count > 0).count() as u32
+    }
+
+    /// Sum of `entry_count` across all pages. Approximate live cache size.
+    pub fn entry_count_sum(&self) -> u32 {
+        self.pages.iter().map(|p| p.entry_count).sum()
     }
 
     /// Get or rasterize a glyph, returning its atlas entry.
@@ -421,6 +440,7 @@ impl GlyphAtlas {
             },
         );
         self.last_evict_frame = Some(self.current_frame);
+        self.eviction_count = self.eviction_count.saturating_add(1);
         let (x, y) = self.pages[victim as usize].try_allocate(w, h, self.atlas_size)?;
         self.active_page = victim;
         self.pages[victim as usize].last_access_frame = self.current_frame;
