@@ -344,11 +344,12 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[];
 
 /// prefix 기반 fallback. METHOD_TABLE에 없는 메서드를 prefix로 매칭한다.
 /// - `surface.ime_*` — IME 메서드 (window 의존, 사용자 입력 영역).
-/// - `claude.*` — Claude Code plugin namespace. Agent (자식 Claude) 의 hook
-///   trigger (`claude.hook`) 를 비롯해 plugin/agent 가 호출 가능해야 한다.
-///   세부 권한은 plugin manifest 의 ipc_namespace 가 분배.
-pub const PREFIX_RULES: &[(&str, MethodMeta)] =
-    &[("surface.ime_", local_only()), ("claude.", plugin(&[]))];
+///
+/// plugin 이 매니페스트 `[[contributes.ipc_namespace]]` 로 점유한 prefix 는
+/// [`register_plugin_prefix`] 로 *runtime* 등록되어 `method_meta()` 의 마지막
+/// fallback 단계에서 해소된다. 정적 `PREFIX_RULES` 는 host 자체 메서드의
+/// prefix-fallback 전용.
+pub const PREFIX_RULES: &[(&str, MethodMeta)] = &[("surface.ime_", local_only())];
 
 /// plugin 매니페스트의 `[[contributes.ipc_namespace]]` 가 등록한 prefix 의
 /// runtime registry. `method_meta()` 의 마지막 fallback 단계에서 조회된다.
