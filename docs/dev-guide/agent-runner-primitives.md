@@ -129,3 +129,67 @@ agent throttle* 을 강제하려면 모든 agent 에 대해 명시적으로 `rat
 `rate_limit_try_consume` 의 store 접근이 실패하면 미들웨어는 `tracing::warn!`
 로 로그만 남기고 통과시킨다. rate_limit 인프라 자체가 망가졌다고 모든 IPC 를
 차단하는 것은 과도하다는 판단 — 운영자가 로그로 인지 후 복구.
+
+## 5. Lease-gated dispatch (Phase J.A)
+
+### 5.1 metadata 컨벤션
+
+```jsonc
+{
+  "lease": {
+    "resource": "file:/etc/example",   // 필수 — 협조적 점유 키
+    "holder": "<task_id>",              // 옵션 — 미명시 시 task.id 자동
+    "ttl_ms": 60000,                    // 옵션 — 만료 후 lazy evict
+    "mode": "block"                     // 옵션 — "block" (default, Deferred 매핑)
+                                        //        "fail" (PermanentFail 매핑)
+  }
+}
+```
+
+semaphore 와 같은 정책: `holder == task.id` 컨벤션을 강제 (호스트 재시작
+정화의 대상 식별용). 외부 도구가 임의 holder 로 acquire 한 lease 는
+`purge_stale_lease_holders` 의 회수 대상이 아니다.
+
+### 5.2 dispatch 게이트 순서
+
+`lease → semaphore` 순서로 시도. 한쪽 점유 후 다음 게이트가 Deferred / Err 면
+점유한 자원 즉시 release (idempotent). 통합 dead-lock 회피 (R-4): 두 자원
+모두 가용한 시점에서만 dispatch 통과.
+
+### 5.3 호스트 재시작 정화
+
+`runner_thread::purge_stale_lease_holders` 가 workspace runner 시작 직전
+1회 수행. Running task 중 `metadata.lease.holder == task.id` 만 정화 대상 —
+store 에서 release + task=Failed("host restart") 마감.
+
+## 6. DispatchHandle 영속 (Phase J.A)
+
+### 6.1 영속 key + 형식
+
+key: `tasty.agent.handle.<task_id>` (workspace scope). 값은
+`DispatchHandle` 의 serde JSON (`tag="kind", content="data"` adjacently-tagged).
+
+### 6.2 영속 대상
+
+- `ClaudeChild`, `ShellProcess`, `BarrierPoll`: 영속.
+- `ReduceImmediate`, `CustomImmediate`, `ImmediateFail`: 영속 *안 함* —
+  다음 tick poll 에서 즉시 흡수되므로 영속해 둘 의미가 없고, reload 시
+  재dispatch 되어 side-effect 위험.
+
+### 6.3 reload 흐름
+
+`reload_persistent_handles` 가 workspace runner 시작 직전 호출:
+
+1. task state 가 Running 이 아니면 stale (영속만 제거, state 보존). R-1 회피.
+2. `ShellProcess { pid }`: `process_alive::is_alive(pid)` 검사.
+   - alive → 복원 (다음 tick poll 의 `try_wait` fallback 이 child map miss →
+     `process_alive` fallback 으로 흡수).
+   - dead → task=Failed("host restart: pid X died") + evict.
+3. `ClaudeChild` / `BarrierPoll`: 복원 (insert only — 즉시 poll 안 함).
+   다음 정상 tick 에서 poll. injector 미준비면 PollOutcome::Failed 흡수.
+
+### 6.4 evict 시점
+
+`HostExecutor::release_permit` (task 종결) 안에서 자동. ws 는 별도
+`held_handles: HashMap<TaskId, u32>` map 으로 추적 (handle 자체에서 ws 식별
+불가 — ShellProcess { pid } variant 에 workspace_id 없음).

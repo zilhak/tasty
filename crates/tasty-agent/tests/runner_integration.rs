@@ -889,3 +889,47 @@ fn lease_gated_dispatch_serializes_two_tasks() {
         assert_eq!(t2.state, TaskState::Succeeded);
     }
 }
+
+// =====================================================================
+// Phase J.A.S6 — DispatchHandle 영속 round-trip 통합 시나리오.
+// runner_host / runner_thread 는 src/ (host adapter) 에 있으므로 여기서는
+// pure tasty-agent 측에서 DispatchHandle::serde 의 forward/backward-compat 와
+// 모든 variant 의 영속/복원 의미를 검증한다.
+// =====================================================================
+
+#[test]
+fn dispatch_handle_persistence_round_trip_all_variants() {
+    use tasty_agent::DispatchHandle;
+    let variants = vec![
+        DispatchHandle::ClaudeChild {
+            parent_sid: 42,
+            child_index: 3,
+            workspace_id: 1,
+        },
+        DispatchHandle::ShellProcess { pid: 99999 },
+        DispatchHandle::ReduceImmediate(TaskResult {
+            exit_code: Some(0),
+            output: Some(serde_json::json!({"x": 1})),
+            error: None,
+        }),
+        DispatchHandle::CustomImmediate(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        }),
+        DispatchHandle::ImmediateFail("dispatch error".into()),
+        DispatchHandle::BarrierPoll {
+            workspace_id: 1,
+            name: "b".into(),
+        },
+    ];
+    for h in variants {
+        let json = serde_json::to_string(&h).expect("serialize");
+        let back: DispatchHandle = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            format!("{h:?}"),
+            format!("{back:?}"),
+            "round-trip mismatch for {h:?}"
+        );
+    }
+}

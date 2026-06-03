@@ -151,15 +151,30 @@ tasty agent task-set-result \
 
 ## 한계 / 향후
 
-- **handle 영속 없음** — runner thread 메모리에만. 호스트 재시작 시 Running
-  task 는 `Unknown` 으로 fallback (현재는 자동 표시 X — 사용자가 `task-retry`
-  로 정리). pid liveness 복원은 `process_alive::is_alive` helper 준비됨, 본
-  phase 에서는 호출 X.
-- **동시성 제어 없음** — 한 tick 의 모든 Ready 를 한꺼번에 dispatch. 100 개
-  병렬 claude.spawn 은 별 phase 의 semaphore 통합으로 조절 예정.
-- **agent.task_await blocking 미지원** — 현재는 단순 `task_get` alias.
-- **`OnFailure::Fallback` 동적 task 생성 X** — fallback task 는 사전에 존재해야
-  동작.
+- **재시작 후 `ShellProcess` 의 exit_code 미상** — pid liveness 만 검사 가능.
+  Child object 가 사라졌으므로 종료 코드/exit status 는 복원 불가. 다음 tick poll
+  에서 `process_alive::is_alive` fallback 이 alive/dead 만 판정.
+- **`ClaudeChild` reload 시 IPC injector 미준비 가능성** — reload 단계는 *복원만*
+  (RunnerLoop.running 에 insert) 하고 즉시 poll 하지 않는다. 다음 정상 tick 에서
+  poll. injector 가 그 시점에도 미초기화이면 `PollOutcome::Failed` 로 흡수되어
+  task=Failed (R3 정책: 사용자 retry).
 
-barrier / semaphore / lease / rate_limit 와 task 의 자동 통합은 *별 phase* 의
-주제.
+barrier / semaphore / lease / rate_limit 와 task 의 자동 통합 (semaphore + lease
+gated dispatch) 는 Phase J.A 에 흡수되었다.
+
+### Phase J.A 에서 해결
+
+- **DispatchHandle 영속** — `tasty.agent.handle.<task_id>` 키로 workspace scope
+  영속. Immediate*/ImmediateFail 제외. 호스트 재시작 시 `reload_persistent_handles`
+  가 `process_alive::is_alive` 로 pid 검사 → alive 복원 / dead Failed 마감.
+- **동시성 제어 (lease + semaphore)** — `HostExecutor` 가 `task.metadata.semaphore`
+  + `task.metadata.lease` 컨벤션을 dispatch 게이트로. 둘 다 점유한 후 한쪽 실패 시
+  즉시 release. 순서 lease → semaphore (R-4 dead-lock 회피).
+- **`agent.task_await` blocking** — `TaskWakerHub` (sync_channel + waiters
+  HashMap + recv_timeout). 현 state 가 종결이면 즉시 반환. `timeout_ms None|0` =
+  무한 대기 (record-level timeout 없음). fire 는 runner_thread tick / Core
+  wrapper (set_state, cancel) 모든 경로에서 호출.
+- **`OnFailure::Fallback` 동적 task 생성** — `Fallback { task: Option<TaskId>,
+  inline: Option<Box<InlineFallbackSpec>> }`. inline 은 main 이 Failed 가 되는
+  set_state 분기에서 `TaskStore::create` 가 새 task 발급. metadata.fallback_of
+  로 idempotency (반복 Failed → 한 번만 생성).

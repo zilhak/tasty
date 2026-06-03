@@ -594,7 +594,7 @@ terminal 의 시작 명령어는 PTY 가 ready 된 직후 stdin 에 한 줄로 �
 
 - **TaskState 8종**: `Waiting` (의존성 미충족) / `Ready` / `Running` / `Succeeded` / `Failed { error }` / `Cancelled` / `Skipped` (의존성 실패로 자동 스킵) / `Unknown` (재시작 후 Running이던 task — 사용자가 retry/cancel 결정 필요)
 - **TaskCommand 4종**: `ClaudeSpawn` (claude.spawn 호출) / `Run` (terminal에서 명령 실행) / `Custom` (임의 IPC 위임) / `Reduce` (5종 reducer 전략) — 실제 실행 wiring은 후속 sub-phase
-- **OnFailure 3종**: `Abort` (downstream 모두 Skipped, 기본) / `ContinueDownstream` (실패를 성공처럼 취급) / `Fallback { task }` (대체 task로 우회 — Phase 5.6 부터 main 실패 시 fallback task 가 자동 Ready, fallback 의 succeed/fail 도 main 의 downstream 으로 전파됨)
+- **OnFailure 3종**: `Abort` (downstream 모두 Skipped, 기본) / `ContinueDownstream` (실패를 성공처럼 취급) / `Fallback { task?, inline? }` (대체 task로 우회 — Phase 5.6 부터 main 실패 시 fallback task 가 자동 Ready, fallback 의 succeed/fail 도 main 의 downstream 으로 전파됨. Phase J.A 부터 `inline: InlineFallbackSpec` 으로 동적 생성 지원 — main Failed 시 `TaskStore::create` 가 새 task 발급, `metadata.fallback_of` 로 idempotency)
 - **사이클 검출**: DFS 3-color로 `create()` 시점에 검증. unknown dependency도 같은 단계에서 거부
 - **자동 cascade**: 임의 task의 state가 바뀌면 transitive downstream을 재평가해 `Waiting → Ready/Skipped`로 자동 전이
 
@@ -605,7 +605,7 @@ terminal 의 시작 명령어는 PTY 가 ready 된 직후 stdin 에 한 줄로 �
 | `agent.task_create` | AgentManage | 새 task 생성. `workspace_id`/`name`/`command`/`depends_on?`/`on_failure?`/`metadata?` |
 | `agent.task_list` | AgentManage | 워크스페이스 task 목록. `state?` 필터 |
 | `agent.task_get` | AgentManage | 단건 조회 |
-| `agent.task_await` | AgentManage | 현 단계: `task_get`와 동일 (즉시 응답). 실제 blocking await는 scheduler 도입 후 |
+| `agent.task_await` | AgentManage | task 가 종결 상태에 도달할 때까지 **blocking** 대기 (Phase J.A). 응답 `{outcome: "terminal"|"timed_out"|"not_found", state?, result?}`. `timeout_ms` 미지정 또는 0 = 무한 대기. TaskWakerHub 가 set_state 종결 분기에서 fire |
 | `agent.task_cancel` | AgentManage | 명시적 취소. downstream cascade |
 | `agent.task_retry` | AgentManage | Failed/Cancelled/Skipped/Unknown task 재시작. `reset_downstream?`로 downstream도 Waiting으로 |
 | `agent.task_graph` | AgentManage | DAG 출력. `format`=`json` (기본) 또는 `dot` (Graphviz) |
@@ -618,7 +618,7 @@ terminal 의 시작 명령어는 PTY 가 ready 된 직후 stdin 에 한 줄로 �
 tasty agent task-create --workspace-id <id> --name <n> --command @spec.json [--depends-on T1,T2] [--on-failure abort|continue_downstream|fallback:T3] [--metadata @meta.json]
 tasty agent task-list   --workspace-id <id> [--state <s>]
 tasty agent task-get    --workspace-id <id> --id <T>
-tasty agent task-await  --workspace-id <id> --id <T>
+tasty agent task-await  --workspace-id <id> --id <T> [--timeout-ms <ms>]
 tasty agent task-cancel --workspace-id <id> --id <T>
 tasty agent task-retry  --workspace-id <id> --id <T> [--reset-downstream]
 tasty agent task-graph  --workspace-id <id> [--format json|dot]
@@ -640,7 +640,19 @@ tasty agent task-set-result --workspace-id <id> --id <T> --state succeeded|faile
 - `HostIpcInjector` (`src/app/ipc/host_call.rs`) — off-main thread 가 plugin IPC 메서드를 동기 호출하는 통로. `IpcCommand` 를 App 큐에 직접 push + `IpcWaker` 깨움 + `sync_channel(1)` `recv_timeout(5s)`.
 - `crates/tasty-agent/src/platform/process_alive.rs` — cross-platform pid liveness probe (Unix `kill(pid, 0)` / Windows `OpenProcess + GetExitCodeProcess`).
 
-handle 은 **runner thread 메모리에만** 보관 — 호스트 재시작 후 Running 잔여 task 는 사용자 `task-retry` 필요. blocking `task_await` 는 후속 phase.
+Phase H.F 시점에는 handle 이 runner thread 메모리에만 — Phase J.A 에서 영속 + restart reload 로 진화.
+
+**Phase J.A — runner 완성**:
+- **DispatchHandle 영속** (`tasty.agent.handle.<task_id>`): Started 직후 영속,
+  release_permit 시 evict. 호스트 재시작 시 `reload_persistent_handles` 가
+  pid liveness 검사 (`process_alive::is_alive`) — alive 복원 / dead Failed 마감.
+- **Lease-gated dispatch**: `task.metadata.lease = {resource, holder?, ttl_ms?, mode?}`
+  컨벤션. dispatch 게이트 순서 lease → semaphore (R-4 dead-lock 회피).
+- **`OnFailure::Fallback { inline }` 동적 task 생성**: main Failed 시
+  `InlineFallbackSpec` 으로 새 task 발급. `metadata.fallback_of` 로 idempotency.
+- **`agent.task_await` 진짜 blocking**: `TaskWakerHub` (sync_channel + waiters
+  HashMap + recv_timeout). set_state 종결 분기 / Core wrapper / runner thread tick
+  의 모든 경로에서 fire.
 
 **Semaphore-gated dispatch + WaitBarrier task (Phase I.A)** — `TaskExecutor::dispatch` 가 `DispatchOutcome::{Started, Deferred, PermanentFail}` 3-way 결과를 반환. `task.metadata.semaphore = { name, holder? }` 컨벤션이 있으면 dispatch 진입에서 `SemaphoreStore::acquire` 시도, 부족 시 `Deferred` 로 다음 tick 재시도. permit 회수는 종결 (Succeeded/Failed/Cancelled) 시 자동. 추가로 `TaskCommand::WaitBarrier { name }` 로 DAG 안에서 명시적 barrier gate 가능 — barrier `Closed` → Succeeded, `TimedOut` → Failed. 호스트 재시작 시 영속된 holder 의 leak 방지를 위해 workspace runner thread 시작 직전 `holder == task.id` 컨벤션이 맞는 Running 잔여 task 의 permit 정화 + Failed("host restart") 마감 단계 1 회. `metadata.semaphore.holder` 가 다르면 *외부 도구가 직접 acquire 한 항목* 으로 간주, 정화 대상 아님. 상세: [dev-guide/agent-runner-primitives.md](dev-guide/agent-runner-primitives.md).
 
