@@ -72,7 +72,11 @@ impl SharedBuffer {
     pub fn generation(&self) -> u64 {
         // SAFETY: SharedMemory 영역의 시작 8바이트는 mmap 페이지 정렬로 8B aligned.
         // tasty_shm::footer의 SAFETY 조건을 충족.
-        unsafe { tasty_shm::footer::load(self.mem.as_slice(), Ordering::Acquire) }
+        // mem.as_slice() 와 footer::load 가 한 read 흐름이라 분할 불필요.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        unsafe {
+            tasty_shm::footer::load(self.mem.as_slice(), Ordering::Acquire)
+        }
     }
 
     /// 사용자 영역을 read-only byte slice로 본다 (footer 제외).
@@ -114,6 +118,8 @@ impl SharedBuffer {
     /// `rect`가 `None`이면 전체 영역이 dirty.
     pub fn commit(&self, rect: Option<PixelRect>) -> Result<(), PluginError> {
         // SAFETY: footer atomic 접근. SharedMemory 영역은 mmap 페이지 정렬이라 8B aligned.
+        // mem.as_slice() 와 footer::fetch_add 가 한 atomic 흐름이라 분할 불필요.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             tasty_shm::footer::fetch_add(self.mem.as_slice(), 1, Ordering::Release);
         }

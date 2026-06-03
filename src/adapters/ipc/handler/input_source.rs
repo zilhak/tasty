@@ -107,6 +107,8 @@ fn switch_input_source(source_id: &str) -> Result<(), String> {
     // - TISCreateInputSourceList는 CFArrayRef를 +1 retain count로 반환 → CFRelease로 정리.
     // - 모든 호출은 IPC 핸들러 스레드(또는 main)에서 수행되며, TIS API는 process-wide
     //   thread-safe하다 (Apple 문서).
+    // FFI 시퀀스가 한 트랜잭션이라 분할하면 retain/release 짝이 분산되어 가독성 저하.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
         let key = cf_string("TISPropertyInputSourceID");
         let val = cf_string(source_id);
@@ -145,6 +147,8 @@ fn post_key_event(keycode: u16, key_down: bool) {
     // 표준 키 시뮬레이션 패턴. 반환된 source/event는 CF object로 ARC 없이는 leak되지만,
     // 이는 debug-only `debug.raw_key` 경로에서 호출되어 leak 영향이 미미하고 별도 fix 대상.
     // 본 SAFETY 보증 범위는 호출 자체의 UB 부재.
+    // CG 시퀀스가 한 단위라 분할 시 가독성 저하.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
         // kCGEventSourceStateCombinedSessionState = 0
         let source = CGEventSourceCreate(0);

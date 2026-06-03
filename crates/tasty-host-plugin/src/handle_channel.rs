@@ -465,6 +465,9 @@ mod unix_wire {
             msg.msg_controllen = cmsg_space as _;
 
             // SAFETY: msg.msg_control이 유효한 64B 버퍼를 가리키고 msg.msg_controllen이 그 안에 들어감.
+            // CMSG_FIRSTHDR / CMSG_DATA / write_unaligned 가 단일 cmsg 헤더 구성에 묶여
+            // 하나의 atomic 한 작업이라 블록 분할이 불필요.
+            #[allow(clippy::multiple_unsafe_ops_per_block)]
             unsafe {
                 let cmsg_ptr = libc::CMSG_FIRSTHDR(&msg);
                 if cmsg_ptr.is_null() {
@@ -548,7 +551,9 @@ mod unix_wire {
                 // SAFETY: CMSG_DATA는 cmsg 안의 data 시작 포인터.
                 let data_ptr = unsafe { libc::CMSG_DATA(cmsg) } as *const libc::c_int;
                 for i in 0..n_fds {
-                    // SAFETY: data_ptr부터 n_fds * sizeof(c_int) 범위 내.
+                    // SAFETY: data_ptr 부터 n_fds * sizeof(c_int) 범위 내. add 와
+                    // read_unaligned 가 cmsg 단일 fd 읽기로 묶여있어 분할 시 가독성 저하.
+                    #[allow(clippy::multiple_unsafe_ops_per_block)]
                     let fd = unsafe { std::ptr::read_unaligned(data_ptr.add(i)) };
                     fds.push(fd);
                 }

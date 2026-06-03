@@ -12,8 +12,10 @@ pub fn is_alive(pid: u32) -> bool {
         return true;
     }
     // ESRCH (No such process) → false. EPERM (권한 없음, 그러나 프로세스 존재) → true.
-    // SAFETY: errno 는 thread-local 변수 — 다른 동시 호출이 덮어쓰기 전 즉시 읽음.
-    let errno = unsafe { *libc::__error() };
+    // SAFETY: __error 는 errno 의 thread-local 포인터 — 항상 valid.
+    let errno_ptr = unsafe { libc::__error() };
+    // SAFETY: thread-local 변수 — 동시 덮어쓰기 전 즉시 읽음.
+    let errno = unsafe { *errno_ptr };
     errno == libc::EPERM
 }
 

@@ -312,6 +312,8 @@ mod tests {
 
         // Plugin 측: 픽셀 채우고 footer fetch_add(Release).
         // SAFETY: 본 테스트가 SharedMemory의 유일한 사용자. 단일 스레드에서 write 후 read만 한다.
+        // 픽셀 write 와 footer fetch_add 가 한 commit 단위라 분할 시 ordering 의미 불명확.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             let raw = mem.as_mut_slice();
             let user = tasty_shm::footer::user_slice_mut(raw);
@@ -342,6 +344,8 @@ mod tests {
             PixelFilter::Linear,
         );
         // SAFETY: 동일 SharedMemory에 다른 writer가 없다.
+        // raw 슬라이스 read + footer load + user_slice + upload 가 한 read 흐름.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             let raw = mem.as_slice();
             let generation = tasty_shm::footer::load(raw, Ordering::Acquire);

@@ -53,11 +53,17 @@ unsafe extern "C-unwind" fn dock_menu(
     item.setTitle(&NSString::from_str("New Window"));
     // SAFETY: 본 함수는 unsafe extern "C-unwind" — main thread NSApplicationDelegate
     // 콜백으로 ObjC 런타임이 호출. setAction은 AppKit main-thread-only이며 invariant 충족.
-    unsafe { item.setAction(Some(sel!(tastyNewWindow:))) };
+    // sel! 매크로 내부 + setAction 호출이 한 묶음.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    unsafe {
+        item.setAction(Some(sel!(tastyNewWindow:)))
+    };
     menu.addItem(&item);
 
     let ptr: *mut NSMenu = Retained::into_raw(menu);
     // SAFETY: autorelease는 NSObject 표준 메서드 — main thread 호출이므로 ObjC runtime 안전.
+    // msg_send 매크로 내부 + 호출이 한 묶음.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
     let _: *mut AnyObject = unsafe { msg_send![ptr, autorelease] };
     ptr.cast()
 }
@@ -137,6 +143,7 @@ pub fn inject_delegate_methods() {
     // Set up app menu
     // SAFETY: delegate는 Retained<dyn>, msg_send![,self]는 self pointer를 얻는 ObjC 표준 호출.
     // main thread에서 호출됨.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
     let delegate_ptr: *mut AnyObject = unsafe { msg_send![&*delegate, self] };
     setup_main_menu(&app, mtm, delegate_ptr);
 
@@ -164,6 +171,8 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
     // SAFETY: 호출자가 main thread(mtm)에서 호출. delegate는 AnyObject 포인터로,
     // winit의 NSApplicationDelegate를 가리키며 app이 살아있는 동안 valid.
     // NSEventModifierFlags 조합은 bitflag로 ObjC API에서 받아들이는 표준 값.
+    // setAction / setTarget / setKeyEquivalentModifierMask 가 한 menu item setup 단위.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
         new_window_item.setAction(Some(sel!(tastyNewWindow:)));
         new_window_item.setTarget(Some(&*delegate.cast()));

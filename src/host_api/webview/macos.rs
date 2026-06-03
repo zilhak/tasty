@@ -34,6 +34,8 @@ impl PlatformWebView {
 
         // SAFETY: mtm으로 main thread 확정. WKWebView/WKPreferences API는 main thread only.
         // msg_send![setValue:forKey:]는 NSString 두 객체에 대한 KVC — 같은 thread, 같은 호출 흐름.
+        // WKWebView init + addSubview 시퀀스는 한 setup 단위라 분할 시 가독성 저하.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             let config = WKWebViewConfiguration::new(mtm);
 
@@ -58,6 +60,8 @@ impl PlatformWebView {
     pub fn set_bounds(&self, bounds: WebViewBounds, scale_factor: f64) {
         // SAFETY: main thread에서만 호출 — PlatformWebView는 main thread 객체
         // (Retained<WKWebView>이므로 !Send/!Sync 기본). logical_to_nsrect도 main thread.
+        // superview/setFrame 호출이 한 묶음이라 분할 불필요.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             if let Some(parent) = self.webview.superview() {
                 let frame = logical_to_nsrect(&parent, bounds, scale_factor);
@@ -77,6 +81,8 @@ impl PlatformWebView {
     /// images, iframes) in the same directory tree are accessible.
     pub fn load_url(&self, url: &str) {
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
+        // URL loading 시퀀스는 한 단위라 분할 시 가독성 저하.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
         unsafe {
             if let Some(path) = url.strip_prefix("file://") {
                 // Use fileURLWithPath for proper percent-encoding of CJK paths
