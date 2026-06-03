@@ -108,6 +108,10 @@ impl TastyInstance {
             .env_remove("OH_MY_ZSH")
             .env_remove("ZSH")
             .env_remove("SHELL")
+            // host 의 RUST_LOG=debug/trace 가 새어들어와 child 가 polled stderr
+            // 보다 빠르게 write 하면 OS pipe buffer 가 가득 차서 child 가 block
+            // 될 위험이 있다. drain thread 가 1차 방어, verbosity cap 이 2차.
+            .env("RUST_LOG", "tasty=info")
             .stderr(Stdio::piped())
             .spawn()
             .expect("failed to spawn tasty");
