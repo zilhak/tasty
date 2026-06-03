@@ -166,13 +166,18 @@ impl CallerContext {
     /// Phase 4 ~ 6 agent 식별자.
     ///
     /// - `Agent` → 호스트-부여 `agent_id` (verifiable, session token 검증 통과)
-    /// - `Plugin` → manifest 의 `plugin_id`
+    /// - `Plugin` → manifest 의 `plugin_id` (telemetry 검증을 위해 점 등은 `_` 로 sanitize)
     /// - `Local` → env `TASTY_AGENT_ID` (없으면 `_host`)
+    ///
+    /// Plugin id 는 reverse-domain (`com.tasty.claude`) 이라 점을 포함하는데
+    /// telemetry `validate_agent_id` 는 `[a-zA-Z0-9_-]` 만 허용하므로 sanitize
+    /// 하지 않으면 dispatcher 미들웨어가 매 IPC 호출마다 `InvalidAgentId` 로
+    /// warn 폭주한다. `AgentId::from_plugin_id` 가 안전한 형태로 매핑.
     pub fn agent_id(&self) -> tasty_telemetry::AgentId {
         match self {
             CallerContext::Local => tasty_telemetry::AgentId::from_env(),
             CallerContext::Plugin { plugin_id, .. } => {
-                tasty_telemetry::AgentId::new(plugin_id.clone())
+                tasty_telemetry::AgentId::from_plugin_id(plugin_id)
             }
             CallerContext::Agent { agent_id, .. } => {
                 tasty_telemetry::AgentId::new(agent_id.clone())

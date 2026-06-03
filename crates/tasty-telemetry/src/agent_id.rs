@@ -50,6 +50,30 @@ impl AgentId {
         }
     }
 
+    /// Plugin id (reverse-domain `com.foo.bar` 형식) → telemetry-safe agent id.
+    ///
+    /// `validate_agent_id` 는 `[a-zA-Z0-9_-]` (최대 64자) 만 허용하지만, plugin
+    /// manifest id 는 통상 점을 포함한다 (`com.tasty.claude`). 점·기타 비허용
+    /// 문자는 `_` 로 치환해 telemetry 도메인에 안전한 식별자로 만든다.
+    /// 64자 초과 시 절단, 빈 입력은 host sentinel.
+    pub fn from_plugin_id(plugin_id: &str) -> Self {
+        let mut out = String::with_capacity(plugin_id.len());
+        for c in plugin_id.chars() {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                out.push(c);
+            } else {
+                out.push('_');
+            }
+        }
+        if out.is_empty() {
+            return Self::host();
+        }
+        if out.len() > 64 {
+            out.truncate(64);
+        }
+        Self(out)
+    }
+
     /// 호스트 sentinel 인가?
     pub fn is_host(&self) -> bool {
         self.0 == Self::HOST
@@ -106,6 +130,39 @@ mod tests {
         let a = AgentId::new("x");
         assert_eq!(format!("{a}"), "x");
         assert_eq!(format!("{}", AgentId::host()), "_host");
+    }
+
+    #[test]
+    fn from_plugin_id_sanitizes_dots_and_other_chars() {
+        // 점은 telemetry 검증에서 거부되므로 _ 로 치환되어야 한다.
+        assert_eq!(
+            AgentId::from_plugin_id("com.tasty.claude").as_str(),
+            "com_tasty_claude"
+        );
+        // 허용 문자 (alnum, _, -) 는 그대로.
+        assert_eq!(
+            AgentId::from_plugin_id("plugin-1_foo").as_str(),
+            "plugin-1_foo"
+        );
+        // 기타 비허용 문자도 _ 로.
+        assert_eq!(AgentId::from_plugin_id("a/b@c").as_str(), "a_b_c");
+        // 결과는 validate_agent_id 를 통과해야 한다.
+        assert!(
+            crate::validate_agent_id(AgentId::from_plugin_id("com.tasty.claude").as_str()).is_ok()
+        );
+    }
+
+    #[test]
+    fn from_plugin_id_truncates_over_64_chars() {
+        let long = "a".repeat(100);
+        let a = AgentId::from_plugin_id(&long);
+        assert_eq!(a.as_str().len(), 64);
+        assert!(crate::validate_agent_id(a.as_str()).is_ok());
+    }
+
+    #[test]
+    fn from_plugin_id_empty_falls_back_to_host() {
+        assert!(AgentId::from_plugin_id("").is_host());
     }
 
     #[test]
