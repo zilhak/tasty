@@ -24,7 +24,7 @@ impl PluginManager {
     /// production 경로는 `App` 가 공유 Arc 를 갖고 있어 `with_registries` 를
     /// 직접 호출 — 본 ctor 는 내부 unit test 전용.
     #[cfg(test)]
-    pub fn new(waker: crate::waker::SharedWakerFactory) -> Self {
+    pub fn new(waker: tasty_terminal::waker_factory::SharedWakerFactory) -> Self {
         Self::with_registries(
             waker,
             Arc::new(crate::file::format::FileFormatRegistry::new()),
@@ -34,7 +34,7 @@ impl PluginManager {
 
     /// CoreState 와 같은 Arc 를 공유하기 위한 생성자.
     pub fn with_registries(
-        waker: crate::waker::SharedWakerFactory,
+        waker: tasty_terminal::waker_factory::SharedWakerFactory,
         file_format: Arc<crate::file::format::FileFormatRegistry>,
         file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
     ) -> Self {
