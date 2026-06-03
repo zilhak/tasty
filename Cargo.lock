@@ -5217,6 +5217,7 @@ dependencies = [
  "tasty-themes",
  "tasty-type-appearance",
  "tasty-utils",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "toml 0.8.2",

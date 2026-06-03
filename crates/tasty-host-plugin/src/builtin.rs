@@ -11,6 +11,8 @@
 //!
 //! 외부 플러그인과의 차이는 *발생지*뿐이다. 디스커버리·실행·권한 모델은 동일하다.
 
+use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::{PluginManager, PluginsConfig, discovery};
@@ -139,6 +141,103 @@ const BUILTINS: &[BuiltinSpec] = &[
 
 pub fn is_builtin_plugin(id: &str) -> bool {
     BUILTINS.iter().any(|b| b.id == id)
+}
+
+/// 자동 builtin upgrade 시 *어떤* 분기로 처리할지 결정한 결과.
+///
+/// `install_builtins_if_needed` 의 already-present 분기와 신규 `upgrade_builtins`
+/// 양쪽에서 공유. mtime 비신뢰성을 피하기 위해 manifest 의 `version` (semver)
+/// 을 1차 기준으로 사용한다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BuiltinUpgradeDecision {
+    /// 변경 없음 (installed >= bundle, 또는 bundle 매니페스트 corrupt).
+    Skip,
+    /// 같은 semver — mtime 기반 idempotent sync 만 수행 (dev workspace hotfix).
+    ResyncSameVersion,
+    /// bundle > installed — 디렉토리 전체를 mtime 무시하고 덮어씀.
+    UpgradeVersion {
+        from: semver::Version,
+        to: semver::Version,
+    },
+    /// 사용자가 `--force` 로 명시 요청 — 동일/하위 버전도 강제 재설치.
+    ForceOverwrite,
+}
+
+/// dest 의 `tasty-plugin.toml` 에서 semver 만 읽음. corrupt/parse-fail → None.
+fn read_installed_version(dest: &Path) -> Option<semver::Version> {
+    Manifest::load(dest)
+        .ok()
+        .and_then(|m| semver::Version::parse(&m.version).ok())
+}
+
+/// bundle 의 `tasty-plugin.toml` 에서 semver 만 읽음. corrupt/parse-fail → None.
+fn read_bundle_version(src: &Path) -> Option<semver::Version> {
+    Manifest::load(src)
+        .ok()
+        .and_then(|m| semver::Version::parse(&m.version).ok())
+}
+
+/// installed / bundle / force 입력으로 upgrade 의사 결정.
+///
+/// 규칙 (verify §5.5 반영):
+/// - force=true → 무조건 `ForceOverwrite`
+/// - bundle 매니페스트 파싱 실패 → `Skip` (corrupt bundle 보호)
+/// - installed 파싱 실패 + bundle ok → `ResyncSameVersion` (사용자 dir 손상 복구)
+/// - 둘 다 ok → bundle vs installed semver 비교
+pub(crate) fn decide_builtin_upgrade(
+    installed: Option<&semver::Version>,
+    bundle: Option<&semver::Version>,
+    force: bool,
+) -> BuiltinUpgradeDecision {
+    if force {
+        return BuiltinUpgradeDecision::ForceOverwrite;
+    }
+    let bundle = match bundle {
+        Some(b) => b,
+        None => return BuiltinUpgradeDecision::Skip,
+    };
+    let installed = match installed {
+        Some(i) => i,
+        None => return BuiltinUpgradeDecision::ResyncSameVersion,
+    };
+    match bundle.cmp(installed) {
+        std::cmp::Ordering::Greater => BuiltinUpgradeDecision::UpgradeVersion {
+            from: installed.clone(),
+            to: bundle.clone(),
+        },
+        std::cmp::Ordering::Equal => BuiltinUpgradeDecision::ResyncSameVersion,
+        std::cmp::Ordering::Less => BuiltinUpgradeDecision::Skip,
+    }
+}
+
+/// dest 의 모든 파일을 src 기준으로 강제 교체 (mtime 무시).
+/// src 에 없는 dest 의 파일/디렉토리는 *제거* — 옛 버전의 잔존 파일 정리.
+fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dest)?;
+    let src_names: HashSet<OsString> = std::fs::read_dir(src)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name())
+        .collect();
+    for entry in std::fs::read_dir(dest)? {
+        let entry = entry?;
+        if !src_names.contains(&entry.file_name()) {
+            if entry.file_type()?.is_dir() {
+                std::fs::remove_dir_all(entry.path())?;
+            } else {
+                std::fs::remove_file(entry.path())?;
+            }
+        }
+    }
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let dest_path = dest.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            overwrite_builtin_dir(&entry.path(), &dest_path)?;
+        } else {
+            copy_atomic(&entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
 }
 
 /// 번들 plugin 디렉터리들이 있는 루트 경로.
@@ -569,6 +668,116 @@ mod tests {
         let changed = apply_builtin_permission_diff(&mut cfg, "com.tasty.image", &manifest);
         assert!(!changed);
         assert_eq!(cfg.granted_permissions("com.tasty.image").len(), 2);
+    }
+
+    fn v(s: &str) -> semver::Version {
+        semver::Version::parse(s).unwrap()
+    }
+
+    #[test]
+    fn decide_returns_skip_when_bundle_is_lower() {
+        let installed = v("1.2.0");
+        let bundle = v("1.1.0");
+        assert_eq!(
+            decide_builtin_upgrade(Some(&installed), Some(&bundle), false),
+            BuiltinUpgradeDecision::Skip
+        );
+    }
+
+    #[test]
+    fn decide_returns_upgrade_when_bundle_is_higher() {
+        let installed = v("1.0.0");
+        let bundle = v("1.1.0");
+        assert_eq!(
+            decide_builtin_upgrade(Some(&installed), Some(&bundle), false),
+            BuiltinUpgradeDecision::UpgradeVersion {
+                from: installed,
+                to: bundle,
+            }
+        );
+    }
+
+    #[test]
+    fn decide_returns_resync_when_versions_equal() {
+        let installed = v("1.0.0");
+        let bundle = v("1.0.0");
+        assert_eq!(
+            decide_builtin_upgrade(Some(&installed), Some(&bundle), false),
+            BuiltinUpgradeDecision::ResyncSameVersion
+        );
+    }
+
+    #[test]
+    fn decide_returns_force_overwrite_when_force_true() {
+        let installed = v("9.9.9");
+        let bundle = v("1.0.0");
+        assert_eq!(
+            decide_builtin_upgrade(Some(&installed), Some(&bundle), true),
+            BuiltinUpgradeDecision::ForceOverwrite
+        );
+        // 입력이 None 이어도 force 우선
+        assert_eq!(
+            decide_builtin_upgrade(None, None, true),
+            BuiltinUpgradeDecision::ForceOverwrite
+        );
+    }
+
+    #[test]
+    fn decide_returns_skip_when_bundle_version_unparsable() {
+        let installed = v("1.0.0");
+        assert_eq!(
+            decide_builtin_upgrade(Some(&installed), None, false),
+            BuiltinUpgradeDecision::Skip
+        );
+    }
+
+    #[test]
+    fn decide_returns_resync_when_installed_version_unparsable_but_bundle_ok() {
+        let bundle = v("1.0.0");
+        assert_eq!(
+            decide_builtin_upgrade(None, Some(&bundle), false),
+            BuiltinUpgradeDecision::ResyncSameVersion
+        );
+    }
+
+    #[test]
+    fn overwrite_builtin_dir_removes_stale_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(src.join("a"), "a-new").unwrap();
+        std::fs::write(src.join("b"), "b-new").unwrap();
+        std::fs::write(dest.join("a"), "a-old").unwrap();
+        std::fs::write(dest.join("b"), "b-old").unwrap();
+        std::fs::write(dest.join("stale.txt"), "remove me").unwrap();
+
+        overwrite_builtin_dir(&src, &dest).unwrap();
+
+        assert_eq!(std::fs::read_to_string(dest.join("a")).unwrap(), "a-new");
+        assert_eq!(std::fs::read_to_string(dest.join("b")).unwrap(), "b-new");
+        assert!(!dest.join("stale.txt").exists());
+    }
+
+    #[test]
+    fn overwrite_builtin_dir_recreates_nested_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(src.join("lang")).unwrap();
+        std::fs::create_dir_all(dest.join("lang")).unwrap();
+        std::fs::write(src.join("lang/en.toml"), "en=new").unwrap();
+        std::fs::write(dest.join("lang/en.toml"), "en=old").unwrap();
+        std::fs::write(dest.join("lang/old.toml"), "stale").unwrap();
+
+        overwrite_builtin_dir(&src, &dest).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("lang/en.toml")).unwrap(),
+            "en=new"
+        );
+        assert!(!dest.join("lang/old.toml").exists());
     }
 
     #[test]
