@@ -5,10 +5,8 @@
 //!   surface_id 는 handler 안에서 결정. cascade 가 origin 보고 focus 이동.
 //! - **CloseSurface**: origin.is_user() 면 snapshot 푸시 (Undo 가능),
 //!   Agent 면 no_snapshot. C1=B / C2 결정.
-//! - **ConvertSurface**: target 분기.
-//!   - `Terminal` → `state.convert_surface_to_terminal(engine, sid)`.
-//!   - `Kind { kind, params }` → 빌트인 wrapper (markdown/image/html) 가 있으면 그쪽,
-//!     없으면 generic `convert_surface_to_kind` 호출.
+//! - **ConvertSurface**: target 분기 — `Terminal` / `Kind { kind, params }`
+//!   모두 `Core::apply_convert_surface` 본문 한 곳에서 처리.
 
 use super::{ConvertTarget, DispatchedIntent, Intent, IntentOrigin};
 use crate::core::Core;
@@ -139,7 +137,6 @@ fn convert(
 
     let domain_target = match target {
         ConvertTarget::Terminal => {
-            // 옛 convert_surface_to_terminal 의 cwd inherit — handler 가 결정.
             let cwd = state.resolve_inherit_cwd(engine);
             ConvertSurfaceTarget::Terminal { cwd }
         }

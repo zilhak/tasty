@@ -469,7 +469,7 @@ mod tests {
         let (_core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
         // Convert to image (blank canvas — no file).
-        assert!(state.convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
+        assert!(state.test_convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
 
         let resp = handle_list(&state, &engine, Value::Null);
         let v = resp.result.expect("list ok");
@@ -483,7 +483,7 @@ mod tests {
         let (_core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
         // Convert to image but never render → no ImageView in store.
-        assert!(state.convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
+        assert!(state.test_convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
 
         let resp = handle_save(
             &mut state,

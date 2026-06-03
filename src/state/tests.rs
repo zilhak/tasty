@@ -229,7 +229,7 @@ fn resolve_inherit_cwd_from_markdown_surface() {
     #[cfg(not(windows))]
     let (root, file) = ("/workspace/proj", "/workspace/proj/readme.md");
     state
-        .add_markdown_tab(&mut engine, file.to_string())
+        .test_add_markdown_tab(&mut engine, file.to_string())
         .unwrap();
 
     let mut sid_opt = None;
@@ -263,7 +263,7 @@ fn resolve_inherit_cwd_from_surface_respects_toggle_off() {
     #[cfg(not(windows))]
     let file = "/workspace/proj/readme.md";
     state
-        .add_markdown_tab(&mut engine, file.to_string())
+        .test_add_markdown_tab(&mut engine, file.to_string())
         .unwrap();
 
     let mut sid_opt = None;
