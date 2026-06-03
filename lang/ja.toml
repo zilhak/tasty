@@ -70,6 +70,17 @@ language = "言語"
 accessibility = "アクセシビリティ"
 file_handler = "ファイルハンドラ"
 misc = "その他"
+updates = "アップデート"
+
+[settings.updates]
+current = "現在のバージョン:"
+latest = "最新バージョン:"
+last_checked = "最終確認:"
+check_now = "今すぐ確認"
+install = "リリースページを開く…"
+no_update = "最新バージョンです。"
+unavailable = "アップデート状態を取得できません。"
+cli_hint = "ヒント: `tasty update` で一括インストールできます。"
 
 [settings.accessibility]
 heading = "アクセシビリティ"
@@ -541,6 +552,10 @@ never_checked = "まだ確認していません。"
 up_to_date = "最新バージョンを使用中です。"
 checking = "確認中…"
 tools_menu_item = "更新を確認…"
+
+[update.notify]
+title = "Tasty の新しいバージョンが利用可能"
+body = "バージョン {} が利用可能です。`tasty update` または 設定 → アップデート から導入できます。"
 
 [search]
 placeholder = "検索..."

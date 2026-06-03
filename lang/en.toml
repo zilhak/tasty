@@ -70,6 +70,17 @@ language = "Language"
 accessibility = "Accessibility"
 file_handler = "File Handler"
 misc = "Misc"
+updates = "Updates"
+
+[settings.updates]
+current = "Current version:"
+latest = "Latest available:"
+last_checked = "Last checked:"
+check_now = "Check now"
+install = "Open release page…"
+no_update = "You're up to date."
+unavailable = "Update status unavailable."
+cli_hint = "Tip: run `tasty update` to install in one step."
 
 [settings.accessibility]
 heading = "Accessibility"
@@ -541,6 +552,10 @@ never_checked = "Not checked yet."
 up_to_date = "You're up to date."
 checking = "Checking…"
 tools_menu_item = "Check for updates…"
+
+[update.notify]
+title = "Tasty update available"
+body = "Version {} is available. Run `tasty update` or open Settings → Updates."
 
 [search]
 placeholder = "Search..."

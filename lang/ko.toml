@@ -70,6 +70,17 @@ language = "언어"
 accessibility = "접근성"
 file_handler = "파일 핸들러"
 misc = "기타"
+updates = "업데이트"
+
+[settings.updates]
+current = "현재 버전:"
+latest = "최신 버전:"
+last_checked = "마지막 확인:"
+check_now = "지금 확인"
+install = "릴리스 페이지 열기…"
+no_update = "최신 버전을 사용 중입니다."
+unavailable = "업데이트 상태를 사용할 수 없습니다."
+cli_hint = "팁: `tasty update` 명령으로 한 번에 설치할 수 있습니다."
 
 [settings.accessibility]
 heading = "접근성"
@@ -541,6 +552,10 @@ never_checked = "아직 확인하지 않음."
 up_to_date = "최신 버전을 사용 중입니다."
 checking = "확인 중…"
 tools_menu_item = "업데이트 확인…"
+
+[update.notify]
+title = "Tasty 새 버전이 출시되었습니다"
+body = "버전 {} 사용 가능. `tasty update` 또는 설정 → 업데이트에서 설치하세요."
 
 [search]
 placeholder = "검색..."

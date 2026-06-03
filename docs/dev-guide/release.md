@@ -113,7 +113,10 @@ GitHub Actions 탭에서 모든 job이 성공했는지 확인한다.
   - Windows: `tasty-X.Y.Z-windows-x64.zip`, `tasty-X.Y.Z-windows-x64.msi`
   - Linux x64: `.tar.gz`, `.deb`, `.rpm`, `.AppImage`
   - Linux arm64: `.tar.gz`, `.deb`, `.rpm`, `.AppImage`
+  - 4 종 `SHA256SUMS-{macos,windows,linux-x64,linux-arm64}.txt` (없으면 `tasty update` 가 hard fail)
   - `docs/agent-guide/*` 문서들
+
+> **사용자 업그레이드 경로**: 새 release 가 publish 되면 호스트의 백그라운드 폴러가 1 시간 내에 감지 → in-app 알림 발사 + Settings → Updates 탭에 표시. 사용자는 `tasty update` 한 줄로 다운로드 + SHA256 검증 + atomic swap (Unix `rename(2)` / Windows 스테이지 + `tasty-swap.bat` / macOS DMG 안내) 까지 끝낸 뒤 수동 재시작. 자세한 자산 매트릭스: [`docs/features.md` "자동 업데이트 확인"](../features.md).
 
 ## 버전 정책
 

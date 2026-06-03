@@ -16,7 +16,13 @@
 
 ## [Unreleased]
 
-(no changes yet)
+### Added
+- **`tasty update` CLI** (Phase J.H) — standalone (호스트 미실행 OK) 자동 업데이트 명령. `--check-only` / `--yes` / `--prerelease` 옵션. GitHub Releases asset 을 OS×arch 매트릭스로 선택 (macOS dmg / Windows msi·zip / Linux deb·rpm·AppImage·tar.gz, x86_64 + aarch64) → 다운로드 + `SHA256SUMS-{platform}.txt` 검증 (hard fail) → atomic swap (Unix `rename(2)` + `.old` 백업 / Windows 스테이지 + `tasty-swap.bat` / macOS DMG 안내). 호스트 IPC 미사용.
+- **Settings → Updates 탭** — 현재/최신 버전, 마지막 확인 시각, `Check now`, `Open release page…`, CLI 사용 안내.
+- **업데이트 감지 시 in-app 알림** — 백그라운드 폴러가 새 버전 첫 감지 (None→Some) 시 1회 `Tasty update available` 알림 발사 (`notified_version` 으로 중복 차단).
+
+### Changed
+- `tasty_update::check_latest` 시그니처 확장: `allow_prerelease: bool` 인자 추가. 기존 호출처는 `false` 로 갱신, CLI `--prerelease` flag 가 `true` 전달.
 
 ## [0.7.0] - 2026-06-04
 
