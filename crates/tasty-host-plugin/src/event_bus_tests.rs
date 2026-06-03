@@ -2,8 +2,8 @@
 
 #![cfg(test)]
 
-use super::*;
-use tasty_plugin_protocol::{EventMeta, EventScope};
+use crate::event_bus::{EventBus, EventBusError, pattern_matches};
+use tasty_plugin_protocol::{EventEnvelope, EventMeta, EventOrigin, EventScope, MAX_HOP};
 
 fn env(key: &str, origin: EventOrigin) -> EventEnvelope {
     EventEnvelope {

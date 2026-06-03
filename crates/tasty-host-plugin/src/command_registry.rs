@@ -114,6 +114,15 @@ impl PluginCommandRegistry {
     pub fn iter_all(&self) -> impl Iterator<Item = &PluginCommandEntry> {
         self.by_plugin.values().flat_map(|v| v.iter())
     }
+
+    /// `(plugin_id, command_id)` 로 단일 entry lookup.
+    #[allow(dead_code)]
+    pub fn find(&self, plugin_id: &str, command_id: &str) -> Option<&PluginCommandEntry> {
+        self.by_plugin
+            .get(plugin_id)?
+            .iter()
+            .find(|e| e.command_id == command_id)
+    }
 }
 
 /// 한 plugin command에 실제 적용되는 단축키.

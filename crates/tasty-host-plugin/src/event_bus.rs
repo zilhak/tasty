@@ -27,7 +27,7 @@ use tasty_plugin_protocol::{
 };
 
 /// 패턴 매칭 헬퍼. 검증된 패턴은 정확 key 또는 `<segs>.*` 형태로 정규화돼 있다고 가정.
-fn pattern_matches(pattern: &str, key: &str) -> bool {
+pub(crate) fn pattern_matches(pattern: &str, key: &str) -> bool {
     if let Some(prefix) = pattern.strip_suffix(".*") {
         if let Some(rest) = key.strip_prefix(prefix) {
             // 와일드카드는 `<prefix>.<segment>` 형태에 일치. `prefix`와 정확히 같은 키는 거부.
