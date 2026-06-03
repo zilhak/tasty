@@ -106,6 +106,9 @@ fn run_dynamic_client_polling(
             .map(|secs| Instant::now() + Duration::from_secs(secs))
     });
 
+    // 첫 None 할당은 loop body 의 `last_response = Some(value);` 가 항상 덮어쓰므로
+    // dead store 이지만, deadline 분기서 읽으려면 mutable 변수 선언이 필요. suppress.
+    #[allow(unused_assignments)]
     let mut last_response: Option<serde_json::Value> = None;
     loop {
         let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
