@@ -70,6 +70,7 @@
 | [dev-guide/i18n.md](dev-guide/i18n.md) | 국제화 정책 — `t()` API, lang 파일 위치, 새 문자열 추가 절차 |
 | [dev-guide/error-handling.md](dev-guide/error-handling.md) | 에러 처리 정책 — `Result` 무시 금지, `tracing::warn!`/`error!` 사용 규칙 |
 | [dev-guide/agent-runner.md](dev-guide/agent-runner.md) | Agent task runner — TaskExecutor trait, HostExecutor 매핑, RunnerRegistry, host→plugin sync IPC |
+| [dev-guide/agent-runner-primitives.md](dev-guide/agent-runner-primitives.md) | Agent primitive 통합 — semaphore-gated dispatch, WaitBarrier task, IPC rate_limit 미들웨어 |
 | [dev-guide/commit-convention.md](dev-guide/commit-convention.md) | Conventional Commits 형식, type 목록, 단위 분할 기준 |
 
 ## AI 자체 검증 지침

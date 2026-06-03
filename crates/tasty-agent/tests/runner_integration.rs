@@ -6,7 +6,10 @@ use std::sync::atomic::AtomicU64;
 
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
 use tasty_agent::task::TaskCreateOpts;
-use tasty_agent::{OnFailure, Task, TaskCommand, TaskResult, TaskState, TaskStore};
+use tasty_agent::{
+    BarrierState, BarrierStore, OnFailure, SemaphoreStore, Task, TaskCommand, TaskId, TaskResult,
+    TaskState, TaskStore,
+};
 use tasty_memory::MemoryStore;
 use tempfile::TempDir;
 
@@ -228,5 +231,419 @@ fn tick_with_store<E: TaskExecutor>(
         if let Some(st) = st_opt {
             let _ = store.set_state(1, &id, st, now_ms); // test helper — 시나리오 외 에러는 무시
         }
+    }
+}
+
+// =====================================================================
+// Phase I.A.S6 — semaphore-gated dispatch + WaitBarrier 통합 시나리오.
+// HostExecutor 가 본 crate 외부에 있으므로, *test-local* SemaphoreAwareExec /
+// BarrierAwareExec 가 동일한 규약 (metadata.semaphore 컨벤션, BarrierPoll handle)
+// 을 사용해 runner 와 store 의 상호작용을 검증한다.
+// =====================================================================
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// metadata.semaphore 를 읽어 SemaphoreStore::acquire/release 를 호출하는 executor.
+/// 점유 부족 시 Deferred, 점유 성공 후 ShellProcess handle 로 dispatch 시뮬레이션.
+/// poll 은 미리 스크립트된 outcome 큐를 따른다.
+struct SemaphoreAwareExec {
+    mem: Rc<RefCell<MemoryStore>>,
+    polls: HashMap<String, std::collections::VecDeque<PollOutcome>>,
+    handle_to_task: HashMap<u32, String>,
+    held_permits: HashMap<TaskId, (u32, String, String)>,
+    next_pid: u32,
+}
+
+impl SemaphoreAwareExec {
+    fn new(mem: Rc<RefCell<MemoryStore>>) -> Self {
+        Self {
+            mem,
+            polls: HashMap::new(),
+            handle_to_task: HashMap::new(),
+            held_permits: HashMap::new(),
+            next_pid: 1,
+        }
+    }
+    fn script(&mut self, task_id: &str, outcomes: Vec<PollOutcome>) {
+        self.polls
+            .insert(task_id.to_string(), outcomes.into_iter().collect());
+    }
+}
+
+impl TaskExecutor for SemaphoreAwareExec {
+    fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
+        if let Some(meta) = task.metadata.get("semaphore").and_then(|v| v.as_object()) {
+            let name = match meta.get("name").and_then(|v| v.as_str()) {
+                Some(n) => n.to_string(),
+                None => return DispatchOutcome::PermanentFail("missing semaphore.name".into()),
+            };
+            let holder = meta
+                .get("holder")
+                .and_then(|v| v.as_str())
+                .unwrap_or(task.id.as_str())
+                .to_string();
+            let mut mem = self.mem.borrow_mut();
+            let mut store = SemaphoreStore::new(&mut *mem, "_host");
+            let outcome = match store.acquire(task.workspace_id, &name, &holder) {
+                Ok(o) => o,
+                Err(e) => return DispatchOutcome::PermanentFail(format!("semaphore: {e}")),
+            };
+            if !outcome.acquired {
+                return DispatchOutcome::Deferred;
+            }
+            self.held_permits
+                .insert(task.id.clone(), (task.workspace_id, name, holder));
+        }
+        let pid = self.next_pid;
+        self.next_pid += 1;
+        self.handle_to_task.insert(pid, task.id.clone());
+        DispatchOutcome::Started(DispatchHandle::ShellProcess { pid })
+    }
+
+    fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
+        let pid = match handle {
+            DispatchHandle::ShellProcess { pid } => *pid,
+            _ => return PollOutcome::Active,
+        };
+        let task_id = match self.handle_to_task.get(&pid) {
+            Some(t) => t.clone(),
+            None => return PollOutcome::Active,
+        };
+        self.polls
+            .get_mut(&task_id)
+            .and_then(|q| q.pop_front())
+            .unwrap_or(PollOutcome::Active)
+    }
+
+    fn release_permit(&mut self, task_id: &TaskId) {
+        if let Some((ws, name, holder)) = self.held_permits.remove(task_id) {
+            let mut mem = self.mem.borrow_mut();
+            let mut store = SemaphoreStore::new(&mut *mem, "_host");
+            let _ = store.release(ws, &name, &holder); // idempotent
+        }
+    }
+}
+
+/// SemaphoreAwareExec 용 한 tick helper — Rc<RefCell<MemoryStore>> 기반.
+fn tick_semaphore_exec(
+    runner: &mut RunnerLoop<SemaphoreAwareExec>,
+    mem: &Rc<RefCell<MemoryStore>>,
+    seq: &AtomicU64,
+    now_ms: u64,
+) {
+    let snapshot = {
+        let mut m = mem.borrow_mut();
+        TaskStore::new(&mut *m, "_host", seq)
+            .list(1)
+            .unwrap_or_default()
+    };
+    let staged: RefCell<Vec<(String, Option<TaskResult>, Option<TaskState>)>> =
+        RefCell::new(Vec::new());
+    runner.tick(
+        1,
+        now_ms,
+        &snapshot,
+        |_ws, id, st, _now| {
+            let mut s = staged.borrow_mut();
+            match s.iter_mut().find(|(i, _, _)| i == id) {
+                Some((_, _, slot)) => *slot = Some(st),
+                None => s.push((id.clone(), None, Some(st))),
+            }
+            Ok(())
+        },
+        |_ws, id, r| {
+            let mut s = staged.borrow_mut();
+            match s.iter_mut().find(|(i, _, _)| i == id) {
+                Some((_, slot, _)) => *slot = Some(r),
+                None => s.push((id.clone(), Some(r), None)),
+            }
+            Ok(())
+        },
+    );
+    let mut m = mem.borrow_mut();
+    let mut store = TaskStore::new(&mut *m, "_host", seq);
+    for (id, r_opt, st_opt) in staged.into_inner() {
+        if let Some(r) = r_opt {
+            let _ = store.set_result(1, &id, r); // test helper — set 외 에러는 무시
+        }
+        if let Some(st) = st_opt {
+            let _ = store.set_state(1, &id, st, now_ms); // test helper — set 외 에러는 무시
+        }
+    }
+}
+
+#[test]
+fn semaphore_gated_dispatch_serializes_two_tasks() {
+    let td = tempfile::tempdir().expect("tempdir");
+    let mem = MemoryStore::open(&td.path().join("mem.db")).expect("mem");
+    let mem = Rc::new(RefCell::new(mem));
+    let seq = AtomicU64::new(0);
+
+    // semaphore permits=1.
+    {
+        let mut m = mem.borrow_mut();
+        let mut s = SemaphoreStore::new(&mut *m, "_host");
+        s.create(1, "g", 1, 1000).unwrap();
+    }
+
+    // 2 task: t-1, t-2 모두 semaphore=g, holder=task.id.
+    let (id1, id2) = {
+        let mut m = mem.borrow_mut();
+        let mut store = TaskStore::new(&mut *m, "_host", &seq);
+        let meta1 = serde_json::json!({ "semaphore": { "name": "g" } });
+        let meta2 = serde_json::json!({ "semaphore": { "name": "g" } });
+        let t1 = store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "t1".into(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Abort,
+                metadata: meta1,
+                now_ms: 1100,
+            })
+            .unwrap();
+        let t2 = store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "t2".into(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Abort,
+                metadata: meta2,
+                now_ms: 1101,
+            })
+            .unwrap();
+        (t1.id, t2.id)
+    };
+
+    // holder 컨벤션을 task.id 로 set — TaskCreateOpts 에 미리 못 박으므로 update.
+    {
+        let mut m = mem.borrow_mut();
+        let mut store = TaskStore::new(&mut *m, "_host", &seq);
+        for tid in [&id1, &id2] {
+            let mut t = store.get(1, tid).unwrap().unwrap();
+            t.metadata = serde_json::json!({ "semaphore": { "name": "g", "holder": tid } });
+            store.put(&t).unwrap();
+        }
+    }
+
+    let mut exec = SemaphoreAwareExec::new(mem.clone());
+    // t-1 의 poll: 1 tick Active, 그다음 Done.
+    exec.script(
+        &id1,
+        vec![PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        })],
+    );
+    exec.script(
+        &id2,
+        vec![PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        })],
+    );
+
+    let mut runner = RunnerLoop::new(exec);
+
+    // tick 1: t-1 acquire 성공 → Running. t-2 는 acquire 실패 → Ready 유지 (Deferred).
+    tick_semaphore_exec(&mut runner, &mem, &seq, 2000);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        let t1 = store.get(1, &id1).unwrap().unwrap();
+        let t2 = store.get(1, &id2).unwrap().unwrap();
+        assert_eq!(t1.state, TaskState::Running, "t1 acquired permit");
+        assert_eq!(t2.state, TaskState::Ready, "t2 deferred");
+    }
+
+    // tick 2: t-1 poll → Done → Succeeded → release_permit (Running arm). 같은 tick 의
+    // Ready arm 에서 t-2 가 새로 release 된 permit 을 acquire → Started → Running.
+    tick_semaphore_exec(&mut runner, &mem, &seq, 2500);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        let t1 = store.get(1, &id1).unwrap().unwrap();
+        let t2 = store.get(1, &id2).unwrap().unwrap();
+        assert_eq!(t1.state, TaskState::Succeeded);
+        assert_eq!(t2.state, TaskState::Running, "t2 acquired after release");
+    }
+
+    // tick 3: t-2 poll → Done → Succeeded.
+    tick_semaphore_exec(&mut runner, &mem, &seq, 3000);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        let t2 = store.get(1, &id2).unwrap().unwrap();
+        assert_eq!(t2.state, TaskState::Succeeded);
+    }
+}
+
+/// BarrierPoll handle 을 처리하는 test-local executor — WaitBarrier task 검증.
+struct BarrierAwareExec {
+    mem: Rc<RefCell<MemoryStore>>,
+}
+
+impl TaskExecutor for BarrierAwareExec {
+    fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
+        match &task.command {
+            TaskCommand::WaitBarrier { name } => {
+                DispatchOutcome::Started(DispatchHandle::BarrierPoll {
+                    workspace_id: task.workspace_id,
+                    name: name.clone(),
+                })
+            }
+            _ => DispatchOutcome::PermanentFail("unsupported in test".into()),
+        }
+    }
+    fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
+        match handle {
+            DispatchHandle::BarrierPoll { workspace_id, name } => {
+                let mut m = self.mem.borrow_mut();
+                let mut store = BarrierStore::new(&mut *m, "_host");
+                match store.state(*workspace_id, name, 9_999_000) {
+                    Ok(b) => match b.state {
+                        BarrierState::Open => PollOutcome::Active,
+                        BarrierState::Closed => PollOutcome::Done(TaskResult {
+                            exit_code: Some(0),
+                            output: None,
+                            error: None,
+                        }),
+                        BarrierState::TimedOut => {
+                            PollOutcome::Failed(format!("barrier '{name}' timed out"))
+                        }
+                    },
+                    Err(e) => PollOutcome::Failed(format!("barrier: {e}")),
+                }
+            }
+            _ => PollOutcome::Active,
+        }
+    }
+}
+
+fn tick_barrier_exec(
+    runner: &mut RunnerLoop<BarrierAwareExec>,
+    mem: &Rc<RefCell<MemoryStore>>,
+    seq: &AtomicU64,
+    now_ms: u64,
+) {
+    let snapshot = {
+        let mut m = mem.borrow_mut();
+        TaskStore::new(&mut *m, "_host", seq)
+            .list(1)
+            .unwrap_or_default()
+    };
+    let staged: RefCell<Vec<(String, Option<TaskResult>, Option<TaskState>)>> =
+        RefCell::new(Vec::new());
+    runner.tick(
+        1,
+        now_ms,
+        &snapshot,
+        |_ws, id, st, _now| {
+            let mut s = staged.borrow_mut();
+            match s.iter_mut().find(|(i, _, _)| i == id) {
+                Some((_, _, slot)) => *slot = Some(st),
+                None => s.push((id.clone(), None, Some(st))),
+            }
+            Ok(())
+        },
+        |_ws, id, r| {
+            let mut s = staged.borrow_mut();
+            match s.iter_mut().find(|(i, _, _)| i == id) {
+                Some((_, slot, _)) => *slot = Some(r),
+                None => s.push((id.clone(), Some(r), None)),
+            }
+            Ok(())
+        },
+    );
+    let mut m = mem.borrow_mut();
+    let mut store = TaskStore::new(&mut *m, "_host", seq);
+    for (id, r_opt, st_opt) in staged.into_inner() {
+        if let Some(r) = r_opt {
+            let _ = store.set_result(1, &id, r); // test helper — set 외 에러는 무시
+        }
+        if let Some(st) = st_opt {
+            let _ = store.set_state(1, &id, st, now_ms); // test helper — set 외 에러는 무시
+        }
+    }
+}
+
+#[test]
+fn wait_barrier_task_succeeds_after_signals() {
+    let td = tempfile::tempdir().expect("tempdir");
+    let mem = MemoryStore::open(&td.path().join("mem.db")).expect("mem");
+    let mem = Rc::new(RefCell::new(mem));
+    let seq = AtomicU64::new(0);
+
+    // barrier(b, count_required=2) 생성.
+    {
+        let mut m = mem.borrow_mut();
+        let mut s = BarrierStore::new(&mut *m, "_host");
+        s.create(1, "b", 2, None, 1000).unwrap();
+    }
+
+    let wb_id = {
+        let mut m = mem.borrow_mut();
+        let mut store = TaskStore::new(&mut *m, "_host", &seq);
+        store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "wb".into(),
+                command: TaskCommand::WaitBarrier { name: "b".into() },
+                depends_on: vec![],
+                on_failure: OnFailure::Abort,
+                metadata: serde_json::Value::Null,
+                now_ms: 1100,
+            })
+            .unwrap()
+            .id
+    };
+
+    let exec = BarrierAwareExec { mem: mem.clone() };
+    let mut runner = RunnerLoop::new(exec);
+
+    // tick 1: dispatch → BarrierPoll handle, state Open → Running.
+    tick_barrier_exec(&mut runner, &mem, &seq, 2000);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        assert_eq!(
+            store.get(1, &wb_id).unwrap().unwrap().state,
+            TaskState::Running
+        );
+    }
+
+    // tick 2: 아직 signal 안 됨 → Open → Active → Running 유지.
+    tick_barrier_exec(&mut runner, &mem, &seq, 2500);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        assert_eq!(
+            store.get(1, &wb_id).unwrap().unwrap().state,
+            TaskState::Running
+        );
+    }
+
+    // signal 2회 — barrier 가 Closed 로.
+    {
+        let mut m = mem.borrow_mut();
+        let mut s = BarrierStore::new(&mut *m, "_host");
+        s.signal(1, "b", 2600).unwrap();
+        s.signal(1, "b", 2601).unwrap();
+    }
+
+    // tick 3: poll → Closed → Done → Succeeded.
+    tick_barrier_exec(&mut runner, &mem, &seq, 3000);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        assert_eq!(
+            store.get(1, &wb_id).unwrap().unwrap().state,
+            TaskState::Succeeded
+        );
     }
 }

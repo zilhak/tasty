@@ -428,4 +428,97 @@ mod tests {
         assert!(store.borrow().tasks[0].result.is_some());
         assert!(!runner.running.contains_key("t-1"));
     }
+
+    /// I.A.S6: Deferred 반환 시 task 는 Ready 유지, 다음 tick 재dispatch.
+    #[test]
+    fn deferred_dispatch_keeps_task_ready_for_retry() {
+        struct ToggleExec {
+            calls: u32,
+        }
+        impl TaskExecutor for ToggleExec {
+            fn dispatch(&mut self, _t: &Task) -> DispatchOutcome {
+                self.calls += 1;
+                if self.calls == 1 {
+                    DispatchOutcome::Deferred
+                } else {
+                    DispatchOutcome::Started(DispatchHandle::ShellProcess { pid: 42 })
+                }
+            }
+            fn poll(&mut self, _h: &DispatchHandle) -> PollOutcome {
+                PollOutcome::Active
+            }
+        }
+        let mut runner = RunnerLoop::new(ToggleExec { calls: 0 });
+        let store = std::cell::RefCell::new(MockStore {
+            tasks: vec![mk_task("t-1", &[])],
+        });
+
+        // tick 1: Deferred → state 전이 없음, handle 미보관.
+        let snap1 = store.borrow().tasks.clone();
+        runner.tick(
+            1,
+            100,
+            &snap1,
+            |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
+            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+        );
+        assert_eq!(store.borrow().tasks[0].state, TaskState::Ready);
+        assert!(!runner.running.contains_key("t-1"));
+
+        // tick 2: 같은 task 가 다시 dispatch 시도 → Started → Running.
+        let snap2 = store.borrow().tasks.clone();
+        runner.tick(
+            1,
+            200,
+            &snap2,
+            |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
+            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+        );
+        assert_eq!(store.borrow().tasks[0].state, TaskState::Running);
+        assert!(runner.running.contains_key("t-1"));
+    }
+
+    /// I.A.S6: Cancelled task — running map 에서 제거 + release_permit 호출.
+    #[test]
+    fn cancelled_running_task_is_purged_and_permit_released() {
+        struct TrackReleases {
+            released: std::cell::RefCell<Vec<TaskId>>,
+        }
+        impl TaskExecutor for TrackReleases {
+            fn dispatch(&mut self, _t: &Task) -> DispatchOutcome {
+                DispatchOutcome::Started(DispatchHandle::ShellProcess { pid: 1 })
+            }
+            fn poll(&mut self, _h: &DispatchHandle) -> PollOutcome {
+                PollOutcome::Active
+            }
+            fn release_permit(&mut self, task_id: &TaskId) {
+                self.released.borrow_mut().push(task_id.clone());
+            }
+        }
+        let exec = TrackReleases {
+            released: std::cell::RefCell::new(Vec::new()),
+        };
+        let mut runner = RunnerLoop::new(exec);
+        runner
+            .running
+            .insert("t-1".to_string(), DispatchHandle::ShellProcess { pid: 1 });
+        // 외부에서 Cancelled 로 직접 전이된 상태 (agent.task_cancel 시나리오).
+        let store = std::cell::RefCell::new(MockStore {
+            tasks: vec![Task {
+                state: TaskState::Cancelled,
+                ..mk_task("t-1", &[])
+            }],
+        });
+        let snap = store.borrow().tasks.clone();
+        runner.tick(
+            1,
+            300,
+            &snap,
+            |ws, id, st, now| store.borrow_mut().set_state(ws, id, st, now),
+            |ws, id, r| store.borrow_mut().set_result(ws, id, r),
+        );
+        assert!(!runner.running.contains_key("t-1"));
+        let released = runner.executor.released.borrow().clone();
+        assert_eq!(released, vec!["t-1".to_string()]);
+    }
 }

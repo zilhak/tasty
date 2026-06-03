@@ -640,7 +640,9 @@ tasty agent task-set-result --workspace-id <id> --id <T> --state succeeded|faile
 - `HostIpcInjector` (`src/app/ipc/host_call.rs`) — off-main thread 가 plugin IPC 메서드를 동기 호출하는 통로. `IpcCommand` 를 App 큐에 직접 push + `IpcWaker` 깨움 + `sync_channel(1)` `recv_timeout(5s)`.
 - `crates/tasty-agent/src/platform/process_alive.rs` — cross-platform pid liveness probe (Unix `kill(pid, 0)` / Windows `OpenProcess + GetExitCodeProcess`).
 
-handle 은 **runner thread 메모리에만** 보관 — 호스트 재시작 후 Running 잔여 task 는 사용자 `task-retry` 필요. barrier/semaphore 통합, blocking `task_await`, 동시성 제어 (semaphore 폭주 방지) 는 후속 phase.
+handle 은 **runner thread 메모리에만** 보관 — 호스트 재시작 후 Running 잔여 task 는 사용자 `task-retry` 필요. blocking `task_await` 는 후속 phase.
+
+**Semaphore-gated dispatch + WaitBarrier task (Phase I.A)** — `TaskExecutor::dispatch` 가 `DispatchOutcome::{Started, Deferred, PermanentFail}` 3-way 결과를 반환. `task.metadata.semaphore = { name, holder? }` 컨벤션이 있으면 dispatch 진입에서 `SemaphoreStore::acquire` 시도, 부족 시 `Deferred` 로 다음 tick 재시도. permit 회수는 종결 (Succeeded/Failed/Cancelled) 시 자동. 추가로 `TaskCommand::WaitBarrier { name }` 로 DAG 안에서 명시적 barrier gate 가능 — barrier `Closed` → Succeeded, `TimedOut` → Failed. 호스트 재시작 시 영속된 holder 의 leak 방지를 위해 workspace runner thread 시작 직전 `holder == task.id` 컨벤션이 맞는 Running 잔여 task 의 permit 정화 + Failed("host restart") 마감 단계 1 회. `metadata.semaphore.holder` 가 다르면 *외부 도구가 직접 acquire 한 항목* 으로 간주, 정화 대상 아님. 상세: [dev-guide/agent-runner-primitives.md](dev-guide/agent-runner-primitives.md).
 
 ### Barrier / Semaphore primitive (Phase 5.2)
 
@@ -659,9 +661,13 @@ handle 은 **runner thread 메모리에만** 보관 — 호스트 재시작 후 
 | `agent.barrier_signal` | AgentManage | count_signaled++. 도달 시 `Closed`, timeout 경과 시 `TimedOut` + 거부 |
 | `agent.barrier_await` | AgentManage | 현 단계: `barrier_state`와 동일 (즉시 응답) |
 | `agent.barrier_state` | AgentManage | 현 상태 (조회 시점에 timeout 도장 적용) |
+| `agent.barrier_list` | AgentManage | `{ total, barriers: [...] }`. 조회 시점에 timeout 도장 적용 |
+| `agent.barrier_delete` | AgentManage | barrier 삭제. 존재하지 않으면 no-op |
 | `agent.semaphore_create` | AgentManage | `workspace_id`/`name`/`permits≥1` |
 | `agent.semaphore_acquire` | AgentManage | `{ acquired, semaphore }`. 동일 holder는 idempotent |
 | `agent.semaphore_release` | AgentManage | `{ released, semaphore }`. 점유 중이 아니면 no-op |
+| `agent.semaphore_list` | AgentManage | `{ total, semaphores: [...] }` |
+| `agent.semaphore_delete` | AgentManage | semaphore 삭제. 존재하지 않으면 no-op |
 
 #### CLI
 
@@ -670,9 +676,13 @@ tasty agent barrier-create   --workspace-id <id> --name <n> --count-required <N>
 tasty agent barrier-signal   --workspace-id <id> --name <n>
 tasty agent barrier-await    --workspace-id <id> --name <n>
 tasty agent barrier-state    --workspace-id <id> --name <n>
+tasty agent barrier-list     --workspace-id <id>
+tasty agent barrier-delete   --workspace-id <id> --name <n>
 tasty agent semaphore-create --workspace-id <id> --name <n> --permits <N>
 tasty agent semaphore-acquire --workspace-id <id> --name <n> --holder <h>
 tasty agent semaphore-release --workspace-id <id> --name <n> --holder <h>
+tasty agent semaphore-list   --workspace-id <id>
+tasty agent semaphore-delete --workspace-id <id> --name <n>
 ```
 
 ### Lease primitive (Phase 5.3)
@@ -735,7 +745,9 @@ tasty agent task-reduce --workspace-id <id> --inputs T1,T2,T3 --strategy first_s
 | `telemetry.cap` | 누적 임계 (예: `input_tokens` 총합 ≥ 100000) | 합산값이 임계 도달 시 |
 | `agent.rate_limit` | 시간당 비율 (예: `ipc_calls` 100/분) | 윈도우 내 토큰 소진 시 |
 
-`burst` 가 비면 `burst = limit` 으로 기본값을 채워 burst-허용 없이 즉시 윈도우 동등 차감으로 동작. 등록되지 않은 (agent, metric) 쌍에 대한 `try_consume` 은 항상 허용 (rate_limit 미적용 = throttle 안 함). 본 단계(5.5)는 CRUD + `try_consume` 만 노출 — IPC dispatcher 자동 평가 미들웨어는 후속 단계에서 결합한다.
+`burst` 가 비면 `burst = limit` 으로 기본값을 채워 burst-허용 없이 즉시 윈도우 동등 차감으로 동작. 등록되지 않은 (agent, metric) 쌍에 대한 `try_consume` 은 항상 허용 (rate_limit 미적용 = throttle 안 함).
+
+**IPC dispatcher 미들웨어 (Phase I.A)** — 모든 비-Local / 비-`_host` IPC 호출은 dispatcher 진입에서 (agent, `ipc_calls`) 1 차감을 자동 시도한다. throttle 차단 시 `-32010 throttled` 응답 + audit Deny. 면제: `telemetry.*` (재귀 폭주), `agent.rate_limit_*` (자가 회복 경로 — 차단 시 throttle 된 agent 가 영구 차단됨), `system.info`. 정책상 throttled 분기는 `record_ipc_call` 을 건너뛰므로 `ipc_calls` 텔레메트리 이벤트로 카운트되지 않는다. throttle 폭주 추적은 `RateLimit.throttled_count` 가 담당.
 
 #### IPC
 
