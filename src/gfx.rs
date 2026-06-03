@@ -4,4 +4,5 @@
 //! - [`renderer`]: terminal cell 그리드의 GPU 렌더링 (CellRenderer + palette + pipeline).
 
 pub mod gpu;
+pub mod perf;
 pub mod renderer;

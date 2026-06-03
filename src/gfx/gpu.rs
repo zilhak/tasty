@@ -15,6 +15,7 @@ use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
 use crate::AppEvent;
+use crate::gfx::perf::{FrameSample, PerfAggregator};
 use crate::model::{LogicalPx, PhysicalPx, PhysicalRect};
 use crate::renderer::CellRenderer;
 use crate::settings::AppearanceSettings;
@@ -54,6 +55,8 @@ pub struct GpuState {
     pub(super) canvas_textures: canvas_texture::CanvasTextureCache,
     /// When set, the next render will capture the frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
+    /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
+    pub(super) perf: PerfAggregator,
 }
 
 impl GpuState {
@@ -192,6 +195,7 @@ impl GpuState {
             surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState::default(),
             canvas_textures: canvas_texture::CanvasTextureCache::new(),
             pending_screenshot: None,
+            perf: PerfAggregator::new(),
         })
     }
 
@@ -408,6 +412,14 @@ impl GpuState {
                  present={present_ms:.1}]"
             );
         }
+
+        let (_, _, draw_total) = self.renderer.draw_call_count();
+        self.perf.push(FrameSample {
+            gpu_total_ms,
+            terminals_ms,
+            draw_calls_total: draw_total,
+            surfaces: self.renderer.active_surface_count(),
+        });
 
         Ok(())
     }
