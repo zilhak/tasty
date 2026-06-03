@@ -253,3 +253,67 @@ marketplace 도입 시 *진짜 의존성* (plugin A 의 동작에 plugin B 가 �
   - 권한 재-grant 정책: manifest.permissions 가 *추가* 된 경우 prompt 재발. *동일 또는
     감소* 시 silent.
 - **uninstall**: 현 `tasty plugin remove <id>` 그대로 재사용. marketplace 별도 변경 없음.
+
+## 4. Trust model
+
+trust 는 4 layer 의 합 — *publisher* (누가 publish 했나) · *signature* (무결성) · *content
+review* (publish 전 검사) · *revocation* (사후 차단). 각각 옵션을 평가한다.
+
+### 4.1 publisher verification
+
+| 옵션 | 동작 | 비용 |
+|------|-----|------|
+| A1: GH OAuth | registry 가 GitHub 계정 보유자에게만 publish 허용 | 中 (OAuth flow + DB) |
+| A2: 이메일 verification + manual review (Homebrew 식) | 사람이 PR review | 大 (운영 인력) |
+| A3: 무검증 | anyone publish | 0 (트러스트 비용 그대로 사용자에게 전가) |
+
+권고: **A1**. Tasty 가 이미 git 생태계 의존 (release 채널, builtin plugin host).
+`publisher = com.{github-user}.<plugin>` 컨벤션과 정합.
+
+### 4.2 signature
+
+| 옵션 | 동작 | 비용 |
+|------|-----|------|
+| B1: minisign / signify | 단순 ed25519, host 의 public key 1 개 embed | 작음 |
+| B2: Sigstore keyless | OIDC token 으로 단기 서명 + Rekor transparency log | 中 (sigstore-rs 의존, 인프라) |
+| B3: 서명 없음 | TLS + checksum 만 (registry 가 source-of-truth) | 0 |
+
+권고: **B3 (초기) → B1 (외부 plugin 5+) → B2 (외부 plugin 20+ 또는 보안 이슈 1 건)**.
+B2 의 keyless 모델은 key 분실 위험 0 이라는 운영상의 이점이 크지만, sigstore 자체에
+의존성이 생긴다 — Tasty 가 single-org 도구 단계에서는 과투자.
+
+### 4.3 content review
+
+| 옵션 | 동작 | 비용 |
+|------|-----|------|
+| C1: 자동 manifest validation | `validate_bin_extras` (이미 존재) + 추가 schema lint | 작음 |
+| C2: 자동 권한 risk score | `fs.write + network + process.spawn → high` 식 매핑 | 작음 |
+| C3: 수동 review (VS Code 식) | 사람이 patchnote / binary 검토 | 大 |
+
+권고: **C1 + C2**. C3 는 운영 비용이 marketplace 가치를 초과 — 외부 plugin 20+ 자생
+시점에 재검토. C2 는 install 시점 권한 grant prompt 와 같은 표면에 색상화로 표시.
+
+### 4.4 revocation
+
+| 옵션 | 동작 | 비용 |
+|------|-----|------|
+| D1: opt-in online check | `tasty plugin update --check-revocation` 으로 registry 의 revocation 상태 확인 | 작음 |
+| D2: 매번 fetch | 모든 plugin start 시 online check (privacy 침해) | 中 |
+| D3: revocation 없음 | 사용자가 직접 발견 + manual remove | 0 |
+
+권고: **D1**. D2 는 *privacy 침해* (실행마다 외부 fetch) + *오프라인 동작 불가* 의 두
+비용. D1 의 opt-in CLI 가 정합. host 가 *자동* 으로 fetch 하지 않는다 (포커스 독립성
+원칙과 같은 결: 명시적 사용자 / 에이전트 호출 시에만).
+
+### 4.5 비교표 (기존 marketplace 와 대조)
+
+| Layer | crates.io | npm | VS Code Marketplace | **권고 (Tasty)** |
+|-------|----------|-----|--------------------|-----------------|
+| publisher | crates account | npm account | MS Publisher account | GH OAuth (A1) |
+| signature | crates v3 (선택) | sigstore (선택) | code-signed VSIX (선택) | B3 → B1 → B2 점진 |
+| content review | 자동 lint | 자동 audit (`npm audit`) | 자동 + 수동 review (paid) | C1 + C2 |
+| revocation | yank | unpublish (24h 제한) | unpublish | D1 (opt-in) |
+
+VS Code 의 수동 review 는 *유료 publisher account* + Microsoft 운영 인력이 받쳐주는
+모델 — Tasty 의 single-org / 무료 publisher 모델로는 재현 불가. crates.io / npm 의
+*자동만* 모델이 현실적 참고점.
