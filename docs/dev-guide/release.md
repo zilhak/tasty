@@ -115,3 +115,18 @@ GitHub Actions 탭에서 모든 job이 성공했는지 확인한다.
 - **테스트/검증을 위한 빌드** (AI 가 스스로 수행하는 `cargo build`, `cargo test` 등): 버전을 올리지 않는다.
 - **사용자가 명시적으로 거부**: "버전 올리지 마" 라는 요청이 있었던 경우.
 - **이미 직전 커밋이 버전 bump 커밋**: 마지막 빌드 이후 새 커밋이 없으면 올리지 않는다.
+
+### 사용자가 major 버전을 지시할 때 (0.7.0 등)
+
+major bump 는 *API stability 선언* 의 성격을 가지므로 patch/minor 보다 절차가 추가된다. AI 는 임의로 올리지 않으며, 사용자가 명시적으로 `X.0.0` 을 지시한 경우에만 다음 순서를 따른다.
+
+1. **0.7 freeze 체크리스트 충족 확인** — [`ipc-stability.md`](ipc-stability.md) 의 *0.7 freeze 진입 체크리스트* 6 항목을 점검. 보안 예외 운영 경험 같은 항목은 *완화* 결정으로 기록 가능 (사건 기반 정착으로 0.7.x 에 위임).
+2. **`crates/tasty-ipc/src/alias.rs::ALIASES` 비우기** — deprecation 기간이 충분히 운영된 transitional alias 를 모두 제거. 호출 사이트는 그대로 두고 빈 배열만 유지 (다음 alias 등장 시 재사용). 내부 단위 테스트가 alias 동작을 가정하면 빈-배열 noop 검증으로 교체.
+3. **CHANGELOG.md `[Unreleased]` → `[X.0.0]` 헤더 변환** — 빈 `[Unreleased]` 절을 위에 다시 추가 (`tests/changelog_unreleased.rs` 보호). 헤더에 `(BREAK) X.0.0 — API stability 선언` 캡션. `Removed` 절에 alias 제거 항목 명시.
+4. **README.md 갱신** — major 시기의 *현재 상태* (기능 목록 / 아키텍처 / crate 수 배지) 가 GitHub 첫 페이지에 반영되도록.
+5. **`docs/agent-guide/api-reference.md` + `docs/dev-guide/plugin-development.md` 정합 확인** — 실제 IPC 와 문서가 어긋나면 같은 PR 에서 갱신.
+6. **`docs/dev-guide/cli-naming.md` namespace 메서드 수 재계산** — 새 IPC 추가가 누적된 namespace 의 카운트를 실측 (`grep -E '"namespace\.' crates/tasty-ipc/src/method_meta.rs`) 와 일치시킴.
+7. **plugin-protocol baseline 결합 시점 기록** — `crates/tasty-plugin-protocol/CHANGELOG.md` 의 baseline 섹션에 *"tasty X.0.0 부터 api_version=N 안정 선언"* 노트 1줄 추가.
+8. **§1 ~ §3 의 일반 릴리스 절차** (Cargo.toml bump → cargo build → 커밋 → tag → 산출물 빌드) 진행.
+
+이후 minor (X.Y.0) 부터는 추가만 가능하고, break 는 다음 major 까지 보류한다.
