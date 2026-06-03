@@ -5100,6 +5100,7 @@ dependencies = [
  "tasty-ipc",
  "tasty-lua",
  "tasty-memory",
+ "tasty-model",
  "tasty-output",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
@@ -5257,6 +5258,19 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "tasty-model"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "tasty-terminal",
+ "tasty-type-geometry",
+ "tasty-utils",
+ "termwiz",
  "tracing",
 ]
 

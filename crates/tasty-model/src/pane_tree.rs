@@ -17,7 +17,7 @@ pub enum PaneNode {
 
 impl BinaryTree for PaneNode {
     type Id = PaneId;
-    const BORDER_WIDTH: PhysicalPx = crate::model::PANE_BORDER_WIDTH;
+    const BORDER_WIDTH: PhysicalPx = crate::PANE_BORDER_WIDTH;
 
     fn split_parts(&self) -> Option<(SplitDirection, f32, &Self, &Self)> {
         match self {

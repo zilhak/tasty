@@ -205,7 +205,7 @@ impl Tab {
     }
 
     /// Visit every leaf Surface (read-only). 닫기 경로의 persist_id 수집용.
-    pub fn for_each_surface(&self, f: &mut dyn FnMut(&dyn crate::model::Surface)) {
+    pub fn for_each_surface(&self, f: &mut dyn FnMut(&dyn crate::Surface)) {
         if let Some(layout) = self.layout_opt.as_ref() {
             layout.for_each_surface(f);
         }

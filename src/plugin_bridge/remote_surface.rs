@@ -128,7 +128,7 @@ impl RemoteSurface {
 }
 
 impl Surface for RemoteSurface {
-    crate::impl_surface_any!();
+    tasty_model::impl_surface_any!();
 
     fn kind(&self) -> &'static str {
         self.kind_static

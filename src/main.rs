@@ -24,26 +24,6 @@ mod store;
 mod view;
 mod waker;
 
-/// `Surface::as_any` / `as_any_mut` 구현을 한 줄로 채우는 매크로.
-///
-/// ```ignore
-/// impl Surface for MyPanel {
-///     crate::impl_surface_any!();
-///     // ... 다른 메서드들 ...
-/// }
-/// ```
-#[macro_export]
-macro_rules! impl_surface_any {
-    () => {
-        fn as_any(&self) -> &dyn ::std::any::Any {
-            self
-        }
-        fn as_any_mut(&mut self) -> &mut dyn ::std::any::Any {
-            self
-        }
-    };
-}
-
 pub mod engine;
 
 use anyhow::Result;

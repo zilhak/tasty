@@ -1,0 +1,19 @@
+[package]
+name = "tasty-model"
+edition = "2024"
+version = "0.1.0"
+authors = ["zilhak <zilhak1@gmail.com>"]
+license = "MIT"
+description = "Tasty workspace / pane / tab / surface domain model."
+
+[dependencies]
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+tasty-utils         = { path = "../tasty-utils" }
+tasty-terminal      = { path = "../tasty-terminal" }
+termwiz    = "0.22"
+serde_json = "1"
+anyhow     = "1"
+tracing    = "0.1"
+
+[lints]
+workspace = true
