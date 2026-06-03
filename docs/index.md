@@ -58,6 +58,7 @@
 | [dev-guide/debug-ipc.md](dev-guide/debug-ipc.md) | Debug 빌드 전용 IPC 메서드 (사용자 입력 재현, popup 트리거) |
 | [dev-guide/crash-diagnostics.md](dev-guide/crash-diagnostics.md) | Crash & 에러 진단 (로그, strace, gdb) |
 | [dev-guide/tui-testing.md](dev-guide/tui-testing.md) | TUI 테스트 — 터미널 에뮬레이션 버그 재현 및 자동 검증 |
+| [dev-guide/e2e-tests.md](dev-guide/e2e-tests.md) | e2e 테스트 환경 격리 정책 + spawn timeout 정책 + flaky 진단 절차 |
 | [dev-guide/cli-naming.md](dev-guide/cli-naming.md) | CLI 명령 네이밍 규칙 |
 | [dev-guide/ipc-stability.md](dev-guide/ipc-stability.md) | IPC 메서드 안정성 정책 |
 | [dev-guide/unsafe-checklist.md](dev-guide/unsafe-checklist.md) | unsafe 블록 작성 체크리스트 |
