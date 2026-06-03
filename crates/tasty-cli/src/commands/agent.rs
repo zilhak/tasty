@@ -184,6 +184,30 @@ pub enum AgentCommands {
         #[arg(long)]
         holder: String,
     },
+    /// List all barriers in a workspace.
+    BarrierList {
+        #[arg(long)]
+        workspace_id: u32,
+    },
+    /// Delete a barrier (no-op if missing).
+    BarrierDelete {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+    },
+    /// List all semaphores in a workspace.
+    SemaphoreList {
+        #[arg(long)]
+        workspace_id: u32,
+    },
+    /// Delete a semaphore (no-op if missing).
+    SemaphoreDelete {
+        #[arg(long)]
+        workspace_id: u32,
+        #[arg(long)]
+        name: String,
+    },
     /// Acquire a lease on an arbitrary resource (advisory, cooperative).
     LeaseAcquire {
         #[arg(long)]

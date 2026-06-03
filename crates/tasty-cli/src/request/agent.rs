@@ -180,6 +180,22 @@ pub(super) fn agent_command_to_method_params(
                 "holder": holder,
             }),
         ),
+        BarrierList { workspace_id } => (
+            "agent.barrier_list",
+            serde_json::json!({ "workspace_id": *workspace_id }),
+        ),
+        BarrierDelete { workspace_id, name } => (
+            "agent.barrier_delete",
+            serde_json::json!({ "workspace_id": *workspace_id, "name": name }),
+        ),
+        SemaphoreList { workspace_id } => (
+            "agent.semaphore_list",
+            serde_json::json!({ "workspace_id": *workspace_id }),
+        ),
+        SemaphoreDelete { workspace_id, name } => (
+            "agent.semaphore_delete",
+            serde_json::json!({ "workspace_id": *workspace_id, "name": name }),
+        ),
         LeaseAcquire {
             workspace_id,
             resource,
