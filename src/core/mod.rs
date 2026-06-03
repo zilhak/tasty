@@ -41,6 +41,48 @@ use crate::ports::notification_sound::NotificationSoundPlayer;
 use crate::ports::process::ProcessSpawner;
 use crate::ports::pty::{PtyService, TerminalWaker};
 
+/// Helper: layout / tab_bar 기반으로 surface_id 별 *목표 grid (cols, rows)* 를
+/// 수집. 본 helper 는 read-only 로 workspaces 만 순회한다 — `terminals` store 에는
+/// 직접 접근하지 않으므로 caller 가 결과를 받아 `engine.terminals.get_mut` 로
+/// resize 호출할 때 borrow 충돌이 없다.
+#[cfg(feature = "gui")]
+fn collect_terminal_resize_targets(
+    state: &crate::state::AppState,
+    engine: &crate::core::CoreState,
+    terminal_rect: crate::model::PhysicalRect,
+    cell_width: f32,
+    cell_height: f32,
+) -> Vec<(u32, usize, usize)> {
+    let tab_bar_h = state.tab_bar_height;
+    let mut out = Vec::new();
+    for ws in &engine.workspaces {
+        let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
+        for (pane_id, pane_rect) in pane_rects {
+            let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
+                continue;
+            };
+            let content_rect = crate::model::PhysicalRect {
+                x: pane_rect.x,
+                y: pane_rect.y + tab_bar_h,
+                width: pane_rect.width,
+                height: (pane_rect.height - tab_bar_h).max(crate::model::PhysicalPx(1.0)),
+            };
+            for tab in &pane.tabs {
+                let Some(layout) = tab.layout_opt.as_ref() else {
+                    continue;
+                };
+                for (sid, rect) in layout.compute_rects(content_rect) {
+                    let cols = ((rect.width.value() / cell_width.max(1.0)).floor() as usize).max(1);
+                    let rows =
+                        ((rect.height.value() / cell_height.max(1.0)).floor() as usize).max(1);
+                    out.push((sid, cols, rows));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Helper: tab 내 surface_id 에 해당하는 TerminalSurface 를 찾는다 (downcast).
 fn terminal_surface_in_tab(
     tab: &crate::model::Tab,
@@ -464,6 +506,10 @@ impl Core {
     /// 모든 workspace 의 모든 terminal 을 layout 에 맞춰 resize. 옛
     /// `state.resize_all(engine, ...)` 의 진입점. tab_bar_height 가 AppState 에
     /// 있어 `state` 도 인자로 받는다 (도메인 흡수 후 제거 예정).
+    ///
+    /// D.3.E.4 이후 TerminalSurface 는 id-marker 라 `Surface::resize_all` 은
+    /// no-op. Terminal 본체는 `engine.terminals` (TerminalStore) 가 owner 이므로
+    /// 여기서 직접 store 를 두드려 resize 한다.
     #[cfg(feature = "gui")]
     pub(crate) fn resize_all_terminals(
         state: &crate::state::AppState,
@@ -472,21 +518,11 @@ impl Core {
         cell_width: f32,
         cell_height: f32,
     ) {
-        let tab_bar_h = state.tab_bar_height;
-        for ws in &mut engine.workspaces {
-            let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
-            for (pane_id, pane_rect) in pane_rects {
-                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                    let content_rect = crate::model::PhysicalRect {
-                        x: pane_rect.x,
-                        y: pane_rect.y + tab_bar_h,
-                        width: pane_rect.width,
-                        height: (pane_rect.height - tab_bar_h).max(crate::model::PhysicalPx(1.0)),
-                    };
-                    for tab in &mut pane.tabs {
-                        tab.resize_all(content_rect, cell_width, cell_height);
-                    }
-                }
+        let targets =
+            collect_terminal_resize_targets(state, engine, terminal_rect, cell_width, cell_height);
+        for (sid, cols, rows) in targets {
+            if let Some(t) = engine.terminals.get_mut(sid) {
+                t.resize(cols, rows);
             }
         }
     }

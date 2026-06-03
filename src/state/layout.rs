@@ -133,6 +133,11 @@ impl AppState {
     }
 
     /// Resize all terminals in all workspaces and all tabs to match a given terminal rect.
+    ///
+    /// D.3.E.4 이후 TerminalSurface 는 id-marker 라 Surface trait 의
+    /// `resize_all` 은 no-op. Terminal 본체는 `engine.terminals` (TerminalStore) 가
+    /// owner — 본 메서드는 layout 으로부터 surface 별 sub-rect 를 산출한 뒤
+    /// store 의 Terminal 을 직접 resize 한다.
     pub fn resize_all(
         &mut self,
         engine: &mut CoreState,
@@ -141,20 +146,36 @@ impl AppState {
         cell_height: f32,
     ) {
         let tab_bar_h = self.tab_bar_height;
-        for ws in &mut engine.workspaces {
+        let mut targets: Vec<(u32, usize, usize)> = Vec::new();
+        for ws in &engine.workspaces {
             let pane_rects = ws.pane_layout().compute_rects(terminal_rect);
             for (pane_id, pane_rect) in pane_rects {
-                if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
-                    let content_rect = PhysicalRect {
-                        x: pane_rect.x,
-                        y: pane_rect.y + tab_bar_h,
-                        width: pane_rect.width,
-                        height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
+                let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
+                    continue;
+                };
+                let content_rect = PhysicalRect {
+                    x: pane_rect.x,
+                    y: pane_rect.y + tab_bar_h,
+                    width: pane_rect.width,
+                    height: (pane_rect.height - tab_bar_h).max(PhysicalPx(1.0)),
+                };
+                for tab in &pane.tabs {
+                    let Some(layout) = tab.layout_opt.as_ref() else {
+                        continue;
                     };
-                    for tab in &mut pane.tabs {
-                        tab.resize_all(content_rect, cell_width, cell_height);
+                    for (sid, rect) in layout.compute_rects(content_rect) {
+                        let cols =
+                            ((rect.width.value() / cell_width.max(1.0)).floor() as usize).max(1);
+                        let rows =
+                            ((rect.height.value() / cell_height.max(1.0)).floor() as usize).max(1);
+                        targets.push((sid, cols, rows));
                     }
                 }
+            }
+        }
+        for (sid, cols, rows) in targets {
+            if let Some(t) = engine.terminals.get_mut(sid) {
+                t.resize(cols, rows);
             }
         }
 
