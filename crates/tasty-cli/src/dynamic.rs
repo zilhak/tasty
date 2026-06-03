@@ -11,7 +11,9 @@ use clap::{Arg, ArgAction, ArgMatches, Command, CommandFactory};
 use serde_json::{Map, Value};
 
 use tasty_ipc::protocol::JsonRpcRequest;
-use tasty_plugin_manifest::{CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest};
+use tasty_plugin_manifest::{
+    CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest, PollingDecl,
+};
 
 /// 한 plugin이 contribute한 CLI 묶음.
 #[derive(Debug, Clone)]
@@ -128,10 +130,13 @@ fn build_arg(arg: &CliArg, positional_index: Option<usize>) -> Arg {
 
 /// 매칭된 `ArgMatches`에서 plugin이 어떤 메서드를 호출할지 해석.
 /// 호스트 정적 서브커맨드와 충돌하지 않는 plugin 최상위 이름에 한해 진행한다.
+///
+/// 반환의 두 번째 값은 manifest 가 선언한 polling 사양 (있으면). caller 가
+/// `Some(polling)` 일 때 *terminal_states 도달까지 반복 IPC 호출* 한다.
 pub fn matches_to_request(
     entries: &[PluginCliEntry],
     matches: &ArgMatches,
-) -> Result<JsonRpcRequest> {
+) -> Result<(JsonRpcRequest, Option<PollingDecl>)> {
     let (top_name, top_sub) = matches
         .subcommand()
         .ok_or_else(|| anyhow!("no subcommand supplied"))?;
@@ -191,15 +196,18 @@ pub fn matches_to_request(
         }
     }
 
-    Ok(JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        method: sub_decl.ipc_method.clone(),
-        params: Value::Object(params),
-        id: Some(Value::from(1)),
-        session_token: std::env::var("TASTY_SESSION_TOKEN")
-            .ok()
-            .filter(|s| !s.is_empty()),
-    })
+    Ok((
+        JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            method: sub_decl.ipc_method.clone(),
+            params: Value::Object(params),
+            id: Some(Value::from(1)),
+            session_token: std::env::var("TASTY_SESSION_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
+        },
+        sub_decl.polling.clone(),
+    ))
 }
 
 /// stdin 이 TTY 가 아닐 때 (= pipe / redirect 로 입력이 들어올 때) stdin 전체를

@@ -45,11 +45,14 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
     if !entries.iter().any(|e| e.cli.name == top_name) {
         return None;
     }
-    let request = match dynamic::matches_to_request(&entries, &matches) {
+    let (request, polling) = match dynamic::matches_to_request(&entries, &matches) {
         Ok(r) => r,
         Err(e) => return Some(Err(e)),
     };
-    Some(run_dynamic_client(request))
+    Some(match polling {
+        Some(p) => run_dynamic_client_polling(request, p),
+        None => run_dynamic_client(request),
+    })
 }
 
 fn run_dynamic_client(request: tasty_ipc::protocol::JsonRpcRequest) -> Result<()> {
@@ -79,6 +82,77 @@ fn run_dynamic_client(request: tasty_ipc::protocol::JsonRpcRequest) -> Result<()
             }
             std::process::exit(1);
         }
+    }
+}
+
+/// `tasty claude wait` 같이 manifest 가 polling 을 선언한 명령. 호스트에
+/// 반복 IPC 호출 + state 확인 + terminal_states 도달 또는 timeout 까지 block.
+/// timeout 도달 시 마지막 응답을 그대로 출력 (caller 가 state 보고 판단).
+fn run_dynamic_client_polling(
+    request: tasty_ipc::protocol::JsonRpcRequest,
+    polling: tasty_plugin_manifest::PollingDecl,
+) -> Result<()> {
+    use std::time::{Duration, Instant};
+
+    let port = port_file::read_port_file()?;
+    let interval = Duration::from_millis(polling.interval_ms);
+    // timeout_field 가 manifest 에 선언되어 있으면 request.params 에서 그 값 (초)
+    // 을 deadline 으로 사용. 없으면 무한 대기.
+    let deadline = polling.timeout_field.as_ref().and_then(|field| {
+        request
+            .params
+            .get(field)
+            .and_then(|v| v.as_u64())
+            .map(|secs| Instant::now() + Duration::from_secs(secs))
+    });
+
+    let mut last_response: Option<serde_json::Value> = None;
+    loop {
+        let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
+            anyhow::anyhow!(
+                "Could not connect to tasty instance on port {}: {}. Is tasty running?",
+                port,
+                e
+            )
+        })?;
+        let mut conn = IpcConnection::new(stream)?;
+        match conn.send(&request) {
+            Ok(value) => {
+                let reached = value
+                    .get(&polling.state_field)
+                    .and_then(|v| v.as_str())
+                    .map(|s| polling.terminal_states.iter().any(|t| t == s))
+                    .unwrap_or(false);
+                if reached {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&value).unwrap_or_default()
+                    );
+                    return Ok(());
+                }
+                last_response = Some(value);
+            }
+            Err(e) => {
+                // IPC 자체 에러는 polling 의미 없음 — 그대로 종료.
+                let msg = e.to_string();
+                if let Some(rest) = msg.strip_prefix("Error (") {
+                    eprintln!("Error ({}", rest);
+                } else {
+                    eprintln!("{}", msg);
+                }
+                std::process::exit(1);
+            }
+        }
+        if let Some(d) = deadline {
+            if Instant::now() >= d {
+                // timeout — 마지막 응답을 그대로 출력. terminal 아님을 caller 가 판단.
+                if let Some(v) = last_response {
+                    println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+                }
+                return Ok(());
+            }
+        }
+        std::thread::sleep(interval);
     }
 }
 
