@@ -24,6 +24,12 @@ pub struct UpdateStatus {
     pub last_checked: Option<Instant>,
     /// Whether a poll is currently running.
     pub in_flight: bool,
+    /// Version we have already shown a notification for. Prevents repeat
+    /// alerts on every hourly poll.
+    pub notified_version: Option<String>,
+    /// Release info awaiting an in-app notification. Main loop drains and
+    /// dispatches `DomainIntent::PushNotification`, then resets to `None`.
+    pub pending_notify: Option<ReleaseInfo>,
 }
 
 impl UpdateStatus {
@@ -58,13 +64,17 @@ pub fn spawn_poller(
                     let mut guard = shared_clone.lock().unwrap();
                     guard.in_flight = true;
                 }
-                let result = tasty_update::check_latest(owner, repo, current_version);
+                let result = tasty_update::check_latest(owner, repo, current_version, false);
                 {
                     let mut guard = shared_clone.lock().unwrap();
                     guard.in_flight = false;
                     guard.last_checked = Some(Instant::now());
                     match result {
                         Ok(Some(info)) => {
+                            let is_new = guard.notified_version.as_deref() != Some(&info.version);
+                            if is_new {
+                                guard.pending_notify = Some(info.clone());
+                            }
                             guard.latest = Some(info);
                             guard.last_error = None;
                         }
@@ -101,13 +111,21 @@ pub fn trigger_check(
                 let mut guard = shared.lock().unwrap();
                 guard.in_flight = true;
             }
-            let result = tasty_update::check_latest(owner, repo, current_version);
+            let result = tasty_update::check_latest(owner, repo, current_version, false);
             let mut guard = shared.lock().unwrap();
             guard.in_flight = false;
             guard.last_checked = Some(Instant::now());
             match result {
-                Ok(latest) => {
-                    guard.latest = latest;
+                Ok(Some(info)) => {
+                    let is_new = guard.notified_version.as_deref() != Some(&info.version);
+                    if is_new {
+                        guard.pending_notify = Some(info.clone());
+                    }
+                    guard.latest = Some(info);
+                    guard.last_error = None;
+                }
+                Ok(None) => {
+                    guard.latest = None;
                     guard.last_error = None;
                 }
                 Err(e) => {

@@ -1,17 +1,25 @@
-//! Auto-update phase 1: poll GitHub Releases, compare versions, surface
-//! "new version available" UI. Downloading/installing is intentionally NOT
-//! handled here — phase 2 work.
+//! Auto-update: poll GitHub Releases, compare versions, download + verify
+//! + atomically swap the binary.
 //!
 //! Usage from the host:
 //!
 //! ```ignore
 //! use tasty_update::{check_latest, ReleaseInfo};
-//! match check_latest("zilhak", "tasty", env!("CARGO_PKG_VERSION")) {
+//! match check_latest("zilhak", "tasty", env!("CARGO_PKG_VERSION"), false) {
 //!     Ok(Some(info)) => /* show "new version" UI */,
 //!     Ok(None) => /* up to date */,
 //!     Err(e) => tracing::warn!("update check failed: {e}"),
 //! }
 //! ```
+
+pub mod download;
+pub mod install;
+
+pub use download::{
+    AssetSpec, DownloadError, LinuxFamily, detect_linux_family, download_to, fetch_sha256_sums,
+    parse_sha256_sums, platform_key, select_asset, select_asset_with, verify_sha256,
+};
+pub use install::{InstallError, SwapOutcome, atomic_swap, atomic_swap_dry, current_exe};
 
 use std::time::Duration;
 
@@ -73,11 +81,13 @@ const API_TIMEOUT: Duration = Duration::from_secs(10);
 /// return `Some(ReleaseInfo)` iff the parsed remote tag is strictly greater
 /// than `current_version`.
 ///
-/// Pre-releases and drafts are skipped (caller may want stable-only).
+/// Drafts are always skipped. Pre-releases are skipped unless
+/// `allow_prerelease` is `true` (CLI `--prerelease` flag).
 pub fn check_latest(
     owner: &str,
     repo: &str,
     current_version: &str,
+    allow_prerelease: bool,
 ) -> Result<Option<ReleaseInfo>, UpdateError> {
     let current = Version::parse(current_version).map_err(UpdateError::InvalidCurrent)?;
     let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
@@ -96,7 +106,10 @@ pub fn check_latest(
         .into_json()
         .map_err(|e| UpdateError::Network(e.to_string()))?;
 
-    if release.draft || release.prerelease {
+    if release.draft {
+        return Ok(None);
+    }
+    if release.prerelease && !allow_prerelease {
         return Ok(None);
     }
 
