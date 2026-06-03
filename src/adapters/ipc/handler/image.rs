@@ -272,26 +272,10 @@ mod tests {
     use super::*;
     use crate::state::AppState;
 
-    fn make_state() -> (AppState, crate::core::CoreState) {
-        let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
-        let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
-        let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
-            tasty_presets::PresetStore::load_default(),
-        ));
-        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
-            std::sync::Arc::new(std::sync::Mutex::new(
-                tasty_memory::testing::InMemoryStorage::new(),
-            ));
-        let state = AppState::new(&mut engine, preset_store, memory);
-        // image kind는 본래 com.tasty.image plugin이 hello 시 등록한다. 단위 테스트는
-        // plugin 프로세스를 띄우지 않으므로 host whitelist 등록을 직접 호출한다.
-        crate::engine::surface_registry::builtins::register_image(&engine.surface_registry);
-        (state, engine)
-    }
-
     /// `handle_open` 처럼 `Core::apply` 를 호출하는 test 용 4-tuple fixture.
     /// `TempDir` 은 호출자가 명명된 binding 으로 받아 즉시 drop 되지 않게 한다.
-    #[allow(dead_code)]
+    /// image kind 는 본래 com.tasty.image plugin 이 hello 시 등록 — 단위 test 는
+    /// plugin 을 띄우지 않으므로 host whitelist 등록을 직접 호출한다.
     fn make_test_core_state() -> (
         crate::core::Core,
         AppState,
@@ -482,7 +466,7 @@ mod tests {
 
     #[test]
     fn list_finds_image_surfaces() {
-        let (mut state, mut engine) = make_state();
+        let (_core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
         // Convert to image (blank canvas — no file).
         assert!(state.convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
@@ -496,7 +480,7 @@ mod tests {
 
     #[test]
     fn save_rejects_without_view() {
-        let (mut state, mut engine) = make_state();
+        let (_core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
         // Convert to image but never render → no ImageView in store.
         assert!(state.convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
