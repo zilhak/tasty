@@ -343,6 +343,7 @@ mod tests {
                         description: None,
                         description_i18n_key: None,
                         stdin_json: false,
+                        polling: None,
                     },
                     CliSubcommandDecl {
                         name: "broadcast".into(),
@@ -351,6 +352,7 @@ mod tests {
                         description: None,
                         description_i18n_key: None,
                         stdin_json: false,
+                        polling: None,
                     },
                 ],
                 arg_groups,
@@ -454,7 +456,7 @@ mod tests {
     fn flag_with_value_maps_to_params() {
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "spawn", "--surface", "5", "--prompt", "hello"]);
-        let req = matches_to_request(&entries, &m).unwrap();
+        let (req, _polling) = matches_to_request(&entries, &m).unwrap();
         assert_eq!(req.method, "codex.spawn");
         let p = req.params.as_object().unwrap();
         assert_eq!(p["surface"], Value::from(5_u32));
@@ -465,7 +467,7 @@ mod tests {
     fn bool_flag_present_serializes_true() {
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "spawn", "--force"]);
-        let req = matches_to_request(&entries, &m).unwrap();
+        let (req, _polling) = matches_to_request(&entries, &m).unwrap();
         let p = req.params.as_object().unwrap();
         assert_eq!(p["force"], Value::Bool(true));
     }
@@ -474,7 +476,7 @@ mod tests {
     fn bool_flag_absent_serializes_false() {
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "spawn"]);
-        let req = matches_to_request(&entries, &m).unwrap();
+        let (req, _polling) = matches_to_request(&entries, &m).unwrap();
         let p = req.params.as_object().unwrap();
         assert_eq!(p["force"], Value::Bool(false));
     }
@@ -483,7 +485,7 @@ mod tests {
     fn default_value_applied_when_missing() {
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "broadcast", "hello"]);
-        let req = matches_to_request(&entries, &m).unwrap();
+        let (req, _polling) = matches_to_request(&entries, &m).unwrap();
         let p = req.params.as_object().unwrap();
         assert_eq!(p["text"], Value::String("hello".into()));
         assert_eq!(p["timeout"], Value::from(60_u32));
