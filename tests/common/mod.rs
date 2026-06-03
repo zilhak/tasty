@@ -108,6 +108,10 @@ impl TastyInstance {
             .env_remove("OH_MY_ZSH")
             .env_remove("ZSH")
             .env_remove("SHELL")
+            // 부모 프로세스가 tasty 안에서 실행 중이면 TASTY_SURFACE_ID 가 상속되어
+            // child 가 augmented help 만 출력하고 종료한다 (boot/cli_routing.rs:55).
+            // 자식은 항상 본 GUI 로 부팅해야 하므로 명시 제거.
+            .env_remove("TASTY_SURFACE_ID")
             // host 의 RUST_LOG=debug/trace 가 새어들어와 child 가 polled stderr
             // 보다 빠르게 write 하면 OS pipe buffer 가 가득 차서 child 가 block
             // 될 위험이 있다. drain thread 가 1차 방어, verbosity cap 이 2차.
