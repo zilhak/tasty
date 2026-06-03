@@ -275,10 +275,10 @@ pub struct PluginManager {
     /// 다음 popup `instance_id`. 1부터 시작해 단조 증가.
     pub(super) next_popup_instance_id: u64,
     /// 파일 형식 식별 시스템. plugin enable/disable 시 detector 추가/제거.
-    /// 호스트 본문이 CoreState 와 같은 Arc 를 공유.
-    pub file_format: Arc<crate::file::format::FileFormatRegistry>,
+    /// 호스트 본문이 CoreState 와 같은 Arc 를 공유 (trait object 로 의존성 격리).
+    pub file_format: Arc<dyn tasty_plugin_protocol::host_port::FileFormatRegistryPort>,
     /// 파일 핸들러 시스템. plugin enable/disable 시 handler 추가/제거.
-    pub file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
+    pub file_handler: Arc<dyn tasty_plugin_protocol::host_port::FileHandlerRegistryPort>,
     /// i18n namespace 등록 trait. None 이면 등록 skip (headless/test).
     pub i18n_registrar: Option<Arc<dyn tasty_plugin_protocol::host_port::I18nNamespaceRegistrar>>,
 }

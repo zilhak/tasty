@@ -14,7 +14,7 @@ use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
     is_reserved_event_namespace, is_reserved_ipc_prefix, is_valid_cli_name, is_valid_event_key,
     is_valid_event_pattern, is_valid_ipc_prefix, is_valid_kind, is_valid_plugin_id,
-    is_valid_tool_id,
+    is_valid_simple_id, is_valid_tool_id,
 };
 
 impl Manifest {
@@ -25,6 +25,28 @@ impl Manifest {
         let manifest: Manifest = toml::from_str(&s)
             .map_err(|e| anyhow::anyhow!("invalid manifest at {}: {}", path.display(), e))?;
         manifest.validate()?;
+        // F.B.2 — opaque detector/handler payload 의 concrete schema 검증을 bin glue
+        // 에 위임. manifest crate 분리 (F.B.6) 후에도 본 호출은 본 바이너리 load 경로
+        // 에 남는다.
+        crate::plugin_bridge::manifest_validate::validate_detector_actual(
+            &manifest.contributes.detector,
+        )?;
+        let surface_kinds: Vec<String> = manifest
+            .surface_kinds
+            .iter()
+            .map(|k| k.kind.clone())
+            .collect();
+        let ipc_prefixes: Vec<String> = manifest
+            .contributes
+            .ipc_namespace
+            .iter()
+            .map(|n| n.prefix.clone())
+            .collect();
+        crate::plugin_bridge::manifest_validate::validate_handler_actual(
+            &manifest.contributes.handler,
+            &surface_kinds,
+            &ipc_prefixes,
+        )?;
         Ok(manifest)
     }
 
@@ -507,71 +529,53 @@ impl Manifest {
             }
         }
 
-        // [[contributes.detector]] 검증.
+        // [[contributes.detector]] 검증 — schema-agnostic 만 (host file 도메인 결합 제거).
+        // concrete detector rule 검증은 본 바이너리
+        // `plugin_bridge::manifest_validate::validate_detector_actual` 에서 수행.
         let mut seen_detector_ids = HashSet::new();
-        for decl in &self.contributes.detector {
-            if !crate::file::format::is_valid_detector_id(&decl.id) {
+        for v in &self.contributes.detector {
+            let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
+            if id.is_empty() {
+                anyhow::bail!("contributes.detector entry missing required 'id' string field");
+            }
+            if !is_valid_simple_id(id) {
                 anyhow::bail!(
-                    "invalid contributes.detector id '{}': must be lowercase ascii + digits + '-', length ≤ 64",
-                    decl.id
+                    "invalid contributes.detector id '{id}': must be lowercase ascii + digits + '-', length ≤ 64"
                 );
             }
-            if decl.id.starts_with('$') {
+            if id.starts_with('$') {
                 anyhow::bail!(
-                    "contributes.detector '{}': plugin cannot define reserved ($-prefixed) detector ids",
-                    decl.id
+                    "contributes.detector '{id}': plugin cannot define reserved ($-prefixed) detector ids"
                 );
             }
-            if !seen_detector_ids.insert(decl.id.clone()) {
-                anyhow::bail!(
-                    "contributes.detector id '{}' declared twice in this manifest",
-                    decl.id
-                );
-            }
-            // 각 rule schema 검증 (cross-ref 인 lua/structure spec 존재여부는 install 시점에)
-            if let Err(e) = crate::file::format::config::validate_detector_decl(decl, true) {
-                anyhow::bail!("contributes.detector '{}': {e}", decl.id);
+            if !seen_detector_ids.insert(id.to_string()) {
+                anyhow::bail!("contributes.detector id '{id}' declared twice in this manifest");
             }
         }
 
-        // [[contributes.handler]] 검증.
-        if !self.contributes.handler.is_empty() {
-            let mut seen_handler_ids = HashSet::new();
-            let surface_kinds: Vec<String> =
-                self.surface_kinds.iter().map(|k| k.kind.clone()).collect();
-            let ipc_prefixes: Vec<String> = self
-                .contributes
-                .ipc_namespace
-                .iter()
-                .map(|n| n.prefix.clone())
-                .collect();
-
-            for decl in &self.contributes.handler {
-                if !seen_handler_ids.insert(decl.id.clone()) {
-                    anyhow::bail!(
-                        "contributes.handler id '{}' declared twice in this manifest",
-                        decl.id
-                    );
-                }
-                if let Err(e) = crate::file::handler::config::validate_plugin_handler_decl(decl) {
-                    anyhow::bail!("contributes.handler: {e}");
-                }
-                if let Err(e) = crate::file::handler::config::validate_plugin_handler_refs(
-                    decl,
-                    &surface_kinds,
-                    &ipc_prefixes,
-                ) {
-                    anyhow::bail!("contributes.handler: {e}");
-                }
-                // 권한 매칭: file_handler.handle:<detector>
-                let needs = format!("file_handler.handle:{}", decl.detector);
-                if !self.permissions.iter().any(|p| p == &needs) {
-                    anyhow::bail!(
-                        "contributes.handler '{}' on detector '{}' requires permission '{needs}'",
-                        decl.id,
-                        decl.detector
-                    );
-                }
+        // [[contributes.handler]] 검증 — schema-agnostic 만. 본문 (action/detector ref)
+        // 은 본 바이너리 측에서 install 시점에 reject (file::handler::install_plugin_handlers).
+        let mut seen_handler_ids = HashSet::new();
+        for v in &self.contributes.handler {
+            let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
+            if id.is_empty() {
+                anyhow::bail!("contributes.handler entry missing required 'id' string field");
+            }
+            if !seen_handler_ids.insert(id.to_string()) {
+                anyhow::bail!("contributes.handler id '{id}' declared twice in this manifest");
+            }
+            // 권한 매칭: file_handler.handle:<detector>
+            let detector = v.get("detector").and_then(|x| x.as_str()).unwrap_or("");
+            if detector.is_empty() {
+                anyhow::bail!(
+                    "contributes.handler '{id}' missing required 'detector' string field"
+                );
+            }
+            let needs = format!("file_handler.handle:{detector}");
+            if !self.permissions.iter().any(|p| p == &needs) {
+                anyhow::bail!(
+                    "contributes.handler '{id}' on detector '{detector}' requires permission '{needs}'"
+                );
             }
         }
 
@@ -579,15 +583,15 @@ impl Manifest {
         // host/다른 plugin 의 detector 목록은 manifest 만으로는 모른다. install 시점에
         // 더 엄격하게 확인하되, manifest 차원에서는 최소한 둘 중 하나는 가져야 한다고
         // 강제한다 — 사용자가 plugin install 시 권한 부여 UI 가 의미를 가지도록.
-        for decl in &self.contributes.detector {
+        for v in &self.contributes.detector {
+            let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
             let has_define = self.permissions.iter().any(|p| p == "file_handler.define");
-            let needs_extend = format!("file_handler.extend:{}", decl.id);
+            let needs_extend = format!("file_handler.extend:{id}");
             let has_extend = self.permissions.iter().any(|p| p == &needs_extend);
             if !has_define && !has_extend {
                 anyhow::bail!(
-                    "contributes.detector '{}' requires either 'file_handler.define' (new id) \
-                     or '{needs_extend}' (extending existing id)",
-                    decl.id
+                    "contributes.detector '{id}' requires either 'file_handler.define' (new id) \
+                     or '{needs_extend}' (extending existing id)"
                 );
             }
         }

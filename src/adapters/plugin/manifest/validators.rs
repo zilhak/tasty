@@ -13,6 +13,18 @@ pub(super) fn is_valid_kind(s: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit())
 }
 
+/// detector id 형식 검증 (manifest 측 schema 차원). 소문자 ascii + 숫자 + `-`,
+/// 길이 1..=64. host 측 `file::format::types::is_valid_detector_id` 와 동일 규칙이며,
+/// 본 함수는 manifest 가 host file 도메인 결합 없이 schema 검증을 마치기 위한
+/// 자체 복제 — 두 함수가 어긋나면 install 단계에서 reject 된다.
+pub(super) fn is_valid_simple_id(s: &str) -> bool {
+    if s.is_empty() || s.len() > 64 {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// IPC namespace prefix 형식 검증.
 /// 소문자 ascii + 숫자 + `_`. 알파벳으로 시작. 길이 1..=32. `.` 포함 불가.
 pub(super) fn is_valid_ipc_prefix(s: &str) -> bool {

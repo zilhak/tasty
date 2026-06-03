@@ -139,6 +139,7 @@ check_println() {
         case "$f" in
             src/main.rs) continue ;;
             src/cli/*) continue ;;
+            src/adapters/cli/*) continue ;;
             src/boot/cli_routing.rs) continue ;;
             crates/tasty-tui-simulator/*) continue ;;
         esac

@@ -35,8 +35,8 @@ impl PluginManager {
     /// CoreState 와 같은 Arc 를 공유하기 위한 생성자.
     pub fn with_registries(
         waker: tasty_terminal::waker_factory::SharedWakerFactory,
-        file_format: Arc<crate::file::format::FileFormatRegistry>,
-        file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
+        file_format: Arc<dyn tasty_plugin_protocol::host_port::FileFormatRegistryPort>,
+        file_handler: Arc<dyn tasty_plugin_protocol::host_port::FileHandlerRegistryPort>,
     ) -> Self {
         let log_dir = tasty_utils::path::tasty_home()
             .map(|d| d.join("plugins-logs"))

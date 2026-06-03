@@ -404,18 +404,18 @@ pub struct Contributes {
     /// 새 detector 정의 또는 기존 detector 재선언(rule 추가 + 메타 patch).
     /// 같은 id 가 host/다른 plugin/user 에 이미 있으면 rule union, 메타는
     /// last-writer-wins (install 순서 host → plugin → user).
-    /// `$`-시작 id 는 plugin 이 신규 정의할 수 없음 (manifest validation reject).
+    ///
+    /// **Opaque payload** (F.B.2): manifest crate 가 본 바이너리 `file::format::config`
+    /// 결합 없이 분리 가능하도록 raw JSON Value 로 보관. concrete `DetectorDecl`
+    /// 변환/검증은 본 바이너리 `plugin_bridge::manifest_validate` 또는 host
+    /// FileFormatRegistryPort impl 에서 수행.
     #[serde(default)]
-    pub detector: Vec<crate::file::format::config::DetectorDecl>,
-    /// 파일 핸들러 contribute. plugin 은 `OpenSurface` / `Ipc` 만 사용 가능 — `System`
-    /// variant 자체가 plugin schema 에 없어 `kind = "system"` 적으면 deserialize 단계에서
-    /// reject.
+    pub detector: Vec<serde_json::Value>,
+    /// 파일 핸들러 contribute. plugin 은 `OpenSurface` / `Ipc` 만 사용 가능.
+    ///
+    /// **Opaque payload** (F.B.2) — detector 와 동일 사유.
     #[serde(default)]
-    pub handler: Vec<
-        crate::file::handler::config::HandlerDecl<
-            crate::file::handler::config::PluginHandlerActionDecl,
-        >,
-    >,
+    pub handler: Vec<serde_json::Value>,
 }
 
 /// Plugin 이 contribute 하는 OS-level 윈도우 정의 (`[[contributes.window]]`).

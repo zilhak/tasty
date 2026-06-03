@@ -115,48 +115,82 @@ pub fn run_plugin_doctor(plugin_id: &str) -> Result<()> {
     println!("  manifest_version: {}", manifest.manifest_version);
     println!("  api_version:      {}", manifest.api_version);
 
+    // F.B.2: contributes.detector/handler 가 opaque Value 로 전환되어 본 CLI 표시는
+    // Value 의 필드를 직접 읽어 요약한다. concrete schema 검증은 manifest::load 내
+    // bin glue 에서 수행하므로 여기 도달했다는 것은 schema 가 valid 함을 의미.
     let detectors = &manifest.contributes.detector;
     println!();
     println!("Detectors contributed: {}", detectors.len());
     let mut total_unsupported = 0_usize;
-    for decl in detectors {
-        let total = decl.rule.len();
-        let unsupported: Vec<&DetectorRuleDecl> = decl
-            .rule
+    for v in detectors {
+        let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("?");
+        let rules: Vec<serde_json::Value> = v
+            .get("rule")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let total = rules.len();
+        let unsupported: Vec<&serde_json::Value> = rules
             .iter()
-            .filter(|r| matches!(r, DetectorRuleDecl::Unknown { .. }))
+            .filter(|r| {
+                let kind = r.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+                !matches!(
+                    kind,
+                    "extension"
+                        | "path_glob"
+                        | "mime"
+                        | "magic"
+                        | "is_directory"
+                        | "structure_check"
+                )
+            })
             .collect();
         let ok = total - unsupported.len();
         total_unsupported += unsupported.len();
         println!(
             "  - {} (rules: {} OK, {} unsupported)",
-            decl.id,
+            id,
             ok,
             unsupported.len()
         );
         for rule in &unsupported {
-            if let DetectorRuleDecl::Unknown { kind_name, .. } = rule {
-                println!(
-                    "      ! rule kind \"{}\" unsupported in this host version",
-                    kind_name
-                );
-            }
+            let kind_name = rule.get("kind").and_then(|k| k.as_str()).unwrap_or("?");
+            println!(
+                "      ! rule kind \"{}\" unsupported in this host version",
+                kind_name
+            );
         }
     }
 
     let handlers = &manifest.contributes.handler;
     println!();
     println!("Handlers contributed: {}", handlers.len());
-    for decl in handlers {
-        let action_summary = match &decl.action {
-            PluginHandlerActionDecl::OpenSurface { surface_kind, .. } => {
-                format!("surface \"{}\"", surface_kind)
-            }
-            PluginHandlerActionDecl::Ipc { method } => format!("ipc \"{}\"", method),
-        };
+    for v in handlers {
+        let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("?");
+        let detector_id = v.get("detector").and_then(|x| x.as_str()).unwrap_or("?");
+        let action_summary = v
+            .get("action")
+            .and_then(|a| a.as_object())
+            .and_then(|obj| {
+                let kind = obj.get("kind").and_then(|k| k.as_str())?;
+                match kind {
+                    "open_surface" => Some(format!(
+                        "surface \"{}\"",
+                        obj.get("surface_kind")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("?")
+                    )),
+                    "ipc" => Some(format!(
+                        "ipc \"{}\"",
+                        obj.get("method").and_then(|x| x.as_str()).unwrap_or("?")
+                    )),
+                    other => Some(format!("(unknown: {other})")),
+                }
+            })
+            .unwrap_or_else(|| "(no action)".into());
         println!(
             "  - {} → detector \"{}\" → {}",
-            decl.id, decl.detector, action_summary
+            id, detector_id, action_summary
         );
     }
 
