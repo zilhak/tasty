@@ -160,6 +160,7 @@ impl App {
     /// CoreState 접근자. 부팅 시 `App.core_state` 에 들어 있다가 첫 MainView
     /// 등록 시 그쪽으로 이동한다. 이 헬퍼는 두 위치 중 살아있는 쪽을 찾아 반환한다.
     /// 어디에도 없으면 panic — 호출 경로가 invariant 를 깬 것.
+    #[cfg(feature = "gui")]
     pub(crate) fn core_state(&self) -> &crate::core::CoreState {
         if let Some(e) = self.core_state.as_ref() {
             return e;
@@ -173,6 +174,7 @@ impl App {
         panic!("App.core_state accessed before initialization");
     }
 
+    #[cfg(feature = "gui")]
     pub(crate) fn core_state_mut(&mut self) -> &mut crate::core::CoreState {
         if self.core_state.is_some() {
             return self.core_state.as_mut().unwrap();
