@@ -1,16 +1,35 @@
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
+
+const STDERR_RING_CAPACITY: usize = 256;
+const STDERR_TAIL_LINES: usize = 30;
 
 pub struct TastyInstance {
     process: Child,
     port: u16,
     port_file: PathBuf,
     isolated_home: PathBuf,
+    stderr_ring: Arc<Mutex<VecDeque<String>>>,
+    stderr_drain: Option<JoinHandle<()>>,
+}
+
+fn stderr_tail(ring: &Arc<Mutex<VecDeque<String>>>, n: usize) -> String {
+    let ring = ring.lock().unwrap();
+    let total = ring.len();
+    let start = total.saturating_sub(n);
+    ring.iter()
+        .skip(start)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 impl TastyInstance {
@@ -35,21 +54,45 @@ impl TastyInstance {
         std::fs::write(isolated_home.join(".zshrc"), "").ok();
         std::fs::write(isolated_home.join(".bashrc"), "").ok();
 
-        let process = Command::new(env!("CARGO_BIN_EXE_tasty"))
+        let mut process = Command::new(env!("CARGO_BIN_EXE_tasty"))
             .arg("--port-file")
             .arg(port_file.to_str().unwrap())
             .env("HOME", &isolated_home)
             .env("ZDOTDIR", &isolated_home)
             .env_remove("OH_MY_ZSH")
             .env_remove("ZSH")
+            .stderr(Stdio::piped())
             .spawn()
             .expect("failed to spawn tasty");
+
+        // drain stderr into a ring buffer so we can attach a tail to spawn-phase
+        // panics. background thread avoids OS pipe backpressure blocking the child
+        // (Linux 64 KB / macOS 16 KB default).
+        let stderr_ring: Arc<Mutex<VecDeque<String>>> =
+            Arc::new(Mutex::new(VecDeque::with_capacity(STDERR_RING_CAPACITY)));
+        let stderr_drain = process.stderr.take().map(|stderr| {
+            let ring = Arc::clone(&stderr_ring);
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    let mut ring = ring.lock().unwrap();
+                    if ring.len() == STDERR_RING_CAPACITY {
+                        ring.pop_front();
+                    }
+                    ring.push_back(line);
+                }
+            })
+        });
 
         // Wait for port file
         let start = Instant::now();
         let port = loop {
             if start.elapsed() > Duration::from_secs(10) {
-                panic!("tasty failed to start within 10 seconds");
+                panic!(
+                    "tasty failed to start within 10 seconds.\n--- stderr (last {} lines) ---\n{}",
+                    STDERR_TAIL_LINES,
+                    stderr_tail(&stderr_ring, STDERR_TAIL_LINES)
+                );
             }
             if let Ok(content) = std::fs::read_to_string(&port_file)
                 && let Ok(port) = content.trim().parse::<u16>()
@@ -64,6 +107,8 @@ impl TastyInstance {
             port,
             port_file,
             isolated_home,
+            stderr_ring: Arc::clone(&stderr_ring),
+            stderr_drain,
         };
 
         // Wait until the shell is actually ready (has screen content).
@@ -74,7 +119,11 @@ impl TastyInstance {
                 break;
             }
             if start.elapsed() > Duration::from_secs(10) {
-                panic!("shell did not produce output within 10 seconds");
+                panic!(
+                    "shell did not produce output within 10 seconds.\n--- stderr (last {} lines) ---\n{}",
+                    STDERR_TAIL_LINES,
+                    stderr_tail(&instance.stderr_ring, STDERR_TAIL_LINES)
+                );
             }
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -257,6 +306,9 @@ impl Drop for TastyInstance {
             let _ = self.process.kill();
         }
         let _ = self.process.wait();
+        if let Some(handle) = self.stderr_drain.take() {
+            let _ = handle.join(); // join drain thread; ignore panic in drainer
+        }
         let _ = std::fs::remove_file(&self.port_file);
         let _ = std::fs::remove_dir_all(&self.isolated_home);
     }
