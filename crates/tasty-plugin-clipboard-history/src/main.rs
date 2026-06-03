@@ -1,3 +1,4 @@
+#![cfg(feature = "process")]
 //! Tasty Clipboard History plugin — 외부 plugin.
 //!
 //! 호스트가 OS clipboard listener로 채우는 `tool.clipboard.list` IPC를 호출해
