@@ -27,6 +27,10 @@ struct BuiltinSpec {
     bin_name: &'static str,
 }
 
+// 의도적으로 미등록: `tasty-plugin-markdown` (`com.tasty.markdown`) — host 가
+// markdown SurfaceKindDef + detector + handler 를 유지 중이라 본 plugin 을 활성화
+// 하면 메타데이터 우선순위가 모호해진다. 향후 host 내장 분리 시 본 배열에 추가
+// (`docs/dev-guide/plugin-development.md` 의 "향후 markdown plugin 신설" 절차 참조).
 #[cfg(windows)]
 const BUILTINS: &[BuiltinSpec] = &[
     BuiltinSpec {
