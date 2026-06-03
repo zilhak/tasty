@@ -17,11 +17,11 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use tasty_agent::runner::RunnerLoop;
-use tasty_agent::{LeaseStore, SemaphoreStore, TaskResult, TaskState, TaskStore};
-use tasty_memory::HOST_OWNER;
+use tasty_agent::runner::{DispatchHandle, RunnerLoop};
+use tasty_agent::{LeaseStore, SemaphoreStore, TaskId, TaskResult, TaskState, TaskStore};
+use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
-use super::runner_host::{HostExecutor, RunnerContext};
+use super::runner_host::{HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, handle_key};
 
 const TICK_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -312,11 +312,154 @@ fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) {
     );
 }
 
+/// S3: 호스트 재시작 후 영속된 DispatchHandle 을 reload.
+///
+/// 각 영속 entry 에 대해:
+/// - `task state == Running` 이 아닌 항목은 stale → 영속만 제거 (state 변경 X).
+/// - `ShellProcess { pid }` : `process_alive::is_alive(pid)` 검사. alive → 복원,
+///   dead → task=Failed("host restart: pid {pid} died") + evict.
+/// - `ClaudeChild` / `BarrierPoll` : 그대로 복원 (insert only). 다음 정상 tick
+///   에서 poll. injector 미준비 시 PollOutcome::Failed → task=Failed (R3 정책).
+/// - `Immediate*` / `ImmediateFail` : 영속 대상 아니므로 도달 안 됨 (방어적 evict).
+///
+/// 반환: 복원할 (task_id, handle) 쌍 — RunnerLoop.running 에 insert.
+fn reload_persistent_handles(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+) -> Vec<(TaskId, DispatchHandle)> {
+    let now = now_ms();
+    let scope = Scope::Workspace(workspace_id);
+    let entries = ctx.with_memory(|mem| {
+        let opts = ListOpts {
+            prefix: Some(HANDLE_KEY_PREFIX.to_string()),
+            ..Default::default()
+        };
+        mem.list(&scope, &opts).unwrap_or_default()
+    });
+    let mut alive: Vec<(TaskId, DispatchHandle)> = Vec::new();
+    let mut dead: Vec<(TaskId, String)> = Vec::new();
+    let mut stale: Vec<TaskId> = Vec::new();
+
+    for e in entries {
+        let task_id = e
+            .key
+            .strip_prefix(HANDLE_KEY_PREFIX)
+            .unwrap_or(&e.key)
+            .to_string();
+        let MemoryValue::Json(v) = e.value else {
+            stale.push(task_id);
+            continue;
+        };
+        let handle: DispatchHandle = match serde_json::from_value(v) {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::warn!("reload handle {task_id} deserialize: {e}");
+                stale.push(task_id);
+                continue;
+            }
+        };
+
+        // task state 가 Running 이 아니면 영속만 정리. R-1: Running 이 아닌데 handle 영속이
+        // 남아 있으면 다음 tick 의 Ready 분기가 *재* dispatch 할 수 있다.
+        let state_opt: Option<TaskState> = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store
+                .get(workspace_id, &task_id)
+                .ok()
+                .flatten()
+                .map(|t| t.state)
+        });
+        if !matches!(state_opt, Some(TaskState::Running)) {
+            stale.push(task_id);
+            continue;
+        }
+
+        match &handle {
+            DispatchHandle::ShellProcess { pid } => {
+                if tasty_agent::platform::process_alive::is_alive(*pid) {
+                    alive.push((task_id, handle));
+                } else {
+                    dead.push((task_id, format!("host restart: pid {pid} died")));
+                }
+            }
+            // Claude/Barrier: 그대로 복원 — 다음 정상 tick 에서 poll.
+            // ClaudeChild 의 첫 poll 이 injector 미준비로 실패하면 task=Failed (R3 정책).
+            DispatchHandle::ClaudeChild { .. } | DispatchHandle::BarrierPoll { .. } => {
+                alive.push((task_id, handle));
+            }
+            // Immediate* / ImmediateFail 은 영속 대상 아님 — 도달 시 방어적 evict.
+            DispatchHandle::ReduceImmediate(_)
+            | DispatchHandle::CustomImmediate(_)
+            | DispatchHandle::ImmediateFail(_) => {
+                stale.push(task_id);
+            }
+        }
+    }
+
+    // stale: 영속만 제거 (task state 는 건드리지 않음).
+    if !stale.is_empty() {
+        ctx.with_memory(|mem| {
+            for tid in &stale {
+                let _ = mem.delete(HOST_OWNER, &scope, &handle_key(tid), None); // best-effort
+            }
+        });
+    }
+
+    // dead: task=Failed + evict.
+    if !dead.is_empty() {
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            {
+                let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+                for (task_id, err) in &dead {
+                    if let Err(e) = store.set_result(
+                        workspace_id,
+                        task_id,
+                        TaskResult {
+                            exit_code: None,
+                            output: None,
+                            error: Some(err.clone()),
+                        },
+                    ) {
+                        tracing::warn!("reload mark failed set_result {task_id}: {e}");
+                    }
+                    if let Err(e) = store.set_state(
+                        workspace_id,
+                        task_id,
+                        TaskState::Failed { error: err.clone() },
+                        now,
+                    ) {
+                        tracing::warn!("reload mark failed set_state {task_id}: {e}");
+                    }
+                }
+            }
+            for (task_id, _) in &dead {
+                let _ = mem.delete(HOST_OWNER, &scope, &handle_key(task_id), None); // best-effort evict — 실패 시 다음 reload 가 stale 처리
+            }
+        });
+    }
+
+    if !alive.is_empty() || !dead.is_empty() || !stale.is_empty() {
+        tracing::info!(
+            "agent runner ws{workspace_id}: reload handles — alive={}, dead={}, stale={}",
+            alive.len(),
+            dead.len(),
+            stale.len()
+        );
+    }
+    alive
+}
+
 fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) {
     purge_stale_semaphore_holders(&ctx, workspace_id);
     purge_stale_lease_holders(&ctx, workspace_id);
+    let reloaded = reload_persistent_handles(&ctx, workspace_id);
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
+    for (task_id, handle) in reloaded {
+        runner.running.insert(task_id, handle);
+    }
     loop {
         // 1. tick 본문.
         let snapshot = ctx.with_memory(|mem| {
@@ -353,5 +496,184 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
             Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
             Err(RecvTimeoutError::Timeout) => continue,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::OnceLock;
+    use std::sync::atomic::AtomicU64;
+    use tasty_agent::task::TaskCreateOpts;
+    use tasty_agent::{OnFailure, TaskCommand};
+    use tasty_memory::{MemoryStorage, MemoryStore, PutOpts};
+
+    fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
+        let td = tempfile::tempdir().unwrap();
+        let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
+        let ctx = RunnerContext {
+            memory: Arc::new(Mutex::new(mem)),
+            agent_seq: Arc::new(AtomicU64::new(0)),
+            host_ipc: Arc::new(OnceLock::new()),
+        };
+        (td, ctx)
+    }
+
+    fn put_handle(ctx: &RunnerContext, ws: u32, task_id: &str, handle: &DispatchHandle) {
+        ctx.with_memory(|mem| {
+            let value = MemoryValue::Json(serde_json::to_value(handle).unwrap());
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(ws),
+                &handle_key(task_id),
+                &value,
+                &PutOpts::default(),
+            )
+            .unwrap();
+        });
+    }
+
+    /// J.A.S3: 현 프로세스 pid 로 ShellProcess handle 영속 + reload → 복원.
+    #[test]
+    fn reload_persistent_handles_restores_alive_shell_process() {
+        let (_td, ctx) = fresh_ctx();
+        // task 가 Running 상태여야 reload 대상이 됨.
+        let task_id = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let t = store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+            store.set_state(1, &t.id, TaskState::Running, 1100).unwrap();
+            t.id
+        });
+        let my_pid = std::process::id();
+        let handle = DispatchHandle::ShellProcess { pid: my_pid };
+        put_handle(&ctx, 1, &task_id, &handle);
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert_eq!(alive.len(), 1, "live pid should restore");
+        assert_eq!(alive[0].0, task_id);
+    }
+
+    /// J.A.S3: dead pid → task=Failed("host restart: pid X died") + handle evict.
+    #[test]
+    fn reload_persistent_handles_marks_dead_pid_as_failed() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let t = store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+            store.set_state(1, &t.id, TaskState::Running, 1100).unwrap();
+            t.id
+        });
+        // 0xFFFF_FFFE 은 거의 확실히 살아있지 않은 pid.
+        let dead_pid: u32 = 0xFFFF_FFFE;
+        put_handle(
+            &ctx,
+            1,
+            &task_id,
+            &DispatchHandle::ShellProcess { pid: dead_pid },
+        );
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert!(alive.is_empty(), "dead pid should not restore");
+
+        // task state 확인.
+        let final_state: TaskState = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap().state
+        });
+        match final_state {
+            TaskState::Failed { error } => assert!(
+                error.contains("host restart") && error.contains("died"),
+                "unexpected error: {error}"
+            ),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+
+        // handle 도 evict 됐는지.
+        let still_there: bool = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &handle_key(&task_id))
+                .map(|v| v.is_some())
+                .unwrap_or(false)
+        });
+        assert!(!still_there, "dead pid handle should be evicted");
+    }
+
+    /// J.A.S3: task state != Running 인 handle → stale 처리 (영속만 evict, state X).
+    #[test]
+    fn reload_persistent_handles_evicts_stale_when_task_not_running() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            // Ready state 유지 (Running 으로 전이 안 함).
+            store
+                .create(TaskCreateOpts {
+                    workspace_id: 1,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: 1,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap()
+                .id
+        });
+        let handle = DispatchHandle::ShellProcess {
+            pid: std::process::id(),
+        };
+        put_handle(&ctx, 1, &task_id, &handle);
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert!(alive.is_empty(), "non-Running task handle is stale");
+
+        let still_there: bool = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &handle_key(&task_id))
+                .map(|v| v.is_some())
+                .unwrap_or(false)
+        });
+        assert!(!still_there, "stale handle should be evicted");
+
+        // task state 는 그대로 (Ready) — 변경하면 안 됨.
+        let state: TaskState = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap().state
+        });
+        assert!(matches!(state, TaskState::Ready), "got {state:?}");
     }
 }
