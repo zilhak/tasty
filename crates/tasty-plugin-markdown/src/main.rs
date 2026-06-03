@@ -5,7 +5,7 @@
 //! workspace 에 존재한다. `crates/tasty-host-plugin/src/builtin.rs` 의 `BUILTINS`
 //! 배열에는 등록되지 않으므로 런타임에 로드되지 않는다.
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use tasty_plugin_sdk::{
     IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
 };
@@ -40,9 +40,18 @@ impl Plugin for MarkdownPlugin {
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
+            "markdown.reload" => markdown_reload(&ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
+}
+
+fn markdown_reload(params: &Value) -> Result<Value, IpcMethodError> {
+    let surface_id = params
+        .get("surface")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| IpcMethodError::invalid_params("missing 'surface'"))?;
+    Ok(json!({ "ok": true, "surface_id": surface_id }))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -52,4 +61,23 @@ fn main() -> anyhow::Result<()> {
         )
         .init();
     tasty_plugin_sdk::run(MarkdownPlugin)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reload_with_surface_id_returns_ok() {
+        let resp = markdown_reload(&json!({ "surface": 42 })).expect("reload should succeed");
+        assert_eq!(resp["ok"], json!(true));
+        assert_eq!(resp["surface_id"], json!(42));
+    }
+
+    #[test]
+    fn reload_without_surface_id_is_invalid_params() {
+        let err = markdown_reload(&json!({})).unwrap_err();
+        assert_eq!(err.code, -32602);
+        assert!(err.message.contains("surface"));
+    }
 }
