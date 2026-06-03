@@ -677,8 +677,10 @@ tasty memory cache clear      --workspace 7
 | `notification` | OSC 알림 시퀀스 수신 |
 | `output-match:PATTERN` | 출력이 정규식에 매칭 |
 | `idle-timeout:SECS` | N초간 출력 없음 |
-| `claude-idle` | Claude Code 작업 완료 (idle 상태 전환) |
-| `needs-input` | Claude Code 사용자 입력 필요 |
+| `claude-idle` | Claude Code 작업 완료 (idle 상태 전환). 자기 surface 에 등록된 hook 만 발사된다. |
+| `needs-input` | Claude Code 사용자 입력 필요. 자기 surface 에 등록된 hook 만 발사된다. |
+| `claude-child-idle` | `claude.spawn` 으로 만들어진 자식 Claude 가 idle (stop / subagent-stop / session-end) 에 도달. *부모 surface* 의 hook 으로 발사되어, conductor 가 polling 없이 자식 완료를 감지할 수 있다. |
+| `claude-child-needs-input` | 자식 Claude 가 input 을 요구. *부모 surface* 의 hook 으로 발사된다. |
 | `claude-error` | Claude child PTY가 알려진 비정상 패턴(API Error, content filter, rate limit, network error 등)을 출력. `claude.spawn`/`claude.launch` 자식 surface에서 자동 감시되며, 사용자/에이전트도 추가 hook을 걸 수 있다. |
 
 ### 글로벌 훅 (타이머 / 파일 감시)

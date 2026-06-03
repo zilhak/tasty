@@ -1202,8 +1202,13 @@ IPC 메서드와 `tasty claude *` CLI 서브커맨드는 plugin이 자체적으�
   받아 상태 갱신 + host의 `surface.fire_hook` / `surface.meta.set` / `surface.meta.unset` 호출
 - **상태 priority**: needs_input > idle > active. claude.children 응답의 `state` 필드에 반영
 - **자동 정리**: surface가 닫힐 때 plugin state에서 자식·상태·error scan plate 함께 정리
-- **HookEvent**: 호스트 측 `ClaudeIdle`/`NeedsInput`/`ClaudeError` 이벤트 타입 유지
-  (`claude-idle`, `needs-input`, `claude-error` 키). plugin이 host의 fire_hook IPC로 발화
+- **HookEvent**: 호스트 측 `ClaudeIdle`/`NeedsInput`/`ClaudeChildIdle`/`ClaudeChildNeedsInput`/
+  `ClaudeError` 이벤트 타입 유지 (`claude-idle`, `needs-input`, `claude-child-idle`,
+  `claude-child-needs-input`, `claude-error` 키). plugin이 host의 fire_hook IPC로 발화
+- **parent fan-out**: child Claude 에서 `stop` / `subagent-stop` / `session-end` 가 들어오면
+  child surface 의 `claude-idle` 외에 *parent surface* 의 `claude-child-idle` 도 함께 fire 한다.
+  `notification` 도 동일하게 parent surface 의 `claude-child-needs-input` 을 fire. parent 매핑이
+  없는 (top-level) 호출에는 영향 없음. conductor 가 polling 없이 자식 완료를 감지하기 위한 채널.
 - **ClaudeError 자동 감시**: `claude.spawn` / `claude.launch`로 만들어진 child surface는 PTY 출력에
   대한 패턴 스캐너가 plugin 안에서 자동 활성화된다. plugin이 `surface.read_since_mark`로 새
   출력 슬라이스를 받아 ANSI strip 후 catalog 정규식과 매칭하고, 매칭되면 `surface.fire_hook`으로
