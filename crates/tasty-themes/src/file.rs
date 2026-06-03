@@ -76,6 +76,7 @@ pub struct AccentSection {
 #[serde(default)]
 pub struct TerminalSection {
     pub selection_bg: Option<HexColor>,
+    pub vi_cursor_bg: Option<HexColor>,
     pub search_match_bg: Option<HexColor>,
     pub search_match_active_bg: Option<HexColor>,
 }
@@ -145,6 +146,7 @@ impl ThemeFile {
             maroon: self.accent.maroon,
             rosewater: self.accent.rosewater,
             selection_bg: self.terminal.selection_bg,
+            vi_cursor_bg: self.terminal.vi_cursor_bg,
             search_match_bg: self.terminal.search_match_bg,
             search_match_active_bg: self.terminal.search_match_active_bg,
             ansi_black: self.ansi.black,

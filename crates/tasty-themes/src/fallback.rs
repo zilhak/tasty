@@ -54,6 +54,7 @@ pub fn mocha_fallback_colors() -> ThemeColors {
         rosewater: HexColor::from_rgb(0xf5, 0xe0, 0xdc),
         // Terminal-specific
         selection_bg: HexColor::from_rgb(0x58, 0x5b, 0x70), // = surface2
+        vi_cursor_bg: HexColor::from_rgb(0xb4, 0xbe, 0xfe), // = lavender
         search_match_bg: HexColor::from_rgba(0xf9, 0xe2, 0xaf, 0x4d), // yellow @ ~30%
         search_match_active_bg: HexColor::from_rgba(0xf9, 0xe2, 0xaf, 0xb3), // yellow @ ~70%
         // ANSI 16

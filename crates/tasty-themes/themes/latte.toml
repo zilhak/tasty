@@ -39,6 +39,7 @@ rosewater = "#dc8a78"
 
 [terminal]
 selection_bg = "#acb0be"
+vi_cursor_bg = "#7287fd"               # lavender — vi copy mode cursor cell
 search_match_bg = "#df8e1d4d"          # yellow @ ~30% alpha
 search_match_active_bg = "#df8e1db3"   # yellow @ ~70% alpha
 

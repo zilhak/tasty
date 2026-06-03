@@ -194,6 +194,8 @@ pub struct ThemeColors {
 
     // ── Terminal-specific 색 (다른 surface 가 selection 기능을 가지면 SurfaceTheme 로 흡수) ──
     pub selection_bg: HexColor,
+    /// vi copy mode 의 cursor cell highlight. selection_bg 와 시각적으로 구분되어야 한다.
+    pub vi_cursor_bg: HexColor,
     pub search_match_bg: HexColor,
     pub search_match_active_bg: HexColor,
 
@@ -286,6 +288,8 @@ pub struct PartialColors {
     pub rosewater: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection_bg: Option<HexColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vi_cursor_bg: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_match_bg: Option<HexColor>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -424,6 +428,9 @@ impl ThemeColors {
         if let Some(v) = p.selection_bg {
             self.selection_bg = v;
         }
+        if let Some(v) = p.vi_cursor_bg {
+            self.vi_cursor_bg = v;
+        }
         if let Some(v) = p.search_match_bg {
             self.search_match_bg = v;
         }
@@ -527,6 +534,7 @@ pub struct Theme {
     pub maroon: HexColor,
     pub rosewater: HexColor,
     pub selection_bg: HexColor,
+    pub vi_cursor_bg: HexColor,
     pub search_match_bg: HexColor,
     pub search_match_active_bg: HexColor,
     pub ansi_black: HexColor,
@@ -631,6 +639,7 @@ impl Theme {
             maroon: c.maroon,
             rosewater: c.rosewater,
             selection_bg: c.selection_bg,
+            vi_cursor_bg: c.vi_cursor_bg,
             search_match_bg: c.search_match_bg,
             search_match_active_bg: c.search_match_active_bg,
             ansi_black: c.ansi_black,
@@ -709,6 +718,7 @@ impl Theme {
             maroon: self.maroon,
             rosewater: self.rosewater,
             selection_bg: self.selection_bg,
+            vi_cursor_bg: self.vi_cursor_bg,
             search_match_bg: self.search_match_bg,
             search_match_active_bg: self.search_match_active_bg,
             ansi_black: self.ansi_black,
@@ -815,6 +825,7 @@ mod tests {
             maroon: c,
             rosewater: c,
             selection_bg: c,
+            vi_cursor_bg: c,
             search_match_bg: c,
             search_match_active_bg: c,
             ansi_black: c,
