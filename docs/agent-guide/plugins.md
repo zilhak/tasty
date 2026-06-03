@@ -436,6 +436,7 @@ tasty plugin extension list                # 모든 extension의 상태 일람 (
 | `plugin.show` | `id: string` | 단일 plugin의 매니페스트 전체 + runtime 상태. `{id,name,version,description,authors,homepage,api_version,manifest_version,dir,enabled,running,log_path,permissions:{manifest,granted},event_subscribe,event_publish,events_emitted,surface_kinds,commands,menu_items,ipc_namespace,cli,extends?,extension_state?}`. `extends`는 `[extends]` 블록을 선언한 extension plugin일 때만 채워진다. `extension_state`는 `{status:"active"\|"pending"\|"disabled"\|"conflict", ...}` 형식. |
 | `plugin.install` | `path: string` | 매니페스트 검증 후 `plugins/<id>/`로 재귀 복사 + 매니페스트 권한 자동 grant + 자동 활성화 시 spawn |
 | `plugin.remove` | `id: string` | graceful shutdown + 디렉터리 삭제 |
+| `plugin.upgrade_builtins` | `force?: bool` (기본 `false`) | bundle 기준으로 builtin plugin 디렉토리를 재설치. semver 비교 기반. `force=true` 시 동일/하위 버전도 덮어쓰기. 응답: `{items: [{id, action: {kind: "skipped"\|"upgraded"\|"reinstalled"\|"not_in_bundle"\|"failed", ...}}]}`. 실행 중 plugin 의 새 binary 적용은 `plugin.disable` → `plugin.enable` 시퀀스 필요. 상세: [`docs/dev-guide/plugin-ecosystem.md` §6](../dev-guide/plugin-ecosystem.md). |
 | `plugin.enable` | `id: string` | 활성화 + spawn |
 | `plugin.disable` | `id: string` | graceful shutdown |
 | `plugin.permissions` | `id: string` | `{id, manifest:[...], granted:[...]}` |

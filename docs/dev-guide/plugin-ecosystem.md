@@ -102,6 +102,58 @@ tasty plugin install ./target/release   # 또는 매니페스트 디렉터리
 
 - 개발자가 plugin을 자주 재빌드하는 워크플로에서 disable/enable의 비용이 명백히 큰 사례
 
+## 6. Built-in plugin 자동 upgrade
+
+호스트와 함께 배포되는 built-in plugin (`com.tasty.explorer` 등) 은 사용자
+디렉토리에 한 번 복사된 후에도 부팅 시점에 bundle 의 새 버전이 있으면 자동
+갱신된다. 기준은 **manifest 의 `version` (semver)** 이다 — mtime 은 dist
+tarball 압축 해제 시 보존되어 부정적으로 작동할 수 있어 1차 신호로 쓰지
+않는다.
+
+### 6.1 동작
+
+부팅 시 `install_builtins_if_needed` 가 BUILTINS 각 항목에 대해 bundle 과
+설치본의 manifest version 을 비교한다.
+
+- `bundle > installed` → bundle 디렉토리를 mtime 무시하고 사용자 디렉토리에
+  덮어쓴다. 옛 버전에만 있던 잔존 파일은 *제거*. 로그: `upgrading builtin
+  '<id>' v<old> → v<new>`.
+- `bundle == installed` → 종전 mtime 기반 sync 만 수행. dev workspace 의
+  hotfix (매니페스트만 수정) 가 즉시 반영되는 경로.
+- `bundle < installed` → skip. 자동 다운그레이드 금지.
+- manifest 파싱 실패: bundle corrupt → skip, installed corrupt + bundle ok →
+  mtime sync 로 복구.
+
+### 6.2 수동 재설치
+
+복구/실험 용도로 `tasty plugin upgrade-builtins [--force]` 를 제공한다.
+
+- 기본 동작은 자동 upgrade 와 동일 (semver 기반).
+- `--force` 는 동일/하위 버전도 강제 덮어쓰기. 설치본 corruption 복구 시 사용.
+- 응답은 항목별 `BuiltinUpgradeReport` JSON. action: `Upgraded { from, to }` /
+  `Reinstalled { version }` / `Skipped { reason }` / `NotInBundle` / `Failed`.
+- 실행 중 plugin 의 binary 가 교체되면 *현재 실행 process 는 옛 binary 메모리
+  를 유지* 한다 (POSIX inode 교체). 새 binary 가 효과를 보려면 `plugin
+  disable` → `plugin enable` 시퀀스가 필요. Windows 에서는 실행 중 binary 의
+  in-place 교체가 sharing violation 으로 실패 → `Failed` 항목으로 보고된다.
+
+### 6.3 사용자 수정 영역
+
+builtin plugin 디렉토리는 **host-owned** 다. 사용자가 그 안에 직접 만든
+파일은 자동/수동 upgrade 가 `overwrite_builtin_dir` 로 제거할 수 있다.
+사용자가 보존해야 할 상태 (grants, disabled, removed_builtins, 단축키
+override) 는 builtin 디렉토리 *밖* 의 `~/.tasty/plugins.toml` 에 저장되므로
+영향을 받지 않는다.
+
+### 6.4 plugin manifest version bump 정책
+
+자동 upgrade 메커니즘이 동작하려면 plugin 작성자가 plugin 의 의미적 변경 시
+`tasty-plugin.toml::version` 을 수동 bump 해야 한다. **루트 앱의 자동 패치
++1 정책과는 분리** — plugin 단위 의미 변화 (매니페스트/permission 추가,
+behavior 변경) 가 있을 때 그 plugin 의 manifest 만 별도 bump 한다. version
+이 그대로면 동일 버전 분기 (mtime resync) 로 떨어지므로 dev workspace 외
+에선 사용자에게 새 binary 가 노출되지 않는다.
+
 ## 부가 정책: i18n 키 충돌
 
 plugin이 contribute하는 `lang/` 디렉터리의 키는 **plugin id prefix**를 권장한다. 예: `com.example.explorer.menu.refresh`. 호스트와 다른 plugin의 키와 충돌하면 마지막 로드가 이긴다.

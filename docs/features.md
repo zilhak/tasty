@@ -271,6 +271,7 @@
 
 #### Explorer (기본 제공 plugin)
 - `com.tasty.explorer` 외부 plugin 바이너리가 디렉토리 트리와 파일 미리보기를 제공한다. 호스트는 plugin이 보낸 UiTree를 egui로 렌더링할 뿐, 모델/IO를 직접 다루지 않는다. plugin 메뉴에서 비활성/제거 가능 (제거 시 `removed_builtins`에 기록되어 재실행 시 다시 설치되지 않음)
+- **자동 upgrade**: 부팅 시 bundle 의 manifest version 이 설치본보다 높으면 자동으로 디렉토리를 덮어쓴다 (semver 기반, mtime fallback 없음). 다운그레이드는 자동으로 차단되며, 복구가 필요할 땐 `tasty plugin upgrade-builtins --force` 로 수동 재설치 가능. 상세: [`docs/dev-guide/plugin-ecosystem.md` §6](dev-guide/plugin-ecosystem.md).
 - 왼쪽 트리 + 오른쪽 뷰어의 2-컬럼 레이아웃, **divider 드래그로 비율 조절** 가능 (0.15~0.85)
 - .md 파일 선택 시 마크다운 렌더링, 기타 파일은 모노스페이스 텍스트 표시
 - 숨김 파일 기본 제외 (.env, .gitignore, .claude는 표시)
