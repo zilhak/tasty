@@ -28,11 +28,13 @@ pub(crate) enum AppEvent {
     #[cfg(feature = "gui")]
     OpenPlugins,
     /// Request to shut down the entire application.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     Shutdown,
     /// Request to minimize (park state, close windows).
     #[cfg(feature = "gui")]
     Minimize,
     /// Request quit following the close_behavior setting.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     QuitRequested,
     /// Request to show window from system tray (Windows only).
     #[cfg(all(windows, feature = "gui"))]
@@ -41,6 +43,7 @@ pub(crate) enum AppEvent {
     #[cfg(feature = "gui")]
     ClipboardChanged(ClipboardData),
     /// ~1초 간격 ticker. 모든 surface의 busy 상태를 다시 평가한다.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     BusyPoll,
     /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
     /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
