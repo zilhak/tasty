@@ -148,7 +148,7 @@ fn draw_add_detector_form(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft) {
                     ui.end_row();
                 });
             if let Some(err) = &fh.add_detector_form.error {
-                ui.colored_label(egui::Color32::LIGHT_RED, err);
+                ui.colored_label(crate::theme::theme().red, err);
             }
             ui.horizontal(|ui| {
                 if ui.button(t("button.add")).clicked() {

@@ -234,7 +234,7 @@ fn draw_add_handler_form(
                     }
                 });
             if let Some(err) = &fh.add_handler_form.error {
-                ui.colored_label(egui::Color32::LIGHT_RED, err);
+                ui.colored_label(crate::theme::theme().red, err);
             }
             ui.horizontal(|ui| {
                 if ui.button(t("button.add")).clicked() {
