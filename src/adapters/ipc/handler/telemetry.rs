@@ -26,7 +26,7 @@ use crate::core::Core;
 use crate::state::AppState;
 use tasty_ipc::caller::CallerContext;
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

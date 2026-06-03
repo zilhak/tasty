@@ -1,7 +1,7 @@
 //! Rate limit store wrapper. handler 의 `core.with_memory + RateLimitStore::new`
 //! 조립을 본 모듈로 흡수.
 
-use tasty_agent::{AgentError, RateLimit, RateLimitStore};
+use tasty_agent::{AgentError, ConsumeOutcome, RateLimit, RateLimitStore};
 use tasty_memory::HOST_OWNER;
 
 use crate::core::Core;
@@ -36,6 +36,20 @@ impl Core {
         self.with_memory(|mem| {
             let mut store = RateLimitStore::new(mem, HOST_OWNER);
             store.status(now_ms)
+        })
+    }
+
+    /// 토큰 소비 시도. 미등록 (agent, metric) 은 항상 허용 (infinity tokens).
+    pub(crate) fn rate_limit_try_consume(
+        &self,
+        agent: &str,
+        metric: &str,
+        cost: u32,
+        now_ms: u64,
+    ) -> Result<ConsumeOutcome, AgentError> {
+        self.with_memory(|mem| {
+            let mut store = RateLimitStore::new(mem, HOST_OWNER);
+            store.try_consume(agent, metric, cost, now_ms)
         })
     }
 }

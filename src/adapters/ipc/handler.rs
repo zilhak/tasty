@@ -120,6 +120,38 @@ pub fn handle_with_caller(
         return JsonRpcResponse::error(id, -32007, format!("cap_blocked: {reason}"));
     }
 
+    // Phase I.A.2 rate_limit 미들웨어: 등록된 (agent, "ipc_calls") 한도 초과 시
+    // -32010 throttled 응답 + audit Deny. 자가 회복을 위해 agent.rate_limit_*
+    // 자체는 제외 (영구 차단 방지). throttled 호출은 `record_ipc_call` 을 건너
+    // 뛰므로 `ipc_calls` telemetry 이벤트로 카운트되지 않는다 — throttle 추적은
+    // `RateLimit.throttled_count` 가 담당.
+    if should_rate_limit(caller, canonical) {
+        let agent_id = caller.agent_id();
+        let agent = agent_id.as_str();
+        match core.rate_limit_try_consume(agent, "ipc_calls", 1, telemetry::now_ms()) {
+            Ok(outcome) if !outcome.allowed => {
+                let reason = format!("throttled: tokens_left={:.2}", outcome.tokens_left);
+                tracing::warn!("ipc rate_limited: {reason}");
+                let seq = engine.telemetry_seq.next();
+                crate::ipc::audit::record(
+                    core,
+                    caller,
+                    canonical,
+                    crate::ipc::audit::AuditDecision::Deny,
+                    Some(&reason),
+                    workspace_id,
+                    seq,
+                );
+                return JsonRpcResponse::error(id, -32010, reason);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                // fail-open: rate_limit 인프라 자체 실패는 전체 IPC 차단보다 통과 + warn.
+                tracing::warn!("rate_limit middleware error: {e}");
+            }
+        }
+    }
+
     // Phase 4.2 텔레메트리 미들웨어: 비-host caller 의 IPC 호출을 자동 카운트.
     // `telemetry.*` 자체와 `_host` agent 는 카운트 제외 (재귀 폭주 / 자기-측정 방지).
     // 카운트는 cap_eval 직후 호출되며 record 시 cap 평가도 함께 일어난다 (Phase 4.3b).
@@ -162,6 +194,36 @@ pub fn handle_with_caller(
     }
 
     JsonRpcResponse::method_not_found(id, &request.method)
+}
+
+/// IPC rate_limit 미들웨어가 적용되는 caller/method 조합인가? (Phase I.A.2)
+///
+/// 제외 정책:
+/// - **Local**: 사용자가 직접 CLI/network 로 호출 — 무제한.
+/// - **Agent `_host`**: 호스트 자기 호출 (telemetry.rs:103 의 record_ipc_call
+///   제외와 일관). throttle 자체 무의미.
+/// - **`telemetry.*` / `agent.rate_limit_*` / `system.info`**:
+///   - `telemetry.*` — record_ipc_call 자체가 호출하므로 재귀 폭주 위험.
+///   - `agent.rate_limit_*` — throttle 걸린 agent 의 *자가 회복 경로*. 이게
+///     막히면 한 번 throttle 된 agent 가 영구 차단됨.
+///   - `system.info` — 단순 상태 조회. throttle 대상 아님.
+fn should_rate_limit(caller: &CallerContext, method: &str) -> bool {
+    use crate::ipc::caller::CallerContext as C;
+    match caller {
+        C::Local => return false,
+        C::Agent { .. } if caller.agent_id().is_host() => return false,
+        _ => {}
+    }
+    if method.starts_with("telemetry.") {
+        return false;
+    }
+    if method.starts_with("agent.rate_limit_") {
+        return false;
+    }
+    if method == "system.info" {
+        return false;
+    }
+    true
 }
 
 /// engine-substate handlers — UI에 의존하지 않음. 단계 07 권한 게이트 대상.
