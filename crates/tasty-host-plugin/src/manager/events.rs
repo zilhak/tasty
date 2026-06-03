@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use crate::protocol::{self, PluginRequest};
+use crate::protocol;
 use tasty_plugin_manifest::EventHookDecl;
 
 use super::{PendingRequestKind, PluginManager};

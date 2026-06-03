@@ -11,9 +11,8 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::host_cmd::HostCmd;
-use crate::process::PluginProcess;
 use crate::protocol::{self, PluginEvent};
-use tasty_plugin_manifest::{Permission, PluginPackage};
+use tasty_plugin_manifest::Permission;
 
 use super::{
     HEALTHCHECK_TIMEOUT, PING_INTERVAL, PendingPluginCall, PendingRequestKind, PluginManager,

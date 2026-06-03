@@ -4,9 +4,7 @@
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use serde_json::json;
-
-use crate::protocol::{self, IpcCallResult, PluginResponse, SurfaceResult};
+use crate::protocol::{self, PluginResponse, SurfaceResult};
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_ipc::server::send_response;
 use tasty_plugin_manifest::{EventHookDecl, HookMode, IpcHookDecl};

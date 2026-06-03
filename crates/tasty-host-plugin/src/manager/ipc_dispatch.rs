@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 
 use crate::protocol::{self, IpcCallResult, PluginRequest};
-use tasty_ipc::caller::CallerContext;
 use tasty_ipc::protocol::JsonRpcResponse;
 use tasty_ipc::server::send_response;
 use tasty_plugin_manifest::{HookMode, IpcHookDecl, Permission};

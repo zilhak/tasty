@@ -8,14 +8,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
-use serde_json::json;
-use tasty_plugin_protocol::{HandleChannelMessage, SharedBufferCreateResult, SharedBufferId};
-#[cfg(unix)]
-use tasty_shm::PeerPid;
+use tasty_plugin_protocol::SharedBufferId;
 use tasty_shm::SharedMemory;
 
 use tasty_plugin_protocol::host_port::SurfaceRegistry;
@@ -25,13 +22,10 @@ use crate::host_cmd::{HostCmd, SurfaceHandles};
 use crate::ipc_namespace::IpcNamespaceRegistry;
 use crate::listener::HostListener;
 use crate::process::PluginProcess;
-use crate::protocol::{
-    self, IpcCallResult, PluginEvent, PluginRequest, PluginResponse, SurfaceResult,
-};
+use crate::protocol::PluginResponse;
 use crate::registry_state::PluginsConfig;
 use tasty_ipc::protocol::JsonRpcResponse;
-use tasty_ipc::server::send_response;
-use tasty_plugin_manifest::{EventHookDecl, HookMode, IpcHookDecl, Permission, PluginPackage};
+use tasty_plugin_manifest::{HookMode, IpcHookDecl, Permission, PluginPackage};
 
 pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);
