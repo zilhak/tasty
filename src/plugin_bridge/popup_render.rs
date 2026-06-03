@@ -10,11 +10,11 @@
 use egui::{Context, Id, Order, Stroke, Vec2};
 use tasty_plugin_protocol::PopupCloseReason;
 
-use super::PluginManager;
-use super::manifest::PopupAnchor;
-use super::ui_tree_render::{PopupSink, render_popup_tree};
 use crate::adapters::ui::popup::CONTENT_MARGIN;
 use crate::gpu::canvas_texture::CanvasTextureCache;
+use crate::plugin::PluginManager;
+use crate::plugin::manifest::PopupAnchor;
+use crate::plugin_bridge::ui_tree_render::{PopupSink, render_popup_tree};
 use crate::state::AppState;
 
 const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);

@@ -211,7 +211,11 @@ pub fn draw_egui_panels(
                 4,
                 None,
                 |ui| {
-                    crate::plugin::ui_tree_render::render_remote_surface(ui, remote, canvas_cache);
+                    crate::plugin_bridge::ui_tree_render::render_remote_surface(
+                        ui,
+                        remote,
+                        canvas_cache,
+                    );
                 },
             );
         }

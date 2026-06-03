@@ -2,7 +2,7 @@
 //!
 //! 매 frame 호스트는 egui 그리기에 앞서 활성 workspace의 plugin Canvas 노드를 찾아내
 //! GPU 텍스처를 보장(ensure)하고 dirty rect 만큼 staging upload한다. 그래야 이후 egui
-//! 그리기에서 [`crate::plugin::ui_tree_render::render_remote_surface`]가 캐시에서 바로
+//! 그리기에서 [`crate::plugin_bridge::ui_tree_render::render_remote_surface`]가 캐시에서 바로
 //! [`egui::TextureId`]를 얻어 합성할 수 있다.
 //!
 //! # 흐름

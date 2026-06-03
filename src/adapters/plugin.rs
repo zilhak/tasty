@@ -21,8 +21,6 @@ pub mod key_dispatch;
 pub mod listener;
 pub mod manager;
 pub mod manifest;
-#[cfg(feature = "gui")]
-pub mod popup_render;
 pub mod process;
 pub mod protocol;
 pub mod registry_state;
@@ -30,8 +28,6 @@ pub mod remote_kind;
 pub mod remote_surface;
 pub mod tool_registry;
 pub mod ui_tree;
-#[cfg(feature = "gui")]
-pub mod ui_tree_render;
 
 pub use builtin::{
     bundle_root, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed,

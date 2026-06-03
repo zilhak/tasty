@@ -5,3 +5,7 @@
 //! 본 모듈이 *protocol port impl* 의 본 바이너리 잔존 지점 역할을 한다.
 
 pub mod manifest_validate;
+#[cfg(feature = "gui")]
+pub mod popup_render;
+#[cfg(feature = "gui")]
+pub mod ui_tree_render;

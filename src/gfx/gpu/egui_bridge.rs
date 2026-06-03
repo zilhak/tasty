@@ -30,7 +30,7 @@ impl GpuState {
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
             ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.
-            crate::plugin::popup_render::draw_plugin_popups(
+            crate::plugin_bridge::popup_render::draw_plugin_popups(
                 ctx,
                 state,
                 engine,
