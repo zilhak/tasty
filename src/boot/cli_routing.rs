@@ -22,7 +22,7 @@ pub(crate) enum Routed {
 
 /// 모든 라우팅 결정을 한 곳에 모은다. plugin CLI 실행 에러는 Result 로 전파.
 pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
-    use clap::Parser;
+    use clap::{CommandFactory, FromArgMatches};
 
     // -a/--all 은 clap parse 우회 — clap 의 -h 가 먼저 exit 하므로 args 를 직접 본다.
     {
@@ -33,10 +33,20 @@ pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
         }
     }
 
+    // tasty-cli 는 라이브러리 crate (CARGO_PKG_VERSION="0.1.0") 라서 clap 기본 `version`
+    // 출력이 root 바이너리 버전과 어긋난다. 여기서 root 의 CARGO_PKG_VERSION 으로 override.
+    let cmd = cli::Cli::command().version(env!("CARGO_PKG_VERSION"));
+
     // 정적 Cli 파싱. InvalidSubcommand 시 plugin CLI 동적 등록에서 한 번 더 매칭 시도.
     // 정적이 항상 우선이므로 plugin 이 호스트 명령을 가릴 수 없다.
-    let cli = match cli::Cli::try_parse() {
-        Ok(cli) => cli,
+    let cli = match cmd.try_get_matches() {
+        Ok(matches) => match cli::Cli::from_arg_matches(&matches) {
+            Ok(cli) => cli,
+            Err(err) => {
+                cli::format_parse_error(err);
+                unreachable!();
+            }
+        },
         Err(err) => {
             if matches!(err.kind(), clap::error::ErrorKind::InvalidSubcommand)
                 && let Some(result) = cli::try_run_plugin_cli()
