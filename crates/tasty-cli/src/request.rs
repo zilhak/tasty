@@ -189,6 +189,7 @@ mod tests {
         );
 
         // case 2: env unset → surface_id 가 null (호스트가 fallback 처리)
+        // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
         unsafe {
             std::env::remove_var("TASTY_SURFACE_ID");
         }
@@ -196,11 +197,13 @@ mod tests {
         assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
 
         // case 3: env 가 invalid → surface_id null (resolve_surface_id 안전 폴백)
+        // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
         unsafe {
             std::env::set_var("TASTY_SURFACE_ID", "not-a-number");
         }
         let req = command_to_request(&cmd);
         assert!(req.params.get("surface_id").is_some_and(|v| v.is_null()));
+        // SAFETY: 단일 테스트 안에서만 set/remove. 다른 테스트와 공유 안 함.
         unsafe {
             std::env::remove_var("TASTY_SURFACE_ID");
         }

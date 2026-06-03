@@ -119,6 +119,7 @@ mod tests {
         assert!(AgentId::from_env().is_host(), "unset should be host");
 
         // 2) empty → host
+        // SAFETY: ENV_LOCK 가드로 직렬화된 단위 테스트 한정. 본 모듈 위 SAFETY 주석 참조.
         unsafe { std::env::set_var(AgentId::ENV_KEY, "") };
         assert!(
             AgentId::from_env().is_host(),
@@ -126,12 +127,14 @@ mod tests {
         );
 
         // 3) value → that value
+        // SAFETY: ENV_LOCK 가드로 직렬화된 단위 테스트 한정. 본 모듈 위 SAFETY 주석 참조.
         unsafe { std::env::set_var(AgentId::ENV_KEY, "child_xyz") };
         let a = AgentId::from_env();
         assert_eq!(a.as_str(), "child_xyz");
         assert!(!a.is_host());
 
         // cleanup
+        // SAFETY: ENV_LOCK 가드로 직렬화된 단위 테스트 한정. 본 모듈 위 SAFETY 주석 참조.
         unsafe { std::env::remove_var(AgentId::ENV_KEY) };
     }
 }
