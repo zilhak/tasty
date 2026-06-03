@@ -6,14 +6,14 @@
 
 ## 1. 작성 형식
 
-**결정**: 1.0까지 **Rust crate + Process entry만** 지원. WASM·Lua·기타 스크립팅은 별도 layer로 분리.
+**결정**: 0.7까지 **Rust crate + Process entry만** 지원. WASM·Lua·기타 스크립팅은 별도 layer로 분리.
 
 **근거**:
 
-- **WASM 보류**: WASM의 진짜 가치는 "가벼움"이 아니라 **강제 가능한 sandbox**다. 현재 권한 모델은 IPC 호출만 게이트하고 plugin이 자기 프로세스에서 직접 `std::fs::write`/네트워크 접근하는 것은 OS process privilege로만 결정된다. WASM은 이 한계를 메울 수 있지만, **1.0 전에 보안 모델·도구체인·디버깅 인프라를 모두 갖추는 비용이 너무 크다**. 1.0 이후 사건 기반 trigger(아래 참조)가 발생하면 재검토.
+- **WASM 보류**: WASM의 진짜 가치는 "가벼움"이 아니라 **강제 가능한 sandbox**다. 현재 권한 모델은 IPC 호출만 게이트하고 plugin이 자기 프로세스에서 직접 `std::fs::write`/네트워크 접근하는 것은 OS process privilege로만 결정된다. WASM은 이 한계를 메울 수 있지만, **0.7 전에 보안 모델·도구체인·디버깅 인프라를 모두 갖추는 비용이 너무 크다**. 0.7 이후 사건 기반 trigger(아래 참조)가 발생하면 재검토.
 - **Lua/Rhai는 별도 layer**: Tasty plugin은 매니페스트 contributes(CLI/단축키/i18n) + IPC namespace 점유 + 별 프로세스 수명주기로 묶인 "시스템 확장"이다. Lua는 problem1.md(스크립팅 층 부재)의 답이지만, "사용자 일상 커스터마이징"이라는 책임이 다르다. plugin과 스크립팅을 같은 entry 메커니즘에 묶으면 schema가 폭발하고 책임이 흐려진다. Lua는 plugin-protocol과 호환되되 host 안에 임베드되는 별 시스템으로.
 
-**1.0 이후 재검토 trigger** (수량보다 사건):
+**0.7 이후 재검토 trigger** (수량보다 사건):
 
 - 외부에서 WASM 또는 비-Rust plugin 작성 요청이 2건 이상
 - 권한 게이트 한계에서 비롯한 보안 이슈 1건
@@ -23,7 +23,7 @@
 
 ## 2. 배포 채널
 
-**결정**: 1.0까지 **로컬 디렉터리 path install + 동봉 builtin**만. marketplace는 1.0 이후 RFC.
+**결정**: 0.7까지 **로컬 디렉터리 path install + 동봉 builtin**만. marketplace는 0.7 이후 RFC.
 
 설치 흐름:
 
@@ -40,7 +40,7 @@ tasty plugin install ./target/release   # 또는 매니페스트 디렉터리
 - marketplace는 plugin 자생적 10+ 시점 가치. 그 전에는 비어 있는 인프라.
 - crates.io는 binary plugin 배포에 부적합 (매니페스트가 별도, host 의존 path가 사용자 환경).
 
-**1.0 이후 재검토 trigger**:
+**0.7 이후 재검토 trigger**:
 
 - 첫 외부 plugin 출시
 - 수동 설치/업데이트 불편 사례 반복 보고
@@ -51,7 +51,7 @@ tasty plugin install ./target/release   # 또는 매니페스트 디렉터리
 
 ## 3. 신뢰 모델
 
-**결정**: **매니페스트 `permissions[]` + 사용자 grant + IPC method_meta 게이트**. 추가 sandbox(seccomp/AppContainer)·서명·marketplace 검토는 1.0까지 미지원.
+**결정**: **매니페스트 `permissions[]` + 사용자 grant + IPC method_meta 게이트**. 추가 sandbox(seccomp/AppContainer)·서명·marketplace 검토는 0.7까지 미지원.
 
 **한계의 명문화**:
 
@@ -61,7 +61,7 @@ tasty plugin install ./target/release   # 또는 매니페스트 디렉터리
 
 상세는 `docs/dev-guide/plugin-permissions.md`.
 
-**1.0 이후 재검토 trigger**:
+**0.7 이후 재검토 trigger**:
 
 - 권한 오해로 인한 보안 이슈 1건
 - 비-trusted plugin을 일반 사용자가 설치하는 시나리오가 현실화되는 시점
@@ -93,7 +93,7 @@ tasty plugin install ./target/release   # 또는 매니페스트 디렉터리
 
 ## 5. Hot reload
 
-**결정**: 1.0까지 **seamless hot reload 미지원**. `tasty plugin disable <id>` → `tasty plugin enable <id>` 재시작을 **개발자 재시작 워크플로용 대안**으로 안내.
+**결정**: 0.7까지 **seamless hot reload 미지원**. `tasty plugin disable <id>` → `tasty plugin enable <id>` 재시작을 **개발자 재시작 워크플로용 대안**으로 안내.
 
 **근거**:
 
@@ -101,7 +101,7 @@ tasty plugin install ./target/release   # 또는 매니페스트 디렉터리
 - 단, **layout 복원은 plugin kind가 등록된 후에만 수행된다** — disable/enable 사이에 surface는 일시적으로 missing 표시된다. seamless reload는 약속하지 않는다.
 - state preservation 포함 hot reload(c)는 plugin 작성자에게 큰 부담 (모든 상태가 serializable + 마이그레이션 가능)이라 1.0 전 의무화는 과한 비용.
 
-**1.0 이후 재검토 trigger**:
+**0.7 이후 재검토 trigger**:
 
 - 개발자가 plugin을 자주 재빌드하는 워크플로에서 disable/enable의 비용이 명백히 큰 사례
 
@@ -172,6 +172,35 @@ builtin plugin 디렉토리는 **host-owned** 다. 사용자가 그 안에 직�
 사용자가 보존해야 할 상태 (grants, disabled, removed_builtins, 단축키
 override) 는 builtin 디렉토리 *밖* 의 `~/.tasty/plugins.toml` 에 저장되므로
 영향을 받지 않는다.
+
+### 6.5 Bundle signature 검증
+
+bundle 디렉토리의 `tasty-plugin.toml` 은 ed25519 detached signature 로 보호된다.
+같은 디렉토리의 `tasty-plugin.toml.sig` (raw 64-byte 서명) 사이드카로 확인.
+
+- **release 빌드** — `upgrade_builtins` 와 `install_builtins_if_needed` 가
+  검증 실패 시 해당 plugin 을 `Skipped { reason: "signature-invalid: ..." }`
+  로 차단. 사이드카 누락 / 길이 불일치 / 서명 검증 실패 모두 차단 사유.
+- **debug 빌드** — dev workspace 의 bundle 은 unsigned 라 검증 실패는 trace
+  로깅 후 통과. 격리: `#[cfg(debug_assertions)]` 분기.
+
+보호 범위는 **manifest 한 파일만** — 권한 / contributes / kind 가 manifest 안에
+들어가 있으므로 *변조 시 confused-deputy* 가 가장 큰 위험이다. binary 자체는
+OS-level codesign (macOS notarization, Windows Authenticode) 에 위임. lang/
+디렉토리 등 부속 파일은 본 검증 범위 밖 (0.7 이후 디렉토리 트리 hash 서명
+검토).
+
+#### 공개키와 키 rotation
+
+`TASTY_BUNDLE_PUBKEY` 는 `crates/tasty-host-plugin/src/bundle_sig.rs` 의
+컴파일타임 상수. 현재는 placeholder (zeroed 32 byte) 이며 release pipeline
+의 `scripts/sign-bundle.sh` + CI 자동 서명 (E.3.5, 본 phase 범위 밖) 완성
+시점에 실키로 교체된다. **scripts/sign-bundle.sh 완성 전 release 빌드는
+모든 builtin 이 `signature-invalid: sidecar missing` 으로 차단되므로** 본
+검증 기능 자체는 빌드 파이프라인 서명과 함께 도입해야 한다.
+
+키 rotation 은 호스트 binary 갱신과 함께 이뤄진다 (auto-update 와 동시 갱신).
+trust store / 다중 키는 0.7 이후 도입.
 
 ### 6.4 plugin manifest version bump 정책
 

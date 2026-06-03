@@ -695,6 +695,34 @@ pub fn upgrade_builtins(
             continue;
         }
 
+        // release 빌드 한정: bundle manifest 의 ed25519 detached signature 검증.
+        // sidecar 누락 / 변조 / 잘못된 서명 → 해당 plugin Skipped 로 차단.
+        // debug 빌드는 dev workspace bundle 이 unsigned 라 warn 로깅 후 통과.
+        #[cfg(not(debug_assertions))]
+        {
+            if let Err(e) = crate::bundle_sig::verify_bundle_signature(&src) {
+                tracing::warn!("builtin '{}' bundle signature check failed: {e}", spec.id);
+                items.push(BuiltinUpgradeItem {
+                    id: spec.id.into(),
+                    action: BuiltinUpgradeAction::Skipped {
+                        installed_version: read_installed_version(&dest).map(|v| v.to_string()),
+                        bundle_version: None,
+                        reason: format!("signature-invalid: {e}"),
+                    },
+                });
+                continue;
+            }
+        }
+        #[cfg(debug_assertions)]
+        {
+            if let Err(e) = crate::bundle_sig::verify_bundle_signature(&src) {
+                tracing::debug!(
+                    "dev bundle '{}' signature check: {e} (debug build = ignored)",
+                    spec.id
+                );
+            }
+        }
+
         let installed_v = read_installed_version(&dest);
         let bundle_v = read_bundle_version(&src);
 

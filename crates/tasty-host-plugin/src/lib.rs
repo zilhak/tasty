@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 pub mod builtin;
+pub mod bundle_sig;
 pub mod command_registry;
 pub mod discovery;
 pub mod event_bus;
