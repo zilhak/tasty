@@ -7,13 +7,34 @@ fn load_host(reg: &FileHandlerRegistry) {
     reg.install_host_defaults(include_str!("defaults/default-file-handlers.toml"));
 }
 
+/// markdown surface 가 별도 plugin (`com.tasty.markdown`) 으로 분리됐다.
+/// 기존 테스트가 가정하던 markdown handler/detector 동작을 보존하기 위해 plugin
+/// install 을 흉내내는 헬퍼. handler id 는 `com.tasty.markdown/viewer`.
+fn install_markdown_plugin(reg: &FileHandlerRegistry) {
+    let decls = vec![HandlerDecl::<PluginHandlerActionDecl> {
+        id: "viewer".into(),
+        detector: "markdown".into(),
+        priority: 50,
+        display_name_i18n_key: None,
+        disabled: false,
+        action: PluginHandlerActionDecl::OpenSurface {
+            surface_kind: "markdown".into(),
+            param_key: "file".into(),
+        },
+    }];
+    reg.install_plugin_handlers("com.tasty.markdown", &decls);
+}
+
+const MD_VIEWER_ID: &str = "com.tasty.markdown/viewer";
+
 #[test]
-fn host_default_loads_handlers_for_markdown() {
+fn markdown_plugin_loads_handlers_for_markdown() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
+    install_markdown_plugin(&reg);
     let v = reg.handlers_for(&DetectorId("markdown".into()));
     assert_eq!(v.len(), 1);
-    assert_eq!(v[0].id.as_str(), "host/markdown-viewer");
+    assert_eq!(v[0].id.as_str(), MD_VIEWER_ID);
     matches!(v[0].action, HandlerAction::OpenSurface { .. });
 }
 
@@ -21,6 +42,7 @@ fn host_default_loads_handlers_for_markdown() {
 fn plugin_handler_with_lower_priority_sorts_first() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
+    install_markdown_plugin(&reg);
     let decls = vec![HandlerDecl::<PluginHandlerActionDecl> {
         id: "viewer".into(),
         detector: "markdown".into(),
@@ -36,18 +58,21 @@ fn plugin_handler_with_lower_priority_sorts_first() {
     let v = reg.handlers_for(&DetectorId("markdown".into()));
     assert_eq!(v.len(), 2);
     assert_eq!(v[0].id.as_str(), "com.example.mdx/viewer");
-    assert_eq!(v[1].id.as_str(), "host/markdown-viewer");
+    assert_eq!(v[1].id.as_str(), MD_VIEWER_ID);
 }
 
 #[test]
-fn user_can_disable_host_handler() {
+fn user_can_disable_plugin_handler() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
-    let user_toml = r#"
+    install_markdown_plugin(&reg);
+    let user_toml = format!(
+        r#"
         [[handler]]
-        id = "host/markdown-viewer"
+        id = "{MD_VIEWER_ID}"
         disabled = true
-    "#;
+    "#
+    );
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("file-handlers.toml");
     std::fs::write(&p, user_toml).unwrap();
@@ -60,6 +85,7 @@ fn user_can_disable_host_handler() {
 fn uninstall_plugin_removes_only_its_handlers() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
+    install_markdown_plugin(&reg);
     let decls = vec![HandlerDecl::<PluginHandlerActionDecl> {
         id: "viewer".into(),
         detector: "markdown".into(),
@@ -75,23 +101,26 @@ fn uninstall_plugin_removes_only_its_handlers() {
     reg.uninstall_plugin("com.example.mdx");
     let v = reg.handlers_for(&DetectorId("markdown".into()));
     assert_eq!(v.len(), 1);
-    assert_eq!(v[0].id.as_str(), "host/markdown-viewer");
+    assert_eq!(v[0].id.as_str(), MD_VIEWER_ID);
 }
 
 #[test]
-fn reload_user_config_replaces_user_handlers_keeps_host() {
+fn reload_user_config_replaces_user_handlers_keeps_plugin() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
+    install_markdown_plugin(&reg);
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("file-handlers.toml");
-    // 1차: user 가 markdown-viewer priority 만 override.
+    // 1차: user 가 com.tasty.markdown/viewer priority 만 override.
     std::fs::write(
         &p,
-        r#"
-            [[handler]]
-            id = "host/markdown-viewer"
-            priority = 10
-        "#,
+        format!(
+            r#"
+                [[handler]]
+                id = "{MD_VIEWER_ID}"
+                priority = 10
+            "#
+        ),
     )
     .unwrap();
     reg.install_user_config(&p);
@@ -114,11 +143,8 @@ fn reload_user_config_replaces_user_handlers_keeps_host() {
     reg.reload_user_config(&p);
 
     let v = reg.handlers_for(&DetectorId("markdown".into()));
-    // host/markdown-viewer 는 호스트 default priority (= 50) 로 복귀.
-    let mdv = v
-        .iter()
-        .find(|h| h.id.as_str() == "host/markdown-viewer")
-        .unwrap();
+    // plugin viewer 는 plugin default priority (= 50) 로 복귀.
+    let mdv = v.iter().find(|h| h.id.as_str() == MD_VIEWER_ID).unwrap();
     assert_eq!(mdv.priority, 50);
     // user/my-md 가 잡혀야 함.
     assert!(v.iter().any(|h| h.id.as_str() == "user/my-md"));
@@ -163,7 +189,8 @@ fn reload_user_config_parse_error_keeps_previous_state() {
 fn handlers_for_priority_tiebreak_uses_owner_order() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
-    // plugin 과 user 모두 priority 50 (host 도 50)
+    install_markdown_plugin(&reg);
+    // 두 plugin + user 모두 priority 50 (markdown plugin viewer 도 50)
     let p = vec![HandlerDecl::<PluginHandlerActionDecl> {
         id: "viewer".into(),
         detector: "markdown".into(),
@@ -189,11 +216,11 @@ fn handlers_for_priority_tiebreak_uses_owner_order() {
     reg.install_user_config(&pth);
 
     let v = reg.handlers_for(&DetectorId("markdown".into()));
-    // priority 모두 50 → tie-break: user > plugin > host
+    // priority 모두 50 → tie-break: user > plugin. plugin 끼리는 id 알파벳 순.
     let owners: Vec<&str> = v.iter().map(|h| h.id.as_str()).collect();
     assert_eq!(owners[0], "user/my-viewer");
     assert_eq!(owners[1], "com.example.x/viewer");
-    assert_eq!(owners[2], "host/markdown-viewer");
+    assert_eq!(owners[2], MD_VIEWER_ID);
 }
 
 #[test]
@@ -201,9 +228,9 @@ fn all_handlers_returns_every_enabled() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
     let v = reg.all_handlers();
-    // host default 3개 (markdown-viewer, html-system, directory-system).
-    // image-viewer 는 com.tasty.image plugin 이 제공 — host default 에 없음.
-    assert_eq!(v.len(), 3);
+    // host default 2개 (html-system, directory-system).
+    // markdown-viewer 는 com.tasty.markdown plugin 이 제공, image-viewer 는 com.tasty.image plugin.
+    assert_eq!(v.len(), 2);
 }
 
 // ── cross-module integration: file_format + file_handler ──────────
@@ -268,10 +295,12 @@ fn user_pdf_detector_and_handler_round_trip() {
 fn export_user_handler_emits_only_user_origin() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
-    // 사용자가 host/markdown-viewer 를 disable 하고 자기 핸들러 user/my-md 추가.
-    let user_toml = r#"
+    install_markdown_plugin(&reg);
+    // 사용자가 com.tasty.markdown/viewer 를 disable 하고 자기 핸들러 user/my-md 추가.
+    let user_toml = format!(
+        r#"
         [[handler]]
-        id = "host/markdown-viewer"
+        id = "{MD_VIEWER_ID}"
         disabled = true
 
         [[handler]]
@@ -281,27 +310,28 @@ fn export_user_handler_emits_only_user_origin() {
         display_name_i18n_key = "user.md"
         [handler.action]
         kind = "system"
-    "#;
+    "#
+    );
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("file-handlers.toml");
     std::fs::write(&p, user_toml).unwrap();
     reg.install_user_config(&p);
 
     let exported = reg.export_user_config();
-    assert!(exported.contains("host/markdown-viewer"));
+    assert!(exported.contains(MD_VIEWER_ID));
     assert!(exported.contains("disabled = true"));
     assert!(exported.contains("user/my-md"));
     assert!(exported.contains("\"markdown\""));
-    // host default 의 markdown-viewer action(OpenSurface) 는 user 가 손대지 않았으므로
-    // export 결과의 host/markdown-viewer entry 에는 action 이 없어야 한다.
+    // plugin 의 markdown viewer action(OpenSurface) 는 user 가 손대지 않았으므로
+    // export 결과의 plugin viewer entry 에는 action 이 없어야 한다.
     let lines: Vec<&str> = exported.split("[[handler]]").collect();
     let md_section = lines
         .iter()
-        .find(|s| s.contains("host/markdown-viewer"))
+        .find(|s| s.contains(MD_VIEWER_ID))
         .expect("section present");
     assert!(
         !md_section.contains("kind = \"open_surface\""),
-        "user export should not leak host action: {md_section}"
+        "user export should not leak plugin action: {md_section}"
     );
 }
 
@@ -395,11 +425,27 @@ fn directory_target_does_not_match_file_detectors() {
 
 // ── DetectorInfo 주입 (Phase E ME1) ──────────────────────────────
 
+/// com.tasty.markdown plugin 의 detector contribution 흉내 (md/markdown 확장자).
+fn install_markdown_plugin_detector(formats: &crate::file::format::FileFormatRegistry) {
+    use crate::file::format::{DetectorDecl, DetectorRuleDecl};
+    let decls = vec![DetectorDecl {
+        id: "markdown".into(),
+        display_name_i18n_key: Some("file_handler.format.markdown".into()),
+        icon: None,
+        disabled: false,
+        rule: vec![DetectorRuleDecl::Extension {
+            values: vec!["md".into(), "markdown".into()],
+        }],
+    }];
+    formats.install_plugin_detectors("com.tasty.markdown", &decls);
+}
+
 #[test]
 fn attach_detector_info_stores_arc_and_returns_clone() {
     use crate::file::format::FileFormatRegistry;
     let formats = std::sync::Arc::new(FileFormatRegistry::new());
     formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
+    install_markdown_plugin_detector(&formats);
 
     let handlers = FileHandlerRegistry::new();
     assert!(handlers.detector_info().is_none());
@@ -419,7 +465,8 @@ fn attach_detector_info_second_call_is_ignored() {
     let formats_a = std::sync::Arc::new(FileFormatRegistry::new());
     let formats_b = std::sync::Arc::new(FileFormatRegistry::new());
     formats_a.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
-    // formats_b 는 host default 안 깐 빈 registry.
+    install_markdown_plugin_detector(&formats_a);
+    // formats_b 는 host default + plugin detector 안 깐 빈 registry.
 
     let handlers = FileHandlerRegistry::new();
     handlers.attach_detector_info(formats_a.clone());

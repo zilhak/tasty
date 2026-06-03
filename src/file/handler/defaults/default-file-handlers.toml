@@ -7,16 +7,6 @@
 # unknown(=identify None) 은 별도 handler 없음 — picker modal 이 처리.
 
 [[handler]]
-id = "markdown-viewer"
-detector = "markdown"
-priority = 50
-
-[handler.action]
-kind = "open_surface"
-surface_kind = "markdown"
-param_key = "file"
-
-[[handler]]
 id = "html-system"
 detector = "html"
 priority = 50

@@ -206,7 +206,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("recent.json");
         let mut rp = RecentPicks::with_cap(5);
-        rp.record_at(&hid("host/markdown-viewer"), 100);
+        rp.record_at(&hid("com.tasty.markdown/viewer"), 100);
         rp.record_at(&hid("user/my-pdf"), 200);
         rp.save_atomic(&path).expect("save");
 
@@ -216,7 +216,7 @@ mod tests {
             .iter()
             .map(|e| e.handler_id.as_str())
             .collect();
-        assert_eq!(ids, vec!["user/my-pdf", "host/markdown-viewer"]);
+        assert_eq!(ids, vec!["user/my-pdf", "com.tasty.markdown/viewer"]);
     }
 
     #[test]

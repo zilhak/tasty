@@ -8,14 +8,6 @@
 # 곧 unknown 의미이며 호출자가 None 보고 picker modal 띄움.
 
 [[detector]]
-id = "markdown"
-display_name_i18n_key = "file_handler.format.markdown"
-
-[[detector.rule]]
-kind = "extension"
-values = ["md", "markdown"]
-
-[[detector]]
 id = "html"
 display_name_i18n_key = "file_handler.format.html"
 

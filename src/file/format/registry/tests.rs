@@ -8,10 +8,27 @@ fn target(p: &str) -> FileTarget {
     FileTarget::new(PathBuf::from(p))
 }
 
+/// host default + com.tasty.markdown plugin detector 동시 install.
+/// markdown surface 가 별도 plugin 으로 분리됐기에, 기존 테스트가 가정하던
+/// markdown detector 동작을 plugin install 로 흉내낸다.
+fn install_host_with_markdown(reg: &FileFormatRegistry) {
+    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    let decls = vec![DetectorDecl {
+        id: "markdown".into(),
+        display_name_i18n_key: Some("file_handler.format.markdown".into()),
+        icon: None,
+        disabled: false,
+        rule: vec![DetectorRuleDecl::Extension {
+            values: vec!["md".into(), "markdown".into()],
+        }],
+    }];
+    reg.install_plugin_detectors("com.tasty.markdown", &decls);
+}
+
 #[test]
 fn host_default_loads_and_identifies_markdown() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     let id = reg.identify(&target("a/b.md"), DetectDepth::Cheap);
     assert_eq!(id, Some(DetectorId("markdown".into())));
     let id = reg.identify(&target("a/b.MARKDOWN"), DetectDepth::Cheap);
@@ -25,7 +42,7 @@ fn host_default_loads_and_identifies_markdown() {
 #[test]
 fn plugin_extends_existing_detector() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     // plugin 이 mdx 확장자 추가
     let decls = vec![DetectorDecl {
         id: "markdown".into(),
@@ -89,7 +106,7 @@ fn plugin_lua_only_detector_skipped() {
 #[test]
 fn uninstall_plugin_removes_only_its_rules() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     let decls = vec![DetectorDecl {
         id: "markdown".into(),
         display_name_i18n_key: None,
@@ -117,7 +134,7 @@ fn uninstall_plugin_removes_only_its_rules() {
 #[test]
 fn directory_prefilter() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     // tempfile 같은 디렉토리 만들기보다 root path 사용 — 디렉토리 매칭 동작만 확인.
     let dir = std::env::temp_dir();
     let t = FileTarget::new(dir);
@@ -169,7 +186,7 @@ fn identify_deep_matches_magic_when_cheap_misses() {
 #[test]
 fn reload_user_config_replaces_user_entries_keeps_host() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     // 1차: 사용자가 pdf detector 추가.
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("file-handlers.toml");
@@ -221,7 +238,7 @@ fn reload_user_config_replaces_user_entries_keeps_host() {
 #[test]
 fn reload_user_config_missing_file_clears_user_entries() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("file-handlers.toml");
     std::fs::write(
@@ -274,7 +291,7 @@ fn reload_user_config_parse_error_keeps_previous_state() {
 #[test]
 fn user_disabled_overrides_host() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     // 사용자가 markdown detector 를 disable
     let user_toml = r#"
             [[detector]]
@@ -293,7 +310,7 @@ fn user_disabled_overrides_host() {
 #[test]
 fn export_emits_user_only_origin() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     // 사용자가 pdf 추가 + markdown disable.
     let user_toml = r#"
             [[detector]]
@@ -325,7 +342,7 @@ fn export_emits_user_only_origin() {
 #[test]
 fn export_round_trip_preserves_user_state() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     let user_toml = r#"
             [[detector]]
             id = "pdf"
@@ -352,7 +369,7 @@ fn export_round_trip_preserves_user_state() {
 
     // 두 번째 registry 에 export 결과만 user origin 으로 로드.
     let reg2 = FileFormatRegistry::new();
-    reg2.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg2);
     let p2 = dir.path().join("export.toml");
     std::fs::write(&p2, &exported).unwrap();
     reg2.install_user_config(&p2);
@@ -428,7 +445,7 @@ fn save_user_config_atomic_write() {
 #[test]
 fn export_empty_when_no_user_contributions() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     assert_eq!(reg.export_user_config(), "");
 }
 
@@ -588,7 +605,7 @@ fn all_advertised_extensions_dedupes_and_sorts() {
 #[test]
 fn is_enabled_reflects_disabled_field() {
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     // host 의 markdown 은 enabled.
     assert!(reg.is_enabled(&DetectorId("markdown".into())));
     // 존재하지 않는 detector 는 false.
@@ -983,7 +1000,7 @@ fn identify_fast_path_does_not_apply_to_directory_target() {
     let reg = FileFormatRegistry::new();
     // 호스트 default 의 $directory 가 디렉토리에 매칭되어야 함 (fast path 가 디렉토리에는
     // 적용되지 않음을 확인).
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     // 사용자가 .tmp 확장자를 가진 detector 등록.
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("u.toml");
@@ -1012,7 +1029,7 @@ fn identify_existing_tests_still_pass_after_cutover() {
     // 빠른 회귀 — host default 단순 매칭 (markdown) 이 깨지지 않음을 확인.
     // image detector 는 com.tasty.image plugin 이 제공 — host default 는 등록 안 함.
     let reg = FileFormatRegistry::new();
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     assert_eq!(
         reg.identify(&target("a/b.md"), DetectDepth::Cheap),
         Some(DetectorId("markdown".into()))
@@ -1023,7 +1040,7 @@ fn identify_existing_tests_still_pass_after_cutover() {
 fn install_order_persists_across_patch_from_other_origin() {
     let reg = FileFormatRegistry::new();
     // 1번째: host default 로 markdown install (install_order=0).
-    reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
+    install_host_with_markdown(&reg);
     let initial = reg
         .detector(&DetectorId("markdown".into()))
         .unwrap()
