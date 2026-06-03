@@ -1,0 +1,14 @@
+[surface.kind]
+markdown = "마크다운"
+
+[markdown.cli]
+desc = "마크다운 뷰어 명령 (템플릿)"
+
+[markdown.namespace]
+desc = "마크다운 뷰어 surface 네임스페이스"
+
+[file_handler.host]
+markdown-viewer = "마크다운 뷰어"
+
+[file_handler.format]
+markdown = "마크다운"

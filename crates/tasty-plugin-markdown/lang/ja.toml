@@ -1,0 +1,14 @@
+[surface.kind]
+markdown = "マークダウン"
+
+[markdown.cli]
+desc = "マークダウンビューアコマンド (テンプレート)"
+
+[markdown.namespace]
+desc = "マークダウンビューア surface ネームスペース"
+
+[file_handler.host]
+markdown-viewer = "マークダウンビューア"
+
+[file_handler.format]
+markdown = "マークダウン"

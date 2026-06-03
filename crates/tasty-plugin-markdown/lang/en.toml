@@ -1,0 +1,14 @@
+[surface.kind]
+markdown = "Markdown"
+
+[markdown.cli]
+desc = "Markdown viewer commands (template)"
+
+[markdown.namespace]
+desc = "Markdown viewer surface namespace"
+
+[file_handler.host]
+markdown-viewer = "Markdown Viewer"
+
+[file_handler.format]
+markdown = "Markdown"
