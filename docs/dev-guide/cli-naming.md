@@ -38,6 +38,45 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 
 새 메서드는 이 형식 예외에 동참하지 말 것 (`split.<x>`, `tree.<x>` 같은 자식도 만들지 말 것).
 
+### Host namespace 메서드 수 (0.7.x SemVer 가드)
+
+`crates/tasty-ipc/src/method_meta.rs::METHOD_TABLE` (release 표면) 실측.
+값은 `tests/cli_naming_count_drift.rs` 가 강제 — drift 발생 시 fail.
+DEBUG_METHODS / PREFIX_RULES / plugin 매니페스트 제공 namespace 는 제외.
+
+<!-- count-table:host-namespaces -->
+| namespace | count |
+|-----------|-------|
+| `agent` | 26 |
+| `approval` | 9 |
+| `file_handler` | 2 |
+| `global_hook` | 3 |
+| `hook` | 3 |
+| `image` | 7 |
+| `memory` | 46 |
+| `message` | 4 |
+| `notification` | 2 |
+| `output` | 4 |
+| `pane` | 2 |
+| `plugin` | 18 |
+| `popup` | 1 |
+| `preset` | 7 |
+| `script` | 1 |
+| `session` | 3 |
+| `surface` | 28 |
+| `system` | 1 |
+| `tab` | 4 |
+| `telemetry` | 12 |
+| `tool` | 5 |
+| `view` | 3 |
+| `webview` | 1 |
+| `window` | 3 |
+| `workspace` | 4 |
+<!-- /count-table:host-namespaces -->
+
+총 199 메서드. 메서드 추가 시 본 표의 해당 행 + (0.7.x 내 추가는 OK) test 동기화.
+메서드 제거는 SemVer 위반 (0.7.x 금지, 2.0.0 major bump 가 필요).
+
 ## verb 화이트리스트
 
 명명 규칙의 정합성을 강화하기 위해 verb를 카테고리별로 분류한다. 새 메서드를 추가할 때 적합한 카테고리를 선택하고, 화이트리스트 밖이라면 PR description에서 정당화한다 (가벼운 ADR — 별도 파일 불필요).
