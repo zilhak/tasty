@@ -1,5 +1,11 @@
 [workspace]
 members = ["crates/*"]
+# Phase J.C — WASM plugin POC 격리. wasmtime/wit-bindgen 의존성이 default
+# 빌드에 새지 않도록 main workspace 에서 완전 제외. 자체 Cargo.lock 사용.
+# `cargo build` / `cargo build --workspace` 모두 이 crate 를 미인식.
+# 본 격리가 없으면 wasmtime 의존성 해석으로 cold build time 이 분 단위 증가.
+# 상세 = docs/architecture/wasm-poc-result.md.
+exclude = ["crates/tasty-plugin-sdk-wasm"]
 resolver = "2"
 
 # 워크스페이스 공통 lint.

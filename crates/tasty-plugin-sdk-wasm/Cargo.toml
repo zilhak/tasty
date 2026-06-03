@@ -1,0 +1,40 @@
+# 본 crate 가 다른 워크스페이스에 흡수되지 않도록 빈 [workspace] 명시.
+# (worktree 부모 디렉터리에 별 cargo workspace 가 있을 때 발생하는 충돌 회피.)
+[workspace]
+
+[package]
+name = "tasty-plugin-sdk-wasm"
+version = "0.1.0-poc"
+edition = "2024"
+license = "MIT"
+description = "POC: Host-side WASM (wasi-preview2 component) runtime for Tasty plugins. Excluded from main workspace."
+repository = "https://github.com/zilhak/tasty"
+publish = false
+
+# Phase J.C POC. main workspace 에서 exclude. 자체 Cargo.lock 사용.
+# default 빌드 무관 — `cargo build` / `cargo build --workspace` 가 본 crate 미인식.
+# 빌드 방법:
+#   cd crates/tasty-plugin-sdk-wasm && cargo build --release
+# POC 완료 후 처리 정책 = wasm-poc-result.md §5 (권고: ① feature 잠금 상태로 main 유지).
+
+[dependencies]
+# wasmtime 35 = rustc 1.86 호환 (최신 45 는 rustc 1.93 필요, repo 환경은 1.89).
+# 향후 정식 채택 시점에 wasmtime 최신으로 bump 가능 (POC 결론 영향 0).
+wasmtime = { version = "35", default-features = false, features = [
+    "runtime",
+    "cranelift",
+    "component-model",
+    "cache",
+] }
+wasmtime-wasi = "35"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+
+[features]
+default = []
+# wasm-poc 활성 시 host 측 loader 가 본 runtime 을 직접 사용.
+# (현재는 본 crate 가 main workspace 에서 exclude 되므로 main 코드에서
+#  직접 import 할 수 없다. host 측 loader 는 별 빌드 단계 + dylib bridge 또는
+#  POC 단계에서는 standalone harness 로 wasm 컴포넌트만 단독 실행.)
