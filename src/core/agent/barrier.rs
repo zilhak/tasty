@@ -47,4 +47,24 @@ impl Core {
             store.state(workspace_id, name, now_ms)
         })
     }
+
+    /// Workspace 내 모든 Barrier 나열. `now_ms` 가 `Some` 이면 timeout 도장 적용.
+    pub(crate) fn barrier_list(
+        &self,
+        workspace_id: u32,
+        now_ms: Option<u64>,
+    ) -> Result<Vec<Barrier>, AgentError> {
+        self.with_memory(|mem| {
+            let mut store = BarrierStore::new(mem, HOST_OWNER);
+            store.list(workspace_id, now_ms)
+        })
+    }
+
+    /// Barrier 삭제. 존재하지 않으면 no-op.
+    pub(crate) fn barrier_delete(&self, workspace_id: u32, name: &str) -> Result<(), AgentError> {
+        self.with_memory(|mem| {
+            let mut store = BarrierStore::new(mem, HOST_OWNER);
+            store.delete(workspace_id, name)
+        })
+    }
 }

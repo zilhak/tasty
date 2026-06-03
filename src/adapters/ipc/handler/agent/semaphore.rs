@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::core::Core;
 use crate::state::AppState;
@@ -93,6 +93,49 @@ pub fn handle_semaphore_release(
     };
     match core.semaphore_release(workspace_id, &name, &holder) {
         Ok(outcome) => serialize(id, outcome),
+        Err(e) => agent_err_to_response(id, e),
+    }
+}
+
+pub fn handle_semaphore_list(
+    core: &Core,
+    _state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    match core.semaphore_list(workspace_id) {
+        Ok(semaphores) => JsonRpcResponse::success(
+            id,
+            json!({ "total": semaphores.len(), "semaphores": semaphores }),
+        ),
+        Err(e) => agent_err_to_response(id, e),
+    }
+}
+
+pub fn handle_semaphore_delete(
+    core: &Core,
+    _state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let name = match name_param(params, &id) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    match core.semaphore_delete(workspace_id, &name) {
+        Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
         Err(e) => agent_err_to_response(id, e),
     }
 }

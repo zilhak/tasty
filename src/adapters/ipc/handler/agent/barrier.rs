@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::core::Core;
 use crate::state::AppState;
@@ -100,6 +100,48 @@ pub fn handle_barrier_await(
     params: &Value,
 ) -> JsonRpcResponse {
     handle_barrier_state(core, state, engine, caller, id, params)
+}
+
+pub fn handle_barrier_list(
+    core: &Core,
+    _state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    match core.barrier_list(workspace_id, Some(now_ms())) {
+        Ok(barriers) => {
+            JsonRpcResponse::success(id, json!({ "total": barriers.len(), "barriers": barriers }))
+        }
+        Err(e) => agent_err_to_response(id, e),
+    }
+}
+
+pub fn handle_barrier_delete(
+    core: &Core,
+    _state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+    _caller: &CallerContext,
+    id: Value,
+    params: &Value,
+) -> JsonRpcResponse {
+    let workspace_id = match workspace_id_param(params, &id) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
+    let name = match name_param(params, &id) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    match core.barrier_delete(workspace_id, &name) {
+        Ok(()) => JsonRpcResponse::success(id, json!({ "deleted": true })),
+        Err(e) => agent_err_to_response(id, e),
+    }
 }
 
 // ============================================================

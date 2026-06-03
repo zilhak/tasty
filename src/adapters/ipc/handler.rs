@@ -559,6 +559,18 @@ fn route_engine_handler(
         "agent.semaphore_release" => {
             agent::handle_semaphore_release(core, state, engine, caller, id, &request.params)
         }
+        "agent.barrier_list" => {
+            agent::handle_barrier_list(core, state, engine, caller, id, &request.params)
+        }
+        "agent.barrier_delete" => {
+            agent::handle_barrier_delete(core, state, engine, caller, id, &request.params)
+        }
+        "agent.semaphore_list" => {
+            agent::handle_semaphore_list(core, state, engine, caller, id, &request.params)
+        }
+        "agent.semaphore_delete" => {
+            agent::handle_semaphore_delete(core, state, engine, caller, id, &request.params)
+        }
         // agent.lease_* — Phase 5.3 (협조적 점유 마커 + TTL)
         "agent.lease_acquire" => {
             agent::handle_lease_acquire(core, state, engine, caller, id, &request.params)

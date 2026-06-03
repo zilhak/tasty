@@ -46,4 +46,20 @@ impl Core {
             store.release(workspace_id, name, holder)
         })
     }
+
+    /// Workspace 내 모든 Semaphore 나열.
+    pub(crate) fn semaphore_list(&self, workspace_id: u32) -> Result<Vec<Semaphore>, AgentError> {
+        self.with_memory(|mem| {
+            let store = SemaphoreStore::new(mem, HOST_OWNER);
+            store.list(workspace_id)
+        })
+    }
+
+    /// Semaphore 삭제. 존재하지 않으면 no-op.
+    pub(crate) fn semaphore_delete(&self, workspace_id: u32, name: &str) -> Result<(), AgentError> {
+        self.with_memory(|mem| {
+            let mut store = SemaphoreStore::new(mem, HOST_OWNER);
+            store.delete(workspace_id, name)
+        })
+    }
 }
