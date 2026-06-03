@@ -26,7 +26,7 @@
 | `empty_surface.rs` | EmptySurface. Surface impl. 변환 버튼 표시 |
 | `tests.rs` | Rect/PaneNode/SurfaceLayout 유닛 테스트 |
 
-`Surface::kind()`는 호스트 빌트인으로 `"terminal"`, `"markdown"`, `"html"`, `"empty"` 4종을 반환하고, `"image"`는 빌트인 `com.tasty.image` plugin이, `"explorer"`/클립보드 viewer popup 등은 다른 plugin이 hello 시점에 추가한다. plugin이 등록하는 `RemoteSurface`는 plugin이 선언한 kind를 그대로 노출한다. IPC/registry/플러그인이 이 값으로 surface 타입을 식별하며, `type_name()`은 표시 전용이라 식별 비교에 쓰면 안 된다.
+`Surface::kind()`는 호스트 빌트인으로 `"terminal"`, `"html"`, `"empty"` 3종을 반환하고, `"image"`는 빌트인 `com.tasty.image` plugin이, `"markdown"`은 빌트인 `com.tasty.markdown` plugin이 (둘 다 `rendering = "host"` whitelist 경유 등록), `"explorer"`/클립보드 viewer popup 등은 다른 plugin이 hello 시점에 추가한다. plugin이 등록하는 `RemoteSurface`는 plugin이 선언한 kind를 그대로 노출한다. IPC/registry/플러그인이 이 값으로 surface 타입을 식별하며, `type_name()`은 표시 전용이라 식별 비교에 쓰면 안 된다.
 
 ### Model + Host View 분리 패턴
 

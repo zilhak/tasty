@@ -617,28 +617,26 @@ priority 가 동순위일 때 owner 순서로 1순위 선택: `user > plugin > h
 따라서 plugin 이 priority=50 으로 contribute 하고 host TOML 에도 priority=50
 handler 가 남아 있어도 plugin 이 1순위.
 
-### 향후 markdown plugin 신설 (템플릿: `crates/tasty-plugin-markdown/`)
+### 참고 구현: `com.tasty.markdown` (`crates/tasty-plugin-markdown/`)
 
-markdown 은 현재 host 가 SurfaceKindDef + detector + handler 모두 보유한다.
-별도 plugin 으로 분리하기 위한 *템플릿 crate* 가 `crates/tasty-plugin-markdown/`
-에 이미 존재한다 (BUILTINS 미등록 — 런타임 로드 X, 빌드/매니페스트 검증만).
+`com.tasty.markdown` 은 host-rendered surface kind 를 plugin manifest 로
+contribute 하는 reference plugin. `BUILTINS` 등록되어 첫 부팅 시 자동 install.
 
-실제 분리 절차:
+- `[[surface_kinds]] kind = "markdown" rendering = "host"` — host 가 그대로
+  `MarkdownPanel` + `MarkdownView` 로 렌더. host_rendered whitelist 가
+  `("markdown", "com.tasty.markdown")` 매칭 시 `register_markdown` 을 호출해
+  실제 `SurfaceKindDef` 를 등록한다 (image plugin 과 동형).
+- `[[contributes.detector]] id = "markdown"` — md/markdown 확장자.
+- `[[contributes.handler]] id = "viewer"` — `OpenSurface { surface_kind = "markdown" }`,
+  priority 50. final handler id 는 `com.tasty.markdown/viewer`.
+- `[[contributes.cli]] name = "markdown"` — `markdown.reload` IPC 노출.
 
-1. `src/engine/surface_registry/builtins.rs` 의 `register_markdown` 호출 제거.
-   함수 자체는 plugin 로드 경로의 host-rendered hook 으로 유지 (image 와 같음).
-2. `src/file/format/defaults/default-file-format.toml` 의 `[[detector]] id = "markdown"`
-   블록 삭제. `src/file/handler/defaults/default-file-handlers.toml` 의
-   `[[handler]] id = "markdown-viewer"` 블록 삭제.
-3. `crates/tasty-host-plugin/src/builtin.rs` 의 `BUILTINS` 배열 (windows /
-   non-windows 두 곳) 에 `com.tasty.markdown` spec 추가 (image entry 복붙 후
-   id/crate_dir/bin_name 교체).
-4. `src/adapters/ui/surface/markdown.rs` view 코드는 그대로 유지 —
-   `rendering = "host"` 이므로 host 가 계속 그린다 (image plugin 과 동일 흐름).
+plugin 비활성/uninstall 시 markdown surface kind 가 *사라지므로* 새 surface
+생성은 실패하고 (`unknown surface kind: markdown`), 기존 layout.json 의
+markdown surface 도 복원되지 않는다 — image plugin 과 동일하게 의도된 동작.
 
-본 plugin 의 `[[surface_kinds]] kind = "markdown"` 은 `rendering = "host"` 라 host
-가 실제 GUI 를 그려준다. plugin 본체는 detector/handler 선언과 선택적 IPC
-(`markdown.reload` 같은 사용자 명령) 만 담당.
+같은 패턴으로 다른 host-rendered 컨텐츠를 plugin 으로 분리할 때 본 crate 를
+참조하면 된다.
 
 ## 4-3. Surface 닫힘 알림 (Event Bus)
 

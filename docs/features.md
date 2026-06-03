@@ -109,12 +109,13 @@
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
 - Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-model`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
-  - `kind()`: 소문자 식별자 — 호스트 빌트인 4종(`"terminal"`, `"markdown"`, `"empty"`, `"diff"`) + plugin 등록 kind(예: `"explorer"`, `"image"`). IPC/registry/플러그인이 식별자로 사용
+  - `kind()`: 소문자 식별자 — 호스트 빌트인 3종(`"terminal"`, `"empty"`, `"diff"`) + plugin 등록 kind(예: `"explorer"`, `"image"`, `"markdown"`). IPC/registry/플러그인이 식별자로 사용
   - `type_name()`: 표시용 라벨. 식별 비교 금지
   - `webview_url()`: webview-enabled surface(plugin) 가 자신의 URL 을 반환. host 의 native WebView 동기화 가 다운캐스트 없이 generic 으로 사용
   - TerminalSurface: 단일 PTY 터미널
-  - MarkdownPanel, HtmlPanel, EmptySurface: 호스트 빌트인 비터미널 콘텐츠
+  - HtmlPanel, EmptySurface: 호스트 빌트인 비터미널 콘텐츠
   - ImagePanel: `com.tasty.image` plugin이 host-rendered kind로 등록하는 비터미널 콘텐츠
+  - MarkdownPanel: `com.tasty.markdown` plugin이 host-rendered kind로 등록하는 비터미널 콘텐츠
   - RemoteSurface: plugin이 IPC로 제공하는 surface (예: 기본 제공 Explorer plugin)
 - **Model + Host View 분리**: 휘발성 GUI 상태(콘텐츠 캐시, 텍스처, 편집 세션, 스크롤, 팝업 버퍼)는 호스트 측 View로 분리되어 `AppState::markdown_views` / `image_views` (HashMap<SurfaceId, View>) 에 보관. surface 닫힘 시 `cleanup_surface(sid)`가 모든 store에서 `drop_view(sid)` 호출
 - AppState: 전체 워크스페이스 목록과 활성 상태를 관리하는 중앙 상태 (IdGenerator 포함)
@@ -1586,8 +1587,9 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
   `tracing::info!` 로그 + `plugin.window_declared` host event 발화. 실 spawn
   handler / multi-window 라우팅은 별도 영역.
 - `crates/tasty-plugin-markdown/tasty-plugin.toml` 에 schema 사용 예시 +
-  실 plugin binary 골격 (BUILTINS 미등록 — host 내장 markdown 유지 중인
-  템플릿 crate).
+  실 plugin binary. `BUILTINS` 등록 — 첫 부팅 시 자동 install 되며 markdown
+  surface kind / detector / handler / cli 를 contribute (image plugin 과 동일
+  host-rendered 패턴).
 - `[[contributes.cli]]` 의 subcommand 엔트리에 `[polling]` 옵션 — `state_field`
   / `terminal_states` (예: `["idle", "needs_input", "exited"]`) / `interval_ms`
   (default 500) / `timeout_field`. 호스트가 plugin CLI 응답을 polling 하여
@@ -1702,7 +1704,7 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
   - `structure_check`: 절대 경로의 JSON Schema 파일로 target 의 구조 검증 (Deep). 현재 JSON 입력만 지원 (`.json` 확장자), 5MB 초과 파일은 즉시 false. schema/target 읽기·파싱 실패 시 false + warn 로그
 - Deep 평가는 한 `identify` 호출당 `DeepCtx` 가 head/MIME 캐시 → 같은 파일을 여러 detector 가 평가해도 IO 는 1회만
 - pre-filter: 디렉토리 대상은 `is_directory` rule 가진 detector 만, 파일 대상은 그 외만 평가 (cross-match 방지)
-- 호스트 default 는 `src/file_format/defaults/default-file-format.toml` 에 정의 — markdown, html, image, `$directory` 등
+- 호스트 default 는 `src/file/format/defaults/default-file-format.toml` 에 정의 — html, `$directory` 등. markdown / image detector 는 각각 `com.tasty.markdown` / `com.tasty.image` plugin 이 contribute
 
 ### 핸들러 디스패치 (`FileHandlerRegistry`)
 - HandlerId 형식: `host/<name>`, `<plugin_id>/<name>`, `user/<name>` (`<name>` 은 `[a-z0-9-]{1,32}`)
