@@ -181,7 +181,7 @@ impl<'a> SessionStore<'a> {
         Ok((token, session))
     }
 
-    fn put(&mut self, token: &SessionToken, session: &AgentSession) -> Result<()> {
+    pub(crate) fn put(&mut self, token: &SessionToken, session: &AgentSession) -> Result<()> {
         let value = MemoryValue::Json(serde_json::to_value(session)?);
         self.mem.put(
             &self.owner,
@@ -193,7 +193,7 @@ impl<'a> SessionStore<'a> {
         Ok(())
     }
 
-    fn get_raw(&self, token: &SessionToken) -> Result<Option<AgentSession>> {
+    pub(crate) fn get_raw(&self, token: &SessionToken) -> Result<Option<AgentSession>> {
         let entry = self.mem.get(&Scope::Global, &session_key(token))?;
         match entry {
             Some(e) => match e.value {

@@ -2,8 +2,10 @@
 
 #![cfg(test)]
 
-use super::*;
+use crate::caller::SessionToken;
+use crate::session::{SessionError, SessionStore};
 use tasty_memory::MemoryStore;
+use tasty_plugin_manifest::Permission;
 use tempfile::TempDir;
 
 fn fresh() -> (TempDir, MemoryStore) {

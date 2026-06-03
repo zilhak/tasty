@@ -2,7 +2,8 @@
 
 #![cfg(test)]
 
-use super::*;
+use crate::method_meta::{METHOD_TABLE, PREFIX_RULES, method_meta};
+use tasty_plugin_manifest::Permission;
 
 #[test]
 fn unknown_method_returns_none() {
