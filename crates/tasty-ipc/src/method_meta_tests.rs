@@ -1,7 +1,5 @@
 //! `method_meta` 단위 테스트.
 
-#![cfg(test)]
-
 use crate::method_meta::{
     METHOD_TABLE, PREFIX_RULES, clear_plugin_prefixes_for_tests, method_meta,
     register_plugin_prefix, unregister_plugin_prefix,

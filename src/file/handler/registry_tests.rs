@@ -1,7 +1,5 @@
 //! `FileHandlerRegistry` 단위 테스트.
 
-#![cfg(test)]
-
 use super::*;
 use crate::file::format::DetectorId;
 

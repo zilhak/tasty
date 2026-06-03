@@ -1,7 +1,5 @@
 //! `lib_tests` 단위 테스트.
 
-#![cfg(test)]
-
 use crate::*;
 
 #[test]

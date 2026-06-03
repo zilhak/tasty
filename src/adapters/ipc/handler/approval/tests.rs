@@ -1,7 +1,5 @@
 //! `approval.*` IPC 단위 테스트.
 
-#![cfg(test)]
-
 use super::*;
 use tasty_approval::ApprovalState;
 

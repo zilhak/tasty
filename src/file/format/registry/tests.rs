@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! `FileFormatRegistry` 단위 테스트 — manifest install/uninstall, extension priority,
 //! user TOML round-trip, identify_by_*, plugin disable/enable 등.
 

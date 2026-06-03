@@ -1,7 +1,5 @@
 //! `EventBus` 단위 테스트.
 
-#![cfg(test)]
-
 use crate::event_bus::{EventBus, EventBusError, pattern_matches};
 use tasty_plugin_protocol::{EventEnvelope, EventMeta, EventOrigin, EventScope, MAX_HOP};
 

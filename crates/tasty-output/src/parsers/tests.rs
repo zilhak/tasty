@@ -1,7 +1,5 @@
 //! `parsers_tests` 단위 테스트.
 
-#![cfg(test)]
-
 use crate::{ParsedItem, parse_buffer};
 
 fn first<'a>(items: &'a [ParsedItem], kind: &str) -> &'a ParsedItem {

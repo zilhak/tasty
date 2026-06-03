@@ -1,7 +1,5 @@
 //! `Terminal` 단위 테스트.
 
-#![cfg(test)]
-
 use super::*;
 use std::sync::Arc;
 use termwiz::escape::csi::CSI;

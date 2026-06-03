@@ -1,9 +1,7 @@
 //! Debug 빌드 전용 plugin IPC 핸들러 — `debug.event_bus.*` + `debug.extension.invoke_hook`.
 //!
 //! PluginManager 의 EventBus 직접 조작 + extension hook 직접 fire. release 빌드에는
-//! 컴파일되지 않는다.
-
-#![cfg(debug_assertions)]
+//! 컴파일되지 않는다 (handler.rs 의 mod 선언에 `#[cfg(debug_assertions)]`).
 
 use crate::ipc::server::send_response;
 use crate::plugin;

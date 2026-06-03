@@ -1,7 +1,5 @@
 //! Manifest 파싱/검증 단위 테스트.
 
-#![cfg(test)]
-
 use super::*;
 
 fn parse(src: &str) -> anyhow::Result<Manifest> {

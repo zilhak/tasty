@@ -14,9 +14,6 @@ pub mod protocol;
 pub mod server;
 pub mod session;
 
-#[cfg(test)]
-mod method_meta_tests;
-#[cfg(test)]
-mod session_tests;
+// 테스트는 method_meta.rs / session.rs 에서 각각 *_tests.rs 를 로드 (co-located).
 
 pub use host_port::{AuditCallerMarker, AuditDecision, IpcHostFacade, SessionResolution};

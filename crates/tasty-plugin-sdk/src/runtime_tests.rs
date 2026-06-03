@@ -1,7 +1,5 @@
 //! `runtime_tests` 단위 테스트.
 
-#![cfg(test)]
-
 use super::*;
 use crate::plugin::{IpcMethodCtx, IpcMethodError, SurfaceResult};
 use serde_json::json;

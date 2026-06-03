@@ -182,10 +182,4 @@ pub fn top_n(events: Vec<TelemetryEvent>, by: &str, limit: usize) -> Vec<TopEntr
     out
 }
 
-// ============================================================
-// Tests
-// ============================================================
-
-#[cfg(test)]
-#[path = "lib_tests.rs"]
-mod tests;
+// 테스트는 lib.rs 에서 lib_tests.rs 를 로드 (중복 모드 방지).

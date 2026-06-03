@@ -1,7 +1,5 @@
 //! `image_view` 단위 테스트.
 
-#![cfg(test)]
-
 use super::*;
 
 #[test]

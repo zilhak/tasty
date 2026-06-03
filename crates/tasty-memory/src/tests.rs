@@ -1,7 +1,5 @@
 //! tasty-memory unit tests — 원본 lib.rs 의 `#[cfg(test)] mod tests` 분리.
 
-#![cfg(test)]
-
 use super::*;
 
 fn store() -> MemoryStore {

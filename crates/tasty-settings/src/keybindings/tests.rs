@@ -1,7 +1,5 @@
 //! `keybindings_tests` 단위 테스트.
 
-#![cfg(test)]
-
 use super::*;
 use std::collections::HashSet;
 

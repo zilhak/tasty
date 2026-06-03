@@ -24,8 +24,7 @@ pub mod registry_state;
 pub mod tool_registry;
 pub mod ui_tree;
 
-#[cfg(test)]
-mod event_bus_tests;
+// 테스트는 event_bus.rs 에서 event_bus_tests.rs 를 로드 (co-located).
 
 pub use builtin::{
     bundle_root, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed,

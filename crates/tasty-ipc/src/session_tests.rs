@@ -1,7 +1,5 @@
 //! IPC `session` 단위 테스트.
 
-#![cfg(test)]
-
 use crate::caller::SessionToken;
 use crate::session::{SessionError, SessionStore};
 use tasty_memory::MemoryStore;
