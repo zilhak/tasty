@@ -1,9 +1,8 @@
-//! Tasty markdown plugin (template/demo).
+//! Tasty markdown plugin — host-rendered markdown viewer surface.
 //!
-//! host 가 현재 `markdown` SurfaceKindDef + detector + handler 를 모두 보유한다.
-//! 본 crate 는 *향후 host 내장을 분리해낼 때 참고할 수 있는 reference template* 으로
-//! workspace 에 존재한다. `crates/tasty-host-plugin/src/builtin.rs` 의 `BUILTINS`
-//! 배열에는 등록되지 않으므로 런타임에 로드되지 않는다.
+//! `markdown` SurfaceKindDef 본체는 host 의 `host_rendered` whitelist 경유로
+//! 등록되며 (image plugin 과 동일 패턴), detector + handler + cli 는 본
+//! manifest 가 contribute. `BUILTINS` 배열에 등록되어 첫 부팅 시 자동 install.
 
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{

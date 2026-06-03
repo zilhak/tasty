@@ -2,7 +2,7 @@ manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
 version = "0.1.0"
-description = "Template: markdown viewer surface (host-rendered)"
+description = "Markdown viewer surface (host-rendered)"
 api_version = "1"
 permissions = [
     "surface.read",
@@ -17,17 +17,15 @@ lang_dir = "lang"
 type = "process"
 command = "tasty-plugin-markdown"
 
-# host 가 SurfaceKindDef 를 제공한다 (image plugin 과 동일 패턴).
-# 본 plugin 이 활성화되면 host 의 register_markdown 매칭이 plugin 화이트리스트
-# 분기로 옮겨가야 한다 — 본 데모에서는 BUILTINS 미등록이라 실행되지 않음.
+# host-rendered: host 가 SurfaceKindDef 본체를 제공하며, 본 plugin 이 활성화될
+# 때만 host_rendered whitelist 분기에서 등록된다 (image plugin 과 동일 패턴).
 [[surface_kinds]]
 kind = "markdown"
 display_name_i18n_key = "surface.kind.markdown"
 icon = "📝"
 rendering = "host"
 
-# 기존 docs/examples/markdown-plugin/tasty-plugin.toml 의 default_colors 흡수.
-# F.H schema 데모 가치 보존.
+# default_colors: F.H schema 데모.
 [surface_kinds.default_colors]
 focused_bg = "#1e1e2e"
 focused_fg = "#cdd6f4"
@@ -38,8 +36,6 @@ unfocused_fg = "#a6adc8"
 prefix = "markdown"
 description_i18n_key = "markdown.namespace.desc"
 
-# 향후 host 의 default-file-format.toml 에서 markdown detector 를 떼어내고
-# 본 plugin 으로 옮길 때 활성화. demo 차원에서는 install 안 됨.
 [[contributes.detector]]
 id = "markdown"
 display_name_i18n_key = "file_handler.format.markdown"
@@ -59,7 +55,7 @@ param_key = "file"
 
 [[contributes.cli]]
 name = "markdown"
-description = "Markdown viewer commands (template)"
+description = "Markdown viewer commands"
 description_i18n_key = "markdown.cli.desc"
 subcommands = [
     { name = "reload", ipc_method = "markdown.reload", args = "reload_args", description = "Force reload the markdown surface from disk" },
