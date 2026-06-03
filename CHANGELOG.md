@@ -16,6 +16,12 @@
 
 ## [Unreleased]
 
+(no changes yet)
+
+## [0.7.0] - 2026-06-04
+
+> **(BREAK) 0.6.0 → 0.7.0 — API stability 선언.** 외부 표면 (IPC method / CLI command / plugin protocol `api_version=1` / 매니페스트 스키마) 의 backward compat 가 SemVer 엄격 모드로 진입한다. 본 버전 이후 break 는 2.0.0 까지 모이며, minor (1.X.0) 는 추가만 가능하다. 세부 정책: [`docs/dev-guide/ipc-stability.md`](docs/dev-guide/ipc-stability.md).
+
 ### Added
 - **공유 컨텍스트 — Blackboard / Plan / Cache (Phase 7)** — 워크스페이스 단위로 여러 에이전트가 같은 상태를 보고/갱신하기 위한 공유 표면 3 종. 모두 일반 `memory.*` 영역 위의 얇은 래퍼 (별도 저장소 없음) — `memory.write` / `memory.read` 권한 그대로 재사용하고, 변경은 모두 `memory.changed` 이벤트로 발화된다. 신규 에러 코드 `-32009 already_exists` (bb/plan/snapshot 중복 생성).
   - **Blackboard (Phase 7.1)** — 워크스페이스 단위 명명된 키-값 컬렉션. 키 컨벤션 `tasty.bb.<name>._meta` + `tasty.bb.<name>.fields.<field>`. `_meta` 의 `schema` 슬롯은 임의 JSON 으로 보관 (호스트는 검증하지 않음 — 호출자가 직접). IPC: `memory.bb_{create,put,get,get_all,get_meta,delete_field,delete,list,exists}` (9 종). 권한: 쓰기 → `memory.write`, 읽기 → `memory.read`. owner 규칙은 일반 memory 와 동일 (caller 가 만든 entry 만 caller 가 수정, `_host` 는 root). 모든 메서드는 `workspace_id` 필수. CLI: `tasty memory bb {create,put,get,get-all,get-meta,delete-field,delete,list,exists}`. `bb_put` 은 `_meta` 가 없으면 `-32004` — 반드시 `bb_create` 가 먼저.
@@ -74,17 +80,12 @@
 - 신규 surface kind `diff` — 좌/우 분할로 `before`/`after` 텍스트 (또는 `before_file`/`after_file` 경로) 를 표시한다. 헤더에 Apply/Reject 버튼. Apply 는 `apply_action` 명령을 시스템 클립보드에 복사하고 surface 를 닫는다 (자동 spawn 은 의도적으로 회피 — 사용자 동선 유지). 예: `tasty split --level surface --target this --type diff --meta '{"before":"...","after":"...","apply_action":"git apply /tmp/p.patch"}'`.
 
 ### Changed
-- `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list` → `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list` (점 표기). 옛 이름은 alias로 동작하지만 deprecated.
 - Plugin SDK `HostHandle::call` 반환 타입이 `Result<Value, HostCallError>` → `Result<Value, PluginError>`. `HostCallError`는 `PluginError`의 `#[deprecated]` alias로 유지.
 - `surface.meta.*` 가 파일 기반 (`~/.tasty/surfaces/<id>/meta.json` 풍의 임시 디렉터리) 에서 `tasty-memory` 위 `scope=surface:<id>` text/plain entry 로 통합 (응답 형태 동일). 같은 row 가 `memory.*` API 로도 보이며 `memory.changed` 이벤트로 변경이 전파된다. 키 형식 검증 (`[a-z0-9._-]+`, 1..=256) 이 새로 강제되므로 대문자/공백 키는 거부된다.
 - **(BREAK) markdown surface 분리** — `markdown` surface kind / `md`/`markdown` detector / `markdown-viewer` handler 가 host 내장에서 `com.tasty.markdown` plugin 으로 이관. host_rendered whitelist 경유 등록 (`com.tasty.image` 와 동일). 첫 부팅 시 BUILTINS 자동 install — 별도 작업 불필요. 영향: (1) `~/.tasty/plugins.toml` 의 `removed_builtins` 에 `com.tasty.markdown` 을 사전 등록한 경우 markdown surface 생성/복원이 실패하므로 `tasty plugin install com.tasty.markdown` 또는 removed_builtins 에서 수동 제거 필요. (2) file_handler ID 가 `host/markdown-viewer` → `com.tasty.markdown/viewer` 로 변경됐으므로 사용자 `file-handlers.toml` 에 `host/markdown-viewer` override 가 있다면 새 ID 로 수정 필요 (옛 override 는 고아가 되어 무시).
 
 ### Deprecated
-- `surface.meta_set` / `surface.meta_get` / `surface.meta_unset` / `surface.meta_list` (underscore 합성). 1.0 tag 직전에 alias 제거.
 - `tasty_plugin_sdk::HostCallError` type alias. 새 코드는 `PluginError` 사용.
 
 ### Removed
-- (없음)
-
-### Fixed
-- (없음)
+- **(BREAK) `surface.meta_*` underscore alias 4 종 제거** — `surface.meta_set` / `surface.meta_get` / `surface.meta_unset` / `surface.meta_list`. 새 이름 `surface.meta.set` / `.get` / `.unset` / `.list` 만 유효. (deprecation 워닝 운영 기간 종료.) 외부 스크립트에 옛 이름이 박혀 있다면 점 표기로 교체 필요.

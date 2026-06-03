@@ -34,6 +34,8 @@
 
 baseline 시점의 schema를 기록한다. 이후 모든 변경은 `[Unreleased]`에 적은 뒤 릴리스 시 버전 헤더로 옮긴다.
 
+> **호스트 결합**: tasty 본체 **0.7.0** (2026-06-04) 부터 `api_version = 1` 시리즈가 안정 선언된다. 이후 본 시리즈에서는 추가만 가능하며, schema break 는 `api_version = 2` 도입과 함께 별도 트랙으로 분리된다 ([`docs/dev-guide/ipc-stability.md`](../../docs/dev-guide/ipc-stability.md)).
+
 ### 핵심 메시지
 
 - `AuthMessage { plugin_id, token }` — 호스트 listener에 첫 줄로 송신
