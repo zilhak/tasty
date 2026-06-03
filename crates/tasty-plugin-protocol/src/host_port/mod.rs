@@ -5,7 +5,9 @@
 //! 이를 통해 manager 와 의존 도메인을 모두 별도 crate 로 분리할 수 있다.
 
 pub mod file;
+pub mod i18n;
 pub mod surface;
 
 pub use file::{FileFormatRegistryPort, FileHandlerRegistryPort};
+pub use i18n::I18nNamespaceRegistrar;
 pub use surface::SurfaceRegistry;

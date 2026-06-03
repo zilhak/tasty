@@ -149,6 +149,7 @@ impl App {
             let mut mgr =
                 plugin::PluginManager::with_registries(factory, file_format, file_handler);
             mgr.set_surface_registry(surface_registry);
+            mgr.set_i18n_registrar(std::sync::Arc::new(crate::i18n::BinI18nRegistrar));
             plugin::install_builtins_if_needed(&mut mgr);
             mgr.packages = plugin::discover();
             mgr.discover_and_start();

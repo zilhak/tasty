@@ -248,6 +248,19 @@ pub fn unregister_namespace(namespace: &str) {
     }
 }
 
+/// Plugin manager 가 의존하는 trait 의 본 바이너리 impl. boot wiring 에서
+/// `Arc::new(BinI18nRegistrar)` 로 주입.
+pub struct BinI18nRegistrar;
+
+impl tasty_plugin_protocol::host_port::I18nNamespaceRegistrar for BinI18nRegistrar {
+    fn register(&self, namespace: &str, lang_dir: &Path) {
+        register_namespace(namespace, lang_dir);
+    }
+    fn unregister(&self, namespace: &str) {
+        unregister_namespace(namespace);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

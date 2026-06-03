@@ -77,7 +77,16 @@ impl PluginManager {
             next_popup_instance_id: 1,
             file_format,
             file_handler,
+            i18n_registrar: None,
         }
+    }
+
+    /// 호스트가 i18n namespace 등록 trait 을 주입. headless/test 는 호출 안 함.
+    pub fn set_i18n_registrar(
+        &mut self,
+        registrar: Arc<dyn tasty_plugin_protocol::host_port::I18nNamespaceRegistrar>,
+    ) {
+        self.i18n_registrar = Some(registrar);
     }
 
     /// plugin에 grant된 권한 set을 갱신. 매니페스트 hello 시점 또는 사용자가
@@ -106,7 +115,9 @@ impl PluginManager {
             // i18n namespace 등록 — 비활성 plugin도 설정 UI에서 command title을
             // 번역해서 보여줘야 하므로 disabled 여부와 무관하게 등록한다.
             let lang_dir = pkg.dir.join(&pkg.manifest.lang_dir);
-            crate::i18n::register_namespace(&pkg.manifest.id, &lang_dir);
+            if let Some(reg) = &self.i18n_registrar {
+                reg.register(&pkg.manifest.id, &lang_dir);
+            }
         }
 
         self.recompute_extensions();

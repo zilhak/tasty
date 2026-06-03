@@ -279,6 +279,8 @@ pub struct PluginManager {
     pub file_format: Arc<crate::file::format::FileFormatRegistry>,
     /// 파일 핸들러 시스템. plugin enable/disable 시 handler 추가/제거.
     pub file_handler: Arc<crate::file::handler::FileHandlerRegistry>,
+    /// i18n namespace 등록 trait. None 이면 등록 skip (headless/test).
+    pub i18n_registrar: Option<Arc<dyn tasty_plugin_protocol::host_port::I18nNamespaceRegistrar>>,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.
