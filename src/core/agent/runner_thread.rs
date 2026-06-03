@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tasty_agent::runner::RunnerLoop;
-use tasty_agent::{SemaphoreStore, TaskResult, TaskState, TaskStore};
+use tasty_agent::{LeaseStore, SemaphoreStore, TaskResult, TaskState, TaskStore};
 use tasty_memory::HOST_OWNER;
 
 use super::runner_host::{HostExecutor, RunnerContext};
@@ -240,8 +240,81 @@ fn purge_stale_semaphore_holders(ctx: &RunnerContext, workspace_id: u32) {
     );
 }
 
+/// S1 보강: 호스트 재시작 후 *영속된* lease holder 정화.
+///
+/// semaphore purge 와 같은 정책 — `metadata.lease.holder == task.id` 인 Running task 만
+/// 정화 대상. 그 외 (외부 도구 또는 사용자 명시 holder) 는 그대로 보존.
+fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) {
+    let now = now_ms();
+    let candidates: Vec<(String, String, String)> = ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        let Ok(tasks) = store.list(workspace_id) else {
+            return Vec::new();
+        };
+        tasks
+            .into_iter()
+            .filter(|t| matches!(t.state, TaskState::Running))
+            .filter_map(|t| {
+                let meta = t.metadata.get("lease")?.as_object()?;
+                let resource = meta.get("resource")?.as_str()?.to_string();
+                let holder = meta
+                    .get("holder")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(t.id.as_str())
+                    .to_string();
+                if holder != *t.id.as_str() {
+                    return None;
+                }
+                Some((t.id, resource, holder))
+            })
+            .collect()
+    });
+    if candidates.is_empty() {
+        return;
+    }
+    ctx.with_memory(|mem| {
+        let seq = ctx.agent_seq.clone();
+        {
+            let mut lstore = LeaseStore::new(mem, HOST_OWNER);
+            for (_task_id, resource, holder) in &candidates {
+                let _ = lstore.release(workspace_id, resource, holder); // idempotent
+            }
+        }
+        let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+        for (task_id, _, _) in &candidates {
+            if let Err(e) = store.set_result(
+                workspace_id,
+                task_id,
+                TaskResult {
+                    exit_code: None,
+                    output: None,
+                    error: Some("host restart".to_string()),
+                },
+            ) {
+                tracing::warn!("purge(lease) set_result for {task_id} failed: {e}");
+            }
+            if let Err(e) = store.set_state(
+                workspace_id,
+                task_id,
+                TaskState::Failed {
+                    error: "host restart".to_string(),
+                },
+                now,
+            ) {
+                tracing::warn!("purge(lease) set_state for {task_id} failed: {e}");
+            }
+        }
+    });
+    tracing::info!(
+        "agent runner ws{workspace_id}: purged {} stale lease holder(s) on restart",
+        candidates.len()
+    );
+}
+
 fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) {
     purge_stale_semaphore_holders(&ctx, workspace_id);
+    purge_stale_lease_holders(&ctx, workspace_id);
     let executor = HostExecutor::new(ctx.clone());
     let mut runner = RunnerLoop::new(executor);
     loop {

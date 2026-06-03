@@ -13,8 +13,8 @@ use std::time::Duration;
 use serde_json::json;
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, TaskExecutor};
 use tasty_agent::{
-    BarrierState, BarrierStore, ReducerInput, SemaphoreStore, Task, TaskCommand, TaskId,
-    TaskResult, reduce_with_custom,
+    AgentError, BarrierState, BarrierStore, LeaseMode, LeaseStore, ReducerInput, SemaphoreStore,
+    Task, TaskCommand, TaskId, TaskResult, reduce_with_custom,
 };
 use tasty_memory::{HOST_OWNER, MemoryStorage};
 
@@ -66,6 +66,9 @@ pub struct HostExecutor {
     /// in-memory only. 호스트 재시작 시 비어 있게 되므로 [`crate::core::agent::runner_thread`]
     /// 의 시작 시 정화 단계가 영속 holder 를 회수.
     held_permits: HashMap<TaskId, (u32, String, String)>,
+    /// 본 executor 가 dispatch 시 점유한 lease — (workspace_id, resource, holder).
+    /// semaphore 와 같은 정책: in-memory only, 재시작 시 runner_thread 의 purge 가 회수.
+    held_leases: HashMap<TaskId, (u32, String, String)>,
 }
 
 impl HostExecutor {
@@ -74,6 +77,7 @@ impl HostExecutor {
             ctx,
             shell_children: HashMap::new(),
             held_permits: HashMap::new(),
+            held_leases: HashMap::new(),
         }
     }
 
@@ -109,23 +113,102 @@ impl HostExecutor {
         }
         Ok(Some(acquired))
     }
+
+    /// `task.metadata.lease` 컨벤션을 읽어 lease 점유 시도.
+    /// metadata 형식: `{ resource: String, holder?: String, ttl_ms?: u64, mode?: "fail"|"block" }`.
+    /// 반환: `Ok(None)` = 미사용, `Ok(Some(true))` = 점유, `Ok(Some(false))` = 충돌 (Block 모드),
+    /// `Err(msg)` = Fail 모드 충돌 또는 store 오류.
+    fn try_acquire_lease(&mut self, task: &Task) -> Result<Option<bool>, String> {
+        let Some(meta) = task.metadata.get("lease").and_then(|v| v.as_object()) else {
+            return Ok(None);
+        };
+        let resource = meta
+            .get("resource")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "lease metadata: missing 'resource'".to_string())?;
+        let holder = meta
+            .get("holder")
+            .and_then(|v| v.as_str())
+            .unwrap_or(task.id.as_str());
+        let ttl_ms = meta.get("ttl_ms").and_then(|v| v.as_u64());
+        let mode = match meta.get("mode").and_then(|v| v.as_str()) {
+            Some("fail") => LeaseMode::Fail,
+            // Block 가 dispatch 컨벤션 (semaphore 와 일관: 부족 → Deferred → 다음 tick).
+            None | Some("block") => LeaseMode::Block,
+            Some(other) => {
+                return Err(format!(
+                    "lease metadata: invalid mode '{other}' (expected 'fail'|'block')"
+                ));
+            }
+        };
+        let resource = resource.to_string();
+        let holder = holder.to_string();
+        let ws = task.workspace_id;
+        let now = now_ms();
+        let result: Result<bool, String> = self.ctx.with_memory(|mem| {
+            let mut store = LeaseStore::new(mem, HOST_OWNER);
+            match store.acquire(ws, &resource, &holder, ttl_ms, mode, now) {
+                Ok(o) => Ok(o.acquired),
+                Err(AgentError::LeaseConflict { resource, holder }) => {
+                    Err(format!("lease conflict: '{resource}' held by '{holder}'"))
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        });
+        let acquired = result?;
+        if acquired {
+            self.held_leases
+                .insert(task.id.clone(), (ws, resource, holder));
+        }
+        Ok(Some(acquired))
+    }
+
+    /// task 가 점유 중인 lease 가 있으면 release. release_permit 안에서 호출.
+    fn release_lease(&mut self, task_id: &TaskId) {
+        let Some((ws, resource, holder)) = self.held_leases.remove(task_id) else {
+            return;
+        };
+        let res: Result<(), String> = self.ctx.with_memory(|mem| {
+            let mut store = LeaseStore::new(mem, HOST_OWNER);
+            store
+                .release(ws, &resource, &holder)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        });
+        if let Err(e) = res {
+            tracing::warn!("lease release failed for task {task_id} ({resource}/{holder}): {e}");
+        }
+    }
 }
 
 impl TaskExecutor for HostExecutor {
     fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
-        // Phase I.A.3: semaphore-gated dispatch. metadata.semaphore 가 있으면 acquire
-        // 시도. 점유 실패 시 Deferred — state 전이 없이 다음 tick 재시도.
-        match self.try_acquire_semaphore(task) {
+        // Phase J.A.S1: lease + semaphore-gated dispatch. lease → semaphore 순서
+        // (lease 가 conflict 잦고 더 가벼움). 어느 한쪽이라도 막 점유한 후 다음 게이트가
+        // 실패하면 점유한 자원 즉시 release (idempotent).
+        match self.try_acquire_lease(task) {
             Ok(None) => {}
             Ok(Some(true)) => {}
             Ok(Some(false)) => return DispatchOutcome::Deferred,
-            Err(e) => return DispatchOutcome::PermanentFail(format!("semaphore: {e}")),
+            Err(e) => return DispatchOutcome::PermanentFail(format!("lease: {e}")),
+        }
+        match self.try_acquire_semaphore(task) {
+            Ok(None) => {}
+            Ok(Some(true)) => {}
+            Ok(Some(false)) => {
+                self.release_lease(&task.id);
+                return DispatchOutcome::Deferred;
+            }
+            Err(e) => {
+                self.release_lease(&task.id);
+                return DispatchOutcome::PermanentFail(format!("semaphore: {e}"));
+            }
         }
         let result = match self.dispatch_command(task) {
             Ok(h) => DispatchOutcome::Started(h),
             Err(e) => DispatchOutcome::PermanentFail(e),
         };
-        // dispatch 가 실패하면 막 점유한 permit 을 즉시 반환 (release 는 idempotent).
+        // dispatch 가 실패하면 막 점유한 자원을 즉시 반환.
         if matches!(result, DispatchOutcome::PermanentFail(_)) {
             self.release_permit(&task.id);
         }
@@ -137,19 +220,22 @@ impl TaskExecutor for HostExecutor {
     }
 
     fn release_permit(&mut self, task_id: &TaskId) {
-        let Some((ws, name, holder)) = self.held_permits.remove(task_id) else {
-            return;
-        };
-        let res: Result<(), String> = self.ctx.with_memory(|mem| {
-            let mut store = SemaphoreStore::new(mem, HOST_OWNER);
-            store
-                .release(ws, &name, &holder)
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        });
-        if let Err(e) = res {
-            tracing::warn!("semaphore release failed for task {task_id} ({name}/{holder}): {e}");
+        // semaphore permit + lease 모두 정리 — 의미는 "이 task 의 모든 자원 해제".
+        if let Some((ws, name, holder)) = self.held_permits.remove(task_id) {
+            let res: Result<(), String> = self.ctx.with_memory(|mem| {
+                let mut store = SemaphoreStore::new(mem, HOST_OWNER);
+                store
+                    .release(ws, &name, &holder)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            });
+            if let Err(e) = res {
+                tracing::warn!(
+                    "semaphore release failed for task {task_id} ({name}/{holder}): {e}"
+                );
+            }
         }
+        self.release_lease(task_id);
     }
 }
 

@@ -7,8 +7,8 @@ use std::sync::atomic::AtomicU64;
 use tasty_agent::runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
 use tasty_agent::task::TaskCreateOpts;
 use tasty_agent::{
-    BarrierState, BarrierStore, OnFailure, SemaphoreStore, Task, TaskCommand, TaskId, TaskResult,
-    TaskState, TaskStore,
+    BarrierState, BarrierStore, LeaseMode, LeaseStore, OnFailure, SemaphoreStore, Task,
+    TaskCommand, TaskId, TaskResult, TaskState, TaskStore,
 };
 use tasty_memory::MemoryStore;
 use tempfile::TempDir;
@@ -645,5 +645,247 @@ fn wait_barrier_task_succeeds_after_signals() {
             store.get(1, &wb_id).unwrap().unwrap().state,
             TaskState::Succeeded
         );
+    }
+}
+
+// =====================================================================
+// Phase J.A.S1 — lease-gated dispatch 통합 시나리오.
+// SemaphoreAwareExec 의 lease 변형. dispatch 시 metadata.lease 의
+// resource/holder 로 LeaseStore::acquire 호출. block 모드 + 점유 충돌 시 Deferred.
+// =====================================================================
+
+struct LeaseAwareExec {
+    mem: Rc<RefCell<MemoryStore>>,
+    polls: HashMap<String, std::collections::VecDeque<PollOutcome>>,
+    handle_to_task: HashMap<u32, String>,
+    held_leases: HashMap<TaskId, (u32, String, String)>,
+    next_pid: u32,
+}
+
+impl LeaseAwareExec {
+    fn new(mem: Rc<RefCell<MemoryStore>>) -> Self {
+        Self {
+            mem,
+            polls: HashMap::new(),
+            handle_to_task: HashMap::new(),
+            held_leases: HashMap::new(),
+            next_pid: 1,
+        }
+    }
+    fn script(&mut self, task_id: &str, outcomes: Vec<PollOutcome>) {
+        self.polls
+            .insert(task_id.to_string(), outcomes.into_iter().collect());
+    }
+}
+
+impl TaskExecutor for LeaseAwareExec {
+    fn dispatch(&mut self, task: &Task) -> DispatchOutcome {
+        if let Some(meta) = task.metadata.get("lease").and_then(|v| v.as_object()) {
+            let resource = match meta.get("resource").and_then(|v| v.as_str()) {
+                Some(r) => r.to_string(),
+                None => return DispatchOutcome::PermanentFail("missing lease.resource".into()),
+            };
+            let holder = meta
+                .get("holder")
+                .and_then(|v| v.as_str())
+                .unwrap_or(task.id.as_str())
+                .to_string();
+            let mut mem = self.mem.borrow_mut();
+            let mut store = LeaseStore::new(&mut *mem, "_host");
+            let outcome = match store.acquire(
+                task.workspace_id,
+                &resource,
+                &holder,
+                None,
+                LeaseMode::Block,
+                0,
+            ) {
+                Ok(o) => o,
+                Err(e) => return DispatchOutcome::PermanentFail(format!("lease: {e}")),
+            };
+            if !outcome.acquired {
+                return DispatchOutcome::Deferred;
+            }
+            self.held_leases
+                .insert(task.id.clone(), (task.workspace_id, resource, holder));
+        }
+        let pid = self.next_pid;
+        self.next_pid += 1;
+        self.handle_to_task.insert(pid, task.id.clone());
+        DispatchOutcome::Started(DispatchHandle::ShellProcess { pid })
+    }
+
+    fn poll(&mut self, handle: &DispatchHandle) -> PollOutcome {
+        let pid = match handle {
+            DispatchHandle::ShellProcess { pid } => *pid,
+            _ => return PollOutcome::Active,
+        };
+        let task_id = match self.handle_to_task.get(&pid) {
+            Some(t) => t.clone(),
+            None => return PollOutcome::Active,
+        };
+        self.polls
+            .get_mut(&task_id)
+            .and_then(|q| q.pop_front())
+            .unwrap_or(PollOutcome::Active)
+    }
+
+    fn release_permit(&mut self, task_id: &TaskId) {
+        if let Some((ws, resource, holder)) = self.held_leases.remove(task_id) {
+            let mut mem = self.mem.borrow_mut();
+            let mut store = LeaseStore::new(&mut *mem, "_host");
+            let _ = store.release(ws, &resource, &holder); // idempotent
+        }
+    }
+}
+
+fn tick_lease_exec(
+    runner: &mut RunnerLoop<LeaseAwareExec>,
+    mem: &Rc<RefCell<MemoryStore>>,
+    seq: &AtomicU64,
+    now_ms: u64,
+) {
+    let snapshot = {
+        let mut m = mem.borrow_mut();
+        TaskStore::new(&mut *m, "_host", seq)
+            .list(1)
+            .unwrap_or_default()
+    };
+    let staged: RefCell<Vec<(String, Option<TaskResult>, Option<TaskState>)>> =
+        RefCell::new(Vec::new());
+    runner.tick(
+        1,
+        now_ms,
+        &snapshot,
+        |_ws, id, st, _now| {
+            let mut s = staged.borrow_mut();
+            match s.iter_mut().find(|(i, _, _)| i == id) {
+                Some((_, _, slot)) => *slot = Some(st),
+                None => s.push((id.clone(), None, Some(st))),
+            }
+            Ok(())
+        },
+        |_ws, id, r| {
+            let mut s = staged.borrow_mut();
+            match s.iter_mut().find(|(i, _, _)| i == id) {
+                Some((_, slot, _)) => *slot = Some(r),
+                None => s.push((id.clone(), Some(r), None)),
+            }
+            Ok(())
+        },
+    );
+    let mut m = mem.borrow_mut();
+    let mut store = TaskStore::new(&mut *m, "_host", seq);
+    for (id, r_opt, st_opt) in staged.into_inner() {
+        if let Some(r) = r_opt {
+            let _ = store.set_result(1, &id, r); // test helper — set 외 에러는 무시
+        }
+        if let Some(st) = st_opt {
+            let _ = store.set_state(1, &id, st, now_ms); // test helper — set 외 에러는 무시
+        }
+    }
+}
+
+#[test]
+fn lease_gated_dispatch_serializes_two_tasks() {
+    let td = tempfile::tempdir().expect("tempdir");
+    let mem = MemoryStore::open(&td.path().join("mem.db")).expect("mem");
+    let mem = Rc::new(RefCell::new(mem));
+    let seq = AtomicU64::new(0);
+
+    // 2 task: t-1, t-2 모두 lease=file:/shared, holder=task.id.
+    let (id1, id2) = {
+        let mut m = mem.borrow_mut();
+        let mut store = TaskStore::new(&mut *m, "_host", &seq);
+        let meta1 = serde_json::json!({ "lease": { "resource": "file:/shared" } });
+        let meta2 = serde_json::json!({ "lease": { "resource": "file:/shared" } });
+        let t1 = store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "t1".into(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Abort,
+                metadata: meta1,
+                now_ms: 1100,
+            })
+            .unwrap();
+        let t2 = store
+            .create(TaskCreateOpts {
+                workspace_id: 1,
+                name: "t2".into(),
+                command: run_cmd(),
+                depends_on: vec![],
+                on_failure: OnFailure::Abort,
+                metadata: meta2,
+                now_ms: 1101,
+            })
+            .unwrap();
+        (t1.id, t2.id)
+    };
+
+    // holder 컨벤션을 task.id 로 set.
+    {
+        let mut m = mem.borrow_mut();
+        let mut store = TaskStore::new(&mut *m, "_host", &seq);
+        for tid in [&id1, &id2] {
+            let mut t = store.get(1, tid).unwrap().unwrap();
+            t.metadata = serde_json::json!({
+                "lease": { "resource": "file:/shared", "holder": tid }
+            });
+            store.put(&t).unwrap();
+        }
+    }
+
+    let mut exec = LeaseAwareExec::new(mem.clone());
+    exec.script(
+        &id1,
+        vec![PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        })],
+    );
+    exec.script(
+        &id2,
+        vec![PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: None,
+            error: None,
+        })],
+    );
+
+    let mut runner = RunnerLoop::new(exec);
+
+    // tick 1: t-1 acquire 성공 → Running. t-2 는 Block 모드 → acquired=false → Deferred.
+    tick_lease_exec(&mut runner, &mem, &seq, 2000);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        let t1 = store.get(1, &id1).unwrap().unwrap();
+        let t2 = store.get(1, &id2).unwrap().unwrap();
+        assert_eq!(t1.state, TaskState::Running, "t1 acquired lease");
+        assert_eq!(t2.state, TaskState::Ready, "t2 deferred");
+    }
+
+    // tick 2: t-1 poll → Done → Succeeded → release_lease. 같은 tick 의 Ready arm 에서
+    // t-2 가 새로 release 된 lease 를 acquire → Running.
+    tick_lease_exec(&mut runner, &mem, &seq, 2500);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        let t1 = store.get(1, &id1).unwrap().unwrap();
+        let t2 = store.get(1, &id2).unwrap().unwrap();
+        assert_eq!(t1.state, TaskState::Succeeded);
+        assert_eq!(t2.state, TaskState::Running, "t2 acquired after release");
+    }
+
+    // tick 3: t-2 poll → Done → Succeeded.
+    tick_lease_exec(&mut runner, &mem, &seq, 3000);
+    {
+        let mut m = mem.borrow_mut();
+        let store = TaskStore::new(&mut *m, "_host", &seq);
+        let t2 = store.get(1, &id2).unwrap().unwrap();
+        assert_eq!(t2.state, TaskState::Succeeded);
     }
 }
