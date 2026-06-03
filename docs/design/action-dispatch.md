@@ -327,7 +327,7 @@ Tasty의 개발 정책상 다음 차이를 둔다. **dispatcher가 강제 거부
 > 중 하나. release 빌드의 Domain Intent 처리 흐름은 UI Intent 를 발화할 수 없으며,
 > 이는 *타입 차원에서 강제* 한다 (Core 가 `UiIntent` 를 모름). GUI adapter
 > 안에서만 UI Intent 발화 가능. 자동 popup / 자동 toast / 자동 dialog 는 release
-> 빌드에 존재하지 않는다. 상세: `../../.claude-workspace/plans/phase-d/intent-ui-vs-domain.md`,
+> 빌드에 존재하지 않는다. 상세: `../../.claude-workspace/plans/archived/phase-d/intent-ui-vs-domain.md`,
 > 자매 정책: `toast-system.md` "트리거 정책 (CRITICAL)", `popup-system.md`
 > "Popup 발화 정책 (CRITICAL)".
 
