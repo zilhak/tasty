@@ -22,14 +22,23 @@
 
 ---
 
-## Phase 3: tasty-ipc 분리 — **비권장 유지 (분리 안 됨)**
+## Phase 3: tasty-ipc 분리 — **완료 (반전, Phase F.B)**
 
-옛 분석: `tasty-ipc-protocol` (131 LOC), `tasty-ipc-server` (196 LOC) 둘 다 비권장.
+옛 분석: `tasty-ipc-protocol` (131 LOC), `tasty-ipc-server` (196 LOC) 둘 다 비권장 →
+**Phase F.B 에서 통합 crate `tasty-ipc` 로 분리**.
 
-- **현재 위치**: `src/app/ipc/`, `src/adapters/ipc/`, `src/ports/ipc_server.rs` 에 분산.
-- **현재 LOC**: 옛 327 LOC 대비 *수천 LOC 로 성장* (handler 다수 추가) 했지만 분리 trigger 도달 안 함.
-- **회고**: 옛 비권장 판정 사유 (*tasty 고유 로직 (포트 파일 경로 / handler / approval) 의 응집*, *외부 재사용 가치 미미*) 가 현재도 그대로. 오히려 plugin 시스템 추가로 `host_api::ipc::handler::plugin` 같은 *본 바이너리 전용* handler 가 더 증가 — 분리는 추가 부담 발생.
-- **재검토 trigger**: 외부 도구가 *tasty IPC wire format 만* 사용해 host 와 통신할 use case 가 발생할 때. 현재까지 0.
+- **현재 위치**: `crates/tasty-ipc/` — JSON-RPC 2.0 envelope + alias + caller + audit +
+  method_meta + port_file + session 일괄. 옛 *protocol / server 2 crate 분리안* 대신
+  *통합 1 crate* 로 진입.
+- **반전 사유**: 옛 비권장의 *외부 재사용 가치 미미* 판정이 *호스트 측 facade 격리*
+  라는 새 분기점에 뒤집힘. plugin host 가 IPC handler/router 의 의존을 *facade trait*
+  (`IpcHostFacade`) 를 통해서만 접근하도록 격리하는 비용이 *crate 경계* 와 동일 —
+  분리가 격리 비용을 줄임. 본 바이너리에 남은 `src/host_api/ipc/handler/` 는 plugin
+  시스템 전용 handler (host-side dispatch) 로 *분리되지 않은 잔존* 이지만, 와이어
+  포맷 / session / port 파일 / alias / caller / audit / method_meta 는 모두 crate
+  내로 이전 완료.
+- **외부 재사용**: 현재까지 0. 옛 비권장의 *재사용 가치 미미* 판정 자체는 그대로
+  유효 — 분리 trigger 는 *호스트 측면의 격리 가치* 였다.
 
 ---
 
@@ -76,6 +85,54 @@
   - plugin 이 *host 의 알림 도메인 타입* 을 직접 import 해야 할 use case 발생 시 → `tasty-notification` 으로 분리 후 plugin-sdk 가 재수출.
   - 현재까지 plugin 은 IPC wire format 만 사용 → 도메인 타입 노출 불필요 → 분리 trigger 미도달.
 - **G.E 시점 (2026-06-03) trigger 미도달 — 분리 보류**. `grep -rn "use crate::ports::notification_sound\|crate::ports::notification_sound" crates/` = 0건 (plugin importer 0). 본 바이너리 내부 importer 는 7곳 (`grep -rn "use crate::ports::notification_sound" src/ | wc -l = 7` — main / core/builder / core/mod / boot/wiring / production/notification_sound/{mod,macos,windows,linux} 일부). F.E NotificationSoundPlayer port 도입에도 *외부 노출 지점 0*. 분리 시 본 바이너리만 영향 받고 외부 이득 없음. 차후 plugin 이 NotificationSoundPlayer trait 직접 의존 시점 재평가.
+
+---
+
+## Phase 7: tasty-plugin-manifest 분리 — **완료 (Phase F.B)**
+
+옛 분석에 미존재 (plugin 시스템 자체가 2026 신규). F.B 에서 신설.
+
+- **현재 위치**: `crates/tasty-plugin-manifest/` — `tasty-plugin.toml` 스키마 / 파서 +
+  `SurfaceKindDecl` (+ F.H `default_colors`) + `[[contributes.*]]` (cli / surface_kind /
+  tool / detector / handler / window) + `permissions` + `CliSubcommandDecl` (+ F.H
+  `[polling]`).
+- **분리 사유**: 호스트와 plugin SDK 양쪽이 manifest 스키마를 *공통 schema source*
+  로 참조. 본 바이너리에 두면 plugin-sdk 가 호스트 코드를 import 해야 하므로 layering
+  invariant 위반. *type-\* 와 유사하게 의존 0 도메인-IO crate* 로 격리.
+- **외부 의존**: serde / toml 만. 워크스페이스 내 다른 crate 의존 0 — type-\* 와 같은
+  leaf 패턴.
+
+---
+
+## Phase 8: tasty-host-plugin 분리 — **완료 (Phase F.B)**
+
+옛 분석에 미존재. F.B 에서 신설.
+
+- **현재 위치**: `crates/tasty-host-plugin/` — 호스트 측 plugin 매니저 / process /
+  handle_channel / discovery / event_bus / registry_state / remote_kind / remote_surface
+  / ipc_namespace / command_registry / extension_registry / tool_registry / host_actions
+  / host_cmd / host_rendered_kind / popup_render / ui_tree(_render) (17 모듈).
+- **분리 사유**: `src/host_api/plugin*` 모듈군이 본 바이너리에서 ~15k LOC 비중을
+  차지하며 *plugin-protocol + plugin-manifest + terminal + shm* 만 의존 → 본
+  바이너리에서 떼어내도 다른 본체 모듈에 영향 없음. 본 바이너리는 *Engine 측 어댑터
+  (`src/plugin_bridge/`)* 만 잔존.
+- **외부 가치**: 현재까지 0. 외부 host (대안 GUI / headless wrapper) 가 plugin 호스팅
+  로직만 재사용할 use case 발생 시 가치 ↑.
+
+---
+
+## Phase 9: tasty-cli 분리 — **완료 (Phase F.B)**
+
+옛 분석에 미존재. F.B 에서 신설.
+
+- **현재 위치**: `crates/tasty-cli/` — clap 기반 CLI 클라이언트 (request / format /
+  transport / dynamic plugin subcommand / polling loop / args).
+- **분리 사유**: CLI 가 호스트 IPC port 파일 (`~/.tasty/tasty.port`) 만 의존하므로
+  본 바이너리 (GUI 진입점) 와 *완전 독립*. CLI 모드 빌드 시 GUI 트리 전체를 dead
+  code 로 끌고 가는 비용 회피. polling 옵션 (F.H 부속) 도 이 crate 가 manifest 의
+  `[polling]` 을 읽어 *반복 IPC 호출 → terminal_states 도달 시 종료* 흐름을 처리.
+- **외부 의존**: clap / serde_json + `tasty-plugin-manifest` (polling 옵션 read) 만.
+  본 바이너리는 cli crate 를 *최상위 진입점만* 호출.
 
 ---
 
