@@ -4,6 +4,7 @@ mod pipeline;
 mod shaders;
 mod types;
 
+use std::cell::Cell;
 use std::ops::Range;
 
 use tasty_type_appearance::color::{GpuRgb, GpuRgba};
@@ -103,6 +104,11 @@ pub struct CellRenderer {
     /// `append_terminal_viewport` call. Set at the start of accumulation
     /// for a surface and read by per-cell push helpers.
     pub(crate) current_viewport_offset: [f32; 2],
+    /// Per-frame draw call counters (set inside `render_all`). `Cell` 으로
+    /// interior mutability 를 부여해 `&self` 시그니처를 유지한 채
+    /// `wgpu::RenderPass<'a>` 와 묶인 lifetime 충돌을 회피한다.
+    last_frame_bg_draws: Cell<u32>,
+    last_frame_glyph_draws: Cell<u32>,
 }
 
 impl CellRenderer {
@@ -125,6 +131,8 @@ impl CellRenderer {
         self.bg_instances.clear();
         self.glyph_instances.clear();
         self.surface_ranges.clear();
+        self.last_frame_bg_draws.set(0);
+        self.last_frame_glyph_draws.set(0);
         self.atlas.begin_frame();
     }
 
@@ -598,6 +606,8 @@ impl CellRenderer {
                 let (x, y, w, h) = clip_scissor(rect, surface_width, surface_height);
                 render_pass.set_scissor_rect(x, y, w, h);
                 render_pass.draw(0..6, bg_range.clone());
+                self.last_frame_bg_draws
+                    .set(self.last_frame_bg_draws.get() + 1);
             }
         }
 
@@ -612,8 +622,28 @@ impl CellRenderer {
                 let (x, y, w, h) = clip_scissor(rect, surface_width, surface_height);
                 render_pass.set_scissor_rect(x, y, w, h);
                 render_pass.draw(0..6, gl_range.clone());
+                self.last_frame_glyph_draws
+                    .set(self.last_frame_glyph_draws.get() + 1);
             }
         }
+    }
+
+    /// Frame 종료 시점의 draw call 카운트 `(bg, glyph, total)`. `render_all`
+    /// 직후 (render() 끝) 에 호출되는 의미. `RenderPass::draw()` 호출만 셈 —
+    /// `set_pipeline` / `set_scissor_rect` 는 포함하지 않음.
+    pub fn draw_call_count(&self) -> (u32, u32, u32) {
+        let bg = self.last_frame_bg_draws.get();
+        let gl = self.last_frame_glyph_draws.get();
+        (bg, gl, bg + gl)
+    }
+
+    /// 활성 (bg 또는 glyph range 비어있지 않은) surface 의 수.
+    /// `regions` 의 변수 type 에 의존하지 않고 draw 결과로부터 직접 센다.
+    pub fn active_surface_count(&self) -> u32 {
+        self.surface_ranges
+            .iter()
+            .filter(|(_, bg, gl)| !bg.is_empty() || !gl.is_empty())
+            .count() as u32
     }
 
     /// Get cell width in pixels.

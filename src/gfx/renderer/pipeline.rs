@@ -294,6 +294,8 @@ impl CellRenderer {
             glyph_instances: Vec::with_capacity(300 * 100),
             surface_ranges: Vec::with_capacity(8),
             current_viewport_offset: [0.0, 0.0],
+            last_frame_bg_draws: std::cell::Cell::new(0),
+            last_frame_glyph_draws: std::cell::Cell::new(0),
         }
     }
 
