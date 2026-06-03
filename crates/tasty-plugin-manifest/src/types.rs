@@ -592,6 +592,32 @@ pub struct CliSubcommandDecl {
     /// `CliArg.stdin_field` 또는 (없으면) `CliArg.name`.
     #[serde(default)]
     pub stdin_json: bool,
+    /// 있으면 CLI 가 *1 회 응답 + 즉시 종료* 가 아니라, `terminal_states` 중
+    /// 하나에 도달하거나 `--timeout` 초가 지날 때까지 *반복 IPC 호출* 한다.
+    /// `tasty claude wait` 처럼 *진짜 blocking subprocess* 가 필요한 경우 활성화.
+    /// timeout 도달 시 마지막 응답을 그대로 출력한다.
+    #[serde(default)]
+    pub polling: Option<PollingDecl>,
+}
+
+/// CLI 명령이 *blocking polling* 모드일 때의 설정.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PollingDecl {
+    /// IPC 응답 JSON 의 어떤 필드를 보고 terminal 판정할지. 보통 `"state"`.
+    pub state_field: String,
+    /// 이 값들 중 하나에 도달하면 polling 종료. 예: `["idle", "needs_input", "exited"]`.
+    pub terminal_states: Vec<String>,
+    /// polling 간격 (밀리초). 기본 500ms.
+    #[serde(default = "default_polling_interval_ms")]
+    pub interval_ms: u64,
+    /// `--timeout` 플래그 이름. CLI args 의 이 필드 (u32) 가 초 단위 timeout.
+    /// 비어 있으면 무한 대기 (CLI process 가 죽을 때까지).
+    #[serde(default)]
+    pub timeout_field: Option<String>,
+}
+
+fn default_polling_interval_ms() -> u64 {
+    500
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
