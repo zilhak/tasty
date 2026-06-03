@@ -390,3 +390,32 @@ yes / no / maybe 판단 가능하도록 self-contained.
 - *sandbox 강제* 는 어느 생태계도 적극 채택하지 않음 — Tasty 의 *marketplace ↔
   sandbox 묶음* 도입은 *생태계 표준에서 벗어남*. 표준화 비용 vs 신뢰 확보 vs 외부
   plugin 작성자 진입 장벽의 trade-off 는 §8 의 trigger 발동 시점에 재평가.
+
+## 7. 구현 시 추정 부담 (측정 없음)
+
+만약 *trigger 발동 후* §0 의 권고 (Git tap → JSON index, GH OAuth, opt-in revocation,
+OS-level sandbox 강제) 를 모두 구현한다면 *호스트 측* 의 추정 부담:
+
+| 항목 | 추정 LOC (측정 없음) | 비고 |
+|------|---------------------|------|
+| Git tap (외부 plugin 5+ 시점) | ~150 | `tasty plugin install <id>` 가 git URL 추론 + clone, lifecycle.rs 의 path 분기 확장 |
+| `tasty plugin update <id>` | ~100 | version compare + 새 tarball fetch + atomic swap |
+| 권한 grant prompt | ~80 | CLI TUI 또는 GUI popup (PopupDef 패턴), `--yes` flag 분기 |
+| 권한 risk score | ~50 | 토큰 → weight 매핑 테이블 + install/grant 시 색상화 |
+| OS-level sandbox 강제 | ~50 | `plugin-sandbox-evaluation.md §3` 의 sandbox 도입 후, marketplace 출처 추적 (`source` 필드) + spawn 시 분기 |
+| GH OAuth publisher | (호스트 외 — registry server) | 호스트 LOC 0, registry server ~300 (Express 류) + DB |
+| JSON index server (외부 plugin 20+ 시점) | (호스트 외) | 정적 JSON 생성 + 호스팅 (Cloudflare Pages 류) |
+| revocation 체크 | ~60 | online fetch, `--check-revocation` opt-in CLI flag |
+| **합계 (호스트만)** | **~490** | + registry 인프라 운영 (1 시간/주 추정) |
+
+비용 추정은 모두 *측정 없음*. POC 수행하지 않음 (본 평가의 범위).
+
+호스트 외 비용:
+
+- registry server: Cloudflare Pages 류 정적 호스팅 (free tier) + GH OAuth 인증 layer.
+  운영 1 인 (자원봉사 또는 maintainer) 의 *주 1 시간 추정*.
+- code signing infrastructure (§5.4): 별도 trigger, 본 합계에서 제외.
+
+→ 호스트 LOC ~490 은 0.7 까지의 plugin 시스템 (`plugin-ecosystem.md §1~6` 의 합계 추정
+~5000 LOC) 대비 10% 미만 — 즉 *trigger 발동 후 점진 도입* 의 부담은 작다. 그러나 *지금*
+도입 시 부담 / 가치 비율은 음수 (외부 plugin 0).
