@@ -1,6 +1,6 @@
-# Cargo Workspace 구조 — 현 28 crate 스냅샷
+# Cargo Workspace 구조 — 현 33 crate 스냅샷
 
-본 문서는 *현재* 워크스페이스 구조를 기록한 스냅샷이다. 옛 *2 crate 분리 후 설계안* 은 *이미 도달한 결과* 이상으로 확장됐다 (28 crate 도달). 옛 분리 의사결정 회고는 [`index.md`](index.md), 옛 실행 절차는 [`execution-plan.md`](execution-plan.md) 참조.
+본 문서는 *현재* 워크스페이스 구조를 기록한 스냅샷이다. 옛 *2 crate 분리 후 설계안* 은 *이미 도달한 결과* 이상으로 확장됐다 (33 crate 도달). 옛 분리 의사결정 회고는 [`index.md`](index.md), 옛 실행 절차는 [`execution-plan.md`](execution-plan.md) 참조.
 
 실측 시점: 2026-06-02 (`Cargo.toml` 기준).
 
@@ -17,7 +17,7 @@ tasty/
 │   ├── engine/  store/  intent/  state/  ports/
 │   ├── boot/  file/  platform/  db/
 │   └── ...                         # 모듈 상세는 ../index.md 의 "본 바이너리 모듈" 절
-└── crates/                         # 28 라이브러리 크레이트
+└── crates/                         # 33 라이브러리 크레이트
     ├── tasty-type-geometry/        # type-* layer (leaf)
     ├── tasty-type-appearance/
     ├── tasty-utils/
@@ -25,17 +25,22 @@ tasty/
     ├── tasty-settings/
     ├── tasty-font/
     ├── tasty-terminal/
+    ├── tasty-model/                # G.E (2026-06-03) 추가 — workspace/pane/tab/surface 도메인
     ├── tasty-hooks/
     ├── tasty-memory/
     ├── tasty-telemetry/
     ├── tasty-output/
     ├── tasty-approval/
     ├── tasty-agent/
-    ├── tasty-presets/
+    ├── tasty-presets/              # 주의: 자기 내부 crate::model:: 모듈은 tasty-model 과 무관 (cross-crate 의존 없음)
     ├── tasty-shm/
     ├── tasty-portscan/
     ├── tasty-update/
     ├── tasty-lua/
+    ├── tasty-ipc/                  # F.B 추가
+    ├── tasty-cli/                  # F.B 추가
+    ├── tasty-host-plugin/          # F.B 추가
+    ├── tasty-plugin-manifest/      # F.B 추가
     ├── tasty-plugin-protocol/      # Plugin layer
     ├── tasty-plugin-sdk/
     ├── tasty-plugin-claude/        # 번들 Plugin layer
@@ -73,7 +78,7 @@ authors = ["zilhak <zilhak1@gmail.com>"]
 license = "MIT"
 ```
 
-본 바이너리 `[dependencies]` 절에서 28 crate 모두 `path = "crates/..."` 형태로 직접 의존:
+본 바이너리 `[dependencies]` 절에서 33 crate 모두 `path = "crates/..."` 형태로 직접 의존:
 
 ```toml
 [dependencies]
@@ -226,10 +231,12 @@ workspace = true
   │     │                                └── tasty-utils
   │     ├─ tasty-themes ── tasty-type-appearance ── tasty-type-geometry
   │     │              └── tasty-utils
+  │     ├─ tasty-model ── tasty-terminal ── tasty-utils                      ← G.E 신규
+  │     │              └── tasty-type-geometry
   │     ├─ tasty-agent ── tasty-memory
   │     │              └── tasty-utils
   │     ├─ tasty-telemetry ── tasty-memory
-  │     ├─ tasty-presets ── tasty-utils
+  │     ├─ tasty-presets ── tasty-utils      (주의: tasty-presets 내부 crate::model:: 모듈은 tasty-model 과 별개 — cross-crate 의존 없음)
   │     ├─ tasty-font / tasty-terminal / tasty-hooks / tasty-output /
   │     │  tasty-approval / tasty-portscan / tasty-update / tasty-lua /
   │     │  tasty-shm ── (모두 외부 deps 만, 워크스페이스 내 의존 0)
@@ -267,6 +274,6 @@ workspace = true
 
 | 문서 | 설명 |
 |------|------|
-| [`index.md`](index.md) | 28 crate 현황 매트릭스 + 옛 8 후보 도달 상태 |
+| [`index.md`](index.md) | 33 crate 현황 매트릭스 + 옛 8 후보 도달 상태 |
 | [`execution-plan.md`](execution-plan.md) | Phase 별 완료 회고 + 미완 Phase trigger 재정의 |
 | [`../index.md`](../index.md) | 워크스페이스 / 모듈 / 의존성 DAG 권위본 |
