@@ -513,6 +513,28 @@ impl Default for FileHandlerRegistry {
     }
 }
 
+impl tasty_plugin_protocol::host_port::FileHandlerRegistryPort for FileHandlerRegistry {
+    fn install_plugin_handlers(&self, plugin_id: &str, handlers: &[serde_json::Value]) {
+        let mut decls: Vec<HandlerDecl<PluginHandlerActionDecl>> =
+            Vec::with_capacity(handlers.len());
+        for v in handlers {
+            match serde_json::from_value::<HandlerDecl<PluginHandlerActionDecl>>(v.clone()) {
+                Ok(d) => decls.push(d),
+                Err(e) => warn!(
+                    plugin = plugin_id,
+                    error = %e,
+                    "plugin handler decode failed"
+                ),
+            }
+        }
+        FileHandlerRegistry::install_plugin_handlers(self, plugin_id, &decls);
+    }
+
+    fn uninstall_plugin(&self, plugin_id: &str) {
+        FileHandlerRegistry::uninstall_plugin(self, plugin_id);
+    }
+}
+
 fn sort_handlers(v: &mut [FileHandler]) {
     v.sort_by(|a, b| {
         a.priority

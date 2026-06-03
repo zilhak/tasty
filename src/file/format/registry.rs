@@ -235,3 +235,22 @@ impl Default for FileFormatRegistry {
         Self::new()
     }
 }
+
+impl tasty_plugin_protocol::host_port::FileFormatRegistryPort for FileFormatRegistry {
+    fn install_plugin_detectors(&self, plugin_id: &str, detectors: &[serde_json::Value]) {
+        let mut decls: Vec<DetectorDecl> = Vec::with_capacity(detectors.len());
+        for v in detectors {
+            match serde_json::from_value::<DetectorDecl>(v.clone()) {
+                Ok(d) => decls.push(d),
+                Err(e) => {
+                    tracing::warn!("plugin '{plugin_id}' detector decode failed: {e} ({v:?})")
+                }
+            }
+        }
+        FileFormatRegistry::install_plugin_detectors(self, plugin_id, &decls);
+    }
+
+    fn uninstall_plugin(&self, plugin_id: &str) {
+        FileFormatRegistry::uninstall_plugin(self, plugin_id);
+    }
+}
