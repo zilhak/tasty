@@ -185,3 +185,32 @@ major bump 는 *API stability 선언* 의 성격을 가지므로 patch/minor 보
 변경이 메서드 제거 / 시그니처 BREAK? → major (X.0.0). 0.7.x 가 아닌 1.1.0 이나 2.0.0 으로 분기.
 ```
 
+## 0.7.1 첫 사례 walkthrough (가상)
+
+실제 0.7.1 hotfix 가 발생할 때 본 절차를 그대로 따른다. 사람 결정 0 을 목표.
+예시 hotfix: `fix(surface): close_after_eof 가 일부 셸에서 잘못된 시그널을 보냄`.
+
+1. **fix commit 작성** — `fix(surface): close_after_eof 잘못된 signal 송신 수정`. main 위에 1 commit.
+
+2. **CHANGELOG `[Unreleased]` 에 항목 추가** — root `CHANGELOG.md`:
+   ```markdown
+   ## [Unreleased]
+
+   ### Fixed
+   - `fix(surface)`: `surface.close_after_eof` 가 SIGTERM 대신 SIGHUP 으로 잘못 종료시키던 회귀 수정
+   ```
+   `plugin-protocol/CHANGELOG.md` 는 schema 변경이 없으므로 손대지 않는다.
+
+3. **테스트 실행** — `cargo test --workspace` 통과 확인. 특히 §"0.7.x 패치 release 가드" 의 4 개 테스트가 모두 green. break guard 가 fail 하면 본 변경이 patch 가 아니라 minor/major 라는 신호 — 분기 결정 트리로 복귀.
+
+4. **버전 bump** — `Cargo.toml` `version = "0.7.0"` → `"0.7.1"`. `cargo build` 로 `Cargo.lock` 갱신.
+
+5. **CHANGELOG promotion** — §1-A "패치 promotion 예시" 의 diff 그대로 적용 (`[Unreleased]` → `[0.7.1] - YYYY-MM-DD` + 빈 `[Unreleased]` 재추가). 위 fix entry 가 `[0.7.1]` 의 `### Fixed` 안에 들어간다.
+
+6. **bump commit** — `chore: bump version to 0.7.1`. body 에 `What's Changed` 섹션 작성 (§2 의 template). 본 body 가 GitHub release 노트로 노출됨.
+
+7. **tag + push** — `git tag v0.7.1` → `git push origin main --tags`. release.yml 의 5 job 모두 green 확인.
+
+8. **검증** — release page 의 노트 (= bump commit body) + 4 플랫폼 artifact + agent-guide 업로드 + draft 해제. §6 의 checklist 그대로.
+
+본 walkthrough 는 가상 시나리오 — 첫 실제 0.7.1 발생 시 본 절차에 따라 진행하고, 만약 마찰이 누적되면 `scripts/promote-unreleased.sh` (CHANGELOG promotion 자동화) 등 추가 도구를 그 시점에 작성 검토.
