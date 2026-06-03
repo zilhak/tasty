@@ -96,6 +96,7 @@ impl Plugin for ClaudePlugin {
             // pane.close)와 ClaudeState를 함께 조합하는 핸들러들.
             "claude.children" => handle_children(&self.state, &ctx.host, &ctx.params),
             "claude.wait" => handle_wait(&self.state, &ctx.host, &ctx.params),
+            "claude.wait_any" => handle_wait_any(&self.state, &ctx.host, &ctx.params),
             "claude.kill" => handle_kill(&mut self.state, &ctx.host, &ctx.params),
             // step 04c: PTY 송신 핸들러. surface.send IPC를 통해 자식 terminal에
             // text를 보낸다.

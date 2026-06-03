@@ -155,6 +155,20 @@ pub(crate) fn wait_decide(
     }
 }
 
+/// `claude.wait_any` IPC 핸들러 (skeleton — F.a). 실제 구현은 F.c 에서 채운다.
+///
+/// 여러 child 중 *먼저* idle / needs_input / exited 가 되는 것을 polling 으로
+/// 감지해 즉시 응답한다. CLI 측 `run_dynamic_client_polling` 이 매 tick
+/// (interval_ms) 마다 본 핸들러를 호출하며, 응답의 `state` 가
+/// terminal_states 매치되면 polling 종료.
+pub(crate) fn handle_wait_any(
+    _state: &ClaudeState,
+    _host: &HostHandle,
+    _params: &Value,
+) -> Result<Value, IpcMethodError> {
+    Ok(json!({ "state": "pending" }))
+}
+
 /// 호스트 `handle_claude_kill` 1:1 이주.
 /// 1. ClaudeState에서 (parent_surface_id, child_index) → child_surface_id 해석
 /// 2. `surface.locate` IPC로 pane_id 조회 (호스트의 `find_pane_for_surface`)

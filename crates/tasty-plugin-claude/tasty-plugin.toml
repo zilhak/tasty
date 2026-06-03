@@ -39,6 +39,7 @@ subcommands = [
     { name = "parent",    ipc_method = "claude.parent",    args = "parent_args",    description = "Show the parent of the specified Claude child" },
     { name = "tell",      ipc_method = "claude.tell",      args = "tell_args",      description = "Send a message to a Claude instance (multi-line, submits at end)" },
     { name = "wait",      ipc_method = "claude.wait",      args = "wait_args",      polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited"], interval_ms = 500, timeout_field = "timeout" }, description = "Wait for a child Claude instance to become idle / needs_input / exited" },
+    { name = "wait-any",  ipc_method = "claude.wait_any",  args = "wait_any_args",  polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited"], interval_ms = 500, timeout_field = "timeout" }, description = "Wait until any of the listed children becomes idle / needs_input / exited" },
     { name = "broadcast", ipc_method = "claude.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Claude instance" },
     { name = "kill",      ipc_method = "claude.kill",      args = "kill_args",      description = "Kill a child Claude instance by child index" },
     { name = "respawn",   ipc_method = "claude.respawn",   args = "respawn_args",   description = "Respawn a child Claude instance" },
@@ -87,6 +88,13 @@ flags = [
     { name = "surface", type = "u32", flag = "--surface", required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)" },
     { name = "child_index", type = "u32", flag = "--child",   required = true,  help = "Child index returned by `claude children` / `claude spawn`" },
     { name = "timeout", type = "u32", flag = "--timeout", required = false, help = "Timeout in seconds (default: 30)" },
+]
+
+[contributes.cli.arg_groups.wait_any_args]
+flags = [
+    { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "children", type = "string", flag = "--children", required = true,  help = "Comma-separated child indices (e.g. \"1,2,3\"). Returns when ANY listed child reaches idle / needs_input / exited; deterministic priority follows the input order." },
+    { name = "timeout",  type = "u32",    flag = "--timeout",  required = false, help = "Timeout in seconds (no default — omit means wait forever, same as `wait`)" },
 ]
 
 [contributes.cli.arg_groups.broadcast_args]
