@@ -140,6 +140,65 @@ fn wait_decide_returns_check_existence_when_child_in_state() {
     );
 }
 
+// ─── G.F.b: wait_any_decide 순수 함수 ─────────────────────────────────
+
+/// 모든 children 이 state 에 등록돼 있을 때 각각의 CheckExistence 가
+/// 입력 순서 그대로 수집된다.
+#[test]
+fn wait_any_decide_collects_all_candidates_when_present() {
+    let mut state = ClaudeState::default();
+    state.register_child(10, entry(100, 1));
+    state.register_child(10, entry(101, 2));
+    state.register_child(10, entry(102, 3));
+
+    let result = wait_any_decide(&state, 10, &[1, 2, 3]);
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0], (1, WaitDecision::CheckExistence(100)));
+    assert_eq!(result[1], (2, WaitDecision::CheckExistence(101)));
+    assert_eq!(result[2], (3, WaitDecision::CheckExistence(102)));
+}
+
+/// 일부 child 가 state 에 없을 때 그 자리에 Exited 가 들어가고 나머지
+/// 순서는 보존된다.
+#[test]
+fn wait_any_decide_marks_missing_children_as_exited() {
+    let mut state = ClaudeState::default();
+    state.register_child(10, entry(100, 1));
+    state.register_child(10, entry(102, 3));
+    // child_index 2 는 state 에 없음.
+
+    let result = wait_any_decide(&state, 10, &[1, 2, 3]);
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0], (1, WaitDecision::CheckExistence(100)));
+    assert_eq!(result[1], (2, WaitDecision::Exited));
+    assert_eq!(result[2], (3, WaitDecision::CheckExistence(102)));
+}
+
+/// R9 회피: children=[CheckExistence, Exited, CheckExistence] 순서일 때
+/// 결과 Vec 의 첫 원소는 Exited 가 아니라 첫 child 의 CheckExistence.
+/// caller 가 a 부터 평가하므로 a 가 terminal 이면 b 의 Exited 보다 우선.
+#[test]
+fn wait_any_decide_preserves_input_order_when_mixed_state() {
+    let mut state = ClaudeState::default();
+    state.register_child(10, entry(100, 1));
+    // child 2 는 state 에 없음 → Exited.
+    state.register_child(10, entry(102, 3));
+
+    let result = wait_any_decide(&state, 10, &[1, 2, 3]);
+    assert_eq!(result[0].0, 1);
+    assert!(matches!(result[0].1, WaitDecision::CheckExistence(_)));
+    assert_eq!(result[1].0, 2);
+    assert!(matches!(result[1].1, WaitDecision::Exited));
+}
+
+/// empty children slice 는 빈 Vec 반환 — caller 가 None-result 로 pending 결정.
+#[test]
+fn wait_any_decide_returns_empty_for_empty_input() {
+    let state = ClaudeState::default();
+    let result = wait_any_decide(&state, 10, &[]);
+    assert!(result.is_empty());
+}
+
 #[test]
 fn kill_finalize_removes_child_and_persists_only_when_needed() {
     let mut state = ClaudeState::default();

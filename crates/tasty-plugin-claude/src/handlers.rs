@@ -155,6 +155,30 @@ pub(crate) fn wait_decide(
     }
 }
 
+/// `wait-any` 의 *state-only* 결정. 입력 children 순서를 보존하며 각 child 의
+/// `WaitDecision` (`Exited` 또는 `CheckExistence`) 을 수집한다.
+///
+/// host IPC 없이 단위 테스트 가능. caller (`handle_wait_any`) 는 결과 Vec 을
+/// 입력 순서대로 iterate 하여 첫 *terminal* 을 결정한다 — `Exited` 면 즉시
+/// terminal, `CheckExistence` 는 host 확인 후 *non-active* 이면 terminal.
+///
+/// **순서 보존이 중요한 이유**: G.F-Q2 "순서대로 첫 매치" 정책. mixed
+/// early-return (Exited 즉시 반환 + CheckExistence 후보 누적) 은
+/// children=[a:CheckExistence→idle, b:Exited, c:CheckExistence→active] 같은
+/// 케이스에서 b 의 exited 가 a 의 idle 을 가로채 정책을 위반한다. 따라서
+/// 본 함수는 *모든 children 의 WaitDecision* 을 단순 collect 하고, 우선순위
+/// 평가는 caller 에게 넘긴다.
+pub(crate) fn wait_any_decide(
+    state: &ClaudeState,
+    parent_surface_id: u32,
+    children: &[u32],
+) -> Vec<(u32, WaitDecision)> {
+    children
+        .iter()
+        .map(|&i| (i, wait_decide(state, parent_surface_id, i)))
+        .collect()
+}
+
 /// `claude.wait_any` IPC 핸들러 (skeleton — F.a). 실제 구현은 F.c 에서 채운다.
 ///
 /// 여러 child 중 *먼저* idle / needs_input / exited 가 되는 것을 polling 으로
