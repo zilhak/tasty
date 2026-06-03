@@ -52,6 +52,7 @@ impl GpuState {
         engine: &crate::core::CoreState,
         focused_surface_id: Option<u32>,
         selection: Option<&crate::selection::TextSelection>,
+        vi_cursor: Option<(u32, crate::selection::SelectionPoint)>,
         _settings: &crate::settings::AppearanceSettings,
         preedit: Option<&super::ImePreeditState>,
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
@@ -90,6 +91,11 @@ impl GpuState {
                     .map(|s| (s.normalized(), theme.selection_bg.to_gpu_rgba()));
                 let sel_ref = sel_info.as_ref();
 
+                let vi_cursor_info = vi_cursor
+                    .filter(|(sid, _)| sid == surface_id)
+                    .map(|(_, pt)| (pt, theme.vi_cursor_bg.to_gpu_rgba()));
+                let vi_cursor_ref = vi_cursor_info.as_ref();
+
                 let render_preedit = preedit
                     .filter(|ime| ime.surface_id == *surface_id && !ime.text.is_empty())
                     .map(|ime| RenderPreedit {
@@ -124,6 +130,7 @@ impl GpuState {
                     fg,
                     is_focused,
                     sel_ref,
+                    vi_cursor_ref,
                     render_preedit_ref,
                     link_for_this,
                     search_ref,

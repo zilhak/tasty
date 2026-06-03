@@ -72,12 +72,14 @@ impl MainView {
                 .as_ref()
                 .map(|h| (h.surface_id, &h.highlight));
             let active_sel = self.active_text_selection();
+            let vi_cursor = self.vi_copy.as_ref().map(|v| (v.surface_id, v.cursor));
             match self.base.gpu.render(
                 &mut self.state,
                 &mut self.core_state,
                 &self.base.winit,
                 self.ime_preedit.as_ref(),
                 active_sel.as_ref(),
+                vi_cursor,
                 link_hover,
                 plugin_manager,
             ) {

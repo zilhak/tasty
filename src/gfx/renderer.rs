@@ -11,7 +11,7 @@ use termwiz::surface::Surface;
 
 use crate::font::{FontConfig, GlyphAtlas, GlyphKey};
 use crate::model::PhysicalRect;
-use crate::selection::NormalizedSelection;
+use crate::selection::{NormalizedSelection, SelectionPoint};
 use crate::terminal_link::LinkHighlight;
 
 /// Search match highlights to pass into the renderer.
@@ -142,6 +142,7 @@ impl CellRenderer {
         default_fg: GpuRgba,
         show_cursor: bool,
         selection: Option<&(NormalizedSelection, GpuRgba)>,
+        vi_cursor: Option<&(SelectionPoint, GpuRgba)>,
         preedit: Option<&RenderPreedit>,
         link: Option<&LinkHighlight>,
         search: Option<&SearchHighlights<'_>>,
@@ -182,6 +183,7 @@ impl CellRenderer {
                 ansi,
                 cursor,
                 selection,
+                vi_cursor,
                 row_offset,
                 preedit,
                 link,
@@ -221,6 +223,7 @@ impl CellRenderer {
                             ansi,
                             queue,
                             selection,
+                            vi_cursor,
                             source_line,
                             link,
                             search,
@@ -238,6 +241,7 @@ impl CellRenderer {
                             ansi,
                             queue,
                             selection,
+                            vi_cursor,
                             source_line,
                             link,
                             search,
@@ -283,6 +287,7 @@ impl CellRenderer {
         ansi: &[GpuRgb; 16],
         cursor: Option<(usize, usize, bool)>,
         selection: Option<&(NormalizedSelection, GpuRgba)>,
+        vi_cursor: Option<&(SelectionPoint, GpuRgba)>,
         row_offset: usize,
         preedit: Option<&RenderPreedit>,
         link: Option<&LinkHighlight>,
@@ -321,6 +326,13 @@ impl CellRenderer {
                     && crate::selection::is_selected(col_idx, abs_row, sel)
                 {
                     bg_color = *sel_bg;
+                }
+                // vi copy mode cursor cell: selection 보다 우선.
+                if let Some((pt, cursor_bg)) = vi_cursor
+                    && pt.col == col_idx
+                    && pt.absolute_row == abs_row
+                {
+                    bg_color = *cursor_bg;
                 }
                 if let Some(link) = link
                     && link.covers(col_idx, abs_row)
@@ -397,12 +409,19 @@ impl CellRenderer {
                 }
             }
             // Trailing cells in the row (incl. cursor on empty cell).
+            let abs_row = row_offset + row_idx;
             for col_idx in last_col..cols {
                 let is_cursor = match cursor {
                     Some((cx, cy, _)) if row_idx == cy && col_idx == cx => true,
                     _ => false,
                 };
-                let bg = if is_cursor { default_fg } else { default_bg };
+                let mut bg = if is_cursor { default_fg } else { default_bg };
+                // vi copy mode cursor cell: trailing 영역 (콘텐츠 없는 row 끝) 에 vi cursor 가 위치한 경우 강조.
+                if let Some((pt, cursor_bg)) = vi_cursor {
+                    if pt.col == col_idx && pt.absolute_row == abs_row {
+                        bg = *cursor_bg;
+                    }
+                }
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],
                     viewport_offset: off,

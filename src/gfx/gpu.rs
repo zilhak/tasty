@@ -226,6 +226,7 @@ impl GpuState {
         window: &Window,
         preedit: Option<&ImePreeditState>,
         selection: Option<&crate::selection::TextSelection>,
+        vi_cursor: Option<(u32, crate::selection::SelectionPoint)>,
         link_hover: Option<(u32, &crate::terminal_link::LinkHighlight)>,
         plugin_manager: Option<&crate::plugin::PluginManager>,
     ) -> Result<(), wgpu::SurfaceError> {
@@ -369,6 +370,7 @@ impl GpuState {
             engine,
             focused_surface_id,
             selection,
+            vi_cursor,
             &engine.settings.appearance,
             preedit,
             link_hover,

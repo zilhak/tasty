@@ -2,7 +2,7 @@ use tasty_type_appearance::color::{GpuRgb, GpuRgba};
 use termwiz::cell::CellAttributes;
 
 use crate::font::GlyphKey;
-use crate::selection::NormalizedSelection;
+use crate::selection::{NormalizedSelection, SelectionPoint};
 use crate::terminal_link::LinkHighlight;
 
 use super::palette::compute_cell_colors;
@@ -25,6 +25,7 @@ impl CellRenderer {
         ansi: &[GpuRgb; 16],
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, GpuRgba)>,
+        vi_cursor: Option<&(SelectionPoint, GpuRgba)>,
         absolute_row: usize,
         link: Option<&LinkHighlight>,
         search: Option<&super::SearchHighlights<'_>>,
@@ -36,6 +37,12 @@ impl CellRenderer {
             && crate::selection::is_selected(col_idx, absolute_row, sel)
         {
             bg_color = *sel_bg;
+        }
+        // vi copy mode cursor cell: selection 보다 우선하여 cursor 위치를 강조.
+        if let Some((pt, cursor_bg)) = vi_cursor {
+            if pt.col == col_idx && pt.absolute_row == absolute_row {
+                bg_color = *cursor_bg;
+            }
         }
         // Link highlight: override both bg and fg for hovered link spans
         if let Some(link) = link
@@ -112,6 +119,7 @@ impl CellRenderer {
         ansi: &[GpuRgb; 16],
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, GpuRgba)>,
+        vi_cursor: Option<&(SelectionPoint, GpuRgba)>,
         absolute_row: usize,
         link: Option<&LinkHighlight>,
         search: Option<&super::SearchHighlights<'_>>,
@@ -135,19 +143,24 @@ impl CellRenderer {
                 ansi,
                 queue,
                 selection,
+                vi_cursor,
                 absolute_row,
                 link,
                 search,
             );
             col_idx += width;
         }
-        // Fill remaining columns with default_bg
+        // Fill remaining columns with default_bg (vi cursor 가 trailing 영역에 있으면 강조).
         let off = self.current_viewport_offset;
         for c in col_idx..cols {
+            let bg_color = vi_cursor
+                .filter(|(pt, _)| pt.col == c && pt.absolute_row == absolute_row)
+                .map(|(_, cursor_bg)| *cursor_bg)
+                .unwrap_or(default_bg);
             self.bg_instances.push(BgInstance {
                 pos: [c as f32, row_idx as f32],
                 viewport_offset: off,
-                bg_color: default_bg,
+                bg_color,
             });
         }
     }
@@ -165,6 +178,7 @@ impl CellRenderer {
         ansi: &[GpuRgb; 16],
         queue: &wgpu::Queue,
         selection: Option<&(NormalizedSelection, GpuRgba)>,
+        vi_cursor: Option<&(SelectionPoint, GpuRgba)>,
         absolute_row: usize,
         link: Option<&LinkHighlight>,
         search: Option<&super::SearchHighlights<'_>>,
@@ -194,19 +208,24 @@ impl CellRenderer {
                 ansi,
                 queue,
                 selection,
+                vi_cursor,
                 absolute_row,
                 link,
                 search,
             );
             last_col = col_idx + width;
         }
-        // Fill remaining columns with default_bg
+        // Fill remaining columns with default_bg (vi cursor 가 trailing 영역에 있으면 강조).
         let off = self.current_viewport_offset;
         for c in last_col..cols {
+            let bg_color = vi_cursor
+                .filter(|(pt, _)| pt.col == c && pt.absolute_row == absolute_row)
+                .map(|(_, cursor_bg)| *cursor_bg)
+                .unwrap_or(default_bg);
             self.bg_instances.push(BgInstance {
                 pos: [c as f32, row_idx as f32],
                 viewport_offset: off,
-                bg_color: default_bg,
+                bg_color,
             });
         }
     }
