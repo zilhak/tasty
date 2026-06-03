@@ -12,6 +12,12 @@ use serde_json::Value;
 const STDERR_RING_CAPACITY: usize = 256;
 const STDERR_TAIL_LINES: usize = 30;
 
+// dev cold path worst-case ~4 s + plugin/theme/gpu init 마진 + dev profile
+// (~3.5x release) + self-hosted runner 변동 폭을 흡수하기 위한 timeout.
+// S1=port file 작성 (init_app_state 후), S2=first surface PTY prompt.
+const SPAWN_PORT_TIMEOUT: Duration = Duration::from_secs(30);
+const SPAWN_SHELL_TIMEOUT: Duration = Duration::from_secs(15);
+
 pub struct TastyInstance {
     process: Child,
     port: u16,
@@ -128,9 +134,10 @@ impl TastyInstance {
         // Wait for port file
         let start = Instant::now();
         let port = loop {
-            if start.elapsed() > Duration::from_secs(10) {
+            if start.elapsed() > SPAWN_PORT_TIMEOUT {
                 panic!(
-                    "tasty failed to start within 10 seconds.\n--- stderr (last {} lines) ---\n{}",
+                    "tasty failed to start within {:?}.\n--- stderr (last {} lines) ---\n{}",
+                    SPAWN_PORT_TIMEOUT,
                     STDERR_TAIL_LINES,
                     stderr_tail(&stderr_ring, STDERR_TAIL_LINES)
                 );
@@ -159,9 +166,10 @@ impl TastyInstance {
             if !text.trim().is_empty() {
                 break;
             }
-            if start.elapsed() > Duration::from_secs(10) {
+            if start.elapsed() > SPAWN_SHELL_TIMEOUT {
                 panic!(
-                    "shell did not produce output within 10 seconds.\n--- stderr (last {} lines) ---\n{}",
+                    "shell did not produce output within {:?}.\n--- stderr (last {} lines) ---\n{}",
+                    SPAWN_SHELL_TIMEOUT,
                     STDERR_TAIL_LINES,
                     stderr_tail(&instance.stderr_ring, STDERR_TAIL_LINES)
                 );
