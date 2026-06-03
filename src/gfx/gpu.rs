@@ -419,6 +419,9 @@ impl GpuState {
             terminals_ms,
             draw_calls_total: draw_total,
             surfaces: self.renderer.active_surface_count(),
+            atlas_evictions: 0,
+            atlas_active_pages: 0,
+            atlas_entry_count_sum: 0,
         });
 
         Ok(())

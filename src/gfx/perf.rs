@@ -17,6 +17,9 @@ pub struct FrameSample {
     pub terminals_ms: f64,
     pub draw_calls_total: u32,
     pub surfaces: u32,
+    pub atlas_evictions: u64,
+    pub atlas_active_pages: u32,
+    pub atlas_entry_count_sum: u32,
 }
 
 pub struct PerfAggregator {
@@ -54,7 +57,8 @@ impl PerfAggregator {
         tracing::info!(
             target: "tasty::gfx::perf",
             "perf n={} surfaces={} draws={} terminals_ms p50={:.2} p99={:.2} max={:.2} \
-             gpu_total_ms p50={:.2} p99={:.2} max={:.2}",
+             gpu_total_ms p50={:.2} p99={:.2} max={:.2} \
+             atlas_evictions={} atlas_pages={} atlas_entries={}",
             self.frames.len(),
             last.surfaces,
             last.draw_calls_total,
@@ -64,6 +68,9 @@ impl PerfAggregator {
             gp50,
             gp99,
             gmax,
+            last.atlas_evictions,
+            last.atlas_active_pages,
+            last.atlas_entry_count_sum,
         );
     }
 }
@@ -95,6 +102,9 @@ mod tests {
             terminals_ms: t,
             draw_calls_total: 20,
             surfaces: 10,
+            atlas_evictions: 0,
+            atlas_active_pages: 1,
+            atlas_entry_count_sum: 0,
         }
     }
 
