@@ -897,7 +897,8 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 ### vi 스타일 키보드 복사 모드
 - `Ctrl+Shift+Space` (기본 키, `enter_copy_mode` 액션) 로 진입. 진입 시 PTY 입력이 차단되고 커서 위치가 1셀 하이라이트로 표시됨
-- 이동 키: `h`/`j`/`k`/`l` (좌/하/상/우), `w`/`b`/`e` (단어 점프), `0`/`$` (줄 시작/끝), `g`/`G` (스크롤백 최상단/하단), `H`/`M`/`L` (viewport top/middle/bottom)
+- 이동 키: `h`/`j`/`k`/`l` (좌/하/상/우), `w`/`b`/`e` (단어 점프), `0`/`$` (줄 시작/끝), `gg`/`G` (스크롤백 최상단/하단 — vim 과 동일한 double-key 시퀀스, 첫 `g` 후 다른 키를 누르면 시퀀스 취소), `H`/`M`/`L` (viewport top/middle/bottom)
+- cursor cell 강조: 진입 직후 및 visual selection 활성 중에도 cursor 가 위치한 셀은 `theme.vi_cursor_bg` (Catppuccin lavender) 로 selection 보다 진한 톤으로 강조되어 식별 가능
 - count prefix 지원: `3w`, `5j`, `10l` 등 (6자리 cap)
 - visual 선택: `v` (문자), `V` (줄 전체), `Ctrl+v` (사각형 블록)
 - `y` 로 클립보드 복사 + 모드 종료, `q` 또는 `Esc` 로 종료 (visual 중이면 visual 만 해제, 한 번 더 누르면 모드 종료)
