@@ -511,6 +511,7 @@ cut_files = "ファイルを切り取りました"
 ctrl_c_ignored_after_paste = "貼り付け直後のCtrl+Cを無視しました"
 vi_copy_blocked_alt_screen = "フルスクリーンアプリ実行中はコピーモードを使用できません"
 vi_copy_entered = "コピーモード(vi): hjkl/wbe移動、v選択、yコピー、/?検索、q終了"
+vi_copy_invalid_register = "不明なレジスタです (対応: \"+ \"* \"\")"
 
 [port_scanner]
 heading = "受信ポート"

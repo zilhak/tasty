@@ -32,11 +32,13 @@ pub struct ViCopySearch {
     pub buffer: Option<String>,
 }
 
-/// double-key 시퀀스 대기 상태 (현재는 `gg` 한정).
+/// double-key 시퀀스 대기 상태.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PendingOp {
     /// 첫 'g' 입력 후 두 번째 'g' 대기.
     G,
+    /// `"` 입력 후 register character 대기.
+    DoubleQuote,
 }
 
 /// vi copy mode state.
@@ -51,6 +53,9 @@ pub struct ViCopyMode {
     pub search: Option<ViCopySearch>,
     /// `gg` 등 double-key 시퀀스 대기 상태. 다음 키가 일치하면 동작, 아니면 취소.
     pub pending_op: Option<PendingOp>,
+    /// 다음 yank 가 사용할 register (`+` clipboard, `*` primary, `"` 무명).
+    /// `"` prefix 로 명시적으로 설정되며, yank 후 자동 초기화.
+    pub active_register: Option<char>,
 }
 
 impl ViCopyMode {
@@ -71,6 +76,7 @@ impl ViCopyMode {
             count_buf: String::new(),
             search: None,
             pending_op: None,
+            active_register: None,
         }
     }
 
@@ -324,6 +330,8 @@ pub enum ViKeyOutcome {
     /// search next/prev (n / N).
     SearchNext,
     SearchPrev,
+    /// `"` 뒤에 알 수 없는 register character → toast 안내, 해당 키 소비.
+    InvalidRegister,
 }
 
 /// 메인 키 dispatcher. cursor / visual / count / search 상태를 mutate.
@@ -376,13 +384,27 @@ pub fn handle_vi_key(
     // 'g' 가 두 번째로 들어오면 top 이동, 그 외 키면 pending 만 취소 + 정상 처리 계속.
     // (`5gg` 의 경우 count_buf 는 첫 'g' 의 take_count() 에서 이미 소비됨 — §단순화 정책.)
     if let Some(op) = vi.pending_op.take() {
-        if matches!(op, PendingOp::G) && matches!(key.as_ref(), Key::Character(s) if s == "g") {
-            vi.cursor.absolute_row = 0;
-            vi.cursor.col = 0;
-            vi.count_buf.clear();
-            return ViKeyOutcome::Moved;
+        match op {
+            PendingOp::G => {
+                if matches!(key.as_ref(), Key::Character(s) if s == "g") {
+                    vi.cursor.absolute_row = 0;
+                    vi.cursor.col = 0;
+                    vi.count_buf.clear();
+                    return ViKeyOutcome::Moved;
+                }
+                // 그 외: pending 만 취소하고 정상 처리 계속.
+            }
+            PendingOp::DoubleQuote => {
+                if let Key::Character(s) = key
+                    && let Some(ch) = s.chars().next()
+                    && matches!(ch, '+' | '*' | '"')
+                {
+                    vi.active_register = Some(ch);
+                    return ViKeyOutcome::Consumed;
+                }
+                return ViKeyOutcome::InvalidRegister;
+            }
         }
-        // 그 외: pending 만 취소하고 정상 처리 계속.
     }
 
     let cols = terminal.cols();
@@ -539,6 +561,10 @@ pub fn handle_vi_key(
                     ViKeyOutcome::Moved
                 }
                 'y' => ViKeyOutcome::Yank,
+                '"' => {
+                    vi.pending_op = Some(PendingOp::DoubleQuote);
+                    ViKeyOutcome::Consumed
+                }
                 'q' => ViKeyOutcome::Exit,
                 '/' => {
                     vi.search = Some(ViCopySearch {
@@ -661,6 +687,13 @@ impl MainView {
             ViKeyOutcome::SearchPrev => {
                 self.vi_copy_search_navigate(false, rows, scrollback_len);
             }
+            ViKeyOutcome::InvalidRegister => {
+                let sid = self.vi_copy.as_ref().map(|v| v.surface_id).unwrap_or(0);
+                self.state.toasts.push_info(
+                    crate::i18n::t("toast.vi_copy_invalid_register"),
+                    crate::adapters::ui::ToastScope::Surface(sid),
+                );
+            }
         }
         self.base.dirty = true;
         true
@@ -697,6 +730,7 @@ impl MainView {
         }
         let sel = vi.live_selection();
         let sid = sel.surface_id;
+        let register = vi.active_register;
         let text = match self.core_state.find_terminal_by_id(sid) {
             Some(t) => extract_selected_text(t, &sel),
             None => String::new(),
@@ -706,7 +740,11 @@ impl MainView {
             return;
         }
         if let Some(cb) = &mut self.clipboard {
-            cb.set_text(&text);
+            match register {
+                Some('*') => cb.set_text_primary(&text),
+                Some('+') | Some('"') | None => cb.set_text(&text),
+                _ => cb.set_text(&text),
+            }
         }
         self.core_state.record_internal_copy(&text);
         self.state.toasts.push_info(
@@ -1042,6 +1080,38 @@ mod tests {
         handle_vi_key(&mut vi, &t, &key_char('W'), ModifiersState::empty());
         // 2W from col 0 → `e.f` at col 8.
         assert_eq!(vi.cursor.col, 8);
+    }
+
+    #[test]
+    fn register_prefix_plus_sets_active_register() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        let out = handle_vi_key(&mut vi, &t, &key_char('"'), ModifiersState::empty());
+        assert!(matches!(out, ViKeyOutcome::Consumed));
+        assert_eq!(vi.pending_op, Some(PendingOp::DoubleQuote));
+        handle_vi_key(&mut vi, &t, &key_char('+'), ModifiersState::empty());
+        assert_eq!(vi.active_register, Some('+'));
+        assert_eq!(vi.pending_op, None);
+    }
+
+    #[test]
+    fn register_prefix_star_sets_active_register() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        handle_vi_key(&mut vi, &t, &key_char('"'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('*'), ModifiersState::empty());
+        assert_eq!(vi.active_register, Some('*'));
+    }
+
+    #[test]
+    fn invalid_register_returns_invalid_register_outcome() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        handle_vi_key(&mut vi, &t, &key_char('"'), ModifiersState::empty());
+        let out = handle_vi_key(&mut vi, &t, &key_char('j'), ModifiersState::empty());
+        assert!(matches!(out, ViKeyOutcome::InvalidRegister));
+        assert_eq!(vi.active_register, None);
+        assert_eq!(vi.pending_op, None);
     }
 
     #[test]

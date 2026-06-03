@@ -511,6 +511,7 @@ cut_files = "Files cut"
 ctrl_c_ignored_after_paste = "Ctrl+C suppressed right after paste"
 vi_copy_blocked_alt_screen = "Copy mode unavailable while a full-screen app is active"
 vi_copy_entered = "Copy mode (vi): hjkl/wbe, v select, y yank, /? search, q exit"
+vi_copy_invalid_register = "Unknown register (supported: \"+ \"* \"\")"
 
 [port_scanner]
 heading = "Listening ports"

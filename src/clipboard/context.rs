@@ -23,6 +23,28 @@ impl ClipboardContext {
             tracing::warn!("clipboard set_text failed: {e}");
         }
     }
+
+    /// Linux primary selection (vim `*` register). Other OSes fall back to
+    /// the regular system clipboard since they have no primary-selection
+    /// concept.
+    pub(crate) fn set_text_primary(&mut self, text: &str) {
+        #[cfg(target_os = "linux")]
+        {
+            use arboard::{LinuxClipboardKind, SetExtLinux};
+            if let Err(e) = self
+                .inner
+                .set()
+                .clipboard(LinuxClipboardKind::Primary)
+                .text(text.to_string())
+            {
+                tracing::warn!("clipboard set_text_primary failed: {e}");
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.set_text(text);
+        }
+    }
 }
 
 /// Clipboard data detected by the background polling thread.
