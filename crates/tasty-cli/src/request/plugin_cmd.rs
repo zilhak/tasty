@@ -14,12 +14,14 @@ pub(super) fn plugin_command_to_method_params(
             force,
             restore_removed,
             restore_all,
+            restart_running,
         } => (
             "plugin.upgrade_builtins",
             serde_json::json!({
                 "force": force,
                 "restore_removed": restore_removed,
                 "restore_all": restore_all,
+                "restart_running": restart_running,
             }),
         ),
         PluginCommands::Enable { id } => ("plugin.enable", serde_json::json!({ "id": id })),

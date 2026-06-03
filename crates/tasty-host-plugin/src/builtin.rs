@@ -577,9 +577,25 @@ pub enum BuiltinUpgradeAction {
         reason: String,
     },
     /// bundle > installed — 디렉토리 교체 성공.
-    Upgraded { from: String, to: String },
+    Upgraded {
+        from: String,
+        to: String,
+        /// `--restart-running` 경로에서 swap restart 가 성공했는지. 기존 client
+        /// 호환을 위해 `#[serde(default)]`.
+        #[serde(default)]
+        was_restarted: bool,
+        /// swap restart 가 실패한 경우 에러 메시지. 성공 / 미시도면 `None`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        restart_error: Option<String>,
+    },
     /// force=true 또는 신규 install — 강제 (재)설치 성공. version 은 bundle 의 값.
-    Reinstalled { version: String },
+    Reinstalled {
+        version: String,
+        #[serde(default)]
+        was_restarted: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        restart_error: Option<String>,
+    },
     /// bundle 디렉토리 자체에 해당 plugin 이 없음 (dev partial build 등).
     NotInBundle,
     /// 파일 IO 실패 — Windows sharing violation 등.
@@ -606,6 +622,7 @@ pub fn upgrade_builtins(
     force: bool,
     restore_removed: &[String],
     restore_all: bool,
+    restart_running: bool,
 ) -> BuiltinUpgradeReport {
     let dest_root = match discovery::plugin_root() {
         Some(p) => p,
@@ -699,6 +716,8 @@ pub fn upgrade_builtins(
                 id: spec.id.into(),
                 action: BuiltinUpgradeAction::Reinstalled {
                     version: bundle_v.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+                    was_restarted: false,
+                    restart_error: None,
                 },
             });
             continue;
@@ -736,7 +755,27 @@ pub fn upgrade_builtins(
             }
             BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
                 tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
+                let should_swap = restart_running && mgr.is_running(spec.id);
+                if should_swap {
+                    if let Err(e) = mgr.swap_shutdown_internal(spec.id) {
+                        items.push(BuiltinUpgradeItem {
+                            id: spec.id.into(),
+                            action: BuiltinUpgradeAction::Failed {
+                                reason: format!("swap-shutdown-failed: {e}"),
+                            },
+                        });
+                        continue;
+                    }
+                }
                 if let Err(e) = overwrite_builtin_dir(&src, &dest) {
+                    if should_swap {
+                        if let Err(re) = mgr.swap_respawn_internal(spec.id) {
+                            tracing::warn!(
+                                "respawn after failed overwrite of '{}' failed: {re}",
+                                spec.id
+                            );
+                        }
+                    }
                     items.push(BuiltinUpgradeItem {
                         id: spec.id.into(),
                         action: BuiltinUpgradeAction::Failed {
@@ -745,12 +784,21 @@ pub fn upgrade_builtins(
                     });
                     continue;
                 }
+                let restart_error = if should_swap {
+                    mgr.swap_respawn_internal(spec.id)
+                        .err()
+                        .map(|e| e.to_string())
+                } else {
+                    None
+                };
                 changed_ids.push(spec.id.into());
                 items.push(BuiltinUpgradeItem {
                     id: spec.id.into(),
                     action: BuiltinUpgradeAction::Upgraded {
                         from: from.to_string(),
                         to: to.to_string(),
+                        was_restarted: should_swap && restart_error.is_none(),
+                        restart_error,
                     },
                 });
             }
@@ -761,7 +809,27 @@ pub fn upgrade_builtins(
                     installed_v.as_ref().map(|v| v.to_string()),
                     bundle_v.as_ref().map(|v| v.to_string()),
                 );
+                let should_swap = restart_running && mgr.is_running(spec.id);
+                if should_swap {
+                    if let Err(e) = mgr.swap_shutdown_internal(spec.id) {
+                        items.push(BuiltinUpgradeItem {
+                            id: spec.id.into(),
+                            action: BuiltinUpgradeAction::Failed {
+                                reason: format!("swap-shutdown-failed: {e}"),
+                            },
+                        });
+                        continue;
+                    }
+                }
                 if let Err(e) = overwrite_builtin_dir(&src, &dest) {
+                    if should_swap {
+                        if let Err(re) = mgr.swap_respawn_internal(spec.id) {
+                            tracing::warn!(
+                                "respawn after failed overwrite of '{}' failed: {re}",
+                                spec.id
+                            );
+                        }
+                    }
                     items.push(BuiltinUpgradeItem {
                         id: spec.id.into(),
                         action: BuiltinUpgradeAction::Failed {
@@ -770,11 +838,20 @@ pub fn upgrade_builtins(
                     });
                     continue;
                 }
+                let restart_error = if should_swap {
+                    mgr.swap_respawn_internal(spec.id)
+                        .err()
+                        .map(|e| e.to_string())
+                } else {
+                    None
+                };
                 changed_ids.push(spec.id.into());
                 items.push(BuiltinUpgradeItem {
                     id: spec.id.into(),
                     action: BuiltinUpgradeAction::Reinstalled {
                         version: bundle_v.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+                        was_restarted: should_swap && restart_error.is_none(),
+                        restart_error,
                     },
                 });
             }

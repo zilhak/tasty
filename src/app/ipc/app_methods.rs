@@ -453,7 +453,18 @@ impl App {
                     .get("restore_all")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                match self.plugin_upgrade_builtins(force, restore_removed, restore_all) {
+                let restart_running = cmd
+                    .request
+                    .params
+                    .get("restart_running")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                match self.plugin_upgrade_builtins(
+                    force,
+                    restore_removed,
+                    restore_all,
+                    restart_running,
+                ) {
                     Ok((report, events)) => {
                         self.cascade_plugin_events(events);
                         match serde_json::to_value(&report) {

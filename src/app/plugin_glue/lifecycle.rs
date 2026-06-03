@@ -244,17 +244,24 @@ impl App {
         force: bool,
         restore_removed: Vec<String>,
         restore_all: bool,
+        restart_running: bool,
     ) -> anyhow::Result<(tasty_host_plugin::BuiltinUpgradeReport, Vec<CoreEvent>)> {
         let Some(mgr) = self.plugin_manager.as_mut() else {
             anyhow::bail!("plugin manager not initialized");
         };
-        let report = tasty_host_plugin::upgrade_builtins(mgr, force, &restore_removed, restore_all);
+        let report = tasty_host_plugin::upgrade_builtins(
+            mgr,
+            force,
+            &restore_removed,
+            restore_all,
+            restart_running,
+        );
 
         let mut events = Vec::new();
         for item in &report.items {
             let new_version = match &item.action {
                 tasty_host_plugin::BuiltinUpgradeAction::Upgraded { to, .. } => Some(to.clone()),
-                tasty_host_plugin::BuiltinUpgradeAction::Reinstalled { version } => {
+                tasty_host_plugin::BuiltinUpgradeAction::Reinstalled { version, .. } => {
                     Some(version.clone())
                 }
                 _ => None,

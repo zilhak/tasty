@@ -38,6 +38,11 @@ pub enum PluginCommands {
         /// `--restore-removed` when both are given.
         #[arg(long = "restore-removed-all")]
         restore_all: bool,
+        /// Restart running builtin processes whose binary is replaced — graceful
+        /// swap. Also unblocks Windows sharing violation on in-place overwrite.
+        /// Default off (conservative — briefly closes affected plugin surfaces).
+        #[arg(long = "restart-running")]
+        restart_running: bool,
     },
     /// Enable a disabled plugin and start it.
     Enable { id: String },
