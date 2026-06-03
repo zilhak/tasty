@@ -1191,9 +1191,15 @@ IPC 메서드와 `tasty claude *` CLI 서브커맨드는 plugin이 자체적으�
 - **claude.children / claude.parent / claude.kill / claude.respawn / claude.broadcast / claude.wait**:
   자식 목록 조회, 부모 역참조, 자식 종료, 자식 재시작(레이아웃 유지), 일괄 전송,
   상태 폴링(idle|needs_input|active|exited). CLI 동일.
+- **claude.wait_any**: 여러 자식 중 *먼저* idle / needs_input / exited 가 되는 것을 즉시
+  깨운다. 응답 JSON 에 `child_index` 키가 포함되어 어느 자식이 깨어났는지 알 수 있다.
+  우선순위는 입력 children 순서 (동시 다수 terminal 시 결정적). timeout 도달 또는
+  iteration 중 전원 active 인 tick 의 응답은 `{"state":"pending"}` (child_index 키 없음).
 - CLI: `tasty claude spawn --direction vertical --cwd /path --role worker --nickname "agent-1" --prompt "Fix bugs"`
 - CLI: `tasty claude children`, `tasty claude parent`, `tasty claude kill --child 1`, `tasty claude respawn --child 1`
 - CLI: `tasty claude broadcast "text\r" [--role ROLE]`, `tasty claude wait --child 1 [--timeout SECS]`
+- CLI: `tasty claude wait-any --children "1,2,3" [--timeout SECS]` — 첫 깨어난 자식의 응답을
+  즉시 출력. `--timeout` 누락 시 무한 polling (`wait` 와 동일 정책).
 - `--child`는 child index를 받는다 (spawn 시 반환되는 `child_index` 값)
 
 #### Hook 통합
@@ -1223,7 +1229,7 @@ IPC 메서드와 `tasty claude *` CLI 서브커맨드는 plugin이 자체적으�
   미설치면 안내 메시지를 stderr에 출력하고 exit code 1로 종료한다.
 - CLI: `tasty claude install`, `tasty claude uninstall`, `tasty claude hook stop|notification|session-end|subagent-stop|prompt-submit|session-start [--surface ID]`
 - IPC: `claude.hook`, `claude.launch`, `claude.spawn`, `claude.children`, `claude.parent`, `claude.kill`,
-  `claude.respawn`, `claude.broadcast`, `claude.wait` 메서드. 권한 토큰: `ipc.invoke:claude`
+  `claude.respawn`, `claude.broadcast`, `claude.wait`, `claude.wait_any` 메서드. 권한 토큰: `ipc.invoke:claude`
 
 ### Surface Metadata Store (surface_meta.rs)
 
