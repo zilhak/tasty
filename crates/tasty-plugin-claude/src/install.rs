@@ -16,12 +16,18 @@ use serde_json::{Value, json};
 
 /// tasty가 자동으로 등록하는 Claude Code hook 이벤트 목록.
 /// `(claude_event_name, tasty_hook_token)` 형태. 호스트 `MANAGED_HOOKS`와 동일.
+///
+/// `UserPromptSubmit` 은 child 가 *2 번째 이후 prompt* 를 받을 때 ClaudeState 의
+/// idle=true (직전 Stop hook 잔재) 를 clear 하는 데 필수. 미등록 시 multi-round
+/// 대화에서 `claude.wait` polling 이 *진짜 active 인 child* 를 idle 로 잘못 보고
+/// transient state bug 발생 (Phase G.A 진행 중 확인).
 pub const MANAGED_HOOKS: &[(&str, &str)] = &[
     ("Stop", "stop"),
     ("Notification", "notification"),
     ("SessionEnd", "session-end"),
     ("SubagentStop", "subagent-stop"),
     ("SessionStart", "session-start"),
+    ("UserPromptSubmit", "prompt-submit"),
 ];
 
 /// `entry_matches_marker`가 식별자로 사용하는 substring.
