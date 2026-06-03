@@ -512,6 +512,9 @@ ctrl_c_ignored_after_paste = "貼り付け直後のCtrl+Cを無視しました"
 vi_copy_blocked_alt_screen = "フルスクリーンアプリ実行中はコピーモードを使用できません"
 vi_copy_entered = "コピーモード(vi): hjkl/wbe移動、v選択、yコピー、/?検索、q終了"
 vi_copy_invalid_register = "不明なレジスタです (対応: \"+ \"* \"\")"
+vi_copy_macro_recording_started = "マクロ録画を開始しました"
+vi_copy_macro_recording_stopped = "マクロ録画を停止しました"
+vi_copy_macro_replay_failed = "マクロ再生に失敗しました (空のレジスタ または再帰回数超過)"
 
 [port_scanner]
 heading = "受信ポート"

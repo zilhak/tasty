@@ -39,7 +39,88 @@ pub enum PendingOp {
     G,
     /// `"` 입력 후 register character 대기.
     DoubleQuote,
+    /// `q` 입력 후 register character 대기 (recording 시작).
+    Q,
+    /// `@` 입력 후 register character 대기 (recording replay).
+    At,
 }
+
+/// 매크로 buffer 에 저장하는 키 — winit `Key` 의 lifetime 의존을 끊기 위해
+/// 평탄화된 표현.
+#[derive(Debug, Clone)]
+pub struct MacroKey {
+    pub repr: String,
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
+    pub logo: bool,
+}
+
+impl MacroKey {
+    fn from_winit(key: &Key, modifiers: ModifiersState) -> Option<Self> {
+        let repr = match key.as_ref() {
+            Key::Character(s) => s.to_string(),
+            Key::Named(n) => named_key_repr(&n)?.to_string(),
+            _ => return None,
+        };
+        Some(Self {
+            repr,
+            ctrl: modifiers.control_key(),
+            shift: modifiers.shift_key(),
+            alt: modifiers.alt_key(),
+            logo: modifiers.super_key(),
+        })
+    }
+
+    fn to_winit(&self) -> (Key, ModifiersState) {
+        let key = match repr_to_named_key(&self.repr) {
+            Some(n) => Key::Named(n),
+            None => Key::Character(self.repr.clone().into()),
+        };
+        let mut modifiers = ModifiersState::empty();
+        if self.ctrl {
+            modifiers |= ModifiersState::CONTROL;
+        }
+        if self.shift {
+            modifiers |= ModifiersState::SHIFT;
+        }
+        if self.alt {
+            modifiers |= ModifiersState::ALT;
+        }
+        if self.logo {
+            modifiers |= ModifiersState::SUPER;
+        }
+        (key, modifiers)
+    }
+}
+
+fn named_key_repr(n: &NamedKey) -> Option<&'static str> {
+    match n {
+        NamedKey::Escape => Some("Escape"),
+        NamedKey::Enter => Some("Enter"),
+        NamedKey::Backspace => Some("Backspace"),
+        _ => None,
+    }
+}
+
+fn repr_to_named_key(repr: &str) -> Option<NamedKey> {
+    match repr {
+        "Escape" => Some(NamedKey::Escape),
+        "Enter" => Some(NamedKey::Enter),
+        "Backspace" => Some(NamedKey::Backspace),
+        _ => None,
+    }
+}
+
+/// 진행 중인 매크로 녹화 상태.
+#[derive(Debug, Clone)]
+pub struct MacroRecording {
+    pub register: char,
+    pub keys: Vec<MacroKey>,
+}
+
+/// replay 재귀 깊이 한도. 16 을 넘으면 무한 루프로 간주하고 중단.
+pub const MAX_REPLAY_DEPTH: u8 = 16;
 
 /// vi copy mode state.
 #[derive(Debug, Clone)]
@@ -56,6 +137,12 @@ pub struct ViCopyMode {
     /// 다음 yank 가 사용할 register (`+` clipboard, `*` primary, `"` 무명).
     /// `"` prefix 로 명시적으로 설정되며, yank 후 자동 초기화.
     pub active_register: Option<char>,
+    /// 진행 중인 매크로 녹화. `q{reg}` 로 시작, `q` 로 중단 + `registers` 에 저장.
+    pub recording: Option<MacroRecording>,
+    /// 녹화 완료된 매크로 저장소 — `@{reg}` replay 시 lookup.
+    pub registers: std::collections::HashMap<char, Vec<MacroKey>>,
+    /// 현재 replay 재귀 깊이. `MAX_REPLAY_DEPTH` 도달 시 추가 replay 중단.
+    pub replay_depth: u8,
 }
 
 impl ViCopyMode {
@@ -77,6 +164,9 @@ impl ViCopyMode {
             search: None,
             pending_op: None,
             active_register: None,
+            recording: None,
+            registers: std::collections::HashMap::new(),
+            replay_depth: 0,
         }
     }
 
@@ -332,11 +422,37 @@ pub enum ViKeyOutcome {
     SearchPrev,
     /// `"` 뒤에 알 수 없는 register character → toast 안내, 해당 키 소비.
     InvalidRegister,
+    /// 매크로 녹화 시작 / 중단 → toast 안내.
+    MacroRecordToggle,
+    /// 매크로 replay 실패 (빈 register / depth 초과) → toast 안내.
+    MacroReplayFailed,
 }
 
 /// 메인 키 dispatcher. cursor / visual / count / search 상태를 mutate.
 /// terminal read-only 로 word_jump 등에 필요. PTY 송신은 전혀 안 일어남.
+/// 매크로 녹화 중인 키는 outcome 이 `MacroRecordToggle` 이 아닌 경우에 한해 자동
+/// 누적된다. replay 중 (`replay_depth > 0`) 키는 녹화에 다시 누적되지 않는다.
 pub fn handle_vi_key(
+    vi: &mut ViCopyMode,
+    terminal: &tasty_terminal::Terminal,
+    key: &Key,
+    modifiers: ModifiersState,
+) -> ViKeyOutcome {
+    let outcome = handle_vi_key_inner(vi, terminal, key, modifiers);
+    // 녹화 중이고, 녹화 시작/중단 토글 자체가 아니며, replay 중이 아니면 키를 buffer 에 push.
+    let should_record = vi.recording.is_some()
+        && vi.replay_depth == 0
+        && !matches!(outcome, ViKeyOutcome::MacroRecordToggle);
+    if should_record
+        && let Some(mk) = MacroKey::from_winit(key, modifiers)
+        && let Some(rec) = vi.recording.as_mut()
+    {
+        rec.keys.push(mk);
+    }
+    outcome
+}
+
+fn handle_vi_key_inner(
     vi: &mut ViCopyMode,
     terminal: &tasty_terminal::Terminal,
     key: &Key,
@@ -404,6 +520,43 @@ pub fn handle_vi_key(
                 }
                 return ViKeyOutcome::InvalidRegister;
             }
+            PendingOp::Q => {
+                // q 단독 + 다음 키가 register character 면 recording 시작.
+                // 그 외 키 (특히 Esc / 문자 키) 면 vim 비표준 호환 동작 = 기존 `q` exit.
+                if let Key::Character(s) = key
+                    && let Some(reg) = s.chars().next()
+                    && reg.is_ascii_alphanumeric()
+                {
+                    vi.recording = Some(MacroRecording {
+                        register: reg,
+                        keys: Vec::new(),
+                    });
+                    return ViKeyOutcome::MacroRecordToggle;
+                }
+                return ViKeyOutcome::Exit;
+            }
+            PendingOp::At => {
+                if let Key::Character(s) = key
+                    && let Some(reg) = s.chars().next()
+                {
+                    if vi.replay_depth >= MAX_REPLAY_DEPTH {
+                        return ViKeyOutcome::MacroReplayFailed;
+                    }
+                    let Some(keys) = vi.registers.get(&reg).cloned() else {
+                        return ViKeyOutcome::MacroReplayFailed;
+                    };
+                    vi.replay_depth += 1;
+                    for mk in &keys {
+                        let (k, m) = mk.to_winit();
+                        let _ = handle_vi_key(vi, terminal, &k, m); // replay outcome 무시 — 호스트 효과는 outer wrapper 가 마지막 outcome 으로 한 번만 처리.
+                    }
+                    vi.replay_depth -= 1;
+                    // replay 종료 후 count_buf 가 누수되지 않게 정리 (재진입 격리).
+                    vi.count_buf.clear();
+                    return ViKeyOutcome::Moved;
+                }
+                return ViKeyOutcome::Consumed;
+            }
         }
     }
 
@@ -433,6 +586,10 @@ pub fn handle_vi_key(
     // 3) 일반 키.
     match key.as_ref() {
         Key::Named(NamedKey::Escape) => {
+            // vim 일치: 녹화 중 Esc 는 녹화를 조용히 저장 후 정상 Esc 동작.
+            if let Some(rec) = vi.recording.take() {
+                vi.registers.insert(rec.register, rec.keys);
+            }
             if vi.has_visual() {
                 vi.visual = ViCopyVisual::None;
                 vi.anchor = None;
@@ -565,7 +722,23 @@ pub fn handle_vi_key(
                     vi.pending_op = Some(PendingOp::DoubleQuote);
                     ViKeyOutcome::Consumed
                 }
-                'q' => ViKeyOutcome::Exit,
+                'q' => {
+                    if vi.recording.is_some() {
+                        // 녹화 중 → 중단 + register 에 저장. 종료 키 (`q`) 자체는 buffer
+                        // 에 포함되지 않음 (outer wrapper 가 MacroRecordToggle 을 보고 skip).
+                        let rec = vi.recording.take().expect("recording is Some");
+                        vi.registers.insert(rec.register, rec.keys);
+                        ViKeyOutcome::MacroRecordToggle
+                    } else {
+                        // 녹화 안 함 → register character 대기 (PendingOp::Q).
+                        vi.pending_op = Some(PendingOp::Q);
+                        ViKeyOutcome::Consumed
+                    }
+                }
+                '@' => {
+                    vi.pending_op = Some(PendingOp::At);
+                    ViKeyOutcome::Consumed
+                }
                 '/' => {
                     vi.search = Some(ViCopySearch {
                         direction: SearchDir::Forward,
@@ -691,6 +864,29 @@ impl MainView {
                 let sid = self.vi_copy.as_ref().map(|v| v.surface_id).unwrap_or(0);
                 self.state.toasts.push_info(
                     crate::i18n::t("toast.vi_copy_invalid_register"),
+                    crate::adapters::ui::ToastScope::Surface(sid),
+                );
+            }
+            ViKeyOutcome::MacroRecordToggle => {
+                let (sid, recording) = self
+                    .vi_copy
+                    .as_ref()
+                    .map(|v| (v.surface_id, v.recording.is_some()))
+                    .unwrap_or((0, false));
+                let key = if recording {
+                    "toast.vi_copy_macro_recording_started"
+                } else {
+                    "toast.vi_copy_macro_recording_stopped"
+                };
+                self.state.toasts.push_info(
+                    crate::i18n::t(key),
+                    crate::adapters::ui::ToastScope::Surface(sid),
+                );
+            }
+            ViKeyOutcome::MacroReplayFailed => {
+                let sid = self.vi_copy.as_ref().map(|v| v.surface_id).unwrap_or(0);
+                self.state.toasts.push_info(
+                    crate::i18n::t("toast.vi_copy_macro_replay_failed"),
                     crate::adapters::ui::ToastScope::Surface(sid),
                 );
             }
@@ -1112,6 +1308,104 @@ mod tests {
         assert!(matches!(out, ViKeyOutcome::InvalidRegister));
         assert_eq!(vi.active_register, None);
         assert_eq!(vi.pending_op, None);
+    }
+
+    #[test]
+    fn record_then_replay_repeats_motion() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        // qa l j j j q → register a 에 4 키 저장.
+        handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
+        let out = handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty());
+        assert!(matches!(out, ViKeyOutcome::MacroRecordToggle));
+        handle_vi_key(&mut vi, &t, &key_char('l'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('j'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('j'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('j'), ModifiersState::empty());
+        let stop = handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
+        assert!(matches!(stop, ViKeyOutcome::MacroRecordToggle));
+        assert!(vi.recording.is_none());
+        assert_eq!(vi.registers.get(&'a').map(|v| v.len()), Some(4));
+
+        let after_record = vi.cursor;
+        // @a → replay: 다시 한번 (l, j×3) 실행.
+        handle_vi_key(&mut vi, &t, &key_char('@'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty());
+        assert_eq!(vi.cursor.col, after_record.col + 1);
+        assert_eq!(vi.cursor.absolute_row, after_record.absolute_row + 3);
+    }
+
+    #[test]
+    fn empty_macro_replay_signals_failure() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        handle_vi_key(&mut vi, &t, &key_char('@'), ModifiersState::empty());
+        let out = handle_vi_key(&mut vi, &t, &key_char('z'), ModifiersState::empty());
+        assert!(matches!(out, ViKeyOutcome::MacroReplayFailed));
+    }
+
+    #[test]
+    fn recursive_macro_depth_capped() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        // register a 에 `@a` 만 들어가는 매크로 — 무한 재귀 시도.
+        let mk_at = MacroKey::from_winit(&key_char('@'), ModifiersState::empty()).unwrap();
+        let mk_a = MacroKey::from_winit(&key_char('a'), ModifiersState::empty()).unwrap();
+        vi.registers.insert('a', vec![mk_at, mk_a]);
+        handle_vi_key(&mut vi, &t, &key_char('@'), ModifiersState::empty());
+        let _ = handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty()); // outcome 무관 — depth 가 다시 0 으로 돌아왔는지만 확인.
+        assert_eq!(vi.replay_depth, 0, "depth should reset after replay");
+    }
+
+    #[test]
+    fn recording_esc_stops_recording_then_exits() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty());
+        assert!(vi.recording.is_some());
+        let out = handle_vi_key(
+            &mut vi,
+            &t,
+            &Key::Named(NamedKey::Escape),
+            ModifiersState::empty(),
+        );
+        assert!(matches!(out, ViKeyOutcome::Exit));
+        assert!(vi.recording.is_none());
+        assert!(vi.registers.contains_key(&'a'));
+    }
+
+    #[test]
+    fn q_alone_then_non_register_exits() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
+        assert_eq!(vi.pending_op, Some(PendingOp::Q));
+        // ASCII 비알파숫자 키 (`!`) → vim 비표준 호환 동작 = Exit.
+        let out = handle_vi_key(&mut vi, &t, &key_char('!'), ModifiersState::empty());
+        assert!(matches!(out, ViKeyOutcome::Exit));
+        assert!(vi.recording.is_none());
+    }
+
+    #[test]
+    fn macro_replay_does_not_leak_count_buf() {
+        let t = term(40, 10);
+        let mut vi = ViCopyMode::enter(0, &t);
+        // qa 3 j q  → register a 에 `3` `j` 저장 (count prefix 가 buffer 에 들어감).
+        handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('3'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('j'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('q'), ModifiersState::empty());
+
+        // replay.
+        handle_vi_key(&mut vi, &t, &key_char('@'), ModifiersState::empty());
+        handle_vi_key(&mut vi, &t, &key_char('a'), ModifiersState::empty());
+        assert!(
+            vi.count_buf.is_empty(),
+            "count_buf should be empty after replay; got {:?}",
+            vi.count_buf
+        );
     }
 
     #[test]
