@@ -132,6 +132,12 @@ impl SurfaceKindRegistry {
     }
 }
 
+impl tasty_plugin_protocol::host_port::SurfaceRegistry for SurfaceKindRegistry {
+    fn contains(&self, kind: &str) -> bool {
+        SurfaceKindRegistry::contains(self, kind)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
