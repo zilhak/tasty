@@ -327,6 +327,49 @@ impl PluginManager {
         self.processes.contains_key(plugin_id)
     }
 
+    /// graceful swap 전용 — `config.disabled.ids` 를 건드리지 않고 process 만
+    /// shutdown + 부속 registry 정리. `disable()` 의 sibling 인데 config persist
+    /// 부작용이 없다 (verify-J-E §3.2: silent config corruption 회피).
+    ///
+    /// 호출 순서: `swap_shutdown_internal` → 외부에서 disk overwrite → `swap_respawn_internal`.
+    /// upgrade_builtins 의 `--restart-running` flag 경로 외에서는 사용 금지.
+    pub(crate) fn swap_shutdown_internal(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        if let Some(proc) = self.processes.remove(plugin_id) {
+            proc.shutdown(Duration::from_secs(2));
+        }
+        self.ipc_namespaces.unregister_plugin(plugin_id);
+        if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == plugin_id) {
+            for ns in &pkg.manifest.contributes.ipc_namespace {
+                tasty_ipc::method_meta::unregister_plugin_prefix(&ns.prefix);
+            }
+        }
+        self.event_bus.clear_plugin(plugin_id);
+        self.cancel_pending_namespace_calls(plugin_id, "plugin swap restart");
+        self.plugin_buffers.remove(plugin_id);
+        Ok(())
+    }
+
+    /// graceful swap 전용 — `config.disabled.ids` 미수정 process spawn.
+    /// `enable()` 의 sibling. 새 binary 로 재시작.
+    pub(crate) fn swap_respawn_internal(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        self.auto_disabled.remove(plugin_id);
+        let pkg = self
+            .packages
+            .iter()
+            .find(|p| p.manifest.id == plugin_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("plugin '{plugin_id}' not in packages"))?;
+        if self.processes.contains_key(plugin_id) {
+            return Ok(());
+        }
+        self.ensure_listener();
+        self.start_plugin_internal(&pkg);
+        if !self.processes.contains_key(plugin_id) {
+            anyhow::bail!("plugin '{plugin_id}' respawn failed (spawn error logged)");
+        }
+        Ok(())
+    }
+
     /// 현재 `packages` + `config.is_disabled`를 기준으로 extension 상태를 재계산.
     /// 디스커버리/enable/disable/install/remove 후 매번 호출한다.
     pub fn log_path(&self, plugin_id: &str) -> PathBuf {
