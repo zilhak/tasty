@@ -129,16 +129,27 @@ tarball 압축 해제 시 보존되어 부정적으로 작동할 수 있어 1차
 
 ### 6.2 수동 재설치
 
-복구/실험 용도로 `tasty plugin upgrade-builtins [--force]` 를 제공한다.
+복구/실험 용도로 `tasty plugin upgrade-builtins [flags]` 를 제공한다.
 
-- 기본 동작은 자동 upgrade 와 동일 (semver 기반).
-- `--force` 는 동일/하위 버전도 강제 덮어쓰기. 설치본 corruption 복구 시 사용.
-- 응답은 항목별 `BuiltinUpgradeReport` JSON. action: `Upgraded { from, to }` /
-  `Reinstalled { version }` / `Skipped { reason }` / `NotInBundle` / `Failed`.
-- 실행 중 plugin 의 binary 가 교체되면 *현재 실행 process 는 옛 binary 메모리
-  를 유지* 한다 (POSIX inode 교체). 새 binary 가 효과를 보려면 `plugin
-  disable` → `plugin enable` 시퀀스가 필요. Windows 에서는 실행 중 binary 의
-  in-place 교체가 sharing violation 으로 실패 → `Failed` 항목으로 보고된다.
+flags:
+
+- `--force` — 동일/하위 버전도 강제 덮어쓰기. 설치본 corruption 복구 시 사용.
+- `--restore-removed <ID>` (반복 지정 가능) — `tasty plugin remove` 로
+  `removed_builtins` 에 박힌 항목을 unmark 하여 같은 호출에서 자동 재설치
+  대상이 되게 한다. 명시된 id 만 unmark.
+- `--restore-removed-all` — `removed_builtins` 전체를 clear. `--restore-removed`
+  와 함께 지정 시 `--restore-removed-all` 우선. *주의*: 사용자가 직접 `tasty
+  plugin remove` 한 의도를 뒤집는 동작이므로 documentation 에서 명확히 안내.
+  부팅 시 자동 install 경로는 절대 unmark 하지 않는다 — 본 flag 만 진입점.
+
+응답은 항목별 `BuiltinUpgradeReport` JSON. action: `Upgraded { from, to }` /
+`Reinstalled { version }` / `Skipped { reason }` / `NotInBundle` / `Failed`.
+
+실행 중 plugin 의 binary 가 교체되면 *현재 실행 process 는 옛 binary 메모리
+를 유지* 한다 (POSIX inode 교체). 새 binary 가 효과를 보려면 `plugin disable`
+→ `plugin enable` 시퀀스가 필요하다. Windows 에서는 실행 중 binary 의 in-place
+교체가 sharing violation 으로 실패 → `Failed` 항목으로 보고된다. 두 문제는
+graceful swap (E.2, 후속) 의 `--restart-running` flag 로 해소된다.
 
 ### 6.3 사용자 수정 영역
 
