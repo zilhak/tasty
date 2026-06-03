@@ -48,6 +48,7 @@ pub struct DispatchedIntent {
 /// 발화* 하는 것은 금지된다 (`docs/design/popup-system.md` "Popup 발화 정책").
 /// debug 빌드의 `debug.popup.*` IPC 만 예외.
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
 pub enum Intent {
     /// 첫 단계의 placeholder. 핸들러는 아무 일도 하지 않는다.
     Noop,

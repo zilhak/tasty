@@ -77,6 +77,7 @@ pub fn apply_plugin_defaults_to(theme: &mut Theme) {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // reason: 테스트 fixture 의 합성 색상.
 mod tests {
     use super::*;
     use tasty_type_appearance::color::HexColor;

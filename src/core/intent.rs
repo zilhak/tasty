@@ -39,6 +39,7 @@ pub(crate) enum SendPayload {
 /// 도메인 변경 요청. Core 만이 자기 메서드로 적용한다.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
 pub(crate) enum DomainIntent {
     // ─── Settings (D.3.C.A.2) ───
     /// Settings 전체 교체. cascade — Theme apply / Scrollback limit / clipboard
@@ -234,6 +235,7 @@ pub(crate) enum DomainIntent {
 /// observer / replay / remote attach 의 기반.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[allow(clippy::large_enum_variant)] // reason: event queue 의 Box 화는 alloc/clone 비용 큼
 pub(crate) enum CoreEvent {
     // ─── Settings (D.3.C.A.2) ───
     /// Settings 가 갱신됨. 새 값 동봉.
