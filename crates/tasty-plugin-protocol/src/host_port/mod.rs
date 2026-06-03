@@ -6,8 +6,10 @@
 
 pub mod file;
 pub mod i18n;
+pub mod ipc_host;
 pub mod surface;
 
 pub use file::{FileFormatRegistryPort, FileHandlerRegistryPort};
 pub use i18n::I18nNamespaceRegistrar;
+pub use ipc_host::{AuditCallerMarker, AuditDecision, IpcHostFacade, SessionResolution};
 pub use surface::SurfaceRegistry;
