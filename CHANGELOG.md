@@ -77,6 +77,7 @@
 - `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list` → `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list` (점 표기). 옛 이름은 alias로 동작하지만 deprecated.
 - Plugin SDK `HostHandle::call` 반환 타입이 `Result<Value, HostCallError>` → `Result<Value, PluginError>`. `HostCallError`는 `PluginError`의 `#[deprecated]` alias로 유지.
 - `surface.meta.*` 가 파일 기반 (`~/.tasty/surfaces/<id>/meta.json` 풍의 임시 디렉터리) 에서 `tasty-memory` 위 `scope=surface:<id>` text/plain entry 로 통합 (응답 형태 동일). 같은 row 가 `memory.*` API 로도 보이며 `memory.changed` 이벤트로 변경이 전파된다. 키 형식 검증 (`[a-z0-9._-]+`, 1..=256) 이 새로 강제되므로 대문자/공백 키는 거부된다.
+- **(BREAK) markdown surface 분리** — `markdown` surface kind / `md`/`markdown` detector / `markdown-viewer` handler 가 host 내장에서 `com.tasty.markdown` plugin 으로 이관. host_rendered whitelist 경유 등록 (`com.tasty.image` 와 동일). 첫 부팅 시 BUILTINS 자동 install — 별도 작업 불필요. 영향: (1) `~/.tasty/plugins.toml` 의 `removed_builtins` 에 `com.tasty.markdown` 을 사전 등록한 경우 markdown surface 생성/복원이 실패하므로 `tasty plugin install com.tasty.markdown` 또는 removed_builtins 에서 수동 제거 필요. (2) file_handler ID 가 `host/markdown-viewer` → `com.tasty.markdown/viewer` 로 변경됐으므로 사용자 `file-handlers.toml` 에 `host/markdown-viewer` override 가 있다면 새 ID 로 수정 필요 (옛 override 는 고아가 되어 무시).
 
 ### Deprecated
 - `surface.meta_set` / `surface.meta_get` / `surface.meta_unset` / `surface.meta_list` (underscore 합성). 1.0 tag 직전에 alias 제거.
