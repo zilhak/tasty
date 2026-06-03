@@ -3,8 +3,6 @@
 //! 정책:
 //! - **SplitSurface**: `DomainIntent::SplitSurface` forward. focused
 //!   surface_id 는 handler 안에서 결정. cascade 가 origin 보고 focus 이동.
-//! - **CloseSurface**: origin.is_user() 면 snapshot 푸시 (Undo 가능),
-//!   Agent 면 no_snapshot. C1=B / C2 결정.
 //! - **ConvertSurface**: target 분기 — `Terminal` / `Kind { kind, params }`
 //!   모두 `Core::apply_convert_surface` 본문 한 곳에서 처리.
 
@@ -24,7 +22,6 @@ pub fn handle(
         Intent::SplitSurface { direction } => {
             split(core, state, engine, *direction, &intent.origin)
         }
-        Intent::CloseSurface { surface_id } => close(core, state, engine, intent, *surface_id),
         Intent::ConvertSurface { surface_id, target } => {
             convert(core, state, engine, *surface_id, target)
         }
@@ -73,54 +70,6 @@ fn split(
                 workspace_index,
                 pane_id,
                 new_surface_id,
-            );
-        }
-    }
-}
-
-fn close(
-    core: &mut Core,
-    state: &mut AppState,
-    engine: &mut CoreState,
-    intent: &DispatchedIntent,
-    surface_id: u32,
-) {
-    // C1=B / C2: 사용자 동작만 closed-tab restore stack (snapshot) 에 push.
-    let save_snapshot = intent.origin.is_user();
-    let domain_intent = crate::core::intent::DomainIntent::CloseSurface {
-        surface_id,
-        save_snapshot,
-    };
-    let events = match core.apply(engine, domain_intent) {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::warn!("CloseSurface failed: {e}");
-            return;
-        }
-    };
-    for ev in events {
-        if let crate::core::intent::CoreEvent::SurfaceClosed {
-            closed,
-            cascade_level,
-            cleanup_targets,
-            closed_tab_ids,
-            closed_pane_ids,
-            workspace_id_purged,
-            workspaces_now_empty,
-            ..
-        } = ev
-            && closed
-        {
-            crate::app::dispatch_domain::cascade_surface_closed(
-                core,
-                state,
-                engine,
-                cascade_level,
-                cleanup_targets,
-                closed_tab_ids,
-                closed_pane_ids,
-                workspace_id_purged,
-                workspaces_now_empty,
             );
         }
     }

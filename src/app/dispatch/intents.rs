@@ -111,18 +111,13 @@ impl App {
             Intent::Ui(_) => {
                 crate::intent::popup::handle(state, intent);
             }
-            Intent::ApplyPreset { .. }
-            | Intent::SavePreset { .. }
-            | Intent::DeletePreset { .. }
-            | Intent::RenamePreset { .. } => {
+            Intent::ApplyPreset { .. } | Intent::SavePreset { .. } => {
                 crate::intent::preset::handle(core, state, engine, intent);
             }
-            Intent::SplitSurface { .. }
-            | Intent::CloseSurface { .. }
-            | Intent::ConvertSurface { .. } => {
+            Intent::SplitSurface { .. } | Intent::ConvertSurface { .. } => {
                 crate::intent::surface::handle(core, state, engine, intent);
             }
-            Intent::NewTab { .. } | Intent::CloseTab { .. } => {
+            Intent::NewTab { .. } => {
                 crate::intent::tab::handle(core, state, engine, intent);
             }
             Intent::SplitPane { .. } => {
@@ -142,7 +137,6 @@ impl App {
                     "dispatch_one_intent reached Intent::Domain (should be handled in domain_batch)"
                 );
             }
-            Intent::Noop => {}
         }
     }
 

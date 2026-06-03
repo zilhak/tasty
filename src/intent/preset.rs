@@ -73,8 +73,6 @@ pub fn handle(
             *overwrite,
             preset,
         ),
-        Intent::DeletePreset { kind, name } => delete(core, state, engine, *kind, name),
-        Intent::RenamePreset { kind, from, to } => rename(core, state, engine, *kind, from, to),
         _ => {}
     }
 }
@@ -161,31 +159,6 @@ fn save(
     if intent.origin.is_user() {
         state.dialogs.pending_open_preset_window = true;
         state.dialogs.pending_preset_window_selection = Some((kind, saved_name));
-    }
-}
-
-fn delete(
-    core: &crate::core::Core,
-    state: &mut AppState,
-    _engine: &mut crate::core::CoreState,
-    kind: PresetKind,
-    name: &str,
-) {
-    if let Err(e) = delete_inner(core, state, kind, name) {
-        tracing::warn!("preset delete failed: {e}");
-    }
-}
-
-fn rename(
-    core: &crate::core::Core,
-    state: &mut AppState,
-    _engine: &mut crate::core::CoreState,
-    kind: PresetKind,
-    from: &str,
-    to: &str,
-) {
-    if let Err(e) = rename_inner(core, state, kind, from, to) {
-        tracing::warn!("preset rename failed: {e}");
     }
 }
 

@@ -50,8 +50,6 @@ pub struct DispatchedIntent {
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
 pub enum Intent {
-    /// 첫 단계의 placeholder. 핸들러는 아무 일도 하지 않는다.
-    Noop,
     /// UI Intent (popup 발화). 별 enum `UiIntent` 로 분리되어 분류축이 명시된다.
     Ui(UiIntent),
     /// Domain Intent (영속 도메인 mutate). `crate::core::intent::DomainIntent` 를
@@ -77,23 +75,10 @@ pub enum Intent {
         overwrite: bool,
         preset: ClonedPreset,
     },
-    /// Preset 삭제.
-    DeletePreset {
-        kind: tasty_presets::PresetKind,
-        name: String,
-    },
-    /// Preset 이름 변경.
-    RenamePreset {
-        kind: tasty_presets::PresetKind,
-        from: String,
-        to: String,
-    },
 
     // ---- Surface 도메인 ----
     /// focused surface 를 split. focused 의존이므로 사용자 단축키 전용 (CLI/IPC 미노출).
     SplitSurface { direction: SplitDirection },
-    /// Surface 닫기. origin.is_user() 면 snapshot 푸시 (Undo 가능), Agent 면 no_snapshot.
-    CloseSurface { surface_id: u32 },
     /// Surface 의 kind 변환. Terminal 은 host 내장, 그 외는 plugin 등록 kind.
     ConvertSurface {
         surface_id: u32,
@@ -107,8 +92,6 @@ pub enum Intent {
         kind: Option<String>,
         params: serde_json::Value,
     },
-    /// 특정 tab 닫기 (ID 지정).
-    CloseTab { tab_id: u32 },
 
     // ---- Pane 도메인 ----
     /// focused pane 을 split. 사용자 단축키 전용 (focused 의존).
@@ -426,15 +409,15 @@ mod tests {
     #[test]
     fn dispatch_intent_pushes_to_queue() {
         let mut state = make_state();
-        state.dispatch_intent(Intent::Noop.from_user_shortcut("test"));
+        state.dispatch_intent(Intent::RestoreClosedItem.from_user_shortcut("test"));
         assert_eq!(state.pending_intents.len(), 1);
     }
 
     #[test]
     fn take_pending_intents_clears_queue() {
         let mut state = make_state();
-        state.dispatch_intent(Intent::Noop.from_user_shortcut("a"));
-        state.dispatch_intent(Intent::Noop.from_user_shortcut("b"));
+        state.dispatch_intent(Intent::RestoreClosedItem.from_user_shortcut("a"));
+        state.dispatch_intent(Intent::RestoreClosedItem.from_user_shortcut("b"));
         let drained = state.take_pending_intents();
         assert_eq!(drained.len(), 2);
         assert!(state.pending_intents.is_empty());
@@ -442,8 +425,8 @@ mod tests {
 
     #[test]
     fn origin_is_user_is_agent() {
-        let user = Intent::Noop.from_user_shortcut("x");
-        let agent = Intent::Noop.from_agent_ipc();
+        let user = Intent::RestoreClosedItem.from_user_shortcut("x");
+        let agent = Intent::RestoreClosedItem.from_agent_ipc();
         assert!(user.origin.is_user());
         assert!(!user.origin.is_agent());
         assert!(agent.origin.is_agent());
@@ -452,10 +435,10 @@ mod tests {
 
     #[test]
     fn cascade_preserves_origin_and_trace_id() {
-        let parent = Intent::Noop
+        let parent = Intent::RestoreClosedItem
             .from_user_shortcut("approve")
             .with_trace_id("t1");
-        let child = Intent::Noop.cascaded_from(&parent);
+        let child = Intent::RestoreClosedItem.cascaded_from(&parent);
         assert!(matches!(
             child.origin,
             IntentOrigin::User {
