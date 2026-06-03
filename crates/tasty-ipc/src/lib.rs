@@ -6,5 +6,6 @@
 //! 잔존 (AppState/Core 결합 깊음 — §4.1 of plan).
 
 pub mod host_port;
+pub mod port_file;
 
 pub use host_port::{AuditCallerMarker, AuditDecision, IpcHostFacade, SessionResolution};

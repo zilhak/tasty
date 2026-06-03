@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::paths::tasty_home;
+use tasty_utils::path::tasty_home;
 
 /// Release: `~/.tasty/tasty.port`, Debug: `~/.tasty/tasty-debug.port`.
 pub fn port_file_path() -> Option<PathBuf> {
@@ -46,7 +46,7 @@ pub fn read_port_file_from(port_file: Option<&str>) -> Result<u16> {
 
 /// 포트를 파일에 쓴다. `custom_path` 지정 시 그 경로, 아니면 기본
 /// (`port_file_path()`). 디렉터리는 부재 시 생성.
-pub(crate) fn write_port_file_to(port: u16, custom_path: Option<&Path>) -> Result<()> {
+pub fn write_port_file_to(port: u16, custom_path: Option<&Path>) -> Result<()> {
     let path = match custom_path {
         Some(p) => p.to_path_buf(),
         None => match port_file_path() {
