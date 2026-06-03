@@ -37,27 +37,27 @@
 
 옛 분석: `font.rs + renderer.rs` (옛 1,108 LOC) → 장기 과제.
 
-- **현재 위치**: `src/gfx/renderer/` + `src/gfx/gpu/` (본 바이너리), `tasty-font` 만 별도 crate (1,186 LOC).
+- **현재 위치**: `src/gfx/renderer/` + `src/gfx/gpu/` (본 바이너리, 16 파일 / 3,633 LOC), `tasty-font` 만 별도 crate (1,186 LOC).
 - **회고**: 옛 *trigger* 였던 "코드베이스 15,000줄 이상 성장 시 재검토" — 본 바이너리는 ~91k LOC 로 6× 초과했음에도 *분리 안 됨*. **이는 LOC 기반 trigger 가 무효함을 입증**.
 - **현 시점 trigger 재정의**:
   - 다른 VTE 백엔드 (alacritty_terminal / 자체) 를 지원해야 할 use case 발생.
   - 외부 프로젝트가 *tasty 의 wgpu 셀 파이프라인* 만 재사용하고 싶다는 요구 발생.
-  - `wgpu` 공개 API 가 1.0 stable 도달 + tasty 자체 셀 파이프라인이 안정화 (현재는 둘 다 미달).
+  - `wgpu` 공개 API 가 1.0 stable 도달 + tasty 자체 셀 파이프라인이 안정화 (현재는 둘 다 미달, wgpu 24 사용).
 - 위 3 조건 중 *2 개 이상* 충족 시 `TerminalSurface` trait 설계로 분리 진입.
+- **G.E 시점 (2026-06-03) trigger 미도달 — 분리 보류**. 본 바이너리 내부 의존 listing (현 시점 grep 실측, 13 unique 모듈): `adapters::ui`, `AppEvent`, `font` (`D2CODING_FAMILY` / `GlyphAtlas` / `GlyphKey` / `FontConfig`), `i18n`, `model`, `plugin_bridge::remote_surface::RemoteSurface`, `plugin::PluginManager`, `renderer::{CellRenderer, RenderPreedit}`, `selection::NormalizedSelection`, `settings::AppearanceSettings`, `state::AppState`, `terminal_link::LinkHighlight`. 외부 의존 (`egui::TextureId`, `tasty_plugin_protocol`, `tasty_type_appearance`, `bytemuck`, `wgpu 24`, `cosmic-text` via font) 중 wgpu/egui API 미안정. 분리 시 *trait extraction* 으로 13 모듈 의존을 끊어야 하나 비용 막대 + 외부 가치 0. 차후 다중 VTE 백엔드 도입 시점 본 표 재평가.
 
 ---
 
-## Phase 5: tasty-model 분리 — **장기 과제 유지 (디렉토리 분할만 완료)**
+## Phase 5: tasty-model 분리 — **완료 (G.E, 2026-06-03)**
 
-옛 분석은 *크레이트 분리* 와 *파일 분할 (대안)* 두 갈래로 제시. **파일 분할은 완료, crate 분리는 미완**.
+옛 분석은 *크레이트 분리* 와 *파일 분할 (대안)* 두 갈래로 제시. **G.E 영역에서 crate 분리 완료**.
 
-- **현재 위치**: `src/model/` 디렉토리 (13 파일: `closed_item.rs`, `surface_layout.rs`, `pane_tree.rs`, `tab.rs`, `workspace.rs` 등).
+- **현재 위치**: `crates/tasty-model/` (16 파일 / 3,719 LOC: `binary_tree`, `closed_item`, `diff_panel`, `empty_surface`, `image_panel`, `markdown_panel`, `pane`, `pane_tree`, `popup_kind`, `surface_layout`, `surface_trait`, `tab`, `terminal_surface`, `toast_kind`, `workspace`, `tests`).
+- **trigger 도달 근거**: F.A (headless 도입) 완료 후 `src/model.rs` 가 이미 `#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]` 로 headless / GUI 양쪽 빌드 정상 동작. 외부 의존 = `tasty-type-geometry` / `tasty-utils` / `tasty-terminal` / `termwiz` / `serde_json` 만, GUI 의존 (egui/wgpu/winit/cosmic-text/arboard/rfd) 0. **옛 trigger ("headless 도입 시 흡수") 충족**.
+- **호환 shim**: 본 바이너리 `src/model.rs` 가 `pub use tasty_model::*;` 단 두 줄로 축약 — 옛 callsite (`use crate::model::Tab` 등 59건) 회귀 0.
 - **회고**:
-  - *옛 model.rs 1,775 LOC 단일 파일* → 디렉토리 분할로 모듈별 응집 확보. 옛 "크레이트 분리 없이 파일 분할" 대안 권고 정확.
-  - 크레이트 분리는 미완. 옛 *제네릭 전파 8 단계* (`SurfaceNode<T>` → ... → `Workspace<T>`) 문제 그대로 — `Terminal` 타입 직접 의존이 분리 비용을 만들고 있음.
-- **현 시점 trigger 재정의**:
-  - *headless 모드* (Phase E.B) 가 안정화되면 `Terminal` 의존을 `TerminalBackend` trait 으로 추상화하는 비용이 *headless 비용에 흡수* 됨 → 그 시점에 분리.
-  - 그 외엔 *외부 재사용 use case* 가 필요 (현재 0).
+  - *옛 model.rs 1,775 LOC 단일 파일* → 디렉토리 분할 → crate 분리 의 2 단계 진행 완료. 옛 "크레이트 분리 없이 파일 분할" 대안 권고는 *중간 단계* 로 유효했고 F.A headless 도입이 *진짜 trigger* 였다.
+  - 옛 *제네릭 전파 8 단계* (`SurfaceNode<T>` → ... → `Workspace<T>`) 문제는 *해결 없이 분리 가능* — `tasty-terminal` 이 leaf crate 라 `Terminal` 직접 의존도 leaf 의존이라 분리 비용에 영향 없음.
 
 ---
 
@@ -65,15 +65,17 @@
 
 옛 분석: 239 LOC → 비권장.
 
-- **현재 위치**: 4 곳 분산.
+- **현재 위치**: 4+ 곳 분산.
   - `src/store/notification.rs` — `NotificationStore`.
   - `src/adapters/ui/notification.rs` — OS 알림 (notify-rust).
   - `src/adapters/ipc/handler/notification.rs` — IPC 핸들러.
   - `src/view/settings/ui/tabs/notifications.rs` — 설정 UI.
+  - `src/ports/notification_sound.rs` + `src/adapters/production/notification_sound/{mod,macos,windows,linux}.rs` — F.E NotificationSoundPlayer port + platform impl.
 - **회고**: *분산만* 진행되고 *crate 분리* 는 미진행. 옛 비권장 판정의 사유 (*tasty 고유 설정/알림 구조*) 는 여전히 유효하나, plugin 시스템이 알림 IPC 를 호출하는 use case 가 발생 시 도메인 crate 화 가치가 ↑ 한다.
 - **현 시점 trigger 재정의**:
   - plugin 이 *host 의 알림 도메인 타입* 을 직접 import 해야 할 use case 발생 시 → `tasty-notification` 으로 분리 후 plugin-sdk 가 재수출.
   - 현재까지 plugin 은 IPC wire format 만 사용 → 도메인 타입 노출 불필요 → 분리 trigger 미도달.
+- **G.E 시점 (2026-06-03) trigger 미도달 — 분리 보류**. `grep -rn "use crate::ports::notification_sound\|crate::ports::notification_sound" crates/` = 0건 (plugin importer 0). 본 바이너리 내부 importer 는 7곳 (`grep -rn "use crate::ports::notification_sound" src/ | wc -l = 7` — main / core/builder / core/mod / boot/wiring / production/notification_sound/{mod,macos,windows,linux} 일부). F.E NotificationSoundPlayer port 도입에도 *외부 노출 지점 0*. 분리 시 본 바이너리만 영향 받고 외부 이득 없음. 차후 plugin 이 NotificationSoundPlayer trait 직접 의존 시점 재평가.
 
 ---
 
@@ -94,6 +96,6 @@
 
 | 문서 | 설명 |
 |------|------|
-| [`index.md`](index.md) | 28 crate 현황 매트릭스 + 옛 8 후보 도달 상태 |
+| [`index.md`](index.md) | 33 crate 현황 매트릭스 + 옛 8 후보 도달 상태 |
 | [`workspace-design.md`](workspace-design.md) | Cargo workspace 구조 / Cargo.toml 발췌 / 의존성 그래프 |
 | [`../refactoring.md`](../refactoring.md) | 본 바이너리 내부 리팩토링 우선순위 (crate 분리 후보 절 cross-link) |

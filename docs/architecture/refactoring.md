@@ -60,13 +60,13 @@ CJK/이모지 등 유니코드 문자가 많으면 아틀라스가 자주 리셋
 
 ## 4. 크레이트 분리 후보
 
-현재 `src/` 내에 있지만 독립 크레이트로 추출 *가능* 한 모듈. **3 후보 모두 분리 trigger 미도달 — 현 시점 권고는 [`library-separation/execution-plan.md`](library-separation/execution-plan.md) 의 Phase 4~6 참조.**
+현재 `src/` 내에 있던 분리 후보 3 종 중 *model* 만 trigger 도달 (G.E 에서 분리 완료), 나머지는 trigger 미도달. **trigger 재정의 + 분리 보류 사유는 [`library-separation/execution-plan.md`](library-separation/execution-plan.md) 의 Phase 4~6 참조.**
 
 | 모듈 | 근거 | 난이도 | 현 상태 |
 |------|------|--------|---------|
-| `src/model/` → `tasty-model` | `tasty-terminal` 외 `use crate::` 없음 | 중 | 디렉토리 분할 완료, crate 분리 미완. trigger: headless 도입 시 흡수 ([exec-plan Phase 5](library-separation/execution-plan.md#phase-5-tasty-model-분리--장기-과제-유지-디렉토리-분할만-완료)) |
-| `src/gfx/renderer/` + `src/gfx/gpu/` → `tasty-renderer` | `font`, `model`, `selection` 만 의존 | 중 | 미완. trigger: 다중 VTE 백엔드 / 외부 wgpu 재사용 ([exec-plan Phase 4](library-separation/execution-plan.md#phase-4-tasty-renderer-분리--장기-과제-유지-분리-안-됨)) |
-| `src/store/notification.rs` + 분산 3 곳 → `tasty-notification` | `model::Rect` 불필요, notify-rust 만 의존 | 소 | 분산만 진행. trigger: plugin 이 알림 도메인 타입 직접 import 시 ([exec-plan Phase 6](library-separation/execution-plan.md#phase-6-tasty-notification-분리--비권장-유지-재검토-필요)) |
+| `src/model/` → `tasty-model` | `tasty-terminal` 외 `use crate::` 없음 | 중 | **✅ 완료 (G.E, 2026-06-03)**. `crates/tasty-model/` (16 파일 / 3,719 LOC). 본 바이너리 `src/model.rs` 는 `pub use tasty_model::*;` shim 유지 — 옛 callsite 회귀 0. ([exec-plan Phase 5](library-separation/execution-plan.md#phase-5-tasty-model-분리--완료-ge-2026-06-03)) |
+| `src/gfx/renderer/` + `src/gfx/gpu/` → `tasty-renderer` | `font`, `model`, `selection` 만 의존 | 중 | **G.E 시점 trigger 미도달 — 보류**. 실측 본 바이너리 내부 의존 13 unique 모듈 (state/settings/plugin/AppEvent/i18n/terminal_link/selection 등), wgpu 24 미안정. ([exec-plan Phase 4](library-separation/execution-plan.md#phase-4-tasty-renderer-분리--장기-과제-유지-분리-안-됨)) |
+| `src/store/notification.rs` + 분산 4 곳 → `tasty-notification` | `model::Rect` 불필요, notify-rust 만 의존 | 소 | **G.E 시점 trigger 미도달 — 보류**. `grep crates/` plugin importer = 0. F.E NotificationSoundPlayer port 도입에도 외부 노출 0. ([exec-plan Phase 6](library-separation/execution-plan.md#phase-6-tasty-notification-분리--비권장-유지-재검토-필요)) |
 
 ---
 
@@ -75,6 +75,6 @@ CJK/이모지 등 유니코드 문자가 많으면 아틀라스가 자주 리셋
 | 순위 | 항목 | 효과 |
 |------|------|------|
 | ~~P2~~ ✅ | ~~BinaryTree trait 추출~~ 완료 (§1) | ~250줄 중복 제거, 새 트리 타입 추가 용이 |
-| P3 | 크레이트 분리 (model, renderer, notification) — *trigger 미도달* | 빌드 병렬화, API 경계 명확화. 권고/trigger 는 [library-separation/execution-plan.md](library-separation/execution-plan.md) |
+| ~~P3~~ ✅ | ~~크레이트 분리 (model)~~ 완료 (G.E, §4) | `crates/tasty-model/` 분리. renderer / notification 은 trigger 미도달 — [library-separation/execution-plan.md](library-separation/execution-plan.md) 의 Phase 4 / 6 trigger 충족 시 재진입 |
 | P3 | 멀티 서피스 렌더 최적화 | 10+ 서피스에서 성능 개선 |
 | P3 | 다중 아틀라스 페이지 | CJK 집약 사용 시 성능 개선 |

@@ -81,9 +81,10 @@ LOC 합계 (workspace, 실측 2026-06-02): 38,711.
 
 | 항목 | 현 위치 | 권고 |
 |------|----------|------|
-| `tasty-model` | `src/model/` (디렉토리 분할 완료) | **유지**. 옛 *제네릭 전파 8 단계* 문제는 그대로. 분리 trigger 미도달 (외부 재사용 use case 0) |
-| `tasty-renderer` | `src/gfx/renderer/` + `src/gfx/gpu/` | **유지**. `TerminalSurface` trait 설계 부담 그대로. 본 바이너리 91k LOC 임에도 trigger 미도달 — 옛 *15k LOC* 기준이 무관함 입증 → 다른 trigger (다중 VTE 백엔드 / 외부 wgpu 사용자) 가 진짜 결정 요인 |
-| `tasty-notification` | 4 곳 분산 | **재검토 필요**. *분리 가치* 가 옛 판정과 달라졌을 가능성 (plugin 이 알림 IPC 를 호출하는 use case 발생 시 도메인 crate 화 가치 ↑) |
+| `tasty-renderer` | `src/gfx/renderer/` + `src/gfx/gpu/` (16 파일 / 3,633 LOC) | **G.E (2026-06-03) 시점 trigger 미도달 — 보류**. 본 바이너리 내부 의존 13 unique 모듈 (state/settings/plugin/AppEvent/i18n 등). wgpu 24 미안정 + 외부 사용자 0. 다중 VTE 백엔드 도입 또는 wgpu 1.0 도달 시점 재평가. |
+| `tasty-notification` | 4+ 곳 분산 (F.E NotificationSoundPlayer port 도입 후에도 plugin importer = 0) | **G.E (2026-06-03) 시점 trigger 미도달 — 보류**. `grep crates/` plugin importer 0. 본 바이너리 내부 importer 7곳뿐. plugin 이 NotificationSoundPlayer trait 직접 의존 시점 재평가. |
+
+**G.E (2026-06-03) 완료**: `tasty-model` 은 trigger 도달로 분리 — `crates/tasty-model/` (16 파일 / 3,719 LOC). 본 매트릭스의 `tasty-model` 행은 § "옛 8 후보 도달 상태" 와 § "현재 33 crate 4 계층 매트릭스" 에서 *완료* 로 표기됨.
 
 ---
 
