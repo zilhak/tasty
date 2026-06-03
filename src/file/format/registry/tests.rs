@@ -19,8 +19,6 @@ fn host_default_loads_and_identifies_markdown() {
     assert_eq!(id, Some(DetectorId("markdown".into())));
     let id = reg.identify(&target("a/b.html"), DetectDepth::Cheap);
     assert_eq!(id, Some(DetectorId("html".into())));
-    let id = reg.identify(&target("a/b.png"), DetectDepth::Cheap);
-    assert_eq!(id, Some(DetectorId("image".into())));
     let id = reg.identify(&target("a/b.unknownext"), DetectDepth::Cheap);
     assert_eq!(id, None);
 }
@@ -1012,16 +1010,13 @@ fn identify_fast_path_does_not_apply_to_directory_target() {
 
 #[test]
 fn identify_existing_tests_still_pass_after_cutover() {
-    // 빠른 회귀 — 기존의 단순 매칭 (host markdown / image) 이 깨지지 않음을 확인.
+    // 빠른 회귀 — host default 단순 매칭 (markdown) 이 깨지지 않음을 확인.
+    // image detector 는 com.tasty.image plugin 이 제공 — host default 는 등록 안 함.
     let reg = FileFormatRegistry::new();
     reg.install_host_defaults(include_str!("../defaults/default-file-format.toml"));
     assert_eq!(
         reg.identify(&target("a/b.md"), DetectDepth::Cheap),
         Some(DetectorId("markdown".into()))
-    );
-    assert_eq!(
-        reg.identify(&target("a/b.png"), DetectDepth::Cheap),
-        Some(DetectorId("image".into()))
     );
 }
 

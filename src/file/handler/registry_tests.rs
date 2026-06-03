@@ -203,8 +203,9 @@ fn all_handlers_returns_every_enabled() {
     let reg = FileHandlerRegistry::new();
     load_host(&reg);
     let v = reg.all_handlers();
-    // host default 4개
-    assert_eq!(v.len(), 4);
+    // host default 3개 (markdown-viewer, html-system, directory-system).
+    // image-viewer 는 com.tasty.image plugin 이 제공 — host default 에 없음.
+    assert_eq!(v.len(), 3);
 }
 
 // ── cross-module integration: file_format + file_handler ──────────
