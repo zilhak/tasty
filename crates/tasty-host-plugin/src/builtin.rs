@@ -555,6 +555,234 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
     }
 }
 
+/// 한 builtin plugin 이 본 실행에서 처리된 결과. CLI/IPC 응답에 포함된다.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BuiltinUpgradeItem {
+    pub id: String,
+    pub action: BuiltinUpgradeAction,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BuiltinUpgradeAction {
+    /// 변경 없이 통과 — installed >= bundle, 동일 버전 mtime resync, 사용자 제거 등.
+    Skipped {
+        installed_version: Option<String>,
+        bundle_version: Option<String>,
+        reason: String,
+    },
+    /// bundle > installed — 디렉토리 교체 성공.
+    Upgraded { from: String, to: String },
+    /// force=true 또는 신규 install — 강제 (재)설치 성공. version 은 bundle 의 값.
+    Reinstalled { version: String },
+    /// bundle 디렉토리 자체에 해당 plugin 이 없음 (dev partial build 등).
+    NotInBundle,
+    /// 파일 IO 실패 — Windows sharing violation 등.
+    Failed { reason: String },
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BuiltinUpgradeReport {
+    pub items: Vec<BuiltinUpgradeItem>,
+}
+
+/// 사용자/AI 가 명시 호출하는 builtin 재설치 진입점.
+///
+/// `install_builtins_if_needed` 와의 차이:
+/// - `force` 입력으로 동일/하위 버전도 덮어쓸 수 있음 (recovery).
+/// - 각 plugin 당 한 줄 report 항목 반환 — CLI/IPC 응답으로 노출.
+/// - 변경된 항목이 있으면 PluginManager 의 packages/extensions 를 재계산.
+///
+/// 실행 중 plugin process 의 binary 가 교체될 수 있다 (POSIX 는 inode 교체로 안전,
+/// Windows 는 sharing violation 가능). 본 함수는 *process 재시작을 수행하지 않는다*
+/// — 새 binary 는 다음 plugin restart (또는 부팅) 후 효과 발생.
+pub fn upgrade_builtins(mgr: &mut PluginManager, force: bool) -> BuiltinUpgradeReport {
+    let dest_root = match discovery::plugin_root() {
+        Some(p) => p,
+        None => {
+            tracing::warn!("upgrade_builtins: cannot resolve plugin root");
+            return BuiltinUpgradeReport {
+                items: vec![BuiltinUpgradeItem {
+                    id: String::new(),
+                    action: BuiltinUpgradeAction::Failed {
+                        reason: "cannot resolve plugin root".into(),
+                    },
+                }],
+            };
+        }
+    };
+    let bundle = bundle_root();
+    let mut items = Vec::with_capacity(BUILTINS.len());
+    let mut changed_ids: Vec<String> = Vec::new();
+
+    for spec in BUILTINS {
+        let dest = dest_root.join(spec.id);
+
+        if mgr.config.is_builtin_removed(spec.id) {
+            items.push(BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::Skipped {
+                    installed_version: read_installed_version(&dest).map(|v| v.to_string()),
+                    bundle_version: None,
+                    reason: "user-removed".into(),
+                },
+            });
+            continue;
+        }
+
+        let Some(bundle_root) = bundle.as_ref() else {
+            items.push(BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::NotInBundle,
+            });
+            continue;
+        };
+        let src = bundle_root.join(spec.id);
+        if !src.is_dir() {
+            items.push(BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::NotInBundle,
+            });
+            continue;
+        }
+
+        let installed_v = read_installed_version(&dest);
+        let bundle_v = read_bundle_version(&src);
+
+        if !dest.exists() {
+            if let Err(e) =
+                std::fs::create_dir_all(&dest_root).and_then(|_| copy_dir_recursive(&src, &dest))
+            {
+                items.push(BuiltinUpgradeItem {
+                    id: spec.id.into(),
+                    action: BuiltinUpgradeAction::Failed {
+                        reason: e.to_string(),
+                    },
+                });
+                continue;
+            }
+            changed_ids.push(spec.id.into());
+            tracing::info!("installed builtin plugin '{}' from bundle", spec.id);
+            items.push(BuiltinUpgradeItem {
+                id: spec.id.into(),
+                action: BuiltinUpgradeAction::Reinstalled {
+                    version: bundle_v.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+                },
+            });
+            continue;
+        }
+
+        match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
+            BuiltinUpgradeDecision::Skip => {
+                items.push(BuiltinUpgradeItem {
+                    id: spec.id.into(),
+                    action: BuiltinUpgradeAction::Skipped {
+                        installed_version: installed_v.map(|v| v.to_string()),
+                        bundle_version: bundle_v.map(|v| v.to_string()),
+                        reason: "installed >= bundle".into(),
+                    },
+                });
+            }
+            BuiltinUpgradeDecision::ResyncSameVersion => {
+                if let Err(e) = sync_dir_recursive_if_newer(&src, &dest) {
+                    items.push(BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Failed {
+                            reason: e.to_string(),
+                        },
+                    });
+                    continue;
+                }
+                items.push(BuiltinUpgradeItem {
+                    id: spec.id.into(),
+                    action: BuiltinUpgradeAction::Skipped {
+                        installed_version: installed_v.map(|v| v.to_string()),
+                        bundle_version: bundle_v.map(|v| v.to_string()),
+                        reason: "same-version (mtime resync)".into(),
+                    },
+                });
+            }
+            BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
+                tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
+                if let Err(e) = overwrite_builtin_dir(&src, &dest) {
+                    items.push(BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Failed {
+                            reason: e.to_string(),
+                        },
+                    });
+                    continue;
+                }
+                changed_ids.push(spec.id.into());
+                items.push(BuiltinUpgradeItem {
+                    id: spec.id.into(),
+                    action: BuiltinUpgradeAction::Upgraded {
+                        from: from.to_string(),
+                        to: to.to_string(),
+                    },
+                });
+            }
+            BuiltinUpgradeDecision::ForceOverwrite => {
+                tracing::info!(
+                    "force-reinstalling builtin '{}' (installed v{:?}, bundle v{:?})",
+                    spec.id,
+                    installed_v.as_ref().map(|v| v.to_string()),
+                    bundle_v.as_ref().map(|v| v.to_string()),
+                );
+                if let Err(e) = overwrite_builtin_dir(&src, &dest) {
+                    items.push(BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Failed {
+                            reason: e.to_string(),
+                        },
+                    });
+                    continue;
+                }
+                changed_ids.push(spec.id.into());
+                items.push(BuiltinUpgradeItem {
+                    id: spec.id.into(),
+                    action: BuiltinUpgradeAction::Reinstalled {
+                        version: bundle_v.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+                    },
+                });
+            }
+        }
+    }
+
+    if !changed_ids.is_empty() {
+        // 디스크가 바뀌었으니 PluginManager state 재계산.
+        mgr.packages = discovery::discover();
+        mgr.recompute_extensions();
+        // 매니페스트 신규 permission 자동 grant — install_builtins_if_needed step 2 와 동일.
+        let mut config_dirty = false;
+        for id in &changed_ids {
+            let dest = dest_root.join(id);
+            if !dest.exists() {
+                continue;
+            }
+            if let Ok(manifest) = Manifest::load(&dest) {
+                if manifest.permissions.is_empty() {
+                    continue;
+                }
+                if !mgr.config.grants.contains_key(id) {
+                    mgr.config.set_granted(id, manifest.permissions.clone());
+                    config_dirty = true;
+                } else if apply_builtin_permission_diff(&mut mgr.config, id, &manifest.permissions)
+                {
+                    config_dirty = true;
+                }
+            }
+        }
+        if config_dirty {
+            if let Err(e) = mgr.config.save() {
+                tracing::warn!("upgrade_builtins: save plugins.toml failed: {e}");
+            }
+        }
+    }
+
+    BuiltinUpgradeReport { items }
+}
+
 /// 기존 builtin grant entry에 매니페스트 신규 permission 만 증분 추가.
 ///
 /// 기존 사용자의 `plugins.toml`에 이미 plugin entry가 있는 경우 (`grants` map에

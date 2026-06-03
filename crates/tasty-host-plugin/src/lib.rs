@@ -27,7 +27,8 @@ pub mod ui_tree;
 // 테스트는 event_bus.rs 에서 event_bus_tests.rs 를 로드 (co-located).
 
 pub use builtin::{
-    bundle_root, install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed,
+    BuiltinUpgradeAction, BuiltinUpgradeItem, BuiltinUpgradeReport, bundle_root,
+    install_builtins_if_needed, is_builtin_plugin, mark_builtin_removed, upgrade_builtins,
 };
 pub use discovery::{discover, plugin_root};
 pub use listener::HostListener;
