@@ -378,12 +378,13 @@ mod tests {
 
     #[test]
     fn open_converts_surface_to_image_with_path() {
-        let (mut state, mut engine) = make_state();
+        let (mut core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
         let tmp = tempfile::tempdir().unwrap();
         let path = write_blank_png(tmp.path(), "a.png");
 
         let resp = handle_open(
+            &mut core,
             &mut state,
             &mut engine,
             Value::Null,
@@ -398,9 +399,10 @@ mod tests {
 
     #[test]
     fn open_rejects_missing_path() {
-        let (mut state, mut engine) = make_state();
+        let (mut core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
         let resp = handle_open(
+            &mut core,
             &mut state,
             &mut engine,
             Value::Null,
@@ -411,8 +413,9 @@ mod tests {
 
     #[test]
     fn open_rejects_unknown_surface() {
-        let (mut state, mut engine) = make_state();
+        let (mut core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let resp = handle_open(
+            &mut core,
             &mut state,
             &mut engine,
             Value::Null,
@@ -423,7 +426,7 @@ mod tests {
 
     #[test]
     fn next_prev_wrap_around_in_directory() {
-        let (mut state, mut engine) = make_state();
+        let (mut core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
         let tmp = tempfile::tempdir().unwrap();
         let a = write_blank_png(tmp.path(), "a.png");
@@ -433,6 +436,7 @@ mod tests {
         // Open with first file. After convert_surface_to_kind, ImagePanel populates
         // dir_images by scanning the directory.
         let resp = handle_open(
+            &mut core,
             &mut state,
             &mut engine,
             Value::Null,
