@@ -179,18 +179,93 @@ pub(crate) fn wait_any_decide(
         .collect()
 }
 
-/// `claude.wait_any` IPC 핸들러 (skeleton — F.a). 실제 구현은 F.c 에서 채운다.
+/// `claude.wait_any` 의 입력 파라미터 파싱. host IPC 없이 단위 테스트 가능.
 ///
-/// 여러 child 중 *먼저* idle / needs_input / exited 가 되는 것을 polling 으로
-/// 감지해 즉시 응답한다. CLI 측 `run_dynamic_client_polling` 이 매 tick
-/// (interval_ms) 마다 본 핸들러를 호출하며, 응답의 `state` 가
-/// terminal_states 매치되면 polling 종료.
+/// `--children "1, 2, 3"` 같은 공백 포함 입력도 trim 후 parse — 잘못된 토큰
+/// 은 silent drop 되므로 모든 토큰이 invalid 한 경우와 empty 입력은 둘 다
+/// 빈 결과 → invalid_params 에러 (G.F-Q3). 정상 케이스는 (parent_surface_id,
+/// children Vec) 반환.
+pub(crate) fn parse_wait_any_params(params: &Value) -> Result<(u32, Vec<u32>), IpcMethodError> {
+    let parent_surface_id = require_surface_id(params)?;
+    let children_str = params
+        .get("children")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            IpcMethodError::invalid_params("Missing 'children' parameter (comma-separated indices)")
+        })?;
+    let children: Vec<u32> = children_str
+        .split(',')
+        .filter_map(|s| s.trim().parse::<u32>().ok())
+        .collect();
+    if children.is_empty() {
+        return Err(IpcMethodError::invalid_params(
+            "'children' must be a non-empty comma-separated list of indices",
+        ));
+    }
+    Ok((parent_surface_id, children))
+}
+
+/// `wait_any_decide` 결과 + host/state 콜백을 받아 응답 JSON 을 구성하는 순수
+/// 함수. 입력 children 순서대로 한 child 씩 평가 — 첫 terminal 을 발견하면
+/// 즉시 반환, 모두 active 면 `{"state":"pending"}` 반환 (child_index 키 없음,
+/// R10).
+///
+/// terminal 판정:
+/// - `WaitDecision::Exited` (state 에 없음): 즉시 `exited`.
+/// - `WaitDecision::CheckExistence(sid)`: `exists_fn(sid) == false` → `exited`,
+///   `state_of_fn(sid) ∈ {"idle","needs_input"}` → 그 state.
+/// - 그 외 (`active`) 는 다음 child 로 진행.
+pub(crate) fn wait_any_response<F, G>(
+    decisions: &[(u32, WaitDecision)],
+    mut exists_fn: F,
+    mut state_of_fn: G,
+) -> Value
+where
+    F: FnMut(u32) -> bool,
+    G: FnMut(u32) -> &'static str,
+{
+    for &(child_index, decision) in decisions {
+        match decision {
+            WaitDecision::Exited => {
+                return json!({ "state": "exited", "child_index": child_index });
+            }
+            WaitDecision::CheckExistence(child_surface_id) => {
+                if !exists_fn(child_surface_id) {
+                    return json!({ "state": "exited", "child_index": child_index });
+                }
+                let s = state_of_fn(child_surface_id);
+                if s == "idle" || s == "needs_input" {
+                    return json!({ "state": s, "child_index": child_index });
+                }
+            }
+        }
+    }
+    json!({ "state": "pending" })
+}
+
+/// `claude.wait_any` IPC 핸들러.
+///
+/// 여러 child 중 *먼저* idle / needs_input / exited 가 되는 것을 즉시
+/// 깨운다. CLI 측 `run_dynamic_client_polling` 이 매 tick (interval_ms)
+/// 마다 본 핸들러를 호출하며, 응답의 `state` 가 terminal_states 매치되면
+/// polling 종료.
 pub(crate) fn handle_wait_any(
-    _state: &ClaudeState,
-    _host: &HostHandle,
-    _params: &Value,
+    state: &ClaudeState,
+    host: &HostHandle,
+    params: &Value,
 ) -> Result<Value, IpcMethodError> {
-    Ok(json!({ "state": "pending" }))
+    let (parent_surface_id, children) = parse_wait_any_params(params)?;
+    let decisions = wait_any_decide(state, parent_surface_id, &children);
+    Ok(wait_any_response(
+        &decisions,
+        |sid| {
+            host.call("surface.locate", json!({ "surface_id": sid }))
+                .ok()
+                .and_then(|v| v.get("exists").and_then(|e| e.as_bool()))
+                .unwrap_or(false)
+        },
+        |sid| state.state_of(sid),
+    ))
 }
 
 /// 호스트 `handle_claude_kill` 1:1 이주.

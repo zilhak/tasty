@@ -199,6 +199,58 @@ fn wait_any_decide_returns_empty_for_empty_input() {
     assert!(result.is_empty());
 }
 
+// ─── G.F.c: handle_wait_any IPC 핸들러 ────────────────────────────────
+
+/// 전원 active 일 때 응답은 `{"state":"pending"}` — child_index 키 없음 (R10).
+/// host call 은 모든 surface 가 살아있음(exists=true), state_of 는 항상 "active".
+#[test]
+fn wait_any_response_returns_pending_when_all_active() {
+    let decisions = vec![
+        (1u32, WaitDecision::CheckExistence(100)),
+        (2u32, WaitDecision::CheckExistence(101)),
+        (3u32, WaitDecision::CheckExistence(102)),
+    ];
+    let resp = wait_any_response(&decisions, |_| true, |_| "active");
+    assert_eq!(resp["state"], "pending");
+    assert!(resp.get("child_index").is_none());
+}
+
+/// R9 회피 (응답 단계): decisions=[CheckExistence(100), Exited] 이고
+/// surface 100 이 idle 일 때 응답은 `{state:"idle", child_index:1}`.
+/// 뒤의 Exited (child 2) 가 앞의 idle (child 1) 을 가로채지 않음.
+#[test]
+fn wait_any_response_returns_first_idle_even_when_later_child_exited() {
+    let decisions = vec![
+        (1u32, WaitDecision::CheckExistence(100)),
+        (2u32, WaitDecision::Exited),
+    ];
+    let resp = wait_any_response(
+        &decisions,
+        |sid| {
+            assert_eq!(sid, 100, "should only check surface 100 before terminal");
+            true
+        },
+        |sid| {
+            assert_eq!(sid, 100);
+            "idle"
+        },
+    );
+    assert_eq!(resp["state"], "idle");
+    assert_eq!(resp["child_index"], 1);
+}
+
+/// empty `--children` 입력은 invalid_params (G.F-Q3). params parsing 단계에서
+/// 잡히므로 host 가 없어도 검증 가능.
+#[test]
+fn parse_wait_any_params_errors_on_empty_children() {
+    let err = parse_wait_any_params(&json!({
+        "surface_id": 10,
+        "children": "",
+    }))
+    .unwrap_err();
+    assert_eq!(err.code, -32602, "expected invalid_params, got {err:?}");
+}
+
 #[test]
 fn kill_finalize_removes_child_and_persists_only_when_needed() {
     let mut state = ClaudeState::default();
