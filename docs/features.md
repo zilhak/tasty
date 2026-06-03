@@ -889,10 +889,21 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
   - **Normal**: 문자 단위 드래그 선택
   - **Word**: 더블클릭으로 단어 선택
   - **Line**: 트리플클릭으로 줄 전체 선택
+  - **Block**: vi 복사 모드의 `Ctrl+v` 로 진입하는 사각형 선택 (마우스에서는 사용 안 함)
 - 선택 영역 시각적 하이라이트 (배경색 오버라이드, Catppuccin Surface2 기반)
 - 스크롤백 영역과 화면 영역을 넘나드는 선택 지원
 - 전각 문자(CJK, 한글) 2셀 너비 올바르게 처리
 - 마우스 트래킹 모드(1000/1002/1003) 활성 시 Shift+드래그로 강제 선택
+
+### vi 스타일 키보드 복사 모드
+- `Ctrl+Shift+Space` (기본 키, `enter_copy_mode` 액션) 로 진입. 진입 시 PTY 입력이 차단되고 커서 위치가 1셀 하이라이트로 표시됨
+- 이동 키: `h`/`j`/`k`/`l` (좌/하/상/우), `w`/`b`/`e` (단어 점프), `0`/`$` (줄 시작/끝), `g`/`G` (스크롤백 최상단/하단), `H`/`M`/`L` (viewport top/middle/bottom)
+- count prefix 지원: `3w`, `5j`, `10l` 등 (6자리 cap)
+- visual 선택: `v` (문자), `V` (줄 전체), `Ctrl+v` (사각형 블록)
+- `y` 로 클립보드 복사 + 모드 종료, `q` 또는 `Esc` 로 종료 (visual 중이면 visual 만 해제, 한 번 더 누르면 모드 종료)
+- 검색: `/` 또는 `?` 로 mini-prompt 활성 → 텍스트 입력 후 `Enter` 로 commit. `n`/`N` 으로 다음/이전 매치. 검색 결과는 기존 `SearchState` 와 동일한 하이라이트
+- viewport 자동 정렬: cursor 가 화면 밖이면 스크롤이 자동으로 따라감
+- 마우스 좌클릭 시 모드 자동 종료. alt-screen 앱 (vim/tmux) 실행 중이면 진입 차단 + toast 안내
 - 터미널 텍스트 영역 위에서 마우스 커서가 I-beam으로 변경
 - 마우스 클릭으로 커서 위치 이동 (`click_cursor` 모듈, `general.click_to_move_cursor` 설정으로 on/off):
   - `EditableRegion`: 현재 셸 입력의 편집 가능 영역을 계산 (커서 위치 + 소프트 랩 연속 행)

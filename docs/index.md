@@ -281,11 +281,12 @@ egui 기반 Image Surface 타입. 이미지 파일을 로드하여 표시(PNG/JP
 다중 OS 윈도우, 전체화면, 윈도우 위치/크기 기억, 포커스 관리, 멀티 모니터 지원.
 
 ### 복사 모드
-마우스 드래그 선택 구현 완료. vi 스타일 키보드 복사 모드는 미구현.
+마우스 드래그 선택 + vi 스타일 키보드 복사 모드 모두 구현 완료.
 
 **현재 구현된 기능:**
 - 마우스 드래그로 문자/단어/줄 단위 텍스트 선택
 - 선택 영역 시각적 하이라이트 + 클립보드 복사 단축키 3종
+- vi 스타일 키보드 복사 모드 (`Ctrl+Shift+Space` 진입): hjkl/wbe 이동, v/V/Ctrl+v visual, y yank, /? 검색 + n/N 이동, count prefix
 - 상세: [features.md](features.md)
 
 ### Surface Hook
