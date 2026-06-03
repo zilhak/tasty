@@ -16,7 +16,16 @@ use tasty_agent::{
     AgentError, BarrierState, BarrierStore, LeaseMode, LeaseStore, ReducerInput, SemaphoreStore,
     Task, TaskCommand, TaskId, TaskResult, reduce_with_custom,
 };
-use tasty_memory::{HOST_OWNER, MemoryStorage};
+use tasty_memory::{HOST_OWNER, MemoryStorage, MemoryValue, PutOpts, Scope};
+
+/// DispatchHandle 영속 key prefix (workspace scope). S2: `RunnerLoop.running` 의
+/// in-memory map 을 호스트 재시작 사이에 복원하기 위한 mirror. Immediate*/ImmediateFail
+/// 은 영속 대상 아님 (다음 tick poll 에서 즉시 흡수).
+pub const HANDLE_KEY_PREFIX: &str = "tasty.agent.handle.";
+
+pub fn handle_key(task_id: &str) -> String {
+    format!("{HANDLE_KEY_PREFIX}{task_id}")
+}
 
 use crate::adapters::ipc::handler::agent::task::run_custom_shell;
 use crate::ipc::host_call::HostIpcInjector;
@@ -69,6 +78,10 @@ pub struct HostExecutor {
     /// 본 executor 가 dispatch 시 점유한 lease — (workspace_id, resource, holder).
     /// semaphore 와 같은 정책: in-memory only, 재시작 시 runner_thread 의 purge 가 회수.
     held_leases: HashMap<TaskId, (u32, String, String)>,
+    /// 영속된 DispatchHandle 의 ws 추적 — release_permit 에서 evict_handle 호출 시
+    /// ws 가 필요한데 handle 자체에서 식별 불가 (ShellProcess { pid } 등) 이므로
+    /// persist_handle 시점에 함께 저장.
+    held_handles: HashMap<TaskId, u32>,
 }
 
 impl HostExecutor {
@@ -78,6 +91,7 @@ impl HostExecutor {
             shell_children: HashMap::new(),
             held_permits: HashMap::new(),
             held_leases: HashMap::new(),
+            held_handles: HashMap::new(),
         }
     }
 
@@ -163,6 +177,63 @@ impl HostExecutor {
         Ok(Some(acquired))
     }
 
+    /// DispatchHandle 영속. dispatch 가 Started 반환 직후 호출. ws 인자는
+    /// `ShellProcess { pid }` variant 에 workspace_id 가 없어서 handle 자체로 식별 불가
+    /// 하기에 호출자(dispatch)가 `task.workspace_id` 를 직접 전달한다.
+    /// `Immediate*` / `ImmediateFail` 은 영속 대상 아님 — 다음 tick 에 흡수되므로
+    /// 영속해 둘 의미가 없고, reload 시 재dispatch 되어 side-effect 위험.
+    fn persist_handle(&mut self, ws: u32, task_id: &TaskId, handle: &DispatchHandle) {
+        if matches!(
+            handle,
+            DispatchHandle::ReduceImmediate(_)
+                | DispatchHandle::CustomImmediate(_)
+                | DispatchHandle::ImmediateFail(_)
+        ) {
+            return;
+        }
+        let value = match serde_json::to_value(handle) {
+            Ok(v) => MemoryValue::Json(v),
+            Err(e) => {
+                tracing::warn!("persist handle {task_id} serialize: {e}");
+                return;
+            }
+        };
+        let res = self.ctx.with_memory(|mem| {
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(ws),
+                &handle_key(task_id),
+                &value,
+                &PutOpts::default(),
+            )
+        });
+        if let Err(e) = res {
+            tracing::warn!("persist handle {task_id}: {e}");
+            return;
+        }
+        self.held_handles.insert(task_id.clone(), ws);
+    }
+
+    /// 영속된 DispatchHandle 삭제. release_permit (task 종결) 시 호출.
+    /// ws 는 `held_handles` 에서 꺼낸다 — handle 자체에서 식별 불가 (ShellProcess
+    /// variant 에 workspace_id 없음) + task store 전수 검색은 race 위험.
+    fn evict_handle(&mut self, task_id: &TaskId) {
+        let Some(ws) = self.held_handles.remove(task_id) else {
+            return; // 영속 안 됐던 task (Immediate*) — no-op.
+        };
+        let res = self.ctx.with_memory(|mem| {
+            mem.delete(
+                HOST_OWNER,
+                &Scope::Workspace(ws),
+                &handle_key(task_id),
+                None,
+            )
+        });
+        if let Err(e) = res {
+            tracing::warn!("evict handle {task_id}: {e}");
+        }
+    }
+
     /// task 가 점유 중인 lease 가 있으면 release. release_permit 안에서 호출.
     fn release_lease(&mut self, task_id: &TaskId) {
         let Some((ws, resource, holder)) = self.held_leases.remove(task_id) else {
@@ -205,7 +276,12 @@ impl TaskExecutor for HostExecutor {
             }
         }
         let result = match self.dispatch_command(task) {
-            Ok(h) => DispatchOutcome::Started(h),
+            Ok(h) => {
+                // S2: Started 직후 영속 — handle 자체에서 ws 식별 불가 (ShellProcess
+                // 에는 workspace_id 가 없음) 라 task.workspace_id 를 직접 전달.
+                self.persist_handle(task.workspace_id, &task.id, &h);
+                DispatchOutcome::Started(h)
+            }
             Err(e) => DispatchOutcome::PermanentFail(e),
         };
         // dispatch 가 실패하면 막 점유한 자원을 즉시 반환.
@@ -220,7 +296,7 @@ impl TaskExecutor for HostExecutor {
     }
 
     fn release_permit(&mut self, task_id: &TaskId) {
-        // semaphore permit + lease 모두 정리 — 의미는 "이 task 의 모든 자원 해제".
+        // 의미: 이 task 의 모든 자원 해제 (semaphore + lease) + 영속 handle evict.
         if let Some((ws, name, holder)) = self.held_permits.remove(task_id) {
             let res: Result<(), String> = self.ctx.with_memory(|mem| {
                 let mut store = SemaphoreStore::new(mem, HOST_OWNER);
@@ -236,6 +312,7 @@ impl TaskExecutor for HostExecutor {
             }
         }
         self.release_lease(task_id);
+        self.evict_handle(task_id);
     }
 }
 
@@ -457,4 +534,105 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tasty_memory::MemoryStore;
+
+    fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
+        let td = tempfile::tempdir().unwrap();
+        let mem = MemoryStore::open(&td.path().join("mem.db")).unwrap();
+        let ctx = RunnerContext {
+            memory: Arc::new(Mutex::new(mem)),
+            agent_seq: Arc::new(AtomicU64::new(0)),
+            host_ipc: Arc::new(OnceLock::new()),
+        };
+        (td, ctx)
+    }
+
+    /// J.A.S2: persist 후 별도 reader 가 deserialize → 같은 variant 복원.
+    #[test]
+    fn persist_handle_round_trip_via_memory_store() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let handle = DispatchHandle::ShellProcess { pid: 4242 };
+        exec.persist_handle(1, &"t-test".to_string(), &handle);
+
+        // fresh read from memory store
+        let loaded: Option<DispatchHandle> = ctx.with_memory(|mem| {
+            let entry = mem
+                .get(&Scope::Workspace(1), &handle_key("t-test"))
+                .ok()??;
+            match entry.value {
+                MemoryValue::Json(v) => serde_json::from_value(v).ok(),
+                _ => None,
+            }
+        });
+        let loaded = loaded.expect("handle loaded");
+        match loaded {
+            DispatchHandle::ShellProcess { pid } => assert_eq!(pid, 4242),
+            other => panic!("expected ShellProcess, got {other:?}"),
+        }
+    }
+
+    /// J.A.S2: ImmediateFail / Reduce / Custom Immediate 는 영속 대상 아님.
+    #[test]
+    fn persist_handle_skips_immediate_variants() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let immediates = vec![
+            DispatchHandle::ImmediateFail("e".into()),
+            DispatchHandle::ReduceImmediate(TaskResult {
+                exit_code: Some(0),
+                output: None,
+                error: None,
+            }),
+            DispatchHandle::CustomImmediate(TaskResult {
+                exit_code: Some(0),
+                output: None,
+                error: None,
+            }),
+        ];
+        for (i, h) in immediates.into_iter().enumerate() {
+            let id = format!("t-im-{i}");
+            exec.persist_handle(1, &id, &h);
+            let present: bool = ctx.with_memory(|mem| {
+                mem.get(&Scope::Workspace(1), &handle_key(&id))
+                    .map(|v| v.is_some())
+                    .unwrap_or(false)
+            });
+            assert!(!present, "Immediate handle {h:?} should not persist");
+        }
+    }
+
+    /// J.A.S2: evict 후 store 에서 사라짐.
+    #[test]
+    fn evict_handle_removes_from_store() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let task_id = "t-evict".to_string();
+        let handle = DispatchHandle::ClaudeChild {
+            parent_sid: 1,
+            child_index: 0,
+            workspace_id: 1,
+        };
+        exec.persist_handle(1, &task_id, &handle);
+        let present_before: bool = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &handle_key(&task_id))
+                .map(|v| v.is_some())
+                .unwrap_or(false)
+        });
+        assert!(present_before, "persist should write entry");
+
+        exec.evict_handle(&task_id);
+        let present_after: bool = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &handle_key(&task_id))
+                .map(|v| v.is_some())
+                .unwrap_or(false)
+        });
+        assert!(!present_after, "evict should remove entry");
+        assert!(!exec.held_handles.contains_key(&task_id));
+    }
 }

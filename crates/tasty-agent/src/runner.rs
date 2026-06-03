@@ -15,6 +15,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::task::{Task, TaskId, TaskResult, TaskState};
 use crate::{AgentError, Result};
 
@@ -25,7 +27,8 @@ use crate::{AgentError, Result};
 /// - `ImmediateFail`: dispatch 가 실패. transition 표상 Ready → Failed 직접 전이가
 ///   불허이므로 *먼저 Running 으로 보낸 후* poll 결과로 Failed 로 흡수하기 위한
 ///   우회 variant.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum DispatchHandle {
     ClaudeChild {
         parent_sid: u32,
@@ -476,6 +479,42 @@ mod tests {
         );
         assert_eq!(store.borrow().tasks[0].state, TaskState::Running);
         assert!(runner.running.contains_key("t-1"));
+    }
+
+    /// J.A.S2: DispatchHandle 의 serde round-trip — 영속 후 reload 시 의미 보존 확인.
+    #[test]
+    fn dispatch_handle_serde_roundtrip_all_variants() {
+        let cases = vec![
+            DispatchHandle::ClaudeChild {
+                parent_sid: 7,
+                child_index: 1,
+                workspace_id: 42,
+            },
+            DispatchHandle::ShellProcess { pid: 12345 },
+            DispatchHandle::ReduceImmediate(TaskResult {
+                exit_code: Some(0),
+                output: Some(serde_json::json!({"merged": "ok"})),
+                error: None,
+            }),
+            DispatchHandle::CustomImmediate(TaskResult {
+                exit_code: Some(0),
+                output: None,
+                error: None,
+            }),
+            DispatchHandle::ImmediateFail("boom".into()),
+            DispatchHandle::BarrierPoll {
+                workspace_id: 1,
+                name: "b".into(),
+            },
+        ];
+        for h in cases {
+            let v = serde_json::to_value(&h).expect("serialize");
+            // tag="kind" → object 에 "kind" 필드 존재.
+            assert!(v.get("kind").is_some(), "missing 'kind' for {h:?}");
+            let back: DispatchHandle = serde_json::from_value(v).expect("deserialize");
+            // Debug equality (DispatchHandle 는 PartialEq 안 받음 → format 비교).
+            assert_eq!(format!("{h:?}"), format!("{back:?}"));
+        }
     }
 
     /// I.A.S6: Cancelled task — running map 에서 제거 + release_permit 호출.
