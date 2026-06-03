@@ -60,13 +60,14 @@
 - 인스턴스 렌더링 기반 2-pass 파이프라인:
   - Pass 1: 셀 배경색 쿼드
   - Pass 2: 알파 블렌딩 글리프 쿼드
+- 다중 서피스를 단일 submit cycle 로 배치 (Phase F.G.a): `CellRenderer` 는 `begin_frame` / `append_terminal_viewport` / `flush_buffers` 로 모든 서피스 인스턴스를 누적한 뒤 kind 당 `queue.write_buffer` 1 회 + 하나의 encoder 로 제출. per-surface 오프셋은 인스턴스 attribute (`viewport_offset`) 에 박혀 있어 셰이더가 read
 - WGSL 셰이더: NDC 변환, 텍스처 샘플링
 
 ### 폰트 래스터라이징
 - cosmic-text FontSystem/SwashCache를 이용한 글리프 래스터라이징
 - **번들 D2Coding ligature 폰트** (NAVER, OFL 1.1): Regular/Bold ttf를 바이너리에 임베드해 사용자의 OS에 D2Coding이 설치되지 않아도 동작. `font_family`가 빈 문자열이거나 `"monospace"`일 때 자동 적용되며, 다른 폰트를 지정해도 D2Coding은 폰트 DB에 남아 fallback face로 동작. `Shaping::Advanced`로 합자(`==`, `!=`, `=>`, `->`, `<=`, `>=` 등) 자동 적용. 한자/가나는 시스템 CJK 폰트로 자동 fallback
-- 2048x2048 R8 텍스처 아틀라스에 선반(shelf) 기반 글리프 패킹
-- 아틀라스 가득 찰 때 자동 리셋 및 재구축 (캐시 초기화 + 텍스처 클리어)
+- 2048×2048 R8 텍스처 페이지에 선반(shelf) 기반 글리프 패킹
+- 다중 페이지 글리프 아틀라스 + LRU eviction (Phase F.G.b): D2Array 4 layer (`MAX_PAGES = 4`, 페이지당 ~4 MiB) 로 확장. 활성 페이지가 가득 차면 다음 페이지로 이동, 모든 페이지 full 이면 활성 페이지를 제외한 가장 오래 미사용 (`last_access_frame` 최소) 페이지를 evict 후 해당 layer 만 zero-clear. 옛 *전체 아틀라스 리셋* 정책은 폐기 — CJK 세션의 주기적 stutter 해소
 - 베이스라인 기반 글리프 오프셋 계산
 - Bold/Italic 변형 지원 (Bold는 D2Coding ligature Bold face가 직접 매칭, synthetic bold 회피)
 - Mask/Color/SubpixelMask 콘텐츠 타입별 그레이스케일 변환 (`chunks_exact` 사용)
@@ -857,7 +858,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 - `settings.notification.enabled`: 알림 활성화/비활성화. 비활성 시 알림 수집 및 시스템 알림 모두 차단
 - `settings.notification.system_notification`: OS 네이티브 알림 개별 제어
 - `settings.notification.coalesce_ms`: NotificationStore 생성 시 병합 간격 전달
-- `settings.notification.sound`: UI 체크박스만 존재. 사운드 재생 미구현 (TODO)
+- `settings.notification.sound`: true 일 때 신규 알림 발화 시 OS 기본 beep 1 회 재생 (Phase F.E — macOS `NSBeep` / Windows `MessageBeep(MB_OK)` / Linux `paplay → aplay → stderr \a` 3 단 폴백). headless 빌드는 `NoopPlayer` 로 대체. 상세는 "알림 사운드" 절 참조
 - `settings.keybindings.*`: UI에 미노출. 현재 main.rs에서 하드코딩된 단축키 사용 (TODO: 파싱 및 적용)
 
 ## 클립보드
@@ -1557,6 +1558,12 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
   handler / multi-window 라우팅은 별도 영역.
 - `docs/examples/markdown-plugin/tasty-plugin.toml` 에 schema 사용 예시 (실
   plugin binary 는 없음 — 데모용).
+- `[[contributes.cli]]` 의 subcommand 엔트리에 `[polling]` 옵션 — `state_field`
+  / `terminal_states` (예: `["idle", "needs_input", "exited"]`) / `interval_ms`
+  (default 500) / `timeout_field`. 호스트가 plugin CLI 응답을 polling 하여
+  terminal state 도달까지 *반복 IPC 호출* 을 manifest 기반으로 일반화. `tasty
+  claude wait` 가 이 메커니즘 위에 동작 (Phase F 후속). `polling` 미설정 시는
+  옛 *1 회 응답 + 즉시 종료* 동작.
 
 ### 프로세스 생명주기
 - 호스트가 `127.0.0.1:0` 으로 listen, plugin이 token 들고 connect 하는 인증 방식
