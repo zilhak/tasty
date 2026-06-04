@@ -47,8 +47,6 @@ pub(crate) use adapters::ui::input::shortcuts;
 #[cfg(feature = "gui")]
 pub(crate) use adapters::ui::preset as preset_ui;
 #[cfg(feature = "gui")]
-pub(crate) use adapters::ui::surface::diff as diff_ui;
-#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::empty as empty_ui;
 #[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::image as image_ui;

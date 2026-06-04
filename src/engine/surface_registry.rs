@@ -187,11 +187,11 @@ mod tests {
         register_builtin_kinds(&reg);
         // explorer는 com.tasty.explorer plugin이, image는 com.tasty.image plugin이,
         // markdown은 com.tasty.markdown plugin이 각각 hello 시 host_rendered
-        // whitelist 경유로 등록한다. diff 는 host 빌트인.
-        for kind in ["terminal", "empty", "diff"] {
+        // whitelist 경유로 등록한다.
+        for kind in ["terminal", "empty"] {
             assert!(reg.contains(kind), "missing builtin kind: {kind}");
         }
-        assert_eq!(reg.len(), 3);
+        assert_eq!(reg.len(), 2);
         assert!(!reg.contains("image"));
         assert!(!reg.contains("markdown"));
         assert!(!reg.contains("explorer"));

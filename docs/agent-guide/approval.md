@@ -74,20 +74,6 @@ tasty approval summary get --workspace-id 1
 
 popup 은 `pending_approval_ids` 큐의 head 를 그린다. 응답 시 head 가 pop 되고 다음으로 자동 이동. Esc 는 의도적으로 차단 — 우회 응답 방지.
 
-## Diff Surface 와 연계
-
-approval 의 `metadata.diff_surface_id` 로 surface 를 가리키면 GUI 가 자동 인식해 popup 에서 "Open diff" 안내를 제공 (사용자가 직접 surface 로 이동).
-
-diff surface 자체는 별도 IPC:
-
-```bash
-# 좌/우 분할 diff 표시. apply_action 은 사용자가 Apply 클릭 시 클립보드에 복사된다.
-tasty split --level surface --target this --type diff \
-    --meta '{"title":"migration 0042","before_file":"/tmp/old.sql","after_file":"/tmp/new.sql","apply_action":"sqlite3 db.sqlite < /tmp/new.sql"}'
-```
-
-Apply 는 명령을 자동 실행하지 않고 클립보드에 복사한다 — 사용자가 자기 활성 터미널에 붙여넣어 실행한다. 이는 의도된 안전 동선이다.
-
 ## 영속 모델
 
 - 매 상태 전이마다 record 가 `tasty.approval.<id>` 키 (memory) 로 직렬화된다.

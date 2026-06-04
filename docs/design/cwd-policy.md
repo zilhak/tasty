@@ -16,11 +16,10 @@
 | **Markdown** | 열린 파일의 parent 디렉토리 | 파일 자체가 안 바뀌므로 *불변* | `MarkdownPanel::source_cwd()` 가 `self.file.parent()` 반환 |
 | **Image** | 열린 파일의 parent 디렉토리 | 불변 | `ImagePanel::source_cwd()` 가 `self.file.parent()` 반환 (file 없으면 None) |
 | **Empty** | 생성 시 carry 된 cwd | 불변 | `EmptySurface::source_cwd()` 가 `self.cwd.clone()` 반환 |
-| **Diff** | 생성 시 carry 된 cwd | 불변 | `DiffPanel::source_cwd()` 가 `self.cwd.clone()` 반환 |
 | **Explorer (RemoteSurface)** | **주소바 (root_path) 에 표시된 폴더** | 주소바 입력 + enter / 즐겨찾기 클릭 / 폴더 더블클릭 진입 등 root_path 가 바뀌는 모든 path | plugin → host IPC `surface.set_cwd` 발사 → host 가 `RemoteSurface.cwd` 필드 갱신 → `RemoteSurface::source_cwd()` 가 그 값 반환 |
 | **기타 RemoteSurface** (git-viewer / codex / claude / ...) | (각 plugin 이 자기 의미로 결정) | (각 plugin 이 자기 의미로 결정) | 동일하게 `surface.set_cwd` IPC 사용 권장. 미구현 plugin 은 cwd None 으로 남음 (호환성 OK) |
 
-### 정의가 *불변* 인 surface (Markdown / Image / Empty / Diff)
+### 정의가 *불변* 인 surface (Markdown / Image / Empty)
 
 이들 surface 의 cwd 는 생성 시 결정되고 이후 바뀌지 않는다. 사용자가 *변경할 수단이 없기 때문* — markdown viewer 안에서 디렉토리를 이동할 수 없고, empty surface 는 자체로 어떤 path 도 표시하지 않는다.
 

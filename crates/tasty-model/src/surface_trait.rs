@@ -5,7 +5,7 @@ use super::{PhysicalRect, SurfaceId};
 
 /// Common behavior for all Surface types.
 ///
-/// Each surface type (TerminalSurface, MarkdownPanel, EmptySurface, DiffPanel,
+/// Each surface type (TerminalSurface, MarkdownPanel, EmptySurface,
 /// ImagePanel, RemoteSurface) implements this trait.
 /// All methods have default implementations suitable for non-terminal surfaces.
 pub trait Surface: Any {
@@ -59,7 +59,7 @@ pub trait Surface: Any {
     ///   None 반환; cwd_from_surface 가 분기)
     /// - MarkdownPanel: 파일의 부모 디렉터리
     /// - ImagePanel: 파일 부모 또는 None
-    /// - EmptySurface / DiffPanel: None (또는 carry 받은 cwd)
+    /// - EmptySurface: None (또는 carry 받은 cwd)
     /// - RemoteSurface: 호스트가 carry 한 cwd (None 또는 ctx.cwd 그대로)
     fn source_cwd(&self) -> Option<PathBuf>;
 

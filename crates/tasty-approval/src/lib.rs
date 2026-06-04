@@ -197,7 +197,7 @@ pub struct ApprovalRequest {
     pub timeout_ms: Option<u64>,
     pub severity: Severity,
     pub created_at: u64,
-    /// 관용 필드. `diff_surface_id`, `command`, `cwd` 등을 호스트/CLI 가 인식.
+    /// 관용 필드. `command`, `cwd` 등을 호스트/CLI 가 인식.
     #[serde(default)]
     pub metadata: serde_json::Value,
 }

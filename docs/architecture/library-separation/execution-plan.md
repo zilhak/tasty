@@ -61,7 +61,7 @@
 
 옛 분석은 *크레이트 분리* 와 *파일 분할 (대안)* 두 갈래로 제시. **G.E 영역에서 crate 분리 완료**.
 
-- **현재 위치**: `crates/tasty-model/` (16 파일 / 3,719 LOC: `binary_tree`, `closed_item`, `diff_panel`, `empty_surface`, `image_panel`, `markdown_panel`, `pane`, `pane_tree`, `popup_kind`, `surface_layout`, `surface_trait`, `tab`, `terminal_surface`, `toast_kind`, `workspace`, `tests`).
+- **현재 위치**: `crates/tasty-model/` (16 파일 / 3,719 LOC: `binary_tree`, `closed_item`, `empty_surface`, `image_panel`, `markdown_panel`, `pane`, `pane_tree`, `popup_kind`, `surface_layout`, `surface_trait`, `tab`, `terminal_surface`, `toast_kind`, `workspace`, `tests`).
 - **trigger 도달 근거**: F.A (headless 도입) 완료 후 `src/model.rs` 가 이미 `#![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]` 로 headless / GUI 양쪽 빌드 정상 동작. 외부 의존 = `tasty-type-geometry` / `tasty-utils` / `tasty-terminal` / `termwiz` / `serde_json` 만, GUI 의존 (egui/wgpu/winit/cosmic-text/arboard/rfd) 0. **옛 trigger ("headless 도입 시 흡수") 충족**.
 - **호환 shim**: 본 바이너리 `src/model.rs` 가 `pub use tasty_model::*;` 단 두 줄로 축약 — 옛 callsite (`use crate::model::Tab` 등 59건) 회귀 0.
 - **회고**:

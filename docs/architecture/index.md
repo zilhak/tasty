@@ -52,7 +52,7 @@ type-\* 끼리만 의존 가능 (`type-appearance → type-geometry`). 도메인
 | `tasty-portscan` | 포트 스캐너 (포트 사용 감지) |
 | `tasty-update` | 업데이트 체커 (ureq + semver) |
 | `tasty-lua` | Lua sandbox (file_format detector, mlua) |
-| `tasty-model` | workspace / pane / pane_tree / surface_layout / tab / surface_trait / terminal_surface / popup_kind / toast_kind / closed_item / diff_panel / empty_surface / image_panel / markdown_panel 도메인 (G.E, 16 파일 / 3,719 LOC). headless / GUI 양쪽 빌드 정상 동작 |
+| `tasty-model` | workspace / pane / pane_tree / surface_layout / tab / surface_trait / terminal_surface / popup_kind / toast_kind / closed_item / empty_surface / image_panel / markdown_panel 도메인 (G.E, 16 파일 / 3,719 LOC). headless / GUI 양쪽 빌드 정상 동작 |
 | `tasty-ipc` | JSON-RPC 2.0 envelope + alias + caller + audit + method_meta + port_file + session. plugin host facade trait (`IpcHostFacade`) 외부화 (Phase F.B) |
 | `tasty-plugin-manifest` | manifest 스키마 / 파서 — `SurfaceKindDecl` (+ `default_colors`), `[[contributes.*]]`, permissions, `CliSubcommandDecl` (+ `[polling]`) (Phase F.B + F.H) |
 | `tasty-host-plugin` | 호스트의 plugin 매니저 / process / handle_channel / discovery / event_bus / registry / remote_kind 등 17 모듈. `plugin-protocol` + `plugin-manifest` + `terminal` + `shm` 의존 (Phase F.B) |

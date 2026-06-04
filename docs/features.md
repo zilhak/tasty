@@ -109,7 +109,7 @@
 - Pane: **독립적인 탭 바**를 가진 화면 영역. 여러 Tab을 포함
 - Tab: 탭 하나. `SurfaceLayout`을 직접 소유. 단일 Leaf = 분할 안 된 상태, Split = 탭 내부 분할
 - Surface trait: 모든 콘텐츠 타입의 공통 인터페이스. 각 타입이 독립 struct로 구현. **`tasty-model`는 GUI-free** — 모델은 식별 정보와 직렬화 가능한 상태만 보유한다 (egui는 optional `egui-compat` feature, 헤드리스 플러그인은 비활성 가능)
-  - `kind()`: 소문자 식별자 — 호스트 빌트인 3종(`"terminal"`, `"empty"`, `"diff"`) + plugin 등록 kind(예: `"explorer"`, `"image"`, `"markdown"`). IPC/registry/플러그인이 식별자로 사용
+  - `kind()`: 소문자 식별자 — 호스트 빌트인 2종(`"terminal"`, `"empty"`) + plugin 등록 kind(예: `"explorer"`, `"image"`, `"markdown"`). IPC/registry/플러그인이 식별자로 사용
   - `type_name()`: 표시용 라벨. 식별 비교 금지
   - `webview_url()`: webview-enabled surface(plugin) 가 자신의 URL 을 반환. host 의 native WebView 동기화 가 다운캐스트 없이 generic 으로 사용
   - TerminalSurface: 단일 PTY 터미널
@@ -333,15 +333,6 @@
 - IPC: `tab.create`에 `type` 파라미터로 통합 (`terminal` / `markdown` / `explorer` + plugin contribute)
 - CLI: `tasty new tab --pane <PANE> --type html --url <URL>`
 
-#### Diff Surface
-- 좌/우 분할로 `before`/`after` 텍스트(또는 `before_file`/`after_file` 경로)를 표시하는 읽기 전용 비교 뷰
-- 헤더에 Apply / Reject 두 버튼
-  - **Apply**: meta의 `apply_action` 명령을 시스템 클립보드에 복사하고 surface를 닫음. 자동 spawn은 의도적으로 회피 — 사용자가 자기 활성 터미널에 직접 붙여넣어 실행하는 안전 동선
-  - **Reject**: 그대로 surface를 닫음
-- 색상은 Theme 적용 (제거 줄은 `th.red` 18% 알파 배경, 추가 줄은 `th.green` 18% 알파 배경), 모노스페이스
-- 생성: `tasty split --level surface --target this --type diff --meta '{"title":"...","before":"...","after":"...","apply_action":"..."}'`
-- 03 phase의 `approval.request`와 결합 시 `metadata.diff_surface_id`로 popup이 자동으로 "Open diff" 안내
-
 ## 레이아웃 프리셋 (Layout Presets)
 
 Workspace / Tab / Pane 레이아웃과 각 leaf surface 의 초기화 파라미터(kind, cwd, 시작 명령어, kind 별 params)를 미리 저장해두고 재사용할 수 있다. `ClosedItem`(닫힌 항목 복원, 인메모리 LIFO)과 달리 디스크에 영구 저장되며 반복 사용을 의도한다.
@@ -497,7 +488,6 @@ terminal 의 시작 명령어는 PTY 가 ready 된 직후 stdin 에 한 줄로 �
 - 응답 경로 3가지가 모두 같은 IPC `approval.respond`로 수렴: ① popup 선택지 버튼 클릭, ② popup 단축키 1..=9 (선택지 순서), ③ CLI `tasty approval respond`
 - 응답 후 head pop → 큐가 비어 있지 않으면 자동으로 다음 head로 재오픈
 - Esc는 의도적으로 차단 — 우회 응답 방지
-- `metadata.diff_surface_id`로 surface를 가리키면 popup이 "Open diff" 안내 표시
 
 ### 영속 & 히스토리 (Phase 3.3)
 - 매 상태 전이마다 record를 `tasty.approval.<id>` 키로 직렬화. `workspace_id` 있으면 `scope=workspace:<id>`, 없으면 `scope=global`

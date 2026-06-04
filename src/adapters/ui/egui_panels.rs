@@ -81,7 +81,6 @@ pub fn draw_egui_panels(
 
     // Second pass: render each egui panel.
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
-    let mut pending_diff_action: Option<(u32, crate::diff_ui::DiffAction)> = None;
 
     let markdown_surface = crate::theme::theme().surface("markdown").clone();
     let markdown_font = engine.settings.appearance.effective_markdown_font();
@@ -186,20 +185,6 @@ pub fn draw_egui_panels(
                     crate::image_ui::draw_image(ui, image_panel, view);
                 },
             );
-        } else if let Some(diff_panel) = surface.as_any().downcast_ref::<crate::model::DiffPanel>()
-        {
-            draw_panel_frame(
-                ctx,
-                &format!("diff_panel_{}", id_suffix),
-                info,
-                4,
-                None,
-                |ui| {
-                    if let Some(act) = crate::diff_ui::draw_diff(ui, diff_panel) {
-                        pending_diff_action = Some((diff_panel.id, act));
-                    }
-                },
-            );
         } else if let Some(remote) = surface
             .as_any()
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
@@ -238,29 +223,6 @@ pub fn draw_egui_panels(
             }
             .from_user_menu("empty_surface_convert"),
         );
-    }
-
-    // Apply deferred diff surface action. Apply 는 명령을 시스템 클립보드에 복사하고
-    // surface 를 닫는다 — 사용자가 활성 터미널에 붙여넣어 실행하도록 안내. 자동
-    // spawn 은 사용자 동선을 가로채므로 의도적으로 피한다. Reject 는 surface 만 닫는다.
-    if let Some((sid, act)) = pending_diff_action {
-        match act {
-            crate::diff_ui::DiffAction::Apply(cmd) => {
-                if let Err(e) =
-                    arboard::Clipboard::new().and_then(|mut cb| cb.set_text(cmd.clone()))
-                {
-                    tracing::warn!("diff apply clipboard copy failed: {e}");
-                }
-                state.toasts.push_info(
-                    crate::i18n::t("diff.toast.apply_copied").to_string(),
-                    crate::adapters::ui::ToastScope::Window,
-                );
-                state.close_surface_by_id_no_snapshot(engine, sid, true); // intent-exempt: diff cleanup, undo 의미 없음
-            }
-            crate::diff_ui::DiffAction::Reject => {
-                state.close_surface_by_id_no_snapshot(engine, sid, true); // intent-exempt: diff cleanup, undo 의미 없음
-            }
-        }
     }
 }
 

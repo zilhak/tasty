@@ -18,7 +18,6 @@ Terminal(/foo/bar) → Explorer 변환 시, 기존에는 `ConvertSurfaceTarget::
 | `MarkdownPanel` | 자기 file 의 parent (자체 의미 우선) |
 | `ImagePanel` | 자기 file 의 parent (자체 의미 우선; file 없으면 None) |
 | `EmptySurface` | carry 한 `self.cwd` (없으면 None) |
-| `DiffPanel` | carry 한 `self.cwd` (없으면 None) |
 | `RemoteSurface` | `None` 반환. plugin 측에서 ctx.cwd 로 받아 자체 surface state 에 보유하지만 호스트 trait 호출에는 노출하지 않는다 — host 가 carry 한 cwd 는 `SurfaceCreateCtx.cwd` 경로로 *한 번만* 전달 |
 
 ### 2. carry 경로 강제 — `SurfaceKindDef::create` 시그니처
