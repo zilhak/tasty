@@ -130,11 +130,7 @@ pub fn handle_launch(
                 json!({"surface_id": sid, "text": cd_cmd}),
             )?;
         }
-        let mut cmd = "codex".to_string();
-        if let Some(t) = task.as_deref() {
-            cmd.push_str(&format!(" --task {}", shell_escape(t)));
-        }
-        cmd.push('\r');
+        let cmd = make_codex_command(task.as_deref());
         host_call(
             host,
             "surface.send",
