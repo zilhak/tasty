@@ -24,17 +24,11 @@ impl Plugin for MarkdownPlugin {
     }
 
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {

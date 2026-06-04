@@ -16,6 +16,10 @@ pub struct SurfaceHandles {
     pub tree: Arc<Mutex<Option<UiNode>>>,
     pub pending_events: Arc<Mutex<Vec<UiEvent>>>,
     pub display_name: Arc<Mutex<String>>,
+    /// plugin 이 `SurfaceResult.snapshot` 으로 piggyback 한 영속화용 데이터.
+    /// 매 응답마다 manager 가 최신값으로 갱신하며, `SavedLayout::capture` 시
+    /// `registry.get(kind).snapshot(surface)` 가 이 값을 읽어 disk 에 저장.
+    pub snapshot_cache: Arc<Mutex<Option<Value>>>,
 }
 
 /// registry create/restore closure가 manager에게 보내는 명령.

@@ -188,6 +188,14 @@ impl ExplorerSurface {
     fn refresh_preview(&mut self) {
         self.preview = self.selected.as_ref().and_then(|p| read_preview(p));
     }
+
+    fn snapshot_value(&self) -> Value {
+        serde_json::json!({
+            "root": self.root.to_string_lossy(),
+            "tree_ratio": self.tree_ratio,
+            "left_inner_ratio": self.left_inner_ratio,
+        })
+    }
 }
 
 fn build_bookmarks_section(bookmarks: &BookmarkStore, tr: &Translator) -> UiNode {
@@ -353,6 +361,7 @@ impl ExplorerPlugin {
         SurfaceResult {
             tree: Some(surface.build_tree(&self.bookmarks, &self.tr)),
             display_name: Some(display_name),
+            snapshot: Some(surface.snapshot_value()),
         }
     }
 }
@@ -402,10 +411,7 @@ impl Plugin for ExplorerPlugin {
 
     fn handle_event(&mut self, ctx: SurfaceEventCtx) -> SurfaceResult {
         let Some(surface) = self.surfaces.get_mut(&ctx.surface_id) else {
-            return SurfaceResult {
-                tree: None,
-                display_name: None,
-            };
+            return SurfaceResult::default();
         };
         match ctx.event {
             UiEvent::TreeExpand {
@@ -491,16 +497,13 @@ impl Plugin for ExplorerPlugin {
         SurfaceResult {
             tree: Some(surface.build_tree(&self.bookmarks, &self.tr)),
             display_name: None,
+            snapshot: Some(surface.snapshot_value()),
         }
     }
 
     fn snapshot_surface(&mut self, ctx: tasty_plugin_sdk::SurfaceSnapshotCtx) -> Value {
         match self.surfaces.get(&ctx.surface_id) {
-            Some(s) => serde_json::json!({
-                "root": s.root.to_string_lossy(),
-                "tree_ratio": s.tree_ratio,
-                "left_inner_ratio": s.left_inner_ratio,
-            }),
+            Some(s) => s.snapshot_value(),
             None => Value::Null,
         }
     }
@@ -515,10 +518,7 @@ impl Plugin for ExplorerPlugin {
 
     fn handle_command(&mut self, ctx: CommandInvokeCtx) -> SurfaceResult {
         let Some(surface) = self.surfaces.get_mut(&ctx.surface_id) else {
-            return SurfaceResult {
-                tree: None,
-                display_name: None,
-            };
+            return SurfaceResult::default();
         };
         let result = match ctx.command_id.as_str() {
             "explorer.refresh" => {
@@ -541,12 +541,10 @@ impl Plugin for ExplorerPlugin {
             SurfaceResult {
                 tree: Some(surface.build_tree(&self.bookmarks, &self.tr)),
                 display_name: None,
+                snapshot: Some(surface.snapshot_value()),
             }
         } else {
-            SurfaceResult {
-                tree: None,
-                display_name: None,
-            }
+            SurfaceResult::default()
         }
     }
 }

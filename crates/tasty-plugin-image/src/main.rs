@@ -29,17 +29,11 @@ impl Plugin for ImagePlugin {
 
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
         // host-rendered kind라 plugin이 tree를 만들지 않는다. 호스트가 직접 그린다.
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {

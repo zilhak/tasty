@@ -69,6 +69,11 @@ impl PluginManager {
                     {
                         *slot = name;
                     }
+                    if let Some(snapshot) = parsed.snapshot
+                        && let Ok(mut slot) = entry.handles.snapshot_cache.lock()
+                    {
+                        *slot = Some(snapshot);
+                    }
                 }
             }
             PendingRequestKind::Other => {}

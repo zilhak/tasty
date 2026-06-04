@@ -49,13 +49,19 @@ pub const METHOD_POPUP_EVENT: &str = "popup.event";
 pub const METHOD_POPUP_CLOSED: &str = "popup.closed";
 
 /// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct SurfaceResult {
     /// 새로 그릴 트리. `None`이면 호스트는 이전 트리를 그대로 사용 (변경 없음).
     #[serde(default)]
     pub tree: Option<UiNode>,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// plugin 측 surface state 의 영속화 가능한 표현. `Some` 이면 host 가
+    /// `RemoteSurface::snapshot_cache` 를 갱신해 다음 layout 저장 시 그대로
+    /// `SavedSurface::Generic { kind, data }` 로 round-trip 한다. `None` 이면
+    /// 호스트는 기존 캐시를 유지.
+    #[serde(default)]
+    pub snapshot: Option<serde_json::Value>,
 }
 
 /// `surface.event` params — 호스트가 plugin에 보낼 사용자 이벤트.

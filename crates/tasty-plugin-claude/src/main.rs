@@ -61,17 +61,11 @@ impl Plugin for ClaudePlugin {
         // 호스트의 일반 terminal surface에서 실행되며, surface 자체는 plugin이 직접
         // 만들지 않는다. 매니페스트에 surface_kinds가 없으므로 이 콜백은 호출되지
         // 않을 것이다.
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {

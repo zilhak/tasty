@@ -21,16 +21,10 @@ impl Plugin for StubPlugin {
         "test.plugin"
     }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         *self.last_ctx.lock().unwrap() = Some(ctx);
@@ -47,16 +41,10 @@ impl Plugin for DefaultPlugin {
         "test.default"
     }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 }
 
@@ -173,16 +161,10 @@ impl Plugin for OnStartRecorder {
         "test.on_start"
     }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn on_start(&mut self, _host: HostHandle, _bus: crate::bus::BusHandle) {
         *self.called.lock().unwrap() += 1;
@@ -208,16 +190,10 @@ impl Plugin for ExtensionStubPlugin {
         "test.extension"
     }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn handle_extension_hook(
         &mut self,
@@ -380,16 +356,10 @@ impl Plugin for PopupStubPlugin {
         "test.popup"
     }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
     fn open_popup(
         &mut self,

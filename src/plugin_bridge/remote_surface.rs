@@ -138,6 +138,7 @@ impl RemoteSurface {
             tree: self.tree.clone(),
             pending_events: self.pending_events.clone(),
             display_name: self.display_name.clone(),
+            snapshot_cache: self.snapshot_cache.clone(),
         }
     }
 }

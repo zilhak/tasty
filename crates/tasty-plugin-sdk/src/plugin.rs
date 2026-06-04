@@ -265,10 +265,7 @@ pub trait Plugin: Send + 'static {
 
     /// `surface.restore`에 응답. 영속화된 데이터로부터 surface 복원.
     fn restore_surface(&mut self, _ctx: SurfaceRestoreCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 
     /// `surface.snapshot` — 영속화할 데이터 반환. 기본 구현은 null.
@@ -282,10 +279,7 @@ pub trait Plugin: Send + 'static {
     /// `command.invoke` — 매니페스트로 등록한 command가 사용자 단축키 매칭으로
     /// 호출됨. tree가 None이면 호스트는 이전 tree 유지. 기본 구현은 no-op.
     fn handle_command(&mut self, _ctx: CommandInvokeCtx) -> SurfaceResult {
-        SurfaceResult {
-            tree: None,
-            display_name: None,
-        }
+        SurfaceResult::default()
     }
 
     /// `ipc.invoke` — 매니페스트 `[[contributes.ipc_namespace]]`로 점유한 prefix에
