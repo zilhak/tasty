@@ -1589,6 +1589,8 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 릴리스 에셋의 `plugins.md` 참조.
 
 ### 기본 제공 plugin (built-in)
+> 분류 정책 전체 (host-native / bundled / user 3 카테고리): [architecture/plugin-categories.md](architecture/plugin-categories.md). 본 절은 *카테고리 2 (bundled plugin)* 의 현재 구현 상태.
+
 - Tasty 바이너리에 함께 묶여 배포되는 plugin은 첫 실행 시 `~/.tasty/plugins/<id>/`에 자동 설치된다 (`builtin::BUILTINS` 목록)
 - 현재 기본 제공:
   - `com.tasty.explorer` (파일 탐색기 surface)
