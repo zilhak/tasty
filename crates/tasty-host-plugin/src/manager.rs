@@ -31,6 +31,9 @@ pub(super) const HEALTHCHECK_TIMEOUT: Duration = Duration::from_secs(60);
 pub(super) const PING_INTERVAL: Duration = Duration::from_secs(15);
 pub(super) const RESTART_FAILURE_WINDOW: Duration = Duration::from_secs(10);
 pub(super) const RESTART_FAILURE_LIMIT: usize = 3;
+/// H — auto-reload polling 간격. pump tick 안의 자연 debounce — 2초 내
+/// 발생한 연속 mtime 변경은 한 번의 swap 으로 흡수된다.
+pub(super) const AUTO_RELOAD_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// IPC 응답을 최종적으로 어디로 회신해야 하는지를 식별. 호스트 외부 caller(CLI/사용자)는
 /// `Local`, 다른 plugin이면 `Plugin`.

@@ -15,8 +15,8 @@ use crate::protocol::{self, PluginEvent};
 use tasty_plugin_manifest::Permission;
 
 use super::{
-    HEALTHCHECK_TIMEOUT, PING_INTERVAL, PendingPluginCall, PendingRequestKind, PluginManager,
-    RemoteSurfaceEntry,
+    AUTO_RELOAD_POLL_INTERVAL, HEALTHCHECK_TIMEOUT, PING_INTERVAL, PendingPluginCall,
+    PendingRequestKind, PluginManager, RemoteSurfaceEntry,
 };
 
 impl PluginManager {
@@ -203,6 +203,20 @@ impl PluginManager {
             self.plugin_buffers.remove(&id);
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);
+            }
+        }
+
+        // H.f — auto-reload polling. flag off 면 check_for_updates 가 즉시
+        // 빈 Vec 을 반환해 cost 0. flag on 이고 마지막 tick 으로부터
+        // AUTO_RELOAD_POLL_INTERVAL 경과 시 1회 polling.
+        if self.auto_reload_enabled
+            && self.last_auto_reload_check.elapsed() >= AUTO_RELOAD_POLL_INTERVAL
+        {
+            self.last_auto_reload_check = Instant::now();
+            for plugin_id in self.check_for_updates() {
+                if let Err(e) = self.auto_reload_one(&plugin_id) {
+                    tracing::warn!("auto-reload '{plugin_id}' failed: {e}");
+                }
             }
         }
 
