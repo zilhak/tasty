@@ -121,6 +121,25 @@ impl CodexState {
         Some(removed)
     }
 
+    /// surface_id로 child를 찾아 제거한다. `surface.closed` 이벤트 처리용 —
+    /// 사용자가 codex child 탭을 닫았을 때 stale registry 정리. 미존재 시 false.
+    pub fn unregister_child_by_surface(&mut self, surface_id: u32) -> bool {
+        let Some(parent) = self.parent_of.get(&surface_id).copied() else {
+            return false;
+        };
+        let Some(list) = self.children.get_mut(&parent) else {
+            return false;
+        };
+        let Some(pos) = list.iter().position(|c| c.child_surface_id == surface_id) else {
+            return false;
+        };
+        list.remove(pos);
+        self.parent_of.remove(&surface_id);
+        self.idle.remove(&surface_id);
+        self.needs_input.remove(&surface_id);
+        true
+    }
+
     pub fn set_idle(&mut self, child_surface: u32, idle: bool) {
         self.idle.insert(child_surface, idle);
         if !idle {
@@ -232,6 +251,29 @@ mod tests {
         assert_eq!(removed.child_surface_id, 100);
         assert!(s.find_child(10, idx).is_none());
         assert_eq!(s.state_of(100), "active"); // idle 데이터도 함께 제거
+    }
+
+    #[test]
+    fn unregister_child_by_surface_removes_entry_and_indexes() {
+        let mut s = CodexState::default();
+        let idx = s.next_index_for(10);
+        s.register_child(
+            10,
+            ChildEntry {
+                child_surface_id: 100,
+                index: idx,
+                cwd: None,
+                role: None,
+                nickname: None,
+            },
+        );
+        s.set_idle(100, true);
+        assert!(s.unregister_child_by_surface(100));
+        assert!(s.find_child(10, idx).is_none());
+        assert_eq!(s.parent_of_child(100), None);
+        assert_eq!(s.state_of(100), "active");
+        // 두 번째 호출은 false.
+        assert!(!s.unregister_child_by_surface(100));
     }
 
     #[test]

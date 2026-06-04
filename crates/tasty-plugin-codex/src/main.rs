@@ -12,7 +12,8 @@ mod state;
 use serde_json::Value;
 use state::CodexState;
 use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
+    BusHandle, EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin,
+    SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
 };
 
 const PLUGIN_ID: &str = "com.tasty.codex";
@@ -50,6 +51,34 @@ impl Plugin for CodexPlugin {
         SurfaceResult::default()
     }
 
+    /// Event Bus 1.0: `surface.closed` 구독. 닫힌 surface가 codex child registry에
+    /// 있으면 stale 엔트리 제거. claude plugin의 `on_event`와 동일 패턴.
+    fn on_event(&mut self, ctx: EventDispatchCtx) {
+        if ctx.envelope.key != "surface.closed" {
+            return;
+        }
+        let Some(sid) = ctx
+            .envelope
+            .payload
+            .get("surface_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+        else {
+            return;
+        };
+        if self.state.unregister_child_by_surface(sid) {
+            self.state.save();
+        }
+    }
+
+    /// worker dispatch 시작 직전 1회 호출. `surface.closed` 이벤트 구독 — 매니페스트의
+    /// `event_subscribe = ["surface.closed"]` 와 짝.
+    fn on_start(&mut self, _host: HostHandle, bus: BusHandle) {
+        if let Err(e) = bus.subscribe("surface.closed") {
+            tracing::warn!("subscribe surface.closed failed: {e}");
+        }
+    }
+
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         let IpcMethodCtx {
             method,
@@ -63,7 +92,7 @@ impl Plugin for CodexPlugin {
             "codex.children" => handlers::handle_children(&self.state, params),
             "codex.parent" => handlers::handle_parent(&self.state, params),
             "codex.tell" => handlers::handle_tell(&host, params),
-            "codex.wait" => handlers::handle_wait(&self.state, params),
+            "codex.wait" => handlers::handle_wait(&self.state, &host, params),
             "codex.broadcast" => handlers::handle_broadcast(&self.state, &host, params),
             "codex.kill" => handlers::handle_kill(&mut self.state, &host, params),
             "codex.respawn" => handlers::handle_respawn(&mut self.state, &host, params),

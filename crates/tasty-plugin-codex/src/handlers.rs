@@ -42,13 +42,20 @@ fn resolve_parent(state: &CodexState, params: &Value) -> Result<u32, IpcMethodEr
 }
 
 /// codex 명령을 PTY로 보낼 문자열을 만든다. prompt가 있으면 shell quote.
-fn make_codex_command(prompt: Option<&str>) -> String {
+///
+/// `TASTY_SURFACE_ID={surface_id}` inline env prefix를 항상 박는다. 이게 없으면
+/// codex 프로세스 env에 `TASTY_SURFACE_ID`가 비어, `~/.codex/settings.json`의 hook
+/// 명령 (`tasty codex hook X --surface ${TASTY_SURFACE_ID}`)이 surface ID 없이
+/// 실행되어 `handle_hook`이 invalid_params로 거부 → idle/needs_input 상태가 영원히
+/// 갱신되지 않는다. claude plugin의 `start_claude_in_surface`와 동일한 패턴.
+fn make_codex_command(surface_id: u32, prompt: Option<&str>) -> String {
+    let prefix = format!("TASTY_SURFACE_ID={surface_id} ");
     match prompt {
         Some(p) if !p.is_empty() => {
             let escaped = p.replace('\\', "\\\\").replace('"', "\\\"");
-            format!("codex \"{escaped}\"\r")
+            format!("{prefix}codex \"{escaped}\"\r")
         }
-        _ => "codex\r".to_string(),
+        _ => format!("{prefix}codex\r"),
     }
 }
 
@@ -110,7 +117,7 @@ pub fn handle_launch(
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        let cmd = make_codex_command(task.as_deref());
+        let cmd = make_codex_command(sid, task.as_deref());
         host_call(
             host,
             "surface.send",
@@ -183,7 +190,7 @@ pub fn handle_spawn(
             ))
         })? as u32;
 
-    let cmd = make_codex_command(prompt.as_deref());
+    let cmd = make_codex_command(new_surface_id, prompt.as_deref());
     host_call(
         host,
         "surface.send",
@@ -228,7 +235,19 @@ pub fn handle_children(state: &CodexState, params: Value) -> Result<Value, IpcMe
     Ok(json!({ "children": children }))
 }
 
-pub fn handle_wait(state: &CodexState, params: Value) -> Result<Value, IpcMethodError> {
+/// CLI 측 polling(`run_dynamic_client_polling`)이 idle/needs_input/exited 도달까지
+/// 반복 호출한다. 본 함수는 그 polling tick 1개를 처리한다 — manifest의 `polling`
+/// 선언이 CLI의 blocking loop를 활성화하므로 핸들러 자체는 1회 snapshot만 반환.
+///
+/// state가 `active` 일 때 surface 자체가 죽었는지 host에 확인한다 (claude plugin과
+/// 동일한 패턴). codex가 `Stop` hook을 못 쏘고 죽거나 (e.g. SIGKILL) 사용자가 탭을
+/// 닫고 plugin이 surface.closed 이벤트를 놓친 케이스에 polling이 무한 루프 빠지지
+/// 않도록 방어한다.
+pub fn handle_wait(
+    state: &CodexState,
+    host: &HostHandle,
+    params: Value,
+) -> Result<Value, IpcMethodError> {
     let parent = resolve_parent(state, &params)?;
     let child_index = require_u32(&params, "child")?;
     let entry = state.find_child(parent, child_index).ok_or_else(|| {
@@ -236,7 +255,19 @@ pub fn handle_wait(state: &CodexState, params: Value) -> Result<Value, IpcMethod
             "child {child_index} not found under surface {parent}"
         ))
     })?;
-    Ok(json!({ "state": state.state_of(entry.child_surface_id) }))
+    let sid = entry.child_surface_id;
+    let response_state = match state.state_of(sid) {
+        "active" => {
+            let exists = host
+                .call("surface.locate", json!({ "surface_id": sid }))
+                .ok()
+                .and_then(|v| v.get("exists").and_then(|e| e.as_bool()))
+                .unwrap_or(true);
+            if exists { "active" } else { "exited" }
+        }
+        other => other,
+    };
+    Ok(json!({ "state": response_state }))
 }
 
 pub fn handle_broadcast(
@@ -317,7 +348,7 @@ pub fn handle_respawn(
         .clone();
     let prompt = optional_str(&params, "prompt");
     let new_cwd = optional_str(&params, "cwd");
-    let cmd = make_codex_command(prompt.as_deref());
+    let cmd = make_codex_command(entry.child_surface_id, prompt.as_deref());
 
     // cwd 변경이 들어왔을 때는 PTY 자체를 새 working_dir 로 갈아끼운다.
     // Ctrl-C + 재실행만으로는 작업 디렉토리가 바뀌지 않는 문제(보고서 결함 3)
@@ -444,7 +475,13 @@ const HOOK_EVENTS: &[(&str, &str)] = &[
 ];
 
 fn hook_command(event_kebab: &str) -> String {
-    format!("tasty codex hook {event_kebab} --surface ${{TASTY_SURFACE_ID}}")
+    // `[ -n "$VAR" ]` guard로 TASTY_SURFACE_ID 가 비어있을 때 skip. claude plugin과
+    // 동일한 패턴 (install.rs::tasty_hook_command). 가드 없으면 codex CLI가
+    // `${TASTY_SURFACE_ID}`를 빈 문자열로 치환해 `tasty codex hook X --surface ` 가
+    // 실행되어 invalid_params 에러 노이즈가 매 hook마다 발생한다.
+    format!(
+        "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID || true"
+    )
 }
 
 fn merge_install(mut value: Value) -> Value {
@@ -491,25 +528,31 @@ mod tests {
 
     #[test]
     fn make_codex_command_no_prompt() {
-        assert_eq!(make_codex_command(None), "codex\r");
-        assert_eq!(make_codex_command(Some("")), "codex\r");
+        assert_eq!(make_codex_command(42, None), "TASTY_SURFACE_ID=42 codex\r");
+        assert_eq!(
+            make_codex_command(42, Some("")),
+            "TASTY_SURFACE_ID=42 codex\r"
+        );
     }
 
     #[test]
     fn make_codex_command_with_plain_prompt() {
-        assert_eq!(make_codex_command(Some("hello")), "codex \"hello\"\r");
+        assert_eq!(
+            make_codex_command(42, Some("hello")),
+            "TASTY_SURFACE_ID=42 codex \"hello\"\r"
+        );
     }
 
     #[test]
     fn make_codex_command_with_prompt_escapes_quotes() {
-        let cmd = make_codex_command(Some(r#"fix "bug" please"#));
-        assert_eq!(cmd, "codex \"fix \\\"bug\\\" please\"\r");
+        let cmd = make_codex_command(7, Some(r#"fix "bug" please"#));
+        assert_eq!(cmd, "TASTY_SURFACE_ID=7 codex \"fix \\\"bug\\\" please\"\r");
     }
 
     #[test]
     fn make_codex_command_with_prompt_escapes_backslash() {
-        let cmd = make_codex_command(Some(r"path\to\file"));
-        assert_eq!(cmd, "codex \"path\\\\to\\\\file\"\r");
+        let cmd = make_codex_command(7, Some(r"path\to\file"));
+        assert_eq!(cmd, "TASTY_SURFACE_ID=7 codex \"path\\\\to\\\\file\"\r");
     }
 
     #[test]
