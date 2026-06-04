@@ -300,12 +300,21 @@ impl ExplorerPlugin {
         }
     }
 
-    fn root_from_params(params: &Value) -> PathBuf {
-        params
+    /// 우선순위: ① params.path (호출자가 명시한 경로) → ② ctx.cwd (호스트가
+    /// source surface 로부터 carry 한 cwd) → ③ home dir (HOME / USERPROFILE)
+    /// → ④ ".". 호스트 시작 cwd (env::current_dir) 는 fallback 으로 쓰지 않는다
+    /// — 사용자 의도와 무관한 dir 이 새 surface 의 root 행세를 하지 않도록.
+    fn root_from_ctx(ctx: &SurfaceCreateCtx) -> PathBuf {
+        ctx.params
             .get("path")
             .and_then(|v| v.as_str())
             .map(PathBuf::from)
-            .or_else(|| std::env::current_dir().ok())
+            .or_else(|| ctx.cwd.clone())
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .or_else(|| std::env::var_os("USERPROFILE"))
+                    .map(PathBuf::from)
+            })
             .unwrap_or_else(|| PathBuf::from("."))
     }
 
@@ -332,7 +341,7 @@ impl Plugin for ExplorerPlugin {
     }
 
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
-        let root = Self::root_from_params(&ctx.params);
+        let root = Self::root_from_ctx(&ctx);
         let surface = ExplorerSurface::new(root);
         let result = self.surface_result(&surface);
         self.surfaces.insert(ctx.surface_id, surface);
@@ -340,12 +349,19 @@ impl Plugin for ExplorerPlugin {
     }
 
     fn restore_surface(&mut self, ctx: SurfaceRestoreCtx) -> SurfaceResult {
+        // restore 는 data.root 가 layout.json 영속 값. fallback 은 home dir →
+        // "." — 호스트 시작 cwd 는 의도적으로 사용하지 않는다 (create 와 동일 정책).
         let root = ctx
             .data
             .get("root")
             .and_then(|v| v.as_str())
             .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .or_else(|| std::env::var_os("USERPROFILE"))
+                    .map(PathBuf::from)
+            })
+            .unwrap_or_else(|| PathBuf::from("."));
         let mut surface = ExplorerSurface::new(root);
         if let Some(tr) = ctx.data.get("tree_ratio").and_then(|v| v.as_f64()) {
             surface.tree_ratio = tr as f32;
