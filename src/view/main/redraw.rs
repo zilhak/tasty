@@ -352,20 +352,14 @@ impl MainView {
                             .find_pane(pane_id)
                             .and_then(|p| p.tabs.get(tab_index))
                             .and_then(|tab| tab.all_surface_ids().first().copied());
-                        if let Some(sid) = target_sid {
-                            let kind = self.state.surface_kind(engine, sid);
-                            if self.state.close_surface_by_id(engine, sid) {
-                                // intent-exempt: request_close cascade 결과 의존
-
-                                if let Some(k) = kind {
-                                    self.state.enqueue_surface_closed(sid, k, true);
-                                }
-                                // 마지막 workspace 까지 닫혔다면 keyboard close 와 동일하게
-                                // window 종료를 요청한다 (그렇지 않으면 다음 redraw 가
-                                // active_workspace() 호출에서 패닉).
-                                if engine.workspaces.is_empty() {
-                                    self.request_close();
-                                }
+                        if let Some(sid) = target_sid
+                            && self.state.close_surface_by_id(engine, sid, true)
+                        {
+                            // 마지막 workspace 까지 닫혔다면 keyboard close 와 동일하게
+                            // window 종료를 요청한다 (그렇지 않으면 다음 redraw 가
+                            // active_workspace() 호출에서 패닉).
+                            if engine.workspaces.is_empty() {
+                                self.request_close();
                             }
                         }
                     }

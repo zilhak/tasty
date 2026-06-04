@@ -115,8 +115,12 @@ impl AppState {
             false
         };
         if closed {
+            // cleanup_surface 직후엔 layout 에서 surface 가 사라져 kind 조회 불가 →
+            // 미리 캡쳐. plugin lifecycle 큐에 cleanup_targets 모두 enqueue (R1 분석).
             for (sid, pid) in targets {
+                let kind = self.surface_kind(engine, sid);
                 self.cleanup_surface(engine, sid, pid);
+                self.enqueue_surface_closed(sid, kind, true);
             }
             engine.mark_layout_dirty();
         }

@@ -147,14 +147,8 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.close_surface, key, mods) {
-            let target_sid = state.focused_surface_id(engine);
-            let target_kind = target_sid.and_then(|s| state.surface_kind(engine, s));
             let closed = state.close_active_surface(engine);
-            if closed {
-                if let (Some(sid), Some(k)) = (target_sid, target_kind) {
-                    state.enqueue_surface_closed(sid, k, true);
-                }
-            } else if !state.close_active_pane(engine) {
+            if !closed && !state.close_active_pane(engine) {
                 state.close_active_workspace(engine);
             }
             if !engine.workspaces.is_empty() {

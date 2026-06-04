@@ -157,15 +157,8 @@ impl MainView {
                         self.state.move_surface_focus_backward(engine);
                     }
                     "close_surface" => {
-                        let target_sid = self.state.focused_surface_id(engine);
-                        let target_kind =
-                            target_sid.and_then(|s| self.state.surface_kind(engine, s));
                         let closed = self.state.close_active_surface(engine);
-                        if closed {
-                            if let (Some(sid), Some(k)) = (target_sid, target_kind) {
-                                self.state.enqueue_surface_closed(sid, k, true);
-                            }
-                        } else if !self.state.close_active_pane(engine) {
+                        if !closed && !self.state.close_active_pane(engine) {
                             self.state.close_active_workspace(engine);
                         }
                         if engine.workspaces.is_empty() {

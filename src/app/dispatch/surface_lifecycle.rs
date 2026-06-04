@@ -37,7 +37,7 @@ impl App {
             };
             let payload = SurfaceClosed {
                 surface_id: ev.surface_id,
-                kind: ev.kind.to_string(),
+                kind: ev.kind.map(|s| s.to_string()).unwrap_or_default(),
                 reason: bus_reason,
             };
             mgr.emit_host_event("surface.closed", &payload, EventScope::Surface);

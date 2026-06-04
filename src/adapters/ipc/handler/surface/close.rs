@@ -14,7 +14,6 @@ fn close_surface_via_intent(
     id: serde_json::Value,
     surface_id: u32,
 ) -> JsonRpcResponse {
-    let kind = state.surface_kind(engine, surface_id);
     let intent = crate::core::intent::DomainIntent::CloseSurface {
         surface_id,
         save_snapshot: false,
@@ -44,6 +43,8 @@ fn close_surface_via_intent(
         );
     }
 
+    // is_user_close=false — IPC 는 agent 경로. cleanup_targets 의 모든 surface 에 대한
+    // lifecycle enqueue 는 cascade_surface_closed 가 처리 (R1 분석 참조).
     crate::app::dispatch_domain::cascade_surface_closed(
         core,
         state,
@@ -54,11 +55,8 @@ fn close_surface_via_intent(
         closed_pane_ids,
         workspace_id_purged,
         workspaces_now_empty,
+        false,
     );
-
-    if let Some(k) = kind {
-        state.enqueue_surface_closed(surface_id, k, false);
-    }
 
     JsonRpcResponse::success(id, json!({ "closed": true, "surface_id": surface_id }))
 }

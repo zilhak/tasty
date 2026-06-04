@@ -41,8 +41,12 @@ impl AppState {
             if let Some(first) = ws.pane_layout().first_pane() {
                 ws.focused_pane = first.id;
             }
+            // cleanup_surface 직후엔 layout 에서 surface 가 사라져 kind 조회 불가 →
+            // 미리 캡쳐. plugin lifecycle 큐에 cleanup_targets 모두 enqueue (R1 분석).
             for (sid, pid) in targets {
+                let kind = self.surface_kind(engine, sid);
                 self.cleanup_surface(engine, sid, pid);
+                self.enqueue_surface_closed(sid, kind, true);
             }
             engine.mark_layout_dirty();
         }
@@ -68,6 +72,7 @@ impl AppState {
             .terminals
             .scrollback_persist_id(surface_id)
             .map(str::to_string);
+        let kind = self.surface_kind(engine, surface_id);
         let split_handled;
         if let Some(pane) = self.focused_pane_mut(engine) {
             let tab = match pane.active_tab_mut() {
@@ -76,17 +81,18 @@ impl AppState {
             };
             if tab.is_split() {
                 if !tab.close_surface(surface_id) {
-                    return self.close_surface_by_id(engine, surface_id);
+                    return self.close_surface_by_id(engine, surface_id, true);
                 }
                 split_handled = true;
             } else {
-                return self.close_surface_by_id(engine, surface_id);
+                return self.close_surface_by_id(engine, surface_id, true);
             }
         } else {
             return false;
         }
         if split_handled {
             self.cleanup_surface(engine, surface_id, persist_id);
+            self.enqueue_surface_closed(surface_id, kind, true);
             engine.mark_layout_dirty();
         }
         true
@@ -96,8 +102,13 @@ impl AppState {
     /// surface -> tab -> pane -> workspace as needed.
     /// When `save_snapshot` is true, the closed item is saved for user restore (Ctrl+Shift+T).
     /// Agent/IPC closures should pass false to avoid polluting the user's undo stack.
-    pub fn close_surface_by_id(&mut self, engine: &mut CoreState, surface_id: u32) -> bool {
-        self.close_surface_by_id_inner(engine, surface_id, true)
+    pub fn close_surface_by_id(
+        &mut self,
+        engine: &mut CoreState,
+        surface_id: u32,
+        is_user_close: bool,
+    ) -> bool {
+        self.close_surface_by_id_inner(engine, surface_id, true, is_user_close)
     }
 
     /// Close without saving snapshot (for IPC/agent-initiated closures).
@@ -111,8 +122,9 @@ impl AppState {
         &mut self,
         engine: &mut CoreState,
         surface_id: u32,
+        is_user_close: bool,
     ) -> bool {
-        let closed = self.close_surface_by_id_inner(engine, surface_id, false);
+        let closed = self.close_surface_by_id_inner(engine, surface_id, false, is_user_close);
         if closed && engine.workspaces.is_empty() {
             // free fn 으로 직접 호출 — Core 통과 없이 invariant 복구 (apply_create_workspace_inner
             // 은 engine-only 라 self/Core 의존 없음). 본 호출처는 PTY exit cleanup
@@ -144,6 +156,7 @@ impl AppState {
         engine: &mut CoreState,
         surface_id: u32,
         save_snapshot: bool,
+        is_user_close: bool,
     ) -> bool {
         // Find which workspace and pane contain this surface
         let (ws_idx, pane_id) = match engine.find_workspace_index_for_surface(surface_id) {
@@ -215,11 +228,13 @@ impl AppState {
                 .terminals
                 .scrollback_persist_id(surface_id)
                 .map(str::to_string);
+            let kind = self.surface_kind(engine, surface_id);
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             let tab = &mut pane.tabs[tab_idx];
             if tab.close_surface(surface_id) {
                 self.cleanup_surface(engine, surface_id, persist_id);
+                self.enqueue_surface_closed(surface_id, kind, is_user_close);
                 engine.mark_layout_dirty();
                 return true;
             }
@@ -267,7 +282,9 @@ impl AppState {
                     pane.active_tab = pane.tabs.len() - 1;
                 }
                 for (sid, pid) in targets {
+                    let kind = self.surface_kind(engine, sid);
                     self.cleanup_surface(engine, sid, pid);
+                    self.enqueue_surface_closed(sid, kind, is_user_close);
                 }
                 engine.mark_layout_dirty();
                 return true;
@@ -296,7 +313,9 @@ impl AppState {
                     ws.focused_pane = first.id;
                 }
                 for (sid, pid) in targets {
+                    let kind = self.surface_kind(engine, sid);
                     self.cleanup_surface(engine, sid, pid);
+                    self.enqueue_surface_closed(sid, kind, is_user_close);
                 }
                 engine.mark_layout_dirty();
                 return true;
@@ -327,6 +346,11 @@ impl AppState {
                 }
             }
         }
+        // workspaces.remove 이후엔 surface_kind 조회 불가 → 미리 캡쳐.
+        let target_kinds: Vec<Option<&'static str>> = targets
+            .iter()
+            .map(|(sid, _)| self.surface_kind(engine, *sid))
+            .collect();
         let workspace_id = engine.workspaces[ws_idx].id;
         engine.workspaces.remove(ws_idx);
         if self.active_workspace >= engine.workspaces.len() && !engine.workspaces.is_empty() {
@@ -344,8 +368,9 @@ impl AppState {
             Ok(_) => {}
             Err(e) => tracing::warn!(workspace_id, "memory: purge_scope failed: {e}"),
         }
-        for (sid, pid) in targets {
+        for ((sid, pid), kind) in targets.into_iter().zip(target_kinds) {
             self.cleanup_surface(engine, sid, pid);
+            self.enqueue_surface_closed(sid, kind, is_user_close);
         }
         engine.mark_layout_dirty();
         true

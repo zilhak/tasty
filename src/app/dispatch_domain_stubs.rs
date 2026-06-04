@@ -52,6 +52,7 @@ pub(crate) fn cascade_surface_closed(
     closed_pane_ids: Vec<u32>,
     workspace_id_purged: Option<u32>,
     workspaces_now_empty: bool,
+    is_user_close: bool,
 ) {
 }
 

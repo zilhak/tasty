@@ -163,7 +163,7 @@ fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
     assert_eq!(surface_ids.len(), 1);
     let sid = surface_ids[0];
 
-    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid));
+    assert!(state.close_surface_by_id_no_snapshot(&mut engine, sid, false));
     assert!(
         !engine.workspaces.is_empty(),
         "agent-initiated close must not leave the window with zero workspaces"

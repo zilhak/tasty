@@ -71,7 +71,10 @@ pub struct SurfaceMessage {
 #[derive(Debug, Clone)]
 pub struct PendingSurfaceClosed {
     pub(crate) surface_id: u32,
-    pub(crate) kind: &'static str,
+    /// kind 가 None 인 경우는 cascade close 경로에서 surface 가 이미 layout 에서
+    /// 제거된 뒤 enqueue 되어 식별이 불가능했음을 의미. payload 변환 시 빈 문자열로
+    /// 폴백한다 — 구독자(예: plugin-claude)는 surface_id 만으로 cleanup 가능.
+    pub(crate) kind: Option<&'static str>,
     pub(crate) is_user_close: bool,
 }
 
@@ -815,7 +818,7 @@ impl AppState {
     pub fn enqueue_surface_closed(
         &mut self,
         surface_id: u32,
-        kind: &'static str,
+        kind: Option<&'static str>,
         is_user_close: bool,
     ) {
         self.pending_lifecycle_events.push(PendingSurfaceClosed {

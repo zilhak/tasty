@@ -110,8 +110,12 @@ impl AppState {
             self.active_workspace = engine.workspaces.len() - 1;
         }
         // Cleanup
+        // workspace.remove 후엔 surface_kind 가 None 을 반환할 수 있으나, plugin
+        // lifecycle 구독자는 surface_id 만으로 cleanup 가능 (R1 분석).
         for (sid, pid) in targets {
+            let kind = self.surface_kind(engine, sid);
             self.cleanup_surface(engine, sid, pid);
+            self.enqueue_surface_closed(sid, kind, true);
         }
         engine.mark_layout_dirty();
         true

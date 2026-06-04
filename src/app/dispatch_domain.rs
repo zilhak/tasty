@@ -228,6 +228,7 @@ impl App {
                 workspaces_now_empty,
             } => {
                 if closed {
+                    let is_user_close = origin.is_user();
                     self.dispatch_surface_closed_cascade(
                         source,
                         cascade_level,
@@ -236,6 +237,7 @@ impl App {
                         closed_pane_ids,
                         workspace_id_purged,
                         workspaces_now_empty,
+                        is_user_close,
                     );
                 }
             }
@@ -575,13 +577,10 @@ impl App {
             });
         }
         state.enqueue_host_event(crate::state::PendingHostEvent::ProcessExited { surface_id });
-        let kind = state.surface_kind(engine, surface_id);
-        if state.close_surface_by_id_no_snapshot(engine, surface_id) {
-            // intent-exempt: PTY/process exit cleanup
-            if let Some(k) = kind {
-                state.enqueue_surface_closed(surface_id, k, true);
-            }
-        }
+        // close_surface_by_id_no_snapshot 내부 (Case 1~5) 에서 cleanup_targets 전체에 대한
+        // enqueue_surface_closed 가 발화된다 (R1 leak fix). 반환값(이미 닫힌 surface 여부)은
+        // cascade 흐름에 영향 없어 의도적 무시.
+        state.close_surface_by_id_no_snapshot(engine, surface_id, true);
         if let Some(base) = dirty_main {
             base.dirty = true;
         }
@@ -600,6 +599,7 @@ impl App {
         closed_pane_ids: Vec<u32>,
         workspace_id_purged: Option<u32>,
         workspaces_now_empty: bool,
+        is_user_close: bool,
     ) {
         let core = &mut self.core;
         match source {
@@ -617,6 +617,7 @@ impl App {
                     closed_pane_ids,
                     workspace_id_purged,
                     workspaces_now_empty,
+                    is_user_close,
                 );
                 main.mark_dirty();
             }
@@ -634,6 +635,7 @@ impl App {
                     closed_pane_ids,
                     workspace_id_purged,
                     workspaces_now_empty,
+                    is_user_close,
                 );
             }
         }
@@ -1353,9 +1355,16 @@ pub(crate) fn cascade_surface_closed(
     closed_pane_ids: Vec<u32>,
     workspace_id_purged: Option<u32>,
     workspaces_now_empty: bool,
+    is_user_close: bool,
 ) {
+    // cleanup_targets 의 sibling 들이 plugin lifecycle 큐에 빠짐없이 들어가야
+    // ClaudeState child registry leak 이 발생하지 않음 (R1 분석 참조).
+    // Core::apply_close_surface 가 이미 layout mutate 후 cleanup_targets 를 채우므로
+    // surface_kind 가 None 일 수 있음 — payload 변환에서 빈 문자열로 폴백한다.
     for (sid, pid) in cleanup_targets {
+        let kind = state.surface_kind(engine, sid);
         state.cleanup_surface(engine, sid, pid);
+        state.enqueue_surface_closed(sid, kind, is_user_close);
     }
 
     for tab_id in &closed_tab_ids {
