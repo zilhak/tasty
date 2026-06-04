@@ -765,6 +765,98 @@ mod tests {
         }
     }
 
+    /// K.A.1: run_outcome JSON 직렬화 → 역직렬화 round trip.
+    #[test]
+    fn run_outcome_done_serde_round_trip() {
+        let outcome = PollOutcome::Done(TaskResult {
+            exit_code: Some(0),
+            output: Some(json!({ "pid": 1234u32 })),
+            error: None,
+        });
+        let v = run_outcome_to_value(&outcome);
+        let back = run_outcome_from_value(&v).expect("round trip");
+        match back {
+            PollOutcome::Done(r) => {
+                assert_eq!(r.exit_code, Some(0));
+                assert_eq!(r.output, Some(json!({ "pid": 1234u32 })));
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+    }
+
+    /// K.A.1: Failed variant serde round trip.
+    #[test]
+    fn run_outcome_failed_serde_round_trip() {
+        let outcome = PollOutcome::Failed("Run exited non-zero: code=Some(1)".into());
+        let v = run_outcome_to_value(&outcome);
+        let back = run_outcome_from_value(&v).expect("round trip");
+        match back {
+            PollOutcome::Failed(err) => assert!(err.contains("non-zero")),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    /// K.A.1: watcher thread 가 자식 종료 후 run_result 영속 + cell 채움.
+    /// "true" 명령 (Unix) — 즉시 종료 코드 0.
+    #[cfg(unix)]
+    #[test]
+    fn shell_dispatch_watcher_persists_exit_code_on_success() {
+        use tasty_agent::OnFailure;
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let task = Task {
+            id: "t-sh-ok".to_string(),
+            workspace_id: 1,
+            name: "shell-ok".into(),
+            command: TaskCommand::Run {
+                command: vec!["true".into()],
+                workspace_id: 1,
+                cwd: None,
+            },
+            state: tasty_agent::TaskState::Running,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+        let outcome = exec.dispatch(&task);
+        let handle = match outcome {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        let pid = match handle {
+            DispatchHandle::ShellProcess { pid } => pid,
+            other => panic!("expected ShellProcess, got {other:?}"),
+        };
+        // watcher 가 wait → cell 채움 + 영속 까지 대기 (max 2s).
+        let mut final_outcome: Option<PollOutcome> = None;
+        for _ in 0..40 {
+            match exec.poll(&handle) {
+                PollOutcome::Active => std::thread::sleep(Duration::from_millis(50)),
+                other => {
+                    final_outcome = Some(other);
+                    break;
+                }
+            }
+        }
+        let outcome = final_outcome.expect("watcher should have completed");
+        match outcome {
+            PollOutcome::Done(r) => assert_eq!(r.exit_code, Some(0)),
+            other => panic!("expected Done, got {other:?}"),
+        }
+        // memory 에도 영속됐는지 확인.
+        let loaded = load_run_result(&ctx, 1, &task.id).expect("persisted");
+        match loaded {
+            PollOutcome::Done(r) => assert_eq!(r.exit_code, Some(0)),
+            other => panic!("expected persisted Done, got {other:?}"),
+        }
+        // shell_children 에서도 제거됐는지.
+        assert!(!exec.shell_children.contains_key(&pid));
+    }
+
     /// J.A.S2: evict 후 store 에서 사라짐.
     #[test]
     fn evict_handle_removes_from_store() {

@@ -23,6 +23,7 @@ use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
     HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result, handle_key, load_run_result,
+    run_result_key,
 };
 use tasty_agent::runner::PollOutcome;
 
@@ -699,6 +700,171 @@ mod tests {
                 .unwrap_or(false)
         });
         assert!(!still_there, "dead pid handle should be evicted");
+    }
+
+    fn put_run_result(ctx: &RunnerContext, ws: u32, task_id: &str, value: serde_json::Value) {
+        ctx.with_memory(|mem| {
+            mem.put(
+                HOST_OWNER,
+                &Scope::Workspace(ws),
+                &run_result_key(task_id),
+                &MemoryValue::Json(value),
+                &PutOpts::default(),
+            )
+            .unwrap();
+        });
+    }
+
+    fn make_running_run_task(ctx: &RunnerContext, ws: u32) -> TaskId {
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            let t = store
+                .create(TaskCreateOpts {
+                    workspace_id: ws,
+                    name: "t".into(),
+                    command: TaskCommand::Run {
+                        command: vec!["true".into()],
+                        workspace_id: ws,
+                        cwd: None,
+                    },
+                    depends_on: vec![],
+                    on_failure: OnFailure::Abort,
+                    metadata: serde_json::Value::Null,
+                    now_ms: 1000,
+                })
+                .unwrap();
+            store
+                .set_state(ws, &t.id, TaskState::Running, 1100)
+                .unwrap();
+            t.id
+        })
+    }
+
+    /// K.A.1: dead pid + run_result(done, exit_code=0) → task=Succeeded + precise 마감.
+    #[test]
+    fn reload_shell_process_with_persisted_done_result_succeeds() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = make_running_run_task(&ctx, 1);
+        let dead_pid: u32 = 0xFFFF_FFFE;
+        put_handle(
+            &ctx,
+            1,
+            &task_id,
+            &DispatchHandle::ShellProcess { pid: dead_pid },
+        );
+        put_run_result(
+            &ctx,
+            1,
+            &task_id,
+            serde_json::json!({
+                "kind": "done",
+                "exit_code": 0,
+                "output": { "pid": dead_pid },
+                "error": null,
+            }),
+        );
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert!(alive.is_empty(), "precise should not restore to alive");
+
+        let task = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap()
+        });
+        assert!(
+            matches!(task.state, TaskState::Succeeded),
+            "got {:?}",
+            task.state
+        );
+        let result = task.result.expect("result present");
+        assert_eq!(result.exit_code, Some(0));
+
+        // handle + run_result 모두 evict.
+        let handle_present: bool = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &handle_key(&task_id))
+                .map(|v| v.is_some())
+                .unwrap_or(false)
+        });
+        assert!(!handle_present, "handle evicted after precise");
+        let result_present: bool = ctx.with_memory(|mem| {
+            mem.get(&Scope::Workspace(1), &run_result_key(&task_id))
+                .map(|v| v.is_some())
+                .unwrap_or(false)
+        });
+        assert!(!result_present, "run_result evicted after precise");
+    }
+
+    /// K.A.1: dead pid + run_result(failed) → task=Failed(원본 메시지) + evict.
+    #[test]
+    fn reload_shell_process_with_persisted_failed_result_marks_failed() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = make_running_run_task(&ctx, 1);
+        let dead_pid: u32 = 0xFFFF_FFFE;
+        put_handle(
+            &ctx,
+            1,
+            &task_id,
+            &DispatchHandle::ShellProcess { pid: dead_pid },
+        );
+        put_run_result(
+            &ctx,
+            1,
+            &task_id,
+            serde_json::json!({
+                "kind": "failed",
+                "error": "Run exited non-zero: code=Some(2)",
+            }),
+        );
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert!(alive.is_empty());
+
+        let task = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap()
+        });
+        match &task.state {
+            TaskState::Failed { error } => assert!(error.contains("non-zero"), "got {error}"),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        // 기존 unknown 메시지가 아니라 watcher 가 영속한 정확한 메시지여야 함.
+        assert!(
+            !matches!(&task.state, TaskState::Failed { error } if error.contains("unknown")),
+            "should not be 'unknown' message",
+        );
+    }
+
+    /// K.A.1: dead pid + run_result 없음 → 기존 동작 (unknown Failed).
+    #[test]
+    fn reload_shell_process_dead_pid_without_run_result_falls_back_to_unknown() {
+        let (_td, ctx) = fresh_ctx();
+        let task_id = make_running_run_task(&ctx, 1);
+        let dead_pid: u32 = 0xFFFF_FFFE;
+        put_handle(
+            &ctx,
+            1,
+            &task_id,
+            &DispatchHandle::ShellProcess { pid: dead_pid },
+        );
+        // run_result 없음.
+
+        let alive = reload_persistent_handles(&ctx, 1);
+        assert!(alive.is_empty());
+
+        let task = ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            let store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+            store.get(1, &task_id).unwrap().unwrap()
+        });
+        match &task.state {
+            TaskState::Failed { error } => {
+                assert!(error.contains("exit_code unknown"), "got {error}")
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
     }
 
     /// J.A.S3: task state != Running 인 handle → stale 처리 (영속만 evict, state X).
