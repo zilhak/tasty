@@ -367,9 +367,14 @@ pub(crate) fn dispatch<P: Plugin>(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            let cwd = params
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(std::path::PathBuf::from);
             let result = plugin.create_surface(SurfaceCreateCtx {
                 surface_id,
                 kind,
+                cwd,
                 params: params.clone(),
             });
             serde_json::to_value(result).map_err(|e| DispatchError::from_anyhow(e.into()))

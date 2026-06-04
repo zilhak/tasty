@@ -234,6 +234,7 @@ impl PluginManager {
                     surface_id,
                     plugin_id,
                     kind,
+                    cwd,
                     params,
                     handles,
                 } => {
@@ -244,12 +245,14 @@ impl PluginManager {
                             handles,
                         },
                     );
+                    let cwd_str = cwd.as_ref().and_then(|p| p.to_str()).map(str::to_string);
                     self.send_surface_request(
                         &plugin_id,
                         protocol::METHOD_SURFACE_CREATE,
                         json!({
                             "surface_id": surface_id,
                             "kind": kind,
+                            "cwd": cwd_str,
                             "params": params,
                         }),
                         PendingRequestKind::SurfaceCreate { surface_id },

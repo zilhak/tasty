@@ -26,6 +26,8 @@
 //! }
 //! ```
 
+use std::path::PathBuf;
+
 use serde_json::Value;
 pub use tasty_plugin_protocol::SurfaceResult;
 use tasty_plugin_protocol::ui_tree::UiEvent;
@@ -37,6 +39,10 @@ use crate::host::HostHandle;
 pub struct SurfaceCreateCtx {
     pub surface_id: u32,
     pub kind: String,
+    /// 호스트가 source surface 로부터 carry 한 시작 cwd. None 이면 plugin 측에서
+    /// params 우선순위 또는 자체 fallback (예: home dir) 으로 결정.
+    /// Surface cwd invariant — `docs/architecture/surface-cwd-invariant.md`.
+    pub cwd: Option<PathBuf>,
     pub params: Value,
 }
 

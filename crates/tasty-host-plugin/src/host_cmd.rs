@@ -3,6 +3,7 @@
 //! 새 RemoteSurface가 만들어지면 해당 surface의 `Arc<Mutex>` 핸들 묶음을 manager에
 //! 전달하여 manager가 plugin과의 메시지 흐름에서 이 surface를 추적할 수 있도록 한다.
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
@@ -23,6 +24,9 @@ pub enum HostCmd {
         surface_id: u32,
         plugin_id: String,
         kind: String,
+        /// 호스트가 carry 한 시작 cwd. Surface cwd invariant —
+        /// `docs/architecture/surface-cwd-invariant.md`.
+        cwd: Option<PathBuf>,
         params: Value,
         handles: SurfaceHandles,
     },
