@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use tasty_plugin_protocol::SharedBufferId;
 use tasty_shm::SharedMemory;
@@ -221,6 +221,15 @@ pub struct PluginManager {
     pub(super) spawn_failures: HashMap<String, Vec<Instant>>,
     /// 자동 disable되어 사용자가 수동 enable하기 전까지 더 이상 spawn 시도 안 함.
     pub(super) auto_disabled: std::collections::HashSet<String>,
+    /// H — auto-reload: plugin id → 마지막 관측한 entry binary mtime.
+    pub(super) plugin_binary_mtimes: HashMap<String, SystemTime>,
+    /// H — auto-reload: plugin id → 마지막 관측한 manifest version.
+    pub(super) plugin_manifest_versions: HashMap<String, String>,
+    /// H — auto-reload: 마지막 polling tick 시각.
+    pub(super) last_auto_reload_check: Instant,
+    /// H — auto-reload 활성 여부. `TASTY_PLUGIN_AUTO_RELOAD` env 로 결정.
+    /// false 이면 pump 의 gate 가 즉시 종료되어 cost 0.
+    pub(super) auto_reload_enabled: bool,
     /// hello 받은 plugin의 surface_kinds를 등록하기 위한 registry 핸들. None이면
     /// registry 등록 동작이 비활성 (헤드리스/테스트).
     pub surface_registry: Option<Arc<dyn SurfaceRegistry>>,
