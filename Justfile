@@ -61,6 +61,86 @@ dist-setup-linux:
         echo "linuxdeploy installed to ~/.local/bin (ensure on PATH)"
     fi
 
+# ────────────────────────────────────────────────────────────
+# Plugin 빌드 / 스테이징
+# ────────────────────────────────────────────────────────────
+#
+# bundle_root() (crates/tasty-host-plugin/src/builtin.rs) 의 fallback 경로
+# `<exe_dir>/builtin-plugins/` = `target/<profile>/builtin-plugins/` 에
+# plugin 산출물(tasty-plugin.toml + bin + lang/) 을 스테이징한다.
+# tasty 부팅 시 `install_builtins_if_needed` 가 거기서 사용자
+# `~/.tasty/plugins/<id>/` 로 자동 sync 한다.
+#
+# 사용:
+#   just build-plugins              # 모든 bin plugin → release 스테이징
+#   PROFILE=debug just build-plugins  # debug 프로필 (cargo build, target/debug/)
+
+# profile 선택 (release 기본; debug 도 가능)
+PROFILE := env_var_or_default('PROFILE', 'release')
+
+# 모든 bin plugin crate 를 빌드 + 스테이징.
+# 판별 기준: crates/tasty-plugin-* 중 tasty-plugin.toml 보유 = bin plugin.
+# manifest 없는 lib-only crate (protocol, sdk, manifest, sdk-wasm) 는 자동 skip.
+build-plugins:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    profile="{{PROFILE}}"
+    case "$profile" in
+        release) profile_flag="--release" ;;
+        debug)   profile_flag="" ;;
+        *)       profile_flag="--profile $profile" ;;
+    esac
+    profile_dir="target/$profile"
+    bundle_root="$profile_dir/builtin-plugins"
+
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) exe_ext=".exe" ;;
+        *)                    exe_ext="" ;;
+    esac
+
+    crates=()
+    for d in crates/tasty-plugin-*; do
+        [ -f "$d/tasty-plugin.toml" ] || continue
+        crates+=("$(basename "$d")")
+    done
+    if [ "${#crates[@]}" -eq 0 ]; then
+        echo "no plugin crates found under crates/tasty-plugin-*" >&2
+        exit 1
+    fi
+
+    # 모든 plugin 을 단일 cargo 호출로 — dep graph 1회 해석.
+    cargo_args=()
+    for c in "${crates[@]}"; do
+        cargo_args+=("-p" "$c")
+    done
+    cargo build $profile_flag "${cargo_args[@]}"
+
+    mkdir -p "$bundle_root"
+    for c in "${crates[@]}"; do
+        d="crates/$c"
+        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+            | sed 's/.*"\([^"]*\)".*/\1/')
+        if [ -z "$id" ]; then
+            echo "✘ $c: cannot parse id from $d/tasty-plugin.toml" >&2
+            exit 1
+        fi
+        bin_name="$c$exe_ext"
+        src_bin="$profile_dir/$bin_name"
+        if [ ! -f "$src_bin" ]; then
+            echo "✘ $c: built binary missing at $src_bin" >&2
+            exit 1
+        fi
+        dest="$bundle_root/$id"
+        mkdir -p "$dest"
+        cp "$src_bin" "$dest/$bin_name"
+        cp "$d/tasty-plugin.toml" "$dest/tasty-plugin.toml"
+        if [ -d "$d/lang" ]; then
+            rm -rf "$dest/lang"
+            cp -R "$d/lang" "$dest/lang"
+        fi
+        echo "✓ staged $id → $dest"
+    done
+
 # SHA256SUMS 재검증.
 dist-verify:
     #!/usr/bin/env bash
