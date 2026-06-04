@@ -897,6 +897,142 @@ mod tests {
         assert!(!exec.shell_children.contains_key(&pid));
     }
 
+    /// K.A.2: injector 미초기화 1회 → Active + grace deadline 세팅.
+    #[test]
+    fn claude_child_poll_injector_uninit_returns_active_within_grace() {
+        let (_td, ctx) = fresh_ctx();
+        // host_ipc OnceLock 비어있는 상태 — set_host_ipc_injector 호출 X.
+        let mut exec = HostExecutor::new(ctx);
+        let handle = DispatchHandle::ClaudeChild {
+            parent_sid: 1,
+            child_index: 0,
+            workspace_id: 1,
+        };
+        let outcome = exec.poll(&handle);
+        assert!(
+            matches!(outcome, PollOutcome::Active),
+            "expected Active, got {outcome:?}"
+        );
+        assert!(
+            exec.injector_grace_deadline_ms.is_some(),
+            "deadline should be set on first uninit"
+        );
+    }
+
+    /// K.A.2: grace deadline 을 과거로 강제 → 다음 poll 은 Failed("grace expired").
+    #[test]
+    fn claude_child_poll_after_grace_expired_returns_failed() {
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx);
+        let handle = DispatchHandle::ClaudeChild {
+            parent_sid: 1,
+            child_index: 0,
+            workspace_id: 1,
+        };
+        // 첫 poll 로 deadline 세팅 — 반환값은 Active (검증은 다음 라인의 덮어쓰기 후).
+        let _first = exec.poll(&handle);
+        debug_assert!(matches!(_first, PollOutcome::Active));
+        exec.injector_grace_deadline_ms = Some(0); // 과거로 강제.
+        let outcome = exec.poll(&handle);
+        match outcome {
+            PollOutcome::Failed(err) => {
+                assert!(err.contains("injector grace expired"), "got {err}");
+                assert!(err.contains("claude.wait"));
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    /// K.A.2: injector ready 가 되어 정상 dispatch 가 응답하면 grace deadline reset.
+    /// 테스트 worker thread 가 claude.wait 응답 — `idle` 상태로 종결.
+    #[test]
+    fn claude_child_poll_recovers_after_injector_ready() {
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_ipc::server::IpcCommand;
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let handle = DispatchHandle::ClaudeChild {
+            parent_sid: 1,
+            child_index: 0,
+            workspace_id: 1,
+        };
+        // 1차 poll — injector 미초기화 → Active + deadline 세팅.
+        let outcome1 = exec.poll(&handle);
+        assert!(matches!(outcome1, PollOutcome::Active));
+        assert!(exec.injector_grace_deadline_ms.is_some());
+
+        // Fake injector + worker thread: claude.wait 에 idle 응답.
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        let injector = HostIpcInjector::new(tx, waker);
+        ctx.host_ipc.set(injector).ok().expect("set once");
+        let worker = std::thread::spawn(move || {
+            let cmd = rx.recv().expect("recv claude.wait");
+            assert_eq!(cmd.request.method, "claude.wait");
+            let resp = JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                serde_json::json!({ "state": "idle" }),
+            );
+            cmd.response_tx.send(resp).expect("send resp");
+        });
+        // 2차 poll — injector ready → claude.wait 응답 "idle" → Done.
+        let outcome2 = exec.poll(&handle);
+        worker.join().unwrap();
+        match outcome2 {
+            PollOutcome::Done(_) => {}
+            other => panic!("expected Done, got {other:?}"),
+        }
+        // grace deadline reset 확인.
+        assert!(
+            exec.injector_grace_deadline_ms.is_none(),
+            "deadline should reset after successful dispatch"
+        );
+    }
+
+    /// K.A.2: injector 외 사유 Err 는 grace 우회 — 즉시 Failed.
+    #[test]
+    fn claude_child_poll_non_injector_error_fails_immediately() {
+        use crate::ipc::host_call::HostIpcInjector;
+        use std::sync::mpsc;
+        use tasty_ipc::server::IpcCommand;
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let handle = DispatchHandle::ClaudeChild {
+            parent_sid: 1,
+            child_index: 0,
+            workspace_id: 1,
+        };
+        // injector 를 ready 로 만들되 worker 가 응답을 보내지 않게 두면 dispatch 가
+        // HOST_DISPATCH_TIMEOUT (5s) 후 timeout Err. 본 테스트는 channel disconnect 로
+        // 빠르게 Err 유도 — sender 만 drop.
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        drop(rx); // receiver drop → sender.send 가 즉시 Err.
+        let waker = std::sync::Arc::new(|| {});
+        let injector = HostIpcInjector::new(tx, waker);
+        ctx.host_ipc.set(injector).ok().expect("set once");
+        let outcome = exec.poll(&handle);
+        match outcome {
+            PollOutcome::Failed(err) => {
+                assert!(err.contains("claude.wait"), "got {err}");
+                assert!(
+                    !err.contains("grace expired"),
+                    "non-injector error must not use grace path: {err}"
+                );
+                assert!(
+                    !err.contains("injector not initialized"),
+                    "should not be uninit path: {err}"
+                );
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        // deadline 은 우회 — 변경 없음 (None 그대로).
+        assert!(exec.injector_grace_deadline_ms.is_none());
+    }
+
     /// J.A.S2: evict 후 store 에서 사라짐.
     #[test]
     fn evict_handle_removes_from_store() {
