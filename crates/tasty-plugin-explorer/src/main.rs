@@ -126,6 +126,17 @@ impl ExplorerSurface {
         }
     }
 
+    /// root 변경 단일 진입점. expanded/selected/preview 후처리를 일괄 수행.
+    /// cwd 통보 (`surface.set_cwd`) 는 호출처가 별도로 발사 — host 핸들이
+    /// `ExplorerSurface` 에 없기 때문.
+    fn set_root(&mut self, new_root: PathBuf) {
+        self.root = new_root.clone();
+        self.expanded.clear();
+        self.expanded.insert(new_root);
+        self.selected = None;
+        self.preview = None;
+    }
+
     fn build_tree(&self, bookmarks: &BookmarkStore, tr: &Translator) -> UiNode {
         let root_node = build_node(&self.root, &self.expanded, &self.selected, 0);
         let tree_pane = scroll_v(tree_view(
@@ -268,6 +279,21 @@ fn list_children(dir: &Path) -> Vec<PathBuf> {
     dirs.into_values().chain(files.into_values()).collect()
 }
 
+/// host 에 surface 의 새 cwd 를 통보. fire-and-forget — 실패 시 warn 로깅만.
+/// host 가 옛 버전이라 메서드 미지원이면 무해 (RemoteSurface.cwd 가 None 유지).
+fn emit_cwd(host: Option<&HostHandle>, surface_id: u32, cwd: &Path) {
+    let Some(host) = host else { return };
+    if let Err(e) = host.call(
+        "surface.set_cwd",
+        serde_json::json!({
+            "surface_id": surface_id,
+            "cwd": cwd.to_string_lossy().to_string(),
+        }),
+    ) {
+        tracing::warn!(surface_id = surface_id, "surface.set_cwd failed: {e}");
+    }
+}
+
 fn read_preview(path: &Path) -> Option<String> {
     if !path.is_file() {
         return None;
@@ -401,11 +427,8 @@ impl Plugin for ExplorerPlugin {
             UiEvent::TreeActivate { node_id, path } if node_id == TREE_NODE_ID => {
                 let p = PathBuf::from(&path);
                 if p.is_dir() {
-                    surface.root = p.clone();
-                    surface.expanded.clear();
-                    surface.expanded.insert(p);
-                    surface.selected = None;
-                    surface.preview = None;
+                    surface.set_root(p.clone());
+                    emit_cwd(self.host.as_ref(), ctx.surface_id, &p);
                 } else if let Some(host) = self.host.as_ref() {
                     if let Err(e) = host.call(
                         "file_handler.dispatch",
@@ -423,11 +446,8 @@ impl Plugin for ExplorerPlugin {
             UiEvent::AddressbarSubmit { text, .. } => {
                 let p = PathBuf::from(&text);
                 if p.is_dir() {
-                    surface.root = p.clone();
-                    surface.expanded.clear();
-                    surface.expanded.insert(p);
-                    surface.selected = None;
-                    surface.preview = None;
+                    surface.set_root(p.clone());
+                    emit_cwd(self.host.as_ref(), ctx.surface_id, &p);
                 }
             }
             UiEvent::SplitterDrag { node_id, ratio } => match node_id.as_str() {
@@ -453,11 +473,8 @@ impl Plugin for ExplorerPlugin {
                     {
                         let p = PathBuf::from(&bm.path);
                         if p.is_dir() {
-                            surface.root = p.clone();
-                            surface.expanded.clear();
-                            surface.expanded.insert(p);
-                            surface.selected = None;
-                            surface.preview = None;
+                            surface.set_root(p.clone());
+                            emit_cwd(self.host.as_ref(), ctx.surface_id, &p);
                         } else if p.is_file() {
                             surface.selected = Some(p);
                             surface.refresh_preview();
@@ -510,11 +527,8 @@ impl Plugin for ExplorerPlugin {
             }
             "explorer.go_up" => {
                 if let Some(parent) = surface.root.parent().map(PathBuf::from) {
-                    surface.root = parent.clone();
-                    surface.expanded.clear();
-                    surface.expanded.insert(parent);
-                    surface.selected = None;
-                    surface.preview = None;
+                    surface.set_root(parent.clone());
+                    emit_cwd(self.host.as_ref(), ctx.surface_id, &parent);
                 }
                 true
             }

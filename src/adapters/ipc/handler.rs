@@ -330,6 +330,7 @@ fn route_engine_handler(
         "surface.meta.get" => meta::handle_surface_meta_get(state, engine, id, &request.params),
         "surface.meta.unset" => meta::handle_surface_meta_unset(state, engine, id, &request.params),
         "surface.meta.list" => meta::handle_surface_meta_list(state, engine, id, &request.params),
+        "surface.set_cwd" => surface::handle_set_cwd(state, engine, id, &request.params),
         // hooks
         "hook.set" => hooks::handle_hook_set(core, state, engine, id, &request.params),
         "hook.list" => hooks::handle_hook_list(state, engine, id, &request.params),

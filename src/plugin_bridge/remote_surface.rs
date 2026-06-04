@@ -14,6 +14,7 @@
 
 #![allow(dead_code)]
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::model::{Surface, SurfaceId};
@@ -39,6 +40,11 @@ pub struct RemoteSurface {
     /// webview-enabled kind 인 경우 plugin 이 `webview.set_url` 로 전달한 URL.
     /// host 의 sync_webviews 가 매 프레임 이 값을 읽어 native webview 동기화.
     pub webview_url: Arc<Mutex<Option<String>>>,
+    /// plugin 이 `surface.set_cwd` 로 통보한 현재 cwd. `source_cwd()` 가 이 값을
+    /// 반환하여 다음 surface 의 carry 후보 cwd 로 사용된다 (예: explorer 가 root
+    /// 변경 시 갱신). 초기값 None — host 가 SurfaceCreateCtx.cwd 로 받은 carry cwd
+    /// 를 생성 직후 `set_cwd` 로 채워 넣는다.
+    pub cwd: Arc<Mutex<Option<PathBuf>>>,
 }
 
 impl RemoteSurface {
@@ -58,6 +64,7 @@ impl RemoteSurface {
             invalidated: Arc::new(Mutex::new(true)),
             display_name: Arc::new(Mutex::new(initial_name)),
             webview_url: Arc::new(Mutex::new(None)),
+            cwd: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -65,6 +72,14 @@ impl RemoteSurface {
     pub fn set_webview_url(&self, url: Option<String>) {
         if let Ok(mut slot) = self.webview_url.lock() {
             *slot = url;
+        }
+    }
+
+    /// `surface.set_cwd` IPC 가 호출. plugin 측 root/working dir 변경을 host 에 통보.
+    /// `Surface::source_cwd()` 가 다음 surface 의 carry 후보로 이 값을 노출.
+    pub fn set_cwd(&self, cwd: Option<PathBuf>) {
+        if let Ok(mut slot) = self.cwd.lock() {
+            *slot = cwd;
         }
     }
 
@@ -142,13 +157,13 @@ impl Surface for RemoteSurface {
         Some(self.id)
     }
 
-    /// RemoteSurface 자체는 cwd 를 들고 있지 않다 — plugin 측에서 ctx.cwd 로
-    /// 받아 자기 surface state 에 저장하지만, 호스트 trait 호출에는 노출하지
-    /// 않는다 (None). Surface cwd invariant — host 가 carry 한 cwd 는
-    /// SurfaceCreateCtx.cwd 경로로 한 번만 전달되며, source_cwd() 는 *호스트가
-    /// 다음 surface 의 carry 후보로 알릴 값* 으로 한정.
+    /// RemoteSurface 는 `cwd` 필드 (plugin 이 `surface.set_cwd` 로 갱신) 의 현재
+    /// 값을 반환. 초기값은 host 가 생성 시점에 `set_cwd(SurfaceCreateCtx.cwd)` 로
+    /// 채워둔 carry cwd. explorer 같이 root 가 *현재 폴더* 의 의미를 갖는 surface 는
+    /// root 변경마다 `surface.set_cwd` 를 발사하여 이 값을 갱신한다. cwd 의미가
+    /// 없는 다른 RemoteSurface kind 는 None 유지.
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
-        None
+        self.cwd.lock().ok().and_then(|g| g.clone())
     }
 
     fn display_name(&self) -> String {
@@ -211,5 +226,21 @@ mod tests {
         let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
         s.set_display_name("Browser".into());
         assert_eq!(s.display_name(), "Browser");
+    }
+
+    #[test]
+    fn initial_cwd_is_none_and_source_cwd_returns_none() {
+        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
+        assert_eq!(s.source_cwd(), None);
+    }
+
+    #[test]
+    fn set_cwd_then_source_cwd_returns_path() {
+        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
+        let p = PathBuf::from("/tmp/foo");
+        s.set_cwd(Some(p.clone()));
+        assert_eq!(s.source_cwd(), Some(p));
+        s.set_cwd(None);
+        assert_eq!(s.source_cwd(), None);
     }
 }

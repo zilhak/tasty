@@ -56,6 +56,9 @@ pub fn register_remote_kind(
                 .unwrap_or_else(|| kind_static.to_string());
             let surface =
                 RemoteSurface::new(sid, kind_static, plugin_id_for_create.clone(), initial_name);
+            // host 가 carry 한 cwd 를 surface 의 source_cwd() 시발점으로 적재.
+            // 이후 plugin 이 root 변경 시 `surface.set_cwd` 로 갱신.
+            surface.set_cwd(cwd.map(std::path::PathBuf::from));
             let handles = surface.handles();
             if let Err(e) = tx_create.send(HostCmd::RemoteSurfaceCreated {
                 surface_id: sid,

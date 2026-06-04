@@ -74,6 +74,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("tree", plugin(&[SurfaceRead])),
         // webview — plugin 이 webview-enabled surface 의 URL 설정. SurfaceWrite 권한.
         ("webview.set_url", plugin(&[SurfaceWrite])),
+        // surface.set_cwd — plugin 이 자기 RemoteSurface 의 cwd 를 host 에 통보.
+        // 예: explorer 가 root 변경 시 carry 후보 cwd 갱신.
+        ("surface.set_cwd", plugin(&[SurfaceWrite])),
         ("surface.meta.get", plugin(&[SurfaceRead])),
         ("surface.meta.list", plugin(&[SurfaceRead])),
         ("surface.meta.set", plugin(&[SurfaceWrite])),

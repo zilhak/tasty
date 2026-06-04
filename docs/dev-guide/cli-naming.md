@@ -63,7 +63,7 @@ DEBUG_METHODS / PREFIX_RULES / plugin 매니페스트 제공 namespace 는 제�
 | `preset` | 7 |
 | `script` | 1 |
 | `session` | 3 |
-| `surface` | 28 |
+| `surface` | 29 |
 | `system` | 1 |
 | `tab` | 4 |
 | `telemetry` | 12 |
@@ -74,7 +74,7 @@ DEBUG_METHODS / PREFIX_RULES / plugin 매니페스트 제공 namespace 는 제�
 | `workspace` | 4 |
 <!-- /count-table:host-namespaces -->
 
-총 199 메서드. 메서드 추가 시 본 표의 해당 행 + (0.7.x 내 추가는 OK) test 동기화.
+총 200 메서드. 메서드 추가 시 본 표의 해당 행 + (0.7.x 내 추가는 OK) test 동기화.
 메서드 제거는 SemVer 위반 (0.7.x 금지, 2.0.0 major bump 가 필요).
 
 ## verb 화이트리스트
