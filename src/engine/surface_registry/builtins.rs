@@ -274,6 +274,32 @@ mod tests {
     }
 
     #[test]
+    fn empty_carries_cwd_from_create() {
+        // Surface cwd invariant: SurfaceKindDef.create 가 받은 cwd 가 EmptySurface
+        // 본체에 carry 되어 source_cwd() 로 그대로 노출되어야 한다.
+        let reg = registry_with_builtins();
+        let def = reg.get("empty").unwrap();
+        let cwd = std::path::PathBuf::from("/tmp/carry-test");
+        let s = (def.create)(1, Some(cwd.as_path()), &json!({})).unwrap();
+        assert_eq!(s.source_cwd().as_deref(), Some(cwd.as_path()));
+    }
+
+    #[test]
+    fn diff_carries_cwd_from_create() {
+        let reg = SurfaceKindRegistry::new();
+        register_diff(&reg);
+        let def = reg.get("diff").unwrap();
+        let cwd = std::path::PathBuf::from("/tmp/diff-carry");
+        let s = (def.create)(
+            2,
+            Some(cwd.as_path()),
+            &json!({"before": "a", "after": "b"}),
+        )
+        .unwrap();
+        assert_eq!(s.source_cwd().as_deref(), Some(cwd.as_path()));
+    }
+
+    #[test]
     fn terminal_create_errors() {
         let reg = registry_with_builtins();
         let def = reg.get("terminal").unwrap();

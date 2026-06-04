@@ -126,6 +126,7 @@
 | [WASM Plugin POC 결과](architecture/wasm-poc-result.md) | Phase J.C — clipboard-history WASM 변환 + wasmtime host runtime 실측 (cold-start ~142ms, host_call ~3µs) + 정식 도입 권고 |
 | [Plugin marketplace 평가](architecture/plugin-marketplace-evaluation.md) | registry / install-by-id / trust / install flow 옵션 비교 — 0.7.x 보류 근거 + 도입 순서 + sandbox 와 묶음 의사결정 |
 | [성능 벤치마크](architecture/performance-benchmarks.md) | F.G GPU 최적화 실측 — terminals_ms p50/p99/max + draw call 수 + atlas eviction 카운터 (10 surface ASCII / CJK 4 surface, release / dist 프로필) |
+| [Surface cwd invariant](architecture/surface-cwd-invariant.md) | Surface 변환·생성 시 cwd carry 강제 규칙 + Surface trait / `SurfaceKindDef.create` / `ConvertSurfaceTarget::Kind` / `SurfaceCreateCtx.cwd` 의 compile-time guard |
 
 ## 구현 현황
 
