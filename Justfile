@@ -74,6 +74,7 @@ dist-setup-linux:
 # 사용:
 #   just build-plugins              # 모든 bin plugin → release 스테이징
 #   PROFILE=debug just build-plugins  # debug 프로필 (cargo build, target/debug/)
+#   just build-plugin claude        # 단일 plugin (이름/crate/manifest id 허용)
 
 # profile 선택 (release 기본; debug 도 가능)
 PROFILE := env_var_or_default('PROFILE', 'release')
@@ -140,6 +141,72 @@ build-plugins:
         fi
         echo "✓ staged $id → $dest"
     done
+
+# 단일 plugin build + 스테이징.
+# 인자 허용 형태: "claude" / "tasty-plugin-claude" / "com.tasty.claude"
+build-plugin name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    name="{{name}}"
+    profile="{{PROFILE}}"
+    case "$profile" in
+        release) profile_flag="--release" ;;
+        debug)   profile_flag="" ;;
+        *)       profile_flag="--profile $profile" ;;
+    esac
+    profile_dir="target/$profile"
+    bundle_root="$profile_dir/builtin-plugins"
+
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) exe_ext=".exe" ;;
+        *)                    exe_ext="" ;;
+    esac
+
+    # 정규화: 입력으로 crate 디렉토리를 찾는다.
+    crate=""
+    plugin_id=""
+    for d in crates/tasty-plugin-*; do
+        [ -f "$d/tasty-plugin.toml" ] || continue
+        c=$(basename "$d")
+        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+            | sed 's/.*"\([^"]*\)".*/\1/')
+        short=${c#tasty-plugin-}
+        if [ "$name" = "$c" ] || [ "$name" = "$short" ] || [ "$name" = "$id" ]; then
+            crate="$c"
+            plugin_id="$id"
+            break
+        fi
+    done
+    if [ -z "$crate" ]; then
+        echo "✘ plugin not found: $name" >&2
+        echo "  사용 가능한 이름:" >&2
+        for d in crates/tasty-plugin-*; do
+            [ -f "$d/tasty-plugin.toml" ] || continue
+            c=$(basename "$d")
+            short=${c#tasty-plugin-}
+            id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+                | sed 's/.*"\([^"]*\)".*/\1/')
+            echo "    $short  ($c, $id)" >&2
+        done
+        exit 1
+    fi
+
+    cargo build $profile_flag -p "$crate"
+    bin_name="$crate$exe_ext"
+    src_bin="$profile_dir/$bin_name"
+    if [ ! -f "$src_bin" ]; then
+        echo "✘ $crate: built binary missing at $src_bin" >&2
+        exit 1
+    fi
+    dest="$bundle_root/$plugin_id"
+    mkdir -p "$dest"
+    cp "$src_bin" "$dest/$bin_name"
+    cp "crates/$crate/tasty-plugin.toml" "$dest/tasty-plugin.toml"
+    if [ -d "crates/$crate/lang" ]; then
+        rm -rf "$dest/lang"
+        cp -R "crates/$crate/lang" "$dest/lang"
+    fi
+    echo "✓ staged $plugin_id → $dest"
 
 # SHA256SUMS 재검증.
 dist-verify:
