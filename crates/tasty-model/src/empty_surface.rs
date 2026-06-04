@@ -52,6 +52,10 @@ impl Surface for EmptySurface {
         Some(self.id)
     }
 
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+
     fn to_tree_json(&self) -> serde_json::Value {
         if let Some(spawn) = &self.deferred_spawn {
             // Deferred terminal placeholder — 외부에 Terminal로 보이고 pty_ready: false.

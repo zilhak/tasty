@@ -47,6 +47,13 @@ impl Surface for TerminalSurface {
         Some(self.id)
     }
 
+    /// Terminal 의 cwd 는 `engine.terminals.get(id).get_cwd()` 로 store 경유 —
+    /// trait 는 None 반환. caller (cwd_from_surface) 가 분기 처리. Surface cwd
+    /// invariant — `docs/architecture/surface-cwd-invariant.md`.
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+
     fn to_tree_json(&self) -> serde_json::Value {
         // cols/rows 는 caller 가 engine.terminals.get(id) 로 enrichment.
         serde_json::json!({

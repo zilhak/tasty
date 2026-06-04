@@ -46,6 +46,9 @@ impl Surface for DiffPanel {
     fn surface_id(&self) -> Option<SurfaceId> {
         Some(self.id)
     }
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        None
+    }
     fn display_name(&self) -> String {
         if self.title.is_empty() {
             "Diff".to_string()

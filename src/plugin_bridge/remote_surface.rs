@@ -142,6 +142,15 @@ impl Surface for RemoteSurface {
         Some(self.id)
     }
 
+    /// RemoteSurface 자체는 cwd 를 들고 있지 않다 — plugin 측에서 ctx.cwd 로
+    /// 받아 자기 surface state 에 저장하지만, 호스트 trait 호출에는 노출하지
+    /// 않는다 (None). Surface cwd invariant — host 가 carry 한 cwd 는
+    /// SurfaceCreateCtx.cwd 경로로 한 번만 전달되며, source_cwd() 는 *호스트가
+    /// 다음 surface 의 carry 후보로 알릴 값* 으로 한정.
+    fn source_cwd(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+
     fn display_name(&self) -> String {
         self.display_name
             .lock()

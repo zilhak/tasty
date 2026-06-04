@@ -51,15 +51,17 @@ pub trait Surface: Any {
     /// The "source" working directory associated with this surface, if any.
     ///
     /// 단축키 등 사용자 행위로 새 surface(터미널/탭/워크스페이스 등)를 만들 때
-    /// 이 값을 시작 cwd로 상속한다.
+    /// 이 값을 시작 cwd로 상속한다. **default 본문 없음** — 모든 Surface impl
+    /// 이 의미를 명시적으로 결정해야 한다 (Surface cwd invariant —
+    /// `docs/architecture/surface-cwd-invariant.md`).
     ///
-    /// - TerminalSurface: 터미널의 OSC 7 cwd
+    /// - TerminalSurface: 터미널의 OSC 7 cwd (engine.terminals 경유 — trait 는
+    ///   None 반환; cwd_from_surface 가 분기)
     /// - MarkdownPanel: 파일의 부모 디렉터리
-    /// - webview-enabled surface (plugin 정의): plugin 측에서 결정
-    /// - 그 외(Image/Empty): None
-    fn source_cwd(&self) -> Option<PathBuf> {
-        None
-    }
+    /// - ImagePanel: 파일 부모 또는 None
+    /// - EmptySurface / DiffPanel: None (또는 carry 받은 cwd)
+    /// - RemoteSurface: 호스트가 carry 한 cwd (None 또는 ctx.cwd 그대로)
+    fn source_cwd(&self) -> Option<PathBuf>;
 
     /// Display name for tab title. Default: type_name.
     fn display_name(&self) -> String {
