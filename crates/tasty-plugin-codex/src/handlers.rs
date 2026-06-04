@@ -396,6 +396,13 @@ pub fn handle_respawn(
     }))
 }
 
+/// Codex CLI hook event 가 fire 됐을 때 호출. install 이 박은 `Stop` /
+/// `UserPromptSubmit` / `SessionStart` 만 정상 처리한다.
+///
+/// 이전엔 `notification` / `session-end` / `subagent-stop` 도 받았으나, codex CLI
+/// 0.130 에 해당 hook event 가 존재하지 않아 영원히 도착하지 않는다 (Claude Code
+/// 흉내내던 잔존 코드). 외부에서 `tasty codex hook notification` 을 invoke 하면
+/// invalid_params 로 거부한다.
 pub fn handle_hook(state: &mut CodexState, params: Value) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
@@ -407,12 +414,10 @@ pub fn handle_hook(state: &mut CodexState, params: Value) -> Result<Value, IpcMe
     })?;
     match event {
         "stop" => state.set_idle(surface_id, true),
-        "notification" => state.set_needs_input(surface_id, true),
-        "session-end" | "subagent-stop" => state.set_idle(surface_id, true),
         "prompt-submit" | "session-start" => state.set_idle(surface_id, false),
         other => {
             return Err(IpcMethodError::invalid_params(&format!(
-                "unknown hook event '{other}'"
+                "unknown hook event '{other}' (supported: stop, prompt-submit, session-start)"
             )));
         }
     }
@@ -421,103 +426,180 @@ pub fn handle_hook(state: &mut CodexState, params: Value) -> Result<Value, IpcMe
 }
 
 pub fn handle_install(_state: &mut CodexState) -> Result<Value, IpcMethodError> {
-    let path = codex_settings_path()?;
+    let path = codex_config_toml_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| IpcMethodError::new(format!("mkdir failed: {e}")))?;
     }
-    let existing = read_json_or_default(&path);
+    let existing = read_toml_or_default(&path);
     let merged = merge_install(existing);
-    write_json(&path, &merged)?;
-    Ok(json!({ "installed": true, "path": path.to_string_lossy() }))
+    write_toml(&path, &merged)?;
+    Ok(json!({
+        "installed": true,
+        "path": path.to_string_lossy(),
+        "trust_required": true,
+        "note": "Codex blocks newly-added hooks until trusted. Run `codex`, type /hooks, and approve the tasty entries.",
+    }))
 }
 
 pub fn handle_uninstall(_state: &mut CodexState) -> Result<Value, IpcMethodError> {
-    let path = codex_settings_path()?;
+    let path = codex_config_toml_path()?;
     if !path.exists() {
         return Ok(json!({ "uninstalled": true, "path": path.to_string_lossy(), "noop": true }));
     }
-    let existing = read_json_or_default(&path);
+    let existing = read_toml_or_default(&path);
     let cleaned = remove_install(existing);
-    write_json(&path, &cleaned)?;
+    write_toml(&path, &cleaned)?;
     Ok(json!({ "uninstalled": true, "path": path.to_string_lossy() }))
 }
 
 // ───── install/uninstall helpers ─────
+//
+// Codex CLI 0.130 의 hook 설정은 `~/.codex/config.toml` 의 `[hooks]` 섹션에 박는다.
+// 이전 구현은 `~/.codex/settings.json` 에 썼으나 codex 가 그 파일은 *external agent
+// config migration* (Claude Code 호환용) 경로에서만 읽고 hook dispatch 에는 쓰지
+// 않는다. 그래서 install 했어도 hook 이 한 번도 fire 되지 않았다.
+//
+// TOML 스키마 (binary strings + 실 동작 검증):
+//
+// ```toml
+// [[hooks.Stop]]                   # MatcherGroup 배열 entry
+// # matcher = "..."                # PreToolUse 등에서 tool name regex. Stop 은 omit.
+//
+// [[hooks.Stop.hooks]]             # HookHandlerConfig 배열
+// type = "command"                 # internally tagged enum 의 discriminator
+// command = "..."
+// # timeout = 5                    # optional, 초 단위
+// # async = false                  # optional
+// ```
+//
+// Codex 가 지원하는 event: Stop, PreToolUse, PostToolUse, PermissionRequest,
+// PreCompact, PostCompact, SessionStart, UserPromptSubmit. tasty 는 idle/active
+// 트래킹에 필요한 3 개만 박는다 (Stop, UserPromptSubmit, SessionStart).
+//
+// Trust gate: codex 는 새 hook entry 를 *trust* 하기 전엔 fire 하지 않고 TUI 에
+// "1 hook needs review" 표시 후 `/hooks` 명령 승인을 요구한다 (`HookStateToml`
+// 의 `trusted_hash` 메커니즘). install 자체는 멱등하게 entry 를 박지만, 첫
+// 사용자가 `/hooks` 로 한 번 승인해야 한다 — 이는 codex CLI 의 보안 정책이므로
+// 플러그인 측에서 우회 불가.
 
-fn codex_settings_path() -> Result<std::path::PathBuf, IpcMethodError> {
+use std::path::{Path, PathBuf};
+
+const HOOK_MARKER: &str = "tasty codex hook";
+
+const HOOK_EVENTS: &[(&str, &str)] = &[
+    ("Stop", "stop"),
+    ("UserPromptSubmit", "prompt-submit"),
+    ("SessionStart", "session-start"),
+];
+
+fn codex_config_toml_path() -> Result<PathBuf, IpcMethodError> {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .ok_or_else(|| IpcMethodError::new("HOME env var not set"))?;
-    Ok(std::path::PathBuf::from(home)
-        .join(".codex")
-        .join("settings.json"))
+    Ok(PathBuf::from(home).join(".codex").join("config.toml"))
 }
 
-fn read_json_or_default(path: &std::path::Path) -> Value {
+fn read_toml_or_default(path: &Path) -> toml::Value {
     match std::fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_else(|_| Value::Object(Map::new())),
-        Err(_) => Value::Object(Map::new()),
+        Ok(text) => toml::from_str::<toml::Value>(&text)
+            .unwrap_or_else(|_| toml::Value::Table(toml::map::Map::new())),
+        Err(_) => toml::Value::Table(toml::map::Map::new()),
     }
 }
 
-fn write_json(path: &std::path::Path, value: &Value) -> Result<(), IpcMethodError> {
-    let text = serde_json::to_string_pretty(value)
+fn write_toml(path: &Path, value: &toml::Value) -> Result<(), IpcMethodError> {
+    let text = toml::to_string_pretty(value)
         .map_err(|e| IpcMethodError::new(format!("encode failed: {e}")))?;
     std::fs::write(path, text).map_err(|e| IpcMethodError::new(format!("write failed: {e}")))
 }
 
-const HOOK_EVENTS: &[(&str, &str)] = &[
-    ("Stop", "stop"),
-    ("Notification", "notification"),
-    ("SessionEnd", "session-end"),
-    ("SubagentStop", "subagent-stop"),
-];
-
 fn hook_command(event_kebab: &str) -> String {
     // `[ -n "$VAR" ]` guard로 TASTY_SURFACE_ID 가 비어있을 때 skip. claude plugin과
-    // 동일한 패턴 (install.rs::tasty_hook_command). 가드 없으면 codex CLI가
-    // `${TASTY_SURFACE_ID}`를 빈 문자열로 치환해 `tasty codex hook X --surface ` 가
-    // 실행되어 invalid_params 에러 노이즈가 매 hook마다 발생한다.
+    // 동일한 패턴. 가드 없으면 codex 가 `${TASTY_SURFACE_ID}` 를 빈 문자열로 치환해
+    // `tasty codex hook X --surface ` 가 실행되어 invalid_params 노이즈 발생.
     format!(
         "[ -n \"$TASTY_SURFACE_ID\" ] && tasty codex hook {event_kebab} --surface $TASTY_SURFACE_ID || true"
     )
 }
 
-fn merge_install(mut value: Value) -> Value {
-    let obj = value.as_object_mut().cloned().unwrap_or_default();
-    let mut root = Map::new();
-    for (k, v) in obj.iter() {
-        root.insert(k.clone(), v.clone());
-    }
-    let hooks = root
-        .entry("hooks")
-        .or_insert_with(|| Value::Object(Map::new()))
-        .as_object_mut()
-        .cloned()
-        .unwrap_or_default();
-    let mut hooks_out = hooks;
-    for (event_key, kebab) in HOOK_EVENTS {
-        hooks_out.insert(
-            (*event_key).to_string(),
-            json!([{
-                "type": "command",
-                "command": hook_command(kebab),
-            }]),
-        );
-    }
-    root.insert("hooks".into(), Value::Object(hooks_out));
-    Value::Object(root)
+fn new_matcher_group(event_kebab: &str) -> toml::Value {
+    let mut handler = toml::map::Map::new();
+    handler.insert("type".into(), toml::Value::String("command".into()));
+    handler.insert(
+        "command".into(),
+        toml::Value::String(hook_command(event_kebab)),
+    );
+    let mut group = toml::map::Map::new();
+    group.insert(
+        "hooks".into(),
+        toml::Value::Array(vec![toml::Value::Table(handler)]),
+    );
+    toml::Value::Table(group)
 }
 
-fn remove_install(mut value: Value) -> Value {
-    let Some(obj) = value.as_object_mut() else {
+fn matcher_group_has_marker(item: &toml::Value, marker: &str) -> bool {
+    let Some(group) = item.as_table() else {
+        return false;
+    };
+    let Some(hooks) = group.get("hooks").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    hooks.iter().any(|h| {
+        h.as_table()
+            .and_then(|t| t.get("command"))
+            .and_then(|c| c.as_str())
+            .map(|s| s.contains(marker))
+            .unwrap_or(false)
+    })
+}
+
+/// `[hooks]` 의 각 event 배열에 tasty MatcherGroup 을 멱등하게 박는다. 기존
+/// non-tasty entry, 다른 키 (다른 hook event, [hooks] 외 섹션) 는 모두 보존.
+fn merge_install(mut value: toml::Value) -> toml::Value {
+    let Some(table) = value.as_table_mut() else {
         return value;
     };
-    if let Some(hooks) = obj.get_mut("hooks").and_then(|v| v.as_object_mut()) {
-        for (event_key, _) in HOOK_EVENTS {
-            hooks.remove(*event_key);
+    let hooks_table = table
+        .entry("hooks".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let Some(hooks) = hooks_table.as_table_mut() else {
+        return value;
+    };
+    for (event_key, kebab) in HOOK_EVENTS {
+        let event_array = hooks
+            .entry((*event_key).to_string())
+            .or_insert_with(|| toml::Value::Array(Vec::new()));
+        let Some(arr) = event_array.as_array_mut() else {
+            continue;
+        };
+        // 기존 tasty marker entry 제거 후 새 entry push — 멱등.
+        arr.retain(|item| !matcher_group_has_marker(item, HOOK_MARKER));
+        arr.push(new_matcher_group(kebab));
+    }
+    value
+}
+
+fn remove_install(mut value: toml::Value) -> toml::Value {
+    let Some(table) = value.as_table_mut() else {
+        return value;
+    };
+    let Some(hooks_table) = table.get_mut("hooks").and_then(|v| v.as_table_mut()) else {
+        return value;
+    };
+    // 각 event 의 array 에서 tasty marker 가진 MatcherGroup 만 제거. `toml::map::Map`
+    // 는 values_mut 가 없어 (&Map iter 만 지원) 키 목록을 떠서 우회.
+    let event_keys: Vec<String> = hooks_table.keys().cloned().collect();
+    for key in event_keys {
+        if let Some(arr) = hooks_table.get_mut(&key).and_then(|v| v.as_array_mut()) {
+            arr.retain(|item| !matcher_group_has_marker(item, HOOK_MARKER));
         }
+    }
+    // 빈 array 가 된 event 키 정리.
+    hooks_table.retain(|_, v| !v.as_array().map(|a| a.is_empty()).unwrap_or(false));
+    // [hooks] 가 텅 비면 제거.
+    if hooks_table.is_empty() {
+        table.remove("hooks");
     }
     value
 }
@@ -555,31 +637,146 @@ mod tests {
         assert_eq!(cmd, "TASTY_SURFACE_ID=7 codex \"path\\\\to\\\\file\"\r");
     }
 
+    fn parse_toml(text: &str) -> toml::Value {
+        toml::from_str(text).expect("valid toml")
+    }
+
     #[test]
-    fn merge_install_adds_four_events() {
-        let result = merge_install(Value::Object(Map::new()));
-        let hooks = result.get("hooks").unwrap().as_object().unwrap();
+    fn merge_install_adds_three_events() {
+        let result = merge_install(toml::Value::Table(toml::map::Map::new()));
+        let hooks = result
+            .as_table()
+            .and_then(|t| t.get("hooks"))
+            .and_then(|v| v.as_table())
+            .unwrap();
         for (event_key, _) in HOOK_EVENTS {
             assert!(hooks.contains_key(*event_key), "missing {event_key}");
+            // 각 event 는 marker 가진 MatcherGroup 한 개.
+            let arr = hooks.get(*event_key).unwrap().as_array().unwrap();
+            assert_eq!(arr.len(), 1);
+            assert!(matcher_group_has_marker(&arr[0], HOOK_MARKER));
         }
     }
 
     #[test]
-    fn merge_install_preserves_other_keys() {
-        let initial = json!({"otherKey": "value", "hooks": {"PreExisting": []}});
+    fn merge_install_preserves_other_keys_and_other_hook_events() {
+        let initial = parse_toml(
+            r#"
+model = "gpt-5.5"
+
+[projects."/path"]
+trust_level = "trusted"
+
+[[hooks.PreToolUse]]
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "user's own hook"
+"#,
+        );
         let result = merge_install(initial);
-        assert_eq!(result["otherKey"], "value");
-        let hooks = result["hooks"].as_object().unwrap();
-        assert!(hooks.contains_key("PreExisting"));
-        assert!(hooks.contains_key("Stop"));
+        let table = result.as_table().unwrap();
+        assert_eq!(table.get("model").and_then(|v| v.as_str()), Some("gpt-5.5"));
+        assert!(table.get("projects").is_some());
+        let hooks = table.get("hooks").and_then(|v| v.as_table()).unwrap();
+        // 사용자의 PreToolUse 는 그대로.
+        let pre = hooks.get("PreToolUse").unwrap().as_array().unwrap();
+        assert_eq!(pre.len(), 1);
+        assert!(!matcher_group_has_marker(&pre[0], HOOK_MARKER));
+        // tasty 의 Stop / UserPromptSubmit / SessionStart 가 추가됨.
+        for (key, _) in HOOK_EVENTS {
+            let arr = hooks.get(*key).unwrap().as_array().unwrap();
+            assert_eq!(arr.len(), 1);
+            assert!(matcher_group_has_marker(&arr[0], HOOK_MARKER));
+        }
     }
 
     #[test]
-    fn remove_install_removes_only_our_events() {
-        let initial = json!({"hooks": {"Stop": [{"command": "foo"}], "Custom": [{}]}});
+    fn merge_install_is_idempotent() {
+        let empty = toml::Value::Table(toml::map::Map::new());
+        let once = merge_install(empty);
+        let twice = merge_install(once.clone());
+        assert_eq!(
+            toml::to_string(&once).unwrap(),
+            toml::to_string(&twice).unwrap()
+        );
+    }
+
+    #[test]
+    fn merge_install_keeps_coexisting_non_tasty_stop_hook() {
+        let initial = parse_toml(
+            r#"
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "user wrote this Stop hook themselves"
+"#,
+        );
+        let result = merge_install(initial);
+        let stop = result
+            .as_table()
+            .and_then(|t| t.get("hooks"))
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("Stop"))
+            .and_then(|v| v.as_array())
+            .unwrap();
+        // 사용자 hook + tasty hook = 2 entries.
+        assert_eq!(stop.len(), 2);
+        assert_eq!(
+            stop.iter()
+                .filter(|i| matcher_group_has_marker(i, HOOK_MARKER))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn remove_install_removes_only_tasty_marker_entries() {
+        let initial = parse_toml(
+            r#"
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "keep me — not tasty"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "tasty codex hook stop --surface $TASTY_SURFACE_ID"
+"#,
+        );
         let result = remove_install(initial);
-        let hooks = result["hooks"].as_object().unwrap();
-        assert!(!hooks.contains_key("Stop"));
-        assert!(hooks.contains_key("Custom"));
+        let stop = result
+            .as_table()
+            .and_then(|t| t.get("hooks"))
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("Stop"))
+            .and_then(|v| v.as_array())
+            .unwrap();
+        assert_eq!(stop.len(), 1);
+        assert!(!matcher_group_has_marker(&stop[0], HOOK_MARKER));
+    }
+
+    #[test]
+    fn remove_install_drops_empty_hooks_block() {
+        let initial = parse_toml(
+            r#"
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "tasty codex hook stop"
+"#,
+        );
+        let result = remove_install(initial);
+        // [hooks] 가 통째로 사라져야 함.
+        assert!(result.as_table().unwrap().get("hooks").is_none());
+    }
+
+    #[test]
+    fn handle_hook_rejects_unsupported_events() {
+        // notification / session-end / subagent-stop 은 codex 가 fire 하지 않으므로
+        // handle_hook 도 거부 (silent no-op 대신 invalid_params).
+        let mut s = CodexState::default();
+        let err = handle_hook(&mut s, json!({"event": "notification", "surface": 1})).unwrap_err();
+        assert!(format!("{err:?}").contains("unknown hook event"));
     }
 }
