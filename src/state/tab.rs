@@ -45,7 +45,9 @@ impl AppState {
     ) -> anyhow::Result<(u32, u32)> {
         let tab_id = engine.next_ids.next_tab();
         let surface_id = engine.next_ids.next_surface();
-        let surface = engine.create_surface_via_registry(kind, surface_id, params)?;
+        let cwd = self.resolve_inherit_cwd(engine);
+        let surface =
+            engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
         let name = super::pane::default_tab_name_for_kind(kind, params);
         if let Some(pane) = self.focused_pane_mut(engine) {
             pane.add_surface_tab(tab_id, name, surface);
@@ -148,7 +150,7 @@ impl AppState {
         kind: &str,
         params: &Value,
     ) -> bool {
-        let new_surface = match engine.create_surface_via_registry(kind, surface_id, params) {
+        let new_surface = match engine.create_surface_via_registry(kind, surface_id, None, params) {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!("test_convert_surface_to_kind('{}') failed: {}", kind, e);

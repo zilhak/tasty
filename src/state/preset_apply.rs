@@ -347,8 +347,9 @@ impl AppState {
         if !engine.surface_registry.contains(&preset.kind) {
             return Err(ApplyError::UnknownKind(preset.kind.clone()));
         }
+        let cwd = preset.cwd.as_ref().map(std::path::PathBuf::from);
         engine
-            .create_surface_via_registry(&preset.kind, surface_id, &preset.params)
+            .create_surface_via_registry(&preset.kind, surface_id, cwd.as_deref(), &preset.params)
             .map_err(ApplyError::Other)
     }
 

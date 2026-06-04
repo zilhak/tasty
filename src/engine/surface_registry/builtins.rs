@@ -35,7 +35,7 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "terminal",
         display_name_i18n_key: "surface.kind.terminal",
-        create: Arc::new(|_sid, _params| {
+        create: Arc::new(|_sid, _cwd, _params| {
             anyhow::bail!("terminal surfaces require host-managed PTY spawn; use split_pane_targeted/add_terminal_tab")
         }),
         restore: Arc::new(|_sid, _data| {
@@ -51,7 +51,7 @@ pub(crate) fn register_markdown(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "markdown",
         display_name_i18n_key: "surface.kind.markdown",
-        create: Arc::new(|sid, params| {
+        create: Arc::new(|sid, _cwd, params| {
             let file = params
                 .get("file")
                 .and_then(|v| v.as_str())
@@ -82,7 +82,7 @@ pub fn register_image(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "image",
         display_name_i18n_key: "surface.kind.image",
-        create: Arc::new(|sid, params| {
+        create: Arc::new(|sid, _cwd, params| {
             let panel = match params.get("file").and_then(|v| v.as_str()) {
                 Some(path) => ImagePanel::new(sid, path.to_string()),
                 None => ImagePanel::new_blank(sid),
@@ -125,7 +125,7 @@ fn register_diff(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "diff",
         display_name_i18n_key: "surface.kind.diff",
-        create: Arc::new(|sid, params| {
+        create: Arc::new(|sid, _cwd, params| {
             let before = read_diff_input(params, "before", "before_file")?;
             let after = read_diff_input(params, "after", "after_file")?;
             let title = params
@@ -185,7 +185,9 @@ fn register_empty(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "empty",
         display_name_i18n_key: "surface.kind.empty",
-        create: Arc::new(|sid, _params| Ok(Box::new(EmptySurface::new(sid)) as Box<dyn Surface>)),
+        create: Arc::new(|sid, _cwd, _params| {
+            Ok(Box::new(EmptySurface::new(sid)) as Box<dyn Surface>)
+        }),
         restore: Arc::new(|sid, _data| Ok(Box::new(EmptySurface::new(sid)) as Box<dyn Surface>)),
         snapshot: Arc::new(|_| Some(Value::Object(Default::default()))),
     });
@@ -209,8 +211,8 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         register_markdown(&reg);
         let def = reg.get("markdown").unwrap();
-        assert!((def.create)(1, &json!({})).is_err());
-        let s = (def.create)(1, &json!({"file": "/tmp/x.md"})).unwrap();
+        assert!((def.create)(1, None, &json!({})).is_err());
+        let s = (def.create)(1, None, &json!({"file": "/tmp/x.md"})).unwrap();
         assert_eq!(s.kind(), "markdown");
         assert_eq!(s.surface_id(), Some(1));
     }
@@ -220,7 +222,7 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         register_markdown(&reg);
         let def = reg.get("markdown").unwrap();
-        let s = (def.create)(7, &json!({"file": "/tmp/y.md"})).unwrap();
+        let s = (def.create)(7, None, &json!({"file": "/tmp/y.md"})).unwrap();
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert_eq!(snap["path"], "/tmp/y.md");
         let restored = (def.restore)(7, &snap).unwrap();
@@ -235,7 +237,7 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         register_image(&reg);
         let def = reg.get("image").unwrap();
-        let s = (def.create)(3, &json!({})).unwrap();
+        let s = (def.create)(3, None, &json!({})).unwrap();
         let img = s.as_any().downcast_ref::<ImagePanel>().unwrap();
         assert!(img.is_blank());
     }
@@ -262,7 +264,7 @@ mod tests {
     fn empty_snapshot_returns_object() {
         let reg = registry_with_builtins();
         let def = reg.get("empty").unwrap();
-        let s = (def.create)(1, &json!({})).unwrap();
+        let s = (def.create)(1, None, &json!({})).unwrap();
         let snap = (def.snapshot)(s.as_ref()).unwrap();
         assert!(snap.is_object());
     }
@@ -271,6 +273,6 @@ mod tests {
     fn terminal_create_errors() {
         let reg = registry_with_builtins();
         let def = reg.get("terminal").unwrap();
-        assert!((def.create)(1, &json!({})).is_err());
+        assert!((def.create)(1, None, &json!({})).is_err());
     }
 }

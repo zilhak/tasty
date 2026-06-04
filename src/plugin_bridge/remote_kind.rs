@@ -48,7 +48,7 @@ pub fn register_remote_kind(
     registry.register(SurfaceKindDef {
         kind: kind_static,
         display_name_i18n_key: i18n_key_static,
-        create: Arc::new(move |sid, params| {
+        create: Arc::new(move |sid, _cwd, params| {
             let initial_name = params
                 .get("display_name")
                 .and_then(|v| v.as_str())

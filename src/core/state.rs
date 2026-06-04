@@ -442,17 +442,22 @@ impl CoreState {
     ///
     /// AppState 가 아닌 CoreState 의 메서드 — surface_registry 는 engine 의 일.
     /// D.3.C.B.1 step 1 에서 AppState::create_surface_via_registry 를 옮김.
+    ///
+    /// `cwd` 는 *carry cwd* — 호출자(intent / preset / convert)가 source surface 의
+    /// source_cwd 를 resolve 해 명시 전달한다. surface kind 가 사용 여부를 결정.
+    /// Surface cwd invariant — `docs/architecture/surface-cwd-invariant.md` 참조.
     pub(crate) fn create_surface_via_registry(
         &self,
         kind: &str,
         surface_id: u32,
+        cwd: Option<&std::path::Path>,
         params: &serde_json::Value,
     ) -> anyhow::Result<Box<dyn crate::model::Surface>> {
         let def = self
             .surface_registry
             .get(kind)
             .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
-        (def.create)(surface_id, params)
+        (def.create)(surface_id, cwd, params)
     }
 }
 

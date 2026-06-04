@@ -1011,8 +1011,12 @@ impl Core {
             engine.terminals.insert(new_surface_id, terminal);
             crate::model::Pane::new_with_terminal_marker(new_pane_id, new_tab_id, new_surface_id)
         } else {
-            let surface =
-                engine.create_surface_via_registry(&kind, new_surface_id, &surface_params)?;
+            let surface = engine.create_surface_via_registry(
+                &kind,
+                new_surface_id,
+                cwd.as_deref(),
+                &surface_params,
+            )?;
             let name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
             crate::model::Pane::new_with_surface(new_pane_id, new_tab_id, name, surface)
         };
@@ -1069,7 +1073,12 @@ impl Core {
             engine.terminals.insert(new_surface_id, terminal);
             Box::new(crate::model::TerminalSurface { id: new_surface_id })
         } else {
-            engine.create_surface_via_registry(&kind, new_surface_id, &surface_params)?
+            engine.create_surface_via_registry(
+                &kind,
+                new_surface_id,
+                cwd.as_deref(),
+                &surface_params,
+            )?
         };
 
         // Phase 2: tab 안 split
@@ -1182,18 +1191,19 @@ impl Core {
                     (Box::new(node), Some(None))
                 }
                 ConvertSurfaceTarget::Kind { kind, params } => {
-                    let new_surface =
-                        match engine.create_surface_via_registry(&kind, surface_id, &params) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                tracing::warn!("ConvertSurface kind='{}' failed: {}", kind, e);
-                                return CoreEvent::SurfaceConverted {
-                                    surface_id,
-                                    replaced: false,
-                                    is_terminal,
-                                };
-                            }
-                        };
+                    let new_surface = match engine
+                        .create_surface_via_registry(&kind, surface_id, None, &params)
+                    {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!("ConvertSurface kind='{}' failed: {}", kind, e);
+                            return CoreEvent::SurfaceConverted {
+                                surface_id,
+                                replaced: false,
+                                is_terminal,
+                            };
+                        }
+                    };
                     // markdown 등 file 기반 kind 는 옛 Markdown variant 처럼
                     // file basename 으로 자동 명명. 그 외 kind 는 클리어 — surface
                     // 자체의 display_name 이 사용된다.
@@ -1599,7 +1609,12 @@ impl Core {
         let waker = engine.make_waker(surface_id);
 
         let prepared_non_terminal = if !is_terminal {
-            let surface = engine.create_surface_via_registry(&kind, surface_id, &surface_params)?;
+            let surface = engine.create_surface_via_registry(
+                &kind,
+                surface_id,
+                cwd.as_deref(),
+                &surface_params,
+            )?;
             let name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
             Some((surface, name))
         } else {
@@ -1840,7 +1855,12 @@ pub(crate) fn apply_create_workspace_inner(
             ws_id, auto_name, pane_id, tab_id, surface_id,
         )
     } else {
-        let surface = engine.create_surface_via_registry(&kind, surface_id, &surface_params)?;
+        let surface = engine.create_surface_via_registry(
+            &kind,
+            surface_id,
+            cwd.as_deref(),
+            &surface_params,
+        )?;
         let tab_name = crate::state::pane::default_tab_name_for_kind(&kind, &surface_params);
         let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
         crate::model::Workspace::new_with_pane(ws_id, auto_name, pane)

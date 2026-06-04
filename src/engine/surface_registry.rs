@@ -18,6 +18,7 @@ pub mod builtins;
 pub mod meta;
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use crate::model::{Surface, SurfaceId};
@@ -47,11 +48,18 @@ pub struct SurfaceKindDef {
     /// 새 surface 인스턴스를 만든다. 03F에서 IPC handler / `add_kind_tab` /
     /// `split_pane_targeted` 가 이 함수를 호출하여 종류별 분기를 일원화한다.
     ///
+    /// `cwd` 는 호출자가 결정한 *carry cwd* — 사용자가 보고 있던 surface 의 source_cwd
+    /// 를 그대로 전달한다. surface 생성자가 사용 여부를 결정 (예: explorer 는 root,
+    /// terminal 은 spawn 시 working_dir). Surface cwd invariant: 호출자는 *반드시*
+    /// resolve 후 명시 전달. 자세한 규칙은 `docs/architecture/surface-cwd-invariant.md`.
+    ///
     /// `params`는 IPC/CLI에서 받은 JSON. 종류별로 필요한 키가 다르다 (예: markdown은 `"file"`,
     /// html은 `"url"`).
     #[allow(clippy::type_complexity)]
     pub create: Arc<
-        dyn Fn(SurfaceId, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>> + Send + Sync,
+        dyn Fn(SurfaceId, Option<&Path>, &serde_json::Value) -> anyhow::Result<Box<dyn Surface>>
+            + Send
+            + Sync,
     >,
 
     /// 영속화된 데이터(`SavedSurface::Generic.data`)에서 surface를 복원한다.
@@ -146,7 +154,7 @@ mod tests {
         SurfaceKindDef {
             kind,
             display_name_i18n_key: "test.dummy",
-            create: Arc::new(|_, _| Err(anyhow::anyhow!("dummy"))),
+            create: Arc::new(|_, _, _| Err(anyhow::anyhow!("dummy"))),
             restore: Arc::new(|_, _| Err(anyhow::anyhow!("dummy"))),
             snapshot: Arc::new(|_| None),
         }
