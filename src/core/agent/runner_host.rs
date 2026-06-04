@@ -45,6 +45,22 @@ use crate::ipc::host_call::HostIpcInjector;
 /// 같은 값으로 통일.
 const HOST_DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// K.A-2: host IPC injector 미초기화 시 dispatch_plugin 이 반환하는 정적 메시지.
+/// poll 분기가 사유 분류용으로 매칭. 메시지 변경 시 grace 가드가 동작하지 않으니
+/// `dispatch_plugin` 과 동일 상수를 참조 (R-6 회피).
+pub(crate) const INJECTOR_UNINIT_MSG: &str = "host IPC injector not initialized";
+
+/// K.A-2: 첫 dispatch_plugin 실패 (injector 미초기화) 시점부터 grace 마감 시각까지의
+/// 허용 시간. reload 직후 첫 tick 가 injector init 보다 먼저 도달해도 30 s 안에서는
+/// task 를 Failed 로 떨어뜨리지 않고 Active 로 흡수.
+pub(crate) const INJECTOR_GRACE_MS: u64 = 30_000;
+
+/// K.A-2: 에러 메시지가 injector 미초기화 사유인지 분류 (`dispatch_plugin` 의
+/// 정적 prefix 매칭). claude.wait 등 메서드명 prefix 가 붙은 형태도 함께 흡수.
+pub(crate) fn is_injector_not_initialized(msg: &str) -> bool {
+    msg.contains(INJECTOR_UNINIT_MSG)
+}
+
 /// runner thread 에 주입되는 컨텍스트 — Core 의 일부만 추려서 thread 로 옮긴다.
 #[derive(Clone)]
 pub struct RunnerContext {
@@ -75,7 +91,7 @@ impl RunnerContext {
         let inj = self
             .host_ipc
             .get()
-            .ok_or_else(|| "host IPC injector not initialized".to_string())?;
+            .ok_or_else(|| INJECTOR_UNINIT_MSG.to_string())?;
         inj.dispatch(method, params, HOST_DISPATCH_TIMEOUT)
     }
 }
@@ -111,6 +127,11 @@ pub struct HostExecutor {
     /// ws 가 필요한데 handle 자체에서 식별 불가 (ShellProcess { pid } 등) 이므로
     /// persist_handle 시점에 함께 저장.
     held_handles: HashMap<TaskId, u32>,
+    /// K.A-2: ClaudeChild poll 이 injector 미초기화로 실패하기 시작한 시각 +
+    /// `INJECTOR_GRACE_MS`. 한 executor (= 한 workspace runner) 가 모든 ClaudeChild
+    /// 핸들에 공유 — reload 직후 injector init 까지의 window 를 흡수. injector 가
+    /// ready 가 되어 정상 dispatch 가 1회라도 성공하면 None 으로 reset.
+    injector_grace_deadline_ms: Option<u64>,
 }
 
 impl HostExecutor {
@@ -121,6 +142,7 @@ impl HostExecutor {
             held_permits: HashMap::new(),
             held_leases: HashMap::new(),
             held_handles: HashMap::new(),
+            injector_grace_deadline_ms: None,
         }
     }
 
@@ -503,7 +525,25 @@ impl HostExecutor {
                     "child_index": child_index,
                 });
                 let resp = match self.ctx.dispatch_plugin("claude.wait", params) {
-                    Ok(v) => v,
+                    Ok(v) => {
+                        // K.A-2: injector 가 ready → grace deadline reset.
+                        self.injector_grace_deadline_ms = None;
+                        v
+                    }
+                    Err(e) if is_injector_not_initialized(&e) => {
+                        // K.A-2: 첫 미초기화 시점에 deadline 세팅. grace 안이면 Active,
+                        // 도래 후이면 기존 정책대로 Failed.
+                        let now = now_ms();
+                        let deadline = *self
+                            .injector_grace_deadline_ms
+                            .get_or_insert(now + INJECTOR_GRACE_MS);
+                        if now < deadline {
+                            return PollOutcome::Active;
+                        }
+                        return PollOutcome::Failed(format!(
+                            "claude.wait: injector grace expired ({INJECTOR_GRACE_MS}ms)"
+                        ));
+                    }
                     Err(e) => return PollOutcome::Failed(format!("claude.wait: {e}")),
                 };
                 match resp["state"].as_str().unwrap_or("active") {
