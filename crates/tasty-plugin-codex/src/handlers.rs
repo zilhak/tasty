@@ -235,14 +235,19 @@ pub fn handle_children(state: &CodexState, params: Value) -> Result<Value, IpcMe
     Ok(json!({ "children": children }))
 }
 
-/// CLI 측 polling(`run_dynamic_client_polling`)이 idle/needs_input/exited 도달까지
-/// 반복 호출한다. 본 함수는 그 polling tick 1개를 처리한다 — manifest의 `polling`
-/// 선언이 CLI의 blocking loop를 활성화하므로 핸들러 자체는 1회 snapshot만 반환.
+/// CLI 측 polling(`run_dynamic_client_polling`)이 idle/needs_input/exited/untrusted
+/// 도달까지 반복 호출한다. 본 함수는 그 polling tick 1개를 처리한다 — manifest의
+/// `polling` 선언이 CLI의 blocking loop를 활성화하므로 핸들러 자체는 1회 snapshot
+/// 만 반환.
 ///
-/// state가 `active` 일 때 surface 자체가 죽었는지 host에 확인한다 (claude plugin과
-/// 동일한 패턴). codex가 `Stop` hook을 못 쏘고 죽거나 (e.g. SIGKILL) 사용자가 탭을
-/// 닫고 plugin이 surface.closed 이벤트를 놓친 케이스에 polling이 무한 루프 빠지지
-/// 않도록 방어한다.
+/// state 분기:
+/// - `idle` / `needs_input` — hook 으로부터 정상 신호. CLI 측에서 즉시 종료.
+/// - `active` — 아직 진행 중. 단:
+///   - host `surface.locate` 로 죽은 surface 면 `exited` 로 강등 (SIGKILL / surface.closed
+///     이벤트 누락 케이스 방어).
+///   - codex hook 이 trust 안 된 상태면 영원히 fire 안 되므로 polling 무한 루프.
+///     이를 막기 위해 첫 active tick 에서 `~/.codex/config.toml` 의 `[hooks.state]`
+///     entry 확인해 미신뢰 시 `untrusted` 로 즉시 종료 + 사용자에게 trust 절차 안내.
 pub fn handle_wait(
     state: &CodexState,
     host: &HostHandle,
@@ -267,6 +272,19 @@ pub fn handle_wait(
         }
         other => other,
     };
+
+    // trust 체크: state 가 active 일 때만 의미 있음. idle/needs_input 이면 hook 이
+    // fire 됐다는 증거 (= trusted) 고, exited 면 더 살피지 않는다.
+    if response_state == "active" && !codex_hooks_all_trusted() {
+        return Ok(json!({
+            "state": "untrusted",
+            "trust_required": true,
+            "instructions": "Codex hooks installed but not trusted — codex blocks them until user approves. \
+        Open `codex` in any terminal, type `/hooks` + Enter, then for each of 3 hooks press Enter → t → Esc → Down. \
+        Trust persists per-machine in ~/.codex/config.toml. Re-run `tasty codex wait` after.",
+        }));
+    }
+
     Ok(json!({ "state": response_state }))
 }
 
@@ -441,12 +459,21 @@ pub fn handle_install(_state: &mut CodexState) -> Result<Value, IpcMethodError> 
     let existing = read_toml_or_default(&path);
     let merged = merge_install(existing);
     write_toml(&path, &merged)?;
-    Ok(json!({
+    let trusted = codex_hooks_all_trusted();
+    let mut resp = json!({
         "installed": true,
         "path": path.to_string_lossy(),
-        "trust_required": true,
-        "note": "Codex blocks newly-added hooks until trusted. Run `codex`, type /hooks, and approve the tasty entries.",
-    }))
+        "trust_status": if trusted { "trusted" } else { "needs_review" },
+    });
+    if !trusted {
+        resp["note"] = Value::String(
+            "Codex blocks newly-added hooks until trusted. Run `codex` in any terminal, \
+type `/hooks` + Enter, then for each of 3 hooks press Enter → t → Esc → Down. \
+Trust persists per-machine. `tasty codex wait` returns `state: \"untrusted\"` until trust is granted."
+                .into(),
+        );
+    }
+    Ok(resp)
 }
 
 pub fn handle_uninstall(_state: &mut CodexState) -> Result<Value, IpcMethodError> {
@@ -494,10 +521,17 @@ use std::path::{Path, PathBuf};
 
 const HOOK_MARKER: &str = "tasty codex hook";
 
-const HOOK_EVENTS: &[(&str, &str)] = &[
-    ("Stop", "stop"),
-    ("UserPromptSubmit", "prompt-submit"),
-    ("SessionStart", "session-start"),
+/// (camel for `[hooks.<Camel>]` table key, kebab for `tasty codex hook <kebab>` CLI
+/// subcommand, snake for `[hooks.state."<path>:<snake>:0:0"]` trust state key).
+///
+/// 3 컬럼이 다른 케이스를 쓰는 이유: codex 가 같은 event 를 표면별로 다른 표기로
+/// 인코딩한다. config table 키는 Rust enum variant 그대로 CamelCase, hook 명령에
+/// 넘기는 우리 자체 event 이름은 kebab, codex 가 trust state 를 영속화할 때 쓰는
+/// 키는 snake_case lowercase.
+const HOOK_EVENTS: &[(&str, &str, &str)] = &[
+    ("Stop", "stop", "stop"),
+    ("UserPromptSubmit", "prompt-submit", "user_prompt_submit"),
+    ("SessionStart", "session-start", "session_start"),
 ];
 
 fn codex_config_toml_path() -> Result<PathBuf, IpcMethodError> {
@@ -573,7 +607,7 @@ fn merge_install(mut value: toml::Value) -> toml::Value {
     let Some(hooks) = hooks_table.as_table_mut() else {
         return value;
     };
-    for (event_key, kebab) in HOOK_EVENTS {
+    for (event_key, kebab, _trust_snake) in HOOK_EVENTS {
         let event_array = hooks
             .entry((*event_key).to_string())
             .or_insert_with(|| toml::Value::Array(Vec::new()));
@@ -585,6 +619,49 @@ fn merge_install(mut value: toml::Value) -> toml::Value {
         arr.push(new_matcher_group(kebab));
     }
     value
+}
+
+/// 우리가 install 한 3 개 hook 모두 trusted 상태인지 확인.
+///
+/// codex 는 user 가 `/hooks` 로 trust 한 hook 에 대해 `[hooks.state."<path>:<snake_event>:0:0"]`
+/// 섹션에 `trusted_hash = "sha256:..."` 를 박는다. 우리 install entry 가 모두 그
+/// 형식으로 등록되어있어야 hook 이 실제 fire 된다.
+///
+/// 주의: codex 는 부팅 시 stored hash 와 현재 hook command 의 fresh hash 를 비교해서
+/// 다르면 invalidate 한다. 본 체크는 키 존재 + sha256: prefix 만 보므로, stale entry
+/// 가 있고 codex 가 invalidate 한 케이스는 못 잡는다. 하지만 우리 install 은 멱등하고
+/// `hook_command()` 가 static 이라 실제 stale 케이스는 사용자가 config.toml 을 직접
+/// 편집한 경우 정도. 그 케이스는 wait 가 timeout 폴백으로 종료되며 별 안전 문제 없음.
+fn codex_hooks_all_trusted() -> bool {
+    let Ok(path) = codex_config_toml_path() else {
+        return false;
+    };
+    let value = read_toml_or_default(&path);
+    codex_hooks_all_trusted_in(&value, &path.to_string_lossy())
+}
+
+fn codex_hooks_all_trusted_in(value: &toml::Value, source_path: &str) -> bool {
+    let Some(state_table) = value
+        .get("hooks")
+        .and_then(|v| v.get("state"))
+        .and_then(|v| v.as_table())
+    else {
+        return false;
+    };
+    for (_, _, trust_snake) in HOOK_EVENTS {
+        let key = format!("{source_path}:{trust_snake}:0:0");
+        let trusted = state_table
+            .get(&key)
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("trusted_hash"))
+            .and_then(|h| h.as_str())
+            .map(|s| s.starts_with("sha256:") && s.len() > "sha256:".len())
+            .unwrap_or(false);
+        if !trusted {
+            return false;
+        }
+    }
+    true
 }
 
 fn remove_install(mut value: toml::Value) -> toml::Value {
@@ -656,7 +733,7 @@ mod tests {
             .and_then(|t| t.get("hooks"))
             .and_then(|v| v.as_table())
             .unwrap();
-        for (event_key, _) in HOOK_EVENTS {
+        for (event_key, _, _) in HOOK_EVENTS {
             assert!(hooks.contains_key(*event_key), "missing {event_key}");
             // 각 event 는 marker 가진 MatcherGroup 한 개.
             let arr = hooks.get(*event_key).unwrap().as_array().unwrap();
@@ -690,7 +767,7 @@ command = "user's own hook"
         assert_eq!(pre.len(), 1);
         assert!(!matcher_group_has_marker(&pre[0], HOOK_MARKER));
         // tasty 의 Stop / UserPromptSubmit / SessionStart 가 추가됨.
-        for (key, _) in HOOK_EVENTS {
+        for (key, _, _) in HOOK_EVENTS {
             let arr = hooks.get(*key).unwrap().as_array().unwrap();
             assert_eq!(arr.len(), 1);
             assert!(matcher_group_has_marker(&arr[0], HOOK_MARKER));
@@ -776,6 +853,88 @@ command = "tasty codex hook stop"
         let result = remove_install(initial);
         // [hooks] 가 통째로 사라져야 함.
         assert!(result.as_table().unwrap().get("hooks").is_none());
+    }
+
+    #[test]
+    fn codex_hooks_all_trusted_in_returns_true_when_all_three_present() {
+        let path = "/Users/x/.codex/config.toml";
+        let toml = format!(
+            r#"
+[hooks.state."{path}:stop:0:0"]
+trusted_hash = "sha256:abc123"
+
+[hooks.state."{path}:user_prompt_submit:0:0"]
+trusted_hash = "sha256:def456"
+
+[hooks.state."{path}:session_start:0:0"]
+trusted_hash = "sha256:fff999"
+"#
+        );
+        let value = parse_toml(&toml);
+        assert!(codex_hooks_all_trusted_in(&value, path));
+    }
+
+    #[test]
+    fn codex_hooks_all_trusted_in_false_when_any_missing() {
+        let path = "/Users/x/.codex/config.toml";
+        // Stop + UserPromptSubmit 만, SessionStart 빠짐.
+        let toml = format!(
+            r#"
+[hooks.state."{path}:stop:0:0"]
+trusted_hash = "sha256:abc"
+
+[hooks.state."{path}:user_prompt_submit:0:0"]
+trusted_hash = "sha256:def"
+"#
+        );
+        let value = parse_toml(&toml);
+        assert!(!codex_hooks_all_trusted_in(&value, path));
+    }
+
+    #[test]
+    fn codex_hooks_all_trusted_in_false_when_hash_value_invalid() {
+        let path = "/Users/x/.codex/config.toml";
+        // 3 개 entry 모두 있지만 trusted_hash 가 sha256: prefix 미충족.
+        let toml = format!(
+            r#"
+[hooks.state."{path}:stop:0:0"]
+trusted_hash = "sha256:abc"
+
+[hooks.state."{path}:user_prompt_submit:0:0"]
+trusted_hash = ""
+
+[hooks.state."{path}:session_start:0:0"]
+trusted_hash = "sha256:abc"
+"#
+        );
+        let value = parse_toml(&toml);
+        assert!(!codex_hooks_all_trusted_in(&value, path));
+    }
+
+    #[test]
+    fn codex_hooks_all_trusted_in_false_when_no_state_section() {
+        let value = parse_toml("model = \"gpt-5.5\"");
+        assert!(!codex_hooks_all_trusted_in(&value, "/x"));
+    }
+
+    #[test]
+    fn codex_hooks_all_trusted_in_false_when_only_other_paths_present() {
+        // 다른 config 경로의 hook 만 있는 경우 → 우리 경로 기준 false.
+        let toml = r#"
+[hooks.state."/other/path:stop:0:0"]
+trusted_hash = "sha256:xyz"
+
+[hooks.state."/other/path:user_prompt_submit:0:0"]
+trusted_hash = "sha256:xyz"
+
+[hooks.state."/other/path:session_start:0:0"]
+trusted_hash = "sha256:xyz"
+"#;
+        let value = parse_toml(toml);
+        assert!(!codex_hooks_all_trusted_in(
+            &value,
+            "/Users/x/.codex/config.toml"
+        ));
     }
 
     #[test]

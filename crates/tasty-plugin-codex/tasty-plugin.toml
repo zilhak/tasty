@@ -33,7 +33,7 @@ subcommands = [
     { name = "children",  ipc_method = "codex.children",  args = "children_args",  description = "List children of the specified Codex parent" },
     { name = "parent",    ipc_method = "codex.parent",    args = "parent_args",    description = "Return the parent Codex surface id for a given child surface" },
     { name = "tell",      ipc_method = "codex.tell",      args = "tell_args",      description = "Send a message to a Codex instance (preserves line breaks, submits at end)" },
-    { name = "wait",      ipc_method = "codex.wait",      args = "wait_args",      polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited"], interval_ms = 500, timeout_field = "timeout" }, description = "Wait for a child Codex instance to become idle / needs_input / exited" },
+    { name = "wait",      ipc_method = "codex.wait",      args = "wait_args",      polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited", "untrusted"], interval_ms = 500, timeout_field = "timeout" }, description = "Wait for a child Codex instance to become idle / needs_input / exited (returns untrusted with instructions if codex hooks haven't been approved yet)" },
     { name = "broadcast", ipc_method = "codex.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Codex instance" },
     { name = "kill",      ipc_method = "codex.kill",      args = "kill_args",      description = "Kill a child Codex instance by child index" },
     { name = "respawn",   ipc_method = "codex.respawn",   args = "respawn_args",   description = "Respawn a child Codex instance" },
