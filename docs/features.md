@@ -1641,6 +1641,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 15초 ping / 60초 timeout 헬스체크, 비응답 시 자동 재시작
 - 10초 내 spawn 실패 3회 시 자동 비활성화 (사용자 수동 enable까지 정지)
 - 종료 시 모든 plugin에 graceful shutdown 송신 후 2초 timeout, 그 후 kill
+- **개발용 자동 reload**: 환경변수 `TASTY_PLUGIN_AUTO_RELOAD` 가 비어있지 않고 `"0"` 도 아니면 활성. 매 pump tick 2초 간격으로 실행 중인 plugin 의 *entry binary mtime* + *manifest version* 을 baseline 과 비교, 변화 감지 시 `--restart-running` 과 동일한 graceful swap (`swap_shutdown_internal` → `swap_respawn_internal`) 으로 새 binary 부팅. `plugins.toml::disabled` 미수정. production 기본 off — flag off 시 polling cost 0. 상세: [`docs/dev-guide/plugin-ecosystem.md` §6.6](dev-guide/plugin-ecosystem.md)
 
 ### Surface 렌더링 (UI tree DSL)
 - plugin이 JSON UI tree를 보내면 호스트가 egui로 렌더 (vbox/hbox/scroll/splitter/label/icon/button/tree/addressbar/text_preview/spacer)

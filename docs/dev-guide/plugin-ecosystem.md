@@ -213,6 +213,40 @@ behavior 변경) 가 있을 때 그 plugin 의 manifest 만 별도 bump 한다. 
 이 그대로면 동일 버전 분기 (mtime resync) 로 떨어지므로 dev workspace 외
 에선 사용자에게 새 binary 가 노출되지 않는다.
 
+### 6.6 개발용 plugin 자동 reload (`TASTY_PLUGIN_AUTO_RELOAD`)
+
+dev workspace 에서 plugin 코드를 수정하고 `cargo build -p tasty-plugin-X --release`
+를 반복할 때, 수동 `plugin disable + enable` 없이 새 binary 가 즉시 적용되도록
+host 가 polling 기반 자동 swap 을 제공한다.
+
+- 활성화: 환경변수 `TASTY_PLUGIN_AUTO_RELOAD` 가 빈 문자열이 아니고 `"0"` 도 아닐 때
+  활성. 호스트 부팅 시 1회 평가 (`discover_and_start`). production 기본 off.
+- 감지 신호: 실행 중인 plugin 마다 *entry binary mtime* 또는 *manifest version*
+  변화. 두 신호 중 하나라도 baseline 과 다르면 swap 대상.
+- baseline 기록 시점: spawn 성공 직후 (`capture_plugin_baseline`) + auto-reload
+  swap 직후. 동일 mtime/version 으로 무한 swap 시도를 차단.
+- polling 주기: 매 pump tick 에서 `AUTO_RELOAD_POLL_INTERVAL` (2초) 경과 시 1회
+  검사. 짧은 시간 안의 연속 mtime 변경은 이 간격 내에서 자연 debounce.
+- swap 경로: `--restart-running` 과 동일한 `swap_shutdown_internal` →
+  `swap_respawn_internal` helper 사용. `plugins.toml::disabled` 미수정. spawn
+  실패 누적 시 기존 `auto_disabled` 로직이 차단.
+- 실패 시 동작: `swap_respawn_internal` 실패 시 warn 로그 남기고 baseline 만
+  새 값으로 갱신 — 같은 diff 로 매 tick 반복 swap 시도하지 않는다. 옛 동작
+  (수동 disable/enable) 으로 graceful degrade.
+- production cost: flag off 면 `check_for_updates` 가 가장 바깥 분기에서 즉시
+  빈 Vec 반환 — pump tick 부담 0.
+
+전형적 dev workflow:
+
+1. 호스트 부팅: `TASTY_PLUGIN_AUTO_RELOAD=1 cargo run`.
+2. plugin 소스 수정 후 `cargo build -p tasty-plugin-X --release` (또는 G.4 의
+   symlink 모드 + 그냥 `cargo build`).
+3. 2 초 이내 host 가 새 binary 감지 → graceful swap → 새 process 부팅.
+4. plugin 의 surface 는 swap 동안 잠깐 missing 으로 노출 — 사용자 영향 동일.
+
+manifest version 만 bump 하고 binary 가 그대로면 mtime 신호는 잠잠해도 version
+신호로 감지된다 (§6.4 와 호환).
+
 ## 부가 정책: i18n 키 충돌
 
 plugin이 contribute하는 `lang/` 디렉터리의 키는 **plugin id prefix**를 권장한다. 예: `com.example.explorer.menu.refresh`. 호스트와 다른 plugin의 키와 충돌하면 마지막 로드가 이긴다.
