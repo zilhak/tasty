@@ -15,5 +15,8 @@ wgpu = "24"
 # Logging
 tracing = "0.1"
 
+# Fast non-cryptographic hash for hot-path glyph cache fallback
+rustc-hash = "2"
+
 [lints]
 workspace = true

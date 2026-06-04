@@ -1,8 +1,9 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 use cosmic_text::{
     Attrs, Buffer, FamilyOwned, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
 };
+use rustc_hash::FxHashMap;
 
 /// Family name of the bundled D2Coding ligature font.
 /// Must match the `family` entry in the ttf `name` table exactly
@@ -268,6 +269,58 @@ pub fn pick_lru_victim(pages: &[AtlasPage], active_page: u32) -> Option<u32> {
         .map(|(i, _)| i as u32)
 }
 
+/// ASCII fast-path glyph cache: direct array index for printable ASCII
+/// (code points 0..128) × bold × italic = 512 slots. Avoids hash lookup
+/// on the hot path where ~95% of cell glyphs land.
+struct AsciiCache {
+    slots: Box<[Option<AtlasEntry>; 512]>,
+}
+
+impl AsciiCache {
+    fn new() -> Self {
+        Self {
+            slots: Box::new([None; 512]),
+        }
+    }
+
+    #[inline]
+    fn index_of(key: &GlyphKey) -> Option<usize> {
+        let cp = key.ch as u32;
+        if cp < 128 {
+            let base = (cp as usize) << 2;
+            let off = (key.bold as usize) | ((key.italic as usize) << 1);
+            Some(base | off)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn get(&self, key: &GlyphKey) -> Option<AtlasEntry> {
+        Self::index_of(key).and_then(|i| self.slots[i])
+    }
+
+    #[inline]
+    fn insert(&mut self, key: &GlyphKey, entry: AtlasEntry) -> bool {
+        if let Some(i) = Self::index_of(key) {
+            self.slots[i] = Some(entry);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn retain_pages_except(&mut self, victim_page: u32) {
+        for slot in self.slots.iter_mut() {
+            if let Some(e) = slot
+                && e.page == victim_page
+            {
+                *slot = None;
+            }
+        }
+    }
+}
+
 /// GPU texture atlas for glyph bitmaps, backed by a `D2Array` texture with
 /// `MAX_PAGES` layers. Uses a simple shelf-based row packer per page. Once
 /// all pages are full, the least-recently-used non-active page is evicted
@@ -277,7 +330,8 @@ pub struct GlyphAtlas {
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
     atlas_size: u32,
-    cache: HashMap<GlyphKey, AtlasEntry>,
+    ascii_cache: AsciiCache,
+    overflow_cache: FxHashMap<GlyphKey, AtlasEntry>,
     pages: Vec<AtlasPage>,
     /// Page where new glyphs are currently being packed.
     active_page: u32,
@@ -336,7 +390,8 @@ impl GlyphAtlas {
             view,
             sampler,
             atlas_size,
-            cache: HashMap::new(),
+            ascii_cache: AsciiCache::new(),
+            overflow_cache: FxHashMap::default(),
             pages: vec![AtlasPage::default(); Self::MAX_PAGES as usize],
             active_page: 0,
             current_frame: 0,
@@ -373,11 +428,22 @@ impl GlyphAtlas {
         font_config: &mut FontConfig,
         queue: &wgpu::Queue,
     ) -> Option<AtlasEntry> {
-        if let Some(entry) = self.cache.get(&key).copied() {
+        if let Some(entry) = self.ascii_cache.get(&key) {
+            self.pages[entry.page as usize].last_access_frame = self.current_frame;
+            return Some(entry);
+        }
+        if let Some(entry) = self.overflow_cache.get(&key).copied() {
             self.pages[entry.page as usize].last_access_frame = self.current_frame;
             return Some(entry);
         }
         self.rasterize_glyph(key, font_config, queue)
+    }
+
+    #[inline]
+    fn cache_insert(&mut self, key: GlyphKey, entry: AtlasEntry) {
+        if !self.ascii_cache.insert(&key, entry) {
+            self.overflow_cache.insert(key, entry);
+        }
     }
 
     /// Try to reserve a glyph box on some page, possibly evicting one if all
@@ -412,7 +478,8 @@ impl GlyphAtlas {
             self.pages[victim as usize].last_access_frame
         );
         // Drop cache entries that lived on this page.
-        self.cache.retain(|_, e| e.page != victim);
+        self.ascii_cache.retain_pages_except(victim);
+        self.overflow_cache.retain(|_, e| e.page != victim);
         self.pages[victim as usize].reset();
         // Zero-clear the layer so stale glyph pixels don't bleed into new UVs.
         let empty = vec![0u8; (self.atlas_size * self.atlas_size) as usize];
@@ -525,7 +592,7 @@ impl GlyphAtlas {
             && !key.italic
             && let Some(entry) = self.rasterize_builtin_glyph(key.ch, font_config, queue)
         {
-            self.cache.insert(key, entry);
+            self.cache_insert(key, entry);
             return Some(entry);
         }
 
@@ -589,7 +656,7 @@ impl GlyphAtlas {
                 height: 0.0,
                 page: self.active_page,
             };
-            self.cache.insert(key, entry);
+            self.cache_insert(key, entry);
             return Some(entry);
         }
 
@@ -625,7 +692,7 @@ impl GlyphAtlas {
             offset_y,
             queue,
         )?;
-        self.cache.insert(key, entry);
+        self.cache_insert(key, entry);
         Some(entry)
     }
 }
