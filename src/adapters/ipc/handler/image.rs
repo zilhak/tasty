@@ -29,6 +29,7 @@ pub fn handle_open(
     let intent = crate::core::intent::DomainIntent::ConvertSurface {
         surface_id: sid,
         target: crate::core::intent::ConvertSurfaceTarget::Kind {
+            cwd: None,
             kind: "image".to_string(),
             params: json!({ "file": path.clone() }),
         },

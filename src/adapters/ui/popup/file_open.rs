@@ -209,6 +209,7 @@ fn apply_open(state: &mut AppState, engine: &mut crate::core::CoreState, path: &
             crate::intent::Intent::ConvertSurface {
                 surface_id: convert_sid,
                 target: crate::intent::ConvertTarget::Kind {
+                    cwd: None,
                     kind: "markdown".to_string(),
                     params: serde_json::json!({ "file_path": file_path }),
                 },

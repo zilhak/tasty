@@ -1190,10 +1190,13 @@ impl Core {
                     // Terminal 변환은 explicit_name 클리어 (auto-derived from CWD).
                     (Box::new(node), Some(None))
                 }
-                ConvertSurfaceTarget::Kind { kind, params } => {
-                    let new_surface = match engine
-                        .create_surface_via_registry(&kind, surface_id, None, &params)
-                    {
+                ConvertSurfaceTarget::Kind { cwd, kind, params } => {
+                    let new_surface = match engine.create_surface_via_registry(
+                        &kind,
+                        surface_id,
+                        cwd.as_deref(),
+                        &params,
+                    ) {
                         Ok(s) => s,
                         Err(e) => {
                             tracing::warn!("ConvertSurface kind='{}' failed: {}", kind, e);

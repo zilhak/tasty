@@ -21,8 +21,17 @@ use tasty_settings::Settings;
 /// / image 등 모든 host/plugin kind 통합).
 #[derive(Debug, Clone)]
 pub(crate) enum ConvertSurfaceTarget {
-    Terminal { cwd: Option<PathBuf> },
-    Kind { kind: String, params: Value },
+    Terminal {
+        cwd: Option<PathBuf>,
+    },
+    /// `cwd` 는 호출자가 source surface 로부터 resolve 한 carry cwd. Surface cwd
+    /// invariant — 호출자는 None 으로 임의 고정하지 않는다 (변환 시 cwd 손실 금지).
+    /// 자세한 규칙은 `docs/architecture/surface-cwd-invariant.md`.
+    Kind {
+        cwd: Option<PathBuf>,
+        kind: String,
+        params: Value,
+    },
 }
 
 /// `DomainIntent::SendToSurface` 의 payload. 호출자가 *어느 메서드 호출* 할지

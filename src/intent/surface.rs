@@ -89,7 +89,7 @@ fn convert(
             let cwd = state.resolve_inherit_cwd(engine);
             ConvertSurfaceTarget::Terminal { cwd }
         }
-        ConvertTarget::Kind { kind, params } => {
+        ConvertTarget::Kind { cwd, kind, params } => {
             // markdown 의 옛 caller 호환: SurfaceKindDef 가 기대하는 키는 `file`
             // 이지만 옛 caller 는 `file_path` 로 넘긴다. 단일 호출 지점에서
             // 정규화 — 별도 헬퍼 추상화 비용 > 이득.
@@ -101,7 +101,14 @@ fn convert(
             {
                 obj.insert("file".to_string(), fp);
             }
+            // Surface cwd invariant: 변환 시 cwd 손실 금지. 호출자가 명시 cwd 를
+            // 넘기지 않은 경우 source surface 에서 carry — 호스트 시작 cwd 같은
+            // 사용자 의도와 무관한 fallback 으로 흘러가지 않도록 한다.
+            let resolved_cwd = cwd
+                .clone()
+                .or_else(|| state.resolve_inherit_cwd_from_surface(engine, surface_id));
             ConvertSurfaceTarget::Kind {
+                cwd: resolved_cwd,
                 kind: kind.clone(),
                 params,
             }

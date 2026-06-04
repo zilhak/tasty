@@ -215,10 +215,14 @@ impl crate::core::intent::DomainIntent {
 
 /// Surface 변환 타깃. Terminal 은 host 내장 special case, 나머지는 surface_registry
 /// 의 kind 로 통합. plugin 이 등록한 kind 도 모두 이 경로로 처리한다.
+///
+/// `Kind` 의 `cwd` 는 호출자가 명시 또는 None (handler 가 source surface 에서 resolve).
 #[derive(Debug, Clone)]
 pub enum ConvertTarget {
     Terminal,
     Kind {
+        /// 변환 대상의 시작 cwd. None 이면 intent handler 가 source surface 로부터 resolve.
+        cwd: Option<std::path::PathBuf>,
         kind: String,
         params: serde_json::Value,
     },

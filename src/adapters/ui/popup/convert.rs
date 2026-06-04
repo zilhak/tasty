@@ -316,6 +316,7 @@ pub fn apply_convert_action(
                 crate::intent::Intent::ConvertSurface {
                     surface_id,
                     target: crate::intent::ConvertTarget::Kind {
+                        cwd: None,
                         kind: "image".to_string(),
                         params: json!({}),
                     },
@@ -328,6 +329,7 @@ pub fn apply_convert_action(
                 crate::intent::Intent::ConvertSurface {
                     surface_id,
                     target: crate::intent::ConvertTarget::Kind {
+                        cwd: None,
                         kind,
                         params: json!({}),
                     },

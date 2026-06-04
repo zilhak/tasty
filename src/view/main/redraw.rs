@@ -463,6 +463,7 @@ impl MainView {
                                 crate::intent::Intent::ConvertSurface {
                                     surface_id,
                                     target: crate::intent::ConvertTarget::Kind {
+                                        cwd: None,
                                         kind: "image".to_string(),
                                         params: serde_json::json!({}),
                                     },
