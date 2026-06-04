@@ -119,6 +119,36 @@ cargo build --profile dist           # dist 프로필
 ./scripts/build-windows.ps1 -SkipMsi # Windows zip만
 ```
 
+## Plugin 빌드 / 스테이징
+
+번들 plugin (`crates/tasty-plugin-*` 중 `tasty-plugin.toml` 보유 crate) 은
+부팅 시 `install_builtins_if_needed` 가 `bundle_root()` → `~/.tasty/plugins/<id>/`
+로 자동 sync 한다. `bundle_root()` 의 fallback 4 는 `<exe_dir>/builtin-plugins/`
+= `target/<profile>/builtin-plugins/` 이므로, **release 빌드도 단순히 그 경로에
+스테이징해두면** 부팅 시 자동으로 user dir 까지 흘러간다.
+
+debug 빌드는 `ensure_dev_bundle` 이 매 부팅마다 workspace → bundle 을 자동
+sync 하므로 별도 스테이징 없이 `cargo build` → `cargo run` 만으로 동작한다.
+
+Justfile recipe:
+
+```bash
+just build-plugins              # 모든 bin plugin → release 스테이징
+PROFILE=debug just build-plugins  # debug 프로필 (target/debug/builtin-plugins/)
+just build-plugin claude        # 단일 plugin (이름/crate/manifest id 허용)
+just build-all                  # plugins + main bin (한 명령)
+just link-plugins               # cp 대신 symlink (rebuild 시 즉시 반영)
+```
+
+스테이징 산출물: `target/<profile>/builtin-plugins/<plugin-id>/{tasty-plugin.toml, <bin>, lang/}`.
+
+lib-only crate (`tasty-plugin-protocol`, `tasty-plugin-sdk`,
+`tasty-plugin-manifest`, `tasty-plugin-sdk-wasm`) 는 manifest 부재로 자동 skip.
+
+`link-plugins` 는 cp 대신 symlink — rebuild 만 하면 새 binary 즉시 반영.
+auto-reload 와 시너지. (debug 빌드는 `ensure_dev_bundle` 이 이미 mtime 기반으로
+sync 하므로 본 recipe 가치는 주로 release 빌드 dev 반복용.)
+
 Linux `.deb` / `.rpm`는 [`cargo-deb`](https://github.com/kornelski/cargo-deb)과
 [`cargo-generate-rpm`](https://github.com/cat-in-136/cargo-generate-rpm)로 만든다:
 
