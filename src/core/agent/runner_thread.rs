@@ -21,7 +21,10 @@ use tasty_agent::runner::{DispatchHandle, RunnerLoop};
 use tasty_agent::{LeaseStore, SemaphoreStore, TaskId, TaskResult, TaskState, TaskStore};
 use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
-use super::runner_host::{HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, handle_key};
+use super::runner_host::{
+    HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result, handle_key, load_run_result,
+};
+use tasty_agent::runner::PollOutcome;
 
 const TICK_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -317,9 +320,10 @@ fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) {
 /// 각 영속 entry 에 대해:
 /// - `task state == Running` 이 아닌 항목은 stale → 영속만 제거 (state 변경 X).
 /// - `ShellProcess { pid }` : `process_alive::is_alive(pid)` 검사. alive → 복원,
-///   dead → task=Failed("host restart: pid {pid} died") + evict.
-/// - `ClaudeChild` / `BarrierPoll` : 그대로 복원 (insert only). 다음 정상 tick
-///   에서 poll. injector 미준비 시 PollOutcome::Failed → task=Failed (R3 정책).
+///   dead → K.A-1 `run_result.<task_id>` 영속이 있으면 정확한 exit_code 로 Succeeded /
+///   Failed 마감 (precise), 없으면 `Failed("host restart: pid {pid} died (exit_code unknown)")`.
+/// - `ClaudeChild` / `BarrierPoll` : 그대로 복원 (insert only). 다음 정상 tick 에서 poll.
+///   ClaudeChild 의 첫 poll 이 injector 미준비여도 K.A-2 grace (30s) 안에서는 Active 유지.
 /// - `Immediate*` / `ImmediateFail` : 영속 대상 아니므로 도달 안 됨 (방어적 evict).
 ///
 /// 반환: 복원할 (task_id, handle) 쌍 — RunnerLoop.running 에 insert.
@@ -339,6 +343,8 @@ fn reload_persistent_handles(
     let mut alive: Vec<(TaskId, DispatchHandle)> = Vec::new();
     let mut dead: Vec<(TaskId, String)> = Vec::new();
     let mut stale: Vec<TaskId> = Vec::new();
+    // K.A-1: 직전 host 의 watcher 가 영속한 정확한 종료 결과 — exit_code 포함 마감.
+    let mut precise: Vec<(TaskId, PollOutcome)> = Vec::new();
 
     for e in entries {
         let task_id = e
@@ -379,8 +385,14 @@ fn reload_persistent_handles(
             DispatchHandle::ShellProcess { pid } => {
                 if tasty_agent::platform::process_alive::is_alive(*pid) {
                     alive.push((task_id, handle));
+                } else if let Some(outcome) = load_run_result(ctx, workspace_id, &task_id) {
+                    // K.A-1: 직전 host watcher 가 exit_code 까지 영속해 둠 → 정확 마감.
+                    precise.push((task_id, outcome));
                 } else {
-                    dead.push((task_id, format!("host restart: pid {pid} died")));
+                    dead.push((
+                        task_id,
+                        format!("host restart: pid {pid} died (exit_code unknown)"),
+                    ));
                 }
             }
             // Claude/Barrier: 그대로 복원 — 다음 정상 tick 에서 poll.
@@ -440,12 +452,53 @@ fn reload_persistent_handles(
         });
     }
 
-    if !alive.is_empty() || !dead.is_empty() || !stale.is_empty() {
+    // K.A-1 precise: 영속된 exit_code 로 정확히 마감 (Succeeded / Failed 분류).
+    if !precise.is_empty() {
+        ctx.with_memory(|mem| {
+            let seq = ctx.agent_seq.clone();
+            {
+                let mut store = TaskStore::new(mem, HOST_OWNER, seq.as_ref());
+                for (task_id, outcome) in &precise {
+                    let (result, next_state) = match outcome {
+                        PollOutcome::Done(r) => (r.clone(), TaskState::Succeeded),
+                        PollOutcome::Failed(err) => (
+                            TaskResult {
+                                exit_code: None,
+                                output: None,
+                                error: Some(err.clone()),
+                            },
+                            TaskState::Failed { error: err.clone() },
+                        ),
+                        PollOutcome::Active => continue, // 도달 안 함 — watcher 는 종결 시점만 영속.
+                    };
+                    if let Err(e) = store.set_result(workspace_id, task_id, result) {
+                        tracing::warn!("reload precise set_result {task_id}: {e}");
+                    }
+                    if let Err(e) = store.set_state(workspace_id, task_id, next_state, now) {
+                        tracing::warn!("reload precise set_state {task_id}: {e}");
+                    }
+                }
+            }
+            // handle + run_result 둘 다 evict (정확히 마감된 task 의 잔재 제거).
+            // best-effort — 실패 시 다음 reload 가 stale 분기로 정리.
+            for (task_id, _) in &precise {
+                if let Err(e) = mem.delete(HOST_OWNER, &scope, &handle_key(task_id), None) {
+                    tracing::warn!("reload precise evict handle {task_id}: {e}");
+                }
+            }
+        });
+        for (task_id, _) in &precise {
+            evict_run_result(ctx, workspace_id, task_id);
+        }
+    }
+
+    if !alive.is_empty() || !dead.is_empty() || !stale.is_empty() || !precise.is_empty() {
         tracing::info!(
-            "agent runner ws{workspace_id}: reload handles — alive={}, dead={}, stale={}",
+            "agent runner ws{workspace_id}: reload handles — alive={}, dead={}, stale={}, precise={}",
             alive.len(),
             dead.len(),
-            stale.len()
+            stale.len(),
+            precise.len()
         );
     }
     alive
