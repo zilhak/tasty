@@ -6,6 +6,8 @@
 //! `apply_action` 은 사용자가 Apply 버튼을 클릭했을 때 새 터미널에서 spawn 될 명령
 //! 라인. metadata 로만 보관하고 도메인 layer 는 실행에 관여하지 않는다.
 
+use std::path::PathBuf;
+
 use super::SurfaceId;
 use super::surface_trait::Surface;
 
@@ -15,6 +17,8 @@ pub struct DiffPanel {
     pub before: String,
     pub after: String,
     pub apply_action: Option<String>,
+    /// 호스트가 carry 한 시작 cwd. apply_action 실행 시 cwd 후보로 사용.
+    pub cwd: Option<PathBuf>,
 }
 
 impl DiffPanel {
@@ -25,11 +29,18 @@ impl DiffPanel {
             before,
             after,
             apply_action: None,
+            cwd: None,
         }
     }
 
     pub fn with_apply_action(mut self, action: Option<String>) -> Self {
         self.apply_action = action;
+        self
+    }
+
+    /// 호스트가 carry 한 cwd 를 부여 (builder).
+    pub fn with_cwd(mut self, cwd: Option<PathBuf>) -> Self {
+        self.cwd = cwd;
         self
     }
 }
@@ -47,7 +58,7 @@ impl Surface for DiffPanel {
         Some(self.id)
     }
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
-        None
+        self.cwd.clone()
     }
     fn display_name(&self) -> String {
         if self.title.is_empty() {

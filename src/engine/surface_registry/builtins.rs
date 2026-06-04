@@ -125,7 +125,7 @@ fn register_diff(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "diff",
         display_name_i18n_key: "surface.kind.diff",
-        create: Arc::new(|sid, _cwd, params| {
+        create: Arc::new(|sid, cwd, params| {
             let before = read_diff_input(params, "before", "before_file")?;
             let after = read_diff_input(params, "after", "after_file")?;
             let title = params
@@ -137,10 +137,11 @@ fn register_diff(registry: &SurfaceKindRegistry) {
                 .get("apply_action")
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
-            Ok(
-                Box::new(DiffPanel::new(sid, title, before, after).with_apply_action(apply_action))
-                    as Box<dyn Surface>,
-            )
+            Ok(Box::new(
+                DiffPanel::new(sid, title, before, after)
+                    .with_apply_action(apply_action)
+                    .with_cwd(cwd.map(std::path::PathBuf::from)),
+            ) as Box<dyn Surface>)
         }),
         restore: Arc::new(|sid, data| {
             let title = data
@@ -185,8 +186,11 @@ fn register_empty(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "empty",
         display_name_i18n_key: "surface.kind.empty",
-        create: Arc::new(|sid, _cwd, _params| {
-            Ok(Box::new(EmptySurface::new(sid)) as Box<dyn Surface>)
+        create: Arc::new(|sid, cwd, _params| {
+            Ok(
+                Box::new(EmptySurface::new(sid).with_cwd(cwd.map(std::path::PathBuf::from)))
+                    as Box<dyn Surface>,
+            )
         }),
         restore: Arc::new(|sid, _data| Ok(Box::new(EmptySurface::new(sid)) as Box<dyn Surface>)),
         snapshot: Arc::new(|_| Some(Value::Object(Default::default()))),

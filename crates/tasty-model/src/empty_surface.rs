@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::SurfaceId;
 use super::surface_trait::Surface;
 use super::terminal_surface::DeferredSpawn;
@@ -10,6 +12,9 @@ pub struct EmptySurface {
     /// PTY lazy spawn 파라미터. Some이면 이 surface는 활성화될 때 TerminalSurface로
     /// 교체될 deferred terminal 자리표시자다.
     pub deferred_spawn: Option<DeferredSpawn>,
+    /// 호스트가 carry 한 시작 cwd. fresh empty 면 None — Surface cwd invariant
+    /// (`docs/architecture/surface-cwd-invariant.md`) 에 따라 다음 변환 시 후보로 사용.
+    pub cwd: Option<PathBuf>,
 }
 
 impl EmptySurface {
@@ -17,6 +22,7 @@ impl EmptySurface {
         Self {
             id,
             deferred_spawn: None,
+            cwd: None,
         }
     }
 
@@ -25,7 +31,14 @@ impl EmptySurface {
         Self {
             id,
             deferred_spawn: Some(spawn),
+            cwd: None,
         }
+    }
+
+    /// 호스트가 carry 한 cwd 를 부여 (builder).
+    pub fn with_cwd(mut self, cwd: Option<PathBuf>) -> Self {
+        self.cwd = cwd;
+        self
     }
 
     /// `deferred_spawn`이 있는지 여부.
@@ -53,7 +66,7 @@ impl Surface for EmptySurface {
     }
 
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
-        None
+        self.cwd.clone()
     }
 
     fn to_tree_json(&self) -> serde_json::Value {
