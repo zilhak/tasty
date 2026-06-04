@@ -327,6 +327,10 @@ mod response;
 #[cfg(test)]
 mod tests_namespace_mirror;
 
+// H — plugin 자동 reload (baseline / check_for_updates / auto_reload_one) 테스트.
+#[cfg(test)]
+mod tests_auto_reload;
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -116,6 +116,14 @@ impl PluginManager {
     /// 디스커버리 + 활성 plugin 모두 spawn. listener도 여기서 한 번만 bind.
     /// plugin이 없으면 listener 자체를 만들지 않음 (포트 점유 회피).
     pub fn discover_and_start(&mut self) {
+        // H.b — env flag 한 번 평가. TASTY_PLUGIN_AUTO_RELOAD 가 비어있지 않고
+        // "0" 이 아니면 enable. 기본 false (production 부작용 0).
+        self.auto_reload_enabled = std::env::var("TASTY_PLUGIN_AUTO_RELOAD")
+            .map(|v| !v.is_empty() && v != "0")
+            .unwrap_or(false);
+        if self.auto_reload_enabled {
+            tracing::info!("plugin auto-reload: enabled (TASTY_PLUGIN_AUTO_RELOAD)");
+        }
         self.packages = crate::discovery::discover();
 
         // command registry에 모든 발견된 plugin의 commands를 등록.
@@ -204,6 +212,11 @@ impl PluginManager {
                 tracing::info!("plugin started: {}", p.plugin_id);
                 self.processes.insert(pkg.manifest.id.clone(), p);
                 self.spawn_failures.remove(&pkg.manifest.id);
+                // H.b — spawn 성공 분기에서만 baseline 캡처. 무한 swap loop 회피용
+                // 기준점. 실패 시 entry 가 디스크에 없거나 metadata 실패해도
+                // capture 가 None 으로 끝남 — 다음 check_for_updates 에서 비교 대상
+                // 없으면 skip.
+                self.capture_plugin_baseline(&pkg.manifest.id);
                 // `plugin.loaded` 발화 위치 — D.3.C.G.2.e 부터 hello 수신 후 호출자
                 // (App::finalize_plugin_hello) 가 cascade 로 발화. spawn-time 직접
                 // 발화는 제거 (이중 발화 회피).
@@ -378,5 +391,31 @@ impl PluginManager {
     /// 디스커버리/enable/disable/install/remove 후 매번 호출한다.
     pub fn log_path(&self, plugin_id: &str) -> PathBuf {
         self.log_dir.join(format!("{plugin_id}.log"))
+    }
+
+    /// H.b — plugin 한 건의 baseline (entry binary mtime + manifest version) 캡처.
+    /// spawn 성공 직후 + auto_reload swap 직후 호출하여 무한 reload loop 회피.
+    /// metadata 실패 시 mtime 항목만 skip — version 은 항상 packages 캐시에서 갱신.
+    pub(super) fn capture_plugin_baseline(&mut self, plugin_id: &str) {
+        let pkg = match self.packages.iter().find(|p| p.manifest.id == plugin_id) {
+            Some(p) => p,
+            None => return,
+        };
+        let bin = pkg.entry_command_path();
+        match std::fs::metadata(&bin).and_then(|m| m.modified()) {
+            Ok(mtime) => {
+                self.plugin_binary_mtimes
+                    .insert(plugin_id.to_string(), mtime);
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "plugin '{plugin_id}' baseline mtime skip ({}): {e}",
+                    bin.display()
+                );
+                self.plugin_binary_mtimes.remove(plugin_id);
+            }
+        }
+        self.plugin_manifest_versions
+            .insert(plugin_id.to_string(), pkg.manifest.version.clone());
     }
 }
