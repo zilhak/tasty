@@ -76,6 +76,7 @@ dist-setup-linux:
 #   PROFILE=debug just build-plugins  # debug 프로필 (cargo build, target/debug/)
 #   just build-plugin claude        # 단일 plugin (이름/crate/manifest id 허용)
 #   just build-all                  # plugins + main bin
+#   just link-plugins               # cp 대신 symlink (dev 가속용)
 
 # profile 선택 (release 기본; debug 도 가능)
 PROFILE := env_var_or_default('PROFILE', 'release')
@@ -220,6 +221,62 @@ build-all: build-plugins
         *)       profile_flag="--profile $profile" ;;
     esac
     cargo build $profile_flag --bin tasty
+
+# 빌드된 plugin 산출물을 cp 대신 symlink 로 스테이징.
+# rebuild 후 별도 sync 단계 없이 새 binary 즉시 반영 — H (auto-reload) 시너지.
+# (debug 빌드는 이미 ensure_dev_bundle 이 mtime 기반 자동 sync 하므로
+#  주로 release 빌드의 dev 반복 가속용.)
+link-plugins:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    profile="{{PROFILE}}"
+    case "$profile" in
+        release) profile_flag="--release" ;;
+        debug)   profile_flag="" ;;
+        *)       profile_flag="--profile $profile" ;;
+    esac
+    profile_dir="target/$profile"
+    bundle_root="$profile_dir/builtin-plugins"
+
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) exe_ext=".exe" ;;
+        *)                    exe_ext="" ;;
+    esac
+
+    crates=()
+    for d in crates/tasty-plugin-*; do
+        [ -f "$d/tasty-plugin.toml" ] || continue
+        crates+=("$(basename "$d")")
+    done
+
+    cargo_args=()
+    for c in "${crates[@]}"; do
+        cargo_args+=("-p" "$c")
+    done
+    cargo build $profile_flag "${cargo_args[@]}"
+
+    mkdir -p "$bundle_root"
+    abs_workspace=$(pwd)
+    for c in "${crates[@]}"; do
+        d="crates/$c"
+        id=$(grep -E '^id[[:space:]]*=' "$d/tasty-plugin.toml" | head -1 \
+            | sed 's/.*"\([^"]*\)".*/\1/')
+        bin_name="$c$exe_ext"
+        src_bin="$abs_workspace/$profile_dir/$bin_name"
+        if [ ! -f "$src_bin" ]; then
+            echo "✘ $c: built binary missing at $src_bin" >&2
+            exit 1
+        fi
+        dest="$bundle_root/$id"
+        mkdir -p "$dest"
+        ln -sfn "$src_bin" "$dest/$bin_name"
+        ln -sfn "$abs_workspace/$d/tasty-plugin.toml" "$dest/tasty-plugin.toml"
+        if [ -d "$d/lang" ]; then
+            rm -rf "$dest/lang"
+            ln -sfn "$abs_workspace/$d/lang" "$dest/lang"
+        fi
+        echo "✓ linked $id → $dest"
+    done
 
 # SHA256SUMS 재검증.
 dist-verify:
