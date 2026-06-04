@@ -403,6 +403,13 @@ pub fn handle_respawn(
 /// 0.130 에 해당 hook event 가 존재하지 않아 영원히 도착하지 않는다 (Claude Code
 /// 흉내내던 잔존 코드). 외부에서 `tasty codex hook notification` 을 invoke 하면
 /// invalid_params 로 거부한다.
+///
+/// **반환값**: 빈 객체 `{}`. CLI 의 stdout 으로 흘러나가 codex 가 직접 파싱하므로
+/// codex 의 wire schema (StopCommandOutputWire / SessionStartCommandOutputWire /
+/// UserPromptSubmitCommandOutputWire) 와 호환되어야 한다. 모든 필드가 optional
+/// 이므로 empty object 는 "no decision, continue normally" 의미. `{"ok":true,...}`
+/// 같은 자체 schema 를 반환하면 codex 가 "hook returned invalid JSON output" 으로
+/// 거부한다 (side effect 는 이미 발생했지만 codex TUI 에 에러 메시지 노출).
 pub fn handle_hook(state: &mut CodexState, params: Value) -> Result<Value, IpcMethodError> {
     let event = params
         .get("event")
@@ -422,7 +429,7 @@ pub fn handle_hook(state: &mut CodexState, params: Value) -> Result<Value, IpcMe
         }
     }
     state.save();
-    Ok(json!({ "ok": true, "state": state.state_of(surface_id) }))
+    Ok(json!({}))
 }
 
 pub fn handle_install(_state: &mut CodexState) -> Result<Value, IpcMethodError> {
