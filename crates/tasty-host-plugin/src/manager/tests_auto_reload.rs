@@ -124,9 +124,114 @@ fn capture_baseline_unknown_plugin_is_noop() {
     assert!(m.plugin_manifest_versions.is_empty());
 }
 
-// 본 모듈은 H.c 의 check_for_updates / H.d 의 auto_reload_one 가 추가되면 그
-// 테스트도 함께 확장한다. unused import 방지를 위해 SystemTime 만 export.
-#[allow(dead_code)]
-fn _unused() -> SystemTime {
-    SystemTime::now()
+#[test]
+fn check_for_updates_empty_when_disabled() {
+    let (_tmp, pkg) = make_pkg_with_binary("0.1.0");
+    let pid = pkg.manifest.id.clone();
+    let mut m = mgr();
+    m.packages.push(pkg);
+    m.processes.insert(
+        pid.clone(),
+        crate::process::PluginProcess::stub_for_test(&pid),
+    );
+    // baseline 을 일부러 깨뜨려둬도 flag off 면 무시되어야 함.
+    m.plugin_binary_mtimes
+        .insert(pid.clone(), SystemTime::UNIX_EPOCH);
+    m.plugin_manifest_versions.insert(pid, "0.0.0".into());
+
+    assert!(m.check_for_updates().is_empty());
+}
+
+#[test]
+fn check_for_updates_detects_binary_mtime_change() {
+    let (tmp, pkg) = make_pkg_with_binary("0.1.0");
+    let pid = pkg.manifest.id.clone();
+    let mut m = mgr();
+    m.auto_reload_enabled = true;
+    m.packages.push(pkg);
+    m.processes.insert(
+        pid.clone(),
+        crate::process::PluginProcess::stub_for_test(&pid),
+    );
+    // baseline 의 mtime 을 일부러 과거로 — 실제 파일 mtime 과 무조건 다르도록.
+    m.plugin_binary_mtimes
+        .insert(pid.clone(), SystemTime::UNIX_EPOCH);
+    m.plugin_manifest_versions
+        .insert(pid.clone(), "0.1.0".into());
+
+    // sanity: 실제 binary mtime 은 epoch 이상.
+    let cur_mtime = std::fs::metadata(tmp.path().join("fake-bin"))
+        .and_then(|md| md.modified())
+        .unwrap();
+    assert!(cur_mtime > SystemTime::UNIX_EPOCH);
+
+    assert_eq!(m.check_for_updates(), vec![pid]);
+}
+
+#[test]
+fn check_for_updates_detects_version_change() {
+    let (_tmp, mut pkg) = make_pkg_with_binary("0.1.0");
+    let pid = pkg.manifest.id.clone();
+    pkg.manifest.version = "0.2.0".into();
+    let mut m = mgr();
+    m.auto_reload_enabled = true;
+    m.packages.push(pkg);
+    m.processes.insert(
+        pid.clone(),
+        crate::process::PluginProcess::stub_for_test(&pid),
+    );
+    // mtime 은 fresh 로 캡처 — version 신호만 발동.
+    m.capture_plugin_baseline(&pid);
+    m.plugin_manifest_versions
+        .insert(pid.clone(), "0.1.0".into());
+
+    assert_eq!(m.check_for_updates(), vec![pid]);
+}
+
+#[test]
+fn check_for_updates_no_diff_after_fresh_baseline() {
+    let (_tmp, pkg) = make_pkg_with_binary("0.1.0");
+    let pid = pkg.manifest.id.clone();
+    let mut m = mgr();
+    m.auto_reload_enabled = true;
+    m.packages.push(pkg);
+    m.processes.insert(
+        pid.clone(),
+        crate::process::PluginProcess::stub_for_test(&pid),
+    );
+    m.capture_plugin_baseline(&pid);
+
+    assert!(m.check_for_updates().is_empty());
+}
+
+#[test]
+fn check_for_updates_skips_plugins_not_running() {
+    let (_tmp, pkg) = make_pkg_with_binary("0.1.0");
+    let pid = pkg.manifest.id.clone();
+    let mut m = mgr();
+    m.auto_reload_enabled = true;
+    m.packages.push(pkg);
+    // processes 에 등록 안 함 — 비활성. baseline diff 가 있어도 skip.
+    m.plugin_binary_mtimes
+        .insert(pid.clone(), SystemTime::UNIX_EPOCH);
+    m.plugin_manifest_versions.insert(pid, "0.0.0".into());
+
+    assert!(m.check_for_updates().is_empty());
+}
+
+#[test]
+fn check_for_updates_skips_when_no_baseline() {
+    // baseline 이 한 번도 안 잡힌 plugin — diff 비교 불가 → false. 무한 reload 회피.
+    let (_tmp, pkg) = make_pkg_with_binary("0.1.0");
+    let pid = pkg.manifest.id.clone();
+    let mut m = mgr();
+    m.auto_reload_enabled = true;
+    m.packages.push(pkg);
+    m.processes.insert(
+        pid.clone(),
+        crate::process::PluginProcess::stub_for_test(&pid),
+    );
+    // baseline 비어있음.
+
+    assert!(m.check_for_updates().is_empty());
 }

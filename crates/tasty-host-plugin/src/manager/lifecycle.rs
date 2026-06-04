@@ -393,6 +393,41 @@ impl PluginManager {
         self.log_dir.join(format!("{plugin_id}.log"))
     }
 
+    /// H.c — auto-reload 가 활성화된 상태에서 실행 중인 plugin 중 baseline 대비
+    /// entry binary mtime 또는 manifest version 이 달라진 id 목록을 반환.
+    ///
+    /// 신호 조합: `binary mtime diff` OR `manifest version diff`.
+    /// - metadata 읽기 실패 (binary 없음, 권한 등) 시 mtime 신호 skip — 무해.
+    /// - flag off 면 즉시 빈 Vec — pump cost 0.
+    /// - process 가 실행 중이지 않은 plugin 은 reload 대상 아님 — skip.
+    pub(super) fn check_for_updates(&self) -> Vec<String> {
+        if !self.auto_reload_enabled {
+            return Vec::new();
+        }
+        let mut updated = Vec::new();
+        for plugin_id in self.processes.keys() {
+            let pkg = match self.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+                Some(p) => p,
+                None => continue,
+            };
+            let bin = pkg.entry_command_path();
+            let new_mtime = std::fs::metadata(&bin).ok().and_then(|m| m.modified().ok());
+            let old_mtime = self.plugin_binary_mtimes.get(plugin_id).copied();
+            let binary_changed = matches!((new_mtime, old_mtime), (Some(n), Some(o)) if n != o);
+
+            let new_version = pkg.manifest.version.as_str();
+            let version_changed = self
+                .plugin_manifest_versions
+                .get(plugin_id)
+                .is_some_and(|old| old != new_version);
+
+            if binary_changed || version_changed {
+                updated.push(plugin_id.clone());
+            }
+        }
+        updated
+    }
+
     /// H.b — plugin 한 건의 baseline (entry binary mtime + manifest version) 캡처.
     /// spawn 성공 직후 + auto_reload swap 직후 호출하여 무한 reload loop 회피.
     /// metadata 실패 시 mtime 항목만 skip — version 은 항상 packages 캐시에서 갱신.
