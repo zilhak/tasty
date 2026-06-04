@@ -5,9 +5,9 @@
 //! - `Run` / `Custom` → F.6 에서 채움.
 
 use std::collections::HashMap;
-use std::process::Child;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::thread;
 use std::time::Duration;
 
 use serde_json::json;
@@ -25,6 +25,16 @@ pub const HANDLE_KEY_PREFIX: &str = "tasty.agent.handle.";
 
 pub fn handle_key(task_id: &str) -> String {
     format!("{HANDLE_KEY_PREFIX}{task_id}")
+}
+
+/// K.A-1: ShellProcess Run task 의 정확한 종료 결과 영속 key prefix.
+/// watcher thread 가 자식 `wait()` 종료 직후 기록 → 호스트가 재시작돼도 다음 reload
+/// 단계가 exit_code 까지 정확히 마감할 수 있다 (단, watcher 가 기록을 마치기 전에
+/// 호스트가 죽으면 손실 — cross-platform 으로 회피 불가).
+pub const RUN_RESULT_KEY_PREFIX: &str = "tasty.agent.run_result.";
+
+pub fn run_result_key(task_id: &str) -> String {
+    format!("{RUN_RESULT_KEY_PREFIX}{task_id}")
 }
 
 use crate::adapters::ipc::handler::agent::task::run_custom_shell;
@@ -70,11 +80,26 @@ impl RunnerContext {
     }
 }
 
+/// K.A-1: ShellProcess Run task 의 watcher 와 결과 cell.
+///
+/// dispatch 가 자식을 spawn 한 직후 watcher thread 를 띄워 `child.wait()` 호출 →
+/// 종료 status 를 `result` cell + 영속 (run_result_key) 양쪽에 기록한다. poll path
+/// 는 `try_wait()` 대신 cell 만 조회하므로, host 가 살아 있는 한 정확한 exit_code
+/// 회수가 보장된다. cancel 시 watcher 는 *자연 종료까지 detach* — 별 phase 에서
+/// `child.kill()` 추가 검토 (현재는 기존 동작 유지).
+struct ShellChildEntry {
+    /// watcher 가 자식 종료 후 채움. poll 이 take() 로 가져가면 entry 제거.
+    result: Arc<Mutex<Option<PollOutcome>>>,
+    /// watcher thread 핸들 — 누수 추적용. host 종료 시 detach.
+    /// 자식이 살아 있는 한 watcher 도 wait() 에 block, 자식이 죽으면 자연 종료.
+    _watcher: thread::JoinHandle<()>,
+}
+
 pub struct HostExecutor {
     ctx: RunnerContext,
-    /// Run task 의 child process 보관 — pid → Child. DispatchHandle 은 Clone
-    /// 필요 (RunnerLoop 가 핸들을 복제), Child 는 Clone 불가이므로 분리.
-    shell_children: HashMap<u32, Child>,
+    /// Run task 의 watcher + 결과 cell — pid → entry. DispatchHandle 은 Clone 필요
+    /// (RunnerLoop 가 핸들을 복제), Child 객체 자체는 watcher thread 가 소유.
+    shell_children: HashMap<u32, ShellChildEntry>,
     /// 본 executor 가 dispatch 시 점유한 semaphore permit — (workspace_id, name, holder).
     /// in-memory only. 호스트 재시작 시 비어 있게 되므로 [`crate::core::agent::runner_thread`]
     /// 의 시작 시 정화 단계가 영속 holder 를 회수.
@@ -236,6 +261,9 @@ impl HostExecutor {
         if let Err(e) = res {
             tracing::warn!("evict handle {task_id}: {e}");
         }
+        // K.A-1: ShellProcess 의 영속 run_result 도 함께 정리. Non-Shell variant 도
+        // 같은 key 가 없을 뿐이라 delete 호출 자체는 idempotent (none-found → no-op).
+        evict_run_result(&self.ctx, ws, task_id);
     }
 
     /// task 가 점유 중인 lease 가 있으면 release. release_permit 안에서 호출.
@@ -409,11 +437,37 @@ impl HostExecutor {
                 if let Some(c) = cwd {
                     cmd.current_dir(c);
                 }
-                let child = cmd
+                let mut child = cmd
                     .spawn()
                     .map_err(|e| format!("Run spawn '{program}': {e}"))?;
                 let pid = child.id();
-                self.shell_children.insert(pid, child);
+                let result_cell: Arc<Mutex<Option<PollOutcome>>> = Arc::new(Mutex::new(None));
+                let cell_clone = result_cell.clone();
+                let mem_clone = self.ctx.memory.clone();
+                let task_id_clone = task.id.clone();
+                let ws = task.workspace_id;
+                let watcher = thread::Builder::new()
+                    .name(format!("agent-shell-watcher-pid{pid}"))
+                    .spawn(move || {
+                        let outcome = match child.wait() {
+                            Ok(status) => {
+                                shell_outcome_from_status(pid, status.code(), status.success())
+                            }
+                            Err(e) => PollOutcome::Failed(format!("Run wait: {e}")),
+                        };
+                        persist_run_result(&mem_clone, ws, &task_id_clone, &outcome);
+                        if let Ok(mut g) = cell_clone.lock() {
+                            *g = Some(outcome);
+                        }
+                    })
+                    .map_err(|e| format!("Run watcher spawn '{program}': {e}"))?;
+                self.shell_children.insert(
+                    pid,
+                    ShellChildEntry {
+                        result: result_cell,
+                        _watcher: watcher,
+                    },
+                );
                 Ok(DispatchHandle::ShellProcess { pid })
             }
             TaskCommand::Custom { ipc_method, params } => {
@@ -470,37 +524,24 @@ impl HostExecutor {
                 PollOutcome::Done(r.clone())
             }
             DispatchHandle::ShellProcess { pid } => {
-                let child = match self.shell_children.get_mut(pid) {
-                    Some(c) => c,
-                    None => {
-                        // handle 은 있는데 child map 에 없음 — 호스트 재시작 후
-                        // 잔여 task 시나리오. process_alive 로 확인 후 처리.
-                        if tasty_agent::platform::process_alive::is_alive(*pid) {
-                            return PollOutcome::Active;
-                        }
-                        return PollOutcome::Failed(format!(
-                            "Run handle lost (pid {pid} no longer tracked)"
-                        ));
+                // K.A-1: watcher cell 우선 조회. 채워졌으면 즉시 종결, 비어있으면 Active.
+                if let Some(entry) = self.shell_children.get(pid) {
+                    let taken = entry.result.lock().ok().and_then(|mut g| g.take());
+                    if let Some(outcome) = taken {
+                        self.shell_children.remove(pid);
+                        return outcome;
                     }
-                };
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        let code = status.code();
-                        let pid_done = *pid;
-                        self.shell_children.remove(&pid_done);
-                        if status.success() {
-                            PollOutcome::Done(TaskResult {
-                                exit_code: code,
-                                output: Some(json!({ "pid": pid_done })),
-                                error: None,
-                            })
-                        } else {
-                            PollOutcome::Failed(format!("Run exited non-zero: code={:?}", code))
-                        }
-                    }
-                    Ok(None) => PollOutcome::Active,
-                    Err(e) => PollOutcome::Failed(format!("Run try_wait: {e}")),
+                    return PollOutcome::Active;
                 }
+                // child map 없음 — 호스트 재시작 후 reload 된 핸들 (이 executor 에서
+                // dispatch 하지 않음 → watcher 도 없음). 정확한 마감은 reload 단계가
+                // run_result 영속 조회로 처리하므로, 여기서는 alive 만 판별:
+                // alive → Active, dead → Failed (이미 reload 가 처리했어야 할 경우의
+                // race 안전망).
+                if tasty_agent::platform::process_alive::is_alive(*pid) {
+                    return PollOutcome::Active;
+                }
+                PollOutcome::Failed(format!("Run handle lost (pid {pid} no longer tracked)"))
             }
             DispatchHandle::ImmediateFail(err) => PollOutcome::Failed(err.clone()),
             DispatchHandle::BarrierPoll { workspace_id, name } => {
@@ -538,6 +579,118 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// K.A-1: `ExitStatus` → `PollOutcome` 변환 (poll 의 try_wait fast path 와 동일 의미).
+pub(crate) fn shell_outcome_from_status(pid: u32, code: Option<i32>, success: bool) -> PollOutcome {
+    if success {
+        PollOutcome::Done(TaskResult {
+            exit_code: code,
+            output: Some(json!({ "pid": pid })),
+            error: None,
+        })
+    } else {
+        PollOutcome::Failed(format!("Run exited non-zero: code={:?}", code))
+    }
+}
+
+/// K.A-1: ShellProcess 종료 결과를 memory store 에 영속 (workspace scope).
+/// watcher thread 가 `child.wait()` 완료 직후 호출. best-effort — 실패 시 warn 로그.
+pub(crate) fn persist_run_result(
+    memory: &Arc<Mutex<dyn MemoryStorage>>,
+    workspace_id: u32,
+    task_id: &str,
+    outcome: &PollOutcome,
+) {
+    let value = MemoryValue::Json(run_outcome_to_value(outcome));
+    let res = {
+        let mut guard = match memory.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        guard.put(
+            HOST_OWNER,
+            &Scope::Workspace(workspace_id),
+            &run_result_key(task_id),
+            &value,
+            &PutOpts::default(),
+        )
+    };
+    if let Err(e) = res {
+        tracing::warn!("persist run_result {task_id}: {e}");
+    }
+}
+
+/// K.A-1: 영속된 ShellProcess 결과를 load (reload 단계가 사용).
+pub(crate) fn load_run_result(
+    ctx: &RunnerContext,
+    workspace_id: u32,
+    task_id: &str,
+) -> Option<PollOutcome> {
+    ctx.with_memory(|mem| {
+        let entry = mem
+            .get(&Scope::Workspace(workspace_id), &run_result_key(task_id))
+            .ok()??;
+        match entry.value {
+            MemoryValue::Json(v) => run_outcome_from_value(&v),
+            _ => None,
+        }
+    })
+}
+
+/// K.A-1: ShellProcess 결과를 evict (release_permit / reload 가 호출).
+pub(crate) fn evict_run_result(ctx: &RunnerContext, workspace_id: u32, task_id: &str) {
+    let res = ctx.with_memory(|mem| {
+        mem.delete(
+            HOST_OWNER,
+            &Scope::Workspace(workspace_id),
+            &run_result_key(task_id),
+            None,
+        )
+    });
+    if let Err(e) = res {
+        tracing::warn!("evict run_result {task_id}: {e}");
+    }
+}
+
+fn run_outcome_to_value(outcome: &PollOutcome) -> serde_json::Value {
+    match outcome {
+        PollOutcome::Done(r) => json!({
+            "kind": "done",
+            "exit_code": r.exit_code,
+            "output": r.output,
+            "error": r.error,
+        }),
+        PollOutcome::Failed(e) => json!({
+            "kind": "failed",
+            "error": e,
+        }),
+        // Active 영속은 의미 없음 — watcher 는 종결 시점에만 호출.
+        PollOutcome::Active => json!({ "kind": "active" }),
+    }
+}
+
+fn run_outcome_from_value(v: &serde_json::Value) -> Option<PollOutcome> {
+    match v.get("kind")?.as_str()? {
+        "done" => {
+            let exit_code = v
+                .get("exit_code")
+                .and_then(|x| x.as_i64())
+                .map(|x| x as i32);
+            let output = v.get("output").cloned();
+            let error = v
+                .get("error")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+            Some(PollOutcome::Done(TaskResult {
+                exit_code,
+                output,
+                error,
+            }))
+        }
+        "failed" => Some(PollOutcome::Failed(v.get("error")?.as_str()?.to_string())),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
