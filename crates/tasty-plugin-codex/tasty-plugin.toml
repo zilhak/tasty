@@ -19,11 +19,6 @@ lang_dir = "lang"
 type = "process"
 command = "tasty-plugin-codex"
 
-[[surface_kinds]]
-kind = "codex_session"
-display_name_i18n_key = "surface.kind.codex_session"
-icon = "🤖"
-
 [[contributes.ipc_namespace]]
 prefix = "codex"
 

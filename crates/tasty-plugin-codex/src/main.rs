@@ -13,7 +13,6 @@ use serde_json::Value;
 use state::CodexState;
 use tasty_plugin_sdk::{
     IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
-    ui::{label, label_color, vbox},
 };
 
 const PLUGIN_ID: &str = "com.tasty.codex";
@@ -41,15 +40,12 @@ impl Plugin for CodexPlugin {
     }
 
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        // codex_session surface는 현재 PoC에서 직접 사용되지 않는다.
-        // 자식 codex 프로세스는 host의 일반 terminal surface에서 실행된다.
-        // surface가 만들어졌을 때 대비한 안내 stub.
+        // codex plugin 은 자체 surface_kind 를 등록하지 않는다. 자식 codex 프로세스는
+        // 호스트의 일반 terminal surface 에서 실행되며, surface 자체는 plugin 이 만들지
+        // 않는다. 매니페스트에 surface_kinds 가 없으므로 이 콜백은 호출되지 않는다.
         SurfaceResult {
-            tree: Some(vbox([
-                label_color("Codex Session", "subtext1"),
-                label("Use `tasty codex spawn` from a terminal to create a child."),
-            ])),
-            display_name: Some("Codex".into()),
+            tree: None,
+            display_name: None,
         }
     }
 

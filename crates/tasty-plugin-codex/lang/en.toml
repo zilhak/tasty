@@ -1,5 +1,2 @@
-[surface.kind]
-codex_session = "Codex Session"
-
 [codex.cli]
 desc = "Manage Codex CLI child sessions"

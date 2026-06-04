@@ -1,5 +1,2 @@
-[surface.kind]
-codex_session = "Codex セッション"
-
 [codex.cli]
 desc = "Codex CLI 子セッションの管理"

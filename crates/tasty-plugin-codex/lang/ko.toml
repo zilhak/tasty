@@ -1,5 +1,2 @@
-[surface.kind]
-codex_session = "Codex 세션"
-
 [codex.cli]
 desc = "Codex CLI 자식 세션 관리"
