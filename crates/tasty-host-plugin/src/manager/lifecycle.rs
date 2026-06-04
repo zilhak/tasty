@@ -393,6 +393,28 @@ impl PluginManager {
         self.log_dir.join(format!("{plugin_id}.log"))
     }
 
+    /// H.d — auto-reload swap 한 건. `swap_shutdown_internal` → `swap_respawn_internal`
+    /// 순으로 호출하고 성공 시 baseline 을 새 값으로 갱신해 다음 polling tick 의
+    /// 무한 swap loop 를 차단한다.
+    ///
+    /// 실패 시:
+    /// - `swap_shutdown_internal` 실패 — 옛 process 그대로. baseline 미갱신.
+    /// - `swap_respawn_internal` 실패 — spawn_failures / auto_disabled 기존 로직이
+    ///   3회 누적 시 plugin 을 차단. 옛 동작 (수동 disable/enable) 으로 graceful
+    ///   degrade. 본 helper 는 baseline 만 갱신해 *부분 swap* (shutdown 만 성공)
+    ///   상태에서도 같은 diff 로 재시도하지 않도록 한다.
+    pub(super) fn auto_reload_one(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        tracing::info!("auto-reload: {plugin_id} swap start");
+        self.swap_shutdown_internal(plugin_id)?;
+        let respawn = self.swap_respawn_internal(plugin_id);
+        // shutdown 이 성공한 시점에서 baseline 을 갱신해야 다음 polling tick 에서
+        // 같은 mtime/version 으로 또 swap 시도하지 않는다 (respawn 결과와 무관).
+        self.capture_plugin_baseline(plugin_id);
+        respawn?;
+        tracing::info!("auto-reload: {plugin_id} swap done");
+        Ok(())
+    }
+
     /// H.c — auto-reload 가 활성화된 상태에서 실행 중인 plugin 중 baseline 대비
     /// entry binary mtime 또는 manifest version 이 달라진 id 목록을 반환.
     ///

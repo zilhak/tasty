@@ -220,6 +220,40 @@ fn check_for_updates_skips_plugins_not_running() {
 }
 
 #[test]
+fn auto_reload_one_updates_baseline_even_when_respawn_fails() {
+    // listener 미존재 — swap_respawn 의 ensure_listener 가 bind 실패할 수도
+    // 있고 성공해도 fake-bin 이 실제 PluginProcess 가 아니므로 spawn 실패.
+    // 어느 쪽이든 baseline 은 capture 되어 다음 tick 의 무한 swap 회피해야 함.
+    let (tmp, pkg) = make_pkg_with_binary("0.1.0");
+    let pid = pkg.manifest.id.clone();
+    let mut m = mgr();
+    m.auto_reload_enabled = true;
+    m.packages.push(pkg);
+    m.processes.insert(
+        pid.clone(),
+        crate::process::PluginProcess::stub_for_test(&pid),
+    );
+    // baseline 의 mtime 을 일부러 과거로 — diff 발동 → swap 시도.
+    m.plugin_binary_mtimes
+        .insert(pid.clone(), SystemTime::UNIX_EPOCH);
+    m.plugin_manifest_versions
+        .insert(pid.clone(), "0.1.0".into());
+
+    let _ = m.auto_reload_one(&pid); // 본 테스트는 baseline 갱신만 검증 — respawn 실패 무시.
+
+    // shutdown 후 baseline 의 mtime 은 실제 파일 mtime 으로 갱신되었어야 함.
+    let stored = m.plugin_binary_mtimes.get(&pid).copied().unwrap();
+    let actual = std::fs::metadata(tmp.path().join("fake-bin"))
+        .and_then(|md| md.modified())
+        .unwrap();
+    assert_eq!(stored, actual);
+
+    // 다음 check_for_updates 호출은 빈 결과 — 동일 mtime 으로 무한 swap 회피.
+    // (단 respawn 실패로 processes 는 비어 있으므로 check 자체가 skip.)
+    assert!(m.check_for_updates().is_empty());
+}
+
+#[test]
 fn check_for_updates_skips_when_no_baseline() {
     // baseline 이 한 번도 안 잡힌 plugin — diff 비교 불가 → false. 무한 reload 회피.
     let (_tmp, pkg) = make_pkg_with_binary("0.1.0");
