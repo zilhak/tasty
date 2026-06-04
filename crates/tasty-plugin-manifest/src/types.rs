@@ -649,6 +649,11 @@ pub struct CliArg {
     /// 매핑하려면 `stdin_field = "session_id"`.
     #[serde(default)]
     pub stdin_field: Option<String>,
+    /// path 인자의 의미론적 종류. 현재 `Some("directory")` 만 사용한다 — CLI 가
+    /// 이 인자를 발견하면 호출자 cwd 기준 absolute path 로 정규화 + 디렉토리
+    /// 존재 검증 후 IPC 로 전달. (호스트는 absolute + valid 만 받는다는 contract.)
+    #[serde(default)]
+    pub path_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

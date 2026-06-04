@@ -448,14 +448,17 @@ pub(crate) fn handle_launch(
         .and_then(|v| v.as_str())
         .map(String::from);
 
+    // cwd 는 CLI 가 미리 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
+    // 호스트 workspace.create 가 직접 PTY 의 working_dir 로 사용 → `cd` echo trick 불필요.
+    let mut ws_params = json!({
+        "type": "terminal",
+        "name": workspace_name,
+    });
+    if let Some(dir) = directory.as_deref() {
+        ws_params["cwd"] = Value::String(dir.to_string());
+    }
     let ws_resp = host
-        .call(
-            "workspace.create",
-            json!({
-                "type": "terminal",
-                "name": workspace_name,
-            }),
-        )
+        .call("workspace.create", ws_params)
         .map_err(IpcMethodError::from)?;
 
     let workspace_id = ws_resp
@@ -469,17 +472,6 @@ pub(crate) fn handle_launch(
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        if let Some(dir) = directory.as_deref() {
-            let normalized = dir.replace('\\', "/");
-            let escaped = shell_escape::escape(normalized.into());
-            if let Err(e) = host.call(
-                "surface.send",
-                json!({ "surface_id": sid, "text": format!("cd {escaped}\r") }),
-            ) {
-                tracing::warn!("surface.send (cd) failed: {e}");
-            }
-        }
-
         let cmd = build_launch_command(task.as_deref());
         if let Err(e) = host.call(
             "surface.send",
@@ -545,21 +537,25 @@ pub(crate) fn handle_respawn(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let child_surface_id = state
+    let existing_child = state
         .find_child(parent_surface_id, child_index)
-        .map(|c| c.child_surface_id)
         .ok_or_else(|| {
             IpcMethodError::invalid_params(&format!(
                 "Child index {} not found for parent {}",
                 child_index, parent_surface_id
             ))
         })?;
+    let child_surface_id = existing_child.child_surface_id;
+    // caller 가 cwd 를 안 줬으면 기존 child 의 cwd 를 재사용 — 같은 디렉토리에서
+    // 재시작. 기존도 없으면 호스트 inherit (None).
+    let effective_cwd = cwd.clone().or_else(|| existing_child.cwd.clone());
 
-    host.call(
-        "surface.respawn_terminal",
-        json!({ "surface_id": child_surface_id }),
-    )
-    .map_err(IpcMethodError::from)?;
+    let mut respawn_params = json!({ "surface_id": child_surface_id });
+    if let Some(c) = effective_cwd.as_deref() {
+        respawn_params["cwd"] = Value::String(c.to_string());
+    }
+    host.call("surface.respawn_terminal", respawn_params)
+        .map_err(IpcMethodError::from)?;
 
     let updated = update_child_metadata(
         state,
@@ -573,7 +569,7 @@ pub(crate) fn handle_respawn(
         state.save();
     }
 
-    start_claude_in_surface(host, child_surface_id, cwd.as_deref(), prompt.as_deref());
+    start_claude_in_surface(host, child_surface_id, prompt.as_deref());
 
     Ok(json!({
         "child_surface_id": child_surface_id,
@@ -619,23 +615,10 @@ pub(crate) fn update_child_metadata(
 ///   `CallerContext::Agent` 로 분기. 발급 실패 시 token prefix 만 생략 — 자식은
 ///   계속 `TASTY_AGENT_ID` 로 self-reporting 은 가능하나, agent 권한 게이트가
 ///   필요한 메서드(agent.*/session.* 등)는 호출 불가.
-pub(crate) fn start_claude_in_surface(
-    host: &HostHandle,
-    surface_id: u32,
-    cwd: Option<&str>,
-    prompt: Option<&str>,
-) {
-    if let Some(dir) = cwd {
-        let normalized = dir.replace('\\', "/");
-        let escaped = shell_escape::escape(normalized.into());
-        if let Err(e) = host.call(
-            "surface.send",
-            json!({ "surface_id": surface_id, "text": format!("cd {escaped}\r") }),
-        ) {
-            tracing::warn!("surface.send (cd) failed: {e}");
-        }
-    }
-
+pub(crate) fn start_claude_in_surface(host: &HostHandle, surface_id: u32, prompt: Option<&str>) {
+    // cwd 는 split / workspace.create / surface.respawn_terminal 호출 시 호스트에
+    // 직접 전달되어 PTY working_dir 로 적용된다. 더 이상 `cd <path>\r` echo 가
+    // 필요 없다 (PTY 자체 cwd 기준 cd → silent fail 사고 제거).
     let agent_id = format!("claude_s{surface_id}");
     let session_token = issue_session_token(host, &agent_id);
     // TASTY_SURFACE_ID 는 자식 셸이 `tasty claude hook` 명령을 발사할 때 자기
@@ -747,7 +730,7 @@ pub(crate) fn handle_spawn(
     })?;
 
     let spawn_pane_id = resolve_or_create_spawn_pane(state, host, parent_surface_id, ws_id)?;
-    let child_surface_id = find_and_spawn_in_pane(host, spawn_pane_id)?;
+    let child_surface_id = find_and_spawn_in_pane(host, spawn_pane_id, cwd.as_deref())?;
 
     let child_index = state.next_child_index(parent_surface_id);
     state.register_child(
@@ -762,7 +745,7 @@ pub(crate) fn handle_spawn(
     );
     state.save();
 
-    start_claude_in_surface(host, child_surface_id, cwd.as_deref(), prompt.as_deref());
+    start_claude_in_surface(host, child_surface_id, prompt.as_deref());
 
     Ok(json!({
         "child_surface_id": child_surface_id,
@@ -872,22 +855,24 @@ pub(crate) fn resolve_or_create_spawn_pane(
 pub(crate) fn find_and_spawn_in_pane(
     host: &HostHandle,
     spawn_pane_id: u32,
+    cwd: Option<&str>,
 ) -> Result<u32, IpcMethodError> {
     let tabs = collect_pane_tab_surfaces(host, spawn_pane_id)?;
 
     // 첫 < 4 인 tab에서 split target을 결정.
     if let Some((_, surfaces)) = tabs.iter().find(|(_, sids)| sids.len() < 4) {
         let (target_sid, direction) = pick_split_target(surfaces.len(), surfaces);
+        let mut split_params = json!({
+            "level": "surface",
+            "target_surface": target_sid,
+            "direction": direction,
+            "type": "terminal",
+        });
+        if let Some(c) = cwd {
+            split_params["cwd"] = Value::String(c.to_string());
+        }
         let split_resp = host
-            .call(
-                "split",
-                json!({
-                    "level": "surface",
-                    "target_surface": target_sid,
-                    "direction": direction,
-                    "type": "terminal",
-                }),
-            )
+            .call("split", split_params)
             .map_err(IpcMethodError::from)?;
         let new_sid = split_resp
             .get("new_surface_id")
@@ -900,11 +885,12 @@ pub(crate) fn find_and_spawn_in_pane(
     // 모든 탭 가득 — 새 탭 생성. tab.create는 surface_id를 반환하지 않으므로
     // 생성 직후의 surface.list로 새 탭(index = tabs.len())의 유일한 surface를
     // 찾는다.
+    let mut tab_params = json!({ "pane_id": spawn_pane_id, "type": "terminal" });
+    if let Some(c) = cwd {
+        tab_params["cwd"] = Value::String(c.to_string());
+    }
     let resp = host
-        .call(
-            "tab.create",
-            json!({ "pane_id": spawn_pane_id, "type": "terminal" }),
-        )
+        .call("tab.create", tab_params)
         .map_err(IpcMethodError::from)?;
     let new_tab_count = resp
         .get("tab_count")

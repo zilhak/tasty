@@ -68,6 +68,26 @@ pub(super) fn resolve_surface_id(explicit: Option<u32>) -> Option<u32> {
     explicit.or_else(|| std::env::var("TASTY_SURFACE_ID").ok()?.parse().ok())
 }
 
+/// `--cwd` raw 입력을 CLI process cwd 기준 absolute path 로 정규화 + 디렉토리
+/// 존재 검증. 실패 시 stderr + exit 1 — 호스트가 silent 하게 잘못된 cwd 에서
+/// PTY 를 시작하는 사고를 사전에 차단한다.
+///
+/// `None` 입력은 그대로 `None` 반환 — caller 가 cwd 를 명시하지 않은 경우는
+/// 호스트 측 inherit 로직에 위임된다.
+fn normalize_cwd_or_exit(raw: Option<&str>) -> Option<String> {
+    let value = raw?;
+    if value.is_empty() {
+        return None;
+    }
+    match super::cwd_resolve::normalize_cwd_arg(value) {
+        Ok(absolute) => Some(absolute),
+        Err(e) => {
+            eprintln!("Error: --cwd: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
     let (method, params) = match command {
         // ── grouped ──
@@ -99,6 +119,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                 .as_ref()
                 .map(|s| serde_json::Value::String(resolve_target(s)));
             let tp = target_pane.map(|p| serde_json::Value::Number(p.into()));
+            let resolved_cwd = normalize_cwd_or_exit(cwd.as_deref());
 
             (
                 "split",
@@ -109,7 +130,7 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
                     "direction": direction,
                     "type": r#type,
                     "meta": meta_value,
-                    "cwd": cwd,
+                    "cwd": resolved_cwd,
                     "file": file,
                     "path": path,
                     "url": url,
@@ -173,17 +194,20 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
             file,
             path,
             url,
-        } => (
-            "workspace.create",
-            serde_json::json!({
-                "name": name.as_deref().unwrap_or(""),
-                "cwd": cwd,
-                "type": r#type,
-                "file": file,
-                "path": path,
-                "url": url,
-            }),
-        ),
+        } => {
+            let resolved_cwd = normalize_cwd_or_exit(cwd.as_deref());
+            (
+                "workspace.create",
+                serde_json::json!({
+                    "name": name.as_deref().unwrap_or(""),
+                    "cwd": resolved_cwd,
+                    "type": r#type,
+                    "file": file,
+                    "path": path,
+                    "url": url,
+                }),
+            )
+        }
         NewCommands::Tab {
             pane,
             r#type,
@@ -191,17 +215,20 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
             file,
             path,
             url,
-        } => (
-            "tab.create",
-            serde_json::json!({
-                "pane_id": pane,
-                "type": r#type,
-                "cwd": cwd,
-                "file": file,
-                "path": path,
-                "url": url,
-            }),
-        ),
+        } => {
+            let resolved_cwd = normalize_cwd_or_exit(cwd.as_deref());
+            (
+                "tab.create",
+                serde_json::json!({
+                    "pane_id": pane,
+                    "type": r#type,
+                    "cwd": resolved_cwd,
+                    "file": file,
+                    "path": path,
+                    "url": url,
+                }),
+            )
+        }
     }
 }
 

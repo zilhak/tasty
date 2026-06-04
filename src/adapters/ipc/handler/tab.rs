@@ -96,6 +96,15 @@ pub fn handle_tab_create(
             .get("cwd")
             .and_then(|v| v.as_str())
             .map(std::path::PathBuf::from);
+        // 2 차 방어: 호스트가 absolute + valid 만 받는다는 contract 검증.
+        if let Some(p) = &explicit
+            && !p.is_dir()
+        {
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("cwd does not exist: {}", p.display()),
+            );
+        }
         explicit.or_else(|| {
             let sid = engine
                 .find_pane_by_id(pane_id)

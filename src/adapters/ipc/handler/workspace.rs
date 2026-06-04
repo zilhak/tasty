@@ -39,6 +39,13 @@ pub fn handle_workspace_create(
         .get("cwd")
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from);
+    // CLI 가 absolute path 로 정규화해 보낸다는 contract — 2 차 방어로 호스트도
+    // 디렉토리 존재 검증. plugin 의 직접 IPC 경로도 함께 보호.
+    if let Some(p) = &explicit_cwd
+        && !p.is_dir()
+    {
+        return JsonRpcResponse::invalid_params(id, format!("cwd does not exist: {}", p.display()));
+    }
     let kind = params
         .get("type")
         .and_then(|v| v.as_str())

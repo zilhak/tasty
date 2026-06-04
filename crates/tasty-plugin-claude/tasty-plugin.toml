@@ -51,7 +51,7 @@ subcommands = [
 [contributes.cli.arg_groups.launch_args]
 flags = [
     { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace name to create (defaults to \"claude\")" },
-    { name = "directory", type = "string", flag = "--directory", required = false, help = "Working directory to cd into before launching claude" },
+    { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching claude" },
     { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to claude as --task <text>" },
 ]
 
@@ -59,7 +59,7 @@ flags = [
 flags = [
     { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)" },
     { name = "workspace", type = "string", flag = "--workspace", required = true,  help = "Target workspace (ID or name) — auto-manages spawn pane placement" },
-    { name = "cwd",       type = "string", flag = "--cwd",       required = false, help = "Working directory for the child Claude process" },
+    { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Working directory for the child Claude process" },
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
@@ -116,7 +116,7 @@ flags = [
 flags = [
     { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to caller's TASTY_SURFACE_ID)" },
     { name = "child_index", type = "u32",    flag = "--child",    required = true,  help = "Child index to respawn" },
-    { name = "cwd",      type = "string", flag = "--cwd",      required = false, help = "Override working directory for the respawned process" },
+    { name = "cwd",      type = "string", flag = "--cwd",      required = false, path_kind = "directory", help = "Override working directory for the respawned process" },
     { name = "role",     type = "string", flag = "--role",     required = false, help = "Replace the role label of the child" },
     { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Replace the display nickname of the child" },
     { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child" },

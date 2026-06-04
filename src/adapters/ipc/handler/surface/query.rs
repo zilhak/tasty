@@ -96,6 +96,12 @@ pub(crate) fn handle_surface_respawn_terminal(
         .get("cwd")
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from);
+    // 2 차 방어: 호스트가 absolute + valid 만 받는다는 contract 검증.
+    if let Some(p) = &cwd
+        && !p.is_dir()
+    {
+        return JsonRpcResponse::invalid_params(id, format!("cwd does not exist: {}", p.display()));
+    }
 
     let intent = crate::core::intent::DomainIntent::RespawnTerminal { surface_id, cwd };
     let events = match core.apply(engine, intent) {

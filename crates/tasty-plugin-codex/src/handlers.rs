@@ -52,21 +52,6 @@ fn make_codex_command(prompt: Option<&str>) -> String {
     }
 }
 
-/// shell escape: cd 등의 인자로 쓸 수 있도록 single-quote로 감싸고 내부 작은따옴표를 escape.
-fn shell_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('\'');
-    for ch in s.chars() {
-        if ch == '\'' {
-            out.push_str("'\\''");
-        } else {
-            out.push(ch);
-        }
-    }
-    out.push('\'');
-    out
-}
-
 /// codex 메시지를 PTY로 보낼 escape된 문자열을 만든다.
 /// claude의 `handle_claude_tell`과 동일한 규칙:
 /// - 줄바꿈(`\n`)은 `\` + `\r`로 변환 (codex CLI에서 newline 입력)
@@ -102,9 +87,14 @@ pub fn handle_launch(
     let directory = optional_str(&params, "directory");
     let task = optional_str(&params, "task");
 
+    // cwd 는 CLI 가 absolute path 로 정규화 + 검증해 전달 (path_kind hint).
+    // 호스트 workspace.create 가 PTY working_dir 로 직접 사용 → `cd` echo 불필요.
     let mut ws_params = Map::new();
     ws_params.insert("name".into(), Value::String(workspace_name.clone()));
     ws_params.insert("type".into(), Value::String("terminal".into()));
+    if let Some(dir) = directory.as_deref() {
+        ws_params.insert("cwd".into(), Value::String(dir.to_string()));
+    }
     let ws_result = host_call(host, "workspace.create", Value::Object(ws_params))?;
     let workspace_id = ws_result
         .get("id")
@@ -120,16 +110,6 @@ pub fn handle_launch(
         .map(|v| v as u32);
 
     if let Some(sid) = surface_id {
-        if let Some(dir) = directory.as_deref() {
-            let normalized = dir.replace('\\', "/");
-            let escaped = shell_escape(&normalized);
-            let cd_cmd = format!("cd {}\r", escaped);
-            host_call(
-                host,
-                "surface.send",
-                json!({"surface_id": sid, "text": cd_cmd}),
-            )?;
-        }
         let cmd = make_codex_command(task.as_deref());
         host_call(
             host,
@@ -336,13 +316,27 @@ pub fn handle_respawn(
         })?
         .clone();
     let prompt = optional_str(&params, "prompt");
+    let new_cwd = optional_str(&params, "cwd");
     let cmd = make_codex_command(prompt.as_deref());
-    // Ctrl+C로 기존 프로세스 종료 후 새 codex 시작.
-    host_call(
-        host,
-        "surface.send_combo",
-        json!({"surface_id": entry.child_surface_id, "key": "c", "modifiers": ["ctrl"]}),
-    )?;
+
+    // cwd 변경이 들어왔을 때는 PTY 자체를 새 working_dir 로 갈아끼운다.
+    // Ctrl-C + 재실행만으로는 작업 디렉토리가 바뀌지 않는 문제(보고서 결함 3)
+    // 를 차단. cwd 가 없으면 기존 cwd 유지 — Ctrl-C + codex 재실행만 수행.
+    let effective_cwd = new_cwd.clone().or_else(|| entry.cwd.clone());
+    if new_cwd.is_some() {
+        let mut respawn_params = json!({ "surface_id": entry.child_surface_id });
+        if let Some(c) = effective_cwd.as_deref() {
+            respawn_params["cwd"] = Value::String(c.to_string());
+        }
+        host_call(host, "surface.respawn_terminal", respawn_params)?;
+    } else {
+        // 기존 동작 유지: Ctrl+C 로 기존 프로세스 종료.
+        host_call(
+            host,
+            "surface.send_combo",
+            json!({"surface_id": entry.child_surface_id, "key": "c", "modifiers": ["ctrl"]}),
+        )?;
+    }
     host_call(
         host,
         "surface.send",
@@ -351,7 +345,6 @@ pub fn handle_respawn(
     // role/nickname/cwd가 새로 들어왔으면 갱신.
     let new_role = optional_str(&params, "role");
     let new_nick = optional_str(&params, "nickname");
-    let new_cwd = optional_str(&params, "cwd");
     state.update_child(parent, child_index, |e| {
         if let Some(r) = new_role {
             e.role = Some(r);

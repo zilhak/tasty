@@ -44,7 +44,7 @@ subcommands = [
 [contributes.cli.arg_groups.launch_args]
 flags = [
     { name = "workspace", type = "string", flag = "--workspace", required = false, help = "Workspace name to create (defaults to \"codex\")" },
-    { name = "directory", type = "string", flag = "--directory", required = false, help = "Working directory to cd into before launching codex" },
+    { name = "directory", type = "string", flag = "--directory", required = false, path_kind = "directory", help = "Working directory to cd into before launching codex" },
     { name = "task",      type = "string", flag = "--task",      required = false, help = "Initial task passed to codex as --task <text>" },
 ]
 
@@ -64,7 +64,7 @@ flags = [
 [contributes.cli.arg_groups.spawn_args]
 flags = [
     { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
-    { name = "cwd",      type = "string", flag = "--cwd",      required = false, help = "Working directory for the child Codex process" },
+    { name = "cwd",      type = "string", flag = "--cwd",      required = false, path_kind = "directory", help = "Working directory for the child Codex process" },
     { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the child after spawn" },
     { name = "role",     type = "string", flag = "--role",     required = false, help = "Role label attached to the child (used by broadcast --role)" },
     { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Display nickname shown on the tab" },
@@ -100,7 +100,7 @@ flags = [
 flags = [
     { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
     { name = "child",    type = "u32",    flag = "--child",    required = true,  help = "Child index to respawn" },
-    { name = "cwd",      type = "string", flag = "--cwd",      required = false, help = "Override working directory for the respawned process" },
+    { name = "cwd",      type = "string", flag = "--cwd",      required = false, path_kind = "directory", help = "Override working directory for the respawned process" },
     { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the respawned child" },
     { name = "role",     type = "string", flag = "--role",     required = false, help = "Replace the role label of the child" },
     { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Replace the display nickname of the child" },
