@@ -271,6 +271,88 @@ winit = { git = "https://github.com/zilhak/winit-ime-fix.git", branch = "fix-kor
 [lints]
 workspace = true
 
+# 일상 dev 빌드의 hot-path 비용을 줄이기 위한 절충 최적화.
+# 본 crate (tasty 본체) 는 빠른 컴파일을 위해 opt-level=0 유지하고,
+# 의존성 + 워크스페이스 crate (cell 루프 / atlas / wgpu wrapper 등 hot path 의 본진)
+# 는 release 수준으로 미리 최적화하여 cache 한다.
+# 첫 빌드는 길어지지만 incremental dev cycle 은 거의 그대로.
+[profile.dev]
+opt-level = 0
+
+# 의존성 전체를 opt=3 (release 수준)
+[profile.dev.package."*"]
+opt-level = 3
+
+# 워크스페이스 crate 들은 `"*"` glob 으로 적용되지 않으므로 각각 명시.
+[profile.dev.package.tasty-agent]
+opt-level = 3
+[profile.dev.package.tasty-approval]
+opt-level = 3
+[profile.dev.package.tasty-cli]
+opt-level = 3
+[profile.dev.package.tasty-font]
+opt-level = 3
+[profile.dev.package.tasty-hooks]
+opt-level = 3
+[profile.dev.package.tasty-host-plugin]
+opt-level = 3
+[profile.dev.package.tasty-ipc]
+opt-level = 3
+[profile.dev.package.tasty-lua]
+opt-level = 3
+[profile.dev.package.tasty-memory]
+opt-level = 3
+[profile.dev.package.tasty-model]
+opt-level = 3
+[profile.dev.package.tasty-output]
+opt-level = 3
+[profile.dev.package.tasty-plugin-claude]
+opt-level = 3
+[profile.dev.package.tasty-plugin-clipboard-history]
+opt-level = 3
+[profile.dev.package.tasty-plugin-codex]
+opt-level = 3
+[profile.dev.package.tasty-plugin-explorer]
+opt-level = 3
+[profile.dev.package.tasty-plugin-git-viewer]
+opt-level = 3
+[profile.dev.package.tasty-plugin-html]
+opt-level = 3
+[profile.dev.package.tasty-plugin-image]
+opt-level = 3
+[profile.dev.package.tasty-plugin-manifest]
+opt-level = 3
+[profile.dev.package.tasty-plugin-markdown]
+opt-level = 3
+[profile.dev.package.tasty-plugin-protocol]
+opt-level = 3
+[profile.dev.package.tasty-plugin-sdk]
+opt-level = 3
+[profile.dev.package.tasty-portscan]
+opt-level = 3
+[profile.dev.package.tasty-presets]
+opt-level = 3
+[profile.dev.package.tasty-settings]
+opt-level = 3
+[profile.dev.package.tasty-shm]
+opt-level = 3
+[profile.dev.package.tasty-telemetry]
+opt-level = 3
+[profile.dev.package.tasty-terminal]
+opt-level = 3
+[profile.dev.package.tasty-themes]
+opt-level = 3
+[profile.dev.package.tasty-tui-simulator]
+opt-level = 3
+[profile.dev.package.tasty-type-appearance]
+opt-level = 3
+[profile.dev.package.tasty-type-geometry]
+opt-level = 3
+[profile.dev.package.tasty-update]
+opt-level = 3
+[profile.dev.package.tasty-utils]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 strip = true
