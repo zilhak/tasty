@@ -503,9 +503,20 @@ mod tests {
     }
 
     #[test]
+    fn make_codex_command_with_plain_prompt() {
+        assert_eq!(make_codex_command(Some("hello")), "codex \"hello\"\r");
+    }
+
+    #[test]
     fn make_codex_command_with_prompt_escapes_quotes() {
         let cmd = make_codex_command(Some(r#"fix "bug" please"#));
         assert_eq!(cmd, "codex \"fix \\\"bug\\\" please\"\r");
+    }
+
+    #[test]
+    fn make_codex_command_with_prompt_escapes_backslash() {
+        let cmd = make_codex_command(Some(r"path\to\file"));
+        assert_eq!(cmd, "codex \"path\\\\to\\\\file\"\r");
     }
 
     #[test]
