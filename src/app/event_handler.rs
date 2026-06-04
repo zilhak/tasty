@@ -87,10 +87,20 @@ impl ApplicationHandler<AppEvent> for App {
                     w.mark_dirty();
                 }
             }
-            AppEvent::EguiRepaint => {
-                for w in self.view.views.values_mut() {
+            AppEvent::EguiRepaint { viewport_id } => {
+                // viewport_id 가 매칭되는 view 한 개만 dirty 처리.
+                // 매 frame 모든 view 를 dirty 로 만들면 한 window 의 repaint 요청이
+                // 전체 fan-out 을 일으켜 single-window 환경에서도 불필요한 비용 발생.
+                let matched = self
+                    .view
+                    .views
+                    .values_mut()
+                    .find(|w| w.base().gpu.egui_ctx.viewport_id() == viewport_id);
+                if let Some(w) = matched {
                     w.mark_dirty();
                 }
+                // 매칭 실패 (shell_setup gpu 등 view 에 등록되지 않은 ctx 가 callback 을 보낸 경우)
+                // 는 silently drop — 본 핸들러는 등록된 view 만 책임진다.
             }
             AppEvent::Shutdown => {
                 self.flush_layout_persistence(true);

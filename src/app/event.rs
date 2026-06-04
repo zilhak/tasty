@@ -16,8 +16,11 @@ pub(crate) enum AppEvent {
     /// IPC command arrived -- wake up and process.
     IpcReady,
     /// egui requested a repaint (new window, animation, cursor blink).
+    /// `viewport_id` 는 어느 egui 컨텍스트가 repaint 를 요청했는지 식별 — 핸들러는
+    /// 해당 viewport 의 view 만 dirty 로 표시한다.
+    /// delay-aware repaint (`Duration > 0`) 는 idle frame loop 방지 위해 callback 단계에서 drop 된다.
     #[cfg(feature = "gui")]
-    EguiRepaint,
+    EguiRepaint { viewport_id: egui::ViewportId },
     /// Request to create a new window (triggered by IPC or shortcut).
     #[cfg(feature = "gui")]
     CreateWindow,

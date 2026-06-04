@@ -163,8 +163,20 @@ impl GpuState {
         // cursor blink, animations) are silently dropped, causing the
         // Settings window to appear only after the next user input.
         let repaint_proxy = proxy;
-        egui_ctx.set_request_repaint_callback(move |_| {
-            crate::shortcuts::send_app_event(&repaint_proxy, AppEvent::EguiRepaint);
+        egui_ctx.set_request_repaint_callback(move |info: egui::RequestRepaintInfo| {
+            // delay 가 0 인 즉시 repaint 만 winit 큐로 보낸다.
+            // delay > 0 (cursor blink, hover delay 등) 은 drop — 그렇지 않으면 매 frame 끝마다
+            // 무조건 다음 frame 이 깨워져 idle 시 ~10fps continuous loop 가 생긴다.
+            // 진행 중인 animation 은 ctx.request_repaint() 가 별도로 즉시 repaint 를 발화하므로
+            // drop 해도 동작에 영향 없음.
+            if info.delay.is_zero() {
+                crate::shortcuts::send_app_event(
+                    &repaint_proxy,
+                    AppEvent::EguiRepaint {
+                        viewport_id: info.viewport_id,
+                    },
+                );
+            }
         });
 
         // Apply theme from settings
