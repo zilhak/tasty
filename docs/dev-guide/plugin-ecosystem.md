@@ -2,6 +2,8 @@
 
 이 문서는 Tasty plugin 시스템의 1.0 전까지의 정책을 명문화한다. 작성 형식·배포·신뢰·호환성·hot reload 5개 영역에 대해 현재 시점의 결정과 그 근거, 그리고 재검토 trigger를 적는다.
 
+> **분류 정책**: 본 문서의 "built-in plugin" / `BUILTINS` 는 *카테고리 2 (bundled plugin)* 를 가리킨다. host-native / bundled / user 3 카테고리 정의: [`architecture/plugin-categories.md`](../architecture/plugin-categories.md).
+
 배경: 현재 동봉 plugin 7개(`tasty-plugin-explorer`, `tasty-plugin-codex`, `tasty-plugin-claude`, `tasty-plugin-image`, `tasty-plugin-clipboard-history`, `tasty-plugin-html`, `tasty-plugin-git-viewer`), 외부 plugin 0개. plugin 생태계가 자생하기 전이 정책 결정 비용 최저점이다.
 
 ## 1. 작성 형식

@@ -3,6 +3,8 @@
 Tasty는 외부 plugin을 별도 OS 프로세스로 실행하여 호스트를 확장할 수 있다.
 호스트 ↔ plugin은 TCP + JSON 메시지로 통신한다.
 
+> **분류 정책**: viewer / plugin 은 host-native / bundled plugin / user plugin 3 카테고리로 분류된다. 본 문서가 다루는 "plugin" 은 카테고리 2 + 3 이다. 상세: [`architecture/plugin-categories.md`](../architecture/plugin-categories.md).
+
 ## Plugin이 할 수 있는 것 — 5가지 카테고리
 
 Plugin의 근본 역할은 다음 5가지로 분류된다.

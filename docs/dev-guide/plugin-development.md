@@ -4,6 +4,8 @@
 
 이 문서는 본 저장소의 `crates/tasty-plugin-explorer/`를 reference로 인용한다 — SDK API의 구체적인 사용 예시가 필요하면 그 코드를 참조하라.
 
+> **분류 정책**: viewer / plugin 은 host-native / bundled plugin / user plugin 3 카테고리로 분류된다. 새 plugin 을 추가할 때 어느 카테고리에 둘지 결정 기준은 [`architecture/plugin-categories.md`](../architecture/plugin-categories.md) 참조.
+
 ## 개요
 
 Plugin은 별도 OS 프로세스로 실행되어 호스트와 TCP+JSON으로 통신한다. 호스트는 `~/.tasty/plugins/<id>/` 디렉터리에서 매니페스트를 발견하면 자동으로 spawn한다.
