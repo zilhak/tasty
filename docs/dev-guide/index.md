@@ -41,6 +41,7 @@ git hooks 디렉토리를 `.githooks/` 로 설정한다. 안 하면 pre-commit /
 | Plugin 제작 | [plugin-development.md](plugin-development.md) |
 | Plugin 권한 모델 | [plugin-permissions.md](plugin-permissions.md) |
 | Plugin 생태계 정책 (1.0 전 결정) | [plugin-ecosystem.md](plugin-ecosystem.md) |
+| Plugin 분류 정책 (host-native / bundled / user) | [../architecture/plugin-categories.md](../architecture/plugin-categories.md) |
 | CLI/IPC 명명 규칙 | [cli-naming.md](cli-naming.md) |
 | IPC 안정성 정책 (break 분류·deprecation) | [ipc-stability.md](ipc-stability.md) |
 | Unsafe 작성 체크리스트 | [unsafe-checklist.md](unsafe-checklist.md) |

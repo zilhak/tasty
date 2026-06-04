@@ -25,6 +25,7 @@ IPC/CLI 전체 메서드는 [api-reference.md](api-reference.md) 참조.
 | 공유 컨텍스트 — Plan (`memory.plan_*`) | [plan.md](plan.md) |
 | 공유 컨텍스트 — Cache (`memory.cache_*`) | [cache.md](cache.md) |
 | Plugin 시스템 | [plugins.md](plugins.md) |
+| Plugin 분류 정책 (host-native / bundled / user) | [../architecture/plugin-categories.md](../architecture/plugin-categories.md) |
 | Event 카탈로그 (Event Bus 1.0 wire) | [event-catalog.md](event-catalog.md) |
 | 터미널 출력 구조화 (parse_since_mark / commands / observer) | [output.md](output.md) |
 | 출력 파서 카탈로그 (`tasty-output`) | [output-parsers.md](output-parsers.md) |
