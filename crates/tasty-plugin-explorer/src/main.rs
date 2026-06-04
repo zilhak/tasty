@@ -407,9 +407,13 @@ impl Plugin for ExplorerPlugin {
                     surface.selected = None;
                     surface.preview = None;
                 } else if let Some(host) = self.host.as_ref() {
-                    if let Err(e) =
-                        host.call("file_handler.dispatch", serde_json::json!({ "path": path }))
-                    {
+                    if let Err(e) = host.call(
+                        "file_handler.dispatch",
+                        serde_json::json!({
+                            "path": path,
+                            "origin_surface_id": ctx.surface_id,
+                        }),
+                    ) {
                         tracing::warn!(path = %path, "file_handler.dispatch failed: {e}");
                     }
                 } else {

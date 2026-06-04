@@ -143,11 +143,17 @@ fn handler_to_summary(h: &FileHandler) -> PickerHandlerSummary {
 
 /// 단일 handler action 을 실행. OpenSurface 는 즉시, Ipc 는 큐로, System 은
 /// webbrowser 위임.
+///
+/// `origin_surface_id` 가 Some 이면 OpenSurface 는 그 surface 가 속한 *Pane* 에
+/// 새 tab 으로 결과를 추가한다 (focus 독립). None 이면 focused pane 의 새 탭
+/// (기존 동작). 다른 action (Ipc / System) 은 origin 영향 없음.
 pub fn execute_handler_action(
+    core: &mut crate::core::Core,
     state: &mut AppState,
-    _engine: &mut crate::core::CoreState,
+    engine: &mut crate::core::CoreState,
     handler: &FileHandler,
     target: &FileTarget,
+    origin_surface_id: Option<u32>,
 ) {
     match &handler.action {
         HandlerAction::OpenSurface {
@@ -156,20 +162,43 @@ pub fn execute_handler_action(
         } => {
             let path_str = target.as_path().to_string_lossy().into_owned();
             let params = serde_json::json!({ param_key.as_str(): path_str });
-            state.dispatch_intent(
-                crate::intent::Intent::NewTab {
-                    kind: Some(surface_kind.clone()),
-                    params,
+            let origin_pane = origin_surface_id.and_then(|sid| engine.find_pane_for_surface(sid));
+            match origin_pane {
+                Some(pane_id) => {
+                    let intent = crate::core::intent::DomainIntent::CreateTab {
+                        pane_id,
+                        cwd: None,
+                        kind: surface_kind.clone(),
+                        surface_params: params,
+                    };
+                    if let Err(e) = core.apply(engine, intent) {
+                        tracing::warn!(
+                            pane_id,
+                            kind = %surface_kind,
+                            "file_dispatch CreateTab failed: {e}",
+                        );
+                    }
+                    let _ = state; // CreateTab 본문이 state mutate (cascade).
                 }
-                .from_user_menu("file_dispatch"),
-            );
+                None => {
+                    state.dispatch_intent(
+                        crate::intent::Intent::NewTab {
+                            kind: Some(surface_kind.clone()),
+                            params,
+                        }
+                        .from_user_menu("file_dispatch"),
+                    );
+                }
+            }
         }
         HandlerAction::Ipc { method, .. } => {
+            // 이 분기는 state.pending_handler_ipc 에 enqueue 만 — core/engine 미사용.
             state
                 .pending_handler_ipc
                 .push((method.clone(), target.clone()));
         }
         HandlerAction::System => {
+            // OS 기본 opener 만 호출 — core/state/engine 미사용.
             let uri = path_to_file_uri(target.as_path());
             #[cfg(feature = "gui")]
             crate::terminal_link::open_uri(&uri);

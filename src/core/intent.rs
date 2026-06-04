@@ -237,6 +237,9 @@ pub(crate) enum DomainIntent {
     DispatchFile {
         target: crate::file::format::FileTarget,
         depth: crate::file::format::DetectDepth,
+        /// OpenSurface action 실행 시 이 surface 가 속한 *Pane* 에 새 tab 으로 추가.
+        /// None 이면 focused pane 의 새 탭 (기존 동작).
+        origin_surface_id: Option<u32>,
     },
 }
 

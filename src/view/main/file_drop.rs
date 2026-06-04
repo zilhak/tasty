@@ -85,6 +85,7 @@ impl MainView {
                 crate::core::intent::DomainIntent::DispatchFile {
                     target: crate::file::format::FileTarget::new(path),
                     depth: crate::file::format::DetectDepth::Deep,
+                    origin_surface_id: None,
                 }
                 .from_user_menu("file_drop"),
             );

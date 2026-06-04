@@ -40,11 +40,12 @@ impl Core {
     /// state.popups mutate). 옛 `file_dispatch::apply_identify_result` 본문 흡수.
     #[cfg(feature = "gui")]
     pub(crate) fn apply_identify_result(
-        &self,
+        &mut self,
         state: &mut AppState,
         engine: &mut CoreState,
         target: FileTarget,
         detector: Option<DetectorId>,
+        origin_surface_id: Option<u32>,
     ) {
         let handlers = match &detector {
             Some(d) => engine.file_handler.handlers_for(d),
@@ -56,7 +57,14 @@ impl Core {
         }
         // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
         let first = handlers.into_iter().next().expect("non-empty checked");
-        crate::file::dispatch::execute_handler_action(state, engine, &first, &target);
+        crate::file::dispatch::execute_handler_action(
+            self,
+            state,
+            engine,
+            &first,
+            &target,
+            origin_surface_id,
+        );
     }
 
     /// Picker popup 결과를 적용 — `redraw.rs` frame end 가 직접 호출.
@@ -66,7 +74,7 @@ impl Core {
     /// 시에도 결과 중복 처리 없음을 보장하기 위함.
     #[cfg(feature = "gui")]
     pub(crate) fn apply_file_picker_result(
-        &self,
+        &mut self,
         state: &mut AppState,
         engine: &mut CoreState,
         target: FileTarget,
@@ -76,7 +84,7 @@ impl Core {
             FileHandlerPickerResult::Selected(handler_id) => {
                 match engine.file_handler.get(&handler_id) {
                     Some(handler) => crate::file::dispatch::execute_handler_action(
-                        state, engine, &handler, &target,
+                        self, state, engine, &handler, &target, None,
                     ),
                     None => tracing::warn!(
                         handler_id = %handler_id,

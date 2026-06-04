@@ -56,5 +56,9 @@ pub(crate) enum AppEvent {
         request_id: crate::identify_worker::IdentifyRequestId,
         target: crate::file::format::FileTarget,
         detector: Option<crate::file::format::DetectorId>,
+        /// `DispatchFile.origin_surface_id` 그대로 carry. Some 이면
+        /// `apply_identify_result` → `execute_handler_action` 가
+        /// origin 의 *Pane* 에 새 tab 으로 추가.
+        origin_surface_id: Option<u32>,
     },
 }

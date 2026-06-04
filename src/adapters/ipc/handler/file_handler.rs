@@ -36,6 +36,10 @@ struct DispatchReq {
     path: String,
     #[serde(default = "default_depth")]
     depth: String,
+    /// 결과 surface 를 이 surface 가 속한 *Pane* 에 새 tab 으로 추가한다.
+    /// None 이면 기존 동작 (focused pane 의 새 탭).
+    #[serde(default)]
+    origin_surface_id: Option<u32>,
 }
 
 fn default_depth() -> String {
@@ -73,7 +77,12 @@ pub fn handle_dispatch(
     };
     let target = FileTarget::new(PathBuf::from(&req.path));
     state.dispatch_intent(
-        crate::core::intent::DomainIntent::DispatchFile { target, depth }.from_agent_ipc(),
+        crate::core::intent::DomainIntent::DispatchFile {
+            target,
+            depth,
+            origin_surface_id: req.origin_surface_id,
+        }
+        .from_agent_ipc(),
     );
     JsonRpcResponse::success(
         id,

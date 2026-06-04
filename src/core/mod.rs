@@ -697,12 +697,16 @@ impl Core {
             DomainIntent::ApplyPendingLayoutRestore => {
                 Ok(vec![Self::apply_apply_pending_layout_restore(engine)])
             }
-            DomainIntent::DispatchFile { target, depth } => {
+            DomainIntent::DispatchFile {
+                target,
+                depth,
+                origin_surface_id,
+            } => {
                 #[cfg(feature = "gui")]
                 {
                     match engine.identify_worker.as_ref() {
                         Some(worker) => {
-                            let _id = worker.spawn(target, depth); // request id not tracked.
+                            let _id = worker.spawn(target, depth, origin_surface_id); // request id not tracked.
                         }
                         None => {
                             tracing::warn!(
@@ -714,7 +718,7 @@ impl Core {
                 }
                 #[cfg(not(feature = "gui"))]
                 {
-                    let _ = (engine, target, depth); // headless: no identify_worker.
+                    let _ = (engine, target, depth, origin_surface_id); // headless: no identify_worker.
                     tracing::warn!("DispatchFile dropped in headless build");
                 }
                 Ok(vec![])

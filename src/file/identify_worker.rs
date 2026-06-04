@@ -45,7 +45,12 @@ impl IdentifyWorker {
     /// 동시 요청이 여러 개여도 worker 들은 독립적으로 동작하며, 결과는 도착 순서가
     /// 보장되지 않는다 — 콜사이트는 자신이 보관한 마지막 `IdentifyRequestId` 와 비교해
     /// 오래된 결과를 drop 해야 한다.
-    pub fn spawn(&self, target: FileTarget, depth: DetectDepth) -> IdentifyRequestId {
+    pub fn spawn(
+        &self,
+        target: FileTarget,
+        depth: DetectDepth,
+        origin_surface_id: Option<u32>,
+    ) -> IdentifyRequestId {
         let id = IdentifyRequestId(self.next_id.fetch_add(1, Ordering::Relaxed));
         let registry = self.registry.clone();
         let proxy = self.proxy.clone();
@@ -56,6 +61,7 @@ impl IdentifyWorker {
                 request_id: id,
                 target: target_for_thread,
                 detector,
+                origin_surface_id,
             });
         });
         id

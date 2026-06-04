@@ -189,11 +189,13 @@ impl ApplicationHandler<AppEvent> for App {
                 request_id,
                 target,
                 detector,
+                origin_surface_id,
             } => {
                 tracing::debug!(
                     request_id = %request_id,
                     target = %target.display(),
                     detector = ?detector.as_ref().map(|d| d.as_str()),
+                    origin_surface_id = ?origin_surface_id,
                     "IdentifyDone",
                 );
                 // Split borrow — focused_window_mut 는 &mut self 전체를 잡아
@@ -206,6 +208,7 @@ impl ApplicationHandler<AppEvent> for App {
                         &mut main.core_state,
                         target,
                         detector,
+                        origin_surface_id,
                     );
                 }
             }
