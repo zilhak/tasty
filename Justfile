@@ -75,6 +75,7 @@ dist-setup-linux:
 #   just build-plugins              # 모든 bin plugin → release 스테이징
 #   PROFILE=debug just build-plugins  # debug 프로필 (cargo build, target/debug/)
 #   just build-plugin claude        # 단일 plugin (이름/crate/manifest id 허용)
+#   just build-all                  # plugins + main bin
 
 # profile 선택 (release 기본; debug 도 가능)
 PROFILE := env_var_or_default('PROFILE', 'release')
@@ -207,6 +208,18 @@ build-plugin name:
         cp -R "crates/$crate/lang" "$dest/lang"
     fi
     echo "✓ staged $plugin_id → $dest"
+
+# main bin + 모든 plugin 한 번에.
+build-all: build-plugins
+    #!/usr/bin/env bash
+    set -euo pipefail
+    profile="{{PROFILE}}"
+    case "$profile" in
+        release) profile_flag="--release" ;;
+        debug)   profile_flag="" ;;
+        *)       profile_flag="--profile $profile" ;;
+    esac
+    cargo build $profile_flag --bin tasty
 
 # SHA256SUMS 재검증.
 dist-verify:
