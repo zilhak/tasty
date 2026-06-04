@@ -182,11 +182,15 @@ key: `tasty.agent.handle.<task_id>` (workspace scope). 값은
 
 1. task state 가 Running 이 아니면 stale (영속만 제거, state 보존). R-1 회피.
 2. `ShellProcess { pid }`: `process_alive::is_alive(pid)` 검사.
-   - alive → 복원 (다음 tick poll 의 `try_wait` fallback 이 child map miss →
-     `process_alive` fallback 으로 흡수).
-   - dead → task=Failed("host restart: pid X died") + evict.
+   - alive → 복원 (다음 tick poll 의 cell miss → `process_alive` fallback).
+   - dead + `run_result.<task_id>` 영속 존재 → 정확한 exit_code 로 Succeeded /
+     Failed 마감 (K.A-1 precise).
+   - dead + run_result 없음 → task=Failed("host restart: pid X died (exit_code
+     unknown)") + evict.
 3. `ClaudeChild` / `BarrierPoll`: 복원 (insert only — 즉시 poll 안 함).
-   다음 정상 tick 에서 poll. injector 미준비면 PollOutcome::Failed 흡수.
+   다음 정상 tick 에서 poll. ClaudeChild 의 첫 poll 이 injector 미준비여도 K.A-2
+   grace (`INJECTOR_GRACE_MS = 30s`) 안에서는 Active 유지 — deadline 도래 후이면
+   `Failed("injector grace expired")`.
 
 ### 6.4 evict 시점
 

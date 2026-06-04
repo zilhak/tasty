@@ -654,6 +654,18 @@ Phase H.F 시점에는 handle 이 runner thread 메모리에만 — Phase J.A �
   HashMap + recv_timeout). set_state 종결 분기 / Core wrapper / runner thread tick
   의 모든 경로에서 fire.
 
+**Phase K.A — runner 잔여 한계 fix**:
+- **`ShellProcess` exit_code 정확 복원**: `HostExecutor::dispatch` 가 Run 자식 spawn
+  직후 watcher thread 를 띄워 `child.wait()` 종료 status 를
+  `tasty.agent.run_result.<task_id>` 영속 + shared cell 양쪽에 기록. poll 은 cell
+  만 조회 (try_wait 우회), reload 의 dead pid 분기는 영속을 조회해 exit_code 까지
+  정확히 Succeeded / Failed 마감 (`precise` 분기). host 가 spawn 과 watcher 의
+  영속 완료 사이에 죽으면 손실 — cross-platform 으로 회피 불가.
+- **`ClaudeChild` reload injector grace**: poll 첫 dispatch 실패가 injector 미초기화
+  사유면 deadline = now + `INJECTOR_GRACE_MS (30s)` 세팅 → 도래 전까지는 `Active`
+  로 흡수, 도래 후이면 `Failed("injector grace expired")`. injector 외 Err (timeout
+  등) 는 기존대로 즉시 Failed. 정상 dispatch 1회 성공 시 deadline reset.
+
 **Semaphore-gated dispatch + WaitBarrier task (Phase I.A)** — `TaskExecutor::dispatch` 가 `DispatchOutcome::{Started, Deferred, PermanentFail}` 3-way 결과를 반환. `task.metadata.semaphore = { name, holder? }` 컨벤션이 있으면 dispatch 진입에서 `SemaphoreStore::acquire` 시도, 부족 시 `Deferred` 로 다음 tick 재시도. permit 회수는 종결 (Succeeded/Failed/Cancelled) 시 자동. 추가로 `TaskCommand::WaitBarrier { name }` 로 DAG 안에서 명시적 barrier gate 가능 — barrier `Closed` → Succeeded, `TimedOut` → Failed. 호스트 재시작 시 영속된 holder 의 leak 방지를 위해 workspace runner thread 시작 직전 `holder == task.id` 컨벤션이 맞는 Running 잔여 task 의 permit 정화 + Failed("host restart") 마감 단계 1 회. `metadata.semaphore.holder` 가 다르면 *외부 도구가 직접 acquire 한 항목* 으로 간주, 정화 대상 아님. 상세: [dev-guide/agent-runner-primitives.md](dev-guide/agent-runner-primitives.md).
 
 ### Barrier / Semaphore primitive (Phase 5.2)

@@ -16,6 +16,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Agent runner ShellProcess exit_code 정확 복원 (Phase K.A.1)** — `HostExecutor` 가 Run 자식 spawn 직후 watcher thread 를 띄워 `child.wait()` 종료 status 를 `tasty.agent.run_result.<task_id>` 영속 + shared cell 양쪽에 기록. 호스트 재시작 후 `reload_persistent_handles` 의 dead pid 분기가 영속을 조회해 exit_code 까지 정확히 `Succeeded` / `Failed` 마감 (precise). 이전 동작은 `Failed("host restart: pid X died")` 로만 마감되어 exit_code 손실.
+- **Agent runner ClaudeChild reload injector grace (Phase K.A.2)** — 호스트 재시작 직후 첫 tick 이 host IPC injector 초기화보다 빨라도 30 s grace 안에서는 `PollOutcome::Active` 로 흡수, deadline 도래 후이면 `Failed("injector grace expired")`. injector 외 사유 (timeout 등) 의 Err 는 기존대로 즉시 Failed. 이전 동작은 reload 직후 1 tick 에 injector 미초기화면 task 가 곧바로 Failed.
+
 ### Added
 - **`tasty update` CLI** (Phase J.H) — standalone (호스트 미실행 OK) 자동 업데이트 명령. `--check-only` / `--yes` / `--prerelease` 옵션. GitHub Releases asset 을 OS×arch 매트릭스로 선택 (macOS dmg / Windows msi·zip / Linux deb·rpm·AppImage·tar.gz, x86_64 + aarch64) → 다운로드 + `SHA256SUMS-{platform}.txt` 검증 (hard fail) → atomic swap (Unix `rename(2)` + `.old` 백업 / Windows 스테이지 + `tasty-swap.bat` / macOS DMG 안내). 호스트 IPC 미사용.
 - **Settings → Updates 탭** — 현재/최신 버전, 마지막 확인 시각, `Check now`, `Open release page…`, CLI 사용 안내.

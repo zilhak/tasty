@@ -151,16 +151,26 @@ tasty agent task-set-result \
 
 ## 한계 / 향후
 
-- **재시작 후 `ShellProcess` 의 exit_code 미상** — pid liveness 만 검사 가능.
-  Child object 가 사라졌으므로 종료 코드/exit status 는 복원 불가. 다음 tick poll
-  에서 `process_alive::is_alive` fallback 이 alive/dead 만 판정.
-- **`ClaudeChild` reload 시 IPC injector 미준비 가능성** — reload 단계는 *복원만*
-  (RunnerLoop.running 에 insert) 하고 즉시 poll 하지 않는다. 다음 정상 tick 에서
-  poll. injector 가 그 시점에도 미초기화이면 `PollOutcome::Failed` 로 흡수되어
-  task=Failed (R3 정책: 사용자 retry).
+남은 한계 (cross-platform 으로 회피 불가):
+
+- **호스트가 ShellProcess spawn 과 watcher 의 영속 완료 사이에 죽으면 exit_code 손실** —
+  자식이 init(1) 으로 reparent 되어 다른 프로세스가 wait 호출 불가. reload 단계는
+  `run_result` 없음 → `Failed("exit_code unknown")` 로 마감.
 
 barrier / semaphore / lease / rate_limit 와 task 의 자동 통합 (semaphore + lease
 gated dispatch) 는 Phase J.A 에 흡수되었다.
+
+### Phase K.A 에서 해결
+
+- **재시작 후 `ShellProcess` 의 exit_code 정확 복원** — `HostExecutor::dispatch` 가
+  Run 자식 spawn 직후 watcher thread 를 띄워 `child.wait()` 종료 status 를
+  `tasty.agent.run_result.<task_id>` 영속 + shared cell 양쪽에 기록. poll 은 cell
+  만 조회 (try_wait 우회), reload 의 dead pid 분기는 영속을 조회해 exit_code 까지
+  정확히 마감 (`precise` vec).
+- **`ClaudeChild` reload 시 IPC injector 미준비 grace** — `INJECTOR_GRACE_MS = 30s`.
+  poll 에서 첫 dispatch 실패가 `INJECTOR_UNINIT_MSG` 사유면 그 시점 + 30 s 를
+  deadline 으로 세팅 → 도래 전까지는 `Active` 로 흡수, 도래 후이면
+  `Failed("injector grace expired")`. injector 외 Err 는 기존대로 즉시 Failed.
 
 ### Phase J.A 에서 해결
 
