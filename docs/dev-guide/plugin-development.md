@@ -1121,7 +1121,7 @@ tasty plugin install ./
 
 ### Builtin plugin 자동 sync (workspace 내 plugin 개발)
 
-`src/plugin/builtin.rs`의 `BUILTINS` 목록에 등록된 plugin(예: `tasty-plugin-explorer`, `tasty-plugin-codex`)은 매번 수동 복사할 필요가 없다. dev 빌드일 때 호스트가 부팅 직후 다음 두 단계를 자동 수행한다:
+`crates/tasty-host-plugin/src/builtin.rs`의 `BUILTINS` 목록에 등록된 plugin(예: `tasty-plugin-explorer`, `tasty-plugin-codex`)은 매번 수동 복사할 필요가 없다. dev 빌드일 때 호스트가 부팅 직후 다음 두 단계를 자동 수행한다:
 
 1. **번들 동기화** (`ensure_dev_bundle`): workspace의 `crates/<crate>/tasty-plugin.toml` + `target/<profile>/<bin>` + `crates/<crate>/lang/`을 `target/<profile>/builtin-plugins/<id>/`로 복사. mtime이 더 새것일 때만 덮어쓰므로 매 부팅 비용은 작다.
 2. **사용자 디렉터리 sync** (`install_builtins_if_needed`): 위 번들 → `~/.tasty/plugins/<id>/`로 sync. 기존 설치본도 번들이 더 새것이면 자동 갱신.
