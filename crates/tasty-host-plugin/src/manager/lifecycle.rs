@@ -344,6 +344,17 @@ impl PluginManager {
         self.processes.contains_key(plugin_id)
     }
 
+    /// 호스트가 송신한 `surface.restore` 요청 중 plugin 응답을 아직 못 받은 것이
+    /// 하나라도 있는지. 부팅 시 wait-for-plugin loop 가 round-trip 완료까지
+    /// 기다리는 데 사용 — None 인 snapshot_cache 가 main loop 에 진입하지 못하게
+    /// 함으로써 capture 시 kind="empty" fallback 으로 layout.json 이 오염되는
+    /// race 를 차단.
+    pub fn has_pending_surface_restores(&self) -> bool {
+        self.pending_requests
+            .values()
+            .any(|k| matches!(k, super::PendingRequestKind::SurfaceRestore { .. }))
+    }
+
     /// graceful swap 전용 — `config.disabled.ids` 를 건드리지 않고 process 만
     /// shutdown + 부속 registry 정리. `disable()` 의 sibling 인데 config persist
     /// 부작용이 없다 (verify-J-E §3.2: silent config corruption 회피).

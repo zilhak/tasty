@@ -199,7 +199,7 @@ impl App {
                 .core_state
                 .as_mut()
                 .expect("core_state must be initialized before layout restore");
-            match self.core.apply(
+            let restored = match self.core.apply(
                 engine,
                 crate::core::intent::DomainIntent::ApplyPendingLayoutRestore,
             ) {
@@ -219,7 +219,42 @@ impl App {
                     tracing::warn!("ApplyPendingLayoutRestore failed: {e}");
                     None
                 }
+            };
+
+            // ApplyPendingLayoutRestore 가 RemoteSurface 들을 생성하고
+            // `HostCmd::RemoteSurfaceRestored` 를 큐잉했다. pump 를 추가로 돌려
+            // 송신 → plugin 응답 round-trip 이 끝날 때까지 대기한다. 이게 끝나야
+            // RemoteSurface 의 snapshot_cache 가 plugin 의 최신 값으로 갱신된
+            // 상태로 main loop 에 진입 — 사용자 동작 race 가 사라진다. carry 값이
+            // 이미 안전망 역할을 하므로 (1) layout.json 오염은 이 wait 와 무관하게
+            // 차단된 상태이고, 이 wait 는 부팅 직후 사용자 동작이 응답으로 덮어
+            // 씌워지는 깜박임/덮어쓰기를 추가로 방지하는 목적.
+            //
+            // deadline: plugin 이 panic/hang 등으로 영영 응답 안 보내는 케이스
+            // 보호. 초과해도 (1) carry 덕에 layout 손상은 없음.
+            {
+                use std::time::{Duration, Instant};
+                let deadline = Instant::now() + Duration::from_millis(500);
+                while Instant::now() < deadline {
+                    let still_pending = if let Some(mgr) = self.plugin_manager.as_mut() {
+                        let hello_pairs = mgr.pump();
+                        if !hello_pairs.is_empty() {
+                            self.finalize_plugin_hello(hello_pairs);
+                        }
+                        self.plugin_manager
+                            .as_ref()
+                            .is_some_and(|m| m.has_pending_surface_restores())
+                    } else {
+                        false
+                    };
+                    if !still_pending {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
             }
+
+            restored
         } else {
             None
         };
