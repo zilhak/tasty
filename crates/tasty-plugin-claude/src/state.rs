@@ -26,6 +26,15 @@ pub struct ChildEntry {
     pub nickname: Option<String>,
 }
 
+/// `ClaudeState::reconcile_with_live_surfaces` 결과 요약. 부팅 시 reconcile 로그
+/// 및 단위 테스트 검증에 사용. codex plugin 의 동명 struct 와 시그니처/의미 동일.
+/// 향후 SDK 공통화 시 한 곳으로 합치기 위해 두 plugin 이 같은 형태 유지.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ReconcileSummary {
+    pub removed_children: u32,
+    pub removed_parents: u32,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ClaudeState {
     /// parent_surface → 자식 목록
@@ -257,6 +266,85 @@ impl ClaudeState {
             None
         }
     }
+
+    /// reconcile 전에 dead 가 될 child_surface_id 목록을 미리 모은다.
+    /// `reconcile_with_live_surfaces` 가 이들을 제거한 후, 호출자는 ErrorScanner
+    /// 등 외부 부수효과 정리에 본 목록을 사용한다 (codex 와 달리 claude 는
+    /// error_scan thread 가 surface 별 enable/disable 을 갖기 때문).
+    pub fn collect_stale_child_surface_ids(&self, live: &HashSet<u32>) -> Vec<u32> {
+        self.children
+            .values()
+            .flat_map(|v| v.iter())
+            .map(|c| c.child_surface_id)
+            .filter(|sid| !live.contains(sid))
+            .collect()
+    }
+
+    /// 호스트의 살아있는 surface 집합과 child registry 를 cross-check 한다.
+    /// `live` 에 없는 child_surface_id 를 모두 제거하고, 그 결과 자식이 0명이 된
+    /// parent 의 `last_index` / `closed_parents` 키도 함께 정리한다. parent key
+    /// 자체가 dead 인데 살아있는 자식이 남은 경우 → `closed_parents` 마킹
+    /// (`mark_parent_closed` 와 동일 의미 — 마지막 자식이 빠지면 deferred GC).
+    ///
+    /// host-IPC-free — 단위 테스트 가능. 부팅 시 `on_start` 가 호스트에서 받은
+    /// surface 목록으로 `HashSet` 을 구성해 본 메서드에 위임한다.
+    ///
+    /// codex plugin 의 동명 메서드와 시그니처/의미가 동일해야 두 plugin 의 동작
+    /// 일관성이 유지된다 (향후 SDK 공통화 후보). claude 특유 정리:
+    /// `closed_parents` cleanup + dead parent 마킹.
+    pub fn reconcile_with_live_surfaces(&mut self, live: &HashSet<u32>) -> ReconcileSummary {
+        let mut summary = ReconcileSummary::default();
+
+        // ── Step 1: stale child 제거 + 빈 parent 수집.
+        let mut dead_parents: Vec<u32> = Vec::new();
+        for (parent, list) in self.children.iter_mut() {
+            let before = list.len();
+            list.retain(|c| live.contains(&c.child_surface_id));
+            summary.removed_children += (before - list.len()) as u32;
+            if list.is_empty() {
+                dead_parents.push(*parent);
+            }
+        }
+
+        // ── Step 2: 자식 0명이 된 parent 정리 (children, last_index, closed_parents).
+        for parent in &dead_parents {
+            self.children.remove(parent);
+            // 자식이 0명이 된 parent 의 last_index 키도 정리. 살아있는 자식이 1명
+            // 이상 남은 parent 의 last_index 는 단조 증가 invariant 보존을 위해
+            // 건드리지 않는다 (사용자/agent 가 외운 child index 가 reconcile 직후
+            // 다른 child 에 재할당되는 surprise 방지).
+            self.last_index.remove(parent);
+            self.closed_parents.remove(parent);
+            // parent surface 자체도 live 가 아니면 — host 가 surface.closed 발화
+            // 누락한 케이스이므로 — removed_parents 로 카운트.
+            if !live.contains(parent) {
+                summary.removed_parents += 1;
+            }
+        }
+
+        // ── Step 3: dead parent + 살아있는 자식이 남은 케이스 → closed_parents 마킹.
+        // `mark_parent_closed` 의 의미 보존 — 마지막 자식이 빠지면 deferred GC.
+        let dead_parents_with_live_children: Vec<u32> = self
+            .children
+            .iter()
+            .filter(|(p, l)| !live.contains(p) && !l.is_empty())
+            .map(|(p, _)| *p)
+            .collect();
+        for parent in dead_parents_with_live_children {
+            self.closed_parents.insert(parent);
+        }
+
+        // ── Step 4: 보조 map 동기화. parent_of/idle/needs_input 은 surface_id 가
+        // live 에 없으면 잔재이므로 제거. closed_parents 는 children map 에 여전히
+        // key 가 있는 경우만 유효.
+        self.parent_of.retain(|sid, _| live.contains(sid));
+        self.idle.retain(|sid, _| live.contains(sid));
+        self.needs_input.retain(|sid, _| live.contains(sid));
+        let valid_parents: HashSet<u32> = self.children.keys().copied().collect();
+        self.closed_parents.retain(|p| valid_parents.contains(p));
+
+        summary
+    }
 }
 
 #[cfg(test)]
@@ -405,5 +493,133 @@ mod tests {
         );
         let restored: ClaudeState = serde_json::from_str(&text).unwrap();
         assert_eq!(restored.spawn_pane_for(10, 1), None);
+    }
+
+    fn live(ids: &[u32]) -> HashSet<u32> {
+        ids.iter().copied().collect()
+    }
+
+    #[test]
+    fn reconcile_removes_stale_children_and_keeps_live() {
+        let mut s = ClaudeState::default();
+        // 프로덕션 spawn 과 동일 흐름: next_child_index 로 last_index 도 함께 bump.
+        let i1 = s.next_child_index(10);
+        s.register_child(10, entry(100, i1));
+        let i2 = s.next_child_index(10);
+        s.register_child(10, entry(101, i2)); // stale
+        let i3 = s.next_child_index(10);
+        s.register_child(10, entry(102, i3));
+        s.set_idle(101, true);
+        s.set_needs_input(101, true);
+
+        let summary = s.reconcile_with_live_surfaces(&live(&[10, 100, 102]));
+
+        assert_eq!(summary.removed_children, 1);
+        assert_eq!(summary.removed_parents, 0);
+        assert!(s.find_child(10, 2).is_none());
+        assert!(s.find_child(10, 1).is_some());
+        assert!(s.find_child(10, 3).is_some());
+        assert_eq!(s.parent_of_child(101), None);
+        // idle/needs_input 모두 stale sid 에 대해 정리됨.
+        assert_eq!(s.state_of(101), "active");
+        // last_index 보존 (살아있는 자식 잔존 parent) → 다음 spawn 은 4.
+        assert_eq!(s.next_child_index(10), 4);
+    }
+
+    #[test]
+    fn reconcile_gc_dead_parent_with_no_live_children() {
+        let mut s = ClaudeState::default();
+        s.register_child(10, entry(100, 1));
+        s.register_child(10, entry(101, 2));
+        // live = empty → parent 10 도, 자식 100/101 도 모두 dead.
+
+        let summary = s.reconcile_with_live_surfaces(&live(&[]));
+
+        assert_eq!(summary.removed_children, 2);
+        assert_eq!(summary.removed_parents, 1);
+        assert!(!s.is_known_parent(10));
+        // last_index 도 통째 GC → next_child_index 가 1 부터 재시작 (1-based).
+        assert_eq!(s.next_child_index(10), 1);
+    }
+
+    #[test]
+    fn reconcile_dead_parent_with_live_children_marks_closed() {
+        let mut s = ClaudeState::default();
+        s.register_child(10, entry(100, 1));
+        s.register_child(10, entry(101, 2));
+        // parent 10 은 dead, child 100 만 살아 있음.
+
+        let summary = s.reconcile_with_live_surfaces(&live(&[100]));
+
+        assert_eq!(summary.removed_children, 1);
+        assert_eq!(summary.removed_parents, 0);
+        assert!(s.is_known_parent(10));
+        // dead parent + live child → closed_parents 마킹 (mark_parent_closed 의미 보존).
+        assert!(s.is_parent_closed(10));
+        assert_eq!(s.list_children(10).len(), 1);
+        // 마지막 자식이 unregister 되면 parent 도 자동 정리되는 의미 보존 확인.
+        s.unregister_child(100);
+        assert!(!s.is_known_parent(10));
+    }
+
+    #[test]
+    fn reconcile_cleans_orphan_closed_parents_and_idle() {
+        let mut s = ClaudeState::default();
+        // 비어 있는 parent 10 이 closed_parents 에만 남아 있는 상태 (state.json
+        // 로딩 후 부분적으로 inconsistent 한 상황을 모사).
+        s.register_child(10, entry(100, 1));
+        s.mark_parent_closed(10);
+        s.unregister_child(100);
+        // unregister 가 list 가 비고 closed_parents 에 있으면 정리하지만, 만약
+        // 외부에서 직접 closed_parents 만 남겨놓은 경우 reconcile 가 정리해야 함.
+        s.closed_parents.insert(99); // 어떤 children 에도 없는 잔재
+        s.set_idle(999, true); // 어떤 surface 에도 없는 잔재
+        s.set_needs_input(888, true);
+        s.register_child(20, entry(200, 1));
+
+        let _ = s.reconcile_with_live_surfaces(&live(&[20, 200])); // 본 테스트는 summary 가 아닌 부수효과(orphan cleanup) 검증
+
+        // 잔재 closed_parents 정리됨.
+        assert!(!s.is_parent_closed(99));
+        // 잔재 idle/needs_input 정리됨.
+        assert_eq!(s.state_of(999), "active");
+        assert_eq!(s.state_of(888), "active");
+        // 살아있는 entry 는 보존.
+        assert!(s.find_child(20, 1).is_some());
+    }
+
+    #[test]
+    fn reconcile_summary_counts_multiple_parents() {
+        let mut s = ClaudeState::default();
+        // parent 10: child 100, 101 → 둘 다 dead, parent 도 dead.
+        s.register_child(10, entry(100, 1));
+        s.register_child(10, entry(101, 2));
+        // parent 20: child 200 live, 201 dead. parent 도 live.
+        s.register_child(20, entry(200, 1));
+        s.register_child(20, entry(201, 2));
+        // parent 30: live, 자식 모두 dead → list 비고 parent 는 live 라서
+        // removed_parents 는 카운트하지 않지만 children 키와 last_index 는 정리.
+        s.register_child(30, entry(300, 1));
+
+        let summary = s.reconcile_with_live_surfaces(&live(&[20, 30, 200]));
+
+        assert_eq!(summary.removed_children, 4); // 100, 101, 201, 300
+        assert_eq!(summary.removed_parents, 1); // parent 10 만 dead-and-empty
+        assert_eq!(s.list_children(20).len(), 1);
+        assert_eq!(s.list_children(10).len(), 0);
+        assert_eq!(s.list_children(30).len(), 0);
+    }
+
+    #[test]
+    fn collect_stale_child_surface_ids_returns_dead_only() {
+        let mut s = ClaudeState::default();
+        s.register_child(10, entry(100, 1));
+        s.register_child(10, entry(101, 2));
+        s.register_child(20, entry(200, 1));
+
+        let stale = s.collect_stale_child_surface_ids(&live(&[10, 100, 20]));
+        let mut sorted = stale.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec![101, 200]);
     }
 }

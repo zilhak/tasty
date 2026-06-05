@@ -13,6 +13,7 @@ mod hook;
 mod install;
 mod state;
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -143,12 +144,17 @@ impl Plugin for ClaudePlugin {
         // worker dispatch가 시작되기 직전에 1회 호출.
         // - `surface.closed` 이벤트 구독 (Event Bus 1.0). 옛 surface_observer
         //   매니페스트 필드의 대체 경로.
+        // - host 의 살아있는 surface 집합과 `ClaudeState` child registry 를
+        //   cross-check 하여 stale entry 정리. Cmd-Q / CLI `pane.close` 경유 등
+        //   `surface.closed` 가 누락된 경로에서 누적된 ghost 자식들을 매 boot
+        //   마다 self-heal. codex plugin 의 동명 helper 와 패턴 일치.
         // - PTY error scan을 위한 background polling thread spawn. 호스트가
         //   메모리 스캔하던 패턴을 1:1로 옮겼고 (`error_scan.rs::CLAUDE_ERROR_PATTERN`),
         //   polling 간격은 800ms로 호스트 tick에 근접하게 맞춘다.
         if let Err(e) = bus.subscribe("surface.closed") {
             tracing::warn!("subscribe surface.closed failed: {e}");
         }
+        reconcile_on_start(&mut self.state, &self.scanner, &host);
         let scanner = self.scanner.clone();
         std::thread::Builder::new()
             .name("claude-error-scan".into())
@@ -185,6 +191,63 @@ fn error_scan_loop(scanner: Arc<Mutex<ErrorScanner>>, host: HostHandle) {
             }
         }
     }
+}
+
+/// 부팅 시 host 의 살아있는 surface 목록을 `surface.list` IPC 로 조회하여
+/// `ClaudeState` 의 child registry 와 cross-check 한다. IPC 가 실패하거나, 응답이
+/// array 가 아니거나, **array 가 비어있는** 경우 — 보수적으로 reconcile 을 건너뛴다.
+/// 빈 array 는 boot 시 layout restore 가 아직 일어나지 않은 시점에 reconcile 이
+/// 돌아 정상 child 까지 모두 stale 로 오판될 위험이 있어 race 회피 목적으로 skip.
+/// 살아있는 entry 를 실수로 제거하는 비용이 stale 이 한 boot 더 남는 비용보다 크다.
+///
+/// codex plugin 의 동명 helper 와 패턴 일치. claude 특유: 제거된 각 child
+/// surface_id 에 대해 `ErrorScanner::disable` 호출 — reconcile 후 죽은 surface 를
+/// 가리키는 background polling 을 즉시 중단해 IPC 오류 발산을 막는다.
+///
+/// 변경이 1건이라도 발생하면 `state.save()` 를 한 번 호출하여 디스크 sync.
+fn reconcile_on_start(
+    state: &mut ClaudeState,
+    scanner: &Arc<Mutex<ErrorScanner>>,
+    host: &HostHandle,
+) {
+    let resp = match host.call("surface.list", json!({})) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("claude reconcile skip: surface.list IPC failed: {e}");
+            return;
+        }
+    };
+    let Some(arr) = resp.as_array() else {
+        tracing::warn!("claude reconcile skip: surface.list returned non-array");
+        return;
+    };
+    let live: HashSet<u32> = arr
+        .iter()
+        .filter_map(|s| s.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
+        .collect();
+    // reconcile 전에 dead 가 될 child surface_id 를 snapshot — reconcile 이 끝나면
+    // state 에서 사라져 ErrorScanner 정리 대상을 알 수 없게 된다.
+    let stale_sids = state.collect_stale_child_surface_ids(&live);
+    let summary = state.reconcile_with_live_surfaces(&live);
+    if summary.removed_children > 0 || summary.removed_parents > 0 {
+        state.save();
+        // 죽은 surface 를 가리키던 background error scan 폴링 중단. lock 실패는
+        // poisoned mutex (다른 thread 가 패닉) 의미이므로 warn 로 흘려보낸다.
+        match scanner.lock() {
+            Ok(mut s) => {
+                for sid in &stale_sids {
+                    s.disable(*sid);
+                }
+            }
+            Err(e) => tracing::warn!("claude reconcile: scanner mutex poisoned: {e}"),
+        }
+    }
+    tracing::info!(
+        removed_children = summary.removed_children,
+        removed_parents = summary.removed_parents,
+        live_count = live.len(),
+        "claude reconcile on_start"
+    );
 }
 
 fn main() -> anyhow::Result<()> {
