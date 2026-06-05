@@ -725,22 +725,46 @@ pub(crate) fn handle_spawn(
         .and_then(|v| v.as_str())
         .map(String::from);
 
+    let pane_override = params.get("pane").and_then(|v| v.as_u64()).map(|v| v as u32);
+
     let ws_id = resolve_workspace_id(host, &workspace_param)?.ok_or_else(|| {
         IpcMethodError::invalid_params(&format!("Workspace '{}' not found", workspace_param))
     })?;
 
-    let spawn_pane_id = resolve_or_create_spawn_pane(state, host, parent_surface_id, ws_id)?;
-    let child_surface_id = find_and_spawn_in_pane(host, spawn_pane_id, cwd.as_deref())?;
+    // 대상 pane: --pane 지정 시 그 pane, 아니면 workspace 의 첫 pane.
+    let pane_id = match pane_override {
+        Some(p) => p,
+        None => first_pane_in_workspace(host, ws_id)?,
+    };
 
+    // child index 를 먼저 확보해 탭 이름을 child{N} 으로 고정 생성한다.
     let child_index = state.next_child_index(parent_surface_id);
+    let tab_name = format!("child{child_index}");
+    let mut tab_params = json!({
+        "pane_id": pane_id,
+        "type": "terminal",
+        "name": tab_name,
+    });
+    if let Some(c) = cwd.as_deref() {
+        tab_params["cwd"] = Value::String(c.to_string());
+    }
+    let tab_resp = host
+        .call("tab.create", tab_params)
+        .map_err(IpcMethodError::from)?;
+    let child_surface_id = tab_resp
+        .get("surface_id")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::new("tab.create returned no 'surface_id'"))?;
+
     state.register_child(
         parent_surface_id,
         ChildEntry {
             child_surface_id,
             index: child_index,
-            cwd: cwd.clone(),
-            role: role.clone(),
-            nickname: nickname.clone(),
+            cwd,
+            role,
+            nickname,
         },
     );
     state.save();
@@ -751,7 +775,7 @@ pub(crate) fn handle_spawn(
         "child_surface_id": child_surface_id,
         "child_index": child_index,
         "parent_surface_id": parent_surface_id,
-        "spawn_pane_id": spawn_pane_id,
+        "pane_id": pane_id,
         "workspace_id": ws_id,
     }))
 }
@@ -792,172 +816,18 @@ pub(crate) fn resolve_workspace_id(
     Ok(None)
 }
 
-/// state.spawn_panes의 캐시된 pane_id가 여전히 유효한지 검증하고, 아니면 새
-/// spawn pane을 만든다. 반환은 유효한 spawn_pane_id.
-pub(crate) fn resolve_or_create_spawn_pane(
-    state: &mut ClaudeState,
-    host: &HostHandle,
-    parent_surface_id: u32,
-    ws_id: u32,
-) -> Result<u32, IpcMethodError> {
-    let cached = state.spawn_pane_for(parent_surface_id, ws_id);
+/// workspace 내 첫 pane 의 id. spawn 시 `--pane` 미지정의 기본 대상이다.
+fn first_pane_in_workspace(host: &HostHandle, ws_id: u32) -> Result<u32, IpcMethodError> {
     let panes = host
         .call("pane.list", json!({}))
         .map_err(IpcMethodError::from)?;
-    let panes_arr = panes
+    let arr = panes
         .as_array()
         .ok_or_else(|| IpcMethodError::new("pane.list returned non-array"))?;
-
-    // 캐시된 pane이 같은 workspace에 여전히 존재하면 그대로 사용.
-    if let Some(pid) = cached {
-        let still_valid = panes_arr.iter().any(|p| {
-            p.get("id").and_then(|v| v.as_u64()) == Some(pid as u64)
-                && p.get("workspace_id").and_then(|v| v.as_u64()) == Some(ws_id as u64)
-        });
-        if still_valid {
-            return Ok(pid);
-        }
-        // stale 매핑 정리.
-        state.clear_spawn_pane(parent_surface_id, ws_id);
-    }
-
-    // 새 spawn pane 생성: workspace 내 임의의 pane을 vertical로 split.
-    let any_pane_in_ws = panes_arr
-        .iter()
+    arr.iter()
         .find(|p| p.get("workspace_id").and_then(|v| v.as_u64()) == Some(ws_id as u64))
         .and_then(|p| p.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
-        .ok_or_else(|| IpcMethodError::new(format!("No panes in workspace {ws_id}")))?;
-
-    let split_resp = host
-        .call(
-            "split",
-            json!({
-                "level": "pane",
-                "target_pane": any_pane_in_ws,
-                "direction": "vertical",
-                "type": "terminal",
-            }),
-        )
-        .map_err(IpcMethodError::from)?;
-    let new_pane_id = split_resp
-        .get("new_pane_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| IpcMethodError::new("split returned no 'new_pane_id'"))?;
-
-    state.set_spawn_pane(parent_surface_id, ws_id, new_pane_id);
-    Ok(new_pane_id)
-}
-
-/// 호스트 `find_and_spawn_in_pane` 1:1. spawn pane 안에서 첫 빈 slot(< 4개의
-/// surface)을 찾아 surface-level split으로 새 surface를 만들고 ID 반환. 모든
-/// 탭이 가득 차면 새 탭을 만든다.
-pub(crate) fn find_and_spawn_in_pane(
-    host: &HostHandle,
-    spawn_pane_id: u32,
-    cwd: Option<&str>,
-) -> Result<u32, IpcMethodError> {
-    let tabs = collect_pane_tab_surfaces(host, spawn_pane_id)?;
-
-    // 첫 < 4 인 tab에서 split target을 결정.
-    if let Some((_, surfaces)) = tabs.iter().find(|(_, sids)| sids.len() < 4) {
-        let (target_sid, direction) = pick_split_target(surfaces.len(), surfaces);
-        let mut split_params = json!({
-            "level": "surface",
-            "target_surface": target_sid,
-            "direction": direction,
-            "type": "terminal",
-        });
-        if let Some(c) = cwd {
-            split_params["cwd"] = Value::String(c.to_string());
-        }
-        let split_resp = host
-            .call("split", split_params)
-            .map_err(IpcMethodError::from)?;
-        let new_sid = split_resp
-            .get("new_surface_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32)
-            .ok_or_else(|| IpcMethodError::new("split returned no 'new_surface_id'"))?;
-        return Ok(new_sid);
-    }
-
-    // 모든 탭 가득 — 새 탭 생성. tab.create는 surface_id를 반환하지 않으므로
-    // 생성 직후의 surface.list로 새 탭(index = tabs.len())의 유일한 surface를
-    // 찾는다.
-    let mut tab_params = json!({ "pane_id": spawn_pane_id, "type": "terminal" });
-    if let Some(c) = cwd {
-        tab_params["cwd"] = Value::String(c.to_string());
-    }
-    let resp = host
-        .call("tab.create", tab_params)
-        .map_err(IpcMethodError::from)?;
-    let new_tab_count = resp
-        .get("tab_count")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .ok_or_else(|| IpcMethodError::new("tab.create returned no 'tab_count'"))?;
-    let new_tab_index = new_tab_count.saturating_sub(1);
-
-    let surfaces = host
-        .call("surface.list", json!({}))
-        .map_err(IpcMethodError::from)?;
-    let arr = surfaces
-        .as_array()
-        .ok_or_else(|| IpcMethodError::new("surface.list returned non-array"))?;
-    let new_sid = arr
-        .iter()
-        .find(|s| {
-            s.get("pane_id").and_then(|v| v.as_u64()) == Some(spawn_pane_id as u64)
-                && s.get("tab_index").and_then(|v| v.as_u64()) == Some(new_tab_index as u64)
-        })
-        .and_then(|s| s.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
-        .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "tab.create succeeded but no surface found in pane={spawn_pane_id} tab_index={new_tab_index}"
-            ))
-        })?;
-    Ok(new_sid)
-}
-
-/// pane 내부의 tab별 surface_id 목록을 tab_index 순서로 수집. surface.list가
-/// 이미 collect_tab_surfaces에서 first-then-second 표시 순서를 보존하므로
-/// 같은 순서로 자연히 정렬된다.
-pub(crate) fn collect_pane_tab_surfaces(
-    host: &HostHandle,
-    pane_id: u32,
-) -> Result<Vec<(usize, Vec<u32>)>, IpcMethodError> {
-    let surfaces = host
-        .call("surface.list", json!({}))
-        .map_err(IpcMethodError::from)?;
-    let arr = surfaces
-        .as_array()
-        .ok_or_else(|| IpcMethodError::new("surface.list returned non-array"))?;
-    let mut by_tab: std::collections::BTreeMap<usize, Vec<u32>> = std::collections::BTreeMap::new();
-    for s in arr {
-        if s.get("pane_id").and_then(|v| v.as_u64()) != Some(pane_id as u64) {
-            continue;
-        }
-        let tab_idx = s.get("tab_index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-        let sid = s.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
-        if let Some(sid) = sid {
-            by_tab.entry(tab_idx).or_default().push(sid);
-        }
-    }
-    Ok(by_tab.into_iter().collect())
-}
-
-/// 호스트 `pick_split_target` 1:1.
-/// - 0/1 surface: 그 surface를 vertical로 split (left|right 생성)
-/// - 2: surface_ids[0]을 horizontal로 split (left-top|left-bottom + right)
-/// - 3: surface_ids[2]을 horizontal로 split (right-top|right-bottom)
-pub(crate) fn pick_split_target(count: usize, surface_ids: &[u32]) -> (u32, &'static str) {
-    match count {
-        0 | 1 => (surface_ids.first().copied().unwrap_or(0), "vertical"),
-        2 => (surface_ids[0], "horizontal"),
-        3 => (surface_ids[2], "horizontal"),
-        _ => (surface_ids.last().copied().unwrap_or(0), "vertical"),
-    }
+        .ok_or_else(|| IpcMethodError::new(format!("No panes in workspace {ws_id}")))
 }
 
 /// 호스트 코드의 PTY 시퀀스 생성 로직을 1:1 옮긴 순수 함수.
