@@ -73,8 +73,15 @@ pub fn draw_pane_tab_bars(
 
     // 탭 바 독자 scale. 기존 ui_scale 과 분리 — 사용자가 settings 에서 직접
     // tab_width / tab_font_size / monitor scale 반영도 (0..=1) 조정.
+    //
+    // 사용자 모델 (physical 기준): physical = base * (1 + adjust * (scale_factor - 1))
+    // egui 가 logical → physical 변환을 ppp(=scale_factor)로 자동 처리하므로,
+    // 우리가 egui 에 전달할 logical 값은 physical_target / scale_factor.
+    //   adjust=1 → logical = base                    (egui 기본 = monitor scale 완전 반영)
+    //   adjust=0 → logical = base / scale_factor     (모든 모니터 동일 physical px)
     let appearance = &engine.settings.appearance;
-    let adjust = appearance.tab_adjust_factor(scale_factor);
+    let physical_ratio = appearance.tab_adjust_factor(scale_factor);
+    let adjust = physical_ratio / scale_factor;
     let tab_w = appearance.tab_width * adjust;
     let label_font_size = appearance.tab_font_size * adjust;
     // bar_h / "+" / arrow / padding / busy dot / active indicator 굵기는 사용자
