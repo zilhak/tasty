@@ -164,7 +164,14 @@ impl App {
                 cleanup_targets,
             } => {
                 if closed {
-                    self.dispatch_tab_closed_cascade(source, tab_id, pane_id, cleanup_targets);
+                    let is_user_close = origin.is_user();
+                    self.dispatch_tab_closed_cascade(
+                        source,
+                        tab_id,
+                        pane_id,
+                        cleanup_targets,
+                        is_user_close,
+                    );
                 }
             }
             CoreEvent::TabMoved { pane_id: _, moved } => {
@@ -214,7 +221,13 @@ impl App {
                 cleanup_targets,
             } => {
                 if closed {
-                    self.dispatch_pane_closed_cascade(source, pane_id, cleanup_targets);
+                    let is_user_close = origin.is_user();
+                    self.dispatch_pane_closed_cascade(
+                        source,
+                        pane_id,
+                        cleanup_targets,
+                        is_user_close,
+                    );
                 }
             }
             CoreEvent::SurfaceClosed {
@@ -761,65 +774,75 @@ impl App {
         }
     }
 
-    /// `PaneClosed` cascade — host event (`pane.closed`) enqueue + cleanup_target
-    /// surface 정리 + main.mark_dirty.
+    /// `PaneClosed` cascade — cleanup_targets 별 `surface.closed` lifecycle
+    /// enqueue + `pane.closed` host event enqueue + main.mark_dirty.
     fn dispatch_pane_closed_cascade(
         &mut self,
         source: DispatchSource,
         pane_id: u32,
         cleanup_targets: Vec<(u32, Option<String>)>,
+        is_user_close: bool,
     ) {
         match source {
             DispatchSource::Main(wid) => {
                 let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     return;
                 };
-                cascade_pane_closed(&mut main.state, pane_id);
-                for (sid, pid) in cleanup_targets {
-                    main.state.cleanup_surface(&mut main.core_state, sid, pid);
-                }
+                cascade_pane_closed_full(
+                    &mut main.state,
+                    &mut main.core_state,
+                    pane_id,
+                    cleanup_targets,
+                    is_user_close,
+                );
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
-                cascade_pane_closed(state, pane_id);
-                for (sid, pid) in cleanup_targets {
-                    state.cleanup_surface(engine, sid, pid);
-                }
+                cascade_pane_closed_full(state, engine, pane_id, cleanup_targets, is_user_close);
             }
         }
     }
 
-    /// `TabClosed` cascade — host event (`tab.closed`) enqueue + polling
-    /// baseline 동기화 + cleanup_target 각각에 `AppState::cleanup_surface` 호출.
+    /// `TabClosed` cascade — cleanup_targets 별 `surface.closed` lifecycle
+    /// enqueue + `tab.closed` host event enqueue + polling baseline 동기화.
     fn dispatch_tab_closed_cascade(
         &mut self,
         source: DispatchSource,
         tab_id: u32,
         pane_id: Option<u32>,
         cleanup_targets: Vec<(u32, Option<String>)>,
+        is_user_close: bool,
     ) {
         match source {
             DispatchSource::Main(wid) => {
                 let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
                     return;
                 };
-                cascade_tab_closed(&mut main.state, tab_id, pane_id);
-                for (sid, pid) in cleanup_targets {
-                    main.state.cleanup_surface(&mut main.core_state, sid, pid);
-                }
+                cascade_tab_closed_full(
+                    &mut main.state,
+                    &mut main.core_state,
+                    tab_id,
+                    pane_id,
+                    cleanup_targets,
+                    is_user_close,
+                );
                 main.mark_dirty();
             }
             DispatchSource::Parked(idx) => {
                 let Some((state, engine)) = self.parked_states.get_mut(idx) else {
                     return;
                 };
-                cascade_tab_closed(state, tab_id, pane_id);
-                for (sid, pid) in cleanup_targets {
-                    state.cleanup_surface(engine, sid, pid);
-                }
+                cascade_tab_closed_full(
+                    state,
+                    engine,
+                    tab_id,
+                    pane_id,
+                    cleanup_targets,
+                    is_user_close,
+                );
             }
         }
     }
@@ -1489,6 +1512,25 @@ pub(crate) fn cascade_pane_closed(state: &mut crate::state::AppState, pane_id: u
     state.enqueue_host_event(crate::state::PendingHostEvent::PaneClosed { pane_id });
 }
 
+/// `CoreEvent::PaneClosed` 의 full cascade — cleanup_targets 별 surface 자원
+/// 정리 + `surface.closed` lifecycle enqueue + `pane.closed` host event enqueue.
+/// `cascade_surface_closed` 와 동일하게 surface 별 kind 캡쳐는 cleanup 호출 전.
+/// dispatcher (`App::dispatch_pane_closed_cascade`) 와 IPC handler 양쪽이 공유.
+pub(crate) fn cascade_pane_closed_full(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    pane_id: u32,
+    cleanup_targets: Vec<(u32, Option<String>)>,
+    is_user_close: bool,
+) {
+    for (sid, pid) in cleanup_targets {
+        let kind = state.surface_kind(engine, sid);
+        state.cleanup_surface(engine, sid, pid);
+        state.enqueue_surface_closed(sid, kind, is_user_close);
+    }
+    cascade_pane_closed(state, pane_id);
+}
+
 /// 새 surface 생성 시 공통 host event 발화 — TabCreated / PaneSplit / SurfaceSplit
 /// / WorkspaceCreated cascade 가 모두 사용. `surface_id` 의 위치 정보를 engine
 /// 에서 lookup 해 `PendingHostEvent::SurfaceCreated` enqueue.
@@ -1609,6 +1651,25 @@ pub(crate) fn cascade_tab_closed(
     };
     state.enqueue_host_event(crate::state::PendingHostEvent::TabClosed { tab_id, pane_id });
     state.lifecycle_baseline_remove_tab(tab_id);
+}
+
+/// `CoreEvent::TabClosed` 의 full cascade — cleanup_targets 별 surface 자원
+/// 정리 + `surface.closed` lifecycle enqueue + `tab.closed` host event enqueue
+/// + baseline 동기화. dispatcher 와 IPC handler 양쪽이 공유.
+pub(crate) fn cascade_tab_closed_full(
+    state: &mut crate::state::AppState,
+    engine: &mut crate::core::CoreState,
+    tab_id: u32,
+    pane_id: Option<u32>,
+    cleanup_targets: Vec<(u32, Option<String>)>,
+    is_user_close: bool,
+) {
+    for (sid, pid) in cleanup_targets {
+        let kind = state.surface_kind(engine, sid);
+        state.cleanup_surface(engine, sid, pid);
+        state.enqueue_surface_closed(sid, kind, is_user_close);
+    }
+    cascade_tab_closed(state, tab_id, pane_id);
 }
 
 /// `CoreEvent::WorkspaceMetaUpdated` 의 외부 cascade. host event 발화 (rename

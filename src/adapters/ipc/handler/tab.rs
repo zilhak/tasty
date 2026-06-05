@@ -178,18 +178,26 @@ pub fn handle_tab_close(
 
     let Some(crate::core::intent::CoreEvent::TabClosed {
         tab_id,
+        pane_id,
         closed,
         cleanup_targets,
-        ..
     }) = events.into_iter().next()
     else {
         return JsonRpcResponse::internal_error(id, "Core::apply returned no TabClosed event");
     };
 
     if closed {
-        for (sid, pid) in cleanup_targets {
-            state.cleanup_surface(engine, sid, pid);
-        }
+        // IPC = Agent origin → is_user_close=false.
+        // helper 가 cleanup_surface + surface.closed lifecycle enqueue +
+        // tab.closed host event enqueue + baseline 갱신을 일괄 처리한다.
+        crate::app::dispatch_domain::cascade_tab_closed_full(
+            state,
+            engine,
+            tab_id,
+            pane_id,
+            cleanup_targets,
+            false,
+        );
         JsonRpcResponse::success(id, json!({ "closed": true, "tab_id": tab_id }))
     } else {
         JsonRpcResponse::success(
