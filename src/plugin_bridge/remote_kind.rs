@@ -79,6 +79,10 @@ pub fn register_remote_kind(
                 plugin_id_for_restore.clone(),
                 kind_static.to_string(),
             );
+            // 옛 snapshot 을 cache 의 초기값으로 carry. plugin 의 surface.restore
+            // 응답이 늦거나 영영 안 와도 capture 시 옛 data 로 정상 저장됨 →
+            // layout.json 이 kind="empty" 로 오염되는 race 차단.
+            surface.cache_snapshot(data.clone());
             let handles = surface.handles();
             if let Err(e) = tx_restore.send(HostCmd::RemoteSurfaceRestored {
                 surface_id: sid,
