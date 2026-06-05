@@ -2,8 +2,9 @@
 //!
 //! Tasty는 일부 plugin (예: explorer, codex)을 본 바이너리와 함께 배포한다. 이들은:
 //!
-//! 1. **번들 위치**에서 디스커버됨 — release/dist 빌드: 실행 파일 옆 `plugins/`
-//!    디렉터리, dev 빌드: `target/<profile>/builtin-plugins/` (build helper로 채움).
+//! 1. **번들 위치**에서 디스커버됨 — 배포 패키지(release/dist): 실행 파일 옆
+//!    `plugins/` 디렉터리, workspace 빌드(debug/release 무관): workspace 를 자동
+//!    탐색해 `target/<profile>/builtin-plugins/`를 채움 (`ensure_dev_bundle`).
 //! 2. **첫 실행 시** `~/.tasty/plugins/<id>/`에 복사됨 — 사용자가 손댈 수 있는
 //!    실제 설치 위치는 사용자 디렉터리 한 곳뿐. `plugins.toml`의
 //!    `removed_builtins`에 등록된 id는 자동 복사하지 않는다.
@@ -21,11 +22,10 @@ use tasty_plugin_manifest::Manifest;
 /// 한 builtin plugin의 패키지 메타 — id, dev workspace crate 경로, plugin 바이너리 이름.
 struct BuiltinSpec {
     id: &'static str,
-    /// `crates/<crate_dir>/` — dev 빌드의 매니페스트/lang 원본 위치. debug 빌드 전용.
-    #[cfg(debug_assertions)]
+    /// `crates/<crate_dir>/` — workspace 빌드의 매니페스트/lang 원본 위치.
+    /// workspace 가 실제로 존재할 때만 dev sync 에 사용된다 (배포 패키지에서는 미사용).
     crate_dir: &'static str,
-    /// `target/<profile>/<bin_name>` — dev 빌드된 plugin 실행 바이너리 이름. debug 빌드 전용.
-    #[cfg(debug_assertions)]
+    /// `target/<profile>/<bin_name>` — workspace 빌드된 plugin 실행 바이너리 이름.
     bin_name: &'static str,
 }
 
@@ -33,58 +33,42 @@ struct BuiltinSpec {
 const BUILTINS: &[BuiltinSpec] = &[
     BuiltinSpec {
         id: "com.tasty.explorer",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-explorer",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-explorer.exe",
     },
     BuiltinSpec {
         id: "com.tasty.codex",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-codex",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-codex.exe",
     },
     BuiltinSpec {
         id: "com.tasty.claude",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-claude",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-claude.exe",
     },
     BuiltinSpec {
         id: "com.tasty.image",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-image",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-image.exe",
     },
     BuiltinSpec {
         id: "com.tasty.markdown",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-markdown",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-markdown.exe",
     },
     BuiltinSpec {
         id: "com.tasty.clipboard-history",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-clipboard-history",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-clipboard-history.exe",
     },
     BuiltinSpec {
         id: "com.tasty.html",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-html",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-html.exe",
     },
     BuiltinSpec {
         id: "com.tasty.git-viewer",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-git-viewer",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-git-viewer.exe",
     },
 ];
@@ -93,58 +77,42 @@ const BUILTINS: &[BuiltinSpec] = &[
 const BUILTINS: &[BuiltinSpec] = &[
     BuiltinSpec {
         id: "com.tasty.explorer",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-explorer",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-explorer",
     },
     BuiltinSpec {
         id: "com.tasty.codex",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-codex",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-codex",
     },
     BuiltinSpec {
         id: "com.tasty.claude",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-claude",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-claude",
     },
     BuiltinSpec {
         id: "com.tasty.image",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-image",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-image",
     },
     BuiltinSpec {
         id: "com.tasty.markdown",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-markdown",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-markdown",
     },
     BuiltinSpec {
         id: "com.tasty.clipboard-history",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-clipboard-history",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-clipboard-history",
     },
     BuiltinSpec {
         id: "com.tasty.html",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-html",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-html",
     },
     BuiltinSpec {
         id: "com.tasty.git-viewer",
-        #[cfg(debug_assertions)]
         crate_dir: "tasty-plugin-git-viewer",
-        #[cfg(debug_assertions)]
         bin_name: "tasty-plugin-git-viewer",
     },
 ];
@@ -254,9 +222,10 @@ fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
 ///
 /// - 첫째: `TASTY_BUILTIN_PLUGINS_DIR` 환경 변수 강제 override.
 /// - 둘째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사).
-/// - 셋째: dev 빌드일 때 workspace 자동 탐색 — `target/<profile>/builtin-plugins/`에
+/// - 셋째: workspace 빌드일 때 자동 탐색 — `target/<profile>/builtin-plugins/`에
 ///   각 builtin plugin의 매니페스트와 빌드된 바이너리를 mtime 비교 후 갱신.
-///   `cargo build`만 하면 자동 반영됨.
+///   `cargo build [--release] --workspace` 후 실행하면 자동 반영됨. workspace 가
+///   없는 배포 패키지에서는 둘째(`plugins/`)에서 이미 반환되어 여기 도달하지 않는다.
 pub fn bundle_root() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TASTY_BUILTIN_PLUGINS_DIR") {
         let path = PathBuf::from(p);
@@ -270,7 +239,6 @@ pub fn bundle_root() -> Option<PathBuf> {
     if next_to_exe.is_dir() {
         return Some(next_to_exe);
     }
-    #[cfg(debug_assertions)]
     if let Some(dev) = ensure_dev_bundle(exe_dir) {
         return Some(dev);
     }
@@ -281,11 +249,12 @@ pub fn bundle_root() -> Option<PathBuf> {
     None
 }
 
-/// dev 빌드에서 workspace를 자동 탐색하여 `target/<profile>/builtin-plugins/`에
-/// 등록된 builtin plugin들의 manifest+binary+lang을 동기화. mtime이 더 새것일
-/// 때만 복사하므로 매 부팅 비용은 작다. 한 plugin이라도 동기화에 성공했으면
-/// Some(bundle_root). workspace를 못 찾으면 None.
-#[cfg(debug_assertions)]
+/// workspace 빌드(debug/release 무관)에서 workspace를 자동 탐색하여
+/// `target/<profile>/builtin-plugins/`에 등록된 builtin plugin들의
+/// manifest+binary+lang을 동기화. mtime이 더 새것일 때만 복사하므로 매 부팅 비용은
+/// 작다. 한 plugin이라도 동기화에 성공했으면 Some(bundle_root). workspace를 못 찾으면
+/// (= 배포 패키지처럼 `crates/`가 없으면) `sync_builtin_dev`가 전부 false 를 반환하여
+/// None. 따라서 진짜 배포본에서는 자연히 no-op.
 fn ensure_dev_bundle(exe_dir: &Path) -> Option<PathBuf> {
     // exe_dir = .../target/<profile>
     let target_dir = exe_dir.parent()?; // .../target
@@ -312,8 +281,8 @@ fn ensure_dev_bundle(exe_dir: &Path) -> Option<PathBuf> {
 }
 
 /// 한 builtin plugin을 dev bundle로 동기화. 바이너리 또는 매니페스트가
-/// workspace에 없으면 (예: codex만 빌드 안 됨) false 반환.
-#[cfg(debug_assertions)]
+/// workspace에 없으면 (예: codex만 빌드 안 됨, 또는 배포 패키지라 `crates/`가 아예
+/// 없음) false 반환. 이 가드가 release 빌드에서도 배포본을 안전하게 만든다.
 fn sync_builtin_dev(
     workspace: &Path,
     exe_dir: &Path,
@@ -353,7 +322,6 @@ fn sync_builtin_dev(
     true
 }
 
-#[cfg(debug_assertions)]
 fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
@@ -370,7 +338,6 @@ fn sync_dir_if_newer(src: &Path, dst: &Path) -> std::io::Result<()> {
 }
 
 /// src가 dest보다 더 최신이거나 dest가 없으면 복사. 이미 같거나 dest가 더 최신이면 no-op.
-#[cfg(debug_assertions)]
 fn copy_if_newer(src: &Path, dest: &Path) -> std::io::Result<()> {
     if let (Ok(src_meta), Ok(dest_meta)) = (std::fs::metadata(src), std::fs::metadata(dest))
         && let (Ok(sm), Ok(dm)) = (src_meta.modified(), dest_meta.modified())

@@ -1121,7 +1121,7 @@ tasty plugin install ./
 
 ### Builtin plugin 자동 sync (workspace 내 plugin 개발)
 
-`crates/tasty-host-plugin/src/builtin.rs`의 `BUILTINS` 목록에 등록된 plugin(예: `tasty-plugin-explorer`, `tasty-plugin-codex`)은 매번 수동 복사할 필요가 없다. dev 빌드일 때 호스트가 부팅 직후 다음 두 단계를 자동 수행한다:
+`crates/tasty-host-plugin/src/builtin.rs`의 `BUILTINS` 목록에 등록된 plugin(예: `tasty-plugin-explorer`, `tasty-plugin-codex`)은 매번 수동 복사할 필요가 없다. **workspace 빌드(debug/release 무관)**일 때 호스트가 부팅 직후 다음 두 단계를 자동 수행한다. `ensure_dev_bundle`은 실행 파일이 `target/<profile>/`에 있고 그 상위에 `crates/`가 존재할 때만 동작하므로, `crates/`가 없는 배포 패키지(release/dist)에서는 자연히 no-op이고 대신 실행 파일 옆 `plugins/`를 사용한다:
 
 1. **번들 동기화** (`ensure_dev_bundle`): workspace의 `crates/<crate>/tasty-plugin.toml` + `target/<profile>/<bin>` + `crates/<crate>/lang/`을 `target/<profile>/builtin-plugins/<id>/`로 복사. mtime이 더 새것일 때만 덮어쓰므로 매 부팅 비용은 작다.
 2. **사용자 디렉터리 sync** (`install_builtins_if_needed`): 위 번들 → `~/.tasty/plugins/<id>/`로 sync. 기존 설치본도 번들이 더 새것이면 자동 갱신.
@@ -1131,11 +1131,12 @@ tasty plugin install ./
 주의 — workspace 루트의 `cargo build` 또는 `cargo run`은 **현재 패키지(루트 `tasty`)만 빌드**하므로 plugin 코드를 고치면 다음 중 하나가 필요하다:
 
 ```bash
-cargo build -p tasty-plugin-codex    # 특정 plugin만
-cargo build --workspace              # 워크스페이스 전체
+cargo build -p tasty-plugin-codex              # 특정 plugin만
+cargo build --workspace                        # 워크스페이스 전체 (debug)
+cargo build --release --workspace              # 워크스페이스 전체 (release)
 ```
 
-위 명령으로 plugin 바이너리를 다시 빌드해야 다음 `cargo run` 부팅 시 sync 메커니즘이 새 binary를 사용자 디렉터리로 복사한다.
+위 명령으로 plugin 바이너리를 다시 빌드해야 다음 부팅 시 sync 메커니즘이 새 binary를 사용자 디렉터리로 복사한다. release 도 동일하게 동작한다 — `cargo build --release --workspace` 후 `target/release/tasty` 를 실행하면(또는 `cargo run --release`) 같은 자동 sync 가 일어난다. 단, 부팅 자동 설치(`install_builtins_if_needed`) 경로는 번들 서명을 검증하지 않으므로, release workspace 빌드는 unsigned dev 번들을 그대로 설치한다 (로컬 개발 편의 우선). 서명 검증은 명시적 `tasty plugin upgrade` 경로에서만 강제된다.
 
 ### 디버깅
 
