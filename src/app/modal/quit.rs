@@ -17,7 +17,7 @@ impl App {
         if quit_modal_open {
             self.close_active_modal();
             self.flush_layout_persistence(true);
-            event_loop.exit();
+            self.shutdown_lifecycle_cascade(event_loop);
             return;
         }
 
@@ -45,7 +45,7 @@ impl App {
         match behavior.as_str() {
             "quit" => {
                 self.flush_layout_persistence(true);
-                event_loop.exit();
+                self.shutdown_lifecycle_cascade(event_loop);
             }
             "minimize" => {
                 crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Minimize);

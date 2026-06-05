@@ -26,6 +26,8 @@ pub(crate) mod plugin_glue;
 #[cfg(feature = "gui")]
 pub(crate) mod request_owner;
 #[cfg(feature = "gui")]
+pub(crate) mod shutdown_cascade;
+#[cfg(feature = "gui")]
 pub(crate) mod window_access;
 #[cfg(feature = "gui")]
 pub(crate) mod window_lifecycle;
