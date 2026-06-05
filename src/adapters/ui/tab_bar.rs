@@ -71,32 +71,21 @@ pub fn draw_pane_tab_bars(
     let mut actions: Vec<(u32, PaneTabAction)> = Vec::new();
     let mut measured_tab_bar_height: Option<f32> = None;
 
-    // 탭 바 독자 scale. 기존 ui_scale 과 분리 — 사용자가 settings 에서 직접
-    // tab_width / tab_font_size / monitor scale 반영도 (0..=1) 조정.
-    //
-    // 사용자 모델 (physical 기준): physical = base * (1 + adjust * (scale_factor - 1))
-    // egui 가 logical → physical 변환을 ppp(=scale_factor)로 자동 처리하므로,
-    // 우리가 egui 에 전달할 logical 값은 physical_target / scale_factor.
-    //   adjust=1 → logical = base                    (egui 기본 = monitor scale 완전 반영)
-    //   adjust=0 → logical = base / scale_factor     (모든 모니터 동일 physical px)
+    // 탭 너비 / 라벨 폰트는 사용자 옵션. 그 외 픽셀 값은 theme/hardcoded.
+    // egui 가 logical → physical 변환을 ppp(=scale_factor)로 자동 처리 (= auto).
     let appearance = &engine.settings.appearance;
-    let physical_ratio = appearance.tab_adjust_factor(scale_factor);
-    let adjust = physical_ratio / scale_factor;
-    let tab_w = appearance.tab_width * adjust;
-    let label_font_size = appearance.tab_font_size * adjust;
-    // bar_h / "+" / arrow / padding / busy dot / active indicator 굵기는 사용자
-    // 옵션을 따로 두지 않고 theme/hardcoded 값에 adjust 만 곱 — 폰트와 함께
-    // 비례 확대되도록.
-    let bar_h = th.item_height_tab.value() * adjust;
-    let plus_w: f32 = 28.0 * adjust;
-    let arrow_w: f32 = 20.0 * adjust;
+    let tab_w = appearance.tab_width;
+    let label_font_size = appearance.tab_font_size;
+    let bar_h = th.item_height_tab.value();
+    let plus_w: f32 = 28.0;
+    let arrow_w: f32 = 20.0;
     let separator_w: f32 = 1.0;
-    let h_padding: f32 = 8.0 * adjust;
-    let dot_radius: f32 = 3.0 * adjust;
-    let dot_pad: f32 = 6.0 * adjust;
-    let active_indicator_h: f32 = 2.0 * adjust;
-    let plus_font_size = th.font_size_body.value() * adjust;
-    let arrow_font_size = th.font_size_caption.value() * adjust;
+    let h_padding: f32 = 8.0;
+    let dot_radius: f32 = 3.0;
+    let dot_pad: f32 = 6.0;
+    let active_indicator_h: f32 = 2.0;
+    let plus_font_size = th.font_size_body.value();
+    let arrow_font_size = th.font_size_caption.value();
 
     for info in &infos {
         let n = info.tab_names.len();

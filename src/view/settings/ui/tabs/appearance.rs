@@ -274,14 +274,6 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
                     .speed(0.5),
             );
             ui.end_row();
-
-            ui.label(t("settings.appearance.tab_monitor_scale_adjust_label"));
-            ui.add(
-                egui::DragValue::new(&mut settings.appearance.tab_monitor_scale_adjust)
-                    .range(0.0..=1.0)
-                    .speed(0.05),
-            );
-            ui.end_row();
         });
 }
 
