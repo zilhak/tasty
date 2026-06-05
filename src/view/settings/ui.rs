@@ -286,11 +286,52 @@ pub fn draw_settings_panel(
                 (SettingsTab::Misc, t("settings.tab.misc")),
                 (SettingsTab::Updates, t("settings.tab.updates")),
             ];
-            for (tab, label) in &tabs {
-                let selected = ui_state.active_tab == *tab;
-                if ui.selectable_label(selected, *label).clicked() {
-                    ui_state.active_tab = *tab;
-                }
+
+            // 윈도우 최소 폭에서 모든 탭이 한 줄에 안 들어갈 수 있다 (UI scale=large
+            // 일 때 빈번). 가로 ScrollArea + 좌우 화살표 버튼으로 우측 잘림 회피.
+            // 한 step 스크롤 거리: 평균 탭 너비 ~80px 기준.
+            const SCROLL_STEP: f32 = 80.0;
+            let arrow_size = ui.spacing().interact_size.y;
+
+            let left = ui.add(egui::Button::new("◀").min_size(egui::vec2(arrow_size, arrow_size)));
+
+            // 우측 화살표 자리 확보 + 약간의 spacing.
+            let avail = (ui.available_width() - arrow_size - ui.spacing().item_spacing.x).max(0.0);
+
+            let output = egui::ScrollArea::horizontal()
+                .id_salt("settings_tabs_scroll")
+                .auto_shrink([false, true])
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                .max_width(avail)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        for (tab, label) in &tabs {
+                            let selected = ui_state.active_tab == *tab;
+                            if ui.selectable_label(selected, *label).clicked() {
+                                ui_state.active_tab = *tab;
+                            }
+                        }
+                    });
+                });
+
+            let right = ui.add(egui::Button::new("▶").min_size(egui::vec2(arrow_size, arrow_size)));
+
+            // 좌/우 클릭 → ScrollArea state 갱신 후 다음 프레임 적용.
+            let viewport_w = output.inner_rect.width();
+            let content_w = output.content_size.x;
+            let max_offset = (content_w - viewport_w).max(0.0);
+            let mut new_offset = output.state.offset.x;
+            if left.clicked() {
+                new_offset = (new_offset - SCROLL_STEP).max(0.0);
+            }
+            if right.clicked() {
+                new_offset = (new_offset + SCROLL_STEP).min(max_offset);
+            }
+            if (new_offset - output.state.offset.x).abs() > f32::EPSILON {
+                let mut s = output.state;
+                s.offset.x = new_offset;
+                s.store(ui.ctx(), output.id);
+                ui.ctx().request_repaint();
             }
         });
         ui.separator();
