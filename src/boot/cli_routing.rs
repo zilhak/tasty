@@ -24,11 +24,19 @@ pub(crate) enum Routed {
 pub(crate) fn parse_or_route() -> anyhow::Result<Routed> {
     use clap::{CommandFactory, FromArgMatches};
 
-    // -a/--all 은 clap parse 우회 — clap 의 -h 가 먼저 exit 하므로 args 를 직접 본다.
+    // -a/--all + -h/--help 는 clap parse 우회 — clap 의 built-in `--help` 가 plugin
+    // contributes.cli 를 모르는 정적 `Cli::command()` 위에서 발화해 plugin 명령
+    // (claude, codex) 이 도움말에서 누락되는 것을 방지한다. args 를 직접 본다.
     {
         let args: Vec<String> = std::env::args().collect();
         if args.iter().any(|a| a == "-a" || a == "--all") {
             cli::print_command_tree();
+            return Ok(Routed::AlreadyHandled);
+        }
+        // root-level `--help` / `-h` 만 가로챈다 — `args[1]` 위치 체크로 좁혀
+        // 서브커맨드의 `--help` (예: `tasty new --help`) 는 그대로 clap 에 위임.
+        if matches!(args.get(1).map(String::as_str), Some("-h") | Some("--help")) {
+            cli::print_augmented_help()?;
             return Ok(Routed::AlreadyHandled);
         }
     }

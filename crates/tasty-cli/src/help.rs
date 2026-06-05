@@ -115,10 +115,20 @@ fn resolve_command_path() -> (clap::Command, String) {
 // ── Public entry points ──
 
 /// Print all commands in a tree structure (2 levels deep) with usage details.
+/// `print_augmented_help` 와 동일하게 plugin contributes.cli 를 합친 트리를 출력 —
+/// `-a/--all` 의 "all" 의미를 정적 호스트 명령 + plugin 명령 양쪽으로 일관화한다.
 pub fn print_command_tree() {
     use clap::CommandFactory;
 
-    let cmd = Cli::command();
+    let entries = match tasty_host_plugin::plugin_root() {
+        Some(root) => dynamic::discover_plugin_clis(&root),
+        None => Vec::new(),
+    };
+    let cmd = if entries.is_empty() {
+        Cli::command()
+    } else {
+        dynamic::build_augmented_cli(&entries)
+    };
     println!("{} {}", cmd.get_name(), cmd.get_version().unwrap_or(""));
     println!(
         "{}",
