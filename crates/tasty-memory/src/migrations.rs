@@ -2,7 +2,7 @@
 //!
 //! 0.x experimental 정책: 마이그레이션 체인을 누적하지 않고 single SCHEMA_SQL을
 //! 적용한다. `user_version == 0`이면 신규 DB로 간주해 일괄 적용, 같은 버전이면
-//! no-op, 다른 버전이면 `SchemaMismatch` 에러로 호출자에게 위임한다 (1.0 직전에
+//! no-op, 다른 버전이면 `SchemaMismatch` 에러로 호출자에게 위임한다 (0.7 직전에
 //! 최종 freeze 후 누적 migration으로 전환 예정).
 
 use rusqlite::Connection;

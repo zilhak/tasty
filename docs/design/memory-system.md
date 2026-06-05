@@ -249,7 +249,7 @@ tasty memory secret stats [--scope S]
 
 `memory.db` 는 아직 릴리스에 포함된 적이 없다. SCHEMA_VERSION 은 1 에 머무르고, 0.x experimental 정책에 따라 single `SCHEMA_SQL` 을 적용한다. 따라서 owner 컬럼 / `memory_secret` 테이블 추가는 **누적 migration 없이** 스키마 정의를 갱신하면 끝난다.
 
-1.0 freeze 시점에 누적 migration 체인으로 전환한다 (현재 `migrations.rs` 의 주석 참조).
+0.7 freeze 시점에 누적 migration 체인으로 전환한다 (현재 `migrations.rs` 의 주석 참조).
 
 ## 보안·신뢰 모델
 

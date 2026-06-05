@@ -1,7 +1,7 @@
 # Plugin Sandbox 평가
 
 이 문서는 Tasty plugin 의 sandbox 옵션 (WASM / OS-level / 현 상태) 을 비교 평가한
-결정 근거다. 1.0 까지는 현 상태 유지가 결론이며, 본문은 그 trade-off 의 *현재 상태* 와
+결정 근거다. 0.7 까지는 현 상태 유지가 결론이며, 본문은 그 trade-off 의 *현재 상태* 와
 *재검토 trigger* 를 한 곳에 기록해 미래에 trigger 발동 시 어떤 비용을 감수했는지를
 참조할 수 있게 한다.
 
@@ -188,7 +188,7 @@ command = "tasty-plugin-foo"
 | process spawn | 강제 deny | 강제 deny | 가능 (OS user 권한) |
 | FFI 부담 | 中 ~ 大 (linear memory 복사) | 0 (native process 유지) | 0 |
 | debug 도구체인 변경 | 필요 (wasm32 target) | 필요 없음 | 필요 없음 |
-| 1.0 까지 도입 비용 | 大 | 中 | 0 |
+| 0.7 까지 도입 비용 | 大 | 中 | 0 |
 | 1.0 *이후* 점진 도입 | 별도 entry type 필요 | opt-in 토글 가능 | 기본값 유지 |
 | plugin 코드 호환성 | wasm32 재컴파일 필요 | 무변경 (sandbox 호환 검증 필요) | 현 상태 |
 
@@ -198,7 +198,7 @@ TL;DR (§0) + 비교표 (§4) + 재검토 trigger (§2.4) 셋만 보면 미래�
 
 ## 5. 권고 (재확인)
 
-- **1.0 까지**: 현 상태 유지. `dev-guide/plugin-ecosystem.md §1` 결정 재확인.
+- **0.7 까지**: 현 상태 유지. `dev-guide/plugin-ecosystem.md §1` 결정 재확인.
 - **0.7 이후 (조건부)**: OS-level sandbox 를 *opt-in* 으로 우선 (FFI 부담 0). WASM 은
   marketplace / 외부 plugin 자생 이후 별도 entry type 으로.
 - **명문화 추가**: 본 평가 문서가 그 자체로 *결정 근거의 기록*. 향후 trigger 발동

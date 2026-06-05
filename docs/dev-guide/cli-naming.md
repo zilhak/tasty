@@ -155,7 +155,7 @@ DEBUG_METHODS / PREFIX_RULES / plugin 매니페스트 제공 namespace 는 제�
 
 **휴리스틱**: modifier가 한 verb에 5개 이상 누적되면 namespace 한 단계 분리를 검토한다. 예: `surface.send_*`(5개)는 차후 `surface.input.{send,key,combo,wait_idle}` 같은 재구조화 후보.
 
-단, 휴리스틱은 시점에 따라 적용한다. 현재 `surface.send_*` 5개는 1.0 freeze 전까지 유지, 1.0 직전 재검토.
+단, 휴리스틱은 시점에 따라 적용한다. 현재 `surface.send_*` 5개는 0.7 freeze 전까지 유지, 0.7 직전 재검토.
 
 ## 명사 규칙
 
@@ -189,7 +189,7 @@ memory, output, approval, telemetry
 ## 변경 절차
 
 - **새 verb/namespace 추가**: PR description에 "이 verb/namespace가 위 화이트리스트 어디에 속하는지, 또는 왜 예외인지" 한 문단. 별도 ADR 파일 불필요.
-- **이름 변경 (rename)**: alias map(`src/ipc/...`)에서 old → new 매핑 + `CHANGELOG.md` Deprecated 절. 옛 이름은 1.0 tag 직전 제거.
+- **이름 변경 (rename)**: alias map(`src/ipc/...`)에서 old → new 매핑 + `CHANGELOG.md` Deprecated 절. 옛 이름은 0.7 tag 직전 제거.
 - **메서드 제거**: minor 버전에서는 deprecated 표시만, 실제 제거는 major.
 
 자세한 break 분류·deprecation 절차는 (예정) `docs/dev-guide/ipc-stability.md` 참조.

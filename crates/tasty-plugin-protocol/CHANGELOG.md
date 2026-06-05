@@ -22,7 +22,7 @@
 - `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`이 `surface.meta.set` / `meta.get` / `meta.unset` / `meta.list`(점 표기)로 정규화됨. 핸들러/method_meta는 새 이름만 등록.
 
 ### Deprecated
-- `surface.meta_set` / `surface.meta_get` / `surface.meta_unset` / `surface.meta_list` — 1.0 tag 직전에 alias가 제거된다. 새 호출자는 점 표기 사용.
+- `surface.meta_set` / `surface.meta_get` / `surface.meta_unset` / `surface.meta_list` — 0.7 tag 직전에 alias가 제거된다. 새 호출자는 점 표기 사용.
 
 ### Removed
 - `METHOD_SURFACE_LIFECYCLE = "surface.lifecycle"` + `SurfaceLifecycleParams` + `SurfaceLifecycleEvent` + `SurfaceCloseReason` — Event Bus 1.0 `surface.closed`로 일원화. 옛 매니페스트 `[[contributes.surface_observer]]`도 함께 제거. plugin은 `event_subscribe = ["surface.closed"]`로 마이그레이션. (api_version 유지 — 머지 전이라 baseline에는 추가된 적 없음)

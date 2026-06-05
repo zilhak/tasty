@@ -384,7 +384,7 @@ tasty debug ime-disable
 
 서피스가 닫히면 해당 scope 의 모든 키가 host 에 의해 즉시 purge 된다 (`memory.changed` `deleted` 이벤트로도 관측 가능).
 
-> **Deprecated alias**: 옛 이름 `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`(underscore 합성)는 호스트가 자동 정규화하지만 `tracing::warn`이 출력된다. **1.0 tag 직전에 일괄 제거**되므로 새 호출자는 점 표기(`surface.meta.*`)를 사용한다.
+> **Deprecated alias**: 옛 이름 `surface.meta_set` / `meta_get` / `meta_unset` / `meta_list`(underscore 합성)는 호스트가 자동 정규화하지만 `tracing::warn`이 출력된다. **0.7 tag 직전에 일괄 제거**되므로 새 호출자는 점 표기(`surface.meta.*`)를 사용한다.
 
 **CLI 사용 예시:**
 

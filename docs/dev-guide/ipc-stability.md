@@ -40,12 +40,12 @@
 
 1. **옛 표면 유지** + 새 표면 추가
 2. 옛 표면 호출 시 `tracing::warn!("deprecated: <old>, use <new>")` 출력 (예: `src/ipc/alias.rs`)
-3. `CHANGELOG.md`의 `Deprecated` 절에 "1.0 tag 직전 제거" 또는 명시적 기한 기록
-4. 1.0 직전 일괄 제거 PR
+3. `CHANGELOG.md`의 `Deprecated` 절에 "0.7 tag 직전 제거" 또는 명시적 기한 기록
+4. 0.7 직전 일괄 제거 PR
 
-**deprecation 기간**: "한 minor 이상 또는 일정 기간"이 원칙이지만, 보안 이슈·심각한 버그 수정은 즉시 제거 가능. 1.0 이후로는 "한 minor 이상" 규칙을 엄수.
+**deprecation 기간**: "한 minor 이상 또는 일정 기간"이 원칙이지만, 보안 이슈·심각한 버그 수정은 즉시 제거 가능. 0.7 이후로는 "한 minor 이상" 규칙을 엄수.
 
-## 1.0 freeze 진입 체크리스트
+## 0.7 freeze 진입 체크리스트
 
 0.7.0 진입 시점(2026-06-04)에 다음 6 항목을 점검했다. ④ 보안 예외 운영 경험은 0.7.x 동안 자연 축적되도록 항목 자체를 *완화* 결정 (부록 참조).
 
@@ -76,4 +76,4 @@
 - **conventional commits → CHANGELOG 초안 도구** (예정): `git-cliff` 같은 도구가 `[Unreleased]` 자동 추가. 사람은 break/deprecation 정확성만 검토.
 - **경로 기반 규칙** (예정): `crates/tasty-plugin-protocol/`에 변경이 있으면 해당 CHANGELOG 갱신 강제.
 
-이 자동화 항목은 본 묶음(early-cost-cleanup) 범위가 아니다. 1.0 freeze 진입 직전까지 점진적으로 도입.
+이 자동화 항목은 본 묶음(early-cost-cleanup) 범위가 아니다. 0.7 freeze 진입 직전까지 점진적으로 도입.
