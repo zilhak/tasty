@@ -101,9 +101,14 @@ impl Pane {
     }
 
     /// Same as [`add_terminal_marker_tab`] but does NOT change `active_tab`.
-    pub fn add_terminal_marker_tab_background(&mut self, tab_id: TabId, surface_id: SurfaceId) {
+    pub fn add_terminal_marker_tab_background(
+        &mut self,
+        tab_id: TabId,
+        surface_id: SurfaceId,
+        explicit_name: Option<String>,
+    ) {
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
-        let tab = Tab::new_with_surface(tab_id, "Shell".to_string(), surface);
+        let tab = Tab::new_named(tab_id, "Shell".to_string(), explicit_name, surface);
         self.tabs.push(tab);
     }
 
@@ -114,6 +119,7 @@ impl Pane {
         tab_id: TabId,
         surface_id: SurfaceId,
         spawn_opts: ShellSpawnOpts<'_>,
+        explicit_name: Option<String>,
     ) {
         let spawn = super::terminal_surface::DeferredSpawn {
             shell: spawn_opts.shell.map(|s| s.to_string()),
@@ -134,7 +140,7 @@ impl Pane {
         let tab = Tab {
             id: tab_id,
             name: "Shell".to_string(),
-            explicit_name: None,
+            explicit_name,
             layout_opt: Some(super::SurfaceLayout::Leaf(surface)),
             focused_surface: surface_id,
             osc_title: None,
@@ -283,9 +289,10 @@ impl Pane {
         &mut self,
         tab_id: TabId,
         name: String,
+        explicit_name: Option<String>,
         surface: Box<dyn super::Surface>,
     ) {
-        let tab = super::tab::Tab::new_with_surface(tab_id, name, surface);
+        let tab = super::tab::Tab::new_named(tab_id, name, explicit_name, surface);
         self.tabs.push(tab);
         self.active_tab = self.tabs.len() - 1;
     }

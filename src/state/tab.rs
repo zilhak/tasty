@@ -50,7 +50,7 @@ impl AppState {
             engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
         let name = super::pane::default_tab_name_for_kind(kind, params);
         if let Some(pane) = self.focused_pane_mut(engine) {
-            pane.add_surface_tab(tab_id, name, surface);
+            pane.add_surface_tab(tab_id, name, None, surface);
             engine.mark_layout_dirty();
             Ok((tab_id, surface_id))
         } else {

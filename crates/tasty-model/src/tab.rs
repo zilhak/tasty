@@ -29,11 +29,24 @@ pub struct Tab {
 impl Tab {
     /// Create a tab with a Surface trait object.
     pub fn new_with_surface(id: TabId, name: String, surface: Box<dyn Surface>) -> Self {
+        Self::new_named(id, name, None, surface)
+    }
+
+    /// `new_with_surface` 의 명시 이름 버전. `explicit_name` 이 `Some` 이면 **생성
+    /// 시점부터** 그 이름이 고정되어 `display_name()` 에서 최우선으로 쓰인다
+    /// (cwd / OSC title 로 덮이지 않음). 에이전트가 `tab.create --name` 으로 탭을
+    /// 만들 때 사용한다.
+    pub fn new_named(
+        id: TabId,
+        name: String,
+        explicit_name: Option<String>,
+        surface: Box<dyn Surface>,
+    ) -> Self {
         let surface_id = surface.surface_id().unwrap_or(0);
         Self {
             id,
             name,
-            explicit_name: None,
+            explicit_name,
             osc_title: None,
             layout_opt: Some(SurfaceLayout::Leaf(surface)),
             focused_surface: surface_id,

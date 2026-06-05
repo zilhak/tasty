@@ -407,7 +407,7 @@ fn pane_node_split_pane_in_place_not_found() {
 #[test]
 fn pane_close_tab_removes_tab() {
     let mut pane = Pane::new_with_terminal_marker(1, 10, 100);
-    pane.add_terminal_marker_tab_background(11, 101);
+    pane.add_terminal_marker_tab_background(11, 101, None);
     assert_eq!(pane.tabs.len(), 2);
     assert!(pane.close_active_tab());
     assert_eq!(pane.tabs.len(), 1);

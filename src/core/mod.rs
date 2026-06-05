@@ -1660,14 +1660,14 @@ impl Core {
                         waker,
                         working_dir: cwd.as_deref(),
                     };
-                    pane.add_tab_deferred(tab_id, surface_id, spawn);
+                    pane.add_tab_deferred(tab_id, surface_id, spawn, None);
                 } else {
                     debug_assert!(prepared_terminal);
-                    pane.add_terminal_marker_tab_background(tab_id, surface_id);
+                    pane.add_terminal_marker_tab_background(tab_id, surface_id, None);
                 }
             } else {
                 let (surface, name) = prepared_non_terminal.unwrap();
-                pane.add_surface_tab(tab_id, name, surface);
+                pane.add_surface_tab(tab_id, name, None, surface);
             }
         }
 
