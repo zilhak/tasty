@@ -64,11 +64,13 @@ flags = [
 
 [contributes.cli.arg_groups.spawn_args]
 flags = [
-    { name = "surface",  type = "u32",    flag = "--surface",  required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
-    { name = "cwd",      type = "string", flag = "--cwd",      required = false, path_kind = "directory", help = "Working directory for the child Codex process" },
-    { name = "prompt",   type = "string", flag = "--prompt",   required = false, help = "Initial prompt sent to the child after spawn" },
-    { name = "role",     type = "string", flag = "--role",     required = false, help = "Role label attached to the child (used by broadcast --role)" },
-    { name = "nickname", type = "string", flag = "--nickname", required = false, help = "Display nickname shown on the tab" },
+    { name = "surface",   type = "u32",    flag = "--surface",   required = false, help = "Parent surface ID (defaults to the focused Codex surface)" },
+    { name = "workspace", type = "string", flag = "--workspace", required = true,  help = "Target workspace (ID or name)" },
+    { name = "pane",      type = "u32",    flag = "--pane",      required = false, help = "Target pane ID (defaults to the first pane in the workspace)" },
+    { name = "cwd",       type = "string", flag = "--cwd",       required = false, path_kind = "directory", help = "Working directory for the child Codex process" },
+    { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
+    { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
+    { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
 ]
 
 [contributes.cli.arg_groups.children_args]

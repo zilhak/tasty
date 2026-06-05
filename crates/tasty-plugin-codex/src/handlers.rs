@@ -167,27 +167,40 @@ pub fn handle_spawn(
     params: Value,
 ) -> Result<Value, IpcMethodError> {
     let parent_surface = require_u32(&params, "surface")?;
+    let workspace_param = optional_str(&params, "workspace")
+        .ok_or_else(|| IpcMethodError::invalid_params("missing required '--workspace'"))?;
+    let pane_override = optional_u32(&params, "pane");
     let cwd = optional_str(&params, "cwd");
     let prompt = optional_str(&params, "prompt");
     let role = optional_str(&params, "role");
     let nickname = optional_str(&params, "nickname");
 
-    let mut split_params = Map::new();
-    split_params.insert("level".into(), Value::String("surface".into()));
-    split_params.insert("target_surface".into(), Value::from(parent_surface));
-    split_params.insert("direction".into(), Value::String("vertical".into()));
-    split_params.insert("type".into(), Value::String("terminal".into()));
+    let ws_id = resolve_workspace_id(host, &workspace_param)?
+        .ok_or_else(|| IpcMethodError::invalid_params(&format!("workspace '{workspace_param}' not found")))?;
+
+    // 대상 pane: --pane 지정 시 그 pane, 아니면 workspace 의 첫 pane.
+    let pane_id = match pane_override {
+        Some(p) => p,
+        None => first_pane_in_workspace(host, ws_id)?,
+    };
+
+    // child index 를 먼저 확보해 탭 이름을 child{N} 으로 고정 생성한다.
+    let index = state.next_index_for(parent_surface);
+    let tab_name = format!("child{index}");
+    let mut tab_params = json!({
+        "pane_id": pane_id,
+        "type": "terminal",
+        "name": tab_name,
+    });
     if let Some(c) = &cwd {
-        split_params.insert("cwd".into(), Value::String(c.clone()));
+        tab_params["cwd"] = Value::String(c.clone());
     }
-    let split_result = host_call(host, "split", Value::Object(split_params))?;
-    let new_surface_id = split_result
-        .get("new_surface_id")
+    let tab_resp = host_call(host, "tab.create", tab_params)?;
+    let new_surface_id = tab_resp
+        .get("surface_id")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| {
-            IpcMethodError::new(format!(
-                "split response missing 'new_surface_id': {split_result}"
-            ))
+            IpcMethodError::new(format!("tab.create response missing 'surface_id': {tab_resp}"))
         })? as u32;
 
     let cmd = make_codex_command(new_surface_id, prompt.as_deref());
@@ -197,7 +210,6 @@ pub fn handle_spawn(
         json!({"surface_id": new_surface_id, "text": cmd}),
     )?;
 
-    let index = state.next_index_for(parent_surface);
     state.register_child(
         parent_surface,
         ChildEntry {
@@ -213,7 +225,44 @@ pub fn handle_spawn(
     Ok(json!({
         "child_surface_id": new_surface_id,
         "child_index": index,
+        "pane_id": pane_id,
+        "workspace_id": ws_id,
     }))
+}
+
+/// workspace 를 ID 또는 이름으로 해석. 숫자면 ID 매칭, 아니면 name 매칭.
+fn resolve_workspace_id(host: &HostHandle, target: &str) -> Result<Option<u32>, IpcMethodError> {
+    let ws_list = host_call(host, "workspace.list", json!({}))?;
+    let arr = ws_list
+        .as_array()
+        .ok_or_else(|| IpcMethodError::new("workspace.list returned non-array"))?;
+    if let Ok(target_id) = target.parse::<u32>() {
+        for w in arr {
+            if w.get("id").and_then(|v| v.as_u64()) == Some(target_id as u64) {
+                return Ok(Some(target_id));
+            }
+        }
+    }
+    for w in arr {
+        if w.get("name").and_then(|v| v.as_str()) == Some(target)
+            && let Some(id) = w.get("id").and_then(|v| v.as_u64())
+        {
+            return Ok(Some(id as u32));
+        }
+    }
+    Ok(None)
+}
+
+/// workspace 내 첫 pane 의 id. spawn 시 `--pane` 미지정의 기본 대상이다.
+fn first_pane_in_workspace(host: &HostHandle, ws_id: u32) -> Result<u32, IpcMethodError> {
+    let panes = host_call(host, "pane.list", json!({}))?;
+    let arr = panes
+        .as_array()
+        .ok_or_else(|| IpcMethodError::new("pane.list returned non-array"))?;
+    arr.iter()
+        .find(|p| p.get("workspace_id").and_then(|v| v.as_u64()) == Some(ws_id as u64))
+        .and_then(|p| p.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
+        .ok_or_else(|| IpcMethodError::new(format!("No panes in workspace {ws_id}")))
 }
 
 pub fn handle_children(state: &CodexState, params: Value) -> Result<Value, IpcMethodError> {
