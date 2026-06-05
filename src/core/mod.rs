@@ -619,8 +619,9 @@ impl Core {
                 pane_id,
                 cwd,
                 kind,
+                name,
                 surface_params,
-            } => Self::apply_create_tab(engine, pane_id, cwd, kind, surface_params),
+            } => Self::apply_create_tab(engine, pane_id, cwd, kind, name, surface_params),
             DomainIntent::CloseTab { tab_id } => Ok(vec![Self::apply_close_tab(engine, tab_id)]),
             DomainIntent::MoveTab {
                 pane_id,
@@ -1603,6 +1604,7 @@ impl Core {
         pane_id: u32,
         cwd: Option<std::path::PathBuf>,
         kind: String,
+        explicit_name: Option<String>,
         surface_params: serde_json::Value,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         let tab_id = engine.next_ids.next_tab();
@@ -1660,14 +1662,14 @@ impl Core {
                         waker,
                         working_dir: cwd.as_deref(),
                     };
-                    pane.add_tab_deferred(tab_id, surface_id, spawn, None);
+                    pane.add_tab_deferred(tab_id, surface_id, spawn, explicit_name);
                 } else {
                     debug_assert!(prepared_terminal);
-                    pane.add_terminal_marker_tab_background(tab_id, surface_id, None);
+                    pane.add_terminal_marker_tab_background(tab_id, surface_id, explicit_name);
                 }
             } else {
                 let (surface, name) = prepared_non_terminal.unwrap();
-                pane.add_surface_tab(tab_id, name, None, surface);
+                pane.add_surface_tab(tab_id, name, explicit_name, surface);
             }
         }
 

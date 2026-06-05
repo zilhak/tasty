@@ -46,6 +46,7 @@ fn new_tab(
         pane_id,
         cwd,
         kind: kind.to_string(),
+        name: None,
         surface_params,
     };
     if let Err(e) = core.apply(engine, intent) {

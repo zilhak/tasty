@@ -169,6 +169,7 @@ pub fn execute_handler_action(
                         pane_id,
                         cwd: None,
                         kind: surface_kind.clone(),
+                        name: None,
                         surface_params: params,
                     };
                     if let Err(e) = core.apply(engine, intent) {

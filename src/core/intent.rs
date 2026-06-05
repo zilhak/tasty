@@ -88,6 +88,9 @@ pub(crate) enum DomainIntent {
         pane_id: u32,
         cwd: Option<PathBuf>,
         kind: String,
+        /// 명시 탭 이름. `Some` 이면 생성 시점부터 `explicit_name` 으로 고정되어
+        /// `display_name()` 에서 최우선으로 쓰인다 (cwd/OSC title 로 덮이지 않음).
+        name: Option<String>,
         surface_params: Value,
     },
     /// tab_id 로 tab close. *모든* workspace 의 pane 순회 (포커스 독립).

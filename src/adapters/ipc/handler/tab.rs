@@ -116,10 +116,15 @@ pub fn handle_tab_create(
         None
     };
 
+    let tab_name = params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let intent = crate::core::intent::DomainIntent::CreateTab {
         pane_id,
         cwd,
         kind: surface_type.to_string(),
+        name: tab_name,
         surface_params: params,
     };
     let events = match core.apply(engine, intent) {
