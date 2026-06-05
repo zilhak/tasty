@@ -145,7 +145,7 @@ impl Settings {
         normalize_choice(
             &mut self.appearance.default_font.font_scale_mode,
             &["auto", "fixed"],
-            "fixed",
+            "auto",
             "default_font.font_scale_mode",
             &mut report.changed,
         );
@@ -392,7 +392,7 @@ ui_scale = "large"
         assert!(report.changed);
         assert!(report.invalid_theme_name.is_none());
         assert_eq!(settings.appearance.ui_scale, "medium");
-        assert_eq!(settings.appearance.default_font.font_scale_mode, "fixed");
+        assert_eq!(settings.appearance.default_font.font_scale_mode, "auto");
         assert!(settings.appearance.terminal_font.font_scale_mode.is_none());
         assert_eq!(settings.general.shell_mode, "default");
         assert_eq!(settings.general.close_behavior, "ask");

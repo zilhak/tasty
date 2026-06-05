@@ -24,7 +24,7 @@ impl Default for FontSettings {
             font_size: 14.0,
             custom_font_path: String::new(),
             line_height: 1.0,
-            font_scale_mode: "fixed".to_string(),
+            font_scale_mode: "auto".to_string(),
         }
     }
 }
