@@ -9,7 +9,9 @@
 mod handlers;
 mod state;
 
-use serde_json::Value;
+use std::collections::HashSet;
+
+use serde_json::{Value, json};
 use state::CodexState;
 use tasty_plugin_sdk::{
     BusHandle, EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin,
@@ -71,12 +73,17 @@ impl Plugin for CodexPlugin {
         }
     }
 
-    /// worker dispatch 시작 직전 1회 호출. `surface.closed` 이벤트 구독 — 매니페스트의
-    /// `event_subscribe = ["surface.closed"]` 와 짝.
-    fn on_start(&mut self, _host: HostHandle, bus: BusHandle) {
+    /// worker dispatch 시작 직전 1회 호출.
+    ///
+    /// 1. `surface.closed` 이벤트 구독 — 매니페스트의 `event_subscribe = ["surface.closed"]` 와 짝.
+    /// 2. host 의 살아있는 surface 집합과 `CodexState` child registry 를 cross-check
+    ///    하여 stale entry 를 정리한다. Cmd-Q 종료 등으로 `surface.closed` 가 누락된
+    ///    경로에서 누적된 ghost 자식들을 매 boot 마다 self-heal.
+    fn on_start(&mut self, host: HostHandle, bus: BusHandle) {
         if let Err(e) = bus.subscribe("surface.closed") {
             tracing::warn!("subscribe surface.closed failed: {e}");
         }
+        reconcile_on_start(&mut self.state, &host);
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
@@ -102,6 +109,40 @@ impl Plugin for CodexPlugin {
             other => Err(IpcMethodError::not_found(other)),
         }
     }
+}
+
+/// 부팅 시 host 의 살아있는 surface 목록을 `surface.list` IPC 로 조회하여
+/// `CodexState` 의 child registry 와 cross-check 한다. IPC 가 실패하거나 응답이
+/// array 가 아닌 경우 — 보수적으로 reconcile 을 건너뛴다. 살아있는 entry 를 실수로
+/// 제거하는 비용이 stale 이 한 boot 더 남는 비용보다 크기 때문.
+///
+/// 변경이 1건이라도 발생하면 `state.save()` 를 한 번 호출하여 디스크 sync.
+fn reconcile_on_start(state: &mut CodexState, host: &HostHandle) {
+    let resp = match host.call("surface.list", json!({})) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("codex reconcile skip: surface.list IPC failed: {e}");
+            return;
+        }
+    };
+    let Some(arr) = resp.as_array() else {
+        tracing::warn!("codex reconcile skip: surface.list returned non-array");
+        return;
+    };
+    let live: HashSet<u32> = arr
+        .iter()
+        .filter_map(|s| s.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
+        .collect();
+    let summary = state.reconcile_with_live_surfaces(&live);
+    if summary.removed_children > 0 || summary.removed_parents > 0 {
+        state.save();
+    }
+    tracing::info!(
+        removed_children = summary.removed_children,
+        removed_parents = summary.removed_parents,
+        live_count = live.len(),
+        "codex reconcile on_start"
+    );
 }
 
 fn main() -> anyhow::Result<()> {
