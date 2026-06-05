@@ -190,11 +190,16 @@ impl HookManager {
                     let cmd = hook.command.clone();
                     let hook_id = hook.id;
                     std::thread::spawn(move || {
-                        let result = if cfg!(windows) {
-                            Command::new("cmd").args(["/C", &cmd]).output()
+                        let mut process = if cfg!(windows) {
+                            let mut c = Command::new("cmd");
+                            c.args(["/C", &cmd]);
+                            c
                         } else {
-                            Command::new("sh").args(["-c", &cmd]).output()
+                            let mut c = Command::new("sh");
+                            c.args(["-c", &cmd]);
+                            c
                         };
+                        let result = tasty_utils::process::hide_console(&mut process).output();
                         if let Err(e) = result {
                             tracing::warn!("hook {hook_id:?} spawn failed: {e}");
                         }

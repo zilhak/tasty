@@ -455,6 +455,7 @@ impl HostExecutor {
                 }
                 let (program, args) = command.split_first().expect("non-empty");
                 let mut cmd = std::process::Command::new(program);
+                tasty_utils::process::hide_console(&mut cmd);
                 cmd.args(args);
                 if let Some(c) = cwd {
                     cmd.current_dir(c);

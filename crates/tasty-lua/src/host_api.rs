@@ -47,6 +47,7 @@ pub(crate) fn install(lua: &Lua) -> Result<(), LuaEngineError> {
                 return Ok(());
             };
             let mut cmd = Command::new(exe);
+            tasty_utils::process::hide_console(&mut cmd);
             cmd.args(&args);
             // stdio inherited 면 Lua hook 콘솔이 노이즈로 차므로 분리.
             cmd.stdin(std::process::Stdio::null())

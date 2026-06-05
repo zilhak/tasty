@@ -587,6 +587,7 @@ pub(crate) fn run_custom_shell(command: &str, stdin_json: &str) -> std::io::Resu
         c
     };
 
+    tasty_utils::process::hide_console(&mut cmd);
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

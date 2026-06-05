@@ -159,13 +159,18 @@ impl GlobalHookManager {
     /// 디버깅이 어렵다. warn으로 흔적을 남긴다.
     pub fn execute_command(command: &str) {
         #[cfg(windows)]
-        let result = std::process::Command::new("cmd")
-            .args(["/C", command])
-            .spawn();
+        let mut cmd = {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/C", command]);
+            c
+        };
         #[cfg(not(windows))]
-        let result = std::process::Command::new("sh")
-            .args(["-c", command])
-            .spawn();
+        let mut cmd = {
+            let mut c = std::process::Command::new("sh");
+            c.args(["-c", command]);
+            c
+        };
+        let result = tasty_utils::process::hide_console(&mut cmd).spawn();
         if let Err(e) = result {
             tracing::warn!("global hook command spawn failed: {e}; cmd: {command}");
         }

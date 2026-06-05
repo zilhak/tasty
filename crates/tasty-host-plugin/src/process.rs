@@ -95,6 +95,9 @@ impl PluginProcess {
 
         let entry_path = package.entry_command_path();
         let mut cmd = Command::new(&entry_path);
+        // Windows GUI 서브시스템 호스트가 콘솔 서브시스템 플러그인 바이너리를
+        // spawn 할 때 빈 콘솔 창이 뜨는 것을 막는다 (비-Windows 에서는 no-op).
+        tasty_utils::process::hide_console(&mut cmd);
         cmd.args(package.entry_args())
             .env("TASTY_PLUGIN_ID", &package.manifest.id)
             .env("TASTY_HOST_API_VERSION", HOST_API_VERSION)

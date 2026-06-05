@@ -16,6 +16,7 @@ impl ProcessSpawner for StdProcessSpawner {
         cwd: Option<&Path>,
     ) -> anyhow::Result<Box<dyn ProcessChild>> {
         let mut cmd = std::process::Command::new(command);
+        tasty_utils::process::hide_console(&mut cmd);
         cmd.args(args);
         for (k, v) in env {
             cmd.env(k, v);
