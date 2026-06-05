@@ -71,11 +71,25 @@ pub fn draw_pane_tab_bars(
     let mut actions: Vec<(u32, PaneTabAction)> = Vec::new();
     let mut measured_tab_bar_height: Option<f32> = None;
 
-    let tab_w = th.tab_width.value();
-    let bar_h = th.item_height_tab.value();
-    let plus_w: f32 = 28.0;
-    let arrow_w: f32 = 20.0;
+    // 탭 바 독자 scale. 기존 ui_scale 과 분리 — 사용자가 settings 에서 직접
+    // tab_width / tab_font_size / monitor scale 반영도 (0..=1) 조정.
+    let appearance = &engine.settings.appearance;
+    let adjust = appearance.tab_adjust_factor(scale_factor);
+    let tab_w = appearance.tab_width * adjust;
+    let label_font_size = appearance.tab_font_size * adjust;
+    // bar_h / "+" / arrow / padding / busy dot / active indicator 굵기는 사용자
+    // 옵션을 따로 두지 않고 theme/hardcoded 값에 adjust 만 곱 — 폰트와 함께
+    // 비례 확대되도록.
+    let bar_h = th.item_height_tab.value() * adjust;
+    let plus_w: f32 = 28.0 * adjust;
+    let arrow_w: f32 = 20.0 * adjust;
     let separator_w: f32 = 1.0;
+    let h_padding: f32 = 8.0 * adjust;
+    let dot_radius: f32 = 3.0 * adjust;
+    let dot_pad: f32 = 6.0 * adjust;
+    let active_indicator_h: f32 = 2.0 * adjust;
+    let plus_font_size = th.font_size_body.value() * adjust;
+    let arrow_font_size = th.font_size_caption.value() * adjust;
 
     for info in &infos {
         let n = info.tab_names.len();
@@ -129,7 +143,7 @@ pub fn draw_pane_tab_bars(
                                     r.center(),
                                     egui::Align2::CENTER_CENTER,
                                     "<",
-                                    egui::FontId::proportional(th.font_size_caption.value()),
+                                    egui::FontId::proportional(arrow_font_size),
                                     arrow_color.into(),
                                 );
                                 if resp.clicked() && can_left {
@@ -195,14 +209,12 @@ pub fn draw_pane_tab_bars(
                                 if is_active {
                                     let line_rect = egui::Rect::from_min_size(
                                         egui::pos2(tab_rect.min.x, tab_rect.min.y),
-                                        egui::vec2(tab_w, 2.0),
+                                        egui::vec2(tab_w, active_indicator_h),
                                     );
                                     painter.rect_filled(line_rect, 0.0, th.blue);
                                 }
 
                                 if is_busy {
-                                    let dot_radius = 3.0;
-                                    let dot_pad = 6.0;
                                     let dot_center = egui::pos2(
                                         tab_rect.max.x - dot_pad - dot_radius,
                                         tab_rect.center().y,
@@ -217,9 +229,7 @@ pub fn draw_pane_tab_bars(
                                 }
 
                                 // Truncate tab name with ellipsis if it exceeds available width
-                                let font_id =
-                                    egui::FontId::proportional(th.font_size_caption.value());
-                                let h_padding = 8.0;
+                                let font_id = egui::FontId::proportional(label_font_size);
                                 let available_w = tab_w - h_padding * 2.0;
                                 let galley = painter.layout_no_wrap(
                                     name.clone(),
@@ -320,7 +330,7 @@ pub fn draw_pane_tab_bars(
                                         plus_rect.center(),
                                         egui::Align2::CENTER_CENTER,
                                         "+",
-                                        egui::FontId::proportional(th.font_size_body.value()),
+                                        egui::FontId::proportional(plus_font_size),
                                         th.subtext0.into(),
                                     );
                                     if resp.clicked() {
@@ -344,7 +354,7 @@ pub fn draw_pane_tab_bars(
                                     r.center(),
                                     egui::Align2::CENTER_CENTER,
                                     ">",
-                                    egui::FontId::proportional(th.font_size_caption.value()),
+                                    egui::FontId::proportional(arrow_font_size),
                                     arrow_color.into(),
                                 );
                                 if resp.clicked() && can_right {
@@ -526,7 +536,7 @@ pub fn draw_pane_tab_bars(
             ghost_rect.center(),
             egui::Align2::CENTER_CENTER,
             &ghost_name,
-            egui::FontId::proportional(th.font_size_caption.value()),
+            egui::FontId::proportional(label_font_size),
             ghost_fg,
         );
     }

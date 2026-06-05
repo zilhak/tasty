@@ -124,7 +124,7 @@
 - egui-winit + egui-wgpu를 이용한 wgpu 위 egui 렌더링
 - 좌측 SidePanel: 워크스페이스 목록, 활성 표시, 추가 버튼
 - Pane별 탭 바: 각 Pane의 rect 상단에 egui Area로 렌더링
-- 탭 UI: 150px 너비 영역 스타일, 1px 세로 구분선(surface1), active 탭 상단 2px 강조선(blue)
+- 탭 UI: 너비/폰트 크기/모니터 스케일 반영도(0~1)를 Appearance settings 에서 직접 조정 — 기본 150px 너비, 11px 폰트, monitor scale 완전 반영. 기존 UI Scale 옵션과 독립적으로 동작. 1px 세로 구분선(surface1), active 탭 상단 강조선(blue)
 - 탭 스크롤: 탭이 영역을 초과하면 좌우 화살표 버튼(< >)으로 스크롤 가능
 - 탭 이름 정책:
   - 기본: 포커스된 surface의 현재 작업 디렉토리의 폴더 이름 (시스템/유저 루트는 `/` 또는 `~`)

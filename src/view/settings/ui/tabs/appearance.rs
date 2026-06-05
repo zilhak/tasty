@@ -258,6 +258,30 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
                     .speed(1.0),
             );
             ui.end_row();
+
+            ui.label(t("settings.appearance.tab_width_label"));
+            ui.add(
+                egui::DragValue::new(&mut settings.appearance.tab_width)
+                    .range(40.0..=400.0)
+                    .speed(1.0),
+            );
+            ui.end_row();
+
+            ui.label(t("settings.appearance.tab_font_size_label"));
+            ui.add(
+                egui::DragValue::new(&mut settings.appearance.tab_font_size)
+                    .range(6.0..=32.0)
+                    .speed(0.5),
+            );
+            ui.end_row();
+
+            ui.label(t("settings.appearance.tab_monitor_scale_adjust_label"));
+            ui.add(
+                egui::DragValue::new(&mut settings.appearance.tab_monitor_scale_adjust)
+                    .range(0.0..=1.0)
+                    .speed(0.05),
+            );
+            ui.end_row();
         });
 }
 

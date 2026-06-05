@@ -98,6 +98,13 @@ pub struct AppearanceSettings {
     pub sidebar_width: LogicalPx,
     /// UI scale: "small", "medium", or "large". Affects all egui UI elements.
     pub ui_scale: String,
+    /// 탭 바 base 너비 (logical px). UI scale 과 무관하게 독자 적용.
+    pub tab_width: f32,
+    /// 탭 라벨 base 폰트 크기 (logical px). UI scale 과 무관.
+    pub tab_font_size: f32,
+    /// 모니터 scale_factor 반영 비율. 0=무시(모든 모니터 동일 logical px),
+    /// 1=완전 반영(egui 기본). final = base * (1 + adjust * (scale_factor - 1)).
+    pub tab_monitor_scale_adjust: f32,
     /// Default font settings applied when a surface override is unset.
     pub default_font: FontSettings,
     /// Terminal surface font override (per-field).
@@ -118,6 +125,9 @@ impl Default for AppearanceSettings {
             background_opacity: 1.0,
             sidebar_width: LogicalPx(180.0),
             ui_scale: "medium".to_string(),
+            tab_width: 150.0,
+            tab_font_size: 11.0,
+            tab_monitor_scale_adjust: 1.0,
             default_font: FontSettings::default(),
             terminal_font: FontOverride::default(),
             markdown_font: FontOverride::default(),
@@ -161,6 +171,13 @@ impl AppearanceSettings {
             "large" => 1.2,
             _ => 1.0, // medium
         }
+    }
+
+    /// 탭 바 전용 monitor scale 곱. `tab_monitor_scale_adjust=0` 이면 모든
+    /// 모니터에서 동일 logical px, `1` 이면 monitor scale 완전 반영.
+    /// 탭 width / font_size / padding 등 모든 픽셀 값에 일괄 곱.
+    pub fn tab_adjust_factor(&self, scale_factor: f32) -> f32 {
+        1.0 + self.tab_monitor_scale_adjust * (scale_factor - 1.0)
     }
 
     /// Get the sidebar width adjusted for UI scale.
