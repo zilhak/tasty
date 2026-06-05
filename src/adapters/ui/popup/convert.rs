@@ -2,6 +2,7 @@ use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
+use egui::emath::GuiRounding as _;
 use serde_json::json;
 
 /// Item height in the convert popup menu.
@@ -10,29 +11,95 @@ const ITEM_HEIGHT: f32 = 24.0;
 const HIDDEN_KINDS: &[&str] = &["empty"];
 /// 빌트인 우선 표시 순서. 이 목록에 없는 kind는 알파벳순으로 뒤따른다.
 const PREFERRED_ORDER: &[&str] = &["terminal", "markdown", "image"];
+/// `default_size` 산정 시 가정하는 항목 수. registry 가 비어 있을 수 있는 등록
+/// 시점에만 쓰이고, sizer 가 매 프레임 실제 등록된 kind 수로 재계산한다.
+/// 현재 빌트인 1 종 (terminal) + plugin 4 종 (markdown, image, explorer, html) = 5.
+const DEFAULT_KIND_COUNT: usize = 5;
 
 /// Sizer: 등록된 변환 가능 kind 수에 맞춰 popup 크기를 계산.
 /// notification.rs가 프레임마다 호출하므로 plugin이 새 kind를 등록한 직후
 /// 자동으로 popup 높이가 맞춰진다.
 pub fn convert_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
     let count = enumerate_convertible_kinds(state, engine).len();
-    convert_popup_size_for(count)
+    convert_popup_size_for(count, effective_item_spacing(engine))
 }
 
 /// Default size used when the popup is first registered (registry가 비어 있을 수 있는 시점).
 pub fn convert_popup_default_size() -> egui::Vec2 {
-    // builtin 4종 + explorer 1 = 5 정도를 가정. sizer가 매 프레임 재계산함.
-    convert_popup_size_for(5)
+    // ui_scale 미적용 baseline (medium = 1.0). sizer 가 매 프레임 재계산하므로 실제
+    // 렌더링에는 영향 없음 — register 시점 placeholder.
+    convert_popup_size_for(DEFAULT_KIND_COUNT, theme::theme().spacing_xs.value())
 }
 
-fn convert_popup_size_for(count: usize) -> egui::Vec2 {
+/// `theme_bridge.rs` 가 `style.spacing.item_spacing.y` 로 적용하는 값과 동일하게
+/// 계산한다. egui draw 시 `allocate_exact_size` 사이의 vertical gap 이 정확히 이
+/// 값이므로 sizer 도 같은 식을 써야 마지막 항목이 잘리지 않는다.
+fn effective_item_spacing(engine: &crate::core::CoreState) -> f32 {
+    let ui_scale = engine.settings.appearance.ui_scale_factor();
+    (theme::theme().spacing_xs.value() * ui_scale).round_ui()
+}
+
+fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {
     let count = count.max(1);
-    let item_spacing = 3.0;
     let content_h = count as f32 * ITEM_HEIGHT + (count.saturating_sub(1)) as f32 * item_spacing;
+    // round_ui 누적 오차 / egui Ui::new 초기 cursor 미세 padding 흡수용 1 px 마진.
+    // 마지막 항목 baseline 이 content_rect 경계와 정확히 일치할 때 anti-alias 한 줄이
+    // 잘려 보이는 case 예방.
+    let safety_margin = 1.0;
     egui::vec2(
         200.0,
-        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h,
+        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h + safety_margin,
     )
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    /// 마지막 항목이 잘리지 않으려면 sizer popup_h 가 *실제 필요 height* 이상이어야
+    /// 한다. 실제 필요 = TITLE_BAR_HEIGHT + 2·CONTENT_MARGIN + N·ITEM_HEIGHT
+    ///                + (N−1)·actual_spacing.
+    fn assert_fits(count: usize, item_spacing: f32) {
+        let popup_h = convert_popup_size_for(count, item_spacing).y;
+        let needed = popup::TITLE_BAR_HEIGHT
+            + popup::CONTENT_MARGIN * 2.0
+            + count as f32 * ITEM_HEIGHT
+            + (count.saturating_sub(1)) as f32 * item_spacing;
+        assert!(
+            popup_h >= needed,
+            "popup_h ({popup_h}) < needed ({needed}) for count={count} spacing={item_spacing}"
+        );
+    }
+
+    #[test]
+    fn fits_five_items_medium_scale() {
+        // ui_scale=1.0 → spacing_xs(4.0) × 1.0 = 4.0. 옛 하드코딩 3.0 으로는 4 px 부족.
+        assert_fits(5, 4.0);
+    }
+
+    #[test]
+    fn fits_five_items_large_scale() {
+        // ui_scale=1.2 → spacing_xs(4.0) × 1.2 = 4.8 → round_ui ≈ 4.78125.
+        assert_fits(5, 4.78125);
+    }
+
+    #[test]
+    fn fits_five_items_small_scale() {
+        // ui_scale=0.85 → 3.4 → round_ui ≈ 3.40625.
+        assert_fits(5, 3.40625);
+    }
+
+    #[test]
+    fn fits_single_item() {
+        // count=1 이면 gap 0개라 spacing 영향 없음.
+        assert_fits(1, 4.0);
+    }
+
+    #[test]
+    fn fits_many_items_large_scale() {
+        // plugin 등록 폭주 가정 (예: 10종). 같은 식이라 안전해야 한다.
+        assert_fits(10, 4.78125);
+    }
 }
 
 /// PopupDef::draw_fn entry point for the convert surface popup.
