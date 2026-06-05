@@ -12,11 +12,9 @@ pub fn is_alive(pid: u32) -> bool {
         return true;
     }
     // ESRCH (No such process) → false. EPERM (권한 없음, 그러나 프로세스 존재) → true.
-    // SAFETY: __error 는 errno 의 thread-local 포인터 — 항상 valid.
-    let errno_ptr = unsafe { libc::__error() };
-    // SAFETY: thread-local 변수 — 동시 덮어쓰기 전 즉시 읽음.
-    let errno = unsafe { *errno_ptr };
-    errno == libc::EPERM
+    // errno 접근은 플랫폼마다 심볼이 다르다 (macOS/BSD `__error`, Linux `__errno_location`).
+    // std 래퍼로 통일해 크로스 플랫폼 분기를 피한다 — kill 직후 즉시 읽으므로 errno 유효.
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 #[cfg(windows)]
