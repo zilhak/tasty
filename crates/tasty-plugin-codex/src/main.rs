@@ -112,9 +112,11 @@ impl Plugin for CodexPlugin {
 }
 
 /// 부팅 시 host 의 살아있는 surface 목록을 `surface.list` IPC 로 조회하여
-/// `CodexState` 의 child registry 와 cross-check 한다. IPC 가 실패하거나 응답이
-/// array 가 아닌 경우 — 보수적으로 reconcile 을 건너뛴다. 살아있는 entry 를 실수로
-/// 제거하는 비용이 stale 이 한 boot 더 남는 비용보다 크기 때문.
+/// `CodexState` 의 child registry 와 cross-check 한다. IPC 가 실패하거나, 응답이
+/// array 가 아니거나, **array 가 비어있는** 경우 — 보수적으로 reconcile 을 건너뛴다.
+/// 빈 array 는 boot 시 layout restore 가 아직 일어나지 않은 시점에 reconcile 이
+/// 돌아 정상 child 까지 모두 stale 로 오판될 위험이 있어 race 회피 목적으로 skip.
+/// 살아있는 entry 를 실수로 제거하는 비용이 stale 이 한 boot 더 남는 비용보다 크다.
 ///
 /// 변경이 1건이라도 발생하면 `state.save()` 를 한 번 호출하여 디스크 sync.
 fn reconcile_on_start(state: &mut CodexState, host: &HostHandle) {
@@ -129,10 +131,9 @@ fn reconcile_on_start(state: &mut CodexState, host: &HostHandle) {
         tracing::warn!("codex reconcile skip: surface.list returned non-array");
         return;
     };
-    let live: HashSet<u32> = arr
-        .iter()
-        .filter_map(|s| s.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
-        .collect();
+    let Some(live) = live_set_or_skip(arr) else {
+        return;
+    };
     let summary = state.reconcile_with_live_surfaces(&live);
     if summary.removed_children > 0 || summary.removed_parents > 0 {
         state.save();
@@ -143,6 +144,80 @@ fn reconcile_on_start(state: &mut CodexState, host: &HostHandle) {
         live_count = live.len(),
         "codex reconcile on_start"
     );
+}
+
+/// `surface.list` 응답 array 를 live surface id 집합으로 변환한다. **빈 array** 인
+/// 경우 `None` 을 반환하여 호출자가 reconcile 자체를 skip 하도록 신호한다.
+/// boot 시 layout restore 가 아직 안 일어난 시점에 빈 응답이 올 수 있고, 그때
+/// reconcile 이 돌면 모든 child 가 stale 로 간주되어 정상 entry 까지 사라진다.
+/// 호스트는 워크스페이스/페인 구조가 비어 있어도 최소 1개 surface 는 항상 노출하므로
+/// 빈 array 는 거의 항상 "아직 준비 안 됨" 신호로 해석해도 안전하다.
+fn live_set_or_skip(arr: &[Value]) -> Option<HashSet<u32>> {
+    if arr.is_empty() {
+        tracing::warn!("codex reconcile skip: empty surface list — likely pre-layout-restore");
+        return None;
+    }
+    Some(
+        arr.iter()
+            .filter_map(|s| s.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod reconcile_tests {
+    use super::*;
+
+    #[test]
+    fn live_set_or_skip_returns_none_for_empty_array() {
+        // 빈 array → None → 호출자가 reconcile skip. CodexState 가 변경되지 않음을
+        // 보장하기 위한 첫 관문 (단위로 분리하여 테스트 가능).
+        assert_eq!(live_set_or_skip(&[]), None);
+    }
+
+    #[test]
+    fn live_set_or_skip_returns_ids_for_non_empty() {
+        let arr = vec![
+            json!({ "id": 1 }),
+            json!({ "id": 7 }),
+            json!({ "no_id": true }),
+        ];
+        let set = live_set_or_skip(&arr).expect("non-empty array should produce Some");
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&1));
+        assert!(set.contains(&7));
+    }
+
+    #[test]
+    fn empty_surface_list_does_not_mutate_state() {
+        // 빈 array 시나리오: state 에 child 1명 등록 → live_set_or_skip 이 None 반환
+        // → reconcile_with_live_surfaces 호출 자체가 일어나지 않음 → state 불변.
+        // pre-layout-restore race 시 정상 child 가 사라지지 않는지 검증.
+        let mut state = CodexState::default();
+        let idx = state.next_index_for(10);
+        state.register_child(
+            10,
+            state::ChildEntry {
+                child_surface_id: 100,
+                index: idx,
+                cwd: None,
+                role: None,
+                nickname: None,
+            },
+        );
+        let before_children = state.list_children(10).len();
+        let before_parent = state.parent_of_child(100);
+
+        // 빈 array 가 오면 live_set_or_skip 이 None → 호출자가 early return.
+        // 그 동작을 그대로 모사한다. live_set_or_skip(&[]) 가 None 이므로 이 분기는
+        // 실행되지 않아야 한다 — 만약 실행되면 아래 assert 가 실패.
+        if let Some(live) = live_set_or_skip(&[]) {
+            let _ = state.reconcile_with_live_surfaces(&live); // 검증 대상은 state 불변성, summary 는 미사용
+        }
+
+        assert_eq!(state.list_children(10).len(), before_children);
+        assert_eq!(state.parent_of_child(100), before_parent);
+    }
 }
 
 fn main() -> anyhow::Result<()> {
