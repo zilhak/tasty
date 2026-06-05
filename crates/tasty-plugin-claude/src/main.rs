@@ -221,10 +221,9 @@ fn reconcile_on_start(
         tracing::warn!("claude reconcile skip: surface.list returned non-array");
         return;
     };
-    let live: HashSet<u32> = arr
-        .iter()
-        .filter_map(|s| s.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
-        .collect();
+    let Some(live) = live_set_or_skip(arr) else {
+        return;
+    };
     // reconcile 전에 dead 가 될 child surface_id 를 snapshot — reconcile 이 끝나면
     // state 에서 사라져 ErrorScanner 정리 대상을 알 수 없게 된다.
     let stale_sids = state.collect_stale_child_surface_ids(&live);
@@ -248,6 +247,76 @@ fn reconcile_on_start(
         live_count = live.len(),
         "claude reconcile on_start"
     );
+}
+
+/// `surface.list` 응답 array 를 live surface id 집합으로 변환한다. **빈 array** 인
+/// 경우 `None` 을 반환하여 호출자가 reconcile 자체를 skip 하도록 신호한다.
+/// boot 시 layout restore 가 아직 안 일어난 시점에 빈 응답이 올 수 있고, 그때
+/// reconcile 이 돌면 모든 child 가 stale 로 간주되어 정상 entry 까지 사라진다.
+/// 호스트는 워크스페이스/페인 구조가 비어 있어도 최소 1개 surface 는 항상 노출하므로
+/// 빈 array 는 거의 항상 "아직 준비 안 됨" 신호로 해석해도 안전하다.
+fn live_set_or_skip(arr: &[Value]) -> Option<HashSet<u32>> {
+    if arr.is_empty() {
+        tracing::warn!("claude reconcile skip: empty surface list — likely pre-layout-restore");
+        return None;
+    }
+    Some(
+        arr.iter()
+            .filter_map(|s| s.get("id").and_then(|v| v.as_u64()).map(|v| v as u32))
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod reconcile_tests {
+    use super::*;
+
+    #[test]
+    fn live_set_or_skip_returns_none_for_empty_array() {
+        // 빈 array → None → 호출자가 reconcile skip. ClaudeState 가 변경되지 않음을
+        // 보장하기 위한 첫 관문 (단위로 분리하여 테스트 가능).
+        assert_eq!(live_set_or_skip(&[]), None);
+    }
+
+    #[test]
+    fn live_set_or_skip_returns_ids_for_non_empty() {
+        let arr = vec![
+            json!({ "id": 1 }),
+            json!({ "id": 7 }),
+            json!({ "no_id": true }),
+        ];
+        let set = live_set_or_skip(&arr).expect("non-empty array should produce Some");
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&1));
+        assert!(set.contains(&7));
+    }
+
+    #[test]
+    fn empty_surface_list_does_not_mutate_state() {
+        // 빈 array 시나리오: state 에 child 1명 등록 → live_set_or_skip 이 None 반환
+        // → reconcile_with_live_surfaces 호출 자체가 일어나지 않음 → state 불변.
+        // pre-layout-restore race 시 정상 child 가 사라지지 않는지 검증.
+        let mut state = ClaudeState::default();
+        state.register_child(
+            10,
+            state::ChildEntry {
+                child_surface_id: 100,
+                index: 1,
+                cwd: None,
+                role: None,
+                nickname: None,
+            },
+        );
+        let before_children = state.list_children(10).len();
+        let before_parent = state.parent_of_child(100);
+
+        if let Some(live) = live_set_or_skip(&[]) {
+            let _ = state.reconcile_with_live_surfaces(&live); // 본 분기는 실행되지 않아야 함
+        }
+
+        assert_eq!(state.list_children(10).len(), before_children);
+        assert_eq!(state.parent_of_child(100), before_parent);
+    }
 }
 
 fn main() -> anyhow::Result<()> {
