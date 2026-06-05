@@ -2,9 +2,26 @@ use winit::window::Window;
 
 use crate::adapters::ui;
 use crate::model::PhysicalRect;
+use crate::settings::EffectiveFont;
 use crate::state::AppState;
 
 use super::GpuState;
+
+/// Build a single-line signature capturing every `EffectiveFont` field that
+/// the GPU cell renderer cares about, plus the scale-resolved size. Used to
+/// detect when `update_font` must be re-run.
+///
+/// Comparing the raw user-facing settings (not the resolved family name) is
+/// intentional — `cosmic_text` normalizes `""` / `"monospace"` into
+/// `FamilyOwned::Name("D2Coding ligature")`, so reading back the post-resolve
+/// family from the renderer and comparing it against the raw settings would
+/// always mismatch, causing a wasted atlas reset every frame.
+pub(super) fn term_font_signature(font: &EffectiveFont, effective_size: f32) -> String {
+    format!(
+        "{}|{}|{}|{}",
+        effective_size, font.font_family, font.custom_font_path, font.line_height
+    )
+}
 
 impl GpuState {
     #[allow(clippy::too_many_arguments)] // reason: frame context 전체 전달
@@ -57,17 +74,8 @@ impl GpuState {
 
         let term_font = engine.settings.appearance.effective_terminal_font();
         let effective_font_size = term_font.effective_font_size(self.scale_factor);
-        let current_font_size = self.renderer.font_config.metrics.font_size;
-        let current_font_family = match &self.renderer.font_config.font_family {
-            cosmic_text::FamilyOwned::Monospace => String::new(),
-            cosmic_text::FamilyOwned::Name(name) => name.to_string(),
-            _ => String::new(),
-        };
-        let expected_cell_height = (effective_font_size * term_font.line_height).ceil();
-        if effective_font_size != current_font_size
-            || term_font.font_family != current_font_family
-            || expected_cell_height != self.renderer.font_config.metrics.cell_height
-        {
+        let new_sig = term_font_signature(&term_font, effective_font_size);
+        if new_sig != self.last_term_font_sig {
             self.renderer.update_font(
                 &self.device,
                 &self.queue,
@@ -78,6 +86,7 @@ impl GpuState {
             );
             self.renderer
                 .resize(&self.queue, self.size.width, self.size.height);
+            self.last_term_font_sig = new_sig;
         }
     }
 
@@ -212,5 +221,68 @@ impl GpuState {
         }
 
         output.present();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_font() -> EffectiveFont {
+        EffectiveFont {
+            font_family: String::new(),
+            font_size: 14.0,
+            custom_font_path: String::new(),
+            line_height: 1.0,
+            font_scale_mode: "auto".to_string(),
+        }
+    }
+
+    #[test]
+    fn signature_stable_for_identical_input() {
+        let f = base_font();
+        assert_eq!(term_font_signature(&f, 14.0), term_font_signature(&f, 14.0));
+    }
+
+    #[test]
+    fn signature_differs_when_family_changes() {
+        let a = base_font();
+        let mut b = base_font();
+        b.font_family = "Hack".into();
+        assert_ne!(term_font_signature(&a, 14.0), term_font_signature(&b, 14.0));
+    }
+
+    #[test]
+    fn signature_differs_when_custom_font_path_changes() {
+        let a = base_font();
+        let mut b = base_font();
+        b.custom_font_path = "/tmp/x.ttf".into();
+        assert_ne!(term_font_signature(&a, 14.0), term_font_signature(&b, 14.0));
+    }
+
+    #[test]
+    fn signature_differs_when_line_height_changes() {
+        let a = base_font();
+        let mut b = base_font();
+        b.line_height = 1.25;
+        assert_ne!(term_font_signature(&a, 14.0), term_font_signature(&b, 14.0));
+    }
+
+    #[test]
+    fn signature_differs_when_effective_size_changes() {
+        let f = base_font();
+        // scale_factor 변화(HiDPI 모니터 전환) 또는 font_scale_mode 토글의 결과.
+        assert_ne!(term_font_signature(&f, 14.0), term_font_signature(&f, 28.0));
+    }
+
+    #[test]
+    fn signature_collapses_empty_and_normalized_family() {
+        // 정규화 mismatch(`""` ↔ `"D2Coding ligature"`) 가 신호 안 되도록,
+        // signature 는 사용자가 입력한 raw family 만 본다.
+        let f = base_font();
+        let sig_empty = term_font_signature(&f, 14.0);
+        // 같은 `""` 가 두 번 들어왔을 때 같은 signature 이어야 한다 — 매 frame
+        // update_font 호출되던 G2 회귀의 회귀 방지.
+        assert_eq!(sig_empty, term_font_signature(&f, 14.0));
     }
 }

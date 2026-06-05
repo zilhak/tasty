@@ -49,6 +49,12 @@ pub struct GpuState {
     pub(super) egui_state: egui_winit::State,
     pub(super) egui_renderer: egui_wgpu::Renderer,
     pub(super) scale_factor: f32,
+    /// Last-applied terminal font signature (see `egui_bridge::term_font_signature`).
+    /// post_egui_update re-runs `update_font` only when this string changes,
+    /// covering every `EffectiveFont` field plus the scale-resolved size — closes
+    /// the holes around `custom_font_path` and the empty-string font_family
+    /// normalization mismatch.
+    pub(super) last_term_font_sig: String,
     /// Tracks per-surface egui font signatures so we re-register only on change.
     pub(super) surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState,
     /// Plugin Canvas SharedBuffer → wgpu texture cache.
@@ -193,6 +199,8 @@ impl GpuState {
 
         let egui_renderer = egui_wgpu::Renderer::new(&device, surface_format, None, 1, false);
 
+        let last_term_font_sig = egui_bridge::term_font_signature(&term_font, effective_font_size);
+
         Ok(Self {
             surface,
             device,
@@ -204,6 +212,7 @@ impl GpuState {
             egui_state,
             egui_renderer,
             scale_factor,
+            last_term_font_sig,
             surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState::default(),
             canvas_textures: canvas_texture::CanvasTextureCache::new(),
             pending_screenshot: None,
