@@ -36,7 +36,30 @@ pub fn normalize_cwd_arg(raw: &str) -> Result<String> {
     if !meta.is_dir() {
         bail!("cwd '{}' is not a directory", canon.display());
     }
-    Ok(canon.to_string_lossy().into_owned())
+    let out = canon.to_string_lossy().into_owned();
+    // Windows 한정: `std::fs::canonicalize` 는 `\\?\` verbatim(extended-length)
+    // prefix 가 붙은 경로를 반환한다. 이 cwd 는 PTY working_dir 로 그대로 전달되어
+    // 자식 프로세스(예: Claude Code/bun)의 process.cwd() 가 되는데, 일부 도구는
+    // `\\?\` 경로를 file URL 로 변환하지 못해 깨진다(pathToFileURL). 따라서
+    // verbatim prefix 를 제거해 일반 경로로 돌려준다. 비-Windows 는 영향 없음.
+    #[cfg(windows)]
+    let out = strip_windows_verbatim_prefix(&out);
+    Ok(out)
+}
+
+/// Windows verbatim(extended-length) prefix `\\?\` 를 제거한다.
+/// - `\\?\UNC\server\share\..` → `\\server\share\..`
+/// - `\\?\C:\..`               → `C:\..`
+/// - 이미 일반 경로            → 그대로 반환
+#[cfg(windows)]
+fn strip_windows_verbatim_prefix(p: &str) -> String {
+    if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = p.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        p.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -85,5 +108,42 @@ mod tests {
     #[test]
     fn empty_errors() {
         assert!(normalize_cwd_arg("").is_err());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_strips_verbatim_disk_prefix() {
+        assert_eq!(
+            strip_windows_verbatim_prefix(r"\\?\E:\workspace\tasty\.worktree\wt-1"),
+            r"E:\workspace\tasty\.worktree\wt-1"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_strips_verbatim_unc_prefix() {
+        assert_eq!(
+            strip_windows_verbatim_prefix(r"\\?\UNC\server\share\dir"),
+            r"\\server\share\dir"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_leaves_normal_path_untouched() {
+        assert_eq!(
+            strip_windows_verbatim_prefix(r"E:\already\normal"),
+            r"E:\already\normal"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_normalize_returns_non_verbatim() {
+        // canonicalize 가 \\?\ 를 붙여도 normalize_cwd_arg 결과는 일반 경로여야 한다.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let out = normalize_cwd_arg(tmp.path().to_str().unwrap()).expect("ok");
+        assert!(!out.starts_with(r"\\?\"), "verbatim prefix leaked: {out}");
+        assert!(Path::new(&out).is_dir());
     }
 }
