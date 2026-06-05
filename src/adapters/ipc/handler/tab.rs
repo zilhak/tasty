@@ -134,6 +134,7 @@ pub fn handle_tab_create(
 
     let Some(crate::core::intent::CoreEvent::TabCreated {
         pane_id,
+        surface_id,
         tab_count,
         active_tab,
         ..
@@ -146,6 +147,7 @@ pub fn handle_tab_create(
         id,
         json!({
             "pane_id": pane_id,
+            "surface_id": surface_id,
             "tab_count": tab_count,
             "active_tab": active_tab,
         }),
