@@ -36,30 +36,13 @@ pub fn normalize_cwd_arg(raw: &str) -> Result<String> {
     if !meta.is_dir() {
         bail!("cwd '{}' is not a directory", canon.display());
     }
-    let out = canon.to_string_lossy().into_owned();
-    // Windows 한정: `std::fs::canonicalize` 는 `\\?\` verbatim(extended-length)
-    // prefix 가 붙은 경로를 반환한다. 이 cwd 는 PTY working_dir 로 그대로 전달되어
-    // 자식 프로세스(예: Claude Code/bun)의 process.cwd() 가 되는데, 일부 도구는
-    // `\\?\` 경로를 file URL 로 변환하지 못해 깨진다(pathToFileURL). 따라서
-    // verbatim prefix 를 제거해 일반 경로로 돌려준다. 비-Windows 는 영향 없음.
-    #[cfg(windows)]
-    let out = strip_windows_verbatim_prefix(&out);
-    Ok(out)
-}
-
-/// Windows verbatim(extended-length) prefix `\\?\` 를 제거한다.
-/// - `\\?\UNC\server\share\..` → `\\server\share\..`
-/// - `\\?\C:\..`               → `C:\..`
-/// - 이미 일반 경로            → 그대로 반환
-#[cfg(windows)]
-fn strip_windows_verbatim_prefix(p: &str) -> String {
-    if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{rest}")
-    } else if let Some(rest) = p.strip_prefix(r"\\?\") {
-        rest.to_string()
-    } else {
-        p.to_string()
-    }
+    // canonicalize 는 Windows 에서 `\\?\` verbatim 경로를 돌려준다. 이 cwd 는 PTY
+    // working_dir 로 전달되어 자식 프로세스의 process.cwd() 가 되는데, 일부 도구가
+    // `\\?\` 를 file URL 로 변환하지 못해 깨진다. 외부 전달 전에 일반 경로로 되돌린다.
+    // (비-Windows 는 no-op — `tasty_utils::path::strip_verbatim_prefix` 참조.)
+    Ok(tasty_utils::path::strip_verbatim_prefix(
+        &canon.to_string_lossy(),
+    ))
 }
 
 #[cfg(test)]
@@ -108,33 +91,6 @@ mod tests {
     #[test]
     fn empty_errors() {
         assert!(normalize_cwd_arg("").is_err());
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn windows_strips_verbatim_disk_prefix() {
-        assert_eq!(
-            strip_windows_verbatim_prefix(r"\\?\E:\workspace\tasty\.worktree\wt-1"),
-            r"E:\workspace\tasty\.worktree\wt-1"
-        );
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn windows_strips_verbatim_unc_prefix() {
-        assert_eq!(
-            strip_windows_verbatim_prefix(r"\\?\UNC\server\share\dir"),
-            r"\\server\share\dir"
-        );
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn windows_leaves_normal_path_untouched() {
-        assert_eq!(
-            strip_windows_verbatim_prefix(r"E:\already\normal"),
-            r"E:\already\normal"
-        );
     }
 
     #[test]
