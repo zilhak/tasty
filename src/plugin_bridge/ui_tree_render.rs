@@ -217,7 +217,20 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
             text,
             placeholder_i18n_key,
         } => {
-            let mut buf = text.clone();
+            // 사용자 편집 buffer 와 직전 protocol text 를 egui memory 에 보관해
+            // frame 경계 너머로 보존한다. plugin 측 text 가 실제로 바뀐 경우에만
+            // 사용자 buffer 를 무효화 — splitter ratio (render_splitter) 와 동일 패턴.
+            let (user_buf_id, last_protocol_id) = addressbar_memory_ids(sink, id);
+            let stored = ui.ctx().memory(|m| {
+                (
+                    m.data.get_temp::<String>(user_buf_id),
+                    m.data.get_temp::<String>(last_protocol_id),
+                )
+            });
+            let mut buf = match stored {
+                (Some(user), Some(last)) if last == *text => user,
+                _ => text.clone(),
+            };
             let placeholder = placeholder_i18n_key
                 .as_ref()
                 .map(|k| crate::i18n::t(k))
@@ -236,9 +249,13 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
             if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 sink.push_event(UiEvent::AddressbarSubmit {
                     node_id: id.clone(),
-                    text: buf,
+                    text: buf.clone(),
                 });
             }
+            ui.ctx().memory_mut(|m| {
+                m.data.insert_temp(user_buf_id, buf);
+                m.data.insert_temp(last_protocol_id, text.clone());
+            });
         }
         UiNode::TextPreview {
             content,
@@ -561,6 +578,14 @@ fn render_splitter(
 /// Splitter의 egui memory 키 — 사용자가 조절한 ratio와 직전 protocol ratio를 분리 저장.
 fn splitter_memory_ids(sink: &dyn UiSink, node_id: &str) -> (egui::Id, egui::Id) {
     let base = ("splitter_state", sink.salt(), node_id);
+    let user = egui::Id::new(("user", base));
+    let last_protocol = egui::Id::new(("last_protocol", base));
+    (user, last_protocol)
+}
+
+/// Addressbar의 egui memory 키 — 사용자가 편집한 buffer 와 직전 protocol text 를 분리 저장.
+fn addressbar_memory_ids(sink: &dyn UiSink, node_id: &str) -> (egui::Id, egui::Id) {
+    let base = ("addressbar_state", sink.salt(), node_id);
     let user = egui::Id::new(("user", base));
     let last_protocol = egui::Id::new(("last_protocol", base));
     (user, last_protocol)
