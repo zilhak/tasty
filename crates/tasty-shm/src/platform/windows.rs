@@ -11,7 +11,8 @@ use windows_sys::Win32::Foundation::{
     CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, HANDLE, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::System::Memory::{
-    CreateFileMappingW, FILE_MAP_ALL_ACCESS, MapViewOfFile, PAGE_READWRITE, UnmapViewOfFile,
+    CreateFileMappingW, FILE_MAP_ALL_ACCESS, MEMORY_MAPPED_VIEW_ADDRESS, MapViewOfFile,
+    PAGE_READWRITE, UnmapViewOfFile,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcess, PROCESS_DUP_HANDLE};
 
@@ -59,7 +60,9 @@ impl Drop for PlatformMapping {
         if !self.view.is_null() {
             // SAFETY: view는 MapViewOfFile이 반환한 유효 포인터. Drop은 한 번만 호출.
             unsafe {
-                UnmapViewOfFile(self.view as _);
+                UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS {
+                    Value: self.view as _,
+                });
             }
         }
         // handle은 OwnedHandle이 자동 close.

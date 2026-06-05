@@ -26,7 +26,7 @@ pub struct HandleStream {
     #[cfg(unix)]
     inner: std::os::unix::net::UnixStream,
     #[cfg(windows)]
-    inner: platform::PipeServerStream,
+    inner: self::windows::PipeServerStream,
 }
 
 impl HandleStream {
