@@ -102,7 +102,7 @@ if my_popup_closed {
 | `title_key` | `&'static str` | i18n 키. `t()`로 번역하여 타이틀바에 표시 |
 | `title_fn` | `Option<fn(&AppState) -> String>` | 동적 타이틀. 설정 시 `title_key` 대신 사용. 대상에 따라 제목이 바뀌는 팝업에 사용 (예: rename popup) |
 | `default_size` | `egui::Vec2` | 기본 크기. `TITLE_BAR_HEIGHT`(28px) + `CONTENT_MARGIN`(4px) 포함 |
-| `sizer` | `Option<fn(&AppState) -> egui::Vec2>` | 동적 크기. open 시점에 1회 호출 |
+| `sizer` | `Option<fn(&AppState) -> egui::Vec2>` | 동적 크기. **매 프레임 호출** 되어 `popup.size` 에 반영. 항목 간격을 손으로 더할 때는 반드시 `theme().spacing_xs.value() × engine.settings.appearance.ui_scale_factor()` (= egui `style.spacing.item_spacing.y` 와 동일) 을 써야 한다. 하드코딩하면 medium/large UI scale 에서 마지막 항목이 잘린다. 1 px 안전 마진을 더해 round_ui 누적/`Ui::new` 초기 cursor 드리프트를 흡수 권장 |
 | `default_scope` | `PopupScope` | 가시성/경계 범위 (Window, Workspace, Pane, Tab, Surface) |
 | `close_on_outside_click` | `bool` | true면 팝업 바깥 클릭 시 닫힘 |
 | `draw_fn` | `fn(&mut Ui, &mut AppState) -> PopupAction` | 매 프레임 호출되는 렌더링 함수 |
