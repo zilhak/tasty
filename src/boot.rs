@@ -32,7 +32,7 @@ pub(crate) fn run() -> anyhow::Result<()> {
 
     match cli_routing::parse_or_route()? {
         cli_routing::Routed::AlreadyHandled => Ok(()),
-        cli_routing::Routed::Subcommand(cmd) => run_subcommand(cmd),
+        cli_routing::Routed::Subcommand(cmd, port_file) => run_subcommand(cmd, port_file),
         cli_routing::Routed::AugmentedHelp => run_augmented_help(),
         cli_routing::Routed::Gui(cli) => {
             #[cfg(feature = "gui")]
@@ -54,9 +54,9 @@ pub(crate) fn run() -> anyhow::Result<()> {
 }
 
 /// `cli.command.is_some()` — i18n 후 client mode 진입.
-fn run_subcommand(cmd: cli::Commands) -> anyhow::Result<()> {
+fn run_subcommand(cmd: cli::Commands, port_file: Option<String>) -> anyhow::Result<()> {
     locale::init();
-    cli::run_client(cmd)
+    cli::run_client(cmd, port_file.as_deref())
 }
 
 /// `TASTY_SURFACE_ID` + `!cli.launch` — i18n 후 augmented help 출력.

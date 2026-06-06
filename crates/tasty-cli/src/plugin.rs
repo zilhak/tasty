@@ -26,8 +26,9 @@ pub fn run_audit_follow(
     decision: Option<&str>,
     batch: u64,
     interval_ms: u64,
+    port_file: Option<&str>,
 ) -> Result<()> {
-    let port = port_file::read_port_file()?;
+    let port = port_file::read_port_file_from(port_file)?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",

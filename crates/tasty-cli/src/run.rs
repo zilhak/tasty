@@ -38,6 +38,8 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
             return None;
         }
     };
+    // 루트 `--port-file` 플래그는 augmented(Cli 기반)에 그대로 포함됨. 추출해 dynamic 경로로 전달.
+    let port_file = matches.get_one::<String>("port_file").cloned();
     let (top_name, _) = matches.subcommand()?;
     if !entries.iter().any(|e| e.cli.name == top_name) {
         return None;
@@ -47,13 +49,16 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
         Err(e) => return Some(Err(e)),
     };
     Some(match polling {
-        Some(p) => run_dynamic_client_polling(request, p),
-        None => run_dynamic_client(request),
+        Some(p) => run_dynamic_client_polling(request, p, port_file.as_deref()),
+        None => run_dynamic_client(request, port_file.as_deref()),
     })
 }
 
-fn run_dynamic_client(request: tasty_ipc::protocol::JsonRpcRequest) -> Result<()> {
-    let port = port_file::read_port_file()?;
+fn run_dynamic_client(
+    request: tasty_ipc::protocol::JsonRpcRequest,
+    port_file: Option<&str>,
+) -> Result<()> {
+    let port = port_file::read_port_file_from(port_file)?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",
@@ -88,10 +93,11 @@ fn run_dynamic_client(request: tasty_ipc::protocol::JsonRpcRequest) -> Result<()
 fn run_dynamic_client_polling(
     request: tasty_ipc::protocol::JsonRpcRequest,
     polling: tasty_plugin_manifest::PollingDecl,
+    port_file: Option<&str>,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
 
-    let port = port_file::read_port_file()?;
+    let port = port_file::read_port_file_from(port_file)?;
     let interval = Duration::from_millis(polling.interval_ms);
     // timeout_field 가 manifest 에 선언되어 있으면 request.params 에서 그 값 (초)
     // 을 deadline 으로 사용. 없으면 무한 대기.
@@ -157,7 +163,7 @@ fn run_dynamic_client_polling(
 }
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
-pub fn run_client(command: Commands) -> Result<()> {
+pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     // `tasty update` is standalone — no host instance required.
     if let Commands::Update(opts) = &command {
         let code = crate::commands::update::run(opts, env!("CARGO_PKG_VERSION"));
@@ -200,10 +206,11 @@ pub fn run_client(command: Commands) -> Result<()> {
             decision.as_deref(),
             *batch,
             *interval_ms,
+            port_file,
         );
     }
 
-    let port = port_file::read_port_file()?;
+    let port = port_file::read_port_file_from(port_file)?;
     let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
         anyhow::anyhow!(
             "Could not connect to tasty instance on port {}: {}. Is tasty running?",
