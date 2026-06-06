@@ -49,12 +49,6 @@ pub struct ClaudeState {
     idle: HashMap<u32, bool>,
     /// surface → needs_input 상태
     needs_input: HashMap<u32, bool>,
-    /// `claude.spawn`의 (parent_surface_id, workspace_id) → spawn_pane_id 매핑.
-    /// 호스트 `engine_state.rs::spawn_panes`와 동일하게 in-memory only — 재시작 후
-    /// 새 spawn pane이 만들어진다. pane이 사용자에 의해 닫혔는지는 매 사용 시점에
-    /// IPC로 검증한다 (`pane.list`).
-    #[serde(skip)]
-    spawn_panes: HashMap<(u32, u32), u32>,
     /// surface → session-start 시각 (unix ms). stop/session-end 시 `wall_time_ms`
     /// 텔레메트리 기록에 사용. 재시작 시 휘발되므로 spans 가 끊겨도 누락만
     /// 발생하고 잘못된 값은 나오지 않는다.
@@ -230,25 +224,6 @@ impl ClaudeState {
     pub fn take_wall_time(&mut self, surface: u32, now_ms: u64) -> Option<u64> {
         let start = self.wall_time_starts.remove(&surface)?;
         Some(now_ms.saturating_sub(start))
-    }
-
-    /// `claude.spawn`의 (parent, workspace) → spawn_pane 조회.
-    pub fn spawn_pane_for(&self, parent_surface_id: u32, workspace_id: u32) -> Option<u32> {
-        self.spawn_panes
-            .get(&(parent_surface_id, workspace_id))
-            .copied()
-    }
-
-    /// 새 spawn pane id를 등록한다.
-    pub fn set_spawn_pane(&mut self, parent_surface_id: u32, workspace_id: u32, pane_id: u32) {
-        self.spawn_panes
-            .insert((parent_surface_id, workspace_id), pane_id);
-    }
-
-    /// 사용자가 spawn pane을 닫았을 때 호출. 매핑을 제거해 다음 spawn에서
-    /// 새 pane을 만들도록 한다.
-    pub fn clear_spawn_pane(&mut self, parent_surface_id: u32, workspace_id: u32) {
-        self.spawn_panes.remove(&(parent_surface_id, workspace_id));
     }
 
     /// `--surface`가 주어지지 않았을 때 사용. 자식 보유 부모가 정확히 한 개일 때만
@@ -460,39 +435,6 @@ mod tests {
         assert_eq!(s.single_parent(), Some(10));
         s.register_child(20, entry(200, 1));
         assert_eq!(s.single_parent(), None);
-    }
-
-    #[test]
-    fn spawn_pane_round_trip() {
-        let mut s = ClaudeState::default();
-        // 등록 전 None.
-        assert_eq!(s.spawn_pane_for(10, 1), None);
-        // 등록 → 조회.
-        s.set_spawn_pane(10, 1, 42);
-        assert_eq!(s.spawn_pane_for(10, 1), Some(42));
-        // 다른 (parent, ws) 키는 영향 없음.
-        assert_eq!(s.spawn_pane_for(11, 1), None);
-        assert_eq!(s.spawn_pane_for(10, 2), None);
-        // 같은 키 재등록은 덮어쓰기.
-        s.set_spawn_pane(10, 1, 43);
-        assert_eq!(s.spawn_pane_for(10, 1), Some(43));
-        // 삭제.
-        s.clear_spawn_pane(10, 1);
-        assert_eq!(s.spawn_pane_for(10, 1), None);
-    }
-
-    #[test]
-    fn spawn_panes_skipped_from_serialization() {
-        // 호스트도 in-memory only이므로 plugin 재시작 후엔 새로 만들어진다.
-        let mut s = ClaudeState::default();
-        s.set_spawn_pane(10, 1, 42);
-        let text = serde_json::to_string(&s).unwrap();
-        assert!(
-            !text.contains("spawn_panes"),
-            "spawn_panes should be #[serde(skip)], got: {text}"
-        );
-        let restored: ClaudeState = serde_json::from_str(&text).unwrap();
-        assert_eq!(restored.spawn_pane_for(10, 1), None);
     }
 
     fn live(ids: &[u32]) -> HashSet<u32> {
