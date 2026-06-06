@@ -66,6 +66,9 @@ enum SettingsTab {
     Performance,
     Accessibility,
     FileHandler,
+    // Misc 탭(tasty 빌트인 bashrc 편집)은 Windows 전용이라 비-Windows 에선
+    // 탭 목록에 push 되지 않는다(match arm 에서만 참조) → dead_code 허용.
+    #[cfg_attr(not(windows), allow(dead_code))]
     Misc,
     Updates,
 }
@@ -197,7 +200,9 @@ pub fn draw_settings_panel(
         ui_state.font_families = Some(font_config.list_families());
     }
 
-    // Lazily load ~/.tasty/bashrc.user on first settings open
+    // Lazily load ~/.tasty/bashrc.user on first settings open.
+    // tasty 빌트인 편집(Misc 탭)은 Windows 전용이므로 비-Windows 에선 로드하지 않는다.
+    #[cfg(windows)]
     if ui_state.bashrc_user_draft.is_none() {
         ui_state.bashrc_user_draft = Some(crate::settings::general::load_user_bashrc());
     }
@@ -225,6 +230,9 @@ pub fn draw_settings_panel(
                     if prev_restore_terminal_content && !settings.general.restore_terminal_content {
                         crate::scrollback_store::clear_all();
                     }
+                    // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭). 비-Windows 는
+                    // draft 가 비어 있고 저장할 것도 없다.
+                    #[cfg(windows)]
                     if let Some(bashrc) = &ui_state.bashrc_user_draft {
                         crate::settings::general::save_user_bashrc(bashrc);
                     }
@@ -272,7 +280,7 @@ pub fn draw_settings_panel(
         ui.add_space(8.0);
 
         ui.horizontal(|ui| {
-            let tabs = [
+            let mut tabs = vec![
                 (SettingsTab::General, t("settings.tab.general")),
                 (SettingsTab::Terminal, t("settings.tab.terminal")),
                 (SettingsTab::Appearance, t("settings.tab.appearance")),
@@ -283,9 +291,13 @@ pub fn draw_settings_panel(
                 (SettingsTab::Performance, t("settings.performance.heading")),
                 (SettingsTab::Accessibility, t("settings.tab.accessibility")),
                 (SettingsTab::FileHandler, t("settings.tab.file_handler")),
-                (SettingsTab::Misc, t("settings.tab.misc")),
-                (SettingsTab::Updates, t("settings.tab.updates")),
             ];
+            // Misc 탭은 tasty 빌트인 bashrc(OSC7/PATH) 편집용이고, 그 빌트인은 Windows
+            // 전용이다(비-Windows tasty 모드는 default 와 동일하게 동작). 따라서 비-Windows
+            // 에서는 편집기를 노출하지 않는다.
+            #[cfg(windows)]
+            tabs.push((SettingsTab::Misc, t("settings.tab.misc")));
+            tabs.push((SettingsTab::Updates, t("settings.tab.updates")));
 
             // 윈도우 최소 폭에서 모든 탭이 한 줄에 안 들어갈 수 있다 (UI scale=large
             // 일 때 빈번). 가로 ScrollArea + 좌우 화살표 버튼으로 우측 잘림 회피.
