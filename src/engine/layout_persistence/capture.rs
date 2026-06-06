@@ -218,21 +218,13 @@ impl SavedSurface {
                 .as_ref()
                 .and_then(|s| s.working_dir.as_ref())
                 .map(|p| p.to_string_lossy().to_string());
+            // deferred surface 복원 명령의 권위 출처는 `DeferredSpawn.restore_command`
+            // (복원 시 layout 에서 이관됨) 뿐이다. `surface_meta[id]` 로 fallback 하면
+            // 재사용된 id 에 남은 stale `claude -r …` 를 주워 담을 수 있으므로 읽지 않는다.
             let restore_command = es
                 .deferred_spawn
                 .as_ref()
-                .and_then(|s| s.restore_command.clone())
-                .or_else(|| {
-                    let mut guard = match memory.lock() {
-                        Ok(g) => g,
-                        Err(p) => p.into_inner(),
-                    };
-                    crate::surface_meta::SurfaceMetaStore::get(
-                        &mut *guard,
-                        es.id,
-                        "restore.command",
-                    )
-                });
+                .and_then(|s| s.restore_command.clone());
             // 옵션 on 일 때만 scrollback_ref 를 다음 capture 까지 유지한다.
             // (옵션 off 면 다음 capture 때 디스크 쓰기를 스킵하므로 ref 도 의미 없음 →
             //  파일은 startup GC 가 청소한다.)
@@ -289,6 +281,71 @@ impl SavedSurface {
         SavedSurface::Generic {
             kind: "empty".into(),
             data: json!({}),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use crate::engine::surface_registry::SurfaceKindRegistry;
+
+    /// Fix B 회귀: deferred surface 의 `DeferredSpawn.restore_command` 가 None 이면,
+    /// surface_meta 에 같은 id 의 (재사용된 stale) restore.command 가 있어도 capture 는
+    /// 이를 무시하고 None 을 저장해야 한다.
+    #[test]
+    fn deferred_capture_ignores_surface_meta_restore_command() {
+        let surface_id = 7u32;
+
+        // memory.db 에 stale restore.command 를 심는다 (이전 실행 잔재 모사).
+        let mem: MemArc = Arc::new(Mutex::new(tasty_memory::testing::InMemoryStorage::new()));
+        {
+            let mut guard = mem.lock().unwrap();
+            crate::surface_meta::SurfaceMetaStore::set(
+                &mut *guard,
+                surface_id,
+                "restore.command",
+                "claude -r STALE-FROM-PREVIOUS-RUN",
+            )
+            .unwrap();
+        }
+
+        // restore_command = None 인 deferred placeholder.
+        let waker: tasty_terminal::Waker = Arc::new(|| {});
+        let spawn = crate::model::DeferredSpawn {
+            shell: None,
+            shell_args: Vec::new(),
+            cols: 80,
+            rows: 24,
+            waker,
+            working_dir: None,
+            restore_command: None,
+            scrollback_persist_id: None,
+        };
+        let mut es = crate::model::EmptySurface::new_deferred(surface_id, spawn);
+
+        let registry = SurfaceKindRegistry::new();
+        let mut seen_refs = SeenRefs::new();
+        let mut terminals = crate::core::terminal_store::TerminalStore::new();
+        let mut ctx = CaptureCtx {
+            registry: &registry,
+            capture_scrollback: false,
+            memory: &mem,
+            seen_refs: &mut seen_refs,
+            terminals: &mut terminals,
+        };
+
+        let saved = SavedSurface::capture_surface(&mut es, &mut ctx);
+        match saved {
+            SavedSurface::Terminal {
+                restore_command, ..
+            } => assert_eq!(
+                restore_command, None,
+                "deferred capture 는 surface_meta fallback 으로 stale 을 주워오면 안 된다"
+            ),
+            _ => panic!("expected SavedSurface::Terminal"),
         }
     }
 }
