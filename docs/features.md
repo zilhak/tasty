@@ -8,7 +8,7 @@
 - PTY 리사이즈 전파: 윈도우 크기 변경 시 자식 프로세스에 새 크기 통보. rows 축소 시 커서 아래 빈 행을 먼저 제거하고 부족하면 위쪽 행을 scrollback으로 캡처하여 커서-콘텐츠 관계를 보존. rows 확대 시 scrollback에서 복원. 모든 워크스페이스/탭의 터미널에 리사이즈 전파
 - 자식 프로세스 핸들 관리: 생존 여부 확인 가능
 - PTY 채널 백프레셔: `sync_channel(32)`으로 버퍼 크기 제한 (32 * 8KB = 256KB), 버퍼 가득 차면 PTY 리더 스레드 블로킹
-- 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. 셸이 내보내는 OSC 7 시퀀스로 CWD를 캐싱 (모든 플랫폼 공통). zsh/fish는 기본 지원, bash는 `PROMPT_COMMAND` 설정 필요. VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
+- 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. CWD 결정은 플랫폼별로 다르다 — **macOS/Linux**는 셸 PID로 OS를 직접 조회(`get_cwd_of_pid`: macOS `proc_pidinfo`, Linux `/proc/<pid>/cwd`)하므로 셸 설정과 무관하게 동작하며, OSC 7 캐시가 있으면 그 값을 우선 사용한다. **Windows**는 타 프로세스 cwd 조회 API가 없어 셸이 내보내는 OSC 7 시퀀스 캐시에만 의존한다(git bash·PowerShell 7+ 등이 송신). VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
 
 ### VTE 파싱 및 터미널 에뮬레이션
 - termwiz `Parser`를 통한 VT 이스케이프 시퀀스 파싱
@@ -851,7 +851,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 ### 설정 카테고리
 - **General**: 레이아웃 저장/복원 (기본 off): 체크 시 워크스페이스/페인/탭/서피스 구조를 `~/.tasty/layout.json`에 저장하고 다음 시작 시 복원. 마지막 윈도우 닫기 동작 (ask / minimize / quit).
-- **Terminal**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 셸 모드 (default / tasty / custom — tasty 모드는 `~/.tasty/bashrc`를 source하여 OSC 7 등의 빌트인 설정을 적용. 기존 설정 파일의 `"fast"`는 unknown 값으로 간주되어 default로 fallback), 시작 명령, 스크롤백 줄 수 (기본 10,000), 실행 중 프로세스 닫기 확인, 작업 디렉토리 상속 (기본 on), 링크 클릭 수식키 (ctrl / alt / none). 데이터는 여전히 `settings.general.*`에 저장되며 UI 탭만 분리되어 있다.
+- **Terminal**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 셸 모드 (default / tasty / custom). **tasty 모드는 Windows 전용으로 의미가 있다** — Windows에서만 bash를 `--rcfile ~/.tasty/bashrc`로 띄워 OSC 7 cwd emit·MSYS PATH 주입 등 빌트인을 적용한다(Windows는 cwd 상속을 OSC 7에 의존하기 때문). 비-Windows에서는 셸별로 `--rcfile` 등을 모르거나 무시하여 셸이 죽거나 의미가 없고 cwd 상속도 OS 조회로 이미 되므로, tasty 모드여도 default와 동일하게 사용자 셸을 그대로 띄운다(빌트인 미적용). 그래서 빌트인 편집(Misc 탭)도 Windows에서만 노출된다. 기존 설정 파일의 `"fast"`는 unknown 값으로 간주되어 default로 fallback. 그 외: 시작 명령, 스크롤백 줄 수 (기본 10,000), 실행 중 프로세스 닫기 확인, 작업 디렉토리 상속 (기본 on), 링크 클릭 수식키 (ctrl / alt / none). 데이터는 여전히 `settings.general.*`에 저장되며 UI 탭만 분리되어 있다.
 - **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지, 기본값 / fixed: 픽셀 고정)
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
@@ -880,7 +880,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 ### 설정 연동
 - `settings.general.shell`: Terminal 생성 시 커스텀 셸 경로 사용 (비어있으면 OS 기본 셸)
-- `settings.general.startup_command`: 새로 생성되는 모든 터미널에 prompt 직후 1회 자동 실행할 명령 (`send_fast_init` 안에서 `tasty_mode_init_command` 다음에 전송). split/새 탭/새 워크스페이스/새 윈도우/레이아웃 복구 모두 적용. 공백·빈 문자열이면 전송 안 함. `surface.respawn_terminal` IPC는 `send_fast_init` 미호출 경로라 적용되지 않음 (플러그인 PTY 갈아끼우기 용도이므로 의도된 제외)
+- `settings.general.startup_command`: 새로 생성되는 모든 터미널에 prompt 직후 1회 자동 실행할 명령 (`send_fast_init`에서 전송). split/새 탭/새 워크스페이스/새 윈도우/레이아웃 복구 모두 적용. 공백·빈 문자열이면 전송 안 함. `surface.respawn_terminal` IPC는 `send_fast_init` 미호출 경로라 적용되지 않음 (플러그인 PTY 갈아끼우기 용도이므로 의도된 제외). (tasty 모드의 bashrc는 PTY 입력이 아니라 셸 `--rcfile` 인자로 source된다 — Windows 전용. `effective_shell_args` 참조.)
 - `settings.appearance.default_font`: 기본 폰트 5종 묶음 (`font_family`, `font_size`, `custom_font_path`, `line_height`, `font_scale_mode`). Terminal·Markdown·Explorer 모두에 일괄 적용되며, 각 surface는 아래 override 그룹으로 항목별 재정의 가능. 설정 UI에서는 Theme 서브탭 하단의 "기본 폰트 설정" 섹션에서 편집
 - `settings.appearance.terminal_font` / `markdown_font` / `explorer_font`: surface별 per-field override. 5개 필드 모두 `Option<T>`이며 `None`이면 `default_font`를 사용. 각 surface 서브탭에 "기본값 사용" 체크박스 + 입력 위젯 패턴으로 노출
 - `font_family`: cosmic-text(터미널) 또는 egui FontDefinitions(Markdown/Explorer)에 전달. 빈 문자열이나 "monospace"이면 번들 D2Coding ligature를 사용. 다른 폰트를 지정해도 D2Coding은 폰트 DB에 남아 fallback face로 동작. 설정 UI에서 시스템 폰트 목록(번들 `D2Coding ligature` 포함)을 검색 가능한 드롭다운으로 선택

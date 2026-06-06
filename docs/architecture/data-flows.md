@@ -130,5 +130,7 @@ UI 표시:
 
 새 터미널 생성 시만 반영되는 항목:
   - general.shell, shell_mode, shell_args
+    (shell_mode="tasty"의 `--rcfile` 빌트인 주입은 Windows 전용. 비-Windows에선
+     default와 동일하게 취급 — `effective_shell_args`)
   - general.scrollback_lines
 ```
