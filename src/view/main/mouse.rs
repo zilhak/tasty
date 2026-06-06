@@ -380,46 +380,148 @@ impl MainView {
                     MouseScrollDelta::LineDelta(_, y) => y as i32,
                     MouseScrollDelta::PixelDelta(pos) => (pos.y / 20.0) as i32,
                 };
-                let is_alt = self
-                    .core_state
-                    .find_terminal_by_id(surface_id)
-                    .map(|t| t.is_alternate_screen());
-                match is_alt {
-                    Some(true) => {
-                        // PTY send 경로 — alt screen 에서 휠을 arrow key 로 변환.
-                        // lines 만큼 sequence 를 *한 Vec<u8> 에 concat 후 1 Intent*
-                        // 발행 (큐 폭증 회피).
-                        if lines != 0 {
-                            let seq: &[u8] = if lines > 0 { b"\x1b[A" } else { b"\x1b[B" };
-                            let count = lines.unsigned_abs() as usize;
-                            let mut bytes = Vec::with_capacity(seq.len() * count);
-                            for _ in 0..count {
-                                bytes.extend_from_slice(seq);
-                            }
-                            self.state.dispatch_intent(
-                                DomainIntent::SendToSurface {
-                                    surface_id,
-                                    payload: SendPayload::Bytes(bytes),
-                                }
-                                .from_user_shortcut("mouse_wheel"),
+                if lines == 0 {
+                    return;
+                }
+                let info = self.core_state.find_terminal_by_id(surface_id).map(|t| {
+                    (
+                        t.is_alternate_screen(),
+                        t.mouse_tracking(),
+                        t.sgr_mouse(),
+                        t.scroll_offset(),
+                        t.scrollback_len(),
+                        t.surface().dimensions(),
+                    )
+                });
+                let Some((is_alt, tracking, sgr, scroll_offset, sb_len, (cols, rows))) = info
+                else {
+                    return;
+                };
+
+                if tracking != tasty_terminal::MouseTrackingMode::None {
+                    // 마우스 추적이 켜져 있으면 휠을 마우스 이벤트로 전송한다 (표준
+                    // 동작). alt screen 이라고 무조건 arrow 로 바꾸면, 앱(예: Claude
+                    // Code)이 그 arrow 를 history 이동으로 해석해 스크롤이 깨진다.
+                    let cell_w = self.base.gpu.cell_width();
+                    let cell_h = self.base.gpu.cell_height();
+                    let (col, row) = self
+                        .cursor_position
+                        .and_then(|pos| {
+                            let (x, y) = (pos.x as f32, pos.y as f32);
+                            let rect = self.state.surface_rect_by_id(
+                                &self.core_state,
+                                surface_id,
+                                terminal_rect,
+                            )?;
+                            let point = crate::selection::pixel_to_grid(
+                                x, y, &rect, cell_w, cell_h, cols, rows, scroll_offset, sb_len,
                             );
+                            // viewport 기준 1-based (col, row). alt screen 은 scrollback
+                            // 이 없어 absolute_row 가 곧 viewport row.
+                            let viewport_top = sb_len.saturating_sub(scroll_offset);
+                            let row = point
+                                .absolute_row
+                                .saturating_sub(viewport_top)
+                                .min(rows.saturating_sub(1))
+                                + 1;
+                            let col = point.col.min(cols.saturating_sub(1)) + 1;
+                            Some((col, row))
+                        })
+                        .unwrap_or((1, 1));
+                    // xterm wheel button: 64 = up, 65 = down.
+                    let btn = if lines > 0 { 64 } else { 65 };
+                    let count = lines.unsigned_abs() as usize;
+                    let bytes = encode_wheel_report(sgr, btn, col, row, count);
+                    self.state.dispatch_intent(
+                        DomainIntent::SendToSurface {
+                            surface_id,
+                            payload: SendPayload::Bytes(bytes),
+                        }
+                        .from_user_shortcut("mouse_wheel"),
+                    );
+                } else if is_alt {
+                    // 마우스 추적 OFF + alt screen — alternate scroll mode: 휠을 arrow
+                    // 키로 변환 (vim/less 등에서 휠 스크롤). lines 만큼 한 Vec 에 concat
+                    // 후 1 Intent (큐 폭증 회피).
+                    let seq: &[u8] = if lines > 0 { b"\x1b[A" } else { b"\x1b[B" };
+                    let count = lines.unsigned_abs() as usize;
+                    let mut bytes = Vec::with_capacity(seq.len() * count);
+                    for _ in 0..count {
+                        bytes.extend_from_slice(seq);
+                    }
+                    self.state.dispatch_intent(
+                        DomainIntent::SendToSurface {
+                            surface_id,
+                            payload: SendPayload::Bytes(bytes),
+                        }
+                        .from_user_shortcut("mouse_wheel"),
+                    );
+                } else {
+                    // 일반 화면 — scrollback (UI 자체 mutate, PTY 와 무관).
+                    if let Some(terminal) = self.core_state.find_terminal_by_id_mut(surface_id) {
+                        if lines > 0 {
+                            terminal.scroll_up(lines as usize);
+                        } else if lines < 0 {
+                            terminal.scroll_down((-lines) as usize);
                         }
                     }
-                    Some(false) => {
-                        // 일반 화면 — scrollback (UI 자체 mutate, PTY 와 무관).
-                        if let Some(terminal) = self.core_state.find_terminal_by_id_mut(surface_id)
-                        {
-                            if lines > 0 {
-                                terminal.scroll_up(lines as usize);
-                            } else if lines < 0 {
-                                terminal.scroll_down((-lines) as usize);
-                            }
-                        }
-                        self.base.dirty = true;
-                    }
-                    None => {}
+                    self.base.dirty = true;
                 }
             }
         }
+    }
+}
+
+/// 마우스 휠 이벤트를 마우스 리포팅 시퀀스로 인코딩한다. `sgr` 가 true 면 SGR
+/// (`ESC [ < btn ; col ; row M`), 아니면 legacy X10 (`ESC [ M` + 32-offset 3 bytes).
+/// `count` 만큼 반복 발행. `btn` 은 64(up)/65(down), `col`/`row` 는 1-based.
+fn encode_wheel_report(sgr: bool, btn: u32, col: usize, row: usize, count: usize) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for _ in 0..count {
+        if sgr {
+            bytes.extend_from_slice(format!("\x1b[<{btn};{col};{row}M").as_bytes());
+        } else {
+            // X10: 각 값에 32 를 더하고 255 로 clamp (legacy 인코딩 한계).
+            let cb = (32 + btn).min(255) as u8;
+            let cx = (32 + col as u32).min(255) as u8;
+            let cy = (32 + row as u32).min(255) as u8;
+            bytes.extend_from_slice(&[0x1b, b'[', b'M', cb, cx, cy]);
+        }
+    }
+    bytes
+}
+
+#[cfg(test)]
+mod wheel_tests {
+    use super::encode_wheel_report;
+
+    #[test]
+    fn sgr_encodes_button_col_row() {
+        assert_eq!(encode_wheel_report(true, 64, 3, 5, 1), b"\x1b[<64;3;5M");
+        assert_eq!(encode_wheel_report(true, 65, 10, 20, 1), b"\x1b[<65;10;20M");
+    }
+
+    #[test]
+    fn x10_encodes_with_32_offset() {
+        // btn=64 → 96, col=1 → 33, row=1 → 33.
+        assert_eq!(
+            encode_wheel_report(false, 64, 1, 1, 1),
+            vec![0x1b, b'[', b'M', 96, 33, 33]
+        );
+    }
+
+    #[test]
+    fn count_repeats_sequence() {
+        assert_eq!(
+            encode_wheel_report(true, 64, 1, 1, 3),
+            b"\x1b[<64;1;1M\x1b[<64;1;1M\x1b[<64;1;1M"
+        );
+    }
+
+    #[test]
+    fn x10_clamps_large_coords() {
+        // 32 + 300 = 332 → clamp 255.
+        let out = encode_wheel_report(false, 64, 300, 1, 1);
+        assert_eq!(out[4], 255);
     }
 }
