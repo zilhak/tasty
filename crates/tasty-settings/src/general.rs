@@ -236,7 +236,13 @@ impl GeneralSettings {
             "tasty" => {
                 // 파생 bashrc가 없으면 현재 user 파일 내용으로 재생성.
                 ensure_compiled_bashrc();
-                vec!["--norc".to_string(), "--noprofile".to_string()]
+                // `--rcfile <bashrc>` 로 셸이 시작 시 *직접* source 하게 한다. 예전처럼
+                // `--norc` 로 띄운 뒤 `. <bashrc>` 를 PTY 입력으로 보내면 그 명령이
+                // 화면에 echo 되고, 복원 시 먼저 뜬 claude(restore_command) 입력창에
+                // 그대로 타이핑되는 문제가 있었다. forward slash 경로여야 Git Bash 가
+                // 올바로 읽는다.
+                let rcfile = tasty_bashrc_path().replace('\\', "/");
+                vec!["--rcfile".to_string(), rcfile]
             }
             "custom" => self
                 .shell_args
@@ -247,16 +253,6 @@ impl GeneralSettings {
         }
     }
 
-    /// Returns a command to source the Tasty bashrc (sent to PTY after shell starts).
-    /// Returns None if not in tasty mode.
-    pub fn tasty_mode_init_command(&self) -> Option<String> {
-        if self.shell_mode == "tasty" {
-            let rcfile = tasty_bashrc_path();
-            Some(format!(". '{}'\n", rcfile.replace('\\', "/")))
-        } else {
-            None
-        }
-    }
 }
 
 /// Path to Tasty's compiled bashrc (builtin + user).

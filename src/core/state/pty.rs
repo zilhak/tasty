@@ -15,11 +15,9 @@ impl CoreState {
                 terminal.enable_disk_scrollback(surface_id);
             }
         }
-        if let Some(cmd) = self.settings.general.tasty_mode_init_command()
-            && let Some(terminal) = self.find_terminal_by_id_mut(surface_id)
-        {
-            terminal.send_key(&cmd);
-        }
+        // tasty 모드의 bashrc source 는 셸 `--rcfile` 인자로 처리한다
+        // (effective_shell_args). 더 이상 PTY 입력으로 보내지 않는다 — 그래야
+        // 화면 echo / 복원 시 claude 입력창 오염이 없다.
         let startup = self.settings.general.startup_command.trim();
         if !startup.is_empty() {
             let line = format!("{startup}\n");
