@@ -57,6 +57,18 @@ impl IdGenerator {
         self.surface
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
+
+    /// surface 카운터를 `min_next` 이상으로 끌어올린다(이미 크면 no-op).
+    /// 다음 `next_surface()` 가 반환할 값이 `>= min_next` 가 되도록 보장.
+    ///
+    /// 재시작 시 `surface_id` 는 매 실행 1 부터 재발급되는데 surface_meta
+    /// (`memory.db`)는 영속되므로, 복원이 발급하는 id 가 이전 실행의 stale
+    /// `Scope::Surface(id)` 와 겹칠 수 있다. 복원 *직전* 에 floor 를 stale 최대
+    /// id 위로 올려 재사용을 원천 차단한다.
+    pub fn bump_surface_floor(&self, min_next: u32) {
+        self.surface
+            .fetch_max(min_next, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// Helper to extract shell configuration from settings, avoiding boilerplate.
@@ -515,3 +527,34 @@ mod finders;
 mod message;
 mod pty;
 mod terminal_finders;
+
+#[cfg(test)]
+mod id_generator_tests {
+    use super::IdGenerator;
+
+    #[test]
+    fn next_surface_starts_at_one() {
+        let ids = IdGenerator::new();
+        assert_eq!(ids.next_surface(), 1);
+        assert_eq!(ids.next_surface(), 2);
+    }
+
+    #[test]
+    fn bump_surface_floor_raises_counter() {
+        let ids = IdGenerator::new();
+        ids.bump_surface_floor(18);
+        assert_eq!(ids.next_surface(), 18, "floor 이후 첫 id 는 min_next 와 같아야 한다");
+        assert_eq!(ids.next_surface(), 19);
+    }
+
+    #[test]
+    fn bump_surface_floor_is_noop_when_already_higher() {
+        let ids = IdGenerator::new();
+        // 카운터를 5 까지 소비 (1..=4 발급, 다음은 5).
+        for _ in 0..4 {
+            ids.next_surface();
+        }
+        ids.bump_surface_floor(3); // 현재 floor(5)보다 낮음 → 무시.
+        assert_eq!(ids.next_surface(), 5);
+    }
+}

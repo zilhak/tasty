@@ -761,12 +761,47 @@ impl Core {
                 active_workspace: None,
             };
         };
+
+        // Fix C: 복원이 surface_id 를 발급하기 *전에* 카운터 floor 를 memory.db 의
+        // 최대 stale Scope::Surface id 위로 올린다. surface_meta 는 영속되지만
+        // surface_id 는 매 실행 재발급되므로, 이래야 복원 surface 자체가 재사용 id
+        // (=stale 메타 보유)와 겹치지 않아 capture 가 남의 restore.command 를 읽지 않는다.
+        {
+            let mut guard = match engine.memory.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            let mem_max = crate::surface_meta::SurfaceMetaStore::max_surface_id(&mut *guard);
+            engine.next_ids.bump_surface_floor(mem_max + 1);
+        }
+
         if !saved.restore(engine) {
             return CoreEvent::LayoutRestored {
                 restored: false,
                 active_workspace: None,
             };
         }
+
+        // Fix A: 복원으로 확정된 live id 외 모든 Surface scope 를 정리한다. Fix C 가
+        // 충돌은 막지만 죽은 scope 를 지우지는 않으므로, 강제 종료 등으로 graceful
+        // close 가 호출되지 못해 남은 stale 메타가 무한 누적되는 것을 끊는다.
+        {
+            let live: std::collections::HashSet<u32> = engine
+                .workspaces
+                .iter()
+                .flat_map(|ws| ws.all_surface_ids())
+                .collect();
+            let mut guard = match engine.memory.lock() {
+                Ok(g) => g,
+                Err(p) => p.into_inner(),
+            };
+            let removed =
+                crate::surface_meta::SurfaceMetaStore::purge_dead_surfaces(&mut *guard, &live);
+            if removed > 0 {
+                tracing::info!("surface_meta GC: purged {removed} dead surface scope(s) on restore");
+            }
+        }
+
         let active = engine.restored_active_workspace.take();
         CoreEvent::LayoutRestored {
             restored: true,

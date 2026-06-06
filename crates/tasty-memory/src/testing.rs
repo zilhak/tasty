@@ -48,44 +48,80 @@ impl MemoryStorage for InMemoryStorage {
 
     fn put(
         &mut self,
-        _owner: &str,
-        _scope: &Scope,
-        _key: &str,
-        _value: &MemoryValue,
+        owner: &str,
+        scope: &Scope,
+        key: &str,
+        value: &MemoryValue,
         _opts: &PutOpts,
     ) -> Result<u64> {
-        // stub — 실제 보관 없음. version 항상 1. D.3.C 의 test 작성 시 확장.
-        Ok(1)
+        let token = scope.as_token();
+        let entry = self
+            .regular
+            .entry((token.clone(), key.to_string()))
+            .or_insert_with(|| MemoryEntry {
+                scope: token,
+                key: key.to_string(),
+                value: value.clone(),
+                created_at: 0,
+                updated_at: 0,
+                expires_at: None,
+                version: 0,
+                owner: Some(owner.to_string()),
+            });
+        entry.value = value.clone();
+        entry.owner = Some(owner.to_string());
+        entry.version += 1;
+        Ok(entry.version)
     }
 
-    fn get(&self, _scope: &Scope, _key: &str) -> Result<Option<MemoryEntry>> {
-        Ok(None)
+    fn get(&self, scope: &Scope, key: &str) -> Result<Option<MemoryEntry>> {
+        Ok(self
+            .regular
+            .get(&(scope.as_token(), key.to_string()))
+            .cloned())
     }
 
-    fn exists(&self, _scope: &Scope, _key: &str) -> Result<bool> {
-        Ok(false)
+    fn exists(&self, scope: &Scope, key: &str) -> Result<bool> {
+        Ok(self
+            .regular
+            .contains_key(&(scope.as_token(), key.to_string())))
     }
 
     fn delete(
         &mut self,
         _owner: &str,
-        _scope: &Scope,
-        _key: &str,
+        scope: &Scope,
+        key: &str,
         _cas: Option<u64>,
     ) -> Result<()> {
+        self.regular.remove(&(scope.as_token(), key.to_string()));
         Ok(())
     }
 
-    fn list(&self, _scope: &Scope, _opts: &ListOpts) -> Result<Vec<MemoryEntry>> {
-        Ok(Vec::new())
+    fn list(&self, scope: &Scope, _opts: &ListOpts) -> Result<Vec<MemoryEntry>> {
+        let token = scope.as_token();
+        Ok(self
+            .regular
+            .values()
+            .filter(|e| e.scope == token)
+            .cloned()
+            .collect())
     }
 
-    fn count(&self, _scope: &Scope, _prefix: Option<&str>) -> Result<u64> {
-        Ok(0)
+    fn count(&self, scope: &Scope, _prefix: Option<&str>) -> Result<u64> {
+        let token = scope.as_token();
+        Ok(self.regular.values().filter(|e| e.scope == token).count() as u64)
     }
 
     fn scopes(&self) -> Result<Vec<String>> {
-        Ok(Vec::new())
+        let mut out: Vec<String> = self
+            .regular
+            .keys()
+            .map(|(scope, _)| scope.clone())
+            .collect();
+        out.sort();
+        out.dedup();
+        Ok(out)
     }
 
     fn stats(&self, _scope: Option<&Scope>) -> Result<MemoryStats> {
@@ -173,11 +209,13 @@ impl MemoryStorage for InMemoryStorage {
         })
     }
 
-    fn purge_scope(&mut self, _scope: &Scope) -> Result<PurgeStats> {
-        // 본 in-memory mock 은 scope 별 entry 저장을 하지 않으므로 no-op 반환.
-        // test 가 close 동작이 purge_scope 를 호출해도 panic 하지 않도록 한다.
+    fn purge_scope(&mut self, scope: &Scope) -> Result<PurgeStats> {
+        let token = scope.as_token();
+        let before = self.regular.len();
+        self.regular.retain(|(s, _), _| s != &token);
+        let removed = (before - self.regular.len()) as u64;
         Ok(PurgeStats {
-            regular: 0,
+            regular: removed,
             secret: 0,
         })
     }

@@ -117,6 +117,60 @@ impl SurfaceMetaStore {
         out
     }
 
+    /// memory.db 에 존재하는 모든 `Scope::Surface(id)` 중 최대 id (없으면 0).
+    /// 재시작 시 surface 카운터 seed 용 — id 재사용으로 인한 stale 메타 유입을
+    /// 막기 위해 복원 직전 카운터 floor 를 `max_surface_id + 1` 로 올린다.
+    pub fn max_surface_id(mem: &mut dyn MemoryStorage) -> u32 {
+        let scopes = match mem.scopes() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("surface_meta max_surface_id: scopes() failed: {e}");
+                return 0;
+            }
+        };
+        scopes
+            .iter()
+            .filter_map(|tok| match Scope::parse(tok) {
+                Ok(Scope::Surface(id)) => Some(id),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// `live` 에 없는 모든 `Scope::Surface(id)` 스코프를 purge. 반환: 지운 스코프 수.
+    /// 복원으로 확정된 live id 외 죽은 surface 메타(앱 강제 종료 등으로 graceful
+    /// close 의 `remove` 가 호출되지 못한 잔재)를 정리해 무한 누적을 막는다.
+    pub fn purge_dead_surfaces(
+        mem: &mut dyn MemoryStorage,
+        live: &std::collections::HashSet<u32>,
+    ) -> usize {
+        let scopes = match mem.scopes() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("surface_meta purge_dead_surfaces: scopes() failed: {e}");
+                return 0;
+            }
+        };
+        let dead: Vec<u32> = scopes
+            .iter()
+            .filter_map(|tok| match Scope::parse(tok) {
+                Ok(Scope::Surface(id)) if !live.contains(&id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        let mut purged = 0;
+        for id in dead {
+            match mem.purge_scope(&Scope::Surface(id)) {
+                Ok(_) => purged += 1,
+                Err(e) => {
+                    tracing::warn!("surface_meta GC: purge surface:{id} failed: {e}");
+                }
+            }
+        }
+        purged
+    }
+
     /// `Surface(*)` 스코프 전체를 훑어 `key=value` 인 첫 surface id 반환.
     /// 닉네임 기반 pane 조회용. 정렬 보장 없음 (memory 의 scopes() 순서를 그대로 사용).
     pub fn find_by_value(mem: &mut dyn MemoryStorage, key: &str, value: &str) -> Option<u32> {
@@ -130,5 +184,64 @@ impl SurfaceMetaStore {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use tasty_memory::testing::InMemoryStorage;
+
+    fn seed(mem: &mut InMemoryStorage, sid: u32, key: &str, val: &str) {
+        SurfaceMetaStore::set(mem, sid, key, val).unwrap();
+    }
+
+    #[test]
+    fn max_surface_id_picks_largest_surface_scope() {
+        let mut mem = InMemoryStorage::new();
+        seed(&mut mem, 2, "restore.command", "claude -r a");
+        seed(&mut mem, 17, "restore.command", "claude -r b");
+        seed(&mut mem, 9, "claude-session-id", "x");
+        // 비-surface scope 는 무시되어야 한다.
+        mem.put(
+            HOST_OWNER,
+            &Scope::Workspace(99),
+            "k",
+            &MemoryValue::Text("v".into()),
+            &PutOpts::default(),
+        )
+        .unwrap();
+        assert_eq!(SurfaceMetaStore::max_surface_id(&mut mem), 17);
+    }
+
+    #[test]
+    fn max_surface_id_empty_is_zero() {
+        let mut mem = InMemoryStorage::new();
+        assert_eq!(SurfaceMetaStore::max_surface_id(&mut mem), 0);
+    }
+
+    #[test]
+    fn purge_dead_surfaces_keeps_live_removes_rest() {
+        let mut mem = InMemoryStorage::new();
+        seed(&mut mem, 2, "restore.command", "claude -r a");
+        seed(&mut mem, 4, "restore.command", "claude -r stale");
+        seed(&mut mem, 6, "restore.command", "claude -r stale2");
+        seed(&mut mem, 17, "claude-session-id", "live");
+
+        let live: HashSet<u32> = [2, 17].into_iter().collect();
+        let removed = SurfaceMetaStore::purge_dead_surfaces(&mut mem, &live);
+
+        assert_eq!(removed, 2, "surface:4 와 surface:6 두 scope 가 purge 돼야 한다");
+        assert_eq!(
+            SurfaceMetaStore::get(&mut mem, 2, "restore.command").as_deref(),
+            Some("claude -r a")
+        );
+        assert_eq!(
+            SurfaceMetaStore::get(&mut mem, 17, "claude-session-id").as_deref(),
+            Some("live")
+        );
+        assert_eq!(SurfaceMetaStore::get(&mut mem, 4, "restore.command"), None);
+        assert_eq!(SurfaceMetaStore::get(&mut mem, 6, "restore.command"), None);
     }
 }
