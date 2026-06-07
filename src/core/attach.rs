@@ -9,6 +9,12 @@
 //! 보유하지 않는다(StreamHub 가 client 연결 권위; design §2.1 의 ClientConn 을 대체).
 //!
 //! decision 5: 자체 인증/토큰 레이어 없음 — SSH + 127.0.0.1 loopback 위임.
+//!
+//! attach 제어 API(acquire/release/force_detach/통지)의 호출자는 `attach.*` IPC
+//! 핸들러로, `ipc/handler.rs:5` 와 동일하게 gui 라우팅 경유다. headless 빌드엔
+//! 호출자가 없어(같은 정책) dead_code 를 *headless 한정* 침묵한다. `is_attached`
+//! (서버 입력 차단)만 headless 에서도 `apply_send_to_surface` 가 호출한다.
+#![cfg_attr(not(feature = "gui"), allow(dead_code))]
 
 use std::collections::HashMap;
 

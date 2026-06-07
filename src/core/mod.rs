@@ -993,6 +993,15 @@ impl Core {
         surface_id: u32,
         payload: crate::core::intent::SendPayload,
     ) -> CoreEvent {
+        // §2.4 서버 본인 입력 차단: attach 로 점유된 surface 는 서버 로컬 입력
+        // (사용자 GUI 키 / IPC surface.send*) 이 PTY 에 닿지 못한다. client 경유
+        // 입력은 단계 4 의 holder-검증 attach 채널로 들어와 이 경로를 우회한다.
+        if engine.attach.is_attached(surface_id) {
+            return CoreEvent::SurfaceSent {
+                surface_id,
+                sent: false,
+            };
+        }
         engine.ensure_surface_initialized(surface_id);
         let sent = if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
             match payload {
@@ -1974,4 +1983,43 @@ fn push_tab_to_pane(
         }
     }
     false
+}
+
+#[cfg(test)]
+mod attach_block_tests {
+    use super::*;
+    use crate::core::intent::SendPayload;
+
+    fn test_engine() -> CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    #[test]
+    fn attached_surface_blocks_server_send() {
+        let mut engine = test_engine();
+        // 알려진 id 의 detached mirror terminal 을 직접 등록(기본 워크스페이스
+        // 터미널과 무관한 deterministic id).
+        let sid = 9999;
+        engine
+            .terminals
+            .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
+
+        // free → 전송 성공.
+        let ev =
+            Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
+
+        // 점유 → 서버 로컬 입력 차단.
+        engine.attach.acquire(sid, 1).unwrap();
+        let ev =
+            Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        assert!(matches!(ev, CoreEvent::SurfaceSent { sent: false, .. }));
+
+        // 해제 → 다시 서버 조작 가능.
+        engine.attach.release(sid, 1).unwrap();
+        let ev =
+            Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
+    }
 }
