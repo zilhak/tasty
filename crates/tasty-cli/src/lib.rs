@@ -154,6 +154,14 @@ pub enum Commands {
         /// 자동 재연결 비활성 (기본: SSH 끊김 시 백오프 재연결).
         #[arg(long)]
         no_reconnect: bool,
+        /// 작업 J 트리거: 이 명령을 받은 *로컬 GUI* 가 client 가 되어 원격 워크스페이스를
+        /// mirror 로 재구성하게 한다(`attach.into_gui` IPC). `--workspace` 와
+        /// `--target-port` 필요. (스트림을 CLI 가 직접 열지 않고 GUI 에 위임.)
+        #[arg(long)]
+        into_gui: bool,
+        /// `--into-gui` 의 원격 tasty 서버 loopback 포트(GUI 가 접속할 대상).
+        #[arg(long)]
+        target_port: Option<u16>,
     },
     /// Send text, key, or queue message
     Send {

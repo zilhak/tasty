@@ -214,6 +214,8 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         remote_tasty,
         remote_port_mode,
         no_reconnect,
+        into_gui: false,
+        target_port: _,
     } = &command
     {
         if surface.is_some() && workspace.is_some() {

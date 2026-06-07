@@ -142,9 +142,22 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         // 여기 도달하는 건 `--force-detach` 뿐 → workspace 면 force_detach_workspace,
         // 아니면 surface force_detach IPC.
         Commands::Attach {
-            surface, workspace, ..
+            surface,
+            workspace,
+            into_gui,
+            target_port,
+            ..
         } => {
-            if let Some(ws) = workspace {
+            if *into_gui {
+                // 작업 J 트리거 — GUI 가 client 로서 원격 워크스페이스 mirror 재구성.
+                (
+                    "attach.into_gui",
+                    serde_json::json!({
+                        "port": target_port,
+                        "workspace": workspace,
+                    }),
+                )
+            } else if let Some(ws) = workspace {
                 (
                     "attach.force_detach_workspace",
                     serde_json::json!({ "workspace_id": ws }),
