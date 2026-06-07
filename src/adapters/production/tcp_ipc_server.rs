@@ -106,91 +106,111 @@ impl TcpIpcServer {
             return;
         }
 
-        let reader = BufReader::new(match stream.try_clone() {
+        let mut reader = BufReader::new(match stream.try_clone() {
             Ok(s) => s,
             Err(_) => return,
         });
         let mut writer = stream;
 
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
+        // Read line-by-line manually (rather than `reader.lines()`) so the
+        // BufReader retains any bytes buffered after the current line. This is a
+        // prerequisite for the streaming-channel upgrade (a later commit), where
+        // binary frames may already sit buffered behind the handshake line.
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break, // EOF
+                Ok(_) => {}
                 Err(e) => {
                     tracing::warn!("IPC read error from {:?}: {}", peer, e);
                     break;
                 }
-            };
-
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
             }
-
-            // Parse JSON-RPC request
-            let request: JsonRpcRequest = match serde_json::from_str(trimmed) {
-                Ok(r) => r,
-                Err(e) => {
-                    let err_resp = JsonRpcResponse::error(
-                        serde_json::Value::Null,
-                        -32700,
-                        format!("Parse error: {}", e),
-                    );
-                    if let Err(e) =
-                        writeln!(writer, "{}", serde_json::to_string(&err_resp).unwrap())
-                    {
-                        tracing::trace!("IPC parse-error response write failed: {e}");
-                    }
-                    if let Err(e) = writer.flush() {
-                        tracing::trace!("IPC parse-error response flush failed: {e}");
-                    }
-                    continue;
-                }
-            };
-
-            // Create a response channel for this request
-            let (resp_tx, resp_rx) = mpsc::sync_channel(1);
-
-            let cmd = IpcCommand {
-                request,
-                response_tx: resp_tx,
-            };
-
-            // Send command to main thread
-            if cmd_tx.send(cmd).is_err() {
-                tracing::warn!("IPC cmd_tx.send failed (main thread shut down?)");
+            if !Self::process_request_line(&line, &cmd_tx, &waker, &mut writer, peer) {
                 break;
-            }
-
-            // Wake the event loop so it processes the command immediately
-            if let Some(ref waker) = waker {
-                waker();
-            }
-
-            // Wait for response from main thread
-            match resp_rx.recv() {
-                Ok(response) => {
-                    let json = serde_json::to_string(&response).unwrap();
-                    if let Err(e) = writeln!(writer, "{}", json) {
-                        tracing::warn!("IPC write error: {}", e);
-                        break;
-                    }
-                    if let Err(e) = writer.flush() {
-                        tracing::warn!("IPC flush error: {}", e);
-                        break;
-                    }
-                    tracing::debug!("IPC response sent for {:?}", peer);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "IPC resp_rx.recv failed: {} (response_tx dropped without sending)",
-                        e
-                    );
-                    break;
-                }
             }
         }
 
         tracing::debug!("IPC client disconnected from {:?}", peer);
+    }
+
+    /// Handle one request line of a request-response connection. Returns `false`
+    /// when the connection should be torn down (send/recv/write failure), `true`
+    /// to keep reading (including for empty or unparseable lines).
+    fn process_request_line(
+        line: &str,
+        cmd_tx: &mpsc::Sender<IpcCommand>,
+        waker: &Option<IpcWaker>,
+        writer: &mut std::net::TcpStream,
+        peer: Option<std::net::SocketAddr>,
+    ) -> bool {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return true;
+        }
+
+        // Parse JSON-RPC request
+        let request: JsonRpcRequest = match serde_json::from_str(trimmed) {
+            Ok(r) => r,
+            Err(e) => {
+                let err_resp = JsonRpcResponse::error(
+                    serde_json::Value::Null,
+                    -32700,
+                    format!("Parse error: {}", e),
+                );
+                if let Err(e) = writeln!(writer, "{}", serde_json::to_string(&err_resp).unwrap()) {
+                    tracing::trace!("IPC parse-error response write failed: {e}");
+                }
+                if let Err(e) = writer.flush() {
+                    tracing::trace!("IPC parse-error response flush failed: {e}");
+                }
+                return true;
+            }
+        };
+
+        // Create a response channel for this request
+        let (resp_tx, resp_rx) = mpsc::sync_channel(1);
+
+        let cmd = IpcCommand {
+            request,
+            response_tx: resp_tx,
+        };
+
+        // Send command to main thread
+        if cmd_tx.send(cmd).is_err() {
+            tracing::warn!("IPC cmd_tx.send failed (main thread shut down?)");
+            return false;
+        }
+
+        // Wake the event loop so it processes the command immediately
+        if let Some(waker) = waker {
+            waker();
+        }
+
+        // Wait for response from main thread
+        match resp_rx.recv() {
+            Ok(response) => {
+                let json = serde_json::to_string(&response).unwrap();
+                if let Err(e) = writeln!(writer, "{}", json) {
+                    tracing::warn!("IPC write error: {}", e);
+                    return false;
+                }
+                if let Err(e) = writer.flush() {
+                    tracing::warn!("IPC flush error: {}", e);
+                    return false;
+                }
+                tracing::debug!("IPC response sent for {:?}", peer);
+                true
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "IPC resp_rx.recv failed: {} (response_tx dropped without sending)",
+                    e
+                );
+                false
+            }
+        }
     }
 
     /// Get the effective port file path for this instance.
