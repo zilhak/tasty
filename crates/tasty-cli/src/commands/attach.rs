@@ -167,6 +167,242 @@ pub fn run_attach_ssh(
     }
 }
 
+/// `tasty attach --workspace <id>` (로컬 loopback, 단계 6) 진입점.
+pub fn run_attach_workspace(
+    workspace: u32,
+    dump_after: Option<u64>,
+    send: Option<&str>,
+    send_to: Option<u32>,
+    port_file: Option<&str>,
+) -> Result<()> {
+    let port = pf::read_port_file_from(port_file)?;
+    run_attach_workspace_on_port(port, workspace, dump_after, send, send_to)?;
+    Ok(())
+}
+
+/// workspace attach 1 회(로컬/SSH 공용). 핸드셰이크 → `attached_workspace` 디스크립터
+/// 파싱 → 터미널마다 mirror 생성 + 비-터미널 placeholder 기록 → demux-dump.
+pub(crate) fn run_attach_workspace_on_port(
+    port: u16,
+    workspace: u32,
+    dump_after: Option<u64>,
+    send: Option<&str>,
+    send_to: Option<u32>,
+) -> Result<AttachExit> {
+    let sock = TcpStream::connect(("127.0.0.1", port)).map_err(|e| {
+        anyhow::anyhow!(
+            "Could not connect to tasty instance on port {port}: {e}. Is tasty running?"
+        )
+    })?;
+    let (mut conn, client_id) =
+        StreamConnection::open_attach_workspace(sock, STREAM_PROTO, workspace)?;
+
+    let first = conn.recv()?;
+    if first.tag != StreamTag::Control {
+        bail!("expected attach Control frame, got {:?}", first.tag);
+    }
+    let ctrl: serde_json::Value = serde_json::from_slice(&first.payload)?;
+    match ctrl.get("event").and_then(|v| v.as_str()) {
+        Some("attached_workspace") => {}
+        Some("attach_error") => {
+            let reason = ctrl
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            bail!("workspace attach rejected: {reason}");
+        }
+        other => bail!("unexpected attach control event: {other:?}"),
+    }
+
+    // surfaces 디스크립터 → 터미널 mirror + 비-터미널 placeholder. 트리 순서 보존.
+    let surfaces = ctrl
+        .get("surfaces")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut mirrors: Vec<(u32, Terminal)> = Vec::new();
+    let mut placeholders: Vec<(u32, String)> = Vec::new();
+    for s in &surfaces {
+        let remote_id = s.get("remote_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        match s.get("role").and_then(|v| v.as_str()) {
+            Some("terminal") => {
+                let cols = s.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as usize;
+                let rows = s.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as usize;
+                mirrors.push((remote_id, Terminal::new_detached(cols, rows)));
+            }
+            _ => {
+                let kind = s
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                placeholders.push((remote_id, kind));
+            }
+        }
+    }
+    eprintln!(
+        "attached workspace {workspace} (client_id={client_id}, {} terminals, {} placeholders)",
+        mirrors.len(),
+        placeholders.len()
+    );
+
+    run_workspace_mirror_dump(conn, mirrors, placeholders, dump_after, send, send_to)
+}
+
+/// `tasty attach --ssh user@host --workspace <id>` (1회성 SSH 터널 workspace attach).
+/// 단계 5 의 터널/포트발견/백오프를 그대로 재사용 — surface 단위와 동일한 SSH 경로.
+#[allow(clippy::too_many_arguments)]
+pub fn run_attach_workspace_ssh(
+    dest: &str,
+    remote_tasty: &str,
+    port_mode: &str,
+    workspace: u32,
+    dump_after: Option<u64>,
+    send: Option<&str>,
+    send_to: Option<u32>,
+    reconnect: bool,
+) -> Result<()> {
+    let ssh = ssh::resolve_ssh_path();
+    let target = SshTarget::parse(dest);
+    let mode = PortMode::parse(port_mode)?;
+    let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
+    let debug = cfg!(debug_assertions);
+
+    let mut backoff = Backoff::new();
+    loop {
+        let remote_port =
+            match ssh::discover_remote_port(&ssh, &target, remote_tasty, mode, verify, debug) {
+                Ok(p) => p,
+                Err(e) if reconnect => {
+                    eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
+                    backoff.sleep();
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+
+        let tunnel = match SshTunnel::establish(&ssh, &target, remote_port, verify) {
+            Ok(t) => t,
+            Err(e) if reconnect => {
+                eprintln!("ssh 터널 수립 실패: {e} — 백오프 재시도");
+                backoff.sleep();
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        eprintln!(
+            "ssh 터널 수립: 127.0.0.1:{} → {dest}:{remote_port}",
+            tunnel.local_port
+        );
+        backoff.reset();
+
+        match run_attach_workspace_on_port(tunnel.local_port, workspace, dump_after, send, send_to)?
+        {
+            AttachExit::Completed => return Ok(()),
+            AttachExit::Disconnected if reconnect => {
+                eprintln!("연결 끊김 — 백오프 재연결(세션은 서버 상주)");
+                drop(tunnel);
+                backoff.sleep();
+                continue;
+            }
+            AttachExit::Disconnected => return Ok(()),
+        }
+    }
+}
+
+/// workspace demux-dump: surface-prefixed Data 를 demux 해 각 mirror 에 feed,
+/// deadline 후 surface 별 화면을 섹션으로 stdout 출력. 검증 핵심(GUI 없이 N grid 확인).
+fn run_workspace_mirror_dump(
+    mut conn: StreamConnection,
+    mut mirrors: Vec<(u32, Terminal)>,
+    placeholders: Vec<(u32, String)>,
+    dump_after: Option<u64>,
+    send: Option<&str>,
+    send_to: Option<u32>,
+) -> Result<AttachExit> {
+    let collect_ms = dump_after.unwrap_or(500);
+
+    // 초기 입력 1 회(지정 surface 로 surface-prefixed).
+    if let Some(s) = send {
+        match send_to {
+            Some(sid) => conn.send(StreamTag::Data, &stream::encode_mux(sid, &decode_escapes(s)))?,
+            None => {
+                eprintln!("workspace 모드의 --send 는 --send-to <surface_id> 와 함께 써야 합니다 (무시).")
+            }
+        }
+    }
+
+    let writer = conn.try_clone_writer()?;
+    let (tx, rx) = mpsc::channel::<StreamFrame>();
+    let reader = thread::spawn(move || {
+        while let Ok(frame) = conn.recv() {
+            let stop = frame.tag == StreamTag::Detach;
+            if tx.send(frame).is_err() || stop {
+                break;
+            }
+        }
+    });
+
+    let deadline = Instant::now() + Duration::from_millis(collect_ms);
+    let mut forced = false;
+    let mut disconnected = false;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining) {
+            Ok(frame) => match frame.tag {
+                StreamTag::Data => {
+                    if let Some((sid, payload)) = stream::decode_mux(&frame.payload)
+                        && let Some((_, m)) = mirrors.iter_mut().find(|(id, _)| *id == sid)
+                    {
+                        m.feed_bytes(payload);
+                    }
+                }
+                StreamTag::Control => {
+                    if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
+                        forced = true;
+                        break;
+                    }
+                }
+                StreamTag::Detach => {
+                    forced = true;
+                    break;
+                }
+                StreamTag::Ping => {}
+            },
+            Err(mpsc::RecvTimeoutError::Timeout) => break,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                disconnected = true;
+                break;
+            }
+        }
+    }
+
+    // 각 surface 화면을 섹션 헤더와 함께 stdout 으로 — 검증 grep 용.
+    for (sid, m) in &mirrors {
+        println!("=== surface {sid} ===");
+        println!("{}", m.screen_text());
+    }
+    for (sid, kind) in &placeholders {
+        println!("=== surface {sid} (placeholder: {kind}) ===");
+    }
+
+    let mut writer = writer;
+    if !forced && !disconnected {
+        let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]);
+    } else if forced {
+        eprintln!("force-detached by server");
+    }
+    let _ = reader.join();
+    Ok(if disconnected {
+        AttachExit::Disconnected
+    } else {
+        AttachExit::Completed
+    })
+}
+
 /// mirror-dump 모드: 출력을 수집해 mirror grid 재구성 → stdout 출력.
 /// 1회성이라 항상 `Completed` 를 반환하지만, deadline 전에 reader 가 끊기면
 /// `Disconnected`(터널/서버 단절)로 보고해 SSH 재연결이 가능하게 한다.

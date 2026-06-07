@@ -28,7 +28,7 @@ impl StreamConnection {
     /// `Control` ack frame. Returns the connection and the server-assigned
     /// client id.
     pub fn open(stream: TcpStream, proto: u32) -> Result<(Self, u32)> {
-        Self::open_with(stream, proto, None)
+        Self::open_with(stream, proto, None, None)
     }
 
     /// Like [`open`](Self::open) but requests attach to `target` (a surface_id):
@@ -37,10 +37,26 @@ impl StreamConnection {
     /// (success/`attach_error`) arrives as a *separate* `Control` frame after the
     /// handshake ack — callers must read it (see `commands::attach`).
     pub fn open_attach(stream: TcpStream, proto: u32, target: u32) -> Result<(Self, u32)> {
-        Self::open_with(stream, proto, Some(target))
+        Self::open_with(stream, proto, Some(target), None)
     }
 
-    fn open_with(stream: TcpStream, proto: u32, target: Option<u32>) -> Result<(Self, u32)> {
+    /// Like [`open_attach`](Self::open_attach) but attaches a whole workspace
+    /// (attach/detach step 6): the server mirrors every terminal in the workspace
+    /// and the connection's `Data` frames are surface-prefixed (`decode_mux`).
+    pub fn open_attach_workspace(
+        stream: TcpStream,
+        proto: u32,
+        workspace: u32,
+    ) -> Result<(Self, u32)> {
+        Self::open_with(stream, proto, None, Some(workspace))
+    }
+
+    fn open_with(
+        stream: TcpStream,
+        proto: u32,
+        target: Option<u32>,
+        target_workspace: Option<u32>,
+    ) -> Result<(Self, u32)> {
         let writer = stream.try_clone()?;
         let mut reader = BufReader::new(stream);
         let mut writer = writer;
@@ -48,6 +64,9 @@ impl StreamConnection {
         let mut params = serde_json::json!({ "proto": proto });
         if let Some(t) = target {
             params["target"] = serde_json::json!(t);
+        }
+        if let Some(w) = target_workspace {
+            params["target_workspace"] = serde_json::json!(w);
         }
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),

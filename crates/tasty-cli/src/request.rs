@@ -139,11 +139,23 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         }
         Commands::Send { command } => send_command_to_method_params(command),
         // attach 의 non-force 경로는 run_client 에서 raw 스트림으로 선처리된다.
-        // 여기 도달하는 건 `--force-detach` 뿐 → attach.force_detach IPC.
-        Commands::Attach { surface, .. } => (
-            "attach.force_detach",
-            serde_json::json!({ "surface_id": surface }),
-        ),
+        // 여기 도달하는 건 `--force-detach` 뿐 → workspace 면 force_detach_workspace,
+        // 아니면 surface force_detach IPC.
+        Commands::Attach {
+            surface, workspace, ..
+        } => {
+            if let Some(ws) = workspace {
+                (
+                    "attach.force_detach_workspace",
+                    serde_json::json!({ "workspace_id": ws }),
+                )
+            } else {
+                (
+                    "attach.force_detach",
+                    serde_json::json!({ "surface_id": surface }),
+                )
+            }
+        }
         Commands::Read { command } => read_command_to_method_params(command),
         Commands::Notify { body, title } => (
             "notification.create",

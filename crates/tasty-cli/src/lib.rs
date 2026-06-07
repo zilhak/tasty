@@ -117,19 +117,27 @@ pub enum Commands {
     },
     /// Attach to a terminal surface and mirror it (surface 단위, 로컬 loopback)
     Attach {
-        /// 대상 surface_id (포커스 비의존 — ID 직접 지정)
-        surface: u32,
+        /// 대상 surface_id (포커스 비의존 — ID 직접 지정). `--workspace` 와 상호배타.
+        surface: Option<u32>,
+        /// 대상 workspace_id — 그 안 모든 터미널을 트리째 mirror (단계 6).
+        /// `surface` positional 과 상호배타. 비-터미널은 placeholder 로 숨김.
+        #[arg(long)]
+        workspace: Option<u32>,
         /// mirror-dump: attach 후 N ms 동안 출력 수집 → mirror 화면을 stdout 출력 후 종료
-        /// (GUI 없이 자동 검증용)
+        /// (GUI 없이 자동 검증용). workspace 모드는 surface 별 화면을 섹션으로 출력
         #[arg(long)]
         dump_after: Option<u64>,
         /// attach 직후 1 회 전송할 입력 (escape 디코딩: \n \r \t \xNN). 비대화형 검증용
         #[arg(long)]
         send: Option<String>,
+        /// workspace 모드에서 `--send` 입력을 보낼 대상 remote surface_id.
+        /// 생략 시 surface 모드만 유효(surface 단위는 점유 surface 로 자동).
+        #[arg(long)]
+        send_to: Option<u32>,
         /// raw 브리지 모드: stdin/stdout passthrough (detach = Ctrl+\)
         #[arg(long)]
         raw: bool,
-        /// 점유된 surface 를 강제로 끊는다 (서버 권한, attach 하지 않음)
+        /// 점유된 surface/workspace 를 강제로 끊는다 (서버 권한, attach 하지 않음)
         #[arg(long)]
         force_detach: bool,
         /// SSH 너머 원격 surface 에 attach (1회성). 예: --ssh user@host, --ssh gx10.

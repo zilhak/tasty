@@ -204,8 +204,10 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     // attach over the tunnel localport), with auto-reconnect backoff.
     if let Commands::Attach {
         surface,
+        workspace,
         dump_after,
         send,
+        send_to,
         raw,
         force_detach: false,
         ssh,
@@ -214,6 +216,38 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         no_reconnect,
     } = &command
     {
+        if surface.is_some() && workspace.is_some() {
+            anyhow::bail!("surface 와 --workspace 는 함께 쓸 수 없습니다.");
+        }
+        // workspace 단위 attach (단계 6): 트리 N-터미널 다중화 mirror.
+        if let Some(ws) = workspace {
+            if *raw {
+                anyhow::bail!("--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림).");
+            }
+            return match ssh {
+                Some(dest) => crate::commands::attach::run_attach_workspace_ssh(
+                    dest,
+                    remote_tasty,
+                    remote_port_mode,
+                    *ws,
+                    *dump_after,
+                    send.as_deref(),
+                    *send_to,
+                    !no_reconnect,
+                ),
+                None => crate::commands::attach::run_attach_workspace(
+                    *ws,
+                    *dump_after,
+                    send.as_deref(),
+                    *send_to,
+                    port_file,
+                ),
+            };
+        }
+        // surface 단위 attach (단계 4/5).
+        let Some(surface) = surface else {
+            anyhow::bail!("attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>.");
+        };
         return match ssh {
             Some(dest) => crate::commands::attach::run_attach_ssh(
                 dest,
