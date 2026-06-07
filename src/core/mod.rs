@@ -13,6 +13,7 @@
 
 pub(crate) mod agent;
 pub(crate) mod attach;
+pub(crate) mod attach_runtime;
 pub(crate) mod builder;
 pub(crate) mod file;
 pub(crate) mod intent;

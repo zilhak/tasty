@@ -146,6 +146,15 @@ impl AttachRegistry {
         self.surface_locks.iter().map(|(&s, &l)| (s, l)).collect()
     }
 
+    /// client 가 점유 중인 surface(단계 4 입력 라우팅 역조회). surface 단위라 client
+    /// 당 0/1 개 — 여러 개면 임의의 하나(workspace 단위는 단계 6 에서 명시 surface_id).
+    pub fn surface_held_by(&self, client_id: AttachClientId) -> Option<SurfaceId> {
+        self.surface_locks
+            .iter()
+            .find(|(_, l)| l.holder == client_id)
+            .map(|(&s, _)| s)
+    }
+
     /// holder 에게 강제 분리 통지를 push(사유 Control + Detach 종료 신호). best-effort:
     /// notifier 미주입이거나 holder 가 이미 끊겼으면 무해하게 무시된다.
     fn notify_detached(&self, holder: AttachClientId, reason: &str) {

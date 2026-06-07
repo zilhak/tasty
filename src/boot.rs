@@ -222,11 +222,30 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 headless_dispatch::pump_ipc(&mut app, &mut state, &mut engine);
             }
             AppEvent::StreamReady => {
-                // 스트림 클라가 보낸 inbound 프레임 drain. debug 빌드는 echo 회신,
-                // release 는 drop (실제 소비자는 단계 4+). 끊긴 client 의 attach lock 은
-                // 자동 free 환원(단계 3).
-                let disconnected = app.stream_hub.pump_inbound(&app.stream_inbound_rx);
-                for client_id in disconnected {
+                // 스트림 클라 inbound 를 분류해 attach 결선(단계 4): attach 요청 →
+                // lock+스냅샷+출력 forward, 입력 Data → 점유 surface PTY, 끊김 →
+                // lock free 환원(단계 3). 비-attach client 의 Data 는 debug echo.
+                let outcome = app.stream_hub.pump_inbound(&app.stream_inbound_rx);
+                for (client_id, surface_id) in outcome.attach_requests {
+                    engine.attach_surface_for_stream(surface_id, client_id, &app.stream_hub);
+                }
+                for (client_id, bytes) in outcome.input_frames {
+                    let routed = engine.feed_attached_input(client_id, &bytes);
+                    #[cfg(debug_assertions)]
+                    if !routed {
+                        // 단계 1 echo client(점유 surface 없음): debug 빌드 회신.
+                        let _ = app.stream_hub.push(
+                            client_id,
+                            crate::ipc::stream::StreamFrame::new(
+                                crate::ipc::stream::StreamTag::Data,
+                                bytes,
+                            ),
+                        );
+                    }
+                    #[cfg(not(debug_assertions))]
+                    let _ = routed;
+                }
+                for client_id in outcome.disconnected {
                     engine.attach.release_all_for_client(client_id);
                 }
             }

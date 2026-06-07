@@ -35,9 +35,30 @@ pub enum StreamInbound {
         client_id: StreamClientId,
         frame: StreamFrame,
     },
+    /// A stream client requested attach to a surface (`stream.open` with a
+    /// `target`). The main loop acquires the lock, taps output, and pushes the
+    /// initial snapshot (attach/detach step 4). Routed via the inbound channel
+    /// because the accept thread cannot touch the engine (main-loop owned).
+    AttachRequest {
+        client_id: StreamClientId,
+        target_surface_id: u32,
+    },
     /// A stream client's connection closed (EOF / read error / detach). The main
     /// loop releases any attach locks that client held (attach/detach step 3).
     Disconnected { client_id: StreamClientId },
+}
+
+/// Classified inbound messages for one `pump_inbound` drain (attach/detach step
+/// 4). The main loop applies each to the engine; classification lives here
+/// (no engine access) while interpretation lives in the main loop.
+#[derive(Default)]
+pub struct PumpOutcome {
+    /// Clients whose connections closed — release their attach locks.
+    pub disconnected: Vec<StreamClientId>,
+    /// `(client_id, target_surface_id)` attach requests.
+    pub attach_requests: Vec<(StreamClientId, u32)>,
+    /// `(client_id, bytes)` input data frames — route to the held surface's PTY.
+    pub input_frames: Vec<(StreamClientId, Vec<u8>)>,
 }
 
 /// Per-client push sink held in the registry.
@@ -150,31 +171,32 @@ impl StreamHub {
     }
 
     /// Drain inbound messages routed from stream clients (called by the main loop
-    /// on `AppEvent::StreamReady`). Returns the client ids whose connections
-    /// closed — the caller releases their attach locks (attach/detach step 3).
+    /// on `AppEvent::StreamReady`). Classifies them into a [`PumpOutcome`] the
+    /// main loop applies to the engine — disconnects free locks, attach requests
+    /// acquire + snapshot + tap, `Data` frames route to the held surface's PTY.
     ///
-    /// Frames: in debug builds each is echoed back to its origin client — the
-    /// step-1 verification path proving "the main loop can push to a specific
-    /// client". In release builds frames are dropped: real consumers (input /
-    /// resize / detach) arrive in later steps.
-    pub fn pump_inbound(&self, inbound_rx: &Receiver<StreamInbound>) -> Vec<StreamClientId> {
-        let mut disconnected = Vec::new();
+    /// `Data` frames from a *non-attached* client are step-1 echo clients: the
+    /// main loop echoes them back (debug only) since they aren't routed by
+    /// `feed_attached_input`. Classification here has no engine access, so it
+    /// returns all `Data` frames as `input_frames` and lets the main loop decide.
+    pub fn pump_inbound(&self, inbound_rx: &Receiver<StreamInbound>) -> PumpOutcome {
+        let mut out = PumpOutcome::default();
         while let Ok(msg) = inbound_rx.try_recv() {
             match msg {
-                StreamInbound::Disconnected { client_id } => disconnected.push(client_id),
+                StreamInbound::Disconnected { client_id } => out.disconnected.push(client_id),
+                StreamInbound::AttachRequest {
+                    client_id,
+                    target_surface_id,
+                } => out.attach_requests.push((client_id, target_surface_id)),
                 StreamInbound::Frame { client_id, frame } => {
-                    #[cfg(debug_assertions)]
-                    {
-                        let _ = self.push(client_id, frame);
+                    if frame.tag == crate::ipc::stream::StreamTag::Data {
+                        out.input_frames.push((client_id, frame.payload));
                     }
-                    #[cfg(not(debug_assertions))]
-                    {
-                        let _ = (client_id, frame);
-                    }
+                    // Control/Ping/Detach from clients carry no step-4 payload.
                 }
             }
         }
-        disconnected
+        out
     }
 }
 
@@ -242,24 +264,31 @@ mod tests {
     }
 
     #[test]
-    fn pump_inbound_echoes_in_debug() {
+    fn pump_inbound_classifies_data_as_input() {
         let hub = StreamHub::new();
-        let id = hub.alloc_id();
-        let rx = hub.register(id);
         let (tx, inbound_rx) = mpsc::channel();
         tx.send(StreamInbound::Frame {
-            client_id: id,
+            client_id: 5,
             frame: frame(StreamTag::Data, b"echo me"),
         })
         .unwrap();
-        let disconnected = hub.pump_inbound(&inbound_rx);
-        assert!(disconnected.is_empty());
-        if cfg!(debug_assertions) {
-            let got = rx.recv().unwrap();
-            assert_eq!(got.payload, b"echo me");
-        } else {
-            assert!(rx.try_recv().is_err());
-        }
+        let out = hub.pump_inbound(&inbound_rx);
+        assert!(out.disconnected.is_empty());
+        assert!(out.attach_requests.is_empty());
+        assert_eq!(out.input_frames, vec![(5u32, b"echo me".to_vec())]);
+    }
+
+    #[test]
+    fn pump_inbound_classifies_attach_requests() {
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        tx.send(StreamInbound::AttachRequest {
+            client_id: 3,
+            target_surface_id: 42,
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.attach_requests, vec![(3u32, 42u32)]);
     }
 
     #[test]
@@ -268,7 +297,7 @@ mod tests {
         let (tx, inbound_rx) = mpsc::channel();
         tx.send(StreamInbound::Disconnected { client_id: 7 }).unwrap();
         tx.send(StreamInbound::Disconnected { client_id: 9 }).unwrap();
-        let disconnected = hub.pump_inbound(&inbound_rx);
-        assert_eq!(disconnected, vec![7, 9]);
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.disconnected, vec![7, 9]);
     }
 }

@@ -71,6 +71,11 @@ impl StreamFrame {
 pub struct StreamOpenParams {
     #[serde(default)]
     pub proto: u32,
+    /// attach 대상 surface_id. `Some` 이면 서버가 핸드셰이크 직후 그 surface 를
+    /// 이 연결의 client 로 attach 한다(배타 점유 + 초기 스냅샷 + 출력 forward).
+    /// `None` 이면 순수 스트림(단계 1 echo) — attach 의미 없음.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<u32>,
 }
 
 /// Control payload the server sends immediately after a successful upgrade.

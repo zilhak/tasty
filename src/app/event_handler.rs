@@ -88,13 +88,10 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::StreamReady => {
-                // 스트림 클라 inbound 프레임 drain (debug: echo, release: drop).
-                // 렌더 상태와 무관하므로 dirty 처리 불필요. 끊긴 client 의 attach lock 은
-                // 모든 engine 에서 자동 free 환원(단계 3).
-                let disconnected = self.stream_hub.pump_inbound(&self.stream_inbound_rx);
-                if !disconnected.is_empty() {
-                    self.release_attach_for_disconnected(&disconnected);
-                }
+                // 스트림 클라 inbound 를 분류해 attach 결선(단계 4). 렌더 상태와 무관해
+                // dirty 처리 불필요. 끊긴 client lock 은 전 engine 에서 자동 free 환원.
+                let outcome = self.stream_hub.pump_inbound(&self.stream_inbound_rx);
+                self.apply_stream_outcome(outcome);
             }
             AppEvent::EguiRepaint { viewport_id } => {
                 // viewport_id 가 매칭되는 view 한 개만 dirty 처리.
@@ -646,5 +643,86 @@ impl App {
                 engine.attach.release_all_for_client(cid);
             }
         }
+    }
+
+    /// `pump_inbound` 가 분류한 stream inbound 를 적용한다(attach/detach 단계 4).
+    /// gui 는 engine 이 여럿(활성 main view + parked)이라, 각 요청을 *대상 surface 를
+    /// 소유한 engine* 에 라우팅한다. 끊김은 전 engine 해제(멱등).
+    pub(crate) fn apply_stream_outcome(
+        &mut self,
+        outcome: crate::adapters::production::stream_hub::PumpOutcome,
+    ) {
+        // StreamHub 는 Arc clone(저렴) — 필드 동시 차용 회피용.
+        let hub = self.stream_hub.clone();
+
+        for (client_id, surface_id) in outcome.attach_requests {
+            if !self.attach_on_owning_engine(surface_id, client_id, &hub) {
+                // 어떤 engine 도 이 surface 를 소유하지 않음 → 거부.
+                crate::core::attach_runtime::reject_attach(&hub, client_id, "not_found", None);
+            }
+        }
+
+        for (client_id, bytes) in outcome.input_frames {
+            let routed = self.feed_input_on_owning_engine(client_id, &bytes);
+            #[cfg(debug_assertions)]
+            if !routed {
+                // 단계 1 echo client(점유 surface 없음): debug 빌드 회신.
+                let _ = self.stream_hub.push(
+                    client_id,
+                    crate::ipc::stream::StreamFrame::new(
+                        crate::ipc::stream::StreamTag::Data,
+                        bytes,
+                    ),
+                );
+            }
+            #[cfg(not(debug_assertions))]
+            let _ = routed;
+        }
+
+        if !outcome.disconnected.is_empty() {
+            self.release_attach_for_disconnected(&outcome.disconnected);
+        }
+    }
+
+    /// 대상 surface 를 소유한 engine 을 찾아 attach 결선. 소유 engine 없으면 false.
+    fn attach_on_owning_engine(
+        &mut self,
+        surface_id: u32,
+        client_id: u32,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) -> bool {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                let e = &mut main.core_state;
+                if e.terminals.contains(surface_id) || e.is_surface_deferred(surface_id) {
+                    e.attach_surface_for_stream(surface_id, client_id, hub);
+                    return true;
+                }
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.terminals.contains(surface_id) || engine.is_surface_deferred(surface_id) {
+                engine.attach_surface_for_stream(surface_id, client_id, hub);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// client 가 점유한 surface 를 가진 engine 에 입력 전달. 없으면 false.
+    fn feed_input_on_owning_engine(&mut self, client_id: u32, bytes: &[u8]) -> bool {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.feed_attached_input(client_id, bytes)
+            {
+                return true;
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.feed_attached_input(client_id, bytes) {
+                return true;
+            }
+        }
+        false
     }
 }
