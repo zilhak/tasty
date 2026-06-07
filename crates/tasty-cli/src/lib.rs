@@ -142,8 +142,15 @@ pub enum Commands {
         force_detach: bool,
         /// SSH 너머 원격 surface 에 attach (1회성). 예: --ssh user@host, --ssh gx10.
         /// 원격성은 ssh 가 흡수 — 내부적으로 ssh -L 터널 + 단계 4 attach 결합.
+        /// `--profile` 과 상호배타.
         #[arg(long)]
         ssh: Option<String>,
+        /// 저장된 SSH 프로필명으로 원격 attach (단계 7). `~/.tasty/ssh-profiles.toml`
+        /// 의 프로필을 resolve 해 user/port/identity/extra-options 를 결선한다.
+        /// `--ssh` 와 상호배타. 이 경우 `--remote-tasty`/`--remote-port-mode` 는 프로필
+        /// 값으로 대체된다.
+        #[arg(long)]
+        profile: Option<String>,
         /// 원격 tasty 바이너리 경로 (셸 비의존 포트 발견용 `ssh host <path> port`).
         /// 기본 "tasty" (원격 PATH 가정). PATH 밖이면 풀경로 지정.
         #[arg(long, default_value = "tasty")]
@@ -262,6 +269,12 @@ pub enum Commands {
     Preset {
         #[command(subcommand)]
         command: PresetCommands,
+    },
+    /// Manage SSH connection profiles (`~/.tasty/ssh-profiles.toml`) — 워크스페이스를
+    /// 원격 컴퓨터에 매핑할 때 참조하는 장비 인벤토리 (단계 7). 로컬 파일 (no IPC).
+    SshProfile {
+        #[command(subcommand)]
+        command: SshProfileCommands,
     },
     /// Print this instance's IPC port to stdout (shell-independent remote port
     /// discovery for `ssh host tasty port`). Reads the port file only — no IPC.

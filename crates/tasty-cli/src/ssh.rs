@@ -49,23 +49,59 @@ pub fn resolve_ssh_path() -> PathBuf {
 
 /// SSH 접속 대상. tasty 는 파싱하지 않고 ssh 에 그대로 위임한다
 /// (`~/.ssh/config` 의 `Host` alias / `ProxyJump` / 포트 전부 ssh 가 해석).
-#[derive(Clone, Debug)]
+///
+/// 단계 7: 저장 프로필의 `identity_file`/`extra_options` 도 함께 실어 ssh 에 전달한다
+/// (`push_common_opts` 가 `-i`/`-o` 로 emit). 1회성(`--ssh`) 경로는 이 둘이 비어
+/// 동작이 불변하다.
+#[derive(Clone, Debug, Default)]
 pub struct SshTarget {
     /// ssh 에 그대로 넘길 destination (`user@host` | `host` | config alias).
     pub destination: String,
     /// 사용자가 명시한 ssh 포트(없으면 ssh config / 22 위임).
     pub ssh_port: Option<u16>,
+    /// identity 파일 경로(`-i`). `~` 는 spawn 시 직접 확장(셸 비경유라 ssh 가 못 풂).
+    pub identity_file: Option<String>,
+    /// 추가 ssh `-o` 옵션. `"Key=Value"` → `-o Key=Value`.
+    pub extra_options: Vec<String>,
 }
 
 impl SshTarget {
     /// `user@host` / `host` / config alias 를 그대로 보관한다. ssh 포트는
-    /// `~/.ssh/config` 에 위임하므로 여기서는 destination 만 받는다.
+    /// `~/.ssh/config` 에 위임하므로 여기서는 destination 만 받는다(1회성 `--ssh`).
     pub fn parse(dest: &str) -> Self {
         Self {
             destination: dest.to_string(),
             ssh_port: None,
+            identity_file: None,
+            extra_options: Vec::new(),
         }
     }
+
+    /// 저장 프로필을 ssh 연결 대상으로 변환한다(단계 7 `attach --profile` / 자동 attach).
+    /// destination = `user@host` 합성, port/identity_file/extra_options 결선.
+    pub fn from_profile(p: &tasty_ssh_profiles::SshProfile) -> Self {
+        Self {
+            destination: p.ssh_destination(),
+            ssh_port: p.port,
+            identity_file: p.identity_file.clone(),
+            extra_options: p.extra_options.clone(),
+        }
+    }
+}
+
+/// 경로 앞의 `~` / `~/` 를 홈 디렉토리로 확장한다. ssh 를 셸 없이 spawn 하면 셸의
+/// 틸드 확장이 일어나지 않으므로 `-i ~/.ssh/id_ed25519` 가 그대로 깨진다.
+fn expand_tilde(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok();
+        if let Some(home) = home {
+            let rest = &path[1..]; // 선행 '~' 제거 → "/.ssh/..." or ""
+            return format!("{home}{rest}");
+        }
+    }
+    path.to_string()
 }
 
 /// 원격 포트 발견 모드(plan §4).
@@ -114,6 +150,15 @@ fn push_common_opts(args: &mut Vec<String>, target: &SshTarget, verify: bool) {
     if let Some(p) = target.ssh_port {
         args.push("-p".into());
         args.push(p.to_string());
+    }
+    // 단계 7 — 프로필 identity_file / extra_options 결선(1회성 경로는 비어 무영향).
+    if let Some(identity) = &target.identity_file {
+        args.push("-i".into());
+        args.push(expand_tilde(identity));
+    }
+    for opt in &target.extra_options {
+        args.push("-o".into());
+        args.push(opt.clone());
     }
 }
 
@@ -353,6 +398,52 @@ mod tests {
         assert_eq!(SshTarget::parse("user@host").destination, "user@host");
         assert_eq!(SshTarget::parse("gx10").destination, "gx10");
         assert!(SshTarget::parse("user@host").ssh_port.is_none());
+        // 1회성 경로는 identity/extra 가 비어 동작 불변.
+        assert!(SshTarget::parse("gx10").identity_file.is_none());
+        assert!(SshTarget::parse("gx10").extra_options.is_empty());
+    }
+
+    #[test]
+    fn from_profile_threads_user_port_identity_options() {
+        let mut p = tasty_ssh_profiles::SshProfile::new("gx10", "gx10");
+        p.user = Some("zilhak".into());
+        p.port = Some(2222);
+        p.identity_file = Some("~/.ssh/id_ed25519".into());
+        p.extra_options = vec!["ServerAliveInterval=30".into()];
+        let t = SshTarget::from_profile(&p);
+        assert_eq!(t.destination, "zilhak@gx10");
+        assert_eq!(t.ssh_port, Some(2222));
+        assert_eq!(t.identity_file.as_deref(), Some("~/.ssh/id_ed25519"));
+        assert_eq!(t.extra_options, vec!["ServerAliveInterval=30".to_string()]);
+    }
+
+    #[test]
+    fn push_common_opts_emits_identity_and_extra_options() {
+        let mut t = SshTarget::parse("gx10");
+        t.ssh_port = Some(2200);
+        t.identity_file = Some("/home/me/.ssh/key".into());
+        t.extra_options = vec!["ProxyJump=bastion".into()];
+        let mut args: Vec<String> = Vec::new();
+        push_common_opts(&mut args, &t, false);
+        // -p <port>
+        let p = args.iter().position(|a| a == "-p").expect("-p present");
+        assert_eq!(args[p + 1], "2200");
+        // -i <identity> (절대 경로는 tilde 확장 무영향)
+        let i = args.iter().position(|a| a == "-i").expect("-i present");
+        assert_eq!(args[i + 1], "/home/me/.ssh/key");
+        // -o ProxyJump=bastion
+        assert!(
+            args.windows(2)
+                .any(|w| w[0] == "-o" && w[1] == "ProxyJump=bastion")
+        );
+    }
+
+    #[test]
+    fn expand_tilde_only_touches_leading_tilde() {
+        // 절대 경로는 불변.
+        assert_eq!(expand_tilde("/etc/x"), "/etc/x");
+        // 중간 ~ 는 불변.
+        assert_eq!(expand_tilde("/a/~/b"), "/a/~/b");
     }
 
     #[test]

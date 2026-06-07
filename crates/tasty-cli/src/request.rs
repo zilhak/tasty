@@ -202,6 +202,8 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Update(_) => ("update.noop", serde_json::json!({})),
         // `tasty port` 는 run.rs 에서 IPC 전에 로컬 처리됨 — 여기 도달하지 않음.
         Commands::Port => ("port.noop", serde_json::json!({})),
+        // ssh-profile 은 run.rs 에서 로컬 처리 (IPC 미경유) — 미도달 arm.
+        Commands::SshProfile { .. } => ("ssh-profile.noop", serde_json::json!({})),
     };
 
     JsonRpcRequest {

@@ -186,6 +186,10 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     if let Commands::Port = &command {
         return crate::commands::port::run_port(port_file);
     }
+    // `tasty ssh-profile ...` — ssh-profiles.toml 은 client 로컬 파일이라 IPC 미경유 (단계 7).
+    if let Commands::SshProfile { command } = &command {
+        return crate::commands::ssh_profile::run(command);
+    }
     // `--ssh` + `--force-detach` is out of scope for step 5 (remote force-detach
     // belongs to profile/management in step 7) — reject explicitly rather than
     // silently force-detaching the *local* surface.
@@ -211,6 +215,7 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         raw,
         force_detach: false,
         ssh,
+        profile,
         remote_tasty,
         remote_port_mode,
         no_reconnect,
@@ -221,14 +226,45 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         if surface.is_some() && workspace.is_some() {
             anyhow::bail!("surface 와 --workspace 는 함께 쓸 수 없습니다.");
         }
+        if ssh.is_some() && profile.is_some() {
+            anyhow::bail!("--ssh 와 --profile 는 함께 쓸 수 없습니다.");
+        }
+        // 단계 7 — 프로필 해석: 저장 프로필 → SshTarget(+remote_tasty/port_mode 대체).
+        // None 이면 1회성 `--ssh` 경로(아래 ssh: Some(dest)).
+        let profile_conn: Option<(crate::ssh::SshTarget, String, String)> = match profile {
+            Some(name) => {
+                let profiles = tasty_ssh_profiles::SshProfiles::load();
+                let Some(p) = profiles.get(name) else {
+                    anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty ssh-profile list).");
+                };
+                Some((
+                    crate::ssh::SshTarget::from_profile(p),
+                    p.remote_tasty.clone(),
+                    p.port_mode.clone(),
+                ))
+            }
+            None => None,
+        };
         // workspace 단위 attach (단계 6): 트리 N-터미널 다중화 mirror.
         if let Some(ws) = workspace {
             if *raw {
                 anyhow::bail!("--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림).");
             }
+            if let Some((target, rt, pm)) = profile_conn {
+                return crate::commands::attach::run_attach_workspace_ssh(
+                    target,
+                    &rt,
+                    &pm,
+                    *ws,
+                    *dump_after,
+                    send.as_deref(),
+                    *send_to,
+                    !no_reconnect,
+                );
+            }
             return match ssh {
                 Some(dest) => crate::commands::attach::run_attach_workspace_ssh(
-                    dest,
+                    crate::ssh::SshTarget::parse(dest),
                     remote_tasty,
                     remote_port_mode,
                     *ws,
@@ -250,9 +286,21 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         let Some(surface) = surface else {
             anyhow::bail!("attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>.");
         };
+        if let Some((target, rt, pm)) = profile_conn {
+            return crate::commands::attach::run_attach_ssh(
+                target,
+                &rt,
+                &pm,
+                *surface,
+                *dump_after,
+                send.as_deref(),
+                *raw,
+                !no_reconnect,
+            );
+        }
         return match ssh {
             Some(dest) => crate::commands::attach::run_attach_ssh(
-                dest,
+                crate::ssh::SshTarget::parse(dest),
                 remote_tasty,
                 remote_port_mode,
                 *surface,

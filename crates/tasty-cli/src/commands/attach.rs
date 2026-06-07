@@ -101,7 +101,7 @@ pub(crate) fn run_attach_on_port(
 /// 세션은 서버에 상주하므로 재연결은 터널 재수립 + 재attach 만 하면 복구된다.
 #[allow(clippy::too_many_arguments)]
 pub fn run_attach_ssh(
-    dest: &str,
+    target: SshTarget,
     remote_tasty: &str,
     port_mode: &str,
     surface: u32,
@@ -111,7 +111,7 @@ pub fn run_attach_ssh(
     reconnect: bool,
 ) -> Result<()> {
     let ssh = ssh::resolve_ssh_path();
-    let target = SshTarget::parse(dest);
+    let dest = target.destination.clone();
     let mode = PortMode::parse(port_mode)?;
     // 자동 검증(Claude Bash) 한정 host key accept-new. 평상시는 기본 strict 유지(보안).
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
@@ -253,7 +253,7 @@ pub(crate) fn run_attach_workspace_on_port(
 /// 단계 5 의 터널/포트발견/백오프를 그대로 재사용 — surface 단위와 동일한 SSH 경로.
 #[allow(clippy::too_many_arguments)]
 pub fn run_attach_workspace_ssh(
-    dest: &str,
+    target: SshTarget,
     remote_tasty: &str,
     port_mode: &str,
     workspace: u32,
@@ -263,7 +263,7 @@ pub fn run_attach_workspace_ssh(
     reconnect: bool,
 ) -> Result<()> {
     let ssh = ssh::resolve_ssh_path();
-    let target = SshTarget::parse(dest);
+    let dest = target.destination.clone();
     let mode = PortMode::parse(port_mode)?;
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
     let debug = cfg!(debug_assertions);
