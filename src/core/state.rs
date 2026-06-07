@@ -166,6 +166,10 @@ pub struct CoreState {
     /// 시 위 `busy_surfaces` 필드는 store 안 동일 이름 필드로 통합 폐기 예정.
     pub(crate) terminals: crate::core::terminal_store::TerminalStore,
 
+    /// 배타적 attach 점유 lock (attach/detach 단계 3). surface_id → 점유 client.
+    /// 휘발성 — 직렬화/복원 안 함(decision 2). client_id 는 단계 1 StreamClientId.
+    pub(crate) attach: crate::core::attach::AttachRegistry,
+
     /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
     /// 추상화하여 헤드리스/플러그인 호스트 컨텍스트에서도 동일 인터페이스를 쓴다.
     /// `App`이 CoreState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
@@ -268,6 +272,7 @@ impl CoreState {
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
+            attach: crate::core::attach::AttachRegistry::new(),
             waker_factory: None,
             surface_registry: {
                 let reg = SurfaceKindRegistry::new();
