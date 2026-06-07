@@ -1063,6 +1063,19 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - **자동 재연결**: SSH/터널 끊김 시 지수 백오프(0.5s→30s 상한)로 터널 재수립 + 재attach. 세션은 서버에 상주하므로 재attach 만 하면 복구된다(`--no-reconnect` 로 끈다). raw 브리지 모드의 attach 후 재연결은 후속(블로킹 stdin 제약).
 - **보안**: 로컬 끝점도 `127.0.0.1` 한정(`-L 127.0.0.1:…`, `-g` 금지). attach 채널에 자체 토큰을 강제하지 않고 SSH 사용자 인증 = attach 권한 경계로 환원한다("SSH 로 그 호스트에 들어올 수 있는 사람 = attach 자격", tmux 모델과 동일).
 
+### workspace 단위 attach
+
+위 surface 단위 attach 를 **workspace 전체**로 확장한다. 한 workspace 를 배타 점유하면 그 안의 **모든 터미널 surface 를 트리째 mirror** 하고, **비-터미널 surface(markdown/image/explorer 등)는 placeholder 로 숨긴다**(내용 안 보임). 로컬 loopback 과 [SSH 터널](#ssh-1회성-원격-attach) 양쪽에서 동작한다(SSH 프로필 저장·워크스페이스 매핑 자동 attach 는 후속).
+
+- **workspace lock**(`AttachRegistry`): workspace 점유 시 그 안 **모든 터미널 surface 를 surface lock 에도 동시 등록** → server 의 placeholder 렌더·입력차단이 surface 단위와 동일하게 자동 적용된다. 멤버 전체(터미널+비-터미널)는 `surface_to_workspace` 역매핑에 등록돼 비-터미널 숨김·일괄 정리에 쓰인다. **부분 점유 충돌 방지**: 멤버 터미널이 이미 다른 client 에 점유돼 있으면 workspace attach 를 거부한다.
+- **출력 다중화**: 한 연결로 N 개 터미널의 출력을 실어야 하므로, workspace 모드 연결의 모든 `Data` 프레임은 **surface-prefixed**(`[u32 surface_id BE][raw bytes]`, `encode_mux`/`decode_mux`)다. server forwarder 가 surface 별로 prefix 를 붙이고 client 가 demux 해 해당 mirror 로 보낸다. surface 단위(단일) 연결은 prefix 없이 그대로다.
+- **트리 디스크립터**: attach 직후 server 가 `attached_workspace` Control 로 트리(분할 방향·비율 포함)와 per-surface 정보(`{remote_id, role: terminal|placeholder, cols, rows, kind}`)를 보낸다. client 는 터미널마다 mirror(`new_detached`)를 만들고 비-터미널은 placeholder 로 표시하며, 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다.
+- **입력/포커스(client 로컬)**: 포커스는 client 가 로컬로 들고(원칙 1·3 — server 는 client 포커스를 모름), 입력은 포커스된 mirror 의 remote surface_id 로 prefix 해 보낸다. server 는 `holder + workspace` 검증 후 그 surface 의 PTY 로 전달(`feed_attached_workspace_input`) — 타 workspace surface 주입은 차단.
+- **비-터미널 placeholder**: server 측에서도 점유 workspace 의 비-터미널은 내용을 숨기고(`is_content_hidden`) "워크스페이스 점유 중" egui 안내 패널로 가린다. 트리 위치(레이아웃)는 보존하되 내용만 비운다.
+- **force-detach(workspace 일괄)**: `attach.force_detach_workspace{workspace_id}` 가 멤버 터미널 lock + 비-터미널 숨김을 일괄 free 환원하고 holder 에 종료 통지를 push 한다. 연결 종료(EOF)·정상 detach 도 workspace 멤버를 한꺼번에 정리한다.
+- **CLI**: `tasty attach --workspace <id>` — 트리 mirror. `--dump-after <ms>` 는 surface 별 화면을 `=== surface <id> ===` 섹션으로 stdout 출력(비-터미널은 `(placeholder: <kind>)`). `--send <str> --send-to <remote_sid>` 로 특정 surface 에 비대화형 입력. `--ssh user@host --workspace <id>` 로 SSH 터널 결합(단계 5 재사용). `--workspace <id> --force-detach` 로 workspace 강제 끊기.
+- **resize**: 현재 client mirror 는 server 보고 크기를 그대로 쓴다(배타 점유라 협상 불필요). 트리 비율 + N 터미널 동시 resize 협상은 후속.
+
 ### 지원 메서드
 
 모든 서피스 관련 메서드는 optional `surface_id` 파라미터를 지원한다. 지정하면 해당 서피스에 직접 접근하고, 생략하면 현재 포커스된 서피스에 작용한다.
