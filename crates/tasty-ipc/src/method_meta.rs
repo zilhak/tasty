@@ -248,6 +248,19 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("session.issue", plugin(&[AgentManage])),
         ("session.revoke", plugin(&[AgentManage])),
         ("session.list", local_only()),
+        // ── attach.* (배타 attach 점유 제어 — attach/detach 단계 3·4) ──────
+        // surface 단위 배타 점유 lock 제어. acquire/release 는 주로 stream 핸드셰이크
+        // (stream.open{target})로 일어나 method_meta 게이트를 거치지 않는다.
+        // force_detach/list 는 JSON-RPC 요청-응답 경로라 여기 등록이 필요하다.
+        //
+        // 권한: decision 5 — attach 보안은 **연결 경계(SSH + 127.0.0.1 loopback)**에
+        // 위임한다. 자체 권한 레이어를 두지 않으므로 추가 Permission 을 요구하지
+        // 않는다(`plugin(&[])`). Local(별도 인스턴스 client)·인증된 agent 모두
+        // 소켓에 도달했다면 attach 제어를 호출할 수 있다.
+        ("attach.acquire", plugin(&[])),
+        ("attach.release", plugin(&[])),
+        ("attach.force_detach", plugin(&[])),
+        ("attach.list", plugin(&[])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),
