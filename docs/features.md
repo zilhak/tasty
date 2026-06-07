@@ -1087,6 +1087,21 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - **트리거**: `tasty attach --into-gui --target-port <원격포트> --workspace <원격ws>` → 실행 인스턴스의 GUI 가 client 가 되어 원격 워크스페이스를 mirror 로 띄운다(`attach.into_gui` IPC → App 이 연결·재구성). 자동 매핑(ssh-profiles/workspace 매핑)은 단계 7. (in-process 진입점 `start_gui_attach` 가 단계 7 의 호출 지점.)
 - **정리(원칙 1①)**: force-detach/EOF 시 client 는 mirror Workspace 와 mirror 터미널만 제거한다(사용자의 닫힌항목 히스토리·로컬 워크스페이스는 건드리지 않음). server 는 lock free 환원 + readonly mirror 제거.
 
+### SSH 프로필 + 워크스페이스↔컴퓨터 매핑 + 자동 attach
+
+위 attach 인프라(SSH 터널 + workspace mirror + GUI 통합)를 **선언적 매핑**으로 끌어올린다 — "워크스페이스1 = a컴퓨터, 워크스페이스2 = b컴퓨터". 매핑된 로컬 워크스페이스를 **활성화하면** 호스트가 자동으로 SSH 터널을 세워 원격 워크스페이스를 GUI mirror 로 띄운다.
+
+- **SSH 연결 프로필**(`~/.tasty/ssh-profiles.toml`, `tasty-ssh-profiles` 크레이트): 원격 컴퓨터의 *장비 인벤토리*. 필드 = `name`(고유 식별자) / `host`(ssh destination, `user@host`·alias 허용) / `user` / `port` / `identity_file`(`-i`) / `use_agent`(기본 true) / `extra_options`(`-o K=V`) / `remote_tasty`(원격 바이너리 경로, 기본 `tasty`) / `port_mode`(원격 포트 발견 방식). **비밀번호는 저장하지 않는다**(decisions 5) — 인증은 identity_file 또는 ssh-agent 위임. config.toml 과 별도 파일이라 손편집·동기화 충돌이 없다.
+  - **CLI**: `tasty ssh-profile add/list/show/edit/remove` (로컬 파일 I/O, IPC 미경유). **IPC**: `ssh.profile.list/get/add/remove`(소켓 에이전트도 관리 — 원칙 2). 모두 `--name`/`name` 으로 대상 지정(포커스 비의존).
+- **워크스페이스 매핑**(`Workspace.attach_mapping`): 워크스페이스가 attach 할 원격 대상. `WorkspaceAttachTarget` = 저장 프로필 참조(`Profile{name}`) 또는 1회성 인라인(`Inline{host,..}`). `remote_workspace`(원격 tasty 의 attach 대상 workspace_id — 원칙 3, ID 명시)를 함께 보관한다.
+  - **설정 CLI**: `tasty new workspace --ssh-profile <name> [--remote-workspace N]`(생성 시 매핑) / `--ssh <user@host>`(인라인). `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace N`(기존 워크스페이스 매핑), `--clear-mapping`(해제). **IPC**: `workspace.create`/`workspace.update` 의 `attach_profile`/`attach_ssh`/`attach_remote_workspace`/`attach_clear` 파라미터. `workspace.list` 가 `attach_mapping` 을 노출(read — 원칙 3).
+  - **영속**: `SavedWorkspace.attach_mapping`(`layout.json`, `#[serde(default)]` 로 구버전 호환). 재시작 후 매핑이 복원되어, 매핑 워크스페이스를 다시 활성화하면 자동 재attach 된다.
+- **자동 attach 결선**: 매핑된 워크스페이스가 **활성 상태가 되면**(`about_to_wait` polling 이 활성 워크스페이스의 매핑을 감지) 호스트가 자동으로 — ① 프로필 resolve → ② **SSH 터널 수립**(`tasty_cli::ssh::SshTunnel`, 단계 5 재사용; 포트 발견 + `ssh -L`)을 **워커 스레드**에서 수행(메인 루프 무블록, 터널 수립은 최대 수초 블록) → ③ 완료되면 `tunnel.local_port` 를 작업 J 의 in-process `start_gui_attach` 에 넘겨 원격 워크스페이스를 **GUI mirror** 로 띄운다. 터널 핸들은 client 세션(`AttachClientSession`)에 보관돼 세션 수명 동안 살아있고(Drop 시 자식 ssh kill — 고아 터널 방지), force-detach/EOF 시 정리된다.
+  - **loopback 직결**: 인라인 host 가 `127.0.0.1:PORT` / `localhost:PORT` 면 SSH 터널 없이 그 포트로 직접 attach(로컬 검증·동일 머신 다중 인스턴스).
+  - **중복 방지**: 매핑된(anchor) 워크스페이스가 이미 attach 중이거나 진행 중이면 재트리거하지 않는다. 다른 워크스페이스로 전환했다가 돌아와도 세션은 유지된다(끊김 시 정리 후 재활성에 재attach).
+  - **원칙 3**: `remote_workspace` 가 None 이면 자동 attach 를 skip 한다(ID 명시 필요). 자동 attach 는 mirror 워크스페이스를 *추가*만 하며 사용자의 포커스/active 전환을 강제하지 않는다(원칙 1①).
+  - **1회성 vs 저장**: `tasty attach --profile <name> --workspace <id>`(저장 프로필 해석 1회성 attach) / `tasty attach --ssh user@host`(즉석). 프로필 해석은 user/port/identity_file/extra_options 를 ssh 인자(`-i`/`-o`/`-p`)로 결선한다.
+
 ### 지원 메서드
 
 모든 서피스 관련 메서드는 optional `surface_id` 파라미터를 지원한다. 지정하면 해당 서피스에 직접 접근하고, 생략하면 현재 포커스된 서피스에 작용한다.
