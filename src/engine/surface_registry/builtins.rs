@@ -22,6 +22,7 @@ use super::{SurfaceKindDef, SurfaceKindRegistry};
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_empty(registry);
+    register_attached(registry);
 }
 
 // ── Terminal ────────────────────────────────────────────────────────────────
@@ -100,6 +101,29 @@ pub fn register_image(registry: &SurfaceKindRegistry) {
             // 빈 캔버스(미저장)은 path null로 직렬화 — 복원 시 다시 빈 캔버스.
             Some(json!({"path": img.file_path}))
         }),
+    });
+}
+
+// ── Attached ──────────────────────────────────────────────────────────────
+//
+// attached surface 는 attach 핸들러(단계 4)가 직접 생성하는 런타임 marker
+// (배타 점유 lock 의 양쪽 표현 — placeholder/mirror). create/restore 경로 없음
+// (sentinel bail). decision 2(휘발성): snapshot=None 으로 layout.json 에서 제외 —
+// 재시작 시 내부 Terminal 이 일반 `SavedSurface::Terminal` 로 free 환원된다.
+
+fn register_attached(registry: &SurfaceKindRegistry) {
+    registry.register(SurfaceKindDef {
+        kind: "attached",
+        display_name_i18n_key: "surface.kind.attached",
+        create: Arc::new(|_sid, _cwd, _params| {
+            anyhow::bail!(
+                "attached surfaces are created by the attach handler, not via registry create"
+            )
+        }),
+        restore: Arc::new(|_sid, _data| {
+            anyhow::bail!("attached surfaces are volatile (decision 2); not restored")
+        }),
+        snapshot: Arc::new(|_| None),
     });
 }
 
@@ -212,5 +236,16 @@ mod tests {
         let reg = registry_with_builtins();
         let def = reg.get("terminal").unwrap();
         assert!((def.create)(1, None, &json!({})).is_err());
+    }
+
+    #[test]
+    fn attached_is_volatile_sentinel() {
+        // attached kind 는 attach 핸들러가 직접 생성하는 런타임 marker —
+        // create/restore 는 sentinel bail, snapshot 은 휘발성(None, decision 2).
+        let reg = registry_with_builtins();
+        let def = reg.get("attached").unwrap();
+        assert!((def.create)(1, None, &json!({})).is_err());
+        assert!((def.restore)(1, &json!({})).is_err());
+        assert!((def.snapshot)(&crate::model::EmptySurface::new(1)).is_none());
     }
 }

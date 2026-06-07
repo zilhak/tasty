@@ -188,10 +188,10 @@ mod tests {
         // explorer는 com.tasty.explorer plugin이, image는 com.tasty.image plugin이,
         // markdown은 com.tasty.markdown plugin이 각각 hello 시 host_rendered
         // whitelist 경유로 등록한다.
-        for kind in ["terminal", "empty"] {
+        for kind in ["terminal", "empty", "attached"] {
             assert!(reg.contains(kind), "missing builtin kind: {kind}");
         }
-        assert_eq!(reg.len(), 2);
+        assert_eq!(reg.len(), 3);
         assert!(!reg.contains("image"));
         assert!(!reg.contains("markdown"));
         assert!(!reg.contains("explorer"));
