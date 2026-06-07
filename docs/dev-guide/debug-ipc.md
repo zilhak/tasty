@@ -48,6 +48,10 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
 
 CLI 서브커맨드도 동일하게 debug 빌드에서만 등록된다. 예를 들어 `tasty tool clipboard viewer`는 release 바이너리에 존재하지 않는다 (`src/cli/mod.rs::ClipboardCommands::Viewer`가 `#[cfg(debug_assertions)]`).
 
+### `tasty debug stream-echo` (JSON-RPC 메서드 아님)
+
+스트리밍 채널(`stream.open` 승격, [features.md](../features.md) "스트리밍 채널" 참조)의 server→client push 경로를 end-to-end 검증하는 **CLI 전용 debug 명령**이다. JSON-RPC 메서드가 아니라 raw framed 교환이라 위 "메서드 목록" 표에 없고 `DEBUG_METHODS` 에도 등록하지 않는다. `run_client` 가 request 매핑 전에 직접 dispatch 한다(`crates/tasty-cli/src/run.rs`). 동작: `stream.open` 핸드셰이크 → `Data` 프레임 N 개 전송 → 호스트 메인 루프가 echo 회신하는지 확인. release 빌드엔 명령 자체가 없다(`DebugCommands` 가 `#![cfg(debug_assertions)]`).
+
 ## 새 디버그 IPC 추가 시
 
 1. 핸들러를 `#[cfg(debug_assertions)]`로 감싼다.

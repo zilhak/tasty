@@ -1015,6 +1015,16 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 - 멀티클라이언트: 각 TCP 연결을 별도 스레드에서 처리
 - 메인 스레드 채널 통신: IPC 스레드 -> mpsc 채널 -> 이벤트 루프에서 처리 -> oneshot 응답
 
+### 스트리밍 채널 (server→client push)
+
+요청-응답 JSON-RPC 위에 **서버가 클라이언트로 연속 push** 할 수 있는 스트리밍 채널을 같은 TCP listener 에 얹는다. attach/detach 의 실시간 PTY 출력 전송 토대다(현재는 전송 인프라만 — attach 의미론은 미구현).
+
+- **연결 승격**(`src/adapters/production/tcp_ipc_server.rs`): 한 연결의 첫 줄이 `{"method":"stream.open",...}` 면 그 연결을 JSON-RPC 직렬 루프에서 빼내 **length-prefixed 바이너리 프레임** 양방향 파이프로 승격한다. 일반 요청-응답 경로는 무손상.
+- **프레임 포맷**(`crates/tasty-ipc/src/stream.rs`): `[tag u8][len u32 BE][payload]`. tag = `Data`/`Control`/`Ping`/`Detach`. 프레임 길이 상한 1 MiB(OOM 방어). 바이너리 1:1 (base64 없음).
+- **push 레지스트리**(`src/adapters/production/stream_hub.rs::StreamHub`): 연결마다 bounded sink 를 보유해 **메인 루프가 특정 클라로 non-blocking push**(느린 클라는 프레임 drop → 임계 초과 시 disconnect). 메인 루프(`AppEvent::StreamReady`)가 클라 inbound 프레임을 drain.
+- **보안**: 스트림 채널은 **자체 토큰을 강제하지 않는다** — 신뢰를 SSH + 127.0.0.1 loopback 에 위임(SSH 가 뚫리면 tasty 보안은 무의미). 인증 레이어 없음.
+- **클라 transport**(`crates/tasty-cli/src/stream.rs::StreamConnection`): 핸드셰이크 + 프레임 read/write. debug 빌드의 `tasty debug stream-echo` 가 push 경로를 end-to-end 검증(보낸 프레임이 메인 루프를 거쳐 echo 로 회신).
+
 ### 헤드리스 데몬 모드
 
 GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 항상 헤드리스이며, GUI 빌드도 `--headless` 플래그로 진입을 시도한다(단, GUI 빌드는 헤드리스 런타임을 내장하지 않아 경고 후 GUI 로 fallback — 실제 헤드리스는 `--no-default-features` 빌드 전용).
@@ -1023,7 +1033,8 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - **부팅 시 engine 부트스트랩**: GUI 는 첫 윈도우 생성 시 `CoreState`/`AppState` 를 만들지만 헤드리스는 창이 없으므로 `run_headless` 가 직접 1 회 생성한다. `CoreState::new_with_ids` 가 default workspace + 터미널 1 개(80×24)를 spawn 하므로 **client 0 명에도 PTY 가 살아 있다.**
 - **PTY 펌프**: `TerminalOutput` 수신 시 `Core::process_all_pty_output` 으로 reader 채널을 drain(채널 포화로 reader 가 블록되는 것 방지) → termwiz 파싱 → 화면/scrollback 갱신 + observer/command_index/OSC52 부수효과 적용. 따라서 화면을 그리지 않아도 출력이 계속 반영된다.
 - **IPC dispatch** (`src/boot/headless_dispatch.rs::pump_ipc`): `IpcReady` 수신 시 큐를 drain 해 각 명령을 단일 engine 으로 직결 dispatch(caller 해석 → `handle_with_caller`). GUI 의 view/parked/plugin 의존 5-step 라우터를 engine 1 개 환경에 맞게 간소화한 것.
-- **제약(현재 단계)**: layout 복원은 헤드리스에선 미적용(항상 default workspace). 데몬 종료는 프로세스 kill 로 한다(`system.shutdown` IPC 헤드리스 dispatch 미포함). busy indicator 미구현. **attach/detach·실시간 스트리밍 자체는 아직 미구현** — 본 모드는 그 서버 토대다.
+- **스트리밍 채널 공존**: `StreamReady` 수신 시 `StreamHub::pump_inbound` 로 스트림 inbound 를 drain(PTY 펌프/IPC dispatch 와 독립 이벤트). push 는 non-blocking 이라 PTY drain 을 방해하지 않는다. ([스트리밍 채널](#스트리밍-채널-serverclient-push) 참조.)
+- **제약(현재 단계)**: layout 복원은 헤드리스에선 미적용(항상 default workspace). 데몬 종료는 프로세스 kill 로 한다(`system.shutdown` IPC 헤드리스 dispatch 미포함). busy indicator 미구현. 스트리밍 채널은 **전송 인프라만** 존재 — attach/detach 의미론(lock/mirror/placeholder)·PTY tap·화면 bulk 스냅샷은 아직 미구현이며 본 모드/채널이 그 토대다.
 
 ### 지원 메서드
 
