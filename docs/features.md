@@ -1044,7 +1044,7 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - **초기 화면 스냅샷**(`Terminal::snapshot_as_vt`): attach 직후 server 가 현재 visible 화면을 VT 바이트로 1 회 직렬화해 push → client mirror 초기화. 셀 속성(fg/bg palette+truecolor, bold/dim/italic/underline/blink/reverse 등) + 커서 위치 + 모드(alt-screen/DECCKM/bracketed)를 복원한다. 이후 화면 변화는 tap delta.
 - **입력 결선**: client 키/바이트 → Data 프레임 → server 가 holder 검증 후 점유 surface 의 PTY 로 직접 전달(`CoreState::feed_attached_input`). server 본인의 로컬 입력(GUI 키/`surface.send`)은 점유 중 차단된다(`apply_send_to_surface` 의 is_attached 거부) — client 입력만 이 우회 경로로 PTY 에 닿는다.
 - **배타 점유 lock**(`AttachRegistry`, 단계 3): 한 surface 는 한 client 만 점유. 동시 attach 는 거부(`already_attached`). client 연결 종료(EOF) 시 lock 자동 free 환원.
-- **server placeholder 렌더**: 점유된 surface 는 GPU 그리드 렌더를 건너뛰어(`render_pass.rs` 의 is_attached 분기) 내용을 숨기고(유출 0), 그 자리에 "다른 곳에서 점유 중" egui 안내 패널 + force-detach 버튼을 그린다. 트리 leaf 는 교체하지 않고 lock 플래그로만 분기한다(점유는 휘발성 — 재시작 시 free 환원).
+- **server readonly 렌더**(작업 J 정정): 점유된 surface 는 server 측에서 **숨기지 않고 readonly 로 보인다**(내용 보임, 조작만 차단). live grid 대신 3초 cadence 로 갱신되는 display-only mirror 를 `render_pass.rs` 의 is_attached 분기가 렌더한다. 입력 차단은 유지. 자세한 동작은 [GUI 통합](#gui-통합--readonly-뷰--점유-표시--workspace-mirror-작업-j) 참조. 트리 leaf 는 교체하지 않고 lock 플래그로만 분기한다(점유는 휘발성 — 재시작 시 free 환원).
 - **client mirror 렌더**: mirror 터미널을 store 에 넣으면 기존 터미널 렌더러가 그대로 그린다(신규 렌더 코드 없음).
 - **force-detach**: server 권한으로 점유를 강제 해제(`attach.force_detach`). holder client 에 `Control{force_detached}`+`Detach` 를 push → client 가 mirror 정리·종료, server surface free 환원.
 - **CLI**: `tasty attach <surface>` — mirror 모드. `--dump-after <ms>`: 출력 수집 후 mirror 화면을 stdout 출력(GUI 없이 검증). `--send <str>`: attach 직후 1 회 입력 주입(escape `\r \n \t \xNN`). `--raw`: stdin/stdout passthrough 브리지(detach 키 `Ctrl+\`). `--force-detach`: 강제 끊기.
@@ -1071,10 +1071,21 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - **출력 다중화**: 한 연결로 N 개 터미널의 출력을 실어야 하므로, workspace 모드 연결의 모든 `Data` 프레임은 **surface-prefixed**(`[u32 surface_id BE][raw bytes]`, `encode_mux`/`decode_mux`)다. server forwarder 가 surface 별로 prefix 를 붙이고 client 가 demux 해 해당 mirror 로 보낸다. surface 단위(단일) 연결은 prefix 없이 그대로다.
 - **트리 디스크립터**: attach 직후 server 가 `attached_workspace` Control 로 트리(분할 방향·비율 포함)와 per-surface 정보(`{remote_id, role: terminal|placeholder, cols, rows, kind}`)를 보낸다. client 는 터미널마다 mirror(`new_detached`)를 만들고 비-터미널은 placeholder 로 표시하며, 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다.
 - **입력/포커스(client 로컬)**: 포커스는 client 가 로컬로 들고(원칙 1·3 — server 는 client 포커스를 모름), 입력은 포커스된 mirror 의 remote surface_id 로 prefix 해 보낸다. server 는 `holder + workspace` 검증 후 그 surface 의 PTY 로 전달(`feed_attached_workspace_input`) — 타 workspace surface 주입은 차단.
-- **비-터미널 placeholder**: server 측에서도 점유 workspace 의 비-터미널은 내용을 숨기고(`is_content_hidden`) "워크스페이스 점유 중" egui 안내 패널로 가린다. 트리 위치(레이아웃)는 보존하되 내용만 비운다.
+- **비-터미널 readonly**(작업 J 정정): server 측 점유 workspace 의 비-터미널도 숨기지 않고 readonly 로 보인다(내용 렌더 + 키 입력만 suppress). 트리 위치(레이아웃)는 보존한다.
 - **force-detach(workspace 일괄)**: `attach.force_detach_workspace{workspace_id}` 가 멤버 터미널 lock + 비-터미널 숨김을 일괄 free 환원하고 holder 에 종료 통지를 push 한다. 연결 종료(EOF)·정상 detach 도 workspace 멤버를 한꺼번에 정리한다.
 - **CLI**: `tasty attach --workspace <id>` — 트리 mirror. `--dump-after <ms>` 는 surface 별 화면을 `=== surface <id> ===` 섹션으로 stdout 출력(비-터미널은 `(placeholder: <kind>)`). `--send <str> --send-to <remote_sid>` 로 특정 surface 에 비대화형 입력. `--ssh user@host --workspace <id>` 로 SSH 터널 결합(단계 5 재사용). `--workspace <id> --force-detach` 로 workspace 강제 끊기.
 - **resize**: 현재 client mirror 는 server 보고 크기를 그대로 쓴다(배타 점유라 협상 불필요). 트리 비율 + N 터미널 동시 resize 협상은 후속.
+
+### GUI 통합 — readonly 뷰 + 점유 표시 + workspace mirror (작업 J)
+
+위 attach 데이터 경로(lock·mirror·스트림·트리 디스크립터)를 **GUI 에 통합**한다 — "원격 워크스페이스가 GUI 에 보이는" 마지막 단계. 두 머신(또는 로컬 두 인스턴스): **A=피점유 server**(PTY/grid 소유), **B=점유 client**(mirror 표시).
+
+- **server readonly 뷰(A)**: client 가 점유한 surface/workspace 를 server 측은 **숨기지 않고 readonly 로 본다**(내용 보임, 조작만 차단). server 는 PTY/grid 권위 owner 라 데이터가 있다. 점유 surface 마다 display-only mirror(detached `Terminal`, `readonly_views`)를 두고 **3초 `AttachPoll` tick** 에 live grid 를 `snapshot_as_vt` → mirror 에 feed → `render_pass` 가 그 mirror 를 렌더한다. 입력 차단(`apply_send_to_surface`)은 유지 — 보기만 가능, 조작은 force-detach 로 회수. 비-터미널도 동일(내용 렌더 + 키 suppress).
+- **점유 표시(A)**: 점유된 **workspace 는 좌측 사이드바에 빨간 인디케이터**(running 류지만 `th.red`), 점유된 **surface 는 주황 1px 테두리**(`th.peach`, focus 무관 유지 — "알림이 온 것처럼"). 색은 Theme 토큰만(하드코딩 없음). 테두리 오버레이의 force-detach 버튼으로 점유를 회수한다.
+- **client GUI 재구성(B)**: `attached_workspace` 디스크립터로 **로컬 mirror Workspace 를 재구성**한다 — 터미널마다 `Terminal::new_detached` 를 `TerminalStore` 에 삽입하고, `to_tree_json_full` 트리(분할 방향/비율/focus)를 보존해 pane/tab/`SurfaceLayout` 을 빌드, 원격↔로컬 surface_id 를 재매핑(`AttachClientSession`)한다. mirror Workspace 는 일반 워크스페이스로 사이드바에 노출되고 **기존 렌더러가 그대로 그린다**(신규 셰이더 0). 입력은 mirror 의 `set_input_sink` 로 forward(원격 PTY 까지) — keyboard.rs 무변경. 비-터미널은 mirror 불가라 placeholder.
+- **3초 polling**: 갱신은 실시간 stream 이 아니라 **3초 cadence**(`AttachPoll` ticker, busy_tick 패턴). 전송(tap forwarder)은 유지하되 *적용/repaint 를 tick 으로 게이트*한다 — server readonly 는 self-snapshot, client mirror 는 누적 출력 버퍼 적용. (입력 echo 도 다음 tick 에 반영.)
+- **트리거**: `tasty attach --into-gui --target-port <원격포트> --workspace <원격ws>` → 실행 인스턴스의 GUI 가 client 가 되어 원격 워크스페이스를 mirror 로 띄운다(`attach.into_gui` IPC → App 이 연결·재구성). 자동 매핑(ssh-profiles/workspace 매핑)은 단계 7. (in-process 진입점 `start_gui_attach` 가 단계 7 의 호출 지점.)
+- **정리(원칙 1①)**: force-detach/EOF 시 client 는 mirror Workspace 와 mirror 터미널만 제거한다(사용자의 닫힌항목 히스토리·로컬 워크스페이스는 건드리지 않음). server 는 lock free 환원 + readonly mirror 제거.
 
 ### 지원 메서드
 
