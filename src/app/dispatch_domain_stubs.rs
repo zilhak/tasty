@@ -54,6 +54,63 @@ pub(crate) fn cascade_surface_closed(
     workspaces_now_empty: bool,
     is_user_close: bool,
 ) {
+    let _ = (
+        closed_tab_ids,
+        closed_pane_ids,
+        workspace_id_purged,
+        is_user_close,
+    );
+    // headless: PTY/scrollback/메모리 scope 등 *자원* 만 실제 해제. host event /
+    // surface.closed lifecycle 통지는 drain 주체(plugin manager / view)가 없으므로
+    // 생략 — 통지를 enqueue 하면 pending 큐가 무한 적재된다.
+    for (sid, pid) in cleanup_targets {
+        state.cleanup_surface(engine, sid, pid);
+    }
+    // workspaces 가 비지 않도록 invariant 복구 (gui cascade 와 동일). 빈 engine 은
+    // 이후 IPC 명령이 active_workspace 를 index out-of-range 로 만들 수 있다.
+    if matches!(cascade_level, CascadeLevel::Workspace)
+        && state.active_workspace >= engine.workspaces.len()
+        && !engine.workspaces.is_empty()
+    {
+        state.active_workspace = engine.workspaces.len() - 1;
+    }
+    if workspaces_now_empty {
+        match core.create_default_workspace(engine) {
+            Ok(idx) => state.active_workspace = idx,
+            Err(e) => tracing::warn!("auto-recreate workspace after SurfaceClosed failed: {e}"),
+        }
+    }
+}
+
+/// gui `cascade_pane_closed_full` 의 headless 등가. pane close 시 닫힌 surface 들의
+/// PTY/scrollback 을 실제 해제한다. host event / lifecycle 통지는 생략 (drain 주체 없음).
+pub(crate) fn cascade_pane_closed_full(
+    state: &mut AppState,
+    engine: &mut CoreState,
+    pane_id: u32,
+    cleanup_targets: Vec<(u32, Option<String>)>,
+    is_user_close: bool,
+) {
+    let _ = (pane_id, is_user_close);
+    for (sid, pid) in cleanup_targets {
+        state.cleanup_surface(engine, sid, pid);
+    }
+}
+
+/// gui `cascade_tab_closed_full` 의 headless 등가. tab close 시 닫힌 surface 들의
+/// PTY/scrollback 을 실제 해제한다. host event / lifecycle 통지는 생략 (drain 주체 없음).
+pub(crate) fn cascade_tab_closed_full(
+    state: &mut AppState,
+    engine: &mut CoreState,
+    tab_id: u32,
+    pane_id: Option<u32>,
+    cleanup_targets: Vec<(u32, Option<String>)>,
+    is_user_close: bool,
+) {
+    let _ = (tab_id, pane_id, is_user_close);
+    for (sid, pid) in cleanup_targets {
+        state.cleanup_surface(engine, sid, pid);
+    }
 }
 
 pub(crate) fn cascade_surface_split(
