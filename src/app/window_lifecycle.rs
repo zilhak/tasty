@@ -356,7 +356,16 @@ impl App {
         let ipc_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
             crate::shortcuts::send_app_event(&ipc_proxy, crate::AppEvent::IpcReady);
         });
-        if let Some(injector) = self.hub.start_ipc(ipc_waker) {
+        let stream_proxy = self.view.proxy.clone();
+        let stream_waker: crate::ipc::server::IpcWaker = std::sync::Arc::new(move || {
+            crate::shortcuts::send_app_event(&stream_proxy, crate::AppEvent::StreamReady);
+        });
+        let stream_ctx = crate::adapters::production::stream_hub::StreamContext {
+            hub: self.stream_hub.clone(),
+            inbound_tx: self.stream_inbound_tx.clone(),
+            waker: stream_waker,
+        };
+        if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx) {
             self.core.set_host_ipc_injector(injector);
         }
         let core_state = self

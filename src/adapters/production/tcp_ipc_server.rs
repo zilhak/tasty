@@ -15,9 +15,11 @@ use std::time::Duration;
 
 use anyhow::Result;
 
+use crate::adapters::production::stream_hub::{StreamContext, StreamInbound};
 use crate::ipc::port_file;
 use crate::ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::ipc::server::{IpcCommand, IpcWaker};
+use crate::ipc::stream::{self, StreamAck, StreamFrame, StreamTag};
 use crate::ports::ipc_server::IpcServerPort;
 
 /// TCP-backed IPC server. listening on 127.0.0.1:{dynamic} + writing port to
@@ -40,6 +42,7 @@ impl TcpIpcServer {
     pub fn start_with_port_file(
         port_file_override: Option<String>,
         waker: Option<IpcWaker>,
+        stream_ctx: StreamContext,
     ) -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
@@ -67,8 +70,9 @@ impl TcpIpcServer {
                     Ok((stream, _)) => {
                         let cmd_tx = accept_tx.clone();
                         let waker = waker.clone();
+                        let stream_ctx = stream_ctx.clone();
                         thread::spawn(move || {
-                            Self::handle_connection(stream, cmd_tx, waker);
+                            Self::handle_connection(stream, cmd_tx, waker, stream_ctx);
                         });
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -95,6 +99,7 @@ impl TcpIpcServer {
         stream: std::net::TcpStream,
         cmd_tx: mpsc::Sender<IpcCommand>,
         waker: Option<IpcWaker>,
+        stream_ctx: StreamContext,
     ) {
         let peer = stream.peer_addr().ok();
         tracing::debug!("IPC client connected from {:?}", peer);
@@ -112,27 +117,119 @@ impl TcpIpcServer {
         });
         let mut writer = stream;
 
-        // Read line-by-line manually (rather than `reader.lines()`) so the
-        // BufReader retains any bytes buffered after the current line. This is a
-        // prerequisite for the streaming-channel upgrade (a later commit), where
-        // binary frames may already sit buffered behind the handshake line.
+        // Read the first line manually so the BufReader retains any bytes
+        // buffered after it. On a streaming-channel upgrade those buffered bytes
+        // are the start of the binary frames following the handshake line.
         let mut line = String::new();
-        loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => break, // EOF
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("IPC read error from {:?}: {}", peer, e);
+        match reader.read_line(&mut line) {
+            Ok(0) => {
+                tracing::debug!("IPC client disconnected (eof) {:?}", peer);
+                return;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!("IPC read error from {:?}: {}", peer, e);
+                return;
+            }
+        }
+
+        // Streaming upgrade: first line is `{"method":"stream.open",...}`. The
+        // connection leaves the request-response model and becomes a framed
+        // bidirectional pipe.
+        if let Ok(req) = serde_json::from_str::<JsonRpcRequest>(line.trim())
+            && req.method == stream::STREAM_OPEN_METHOD
+        {
+            Self::handle_stream_connection(reader, writer, req, stream_ctx, peer);
+            return;
+        }
+
+        // Normal request-response: handle the first line, then keep reading.
+        if Self::process_request_line(&line, &cmd_tx, &waker, &mut writer, peer) {
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) => break, // EOF
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("IPC read error from {:?}: {}", peer, e);
+                        break;
+                    }
+                }
+                if !Self::process_request_line(&line, &cmd_tx, &waker, &mut writer, peer) {
                     break;
                 }
-            }
-            if !Self::process_request_line(&line, &cmd_tx, &waker, &mut writer, peer) {
-                break;
             }
         }
 
         tracing::debug!("IPC client disconnected from {:?}", peer);
+    }
+
+    /// Drive an upgraded streaming connection: a write thread drains the client's
+    /// push sink to the socket, while this thread reads inbound frames and
+    /// forwards them to the main loop. Returns when the client detaches or the
+    /// socket closes.
+    ///
+    /// No authentication: the streaming channel trusts SSH + 127.0.0.1 loopback
+    /// (decisions.md #5). `session_token` in the handshake is ignored.
+    fn handle_stream_connection(
+        mut reader: BufReader<std::net::TcpStream>,
+        writer: std::net::TcpStream,
+        _req: JsonRpcRequest,
+        ctx: StreamContext,
+        peer: Option<std::net::SocketAddr>,
+    ) {
+        let client_id = ctx.hub.alloc_id();
+        let sink_rx = ctx.hub.register(client_id);
+        tracing::debug!("stream client {} upgraded from {:?}", client_id, peer);
+
+        // Write thread: drain the push sink (fed by the main loop) to the socket.
+        let mut w = writer;
+        let write_handle = thread::spawn(move || {
+            for frame in sink_rx {
+                if stream::write_frame(&mut w, frame.tag, &frame.payload).is_err() {
+                    break;
+                }
+                if frame.tag == StreamTag::Detach {
+                    break;
+                }
+            }
+        });
+
+        // Handshake ack — pushed through the sink so the single write thread owns
+        // all socket writes.
+        let ack = StreamAck {
+            ok: true,
+            client_id: Some(client_id),
+            proto: stream::STREAM_PROTO,
+            error: None,
+        };
+        let ack_bytes = serde_json::to_vec(&ack).unwrap_or_default();
+        let _ = ctx
+            .hub
+            .push(client_id, StreamFrame::new(StreamTag::Control, ack_bytes));
+
+        // Read loop: forward inbound frames to the main loop (which echoes them
+        // back in debug builds; later steps interpret them as input/resize).
+        loop {
+            match stream::read_frame(&mut reader) {
+                Ok(frame) if frame.tag == StreamTag::Detach => break,
+                Ok(frame) => {
+                    if ctx
+                        .inbound_tx
+                        .send(StreamInbound { client_id, frame })
+                        .is_err()
+                    {
+                        break; // main loop gone
+                    }
+                    (ctx.waker)();
+                }
+                Err(_) => break, // EOF / oversize / unknown tag
+            }
+        }
+
+        ctx.hub.unregister(client_id); // drops the sink sender → write thread exits
+        let _ = write_handle.join();
+        tracing::debug!("stream client {} disconnected from {:?}", client_id, peer);
     }
 
     /// Handle one request line of a request-response connection. Returns `false`

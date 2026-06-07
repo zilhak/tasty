@@ -58,6 +58,16 @@ pub(crate) struct App {
     pub(crate) core: Core,
     /// Phase C — 외부 통신 표면. ipc_server, port_file 보유.
     pub(crate) hub: Hub,
+    /// Streaming-channel push registry (attach/detach step 1). The IPC accept
+    /// threads register/unregister client sinks; the main loop pushes via this.
+    pub(crate) stream_hub: crate::adapters::production::stream_hub::StreamHub,
+    /// Sender cloned into each stream connection so its read thread can route
+    /// inbound frames to the main loop.
+    pub(crate) stream_inbound_tx:
+        std::sync::mpsc::Sender<crate::adapters::production::stream_hub::StreamInbound>,
+    /// Receiver drained by the main loop on `AppEvent::StreamReady`.
+    pub(crate) stream_inbound_rx:
+        std::sync::mpsc::Receiver<crate::adapters::production::stream_hub::StreamInbound>,
     /// Phase C — GUI 어댑터. proxy, modal/focus 식별자, views HashMap 보유.
     #[cfg(feature = "gui")]
     pub(crate) view: ViewRegistry,
@@ -118,9 +128,13 @@ impl App {
         memory: Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>>,
         #[cfg(debug_assertions)] input_simulation_enabled: bool,
     ) -> anyhow::Result<Self> {
+        let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
         Ok(Self {
             core: crate::boot::wiring::build_production_core(proxy.clone(), memory)?,
             hub: Hub::new(port_file),
+            stream_hub: crate::adapters::production::stream_hub::StreamHub::new(),
+            stream_inbound_tx,
+            stream_inbound_rx,
             view: ViewRegistry::new(proxy.clone()),
             parked_states: Vec::new(),
             shell_setup_mode: false,
@@ -148,9 +162,13 @@ impl App {
         port_file: Option<String>,
         memory: Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>>,
     ) -> anyhow::Result<Self> {
+        let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
         Ok(Self {
             core: crate::boot::wiring::build_production_core_headless(terminal_waker, memory)?,
             hub: Hub::new(port_file),
+            stream_hub: crate::adapters::production::stream_hub::StreamHub::new(),
+            stream_inbound_tx,
+            stream_inbound_rx,
             #[cfg(debug_assertions)]
             input_simulation_enabled: false,
             plugin_manager: None,

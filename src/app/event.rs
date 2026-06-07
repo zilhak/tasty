@@ -15,6 +15,9 @@ pub(crate) enum AppEvent {
     TerminalOutput(Option<u32>),
     /// IPC command arrived -- wake up and process.
     IpcReady,
+    /// A streaming-channel client sent an inbound frame -- wake up and drain the
+    /// stream inbound queue (StreamHub::pump_inbound).
+    StreamReady,
     /// egui requested a repaint (new window, animation, cursor blink).
     /// `viewport_id` 는 어느 egui 컨텍스트가 repaint 를 요청했는지 식별 — 핸들러는
     /// 해당 viewport 의 view 만 dirty 로 표시한다.

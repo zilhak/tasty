@@ -87,6 +87,11 @@ impl ApplicationHandler<AppEvent> for App {
                     w.mark_dirty();
                 }
             }
+            AppEvent::StreamReady => {
+                // 스트림 클라 inbound 프레임 drain (debug: echo, release: drop).
+                // 렌더 상태와 무관하므로 dirty 처리 불필요.
+                self.stream_hub.pump_inbound(&self.stream_inbound_rx);
+            }
             AppEvent::EguiRepaint { viewport_id } => {
                 // viewport_id 가 매칭되는 view 한 개만 dirty 처리.
                 // 매 frame 모든 view 를 dirty 로 만들면 한 window 의 repaint 요청이

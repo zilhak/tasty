@@ -130,7 +130,7 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
 /// 1. `mpsc::channel::<AppEvent>` 생성 + `HeadlessWaker` 로 IPC/PTY waker 발급
 /// 2. Settings/Memory store 초기화 (gui 와 동일 정책)
 /// 3. `App::new_headless` 로 Core+Hub+plugin_manager 초기화
-/// 4. `hub.start_ipc(ipc_waker)` — accept 스레드 분리
+/// 4. `hub.start_ipc(ipc_waker, stream_ctx)` — accept 스레드 분리 (+ 스트림 승격 경로)
 /// 5. `rx.recv()` loop — Shutdown / QuitRequested 수신 시 break
 #[cfg(not(feature = "gui"))]
 fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
@@ -169,7 +169,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     };
 
     let mut app = App::new_headless(waker.terminal_waker(), cli.port_file, memory_arc)?;
-    if let Some(injector) = app.hub.start_ipc(waker.ipc_waker()) {
+    let stream_ctx = crate::adapters::production::stream_hub::StreamContext {
+        hub: app.stream_hub.clone(),
+        inbound_tx: app.stream_inbound_tx.clone(),
+        waker: waker.stream_waker(),
+    };
+    if let Some(injector) = app.hub.start_ipc(waker.ipc_waker(), stream_ctx) {
         app.core.set_host_ipc_injector(injector);
     }
 
@@ -212,6 +217,11 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             }
             AppEvent::IpcReady => {
                 headless_dispatch::pump_ipc(&mut app, &mut state, &mut engine);
+            }
+            AppEvent::StreamReady => {
+                // 스트림 클라가 보낸 inbound 프레임 drain. debug 빌드는 echo 회신,
+                // release 는 drop (실제 소비자는 단계 3+).
+                app.stream_hub.pump_inbound(&app.stream_inbound_rx);
             }
             AppEvent::BusyPoll => {
                 // 단계 0 범위 밖 — busy indicator 미구현.

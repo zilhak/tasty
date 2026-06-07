@@ -34,6 +34,15 @@ impl HeadlessWaker {
         })
     }
 
+    /// 스트림 연결의 read 스레드가 inbound 프레임 수신 시 호출하는 waker.
+    /// `StreamReady` 발화 → 메인 루프가 `StreamHub::pump_inbound` 로 drain.
+    pub(crate) fn stream_waker(&self) -> IpcWaker {
+        let tx = self.tx.clone();
+        Arc::new(move || {
+            let _ = tx.send(AppEvent::StreamReady); // shutdown race — drop quietly.
+        })
+    }
+
     /// PTY reader 스레드가 호출하는 waker. `TerminalOutput(surface_id?)` 발화.
     pub(crate) fn terminal_waker(&self) -> Arc<dyn TerminalWaker> {
         Arc::new(HeadlessTerminalWaker {
