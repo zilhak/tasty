@@ -133,6 +133,33 @@ pub(crate) fn handle_force_detach_workspace(
     )
 }
 
+/// `attach.into_gui` { port, workspace } → 이 GUI 인스턴스가 *client* 로서 loopback
+/// `port` 의 원격 tasty `workspace` 를 mirror 로 재구성하도록 트리거(작업 J B2).
+/// 실제 연결/재구성은 App 이 `about_to_wait` 에서 큐를 drain 해 수행(스레드·뷰 접근
+/// 필요 — 핸들러는 engine 만 본다). headless 는 GUI 가 없어 drain 되지 않는다.
+///
+/// 원칙 3(포커스 독립): 대상을 ID(port/workspace)로 직접 지정. 단계 7 자동 매핑의
+/// 수동 트리거 버전 — 자동 attach 결선은 단계 7.
+pub(crate) fn handle_into_gui(
+    engine: &mut CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let port = match params.get("port").and_then(|v| v.as_u64()) {
+        Some(v) if v <= u16::MAX as u64 => v as u16,
+        _ => return JsonRpcResponse::invalid_params(id, "Missing/invalid 'port' parameter"),
+    };
+    let workspace = match params.get("workspace").and_then(|v| v.as_u64()) {
+        Some(v) => v as u32,
+        None => return JsonRpcResponse::invalid_params(id, "Missing required 'workspace' parameter"),
+    };
+    engine.pending_gui_attach.push((port, workspace));
+    JsonRpcResponse::success(
+        id,
+        json!({ "queued": true, "port": port, "workspace": workspace }),
+    )
+}
+
 /// `attach.list` → 전 점유 목록(포커스 독립). free/점유 디스커버리(design §5.3).
 /// surface 단위(단계 4)와 workspace 단위(단계 6) 점유를 함께 보고한다.
 pub(crate) fn handle_list(engine: &CoreState, id: serde_json::Value) -> JsonRpcResponse {

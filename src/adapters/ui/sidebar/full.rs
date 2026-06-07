@@ -181,6 +181,10 @@ pub fn draw_full_sidebar(
                             .notifications
                             .has_highlighted_surface(&ws_surface_ids);
                         let ws_busy_count = engine.busy_count(&ws_surface_ids);
+                        // attach/detach 작업 J-2: client 가 점유(attach)한 workspace 는
+                        // running(녹색) 인디케이터처럼 표시하되 **빨간색**(th.red).
+                        let ws_attached =
+                            engine.attach.workspace_holder(engine.workspaces[i].id).is_some();
 
                         let bg = if is_active {
                             th.surface0.to_egui()
@@ -213,6 +217,26 @@ pub fn draw_full_sidebar(
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
+                                        if ws_attached {
+                                            // 점유 인디케이터(빨강). running(녹색)과 구별.
+                                            let dot_radius = 3.0;
+                                            let (dot_rect, resp) = ui.allocate_exact_size(
+                                                egui::vec2(
+                                                    dot_radius * 2.0 + 2.0,
+                                                    dot_radius * 2.0,
+                                                ),
+                                                egui::Sense::hover(),
+                                            );
+                                            ui.painter().circle_filled(
+                                                dot_rect.center(),
+                                                dot_radius,
+                                                th.red,
+                                            );
+                                            resp.on_hover_text(crate::i18n::t(
+                                                "attach.occupied_workspace",
+                                            ));
+                                        }
+
                                         if ws_has_highlight {
                                             let badge_size = egui::vec2(18.0, 16.0);
                                             let (rect, _) = ui.allocate_exact_size(

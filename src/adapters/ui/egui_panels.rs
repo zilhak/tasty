@@ -31,10 +31,6 @@ pub fn draw_egui_panels(
 ) {
     // First pass: gather info about egui-rendered panels (read-only).
     let mut infos = Vec::new();
-    // attach/detach 단계 4 (F·§3): 다른 client 가 점유 중인 터미널 surface 는 grid 가
-    // render_pass 에서 숨겨지므로(is_attached → continue), 그 자리에 egui 안내 패널을
-    // 그린다. (트리 leaf 는 terminal kind 그대로 — D1.) (EguiPanelInfo, holder).
-    let mut placeholders: Vec<(EguiPanelInfo, Option<u32>)> = Vec::new();
     {
         let ws = state.active_workspace(engine);
         let focused_pane_id = ws.focused_pane;
@@ -58,8 +54,18 @@ pub fn draw_egui_panels(
                 height: (pane_rect.height - tab_bar_h)
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
-            // egui로 그려지는 surface = terminal 외 모든 종류 + 점유된 터미널(placeholder).
+            // egui 로 그려지는 surface = terminal 외 모든 종류.
+            // attach/detach 작업 J(readonly 정정): 점유된 터미널은 render_pass 가
+            // readonly display mirror 로 렌더하므로 egui 는 관여하지 않는다(점유 표시
+            // 테두리만 §J-3 오버레이가 그린다). 점유된 비-터미널은 mirror 불가지만
+            // **숨기지 않고 내용을 readonly 로 렌더**하되 키 입력만 suppress 한다.
             for r in tab.layout().surface_regions(content_rect) {
+                if r.surface.kind() == "terminal" {
+                    // free·점유 모두 GPU 렌더(점유는 readonly mirror). egui 미관여.
+                    continue;
+                }
+                // 점유 비-터미널은 조작 차단(키 입력 미적용) — 보기 전용.
+                let is_readonly = engine.attach.is_content_hidden(r.id);
                 let info = EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),
@@ -67,20 +73,11 @@ pub fn draw_egui_panels(
                     logical_y: (r.rect.y.value() / scale_factor).round_ui(),
                     logical_w: (r.rect.width.value() / scale_factor).round_ui(),
                     logical_h: (r.rect.height.value() / scale_factor).round_ui(),
-                    is_keyboard_target: pane_id == focused_pane_id
+                    is_keyboard_target: !is_readonly
+                        && pane_id == focused_pane_id
                         && r.id == focused_surface_in_tab,
                 };
-                if r.surface.kind() == "terminal" {
-                    // 점유된 터미널만 placeholder 안내. free 터미널은 GPU 렌더.
-                    if engine.attach.is_attached(r.id) {
-                        placeholders.push((info, engine.attach.holder(r.id)));
-                    }
-                } else if engine.attach.is_content_hidden(r.id) {
-                    // 비-터미널이 점유 workspace 의 멤버 → 내용 숨김(단계 6, decision 3).
-                    placeholders.push((info, engine.attach.workspace_holder_of(r.id)));
-                } else {
-                    infos.push(info);
-                }
+                infos.push(info);
             }
         }
     }
@@ -216,60 +213,12 @@ pub fn draw_egui_panels(
         }
     }
 
-    // attach placeholder 안내(F·§3.2): render_pass 가 grid 를 숨긴 자리에 "다른 곳에서
-    // 점유 중" 안내 + force-detach 버튼을 그린다. 버튼은 CLI force-detach 와 동일 동작.
-    let mut pending_force_detach: Option<u32> = None;
-    for (info, holder) in &placeholders {
-        let sid = info.surface_id.unwrap_or(0);
-        let holder = *holder;
-        // workspace 점유면 안내 문구가 다르다(단계 6, design §4.4). 터미널 단위 점유
-        // (단계 4)면 기존 문구.
-        let is_workspace = engine.attach.workspace_of_surface(sid).is_some();
-        let (title_key, body_key) = if is_workspace {
-            ("attach.held_workspace_title", "attach.held_workspace_body")
-        } else {
-            ("attach.held_title", "attach.held_body")
-        };
-        let panel_h = info.logical_h;
-        let clicked = draw_panel_frame(
-            ctx,
-            &format!("attach_placeholder_{sid}"),
-            info,
-            8,
-            None,
-            |ui| -> bool {
-                let mut hit = false;
-                ui.vertical_centered(|ui| {
-                    ui.add_space((panel_h * 0.30).max(8.0));
-                    ui.heading(crate::i18n::t(title_key));
-                    ui.add_space(6.0);
-                    let body = match holder {
-                        Some(h) => format!("{} (client {h})", crate::i18n::t(body_key)),
-                        None => crate::i18n::t(body_key).to_string(),
-                    };
-                    ui.label(body);
-                    ui.add_space(10.0);
-                    if ui.button(crate::i18n::t("attach.force_detach")).clicked() {
-                        hit = true;
-                    }
-                });
-                hit
-            },
-        );
-        if clicked {
-            pending_force_detach = Some(sid);
-        }
-    }
-    // 버튼 클릭은 egui 클로저 밖에서 적용(engine 가변 차용). force_detach 는 holder
-    // 에게 종료 통지(StreamHub)를 push 하고 lock 을 free 환원한다(단계 3/6). workspace
-    // 점유 surface 면 workspace 단위로 일괄 해제(단계 6, D6).
-    if let Some(sid) = pending_force_detach {
-        if let Some(ws) = engine.attach.workspace_of_surface(sid) {
-            engine.attach.force_detach_workspace(ws);
-        } else {
-            engine.attach.force_detach(sid);
-        }
-    }
+    // attach/detach 작업 J: 점유 surface 의 주황 테두리 + force-detach 오버레이는
+    // `draw_occupied_overlays` 가 그린다(§J-3). readonly 정정으로 "내용 숨김
+    // placeholder 안내" 는 폐기됐다(내용은 render_pass/위 infos 가 readonly 로 보임).
+    let active_ws = state.active_workspace;
+    let tab_bar_h = state.tab_bar_height;
+    draw_occupied_overlays(ctx, active_ws, tab_bar_h, engine, pane_rects, scale_factor);
 
     // Restore extracted view stores before any further `state` access below.
     state.markdown_views = markdown_views;
@@ -345,4 +294,111 @@ where
             clip_ui.set_clip_rect(panel_rect);
             body(&mut clip_ui);
         });
+}
+
+/// 점유된 surface 의 **주황 테두리 + force-detach 오버레이**(attach/detach 작업 J-3).
+///
+/// 서버측에서 client 가 점유한 surface 를 "알림이 온 것처럼" 주황(`th.peach`) 1px
+/// 테두리로 표시한다. **focus 와 무관**하게 점유 중이면 항상 그린다(focus 해도 사라지지
+/// 않음). readonly 정정으로 내용은 보이므로(render_pass/egui), 테두리는 *점유 표식* +
+/// force-detach 진입점 역할만 한다. 색은 Theme 토큰(하드코딩 없음).
+fn draw_occupied_overlays(
+    ctx: &egui::Context,
+    active_ws: usize,
+    tab_bar_h: tasty_type_geometry::length::PhysicalPx,
+    engine: &mut crate::core::CoreState,
+    pane_rects: &[(u32, PhysicalRect)],
+    scale_factor: f32,
+) {
+    let th = theme::theme();
+
+    /// 점유 surface 의 logical rect(읽기 단계 수집물).
+    struct Occ {
+        sid: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    }
+    let mut occ: Vec<Occ> = Vec::new();
+    {
+        let Some(ws) = engine.workspaces.get(active_ws) else {
+            return;
+        };
+        for &(pane_id, pane_rect) in pane_rects {
+            let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
+                continue;
+            };
+            let Some(tab) = pane.tabs.get(pane.active_tab) else {
+                continue;
+            };
+            let content_rect = PhysicalRect {
+                x: pane_rect.x,
+                y: pane_rect.y + tab_bar_h,
+                width: pane_rect.width,
+                height: (pane_rect.height - tab_bar_h)
+                    .max(tasty_type_geometry::length::PhysicalPx(1.0)),
+            };
+            for r in tab.layout().surface_regions(content_rect) {
+                // 터미널 단위 점유(is_attached) 또는 workspace 점유 멤버(is_content_hidden).
+                if !engine.attach.is_attached(r.id) && !engine.attach.is_content_hidden(r.id) {
+                    continue;
+                }
+                occ.push(Occ {
+                    sid: r.id,
+                    x: (r.rect.x.value() / scale_factor).round_ui(),
+                    y: (r.rect.y.value() / scale_factor).round_ui(),
+                    w: (r.rect.width.value() / scale_factor).round_ui(),
+                    h: (r.rect.height.value() / scale_factor).round_ui(),
+                });
+            }
+        }
+    }
+    if occ.is_empty() {
+        return;
+    }
+
+    // 주황 테두리 + 우상단 force-detach 버튼. 클릭은 deferred 적용(engine 가변 차용).
+    let mut pending_force_detach: Option<u32> = None;
+    for o in &occ {
+        let clicked = egui::Area::new(egui::Id::new(format!("attach_occupied_{}", o.sid)))
+            .fixed_pos(egui::pos2(o.x, o.y))
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| -> bool {
+                ui.set_min_size(egui::vec2(o.w, o.h));
+                ui.set_max_size(egui::vec2(o.w, o.h));
+                let rect = ui.max_rect();
+                // 1px 주황 테두리(focus 무관, Theme 토큰).
+                ui.painter().rect_stroke(
+                    rect,
+                    0.0,
+                    egui::Stroke::new(1.0, th.peach),
+                    egui::StrokeKind::Inside,
+                );
+                // 우상단 force-detach 버튼(작게). readonly 점유를 회수하는 진입점.
+                let btn_w = (o.w - 8.0).clamp(24.0, 96.0);
+                let btn_rect = egui::Rect::from_min_size(
+                    egui::pos2(rect.right() - btn_w - 4.0, rect.top() + 4.0),
+                    egui::vec2(btn_w, 20.0),
+                );
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(btn_rect));
+                child
+                    .button(crate::i18n::t("attach.force_detach"))
+                    .on_hover_text(crate::i18n::t("attach.occupied_surface"))
+                    .clicked()
+            })
+            .inner;
+        if clicked {
+            pending_force_detach = Some(o.sid);
+        }
+    }
+
+    if let Some(sid) = pending_force_detach {
+        // workspace 점유면 멤버 일괄 해제(단계 6 D6), 아니면 surface 단위.
+        if let Some(ws) = engine.attach.workspace_of_surface(sid) {
+            engine.attach.force_detach_workspace(ws);
+        } else {
+            engine.attach.force_detach(sid);
+        }
+    }
 }

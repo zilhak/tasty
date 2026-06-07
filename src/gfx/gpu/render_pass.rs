@@ -69,21 +69,31 @@ impl GpuState {
 
         for (_pane_id, _pane_rect, surface_regions) in regions {
             for region in surface_regions {
-                // attach/detach 단계 4 (D1·§3.2): 다른 client 가 점유 중인 surface 는
-                // 서버측에서 grid 내용을 **그리지 않는다** — 터미널 store 접근 자체를
-                // 건너뛰어 내용 유출 0. placeholder 안내는 egui 오버레이가 그린다
-                // (`draw_egui_panels`). 트리 leaf 는 교체하지 않으므로(D1) lock 플래그
-                // (is_attached) 한 줄로 분기한다. client mirror 는 자기 engine 에 lock 이
-                // 없어(is_attached=false) 정상 렌더된다(G).
-                if engine.attach.is_attached(region.id) {
-                    continue;
-                }
-                let Some(terminal) = engine.terminals.get(region.id) else {
-                    continue;
+                // attach/detach 작업 J (decisions 정정): 점유된 surface 는 서버측에서
+                // **readonly 뷰**로 보인다 — 숨김이 아니라 내용 보임, 조작만 차단.
+                // live grid 대신 3초 cadence 로 갱신되는 display-only mirror
+                // (`readonly_view`)를 렌더한다(plan §2.3). 입력 차단은
+                // `apply_send_to_surface` 가 담당하고, 점유 표시(주황 테두리)는 egui
+                // 오버레이가 그린다. client mirror 는 자기 engine 에 lock 이 없어
+                // (is_attached=false) live terminal 을 정상 렌더한다(G).
+                let is_readonly = engine.attach.is_attached(region.id);
+                let terminal = if is_readonly {
+                    match engine.readonly_view(region.id) {
+                        Some(t) => t,
+                        // 첫 AttachPoll tick 전 — 다음 tick 에 mirror 가 채워진다.
+                        None => continue,
+                    }
+                } else {
+                    match engine.terminals.get(region.id) {
+                        Some(t) => t,
+                        None => continue,
+                    }
                 };
                 let surface_id = &region.id;
                 let rect = &region.rect;
-                let is_focused = focused_surface_id == Some(*surface_id);
+                // readonly 뷰는 사용자가 조작할 수 없으므로 포커스 커서/선택/IME/링크/
+                // 검색 오버레이를 그리지 않는다(보기 전용).
+                let is_focused = !is_readonly && focused_surface_id == Some(*surface_id);
                 let bg = if is_focused {
                     term_surface.focused_bg.to_gpu_rgba()
                 } else {
@@ -95,17 +105,21 @@ impl GpuState {
                     term_surface.unfocused_fg.to_gpu_rgba()
                 };
 
+                // readonly 뷰는 사용자 상호작용 오버레이를 그리지 않는다(보기 전용).
                 let sel_info = selection
+                    .filter(|_| !is_readonly)
                     .filter(|s| s.surface_id == *surface_id && !s.is_empty())
                     .map(|s| (s.normalized(), theme.selection_bg.to_gpu_rgba()));
                 let sel_ref = sel_info.as_ref();
 
                 let vi_cursor_info = vi_cursor
+                    .filter(|_| !is_readonly)
                     .filter(|(sid, _)| sid == surface_id)
                     .map(|(_, pt)| (pt, theme.vi_cursor_bg.to_gpu_rgba()));
                 let vi_cursor_ref = vi_cursor_info.as_ref();
 
                 let render_preedit = preedit
+                    .filter(|_| !is_readonly)
                     .filter(|ime| ime.surface_id == *surface_id && !ime.text.is_empty())
                     .map(|ime| RenderPreedit {
                         text: ime.text.clone(),
@@ -117,10 +131,12 @@ impl GpuState {
                 let render_preedit_ref = render_preedit.as_ref();
 
                 let link_for_this = link_hover
+                    .filter(|_| !is_readonly)
                     .filter(|(sid, _)| sid == surface_id)
                     .map(|(_, h)| h);
 
                 let search_highlights = search
+                    .filter(|_| !is_readonly)
                     .filter(|s| s.surface_id == *surface_id && !s.matches.is_empty())
                     .map(|s| crate::renderer::SearchHighlights {
                         matches: &s.matches,

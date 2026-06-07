@@ -51,6 +51,11 @@ pub(crate) enum AppEvent {
     /// ~1초 간격 ticker. 모든 surface의 busy 상태를 다시 평가한다.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     BusyPoll,
+    /// attach/detach 작업 J — 3초 간격 ticker. 서버측 readonly 뷰의 display mirror 를
+    /// live grid 스냅샷으로 갱신하고, client mirror 의 누적 출력 버퍼를 적용해 화면을
+    /// 3초 cadence 로 repaint 한다(실시간 stream 이 아니라 polling, plan §4).
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    AttachPoll,
     /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
     /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
     /// 오래된 결과를 drop 한다.

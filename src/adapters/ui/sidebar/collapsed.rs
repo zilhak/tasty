@@ -162,6 +162,9 @@ pub fn draw_collapsed_sidebar(
                         .notifications
                         .has_highlighted_surface(&ws_surface_ids);
                     let ws_busy_count = engine.busy_count(&ws_surface_ids);
+                    // 작업 J-2: 점유(attach)된 workspace = 빨강 인디케이터.
+                    let ws_attached =
+                        engine.attach.workspace_holder(engine.workspaces[i].id).is_some();
                     let label = format!("{}", i + 1);
                     let bg = if is_active { th.surface0 } else { th.mantle };
                     let text_color = if is_active {
@@ -205,6 +208,16 @@ pub fn draw_collapsed_sidebar(
                             rect.min.y + dot_pad + dot_radius,
                         );
                         ui.painter().circle_filled(dot_center, dot_radius, th.green);
+                    }
+                    if ws_attached {
+                        // 점유 인디케이터(빨강) — 우하단(busy 녹점과 구별).
+                        let dot_radius = 3.0;
+                        let dot_pad = 4.0;
+                        let dot_center = egui::pos2(
+                            rect.max.x - dot_pad - dot_radius,
+                            rect.max.y - dot_pad - dot_radius,
+                        );
+                        ui.painter().circle_filled(dot_center, dot_radius, th.red);
                     }
                     if resp.clicked() {
                         switch_ws = Some(i);

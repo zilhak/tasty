@@ -673,6 +673,7 @@ fn route_engine_handler(
         "attach.force_detach_workspace" => {
             attach::handle_force_detach_workspace(engine, id, &request.params)
         }
+        "attach.into_gui" => attach::handle_into_gui(engine, id, &request.params),
         "attach.list" => attach::handle_list(engine, id),
         _ => return None,
     })

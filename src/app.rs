@@ -2,6 +2,10 @@
 //! parked AppState 보관. 메서드는 도메인별 서브모듈로 분산되어 있다.
 
 #[cfg(feature = "gui")]
+pub(crate) mod attach_client;
+#[cfg(feature = "gui")]
+pub(crate) mod attach_poll;
+#[cfg(feature = "gui")]
 pub(crate) mod busy;
 #[cfg(feature = "gui")]
 pub(crate) mod clipboard_record;
@@ -110,6 +114,11 @@ pub(crate) struct App {
     /// 이 id 의 view 로 포커스만 이동한다.
     #[cfg(feature = "gui")]
     pub(crate) preset_view_id: Option<WindowId>,
+    /// attach/detach 작업 J — 호스트가 client 로서 점유한 원격 워크스페이스의 mirror
+    /// 세션들(연결 reader/입력 forwarder 스레드 + remote↔local id 맵). AttachPoll 이
+    /// 출력 적용/정리에 순회한다.
+    #[cfg(feature = "gui")]
+    pub(crate) attach_client_sessions: Vec<attach_client::AttachClientSession>,
 }
 
 /// State for the modal window shake animation.
@@ -152,6 +161,7 @@ impl App {
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             preset_view_id: None,
+            attach_client_sessions: Vec::new(),
         })
     }
 

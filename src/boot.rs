@@ -12,6 +12,8 @@
 //!      (gui 빌드 + `!cli.headless`) — 또는 `run_headless` (headless 빌드 / `--headless`)
 
 #[cfg(feature = "gui")]
+pub(crate) mod attach_tick;
+#[cfg(feature = "gui")]
 pub(crate) mod busy_tick;
 pub(crate) mod cli_routing;
 #[cfg(feature = "gui")]
@@ -77,6 +79,7 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
 
     clipboard::poll_thread::spawn(proxy.clone());
     busy_tick::spawn(proxy.clone());
+    attach_tick::spawn(proxy.clone());
 
     // CWD는 OSC 7 시퀀스에만 의존한다. 모든 플랫폼 공통.
     // zsh/fish는 기본 지원, bash는 PROMPT_COMMAND 설정 필요.
@@ -265,6 +268,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             }
             AppEvent::BusyPoll => {
                 // 단계 0 범위 밖 — busy indicator 미구현.
+            }
+            AppEvent::AttachPoll => {
+                // headless 는 렌더가 없어 readonly display mirror·client mirror 가
+                // 무의미하다(작업 J 는 GUI 통합). gui 에서만 처리한다.
             }
         }
     }

@@ -170,6 +170,21 @@ pub struct CoreState {
     /// 휘발성 — 직렬화/복원 안 함(decision 2). client_id 는 단계 1 StreamClientId.
     pub(crate) attach: crate::core::attach::AttachRegistry,
 
+    /// attach/detach 작업 J — 서버측 readonly 뷰의 display-only mirror.
+    /// 점유된 surface 마다 detached `Terminal`(grid 표시 전용)을 두고, 3초 `AttachPoll`
+    /// tick 때 live grid 스냅샷을 feed 한다(plan §2.3). render_pass 가 is_attached
+    /// surface 를 이 mirror 로 렌더해 "내용 보임 + 조작만 차단 + 3초 cadence" readonly
+    /// 를 구현한다. live Terminal 은 PTY 소유·입력 차단 전용으로 유지. 휘발성.
+    /// headless 는 렌더가 없어 읽지 않는다(gui 한정).
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
+    pub(crate) readonly_views: HashMap<u32, tasty_terminal::Terminal>,
+
+    /// attach/detach 작업 J — GUI in-process attach-client 트리거 큐. IPC
+    /// `attach.into_gui {port, workspace}` 핸들러가 `(port, workspace)` 를 push 하면
+    /// App 이 `about_to_wait` 에서 drain 해 원격 워크스페이스를 mirror 로 재구성한다
+    /// (focus 비의존, plan §5). headless 는 GUI 가 없어 drain 되지 않는다.
+    pub(crate) pending_gui_attach: Vec<(u16, u32)>,
+
     /// Targeted waker creation. winit `EventLoopProxy`를 직접 들지 않고 trait 뒤로
     /// 추상화하여 헤드리스/플러그인 호스트 컨텍스트에서도 동일 인터페이스를 쓴다.
     /// `App`이 CoreState 생성 후 본체에서 `WinitWakerFactory`를 주입한다.
@@ -273,6 +288,8 @@ impl CoreState {
             busy_surfaces: std::collections::HashSet::new(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::AttachRegistry::new(),
+            readonly_views: HashMap::new(),
+            pending_gui_attach: Vec::new(),
             waker_factory: None,
             surface_registry: {
                 let reg = SurfaceKindRegistry::new();

@@ -177,6 +177,9 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::BusyPoll => {
                 self.poll_busy_states();
             }
+            AppEvent::AttachPoll => {
+                self.poll_attach_views();
+            }
             AppEvent::IdentifyDone {
                 request_id,
                 target,
@@ -542,6 +545,10 @@ impl ApplicationHandler<AppEvent> for App {
             w.mark_dirty();
         }
 
+        // attach/detach 작업 J — IPC 가 쌓은 GUI attach 트리거 실행(원격 워크스페이스
+        // mirror 재구성). process_ipc 직후라야 같은 frame 에 반영된다.
+        self.dispatch_pending_gui_attach();
+
         // Plugin host pump — process plugin events, run health checks, restart unresponsive.
         let hello_pairs = if let Some(ref mut mgr) = self.plugin_manager {
             mgr.pump()
@@ -692,6 +699,16 @@ impl App {
 
         if !outcome.disconnected.is_empty() {
             self.release_attach_for_disconnected(&outcome.disconnected);
+        }
+
+        // 작업 J: attach/detach 직후 즉시 서버 readonly display mirror 를 채워(또는
+        // 해제분 정리) 첫 3초 tick 전 blank 를 없앤다. 점유 mirror 있는 window 만 dirty.
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.refresh_readonly_views()
+            {
+                w.mark_dirty();
+            }
         }
     }
 
