@@ -885,3 +885,39 @@ fn source_cwd_empty_surface_is_none() {
     let e = EmptySurface::new(1);
     assert_eq!(e.source_cwd(), None);
 }
+
+// ---- AttachedSurface tests (attach/detach 단계 3) ----
+
+#[test]
+fn attached_surface_placeholder_kind_and_holder() {
+    let s = AttachedSurface::placeholder(7, 42);
+    assert_eq!(s.kind(), "attached");
+    assert_eq!(s.surface_id(), Some(7));
+    assert!(s.is_placeholder());
+    assert!(!s.is_mirror());
+    assert_eq!(s.holder(), Some(42));
+    assert_eq!(s.source_cwd(), None);
+}
+
+#[test]
+fn attached_surface_mirror_role() {
+    let s = AttachedSurface::mirror(3, 99, 1);
+    assert_eq!(s.kind(), "attached");
+    assert!(s.is_mirror());
+    assert!(!s.is_placeholder());
+    assert_eq!(s.holder(), None);
+}
+
+#[test]
+fn attached_surface_tree_json_role() {
+    let p = AttachedSurface::placeholder(5, 8);
+    let pj = p.to_tree_json();
+    assert_eq!(pj["kind"], "attached");
+    assert_eq!(pj["id"], 5);
+    assert_eq!(pj["role"]["placeholder"]["holder"], 8);
+
+    let m = AttachedSurface::mirror(5, 12, 2);
+    let mj = m.to_tree_json();
+    assert_eq!(mj["role"]["mirror"]["remote_surface_id"], 12);
+    assert_eq!(mj["role"]["mirror"]["session"], 2);
+}
