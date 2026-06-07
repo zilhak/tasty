@@ -465,3 +465,171 @@ fn resize_ping_pong_does_not_accumulate_visible_lines_when_cursor_is_high() {
         );
     }
 }
+
+// ---- Mirror foundation: new_detached + feed_bytes ----
+
+/// A representative byte sequence exercising text, CR/LF, SGR color/intensity,
+/// absolute cursor moves, EraseLine, a DECSET mode toggle, and a clear.
+const MIRROR_SEQ: &[u8] = b"hello\r\n\x1b[31mred\x1b[0m world\r\n\x1b[2J\x1b[H\x1b[1mbold\x1b[0m\x1b[?1h\x1b[3;5Hxy\x1b[K";
+
+fn assert_grid_eq(a: &Terminal, b: &Terminal, ctx: &str) {
+    assert_eq!(a.screen_text(), b.screen_text(), "{ctx}: screen_text");
+    assert_eq!(
+        a.surface().cursor_position(),
+        b.surface().cursor_position(),
+        "{ctx}: cursor"
+    );
+    assert_eq!(
+        a.application_cursor_keys(),
+        b.application_cursor_keys(),
+        "{ctx}: DECCKM"
+    );
+    assert_eq!(
+        a.is_alternate_screen(),
+        b.is_alternate_screen(),
+        "{ctx}: alt-screen"
+    );
+    // Compare per-cell text + key attributes on the populated rows.
+    for row in 0..4 {
+        let ac = a.row_cells(row);
+        let bc = b.row_cells(row);
+        assert_eq!(ac.len(), bc.len(), "{ctx}: row {row} cell count");
+        for ((aidx, ai), (bidx, bi)) in ac.iter().zip(bc.iter()) {
+            assert_eq!(aidx, bidx, "{ctx}: row {row} cell index");
+            assert_eq!(ai.text, bi.text, "{ctx}: row {row} text");
+            assert_eq!(
+                (ai.fg.as_str(), ai.intensity, ai.inverse),
+                (bi.fg.as_str(), bi.intensity, bi.inverse),
+                "{ctx}: row {row} attrs"
+            );
+        }
+    }
+}
+
+#[test]
+fn detached_feed_matches_pty_process_path() {
+    let mut real = test_terminal(40, 12); // PTY-backed; shell output unused
+    let mut mirror = Terminal::new_detached(40, 12);
+    real.process_bytes(MIRROR_SEQ); // shared ingest path (= process() parsing)
+    mirror.feed_bytes(MIRROR_SEQ);
+    assert_grid_eq(&real, &mirror, "single-shot");
+}
+
+#[test]
+fn detached_feed_is_chunk_boundary_invariant() {
+    // Feeding the same stream split at arbitrary byte boundaries (including
+    // mid-escape) must reconstruct an identical grid — the parser carries
+    // state across feed_bytes calls.
+    let whole = {
+        let mut t = Terminal::new_detached(40, 12);
+        t.feed_bytes(MIRROR_SEQ);
+        t
+    };
+    // Split points: mid-escape "\x1b[3" | ";5Hxy..." and a few others.
+    for split in [1usize, 7, 18, 30, MIRROR_SEQ.len() - 3] {
+        let mut t = Terminal::new_detached(40, 12);
+        t.feed_bytes(&MIRROR_SEQ[..split]);
+        t.feed_bytes(&MIRROR_SEQ[split..]);
+        assert_grid_eq(&whole, &t, &format!("split@{split}"));
+    }
+}
+
+#[test]
+fn detached_alt_screen_parity() {
+    let seq = b"main\x1b[?1049h\x1b[Halt-content\x1b[?1049lback";
+    let mut real = test_terminal(40, 12);
+    let mut mirror = Terminal::new_detached(40, 12);
+    real.process_bytes(b"main\x1b[?1049h\x1b[Halt-content");
+    mirror.feed_bytes(b"main\x1b[?1049h\x1b[Halt-content");
+    assert_grid_eq(&real, &mirror, "in-alt");
+    real.process_bytes(b"\x1b[?1049lback");
+    mirror.feed_bytes(b"\x1b[?1049lback");
+    assert_grid_eq(&real, &mirror, "after-exit");
+    let _ = seq;
+}
+
+#[test]
+fn detached_terminal_has_no_pty_state() {
+    let mut t = Terminal::new_detached(40, 12);
+    assert_eq!(t.process_id(), None);
+    assert!(!t.is_busy());
+    assert!(t.is_alive(), "detached mirror is considered alive");
+    // resize touches only the surface; no PTY notification is queued.
+    t.resize(80, 24);
+    assert_eq!(t.cols(), 80);
+    assert_eq!(t.rows(), 24);
+    assert!(!t.has_pending_pty_resize());
+    let (cols, rows) = t.surface().dimensions();
+    assert_eq!((cols, rows), (80, 24));
+    // process() on a detached terminal is a harmless no-op (no child exit event).
+    assert!(!t.process());
+    assert!(t.take_events().is_empty());
+}
+
+#[test]
+fn feed_bytes_reports_change() {
+    let mut t = Terminal::new_detached(40, 12);
+    assert!(!t.feed_bytes(b""), "empty feed does not change the surface");
+    assert!(t.feed_bytes(b"x"), "text feed changes the surface");
+}
+
+#[test]
+fn detached_input_forwards_to_sink() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(40, 12);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.send_bytes(b"abc");
+    t.send_key("Z");
+    assert_eq!(rx.recv().unwrap(), b"abc".to_vec());
+    assert_eq!(rx.recv().unwrap(), b"Z".to_vec());
+}
+
+#[test]
+fn detached_input_without_sink_is_dropped() {
+    // No sink wired: must not panic or hang, just drop.
+    let mut t = Terminal::new_detached(40, 12);
+    t.send_bytes(b"abc");
+    t.send_key("Z");
+}
+
+// ---- Server-side output tap (fan-out) ----
+
+#[test]
+fn output_tap_receives_raw_bytes_and_replays_to_mirror() {
+    let mut t = test_terminal(40, 12);
+    let rx = t.add_output_tap();
+    t.process_bytes(b"\x1b[31mX");
+    assert_eq!(rx.try_recv().unwrap(), b"\x1b[31mX".to_vec());
+
+    // Replaying the tapped bytes into a mirror yields an identical grid.
+    let mut mirror = Terminal::new_detached(40, 12);
+    mirror.feed_bytes(b"\x1b[31mX");
+    assert_grid_eq(&t, &mirror, "tap-replay");
+}
+
+#[test]
+fn output_tap_is_non_destructive() {
+    // The grid produced with a tap attached must match the grid without one.
+    let mut tapped = test_terminal(40, 12);
+    let _rx = tapped.add_output_tap();
+    tapped.process_bytes(MIRROR_SEQ);
+
+    let mut untapped = test_terminal(40, 12);
+    untapped.process_bytes(MIRROR_SEQ);
+    assert_grid_eq(&tapped, &untapped, "tap-nondestructive");
+}
+
+#[test]
+fn output_tap_disconnected_is_pruned() {
+    let mut t = test_terminal(40, 12);
+    let rx = t.add_output_tap();
+    drop(rx); // subscriber gone
+    // Next ingest detects the disconnect, prunes the tap, and applies normally.
+    t.process_bytes(b"hello");
+    assert!(t.screen_text().contains("hello"));
+    // A fresh tap still works after pruning.
+    let rx2 = t.add_output_tap();
+    t.process_bytes(b"!");
+    assert_eq!(rx2.try_recv().unwrap(), b"!".to_vec());
+}

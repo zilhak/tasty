@@ -64,8 +64,11 @@ impl Terminal {
         self.scroll_region = None;
 
         // Defer PTY resize notification to avoid SIGWINCH storms during drag.
-        // Call flush_pty_resize() after resize events settle.
-        self.pending_pty_resize = Some((cols, rows));
+        // Call flush_pty_resize() after resize events settle. A detached mirror
+        // has no PTY to notify, so there is nothing to defer.
+        if self.pty.is_some() {
+            self.pending_pty_resize = Some((cols, rows));
+        }
     }
 
     /// Throttle interval for PTY resize notifications.
@@ -83,12 +86,14 @@ impl Terminal {
         }
 
         if let Some((cols, rows)) = self.pending_pty_resize.take() {
-            if let Err(e) = self.pty_master.resize(PtySize {
-                rows: rows as u16,
-                cols: cols as u16,
-                pixel_width: 0,
-                pixel_height: 0,
-            }) {
+            if let Some(pty) = self.pty.as_ref()
+                && let Err(e) = pty.pty_master.resize(PtySize {
+                    rows: rows as u16,
+                    cols: cols as u16,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+            {
                 tracing::warn!("PTY resize failed: {e}");
             }
             self.last_pty_flush = std::time::Instant::now();
@@ -100,12 +105,14 @@ impl Terminal {
     /// Used for discrete events (pane close, split) where immediate notification is needed.
     pub fn force_flush_pty_resize(&mut self) {
         if let Some((cols, rows)) = self.pending_pty_resize.take() {
-            if let Err(e) = self.pty_master.resize(PtySize {
-                rows: rows as u16,
-                cols: cols as u16,
-                pixel_width: 0,
-                pixel_height: 0,
-            }) {
+            if let Some(pty) = self.pty.as_ref()
+                && let Err(e) = pty.pty_master.resize(PtySize {
+                    rows: rows as u16,
+                    cols: cols as u16,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+            {
                 tracing::warn!("PTY resize failed: {e}");
             }
             self.last_pty_flush = std::time::Instant::now();

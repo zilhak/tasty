@@ -35,14 +35,14 @@ impl Terminal {
         self.rows
     }
 
-    /// Get the PID of the child process.
+    /// Get the PID of the child process. `None` for a detached mirror (no child).
     pub fn process_id(&self) -> Option<u32> {
-        self.child.process_id()
+        self.pty.as_ref()?.child.process_id()
     }
 
     /// Get the foreground process info (name, PID) for this terminal.
     pub fn foreground_process_info(&self) -> Option<foreground_process::ForegroundProcessInfo> {
-        let shell_pid = self.child.process_id()?;
+        let shell_pid = self.process_id()?;
         foreground_process::get_foreground_process(shell_pid)
     }
 
@@ -60,7 +60,7 @@ impl Terminal {
     /// cannot be resolved, or when the foreground program has been quiet long
     /// enough to look idle.
     pub fn is_busy(&self) -> bool {
-        let Some(shell_pid) = self.child.process_id() else {
+        let Some(shell_pid) = self.process_id() else {
             return false;
         };
         let Some(info) = foreground_process::get_foreground_process(shell_pid) else {
@@ -100,16 +100,22 @@ impl Terminal {
         self.cached_cwd = Some(cwd);
     }
 
-    /// Check if the child process is still running.
+    /// Check if the child process is still running. A detached mirror has no
+    /// child; its lifetime is governed by the attach session, so it is reported
+    /// as alive (never spuriously "exited").
     pub fn is_alive(&mut self) -> bool {
-        self.child.try_wait().ok().flatten().is_none()
+        match self.pty.as_mut() {
+            Some(pty) => pty.child.try_wait().ok().flatten().is_none(),
+            None => true,
+        }
     }
 
-    /// Check if the child process has exited. Returns false if exited.
+    /// Check if the child process has exited. Returns false if exited. A
+    /// detached mirror (no child) is always considered alive.
     pub fn check_process_alive(&mut self) -> bool {
-        match self.child.try_wait() {
-            Ok(Some(_status)) => false, // exited
-            _ => true,
+        match self.pty.as_mut() {
+            Some(pty) => !matches!(pty.child.try_wait(), Ok(Some(_status))),
+            None => true,
         }
     }
 

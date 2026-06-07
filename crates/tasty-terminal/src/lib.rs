@@ -78,6 +78,32 @@ pub struct CellInfo {
     pub vertical_align: &'static str,
 }
 
+/// PTY-bearing fields, grouped so a terminal is either fully PTY-backed
+/// (`Some`) or fully detached (`None`). Detached mirror terminals own no PTY,
+/// no child process, and no reader/writer threads.
+struct PtyBackend {
+    /// Channel for non-blocking PTY writes. A background writer thread drains this.
+    pty_write_tx: mpsc::Sender<Vec<u8>>,
+    _writer_thread: thread::JoinHandle<()>,
+    pty_master: Box<dyn portable_pty::MasterPty + Send>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+    action_rx: mpsc::Receiver<Vec<u8>>,
+    _reader_thread: thread::JoinHandle<()>,
+}
+
+/// A server-side subscriber to a terminal's raw PTY output.
+struct OutputTap {
+    tx: mpsc::SyncSender<Vec<u8>>,
+    /// Consecutive `Full` count; the tap is dropped once it exceeds the limit
+    /// (a persistently slow subscriber must not pin memory or stall the pump).
+    lag: u32,
+}
+
+/// Bounded capacity for each output tap channel.
+const OUTPUT_TAP_CAP: usize = 1024;
+/// Consecutive `Full` sends after which a slow tap is unsubscribed.
+const OUTPUT_TAP_LAG_LIMIT: u32 = 64;
+
 pub struct Terminal {
     /// Primary screen buffer.
     pub(crate) primary_surface: Surface,
@@ -86,13 +112,18 @@ pub struct Terminal {
     /// Whether the alternate screen is active.
     pub(crate) use_alternate: bool,
     parser: Parser,
-    /// Channel for non-blocking PTY writes. A background writer thread drains this.
-    pty_write_tx: mpsc::Sender<Vec<u8>>,
-    _writer_thread: thread::JoinHandle<()>,
-    pty_master: Box<dyn portable_pty::MasterPty + Send>,
-    child: Box<dyn portable_pty::Child + Send + Sync>,
-    action_rx: mpsc::Receiver<Vec<u8>>,
-    _reader_thread: thread::JoinHandle<()>,
+    /// PTY backend (master/child/reader-writer threads/channels). `None` for a
+    /// detached mirror terminal created via [`Terminal::new_detached`], which
+    /// reconstructs its grid from externally supplied bytes (`feed_bytes`)
+    /// instead of owning a PTY.
+    pty: Option<PtyBackend>,
+    /// Server-side raw output subscribers. Each tap receives the exact raw PTY
+    /// chunks (in apply order) so a remote mirror can replay them. Empty on a
+    /// detached terminal and in the common no-subscriber case (zero overhead).
+    output_taps: Vec<OutputTap>,
+    /// Detached-only: where `send_bytes`/`send_key` forward input when there is
+    /// no PTY. Wired to the attach stream in stage 3; `None` means drop.
+    input_sink: Option<mpsc::Sender<Vec<u8>>>,
     pub(crate) cols: usize,
     pub(crate) rows: usize,
     /// Saved cursor position for ESC 7 / ESC 8
@@ -293,20 +324,38 @@ impl Terminal {
             }
         });
 
-        let primary_surface = Surface::new(cols, rows);
-        let parser = Parser::new();
-
-        Ok(Self {
-            primary_surface,
-            alternate_surface: None,
-            use_alternate: false,
-            parser,
+        let pty = PtyBackend {
             pty_write_tx: write_tx,
             _writer_thread: writer_thread,
             pty_master: pair.master,
             child,
             action_rx: rx,
             _reader_thread: reader_thread,
+        };
+
+        Ok(Self::assemble(cols, rows, Some(pty)))
+    }
+
+    /// Create a detached mirror terminal with no PTY, child, or reader/writer
+    /// threads. Its grid is reconstructed purely from bytes pushed via
+    /// [`Terminal::feed_bytes`] — used by an attach client to mirror a remote
+    /// session through the same VTE parser the server uses.
+    pub fn new_detached(cols: usize, rows: usize) -> Self {
+        Self::assemble(cols, rows, None)
+    }
+
+    /// Build a `Terminal` from its PTY-independent initial state plus an optional
+    /// PTY backend. Shared by [`Terminal::new`] and [`Terminal::new_detached`]
+    /// so the two constructors can never drift on non-PTY field initialization.
+    fn assemble(cols: usize, rows: usize, pty: Option<PtyBackend>) -> Self {
+        Self {
+            primary_surface: Surface::new(cols, rows),
+            alternate_surface: None,
+            use_alternate: false,
+            parser: Parser::new(),
+            pty,
+            output_taps: Vec::new(),
+            input_sink: None,
             cols,
             rows,
             saved_cursor: None,
@@ -331,7 +380,7 @@ impl Terminal {
             last_output_at: std::time::Instant::now(),
             // Start in the past so the first PTY output is never mistaken for echo.
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
-        })
+        }
     }
 
     /// Process pending PTY output. Returns true if surface changed.
@@ -341,38 +390,106 @@ impl Terminal {
 
         let mut changed = false;
 
-        while let Ok(data) = self.action_rx.try_recv() {
-            self.output.append(&data);
-            if !data.is_empty() {
-                self.last_output_at = std::time::Instant::now();
+        // Drain raw PTY chunks first (the `action_rx` borrow lives inside
+        // `self.pty`, so we cannot hold it across the `&mut self` ingest call).
+        let chunks: Vec<Vec<u8>> = match self.pty.as_ref() {
+            Some(pty) => {
+                let mut chunks = Vec::new();
+                while let Ok(data) = pty.action_rx.try_recv() {
+                    chunks.push(data);
+                }
+                chunks
             }
-
-            let actions = self.parser.parse_as_vec(&data);
-            for action in actions {
-                // Intercept Mode actions (DECSET/DECRST) -- they affect Terminal
-                // state rather than Surface content.
-                if let Action::CSI(CSI::Mode(ref mode)) = action {
-                    self.handle_mode(mode);
-                    changed = true;
-                    continue;
-                }
-                let changes = self.action_to_changes(action);
-                if !changes.is_empty() {
-                    for change in changes {
-                        self.apply_or_stage_change(change);
-                    }
-                    changed = true;
-                }
+            None => Vec::new(),
+        };
+        for data in chunks {
+            if self.ingest(&data) {
+                changed = true;
             }
         }
 
-        // Check if the child process has exited (emit event once)
-        if !self.process_exit_emitted && !self.check_process_alive() {
+        // Check if the child process has exited (emit event once). Only
+        // meaningful for PTY-backed terminals; a detached mirror has no child.
+        if self.pty.is_some() && !self.process_exit_emitted && !self.check_process_alive() {
             self.process_exit_emitted = true;
             self.events.push(TerminalEvent {
                 surface_id: 0,
                 kind: TerminalEventKind::ProcessExited,
             });
+        }
+
+        changed
+    }
+
+    /// Feed externally supplied raw VT bytes into the parser, updating the
+    /// surface as if they had arrived from a PTY. Returns true if the surface
+    /// changed. This is the mirror ingestion path: a detached terminal has the
+    /// caller supply bytes instead of a reader thread.
+    pub fn feed_bytes(&mut self, data: &[u8]) -> bool {
+        self.ingest(data)
+    }
+
+    /// Register a server-side subscriber to this terminal's raw PTY output.
+    /// The returned receiver yields the exact raw chunks (in the order they are
+    /// applied to the local grid) so a remote mirror can replay them and
+    /// reconstruct an identical grid. Backpressure: a subscriber that falls too
+    /// far behind is dropped (see [`OUTPUT_TAP_LAG_LIMIT`]).
+    pub fn add_output_tap(&mut self) -> mpsc::Receiver<Vec<u8>> {
+        let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(OUTPUT_TAP_CAP);
+        self.output_taps.push(OutputTap { tx, lag: 0 });
+        rx
+    }
+
+    /// Fan a raw chunk out to all output subscribers without blocking the pump.
+    /// Closed or persistently-lagging taps are pruned. No-op (and no allocation)
+    /// when there are no subscribers — the common case.
+    fn fan_out_to_taps(&mut self, data: &[u8]) {
+        if self.output_taps.is_empty() {
+            return;
+        }
+        self.output_taps.retain_mut(|tap| match tap.tx.try_send(data.to_vec()) {
+            Ok(()) => {
+                tap.lag = 0;
+                true
+            }
+            Err(mpsc::TrySendError::Full(_)) => {
+                tap.lag += 1;
+                tap.lag < OUTPUT_TAP_LAG_LIMIT
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => false,
+        });
+    }
+
+    /// Parse a chunk of raw VT bytes and apply it to the surface. Shared by
+    /// [`Terminal::process`] (PTY drain), [`Terminal::feed_bytes`] (mirror), and
+    /// `process_bytes` (test injection) so all three take an identical path —
+    /// guaranteeing a detached mirror reconstructs the same grid as the server.
+    /// Returns true if the surface changed.
+    pub(crate) fn ingest(&mut self, data: &[u8]) -> bool {
+        if data.is_empty() {
+            return false;
+        }
+        self.output.append(data);
+        self.last_output_at = std::time::Instant::now();
+        self.fan_out_to_taps(data);
+
+        let mut changed = false;
+        let actions = self.parser.parse_as_vec(data);
+        for action in actions {
+            // Intercept Mode actions (DECSET/DECRST) -- they affect Terminal
+            // state rather than Surface content.
+            if let Action::CSI(CSI::Mode(ref mode)) = action {
+                self.handle_mode(mode);
+                changed = true;
+                continue;
+            }
+            let changes = self.action_to_changes(action);
+            if !changes.is_empty() {
+                for change in changes {
+                    self.apply_or_stage_change(change);
+                }
+                changed = true;
+            }
         }
 
         changed

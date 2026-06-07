@@ -1,42 +1,53 @@
 //! `Terminal` 의 IO 경로 — PTY 출력 처리 / 입력 송신 / change apply.
 
-use termwiz::escape::Action;
-use termwiz::escape::csi::CSI;
+use std::sync::mpsc;
+
 use termwiz::surface::Change;
 
 use crate::Terminal;
 
 impl Terminal {
-    /// This is useful for testing without a real PTY.
+    /// Feed raw bytes through the shared ingest path. Useful for testing without
+    /// a real PTY, and used by the debug `feed_bytes` IPC handler.
     pub fn process_bytes(&mut self, data: &[u8]) {
-        if !data.is_empty() {
-            self.last_output_at = std::time::Instant::now();
-        }
-        let actions = self.parser.parse_as_vec(data);
-        for action in actions {
-            if let Action::CSI(CSI::Mode(ref mode)) = action {
-                self.handle_mode(mode);
-                continue;
+        self.ingest(data);
+    }
+
+    /// Wire a detached mirror's input forwarding sink. When the terminal has no
+    /// PTY, `send_bytes`/`send_key` forward to this sink (the attach stream)
+    /// instead of writing to a PTY. PTY-backed terminals ignore it.
+    pub fn set_input_sink(&mut self, sink: mpsc::Sender<Vec<u8>>) {
+        self.input_sink = Some(sink);
+    }
+
+    /// Route input bytes to the PTY when present, otherwise forward to the
+    /// detached input sink. With neither, the bytes are dropped (stage 2 leaves
+    /// the sink unwired; the attach stream connects it in stage 3).
+    fn write_input(&mut self, bytes: Vec<u8>) {
+        self.last_input_at = std::time::Instant::now();
+        if let Some(pty) = self.pty.as_ref() {
+            if let Err(e) = pty.pty_write_tx.send(bytes) {
+                tracing::warn!("pty writer channel closed during input: {e}");
             }
-            let changes = self.action_to_changes(action);
-            for change in changes {
-                self.apply_or_stage_change(change);
+        } else if let Some(sink) = self.input_sink.as_ref() {
+            if let Err(e) = sink.send(bytes) {
+                tracing::warn!("detached input sink closed: {e}");
             }
+        } else {
+            tracing::trace!(
+                "detached terminal input dropped (no sink): {} bytes",
+                bytes.len()
+            );
         }
     }
 
     /// Send keyboard input to PTY (non-blocking, queued to writer thread).
     pub fn send_key(&mut self, text: &str) {
-        self.last_input_at = std::time::Instant::now();
-        if let Err(e) = self.pty_write_tx.send(text.as_bytes().to_vec()) {
-            tracing::warn!("pty writer channel closed during send_key: {e}");
-        }
+        self.write_input(text.as_bytes().to_vec());
     }
 
-    pub(crate) fn send_terminal_response(&self, response: &str) {
-        if let Err(e) = self.pty_write_tx.send(response.as_bytes().to_vec()) {
-            tracing::warn!("pty writer channel closed during terminal response: {e}");
-        }
+    pub(crate) fn send_terminal_response(&mut self, response: &str) {
+        self.write_input(response.as_bytes().to_vec());
     }
 
     pub(crate) fn apply_or_stage_change(&mut self, change: Change) {
@@ -65,9 +76,6 @@ impl Terminal {
 
     /// Send raw bytes to PTY (non-blocking, queued to writer thread).
     pub fn send_bytes(&mut self, bytes: &[u8]) {
-        self.last_input_at = std::time::Instant::now();
-        if let Err(e) = self.pty_write_tx.send(bytes.to_vec()) {
-            tracing::warn!("pty writer channel closed during send_bytes: {e}");
-        }
+        self.write_input(bytes.to_vec());
     }
 }
