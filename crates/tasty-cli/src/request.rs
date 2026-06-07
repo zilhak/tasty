@@ -229,6 +229,9 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
             file,
             path,
             url,
+            ssh_profile,
+            ssh,
+            remote_workspace,
         } => {
             let resolved_cwd = normalize_cwd_or_exit(cwd.as_deref());
             (
@@ -240,6 +243,9 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
                     "file": file,
                     "path": path,
                     "url": url,
+                    "attach_profile": ssh_profile,
+                    "attach_ssh": ssh,
+                    "attach_remote_workspace": remote_workspace,
                 }),
             )
         }
@@ -451,6 +457,10 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
             name,
             subtitle,
             description,
+            ssh_profile,
+            ssh,
+            remote_workspace,
+            clear_mapping,
         } => (
             "workspace.update",
             serde_json::json!({
@@ -458,6 +468,10 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "name": name,
                 "subtitle": subtitle,
                 "description": description,
+                "attach_profile": ssh_profile,
+                "attach_ssh": ssh,
+                "attach_remote_workspace": remote_workspace,
+                "attach_clear": clear_mapping,
             }),
         ),
         SetCommands::GlobalHook {

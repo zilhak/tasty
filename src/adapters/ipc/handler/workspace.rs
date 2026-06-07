@@ -1,7 +1,53 @@
 use serde_json::json;
 
+use crate::model::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
+
+/// 단계 7 — workspace.create/update params 에서 SSH attach 매핑을 파싱한다.
+/// `attach_profile`(저장 프로필) 우선, 없으면 `attach_ssh`(1회성 인라인).
+/// 둘 다 없으면 None(매핑 없음).
+fn parse_attach_mapping(params: &serde_json::Value) -> Option<WorkspaceAttachMapping> {
+    let remote_workspace = params
+        .get("attach_remote_workspace")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    if let Some(name) = params
+        .get("attach_profile")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        return Some(WorkspaceAttachMapping {
+            target: WorkspaceAttachTarget::Profile {
+                name: name.to_string(),
+            },
+            remote_workspace,
+        });
+    }
+    if let Some(host) = params
+        .get("attach_ssh")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        return Some(WorkspaceAttachMapping {
+            target: WorkspaceAttachTarget::Inline {
+                host: host.to_string(),
+                remote_tasty: None,
+                port_mode: None,
+            },
+            remote_workspace,
+        });
+    }
+    None
+}
+
+/// 매핑을 JSON 으로 노출(workspace.list 의 read — 원칙 3 read 허용).
+fn mapping_to_json(mapping: &Option<WorkspaceAttachMapping>) -> serde_json::Value {
+    match mapping {
+        Some(m) => serde_json::to_value(m).unwrap_or(serde_json::Value::Null),
+        None => serde_json::Value::Null,
+    }
+}
 
 pub fn handle_workspace_list(
     state: &AppState,
@@ -22,6 +68,7 @@ pub fn handle_workspace_list(
                 "active": i == state.active_workspace,
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
                 "busy_count": engine.busy_count(&sids),
+                "attach_mapping": mapping_to_json(&ws.attach_mapping),
             })
         })
         .collect();
@@ -132,6 +179,12 @@ pub fn handle_workspace_create(
         renamed_description.clone(),
     );
 
+    // 단계 7 — SSH attach 매핑 설정(있으면). layout.json 영속을 위해 dirty 표시.
+    if let Some(mapping) = parse_attach_mapping(params) {
+        engine.workspaces[index].set_attach_mapping(Some(mapping));
+        engine.mark_layout_dirty();
+    }
+
     let ws = &engine.workspaces[index];
     JsonRpcResponse::success(
         id,
@@ -142,6 +195,7 @@ pub fn handle_workspace_create(
             "description": ws.description,
             "index": index,
             "surface_id": surface_id,
+            "attach_mapping": mapping_to_json(&ws.attach_mapping),
         }),
     )
 }
@@ -220,6 +274,20 @@ pub fn handle_workspace_update(
         description,
     );
 
+    // 단계 7 — SSH attach 매핑 갱신/해제. `attach_clear` 가 우선(해제), 아니면 파싱한
+    // 매핑이 있으면 설정. 어느 쪽이든 layout.json 영속을 위해 dirty 표시.
+    let clear = params
+        .get("attach_clear")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if clear {
+        engine.workspaces[index].set_attach_mapping(None);
+        engine.mark_layout_dirty();
+    } else if let Some(mapping) = parse_attach_mapping(params) {
+        engine.workspaces[index].set_attach_mapping(Some(mapping));
+        engine.mark_layout_dirty();
+    }
+
     let ws = &engine.workspaces[index];
     JsonRpcResponse::success(
         id,
@@ -229,6 +297,7 @@ pub fn handle_workspace_update(
             "subtitle": ws.subtitle,
             "description": ws.description,
             "index": index,
+            "attach_mapping": mapping_to_json(&ws.attach_mapping),
         }),
     )
 }
