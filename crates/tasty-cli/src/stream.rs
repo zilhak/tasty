@@ -28,14 +28,31 @@ impl StreamConnection {
     /// `Control` ack frame. Returns the connection and the server-assigned
     /// client id.
     pub fn open(stream: TcpStream, proto: u32) -> Result<(Self, u32)> {
+        Self::open_with(stream, proto, None)
+    }
+
+    /// Like [`open`](Self::open) but requests attach to `target` (a surface_id):
+    /// the server acquires the exclusive lock, pushes the initial screen
+    /// snapshot, then streams output (attach/detach step 4). The attach result
+    /// (success/`attach_error`) arrives as a *separate* `Control` frame after the
+    /// handshake ack — callers must read it (see `commands::attach`).
+    pub fn open_attach(stream: TcpStream, proto: u32, target: u32) -> Result<(Self, u32)> {
+        Self::open_with(stream, proto, Some(target))
+    }
+
+    fn open_with(stream: TcpStream, proto: u32, target: Option<u32>) -> Result<(Self, u32)> {
         let writer = stream.try_clone()?;
         let mut reader = BufReader::new(stream);
         let mut writer = writer;
 
+        let mut params = serde_json::json!({ "proto": proto });
+        if let Some(t) = target {
+            params["target"] = serde_json::json!(t);
+        }
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: stream::STREAM_OPEN_METHOD.to_string(),
-            params: serde_json::json!({ "proto": proto }),
+            params,
             id: Some(serde_json::json!(1)),
             session_token: None,
         };
@@ -44,10 +61,7 @@ impl StreamConnection {
 
         let ack_frame = stream::read_frame(&mut reader)?;
         if ack_frame.tag != StreamTag::Control {
-            bail!(
-                "expected Control ack frame, got {:?}",
-                ack_frame.tag
-            );
+            bail!("expected Control ack frame, got {:?}", ack_frame.tag);
         }
         let ack: StreamAck = serde_json::from_slice(&ack_frame.payload)?;
         if !ack.ok {
@@ -58,6 +72,12 @@ impl StreamConnection {
         }
 
         Ok((Self { writer, reader }, ack.client_id.unwrap_or(0)))
+    }
+
+    /// Clone the writer half of the socket so input can be sent from one thread
+    /// while another blocks reading frames (mirror-dump / raw bridge).
+    pub fn try_clone_writer(&self) -> Result<TcpStream> {
+        Ok(self.writer.try_clone()?)
     }
 
     /// Write one frame to the server.

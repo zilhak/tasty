@@ -5280,6 +5280,7 @@ dependencies = [
  "tasty-ipc",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
+ "tasty-terminal",
  "tasty-update",
  "tasty-utils",
  "tempfile",

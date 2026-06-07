@@ -181,6 +181,25 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     {
         return crate::commands::debug::run_stream_echo(payload, *count, port_file);
     }
+    // `tasty attach <id>` (non-force) uses the raw streaming channel, not the
+    // JSON-RPC path — dispatch it directly. `--force-detach` is a normal
+    // request-response (attach.force_detach) so it falls through.
+    if let Commands::Attach {
+        surface,
+        dump_after,
+        send,
+        raw,
+        force_detach: false,
+    } = &command
+    {
+        return crate::commands::attach::run_attach(
+            *surface,
+            *dump_after,
+            send.as_deref(),
+            *raw,
+            port_file,
+        );
+    }
     // plugin logs is local-only — read the log file directly.
     if let Commands::Plugin {
         command: PluginCommands::Logs { id, follow },

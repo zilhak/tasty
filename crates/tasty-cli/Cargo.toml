@@ -16,6 +16,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-uti
 clap = { version = "4", features = ["derive"] }
 toml = "0.8"
 tasty-ipc = { path = "../tasty-ipc" }
+tasty-terminal = { path = "../tasty-terminal" }
 tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }
 tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 tasty-host-plugin = { path = "../tasty-host-plugin" }

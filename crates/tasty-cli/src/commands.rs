@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod approval;
+pub mod attach;
 pub mod clipboard;
 pub mod debug;
 pub mod file_handler;

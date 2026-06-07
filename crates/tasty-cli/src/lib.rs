@@ -114,6 +114,24 @@ pub enum Commands {
         #[arg(long)]
         url: Option<String>,
     },
+    /// Attach to a terminal surface and mirror it (surface 단위, 로컬 loopback)
+    Attach {
+        /// 대상 surface_id (포커스 비의존 — ID 직접 지정)
+        surface: u32,
+        /// mirror-dump: attach 후 N ms 동안 출력 수집 → mirror 화면을 stdout 출력 후 종료
+        /// (GUI 없이 자동 검증용)
+        #[arg(long)]
+        dump_after: Option<u64>,
+        /// attach 직후 1 회 전송할 입력 (escape 디코딩: \n \r \t \xNN). 비대화형 검증용
+        #[arg(long)]
+        send: Option<String>,
+        /// raw 브리지 모드: stdin/stdout passthrough (detach = Ctrl+\)
+        #[arg(long)]
+        raw: bool,
+        /// 점유된 surface 를 강제로 끊는다 (서버 권한, attach 하지 않음)
+        #[arg(long)]
+        force_detach: bool,
+    },
     /// Send text, key, or queue message
     Send {
         #[command(subcommand)]
