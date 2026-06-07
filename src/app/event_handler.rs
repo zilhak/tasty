@@ -180,6 +180,11 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::AttachPoll => {
                 self.poll_attach_views();
             }
+            // 단계 7 — 자동 attach 워커가 SSH 터널 수립을 마쳤다(wake). 결과를 drain 해
+            // mirror 를 띄운다(idle 상태에서도 즉시 반영).
+            AppEvent::AutoAttachReady => {
+                self.drain_auto_attach_results();
+            }
             AppEvent::IdentifyDone {
                 request_id,
                 target,
@@ -548,6 +553,11 @@ impl ApplicationHandler<AppEvent> for App {
         // attach/detach 작업 J — IPC 가 쌓은 GUI attach 트리거 실행(원격 워크스페이스
         // mirror 재구성). process_ipc 직후라야 같은 frame 에 반영된다.
         self.dispatch_pending_gui_attach();
+
+        // attach/detach 단계 7 — 매핑된 워크스페이스 자동 attach. 활성 ws 가 매핑 Some &
+        // 미attach 면 SSH 터널 워커를 spawn(무블록)하고, 완료된 결과를 drain 해 mirror
+        // 를 띄운다(원격 워크스페이스 = 로컬 워크스페이스 매핑의 종착점).
+        self.poll_auto_attach();
 
         // Plugin host pump — process plugin events, run health checks, restart unresponsive.
         let hello_pairs = if let Some(ref mut mgr) = self.plugin_manager {

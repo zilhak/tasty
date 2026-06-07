@@ -6,6 +6,8 @@ pub(crate) mod attach_client;
 #[cfg(feature = "gui")]
 pub(crate) mod attach_poll;
 #[cfg(feature = "gui")]
+pub(crate) mod auto_attach;
+#[cfg(feature = "gui")]
 pub(crate) mod busy;
 #[cfg(feature = "gui")]
 pub(crate) mod clipboard_record;
@@ -119,6 +121,15 @@ pub(crate) struct App {
     /// 출력 적용/정리에 순회한다.
     #[cfg(feature = "gui")]
     pub(crate) attach_client_sessions: Vec<attach_client::AttachClientSession>,
+    /// 단계 7 — 자동 attach 진행 중/완료된 매핑(anchor) 워크스페이스 id 집합. 중복
+    /// 트리거 방지(활성화 polling 이 anchor 가 여기 있으면 skip). 세션 정리 시 제거.
+    #[cfg(feature = "gui")]
+    pub(crate) auto_attach_active: std::collections::HashSet<u32>,
+    /// 단계 7 — 자동 attach 워커 스레드 → 메인 루프 결과 채널(SSH 터널/포트 전달).
+    #[cfg(feature = "gui")]
+    pub(crate) auto_attach_tx: std::sync::mpsc::Sender<auto_attach::AutoAttachOutcome>,
+    #[cfg(feature = "gui")]
+    pub(crate) auto_attach_rx: std::sync::mpsc::Receiver<auto_attach::AutoAttachOutcome>,
 }
 
 /// State for the modal window shake animation.
@@ -138,6 +149,7 @@ impl App {
         #[cfg(debug_assertions)] input_simulation_enabled: bool,
     ) -> anyhow::Result<Self> {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
+        let (auto_attach_tx, auto_attach_rx) = std::sync::mpsc::channel();
         Ok(Self {
             core: crate::boot::wiring::build_production_core(proxy.clone(), memory)?,
             hub: Hub::new(port_file),
@@ -162,6 +174,9 @@ impl App {
             lua_engine: crate::hooks::lua::init_engine(),
             preset_view_id: None,
             attach_client_sessions: Vec::new(),
+            auto_attach_active: std::collections::HashSet::new(),
+            auto_attach_tx,
+            auto_attach_rx,
         })
     }
 

@@ -48,6 +48,13 @@ pub(crate) struct AttachClientSession {
     writer: Arc<Mutex<TcpStream>>,
     #[allow(dead_code)]
     client_id: u32,
+    /// 단계 7 — 자동 attach 의 SSH 터널 핸들. 세션이 살아있는 동안 보관해 Drop(자식
+    /// ssh kill)을 막는다. 수동 트리거(`attach.into_gui`)·loopback 은 None.
+    #[allow(dead_code)]
+    tunnel: Option<tasty_cli::ssh::SshTunnel>,
+    /// 단계 7 — 이 mirror 를 띄운 매핑된(anchor) 로컬 워크스페이스 id. 세션 정리 시
+    /// `auto_attach_active` 에서 제거해 재활성 시 재attach 가능하게 한다. 수동 None.
+    anchor_ws_id: Option<u32>,
 }
 
 impl App {
@@ -61,15 +68,26 @@ impl App {
             reqs.append(&mut e.pending_gui_attach);
         }
         for (port, workspace) in reqs {
-            if let Err(e) = self.start_gui_attach(port, workspace) {
+            if let Err(e) = self.start_gui_attach(port, workspace, None, None) {
                 tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
             }
         }
     }
 
     /// 원격 tasty(loopback `port`)의 `workspace` 를 mirror 로 재구성해 GUI 에 띄운다.
-    /// loopback 연결+핸드셰이크는 near-instant 라 동기 처리(수동 트리거).
-    fn start_gui_attach(&mut self, port: u16, workspace: u32) -> anyhow::Result<()> {
+    /// loopback 연결+핸드셰이크는 near-instant 라 동기 처리.
+    ///
+    /// 단계 7 자동 attach(`auto_attach.rs`)는 SSH 터널을 먼저 세워 그 `tunnel.local_port`
+    /// 를 `port` 로 넘기고 `tunnel` 핸들을 세션에 실어 Drop 을 막는다. `anchor_ws_id` 는
+    /// 매핑된 로컬 워크스페이스 id(세션 정리 시 재attach 게이트 해제용). 수동 트리거는
+    /// 둘 다 None.
+    pub(crate) fn start_gui_attach(
+        &mut self,
+        port: u16,
+        workspace: u32,
+        tunnel: Option<tasty_cli::ssh::SshTunnel>,
+        anchor_ws_id: Option<u32>,
+    ) -> anyhow::Result<()> {
         // 1. 연결 + 핸드셰이크 + 디스크립터 수신.
         let sock = TcpStream::connect(("127.0.0.1", port))?;
         let (mut conn, client_id) =
@@ -205,6 +223,8 @@ impl App {
             disconnected,
             writer,
             client_id,
+            tunnel,
+            anchor_ws_id,
         });
         tracing::info!(
             "gui attach: mirror workspace {local_ws_id} from 127.0.0.1:{port} (remote ws {workspace})"
@@ -296,6 +316,11 @@ impl App {
         if let Ok(mut w) = sess.writer.lock() {
             let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]);
         }
+        // 단계 7 — 자동 attach 였다면 anchor 게이트 해제(재활성 시 재attach 가능).
+        if let Some(anchor) = sess.anchor_ws_id {
+            self.auto_attach_active.remove(&anchor);
+        }
+        // 터널 핸들(sess.tunnel)은 여기서 Drop → 자식 ssh kill(고아 터널 방지).
     }
 }
 

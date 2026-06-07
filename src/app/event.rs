@@ -56,6 +56,12 @@ pub(crate) enum AppEvent {
     /// 3초 cadence 로 repaint 한다(실시간 stream 이 아니라 polling, plan §4).
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     AttachPoll,
+    /// attach/detach 단계 7 — 자동 attach 워커 스레드가 SSH 터널 수립(또는 loopback
+    /// 해석)을 마치면 보내는 wake 신호. App 이 결과 채널(`auto_attach_rx`)을 drain 해
+    /// `start_gui_attach` 로 mirror 를 띄운다. 터널 핸들은 채널로 전달(AppEvent 는
+    /// Debug 라 핸들을 싣지 않는다).
+    #[cfg(feature = "gui")]
+    AutoAttachReady,
     /// 비동기 파일 식별 결과. `IdentifyWorker::spawn` 의 worker thread 가 완료 시 송신.
     /// 콜사이트(Phase C 의 mouse.rs 등) 는 보관한 마지막 `request_id` 와 매칭해
     /// 오래된 결과를 drop 한다.
