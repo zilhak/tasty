@@ -28,10 +28,16 @@ const LAG_LIMIT: u32 = 64;
 /// Identifier of an upgraded streaming connection.
 pub type StreamClientId = u32;
 
-/// One inbound frame received from a stream client, routed to the main loop.
-pub struct StreamInbound {
-    pub client_id: StreamClientId,
-    pub frame: StreamFrame,
+/// One message routed from a stream connection to the main loop.
+pub enum StreamInbound {
+    /// A frame received from a stream client.
+    Frame {
+        client_id: StreamClientId,
+        frame: StreamFrame,
+    },
+    /// A stream client's connection closed (EOF / read error / detach). The main
+    /// loop releases any attach locks that client held (attach/detach step 3).
+    Disconnected { client_id: StreamClientId },
 }
 
 /// Per-client push sink held in the registry.
@@ -143,24 +149,32 @@ impl StreamHub {
         self.sinks.lock().map(|s| s.len()).unwrap_or(0)
     }
 
-    /// Drain inbound frames routed from stream clients (called by the main loop
-    /// on `AppEvent::StreamReady`).
+    /// Drain inbound messages routed from stream clients (called by the main loop
+    /// on `AppEvent::StreamReady`). Returns the client ids whose connections
+    /// closed — the caller releases their attach locks (attach/detach step 3).
     ///
-    /// In debug builds each frame is echoed back to its origin client — the
+    /// Frames: in debug builds each is echoed back to its origin client — the
     /// step-1 verification path proving "the main loop can push to a specific
     /// client". In release builds frames are dropped: real consumers (input /
     /// resize / detach) arrive in later steps.
-    pub fn pump_inbound(&self, inbound_rx: &Receiver<StreamInbound>) {
+    pub fn pump_inbound(&self, inbound_rx: &Receiver<StreamInbound>) -> Vec<StreamClientId> {
+        let mut disconnected = Vec::new();
         while let Ok(msg) = inbound_rx.try_recv() {
-            #[cfg(debug_assertions)]
-            {
-                let _ = self.push(msg.client_id, msg.frame);
-            }
-            #[cfg(not(debug_assertions))]
-            {
-                let _ = msg;
+            match msg {
+                StreamInbound::Disconnected { client_id } => disconnected.push(client_id),
+                StreamInbound::Frame { client_id, frame } => {
+                    #[cfg(debug_assertions)]
+                    {
+                        let _ = self.push(client_id, frame);
+                    }
+                    #[cfg(not(debug_assertions))]
+                    {
+                        let _ = (client_id, frame);
+                    }
+                }
             }
         }
+        disconnected
     }
 }
 
@@ -233,17 +247,28 @@ mod tests {
         let id = hub.alloc_id();
         let rx = hub.register(id);
         let (tx, inbound_rx) = mpsc::channel();
-        tx.send(StreamInbound {
+        tx.send(StreamInbound::Frame {
             client_id: id,
             frame: frame(StreamTag::Data, b"echo me"),
         })
         .unwrap();
-        hub.pump_inbound(&inbound_rx);
+        let disconnected = hub.pump_inbound(&inbound_rx);
+        assert!(disconnected.is_empty());
         if cfg!(debug_assertions) {
             let got = rx.recv().unwrap();
             assert_eq!(got.payload, b"echo me");
         } else {
             assert!(rx.try_recv().is_err());
         }
+    }
+
+    #[test]
+    fn pump_inbound_reports_disconnects() {
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        tx.send(StreamInbound::Disconnected { client_id: 7 }).unwrap();
+        tx.send(StreamInbound::Disconnected { client_id: 9 }).unwrap();
+        let disconnected = hub.pump_inbound(&inbound_rx);
+        assert_eq!(disconnected, vec![7, 9]);
     }
 }

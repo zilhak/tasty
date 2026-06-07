@@ -34,6 +34,7 @@ pub(crate) mod workspace;
 
 pub mod agent;
 pub mod approval;
+pub(crate) mod attach;
 pub mod audit;
 #[cfg(feature = "gui")]
 pub mod ime;
@@ -665,6 +666,11 @@ fn route_engine_handler(
         "session.issue" => session::handle_issue(core, caller, id, &request.params),
         "session.revoke" => session::handle_revoke(core, id, &request.params),
         "session.list" => session::handle_list(core, id),
+        // attach.* — attach/detach 단계 3 (배타 점유 제어; session.* 와 별개)
+        "attach.acquire" => attach::handle_acquire(engine, id, &request.params),
+        "attach.release" => attach::handle_release(engine, id, &request.params),
+        "attach.force_detach" => attach::handle_force_detach(engine, id, &request.params),
+        "attach.list" => attach::handle_list(engine, id),
         _ => return None,
     })
 }

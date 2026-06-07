@@ -193,6 +193,9 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     let mut engine =
         crate::core::CoreState::new_with_ids(80, 24, base_waker, None, app.core.memory_arc())?;
     engine.waker_factory = Some(factory);
+    // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록 IPC
+    // 서버와 동일한 StreamHub 를 attach registry 에 주입.
+    engine.attach.set_notifier(app.stream_hub.clone());
     let preset_store = app.core.preset_store.clone();
     let memory = app.core.memory_arc();
     let mut state = crate::state::AppState::new(&mut engine, preset_store, memory);
@@ -220,8 +223,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             }
             AppEvent::StreamReady => {
                 // 스트림 클라가 보낸 inbound 프레임 drain. debug 빌드는 echo 회신,
-                // release 는 drop (실제 소비자는 단계 3+).
-                app.stream_hub.pump_inbound(&app.stream_inbound_rx);
+                // release 는 drop (실제 소비자는 단계 4+). 끊긴 client 의 attach lock 은
+                // 자동 free 환원(단계 3).
+                let disconnected = app.stream_hub.pump_inbound(&app.stream_inbound_rx);
+                for client_id in disconnected {
+                    engine.attach.release_all_for_client(client_id);
+                }
             }
             AppEvent::BusyPoll => {
                 // 단계 0 범위 밖 — busy indicator 미구현.

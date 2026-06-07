@@ -368,10 +368,13 @@ impl App {
         if let Some(injector) = self.hub.start_ipc(ipc_waker, stream_ctx) {
             self.core.set_host_ipc_injector(injector);
         }
-        let core_state = self
+        let mut core_state = self
             .core_state
             .take()
             .expect("App.core_state must be present to register a main window");
+        // attach/detach 단계 3: force-detach 통지가 stream client 로 push 되도록
+        // IPC 서버와 동일한 StreamHub 를 attach registry 에 주입.
+        core_state.attach.set_notifier(self.stream_hub.clone());
         self.register_window(gpu, state, core_state, window);
         // Event Bus 1.0: `system.startup_complete`는 부팅 완료 직후 1회 발화.
         // init_app_state는 첫 윈도우 등록 시 한 번만 호출되므로 별도 once 가드 불필요.

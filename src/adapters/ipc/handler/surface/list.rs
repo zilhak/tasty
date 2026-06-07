@@ -67,6 +67,8 @@ fn collect_tab_surface_info(
                 "rows": t.map(|x| x.rows()).unwrap_or(0),
                 "busy": engine.is_surface_busy(node.id),
                 "pty_ready": engine.terminals.contains(node.id),
+                // attach/detach 단계 3: 배타 점유 여부(free/점유 디스커버리).
+                "attached": engine.attach.is_attached(node.id),
             });
             if let Some(fg) = t.and_then(|x| x.foreground_process_info()) {
                 entry["foreground_process"] = json!(fg.name);

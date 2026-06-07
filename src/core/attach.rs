@@ -71,7 +71,9 @@ impl AttachRegistry {
         self.surface_locks.contains_key(&surface_id)
     }
 
-    /// surface 의 점유 client(없으면 None).
+    /// surface 의 점유 client(없으면 None). 단계 4 placeholder 렌더("client N 점유
+    /// 중")·force-detach UI 가 사용. 현재는 테스트만 호출하므로 dead_code 침묵.
+    #[allow(dead_code)]
     pub fn holder(&self, surface_id: SurfaceId) -> Option<AttachClientId> {
         self.surface_locks.get(&surface_id).map(|l| l.holder)
     }

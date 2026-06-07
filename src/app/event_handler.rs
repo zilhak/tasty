@@ -89,8 +89,12 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::StreamReady => {
                 // 스트림 클라 inbound 프레임 drain (debug: echo, release: drop).
-                // 렌더 상태와 무관하므로 dirty 처리 불필요.
-                self.stream_hub.pump_inbound(&self.stream_inbound_rx);
+                // 렌더 상태와 무관하므로 dirty 처리 불필요. 끊긴 client 의 attach lock 은
+                // 모든 engine 에서 자동 free 환원(단계 3).
+                let disconnected = self.stream_hub.pump_inbound(&self.stream_inbound_rx);
+                if !disconnected.is_empty() {
+                    self.release_attach_for_disconnected(&disconnected);
+                }
             }
             AppEvent::EguiRepaint { viewport_id } => {
                 // viewport_id 가 매칭되는 view 한 개만 dirty 처리.
@@ -620,6 +624,26 @@ impl ApplicationHandler<AppEvent> for App {
         if any_pending {
             for w in self.view.views.values() {
                 w.base().winit.request_redraw();
+            }
+        }
+    }
+}
+
+impl App {
+    /// stream client 들이 끊겼을 때 그들이 잡고 있던 attach lock 을 모든 engine
+    /// (활성 main view + parked)에서 자동 해제한다(attach/detach 단계 3 EOF 해제).
+    /// 한 client_id 는 한 engine 에만 lock 을 가지므로 전 engine 순회는 멱등·안전.
+    pub(crate) fn release_attach_for_disconnected(&mut self, clients: &[u32]) {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                for &cid in clients {
+                    main.core_state.attach.release_all_for_client(cid);
+                }
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            for &cid in clients {
+                engine.attach.release_all_for_client(cid);
             }
         }
     }

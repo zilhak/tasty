@@ -216,7 +216,7 @@ impl TcpIpcServer {
                 Ok(frame) => {
                     if ctx
                         .inbound_tx
-                        .send(StreamInbound { client_id, frame })
+                        .send(StreamInbound::Frame { client_id, frame })
                         .is_err()
                     {
                         break; // main loop gone
@@ -229,6 +229,16 @@ impl TcpIpcServer {
 
         ctx.hub.unregister(client_id); // drops the sink sender → write thread exits
         let _ = write_handle.join();
+        // Notify the main loop so it releases any attach locks this client held
+        // (attach/detach step 3). Best-effort: if the main loop is gone, nothing
+        // to release anyway.
+        if ctx
+            .inbound_tx
+            .send(StreamInbound::Disconnected { client_id })
+            .is_ok()
+        {
+            (ctx.waker)();
+        }
         tracing::debug!("stream client {} disconnected from {:?}", client_id, peer);
     }
 
