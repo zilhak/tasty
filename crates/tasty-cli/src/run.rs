@@ -172,6 +172,15 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         }
         std::process::exit(code);
     }
+    // debug stream-echo uses a raw framed streaming channel, not the JSON-RPC
+    // request-response path — dispatch it directly (debug builds only).
+    #[cfg(debug_assertions)]
+    if let Commands::Debug {
+        command: super::commands::DebugCommands::StreamEcho { payload, count },
+    } = &command
+    {
+        return crate::commands::debug::run_stream_echo(payload, *count, port_file);
+    }
     // plugin logs is local-only — read the log file directly.
     if let Commands::Plugin {
         command: PluginCommands::Logs { id, follow },

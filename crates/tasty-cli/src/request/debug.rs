@@ -61,6 +61,11 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::Extension(sub) => extension_debug_command_to_method_params(sub),
         DebugCommands::Tool(sub) => tool_debug_command_to_method_params(sub),
         DebugCommands::Popup(sub) => popup_debug_command_to_method_params(sub),
+        // stream-echo is a raw framed exchange, not a JSON-RPC request — it is
+        // handled directly in `run_client` before request mapping is reached.
+        DebugCommands::StreamEcho { .. } => {
+            unreachable!("debug stream-echo is dispatched before request mapping")
+        }
     }
 }
 

@@ -11,6 +11,7 @@ pub mod help;
 pub mod plugin;
 pub mod request;
 pub mod run;
+pub mod stream;
 pub mod transport;
 
 use clap::{Parser, Subcommand};

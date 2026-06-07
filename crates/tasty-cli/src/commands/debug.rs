@@ -89,6 +89,70 @@ pub enum DebugCommands {
     /// Plugin popup inspection and open/close (debug builds only)
     #[command(subcommand)]
     Popup(PopupDebugCommands),
+    /// Open a streaming channel and verify the server→client push path: send N
+    /// data frames and expect each one echoed back (debug builds only).
+    StreamEcho {
+        /// Payload sent in each frame (an index suffix `#N` is appended).
+        #[arg(long, default_value = "hello")]
+        payload: String,
+        /// Number of frames to send and expect echoed back.
+        #[arg(long, default_value_t = 1)]
+        count: u32,
+    },
+}
+
+/// Run the `debug stream-echo` verification: connect, upgrade to a streaming
+/// channel, send `count` data frames, and confirm each is echoed back by the
+/// host's main loop. Returns an error on connect/handshake failure or mismatch.
+///
+/// This exercises the *transport infrastructure* (server→client push), not user
+/// input simulation, so it lives in the debug-isolated CLI surface per the
+/// agent/user action separation policy.
+pub fn run_stream_echo(payload: &str, count: u32, port_file: Option<&str>) -> anyhow::Result<()> {
+    use std::net::TcpStream;
+
+    use tasty_ipc::port_file as pf;
+    use tasty_ipc::stream::{STREAM_PROTO, StreamTag};
+
+    use crate::stream::StreamConnection;
+
+    let port = pf::read_port_file_from(port_file)?;
+    let sock = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
+        anyhow::anyhow!(
+            "Could not connect to tasty instance on port {}: {}. Is tasty running?",
+            port,
+            e
+        )
+    })?;
+
+    let (mut conn, client_id) = StreamConnection::open(sock, STREAM_PROTO)?;
+    println!("stream opened (client_id={client_id}, proto={STREAM_PROTO})");
+
+    for i in 0..count {
+        let msg = format!("{payload}#{i}");
+        conn.send(StreamTag::Data, msg.as_bytes())?;
+        let frame = conn.recv()?;
+        if frame.tag != StreamTag::Data {
+            anyhow::bail!("frame {i}: expected Data tag, got {:?}", frame.tag);
+        }
+        if frame.payload != msg.as_bytes() {
+            anyhow::bail!(
+                "frame {i}: echo mismatch — sent {:?}, got {:?}",
+                msg,
+                String::from_utf8_lossy(&frame.payload)
+            );
+        }
+        println!(
+            "echo {}/{} ok: {}",
+            i + 1,
+            count,
+            String::from_utf8_lossy(&frame.payload)
+        );
+    }
+
+    conn.detach()?;
+    println!("all {count} frame(s) echoed back; detached");
+    Ok(())
 }
 
 #[cfg(debug_assertions)]
