@@ -25,7 +25,6 @@ pub(crate) use state::CoreState;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-#[cfg(feature = "gui")]
 use intent::ProcessPtyOutcome;
 use intent::{CoreEvent, DomainIntent};
 use tasty_memory::MemoryStorage;
@@ -423,7 +422,9 @@ impl Core {
     /// observer_router (OutputAppended) / command_index (PromptBoundary) /
     /// 시스템 clipboard (OSC 52) 의 부수효과는 본 함수가 직접 처리. 나머지
     /// terminal event 는 outcome.events 로 cascade dispatcher 에 전달.
-    #[cfg(feature = "gui")]
+    // headless 메인 루프는 `process_all_pty_output` 만 사용한다 — 단일 surface 변형은
+    // gui event_handler 의 targeted polling 전용이라 headless 에선 dead.
+    #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     pub(crate) fn process_pty_output(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -436,7 +437,6 @@ impl Core {
 
     /// 모든 workspace 의 모든 terminal 을 drain + 변환. 반환: cascade 가 처리할
     /// CoreEvent 목록 + 어느 surface 든 데이터 drain 했는지.
-    #[cfg(feature = "gui")]
     pub(crate) fn process_all_pty_output(
         &mut self,
         engine: &mut crate::core::CoreState,
@@ -449,7 +449,6 @@ impl Core {
     /// `engine.collect_events()` 결과를 CoreEvent 로 변환. observer_router /
     /// command_index / system clipboard 의 *직접 부수효과* 는 본 함수가 처리하고,
     /// cascade 가 필요한 event 만 Vec<CoreEvent> 로 반환.
-    #[cfg(feature = "gui")]
     fn drain_terminal_events(&mut self, engine: &mut crate::core::CoreState) -> Vec<CoreEvent> {
         use tasty_terminal::TerminalEventKind;
         let raw = engine.collect_events();
