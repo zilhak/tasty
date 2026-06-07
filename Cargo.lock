@@ -5220,6 +5220,7 @@ dependencies = [
  "tasty-presets",
  "tasty-settings",
  "tasty-shm",
+ "tasty-ssh-profiles",
  "tasty-telemetry",
  "tasty-terminal",
  "tasty-themes",
@@ -5280,6 +5281,7 @@ dependencies = [
  "tasty-ipc",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
+ "tasty-ssh-profiles",
  "tasty-terminal",
  "tasty-update",
  "tasty-utils",
@@ -5389,6 +5391,7 @@ name = "tasty-model"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "serde",
  "serde_json",
  "tasty-terminal",
  "tasty-type-geometry",
@@ -5583,6 +5586,17 @@ dependencies = [
  "libc",
  "thiserror 1.0.69",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "tasty-ssh-profiles"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "tasty-utils",
+ "toml 0.8.2",
+ "tracing",
 ]
 
 [[package]]
