@@ -1,0 +1,249 @@
+//! Server-side streaming push registry for the attach/detach feature (step 1).
+//!
+//! Holds one bounded push sink per upgraded stream connection so the main loop
+//! can push frames to a specific client *without ever blocking* (slow clients
+//! drop frames, then get disconnected). The IPC accept threads register and
+//! unregister sinks; the main loop pushes and drains inbound frames.
+//!
+//! Security (decisions.md #5): the streaming channel carries no token of its own
+//! — trust is delegated to SSH + 127.0.0.1 loopback. No auth layer here.
+//!
+//! See `.claude-workspace/conductor/attach-detach/step1/plan.md` §5, §7.
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
+
+use crate::ipc::server::IpcWaker;
+use crate::ipc::stream::StreamFrame;
+
+/// Bounded capacity of each per-client push sink. A client whose sink fills up
+/// has frames dropped — the main loop never blocks on a slow consumer.
+const SINK_CAP: usize = 1024;
+
+/// Consecutive dropped frames after which a lagging client is force-disconnected.
+const LAG_LIMIT: u32 = 64;
+
+/// Identifier of an upgraded streaming connection.
+pub type StreamClientId = u32;
+
+/// One inbound frame received from a stream client, routed to the main loop.
+pub struct StreamInbound {
+    pub client_id: StreamClientId,
+    pub frame: StreamFrame,
+}
+
+/// Per-client push sink held in the registry.
+struct StreamSink {
+    tx: SyncSender<StreamFrame>,
+    /// Consecutive dropped-frame count (reset on a successful send).
+    lag: u32,
+}
+
+/// Outcome of a [`StreamHub::push`] attempt.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PushResult {
+    /// Frame queued for the client's write thread.
+    Sent,
+    /// No such client (already disconnected).
+    Unknown,
+    /// Sink full — frame dropped, client still connected.
+    Dropped,
+    /// Client exceeded the lag limit and was disconnected.
+    Disconnected,
+}
+
+/// Context handed to each accepted connection so it can register a stream sink,
+/// forward inbound frames, and wake the main loop. Cloneable + `Send`.
+#[derive(Clone)]
+pub struct StreamContext {
+    pub hub: StreamHub,
+    pub inbound_tx: Sender<StreamInbound>,
+    pub waker: IpcWaker,
+}
+
+/// Shared registry of stream-client push sinks. Cloneable (internal `Arc`): the
+/// IPC accept threads register/unregister, the main loop pushes.
+#[derive(Clone)]
+pub struct StreamHub {
+    sinks: Arc<Mutex<HashMap<StreamClientId, StreamSink>>>,
+    next_id: Arc<AtomicU32>,
+}
+
+impl Default for StreamHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StreamHub {
+    pub fn new() -> Self {
+        Self {
+            sinks: Arc::new(Mutex::new(HashMap::new())),
+            next_id: Arc::new(AtomicU32::new(1)),
+        }
+    }
+
+    /// Allocate a fresh client id (monotonic, mirrors `IdGenerator`).
+    pub fn alloc_id(&self) -> StreamClientId {
+        self.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Register a client's push sink. Returns the receiving end the connection's
+    /// write thread drains to the socket.
+    pub fn register(&self, id: StreamClientId) -> Receiver<StreamFrame> {
+        let (tx, rx) = mpsc::sync_channel(SINK_CAP);
+        if let Ok(mut sinks) = self.sinks.lock() {
+            sinks.insert(id, StreamSink { tx, lag: 0 });
+        }
+        rx
+    }
+
+    /// Drop a client's sink (its write thread then exits when the sender drops).
+    /// Idempotent.
+    pub fn unregister(&self, id: StreamClientId) {
+        if let Ok(mut sinks) = self.sinks.lock() {
+            sinks.remove(&id);
+        }
+    }
+
+    /// Push a frame to one client. Non-blocking: a full sink drops the frame and,
+    /// past [`LAG_LIMIT`] consecutive drops, disconnects the client.
+    pub fn push(&self, id: StreamClientId, frame: StreamFrame) -> PushResult {
+        let Ok(mut sinks) = self.sinks.lock() else {
+            return PushResult::Unknown;
+        };
+        let Some(sink) = sinks.get_mut(&id) else {
+            return PushResult::Unknown;
+        };
+        match sink.tx.try_send(frame) {
+            Ok(()) => {
+                sink.lag = 0;
+                PushResult::Sent
+            }
+            Err(TrySendError::Full(_)) => {
+                sink.lag += 1;
+                if sink.lag >= LAG_LIMIT {
+                    sinks.remove(&id); // sender dropped → write thread exits
+                    PushResult::Disconnected
+                } else {
+                    PushResult::Dropped
+                }
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                sinks.remove(&id);
+                PushResult::Unknown
+            }
+        }
+    }
+
+    /// Number of currently connected stream clients.
+    pub fn client_count(&self) -> usize {
+        self.sinks.lock().map(|s| s.len()).unwrap_or(0)
+    }
+
+    /// Drain inbound frames routed from stream clients (called by the main loop
+    /// on `AppEvent::StreamReady`).
+    ///
+    /// In debug builds each frame is echoed back to its origin client — the
+    /// step-1 verification path proving "the main loop can push to a specific
+    /// client". In release builds frames are dropped: real consumers (input /
+    /// resize / detach) arrive in later steps.
+    pub fn pump_inbound(&self, inbound_rx: &Receiver<StreamInbound>) {
+        while let Ok(msg) = inbound_rx.try_recv() {
+            #[cfg(debug_assertions)]
+            {
+                let _ = self.push(msg.client_id, msg.frame);
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                let _ = msg;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ipc::stream::StreamTag;
+
+    fn frame(tag: StreamTag, p: &[u8]) -> StreamFrame {
+        StreamFrame::new(tag, p.to_vec())
+    }
+
+    #[test]
+    fn alloc_id_is_monotonic() {
+        let hub = StreamHub::new();
+        assert_eq!(hub.alloc_id(), 1);
+        assert_eq!(hub.alloc_id(), 2);
+        assert_eq!(hub.alloc_id(), 3);
+    }
+
+    #[test]
+    fn push_unknown_client() {
+        let hub = StreamHub::new();
+        assert_eq!(hub.push(42, frame(StreamTag::Data, b"x")), PushResult::Unknown);
+    }
+
+    #[test]
+    fn register_push_receive() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        assert_eq!(hub.client_count(), 1);
+        assert_eq!(hub.push(id, frame(StreamTag::Data, b"hi")), PushResult::Sent);
+        let got = rx.recv().unwrap();
+        assert_eq!(got.tag, StreamTag::Data);
+        assert_eq!(got.payload, b"hi");
+        hub.unregister(id);
+        assert_eq!(hub.client_count(), 0);
+    }
+
+    #[test]
+    fn slow_client_drops_then_disconnects() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        // Keep the receiver alive but never drain it so the sink fills up.
+        let _rx = hub.register(id);
+        // Fill the bounded sink (SINK_CAP frames accepted).
+        for _ in 0..SINK_CAP {
+            assert_eq!(hub.push(id, frame(StreamTag::Data, b"x")), PushResult::Sent);
+        }
+        // Next pushes are dropped until LAG_LIMIT, then the client is dropped.
+        let mut saw_disconnect = false;
+        for _ in 0..LAG_LIMIT {
+            match hub.push(id, frame(StreamTag::Data, b"x")) {
+                PushResult::Dropped => {}
+                PushResult::Disconnected => {
+                    saw_disconnect = true;
+                    break;
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert!(saw_disconnect);
+        assert_eq!(hub.client_count(), 0);
+    }
+
+    #[test]
+    fn pump_inbound_echoes_in_debug() {
+        let hub = StreamHub::new();
+        let id = hub.alloc_id();
+        let rx = hub.register(id);
+        let (tx, inbound_rx) = mpsc::channel();
+        tx.send(StreamInbound {
+            client_id: id,
+            frame: frame(StreamTag::Data, b"echo me"),
+        })
+        .unwrap();
+        hub.pump_inbound(&inbound_rx);
+        if cfg!(debug_assertions) {
+            let got = rx.recv().unwrap();
+            assert_eq!(got.payload, b"echo me");
+        } else {
+            assert!(rx.try_recv().is_err());
+        }
+    }
+}
