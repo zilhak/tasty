@@ -25,9 +25,18 @@ use tasty_ipc::port_file as pf;
 use tasty_ipc::stream::{self, STREAM_PROTO, StreamFrame, StreamTag};
 use tasty_terminal::Terminal;
 
+use crate::ssh::{self, Backoff, PortMode, SshTarget, SshTunnel};
 use crate::stream::StreamConnection;
 
-/// `tasty attach <surface>` 진입점(mirror-dump / raw). force-detach 는 별도(JSON-RPC).
+/// 한 attach 세션이 끝난 사유(백오프 재연결 판단용 — 단계 5).
+pub(crate) enum AttachExit {
+    /// 정상 종료(mirror-dump 1회성 완료, raw 의 사용자 detach/EOF, force-detach).
+    Completed,
+    /// 연결이 예기치 않게 끊김(터널/서버 단절) — 재연결 대상.
+    Disconnected,
+}
+
+/// `tasty attach <surface>` (로컬 loopback) 진입점. force-detach 는 별도(JSON-RPC).
 pub fn run_attach(
     surface: u32,
     dump_after: Option<u64>,
@@ -36,7 +45,21 @@ pub fn run_attach(
     port_file: Option<&str>,
 ) -> Result<()> {
     let port = pf::read_port_file_from(port_file)?;
-    let sock = TcpStream::connect(format!("127.0.0.1:{port}")).map_err(|e| {
+    run_attach_on_port(port, surface, dump_after, send, raw)?;
+    Ok(())
+}
+
+/// 단일 attach 세션 1 회: `127.0.0.1:port` 접속 → 핸드셰이크 → mirror/raw.
+/// 로컬(loopback)과 SSH(터널 localport) 양쪽이 공유한다 — SSH 경로는 이 함수에
+/// **터널의 localport** 를 넘기기만 한다(O7: `--port` 공개 플래그 불필요).
+pub(crate) fn run_attach_on_port(
+    port: u16,
+    surface: u32,
+    dump_after: Option<u64>,
+    send: Option<&str>,
+    raw: bool,
+) -> Result<AttachExit> {
+    let sock = TcpStream::connect(("127.0.0.1", port)).map_err(|e| {
         anyhow::anyhow!(
             "Could not connect to tasty instance on port {port}: {e}. Is tasty running?"
         )
@@ -71,14 +94,89 @@ pub fn run_attach(
     }
 }
 
+/// `tasty attach --ssh user@host <surface>` (1회성 SSH 터널 attach — 단계 5).
+///
+/// ① 원격 포트 발견(셸 비의존 우선) → ② `ssh -L` 터널 수립 → ③ 터널 localport 로
+/// 단계 4 attach. SSH 끊김 시 백오프 재연결(decisions 7, `--no-reconnect` 로 off).
+/// 세션은 서버에 상주하므로 재연결은 터널 재수립 + 재attach 만 하면 복구된다.
+#[allow(clippy::too_many_arguments)]
+pub fn run_attach_ssh(
+    dest: &str,
+    remote_tasty: &str,
+    port_mode: &str,
+    surface: u32,
+    dump_after: Option<u64>,
+    send: Option<&str>,
+    raw: bool,
+    reconnect: bool,
+) -> Result<()> {
+    let ssh = ssh::resolve_ssh_path();
+    let target = SshTarget::parse(dest);
+    let mode = PortMode::parse(port_mode)?;
+    // 자동 검증(Claude Bash) 한정 host key accept-new. 평상시는 기본 strict 유지(보안).
+    let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
+    let debug = cfg!(debug_assertions);
+
+    let mut backoff = Backoff::new();
+    loop {
+        // ① 원격 포트 발견.
+        let remote_port = match ssh::discover_remote_port(
+            &ssh,
+            &target,
+            remote_tasty,
+            mode,
+            verify,
+            debug,
+        ) {
+            Ok(p) => p,
+            Err(e) if reconnect => {
+                eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
+                backoff.sleep();
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+
+        // ② ssh -L 터널 (Drop 시 자식 ssh 자동 kill — 원격 데몬은 생존).
+        let tunnel = match SshTunnel::establish(&ssh, &target, remote_port, verify) {
+            Ok(t) => t,
+            Err(e) if reconnect => {
+                eprintln!("ssh 터널 수립 실패: {e} — 백오프 재시도");
+                backoff.sleep();
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        eprintln!(
+            "ssh 터널 수립: 127.0.0.1:{} → {dest}:{remote_port}",
+            tunnel.local_port
+        );
+        backoff.reset();
+
+        // ③ 단계 4 attach (터널 localport 로).
+        match run_attach_on_port(tunnel.local_port, surface, dump_after, send, raw)? {
+            AttachExit::Completed => return Ok(()),
+            AttachExit::Disconnected if reconnect => {
+                eprintln!("연결 끊김 — 백오프 재연결(세션은 서버 상주)");
+                drop(tunnel); // 자식 ssh kill 후 재수립.
+                backoff.sleep();
+                continue;
+            }
+            AttachExit::Disconnected => return Ok(()),
+        }
+    }
+}
+
 /// mirror-dump 모드: 출력을 수집해 mirror grid 재구성 → stdout 출력.
+/// 1회성이라 항상 `Completed` 를 반환하지만, deadline 전에 reader 가 끊기면
+/// `Disconnected`(터널/서버 단절)로 보고해 SSH 재연결이 가능하게 한다.
 fn run_mirror_dump(
     mut conn: StreamConnection,
     cols: usize,
     rows: usize,
     dump_after: Option<u64>,
     send: Option<&str>,
-) -> Result<()> {
+) -> Result<AttachExit> {
     let collect_ms = dump_after.unwrap_or(500);
 
     // 초기 입력 1 회(비대화형 검증용).
@@ -91,15 +189,10 @@ fn run_mirror_dump(
     let writer = conn.try_clone_writer()?;
     let (tx, rx) = mpsc::channel::<StreamFrame>();
     let reader = thread::spawn(move || {
-        loop {
-            match conn.recv() {
-                Ok(frame) => {
-                    let stop = frame.tag == StreamTag::Detach;
-                    if tx.send(frame).is_err() || stop {
-                        break;
-                    }
-                }
-                Err(_) => break,
+        while let Ok(frame) = conn.recv() {
+            let stop = frame.tag == StreamTag::Detach;
+            if tx.send(frame).is_err() || stop {
+                break;
             }
         }
     });
@@ -107,6 +200,7 @@ fn run_mirror_dump(
     let mut mirror = Terminal::new_detached(cols, rows);
     let deadline = Instant::now() + Duration::from_millis(collect_ms);
     let mut forced = false;
+    let mut disconnected = false;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -129,27 +223,40 @@ fn run_mirror_dump(
                 }
                 StreamTag::Ping => {}
             },
-            Err(_) => break, // timeout or reader gone
+            Err(mpsc::RecvTimeoutError::Timeout) => break, // 정상: deadline 도달.
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                // reader 스레드 종료 = 소켓 끊김(터널/서버 단절) → 재연결 대상.
+                disconnected = true;
+                break;
+            }
         }
     }
 
     // mirror 화면을 stdout 으로 — 검증 핵심(GUI 없이 grid 확인).
     println!("{}", mirror.screen_text());
 
-    // 정상 종료 시 detach 통지(force-detach 면 서버가 이미 끊음).
+    // 정상 종료 시 detach 통지(force-detach/단절이면 서버가 이미 끊음).
     let mut writer = writer;
-    if !forced {
+    if !forced && !disconnected {
         let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]);
-    } else {
+    } else if forced {
         eprintln!("force-detached by server");
     }
     let _ = reader.join();
-    Ok(())
+    Ok(if disconnected {
+        AttachExit::Disconnected
+    } else {
+        AttachExit::Completed
+    })
 }
 
 /// raw 브리지 모드: stdin→서버 입력, 서버 출력→stdout. detach 키 `Ctrl+\`(0x1c).
 /// 단계 4 옵션(완전 raw TTY 설정은 추후) — 기본 passthrough.
-fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<()> {
+///
+/// 항상 `Completed` 를 반환한다(사용자 detach/EOF). 서버/터널이 먼저 닫으면 reader
+/// 스레드가 프로세스를 종료하므로 raw 모드는 attach 후 자동 재연결을 하지 않는다
+/// (블로킹 stdin 을 깰 수 없음 — 완전 raw TTY + 재연결 UX 는 후속, plan §6.4 R6).
+fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachExit> {
     let mut writer = conn.try_clone_writer()?;
     if let Some(s) = send {
         stream::write_frame(&mut writer, StreamTag::Data, &decode_escapes(s))?;
@@ -159,24 +266,21 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<()> {
     let mut conn = conn;
     let reader = thread::spawn(move || {
         let stdout = std::io::stdout();
-        loop {
-            match conn.recv() {
-                Ok(frame) => match frame.tag {
-                    StreamTag::Data => {
-                        let mut h = stdout.lock();
-                        let _ = h.write_all(&frame.payload);
-                        let _ = h.flush();
+        while let Ok(frame) = conn.recv() {
+            match frame.tag {
+                StreamTag::Data => {
+                    let mut h = stdout.lock();
+                    let _ = h.write_all(&frame.payload);
+                    let _ = h.flush();
+                }
+                StreamTag::Detach => break,
+                StreamTag::Control => {
+                    if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
+                        eprintln!("\r\nforce-detached by server");
+                        break;
                     }
-                    StreamTag::Detach => break,
-                    StreamTag::Control => {
-                        if String::from_utf8_lossy(&frame.payload).contains("force_detached") {
-                            eprintln!("\r\nforce-detached by server");
-                            break;
-                        }
-                    }
-                    StreamTag::Ping => {}
-                },
-                Err(_) => break,
+                }
+                StreamTag::Ping => {}
             }
         }
         std::process::exit(0);
@@ -205,7 +309,7 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<()> {
         }
     }
     let _ = reader.join();
-    Ok(())
+    Ok(AttachExit::Completed)
 }
 
 /// 입력 문자열의 escape 를 raw 바이트로 디코딩: `\r \n \t \0 \\ \xNN`.

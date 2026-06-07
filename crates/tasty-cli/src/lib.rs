@@ -11,6 +11,7 @@ pub mod help;
 pub mod plugin;
 pub mod request;
 pub mod run;
+pub mod ssh;
 pub mod stream;
 pub mod transport;
 
@@ -131,6 +132,20 @@ pub enum Commands {
         /// 점유된 surface 를 강제로 끊는다 (서버 권한, attach 하지 않음)
         #[arg(long)]
         force_detach: bool,
+        /// SSH 너머 원격 surface 에 attach (1회성). 예: --ssh user@host, --ssh gx10.
+        /// 원격성은 ssh 가 흡수 — 내부적으로 ssh -L 터널 + 단계 4 attach 결합.
+        #[arg(long)]
+        ssh: Option<String>,
+        /// 원격 tasty 바이너리 경로 (셸 비의존 포트 발견용 `ssh host <path> port`).
+        /// 기본 "tasty" (원격 PATH 가정). PATH 밖이면 풀경로 지정.
+        #[arg(long, default_value = "tasty")]
+        remote_tasty: String,
+        /// 원격 포트 발견 모드: auto(기본) | subcommand | file-unix | file-windows.
+        #[arg(long, default_value = "auto")]
+        remote_port_mode: String,
+        /// 자동 재연결 비활성 (기본: SSH 끊김 시 백오프 재연결).
+        #[arg(long)]
+        no_reconnect: bool,
     },
     /// Send text, key, or queue message
     Send {
@@ -232,6 +247,9 @@ pub enum Commands {
         #[command(subcommand)]
         command: PresetCommands,
     },
+    /// Print this instance's IPC port to stdout (shell-independent remote port
+    /// discovery for `ssh host tasty port`). Reads the port file only — no IPC.
+    Port,
     /// Check for and install a new tasty version (standalone — no host needed)
     Update(UpdateOpts),
 }

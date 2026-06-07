@@ -181,24 +181,58 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     {
         return crate::commands::debug::run_stream_echo(payload, *count, port_file);
     }
+    // `tasty port` — read the port file and print it. Local-only (no IPC):
+    // enables shell-independent remote port discovery via `ssh host tasty port`.
+    if let Commands::Port = &command {
+        return crate::commands::port::run_port(port_file);
+    }
+    // `--ssh` + `--force-detach` is out of scope for step 5 (remote force-detach
+    // belongs to profile/management in step 7) — reject explicitly rather than
+    // silently force-detaching the *local* surface.
+    if let Commands::Attach {
+        ssh: Some(_),
+        force_detach: true,
+        ..
+    } = &command
+    {
+        anyhow::bail!("--ssh 와 --force-detach 는 함께 쓸 수 없습니다 (원격 force-detach 는 미지원).");
+    }
     // `tasty attach <id>` (non-force) uses the raw streaming channel, not the
     // JSON-RPC path — dispatch it directly. `--force-detach` is a normal
     // request-response (attach.force_detach) so it falls through.
+    // `--ssh user@host` routes through the SSH tunnel (discover port + ssh -L +
+    // attach over the tunnel localport), with auto-reconnect backoff.
     if let Commands::Attach {
         surface,
         dump_after,
         send,
         raw,
         force_detach: false,
+        ssh,
+        remote_tasty,
+        remote_port_mode,
+        no_reconnect,
     } = &command
     {
-        return crate::commands::attach::run_attach(
-            *surface,
-            *dump_after,
-            send.as_deref(),
-            *raw,
-            port_file,
-        );
+        return match ssh {
+            Some(dest) => crate::commands::attach::run_attach_ssh(
+                dest,
+                remote_tasty,
+                remote_port_mode,
+                *surface,
+                *dump_after,
+                send.as_deref(),
+                *raw,
+                !no_reconnect,
+            ),
+            None => crate::commands::attach::run_attach(
+                *surface,
+                *dump_after,
+                send.as_deref(),
+                *raw,
+                port_file,
+            ),
+        };
     }
     // plugin logs is local-only — read the log file directly.
     if let Commands::Plugin {
