@@ -312,6 +312,38 @@ impl SurfaceLayout {
         }
     }
 
+    /// Full layout tree JSON including split **direction + ratio** (attach 단계 6,
+    /// R2). `Tab::to_tree_json` 의 SplitLayout 은 surface id 만 담아 분할 비율/방향이
+    /// 빠져 있어 원격 client 가 레이아웃을 정확히 복원할 수 없다. 이 메서드는 트리
+    /// 구조를 보존해 workspace attach 디스크립터(D4)가 client mirror 트리를 같은 비율로
+    /// 재구성하게 한다.
+    pub fn to_tree_json_full(&self) -> serde_json::Value {
+        match self {
+            SurfaceLayout::Leaf(surface) => serde_json::json!({
+                "type": "Leaf",
+                "id": surface.surface_id(),
+                "kind": surface.kind(),
+            }),
+            SurfaceLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                focus_second,
+            } => serde_json::json!({
+                "type": "Split",
+                "direction": match direction {
+                    SplitDirection::Horizontal => "horizontal",
+                    SplitDirection::Vertical => "vertical",
+                },
+                "ratio": ratio,
+                "focus_second": focus_second,
+                "first": first.to_tree_json_full(),
+                "second": second.to_tree_json_full(),
+            }),
+        }
+    }
+
     /// Visit every leaf Surface (Terminal/Empty/Markdown/etc.) for read-only inspection.
     /// 닫기 경로에서 leaf 들의 `scrollback_persist_id` 를 추출해 디스크 정리하는 용도로
     /// 쓰인다.

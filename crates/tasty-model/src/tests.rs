@@ -827,6 +827,50 @@ fn tab_ensure_initialized_replaces_placeholder_in_split() {
     assert_eq!(tab.deferred_surface_ids(), vec![12]);
 }
 
+// ---- workspace attach classification (단계 6) ----
+
+#[test]
+fn workspace_classify_attach_surfaces_separates_terminal_and_non_terminal() {
+    use super::{EmptySurface, Pane, Surface, TerminalSurface, Workspace};
+    // 터미널(100) + split 으로 비-터미널 EmptySurface(200, 비-deferred) + deferred(300).
+    let mut pane =
+        Pane::new_with_surface(1, 1, "t".into(), Box::new(TerminalSurface { id: 100 }));
+    pane.split_surface_by_id_with_surface(
+        100,
+        SplitDirection::Vertical,
+        Box::new(EmptySurface::new(200)),
+    )
+    .unwrap();
+    // deferred 터미널 자리(EmptySurface deferred) → 터미널로 분류돼야 한다.
+    pane.split_surface_by_id_with_surface(
+        200,
+        SplitDirection::Horizontal,
+        Box::new(test_deferred_placeholder(300)) as Box<dyn Surface>,
+    )
+    .unwrap();
+    let ws = Workspace::new_with_pane(1, "w".into(), pane);
+    let class = ws.classify_attach_surfaces();
+    let mut terms = class.terminals.clone();
+    terms.sort_unstable();
+    assert_eq!(terms, vec![100, 300]); // 실 터미널 + deferred
+    assert_eq!(class.non_terminals, vec![200]); // 비-deferred empty
+}
+
+#[test]
+fn surface_layout_to_tree_json_full_preserves_split_ratio() {
+    let node1 = test_surface_node(10);
+    let node2 = test_surface_node(20);
+    let layout = SurfaceLayout::Leaf(Box::new(node1));
+    let (layout, _) = layout.split_with_node(10, SplitDirection::Horizontal, node2);
+    let json = layout.to_tree_json_full();
+    assert_eq!(json["type"], "Split");
+    assert_eq!(json["direction"], "horizontal");
+    assert_eq!(json["ratio"], 0.5);
+    assert_eq!(json["first"]["type"], "Leaf");
+    assert_eq!(json["first"]["id"], 10);
+    assert_eq!(json["second"]["id"], 20);
+}
+
 // ---- compute_terminal_rect tests ----
 
 #[test]
