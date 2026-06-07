@@ -31,6 +31,10 @@ pub fn draw_egui_panels(
 ) {
     // First pass: gather info about egui-rendered panels (read-only).
     let mut infos = Vec::new();
+    // attach/detach 단계 4 (F·§3): 다른 client 가 점유 중인 터미널 surface 는 grid 가
+    // render_pass 에서 숨겨지므로(is_attached → continue), 그 자리에 egui 안내 패널을
+    // 그린다. (트리 leaf 는 terminal kind 그대로 — D1.) (EguiPanelInfo, holder).
+    let mut placeholders: Vec<(EguiPanelInfo, Option<u32>)> = Vec::new();
     {
         let ws = state.active_workspace(engine);
         let focused_pane_id = ws.focused_pane;
@@ -54,14 +58,9 @@ pub fn draw_egui_panels(
                 height: (pane_rect.height - tab_bar_h)
                     .max(tasty_type_geometry::length::PhysicalPx(1.0)),
             };
-            // egui로 그려지는 surface = terminal 외 모든 종류.
-            for r in tab
-                .layout()
-                .surface_regions(content_rect)
-                .into_iter()
-                .filter(|r| r.surface.kind() != "terminal")
-            {
-                infos.push(EguiPanelInfo {
+            // egui로 그려지는 surface = terminal 외 모든 종류 + 점유된 터미널(placeholder).
+            for r in tab.layout().surface_regions(content_rect) {
+                let info = EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),
                     logical_x: (r.rect.x.value() / scale_factor).round_ui(),
@@ -70,7 +69,15 @@ pub fn draw_egui_panels(
                     logical_h: (r.rect.height.value() / scale_factor).round_ui(),
                     is_keyboard_target: pane_id == focused_pane_id
                         && r.id == focused_surface_in_tab,
-                });
+                };
+                if r.surface.kind() == "terminal" {
+                    // 점유된 터미널만 placeholder 안내. free 터미널은 GPU 렌더.
+                    if engine.attach.is_attached(r.id) {
+                        placeholders.push((info, engine.attach.holder(r.id)));
+                    }
+                } else {
+                    infos.push(info);
+                }
             }
         }
     }
@@ -204,6 +211,48 @@ pub fn draw_egui_panels(
                 },
             );
         }
+    }
+
+    // attach placeholder 안내(F·§3.2): render_pass 가 grid 를 숨긴 자리에 "다른 곳에서
+    // 점유 중" 안내 + force-detach 버튼을 그린다. 버튼은 CLI force-detach 와 동일 동작.
+    let mut pending_force_detach: Option<u32> = None;
+    for (info, holder) in &placeholders {
+        let sid = info.surface_id.unwrap_or(0);
+        let holder = *holder;
+        let panel_h = info.logical_h;
+        let clicked = draw_panel_frame(
+            ctx,
+            &format!("attach_placeholder_{sid}"),
+            info,
+            8,
+            None,
+            |ui| -> bool {
+                let mut hit = false;
+                ui.vertical_centered(|ui| {
+                    ui.add_space((panel_h * 0.30).max(8.0));
+                    ui.heading(crate::i18n::t("attach.held_title"));
+                    ui.add_space(6.0);
+                    let body = match holder {
+                        Some(h) => format!("{} (client {h})", crate::i18n::t("attach.held_body")),
+                        None => crate::i18n::t("attach.held_body").to_string(),
+                    };
+                    ui.label(body);
+                    ui.add_space(10.0);
+                    if ui.button(crate::i18n::t("attach.force_detach")).clicked() {
+                        hit = true;
+                    }
+                });
+                hit
+            },
+        );
+        if clicked {
+            pending_force_detach = Some(sid);
+        }
+    }
+    // 버튼 클릭은 egui 클로저 밖에서 적용(engine 가변 차용). force_detach 는 holder
+    // 에게 종료 통지(StreamHub)를 push 하고 lock 을 free 환원한다(단계 3).
+    if let Some(sid) = pending_force_detach {
+        engine.attach.force_detach(sid);
     }
 
     // Restore extracted view stores before any further `state` access below.

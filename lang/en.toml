@@ -643,3 +643,8 @@ apply_pane_title = "Apply pane preset"
 empty = "No presets saved yet."
 apply_button = "Apply"
 cancel_button = "Cancel"
+
+[attach]
+held_title = "Attached elsewhere"
+held_body = "This surface is held by another client."
+force_detach = "Force detach"

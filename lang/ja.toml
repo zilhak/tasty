@@ -643,3 +643,8 @@ apply_pane_title = "ペインプリセット適用"
 empty = "保存されたプリセットがありません。"
 apply_button = "適用"
 cancel_button = "キャンセル"
+
+[attach]
+held_title = "別の場所で接続中"
+held_body = "この画面は別のクライアントが占有しています。"
+force_detach = "強制切断"

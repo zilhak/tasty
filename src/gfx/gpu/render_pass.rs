@@ -69,6 +69,15 @@ impl GpuState {
 
         for (_pane_id, _pane_rect, surface_regions) in regions {
             for region in surface_regions {
+                // attach/detach 단계 4 (D1·§3.2): 다른 client 가 점유 중인 surface 는
+                // 서버측에서 grid 내용을 **그리지 않는다** — 터미널 store 접근 자체를
+                // 건너뛰어 내용 유출 0. placeholder 안내는 egui 오버레이가 그린다
+                // (`draw_egui_panels`). 트리 leaf 는 교체하지 않으므로(D1) lock 플래그
+                // (is_attached) 한 줄로 분기한다. client mirror 는 자기 engine 에 lock 이
+                // 없어(is_attached=false) 정상 렌더된다(G).
+                if engine.attach.is_attached(region.id) {
+                    continue;
+                }
                 let Some(terminal) = engine.terminals.get(region.id) else {
                     continue;
                 };
