@@ -62,6 +62,7 @@ pub fn compute_terminal_rect(
     }
 }
 
+mod attach_mapping;
 mod attached_surface;
 mod binary_tree;
 pub mod closed_item;
@@ -78,6 +79,7 @@ mod terminal_surface;
 pub mod toast_kind;
 mod workspace;
 
+pub use attach_mapping::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 pub use attached_surface::*;
 pub use binary_tree::BinaryTree;
 pub use closed_item::{ClosedItem, ClosedItemStore};

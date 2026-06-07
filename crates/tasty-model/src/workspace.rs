@@ -1,4 +1,6 @@
-use super::{EmptySurface, Pane, PaneId, PaneNode, SurfaceId, TabId, WorkspaceId};
+use super::{
+    EmptySurface, Pane, PaneId, PaneNode, SurfaceId, TabId, WorkspaceAttachMapping, WorkspaceId,
+};
 
 /// Workspace attach(단계 6) 의 surface 분류 결과.
 ///
@@ -21,6 +23,10 @@ pub struct Workspace {
     /// Always `Some` during normal operation. Temporarily `None` during structural mutations.
     pane_layout_opt: Option<PaneNode>,
     pub focused_pane: PaneId,
+    /// attach/detach 단계 7 — 이 워크스페이스가 attach 할 원격 컴퓨터(SSH) 매핑.
+    /// `Some` 이면 활성화 시 호스트가 자동 attach(SSH 터널 + workspace mirror) 한다.
+    /// layout.json 으로 영속(`SavedWorkspace.attach_mapping`).
+    pub attach_mapping: Option<WorkspaceAttachMapping>,
 }
 
 impl Workspace {
@@ -42,6 +48,7 @@ impl Workspace {
             description: String::new(),
             pane_layout_opt: Some(PaneNode::Leaf(pane)),
             focused_pane,
+            attach_mapping: None,
         }
     }
 
@@ -73,6 +80,7 @@ impl Workspace {
             description: String::new(),
             pane_layout_opt: Some(PaneNode::Leaf(pane)),
             focused_pane,
+            attach_mapping: None,
         }
     }
 
@@ -91,7 +99,14 @@ impl Workspace {
             description: String::new(),
             pane_layout_opt: Some(pane_layout),
             focused_pane,
+            attach_mapping: None,
         }
+    }
+
+    /// attach/detach 단계 7 — 이 워크스페이스의 원격 attach 매핑을 설정/해제한다.
+    /// 생성/복원 경로가 생성자 churn 없이 매핑을 얹기 위한 setter.
+    pub fn set_attach_mapping(&mut self, mapping: Option<WorkspaceAttachMapping>) {
+        self.attach_mapping = mapping;
     }
 
     /// Collect all surface IDs in this workspace.
