@@ -16,6 +16,8 @@ pub(crate) mod busy_tick;
 pub(crate) mod cli_routing;
 #[cfg(feature = "gui")]
 pub(crate) mod event_loop;
+#[cfg(not(feature = "gui"))]
+pub(crate) mod headless_dispatch;
 pub(crate) mod locale;
 pub(crate) mod os;
 #[cfg(feature = "gui")]
@@ -171,24 +173,48 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         app.core.set_host_ipc_injector(injector);
     }
 
+    // ── Engine 부트스트랩 ──────────────────────────────────────────────
+    // gui 는 첫 MainView 생성 시 CoreState/AppState 를 만든다 (window_lifecycle).
+    // headless 는 창이 없으므로 여기서 직접 1 회 만든다. `CoreState::new_with_ids`
+    // 가 default workspace + 터미널 1 개를 spawn 하므로 client 0 명에도 PTY 가 산다.
+    // 터미널 reader 스레드는 factory 가 발급한 waker 로 `TerminalOutput` 을 push,
+    // 아래 메인 루프가 `process_all_pty_output` 으로 채널을 drain 한다.
+    //
+    // 0-B: 창이 없어 grid 크기를 측정할 수 없으므로 기본 80×24.
+    // 0-C: layout 복원은 gui 의 plugin-pump 경로(ApplyPendingLayoutRestore)에
+    //      종속이라 headless 엔 미적용 — 항상 fallback default workspace 로 뜬다.
+    let factory = waker.waker_factory();
+    let base_waker = factory.make_default_waker();
+    let mut engine =
+        crate::core::CoreState::new_with_ids(80, 24, base_waker, None, app.core.memory_arc())?;
+    engine.waker_factory = Some(factory);
+    let preset_store = app.core.preset_store.clone();
+    let memory = app.core.memory_arc();
+    let mut state = crate::state::AppState::new(&mut engine, preset_store, memory);
+
     hooks::lua::fire(
         app.lua_engine.as_ref(),
         "tasty.startup.post",
         &serde_json::Value::Null,
     );
 
+    tracing::info!("headless daemon ready; PTY pump + IPC dispatch active");
+
     while let Ok(event) = rx.recv() {
         match event {
             AppEvent::Shutdown | AppEvent::QuitRequested => break,
             AppEvent::TerminalOutput(_id) => {
-                // 후속 작업: app.on_terminal_output_headless(_id)
-                // 현재는 PTY reader 가 직접 scrollback_store 에 기록.
+                // 단일 engine 전체 drain — reader 채널을 비워 블록을 방지하고
+                // termwiz 파싱 + observer/command_index/OSC52 부수효과를 적용한다.
+                // 반환 CoreEvent (Notification/Bell/Title/Cwd/Exit) 는 cascade 주체
+                // (view/plugin)가 없으므로 단계 0 에선 무시한다.
+                let _ = app.core.process_all_pty_output(&mut engine);
             }
             AppEvent::IpcReady => {
-                // 후속 작업: IPC pending queue dispatch via handler.
+                headless_dispatch::pump_ipc(&mut app, &mut state, &mut engine);
             }
             AppEvent::BusyPoll => {
-                // 후속 작업: busy_tick 평가 — headless tick 미구현.
+                // 단계 0 범위 밖 — busy indicator 미구현.
             }
         }
     }

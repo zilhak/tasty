@@ -7,6 +7,9 @@
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
+use tasty_terminal::Waker;
+use tasty_terminal::waker_factory::{SharedWakerFactory, WakerFactory};
+
 use crate::AppEvent;
 use crate::ipc::server::IpcWaker;
 use crate::ports::pty::TerminalWaker;
@@ -35,6 +38,37 @@ impl HeadlessWaker {
     pub(crate) fn terminal_waker(&self) -> Arc<dyn TerminalWaker> {
         Arc::new(HeadlessTerminalWaker {
             tx: self.tx.clone(),
+        })
+    }
+
+    /// `CoreState` 에 주입할 WakerFactory. targeted/default 양쪽 waker 가 같은
+    /// `mpsc::Sender` 로 `TerminalOutput` 을 push 한다.
+    pub(crate) fn waker_factory(&self) -> SharedWakerFactory {
+        Arc::new(HeadlessWakerFactory {
+            tx: self.tx.clone(),
+        })
+    }
+}
+
+/// `WakerFactory` 의 headless 구현 — winit `WinitWakerFactory` 의 mpsc 미러.
+/// `CoreState::make_waker` 가 surface 별 targeted waker 를 발급할 때 사용한다.
+pub(crate) struct HeadlessWakerFactory {
+    tx: Sender<AppEvent>,
+}
+
+impl WakerFactory for HeadlessWakerFactory {
+    fn make_targeted_waker(&self, surface_id: u32) -> Waker {
+        let tx = self.tx.clone();
+        Arc::new(move || {
+            // headless receiver shutdown race 는 무시 (정상 shutdown 시퀀스).
+            let _ = tx.send(AppEvent::TerminalOutput(Some(surface_id)));
+        })
+    }
+
+    fn make_default_waker(&self) -> Waker {
+        let tx = self.tx.clone();
+        Arc::new(move || {
+            let _ = tx.send(AppEvent::TerminalOutput(None));
         })
     }
 }

@@ -298,7 +298,6 @@ impl Core {
     /// Memory port 의 Arc clone. AppState 등 *Core 인자가 cascade 로 도달하지
     /// 못하는 표면* (UI popup draw_fn, state cleanup 등) 에 inject 해 동일
     /// allocation 의 port 를 공유시킨다.
-    #[cfg(feature = "gui")]
     pub(crate) fn memory_arc(
         &self,
     ) -> std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> {
