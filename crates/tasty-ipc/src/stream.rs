@@ -76,6 +76,31 @@ pub struct StreamOpenParams {
     /// `None` 이면 순수 스트림(단계 1 echo) — attach 의미 없음.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<u32>,
+    /// attach 대상 workspace_id(단계 6). `Some` 이면 서버가 그 workspace 의 모든
+    /// 터미널 surface 를 mirror 하고 비-터미널은 placeholder 로 숨긴다. 이 연결의
+    /// 모든 `Data` 프레임은 **surface-prefixed**(`[u32 surface_id BE][bytes]`, D3)다.
+    /// `target` 와 상호배타 — 둘 다 지정되면 서버가 거부한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_workspace: Option<u32>,
+}
+
+/// workspace attach(단계 6, D3) 의 `Data` 프레임 다중화 인코딩.
+/// 페이로드 앞에 4바이트 BE surface_id 를 붙여 한 연결로 N 개 터미널의 바이트를
+/// 구분해 실어 보낸다. surface 단위(단계 4) 연결은 이 prefix 를 쓰지 않는다(bare).
+pub fn encode_mux(surface_id: u32, bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + bytes.len());
+    out.extend_from_slice(&surface_id.to_be_bytes());
+    out.extend_from_slice(bytes);
+    out
+}
+
+/// [`encode_mux`] 의 역연산. 4바이트 미만이면 `None`(잘린 프레임).
+pub fn decode_mux(buf: &[u8]) -> Option<(u32, &[u8])> {
+    if buf.len() < 4 {
+        return None;
+    }
+    let sid = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
+    Some((sid, &buf[4..]))
 }
 
 /// Control payload the server sends immediately after a successful upgrade.
@@ -185,5 +210,41 @@ mod tests {
         let big = vec![0u8; (MAX_FRAME_LEN + 1) as usize];
         let mut buf = Vec::new();
         assert!(write_frame(&mut buf, StreamTag::Data, &big).is_err());
+    }
+
+    #[test]
+    fn mux_roundtrip() {
+        let enc = encode_mux(42, b"hello");
+        assert_eq!(&enc[..4], &42u32.to_be_bytes());
+        let (sid, rest) = decode_mux(&enc).unwrap();
+        assert_eq!(sid, 42);
+        assert_eq!(rest, b"hello");
+        // empty payload still carries the id.
+        let empty = encode_mux(7, b"");
+        let (sid2, rest2) = decode_mux(&empty).unwrap();
+        assert_eq!(sid2, 7);
+        assert!(rest2.is_empty());
+    }
+
+    #[test]
+    fn decode_mux_rejects_truncated() {
+        assert!(decode_mux(&[0u8, 1, 2]).is_none());
+        assert!(decode_mux(&[]).is_none());
+    }
+
+    #[test]
+    fn open_params_target_workspace_roundtrip() {
+        let p = StreamOpenParams {
+            proto: 1,
+            target: None,
+            target_workspace: Some(9),
+        };
+        let s = serde_json::to_string(&p).unwrap();
+        let back: StreamOpenParams = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.target_workspace, Some(9));
+        assert_eq!(back.target, None);
+        // 구버전(필드 없음) 호환.
+        let old: StreamOpenParams = serde_json::from_str(r#"{"proto":1}"#).unwrap();
+        assert_eq!(old.target_workspace, None);
     }
 }

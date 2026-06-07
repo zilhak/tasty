@@ -260,6 +260,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("attach.acquire", plugin(&[])),
         ("attach.release", plugin(&[])),
         ("attach.force_detach", plugin(&[])),
+        ("attach.force_detach_workspace", plugin(&[])),
         ("attach.list", plugin(&[])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
