@@ -148,13 +148,11 @@ impl SavedWorkspace {
             .or_else(|| all_ids.first().copied())
             .unwrap_or(0);
 
-        Some(Workspace::from_restored(
-            ws_id,
-            self.name,
-            self.subtitle,
-            pane_layout,
-            focused_pane,
-        ))
+        let mut ws =
+            Workspace::from_restored(ws_id, self.name, self.subtitle, pane_layout, focused_pane);
+        // 단계 7 — 매핑 복원(재시작 후 활성화 시 자동 재attach). 생성자 churn 0(setter).
+        ws.set_attach_mapping(self.attach_mapping);
+        Some(ws)
     }
 }
 

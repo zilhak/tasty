@@ -82,6 +82,7 @@ impl SavedWorkspace {
             .iter()
             .position(|&id| id == ws.focused_pane)
             .unwrap_or(0);
+        let attach_mapping = ws.attach_mapping.clone();
         let pane_layout = SavedPaneNode::capture(ws.pane_layout_mut(), ctx);
         Self {
             name: ws.name.clone(),
@@ -89,6 +90,7 @@ impl SavedWorkspace {
             description: ws.description.clone(),
             pane_layout,
             focused_pane_index,
+            attach_mapping,
         }
     }
 }

@@ -7,7 +7,7 @@ use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::model::SplitDirection;
+use crate::model::{SplitDirection, WorkspaceAttachMapping};
 
 // ── Serializable structs ──
 
@@ -26,6 +26,10 @@ pub struct SavedWorkspace {
     pub pane_layout: SavedPaneNode,
     /// Index of the focused pane among all leaf panes (left-to-right DFS order).
     pub focused_pane_index: usize,
+    /// attach/detach 단계 7 — 원격 컴퓨터(SSH) attach 매핑. `#[serde(default)]` 로
+    /// 구버전 layout.json(필드 없음) 과 호환. None 이면 일반(로컬) 워크스페이스.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attach_mapping: Option<WorkspaceAttachMapping>,
 }
 
 #[derive(Serialize, Deserialize)]

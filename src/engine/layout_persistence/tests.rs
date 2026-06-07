@@ -94,3 +94,53 @@ fn unknown_variant_is_rejected() {
     let result: Result<SavedSurface, _> = serde_json::from_str(r#"{"Bogus":{}}"#);
     assert!(result.is_err());
 }
+
+// ── 단계 7: SavedWorkspace.attach_mapping 영속 round-trip + 구버전 호환 ──
+
+#[test]
+fn saved_workspace_attach_mapping_round_trips() {
+    use super::schema::{SavedPane, SavedPaneNode, SavedSurfaceLayout, SavedTab, SavedWorkspace};
+    use crate::model::WorkspaceAttachMapping;
+
+    let leaf = SavedSurfaceLayout::Leaf(SavedSurface::Terminal {
+        cwd: None,
+        restore_command: None,
+        scrollback_ref: None,
+    });
+    let ws = SavedWorkspace {
+        name: "remote-a".into(),
+        subtitle: String::new(),
+        description: String::new(),
+        pane_layout: SavedPaneNode::Leaf(SavedPane {
+            tabs: vec![SavedTab {
+                name: "Shell".into(),
+                explicit_name: None,
+                surface: leaf,
+            }],
+            active_tab: 0,
+        }),
+        focused_pane_index: 0,
+        attach_mapping: Some(WorkspaceAttachMapping::profile("gx10", Some(1))),
+    };
+    let json = serde_json::to_string(&ws).unwrap();
+    let back: SavedWorkspace = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.attach_mapping, ws.attach_mapping);
+}
+
+#[test]
+fn saved_workspace_without_mapping_field_is_none() {
+    use super::schema::SavedWorkspace;
+    // 구버전 layout.json (attach_mapping 필드 없음) → serde(default) 로 None.
+    let legacy = r#"{
+        "name": "ws",
+        "subtitle": "",
+        "description": "",
+        "pane_layout": { "Leaf": { "tabs": [
+            { "name": "Shell", "explicit_name": null,
+              "surface": { "Leaf": { "Terminal": {} } } }
+        ], "active_tab": 0 } },
+        "focused_pane_index": 0
+    }"#;
+    let ws: SavedWorkspace = serde_json::from_str(legacy).unwrap();
+    assert!(ws.attach_mapping.is_none());
+}
