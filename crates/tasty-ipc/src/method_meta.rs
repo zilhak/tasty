@@ -263,6 +263,13 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("attach.force_detach_workspace", plugin(&[])),
         ("attach.into_gui", plugin(&[])),
         ("attach.list", plugin(&[])),
+        // ── ssh.profile.* (SSH 연결 프로필 CRUD — attach/detach 단계 7) ──────
+        // 프로필은 비밀 없는 장비 인벤토리(decision 5: 비번 미저장). attach.* 와 동일하게
+        // 연결 경계(소켓 도달)에 신뢰를 위임 — 추가 Permission 불요.
+        ("ssh.profile.list", plugin(&[])),
+        ("ssh.profile.get", plugin(&[])),
+        ("ssh.profile.add", plugin(&[])),
+        ("ssh.profile.remove", plugin(&[])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

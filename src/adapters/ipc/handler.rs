@@ -23,6 +23,7 @@ mod notification;
 mod output;
 pub(crate) mod pane;
 mod preset;
+mod ssh_profile;
 pub(crate) mod surface;
 mod tab;
 mod telemetry;
@@ -675,6 +676,11 @@ fn route_engine_handler(
         }
         "attach.into_gui" => attach::handle_into_gui(engine, id, &request.params),
         "attach.list" => attach::handle_list(engine, id),
+        // ssh.profile.* — SSH 연결 프로필 CRUD (단계 7, 원칙 2). 로컬 파일 I/O.
+        "ssh.profile.list" => ssh_profile::handle_list(id),
+        "ssh.profile.get" => ssh_profile::handle_get(id, &request.params),
+        "ssh.profile.add" => ssh_profile::handle_add(id, &request.params),
+        "ssh.profile.remove" => ssh_profile::handle_remove(id, &request.params),
         _ => return None,
     })
 }
