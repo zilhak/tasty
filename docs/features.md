@@ -1017,7 +1017,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 ### 스트리밍 채널 (server→client push)
 
-요청-응답 JSON-RPC 위에 **서버가 클라이언트로 연속 push** 할 수 있는 스트리밍 채널을 같은 TCP listener 에 얹는다. attach/detach 의 실시간 PTY 출력 전송 토대다(현재는 전송 인프라만 — attach 의미론은 미구현).
+요청-응답 JSON-RPC 위에 **서버가 클라이언트로 연속 push** 할 수 있는 스트리밍 채널을 같은 TCP listener 에 얹는다. attach/detach 의 실시간 PTY 출력 전송 토대이며, [surface 단위 attach](#surface-단위-attachdetach-로컬-loopback) 가 이 채널 위에서 동작한다.
 
 - **연결 승격**(`src/adapters/production/tcp_ipc_server.rs`): 한 연결의 첫 줄이 `{"method":"stream.open",...}` 면 그 연결을 JSON-RPC 직렬 루프에서 빼내 **length-prefixed 바이너리 프레임** 양방향 파이프로 승격한다. 일반 요청-응답 경로는 무손상.
 - **프레임 포맷**(`crates/tasty-ipc/src/stream.rs`): `[tag u8][len u32 BE][payload]`. tag = `Data`/`Control`/`Ping`/`Detach`. 프레임 길이 상한 1 MiB(OOM 방어). 바이너리 1:1 (base64 없음).
@@ -1034,7 +1034,22 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - **PTY 펌프**: `TerminalOutput` 수신 시 `Core::process_all_pty_output` 으로 reader 채널을 drain(채널 포화로 reader 가 블록되는 것 방지) → termwiz 파싱 → 화면/scrollback 갱신 + observer/command_index/OSC52 부수효과 적용. 따라서 화면을 그리지 않아도 출력이 계속 반영된다.
 - **IPC dispatch** (`src/boot/headless_dispatch.rs::pump_ipc`): `IpcReady` 수신 시 큐를 drain 해 각 명령을 단일 engine 으로 직결 dispatch(caller 해석 → `handle_with_caller`). GUI 의 view/parked/plugin 의존 5-step 라우터를 engine 1 개 환경에 맞게 간소화한 것.
 - **스트리밍 채널 공존**: `StreamReady` 수신 시 `StreamHub::pump_inbound` 로 스트림 inbound 를 drain(PTY 펌프/IPC dispatch 와 독립 이벤트). push 는 non-blocking 이라 PTY drain 을 방해하지 않는다. ([스트리밍 채널](#스트리밍-채널-serverclient-push) 참조.)
-- **제약(현재 단계)**: layout 복원은 헤드리스에선 미적용(항상 default workspace). 데몬 종료는 프로세스 kill 로 한다(`system.shutdown` IPC 헤드리스 dispatch 미포함). busy indicator 미구현. 스트리밍 채널은 **전송 인프라만** 존재 — attach/detach 의미론(lock/mirror/placeholder)·PTY tap·화면 bulk 스냅샷은 아직 미구현이며 본 모드/채널이 그 토대다.
+- **제약(현재 단계)**: layout 복원은 헤드리스에선 미적용(항상 default workspace). 데몬 종료는 프로세스 kill 로 한다(`system.shutdown` IPC 헤드리스 dispatch 미포함). busy indicator 미구현.
+
+### surface 단위 attach/detach (로컬 loopback)
+
+한 인스턴스(server)의 터미널 surface 를 다른 인스턴스 또는 CLI client 가 **배타 점유해 attach** 한다. server 는 그 surface 를 placeholder 로 가리고, client 는 원격 grid 를 mirror 로 재구성해 실시간 입출력한다. 같은 머신 loopback 으로 동작하며, SSH 터널 전송은 다음 단계(현재 범위 = surface 1 개, workspace 단위·SSH 는 후속).
+
+- **출력 결선**: attach 성립 시 server 가 그 터미널의 **output tap**(원시 PTY 바이트 fan-out, `Terminal::add_output_tap`)을 등록하고, forwarder 스레드가 tap → `StreamHub::push`(Data 프레임) → client 로 흘린다. client 는 받은 바이트를 PTY 없는 **mirror 터미널**(`Terminal::new_detached`+`feed_bytes`)에 먹여 같은 termwiz 파서로 grid 를 재구성한다(렌더러·스크롤백 재사용).
+- **초기 화면 스냅샷**(`Terminal::snapshot_as_vt`): attach 직후 server 가 현재 visible 화면을 VT 바이트로 1 회 직렬화해 push → client mirror 초기화. 셀 속성(fg/bg palette+truecolor, bold/dim/italic/underline/blink/reverse 등) + 커서 위치 + 모드(alt-screen/DECCKM/bracketed)를 복원한다. 이후 화면 변화는 tap delta.
+- **입력 결선**: client 키/바이트 → Data 프레임 → server 가 holder 검증 후 점유 surface 의 PTY 로 직접 전달(`CoreState::feed_attached_input`). server 본인의 로컬 입력(GUI 키/`surface.send`)은 점유 중 차단된다(`apply_send_to_surface` 의 is_attached 거부) — client 입력만 이 우회 경로로 PTY 에 닿는다.
+- **배타 점유 lock**(`AttachRegistry`, 단계 3): 한 surface 는 한 client 만 점유. 동시 attach 는 거부(`already_attached`). client 연결 종료(EOF) 시 lock 자동 free 환원.
+- **server placeholder 렌더**: 점유된 surface 는 GPU 그리드 렌더를 건너뛰어(`render_pass.rs` 의 is_attached 분기) 내용을 숨기고(유출 0), 그 자리에 "다른 곳에서 점유 중" egui 안내 패널 + force-detach 버튼을 그린다. 트리 leaf 는 교체하지 않고 lock 플래그로만 분기한다(점유는 휘발성 — 재시작 시 free 환원).
+- **client mirror 렌더**: mirror 터미널을 store 에 넣으면 기존 터미널 렌더러가 그대로 그린다(신규 렌더 코드 없음).
+- **force-detach**: server 권한으로 점유를 강제 해제(`attach.force_detach`). holder client 에 `Control{force_detached}`+`Detach` 를 push → client 가 mirror 정리·종료, server surface free 환원.
+- **CLI**: `tasty attach <surface>` — mirror 모드. `--dump-after <ms>`: 출력 수집 후 mirror 화면을 stdout 출력(GUI 없이 검증). `--send <str>`: attach 직후 1 회 입력 주입(escape `\r \n \t \xNN`). `--raw`: stdin/stdout passthrough 브리지(detach 키 `Ctrl+\`). `--force-detach`: 강제 끊기.
+- **IPC**: `attach.acquire`/`release` 는 `stream.open{target}` 핸드셰이크로 일어나고, `attach.force_detach`/`attach.list` 는 JSON-RPC. 보안은 SSH + 127.0.0.1 loopback 위임(자체 토큰 없음).
+- **보안 격리**: attach 는 *에이전트 행동*(ID 직접 지정)이라 release 노출. force-detach 는 server 의 포커스/닫힌항목 히스토리를 건드리지 않는다(원칙 1①).
 
 ### 지원 메서드
 
