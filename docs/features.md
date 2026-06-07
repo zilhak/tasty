@@ -1038,7 +1038,7 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 
 ### surface 단위 attach/detach (로컬 loopback)
 
-한 인스턴스(server)의 터미널 surface 를 다른 인스턴스 또는 CLI client 가 **배타 점유해 attach** 한다. server 는 그 surface 를 placeholder 로 가리고, client 는 원격 grid 를 mirror 로 재구성해 실시간 입출력한다. 같은 머신 loopback 으로 동작하며, SSH 터널 전송은 다음 단계(현재 범위 = surface 1 개, workspace 단위·SSH 는 후속).
+한 인스턴스(server)의 터미널 surface 를 다른 인스턴스 또는 CLI client 가 **배타 점유해 attach** 한다. server 는 그 surface 를 placeholder 로 가리고, client 는 원격 grid 를 mirror 로 재구성해 실시간 입출력한다. 같은 머신 loopback 또는 [SSH 터널](#ssh-1회성-원격-attach) 너머로 동작한다(현재 범위 = surface 1 개; workspace 단위는 후속, SSH 프로필 저장도 후속).
 
 - **출력 결선**: attach 성립 시 server 가 그 터미널의 **output tap**(원시 PTY 바이트 fan-out, `Terminal::add_output_tap`)을 등록하고, forwarder 스레드가 tap → `StreamHub::push`(Data 프레임) → client 로 흘린다. client 는 받은 바이트를 PTY 없는 **mirror 터미널**(`Terminal::new_detached`+`feed_bytes`)에 먹여 같은 termwiz 파서로 grid 를 재구성한다(렌더러·스크롤백 재사용).
 - **초기 화면 스냅샷**(`Terminal::snapshot_as_vt`): attach 직후 server 가 현재 visible 화면을 VT 바이트로 1 회 직렬화해 push → client mirror 초기화. 셀 속성(fg/bg palette+truecolor, bold/dim/italic/underline/blink/reverse 등) + 커서 위치 + 모드(alt-screen/DECCKM/bracketed)를 복원한다. 이후 화면 변화는 tap delta.
@@ -1050,6 +1050,18 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - **CLI**: `tasty attach <surface>` — mirror 모드. `--dump-after <ms>`: 출력 수집 후 mirror 화면을 stdout 출력(GUI 없이 검증). `--send <str>`: attach 직후 1 회 입력 주입(escape `\r \n \t \xNN`). `--raw`: stdin/stdout passthrough 브리지(detach 키 `Ctrl+\`). `--force-detach`: 강제 끊기.
 - **IPC**: `attach.acquire`/`release` 는 `stream.open{target}` 핸드셰이크로 일어나고, `attach.force_detach`/`attach.list` 는 JSON-RPC. 보안은 SSH + 127.0.0.1 loopback 위임(자체 토큰 없음).
 - **보안 격리**: attach 는 *에이전트 행동*(ID 직접 지정)이라 release 노출. force-detach 는 server 의 포커스/닫힌항목 히스토리를 건드리지 않는다(원칙 1①).
+
+### SSH 1회성 원격 attach
+
+위 surface 단위 attach 를 **SSH 터널 너머**로 확장한다. tasty 는 자체 원격 프로토콜을 만들지 않고 **시스템 ssh 에 위임** 한다 — 원격 = "loopback 을 SSH 터널로 잇는 것". 서버는 여전히 `127.0.0.1` 만 바인딩하고, 원격 접근·인증·암호화는 SSH 가 전담한다.
+
+- **CLI**: `tasty attach --ssh user@host <surface>` (1 회성; 프로필 저장은 후속). `--remote-tasty <path>`: 원격 tasty 바이너리 경로(기본 `tasty`, 원격 PATH 가정). `--remote-port-mode <auto|subcommand|file-unix|file-windows>`: 원격 포트 발견 방식(기본 auto). `--no-reconnect`: 자동 재연결 비활성.
+- **흐름**: ① 원격 데몬의 IPC 포트 발견 → ② `ssh -L 127.0.0.1:<localport>:127.0.0.1:<remoteport> -N user@host` 백그라운드 터널 → ③ 터널 localport 로 위 surface attach(터널은 바이트 파이프라 스트림 프로토콜에 투명). 원격 데몬(headless)은 미리 떠 있다고 가정한다.
+- **시스템 ssh spawn**: `ssh` 를 자식 프로세스로 실행한다. **Windows 는 시스템 OpenSSH 풀경로**(`%WINDIR%\System32\OpenSSH\ssh.exe`)를 우선 — git 번들 ssh 는 윈도우 ssh-agent(named pipe)를 못 봐 무암호 인증이 실패한다. mac/linux 는 PATH 의 `ssh`. 사용자의 `~/.ssh/config`(Host alias·ProxyJump·IdentityFile)·agent·known_hosts 를 그대로 재사용한다.
+- **원격 포트 발견**: 셸 비의존 `ssh host tasty port`(신규 `tasty port` 서브커맨드 — 포트 파일을 stdout 출력, IPC 불필요)를 1 순위로, OS 분기 file 모드(Unix `cat ~/.tasty/tasty.port` / Windows `type %USERPROFILE%\.tasty\tasty.port`, debug 는 `tasty-debug.port`)를 fallback 으로 쓴다.
+- **터널 생명주기**: `ssh -L … -N` 자식의 생존을 `try_wait` 로 추적하고, ready 는 localport TCP probe(`ExitOnForwardFailure=yes`)로 감지한다. detach/종료 시 자식 ssh 를 kill 해 고아 터널을 막되, **원격 데몬은 생존**한다(server-owns-PTY persistence = detach 의 본질).
+- **자동 재연결**: SSH/터널 끊김 시 지수 백오프(0.5s→30s 상한)로 터널 재수립 + 재attach. 세션은 서버에 상주하므로 재attach 만 하면 복구된다(`--no-reconnect` 로 끈다). raw 브리지 모드의 attach 후 재연결은 후속(블로킹 stdin 제약).
+- **보안**: 로컬 끝점도 `127.0.0.1` 한정(`-L 127.0.0.1:…`, `-g` 금지). attach 채널에 자체 토큰을 강제하지 않고 SSH 사용자 인증 = attach 권한 경계로 환원한다("SSH 로 그 호스트에 들어올 수 있는 사람 = attach 자격", tmux 모델과 동일).
 
 ### 지원 메서드
 
