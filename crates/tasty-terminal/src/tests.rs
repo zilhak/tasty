@@ -633,3 +633,97 @@ fn output_tap_disconnected_is_pruned() {
     t.process_bytes(b"!");
     assert_eq!(rx2.try_recv().unwrap(), b"!".to_vec());
 }
+
+// ---- Initial bulk snapshot (snapshot_as_vt, attach step 4) ----
+
+/// Snapshot-specific grid comparison. Unlike [`assert_grid_eq`], this does NOT
+/// compare raw `visible_cells()` counts: termwiz back-fills a row to full width
+/// when reached via absolute cursor addressing (CUP), while `EraseLine` shrinks
+/// it — so the raw cell count depends on the write/erase *history*, not the final
+/// visible content. The snapshot reproduces visible content, not history. We
+/// therefore compare the rendered text, cursor, modes, and the attributes of each
+/// non-blank cell (which is what the renderer actually draws).
+fn assert_snapshot_eq(server: &Terminal, mirror: &Terminal, ctx: &str) {
+    assert_eq!(
+        server.screen_text(),
+        mirror.screen_text(),
+        "{ctx}: screen_text"
+    );
+    assert_eq!(
+        server.surface().cursor_position(),
+        mirror.surface().cursor_position(),
+        "{ctx}: cursor"
+    );
+    assert_eq!(
+        server.application_cursor_keys(),
+        mirror.application_cursor_keys(),
+        "{ctx}: DECCKM"
+    );
+    assert_eq!(
+        server.is_alternate_screen(),
+        mirror.is_alternate_screen(),
+        "{ctx}: alt-screen"
+    );
+    // Per non-blank cell: text + key attributes must match at the same position.
+    let nonblank = |t: &Terminal, row: usize| -> Vec<(usize, String, String, &'static str, bool)> {
+        t.row_cells(row)
+            .into_iter()
+            .filter(|(_, ci)| ci.text != " " && !ci.text.is_empty())
+            .map(|(idx, ci)| (idx, ci.text, ci.fg, ci.intensity, ci.inverse))
+            .collect()
+    };
+    for row in 0..server.rows() {
+        assert_eq!(
+            nonblank(server, row),
+            nonblank(mirror, row),
+            "{ctx}: row {row} non-blank cells"
+        );
+    }
+}
+
+#[test]
+fn snapshot_as_vt_reconstructs_grid_in_mirror() {
+    // Build a populated server-side screen (text + SGR + cursor move + DECCKM).
+    let mut server = test_terminal(40, 12);
+    server.process_bytes(MIRROR_SEQ);
+
+    // Serialize the current screen and feed it into a fresh mirror: the mirror's
+    // visible content + cursor + modes must match the server's.
+    let snapshot = server.snapshot_as_vt();
+    let mut mirror = Terminal::new_detached(40, 12);
+    mirror.feed_bytes(&snapshot);
+    assert_snapshot_eq(&server, &mirror, "snapshot-replay");
+}
+
+#[test]
+fn snapshot_as_vt_preserves_colors_and_intensity() {
+    // 24-bit fg, palette bg, bold — all must round-trip through the snapshot.
+    let mut server = test_terminal(20, 4);
+    server.process_bytes(b"\x1b[38;2;10;200;30m\x1b[44m\x1b[1mAB\x1b[0mC");
+    let snapshot = server.snapshot_as_vt();
+    let mut mirror = Terminal::new_detached(20, 4);
+    mirror.feed_bytes(&snapshot);
+
+    let a = server.row_cells(0);
+    let b = mirror.row_cells(0);
+    assert_eq!(a.len(), b.len(), "cell count");
+    for ((_, ai), (_, bi)) in a.iter().zip(b.iter()) {
+        assert_eq!(
+            (ai.text.as_str(), ai.fg.as_str(), ai.bg.as_str(), ai.intensity),
+            (bi.text.as_str(), bi.fg.as_str(), bi.bg.as_str(), bi.intensity),
+            "cell attrs round-trip"
+        );
+    }
+}
+
+#[test]
+fn snapshot_as_vt_preserves_alt_screen() {
+    let mut server = test_terminal(20, 4);
+    server.process_bytes(b"primary\x1b[?1049h\x1b[Halt-only");
+    assert!(server.is_alternate_screen());
+    let snapshot = server.snapshot_as_vt();
+    let mut mirror = Terminal::new_detached(20, 4);
+    mirror.feed_bytes(&snapshot);
+    assert!(mirror.is_alternate_screen(), "mirror enters alt-screen");
+    assert_eq!(server.screen_text(), mirror.screen_text(), "alt content");
+}

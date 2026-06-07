@@ -8,6 +8,7 @@ mod port_impl;
 mod resize;
 mod screen;
 mod scrollback;
+mod snapshot;
 mod vte_handler;
 
 pub mod cwd;
