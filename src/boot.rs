@@ -229,8 +229,22 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 for (client_id, surface_id) in outcome.attach_requests {
                     engine.attach_surface_for_stream(surface_id, client_id, &app.stream_hub);
                 }
+                for (client_id, workspace_id) in outcome.workspace_attach_requests {
+                    engine.attach_workspace_for_stream(workspace_id, client_id, &app.stream_hub);
+                }
                 for (client_id, bytes) in outcome.input_frames {
-                    let routed = engine.feed_attached_input(client_id, &bytes);
+                    // workspace mode(단계 6)면 입력은 surface-prefixed → demux 후 지정
+                    // surface 로. 아니면 단계 4 의 bare 입력(점유 단일 surface).
+                    let routed = if engine.attach.client_holds_workspace(client_id) {
+                        match crate::ipc::stream::decode_mux(&bytes) {
+                            Some((sid, payload)) => {
+                                engine.feed_attached_workspace_input(client_id, sid, payload)
+                            }
+                            None => false,
+                        }
+                    } else {
+                        engine.feed_attached_input(client_id, &bytes)
+                    };
                     #[cfg(debug_assertions)]
                     if !routed {
                         // 단계 1 echo client(점유 surface 없음): debug 빌드 회신.

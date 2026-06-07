@@ -43,6 +43,13 @@ pub enum StreamInbound {
         client_id: StreamClientId,
         target_surface_id: u32,
     },
+    /// A stream client requested attach to a whole workspace (`stream.open` with
+    /// `target_workspace`, attach/detach step 6). The main loop mirrors every
+    /// terminal surface in the workspace and hides non-terminals (decision 3).
+    AttachWorkspaceRequest {
+        client_id: StreamClientId,
+        target_workspace_id: u32,
+    },
     /// A stream client's connection closed (EOF / read error / detach). The main
     /// loop releases any attach locks that client held (attach/detach step 3).
     Disconnected { client_id: StreamClientId },
@@ -57,7 +64,11 @@ pub struct PumpOutcome {
     pub disconnected: Vec<StreamClientId>,
     /// `(client_id, target_surface_id)` attach requests.
     pub attach_requests: Vec<(StreamClientId, u32)>,
+    /// `(client_id, target_workspace_id)` workspace attach requests (step 6).
+    pub workspace_attach_requests: Vec<(StreamClientId, u32)>,
     /// `(client_id, bytes)` input data frames — route to the held surface's PTY.
+    /// In workspace mode the bytes are surface-prefixed (`decode_mux`); the main
+    /// loop demuxes based on whether the client holds a workspace.
     pub input_frames: Vec<(StreamClientId, Vec<u8>)>,
 }
 
@@ -188,6 +199,12 @@ impl StreamHub {
                     client_id,
                     target_surface_id,
                 } => out.attach_requests.push((client_id, target_surface_id)),
+                StreamInbound::AttachWorkspaceRequest {
+                    client_id,
+                    target_workspace_id,
+                } => out
+                    .workspace_attach_requests
+                    .push((client_id, target_workspace_id)),
                 StreamInbound::Frame { client_id, frame } => {
                     if frame.tag == crate::ipc::stream::StreamTag::Data {
                         out.input_frames.push((client_id, frame.payload));
@@ -289,6 +306,20 @@ mod tests {
         .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
         assert_eq!(out.attach_requests, vec![(3u32, 42u32)]);
+    }
+
+    #[test]
+    fn pump_inbound_classifies_workspace_attach_requests() {
+        let hub = StreamHub::new();
+        let (tx, inbound_rx) = mpsc::channel();
+        tx.send(StreamInbound::AttachWorkspaceRequest {
+            client_id: 4,
+            target_workspace_id: 8,
+        })
+        .unwrap();
+        let out = hub.pump_inbound(&inbound_rx);
+        assert_eq!(out.workspace_attach_requests, vec![(4u32, 8u32)]);
+        assert!(out.attach_requests.is_empty());
     }
 
     #[test]

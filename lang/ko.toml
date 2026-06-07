@@ -647,4 +647,6 @@ cancel_button = "취소"
 [attach]
 held_title = "다른 곳에서 점유 중"
 held_body = "다른 client 가 이 surface 를 점유하고 있습니다."
+held_workspace_title = "워크스페이스 점유 중"
+held_workspace_body = "다른 client 가 이 워크스페이스를 attach 하고 있습니다."
 force_detach = "강제 끊기"

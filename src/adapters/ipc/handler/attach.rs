@@ -109,7 +109,32 @@ pub(crate) fn handle_force_detach(
     )
 }
 
+/// `attach.force_detach_workspace` { workspace_id } → workspace 단위 강제 해제(단계 6).
+/// 멤버 터미널 lock + 비-터미널 숨김을 일괄 free 환원하고 holder 에게 종료 통지.
+pub(crate) fn handle_force_detach_workspace(
+    engine: &mut CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let workspace_id = match params.get("workspace_id").and_then(|v| v.as_u64()) {
+        Some(v) => v as u32,
+        None => {
+            return JsonRpcResponse::invalid_params(id, "Missing required 'workspace_id' parameter");
+        }
+    };
+    let holder = engine.attach.force_detach_workspace(workspace_id);
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "force_detached": holder.is_some(),
+            "workspace_id": workspace_id,
+            "holder": holder,
+        }),
+    )
+}
+
 /// `attach.list` → 전 점유 목록(포커스 독립). free/점유 디스커버리(design §5.3).
+/// surface 단위(단계 4)와 workspace 단위(단계 6) 점유를 함께 보고한다.
 pub(crate) fn handle_list(engine: &CoreState, id: serde_json::Value) -> JsonRpcResponse {
     let arr: Vec<_> = engine
         .attach
@@ -123,5 +148,17 @@ pub(crate) fn handle_list(engine: &CoreState, id: serde_json::Value) -> JsonRpcR
             })
         })
         .collect();
-    JsonRpcResponse::success(id, json!({ "attached": arr }))
+    let workspaces: Vec<_> = engine
+        .attach
+        .workspaces_snapshot()
+        .into_iter()
+        .map(|(ws, l)| {
+            json!({
+                "workspace_id": ws,
+                "holder": l.holder,
+                "granted_seq": l.granted_seq,
+            })
+        })
+        .collect();
+    JsonRpcResponse::success(id, json!({ "attached": arr, "workspaces": workspaces }))
 }

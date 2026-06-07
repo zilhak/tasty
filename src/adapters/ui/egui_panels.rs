@@ -75,6 +75,9 @@ pub fn draw_egui_panels(
                     if engine.attach.is_attached(r.id) {
                         placeholders.push((info, engine.attach.holder(r.id)));
                     }
+                } else if engine.attach.is_content_hidden(r.id) {
+                    // 비-터미널이 점유 workspace 의 멤버 → 내용 숨김(단계 6, decision 3).
+                    placeholders.push((info, engine.attach.workspace_holder_of(r.id)));
                 } else {
                     infos.push(info);
                 }
@@ -219,6 +222,14 @@ pub fn draw_egui_panels(
     for (info, holder) in &placeholders {
         let sid = info.surface_id.unwrap_or(0);
         let holder = *holder;
+        // workspace 점유면 안내 문구가 다르다(단계 6, design §4.4). 터미널 단위 점유
+        // (단계 4)면 기존 문구.
+        let is_workspace = engine.attach.workspace_of_surface(sid).is_some();
+        let (title_key, body_key) = if is_workspace {
+            ("attach.held_workspace_title", "attach.held_workspace_body")
+        } else {
+            ("attach.held_title", "attach.held_body")
+        };
         let panel_h = info.logical_h;
         let clicked = draw_panel_frame(
             ctx,
@@ -230,11 +241,11 @@ pub fn draw_egui_panels(
                 let mut hit = false;
                 ui.vertical_centered(|ui| {
                     ui.add_space((panel_h * 0.30).max(8.0));
-                    ui.heading(crate::i18n::t("attach.held_title"));
+                    ui.heading(crate::i18n::t(title_key));
                     ui.add_space(6.0);
                     let body = match holder {
-                        Some(h) => format!("{} (client {h})", crate::i18n::t("attach.held_body")),
-                        None => crate::i18n::t("attach.held_body").to_string(),
+                        Some(h) => format!("{} (client {h})", crate::i18n::t(body_key)),
+                        None => crate::i18n::t(body_key).to_string(),
                     };
                     ui.label(body);
                     ui.add_space(10.0);
@@ -250,9 +261,14 @@ pub fn draw_egui_panels(
         }
     }
     // 버튼 클릭은 egui 클로저 밖에서 적용(engine 가변 차용). force_detach 는 holder
-    // 에게 종료 통지(StreamHub)를 push 하고 lock 을 free 환원한다(단계 3).
+    // 에게 종료 통지(StreamHub)를 push 하고 lock 을 free 환원한다(단계 3/6). workspace
+    // 점유 surface 면 workspace 단위로 일괄 해제(단계 6, D6).
     if let Some(sid) = pending_force_detach {
-        engine.attach.force_detach(sid);
+        if let Some(ws) = engine.attach.workspace_of_surface(sid) {
+            engine.attach.force_detach_workspace(ws);
+        } else {
+            engine.attach.force_detach(sid);
+        }
     }
 
     // Restore extracted view stores before any further `state` access below.

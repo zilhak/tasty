@@ -662,8 +662,19 @@ impl App {
             }
         }
 
+        for (client_id, workspace_id) in outcome.workspace_attach_requests {
+            if !self.attach_workspace_on_owning_engine(workspace_id, client_id, &hub) {
+                crate::core::attach_runtime::reject_attach(
+                    &hub,
+                    client_id,
+                    "workspace_not_found",
+                    None,
+                );
+            }
+        }
+
         for (client_id, bytes) in outcome.input_frames {
-            let routed = self.feed_input_on_owning_engine(client_id, &bytes);
+            let routed = self.feed_stream_input(client_id, &bytes);
             #[cfg(debug_assertions)]
             if !routed {
                 // 단계 1 echo client(점유 surface 없음): debug 빌드 회신.
@@ -707,6 +718,62 @@ impl App {
             }
         }
         false
+    }
+
+    /// 대상 workspace 를 소유한 engine 을 찾아 workspace attach 결선(단계 6). 없으면 false.
+    fn attach_workspace_on_owning_engine(
+        &mut self,
+        workspace_id: u32,
+        client_id: u32,
+        hub: &crate::adapters::production::stream_hub::StreamHub,
+    ) -> bool {
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut() {
+                let e = &mut main.core_state;
+                if e.find_workspace_index_for_id(workspace_id).is_some() {
+                    e.attach_workspace_for_stream(workspace_id, client_id, hub);
+                    return true;
+                }
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.find_workspace_index_for_id(workspace_id).is_some() {
+                engine.attach_workspace_for_stream(workspace_id, client_id, hub);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// stream client 입력을 적절한 engine 으로. workspace mode(단계 6)면 입력은
+    /// surface-prefixed → demux 후 지정 surface; 아니면 단계 4 의 bare 단일 surface.
+    fn feed_stream_input(&mut self, client_id: u32, bytes: &[u8]) -> bool {
+        // workspace 점유 engine 우선(client_holds_workspace).
+        for w in self.view.views.values_mut() {
+            if let Some(main) = w.as_main_mut()
+                && main.core_state.attach.client_holds_workspace(client_id)
+            {
+                return Self::demux_workspace_input(&mut main.core_state, client_id, bytes);
+            }
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            if engine.attach.client_holds_workspace(client_id) {
+                return Self::demux_workspace_input(engine, client_id, bytes);
+            }
+        }
+        // surface 단위(단계 4) 폴백.
+        self.feed_input_on_owning_engine(client_id, bytes)
+    }
+
+    fn demux_workspace_input(
+        engine: &mut crate::core::CoreState,
+        client_id: u32,
+        bytes: &[u8],
+    ) -> bool {
+        match crate::ipc::stream::decode_mux(bytes) {
+            Some((sid, payload)) => engine.feed_attached_workspace_input(client_id, sid, payload),
+            None => false,
+        }
     }
 
     /// client 가 점유한 surface 를 가진 engine 에 입력 전달. 없으면 false.

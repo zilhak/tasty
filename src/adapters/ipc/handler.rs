@@ -670,6 +670,9 @@ fn route_engine_handler(
         "attach.acquire" => attach::handle_acquire(engine, id, &request.params),
         "attach.release" => attach::handle_release(engine, id, &request.params),
         "attach.force_detach" => attach::handle_force_detach(engine, id, &request.params),
+        "attach.force_detach_workspace" => {
+            attach::handle_force_detach_workspace(engine, id, &request.params)
+        }
         "attach.list" => attach::handle_list(engine, id),
         _ => return None,
     })

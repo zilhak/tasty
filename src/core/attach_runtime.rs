@@ -16,13 +16,14 @@
 //!
 //! 범위: surface 단위(터미널 1개). workspace 단위는 단계 6.
 
+use std::collections::HashMap;
 use std::thread;
 
 use crate::adapters::production::stream_hub::{PushResult, StreamHub};
 use crate::core::attach::{AttachClientId, AttachError};
 use crate::core::CoreState;
-use crate::ipc::stream::{StreamFrame, StreamTag};
-use crate::model::SurfaceId;
+use crate::ipc::stream::{encode_mux, StreamFrame, StreamTag};
+use crate::model::{AttachSurfaceClass, SurfaceId};
 
 impl CoreState {
     /// stream client 의 attach 요청 처리(`stream.open` 의 `target`). 성공 시 그 client
@@ -119,6 +120,163 @@ impl CoreState {
         } else {
             false
         }
+    }
+
+    /// workspace 단위 attach 요청 처리(단계 6, D1/D3/D4). 그 workspace 의 모든 터미널
+    /// surface 를 배타 점유하고 각각 단계 4 와 동일하게 초기 스냅샷 + 출력 forwarder 를
+    /// 건다. 단, 한 연결에 N 개 터미널이 실리므로 모든 Data 는 surface-prefixed
+    /// (`encode_mux`)다. 비-터미널은 mirror 없이 placeholder 로만 디스크립터에 실린다.
+    pub fn attach_workspace_for_stream(
+        &mut self,
+        workspace_id: u32,
+        client_id: AttachClientId,
+        hub: &StreamHub,
+    ) {
+        let Some(idx) = self.find_workspace_index_for_id(workspace_id) else {
+            reject_attach(hub, client_id, "workspace_not_found", None);
+            return;
+        };
+        let class = self.workspaces[idx].classify_attach_surfaces();
+        let members: Vec<SurfaceId> = class
+            .terminals
+            .iter()
+            .chain(class.non_terminals.iter())
+            .copied()
+            .collect();
+
+        match self
+            .attach
+            .acquire_workspace(workspace_id, &class.terminals, &members, client_id)
+        {
+            Ok(_) => {}
+            Err(AttachError::AlreadyAttached { holder }) => {
+                reject_attach(hub, client_id, "already_attached", Some(holder));
+                return;
+            }
+            Err(_) => {
+                reject_attach(hub, client_id, "lock_error", None);
+                return;
+            }
+        }
+
+        // deferred 터미널은 여기서 PTY spawn(크기·스냅샷 확정).
+        for &sid in &class.terminals {
+            self.ensure_surface_initialized(sid);
+        }
+
+        // 트리 디스크립터(client mirror 트리 재구성 + per-surface role/cols/rows).
+        let descriptor = self.build_workspace_descriptor(idx, workspace_id, &class);
+        let _ = hub.push(
+            client_id,
+            StreamFrame::new(
+                StreamTag::Control,
+                serde_json::to_vec(&descriptor).unwrap_or_default(),
+            ),
+        );
+
+        // 각 터미널: 초기 스냅샷(mux) + 출력 forwarder(mux). client 끊김 시 자동 종료.
+        for &sid in &class.terminals {
+            let Some(terminal) = self.terminals.get_mut(sid) else {
+                continue;
+            };
+            let snapshot = terminal.snapshot_as_vt();
+            let tap_rx = terminal.add_output_tap();
+            let _ = hub.push(
+                client_id,
+                StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot)),
+            );
+            let hub2 = hub.clone();
+            thread::spawn(move || {
+                for chunk in tap_rx {
+                    match hub2.push(
+                        client_id,
+                        StreamFrame::new(StreamTag::Data, encode_mux(sid, &chunk)),
+                    ) {
+                        PushResult::Unknown | PushResult::Disconnected => break,
+                        _ => {}
+                    }
+                }
+            });
+        }
+
+        tracing::debug!(
+            "attach: workspace {workspace_id} -> client {client_id} ({} terminals, {} placeholders)",
+            class.terminals.len(),
+            class.non_terminals.len(),
+        );
+    }
+
+    /// workspace mode client 의 입력(surface-prefixed)을 지정 remote surface 의 PTY 로.
+    /// holder 가 그 workspace 를 점유 중일 때만 통과(타 workspace surface 주입 차단).
+    pub fn feed_attached_workspace_input(
+        &mut self,
+        client_id: AttachClientId,
+        remote_surface_id: u32,
+        bytes: &[u8],
+    ) -> bool {
+        let Some(ws) = self.attach.workspace_of_surface(remote_surface_id) else {
+            return false;
+        };
+        if self.attach.workspace_holder(ws) != Some(client_id) {
+            return false;
+        }
+        if let Some(terminal) = self.terminals.get_mut(remote_surface_id) {
+            terminal.send_bytes(bytes);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// workspace attach 디스크립터: 트리(분할 비율 포함) + per-surface role/cols/rows/kind.
+    fn build_workspace_descriptor(
+        &self,
+        idx: usize,
+        workspace_id: u32,
+        class: &AttachSurfaceClass,
+    ) -> serde_json::Value {
+        let ws = &self.workspaces[idx];
+        // sid → kind (비-터미널 placeholder 라벨용).
+        let mut kinds: HashMap<u32, &'static str> = HashMap::new();
+        for pane_id in ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
+                for tab in &pane.tabs {
+                    tab.for_each_surface(&mut |s| {
+                        if let Some(id) = s.surface_id() {
+                            kinds.insert(id, s.kind());
+                        }
+                    });
+                }
+            }
+        }
+        let mut surfaces = Vec::new();
+        for &sid in &class.terminals {
+            let (cols, rows) = self
+                .terminals
+                .get(sid)
+                .map(|t| (t.cols(), t.rows()))
+                .unwrap_or((80, 24));
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "terminal",
+                "cols": cols,
+                "rows": rows,
+            }));
+        }
+        for &sid in &class.non_terminals {
+            surfaces.push(serde_json::json!({
+                "remote_id": sid,
+                "role": "placeholder",
+                "kind": kinds.get(&sid).copied().unwrap_or("unknown"),
+            }));
+        }
+        serde_json::json!({
+            "event": "attached_workspace",
+            "workspace_id": workspace_id,
+            "name": ws.name,
+            "tree": ws.to_attach_tree_json(),
+            "surfaces": surfaces,
+        })
     }
 }
 

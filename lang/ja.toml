@@ -647,4 +647,6 @@ cancel_button = "キャンセル"
 [attach]
 held_title = "別の場所で接続中"
 held_body = "この画面は別のクライアントが占有しています。"
+held_workspace_title = "ワークスペース接続中"
+held_workspace_body = "このワークスペースは別のクライアントが接続しています。"
 force_detach = "強制切断"

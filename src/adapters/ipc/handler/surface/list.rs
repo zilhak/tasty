@@ -117,6 +117,9 @@ fn collect_surface_layout_info(
                 "tab_index": tab_idx,
                 "type": surface.type_name(),
                 "busy": engine.is_surface_busy(id),
+                // attach/detach: 배타 점유 여부(surface 단위 단계 4 + workspace 단계 6).
+                // split 레이아웃의 leaf 도 단일-surface 경로와 동일하게 노출.
+                "attached": engine.attach.is_attached(id),
             });
             if let Some(terminal) = engine.terminals.get(id) {
                 entry["cols"] = json!(terminal.cols());

@@ -182,10 +182,11 @@ impl TcpIpcServer {
         let sink_rx = ctx.hub.register(client_id);
         tracing::debug!("stream client {} upgraded from {:?}", client_id, peer);
 
-        // attach 대상(surface_id)을 핸드셰이크 params 에서 추출(attach/detach 단계 4).
-        let attach_target = serde_json::from_value::<stream::StreamOpenParams>(req.params)
-            .ok()
-            .and_then(|p| p.target);
+        // attach 대상을 핸드셰이크 params 에서 추출. surface(단계 4) 또는 workspace
+        // (단계 6) 둘 중 하나. workspace 우선(둘 다 지정은 비정상이지만 안전 분기).
+        let open_params = serde_json::from_value::<stream::StreamOpenParams>(req.params).ok();
+        let attach_target = open_params.as_ref().and_then(|p| p.target);
+        let attach_workspace = open_params.as_ref().and_then(|p| p.target_workspace);
 
         // Write thread: drain the push sink (fed by the main loop) to the socket.
         let mut w = writer;
@@ -216,7 +217,18 @@ impl TcpIpcServer {
         // attach 요청이면 메인루프로 위임(엔진은 메인루프 단일소유 → accept thread 가
         // 직접 acquire 불가). 메인루프가 lock 획득 + 스냅샷 push + 출력 tap 결선한다.
         // attach 결과(성공/거부)는 별도 Control 프레임으로 client 에 통지된다.
-        if let Some(target_surface_id) = attach_target
+        if let Some(target_workspace_id) = attach_workspace {
+            if ctx
+                .inbound_tx
+                .send(StreamInbound::AttachWorkspaceRequest {
+                    client_id,
+                    target_workspace_id,
+                })
+                .is_ok()
+            {
+                (ctx.waker)();
+            }
+        } else if let Some(target_surface_id) = attach_target
             && ctx
                 .inbound_tx
                 .send(StreamInbound::AttachRequest {
