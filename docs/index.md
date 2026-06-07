@@ -213,7 +213,7 @@ GPU 렌더링된 사이드바에 Git 브랜치, PR 상태, 작업 디렉토리, 
 - 디버그 전용 메서드 (debug 빌드에서만): system.shutdown, ui.state, ui.screenshot, debug.{info,cell_info,screen_attrs,glyph_color,feed_bytes,inject_key,inject_mouse,tool.{list,invoke},popup.{list,open,close},extension.invoke_hook,event_bus.{list_subscribers,publish,trace}}
 - 메인 스레드 채널 통신으로 스레드 안전한 상태 접근
 - 앱 시작 시 자동 기동, 종료 시 포트 파일 자동 삭제
-- 헤드리스 모드: `--headless` 플래그로 GUI 없이 IPC 전용 실행 (E2E 테스트/CI 활용)
+- 헤드리스 모드: `--no-default-features` 빌드(또는 GUI 빌드의 `--headless` 플래그)로 GUI 없이 실행. **client 0 명에도 PTY 가 살아 펌프되고 IPC 명령을 dispatch 하는 데몬**으로 동작 — 부팅 시 default workspace + 터미널 1 개(80×24)를 spawn 하고, PTY 출력은 메인 루프가 `process_all_pty_output` 으로 drain·파싱한다. (E2E 테스트/CI + attach 서버 토대. attach/스트리밍 자체는 아직 미구현.) layout 복원은 헤드리스에선 미적용(항상 default workspace).
 - IPC Waker: IPC 명령 도착 시 `EventLoopProxy`로 이벤트 루프 즉시 깨움
 - E2E 테스트 프레임워크: `TastyInstance` 헬퍼 기반 14개 통합 테스트 (헤드리스)
 - GUI 통합 테스트 프레임워크: `GuiTestInstance` 헬퍼 기반 24개 GUI 테스트 (enigo 입력 시뮬레이션 + IPC 검증 + 속도 측정)

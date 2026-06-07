@@ -1015,6 +1015,16 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 - 멀티클라이언트: 각 TCP 연결을 별도 스레드에서 처리
 - 메인 스레드 채널 통신: IPC 스레드 -> mpsc 채널 -> 이벤트 루프에서 처리 -> oneshot 응답
 
+### 헤드리스 데몬 모드
+
+GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 항상 헤드리스이며, GUI 빌드도 `--headless` 플래그로 진입을 시도한다(단, GUI 빌드는 헤드리스 런타임을 내장하지 않아 경고 후 GUI 로 fallback — 실제 헤드리스는 `--no-default-features` 빌드 전용).
+
+- **데몬 본체** (`src/boot.rs::run_headless`): winit/wgpu/egui 없이 `mpsc::channel<AppEvent>` 기반 blocking 루프(`rx.recv()`)로 동작. waker(`HeadlessWaker`/`HeadlessWakerFactory`, `src/adapters/production/headless_waker.rs`)가 PTY 출력 도착 시 `TerminalOutput`, IPC 명령 도착 시 `IpcReady` 를 push 하면 루프가 깨어 처리한다.
+- **부팅 시 engine 부트스트랩**: GUI 는 첫 윈도우 생성 시 `CoreState`/`AppState` 를 만들지만 헤드리스는 창이 없으므로 `run_headless` 가 직접 1 회 생성한다. `CoreState::new_with_ids` 가 default workspace + 터미널 1 개(80×24)를 spawn 하므로 **client 0 명에도 PTY 가 살아 있다.**
+- **PTY 펌프**: `TerminalOutput` 수신 시 `Core::process_all_pty_output` 으로 reader 채널을 drain(채널 포화로 reader 가 블록되는 것 방지) → termwiz 파싱 → 화면/scrollback 갱신 + observer/command_index/OSC52 부수효과 적용. 따라서 화면을 그리지 않아도 출력이 계속 반영된다.
+- **IPC dispatch** (`src/boot/headless_dispatch.rs::pump_ipc`): `IpcReady` 수신 시 큐를 drain 해 각 명령을 단일 engine 으로 직결 dispatch(caller 해석 → `handle_with_caller`). GUI 의 view/parked/plugin 의존 5-step 라우터를 engine 1 개 환경에 맞게 간소화한 것.
+- **제약(현재 단계)**: layout 복원은 헤드리스에선 미적용(항상 default workspace). 데몬 종료는 프로세스 kill 로 한다(`system.shutdown` IPC 헤드리스 dispatch 미포함). busy indicator 미구현. **attach/detach·실시간 스트리밍 자체는 아직 미구현** — 본 모드는 그 서버 토대다.
+
 ### 지원 메서드
 
 모든 서피스 관련 메서드는 optional `surface_id` 파라미터를 지원한다. 지정하면 해당 서피스에 직접 접근하고, 생략하면 현재 포커스된 서피스에 작용한다.
