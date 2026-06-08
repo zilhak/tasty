@@ -221,11 +221,17 @@ fn overwrite_builtin_dir(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// 번들 plugin 디렉터리들이 있는 루트 경로.
 ///
 /// - 첫째: `TASTY_BUILTIN_PLUGINS_DIR` 환경 변수 강제 override.
-/// - 둘째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사).
+/// - 둘째: 실행 파일 옆 `plugins/` (release/dist에서 packaging 시 함께 복사,
+///   portable .tar.gz / .app / .zip 설치).
 /// - 셋째: workspace 빌드일 때 자동 탐색 — `target/<profile>/builtin-plugins/`에
 ///   각 builtin plugin의 매니페스트와 빌드된 바이너리를 mtime 비교 후 갱신.
 ///   `cargo build [--release] --workspace` 후 실행하면 자동 반영됨. workspace 가
 ///   없는 배포 패키지에서는 둘째(`plugins/`)에서 이미 반환되어 여기 도달하지 않는다.
+/// - 넷째 (linux 한정): FHS 표준 경로 `/usr/lib/tasty/plugins/`,
+///   `/usr/share/tasty/plugins/` — `.deb` / `.rpm` 패키지가 `/usr/bin/tasty` 옆이
+///   아닌 FHS 친화 위치에 plugin 을 설치한다. exe-relative 보다 우선순위가
+///   낮음 — 같은 머신에 portable archive 가 풀려있으면 그쪽이 항상 우선이라
+///   두 설치 형태가 충돌하지 않는다.
 pub fn bundle_root() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("TASTY_BUILTIN_PLUGINS_DIR") {
         let path = PathBuf::from(p);
@@ -233,6 +239,24 @@ pub fn bundle_root() -> Option<PathBuf> {
             return Some(path);
         }
     }
+    if let Some(found) = bundle_root_exe_relative() {
+        return Some(found);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        for sys_path in ["/usr/lib/tasty/plugins", "/usr/share/tasty/plugins"] {
+            let path = PathBuf::from(sys_path);
+            if path.is_dir() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+/// exe-relative 경로들에서 bundle root 검색. 추출 사유: FHS fallback 진입 전
+/// `current_exe()` 실패 (테스트 환경 등) 가 전체 None 으로 단락되지 않도록.
+fn bundle_root_exe_relative() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
     let next_to_exe = exe_dir.join("plugins");
