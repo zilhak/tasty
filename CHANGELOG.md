@@ -18,7 +18,7 @@
 
 ## [0.8.1] - 2026-06-08
 
-> 0.7.0 이후 누적된 변경이 매우 많아 세부 entry 를 모두 나열하지 않고 큼직한 축만 정리한다. 자세한 내역은 `git log v0.7.0..v0.8.1` 참조.
+> 마지막 publish (0.3.1) 이후 누적된 변경이 매우 많아 세부 entry 를 모두 나열하지 않고 큼직한 축만 정리한다. 자세한 내역은 `git log v0.3.1..v0.8.1` 참조.
 
 ### Added
 - **Headless 빌드** — `--headless` flag 또는 `no-default-features` 빌드로 GUI 없이 IPC + PTY + plugin 만 동작. 서버 / 원격 호스트에 tasty 데몬을 띄울 수 있다.
