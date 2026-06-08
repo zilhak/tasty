@@ -15,6 +15,7 @@ use crate::i18n::t;
 use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::Settings;
+use tasty_host_plugin::SettingsPageEntry;
 
 /// 단계 E: Plugins 서브탭에서 표시할 한 row.
 ///
@@ -37,14 +38,21 @@ pub struct PluginShortcutSnapshot {
 }
 
 /// Sub-tab within the Appearance tab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Host-internal variants (`Theme` / `General` / `Tasty` / `Terminal` /
+/// `HtmlViewer`) are hardcoded; plugin-contributed pages appear as
+/// `Plugin(<page_id>)` and are resolved against `SettingsUiState::settings_pages`
+/// at render time.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AppearanceSubTab {
     Theme,
     General,
     Tasty,
     Terminal,
-    Markdown,
     HtmlViewer,
+    /// Plugin-contributed sub-tab. String = `SettingsPageContribute::id`
+    /// scoped under the contributing plugin (see `SettingsPageEntry`).
+    Plugin(String),
 }
 
 /// Sub-tab within the Misc tab.
@@ -129,6 +137,11 @@ pub struct SettingsUiState {
     /// 디스크에 저장한다.
     pub plugin_shortcuts_draft:
         std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
+    /// Plugin 이 contribute 한 settings page 들의 스냅샷. 모달 오픈 시
+    /// host 의 `PluginManager::settings_pages` 에서 복사. 외관 탭의 sub-tab
+    /// 합성과 plugin page 렌더링에서 참조한다. 비어 있으면 plugin sub-tab
+    /// 자체가 표시되지 않는다 (= dead-setting 미노출 정책).
+    pub settings_pages: Vec<SettingsPageEntry>,
 }
 
 impl SettingsUiState {
@@ -171,7 +184,17 @@ impl SettingsUiState {
             plugin_shortcuts: PluginShortcutSnapshot::default(),
             plugin_shortcuts_selected: None,
             plugin_shortcuts_draft: std::collections::BTreeMap::new(),
+            settings_pages: Vec::new(),
         }
+    }
+
+    /// Plugin 이 contribute 한 settings page 스냅샷을 주입한다. 모달 오픈 직전에
+    /// host App 이 호출한다. 빈 vec 으로 호출하면 plugin sub-tab 이 사라진다.
+    ///
+    /// 호출처 (host App) 가 들어오는 다음 Step 까지 unused — Step 5 는 UI 측만 다룬다.
+    #[allow(dead_code)]
+    pub fn set_settings_pages(&mut self, pages: Vec<SettingsPageEntry>) {
+        self.settings_pages = pages;
     }
 }
 
@@ -363,6 +386,7 @@ pub fn draw_settings_panel(
                         &mut ui_state.font_families,
                         &mut ui_state.font_filter,
                         &mut ui_state.preview_font_loaded,
+                        &ui_state.settings_pages,
                     ),
                     SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
                     SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),

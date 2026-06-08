@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use crate::i18n::t;
 use crate::settings::{EffectiveFont, FontOverride, FontSettings, HexColor, Settings};
+use tasty_host_plugin::SettingsPageEntry;
+use tasty_plugin_manifest::{SettingsCategory, SettingsItemDecl, SettingsPageContribute};
 use tasty_type_appearance::theme::SurfaceTheme;
 
 /// Draw a label followed by a (?) icon with tooltip. For use inside Grid rows.
@@ -22,12 +24,54 @@ pub fn draw_appearance_tab(
     font_families: &mut Option<Vec<String>>,
     font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
+    settings_pages: &[SettingsPageEntry],
 ) {
     use crate::settings_ui::AppearanceSubTab;
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
     let available_height = ui.available_height() - 8.0 - 14.0;
+
+    // Host-internal sub-tabs (always present) + dynamically composed plugin
+    // pages (Appearance category). Markdown is no longer hardcoded — it now
+    // appears only if `tasty-plugin-markdown` is loaded and contributes a
+    // settings_page.
+    let mut sub_tabs: Vec<(AppearanceSubTab, String)> = vec![
+        (
+            AppearanceSubTab::Theme,
+            t("settings.appearance.subtab.theme").to_string(),
+        ),
+        (
+            AppearanceSubTab::General,
+            t("settings.appearance.subtab.general").to_string(),
+        ),
+        (AppearanceSubTab::Tasty, "Tasty".to_string()),
+        (
+            AppearanceSubTab::Terminal,
+            t("settings.appearance.subtab.terminal").to_string(),
+        ),
+    ];
+    for entry in settings_pages
+        .iter()
+        .filter(|e| e.page.category == SettingsCategory::Appearance)
+    {
+        sub_tabs.push((
+            AppearanceSubTab::Plugin(entry.page.id.clone()),
+            t(&entry.page.title_key).to_string(),
+        ));
+    }
+    sub_tabs.push((AppearanceSubTab::HtmlViewer, "HTML".to_string()));
+
+    // If the currently active sub-tab points at a plugin page that's no longer
+    // present (plugin disabled mid-session), fall back to Theme so the right
+    // panel doesn't render blank.
+    if let AppearanceSubTab::Plugin(page_id) = &*sub_tab
+        && !sub_tabs
+            .iter()
+            .any(|(tab, _)| matches!(tab, AppearanceSubTab::Plugin(id) if id == page_id))
+    {
+        *sub_tab = AppearanceSubTab::Theme;
+    }
 
     ui.horizontal_top(|ui| {
         // ── Left: sub-tab selector ──
@@ -41,30 +85,10 @@ pub fn draw_appearance_tab(
                 ui.set_min_height(available_height);
 
                 ui.vertical(|ui| {
-                    let sub_tabs = [
-                        (
-                            AppearanceSubTab::Theme,
-                            t("settings.appearance.subtab.theme"),
-                        ),
-                        (
-                            AppearanceSubTab::General,
-                            t("settings.appearance.subtab.general"),
-                        ),
-                        (AppearanceSubTab::Tasty, "Tasty"),
-                        (
-                            AppearanceSubTab::Terminal,
-                            t("settings.appearance.subtab.terminal"),
-                        ),
-                        (
-                            AppearanceSubTab::Markdown,
-                            t("settings.appearance.subtab.markdown"),
-                        ),
-                        (AppearanceSubTab::HtmlViewer, "HTML"),
-                    ];
                     for (tab, label) in &sub_tabs {
-                        let selected = *sub_tab == *tab;
-                        if ui.selectable_label(selected, *label).clicked() {
-                            *sub_tab = *tab;
+                        let selected = sub_tab == tab;
+                        if ui.selectable_label(selected, label.as_str()).clicked() {
+                            *sub_tab = tab.clone();
                         }
                     }
                 });
@@ -73,7 +97,7 @@ pub fn draw_appearance_tab(
         ui.add_space(8.0);
 
         // ── Right: sub-tab content ──
-        ui.vertical(|ui| match *sub_tab {
+        ui.vertical(|ui| match &*sub_tab {
             AppearanceSubTab::Theme => {
                 draw_appearance_theme(
                     ui,
@@ -98,17 +122,20 @@ pub fn draw_appearance_tab(
                     preview_font_loaded,
                 );
             }
-            AppearanceSubTab::Markdown => {
-                draw_appearance_markdown(
-                    ui,
-                    settings,
-                    font_families,
-                    font_filter,
-                    preview_font_loaded,
-                );
-            }
             AppearanceSubTab::HtmlViewer => {
                 draw_appearance_placeholder(ui, "HTML Viewer");
+            }
+            AppearanceSubTab::Plugin(page_id) => {
+                if let Some(entry) = settings_pages.iter().find(|e| &e.page.id == page_id) {
+                    draw_plugin_settings_page(
+                        ui,
+                        settings,
+                        font_families,
+                        font_filter,
+                        preview_font_loaded,
+                        &entry.page,
+                    );
+                }
             }
         });
     });
@@ -298,38 +325,51 @@ fn draw_appearance_terminal(
     // (`~/.tasty/themes/<id>.toml` 의 `[surfaces.terminal]`) 에서 직접 편집.
 }
 
+/// Target of a font override section: either the host-internal `terminal_font`
+/// field or a plugin-contributed slot keyed by `storage_key` inside
+/// `appearance.plugin_font_overrides`.
+///
+/// Held by reference (`&'a`) because Plugin uses a borrowed storage key — the
+/// owning string lives in `SettingsPageContribute::items`.
 #[derive(Clone, Copy)]
-enum SurfaceFontTarget {
+enum SurfaceFontTarget<'a> {
     Terminal,
-    Markdown,
+    /// `storage_key` is the key inside `plugin_font_overrides` *and* doubles as
+    /// the surface id used to pick a theme `SurfaceTheme` for the preview.
+    Plugin {
+        storage_key: &'a str,
+    },
 }
 
-impl SurfaceFontTarget {
-    fn salt(self) -> &'static str {
+impl<'a> SurfaceFontTarget<'a> {
+    fn salt(self) -> &'a str {
         match self {
             SurfaceFontTarget::Terminal => "terminal",
-            SurfaceFontTarget::Markdown => "markdown",
+            SurfaceFontTarget::Plugin { storage_key } => storage_key,
         }
     }
 
     fn override_mut(self, app: &mut crate::settings::AppearanceSettings) -> &mut FontOverride {
         match self {
             SurfaceFontTarget::Terminal => &mut app.terminal_font,
-            SurfaceFontTarget::Markdown => &mut app.markdown_font,
+            SurfaceFontTarget::Plugin { storage_key } => app
+                .plugin_font_overrides
+                .entry(storage_key.to_string())
+                .or_default(),
         }
     }
 
     fn effective(self, app: &crate::settings::AppearanceSettings) -> EffectiveFont {
         match self {
             SurfaceFontTarget::Terminal => app.effective_terminal_font(),
-            SurfaceFontTarget::Markdown => app.effective_markdown_font(),
+            SurfaceFontTarget::Plugin { storage_key } => app.effective_font_for_kind(storage_key),
         }
     }
 
-    fn surface_id(self) -> &'static str {
+    fn surface_id(self) -> &'a str {
         match self {
             SurfaceFontTarget::Terminal => "terminal",
-            SurfaceFontTarget::Markdown => "markdown",
+            SurfaceFontTarget::Plugin { storage_key } => storage_key,
         }
     }
 }
@@ -340,7 +380,7 @@ fn draw_surface_font_section(
     font_families: &mut Option<Vec<String>>,
     font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
-    target: SurfaceFontTarget,
+    target: SurfaceFontTarget<'_>,
 ) {
     let th = crate::theme::theme();
     ui.add_space(4.0);
@@ -414,25 +454,48 @@ fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
     ui.end_row();
 }
 
-/// Appearance > Markdown: font override + color settings.
-fn draw_appearance_markdown(
+/// Appearance > Plugin-contributed page. Renders each `SettingsItemDecl` in the
+/// page using a generic widget (currently only `FontOverride`).
+///
+/// The contract is fixed by `SettingsPageContribute`: host knows the *shape*
+/// (FontOverride → label + override grid + preview), plugin owns the *storage*
+/// (`appearance.plugin_font_overrides[storage_key]`). Color/Bool/Enum item
+/// kinds will land in later TODOs and route through the same dispatch.
+///
+/// Note: surface 색 picker 가 사라졌다. theme TOML
+/// (`~/.tasty/themes/<id>.toml` 의 `[surfaces.<storage_key>]`) 에서 직접 편집.
+fn draw_plugin_settings_page(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,
     font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
+    page: &SettingsPageContribute,
 ) {
-    draw_surface_font_section(
-        ui,
-        settings,
-        font_families,
-        font_filter,
-        preview_font_loaded,
-        SurfaceFontTarget::Markdown,
-    );
-
-    // Note: surface 색 picker 가 사라졌다. theme TOML
-    // (`~/.tasty/themes/<id>.toml` 의 `[surfaces.markdown]`) 에서 직접 편집.
+    for item in &page.items {
+        match item {
+            SettingsItemDecl::FontOverride {
+                id: _,
+                label_key,
+                storage_key,
+            } => {
+                let th = crate::theme::theme();
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(t(label_key)).strong().color(th.text));
+                ui.add_space(4.0);
+                draw_surface_font_section(
+                    ui,
+                    settings,
+                    font_families,
+                    font_filter,
+                    preview_font_loaded,
+                    SurfaceFontTarget::Plugin {
+                        storage_key: storage_key.as_str(),
+                    },
+                );
+            }
+        }
+    }
 }
 
 /// Placeholder for sub-tabs not yet populated with settings.
