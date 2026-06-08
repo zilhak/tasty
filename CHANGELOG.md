@@ -16,17 +16,24 @@
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-06-08
+
 ### Fixed
 - **Agent runner ShellProcess exit_code 정확 복원 (Phase K.A.1)** — `HostExecutor` 가 Run 자식 spawn 직후 watcher thread 를 띄워 `child.wait()` 종료 status 를 `tasty.agent.run_result.<task_id>` 영속 + shared cell 양쪽에 기록. 호스트 재시작 후 `reload_persistent_handles` 의 dead pid 분기가 영속을 조회해 exit_code 까지 정확히 `Succeeded` / `Failed` 마감 (precise). 이전 동작은 `Failed("host restart: pid X died")` 로만 마감되어 exit_code 손실.
 - **Agent runner ClaudeChild reload injector grace (Phase K.A.2)** — 호스트 재시작 직후 첫 tick 이 host IPC injector 초기화보다 빨라도 30 s grace 안에서는 `PollOutcome::Active` 로 흡수, deadline 도래 후이면 `Failed("injector grace expired")`. injector 외 사유 (timeout 등) 의 Err 는 기존대로 즉시 Failed. 이전 동작은 reload 직후 1 tick 에 injector 미초기화면 task 가 곧바로 Failed.
+- **PTY reader wake debounce 제거** — 짧은 명령(예: `ls`) 의 마지막 chunk wake 가 8ms throttle 에 누락되어 GUI 가 1~3 초 동안 갱신되지 않던 회귀 수정.
 
 ### Added
 - **`tasty update` CLI** (Phase J.H) — standalone (호스트 미실행 OK) 자동 업데이트 명령. `--check-only` / `--yes` / `--prerelease` 옵션. GitHub Releases asset 을 OS×arch 매트릭스로 선택 (macOS dmg / Windows msi·zip / Linux deb·rpm·AppImage·tar.gz, x86_64 + aarch64) → 다운로드 + `SHA256SUMS-{platform}.txt` 검증 (hard fail) → atomic swap (Unix `rename(2)` + `.old` 백업 / Windows 스테이지 + `tasty-swap.bat` / macOS DMG 안내). 호스트 IPC 미사용.
 - **Settings → Updates 탭** — 현재/최신 버전, 마지막 확인 시각, `Check now`, `Open release page…`, CLI 사용 안내.
 - **업데이트 감지 시 in-app 알림** — 백그라운드 폴러가 새 버전 첫 감지 (None→Some) 시 1회 `Tasty update available` 알림 발사 (`notified_version` 으로 중복 차단).
+- **`TreeNode.has_children` hint 필드** — UI tree protocol. 디렉토리 노드가 lazy children 모델로 `children=[]` 송신해도 host 가 `CollapsingHeader` 로 렌더하여 collapse 후 expand 가능. `#[serde(default)]` 로 backward compat.
 
 ### Changed
 - `tasty_update::check_latest` 시그니처 확장: `allow_prerelease: bool` 인자 추가. 기존 호출처는 `false` 로 갱신, CLI `--prerelease` flag 가 `true` 전달.
+- **Explorer dotfile 필터** — 4 항목 화이트리스트 (.env|.gitignore|.claude|.editorconfig) 에서 빈 블랙리스트로 전환. 결과적으로 `.claude-workspace`, `.cursor`, `.idea`, `.git` 등 모든 dotfile 폴더가 explorer 에 표시된다.
+- **macOS menubar — winit 기본 메뉴 비활성화 + tasty 자가 등록** — winit `with_default_menu(false)` 적용 후 tasty 가 Application / File / Edit / Window submenu 직접 등록. Quit 의 selector 를 `tastyQuit:` 로 라우팅하여 `AppEvent::QuitRequested` → `shutdown_lifecycle_cascade` 가 발화 (plugin cleanup + layout persistence flush). 이전엔 winit 의 자동 Quit (`terminate:`) 가 `[NSApp terminate:]` 로 직행해 cascade 미발화.
+- **NSMenu Quit / New Window key equivalent ↔ KeybindingSettings sync** — 부팅 시 `KeybindingSettings.quit` / `.new_window` 의 첫 binding 으로 NSMenuItem key equivalent 를 변환 (macOS `alt → Cmd` 위치 기반 매핑). 빈 binding 이면 메뉴 항목은 보이되 단축키 미표시.
 
 ## [0.7.0] - 2026-06-04
 
