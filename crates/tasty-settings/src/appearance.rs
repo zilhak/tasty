@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use tasty_themes::{ThemeApplyContext, mocha_fallback_colors};
 use tasty_type_appearance::theme::{PartialColors, ThemeColors};
@@ -60,6 +62,17 @@ impl EffectiveFont {
     }
 }
 
+impl FontOverride {
+    /// `true` when every field is `None` — i.e. nothing actually overrides the default.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.font_family.is_none()
+            && self.font_size.is_none()
+            && self.custom_font_path.is_none()
+            && self.line_height.is_none()
+            && self.font_scale_mode.is_none()
+    }
+}
+
 impl FontSettings {
     /// Apply per-field override. `None` fields fall back to defaults.
     pub fn apply_override(&self, ov: &FontOverride) -> EffectiveFont {
@@ -104,11 +117,19 @@ pub struct AppearanceSettings {
     pub tab_font_size: f32,
     /// Default font settings applied when a surface override is unset.
     pub default_font: FontSettings,
-    /// Terminal surface font override (per-field).
+    /// Terminal surface font override (per-field). Host-rendered terminal core uses this.
     pub terminal_font: FontOverride,
-    /// Markdown surface font override (per-field).
+    /// Per-plugin (surface-kind) font overrides. Key = surface kind string
+    /// (e.g. `"markdown"`, `"explorer"`).
+    #[serde(default)]
+    pub plugin_font_overrides: HashMap<String, FontOverride>,
+    /// Legacy markdown override. Read on load and migrated into
+    /// `plugin_font_overrides["markdown"]`; never written back.
+    #[serde(default, skip_serializing)]
     pub markdown_font: FontOverride,
-    /// Explorer surface font override (per-field).
+    /// Legacy explorer override. Read on load and migrated into
+    /// `plugin_font_overrides["explorer"]`; never written back.
+    #[serde(default, skip_serializing)]
     pub explorer_font: FontOverride,
 }
 
@@ -126,6 +147,7 @@ impl Default for AppearanceSettings {
             tab_font_size: 11.0,
             default_font: FontSettings::default(),
             terminal_font: FontOverride::default(),
+            plugin_font_overrides: HashMap::new(),
             markdown_font: FontOverride::default(),
             explorer_font: FontOverride::default(),
         }
@@ -183,14 +205,46 @@ impl AppearanceSettings {
         self.default_font.apply_override(&self.terminal_font)
     }
 
+    /// Effective font for an arbitrary plugin surface kind (e.g. `"markdown"`,
+    /// `"explorer"`). Falls back to `default_font` if no override is registered
+    /// for the given kind.
+    pub fn effective_font_for_kind(&self, kind: &str) -> EffectiveFont {
+        match self.plugin_font_overrides.get(kind) {
+            Some(ov) => self.default_font.apply_override(ov),
+            None => self.default_font.apply_override(&FontOverride::default()),
+        }
+    }
+
     /// Effective font for markdown surface.
+    #[deprecated(note = "use effective_font_for_kind(\"markdown\") — removed in Step 4")]
     pub fn effective_markdown_font(&self) -> EffectiveFont {
-        self.default_font.apply_override(&self.markdown_font)
+        self.effective_font_for_kind("markdown")
     }
 
     /// Effective font for explorer surface.
+    #[deprecated(note = "use effective_font_for_kind(\"explorer\") — removed in Step 4")]
     pub fn effective_explorer_font(&self) -> EffectiveFont {
-        self.default_font.apply_override(&self.explorer_font)
+        self.effective_font_for_kind("explorer")
+    }
+
+    /// Migrate legacy `markdown_font` / `explorer_font` fields into
+    /// `plugin_font_overrides`. Called by [`crate::Settings::load`] right after
+    /// deserialization. Idempotent: an existing entry in `plugin_font_overrides`
+    /// always wins over the legacy field.
+    pub fn migrate_legacy_font_overrides(&mut self) {
+        let legacy = [
+            ("markdown", std::mem::take(&mut self.markdown_font)),
+            ("explorer", std::mem::take(&mut self.explorer_font)),
+        ];
+        for (key, ov) in legacy {
+            if ov.is_empty() {
+                continue;
+            }
+            if self.plugin_font_overrides.contains_key(key) {
+                continue;
+            }
+            self.plugin_font_overrides.insert(key.to_string(), ov);
+        }
     }
 }
 
@@ -261,16 +315,22 @@ font_size = 18.0
 [markdown_font]
 font_family = "Iosevka"
 "#;
-        let parsed: AppearanceSettings = toml::from_str(toml_str).unwrap();
+        let mut parsed: AppearanceSettings = toml::from_str(toml_str).unwrap();
         assert_eq!(parsed.default_font.font_family, "Cascadia");
         assert_eq!(parsed.default_font.font_size, 15.0);
         assert_eq!(parsed.terminal_font.font_size, Some(18.0));
+        // Legacy field deserializes pre-migration.
         assert_eq!(parsed.markdown_font.font_family.as_deref(), Some("Iosevka"));
+        parsed.migrate_legacy_font_overrides();
+        // After migration: markdown override lives only in plugin_font_overrides.
+        assert!(parsed.markdown_font.is_empty());
+        let md_ov = parsed.plugin_font_overrides.get("markdown").unwrap();
+        assert_eq!(md_ov.font_family.as_deref(), Some("Iosevka"));
         // Effective values: terminal_font overrides only size, markdown only family.
         let eff_term = parsed.effective_terminal_font();
         assert_eq!(eff_term.font_family, "Cascadia");
         assert_eq!(eff_term.font_size, 18.0);
-        let eff_md = parsed.effective_markdown_font();
+        let eff_md = parsed.effective_font_for_kind("markdown");
         assert_eq!(eff_md.font_family, "Iosevka");
         assert_eq!(eff_md.font_size, 15.0);
     }
@@ -280,5 +340,132 @@ font_family = "Iosevka"
         let parsed: AppearanceSettings = toml::from_str("").unwrap();
         assert_eq!(parsed.default_font.font_size, 14.0);
         assert!(parsed.terminal_font.font_size.is_none());
+    }
+
+    #[test]
+    fn legacy_markdown_font_migrates_to_plugin_overrides() {
+        let toml_str = r#"
+[default_font]
+font_family = "Base"
+
+[markdown_font]
+font_family = "Iosevka"
+font_size = 17.0
+"#;
+        let mut parsed: AppearanceSettings = toml::from_str(toml_str).unwrap();
+        parsed.migrate_legacy_font_overrides();
+        let ov = parsed
+            .plugin_font_overrides
+            .get("markdown")
+            .expect("markdown migrated");
+        assert_eq!(ov.font_family.as_deref(), Some("Iosevka"));
+        assert_eq!(ov.font_size, Some(17.0));
+        assert!(parsed.markdown_font.is_empty());
+    }
+
+    #[test]
+    fn legacy_explorer_font_migrates_to_plugin_overrides() {
+        let toml_str = r#"
+[explorer_font]
+font_family = "Mono"
+line_height = 1.4
+"#;
+        let mut parsed: AppearanceSettings = toml::from_str(toml_str).unwrap();
+        parsed.migrate_legacy_font_overrides();
+        let ov = parsed
+            .plugin_font_overrides
+            .get("explorer")
+            .expect("explorer migrated");
+        assert_eq!(ov.font_family.as_deref(), Some("Mono"));
+        assert_eq!(ov.line_height, Some(1.4));
+        assert!(parsed.explorer_font.is_empty());
+    }
+
+    #[test]
+    fn new_plugin_font_overrides_round_trip() {
+        let toml_str = r#"
+[default_font]
+font_family = "Base"
+
+[plugin_font_overrides.markdown]
+font_family = "Iosevka"
+font_size = 16.0
+font_scale_mode = "fixed"
+"#;
+        let mut parsed: AppearanceSettings = toml::from_str(toml_str).unwrap();
+        parsed.migrate_legacy_font_overrides();
+        let dumped = toml::to_string(&parsed).unwrap();
+        let mut reparsed: AppearanceSettings = toml::from_str(&dumped).unwrap();
+        reparsed.migrate_legacy_font_overrides();
+        let ov = reparsed
+            .plugin_font_overrides
+            .get("markdown")
+            .expect("markdown survives round-trip");
+        assert_eq!(ov.font_family.as_deref(), Some("Iosevka"));
+        assert_eq!(ov.font_size, Some(16.0));
+        assert_eq!(ov.font_scale_mode.as_deref(), Some("fixed"));
+        // Legacy fields never re-emit.
+        assert!(!dumped.contains("[markdown_font]"));
+        assert!(!dumped.contains("[explorer_font]"));
+    }
+
+    #[test]
+    fn effective_font_for_kind_falls_back_to_default() {
+        let mut s = AppearanceSettings::default();
+        s.default_font.font_family = "Default".to_string();
+        s.default_font.font_size = 13.0;
+        let eff = s.effective_font_for_kind("nonexistent");
+        assert_eq!(eff.font_family, "Default");
+        assert_eq!(eff.font_size, 13.0);
+    }
+
+    #[test]
+    fn migration_does_not_overwrite_existing_plugin_override() {
+        let toml_str = r#"
+[markdown_font]
+font_family = "Legacy"
+
+[plugin_font_overrides.markdown]
+font_family = "New"
+"#;
+        let mut parsed: AppearanceSettings = toml::from_str(toml_str).unwrap();
+        parsed.migrate_legacy_font_overrides();
+        let ov = parsed.plugin_font_overrides.get("markdown").unwrap();
+        assert_eq!(
+            ov.font_family.as_deref(),
+            Some("New"),
+            "explicit plugin_font_overrides wins over legacy field"
+        );
+        assert!(parsed.markdown_font.is_empty());
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_effective_markdown_font_still_works() {
+        let mut s = AppearanceSettings::default();
+        s.default_font.font_family = "Base".to_string();
+        s.plugin_font_overrides.insert(
+            "markdown".to_string(),
+            FontOverride {
+                font_family: Some("Md".to_string()),
+                ..Default::default()
+            },
+        );
+        let via_deprecated = s.effective_markdown_font();
+        let via_new = s.effective_font_for_kind("markdown");
+        assert_eq!(via_deprecated.font_family, via_new.font_family);
+        assert_eq!(via_deprecated.font_family, "Md");
+
+        s.plugin_font_overrides.insert(
+            "explorer".to_string(),
+            FontOverride {
+                font_size: Some(22.0),
+                ..Default::default()
+            },
+        );
+        let via_deprecated_ex = s.effective_explorer_font();
+        let via_new_ex = s.effective_font_for_kind("explorer");
+        assert_eq!(via_deprecated_ex.font_size, via_new_ex.font_size);
+        assert_eq!(via_deprecated_ex.font_size, 22.0);
     }
 }

@@ -75,6 +75,7 @@ impl Settings {
 
                 match toml::from_str::<Settings>(&contents) {
                     Ok(mut settings) => {
+                        settings.appearance.migrate_legacy_font_overrides();
                         settings
                             .keybindings
                             .remove_conflicts_from_defaults(&existing_kb_keys);
@@ -151,6 +152,9 @@ impl Settings {
         );
 
         // appearance.{terminal,markdown,explorer}_font.font_scale_mode (Option<String>)
+        // markdown_font / explorer_font are legacy fields kept for one-shot
+        // migration; validating them here means a normalize() call made *before*
+        // migration still catches bad values.
         for (label, opt) in [
             (
                 "terminal_font.font_scale_mode",
@@ -170,6 +174,19 @@ impl Settings {
             {
                 let invalid = opt.take().unwrap();
                 tracing::warn!("invalid {label} \"{invalid}\" → unset");
+                report.changed = true;
+            }
+        }
+
+        // plugin_font_overrides.<kind>.font_scale_mode (Option<String>)
+        for (kind, ov) in self.appearance.plugin_font_overrides.iter_mut() {
+            if let Some(mode) = ov.font_scale_mode.as_ref()
+                && !matches!(mode.as_str(), "auto" | "fixed")
+            {
+                let invalid = ov.font_scale_mode.take().unwrap();
+                tracing::warn!(
+                    "invalid plugin_font_overrides.{kind}.font_scale_mode \"{invalid}\" → unset"
+                );
                 report.changed = true;
             }
         }
