@@ -298,12 +298,6 @@ impl Terminal {
 
         let reader_thread = thread::spawn(move || {
             let mut buf = [0u8; 8192];
-            // Coalesce wakes: a steady byte stream (AI token output, build logs)
-            // should not let PTY chunk frequency dictate frame rate. Skip wake
-            // calls that arrive within WAKE_DEBOUNCE of the previous wake;
-            // the next chunk after the window will re-arm.
-            const WAKE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(8);
-            let mut last_wake: Option<std::time::Instant> = None;
             loop {
                 match pty_reader.read(&mut buf) {
                     Ok(0) => break,
@@ -311,14 +305,7 @@ impl Terminal {
                         if tx.send(buf[..n].to_vec()).is_err() {
                             break;
                         }
-                        let now = std::time::Instant::now();
-                        let should_wake = last_wake
-                            .map(|t| now.duration_since(t) >= WAKE_DEBOUNCE)
-                            .unwrap_or(true);
-                        if should_wake {
-                            last_wake = Some(now);
-                            waker();
-                        }
+                        waker();
                     }
                     Err(_) => break,
                 }
