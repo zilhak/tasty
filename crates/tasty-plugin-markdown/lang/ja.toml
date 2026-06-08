@@ -12,3 +12,6 @@ markdown-viewer = "マークダウンビューア"
 
 [file_handler.format]
 markdown = "マークダウン"
+
+[settings.subtab]
+markdown = "Markdown"

@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.0"
+version = "0.1.1"
 description = "Markdown viewer surface (host-rendered)"
 api_version = "1"
 permissions = [
@@ -10,6 +10,7 @@ permissions = [
     "fs.read",
     "file_handler.define",
     "file_handler.handle:markdown",
+    "ui.settings_page",
 ]
 lang_dir = "lang"
 
@@ -65,3 +66,14 @@ subcommands = [
 flags = [
     { name = "surface", type = "u32", flag = "--surface", required = true, help = "Target surface ID" },
 ]
+
+[[contributes.settings_pages]]
+id = "markdown"
+title_key = "settings.subtab.markdown"
+category = "appearance"
+
+[[contributes.settings_pages.items]]
+kind = "font_override"
+id = "font"
+label_key = "settings.appearance.font_override"
+storage_key = "markdown"

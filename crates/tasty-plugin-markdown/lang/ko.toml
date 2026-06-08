@@ -12,3 +12,6 @@ markdown-viewer = "마크다운 뷰어"
 
 [file_handler.format]
 markdown = "마크다운"
+
+[settings.subtab]
+markdown = "Markdown"
