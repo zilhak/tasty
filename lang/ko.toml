@@ -185,6 +185,8 @@ close_behavior_label = "종료 동작:"
 close_behavior_ask = "물어보기"
 close_behavior_minimize = "백그라운드로 최소화"
 close_behavior_quit = "종료"
+language_label = "언어:"
+language_restart_notice = "언어 변경은 재시작 후 적용됩니다."
 
 [settings.terminal]
 heading = "터미널"

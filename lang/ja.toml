@@ -185,6 +185,8 @@ close_behavior_label = "終了時の動作:"
 close_behavior_ask = "確認する"
 close_behavior_minimize = "バックグラウンドに最小化"
 close_behavior_quit = "終了"
+language_label = "言語:"
+language_restart_notice = "言語の変更は再起動後に適用されます。"
 
 [settings.terminal]
 heading = "ターミナル"

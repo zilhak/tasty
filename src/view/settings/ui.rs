@@ -62,7 +62,6 @@ enum SettingsTab {
     Clipboard,
     Notifications,
     Keybindings,
-    Language,
     Performance,
     Accessibility,
     FileHandler,
@@ -287,7 +286,6 @@ pub fn draw_settings_panel(
                 (SettingsTab::Clipboard, t("settings.tab.clipboard")),
                 (SettingsTab::Notifications, t("settings.tab.notifications")),
                 (SettingsTab::Keybindings, t("settings.tab.keybindings")),
-                (SettingsTab::Language, t("settings.tab.language")),
                 (SettingsTab::Performance, t("settings.performance.heading")),
                 (SettingsTab::Accessibility, t("settings.tab.accessibility")),
                 (SettingsTab::FileHandler, t("settings.tab.file_handler")),
@@ -381,7 +379,6 @@ pub fn draw_settings_panel(
                         &mut ui_state.plugin_shortcuts_selected,
                         &mut ui_state.plugin_shortcuts_draft,
                     ),
-                    SettingsTab::Language => draw_language_tab(ui, &mut draft),
                     SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
                     SettingsTab::Accessibility => draw_accessibility_tab(ui, &mut draft),
                     SettingsTab::FileHandler => draw_file_handler_tab(
