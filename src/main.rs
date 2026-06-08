@@ -55,8 +55,6 @@ pub(crate) use adapters::ui::surface::markdown as markdown_ui;
 #[cfg(feature = "gui")]
 pub(crate) use adapters::ui::terminal_link;
 #[cfg(feature = "gui")]
-pub(crate) use adapters::ui::theme_bridge;
-#[cfg(feature = "gui")]
 pub(crate) use app::App;
 pub(crate) use app::event::AppEvent;
 #[cfg(feature = "gui")]

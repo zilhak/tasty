@@ -56,9 +56,10 @@ pub fn draw_command_palette_popup(
 
         let resp = ui.add(
             egui::TextEdit::singleline(&mut state.command_palette.query)
-                .hint_text(crate::theme_bridge::hint_text(t(
-                    "command_palette.placeholder",
-                )))
+                .hint_text(tasty_egui_theme::hint_text(
+                    &crate::theme::theme(),
+                    t("command_palette.placeholder"),
+                ))
                 .desired_width(ui.available_width() - 8.0)
                 .font(egui::TextStyle::Body),
         );

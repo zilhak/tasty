@@ -5205,6 +5205,7 @@ dependencies = [
  "tasty-agent",
  "tasty-approval",
  "tasty-cli",
+ "tasty-egui-theme",
  "tasty-font",
  "tasty-hooks",
  "tasty-host-plugin",
@@ -5290,6 +5291,15 @@ dependencies = [
  "tokio",
  "toml 0.8.2",
  "tracing",
+]
+
+[[package]]
+name = "tasty-egui-theme"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "tasty-type-appearance",
+ "tasty-type-geometry",
 ]
 
 [[package]]

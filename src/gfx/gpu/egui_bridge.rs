@@ -68,7 +68,7 @@ impl GpuState {
             self.refresh_theme(&engine.settings.appearance.theme, ui_scale);
         }
         // Always re-apply UI scale (in case it changed)
-        crate::theme_bridge::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx, ui_scale);
+        tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx, ui_scale);
 
         // Surface font refresh is done in render() before run_egui_frame().
 
@@ -92,7 +92,7 @@ impl GpuState {
 
     /// Apply the theme to the egui context.
     pub(super) fn apply_theme(ctx: &egui::Context, _theme: &str, ui_scale: f32) {
-        crate::theme_bridge::apply_theme_to_egui(&crate::theme::theme(), ctx, ui_scale);
+        tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), ctx, ui_scale);
     }
 
     /// Re-apply the theme from settings. Called after settings are saved.

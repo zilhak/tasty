@@ -99,6 +99,7 @@ tasty-ssh-profiles = { path = "crates/tasty-ssh-profiles" }
 tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }
 tasty-themes = { path = "crates/tasty-themes" }
+tasty-egui-theme = { path = "crates/tasty-egui-theme" }
 tasty-type-appearance = { path = "crates/tasty-type-appearance" }
 tasty-type-geometry = { path = "crates/tasty-type-geometry" }
 tasty-utils = { path = "crates/tasty-utils" }
@@ -342,6 +343,8 @@ opt-level = 3
 [profile.dev.package.tasty-terminal]
 opt-level = 3
 [profile.dev.package.tasty-themes]
+opt-level = 3
+[profile.dev.package.tasty-egui-theme]
 opt-level = 3
 [profile.dev.package.tasty-tui-simulator]
 opt-level = 3

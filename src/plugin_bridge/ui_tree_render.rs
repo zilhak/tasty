@@ -237,7 +237,10 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
                 .unwrap_or_default();
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut buf)
-                    .hint_text(crate::theme_bridge::hint_text(placeholder))
+                    .hint_text(tasty_egui_theme::hint_text(
+                        &crate::theme::theme(),
+                        placeholder,
+                    ))
                     .desired_width(f32::INFINITY),
             );
             if resp.changed() {

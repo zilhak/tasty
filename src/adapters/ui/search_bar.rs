@@ -23,7 +23,10 @@ pub fn draw_search_bar(
         // Search input field
         let response = ui.add(
             egui::TextEdit::singleline(&mut state.search.query)
-                .hint_text(crate::theme_bridge::hint_text(t("search.placeholder")))
+                .hint_text(tasty_egui_theme::hint_text(
+                    &crate::theme::theme(),
+                    t("search.placeholder"),
+                ))
                 .desired_width(200.0)
                 .font(egui::TextStyle::Body),
         );

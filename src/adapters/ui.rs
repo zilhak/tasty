@@ -15,7 +15,6 @@ pub mod preset;
 pub(crate) mod search_bar;
 pub mod surface;
 pub mod terminal_link;
-pub mod theme_bridge;
 pub mod toast;
 pub(crate) mod tools_menu;
 

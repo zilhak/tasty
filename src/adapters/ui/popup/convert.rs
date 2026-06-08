@@ -31,7 +31,7 @@ pub fn convert_popup_default_size() -> egui::Vec2 {
     convert_popup_size_for(DEFAULT_KIND_COUNT, theme::theme().spacing_xs.value())
 }
 
-/// `theme_bridge.rs` 가 `style.spacing.item_spacing.y` 로 적용하는 값과 동일하게
+/// `tasty_egui_theme` 가 `style.spacing.item_spacing.y` 로 적용하는 값과 동일하게
 /// 계산한다. egui draw 시 `allocate_exact_size` 사이의 vertical gap 이 정확히 이
 /// 값이므로 sizer 도 같은 식을 써야 마지막 항목이 잘리지 않는다.
 fn effective_item_spacing(engine: &crate::core::CoreState) -> f32 {
