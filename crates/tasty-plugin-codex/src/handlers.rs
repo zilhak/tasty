@@ -328,16 +328,24 @@ pub fn handle_wait(
     // trust 체크: state 가 active 일 때만 의미 있음. idle/needs_input 이면 hook 이
     // fire 됐다는 증거 (= trusted) 고, exited 면 더 살피지 않는다.
     if response_state == "active" && !codex_hooks_all_trusted() {
-        return Ok(json!({
-            "state": "untrusted",
-            "trust_required": true,
-            "instructions": "Codex hooks installed but not trusted — codex blocks them until user approves. \
-        Open `codex` in any terminal, type `/hooks` + Enter, then for each of 3 hooks press Enter → t → Esc → Down. \
-        Trust persists per-machine in ~/.codex/config.toml. Re-run `tasty codex wait` after.",
-        }));
+        return Ok(untrusted_response());
     }
 
     Ok(json!({ "state": response_state }))
+}
+
+/// `handle_wait` 와 `handle_wait_by_surface` 가 공통으로 반환하는 untrusted 응답.
+/// codex 가 hook 을 실행하지 않으므로 polling 으로는 영원히 idle 도달 불가 — 사용자에게
+/// trust 절차를 안내하는 응답을 즉시 돌려 wait loop 가 untrusted terminal state 로
+/// 빠져나가도록 한다.
+fn untrusted_response() -> Value {
+    json!({
+        "state": "untrusted",
+        "trust_required": true,
+        "instructions": "Codex hooks installed but not trusted — codex blocks them until user approves. \
+    Open `codex` in any terminal, type `/hooks` + Enter, then for each of 3 hooks press Enter → t → Esc → Down. \
+    Trust persists per-machine in ~/.codex/config.toml. Re-run `tasty codex wait` after.",
+    })
 }
 
 /// `codex.tell` 의 자동 wait chain 이 호출하는 mirror 메서드. 입력은 `surface`
@@ -365,13 +373,7 @@ pub fn handle_wait_by_surface(
         other => other,
     };
     if response_state == "active" && !codex_hooks_all_trusted() {
-        return Ok(json!({
-            "state": "untrusted",
-            "trust_required": true,
-            "instructions": "Codex hooks installed but not trusted — codex blocks them until user approves. \
-        Open `codex` in any terminal, type `/hooks` + Enter, then for each of 3 hooks press Enter → t → Esc → Down. \
-        Trust persists per-machine in ~/.codex/config.toml. Re-run `tasty codex wait` after.",
-        }));
+        return Ok(untrusted_response());
     }
     Ok(json!({ "state": response_state }))
 }
