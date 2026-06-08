@@ -5,10 +5,6 @@ name: Test
 # changelog_unreleased, cli_naming_count_drift) 의 자동 실행 채널이다.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 # 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
