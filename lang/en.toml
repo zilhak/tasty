@@ -66,7 +66,6 @@ appearance = "Appearance"
 clipboard = "Clipboard"
 notifications = "Notifications"
 keybindings = "Keybindings"
-language = "Language"
 accessibility = "Accessibility"
 file_handler = "File Handler"
 misc = "Misc"
@@ -373,11 +372,6 @@ scrollback_disk_swap = "Scrollback disk swap"
 scrollback_disk_swap_desc = "Swap old scrollback lines to disk to reduce memory usage."
 lazy_pty_init = "Lazy PTY initialization"
 lazy_pty_init_desc = "Spawn shell processes only when a tab is first focused, not at creation."
-
-[settings.language]
-heading = "Language"
-label = "Language:"
-restart_notice = "Language change will take effect after restart."
 
 [quit_modal]
 title = "Close Tasty"

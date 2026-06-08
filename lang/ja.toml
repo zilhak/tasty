@@ -66,7 +66,6 @@ appearance = "外観"
 clipboard = "クリップボード"
 notifications = "通知"
 keybindings = "キーバインド"
-language = "言語"
 accessibility = "アクセシビリティ"
 file_handler = "ファイルハンドラ"
 misc = "その他"
@@ -373,11 +372,6 @@ scrollback_disk_swap = "スクロールバックディスクスワップ"
 scrollback_disk_swap_desc = "古いスクロールバック行をディスクにスワップしてメモリ使用量を削減します。"
 lazy_pty_init = "遅延PTY初期化"
 lazy_pty_init_desc = "タブ作成時ではなく、初めてフォーカスされた時にシェルプロセスを生成します。"
-
-[settings.language]
-heading = "言語"
-label = "言語:"
-restart_notice = "言語の変更は再起動後に適用されます。"
 
 [quit_modal]
 title = "Tasty を閉じる"

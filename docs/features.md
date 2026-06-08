@@ -864,7 +864,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 ### GUI 설정 윈도우
 - Ctrl+, 단축키로 설정 윈도우 토글
-- egui Window 기반 탭 인터페이스 (General / Terminal / Appearance / Clipboard / Notifications / Keybindings / Language / Performance / Accessibility / FileHandler / Misc)
+- egui Window 기반 탭 인터페이스 (General / Terminal / Appearance / Clipboard / Notifications / Keybindings / Performance / Accessibility / FileHandler / Misc)
 - egui에 시스템 CJK 폰트 로드: Windows(맑은 고딕), macOS(AppleSDGothicNeo), Linux(Noto Sans CJK)
 - 편집 중 원본 설정을 보존하는 드래프트 패턴
 - Save 버튼: 디스크에 저장 후 즉시 적용

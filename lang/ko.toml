@@ -66,7 +66,6 @@ appearance = "외관"
 clipboard = "클립보드"
 notifications = "알림"
 keybindings = "단축키"
-language = "언어"
 accessibility = "접근성"
 file_handler = "파일 핸들러"
 misc = "기타"
@@ -373,11 +372,6 @@ scrollback_disk_swap = "스크롤백 디스크 스왑"
 scrollback_disk_swap_desc = "오래된 스크롤백 줄을 디스크로 스왑하여 메모리 사용량을 줄입니다."
 lazy_pty_init = "지연 PTY 초기화"
 lazy_pty_init_desc = "탭 생성 시가 아닌 처음 포커스될 때 셸 프로세스를 생성합니다."
-
-[settings.language]
-heading = "언어"
-label = "언어:"
-restart_notice = "언어 변경은 재시작 후 적용됩니다."
 
 [quit_modal]
 title = "Tasty 종료"
