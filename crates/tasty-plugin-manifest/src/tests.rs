@@ -1750,6 +1750,146 @@ fn example_markdown_plugin_manifest_parses() {
     assert!(m.surface_kinds[0].default_colors.is_some());
 }
 
+// ─────────────────────────────────────────────────────────────────
+//  Settings pages contribute (Step 1 — manifest schema 확장)
+// ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn settings_pages_parses_with_default_empty() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+    "#;
+    let m = parse(s).expect("manifest without settings_pages should parse");
+    assert!(m.contributes.settings_pages.is_empty());
+}
+
+#[test]
+fn settings_pages_with_font_override_parses() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.tasty.markdown"
+        name = "Markdown"
+        version = "0.1.0"
+        api_version = "1"
+        permissions = ["ui.settings_page"]
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.settings_pages]]
+        id = "markdown"
+        title_key = "settings.subtab.markdown"
+        category = "appearance"
+
+        [[contributes.settings_pages.items]]
+        kind = "font_override"
+        id = "font"
+        label_key = "settings.markdown.font"
+        storage_key = "markdown"
+    "#;
+    let m = parse(s).expect("settings_pages with font_override should parse");
+    assert_eq!(m.contributes.settings_pages.len(), 1);
+    let page = &m.contributes.settings_pages[0];
+    assert_eq!(page.id, "markdown");
+    assert_eq!(page.title_key, "settings.subtab.markdown");
+    assert_eq!(page.category, SettingsCategory::Appearance);
+    assert_eq!(page.items.len(), 1);
+    match &page.items[0] {
+        SettingsItemDecl::FontOverride {
+            id,
+            label_key,
+            storage_key,
+        } => {
+            assert_eq!(id, "font");
+            assert_eq!(label_key, "settings.markdown.font");
+            assert_eq!(storage_key, "markdown");
+        }
+    }
+    // permission token round-trip
+    assert_eq!(
+        Permission::from_token("ui.settings_page"),
+        Some(Permission::UiSettingsPage)
+    );
+    assert_eq!(Permission::UiSettingsPage.as_token(), "ui.settings_page");
+}
+
+#[test]
+fn settings_pages_requires_ui_permission() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.tasty.markdown"
+        name = "Markdown"
+        version = "0.1.0"
+        api_version = "1"
+        permissions = []
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.settings_pages]]
+        id = "markdown"
+        title_key = "settings.subtab.markdown"
+        category = "appearance"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("ui.settings_page"), "got: {err}");
+}
+
+#[test]
+fn surface_kind_decl_new_fields_default() {
+    // 새 3 필드 (required_params / param_aliases / consumes_egui_input) 는 모두
+    // `#[serde(default)]` 이므로 기존 manifest 가 깨지지 않아야 한다.
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+    "#;
+    let m = parse(s).expect("manifest without new surface_kind fields should parse");
+    let kind = &m.surface_kinds[0];
+    assert!(kind.required_params.is_empty());
+    assert!(kind.param_aliases.is_empty());
+    assert!(!kind.consumes_egui_input);
+
+    // 명시 지정도 round-trip 되는지.
+    let s2 = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+        required_params = ["file"]
+        consumes_egui_input = true
+        [surface_kinds.param_aliases]
+        file_path = "file"
+    "#;
+    let m2 = parse(s2).expect("manifest with new surface_kind fields should parse");
+    let kind2 = &m2.surface_kinds[0];
+    assert_eq!(kind2.required_params, vec!["file".to_string()]);
+    assert!(kind2.consumes_egui_input);
+    assert_eq!(kind2.param_aliases.get("file_path"), Some(&"file".into()));
+}
+
 #[test]
 fn window_contribute_zero_default_size_rejected() {
     let s = window_skeleton(

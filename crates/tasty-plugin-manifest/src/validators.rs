@@ -82,6 +82,16 @@ pub(super) fn is_valid_tool_id(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// `[[contributes.settings_pages]]` id 와 item id 의 형식 검증.
+/// 비어있지 않고 영숫자(소문자) + `_` + `-` 만 허용. 길이 1..=64.
+pub(super) fn is_valid_settings_id(s: &str) -> bool {
+    if s.is_empty() || s.len() > 64 {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
 pub(super) fn is_valid_cli_name(s: &str) -> bool {
     if s.is_empty() || s.len() > 32 {
         return false;

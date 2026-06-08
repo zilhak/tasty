@@ -8,13 +8,13 @@ use std::path::Path;
 
 use super::types::{
     HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, MANIFEST_VERSION, Manifest, Permission,
-    PopupTrigger, ToolAction,
+    PopupTrigger, SettingsItemDecl, ToolAction,
 };
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
     is_reserved_event_namespace, is_reserved_ipc_prefix, is_valid_cli_name, is_valid_event_key,
     is_valid_event_pattern, is_valid_ipc_prefix, is_valid_kind, is_valid_plugin_id,
-    is_valid_simple_id, is_valid_tool_id,
+    is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
 };
 
 impl Manifest {
@@ -506,6 +506,75 @@ impl Manifest {
                         "contributes.window '{}': default_size width/height must be > 0",
                         w.id
                     );
+                }
+            }
+        }
+
+        // [[contributes.settings_pages]] 검증.
+        if !self.contributes.settings_pages.is_empty() {
+            if !self.permissions.iter().any(|p| p == "ui.settings_page") {
+                anyhow::bail!(
+                    "contributes.settings_pages requires the 'ui.settings_page' permission"
+                );
+            }
+            let mut seen_page_ids = HashSet::new();
+            for page in &self.contributes.settings_pages {
+                if !is_valid_settings_id(&page.id) {
+                    anyhow::bail!(
+                        "invalid contributes.settings_pages id '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
+                        page.id
+                    );
+                }
+                if !seen_page_ids.insert(page.id.clone()) {
+                    anyhow::bail!(
+                        "contributes.settings_pages id '{}' declared twice in this manifest",
+                        page.id
+                    );
+                }
+                if page.title_key.is_empty() {
+                    anyhow::bail!(
+                        "contributes.settings_pages '{}': title_key must not be empty",
+                        page.id
+                    );
+                }
+                let mut seen_item_ids = HashSet::new();
+                for item in &page.items {
+                    match item {
+                        SettingsItemDecl::FontOverride {
+                            id,
+                            label_key,
+                            storage_key,
+                        } => {
+                            if !is_valid_settings_id(id) {
+                                anyhow::bail!(
+                                    "invalid contributes.settings_pages '{}' item id '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
+                                    page.id,
+                                    id
+                                );
+                            }
+                            if !seen_item_ids.insert(id.clone()) {
+                                anyhow::bail!(
+                                    "contributes.settings_pages '{}' item id '{}' declared twice",
+                                    page.id,
+                                    id
+                                );
+                            }
+                            if label_key.is_empty() {
+                                anyhow::bail!(
+                                    "contributes.settings_pages '{}' item '{}': label_key must not be empty",
+                                    page.id,
+                                    id
+                                );
+                            }
+                            if storage_key.is_empty() {
+                                anyhow::bail!(
+                                    "contributes.settings_pages '{}' item '{}': storage_key must not be empty",
+                                    page.id,
+                                    id
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }

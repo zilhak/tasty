@@ -149,6 +149,10 @@ pub enum Permission {
     /// `[[contributes.popup]]` 항목을 선언한 plugin은 매니페스트의 `permissions`에
     /// 반드시 이 토큰을 포함해야 한다.
     UiPopup,
+    /// Settings page contribute 권한. 토큰 `ui.settings_page`.
+    /// `[[contributes.settings_pages]]` 항목을 선언한 plugin 은 매니페스트의
+    /// `permissions` 에 반드시 이 토큰을 포함해야 한다.
+    UiSettingsPage,
     /// `[[contributes.window]]` 권한. 토큰 `window.spawn`.
     /// Plugin 이 OS-level 별도 윈도우를 contribute 하려면 이 권한이 필요하다.
     /// 1.0 에서는 schema + stub 만 — 실제 spawn handler 는 별도 영역에서 도입.
@@ -188,6 +192,7 @@ impl Permission {
             "agent" => Self::AgentManage,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
+            "ui.settings_page" => Self::UiSettingsPage,
             "window.spawn" => Self::WindowSpawn,
             "file_handler.define" => Self::FileHandlerDefine,
             other => {
@@ -251,6 +256,7 @@ impl Permission {
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
             Self::UiPopup => "ui.popup".into(),
+            Self::UiSettingsPage => "ui.settings_page".into(),
             Self::WindowSpawn => "window.spawn".into(),
             Self::FileHandlerDefine => "file_handler.define".into(),
             Self::FileHandlerExtend(id) => format!("file_handler.extend:{id}"),
@@ -304,6 +310,23 @@ pub struct SurfaceKindDecl {
     /// fallback chain: 사용자 TOML > plugin default > FALLBACK_SURFACE.
     #[serde(default)]
     pub default_colors: Option<tasty_type_appearance::theme::PartialSurfaceTheme>,
+    /// surface 열기 요청 시 반드시 포함되어야 하는 IPC params 키 목록. 호스트가
+    /// surface 생성 요청을 generic 하게 검증할 때 사용한다 — plugin 별로 host
+    /// 본체에 박혀 있던 `if kind == "markdown"` 류 직결 분기를 대체.
+    /// 예: markdown 의 경우 `["file"]`.
+    #[serde(default)]
+    pub required_params: Vec<String>,
+    /// surface 열기 요청 params 의 key alias 매핑. caller 가 옛 키로 넘기면
+    /// host 가 canonical 키로 정규화한다. host 본체의 `kind == "markdown"` 일 때
+    /// `file_path` → `file` 정규화 같은 결합을 generic 화 하기 위한 메타.
+    /// 예: `{"file_path": "file"}`.
+    #[serde(default)]
+    pub param_aliases: HashMap<String, String>,
+    /// 이 kind 의 surface 가 활성일 때 host 의 egui 입력 라우팅이 plugin/host
+    /// 본체 측으로 입력을 흘려야 하는지. host 본체의 `kind == "markdown" || kind == "image"`
+    /// 같은 하드코딩 분기를 generic 화 하기 위한 capability 메타. 기본 false.
+    #[serde(default)]
+    pub consumes_egui_input: bool,
 }
 
 /// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "host" | "remote" | "webview"`.
@@ -421,6 +444,77 @@ pub struct Contributes {
     /// **Opaque payload** (F.B.2) — detector 와 동일 사유.
     #[serde(default)]
     pub handler: Vec<serde_json::Value>,
+    /// Plugin 이 설정 모달에 노출할 sub-page 정의. 항목당 `[[contributes.settings_pages]]`
+    /// 한 블록. host 가 plugin registry 를 순회해 동적으로 sub-tab 을 그린다.
+    /// 1 차 schema 는 `FontOverride` 항목만 지원 (Color/Bool/Enum 등은 후속 확장).
+    #[serde(default)]
+    pub settings_pages: Vec<SettingsPageContribute>,
+}
+
+/// Plugin 이 contribute 하는 설정 모달 sub-page 정의 (`[[contributes.settings_pages]]`).
+///
+/// host 가 설정 UI 의 카테고리별 sub-tab 영역에 plugin registry 를 순회해
+/// 동적으로 추가한다. plugin 비활성 시 자동으로 사라지므로 dead-setting 이
+/// 노출되지 않는다.
+///
+/// - `id`: plugin 내 고유 (소문자/숫자 + `_` + `-`). 호스트는 `<plugin_id>/<id>`
+///   로 전역 식별.
+/// - `title_key`: sub-tab 라벨 i18n 키.
+/// - `category`: 호스트가 받아들이는 설정 카테고리 (예: `appearance`).
+/// - `items`: 이 page 에서 host 가 generic 렌더할 항목 목록.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SettingsPageContribute {
+    pub id: String,
+    pub title_key: String,
+    pub category: SettingsCategory,
+    #[serde(default)]
+    pub items: Vec<SettingsItemDecl>,
+}
+
+/// 설정 모달의 상위 카테고리. host 가 받아들이는 값만 enumerate.
+/// 알 수 없는 카테고리는 `Other(name)` 로 보존 (host 측에서 무시 또는 fallback).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsCategory {
+    Appearance,
+    General,
+    Keybindings,
+    Other(String),
+}
+
+impl<'de> Deserialize<'de> for SettingsCategory {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(match s.as_str() {
+            "appearance" => SettingsCategory::Appearance,
+            "general" => SettingsCategory::General,
+            "keybindings" => SettingsCategory::Keybindings,
+            _ => SettingsCategory::Other(s),
+        })
+    }
+}
+
+/// `[[contributes.settings_pages.items]]` 의 한 항목.
+///
+/// 1 차에서는 `FontOverride` 한 종류만 지원. 향후 Color/Bool/Enum variants 가
+/// 추가될 수 있으므로 `#[serde(tag = "kind", rename_all = "snake_case")]` 로
+/// 직렬화한다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SettingsItemDecl {
+    /// 폰트 override 항목. host 는 `plugin_font_overrides.<storage_key>` 슬롯에
+    /// FontOverride 값을 read/write 하는 generic UI 를 그린다.
+    ///
+    /// - `id`: page 내 항목 식별자 (소문자/숫자 + `_` + `-`).
+    /// - `label_key`: 항목 라벨 i18n 키.
+    /// - `storage_key`: host 측 settings 의 `plugin_font_overrides.<storage_key>` slot.
+    FontOverride {
+        id: String,
+        label_key: String,
+        storage_key: String,
+    },
 }
 
 /// Plugin 이 contribute 하는 OS-level 윈도우 정의 (`[[contributes.window]]`).
@@ -745,7 +839,7 @@ pub struct MenuItemDecl {
 
 /// `file::format::is_valid_detector_id` 의 로컬 복제. 길이 1..=64, lowercase ascii
 /// + 숫자 + `-`, optional `$`-prefix. 호스트 측 식별기와 동일 규칙이며 schema 차원
-/// 검증 only.
+///   검증 only.
 fn is_valid_detector_id_local(s: &str) -> bool {
     if s.is_empty() || s.len() > 64 {
         return false;

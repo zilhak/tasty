@@ -20,6 +20,7 @@ pub use types::{
     CommandScope, Contributes, Entry, EventEmittedDecl, EventHookDecl, EventStability, ExtendsDecl,
     HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, IpcHookDecl, IpcNamespaceDecl,
     MANIFEST_VERSION, Manifest, MenuItemDecl, Permission, PollingDecl, PopupAnchor,
-    PopupContribute, PopupSizeHint, PopupTrigger, SurfaceKindDecl, SurfaceKindRendering,
-    ToolAction, ToolContribute, WindowContribute, WindowSizeHint,
+    PopupContribute, PopupSizeHint, PopupTrigger, SettingsCategory, SettingsItemDecl,
+    SettingsPageContribute, SurfaceKindDecl, SurfaceKindRendering, ToolAction, ToolContribute,
+    WindowContribute, WindowSizeHint,
 };
