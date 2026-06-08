@@ -35,7 +35,7 @@ pub fn collect(state: &AppState, gpu: Option<&GpuState>, ime_active: bool) -> Va
     // -- Font settings (per-surface effective values) --
     let appearance = &state.engine.settings.appearance;
     let term_eff = appearance.effective_terminal_font();
-    let md_eff = appearance.effective_markdown_font();
+    let md_eff = appearance.effective_font_for_kind("markdown");
     info.insert("default_font_size".into(), json!(appearance.default_font.font_size));
     info.insert("default_font_family".into(), json!(&appearance.default_font.font_family));
     info.insert("terminal_font_size".into(), json!(term_eff.font_size));

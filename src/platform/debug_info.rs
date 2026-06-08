@@ -40,7 +40,7 @@ pub fn collect(
     // -- Font settings (per-surface effective values) --
     let appearance = &engine.settings.appearance;
     let term_eff = appearance.effective_terminal_font();
-    let md_eff = appearance.effective_markdown_font();
+    let md_eff = appearance.effective_font_for_kind("markdown");
     info.insert(
         "default_font_size".into(),
         json!(appearance.default_font.font_size),
