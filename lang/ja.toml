@@ -245,7 +245,9 @@ fg_label = "文字色:"
 theme = "テーマ"
 general = "一般"
 terminal = "ターミナル"
-markdown = "マークダウン"
+
+[settings.appearance]
+font_override = "フォント override"
 
 [settings.appearance.theme]
 heading = "テーマプリセット"

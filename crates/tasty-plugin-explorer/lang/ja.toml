@@ -10,3 +10,6 @@ preview_placeholder = "プレビューするファイルを選択"
 bookmarks_heading = "★ ブックマーク"
 bookmarks_empty = "(空)"
 default_display_name = "ファイル"
+
+[settings.subtab]
+explorer = "Explorer"

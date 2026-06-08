@@ -10,3 +10,6 @@ preview_placeholder = "Select a file to preview"
 bookmarks_heading = "★ Bookmarks"
 bookmarks_empty = "(empty)"
 default_display_name = "Files"
+
+[settings.subtab]
+explorer = "Explorer"

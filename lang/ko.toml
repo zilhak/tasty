@@ -245,7 +245,9 @@ fg_label = "글자색:"
 theme = "테마"
 general = "일반"
 terminal = "터미널"
-markdown = "마크다운"
+
+[settings.appearance]
+font_override = "폰트 override"
 
 [settings.appearance.theme]
 heading = "테마 프리셋"

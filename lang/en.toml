@@ -245,7 +245,9 @@ fg_label = "Text:"
 theme = "Theme"
 general = "General"
 terminal = "Terminal"
-markdown = "Markdown"
+
+[settings.appearance]
+font_override = "Font override"
 
 [settings.appearance.theme]
 heading = "Theme Preset"
