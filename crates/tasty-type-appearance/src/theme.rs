@@ -852,8 +852,10 @@ mod tests {
     fn apply_partial_overwrites_only_some_fields() {
         let mut base = dummy_colors();
         let original_red = base.red;
-        let mut partial = PartialColors::default();
-        partial.blue = Some(HexColor::from_rgb(0x00, 0xff, 0x00));
+        let partial = PartialColors {
+            blue: Some(HexColor::from_rgb(0x00, 0xff, 0x00)),
+            ..Default::default()
+        };
         base.apply_partial(&partial);
         assert_eq!(base.blue, HexColor::from_rgb(0x00, 0xff, 0x00));
         // red 는 건드리지 않음
@@ -910,12 +912,16 @@ mod tests {
             .insert("terminal".to_string(), FALLBACK_SURFACE.clone());
 
         let mut partial = PartialColors::default();
-        let mut p_st = PartialSurfaceTheme::default();
-        p_st.focused_bg = Some(HexColor::from_rgb(0x11, 0x22, 0x33));
+        let p_st = PartialSurfaceTheme {
+            focused_bg: Some(HexColor::from_rgb(0x11, 0x22, 0x33)),
+            ..Default::default()
+        };
         partial.surface_themes.insert("terminal".to_string(), p_st);
         // 또 base 에 없는 id 도 partial 만으로 등장 가능 — default 위에 입혀짐
-        let mut p_md = PartialSurfaceTheme::default();
-        p_md.focused_fg = Some(HexColor::from_rgb(0xaa, 0xbb, 0xcc));
+        let p_md = PartialSurfaceTheme {
+            focused_fg: Some(HexColor::from_rgb(0xaa, 0xbb, 0xcc)),
+            ..Default::default()
+        };
         partial.surface_themes.insert("markdown".to_string(), p_md);
 
         base.apply_partial(&partial);
@@ -941,8 +947,10 @@ mod tests {
     fn surface_theme_apply_partial_overwrites_only_some_fields() {
         let mut base = FALLBACK_SURFACE.clone();
         let original_fg = base.focused_fg;
-        let mut partial = PartialSurfaceTheme::default();
-        partial.focused_bg = Some(HexColor::from_rgb(0xff, 0x00, 0x00));
+        let partial = PartialSurfaceTheme {
+            focused_bg: Some(HexColor::from_rgb(0xff, 0x00, 0x00)),
+            ..Default::default()
+        };
         base.apply_partial(&partial);
         assert_eq!(base.focused_bg, HexColor::from_rgb(0xff, 0x00, 0x00));
         // focused_fg 는 건드리지 않음

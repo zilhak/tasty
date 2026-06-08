@@ -82,7 +82,7 @@ impl Default for PerfAggregator {
 }
 
 fn percentiles<F: Fn(&FrameSample) -> f64>(buf: &VecDeque<FrameSample>, sel: F) -> (f64, f64, f64) {
-    let mut v: Vec<f64> = buf.iter().map(|s| sel(s)).collect();
+    let mut v: Vec<f64> = buf.iter().map(sel).collect();
     v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = v.len();
     let p50 = v[n / 2];

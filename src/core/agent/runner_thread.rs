@@ -579,7 +579,7 @@ mod tests {
     use std::sync::atomic::AtomicU64;
     use tasty_agent::task::TaskCreateOpts;
     use tasty_agent::{OnFailure, TaskCommand};
-    use tasty_memory::{MemoryStorage, MemoryStore, PutOpts};
+    use tasty_memory::{MemoryStore, PutOpts};
 
     fn fresh_ctx() -> (tempfile::TempDir, RunnerContext) {
         let td = tempfile::tempdir().unwrap();

@@ -149,8 +149,8 @@ mod tests {
     use super::*;
 
     fn registry_with_builtins() -> SurfaceKindRegistry {
-        let mut r = SurfaceKindRegistry::new();
-        register_builtin_kinds(&mut r);
+        let r = SurfaceKindRegistry::new();
+        register_builtin_kinds(&r);
         r
     }
 

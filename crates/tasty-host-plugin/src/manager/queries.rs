@@ -26,7 +26,7 @@ impl PluginManager {
             }
             // ui.tool_item 권한이 grant되어야 메뉴에 노출.
             let granted = self.config.granted_permissions(&pkg.manifest.id);
-            if !granted.contains(&"ui.tool_item".to_string()) {
+            if !granted.contains("ui.tool_item") {
                 continue;
             }
             for tool in &pkg.manifest.contributes.tool {
@@ -56,7 +56,7 @@ impl PluginManager {
                 continue;
             }
             let granted = self.config.granted_permissions(&pkg.manifest.id);
-            if !granted.contains(&"ui.popup".to_string()) {
+            if !granted.contains("ui.popup") {
                 continue;
             }
             for popup in &pkg.manifest.contributes.popup {

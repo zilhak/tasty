@@ -197,7 +197,7 @@ pub(crate) fn handle_surface_fire_hook(
         }
     };
 
-    let fired = core.fire_surface_hooks(engine, surface_id, &[event.clone()]);
+    let fired = core.fire_surface_hooks(engine, surface_id, std::slice::from_ref(&event));
     let event_kind = event.to_display_string();
     for hook_id in &fired {
         state.enqueue_host_event(crate::state::PendingHostEvent::HookFired {

@@ -476,13 +476,11 @@ impl App {
                             Err(e) => host_ipc::protocol::JsonRpcResponse::error(
                                 id,
                                 -32603,
-                                &format!("serialize report failed: {e}"),
+                                format!("serialize report failed: {e}"),
                             ),
                         }
                     }
-                    Err(e) => {
-                        host_ipc::protocol::JsonRpcResponse::error(id, -32000, &e.to_string())
-                    }
+                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32000, e.to_string()),
                 }
             }
             "plugin.audit_query" => {
