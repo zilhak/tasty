@@ -90,7 +90,10 @@ pub fn draw_egui_panels(
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
 
     let markdown_surface = crate::theme::theme().surface("markdown").clone();
-    let markdown_font = engine.settings.appearance.effective_markdown_font();
+    let markdown_font = engine
+        .settings
+        .appearance
+        .effective_font_for_kind("markdown");
 
     // Temporarily extract view stores so we can hold a `&mut View` from
     // the store at the same time as `&mut Panel` from `engine.workspaces`.
