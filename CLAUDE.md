@@ -142,9 +142,18 @@ Conventional Commits 형식을 따른다 (예: `feat(themes): add latte theme`).
 
 버전 형식은 `MAJOR.MINOR.PATCH`.
 
+### 본체 (`Cargo.toml` 루트)
+
 - **패치 버전**: 사용자가 빌드를 요청했을 때, 마지막 빌드 이후 새 커밋이 있고 사용자가 막지 않았다면 AI 가 자동으로 +1 한다.
 - **마이너 / 메이저**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
 - **AI 자체 검증용 빌드** (`cargo build` / `cargo test`): 버전을 올리지 않는다.
+
+### Plugin (`crates/tasty-plugin-*/Cargo.toml`)
+
+- **마이너 버전 자동 +1 (무조건)**: 한 커밋에 특정 plugin 디렉토리(`crates/tasty-plugin-<name>/`) 의 파일이 하나라도 staged 되어 있으면, 그 plugin 의 `Cargo.toml.version` 의 마이너를 +1 하고 (patch 는 0 으로 리셋), **같은 커밋**에 포함한다. 사용자가 명시적으로 막지 않는 한 적용.
+- 여러 plugin 이 함께 변경된 커밋은 각 plugin 에 독립 적용 (각각의 Cargo.toml 모두 갱신).
+- **메이저**: 사용자가 직접 지정. AI 가 임의로 올리지 않는다.
+- 본체 정책과 독립적으로 적용된다 (같은 커밋에 본체와 plugin 이 함께 변경돼도 본체는 본체 규칙, plugin 은 plugin 규칙).
 
 자동 +1 절차와 릴리스 절차 전체: [`docs/dev-guide/release.md`](docs/dev-guide/release.md).
 
