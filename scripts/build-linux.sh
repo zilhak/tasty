@@ -74,11 +74,64 @@ fi
 echo "==> Building tasty ($PROFILE)..."
 cargo build $CARGO_FLAGS
 
+# Discover bundled plugin crates (any `crates/tasty-plugin-*` with a manifest).
+# Matches justfile `build-plugins` recipe and build-macos-dmg.sh — keep in sync.
+PLUGIN_CRATES=()
+for d in crates/tasty-plugin-*; do
+    [ -f "$d/tasty-plugin.toml" ] || continue
+    PLUGIN_CRATES+=("$(basename "$d")")
+done
+
+if [[ ${#PLUGIN_CRATES[@]} -eq 0 ]]; then
+    echo "Error: no plugin crates with tasty-plugin.toml found under crates/" >&2
+    exit 1
+fi
+
+echo "==> Building ${#PLUGIN_CRATES[@]} plugins ($PROFILE)..."
+PLUGIN_CARGO_ARGS=()
+for c in "${PLUGIN_CRATES[@]}"; do
+    PLUGIN_CARGO_ARGS+=("-p" "$c")
+done
+cargo build $CARGO_FLAGS "${PLUGIN_CARGO_ARGS[@]}"
+
+# Stage plugins under <dest>/<id>/. Mirrors macOS build-macos-dmg.sh staging.
+# `bundle_root()` (crates/tasty-host-plugin/src/builtin.rs) discovers
+# `<exe_dir>/plugins/` and syncs each `<plugin-id>/` into `~/.tasty/plugins/<id>/`
+# on first launch.
+stage_plugins() {
+    local plugins_dir="$1"
+    mkdir -p "$plugins_dir"
+    for c in "${PLUGIN_CRATES[@]}"; do
+        local manifest="crates/$c/tasty-plugin.toml"
+        local id
+        id=$(grep -E '^id[[:space:]]*=' "$manifest" | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+        if [[ -z "$id" ]]; then
+            echo "Error: cannot parse id from $manifest" >&2
+            exit 1
+        fi
+        local src_bin="target/$PROFILE/$c"
+        if [[ ! -f "$src_bin" ]]; then
+            echo "Error: plugin binary missing: $src_bin" >&2
+            exit 1
+        fi
+        local dest="$plugins_dir/$id"
+        mkdir -p "$dest"
+        cp "$src_bin" "$dest/$c"
+        cp "$manifest" "$dest/tasty-plugin.toml"
+        if [[ -d "crates/$c/lang" ]]; then
+            rm -rf "$dest/lang"
+            cp -R "crates/$c/lang" "$dest/lang"
+        fi
+        echo "  staged $id"
+    done
+}
+
 echo "==> Assembling archive..."
 rm -rf "$DIST_DIR/$PKG_DIR"
 mkdir -p "$DIST_DIR/$PKG_DIR"
 
 cp "target/$PROFILE/tasty" "$DIST_DIR/$PKG_DIR/tasty"
+stage_plugins "$DIST_DIR/$PKG_DIR/plugins"
 
 echo "==> Creating $ARCHIVE_NAME..."
 rm -f "$DIST_DIR/$ARCHIVE_NAME"
@@ -103,6 +156,15 @@ if [[ "$PROFILE" != "debug" ]]; then
         exit 1
     fi
 
+    # NOTE: .deb and .rpm packages do NOT yet ship plugins. cargo-deb /
+    # cargo-generate-rpm read their asset lists from Cargo.toml metadata,
+    # which is outside the scope of this script. Pairing those packages with
+    # plugin support also requires deciding the install path (current runtime
+    # `bundle_root()` only looks at `<exe_dir>/plugins/`, which for
+    # `/usr/bin/tasty` is `/usr/bin/plugins/` — not FHS-friendly).
+    # Until then, .tar.gz and .AppImage are the supported install paths for
+    # plugin-enabled Linux builds.
+
     echo "==> Building .deb package..."
     cargo deb --no-build --profile "$PROFILE"
     DEB_SRC=$(ls -t target/debian/tasty_*.deb | head -1)
@@ -119,7 +181,10 @@ if [[ "$PROFILE" != "debug" ]]; then
     APPIMAGE_NAME="Tasty-${VERSION}-${ARCH_RAW}.AppImage"
     APPDIR="target/AppDir"
     rm -rf "$APPDIR"
-    mkdir -p "$APPDIR"
+    mkdir -p "$APPDIR/usr/bin"
+    # linuxdeploy doesn't clean AppDir — pre-stage plugins next to where it will
+    # place tasty (AppDir/usr/bin/), so current_exe() sees `<exe_dir>/plugins/`.
+    stage_plugins "$APPDIR/usr/bin/plugins"
     VERSION="$VERSION" OUTPUT="$APPIMAGE_NAME" linuxdeploy \
         --appdir "$APPDIR" \
         --executable "target/$PROFILE/tasty" \
