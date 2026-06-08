@@ -34,7 +34,7 @@ pub fn refresh_surface_fonts(
     appearance: &AppearanceSettings,
     state: &mut SurfaceFontState,
 ) {
-    let md = appearance.effective_markdown_font();
+    let md = appearance.effective_font_for_kind("markdown");
     let new_md_sig = signature(&md);
 
     if state.initialized && state.markdown_sig == new_md_sig {
@@ -76,7 +76,7 @@ pub fn build_font_definitions(
         }
     }
 
-    let md = appearance.effective_markdown_font();
+    let md = appearance.effective_font_for_kind("markdown");
     register_surface_family(&mut fonts, MARKDOWN_FAMILY, "md", &md, cjk_data.is_some());
 
     if let Some((slot, eff)) = preview {
