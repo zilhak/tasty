@@ -24,7 +24,7 @@ impl GpuState {
             .or_default();
         monospace.insert(0, "d2coding".to_owned());
 
-        if let Some(cjk_bytes) = Self::load_system_cjk_font() {
+        if let Some(cjk_bytes) = tasty_egui_theme::load_system_cjk_font() {
             fonts.font_data.insert(
                 "system_cjk".to_owned(),
                 Arc::new(egui::FontData::from_owned(cjk_bytes)),
@@ -46,45 +46,5 @@ impl GpuState {
         }
 
         ctx.set_fonts(fonts);
-    }
-
-    fn load_system_cjk_font() -> Option<Vec<u8>> {
-        #[cfg(target_os = "windows")]
-        {
-            // Malgun Gothic (맑은 고딕) — bundled with Windows Vista+
-            let path = "C:/Windows/Fonts/malgun.ttf";
-            if let Ok(data) = std::fs::read(path) {
-                return Some(data);
-            }
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            for path in &[
-                "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-                "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
-                "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-            ] {
-                if let Ok(data) = std::fs::read(path) {
-                    return Some(data);
-                }
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            for path in &[
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-            ] {
-                if let Ok(data) = std::fs::read(path) {
-                    return Some(data);
-                }
-            }
-        }
-
-        None
     }
 }

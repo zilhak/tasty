@@ -1,6 +1,6 @@
 [package]
 name = "tasty-egui-theme"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Theme ↔ egui adapter helpers (Visuals/Style apply, hint_text wrapper)"
@@ -9,6 +9,7 @@ description = "Theme ↔ egui adapter helpers (Visuals/Style apply, hint_text wr
 egui = "0.31"
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-type-geometry = { path = "../tasty-type-geometry" }
+tracing = "0.1"
 
 [lints]
 workspace = true

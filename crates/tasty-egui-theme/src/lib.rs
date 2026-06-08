@@ -10,6 +10,8 @@
 //! 덮어쓴다. 베이스 기본값에 의존하는 필드를 남기지 않아 라이트 ↔ 다크 전환 시
 //! 일부 위젯이 어울리지 않는 톤으로 남는 문제를 막는다.
 
+use std::sync::Arc;
+
 use egui::emath::GuiRounding as _;
 use tasty_type_appearance::color::HexColor;
 use tasty_type_appearance::theme::Theme;
@@ -127,4 +129,71 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context, ui_scale: f32) {
         (theme.spacing_xs.value() * ui_scale).round_ui(),
     );
     ctx.set_style(style);
+}
+
+/// 시스템에서 CJK 폰트 파일 (macOS / Linux / Windows) 을 찾아 바이트로 반환한다.
+/// 본체 GPU 폰트 셋업과 갤러리 양쪽에서 호출되는 단일 진실 공급원.
+pub fn load_system_cjk_font() -> Option<Vec<u8>> {
+    #[cfg(target_os = "windows")]
+    {
+        // Malgun Gothic (맑은 고딕) — bundled with Windows Vista+
+        if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
+            return Some(data);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in &[
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for path in &[
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+
+    None
+}
+
+/// egui Context 에 시스템 CJK 폰트를 `Proportional` / `Monospace` family 양쪽의
+/// fallback 으로 등록한다. 시스템 폰트를 못 찾으면 `tracing::warn!` 후 noop.
+///
+/// 본체 (`src/gfx/gpu/fonts.rs`) 는 번들 D2Coding 우선순위와 결합된 자체
+/// `setup_egui_fonts` 를 가지므로 이 함수를 직접 호출하지 않고
+/// [`load_system_cjk_font`] 만 재사용한다. 갤러리처럼 추가 폰트가 없는 경우용.
+pub fn install_cjk_fallback(ctx: &egui::Context) {
+    let Some(bytes) = load_system_cjk_font() else {
+        tracing::warn!("no system CJK font found; Korean/Japanese/Chinese labels will render as □");
+        return;
+    };
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "system_cjk".to_owned(),
+        Arc::new(egui::FontData::from_owned(bytes)),
+    );
+    for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(fam)
+            .or_default()
+            .push("system_cjk".to_owned());
+    }
+    ctx.set_fonts(fonts);
 }
