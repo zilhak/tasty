@@ -1340,10 +1340,23 @@ IPC 메서드와 `tasty claude *` CLI 서브커맨드는 plugin이 자체적으�
 - **claude.children / claude.parent / claude.kill / claude.respawn / claude.broadcast / claude.wait**:
   자식 목록 조회, 부모 역참조, 자식 종료, 자식 재시작(레이아웃 유지), 일괄 전송,
   상태 폴링(idle|needs_input|active|exited). CLI 동일.
+- **claude.wait_by_surface**: child surface id 단독 lookup 으로 자식 state 를 반환.
+  `claude.wait` 와 동일 semantics 이되 (parent, child_index) 가 아닌 surface id 만 받는다.
+  `tell` 의 자동 wait chain 이 사용 (tell 응답에 child_index 가 없으므로 surface id 기준
+  wait 가 필요).
 - **claude.wait_any**: 여러 자식 중 *먼저* idle / needs_input / exited 가 되는 것을 즉시
   깨운다. 응답 JSON 에 `child_index` 키가 포함되어 어느 자식이 깨어났는지 알 수 있다.
   우선순위는 입력 children 순서 (동시 다수 terminal 시 결정적). timeout 도달 또는
   iteration 중 전원 active 인 tick 의 응답은 `{"state":"pending"}` (child_index 키 없음).
+- **자동 wait chain** (`spawn` / `tell`): `tasty claude spawn` 과 `tasty claude tell` 은
+  1 차 IPC 응답 직후 자동으로 `claude.wait` / `claude.wait_by_surface` 를 chain 호출하여
+  child 가 `idle` / `needs_input` / `exited` terminal state 에 도달할 때까지 block 한다.
+  응답은 line-delimited 두 JSON — 첫 줄이 spawn/tell 응답, 둘째 줄이 wait 응답.
+  - `--no-wait` (bool): chain 을 skip — 기존 fire-and-forget 동작 (1 차 응답 한 줄만 출력).
+  - `--timeout SECS` (u32): wait polling deadline. 생략하면 무한 대기.
+  - 다른 plugin 도 manifest `[[contributes.cli.subcommand]].auto_wait` 필드로 동일 패턴을
+    선언할 수 있다 — 상세는 [`docs/dev-guide/cli-naming.md`](dev-guide/cli-naming.md) 의
+    "auto-wait chain" 섹션 참조.
 - CLI: `tasty claude spawn --direction vertical --cwd /path --role worker --nickname "agent-1" --prompt "Fix bugs"`
 - CLI: `tasty claude children`, `tasty claude parent`, `tasty claude kill --child 1`, `tasty claude respawn --child 1`
 - CLI: `tasty claude broadcast "text\r" [--role ROLE]`, `tasty claude wait --child 1 [--timeout SECS]`
@@ -1378,7 +1391,8 @@ IPC 메서드와 `tasty claude *` CLI 서브커맨드는 plugin이 자체적으�
   미설치면 안내 메시지를 stderr에 출력하고 exit code 1로 종료한다.
 - CLI: `tasty claude install`, `tasty claude uninstall`, `tasty claude hook stop|notification|session-end|subagent-stop|prompt-submit|session-start [--surface ID]`
 - IPC: `claude.hook`, `claude.launch`, `claude.spawn`, `claude.children`, `claude.parent`, `claude.kill`,
-  `claude.respawn`, `claude.broadcast`, `claude.wait`, `claude.wait_any` 메서드. 권한 토큰: `ipc.invoke:claude`
+  `claude.respawn`, `claude.broadcast`, `claude.wait`, `claude.wait_any`, `claude.wait_by_surface`
+  메서드. 권한 토큰: `ipc.invoke:claude`
 
 ### Surface Metadata Store (surface_meta.rs)
 
@@ -1677,7 +1691,7 @@ Claude Code 등 TUI 앱이 실행 중이던 터미널을 복원할 때, 해당 �
 - 현재 기본 제공:
   - `com.tasty.explorer` (파일 탐색기 surface)
   - `com.tasty.claude` (Claude Code 통합 — `tasty claude launch|spawn|children|parent|broadcast|wait|kill|respawn|install|uninstall|hook`)
-  - `com.tasty.codex` (Codex CLI 통합 — `tasty codex launch|spawn|children|parent|tell|wait|broadcast|kill|respawn|install|uninstall|hook`. claude plugin과 동일 사용법, `--surface` 미지정 시 호출자 surface의 `TASTY_SURFACE_ID` env로 fallback)
+  - `com.tasty.codex` (Codex CLI 통합 — `tasty codex launch|spawn|children|parent|tell|wait|broadcast|kill|respawn|install|uninstall|hook`. claude plugin과 동일 사용법, `--surface` 미지정 시 호출자 surface의 `TASTY_SURFACE_ID` env로 fallback. `tasty codex spawn` / `tell` 도 claude 와 동일한 자동 wait chain 지원 — terminal_states 에 `untrusted` 추가됨. IPC 메서드: `codex.wait_by_surface` 도 함께 노출)
 - 사용자가 plugin 메뉴에서 "제거"를 선택하면 `removed_builtins`에 기록되어 다음 실행에서 자동 재설치되지 않는다 — 외부 plugin과 완전히 동일한 라이프사이클 적용
 - 번들 위치 탐색 순서: `TASTY_BUILTIN_PLUGINS_DIR` env > 실행 파일 옆 `plugins/` > dev 빌드 시 `target/<profile>/builtin-plugins/` (workspace 자동 부트스트랩, 등록된 모든 builtin 동기화)
 - **권한 자동 복구**: builtin plugin이 사용자 디렉터리에는 있지만 `plugins.toml`에 grant 엔트리가 없는 경우(예: 이전 버전에서 builtin으로 인식되지 않은 채 외부 plugin처럼 설치됨), 부팅 시 매니페스트의 모든 권한을 자동 grant. `granted = []`로 명시 비워둔 경우는 entry가 있으니 건드리지 않음
