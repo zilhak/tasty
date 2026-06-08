@@ -17,6 +17,7 @@ Plugin이 호스트에 contribute하는 카테고리(상세는 `docs/agent-guide
 3. 새 Popup 추가 — `[[contributes.popup]]` + `permissions = ["ui.popup"]`. trigger는 `event`(host/plugin event 발화 시 자동 open) 또는 `ipc`(plugin 명시 호출). SDK trait의 `open_popup/handle_popup_event/on_popup_closed`로 구현한다.
 4. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.tool]]` + `permissions = ["ui.tool_item"]`. 클릭 시 dispatch는 `kind = "event"` (Event Bus 발화) / `"open_surface"` (탭 추가) / `"open_popup"` (`[[contributes.popup]]` 인스턴스 open, `popup_id`는 `<plugin_id>/<id>` 형식)
 5. 이벤트별 동작 추가 — `[[contributes.commands]]`(키 입력) / `event_subscribe`(Event Bus 구독, 예: `"surface.closed"`) / `[[contributes.ipc_namespace]]`(IPC 호출) / `[[contributes.cli]]`(CLI 호출)
+6. 설정 모달에 sub-tab 추가 — `[[contributes.settings_pages]]` + `permissions = ["ui.settings_page"]`. host 가 SettingsPageRegistry 를 순회해 sub-tab 을 동적으로 합성하며, 1 차 schema 는 `font_override` 항목만 지원 (`storage_key` 가 `settings.appearance.plugin_font_overrides` 의 key 로 쓰임).
 
 작성자가 다뤄야 할 것:
 
@@ -494,6 +495,71 @@ default_size = { width = 1024, height = 768 }   # 옵션, LogicalPx 단위
 - hello 시점에 `plugin.window_declared { plugin_id, window_id }` host event
   발화 — 다른 plugin / Lua hook 이 구독 가능.
 - 실제 윈도우는 *열리지 않는다* — schema 잠금만.
+
+## 4-1-D. 설정 페이지 (Settings page contribute)
+
+Plugin 은 매니페스트의 `[[contributes.settings_pages]]` 로 호스트 설정 모달에
+자기 sub-tab 을 등록할 수 있다. 호스트가 plugin SettingsPageRegistry 를 순회해
+sub-tab 을 동적으로 그리며, plugin 비활성 시 sub-tab 이 자동으로 사라진다
+(= dead-setting 비표시).
+
+### 매니페스트
+
+```toml
+permissions = [..., "ui.settings_page"]
+
+[[contributes.settings_pages]]
+id = "markdown"                                # 소문자/숫자 + `_` + `-`, plugin 내 unique
+title_key = "settings.subtab.markdown"         # sub-tab 라벨 i18n 키
+category = "appearance"                        # appearance / general / keybindings / other:<name>
+
+[[contributes.settings_pages.items]]
+kind = "font_override"                         # 1 차 schema 는 이 한 종류만 지원
+id = "font"                                    # page 내 unique
+label_key = "settings.appearance.font_override"
+storage_key = "markdown"                       # settings.appearance.plugin_font_overrides 의 key
+```
+
+`ui.settings_page` 권한 토큰이 누락된 매니페스트는 manifest validator 가
+거부한다 (`contributes.settings_pages requires the 'ui.settings_page' permission`).
+같은 매니페스트 내 page id 중복, item id 중복, 빈 `title_key` / `label_key` /
+`storage_key` 도 거부.
+
+### 항목 종류
+
+1 차에서는 `font_override` 한 종류만 지원한다. host 는 settings 모듈의
+`plugin_font_overrides: HashMap<String, FontOverride>` 슬롯에 값을 read/write
+하는 generic UI 를 그린다 — `storage_key` 가 그 HashMap 의 key 로 쓰인다.
+같은 plugin 이 surface kind 를 동시에 contribute 하는 경우, 보통
+`storage_key` 를 surface kind 이름과 동일하게 두어 host renderer 의
+`effective_font_for_kind(kind)` 가 자동으로 override 값을 집어가게 한다.
+
+향후 추가 예정 (별도 TODO): `color` / `bool` / `enum`. 추가 variants 는
+`#[serde(tag = "kind")]` 로 직렬화되므로 기존 매니페스트는 forward-compat
+가 보장된다.
+
+### 카테고리
+
+- `appearance` — Appearance 탭의 sub-tab 영역에 합류 (1 차 구현 대상)
+- `general` / `keybindings` — 후속 host 측 동적 dispatch 지원 예정
+- 그 외 임의 문자열 — `SettingsCategory::Other(name)` 로 보존되며 host 가
+  모르는 카테고리는 warn 후 drop 하지 않고 보관만 한다 (forward-compat)
+
+### i18n
+
+- `title_key` 는 보통 plugin 자체 `lang/{en,ko,ja}.toml` 에 정의 (예:
+  `[settings.subtab] markdown = "Markdown"`).
+- `label_key` 는 plugin 별 라벨이면 plugin lang, 항목 종류별 공통 라벨이면
+  host lang (예: `settings.appearance.font_override`) 어느 쪽이든 가능. host
+  의 lookup 은 host lang → plugin lang 순서로 fallback 한다.
+
+### 참고 구현
+
+`crates/tasty-plugin-markdown/tasty-plugin.toml` 이 `font_override` 항목
+하나를 등록하는 reference. host 측 SettingsPageRegistry / generic renderer
+구현은 `crates/tasty-host-plugin/src/settings_registry.rs` 와
+`src/view/settings/ui/tabs/appearance.rs` 의 plugin-driven sub-tab 합성 로직
+참조.
 
 ## 4-2. IPC namespace 처리 (handle_ipc_method)
 

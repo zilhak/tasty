@@ -46,7 +46,7 @@ process.spawn
 memory.read        memory.write        memory.secret
 notification
 network
-ui.popup           ui.tool_item
+ui.popup           ui.tool_item       ui.settings_page
 approval
 telemetry
 agent
@@ -166,6 +166,12 @@ plugin 로드 단계에서 `manifest::validate_*_permissions` 함수가 수행�
 | contributes 항목 | 요구 권한 | 검증 함수 |
 |----------------|----------|----------|
 | `events_emitted[].key` | 매니페스트 `event_publish` 패턴이 해당 키를 커버해야 함 | `validate_events_emitted` |
+| `[[contributes.settings_pages]]` (1개 이상) | `ui.settings_page` 토큰이 매니페스트에 있어야 함 | `PluginManifest::validate_*` (validate.rs) |
+
+`ui.settings_page` 는 plugin 이 host 설정 모달에 자기 sub-tab 을 등록하는 권한이다.
+`[[contributes.settings_pages]]` 블록이 하나라도 있으면 필수 — 누락 시 plugin
+시작이 거부된다. 자세한 매니페스트 schema·항목 종류·storage_key 의미는
+[`plugin-development.md`](plugin-development.md) §4-1-D 참조.
 
 surface lifecycle 알림 같은 broadcast 이벤트는 Event Bus의 `event_subscribe` 패턴으로 받는다 (요구 권한 별도 없음 — 패턴 자체가 권한 게이트).
 
