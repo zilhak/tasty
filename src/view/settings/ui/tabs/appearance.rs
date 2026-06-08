@@ -826,12 +826,6 @@ fn draw_font_preview(
         egui::Sense::hover(),
     );
     ui.painter().rect_filled(focused_rect, 2.0, focused_bg32);
-    ui.painter().rect_stroke(
-        focused_rect,
-        2.0,
-        egui::Stroke::new(th.border_width.value(), th.blue),
-        egui::StrokeKind::Outside,
-    );
     for (i, line) in sample_lines.iter().enumerate() {
         let pos = focused_rect.min + egui::vec2(padding, padding + line_height * i as f32);
         ui.painter().text(
