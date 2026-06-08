@@ -199,13 +199,9 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프
 
 **tasty 의 모든 단축키는 `KeybindingSettings` 로 노출되며, 코드에 하드코딩되어서는 안 된다.** macOS NSMenu / Windows AcceleratorTable / Linux Wayland 같은 OS 메뉴 측 key equivalent 도 `KeybindingSettings` 의 대응 binding 값을 따라가야 한다.
 
-예외 (어쩔 수 없는 때) — OS 의 표준 NSResponder/NSWindow chain 이 자체적으로 처리하는 항목은 표준 selector 와 함께 표준 단축키를 그대로 두는 것이 정당하다:
+예외 (수정 불가능한 단축키) — **OS 자체가 박아두어 tasty 가 무력화 / 덮어쓰기 / 가로채기 모두 불가능한 단축키**는 그대로 둔다 (예: macOS Spotlight `Cmd+Space`, OS 전역 윈도우 전환 등). 이 케이스는 애초에 tasty 가 등록할 수도 끌 수도 없는 것이므로 정책의 범위 밖이다.
 
-- `cut:` / `copy:` / `paste:` / `selectAll:` (텍스트 위젯 NSResponder 표준)
-- `miniaturize:` / `performClose:` / `performZoom:` (NSWindow 표준)
-- `hide:` / `hideOtherApplications:` / `unhideAllApplications:` / `orderFrontStandardAboutPanel:` (NSApplication 표준)
-
-위 항목은 **tasty 가 임의로 결정한 단축키가 아니라 OS 컨벤션을 따르는 것**이므로 hardcoded 가 허용되며, 해당 코드 옆에 정당화 주석 (예: "OS 표준 selector — Settings 미연동") 을 남긴다.
+반대로, **tasty 가 직접 NSMenu / AcceleratorTable 등에 등록하는 모든 메뉴 항목의 key equivalent 는 — `KeybindingSettings` 의 binding 에서 가져올 수 있으면 가져오고, 가져올 수 없으면 비운다.** selector 가 OS 표준 (`cut:` / `performClose:` / `miniaturize:` / `hide:` 등) 이라는 사실은 단축키 하드코딩의 정당화가 되지 않는다. tasty 가 winit 의 `with_default_menu(false)` 로 NSMenu 를 직접 소유한 시점부터 모든 NSMenu 항목의 key equivalent 는 tasty 의 선택이며, 정책은 "Settings 연동 또는 빈 값" 둘 중 하나만 허용한다. selector 와 단축키는 독립적으로 결정한다 — selector 는 OS 표준을 그대로 써도 되지만, 같은 항목의 key equivalent 까지 OS 컨벤션 단축키로 박는 것은 금지.
 
 tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등) 은 **반드시** `KeybindingSettings` 의 대응 필드를 읽어 key equivalent 를 설정해야 한다. binding 이 빈 vec 이면 key equivalent 도 비워두어 단축키 없는 메뉴 항목으로 표시한다.
 

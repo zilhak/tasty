@@ -198,37 +198,24 @@ fn setup_main_menu(
     let app_menu_item = NSMenuItem::new(mtm);
     let app_menu = NSMenu::new(mtm);
 
-    // OS 표준 NSApplication selector — Settings 미연동 (CLAUDE.md 단축키 정책의 예외).
     let about_title = NSString::from_str("About ").stringByAppendingString(&process_name);
     app_menu.addItem(&make_std_item(
         mtm,
         &about_title,
-        Some(sel!(orderFrontStandardAboutPanel:)),
-        None,
-        NSEventModifierFlags::Command,
+        sel!(orderFrontStandardAboutPanel:),
     ));
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
     let hide_title = NSString::from_str("Hide ").stringByAppendingString(&process_name);
-    app_menu.addItem(&make_std_item(
-        mtm,
-        &hide_title,
-        Some(sel!(hide:)),
-        Some("h"),
-        NSEventModifierFlags::Command,
-    ));
+    app_menu.addItem(&make_std_item(mtm, &hide_title, sel!(hide:)));
     app_menu.addItem(&make_std_item(
         mtm,
         &NSString::from_str("Hide Others"),
-        Some(sel!(hideOtherApplications:)),
-        Some("h"),
-        NSEventModifierFlags::Command | NSEventModifierFlags::Option,
+        sel!(hideOtherApplications:),
     ));
     app_menu.addItem(&make_std_item(
         mtm,
         &NSString::from_str("Show All"),
-        Some(sel!(unhideAllApplications:)),
-        None,
-        NSEventModifierFlags::Command,
+        sel!(unhideAllApplications:),
     ));
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
 
@@ -282,66 +269,46 @@ fn setup_main_menu(
     main_menu.addItem(&file_menu_item);
 
     // ── Edit Menu ──────────────────────────────────────────────────
-    // OS 표준 NSResponder selector — Settings 미연동 (CLAUDE.md 단축키 정책의 예외).
     let edit_menu_item = NSMenuItem::new(mtm);
     let edit_menu = NSMenu::new(mtm);
     edit_menu.setTitle(&NSString::from_str("Edit"));
-    edit_menu.addItem(&make_std_item(
-        mtm,
-        &NSString::from_str("Cut"),
-        Some(sel!(cut:)),
-        Some("x"),
-        NSEventModifierFlags::Command,
-    ));
+    edit_menu.addItem(&make_std_item(mtm, &NSString::from_str("Cut"), sel!(cut:)));
     edit_menu.addItem(&make_std_item(
         mtm,
         &NSString::from_str("Copy"),
-        Some(sel!(copy:)),
-        Some("c"),
-        NSEventModifierFlags::Command,
+        sel!(copy:),
     ));
     edit_menu.addItem(&make_std_item(
         mtm,
         &NSString::from_str("Paste"),
-        Some(sel!(paste:)),
-        Some("v"),
-        NSEventModifierFlags::Command,
+        sel!(paste:),
     ));
     edit_menu.addItem(&make_std_item(
         mtm,
         &NSString::from_str("Select All"),
-        Some(sel!(selectAll:)),
-        Some("a"),
-        NSEventModifierFlags::Command,
+        sel!(selectAll:),
     ));
     edit_menu_item.setSubmenu(Some(&edit_menu));
     main_menu.addItem(&edit_menu_item);
 
     // ── Window Menu ────────────────────────────────────────────────
-    // OS 표준 NSWindow selector — Settings 미연동 (CLAUDE.md 단축키 정책의 예외).
     let window_menu_item = NSMenuItem::new(mtm);
     let window_menu = NSMenu::new(mtm);
     window_menu.setTitle(&NSString::from_str("Window"));
     window_menu.addItem(&make_std_item(
         mtm,
         &NSString::from_str("Minimize"),
-        Some(sel!(miniaturize:)),
-        Some("m"),
-        NSEventModifierFlags::Command,
+        sel!(miniaturize:),
     ));
     window_menu.addItem(&make_std_item(
         mtm,
         &NSString::from_str("Zoom"),
-        Some(sel!(performZoom:)),
-        None,
-        NSEventModifierFlags::Command,
+        sel!(performZoom:),
     ));
     window_menu.addItem(&make_std_item(
         mtm,
         &NSString::from_str("Close Window"),
-        Some(sel!(performClose:)),
-        Some("w"),
-        NSEventModifierFlags::Command,
+        sel!(performClose:),
     ));
     window_menu_item.setSubmenu(Some(&window_menu));
     main_menu.addItem(&window_menu_item);
@@ -389,27 +356,23 @@ fn binding_to_nsmenu_key(
 }
 
 /// 표준 NSResponder selector 용 NSMenuItem 생성 (target = nil → first responder chain).
-fn make_std_item(
-    mtm: MainThreadMarker,
-    title: &NSString,
-    selector: Option<Sel>,
-    key: Option<&str>,
-    modifier_mask: objc2_app_kit::NSEventModifierFlags,
-) -> Retained<NSMenuItem> {
+///
+/// 단축키 (key equivalent / modifier mask) 인자를 의도적으로 받지 않는다 — tasty 의
+/// 단축키 정책상 NSMenu 항목의 key equivalent 는 [`KeybindingSettings`] 의 binding 에서
+/// 가져오거나 비어 있어야 한다. 본 헬퍼는 후자(빈 값) 경로 전용이므로 호출부에서
+/// 단축키를 박을 수 없게 시그니처에서 차단한다.
+fn make_std_item(mtm: MainThreadMarker, title: &NSString, selector: Sel) -> Retained<NSMenuItem> {
     let item = NSMenuItem::new(mtm);
     item.setTitle(title);
-    if let Some(key_str) = key {
-        item.setKeyEquivalent(&NSString::from_str(key_str));
-        // SAFETY: main thread (mtm). setKeyEquivalentModifierMask 는 AppKit main-thread-only.
-        unsafe {
-            item.setKeyEquivalentModifierMask(modifier_mask);
-        }
-    }
-    if let Some(sel) = selector {
-        // SAFETY: main thread (mtm). target 미설정 = nil = first responder chain (표준 selector 용).
-        unsafe {
-            item.setAction(Some(sel));
-        }
+    // key equivalent 는 명시적으로 빈 문자열 — 정책상 NSMenu 항목 단축키는 KeybindingSettings
+    // 연동 경로(별도 NSMenuItem 직접 구성)에서만 설정된다.
+    item.setKeyEquivalent(&NSString::from_str(""));
+    // SAFETY: main thread (mtm). setKeyEquivalentModifierMask / setAction 은 AppKit main-thread-only.
+    // target 미설정 = nil = first responder chain (표준 selector 용).
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    unsafe {
+        item.setKeyEquivalentModifierMask(objc2_app_kit::NSEventModifierFlags::empty());
+        item.setAction(Some(selector));
     }
     item
 }
@@ -428,5 +391,50 @@ fn set_dock_icon(app: &NSApplication) {
         unsafe { app.setApplicationIconImage(Some(&image)) };
     } else {
         tracing::warn!("Failed to create NSImage for dock icon");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_app_kit::NSEventModifierFlags;
+
+    #[test]
+    fn binding_to_nsmenu_key_empty_returns_empty_key_and_empty_mods() {
+        let (key, mods) = binding_to_nsmenu_key("");
+        assert_eq!(key.to_string(), "");
+        assert_eq!(mods, NSEventModifierFlags::empty());
+    }
+
+    #[test]
+    fn binding_to_nsmenu_key_prefix_only_returns_empty_key() {
+        // "alt+" 만 있고 실제 키가 없으면 단축키 미표시 (key 빈 문자열).
+        let (key, mods) = binding_to_nsmenu_key("alt+");
+        assert_eq!(key.to_string(), "");
+        assert_eq!(mods, NSEventModifierFlags::Command);
+    }
+
+    #[test]
+    fn binding_to_nsmenu_key_alt_maps_to_command() {
+        // 위치 기반 추상화: `alt+` → macOS Command.
+        let (key, mods) = binding_to_nsmenu_key("alt+w");
+        assert_eq!(key.to_string(), "w");
+        assert_eq!(mods, NSEventModifierFlags::Command);
+    }
+
+    #[test]
+    fn binding_to_nsmenu_key_combo_aggregates_modifiers() {
+        let (key, mods) = binding_to_nsmenu_key("alt+shift+n");
+        assert_eq!(key.to_string(), "n");
+        assert_eq!(
+            mods,
+            NSEventModifierFlags::Command | NSEventModifierFlags::Shift
+        );
+    }
+
+    #[test]
+    fn binding_to_nsmenu_key_lowercases_alpha_key() {
+        let (key, _) = binding_to_nsmenu_key("alt+W");
+        assert_eq!(key.to_string(), "w");
     }
 }
