@@ -156,14 +156,14 @@ if [[ "$PROFILE" != "debug" ]]; then
         exit 1
     fi
 
-    # NOTE: .deb and .rpm packages do NOT yet ship plugins. cargo-deb /
-    # cargo-generate-rpm read their asset lists from Cargo.toml metadata,
-    # which is outside the scope of this script. Pairing those packages with
-    # plugin support also requires deciding the install path (current runtime
-    # `bundle_root()` only looks at `<exe_dir>/plugins/`, which for
-    # `/usr/bin/tasty` is `/usr/bin/plugins/` — not FHS-friendly).
-    # Until then, .tar.gz and .AppImage are the supported install paths for
-    # plugin-enabled Linux builds.
+    # .deb and .rpm ship plugins via Cargo.toml metadata assets
+    # (`[package.metadata.deb]` and `[package.metadata.generate-rpm]`).
+    # Plugins land in /usr/lib/tasty/plugins/<id>/ — the runtime
+    # `bundle_root()` (crates/tasty-host-plugin/src/builtin.rs) picks this up
+    # as the linux FHS fallback after the exe-relative `plugins/` lookup
+    # fails. cargo-deb / cargo-generate-rpm read those metadata blocks before
+    # this script runs `--no-build`, so the binaries must exist in
+    # `target/<profile>/` (built above).
 
     echo "==> Building .deb package..."
     cargo deb --no-build --profile "$PROFILE"

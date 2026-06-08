@@ -56,6 +56,35 @@ assets = [
     ["assets/icons/icon_128.png", "usr/share/icons/hicolor/128x128/apps/tasty.png", "644"],
     ["assets/icons/icon_256.png", "usr/share/icons/hicolor/256x256/apps/tasty.png", "644"],
     ["assets/icons/icon_512.png", "usr/share/icons/hicolor/512x512/apps/tasty.png", "644"],
+    # Builtin plugins — installed under FHS path; `bundle_root()` picks this up
+    # as the linux fallback (crates/tasty-host-plugin/src/builtin.rs).
+    # Per-plugin layout: <id>/{tasty-plugin-<crate>, tasty-plugin.toml, lang/}.
+    # Keep in sync with crates/tasty-host-plugin/src/builtin.rs BUILTINS and
+    # the build-linux.sh / build-macos-dmg.sh staging loops.
+    ["target/release/tasty-plugin-claude",            "usr/lib/tasty/plugins/com.tasty.claude/",            "755"],
+    ["crates/tasty-plugin-claude/tasty-plugin.toml",  "usr/lib/tasty/plugins/com.tasty.claude/",            "644"],
+    ["crates/tasty-plugin-claude/lang/*",             "usr/lib/tasty/plugins/com.tasty.claude/lang/",       "644"],
+    ["target/release/tasty-plugin-clipboard-history",            "usr/lib/tasty/plugins/com.tasty.clipboard-history/",            "755"],
+    ["crates/tasty-plugin-clipboard-history/tasty-plugin.toml",  "usr/lib/tasty/plugins/com.tasty.clipboard-history/",            "644"],
+    ["crates/tasty-plugin-clipboard-history/lang/*",             "usr/lib/tasty/plugins/com.tasty.clipboard-history/lang/",       "644"],
+    ["target/release/tasty-plugin-codex",             "usr/lib/tasty/plugins/com.tasty.codex/",             "755"],
+    ["crates/tasty-plugin-codex/tasty-plugin.toml",   "usr/lib/tasty/plugins/com.tasty.codex/",             "644"],
+    ["crates/tasty-plugin-codex/lang/*",              "usr/lib/tasty/plugins/com.tasty.codex/lang/",        "644"],
+    ["target/release/tasty-plugin-explorer",          "usr/lib/tasty/plugins/com.tasty.explorer/",          "755"],
+    ["crates/tasty-plugin-explorer/tasty-plugin.toml","usr/lib/tasty/plugins/com.tasty.explorer/",          "644"],
+    ["crates/tasty-plugin-explorer/lang/*",           "usr/lib/tasty/plugins/com.tasty.explorer/lang/",     "644"],
+    ["target/release/tasty-plugin-git-viewer",        "usr/lib/tasty/plugins/com.tasty.git-viewer/",        "755"],
+    ["crates/tasty-plugin-git-viewer/tasty-plugin.toml","usr/lib/tasty/plugins/com.tasty.git-viewer/",      "644"],
+    ["crates/tasty-plugin-git-viewer/lang/*",         "usr/lib/tasty/plugins/com.tasty.git-viewer/lang/",   "644"],
+    ["target/release/tasty-plugin-html",              "usr/lib/tasty/plugins/com.tasty.html/",              "755"],
+    ["crates/tasty-plugin-html/tasty-plugin.toml",    "usr/lib/tasty/plugins/com.tasty.html/",              "644"],
+    ["crates/tasty-plugin-html/lang/*",               "usr/lib/tasty/plugins/com.tasty.html/lang/",         "644"],
+    ["target/release/tasty-plugin-image",             "usr/lib/tasty/plugins/com.tasty.image/",             "755"],
+    ["crates/tasty-plugin-image/tasty-plugin.toml",   "usr/lib/tasty/plugins/com.tasty.image/",             "644"],
+    ["crates/tasty-plugin-image/lang/*",              "usr/lib/tasty/plugins/com.tasty.image/lang/",        "644"],
+    ["target/release/tasty-plugin-markdown",          "usr/lib/tasty/plugins/com.tasty.markdown/",          "755"],
+    ["crates/tasty-plugin-markdown/tasty-plugin.toml","usr/lib/tasty/plugins/com.tasty.markdown/",          "644"],
+    ["crates/tasty-plugin-markdown/lang/*",           "usr/lib/tasty/plugins/com.tasty.markdown/lang/",     "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -72,6 +101,31 @@ assets = [
     { source = "assets/icons/icon_128.png", dest = "/usr/share/icons/hicolor/128x128/apps/tasty.png", mode = "644" },
     { source = "assets/icons/icon_256.png", dest = "/usr/share/icons/hicolor/256x256/apps/tasty.png", mode = "644" },
     { source = "assets/icons/icon_512.png", dest = "/usr/share/icons/hicolor/512x512/apps/tasty.png", mode = "644" },
+    # Builtin plugins — see [package.metadata.deb] for layout/sync notes.
+    { source = "target/release/tasty-plugin-claude",             dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin-claude",                       mode = "755" },
+    { source = "crates/tasty-plugin-claude/tasty-plugin.toml",   dest = "/usr/lib/tasty/plugins/com.tasty.claude/tasty-plugin.toml",                         mode = "644" },
+    { source = "crates/tasty-plugin-claude/lang/*",              dest = "/usr/lib/tasty/plugins/com.tasty.claude/lang/",                                     mode = "644" },
+    { source = "target/release/tasty-plugin-clipboard-history",            dest = "/usr/lib/tasty/plugins/com.tasty.clipboard-history/tasty-plugin-clipboard-history", mode = "755" },
+    { source = "crates/tasty-plugin-clipboard-history/tasty-plugin.toml",  dest = "/usr/lib/tasty/plugins/com.tasty.clipboard-history/tasty-plugin.toml",   mode = "644" },
+    { source = "crates/tasty-plugin-clipboard-history/lang/*",             dest = "/usr/lib/tasty/plugins/com.tasty.clipboard-history/lang/",               mode = "644" },
+    { source = "target/release/tasty-plugin-codex",              dest = "/usr/lib/tasty/plugins/com.tasty.codex/tasty-plugin-codex",                         mode = "755" },
+    { source = "crates/tasty-plugin-codex/tasty-plugin.toml",    dest = "/usr/lib/tasty/plugins/com.tasty.codex/tasty-plugin.toml",                          mode = "644" },
+    { source = "crates/tasty-plugin-codex/lang/*",               dest = "/usr/lib/tasty/plugins/com.tasty.codex/lang/",                                      mode = "644" },
+    { source = "target/release/tasty-plugin-explorer",           dest = "/usr/lib/tasty/plugins/com.tasty.explorer/tasty-plugin-explorer",                   mode = "755" },
+    { source = "crates/tasty-plugin-explorer/tasty-plugin.toml", dest = "/usr/lib/tasty/plugins/com.tasty.explorer/tasty-plugin.toml",                       mode = "644" },
+    { source = "crates/tasty-plugin-explorer/lang/*",            dest = "/usr/lib/tasty/plugins/com.tasty.explorer/lang/",                                   mode = "644" },
+    { source = "target/release/tasty-plugin-git-viewer",         dest = "/usr/lib/tasty/plugins/com.tasty.git-viewer/tasty-plugin-git-viewer",               mode = "755" },
+    { source = "crates/tasty-plugin-git-viewer/tasty-plugin.toml", dest = "/usr/lib/tasty/plugins/com.tasty.git-viewer/tasty-plugin.toml",                   mode = "644" },
+    { source = "crates/tasty-plugin-git-viewer/lang/*",          dest = "/usr/lib/tasty/plugins/com.tasty.git-viewer/lang/",                                 mode = "644" },
+    { source = "target/release/tasty-plugin-html",               dest = "/usr/lib/tasty/plugins/com.tasty.html/tasty-plugin-html",                           mode = "755" },
+    { source = "crates/tasty-plugin-html/tasty-plugin.toml",     dest = "/usr/lib/tasty/plugins/com.tasty.html/tasty-plugin.toml",                           mode = "644" },
+    { source = "crates/tasty-plugin-html/lang/*",                dest = "/usr/lib/tasty/plugins/com.tasty.html/lang/",                                       mode = "644" },
+    { source = "target/release/tasty-plugin-image",              dest = "/usr/lib/tasty/plugins/com.tasty.image/tasty-plugin-image",                         mode = "755" },
+    { source = "crates/tasty-plugin-image/tasty-plugin.toml",    dest = "/usr/lib/tasty/plugins/com.tasty.image/tasty-plugin.toml",                          mode = "644" },
+    { source = "crates/tasty-plugin-image/lang/*",               dest = "/usr/lib/tasty/plugins/com.tasty.image/lang/",                                      mode = "644" },
+    { source = "target/release/tasty-plugin-markdown",           dest = "/usr/lib/tasty/plugins/com.tasty.markdown/tasty-plugin-markdown",                   mode = "755" },
+    { source = "crates/tasty-plugin-markdown/tasty-plugin.toml", dest = "/usr/lib/tasty/plugins/com.tasty.markdown/tasty-plugin.toml",                       mode = "644" },
+    { source = "crates/tasty-plugin-markdown/lang/*",            dest = "/usr/lib/tasty/plugins/com.tasty.markdown/lang/",                                   mode = "644" },
 ]
 
 [package.metadata.generate-rpm.requires]
