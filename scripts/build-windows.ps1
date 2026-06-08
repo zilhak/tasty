@@ -149,11 +149,12 @@ Write-Host ""
 Write-Host "Portable archive: $DistDir\$ArchiveName"
 
 # === MSI installer (cargo-wix) ===
-# NOTE: the .msi does NOT yet ship plugins. cargo-wix builds from wix\main.wxs,
-# which only declares the `tasty.exe` component — adding plugins requires
-# new Component / File entries (one per plugin) in main.wxs, outside the
-# scope of this script. Until that's done, the ZIP is the supported install
-# path for plugin-enabled Windows builds.
+# The .msi ships plugins via explicit Component / File entries in
+# wix\main.wxs (one per binary, manifest, and lang file). They install
+# to `<APPLICATIONFOLDER>\bin\plugins\<id>\` next to tasty.exe so the
+# runtime `bundle_root()` finds them via the exe-relative `plugins/`
+# lookup. Keep the wxs plugin list in sync with BUILTINS in
+# crates\tasty-host-plugin\src\builtin.rs.
 if (-not $SkipMsi) {
     Write-Host ""
     Write-Host "==> Building MSI installer..."

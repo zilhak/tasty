@@ -114,6 +114,171 @@
                                 Source='$(var.CargoTargetBinDir)\tasty.exe'
                                 KeyPath='yes'/>
                         </Component>
+
+                        <!--
+                          Builtin plugins. Each lands in
+                          `<APPLICATIONFOLDER>\bin\plugins\<id>\` so the
+                          runtime `bundle_root()` (crates\tasty-host-plugin\
+                          src\builtin.rs) finds them via the exe-relative
+                          `plugins/` lookup that runs before the linux FHS
+                          fallback. Keep the plugin list in sync with that
+                          BUILTINS array and the build-windows.ps1 staging
+                          loop.
+                        -->
+                        <Directory Id='PluginsDir' Name='plugins'>
+                            <Directory Id='PluginClaudeDir' Name='com.tasty.claude'>
+                                <Component Id='PluginClaudeBin' Guid='*'>
+                                    <File Source='$(var.CargoTargetBinDir)\tasty-plugin-claude.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginClaudeManifest' Guid='*'>
+                                    <File Source='crates\tasty-plugin-claude\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginClaudeLangDir' Name='lang'>
+                                    <Component Id='PluginClaudeLangEn' Guid='*'>
+                                        <File Source='crates\tasty-plugin-claude\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginClaudeLangJa' Guid='*'>
+                                        <File Source='crates\tasty-plugin-claude\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginClaudeLangKo' Guid='*'>
+                                        <File Source='crates\tasty-plugin-claude\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
+                            <Directory Id='PluginClipboardHistoryDir' Name='com.tasty.clipboard-history'>
+                                <Component Id='PluginClipboardHistoryBin' Guid='*'>
+                                    <File Source='$(var.CargoTargetBinDir)\tasty-plugin-clipboard-history.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginClipboardHistoryManifest' Guid='*'>
+                                    <File Source='crates\tasty-plugin-clipboard-history\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginClipboardHistoryLangDir' Name='lang'>
+                                    <Component Id='PluginClipboardHistoryLangEn' Guid='*'>
+                                        <File Source='crates\tasty-plugin-clipboard-history\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginClipboardHistoryLangJa' Guid='*'>
+                                        <File Source='crates\tasty-plugin-clipboard-history\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginClipboardHistoryLangKo' Guid='*'>
+                                        <File Source='crates\tasty-plugin-clipboard-history\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
+                            <Directory Id='PluginCodexDir' Name='com.tasty.codex'>
+                                <Component Id='PluginCodexBin' Guid='*'>
+                                    <File Source='$(var.CargoTargetBinDir)\tasty-plugin-codex.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginCodexManifest' Guid='*'>
+                                    <File Source='crates\tasty-plugin-codex\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginCodexLangDir' Name='lang'>
+                                    <Component Id='PluginCodexLangEn' Guid='*'>
+                                        <File Source='crates\tasty-plugin-codex\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginCodexLangJa' Guid='*'>
+                                        <File Source='crates\tasty-plugin-codex\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginCodexLangKo' Guid='*'>
+                                        <File Source='crates\tasty-plugin-codex\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
+                            <Directory Id='PluginExplorerDir' Name='com.tasty.explorer'>
+                                <Component Id='PluginExplorerBin' Guid='*'>
+                                    <File Source='$(var.CargoTargetBinDir)\tasty-plugin-explorer.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginExplorerManifest' Guid='*'>
+                                    <File Source='crates\tasty-plugin-explorer\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginExplorerLangDir' Name='lang'>
+                                    <Component Id='PluginExplorerLangEn' Guid='*'>
+                                        <File Source='crates\tasty-plugin-explorer\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginExplorerLangJa' Guid='*'>
+                                        <File Source='crates\tasty-plugin-explorer\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginExplorerLangKo' Guid='*'>
+                                        <File Source='crates\tasty-plugin-explorer\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
+                            <Directory Id='PluginGitViewerDir' Name='com.tasty.git-viewer'>
+                                <Component Id='PluginGitViewerBin' Guid='*'>
+                                    <File Source='$(var.CargoTargetBinDir)\tasty-plugin-git-viewer.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginGitViewerManifest' Guid='*'>
+                                    <File Source='crates\tasty-plugin-git-viewer\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginGitViewerLangDir' Name='lang'>
+                                    <Component Id='PluginGitViewerLangEn' Guid='*'>
+                                        <File Source='crates\tasty-plugin-git-viewer\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginGitViewerLangJa' Guid='*'>
+                                        <File Source='crates\tasty-plugin-git-viewer\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginGitViewerLangKo' Guid='*'>
+                                        <File Source='crates\tasty-plugin-git-viewer\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
+                            <Directory Id='PluginHtmlDir' Name='com.tasty.html'>
+                                <Component Id='PluginHtmlBin' Guid='*'>
+                                    <File Source='$(var.CargoTargetBinDir)\tasty-plugin-html.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginHtmlManifest' Guid='*'>
+                                    <File Source='crates\tasty-plugin-html\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginHtmlLangDir' Name='lang'>
+                                    <Component Id='PluginHtmlLangEn' Guid='*'>
+                                        <File Source='crates\tasty-plugin-html\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginHtmlLangJa' Guid='*'>
+                                        <File Source='crates\tasty-plugin-html\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginHtmlLangKo' Guid='*'>
+                                        <File Source='crates\tasty-plugin-html\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
+                            <Directory Id='PluginImageDir' Name='com.tasty.image'>
+                                <Component Id='PluginImageBin' Guid='*'>
+                                    <File Source='$(var.CargoTargetBinDir)\tasty-plugin-image.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginImageManifest' Guid='*'>
+                                    <File Source='crates\tasty-plugin-image\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginImageLangDir' Name='lang'>
+                                    <Component Id='PluginImageLangEn' Guid='*'>
+                                        <File Source='crates\tasty-plugin-image\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginImageLangJa' Guid='*'>
+                                        <File Source='crates\tasty-plugin-image\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginImageLangKo' Guid='*'>
+                                        <File Source='crates\tasty-plugin-image\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
+                            <Directory Id='PluginMarkdownDir' Name='com.tasty.markdown'>
+                                <Component Id='PluginMarkdownBin' Guid='*'>
+                                    <File Source='$(var.CargoTargetBinDir)\tasty-plugin-markdown.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginMarkdownManifest' Guid='*'>
+                                    <File Source='crates\tasty-plugin-markdown\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginMarkdownLangDir' Name='lang'>
+                                    <Component Id='PluginMarkdownLangEn' Guid='*'>
+                                        <File Source='crates\tasty-plugin-markdown\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginMarkdownLangJa' Guid='*'>
+                                        <File Source='crates\tasty-plugin-markdown\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginMarkdownLangKo' Guid='*'>
+                                        <File Source='crates\tasty-plugin-markdown\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
+                        </Directory>
                     </Directory>
                 </Directory>
             </Directory>
@@ -156,6 +321,49 @@
             <ComponentRef Id='License'/>
             <ComponentRef Id='binary0'/>
             <ComponentRef Id='ApplicationShortcut'/>
+
+            <!-- Builtin plugin components — keep order/list aligned with the
+                 Directory tree above and BUILTINS in tasty-host-plugin. -->
+            <ComponentRef Id='PluginClaudeBin'/>
+            <ComponentRef Id='PluginClaudeManifest'/>
+            <ComponentRef Id='PluginClaudeLangEn'/>
+            <ComponentRef Id='PluginClaudeLangJa'/>
+            <ComponentRef Id='PluginClaudeLangKo'/>
+            <ComponentRef Id='PluginClipboardHistoryBin'/>
+            <ComponentRef Id='PluginClipboardHistoryManifest'/>
+            <ComponentRef Id='PluginClipboardHistoryLangEn'/>
+            <ComponentRef Id='PluginClipboardHistoryLangJa'/>
+            <ComponentRef Id='PluginClipboardHistoryLangKo'/>
+            <ComponentRef Id='PluginCodexBin'/>
+            <ComponentRef Id='PluginCodexManifest'/>
+            <ComponentRef Id='PluginCodexLangEn'/>
+            <ComponentRef Id='PluginCodexLangJa'/>
+            <ComponentRef Id='PluginCodexLangKo'/>
+            <ComponentRef Id='PluginExplorerBin'/>
+            <ComponentRef Id='PluginExplorerManifest'/>
+            <ComponentRef Id='PluginExplorerLangEn'/>
+            <ComponentRef Id='PluginExplorerLangJa'/>
+            <ComponentRef Id='PluginExplorerLangKo'/>
+            <ComponentRef Id='PluginGitViewerBin'/>
+            <ComponentRef Id='PluginGitViewerManifest'/>
+            <ComponentRef Id='PluginGitViewerLangEn'/>
+            <ComponentRef Id='PluginGitViewerLangJa'/>
+            <ComponentRef Id='PluginGitViewerLangKo'/>
+            <ComponentRef Id='PluginHtmlBin'/>
+            <ComponentRef Id='PluginHtmlManifest'/>
+            <ComponentRef Id='PluginHtmlLangEn'/>
+            <ComponentRef Id='PluginHtmlLangJa'/>
+            <ComponentRef Id='PluginHtmlLangKo'/>
+            <ComponentRef Id='PluginImageBin'/>
+            <ComponentRef Id='PluginImageManifest'/>
+            <ComponentRef Id='PluginImageLangEn'/>
+            <ComponentRef Id='PluginImageLangJa'/>
+            <ComponentRef Id='PluginImageLangKo'/>
+            <ComponentRef Id='PluginMarkdownBin'/>
+            <ComponentRef Id='PluginMarkdownManifest'/>
+            <ComponentRef Id='PluginMarkdownLangEn'/>
+            <ComponentRef Id='PluginMarkdownLangJa'/>
+            <ComponentRef Id='PluginMarkdownLangKo'/>
 
             <Feature
                 Id='Environment'
