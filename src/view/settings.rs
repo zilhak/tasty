@@ -80,6 +80,12 @@ impl SettingsView {
         self.settings_ui_state.plugin_shortcuts = snapshot;
     }
 
+    /// Plugin 이 contribute 한 settings sub-page 스냅샷을 주입한다. 모달 오픈 직전에
+    /// host App 이 호출. 빈 vec 으로 호출하면 plugin sub-tab 이 사라진다.
+    pub fn set_plugin_settings_pages(&mut self, pages: Vec<tasty_host_plugin::SettingsPageEntry>) {
+        self.settings_ui_state.set_settings_pages(pages);
+    }
+
     /// 사용자가 Plugins 서브탭에서 변경한 override draft를 가져간다.
     /// 호출 후에는 빈 draft가 남는다. 모달 close 시 main App이 회수.
     pub fn take_plugin_shortcut_draft(

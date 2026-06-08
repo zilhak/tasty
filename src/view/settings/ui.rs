@@ -190,9 +190,6 @@ impl SettingsUiState {
 
     /// Plugin 이 contribute 한 settings page 스냅샷을 주입한다. 모달 오픈 직전에
     /// host App 이 호출한다. 빈 vec 으로 호출하면 plugin sub-tab 이 사라진다.
-    ///
-    /// 호출처 (host App) 가 들어오는 다음 Step 까지 unused — Step 5 는 UI 측만 다룬다.
-    #[allow(dead_code)]
     pub fn set_settings_pages(&mut self, pages: Vec<SettingsPageEntry>) {
         self.settings_pages = pages;
     }

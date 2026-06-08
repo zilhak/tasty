@@ -67,6 +67,12 @@ impl App {
             user_config_path,
         );
         modal.set_plugin_shortcuts(self.snapshot_plugin_shortcuts());
+        let plugin_pages: Vec<tasty_host_plugin::SettingsPageEntry> = self
+            .plugin_manager
+            .as_ref()
+            .map(|mgr| mgr.settings_pages.iter().cloned().collect())
+            .unwrap_or_default();
+        modal.set_plugin_settings_pages(plugin_pages);
         if let Some(main) = self.focused_window() {
             modal.set_update_status(main.state.update_status.clone());
         }
