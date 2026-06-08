@@ -195,6 +195,22 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프
 
 상세 (API, lang 파일 위치, plugin 네임스페이스, 하드코딩 허용 예외): [`docs/dev-guide/i18n.md`](docs/dev-guide/i18n.md).
 
+## 단축키 (필수)
+
+**tasty 의 모든 단축키는 `KeybindingSettings` 로 노출되며, 코드에 하드코딩되어서는 안 된다.** macOS NSMenu / Windows AcceleratorTable / Linux Wayland 같은 OS 메뉴 측 key equivalent 도 `KeybindingSettings` 의 대응 binding 값을 따라가야 한다.
+
+예외 (어쩔 수 없는 때) — OS 의 표준 NSResponder/NSWindow chain 이 자체적으로 처리하는 항목은 표준 selector 와 함께 표준 단축키를 그대로 두는 것이 정당하다:
+
+- `cut:` / `copy:` / `paste:` / `selectAll:` (텍스트 위젯 NSResponder 표준)
+- `miniaturize:` / `performClose:` / `performZoom:` (NSWindow 표준)
+- `hide:` / `hideOtherApplications:` / `unhideAllApplications:` / `orderFrontStandardAboutPanel:` (NSApplication 표준)
+
+위 항목은 **tasty 가 임의로 결정한 단축키가 아니라 OS 컨벤션을 따르는 것**이므로 hardcoded 가 허용되며, 해당 코드 옆에 정당화 주석 (예: "OS 표준 selector — Settings 미연동") 을 남긴다.
+
+tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등) 은 **반드시** `KeybindingSettings` 의 대응 필드를 읽어 key equivalent 를 설정해야 한다. binding 이 빈 vec 이면 key equivalent 도 비워두어 단축키 없는 메뉴 항목으로 표시한다.
+
+상세 (modifier 매핑 규칙, 위치 기반 추상화): [`docs/design/key-mapping.md`](docs/design/key-mapping.md).
+
 ## 에러 처리 (필수)
 
 `Result` 를 `let _ =` 로 무시하지 않는다. 에러는 처리하거나 `tracing::warn!` / `tracing::error!` 로 로그를 남긴다.
