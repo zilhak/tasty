@@ -5313,6 +5313,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasty-gallery"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "pollster",
+ "tasty-egui-theme",
+ "tasty-themes",
+ "tasty-type-appearance",
+ "tasty-type-geometry",
+ "tracing",
+ "tracing-subscriber",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "tasty-hooks"
 version = "0.1.0"
 dependencies = [

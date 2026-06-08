@@ -346,6 +346,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.tasty-egui-theme]
 opt-level = 3
+[profile.dev.package.tasty-gallery]
+opt-level = 3
 [profile.dev.package.tasty-tui-simulator]
 opt-level = 3
 [profile.dev.package.tasty-type-appearance]

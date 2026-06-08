@@ -1,0 +1,25 @@
+[package]
+name = "tasty-gallery"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Tasty UI component gallery — standalone visual catalog (Storybook-like)"
+
+[dependencies]
+winit = "0.30"
+wgpu = "24"
+egui = "0.31"
+egui-wgpu = "0.31"
+egui-winit = "0.31"
+pollster = "0.4"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+tasty-egui-theme = { path = "../tasty-egui-theme" }
+tasty-themes = { path = "../tasty-themes" }
+tasty-type-appearance = { path = "../tasty-type-appearance" }
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+
+[lints]
+workspace = true
