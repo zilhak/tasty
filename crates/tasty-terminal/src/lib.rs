@@ -448,17 +448,18 @@ impl Terminal {
         if self.output_taps.is_empty() {
             return;
         }
-        self.output_taps.retain_mut(|tap| match tap.tx.try_send(data.to_vec()) {
-            Ok(()) => {
-                tap.lag = 0;
-                true
-            }
-            Err(mpsc::TrySendError::Full(_)) => {
-                tap.lag += 1;
-                tap.lag < OUTPUT_TAP_LAG_LIMIT
-            }
-            Err(mpsc::TrySendError::Disconnected(_)) => false,
-        });
+        self.output_taps
+            .retain_mut(|tap| match tap.tx.try_send(data.to_vec()) {
+                Ok(()) => {
+                    tap.lag = 0;
+                    true
+                }
+                Err(mpsc::TrySendError::Full(_)) => {
+                    tap.lag += 1;
+                    tap.lag < OUTPUT_TAP_LAG_LIMIT
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => false,
+            });
     }
 
     /// Parse a chunk of raw VT bytes and apply it to the surface. Shared by

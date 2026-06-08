@@ -237,7 +237,10 @@ mod tests {
     #[test]
     fn push_unknown_client() {
         let hub = StreamHub::new();
-        assert_eq!(hub.push(42, frame(StreamTag::Data, b"x")), PushResult::Unknown);
+        assert_eq!(
+            hub.push(42, frame(StreamTag::Data, b"x")),
+            PushResult::Unknown
+        );
     }
 
     #[test]
@@ -246,7 +249,10 @@ mod tests {
         let id = hub.alloc_id();
         let rx = hub.register(id);
         assert_eq!(hub.client_count(), 1);
-        assert_eq!(hub.push(id, frame(StreamTag::Data, b"hi")), PushResult::Sent);
+        assert_eq!(
+            hub.push(id, frame(StreamTag::Data, b"hi")),
+            PushResult::Sent
+        );
         let got = rx.recv().unwrap();
         assert_eq!(got.tag, StreamTag::Data);
         assert_eq!(got.payload, b"hi");
@@ -326,8 +332,10 @@ mod tests {
     fn pump_inbound_reports_disconnects() {
         let hub = StreamHub::new();
         let (tx, inbound_rx) = mpsc::channel();
-        tx.send(StreamInbound::Disconnected { client_id: 7 }).unwrap();
-        tx.send(StreamInbound::Disconnected { client_id: 9 }).unwrap();
+        tx.send(StreamInbound::Disconnected { client_id: 7 })
+            .unwrap();
+        tx.send(StreamInbound::Disconnected { client_id: 9 })
+            .unwrap();
         let out = hub.pump_inbound(&inbound_rx);
         assert_eq!(out.disconnected, vec![7, 9]);
     }

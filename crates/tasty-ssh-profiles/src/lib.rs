@@ -128,7 +128,11 @@ impl SshProfiles {
         match fs::read_to_string(&path) {
             Ok(contents) => match toml::from_str::<SshProfiles>(&contents) {
                 Ok(p) => {
-                    tracing::info!("loaded {} ssh profile(s) from {}", p.profiles.len(), path.display());
+                    tracing::info!(
+                        "loaded {} ssh profile(s) from {}",
+                        p.profiles.len(),
+                        path.display()
+                    );
                     p
                 }
                 Err(e) => {
@@ -137,7 +141,10 @@ impl SshProfiles {
                 }
             },
             Err(_) => {
-                tracing::info!("no ssh-profiles file at {}, using empty list", path.display());
+                tracing::info!(
+                    "no ssh-profiles file at {}, using empty list",
+                    path.display()
+                );
                 Self::default()
             }
         }
@@ -155,7 +162,11 @@ impl SshProfiles {
         }
         let contents = toml::to_string_pretty(&to_write)?;
         fs::write(&path, contents)?;
-        tracing::info!("saved {} ssh profile(s) to {}", to_write.profiles.len(), path.display());
+        tracing::info!(
+            "saved {} ssh profile(s) to {}",
+            to_write.profiles.len(),
+            path.display()
+        );
         Ok(())
     }
 

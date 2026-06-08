@@ -69,7 +69,10 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn leaves_normal_path_untouched() {
-        assert_eq!(strip_verbatim_prefix(r"E:\already\normal"), r"E:\already\normal");
+        assert_eq!(
+            strip_verbatim_prefix(r"E:\already\normal"),
+            r"E:\already\normal"
+        );
     }
 
     #[test]

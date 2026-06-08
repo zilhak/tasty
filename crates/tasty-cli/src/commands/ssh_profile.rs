@@ -143,7 +143,10 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
             } else if profiles.profiles.is_empty() {
                 println!("저장된 SSH 프로필이 없습니다 (tasty ssh-profile add ...).");
             } else {
-                println!("{:<16} {:<28} {:<10} REMOTE-TASTY", "NAME", "HOST", "PORT-MODE");
+                println!(
+                    "{:<16} {:<28} {:<10} REMOTE-TASTY",
+                    "NAME", "HOST", "PORT-MODE"
+                );
                 for p in &profiles.profiles {
                     let dest = p.ssh_destination();
                     println!(
@@ -171,7 +174,10 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
                 if let Some(port) = p.port {
                     println!("port          : {port}");
                 }
-                println!("identity_file : {}", p.identity_file.as_deref().unwrap_or("(none)"));
+                println!(
+                    "identity_file : {}",
+                    p.identity_file.as_deref().unwrap_or("(none)")
+                );
                 println!("use_agent     : {}", p.use_agent);
                 if !p.extra_options.is_empty() {
                     println!("extra_options : {}", p.extra_options.join(", "));

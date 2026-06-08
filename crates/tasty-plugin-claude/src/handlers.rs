@@ -725,7 +725,10 @@ pub(crate) fn handle_spawn(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let pane_override = params.get("pane").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let pane_override = params
+        .get("pane")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
 
     let ws_id = resolve_workspace_id(host, &workspace_param)?.ok_or_else(|| {
         IpcMethodError::invalid_params(&format!("Workspace '{}' not found", workspace_param))

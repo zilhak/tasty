@@ -403,7 +403,8 @@ mod tests {
     fn acquire_workspace_locks_terminals_and_members() {
         let mut reg = AttachRegistry::new();
         // ws 100: 터미널 [10,11] + 비-터미널 [12].
-        reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 1).unwrap();
+        reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 1)
+            .unwrap();
         // 터미널은 surface_locks 에도 들어가 서버 렌더/입력차단이 자동 적용.
         assert!(reg.is_attached(10));
         assert!(reg.is_attached(11));
@@ -439,7 +440,9 @@ mod tests {
         // surface 11 을 client 2 가 surface 단위로 먼저 점유.
         reg.acquire(11, 2).unwrap();
         // ws 100 이 11 을 포함 → 부분 충돌로 거부.
-        let err = reg.acquire_workspace(100, &[10, 11], &[10, 11], 1).unwrap_err();
+        let err = reg
+            .acquire_workspace(100, &[10, 11], &[10, 11], 1)
+            .unwrap_err();
         assert_eq!(err, AttachError::AlreadyAttached { holder: 2 });
         assert!(!reg.workspace_locks.contains_key(&100));
         assert!(!reg.is_attached(10)); // 부분 점유 안 됨
@@ -448,7 +451,8 @@ mod tests {
     #[test]
     fn force_detach_workspace_clears_members() {
         let mut reg = AttachRegistry::new();
-        reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 7).unwrap();
+        reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 7)
+            .unwrap();
         assert_eq!(reg.force_detach_workspace(100), Some(7));
         assert!(!reg.is_attached(10));
         assert!(!reg.is_attached(11));
@@ -466,7 +470,8 @@ mod tests {
     #[test]
     fn release_all_for_client_clears_workspace_and_surface() {
         let mut reg = AttachRegistry::new();
-        reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 1).unwrap();
+        reg.acquire_workspace(100, &[10, 11], &[10, 11, 12], 1)
+            .unwrap();
         reg.acquire(20, 1).unwrap(); // 별도 surface 단위
         reg.acquire_workspace(200, &[30], &[30], 2).unwrap(); // 다른 client
         let mut released = reg.release_all_for_client(1);

@@ -25,7 +25,9 @@ fn require_client_id(
         .get("client_id")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32)
-        .ok_or_else(|| JsonRpcResponse::invalid_params(id.clone(), "Missing required 'client_id' parameter"))
+        .ok_or_else(|| {
+            JsonRpcResponse::invalid_params(id.clone(), "Missing required 'client_id' parameter")
+        })
 }
 
 /// `attach.acquire` { surface_id, client_id } → 배타 lock 획득(동시 attach 거부).
@@ -119,7 +121,10 @@ pub(crate) fn handle_force_detach_workspace(
     let workspace_id = match params.get("workspace_id").and_then(|v| v.as_u64()) {
         Some(v) => v as u32,
         None => {
-            return JsonRpcResponse::invalid_params(id, "Missing required 'workspace_id' parameter");
+            return JsonRpcResponse::invalid_params(
+                id,
+                "Missing required 'workspace_id' parameter",
+            );
         }
     };
     let holder = engine.attach.force_detach_workspace(workspace_id);
@@ -151,7 +156,9 @@ pub(crate) fn handle_into_gui(
     };
     let workspace = match params.get("workspace").and_then(|v| v.as_u64()) {
         Some(v) => v as u32,
-        None => return JsonRpcResponse::invalid_params(id, "Missing required 'workspace' parameter"),
+        None => {
+            return JsonRpcResponse::invalid_params(id, "Missing required 'workspace' parameter");
+        }
     };
     engine.pending_gui_attach.push((port, workspace));
     JsonRpcResponse::success(

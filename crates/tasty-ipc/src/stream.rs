@@ -117,9 +117,10 @@ pub struct StreamAck {
 
 /// Write a single framed message (`[tag][len BE][payload]`), then flush.
 pub fn write_frame<W: Write>(w: &mut W, tag: StreamTag, payload: &[u8]) -> io::Result<()> {
-    let len: u32 = payload.len().try_into().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidInput, "frame payload exceeds u32")
-    })?;
+    let len: u32 = payload
+        .len()
+        .try_into()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "frame payload exceeds u32"))?;
     if len > MAX_FRAME_LEN {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

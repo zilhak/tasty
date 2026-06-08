@@ -799,7 +799,9 @@ impl Core {
             let removed =
                 crate::surface_meta::SurfaceMetaStore::purge_dead_surfaces(&mut *guard, &live);
             if removed > 0 {
-                tracing::info!("surface_meta GC: purged {removed} dead surface scope(s) on restore");
+                tracing::info!(
+                    "surface_meta GC: purged {removed} dead surface scope(s) on restore"
+                );
             }
         }
 
@@ -2008,20 +2010,17 @@ mod attach_block_tests {
             .insert(sid, tasty_terminal::Terminal::new_detached(80, 24));
 
         // free → 전송 성공.
-        let ev =
-            Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        let ev = Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
 
         // 점유 → 서버 로컬 입력 차단.
         engine.attach.acquire(sid, 1).unwrap();
-        let ev =
-            Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        let ev = Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: false, .. }));
 
         // 해제 → 다시 서버 조작 가능.
         engine.attach.release(sid, 1).unwrap();
-        let ev =
-            Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
+        let ev = Core::apply_send_to_surface(&mut engine, sid, SendPayload::Bytes(b"x".to_vec()));
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
     }
 }

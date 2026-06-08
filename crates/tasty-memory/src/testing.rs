@@ -87,13 +87,7 @@ impl MemoryStorage for InMemoryStorage {
             .contains_key(&(scope.as_token(), key.to_string())))
     }
 
-    fn delete(
-        &mut self,
-        _owner: &str,
-        scope: &Scope,
-        key: &str,
-        _cas: Option<u64>,
-    ) -> Result<()> {
+    fn delete(&mut self, _owner: &str, scope: &Scope, key: &str, _cas: Option<u64>) -> Result<()> {
         self.regular.remove(&(scope.as_token(), key.to_string()));
         Ok(())
     }

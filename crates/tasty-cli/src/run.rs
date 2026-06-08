@@ -199,7 +199,9 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         ..
     } = &command
     {
-        anyhow::bail!("--ssh 와 --force-detach 는 함께 쓸 수 없습니다 (원격 force-detach 는 미지원).");
+        anyhow::bail!(
+            "--ssh 와 --force-detach 는 함께 쓸 수 없습니다 (원격 force-detach 는 미지원)."
+        );
     }
     // `tasty attach <id>` (non-force) uses the raw streaming channel, not the
     // JSON-RPC path — dispatch it directly. `--force-detach` is a normal
@@ -235,7 +237,9 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
             Some(name) => {
                 let profiles = tasty_ssh_profiles::SshProfiles::load();
                 let Some(p) = profiles.get(name) else {
-                    anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty ssh-profile list).");
+                    anyhow::bail!(
+                        "SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty ssh-profile list)."
+                    );
                 };
                 Some((
                     crate::ssh::SshTarget::from_profile(p),

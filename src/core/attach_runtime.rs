@@ -20,9 +20,9 @@ use std::collections::HashMap;
 use std::thread;
 
 use crate::adapters::production::stream_hub::{PushResult, StreamHub};
-use crate::core::attach::{AttachClientId, AttachError};
 use crate::core::CoreState;
-use crate::ipc::stream::{encode_mux, StreamFrame, StreamTag};
+use crate::core::attach::{AttachClientId, AttachError};
+use crate::ipc::stream::{StreamFrame, StreamTag, encode_mux};
 use crate::model::{AttachSurfaceClass, SurfaceId};
 
 impl CoreState {

@@ -268,7 +268,6 @@ impl GeneralSettings {
             _ => vec![], // "default" 및 unknown
         }
     }
-
 }
 
 /// Path to Tasty's compiled bashrc (builtin + user).
@@ -348,7 +347,11 @@ mod tests {
 
     #[test]
     fn default_mode_has_no_args() {
-        assert!(settings_with_mode("default").effective_shell_args().is_empty());
+        assert!(
+            settings_with_mode("default")
+                .effective_shell_args()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -360,7 +363,10 @@ mod tests {
     fn custom_mode_splits_user_args() {
         let mut g = settings_with_mode("custom");
         g.shell_args = "-x -y".to_string();
-        assert_eq!(g.effective_shell_args(), vec!["-x".to_string(), "-y".to_string()]);
+        assert_eq!(
+            g.effective_shell_args(),
+            vec!["-x".to_string(), "-y".to_string()]
+        );
     }
 
     // tasty 모드: Windows 는 `--rcfile <path>` 로 빌트인을 source 하고(S-2 픽스 보존),
@@ -376,6 +382,10 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn tasty_mode_non_windows_is_empty_like_default() {
-        assert!(settings_with_mode("tasty").effective_shell_args().is_empty());
+        assert!(
+            settings_with_mode("tasty")
+                .effective_shell_args()
+                .is_empty()
+        );
     }
 }

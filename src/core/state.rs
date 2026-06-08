@@ -565,7 +565,11 @@ mod id_generator_tests {
     fn bump_surface_floor_raises_counter() {
         let ids = IdGenerator::new();
         ids.bump_surface_floor(18);
-        assert_eq!(ids.next_surface(), 18, "floor 이후 첫 id 는 min_next 와 같아야 한다");
+        assert_eq!(
+            ids.next_surface(),
+            18,
+            "floor 이후 첫 id 는 min_next 와 같아야 한다"
+        );
         assert_eq!(ids.next_surface(), 19);
     }
 

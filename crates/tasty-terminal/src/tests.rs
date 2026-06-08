@@ -709,8 +709,18 @@ fn snapshot_as_vt_preserves_colors_and_intensity() {
     assert_eq!(a.len(), b.len(), "cell count");
     for ((_, ai), (_, bi)) in a.iter().zip(b.iter()) {
         assert_eq!(
-            (ai.text.as_str(), ai.fg.as_str(), ai.bg.as_str(), ai.intensity),
-            (bi.text.as_str(), bi.fg.as_str(), bi.bg.as_str(), bi.intensity),
+            (
+                ai.text.as_str(),
+                ai.fg.as_str(),
+                ai.bg.as_str(),
+                ai.intensity
+            ),
+            (
+                bi.text.as_str(),
+                bi.fg.as_str(),
+                bi.bg.as_str(),
+                bi.intensity
+            ),
             "cell attrs round-trip"
         );
     }

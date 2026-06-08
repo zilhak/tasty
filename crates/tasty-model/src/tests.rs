@@ -833,8 +833,7 @@ fn tab_ensure_initialized_replaces_placeholder_in_split() {
 fn workspace_classify_attach_surfaces_separates_terminal_and_non_terminal() {
     use super::{EmptySurface, Pane, Surface, TerminalSurface, Workspace};
     // 터미널(100) + split 으로 비-터미널 EmptySurface(200, 비-deferred) + deferred(300).
-    let mut pane =
-        Pane::new_with_surface(1, 1, "t".into(), Box::new(TerminalSurface { id: 100 }));
+    let mut pane = Pane::new_with_surface(1, 1, "t".into(), Box::new(TerminalSurface { id: 100 }));
     pane.split_surface_by_id_with_surface(
         100,
         SplitDirection::Vertical,

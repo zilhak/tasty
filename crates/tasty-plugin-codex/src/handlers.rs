@@ -175,8 +175,9 @@ pub fn handle_spawn(
     let role = optional_str(&params, "role");
     let nickname = optional_str(&params, "nickname");
 
-    let ws_id = resolve_workspace_id(host, &workspace_param)?
-        .ok_or_else(|| IpcMethodError::invalid_params(&format!("workspace '{workspace_param}' not found")))?;
+    let ws_id = resolve_workspace_id(host, &workspace_param)?.ok_or_else(|| {
+        IpcMethodError::invalid_params(&format!("workspace '{workspace_param}' not found"))
+    })?;
 
     // 대상 pane: --pane 지정 시 그 pane, 아니면 workspace 의 첫 pane.
     let pane_id = match pane_override {
@@ -200,7 +201,9 @@ pub fn handle_spawn(
         .get("surface_id")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| {
-            IpcMethodError::new(format!("tab.create response missing 'surface_id': {tab_resp}"))
+            IpcMethodError::new(format!(
+                "tab.create response missing 'surface_id': {tab_resp}"
+            ))
         })? as u32;
 
     let cmd = make_codex_command(new_surface_id, prompt.as_deref());

@@ -28,11 +28,11 @@ use tasty_terminal::Terminal;
 
 use crate::app::App;
 use crate::ipc::stream::{self, STREAM_PROTO, StreamTag};
-use crate::view::ui::View as _;
 use crate::model::{
     EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, TerminalSurface,
     Workspace,
 };
+use crate::view::ui::View as _;
 
 /// client 가 점유한 원격 워크스페이스의 로컬 mirror 세션(작업 J).
 pub(crate) struct AttachClientSession {
@@ -199,7 +199,8 @@ impl App {
                                 break;
                             }
                             StreamTag::Control => {
-                                if String::from_utf8_lossy(&frame.payload).contains("force_detached")
+                                if String::from_utf8_lossy(&frame.payload)
+                                    .contains("force_detached")
                                 {
                                     disconnected.store(true, Ordering::SeqCst);
                                     break;
@@ -450,7 +451,13 @@ fn build_mirror_workspace(
         };
     }
 
-    Workspace::from_restored(ws_id, name.to_string(), String::new(), node, focused_local_pane)
+    Workspace::from_restored(
+        ws_id,
+        name.to_string(),
+        String::new(),
+        node,
+        focused_local_pane,
+    )
 }
 
 /// `to_tree_json_full` JSON → `SurfaceLayout`(분할 방향/비율/focus 보존). leaf 의 remote
@@ -466,7 +473,10 @@ fn build_layout(
         "Leaf" => {
             let remote = node.get("id").and_then(|v| v.as_u64())? as u32;
             // map 에 없으면(예상 밖) 새 placeholder id 발급.
-            let local = map.get(&remote).copied().unwrap_or_else(|| ids.next_surface());
+            let local = map
+                .get(&remote)
+                .copied()
+                .unwrap_or_else(|| ids.next_surface());
             let surface: Box<dyn Surface> = if term.contains(&local) {
                 Box::new(TerminalSurface { id: local })
             } else {

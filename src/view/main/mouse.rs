@@ -414,7 +414,15 @@ impl MainView {
                                 terminal_rect,
                             )?;
                             let point = crate::selection::pixel_to_grid(
-                                x, y, &rect, cell_w, cell_h, cols, rows, scroll_offset, sb_len,
+                                x,
+                                y,
+                                &rect,
+                                cell_w,
+                                cell_h,
+                                cols,
+                                rows,
+                                scroll_offset,
+                                sb_len,
                             );
                             // viewport 기준 1-based (col, row). alt screen 은 scrollback
                             // 이 없어 absolute_row 가 곧 viewport row.

@@ -37,8 +37,7 @@ impl CoreState {
             .collect();
 
         // 점유 해제된 surface 의 stale mirror 제거.
-        self.readonly_views
-            .retain(|sid, _| attached.contains(sid));
+        self.readonly_views.retain(|sid, _| attached.contains(sid));
 
         let mut any = false;
         for sid in attached {

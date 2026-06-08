@@ -232,7 +232,10 @@ mod tests {
         let live: HashSet<u32> = [2, 17].into_iter().collect();
         let removed = SurfaceMetaStore::purge_dead_surfaces(&mut mem, &live);
 
-        assert_eq!(removed, 2, "surface:4 와 surface:6 두 scope 가 purge 돼야 한다");
+        assert_eq!(
+            removed, 2,
+            "surface:4 와 surface:6 두 scope 가 purge 돼야 한다"
+        );
         assert_eq!(
             SurfaceMetaStore::get(&mut mem, 2, "restore.command").as_deref(),
             Some("claude -r a")

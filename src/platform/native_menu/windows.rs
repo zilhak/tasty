@@ -54,10 +54,7 @@ pub fn show_context_menu(
             y: y as i32,
         };
         if !windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut pt).as_bool() {
-            tracing::warn!(
-                "ClientToScreen failed: {}",
-                std::io::Error::last_os_error()
-            );
+            tracing::warn!("ClientToScreen failed: {}", std::io::Error::last_os_error());
         }
 
         let selected = TrackPopupMenu(

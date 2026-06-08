@@ -120,22 +120,16 @@ pub fn run_attach_ssh(
     let mut backoff = Backoff::new();
     loop {
         // ① 원격 포트 발견.
-        let remote_port = match ssh::discover_remote_port(
-            &ssh,
-            &target,
-            remote_tasty,
-            mode,
-            verify,
-            debug,
-        ) {
-            Ok(p) => p,
-            Err(e) if reconnect => {
-                eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
-                backoff.sleep();
-                continue;
-            }
-            Err(e) => return Err(e),
-        };
+        let remote_port =
+            match ssh::discover_remote_port(&ssh, &target, remote_tasty, mode, verify, debug) {
+                Ok(p) => p,
+                Err(e) if reconnect => {
+                    eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
+                    backoff.sleep();
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
 
         // ② ssh -L 터널 (Drop 시 자식 ssh 자동 kill — 원격 데몬은 생존).
         let tunnel = match SshTunnel::establish(&ssh, &target, remote_port, verify) {
@@ -325,9 +319,14 @@ fn run_workspace_mirror_dump(
     // 초기 입력 1 회(지정 surface 로 surface-prefixed).
     if let Some(s) = send {
         match send_to {
-            Some(sid) => conn.send(StreamTag::Data, &stream::encode_mux(sid, &decode_escapes(s)))?,
+            Some(sid) => conn.send(
+                StreamTag::Data,
+                &stream::encode_mux(sid, &decode_escapes(s)),
+            )?,
             None => {
-                eprintln!("workspace 모드의 --send 는 --send-to <surface_id> 와 함께 써야 합니다 (무시).")
+                eprintln!(
+                    "workspace 모드의 --send 는 --send-to <surface_id> 와 함께 써야 합니다 (무시)."
+                )
             }
         }
     }

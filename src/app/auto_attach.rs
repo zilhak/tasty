@@ -159,7 +159,8 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
     // 자동 검증(Claude Bash) 한정 host key accept-new. 평상시 기본 strict 유지(보안).
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
     let debug = cfg!(debug_assertions);
-    let remote_port = ssh::discover_remote_port(&ssh, &ssh_target, &remote_tasty, mode, verify, debug)?;
+    let remote_port =
+        ssh::discover_remote_port(&ssh, &ssh_target, &remote_tasty, mode, verify, debug)?;
     let tunnel = SshTunnel::establish(&ssh, &ssh_target, remote_port, verify)?;
     let local_port = tunnel.local_port;
     Ok((Some(tunnel), local_port))

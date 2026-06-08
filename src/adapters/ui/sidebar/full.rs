@@ -183,8 +183,10 @@ pub fn draw_full_sidebar(
                         let ws_busy_count = engine.busy_count(&ws_surface_ids);
                         // attach/detach 작업 J-2: client 가 점유(attach)한 workspace 는
                         // running(녹색) 인디케이터처럼 표시하되 **빨간색**(th.red).
-                        let ws_attached =
-                            engine.attach.workspace_holder(engine.workspaces[i].id).is_some();
+                        let ws_attached = engine
+                            .attach
+                            .workspace_holder(engine.workspaces[i].id)
+                            .is_some();
 
                         let bg = if is_active {
                             th.surface0.to_egui()
