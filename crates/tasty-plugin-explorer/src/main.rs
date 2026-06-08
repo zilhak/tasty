@@ -256,6 +256,7 @@ fn build_node(
         expanded: is_expanded,
         selected: is_selected,
         children,
+        has_children: is_dir,
     }
 }
 

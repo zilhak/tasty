@@ -137,6 +137,12 @@ pub struct TreeNode {
     pub selected: bool,
     #[serde(default)]
     pub children: Vec<TreeNode>,
+    /// Host hint: 이 노드가 자식을 가질 수 있는 컨테이너인가.
+    /// `true` 면 host 는 `children` 이 비어 있어도 `CollapsingHeader` 로 렌더하여
+    /// 사용자가 expand 토글로 다시 펼 수 있게 한다 (lazy children 모델 지원).
+    /// 일반 leaf 는 `false` (기본).
+    #[serde(default)]
+    pub has_children: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -398,7 +404,9 @@ mod tests {
                     expanded: false,
                     selected: true,
                     children: vec![],
+                    has_children: false,
                 }],
+                has_children: true,
             }],
             selection_mode: SelectionMode::Single,
         };

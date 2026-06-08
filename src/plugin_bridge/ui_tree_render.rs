@@ -607,7 +607,7 @@ fn render_tree_node(
         Some(icon) => format!("{icon} {}", n.label),
         None => n.label.clone(),
     };
-    if n.children.is_empty() {
+    if !n.has_children && n.children.is_empty() {
         let resp = ui.selectable_label(n.selected, label);
         if resp.clicked() {
             sink.push_event(UiEvent::TreeSelect {
