@@ -1,5 +1,6 @@
 //! Zoom in / out / reset 단축키 — focused surface 의 font_size override 갱신.
 
+use tasty_settings::FontOverride;
 use winit::keyboard::{Key, ModifiersState};
 
 use super::binding::matches_any_binding;
@@ -32,12 +33,13 @@ impl MainView {
                     .font_size;
                 (&mut appearance.terminal_font, size)
             }
-            FocusedSurfaceType::Kind(k) if k == "markdown" => {
-                let size = appearance
-                    .default_font
-                    .apply_override(&appearance.markdown_font)
-                    .font_size;
-                (&mut appearance.markdown_font, size)
+            FocusedSurfaceType::Kind(k) if k == "markdown" || k == "explorer" => {
+                let size = appearance.effective_font_for_kind(k).font_size;
+                let ov = appearance
+                    .plugin_font_overrides
+                    .entry(k.to_string())
+                    .or_insert_with(FontOverride::default);
+                (ov, size)
             }
             // Other surfaces don't expose a font_size shortcut.
             _ => return false,
