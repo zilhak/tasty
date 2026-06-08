@@ -78,6 +78,14 @@ unsafe extern "C-unwind" fn new_window_action(
     send_create_window();
 }
 
+/// `tastyQuit:` action handler — winit 자동 `terminate:` 대신 tasty 라이프사이클로 라우팅.
+unsafe extern "C-unwind" fn quit_action(_this: *mut AnyObject, _sel: Sel, _sender: *mut AnyObject) {
+    tracing::info!("menu: quit requested");
+    if let Some(proxy) = PROXY.get() {
+        crate::shortcuts::send_app_event(proxy, AppEvent::QuitRequested);
+    }
+}
+
 /// Store the proxy. Called once at startup (before run_app).
 pub fn store_proxy(proxy: EventLoopProxy<AppEvent>) {
     PROXY.set(proxy).ok();
@@ -138,6 +146,16 @@ pub fn inject_delegate_methods() {
             >(new_window_action),
             c"v@:@".as_ptr(),
         );
+
+        objc2::ffi::class_addMethod(
+            cls,
+            sel!(tastyQuit:),
+            std::mem::transmute::<
+                unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject),
+                objc2::runtime::Imp,
+            >(quit_action),
+            c"v@:@".as_ptr(),
+        );
     }
 
     // Set up app menu
@@ -153,62 +171,186 @@ pub fn inject_delegate_methods() {
     tracing::info!("macOS delegate methods injected into winit's delegate");
 }
 
-/// Set up the app menu bar with File → New Window.
+/// macOS 표준 menubar 등록. winit `with_default_menu(false)` 와 짝.
+///
+/// Application Menu (About/Hide/.../Quit), File (New Window), Edit (Cut/Copy/Paste/
+/// Select All), Window (Minimize/Zoom/Close Window) 4개 submenu 를 등록한다.
+/// 표준 selector 는 first responder chain 으로 전달 (target=nil), `tastyQuit:` /
+/// `tastyNewWindow:` 만 delegate target 지정.
 fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut AnyObject) {
-    let main_menu = match app.mainMenu() {
-        Some(menu) => menu,
-        None => {
-            let menu = NSMenu::new(mtm);
-            app.setMainMenu(Some(&menu));
-            menu
-        }
-    };
+    use objc2_app_kit::NSEventModifierFlags;
+    use objc2_foundation::NSProcessInfo;
 
-    let file_menu = find_or_create_file_menu(&main_menu, mtm);
+    let main_menu = NSMenu::new(mtm);
+    let process_name = NSProcessInfo::processInfo().processName();
+
+    // ── Application Menu ──────────────────────────────────────────
+    let app_menu_item = NSMenuItem::new(mtm);
+    let app_menu = NSMenu::new(mtm);
+
+    let about_title = NSString::from_str("About ").stringByAppendingString(&process_name);
+    app_menu.addItem(&make_std_item(
+        mtm,
+        &about_title,
+        Some(sel!(orderFrontStandardAboutPanel:)),
+        None,
+        NSEventModifierFlags::Command,
+    ));
+    app_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    let hide_title = NSString::from_str("Hide ").stringByAppendingString(&process_name);
+    app_menu.addItem(&make_std_item(
+        mtm,
+        &hide_title,
+        Some(sel!(hide:)),
+        Some("h"),
+        NSEventModifierFlags::Command,
+    ));
+    app_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Hide Others"),
+        Some(sel!(hideOtherApplications:)),
+        Some("h"),
+        NSEventModifierFlags::Command | NSEventModifierFlags::Option,
+    ));
+    app_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Show All"),
+        Some(sel!(unhideAllApplications:)),
+        None,
+        NSEventModifierFlags::Command,
+    ));
+    app_menu.addItem(&NSMenuItem::separatorItem(mtm));
+
+    // Quit — tasty 라이프사이클로 라우팅.
+    let quit_title = NSString::from_str("Quit ").stringByAppendingString(&process_name);
+    let quit_item = NSMenuItem::new(mtm);
+    quit_item.setTitle(&quit_title);
+    quit_item.setKeyEquivalent(&NSString::from_str("q"));
+    // SAFETY: main thread (mtm). delegate 는 NSApplicationDelegate 포인터로 app 수명 동안 유효.
+    // setAction / setTarget / setKeyEquivalentModifierMask 한 단위.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    unsafe {
+        quit_item.setAction(Some(sel!(tastyQuit:)));
+        quit_item.setTarget(Some(&*delegate.cast()));
+        quit_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+    }
+    app_menu.addItem(&quit_item);
+
+    app_menu_item.setSubmenu(Some(&app_menu));
+    main_menu.addItem(&app_menu_item);
+
+    // ── File Menu ──────────────────────────────────────────────────
+    let file_menu_item = NSMenuItem::new(mtm);
+    let file_menu = NSMenu::new(mtm);
+    file_menu.setTitle(&NSString::from_str("File"));
 
     let new_window_item = NSMenuItem::new(mtm);
     new_window_item.setTitle(&NSString::from_str("New Window"));
-    // SAFETY: 호출자가 main thread(mtm)에서 호출. delegate는 AnyObject 포인터로,
-    // winit의 NSApplicationDelegate를 가리키며 app이 살아있는 동안 valid.
-    // NSEventModifierFlags 조합은 bitflag로 ObjC API에서 받아들이는 표준 값.
-    // setAction / setTarget / setKeyEquivalentModifierMask 가 한 menu item setup 단위.
+    new_window_item.setKeyEquivalent(&NSString::from_str("n"));
+    // SAFETY: 위 quit_item 와 동일 — main thread + delegate 수명 보장.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
         new_window_item.setAction(Some(sel!(tastyNewWindow:)));
         new_window_item.setTarget(Some(&*delegate.cast()));
         new_window_item.setKeyEquivalentModifierMask(
-            objc2_app_kit::NSEventModifierFlags::Command
-                | objc2_app_kit::NSEventModifierFlags::Shift,
+            NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
         );
     }
-    new_window_item.setKeyEquivalent(&NSString::from_str("n"));
+    file_menu.addItem(&new_window_item);
 
-    file_menu.insertItem_atIndex(&new_window_item, 0);
+    file_menu_item.setSubmenu(Some(&file_menu));
+    main_menu.addItem(&file_menu_item);
+
+    // ── Edit Menu ──────────────────────────────────────────────────
+    let edit_menu_item = NSMenuItem::new(mtm);
+    let edit_menu = NSMenu::new(mtm);
+    edit_menu.setTitle(&NSString::from_str("Edit"));
+    edit_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Cut"),
+        Some(sel!(cut:)),
+        Some("x"),
+        NSEventModifierFlags::Command,
+    ));
+    edit_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Copy"),
+        Some(sel!(copy:)),
+        Some("c"),
+        NSEventModifierFlags::Command,
+    ));
+    edit_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Paste"),
+        Some(sel!(paste:)),
+        Some("v"),
+        NSEventModifierFlags::Command,
+    ));
+    edit_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Select All"),
+        Some(sel!(selectAll:)),
+        Some("a"),
+        NSEventModifierFlags::Command,
+    ));
+    edit_menu_item.setSubmenu(Some(&edit_menu));
+    main_menu.addItem(&edit_menu_item);
+
+    // ── Window Menu ────────────────────────────────────────────────
+    let window_menu_item = NSMenuItem::new(mtm);
+    let window_menu = NSMenu::new(mtm);
+    window_menu.setTitle(&NSString::from_str("Window"));
+    window_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Minimize"),
+        Some(sel!(miniaturize:)),
+        Some("m"),
+        NSEventModifierFlags::Command,
+    ));
+    window_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Zoom"),
+        Some(sel!(performZoom:)),
+        None,
+        NSEventModifierFlags::Command,
+    ));
+    window_menu.addItem(&make_std_item(
+        mtm,
+        &NSString::from_str("Close Window"),
+        Some(sel!(performClose:)),
+        Some("w"),
+        NSEventModifierFlags::Command,
+    ));
+    window_menu_item.setSubmenu(Some(&window_menu));
+    main_menu.addItem(&window_menu_item);
+
+    app.setMainMenu(Some(&main_menu));
 }
 
-fn find_or_create_file_menu(main_menu: &NSMenu, mtm: MainThreadMarker) -> Retained<NSMenu> {
-    let count = main_menu.numberOfItems();
-    for i in 0..count {
-        if let Some(item) = main_menu.itemAtIndex(i)
-            && let Some(submenu) = item.submenu()
-        {
-            let title = submenu.title().to_string();
-            if title == "File" {
-                return submenu;
-            }
+/// 표준 NSResponder selector 용 NSMenuItem 생성 (target = nil → first responder chain).
+fn make_std_item(
+    mtm: MainThreadMarker,
+    title: &NSString,
+    selector: Option<Sel>,
+    key: Option<&str>,
+    modifier_mask: objc2_app_kit::NSEventModifierFlags,
+) -> Retained<NSMenuItem> {
+    let item = NSMenuItem::new(mtm);
+    item.setTitle(title);
+    if let Some(key_str) = key {
+        item.setKeyEquivalent(&NSString::from_str(key_str));
+        // SAFETY: main thread (mtm). setKeyEquivalentModifierMask 는 AppKit main-thread-only.
+        unsafe {
+            item.setKeyEquivalentModifierMask(modifier_mask);
         }
     }
-
-    let file_menu = NSMenu::new(mtm);
-    file_menu.setTitle(&NSString::from_str("File"));
-
-    let file_item = NSMenuItem::new(mtm);
-    file_item.setSubmenu(Some(&file_menu));
-
-    let insert_idx = if count > 0 { 1 } else { 0 };
-    main_menu.insertItem_atIndex(&file_item, insert_idx);
-
-    file_menu
+    if let Some(sel) = selector {
+        // SAFETY: main thread (mtm). target 미설정 = nil = first responder chain (표준 selector 용).
+        unsafe {
+            item.setAction(Some(sel));
+        }
+    }
+    item
 }
 
 /// Set the Dock icon using NSApplication::setApplicationIconImage.
