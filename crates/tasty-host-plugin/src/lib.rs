@@ -22,6 +22,7 @@ pub mod manager;
 pub mod process;
 pub mod protocol;
 pub mod registry_state;
+pub mod settings_registry;
 pub mod tool_registry;
 pub mod ui_tree;
 // Phase J.C WASM POC stub — `wasm-poc` feature 가 활성일 때만 컴파일.
@@ -39,4 +40,5 @@ pub use listener::HostListener;
 pub use manager::{PluginManager, PopupInstance};
 pub use process::PluginProcess;
 pub use registry_state::PluginsConfig;
+pub use settings_registry::{SettingsPageEntry, SettingsPageRegistry};
 pub use tasty_plugin_manifest::PluginPackage;

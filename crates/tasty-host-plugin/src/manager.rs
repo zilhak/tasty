@@ -254,6 +254,10 @@ pub struct PluginManager {
     /// plugin이 매니페스트로 선언한 단축키 command 일람. plugin
     /// enable/disable/install/remove 시 갱신됨.
     pub command_registry: super::command_registry::PluginCommandRegistry,
+    /// plugin 이 매니페스트로 선언한 `[[contributes.settings_pages]]` sub-page 일람.
+    /// plugin hello/manifest 수신 시 등록되고, disable / 재시작 시 정리된다.
+    /// 설정 모달의 sub-tab 합성은 본 registry 를 순회 (Step 5).
+    pub settings_pages: crate::settings_registry::SettingsPageRegistry,
     /// plugin이 매니페스트로 선언한 IPC namespace prefix 일람. plugin이
     /// 실행 중일 때만 등록되며, 호스트 IPC dispatcher가 namespace 메서드를
     /// 어느 plugin에 forward할지 해결할 때 조회한다.

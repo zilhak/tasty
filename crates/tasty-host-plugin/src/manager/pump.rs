@@ -113,6 +113,13 @@ impl PluginManager {
                         pkg.manifest.event_subscribe.clone(),
                         pkg.manifest.event_publish.clone(),
                     );
+                    // settings_pages: hello/manifest 수신 시 plugin 의 sub-page 등록.
+                    // 동일 plugin 의 중복 register 방지를 위해 먼저 정리한 뒤 register.
+                    self.settings_pages.unregister_plugin(plugin_id);
+                    self.settings_pages.register(
+                        plugin_id.clone(),
+                        pkg.manifest.contributes.settings_pages.clone(),
+                    );
                     hello_pairs.push((plugin_id.clone(), pkg.manifest.version.clone()));
                 }
             }
@@ -201,6 +208,7 @@ impl PluginManager {
             self.event_bus.clear_plugin(&id);
             self.cancel_pending_namespace_calls(&id, "plugin restarting");
             self.plugin_buffers.remove(&id);
+            self.settings_pages.unregister_plugin(&id);
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);
             }

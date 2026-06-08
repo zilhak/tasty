@@ -78,6 +78,7 @@ impl PluginManager {
             plugin_permissions: HashMap::new(),
             pending_plugin_calls: Vec::new(),
             command_registry: crate::command_registry::PluginCommandRegistry::new(),
+            settings_pages: crate::settings_registry::SettingsPageRegistry::new(),
             ipc_namespaces: IpcNamespaceRegistry::new(),
             plugin_buffers: HashMap::new(),
             next_buffer_id: AtomicU64::new(1),
@@ -337,6 +338,7 @@ impl PluginManager {
         self.event_bus.clear_plugin(plugin_id);
         self.cancel_pending_namespace_calls(plugin_id, "plugin disabled");
         self.plugin_buffers.remove(plugin_id);
+        self.settings_pages.unregister_plugin(plugin_id);
         Ok(())
     }
 
@@ -374,6 +376,7 @@ impl PluginManager {
         self.event_bus.clear_plugin(plugin_id);
         self.cancel_pending_namespace_calls(plugin_id, "plugin swap restart");
         self.plugin_buffers.remove(plugin_id);
+        self.settings_pages.unregister_plugin(plugin_id);
         Ok(())
     }
 
