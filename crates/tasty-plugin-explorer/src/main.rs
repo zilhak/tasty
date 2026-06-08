@@ -259,6 +259,9 @@ fn build_node(
     }
 }
 
+/// dotfile blacklist. 현재 비어있다 — 추후 plugin 설정 메뉴에서 사용자가 추가한다.
+const DOTFILE_BLACKLIST: &[&str] = &[];
+
 fn list_children(dir: &Path) -> Vec<PathBuf> {
     let mut dirs: BTreeMap<String, PathBuf> = BTreeMap::new();
     let mut files: BTreeMap<String, PathBuf> = BTreeMap::new();
@@ -268,12 +271,7 @@ fn list_children(dir: &Path) -> Vec<PathBuf> {
     };
     for entry in read.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.')
-            && !matches!(
-                name.as_str(),
-                ".env" | ".gitignore" | ".claude" | ".editorconfig"
-            )
-        {
+        if DOTFILE_BLACKLIST.contains(&name.as_str()) {
             continue;
         }
         let path = entry.path();
