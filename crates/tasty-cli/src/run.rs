@@ -133,7 +133,34 @@ fn run_dynamic_client_with_auto_wait(
         return Ok(());
     }
 
-    // ── 3) wait params 구성: 응답 매핑 + 요청 매핑 + timeout.
+    // ── 3) wait params 구성 + 4) wait IPC chain. polling sense 그대로 재사용.
+    let wait_params = build_wait_params(&aw, &first_value);
+    let wait_req = tasty_ipc::protocol::JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        method: aw.method.clone(),
+        params: serde_json::Value::Object(wait_params),
+        id: Some(serde_json::Value::from(2)),
+        session_token: request.session_token.clone(),
+    };
+    run_dynamic_client_polling(wait_req, aw.polling, port_file)
+}
+
+/// auto-wait chain 의 wait IPC 요청 params 를 빌드. 1 차 응답 → 1 차 요청 →
+/// timeout 키 순으로 채우고 마지막에 `surface` ↔ `surface_id` 양방향 alias 를 보강.
+///
+/// 우선순위:
+/// 1. `map_from_response` — 1 차 응답에서 값을 꺼내 wait params 키로 복사.
+/// 2. `map_from_request` — 1 차 요청 params 에서 fallback (응답 매핑이 이미 채운
+///    키는 건드리지 않음 — response 가 우선).
+/// 3. timeout — 1 차 요청 params 의 `aw.timeout_field` 값을 wait params 의
+///    `aw.polling.timeout_field` 키 (없으면 `"timeout"`) 로 복사.
+/// 4. surface alias — 두 키 중 하나만 채워졌을 때 다른 키도 같은 값으로 보강.
+///    wait IPC handler 가 `surface` 또는 `surface_id` 둘 중 어느 키를 기대하든
+///    manifest 작성자가 알 수 없으므로 호환 안전망.
+pub(crate) fn build_wait_params(
+    aw: &super::dynamic::AutoWaitPlan,
+    first_value: &serde_json::Value,
+) -> serde_json::Map<String, serde_json::Value> {
     let mut wait_params = serde_json::Map::new();
     for (resp_key, target_key) in &aw.map_from_response {
         if let Some(v) = first_value.get(resp_key) {
@@ -147,8 +174,6 @@ fn run_dynamic_client_with_auto_wait(
             wait_params.insert(target_key.clone(), v.clone());
         }
     }
-    // `--timeout` 은 원 요청 params 의 `timeout_field` 값 — wait 의 polling 이
-    // 그 키로 deadline 을 읽도록 동일 키로 복사.
     let wait_timeout_key = aw
         .polling
         .timeout_field
@@ -157,25 +182,13 @@ fn run_dynamic_client_with_auto_wait(
     if let Some(t) = aw.request_params.get(&aw.timeout_field) {
         wait_params.insert(wait_timeout_key, t.clone());
     }
-    // matches_to_request 와 동일한 surface ↔ surface_id sync. wait IPC handler 는
-    // 통상 `surface_id` 키를 기대하므로, manifest 가 응답을 `surface` 로 매핑해도
-    // wait 측이 받을 수 있도록 두 키 모두 채워둔다.
     if let Some(v) = wait_params.get("surface").cloned() {
         wait_params.entry("surface_id".to_string()).or_insert(v);
     }
     if let Some(v) = wait_params.get("surface_id").cloned() {
         wait_params.entry("surface".to_string()).or_insert(v);
     }
-
-    // ── 4) wait IPC chain. polling sense 그대로 재사용.
-    let wait_req = tasty_ipc::protocol::JsonRpcRequest {
-        jsonrpc: "2.0".into(),
-        method: aw.method.clone(),
-        params: serde_json::Value::Object(wait_params),
-        id: Some(serde_json::Value::from(2)),
-        session_token: request.session_token.clone(),
-    };
-    run_dynamic_client_polling(wait_req, aw.polling, port_file)
+    wait_params
 }
 
 /// `tasty claude wait` 같이 manifest 가 polling 을 선언한 명령. 호스트에
@@ -479,4 +492,140 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dynamic::AutoWaitPlan;
+    use serde_json::{Map, Value, json};
+    use std::collections::HashMap;
+    use tasty_plugin_manifest::PollingDecl;
+
+    fn sample_plan(
+        map_from_response: HashMap<String, String>,
+        map_from_request: HashMap<String, String>,
+        request_params: Map<String, Value>,
+    ) -> AutoWaitPlan {
+        AutoWaitPlan {
+            method: "x.wait".into(),
+            polling: PollingDecl {
+                state_field: "state".into(),
+                terminal_states: vec!["idle".into()],
+                interval_ms: 100,
+                timeout_field: Some("timeout".into()),
+            },
+            map_from_response,
+            map_from_request,
+            timeout_field: "timeout".into(),
+            request_params,
+            skipped: false,
+        }
+    }
+
+    #[test]
+    fn auto_wait_maps_from_response() {
+        // 1 차 응답 키가 map_from_response 매핑에 따라 wait params 로 복사된다.
+        let mut mfr = HashMap::new();
+        mfr.insert("child_index".into(), "child".into());
+        mfr.insert("parent_surface_id".into(), "surface".into());
+        let plan = sample_plan(mfr, HashMap::new(), Map::new());
+        let resp = json!({ "child_index": 3, "parent_surface_id": 11 });
+        let p = build_wait_params(&plan, &resp);
+        assert_eq!(p.get("child"), Some(&Value::from(3)));
+        // surface ↔ surface_id alias 가 양쪽 다 채워짐.
+        assert_eq!(p.get("surface"), Some(&Value::from(11)));
+        assert_eq!(p.get("surface_id"), Some(&Value::from(11)));
+    }
+
+    #[test]
+    fn auto_wait_maps_from_request_fallback() {
+        // 응답에 키가 없을 때 1 차 요청 params 에서 채워온다.
+        let mut mfreq = HashMap::new();
+        mfreq.insert("surface".into(), "surface".into());
+        let mut params = Map::new();
+        params.insert("surface".into(), Value::from(42_u32));
+        let plan = sample_plan(HashMap::new(), mfreq, params);
+        let resp = json!({});
+        let p = build_wait_params(&plan, &resp);
+        assert_eq!(p.get("surface"), Some(&Value::from(42_u32)));
+        assert_eq!(p.get("surface_id"), Some(&Value::from(42_u32)));
+    }
+
+    #[test]
+    fn auto_wait_both_mappings_response_wins() {
+        // response 와 request 둘 다 동일 target_key 로 매핑되어 있으면 response 우선.
+        let mut mfr = HashMap::new();
+        mfr.insert("surface".into(), "surface".into());
+        let mut mfreq = HashMap::new();
+        mfreq.insert("surface".into(), "surface".into());
+        let mut params = Map::new();
+        params.insert("surface".into(), Value::from(1_u32));
+        let plan = sample_plan(mfr, mfreq, params);
+        let resp = json!({ "surface": 9_u32 });
+        let p = build_wait_params(&plan, &resp);
+        assert_eq!(
+            p.get("surface"),
+            Some(&Value::from(9_u32)),
+            "response value should win over request fallback"
+        );
+    }
+
+    #[test]
+    fn auto_wait_surface_id_aliased_from_surface() {
+        // 응답 매핑이 "surface" 키만 채워도 wait IPC handler 가 surface_id 키를 보면
+        // 받아서 동작하도록 양방향 alias.
+        let mut mfr = HashMap::new();
+        mfr.insert("parent".into(), "surface".into());
+        let plan = sample_plan(mfr, HashMap::new(), Map::new());
+        let resp = json!({ "parent": 7_u32 });
+        let p = build_wait_params(&plan, &resp);
+        assert_eq!(p.get("surface"), Some(&Value::from(7_u32)));
+        assert_eq!(p.get("surface_id"), Some(&Value::from(7_u32)));
+    }
+
+    #[test]
+    fn auto_wait_surface_aliased_from_surface_id() {
+        // 반대 방향: surface_id 만 채워졌어도 surface 키도 동일 값으로 채운다.
+        let mut mfr = HashMap::new();
+        mfr.insert("sid".into(), "surface_id".into());
+        let plan = sample_plan(mfr, HashMap::new(), Map::new());
+        let resp = json!({ "sid": 5_u32 });
+        let p = build_wait_params(&plan, &resp);
+        assert_eq!(p.get("surface"), Some(&Value::from(5_u32)));
+        assert_eq!(p.get("surface_id"), Some(&Value::from(5_u32)));
+    }
+
+    #[test]
+    fn auto_wait_timeout_field_copied() {
+        // 1 차 요청의 timeout 값이 wait params 의 polling.timeout_field 키로 복사.
+        let mut params = Map::new();
+        params.insert("timeout".into(), Value::from(30_u32));
+        let plan = sample_plan(HashMap::new(), HashMap::new(), params);
+        let p = build_wait_params(&plan, &json!({}));
+        assert_eq!(p.get("timeout"), Some(&Value::from(30_u32)));
+    }
+
+    #[test]
+    fn auto_wait_timeout_renamed_via_polling_timeout_field() {
+        // polling.timeout_field 가 "deadline" 이면 wait params 의 키도 "deadline".
+        // (manifest 작성자가 wait handler 의 키 이름을 다른 이름으로 둘 수 있음.)
+        let mut params = Map::new();
+        params.insert("timeout".into(), Value::from(45_u32));
+        let mut plan = sample_plan(HashMap::new(), HashMap::new(), params);
+        plan.polling.timeout_field = Some("deadline".into());
+        let p = build_wait_params(&plan, &json!({}));
+        assert_eq!(p.get("deadline"), Some(&Value::from(45_u32)));
+        // 원 키는 채우지 않음.
+        assert!(p.get("timeout").is_none());
+    }
+
+    #[test]
+    fn auto_wait_timeout_absent_no_copy() {
+        // 1 차 요청에 timeout 키가 없으면 wait params 에도 timeout 키가 들어가지 않음
+        // (= 무한 대기).
+        let plan = sample_plan(HashMap::new(), HashMap::new(), Map::new());
+        let p = build_wait_params(&plan, &json!({}));
+        assert!(p.get("timeout").is_none());
+    }
 }
