@@ -42,6 +42,26 @@ DMG_NAME="$APP_NAME-$VERSION-macos.dmg"
 echo "==> Building tasty ($PROFILE)..."
 cargo build $CARGO_FLAGS
 
+# Discover bundled plugin crates (any `crates/tasty-plugin-*` with a manifest).
+# Matches justfile `build-plugins` recipe — keep them in sync.
+PLUGIN_CRATES=()
+for d in crates/tasty-plugin-*; do
+    [ -f "$d/tasty-plugin.toml" ] || continue
+    PLUGIN_CRATES+=("$(basename "$d")")
+done
+
+if [[ ${#PLUGIN_CRATES[@]} -eq 0 ]]; then
+    echo "Error: no plugin crates with tasty-plugin.toml found under crates/" >&2
+    exit 1
+fi
+
+echo "==> Building ${#PLUGIN_CRATES[@]} plugins ($PROFILE)..."
+PLUGIN_CARGO_ARGS=()
+for c in "${PLUGIN_CRATES[@]}"; do
+    PLUGIN_CARGO_ARGS+=("-p" "$c")
+done
+cargo build $CARGO_FLAGS "${PLUGIN_CARGO_ARGS[@]}"
+
 echo "==> Assembling $APP_NAME.app..."
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
@@ -49,6 +69,34 @@ mkdir -p "$APP_DIR/Contents/Resources"
 
 # Copy executable
 cp "target/$PROFILE/tasty" "$APP_DIR/Contents/MacOS/tasty"
+
+# Stage plugins next to the executable. `bundle_root()` (crates/tasty-host-plugin/
+# src/builtin.rs) discovers `<exe_dir>/plugins/` for packaged builds and syncs each
+# `<plugin-id>/` into `~/.tasty/plugins/<id>/` on first launch.
+PLUGINS_DIR="$APP_DIR/Contents/MacOS/plugins"
+mkdir -p "$PLUGINS_DIR"
+for c in "${PLUGIN_CRATES[@]}"; do
+    manifest="crates/$c/tasty-plugin.toml"
+    id=$(grep -E '^id[[:space:]]*=' "$manifest" | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+    if [[ -z "$id" ]]; then
+        echo "Error: cannot parse id from $manifest" >&2
+        exit 1
+    fi
+    src_bin="target/$PROFILE/$c"
+    if [[ ! -f "$src_bin" ]]; then
+        echo "Error: plugin binary missing: $src_bin" >&2
+        exit 1
+    fi
+    dest="$PLUGINS_DIR/$id"
+    mkdir -p "$dest"
+    cp "$src_bin" "$dest/$c"
+    cp "$manifest" "$dest/tasty-plugin.toml"
+    if [[ -d "crates/$c/lang" ]]; then
+        rm -rf "$dest/lang"
+        cp -R "crates/$c/lang" "$dest/lang"
+    fi
+    echo "  staged $id"
+done
 
 # Copy icon
 cp "assets/icons/icon.icns" "$APP_DIR/Contents/Resources/icon.icns"
