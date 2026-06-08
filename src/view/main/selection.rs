@@ -359,4 +359,35 @@ impl MainView {
 
         true
     }
+
+    /// Copy the current selection to clipboard, collapsing every line break into
+    /// a single space. Soft wraps are already joined by `extract_selected_text`;
+    /// here we additionally replace each hard `\n` with one space so a multi-line
+    /// selection becomes a single space-separated line. Selection is preserved.
+    pub fn copy_selection_no_newline(&mut self) -> bool {
+        let engine = &mut self.core_state;
+        let sel = match &self.text_selection {
+            Some(s) if !s.is_empty() => s.clone(),
+            _ => return false,
+        };
+        let text = if let Some(terminal) = engine.find_terminal_by_id(sel.surface_id) {
+            selection::extract_selected_text(terminal, &sel)
+        } else {
+            return false;
+        };
+        if text.is_empty() {
+            return false;
+        }
+        let text = text.replace('\n', " ");
+        if let Some(cb) = &mut self.clipboard {
+            cb.set_text(&text);
+        }
+        engine.record_internal_copy(&text);
+        self.state.toasts.push_info(
+            crate::i18n::t("toast.copied"),
+            crate::adapters::ui::ToastScope::Surface(sel.surface_id),
+        );
+
+        true
+    }
 }

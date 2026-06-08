@@ -563,21 +563,41 @@ impl MainView {
                 self.mark_dirty();
             }
             PendingNativeMenu::TerminalSurface { surface_id, x, y } => {
-                let items = [MenuItem::new(
+                // Show copy items only when there is an active (non-empty) selection.
+                let has_selection = self.text_selection.as_ref().is_some_and(|s| !s.is_empty());
+                let mut items = Vec::new();
+                if has_selection {
+                    items.push(MenuItem::new(2, crate::i18n::t("terminal_context_menu.copy")));
+                    items.push(MenuItem::new(
+                        3,
+                        crate::i18n::t("terminal_context_menu.copy_no_newline"),
+                    ));
+                    items.push(MenuItem::separator());
+                }
+                items.push(MenuItem::new(
                     1,
                     crate::i18n::t("terminal_context_menu.copy_surface_id"),
-                )];
+                ));
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                if let Some(1) = result {
-                    let text = surface_id.to_string();
-                    if let Some(cb) = &mut self.clipboard {
-                        cb.set_text(&text);
+                match result {
+                    Some(1) => {
+                        let text = surface_id.to_string();
+                        if let Some(cb) = &mut self.clipboard {
+                            cb.set_text(&text);
+                        }
+                        self.state.toasts.push_info(
+                            crate::i18n::t("toast.copied"),
+                            crate::adapters::ui::ToastScope::Surface(surface_id),
+                        );
                     }
-                    self.state.toasts.push_info(
-                        crate::i18n::t("toast.copied"),
-                        crate::adapters::ui::ToastScope::Surface(surface_id),
-                    );
+                    Some(2) => {
+                        self.copy_selection_to_clipboard();
+                    }
+                    Some(3) => {
+                        self.copy_selection_no_newline();
+                    }
+                    _ => {}
                 }
                 self.mark_dirty();
             }

@@ -433,6 +433,8 @@ new_html = "新規HTML..."
 new_image = "新規画像"
 
 [terminal_context_menu]
+copy = "コピー"
+copy_no_newline = "改行なしでコピー"
 copy_surface_id = "ターミナルIDをコピー"
 
 [notification_panel]

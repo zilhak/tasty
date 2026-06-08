@@ -433,6 +433,8 @@ new_html = "New HTML..."
 new_image = "New Image"
 
 [terminal_context_menu]
+copy = "Copy"
+copy_no_newline = "Copy Without Line Breaks"
 copy_surface_id = "Copy Terminal ID"
 
 [notification_panel]

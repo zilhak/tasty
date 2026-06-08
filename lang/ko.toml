@@ -433,6 +433,8 @@ new_html = "새 HTML..."
 new_image = "새 이미지"
 
 [terminal_context_menu]
+copy = "복사"
+copy_no_newline = "줄바꿈 없이 복사"
 copy_surface_id = "터미널 ID 복사"
 
 [notification_panel]
