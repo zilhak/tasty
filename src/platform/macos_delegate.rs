@@ -163,7 +163,9 @@ pub fn inject_delegate_methods() {
     // main thread에서 호출됨.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
     let delegate_ptr: *mut AnyObject = unsafe { msg_send![&*delegate, self] };
-    setup_main_menu(&app, mtm, delegate_ptr);
+    // tasty 특화 액션의 key equivalent 는 KeybindingSettings 에서 가져온다 (부팅 시 1회).
+    let settings = crate::settings::Settings::load();
+    setup_main_menu(&app, mtm, delegate_ptr, &settings.keybindings);
 
     // Set Dock icon from embedded PNG (works even without .app bundle)
     set_dock_icon(&app);
@@ -177,7 +179,15 @@ pub fn inject_delegate_methods() {
 /// Select All), Window (Minimize/Zoom/Close Window) 4개 submenu 를 등록한다.
 /// 표준 selector 는 first responder chain 으로 전달 (target=nil), `tastyQuit:` /
 /// `tastyNewWindow:` 만 delegate target 지정.
-fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut AnyObject) {
+///
+/// tasty 특화 액션 (Quit / New Window) 의 key equivalent + modifier mask 는
+/// `keybindings` 의 대응 binding 첫 값에서 동적으로 변환한다 (부팅 시 1회).
+fn setup_main_menu(
+    app: &NSApplication,
+    mtm: MainThreadMarker,
+    delegate: *mut AnyObject,
+    keybindings: &crate::settings::KeybindingSettings,
+) {
     use objc2_app_kit::NSEventModifierFlags;
     use objc2_foundation::NSProcessInfo;
 
@@ -188,6 +198,7 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
     let app_menu_item = NSMenuItem::new(mtm);
     let app_menu = NSMenu::new(mtm);
 
+    // OS 표준 NSApplication selector — Settings 미연동 (CLAUDE.md 단축키 정책의 예외).
     let about_title = NSString::from_str("About ").stringByAppendingString(&process_name);
     app_menu.addItem(&make_std_item(
         mtm,
@@ -221,18 +232,23 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
     ));
     app_menu.addItem(&NSMenuItem::separatorItem(mtm));
 
-    // Quit — tasty 라이프사이클로 라우팅.
+    // Quit — tasty 라이프사이클로 라우팅. key equivalent 는 KeybindingSettings.quit 에서.
     let quit_title = NSString::from_str("Quit ").stringByAppendingString(&process_name);
     let quit_item = NSMenuItem::new(mtm);
     quit_item.setTitle(&quit_title);
-    quit_item.setKeyEquivalent(&NSString::from_str("q"));
+    let (quit_key, quit_mods) = keybindings
+        .quit
+        .first()
+        .map(|b| binding_to_nsmenu_key(b))
+        .unwrap_or_else(|| (NSString::from_str(""), NSEventModifierFlags::empty()));
+    quit_item.setKeyEquivalent(&quit_key);
     // SAFETY: main thread (mtm). delegate 는 NSApplicationDelegate 포인터로 app 수명 동안 유효.
     // setAction / setTarget / setKeyEquivalentModifierMask 한 단위.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
         quit_item.setAction(Some(sel!(tastyQuit:)));
         quit_item.setTarget(Some(&*delegate.cast()));
-        quit_item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+        quit_item.setKeyEquivalentModifierMask(quit_mods);
     }
     app_menu.addItem(&quit_item);
 
@@ -244,17 +260,21 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
     let file_menu = NSMenu::new(mtm);
     file_menu.setTitle(&NSString::from_str("File"));
 
+    // New Window — key equivalent 는 KeybindingSettings.new_window 에서.
     let new_window_item = NSMenuItem::new(mtm);
     new_window_item.setTitle(&NSString::from_str("New Window"));
-    new_window_item.setKeyEquivalent(&NSString::from_str("n"));
+    let (nw_key, nw_mods) = keybindings
+        .new_window
+        .first()
+        .map(|b| binding_to_nsmenu_key(b))
+        .unwrap_or_else(|| (NSString::from_str(""), NSEventModifierFlags::empty()));
+    new_window_item.setKeyEquivalent(&nw_key);
     // SAFETY: 위 quit_item 와 동일 — main thread + delegate 수명 보장.
     #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
         new_window_item.setAction(Some(sel!(tastyNewWindow:)));
         new_window_item.setTarget(Some(&*delegate.cast()));
-        new_window_item.setKeyEquivalentModifierMask(
-            NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
-        );
+        new_window_item.setKeyEquivalentModifierMask(nw_mods);
     }
     file_menu.addItem(&new_window_item);
 
@@ -262,6 +282,7 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
     main_menu.addItem(&file_menu_item);
 
     // ── Edit Menu ──────────────────────────────────────────────────
+    // OS 표준 NSResponder selector — Settings 미연동 (CLAUDE.md 단축키 정책의 예외).
     let edit_menu_item = NSMenuItem::new(mtm);
     let edit_menu = NSMenu::new(mtm);
     edit_menu.setTitle(&NSString::from_str("Edit"));
@@ -297,6 +318,7 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
     main_menu.addItem(&edit_menu_item);
 
     // ── Window Menu ────────────────────────────────────────────────
+    // OS 표준 NSWindow selector — Settings 미연동 (CLAUDE.md 단축키 정책의 예외).
     let window_menu_item = NSMenuItem::new(mtm);
     let window_menu = NSMenu::new(mtm);
     window_menu.setTitle(&NSString::from_str("Window"));
@@ -325,6 +347,45 @@ fn setup_main_menu(app: &NSApplication, mtm: MainThreadMarker, delegate: *mut An
     main_menu.addItem(&window_menu_item);
 
     app.setMainMenu(Some(&main_menu));
+}
+
+/// binding 문자열 (e.g. `"alt+shift+n"`) 을 NSMenuItem 의 key equivalent + modifier mask 로 변환.
+///
+/// `docs/design/key-mapping.md` 의 macOS 매핑:
+/// - `ctrl` → Control, `shift` → Shift, `option` → Option
+/// - `alt` → **Cmd** (위치 기반 추상화: macOS 의 ⌘ 는 Windows 의 Alt 와 같은 손가락 위치)
+///
+/// 빈 문자열 / prefix 만 있는 경우 key = `""` → 메뉴 항목에 단축키 미표시.
+fn binding_to_nsmenu_key(
+    binding: &str,
+) -> (Retained<NSString>, objc2_app_kit::NSEventModifierFlags) {
+    use objc2_app_kit::NSEventModifierFlags;
+    let mut mods = NSEventModifierFlags::empty();
+    let mut rest = binding;
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        if lower.starts_with("ctrl+") {
+            mods |= NSEventModifierFlags::Control;
+            rest = &rest[5..];
+        } else if lower.starts_with("shift+") {
+            mods |= NSEventModifierFlags::Shift;
+            rest = &rest[6..];
+        } else if lower.starts_with("alt+") {
+            mods |= NSEventModifierFlags::Command;
+            rest = &rest[4..];
+        } else if lower.starts_with("option+") {
+            mods |= NSEventModifierFlags::Option;
+            rest = &rest[7..];
+        } else {
+            break;
+        }
+    }
+    let key = if rest.is_empty() {
+        NSString::from_str("")
+    } else {
+        NSString::from_str(&rest.to_ascii_lowercase())
+    };
+    (key, mods)
 }
 
 /// 표준 NSResponder selector 용 NSMenuItem 생성 (target = nil → first responder chain).
