@@ -159,6 +159,7 @@ async fn init_runtime(window: Arc<Window>) -> anyhow::Result<Runtime> {
     egui_ctx.options_mut(|opts| {
         opts.zoom_with_keyboard = false;
     });
+    install_cjk_fallback(&egui_ctx);
 
     let egui_state = egui_winit::State::new(
         egui_ctx.clone(),
@@ -182,6 +183,71 @@ async fn init_runtime(window: Arc<Window>) -> anyhow::Result<Runtime> {
         egui_renderer,
         gallery: GalleryState::new(),
     })
+}
+
+/// 갤러리는 본체의 폰트 파이프라인을 끌어오지 않으므로, egui Context 가
+/// 한글/한자/かな 글리프를 그리지 못한다 (Proportional / Monospace 기본
+/// family 에는 라틴 글리프만 포함됨 → □ 로 fallback). 시스템 CJK 폰트를
+/// 직접 읽어 양쪽 family 끝에 fallback 으로 붙인다. 본체의
+/// `src/gfx/gpu/fonts.rs` 와 같은 경로 리스트.
+fn install_cjk_fallback(ctx: &egui::Context) {
+    let Some(bytes) = load_system_cjk_font() else {
+        tracing::warn!(
+            "gallery: no system CJK font found; Korean/Japanese/Chinese labels will render as □"
+        );
+        return;
+    };
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "system_cjk".to_owned(),
+        Arc::new(egui::FontData::from_owned(bytes)),
+    );
+    for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(fam)
+            .or_default()
+            .push("system_cjk".to_owned());
+    }
+    ctx.set_fonts(fonts);
+}
+
+fn load_system_cjk_font() -> Option<Vec<u8>> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(data) = std::fs::read("C:/Windows/Fonts/malgun.ttf") {
+            return Some(data);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in &[
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for path in &[
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+
+    None
 }
 
 fn render_frame(rt: &mut Runtime) -> anyhow::Result<()> {

@@ -1,6 +1,6 @@
 [package]
 name = "tasty-gallery"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Tasty UI component gallery — standalone visual catalog (Storybook-like)"
