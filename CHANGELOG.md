@@ -21,7 +21,7 @@
 - **Manifest schema `auto_wait`** (`CliSubcommandDecl.auto_wait`, `AutoWaitDecl`) — CLI subcommand 가 1 차 IPC 응답 후 다른 method 로 자동 chain wait 하도록 선언하는 필드. `polling` 과 동시 선언 시 manifest validator 가 reject. `#[serde(default)]` 로 기존 plugin 매니페스트 backward compat.
 
 ### Changed
-- **(BREAK) `tasty claude spawn` / `tasty claude tell` / `tasty codex spawn` / `tasty codex tell` 기본 동작 변경** — 호출자가 child 가 `idle` / `needs_input` / `exited` (codex 는 `untrusted` 포함) 에 도달할 때까지 block 한다. 기존 fire-and-forget 동작은 `--no-wait` 옵트인. `--timeout SECS` 로 wait deadline 명시 (default = 무한). 응답은 line-delimited 두 JSON — 1 차 spawn/tell JSON + chain 된 wait 결과 JSON (`--no-wait` 시 1 차 응답만). 기타 명령 (`broadcast` / `kill` / `respawn` / `children` / `parent` / `wait` / `wait-any` / `launch` / `install` / `uninstall` / `hook`) 동작 불변.
+- **`tasty claude spawn` / `tasty claude tell` / `tasty codex spawn` / `tasty codex tell` 기본 동작 변경** — 호출자가 child 가 `idle` / `needs_input` / `exited` (codex 는 `untrusted` 포함) 에 도달할 때까지 block 한다. 응답은 line-delimited 두 JSON — 1 차 spawn/tell JSON + chain 된 wait 결과 JSON. 기존 fire-and-forget 동작은 `--no-wait` 옵트인으로 보존 (= 한 minor 이상 deprecation 경고 우선 — `docs/dev-guide/ipc-stability.md` 0.x 정책). `--timeout SECS` 로 wait deadline 명시 (default = 무한). 기타 명령 (`broadcast` / `kill` / `respawn` / `children` / `parent` / `wait` / `wait-any` / `launch` / `install` / `uninstall` / `hook`) 동작 불변.
 
 ## [0.8.1] - 2026-06-08
 
