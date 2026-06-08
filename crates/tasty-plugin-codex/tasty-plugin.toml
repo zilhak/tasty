@@ -29,10 +29,10 @@ description = "Codex CLI integration (launch, spawn, kill, wait, etc.)"
 description_i18n_key = "codex.cli.desc"
 subcommands = [
     { name = "launch",    ipc_method = "codex.launch",    args = "launch_args",    description = "Launch a new workspace and start Codex in its terminal" },
-    { name = "spawn",     ipc_method = "codex.spawn",     args = "spawn_args",     description = "Spawn a child Codex instance in a split surface" },
+    { name = "spawn",     ipc_method = "codex.spawn",     args = "spawn_args",     auto_wait = { method = "codex.wait", map_from_response = { child_index = "child" }, map_from_request = { surface = "surface" }, polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited", "untrusted"], interval_ms = 500, timeout_field = "timeout" } }, description = "Spawn a child Codex instance in a split surface. Auto-waits until the child becomes idle / needs_input / exited; pass --no-wait for legacy fire-and-forget." },
     { name = "children",  ipc_method = "codex.children",  args = "children_args",  description = "List children of the specified Codex parent" },
     { name = "parent",    ipc_method = "codex.parent",    args = "parent_args",    description = "Return the parent Codex surface id for a given child surface" },
-    { name = "tell",      ipc_method = "codex.tell",      args = "tell_args",      description = "Send a message to a Codex instance (preserves line breaks, submits at end)" },
+    { name = "tell",      ipc_method = "codex.tell",      args = "tell_args",      auto_wait = { method = "codex.wait_by_surface", map_from_request = { surface = "surface" }, polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited", "untrusted"], interval_ms = 500, timeout_field = "timeout" } }, description = "Send a message to a Codex instance (preserves line breaks, submits at end). Auto-waits until the target becomes idle / needs_input / exited; pass --no-wait for legacy fire-and-forget." },
     { name = "wait",      ipc_method = "codex.wait",      args = "wait_args",      polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited", "untrusted"], interval_ms = 500, timeout_field = "timeout" }, description = "Wait for a child Codex instance to become idle / needs_input / exited (returns untrusted with instructions if codex hooks haven't been approved yet)" },
     { name = "broadcast", ipc_method = "codex.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Codex instance" },
     { name = "kill",      ipc_method = "codex.kill",      args = "kill_args",      description = "Kill a child Codex instance by child index" },
@@ -59,7 +59,9 @@ positional = [
     { name = "message", type = "string", required = true, help = "Message text to send. Newlines are preserved; the message is submitted automatically." },
 ]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Target Codex surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "surface", type = "u32",  flag = "--surface", required = false, help = "Target Codex surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "no_wait", type = "bool", flag = "--no-wait", required = false, help = "Skip the automatic wait — return immediately after tell (legacy fire-and-forget)" },
+    { name = "timeout", type = "u32",  flag = "--timeout", required = false, help = "Auto-wait timeout in seconds (omit means wait forever)" },
 ]
 
 [contributes.cli.arg_groups.spawn_args]
@@ -71,6 +73,8 @@ flags = [
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
+    { name = "no_wait",   type = "bool",   flag = "--no-wait",   required = false, help = "Skip the automatic wait — return immediately after spawn (legacy fire-and-forget)" },
+    { name = "timeout",   type = "u32",    flag = "--timeout",   required = false, help = "Auto-wait timeout in seconds (omit means wait forever)" },
 ]
 
 [contributes.cli.arg_groups.children_args]

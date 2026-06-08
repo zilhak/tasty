@@ -340,6 +340,42 @@ pub fn handle_wait(
     Ok(json!({ "state": response_state }))
 }
 
+/// `codex.tell` 의 자동 wait chain 이 호출하는 mirror 메서드. 입력은 `surface`
+/// (= child surface id) 하나. `CodexState::parent_of_child` 로 (parent) 를 역조회
+/// 후 그 자식의 state 를 반환. 등록되지 않은 surface 면 즉시 `exited` 응답.
+/// `handle_wait` 와 달리 trust 체크(`untrusted` 분기) 도 동일하게 수행한다.
+pub fn handle_wait_by_surface(
+    state: &CodexState,
+    host: &HostHandle,
+    params: Value,
+) -> Result<Value, IpcMethodError> {
+    let sid = require_u32(&params, "surface")?;
+    if state.parent_of_child(sid).is_none() {
+        return Ok(json!({ "state": "exited" }));
+    }
+    let response_state = match state.state_of(sid) {
+        "active" => {
+            let exists = host
+                .call("surface.locate", json!({ "surface_id": sid }))
+                .ok()
+                .and_then(|v| v.get("exists").and_then(|e| e.as_bool()))
+                .unwrap_or(true);
+            if exists { "active" } else { "exited" }
+        }
+        other => other,
+    };
+    if response_state == "active" && !codex_hooks_all_trusted() {
+        return Ok(json!({
+            "state": "untrusted",
+            "trust_required": true,
+            "instructions": "Codex hooks installed but not trusted — codex blocks them until user approves. \
+        Open `codex` in any terminal, type `/hooks` + Enter, then for each of 3 hooks press Enter → t → Esc → Down. \
+        Trust persists per-machine in ~/.codex/config.toml. Re-run `tasty codex wait` after.",
+        }));
+    }
+    Ok(json!({ "state": response_state }))
+}
+
 pub fn handle_broadcast(
     state: &CodexState,
     host: &HostHandle,

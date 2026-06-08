@@ -34,10 +34,10 @@ description = "Claude Code CLI integration (launch, spawn, kill, wait, etc.)"
 description_i18n_key = "claude.cli.desc"
 subcommands = [
     { name = "launch",    ipc_method = "claude.launch",    args = "launch_args",    description = "Launch Claude Code in a new workspace" },
-    { name = "spawn",     ipc_method = "claude.spawn",     args = "spawn_args",     description = "Spawn a child Claude instance into a workspace" },
+    { name = "spawn",     ipc_method = "claude.spawn",     args = "spawn_args",     auto_wait = { method = "claude.wait", map_from_response = { parent_surface_id = "surface", child_index = "child_index" }, polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited"], interval_ms = 500, timeout_field = "timeout" } }, description = "Spawn a child Claude instance into a workspace. Auto-waits until the child becomes idle / needs_input / exited; pass --no-wait for legacy fire-and-forget." },
     { name = "children",  ipc_method = "claude.children",  args = "children_args",  description = "List children of the specified Claude parent" },
     { name = "parent",    ipc_method = "claude.parent",    args = "parent_args",    description = "Show the parent of the specified Claude child" },
-    { name = "tell",      ipc_method = "claude.tell",      args = "tell_args",      description = "Send a message to a Claude instance (multi-line, submits at end)" },
+    { name = "tell",      ipc_method = "claude.tell",      args = "tell_args",      auto_wait = { method = "claude.wait_by_surface", map_from_request = { surface = "surface" }, polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited"], interval_ms = 500, timeout_field = "timeout" } }, description = "Send a message to a Claude instance (multi-line, submits at end). Auto-waits until the target becomes idle / needs_input / exited; pass --no-wait for legacy fire-and-forget." },
     { name = "wait",      ipc_method = "claude.wait",      args = "wait_args",      polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited"], interval_ms = 500, timeout_field = "timeout" }, description = "Wait for a child Claude instance to become idle / needs_input / exited" },
     { name = "wait-any",  ipc_method = "claude.wait_any",  args = "wait_any_args",  polling = { state_field = "state", terminal_states = ["idle", "needs_input", "exited"], interval_ms = 500, timeout_field = "timeout" }, description = "Wait until any of the listed children becomes idle / needs_input / exited" },
     { name = "broadcast", ipc_method = "claude.broadcast", args = "broadcast_args", description = "Broadcast text to all children of a parent Claude instance" },
@@ -64,6 +64,8 @@ flags = [
     { name = "role",      type = "string", flag = "--role",      required = false, help = "Role label attached to the child (used by broadcast --role)" },
     { name = "nickname",  type = "string", flag = "--nickname",  required = false, help = "Display nickname shown on the tab" },
     { name = "prompt",    type = "string", flag = "--prompt",    required = false, help = "Initial prompt sent to the child after spawn" },
+    { name = "no_wait",   type = "bool",   flag = "--no-wait",   required = false, help = "Skip the automatic wait — return immediately after spawn (legacy fire-and-forget)" },
+    { name = "timeout",   type = "u32",    flag = "--timeout",   required = false, help = "Auto-wait timeout in seconds (omit means wait forever)" },
 ]
 
 [contributes.cli.arg_groups.children_args]
@@ -81,7 +83,9 @@ positional = [
     { name = "message", type = "string", required = true, help = "Message text to send. Newlines are preserved; the message is submitted automatically." },
 ]
 flags = [
-    { name = "surface", type = "u32", flag = "--surface", required = false, help = "Target Claude surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "surface", type = "u32",  flag = "--surface", required = false, help = "Target Claude surface ID to send the message to (defaults to caller's TASTY_SURFACE_ID)" },
+    { name = "no_wait", type = "bool", flag = "--no-wait", required = false, help = "Skip the automatic wait — return immediately after tell (legacy fire-and-forget)" },
+    { name = "timeout", type = "u32",  flag = "--timeout", required = false, help = "Auto-wait timeout in seconds (omit means wait forever)" },
 ]
 
 [contributes.cli.arg_groups.wait_args]

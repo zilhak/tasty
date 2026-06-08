@@ -16,6 +16,13 @@
 
 ## [Unreleased]
 
+### Added
+- **`claude.wait_by_surface` / `codex.wait_by_surface` IPC methods** — `wait` 와 동일 semantics 이되 child surface id 단독 lookup. `tell` 의 자동 wait chain 이 사용 (tell 응답에 child_index 가 없으므로 child surface id 기준 wait 가 필요).
+- **Manifest schema `auto_wait`** (`CliSubcommandDecl.auto_wait`, `AutoWaitDecl`) — CLI subcommand 가 1 차 IPC 응답 후 다른 method 로 자동 chain wait 하도록 선언하는 필드. `polling` 과 동시 선언 시 manifest validator 가 reject. `#[serde(default)]` 로 기존 plugin 매니페스트 backward compat.
+
+### Changed
+- **(BREAK) `tasty claude spawn` / `tasty claude tell` / `tasty codex spawn` / `tasty codex tell` 기본 동작 변경** — 호출자가 child 가 `idle` / `needs_input` / `exited` (codex 는 `untrusted` 포함) 에 도달할 때까지 block 한다. 기존 fire-and-forget 동작은 `--no-wait` 옵트인. `--timeout SECS` 로 wait deadline 명시 (default = 무한). 응답은 line-delimited 두 JSON — 1 차 spawn/tell JSON + chain 된 wait 결과 JSON (`--no-wait` 시 1 차 응답만). 기타 명령 (`broadcast` / `kill` / `respawn` / `children` / `parent` / `wait` / `wait-any` / `launch` / `install` / `uninstall` / `hook`) 동작 불변.
+
 ## [0.8.1] - 2026-06-08
 
 > 마지막 publish (0.3.1) 이후 누적된 변경이 매우 많아 세부 entry 를 모두 나열하지 않고 큼직한 축만 정리한다. 자세한 내역은 `git log v0.3.1..v0.8.1` 참조.

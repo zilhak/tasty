@@ -4,6 +4,7 @@
 //! 호스트 정적 `Cli` 파싱이 `InvalidSubcommand`로 실패할 때 진입한다 — 정적 우선,
 //! 정적이 모르는 이름만 plugin CLI에서 찾는다. plugin이 호스트 명령을 가릴 수 없다.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Result, anyhow};
@@ -12,8 +13,24 @@ use serde_json::{Map, Value};
 
 use tasty_ipc::protocol::JsonRpcRequest;
 use tasty_plugin_manifest::{
-    CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest, PollingDecl,
+    AutoWaitDecl, CliArg, CliArgGroup, CliArgType, CliCommandDecl, Manifest, PollingDecl,
 };
+
+/// `spawn` / `tell` 같이 1 차 응답 후 chained wait 가 필요한 명령의 실행 계획.
+/// `matches_to_request` 가 manifest `AutoWaitDecl` + 사용자 CLI 입력을 합쳐 빌드.
+#[derive(Debug, Clone)]
+pub struct AutoWaitPlan {
+    pub method: String,
+    pub polling: PollingDecl,
+    pub map_from_response: HashMap<String, String>,
+    pub map_from_request: HashMap<String, String>,
+    pub timeout_field: String,
+    /// 원 요청 params snapshot. wait params 구성 시 `map_from_request` 매핑과
+    /// timeout 키 추출에 사용.
+    pub request_params: Map<String, Value>,
+    /// `--no-wait` 가 true 면 chain skip — caller 가 1 차 응답만 출력하고 종료.
+    pub skipped: bool,
+}
 
 /// 한 plugin이 contribute한 CLI 묶음.
 #[derive(Debug, Clone)]
@@ -136,7 +153,7 @@ fn build_arg(arg: &CliArg, positional_index: Option<usize>) -> Arg {
 pub fn matches_to_request(
     entries: &[PluginCliEntry],
     matches: &ArgMatches,
-) -> Result<(JsonRpcRequest, Option<PollingDecl>)> {
+) -> Result<(JsonRpcRequest, Option<PollingDecl>, Option<AutoWaitPlan>)> {
     let (top_name, top_sub) = matches
         .subcommand()
         .ok_or_else(|| anyhow!("no subcommand supplied"))?;
@@ -208,6 +225,11 @@ pub fn matches_to_request(
         }
     }
 
+    let auto_wait_plan = sub_decl
+        .auto_wait
+        .as_ref()
+        .map(|aw| build_auto_wait_plan(aw, &params));
+
     Ok((
         JsonRpcRequest {
             jsonrpc: "2.0".into(),
@@ -219,7 +241,26 @@ pub fn matches_to_request(
                 .filter(|s| !s.is_empty()),
         },
         sub_decl.polling.clone(),
+        auto_wait_plan,
     ))
+}
+
+/// `AutoWaitDecl` 와 1 차 요청 params 로 실행 계획을 구성한다.
+/// `--no-wait` (params 의 `no_wait_field` 가 true 인 경우) 면 `skipped = true`.
+fn build_auto_wait_plan(aw: &AutoWaitDecl, request_params: &Map<String, Value>) -> AutoWaitPlan {
+    let skipped = request_params
+        .get(&aw.no_wait_field)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    AutoWaitPlan {
+        method: aw.method.clone(),
+        polling: aw.polling.clone(),
+        map_from_response: aw.map_from_response.clone(),
+        map_from_request: aw.map_from_request.clone(),
+        timeout_field: aw.timeout_field.clone(),
+        request_params: request_params.clone(),
+        skipped,
+    }
 }
 
 /// stdin 이 TTY 가 아닐 때 (= pipe / redirect 로 입력이 들어올 때) stdin 전체를
@@ -281,6 +322,19 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use tasty_plugin_manifest::{CliArg, CliArgGroup, CliArgType, CliSubcommandDecl};
+
+    fn new_subcommand(name: &str, ipc_method: &str, args: &str) -> CliSubcommandDecl {
+        CliSubcommandDecl {
+            name: name.into(),
+            ipc_method: ipc_method.into(),
+            args: args.into(),
+            description: None,
+            description_i18n_key: None,
+            stdin_json: false,
+            polling: None,
+            auto_wait: None,
+        }
+    }
 
     fn sample_entry() -> PluginCliEntry {
         let mut arg_groups: HashMap<String, CliArgGroup> = HashMap::new();
@@ -353,24 +407,8 @@ mod tests {
                 description: None,
                 description_i18n_key: None,
                 subcommands: vec![
-                    CliSubcommandDecl {
-                        name: "spawn".into(),
-                        ipc_method: "codex.spawn".into(),
-                        args: "spawn_args".into(),
-                        description: None,
-                        description_i18n_key: None,
-                        stdin_json: false,
-                        polling: None,
-                    },
-                    CliSubcommandDecl {
-                        name: "broadcast".into(),
-                        ipc_method: "codex.broadcast".into(),
-                        args: "broadcast_args".into(),
-                        description: None,
-                        description_i18n_key: None,
-                        stdin_json: false,
-                        polling: None,
-                    },
+                    new_subcommand("spawn", "codex.spawn", "spawn_args"),
+                    new_subcommand("broadcast", "codex.broadcast", "broadcast_args"),
                 ],
                 arg_groups,
             },
@@ -477,7 +515,7 @@ mod tests {
     fn flag_with_value_maps_to_params() {
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "spawn", "--surface", "5", "--prompt", "hello"]);
-        let (req, _polling) = matches_to_request(&entries, &m).unwrap();
+        let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
         assert_eq!(req.method, "codex.spawn");
         let p = req.params.as_object().unwrap();
         assert_eq!(p["surface"], Value::from(5_u32));
@@ -488,7 +526,7 @@ mod tests {
     fn bool_flag_present_serializes_true() {
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "spawn", "--force"]);
-        let (req, _polling) = matches_to_request(&entries, &m).unwrap();
+        let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
         let p = req.params.as_object().unwrap();
         assert_eq!(p["force"], Value::Bool(true));
     }
@@ -497,7 +535,7 @@ mod tests {
     fn bool_flag_absent_serializes_false() {
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "spawn"]);
-        let (req, _polling) = matches_to_request(&entries, &m).unwrap();
+        let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
         let p = req.params.as_object().unwrap();
         assert_eq!(p["force"], Value::Bool(false));
     }
@@ -506,7 +544,7 @@ mod tests {
     fn default_value_applied_when_missing() {
         let entries = vec![sample_entry()];
         let m = parse(&["codex", "broadcast", "hello"]);
-        let (req, _polling) = matches_to_request(&entries, &m).unwrap();
+        let (req, _polling, _auto) = matches_to_request(&entries, &m).unwrap();
         let p = req.params.as_object().unwrap();
         assert_eq!(p["text"], Value::String("hello".into()));
         assert_eq!(p["timeout"], Value::from(60_u32));

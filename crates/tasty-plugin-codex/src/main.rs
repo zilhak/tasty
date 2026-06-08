@@ -100,6 +100,7 @@ impl Plugin for CodexPlugin {
             "codex.parent" => handlers::handle_parent(&self.state, params),
             "codex.tell" => handlers::handle_tell(&host, params),
             "codex.wait" => handlers::handle_wait(&self.state, &host, params),
+            "codex.wait_by_surface" => handlers::handle_wait_by_surface(&self.state, &host, params),
             "codex.broadcast" => handlers::handle_broadcast(&self.state, &host, params),
             "codex.kill" => handlers::handle_kill(&mut self.state, &host, params),
             "codex.respawn" => handlers::handle_respawn(&mut self.state, &host, params),

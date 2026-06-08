@@ -692,6 +692,51 @@ pub struct CliSubcommandDecl {
     /// timeout 도달 시 마지막 응답을 그대로 출력한다.
     #[serde(default)]
     pub polling: Option<PollingDecl>,
+    /// 있으면 CLI 가 1 차 IPC 응답을 출력한 *뒤* `auto_wait.method` 를 chain
+    /// 호출하여 terminal_states 도달까지 block 한다 (claude/codex spawn·tell 의
+    /// 자동 wait). `polling` 과 동시 선언 금지 (validator 가 reject).
+    #[serde(default)]
+    pub auto_wait: Option<AutoWaitDecl>,
+}
+
+/// `spawn` / `tell` 같이 1 차 응답 후 *chained wait* 를 자동으로 거는 CLI 명령
+/// 의 설정. CLI 는 1 차 IPC 응답을 line-delimited JSON 으로 출력한 뒤,
+/// `--no-wait` 가 아닐 경우 `method` 를 호출하여 `polling.terminal_states`
+/// 도달까지 block 하고 wait 응답을 두 번째 JSON line 으로 출력한다.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AutoWaitDecl {
+    /// chain 호출할 IPC method (예: `"claude.wait"`, `"claude.wait_by_surface"`).
+    pub method: String,
+    /// 1 차 응답 JSON 의 어떤 키를 wait params 의 어떤 키로 매핑할지.
+    /// 키: 1 차 응답 키, 값: wait params 키.
+    /// 예: `{ "child_index": "child_index", "parent_surface_id": "surface" }`.
+    #[serde(default)]
+    pub map_from_response: std::collections::HashMap<String, String>,
+    /// 1 차 응답에 없는 wait params 를 *원 요청* 의 어떤 params 키에서 가져올지.
+    /// 키: 원 요청 params 키, 값: wait params 키.
+    /// `tell` 처럼 응답에 child_index 가 없는 경우 fallback 매핑에 사용.
+    #[serde(default)]
+    pub map_from_request: std::collections::HashMap<String, String>,
+    /// wait 폴링 사양 (`PollingDecl` 과 동일 모양 — state_field / terminal_states /
+    /// interval_ms). `timeout_field` 는 본 `AutoWaitDecl` 의 `timeout_field` 가
+    /// 우선이므로 무시된다.
+    pub polling: PollingDecl,
+    /// `--no-wait` flag 의 CLI arg name. CLI 가 이 키를 true 로 받으면 chain skip.
+    /// 기본 `"no_wait"`.
+    #[serde(default = "default_no_wait_field")]
+    pub no_wait_field: String,
+    /// `--timeout` flag 의 CLI arg name. wait 폴링의 timeout 으로 사용.
+    /// 비어있으면 무한 대기. 기본 `"timeout"`.
+    #[serde(default = "default_timeout_field")]
+    pub timeout_field: String,
+}
+
+fn default_no_wait_field() -> String {
+    "no_wait".into()
+}
+
+fn default_timeout_field() -> String {
+    "timeout".into()
 }
 
 /// CLI 명령이 *blocking polling* 모드일 때의 설정.

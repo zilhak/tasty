@@ -292,6 +292,14 @@ impl Manifest {
                         sub.args
                     );
                 }
+                if sub.polling.is_some() && sub.auto_wait.is_some() {
+                    anyhow::bail!(
+                        "cli subcommand '{} {}' declares both 'polling' and 'auto_wait' \
+                         — choose one (polling = self-poll, auto_wait = chain to another method)",
+                        cli.name,
+                        sub.name
+                    );
+                }
                 // ipc_method는 plugin 자기 namespace로 시작해야 한다.
                 let Some(dot) = sub.ipc_method.find('.') else {
                     anyhow::bail!(

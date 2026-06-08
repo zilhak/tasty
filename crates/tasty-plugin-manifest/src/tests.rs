@@ -1904,3 +1904,66 @@ fn window_contribute_zero_default_size_rejected() {
     let err = parse(&s).unwrap_err().to_string();
     assert!(err.contains("default_size"), "got: {err}");
 }
+
+#[test]
+fn auto_wait_decl_parses_with_defaults() {
+    // `tasty claude spawn` 자동 wait manifest 가 `map_from_response` /
+    // `map_from_request` / default no_wait/timeout 필드 없이도 deserialize 되는지.
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.ipc_namespace]]
+        prefix = "ex"
+
+        [[contributes.cli]]
+        name = "ex"
+        subcommands = [
+          { name = "spawn", ipc_method = "ex.spawn", args = "g", auto_wait = { method = "ex.wait", map_from_response = { parent_surface_id = "surface", child_index = "child_index" }, polling = { state_field = "state", terminal_states = ["idle"], interval_ms = 500 } } },
+        ]
+
+        [contributes.cli.arg_groups.g]
+    "#;
+    let m = parse(s).expect("manifest should parse");
+    let sub = &m.contributes.cli[0].subcommands[0];
+    let aw = sub.auto_wait.as_ref().expect("auto_wait declared");
+    assert_eq!(aw.method, "ex.wait");
+    assert_eq!(aw.no_wait_field, "no_wait");
+    assert_eq!(aw.timeout_field, "timeout");
+    assert!(aw.map_from_request.is_empty());
+}
+
+#[test]
+fn rejects_subcommand_with_both_polling_and_auto_wait() {
+    // 한 subcommand 가 polling (self-poll) 과 auto_wait (chained wait) 를 동시에
+    // 선언하면 의미가 충돌 — validator 가 reject.
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.ipc_namespace]]
+        prefix = "ex"
+
+        [[contributes.cli]]
+        name = "ex"
+        subcommands = [
+          { name = "spawn", ipc_method = "ex.spawn", args = "g", polling = { state_field = "state", terminal_states = ["idle"], interval_ms = 500 }, auto_wait = { method = "ex.wait", polling = { state_field = "state", terminal_states = ["idle"], interval_ms = 500 } } },
+        ]
+
+        [contributes.cli.arg_groups.g]
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("auto_wait"), "got: {err}");
+}

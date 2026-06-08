@@ -44,13 +44,14 @@ pub fn try_run_plugin_cli() -> Option<Result<()>> {
     if !entries.iter().any(|e| e.cli.name == top_name) {
         return None;
     }
-    let (request, polling) = match dynamic::matches_to_request(&entries, &matches) {
+    let (request, polling, auto_wait) = match dynamic::matches_to_request(&entries, &matches) {
         Ok(r) => r,
         Err(e) => return Some(Err(e)),
     };
-    Some(match polling {
-        Some(p) => run_dynamic_client_polling(request, p, port_file.as_deref()),
-        None => run_dynamic_client(request, port_file.as_deref()),
+    Some(match (polling, auto_wait) {
+        (Some(p), _) => run_dynamic_client_polling(request, p, port_file.as_deref()),
+        (None, Some(aw)) => run_dynamic_client_with_auto_wait(request, aw, port_file.as_deref()),
+        (None, None) => run_dynamic_client(request, port_file.as_deref()),
     })
 }
 
@@ -85,6 +86,96 @@ fn run_dynamic_client(
             std::process::exit(1);
         }
     }
+}
+
+/// `claude spawn` / `claude tell` / `codex spawn` / `codex tell` 같이 manifest 가
+/// `auto_wait` 를 선언한 명령. 1 차 IPC 응답을 line-delimited JSON 으로 출력한 뒤,
+/// `--no-wait` 가 아니면 wait IPC 를 chain 호출해 terminal_states 도달까지 block —
+/// wait 응답도 두 번째 JSON line 으로 출력. caller 는 마지막 line 만 파싱하면
+/// wait 결과를 확보할 수 있다.
+fn run_dynamic_client_with_auto_wait(
+    request: tasty_ipc::protocol::JsonRpcRequest,
+    aw: super::dynamic::AutoWaitPlan,
+    port_file: Option<&str>,
+) -> Result<()> {
+    let port = port_file::read_port_file_from(port_file)?;
+
+    // ── 1) 1 차 IPC (spawn / tell) 호출 + 응답 출력.
+    let first_value = {
+        let stream = TcpStream::connect(format!("127.0.0.1:{}", port)).map_err(|e| {
+            anyhow::anyhow!(
+                "Could not connect to tasty instance on port {}: {}. Is tasty running?",
+                port,
+                e
+            )
+        })?;
+        let mut conn = IpcConnection::new(stream)?;
+        match conn.send(&request) {
+            Ok(value) => value,
+            Err(e) => {
+                let msg = e.to_string();
+                if let Some(rest) = msg.strip_prefix("Error (") {
+                    eprintln!("Error ({}", rest);
+                } else {
+                    eprintln!("{}", msg);
+                }
+                std::process::exit(1);
+            }
+        }
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&first_value).unwrap_or_default()
+    );
+
+    // ── 2) --no-wait 이면 여기서 종료.
+    if aw.skipped {
+        return Ok(());
+    }
+
+    // ── 3) wait params 구성: 응답 매핑 + 요청 매핑 + timeout.
+    let mut wait_params = serde_json::Map::new();
+    for (resp_key, target_key) in &aw.map_from_response {
+        if let Some(v) = first_value.get(resp_key) {
+            wait_params.insert(target_key.clone(), v.clone());
+        }
+    }
+    for (req_key, target_key) in &aw.map_from_request {
+        if !wait_params.contains_key(target_key)
+            && let Some(v) = aw.request_params.get(req_key)
+        {
+            wait_params.insert(target_key.clone(), v.clone());
+        }
+    }
+    // `--timeout` 은 원 요청 params 의 `timeout_field` 값 — wait 의 polling 이
+    // 그 키로 deadline 을 읽도록 동일 키로 복사.
+    let wait_timeout_key = aw
+        .polling
+        .timeout_field
+        .clone()
+        .unwrap_or_else(|| "timeout".into());
+    if let Some(t) = aw.request_params.get(&aw.timeout_field) {
+        wait_params.insert(wait_timeout_key, t.clone());
+    }
+    // matches_to_request 와 동일한 surface ↔ surface_id sync. wait IPC handler 는
+    // 통상 `surface_id` 키를 기대하므로, manifest 가 응답을 `surface` 로 매핑해도
+    // wait 측이 받을 수 있도록 두 키 모두 채워둔다.
+    if let Some(v) = wait_params.get("surface").cloned() {
+        wait_params.entry("surface_id".to_string()).or_insert(v);
+    }
+    if let Some(v) = wait_params.get("surface_id").cloned() {
+        wait_params.entry("surface".to_string()).or_insert(v);
+    }
+
+    // ── 4) wait IPC chain. polling sense 그대로 재사용.
+    let wait_req = tasty_ipc::protocol::JsonRpcRequest {
+        jsonrpc: "2.0".into(),
+        method: aw.method.clone(),
+        params: serde_json::Value::Object(wait_params),
+        id: Some(serde_json::Value::from(2)),
+        session_token: request.session_token.clone(),
+    };
+    run_dynamic_client_polling(wait_req, aw.polling, port_file)
 }
 
 /// `tasty claude wait` 같이 manifest 가 polling 을 선언한 명령. 호스트에

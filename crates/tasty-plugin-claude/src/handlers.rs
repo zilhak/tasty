@@ -134,6 +134,36 @@ pub(crate) fn handle_wait(
     Ok(json!({ "state": response_state }))
 }
 
+/// `claude.tell` 의 자동 wait chain 이 호출하는 mirror 메서드. 입력은 `surface_id`
+/// (= child surface id) 하나. ClaudeState 의 `parent_of_child` lookup 으로
+/// (parent, child_index) 를 역조회한 뒤 `handle_wait` 와 동일 분기로 응답.
+/// 등록되지 않은 child surface 면 — child registry 에 없다는 의미이므로 — 즉시
+/// `exited` 로 응답 (호스트가 이미 surface 를 정리했거나, surface 가 spawn 으로
+/// 들어온 적이 없는 경우).
+pub(crate) fn handle_wait_by_surface(
+    state: &ClaudeState,
+    host: &HostHandle,
+    params: &Value,
+) -> Result<Value, IpcMethodError> {
+    let child_surface_id = require_surface_id(params)?;
+    let response_state = match state.parent_of_child(child_surface_id) {
+        Some(_) => {
+            let exists = host
+                .call("surface.locate", json!({ "surface_id": child_surface_id }))
+                .ok()
+                .and_then(|v| v.get("exists").and_then(|e| e.as_bool()))
+                .unwrap_or(false);
+            if !exists {
+                "exited"
+            } else {
+                state.state_of(child_surface_id)
+            }
+        }
+        None => "exited",
+    };
+    Ok(json!({ "state": response_state }))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WaitDecision {
     /// child가 ClaudeState에 없다 → 즉시 "exited".
