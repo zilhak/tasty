@@ -60,6 +60,65 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Discover bundled plugin crates (any `crates\tasty-plugin-*` with a manifest).
+# Matches justfile `build-plugins` recipe and build-macos-dmg.sh — keep in sync.
+$PluginCrates = @()
+foreach ($d in (Get-ChildItem -Path "crates" -Filter "tasty-plugin-*" -Directory)) {
+    if (Test-Path (Join-Path $d.FullName "tasty-plugin.toml")) {
+        $PluginCrates += $d.Name
+    }
+}
+
+if ($PluginCrates.Count -eq 0) {
+    Write-Error "No plugin crates with tasty-plugin.toml found under crates\"
+    exit 1
+}
+
+Write-Host "==> Building $($PluginCrates.Count) plugins ($BuildProfile)..."
+$PluginCargoArgs = @()
+foreach ($c in $PluginCrates) {
+    $PluginCargoArgs += @("-p", $c)
+}
+cargo build @CargoFlags @PluginCargoArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "cargo build (plugins) failed with exit code $LASTEXITCODE"
+    exit 1
+}
+
+# Stage plugins under <dest>\<id>\. Mirrors macOS build-macos-dmg.sh staging.
+# `bundle_root()` (crates\tasty-host-plugin\src\builtin.rs) discovers
+# `<exe_dir>\plugins\` and syncs each `<plugin-id>\` into
+# `%USERPROFILE%\.tasty\plugins\<id>\` on first launch.
+function Stage-Plugins {
+    param([string]$PluginsDir)
+    New-Item -ItemType Directory -Force -Path $PluginsDir | Out-Null
+    foreach ($c in $PluginCrates) {
+        $manifest = Join-Path "crates" (Join-Path $c "tasty-plugin.toml")
+        $idMatch = Select-String -Path $manifest -Pattern '^\s*id\s*=\s*"([^"]+)"' | Select-Object -First 1
+        if (-not $idMatch) {
+            Write-Error "Cannot parse id from $manifest"
+            exit 1
+        }
+        $id = $idMatch.Matches[0].Groups[1].Value
+        $srcBin = Join-Path (Join-Path "target" $BuildProfile) "$c.exe"
+        if (-not (Test-Path $srcBin)) {
+            Write-Error "Plugin binary missing: $srcBin"
+            exit 1
+        }
+        $dest = Join-Path $PluginsDir $id
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        Copy-Item $srcBin -Destination (Join-Path $dest "$c.exe")
+        Copy-Item $manifest -Destination (Join-Path $dest "tasty-plugin.toml")
+        $langDir = Join-Path "crates" (Join-Path $c "lang")
+        if (Test-Path $langDir) {
+            $destLang = Join-Path $dest "lang"
+            if (Test-Path $destLang) { Remove-Item -Recurse -Force $destLang }
+            Copy-Item -Recurse $langDir $destLang
+        }
+        Write-Host "  staged $id"
+    }
+}
+
 Write-Host "==> Assembling archive..."
 if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
@@ -77,6 +136,8 @@ Get-ChildItem -Path $BuildDir -Filter "*.dll" | ForEach-Object {
     Copy-Item $_.FullName -Destination $StageDir
 }
 
+Stage-Plugins (Join-Path $StageDir "plugins")
+
 Write-Host "==> Creating $ArchiveName..."
 $ArchivePath = Join-Path $DistDir $ArchiveName
 if (Test-Path $ArchivePath) { Remove-Item -Force $ArchivePath }
@@ -88,6 +149,11 @@ Write-Host ""
 Write-Host "Portable archive: $DistDir\$ArchiveName"
 
 # === MSI installer (cargo-wix) ===
+# NOTE: the .msi does NOT yet ship plugins. cargo-wix builds from wix\main.wxs,
+# which only declares the `tasty.exe` component — adding plugins requires
+# new Component / File entries (one per plugin) in main.wxs, outside the
+# scope of this script. Until that's done, the ZIP is the supported install
+# path for plugin-enabled Windows builds.
 if (-not $SkipMsi) {
     Write-Host ""
     Write-Host "==> Building MSI installer..."
