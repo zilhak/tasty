@@ -188,6 +188,81 @@ memory, output, approval, telemetry
 
 (상세는 `docs/dev-guide/plugin-development.md` "매니페스트 검증 / 예약 prefix")
 
+## Auto-wait chain (manifest `auto_wait` 필드)
+
+`tasty claude spawn` / `tasty claude tell` / `tasty codex spawn` / `tasty codex tell`
+는 1 차 IPC 응답 직후 wait IPC 를 자동 chain 호출하여 child 가 terminal state
+(`idle` / `needs_input` / `exited`, codex 는 `untrusted` 추가) 에 도달할 때까지
+block 한다. 이 동작은 manifest `[[contributes.cli.subcommand]].auto_wait` 한 필드로
+선언적으로 켠다 — plugin 의 spawn / tell 핸들러는 건드리지 않고, CLI 측 dynamic
+runner 가 wait 를 chain 호출한다.
+
+### schema
+
+```toml
+[[contributes.cli.subcommand]]
+name = "spawn"
+ipc_method = "myplugin.spawn"
+args = "spawn_args"
+
+  [contributes.cli.subcommand.auto_wait]
+  method = "myplugin.wait_by_surface"   # chain 호출할 wait IPC method (필수)
+  no_wait_field = "no_wait"             # spawn args 의 --no-wait flag 이름 (default: "no_wait")
+  timeout_field = "timeout"             # spawn args 의 --timeout 옵션 이름 (default: "timeout")
+
+    [contributes.cli.subcommand.auto_wait.map_from_response]
+    # 1 차 응답 키 → wait params 키. 우선 적용.
+    child_surface_id = "surface_id"
+
+    [contributes.cli.subcommand.auto_wait.map_from_request]
+    # 1 차 요청 params 키 → wait params 키. 응답 매핑이 채우지 못한 키만 채움 (fallback).
+    surface = "surface"
+
+    [contributes.cli.subcommand.auto_wait.polling]
+    state_field = "state"
+    terminal_states = ["idle", "needs_input", "exited"]
+    interval_ms = 250
+    timeout_field = "timeout"           # wait IPC handler 가 기대하는 timeout 키 이름
+```
+
+### 의미
+
+- `method`: chain 호출할 wait IPC 메서드. 통상 `<plugin>.wait_by_surface` 같이 child
+  surface id 단독으로 lookup 가능한 mirror 메서드를 둔다 (1 차 응답이 `child_index` 를
+  돌려주지 않는 `tell` 같은 명령도 chain 가능).
+- `map_from_response`: 1 차 응답 JSON 에서 키를 꺼내 wait params 키로 복사. 가장 먼저
+  적용되며, 동일 target 에 대해 `map_from_request` 보다 우선.
+- `map_from_request`: 1 차 요청 params 에서 fallback 으로 복사. `tell` 처럼 응답에
+  surface id 가 없는 경우 요청의 `--surface` 인자로부터 채우는 용도.
+- `polling`: 기존 `polling` 필드와 동일 schema. CLI 의 `run_dynamic_client_polling`
+  엔진이 wait IPC 응답의 `state_field` 값이 `terminal_states` 중 하나가 될 때까지
+  반복 호출. `interval_ms` 간격, `timeout_field` 키로 deadline 추출.
+- `no_wait_field`: 사용자가 `--no-wait` 를 켰을 때 chain 을 skip 하는 키 이름 (CLI args
+  에 동명의 bool 인자를 함께 선언해야 함).
+- `timeout_field`: 1 차 요청 params 의 timeout 값을 어느 키에서 읽어 wait 로 복사할지.
+  내부적으로 `polling.timeout_field` 키로 rename 되어 wait params 에 들어간다.
+
+### `surface` ↔ `surface_id` 자동 alias
+
+wait params 빌드 마지막 단계에서 `surface` 와 `surface_id` 두 키 중 하나만 채워져
+있으면 다른 키도 같은 값으로 자동 보강된다. wait IPC handler 가 어느 키를 기대하든
+호환되도록 한 안전망. manifest 작성자는 둘 중 어느 이름이든 자유롭게 선택할 수 있다.
+
+### `polling` 과 동시 선언 금지
+
+같은 subcommand 가 `polling` 과 `auto_wait` 를 동시에 선언하면 manifest validator 가
+reject 한다 (`crates/tasty-plugin-manifest/src/validate.rs`). `polling` 은 *이 명령
+자체가 wait* 인 경우 (예: `claude wait`), `auto_wait` 는 *이 명령 1 차 응답 직후 다른
+method 로 chain* 인 경우 — 두 의미가 직교한다.
+
+### 예시 (현재 사용처)
+
+- `crates/tasty-plugin-claude/tasty-plugin.toml`: `spawn` 은
+  `map_from_response = { parent_surface_id = "surface", child_index = "child_index" }`
+  + `claude.wait`, `tell` 은 `map_from_request = { surface = "surface" }` + `claude.wait_by_surface`.
+- `crates/tasty-plugin-codex/tasty-plugin.toml`: 동일 패턴. terminal_states 에
+  `"untrusted"` 추가.
+
 ## 변경 절차
 
 - **새 verb/namespace 추가**: PR description에 "이 verb/namespace가 위 화이트리스트 어디에 속하는지, 또는 왜 예외인지" 한 문단. 별도 ADR 파일 불필요.
