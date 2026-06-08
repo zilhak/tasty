@@ -566,6 +566,107 @@ mod tests {
         assert!(res.is_err());
     }
 
+    fn sample_auto_wait_decl() -> AutoWaitDecl {
+        let mut map_from_response = HashMap::new();
+        map_from_response.insert("child_surface_id".into(), "surface_id".into());
+        let mut map_from_request = HashMap::new();
+        map_from_request.insert("surface".into(), "surface".into());
+        AutoWaitDecl {
+            method: "claude.wait_by_surface".into(),
+            map_from_response,
+            map_from_request,
+            polling: PollingDecl {
+                state_field: "state".into(),
+                terminal_states: vec!["idle".into(), "exited".into()],
+                interval_ms: 100,
+                timeout_field: Some("timeout".into()),
+            },
+            no_wait_field: "no_wait".into(),
+            timeout_field: "timeout".into(),
+        }
+    }
+
+    #[test]
+    fn auto_wait_skipped_when_no_wait_flag() {
+        // --no-wait 가 params 에 true 로 들어오면 AutoWaitPlan.skipped = true.
+        let aw = sample_auto_wait_decl();
+        let mut params = Map::new();
+        params.insert("no_wait".into(), Value::Bool(true));
+        params.insert("surface".into(), Value::from(7_u32));
+        let plan = build_auto_wait_plan(&aw, &params);
+        assert!(plan.skipped, "no_wait=true should skip chain");
+        assert_eq!(plan.method, "claude.wait_by_surface");
+    }
+
+    #[test]
+    fn auto_wait_not_skipped_when_no_wait_absent_or_false() {
+        // no_wait 키 부재 / false 면 chain 진행.
+        let aw = sample_auto_wait_decl();
+        let mut params = Map::new();
+        params.insert("surface".into(), Value::from(7_u32));
+        let plan = build_auto_wait_plan(&aw, &params);
+        assert!(!plan.skipped);
+
+        let mut params2 = Map::new();
+        params2.insert("no_wait".into(), Value::Bool(false));
+        let plan2 = build_auto_wait_plan(&aw, &params2);
+        assert!(!plan2.skipped);
+    }
+
+    #[test]
+    fn auto_wait_plan_snapshots_request_params() {
+        // build_auto_wait_plan 은 1 차 요청 params 를 그대로 snapshot 해 둔다 —
+        // 나중에 build_wait_params 가 map_from_request 매핑에 사용.
+        let aw = sample_auto_wait_decl();
+        let mut params = Map::new();
+        params.insert("surface".into(), Value::from(42_u32));
+        params.insert("prompt".into(), Value::String("hi".into()));
+        let plan = build_auto_wait_plan(&aw, &params);
+        assert_eq!(
+            plan.request_params.get("surface"),
+            Some(&Value::from(42_u32))
+        );
+        assert_eq!(
+            plan.request_params.get("prompt"),
+            Some(&Value::String("hi".into()))
+        );
+        // map_from_response / map_from_request 는 그대로 복사.
+        assert_eq!(
+            plan.map_from_response.get("child_surface_id"),
+            Some(&"surface_id".into())
+        );
+        assert_eq!(
+            plan.map_from_request.get("surface"),
+            Some(&"surface".into())
+        );
+    }
+
+    #[test]
+    fn auto_wait_plan_carries_polling_and_timeout_field() {
+        // polling 사양 + timeout_field 가 그대로 plan 에 전파되는지.
+        let aw = sample_auto_wait_decl();
+        let plan = build_auto_wait_plan(&aw, &Map::new());
+        assert_eq!(plan.polling.state_field, "state");
+        assert_eq!(plan.polling.terminal_states, vec!["idle", "exited"]);
+        assert_eq!(plan.polling.interval_ms, 100);
+        assert_eq!(plan.timeout_field, "timeout");
+    }
+
+    #[test]
+    fn auto_wait_custom_no_wait_field_name() {
+        // manifest 가 `no_wait_field` 를 커스텀으로 지정한 경우 그 키를 본다.
+        let mut aw = sample_auto_wait_decl();
+        aw.no_wait_field = "skip_chain".into();
+        let mut params = Map::new();
+        params.insert("skip_chain".into(), Value::Bool(true));
+        // 표준 "no_wait" 키는 true 가 아니므로 만약 잘못 보면 skipped=false.
+        let plan = build_auto_wait_plan(&aw, &params);
+        assert!(
+            plan.skipped,
+            "custom no_wait_field='skip_chain' should be honored"
+        );
+    }
+
     #[test]
     fn discover_skips_invalid_manifest() {
         let dir = tempfile::tempdir().expect("tempdir");
