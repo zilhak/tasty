@@ -195,8 +195,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 hint_label,
                 entries: &[],
             };
-            // 카탈로그는 시각 검증 전용 — action 폐기.
-            drop(draw_port_scanner_view(ui, &props));
+            let _action = draw_port_scanner_view(ui, &props);
         });
     ui.add_space(16.0);
 
@@ -220,8 +219,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 hint_label,
                 entries: &few,
             };
-            // 카탈로그는 시각 검증 전용 — action 폐기.
-            drop(draw_port_scanner_view(ui, &props));
+            let _action = draw_port_scanner_view(ui, &props);
         });
     ui.add_space(16.0);
 
@@ -245,8 +243,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 hint_label,
                 entries: &many,
             };
-            // 카탈로그는 시각 검증 전용 — action 폐기.
-            drop(draw_port_scanner_view(ui, &props));
+            let _action = draw_port_scanner_view(ui, &props);
         });
 
     ui.add_space(12.0);

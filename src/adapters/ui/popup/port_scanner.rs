@@ -92,10 +92,10 @@ pub fn draw_port_scanner_popup(
 
     let props = PortScannerProps {
         theme: &th,
-        heading: &heading,
-        no_ports_label: &no_ports_label,
-        refresh_label: &refresh_label,
-        hint_label: &hint_label,
+        heading,
+        no_ports_label,
+        refresh_label,
+        hint_label,
         entries: &entries,
     };
 
