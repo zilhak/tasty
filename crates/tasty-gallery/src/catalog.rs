@@ -69,5 +69,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Popup — Apply Preset (Workspace/Tab/Pane)",
             draw: components::apply_preset::draw,
         },
+        CatalogItem {
+            name: "Popup — File Handler Picker",
+            draw: components::file_handler_picker::draw,
+        },
     ]
 }
