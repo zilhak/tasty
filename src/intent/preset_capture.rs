@@ -2,43 +2,50 @@
 //!
 //! 이전 `tasty-presets::capture` 가 하던 일을 본 바이너리로 옮긴 것. presets crate
 //! 는 *데이터 schema + 디스크 IO* 만 책임지고, 트리 walking + Surface trait 호출
-//! 같은 *본 바이너리 도메인* 작업은 여기서 한다. presets 가 `tasty-core` 의존
-//! 끊는 게 목적 (역의존 금지).
+//! 같은 *본 바이너리 도메인* 작업은 여기서 한다 (presets 가 `tasty-core` 의존
+//! 끊는 게 목적 — 역의존 금지).
 //!
-//! 호출자가 `capture_fn` 콜백을 전달한다. 이 콜백은 SurfaceKindRegistry 의
-//! snapshot 을 호출해 (kind, params) 를 만든다.
+//! Preset 은 *layout 템플릿* 이다. PTY 인스턴스 / scrollback / attach 세션 같은
+//! 라이브 상태는 보존하지 않는다. `preset_apply::build_leaf_surface` 도 이 의도로
+//! 작성되어 있어 `kind == "terminal"` 분기는 `cwd` + `startup_command` 만 사용하고
+//! `params` 는 참조하지 않는다. capture 측에서도 terminal 의 params 는 빈 객체로
+//! 두면 충분.
 //!
-//! terminal surface 의 `cwd` 와 `startup_command` 는 호출자가 제공하지 않고
-//! 본 모듈에서 `terminal.get_cwd()` 로 직접 추출. startup_command 는 capture
-//! 시점에는 None — 사용자가 PresetView 에서 편집한다.
+//! ### terminal/attached 특수 처리
+//!
+//! `SurfaceKindRegistry` 의 terminal/attached snapshot 은 의도적으로 `None` 을
+//! 반환한다 (PTY 는 host 책임, attached 는 휘발성 marker). preset capture 는 이
+//! `None` 을 *실패* 가 아니라 *정상 신호* 로 받아들여야 한다. 같은 코드베이스의
+//! `engine::layout_persistence::capture::SavedSurface::capture_surface` 가 동일한
+//! 패턴을 쓰며, 본 모듈도 그와 정렬한다.
+
+use serde_json::Value;
 
 use crate::core::CoreState;
+use crate::engine::surface_registry::SurfaceKindRegistry;
 use crate::model::{Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace};
 use tasty_presets::{
-    CapturedSurfaceMeta, PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection,
-    PresetSurface, PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
+    PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
+    PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
-
-/// SurfaceKindRegistry 의 snapshot 을 부르는 콜백.
-///
-/// 비-terminal surface 의 kind/params 추출용. None 반환 시 leaf 전체가 None 으로
-/// 전파 → 해당 preset 캡처 실패.
-pub type CaptureFn<'a> = &'a mut dyn FnMut(&dyn Surface) -> Option<CapturedSurfaceMeta>;
 
 // ── 공개 API ─────────────────────────────────────────────────────────────
 
 /// 라이브 Workspace 를 WorkspacePreset 으로 캡처.
+///
+/// surface 단위 capture 는 항상 성공 (terminal / kind 별 snapshot / empty
+/// fallback 중 하나로 귀결). 상위에서 `None` 을 반환하는 유일한 경로는 빈 pane.
 pub fn capture_workspace_preset(
     engine: &CoreState,
     ws: &Workspace,
     name: Option<String>,
-    capture_fn: CaptureFn<'_>,
+    registry: &SurfaceKindRegistry,
 ) -> Option<WorkspacePreset> {
     Some(WorkspacePreset {
         name: name.unwrap_or_default(),
         subtitle: ws.subtitle.clone(),
         description: ws.description.clone(),
-        layout: capture_pane_node(engine, ws.pane_layout(), capture_fn)?,
+        layout: capture_pane_node(engine, ws.pane_layout(), registry)?,
     })
 }
 
@@ -47,11 +54,11 @@ pub fn capture_tab_preset(
     engine: &CoreState,
     tab: &Tab,
     name: Option<String>,
-    capture_fn: CaptureFn<'_>,
+    registry: &SurfaceKindRegistry,
 ) -> Option<TabPreset> {
     Some(TabPreset {
         name: name.unwrap_or_default(),
-        tab: capture_tab(engine, tab, capture_fn)?,
+        tab: capture_tab(engine, tab, registry),
     })
 }
 
@@ -60,11 +67,11 @@ pub fn capture_pane_preset(
     engine: &CoreState,
     pane: &Pane,
     name: Option<String>,
-    capture_fn: CaptureFn<'_>,
+    registry: &SurfaceKindRegistry,
 ) -> Option<PanePreset> {
     Some(PanePreset {
         name: name.unwrap_or_default(),
-        pane: capture_pane(engine, pane, capture_fn)?,
+        pane: capture_pane(engine, pane, registry)?,
     })
 }
 
@@ -80,11 +87,11 @@ fn to_preset_split(d: SplitDirection) -> PresetSplitDirection {
 fn capture_pane_node(
     engine: &CoreState,
     node: &PaneNode,
-    capture_fn: CaptureFn<'_>,
+    registry: &SurfaceKindRegistry,
 ) -> Option<PresetPaneNode> {
     match node {
         PaneNode::Leaf(pane) => Some(PresetPaneNode::Leaf {
-            pane: capture_pane(engine, pane, capture_fn)?,
+            pane: capture_pane(engine, pane, registry)?,
         }),
         PaneNode::Split {
             direction,
@@ -94,16 +101,20 @@ fn capture_pane_node(
         } => Some(PresetPaneNode::Split {
             direction: to_preset_split(*direction),
             ratio: *ratio,
-            first: Box::new(capture_pane_node(engine, first, capture_fn)?),
-            second: Box::new(capture_pane_node(engine, second, capture_fn)?),
+            first: Box::new(capture_pane_node(engine, first, registry)?),
+            second: Box::new(capture_pane_node(engine, second, registry)?),
         }),
     }
 }
 
-fn capture_pane(engine: &CoreState, pane: &Pane, capture_fn: CaptureFn<'_>) -> Option<PresetPane> {
+fn capture_pane(
+    engine: &CoreState,
+    pane: &Pane,
+    registry: &SurfaceKindRegistry,
+) -> Option<PresetPane> {
     let mut tabs = Vec::with_capacity(pane.tabs.len());
     for tab in &pane.tabs {
-        tabs.push(capture_tab(engine, tab, capture_fn)?);
+        tabs.push(capture_tab(engine, tab, registry));
     }
     if tabs.is_empty() {
         return None;
@@ -112,62 +123,82 @@ fn capture_pane(engine: &CoreState, pane: &Pane, capture_fn: CaptureFn<'_>) -> O
     Some(PresetPane { tabs, active_tab })
 }
 
-fn capture_tab(engine: &CoreState, tab: &Tab, capture_fn: CaptureFn<'_>) -> Option<PresetTab> {
-    let layout = capture_surface_layout(engine, tab.layout(), capture_fn)?;
-    Some(PresetTab {
+fn capture_tab(engine: &CoreState, tab: &Tab, registry: &SurfaceKindRegistry) -> PresetTab {
+    PresetTab {
         explicit_name: tab.explicit_name.clone(),
-        layout,
-    })
+        layout: capture_surface_layout(engine, tab.layout(), registry),
+    }
 }
 
 fn capture_surface_layout(
     engine: &CoreState,
     layout: &SurfaceLayout,
-    capture_fn: CaptureFn<'_>,
-) -> Option<PresetSurfaceLayout> {
+    registry: &SurfaceKindRegistry,
+) -> PresetSurfaceLayout {
     match layout {
-        SurfaceLayout::Leaf(surface) => Some(PresetSurfaceLayout::Leaf {
-            surface: capture_surface(engine, surface.as_ref(), capture_fn)?,
-        }),
+        SurfaceLayout::Leaf(surface) => PresetSurfaceLayout::Leaf {
+            surface: capture_surface(engine, surface.as_ref(), registry),
+        },
         SurfaceLayout::Split {
             direction,
             ratio,
             first,
             second,
             ..
-        } => Some(PresetSurfaceLayout::Split {
+        } => PresetSurfaceLayout::Split {
             direction: to_preset_split(*direction),
             ratio: *ratio,
-            first: Box::new(capture_surface_layout(engine, first, capture_fn)?),
-            second: Box::new(capture_surface_layout(engine, second, capture_fn)?),
-        }),
+            first: Box::new(capture_surface_layout(engine, first, registry)),
+            second: Box::new(capture_surface_layout(engine, second, registry)),
+        },
     }
 }
 
+/// 단일 surface 를 PresetSurface 로 캡처. **절대 실패하지 않는다.**
+///
+/// 분기 흐름 (`SavedSurface::capture_surface` 모범 답안과 동일 패턴):
+///
+/// 1. terminal / attached → `kind = "terminal"` + `cwd` 추출 + 빈 params.
+///    (attached 는 preset 레이아웃 관점에서 terminal 슬롯이다.)
+/// 2. 그 외 registry 등록 kind → snapshot 호출. snapshot 이 `None` 이면 빈
+///    객체로 fallback (kind 는 그대로 보존).
+/// 3. registry 에 없는 kind → `kind = "empty"` 로 치환 (leaf 자체가 사라지면
+///    split 구조가 어색해지므로).
 fn capture_surface(
     engine: &CoreState,
     surface: &dyn Surface,
-    capture_fn: CaptureFn<'_>,
-) -> Option<PresetSurface> {
-    let meta = capture_fn(surface)?;
-    // terminal kind 면 cwd 추출 (store 에서). 다른 kind 는 params 만.
-    let (cwd, startup_command) = if let Some(ts) = surface
-        .as_any()
-        .downcast_ref::<crate::model::TerminalSurface>()
-    {
-        let cwd = engine
-            .terminals
-            .get(ts.id)
+    registry: &SurfaceKindRegistry,
+) -> PresetSurface {
+    let kind_str = surface.kind();
+
+    if kind_str == "terminal" || kind_str == "attached" {
+        let cwd = surface
+            .surface_id()
+            .and_then(|id| engine.terminals.get(id))
             .and_then(|t| t.get_cwd())
             .map(|p| p.to_string_lossy().to_string());
-        (cwd, None)
-    } else {
-        (None, None)
-    };
-    Some(PresetSurface {
-        kind: meta.kind,
-        cwd,
-        startup_command,
-        params: meta.params,
-    })
+        return PresetSurface {
+            kind: "terminal".into(),
+            cwd,
+            startup_command: None,
+            params: Value::Object(Default::default()),
+        };
+    }
+
+    if let Some(def) = registry.get(kind_str) {
+        let params = (def.snapshot)(surface).unwrap_or_else(|| Value::Object(Default::default()));
+        return PresetSurface {
+            kind: kind_str.to_string(),
+            cwd: None,
+            startup_command: None,
+            params,
+        };
+    }
+
+    PresetSurface {
+        kind: "empty".into(),
+        cwd: None,
+        startup_command: None,
+        params: Value::Object(Default::default()),
+    }
 }

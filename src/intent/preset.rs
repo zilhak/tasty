@@ -18,7 +18,6 @@
 //! - **List/Get**: read-only — Intent 큐 안 거치고 IPC handler 가 직접 처리.
 
 use super::{DispatchedIntent, Intent};
-use crate::model::Surface;
 
 /// preset Intent 가 운반하는 캡처된 preset payload.
 /// 호출자 (우클릭 / IPC) 가 capture 를 수행한 뒤 핸들러에 그대로 넘긴다 — TODO 01
@@ -45,7 +44,7 @@ use crate::intent::preset_capture::{
 };
 use crate::state::AppState;
 use crate::state::preset_apply::{ApplyError, ApplyOptions};
-use tasty_presets::{CapturedSurfaceMeta, PresetError, PresetKind};
+use tasty_presets::{PresetError, PresetKind};
 
 // ───────────────────────────────── Intent dispatcher ─────────────────────────────────
 
@@ -384,14 +383,6 @@ pub fn capture_inner(
     source_id: u32,
 ) -> Result<(ClonedPreset, String), String> {
     let registry = engine.surface_registry.clone();
-    let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
-        let def = registry.get(s.kind())?;
-        let params = (def.snapshot)(s)?;
-        Some(CapturedSurfaceMeta {
-            kind: s.kind().to_string(),
-            params,
-        })
-    };
 
     match kind {
         PresetKind::Workspace => {
@@ -405,7 +396,7 @@ pub fn capture_inner(
             } else {
                 ws.name.clone()
             };
-            let preset = capture_workspace_preset(engine, ws, None, &mut capture)
+            let preset = capture_workspace_preset(engine, ws, None, &registry)
                 .ok_or_else(|| "workspace capture failed".to_string())?;
             Ok((ClonedPreset::Workspace(preset), base))
         }
@@ -426,7 +417,7 @@ pub fn capture_inner(
                             } else {
                                 base
                             };
-                            let preset = capture_tab_preset(engine, tab, None, &mut capture)
+                            let preset = capture_tab_preset(engine, tab, None, &registry)
                                 .ok_or_else(|| "tab capture failed".to_string())?;
                             return Ok((ClonedPreset::Tab(preset), base));
                         }
@@ -438,7 +429,7 @@ pub fn capture_inner(
         PresetKind::Pane => {
             for ws in &engine.workspaces {
                 if let Some(pane) = ws.pane_layout().find_pane(source_id) {
-                    let preset = capture_pane_preset(engine, pane, None, &mut capture)
+                    let preset = capture_pane_preset(engine, pane, None, &registry)
                         .ok_or_else(|| "pane capture failed".to_string())?;
                     return Ok((ClonedPreset::Pane(preset), "pane".to_string()));
                 }

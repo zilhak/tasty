@@ -21,16 +21,3 @@ pub use model::{
 };
 pub use port::PresetStorage;
 pub use storage::{PresetError, PresetResult, PresetStore};
-
-// ── Capture 콜백 표면 (capture 로직은 본 바이너리 측) ────────────────────
-
-/// 한 surface 의 (kind, params) snapshot.
-///
-/// 본 바이너리의 capture 로직이 SurfaceKindRegistry 의 snapshot 을 호출해 만들어
-/// 넘긴다. presets crate 는 이 struct 만 알고, 그 위의 `dyn Surface` 같은
-/// trait 은 모른다.
-#[derive(Debug, Clone)]
-pub struct CapturedSurfaceMeta {
-    pub kind: String,
-    pub params: serde_json::Value,
-}

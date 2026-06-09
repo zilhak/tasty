@@ -5,13 +5,11 @@
 //! save → PresetView 오픈 + select 까지 일괄 처리한다.
 
 use anyhow::{Result, anyhow};
-use tasty_presets::CapturedSurfaceMeta;
 
 use crate::intent::preset_capture::{
     capture_pane_preset, capture_tab_preset, capture_workspace_preset,
 };
 use crate::intent::{ClonedPreset, Intent};
-use crate::model::Surface;
 
 use super::MainView;
 
@@ -29,15 +27,7 @@ impl MainView {
         };
 
         let registry = engine.surface_registry.clone();
-        let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
-            let def = registry.get(s.kind())?;
-            let params = (def.snapshot)(s)?;
-            Some(CapturedSurfaceMeta {
-                kind: s.kind().to_string(),
-                params,
-            })
-        };
-        let preset = capture_workspace_preset(engine, ws, None, &mut capture)
+        let preset = capture_workspace_preset(engine, ws, None, &registry)
             .ok_or_else(|| anyhow!("workspace capture failed"))?;
 
         self.state.dispatch_intent(
@@ -78,15 +68,7 @@ impl MainView {
         };
 
         let registry = engine.surface_registry.clone();
-        let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
-            let def = registry.get(s.kind())?;
-            let params = (def.snapshot)(s)?;
-            Some(CapturedSurfaceMeta {
-                kind: s.kind().to_string(),
-                params,
-            })
-        };
-        let preset = capture_tab_preset(engine, tab, None, &mut capture)
+        let preset = capture_tab_preset(engine, tab, None, &registry)
             .ok_or_else(|| anyhow!("tab capture failed"))?;
 
         self.state.dispatch_intent(
@@ -111,15 +93,7 @@ impl MainView {
         let base_name = "pane".to_string();
 
         let registry = engine.surface_registry.clone();
-        let mut capture = move |s: &dyn Surface| -> Option<CapturedSurfaceMeta> {
-            let def = registry.get(s.kind())?;
-            let params = (def.snapshot)(s)?;
-            Some(CapturedSurfaceMeta {
-                kind: s.kind().to_string(),
-                params,
-            })
-        };
-        let preset = capture_pane_preset(engine, pane, None, &mut capture)
+        let preset = capture_pane_preset(engine, pane, None, &registry)
             .ok_or_else(|| anyhow!("pane capture failed"))?;
 
         self.state.dispatch_intent(
