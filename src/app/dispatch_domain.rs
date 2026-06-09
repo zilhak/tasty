@@ -1213,6 +1213,13 @@ impl App {
                 );
             }
         }
+
+        // macOS NSMenu 의 key equivalent 표시는 KeybindingSettings 의 quit /
+        // new_window 에서 가져오므로, 변경 시 NSMenu 를 rebuild 해야 표시가 stale
+        // 상태로 남지 않는다. cascade_settings_updated 는 single entry-point 이므로
+        // 본 위치 1 곳만으로 모든 settings save 경로를 커버. 다른 OS 는 no-op.
+        #[cfg(target_os = "macos")]
+        crate::macos_delegate::rebuild_main_menu(&new_settings.keybindings);
     }
 
     /// Notification cascade — workspace 라우팅 후 store.add + host event enqueue.

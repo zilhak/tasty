@@ -173,6 +173,37 @@ pub fn inject_delegate_methods() {
     tracing::info!("macOS delegate methods injected into winit's delegate");
 }
 
+/// Settings 변경으로 [`crate::settings::KeybindingSettings`] 가 갱신됐을 때
+/// NSMenu 의 key equivalent 표시를 새 binding 으로 갱신한다.
+///
+/// 호출 시점: `cascade_settings_updated` 직후 (Settings 모달 닫힘 시 등 single
+/// entry-point). 호출 스레드는 winit event loop 내부 → main thread 보장. 만약
+/// main thread 가 아니면 `MainThreadMarker::new()` 가 None 을 반환하므로 안전한
+/// no-op + warn 로그.
+///
+/// 구현: NSMenu 항목 갯수가 4 submenu 로 적어 전체 rebuild 비용 무시 가능 →
+/// [`setup_main_menu`] 를 통째로 재호출 (증분 갱신 대신). NSApplication / delegate
+/// 는 매번 `sharedApplication` + `app.delegate()` 로 재획득 — 별도 static 보관
+/// 불필요. delegate ptr 의 수명은 app 수명 동안 유효하며 setTarget 으로 새 NSMenuItem
+/// 의 target 으로 다시 설정된다.
+pub fn rebuild_main_menu(keybindings: &crate::settings::KeybindingSettings) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        tracing::warn!("rebuild_main_menu: not on main thread, skipping");
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    let Some(delegate) = app.delegate() else {
+        tracing::warn!("rebuild_main_menu: NSApplication has no delegate yet");
+        return;
+    };
+    // SAFETY: main thread (mtm 로 검증). msg_send self 는 NSObject 표준 메서드 —
+    // delegate (Retained<dyn>) 가 살아있는 동안 안전. 결과 ptr 은 setup_main_menu
+    // 의 setTarget 인자로만 사용.
+    let delegate_ptr: *mut AnyObject = unsafe { msg_send![&*delegate, self] };
+    setup_main_menu(&app, mtm, delegate_ptr, keybindings);
+    tracing::debug!("macOS NSMenu rebuilt for KeybindingSettings change");
+}
+
 /// macOS 표준 menubar 등록. winit `with_default_menu(false)` 와 짝.
 ///
 /// Application Menu (About/Hide/.../Quit), File (New Window), Edit (Cut/Copy/Paste/
@@ -181,7 +212,9 @@ pub fn inject_delegate_methods() {
 /// `tastyNewWindow:` 만 delegate target 지정.
 ///
 /// tasty 특화 액션 (Quit / New Window) 의 key equivalent + modifier mask 는
-/// `keybindings` 의 대응 binding 첫 값에서 동적으로 변환한다 (부팅 시 1회).
+/// `keybindings` 의 대응 binding 첫 값에서 동적으로 변환한다. 부팅 시 1 회 +
+/// Settings 의 KeybindingSettings 변경 시 [`rebuild_main_menu`] 가 본 함수를
+/// 재호출하여 전체 갱신.
 fn setup_main_menu(
     app: &NSApplication,
     mtm: MainThreadMarker,
