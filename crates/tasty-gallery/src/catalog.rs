@@ -78,18 +78,16 @@ pub fn all() -> Vec<CatalogItem> {
             draw: components::approval::draw,
         },
         CatalogItem {
-<<<<<<< HEAD
-<<<<<<< HEAD
             name: "Popup — Command Palette",
             draw: components::command_palette::draw,
-=======
+        },
+        CatalogItem {
             name: "Layout — Sidebar (Full / Collapsed)",
             draw: components::sidebar::draw,
->>>>>>> d5caa241 (feat(gallery): add sidebar catalog demo (Full + Collapsed))
-=======
+        },
+        CatalogItem {
             name: "Layout — Pane Tab Bar",
             draw: components::tab_bar::draw,
->>>>>>> e1d62b95 (feat(gallery): add tab_bar catalog demo)
         },
     ]
 }
