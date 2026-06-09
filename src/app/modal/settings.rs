@@ -16,8 +16,8 @@ impl App {
 
         let mut attrs = WindowAttributes::default()
             .with_title("Tasty Settings")
-            .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
-            .with_min_inner_size(winit::dpi::LogicalSize::new(960, 640))
+            .with_inner_size(winit::dpi::LogicalSize::new(1200, 800))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(1200, 800))
             .with_visible(false); // Start hidden, show after first render
         if let Some(icon) = crate::app_icon::winit_window_icon() {
             attrs = attrs.with_window_icon(Some(icon));
