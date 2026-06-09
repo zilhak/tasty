@@ -1,9 +1,15 @@
+//! Full (expanded) sidebar wrapper — props 추출 + view 호출 + action → state
+//! mutation 매핑. 시각 / 입력 로직은 [`crate::adapters::ui::sidebar::view`] 에서.
+
 use crate::i18n::t;
 use crate::intent::Intent;
 use crate::state::AppState;
 use crate::theme;
 
-/// Draw the full (expanded) sidebar with workspace cards.
+use super::view::{
+    DragSnapshot, SidebarFullAction, SidebarFullProps, WorkspaceEntryView, draw_full_sidebar_view,
+};
+
 pub struct FullSidebarResult {
     pub collapse_clicked: bool,
     pub plugins_clicked: bool,
@@ -18,414 +24,110 @@ pub fn draw_full_sidebar(
     sidebar_width: f32,
 ) -> FullSidebarResult {
     let th = theme::theme();
-    let mut sidebar_collapse = false;
-    let mut sidebar_plugins = false;
-    let mut sidebar_settings = false;
-    let mut sidebar_tools_rect: Option<egui::Rect> = None;
+    let active_ws = state.active_workspace;
+    let workspaces: Vec<WorkspaceEntryView> = engine
+        .workspaces
+        .iter()
+        .enumerate()
+        .map(|(i, ws)| {
+            let surface_ids = ws.all_surface_ids();
+            WorkspaceEntryView {
+                name: ws.name.clone(),
+                subtitle: ws.subtitle.clone(),
+                description: ws.description.clone(),
+                busy_count: engine.busy_count(&surface_ids),
+                has_highlight: engine.notifications.has_highlighted_surface(&surface_ids),
+                attached: engine.attach.workspace_holder(ws.id).is_some(),
+                is_active: i == active_ws,
+            }
+        })
+        .collect();
+
+    let drag = state.dialogs.ws_drag.as_ref().map(|d| DragSnapshot {
+        ws_idx: d.ws_idx,
+        current_y: d.current_y,
+    });
+
+    let tools_label = t("sidebar.tools_button");
+    let collapse_label = "<  Collapse";
+    let plugins_label = t("button.plugins");
+    let settings_label = t("button.settings");
+    let new_workspace_label = t("button.new_workspace");
+    let occupied_hover = t("attach.occupied_workspace");
+
+    let mut result = FullSidebarResult {
+        collapse_clicked: false,
+        plugins_clicked: false,
+        settings_clicked: false,
+        tools_rect: None,
+    };
+
+    let mut deferred_actions: Vec<SidebarFullAction> = Vec::new();
 
     egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
         .show(ctx, |ui| {
-            // 바닥 고정 섹션 — TopBottomPanel::bottom으로 anchor.
-            // 픽셀 계산 없이 자기 콘텐츠 높이만큼만 점유하고 나머지를 ScrollArea가 사용.
-            egui::TopBottomPanel::bottom("workspace_sidebar_bottom")
-                .frame(egui::Frame::NONE)
-                .show_separator_line(false)
-                .show_inside(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    ui.separator();
-                    ui.add_space(2.0);
-
-                    // Tools button
-                    {
-                        let full_width = ui.available_width();
-                        let (rect, resp) = ui.allocate_exact_size(
-                            egui::vec2(full_width, 28.0),
-                            egui::Sense::click().union(egui::Sense::hover()),
-                        );
-                        if resp.hovered() {
-                            ui.painter().rect_filled(
-                                rect,
-                                4.0,
-                                th.hover_overlay.to_egui_premultiplied(),
-                            );
-                        }
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            t("sidebar.tools_button"),
-                            egui::FontId::proportional(12.0),
-                            if resp.hovered() {
-                                th.subtext1.into()
-                            } else {
-                                th.overlay0.into()
-                            },
-                        );
-                        if resp.clicked() {
-                            sidebar_tools_rect = Some(rect);
-                        }
-                    }
-
-                    ui.add_space(2.0);
-
-                    {
-                        let full_width = ui.available_width();
-                        let (collapse_rect, collapse_resp) = ui.allocate_exact_size(
-                            egui::vec2(full_width, 28.0),
-                            egui::Sense::click().union(egui::Sense::hover()),
-                        );
-                        if collapse_resp.hovered() {
-                            ui.painter().rect_filled(
-                                collapse_rect,
-                                4.0,
-                                th.hover_overlay.to_egui_premultiplied(),
-                            );
-                        }
-                        ui.painter().text(
-                            collapse_rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            "<  Collapse",
-                            egui::FontId::proportional(12.0),
-                            if collapse_resp.hovered() {
-                                th.subtext1.into()
-                            } else {
-                                th.overlay0.into()
-                            },
-                        );
-                        if collapse_resp.clicked() {
-                            sidebar_collapse = true;
-                        }
-                    }
-
-                    ui.add_space(2.0);
-                    {
-                        let full_width = ui.available_width();
-                        let (rect, response) = ui.allocate_exact_size(
-                            egui::vec2(full_width, 28.0),
-                            egui::Sense::click().union(egui::Sense::hover()),
-                        );
-                        let text_color = if response.hovered() {
-                            th.subtext1
-                        } else {
-                            th.overlay0
-                        };
-                        if response.hovered() {
-                            ui.painter().rect_filled(
-                                rect,
-                                4.0,
-                                th.hover_overlay.to_egui_premultiplied(),
-                            );
-                        }
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            t("button.plugins"),
-                            egui::FontId::proportional(12.0),
-                            text_color.into(),
-                        );
-                        if response.clicked() {
-                            sidebar_plugins = true;
-                        }
-                    }
-                    ui.add_space(2.0);
-                    {
-                        let full_width = ui.available_width();
-                        let (rect, response) = ui.allocate_exact_size(
-                            egui::vec2(full_width, 28.0),
-                            egui::Sense::click().union(egui::Sense::hover()),
-                        );
-                        let text_color = if response.hovered() {
-                            th.subtext1
-                        } else {
-                            th.overlay0
-                        };
-                        if response.hovered() {
-                            ui.painter().rect_filled(
-                                rect,
-                                4.0,
-                                th.hover_overlay.to_egui_premultiplied(),
-                            );
-                        }
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            t("button.settings"),
-                            egui::FontId::proportional(12.0),
-                            text_color.into(),
-                        );
-                        if response.clicked() {
-                            sidebar_settings = true;
-                        }
-                    }
-                    ui.add_space(8.0);
-                });
-
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .drag_to_scroll(false)
-                .show(ui, |ui| {
-                    ui.add_space(4.0);
-
-                    let active_ws = state.active_workspace;
-                    let ws_count = engine.workspaces.len();
-                    let mut ws_card_rects: Vec<(usize, egui::Rect)> = Vec::new();
-
-                    for i in 0..ws_count {
-                        let is_active = i == active_ws;
-                        let name = engine.workspaces[i].name.clone();
-                        let subtitle = engine.workspaces[i].subtitle.clone();
-                        let description = engine.workspaces[i].description.clone();
-                        let ws_surface_ids = engine.workspaces[i].all_surface_ids();
-                        let ws_has_highlight = engine
-                            .notifications
-                            .has_highlighted_surface(&ws_surface_ids);
-                        let ws_busy_count = engine.busy_count(&ws_surface_ids);
-                        // attach/detach 작업 J-2: client 가 점유(attach)한 workspace 는
-                        // running(녹색) 인디케이터처럼 표시하되 **빨간색**(th.red).
-                        let ws_attached = engine
-                            .attach
-                            .workspace_holder(engine.workspaces[i].id)
-                            .is_some();
-
-                        let bg = if is_active {
-                            th.surface0.to_egui()
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        };
-                        let border = if is_active {
-                            th.blue.to_egui()
-                        } else {
-                            th.surface0.to_egui()
-                        };
-
-                        let frame = egui::Frame::new()
-                            .fill(bg)
-                            .stroke(egui::Stroke::new(1.0, border))
-                            .corner_radius(4.0)
-                            .inner_margin(egui::Margin::symmetric(8, 6));
-
-                        let response = frame.show(ui, |ui| {
-                            ui.set_min_width(ui.available_width());
-
-                            ui.horizontal(|ui| {
-                                let title_text = if is_active {
-                                    egui::RichText::new(&name).strong()
-                                } else {
-                                    egui::RichText::new(&name)
-                                };
-                                ui.label(title_text);
-
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if ws_attached {
-                                            // 점유 인디케이터(빨강). running(녹색)과 구별.
-                                            let dot_radius = 3.0;
-                                            let (dot_rect, resp) = ui.allocate_exact_size(
-                                                egui::vec2(
-                                                    dot_radius * 2.0 + 2.0,
-                                                    dot_radius * 2.0,
-                                                ),
-                                                egui::Sense::hover(),
-                                            );
-                                            ui.painter().circle_filled(
-                                                dot_rect.center(),
-                                                dot_radius,
-                                                th.red,
-                                            );
-                                            resp.on_hover_text(crate::i18n::t(
-                                                "attach.occupied_workspace",
-                                            ));
-                                        }
-
-                                        if ws_has_highlight {
-                                            let badge_size = egui::vec2(18.0, 16.0);
-                                            let (rect, _) = ui.allocate_exact_size(
-                                                badge_size,
-                                                egui::Sense::hover(),
-                                            );
-                                            ui.painter().rect_stroke(
-                                                rect,
-                                                3.0,
-                                                egui::Stroke::new(1.0, th.blue),
-                                                egui::StrokeKind::Inside,
-                                            );
-                                            ui.painter().text(
-                                                rect.center(),
-                                                egui::Align2::CENTER_CENTER,
-                                                "!",
-                                                egui::FontId::proportional(10.0),
-                                                th.blue.into(),
-                                            );
-                                        }
-
-                                        if ws_busy_count > 0 {
-                                            let count_text = format!("{ws_busy_count}");
-                                            ui.label(
-                                                egui::RichText::new(&count_text)
-                                                    .small()
-                                                    .color(th.green),
-                                            );
-                                            let dot_radius = 3.0;
-                                            let (dot_rect, _) = ui.allocate_exact_size(
-                                                egui::vec2(
-                                                    dot_radius * 2.0 + 2.0,
-                                                    dot_radius * 2.0,
-                                                ),
-                                                egui::Sense::hover(),
-                                            );
-                                            ui.painter().circle_filled(
-                                                dot_rect.center(),
-                                                dot_radius,
-                                                th.green,
-                                            );
-                                        }
-                                    },
-                                );
-                            });
-
-                            if !subtitle.is_empty() {
-                                ui.label(egui::RichText::new(&subtitle).small().color(th.subtext0));
-                            }
-
-                            if !description.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(&description).small().color(th.overlay0),
-                                );
-                            }
-                        });
-
-                        let card_response =
-                            response.response.interact(egui::Sense::click_and_drag());
-
-                        if card_response.clicked() {
-                            state.switch_workspace(engine, i);
-                        }
-
-                        if card_response.secondary_clicked() {
-                            let pos = card_response.interact_pointer_pos().unwrap_or_default();
-                            state.dialogs.pending_native_menu =
-                                Some(crate::state::PendingNativeMenu::Workspace {
-                                    ws_idx: i,
-                                    x: pos.x,
-                                    y: pos.y,
-                                });
-                        }
-
-                        // Drag-and-drop for workspace reordering
-                        if card_response.drag_started_by(egui::PointerButton::Primary) {
-                            state.dialogs.ws_drag = Some(crate::state::WsDragState {
-                                ws_idx: i,
-                                current_y: card_response
-                                    .interact_pointer_pos()
-                                    .map(|p| p.y)
-                                    .unwrap_or(0.0),
-                            });
-                        }
-                        if card_response.dragged_by(egui::PointerButton::Primary)
-                            && let Some(ref mut drag) = state.dialogs.ws_drag
-                            && drag.ws_idx == i
-                            && let Some(pos) = card_response.interact_pointer_pos()
-                        {
-                            drag.current_y = pos.y;
-                        }
-
-                        // Store card rect for drop calculation
-                        ws_card_rects.push((i, response.response.rect));
-
-                        ui.add_space(2.0);
-                    }
-
-                    // Handle drag stop — check if mouse was released
-                    if let Some(drag) = state.dialogs.ws_drag.clone() {
-                        let released = !ui.input(|i| i.pointer.primary_down());
-                        if released {
-                            state.dialogs.ws_drag = None;
-                            // Compute drop target from card rects
-                            let target = ws_card_rects
-                                .iter()
-                                .position(|(_, rect)| drag.current_y < rect.center().y)
-                                .unwrap_or(ws_card_rects.len().saturating_sub(1));
-                            let target = target.min(ws_count.saturating_sub(1));
-                            if target != drag.ws_idx {
-                                state.move_workspace(engine, drag.ws_idx, target);
-                            }
-                        } else {
-                            // Draw insert marker
-                            let insert_idx = ws_card_rects
-                                .iter()
-                                .position(|(_, rect)| drag.current_y < rect.center().y)
-                                .unwrap_or(ws_card_rects.len());
-                            if let Some(marker_rect) = if insert_idx < ws_card_rects.len() {
-                                Some(ws_card_rects[insert_idx].1)
-                            } else {
-                                ws_card_rects.last().map(|(_, r)| *r)
-                            } {
-                                let marker_y = if insert_idx < ws_card_rects.len() {
-                                    marker_rect.min.y - 1.0
-                                } else {
-                                    marker_rect.max.y + 1.0
-                                };
-                                let line = egui::Rect::from_min_size(
-                                    egui::pos2(marker_rect.min.x, marker_y),
-                                    egui::vec2(marker_rect.width(), 2.0),
-                                );
-                                ui.painter().rect_filled(line, 0.0, th.blue);
-                            }
-
-                            // Draw ghost card at mouse position
-                            if let Some(name) =
-                                engine.workspaces.get(drag.ws_idx).map(|w| w.name.clone())
-                                && let Some((_, first_rect)) = ws_card_rects.first()
-                            {
-                                let ghost_rect = egui::Rect::from_min_size(
-                                    egui::pos2(
-                                        first_rect.min.x,
-                                        drag.current_y - first_rect.height() / 2.0,
-                                    ),
-                                    first_rect.size(),
-                                );
-                                // Ghost drag preview: theme 색 + ~70% alpha.
-                                let ghost_bg = th.surface0.with_alpha(180).to_egui();
-                                let ghost_fg = th.text.with_alpha(180).to_egui();
-                                ui.painter().rect_filled(ghost_rect, 4.0, ghost_bg);
-                                ui.painter().text(
-                                    ghost_rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    &name,
-                                    egui::FontId::proportional(12.0),
-                                    ghost_fg,
-                                );
-                            }
-                        }
-                    }
-
-                    ui.add_space(4.0);
-                    let full_width = ui.available_width();
-                    if ui
-                        .add_sized(
-                            [full_width, 28.0],
-                            egui::Button::new(t("button.new_workspace")),
-                        )
-                        .clicked()
-                    {
-                        state.dispatch_intent(
-                            Intent::NewWorkspace {
-                                kind: None,
-                                params: serde_json::Value::Null,
-                            }
-                            .from_user_menu("sidebar_add_workspace"),
-                        );
-                    }
-                    ui.add_space(4.0);
-                });
+            let props = SidebarFullProps {
+                theme: &th,
+                workspaces: &workspaces,
+                drag,
+                tools_label,
+                collapse_label,
+                plugins_label,
+                settings_label,
+                new_workspace_label,
+                occupied_hover,
+            };
+            deferred_actions = draw_full_sidebar_view(ui, &props);
         });
 
-    FullSidebarResult {
-        collapse_clicked: sidebar_collapse,
-        plugins_clicked: sidebar_plugins,
-        settings_clicked: sidebar_settings,
-        tools_rect: sidebar_tools_rect,
+    let ws_count = engine.workspaces.len();
+
+    for action in deferred_actions {
+        match action {
+            SidebarFullAction::Collapse => result.collapse_clicked = true,
+            SidebarFullAction::Plugins => result.plugins_clicked = true,
+            SidebarFullAction::Settings => result.settings_clicked = true,
+            SidebarFullAction::ToolsClicked(rect) => result.tools_rect = Some(rect),
+            SidebarFullAction::WorkspaceClicked(i) => {
+                state.switch_workspace(engine, i);
+            }
+            SidebarFullAction::WorkspaceContextMenu { ws_idx, x, y } => {
+                state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::Workspace { ws_idx, x, y });
+            }
+            SidebarFullAction::DragStart { ws_idx, y } => {
+                state.dialogs.ws_drag = Some(crate::state::WsDragState {
+                    ws_idx,
+                    current_y: y,
+                });
+            }
+            SidebarFullAction::DragUpdate { y } => {
+                if let Some(drag) = state.dialogs.ws_drag.as_mut() {
+                    drag.current_y = y;
+                }
+            }
+            SidebarFullAction::DragReleased { drop_target } => {
+                let from = state.dialogs.ws_drag.as_ref().map(|d| d.ws_idx);
+                state.dialogs.ws_drag = None;
+                if let (Some(from), Some(to)) = (from, drop_target)
+                    && to < ws_count
+                {
+                    state.move_workspace(engine, from, to);
+                }
+            }
+            SidebarFullAction::NewWorkspace => {
+                state.dispatch_intent(
+                    Intent::NewWorkspace {
+                        kind: None,
+                        params: serde_json::Value::Null,
+                    }
+                    .from_user_menu("sidebar_add_workspace"),
+                );
+            }
+        }
     }
+
+    result
 }

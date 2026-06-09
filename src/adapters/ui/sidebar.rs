@@ -3,6 +3,7 @@
 mod collapsed;
 mod full;
 pub(crate) mod tools;
+pub(crate) mod view;
 
 pub use collapsed::draw_collapsed_sidebar;
 pub use full::draw_full_sidebar;
