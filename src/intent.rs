@@ -140,6 +140,10 @@ impl From<UiIntent> for Intent {
 
 /// `UiIntent` 발화 ergonomics — `Intent` 의 builder 들을 그대로 갖춰 호출처가
 /// `UiIntent::OpenPopup{...}.from_user_shortcut(...)` 형태로 발화할 수 있게 한다.
+///
+/// origin 분기 builder set — agent plugin / cli / cascade 발화 경로가 wiring
+/// 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이 필요하므로 보존.
+#[allow(dead_code)]
 impl UiIntent {
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         Intent::Ui(self).from_user_shortcut(id)
@@ -172,6 +176,11 @@ impl UiIntent {
 
 /// `DomainIntent` 발화 ergonomics — `UiIntent` 와 동일 패턴. 단 `from_system()`
 /// 은 *Domain 한정* 으로 본 impl 에만 존재한다 — UI Intent 의 자동 발화 차단.
+///
+/// origin 분기 builder set — context_menu / agent_plugin / agent_cli / cascade
+/// 발화 경로가 wiring 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이
+/// 필요하므로 보존.
+#[allow(dead_code)]
 impl crate::core::intent::DomainIntent {
     pub(crate) fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         Intent::Domain(self).from_user_shortcut(id)
@@ -311,6 +320,10 @@ impl IntentOrigin {
 
 /// 발화 ergonomics. `UiIntent::OpenPopup { ... }.from_user_shortcut("id")` 또는
 /// 도메인 variant 에서 `Intent::ApplyPreset { ... }.from_user_menu("id")` 형태.
+///
+/// origin 분기 builder set — agent plugin / cli / cascade 발화 경로가 wiring
+/// 전이라 일부 메서드 dead. 외부 호출처 추가 시 일관 set 이 필요하므로 보존.
+#[allow(dead_code)]
 impl Intent {
     pub fn from_user_shortcut(self, id: &'static str) -> DispatchedIntent {
         DispatchedIntent {
