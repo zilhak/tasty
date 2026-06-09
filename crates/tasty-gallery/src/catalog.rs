@@ -65,5 +65,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Component — Port Scanner popup",
             draw: components::port_scanner::draw,
         },
+        CatalogItem {
+            name: "Popup — Apply Preset (Workspace/Tab/Pane)",
+            draw: components::apply_preset::draw,
+        },
     ]
 }

@@ -5,6 +5,7 @@
 //! 로컬에 재현한다. 갤러리는 본체 binary 에 직접 의존할 수 없어 props 타입과
 //! 시각 layout 을 *복제* 한다 — 본체 update 시 시각 동등성은 수동 검증.
 
+pub mod apply_preset;
 pub mod convert;
 pub mod markdown_open;
 pub mod port_scanner;
