@@ -7,4 +7,5 @@
 
 pub mod convert;
 pub mod markdown_open;
+pub mod port_scanner;
 pub mod update;

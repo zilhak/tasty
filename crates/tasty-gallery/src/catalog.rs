@@ -61,5 +61,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Component — Convert popup (props view)",
             draw: components::convert::draw,
         },
+        CatalogItem {
+            name: "Component — Port Scanner popup",
+            draw: components::port_scanner::draw,
+        },
     ]
 }
