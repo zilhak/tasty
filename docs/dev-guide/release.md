@@ -51,6 +51,25 @@ CHANGELOG.md 의 변환 예 — 한 PR 로 처리:
 
 `crates/tasty-plugin-protocol/CHANGELOG.md` 에 schema 변경이 *없으면* 본 파일은 건드리지 않는다 (빈 `[Unreleased]` 그대로).
 
+## 1-B. Plugin 매니페스트 서명
+
+`crates/tasty-plugin-*/tasty-plugin.toml` 중 하나라도 본 release 사이클 동안
+변경된 적이 있으면 (또는 처음 release 빌드라면) 매니페스트의 서명을 갱신한다.
+
+```bash
+./scripts/sign-bundle.sh --key secrets/dev-private.pem --all-builtins
+```
+
+생성/갱신된 `crates/tasty-plugin-*/tasty-plugin.toml.sig` 8 개를 같은 bump 커밋에
+포함하거나 직전 커밋으로 분리. 빌드 스크립트 (`build-macos-dmg.sh` 등) 는 패키징
+직전 자동으로 sign-bundle.sh 를 다시 호출하므로 *로컬에서 잊고 안 했어도* 직접
+빌드한 산출물은 통과. **단, tag push 로 CI 가 빌드하는 정식 release 는** CI 에
+주입된 `TASTY_RELEASE_SIGN_KEY` secret 으로 재서명하므로, repo 에 commit 된
+`.sig` 와 다른 키로 덮어쓰는 것이 정상 — repo 의 `.sig` 는 *로컬 release 빌드
+및 dev 검증용* 이다.
+
+서명 알고리즘 / 키 보관 / CI secret 설정의 상세는 [`plugin-signing.md`](plugin-signing.md).
+
 ## 2. 커밋 작성
 
 `Cargo.toml` + `Cargo.lock`을 함께 커밋한다. **커밋 body에 체인지로그를 작성**한다.
@@ -100,8 +119,16 @@ git push origin main --tags
 `release.yml`이 자동 트리거된다. 순서:
 
 1. **create-release**: 버전 검증 → draft release 생성 (body를 릴리스 노트로)
-2. **build-macos / build-windows / build-linux-x64 / build-linux-arm64**: 각 플랫폼 빌드 및 아티팩트 업로드
+2. **build-macos / build-windows / build-linux-x64 / build-linux-arm64**: 각 플랫폼에서
+   - `TASTY_RELEASE_SIGN_KEY` secret 을 임시 키 파일로 디코딩
+   - `scripts/sign-bundle.sh --key "$TASTY_SIGN_KEY" --all-builtins` 호출 (8 plugin 재서명)
+   - 빌드 및 아티팩트 업로드
+   - 키 파일 wipe (성공/실패 무관)
 3. **publish-release**: `docs/agent-guide/*` 업로드 → draft 해제 (공개)
+
+CI secret 등록 절차는 [`plugin-signing.md`](plugin-signing.md) 의 "GitHub Secret
+등록" 섹션 참조. 미등록 상태로 tag push 시 4 개 build job 모두 첫 step 에서
+fail.
 
 GitHub Actions 탭에서 모든 job이 성공했는지 확인한다.
 
@@ -138,7 +165,7 @@ GitHub Actions 탭에서 모든 job이 성공했는지 확인한다.
 1. `Cargo.toml` 의 patch 번호를 `+1` 한다.
 2. `cargo build` 를 실행한다 (`Cargo.lock` 이 자동 갱신된다).
 3. `Cargo.toml` + `Cargo.lock` 을 함께 커밋한다 (`chore: bump version to X.Y.Z`).
-4. 본격 릴리스 절차는 위의 1-A (CHANGELOG) 부터 이어간다.
+4. 본격 릴리스 절차는 위의 1-A (CHANGELOG) → 1-B (plugin 매니페스트 서명) 부터 이어간다.
 
 ### AI 가 자동으로 올리지 않는 경우
 

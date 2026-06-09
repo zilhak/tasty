@@ -64,6 +64,7 @@
 | [dev-guide/unsafe-checklist.md](dev-guide/unsafe-checklist.md) | unsafe 블록 작성 체크리스트 |
 | [dev-guide/plugin-development.md](dev-guide/plugin-development.md) | Plugin 제작 가이드 — 크레이트 골격, Plugin trait, UI 빌더, snapshot/restore, 빌드/설치 + `crates/tasty-plugin-markdown/` 템플릿 |
 | [dev-guide/plugin-permissions.md](dev-guide/plugin-permissions.md) | Plugin 권한 모델 — method_meta, CallerContext, grant/revoke 흐름 |
+| [dev-guide/plugin-signing.md](dev-guide/plugin-signing.md) | Plugin 매니페스트 서명 — Ed25519 dev/release 키, sign-bundle.sh, CI secret, 키 회전 |
 | [dev-guide/plugin-ecosystem.md](dev-guide/plugin-ecosystem.md) | Plugin 생태계 — 번들 plugin 목록과 책임 분담 |
 | [dev-guide/lua-hooks.md](dev-guide/lua-hooks.md) | Lua hook 호스트 매핑 — 이벤트별 발화 site / payload 스키마 / 추가 가이드 |
 | [dev-guide/git-hooks.md](dev-guide/git-hooks.md) | pre-commit / pre-push 훅 규칙 — 설치, 검사 목록, 예외 |
