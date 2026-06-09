@@ -260,6 +260,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 
 # RNG (Phase 6.2: agent session token)
 rand = "0.9"
+
+# Date/time — known-plugins.toml trusted_at RFC3339 timestamp.
+# default-features=false 로 tzdata 의존 제거; UTC + std clock 만 사용.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 egui_commonmark = { version = "0.20.0", optional = true }
 
 # WebView (macOS)

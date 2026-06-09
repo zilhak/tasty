@@ -22,7 +22,7 @@ fn record_trust_then_install(
     let entry = KnownPluginEntry {
         pubkey: pubkey_b64.to_string(),
         permissions: permissions.to_vec(),
-        trusted_at: current_rfc3339(),
+        trusted_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         publisher_fingerprint: publisher_fingerprint.to_string(),
     };
     db.add(plugin_id.to_string(), entry);
@@ -32,37 +32,23 @@ fn record_trust_then_install(
     app.plugin_install(std::path::PathBuf::from(src_path))
 }
 
-/// `chrono` 같은 추가 deps 없이 std::time 으로 RFC3339 UTC 타임스탬프 생성.
-/// 정밀도는 초 단위 — trust 시점 식별용으로 충분.
-fn current_rfc3339() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    // Days from civil date — Howard Hinnant's algorithm. 1970-01-01 = epoch.
-    let days = secs.div_euclid(86_400);
-    let time_of_day = secs.rem_euclid(86_400);
-    let hour = (time_of_day / 3600) as u32;
-    let minute = ((time_of_day % 3600) / 60) as u32;
-    let second = (time_of_day % 60) as u32;
-    let (y, m, d) = civil_from_days(days);
-    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
-}
-
-/// Howard Hinnant `days_from_civil` 역함수 — epoch days → (year, month, day).
-fn civil_from_days(z: i64) -> (i32, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    let y = (y + if m <= 2 { 1 } else { 0 }) as i32;
-    (y, m, d)
+#[cfg(test)]
+mod rfc3339_tests {
+    /// 초 정밀도 UTC RFC3339 형식 (`YYYY-MM-DDTHH:MM:SSZ`) 정규식 검증.
+    /// `KnownPluginEntry.trusted_at` 가 toml 직렬화/외부 비교를 견디려면
+    /// 항상 동일한 모양이어야 한다.
+    #[test]
+    fn now_rfc3339_is_seconds_z_utc() {
+        let s = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        // 예: "2026-06-09T10:54:38Z"
+        assert_eq!(s.len(), 20, "unexpected length: {s}");
+        assert!(s.ends_with('Z'), "must end with Z: {s}");
+        assert_eq!(s.as_bytes()[4], b'-');
+        assert_eq!(s.as_bytes()[7], b'-');
+        assert_eq!(s.as_bytes()[10], b'T');
+        assert_eq!(s.as_bytes()[13], b':');
+        assert_eq!(s.as_bytes()[16], b':');
+    }
 }
 
 impl App {
