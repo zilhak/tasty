@@ -36,5 +36,17 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Widget — hint_text",
             draw: widgets::hint_text::draw,
         },
+        CatalogItem {
+            name: "Widget — Divider (pane borders)",
+            draw: widgets::divider::draw,
+        },
+        CatalogItem {
+            name: "Widget — Toast (card visual)",
+            draw: widgets::toast::draw,
+        },
+        CatalogItem {
+            name: "Widget — Dialog (rename popup frame)",
+            draw: widgets::dialog::draw,
+        },
     ]
 }
