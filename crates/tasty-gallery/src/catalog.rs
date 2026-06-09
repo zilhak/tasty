@@ -89,5 +89,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Layout — Pane Tab Bar",
             draw: components::tab_bar::draw,
         },
+        CatalogItem {
+            name: "Popup — Rename (workspace / tab)",
+            draw: components::rename_popup::draw,
+        },
     ]
 }
