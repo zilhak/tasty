@@ -2,6 +2,7 @@ use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
+use crate::theme::Theme;
 use egui::emath::GuiRounding as _;
 use serde_json::json;
 
@@ -206,7 +207,119 @@ pub enum ConvertResult {
     Close,
 }
 
-/// Draw the convert surface popup content inside PopupManager.
+/// Pure visual props for [`draw_convert_view`].
+///
+/// AppState/CoreState 의존을 *완전히* 제거한 데이터. `String` 으로 owned 화한
+/// 것은 gallery mock 에서 임의 mock data 를 만들 수 있게 하기 위함.
+#[derive(Debug, Clone)]
+pub struct ConvertItemView {
+    pub kind: String,
+    pub label: String,
+    pub shortcut: Option<char>,
+    pub is_current: bool,
+}
+
+/// Props 일체. 호출처가 AppState/CoreState 에서 추출해서 전달.
+#[derive(Debug, Clone, Default)]
+pub struct ConvertProps {
+    pub items: Vec<ConvertItemView>,
+    /// 키보드 선택 위치. None 이면 마우스 호버만 강조.
+    pub selected_index: Option<usize>,
+}
+
+impl ConvertProps {
+    /// `items` 의 인덱스 중 `is_current == false` 인 항목들. selectable 후보.
+    pub fn selectable_indices(&self) -> Vec<usize> {
+        self.items
+            .iter()
+            .enumerate()
+            .filter(|(_, it)| !it.is_current)
+            .map(|(i, _)| i)
+            .collect()
+    }
+}
+
+/// View 의 출력 — 사용자 입력의 의미. wrapper 가 AppState/CoreState 에 반영.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConvertViewAction {
+    None,
+    /// 사용자가 항목을 클릭. (current 항목은 호출되지 않음.) wrapper 는 `kind`
+    /// 를 `action_for_kind` 로 변환해 적용한다.
+    Clicked {
+        idx: usize,
+        kind: String,
+    },
+}
+
+/// Pure 시각 view. AppState/CoreState 비의존.
+///
+/// 키보드 처리(Escape/Arrow/Enter/letter shortcut) 는 wrapper 책임 —
+/// view 는 마우스 클릭과 시각 강조만 다룬다.
+pub fn draw_convert_view(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    props: &ConvertProps,
+) -> ConvertViewAction {
+    let popup_w = ui.available_width();
+    let mut action = ConvertViewAction::None;
+
+    for (idx, item) in props.items.iter().enumerate() {
+        let is_current = item.is_current;
+        let is_selected = props.selected_index == Some(idx);
+
+        let shortcut_str: String = item.shortcut.map(|c| c.to_string()).unwrap_or_default();
+        let label = if is_current {
+            format!("  \u{2713} {}    {}", item.label, shortcut_str)
+        } else {
+            format!("    {}    {}", item.label, shortcut_str)
+        };
+        let text_color = if is_current {
+            theme.overlay0
+        } else {
+            theme.text
+        };
+
+        let sense = if is_current {
+            egui::Sense::hover()
+        } else {
+            egui::Sense::click()
+        };
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, ITEM_HEIGHT), sense);
+
+        let highlight = (!is_current && resp.hovered()) || is_selected;
+        if highlight {
+            ui.painter()
+                .rect_filled(rect, 0.0, theme.hover_overlay.to_egui_premultiplied());
+        }
+        if !is_current && resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+
+        let text_pos = egui::pos2(
+            rect.min.x + theme.spacing_sm.value(),
+            rect.center().y - theme.font_size_body.value() / 2.0,
+        );
+        ui.painter().text(
+            text_pos,
+            egui::Align2::LEFT_TOP,
+            &label,
+            egui::FontId::proportional(theme.font_size_body.value()),
+            text_color.into(),
+        );
+
+        if resp.clicked() && !is_current {
+            action = ConvertViewAction::Clicked {
+                idx,
+                kind: item.kind.clone(),
+            };
+        }
+    }
+
+    action
+}
+
+/// 본체 wrapper: AppState/CoreState 로부터 props 추출 + 키보드 처리 + view 호출
+/// + action 적용을 담당.
 pub fn draw_convert_content(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -214,17 +327,14 @@ pub fn draw_convert_content(
 ) -> Option<ConvertResult> {
     let surface_id = state.dialogs.convert_popup?;
 
-    let th = theme::theme();
     let current_kind = current_surface_kind(state, engine, surface_id);
-    let popup_w = ui.available_width();
-
-    let items = enumerate_convertible_kinds(state, engine);
-    let selectable_indices: Vec<usize> = items
-        .iter()
-        .enumerate()
-        .filter(|(_, it)| Some(it.kind) != current_kind)
-        .map(|(i, _)| i)
-        .collect();
+    let internal_items = enumerate_convertible_kinds(state, engine);
+    let props = props_from_items(
+        &internal_items,
+        current_kind,
+        state.dialogs.convert_popup_selected,
+    );
+    let selectable_indices = props.selectable_indices();
 
     let ctx = ui.ctx().clone();
 
@@ -269,7 +379,7 @@ pub fn draw_convert_content(
         && let Some(sel) = state.dialogs.convert_popup_selected
         && selectable_indices.contains(&sel)
     {
-        action = Some(action_for_kind(items[sel].kind));
+        action = Some(action_for_kind(internal_items[sel].kind));
     }
 
     // 단축키: physical_key 사용 (한글 IME 활성 시에도 영문 매칭 보장).
@@ -285,7 +395,7 @@ pub fn draw_convert_content(
                 && modifiers.is_none()
                 && let Some(key) = physical_key
                 && let Some(ch) = letter_key_to_char(key)
-                && let Some(item) = items
+                && let Some(item) = internal_items
                     .iter()
                     .find(|it| it.shortcut == Some(ch) && Some(it.kind) != current_kind)
             {
@@ -294,53 +404,39 @@ pub fn draw_convert_content(
         }
     });
 
-    let selected = state.dialogs.convert_popup_selected;
-    for (idx, item) in items.iter().enumerate() {
-        let is_current = Some(item.kind) == current_kind;
-        let is_selected = selected == Some(idx);
-
-        let shortcut_str: String = item.shortcut.map(|c| c.to_string()).unwrap_or_default();
-        let label = if is_current {
-            format!("  \u{2713} {}    {}", item.label, shortcut_str)
-        } else {
-            format!("    {}    {}", item.label, shortcut_str)
-        };
-        let text_color = if is_current { th.overlay0 } else { th.text };
-
-        let sense = if is_current {
-            egui::Sense::hover()
-        } else {
-            egui::Sense::click()
-        };
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, ITEM_HEIGHT), sense);
-
-        let highlight = (!is_current && resp.hovered()) || is_selected;
-        if highlight {
-            ui.painter()
-                .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
-        }
-        if !is_current && resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-
-        let text_pos = egui::pos2(
-            rect.min.x + th.spacing_sm.value(),
-            rect.center().y - th.font_size_body.value() / 2.0,
-        );
-        ui.painter().text(
-            text_pos,
-            egui::Align2::LEFT_TOP,
-            &label,
-            egui::FontId::proportional(th.font_size_body.value()),
-            text_color.into(),
-        );
-
-        if resp.clicked() && !is_current {
-            action = Some(action_for_kind(item.kind));
-        }
+    // 키보드 선택을 view 가 강조할 수 있도록 props 갱신 (Arrow 처리 이후 값).
+    let view_props = ConvertProps {
+        items: props.items,
+        selected_index: state.dialogs.convert_popup_selected,
+    };
+    let view_action = draw_convert_view(ui, &theme::theme(), &view_props);
+    if let ConvertViewAction::Clicked { kind, .. } = view_action {
+        action = Some(action_for_kind(&kind));
     }
 
     action.map(ConvertResult::Action)
+}
+
+/// 내부 `ConvertItem` 목록 + 현재 kind 로부터 view 용 props 를 만든다.
+/// AppState/CoreState 비의존 — 테스트하기 쉬운 형태.
+fn props_from_items(
+    items: &[ConvertItem],
+    current_kind: Option<&'static str>,
+    selected_index: Option<usize>,
+) -> ConvertProps {
+    let items = items
+        .iter()
+        .map(|it| ConvertItemView {
+            kind: it.kind.to_string(),
+            label: it.label.clone(),
+            shortcut: it.shortcut,
+            is_current: Some(it.kind) == current_kind,
+        })
+        .collect();
+    ConvertProps {
+        items,
+        selected_index,
+    }
 }
 
 /// Apply the convert action to the state.
@@ -481,4 +577,58 @@ fn current_surface_kind(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod props_tests {
+    use super::*;
+
+    fn mk(kind: &'static str, shortcut: Option<char>) -> ConvertItem {
+        ConvertItem {
+            kind,
+            label: kind.to_string(),
+            shortcut,
+        }
+    }
+
+    #[test]
+    fn marks_current_kind() {
+        let items = vec![mk("terminal", Some('T')), mk("markdown", Some('M'))];
+        let props = props_from_items(&items, Some("terminal"), None);
+        assert!(props.items[0].is_current);
+        assert!(!props.items[1].is_current);
+    }
+
+    #[test]
+    fn selectable_indices_excludes_current() {
+        let items = vec![
+            mk("terminal", Some('T')),
+            mk("markdown", Some('M')),
+            mk("image", Some('I')),
+        ];
+        let props = props_from_items(&items, Some("markdown"), None);
+        assert_eq!(props.selectable_indices(), vec![0, 2]);
+    }
+
+    #[test]
+    fn no_current_kind_means_all_selectable() {
+        let items = vec![mk("terminal", Some('T')), mk("markdown", Some('M'))];
+        let props = props_from_items(&items, None, None);
+        assert_eq!(props.selectable_indices(), vec![0, 1]);
+    }
+
+    #[test]
+    fn empty_props_default() {
+        let props = ConvertProps::default();
+        assert!(props.items.is_empty());
+        assert!(props.selectable_indices().is_empty());
+        assert_eq!(props.selected_index, None);
+    }
+
+    #[test]
+    fn preserves_selected_index() {
+        let items = vec![mk("terminal", Some('T')), mk("markdown", Some('M'))];
+        let props = props_from_items(&items, Some("terminal"), Some(1));
+        assert_eq!(props.selected_index, Some(1));
+    }
 }
