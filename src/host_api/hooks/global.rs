@@ -53,6 +53,11 @@ pub struct GlobalHookManager {
     /// Creation time for Once hooks, to measure elapsed time.
     created_at: HashMap<u32, Instant>,
     /// Set of Once hook IDs that have already fired and should be removed.
+    ///
+    /// `tick()` 내부에서 drain → remove 흐름으로만 쓰이므로 *external read* 가
+    /// 없어 dead 로 잡힌다. tick 자체가 event loop 통합 전이라 함께 allow —
+    /// hook lifecycle 통합 시 read 경로가 생긴다.
+    #[allow(dead_code)]
     fired_once: Vec<u32>,
 }
 
@@ -107,6 +112,10 @@ impl GlobalHookManager {
     }
 
     /// Get a single hook by ID.
+    ///
+    /// IPC handler 가 hook 메타 조회 통합 후 사용 예정. 현재는 add/remove 만
+    /// 사용 — 공개 API 유지.
+    #[allow(dead_code)]
     pub fn get(&self, id: u32) -> Option<&GlobalHook> {
         self.hooks.get(&id)
     }
@@ -114,6 +123,10 @@ impl GlobalHookManager {
     /// Check all hooks and return `(hook_id, command)` pairs that should be
     /// executed right now. Called periodically (e.g. every ~250 ms) from the
     /// event loop.
+    ///
+    /// event loop 통합이 아직 안 됨 — add/remove 만 활성. tick 호출 경로 추가
+    /// 후 allow 제거.
+    #[allow(dead_code)]
     pub fn tick(&mut self) -> Vec<(u32, String)> {
         let now = Instant::now();
         let mut to_fire: Vec<(u32, String)> = Vec::new();
@@ -157,6 +170,9 @@ impl GlobalHookManager {
     /// Execute a shell command in a fire-and-forget fashion.
     /// Spawn 실패는 사용자 hook이 발동했다고 보이지만 실제로는 자식이 안 뜬 상태라
     /// 디버깅이 어렵다. warn으로 흔적을 남긴다.
+    ///
+    /// tick 결과를 실제로 dispatch 하는 event loop wiring 통합 후 사용 예정.
+    #[allow(dead_code)]
     pub fn execute_command(command: &str) {
         #[cfg(windows)]
         let mut cmd = {
