@@ -6,10 +6,18 @@
 //! - 포커스를 받지 않으며 입력 이벤트를 소비하지 않는다 (마우스가 그대로 통과).
 //! - 자동 소멸한다 (기본 2초).
 //! - `LayoutContext`를 받아 스코프별 rect를 얻는다.
+//!
+//! ## Split: wrapper / view
+//!
+//! [`ToastManager`] 가 *상태 관리* (push / coalesce / 만료 정리 / fade alpha 계산 /
+//! scope rect lookup) 를 담당하고, 순수 시각 [`draw_toast_view`] 가 미리 계산된
+//! [`ToastEntryView`] (alpha 포함) 와 scope rect 만 받아 그린다. AppState/CoreState
+//! 의존 없는 시각이라 gallery (`tasty-gallery`) 에서 mock props 로 검증 가능.
 
 use std::time::{Duration, Instant};
 
 use crate::theme;
+use crate::theme::Theme;
 
 use super::layout_context::LayoutContext;
 
@@ -44,6 +52,126 @@ const PADDING_X: f32 = 12.0;
 const PADDING_Y: f32 = 8.0;
 /// 좌측 컬러 바 두께 (px).
 const ACCENT_BAR_WIDTH: f32 = 4.0;
+
+/// View 입력 — 그릴 준비가 끝난 토스트 1 개의 시각 데이터.
+///
+/// `alpha` 는 매니저가 lifetime/fade 로부터 미리 계산. view 는 시간 의존이 없다.
+#[derive(Clone, Debug)]
+pub struct ToastEntryView {
+    pub kind: ToastKind,
+    pub message: String,
+    /// [0.0, 1.0] — 0 이면 view 가 스킵.
+    pub alpha: f32,
+}
+
+/// View 입력 — 한 scope 의 토스트 그룹.
+///
+/// `entries` 는 *발사 순서* (id 오름차순) 로 정렬돼 있어야 한다 — view 는 그대로
+/// 우측 하단부터 위로 쌓는다.
+#[derive(Clone, Debug)]
+pub struct ToastScopeView {
+    pub scope_rect: egui::Rect,
+    pub entries: Vec<ToastEntryView>,
+}
+
+/// View 입력 — 전체 scope 의 그룹 리스트 + theme.
+pub struct ToastViewProps<'a> {
+    pub theme: &'a Theme,
+    pub scopes: &'a [ToastScopeView],
+}
+
+/// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
+///
+/// `ctx` 를 받는 이유는 토스트가 다른 UI 위에 떠야 하므로
+/// `LayerId(Order::Tooltip, ...)` 의 layer painter 를 사용하기 때문.
+/// 반환값 없음 — 토스트는 사용자 입력을 받지 않으며 (auto-dismiss) action 도 없다.
+pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
+    if props.scopes.is_empty() {
+        return;
+    }
+
+    let th = props.theme;
+    let layer_id = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("toast_layer"));
+    let painter = ctx.layer_painter(layer_id);
+
+    for scope in props.scopes {
+        let scope_rect = scope.scope_rect;
+        let mut cursor_y = scope_rect.max.y - SCOPE_MARGIN;
+
+        // 새것부터 그리며 위로 올라간다 (id 오름차순으로 받았으므로 reverse).
+        for entry in scope.entries.iter().rev() {
+            let alpha = entry.alpha;
+            if alpha <= 0.0 {
+                continue;
+            }
+
+            let body_text = entry.message.as_str();
+            let max_width = (scope_rect.width() * 0.8).max(80.0);
+            let font = egui::FontId::proportional(th.font_size_body.value());
+
+            let galley = ctx.fonts(|f| {
+                f.layout(
+                    body_text.to_string(),
+                    font.clone(),
+                    th.text.into(),
+                    max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH,
+                )
+            });
+
+            let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
+            let toast_h = galley.size().y + PADDING_Y * 2.0;
+
+            let max_x = scope_rect.max.x - SCOPE_MARGIN;
+            let bottom_y = cursor_y;
+            let top_y = bottom_y - toast_h;
+            let left_x = max_x - toast_w;
+
+            let rect =
+                egui::Rect::from_min_max(egui::pos2(left_x, top_y), egui::pos2(max_x, bottom_y));
+
+            let bg = th.surface0.gamma_multiply(alpha);
+            let border = th.surface1.gamma_multiply(alpha);
+            let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
+
+            painter.rect_filled(rect, th.corner_radius.value(), bg);
+            painter.rect_stroke(
+                rect,
+                th.corner_radius.value(),
+                egui::Stroke::new(th.border_width.value(), border),
+                egui::StrokeKind::Inside,
+            );
+
+            let bar_rect = egui::Rect::from_min_max(
+                rect.min,
+                egui::pos2(rect.min.x + ACCENT_BAR_WIDTH, rect.max.y),
+            );
+            let bar_radius = egui::CornerRadius {
+                nw: th.corner_radius.value() as u8,
+                sw: th.corner_radius.value() as u8,
+                ne: 0,
+                se: 0,
+            };
+            painter.rect_filled(bar_rect, bar_radius, accent);
+
+            let text_pos = egui::pos2(
+                rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
+                rect.min.y + PADDING_Y,
+            );
+            painter.galley(text_pos, galley, th.text.gamma_multiply(alpha).into());
+
+            cursor_y = top_y - TOAST_GAP;
+        }
+    }
+}
+
+fn accent_color(kind: ToastKind, th: &Theme) -> egui::Color32 {
+    match kind {
+        ToastKind::Info => th.blue.into(),
+        ToastKind::Success => th.green.into(),
+        ToastKind::Warning => th.yellow.into(),
+        ToastKind::Error => th.red.into(),
+    }
+}
 
 pub struct ToastManager {
     toasts: Vec<ToastState>,
@@ -105,6 +233,9 @@ impl ToastManager {
     /// `draw_ctx`는 PopupManager가 만든 것을 그대로 공유한다.
     ///
     /// `reduced_motion`이 true면 페이드 인/아웃을 0ms로 처리 (시각 자극 최소화).
+    ///
+    /// Wrapper: 상태 정리 + alpha 계산 + scope rect lookup → 순수
+    /// [`draw_toast_view`] 로 위임.
     pub fn draw(&mut self, ctx: &egui::Context, draw_ctx: &LayoutContext, reduced_motion: bool) {
         let now = Instant::now();
 
@@ -125,11 +256,7 @@ impl ToastManager {
         // 살아있는 동안에는 매 프레임 다시 그려야 페이드가 보인다.
         ctx.request_repaint();
 
-        let th = theme::theme();
-        let layer_id = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("toast_layer"));
-        let painter = ctx.layer_painter(layer_id);
-
-        // 3) 스코프별로 그루핑하여 우측 하단에서부터 위로 쌓는다.
+        // 3) 스코프별로 그루핑하여 view 입력으로 변환.
         let mut by_scope: std::collections::HashMap<String, Vec<&ToastState>> =
             std::collections::HashMap::new();
         for t in &self.toasts {
@@ -139,119 +266,33 @@ impl ToastManager {
                 .push(t);
         }
 
+        let mut scopes: Vec<ToastScopeView> = Vec::with_capacity(by_scope.len());
         for (_, mut group) in by_scope {
-            // 안정적인 순서: id 오름차순(= 발사 순서). 새것이 가장 아래.
             group.sort_by_key(|t| t.id);
             let scope = &group[0].scope;
             let Some(scope_rect) = Self::scope_rect(scope, draw_ctx, ctx) else {
                 continue;
             };
-
-            // 우측 하단 시작 좌표 (가장 새로운 토스트의 bottom).
-            let mut cursor_y = scope_rect.max.y - SCOPE_MARGIN;
-
-            // 새것부터 그리며 위로 올라간다.
-            for t in group.iter().rev() {
-                let alpha = if reduced_motion {
-                    // 페이드 없음 — lifetime이 남았으면 1.0, 끝났으면 0.0.
-                    let age_ms = now.duration_since(t.spawned_at).as_secs_f32() * 1000.0;
-                    let life_ms = t.lifetime.as_secs_f32() * 1000.0;
-                    if age_ms < life_ms { 1.0 } else { 0.0 }
-                } else {
-                    Self::compute_alpha(t, now)
-                };
-                if alpha <= 0.0 {
-                    continue;
-                }
-
-                let body_text = t.message.as_str();
-                let max_width = (scope_rect.width() * 0.8).max(80.0);
-                let font = egui::FontId::proportional(th.font_size_body.value());
-
-                // 텍스트 갤리(줄바꿈 포함) 측정.
-                let galley = ctx.fonts(|f| {
-                    f.layout(
-                        body_text.to_string(),
-                        font.clone(),
-                        th.text.into(),
-                        max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH,
-                    )
-                });
-
-                let toast_w = (galley.size().x + PADDING_X * 2.0 + ACCENT_BAR_WIDTH).min(max_width);
-                let toast_h = galley.size().y + PADDING_Y * 2.0;
-
-                let max_x = scope_rect.max.x - SCOPE_MARGIN;
-                let bottom_y = cursor_y;
-                let top_y = bottom_y - toast_h;
-                let left_x = max_x - toast_w;
-
-                let rect = egui::Rect::from_min_max(
-                    egui::pos2(left_x, top_y),
-                    egui::pos2(max_x, bottom_y),
-                );
-
-                let bg = th.surface0.gamma_multiply(alpha);
-                let border = th.surface1.gamma_multiply(alpha);
-                let accent = Self::accent_color(t.kind, &th).gamma_multiply(alpha);
-
-                // 배경 + 보더.
-                painter.rect_filled(rect, th.corner_radius.value(), bg);
-                painter.rect_stroke(
-                    rect,
-                    th.corner_radius.value(),
-                    egui::Stroke::new(th.border_width.value(), border),
-                    egui::StrokeKind::Inside,
-                );
-
-                // 좌측 컬러 바.
-                let bar_rect = egui::Rect::from_min_max(
-                    rect.min,
-                    egui::pos2(rect.min.x + ACCENT_BAR_WIDTH, rect.max.y),
-                );
-                let bar_radius = egui::CornerRadius {
-                    nw: th.corner_radius.value() as u8,
-                    sw: th.corner_radius.value() as u8,
-                    ne: 0,
-                    se: 0,
-                };
-                painter.rect_filled(bar_rect, bar_radius, accent);
-
-                // 본문 텍스트. galley 색을 alpha 적용해 다시 만들지 않고 그대로 그린다 —
-                // 알파는 배경/보더로 표현하고, 텍스트는 단단하게 둬도 가독성에 도움이 된다.
-                let text_pos = egui::pos2(
-                    rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
-                    rect.min.y + PADDING_Y,
-                );
-                painter.galley(text_pos, galley, th.text.gamma_multiply(alpha).into());
-
-                cursor_y = top_y - TOAST_GAP;
-            }
+            let entries: Vec<ToastEntryView> = group
+                .iter()
+                .map(|t| ToastEntryView {
+                    kind: t.kind,
+                    message: t.message.clone(),
+                    alpha: compute_alpha(t, now, reduced_motion),
+                })
+                .collect();
+            scopes.push(ToastScopeView {
+                scope_rect,
+                entries,
+            });
         }
-    }
 
-    /// 페이드 인/아웃 알파 계산.
-    fn compute_alpha(t: &ToastState, now: Instant) -> f32 {
-        let age_ms = now.duration_since(t.spawned_at).as_secs_f32() * 1000.0;
-        let life_ms = t.lifetime.as_secs_f32() * 1000.0;
-
-        if age_ms < FADE_IN_MS {
-            (age_ms / FADE_IN_MS).clamp(0.0, 1.0)
-        } else if age_ms < life_ms {
-            1.0
-        } else {
-            let fade_out = (age_ms - life_ms) / FADE_OUT_MS;
-            (1.0 - fade_out).clamp(0.0, 1.0)
-        }
-    }
-
-    fn accent_color(kind: ToastKind, th: &theme::Theme) -> egui::Color32 {
-        match kind {
-            ToastKind::Info => th.blue.into(),
-            ToastKind::Success => th.green.into(),
-            ToastKind::Warning => th.yellow.into(),
-            ToastKind::Error => th.red.into(),
-        }
+        let th = theme::theme();
+        let props = ToastViewProps {
+            theme: &th,
+            scopes: &scopes,
+        };
+        draw_toast_view(ctx, &props);
     }
 
     /// 스코프의 rect를 얻는다. Window/Workspace는 screen rect를 사용한다.
@@ -283,8 +324,166 @@ impl ToastManager {
     }
 }
 
+/// 페이드 인/아웃 알파 계산. pub — 테스트 + wrapper 가 view 입력 변환 시 호출.
+pub fn compute_alpha(t: &ToastState, now: Instant, reduced_motion: bool) -> f32 {
+    let age_ms = now.duration_since(t.spawned_at).as_secs_f32() * 1000.0;
+    let life_ms = t.lifetime.as_secs_f32() * 1000.0;
+
+    if reduced_motion {
+        return if age_ms < life_ms { 1.0 } else { 0.0 };
+    }
+
+    if age_ms < FADE_IN_MS {
+        (age_ms / FADE_IN_MS).clamp(0.0, 1.0)
+    } else if age_ms < life_ms {
+        1.0
+    } else {
+        let fade_out = (age_ms - life_ms) / FADE_OUT_MS;
+        (1.0 - fade_out).clamp(0.0, 1.0)
+    }
+}
+
 impl Default for ToastManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_theme() -> Theme {
+        tasty_themes::mocha_fallback()
+    }
+
+    fn mk_state(id: u64, kind: ToastKind, msg: &str) -> ToastState {
+        ToastState {
+            id,
+            message: msg.to_string(),
+            kind,
+            scope: ToastScope::Window,
+            spawned_at: Instant::now(),
+            lifetime: DEFAULT_LIFETIME,
+        }
+    }
+
+    #[test]
+    fn compute_alpha_full_during_lifetime() {
+        let t = mk_state(1, ToastKind::Info, "hello");
+        // 100ms past spawn (FADE_IN_MS = 80) — full opacity
+        let now = t.spawned_at + Duration::from_millis(100);
+        let a = compute_alpha(&t, now, false);
+        assert!((a - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn compute_alpha_fade_in() {
+        let t = mk_state(1, ToastKind::Info, "hi");
+        // 40ms past spawn → 40/80 = 0.5
+        let now = t.spawned_at + Duration::from_millis(40);
+        let a = compute_alpha(&t, now, false);
+        assert!((a - 0.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn compute_alpha_fade_out() {
+        let t = mk_state(1, ToastKind::Info, "hi");
+        // 2080ms past spawn → past lifetime, mid fade-out (80/160 = 0.5 done)
+        let now = t.spawned_at + Duration::from_millis(2080);
+        let a = compute_alpha(&t, now, false);
+        assert!((a - 0.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn compute_alpha_reduced_motion_no_fade() {
+        let t = mk_state(1, ToastKind::Info, "hi");
+        // 40ms past spawn — would be 0.5 with fade, but reduced_motion → 1.0
+        let now_in = t.spawned_at + Duration::from_millis(40);
+        assert!((compute_alpha(&t, now_in, true) - 1.0).abs() < 1e-3);
+        // past lifetime → 0.0
+        let now_out = t.spawned_at + Duration::from_millis(3000);
+        assert_eq!(compute_alpha(&t, now_out, true), 0.0);
+    }
+
+    #[test]
+    fn manager_push_assigns_unique_ids() {
+        let mut mgr = ToastManager::new();
+        mgr.push("a", ToastKind::Info, ToastScope::Window);
+        mgr.push("b", ToastKind::Info, ToastScope::Window);
+        assert_eq!(mgr.toasts.len(), 2);
+        assert_ne!(mgr.toasts[0].id, mgr.toasts[1].id);
+    }
+
+    #[test]
+    fn manager_coalesce_same_message_same_scope() {
+        let mut mgr = ToastManager::new();
+        mgr.push("dup", ToastKind::Info, ToastScope::Window);
+        mgr.push("dup", ToastKind::Warning, ToastScope::Window);
+        assert_eq!(mgr.toasts.len(), 1);
+        // kind 갱신됨
+        assert_eq!(mgr.toasts[0].kind, ToastKind::Warning);
+    }
+
+    #[test]
+    fn manager_max_per_scope_evicts_oldest() {
+        let mut mgr = ToastManager::new();
+        for i in 0..(MAX_PER_SCOPE + 2) {
+            mgr.push(format!("m-{i}"), ToastKind::Info, ToastScope::Window);
+        }
+        assert_eq!(mgr.toasts.len(), MAX_PER_SCOPE);
+        assert!(mgr.toasts.iter().all(|t| t.message != "m-0"));
+        assert!(mgr.toasts.iter().all(|t| t.message != "m-1"));
+    }
+
+    fn run_view(scopes: Vec<ToastScopeView>) {
+        let ctx = egui::Context::default();
+        let theme = test_theme();
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            let props = ToastViewProps {
+                theme: &theme,
+                scopes: &scopes,
+            };
+            draw_toast_view(ctx, &props);
+        }));
+    }
+
+    #[test]
+    fn view_empty_scopes_is_noop() {
+        run_view(vec![]);
+    }
+
+    #[test]
+    fn view_with_entries_does_not_panic() {
+        let scopes = vec![ToastScopeView {
+            scope_rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0)),
+            entries: vec![
+                ToastEntryView {
+                    kind: ToastKind::Info,
+                    message: "info".into(),
+                    alpha: 1.0,
+                },
+                ToastEntryView {
+                    kind: ToastKind::Error,
+                    message: "long error message that may wrap into multiple lines".into(),
+                    alpha: 0.5,
+                },
+            ],
+        }];
+        run_view(scopes);
+    }
+
+    #[test]
+    fn view_skips_zero_alpha_entries() {
+        // alpha=0 인 entry 만 있어도 panic 없이 통과.
+        let scopes = vec![ToastScopeView {
+            scope_rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0)),
+            entries: vec![ToastEntryView {
+                kind: ToastKind::Warning,
+                message: "invisible".into(),
+                alpha: 0.0,
+            }],
+        }];
+        run_view(scopes);
     }
 }
