@@ -3,6 +3,7 @@
 //! 한 항목은 `(name, draw)` 의 페어. `draw` 는 선택 시 우측 디테일 패널에
 //! 호출되는 함수로, `Theme` 을 받아 egui 위젯을 그린다.
 
+pub mod components;
 pub mod spacing;
 pub mod theme;
 pub mod typography;
@@ -47,6 +48,10 @@ pub fn all() -> Vec<CatalogItem> {
         CatalogItem {
             name: "Widget — Dialog (rename popup frame)",
             draw: widgets::dialog::draw,
+        },
+        CatalogItem {
+            name: "Popup — Markdown Open",
+            draw: components::markdown_open::draw,
         },
     ]
 }
