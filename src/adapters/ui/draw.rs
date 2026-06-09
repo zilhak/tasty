@@ -31,7 +31,7 @@ pub fn draw_ui(
             state.settings_open = true;
         }
         if let Some(btn_rect) = r.tools_rect {
-            sidebar::tools::open_tools_menu(state, btn_rect);
+            sidebar::tools::open_tools_menu(state, engine, btn_rect);
         }
         if let Some(i) = r.switch_ws {
             state.switch_workspace(engine, i);
@@ -58,7 +58,7 @@ pub fn draw_ui(
             state.settings_open = true;
         }
         if let Some(btn_rect) = r.tools_rect {
-            sidebar::tools::open_tools_menu(state, btn_rect);
+            sidebar::tools::open_tools_menu(state, engine, btn_rect);
         }
     }
 

@@ -10,13 +10,21 @@
 //! - `ToolAction::OpenSurface` → focused pane에 `add_kind_tab`.
 //! - `ToolAction::OpenPopup` → pending_popup_opens enqueue.
 
-use crate::adapters::ui::popup::PopupAction;
+use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::intent::{OpenPopupMode, UiIntent};
 use crate::plugin::manifest::ToolAction;
 use crate::plugin::tool_registry::ToolItem;
 use crate::state::AppState;
 use crate::theme;
+use egui::emath::GuiRounding as _;
+
+/// Popup width (도구 항목 라벨이 모두 들어가는 baseline). 사이드바 도구 버튼 좌측 정렬.
+const POPUP_WIDTH: f32 = 160.0;
+/// 도구 항목 한 줄 높이. draw 와 sizer 가 같은 값을 참조해야 잘림 방지.
+const ITEM_HEIGHT: f32 = 28.0;
+/// `ui.separator()` 가 차지하는 perpendicular space (egui 기본값).
+const SEPARATOR_SPACE: f32 = 6.0;
 
 /// Built-in tool entries that are not contributed by any plugin.
 /// `action` 으로 popup / 별도 winit 윈도우 오픈을 구분한다.
@@ -72,7 +80,8 @@ pub fn draw_tools_menu(
     let mut open_popup: Option<&'static str> = None;
     let mut open_window: Option<WindowKind> = None;
     for entry in BUILTIN_TOOLS {
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT), egui::Sense::click());
         if resp.hovered() {
             ui.painter()
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -122,7 +131,8 @@ pub fn draw_tools_menu(
 
     let mut clicked: Option<ToolItem> = None;
     for item in &items {
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT), egui::Sense::click());
         if resp.hovered() {
             ui.painter()
                 .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -203,5 +213,117 @@ pub fn invoke_tool(state: &mut AppState, engine: &mut crate::core::CoreState, it
                 );
             }
         }
+    }
+}
+
+/// `tasty_egui_theme` 가 `style.spacing.item_spacing.y` 로 적용하는 값과 동일하게
+/// 계산한다 (convert popup 과 동일 패턴). draw 시 `allocate_exact_size` 사이의
+/// vertical gap 이 이 값이므로 sizer 도 같은 식을 써야 마지막 항목이 잘리지 않는다.
+fn effective_item_spacing(engine: &crate::core::CoreState) -> f32 {
+    let ui_scale = engine.settings.appearance.ui_scale_factor();
+    (theme::theme().spacing_xs.value() * ui_scale).round_ui()
+}
+
+/// 빌트인 + 플러그인 항목 개수에 맞춘 popup 크기 계산.
+///
+/// content height = N·ITEM_HEIGHT + (N−1)·item_spacing
+///                  + (separator 가 들어가면 SEPARATOR_SPACE + item_spacing)
+/// popup height   = CONTENT_MARGIN·2 + content_h + safety_margin
+///                  (headless 이므로 TITLE_BAR_HEIGHT 는 빠진다)
+fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: f32) -> egui::Vec2 {
+    let total = builtin_count + plugin_count;
+    let total = total.max(1);
+    let mut content_h =
+        total as f32 * ITEM_HEIGHT + (total.saturating_sub(1)) as f32 * item_spacing;
+    if builtin_count > 0 && plugin_count > 0 {
+        content_h += SEPARATOR_SPACE + item_spacing;
+    }
+    // round_ui 누적 오차 / 초기 cursor 미세 padding 흡수용 1 px 마진.
+    let safety_margin = 1.0;
+    egui::vec2(
+        POPUP_WIDTH,
+        popup::CONTENT_MARGIN * 2.0 + content_h + safety_margin,
+    )
+}
+
+/// PopupDef.sizer — 매 프레임 plugin tool registry 의 실제 항목 수로 height 재계산.
+pub fn tools_menu_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
+    let plugin_count = state.tool_registry.visible_items().len();
+    tools_menu_size_for(
+        BUILTIN_TOOLS.len(),
+        plugin_count,
+        effective_item_spacing(engine),
+    )
+}
+
+/// PopupDef.default_size — register 시점 placeholder. registry 가 비어있을 수 있으므로
+/// BUILTIN_TOOLS 만 가정. sizer 가 매 프레임 재계산하므로 실제 렌더링에는 영향 없음.
+pub fn tools_menu_default_size() -> egui::Vec2 {
+    tools_menu_size_for(BUILTIN_TOOLS.len(), 0, theme::theme().spacing_xs.value())
+}
+
+/// 사이드바 도구 버튼이 popup 을 띄울 때 위치 계산용으로 호출한다.
+/// `default_size` 대신 *현재 등록된 plugin 도구 수* 까지 반영한 정확한 크기를 받아야
+/// popup top 이 버튼 위쪽 정확한 위치에 align 된다.
+pub fn tools_menu_current_size(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
+    tools_menu_sizer(state, engine)
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    #[test]
+    fn fits_builtin_only_medium_scale() {
+        // ui_scale=1.0 → spacing_xs(4.0). BUILTIN 4 개, plugin 0 개, separator 없음.
+        let size = tools_menu_size_for(4, 0, 4.0);
+        let needed = popup::CONTENT_MARGIN * 2.0 + 4.0 * ITEM_HEIGHT + 3.0 * 4.0;
+        assert!(
+            size.y >= needed,
+            "size.y ({}) < needed ({}) for 4 builtin items",
+            size.y,
+            needed
+        );
+        assert_eq!(size.x, POPUP_WIDTH);
+    }
+
+    #[test]
+    fn fits_builtin_plus_plugin_with_separator() {
+        // BUILTIN 4 + plugin 3 → separator 1 개 추가됨.
+        let size = tools_menu_size_for(4, 3, 4.0);
+        let needed = popup::CONTENT_MARGIN * 2.0
+            + 7.0 * ITEM_HEIGHT
+            + 6.0 * 4.0           // item_spacing between 7 items
+            + SEPARATOR_SPACE
+            + 4.0; // separator 양쪽 spacing 중 1 개 추가
+        assert!(
+            size.y >= needed,
+            "size.y ({}) < needed ({}) for 4+3 items",
+            size.y,
+            needed
+        );
+    }
+
+    #[test]
+    fn fits_plugin_only_no_separator() {
+        // BUILTIN 0 + plugin 5 (hypothetical) → separator 없음.
+        let size = tools_menu_size_for(0, 5, 4.0);
+        let needed = popup::CONTENT_MARGIN * 2.0 + 5.0 * ITEM_HEIGHT + 4.0 * 4.0;
+        assert!(size.y >= needed);
+    }
+
+    #[test]
+    fn empty_does_not_underflow() {
+        let size = tools_menu_size_for(0, 0, 4.0);
+        // total.max(1) 이 적용되어 최소 한 줄 분량은 확보된다.
+        assert!(size.y >= popup::CONTENT_MARGIN * 2.0 + ITEM_HEIGHT);
+    }
+
+    #[test]
+    fn scales_with_ui_scale_1_2() {
+        // ui_scale=1.2 → spacing ≈ 4.78. 4 항목 기준 spacing 누적이 늘어나도 fit.
+        let size = tools_menu_size_for(4, 0, 4.78);
+        let needed = popup::CONTENT_MARGIN * 2.0 + 4.0 * ITEM_HEIGHT + 3.0 * 4.78;
+        assert!(size.y >= needed);
     }
 }
