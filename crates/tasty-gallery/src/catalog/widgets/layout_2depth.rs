@@ -195,26 +195,30 @@ fn draw_content(ui: &mut egui::Ui, theme: &Theme) {
         .id_salt("layout_2depth_content_scroll")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(format!("Content: {top_label} / {sub_label}"))
-                    .color(egui::Color32::from(theme.text))
-                    .size(12.0),
-            );
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("(여기에 라벨 + 입력 위젯 grid)")
-                    .color(egui::Color32::from(theme.subtext0))
-                    .size(11.0),
-            );
-            ui.add_space(40.0);
-            // 스크롤 데모용 더미 행
-            for i in 0..30 {
-                ui.label(
-                    egui::RichText::new(format!("dummy row #{i}"))
-                        .color(egui::Color32::from(theme.subtext1))
-                        .size(11.0),
-                );
-            }
+            egui::Frame::new()
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(format!("Content: {top_label} / {sub_label}"))
+                            .color(egui::Color32::from(theme.text))
+                            .size(12.0),
+                    );
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new("(여기에 라벨 + 입력 위젯 grid)")
+                            .color(egui::Color32::from(theme.subtext0))
+                            .size(11.0),
+                    );
+                    ui.add_space(40.0);
+                    // 스크롤 데모용 더미 행
+                    for i in 0..30 {
+                        ui.label(
+                            egui::RichText::new(format!("dummy row #{i}"))
+                                .color(egui::Color32::from(theme.subtext1))
+                                .size(11.0),
+                        );
+                    }
+                });
         });
 }
 
