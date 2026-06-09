@@ -44,11 +44,6 @@ fn sub_tabs_for(top: usize) -> &'static [&'static str] {
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.label(
-        egui::RichText::new("Layout — 2 depth (Settings idiom)")
-            .color(egui::Color32::from(theme.text))
-            .heading(),
-    );
-    ui.label(
         egui::RichText::new(
             "본체 src/view/settings/ui.rs 의 *상단 탭 + sub tab + content + 하단 Save/Cancel* 패턴. \
              상단 탭은 가로 ScrollArea + overlay chevron (스크롤 필요시).",

@@ -42,11 +42,6 @@ const LIST_ITEMS: &[(&str, &str)] = &[
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.label(
-        egui::RichText::new("Layout — 1 depth (Plugins idiom)")
-            .color(egui::Color32::from(theme.text))
-            .heading(),
-    );
-    ui.label(
         egui::RichText::new(
             "본체 src/view/plugins/ui.rs 의 *상단 헤더 + 1단 탭 + 좌측 리스트 + 우측 디테일* 패턴.",
         )

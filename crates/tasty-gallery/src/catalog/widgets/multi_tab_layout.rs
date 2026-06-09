@@ -60,11 +60,6 @@ const SUBSUB_TABS: &[&str] = &["Light", "Dark", "Auto"];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.label(
-        egui::RichText::new("Multi-tier tab layout")
-            .color(egui::Color32::from(theme.text))
-            .heading(),
-    );
-    ui.label(
         egui::RichText::new(
             "본체 Settings / Layout Preset 의 다단 탭 레이아웃을 동일 idiom 으로 재현. \
              상단: 가로 ScrollArea + overlay 화살표 (스크롤 필요시만, alpha 0.4). \
