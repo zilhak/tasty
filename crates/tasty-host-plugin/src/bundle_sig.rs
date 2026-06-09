@@ -350,3 +350,176 @@ mod tests {
         assert_eq!(fp.len(), 64 + 31);
     }
 }
+
+/// `KnownPlugins` 와의 e2e 분기 — HOME 환경변수를 임시 디렉토리로 돌려 trust DB
+/// 를 격리한 뒤 `verify_bundle_signature` 의 multi-stage 동작을 검증.
+///
+/// Unix 한정: `directories::BaseDirs` 가 Unix 에서는 HOME 환경변수로 결정되지만
+/// Windows 에서는 `SHGetKnownFolderPath` 를 통해 결정되므로 env override 가 통하지
+/// 않는다. Windows 용 e2e 는 별도 `KnownPlugins::load_from(path)` API 도입 후 0.7+.
+#[cfg(all(test, unix))]
+mod integration_tests {
+    use super::*;
+    use crate::known_plugins::KnownPluginEntry;
+    use ed25519_dalek::{Signer, SigningKey};
+    use std::sync::Mutex;
+    use tempfile::TempDir;
+
+    /// HOME override race 방지용 글로벌 mutex — cargo test 의 병렬 실행에서
+    /// 두 테스트가 동시에 HOME 을 바꾸면 한 쪽이 다른 쪽의 디렉토리를 보게 된다.
+    static HOME_LOCK: Mutex<()> = Mutex::new(());
+
+    struct HomeOverride {
+        original: Option<std::ffi::OsString>,
+        // MutexGuard 이 살아있는 동안 다른 테스트가 HOME 을 못 만짐.
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl HomeOverride {
+        fn new(home: &Path) -> Self {
+            let guard = HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let original = std::env::var_os("HOME");
+            // SAFETY: 단일 스레드만이 HOME_LOCK 을 보유 — 다른 테스트의 동시 access 차단.
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
+            Self {
+                original,
+                _guard: guard,
+            }
+        }
+    }
+
+    impl Drop for HomeOverride {
+        fn drop(&mut self) {
+            match &self.original {
+                // SAFETY: lock 해제 이전, 단일 스레드.
+                Some(v) => unsafe { std::env::set_var("HOME", v) },
+                // SAFETY: lock 해제 이전, 단일 스레드.
+                None => unsafe { std::env::remove_var("HOME") },
+            }
+        }
+    }
+
+    /// 매니페스트 작성 + ed25519 signing — 매니페스트 digest 에 sk 서명.
+    fn make_bundle(
+        bundle_dir: &Path,
+        sk: &SigningKey,
+        plugin_id: &str,
+        perms: &[&str],
+    ) -> [u8; 32] {
+        let perms_toml = perms
+            .iter()
+            .map(|p| format!("\"{p}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let manifest =
+            format!("id = \"{plugin_id}\"\nversion = \"1.0.0\"\npermissions = [{perms_toml}]\n");
+        std::fs::write(bundle_dir.join("tasty-plugin.toml"), &manifest).unwrap();
+        let digest = Sha256::digest(manifest.as_bytes());
+        let sig = sk.sign(digest.as_slice()).to_bytes().to_vec();
+        std::fs::write(bundle_dir.join("tasty-plugin.toml.sig"), &sig).unwrap();
+        sk.verifying_key().to_bytes()
+    }
+
+    /// `~/.tasty/known-plugins.toml` 에 trust 항목 1 개 작성.
+    fn write_known_db(home: &Path, plugin_id: &str, pk: &[u8; 32], perms: &[&str]) {
+        let tasty_dir = home.join(".tasty");
+        std::fs::create_dir_all(&tasty_dir).unwrap();
+        let perms_lines = perms
+            .iter()
+            .map(|p| format!("\"{p}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let contents = format!(
+            "[plugins.\"{plugin_id}\"]\npubkey = \"{}\"\npermissions = [{perms_lines}]\ntrusted_at = \"2026-06-09T00:00:00Z\"\npublisher_fingerprint = \"\"\n",
+            KnownPluginEntry::encode_pubkey(pk),
+        );
+        std::fs::write(tasty_dir.join("known-plugins.toml"), contents).unwrap();
+    }
+
+    /// B-1: 임베드 키로는 검증 실패하지만 known_plugins.toml 의 trust 항목이
+    /// 일치 → `Trusted` 반환.
+    #[test]
+    fn known_plugins_trust_grants_trusted() {
+        let home_tmp = TempDir::new().unwrap();
+        let _g = HomeOverride::new(home_tmp.path());
+
+        let bundle_tmp = TempDir::new().unwrap();
+        let sk = SigningKey::from_bytes(&[99u8; 32]);
+        let perms = ["filesystem.read"];
+        let pk = make_bundle(bundle_tmp.path(), &sk, "com.example.bnk", &perms);
+        write_known_db(home_tmp.path(), "com.example.bnk", &pk, &perms);
+
+        let result = verify_bundle_signature(bundle_tmp.path()).unwrap();
+        assert!(
+            matches!(result, TrustDecision::Trusted),
+            "expected Trusted, got {result:?}"
+        );
+    }
+
+    /// B-2: known_plugins.toml 에는 권한 `["filesystem.read"]` 만 trust 했는데
+    /// 매니페스트는 `["filesystem.read", "network.outbound"]` 를 요구 → 권한 변경
+    /// 감지로 `Untrusted { PermissionsChanged }`.
+    #[test]
+    fn known_plugins_permission_change_yields_untrusted() {
+        let home_tmp = TempDir::new().unwrap();
+        let _g = HomeOverride::new(home_tmp.path());
+
+        let bundle_tmp = TempDir::new().unwrap();
+        let sk = SigningKey::from_bytes(&[88u8; 32]);
+        let manifest_perms = ["filesystem.read", "network.outbound"];
+        let old_perms = ["filesystem.read"];
+        let pk = make_bundle(bundle_tmp.path(), &sk, "com.example.pchg", &manifest_perms);
+        write_known_db(home_tmp.path(), "com.example.pchg", &pk, &old_perms);
+
+        let result = verify_bundle_signature(bundle_tmp.path()).unwrap();
+        match result {
+            TrustDecision::Untrusted {
+                reason,
+                plugin_id,
+                manifest_permissions,
+                ..
+            } => {
+                assert_eq!(reason, UntrustedReason::PermissionsChanged);
+                assert_eq!(plugin_id, "com.example.pchg");
+                assert_eq!(manifest_permissions.len(), 2);
+            }
+            other => panic!("expected PermissionsChanged, got {other:?}"),
+        }
+    }
+
+    /// B-3: placeholder embed pubkey + 빈 trust DB → 절대 `Trusted` 가 나오면 안 됨.
+    /// 현재 동작: `Untrusted { UnknownKey }` 또는 `Err(NoValidTrustedKeys)` 중 하나
+    /// (ed25519-dalek 버전에 따라 zero pubkey 의 `from_bytes` 결과가 다름).
+    ///
+    /// TODO(0.7+): release-pubkey.bin 이 zero 일 때 *build.rs* 가 cargo:warning 으로
+    /// 명시적 misconfig 안내. 본 테스트는 placeholder 인 동안 *invariant 만* 검증.
+    #[test]
+    fn placeholder_embed_with_empty_db_never_trusts() {
+        let home_tmp = TempDir::new().unwrap();
+        let _g = HomeOverride::new(home_tmp.path());
+
+        let bundle_tmp = TempDir::new().unwrap();
+        let sk = SigningKey::from_bytes(&[17u8; 32]);
+        // pk 반환값 무시 — placeholder 시나리오는 trust DB 가 비어 있어 어떤
+        // pubkey 로도 매칭이 일어나지 않는다.
+        let _pk = make_bundle(
+            bundle_tmp.path(),
+            &sk,
+            "com.example.ph",
+            &["filesystem.read"],
+        );
+
+        let result = verify_bundle_signature(bundle_tmp.path());
+        match result {
+            Ok(TrustDecision::Trusted) => panic!("placeholder must never grant Trusted"),
+            Ok(TrustDecision::Untrusted {
+                reason: UntrustedReason::UnknownKey,
+                ..
+            }) => {}
+            Err(SigVerifyError::NoValidTrustedKeys) => {}
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+}
