@@ -143,6 +143,10 @@ check_egui_window() {
 #   - crates/tasty-cli/*              : CLI 응답 출력 (tree, JSON, 에러 메시지 등
 #                                       — caller 가 stdout/stderr 로 수신)
 #   - crates/tasty-tui-simulator/*    : 테스트용 TUI simulator
+#   - **/build.rs                     : cargo build script — `cargo:warning=` /
+#                                       `cargo:rerun-if-changed=` 같은 directive 가
+#                                       println 으로만 가능 (build.rs 에선 tracing
+#                                       사용 불가)
 # 그 외 .rs 파일은 tracing::info!/warn!/error! 사용.
 check_println() {
     if [ -z "$STAGED_RS" ]; then return; fi
@@ -153,6 +157,8 @@ check_println() {
             src/boot/cli_routing.rs) continue ;;
             crates/tasty-cli/*) continue ;;
             crates/tasty-tui-simulator/*) continue ;;
+            build.rs) continue ;;
+            */build.rs) continue ;;
         esac
         local violation
         violation=$(git diff --cached -U0 -- "$f" \
