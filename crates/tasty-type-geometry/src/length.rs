@@ -1,10 +1,10 @@
-/// Type-safe pixel length types to prevent physical/logical pixel confusion at compile time.
-///
-/// - `PhysicalPx`: actual device pixels (used by GPU, wgpu, winit mouse coordinates)
-/// - `LogicalPx`: DPI-independent pixels (used by egui, Theme constants)
-///
-/// Direct assignment between the two is impossible. Conversion requires an explicit
-/// scale factor, making DPI-related bugs a compile error instead of a runtime surprise.
+//! Type-safe pixel length types to prevent physical/logical pixel confusion at compile time.
+//!
+//! - `PhysicalPx`: actual device pixels (used by GPU, wgpu, winit mouse coordinates)
+//! - `LogicalPx`: DPI-independent pixels (used by egui, Theme constants)
+//!
+//! Direct assignment between the two is impossible. Conversion requires an explicit
+//! scale factor, making DPI-related bugs a compile error instead of a runtime surprise.
 
 /// A length in physical (device) pixels.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
