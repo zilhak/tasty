@@ -649,10 +649,8 @@ pub fn upgrade_builtins(
             }
         }
     }
-    if removed_cleared {
-        if let Err(e) = mgr.config.save() {
-            tracing::warn!("upgrade_builtins: save plugins.toml after unmark failed: {e}");
-        }
+    if removed_cleared && let Err(e) = mgr.config.save() {
+        tracing::warn!("upgrade_builtins: save plugins.toml after unmark failed: {e}");
     }
 
     for spec in BUILTINS {
@@ -806,25 +804,21 @@ pub fn upgrade_builtins(
             BuiltinUpgradeDecision::UpgradeVersion { from, to } => {
                 tracing::info!("upgrading builtin '{}' v{} → v{}", spec.id, from, to);
                 let should_swap = restart_running && mgr.is_running(spec.id);
-                if should_swap {
-                    if let Err(e) = mgr.swap_shutdown_internal(spec.id) {
-                        items.push(BuiltinUpgradeItem {
-                            id: spec.id.into(),
-                            action: BuiltinUpgradeAction::Failed {
-                                reason: format!("swap-shutdown-failed: {e}"),
-                            },
-                        });
-                        continue;
-                    }
+                if should_swap && let Err(e) = mgr.swap_shutdown_internal(spec.id) {
+                    items.push(BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Failed {
+                            reason: format!("swap-shutdown-failed: {e}"),
+                        },
+                    });
+                    continue;
                 }
                 if let Err(e) = overwrite_builtin_dir(&src, &dest) {
-                    if should_swap {
-                        if let Err(re) = mgr.swap_respawn_internal(spec.id) {
-                            tracing::warn!(
-                                "respawn after failed overwrite of '{}' failed: {re}",
-                                spec.id
-                            );
-                        }
+                    if should_swap && let Err(re) = mgr.swap_respawn_internal(spec.id) {
+                        tracing::warn!(
+                            "respawn after failed overwrite of '{}' failed: {re}",
+                            spec.id
+                        );
                     }
                     items.push(BuiltinUpgradeItem {
                         id: spec.id.into(),
@@ -860,25 +854,21 @@ pub fn upgrade_builtins(
                     bundle_v.as_ref().map(|v| v.to_string()),
                 );
                 let should_swap = restart_running && mgr.is_running(spec.id);
-                if should_swap {
-                    if let Err(e) = mgr.swap_shutdown_internal(spec.id) {
-                        items.push(BuiltinUpgradeItem {
-                            id: spec.id.into(),
-                            action: BuiltinUpgradeAction::Failed {
-                                reason: format!("swap-shutdown-failed: {e}"),
-                            },
-                        });
-                        continue;
-                    }
+                if should_swap && let Err(e) = mgr.swap_shutdown_internal(spec.id) {
+                    items.push(BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Failed {
+                            reason: format!("swap-shutdown-failed: {e}"),
+                        },
+                    });
+                    continue;
                 }
                 if let Err(e) = overwrite_builtin_dir(&src, &dest) {
-                    if should_swap {
-                        if let Err(re) = mgr.swap_respawn_internal(spec.id) {
-                            tracing::warn!(
-                                "respawn after failed overwrite of '{}' failed: {re}",
-                                spec.id
-                            );
-                        }
+                    if should_swap && let Err(re) = mgr.swap_respawn_internal(spec.id) {
+                        tracing::warn!(
+                            "respawn after failed overwrite of '{}' failed: {re}",
+                            spec.id
+                        );
                     }
                     items.push(BuiltinUpgradeItem {
                         id: spec.id.into(),
@@ -932,10 +922,8 @@ pub fn upgrade_builtins(
                 }
             }
         }
-        if config_dirty {
-            if let Err(e) = mgr.config.save() {
-                tracing::warn!("upgrade_builtins: save plugins.toml failed: {e}");
-            }
+        if config_dirty && let Err(e) = mgr.config.save() {
+            tracing::warn!("upgrade_builtins: save plugins.toml failed: {e}");
         }
     }
 
