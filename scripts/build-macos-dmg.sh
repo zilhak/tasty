@@ -62,6 +62,20 @@ for c in "${PLUGIN_CRATES[@]}"; do
 done
 cargo build $CARGO_FLAGS "${PLUGIN_CARGO_ARGS[@]}"
 
+# release/dist builds: sign all plugin manifests (Ed25519). The runtime
+# loader (`bundle_sig.rs`) rejects unsigned plugins in non-debug builds.
+# Debug builds skip signing — `builtin.rs` warns instead of rejecting.
+if [[ "$PROFILE" != "debug" ]]; then
+    SIGN_KEY_PATH="${SIGN_KEY_PATH:-$HOME/.tasty-keys/release.pem}"
+    if [[ ! -f "$SIGN_KEY_PATH" ]]; then
+        echo "Error: signing key not found: $SIGN_KEY_PATH" >&2
+        echo "  Set SIGN_KEY_PATH or generate a dev key (scripts/gen-dev-key.sh)." >&2
+        exit 1
+    fi
+    echo "==> Signing plugin manifests with $SIGN_KEY_PATH..."
+    ./scripts/sign-bundle.sh --key "$SIGN_KEY_PATH" --all-builtins
+fi
+
 echo "==> Assembling $APP_NAME.app..."
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
@@ -91,6 +105,14 @@ for c in "${PLUGIN_CRATES[@]}"; do
     mkdir -p "$dest"
     cp "$src_bin" "$dest/$c"
     cp "$manifest" "$dest/tasty-plugin.toml"
+    # .sig sidecar — produced by sign-bundle.sh above; required for non-debug
+    # builds, optional otherwise (debug runtime warns instead of rejecting).
+    if [[ -f "crates/$c/tasty-plugin.toml.sig" ]]; then
+        cp "crates/$c/tasty-plugin.toml.sig" "$dest/tasty-plugin.toml.sig"
+    elif [[ "$PROFILE" != "debug" ]]; then
+        echo "Error: missing crates/$c/tasty-plugin.toml.sig (signing failed?)" >&2
+        exit 1
+    fi
     if [[ -d "crates/$c/lang" ]]; then
         rm -rf "$dest/lang"
         cp -R "crates/$c/lang" "$dest/lang"

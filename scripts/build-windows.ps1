@@ -85,6 +85,31 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# release/dist builds: sign all plugin manifests (Ed25519). The runtime
+# loader (`bundle_sig.rs`) rejects unsigned plugins in non-debug builds.
+# Debug builds skip signing — `builtin.rs` warns instead of rejecting.
+if ($BuildProfile -ne "debug") {
+    $SignKeyPath = $env:SIGN_KEY_PATH
+    if (-not $SignKeyPath) {
+        $SignKeyPath = Join-Path $env:USERPROFILE ".tasty-keys\release.pem"
+    }
+    if (-not (Test-Path $SignKeyPath)) {
+        Write-Error "Signing key not found: $SignKeyPath. Set SIGN_KEY_PATH or generate a dev key (scripts/gen-dev-key.sh)."
+        exit 1
+    }
+    $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+    if (-not $bashCmd) {
+        Write-Error "bash not found in PATH. Install Git Bash or WSL to run scripts/sign-bundle.sh."
+        exit 1
+    }
+    Write-Host "==> Signing plugin manifests with $SignKeyPath..."
+    & bash ./scripts/sign-bundle.sh --key $SignKeyPath --all-builtins
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "sign-bundle.sh failed with exit code $LASTEXITCODE"
+        exit 1
+    }
+}
+
 # Stage plugins under <dest>\<id>\. Mirrors macOS build-macos-dmg.sh staging.
 # `bundle_root()` (crates\tasty-host-plugin\src\builtin.rs) discovers
 # `<exe_dir>\plugins\` and syncs each `<plugin-id>\` into
@@ -109,6 +134,15 @@ function Stage-Plugins {
         New-Item -ItemType Directory -Force -Path $dest | Out-Null
         Copy-Item $srcBin -Destination (Join-Path $dest "$c.exe")
         Copy-Item $manifest -Destination (Join-Path $dest "tasty-plugin.toml")
+        # .sig sidecar — produced by sign-bundle.sh above; required for non-debug
+        # builds, optional otherwise (debug runtime warns instead of rejecting).
+        $sigPath = Join-Path "crates" (Join-Path $c "tasty-plugin.toml.sig")
+        if (Test-Path $sigPath) {
+            Copy-Item $sigPath -Destination (Join-Path $dest "tasty-plugin.toml.sig")
+        } elseif ($BuildProfile -ne "debug") {
+            Write-Error "Missing $sigPath (signing failed?)"
+            exit 1
+        }
         $langDir = Join-Path "crates" (Join-Path $c "lang")
         if (Test-Path $langDir) {
             $destLang = Join-Path $dest "lang"
