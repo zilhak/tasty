@@ -493,6 +493,8 @@ impl MainView {
                     move_down,
                     MenuItem::separator(),
                     MenuItem::new(5, crate::i18n::t("preset.context.save_as_workspace_preset")),
+                    MenuItem::separator(),
+                    MenuItem::new(6, crate::i18n::t("context_menu.close_workspace")),
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -544,6 +546,14 @@ impl MainView {
                                     crate::adapters::ui::ToastKind::Error,
                                     crate::adapters::ui::ToastScope::Window,
                                 );
+                            }
+                        }
+                        Some(6) => {
+                            // Close workspace (모든 surface + closed_item snapshot)
+                            if self.state.close_workspace_at(engine, ws_idx)
+                                && engine.workspaces.is_empty()
+                            {
+                                self.request_close();
                             }
                         }
                         _ => {}

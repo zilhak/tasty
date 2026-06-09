@@ -398,6 +398,7 @@ rename_title = "이름 변경"
 rename_subtitle = "부제목 변경"
 move_up = "위로 이동"
 move_down = "아래로 이동"
+close_workspace = "워크스페이스 닫기"
 
 [rename_dialog]
 title_heading = "워크스페이스 이름 변경"

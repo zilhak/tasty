@@ -62,10 +62,15 @@ impl AppState {
     /// Close the active workspace. Returns true if the workspace was removed.
     /// Cleans up all surfaces (surface meta + per-surface view state) in the workspace.
     pub fn close_active_workspace(&mut self, engine: &mut CoreState) -> bool {
-        if engine.workspaces.is_empty() {
+        self.close_workspace_at(engine, self.active_workspace)
+    }
+
+    /// Close a specific workspace by index (context menu 등 임의 지정 close).
+    /// Cleans up all surfaces + closed_item snapshot + memory scope purge.
+    pub fn close_workspace_at(&mut self, engine: &mut CoreState, ws_idx: usize) -> bool {
+        if ws_idx >= engine.workspaces.len() {
             return false;
         }
-        let ws_idx = self.active_workspace;
         // Capture workspace snapshot before closing
         let snapshot = {
             let mut snap_fn =

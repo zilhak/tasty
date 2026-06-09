@@ -398,6 +398,7 @@ rename_title = "Rename"
 rename_subtitle = "Change Subtitle"
 move_up = "Move Up"
 move_down = "Move Down"
+close_workspace = "Close Workspace"
 
 [rename_dialog]
 title_heading = "Rename Workspace"
