@@ -318,21 +318,17 @@ pub fn draw_settings_panel(
             tabs.push((SettingsTab::Updates, t("settings.tab.updates")));
 
             // 윈도우 최소 폭에서 모든 탭이 한 줄에 안 들어갈 수 있다 (UI scale=large
-            // 일 때 빈번). 가로 ScrollArea + 좌우 화살표 버튼으로 우측 잘림 회피.
+            // 일 때 빈번). 가로 ScrollArea + 좌우 화살표로 우측 잘림 회피.
+            // - 화살표는 *콘텐츠 width 가 viewport 보다 클 때만* 표시 (스크롤 필요시)
+            // - 영역을 차지하지 않고 탭 위에 alpha 0.4 overlay 로 표시
             // 한 step 스크롤 거리: 평균 탭 너비 ~80px 기준.
             const SCROLL_STEP: f32 = 80.0;
-            let arrow_size = ui.spacing().interact_size.y;
-
-            let left = ui.add(egui::Button::new("◀").min_size(egui::vec2(arrow_size, arrow_size)));
-
-            // 우측 화살표 자리 확보 + 약간의 spacing.
-            let avail = (ui.available_width() - arrow_size - ui.spacing().item_spacing.x).max(0.0);
 
             let output = egui::ScrollArea::horizontal()
                 .id_salt("settings_tabs_scroll")
                 .auto_shrink([false, true])
                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                .max_width(avail)
+                .max_width(ui.available_width())
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         for (tab, label) in &tabs {
@@ -344,18 +340,53 @@ pub fn draw_settings_panel(
                     });
                 });
 
-            let right = ui.add(egui::Button::new("▶").min_size(egui::vec2(arrow_size, arrow_size)));
-
-            // 좌/우 클릭 → ScrollArea state 갱신 후 다음 프레임 적용.
             let viewport_w = output.inner_rect.width();
             let content_w = output.content_size.x;
+            let needs_scroll = content_w > viewport_w + 0.5;
+
+            // 화살표 overlay — needs_scroll 시에만, 탭 영역 위에 떠 있음.
             let max_offset = (content_w - viewport_w).max(0.0);
             let mut new_offset = output.state.offset.x;
-            if left.clicked() {
-                new_offset = (new_offset - SCROLL_STEP).max(0.0);
-            }
-            if right.clicked() {
-                new_offset = (new_offset + SCROLL_STEP).min(max_offset);
+            if needs_scroll {
+                let bar_rect = output.inner_rect;
+                let arrow_font_size = 14.0_f32;
+                let arrow_area_w = arrow_font_size * 1.6;
+                let arrow_color = ui.style().visuals.text_color().gamma_multiply(0.4);
+
+                let left_rect = egui::Rect::from_min_size(
+                    bar_rect.left_top(),
+                    egui::vec2(arrow_area_w, bar_rect.height()),
+                );
+                let right_rect = egui::Rect::from_min_max(
+                    egui::pos2(bar_rect.right() - arrow_area_w, bar_rect.top()),
+                    bar_rect.right_bottom(),
+                );
+                let left_btn = ui.put(
+                    left_rect,
+                    egui::Button::new(
+                        egui::RichText::new("◀")
+                            .color(arrow_color)
+                            .size(arrow_font_size),
+                    )
+                    .frame(false)
+                    .min_size(left_rect.size()),
+                );
+                let right_btn = ui.put(
+                    right_rect,
+                    egui::Button::new(
+                        egui::RichText::new("▶")
+                            .color(arrow_color)
+                            .size(arrow_font_size),
+                    )
+                    .frame(false)
+                    .min_size(right_rect.size()),
+                );
+                if left_btn.clicked() {
+                    new_offset = (new_offset - SCROLL_STEP).max(0.0);
+                }
+                if right_btn.clicked() {
+                    new_offset = (new_offset + SCROLL_STEP).min(max_offset);
+                }
             }
             if (new_offset - output.state.offset.x).abs() > f32::EPSILON {
                 let mut s = output.state;
