@@ -47,8 +47,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Decode release signing key
+        env:
+          KEY_B64: ${{ secrets.TASTY_RELEASE_SIGN_KEY }}
+        run: |
+          if [ -z "$KEY_B64" ]; then
+            echo "::error::TASTY_RELEASE_SIGN_KEY secret is not set"
+            exit 1
+          fi
+          KEY_DIR="$RUNNER_TEMP/tasty-keys"
+          mkdir -p "$KEY_DIR"
+          chmod 700 "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/release.pem"
+          printf '%s' "$KEY_B64" | base64 -d > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "TASTY_SIGN_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "::add-mask::$KEY_PATH"
+
+      - name: Sign plugin manifests
+        run: bash scripts/sign-bundle.sh --key "$TASTY_SIGN_KEY" --all-builtins
+
       - name: Build DMG
         run: bash scripts/build-macos-dmg.sh
+
+      - name: Wipe release signing key
+        if: always()
+        run: |
+          if [ -n "${TASTY_SIGN_KEY:-}" ] && [ -f "$TASTY_SIGN_KEY" ]; then
+            rm -f "$TASTY_SIGN_KEY"
+          fi
+          rm -rf "$RUNNER_TEMP/tasty-keys"
 
       - name: Upload to release
         if: github.event_name == 'push'
@@ -70,9 +98,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Decode release signing key
+        shell: pwsh
+        env:
+          KEY_B64: ${{ secrets.TASTY_RELEASE_SIGN_KEY }}
+        run: |
+          if (-not $env:KEY_B64) {
+            Write-Error "TASTY_RELEASE_SIGN_KEY secret is not set"
+            exit 1
+          }
+          $KeyDir = Join-Path $env:RUNNER_TEMP "tasty-keys"
+          New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
+          $KeyPath = Join-Path $KeyDir "release.pem"
+          [IO.File]::WriteAllBytes($KeyPath, [Convert]::FromBase64String($env:KEY_B64))
+          "TASTY_SIGN_KEY=$KeyPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "::add-mask::$KeyPath"
+
+      - name: Sign plugin manifests
+        shell: bash
+        run: bash scripts/sign-bundle.sh --key "$TASTY_SIGN_KEY" --all-builtins
+
       - name: Build ZIP and MSI
         shell: pwsh
         run: ./scripts/build-windows.ps1
+
+      - name: Wipe release signing key
+        if: always()
+        shell: pwsh
+        run: |
+          $KeyDir = Join-Path $env:RUNNER_TEMP "tasty-keys"
+          Remove-Item -Recurse -Force $KeyDir -ErrorAction SilentlyContinue
 
       - name: Upload to release
         if: github.event_name == 'push'
@@ -102,8 +157,36 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Decode release signing key
+        env:
+          KEY_B64: ${{ secrets.TASTY_RELEASE_SIGN_KEY }}
+        run: |
+          if [ -z "$KEY_B64" ]; then
+            echo "::error::TASTY_RELEASE_SIGN_KEY secret is not set"
+            exit 1
+          fi
+          KEY_DIR="$RUNNER_TEMP/tasty-keys"
+          mkdir -p "$KEY_DIR"
+          chmod 700 "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/release.pem"
+          printf '%s' "$KEY_B64" | base64 -d > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "TASTY_SIGN_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "::add-mask::$KEY_PATH"
+
+      - name: Sign plugin manifests
+        run: bash scripts/sign-bundle.sh --key "$TASTY_SIGN_KEY" --all-builtins
+
       - name: Build tar.gz + deb + rpm + AppImage
         run: bash scripts/build-linux.sh
+
+      - name: Wipe release signing key
+        if: always()
+        run: |
+          if [ -n "${TASTY_SIGN_KEY:-}" ] && [ -f "$TASTY_SIGN_KEY" ]; then
+            rm -f "$TASTY_SIGN_KEY"
+          fi
+          rm -rf "$RUNNER_TEMP/tasty-keys"
 
       - name: Upload to release
         if: github.event_name == 'push'
@@ -133,8 +216,36 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Decode release signing key
+        env:
+          KEY_B64: ${{ secrets.TASTY_RELEASE_SIGN_KEY }}
+        run: |
+          if [ -z "$KEY_B64" ]; then
+            echo "::error::TASTY_RELEASE_SIGN_KEY secret is not set"
+            exit 1
+          fi
+          KEY_DIR="$RUNNER_TEMP/tasty-keys"
+          mkdir -p "$KEY_DIR"
+          chmod 700 "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/release.pem"
+          printf '%s' "$KEY_B64" | base64 -d > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "TASTY_SIGN_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+          echo "::add-mask::$KEY_PATH"
+
+      - name: Sign plugin manifests
+        run: bash scripts/sign-bundle.sh --key "$TASTY_SIGN_KEY" --all-builtins
+
       - name: Build tar.gz + deb + rpm + AppImage
         run: bash scripts/build-linux.sh
+
+      - name: Wipe release signing key
+        if: always()
+        run: |
+          if [ -n "${TASTY_SIGN_KEY:-}" ] && [ -f "$TASTY_SIGN_KEY" ]; then
+            rm -f "$TASTY_SIGN_KEY"
+          fi
+          rm -rf "$RUNNER_TEMP/tasty-keys"
 
       - name: Upload to release
         if: github.event_name == 'push'
