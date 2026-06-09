@@ -90,8 +90,13 @@ pub fn all() -> Vec<CatalogItem> {
             draw: components::tab_bar::draw,
         },
         CatalogItem {
+<<<<<<< HEAD
             name: "Popup — Rename (workspace / tab)",
             draw: components::rename_popup::draw,
+=======
+            name: "Component — Toast Stack (Tier 3)",
+            draw: components::toast::draw,
+>>>>>>> ef838ae2 (feat(gallery): add toast catalog demo)
         },
     ]
 }
