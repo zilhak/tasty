@@ -53,5 +53,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Popup — Markdown Open",
             draw: components::markdown_open::draw,
         },
+        CatalogItem {
+            name: "Popup — Update (Tier 3)",
+            draw: components::update::draw,
+        },
     ]
 }
