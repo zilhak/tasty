@@ -159,5 +159,15 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Overlay — Surface Highlights",
             draw: components::surface_highlights::draw,
         },
+        CatalogItem {
+            category: Category::Layout,
+            name: "Layout — 1 depth (Plugins idiom)",
+            draw: widgets::layout_1depth::draw,
+        },
+        CatalogItem {
+            category: Category::Layout,
+            name: "Layout — 2 depth (Settings idiom)",
+            draw: widgets::layout_2depth::draw,
+        },
     ]
 }
