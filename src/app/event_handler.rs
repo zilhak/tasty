@@ -381,6 +381,12 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Normal mode — find the window by ID and delegate
         if let WindowEvent::CloseRequested = &event {
+            // PresetView (modeless editor) — 바로 닫힌다. quit 흐름 거치지 않음.
+            // 메인 윈도우 개수와 무관하게 자기 자신만 닫는 게 의도된 동작.
+            if self.preset_view_id == Some(id) {
+                self.on_preset_window_closed(id);
+                return;
+            }
             // MainView 개수 기준으로 판단 (모달은 수에 포함되지 않음)
             let main_window_count = self
                 .view
