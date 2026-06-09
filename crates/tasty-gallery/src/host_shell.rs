@@ -4,11 +4,57 @@ use tasty_type_appearance::theme::Theme;
 
 use crate::catalog::{self, CatalogItem, Category};
 
+/// 갤러리에 노출하는 빌트인 테마 식별자.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeId {
+    Mocha,
+    Latte,
+}
+
+impl ThemeId {
+    fn label(self) -> &'static str {
+        match self {
+            ThemeId::Mocha => "Mocha",
+            ThemeId::Latte => "Latte",
+        }
+    }
+
+    fn all() -> &'static [ThemeId] {
+        &[ThemeId::Mocha, ThemeId::Latte]
+    }
+
+    /// 해당 id 의 *기본 색상 세트* 를 만들고 base mode 를 적용해 Theme 으로 반환.
+    fn build(self, is_light: bool) -> Theme {
+        let mut t = match self {
+            ThemeId::Mocha => tasty_themes::mocha_fallback(),
+            ThemeId::Latte => latte_theme(),
+        };
+        t.set_is_light(is_light);
+        t
+    }
+}
+
+/// 빌트인 `LATTE_TOML_TEXT` 를 Mocha base 위에 partial 로 적용해 Theme 생성.
+/// `mocha_fallback()` 과 대칭되는 helper. 실패는 갤러리에서 panic 해도 무방
+/// (TOML 텍스트는 crate 에 박혀 있음).
+fn latte_theme() -> Theme {
+    use tasty_type_appearance::theme::Theme as ThemeStruct;
+    let file = tasty_themes::ThemeFile::parse(tasty_themes::LATTE_TOML_TEXT)
+        .expect("builtin latte.toml ships valid");
+    let (partial, is_light) = file.to_partial();
+    let mut colors = tasty_themes::mocha_fallback_colors();
+    colors.apply_partial(&partial);
+    ThemeStruct::with_colors(colors, is_light.unwrap_or(true))
+}
+
 /// 갤러리 전역 상태.
 pub struct GalleryState {
     /// 현재 적용 중인 테마. 본체 글로벌 (`tasty_themes::theme()`) 과 격리된
     /// 갤러리 전용 인스턴스 — dropdown 토글이 본체 색에 영향을 주지 않는다.
     pub theme: Theme,
+    /// 콤보에서 선택된 테마 식별자. `theme` 자체에는 보존되지 않는 정보
+    /// (Theme 구조체는 id 를 모름) 라 별도 보관.
+    pub theme_id: ThemeId,
     pub items: Vec<CatalogItem>,
     /// 현재 선택된 카탈로그 항목의 *전역* index (`items` 기준).
     pub selected: usize,
@@ -27,8 +73,11 @@ impl GalleryState {
             .first()
             .map(|i| i.category)
             .unwrap_or(Category::Appearance);
+        let theme_id = ThemeId::Mocha;
+        let theme = theme_id.build(false);
         Self {
-            theme: tasty_themes::mocha_fallback(),
+            theme,
+            theme_id,
             items,
             selected: 0,
             active_category,
@@ -55,32 +104,29 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
     egui::TopBottomPanel::top("gallery_toolbar").show(ctx, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
+            // Theme 선택 (Mocha / Latte). base mode (light/dark) 토글은 옆 별도.
             ui.label("Theme:");
-            let label = if state.theme.is_light {
-                "Mocha (light base)"
-            } else {
-                "Mocha (dark base)"
-            };
             egui::ComboBox::from_id_salt("theme_combo")
-                .selected_text(label)
+                .selected_text(state.theme_id.label())
                 .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(!state.theme.is_light, "Mocha (dark base)")
-                        .clicked()
-                        && state.theme.is_light
-                    {
-                        state.theme.set_is_light(false);
-                        state.needs_reapply = true;
-                    }
-                    if ui
-                        .selectable_label(state.theme.is_light, "Mocha (light base)")
-                        .clicked()
-                        && !state.theme.is_light
-                    {
-                        state.theme.set_is_light(true);
-                        state.needs_reapply = true;
+                    for id in ThemeId::all() {
+                        let selected = state.theme_id == *id;
+                        if ui.selectable_label(selected, id.label()).clicked() && !selected {
+                            state.theme_id = *id;
+                            state.theme = id.build(state.theme.is_light);
+                            state.needs_reapply = true;
+                        }
                     }
                 });
+
+            ui.label("Base:");
+            for (label, is_light) in [("Dark", false), ("Light", true)] {
+                let selected = state.theme.is_light == is_light;
+                if ui.selectable_label(selected, label).clicked() && !selected {
+                    state.theme.set_is_light(is_light);
+                    state.needs_reapply = true;
+                }
+            }
 
             ui.separator();
             ui.label("UI scale:");
