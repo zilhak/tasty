@@ -164,6 +164,25 @@ fn parse_manifest_basics(dir: &Path) -> (String, Vec<String>) {
     (plugin_id, permissions)
 }
 
+/// 외부 publisher 가 동봉한 `tasty-plugin.toml.pub` sidecar 를 읽어
+/// raw 32 byte ed25519 pubkey 를 반환. 파일이 없거나 길이가 다르면 None.
+///
+/// 본 함수는 [`verify_bundle_signature`] 의 *core 검증* 에는 참여하지 않는다.
+/// `TrustDecision::Untrusted { UnknownKey, .. }` 인 plugin 을 사용자가 trust
+/// 하기로 결정했을 때, [`crate::known_plugins::KnownPluginEntry::pubkey`] 에
+/// 저장할 raw pubkey 를 얻기 위한 *trust 저장 시점 helper*. signature 자체는
+/// pubkey 를 노출하지 않으므로 publisher 가 sidecar 로 제공해야 trust 가 가능.
+pub fn read_pubkey_sidecar(dir: &Path) -> Option<[u8; 32]> {
+    let path = dir.join("tasty-plugin.toml.pub");
+    let bytes = std::fs::read(&path).ok()?;
+    if bytes.len() != 32 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Some(out)
+}
+
 /// 32 byte ed25519 pubkey 의 SHA-256 fingerprint (hex, 콜론 구분).
 pub fn pubkey_fingerprint(pk: &[u8; 32]) -> String {
     let digest = Sha256::digest(pk);
@@ -339,6 +358,70 @@ mod tests {
             Err(SigVerifyError::NoValidTrustedKeys) => {}
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn pubkey_sidecar_reads_32_byte_file() {
+        let tmp = TempDir::new().unwrap();
+        let pk = [0x55u8; 32];
+        std::fs::write(tmp.path().join("tasty-plugin.toml.pub"), pk).unwrap();
+        assert_eq!(read_pubkey_sidecar(tmp.path()), Some(pk));
+    }
+
+    #[test]
+    fn pubkey_sidecar_rejects_wrong_length() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("tasty-plugin.toml.pub"), [0u8; 16]).unwrap();
+        assert_eq!(read_pubkey_sidecar(tmp.path()), None);
+    }
+
+    #[test]
+    fn pubkey_sidecar_missing_returns_none() {
+        let tmp = TempDir::new().unwrap();
+        assert_eq!(read_pubkey_sidecar(tmp.path()), None);
+    }
+
+    /// 시나리오: 외부 publisher 가 자체 key 로 서명 → 임베드 키 mismatch.
+    /// `verify_bundle_signature` 는 `Untrusted` 반환해야 함 (Add UI 가 빨간 경고).
+    /// 또한 `.pub` sidecar 가 있으면 trust 저장에 필요한 raw pubkey 가 동봉됨.
+    #[test]
+    fn untrusted_external_signer_with_pubkey_sidecar() {
+        let sk = SigningKey::from_bytes(&[99u8; 32]);
+        let vk = sk.verifying_key();
+        let tmp = TempDir::new().unwrap();
+        let manifest = b"id = \"com.example.extp\"\nversion = \"0.1.0\"\n";
+        write_manifest(tmp.path(), std::str::from_utf8(manifest).unwrap());
+        write_sig(tmp.path(), &sign_digest(&sk, manifest));
+        std::fs::write(
+            tmp.path().join("tasty-plugin.toml.pub"),
+            vk.to_bytes().as_slice(),
+        )
+        .unwrap();
+
+        // verify_bundle_signature 는 Untrusted (UnknownKey) — 단, placeholder
+        // 키 환경에서는 NoValidTrustedKeys 도 가능 (테스트 환경 의존).
+        match verify_bundle_signature(tmp.path()) {
+            Ok(TrustDecision::Untrusted { reason, .. }) => {
+                assert_eq!(reason, UntrustedReason::UnknownKey);
+            }
+            Err(SigVerifyError::NoValidTrustedKeys) => {} // placeholder key 환경
+            other => panic!("expected Untrusted/UnknownKey, got {other:?}"),
+        }
+
+        // `.pub` sidecar 로 publisher pubkey 를 추출 가능 → Add UI 가
+        // TrustAndInstall 액션을 enqueue 할 수 있음.
+        assert_eq!(read_pubkey_sidecar(tmp.path()), Some(vk.to_bytes()));
+    }
+
+    #[test]
+    fn untrusted_external_signer_without_pubkey_sidecar() {
+        let sk = SigningKey::from_bytes(&[88u8; 32]);
+        let tmp = TempDir::new().unwrap();
+        let manifest = b"id = \"com.example.nopub\"\nversion = \"0.1.0\"\n";
+        write_manifest(tmp.path(), std::str::from_utf8(manifest).unwrap());
+        write_sig(tmp.path(), &sign_digest(&sk, manifest));
+        // sidecar 없음 → Add UI 가 UntrustedNoPubkey 분기, install 차단.
+        assert!(read_pubkey_sidecar(tmp.path()).is_none());
     }
 
     #[test]
