@@ -22,22 +22,14 @@ thread_local! {
 }
 
 const TOP_TABS: &[&str] = &[
-    "General",
-    "Terminal",
-    "Appearance",
-    "Clipboard",
-    "Notifications",
-    "Keybindings",
-    "Accessibility",
-    "File Handler",
-    "Updates",
+    "Tab1", "Tab2", "Tab3", "Tab4", "Tab5", "Tab6", "Tab7", "Tab8", "Tab9",
 ];
 
-// 활성 탭의 sub tab (없으면 빈 슬라이스).
+// 활성 탭의 sub tab (없으면 빈 슬라이스). index 기반 — Tab3 / Tab8 만 sub 보유.
 fn sub_tabs_for(top: usize) -> &'static [&'static str] {
-    match TOP_TABS.get(top).copied() {
-        Some("Appearance") => &["Tasty", "Theme", "Editor"],
-        Some("File Handler") => &["Detectors", "Handlers", "Extension Mapping"],
+    match top {
+        2 => &["Sub1", "Sub2", "Sub3"],
+        7 => &["Sub1", "Sub2", "Sub3"],
         _ => &[],
     }
 }

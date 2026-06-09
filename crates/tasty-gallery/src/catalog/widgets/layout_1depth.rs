@@ -30,14 +30,14 @@ thread_local! {
 }
 
 const LIST_ITEMS: &[(&str, &str)] = &[
-    ("Claude", "enabled"),
-    ("Codex", "enabled"),
-    ("Explorer", "disabled"),
-    ("Git Viewer", "enabled"),
-    ("Markdown", "enabled"),
-    ("Clipboard History", "enabled"),
-    ("HTML", "enabled"),
-    ("Image", "disabled"),
+    ("Menu1", "enabled"),
+    ("Menu2", "enabled"),
+    ("Menu3", "disabled"),
+    ("Menu4", "enabled"),
+    ("Menu5", "enabled"),
+    ("Menu6", "enabled"),
+    ("Menu7", "enabled"),
+    ("Menu8", "disabled"),
 ];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
