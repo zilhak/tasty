@@ -1,9 +1,11 @@
-//! Layout — 2depth (Settings 창 idiom).
+//! Layout — 2depth (Settings → Keybindings 탭 idiom).
 //!
-//! 본체 `src/view/settings/ui.rs::draw_settings_panel` 의 *상단 탭 + sub tab + 콘텐츠 + 하단 Save/Cancel* 패턴 재현.
+//! 본체 `src/view/settings/ui/keybindings_tab.rs::draw_keybindings_tab` 의
+//! *상단 1depth 탭 + 좌측 2depth 메뉴 + 우측 콘텐츠 + 하단 Save/Cancel* 패턴 재현.
+//!
 //! - 상단: 가로 스크롤 가능 탭바 + overlay chevron 화살표 (스크롤 필요시)
-//! - 중간: 활성 탭의 sub tab 바 (해당 탭이 sub 를 가질 때만)
-//! - 콘텐츠: 분기된 form 영역
+//! - 좌측: 고정 폭 (100px) `Frame` 패널 — `vertical` `selectable_label` 리스트
+//! - 우측: 활성 (top, sub) 조합에 따른 콘텐츠
 //! - 하단: Save / Cancel 버튼 영역
 //!
 //! Theme 만 의존. 본체 binary 미의존.
@@ -25,19 +27,14 @@ const TOP_TABS: &[&str] = &[
     "Tab1", "Tab2", "Tab3", "Tab4", "Tab5", "Tab6", "Tab7", "Tab8", "Tab9",
 ];
 
-// 활성 탭의 sub tab (없으면 빈 슬라이스). index 기반 — Tab3 / Tab8 만 sub 보유.
-fn sub_tabs_for(top: usize) -> &'static [&'static str] {
-    match top {
-        2 => &["Sub1", "Sub2", "Sub3"],
-        7 => &["Sub1", "Sub2", "Sub3"],
-        _ => &[],
-    }
-}
+// 모든 top tab 이 좌측 sub menu 를 가진다 (단축키 탭 idiom — 항상 좌측 패널 노출).
+const SUB_TABS: &[&str] = &["Sub1", "Sub2", "Sub3", "Sub4", "Sub5"];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.label(
         egui::RichText::new(
-            "본체 src/view/settings/ui.rs 의 *상단 탭 + sub tab + content + 하단 Save/Cancel* 패턴. \
+            "본체 src/view/settings/ui/keybindings_tab.rs 의 \
+             *상단 1depth 탭 + 좌측 2depth 메뉴 + 우측 콘텐츠 + 하단 Save/Cancel* 패턴. \
              상단 탭은 가로 ScrollArea + overlay chevron (스크롤 필요시).",
         )
         .color(egui::Color32::from(theme.subtext0))
@@ -60,12 +57,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             |ui| {
                 draw_top_tabs(ui, theme);
                 ui.separator();
-                if !sub_tabs_for(STATE.with(|s| s.borrow().top)).is_empty() {
-                    draw_sub_tabs(ui);
-                    ui.separator();
-                }
                 ui.add_space(4.0);
-                draw_content(ui, theme);
+                draw_split(ui, theme);
             },
         );
 
@@ -157,19 +150,37 @@ fn draw_top_tabs(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-fn draw_sub_tabs(ui: &mut egui::Ui) {
-    let (top, sub) = STATE.with(|s| {
-        let st = s.borrow();
-        (st.top, st.sub)
-    });
-    let tabs = sub_tabs_for(top);
-    ui.horizontal(|ui| {
+/// 좌측 sub menu Frame + 우측 콘텐츠. 단축키 탭 idiom 그대로.
+fn draw_split(ui: &mut egui::Ui, theme: &Theme) {
+    let available_height = ui.available_height();
+    ui.horizontal_top(|ui| {
+        // 좌측 sub menu (고정 폭 100, 단축키 탭과 동일)
+        egui::Frame::new()
+            .fill(egui::Color32::from(theme.crust))
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from(theme.surface0)))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(6, 6))
+            .show(ui, |ui| {
+                ui.set_width(100.0);
+                ui.set_min_height(available_height);
+
+                ui.vertical(|ui| {
+                    let cur = STATE.with(|s| s.borrow().sub);
+                    for (idx, label) in SUB_TABS.iter().enumerate() {
+                        if ui.selectable_label(cur == idx, *label).clicked() {
+                            STATE.with(|s| s.borrow_mut().sub = idx);
+                        }
+                    }
+                });
+            });
+
         ui.add_space(8.0);
-        for (idx, label) in tabs.iter().enumerate() {
-            if ui.selectable_label(sub == idx, *label).clicked() {
-                STATE.with(|s| s.borrow_mut().sub = idx);
-            }
-        }
+
+        // 우측 콘텐츠
+        ui.vertical(|ui| {
+            ui.set_max_height(available_height);
+            draw_content(ui, theme);
+        });
     });
 }
 
@@ -179,21 +190,13 @@ fn draw_content(ui: &mut egui::Ui, theme: &Theme) {
         (st.top, st.sub)
     });
     let top_label = TOP_TABS.get(top).copied().unwrap_or("?");
-    let sub_tabs = sub_tabs_for(top);
-    let path = if sub_tabs.is_empty() {
-        top_label.to_string()
-    } else {
-        format!(
-            "{top_label} / {}",
-            sub_tabs.get(sub).copied().unwrap_or("?")
-        )
-    };
+    let sub_label = SUB_TABS.get(sub).copied().unwrap_or("?");
     egui::ScrollArea::vertical()
         .id_salt("layout_2depth_content_scroll")
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.label(
-                egui::RichText::new(format!("Content: {path}"))
+                egui::RichText::new(format!("Content: {top_label} / {sub_label}"))
                     .color(egui::Color32::from(theme.text))
                     .size(12.0),
             );
