@@ -74,13 +74,13 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
 
             ui.separator();
             ui.label("UI scale:");
-            let resp = ui.add(
-                egui::Slider::new(&mut state.ui_scale, 0.5..=2.0)
-                    .step_by(0.05)
-                    .fixed_decimals(2),
-            );
-            if resp.changed() {
-                state.needs_reapply = true;
+            // 본체 ui_scale_factor 매핑 (src/../appearance.rs) 와 동일: 0.85 / 1.0 / 1.2.
+            for (label, scale) in [("Small", 0.85_f32), ("Medium", 1.0), ("Large", 1.2)] {
+                let selected = (state.ui_scale - scale).abs() < 0.001;
+                if ui.selectable_label(selected, label).clicked() && !selected {
+                    state.ui_scale = scale;
+                    state.needs_reapply = true;
+                }
             }
 
             ui.separator();
