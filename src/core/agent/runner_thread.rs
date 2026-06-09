@@ -23,7 +23,6 @@ use tasty_memory::{HOST_OWNER, ListOpts, MemoryValue, Scope};
 
 use super::runner_host::{
     HANDLE_KEY_PREFIX, HostExecutor, RunnerContext, evict_run_result, handle_key, load_run_result,
-    run_result_key,
 };
 use tasty_agent::runner::PollOutcome;
 
@@ -574,6 +573,7 @@ fn run_loop(ctx: RunnerContext, workspace_id: u32, stop_rx: mpsc::Receiver<()>) 
 
 #[cfg(test)]
 mod tests {
+    use super::super::runner_host::run_result_key;
     use super::*;
     use std::sync::OnceLock;
     use std::sync::atomic::AtomicU64;

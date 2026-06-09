@@ -13,8 +13,8 @@ impl NotificationSoundPlayer for MacBeepPlayer {
         // NSBeep 는 AppKit 의 main thread 호출이 권장됨. cascade 는 winit
         // event_loop main thread 에서 실행되므로 조건 충족. worker thread 발화
         // 경로가 추가되면 dispatch::main_queue 로 marshalling 필요.
-        // SAFETY: winit event_loop main thread 에서만 호출 — AppKit 의 main thread
-        // 요구사항을 만족 (위 주석의 호출 조건이 깨지면 SIGTRAP 가능).
-        unsafe { NSBeep() };
+        // (`objc2_app_kit::NSBeep` 자체는 safe fn — main-thread 보장은 호출
+        //  컨벤션 차원이지 unsafe 마커가 강제하지 않는다.)
+        NSBeep();
     }
 }
