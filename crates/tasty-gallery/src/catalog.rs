@@ -97,5 +97,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Component — Toast Stack (Tier 3)",
             draw: components::toast::draw,
         },
+        CatalogItem {
+            name: "Overlay — Surface Highlights",
+            draw: components::surface_highlights::draw,
+        },
     ]
 }

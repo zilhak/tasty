@@ -14,6 +14,7 @@ pub mod markdown_open;
 pub mod port_scanner;
 pub mod rename_popup;
 pub mod sidebar;
+pub mod surface_highlights;
 pub mod tab_bar;
 pub mod toast;
 pub mod update;
