@@ -205,6 +205,10 @@ pub fn t(key: &str) -> &str {
 
 /// 활성 language code. 부팅 시 [`init`]에 전달된 값. 미초기화면 `"en"` fallback.
 /// 호스트가 plugin spawn 시 `TASTY_LOCALE` 환경변수로 전달하는 등에 사용.
+///
+/// 현재 호출처 0 — plugin process spawn wiring 통합 시점에 사용 예정. 공개 API
+/// 이므로 외부 호출자 대비 allow 만 추가하고 보존.
+#[allow(dead_code)]
 pub fn current_language() -> &'static str {
     TRANSLATIONS
         .get()

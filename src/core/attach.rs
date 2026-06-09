@@ -253,6 +253,10 @@ impl AttachRegistry {
     }
 
     /// surface 가 속한 점유 workspace 의 holder(placeholder 표시·force-detach UI 용).
+    ///
+    /// 현재는 호출처가 자체 테스트뿐 — placeholder UI / force-detach 메뉴 통합 후
+    /// 본격 사용 예정. 공개 API 이므로 외부 호출자 대비 dead 제거가 아닌 allow 만.
+    #[allow(dead_code)]
     pub fn workspace_holder_of(&self, surface_id: SurfaceId) -> Option<AttachClientId> {
         self.workspace_of_surface(surface_id)
             .and_then(|ws| self.workspace_holder(ws))

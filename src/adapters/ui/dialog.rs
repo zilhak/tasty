@@ -34,6 +34,10 @@ pub fn rename_popup_title(state: &AppState, _engine: &crate::core::CoreState) ->
 /// `buffer` 는 `&mut String` — view 가 TextEdit 으로 직접 mutate. gallery 에서는
 /// 로컬 `String` 의 `&mut` 를 넘기면 된다.
 pub struct RenamePopupProps<'a> {
+    /// Tier 3 popup props 일관성 보존용. 현재 view 본문은 egui 기본 스타일에
+    /// 의존해 theme 토큰 직접 사용은 없지만, 다른 popup props 와 시그니처
+    /// 통일성 (gallery mirror 도 동일 field 보유) 을 위해 유지.
+    #[allow(dead_code)]
     pub theme: &'a Theme,
     pub buffer: &'a mut String,
     pub save_label: &'a str,

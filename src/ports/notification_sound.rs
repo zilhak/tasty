@@ -12,6 +12,12 @@ pub trait NotificationSoundPlayer: Send + Sync {
 }
 
 /// Headless / 테스트 / 기본 fallback. 호출은 받지만 아무것도 하지 않음.
+///
+/// macOS gui 빌드에서는 `MacBeepPlayer` 가 주입되어 NoopPlayer 직접 사용
+/// 경로 0. 그러나 BSD / Linux 미지원 OS / headless / 테스트 (e.g. ipc handler
+/// image with_sound_player) 에서 fallback 으로 *cfg-분기* 사용 — 다른 환경
+/// 기준 dead code 가 아님.
+#[allow(dead_code)]
 pub struct NoopPlayer;
 
 impl NotificationSoundPlayer for NoopPlayer {
