@@ -344,23 +344,12 @@ impl MainView {
                         );
                     }
                     Some(2) => {
-                        // Close
-                        let target_sid = self
-                            .state
-                            .active_workspace(engine)
-                            .pane_layout()
-                            .find_pane(pane_id)
-                            .and_then(|p| p.tabs.get(tab_index))
-                            .and_then(|tab| tab.all_surface_ids().first().copied());
-                        if let Some(sid) = target_sid
-                            && self.state.close_surface_by_id(engine, sid, true)
+                        // Close tab (모든 surface 포함). 이전엔 첫 surface 만 닫아 split
+                        // 상태에서 surface 하나만 사라지던 버그가 있었음.
+                        if self.state.close_tab(engine, pane_id, tab_index)
+                            && engine.workspaces.is_empty()
                         {
-                            // 마지막 workspace 까지 닫혔다면 keyboard close 와 동일하게
-                            // window 종료를 요청한다 (그렇지 않으면 다음 redraw 가
-                            // active_workspace() 호출에서 패닉).
-                            if engine.workspaces.is_empty() {
-                                self.request_close();
-                            }
+                            self.request_close();
                         }
                     }
                     Some(3) => {

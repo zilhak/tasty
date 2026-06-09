@@ -86,6 +86,53 @@ impl AppState {
         }
     }
 
+    /// Close a specific tab in a specific pane (context menu 등 임의 (pane_id, tab_index)
+    /// 지정 close). focused pane / active tab 와 무관하게 동작한다.
+    /// 내부 모든 surface cleanup + closed_item snapshot + layout dirty 마킹을 수행.
+    pub fn close_tab(&mut self, engine: &mut CoreState, pane_id: u32, tab_index: usize) -> bool {
+        let mut targets: Vec<(u32, Option<String>)> = Vec::new();
+        let snapshot_opt = if let Some(pane) = self
+            .active_workspace(engine)
+            .pane_layout()
+            .find_pane(pane_id)
+        {
+            if let Some(tab) = pane.tabs.get(tab_index) {
+                super::AppState::collect_close_targets(tab, engine, &mut targets);
+                let mut snap_fn =
+                    crate::engine::surface_registry::snapshot_fn_for(&engine.surface_registry);
+                let terminals = &engine.terminals;
+                crate::model::closed_item::ClosedTab::from_tab(tab, &mut snap_fn, &|id| {
+                    terminals.get(id)
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(snapshot) = snapshot_opt {
+            engine.push_closed_item(crate::model::ClosedItem::Tab(snapshot));
+        }
+        let closed = if let Some(pane) = self
+            .active_workspace_mut(engine)
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+        {
+            pane.close_tab(tab_index)
+        } else {
+            false
+        };
+        if closed {
+            for (sid, pid) in targets {
+                let kind = self.surface_kind(engine, sid);
+                self.cleanup_surface(engine, sid, pid);
+                self.enqueue_surface_closed(sid, kind, true);
+            }
+            engine.mark_layout_dirty();
+        }
+        closed
+    }
+
     /// Close the active tab in the focused pane. Returns true if a tab was closed.
     pub fn close_active_tab(&mut self, engine: &mut CoreState) -> bool {
         // Capture tab snapshot + collect persist_ids (immutable borrow).
