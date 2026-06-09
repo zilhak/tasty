@@ -57,5 +57,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Popup — Update (Tier 3)",
             draw: components::update::draw,
         },
+        CatalogItem {
+            name: "Component — Convert popup (props view)",
+            draw: components::convert::draw,
+        },
     ]
 }
