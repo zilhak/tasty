@@ -73,5 +73,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Popup — File Handler Picker",
             draw: components::file_handler_picker::draw,
         },
+        CatalogItem {
+            name: "Component — Approval popup",
+            draw: components::approval::draw,
+        },
     ]
 }

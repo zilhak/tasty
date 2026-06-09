@@ -6,6 +6,7 @@
 //! 시각 layout 을 *복제* 한다 — 본체 update 시 시각 동등성은 수동 검증.
 
 pub mod apply_preset;
+pub mod approval;
 pub mod convert;
 pub mod file_handler_picker;
 pub mod markdown_open;
