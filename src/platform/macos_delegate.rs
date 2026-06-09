@@ -302,28 +302,42 @@ fn setup_main_menu(
     main_menu.addItem(&file_menu_item);
 
     // ── Edit Menu ──────────────────────────────────────────────────
+    //
+    // Cut/Copy/Paste/Select All 는 *마우스 클릭 무반응* 흠을 해소하기 위해
+    // 명시적 disabled 로 표시한다. tasty 의 cut/copy/paste/select_all 동작은
+    // winit `WindowEvent::KeyboardInput` → `shortcuts::handle_*` 흐름이 받으므로
+    // *단축키만 정상 동작* 한다. NSMenu 의 메뉴 항목은 *단축키 발견용 안내* 역할.
+    //
+    // - `setAutoenablesItems(false)`: NSMenu 의 자동 enable 검증을 끄지 않으면
+    //   AppKit 이 first responder chain 에서 `cut:` 셀렉터의 default
+    //   NSResponder impl (no-op) 을 발견해 항목을 자동 enable 해 버린다.
+    // - 각 항목 `setEnabled(false)`: 마우스 클릭 차단 + key equivalent 는 회색
+    //   으로 표시되어 *어떤 단축키인지 알려준다*.
+    // - 단축키 흐름: macOS 는 disabled 메뉴 항목의 key equivalent 매칭 시 메뉴
+    //   action 을 발화하지 않고 NSView keyDown 으로 떨어뜨려 winit 이 받는다.
     let edit_menu_item = NSMenuItem::new(mtm);
     let edit_menu = NSMenu::new(mtm);
     edit_menu.setTitle(&NSString::from_str("Edit"));
-    edit_menu.addItem(&make_std_item_with_binding(
+    edit_menu.setAutoenablesItems(false);
+    edit_menu.addItem(&make_disabled_item_with_binding(
         mtm,
         &NSString::from_str("Cut"),
         sel!(cut:),
         &keybindings.cut,
     ));
-    edit_menu.addItem(&make_std_item_with_binding(
+    edit_menu.addItem(&make_disabled_item_with_binding(
         mtm,
         &NSString::from_str("Copy"),
         sel!(copy:),
         &keybindings.copy,
     ));
-    edit_menu.addItem(&make_std_item_with_binding(
+    edit_menu.addItem(&make_disabled_item_with_binding(
         mtm,
         &NSString::from_str("Paste"),
         sel!(paste:),
         &keybindings.paste,
     ));
-    edit_menu.addItem(&make_std_item_with_binding(
+    edit_menu.addItem(&make_disabled_item_with_binding(
         mtm,
         &NSString::from_str("Select All"),
         sel!(selectAll:),
@@ -462,6 +476,27 @@ fn make_std_item_with_binding(
         item.setKeyEquivalentModifierMask(mods);
         item.setAction(Some(selector));
     }
+    item
+}
+
+/// [`make_std_item_with_binding`] 의 *disabled* 변형 — Edit menu Cut/Copy/Paste/
+/// Select All 처럼 *단축키만 사용* 하고 마우스 클릭은 제공하지 않는 항목용.
+///
+/// NSResponder chain 의 표준 selector (`cut:` 등) 는 winit 의 NSView 가 default
+/// NSResponder impl 로 응답하므로 *AppKit 의 auto-enable validation* 이 항목을
+/// 자동 enable 해 버리는 흠이 있었다 (마우스 클릭 → no-op dead-letter).
+/// 호출처에서 NSMenu 에 `setAutoenablesItems(false)` 를 적용한 다음 본 helper 로
+/// 항목을 명시적 disabled 로 만든다 — key equivalent 표시는 유지되고 (회색),
+/// 마우스 클릭은 차단된다. 실제 cut/copy/paste/select_all 동작은 winit
+/// `KeyboardInput` → [`crate::shortcuts`] 가 받는다.
+fn make_disabled_item_with_binding(
+    mtm: MainThreadMarker,
+    title: &NSString,
+    selector: Sel,
+    bindings: &[String],
+) -> Retained<NSMenuItem> {
+    let item = make_std_item_with_binding(mtm, title, selector, bindings);
+    item.setEnabled(false);
     item
 }
 
