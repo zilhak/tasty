@@ -17,6 +17,7 @@ pub mod handle_channel;
 pub mod host_actions;
 pub mod host_cmd;
 pub mod ipc_namespace;
+pub mod known_plugins;
 pub mod listener;
 pub mod manager;
 pub mod process;

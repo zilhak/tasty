@@ -1,6 +1,6 @@
 [package]
 name = "tasty-host-plugin"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
 description = "Tasty plugin manager — host-side process lifecycle, IPC routing, manifest registry"
@@ -30,6 +30,7 @@ hex = "0.4"
 toml = "0.8"
 ed25519-dalek = "2"
 sha2 = "0.10"
+base64 = "0.22"
 
 [features]
 # Phase J.C WASM POC stub gate. 본 feature 활성 시 src/wasm_poc.rs 컴파일.

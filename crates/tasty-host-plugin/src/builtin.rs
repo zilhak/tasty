@@ -691,26 +691,57 @@ pub fn upgrade_builtins(
         // debug 빌드는 dev workspace bundle 이 unsigned 라 warn 로깅 후 통과.
         #[cfg(not(debug_assertions))]
         {
-            if let Err(e) = crate::bundle_sig::verify_bundle_signature(&src) {
-                tracing::warn!("builtin '{}' bundle signature check failed: {e}", spec.id);
-                items.push(BuiltinUpgradeItem {
-                    id: spec.id.into(),
-                    action: BuiltinUpgradeAction::Skipped {
-                        installed_version: read_installed_version(&dest).map(|v| v.to_string()),
-                        bundle_version: None,
-                        reason: format!("signature-invalid: {e}"),
-                    },
-                });
-                continue;
+            use crate::bundle_sig::{TrustDecision, verify_bundle_signature};
+            match verify_bundle_signature(&src) {
+                Ok(TrustDecision::Trusted) => {}
+                Ok(TrustDecision::Untrusted {
+                    plugin_id,
+                    fingerprint,
+                    reason,
+                    ..
+                }) => {
+                    // 임베드 + known_plugins.toml 모두 거부. release 빌드의
+                    // builtin 은 *반드시* 임베드 키로 통과되어야 하므로,
+                    // Untrusted = 사실상 차단. trust 모달은 외부 plugin 경로용
+                    // (0.7+ marketplace) 이며 builtin 흐름엔 노출하지 않는다.
+                    tracing::warn!(
+                        "builtin '{}' is untrusted (reason: {reason:?}, fp: {fingerprint})",
+                        plugin_id
+                    );
+                    items.push(BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Skipped {
+                            installed_version: read_installed_version(&dest).map(|v| v.to_string()),
+                            bundle_version: None,
+                            reason: format!("untrusted: {reason:?}"),
+                        },
+                    });
+                    continue;
+                }
+                Err(e) => {
+                    tracing::warn!("builtin '{}' bundle signature check failed: {e}", spec.id);
+                    items.push(BuiltinUpgradeItem {
+                        id: spec.id.into(),
+                        action: BuiltinUpgradeAction::Skipped {
+                            installed_version: read_installed_version(&dest).map(|v| v.to_string()),
+                            bundle_version: None,
+                            reason: format!("signature-invalid: {e}"),
+                        },
+                    });
+                    continue;
+                }
             }
         }
         #[cfg(debug_assertions)]
         {
-            if let Err(e) = crate::bundle_sig::verify_bundle_signature(&src) {
-                tracing::debug!(
-                    "dev bundle '{}' signature check: {e} (debug build = ignored)",
-                    spec.id
-                );
+            match crate::bundle_sig::verify_bundle_signature(&src) {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::debug!(
+                        "dev bundle '{}' signature check: {e} (debug build = ignored)",
+                        spec.id
+                    );
+                }
             }
         }
 
