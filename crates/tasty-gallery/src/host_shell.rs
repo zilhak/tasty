@@ -2,7 +2,7 @@
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::catalog::{self, CatalogItem};
+use crate::catalog::{self, CatalogItem, Category};
 
 /// 갤러리 전역 상태.
 pub struct GalleryState {
@@ -10,7 +10,10 @@ pub struct GalleryState {
     /// 갤러리 전용 인스턴스 — dropdown 토글이 본체 색에 영향을 주지 않는다.
     pub theme: Theme,
     pub items: Vec<CatalogItem>,
+    /// 현재 선택된 카탈로그 항목의 *전역* index (`items` 기준).
     pub selected: usize,
+    /// 현재 활성 1차 카테고리. 좌측 사이드바는 이 카테고리의 항목만 표시.
+    pub active_category: Category,
     pub ui_scale: f32,
     /// "Apply theme" 후 다음 frame 에서 ctx 에 visuals/style 을 다시 박을지.
     pub needs_reapply: bool,
@@ -18,10 +21,17 @@ pub struct GalleryState {
 
 impl GalleryState {
     pub fn new() -> Self {
+        let items = catalog::all();
+        // 첫 항목의 카테고리를 active 로 두어 진입 시 빈 사이드바를 피한다.
+        let active_category = items
+            .first()
+            .map(|i| i.category)
+            .unwrap_or(Category::Appearance);
         Self {
             theme: tasty_themes::mocha_fallback(),
-            items: catalog::all(),
+            items,
             selected: 0,
+            active_category,
             ui_scale: 1.0,
             needs_reapply: true,
         }
@@ -87,6 +97,34 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
             ui.label("(i18n: gallery 자체는 단순 표기, 본체 i18n 시스템 미사용)");
         });
         ui.add_space(4.0);
+
+        // 1차 카테고리 탭 — Appearance / Widget / Popup / Component / Layout.
+        ui.horizontal(|ui| {
+            for category in Category::all() {
+                let count = state
+                    .items
+                    .iter()
+                    .filter(|i| i.category == *category)
+                    .count();
+                let label = format!("{} ({count})", category.label());
+                if ui
+                    .selectable_label(state.active_category == *category, label)
+                    .clicked()
+                {
+                    state.active_category = *category;
+                    // 새 카테고리의 첫 항목으로 자동 선택 이동.
+                    if let Some((idx, _)) = state
+                        .items
+                        .iter()
+                        .enumerate()
+                        .find(|(_, item)| item.category == *category)
+                    {
+                        state.selected = idx;
+                    }
+                }
+            }
+        });
+        ui.add_space(2.0);
     });
 
     egui::SidePanel::left("gallery_sidebar")
@@ -101,6 +139,9 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     for (idx, item) in state.items.iter().enumerate() {
+                        if item.category != state.active_category {
+                            continue;
+                        }
                         if ui
                             .selectable_label(state.selected == idx, item.name)
                             .clicked()
