@@ -66,6 +66,7 @@
 | [dev-guide/plugin-permissions.md](dev-guide/plugin-permissions.md) | Plugin 권한 모델 — method_meta, CallerContext, grant/revoke 흐름 |
 | [dev-guide/plugin-signing.md](dev-guide/plugin-signing.md) | Plugin 매니페스트 서명 — Ed25519 dev/release 키, sign-bundle.sh, CI secret, 키 회전 |
 | [dev-guide/plugin-ecosystem.md](dev-guide/plugin-ecosystem.md) | Plugin 생태계 — 번들 plugin 목록과 책임 분담 |
+| [dev-guide/plugin-staging-sync.md](dev-guide/plugin-staging-sync.md) | Plugin staging 7 위치 동기화 (deb / rpm / wix / 빌드 스크립트 / BUILTINS) — 새 plugin 추가 시 수정해야 할 곳 |
 | [dev-guide/lua-hooks.md](dev-guide/lua-hooks.md) | Lua hook 호스트 매핑 — 이벤트별 발화 site / payload 스키마 / 추가 가이드 |
 | [dev-guide/git-hooks.md](dev-guide/git-hooks.md) | pre-commit / pre-push 훅 규칙 — 설치, 검사 목록, 예외 |
 | [dev-guide/i18n.md](dev-guide/i18n.md) | 국제화 정책 — `t()` API, lang 파일 위치, 새 문자열 추가 절차 |
