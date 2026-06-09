@@ -417,8 +417,6 @@ pub struct DialogState {
     pub(crate) markdown_open_buffer: String,
     /// Which pane the file open popup was triggered from
     pub(crate) file_open_pane_id: Option<u32>,
-    /// Internal flag for cancel button in file open popups
-    pub(crate) file_popup_cancel: bool,
     /// Error message for file open popup validation
     pub(crate) file_open_error: Option<String>,
     /// Pending file drag request (paths to drag to external apps).
@@ -489,7 +487,6 @@ impl DialogState {
             pending_native_menu: None,
             markdown_open_buffer: String::new(),
             file_open_pane_id: None,
-            file_popup_cancel: false,
             file_open_error: None,
             pending_file_drag: None,
             tab_drag: None,
