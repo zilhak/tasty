@@ -77,5 +77,9 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Component — Approval popup",
             draw: components::approval::draw,
         },
+        CatalogItem {
+            name: "Popup — Command Palette",
+            draw: components::command_palette::draw,
+        },
     ]
 }

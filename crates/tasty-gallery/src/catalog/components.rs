@@ -7,6 +7,7 @@
 
 pub mod apply_preset;
 pub mod approval;
+pub mod command_palette;
 pub mod convert;
 pub mod file_handler_picker;
 pub mod markdown_open;
