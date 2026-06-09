@@ -240,6 +240,7 @@ preview_unfocused = "비포커스"
 preview_font_info = "폰트: {}"
 loading_fonts = "폰트 로딩 중..."
 search_hint = "검색..."
+font_override = "폰트 override"
 
 [settings.appearance.colors]
 focused_heading = "포커스 상태"
@@ -251,9 +252,6 @@ fg_label = "글자색:"
 theme = "테마"
 general = "일반"
 terminal = "터미널"
-
-[settings.appearance]
-font_override = "폰트 override"
 
 [settings.appearance.theme]
 heading = "테마 프리셋"

@@ -240,6 +240,7 @@ preview_unfocused = "非フォーカス"
 preview_font_info = "フォント: {}"
 loading_fonts = "フォント読み込み中..."
 search_hint = "検索..."
+font_override = "フォント override"
 
 [settings.appearance.colors]
 focused_heading = "フォーカス時"
@@ -251,9 +252,6 @@ fg_label = "文字色:"
 theme = "テーマ"
 general = "一般"
 terminal = "ターミナル"
-
-[settings.appearance]
-font_override = "フォント override"
 
 [settings.appearance.theme]
 heading = "テーマプリセット"
