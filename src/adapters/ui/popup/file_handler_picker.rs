@@ -14,11 +14,20 @@
 //!   ├───────────────────────────────────────┴───────────────────────────┤
 //!   │                                              [ 취소 ]  [ 열기 ]   │
 //!   └───────────────────────────────────────────────────────────────────┘
+//!
+//! ## Split: wrapper / view / action
+//!
+//! 순수 시각 `draw_file_handler_picker_view` 는 [`FileHandlerPickerProps`] 만 받고
+//! [`FileHandlerPickerAction`] 만 반환한다 (AppState/CoreState 비의존).
+//! `draw_file_handler_picker` wrapper 가 runtime 상태에서 props 를 추출하고,
+//! 반환된 action 을 state mutation + [`PopupAction`] 으로 변환한다.
+//! Gallery (`tasty-gallery`) 는 view 를 mock props 로 mirror 해서 시각 검증.
 
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
-use crate::state::{AppState, FileHandlerPickerResult, PickerHandlerSummary};
+use crate::state::{AppState, FileHandlerPickerResult};
 use crate::theme;
+use crate::theme::Theme;
 
 pub const PICKER_POPUP_ID: &str = "file_handler_picker";
 
@@ -62,28 +71,63 @@ pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui:
     )
 }
 
-/// PopupDef.draw_fn.
-pub fn draw_file_handler_picker(
+/// 후보/recent 리스트 한 행의 시각 입력 — `HandlerId` 가 owned `String` 이라
+/// gallery mock 에서도 안전하게 만들 수 있다.
+#[derive(Clone, Debug)]
+pub struct FileHandlerPickerEntryView {
+    /// `HandlerId::as_str()` 값 (예: `host/markdown-viewer`).
+    pub id: String,
+    /// 사용자에게 보일 라벨 (번역된 값 또는 handler id).
+    pub display: String,
+}
+
+/// 순수 시각 view 의 입력. AppState/CoreState 의존 없음.
+pub struct FileHandlerPickerProps<'a> {
+    pub theme: &'a Theme,
+    /// 헤더에 보일 대상 표시 (이미 축약됨 — `shorten_target` 적용 후).
+    pub target_display: &'a str,
+    /// 탐지된 detector 라벨. `None` 이면 "알 수 없음" 텍스트로 표시.
+    pub detector_label: Option<&'a str>,
+    pub candidates: &'a [FileHandlerPickerEntryView],
+    pub recent: &'a [FileHandlerPickerEntryView],
+    /// 현재 선택된 handler id (없으면 [열기] 버튼 비활성화).
+    pub selected_id: Option<&'a str>,
+
+    // i18n 라벨 — 호출처가 미리 t() 로 해상해서 전달.
+    pub target_label: &'a str,
+    pub format_label: &'a str,
+    pub unknown_format_label: &'a str,
+    pub candidates_heading: &'a str,
+    pub recent_heading: &'a str,
+    pub empty_label: &'a str,
+    pub open_button_label: &'a str,
+    pub cancel_button_label: &'a str,
+}
+
+/// View 가 발생시킨 사용자 의도. Wrapper 가 mutation 으로 변환.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileHandlerPickerAction {
+    None,
+    /// ESC 또는 [취소] — popup 닫기 + result=Cancelled.
+    Cancel,
+    /// 단일 클릭 — `selected` 만 갱신, popup 유지.
+    Select(String),
+    /// 더블클릭 또는 [열기] — result=Selected(id) 후 popup 닫기.
+    Dispatch(String),
+}
+
+/// 순수 시각 view. AppState/CoreState/`theme::theme()` 비의존.
+pub fn draw_file_handler_picker_view(
     ui: &mut egui::Ui,
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-) -> PopupAction {
+    props: &FileHandlerPickerProps<'_>,
+) -> FileHandlerPickerAction {
     let ctx = ui.ctx().clone();
 
-    // popup 이 데이터 없이 열려 있으면 즉시 닫기 (이상 상태 회복).
-    if state.dialogs.file_handler_picker.is_none() {
-        return PopupAction::Close;
-    }
-
-    // ESC — 취소 결과 기록 후 닫기.
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
-            p.result = Some(FileHandlerPickerResult::Cancelled);
-        }
-        return PopupAction::Close;
+        return FileHandlerPickerAction::Cancel;
     }
 
-    let th = theme::theme();
+    let th = props.theme;
 
     // Horizontal margin
     let available = ui.available_rect_before_wrap();
@@ -92,79 +136,47 @@ pub fn draw_file_handler_picker(
     let ui = &mut child_ui;
 
     // ── Header ────────────────────────────────────────────────────────
-    {
-        let p = match state.dialogs.file_handler_picker.as_ref() {
-            Some(p) => p,
-            None => return PopupAction::Close,
-        };
-        ui.label(
-            egui::RichText::new(format!(
-                "{} {}",
-                t("file_handler.picker.target_label"),
-                shorten_target(&p.target_display)
-            ))
+    ui.label(
+        egui::RichText::new(format!("{} {}", props.target_label, props.target_display))
             .size(th.font_size_body.value())
             .color(th.text),
-        );
-        let detector_text = match &p.detector {
-            Some(id) => id.as_str().to_string(),
-            None => t("file_handler.picker.unknown_format").to_string(),
-        };
-        ui.label(
-            egui::RichText::new(format!(
-                "{} {}",
-                t("file_handler.picker.format_label"),
-                detector_text
-            ))
+    );
+    let detector_text = props.detector_label.unwrap_or(props.unknown_format_label);
+    ui.label(
+        egui::RichText::new(format!("{} {}", props.format_label, detector_text))
             .size(th.font_size_caption.value())
             .color(th.subtext0),
-        );
-    }
+    );
 
     ui.add_space(VERTICAL_PADDING);
 
     // ── 빈 상태 (handler 0개) ─────────────────────────────────────────
-    let is_empty = state
-        .dialogs
-        .file_handler_picker
-        .as_ref()
-        .map(|p| p.candidates.is_empty() && p.recent.is_empty())
-        .unwrap_or(true);
+    let is_empty = props.candidates.is_empty() && props.recent.is_empty();
 
     if is_empty {
         ui.label(
-            egui::RichText::new(t("file_handler.picker.empty"))
+            egui::RichText::new(props.empty_label)
                 .size(th.font_size_body.value())
                 .color(th.subtext1),
         );
         ui.add_space(VERTICAL_PADDING);
-        // 취소만 보여준다.
         let mut cancel_clicked = false;
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(t("button.cancel")).clicked() {
+            if ui.button(props.cancel_button_label).clicked() {
                 cancel_clicked = true;
             }
         });
         if cancel_clicked {
-            if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
-                p.result = Some(FileHandlerPickerResult::Cancelled);
-            }
-            return PopupAction::Close;
+            return FileHandlerPickerAction::Cancel;
         }
-        return PopupAction::None;
+        return FileHandlerPickerAction::None;
     }
 
     // ── 두 열 list (좌: 후보 / 우: recent) ────────────────────────────
-    // double_click_dispatch: 더블클릭 또는 [열기] 시 dispatch.
-    let mut double_click_dispatch: Option<crate::file::handler::HandlerId> = None;
+    let mut action = FileHandlerPickerAction::None;
 
     let list_height = {
-        let rows = state
-            .dialogs
-            .file_handler_picker
-            .as_ref()
-            .map(|p| p.candidates.len().max(p.recent.len()))
-            .unwrap_or(0);
+        let rows = props.candidates.len().max(props.recent.len());
         (rows.max(4) as f32 * ITEM_HEIGHT).clamp(LIST_MIN_HEIGHT, LIST_MAX_HEIGHT)
     };
 
@@ -177,7 +189,7 @@ pub fn draw_file_handler_picker(
             ui.set_min_width(col_w);
             ui.set_max_width(col_w);
             ui.label(
-                egui::RichText::new(t("file_handler.picker.candidates_heading"))
+                egui::RichText::new(props.candidates_heading)
                     .size(th.font_size_caption.value())
                     .color(th.overlay1),
             );
@@ -186,20 +198,13 @@ pub fn draw_file_handler_picker(
                 .max_height(list_height)
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
-                    let items = state
-                        .dialogs
-                        .file_handler_picker
-                        .as_ref()
-                        .map(|p| p.candidates.clone())
-                        .unwrap_or_default();
                     draw_handler_list(
                         ui,
-                        &th,
-                        &items,
+                        th,
+                        props.candidates,
+                        props.selected_id,
                         col_w,
-                        state,
-                        engine,
-                        &mut double_click_dispatch,
+                        &mut action,
                     );
                 });
         });
@@ -211,7 +216,7 @@ pub fn draw_file_handler_picker(
             ui.set_min_width(col_w);
             ui.set_max_width(col_w);
             ui.label(
-                egui::RichText::new(t("file_handler.picker.recent_heading"))
+                egui::RichText::new(props.recent_heading)
                     .size(th.font_size_caption.value())
                     .color(th.overlay1),
             );
@@ -220,21 +225,7 @@ pub fn draw_file_handler_picker(
                 .max_height(list_height)
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
-                    let items = state
-                        .dialogs
-                        .file_handler_picker
-                        .as_ref()
-                        .map(|p| p.recent.clone())
-                        .unwrap_or_default();
-                    draw_handler_list(
-                        ui,
-                        &th,
-                        &items,
-                        col_w,
-                        state,
-                        engine,
-                        &mut double_click_dispatch,
-                    );
+                    draw_handler_list(ui, th, props.recent, props.selected_id, col_w, &mut action);
                 });
         });
     });
@@ -246,73 +237,44 @@ pub fn draw_file_handler_picker(
     let mut cancel_clicked = false;
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let has_selection = state
-                .dialogs
-                .file_handler_picker
-                .as_ref()
-                .map(|p| p.selected.is_some())
-                .unwrap_or(false);
+            let has_selection = props.selected_id.is_some();
             ui.add_enabled_ui(has_selection, |ui| {
-                if ui.button(t("file_handler.picker.open_button")).clicked() {
+                if ui.button(props.open_button_label).clicked() {
                     open_clicked = true;
                 }
             });
-            if ui.button(t("button.cancel")).clicked() {
+            if ui.button(props.cancel_button_label).clicked() {
                 cancel_clicked = true;
             }
         });
     });
 
-    // dispatch 결정 — 우선순위: 더블클릭 > [열기]
-    let dispatch_id = double_click_dispatch.or_else(|| {
-        if open_clicked {
-            state
-                .dialogs
-                .file_handler_picker
-                .as_ref()
-                .and_then(|p| p.selected.clone())
-        } else {
-            None
-        }
-    });
-
-    if let Some(id) = dispatch_id {
-        if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
-            p.result = Some(FileHandlerPickerResult::Selected(id));
-        }
-        return PopupAction::Close;
+    // 우선순위: 더블클릭(Dispatch) > [열기] > [취소] > 단일클릭(Select)
+    if matches!(action, FileHandlerPickerAction::Dispatch(_)) {
+        return action;
     }
-
+    if open_clicked && let Some(id) = props.selected_id {
+        return FileHandlerPickerAction::Dispatch(id.to_string());
+    }
     if cancel_clicked {
-        if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
-            p.result = Some(FileHandlerPickerResult::Cancelled);
-        }
-        return PopupAction::Close;
+        return FileHandlerPickerAction::Cancel;
     }
-
-    PopupAction::None
+    action
 }
 
 fn draw_handler_list(
     ui: &mut egui::Ui,
-    th: &theme::Theme,
-    items: &[PickerHandlerSummary],
+    th: &Theme,
+    items: &[FileHandlerPickerEntryView],
+    selected_id: Option<&str>,
     col_w: f32,
-    state: &mut AppState,
-    _engine: &mut crate::core::CoreState,
-    double_click_dispatch: &mut Option<crate::file::handler::HandlerId>,
+    action: &mut FileHandlerPickerAction,
 ) {
     for entry in items {
         let (rect, resp) =
             ui.allocate_exact_size(egui::vec2(col_w, ITEM_HEIGHT), egui::Sense::click());
 
-        let is_selected = state
-            .dialogs
-            .file_handler_picker
-            .as_ref()
-            .and_then(|p| p.selected.as_ref())
-            .map(|sel| sel == &entry.id)
-            .unwrap_or(false);
+        let is_selected = selected_id == Some(entry.id.as_str());
 
         if is_selected {
             ui.painter()
@@ -339,16 +301,98 @@ fn draw_handler_list(
             },
         );
 
-        if resp.clicked()
-            && let Some(p) = state.dialogs.file_handler_picker.as_mut()
-        {
-            p.selected = Some(entry.id.clone());
-        }
         if resp.double_clicked() {
-            *double_click_dispatch = Some(entry.id.clone());
+            *action = FileHandlerPickerAction::Dispatch(entry.id.clone());
+        } else if resp.clicked() && !matches!(action, FileHandlerPickerAction::Dispatch(_)) {
+            *action = FileHandlerPickerAction::Select(entry.id.clone());
         }
 
-        resp.on_hover_text(entry.id.as_str());
+        resp.on_hover_text(&entry.id);
+    }
+}
+
+/// PopupDef.draw_fn — runtime wrapper. props 추출 + view 호출 + action → mutation.
+pub fn draw_file_handler_picker(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    _engine: &mut crate::core::CoreState,
+) -> PopupAction {
+    // popup 이 데이터 없이 열려 있으면 즉시 닫기 (이상 상태 회복).
+    let Some(picker) = state.dialogs.file_handler_picker.as_ref() else {
+        return PopupAction::Close;
+    };
+
+    let th = theme::theme();
+    let target_display = shorten_target(&picker.target_display);
+    let detector_str = picker.detector.as_ref().map(|d| d.as_str().to_string());
+    let candidates: Vec<FileHandlerPickerEntryView> = picker
+        .candidates
+        .iter()
+        .map(|s| FileHandlerPickerEntryView {
+            id: s.id.as_str().to_string(),
+            display: s.display.clone(),
+        })
+        .collect();
+    let recent: Vec<FileHandlerPickerEntryView> = picker
+        .recent
+        .iter()
+        .map(|s| FileHandlerPickerEntryView {
+            id: s.id.as_str().to_string(),
+            display: s.display.clone(),
+        })
+        .collect();
+    let selected_id_owned = picker.selected.as_ref().map(|s| s.as_str().to_string());
+
+    let target_label = t("file_handler.picker.target_label");
+    let format_label = t("file_handler.picker.format_label");
+    let unknown_format_label = t("file_handler.picker.unknown_format");
+    let candidates_heading = t("file_handler.picker.candidates_heading");
+    let recent_heading = t("file_handler.picker.recent_heading");
+    let empty_label = t("file_handler.picker.empty");
+    let open_button_label = t("file_handler.picker.open_button");
+    let cancel_button_label = t("button.cancel");
+
+    let props = FileHandlerPickerProps {
+        theme: &th,
+        target_display: &target_display,
+        detector_label: detector_str.as_deref(),
+        candidates: &candidates,
+        recent: &recent,
+        selected_id: selected_id_owned.as_deref(),
+        target_label,
+        format_label,
+        unknown_format_label,
+        candidates_heading,
+        recent_heading,
+        empty_label,
+        open_button_label,
+        cancel_button_label,
+    };
+
+    let action = draw_file_handler_picker_view(ui, &props);
+
+    match action {
+        FileHandlerPickerAction::None => PopupAction::None,
+        FileHandlerPickerAction::Cancel => {
+            if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
+                p.result = Some(FileHandlerPickerResult::Cancelled);
+            }
+            PopupAction::Close
+        }
+        FileHandlerPickerAction::Select(id) => {
+            if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
+                p.selected = Some(crate::file::handler::HandlerId(id));
+            }
+            PopupAction::None
+        }
+        FileHandlerPickerAction::Dispatch(id) => {
+            if let Some(p) = state.dialogs.file_handler_picker.as_mut() {
+                p.result = Some(FileHandlerPickerResult::Selected(
+                    crate::file::handler::HandlerId(id),
+                ));
+            }
+            PopupAction::Close
+        }
     }
 }
 
@@ -362,4 +406,91 @@ fn shorten_target(s: &str) -> String {
         return s.to_string();
     }
     format!(".../{}", parts[parts.len() - 2..].join("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_theme() -> Theme {
+        tasty_themes::mocha_fallback()
+    }
+
+    fn run_with_input(
+        raw: egui::RawInput,
+        candidates: &[FileHandlerPickerEntryView],
+        recent: &[FileHandlerPickerEntryView],
+        selected_id: Option<&str>,
+    ) -> FileHandlerPickerAction {
+        let ctx = egui::Context::default();
+        let theme = test_theme();
+        let mut out = FileHandlerPickerAction::None;
+        drop(ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let props = FileHandlerPickerProps {
+                    theme: &theme,
+                    target_display: "/tmp/foo.md",
+                    detector_label: Some("markdown"),
+                    candidates,
+                    recent,
+                    selected_id,
+                    target_label: "Target:",
+                    format_label: "Format:",
+                    unknown_format_label: "unknown",
+                    candidates_heading: "Candidates",
+                    recent_heading: "Recent",
+                    empty_label: "No handlers registered.",
+                    open_button_label: "Open",
+                    cancel_button_label: "Cancel",
+                };
+                out = draw_file_handler_picker_view(ui, &props);
+            });
+        }));
+        out
+    }
+
+    #[test]
+    fn view_returns_cancel_on_escape() {
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: Some(egui::Key::Escape),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let action = run_with_input(raw, &[], &[], None);
+        assert_eq!(action, FileHandlerPickerAction::Cancel);
+    }
+
+    #[test]
+    fn view_returns_none_on_idle_empty() {
+        let action = run_with_input(egui::RawInput::default(), &[], &[], None);
+        assert_eq!(action, FileHandlerPickerAction::None);
+    }
+
+    #[test]
+    fn view_renders_with_entries_without_panic() {
+        let cands = vec![
+            FileHandlerPickerEntryView {
+                id: "host/markdown-viewer".into(),
+                display: "Markdown Viewer".into(),
+            },
+            FileHandlerPickerEntryView {
+                id: "user/my-md".into(),
+                display: "user/my-md".into(),
+            },
+        ];
+        let recent = vec![FileHandlerPickerEntryView {
+            id: "host/image-viewer".into(),
+            display: "Image Viewer".into(),
+        }];
+        let action = run_with_input(
+            egui::RawInput::default(),
+            &cands,
+            &recent,
+            Some("host/markdown-viewer"),
+        );
+        assert_eq!(action, FileHandlerPickerAction::None);
+    }
 }
