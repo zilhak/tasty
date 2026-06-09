@@ -9,3 +9,6 @@
 
 # Plugin manifest 서명 산출물 (빌드 머신 dev key 로 자동 생성)
 crates/tasty-plugin-*/tasty-plugin.toml.sig
+
+# AI 에이전트 작업 공간 (임시 파일, 계획 md, 스크린샷 등 — git 미추적 정책)
+.claude-workspace/
