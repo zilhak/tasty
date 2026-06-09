@@ -1,16 +1,15 @@
 //! Multi-tier tab layout 데모 (Tier 2 widget).
 //!
-//! 본체의 *Settings modal* / *Layout Preset window* 가 사용하는 다단 탭 레이아웃
-//! 패턴 (`Top tab bar → Sub tab bar → Content`) 의 시각 모방.
-//! 본체 의존 없음 — Theme + 더미 데이터로 동일 idiom 재현.
+//! 같은 *가로 축* 에 탭이 N단 쌓일 때 depth 별로 시각 위계를 부여하는 패턴.
 //!
-//! ## 본체 idiom (Settings 기준 — `src/view/settings/ui.rs`)
-//! - Top tab bar: 가로 `ScrollArea` + `selectable_label` 리스트 + 콘텐츠 width
-//!   가 viewport 보다 클 때만 *overlay* 좌우 화살표 (alpha 0.4, 글자 크기)
-//! - Sub tab bar: `ui.horizontal` + `selectable_label` (보통 짧아 스크롤 불필요)
-//! - Content: `ui.separator()` + 분기 draw
+//! - **1단 (top)**: 일반 `selectable_label` + 아래 `ui.separator()` (밑줄).
+//! - **2단 (sub)**: 외곽 `Frame` 으로 묶은 *segmented control* — Frame 이
+//!   "이 탭들은 한 그룹" 임을 시각적으로 표명. 활성 항목은 `selectable_label`
+//!   기본 selection 색으로 강조.
+//! - **3단 (subsub)**: 같은 segmented 패턴을 *작은 사이즈* 로 한 번 더.
+//!   글씨 11 + 더 얇은 inner padding + 더 작은 corner.
 //!
-//! 본 데모는 시각만 보여주므로 클릭 인터랙션은 `thread_local` 상태에 저장.
+//! `Theme` 만 의존. 본체 binary 미의존.
 
 use std::cell::RefCell;
 
@@ -61,9 +60,9 @@ const SUBSUB_TABS: &[&str] = &["Light", "Dark", "Auto"];
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.label(
         egui::RichText::new(
-            "본체 Settings / Layout Preset 의 다단 탭 레이아웃을 동일 idiom 으로 재현. \
-             상단: 가로 ScrollArea + overlay 화살표 (스크롤 필요시만, alpha 0.4). \
-             중간: ui.horizontal + selectable_label. 하단: separator + content.",
+            "같은 가로 축에서 depth 를 시각 위계로 표현. \
+             1단: 일반 탭 + 밑줄. 2단: 외곽 Frame 으로 묶은 segmented control. \
+             3단: 같은 segmented 패턴 + 작은 사이즈.",
         )
         .color(egui::Color32::from(theme.subtext0))
         .size(11.0),
@@ -100,10 +99,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
     // 본 데모 패널 — 본체 settings 의 modal 상단 영역과 같은 시각 idiom.
     let panel_h = match case {
-        Case::SingleTier => 80.0,
-        Case::TwoTier => 130.0,
-        Case::ThreeTier => 180.0,
-        Case::ManyTopTabs => 180.0,
+        Case::SingleTier => 90.0,
+        Case::TwoTier => 150.0,
+        Case::ThreeTier => 210.0,
+        Case::ManyTopTabs => 200.0,
     };
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.set_min_size(egui::vec2(ui.available_width(), panel_h));
@@ -115,19 +114,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TOP_TABS_FEW
         };
 
+        // 1단: 일반 탭 + 밑줄 separator.
         draw_top_tab_bar(ui, theme, top_tabs);
+        ui.separator();
 
         if matches!(case, Case::TwoTier | Case::ThreeTier) {
-            ui.add_space(4.0);
-            draw_sub_tab_bar(ui, theme, SUB_TABS, |idx| {
+            ui.add_space(6.0);
+            // 2단: segmented control.
+            draw_sub_segmented(ui, theme, SUB_TABS, |idx| {
                 STATE.with(|s| s.borrow_mut().sub = idx);
             });
         }
         if matches!(case, Case::ThreeTier) {
-            draw_sub_sub_tab_bar(ui, theme, SUBSUB_TABS);
+            ui.add_space(4.0);
+            // 3단: segmented control (작은 사이즈).
+            draw_subsub_segmented(ui, theme, SUBSUB_TABS);
         }
 
-        ui.separator();
+        ui.add_space(8.0);
         draw_content(ui, theme, case);
     });
 }
@@ -211,38 +215,45 @@ fn draw_top_tab_bar(ui: &mut egui::Ui, theme: &Theme, tabs: &[&str]) {
     });
 }
 
-fn draw_sub_tab_bar(ui: &mut egui::Ui, _theme: &Theme, tabs: &[&str], on_click: impl Fn(usize)) {
-    ui.horizontal(|ui| {
-        let cur = STATE.with(|s| s.borrow().sub);
-        for (idx, label) in tabs.iter().enumerate() {
-            if ui.selectable_label(cur == idx, *label).clicked() {
-                on_click(idx);
-            }
-        }
-    });
+/// 2단: 외곽 Frame 으로 묶은 segmented control. *이 탭들은 한 그룹* 임을 시각화.
+fn draw_sub_segmented(ui: &mut egui::Ui, theme: &Theme, tabs: &[&str], on_click: impl Fn(usize)) {
+    egui::Frame::new()
+        .fill(egui::Color32::from(theme.mantle))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from(theme.surface0)))
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::symmetric(4, 3))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let cur = STATE.with(|s| s.borrow().sub);
+                for (idx, label) in tabs.iter().enumerate() {
+                    if ui.selectable_label(cur == idx, *label).clicked() {
+                        on_click(idx);
+                    }
+                }
+            });
+        });
 }
 
-fn draw_sub_sub_tab_bar(ui: &mut egui::Ui, theme: &Theme, tabs: &[&str]) {
-    ui.horizontal(|ui| {
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new("▸")
-                .color(egui::Color32::from(theme.subtext0))
-                .size(11.0),
-        );
-        let cur = STATE.with(|s| s.borrow().subsub);
-        for (idx, label) in tabs.iter().enumerate() {
-            let resp = ui.selectable_label(
-                cur == idx,
-                egui::RichText::new(*label)
-                    .size(11.0)
-                    .color(egui::Color32::from(theme.text)),
-            );
-            if resp.clicked() {
-                STATE.with(|s| s.borrow_mut().subsub = idx);
-            }
-        }
-    });
+/// 3단: 같은 segmented 패턴, 글씨 11 + 더 얇은 inner padding + 작은 corner.
+fn draw_subsub_segmented(ui: &mut egui::Ui, theme: &Theme, tabs: &[&str]) {
+    egui::Frame::new()
+        .fill(egui::Color32::from(theme.mantle))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from(theme.surface0)))
+        .corner_radius(4.0)
+        .inner_margin(egui::Margin::symmetric(3, 2))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let cur = STATE.with(|s| s.borrow().subsub);
+                for (idx, label) in tabs.iter().enumerate() {
+                    let rt = egui::RichText::new(*label)
+                        .size(11.0)
+                        .color(egui::Color32::from(theme.text));
+                    if ui.selectable_label(cur == idx, rt).clicked() {
+                        STATE.with(|s| s.borrow_mut().subsub = idx);
+                    }
+                }
+            });
+        });
 }
 
 fn draw_content(ui: &mut egui::Ui, theme: &Theme, case: Case) {
