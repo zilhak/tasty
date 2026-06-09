@@ -111,14 +111,28 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
                 });
         });
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        let item = state.items.get(state.selected).copied();
-        if let Some(item) = item {
-            ui.heading(item.name);
-            ui.separator();
-            (item.draw)(ui, &state.theme);
-        } else {
-            ui.label("No catalog item selected.");
-        }
+    // CentralPanel 의 우측 inner_margin 을 0 으로 두어 ScrollArea 의 스크롤바가
+    // 갤러리 창 우측 끝에 정확히 붙도록 한다. 상/좌/하 margin 은 기본값 유지.
+    let central_frame = egui::Frame::central_panel(&ctx.style()).inner_margin(egui::Margin {
+        left: 8,
+        right: 0,
+        top: 8,
+        bottom: 8,
     });
+    egui::CentralPanel::default()
+        .frame(central_frame)
+        .show(ctx, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let item = state.items.get(state.selected).copied();
+                    if let Some(item) = item {
+                        ui.heading(item.name);
+                        ui.separator();
+                        (item.draw)(ui, &state.theme);
+                    } else {
+                        ui.label("No catalog item selected.");
+                    }
+                });
+        });
 }
