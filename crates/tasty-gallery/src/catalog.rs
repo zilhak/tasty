@@ -50,6 +50,10 @@ pub fn all() -> Vec<CatalogItem> {
             draw: widgets::dialog::draw,
         },
         CatalogItem {
+            name: "Widget — Multi-tier Tab Layout",
+            draw: widgets::multi_tab_layout::draw,
+        },
+        CatalogItem {
             name: "Popup — Markdown Open",
             draw: components::markdown_open::draw,
         },

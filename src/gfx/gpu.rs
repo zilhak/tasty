@@ -160,6 +160,10 @@ impl GpuState {
             opts.zoom_with_keyboard = false;
         });
 
+        // egui_extras image loaders (SVG / PNG / ...). 정적 SVG 아이콘 (chevron 등) 을
+        // `egui::include_image!` 로 임베드한 뒤 `egui::Image` 위젯에서 사용한다.
+        egui_extras::install_image_loaders(&egui_ctx);
+
         // Register bundled D2Coding (primary monospace) and system CJK fallback in egui.
         Self::setup_egui_fonts(&egui_ctx);
 

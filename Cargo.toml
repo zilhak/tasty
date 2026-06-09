@@ -187,6 +187,8 @@ wgpu = { version = "24", optional = true }
 egui = { version = "0.31", optional = true }
 egui-wgpu = { version = "0.31", optional = true }
 egui-winit = { version = "0.31", optional = true }
+# SVG icons (chevron) via egui::Image — load + tint as currentColor.
+egui_extras = { version = "0.31", features = ["svg"], optional = true }
 
 # Terminal Emulation
 termwiz = "0.22"
@@ -313,6 +315,7 @@ gui = [
     "dep:egui",
     "dep:egui-wgpu",
     "dep:egui-winit",
+    "dep:egui_extras",
     "dep:cosmic-text",
     "dep:bytemuck",
     "dep:webbrowser",

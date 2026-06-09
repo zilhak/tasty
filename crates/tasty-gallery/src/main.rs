@@ -160,6 +160,8 @@ async fn init_runtime(window: Arc<Window>) -> anyhow::Result<Runtime> {
         opts.zoom_with_keyboard = false;
     });
     tasty_egui_theme::install_cjk_fallback(&egui_ctx);
+    // SVG icon (chevron) loaders.
+    egui_extras::install_image_loaders(&egui_ctx);
 
     let egui_state = egui_winit::State::new(
         egui_ctx.clone(),

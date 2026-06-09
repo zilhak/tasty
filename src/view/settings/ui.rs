@@ -349,9 +349,9 @@ pub fn draw_settings_panel(
             let mut new_offset = output.state.offset.x;
             if needs_scroll {
                 let bar_rect = output.inner_rect;
-                let arrow_font_size = 14.0_f32;
-                let arrow_area_w = arrow_font_size * 1.6;
-                let arrow_color = ui.style().visuals.text_color().gamma_multiply(0.4);
+                let icon_size = 14.0_f32;
+                let arrow_area_w = icon_size * 1.6;
+                let icon_tint = ui.style().visuals.text_color().gamma_multiply(0.4);
 
                 let left_rect = egui::Rect::from_min_size(
                     bar_rect.left_top(),
@@ -363,20 +363,24 @@ pub fn draw_settings_panel(
                 );
                 let left_btn = ui.put(
                     left_rect,
-                    egui::Button::new(
-                        egui::RichText::new("◀")
-                            .color(arrow_color)
-                            .size(arrow_font_size),
+                    egui::Button::image(
+                        egui::Image::new(egui::include_image!(
+                            "../../../assets/icons/chevron-left.svg"
+                        ))
+                        .tint(icon_tint)
+                        .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
                     )
                     .frame(false)
                     .min_size(left_rect.size()),
                 );
                 let right_btn = ui.put(
                     right_rect,
-                    egui::Button::new(
-                        egui::RichText::new("▶")
-                            .color(arrow_color)
-                            .size(arrow_font_size),
+                    egui::Button::image(
+                        egui::Image::new(egui::include_image!(
+                            "../../../assets/icons/chevron-right.svg"
+                        ))
+                        .tint(icon_tint)
+                        .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
                     )
                     .frame(false)
                     .min_size(right_rect.size()),
