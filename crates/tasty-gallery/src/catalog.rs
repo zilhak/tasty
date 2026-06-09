@@ -78,8 +78,13 @@ pub fn all() -> Vec<CatalogItem> {
             draw: components::approval::draw,
         },
         CatalogItem {
+<<<<<<< HEAD
             name: "Popup — Command Palette",
             draw: components::command_palette::draw,
+=======
+            name: "Layout — Sidebar (Full / Collapsed)",
+            draw: components::sidebar::draw,
+>>>>>>> d5caa241 (feat(gallery): add sidebar catalog demo (Full + Collapsed))
         },
     ]
 }
