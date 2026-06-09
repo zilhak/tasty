@@ -6,3 +6,6 @@
 .DS_Store
 .claude/
 .idea/
+
+# Plugin manifest 서명 산출물 (빌드 머신 dev key 로 자동 생성)
+crates/tasty-plugin-*/tasty-plugin.toml.sig
