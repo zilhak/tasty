@@ -305,21 +305,29 @@ fn setup_main_menu(
     let edit_menu_item = NSMenuItem::new(mtm);
     let edit_menu = NSMenu::new(mtm);
     edit_menu.setTitle(&NSString::from_str("Edit"));
-    edit_menu.addItem(&make_std_item(mtm, &NSString::from_str("Cut"), sel!(cut:)));
-    edit_menu.addItem(&make_std_item(
+    edit_menu.addItem(&make_std_item_with_binding(
+        mtm,
+        &NSString::from_str("Cut"),
+        sel!(cut:),
+        &keybindings.cut,
+    ));
+    edit_menu.addItem(&make_std_item_with_binding(
         mtm,
         &NSString::from_str("Copy"),
         sel!(copy:),
+        &keybindings.copy,
     ));
-    edit_menu.addItem(&make_std_item(
+    edit_menu.addItem(&make_std_item_with_binding(
         mtm,
         &NSString::from_str("Paste"),
         sel!(paste:),
+        &keybindings.paste,
     ));
-    edit_menu.addItem(&make_std_item(
+    edit_menu.addItem(&make_std_item_with_binding(
         mtm,
         &NSString::from_str("Select All"),
         sel!(selectAll:),
+        &keybindings.select_all,
     ));
     edit_menu_item.setSubmenu(Some(&edit_menu));
     main_menu.addItem(&edit_menu_item);
@@ -338,10 +346,11 @@ fn setup_main_menu(
         &NSString::from_str("Zoom"),
         sel!(performZoom:),
     ));
-    window_menu.addItem(&make_std_item(
+    window_menu.addItem(&make_std_item_with_binding(
         mtm,
         &NSString::from_str("Close Window"),
         sel!(performClose:),
+        &keybindings.close_surface,
     ));
     window_menu_item.setSubmenu(Some(&window_menu));
     main_menu.addItem(&window_menu_item);
@@ -410,6 +419,52 @@ fn make_std_item(mtm: MainThreadMarker, title: &NSString, selector: Sel) -> Reta
     item
 }
 
+/// [`KeybindingSettings`] 의 binding vec 첫 항목을 NSMenu key equivalent +
+/// modifier mask 로 변환. vec 이 비면 둘 다 빈 값.
+///
+/// `make_std_item_with_binding` 의 inner — NSMenuItem 생성 (main-thread 한정)
+/// 을 거치지 않고 변환 동작만 단독 검증할 수 있도록 분리.
+fn key_equivalent_from_bindings(
+    bindings: &[String],
+) -> (Retained<NSString>, objc2_app_kit::NSEventModifierFlags) {
+    use objc2_app_kit::NSEventModifierFlags;
+    bindings
+        .first()
+        .map(|b| binding_to_nsmenu_key(b))
+        .unwrap_or_else(|| (NSString::from_str(""), NSEventModifierFlags::empty()))
+}
+
+/// `make_std_item` 의 *binding 연동* 변형. selector 는 NSResponder chain 표준
+/// 그대로 (`cut:` / `copy:` / `paste:` 등) 두고, *menubar 표시 + 단축키 등록*
+/// 만 [`KeybindingSettings`] 의 첫 binding 값으로 채운다.
+///
+/// binding 이 빈 vec 이면 [`make_std_item`] 과 동일하게 *key equivalent 빈 값*
+/// (단축키 없는 메뉴 항목). 빈 단일 항목 binding (예: `vec!["alt+"]`) 도
+/// [`binding_to_nsmenu_key`] 가 안전 처리하여 빈 key 로 폴백.
+///
+/// NSResponder chain 의 내부 동작은 변경하지 않는다 — Cmd+X 입력 시
+/// first responder 가 `cut:` 를 받는 것은 macOS 표준 selector + key equivalent
+/// 매칭이라 menubar 측 변경만으로 자동 활성화된다.
+fn make_std_item_with_binding(
+    mtm: MainThreadMarker,
+    title: &NSString,
+    selector: Sel,
+    bindings: &[String],
+) -> Retained<NSMenuItem> {
+    let (key, mods) = key_equivalent_from_bindings(bindings);
+    let item = NSMenuItem::new(mtm);
+    item.setTitle(title);
+    item.setKeyEquivalent(&key);
+    // SAFETY: main thread (mtm). setKeyEquivalentModifierMask / setAction 은 AppKit
+    // main-thread-only. target 미설정 = nil = first responder chain (표준 selector 용).
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    unsafe {
+        item.setKeyEquivalentModifierMask(mods);
+        item.setAction(Some(selector));
+    }
+    item
+}
+
 /// Set the Dock icon using NSApplication::setApplicationIconImage.
 /// This works even for non-bundled executables (cargo run).
 fn set_dock_icon(app: &NSApplication) {
@@ -469,5 +524,39 @@ mod tests {
     fn binding_to_nsmenu_key_lowercases_alpha_key() {
         let (key, _) = binding_to_nsmenu_key("alt+W");
         assert_eq!(key.to_string(), "w");
+    }
+
+    /// 표준 selector 항목 (`cut:` 등) 의 menubar 표시가 KeybindingSettings 의
+    /// *첫* binding 으로 채워지는지 — make_std_item_with_binding 의 핵심 보장
+    /// (vec 의 첫 항목만 menubar 측에 노출, 나머지 binding 은 본체 keymap 처리).
+    #[test]
+    fn key_equivalent_from_bindings_picks_first_binding() {
+        let bindings = vec!["alt+x".to_string(), "ctrl+x".to_string()];
+        let (key, mods) = key_equivalent_from_bindings(&bindings);
+        assert_eq!(key.to_string(), "x");
+        // `alt+` → Command (위치 기반 추상화).
+        assert!(mods.contains(NSEventModifierFlags::Command));
+        // ctrl+ 는 두 번째 binding 이라 menubar 노출 X.
+        assert!(!mods.contains(NSEventModifierFlags::Control));
+    }
+
+    /// 빈 binding vec → key equivalent / modifier 모두 빈 값
+    /// (= 단축키 없는 메뉴 항목, 정책상 KeybindingSettings 미연동 fallback).
+    #[test]
+    fn key_equivalent_from_bindings_empty_yields_empty_key() {
+        let bindings: Vec<String> = vec![];
+        let (key, mods) = key_equivalent_from_bindings(&bindings);
+        assert_eq!(key.to_string(), "");
+        assert_eq!(mods, NSEventModifierFlags::empty());
+    }
+
+    /// binding 에 prefix 만 있는 비정상 값 → key 만 빈 값으로 폴백 (panic X).
+    /// modifier 는 binding_to_nsmenu_key 동작상 prefix 만으로도 set.
+    #[test]
+    fn key_equivalent_from_bindings_prefix_only_falls_back_to_empty_key() {
+        let bindings = vec!["alt+".to_string()];
+        let (key, mods) = key_equivalent_from_bindings(&bindings);
+        assert_eq!(key.to_string(), "");
+        assert!(mods.contains(NSEventModifierFlags::Command));
     }
 }
