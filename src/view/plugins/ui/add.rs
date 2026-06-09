@@ -1,7 +1,9 @@
 use crate::i18n::{t, t_fmt};
 use crate::theme;
 
-use super::{AddPreview, PluginsAction, PluginsSnapshot, PluginsUiState};
+use super::{
+    AddPreview, AddTrustReason, AddTrustState, PluginsAction, PluginsSnapshot, PluginsUiState,
+};
 
 pub(super) fn draw_add_tab(
     ctx: &egui::Context,
@@ -149,22 +151,105 @@ fn draw_add_preview(
             }
         });
 
+    // Untrusted plugin 경고 — 빨간색 영역. 이미 설치된 plugin 은 표시 X
+    // (그쪽이 더 의미 있는 메시지).
+    if preview.already_installed.is_none() {
+        draw_untrusted_warning(ui, &preview, th);
+    }
+
     ui.add_space(10.0);
     ui.separator();
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        let can_add = preview.already_installed.is_none();
+        let can_add = preview.already_installed.is_none()
+            && !matches!(
+                preview.trust_state,
+                AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError(_)
+            );
         let add_btn = ui.add_enabled(can_add, egui::Button::new(t("plugins.add_button")));
         if add_btn.clicked() {
-            actions.push(PluginsAction::Install {
-                src_path: preview.src_path.clone(),
-            });
+            let action = match &preview.trust_state {
+                AddTrustState::Trusted => PluginsAction::Install {
+                    src_path: preview.src_path.clone(),
+                },
+                AddTrustState::UntrustedWithPubkey {
+                    fingerprint,
+                    pubkey_b64,
+                    ..
+                } => PluginsAction::TrustAndInstall {
+                    src_path: preview.src_path.clone(),
+                    plugin_id: preview.id.clone(),
+                    pubkey_b64: pubkey_b64.clone(),
+                    permissions: preview.permissions.clone(),
+                    publisher_fingerprint: fingerprint.clone(),
+                },
+                // can_add=false 이므로 도달 불가. 안전망으로 일반 Install fallthrough.
+                AddTrustState::UntrustedNoPubkey { .. } | AddTrustState::SigError(_) => {
+                    PluginsAction::Install {
+                        src_path: preview.src_path.clone(),
+                    }
+                }
+            };
+            actions.push(action);
             reset_add_state(ui_state);
         }
         if ui.button(t("button.cancel")).clicked() {
             reset_add_state(ui_state);
         }
     });
+}
+
+/// `Add Plugin` 탭 하단의 출처 미상 plugin 경고 영역. theme.red 빨간색 박스.
+fn draw_untrusted_warning(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::Theme) {
+    let red = egui::Color32::from(th.red);
+    match &preview.trust_state {
+        AddTrustState::Trusted => {}
+        AddTrustState::UntrustedWithPubkey {
+            fingerprint,
+            reason,
+            ..
+        } => {
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            let title = match reason {
+                AddTrustReason::PermissionsChanged => t("plugins.trust_permissions_changed_title"),
+                AddTrustReason::UnknownKey => t("plugins.trust_unknown_title"),
+            };
+            ui.label(egui::RichText::new(title).strong().color(red));
+            ui.label(
+                egui::RichText::new(t("plugins.trust_unknown_body"))
+                    .color(egui::Color32::from(th.text)),
+            );
+            ui.label(t_fmt("plugins.trust_fingerprint", fingerprint));
+        }
+        AddTrustState::UntrustedNoPubkey {
+            fingerprint,
+            reason,
+        } => {
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            let title = match reason {
+                AddTrustReason::PermissionsChanged => t("plugins.trust_permissions_changed_title"),
+                AddTrustReason::UnknownKey => t("plugins.trust_unknown_title"),
+            };
+            ui.label(egui::RichText::new(title).strong().color(red));
+            ui.label(egui::RichText::new(t("plugins.trust_no_pubkey")).color(red));
+            ui.label(t_fmt("plugins.trust_fingerprint", fingerprint));
+        }
+        AddTrustState::SigError(msg) => {
+            ui.add_space(12.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new(t("plugins.trust_sig_error_title"))
+                    .strong()
+                    .color(red),
+            );
+            ui.label(egui::RichText::new(msg).color(red));
+        }
+    }
 }
 
 /// `Add` 탭의 상태를 초기 입력 화면으로 되돌린다.
@@ -193,6 +278,7 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
                 .iter()
                 .any(|p| p.id == manifest.id)
                 .then(|| t_fmt("plugins.add_already_installed", &manifest.id));
+            let trust_state = compute_trust_state(&path);
             ui_state.add_preview = Some(AddPreview {
                 src_path: path.to_string_lossy().to_string(),
                 id: manifest.id.clone(),
@@ -208,10 +294,46 @@ fn try_validate_path(ui_state: &mut PluginsUiState, snapshot: &PluginsSnapshot) 
                     .collect(),
                 permissions: manifest.permissions,
                 already_installed: already,
+                trust_state,
             });
         }
         Err(e) => {
             ui_state.add_error = Some(t_fmt("plugins.add_invalid_manifest", &e.to_string()));
         }
+    }
+}
+
+/// 매니페스트 sig 검증 + `.pub` sidecar 조회 결과를 UI 가 분기 가능한 enum 으로
+/// 매핑.
+fn compute_trust_state(dir: &std::path::Path) -> AddTrustState {
+    use tasty_host_plugin::bundle_sig::{
+        TrustDecision, UntrustedReason, read_pubkey_sidecar, verify_bundle_signature,
+    };
+    use tasty_host_plugin::known_plugins::KnownPluginEntry;
+
+    match verify_bundle_signature(dir) {
+        Ok(TrustDecision::Trusted) => AddTrustState::Trusted,
+        Ok(TrustDecision::Untrusted {
+            fingerprint,
+            reason,
+            ..
+        }) => {
+            let mapped_reason = match reason {
+                UntrustedReason::UnknownKey => AddTrustReason::UnknownKey,
+                UntrustedReason::PermissionsChanged => AddTrustReason::PermissionsChanged,
+            };
+            match read_pubkey_sidecar(dir) {
+                Some(pk) => AddTrustState::UntrustedWithPubkey {
+                    fingerprint,
+                    pubkey_b64: KnownPluginEntry::encode_pubkey(&pk),
+                    reason: mapped_reason,
+                },
+                None => AddTrustState::UntrustedNoPubkey {
+                    fingerprint,
+                    reason: mapped_reason,
+                },
+            }
+        }
+        Err(e) => AddTrustState::SigError(e.to_string()),
     }
 }

@@ -3,6 +3,68 @@
 use crate::app::App;
 use crate::{plugin, plugins_ui, window};
 
+/// `TrustAndInstall` 의 핵심 절차 — known-plugins.toml 에 trust entry 추가 후
+/// 일반 `plugin_install` 흐름 진행. trust 저장에 실패하면 install 자체 중단
+/// (출처 미상 plugin 이 trust DB 미반영 상태로 disk 에 남아 다음 discover 에서
+/// silent-loaded 되는 시나리오 차단).
+fn record_trust_then_install(
+    app: &mut App,
+    src_path: &str,
+    plugin_id: &str,
+    pubkey_b64: &str,
+    permissions: &[String],
+    publisher_fingerprint: &str,
+) -> anyhow::Result<Vec<crate::core::intent::CoreEvent>> {
+    use tasty_host_plugin::known_plugins::{KnownPluginEntry, KnownPlugins};
+
+    let mut db =
+        KnownPlugins::load().map_err(|e| anyhow::anyhow!("load known-plugins.toml failed: {e}"))?;
+    let entry = KnownPluginEntry {
+        pubkey: pubkey_b64.to_string(),
+        permissions: permissions.to_vec(),
+        trusted_at: current_rfc3339(),
+        publisher_fingerprint: publisher_fingerprint.to_string(),
+    };
+    db.add(plugin_id.to_string(), entry);
+    db.save()
+        .map_err(|e| anyhow::anyhow!("save known-plugins.toml failed: {e}"))?;
+
+    app.plugin_install(std::path::PathBuf::from(src_path))
+}
+
+/// `chrono` 같은 추가 deps 없이 std::time 으로 RFC3339 UTC 타임스탬프 생성.
+/// 정밀도는 초 단위 — trust 시점 식별용으로 충분.
+fn current_rfc3339() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    // Days from civil date — Howard Hinnant's algorithm. 1970-01-01 = epoch.
+    let days = secs.div_euclid(86_400);
+    let time_of_day = secs.rem_euclid(86_400);
+    let hour = (time_of_day / 3600) as u32;
+    let minute = ((time_of_day % 3600) / 60) as u32;
+    let second = (time_of_day % 60) as u32;
+    let (y, m, d) = civil_from_days(days);
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+/// Howard Hinnant `days_from_civil` 역함수 — epoch days → (year, month, day).
+fn civil_from_days(z: i64) -> (i32, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = (y + if m <= 2 { 1 } else { 0 }) as i32;
+    (y, m, d)
+}
+
 impl App {
     /// Drain pending actions from the plugins modal and apply them to the manager.
     /// Refreshes the modal's snapshot after applying.
@@ -90,6 +152,45 @@ impl App {
                                     _ => None,
                                 })
                                 .unwrap_or_default();
+                            self.cascade_plugin_events(events);
+                            (
+                                crate::i18n::t_fmt("plugins.add_installed", &installed),
+                                crate::adapters::ui::ToastKind::Success,
+                            )
+                        }
+                        Err(e) => (
+                            crate::i18n::t_fmt("plugins.add_install_failed", &e.to_string()),
+                            crate::adapters::ui::ToastKind::Error,
+                        ),
+                    };
+                    pending_toasts.push(toast);
+                }
+                plugins_ui::PluginsAction::TrustAndInstall {
+                    src_path,
+                    plugin_id,
+                    pubkey_b64,
+                    permissions,
+                    publisher_fingerprint,
+                } => {
+                    let toast = match record_trust_then_install(
+                        self,
+                        &src_path,
+                        &plugin_id,
+                        &pubkey_b64,
+                        &permissions,
+                        &publisher_fingerprint,
+                    ) {
+                        Ok(events) => {
+                            let installed = events
+                                .iter()
+                                .find_map(|ev| match ev {
+                                    crate::core::intent::CoreEvent::PluginRegistryChanged {
+                                        plugin_id,
+                                        ..
+                                    } => Some(plugin_id.clone()),
+                                    _ => None,
+                                })
+                                .unwrap_or(plugin_id.clone());
                             self.cascade_plugin_events(events);
                             (
                                 crate::i18n::t_fmt("plugins.add_installed", &installed),

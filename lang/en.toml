@@ -54,6 +54,12 @@ add_invalid_manifest = "Cannot read manifest: {}"
 add_already_installed = "Plugin '{}' is already installed."
 add_install_failed = "Install failed: {}"
 add_installed = "Plugin '{}' installed."
+trust_unknown_title = "Unknown source plugin"
+trust_permissions_changed_title = "Plugin permissions have changed"
+trust_unknown_body = "This plugin is not signed by a verified key. Adding it will permanently record your trust so future loads are automatic."
+trust_fingerprint = "Fingerprint: {}"
+trust_no_pubkey = "Cannot register trust — public-key sidecar (tasty-plugin.toml.pub) is missing. Ask the publisher to supply the public key file."
+trust_sig_error_title = "Signature verification error"
 
 [settings]
 [settings.window]

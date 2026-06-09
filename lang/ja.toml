@@ -54,6 +54,12 @@ add_invalid_manifest = "マニフェストを読み込めません: {}"
 add_already_installed = "すでにインストール済みです: {}"
 add_install_failed = "インストール失敗: {}"
 add_installed = "プラグインを追加しました: {}"
+trust_unknown_title = "出所不明のプラグイン"
+trust_permissions_changed_title = "権限が変更されたプラグイン"
+trust_unknown_body = "このプラグインは検証済みの鍵で署名されていません。追加するとユーザー信頼リストに永続記録され、次回からは自動的に信頼されます。"
+trust_fingerprint = "フィンガープリント: {}"
+trust_no_pubkey = "署名鍵サイドカー (tasty-plugin.toml.pub) が見つからないため信頼登録できません。配布元に公開鍵ファイルを依頼してください。"
+trust_sig_error_title = "署名検証エラー"
 
 [settings]
 [settings.window]
