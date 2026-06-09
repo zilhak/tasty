@@ -391,6 +391,7 @@ cancel_button = "취소"
 workspaces_heading = "워크스페이스"
 shortcuts_heading = "단축키"
 tools_button = "도구"
+collapse_button = "접기"
 
 [context_menu]
 rename_title = "이름 변경"

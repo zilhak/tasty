@@ -391,6 +391,7 @@ cancel_button = "キャンセル"
 workspaces_heading = "ワークスペース"
 shortcuts_heading = "ショートカット"
 tools_button = "ツール"
+collapse_button = "折りたたむ"
 
 [context_menu]
 rename_title = "名前の変更"

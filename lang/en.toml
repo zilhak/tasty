@@ -391,6 +391,7 @@ cancel_button = "Cancel"
 workspaces_heading = "Workspaces"
 shortcuts_heading = "Shortcuts"
 tools_button = "Tools"
+collapse_button = "Collapse"
 
 [context_menu]
 rename_title = "Rename"

@@ -49,7 +49,7 @@ pub fn draw_full_sidebar(
     });
 
     let tools_label = t("sidebar.tools_button");
-    let collapse_label = "<  Collapse";
+    let collapse_label = format!("<  {}", t("sidebar.collapse_button"));
     let plugins_label = t("button.plugins");
     let settings_label = t("button.settings");
     let new_workspace_label = t("button.new_workspace");
@@ -73,7 +73,7 @@ pub fn draw_full_sidebar(
                 workspaces: &workspaces,
                 drag,
                 tools_label,
-                collapse_label,
+                collapse_label: &collapse_label,
                 plugins_label,
                 settings_label,
                 new_workspace_label,
