@@ -161,7 +161,7 @@ fn draw_split(ui: &mut egui::Ui, theme: &Theme) {
             .corner_radius(4.0)
             .inner_margin(egui::Margin::symmetric(6, 6))
             .show(ui, |ui| {
-                ui.set_width(100.0);
+                ui.set_width(150.0);
                 ui.set_min_height(available_height);
 
                 ui.vertical(|ui| {
