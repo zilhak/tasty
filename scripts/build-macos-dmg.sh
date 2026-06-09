@@ -39,6 +39,24 @@ DIST_DIR="dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 DMG_NAME="$APP_NAME-$VERSION-macos.dmg"
 
+# Discover signing key BEFORE cargo build — so that any newly generated
+# dev-pubkey.bin is embedded into the host-plugin binary at compile time.
+# release/dist builds require a signing key; debug skips entirely.
+if [[ "$PROFILE" != "debug" ]]; then
+    if [[ -z "${SIGN_KEY_PATH:-}" ]]; then
+        if [[ -f "$HOME/.tasty-keys/release.pem" ]]; then
+            SIGN_KEY_PATH="$HOME/.tasty-keys/release.pem"
+        elif [[ -f "$HOME/.tasty-keys/dev.pem" ]]; then
+            SIGN_KEY_PATH="$HOME/.tasty-keys/dev.pem"
+        else
+            echo "==> No signing key found — auto-generating dev key for zero-touch build..."
+            ./scripts/gen-dev-key.sh
+            SIGN_KEY_PATH="$HOME/.tasty-keys/dev.pem"
+        fi
+    fi
+    export SIGN_KEY_PATH
+fi
+
 echo "==> Building tasty ($PROFILE)..."
 cargo build $CARGO_FLAGS
 
@@ -62,16 +80,9 @@ for c in "${PLUGIN_CRATES[@]}"; do
 done
 cargo build $CARGO_FLAGS "${PLUGIN_CARGO_ARGS[@]}"
 
-# release/dist builds: sign all plugin manifests (Ed25519). The runtime
-# loader (`bundle_sig.rs`) rejects unsigned plugins in non-debug builds.
-# Debug builds skip signing — `builtin.rs` warns instead of rejecting.
+# release/dist builds: sign all plugin manifests (Ed25519) with the key
+# discovered (or auto-generated) before cargo build.
 if [[ "$PROFILE" != "debug" ]]; then
-    SIGN_KEY_PATH="${SIGN_KEY_PATH:-$HOME/.tasty-keys/release.pem}"
-    if [[ ! -f "$SIGN_KEY_PATH" ]]; then
-        echo "Error: signing key not found: $SIGN_KEY_PATH" >&2
-        echo "  Set SIGN_KEY_PATH or generate a dev key (scripts/gen-dev-key.sh)." >&2
-        exit 1
-    fi
     echo "==> Signing plugin manifests with $SIGN_KEY_PATH..."
     ./scripts/sign-bundle.sh --key "$SIGN_KEY_PATH" --all-builtins
 fi

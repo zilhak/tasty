@@ -53,6 +53,35 @@ $DistDir = "dist"
 $ArchiveName = "tasty-${Version}-windows-x64.zip"
 $StageDir = Join-Path $DistDir "tasty-windows"
 
+# Discover signing key BEFORE cargo build — so that any newly generated
+# dev-pubkey.bin is embedded into the host-plugin binary at compile time.
+if ($BuildProfile -ne "debug") {
+    $SignKeyPath = $env:SIGN_KEY_PATH
+    if (-not $SignKeyPath) {
+        $ReleaseKey = Join-Path $env:USERPROFILE ".tasty-keys\release.pem"
+        $DevKey = Join-Path $env:USERPROFILE ".tasty-keys\dev.pem"
+        if (Test-Path $ReleaseKey) {
+            $SignKeyPath = $ReleaseKey
+        } elseif (Test-Path $DevKey) {
+            $SignKeyPath = $DevKey
+        } else {
+            Write-Host "==> No signing key found — auto-generating dev key for zero-touch build..."
+            $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+            if (-not $bashCmd) {
+                Write-Error "bash not found in PATH. Install Git Bash or WSL to run scripts/gen-dev-key.sh."
+                exit 1
+            }
+            & bash ./scripts/gen-dev-key.sh
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "gen-dev-key.sh failed with exit code $LASTEXITCODE"
+                exit 1
+            }
+            $SignKeyPath = $DevKey
+        }
+    }
+    $env:SIGN_KEY_PATH = $SignKeyPath
+}
+
 Write-Host "==> Building tasty ($BuildProfile)..."
 cargo build @CargoFlags
 if ($LASTEXITCODE -ne 0) {
@@ -85,18 +114,10 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# release/dist builds: sign all plugin manifests (Ed25519). The runtime
-# loader (`bundle_sig.rs`) rejects unsigned plugins in non-debug builds.
-# Debug builds skip signing — `builtin.rs` warns instead of rejecting.
+# release/dist builds: sign all plugin manifests (Ed25519) with the key
+# discovered (or auto-generated) before cargo build.
 if ($BuildProfile -ne "debug") {
     $SignKeyPath = $env:SIGN_KEY_PATH
-    if (-not $SignKeyPath) {
-        $SignKeyPath = Join-Path $env:USERPROFILE ".tasty-keys\release.pem"
-    }
-    if (-not (Test-Path $SignKeyPath)) {
-        Write-Error "Signing key not found: $SignKeyPath. Set SIGN_KEY_PATH or generate a dev key (scripts/gen-dev-key.sh)."
-        exit 1
-    }
     $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
     if (-not $bashCmd) {
         Write-Error "bash not found in PATH. Install Git Bash or WSL to run scripts/sign-bundle.sh."
