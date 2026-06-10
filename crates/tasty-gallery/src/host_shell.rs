@@ -72,7 +72,7 @@ impl GalleryState {
         let active_category = items
             .first()
             .map(|i| i.category)
-            .unwrap_or(Category::Appearance);
+            .unwrap_or(Category::Foundations);
         let theme_id = ThemeId::Mocha;
         let theme = theme_id.build(false);
         Self {

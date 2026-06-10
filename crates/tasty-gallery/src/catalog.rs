@@ -2,6 +2,11 @@
 //!
 //! 한 항목은 `(name, draw)` 의 페어. `draw` 는 선택 시 우측 디테일 패널에
 //! 호출되는 함수로, `Theme` 을 받아 egui 위젯을 그린다.
+//!
+//! 1 차 분류는 웹 디자인 시스템 gallery 와 동일한 4 분류:
+//! Foundations / Components / Overlays / Layouts.
+//! (이전 5 분류 Appearance/Widget/Popup/Component/Layout 에서 Widget+Component 를
+//!  Components 로 통합하고, Popup 을 Overlays, Appearance 를 Foundations 로 재편.)
 
 pub mod components;
 pub mod spacing;
@@ -14,31 +19,32 @@ use tasty_type_appearance::theme::Theme;
 /// 카탈로그 1차 분류. 상단 탭 + 좌측 사이드바 필터링에 사용.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {
-    Appearance,
-    Widget,
-    Popup,
-    Component,
-    Layout,
+    /// 토큰·기초 (색/타입/간격).
+    Foundations,
+    /// 위젯·컴포넌트 (단일 UI 요소).
+    Components,
+    /// 모달·팝업 레이어.
+    Overlays,
+    /// 구조 셸 (사이드바/탭바/분할/하이라이트).
+    Layouts,
 }
 
 impl Category {
     pub fn label(self) -> &'static str {
         match self {
-            Category::Appearance => "Appearance",
-            Category::Widget => "Widget",
-            Category::Popup => "Popup",
-            Category::Component => "Component",
-            Category::Layout => "Layout",
+            Category::Foundations => "Foundations",
+            Category::Components => "Components",
+            Category::Overlays => "Overlays",
+            Category::Layouts => "Layouts",
         }
     }
 
     pub fn all() -> &'static [Category] {
         &[
-            Category::Appearance,
-            Category::Widget,
-            Category::Popup,
-            Category::Component,
-            Category::Layout,
+            Category::Foundations,
+            Category::Components,
+            Category::Overlays,
+            Category::Layouts,
         ]
     }
 }
@@ -54,119 +60,123 @@ pub struct CatalogItem {
 /// 모든 카탈로그 항목. 좌측 트리는 이 목록을 순회한다.
 pub fn all() -> Vec<CatalogItem> {
     vec![
+        // ── Foundations ──
         CatalogItem {
-            category: Category::Appearance,
-            name: "Theme — Color Swatches",
+            category: Category::Foundations,
+            name: "Color Swatches",
             draw: theme::draw,
         },
         CatalogItem {
-            category: Category::Appearance,
+            category: Category::Foundations,
             name: "Typography",
             draw: typography::draw,
         },
         CatalogItem {
-            category: Category::Appearance,
+            category: Category::Foundations,
             name: "Spacing",
             draw: spacing::draw,
         },
+        // ── Components ──
         CatalogItem {
-            category: Category::Widget,
-            name: "Widget — hint_text",
+            category: Category::Components,
+            name: "Hint text",
             draw: widgets::hint_text::draw,
         },
         CatalogItem {
-            category: Category::Widget,
-            name: "Widget — Divider (pane borders)",
-            draw: widgets::divider::draw,
-        },
-        CatalogItem {
-            category: Category::Widget,
-            name: "Widget — Toast (card visual)",
+            category: Category::Components,
+            name: "Toast (card visual)",
             draw: widgets::toast::draw,
         },
         CatalogItem {
-            category: Category::Widget,
-            name: "Widget — Dialog (rename popup frame)",
+            category: Category::Components,
+            name: "Dialog (rename popup frame)",
             draw: widgets::dialog::draw,
         },
         CatalogItem {
-            category: Category::Widget,
-            name: "Widget — Multi-tier Tab Layout",
-            draw: widgets::multi_tab_layout::draw,
-        },
-        CatalogItem {
-            category: Category::Popup,
-            name: "Popup — Markdown Open",
-            draw: components::markdown_open::draw,
-        },
-        CatalogItem {
-            category: Category::Popup,
-            name: "Popup — Update (Tier 3)",
-            draw: components::update::draw,
-        },
-        CatalogItem {
-            category: Category::Component,
-            name: "Component — Convert popup (props view)",
+            category: Category::Components,
+            name: "Convert popup (props view)",
             draw: components::convert::draw,
         },
         CatalogItem {
-            category: Category::Component,
-            name: "Component — Port Scanner popup",
+            category: Category::Components,
+            name: "Port Scanner popup",
             draw: components::port_scanner::draw,
         },
         CatalogItem {
-            category: Category::Popup,
-            name: "Popup — Apply Preset (Workspace/Tab/Pane)",
-            draw: components::apply_preset::draw,
-        },
-        CatalogItem {
-            category: Category::Popup,
-            name: "Popup — File Handler Picker",
-            draw: components::file_handler_picker::draw,
-        },
-        CatalogItem {
-            category: Category::Component,
-            name: "Component — Approval popup",
+            category: Category::Components,
+            name: "Approval popup",
             draw: components::approval::draw,
         },
         CatalogItem {
-            category: Category::Popup,
-            name: "Popup — Command Palette",
+            category: Category::Components,
+            name: "Toast Stack (Tier 3)",
+            draw: components::toast::draw,
+        },
+        // ── Overlays ──
+        CatalogItem {
+            category: Category::Overlays,
+            name: "Markdown Open",
+            draw: components::markdown_open::draw,
+        },
+        CatalogItem {
+            category: Category::Overlays,
+            name: "Update (Tier 3)",
+            draw: components::update::draw,
+        },
+        CatalogItem {
+            category: Category::Overlays,
+            name: "Apply Preset (Workspace/Tab/Pane)",
+            draw: components::apply_preset::draw,
+        },
+        CatalogItem {
+            category: Category::Overlays,
+            name: "File Handler Picker",
+            draw: components::file_handler_picker::draw,
+        },
+        CatalogItem {
+            category: Category::Overlays,
+            name: "Command Palette",
             draw: components::command_palette::draw,
         },
         CatalogItem {
-            category: Category::Layout,
-            name: "Layout — Sidebar (Full / Collapsed)",
+            category: Category::Overlays,
+            name: "Rename (workspace / tab)",
+            draw: components::rename_popup::draw,
+        },
+        // ── Layouts ──
+        CatalogItem {
+            category: Category::Layouts,
+            name: "Sidebar (Full / Collapsed)",
             draw: components::sidebar::draw,
         },
         CatalogItem {
-            category: Category::Layout,
-            name: "Layout — Pane Tab Bar",
+            category: Category::Layouts,
+            name: "Pane Tab Bar",
             draw: components::tab_bar::draw,
         },
         CatalogItem {
-            category: Category::Popup,
-            name: "Popup — Rename (workspace / tab)",
-            draw: components::rename_popup::draw,
+            category: Category::Layouts,
+            name: "Divider (pane borders)",
+            draw: widgets::divider::draw,
         },
         CatalogItem {
-            category: Category::Component,
-            name: "Component — Toast Stack (Tier 3)",
-            draw: components::toast::draw,
-        },
-        CatalogItem {
-            category: Category::Layout,
-            name: "Overlay — Surface Highlights",
+            category: Category::Layouts,
+            name: "Surface Highlights",
             draw: components::surface_highlights::draw,
         },
         CatalogItem {
-            category: Category::Layout,
-            name: "Layout — 1 depth (Plugins idiom)",
+            category: Category::Layouts,
+            name: "Multi-tier Tab Layout",
+            draw: widgets::multi_tab_layout::draw,
+        },
+        CatalogItem {
+            category: Category::Layouts,
+            name: "1 depth (Plugins idiom)",
             draw: widgets::layout_1depth::draw,
         },
         CatalogItem {
-            category: Category::Layout,
-            name: "Layout — 2 depth (Settings idiom)",
+            category: Category::Layouts,
+            name: "2 depth (Settings idiom)",
             draw: widgets::layout_2depth::draw,
         },
     ]
