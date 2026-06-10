@@ -17,3 +17,7 @@ pub const PANEL_STROKE_WIDTH: f32 = 1.0;
 
 /// 좌·우 패널 사이 horizontal spacing.
 pub const PANEL_SPACING: f32 = 8.0;
+
+/// 탭 컨텐츠 영역의 inner padding (px, 4 면 동일).
+/// settings 모달 본체와 갤러리의 layout idiom 공통 표준.
+pub const TAB_CONTENT_PADDING: i8 = 16;

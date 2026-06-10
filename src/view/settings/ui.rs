@@ -334,53 +334,51 @@ pub fn draw_settings_panel(
                 .auto_shrink([false, false])
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
-                    egui::Frame::new()
-                        .inner_margin(egui::Margin::same(16))
-                        .show(ui, |ui| match active_tab {
-                            SettingsTab::General => draw_general_tab(ui, &mut draft),
-                            SettingsTab::Terminal => draw_terminal_tab(ui, &mut draft),
-                            SettingsTab::Appearance => draw_appearance_tab(
-                                ui,
-                                &mut draft,
-                                &mut ui_state.appearance_sub_tab,
-                                &mut ui_state.font_families,
-                                &mut ui_state.font_filter,
-                                &mut ui_state.preview_font_loaded,
-                                &ui_state.settings_pages,
-                            ),
-                            SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
-                            SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
-                            SettingsTab::Keybindings => draw_keybindings_tab(
-                                ui,
-                                &mut draft,
-                                &mut ui_state.recording_field,
-                                &mut ui_state.keybindings_sub_tab,
-                                &mut ui_state.selected_preset,
-                                &mut ui_state.pending_binding,
-                                captured_double_tap,
-                                &mut ui_state.captured_winit_combo,
-                                &ui_state.plugin_shortcuts,
-                                &mut ui_state.plugin_shortcuts_selected,
-                                &mut ui_state.plugin_shortcuts_draft,
-                            ),
-                            SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
-                            SettingsTab::Accessibility => draw_accessibility_tab(ui, &mut draft),
-                            SettingsTab::FileHandler => draw_file_handler_tab(
-                                ui,
-                                &mut ui_state.file_handler_sub_tab,
-                                &mut ui_state.extension_priority_draft,
-                                &mut ui_state.extension_priority_new_input,
-                                &mut ui_state.fh_edit_draft,
-                                file_format,
-                                file_handler,
-                            ),
-                            SettingsTab::Misc => draw_misc_tab(
-                                ui,
-                                &mut ui_state.misc_sub_tab,
-                                &mut ui_state.bashrc_user_draft,
-                            ),
-                            SettingsTab::Updates => draw_updates_tab(ui, update_status),
-                        });
+                    tasty_ui_widgets::tab_content_frame(ui, |ui| match active_tab {
+                        SettingsTab::General => draw_general_tab(ui, &mut draft),
+                        SettingsTab::Terminal => draw_terminal_tab(ui, &mut draft),
+                        SettingsTab::Appearance => draw_appearance_tab(
+                            ui,
+                            &mut draft,
+                            &mut ui_state.appearance_sub_tab,
+                            &mut ui_state.font_families,
+                            &mut ui_state.font_filter,
+                            &mut ui_state.preview_font_loaded,
+                            &ui_state.settings_pages,
+                        ),
+                        SettingsTab::Clipboard => draw_clipboard_tab(ui, &mut draft),
+                        SettingsTab::Notifications => draw_notifications_tab(ui, &mut draft),
+                        SettingsTab::Keybindings => draw_keybindings_tab(
+                            ui,
+                            &mut draft,
+                            &mut ui_state.recording_field,
+                            &mut ui_state.keybindings_sub_tab,
+                            &mut ui_state.selected_preset,
+                            &mut ui_state.pending_binding,
+                            captured_double_tap,
+                            &mut ui_state.captured_winit_combo,
+                            &ui_state.plugin_shortcuts,
+                            &mut ui_state.plugin_shortcuts_selected,
+                            &mut ui_state.plugin_shortcuts_draft,
+                        ),
+                        SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
+                        SettingsTab::Accessibility => draw_accessibility_tab(ui, &mut draft),
+                        SettingsTab::FileHandler => draw_file_handler_tab(
+                            ui,
+                            &mut ui_state.file_handler_sub_tab,
+                            &mut ui_state.extension_priority_draft,
+                            &mut ui_state.extension_priority_new_input,
+                            &mut ui_state.fh_edit_draft,
+                            file_format,
+                            file_handler,
+                        ),
+                        SettingsTab::Misc => draw_misc_tab(
+                            ui,
+                            &mut ui_state.misc_sub_tab,
+                            &mut ui_state.bashrc_user_draft,
+                        ),
+                        SettingsTab::Updates => draw_updates_tab(ui, update_status),
+                    });
                 });
 
             // 충돌 감지 시 팝업 열기.
