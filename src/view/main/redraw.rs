@@ -566,7 +566,10 @@ impl MainView {
                 let has_selection = self.text_selection.as_ref().is_some_and(|s| !s.is_empty());
                 let mut items = Vec::new();
                 if has_selection {
-                    items.push(MenuItem::new(2, crate::i18n::t("terminal_context_menu.copy")));
+                    items.push(MenuItem::new(
+                        2,
+                        crate::i18n::t("terminal_context_menu.copy"),
+                    ));
                     items.push(MenuItem::new(
                         3,
                         crate::i18n::t("terminal_context_menu.copy_no_newline"),
