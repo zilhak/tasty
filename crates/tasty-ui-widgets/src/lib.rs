@@ -8,6 +8,8 @@
 //!
 //! 위젯 함수는 후속 step 에서 점진적으로 추가된다.
 
+mod horizontal_tab_bar;
 pub mod tokens;
 mod two_depth;
+pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
 pub use two_depth::two_depth_layout;
