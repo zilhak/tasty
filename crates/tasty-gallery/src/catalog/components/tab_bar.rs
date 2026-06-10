@@ -32,6 +32,7 @@ struct TabEntryView {
     name: String,
     has_notification: bool,
     is_busy: bool,
+    is_agent_created: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -159,6 +160,26 @@ fn draw_pane_tab_bar_mock(
             tab_painter.circle_filled(dot_center, DOT_RADIUS, dot_color);
         }
 
+        // agent(IPC/CLI) 생성 surface → mauve dot. busy 와 겹치면 그 왼쪽 슬롯.
+        if tab.is_agent_created {
+            let base_x = tab_rect.max.x - DOT_PAD - DOT_RADIUS;
+            let agent_x = if tab.is_busy {
+                base_x - DOT_RADIUS * 2.0 - DOT_PAD
+            } else {
+                base_x
+            };
+            let dot_color: egui::Color32 = if is_active {
+                th.mauve.into()
+            } else {
+                th.mauve.with_alpha(180).to_egui()
+            };
+            tab_painter.circle_filled(
+                egui::pos2(agent_x, tab_rect.center().y),
+                DOT_RADIUS,
+                dot_color,
+            );
+        }
+
         // 라벨 (잘림 처리 — 본체와 동일 알고리즘)
         let font_id = egui::FontId::proportional(label_font_size);
         let available_w = tab_w - H_PADDING * 2.0;
@@ -267,6 +288,7 @@ fn tab(name: &str) -> TabEntryView {
         name: name.to_string(),
         has_notification: false,
         is_busy: false,
+        is_agent_created: false,
     }
 }
 
@@ -275,6 +297,7 @@ fn tab_notif(name: &str) -> TabEntryView {
         name: name.to_string(),
         has_notification: true,
         is_busy: false,
+        is_agent_created: false,
     }
 }
 
@@ -283,6 +306,16 @@ fn tab_busy(name: &str) -> TabEntryView {
         name: name.to_string(),
         has_notification: false,
         is_busy: true,
+        is_agent_created: false,
+    }
+}
+
+fn tab_agent(name: &str) -> TabEntryView {
+    TabEntryView {
+        name: name.to_string(),
+        has_notification: false,
+        is_busy: false,
+        is_agent_created: true,
     }
 }
 
@@ -325,10 +358,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             draw_pane_tab_bars_mock(ui, &props);
             ui.add_space(16.0);
 
-            // Case 2 — 5 tabs, dirty + busy 혼합
+            // Case 2 — 5 tabs, notif + busy + agent 혼합
             ui.label(
                 egui::RichText::new(
-                    "Case 2 — 5 탭, 활성 강조 + notification (노란) + busy (녹색 점)",
+                    "Case 2 — 5 탭, 활성 강조 + notification (노란) + busy (녹색 점) + agent (mauve 점)",
                 )
                 .strong()
                 .color(egui::Color32::from(theme.text)),
@@ -340,7 +373,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 vec![
                     tab("README.md"),
                     tab_busy("build.rs"),
-                    tab("src/main.rs"),
+                    tab_agent("agent/run.rs"),
                     tab_notif("Cargo.toml"),
                     tab("docs/index.md"),
                 ],
