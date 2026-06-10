@@ -73,31 +73,21 @@ pub fn draw_appearance_tab(
         *sub_tab = AppearanceSubTab::Theme;
     }
 
-    ui.horizontal_top(|ui| {
-        // ── Left: sub-tab selector ──
-        egui::Frame::new()
-            .fill(th.crust.into())
-            .stroke(egui::Stroke::new(1.0, th.surface0))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(6, 6))
-            .show(ui, |ui| {
-                ui.set_width(150.0);
-                ui.set_min_height(available_height);
-
-                ui.vertical(|ui| {
-                    for (tab, label) in &sub_tabs {
-                        let selected = sub_tab == tab;
-                        if ui.selectable_label(selected, label.as_str()).clicked() {
-                            *sub_tab = tab.clone();
-                        }
-                    }
-                });
-            });
-
-        ui.add_space(8.0);
-
-        // ── Right: sub-tab content ──
-        ui.vertical(|ui| match &*sub_tab {
+    let current = sub_tab.clone();
+    let mut selected_new: Option<AppearanceSubTab> = None;
+    tasty_ui_widgets::two_depth_layout(
+        ui,
+        &th,
+        available_height,
+        |ui| {
+            for (tab, label) in &sub_tabs {
+                let selected = &current == tab;
+                if ui.selectable_label(selected, label.as_str()).clicked() {
+                    selected_new = Some(tab.clone());
+                }
+            }
+        },
+        |ui| match &current {
             AppearanceSubTab::Theme => {
                 draw_appearance_theme(
                     ui,
@@ -137,8 +127,11 @@ pub fn draw_appearance_tab(
                     );
                 }
             }
-        });
-    });
+        },
+    );
+    if let Some(new) = selected_new {
+        *sub_tab = new;
+    }
 }
 
 /// Appearance > Theme: preset selection + default font settings (single source
