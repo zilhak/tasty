@@ -31,23 +31,6 @@ Ed25519 공개키 임베드 디렉토리. `bundle_sig.rs` 의 `TRUSTED_PUBKEYS` 
 zeroed pubkey 로 어떤 서명도 통과시키지 않으므로 검증은 항상 fail. 실제 release
 직전에 키 생성/주입 작업이 별도 PR 로 들어온다.
 
-## 로컬 빌드 시 working tree dirty 가 정상
-
-`scripts/build-macos-dmg.sh` (release/dist 빌드) 는 `cargo build` 직전에
-`~/.tasty-keys/dev.pem` 의 pubkey 를 추출해 `dev-pubkey.bin` 에 덮어쓴다.
-이는 dev key 페어 (private dev.pem ↔ public dev-pubkey.bin) 의 불일치로
-모든 plugin 의 sig 가 trust gate 에서 silent skip 되는 사고 ("plugin 0 개 로드")
-를 막기 위한 자동 동기화다.
-
-결과적으로 로컬 빌드 후 `git status` 에 `dev-pubkey.bin` 이 modified 로 뜨는 건
-**의도된 동작**. 이 변경은 사용자 본인의 dev key 의 공개부에 해당하므로 **절대
-main 브랜치에 commit 하지 말 것**. (개인 키 페어는 사용자별로 다르며, 다른 개발자
-머신에선 무의미하다.)
-
-stale 자동 복구는 `scripts/gen-dev-key.sh` 도 담당한다 — `--force` 없이 호출해도
-`dev.pem` 만 있고 `dev-pubkey.bin` 이 zero placeholder 인 케이스를 감지해 pubkey 만
-재추출한다 (private key 보존). 빌드 스크립트와 더불어 다중 방어선.
-
 ## 정책 참조
 
 - 정책 4=B (`include_bytes!`): `.claude-workspace/conductor/dmg-signature-gate-design.md` § 4

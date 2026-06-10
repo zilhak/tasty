@@ -57,27 +57,6 @@ if [[ "$PROFILE" != "debug" ]]; then
     export SIGN_KEY_PATH
 fi
 
-# dev key 페어 (private dev.pem ↔ public dev-pubkey.bin) 동기화 검증.
-# 두 파일은 *반드시 한 쌍* 이어야 함 — host 는 컴파일 타임에 dev-pubkey.bin 을
-# 임베드하고, sign-bundle 은 dev.pem 으로 .sig 를 생성한다. 한쪽만 갱신되면
-# 모든 plugin sig 가 trust gate 에서 silent skip → "plugin 0 개 로드" 사고.
-#
-# 트리거 시나리오: git checkout 으로 zero placeholder 가 트리에 들어왔는데
-# ~/.tasty-keys/dev.pem 은 이전 세션의 실제 키 그대로 남아있는 경우.
-# gen-dev-key.sh 는 dev.pem 존재 시 `--force` 없이 skip 하므로 사용자가
-# 매번 알아서 챙길 수 없다 — 빌드 스크립트가 책임진다.
-if [[ "$PROFILE" != "debug" && -f "$HOME/.tasty-keys/dev.pem" ]]; then
-    DEV_PUBKEY_PATH="crates/tasty-host-plugin/keys/dev-pubkey.bin"
-    EXPECTED_PUB_SHA="$(openssl pkey -in "$HOME/.tasty-keys/dev.pem" -pubout -outform DER \
-        | tail -c 32 | shasum -a 256 | awk '{print $1}')"
-    CURRENT_PUB_SHA="$(shasum -a 256 "$DEV_PUBKEY_PATH" | awk '{print $1}')"
-    if [[ "$EXPECTED_PUB_SHA" != "$CURRENT_PUB_SHA" ]]; then
-        echo "==> dev-pubkey.bin out of sync with dev.pem — re-extracting (was: ${CURRENT_PUB_SHA:0:12}…, now: ${EXPECTED_PUB_SHA:0:12}…)"
-        openssl pkey -in "$HOME/.tasty-keys/dev.pem" -pubout -outform DER \
-            | tail -c 32 > "$DEV_PUBKEY_PATH"
-    fi
-fi
-
 echo "==> Building tasty ($PROFILE)..."
 cargo build $CARGO_FLAGS
 
