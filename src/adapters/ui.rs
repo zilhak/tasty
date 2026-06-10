@@ -1,6 +1,7 @@
 mod divider;
 mod draw;
 mod egui_panels;
+pub(crate) mod icons;
 mod sidebar;
 mod tab_bar;
 

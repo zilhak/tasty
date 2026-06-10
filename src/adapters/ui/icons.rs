@@ -1,0 +1,72 @@
+//! ui_kit line-icon set.
+//!
+//! 2px stroke line-icon. path 는 디자인 시스템 `ui_kits/terminal/chrome.jsx` 의
+//! `ic` 객체에서 그대로 가져왔다. egui_extras 의 svg 로더 (gpu.rs 의
+//! `install_image_loaders`) 로 텍스처화하고, `tint` 로 테마 색을 입힌다.
+//! stroke 는 white 로 고정 — tint 곱셈으로 임의 테마 색이 된다.
+
+/// 한 개의 line-icon. `svg` 는 완성된 SVG 문서, `uri` 는 egui 이미지 캐시 키.
+#[derive(Clone, Copy)]
+pub struct Icon {
+    svg: &'static str,
+    uri: &'static str,
+}
+
+impl Icon {
+    /// 정사각 `size` (logical px) + `tint` 색의 egui Image.
+    pub fn image(self, size: f32, tint: egui::Color32) -> egui::Image<'static> {
+        egui::Image::from_bytes(self.uri, self.svg.as_bytes())
+            .fit_to_exact_size(egui::vec2(size, size))
+            .tint(tint)
+    }
+}
+
+macro_rules! line_icon {
+    ($name:ident, $uri:literal, $body:literal) => {
+        pub const $name: Icon = Icon {
+            uri: concat!("bytes://tasty_icon_", $uri, ".svg"),
+            svg: concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">"#,
+                $body,
+                "</svg>"
+            ),
+        };
+    };
+}
+
+line_icon!(
+    FOLDER,
+    "folder",
+    r#"<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/>"#
+);
+line_icon!(PLUS, "plus", r#"<path d="M12 5v14M5 12h14"/>"#);
+line_icon!(
+    SETTINGS,
+    "settings",
+    r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>"#
+);
+line_icon!(
+    PLUG,
+    "plug",
+    r#"<path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0V8zM12 16v6"/>"#
+);
+line_icon!(
+    TOOLS,
+    "tools",
+    r#"<path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 1 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z"/>"#
+);
+line_icon!(
+    CHEVRONS_LEFT,
+    "chevrons_left",
+    r#"<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>"#
+);
+line_icon!(
+    TERM,
+    "term",
+    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>"#
+);
+line_icon!(
+    MD,
+    "md",
+    r#"<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9l2.5 3L12 9v6M16 9v4m0 0 2-2m-2 2-2-2"/>"#
+);

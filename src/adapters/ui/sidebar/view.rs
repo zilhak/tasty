@@ -6,6 +6,7 @@
 //! 로 호출해 시각 검증한다 — Tier 3 패턴
 //! (`.claude-workspace/conductor/tier-3-props-extraction-pattern.md`).
 
+use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
@@ -122,25 +123,26 @@ pub fn draw_full_sidebar_view(
             ui.add_space(2.0);
 
             // Tools
-            if let Some(rect) = draw_full_bottom_button(ui, th, props.tools_label) {
+            if let Some(rect) = draw_full_bottom_button(ui, th, icons::TOOLS, props.tools_label) {
                 actions.push(SidebarFullAction::ToolsClicked(rect));
             }
             ui.add_space(2.0);
 
             // Collapse
-            if draw_full_bottom_button(ui, th, props.collapse_label).is_some() {
+            if draw_full_bottom_button(ui, th, icons::CHEVRONS_LEFT, props.collapse_label).is_some()
+            {
                 actions.push(SidebarFullAction::Collapse);
             }
             ui.add_space(2.0);
 
             // Plugins
-            if draw_full_bottom_button(ui, th, props.plugins_label).is_some() {
+            if draw_full_bottom_button(ui, th, icons::PLUG, props.plugins_label).is_some() {
                 actions.push(SidebarFullAction::Plugins);
             }
             ui.add_space(2.0);
 
             // Settings
-            if draw_full_bottom_button(ui, th, props.settings_label).is_some() {
+            if draw_full_bottom_button(ui, th, icons::SETTINGS, props.settings_label).is_some() {
                 actions.push(SidebarFullAction::Settings);
             }
             ui.add_space(8.0);
@@ -419,7 +421,12 @@ pub fn draw_collapsed_sidebar_view(
 }
 
 /// 풀 사이드바 바닥 버튼 (Tools/Collapse/Plugins/Settings) 1 행. 클릭되면 rect 반환.
-fn draw_full_bottom_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> Option<egui::Rect> {
+fn draw_full_bottom_button(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    icon: icons::Icon,
+    label: &str,
+) -> Option<egui::Rect> {
     let full_width = ui.available_width();
     let (rect, resp) = ui.allocate_exact_size(
         egui::vec2(full_width, BTN_HEIGHT),
@@ -429,16 +436,24 @@ fn draw_full_bottom_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> Option
         ui.painter()
             .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
+    let color: egui::Color32 = if resp.hovered() {
+        th.subtext1.into()
+    } else {
+        th.overlay0.into()
+    };
+    // 아이콘 + 텍스트, 좌측 정렬 (ui_kit Sidebar 하단 버튼).
+    let icon_size = 16.0;
+    let icon_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.min.x + 10.0, rect.center().y - icon_size / 2.0),
+        egui::vec2(icon_size, icon_size),
+    );
+    icon.image(icon_size, color).paint_at(ui, icon_rect);
     ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
+        egui::pos2(icon_rect.max.x + 8.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(12.0),
-        if resp.hovered() {
-            th.subtext1.into()
-        } else {
-            th.overlay0.into()
-        },
+        color,
     );
     resp.clicked().then_some(rect)
 }
@@ -499,6 +514,14 @@ fn draw_workspace_card(
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
+            // 폴더 아이콘 (ui_kit WorkspaceRow). active = accent, 그 외 muted.
+            let icon_color: egui::Color32 = if ws.is_active {
+                th.blue.into()
+            } else {
+                th.subtext0.into()
+            };
+            ui.add(icons::FOLDER.image(16.0, icon_color));
+            ui.add_space(2.0);
             let title_text = if ws.is_active {
                 egui::RichText::new(&ws.name).strong()
             } else {
