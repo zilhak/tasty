@@ -278,11 +278,12 @@ fn draw_handler_list(
 
         if is_selected {
             ui.painter()
+                .rect_filled(rect, 0.0, th.active_overlay.to_egui_premultiplied());
+        } else if resp.hovered() {
+            ui.painter()
                 .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
         }
         if resp.hovered() {
-            ui.painter()
-                .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
 

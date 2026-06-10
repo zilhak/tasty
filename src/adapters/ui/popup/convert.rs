@@ -286,8 +286,10 @@ pub fn draw_convert_view(
         };
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(popup_w, ITEM_HEIGHT), sense);
 
-        let highlight = (!is_current && resp.hovered()) || is_selected;
-        if highlight {
+        if is_selected {
+            ui.painter()
+                .rect_filled(rect, 0.0, theme.active_overlay.to_egui_premultiplied());
+        } else if !is_current && resp.hovered() {
             ui.painter()
                 .rect_filled(rect, 0.0, theme.hover_overlay.to_egui_premultiplied());
         }

@@ -203,7 +203,13 @@ pub fn draw_apply_preset_view(
                             egui::vec2(full_width, 22.0),
                             egui::Sense::click(),
                         );
-                        if is_selected || resp.hovered() {
+                        if is_selected {
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                th.active_overlay.to_egui_premultiplied(),
+                            );
+                        } else if resp.hovered() {
                             ui.painter().rect_filled(
                                 rect,
                                 4.0,

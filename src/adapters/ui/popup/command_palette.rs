@@ -137,7 +137,13 @@ pub fn draw_command_palette_view(
                             egui::Sense::click(),
                         );
                         let is_selected = i == selected_idx;
-                        if is_selected || resp.hovered() {
+                        if is_selected {
+                            ui.painter().rect_filled(
+                                rect,
+                                4.0,
+                                theme.active_overlay.to_egui_premultiplied(),
+                            );
+                        } else if resp.hovered() {
                             ui.painter().rect_filled(
                                 rect,
                                 4.0,
