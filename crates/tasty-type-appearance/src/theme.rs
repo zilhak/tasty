@@ -113,6 +113,8 @@ pub struct ThemeSizing {
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
     pub border_width: LogicalPx,
+    /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
+    pub focus_ring_width: LogicalPx,
     pub corner_radius: LogicalPx,
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
@@ -131,6 +133,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     font_size_heading: LogicalPx(13.0), // semibold 로 구분, 크기는 같음
     font_size_max: LogicalPx(14.0),
     border_width: LogicalPx(1.0),
+    focus_ring_width: LogicalPx(2.0),
     corner_radius: LogicalPx(4.0),
     item_height_tree: LogicalPx(22.0),
     item_height_interactive: LogicalPx(28.0),
@@ -568,6 +571,8 @@ pub struct Theme {
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
     pub border_width: LogicalPx,
+    /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
+    pub focus_ring_width: LogicalPx,
     pub corner_radius: LogicalPx,
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
@@ -666,6 +671,7 @@ impl Theme {
             font_size_heading: SIZING.font_size_heading,
             font_size_max: SIZING.font_size_max,
             border_width: SIZING.border_width,
+            focus_ring_width: SIZING.focus_ring_width,
             corner_radius: SIZING.corner_radius,
             item_height_tree: SIZING.item_height_tree,
             item_height_interactive: SIZING.item_height_interactive,

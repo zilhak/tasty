@@ -232,8 +232,9 @@ ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui());
 | 모든 간격 | 4px 그리드 — `spacing_xs`/`sm`/`md`/`lg` 만 사용 |
 | UI 폰트 최대 크기 | 14px (`font_size_body`) |
 | 보더 두께 | 항상 1px (`border_width`) |
+| 포커스 링 | 2px accent-primary outline (`focus_ring_width`, egui `selection.stroke` 에 적용) |
 | 호버 오버레이 | `theme().hover_overlay` 사용 (라이트=검정 8%, 다크=흰색 8% 자동 도출). 직접 값 쓰지 말 것 |
-| 활성 오버레이 | `theme().active_overlay` (12% overlay) |
+| 활성 오버레이 | `theme().active_overlay` (12% overlay) — 선택/active 행에 사용, hover(8%) 와 구분 |
 | 텍스트 대비 | 최소 4.5:1. 위반 시 [`ai-verification/visual-verification.md`](../ai-verification/visual-verification.md) 의 색상 대비 체크리스트 적용 |
 | 터미널 콘텐츠 애니메이션 | **0ms**. 터미널 셀/스크롤 영역엔 어떤 transition 도 넣지 않는다 — 입력 응답성 우선 |
 | UI 위젯 애니메이션 | 짧게 (보통 100–150ms). 사용자 입력 직후의 시각 피드백에 한정 |

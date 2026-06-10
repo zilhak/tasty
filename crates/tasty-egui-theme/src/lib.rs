@@ -81,10 +81,11 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context, ui_scale: f32) {
     visuals.widgets.open.bg_stroke = stroke1(theme.surface2);
     visuals.widgets.open.fg_stroke = stroke1(theme.text);
 
-    // ── Selection ──
+    // ── Selection / focus ring ──
     // blue 의 ~31% alpha. straight RGBA → to_egui() 가 gamma-aware premultiply.
     visuals.selection.bg_fill = theme.blue.with_alpha(80).to_egui();
-    visuals.selection.stroke = stroke1(theme.blue);
+    // focus 외곽선은 디자인 시스템의 2px focus ring (accent-primary).
+    visuals.selection.stroke = egui::Stroke::new(theme.focus_ring_width.value(), theme.blue);
 
     // ── 의미 색상 ──
     visuals.hyperlink_color = theme.blue.into();
