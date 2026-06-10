@@ -103,7 +103,7 @@ const BTN_HEIGHT: f32 = 28.0;
 const COLLAPSED_ICON_SIZE: egui::Vec2 = egui::vec2(32.0, 22.0);
 const COLLAPSED_WS_SIZE: egui::Vec2 = egui::vec2(32.0, 28.0);
 const CARD_INNER_MARGIN_X: i8 = 8;
-const CARD_INNER_MARGIN_Y: i8 = 6;
+const CARD_INNER_MARGIN_Y: i8 = 4;
 
 /// Pure view: full sidebar 내부 (SidePanel 안쪽 ui) 를 그리고 action 리스트
 /// 를 반환. 호출처는 SidePanel 을 직접 연다.
@@ -569,20 +569,15 @@ fn draw_workspace_card(
     ws: &WorkspaceEntryView,
     occupied_hover: &str,
 ) -> egui::Rect {
+    // ui_kit WorkspaceRow — 테두리 없는 플랫 행. active 만 배경 채움.
     let bg = if ws.is_active {
         th.surface0.to_egui()
     } else {
         egui::Color32::TRANSPARENT
     };
-    let border = if ws.is_active {
-        th.blue.to_egui()
-    } else {
-        th.surface0.to_egui()
-    };
 
     let frame = egui::Frame::new()
         .fill(bg)
-        .stroke(egui::Stroke::new(1.0, border))
         .corner_radius(4.0)
         .inner_margin(egui::Margin::symmetric(
             CARD_INNER_MARGIN_X,
