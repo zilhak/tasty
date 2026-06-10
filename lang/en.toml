@@ -8,7 +8,7 @@ ok = "OK"
 cancel = "Cancel"
 save = "Save"
 add = "Add"
-new_workspace = "+ New Workspace"
+new_workspace = "New Workspace"
 mark_all_read = "Mark all read"
 jump_to_workspace = "Jump"
 settings = "Settings"
@@ -391,6 +391,7 @@ cancel_button = "Cancel"
 [sidebar]
 tools_button = "Tools"
 collapse_button = "Collapse"
+workspaces_heading = "WORKSPACES"
 
 [context_menu]
 rename_title = "Rename"

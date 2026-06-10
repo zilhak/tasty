@@ -8,7 +8,7 @@ ok = "OK"
 cancel = "キャンセル"
 save = "保存"
 add = "追加"
-new_workspace = "+ 新しいワークスペース"
+new_workspace = "新しいワークスペース"
 mark_all_read = "すべて既読"
 jump_to_workspace = "移動"
 settings = "設定"
@@ -391,6 +391,7 @@ cancel_button = "キャンセル"
 [sidebar]
 tools_button = "ツール"
 collapse_button = "折りたたむ"
+workspaces_heading = "ワークスペース"
 
 [context_menu]
 rename_title = "名前の変更"

@@ -8,7 +8,7 @@ ok = "확인"
 cancel = "취소"
 save = "저장"
 add = "추가"
-new_workspace = "+ 새 워크스페이스"
+new_workspace = "새 워크스페이스"
 mark_all_read = "모두 읽음"
 jump_to_workspace = "이동"
 settings = "설정"
@@ -391,6 +391,7 @@ cancel_button = "취소"
 [sidebar]
 tools_button = "도구"
 collapse_button = "접기"
+workspaces_heading = "워크스페이스"
 
 [context_menu]
 rename_title = "이름 변경"

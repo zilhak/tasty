@@ -53,6 +53,7 @@ pub fn draw_full_sidebar(
     let plugins_label = t("button.plugins");
     let settings_label = t("button.settings");
     let new_workspace_label = t("button.new_workspace");
+    let workspaces_heading = t("sidebar.workspaces_heading");
     let occupied_hover = t("attach.occupied_workspace");
 
     let mut result = FullSidebarResult {
@@ -77,6 +78,7 @@ pub fn draw_full_sidebar(
                 plugins_label,
                 settings_label,
                 new_workspace_label,
+                workspaces_heading,
                 occupied_hover,
             };
             deferred_actions = draw_full_sidebar_view(ui, &props);

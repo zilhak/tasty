@@ -33,6 +33,7 @@ pub struct SidebarFullProps<'a> {
     pub plugins_label: &'a str,
     pub settings_label: &'a str,
     pub new_workspace_label: &'a str,
+    pub workspaces_heading: &'a str,
     pub occupied_hover: &'a str,
 }
 
@@ -152,6 +153,8 @@ pub fn draw_full_sidebar_view(
         .auto_shrink([false, false])
         .drag_to_scroll(false)
         .show(ui, |ui| {
+            ui.add_space(8.0);
+            draw_section_heading(ui, th, props.workspaces_heading);
             ui.add_space(4.0);
             let mut card_rects: Vec<(usize, egui::Rect)> = Vec::new();
 
@@ -265,7 +268,10 @@ pub fn draw_full_sidebar_view(
             let full_width = ui.available_width();
             let new_ws_resp = ui.add_sized(
                 [full_width, BTN_HEIGHT],
-                egui::Button::new(props.new_workspace_label),
+                egui::Button::image_and_text(
+                    icons::PLUS.image(16.0, th.subtext1.into()),
+                    props.new_workspace_label,
+                ),
             );
             if new_ws_resp.clicked() {
                 actions.push(SidebarFullAction::NewWorkspace);
@@ -458,6 +464,21 @@ fn draw_full_bottom_button(
     resp.clicked().then_some(rect)
 }
 
+/// ui_kit 섹션 헤딩 — 모노 대문자, muted, 좌측 패딩.
+fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), 18.0),
+        egui::Sense::hover(),
+    );
+    ui.painter().text(
+        egui::pos2(rect.min.x + 10.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        text,
+        egui::FontId::monospace(10.0),
+        th.subtext0.into(),
+    );
+}
+
 /// Collapsed 측 아이콘 버튼의 hover 배경 + 텍스트 그리기 helper.
 fn paint_icon_button(
     ui: &mut egui::Ui,
@@ -624,6 +645,7 @@ mod tests {
                     plugins_label: "Plugins",
                     settings_label: "Settings",
                     new_workspace_label: "New Workspace",
+                    workspaces_heading: "WORKSPACES",
                     occupied_hover: "Held by another client",
                 };
                 out = draw_full_sidebar_view(ui, &props);
