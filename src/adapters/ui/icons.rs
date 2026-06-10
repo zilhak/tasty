@@ -61,6 +61,11 @@ line_icon!(
     r#"<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>"#
 );
 line_icon!(
+    CHEVRONS_RIGHT,
+    "chevrons_right",
+    r#"<path d="m13 17 5-5-5-5M6 17l5-5-5-5"/>"#
+);
+line_icon!(
     TERM,
     "term",
     r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>"#

@@ -307,6 +307,35 @@ pub fn draw_collapsed_sidebar_view(
     let mut actions: Vec<SidebarCollapsedAction> = Vec::new();
     let th = props.theme;
 
+    // 헤더 — 펼치기(») 버튼 (ui_kit CollapsedSidebar 상단).
+    egui::TopBottomPanel::top("workspace_sidebar_collapsed_header")
+        .frame(egui::Frame::NONE)
+        .show_separator_line(false)
+        .show_inside(ui, |ui| {
+            ui.add_space(10.0);
+            ui.vertical_centered(|ui| {
+                let (rect, resp) =
+                    ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
+                if resp.hovered() {
+                    ui.painter()
+                        .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+                }
+                let color: egui::Color32 = if resp.hovered() {
+                    th.subtext1.into()
+                } else {
+                    th.overlay0.into()
+                };
+                icons::CHEVRONS_RIGHT.image(16.0, color).paint_at(
+                    ui,
+                    egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
+                );
+                if resp.clicked() {
+                    actions.push(SidebarCollapsedAction::Expand);
+                }
+            });
+            ui.add_space(6.0);
+        });
+
     egui::TopBottomPanel::bottom("workspace_sidebar_collapsed_bottom")
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
@@ -323,15 +352,6 @@ pub fn draw_collapsed_sidebar_view(
                 let tools_resp = tools_resp.on_hover_text(props.tools_hover);
                 if tools_resp.clicked() {
                     actions.push(SidebarCollapsedAction::ToolsClicked(tools_btn_rect));
-                }
-                ui.add_space(2.0);
-
-                // Expand
-                let (rect, resp) =
-                    ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
-                paint_icon_button(ui, th, rect, &resp, ">", 14.0);
-                if resp.clicked() {
-                    actions.push(SidebarCollapsedAction::Expand);
                 }
                 ui.add_space(2.0);
 
