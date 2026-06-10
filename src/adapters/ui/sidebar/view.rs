@@ -271,6 +271,12 @@ pub fn draw_full_sidebar_view(
             if new_ws_resp.secondary_clicked() {
                 let pos = new_ws_resp.interact_pointer_pos().unwrap_or_default();
                 actions.push(SidebarFullAction::NewWorkspaceContextMenu { x: pos.x, y: pos.y });
+                ui.painter().rect_stroke(
+                    new_ws_resp.rect,
+                    4.0,
+                    egui::Stroke::new(2.0, th.green),
+                    egui::StrokeKind::Inside,
+                );
             }
             ui.add_space(4.0);
         });
@@ -400,6 +406,12 @@ pub fn draw_collapsed_sidebar_view(
         if resp.secondary_clicked() {
             let pos = resp.interact_pointer_pos().unwrap_or_default();
             actions.push(SidebarCollapsedAction::NewWorkspaceContextMenu { x: pos.x, y: pos.y });
+            ui.painter().rect_stroke(
+                rect,
+                4.0,
+                egui::Stroke::new(2.0, th.green),
+                egui::StrokeKind::Inside,
+            );
         }
     });
 
