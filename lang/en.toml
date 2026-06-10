@@ -386,8 +386,6 @@ minimize_button = "Minimize"
 cancel_button = "Cancel"
 
 [sidebar]
-workspaces_heading = "Workspaces"
-shortcuts_heading = "Shortcuts"
 tools_button = "Tools"
 collapse_button = "Collapse"
 

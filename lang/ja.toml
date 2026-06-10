@@ -386,8 +386,6 @@ minimize_button = "最小化"
 cancel_button = "キャンセル"
 
 [sidebar]
-workspaces_heading = "ワークスペース"
-shortcuts_heading = "ショートカット"
 tools_button = "ツール"
 collapse_button = "折りたたむ"
 

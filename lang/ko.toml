@@ -386,8 +386,6 @@ minimize_button = "최소화"
 cancel_button = "취소"
 
 [sidebar]
-workspaces_heading = "워크스페이스"
-shortcuts_heading = "단축키"
 tools_button = "도구"
 collapse_button = "접기"
 
