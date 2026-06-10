@@ -1,3 +1,4 @@
+pub(crate) mod brand;
 mod divider;
 mod draw;
 mod egui_panels;

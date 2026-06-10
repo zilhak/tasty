@@ -6,7 +6,7 @@
 //! 로 호출해 시각 검증한다 — Tier 3 패턴
 //! (`.claude-workspace/conductor/tier-3-props-extraction-pattern.md`).
 
-use crate::adapters::ui::icons;
+use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
@@ -114,7 +114,19 @@ pub fn draw_full_sidebar_view(
     let mut actions: Vec<SidebarFullAction> = Vec::new();
     let th = props.theme;
 
-    // 바닥 고정 섹션 (Tools / Collapse / Plugins / Settings).
+    // 헤더 — 워드마크 `tasty.` + 접기 (ui_kit Sidebar 상단).
+    egui::TopBottomPanel::top("workspace_sidebar_header")
+        .frame(egui::Frame::NONE)
+        .show_separator_line(false)
+        .show_inside(ui, |ui| {
+            ui.add_space(10.0);
+            if draw_sidebar_header(ui, th, props.collapse_label) {
+                actions.push(SidebarFullAction::Collapse);
+            }
+            ui.add_space(6.0);
+        });
+
+    // 바닥 고정 섹션 (Tools / Plugins / Settings). 접기는 헤더로 이동.
     egui::TopBottomPanel::bottom("workspace_sidebar_bottom")
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
@@ -126,13 +138,6 @@ pub fn draw_full_sidebar_view(
             // Tools
             if let Some(rect) = draw_full_bottom_button(ui, th, icons::TOOLS, props.tools_label) {
                 actions.push(SidebarFullAction::ToolsClicked(rect));
-            }
-            ui.add_space(2.0);
-
-            // Collapse
-            if draw_full_bottom_button(ui, th, icons::CHEVRONS_LEFT, props.collapse_label).is_some()
-            {
-                actions.push(SidebarFullAction::Collapse);
             }
             ui.add_space(2.0);
 
@@ -462,6 +467,58 @@ fn draw_full_bottom_button(
         color,
     );
     resp.clicked().then_some(rect)
+}
+
+/// ui_kit 사이드바 헤더 — 워드마크 `tasty.` (`.` = 브랜드색) + 접기(«).
+/// collapse 클릭 여부 반환.
+fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> bool {
+    let mut collapse = false;
+    ui.horizontal(|ui| {
+        ui.add_space(6.0);
+        let mut job = egui::text::LayoutJob::default();
+        let font = egui::FontId::monospace(17.0);
+        job.append(
+            "tasty",
+            0.0,
+            egui::TextFormat {
+                font_id: font.clone(),
+                color: th.text.into(),
+                ..Default::default()
+            },
+        );
+        job.append(
+            ".",
+            0.0,
+            egui::TextFormat {
+                font_id: font,
+                color: brand::MELON_FLESH.into(),
+                ..Default::default()
+            },
+        );
+        ui.label(job);
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(6.0);
+            let (rect, resp) =
+                ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+            if resp.hovered() {
+                ui.painter()
+                    .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+            }
+            let color: egui::Color32 = if resp.hovered() {
+                th.subtext1.into()
+            } else {
+                th.overlay0.into()
+            };
+            icons::CHEVRONS_LEFT.image(16.0, color).paint_at(
+                ui,
+                egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0)),
+            );
+            resp.clone().on_hover_text(collapse_hover);
+            collapse = resp.clicked();
+        });
+    });
+    collapse
 }
 
 /// ui_kit 섹션 헤딩 — 모노 대문자, muted, 좌측 패딩.
