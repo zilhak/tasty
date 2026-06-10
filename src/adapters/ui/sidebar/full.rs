@@ -76,6 +76,7 @@ pub fn draw_full_sidebar(
     egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
+        .show_separator_line(false)
         .show(ctx, |ui| {
             let props = SidebarFullProps {
                 theme: &th,

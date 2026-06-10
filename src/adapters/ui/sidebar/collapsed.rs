@@ -68,6 +68,7 @@ pub fn draw_collapsed_sidebar(
     egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
+        .show_separator_line(false)
         .show(ctx, |ui| {
             let props = SidebarCollapsedProps {
                 theme: &th,
