@@ -16,8 +16,20 @@ use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::PhysicalPx;
 use tasty_type_geometry::rect::PhysicalRect;
 
+use crate::adapters::ui::icons;
 use crate::state::AppState;
 use crate::theme;
+
+/// surface kind → 탭 leading 아이콘 (ui_kit tab strip).
+fn kind_icon(kind: &str) -> icons::Icon {
+    match kind {
+        "markdown" => icons::MD,
+        "explorer" => icons::FOLDER,
+        "image" => icons::IMAGE,
+        "terminal" | "attached" => icons::TERM,
+        _ => icons::FILE,
+    }
+}
 
 /// View 입력 — pane 한 개 분의 탭 데이터.
 #[derive(Clone, Debug)]
@@ -26,6 +38,8 @@ pub struct PaneTabBarView {
     /// Pane 의 *물리* 좌표 사각형 (view 가 scale_factor 로 logical 변환).
     pub rect: PhysicalRect,
     pub tab_names: Vec<String>,
+    /// 탭별 surface kind ("terminal"/"markdown"/...) — leading 아이콘 결정.
+    pub tab_kinds: Vec<&'static str>,
     /// 탭별 알림(노란 라벨) 여부.
     pub tab_has_notification: Vec<bool>,
     /// 탭별 busy(녹색 점) 여부.
@@ -300,16 +314,37 @@ pub fn draw_pane_tab_bars_view(
                                     );
                                 }
 
+                                // kind 아이콘 (leading) — ui_kit tab strip.
+                                let icon_size = 14.0;
+                                let icon_rect = egui::Rect::from_min_size(
+                                    egui::pos2(
+                                        tab_rect.min.x + h_padding,
+                                        tab_rect.center().y - icon_size / 2.0,
+                                    ),
+                                    egui::vec2(icon_size, icon_size),
+                                );
+                                let kind = info.tab_kinds.get(i).copied().unwrap_or("terminal");
+                                kind_icon(kind)
+                                    .image(icon_size, text_color.into())
+                                    .paint_at(ui, icon_rect);
+
+                                // 텍스트 — 아이콘 뒤, 좌측 정렬. 우측엔 dot 공간 확보.
+                                let text_x = icon_rect.max.x + 6.0;
+                                let right_reserve = if is_busy || is_agent_created {
+                                    dot_pad + dot_radius * 2.0 + 4.0
+                                } else {
+                                    h_padding
+                                };
+                                let available_w = (tab_rect.max.x - right_reserve - text_x).max(0.0);
                                 let font_id = egui::FontId::proportional(label_font_size);
-                                let available_w = tab_w - h_padding * 2.0;
                                 let galley = painter.layout_no_wrap(
                                     name.clone(),
                                     font_id.clone(),
                                     text_color.into(),
                                 );
-                                if galley.size().x > available_w {
+                                let final_galley = if galley.size().x > available_w {
                                     let mut truncated = name.clone();
-                                    while !truncated.is_empty() {
+                                    loop {
                                         truncated.pop();
                                         let candidate = format!("{truncated}…");
                                         let g = painter.layout_no_wrap(
@@ -317,21 +352,19 @@ pub fn draw_pane_tab_bars_view(
                                             font_id.clone(),
                                             text_color.into(),
                                         );
-                                        if g.size().x <= available_w {
-                                            let text_x = tab_rect.min.x + h_padding;
-                                            let text_y = tab_rect.center().y - g.size().y / 2.0;
-                                            painter.galley(
-                                                egui::pos2(text_x, text_y),
-                                                g,
-                                                text_color.into(),
-                                            );
-                                            break;
+                                        if g.size().x <= available_w || truncated.is_empty() {
+                                            break g;
                                         }
                                     }
                                 } else {
-                                    let text_pos = tab_rect.center() - galley.size() / 2.0;
-                                    painter.galley(text_pos, galley, text_color.into());
-                                }
+                                    galley
+                                };
+                                let text_y = tab_rect.center().y - final_galley.size().y / 2.0;
+                                painter.galley(
+                                    egui::pos2(text_x, text_y),
+                                    final_galley,
+                                    text_color.into(),
+                                );
 
                                 let tab_clip = tab_rect.intersect(clip_rect);
                                 if !tab_clip.is_negative() {
@@ -611,6 +644,16 @@ pub fn draw_pane_tab_bars(
                 pane_id,
                 rect: pane_rect,
                 tab_names: pane.tabs.iter().map(|t| t.display_name()).collect(),
+                tab_kinds: pane
+                    .tabs
+                    .iter()
+                    .map(|t| {
+                        engine
+                            .find_surface_by_id(t.focused_surface)
+                            .map(|s| s.kind())
+                            .unwrap_or("terminal")
+                    })
+                    .collect(),
                 tab_has_notification,
                 tab_is_busy,
                 tab_is_agent_created,
@@ -825,6 +868,7 @@ mod tests {
                 height: PhysicalPx(600.0),
             },
             tab_names: names.iter().map(|s| s.to_string()).collect(),
+            tab_kinds: vec!["terminal"; n],
             tab_has_notification: vec![false; n],
             tab_is_busy: vec![false; n],
             tab_is_agent_created: vec![false; n],
