@@ -123,6 +123,7 @@
 | [데이터 흐름](architecture/data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준) |
 | [리팩토링 분석](architecture/refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
 | [라이브러리 분리](architecture/library-separation/index.md) | 워크스페이스 33 crate 현황 + 분리 의사결정 회고 (G.E — tasty-model 분리, Phase F.B — tasty-ipc / tasty-plugin-manifest / tasty-host-plugin / tasty-cli 4 crate 추가, plugin_bridge/ 본 바이너리 잔존) |
+| [UI widgets crate](architecture/ui-widgets-crate.md) | `tasty-ui-widgets` 의 목적·의존·위젯 카탈로그 — 본체와 갤러리가 공유하는 egui layout primitive (two_depth_layout / horizontal_tab_bar_with_arrows / tab_content_frame) + tokens (SUB_TAB_PANEL_WIDTH 등 layout 상수) |
 | [Plugin categories](architecture/plugin-categories.md) | host-native / bundled plugin / user plugin 3 카테고리 분류 정책 + 기존 "builtin" 표현 매핑 |
 | [Plugin sandbox 평가](architecture/plugin-sandbox-evaluation.md) | WASM / OS-level / 현 상태 비교 — 0.7 보류 근거 + 재검토 trigger |
 | [WASM Plugin POC 결과](architecture/wasm-poc-result.md) | Phase J.C — clipboard-history WASM 변환 + wasmtime host runtime 실측 (cold-start ~142ms, host_call ~3µs) + 정식 도입 권고 |
