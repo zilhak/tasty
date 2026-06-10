@@ -8,7 +8,7 @@
 - PTY 리사이즈 전파: 윈도우 크기 변경 시 자식 프로세스에 새 크기 통보. rows 축소 시 커서 아래 빈 행을 먼저 제거하고 부족하면 위쪽 행을 scrollback으로 캡처하여 커서-콘텐츠 관계를 보존. rows 확대 시 scrollback에서 복원. 모든 워크스페이스/탭의 터미널에 리사이즈 전파
 - 자식 프로세스 핸들 관리: 생존 여부 확인 가능
 - PTY 채널 백프레셔: `sync_channel(32)`으로 버퍼 크기 제한 (32 * 8KB = 256KB), 버퍼 가득 차면 PTY 리더 스레드 블로킹
-- 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. CWD 결정은 플랫폼별로 다르다 — **macOS/Linux**는 셸 PID로 OS를 직접 조회(`get_cwd_of_pid`: macOS `proc_pidinfo`, Linux `/proc/<pid>/cwd`)하므로 셸 설정과 무관하게 동작하며, OSC 7 캐시가 있으면 그 값을 우선 사용한다. **Windows**는 타 프로세스 cwd 조회 API가 없어 셸이 내보내는 OSC 7 시퀀스 캐시에만 의존한다(git bash·PowerShell 7+ 등이 송신). VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
+- 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. CWD 결정은 플랫폼별로 다르다 — **macOS/Linux**는 셸 PID로 OS를 직접 조회(`get_cwd_of_pid`: macOS `proc_pidinfo`, Linux `/proc/<pid>/cwd`)하므로 셸 설정과 무관하게 동작하며, OSC 7 캐시가 있으면 그 값을 우선 사용한다. **Windows**는 타 프로세스 cwd 조회 API가 없어 셸이 내보내는 OSC 7 시퀀스 캐시에만 의존한다 — tasty 가 bash 를 `--rcfile <합성 rc>` 로 띄워 **셸 모드(default/tasty)와 무관하게 OSC 7 emit·UTF-8·MSYS PATH 빌트인을 강제 주입**한다. VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
 
 ### VTE 파싱 및 터미널 에뮬레이션
 - termwiz `Parser`를 통한 VT 이스케이프 시퀀스 파싱
@@ -854,7 +854,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 ### 설정 카테고리
 - **General**: 레이아웃 저장/복원 (기본 off): 체크 시 워크스페이스/페인/탭/서피스 구조를 `~/.tasty/layout.json`에 저장하고 다음 시작 시 복원. 마지막 윈도우 닫기 동작 (ask / minimize / quit).
-- **Terminal**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 셸 모드 (default / tasty / custom). **tasty 모드는 Windows 전용으로 의미가 있다** — Windows에서만 bash를 `--rcfile ~/.tasty/bashrc`로 띄워 OSC 7 cwd emit·MSYS PATH 주입 등 빌트인을 적용한다(Windows는 cwd 상속을 OSC 7에 의존하기 때문). 비-Windows에서는 셸별로 `--rcfile` 등을 모르거나 무시하여 셸이 죽거나 의미가 없고 cwd 상속도 OS 조회로 이미 되므로, tasty 모드여도 default와 동일하게 사용자 셸을 그대로 띄운다(빌트인 미적용). 그래서 빌트인 편집(Misc 탭)도 Windows에서만 노출된다. 기존 설정 파일의 `"fast"`는 unknown 값으로 간주되어 default로 fallback. 그 외: 시작 명령, 스크롤백 줄 수 (기본 10,000), 실행 중 프로세스 닫기 확인, 작업 디렉토리 상속 (기본 on), 링크 클릭 수식키 (ctrl / alt / none). 데이터는 여전히 `settings.general.*`에 저장되며 UI 탭만 분리되어 있다.
+- **Terminal**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 셸 모드 (default / tasty). **셸 모드는 Windows 전용 개념** — 모드는 "어떤 사용자 rc 를 source 하느냐" 만 결정하고, OSC 7/UTF-8/MSYS PATH 같은 tasty 빌트인은 **두 모드 모두에서 강제 주입**된다(Windows 는 cwd 상속이 OSC 7 에만 의존하기 때문). 구체적으로: `default` 모드는 `~/.tasty/bashrc.default` (`BUILTIN + source ~/.bashrc + BUILTIN PROMPT`) 를 `--rcfile` 로 띄워 사용자 시스템 `~/.bashrc` 를 source 하고, `tasty` 모드는 `~/.tasty/bashrc` (`BUILTIN + ~/.tasty/bashrc.user + BUILTIN PROMPT`) 를 띄워 tasty 가 관리하는 사용자 영역을 source 한다. 어느 쪽이든 BUILTIN 의 PROMPT_COMMAND 설정이 *맨 마지막* 에 와서 사용자 rc 가 PROMPT_COMMAND 를 덮어쓰더라도 `__tasty_osc7` 이 prepend 된다. 비-Windows 에서는 셸별로 `--rcfile` 등을 모르거나 무시하여 셸이 죽거나 의미가 없고 cwd 상속도 OS 조회로 이미 되므로, 셸 모드 UI 자체를 노출하지 않고 사용자 셸을 그대로 띄운다(빌트인 미적용). 그래서 빌트인 편집(Misc 탭)도 Windows 에서만 노출된다. 기존 설정 파일의 `"fast"`/`"custom"` 같은 unknown 값은 `default` 와 동일하게 처리된다. 그 외: 시작 명령, 스크롤백 줄 수 (기본 10,000), 실행 중 프로세스 닫기 확인, 작업 디렉토리 상속 (기본 on), 링크 클릭 수식키 (ctrl / alt / none). 데이터는 여전히 `settings.general.*`에 저장되며 UI 탭만 분리되어 있다.
 - **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지, 기본값 / fixed: 픽셀 고정). sub-tab 은 호스트 정적 항목 (Theme / Terminal / Explorer 등) + plugin contribute 동적 항목의 합성으로 구성된다 — 활성 plugin 의 `[[contributes.settings_pages]]` (category=`appearance`) 가 SettingsPageRegistry 를 통해 sub-tab 으로 합류하며, plugin 비활성 시 자동으로 사라진다 (dead-setting 비표시 정책). plugin 측 sub-tab 의 라벨·항목·storage_key 는 plugin 자체 manifest 가 결정한다.
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
@@ -863,7 +863,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
   - **Preset 서브탭**: 좌측에 프리셋 목록, 우측에 미리보기 패널 (3열 테이블 — 기능 / 이전 / 이후). 변경되는 행은 bold 강조. 하단 "적용" 버튼으로 Draft에 반영 (실제 저장은 하단 Save 버튼). Draft가 이미 프리셋과 동일하면 적용 버튼 비활성화.
 - **Performance**: targeted PTY polling, scrollback disk swap, lazy PTY init (background 탭 생성 시 PTY를 즉시 spawn하지 않고 최초 접근 시점에 spawn — 레이아웃 복원으로 만들어진 비활성 워크스페이스의 deferred 터미널은 사용자가 워크스페이스를 전환하거나, 에이전트가 send/`surface.wake` IPC로 접근하는 시점에 PTY가 자동 생성된다. `surface.list`/`tree` 결과의 `pty_ready` 필드로 현재 상태를 확인할 수 있다)
 - **Misc (기타)**: 좌측 서브탭 메뉴 + 우측 콘텐츠 구조 (Keybindings 탭과 동일한 레이아웃, 향후 서브탭 확장 대비).
-  - **tastyrc 서브탭**: Tasty 모드 bashrc 편집기. 사용자 편집분은 `~/.tasty/bashrc.user`에 저장되고, 빌트인 블록(OSC 7 emission / UTF-8 / PATH)은 코드 상수로 유지되어 Save 시마다 `~/.tasty/bashrc`가 `builtin + user` 형태로 자동 재생성된다. 이로써 빌트인 템플릿이 업데이트되면 기존 사용자에게도 즉시 반영된다. Reset 버튼으로 user 파트를 초기 기본값으로 되돌릴 수 있다.
+  - **tastyrc 서브탭**: Tasty 모드 bashrc 편집기 (Windows 한정 노출). 사용자 편집분은 `~/.tasty/bashrc.user`에 저장되고, 빌트인 블록(OSC 7 emission / UTF-8 / PATH 등 PRE 부분과 PROMPT_COMMAND 설정의 POST 부분)은 코드 상수로 유지되어 Save 시마다 `~/.tasty/bashrc`가 `BUILTIN_PRE + user + BUILTIN_PROMPT` 형태로 자동 재생성된다. PROMPT_COMMAND 설정이 사용자 본문 *뒤* 에 와서 사용자가 PROMPT_COMMAND 를 덮어쓰더라도 `__tasty_osc7` 이 prepend 되도록 보장한다. 빌트인 템플릿이 업데이트되면 기존 사용자에게도 즉시 반영된다. Reset 버튼으로 user 파트를 초기 기본값으로 되돌릴 수 있다.
 
 ### GUI 설정 윈도우
 - Ctrl+, 단축키로 설정 윈도우 토글

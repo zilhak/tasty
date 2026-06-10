@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-/// Tasty 쉘 모드에서 항상 앞단에 prepend되는 빌트인 bashrc. UI에서 노출되지 않으며
-/// 사용자가 편집할 수 없다. 파생 `~/.tasty/bashrc`는 저장 시마다 `BUILTIN + "\n" + user`로
-/// 재생성되므로 템플릿 업데이트가 기존 사용자에게도 자동 반영된다.
-pub const BUILTIN_BASHRC: &str = r#"# === tasty built-in (auto-generated, do not edit) ===
+/// 빌트인 bashrc 의 *전반부* — LANG/LC_ALL, MSYS PATH, `__tasty_osc7` 함수 정의.
+/// 모드와 무관하게 합성 rc 의 *맨 앞* 에 prepend 된다. 사용자 rc 가 이후에 source 된다.
+pub const BUILTIN_BASHRC_PRE: &str = r#"# === tasty built-in (auto-generated, do not edit) ===
 # This section is regenerated every time settings are saved.
 # Put your customizations in ~/.tasty/bashrc.user instead.
 
@@ -34,7 +33,11 @@ __tasty_osc7() {
     fi
     printf '\033]7;file://%s%s\033\\' "${HOSTNAME:-localhost}" "$pwd_emit"
 }
-PROMPT_COMMAND="__tasty_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+"#;
+
+/// 빌트인 bashrc 의 *후반부* — `PROMPT_COMMAND` 설정. 합성 rc 의 *맨 뒤* 에 append
+/// 되어 사용자 rc 가 PROMPT_COMMAND 를 덮어쓰더라도 `__tasty_osc7` 이 마지막에 prepend.
+pub const BUILTIN_BASHRC_PROMPT: &str = r#"PROMPT_COMMAND="__tasty_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 
 # === end tasty built-in ===
 "#;
@@ -251,13 +254,17 @@ impl GeneralSettings {
         //   사용자 셸을 그대로 띄운다.
         #[cfg(windows)]
         {
-            if self.shell_mode.as_str() == "tasty" {
-                // 파생 bashrc가 없으면 현재 user 파일 내용으로 재생성.
-                ensure_compiled_bashrc();
-                let rcfile = tasty_bashrc_path().replace('\\', "/");
-                return vec!["--rcfile".to_string(), rcfile];
-            }
-            Vec::new()
+            // OSC7 빌트인은 셸 모드와 무관하게 강제 주입한다 — Windows 는 다른 프로세스
+            // cwd 조회 API 가 없어 새 탭 cwd 상속이 OSC7 emit 에만 의존하기 때문.
+            // 모드는 "어떤 사용자 rc 를 source 하느냐" 만 결정한다:
+            //   - tasty: ~/.tasty/bashrc          (BUILTIN_PRE + ~/.tasty/bashrc.user + BUILTIN_PROMPT)
+            //   - default (or unknown): ~/.tasty/bashrc.default (BUILTIN_PRE + source ~/.bashrc + BUILTIN_PROMPT)
+            ensure_compiled_bashrc();
+            let rcfile = match self.shell_mode.as_str() {
+                "tasty" => tasty_bashrc_path().replace('\\', "/"),
+                _ => tasty_bashrc_default_path().replace('\\', "/"),
+            };
+            vec!["--rcfile".to_string(), rcfile]
         }
         #[cfg(not(windows))]
         {
@@ -266,9 +273,17 @@ impl GeneralSettings {
     }
 }
 
-/// Path to Tasty's compiled bashrc (builtin + user).
+/// Path to Tasty's compiled bashrc for **tasty 모드** (BUILTIN_PRE + ~/.tasty/bashrc.user + BUILTIN_PROMPT).
 pub fn tasty_bashrc_path() -> String {
     tasty_dir().join("bashrc").to_string_lossy().to_string()
+}
+
+/// Path to Tasty's compiled bashrc for **default 모드** (BUILTIN_PRE + `source ~/.bashrc` + BUILTIN_PROMPT).
+pub fn tasty_bashrc_default_path() -> String {
+    tasty_dir()
+        .join("bashrc.default")
+        .to_string_lossy()
+        .to_string()
 }
 
 /// Path to the user-editable bashrc fragment.
@@ -277,6 +292,24 @@ pub fn tasty_bashrc_user_path() -> String {
         .join("bashrc.user")
         .to_string_lossy()
         .to_string()
+}
+
+/// default 모드용 합성 rc 본문. BUILTIN PRE → 사용자 `~/.bashrc` source → BUILTIN PROMPT.
+/// 사용자 rc 가 PROMPT_COMMAND 를 덮어써도 마지막에 `__tasty_osc7` 이 prepend.
+pub fn compose_default_mode_bashrc() -> String {
+    format!(
+        "{}\n[ -f ~/.bashrc ] && source ~/.bashrc\n{}",
+        BUILTIN_BASHRC_PRE, BUILTIN_BASHRC_PROMPT,
+    )
+}
+
+/// tasty 모드용 합성 rc 본문. BUILTIN PRE → tasty user rc → BUILTIN PROMPT.
+/// 사용자 영역 (`~/.tasty/bashrc.user`) 이 PROMPT_COMMAND 를 덮어써도 마지막에 prepend.
+pub fn compose_tasty_mode_bashrc(user_content: &str) -> String {
+    format!(
+        "{}\n{}\n{}",
+        BUILTIN_BASHRC_PRE, user_content, BUILTIN_BASHRC_PROMPT,
+    )
 }
 
 fn tasty_dir() -> std::path::PathBuf {
@@ -311,23 +344,37 @@ pub fn save_user_bashrc(user_content: &str) {
         tracing::warn!("write bashrc.user failed: {e}");
         return;
     }
-    let compiled = format!("{}\n{}", BUILTIN_BASHRC, user_content);
+    let compiled = compose_tasty_mode_bashrc(user_content);
     if let Err(e) = std::fs::write(&compiled_path, compiled) {
         tracing::warn!("write compiled bashrc failed: {e}");
     }
 }
 
-/// tasty 모드 진입 시 파생 bashrc가 없으면 현재 user 파일(또는 기본값)로 생성.
-/// tasty 빌트인은 Windows 전용이라 호출자(`effective_shell_args`의 windows 분기)도
-/// Windows 에만 존재한다. 비-Windows 에서 dead_code 경고가 나지 않도록 함께 격리한다.
+/// Windows 셸 시작 시 두 합성 rc (`~/.tasty/bashrc`, `~/.tasty/bashrc.default`) 가 존재하도록
+/// 보장한다. 빠진 파일만 채우며, 이미 있는 파일은 건드리지 않는다 (사용자가 tastyrc 를
+/// 저장한 결과를 `save_user_bashrc` 가 별도로 재생성).
 #[cfg(windows)]
 fn ensure_compiled_bashrc() {
-    let compiled_path = tasty_bashrc_path();
-    if std::path::Path::new(&compiled_path).exists() {
-        return;
+    // tasty 모드 합성 rc.
+    let tasty_path = tasty_bashrc_path();
+    if !std::path::Path::new(&tasty_path).exists() {
+        let user = load_user_bashrc();
+        save_user_bashrc(&user);
     }
-    let user = load_user_bashrc();
-    save_user_bashrc(&user);
+    // default 모드 합성 rc.
+    let default_path = tasty_bashrc_default_path();
+    if !std::path::Path::new(&default_path).exists() {
+        let compiled = compose_default_mode_bashrc();
+        if let Some(parent) = std::path::Path::new(&default_path).parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            tracing::warn!("create_dir_all for bashrc.default failed: {e}");
+            return;
+        }
+        if let Err(e) = std::fs::write(&default_path, compiled) {
+            tracing::warn!("write bashrc.default failed: {e}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -342,29 +389,64 @@ mod tests {
         }
     }
 
+    // default 모드: Windows 는 `--rcfile ~/.tasty/bashrc.default` 로 OSC7 강제 주입.
     #[cfg(windows)]
     #[test]
-    fn default_mode_has_no_args() {
+    fn default_mode_uses_default_rc_file() {
+        let args = settings_with_mode("default").effective_shell_args();
+        assert!(args.iter().any(|a| a == "--rcfile"));
         assert!(
-            settings_with_mode("default")
-                .effective_shell_args()
-                .is_empty()
+            args.iter()
+                .any(|a| a.contains(".tasty") && a.ends_with("bashrc.default"))
         );
     }
 
+    // unknown 모드도 default 와 동일하게 fallback.
     #[cfg(windows)]
     #[test]
-    fn unknown_mode_falls_back_to_no_args() {
-        assert!(settings_with_mode("fast").effective_shell_args().is_empty());
+    fn unknown_mode_falls_back_to_default_rc_file() {
+        let args = settings_with_mode("fast").effective_shell_args();
+        assert!(args.iter().any(|a| a == "--rcfile"));
+        assert!(
+            args.iter()
+                .any(|a| a.contains(".tasty") && a.ends_with("bashrc.default"))
+        );
     }
 
-    // tasty 모드: Windows 는 `--rcfile <path>` 로 빌트인을 source 한다(S-2 픽스 보존).
+    // tasty 모드: Windows 는 `--rcfile ~/.tasty/bashrc` 로 빌트인을 source 한다(S-2 픽스 보존).
     #[cfg(windows)]
     #[test]
-    fn tasty_mode_windows_uses_rcfile() {
+    fn tasty_mode_uses_tasty_rc_file() {
         let args = settings_with_mode("tasty").effective_shell_args();
         assert_eq!(args.len(), 2);
         assert_eq!(args[0], "--rcfile");
+        assert!(
+            args.iter()
+                .any(|a| a.contains(".tasty") && a.ends_with("bashrc"))
+        );
+        assert!(args.iter().all(|a| !a.ends_with("bashrc.default")));
+    }
+
+    // default 모드 합성 rc 는 BUILTIN PRE / 사용자 ~/.bashrc source / BUILTIN PROMPT 셋 다 포함.
+    #[test]
+    fn default_mode_compiled_rc_sources_user_bashrc() {
+        let compiled = compose_default_mode_bashrc();
+        assert!(compiled.contains("__tasty_osc7")); // BUILTIN PRE 적용
+        assert!(compiled.contains("source ~/.bashrc")); // 사용자 rc 호출
+        assert!(compiled.contains("PROMPT_COMMAND=")); // BUILTIN PROMPT 적용
+    }
+
+    // tasty 모드 합성 rc 는 BUILTIN PRE / 사용자 본문 / BUILTIN PROMPT 셋 다 포함.
+    #[test]
+    fn tasty_mode_compiled_rc_wraps_user_content() {
+        let compiled = compose_tasty_mode_bashrc("alias hi='echo hi'\n");
+        assert!(compiled.contains("__tasty_osc7"));
+        assert!(compiled.contains("alias hi='echo hi'"));
+        assert!(compiled.contains("PROMPT_COMMAND="));
+        // PROMPT_COMMAND 는 사용자 본문 *뒤* 에 와야 한다.
+        let user_pos = compiled.find("alias hi").unwrap();
+        let prompt_pos = compiled.find("PROMPT_COMMAND=").unwrap();
+        assert!(prompt_pos > user_pos);
     }
 
     // 비-Windows: 셸 모드 필드 자체가 없으므로 effective_shell_args 는 항상 빈 vec.
