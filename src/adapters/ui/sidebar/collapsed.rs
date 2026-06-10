@@ -65,7 +65,7 @@ pub fn draw_collapsed_sidebar(
 
     let mut deferred_actions: Vec<SidebarCollapsedAction> = Vec::new();
 
-    egui::SidePanel::left("workspace_sidebar")
+    let panel_resp = egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
         .show_separator_line(false)
@@ -77,6 +77,18 @@ pub fn draw_collapsed_sidebar(
             };
             deferred_actions = draw_collapsed_sidebar_view(ui, &props);
         });
+
+    // 우측 경계선 (ui_kit border-right) — 사이드바 안쪽 마지막 px.
+    let border_rect = panel_resp.response.rect;
+    ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("sidebar_right_border"),
+    ))
+    .vline(
+        border_rect.right() - 0.5,
+        border_rect.y_range(),
+        egui::Stroke::new(1.0, th.separator.to_egui_premultiplied()),
+    );
 
     for action in deferred_actions {
         match action {
