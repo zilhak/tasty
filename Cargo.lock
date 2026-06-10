@@ -5355,6 +5355,7 @@ dependencies = [
  "tasty-themes",
  "tasty-type-appearance",
  "tasty-type-geometry",
+ "tasty-ui-widgets",
  "tasty-update",
  "tasty-utils",
  "tempfile",
@@ -5455,6 +5456,7 @@ dependencies = [
  "tasty-themes",
  "tasty-type-appearance",
  "tasty-type-geometry",
+ "tasty-ui-widgets",
  "tracing",
  "tracing-subscriber",
  "wgpu",
@@ -5819,6 +5821,16 @@ name = "tasty-type-geometry"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "tasty-ui-widgets"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "tasty-egui-theme",
+ "tasty-type-appearance",
+ "tasty-type-geometry",
 ]
 
 [[package]]

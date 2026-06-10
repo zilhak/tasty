@@ -18,6 +18,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 tasty-egui-theme = { path = "../tasty-egui-theme" }
+tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 tasty-themes = { path = "../tasty-themes" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-type-geometry = { path = "../tasty-type-geometry" }

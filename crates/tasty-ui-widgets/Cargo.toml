@@ -1,0 +1,15 @@
+[package]
+name = "tasty-ui-widgets"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Reusable egui layout/widget primitives shared by main app and gallery"
+
+[dependencies]
+egui = "0.31"
+tasty-egui-theme = { path = "../tasty-egui-theme" }
+tasty-type-appearance = { path = "../tasty-type-appearance" }
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+
+[lints]
+workspace = true

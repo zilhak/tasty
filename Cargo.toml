@@ -170,6 +170,7 @@ tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }
 tasty-themes = { path = "crates/tasty-themes" }
 tasty-egui-theme = { path = "crates/tasty-egui-theme" }
+tasty-ui-widgets = { path = "crates/tasty-ui-widgets" }
 tasty-type-appearance = { path = "crates/tasty-type-appearance" }
 tasty-type-geometry = { path = "crates/tasty-type-geometry" }
 tasty-utils = { path = "crates/tasty-utils" }
@@ -422,6 +423,8 @@ opt-level = 3
 [profile.dev.package.tasty-themes]
 opt-level = 3
 [profile.dev.package.tasty-egui-theme]
+opt-level = 3
+[profile.dev.package.tasty-ui-widgets]
 opt-level = 3
 [profile.dev.package.tasty-gallery]
 opt-level = 3
