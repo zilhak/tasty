@@ -11,6 +11,9 @@
 //! Plugin 이 host 가 아직 모르는 카테고리를 선언한 경우 `tracing::warn!` 로 경고만
 //! 출력하고 page 는 그대로 보관한다. drop 하지 않는 이유는, host 측 카테고리
 //! enum 이 후속 버전에서 확장되면 보존된 page 가 자동으로 합쳐지도록 하기 위함.
+//!
+//! Host 가 인지하는 카테고리 (현재): `Appearance`, `General`, `Keybindings`, `Plugin`.
+//! 그 외는 `Other(_)`.
 
 use tasty_plugin_manifest::{SettingsCategory, SettingsPageContribute};
 
@@ -152,6 +155,7 @@ mod tests {
             vec![
                 make_page("a_app", SettingsCategory::Appearance),
                 make_page("a_gen", SettingsCategory::General),
+                make_page("a_plg", SettingsCategory::Plugin),
                 make_page("a_other", SettingsCategory::Other("unknown".into())),
             ],
         );
@@ -166,6 +170,12 @@ mod tests {
             .map(|e| e.page.id.as_str())
             .collect();
         assert_eq!(general, vec!["a_gen"]);
+
+        let plugin: Vec<_> = reg
+            .by_category(&SettingsCategory::Plugin)
+            .map(|e| e.page.id.as_str())
+            .collect();
+        assert_eq!(plugin, vec!["a_plg"]);
 
         let other_cat = SettingsCategory::Other("unknown".into());
         let other: Vec<_> = reg

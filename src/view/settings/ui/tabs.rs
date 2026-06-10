@@ -8,6 +8,7 @@ mod general;
 mod misc;
 mod notifications;
 mod performance;
+mod plugin;
 mod terminal;
 mod updates;
 
@@ -18,5 +19,6 @@ pub use general::draw_general_tab;
 pub use misc::draw_misc_tab;
 pub use notifications::draw_notifications_tab;
 pub use performance::draw_performance_tab;
+pub use plugin::draw_plugin_tab;
 pub use terminal::draw_terminal_tab;
 pub use updates::draw_updates_tab;

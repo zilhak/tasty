@@ -1843,6 +1843,39 @@ fn settings_pages_requires_ui_permission() {
 }
 
 #[test]
+fn settings_category_plugin_deserializes() {
+    let cat: SettingsCategory =
+        serde_json::from_str(r#""plugin""#).expect("\"plugin\" should deserialize");
+    assert_eq!(cat, SettingsCategory::Plugin);
+}
+
+#[test]
+fn settings_pages_with_plugin_category_parses() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        permissions = ["ui.settings_page"]
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.settings_pages]]
+        id = "main"
+        title_key = "settings.subtab.x_main"
+        category = "plugin"
+    "#;
+    let m = parse(s).expect("category = \"plugin\" should be accepted");
+    assert_eq!(m.contributes.settings_pages.len(), 1);
+    assert_eq!(
+        m.contributes.settings_pages[0].category,
+        SettingsCategory::Plugin
+    );
+}
+
+#[test]
 fn surface_kind_decl_new_fields_default() {
     // 새 3 필드 (required_params / param_aliases / consumes_egui_input) 는 모두
     // `#[serde(default)]` 이므로 기존 manifest 가 깨지지 않아야 한다.

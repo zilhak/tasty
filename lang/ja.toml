@@ -75,7 +75,11 @@ keybindings = "キーバインド"
 accessibility = "アクセシビリティ"
 file_handler = "ファイルハンドラ"
 misc = "その他"
+plugin = "プラグイン"
 updates = "アップデート"
+
+[settings.plugin]
+empty = "項目がありません。"
 
 [settings.updates]
 current = "現在のバージョン:"

@@ -61,6 +61,14 @@ pub(crate) enum AppearanceSubTab {
     },
 }
 
+/// Sub-tab within the Plugin tab. Plugin-contributed pages keyed by
+/// `(plugin_id, page_id)` — 동일 `page_id` 를 contribute 한 두 plugin 이 충돌하지
+/// 않도록 복합키 사용.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PluginSubTab {
+    Plugin { plugin_id: String, page_id: String },
+}
+
 /// Sub-tab within the Misc tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
@@ -83,6 +91,7 @@ enum SettingsTab {
     // 탭 목록에 push 되지 않는다(match arm 에서만 참조) → dead_code 허용.
     #[cfg_attr(not(windows), allow(dead_code))]
     Misc,
+    Plugin,
     Updates,
 }
 
@@ -97,6 +106,9 @@ pub struct SettingsUiState {
     keybindings_sub_tab: KeybindingsSubTab,
     /// Active sub-tab within appearance.
     appearance_sub_tab: AppearanceSubTab,
+    /// Active sub-tab within plugin tab. `None` = 등록된 plugin page 가 없거나
+    /// 사용자가 아직 어떤 sub-tab 도 선택하지 않은 상태.
+    pub(crate) plugin_sub_tab: Option<PluginSubTab>,
     /// Active sub-tab within misc.
     misc_sub_tab: MiscSubTab,
     /// Active sub-tab within FileHandler.
@@ -172,6 +184,7 @@ impl SettingsUiState {
             recording_field: None,
             keybindings_sub_tab: KeybindingsSubTab::General,
             appearance_sub_tab: AppearanceSubTab::General,
+            plugin_sub_tab: None,
             misc_sub_tab: MiscSubTab::Tastyrc,
             file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
             extension_priority_draft: None,
@@ -321,6 +334,7 @@ pub fn draw_settings_panel(
             // 에서는 편집기를 노출하지 않는다.
             #[cfg(windows)]
             tabs.push((SettingsTab::Misc, t("settings.tab.misc")));
+            tabs.push((SettingsTab::Plugin, t("settings.tab.plugin")));
             tabs.push((SettingsTab::Updates, t("settings.tab.updates")));
 
             tasty_ui_widgets::horizontal_tab_bar_with_arrows(
@@ -382,6 +396,15 @@ pub fn draw_settings_panel(
                             ui,
                             &mut ui_state.misc_sub_tab,
                             &mut ui_state.bashrc_user_draft,
+                        ),
+                        SettingsTab::Plugin => draw_plugin_tab(
+                            ui,
+                            &mut draft,
+                            &mut ui_state.plugin_sub_tab,
+                            &mut ui_state.font_families,
+                            &mut ui_state.font_filter,
+                            &mut ui_state.preview_font_loaded,
+                            &ui_state.settings_pages,
                         ),
                         SettingsTab::Updates => draw_updates_tab(ui, update_status),
                     });

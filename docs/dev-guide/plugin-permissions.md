@@ -170,7 +170,9 @@ plugin 로드 단계에서 `manifest::validate_*_permissions` 함수가 수행�
 
 `ui.settings_page` 는 plugin 이 host 설정 모달에 자기 sub-tab 을 등록하는 권한이다.
 `[[contributes.settings_pages]]` 블록이 하나라도 있으면 필수 — 누락 시 plugin
-시작이 거부된다. 자세한 매니페스트 schema·항목 종류·storage_key 의미는
+시작이 거부된다. **카테고리와 무관하게 동일 권한** 이 적용된다: `appearance`,
+`general`, `keybindings`, `plugin` 어느 카테고리든 별도 권한이 추가되지 않는다.
+자세한 매니페스트 schema·항목 종류·storage_key 의미는
 [`plugin-development.md`](plugin-development.md) §4-1-D 참조.
 
 surface lifecycle 알림 같은 broadcast 이벤트는 Event Bus의 `event_subscribe` 패턴으로 받는다 (요구 권한 별도 없음 — 패턴 자체가 권한 게이트).

@@ -17,7 +17,7 @@ Plugin이 호스트에 contribute하는 카테고리(상세는 `docs/agent-guide
 3. 새 Popup 추가 — `[[contributes.popup]]` + `permissions = ["ui.popup"]`. trigger는 `event`(host/plugin event 발화 시 자동 open) 또는 `ipc`(plugin 명시 호출). SDK trait의 `open_popup/handle_popup_event/on_popup_closed`로 구현한다.
 4. 새 Tool 추가 (좌측 사이드바 도구 메뉴 항목) — `[[contributes.tool]]` + `permissions = ["ui.tool_item"]`. 클릭 시 dispatch는 `kind = "event"` (Event Bus 발화) / `"open_surface"` (탭 추가) / `"open_popup"` (`[[contributes.popup]]` 인스턴스 open, `popup_id`는 `<plugin_id>/<id>` 형식)
 5. 이벤트별 동작 추가 — `[[contributes.commands]]`(키 입력) / `event_subscribe`(Event Bus 구독, 예: `"surface.closed"`) / `[[contributes.ipc_namespace]]`(IPC 호출) / `[[contributes.cli]]`(CLI 호출)
-6. 설정 모달에 sub-tab 추가 — `[[contributes.settings_pages]]` + `permissions = ["ui.settings_page"]`. host 가 SettingsPageRegistry 를 순회해 sub-tab 을 동적으로 합성하며, 1 차 schema 는 `font_override` 항목만 지원 (`storage_key` 가 `settings.appearance.plugin_font_overrides` 의 key 로 쓰임).
+6. 설정 모달에 sub-tab 추가 — `[[contributes.settings_pages]]` + `permissions = ["ui.settings_page"]`. host 가 SettingsPageRegistry 를 순회해 sub-tab 을 동적으로 합성한다. `category` 가 `"appearance"` 인 page 는 외관 탭에, `"plugin"` 인 page 는 플러그인 탭에 sub-tab 으로 합류한다 (전 OS 노출). 1 차 schema 는 `font_override` 항목만 지원 (`storage_key` 가 `settings.appearance.plugin_font_overrides` 의 key 로 쓰임).
 
 작성자가 다뤄야 할 것:
 
@@ -511,7 +511,7 @@ permissions = [..., "ui.settings_page"]
 [[contributes.settings_pages]]
 id = "markdown"                                # 소문자/숫자 + `_` + `-`, plugin 내 unique
 title_key = "settings.subtab.markdown"         # sub-tab 라벨 i18n 키
-category = "appearance"                        # appearance / general / keybindings / other:<name>
+category = "appearance"                        # appearance / general / keybindings / plugin / other:<name>
 
 [[contributes.settings_pages.items]]
 kind = "font_override"                         # 1 차 schema 는 이 한 종류만 지원

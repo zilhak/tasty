@@ -12,7 +12,7 @@ use tasty_type_appearance::theme::SurfaceTheme;
 /// 매칭이 반환되어 다른 plugin 의 콘텐츠가 잘못 렌더된다. 전역 식별자는
 /// `<plugin_id>/<page_id>` (manifest types 460-462 참고) 이므로 이 헬퍼를 통한
 /// 복합키 매칭이 정답.
-fn find_plugin_settings_entry<'a>(
+pub(super) fn find_plugin_settings_entry<'a>(
     entries: &'a [SettingsPageEntry],
     plugin_id: &str,
     page_id: &str,
@@ -484,7 +484,7 @@ fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
 ///
 /// Note: surface 색 picker 가 사라졌다. theme TOML
 /// (`~/.tasty/themes/<id>.toml` 의 `[surfaces.<storage_key>]`) 에서 직접 편집.
-fn draw_plugin_settings_page(
+pub(super) fn draw_plugin_settings_page(
     ui: &mut egui::Ui,
     settings: &mut Settings,
     font_families: &mut Option<Vec<String>>,

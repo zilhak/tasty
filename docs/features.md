@@ -855,7 +855,8 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 ### 설정 카테고리
 - **General**: 레이아웃 저장/복원 (기본 off): 체크 시 워크스페이스/페인/탭/서피스 구조를 `~/.tasty/layout.json`에 저장하고 다음 시작 시 복원. 마지막 윈도우 닫기 동작 (ask / minimize / quit).
 - **Terminal**: 셸 경로 (OS별 자동 감지: COMSPEC/SHELL), 셸 모드 (default / tasty). **셸 모드는 Windows 전용 개념** — 모드는 "어떤 사용자 rc 를 source 하느냐" 만 결정하고, OSC 7/UTF-8/MSYS PATH 같은 tasty 빌트인은 **두 모드 모두에서 강제 주입**된다(Windows 는 cwd 상속이 OSC 7 에만 의존하기 때문). 구체적으로: `default` 모드는 `~/.tasty/bashrc.default` (`BUILTIN + source ~/.bashrc + BUILTIN PROMPT`) 를 `--rcfile` 로 띄워 사용자 시스템 `~/.bashrc` 를 source 하고, `tasty` 모드는 `~/.tasty/bashrc` (`BUILTIN + ~/.tasty/bashrc.user + BUILTIN PROMPT`) 를 띄워 tasty 가 관리하는 사용자 영역을 source 한다. 어느 쪽이든 BUILTIN 의 PROMPT_COMMAND 설정이 *맨 마지막* 에 와서 사용자 rc 가 PROMPT_COMMAND 를 덮어쓰더라도 `__tasty_osc7` 이 prepend 된다. 비-Windows 에서는 셸별로 `--rcfile` 등을 모르거나 무시하여 셸이 죽거나 의미가 없고 cwd 상속도 OS 조회로 이미 되므로, 셸 모드 UI 자체를 노출하지 않고 사용자 셸을 그대로 띄운다(빌트인 미적용). 그래서 빌트인 편집(Misc 탭)도 Windows 에서만 노출된다. 기존 설정 파일의 `"fast"`/`"custom"` 같은 unknown 값은 `default` 와 동일하게 처리된다. 그 외: 시작 명령, 스크롤백 줄 수 (기본 10,000), 실행 중 프로세스 닫기 확인, 작업 디렉토리 상속 (기본 on), 링크 클릭 수식키 (ctrl / alt / none). 데이터는 여전히 `settings.general.*`에 저장되며 UI 탭만 분리되어 있다.
-- **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지, 기본값 / fixed: 픽셀 고정). sub-tab 은 호스트 정적 항목 (Theme / Terminal / Explorer 등) + plugin contribute 동적 항목의 합성으로 구성된다 — 활성 plugin 의 `[[contributes.settings_pages]]` (category=`appearance`) 가 SettingsPageRegistry 를 통해 sub-tab 으로 합류하며, plugin 비활성 시 자동으로 사라진다 (dead-setting 비표시 정책). plugin 측 sub-tab 의 라벨·항목·storage_key 는 plugin 자체 manifest 가 결정한다.
+- **Appearance**: 폰트 패밀리 (기본값: 시스템 모노스페이스), 폰트 크기, 테마 (dark/light), 배경 투명도, 사이드바 너비, focused surface 배경색, Font DPI 스케일링 모드 (auto: 모니터 DPI에 맞춰 동일 물리 크기 유지, 기본값 / fixed: 픽셀 고정). sub-tab 은 호스트 정적 항목 (Theme / Terminal / Explorer 등) + plugin contribute 동적 항목의 합성으로 구성된다 — 활성 plugin 의 `[[contributes.settings_pages]]` (category=`appearance`) 가 SettingsPageRegistry 를 통해 sub-tab 으로 합류하며, plugin 비활성 시 자동으로 사라진다 (dead-setting 비표시 정책). plugin 측 sub-tab 의 라벨·항목·storage_key 는 plugin 자체 manifest 가 결정한다. 외관 탭은 `appearance` 카테고리만 필터링하므로 `plugin` 카테고리 page 는 별도 플러그인 탭에 노출된다 (아래 Plugin 탭 항목 참조).
+- **Plugin**: 전 OS 노출. 활성 plugin 의 `[[contributes.settings_pages]]` 중 `category = "plugin"` 인 page 들이 좌측 2depth sub-tab 으로 합성된다 (외관 탭과 동일한 `two_depth_layout`). 등록된 page 가 0 개면 좌측 메뉴는 비고 우측에 "항목이 없습니다." 안내만 표시. 권한 게이트는 외관 탭과 동일하게 `ui.settings_page` 1 개만. plugin disable 시 sub-tab 이 사라지고 활성 sub-tab 은 None 으로 리셋되어 안내 메시지로 fallback 한다.
 - **Clipboard**: OS별 기본 활성화 (macOS: Alt+C/V, Linux: Ctrl+Shift+C/V, Windows: Ctrl+C/V)
 - **Notifications**: 알림 활성화, 시스템 알림, 사운드, 병합 간격(ms)
 - **Keybindings**: 서브탭으로 분류된 단축키 설정 (General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Preset). 유비쿼터스 언어 계층 구조(Workspace → Pane → Tab → Surface) 순서. 각 서브탭 내부 항목은 생성/분할 → 탐색 → 수정 → 닫기 순서로 정렬
@@ -867,7 +868,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 ### GUI 설정 윈도우
 - Ctrl+, 단축키로 설정 윈도우 토글
-- egui Window 기반 탭 인터페이스 (General / Terminal / Appearance / Clipboard / Notifications / Keybindings / Performance / Accessibility / FileHandler / Misc)
+- egui Window 기반 탭 인터페이스 (General / Terminal / Appearance / Clipboard / Notifications / Keybindings / Performance / Accessibility / FileHandler / Misc / Plugin)
 - egui에 시스템 CJK 폰트 로드: Windows(맑은 고딕), macOS(AppleSDGothicNeo), Linux(Noto Sans CJK)
 - 편집 중 원본 설정을 보존하는 드래프트 패턴
 - Save 버튼: 디스크에 저장 후 즉시 적용

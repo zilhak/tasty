@@ -478,6 +478,7 @@ pub enum SettingsCategory {
     Appearance,
     General,
     Keybindings,
+    Plugin,
     Other(String),
 }
 
@@ -491,6 +492,7 @@ impl<'de> Deserialize<'de> for SettingsCategory {
             "appearance" => SettingsCategory::Appearance,
             "general" => SettingsCategory::General,
             "keybindings" => SettingsCategory::Keybindings,
+            "plugin" => SettingsCategory::Plugin,
             _ => SettingsCategory::Other(s),
         })
     }
