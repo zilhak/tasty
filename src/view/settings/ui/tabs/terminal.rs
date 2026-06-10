@@ -23,35 +23,28 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.text_edit_singleline(&mut settings.general.shell);
             ui.end_row();
 
-            ui.label(t("settings.terminal.shell_mode_label"));
-            egui::ComboBox::from_id_salt("shell_mode")
-                .selected_text(match settings.general.shell_mode.as_str() {
-                    "tasty" => t("settings.terminal.shell_mode_tasty"),
-                    "custom" => t("settings.terminal.shell_mode_custom"),
-                    _ => t("settings.terminal.shell_mode_default"),
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut settings.general.shell_mode,
-                        "default".to_string(),
-                        t("settings.terminal.shell_mode_default"),
-                    );
-                    ui.selectable_value(
-                        &mut settings.general.shell_mode,
-                        "tasty".to_string(),
-                        t("settings.terminal.shell_mode_tasty"),
-                    );
-                    ui.selectable_value(
-                        &mut settings.general.shell_mode,
-                        "custom".to_string(),
-                        t("settings.terminal.shell_mode_custom"),
-                    );
-                });
-            ui.end_row();
-
-            if settings.general.shell_mode == "custom" {
-                ui.label(t("settings.terminal.shell_args_label"));
-                ui.text_edit_singleline(&mut settings.general.shell_args);
+            // 셸 모드는 Windows 전용 — OSC7/MSYS PATH 빌트인 적용 여부 결정.
+            // 비-Windows 에서는 의미가 없어 UI 에서도 노출하지 않는다.
+            #[cfg(windows)]
+            {
+                ui.label(t("settings.terminal.shell_mode_label"));
+                egui::ComboBox::from_id_salt("shell_mode")
+                    .selected_text(match settings.general.shell_mode.as_str() {
+                        "tasty" => t("settings.terminal.shell_mode_tasty"),
+                        _ => t("settings.terminal.shell_mode_default"),
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut settings.general.shell_mode,
+                            "default".to_string(),
+                            t("settings.terminal.shell_mode_default"),
+                        );
+                        ui.selectable_value(
+                            &mut settings.general.shell_mode,
+                            "tasty".to_string(),
+                            t("settings.terminal.shell_mode_tasty"),
+                        );
+                    });
                 ui.end_row();
             }
 

@@ -191,10 +191,13 @@ impl Settings {
             }
         }
 
-        // general.shell_mode
+        // general.shell_mode — Windows 전용 필드. 기존 settings.toml 의
+        // `shell_mode = "custom"` 같은 값은 비-Windows 에서 serde(default) 가
+        // unknown field 로 무시하고, Windows 에서는 여기서 default 로 fallback.
+        #[cfg(windows)]
         normalize_choice(
             &mut self.general.shell_mode,
-            &["default", "tasty", "custom"],
+            &["default", "tasty"],
             "default",
             "shell_mode",
             &mut report.changed,
@@ -401,7 +404,10 @@ ui_scale = "large"
         settings.appearance.ui_scale = "huge".to_string();
         settings.appearance.default_font.font_scale_mode = "bogus".to_string();
         settings.appearance.terminal_font.font_scale_mode = Some("nope".to_string());
-        settings.general.shell_mode = "weird".to_string();
+        #[cfg(windows)]
+        {
+            settings.general.shell_mode = "weird".to_string();
+        }
         settings.general.close_behavior = "explode".to_string();
         settings.general.link_click_modifier = "meta".to_string();
 
@@ -411,9 +417,22 @@ ui_scale = "large"
         assert_eq!(settings.appearance.ui_scale, "medium");
         assert_eq!(settings.appearance.default_font.font_scale_mode, "auto");
         assert!(settings.appearance.terminal_font.font_scale_mode.is_none());
+        #[cfg(windows)]
         assert_eq!(settings.general.shell_mode, "default");
         assert_eq!(settings.general.close_behavior, "ask");
         assert_eq!(settings.general.link_click_modifier, "ctrl");
+    }
+
+    /// 기존 settings.toml 에 `shell_mode = "custom"` 이 남아 있을 때 normalize 가
+    /// panic 없이 default 로 fallback 하는지 검증 (Windows 전용 필드).
+    #[cfg(windows)]
+    #[test]
+    fn custom_mode_no_longer_exists() {
+        let mut settings = Settings::default();
+        settings.general.shell_mode = "custom".to_string();
+        let report = settings.normalize();
+        assert!(report.changed);
+        assert_eq!(settings.general.shell_mode, "default");
     }
 
     #[test]

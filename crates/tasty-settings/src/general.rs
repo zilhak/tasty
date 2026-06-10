@@ -57,10 +57,11 @@ alias grep='grep --color=auto'
 #[serde(default)]
 pub struct GeneralSettings {
     pub shell: String,
-    /// Shell startup mode: "default", "tasty", or "custom".
+    /// Shell startup mode: "default" or "tasty". Windows 전용 — OSC7/MSYS PATH
+    /// 빌트인을 prepend 할지 여부를 결정한다. 비-Windows 에서는 셸 모드 자체가
+    /// 의미가 없어 노출하지 않는다.
+    #[cfg(windows)]
     pub shell_mode: String,
-    /// Extra arguments passed to the shell (used when shell_mode is "custom").
-    pub shell_args: String,
     pub startup_command: String,
     pub language: String,
     /// Number of scrollback lines to keep.
@@ -118,8 +119,8 @@ impl Default for GeneralSettings {
         let shell = Self::detect_shell();
         Self {
             shell,
+            #[cfg(windows)]
             shell_mode: "default".to_string(),
-            shell_args: String::new(),
             startup_command: String::new(),
             language: "en".to_string(),
             scrollback_lines: 10000,
@@ -231,41 +232,36 @@ impl GeneralSettings {
     }
 
     /// Resolve effective shell arguments based on shell_mode.
+    ///
+    /// 시그니처는 OS 공통 — 호출자가 cfg 분기를 하지 않도록 유지한다. 비-Windows
+    /// 에서는 셸 모드 개념 자체가 없어 항상 빈 vec 을 반환한다.
     pub fn effective_shell_args(&self) -> Vec<String> {
-        match self.shell_mode.as_str() {
-            "tasty" => {
-                // tasty 빌트인(OSC7 cwd emit, MSYS PATH 주입)은 **Windows 전용 가치**다.
-                //
-                // - Windows: 다른 프로세스의 cwd 를 조회하는 표준 API 가 없어 새 탭 cwd
-                //   상속을 OSC7 에 의존한다. 그래서 bash 를 `--rcfile <bashrc>` 로 띄워
-                //   빌트인을 startup 에 *직접* source 시킨다. (예전처럼 `--norc` 로 띄운 뒤
-                //   `. <bashrc>` 를 PTY 입력으로 보내면 화면 echo / 복원 시 claude 입력창
-                //   오염 문제가 있었다. forward slash 경로여야 Git Bash 가 올바로 읽는다.)
-                //
-                // - 비-Windows: zsh 는 `--rcfile`/`--norc` 를 *모르고* (옵션 거부 → 셸
-                //   즉사), bash login 셸은 `--rcfile` 을 *무시*한다. 게다가 새 탭 cwd 는
-                //   `get_cwd_of_pid`(macOS `proc_pidinfo` / Linux `/proc/<pid>/cwd`)로
-                //   이미 상속되므로 OSC7 이 불필요하다. 따라서 셸을 죽이는 옵션을 붙이지
-                //   않고, default 모드와 동일하게(=`lib.rs` 의 `-li` 만) 사용자 셸을 그대로
-                //   띄운다. 어떤 셸(zsh/bash/fish/…)이든 정상 기동한다.
-                #[cfg(windows)]
-                {
-                    // 파생 bashrc가 없으면 현재 user 파일 내용으로 재생성.
-                    ensure_compiled_bashrc();
-                    let rcfile = tasty_bashrc_path().replace('\\', "/");
-                    vec!["--rcfile".to_string(), rcfile]
-                }
-                #[cfg(not(windows))]
-                {
-                    Vec::new()
-                }
+        // tasty 빌트인(OSC7 cwd emit, MSYS PATH 주입)은 **Windows 전용 가치**다.
+        //
+        // - Windows: 다른 프로세스의 cwd 를 조회하는 표준 API 가 없어 새 탭 cwd
+        //   상속을 OSC7 에 의존한다. 그래서 bash 를 `--rcfile <bashrc>` 로 띄워
+        //   빌트인을 startup 에 *직접* source 시킨다. (예전처럼 `--norc` 로 띄운 뒤
+        //   `. <bashrc>` 를 PTY 입력으로 보내면 화면 echo / 복원 시 claude 입력창
+        //   오염 문제가 있었다. forward slash 경로여야 Git Bash 가 올바로 읽는다.)
+        //
+        // - 비-Windows: zsh 는 `--rcfile`/`--norc` 를 *모르고* (옵션 거부 → 셸
+        //   즉사), bash login 셸은 `--rcfile` 을 *무시*한다. 게다가 새 탭 cwd 는
+        //   `get_cwd_of_pid`(macOS `proc_pidinfo` / Linux `/proc/<pid>/cwd`)로
+        //   이미 상속되므로 OSC7 이 불필요하다. 셸 모드 UI 자체를 노출하지 않고
+        //   사용자 셸을 그대로 띄운다.
+        #[cfg(windows)]
+        {
+            if self.shell_mode.as_str() == "tasty" {
+                // 파생 bashrc가 없으면 현재 user 파일 내용으로 재생성.
+                ensure_compiled_bashrc();
+                let rcfile = tasty_bashrc_path().replace('\\', "/");
+                return vec!["--rcfile".to_string(), rcfile];
             }
-            "custom" => self
-                .shell_args
-                .split_whitespace()
-                .map(|s| s.to_string())
-                .collect(),
-            _ => vec![], // "default" 및 unknown
+            Vec::new()
+        }
+        #[cfg(not(windows))]
+        {
+            Vec::new()
         }
     }
 }
@@ -338,6 +334,7 @@ fn ensure_compiled_bashrc() {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
     fn settings_with_mode(mode: &str) -> GeneralSettings {
         GeneralSettings {
             shell_mode: mode.to_string(),
@@ -345,6 +342,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn default_mode_has_no_args() {
         assert!(
@@ -354,23 +352,13 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn unknown_mode_falls_back_to_no_args() {
         assert!(settings_with_mode("fast").effective_shell_args().is_empty());
     }
 
-    #[test]
-    fn custom_mode_splits_user_args() {
-        let mut g = settings_with_mode("custom");
-        g.shell_args = "-x -y".to_string();
-        assert_eq!(
-            g.effective_shell_args(),
-            vec!["-x".to_string(), "-y".to_string()]
-        );
-    }
-
-    // tasty 모드: Windows 는 `--rcfile <path>` 로 빌트인을 source 하고(S-2 픽스 보존),
-    // 비-Windows 는 셸을 죽이는 옵션을 붙이지 않아 default 와 동일하게 빈 인자를 쓴다.
+    // tasty 모드: Windows 는 `--rcfile <path>` 로 빌트인을 source 한다(S-2 픽스 보존).
     #[cfg(windows)]
     #[test]
     fn tasty_mode_windows_uses_rcfile() {
@@ -379,13 +367,11 @@ mod tests {
         assert_eq!(args[0], "--rcfile");
     }
 
+    // 비-Windows: 셸 모드 필드 자체가 없으므로 effective_shell_args 는 항상 빈 vec.
     #[cfg(not(windows))]
     #[test]
-    fn tasty_mode_non_windows_is_empty_like_default() {
-        assert!(
-            settings_with_mode("tasty")
-                .effective_shell_args()
-                .is_empty()
-        );
+    fn effective_shell_args_empty_on_unix() {
+        let s = GeneralSettings::default();
+        assert!(s.effective_shell_args().is_empty());
     }
 }
