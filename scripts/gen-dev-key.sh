@@ -51,8 +51,27 @@ mkdir -p "$KEY_DIR"
 chmod 700 "$KEY_DIR"
 
 if [[ -f "$PRIV_PATH" && "$FORCE" -ne 1 ]]; then
-    echo "Already exists: $PRIV_PATH"
-    echo "  Use --force to regenerate (NOTE: 기존 키로 서명된 .sig 는 모두 무효화됨)"
+    # private key 는 보존하되, public key 사본 (dev-pubkey.bin) 이 stale 한
+    # 케이스 (zero placeholder 또는 다른 키 대응) 는 자동 복구한다. 한 쌍 불일치는
+    # 모든 plugin sig 가 trust gate 에서 silent skip 되는 사고로 직결되므로
+    # private key 변경 없이 pubkey 만 재추출하는 건 안전하고 비파괴적이다.
+    EXPECTED_PUB_SHA="$(openssl pkey -in "$PRIV_PATH" -pubout -outform DER | tail -c 32 | shasum -a 256 | awk '{print $1}')"
+    if [[ -f "$PUB_PATH" ]]; then
+        CURRENT_PUB_SHA="$(shasum -a 256 "$PUB_PATH" | awk '{print $1}')"
+    else
+        CURRENT_PUB_SHA=""
+    fi
+    if [[ "$EXPECTED_PUB_SHA" != "$CURRENT_PUB_SHA" ]]; then
+        echo "Re-syncing $PUB_PATH from existing $PRIV_PATH..."
+        mkdir -p "$(dirname "$PUB_PATH")"
+        openssl pkey -in "$PRIV_PATH" -pubout -outform DER | tail -c 32 > "$PUB_PATH"
+        echo "==> dev-pubkey.bin updated. Re-build host crate to embed new key:"
+        echo "      cargo build -p tasty-host-plugin"
+        exit 0
+    fi
+
+    echo "Already exists: $PRIV_PATH (dev-pubkey.bin in sync)"
+    echo "  Use --force to regenerate the private key (NOTE: 기존 키로 서명된 .sig 는 모두 무효화됨)"
     exit 0
 fi
 
