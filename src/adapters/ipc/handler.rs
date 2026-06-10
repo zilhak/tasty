@@ -782,6 +782,23 @@ pub(crate) fn apply_meta(
     }
 }
 
+/// IPC/CLI(= 에이전트 행동) 로 생성된 surface 에 `created_by=agent` 메타를 기록한다.
+/// 사용자 GUI 생성 경로와 구분하기 위한 읽기 전용 표지 — UI 의 mauve indicator 가 이 값을 읽는다.
+/// 생성 주체는 불변이므로 사용자가 이어받아도 그대로 둔다.
+pub(crate) fn mark_agent_created(state: &AppState, surface_id: u32) {
+    let result = state.with_memory(|m| {
+        crate::surface_meta::SurfaceMetaStore::set(
+            m,
+            surface_id,
+            crate::surface_meta::META_CREATED_BY,
+            crate::surface_meta::CREATED_BY_AGENT,
+        )
+    });
+    if let Err(e) = result {
+        tracing::warn!("surface_meta set created_by=agent failed for surface {surface_id}: {e}");
+    }
+}
+
 fn handle_system_info(
     state: &AppState,
     engine: &crate::core::CoreState,

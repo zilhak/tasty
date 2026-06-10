@@ -161,6 +161,10 @@ pub fn handle_workspace_create(
         );
     };
 
+    if let Some(sid) = surface_id {
+        super::mark_agent_created(state, sid);
+    }
+
     // cascade: host event 발화 (rename 필드 있을 때). IPC 는 Agent origin 이므로
     // active 전환은 하지 않는다 (`cascade_workspace_created` 가 origin 보고 분기).
     let agent_origin = crate::intent::IntentOrigin::Agent {

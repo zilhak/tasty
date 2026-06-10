@@ -21,6 +21,12 @@ fn memory_err_to_io(e: MemoryError) -> io::Error {
     io::Error::other(format!("memory: {e}"))
 }
 
+/// surface 생성 주체를 기록하는 메타 키. 값은 [`CREATED_BY_AGENT`] 등.
+/// IPC/CLI(에이전트 행동) 로 만든 surface 를 사용자 생성과 구분하는 읽기 전용 표지.
+pub const META_CREATED_BY: &str = "created_by";
+/// [`META_CREATED_BY`] 값 — 에이전트(IPC/CLI) 가 생성.
+pub const CREATED_BY_AGENT: &str = "agent";
+
 /// File-based per-surface metadata store (now forwarding to `tasty-memory`).
 pub struct SurfaceMetaStore;
 
