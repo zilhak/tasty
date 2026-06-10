@@ -162,6 +162,12 @@ pub fn draw_full_sidebar_view(
                         x: pos.x,
                         y: pos.y,
                     });
+                    ui.painter().rect_stroke(
+                        card_rect,
+                        4.0,
+                        egui::Stroke::new(2.0, th.green),
+                        egui::StrokeKind::Inside,
+                    );
                 }
 
                 if card_response.drag_started_by(egui::PointerButton::Primary) {

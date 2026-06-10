@@ -205,6 +205,12 @@ pub fn draw_pane_tab_bars_view(
                                     pane_id: info.pane_id,
                                     pos: viewport_resp.interact_pointer_pos().unwrap_or_default(),
                                 });
+                                ui.painter().rect_stroke(
+                                    clip_rect,
+                                    0.0,
+                                    egui::Stroke::new(2.0, th.green),
+                                    egui::StrokeKind::Inside,
+                                );
                             }
 
                             let painter = ui.painter().with_clip_rect(clip_rect);
@@ -313,6 +319,12 @@ pub fn draw_pane_tab_bars_view(
                                             tab_index: i,
                                             pos: resp.interact_pointer_pos().unwrap_or_default(),
                                         });
+                                        painter.rect_stroke(
+                                            tab_clip,
+                                            0.0,
+                                            egui::Stroke::new(2.0, th.green),
+                                            egui::StrokeKind::Inside,
+                                        );
                                     }
                                     if resp.drag_started_by(egui::PointerButton::Primary) {
                                         output.actions.push(TabBarAction::DragStart {
