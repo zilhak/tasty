@@ -41,8 +41,10 @@ pub struct PluginShortcutSnapshot {
 ///
 /// Host-internal variants (`Theme` / `General` / `Tasty` / `Terminal` /
 /// `HtmlViewer`) are hardcoded; plugin-contributed pages appear as
-/// `Plugin(<page_id>)` and are resolved against `SettingsUiState::settings_pages`
-/// at render time.
+/// `Plugin { plugin_id, page_id }` and are resolved against
+/// `SettingsUiState::settings_pages` at render time. `page_id` 단독으로는
+/// 서로 다른 plugin 이 동일 id 를 contribute 할 경우 충돌하므로
+/// `(plugin_id, page_id)` 복합키로 식별한다.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AppearanceSubTab {
     Theme,
@@ -50,9 +52,13 @@ pub(crate) enum AppearanceSubTab {
     Tasty,
     Terminal,
     HtmlViewer,
-    /// Plugin-contributed sub-tab. String = `SettingsPageContribute::id`
-    /// scoped under the contributing plugin (see `SettingsPageEntry`).
-    Plugin(String),
+    /// Plugin-contributed sub-tab. 복합키:
+    /// - `plugin_id` = `SettingsPageEntry::plugin_id`
+    /// - `page_id` = `SettingsPageContribute::id` (plugin scope 내)
+    Plugin {
+        plugin_id: String,
+        page_id: String,
+    },
 }
 
 /// Sub-tab within the Misc tab.

@@ -6,6 +6,22 @@ use tasty_host_plugin::SettingsPageEntry;
 use tasty_plugin_manifest::{SettingsCategory, SettingsItemDecl, SettingsPageContribute};
 use tasty_type_appearance::theme::SurfaceTheme;
 
+/// Plugin sub-tab 식별: `(plugin_id, page_id)` 복합키로 일치하는 entry 를 찾는다.
+///
+/// `page_id` 단독 매칭은 서로 다른 plugin 이 동일 id 를 contribute 할 경우 첫
+/// 매칭이 반환되어 다른 plugin 의 콘텐츠가 잘못 렌더된다. 전역 식별자는
+/// `<plugin_id>/<page_id>` (manifest types 460-462 참고) 이므로 이 헬퍼를 통한
+/// 복합키 매칭이 정답.
+fn find_plugin_settings_entry<'a>(
+    entries: &'a [SettingsPageEntry],
+    plugin_id: &str,
+    page_id: &str,
+) -> Option<&'a SettingsPageEntry> {
+    entries
+        .iter()
+        .find(|e| e.plugin_id == plugin_id && e.page.id == page_id)
+}
+
 /// Draw a label followed by a (?) icon with tooltip. For use inside Grid rows.
 fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
     let th = crate::theme::theme();
@@ -56,7 +72,10 @@ pub fn draw_appearance_tab(
         .filter(|e| e.page.category == SettingsCategory::Appearance)
     {
         sub_tabs.push((
-            AppearanceSubTab::Plugin(entry.page.id.clone()),
+            AppearanceSubTab::Plugin {
+                plugin_id: entry.plugin_id.clone(),
+                page_id: entry.page.id.clone(),
+            },
             t(&entry.page.title_key).to_string(),
         ));
     }
@@ -65,10 +84,17 @@ pub fn draw_appearance_tab(
     // If the currently active sub-tab points at a plugin page that's no longer
     // present (plugin disabled mid-session), fall back to Theme so the right
     // panel doesn't render blank.
-    if let AppearanceSubTab::Plugin(page_id) = &*sub_tab
-        && !sub_tabs
-            .iter()
-            .any(|(tab, _)| matches!(tab, AppearanceSubTab::Plugin(id) if id == page_id))
+    if let AppearanceSubTab::Plugin {
+        plugin_id: active_plugin,
+        page_id: active_page,
+    } = &*sub_tab
+        && !sub_tabs.iter().any(|(tab, _)| {
+            matches!(
+                tab,
+                AppearanceSubTab::Plugin { plugin_id, page_id }
+                    if plugin_id == active_plugin && page_id == active_page
+            )
+        })
     {
         *sub_tab = AppearanceSubTab::Theme;
     }
@@ -115,8 +141,9 @@ pub fn draw_appearance_tab(
             AppearanceSubTab::HtmlViewer => {
                 draw_appearance_placeholder(ui, "HTML Viewer");
             }
-            AppearanceSubTab::Plugin(page_id) => {
-                if let Some(entry) = settings_pages.iter().find(|e| &e.page.id == page_id) {
+            AppearanceSubTab::Plugin { plugin_id, page_id } => {
+                if let Some(entry) = find_plugin_settings_entry(settings_pages, plugin_id, page_id)
+                {
                     draw_plugin_settings_page(
                         ui,
                         settings,
@@ -928,4 +955,49 @@ fn draw_font_preview(
         .size(th.font_size_caption.value())
         .color(th.subtext0),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_plugin_settings_entry;
+    use tasty_host_plugin::SettingsPageEntry;
+    use tasty_plugin_manifest::{SettingsCategory, SettingsPageContribute};
+
+    fn entry(plugin_id: &str, page_id: &str) -> SettingsPageEntry {
+        SettingsPageEntry {
+            plugin_id: plugin_id.into(),
+            page: SettingsPageContribute {
+                id: page_id.into(),
+                title_key: format!("{plugin_id}.{page_id}.title"),
+                category: SettingsCategory::Appearance,
+                items: vec![],
+            },
+        }
+    }
+
+    /// 서로 다른 plugin 이 동일한 `page_id` ("theme") 를 contribute 해도
+    /// `(plugin_id, page_id)` 복합키 매칭이 각각의 entry 를 정확히 가려낸다.
+    #[test]
+    fn same_page_id_from_different_plugins_resolves_correctly() {
+        let entries = vec![entry("alpha", "theme"), entry("beta", "theme")];
+
+        let found_alpha = find_plugin_settings_entry(&entries, "alpha", "theme")
+            .expect("alpha/theme should be found");
+        assert_eq!(found_alpha.plugin_id, "alpha");
+
+        let found_beta = find_plugin_settings_entry(&entries, "beta", "theme")
+            .expect("beta/theme should be found");
+        assert_eq!(found_beta.plugin_id, "beta");
+
+        // page_id 만 보고 첫 매칭을 반환하던 버그 회귀 방지: beta 조회 시
+        // alpha 가 잘못 반환되면 안 된다.
+        assert_ne!(found_beta.plugin_id, found_alpha.plugin_id);
+    }
+
+    #[test]
+    fn missing_plugin_returns_none() {
+        let entries = vec![entry("alpha", "theme")];
+        assert!(find_plugin_settings_entry(&entries, "gamma", "theme").is_none());
+        assert!(find_plugin_settings_entry(&entries, "alpha", "other").is_none());
+    }
 }
