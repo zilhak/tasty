@@ -317,87 +317,12 @@ pub fn draw_settings_panel(
             tabs.push((SettingsTab::Misc, t("settings.tab.misc")));
             tabs.push((SettingsTab::Updates, t("settings.tab.updates")));
 
-            // 윈도우 최소 폭에서 모든 탭이 한 줄에 안 들어갈 수 있다 (UI scale=large
-            // 일 때 빈번). 가로 ScrollArea + 좌우 화살표로 우측 잘림 회피.
-            // - 화살표는 *콘텐츠 width 가 viewport 보다 클 때만* 표시 (스크롤 필요시)
-            // - 영역을 차지하지 않고 탭 위에 alpha 0.4 overlay 로 표시
-            // 한 step 스크롤 거리: 평균 탭 너비 ~80px 기준.
-            const SCROLL_STEP: f32 = 80.0;
-
-            let output = egui::ScrollArea::horizontal()
-                .id_salt("settings_tabs_scroll")
-                .auto_shrink([false, true])
-                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                .max_width(ui.available_width())
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        for (tab, label) in &tabs {
-                            let selected = ui_state.active_tab == *tab;
-                            if ui.selectable_label(selected, *label).clicked() {
-                                ui_state.active_tab = *tab;
-                            }
-                        }
-                    });
-                });
-
-            let viewport_w = output.inner_rect.width();
-            let content_w = output.content_size.x;
-            let needs_scroll = content_w > viewport_w + 0.5;
-
-            // 화살표 overlay — needs_scroll 시에만, 탭 영역 위에 떠 있음.
-            let max_offset = (content_w - viewport_w).max(0.0);
-            let mut new_offset = output.state.offset.x;
-            if needs_scroll {
-                let bar_rect = output.inner_rect;
-                let icon_size = 14.0_f32;
-                let arrow_area_w = icon_size * 1.6;
-                let icon_tint = ui.style().visuals.text_color().gamma_multiply(0.4);
-
-                let left_rect = egui::Rect::from_min_size(
-                    bar_rect.left_top(),
-                    egui::vec2(arrow_area_w, bar_rect.height()),
-                );
-                let right_rect = egui::Rect::from_min_max(
-                    egui::pos2(bar_rect.right() - arrow_area_w, bar_rect.top()),
-                    bar_rect.right_bottom(),
-                );
-                let left_btn = ui.put(
-                    left_rect,
-                    egui::Button::image(
-                        egui::Image::new(egui::include_image!(
-                            "../../../assets/icons/chevron-left.svg"
-                        ))
-                        .tint(icon_tint)
-                        .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
-                    )
-                    .frame(false)
-                    .min_size(left_rect.size()),
-                );
-                let right_btn = ui.put(
-                    right_rect,
-                    egui::Button::image(
-                        egui::Image::new(egui::include_image!(
-                            "../../../assets/icons/chevron-right.svg"
-                        ))
-                        .tint(icon_tint)
-                        .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
-                    )
-                    .frame(false)
-                    .min_size(right_rect.size()),
-                );
-                if left_btn.clicked() {
-                    new_offset = (new_offset - SCROLL_STEP).max(0.0);
-                }
-                if right_btn.clicked() {
-                    new_offset = (new_offset + SCROLL_STEP).min(max_offset);
-                }
-            }
-            if (new_offset - output.state.offset.x).abs() > f32::EPSILON {
-                let mut s = output.state;
-                s.offset.x = new_offset;
-                s.store(ui.ctx(), output.id);
-                ui.ctx().request_repaint();
-            }
+            tasty_ui_widgets::horizontal_tab_bar_with_arrows(
+                ui,
+                "settings_tabs_scroll",
+                &tabs,
+                &mut ui_state.active_tab,
+            );
         });
         ui.separator();
 

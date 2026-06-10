@@ -67,87 +67,25 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-fn draw_top_tabs(ui: &mut egui::Ui, theme: &Theme) {
-    const SCROLL_STEP: f32 = 80.0;
+fn draw_top_tabs(ui: &mut egui::Ui, _theme: &Theme) {
+    let cur_top = STATE.with(|s| s.borrow().top);
+    let mut new_top = cur_top;
+    let tabs: Vec<(usize, &str)> = TOP_TABS.iter().copied().enumerate().collect();
     ui.horizontal(|ui| {
-        let output = egui::ScrollArea::horizontal()
-            .id_salt("layout_2depth_top_scroll")
-            .auto_shrink([false, true])
-            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-            .max_width(ui.available_width())
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let cur = STATE.with(|s| s.borrow().top);
-                    for (idx, label) in TOP_TABS.iter().enumerate() {
-                        if ui.selectable_label(cur == idx, *label).clicked() {
-                            STATE.with(|s| {
-                                let mut st = s.borrow_mut();
-                                st.top = idx;
-                                st.sub = 0;
-                            });
-                        }
-                    }
-                });
-            });
-
-        let viewport_w = output.inner_rect.width();
-        let content_w = output.content_size.x;
-        let needs_scroll = content_w > viewport_w + 0.5;
-
-        let max_offset = (content_w - viewport_w).max(0.0);
-        let mut new_offset = output.state.offset.x;
-        if needs_scroll {
-            let bar_rect = output.inner_rect;
-            let icon_size = 14.0_f32;
-            let arrow_area_w = icon_size * 1.6;
-            let icon_tint = egui::Color32::from(theme.text).gamma_multiply(0.4);
-
-            let left_rect = egui::Rect::from_min_size(
-                bar_rect.left_top(),
-                egui::vec2(arrow_area_w, bar_rect.height()),
-            );
-            let right_rect = egui::Rect::from_min_max(
-                egui::pos2(bar_rect.right() - arrow_area_w, bar_rect.top()),
-                bar_rect.right_bottom(),
-            );
-            let l = ui.put(
-                left_rect,
-                egui::Button::image(
-                    egui::Image::new(egui::include_image!(
-                        "../../../../../assets/icons/chevron-left.svg"
-                    ))
-                    .tint(icon_tint)
-                    .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
-                )
-                .frame(false)
-                .min_size(left_rect.size()),
-            );
-            let r = ui.put(
-                right_rect,
-                egui::Button::image(
-                    egui::Image::new(egui::include_image!(
-                        "../../../../../assets/icons/chevron-right.svg"
-                    ))
-                    .tint(icon_tint)
-                    .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
-                )
-                .frame(false)
-                .min_size(right_rect.size()),
-            );
-            if l.clicked() {
-                new_offset = (new_offset - SCROLL_STEP).max(0.0);
-            }
-            if r.clicked() {
-                new_offset = (new_offset + SCROLL_STEP).min(max_offset);
-            }
-        }
-        if (new_offset - output.state.offset.x).abs() > f32::EPSILON {
-            let mut s = output.state;
-            s.offset.x = new_offset;
-            s.store(ui.ctx(), output.id);
-            ui.ctx().request_repaint();
-        }
+        tasty_ui_widgets::horizontal_tab_bar_with_arrows(
+            ui,
+            "layout_2depth_top_scroll",
+            &tabs,
+            &mut new_top,
+        );
     });
+    if new_top != cur_top {
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            st.top = new_top;
+            st.sub = 0;
+        });
+    }
 }
 
 /// 좌측 sub menu Frame + 우측 콘텐츠. `tasty_ui_widgets::two_depth_layout` 호출.
