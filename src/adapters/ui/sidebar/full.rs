@@ -93,17 +93,19 @@ pub fn draw_full_sidebar(
             deferred_actions = draw_full_sidebar_view(ui, &props);
         });
 
-    // 우측 경계선 (ui_kit border-right) — 사이드바 안쪽 마지막 px 에 직접 그린다.
-    // egui 기본 separator 는 터미널 첫 컬럼에 그려져 끄고, 여기서 사이드바 내부에.
-    let border_rect = panel_resp.response.rect;
+    // 우측 경계선 (ui_kit border-right) — 사이드바 안쪽 마지막 px.
+    // panel_resp.response.rect.right() 는 exact_width 보다 크다(separator/resize handle
+    // 영역 포함, 측정상 190 vs 180). 그대로 쓰면 터미널을 ~10px 침범하므로, 터미널
+    // 영역 계산과 동일한 sidebar_width 를 기준으로 그린다.
+    let panel_rect = panel_resp.response.rect;
     ctx.layer_painter(egui::LayerId::new(
         egui::Order::Foreground,
         egui::Id::new("sidebar_right_border"),
     ))
     .vline(
-        border_rect.right() - 0.5,
-        border_rect.y_range(),
-        egui::Stroke::new(1.0, th.separator.to_egui_premultiplied()),
+        sidebar_width - 0.5,
+        panel_rect.y_range(),
+        egui::Stroke::new(1.0, th.surface0.to_egui()),
     );
 
     let ws_count = engine.workspaces.len();
