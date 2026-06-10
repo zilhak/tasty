@@ -116,7 +116,7 @@ fn draw_add_detector_form(ui: &mut egui::Ui, fh: &mut FileHandlerEditDraft) {
         return;
     }
     egui::Frame::new()
-        .inner_margin(egui::vec2(8.0, 6.0))
+        .inner_margin(egui::vec2(8.0, 4.0))
         .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
         .show(ui, |ui| {
             egui::Grid::new("file_handler_detectors_add_grid")

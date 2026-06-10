@@ -31,7 +31,7 @@ fn draw_add_input(
     th: &theme::Theme,
 ) {
     ui.label(t("plugins.add_path_label"));
-    ui.add_space(6.0);
+    ui.add_space(8.0);
 
     let mut submitted = false;
     ui.horizontal(|ui| {
@@ -55,7 +55,7 @@ fn draw_add_input(
     }
 
     if let Some(err) = &ui_state.add_error {
-        ui.add_space(6.0);
+        ui.add_space(8.0);
         ui.label(egui::RichText::new(err).color(egui::Color32::from(th.red)));
     }
 
@@ -107,7 +107,7 @@ fn draw_add_preview(
 
             if !preview.description.is_empty() {
                 ui.label(&preview.description);
-                ui.add_space(6.0);
+                ui.add_space(8.0);
             }
             if !preview.authors.is_empty() {
                 ui.label(format!(
@@ -146,7 +146,7 @@ fn draw_add_preview(
             }
 
             if let Some(msg) = &preview.already_installed {
-                ui.add_space(10.0);
+                ui.add_space(12.0);
                 ui.label(egui::RichText::new(msg).color(egui::Color32::from(th.peach)));
             }
         });
@@ -157,7 +157,7 @@ fn draw_add_preview(
         draw_untrusted_warning(ui, &preview, th);
     }
 
-    ui.add_space(10.0);
+    ui.add_space(12.0);
     ui.separator();
     ui.add_space(8.0);
     ui.horizontal(|ui| {

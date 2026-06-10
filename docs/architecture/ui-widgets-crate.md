@@ -28,14 +28,16 @@ tasty-ui-widgets     ← layout / 위젯 primitive (본 문서 대상)
 
 `tasty-ui-widgets::tokens` 모듈은 위젯이 사용하는 *layout-level* 상수 (색·폰트가 아닌 폭·패딩·corner 등) 를 단일 진실로 보관한다. 색·폰트는 `tasty-type-appearance::theme::Theme` 토큰에서 온다.
 
-| 상수 | 값 | 설명 |
-|------|----|------|
-| `SUB_TAB_PANEL_WIDTH` | 150.0 | `two_depth_layout` 좌측 패널 고정 폭 (logical px) |
-| `PANEL_INNER_MARGIN` | 6 (i8) | 좌측 패널 Frame symmetric inner margin |
-| `PANEL_CORNER_RADIUS` | 4.0 | 좌측 패널 Frame corner radius |
-| `PANEL_STROKE_WIDTH` | 1.0 | 좌측 패널 Frame stroke |
-| `PANEL_SPACING` | 8.0 | 좌·우 사이 horizontal spacing |
-| `TAB_CONTENT_PADDING` | 16 (i8) | `tab_content_frame` inner margin (4 면 동일) |
+SIZING 과 의미가 겹치는 값은 매직넘버로 재정의하지 않고 `tasty-type-appearance::theme::SIZING` 을 단일 소스로 참조한다 (이름은 "이 위치에서 어떤 토큰을 쓰는지" 의미론을 보존).
+
+| 상수 | 값 | SIZING 출처 | 설명 |
+|------|----|------|------|
+| `SUB_TAB_PANEL_WIDTH` | 150.0 | `tab_width` | `two_depth_layout` 좌측 패널 고정 폭 (logical px) |
+| `PANEL_INNER_MARGIN` | 8 (i8) | `spacing_sm` | 좌측 패널 Frame symmetric inner margin |
+| `PANEL_CORNER_RADIUS` | 4.0 | `corner_radius` | 좌측 패널 Frame corner radius |
+| `PANEL_STROKE_WIDTH` | 1.0 | `border_width` | 좌측 패널 Frame stroke |
+| `PANEL_SPACING` | 8.0 | `spacing_sm` | 좌·우 사이 horizontal spacing |
+| `TAB_CONTENT_PADDING` | 16 (i8) | `spacing_lg` | `tab_content_frame` inner margin (4 면 동일) |
 
 상수 변경 시 본체와 갤러리 양쪽이 자동으로 동기화된다. 본체 settings 의 sub-tab 폭 정책을 100 → 150 으로 올리던 작업도, 새 widgets crate 도입 후에는 `SUB_TAB_PANEL_WIDTH` 한 줄만 바꾸면 끝난다.
 

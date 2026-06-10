@@ -97,7 +97,7 @@ fn draw_extension_row(
     let candidates = file_format.detectors_for_extension(ext);
     if candidates.is_empty() {
         egui::Frame::new()
-            .inner_margin(egui::vec2(8.0, 6.0))
+            .inner_margin(egui::vec2(8.0, 4.0))
             .fill(ui.visuals().faint_bg_color)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -127,7 +127,7 @@ fn draw_extension_row(
     };
 
     egui::Frame::new()
-        .inner_margin(egui::vec2(8.0, 6.0))
+        .inner_margin(egui::vec2(8.0, 4.0))
         .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
         .show(ui, |ui| {
             ui.horizontal(|ui| {

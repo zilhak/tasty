@@ -125,7 +125,7 @@ fn draw_add_handler_form(
     }
     let detector_ids = file_format.list_detectors();
     egui::Frame::new()
-        .inner_margin(egui::vec2(8.0, 6.0))
+        .inner_margin(egui::vec2(8.0, 4.0))
         .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
         .show(ui, |ui| {
             egui::Grid::new("file_handler_handlers_add_grid")

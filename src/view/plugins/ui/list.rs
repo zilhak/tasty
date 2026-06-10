@@ -119,11 +119,11 @@ pub(super) fn draw_list_tab(
                     .small()
                     .color(egui::Color32::from(th.subtext0)),
             );
-            ui.add_space(6.0);
+            ui.add_space(8.0);
 
             if !entry.description.is_empty() {
                 ui.label(&entry.description);
-                ui.add_space(6.0);
+                ui.add_space(8.0);
             }
             if !entry.authors.is_empty() {
                 ui.label(format!(
@@ -136,10 +136,10 @@ pub(super) fn draw_list_tab(
                 ui.label(format!("{}: {}", t("plugins.homepage"), entry.homepage));
             }
 
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             ui.separator();
 
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             ui.horizontal(|ui| {
                 ui.label(format!("{}:", t("plugins.status")));
                 let mut enabled = entry.enabled;
@@ -159,9 +159,9 @@ pub(super) fn draw_list_tab(
                 ui.label(entry.surface_kinds.join(", "));
             }
 
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             ui.separator();
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             ui.label(format!("{}:", t("plugins.permissions")));
             if entry.manifest_permissions.is_empty() {
                 ui.label(t("plugins.none"));
@@ -184,9 +184,9 @@ pub(super) fn draw_list_tab(
                 }
             }
 
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             ui.separator();
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             ui.label(format!("{}:", t("plugins.install_path")));
             ui.horizontal(|ui| {
                 ui.label(

@@ -12,11 +12,9 @@ use tasty_type_appearance::theme::SIZING;
 /// 좌측 sub-menu 패널의 고정 폭 (logical px). = `SIZING.tab_width`.
 pub const SUB_TAB_PANEL_WIDTH: f32 = SIZING.tab_width.0;
 
-/// 좌측 패널 Frame 의 inner margin (px, symmetric).
-///
-/// NOTE: 6 은 4px 그리드에 맞지 않는다. 그리드 정합(4 또는 8)으로의 교정은
-/// 시각 변화를 동반하므로 별도 판단 대상.
-pub const PANEL_INNER_MARGIN: i8 = 6;
+/// 좌측 패널 Frame 의 inner margin (px, symmetric). = `SIZING.spacing_sm`.
+/// (이전 6 은 4px 그리드 위반이었다 → spacing_sm 으로 정합.)
+pub const PANEL_INNER_MARGIN: i8 = SIZING.spacing_sm.0 as i8;
 
 /// 좌측 패널 Frame 의 corner radius. = `SIZING.corner_radius`.
 pub const PANEL_CORNER_RADIUS: f32 = SIZING.corner_radius.0;
