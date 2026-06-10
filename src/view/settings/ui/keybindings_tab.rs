@@ -69,72 +69,61 @@ pub fn draw_keybindings_tab(
 
     let available_height = ui.available_height() - 8.0 - 14.0;
 
-    ui.horizontal_top(|ui| {
-        egui::Frame::new()
-            .fill(th.crust.into())
-            .stroke(egui::Stroke::new(1.0, th.surface0))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(6, 6))
-            .show(ui, |ui| {
-                ui.set_width(150.0);
-                ui.set_min_height(available_height);
+    let current = *sub_tab;
+    let mut selected_new: Option<KeybindingsSubTab> = None;
+    tasty_ui_widgets::two_depth_layout(
+        ui,
+        &th,
+        available_height,
+        |ui| {
+            let sub_tabs = [
+                (
+                    KeybindingsSubTab::General,
+                    t("settings.keybindings.subtab.general"),
+                ),
+                (
+                    KeybindingsSubTab::Workspace,
+                    t("settings.keybindings.subtab.workspace"),
+                ),
+                (
+                    KeybindingsSubTab::Pane,
+                    t("settings.keybindings.subtab.pane"),
+                ),
+                (KeybindingsSubTab::Tab, t("settings.keybindings.subtab.tab")),
+                (
+                    KeybindingsSubTab::Surface,
+                    t("settings.keybindings.subtab.surface"),
+                ),
+                (
+                    KeybindingsSubTab::Clipboard,
+                    t("settings.keybindings.subtab.clipboard"),
+                ),
+                (
+                    KeybindingsSubTab::Zoom,
+                    t("settings.keybindings.subtab.zoom"),
+                ),
+                (
+                    KeybindingsSubTab::Image,
+                    t("settings.keybindings.subtab.image"),
+                ),
+                (
+                    KeybindingsSubTab::Preset,
+                    t("settings.keybindings.subtab.preset"),
+                ),
+                (
+                    KeybindingsSubTab::Plugins,
+                    t("settings.keybindings.subtab.plugins"),
+                ),
+            ];
 
-                ui.vertical(|ui| {
-                    let sub_tabs = [
-                        (
-                            KeybindingsSubTab::General,
-                            t("settings.keybindings.subtab.general"),
-                        ),
-                        (
-                            KeybindingsSubTab::Workspace,
-                            t("settings.keybindings.subtab.workspace"),
-                        ),
-                        (
-                            KeybindingsSubTab::Pane,
-                            t("settings.keybindings.subtab.pane"),
-                        ),
-                        (KeybindingsSubTab::Tab, t("settings.keybindings.subtab.tab")),
-                        (
-                            KeybindingsSubTab::Surface,
-                            t("settings.keybindings.subtab.surface"),
-                        ),
-                        (
-                            KeybindingsSubTab::Clipboard,
-                            t("settings.keybindings.subtab.clipboard"),
-                        ),
-                        (
-                            KeybindingsSubTab::Zoom,
-                            t("settings.keybindings.subtab.zoom"),
-                        ),
-                        (
-                            KeybindingsSubTab::Image,
-                            t("settings.keybindings.subtab.image"),
-                        ),
-                        (
-                            KeybindingsSubTab::Preset,
-                            t("settings.keybindings.subtab.preset"),
-                        ),
-                        (
-                            KeybindingsSubTab::Plugins,
-                            t("settings.keybindings.subtab.plugins"),
-                        ),
-                    ];
-
-                    for (tab, label) in &sub_tabs {
-                        let selected = *sub_tab == *tab;
-                        if ui.selectable_label(selected, *label).clicked() {
-                            *sub_tab = *tab;
-                            *recording_field = None;
-                        }
-                    }
-                });
-            });
-
-        ui.add_space(8.0);
-
-        ui.vertical(|ui| {
-            ui.set_max_height(available_height);
-
+            for (tab, label) in &sub_tabs {
+                let selected = current == *tab;
+                if ui.selectable_label(selected, *label).clicked() {
+                    selected_new = Some(*tab);
+                }
+            }
+        },
+        |ui| {
             // winit에서 직접 캡처한 키 조합을 사용. double-tap이 우선.
             let captured = if recording_field.is_some() {
                 if let Some(dt) = captured_double_tap.take() {
@@ -146,7 +135,7 @@ pub fn draw_keybindings_tab(
                 KeyCapture::None
             };
 
-            match *sub_tab {
+            match current {
                 KeybindingsSubTab::General => {
                     draw_keybinding_entries(
                         ui,
@@ -400,7 +389,7 @@ pub fn draw_keybindings_tab(
             }
 
             if !matches!(
-                *sub_tab,
+                current,
                 KeybindingsSubTab::Preset | KeybindingsSubTab::Plugins
             ) {
                 ui.add_space(8.0);
@@ -410,8 +399,12 @@ pub fn draw_keybindings_tab(
                         .color(th.overlay1),
                 );
             }
-        }); // end vertical
-    }); // end horizontal_top
+        },
+    );
+    if let Some(new) = selected_new {
+        *sub_tab = new;
+        *recording_field = None;
+    }
 }
 
 fn modifier_display(modifier: &str) -> &str {
