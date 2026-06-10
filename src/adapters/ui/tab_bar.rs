@@ -82,6 +82,10 @@ pub enum TabBarAction {
         pane_id: u32,
         tab_index: usize,
     },
+    CloseTab {
+        pane_id: u32,
+        tab_index: usize,
+    },
     AddTab {
         pane_id: u32,
     },
@@ -275,11 +279,12 @@ pub fn draw_pane_tab_bars_view(
                                     painter.rect_filled(line_rect, 0.0, th.blue);
                                 }
 
+                                // close 버튼 슬롯(우측 h_padding + 14px)을 비워두고 dot 은
+                                // 그 왼쪽에 둔다 (close 와 겹치지 않게).
+                                let dot_right = tab_rect.max.x - h_padding - 14.0;
                                 if is_busy {
-                                    let dot_center = egui::pos2(
-                                        tab_rect.max.x - dot_pad - dot_radius,
-                                        tab_rect.center().y,
-                                    );
+                                    let dot_center =
+                                        egui::pos2(dot_right - dot_radius, tab_rect.center().y);
                                     let dot_color: egui::Color32 = if is_active {
                                         th.green.into()
                                     } else {
@@ -296,7 +301,7 @@ pub fn draw_pane_tab_bars_view(
                                     .copied()
                                     .unwrap_or(false);
                                 if is_agent_created {
-                                    let base_x = tab_rect.max.x - dot_pad - dot_radius;
+                                    let base_x = dot_right - dot_radius;
                                     let agent_x = if is_busy {
                                         base_x - dot_radius * 2.0 - dot_pad
                                     } else {
@@ -330,12 +335,16 @@ pub fn draw_pane_tab_bars_view(
 
                                 // 텍스트 — 아이콘 뒤, 좌측 정렬. 우측엔 dot 공간 확보.
                                 let text_x = icon_rect.max.x + 6.0;
-                                let right_reserve = if is_busy || is_agent_created {
-                                    dot_pad + dot_radius * 2.0 + 4.0
-                                } else {
-                                    h_padding
-                                };
-                                let available_w = (tab_rect.max.x - right_reserve - text_x).max(0.0);
+                                // 텍스트 우측 한계: dot/close 슬롯(dot_right) 왼쪽. busy/agent
+                                // dot 이 있으면 그만큼 더 좁힌다.
+                                let mut text_right = dot_right - 4.0;
+                                if is_busy {
+                                    text_right -= dot_radius * 2.0 + dot_pad;
+                                }
+                                if is_agent_created {
+                                    text_right -= dot_radius * 2.0 + dot_pad;
+                                }
+                                let available_w = (text_right - text_x).max(0.0);
                                 let font_id = egui::FontId::proportional(label_font_size);
                                 let galley = painter.layout_no_wrap(
                                     name.clone(),
@@ -373,7 +382,39 @@ pub fn draw_pane_tab_bars_view(
                                         egui::Id::new(format!("tab_{}_{}", info.pane_id, i)),
                                         egui::Sense::click_and_drag(),
                                     );
-                                    if resp.clicked() {
+                                    // close 버튼 (active or hover) — 우측 끝. 클릭은
+                                    // SwitchTab 보다 우선.
+                                    let show_close = is_active || resp.hovered();
+                                    let close_clicked = if show_close {
+                                        let cs = 14.0;
+                                        let close_rect = egui::Rect::from_center_size(
+                                            egui::pos2(
+                                                tab_rect.max.x - h_padding - cs / 2.0,
+                                                tab_rect.center().y,
+                                            ),
+                                            egui::vec2(cs, cs),
+                                        );
+                                        let cr = ui.interact(
+                                            close_rect,
+                                            egui::Id::new(("tabclose", info.pane_id, i)),
+                                            egui::Sense::click(),
+                                        );
+                                        let cc: egui::Color32 = if cr.hovered() {
+                                            th.text.into()
+                                        } else {
+                                            th.subtext0.into()
+                                        };
+                                        icons::CLOSE.image(cs, cc).paint_at(ui, close_rect);
+                                        cr.clicked()
+                                    } else {
+                                        false
+                                    };
+                                    if close_clicked {
+                                        output.actions.push(TabBarAction::CloseTab {
+                                            pane_id: info.pane_id,
+                                            tab_index: i,
+                                        });
+                                    } else if resp.clicked() {
                                         output.actions.push(TabBarAction::SwitchTab {
                                             pane_id: info.pane_id,
                                             tab_index: i,
@@ -708,6 +749,9 @@ pub fn draw_pane_tab_bars(
                 for sid in to_wake {
                     engine.ensure_surface_initialized(sid);
                 }
+            }
+            TabBarAction::CloseTab { pane_id, tab_index } => {
+                state.close_tab(engine, pane_id, tab_index);
             }
             TabBarAction::AddTab { pane_id } => {
                 state.active_workspace_mut(engine).focused_pane = pane_id;
