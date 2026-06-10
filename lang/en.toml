@@ -72,7 +72,6 @@ appearance = "Appearance"
 clipboard = "Clipboard"
 notifications = "Notifications"
 keybindings = "Keybindings"
-accessibility = "Accessibility"
 file_handler = "File Handler"
 misc = "Misc"
 plugin = "Plugin"
@@ -478,6 +477,8 @@ clipboard_history = "Clipboard History"
 
 [settings.misc.subtab]
 tastyrc = "tastyrc"
+accessibility = "Accessibility"
+performance = "Performance"
 
 [settings.misc.bashrc]
 heading = "Tasty-mode bashrc"

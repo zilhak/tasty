@@ -70,9 +70,16 @@ pub(crate) enum PluginSubTab {
 }
 
 /// Sub-tab within the Misc tab.
+///
+/// `Tastyrc` 는 Windows 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는
+/// 메뉴에 push 되지 않아 dead variant 가 되지만, exhaustive match 안전성을
+/// 위해 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
+    #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
+    Accessibility,
+    Performance,
 }
 
 /// Active tab in the settings window.
@@ -84,12 +91,7 @@ enum SettingsTab {
     Clipboard,
     Notifications,
     Keybindings,
-    Performance,
-    Accessibility,
     FileHandler,
-    // Misc 탭(tasty 빌트인 bashrc 편집)은 Windows 전용이라 비-Windows 에선
-    // 탭 목록에 push 되지 않는다(match arm 에서만 참조) → dead_code 허용.
-    #[cfg_attr(not(windows), allow(dead_code))]
     Misc,
     Plugin,
     Updates,
@@ -185,7 +187,10 @@ impl SettingsUiState {
             keybindings_sub_tab: KeybindingsSubTab::General,
             appearance_sub_tab: AppearanceSubTab::General,
             plugin_sub_tab: None,
+            #[cfg(windows)]
             misc_sub_tab: MiscSubTab::Tastyrc,
+            #[cfg(not(windows))]
+            misc_sub_tab: MiscSubTab::Accessibility,
             file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
             extension_priority_draft: None,
             extension_priority_new_input: String::new(),
@@ -318,24 +323,20 @@ pub fn draw_settings_panel(
         ui.add_space(8.0);
 
         ui.horizontal(|ui| {
-            let mut tabs = vec![
+            let tabs = vec![
                 (SettingsTab::General, t("settings.tab.general")),
                 (SettingsTab::Terminal, t("settings.tab.terminal")),
                 (SettingsTab::Appearance, t("settings.tab.appearance")),
                 (SettingsTab::Clipboard, t("settings.tab.clipboard")),
                 (SettingsTab::Notifications, t("settings.tab.notifications")),
                 (SettingsTab::Keybindings, t("settings.tab.keybindings")),
-                (SettingsTab::Performance, t("settings.performance.heading")),
-                (SettingsTab::Accessibility, t("settings.tab.accessibility")),
                 (SettingsTab::FileHandler, t("settings.tab.file_handler")),
+                // Misc 탭은 OS 무관 노출. 내부 tastyrc 서브탭만 Windows 한정.
+                // 비-Windows 에서는 접근성/성능 서브탭만 노출된다.
+                (SettingsTab::Misc, t("settings.tab.misc")),
+                (SettingsTab::Plugin, t("settings.tab.plugin")),
+                (SettingsTab::Updates, t("settings.tab.updates")),
             ];
-            // Misc 탭은 tasty 빌트인 bashrc(OSC7/PATH) 편집용이고, 그 빌트인은 Windows
-            // 전용이다(비-Windows tasty 모드는 default 와 동일하게 동작). 따라서 비-Windows
-            // 에서는 편집기를 노출하지 않는다.
-            #[cfg(windows)]
-            tabs.push((SettingsTab::Misc, t("settings.tab.misc")));
-            tabs.push((SettingsTab::Plugin, t("settings.tab.plugin")));
-            tabs.push((SettingsTab::Updates, t("settings.tab.updates")));
 
             tasty_ui_widgets::horizontal_tab_bar_with_arrows(
                 ui,
@@ -381,8 +382,6 @@ pub fn draw_settings_panel(
                             &mut ui_state.plugin_shortcuts_selected,
                             &mut ui_state.plugin_shortcuts_draft,
                         ),
-                        SettingsTab::Performance => draw_performance_tab(ui, &mut draft),
-                        SettingsTab::Accessibility => draw_accessibility_tab(ui, &mut draft),
                         SettingsTab::FileHandler => draw_file_handler_tab(
                             ui,
                             &mut ui_state.file_handler_sub_tab,
@@ -395,6 +394,7 @@ pub fn draw_settings_panel(
                         SettingsTab::Misc => draw_misc_tab(
                             ui,
                             &mut ui_state.misc_sub_tab,
+                            &mut draft,
                             &mut ui_state.bashrc_user_draft,
                         ),
                         SettingsTab::Plugin => draw_plugin_tab(

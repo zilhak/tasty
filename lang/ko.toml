@@ -72,7 +72,6 @@ appearance = "외관"
 clipboard = "클립보드"
 notifications = "알림"
 keybindings = "단축키"
-accessibility = "접근성"
 file_handler = "파일 핸들러"
 misc = "기타"
 plugin = "플러그인"
@@ -478,6 +477,8 @@ clipboard_history = "클립보드 히스토리"
 
 [settings.misc.subtab]
 tastyrc = "tastyrc"
+accessibility = "접근성"
+performance = "성능"
 
 [settings.misc.bashrc]
 heading = "Tasty 모드에서 적용되는 bashrc"
