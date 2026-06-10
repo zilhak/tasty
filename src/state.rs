@@ -398,6 +398,10 @@ pub enum PendingNativeMenu {
     Workspace { ws_idx: usize, x: f32, y: f32 },
     /// Terminal surface right-click: Copy surface id (좌표는 logical px 기준)
     TerminalSurface { surface_id: u32, x: f32, y: f32 },
+    /// "New workspace" 버튼 우클릭 (full/collapsed sidebar 공통): 프리셋으로 새 워크스페이스 생성
+    NewWorkspaceButton { x: f32, y: f32 },
+    /// 탭 "+" 버튼 우클릭: 프리셋으로 탭/페인 생성
+    NewTabButton { pane_id: u32, x: f32, y: f32 },
 }
 
 /// All transient UI dialog/popup state, grouped to avoid AppState bloat.

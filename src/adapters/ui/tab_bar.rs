@@ -84,6 +84,11 @@ pub enum TabBarAction {
         pane_id: u32,
         pos: egui::Pos2,
     },
+    /// 탭 "+" 버튼 우클릭 — 프리셋으로 탭/페인 생성 진입점.
+    OpenNewTabButtonContextMenu {
+        pane_id: u32,
+        pos: egui::Pos2,
+    },
     DragStart {
         pane_id: u32,
         tab_index: usize,
@@ -388,6 +393,22 @@ pub fn draw_pane_tab_bars_view(
                                             pane_id: info.pane_id,
                                         });
                                     }
+                                    if resp.secondary_clicked() {
+                                        output.actions.push(
+                                            TabBarAction::OpenNewTabButtonContextMenu {
+                                                pane_id: info.pane_id,
+                                                pos: resp
+                                                    .interact_pointer_pos()
+                                                    .unwrap_or_default(),
+                                            },
+                                        );
+                                        painter.rect_stroke(
+                                            plus_clip,
+                                            0.0,
+                                            egui::Stroke::new(2.0, th.green),
+                                            egui::StrokeKind::Inside,
+                                        );
+                                    }
                                 }
                             }
 
@@ -641,6 +662,14 @@ pub fn draw_pane_tab_bars(
                     x: pos.x,
                     y: pos.y,
                 });
+            }
+            TabBarAction::OpenNewTabButtonContextMenu { pane_id, pos } => {
+                state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::NewTabButton {
+                        pane_id,
+                        x: pos.x,
+                        y: pos.y,
+                    });
             }
             TabBarAction::DragStart { pane_id, tab_index } => {
                 state.dialogs.tab_drag = Some(crate::state::TabDragState {

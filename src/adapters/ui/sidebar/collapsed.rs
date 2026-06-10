@@ -20,7 +20,7 @@ pub struct CollapsedSidebarResult {
 
 pub fn draw_collapsed_sidebar(
     ctx: &egui::Context,
-    state: &AppState,
+    state: &mut AppState,
     engine: &crate::core::CoreState,
     sidebar_width: f32,
 ) -> CollapsedSidebarResult {
@@ -77,6 +77,10 @@ pub fn draw_collapsed_sidebar(
             SidebarCollapsedAction::ToolsClicked(rect) => result.tools_rect = Some(rect),
             SidebarCollapsedAction::WorkspaceClicked(i) => result.switch_ws = Some(i),
             SidebarCollapsedAction::NewWorkspace => result.add_ws = true,
+            SidebarCollapsedAction::NewWorkspaceContextMenu { x, y } => {
+                state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::NewWorkspaceButton { x, y });
+            }
         }
     }
 

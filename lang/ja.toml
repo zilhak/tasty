@@ -631,6 +631,9 @@ placeholder = "保存されたプリセットがここに表示されます。"
 save_as_workspace_preset = "ワークスペースプリセットとして保存"
 save_as_tab_preset = "タブプリセットとして保存"
 save_as_pane_preset = "ペインプリセットとして保存"
+apply_workspace_preset = "プリセットからワークスペースを作成..."
+apply_tab_preset = "プリセットからタブを作成..."
+apply_pane_preset = "プリセットからペインを作成..."
 
 [preset.toast]
 saved_workspace = "ワークスペースプリセットを保存しました"

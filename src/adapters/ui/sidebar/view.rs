@@ -74,6 +74,11 @@ pub enum SidebarFullAction {
         drop_target: Option<usize>,
     },
     NewWorkspace,
+    /// "New workspace" 버튼 우클릭 — 프리셋으로 새 워크스페이스 생성 진입점.
+    NewWorkspaceContextMenu {
+        x: f32,
+        y: f32,
+    },
 }
 
 /// Collapsed sidebar view 가 보고하는 사용자 의도.
@@ -85,6 +90,11 @@ pub enum SidebarCollapsedAction {
     ToolsClicked(egui::Rect),
     WorkspaceClicked(usize),
     NewWorkspace,
+    /// "+" 아이콘 우클릭 — 프리셋으로 새 워크스페이스 생성 진입점.
+    NewWorkspaceContextMenu {
+        x: f32,
+        y: f32,
+    },
 }
 
 const BTN_HEIGHT: f32 = 28.0;
@@ -251,14 +261,16 @@ pub fn draw_full_sidebar_view(
 
             ui.add_space(4.0);
             let full_width = ui.available_width();
-            if ui
-                .add_sized(
-                    [full_width, BTN_HEIGHT],
-                    egui::Button::new(props.new_workspace_label),
-                )
-                .clicked()
-            {
+            let new_ws_resp = ui.add_sized(
+                [full_width, BTN_HEIGHT],
+                egui::Button::new(props.new_workspace_label),
+            );
+            if new_ws_resp.clicked() {
                 actions.push(SidebarFullAction::NewWorkspace);
+            }
+            if new_ws_resp.secondary_clicked() {
+                let pos = new_ws_resp.interact_pointer_pos().unwrap_or_default();
+                actions.push(SidebarFullAction::NewWorkspaceContextMenu { x: pos.x, y: pos.y });
             }
             ui.add_space(4.0);
         });
@@ -384,6 +396,10 @@ pub fn draw_collapsed_sidebar_view(
         paint_icon_button(ui, th, rect, &resp, "+", 14.0);
         if resp.clicked() {
             actions.push(SidebarCollapsedAction::NewWorkspace);
+        }
+        if resp.secondary_clicked() {
+            let pos = resp.interact_pointer_pos().unwrap_or_default();
+            actions.push(SidebarCollapsedAction::NewWorkspaceContextMenu { x: pos.x, y: pos.y });
         }
     });
 

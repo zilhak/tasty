@@ -631,6 +631,9 @@ placeholder = "Saved presets will appear here."
 save_as_workspace_preset = "Save as workspace preset"
 save_as_tab_preset = "Save as tab preset"
 save_as_pane_preset = "Save as pane preset"
+apply_workspace_preset = "Create workspace from preset..."
+apply_tab_preset = "Create tab from preset..."
+apply_pane_preset = "Create pane from preset..."
 
 [preset.toast]
 saved_workspace = "Workspace preset saved"

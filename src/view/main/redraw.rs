@@ -407,6 +407,9 @@ impl MainView {
                     MenuItem::new(5, crate::i18n::t("pane_context_menu.new_image")),
                     MenuItem::separator(),
                     MenuItem::new(6, crate::i18n::t("preset.context.save_as_pane_preset")),
+                    MenuItem::separator(),
+                    MenuItem::new(7, crate::i18n::t("preset.context.apply_tab_preset")),
+                    MenuItem::new(8, crate::i18n::t("preset.context.apply_pane_preset")),
                 ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -464,6 +467,28 @@ impl MainView {
                                 crate::adapters::ui::ToastScope::Window,
                             );
                         }
+                    }
+                    Some(7) => {
+                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                        self.state.dialogs.preset_picker_selected = None;
+                        self.state.dispatch_intent(
+                            crate::intent::UiIntent::OpenPopup {
+                                id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
+                                mode: crate::intent::OpenPopupMode::CenteredFocused,
+                            }
+                            .from_user_context_menu(),
+                        );
+                    }
+                    Some(8) => {
+                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                        self.state.dialogs.preset_picker_selected = None;
+                        self.state.dispatch_intent(
+                            crate::intent::UiIntent::OpenPopup {
+                                id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
+                                mode: crate::intent::OpenPopupMode::CenteredFocused,
+                            }
+                            .from_user_context_menu(),
+                        );
                     }
                     _ => {}
                 }
@@ -598,6 +623,59 @@ impl MainView {
                     }
                     Some(3) => {
                         self.copy_selection_no_newline();
+                    }
+                    _ => {}
+                }
+                self.mark_dirty();
+            }
+            PendingNativeMenu::NewWorkspaceButton { x, y } => {
+                let items = [MenuItem::new(
+                    1,
+                    crate::i18n::t("preset.context.apply_workspace_preset"),
+                )];
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                if let Some(1) = result {
+                    self.state.dialogs.preset_picker_selected = None;
+                    self.state.dispatch_intent(
+                        crate::intent::UiIntent::OpenPopup {
+                            id: crate::adapters::ui::popup::preset_apply::APPLY_WORKSPACE_POPUP_ID,
+                            mode: crate::intent::OpenPopupMode::CenteredFocused,
+                        }
+                        .from_user_context_menu(),
+                    );
+                }
+                self.mark_dirty();
+            }
+            PendingNativeMenu::NewTabButton { pane_id, x, y } => {
+                let items = [
+                    MenuItem::new(1, crate::i18n::t("preset.context.apply_tab_preset")),
+                    MenuItem::new(2, crate::i18n::t("preset.context.apply_pane_preset")),
+                ];
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                match result {
+                    Some(1) => {
+                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                        self.state.dialogs.preset_picker_selected = None;
+                        self.state.dispatch_intent(
+                            crate::intent::UiIntent::OpenPopup {
+                                id: crate::adapters::ui::popup::preset_apply::APPLY_TAB_POPUP_ID,
+                                mode: crate::intent::OpenPopupMode::CenteredFocused,
+                            }
+                            .from_user_context_menu(),
+                        );
+                    }
+                    Some(2) => {
+                        self.state.active_workspace_mut(engine).focused_pane = pane_id;
+                        self.state.dialogs.preset_picker_selected = None;
+                        self.state.dispatch_intent(
+                            crate::intent::UiIntent::OpenPopup {
+                                id: crate::adapters::ui::popup::preset_apply::APPLY_PANE_POPUP_ID,
+                                mode: crate::intent::OpenPopupMode::CenteredFocused,
+                            }
+                            .from_user_context_menu(),
+                        );
                     }
                     _ => {}
                 }

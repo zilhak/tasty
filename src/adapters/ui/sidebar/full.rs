@@ -126,6 +126,10 @@ pub fn draw_full_sidebar(
                     .from_user_menu("sidebar_add_workspace"),
                 );
             }
+            SidebarFullAction::NewWorkspaceContextMenu { x, y } => {
+                state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::NewWorkspaceButton { x, y });
+            }
         }
     }
 
