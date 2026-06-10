@@ -30,6 +30,8 @@ pub struct PaneTabBarView {
     pub tab_has_notification: Vec<bool>,
     /// 탭별 busy(녹색 점) 여부.
     pub tab_is_busy: Vec<bool>,
+    /// 탭별 agent(IPC/CLI) 생성 여부 — mauve dot 으로 표시.
+    pub tab_is_agent_created: Vec<bool>,
     pub active_tab: usize,
     /// 이 pane 이 현재 focus 인지 — 배경 (surface0 vs mantle) 결정.
     pub is_focused: bool,
@@ -270,6 +272,32 @@ pub fn draw_pane_tab_bars_view(
                                         th.green.with_alpha(180).to_egui()
                                     };
                                     painter.circle_filled(dot_center, dot_radius, dot_color);
+                                }
+
+                                // agent(IPC/CLI) 생성 surface → mauve dot.
+                                // busy(녹색) dot 과 겹치지 않게, busy 있으면 그 왼쪽 슬롯에.
+                                let is_agent_created = info
+                                    .tab_is_agent_created
+                                    .get(i)
+                                    .copied()
+                                    .unwrap_or(false);
+                                if is_agent_created {
+                                    let base_x = tab_rect.max.x - dot_pad - dot_radius;
+                                    let agent_x = if is_busy {
+                                        base_x - dot_radius * 2.0 - dot_pad
+                                    } else {
+                                        base_x
+                                    };
+                                    let dot_color: egui::Color32 = if is_active {
+                                        th.mauve.into()
+                                    } else {
+                                        th.mauve.with_alpha(180).to_egui()
+                                    };
+                                    painter.circle_filled(
+                                        egui::pos2(agent_x, tab_rect.center().y),
+                                        dot_radius,
+                                        dot_color,
+                                    );
                                 }
 
                                 let font_id = egui::FontId::proportional(label_font_size);
@@ -562,12 +590,30 @@ pub fn draw_pane_tab_bars(
                     sids.iter().any(|sid| engine.busy_surfaces.contains(sid))
                 })
                 .collect();
+            // created_by=agent 메타는 영속(memory.db). pane 당 lock 1 회로 묶어 조회.
+            let tab_is_agent_created: Vec<bool> = state.with_memory(|m| {
+                pane.tabs
+                    .iter()
+                    .map(|t| {
+                        t.all_surface_ids().iter().any(|&sid| {
+                            crate::surface_meta::SurfaceMetaStore::get(
+                                m,
+                                sid,
+                                crate::surface_meta::META_CREATED_BY,
+                            )
+                            .as_deref()
+                                == Some(crate::surface_meta::CREATED_BY_AGENT)
+                        })
+                    })
+                    .collect()
+            });
             panes.push(PaneTabBarView {
                 pane_id,
                 rect: pane_rect,
                 tab_names: pane.tabs.iter().map(|t| t.display_name()).collect(),
                 tab_has_notification,
                 tab_is_busy,
+                tab_is_agent_created,
                 active_tab: pane.active_tab,
                 is_focused: pane_id == focused_pane_id,
                 scroll_offset: pane.tab_scroll_offset,
@@ -781,6 +827,7 @@ mod tests {
             tab_names: names.iter().map(|s| s.to_string()).collect(),
             tab_has_notification: vec![false; n],
             tab_is_busy: vec![false; n],
+            tab_is_agent_created: vec![false; n],
             active_tab: active,
             is_focused: focused,
             scroll_offset: 0.0,
