@@ -150,38 +150,23 @@ fn draw_top_tabs(ui: &mut egui::Ui, theme: &Theme) {
     });
 }
 
-/// 좌측 sub menu Frame + 우측 콘텐츠. 단축키 탭 idiom 그대로.
+/// 좌측 sub menu Frame + 우측 콘텐츠. `tasty_ui_widgets::two_depth_layout` 호출.
 fn draw_split(ui: &mut egui::Ui, theme: &Theme) {
     let available_height = ui.available_height();
-    ui.horizontal_top(|ui| {
-        // 좌측 sub menu (고정 폭 100, 단축키 탭과 동일)
-        egui::Frame::new()
-            .fill(egui::Color32::from(theme.crust))
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from(theme.surface0)))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(6, 6))
-            .show(ui, |ui| {
-                ui.set_width(150.0);
-                ui.set_min_height(available_height);
-
-                ui.vertical(|ui| {
-                    let cur = STATE.with(|s| s.borrow().sub);
-                    for (idx, label) in SUB_TABS.iter().enumerate() {
-                        if ui.selectable_label(cur == idx, *label).clicked() {
-                            STATE.with(|s| s.borrow_mut().sub = idx);
-                        }
-                    }
-                });
-            });
-
-        ui.add_space(8.0);
-
-        // 우측 콘텐츠
-        ui.vertical(|ui| {
-            ui.set_max_height(available_height);
-            draw_content(ui, theme);
-        });
-    });
+    tasty_ui_widgets::two_depth_layout(
+        ui,
+        theme,
+        available_height,
+        |ui| {
+            let cur = STATE.with(|s| s.borrow().sub);
+            for (idx, label) in SUB_TABS.iter().enumerate() {
+                if ui.selectable_label(cur == idx, *label).clicked() {
+                    STATE.with(|s| s.borrow_mut().sub = idx);
+                }
+            }
+        },
+        |ui| draw_content(ui, theme),
+    );
 }
 
 fn draw_content(ui: &mut egui::Ui, theme: &Theme) {
