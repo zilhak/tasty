@@ -383,6 +383,13 @@ pub fn draw_pane_tab_bars_view(
                                             egui::Id::new(("tabclose", info.pane_id, i)),
                                             egui::Sense::click(),
                                         );
+                                        if cr.hovered() {
+                                            painter.rect_filled(
+                                                close_rect,
+                                                2.0,
+                                                th.active_overlay.to_egui_premultiplied(),
+                                            );
+                                        }
                                         let cc: egui::Color32 = if cr.hovered() {
                                             th.text.into()
                                         } else {
