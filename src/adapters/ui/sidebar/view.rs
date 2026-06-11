@@ -143,19 +143,22 @@ pub fn draw_full_sidebar_view(
             ui.add_space(2.0);
 
             // Tools
-            if let Some(rect) = draw_full_bottom_button(ui, th, icons::TOOLS, props.tools_label) {
-                actions.push(SidebarFullAction::ToolsClicked(rect));
+            let tools_resp = draw_ghost_block_button(ui, th, Some(icons::TOOLS), props.tools_label);
+            if tools_resp.clicked() {
+                actions.push(SidebarFullAction::ToolsClicked(tools_resp.rect));
             }
             ui.add_space(2.0);
 
             // Plugins
-            if draw_full_bottom_button(ui, th, icons::PLUG, props.plugins_label).is_some() {
+            if draw_ghost_block_button(ui, th, Some(icons::PLUG), props.plugins_label).clicked() {
                 actions.push(SidebarFullAction::Plugins);
             }
             ui.add_space(2.0);
 
             // Settings
-            if draw_full_bottom_button(ui, th, icons::SETTINGS, props.settings_label).is_some() {
+            if draw_ghost_block_button(ui, th, Some(icons::SETTINGS), props.settings_label)
+                .clicked()
+            {
                 actions.push(SidebarFullAction::Settings);
             }
             ui.add_space(8.0);
@@ -277,14 +280,8 @@ pub fn draw_full_sidebar_view(
             }
 
             ui.add_space(4.0);
-            let full_width = ui.available_width();
-            let new_ws_resp = ui.add_sized(
-                [full_width, BTN_HEIGHT],
-                egui::Button::image_and_text(
-                    icons::PLUS.image(16.0, th.subtext1.into()),
-                    props.new_workspace_label,
-                ),
-            );
+            let new_ws_resp =
+                draw_ghost_block_button(ui, th, Some(icons::PLUS), props.new_workspace_label);
             if new_ws_resp.clicked() {
                 actions.push(SidebarFullAction::NewWorkspace);
             }
@@ -360,7 +357,7 @@ pub fn draw_collapsed_sidebar_view(
                 // Tools
                 let (tools_btn_rect, tools_resp) =
                     ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
-                paint_icon_button(ui, th, tools_btn_rect, &tools_resp, "T", 12.0);
+                paint_icon_button(ui, th, tools_btn_rect, &tools_resp, icons::TOOLS);
                 let tools_resp = tools_resp.on_hover_text(props.tools_hover);
                 if tools_resp.clicked() {
                     actions.push(SidebarCollapsedAction::ToolsClicked(tools_btn_rect));
@@ -370,7 +367,7 @@ pub fn draw_collapsed_sidebar_view(
                 // Plugins
                 let (rect, resp) =
                     ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
-                paint_icon_button(ui, th, rect, &resp, "\u{1F9E9}", 14.0);
+                paint_icon_button(ui, th, rect, &resp, icons::PLUG);
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Plugins);
                 }
@@ -379,7 +376,7 @@ pub fn draw_collapsed_sidebar_view(
                 // Settings
                 let (rect, resp) =
                     ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
-                paint_icon_button(ui, th, rect, &resp, "\u{2699}", 14.0);
+                paint_icon_button(ui, th, rect, &resp, icons::SETTINGS);
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Settings);
                 }
@@ -390,7 +387,14 @@ pub fn draw_collapsed_sidebar_view(
     ui.vertical_centered(|ui| {
         ui.add_space(4.0);
         for (i, ws) in props.workspaces.iter().enumerate() {
-            let label = format!("{}", i + 1);
+            // 디자인 (chrome.jsx CollapsedSidebar): 워크스페이스 이름 첫 글자 대문자,
+            // mono 13 bold. 빈 이름이면 라벨 생략 (한글/이모지도 안전하게 chars().next()).
+            let label = ws
+                .name
+                .chars()
+                .next()
+                .map(|c| c.to_uppercase().to_string())
+                .unwrap_or_default();
             let bg = if ws.is_active { th.surface0 } else { th.mantle };
             let text_color = if ws.is_active {
                 th.text
@@ -414,13 +418,15 @@ pub fn draw_collapsed_sidebar_view(
                 ui.painter()
                     .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
             }
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                &label,
-                egui::FontId::proportional(12.0),
-                text_color.into(),
-            );
+            if !label.is_empty() {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &label,
+                    egui::FontId::monospace(13.0),
+                    text_color.into(),
+                );
+            }
             if ws.busy_count > 0 {
                 let dot_radius = 3.0;
                 let dot_pad = 4.0;
@@ -446,7 +452,7 @@ pub fn draw_collapsed_sidebar_view(
 
         ui.add_space(2.0);
         let (rect, resp) = ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
-        paint_icon_button(ui, th, rect, &resp, "+", 14.0);
+        paint_icon_button(ui, th, rect, &resp, icons::PLUS);
         if resp.clicked() {
             actions.push(SidebarCollapsedAction::NewWorkspace);
         }
@@ -465,42 +471,49 @@ pub fn draw_collapsed_sidebar_view(
     actions
 }
 
-/// 풀 사이드바 바닥 버튼 (Tools/Collapse/Plugins/Settings) 1 행. 클릭되면 rect 반환.
-fn draw_full_bottom_button(
+/// 디자인의 ghost variant block button — 사이드바 좌측 정렬 버튼 공통 (Full
+/// New Workspace / Tools / Plugins / Settings). 평소 subtext1 (text-secondary),
+/// hover 시 text (text-primary) + overlay_hover 배경, pressed 시 overlay_active.
+fn draw_ghost_block_button(
     ui: &mut egui::Ui,
     th: &Theme,
-    icon: icons::Icon,
+    leading_icon: Option<icons::Icon>,
     label: &str,
-) -> Option<egui::Rect> {
+) -> egui::Response {
     let full_width = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(full_width, BTN_HEIGHT),
-        egui::Sense::click().union(egui::Sense::hover()),
-    );
-    if resp.hovered() {
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(full_width, BTN_HEIGHT), egui::Sense::click());
+    let pressed = resp.is_pointer_button_down_on();
+    if pressed {
+        ui.painter()
+            .rect_filled(rect, 4.0, th.active_overlay.to_egui_premultiplied());
+    } else if resp.hovered() {
         ui.painter()
             .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
-    let color: egui::Color32 = if resp.hovered() {
-        th.subtext1.into()
+    let color: egui::Color32 = if resp.hovered() || pressed {
+        th.text.into()
     } else {
-        th.overlay0.into()
+        th.subtext1.into()
     };
-    // 아이콘 + 텍스트, 좌측 정렬 (ui_kit Sidebar 하단 버튼).
-    let icon_size = 16.0;
-    let icon_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.min.x + 10.0, rect.center().y - icon_size / 2.0),
-        egui::vec2(icon_size, icon_size),
-    );
-    icon.image(icon_size, color).paint_at(ui, icon_rect);
+    let mut text_x = rect.min.x + 10.0;
+    if let Some(icon) = leading_icon {
+        let icon_size = 16.0;
+        let icon_rect = egui::Rect::from_min_size(
+            egui::pos2(text_x, rect.center().y - icon_size / 2.0),
+            egui::vec2(icon_size, icon_size),
+        );
+        icon.image(icon_size, color).paint_at(ui, icon_rect);
+        text_x = icon_rect.max.x + 8.0;
+    }
     ui.painter().text(
-        egui::pos2(icon_rect.max.x + 8.0, rect.center().y),
+        egui::pos2(text_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
         egui::FontId::proportional(12.0),
         color,
     );
-    resp.clicked().then_some(rect)
+    resp
 }
 
 /// ui_kit 사이드바 헤더 — 워드마크 `tasty.` (`.` = 브랜드색) + 접기(«).
@@ -574,14 +587,13 @@ fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
     );
 }
 
-/// Collapsed 측 아이콘 버튼의 hover 배경 + 텍스트 그리기 helper.
+/// Collapsed 측 IconButton — hover 배경 + SVG icon 그리기 helper.
 fn paint_icon_button(
     ui: &mut egui::Ui,
     th: &Theme,
     rect: egui::Rect,
     resp: &egui::Response,
-    glyph: &str,
-    font_size: f32,
+    icon: icons::Icon,
 ) {
     // pressed (마우스 누른 채 위) > hover > idle. pressed 가 우선, 배경만 강화.
     let pressed = resp.is_pointer_button_down_on();
@@ -592,17 +604,14 @@ fn paint_icon_button(
         ui.painter()
             .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        glyph,
-        egui::FontId::proportional(font_size),
-        if resp.hovered() || pressed {
-            th.subtext1.into()
-        } else {
-            th.overlay0.into()
-        },
-    );
+    let color: egui::Color32 = if resp.hovered() || pressed {
+        th.subtext1.into()
+    } else {
+        th.overlay0.into()
+    };
+    let icon_size = 16.0;
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(icon_size, icon_size));
+    icon.image(icon_size, color).paint_at(ui, icon_rect);
 }
 
 /// Full 사이드바의 workspace card 1 장 — Frame::show 로 직접 그리고 점유한 rect 반환.
@@ -633,10 +642,13 @@ fn draw_workspace_card(
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            // 좌측 상태 dot — ui_kit WorkspaceRow StatusDot 대응.
-            // 우선순위: running(busy) > attached > none. agent_created 는 ws 단위 데이터
-            // 부재로 보류. 폴더 아이콘(16px) 슬롯과 동일 폭을 차지해 라벨 위치가 흔들리지
-            // 않게 한다.
+            // 좌측 상태 dot — 디자인 StatusDot (running/idle/agent/waiting/error)
+            // 중 ws-level 데이터로 결정 가능한 두 case 만 표시.
+            // 우선순위: running(busy_count>0) → green (accent-success)
+            //          > attached (다른 client 점유) → red (accent-danger)
+            //          > 없음 (idle 은 무점 표시)
+            // 디자인의 agent / waiting case 는 ws-level 데이터 부재로 보류.
+            // 폴더 아이콘(16px) 슬롯과 동일 폭을 차지해 라벨 위치가 흔들리지 않게 한다.
             let dot_slot = egui::vec2(16.0, 16.0);
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
             let dot_color: Option<egui::Color32> = if ws.busy_count > 0 {
@@ -647,12 +659,7 @@ fn draw_workspace_card(
                 None
             };
             if let Some(color) = dot_color {
-                let color = if ws.is_active {
-                    color
-                } else {
-                    // 비활성 행은 살짝 톤다운 (tab strip dot 패턴과 동일).
-                    egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 180)
-                };
+                // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
                 ui.painter().circle_filled(dot_rect.center(), 4.0, color);
                 if ws.attached && ws.busy_count == 0 {
                     dot_resp.on_hover_text(occupied_hover);
@@ -690,6 +697,17 @@ fn draw_workspace_card(
             ui.horizontal(|ui| {
                 ui.add_space(20.0);
                 ui.label(egui::RichText::new(&ws.subtitle).small().color(th.subtext0));
+            });
+        }
+
+        if !ws.description.is_empty() {
+            ui.horizontal(|ui| {
+                ui.add_space(20.0);
+                ui.label(
+                    egui::RichText::new(&ws.description)
+                        .small()
+                        .color(th.overlay0),
+                );
             });
         }
     });
