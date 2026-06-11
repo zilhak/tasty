@@ -106,11 +106,29 @@ pub enum SidebarCollapsedAction {
     },
 }
 
-const BTN_HEIGHT: f32 = 24.0;
-const COLLAPSED_ICON_SIZE: egui::Vec2 = egui::vec2(32.0, 22.0);
-const COLLAPSED_WS_SIZE: egui::Vec2 = egui::vec2(32.0, 28.0);
-const CARD_INNER_MARGIN_X: i8 = 8;
-const CARD_INNER_MARGIN_Y: i8 = 4;
+// Sidebar 의 모든 zoom-sensitive 길이는 Theme 토큰에서 가져온다 (Z-1/Z-2 에서
+// host UI zoom 곱셈이 토큰 자체에 박힘). 아래는 토큰에서 도출하는 헬퍼.
+fn btn_height(th: &Theme) -> f32 {
+    th.item_height_tab.value()
+}
+fn collapsed_icon_size(th: &Theme) -> egui::Vec2 {
+    egui::vec2(
+        th.sidebar_collapsed_slot_width.value(),
+        th.sidebar_collapsed_icon_height.value(),
+    )
+}
+fn collapsed_ws_size(th: &Theme) -> egui::Vec2 {
+    egui::vec2(
+        th.sidebar_collapsed_slot_width.value(),
+        th.sidebar_collapsed_workspace_height.value(),
+    )
+}
+fn card_inner_margin_x(th: &Theme) -> i8 {
+    th.spacing_sm.value() as i8
+}
+fn card_inner_margin_y(th: &Theme) -> i8 {
+    th.spacing_xs.value() as i8
+}
 
 /// Pure view: full sidebar 내부 (SidePanel 안쪽 ui) 를 그리고 action 리스트
 /// 를 반환. 호출처는 SidePanel 을 직접 연다.
@@ -316,15 +334,16 @@ pub fn draw_collapsed_sidebar_view(
         .show_inside(ui, |ui| {
             ui.add_space(10.0);
             ui.vertical_centered(|ui| {
-                // 로고 24x24 — 상단, expand 버튼 위.
-                let (logo_rect, _) =
-                    ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                // 로고 (collapsed) — 상단, expand 버튼 위.
+                let logo_size = th.sidebar_logo_collapsed_size.value();
+                let logo_vec = egui::vec2(logo_size, logo_size);
+                let (logo_rect, _) = ui.allocate_exact_size(logo_vec, egui::Sense::hover());
                 egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
-                    .fit_to_exact_size(egui::vec2(24.0, 24.0))
+                    .fit_to_exact_size(logo_vec)
                     .paint_at(ui, logo_rect);
                 ui.add_space(4.0);
                 let (rect, resp) =
-                    ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
+                    ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 if resp.hovered() {
                     ui.painter()
                         .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -356,7 +375,7 @@ pub fn draw_collapsed_sidebar_view(
 
                 // Tools
                 let (tools_btn_rect, tools_resp) =
-                    ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
+                    ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 paint_icon_button(ui, th, tools_btn_rect, &tools_resp, icons::TOOLS);
                 let tools_resp = tools_resp.on_hover_text(props.tools_hover);
                 if tools_resp.clicked() {
@@ -366,7 +385,7 @@ pub fn draw_collapsed_sidebar_view(
 
                 // Plugins
                 let (rect, resp) =
-                    ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
+                    ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 paint_icon_button(ui, th, rect, &resp, icons::PLUG);
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Plugins);
@@ -375,7 +394,7 @@ pub fn draw_collapsed_sidebar_view(
 
                 // Settings
                 let (rect, resp) =
-                    ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
+                    ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 paint_icon_button(ui, th, rect, &resp, icons::SETTINGS);
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Settings);
@@ -404,7 +423,7 @@ pub fn draw_collapsed_sidebar_view(
                 th.subtext0
             };
 
-            let (rect, resp) = ui.allocate_exact_size(COLLAPSED_WS_SIZE, egui::Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(collapsed_ws_size(th), egui::Sense::click());
             ui.painter().rect_filled(rect, 4.0, bg);
             if ws.is_active {
                 ui.painter().rect_stroke(
@@ -423,7 +442,7 @@ pub fn draw_collapsed_sidebar_view(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     &label,
-                    egui::FontId::monospace(13.0),
+                    egui::FontId::monospace(th.font_size_body.value()),
                     text_color.into(),
                 );
             }
@@ -451,7 +470,7 @@ pub fn draw_collapsed_sidebar_view(
         }
 
         ui.add_space(2.0);
-        let (rect, resp) = ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
         paint_icon_button(ui, th, rect, &resp, icons::PLUS);
         if resp.clicked() {
             actions.push(SidebarCollapsedAction::NewWorkspace);
@@ -482,7 +501,7 @@ fn draw_ghost_block_button(
 ) -> egui::Response {
     let full_width = ui.available_width();
     let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(full_width, BTN_HEIGHT), egui::Sense::click());
+        ui.allocate_exact_size(egui::vec2(full_width, btn_height(th)), egui::Sense::click());
     let pressed = resp.is_pointer_button_down_on();
     if pressed {
         ui.painter()
@@ -510,7 +529,7 @@ fn draw_ghost_block_button(
         egui::pos2(text_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
-        egui::FontId::proportional(12.0),
+        egui::FontId::proportional(th.sidebar_button_label_font_size.value()),
         color,
     );
     resp
@@ -523,13 +542,15 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
     ui.horizontal(|ui| {
         ui.add_space(6.0);
         // 로고 (수박 PNG) — 워드마크 좌측, gap 8.
-        let (logo_rect, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+        let logo_size = th.sidebar_logo_size.value();
+        let logo_vec = egui::vec2(logo_size, logo_size);
+        let (logo_rect, _) = ui.allocate_exact_size(logo_vec, egui::Sense::hover());
         egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
-            .fit_to_exact_size(egui::vec2(22.0, 22.0))
+            .fit_to_exact_size(logo_vec)
             .paint_at(ui, logo_rect);
         ui.add_space(8.0);
         let mut job = egui::text::LayoutJob::default();
-        let font = egui::FontId::monospace(17.0);
+        let font = egui::FontId::monospace(th.sidebar_wordmark_font_size.value());
         // 워드마크 트래킹 -0.5px (디자인 정책: mono 17 bold).
         job.append(
             "tasty",
@@ -586,7 +607,7 @@ fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
         text,
         0.0,
         egui::TextFormat {
-            font_id: egui::FontId::monospace(10.0),
+            font_id: egui::FontId::monospace(th.sidebar_section_heading_font_size.value()),
             extra_letter_spacing: 0.7,
             color: th.subtext0.into(),
             ..Default::default()
@@ -644,8 +665,8 @@ fn draw_workspace_card(
         .corner_radius(2.0)
         .outer_margin(egui::Margin::symmetric(6, 0))
         .inner_margin(egui::Margin::symmetric(
-            CARD_INNER_MARGIN_X,
-            CARD_INNER_MARGIN_Y,
+            card_inner_margin_x(th),
+            card_inner_margin_y(th),
         ));
 
     let response = frame.show(ui, |ui| {

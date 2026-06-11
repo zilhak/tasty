@@ -125,6 +125,23 @@ pub struct ThemeSizing {
     pub spacing_md: LogicalPx,
     pub spacing_lg: LogicalPx,
     pub spacing_xl: LogicalPx,
+    // ── Sidebar 전용 (host UI zoom 영향 받음) ──
+    /// Full sidebar 헤더의 수박 로고 크기.
+    pub sidebar_logo_size: LogicalPx,
+    /// Collapsed sidebar 헤더의 수박 로고 크기.
+    pub sidebar_logo_collapsed_size: LogicalPx,
+    /// `tasty.` 워드마크 mono 폰트 크기.
+    pub sidebar_wordmark_font_size: LogicalPx,
+    /// "WORKSPACES" 섹션 헤딩 mono 폰트 크기.
+    pub sidebar_section_heading_font_size: LogicalPx,
+    /// Tools / Plugins / Settings / New workspace 등 사이드바 ghost block 버튼 라벨 폰트 크기.
+    pub sidebar_button_label_font_size: LogicalPx,
+    /// Collapsed sidebar icon / workspace 슬롯의 공통 너비.
+    pub sidebar_collapsed_slot_width: LogicalPx,
+    /// Collapsed sidebar Tools / Plugins / Settings / Expand 아이콘 슬롯 높이.
+    pub sidebar_collapsed_icon_height: LogicalPx,
+    /// Collapsed sidebar workspace 슬롯 높이.
+    pub sidebar_collapsed_workspace_height: LogicalPx,
 }
 
 pub const SIZING: ThemeSizing = ThemeSizing {
@@ -144,6 +161,14 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     spacing_md: LogicalPx(12.0),
     spacing_lg: LogicalPx(16.0),
     spacing_xl: LogicalPx(24.0),
+    sidebar_logo_size: LogicalPx(22.0),
+    sidebar_logo_collapsed_size: LogicalPx(24.0),
+    sidebar_wordmark_font_size: LogicalPx(17.0),
+    sidebar_section_heading_font_size: LogicalPx(10.0),
+    sidebar_button_label_font_size: LogicalPx(12.0),
+    sidebar_collapsed_slot_width: LogicalPx(32.0),
+    sidebar_collapsed_icon_height: LogicalPx(22.0),
+    sidebar_collapsed_workspace_height: LogicalPx(28.0),
 };
 
 // ============================================================================
@@ -583,6 +608,15 @@ pub struct Theme {
     pub spacing_md: LogicalPx,
     pub spacing_lg: LogicalPx,
     pub spacing_xl: LogicalPx,
+    // ── Sidebar 전용 (host UI zoom 영향 받음) ──
+    pub sidebar_logo_size: LogicalPx,
+    pub sidebar_logo_collapsed_size: LogicalPx,
+    pub sidebar_wordmark_font_size: LogicalPx,
+    pub sidebar_section_heading_font_size: LogicalPx,
+    pub sidebar_button_label_font_size: LogicalPx,
+    pub sidebar_collapsed_slot_width: LogicalPx,
+    pub sidebar_collapsed_icon_height: LogicalPx,
+    pub sidebar_collapsed_workspace_height: LogicalPx,
 
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
@@ -693,6 +727,14 @@ impl Theme {
             spacing_md: zoomed(SIZING.spacing_md),
             spacing_lg: zoomed(SIZING.spacing_lg),
             spacing_xl: zoomed(SIZING.spacing_xl),
+            sidebar_logo_size: zoomed(SIZING.sidebar_logo_size),
+            sidebar_logo_collapsed_size: zoomed(SIZING.sidebar_logo_collapsed_size),
+            sidebar_wordmark_font_size: zoomed(SIZING.sidebar_wordmark_font_size),
+            sidebar_section_heading_font_size: zoomed(SIZING.sidebar_section_heading_font_size),
+            sidebar_button_label_font_size: zoomed(SIZING.sidebar_button_label_font_size),
+            sidebar_collapsed_slot_width: zoomed(SIZING.sidebar_collapsed_slot_width),
+            sidebar_collapsed_icon_height: zoomed(SIZING.sidebar_collapsed_icon_height),
+            sidebar_collapsed_workspace_height: zoomed(SIZING.sidebar_collapsed_workspace_height),
             is_light,
             surface_themes: c.surface_themes,
         }
@@ -913,6 +955,45 @@ mod tests {
         assert_eq!(base.item_height_interactive, zoomed.item_height_interactive);
         assert_eq!(base.item_height_tab, zoomed.item_height_tab);
         assert_eq!(base.tab_width, zoomed.tab_width);
+        assert_eq!(base.sidebar_logo_size, zoomed.sidebar_logo_size);
+        assert_eq!(
+            base.sidebar_logo_collapsed_size,
+            zoomed.sidebar_logo_collapsed_size
+        );
+        assert_eq!(
+            base.sidebar_wordmark_font_size,
+            zoomed.sidebar_wordmark_font_size
+        );
+        assert_eq!(
+            base.sidebar_section_heading_font_size,
+            zoomed.sidebar_section_heading_font_size
+        );
+        assert_eq!(
+            base.sidebar_button_label_font_size,
+            zoomed.sidebar_button_label_font_size
+        );
+        assert_eq!(
+            base.sidebar_collapsed_slot_width,
+            zoomed.sidebar_collapsed_slot_width
+        );
+        assert_eq!(
+            base.sidebar_collapsed_icon_height,
+            zoomed.sidebar_collapsed_icon_height
+        );
+        assert_eq!(
+            base.sidebar_collapsed_workspace_height,
+            zoomed.sidebar_collapsed_workspace_height
+        );
+    }
+
+    #[test]
+    fn sidebar_tokens_scale_with_zoom() {
+        // 22 * 1.5 = 33.0, 17 * 1.5 = 25.5 → round → 26.
+        let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
+        assert_eq!(t.sidebar_logo_size.value(), 33.0);
+        assert_eq!(t.sidebar_wordmark_font_size.value(), 26.0);
+        // 32 * 1.5 = 48.0
+        assert_eq!(t.sidebar_collapsed_slot_width.value(), 48.0);
     }
 
     #[test]
