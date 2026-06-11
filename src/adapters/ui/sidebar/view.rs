@@ -612,9 +612,10 @@ fn draw_workspace_card(
     ws: &WorkspaceEntryView,
     occupied_hover: &str,
 ) -> egui::Rect {
-    // ui_kit WorkspaceRow — 테두리 없는 플랫 행. active 만 배경 채움.
+    // ui_kit WorkspaceRow — 테두리 없는 플랫 행. active 만 배경 채움 (`--surface-active`
+    // = catppuccin surface2).
     let bg = if ws.is_active {
-        th.surface0.to_egui()
+        th.surface2.to_egui()
     } else {
         egui::Color32::TRANSPARENT
     };
@@ -622,7 +623,7 @@ fn draw_workspace_card(
     let frame =
         egui::Frame::new()
             .fill(bg)
-            .corner_radius(4.0)
+            .corner_radius(2.0)
             .inner_margin(egui::Margin::symmetric(
                 CARD_INNER_MARGIN_X,
                 CARD_INNER_MARGIN_Y,
@@ -697,6 +698,15 @@ fn draw_workspace_card(
             );
         }
     });
+
+    // Active 좌측 2px inset accent bar (디자인 `boxShadow: inset 2px 0 0 var(--accent-primary)`).
+    // 카드 좌측 가장 안쪽 모서리, 좌측 inner_margin(8px) 안에 위치 → dot 슬롯(좌측 8px 부터)
+    // 과 겹치지 않는다.
+    if ws.is_active {
+        let card_rect = response.response.rect;
+        let bar = egui::Rect::from_min_size(card_rect.min, egui::vec2(2.0, card_rect.height()));
+        ui.painter().rect_filled(bar, 0.0, th.blue);
+    }
 
     response.response.rect
 }
