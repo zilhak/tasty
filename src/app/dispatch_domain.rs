@@ -1158,15 +1158,17 @@ impl App {
     /// 있는 상태에서 settings 변경 후 윈도우가 복원되면 옛 settings 로 살아나는 버그.
     fn cascade_settings_updated(&mut self, new_settings: Settings) {
         // SettingsView 는 단일 SoT — prev/new 글로벌 비교로 충분.
-        let prev_theme = self
+        let prev_appearance = self
             .main_windows_iter_mut()
             .next()
-            .map(|w| w.core_state.settings.appearance.theme.clone());
-        let prev_theme = prev_theme.or_else(|| {
+            .map(|w| w.core_state.settings.appearance.clone());
+        let prev_appearance = prev_appearance.or_else(|| {
             self.parked_states
                 .first()
-                .map(|(_, e)| e.settings.appearance.theme.clone())
+                .map(|(_, e)| e.settings.appearance.clone())
         });
+        let prev_theme = prev_appearance.as_ref().map(|a| a.theme.clone());
+        let prev_ui_scale = prev_appearance.as_ref().map(|a| a.ui_scale.clone());
         let prev_language = self
             .main_windows_iter_mut()
             .next()
@@ -1187,8 +1189,25 @@ impl App {
         if let Err(e) = new_settings.save() {
             tracing::warn!("failed to save settings: {e}");
         }
-        // 새 settings 의 두 레이어로 전역 Theme 인스턴스 재구성.
-        tasty_themes::install_global(&new_settings.appearance);
+
+        // Appearance (theme 색상 or host UI zoom) 변경 시 `UiIntent::AppearanceChanged`
+        // 발화 → dispatcher 가 모든 윈도우 (main + modal) 의 GpuState 에 broadcast.
+        let appearance_changed = prev_theme.as_deref()
+            != Some(new_settings.appearance.theme.as_str())
+            || prev_ui_scale.as_deref() != Some(new_settings.appearance.ui_scale.as_str());
+        if appearance_changed {
+            use crate::intent::UiIntent;
+            if let Some(main) = self.main_windows_iter_mut().next() {
+                main.state.dispatch_intent(
+                    UiIntent::AppearanceChanged.from_user_menu("settings.appearance.changed"),
+                );
+            }
+        } else {
+            // 색/zoom 외 변화 (예: tab_width / font 등) 면 broadcast 불필요하나,
+            // 전역 Theme 가 settings 의 다른 partial 색 override 를 반영해야 할 수도
+            // 있어 install_global 로 그대로 갱신.
+            tasty_themes::install_global(&new_settings.appearance);
+        }
 
         // Event Bus 1.0: theme/language 변경 발화.
         if let Some(mgr) = self.plugin_manager.as_mut() {

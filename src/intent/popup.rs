@@ -33,6 +33,10 @@ pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
                     open(state, id, mode);
                 }
             }
+            // AppearanceChanged 는 popup 도메인이 아닌 App-level cascade — 본 핸들러는
+            // popup state 만 다루므로 무시한다. dispatch_pending_intents 가 별도
+            // batch 로 분리해 cascade_appearance_changed 로 보낸다.
+            UiIntent::AppearanceChanged => {}
         }
     }
     #[cfg(not(feature = "gui"))]

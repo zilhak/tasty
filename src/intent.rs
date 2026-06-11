@@ -130,6 +130,10 @@ pub enum UiIntent {
     ClosePopup { id: PopupId },
     /// popup toggle (열려있으면 닫고, 닫혀있으면 열기).
     TogglePopup { id: PopupId, mode: OpenPopupMode },
+    /// Theme 색상 또는 host UI zoom 배율이 바뀌었다. 모든 윈도우 (main + modal)
+    /// 의 GpuState 가 전역 `Theme` 인스턴스를 재빌드 후 egui ctx 에 reapply
+    /// 해야 한다. dispatcher 가 fan-out 처리.
+    AppearanceChanged,
 }
 
 impl From<UiIntent> for Intent {
@@ -448,6 +452,20 @@ mod tests {
         assert!(!user.origin.is_agent());
         assert!(agent.origin.is_agent());
         assert!(!agent.origin.is_user());
+    }
+
+    #[test]
+    fn appearance_changed_intent_pushes_to_queue() {
+        let mut state = make_state();
+        state.dispatch_intent(
+            UiIntent::AppearanceChanged.from_user_menu("settings.appearance.changed"),
+        );
+        assert_eq!(state.pending_intents.len(), 1);
+        let drained = state.take_pending_intents();
+        assert!(matches!(
+            drained[0].body,
+            Intent::Ui(UiIntent::AppearanceChanged)
+        ));
     }
 
     #[test]

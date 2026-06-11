@@ -62,16 +62,13 @@ impl GpuState {
         })
     }
 
-    pub(super) fn post_egui_update(&mut self, engine: &crate::core::CoreState, prev_theme: &str) {
-        let ui_zoom = engine.settings.appearance.ui_scale_factor();
-        let theme_changed = engine.settings.appearance.theme != prev_theme;
-        let zoom_changed = (ui_zoom - self.last_ui_zoom).abs() > f32::EPSILON;
-        if theme_changed || zoom_changed {
-            // Theme 토큰 자체에 zoom 을 곱해 박는다 (Theme::with_colors_and_zoom).
-            tasty_themes::install_global_with_zoom(&engine.settings.appearance, ui_zoom);
-            self.last_ui_zoom = ui_zoom;
-        }
-        // Always re-apply (cheap; visuals/style state in egui ctx).
+    pub(super) fn post_egui_update(&mut self, engine: &crate::core::CoreState, _prev_theme: &str) {
+        // Theme / ui_zoom 변경 감지는 더 이상 polling 으로 하지 않는다 —
+        // settings cascade 와 단축키 (Z-7) 가 `UiIntent::AppearanceChanged` 를
+        // 발화하면 `App::cascade_appearance_changed` 가 broadcast 로 갱신한다.
+        // 본 함수는 매 프레임 egui style reapply 만 담당 (cheap; visuals/style
+        // state 가 egui ctx 안에 있어 다른 set_style 호출에 덮어쓰일 가능성을
+        // 대비한 idempotent re-application).
         tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx);
 
         // Surface font refresh is done in render() before run_egui_frame().
@@ -99,9 +96,11 @@ impl GpuState {
         tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), ctx);
     }
 
-    /// Re-apply the theme from settings. Called after settings are saved.
-    pub fn refresh_theme(&self, theme: &str) {
-        Self::apply_theme(&self.egui_ctx, theme);
+    /// Re-apply the current global `Theme` to this window's egui context.
+    /// `cascade_appearance_changed` broadcast 의 진입점 — main + modal 모두 같은
+    /// 시그니처로 호출한다.
+    pub fn refresh_theme(&self) {
+        tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx);
     }
 
     // ── Generic egui helpers (for modal windows) ──

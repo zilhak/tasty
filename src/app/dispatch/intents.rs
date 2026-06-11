@@ -17,12 +17,13 @@ impl App {
     /// 단계 분리 이유: `dispatch_domain_intent` 가 `&mut self` 필요하지만 per-state
     /// loop 는 `&mut self.view.views[id]` 를 잡고 있어 동시 borrow 불가.
     pub(crate) fn dispatch_pending_intents(&mut self) {
-        use crate::intent::Intent;
+        use crate::intent::{Intent, UiIntent};
         // 모든 windows + parked_states 에서 드레인한 뒤 일괄 처리.
         // 각 state 마다 독립적으로 처리해야 — popup mutation 은 그 state.popups 대상이므로.
         let mut per_state_batches: Vec<(WindowId, Vec<crate::intent::DispatchedIntent>)> =
             Vec::new();
         let mut parked_batches: Vec<(usize, Vec<crate::intent::DispatchedIntent>)> = Vec::new();
+        let mut appearance_changed = false;
 
         for (id, w) in self.view.views.iter_mut() {
             if let Some(main) = w.as_main_mut() {
@@ -68,6 +69,10 @@ impl App {
                     ));
                     continue;
                 }
+                if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
+                    appearance_changed = true;
+                    continue;
+                }
                 Self::dispatch_one_intent(core, &mut main.state, &mut main.core_state, &intent);
             }
             main.mark_dirty();
@@ -87,6 +92,10 @@ impl App {
                     ));
                     continue;
                 }
+                if matches!(intent.body, Intent::Ui(UiIntent::AppearanceChanged)) {
+                    appearance_changed = true;
+                    continue;
+                }
                 Self::dispatch_one_intent(core, state, engine, &intent);
             }
         }
@@ -96,6 +105,50 @@ impl App {
             if let Err(e) = self.dispatch_domain_intent(source, dispatched) {
                 tracing::warn!("dispatch_domain_intent failed: {e}");
             }
+        }
+
+        // Appearance fan-out — 모든 windows 의 GpuState 에 새 Theme 인스턴스를
+        // 박고 egui ctx 에 reapply. dispatcher 가 single entry point 라 main 과
+        // modal (settings / plugins / preset / quit) 모두 같은 프레임에 갱신된다.
+        if appearance_changed {
+            self.cascade_appearance_changed();
+        }
+    }
+
+    /// Appearance (theme 색상 또는 host UI zoom) 가 바뀌었다는 단일 통지를 모든
+    /// 윈도우로 fan-out 한다. settings 변경 cascade 와 단축키 발화 (Z-7) 가 같은
+    /// entry point 로 모인다.
+    ///
+    /// 1. 전역 `Theme` 인스턴스를 `install_global_with_zoom` 으로 재빌드.
+    /// 2. main + modal (settings / plugins / preset / quit) 의 GpuState 모두
+    ///    `refresh_theme()` 호출 + mark_dirty.
+    pub(crate) fn cascade_appearance_changed(&mut self) {
+        // appearance 의 single source — focused main 의 core_state.settings.appearance.
+        // focused 가 없으면 어떤 main 이든 (clone 으로 settings 동기화돼 있음).
+        let appearance = self
+            .focused_window()
+            .map(|w| w.core_state.settings.appearance.clone())
+            .or_else(|| {
+                self.view.views.values().find_map(|w| {
+                    w.as_main()
+                        .map(|m| m.core_state.settings.appearance.clone())
+                })
+            })
+            .or_else(|| {
+                self.parked_states
+                    .first()
+                    .map(|(_, e)| e.settings.appearance.clone())
+            });
+        let Some(appearance) = appearance else {
+            return;
+        };
+        let ui_zoom = appearance.ui_scale_factor();
+        tasty_themes::install_global_with_zoom(&appearance, ui_zoom);
+
+        // Broadcast: 모든 윈도우의 GpuState 가 새 Theme 을 egui ctx 에 reapply.
+        for w in self.view.views.values_mut() {
+            w.base_mut().gpu.refresh_theme();
+            w.mark_dirty();
         }
     }
 
