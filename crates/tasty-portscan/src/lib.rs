@@ -33,6 +33,20 @@ pub struct ListeningPort {
     pub port: u16,
     /// Local bind address (e.g. `0.0.0.0`, `127.0.0.1`, `::1`).
     pub addr: IpAddr,
+    /// Process name (e.g. `node`, `python3`). `None` if unavailable.
+    pub process_name: Option<String>,
+}
+
+/// A TCP listening port observed across the whole system.
+///
+/// Unlike `ListeningPort`, `pid` is `Optional` because some platforms / privilege
+/// contexts cannot identify the owning process for every listener.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SystemListeningPort {
+    pub pid: Option<u32>,
+    pub port: u16,
+    pub addr: IpAddr,
+    pub process_name: Option<String>,
 }
 
 /// Scan TCP listening ports owned by any of the given PIDs.
@@ -77,6 +91,46 @@ fn scan_impl(pids: &HashSet<u32>) -> Vec<ListeningPort> {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn scan_impl(_pids: &HashSet<u32>) -> Vec<ListeningPort> {
+    Vec::new()
+}
+
+/// Scan all TCP listening sockets on the system, regardless of owning PID.
+///
+/// Returns a sorted, deduplicated list. Errors during enumeration are logged at
+/// warn level and result in an empty vec.
+pub fn scan_all() -> Vec<SystemListeningPort> {
+    let mut found = scan_all_impl();
+    found.sort_by_key(|p| (p.port, p.pid.unwrap_or(0), p.addr.to_string()));
+    found.dedup();
+    found
+}
+
+#[cfg(target_os = "linux")]
+fn scan_all_impl() -> Vec<SystemListeningPort> {
+    linux::scan_all().unwrap_or_else(|e| {
+        tracing::warn!("portscan(linux) scan_all failed: {e}");
+        Vec::new()
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn scan_all_impl() -> Vec<SystemListeningPort> {
+    macos::scan_all().unwrap_or_else(|e| {
+        tracing::warn!("portscan(macos) scan_all failed: {e}");
+        Vec::new()
+    })
+}
+
+#[cfg(windows)]
+fn scan_all_impl() -> Vec<SystemListeningPort> {
+    windows::scan_all().unwrap_or_else(|e| {
+        tracing::warn!("portscan(windows) scan_all failed: {e}");
+        Vec::new()
+    })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn scan_all_impl() -> Vec<SystemListeningPort> {
     Vec::new()
 }
 

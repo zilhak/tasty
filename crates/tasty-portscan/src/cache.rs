@@ -66,6 +66,7 @@ mod tests {
             pid,
             port,
             addr: Ipv4Addr::new(127, 0, 0, 1).into(),
+            process_name: None,
         }
     }
 

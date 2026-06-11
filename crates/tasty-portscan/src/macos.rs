@@ -9,7 +9,7 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::process::Command;
 
-use crate::ListeningPort;
+use crate::{ListeningPort, SystemListeningPort};
 
 pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
     if pids.is_empty() {
@@ -28,6 +28,23 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
     // non-empty stdout as success regardless of exit code.
     let text = String::from_utf8_lossy(&output.stdout);
     Ok(parse_lsof(&text))
+}
+
+/// System-wide scan (all PIDs). Uses the same lsof parser.
+pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
+    let output = Command::new("lsof")
+        .args(["-nP", "-iTCP", "-sTCP:LISTEN"])
+        .output()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_lsof(&text)
+        .into_iter()
+        .map(|p| SystemListeningPort {
+            pid: Some(p.pid),
+            port: p.port,
+            addr: p.addr,
+            process_name: p.process_name,
+        })
+        .collect())
 }
 
 /// Parse human-readable lsof output. Each line looks like:
@@ -51,11 +68,17 @@ fn parse_lsof(text: &str) -> Vec<ListeningPort> {
             Ok(p) => p,
             Err(_) => continue,
         };
+        let process_name = Some(fields[0].to_string());
         // The `name` field looks like `*:8080`, `127.0.0.1:3000`, `[::1]:8080`, or `[::]:8080`.
         // It's the 9th column when -nP is used.
         let name = fields[8];
         if let Some((addr, port)) = parse_lsof_addr(name) {
-            out.push(ListeningPort { pid, port, addr });
+            out.push(ListeningPort {
+                pid,
+                port,
+                addr,
+                process_name,
+            });
         }
     }
     out
@@ -127,5 +150,16 @@ ssh     54321  ljh   3u   IPv4 0x1234                  0t0  TCP 1.2.3.4:22->5.6.
         assert_eq!(results[0].pid, 12345);
         assert_eq!(results[0].port, 3000);
         assert_eq!(results[1].port, 8080);
+    }
+
+    #[test]
+    fn parse_lsof_fills_process_name() {
+        let sample = "\
+COMMAND   PID  USER  FD   TYPE             DEVICE SIZE/OFF NODE NAME
+python3 12345 ljh   22u  IPv4 0x1                  0t0 TCP *:3000 (LISTEN)
+";
+        let results = parse_lsof(sample);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].process_name.as_deref(), Some("python3"));
     }
 }

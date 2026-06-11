@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use crate::ListeningPort;
+use crate::{ListeningPort, SystemListeningPort};
 
 /// State value used by /proc/net/tcp* for LISTEN.
 const TCP_LISTEN: u32 = 0x0A;
@@ -35,6 +35,7 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
             Ok(e) => e,
             Err(_) => continue, // process might have exited or we lack permission
         };
+        let process_name = read_comm(pid);
         for entry in entries.flatten() {
             let target = match std::fs::read_link(entry.path()) {
                 Ok(p) => p,
@@ -47,13 +48,97 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
             if let Some(inode_str) = s.strip_prefix("socket:[").and_then(|r| r.strip_suffix(']')) {
                 if let Ok(inode) = inode_str.parse::<u64>() {
                     if let Some(&(addr, port)) = inode_map.get(&inode) {
-                        out.push(ListeningPort { pid, port, addr });
+                        out.push(ListeningPort {
+                            pid,
+                            port,
+                            addr,
+                            process_name: process_name.clone(),
+                        });
                     }
                 }
             }
         }
     }
     Ok(out)
+}
+
+/// System-wide scan: walk all of `/proc/<pid>/fd` and reverse-lookup socket inodes.
+pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
+    let mut inode_map: HashMap<u64, (IpAddr, u16)> = HashMap::new();
+    if let Ok(text) = std::fs::read_to_string("/proc/net/tcp") {
+        parse_proc_net_tcp(&text, false, &mut inode_map);
+    }
+    if let Ok(text) = std::fs::read_to_string("/proc/net/tcp6") {
+        parse_proc_net_tcp(&text, true, &mut inode_map);
+    }
+    if inode_map.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // inode → (pid, process_name)
+    let mut inode_owner: HashMap<u64, (u32, Option<String>)> = HashMap::new();
+    let proc_entries = match std::fs::read_dir("/proc") {
+        Ok(e) => e,
+        Err(e) => return Err(e),
+    };
+    for entry in proc_entries.flatten() {
+        let file_name = entry.file_name();
+        let name = match file_name.to_str() {
+            Some(s) => s,
+            None => continue,
+        };
+        let pid: u32 = match name.parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let fd_dir = entry.path().join("fd");
+        let fd_entries = match std::fs::read_dir(&fd_dir) {
+            Ok(e) => e,
+            Err(_) => continue, // permission denied for other users' processes
+        };
+        let mut process_name: Option<Option<String>> = None;
+        for fd in fd_entries.flatten() {
+            let target = match std::fs::read_link(fd.path()) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let s = match target.to_str() {
+                Some(s) => s,
+                None => continue,
+            };
+            if let Some(inode_str) = s.strip_prefix("socket:[").and_then(|r| r.strip_suffix(']')) {
+                if let Ok(inode) = inode_str.parse::<u64>() {
+                    if inode_map.contains_key(&inode) {
+                        let pn = process_name.get_or_insert_with(|| read_comm(pid));
+                        inode_owner
+                            .entry(inode)
+                            .or_insert_with(|| (pid, pn.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    for (inode, (addr, port)) in inode_map {
+        let (pid, process_name) = match inode_owner.remove(&inode) {
+            Some((p, n)) => (Some(p), n),
+            None => (None, None),
+        };
+        out.push(SystemListeningPort {
+            pid,
+            port,
+            addr,
+            process_name,
+        });
+    }
+    Ok(out)
+}
+
+fn read_comm(pid: u32) -> Option<String> {
+    std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|s| s.trim_end_matches('\n').to_string())
 }
 
 fn parse_proc_net_tcp(text: &str, ipv6: bool, out: &mut HashMap<u64, (IpAddr, u16)>) {
