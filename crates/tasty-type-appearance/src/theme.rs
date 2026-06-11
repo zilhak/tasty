@@ -142,6 +142,15 @@ pub struct ThemeSizing {
     pub sidebar_collapsed_icon_height: LogicalPx,
     /// Collapsed sidebar workspace 슬롯 높이.
     pub sidebar_collapsed_workspace_height: LogicalPx,
+    // ── Tab bar 전용 (host UI zoom 영향 받지 않음) ──
+    // 사용자 제약 — 탭바는 host UI zoom 제외. with_colors_and_zoom 에서 SIZING 그대로
+    // 복사 (border_width / tab_width 와 동일 처리).
+    /// 탭바 자체 높이.
+    pub tab_bar_height: LogicalPx,
+    /// "+" 새 탭 버튼 폰트 크기.
+    pub tab_bar_label_font_size: LogicalPx,
+    /// 좌/우 스크롤 화살표 폰트 크기.
+    pub tab_bar_arrow_font_size: LogicalPx,
 }
 
 pub const SIZING: ThemeSizing = ThemeSizing {
@@ -169,6 +178,9 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     sidebar_collapsed_slot_width: LogicalPx(32.0),
     sidebar_collapsed_icon_height: LogicalPx(22.0),
     sidebar_collapsed_workspace_height: LogicalPx(28.0),
+    tab_bar_height: LogicalPx(24.0),
+    tab_bar_label_font_size: LogicalPx(13.0),
+    tab_bar_arrow_font_size: LogicalPx(11.0),
 };
 
 // ============================================================================
@@ -617,6 +629,10 @@ pub struct Theme {
     pub sidebar_collapsed_slot_width: LogicalPx,
     pub sidebar_collapsed_icon_height: LogicalPx,
     pub sidebar_collapsed_workspace_height: LogicalPx,
+    // ── Tab bar 전용 (host UI zoom 영향 받지 않음) ──
+    pub tab_bar_height: LogicalPx,
+    pub tab_bar_label_font_size: LogicalPx,
+    pub tab_bar_arrow_font_size: LogicalPx,
 
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
@@ -735,6 +751,10 @@ impl Theme {
             sidebar_collapsed_slot_width: zoomed(SIZING.sidebar_collapsed_slot_width),
             sidebar_collapsed_icon_height: zoomed(SIZING.sidebar_collapsed_icon_height),
             sidebar_collapsed_workspace_height: zoomed(SIZING.sidebar_collapsed_workspace_height),
+            // Tab bar 전용 — 사용자 제약 "탭바 zoom 제외" 에 따라 SIZING 그대로 (zoom 미적용).
+            tab_bar_height: SIZING.tab_bar_height,
+            tab_bar_label_font_size: SIZING.tab_bar_label_font_size,
+            tab_bar_arrow_font_size: SIZING.tab_bar_arrow_font_size,
             is_light,
             surface_themes: c.surface_themes,
         }
@@ -984,6 +1004,9 @@ mod tests {
             base.sidebar_collapsed_workspace_height,
             zoomed.sidebar_collapsed_workspace_height
         );
+        assert_eq!(base.tab_bar_height, zoomed.tab_bar_height);
+        assert_eq!(base.tab_bar_label_font_size, zoomed.tab_bar_label_font_size);
+        assert_eq!(base.tab_bar_arrow_font_size, zoomed.tab_bar_arrow_font_size);
     }
 
     #[test]
@@ -1016,6 +1039,25 @@ mod tests {
         // tab_width 도 zoom 무관 (탭바 제외 정책).
         assert_eq!(t_small.tab_width, SIZING.tab_width);
         assert_eq!(t_large.tab_width, SIZING.tab_width);
+        // tab_bar_* 도 zoom 무관 (탭바 제외 정책).
+        assert_eq!(t_small.tab_bar_height, SIZING.tab_bar_height);
+        assert_eq!(t_large.tab_bar_height, SIZING.tab_bar_height);
+        assert_eq!(
+            t_small.tab_bar_label_font_size,
+            SIZING.tab_bar_label_font_size
+        );
+        assert_eq!(
+            t_large.tab_bar_label_font_size,
+            SIZING.tab_bar_label_font_size
+        );
+        assert_eq!(
+            t_small.tab_bar_arrow_font_size,
+            SIZING.tab_bar_arrow_font_size
+        );
+        assert_eq!(
+            t_large.tab_bar_arrow_font_size,
+            SIZING.tab_bar_arrow_font_size
+        );
     }
 
     #[test]

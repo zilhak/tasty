@@ -141,7 +141,9 @@ pub fn draw_pane_tab_bars_view(
 
     let tab_w = props.tab_width;
     let label_font_size = props.tab_font_size;
-    let bar_h = th.item_height_tab.value();
+    // 탭바는 host UI zoom 영향 받지 않는다 (사용자 제약). zoom-aware 토큰 (item_height_tab /
+    // font_size_body / font_size_caption) 대신 zoom 미적용 tab_bar_* 토큰 사용.
+    let bar_h = th.tab_bar_height.value();
     let plus_w: f32 = 28.0;
     let arrow_w: f32 = 20.0;
     let separator_w: f32 = 1.0;
@@ -149,8 +151,8 @@ pub fn draw_pane_tab_bars_view(
     let dot_radius: f32 = 3.0;
     let dot_pad: f32 = 6.0;
     let active_indicator_h: f32 = 2.0;
-    let plus_font_size = th.font_size_body.value();
-    let arrow_font_size = th.font_size_caption.value();
+    let plus_font_size = th.tab_bar_label_font_size.value();
+    let arrow_font_size = th.tab_bar_arrow_font_size.value();
 
     for info in props.panes {
         let logical_x = (info.rect.x.value() / scale_factor).round_ui();

@@ -35,9 +35,11 @@ pub fn convert_popup_default_size() -> egui::Vec2 {
 /// `tasty_egui_theme` 가 `style.spacing.item_spacing.y` 로 적용하는 값과 동일하게
 /// 계산한다. egui draw 시 `allocate_exact_size` 사이의 vertical gap 이 정확히 이
 /// 값이므로 sizer 도 같은 식을 써야 마지막 항목이 잘리지 않는다.
-fn effective_item_spacing(engine: &crate::core::CoreState) -> f32 {
-    let ui_scale = engine.settings.appearance.ui_scale_factor();
-    (theme::theme().spacing_xs.value() * ui_scale).round_ui()
+///
+/// Theme 토큰 자체가 host UI zoom 곱셈을 이미 반영하므로 (Z-1/Z-2) 여기서
+/// 별도 `ui_scale_factor()` 곱셈 없이 그대로 사용한다.
+fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
+    theme::theme().spacing_xs.value().round_ui()
 }
 
 fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {

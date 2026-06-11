@@ -648,8 +648,9 @@ impl AppState {
             #[cfg(feature = "gui")]
             popups: {
                 let mut pm = crate::adapters::ui::PopupManager::new();
+                let ui_zoom = engine.settings.appearance.ui_scale_factor();
                 for def in crate::adapters::ui::popup::defs::all_defs() {
-                    pm.register_def(def);
+                    pm.register_def(def, ui_zoom);
                 }
                 pm
             },

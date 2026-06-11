@@ -194,11 +194,20 @@ impl PopupManager {
 
     /// Register a popup from a PopupDef. title은 `t()`로 번역하여 사용하며,
     /// 이후 locale이 바뀌면 draw 루프에서 재번역된다(draw_popups 참고).
-    pub fn register_def(&mut self, def: &PopupDef) {
+    ///
+    /// `ui_zoom` 은 host UI zoom 배율 (medium=1.0). sizer 가 없는 popup 의 초기
+    /// default_size 에만 곱해진다 — sizer 가 있는 popup 은 sizer 가 매 프레임
+    /// 직접 zoomed token 으로 재계산하므로 추가 곱셈하면 이중 곱셈이 된다.
+    pub fn register_def(&mut self, def: &PopupDef, ui_zoom: f32) {
         if self.popups.iter().any(|p| p.id == def.id) {
             return;
         }
-        let popup = PopupState::new(def.id, crate::i18n::t(def.title_key), def.default_size)
+        let initial_size = if def.sizer.is_some() {
+            def.default_size
+        } else {
+            def.default_size * ui_zoom
+        };
+        let popup = PopupState::new(def.id, crate::i18n::t(def.title_key), initial_size)
             .with_scope(def.default_scope.clone())
             .with_close_on_outside_click(def.close_on_outside_click)
             .with_headless(def.headless)
