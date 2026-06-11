@@ -530,11 +530,13 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
         ui.add_space(8.0);
         let mut job = egui::text::LayoutJob::default();
         let font = egui::FontId::monospace(17.0);
+        // 워드마크 트래킹 -0.5px (디자인 정책: mono 17 bold).
         job.append(
             "tasty",
             0.0,
             egui::TextFormat {
                 font_id: font.clone(),
+                extra_letter_spacing: -0.5,
                 color: th.text.into(),
                 ..Default::default()
             },
@@ -544,6 +546,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
             0.0,
             egui::TextFormat {
                 font_id: font,
+                extra_letter_spacing: -0.5,
                 color: brand::MELON_FLESH.into(),
                 ..Default::default()
             },
@@ -574,17 +577,24 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
     collapse
 }
 
-/// ui_kit 섹션 헤딩 — 모노 대문자, muted, 좌측 패딩.
+/// ui_kit 섹션 헤딩 — 모노 대문자, muted, 좌측 패딩. 트래킹 0.07em (=0.7px @ 10px).
 fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::hover());
-    ui.painter().text(
-        egui::pos2(rect.min.x + 10.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
         text,
-        egui::FontId::monospace(10.0),
-        th.subtext0.into(),
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::monospace(10.0),
+            extra_letter_spacing: 0.7,
+            color: th.subtext0.into(),
+            ..Default::default()
+        },
     );
+    let galley = ui.painter().layout_job(job);
+    let pos = egui::pos2(rect.min.x + 10.0, rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(pos, galley, th.subtext0.into());
 }
 
 /// Collapsed 측 IconButton — hover 배경 + SVG icon 그리기 helper.
