@@ -281,39 +281,29 @@ pub fn draw_pane_tab_bars_view(
 
                                 // close 버튼 슬롯(우측 h_padding + 14px)을 비워두고 dot 은
                                 // 그 왼쪽에 둔다 (close 와 겹치지 않게).
+                                // running > agent 우선순위로 상호 배타. dot 슬롯은 최대 1개.
                                 let dot_right = tab_rect.max.x - h_padding - 14.0;
-                                if is_busy {
-                                    let dot_center =
-                                        egui::pos2(dot_right - dot_radius, tab_rect.center().y);
-                                    let dot_color: egui::Color32 = if is_active {
+                                let is_agent_created =
+                                    info.tab_is_agent_created.get(i).copied().unwrap_or(false);
+                                let dot_color: Option<egui::Color32> = if is_busy {
+                                    Some(if is_active {
                                         th.green.into()
                                     } else {
                                         th.green.with_alpha(180).to_egui()
-                                    };
-                                    painter.circle_filled(dot_center, dot_radius, dot_color);
-                                }
-
-                                // agent(IPC/CLI) 생성 surface → mauve dot.
-                                // busy(녹색) dot 과 겹치지 않게, busy 있으면 그 왼쪽 슬롯에.
-                                let is_agent_created =
-                                    info.tab_is_agent_created.get(i).copied().unwrap_or(false);
-                                if is_agent_created {
-                                    let base_x = dot_right - dot_radius;
-                                    let agent_x = if is_busy {
-                                        base_x - dot_radius * 2.0 - dot_pad
-                                    } else {
-                                        base_x
-                                    };
-                                    let dot_color: egui::Color32 = if is_active {
+                                    })
+                                } else if is_agent_created {
+                                    Some(if is_active {
                                         th.mauve.into()
                                     } else {
                                         th.mauve.with_alpha(180).to_egui()
-                                    };
-                                    painter.circle_filled(
-                                        egui::pos2(agent_x, tab_rect.center().y),
-                                        dot_radius,
-                                        dot_color,
-                                    );
+                                    })
+                                } else {
+                                    None
+                                };
+                                if let Some(color) = dot_color {
+                                    let dot_center =
+                                        egui::pos2(dot_right - dot_radius, tab_rect.center().y);
+                                    painter.circle_filled(dot_center, dot_radius, color);
                                 }
 
                                 // kind 아이콘 (leading) — ui_kit tab strip.
@@ -332,13 +322,10 @@ pub fn draw_pane_tab_bars_view(
 
                                 // 텍스트 — 아이콘 뒤, 좌측 정렬. 우측엔 dot 공간 확보.
                                 let text_x = icon_rect.max.x + 6.0;
-                                // 텍스트 우측 한계: dot/close 슬롯(dot_right) 왼쪽. busy/agent
-                                // dot 이 있으면 그만큼 더 좁힌다.
+                                // 텍스트 우측 한계: dot/close 슬롯(dot_right) 왼쪽. dot 슬롯은
+                                // 최대 1개(running 또는 agent)이므로 한 번만 깎는다.
                                 let mut text_right = dot_right - 4.0;
-                                if is_busy {
-                                    text_right -= dot_radius * 2.0 + dot_pad;
-                                }
-                                if is_agent_created {
+                                if is_busy || is_agent_created {
                                     text_right -= dot_radius * 2.0 + dot_pad;
                                 }
                                 let available_w = (text_right - text_x).max(0.0);
