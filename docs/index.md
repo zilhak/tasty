@@ -251,8 +251,8 @@ OS 클립보드 직접 접근. arboard 크레이트 기반 크로스 플랫폼 �
 ### IME 지원
 winit의 IME 이벤트 처리로 CJK (한국어/중국어/일본어) 입력기 직접 지원. 조합 문자 인라인 표시.
 
-### 포트 스캐닝
-셸 프로세스가 리스닝하는 포트를 감지하여 사이드바에 표시.
+### 리스닝 포트 뷰어
+워크스페이스 또는 시스템 전체의 TCP LISTEN 포트를 7컬럼 (Port / Proto / Address / Process / Workspace / Tab / State) 테이블로 표시. 백그라운드 스레드 비동기 스캔 + Spinner, 검색 (전 컬럼 case-insensitive substring), 정렬 (▲/▼ 인디케이터, None 항상 tail), Tasty / System 토글. 포트 클릭 시 브라우저 열기. 상세: [features.md "리스닝 포트 뷰어"](features.md).
 
 ### 원격 SSH
 SSH를 통한 원격 서버 워크스페이스 연결.
