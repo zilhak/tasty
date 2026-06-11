@@ -607,13 +607,31 @@ fn draw_workspace_card(
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
-            // 폴더 아이콘 (ui_kit WorkspaceRow). active = accent, 그 외 muted.
-            let icon_color: egui::Color32 = if ws.is_active {
-                th.blue.into()
+            // 좌측 상태 dot — ui_kit WorkspaceRow StatusDot 대응.
+            // 우선순위: running(busy) > attached > none. agent_created 는 ws 단위 데이터
+            // 부재로 보류. 폴더 아이콘(16px) 슬롯과 동일 폭을 차지해 라벨 위치가 흔들리지
+            // 않게 한다.
+            let dot_slot = egui::vec2(16.0, 16.0);
+            let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
+            let dot_color: Option<egui::Color32> = if ws.busy_count > 0 {
+                Some(th.green.into())
+            } else if ws.attached {
+                Some(th.red.into())
             } else {
-                th.subtext0.into()
+                None
             };
-            ui.add(icons::FOLDER.image(16.0, icon_color));
+            if let Some(color) = dot_color {
+                let color = if ws.is_active {
+                    color
+                } else {
+                    // 비활성 행은 살짝 톤다운 (tab strip dot 패턴과 동일).
+                    egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 180)
+                };
+                ui.painter().circle_filled(dot_rect.center(), 4.0, color);
+                if ws.attached && ws.busy_count == 0 {
+                    dot_resp.on_hover_text(occupied_hover);
+                }
+            }
             ui.add_space(2.0);
             let title_text = if ws.is_active {
                 egui::RichText::new(&ws.name).strong()
@@ -623,23 +641,6 @@ fn draw_workspace_card(
             ui.label(title_text);
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // 탭 수 (우측 끝, muted) — ui_kit WorkspaceRow 우측 숫자.
-                ui.label(
-                    egui::RichText::new(ws.tab_count.to_string())
-                        .small()
-                        .color(th.subtext0),
-                );
-                if ws.attached {
-                    let dot_radius = 3.0;
-                    let (dot_rect, resp) = ui.allocate_exact_size(
-                        egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
-                        egui::Sense::hover(),
-                    );
-                    ui.painter()
-                        .circle_filled(dot_rect.center(), dot_radius, th.red);
-                    resp.on_hover_text(occupied_hover);
-                }
-
                 if ws.has_highlight {
                     let badge_size = egui::vec2(18.0, 16.0);
                     let (rect, _) = ui.allocate_exact_size(badge_size, egui::Sense::hover());
@@ -656,18 +657,6 @@ fn draw_workspace_card(
                         egui::FontId::proportional(10.0),
                         th.blue.into(),
                     );
-                }
-
-                if ws.busy_count > 0 {
-                    let count_text = format!("{}", ws.busy_count);
-                    ui.label(egui::RichText::new(&count_text).small().color(th.green));
-                    let dot_radius = 3.0;
-                    let (dot_rect, _) = ui.allocate_exact_size(
-                        egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
-                        egui::Sense::hover(),
-                    );
-                    ui.painter()
-                        .circle_filled(dot_rect.center(), dot_radius, th.green);
                 }
             });
         });
