@@ -286,17 +286,9 @@ pub fn draw_pane_tab_bars_view(
                                 let is_agent_created =
                                     info.tab_is_agent_created.get(i).copied().unwrap_or(false);
                                 let dot_color: Option<egui::Color32> = if is_busy {
-                                    Some(if is_active {
-                                        th.green.into()
-                                    } else {
-                                        th.green.with_alpha(180).to_egui()
-                                    })
+                                    Some(th.green.into())
                                 } else if is_agent_created {
-                                    Some(if is_active {
-                                        th.mauve.into()
-                                    } else {
-                                        th.mauve.with_alpha(180).to_egui()
-                                    })
+                                    Some(th.mauve.into())
                                 } else {
                                     None
                                 };
