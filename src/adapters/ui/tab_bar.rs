@@ -295,11 +295,8 @@ pub fn draw_pane_tab_bars_view(
 
                                 // agent(IPC/CLI) 생성 surface → mauve dot.
                                 // busy(녹색) dot 과 겹치지 않게, busy 있으면 그 왼쪽 슬롯에.
-                                let is_agent_created = info
-                                    .tab_is_agent_created
-                                    .get(i)
-                                    .copied()
-                                    .unwrap_or(false);
+                                let is_agent_created =
+                                    info.tab_is_agent_created.get(i).copied().unwrap_or(false);
                                 if is_agent_created {
                                     let base_x = dot_right - dot_radius;
                                     let agent_x = if is_busy {

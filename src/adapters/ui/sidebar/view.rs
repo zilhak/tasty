@@ -521,8 +521,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_space(6.0);
-            let (rect, resp) =
-                ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
             if resp.hovered() {
                 ui.painter()
                     .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
@@ -545,10 +544,8 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
 
 /// ui_kit 섹션 헤딩 — 모노 대문자, muted, 좌측 패딩.
 fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), 18.0),
-        egui::Sense::hover(),
-    );
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::hover());
     ui.painter().text(
         egui::pos2(rect.min.x + 10.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
@@ -598,13 +595,14 @@ fn draw_workspace_card(
         egui::Color32::TRANSPARENT
     };
 
-    let frame = egui::Frame::new()
-        .fill(bg)
-        .corner_radius(4.0)
-        .inner_margin(egui::Margin::symmetric(
-            CARD_INNER_MARGIN_X,
-            CARD_INNER_MARGIN_Y,
-        ));
+    let frame =
+        egui::Frame::new()
+            .fill(bg)
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(
+                CARD_INNER_MARGIN_X,
+                CARD_INNER_MARGIN_Y,
+            ));
 
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());

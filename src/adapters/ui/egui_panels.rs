@@ -222,7 +222,15 @@ pub fn draw_egui_panels(
     let active_ws = state.active_workspace;
     let tab_bar_h = state.tab_bar_height;
     draw_occupied_overlays(ctx, active_ws, tab_bar_h, engine, pane_rects, scale_factor);
-    draw_focused_agent_outline(ctx, active_ws, tab_bar_h, engine, state, pane_rects, scale_factor);
+    draw_focused_agent_outline(
+        ctx,
+        active_ws,
+        tab_bar_h,
+        engine,
+        state,
+        pane_rects,
+        scale_factor,
+    );
 
     // Restore extracted view stores before any further `state` access below.
     state.markdown_views = markdown_views;
