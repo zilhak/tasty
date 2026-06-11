@@ -86,34 +86,132 @@ pub struct ScanSnapshot {
     pub show_all_system: bool,
 }
 
-/// One entry in the port list — host-side projection of `ListeningPort` with
-/// `addr` already formatted for display.
-#[derive(Clone, Debug)]
-pub struct PortEntryView {
-    pub port: u16,
-    pub addr_display: String,
-    pub pid: u32,
+/// Which column the table is sorted by. `Proto` and `State` are not sortable.
+/// PR-5 wires header clicks; PR-4 keeps the field as a stable default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortKey {
+    Port,
+    Address,
+    Pid,
+    Process,
+    Workspace,
+    Tab,
+}
+
+/// Ascending or descending sort order. Same PR-5 caveat as [`SortKey`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortDir {
+    Asc,
+    Desc,
+}
+
+/// User-controlled view state, persisted in `egui::Memory` across frames
+/// (Id: `"port_scanner.filter"`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FilterState {
+    pub show_all_system: bool,
+    pub query: String,
+    pub sort_key: SortKey,
+    pub sort_dir: SortDir,
+}
+
+impl Default for FilterState {
+    fn default() -> Self {
+        Self {
+            show_all_system: false,
+            query: String::new(),
+            sort_key: SortKey::Port,
+            sort_dir: SortDir::Asc,
+        }
+    }
+}
+
+/// Async view payload the table renders from. `Loading`/`Failed` short-circuit
+/// the table; `Ready` carries the row slice + count so the header tag can be
+/// drawn consistently.
+#[derive(Clone, Copy)]
+pub enum PortScannerViewState<'a> {
+    Loading,
+    Ready { rows: &'a [PortRowView] },
+    Failed { message: &'a str },
+}
+
+/// Filter inputs handed to the view (read-only projection of [`FilterState`]).
+pub struct PortScannerFilter<'a> {
+    pub show_all_system: bool,
+    pub query: &'a str,
+    /// Consumed by PR-5 (sortable header). PR-4 keeps the field for shape.
+    #[allow(dead_code)]
+    pub sort_key: SortKey,
+    /// Consumed by PR-5 (sortable header). PR-4 keeps the field for shape.
+    #[allow(dead_code)]
+    pub sort_dir: SortDir,
 }
 
 /// Pure inputs to `draw_port_scanner_view`. Contains no `AppState` /
-/// `CoreState` — every value is read-only.
+/// `CoreState` — every value is read-only. All user-facing strings are
+/// pre-resolved by the wrapper so the view is i18n-agnostic.
 pub struct PortScannerProps<'a> {
     pub theme: &'a Theme,
-    pub heading: &'a str,
-    pub no_ports_label: &'a str,
-    pub refresh_label: &'a str,
-    pub hint_label: &'a str,
-    pub entries: &'a [PortEntryView],
+    pub view_state: PortScannerViewState<'a>,
+    pub filter: PortScannerFilter<'a>,
+    pub label_heading: &'a str,
+    pub label_search_placeholder: &'a str,
+    pub label_filter_show_all_system: &'a str,
+    pub label_loading: &'a str,
+    pub label_failed: &'a str,
+    pub label_close: &'a str,
+    pub label_refresh: &'a str,
+    pub label_external_dash: &'a str,
+    pub label_no_ports_tasty_empty: &'a str,
+    pub label_no_ports_system_empty: &'a str,
+    pub label_no_ports_search_zero: &'a str,
+    pub label_footer_loading: &'a str,
+    pub label_header_tag_scanning: &'a str,
+    /// Format string with `{n}` placeholder, e.g. `"{n} listening"`.
+    pub label_header_tag_count: &'a str,
+    /// Format string with `{n}` placeholder, e.g. `"{n} listening"`.
+    pub label_footer_counter: &'a str,
+    pub label_column_port: &'a str,
+    pub label_column_proto: &'a str,
+    pub label_column_address: &'a str,
+    pub label_column_process: &'a str,
+    pub label_column_workspace: &'a str,
+    pub label_column_tab: &'a str,
+    pub label_column_state: &'a str,
 }
 
 /// User intent surfaced by the view. The wrapper translates these into
-/// state mutation + side effects (browser launch, cache invalidation).
+/// state mutation + side effects (browser launch, scan kick-off).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PortScannerAction {
     None,
     Close,
     Refresh,
     OpenEntry(usize),
+    SetShowAllSystem(bool),
+    SetQuery(String),
+    /// Emitted by PR-5 (header click → toggle sort). PR-4 wires the variant
+    /// but never produces it.
+    #[allow(dead_code)]
+    SetSort(SortKey),
+}
+
+const FILTER_MEMORY_ID: &str = "port_scanner.filter";
+
+fn read_filter_state(ctx: &egui::Context) -> FilterState {
+    ctx.memory(|mem| {
+        mem.data
+            .get_temp::<FilterState>(egui::Id::new(FILTER_MEMORY_ID))
+            .unwrap_or_default()
+    })
+}
+
+fn write_filter_state(ctx: &egui::Context, filter: FilterState) {
+    ctx.memory_mut(|mem| {
+        mem.data
+            .insert_temp(egui::Id::new(FILTER_MEMORY_ID), filter);
+    });
 }
 
 pub fn draw_port_scanner_popup(
@@ -124,14 +222,13 @@ pub fn draw_port_scanner_popup(
     let th = theme::theme();
     let ctx = ui.ctx().clone();
 
-    // PR-3: scope toggle UI 는 PR-4 가 추가. 그 전까지는 항상 Tasty 모드 (show_all_system=false).
-    let target_show_all_system = false;
+    let mut filter_state = read_filter_state(&ctx);
+    let target_show_all_system = filter_state.show_all_system;
 
     // ④ 매 프레임 poll: Loading → Ready/Failed.
     poll_scan(state);
 
-    // ① 첫 open: Idle → kick_off_scan.
-    // ② scope 변경: Ready 상태인데 scope 가 다르면 재 kick_off_scan (PR-4 토글이 입력 줄 자리).
+    // ① 첫 open (Idle), ② scope 변경 (Ready{scope} ≠ target) → kick_off_scan.
     let need_kick = match &state.port_scan {
         PortScanState::Idle => true,
         PortScanState::Ready { scope, .. } => *scope != scope_from_flag(target_show_all_system),
@@ -141,30 +238,55 @@ pub fn draw_port_scanner_popup(
         kick_off_scan(state, engine, &ctx, target_show_all_system);
     }
 
-    let entries: Vec<PortEntryView> = match &state.port_scan {
+    // 검색 필터링: Ready rows 에 대해서만 적용.
+    let filtered_rows: Vec<PortRowView> = match &state.port_scan {
         PortScanState::Ready { rows, .. } => rows
             .iter()
-            .map(|r| PortEntryView {
-                port: r.port,
-                addr_display: r.addr_display.clone(),
-                pid: r.pid.unwrap_or(0),
-            })
+            .filter(|r| matches_query(r, &filter_state.query))
+            .cloned()
             .collect(),
         _ => Vec::new(),
     };
 
-    let heading = t("port_scanner.heading");
-    let no_ports_label = t("port_scanner.no_ports");
-    let refresh_label = t("port_scanner.refresh");
-    let hint_label = t("port_scanner.hint");
+    let view_state = match &state.port_scan {
+        PortScanState::Idle | PortScanState::Loading { .. } => PortScannerViewState::Loading,
+        PortScanState::Ready { .. } => PortScannerViewState::Ready {
+            rows: &filtered_rows,
+        },
+        PortScanState::Failed(msg) => PortScannerViewState::Failed { message: msg },
+    };
 
     let props = PortScannerProps {
         theme: &th,
-        heading,
-        no_ports_label,
-        refresh_label,
-        hint_label,
-        entries: &entries,
+        view_state,
+        filter: PortScannerFilter {
+            show_all_system: filter_state.show_all_system,
+            query: &filter_state.query,
+            sort_key: filter_state.sort_key,
+            sort_dir: filter_state.sort_dir,
+        },
+        label_heading: t("port_scanner.heading"),
+        label_search_placeholder: t("port_scanner.search_placeholder"),
+        label_filter_show_all_system: t("port_scanner.filter_show_all_system"),
+        label_loading: t("port_scanner.loading"),
+        label_failed: t("port_scanner.failed_label"),
+        label_close: t("port_scanner.close"),
+        label_refresh: t("port_scanner.refresh"),
+        label_external_dash: t("port_scanner.external_dash"),
+        label_no_ports_tasty_empty: t("port_scanner.no_ports_tasty_empty"),
+        label_no_ports_system_empty: t("port_scanner.no_ports_system_empty"),
+        label_no_ports_search_zero: t("port_scanner.no_ports_search_zero"),
+        label_footer_loading: t("port_scanner.footer_loading"),
+        label_header_tag_scanning: t("port_scanner.header_tag_scanning"),
+        label_header_tag_count: t("port_scanner.header_tag_count"),
+        label_footer_counter: t("port_scanner.footer_counter"),
+        label_column_port: t("port_scanner.column_port"),
+        label_column_proto: t("port_scanner.column_proto"),
+        label_column_address: t("port_scanner.column_address"),
+        label_column_process: t("port_scanner.column_process"),
+        label_column_workspace: t("port_scanner.column_workspace"),
+        label_column_tab: t("port_scanner.column_tab"),
+        label_column_state: t("port_scanner.column_state"),
     };
 
     let action = draw_port_scanner_view(ui, &props);
@@ -172,8 +294,7 @@ pub fn draw_port_scanner_popup(
     match action {
         PortScannerAction::None => PopupAction::None,
         PortScannerAction::Close => {
-            // ⑦ close → reset to Idle. 백그라운드 thread 가 살아 있어도 rx 가 drop 되어
-            // 마지막 send 가 실패할 뿐 — 스레드 자체는 자연 종료한다.
+            // ⑦ close → Idle reset. 백그라운드 thread 의 rx 가 drop 되어 send 가 실패할 뿐.
             state.port_scan = PortScanState::Idle;
             PopupAction::Close
         }
@@ -183,14 +304,68 @@ pub fn draw_port_scanner_popup(
             PopupAction::None
         }
         PortScannerAction::OpenEntry(i) => {
-            if let PortScanState::Ready { rows, .. } = &state.port_scan {
-                if let Some(row) = rows.get(i) {
-                    open_in_browser(row);
-                }
+            if let Some(row) = filtered_rows.get(i) {
+                open_in_browser(row);
             }
             PopupAction::None
         }
+        PortScannerAction::SetShowAllSystem(v) => {
+            filter_state.show_all_system = v;
+            write_filter_state(&ctx, filter_state);
+            PopupAction::None
+        }
+        PortScannerAction::SetQuery(q) => {
+            filter_state.query = q;
+            write_filter_state(&ctx, filter_state);
+            PopupAction::None
+        }
+        PortScannerAction::SetSort(key) => {
+            // PR-5 가 emit. PR-4 에서는 wrapper 도 명시적으로 처리하지 않으나
+            // pattern exhaustive 를 위해 memory 만 갱신해 둔다.
+            if filter_state.sort_key == key {
+                filter_state.sort_dir = match filter_state.sort_dir {
+                    SortDir::Asc => SortDir::Desc,
+                    SortDir::Desc => SortDir::Asc,
+                };
+            } else {
+                filter_state.sort_key = key;
+                filter_state.sort_dir = SortDir::Asc;
+            }
+            write_filter_state(&ctx, filter_state);
+            PopupAction::None
+        }
     }
+}
+
+/// Case-insensitive substring match across every visible column. Empty query
+/// matches everything.
+pub fn matches_query(row: &PortRowView, query: &str) -> bool {
+    let q = query.trim();
+    if q.is_empty() {
+        return true;
+    }
+    let q_lower = q.to_lowercase();
+    let port_str = row.port.to_string();
+    let pid_str = row.pid.map(|p| p.to_string()).unwrap_or_default();
+    let process = row.process_name.as_deref().unwrap_or("");
+    let (ws, tab) = match &row.source {
+        SourceTag::Tasty {
+            workspace_name,
+            tab_name,
+        } => (workspace_name.as_str(), tab_name.as_deref().unwrap_or("")),
+        SourceTag::External => ("", ""),
+    };
+    let haystacks: [&str; 6] = [
+        port_str.as_str(),
+        row.addr_display.as_str(),
+        pid_str.as_str(),
+        process,
+        ws,
+        tab,
+    ];
+    haystacks
+        .iter()
+        .any(|h| h.to_lowercase().contains(&q_lower))
 }
 
 fn scope_from_flag(show_all_system: bool) -> ScanScope {
@@ -353,76 +528,378 @@ pub fn draw_port_scanner_view(
         return PortScannerAction::Close;
     }
 
-    let th = props.theme;
     let mut action = PortScannerAction::None;
 
     ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 4.0;
-
-        // Header
-        ui.label(egui::RichText::new(props.heading).color(th.text).size(13.0));
-        ui.separator();
-
-        if props.entries.is_empty() {
-            ui.label(
-                egui::RichText::new(props.no_ports_label)
-                    .color(th.subtext0)
-                    .italics(),
-            );
-        } else {
-            egui::ScrollArea::vertical()
-                .max_height(240.0)
-                .show(ui, |ui| {
-                    for (i, entry) in props.entries.iter().enumerate() {
-                        if draw_port_row(ui, th, entry) {
-                            action = PortScannerAction::OpenEntry(i);
-                        }
-                    }
-                });
+        ui.spacing_mut().item_spacing.y = 6.0;
+        if let Some(a) = draw_header_row(ui, props) {
+            action = a;
         }
-
+        if let Some(a) = draw_filter_row(ui, props) {
+            action = a;
+        }
         ui.separator();
-        ui.horizontal(|ui| {
-            if ui.button(props.refresh_label).clicked() {
-                action = PortScannerAction::Refresh;
+        match &props.view_state {
+            PortScannerViewState::Loading => draw_loading_body(ui, props),
+            PortScannerViewState::Failed { message } => {
+                if let Some(a) = draw_failed_body(ui, props, message) {
+                    action = a;
+                }
             }
-            ui.label(
-                egui::RichText::new(props.hint_label)
-                    .color(th.overlay0)
-                    .size(11.0),
-            );
-        });
+            PortScannerViewState::Ready { rows } => {
+                if let Some(a) = draw_ready_body(ui, props, rows) {
+                    action = a;
+                }
+            }
+        }
+        draw_footer(ui, props);
     });
 
     action
 }
 
-fn draw_port_row(ui: &mut egui::Ui, th: &Theme, entry: &PortEntryView) -> bool {
-    let full_width = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(full_width, 22.0),
-        egui::Sense::click().union(egui::Sense::hover()),
-    );
-    if resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
+    let th = props.theme;
+    let text = match &props.view_state {
+        PortScannerViewState::Loading => Some(props.label_footer_loading.to_string()),
+        PortScannerViewState::Ready { rows } => Some(
+            props
+                .label_footer_counter
+                .replace("{n}", &rows.len().to_string()),
+        ),
+        PortScannerViewState::Failed { .. } => None,
+    };
+    if let Some(s) = text {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(s)
+                    .color(th.overlay0)
+                    .size(th.font_size_caption.value()),
+            );
+        });
     }
-    let label = format!(
-        "{}  ·  {}  ·  PID {}",
-        entry.port, entry.addr_display, entry.pid
-    );
-    ui.painter().text(
-        egui::pos2(rect.min.x + 8.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        label,
-        egui::FontId::proportional(12.0),
-        if resp.hovered() {
-            th.text.into()
+}
+
+/// 1줄 헤더: 좌측 heading + 우측 search TextEdit + 우측 끝 close 버튼.
+fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
+    let th = props.theme;
+    let mut out: Option<PortScannerAction> = None;
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(props.label_heading)
+                .color(th.text)
+                .size(th.font_size_heading.value())
+                .strong(),
+        );
+        // 우측에 close 버튼 + search.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button(egui::RichText::new("×").size(16.0).color(th.text))
+                .on_hover_text(props.label_close)
+                .clicked()
+            {
+                out = Some(PortScannerAction::Close);
+            }
+            let avail = ui.available_width().max(120.0);
+            let mut buf = props.filter.query.to_string();
+            let resp = ui.add_sized(
+                egui::vec2(avail, 22.0),
+                egui::TextEdit::singleline(&mut buf)
+                    .hint_text(props.label_search_placeholder)
+                    .desired_width(avail),
+            );
+            if resp.changed() && buf != props.filter.query {
+                out = Some(PortScannerAction::SetQuery(buf));
+            }
+        });
+    });
+    out
+}
+
+/// 2줄 헤더: "전체 보기" 체크박스 + 헤더 카운터 Tag.
+fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
+    let th = props.theme;
+    let mut out: Option<PortScannerAction> = None;
+    ui.horizontal(|ui| {
+        let mut checked = props.filter.show_all_system;
+        if ui
+            .checkbox(&mut checked, props.label_filter_show_all_system)
+            .changed()
+        {
+            out = Some(PortScannerAction::SetShowAllSystem(checked));
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let tag = match &props.view_state {
+                PortScannerViewState::Loading => props.label_header_tag_scanning.to_string(),
+                PortScannerViewState::Ready { rows } => props
+                    .label_header_tag_count
+                    .replace("{n}", &rows.len().to_string()),
+                PortScannerViewState::Failed { .. } => String::new(),
+            };
+            if !tag.is_empty() {
+                ui.label(
+                    egui::RichText::new(tag)
+                        .color(th.subtext0)
+                        .size(th.font_size_caption.value()),
+                );
+            }
+        });
+    });
+    out
+}
+
+/// 콘텐츠 중앙 horizontal: Spinner + "Collecting…" 텍스트.
+fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
+    let th = props.theme;
+    ui.vertical_centered(|ui| {
+        ui.add_space(48.0);
+        ui.horizontal(|ui| {
+            ui.add(egui::Spinner::new().size(16.0).color(th.subtext0));
+            ui.label(
+                egui::RichText::new(props.label_loading)
+                    .color(th.subtext0)
+                    .size(th.font_size_body.value()),
+            );
+        });
+    });
+}
+
+/// Failed: 에러 메시지 + Refresh 버튼.
+fn draw_failed_body(
+    ui: &mut egui::Ui,
+    props: &PortScannerProps<'_>,
+    message: &str,
+) -> Option<PortScannerAction> {
+    let th = props.theme;
+    let mut out: Option<PortScannerAction> = None;
+    ui.vertical_centered(|ui| {
+        ui.add_space(32.0);
+        ui.label(
+            egui::RichText::new(props.label_failed)
+                .color(th.red)
+                .size(th.font_size_body.value())
+                .strong(),
+        );
+        ui.label(
+            egui::RichText::new(message)
+                .color(th.subtext0)
+                .size(th.font_size_caption.value()),
+        );
+        ui.add_space(8.0);
+        if ui.button(props.label_refresh).clicked() {
+            out = Some(PortScannerAction::Refresh);
+        }
+    });
+    out
+}
+
+/// Ready: 빈 결과 분기 3종 OR TableBuilder 7컬럼.
+fn draw_ready_body(
+    ui: &mut egui::Ui,
+    props: &PortScannerProps<'_>,
+    rows: &[PortRowView],
+) -> Option<PortScannerAction> {
+    let th = props.theme;
+    if rows.is_empty() {
+        let empty_label = if !props.filter.query.trim().is_empty() {
+            props.label_no_ports_search_zero
+        } else if props.filter.show_all_system {
+            props.label_no_ports_system_empty
         } else {
-            th.subtext0.into()
-        },
+            props.label_no_ports_tasty_empty
+        };
+        ui.vertical_centered(|ui| {
+            ui.add_space(40.0);
+            ui.label(
+                egui::RichText::new(empty_label)
+                    .color(th.subtext0)
+                    .italics()
+                    .size(th.font_size_body.value()),
+            );
+        });
+        return None;
+    }
+    draw_table(ui, props, rows)
+}
+
+/// 7컬럼 TableBuilder. 컬럼 폭은 디자이너 확정값.
+fn draw_table(
+    ui: &mut egui::Ui,
+    props: &PortScannerProps<'_>,
+    rows: &[PortRowView],
+) -> Option<PortScannerAction> {
+    use egui_extras::{Column, TableBuilder};
+    let th = props.theme;
+    let mut out: Option<PortScannerAction> = None;
+    let text_h = th.font_size_body.value() + 6.0;
+
+    TableBuilder::new(ui)
+        .striped(false)
+        .resizable(false)
+        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+        .column(Column::initial(84.0).at_least(60.0))
+        .column(Column::initial(76.0).at_least(60.0))
+        .column(Column::remainder().at_least(80.0))
+        .column(Column::remainder().at_least(100.0))
+        .column(Column::initial(120.0).at_least(80.0))
+        .column(Column::remainder().at_least(80.0))
+        .column(Column::initial(140.0).at_least(100.0))
+        .header(text_h + 4.0, |mut header| {
+            header.col(|ui| {
+                draw_header_cell(ui, th, props.label_column_port);
+            });
+            header.col(|ui| {
+                draw_header_cell(ui, th, props.label_column_proto);
+            });
+            header.col(|ui| {
+                draw_header_cell(ui, th, props.label_column_address);
+            });
+            header.col(|ui| {
+                draw_header_cell(ui, th, props.label_column_process);
+            });
+            header.col(|ui| {
+                draw_header_cell(ui, th, props.label_column_workspace);
+            });
+            header.col(|ui| {
+                draw_header_cell(ui, th, props.label_column_tab);
+            });
+            header.col(|ui| {
+                draw_header_cell(ui, th, props.label_column_state);
+            });
+        })
+        .body(|mut body| {
+            for (i, row) in rows.iter().enumerate() {
+                body.row(text_h + 8.0, |mut tr| {
+                    tr.col(|ui| {
+                        let resp = ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(row.port.to_string())
+                                    .color(th.text)
+                                    .size(th.font_size_body.value()),
+                            )
+                            .sense(egui::Sense::click()),
+                        );
+                        if resp.clicked() {
+                            out = Some(PortScannerAction::OpenEntry(i));
+                        }
+                    });
+                    tr.col(|ui| {
+                        ui.label(
+                            egui::RichText::new("TCP")
+                                .color(th.subtext0)
+                                .size(th.font_size_body.value()),
+                        );
+                    });
+                    tr.col(|ui| {
+                        ui.label(
+                            egui::RichText::new(&row.addr_display)
+                                .color(th.subtext0)
+                                .size(th.font_size_body.value())
+                                .monospace(),
+                        );
+                    });
+                    tr.col(|ui| {
+                        draw_process_cell(ui, th, row);
+                    });
+                    tr.col(|ui| {
+                        draw_workspace_cell(ui, th, row, props.label_external_dash);
+                    });
+                    tr.col(|ui| {
+                        draw_tab_cell(ui, th, row, props.label_external_dash);
+                    });
+                    tr.col(|ui| {
+                        draw_state_cell(ui, th);
+                    });
+                });
+            }
+        });
+    out
+}
+
+fn draw_header_cell(ui: &mut egui::Ui, th: &Theme, label: &str) {
+    ui.label(
+        egui::RichText::new(label)
+            .color(th.subtext0)
+            .size(th.font_size_caption.value())
+            .strong(),
     );
-    resp.clicked()
+}
+
+/// Process 셀: process_name + PID 배지.
+fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView) {
+    ui.horizontal(|ui| {
+        let name = row.process_name.as_deref().unwrap_or("—");
+        ui.label(
+            egui::RichText::new(name)
+                .color(th.text)
+                .size(th.font_size_body.value()),
+        );
+        if let Some(pid) = row.pid {
+            let txt = format!("PID {pid}");
+            let badge = egui::RichText::new(txt)
+                .color(th.subtext0)
+                .size(th.font_size_caption.value())
+                .monospace();
+            egui::Frame::default()
+                .fill(th.surface1.into())
+                .corner_radius(egui::CornerRadius::same(3))
+                .inner_margin(egui::Margin::symmetric(4, 1))
+                .show(ui, |ui| {
+                    ui.label(badge);
+                });
+        }
+    });
+}
+
+/// Workspace 셀: Tasty → workspace_name, External → dash.
+fn draw_workspace_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
+    match &row.source {
+        SourceTag::Tasty { workspace_name, .. } => {
+            ui.label(
+                egui::RichText::new(workspace_name)
+                    .color(th.text)
+                    .size(th.font_size_body.value()),
+            );
+        }
+        SourceTag::External => {
+            ui.colored_label(th.subtext0, dash);
+        }
+    }
+}
+
+/// Tab 셀: Tasty → tab_name (Some), 없거나 External → dash.
+fn draw_tab_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
+    let tab_name = match &row.source {
+        SourceTag::Tasty {
+            tab_name: Some(t), ..
+        } => Some(t.as_str()),
+        _ => None,
+    };
+    match tab_name {
+        Some(name) => {
+            ui.label(
+                egui::RichText::new(name)
+                    .color(th.subtext0)
+                    .size(th.font_size_body.value()),
+            );
+        }
+        None => {
+            ui.colored_label(th.subtext0, dash);
+        }
+    }
+}
+
+/// State 셀: 초록 dot + "LISTEN".
+fn draw_state_cell(ui: &mut egui::Ui, th: &Theme) {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+        ui.painter().circle_filled(rect.center(), 4.0, th.green);
+        ui.label(
+            egui::RichText::new("LISTEN")
+                .color(th.subtext0)
+                .size(th.font_size_caption.value()),
+        );
+    });
 }
 
 fn format_addr(addr: IpAddr) -> String {
@@ -456,21 +933,64 @@ mod tests {
         tasty_themes::mocha_fallback()
     }
 
-    fn run_with_input(raw: egui::RawInput, entries: &[PortEntryView]) -> PortScannerAction {
+    fn dummy_row(port: u16) -> PortRowView {
+        PortRowView {
+            port,
+            addr_display: "127.0.0.1".into(),
+            pid: Some(42),
+            process_name: None,
+            source: SourceTag::External,
+        }
+    }
+
+    fn default_props<'a>(
+        theme: &'a Theme,
+        view_state: PortScannerViewState<'a>,
+        query: &'a str,
+        show_all_system: bool,
+    ) -> PortScannerProps<'a> {
+        PortScannerProps {
+            theme,
+            view_state,
+            filter: PortScannerFilter {
+                show_all_system,
+                query,
+                sort_key: SortKey::Port,
+                sort_dir: SortDir::Asc,
+            },
+            label_heading: "Listening ports",
+            label_search_placeholder: "Search…",
+            label_filter_show_all_system: "Show all system ports",
+            label_loading: "Scanning…",
+            label_failed: "Scan failed",
+            label_close: "Close",
+            label_refresh: "Refresh",
+            label_external_dash: "—",
+            label_no_ports_tasty_empty: "No Tasty ports.",
+            label_no_ports_system_empty: "No system ports.",
+            label_no_ports_search_zero: "No matches.",
+            label_footer_loading: "Scanning…",
+            label_header_tag_scanning: "scanning…",
+            label_header_tag_count: "{n} listening",
+            label_footer_counter: "{n} listening",
+            label_column_port: "Port",
+            label_column_proto: "Proto",
+            label_column_address: "Address",
+            label_column_process: "Process",
+            label_column_workspace: "Workspace",
+            label_column_tab: "Tab",
+            label_column_state: "State",
+        }
+    }
+
+    fn run_view(raw: egui::RawInput, rows: &[PortRowView]) -> PortScannerAction {
         let ctx = egui::Context::default();
         let mut out = PortScannerAction::None;
         let theme = test_theme();
-        // FullOutput 은 폐기 — 단위 테스트는 view 의 반환 action 만 검증.
         drop(ctx.run(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let props = PortScannerProps {
-                    theme: &theme,
-                    heading: "Listening ports",
-                    no_ports_label: "No ports.",
-                    refresh_label: "Refresh",
-                    hint_label: "Click a row to open in browser.",
-                    entries,
-                };
+                let view_state = PortScannerViewState::Ready { rows };
+                let props = default_props(&theme, view_state, "", false);
                 out = draw_port_scanner_view(ui, &props);
             });
         }));
@@ -479,7 +999,7 @@ mod tests {
 
     #[test]
     fn view_returns_none_on_empty_input() {
-        let action = run_with_input(egui::RawInput::default(), &[]);
+        let action = run_view(egui::RawInput::default(), &[]);
         assert_eq!(action, PortScannerAction::None);
     }
 
@@ -493,18 +1013,8 @@ mod tests {
             repeat: false,
             modifiers: egui::Modifiers::NONE,
         });
-        let action = run_with_input(raw, &[]);
+        let action = run_view(raw, &[]);
         assert_eq!(action, PortScannerAction::Close);
-    }
-
-    fn dummy_row(port: u16) -> PortRowView {
-        PortRowView {
-            port,
-            addr_display: "127.0.0.1".into(),
-            pid: Some(42),
-            process_name: None,
-            source: SourceTag::External,
-        }
     }
 
     #[test]
@@ -579,19 +1089,107 @@ mod tests {
 
     #[test]
     fn view_renders_with_entries_without_panic() {
-        let entries = vec![
-            PortEntryView {
-                port: 3000,
-                addr_display: "0.0.0.0".into(),
-                pid: 12345,
+        let rows = vec![dummy_row(3000), dummy_row(8080)];
+        let action = run_view(egui::RawInput::default(), &rows);
+        assert_eq!(action, PortScannerAction::None);
+    }
+
+    fn tasty_row(port: u16, ws: &str, tab: Option<&str>) -> PortRowView {
+        PortRowView {
+            port,
+            addr_display: "0.0.0.0".into(),
+            pid: Some(7),
+            process_name: Some("node".into()),
+            source: SourceTag::Tasty {
+                workspace_name: ws.to_string(),
+                tab_name: tab.map(str::to_string),
             },
-            PortEntryView {
-                port: 8080,
-                addr_display: "127.0.0.1".into(),
-                pid: 12346,
-            },
-        ];
-        let action = run_with_input(egui::RawInput::default(), &entries);
+        }
+    }
+
+    #[test]
+    fn query_filter_matches_any_column_case_insensitive() {
+        let row = tasty_row(3000, "frontend", Some("dev-server"));
+        // port number
+        assert!(matches_query(&row, "3000"));
+        // address (case insensitive)
+        assert!(matches_query(&row, "0.0.0.0"));
+        // process name (different case)
+        assert!(matches_query(&row, "NODE"));
+        // workspace
+        assert!(matches_query(&row, "frontend"));
+        // tab
+        assert!(matches_query(&row, "dev-server"));
+        // pid
+        assert!(matches_query(&row, "7"));
+        // no match
+        assert!(!matches_query(&row, "xyzzy"));
+    }
+
+    #[test]
+    fn query_filter_empty_matches_everything() {
+        let row = tasty_row(3000, "ws", Some("tab"));
+        assert!(matches_query(&row, ""));
+        assert!(matches_query(&row, "   "));
+    }
+
+    #[test]
+    fn query_filter_external_row_skips_workspace_match() {
+        let row = dummy_row(80);
+        // External rows have no workspace/tab strings to match.
+        assert!(!matches_query(&row, "workspace"));
+        // But port/addr still match.
+        assert!(matches_query(&row, "80"));
+        assert!(matches_query(&row, "127.0.0.1"));
+    }
+
+    fn run_view_state(
+        view_state: PortScannerViewState<'_>,
+        query: &str,
+        show_all_system: bool,
+    ) -> PortScannerAction {
+        let ctx = egui::Context::default();
+        let mut out = PortScannerAction::None;
+        let theme = test_theme();
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let props = default_props(&theme, view_state, query, show_all_system);
+                out = draw_port_scanner_view(ui, &props);
+            });
+        }));
+        out
+    }
+
+    #[test]
+    fn empty_ready_renders_tasty_empty_message() {
+        let rows: Vec<PortRowView> = Vec::new();
+        let action = run_view_state(PortScannerViewState::Ready { rows: &rows }, "", false);
+        assert_eq!(action, PortScannerAction::None);
+    }
+
+    #[test]
+    fn empty_ready_renders_system_empty_message() {
+        let rows: Vec<PortRowView> = Vec::new();
+        let action = run_view_state(PortScannerViewState::Ready { rows: &rows }, "", true);
+        assert_eq!(action, PortScannerAction::None);
+    }
+
+    #[test]
+    fn empty_ready_with_query_renders_search_zero_message() {
+        let rows: Vec<PortRowView> = Vec::new();
+        let action = run_view_state(PortScannerViewState::Ready { rows: &rows }, "nginx", false);
+        assert_eq!(action, PortScannerAction::None);
+    }
+
+    #[test]
+    fn loading_state_renders_without_panic() {
+        let action = run_view_state(PortScannerViewState::Loading, "", false);
+        assert_eq!(action, PortScannerAction::None);
+    }
+
+    #[test]
+    fn failed_state_renders_without_panic() {
+        let action = run_view_state(PortScannerViewState::Failed { message: "boom" }, "", false);
         assert_eq!(action, PortScannerAction::None);
     }
 }
