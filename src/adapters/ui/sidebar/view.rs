@@ -632,6 +632,7 @@ fn draw_workspace_card(
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
             // 좌측 상태 dot — ui_kit WorkspaceRow StatusDot 대응.
             // 우선순위: running(busy) > attached > none. agent_created 는 ws 단위 데이터
             // 부재로 보류. 폴더 아이콘(16px) 슬롯과 동일 폭을 차지해 라벨 위치가 흔들리지
@@ -657,7 +658,6 @@ fn draw_workspace_card(
                     dot_resp.on_hover_text(occupied_hover);
                 }
             }
-            ui.add_space(2.0);
             let title_text = if ws.is_active {
                 egui::RichText::new(&ws.name).strong()
             } else {
@@ -687,15 +687,21 @@ fn draw_workspace_card(
         });
 
         if !ws.subtitle.is_empty() {
-            ui.label(egui::RichText::new(&ws.subtitle).small().color(th.subtext0));
+            ui.horizontal(|ui| {
+                ui.add_space(20.0);
+                ui.label(egui::RichText::new(&ws.subtitle).small().color(th.subtext0));
+            });
         }
 
         if !ws.description.is_empty() {
-            ui.label(
-                egui::RichText::new(&ws.description)
-                    .small()
-                    .color(th.overlay0),
-            );
+            ui.horizontal(|ui| {
+                ui.add_space(20.0);
+                ui.label(
+                    egui::RichText::new(&ws.description)
+                        .small()
+                        .color(th.overlay0),
+                );
+            });
         }
     });
 
