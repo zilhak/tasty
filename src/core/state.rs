@@ -550,6 +550,8 @@ mod message;
 mod pty;
 mod terminal_finders;
 
+pub use finders::SurfaceDisplayPath;
+
 #[cfg(test)]
 mod id_generator_tests {
     use super::IdGenerator;

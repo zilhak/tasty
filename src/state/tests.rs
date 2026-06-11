@@ -290,3 +290,22 @@ fn resolve_inherit_cwd_from_unknown_surface_is_none() {
     let _ = &engine;
     assert_eq!(state.resolve_inherit_cwd_from_surface(&engine, 99999), None);
 }
+
+#[test]
+fn surface_display_path_returns_workspace_and_tab_names() {
+    let (mut state, mut engine) = test_state();
+    let surface_ids = collect_surface_ids(&mut state, &mut engine);
+    let sid = surface_ids[0];
+    let path = engine
+        .surface_display_path(sid)
+        .expect("path for existing surface");
+    let ws = state.active_workspace(&engine);
+    assert_eq!(path.workspace_name, ws.name);
+    assert!(path.tab_name.is_some());
+}
+
+#[test]
+fn surface_display_path_unknown_surface_is_none() {
+    let (_state, engine) = test_state();
+    assert!(engine.surface_display_path(99999).is_none());
+}

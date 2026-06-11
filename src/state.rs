@@ -272,9 +272,10 @@ pub struct AppState {
     pub(crate) popups: crate::adapters::ui::PopupManager,
     /// Terminal text search state.
     pub(crate) search: crate::search_state::SearchState,
-    /// TCP listening port scan cache, keyed by surface_id.
-    /// Refreshed lazily when the ports popup is opened or visible.
-    pub(crate) port_scan: tasty_portscan::PortScanCache,
+    /// Listening-port scanner async state machine. Driven by the port scanner
+    /// popup: Idle → Loading (background thread + mpsc channel) → Ready / Failed.
+    /// Reset to `Idle` when the popup closes.
+    pub(crate) port_scan: crate::adapters::ui::popup::port_scanner::PortScanState,
     /// Shared snapshot of background update-check state. Polled hourly.
     pub(crate) update_status:
         std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
@@ -653,7 +654,7 @@ impl AppState {
                 pm
             },
             search: crate::search_state::SearchState::new(),
-            port_scan: tasty_portscan::PortScanCache::new(tasty_portscan::DEFAULT_TTL),
+            port_scan: crate::adapters::ui::popup::port_scanner::PortScanState::Idle,
             update_status: crate::state::update_check::spawn_poller(
                 "zilhak",
                 "tasty",

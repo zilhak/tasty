@@ -17,7 +17,7 @@
 //! props to verify visual states without runtime state.
 
 use std::net::IpAddr;
-use std::time::Instant;
+use std::sync::mpsc;
 
 use tasty_portscan::ListeningPort;
 
@@ -28,6 +28,54 @@ use crate::theme;
 use crate::theme::Theme;
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
+
+/// Which set of listening ports a scan covers.
+/// Tasty: only ports owned by Tasty shell process trees.
+/// System: every LISTEN socket on the host, with Tasty rows tagged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScanScope {
+    Tasty,
+    System,
+}
+
+/// Which workspace/tab a row belongs to. `External` means the listening
+/// process is not part of any Tasty shell tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SourceTag {
+    Tasty {
+        workspace_name: String,
+        tab_name: Option<String>,
+    },
+    External,
+}
+
+/// One row in the redesigned port table — workspace/tab-named projection of a
+/// listening port (Tasty or system-wide).
+#[derive(Clone, Debug)]
+pub struct PortRowView {
+    pub port: u16,
+    pub addr_display: String,
+    pub pid: Option<u32>,
+    pub process_name: Option<String>,
+    pub source: SourceTag,
+}
+
+/// Async state machine for the port scanner popup. Owned by `AppState.port_scan`.
+///
+/// Transitions: `Idle` → (kick) → `Loading { rx, scope }` → (poll) → `Ready { rows, scope }`
+/// or `Failed(msg)`. Closing the popup resets to `Idle`.
+pub enum PortScanState {
+    Idle,
+    Loading {
+        rx: mpsc::Receiver<Result<Vec<PortRowView>, String>>,
+        scope: ScanScope,
+    },
+    Ready {
+        rows: Vec<PortRowView>,
+        scope: ScanScope,
+    },
+    Failed(String),
+}
 
 /// One entry in the port list — host-side projection of `ListeningPort` with
 /// `addr` already formatted for display.
@@ -62,28 +110,15 @@ pub enum PortScannerAction {
 pub fn draw_port_scanner_popup(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    engine: &mut crate::core::CoreState,
+    _engine: &mut crate::core::CoreState,
 ) -> PopupAction {
     let th = theme::theme();
-    let surface_id = focused_terminal_surface_id(state, engine);
 
-    // Refresh cache lazily.
-    refresh_if_stale(state, engine, surface_id);
-
-    let ports: Vec<ListeningPort> = state
-        .port_scan
-        .get_any(surface_id)
-        .map(|s| s.to_vec())
-        .unwrap_or_default();
-
-    let entries: Vec<PortEntryView> = ports
-        .iter()
-        .map(|p| PortEntryView {
-            port: p.port,
-            addr_display: format_addr(p.addr),
-            pid: p.pid,
-        })
-        .collect();
+    // PR-2: PortScanCache 가 PortScanState 로 교체됨. 실제 스캔/캐싱은 PR-3 에서
+    // kick_off_scan / poll_scan 로 채운다. 그 사이 popup 은 빈 결과만 그린다.
+    let _ = &state.port_scan; // PR-3 가 소비할 placeholder — unused 경고 회피.
+    let entries: Vec<PortEntryView> = Vec::new();
+    let ports: Vec<ListeningPort> = Vec::new();
 
     let heading = t("port_scanner.heading");
     let no_ports_label = t("port_scanner.no_ports");
@@ -104,11 +139,7 @@ pub fn draw_port_scanner_popup(
     match action {
         PortScannerAction::None => PopupAction::None,
         PortScannerAction::Close => PopupAction::Close,
-        PortScannerAction::Refresh => {
-            state.port_scan.forget(surface_id);
-            refresh_if_stale(state, engine, surface_id);
-            PopupAction::None
-        }
+        PortScannerAction::Refresh => PopupAction::None,
         PortScannerAction::OpenEntry(i) => {
             if let Some(port) = ports.get(i) {
                 open_in_browser(port);
@@ -224,44 +255,6 @@ fn open_in_browser(port: &ListeningPort) {
     if let Err(e) = webbrowser::open(&url) {
         tracing::warn!("port_scanner: failed to open {url}: {e}");
     }
-}
-
-fn refresh_if_stale(state: &mut AppState, engine: &mut crate::core::CoreState, surface_id: u32) {
-    let now = Instant::now();
-    if !state.port_scan.needs_refresh(surface_id, now) {
-        return;
-    }
-    let shell_pid = match shell_pid_for_surface(state, engine, surface_id) {
-        Some(p) => p,
-        None => {
-            state.port_scan.insert(surface_id, Vec::new(), now);
-            return;
-        }
-    };
-    let pids = tasty_portscan::collect_descendant_pids(shell_pid);
-    let mut ports = tasty_portscan::scan_for_pids(&pids);
-    // Sidebar UX: collapse duplicates that differ only by v4/v6 wildcard.
-    ports.dedup_by(|a, b| a.port == b.port && a.pid == b.pid && a.addr == b.addr);
-    state.port_scan.insert(surface_id, ports, now);
-}
-
-fn shell_pid_for_surface(
-    _state: &AppState,
-    engine: &crate::core::CoreState,
-    surface_id: u32,
-) -> Option<u32> {
-    let terminal = engine.find_terminal_by_id(surface_id)?;
-    terminal.process_id()
-}
-
-fn focused_terminal_surface_id(state: &AppState, engine: &crate::core::CoreState) -> u32 {
-    let ws = state.active_workspace(engine);
-    let pane_id = ws.focused_pane;
-    ws.pane_layout()
-        .find_pane(pane_id)
-        .and_then(|pane| pane.tabs.get(pane.active_tab))
-        .and_then(|tab| tab.focused_surface_id())
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

@@ -104,4 +104,33 @@ impl CoreState {
     pub fn find_workspace_index_for_id(&self, ws_id: u32) -> Option<usize> {
         self.workspaces.iter().position(|w| w.id == ws_id)
     }
+
+    /// Resolve a surface to its display path (workspace name + tab display name).
+    /// Returns `None` if the surface does not belong to any workspace.
+    pub fn surface_display_path(&self, surface_id: u32) -> Option<SurfaceDisplayPath> {
+        for workspace in &self.workspaces {
+            for pid in workspace.pane_layout().all_pane_ids() {
+                if let Some(pane) = workspace.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        if tab.contains_surface(surface_id) {
+                            return Some(SurfaceDisplayPath {
+                                workspace_name: workspace.name.clone(),
+                                tab_name: Some(tab.display_name()),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Display-friendly path for a surface: the workspace it lives in, plus the
+/// tab name when known. Used by UI surfaces that label cross-workspace data
+/// (e.g. the port scanner popup) by human-readable name rather than ID.
+#[derive(Clone, Debug)]
+pub struct SurfaceDisplayPath {
+    pub workspace_name: String,
+    pub tab_name: Option<String>,
 }
