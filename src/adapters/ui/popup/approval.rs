@@ -10,7 +10,7 @@
 
 use tasty_approval::{ApprovalRecord, Responder, Severity};
 
-use crate::adapters::ui::popup::{CONTENT_MARGIN, PopupAction, TITLE_BAR_HEIGHT};
+use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
@@ -53,7 +53,12 @@ pub fn approval_popup_sizer(state: &AppState, engine: &crate::core::CoreState) -
     let approx_lines = (body_len as f32 / 60.0).ceil().max(1.0);
     let body_h = approx_lines * BODY_FONT_SIZE * 1.5;
     let buttons_h = (choice_count as f32 / 3.0).ceil() * 32.0;
-    let total_h = (TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + body_h + 32.0 + buttons_h + 56.0)
+    let total_h = (popup::title_bar_height()
+        + popup::content_margin() * 2.0
+        + body_h
+        + 32.0
+        + buttons_h
+        + 56.0)
         .clamp(MIN_HEIGHT, MAX_HEIGHT);
     egui::vec2(DEFAULT_WIDTH, total_h)
 }

@@ -91,8 +91,23 @@ pub struct PopupState {
     pub request_top: bool,
 }
 
-pub const TITLE_BAR_HEIGHT: f32 = 28.0;
-pub const CONTENT_MARGIN: f32 = 4.0;
+/// Popup 타이틀바 높이 — `Theme.item_height_interactive` (디자인 28px) 의 round_ui.
+/// `with_colors_and_zoom` 가 토큰 자체에 host UI zoom 을 박으므로 본 함수도
+/// 매 호출마다 현재 zoom 이 반영된 높이를 반환한다. const 였던 시절과 시그니처
+/// 호환을 위해 `f32` 반환.
+pub fn title_bar_height() -> f32 {
+    use egui::emath::GuiRounding as _;
+    crate::theme::theme()
+        .item_height_interactive
+        .value()
+        .round_ui()
+}
+
+/// Popup 콘텐츠 영역 inner margin — `Theme.spacing_xs` (디자인 4px) 의 round_ui.
+pub fn content_margin() -> f32 {
+    use egui::emath::GuiRounding as _;
+    crate::theme::theme().spacing_xs.value().round_ui()
+}
 
 impl PopupState {
     pub fn new(id: PopupId, title: impl Into<String>, default_size: egui::Vec2) -> Self {
@@ -143,19 +158,20 @@ impl PopupState {
     }
 
     fn title_rect(&self) -> egui::Rect {
-        egui::Rect::from_min_size(self.pos, egui::vec2(self.size.x, TITLE_BAR_HEIGHT))
+        egui::Rect::from_min_size(self.pos, egui::vec2(self.size.x, title_bar_height()))
     }
 
     fn content_rect(&self) -> egui::Rect {
         let popup = self.popup_rect();
+        let margin = content_margin();
         let top_offset = if self.headless {
-            CONTENT_MARGIN
+            margin
         } else {
-            TITLE_BAR_HEIGHT + CONTENT_MARGIN
+            title_bar_height() + margin
         };
         egui::Rect::from_min_max(
-            egui::pos2(popup.min.x + CONTENT_MARGIN, popup.min.y + top_offset),
-            egui::pos2(popup.max.x - CONTENT_MARGIN, popup.max.y - CONTENT_MARGIN),
+            egui::pos2(popup.min.x + margin, popup.min.y + top_offset),
+            egui::pos2(popup.max.x - margin, popup.max.y - margin),
         )
     }
 

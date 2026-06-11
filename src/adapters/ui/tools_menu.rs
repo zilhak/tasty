@@ -230,8 +230,8 @@ fn effective_item_spacing(_engine: &crate::core::CoreState) -> f32 {
 ///
 /// content height = N·ITEM_HEIGHT + (N−1)·item_spacing
 ///                  + (separator 가 들어가면 SEPARATOR_SPACE + item_spacing)
-/// popup height   = CONTENT_MARGIN·2 + content_h + safety_margin
-///                  (headless 이므로 TITLE_BAR_HEIGHT 는 빠진다)
+/// popup height   = content_margin()·2 + content_h + safety_margin
+///                  (headless 이므로 title_bar_height() 는 빠진다)
 fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: f32) -> egui::Vec2 {
     let total = builtin_count + plugin_count;
     let total = total.max(1);
@@ -244,7 +244,7 @@ fn tools_menu_size_for(builtin_count: usize, plugin_count: usize, item_spacing: 
     let safety_margin = 1.0;
     egui::vec2(
         POPUP_WIDTH,
-        popup::CONTENT_MARGIN * 2.0 + content_h + safety_margin,
+        popup::content_margin() * 2.0 + content_h + safety_margin,
     )
 }
 
@@ -279,7 +279,7 @@ mod size_tests {
     fn fits_builtin_only_medium_scale() {
         // ui_scale=1.0 → spacing_xs(4.0). BUILTIN 4 개, plugin 0 개, separator 없음.
         let size = tools_menu_size_for(4, 0, 4.0);
-        let needed = popup::CONTENT_MARGIN * 2.0 + 4.0 * ITEM_HEIGHT + 3.0 * 4.0;
+        let needed = popup::content_margin() * 2.0 + 4.0 * ITEM_HEIGHT + 3.0 * 4.0;
         assert!(
             size.y >= needed,
             "size.y ({}) < needed ({}) for 4 builtin items",
@@ -293,7 +293,7 @@ mod size_tests {
     fn fits_builtin_plus_plugin_with_separator() {
         // BUILTIN 4 + plugin 3 → separator 1 개 추가됨.
         let size = tools_menu_size_for(4, 3, 4.0);
-        let needed = popup::CONTENT_MARGIN * 2.0
+        let needed = popup::content_margin() * 2.0
             + 7.0 * ITEM_HEIGHT
             + 6.0 * 4.0           // item_spacing between 7 items
             + SEPARATOR_SPACE
@@ -310,7 +310,7 @@ mod size_tests {
     fn fits_plugin_only_no_separator() {
         // BUILTIN 0 + plugin 5 (hypothetical) → separator 없음.
         let size = tools_menu_size_for(0, 5, 4.0);
-        let needed = popup::CONTENT_MARGIN * 2.0 + 5.0 * ITEM_HEIGHT + 4.0 * 4.0;
+        let needed = popup::content_margin() * 2.0 + 5.0 * ITEM_HEIGHT + 4.0 * 4.0;
         assert!(size.y >= needed);
     }
 
@@ -318,14 +318,14 @@ mod size_tests {
     fn empty_does_not_underflow() {
         let size = tools_menu_size_for(0, 0, 4.0);
         // total.max(1) 이 적용되어 최소 한 줄 분량은 확보된다.
-        assert!(size.y >= popup::CONTENT_MARGIN * 2.0 + ITEM_HEIGHT);
+        assert!(size.y >= popup::content_margin() * 2.0 + ITEM_HEIGHT);
     }
 
     #[test]
     fn scales_with_ui_scale_1_2() {
         // ui_scale=1.2 → spacing ≈ 4.78. 4 항목 기준 spacing 누적이 늘어나도 fit.
         let size = tools_menu_size_for(4, 0, 4.78);
-        let needed = popup::CONTENT_MARGIN * 2.0 + 4.0 * ITEM_HEIGHT + 3.0 * 4.78;
+        let needed = popup::content_margin() * 2.0 + 4.0 * ITEM_HEIGHT + 3.0 * 4.78;
         assert!(size.y >= needed);
     }
 }

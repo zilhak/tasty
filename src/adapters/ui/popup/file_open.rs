@@ -58,7 +58,7 @@ pub fn markdown_open_popup_size(recent_count: usize) -> egui::Vec2 {
     };
     egui::vec2(
         360.0,
-        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + base + recent_h,
+        popup::title_bar_height() + popup::content_margin() * 2.0 + base + recent_h,
     )
 }
 

@@ -8,7 +8,7 @@
 //! 시각 검증한다 — Tier 3 패턴
 //! (`.claude-workspace/conductor/tier-3-props-extraction-pattern.md`).
 
-use crate::adapters::ui::popup::{CONTENT_MARGIN, PopupAction, TITLE_BAR_HEIGHT};
+use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::{AppState, RenameTarget};
 use crate::theme;
@@ -16,7 +16,10 @@ use crate::theme::Theme;
 
 /// Default size for the rename popup.
 pub fn rename_popup_default_size() -> egui::Vec2 {
-    egui::vec2(280.0, TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + 64.0)
+    egui::vec2(
+        280.0,
+        popup::title_bar_height() + popup::content_margin() * 2.0 + 64.0,
+    )
 }
 
 /// Dynamic title for the rename popup (based on RenameTarget).

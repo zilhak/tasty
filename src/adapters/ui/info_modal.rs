@@ -12,7 +12,7 @@
 //! });
 //! ```
 
-use crate::adapters::ui::popup::{CONTENT_MARGIN, PopupAction, TITLE_BAR_HEIGHT};
+use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
@@ -78,8 +78,8 @@ pub fn info_modal_sizer(state: &AppState, _engine: &crate::core::CoreState) -> e
     let approx_lines = (body_len as f32 / 60.0).ceil().max(2.0);
     let line_h = BODY_FONT_SIZE * 1.5;
     let body_h = approx_lines * line_h;
-    let total_h =
-        (TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + body_h + 48.0).clamp(MIN_HEIGHT, MAX_HEIGHT);
+    let total_h = (popup::title_bar_height() + popup::content_margin() * 2.0 + body_h + 48.0)
+        .clamp(MIN_HEIGHT, MAX_HEIGHT);
     egui::vec2(DEFAULT_WIDTH, total_h)
 }
 

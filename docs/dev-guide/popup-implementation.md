@@ -101,8 +101,8 @@ if my_popup_closed {
 | `id` | `&'static str` | 고유 식별자 |
 | `title_key` | `&'static str` | i18n 키. `t()`로 번역하여 타이틀바에 표시 |
 | `title_fn` | `Option<fn(&AppState) -> String>` | 동적 타이틀. 설정 시 `title_key` 대신 사용. 대상에 따라 제목이 바뀌는 팝업에 사용 (예: rename popup) |
-| `default_size` | `egui::Vec2` | 기본 크기. `TITLE_BAR_HEIGHT`(28px) + `CONTENT_MARGIN`(4px) 포함 |
-| `sizer` | `Option<fn(&AppState) -> egui::Vec2>` | 동적 크기. **매 프레임 호출** 되어 `popup.size` 에 반영. 항목 간격을 손으로 더할 때는 반드시 `theme().spacing_xs.value() × engine.settings.appearance.ui_scale_factor()` (= egui `style.spacing.item_spacing.y` 와 동일) 을 써야 한다. 하드코딩하면 medium/large UI scale 에서 마지막 항목이 잘린다. 1 px 안전 마진을 더해 round_ui 누적/`Ui::new` 초기 cursor 드리프트를 흡수 권장 |
+| `default_size` | `egui::Vec2` | 기본 크기 (unzoomed baseline). `popup.rs::title_bar_height()` + `content_margin()` 포함. `PopupManager::register_def` 가 등록 시점에 `ui_zoom` 을 한 번만 곱해 `PopupState.size` 에 박는다 — sizer 가 있는 popup 은 곱셈 생략 (sizer 가 매 프레임 zoomed token 으로 재계산하므로 이중 곱셈 회피) |
+| `sizer` | `Option<fn(&AppState) -> egui::Vec2>` | 동적 크기. **매 프레임 호출** 되어 `popup.size` 에 반영. **`ui_scale_factor()` 곱셈 금지** — `Theme::with_colors_and_zoom` 가 sizing 토큰 자체에 host UI zoom 을 이미 박아 두므로 `theme().spacing_xs` 만으로 충분하다. sizer 가 추가로 `* ui_scale_factor()` 를 곱하면 이중 곱셈이 일어나 medium/large 에서 layout 이 깨진다. 항목 간격은 egui `style.spacing.item_spacing.y` 와 동일하게 `theme().spacing_xs.value().round_ui()` 사용 (예: `convert.rs::effective_item_spacing`, `tools_menu.rs::effective_item_spacing`). 1 px 안전 마진은 `round_ui` 누적 / `Ui::new` 초기 cursor 드리프트 흡수 용도로 그대로 권장 |
 | `default_scope` | `PopupScope` | 가시성/경계 범위 (Window, Workspace, Pane, Tab, Surface) |
 | `close_on_outside_click` | `bool` | true면 팝업 바깥 클릭 시 닫힘 |
 | `draw_fn` | `fn(&mut Ui, &mut AppState) -> PopupAction` | 매 프레임 호출되는 렌더링 함수 |

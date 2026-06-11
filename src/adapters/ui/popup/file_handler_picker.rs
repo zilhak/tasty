@@ -67,7 +67,7 @@ pub fn picker_sizer(state: &AppState, _engine: &crate::core::CoreState) -> egui:
 
     egui::vec2(
         POPUP_WIDTH,
-        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_height,
+        popup::title_bar_height() + popup::content_margin() * 2.0 + content_height,
     )
 }
 

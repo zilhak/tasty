@@ -238,8 +238,26 @@ ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui());
 | 텍스트 대비 | 최소 4.5:1. 위반 시 [`ai-verification/visual-verification.md`](../ai-verification/visual-verification.md) 의 색상 대비 체크리스트 적용 |
 | 터미널 콘텐츠 애니메이션 | **0ms**. 터미널 셀/스크롤 영역엔 어떤 transition 도 넣지 않는다 — 입력 응답성 우선 |
 | UI 위젯 애니메이션 | 짧게 (보통 100–150ms). 사용자 입력 직후의 시각 피드백에 한정 |
+| Host UI zoom | `AppearanceSettings.ui_scale` (`small / medium / large` = `0.85 / 1.0 / 1.2`). `Theme::with_colors_and_zoom` 이 빌드 시점에 토큰에 직접 곱해 박는다. UI 코드는 곱셈 무지 — `theme().spacing_xs` 가 이미 zoomed 값. |
 
 위 값 중 코드에 하드코딩으로 등장하는 곳이 발견되면 `Theme` 의 해당 필드로 옮긴다. 새 시각 규칙이 필요해지면 본 표에 추가한 뒤 `Theme` 에 필드를 신설한다.
+
+### Host UI zoom 정책
+
+`AppearanceSettings.ui_scale` 변경은 `tasty-themes::install_global_with_zoom` 로 전역 `Theme` 을 재빌드하여 sizing 토큰 자체에 zoom 배율을 곱한다. UI 코드는 `theme().spacing_*` / `font_size_*` 등을 그대로 호출하면 자동으로 zoom 영향을 받는다.
+
+**zoom 영향 받는 토큰** — `spacing_xs/sm/md/lg/xl`, `font_size_caption/body/heading/max`, `corner_radius`, `focus_ring_width`, `item_height_tree/interactive/tab`, `sidebar_logo_size`, `sidebar_logo_collapsed_size`, `sidebar_wordmark_font_size`, `sidebar_section_heading_font_size`, `sidebar_button_label_font_size`, `sidebar_collapsed_slot_width`, `sidebar_collapsed_icon_height`, `sidebar_collapsed_workspace_height`.
+
+**zoom 영향 받지 않는 토큰** —
+- `border_width` (1px 보더 정책 — zoom 시 깨지면 안 됨)
+- `tab_width`, `tab_bar_height`, `tab_bar_label_font_size`, `tab_bar_arrow_font_size` (탭바 zoom 제외 정책)
+- 터미널 콘텐츠 폰트는 `effective_terminal_font` 별도 경로로 GPU 셰이더에 전달되므로 host UI zoom 과 무관
+
+**14px 폰트 상한** — `font_size_max` 도 같이 곱셈만 적용 (cap 없음). zoom 변경은 사용자의 명시적 의도이므로 상한을 강제하지 않는다.
+
+**4px 그리드** — zoom 적용 시 비정수 값 (예: `12 × 1.2 = 14.4`) 이 발생하면 `LogicalPx::round_ui()` 또는 `f32::round()` 로 GPU 픽셀 정수로 흡수한다. 그리드 자체는 zoom 배수의 그리드로 자연스럽게 어긋난다.
+
+**라이브 갱신** — 설정 모달 Save / IPC settings update 등으로 `AppearanceSettings` 가 바뀌면 `UiIntent::AppearanceChanged` 가 발화되고, `App::cascade_appearance_changed` 가 모든 윈도우 (main + Settings/Plugins/Preset/Quit modal) 의 GpuState 에 broadcast 한다. polling 아님 — 변경 시점에 한 번만 발화.
 
 ### 호버 오버레이 변환 주의
 

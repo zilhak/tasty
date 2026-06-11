@@ -10,7 +10,7 @@
 use egui::{Context, Id, Order, Stroke, Vec2};
 use tasty_plugin_protocol::PopupCloseReason;
 
-use crate::adapters::ui::popup::CONTENT_MARGIN;
+use crate::adapters::ui::popup;
 use crate::gpu::canvas_texture::CanvasTextureCache;
 use crate::plugin::PluginManager;
 use crate::plugin::manifest::PopupAnchor;
@@ -110,7 +110,7 @@ pub fn draw_plugin_popups(
             egui::StrokeKind::Outside,
         );
 
-        let content_rect = rect.shrink(CONTENT_MARGIN);
+        let content_rect = rect.shrink(popup::content_margin());
         let mut child_ui = egui::Ui::new(
             ctx.clone(),
             Id::new("plugin_popup_content").with(snap.instance_id),

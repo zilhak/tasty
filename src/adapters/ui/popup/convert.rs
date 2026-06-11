@@ -51,7 +51,7 @@ fn convert_popup_size_for(count: usize, item_spacing: f32) -> egui::Vec2 {
     let safety_margin = 1.0;
     egui::vec2(
         200.0,
-        popup::TITLE_BAR_HEIGHT + popup::CONTENT_MARGIN * 2.0 + content_h + safety_margin,
+        popup::title_bar_height() + popup::content_margin() * 2.0 + content_h + safety_margin,
     )
 }
 
@@ -60,12 +60,12 @@ mod size_tests {
     use super::*;
 
     /// 마지막 항목이 잘리지 않으려면 sizer popup_h 가 *실제 필요 height* 이상이어야
-    /// 한다. 실제 필요 = TITLE_BAR_HEIGHT + 2·CONTENT_MARGIN + N·ITEM_HEIGHT
+    /// 한다. 실제 필요 = title_bar_height() + 2·content_margin() + N·ITEM_HEIGHT
     ///                + (N−1)·actual_spacing.
     fn assert_fits(count: usize, item_spacing: f32) {
         let popup_h = convert_popup_size_for(count, item_spacing).y;
-        let needed = popup::TITLE_BAR_HEIGHT
-            + popup::CONTENT_MARGIN * 2.0
+        let needed = popup::title_bar_height()
+            + popup::content_margin() * 2.0
             + count as f32 * ITEM_HEIGHT
             + (count.saturating_sub(1)) as f32 * item_spacing;
         assert!(
