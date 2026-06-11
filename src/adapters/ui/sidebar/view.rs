@@ -106,7 +106,7 @@ pub enum SidebarCollapsedAction {
     },
 }
 
-const BTN_HEIGHT: f32 = 28.0;
+const BTN_HEIGHT: f32 = 24.0;
 const COLLAPSED_ICON_SIZE: egui::Vec2 = egui::vec2(32.0, 22.0);
 const COLLAPSED_WS_SIZE: egui::Vec2 = egui::vec2(32.0, 28.0);
 const CARD_INNER_MARGIN_X: i8 = 8;
@@ -620,14 +620,14 @@ fn draw_workspace_card(
         egui::Color32::TRANSPARENT
     };
 
-    let frame =
-        egui::Frame::new()
-            .fill(bg)
-            .corner_radius(2.0)
-            .inner_margin(egui::Margin::symmetric(
-                CARD_INNER_MARGIN_X,
-                CARD_INNER_MARGIN_Y,
-            ));
+    let frame = egui::Frame::new()
+        .fill(bg)
+        .corner_radius(2.0)
+        .outer_margin(egui::Margin::symmetric(6, 0))
+        .inner_margin(egui::Margin::symmetric(
+            CARD_INNER_MARGIN_X,
+            CARD_INNER_MARGIN_Y,
+        ));
 
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
@@ -692,29 +692,24 @@ fn draw_workspace_card(
                 ui.label(egui::RichText::new(&ws.subtitle).small().color(th.subtext0));
             });
         }
-
-        if !ws.description.is_empty() {
-            ui.horizontal(|ui| {
-                ui.add_space(20.0);
-                ui.label(
-                    egui::RichText::new(&ws.description)
-                        .small()
-                        .color(th.overlay0),
-                );
-            });
-        }
     });
+
+    let card_rect = response.response.rect;
+
+    if !ws.is_active && response.response.hovered() {
+        ui.painter()
+            .rect_filled(card_rect, 2.0, th.hover_overlay.to_egui_premultiplied());
+    }
 
     // Active 좌측 2px inset accent bar (디자인 `boxShadow: inset 2px 0 0 var(--accent-primary)`).
     // 카드 좌측 가장 안쪽 모서리, 좌측 inner_margin(8px) 안에 위치 → dot 슬롯(좌측 8px 부터)
     // 과 겹치지 않는다.
     if ws.is_active {
-        let card_rect = response.response.rect;
         let bar = egui::Rect::from_min_size(card_rect.min, egui::vec2(2.0, card_rect.height()));
         ui.painter().rect_filled(bar, 0.0, th.blue);
     }
 
-    response.response.rect
+    card_rect
 }
 
 #[cfg(test)]
