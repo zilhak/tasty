@@ -97,7 +97,7 @@ impl Default for GalleryState {
 /// 때만 호출하면 충분하지만, 단순화 위해 매 frame 호출해도 비용 무시 가능.
 pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
     if state.needs_reapply {
-        tasty_egui_theme::apply_theme_to_egui(&state.theme, ctx, state.ui_scale);
+        tasty_egui_theme::apply_theme_to_egui(&state.theme, ctx);
         state.needs_reapply = false;
     }
 

@@ -63,12 +63,16 @@ impl GpuState {
     }
 
     pub(super) fn post_egui_update(&mut self, engine: &crate::core::CoreState, prev_theme: &str) {
-        let ui_scale = engine.settings.appearance.ui_scale_factor();
-        if engine.settings.appearance.theme != prev_theme {
-            self.refresh_theme(&engine.settings.appearance.theme, ui_scale);
+        let ui_zoom = engine.settings.appearance.ui_scale_factor();
+        let theme_changed = engine.settings.appearance.theme != prev_theme;
+        let zoom_changed = (ui_zoom - self.last_ui_zoom).abs() > f32::EPSILON;
+        if theme_changed || zoom_changed {
+            // Theme 토큰 자체에 zoom 을 곱해 박는다 (Theme::with_colors_and_zoom).
+            tasty_themes::install_global_with_zoom(&engine.settings.appearance, ui_zoom);
+            self.last_ui_zoom = ui_zoom;
         }
-        // Always re-apply UI scale (in case it changed)
-        tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx, ui_scale);
+        // Always re-apply (cheap; visuals/style state in egui ctx).
+        tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), &self.egui_ctx);
 
         // Surface font refresh is done in render() before run_egui_frame().
 
@@ -91,13 +95,13 @@ impl GpuState {
     }
 
     /// Apply the theme to the egui context.
-    pub(super) fn apply_theme(ctx: &egui::Context, _theme: &str, ui_scale: f32) {
-        tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), ctx, ui_scale);
+    pub(super) fn apply_theme(ctx: &egui::Context, _theme: &str) {
+        tasty_egui_theme::apply_theme_to_egui(&crate::theme::theme(), ctx);
     }
 
     /// Re-apply the theme from settings. Called after settings are saved.
-    pub fn refresh_theme(&self, theme: &str, ui_scale: f32) {
-        Self::apply_theme(&self.egui_ctx, theme, ui_scale);
+    pub fn refresh_theme(&self, theme: &str) {
+        Self::apply_theme(&self.egui_ctx, theme);
     }
 
     // ── Generic egui helpers (for modal windows) ──

@@ -34,7 +34,7 @@ impl GpuState {
 
             // Apply theme from theme module
             let th = crate::theme::theme();
-            tasty_egui_theme::apply_theme_to_egui(&th, ctx, 1.0);
+            tasty_egui_theme::apply_theme_to_egui(&th, ctx);
 
             // Local aliases for this function
             let bg_panel = th.crust;

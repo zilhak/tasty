@@ -615,7 +615,18 @@ impl Theme {
     /// `ThemeColors` + `is_light` 로 풀 인스턴스 빌드. SIZING 은 const 에서 복사.
     /// `surface_themes` 가 `BTreeMap` 이라 더 이상 `const fn` 일 수 없다.
     pub fn with_colors(c: ThemeColors, is_light: bool) -> Self {
+        Self::with_colors_and_zoom(c, is_light, 1.0)
+    }
+
+    /// `with_colors` 의 일반화 — host UI zoom 배율을 sizing token 자체에 곱해서
+    /// 박는다. `ui_zoom == 1.0` 이면 `with_colors` 와 결과 동일.
+    ///
+    /// 미적용 토큰 (디자인 정책상 zoom 영향 받지 않음):
+    /// - `border_width` (1px 보더는 zoom 무관)
+    /// - `tab_width` (탭바는 host UI zoom 제외)
+    pub fn with_colors_and_zoom(c: ThemeColors, is_light: bool, ui_zoom: f32) -> Self {
         let (hover_overlay, active_overlay, separator) = derive_overlays(is_light);
+        let zoomed = |px: LogicalPx| LogicalPx((px.value() * ui_zoom).round());
         Self {
             crust: c.crust,
             mantle: c.mantle,
@@ -666,22 +677,22 @@ impl Theme {
             hover_overlay,
             active_overlay,
             separator,
-            font_size_caption: SIZING.font_size_caption,
-            font_size_body: SIZING.font_size_body,
-            font_size_heading: SIZING.font_size_heading,
-            font_size_max: SIZING.font_size_max,
+            font_size_caption: zoomed(SIZING.font_size_caption),
+            font_size_body: zoomed(SIZING.font_size_body),
+            font_size_heading: zoomed(SIZING.font_size_heading),
+            font_size_max: zoomed(SIZING.font_size_max),
             border_width: SIZING.border_width,
-            focus_ring_width: SIZING.focus_ring_width,
-            corner_radius: SIZING.corner_radius,
-            item_height_tree: SIZING.item_height_tree,
-            item_height_interactive: SIZING.item_height_interactive,
-            item_height_tab: SIZING.item_height_tab,
+            focus_ring_width: zoomed(SIZING.focus_ring_width),
+            corner_radius: zoomed(SIZING.corner_radius),
+            item_height_tree: zoomed(SIZING.item_height_tree),
+            item_height_interactive: zoomed(SIZING.item_height_interactive),
+            item_height_tab: zoomed(SIZING.item_height_tab),
             tab_width: SIZING.tab_width,
-            spacing_xs: SIZING.spacing_xs,
-            spacing_sm: SIZING.spacing_sm,
-            spacing_md: SIZING.spacing_md,
-            spacing_lg: SIZING.spacing_lg,
-            spacing_xl: SIZING.spacing_xl,
+            spacing_xs: zoomed(SIZING.spacing_xs),
+            spacing_sm: zoomed(SIZING.spacing_sm),
+            spacing_md: zoomed(SIZING.spacing_md),
+            spacing_lg: zoomed(SIZING.spacing_lg),
+            spacing_xl: zoomed(SIZING.spacing_xl),
             is_light,
             surface_themes: c.surface_themes,
         }
@@ -880,6 +891,50 @@ mod tests {
         assert_eq!(t.spacing_sm, SIZING.spacing_sm);
         assert_eq!(t.tab_width, SIZING.tab_width);
         assert!(!t.is_light);
+    }
+
+    #[test]
+    fn zoom_one_preserves_sizing() {
+        let base = Theme::with_colors(dummy_colors(), false);
+        let zoomed = Theme::with_colors_and_zoom(dummy_colors(), false, 1.0);
+        assert_eq!(base.spacing_xs, zoomed.spacing_xs);
+        assert_eq!(base.spacing_sm, zoomed.spacing_sm);
+        assert_eq!(base.spacing_md, zoomed.spacing_md);
+        assert_eq!(base.spacing_lg, zoomed.spacing_lg);
+        assert_eq!(base.spacing_xl, zoomed.spacing_xl);
+        assert_eq!(base.font_size_caption, zoomed.font_size_caption);
+        assert_eq!(base.font_size_body, zoomed.font_size_body);
+        assert_eq!(base.font_size_heading, zoomed.font_size_heading);
+        assert_eq!(base.font_size_max, zoomed.font_size_max);
+        assert_eq!(base.border_width, zoomed.border_width);
+        assert_eq!(base.focus_ring_width, zoomed.focus_ring_width);
+        assert_eq!(base.corner_radius, zoomed.corner_radius);
+        assert_eq!(base.item_height_tree, zoomed.item_height_tree);
+        assert_eq!(base.item_height_interactive, zoomed.item_height_interactive);
+        assert_eq!(base.item_height_tab, zoomed.item_height_tab);
+        assert_eq!(base.tab_width, zoomed.tab_width);
+    }
+
+    #[test]
+    fn zoom_one_point_five_doubles_almost_spacing() {
+        // spacing_md=12 → 12 * 1.5 = 18.0 (정수). spacing_sm=8 → 12.
+        let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
+        assert_eq!(t.spacing_md.value(), 18.0);
+        assert_eq!(t.spacing_sm.value(), 12.0);
+        assert_eq!(t.spacing_lg.value(), 24.0);
+        // font_size_body=13 → 13 * 1.5 = 19.5 → round → 20.0
+        assert_eq!(t.font_size_body.value(), 20.0);
+    }
+
+    #[test]
+    fn border_width_unaffected_by_zoom() {
+        let t_small = Theme::with_colors_and_zoom(dummy_colors(), false, 0.85);
+        let t_large = Theme::with_colors_and_zoom(dummy_colors(), false, 1.2);
+        assert_eq!(t_small.border_width.value(), 1.0);
+        assert_eq!(t_large.border_width.value(), 1.0);
+        // tab_width 도 zoom 무관 (탭바 제외 정책).
+        assert_eq!(t_small.tab_width, SIZING.tab_width);
+        assert_eq!(t_large.tab_width, SIZING.tab_width);
     }
 
     #[test]

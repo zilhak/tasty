@@ -32,8 +32,11 @@ fn stroke1(c: HexColor) -> egui::Stroke {
     egui::Stroke::new(1.0, c)
 }
 
-/// Apply this theme to an egui context with UI scale factor.
-pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context, ui_scale: f32) {
+/// Apply this theme to an egui context.
+///
+/// `Theme` 자체가 이미 host UI zoom 배율 (`with_colors_and_zoom`) 을 sizing
+/// 토큰에 반영하고 있다고 가정한다 — 여기서 별도 ui_scale 곱셈 없음.
+pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     // ── 베이스: 라이트/다크 분기 ──
     // light()/dark() 의 기본값에 의존하는 필드는 아래에서 거의 모두 덮어쓴다.
     // 그래도 베이스를 맞춰두면 shadow / text_cursor 등 우리가 매핑하지 않는
@@ -103,31 +106,31 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context, ui_scale: f32) {
     let mut style = (*ctx.style()).clone();
     style.text_styles.insert(
         egui::TextStyle::Body,
-        egui::FontId::proportional((theme.font_size_body.value() * ui_scale).round_ui()),
+        egui::FontId::proportional(theme.font_size_body.value().round_ui()),
     );
     style.text_styles.insert(
         egui::TextStyle::Small,
-        egui::FontId::proportional((theme.font_size_caption.value() * ui_scale).round_ui()),
+        egui::FontId::proportional(theme.font_size_caption.value().round_ui()),
     );
     style.text_styles.insert(
         egui::TextStyle::Heading,
-        egui::FontId::proportional((theme.font_size_heading.value() * ui_scale * 1.15).round_ui()),
+        egui::FontId::proportional((theme.font_size_heading.value() * 1.15).round_ui()),
     );
     style.text_styles.insert(
         egui::TextStyle::Button,
-        egui::FontId::proportional((theme.font_size_body.value() * ui_scale).round_ui()),
+        egui::FontId::proportional(theme.font_size_body.value().round_ui()),
     );
     style.text_styles.insert(
         egui::TextStyle::Monospace,
-        egui::FontId::monospace((theme.font_size_body.value() * ui_scale).round_ui()),
+        egui::FontId::monospace(theme.font_size_body.value().round_ui()),
     );
     style.spacing.item_spacing = egui::vec2(
-        (theme.spacing_sm.value() * ui_scale).round_ui(),
-        (theme.spacing_xs.value() * ui_scale).round_ui(),
+        theme.spacing_sm.value().round_ui(),
+        theme.spacing_xs.value().round_ui(),
     );
     style.spacing.button_padding = egui::vec2(
-        (theme.spacing_sm.value() * ui_scale).round_ui(),
-        (theme.spacing_xs.value() * ui_scale).round_ui(),
+        theme.spacing_sm.value().round_ui(),
+        theme.spacing_xs.value().round_ui(),
     );
     ctx.set_style(style);
 }

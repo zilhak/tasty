@@ -14,15 +14,26 @@ use tasty_type_appearance::theme::Theme;
 /// 두 레이어를 합쳐 실제 적용될 `Theme` 인스턴스를 만든다.
 /// `theme_base` 위에 `theme_overrides` 의 `Some` 필드만 덮어쓴 결과.
 pub fn resolve<C: ThemeApplyContext + ?Sized>(ctx: &C) -> Theme {
+    resolve_with_zoom(ctx, 1.0)
+}
+
+/// `resolve()` 의 일반화 — host UI zoom 배율을 sizing 토큰에 반영한다.
+pub fn resolve_with_zoom<C: ThemeApplyContext + ?Sized>(ctx: &C, ui_zoom: f32) -> Theme {
     let mut colors = ctx.theme_base().clone();
     colors.apply_partial(ctx.theme_overrides());
-    Theme::with_colors(colors, ctx.theme_is_light())
+    Theme::with_colors_and_zoom(colors, ctx.theme_is_light(), ui_zoom)
 }
 
 /// `resolve()` 결과를 전역 `Theme` 에 박는다.
 /// 등록된 plugin surface defaults 도 함께 머지 (사용자 정의 kind 는 보존).
 pub fn install_global<C: ThemeApplyContext + ?Sized>(ctx: &C) {
-    let mut t = resolve(ctx);
+    install_global_with_zoom(ctx, 1.0)
+}
+
+/// `install_global` 의 일반화 — host UI zoom 배율을 반영한 Theme 으로 전역 슬롯
+/// 을 갱신한다.
+pub fn install_global_with_zoom<C: ThemeApplyContext + ?Sized>(ctx: &C, ui_zoom: f32) {
+    let mut t = resolve_with_zoom(ctx, ui_zoom);
     crate::plugin_defaults::apply_plugin_defaults_to(&mut t);
     set_theme(t);
 }

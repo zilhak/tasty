@@ -55,6 +55,9 @@ pub struct GpuState {
     /// the holes around `custom_font_path` and the empty-string font_family
     /// normalization mismatch.
     pub(super) last_term_font_sig: String,
+    /// Last-applied host UI zoom factor. `post_egui_update` rebuilds the Theme
+    /// (via `Theme::with_colors_and_zoom`) when this value changes.
+    pub(super) last_ui_zoom: f32,
     /// Tracks per-surface egui font signatures so we re-register only on change.
     pub(super) surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState,
     /// Plugin Canvas SharedBuffer → wgpu texture cache.
@@ -189,7 +192,9 @@ impl GpuState {
         });
 
         // Apply theme from settings
-        Self::apply_theme(&egui_ctx, &appearance.theme, appearance.ui_scale_factor());
+        let ui_zoom = appearance.ui_scale_factor();
+        tasty_themes::install_global_with_zoom(appearance, ui_zoom);
+        Self::apply_theme(&egui_ctx, &appearance.theme);
 
         let egui_state = egui_winit::State::new(
             egui_ctx.clone(),
@@ -216,6 +221,7 @@ impl GpuState {
             egui_renderer,
             scale_factor,
             last_term_font_sig,
+            last_ui_zoom: ui_zoom,
             surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState::default(),
             canvas_textures: canvas_texture::CanvasTextureCache::new(),
             pending_screenshot: None,
