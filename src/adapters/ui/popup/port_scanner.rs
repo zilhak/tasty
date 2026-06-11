@@ -140,11 +140,7 @@ pub enum PortScannerViewState<'a> {
 pub struct PortScannerFilter<'a> {
     pub show_all_system: bool,
     pub query: &'a str,
-    /// Consumed by PR-5 (sortable header). PR-4 keeps the field for shape.
-    #[allow(dead_code)]
     pub sort_key: SortKey,
-    /// Consumed by PR-5 (sortable header). PR-4 keeps the field for shape.
-    #[allow(dead_code)]
     pub sort_dir: SortDir,
 }
 
@@ -191,9 +187,7 @@ pub enum PortScannerAction {
     OpenEntry(usize),
     SetShowAllSystem(bool),
     SetQuery(String),
-    /// Emitted by PR-5 (header click → toggle sort). PR-4 wires the variant
-    /// but never produces it.
-    #[allow(dead_code)]
+    /// Emitted by header click → toggle sort.
     SetSort(SortKey),
 }
 
@@ -238,13 +232,18 @@ pub fn draw_port_scanner_popup(
         kick_off_scan(state, engine, &ctx, target_show_all_system);
     }
 
-    // 검색 필터링: Ready rows 에 대해서만 적용.
+    // 검색 필터링 + 정렬: Ready rows 에 대해서만 적용. OpenEntry(i) 가 view 에 보이는
+    // 그대로의 index 를 가리키도록 sort 도 wrapper 에서 적용.
     let filtered_rows: Vec<PortRowView> = match &state.port_scan {
-        PortScanState::Ready { rows, .. } => rows
-            .iter()
-            .filter(|r| matches_query(r, &filter_state.query))
-            .cloned()
-            .collect(),
+        PortScanState::Ready { rows, .. } => {
+            let mut v: Vec<PortRowView> = rows
+                .iter()
+                .filter(|r| matches_query(r, &filter_state.query))
+                .cloned()
+                .collect();
+            sort_rows(&mut v, filter_state.sort_key, filter_state.sort_dir);
+            v
+        }
         _ => Vec::new(),
     };
 
@@ -334,6 +333,75 @@ pub fn draw_port_scanner_popup(
             write_filter_state(&ctx, filter_state);
             PopupAction::None
         }
+    }
+}
+
+/// Sort rows in place by the given key + direction. `None` values are always
+/// placed at the tail, regardless of direction (per design — None ≈ "no info,
+/// don't surface").
+pub fn sort_rows(rows: &mut [PortRowView], key: SortKey, dir: SortDir) {
+    rows.sort_by(|a, b| compare_rows(key, dir, a, b));
+}
+
+/// Two-row comparator used by [`sort_rows`]. None-or-empty values for the
+/// active key bubble to the tail regardless of `dir`.
+pub fn compare_rows(
+    key: SortKey,
+    dir: SortDir,
+    a: &PortRowView,
+    b: &PortRowView,
+) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (a_missing, b_missing) = (value_missing(a, key), value_missing(b, key));
+    match (a_missing, b_missing) {
+        (true, true) => return Ordering::Equal,
+        (true, false) => return Ordering::Greater,
+        (false, true) => return Ordering::Less,
+        (false, false) => {}
+    }
+    let ord = match key {
+        SortKey::Port => a.port.cmp(&b.port),
+        SortKey::Address => a.addr_display.cmp(&b.addr_display),
+        SortKey::Pid => a.pid.unwrap_or(0).cmp(&b.pid.unwrap_or(0)),
+        SortKey::Process => a
+            .process_name
+            .as_deref()
+            .unwrap_or("")
+            .cmp(b.process_name.as_deref().unwrap_or("")),
+        SortKey::Workspace => workspace_name(a).cmp(workspace_name(b)),
+        SortKey::Tab => tab_name(a).unwrap_or("").cmp(tab_name(b).unwrap_or("")),
+    };
+    match dir {
+        SortDir::Asc => ord,
+        SortDir::Desc => ord.reverse(),
+    }
+}
+
+/// "Missing" for sort purposes: None pid / no process_name / External source
+/// (for workspace/tab) / Tasty source with no tab_name (for tab only).
+fn value_missing(row: &PortRowView, key: SortKey) -> bool {
+    match key {
+        SortKey::Port | SortKey::Address => false,
+        SortKey::Pid => row.pid.is_none(),
+        SortKey::Process => row.process_name.is_none(),
+        SortKey::Workspace => matches!(row.source, SourceTag::External),
+        SortKey::Tab => tab_name(row).is_none(),
+    }
+}
+
+fn workspace_name(row: &PortRowView) -> &str {
+    match &row.source {
+        SourceTag::Tasty { workspace_name, .. } => workspace_name.as_str(),
+        SourceTag::External => "",
+    }
+}
+
+fn tab_name(row: &PortRowView) -> Option<&str> {
+    match &row.source {
+        SourceTag::Tasty {
+            tab_name: Some(t), ..
+        } => Some(t.as_str()),
+        _ => None,
     }
 }
 
@@ -745,27 +813,25 @@ fn draw_table(
         .column(Column::remainder().at_least(80.0))
         .column(Column::initial(140.0).at_least(100.0))
         .header(text_h + 4.0, |mut header| {
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_port);
-            });
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_proto);
-            });
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_address);
-            });
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_process);
-            });
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_workspace);
-            });
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_tab);
-            });
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_state);
-            });
+            let mut sort_click = |this: Option<SortKey>, ui: &mut egui::Ui, label: &str| {
+                if let Some(k) = draw_header_cell(
+                    ui,
+                    th,
+                    label,
+                    this,
+                    props.filter.sort_key,
+                    props.filter.sort_dir,
+                ) {
+                    out = Some(PortScannerAction::SetSort(k));
+                }
+            };
+            header.col(|ui| sort_click(Some(SortKey::Port), ui, props.label_column_port));
+            header.col(|ui| sort_click(None, ui, props.label_column_proto));
+            header.col(|ui| sort_click(Some(SortKey::Address), ui, props.label_column_address));
+            header.col(|ui| sort_click(Some(SortKey::Process), ui, props.label_column_process));
+            header.col(|ui| sort_click(Some(SortKey::Workspace), ui, props.label_column_workspace));
+            header.col(|ui| sort_click(Some(SortKey::Tab), ui, props.label_column_tab));
+            header.col(|ui| sort_click(None, ui, props.label_column_state));
         })
         .body(|mut body| {
             for (i, row) in rows.iter().enumerate() {
@@ -816,13 +882,45 @@ fn draw_table(
     out
 }
 
-fn draw_header_cell(ui: &mut egui::Ui, th: &Theme, label: &str) {
-    ui.label(
-        egui::RichText::new(label)
-            .color(th.subtext0)
-            .size(th.font_size_caption.value())
-            .strong(),
-    );
+/// Header cell. When `this_col` is `Some`, the cell is sortable: it picks up
+/// a click sense, draws ▲/▼ when active, and returns the [`SortKey`] on click.
+/// When `None` (Proto / State), the cell is static text.
+fn draw_header_cell(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    label: &str,
+    this_col: Option<SortKey>,
+    active_key: SortKey,
+    active_dir: SortDir,
+) -> Option<SortKey> {
+    let is_active = this_col.map(|k| k == active_key).unwrap_or(false);
+    let arrow = if is_active {
+        match active_dir {
+            SortDir::Asc => " ▲",
+            SortDir::Desc => " ▼",
+        }
+    } else {
+        ""
+    };
+    let text = if arrow.is_empty() {
+        label.to_string()
+    } else {
+        format!("{label}{arrow}")
+    };
+    let rich = egui::RichText::new(text)
+        .color(if is_active { th.text } else { th.subtext0 })
+        .size(th.font_size_caption.value())
+        .strong();
+    match this_col {
+        Some(key) => {
+            let resp = ui.add(egui::Label::new(rich).sense(egui::Sense::click()));
+            if resp.clicked() { Some(key) } else { None }
+        }
+        None => {
+            ui.label(rich);
+            None
+        }
+    }
 }
 
 /// Process 셀: process_name + PID 배지.
@@ -1185,6 +1283,120 @@ mod tests {
     fn loading_state_renders_without_panic() {
         let action = run_view_state(PortScannerViewState::Loading, "", false);
         assert_eq!(action, PortScannerAction::None);
+    }
+
+    fn row_with(port: u16, pid: Option<u32>, process: Option<&str>) -> PortRowView {
+        PortRowView {
+            port,
+            addr_display: "127.0.0.1".into(),
+            pid,
+            process_name: process.map(str::to_string),
+            source: SourceTag::External,
+        }
+    }
+
+    #[test]
+    fn sort_toggle_same_column_flips_direction() {
+        // Mirrors the wrapper's SetSort logic — same key → flip dir.
+        let mut fs = FilterState {
+            sort_key: SortKey::Port,
+            sort_dir: SortDir::Asc,
+            ..FilterState::default()
+        };
+        // Same column click.
+        let key = SortKey::Port;
+        if fs.sort_key == key {
+            fs.sort_dir = match fs.sort_dir {
+                SortDir::Asc => SortDir::Desc,
+                SortDir::Desc => SortDir::Asc,
+            };
+        } else {
+            fs.sort_key = key;
+            fs.sort_dir = SortDir::Asc;
+        }
+        assert_eq!(fs.sort_key, SortKey::Port);
+        assert_eq!(fs.sort_dir, SortDir::Desc);
+
+        // Different column click.
+        let key = SortKey::Address;
+        if fs.sort_key == key {
+            fs.sort_dir = match fs.sort_dir {
+                SortDir::Asc => SortDir::Desc,
+                SortDir::Desc => SortDir::Asc,
+            };
+        } else {
+            fs.sort_key = key;
+            fs.sort_dir = SortDir::Asc;
+        }
+        assert_eq!(fs.sort_key, SortKey::Address);
+        assert_eq!(fs.sort_dir, SortDir::Asc);
+    }
+
+    #[test]
+    fn sort_puts_none_last_for_both_directions() {
+        // SortKey::Pid: row with Some(pid) vs row with None.
+        let some = row_with(3000, Some(10), None);
+        let none = row_with(3000, None, None);
+        // Asc: Some before None.
+        assert_eq!(
+            compare_rows(SortKey::Pid, SortDir::Asc, &some, &none),
+            std::cmp::Ordering::Less,
+        );
+        // Desc: still Some before None — None is sticky to the tail.
+        assert_eq!(
+            compare_rows(SortKey::Pid, SortDir::Desc, &some, &none),
+            std::cmp::Ordering::Less,
+        );
+
+        // Reverse arguments: None first → must report Greater (= goes behind).
+        assert_eq!(
+            compare_rows(SortKey::Pid, SortDir::Asc, &none, &some),
+            std::cmp::Ordering::Greater,
+        );
+        assert_eq!(
+            compare_rows(SortKey::Pid, SortDir::Desc, &none, &some),
+            std::cmp::Ordering::Greater,
+        );
+    }
+
+    #[test]
+    fn sort_port_asc_then_desc() {
+        let mut rows = vec![row_with(8080, None, None), row_with(80, None, None)];
+        sort_rows(&mut rows, SortKey::Port, SortDir::Asc);
+        assert_eq!(rows[0].port, 80);
+        assert_eq!(rows[1].port, 8080);
+        sort_rows(&mut rows, SortKey::Port, SortDir::Desc);
+        assert_eq!(rows[0].port, 8080);
+        assert_eq!(rows[1].port, 80);
+    }
+
+    #[test]
+    fn sort_process_keeps_none_at_tail_with_desc() {
+        let mut rows = vec![
+            row_with(1, Some(1), None),
+            row_with(2, Some(2), Some("alpha")),
+            row_with(3, Some(3), Some("zulu")),
+        ];
+        sort_rows(&mut rows, SortKey::Process, SortDir::Desc);
+        // Desc: zulu before alpha; None always last.
+        assert_eq!(rows[0].process_name.as_deref(), Some("zulu"));
+        assert_eq!(rows[1].process_name.as_deref(), Some("alpha"));
+        assert_eq!(rows[2].process_name, None);
+    }
+
+    #[test]
+    fn sort_workspace_treats_external_as_missing() {
+        let tasty = tasty_row(3000, "frontend", Some("tab1"));
+        let external = dummy_row(3000);
+        // workspace: Tasty has name, External is "missing" → External tail.
+        assert_eq!(
+            compare_rows(SortKey::Workspace, SortDir::Asc, &tasty, &external),
+            std::cmp::Ordering::Less,
+        );
+        assert_eq!(
+            compare_rows(SortKey::Workspace, SortDir::Desc, &tasty, &external),
+            std::cmp::Ordering::Less,
+        );
     }
 
     #[test]
