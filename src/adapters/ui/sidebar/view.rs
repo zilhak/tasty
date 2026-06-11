@@ -9,6 +9,11 @@
 use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 
+/// 사이드바 헤더 (full / collapsed) 에 표시되는 수박 로고 PNG.
+/// `egui_extras::install_image_loaders` (gpu.rs) 가 PNG 디코딩을 처리한다.
+const LOGO_PNG: &[u8] = include_bytes!("../../../../assets/icons/icon_256.png");
+const LOGO_URI: &str = "bytes://tasty_sidebar_logo_256.png";
+
 /// Full / Collapsed 공통 — 사이드바 한 행 (workspace card / square) 에 들어가는
 /// 데이터. AppState / CoreState 모두 비의존인 owned/snapshot 값.
 #[derive(Debug, Clone)]
@@ -307,13 +312,20 @@ pub fn draw_collapsed_sidebar_view(
     let mut actions: Vec<SidebarCollapsedAction> = Vec::new();
     let th = props.theme;
 
-    // 헤더 — 펼치기(») 버튼 (ui_kit CollapsedSidebar 상단).
+    // 헤더 — 로고 + 펼치기(») 버튼 (ui_kit CollapsedSidebar 상단).
     egui::TopBottomPanel::top("workspace_sidebar_collapsed_header")
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
         .show_inside(ui, |ui| {
             ui.add_space(10.0);
             ui.vertical_centered(|ui| {
+                // 로고 24x24 — 상단, expand 버튼 위.
+                let (logo_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
+                    .fit_to_exact_size(egui::vec2(24.0, 24.0))
+                    .paint_at(ui, logo_rect);
+                ui.add_space(4.0);
                 let (rect, resp) =
                     ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
                 if resp.hovered() {
@@ -497,6 +509,12 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
     let mut collapse = false;
     ui.horizontal(|ui| {
         ui.add_space(6.0);
+        // 로고 (수박 PNG) — 워드마크 좌측, gap 8.
+        let (logo_rect, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+        egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
+            .fit_to_exact_size(egui::vec2(22.0, 22.0))
+            .paint_at(ui, logo_rect);
+        ui.add_space(8.0);
         let mut job = egui::text::LayoutJob::default();
         let font = egui::FontId::monospace(17.0);
         job.append(
@@ -526,10 +544,11 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
                 ui.painter()
                     .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
             }
+            // 평소: subtext1 (--text-secondary), hover: text (--text-primary). 톤 한 단계 상향.
             let color: egui::Color32 = if resp.hovered() {
-                th.subtext1.into()
+                th.text.into()
             } else {
-                th.overlay0.into()
+                th.subtext1.into()
             };
             icons::CHEVRONS_LEFT.image(16.0, color).paint_at(
                 ui,
@@ -564,7 +583,12 @@ fn paint_icon_button(
     glyph: &str,
     font_size: f32,
 ) {
-    if resp.hovered() {
+    // pressed (마우스 누른 채 위) > hover > idle. pressed 가 우선, 배경만 강화.
+    let pressed = resp.is_pointer_button_down_on();
+    if pressed {
+        ui.painter()
+            .rect_filled(rect, 4.0, th.active_overlay.to_egui_premultiplied());
+    } else if resp.hovered() {
         ui.painter()
             .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
@@ -573,7 +597,7 @@ fn paint_icon_button(
         egui::Align2::CENTER_CENTER,
         glyph,
         egui::FontId::proportional(font_size),
-        if resp.hovered() {
+        if resp.hovered() || pressed {
             th.subtext1.into()
         } else {
             th.overlay0.into()
