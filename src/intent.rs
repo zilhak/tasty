@@ -3,6 +3,10 @@
 // 본질적으로 gui 어댑터의 API 면 + IPC handler 경유 후보이므로 *headless 한정*
 // 으로 dead_code/unused_imports 를 침묵 — gui 빌드에서는 검사 그대로.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
+// 본 모듈의 `from_*` 메서드는 `From` trait 변환이 아니라 *intent 의 dispatch
+// source 부착* 의미 (예: `intent.from_user_shortcut(id)` = "이 intent 는 사용자
+// 단축키로 발화되었다고 표시"). 따라서 `self` 를 받는 것이 의도된 형태.
+#![allow(clippy::wrong_self_convention)]
 
 //! Host-internal action dispatch (Intent 큐).
 //!
@@ -11,6 +15,10 @@
 //! 발화자는 `AppState::dispatch_intent`로 `DispatchedIntent`를 push만 한다.
 //! 메인 루프의 `App::dispatch_pending_intents`가 drain 하여 도메인별 핸들러
 //! (`intent::popup`, `intent::preset`, ...)로 분기한다. fire-and-forget.
+//!
+//! 본 모듈의 `from_*` 메서드는 `From` trait 변환이 아니라 *intent 의 dispatch
+//! source 부착* 의미. `self` 를 받는 것이 의도된 형태이며
+//! `clippy::wrong_self_convention` 은 모듈 단위로 허용한다.
 
 pub mod closed_item;
 pub mod pane;
