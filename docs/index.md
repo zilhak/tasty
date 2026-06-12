@@ -74,6 +74,7 @@
 | [dev-guide/agent-runner.md](dev-guide/agent-runner.md) | Agent task runner — TaskExecutor trait, HostExecutor 매핑, RunnerRegistry, host→plugin sync IPC |
 | [dev-guide/agent-runner-primitives.md](dev-guide/agent-runner-primitives.md) | Agent primitive 통합 — semaphore-gated dispatch, WaitBarrier task, IPC rate_limit 미들웨어 |
 | [dev-guide/commit-convention.md](dev-guide/commit-convention.md) | Conventional Commits 형식, type 목록, 단위 분할 기준 |
+| [dev-guide/dep-issues.md](dev-guide/dep-issues.md) | 의존성 이슈 모니터링 — block v0.1.6 future-incompat 점검 방법과 전환 트리거 |
 
 ## AI 자체 검증 지침
 
