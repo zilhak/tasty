@@ -14,6 +14,7 @@ use crate::view::ui::View;
 /// - OS 네이티브 포커스에 독립적으로 참여
 /// - 모달이 활성 상태일 때만 입력 차단됨
 /// - 내부에 Surface 트리를 호스팅 (개수/구조는 구현체마다 상이)
+///
 /// `impl TerminalHostView for MainView {}` 가 존재하지만 trait object 사용 0.
 /// 도메인 계열 표현과 미래 StandaloneSurfaceWindow/StandaloneWorkspaceWindow
 /// placeholder로 보존.

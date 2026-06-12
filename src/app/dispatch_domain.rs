@@ -1609,6 +1609,7 @@ fn find_surface_location(
 /// active_workspace 인덱스를 보정한다.
 /// - 이동한 ws 가 active 였으면 따라간다 (`active = to`).
 /// - from 과 to 사이를 자기 위치가 통과하면 shift 보정.
+///
 /// IPC handler 도 직접 호출 가능.
 pub(crate) fn cascade_workspace_moved(
     state: &mut crate::state::AppState,

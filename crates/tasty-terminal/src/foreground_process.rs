@@ -1,7 +1,7 @@
-/// Foreground process detection for PTY child processes.
-///
-/// Returns (process_name, pid) of the foreground process group leader
-/// for the controlling terminal of the given shell PID.
+//! Foreground process detection for PTY child processes.
+//!
+//! Returns (process_name, pid) of the foreground process group leader
+//! for the controlling terminal of the given shell PID.
 
 /// Info about the foreground process.
 #[derive(Debug, Clone)]
