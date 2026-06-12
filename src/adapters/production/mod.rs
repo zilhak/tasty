@@ -11,11 +11,8 @@ pub mod directories_home;
 #[cfg(not(feature = "gui"))]
 pub mod headless_waker;
 pub mod notification_sound;
-pub mod portable_pty;
 pub mod std_clock;
 pub mod std_fs;
 pub mod std_process;
 pub mod stream_hub;
 pub mod tcp_ipc_server;
-#[cfg(feature = "gui")]
-pub mod winit_waker;

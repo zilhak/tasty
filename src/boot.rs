@@ -171,7 +171,7 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
         }
     };
 
-    let mut app = App::new_headless(waker.terminal_waker(), cli.port_file, memory_arc)?;
+    let mut app = App::new_headless(cli.port_file, memory_arc)?;
     let stream_ctx = crate::adapters::production::stream_hub::StreamContext {
         hub: app.stream_hub.clone(),
         inbound_tx: app.stream_inbound_tx.clone(),

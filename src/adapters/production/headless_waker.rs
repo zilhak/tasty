@@ -1,7 +1,7 @@
-//! Headless 빌드 / `--headless` 모드용 IpcWaker + TerminalWaker.
+//! Headless 빌드 / `--headless` 모드용 IpcWaker + WakerFactory.
 //!
-//! `winit_waker.rs` 와 동등 시그니처. winit `EventLoopProxy` 대신 `mpsc::Sender`
-//! 를 통해 [`crate::AppEvent`] 를 push — `boot::run_headless` 의 receiver loop 가
+//! gui 빌드의 winit `EventLoopProxy` 대신 `mpsc::Sender` 를 통해
+//! [`crate::AppEvent`] 를 push — `boot::run_headless` 의 receiver loop 가
 //! 깨어난다.
 
 use std::collections::HashMap;
@@ -15,7 +15,6 @@ use tasty_terminal::waker_factory::{SharedWakerFactory, WakerFactory};
 
 use crate::AppEvent;
 use crate::ipc::server::IpcWaker;
-use crate::ports::pty::TerminalWaker;
 
 /// Headless 모드 waker factory. `mpsc::Sender<AppEvent>` 한 개를 clone 해서
 /// IPC / PTY waker 두 가지로 fan-out 한다.
@@ -43,13 +42,6 @@ impl HeadlessWaker {
         let tx = self.tx.clone();
         Arc::new(move || {
             let _ = tx.send(AppEvent::StreamReady); // shutdown race — drop quietly.
-        })
-    }
-
-    /// PTY reader 스레드가 호출하는 waker. `TerminalOutput(surface_id?)` 발화.
-    pub(crate) fn terminal_waker(&self) -> Arc<dyn TerminalWaker> {
-        Arc::new(HeadlessTerminalWaker {
-            tx: self.tx.clone(),
         })
     }
 
@@ -118,17 +110,6 @@ impl WakerFactory for HeadlessWakerFactory {
             }
             None => self.default_gate.store(false, Ordering::Release),
         }
-    }
-}
-
-struct HeadlessTerminalWaker {
-    tx: Sender<AppEvent>,
-}
-
-impl TerminalWaker for HeadlessTerminalWaker {
-    fn wake(&self, surface_id: Option<u32>) {
-        // receiver shutdown race 는 무시 (정상 shutdown 시퀀스).
-        let _ = self.tx.send(AppEvent::TerminalOutput(surface_id)); // shutdown race — drop quietly.
     }
 }
 

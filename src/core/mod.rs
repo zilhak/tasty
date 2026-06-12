@@ -41,7 +41,6 @@ use crate::ports::fs::FileSystem;
 use crate::ports::home::HomeDirectory;
 use crate::ports::notification_sound::NotificationSoundPlayer;
 use crate::ports::process::ProcessSpawner;
-use crate::ports::pty::{PtyService, TerminalWaker};
 
 /// Helper: layout / tab_bar 기반으로 surface_id 별 *목표 grid (cols, rows)* 를
 /// 수집. 본 helper 는 read-only 로 workspaces 만 순회한다 — `terminals` store 에는
@@ -97,7 +96,7 @@ fn terminal_surface_in_tab(
         .downcast_ref::<crate::model::TerminalSurface>()
 }
 
-/// 도메인 본체. 11 outbound port (7 external + 4 internal) + preset_store 직속.
+/// 도메인 본체. 9 outbound port (5 external + 4 internal) + preset_store 직속.
 ///
 /// 도메인 데이터 (`crate::core::CoreState`) 는 본 struct 가 아닌
 /// `App.core_state` 가 main owner — Phase D 진행 중의 *공존 layer*. D.3.C
@@ -105,8 +104,6 @@ fn terminal_surface_in_tab(
 #[allow(dead_code)]
 pub(crate) struct Core {
     // ─── External ports (bin 안 정의, src/ports/) ───
-    pty: Arc<dyn PtyService>,
-    waker: Arc<dyn TerminalWaker>,
     fs: Arc<dyn FileSystem>,
     clock: Arc<dyn Clock>,
     clipboard: Arc<dyn ClipboardSystem>,

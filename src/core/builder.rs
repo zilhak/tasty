@@ -16,7 +16,6 @@ use crate::ports::fs::FileSystem;
 use crate::ports::home::HomeDirectory;
 use crate::ports::notification_sound::NotificationSoundPlayer;
 use crate::ports::process::ProcessSpawner;
-use crate::ports::pty::{PtyService, TerminalWaker};
 
 /// Builder for `Core`. 모든 port 가 주입돼야 `build()` 가 성공.
 ///
@@ -25,8 +24,6 @@ use crate::ports::pty::{PtyService, TerminalWaker};
 /// 두 필드의 owner 일관성 자동 보장.
 #[allow(dead_code)]
 pub(crate) struct CoreBuilder {
-    pty: Option<Arc<dyn PtyService>>,
-    waker: Option<Arc<dyn TerminalWaker>>,
     fs: Option<Arc<dyn FileSystem>>,
     clock: Option<Arc<dyn Clock>>,
     clipboard: Option<Arc<dyn ClipboardSystem>>,
@@ -43,8 +40,6 @@ pub(crate) struct CoreBuilder {
 impl CoreBuilder {
     pub(crate) fn new() -> Self {
         Self {
-            pty: None,
-            waker: None,
             fs: None,
             clock: None,
             clipboard: None,
@@ -58,14 +53,6 @@ impl CoreBuilder {
         }
     }
 
-    pub(crate) fn with_pty(mut self, pty: Arc<dyn PtyService>) -> Self {
-        self.pty = Some(pty);
-        self
-    }
-    pub(crate) fn with_waker(mut self, waker: Arc<dyn TerminalWaker>) -> Self {
-        self.waker = Some(waker);
-        self
-    }
     pub(crate) fn with_fs(mut self, fs: Arc<dyn FileSystem>) -> Self {
         self.fs = Some(fs);
         self
@@ -110,7 +97,7 @@ impl CoreBuilder {
         self
     }
 
-    /// 모든 11 port 가 주입됐는지 확인 후 Core 생성.
+    /// 모든 9 port 가 주입됐는지 확인 후 Core 생성.
     pub(crate) fn build(self) -> anyhow::Result<Core> {
         let preset_store = self
             .preset_store
@@ -118,12 +105,6 @@ impl CoreBuilder {
         // `presets` (trait Arc) 는 `preset_store` 와 *같은 allocation* — coerce 로 type 만 변경.
         let presets: Arc<Mutex<dyn PresetStorage>> = preset_store.clone();
         Ok(Core {
-            pty: self
-                .pty
-                .ok_or_else(|| anyhow::anyhow!("PtyService missing"))?,
-            waker: self
-                .waker
-                .ok_or_else(|| anyhow::anyhow!("TerminalWaker missing"))?,
             fs: self
                 .fs
                 .ok_or_else(|| anyhow::anyhow!("FileSystem missing"))?,

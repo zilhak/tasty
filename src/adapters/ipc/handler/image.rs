@@ -289,17 +289,12 @@ mod tests {
 
         use crate::adapters::test::{
             fake_clock::FakeClock, mem_fs::MemFileSystem, mock_clipboard::MockClipboard,
-            mock_process::MockProcessSpawner, mock_pty::MockPtyService,
-            mock_waker::MockTerminalWaker, tmp_home::TmpHome,
+            mock_process::MockProcessSpawner, tmp_home::TmpHome,
         };
         use crate::core::builder::CoreBuilder;
         use crate::ports::notification_sound::NoopPlayer;
-        use crate::ports::pty::TerminalWaker;
 
-        // CoreState 의 waker (Arc<dyn Fn() + Send + Sync>) 와 Core 의 PTY-side
-        // waker (Arc<dyn TerminalWaker>) 는 서로 다른 trait object 이므로 별 생성.
         let term_waker: crate::terminal::Waker = Arc::new(|| {});
-        let port_waker: Arc<dyn TerminalWaker> = Arc::new(MockTerminalWaker::new());
 
         let mut engine = crate::core::CoreState::new(80, 24, term_waker).unwrap();
 
@@ -316,8 +311,6 @@ mod tests {
         let home = TmpHome::new(home_tmp.path().to_path_buf());
 
         let core = CoreBuilder::new()
-            .with_pty(Arc::new(MockPtyService::new()))
-            .with_waker(port_waker)
             .with_fs(Arc::new(MemFileSystem::new()))
             .with_clock(Arc::new(FakeClock::default()))
             .with_clipboard(Arc::new(MockClipboard::default()))

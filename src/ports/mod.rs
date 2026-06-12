@@ -9,8 +9,7 @@
 //! ## 위치 분기
 //!
 //! - **External crate 의존** — 본 모듈 (`src/ports/`).
-//!   PtyService, FileSystem, Clock, ClipboardSystem, ProcessSpawner, HomeDirectory,
-//!   TerminalWaker.
+//!   FileSystem, Clock, ClipboardSystem, ProcessSpawner, HomeDirectory.
 //!
 //! ## Hub 의 외부 통신
 //!
@@ -34,4 +33,3 @@ pub mod inbound;
 pub mod ipc_server;
 pub mod notification_sound;
 pub mod process;
-pub mod pty;

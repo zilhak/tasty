@@ -151,7 +151,7 @@ impl App {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
         let (auto_attach_tx, auto_attach_rx) = std::sync::mpsc::channel();
         Ok(Self {
-            core: crate::boot::wiring::build_production_core(proxy.clone(), memory)?,
+            core: crate::boot::wiring::build_production_core(memory)?,
             hub: Hub::new(port_file),
             stream_hub: crate::adapters::production::stream_hub::StreamHub::new(),
             stream_inbound_tx,
@@ -183,13 +183,12 @@ impl App {
     /// Headless 부트 — winit/wgpu/egui 0. mpsc 기반 waker.
     #[cfg(not(feature = "gui"))]
     pub(crate) fn new_headless(
-        terminal_waker: std::sync::Arc<dyn crate::ports::pty::TerminalWaker>,
         port_file: Option<String>,
         memory: Option<std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>>,
     ) -> anyhow::Result<Self> {
         let (stream_inbound_tx, stream_inbound_rx) = std::sync::mpsc::channel();
         Ok(Self {
-            core: crate::boot::wiring::build_production_core_headless(terminal_waker, memory)?,
+            core: crate::boot::wiring::build_production_core_headless(memory)?,
             hub: Hub::new(port_file),
             stream_hub: crate::adapters::production::stream_hub::StreamHub::new(),
             stream_inbound_tx,

@@ -1,4 +1,4 @@
-//! Production DI wiring — `Core` 의 11 port 에 production adapter 주입.
+//! Production DI wiring — `Core` 의 9 port 에 production adapter 주입.
 //!
 //! 호출처는 `App::new` (또는 향후 entrypoint). test 시 별 wiring (`CoreBuilder`
 //! 에 mock adapter 주입).
@@ -9,23 +9,19 @@ use tasty_memory::MemoryStorage;
 use tasty_presets::PresetStore;
 use tasty_settings::{FileSettingsStorage, SettingsStorage};
 use tasty_themes::{ThemeStorage, ThemeStore};
-#[cfg(feature = "gui")]
-use winit::event_loop::EventLoopProxy;
 
 #[cfg(feature = "gui")]
-use crate::AppEvent;
+use crate::adapters::production::arboard_clip::ArboardClipboard;
 #[cfg(feature = "gui")]
 use crate::adapters::production::notification_sound::PlatformPlayer;
-#[cfg(feature = "gui")]
-use crate::adapters::production::{arboard_clip::ArboardClipboard, winit_waker::WinitWaker};
 use crate::adapters::production::{
-    directories_home::DirectoriesHome, portable_pty::PortablePtyService, std_clock::SystemClock,
-    std_fs::StdFileSystem, std_process::StdProcessSpawner,
+    directories_home::DirectoriesHome, std_clock::SystemClock, std_fs::StdFileSystem,
+    std_process::StdProcessSpawner,
 };
 use crate::core::Core;
 use crate::core::builder::CoreBuilder;
 
-/// Production `Core` 빌드. winit proxy 가 필요한 `WinitWaker` 때문에 인자 1 개.
+/// Production `Core` 빌드.
 ///
 /// Memory: boot 가 `tasty_memory::init_with_config` 로 새 `Arc<Mutex<MemoryStore>>`
 /// 를 만들어 본 함수에 전달. Core 가 그 Arc 의 유일 owner — 모든 하위 표면
@@ -35,23 +31,19 @@ use crate::core::builder::CoreBuilder;
 /// 로 fallback 해 앱 자체는 기동시킨다 — handler 가 자체적으로 store 의 가용성을 평가.
 #[cfg(feature = "gui")]
 pub(crate) fn build_production_core(
-    proxy: EventLoopProxy<AppEvent>,
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
 ) -> anyhow::Result<Core> {
-    let waker: Arc<dyn crate::ports::pty::TerminalWaker> = Arc::new(WinitWaker::new(proxy));
     let clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem> = Arc::new(ArboardClipboard);
     // PlatformPlayer 는 OS 별 alias — macOS+gui = MacBeepPlayer, Windows =
     // WinBeepPlayer, Linux = LinuxBeepPlayer, headless macOS / 그 외 = NoopPlayer.
     let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
         Arc::new(PlatformPlayer);
-    build_production_core_inner(waker, clipboard, sound_player, memory_arc)
+    build_production_core_inner(clipboard, sound_player, memory_arc)
 }
 
-/// Headless variant — gui-only adapter 의존성 (winit_waker, arboard) 을 제외.
-/// terminal_waker 는 `HeadlessWaker::terminal_waker()` 가 제공.
+/// Headless variant — gui-only adapter 의존성 (arboard) 을 제외.
 #[cfg(not(feature = "gui"))]
 pub(crate) fn build_production_core_headless(
-    terminal_waker: Arc<dyn crate::ports::pty::TerminalWaker>,
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
 ) -> anyhow::Result<Core> {
     // headless 빌드는 clipboard 가 안 쓰이지만 ClipboardSystem trait 를 구현하는
@@ -60,16 +52,14 @@ pub(crate) fn build_production_core_headless(
     // headless 빌드도 sound 재생 미지원 — NoopPlayer 명시 주입.
     let sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer> =
         Arc::new(crate::ports::notification_sound::NoopPlayer);
-    build_production_core_inner(terminal_waker, clipboard, sound_player, memory_arc)
+    build_production_core_inner(clipboard, sound_player, memory_arc)
 }
 
 fn build_production_core_inner(
-    waker: Arc<dyn crate::ports::pty::TerminalWaker>,
     clipboard: Arc<dyn crate::ports::clipboard::ClipboardSystem>,
     sound_player: Arc<dyn crate::ports::notification_sound::NotificationSoundPlayer>,
     memory_arc: Option<Arc<Mutex<tasty_memory::MemoryStore>>>,
 ) -> anyhow::Result<Core> {
-    let pty: Arc<dyn crate::ports::pty::PtyService> = Arc::new(PortablePtyService);
     let fs: Arc<dyn crate::ports::fs::FileSystem> = Arc::new(StdFileSystem);
     let clock: Arc<dyn crate::ports::clock::Clock> = Arc::new(SystemClock);
     let process: Arc<dyn crate::ports::process::ProcessSpawner> = Arc::new(StdProcessSpawner);
@@ -90,8 +80,6 @@ fn build_production_core_inner(
     let settings_storage: Arc<dyn SettingsStorage> = Arc::new(FileSettingsStorage);
 
     CoreBuilder::new()
-        .with_pty(pty)
-        .with_waker(waker)
         .with_fs(fs)
         .with_clock(clock)
         .with_clipboard(clipboard)

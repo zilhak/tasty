@@ -25,7 +25,7 @@ impl Hub {
 
     /// IPC 서버 시작. `IpcWaker` 는 호출자가 직접 만든다 — gui 빌드는
     /// `EventLoopProxy<AppEvent>` 에서 변환, headless 는 `mpsc::Sender<AppEvent>`
-    /// 에서 변환 (`adapters::production::{winit_waker, headless_waker}`).
+    /// 에서 변환 (`adapters::production::headless_waker`).
     ///
     /// 반환: host→plugin sync dispatch 에 사용할 `HostIpcInjector` (서버 시작
     /// 실패 시 `None`). 호출자가 `Core::set_host_ipc_injector` 로 등록한다.
