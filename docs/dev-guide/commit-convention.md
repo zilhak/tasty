@@ -56,6 +56,14 @@ refactor(state): extract pane split logic into intent module
 
 body 가 길어지면 별도 design 문서를 만들고 커밋에서는 그 문서를 참조하는 게 낫다.
 
+## ADR 커밋
+
+ADR ([`../adr/index.md`](../adr/index.md)) 관련 커밋은 `docs(adr)` scope 를 권장한다.
+
+- 신규 작성: `docs(adr): add ADR-XXXX <slug>`
+- Supersede: `docs(adr): supersede ADR-XXXX by ADR-YYYY`
+- Deprecate: `docs(adr): deprecate ADR-XXXX`
+
 ## 릴리스 커밋
 
 릴리스용 버전 bump 커밋은 별도 형식을 따른다. [`release.md`](release.md) 의 "커밋 작성" 항목 참조.

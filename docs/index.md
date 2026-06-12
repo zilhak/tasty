@@ -89,6 +89,15 @@
 | [ai-verification/windows-process-cleanup.md](ai-verification/windows-process-cleanup.md) | Windows 프로세스 트리 종료 |
 | [ai-verification/ime-testing.md](ai-verification/ime-testing.md) | IME 시뮬레이션을 이용한 디버깅 가이드 |
 
+## ADR (결정 기록)
+
+아키텍처/정책 결정의 근거·대안·재검토 조건을 기록한다. 신규 작성은 [adr/template.md](adr/template.md) 양식.
+
+| 문서 | 설명 |
+|------|------|
+| [adr/index.md](adr/index.md) | ADR 목록 (번호 / 상태 / 날짜 / 태그) |
+| [adr/0001-linux-system-tray-unsupported.md](adr/0001-linux-system-tray-unsupported.md) | ADR-0001 — Linux 시스템 트레이 미지원 결정 (DE 분열, 태스크바 유지로 충분) |
+
 ## 디자인 문서
 
 | 문서 | 설명 |
@@ -109,7 +118,7 @@
 | [design/typed-length.md](design/typed-length.md) | 타입 안전 길이 시스템 — PhysicalPx/LogicalPx newtype, DPI 혼동 방지 |
 | [design/cwd-policy.md](design/cwd-policy.md) | CWD 정책 — OSC 7 기반 CWD 감지 (모든 플랫폼 공통) |
 | [design/explorer-context-menu.md](design/explorer-context-menu.md) | Explorer 컨텍스트 메뉴 — 우클릭 대상 결정, 메뉴 항목 분기, 액션 동작 정의 |
-| [design/linux-system-tray.md](design/linux-system-tray.md) | Linux 시스템 트레이 미지원 결정 — DE 분열, GNOME 기본 미지원, 태스크바 유지로 충분 |
+| [design/linux-system-tray.md](design/linux-system-tray.md) | Linux 시스템 트레이 미지원 정책 — 운영 측 상세 (백그라운드 동선, `tray-icon` cfg(windows) 한정). 결정 근거는 ADR-0001 |
 | [design/busy-indicator.md](design/busy-indicator.md) | 실행 중 표시 — 탭/워크스페이스 busy 판정 정책, 시각 표시, 플랫폼별 foreground 감지 |
 | [design/memory-system.md](design/memory-system.md) | 에이전트 메모리 — regular/secret 두 계층, owner 자동 도출, plugin 별 사전 분할 |
 | [design/lua-hooks.md](design/lua-hooks.md) | Lua hook 설계 — host 전용·observe-only·event matrix·사용자-직접 변경 의미 |
