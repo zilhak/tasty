@@ -20,6 +20,11 @@ pub trait WakerFactory: Send + Sync + 'static {
 
     /// surface 식별 없이 "뭔가 도착했음" 일반 waker.
     fn make_default_waker(&self) -> Waker;
+
+    /// dedup 게이트 리셋: `Some(sid)` 면 해당 surface 의 게이트, `None` 이면 글로벌
+    /// default 게이트를 푼다. event handler 가 PTY 채널 drain *직전* 에 호출해야,
+    /// drain 과 경합하는 wake 가 스킵되어 유실되는 것을 막는다.
+    fn note_drained(&self, surface_id: Option<u32>);
 }
 
 /// 공용 핸들 — `CoreState` 에 보관되며 `Arc::clone` 으로 PTY 리더 스레드에 분배된다.
@@ -35,4 +40,5 @@ impl WakerFactory for NoopWakerFactory {
     fn make_default_waker(&self) -> Waker {
         Arc::new(|| {})
     }
+    fn note_drained(&self, _surface_id: Option<u32>) {}
 }

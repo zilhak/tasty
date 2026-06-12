@@ -4,7 +4,10 @@
 //! 를 통해 [`crate::AppEvent`] 를 push — `boot::run_headless` 의 receiver loop 가
 //! 깨어난다.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 
 use tasty_terminal::Waker;
@@ -55,6 +58,8 @@ impl HeadlessWaker {
     pub(crate) fn waker_factory(&self) -> SharedWakerFactory {
         Arc::new(HeadlessWakerFactory {
             tx: self.tx.clone(),
+            default_gate: Arc::new(AtomicBool::new(false)),
+            targeted_gates: Mutex::new(HashMap::new()),
         })
     }
 }
@@ -63,12 +68,26 @@ impl HeadlessWaker {
 /// `CoreState::make_waker` 가 surface 별 targeted waker 를 발급할 때 사용한다.
 pub(crate) struct HeadlessWakerFactory {
     tx: Sender<AppEvent>,
+    /// `WinitWakerFactory` 와 동일한 dual gate (research §5). None 은 전체 drain
+    /// 이라 글로벌 1 개, Some 은 surface 단위 drain 이라 surface 별 게이트.
+    default_gate: Arc<AtomicBool>,
+    targeted_gates: Mutex<HashMap<u32, Arc<AtomicBool>>>,
 }
 
 impl WakerFactory for HeadlessWakerFactory {
     fn make_targeted_waker(&self, surface_id: u32) -> Waker {
         let tx = self.tx.clone();
+        let gate = self
+            .targeted_gates
+            .lock()
+            .expect("HeadlessWakerFactory targeted_gates poisoned")
+            .entry(surface_id)
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+            .clone();
         Arc::new(move || {
+            if gate.swap(true, Ordering::AcqRel) {
+                return;
+            }
             // headless receiver shutdown race 는 무시 (정상 shutdown 시퀀스).
             let _ = tx.send(AppEvent::TerminalOutput(Some(surface_id)));
         })
@@ -76,9 +95,29 @@ impl WakerFactory for HeadlessWakerFactory {
 
     fn make_default_waker(&self) -> Waker {
         let tx = self.tx.clone();
+        let gate = self.default_gate.clone();
         Arc::new(move || {
+            if gate.swap(true, Ordering::AcqRel) {
+                return;
+            }
             let _ = tx.send(AppEvent::TerminalOutput(None));
         })
+    }
+
+    fn note_drained(&self, surface_id: Option<u32>) {
+        match surface_id {
+            Some(sid) => {
+                if let Some(gate) = self
+                    .targeted_gates
+                    .lock()
+                    .expect("HeadlessWakerFactory targeted_gates poisoned")
+                    .get(&sid)
+                {
+                    gate.store(false, Ordering::Release);
+                }
+            }
+            None => self.default_gate.store(false, Ordering::Release),
+        }
     }
 }
 
@@ -90,5 +129,69 @@ impl TerminalWaker for HeadlessTerminalWaker {
     fn wake(&self, surface_id: Option<u32>) {
         // receiver shutdown race 는 무시 (정상 shutdown 시퀀스).
         let _ = self.tx.send(AppEvent::TerminalOutput(surface_id)); // shutdown race — drop quietly.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    /// 큐에 쌓인 `TerminalOutput` 을 (None 개수, Some 개수) 로 집계하며 비운다.
+    fn drain_counts(rx: &mpsc::Receiver<AppEvent>) -> (usize, usize) {
+        let mut none = 0;
+        let mut some = 0;
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                AppEvent::TerminalOutput(None) => none += 1,
+                AppEvent::TerminalOutput(Some(_)) => some += 1,
+                _ => {}
+            }
+        }
+        (none, some)
+    }
+
+    #[test]
+    fn default_waker_coalesces_until_drained() {
+        let (tx, rx) = mpsc::channel();
+        let factory = HeadlessWaker::new(tx).waker_factory();
+        let waker = factory.make_default_waker();
+
+        // 연속 호출 → 직전 wake 가 소화되기 전까지 1 회만 큐잉.
+        waker();
+        waker();
+        waker();
+        assert_eq!(drain_counts(&rx), (1, 0), "coalesced to a single None");
+
+        // 핸들러가 drain 후 게이트 리셋 → 다시 큐잉 가능.
+        factory.note_drained(None);
+        waker();
+        waker();
+        assert_eq!(
+            drain_counts(&rx),
+            (1, 0),
+            "re-armed after note_drained(None)"
+        );
+    }
+
+    #[test]
+    fn targeted_wakers_are_independent_per_surface() {
+        let (tx, rx) = mpsc::channel();
+        let factory = HeadlessWaker::new(tx).waker_factory();
+        let waker_a = factory.make_targeted_waker(1);
+        let waker_b = factory.make_targeted_waker(2);
+
+        // surface 1 게이트가 닫혀도 surface 2 는 독립적으로 큐잉된다.
+        waker_a();
+        waker_a();
+        waker_b();
+        waker_b();
+        assert_eq!(drain_counts(&rx), (0, 2), "each surface queues once");
+
+        // surface 1 만 리셋 → surface 1 만 재무장, surface 2 는 여전히 닫힘.
+        factory.note_drained(Some(1));
+        waker_a();
+        waker_b();
+        assert_eq!(drain_counts(&rx), (0, 1), "only surface 1 re-armed");
     }
 }

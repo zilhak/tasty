@@ -22,6 +22,22 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::TerminalOutput(surface_id) => {
                 use crate::app::dispatch_domain::DispatchSource;
                 use crate::core::intent::CoreEvent;
+                // Early reset: 채널 drain 직전에 dedup 게이트를 풀어, drain 과 경합하는
+                // reader wake 가 스킵되어 유실되는 것을 막는다 (research §8). Some →
+                // 해당 surface 게이트, None → 글로벌 게이트. surface 가 없는 factory 의
+                // note_drained 는 무해한 no-op 이므로 전 view/parked 를 순회한다.
+                for w in self.view.views.values() {
+                    if let Some(main) = w.as_main()
+                        && let Some(factory) = main.core_state.waker_factory.as_ref()
+                    {
+                        factory.note_drained(surface_id);
+                    }
+                }
+                for (_, engine) in self.parked_states.iter() {
+                    if let Some(factory) = engine.waker_factory.as_ref() {
+                        factory.note_drained(surface_id);
+                    }
+                }
                 let core = &mut self.core;
                 let views = &mut self.view.views;
                 let parked_states = &mut self.parked_states;

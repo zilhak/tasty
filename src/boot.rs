@@ -214,7 +214,12 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
     while let Ok(event) = rx.recv() {
         match event {
             AppEvent::Shutdown | AppEvent::QuitRequested => break,
-            AppEvent::TerminalOutput(_id) => {
+            AppEvent::TerminalOutput(id) => {
+                // Early reset: drain 직전에 dedup 게이트를 풀어 경합 wake 유실 방지
+                // (research §8). headless 는 단일 engine 이라 순회 불필요.
+                if let Some(factory) = engine.waker_factory.as_ref() {
+                    factory.note_drained(id);
+                }
                 // 단일 engine 전체 drain — reader 채널을 비워 블록을 방지하고
                 // termwiz 파싱 + observer/command_index/OSC52 부수효과를 적용한다.
                 // 반환 CoreEvent (Notification/Bell/Title/Cwd/Exit) 는 cascade 주체
