@@ -145,7 +145,7 @@ plugin, extension, process, clipboard, theme, language, debug
 | `window.closed` | OS window 종료 | `window_id, reason` | system | Stable |
 | `window.focused` | OS focus 받음 | `window_id` | system | Stable |
 
-`kind`/`modality`는 [유비쿼터스 언어](../design/ubiquitous-language.md)와 일치.
+`kind`/`modality`는 [유비쿼터스 언어](../concepts/ubiquitous-language.md)와 일치.
 
 ### Clipboard (OS)
 

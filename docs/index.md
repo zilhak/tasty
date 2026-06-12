@@ -98,6 +98,17 @@
 | [adr/index.md](adr/index.md) | ADR 목록 (번호 / 상태 / 날짜 / 태그) |
 | [adr/0001-linux-system-tray-unsupported.md](adr/0001-linux-system-tray-unsupported.md) | ADR-0001 — Linux 시스템 트레이 미지원 결정 (DE 분열, 태스크바 유지로 충분) |
 
+## 개념 정의
+
+프로젝트가 합의한 용어와 개념. 코드 작업 시작 전 ubiquitous-language 를 먼저 읽는다.
+
+| 문서 | 설명 |
+|------|------|
+| [concepts/index.md](concepts/index.md) | 개념 문서 인덱스 |
+| [concepts/ubiquitous-language.md](concepts/ubiquitous-language.md) | 유비쿼터스 언어 — 용어 정의, 계층 구조, 코드 매핑 |
+| [concepts/layout.md](concepts/layout.md) | 두 레벨 레이아웃 — 상위(고정)/하위(탭 종속) 분할 개념 |
+| [concepts/typed-length.md](concepts/typed-length.md) | 타입 안전 길이 시스템 — PhysicalPx/LogicalPx newtype, DPI 혼동 방지 |
+
 ## 디자인 문서
 
 | 문서 | 설명 |
@@ -105,8 +116,6 @@
 | [design/theme-system.md](design/theme-system.md) | 테마 시스템 — 색상, 타이포그래피, 간격, 크기 규칙 |
 | [design/multi-window-architecture.md](design/multi-window-architecture.md) | 멀티 윈도우 아키텍처 — 엔진/윈도우/모달 구조 |
 | [design/focus-policy.md](design/focus-policy.md) | 포커스 정책 — 윈도우/모달 간 입력 라우팅 규칙 |
-| [design/ubiquitous-language.md](design/ubiquitous-language.md) | 유비쿼터스 언어 — 용어 정의, 계층 구조, 코드 매핑 |
-| [design/layout-concept.md](design/layout-concept.md) | 두 레벨 레이아웃 — 상위(고정)/하위(탭 종속) 분할 설계 |
 | [design/split-command.md](design/split-command.md) | Split 명령어 설계 — 통합 split 명령, 레벨/대상/방향 파라미터, 포커스 정책 |
 | [design/key-mapping.md](design/key-mapping.md) | 키 매핑 설계 — OS별 물리적 키 위치 매핑, 프리셋, 캡처/매칭 규칙 |
 | [design/popup-system.md](design/popup-system.md) | 내부 팝업 시스템 — 공통 규칙 7가지, PopupManager 구조 |
@@ -115,7 +124,6 @@
 | [design/toast-system.md](design/toast-system.md) | 토스트 시스템 — 휘발성 인앱 알림, 스코프, 사용자 행동 트리거 정책 |
 | [design/settings-system.md](design/settings-system.md) | 설정 시스템 — 탭/서브탭 구조, 항목 순서 규칙, 배치 판단 기준 |
 | [design/input-layer.md](design/input-layer.md) | 마우스 입력 계층 — z-order 기반 이벤트 소비/버블링 설계 |
-| [design/typed-length.md](design/typed-length.md) | 타입 안전 길이 시스템 — PhysicalPx/LogicalPx newtype, DPI 혼동 방지 |
 | [design/cwd-policy.md](design/cwd-policy.md) | CWD 정책 — OSC 7 기반 CWD 감지 (모든 플랫폼 공통) |
 | [design/explorer-context-menu.md](design/explorer-context-menu.md) | Explorer 컨텍스트 메뉴 — 우클릭 대상 결정, 메뉴 항목 분기, 액션 동작 정의 |
 | [design/linux-system-tray.md](design/linux-system-tray.md) | Linux 시스템 트레이 미지원 정책 — 운영 측 상세 (백그라운드 동선, `tray-icon` cfg(windows) 한정). 결정 근거는 ADR-0001 |

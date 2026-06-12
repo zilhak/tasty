@@ -30,7 +30,7 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 
 이벤트의 "사용자 키 입력 **등**"은 단축키만이 아니라 surface lifecycle / IPC / CLI 호출 등 **모든 외부 트리거**를 포함한다. 어떤 카테고리를 몇 개 contribute할지는 plugin이 자유롭게 정한다 — 0개여도 valid다.
 
-> **Window / Surface / Popup의 차이**는 `docs/design/ubiquitous-language.md` 참조. 요약하면: Window는 OS-level 별도 창, Surface는 탭/스플릿 안의 콘텐츠 영역, Popup은 Window 내부에 떠 있으며 포커스를 빼앗지 않는 일시적 가상 창이다. 휘발성 알림인 Toast는 plugin contribute 대상이 아니다 — Toast는 사용자 행동에서만 발사된다는 원칙(`docs/design/toast-system.md`) 때문.
+> **Window / Surface / Popup의 차이**는 `docs/concepts/ubiquitous-language.md` 참조. 요약하면: Window는 OS-level 별도 창, Surface는 탭/스플릿 안의 콘텐츠 영역, Popup은 Window 내부에 떠 있으며 포커스를 빼앗지 않는 일시적 가상 창이다. 휘발성 알림인 Toast는 plugin contribute 대상이 아니다 — Toast는 사용자 행동에서만 발사된다는 원칙(`docs/design/toast-system.md`) 때문.
 
 ### 매니페스트 선언 원칙
 

@@ -10,7 +10,7 @@
 | **Modal** | Window의 특수 modality. 전역 입력 독점 | 닫기 전 다른 조작 불가 | 엔진 전역 최대 1개 | 별도 OS 윈도우 (SettingsView, QuitView 등) |
 | **Popup** | Window 내부 가상 창 | 키보드: 포커스 시 차단. 마우스: 입력 계층에 따라 소비 | 여러 개 가능 | `PopupManager` + `PopupDef` |
 
-상세 정의: `docs/design/ubiquitous-language.md`
+상세 정의: `docs/concepts/ubiquitous-language.md`
 
 ## 핵심 규칙
 
@@ -143,4 +143,4 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
 
 - `docs/design/popup-system.md`: 팝업 시스템 전체 설계
 - `docs/design/input-layer.md`: 마우스 입력 계층 (z-order와 입력 소비)
-- `docs/design/ubiquitous-language.md`: Window/Modal/Popup 용어 정의
+- `docs/concepts/ubiquitous-language.md`: Window/Modal/Popup 용어 정의

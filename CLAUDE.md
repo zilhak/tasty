@@ -114,7 +114,7 @@ Tasty 는 **Windows, macOS, Linux 를 모두 지원하는 크로스 플랫폼 �
 
 ## 시작 전 (필수)
 
-1. [`docs/design/ubiquitous-language.md`](docs/design/ubiquitous-language.md) 먼저 읽기 — 용어를 잘못 쓰면 코드/문서 일관성이 깨진다. 특히 Window / Pane / Tab / Surface 계층, 상위/하위 레이아웃 구분, Modal / Popup / Toast 구분.
+1. [`docs/concepts/ubiquitous-language.md`](docs/concepts/ubiquitous-language.md) 먼저 읽기 — 용어를 잘못 쓰면 코드/문서 일관성이 깨진다. 특히 Window / Pane / Tab / Surface 계층, 상위/하위 레이아웃 구분, Modal / Popup / Toast 구분.
 2. 해당 작업 영역의 가이드 문서 확인 — [`docs/index.md`](docs/index.md) 에서 전체 인덱스 확인.
 
 ## 임시 파일·계획 위치
@@ -182,7 +182,7 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프
 - `LogicalPx`: egui UI, Theme 상수, 사이드바 너비
 - 두 타입 간 직접 대입 불가. `to_physical(sf)` / `to_logical(sf)` 변환 필수.
 
-상세: [`docs/design/typed-length.md`](docs/design/typed-length.md).
+상세: [`docs/concepts/typed-length.md`](docs/concepts/typed-length.md).
 
 ## UI 디자인 (필수)
 

@@ -202,7 +202,7 @@ pub struct WindowCreated {
     pub modality: WindowModality,
 }
 
-/// 윈도우 modality — 유비쿼터스 언어(`docs/design/ubiquitous-language.md`)와 일치.
+/// 윈도우 modality — 유비쿼터스 언어(`docs/concepts/ubiquitous-language.md`)와 일치.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowModality {

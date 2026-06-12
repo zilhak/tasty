@@ -72,7 +72,7 @@ LOC 합계 (workspace 크레이트 270 `.rs`, 실측 2026-06-03): ~63k. F.B (cli
 
 ## 옛 분석 외 영역 (신규 추가)
 
-- **type-\* layer** (geometry / appearance) — `LogicalPx`/`PhysicalPx` typed-length 시스템 ([`../../design/typed-length.md`](../../design/typed-length.md)). 옛 분석 당시 미존재.
+- **type-\* layer** (geometry / appearance) — `LogicalPx`/`PhysicalPx` typed-length 시스템 ([`../../concepts/typed-length.md`](../../concepts/typed-length.md)). 옛 분석 당시 미존재.
 - **Plugin 생태계** — protocol/sdk + 7 개 번들 plugin. 옛 분석 시 plugin 자체 미존재.
 - **Agent / Memory / Approval / Presets / Telemetry / Output** — Phase 6.x 부터 추가된 에이전트 도메인.
 - **type-\* 계층 규칙** — "type-\* 끼리만 의존 가능. 도메인/IO crate 의존 금지. 그룹 내 순환 금지." 옛 분석에 없던 새 *layering invariant*.

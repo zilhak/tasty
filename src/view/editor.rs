@@ -13,7 +13,7 @@ use crate::view::Modality;
 use crate::view::ui::View;
 
 /// `impl EditorView for PresetView {}` 가 존재하지만 trait object 사용 0.
-/// 도메인 계열 표현(`docs/design/ubiquitous-language.md`)과 미래 에디터(키바인딩/테마)
+/// 도메인 계열 표현(`docs/concepts/ubiquitous-language.md`)과 미래 에디터(키바인딩/테마)
 /// placeholder로 보존.
 #[allow(dead_code)]
 pub(crate) trait EditorView: View {}
