@@ -139,15 +139,23 @@
 | [아키텍처 개요](architecture/index.md) | 워크스페이스 크레이트 33개, 본 바이너리 모듈 구조, 의존성 DAG |
 | [모듈별 상세](architecture/modules.md) | 디렉토리 모듈별 책임, 설계 목적, 한계 |
 | [데이터 흐름](architecture/data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준) |
-| [리팩토링 분석](architecture/refactoring.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
 | [라이브러리 분리](architecture/library-separation/index.md) | 워크스페이스 33 crate 현황 + 분리 의사결정 회고 (G.E — tasty-model 분리, Phase F.B — tasty-ipc / tasty-plugin-manifest / tasty-host-plugin / tasty-cli 4 crate 추가, plugin_bridge/ 본 바이너리 잔존) |
 | [UI widgets crate](architecture/ui-widgets-crate.md) | `tasty-ui-widgets` 의 목적·의존·위젯 카탈로그 — 본체와 갤러리가 공유하는 egui layout primitive (two_depth_layout / horizontal_tab_bar_with_arrows / tab_content_frame) + tokens (SUB_TAB_PANEL_WIDTH 등 layout 상수) |
 | [Plugin categories](architecture/plugin-categories.md) | host-native / bundled plugin / user plugin 3 카테고리 분류 정책 + 기존 "builtin" 표현 매핑 |
-| [Plugin sandbox 평가](architecture/plugin-sandbox-evaluation.md) | WASM / OS-level / 현 상태 비교 — 0.7 보류 근거 + 재검토 trigger |
-| [WASM Plugin POC 결과](architecture/wasm-poc-result.md) | Phase J.C — clipboard-history WASM 변환 + wasmtime host runtime 실측 (cold-start ~142ms, host_call ~3µs) + 정식 도입 권고 |
-| [Plugin marketplace 평가](architecture/plugin-marketplace-evaluation.md) | registry / install-by-id / trust / install flow 옵션 비교 — 0.7.x 보류 근거 + 도입 순서 + sandbox 와 묶음 의사결정 |
 | [성능 벤치마크](architecture/performance-benchmarks.md) | F.G GPU 최적화 실측 — terminals_ms p50/p99/max + draw call 수 + atlas eviction 카운터 (10 surface ASCII / CJK 4 surface, release / dist 프로필) |
 | [Surface cwd invariant](architecture/surface-cwd-invariant.md) | Surface 변환·생성 시 cwd carry 강제 규칙 + Surface trait / `SurfaceKindDef.create` / `ConvertSurfaceTarget::Kind` / `SurfaceCreateCtx.cwd` 의 compile-time guard |
+
+## 평가 / POC
+
+시점성 평가 / POC 결과 보존본 — ADR 의 *근거* 원본. 진입은 [evaluations/index.md](evaluations/index.md) (시점·결론·재검토 trigger 표).
+
+| 문서 | 설명 |
+|------|------|
+| [Plugin sandbox 평가](evaluations/plugin-sandbox.md) | WASM / OS-level / 현 상태 비교 — 0.7 보류 근거 + 재검토 trigger |
+| [WASM Plugin POC 결과](evaluations/wasm-poc.md) | Phase J.C — clipboard-history WASM 변환 + wasmtime host runtime 실측 (cold-start ~142ms, host_call ~3µs) + 정식 도입 권고 |
+| [Plugin marketplace 평가](evaluations/plugin-marketplace.md) | registry / install-by-id / trust / install flow 옵션 비교 — 0.7.x 보류 근거 + 도입 순서 + sandbox 와 묶음 의사결정 |
+| [리팩토링 진행 상태](evaluations/refactoring-status.md) | 남아있는 개선 가능성, 우선순위별 로드맵 |
+| [라이브러리 분리 — 옛 6 관점 분석](evaluations/library-separation/) | 2025 분리 계획 시점 분석 보존본 (technical-feasibility 외 5) |
 
 ## 구현 현황
 

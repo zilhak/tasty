@@ -1,9 +1,11 @@
 # WASM Plugin POC — 결과
 
+> 결정 자체는 ADR 후보 (adr-candidates.md #0011, wasm-plugin-adoption-recommended) — ADR 작성 후 본 줄을 ADR 링크로 교체. 본 문서는 그 *근거* 의 원본 평가.
+
 Phase J.C 산출물. clipboard-history 를 WASI Preview 2 component 로 변환하고
 host-side wasmtime runtime 으로 load/call 했을 때 측정값과 정성 분석.
 
-본 문서는 [plugin-sandbox-evaluation.md](plugin-sandbox-evaluation.md) §2.3 의
+본 문서는 [plugin-sandbox.md](plugin-sandbox.md) §2.3 의
 *추정* 비용표를 *측정값* 으로 대체하기 위한 데이터. WASM 의 정식 채택 여부
 의사결정에 사용된다.
 
@@ -139,7 +141,7 @@ spawn 하고 wasm plugin 은 host_call 로 출력 stream 만 받는 모델 → m
 | 도구체인 비용 | 1 회 setup ~3-5 분. 일상 빌드 부담 0 (격리 OK) |
 | 0.7 이후 도입 | **권고 = 후속 spike 1 회 (~2 시간) 로 sandbox 실증 + RSS 측정 + JSON marshal 대비 typed-record 비용 측정 후 manifest schema bump (`Entry::Wasm`) 정식 도입 의사결정** |
 
-[plugin-sandbox-evaluation.md](plugin-sandbox-evaluation.md) §2.3 의 7 항목
+[plugin-sandbox.md](plugin-sandbox.md) §2.3 의 7 항목
 *추정* 표 갱신 항목:
 
 | 비용 항목 | 추정 → 측정값 |
@@ -167,7 +169,7 @@ clipboard-history wasm feature.
 
 ## 7. 출처
 
-- [plugin-sandbox-evaluation.md](plugin-sandbox-evaluation.md) — 0.7 보류 결정 + 비용 추정
-- [plugin-marketplace-evaluation.md](plugin-marketplace-evaluation.md) — marketplace 도입 시 sandbox §3 묶음 의사결정
+- [plugin-sandbox.md](plugin-sandbox.md) — 0.7 보류 결정 + 비용 추정
+- [plugin-marketplace.md](plugin-marketplace.md) — marketplace 도입 시 sandbox §3 묶음 의사결정
 - TODO: `.claude-workspace/plans/phase-j/TODO-C.md`
 - 구현 commit: `feat(wasm-poc/J.C): ...` 시리즈

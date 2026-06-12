@@ -1,5 +1,7 @@
 # Plugin Sandbox 평가
 
+> 결정 자체는 ADR 후보 (adr-candidates.md #0009, plugin-sandbox-deferred-until-0.8) — ADR 작성 후 본 줄을 ADR 링크로 교체. 본 문서는 그 *근거* 의 원본 평가.
+
 이 문서는 Tasty plugin 의 sandbox 옵션 (WASM / OS-level / 현 상태) 을 비교 평가한
 결정 근거다. 0.7 까지는 현 상태 유지가 결론이며, 본문은 그 trade-off 의 *현재 상태* 와
 *재검토 trigger* 를 한 곳에 기록해 미래에 trigger 발동 시 어떤 비용을 감수했는지를
@@ -117,7 +119,7 @@ Object 모두 없다.
 
 > **Phase J.C POC 측정값**: clipboard-history 변환으로 위 7 항목 중 4 항목
 > (FFI 부담 / FS access 우회 / 빌드·배포 / i18n) 의 *추정* 을 *측정값* 으로
-> 교체. 결과 = [wasm-poc-result.md §5](wasm-poc-result.md#5-결론--후속).
+> 교체. 결과 = [wasm-poc.md §5](wasm-poc.md#5-결론--후속).
 > 핵심 = cold-start ~142 ms (process 와 유사 또는 우월), host_call ~3 µs (process
 > TCP+JSON 보다 우월), 격리 invariant OK (default 빌드 surface 변경 0).
 
@@ -129,7 +131,7 @@ Object 모두 없다.
 - 권한 게이트 한계에서 비롯한 보안 이슈 1 건.
 - 첫 외부 plugin 출시 직후 1 년 운영 데이터.
 - **신규**: marketplace 도입 (비-trusted plugin 일상화) — `plugin-ecosystem.md §2`
-  marketplace trigger 와 연동. 평가 상세는 [plugin-marketplace-evaluation.md](plugin-marketplace-evaluation.md) §5.2 / §8.4 — marketplace ↔ sandbox §3 묶음 의사결정.
+  marketplace trigger 와 연동. 평가 상세는 [plugin-marketplace.md](plugin-marketplace.md) §5.2 / §8.4 — marketplace ↔ sandbox §3 묶음 의사결정.
 
 ## 3. OS-level sandbox 옵션 평가 (대안)
 

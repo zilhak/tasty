@@ -7,7 +7,9 @@
 | **현재** | [`index.md`](index.md) (본 문서) | 33 crate 현황 매트릭스 + 옛 8 후보 도달 상태 |
 | **현재** | [`execution-plan.md`](execution-plan.md) | 완료 회고 + 미분리 항목 (model / renderer / notification) 권고 |
 | **현재** | [`workspace-design.md`](workspace-design.md) | 현 워크스페이스 구조 / 의존 그래프 / Cargo.toml 발췌 |
-| **역사** | `technical-feasibility.md` / `ecosystem-value.md` / `maintainability.md` / `performance.md` / `developer-experience.md` / `strategic.md` | 옛 분리 계획 시점 (2025) 의 7 관점 분석 보존본. 신규 crate 추가/제거 판단 framework 로 재사용 가능 |
+| **역사** | [`../../evaluations/library-separation/`](../../evaluations/library-separation/) 하위 `technical-feasibility.md` / `ecosystem-value.md` / `maintainability.md` / `performance.md` / `developer-experience.md` / `strategic.md` | 옛 분리 계획 시점 (2025) 의 6 관점 분석 보존본. 신규 crate 추가/제거 판단 framework 로 재사용 가능 |
+
+옛 6 관점 분석 문서는 `docs/evaluations/library-separation/` 로 이전됐다. 본 디렉토리에는 *현재 구조* 만 남는다.
 
 신규 독자는 현황부터 (본 문서 → execution-plan.md → workspace-design.md), 옛 의사결정 맥락 검토 시 6 분석 문서 참조.
 
@@ -22,7 +24,7 @@ Tasty 워크스페이스는 본 바이너리 (`src/`, 394 `.rs` / ~69k LOC) + **
 2. *2025 년 분리 계획 8 후보의 현재 도달 상태* (4 완료 / 2 결정 반전 / 2 장기 과제 유지).
 3. *남은 미분리 영역* (model / renderer / notification) 에 대한 현 시점 권고.
 
-옛 7 관점 framework (technical-feasibility / ecosystem-value / maintainability / performance / developer-experience / strategic / execution-plan) 는 보존본에 그대로 남아 있으며, 신규 crate 추가/제거 판단 시 재사용 가능.
+옛 6 관점 framework (technical-feasibility / ecosystem-value / maintainability / performance / developer-experience / strategic) 는 `docs/evaluations/library-separation/` 에 보존되어 있으며, 신규 crate 추가/제거 판단 시 재사용 가능.
 
 ---
 

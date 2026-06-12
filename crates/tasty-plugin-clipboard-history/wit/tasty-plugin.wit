@@ -2,7 +2,7 @@
 //
 // 설계 결정 (TODO-C §3.1):
 // - JSON-string marshal: UiNode/UiEvent 의 WIT record 변환을 회피하고 모두 string
-//   으로 직렬화 (POC 단순화). 비용은 wasm-poc-result.md §3 에서 측정 후 평가.
+//   으로 직렬화 (POC 단순화). 비용은 wasm-poc.md §3 에서 측정 후 평가.
 // - exports = Plugin trait 의 callback 7 종 (init / open-popup / handle-popup-event
 //   / on-popup-closed / create-surface / handle-surface-event / handle-ipc-method).
 // - imports = host-call (generic IPC), log, tr (i18n lookup).

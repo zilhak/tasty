@@ -1,6 +1,6 @@
 # 성능 관점
 
-> **이 문서는 2026 년 3 월 분리 계획 시점 분석의 보존본이다.** 분석 대상이었던 8 후보 중 4 개가 분리 완료, 2 개가 결정 반전, 2 개가 장기 과제 유지 상태다. 현재 워크스페이스 (33 crate) 의 *현황 매트릭스* 는 [`index.md`](index.md), *완료 회고* 는 [`execution-plan.md`](execution-plan.md) 참조. 본 분석의 7 관점 framework 는 신규 crate 추가/제거 판단 시 재사용 가능.
+> **이 문서는 2026 년 3 월 분리 계획 시점 분석의 보존본이다.** 분석 대상이었던 8 후보 중 4 개가 분리 완료, 2 개가 결정 반전, 2 개가 장기 과제 유지 상태다. 현재 워크스페이스 (33 crate) 의 *현황 매트릭스* 는 [`index.md`](../../architecture/library-separation/index.md), *완료 회고* 는 [`execution-plan.md`](../../architecture/library-separation/execution-plan.md) 참조. 본 분석의 6 관점 framework 는 신규 crate 추가/제거 판단 시 재사용 가능.
 
 라이브러리 분리가 런타임 성능과 빌드 성능에 미치는 영향을 분석한다.
 

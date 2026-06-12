@@ -21,7 +21,7 @@
 - 권한 게이트 한계에서 비롯한 보안 이슈 1건
 - 첫 외부 plugin 출시 직후 1년 운영 데이터
 
-→ 평가 상세: [architecture/plugin-sandbox-evaluation.md](../architecture/plugin-sandbox-evaluation.md)
+→ 평가 상세: [evaluations/plugin-sandbox.md](../evaluations/plugin-sandbox.md)
 
 ## 2. 배포 채널
 
@@ -49,7 +49,7 @@ tasty plugin install ./target/release   # 또는 매니페스트 디렉터리
 - 외부 plugin 5+개 자생
 
 → 평가 상세 (registry / install flow / trust / sandbox 묶음 의사결정):
-[architecture/plugin-marketplace-evaluation.md](../architecture/plugin-marketplace-evaluation.md)
+[evaluations/plugin-marketplace.md](../evaluations/plugin-marketplace.md)
 
 ## 3. 신뢰 모델
 

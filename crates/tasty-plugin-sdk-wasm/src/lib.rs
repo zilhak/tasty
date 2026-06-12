@@ -20,7 +20,7 @@
 //! 현재 main workspace 에서 exclude 되어 있으므로 본 runtime 은 main 바이너리에
 //! 직접 link 되지 않는다. POC 완료 후 정식 채택 시점에 (a) workspace 포함 +
 //! tasty-host-plugin 의 wasm.rs 모듈에서 직접 사용 / (b) 별 dylib bridge 중 하나로
-//! 통합. 평가 = `docs/architecture/wasm-poc-result.md §5`.
+//! 통합. 평가 = `docs/evaluations/wasm-poc.md §5`.
 
 pub mod bridge;
 pub mod runtime;

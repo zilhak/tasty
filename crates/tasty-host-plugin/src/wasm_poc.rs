@@ -6,7 +6,7 @@
 //! 본 crate 로 새지 않도록 격리).
 //!
 //! 본 모듈은 `wasm-poc` feature 활성 시점에 *production 통합* 단계의 인터페이스
-//! 자리표시. 정식 채택 의사결정 (= `docs/architecture/wasm-poc-result.md §5`)
+//! 자리표시. 정식 채택 의사결정 (= `docs/evaluations/wasm-poc.md §5`)
 //! 후에 본 모듈이 sdk-wasm 의 `WasmPluginRuntime` 을 import 해서
 //! `PluginProcess` 와 동등한 채널 인터페이스 (`PluginEvent` mpsc, `PluginRequest`
 //! mpsc) 를 노출하도록 구현 예정.
@@ -46,7 +46,7 @@
 //!
 //! # 정식 채택 결정 조건
 //!
-//! `wasm-poc-result.md §0 TL;DR` 의 5 라인 결론에 따라 결정.
+//! `wasm-poc.md §0 TL;DR` 의 5 라인 결론에 따라 결정.
 //! POC 측정 후 trigger:
 //! - 모든 지표 < 1.3x process : 도입 검토 가능 → 본 stub 을 실구현으로 교체.
 //! - cold-start > 2x process : 도입 보류 → 본 stub 삭제.

@@ -4,7 +4,7 @@
 
 [package]
 name = "tasty-plugin-sdk-wasm"
-version = "0.1.0-poc"
+version = "0.1.1-poc"
 edition = "2024"
 license = "MIT"
 description = "POC: Host-side WASM (wasi-preview2 component) runtime for Tasty plugins. Excluded from main workspace."
@@ -15,7 +15,7 @@ publish = false
 # default 빌드 무관 — `cargo build` / `cargo build --workspace` 가 본 crate 미인식.
 # 빌드 방법:
 #   cd crates/tasty-plugin-sdk-wasm && cargo build --release
-# POC 완료 후 처리 정책 = wasm-poc-result.md §5 (권고: ① feature 잠금 상태로 main 유지).
+# POC 완료 후 처리 정책 = wasm-poc.md §5 (권고: ① feature 잠금 상태로 main 유지).
 
 [dependencies]
 # wasmtime 35 = rustc 1.86 호환 (최신 45 는 rustc 1.93 필요, repo 환경은 1.89).
