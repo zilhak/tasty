@@ -107,12 +107,13 @@ pub fn inject_delegate_methods() {
         }
     };
 
-    // SAFETY: 본 블록은 winit의 NSApplicationDelegate 클래스에 메서드 3개를 주입하는
+    // SAFETY: 본 블록은 winit의 NSApplicationDelegate 클래스에 메서드 4개를 주입하는
     // class_addMethod 호출 시퀀스. 호출은 `resumed()` 흐름의 main thread에서만 수행된다
     // (MainThreadMarker로 위에서 검증). 주입하는 함수 포인터(handle_reopen 등)는 모두
     // 'static fn이므로 lifetime 안전. transmute는 unsafe extern fn → Imp (둘 다 raw fn ptr)
     // 캐스팅이며 ObjC runtime이 ABI-compatible로 받음을 objc2 문서가 보장. 시그니처 인코딩
     // 문자열(c"B@:@B" 등)은 'static C string.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
         // Get the class of winit's delegate and inject our methods into it.
         let cls: *mut AnyClass = msg_send![&*delegate, class];
