@@ -32,19 +32,11 @@ pub fn draw_collapsed_sidebar(
         .enumerate()
         .map(|(i, ws)| {
             let surface_ids = ws.all_surface_ids();
-            let tab_count: usize = ws
-                .pane_layout()
-                .all_pane_ids()
-                .into_iter()
-                .filter_map(|pid| ws.pane_layout().find_pane(pid))
-                .map(|pane| pane.tabs.len())
-                .sum();
             WorkspaceEntryView {
                 name: ws.name.clone(),
                 subtitle: ws.subtitle.clone(),
                 description: ws.description.clone(),
                 busy_count: engine.busy_count(&surface_ids),
-                tab_count,
                 has_highlight: engine.notifications.has_highlighted_surface(&surface_ids),
                 attached: engine.attach.workspace_holder(ws.id).is_some(),
                 is_active: i == active_ws,

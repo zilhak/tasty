@@ -92,7 +92,6 @@ pub struct ScanSnapshot {
 pub enum SortKey {
     Port,
     Address,
-    Pid,
     Process,
     Workspace,
     Tab,
@@ -362,7 +361,6 @@ pub fn compare_rows(
     let ord = match key {
         SortKey::Port => a.port.cmp(&b.port),
         SortKey::Address => a.addr_display.cmp(&b.addr_display),
-        SortKey::Pid => a.pid.unwrap_or(0).cmp(&b.pid.unwrap_or(0)),
         SortKey::Process => a
             .process_name
             .as_deref()
@@ -382,7 +380,6 @@ pub fn compare_rows(
 fn value_missing(row: &PortRowView, key: SortKey) -> bool {
     match key {
         SortKey::Port | SortKey::Address => false,
-        SortKey::Pid => row.pid.is_none(),
         SortKey::Process => row.process_name.is_none(),
         SortKey::Workspace => matches!(row.source, SourceTag::External),
         SortKey::Tab => tab_name(row).is_none(),
@@ -1334,27 +1331,27 @@ mod tests {
 
     #[test]
     fn sort_puts_none_last_for_both_directions() {
-        // SortKey::Pid: row with Some(pid) vs row with None.
-        let some = row_with(3000, Some(10), None);
+        // SortKey::Process: row with Some(process) vs row with None.
+        let some = row_with(3000, None, Some("nginx"));
         let none = row_with(3000, None, None);
         // Asc: Some before None.
         assert_eq!(
-            compare_rows(SortKey::Pid, SortDir::Asc, &some, &none),
+            compare_rows(SortKey::Process, SortDir::Asc, &some, &none),
             std::cmp::Ordering::Less,
         );
         // Desc: still Some before None — None is sticky to the tail.
         assert_eq!(
-            compare_rows(SortKey::Pid, SortDir::Desc, &some, &none),
+            compare_rows(SortKey::Process, SortDir::Desc, &some, &none),
             std::cmp::Ordering::Less,
         );
 
         // Reverse arguments: None first → must report Greater (= goes behind).
         assert_eq!(
-            compare_rows(SortKey::Pid, SortDir::Asc, &none, &some),
+            compare_rows(SortKey::Process, SortDir::Asc, &none, &some),
             std::cmp::Ordering::Greater,
         );
         assert_eq!(
-            compare_rows(SortKey::Pid, SortDir::Desc, &none, &some),
+            compare_rows(SortKey::Process, SortDir::Desc, &none, &some),
             std::cmp::Ordering::Greater,
         );
     }

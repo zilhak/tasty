@@ -8,5 +8,3 @@ use tasty_type_appearance::color::HexColor;
 
 /// 수박 과육 (워드마크 `tasty.` 의 `.`, 로고 flesh).
 pub const MELON_FLESH: HexColor = HexColor::from_rgb(0xf2, 0x5d, 0x6b);
-/// 수박 껍질 (로고 rind).
-pub const MELON_RIND: HexColor = HexColor::from_rgb(0x1e, 0x7d, 0x4f);

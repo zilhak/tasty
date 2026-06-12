@@ -426,26 +426,3 @@ fn kill_finalize_handles_nested_parent_case() {
     assert!(state.is_parent_closed(100));
     assert_eq!(state.list_children(100).len(), 2);
 }
-
-// ─── step 04d.3: spawn helper tests ─────────────────────────────────────
-
-#[test]
-fn caller_surface_id_reads_key_from_params() {
-    assert_eq!(
-        caller_surface_id(&json!({ "caller_surface_id": 42 })),
-        Some(42)
-    );
-}
-
-#[test]
-fn caller_surface_id_missing_returns_none() {
-    assert_eq!(caller_surface_id(&json!({})), None);
-}
-
-#[test]
-fn caller_surface_id_wrong_type_returns_none() {
-    assert_eq!(
-        caller_surface_id(&json!({ "caller_surface_id": "42" })),
-        None
-    );
-}

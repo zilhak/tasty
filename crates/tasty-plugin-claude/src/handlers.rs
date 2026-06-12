@@ -813,14 +813,6 @@ pub(crate) fn handle_spawn(
     }))
 }
 
-/// 호스트 `caller_surface_id` 1:1. plugin IPC ctx.params에 같은 키가 들어온다.
-pub(crate) fn caller_surface_id(params: &Value) -> Option<u32> {
-    params
-        .get("caller_surface_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-}
-
 /// 호스트 `resolve_workspace` 1:1. target이 숫자면 id, 아니면 name으로 매칭.
 pub(crate) fn resolve_workspace_id(
     host: &HostHandle,

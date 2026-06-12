@@ -22,8 +22,6 @@ pub struct WorkspaceEntryView {
     pub subtitle: String,
     pub description: String,
     pub busy_count: usize,
-    /// 이 workspace 의 전체 탭 수 (ui_kit WorkspaceRow 우측 숫자).
-    pub tab_count: usize,
     pub has_highlight: bool,
     /// 다른 client 가 해당 workspace 를 attach 한 상태 (빨간 인디케이터).
     pub attached: bool,
@@ -775,7 +773,6 @@ mod tests {
             subtitle: String::new(),
             description: String::new(),
             busy_count: 0,
-            tab_count: 1,
             has_highlight: false,
             attached: false,
             is_active,
@@ -853,7 +850,6 @@ mod tests {
             subtitle: String::new(),
             description: String::new(),
             busy_count: 3,
-            tab_count: 2,
             has_highlight: true,
             attached: true,
             is_active: true,
