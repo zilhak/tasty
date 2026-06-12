@@ -15,7 +15,6 @@ pub struct ClipboardSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-#[derive(Default)]
 pub struct PerformanceSettings {
     /// When enabled, only terminals with new PTY output are processed each frame
     /// instead of polling all terminals. Reduces CPU usage with many surfaces.
@@ -28,6 +27,16 @@ pub struct PerformanceSettings {
     /// instead of at tab creation time. Reduces initial resource usage.
     /// Requires restart to apply.
     pub lazy_pty_init: bool,
+}
+
+impl Default for PerformanceSettings {
+    fn default() -> Self {
+        Self {
+            targeted_pty_polling: true,
+            scrollback_disk_swap: false,
+            lazy_pty_init: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

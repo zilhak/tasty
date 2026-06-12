@@ -443,4 +443,24 @@ ui_scale = "large"
         assert!(!report.changed);
         assert_eq!(settings.general.language, "fr");
     }
+
+    #[test]
+    fn default_targeted_pty_polling_is_on() {
+        assert!(PerformanceSettings::default().targeted_pty_polling);
+    }
+
+    #[test]
+    fn performance_missing_key_uses_new_default() {
+        let parsed: Settings = toml::from_str("[performance]").unwrap();
+        assert!(parsed.performance.targeted_pty_polling);
+        let parsed: Settings = toml::from_str("").unwrap();
+        assert!(parsed.performance.targeted_pty_polling);
+    }
+
+    #[test]
+    fn performance_explicit_false_preserved() {
+        let parsed: Settings =
+            toml::from_str("[performance]\ntargeted_pty_polling = false").unwrap();
+        assert!(!parsed.performance.targeted_pty_polling);
+    }
 }

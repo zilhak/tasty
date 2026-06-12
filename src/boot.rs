@@ -220,11 +220,18 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 if let Some(factory) = engine.waker_factory.as_ref() {
                     factory.note_drained(id);
                 }
-                // 단일 engine 전체 drain — reader 채널을 비워 블록을 방지하고
-                // termwiz 파싱 + observer/command_index/OSC52 부수효과를 적용한다.
+                // Targeted wake 는 해당 surface 만, default wake 는 전체 drain.
                 // 반환 CoreEvent (Notification/Bell/Title/Cwd/Exit) 는 cascade 주체
-                // (view/plugin)가 없으므로 단계 0 에선 무시한다.
-                let _ = app.core.process_all_pty_output(&mut engine);
+                // (view/plugin)가 없으므로 단계 0 에선 무시한다 — 직접 부수효과
+                // (observer/command_index/OSC52) 는 process 함수 내부에서 이미 적용됨.
+                match id {
+                    Some(sid) => {
+                        let _ = app.core.process_pty_output(&mut engine, sid); // targeted: 해당 surface 만 drain — CoreEvent 무시 사유는 위 주석 참조
+                    }
+                    None => {
+                        let _ = app.core.process_all_pty_output(&mut engine); // default: 전체 drain — CoreEvent 무시 사유는 위 주석 참조
+                    }
+                }
             }
             AppEvent::IpcReady => {
                 headless_dispatch::pump_ipc(&mut app, &mut state, &mut engine);
