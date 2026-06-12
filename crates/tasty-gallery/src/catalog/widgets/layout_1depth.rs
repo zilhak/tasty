@@ -23,10 +23,12 @@ struct State {
 }
 
 thread_local! {
-    static STATE: RefCell<State> = RefCell::new(State {
-        tab: Tab::List,
-        selected: 0,
-    });
+    static STATE: RefCell<State> = const {
+        RefCell::new(State {
+            tab: Tab::List,
+            selected: 0,
+        })
+    };
 }
 
 const LIST_ITEMS: &[(&str, &str)] = &[

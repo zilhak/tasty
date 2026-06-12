@@ -165,6 +165,15 @@ fn live_set_or_skip(arr: &[Value]) -> Option<HashSet<u32>> {
     )
 }
 
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .init();
+    tasty_plugin_sdk::run(CodexPlugin::new())
+}
+
 #[cfg(test)]
 mod reconcile_tests {
     use super::*;
@@ -219,13 +228,4 @@ mod reconcile_tests {
         assert_eq!(state.list_children(10).len(), before_children);
         assert_eq!(state.parent_of_child(100), before_parent);
     }
-}
-
-fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
-    tasty_plugin_sdk::run(CodexPlugin::new())
 }

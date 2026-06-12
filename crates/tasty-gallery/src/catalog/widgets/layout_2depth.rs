@@ -20,7 +20,7 @@ struct State {
 }
 
 thread_local! {
-    static STATE: RefCell<State> = RefCell::new(State { top: 0, sub: 0 });
+    static STATE: RefCell<State> = const { RefCell::new(State { top: 0, sub: 0 }) };
 }
 
 const TOP_TABS: &[&str] = &[

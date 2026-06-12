@@ -31,12 +31,14 @@ struct DemoState {
 }
 
 thread_local! {
-    static STATE: RefCell<DemoState> = RefCell::new(DemoState {
-        case: Case::TwoTier,
-        top: 0,
-        sub: 0,
-        subsub: 0,
-    });
+    static STATE: RefCell<DemoState> = const {
+        RefCell::new(DemoState {
+            case: Case::TwoTier,
+            top: 0,
+            sub: 0,
+            subsub: 0,
+        })
+    };
 }
 
 const TOP_TABS_FEW: &[&str] = &["General", "Terminal", "Appearance", "Plugins"];

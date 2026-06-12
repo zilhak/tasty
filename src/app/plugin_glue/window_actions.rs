@@ -32,25 +32,6 @@ fn record_trust_then_install(
     app.plugin_install(std::path::PathBuf::from(src_path))
 }
 
-#[cfg(test)]
-mod rfc3339_tests {
-    /// 초 정밀도 UTC RFC3339 형식 (`YYYY-MM-DDTHH:MM:SSZ`) 정규식 검증.
-    /// `KnownPluginEntry.trusted_at` 가 toml 직렬화/외부 비교를 견디려면
-    /// 항상 동일한 모양이어야 한다.
-    #[test]
-    fn now_rfc3339_is_seconds_z_utc() {
-        let s = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-        // 예: "2026-06-09T10:54:38Z"
-        assert_eq!(s.len(), 20, "unexpected length: {s}");
-        assert!(s.ends_with('Z'), "must end with Z: {s}");
-        assert_eq!(s.as_bytes()[4], b'-');
-        assert_eq!(s.as_bytes()[7], b'-');
-        assert_eq!(s.as_bytes()[10], b'T');
-        assert_eq!(s.as_bytes()[13], b':');
-        assert_eq!(s.as_bytes()[16], b':');
-    }
-}
-
 impl App {
     /// Drain pending actions from the plugins modal and apply them to the manager.
     /// Refreshes the modal's snapshot after applying.
@@ -207,5 +188,24 @@ impl App {
                 plugins_window.push_toast(msg, kind);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod rfc3339_tests {
+    /// 초 정밀도 UTC RFC3339 형식 (`YYYY-MM-DDTHH:MM:SSZ`) 정규식 검증.
+    /// `KnownPluginEntry.trusted_at` 가 toml 직렬화/외부 비교를 견디려면
+    /// 항상 동일한 모양이어야 한다.
+    #[test]
+    fn now_rfc3339_is_seconds_z_utc() {
+        let s = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        // 예: "2026-06-09T10:54:38Z"
+        assert_eq!(s.len(), 20, "unexpected length: {s}");
+        assert!(s.ends_with('Z'), "must end with Z: {s}");
+        assert_eq!(s.as_bytes()[4], b'-');
+        assert_eq!(s.as_bytes()[7], b'-');
+        assert_eq!(s.as_bytes()[10], b'T');
+        assert_eq!(s.as_bytes()[13], b':');
+        assert_eq!(s.as_bytes()[16], b':');
     }
 }
