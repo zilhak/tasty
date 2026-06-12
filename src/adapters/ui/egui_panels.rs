@@ -222,15 +222,6 @@ pub fn draw_egui_panels(
     let active_ws = state.active_workspace;
     let tab_bar_h = state.tab_bar_height;
     draw_occupied_overlays(ctx, active_ws, tab_bar_h, engine, pane_rects, scale_factor);
-    draw_focused_agent_outline(
-        ctx,
-        active_ws,
-        tab_bar_h,
-        engine,
-        state,
-        pane_rects,
-        scale_factor,
-    );
 
     // Restore extracted view stores before any further `state` access below.
     state.markdown_views = markdown_views;
@@ -249,84 +240,6 @@ pub fn draw_egui_panels(
             }
             .from_user_menu("empty_surface_convert"),
         );
-    }
-}
-
-/// focused surface 가 agent(IPC/CLI) 생성이면 그 영역에 mauve 1px outline 을 얹는다.
-/// 탭 mauve dot 의 보조 — 지금 들여다보는 surface 가 agent 것임을 명확히 한다.
-/// focused 일 때만 그려 비강제적으로 유지(원칙: agent 활동은 legible but not intrusive).
-fn draw_focused_agent_outline(
-    ctx: &egui::Context,
-    active_ws: usize,
-    tab_bar_h: tasty_type_geometry::length::PhysicalPx,
-    engine: &crate::core::CoreState,
-    state: &AppState,
-    pane_rects: &[(u32, PhysicalRect)],
-    scale_factor: f32,
-) {
-    let Some(ws) = engine.workspaces.get(active_ws) else {
-        return;
-    };
-    // 전역 focused surface = focused pane 의 active tab 의 focused surface.
-    let focused_pane_id = ws.focused_pane;
-    let Some(focused_sid) = ws
-        .pane_layout()
-        .find_pane(focused_pane_id)
-        .and_then(|p| p.tabs.get(p.active_tab))
-        .map(|t| t.focused_surface)
-    else {
-        return;
-    };
-    let is_agent = state.with_memory(|m| {
-        crate::surface_meta::SurfaceMetaStore::get(
-            m,
-            focused_sid,
-            crate::surface_meta::META_CREATED_BY,
-        )
-        .as_deref()
-            == Some(crate::surface_meta::CREATED_BY_AGENT)
-    });
-    if !is_agent {
-        return;
-    }
-
-    let th = theme::theme();
-    for &(pane_id, pane_rect) in pane_rects {
-        let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
-            continue;
-        };
-        let Some(tab) = pane.tabs.get(pane.active_tab) else {
-            continue;
-        };
-        let content_rect = PhysicalRect {
-            x: pane_rect.x,
-            y: pane_rect.y + tab_bar_h,
-            width: pane_rect.width,
-            height: (pane_rect.height - tab_bar_h)
-                .max(tasty_type_geometry::length::PhysicalPx(1.0)),
-        };
-        for r in tab.layout().surface_regions(content_rect) {
-            if r.id != focused_sid {
-                continue;
-            }
-            let x = (r.rect.x.value() / scale_factor).round_ui();
-            let y = (r.rect.y.value() / scale_factor).round_ui();
-            let w = (r.rect.width.value() / scale_factor).round_ui();
-            let h = (r.rect.height.value() / scale_factor).round_ui();
-            let rect = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h));
-            egui::Area::new(egui::Id::new(format!("agent_outline_{focused_sid}")))
-                .fixed_pos(rect.min)
-                .order(egui::Order::Foreground)
-                .show(ctx, |ui| {
-                    ui.painter().rect_stroke(
-                        rect,
-                        0.0,
-                        egui::Stroke::new(1.0, th.mauve),
-                        egui::StrokeKind::Inside,
-                    );
-                });
-            return;
-        }
     }
 }
 

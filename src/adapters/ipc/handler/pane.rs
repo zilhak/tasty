@@ -4,7 +4,7 @@ use crate::model::SplitDirection;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
-use super::{apply_meta, mark_agent_created, require_pane_id};
+use super::{apply_meta, require_pane_id};
 
 pub fn handle_pane_list(
     _state: &AppState,
@@ -266,7 +266,6 @@ pub fn handle_split(
             );
 
             apply_meta(state, new_surface_id, meta);
-            mark_agent_created(state, new_surface_id);
             JsonRpcResponse::success(
                 id,
                 json!({
@@ -331,7 +330,6 @@ pub fn handle_split(
             );
 
             apply_meta(state, new_surface_id, meta);
-            mark_agent_created(state, new_surface_id);
             JsonRpcResponse::success(
                 id,
                 json!({

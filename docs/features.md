@@ -126,7 +126,6 @@
 - 좌측 SidePanel: 워크스페이스 목록, 활성 표시, 추가 버튼
 - Pane별 탭 바: 각 Pane의 rect 상단에 egui Area로 렌더링
 - 탭 UI: 너비/폰트 크기를 Appearance settings 에서 직접 조정 (기본 150px / 11px). 모니터 scale 은 egui 가 자동 반영 (= auto). 1px 세로 구분선(surface1), active 탭 상단 강조선(blue)
-- 에이전트 surface 시각 구분: IPC/CLI(= 에이전트 행동)로 생성된 surface 는 `created_by=agent` 메타가 기록되어, 탭에 **mauve dot**(busy 녹색 점 왼쪽 슬롯), focused 시 surface 영역에 **mauve 1px outline** 으로 표시된다. 사용자가 직접 만든 surface 와 시각 구분 (Tasty 정체성 — 사용자/에이전트 행동 분리). 표시는 정적(애니메이션 없음). 생성 주체는 불변
 - 탭 스크롤: 탭이 영역을 초과하면 좌우 화살표 버튼(< >)으로 스크롤 가능
 - 탭 이름 정책:
   - 기본: 포커스된 surface의 현재 작업 디렉토리의 폴더 이름 (시스템/유저 루트는 `/` 또는 `~`)

@@ -143,8 +143,6 @@ pub fn handle_tab_create(
         return JsonRpcResponse::internal_error(id, "Core::apply returned no TabCreated event");
     };
 
-    super::mark_agent_created(state, surface_id);
-
     JsonRpcResponse::success(
         id,
         json!({

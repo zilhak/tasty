@@ -44,8 +44,6 @@ pub struct PaneTabBarView {
     pub tab_has_notification: Vec<bool>,
     /// 탭별 busy(녹색 점) 여부.
     pub tab_is_busy: Vec<bool>,
-    /// 탭별 agent(IPC/CLI) 생성 여부 — mauve dot 으로 표시.
-    pub tab_is_agent_created: Vec<bool>,
     pub active_tab: usize,
     /// 이 pane 이 현재 focus 인지 — 배경 (surface0 vs mantle) 결정.
     pub is_focused: bool,
@@ -283,20 +281,11 @@ pub fn draw_pane_tab_bars_view(
 
                                 // close 버튼 슬롯(우측 h_padding + 14px)을 비워두고 dot 은
                                 // 그 왼쪽에 둔다 (close 와 겹치지 않게).
-                                // running > agent 우선순위로 상호 배타. dot 슬롯은 최대 1개.
                                 let dot_right = tab_rect.max.x - h_padding - 14.0;
-                                let is_agent_created =
-                                    info.tab_is_agent_created.get(i).copied().unwrap_or(false);
-                                let dot_color: Option<egui::Color32> = if is_busy {
-                                    Some(th.green.into())
-                                } else if is_agent_created {
-                                    Some(th.mauve.into())
-                                } else {
-                                    None
-                                };
-                                if let Some(color) = dot_color {
+                                if is_busy {
                                     let dot_center =
                                         egui::pos2(dot_right - dot_radius, tab_rect.center().y);
+                                    let color: egui::Color32 = th.green.into();
                                     painter.circle_filled(dot_center, dot_radius, color);
                                 }
 
@@ -316,10 +305,9 @@ pub fn draw_pane_tab_bars_view(
 
                                 // 텍스트 — 아이콘 뒤, 좌측 정렬. 우측엔 dot 공간 확보.
                                 let text_x = icon_rect.max.x + 6.0;
-                                // 텍스트 우측 한계: dot/close 슬롯(dot_right) 왼쪽. dot 슬롯은
-                                // 최대 1개(running 또는 agent)이므로 한 번만 깎는다.
+                                // 텍스트 우측 한계: dot/close 슬롯(dot_right) 왼쪽.
                                 let mut text_right = dot_right - 4.0;
-                                if is_busy || is_agent_created {
+                                if is_busy {
                                     text_right -= dot_radius * 2.0 + dot_pad;
                                 }
                                 let available_w = (text_right - text_x).max(0.0);
@@ -649,23 +637,6 @@ pub fn draw_pane_tab_bars(
                     sids.iter().any(|sid| engine.busy_surfaces.contains(sid))
                 })
                 .collect();
-            // created_by=agent 메타는 영속(memory.db). pane 당 lock 1 회로 묶어 조회.
-            let tab_is_agent_created: Vec<bool> = state.with_memory(|m| {
-                pane.tabs
-                    .iter()
-                    .map(|t| {
-                        t.all_surface_ids().iter().any(|&sid| {
-                            crate::surface_meta::SurfaceMetaStore::get(
-                                m,
-                                sid,
-                                crate::surface_meta::META_CREATED_BY,
-                            )
-                            .as_deref()
-                                == Some(crate::surface_meta::CREATED_BY_AGENT)
-                        })
-                    })
-                    .collect()
-            });
             panes.push(PaneTabBarView {
                 pane_id,
                 rect: pane_rect,
@@ -682,7 +653,6 @@ pub fn draw_pane_tab_bars(
                     .collect(),
                 tab_has_notification,
                 tab_is_busy,
-                tab_is_agent_created,
                 active_tab: pane.active_tab,
                 is_focused: pane_id == focused_pane_id,
                 scroll_offset: pane.tab_scroll_offset,
@@ -900,7 +870,6 @@ mod tests {
             tab_kinds: vec!["terminal"; n],
             tab_has_notification: vec![false; n],
             tab_is_busy: vec![false; n],
-            tab_is_agent_created: vec![false; n],
             active_tab: active,
             is_focused: focused,
             scroll_offset: 0.0,
