@@ -204,11 +204,9 @@ pub enum Commands {
         #[arg(long)]
         surface: Option<u32>,
     },
-    /// Force-spawn the PTY of a deferred surface (restored from layout in an
-    /// inactive workspace). No-op if the surface's PTY is already running.
-    /// Send commands (`send text`, `send key`, ...) auto-wake the target, so
-    /// this is only useful when you want the PTY running without sending any
-    /// input yet.
+    /// Spawn the PTY of a deferred surface (no-op if already running)
+    ///
+    /// Send commands auto-wake the target; use this only to start the PTY without sending input.
     Wake {
         /// Surface ID (default: focused)
         #[arg(long)]
