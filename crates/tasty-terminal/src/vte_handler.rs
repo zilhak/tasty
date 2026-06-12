@@ -8,16 +8,16 @@ impl Terminal {
     pub(crate) fn action_to_changes(&mut self, action: Action) -> Vec<Change> {
         match action {
             Action::Print(c) => {
-                self.emit_output_text(c.to_string());
+                self.emit_output_text(|| c.to_string());
                 vec![Change::Text(c.to_string())]
             }
             Action::PrintString(s) => {
-                self.emit_output_text(s.clone());
+                self.emit_output_text(|| s.clone());
                 vec![Change::Text(s)]
             }
             Action::Control(code) => {
                 if matches!(code, ControlCode::LineFeed) {
-                    self.emit_output_text("\n".to_string());
+                    self.emit_output_text(|| "\n".to_string());
                 }
                 self.map_control(code)
             }
@@ -31,9 +31,15 @@ impl Terminal {
         }
     }
 
-    /// Push an `OutputAppended` event for the observer router.
-    /// `surface_id = 0` here; the host fills it on `collect_events`.
-    fn emit_output_text(&mut self, text: String) {
+    /// Push an `OutputAppended` event for the observer router. The text is
+    /// built lazily so a disabled gate (no observers — the common case) costs
+    /// no allocation. `surface_id = 0` here; the host fills it on
+    /// `collect_events`.
+    fn emit_output_text(&mut self, make_text: impl FnOnce() -> String) {
+        if !self.emit_output_events {
+            return;
+        }
+        let text = make_text();
         if text.is_empty() {
             return;
         }

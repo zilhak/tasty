@@ -265,6 +265,15 @@ impl ObserverRouter {
         self.observers.get(&id).map(|e| entry_to_info(id, e))
     }
 
+    /// 이 surface 의 출력을 보고 싶은 옵저버가 있는가 — terminal emit 게이트 판정.
+    /// `dispatch_line` 의 매칭 규칙과 동일해야 한다.
+    pub fn wants(&self, surface_id: u32) -> bool {
+        self.observers.values().any(|e| match e.spec.surface_id {
+            None => true,
+            Some(sid) => sid == surface_id,
+        })
+    }
+
     /// PTY 가 emit 한 텍스트를 라인 단위로 쪼개 매칭 옵저버에 dispatch.
     pub fn dispatch_text(&mut self, surface_id: u32, text: &str) {
         if self.observers.is_empty() {
@@ -501,6 +510,48 @@ mod tests {
         // ObserverRouter::dispatch_text is the public surface; with no observers
         // there are no externally observable effects. The test just ensures
         // the buffer-and-split path doesn't panic on partial chunks.
+    }
+
+    #[test]
+    fn wants_matches_observer_registrations() {
+        let mut r = ObserverRouter::new();
+        assert!(!r.wants(1), "no observers — gate off everywhere");
+
+        let memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>> =
+            std::sync::Arc::new(std::sync::Mutex::new(
+                tasty_memory::MemoryStore::open_in_memory().unwrap(),
+            ));
+        let tied = r
+            .register(
+                ObserverSpec {
+                    surface_id: Some(1),
+                    parsers: vec![],
+                    kinds: None,
+                    sink: SinkSpec::Memory { max_records: 10 },
+                },
+                memory.clone(),
+            )
+            .unwrap();
+        assert!(r.wants(1), "surface-tied observer enables its surface");
+        assert!(!r.wants(2), "other surfaces stay off");
+
+        let wildcard = r
+            .register(
+                ObserverSpec {
+                    surface_id: None,
+                    parsers: vec![],
+                    kinds: None,
+                    sink: SinkSpec::Memory { max_records: 10 },
+                },
+                memory,
+            )
+            .unwrap();
+        assert!(r.wants(2), "wildcard observer enables every surface");
+
+        r.unregister(wildcard).unwrap();
+        assert!(!r.wants(2), "wildcard removed — surface 2 off again");
+        r.unregister(tied).unwrap();
+        assert!(!r.wants(1), "all observers removed — gate off");
     }
 
     #[test]

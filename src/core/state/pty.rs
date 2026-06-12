@@ -119,14 +119,29 @@ impl CoreState {
         anyhow::bail!("Surface {} not found", surface_id)
     }
 
+    /// terminal 들의 `OutputAppended` emit 게이트를 현재 옵저버 집합과 동기화.
+    /// process 직전(lazy) + observer register/unregister 직후(eager) 호출 —
+    /// terminal 생성 콜사이트가 게이트 초기화를 신경 쓸 필요가 없다.
+    pub(crate) fn sync_output_event_gates(&mut self) {
+        let router = &self.observer_router;
+        for (sid, t) in self.terminals.iter_mut() {
+            t.set_output_events_enabled(router.wants(sid));
+        }
+    }
+
     /// Process all terminals (read PTY output). **D.3.E.4.f** — store 가 owner.
     pub fn process_all(&mut self) -> bool {
+        self.sync_output_event_gates();
         self.terminals.process_all()
     }
 
     /// Process a single terminal by surface ID (read PTY output).
     /// Returns true if data was processed.
     pub fn process_surface(&mut self, surface_id: u32) -> bool {
+        let enabled = self.observer_router.wants(surface_id);
+        if let Some(t) = self.terminals.get_mut(surface_id) {
+            t.set_output_events_enabled(enabled);
+        }
         self.terminals.process_surface(surface_id)
     }
 

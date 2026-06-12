@@ -158,6 +158,10 @@ impl App {
                             }
                         }
                     });
+                    // Mirror emit 은 process() 밖(feed_bytes)이라 process 진입의
+                    // lazy 게이트 동기화가 닿지 않는다 — 옵저버가 먼저 등록된
+                    // 경우를 위해 insert 시점에 게이트를 직접 초기화한다.
+                    mirror.set_output_events_enabled(engine.observer_router.wants(local_id));
                     engine.terminals.insert(local_id, mirror);
                     terminal_locals.insert(local_id);
                 }

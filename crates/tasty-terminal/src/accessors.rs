@@ -124,6 +124,12 @@ impl Terminal {
         std::mem::take(&mut self.events)
     }
 
+    /// Enable/disable `OutputAppended` emission. The host calls this from its
+    /// observer-gate sync; defaults to off.
+    pub fn set_output_events_enabled(&mut self, enabled: bool) {
+        self.emit_output_events = enabled;
+    }
+
     /// Set a read mark at the current end of the output buffer.
     pub fn set_mark(&mut self) {
         self.output.set_mark();

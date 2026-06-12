@@ -187,6 +187,10 @@ pub struct Terminal {
     /// Timestamp of the last `check_process_alive()` syscall from `process()`.
     /// Used to throttle per-chunk `try_wait` syscalls (ALIVE_CHECK_INTERVAL).
     last_alive_check: std::time::Instant,
+    /// Whether `OutputAppended` events are pushed during ingest. Kept in sync
+    /// with the host's observer registrations; false (the default) skips the
+    /// per-character String allocation entirely.
+    emit_output_events: bool,
 }
 
 /// How long after the last PTY output a terminal still counts as busy.
@@ -384,6 +388,7 @@ impl Terminal {
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
             // Start in the past so the first process() always checks immediately.
             last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
+            emit_output_events: false,
         }
     }
 

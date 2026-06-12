@@ -799,6 +799,52 @@ fn process_exited_eventually_emitted() {
     assert!(seen, "ProcessExited not emitted before deadline");
 }
 
+// ---- OutputAppended observer gate tests ----
+
+/// Concat of all OutputAppended texts — termwiz may deliver "hello" as one
+/// PrintString or a chain of Print(c), so individual events are not stable.
+fn appended_text(events: &[TerminalEvent]) -> String {
+    events
+        .iter()
+        .filter_map(|e| match &e.kind {
+            TerminalEventKind::OutputAppended { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn no_output_appended_when_gate_off() {
+    let mut t = Terminal::new_detached(80, 24);
+    // The gate defaults to off — no setter call needed.
+    t.feed_bytes(b"hello world");
+    assert_eq!(appended_text(&t.take_events()), "");
+
+    t.set_output_events_enabled(false);
+    t.feed_bytes(b"more");
+    assert_eq!(appended_text(&t.take_events()), "");
+}
+
+#[test]
+fn output_appended_emitted_when_gate_on() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.set_output_events_enabled(true);
+    t.feed_bytes(b"hello");
+    assert_eq!(appended_text(&t.take_events()), "hello");
+}
+
+#[test]
+fn output_appended_stops_after_gate_turned_off() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.set_output_events_enabled(true);
+    t.feed_bytes(b"on");
+    assert_eq!(appended_text(&t.take_events()), "on");
+
+    t.set_output_events_enabled(false);
+    t.feed_bytes(b"off");
+    assert_eq!(appended_text(&t.take_events()), "");
+}
+
 #[test]
 fn detached_terminal_never_emits_process_exited() {
     let mut t = Terminal::new_detached(40, 12);

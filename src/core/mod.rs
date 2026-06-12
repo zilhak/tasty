@@ -176,7 +176,9 @@ impl Core {
         spec: crate::output_observer::ObserverSpec,
     ) -> Result<u64, crate::output_observer::ObserverError> {
         let memory = engine.memory.clone();
-        engine.observer_router.register(spec, memory)
+        let id = engine.observer_router.register(spec, memory)?;
+        engine.sync_output_event_gates();
+        Ok(id)
     }
 
     /// Observer 해제.
@@ -185,7 +187,9 @@ impl Core {
         engine: &mut crate::core::CoreState,
         observer_id: u64,
     ) -> Result<(), crate::output_observer::ObserverError> {
-        engine.observer_router.unregister(observer_id)
+        engine.observer_router.unregister(observer_id)?;
+        engine.sync_output_event_gates();
+        Ok(())
     }
 
     /// Observer 목록 — read 인터페이스.
