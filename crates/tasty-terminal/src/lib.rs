@@ -184,6 +184,9 @@ pub struct Terminal {
     /// or `send_bytes()`. Used by `is_busy()` to distinguish user-typing echo
     /// from genuine program output.
     last_input_at: std::time::Instant,
+    /// Timestamp of the last `check_process_alive()` syscall from `process()`.
+    /// Used to throttle per-chunk `try_wait` syscalls (ALIVE_CHECK_INTERVAL).
+    last_alive_check: std::time::Instant,
 }
 
 /// How long after the last PTY output a terminal still counts as busy.
@@ -197,6 +200,11 @@ pub(crate) const BUSY_OUTPUT_WINDOW: std::time::Duration = std::time::Duration::
 /// and does NOT count toward the busy indicator. Program-generated output
 /// (token streams, build logs) arrives well after this threshold.
 pub(crate) const INPUT_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Minimum interval between child-alive `try_wait` syscalls in `process()`.
+/// Exit detection is still prompt: the reader thread fires a final wake on PTY
+/// EOF, and a disconnected channel forces an immediate check past the throttle.
+pub(crate) const ALIVE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
 impl Terminal {
     /// Create a new terminal.
@@ -310,6 +318,12 @@ impl Terminal {
                     Err(_) => break,
                 }
             }
+            // PTY EOF/error: drop the sender so the channel reads Disconnected,
+            // then fire one final wake — process() is guaranteed to run once
+            // more after the channel closed and detect the exit immediately
+            // (the Disconnected path bypasses the alive-check throttle).
+            drop(tx);
+            waker();
         });
 
         let pty = PtyBackend {
@@ -368,6 +382,8 @@ impl Terminal {
             last_output_at: std::time::Instant::now(),
             // Start in the past so the first PTY output is never mistaken for echo.
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
+            // Start in the past so the first process() always checks immediately.
+            last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
         }
     }
 
@@ -380,11 +396,22 @@ impl Terminal {
 
         // Drain raw PTY chunks first (the `action_rx` borrow lives inside
         // `self.pty`, so we cannot hold it across the `&mut self` ingest call).
+        // `Disconnected` means the reader thread exited (PTY EOF — child very
+        // likely gone): force an alive check regardless of the throttle window
+        // so exit detection never depends on a future wake that may never come.
+        let mut reader_gone = false;
         let chunks: Vec<Vec<u8>> = match self.pty.as_ref() {
             Some(pty) => {
                 let mut chunks = Vec::new();
-                while let Ok(data) = pty.action_rx.try_recv() {
-                    chunks.push(data);
+                loop {
+                    match pty.action_rx.try_recv() {
+                        Ok(data) => chunks.push(data),
+                        Err(mpsc::TryRecvError::Empty) => break,
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            reader_gone = true;
+                            break;
+                        }
+                    }
                 }
                 chunks
             }
@@ -396,14 +423,21 @@ impl Terminal {
             }
         }
 
-        // Check if the child process has exited (emit event once). Only
-        // meaningful for PTY-backed terminals; a detached mirror has no child.
-        if self.pty.is_some() && !self.process_exit_emitted && !self.check_process_alive() {
-            self.process_exit_emitted = true;
-            self.events.push(TerminalEvent {
-                surface_id: 0,
-                kind: TerminalEventKind::ProcessExited,
-            });
+        // Check if the child process has exited (emit event once), throttled to
+        // one `try_wait` syscall per ALIVE_CHECK_INTERVAL. Only meaningful for
+        // PTY-backed terminals; a detached mirror has no child.
+        if self.pty.is_some()
+            && !self.process_exit_emitted
+            && (reader_gone || self.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL)
+        {
+            self.last_alive_check = std::time::Instant::now();
+            if !self.check_process_alive() {
+                self.process_exit_emitted = true;
+                self.events.push(TerminalEvent {
+                    surface_id: 0,
+                    kind: TerminalEventKind::ProcessExited,
+                });
+            }
         }
 
         changed

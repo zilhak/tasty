@@ -737,3 +737,78 @@ fn snapshot_as_vt_preserves_alt_screen() {
     assert!(mirror.is_alternate_screen(), "mirror enters alt-screen");
     assert_eq!(server.screen_text(), mirror.screen_text(), "alt content");
 }
+
+// ---- check_process_alive throttle tests ----
+
+#[test]
+fn alive_check_throttled_within_window() {
+    let mut t = test_terminal(80, 24);
+    // In-the-past init: the first process() must check immediately.
+    assert!(t.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL);
+
+    t.process();
+    let first = t.last_alive_check;
+    assert!(
+        first.elapsed() < ALIVE_CHECK_INTERVAL,
+        "first check stamped now"
+    );
+
+    // Immediate second call falls inside the throttle window — no re-check.
+    t.process();
+    assert_eq!(first, t.last_alive_check, "check skipped within window");
+
+    // After the window elapses the check runs (and re-stamps) again.
+    std::thread::sleep(ALIVE_CHECK_INTERVAL + std::time::Duration::from_millis(100));
+    t.process();
+    assert!(t.last_alive_check > first, "check re-ran after window");
+}
+
+#[test]
+fn process_exited_eventually_emitted() {
+    let waker = noop_waker();
+    let mut t = Terminal::new(
+        TerminalConfig {
+            cols: 80,
+            rows: 24,
+            shell: None,
+            args: &[],
+            surface_id: 0,
+            working_dir: None,
+            initial_input: Some("exit\r"),
+        },
+        waker,
+    )
+    .expect("terminal creation");
+
+    // The shell exits on its own; the reader thread's final EOF wake plus the
+    // Disconnected fast path must surface ProcessExited well within the
+    // deadline regardless of the throttle window.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut seen = false;
+    while std::time::Instant::now() < deadline {
+        t.process();
+        if t.events
+            .iter()
+            .any(|e| matches!(e.kind, TerminalEventKind::ProcessExited))
+        {
+            seen = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(seen, "ProcessExited not emitted before deadline");
+}
+
+#[test]
+fn detached_terminal_never_emits_process_exited() {
+    let mut t = Terminal::new_detached(40, 12);
+    t.process();
+    std::thread::sleep(ALIVE_CHECK_INTERVAL + std::time::Duration::from_millis(50));
+    t.process();
+    assert!(
+        !t.events
+            .iter()
+            .any(|e| matches!(e.kind, TerminalEventKind::ProcessExited)),
+        "detached mirror has no child to exit"
+    );
+}
