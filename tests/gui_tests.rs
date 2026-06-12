@@ -769,7 +769,7 @@ fn test_workspace_switch_speed() {
         let start = Instant::now();
         inst.press_alt(Key::Unicode(ws0_key));
         inst.wait_for_ui("ws 0", Duration::from_secs(3), |s| {
-            s.active_workspace == (initial_ws.saturating_sub(1)).max(0)
+            s.active_workspace == (initial_ws.saturating_sub(1))
         });
         latencies.push(start.elapsed());
 

@@ -16,9 +16,8 @@ pub fn handle(
     engine: &mut CoreState,
     intent: &DispatchedIntent,
 ) {
-    match &intent.body {
-        Intent::NewTab { kind, params } => new_tab(core, state, engine, kind.as_deref(), params),
-        _ => {}
+    if let Intent::NewTab { kind, params } = &intent.body {
+        new_tab(core, state, engine, kind.as_deref(), params)
     }
 }
 

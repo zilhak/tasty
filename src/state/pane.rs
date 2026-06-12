@@ -432,8 +432,7 @@ impl AppState {
 pub(crate) fn default_tab_name_for_kind(kind: &str, params: &Value) -> String {
     fn basename_or(path: &str, fallback: &str) -> String {
         path.split(['/', '\\'])
-            .filter(|s| !s.is_empty())
-            .next_back()
+            .rfind(|s| !s.is_empty())
             .unwrap_or(fallback)
             .to_string()
     }

@@ -39,10 +39,11 @@ impl CellRenderer {
             bg_color = *sel_bg;
         }
         // vi copy mode cursor cell: selection 보다 우선하여 cursor 위치를 강조.
-        if let Some((pt, cursor_bg)) = vi_cursor {
-            if pt.col == col_idx && pt.absolute_row == absolute_row {
-                bg_color = *cursor_bg;
-            }
+        if let Some((pt, cursor_bg)) = vi_cursor
+            && pt.col == col_idx
+            && pt.absolute_row == absolute_row
+        {
+            bg_color = *cursor_bg;
         }
         // Link highlight: override both bg and fg for hovered link spans
         if let Some(link) = link

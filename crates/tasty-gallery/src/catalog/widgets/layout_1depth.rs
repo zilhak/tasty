@@ -89,7 +89,7 @@ fn draw_header(ui: &mut egui::Ui, theme: &Theme) {
 fn draw_list_tab(ui: &mut egui::Ui, theme: &Theme) {
     // 좌측 리스트 + 우측 디테일을 horizontal 로 분할.
     let avail = ui.available_size();
-    let list_w = (avail.x * 0.32).max(160.0).min(260.0);
+    let list_w = (avail.x * 0.32).clamp(160.0, 260.0);
     ui.horizontal(|ui| {
         // 좌측 리스트
         ui.allocate_ui_with_layout(

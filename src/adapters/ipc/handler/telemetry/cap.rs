@@ -161,7 +161,7 @@ pub fn handle_cap_list(
     if let Some(ref a) = agent_filter {
         caps.retain(|c| &c.agent == a);
     }
-    caps.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    caps.sort_by_key(|a| a.created_at);
     let arr: Vec<Value> = caps.iter().map(cap_to_json).collect();
     JsonRpcResponse::success(id, json!({ "entries": arr, "count": arr.len() }))
 }

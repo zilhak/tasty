@@ -330,12 +330,12 @@ impl Terminal {
         let cols = self.cols;
         let lines = surface.screen_lines();
         let mut result = Vec::new();
-        for i in 0..count.min(lines.len()) {
-            let cells: Vec<(String, CellAttributes)> = lines[i]
+        for line in lines.iter().take(count.min(lines.len())) {
+            let cells: Vec<(String, CellAttributes)> = line
                 .visible_cells()
                 .map(|cell| (cell.str().to_string(), cell.attrs().clone()))
                 .collect();
-            let wrapped = Self::line_was_soft_wrapped(&lines[i], cols);
+            let wrapped = Self::line_was_soft_wrapped(line, cols);
             result.push(crate::scrollback::ScrollbackLine::new(cells, wrapped));
         }
         result

@@ -83,16 +83,11 @@ pub enum PluginsAction {
 }
 
 /// 현재 활성 탭.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PluginsTab {
+    #[default]
     List,
     Add,
-}
-
-impl Default for PluginsTab {
-    fn default() -> Self {
-        Self::List
-    }
 }
 
 /// `Add` 탭에서 사용자가 경로를 검증한 결과 — 추가/취소 확인 단계로 진입.

@@ -164,12 +164,15 @@ fn key_matches_token(character: &str, token: &str) -> bool {
     if character == token {
         return true;
     }
-    match (character, token) {
-        ("+", "plus") | ("plus", "+") => true,
-        ("-", "minus") | ("minus", "-") => true,
-        ("=", "equals") | ("equals", "=") => true,
-        _ => false,
-    }
+    matches!(
+        (character, token),
+        ("+", "plus")
+            | ("plus", "+")
+            | ("-", "minus")
+            | ("minus", "-")
+            | ("=", "equals")
+            | ("equals", "=")
+    )
 }
 
 fn named_key_to_string(key: &NamedKey) -> Option<&'static str> {

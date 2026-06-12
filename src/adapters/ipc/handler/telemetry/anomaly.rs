@@ -131,7 +131,7 @@ pub fn handle_anomaly_list(
         }
         out.push(a);
     }
-    out.sort_by(|a, b| a.detected_at.cmp(&b.detected_at));
+    out.sort_by_key(|a| a.detected_at);
     let arr: Vec<Value> = out
         .iter()
         .map(|a| serde_json::to_value(a).unwrap_or(Value::Null))

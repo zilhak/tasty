@@ -26,9 +26,7 @@ impl MainView {
         let mods = &self.base.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
-        let new_link = if !matches_mods {
-            None
-        } else if self.state.settings_open || self.state.popup_hovered {
+        let new_link = if !matches_mods || self.state.settings_open || self.state.popup_hovered {
             None
         } else {
             self.compute_hovered_link()

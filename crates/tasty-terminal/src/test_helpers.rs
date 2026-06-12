@@ -299,12 +299,9 @@ impl TestTerminal {
                 }
                 _ => vec![],
             },
-            Edit::EraseInLine(mode) => match mode {
-                EraseInLine::EraseToEndOfLine => {
-                    vec![Change::ClearToEndOfLine(Default::default())]
-                }
-                _ => vec![],
-            },
+            Edit::EraseInLine(EraseInLine::EraseToEndOfLine) => {
+                vec![Change::ClearToEndOfLine(Default::default())]
+            }
             _ => vec![],
         }
     }

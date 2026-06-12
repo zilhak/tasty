@@ -49,17 +49,13 @@ fn lease_key(resource: &str) -> String {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum LeaseMode {
     /// 충돌 시 즉시 `LeaseConflict` 에러 반환.
+    #[default]
     Fail,
     /// 충돌 시 `acquired=false` 로 반환 — 호출자가 polling.
     Block,
-}
-
-impl Default for LeaseMode {
-    fn default() -> Self {
-        Self::Fail
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

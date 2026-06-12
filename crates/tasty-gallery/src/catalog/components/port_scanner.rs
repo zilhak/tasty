@@ -663,7 +663,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         "Case 6 — Desc 정렬 (SortKey::Port, SortDir::Desc — 헤더에 ▼ 인디케이터)",
     );
     let mut rows = mock_tasty_rows();
-    rows.sort_by(|a, b| b.port.cmp(&a.port));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.port));
     let p = props(
         theme,
         PortScannerViewState::Ready { rows: &rows },

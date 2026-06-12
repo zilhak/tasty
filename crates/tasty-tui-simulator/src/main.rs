@@ -432,7 +432,7 @@ fn parse_u16_or(s: &str, default: u16) -> u16 {
 
 fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
     let s = s.trim();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len())

@@ -571,6 +571,10 @@ impl MainView {
                                 );
                             }
                         }
+                        // 의도적 비축약 — close_workspace_at 은 부수효과 호출이라
+                        // match guard 로 옮기면 guard 에 부수효과를 기대하지 않는
+                        // 독자에게 함정이 된다.
+                        #[allow(clippy::collapsible_match)]
                         Some(6) => {
                             // Close workspace (모든 surface + closed_item snapshot)
                             if self.state.close_workspace_at(engine, ws_idx)

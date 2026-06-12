@@ -34,7 +34,7 @@ pub fn handle_raw_key(id: serde_json::Value, params: &serde_json::Value) -> Json
     match direction {
         "press" => post_key_event(keycode, true),
         "release" => post_key_event(keycode, false),
-        "click" | _ => {
+        _ => {
             post_key_event(keycode, true);
             std::thread::sleep(std::time::Duration::from_millis(30));
             post_key_event(keycode, false);

@@ -236,7 +236,7 @@ pub(super) fn collect_anomalies(
         }
         out.push(a);
     }
-    out.sort_by(|a, b| a.detected_at.cmp(&b.detected_at));
+    out.sort_by_key(|a| a.detected_at);
     Ok(out)
 }
 

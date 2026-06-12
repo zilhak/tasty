@@ -1,6 +1,5 @@
 //! Zoom in / out / reset 단축키 — focused surface 의 font_size override 갱신.
 
-use tasty_settings::FontOverride;
 use winit::keyboard::{Key, ModifiersState};
 
 use super::binding::matches_any_binding;
@@ -38,7 +37,7 @@ impl MainView {
                 let ov = appearance
                     .plugin_font_overrides
                     .entry(k.to_string())
-                    .or_insert_with(FontOverride::default);
+                    .or_default();
                 (ov, size)
             }
             // Other surfaces don't expose a font_size shortcut.

@@ -111,17 +111,12 @@ struct AddHandlerForm {
     error: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum AddHandlerActionKind {
+    #[default]
     OpenSurface,
     Ipc,
     System,
-}
-
-impl Default for AddHandlerActionKind {
-    fn default() -> Self {
-        Self::OpenSurface
-    }
 }
 
 pub(crate) fn draw_file_handler_tab(

@@ -220,8 +220,8 @@ fn zoom_in_increments_terminal_font_size_override_only() {
     let app = &engine.settings.appearance;
     assert_eq!(app.terminal_font.font_size, Some(15.0));
     // Other surfaces remain untouched.
-    assert!(app.plugin_font_overrides.get("markdown").is_none());
-    assert!(app.plugin_font_overrides.get("explorer").is_none());
+    assert!(!app.plugin_font_overrides.contains_key("markdown"));
+    assert!(!app.plugin_font_overrides.contains_key("explorer"));
     // default_font is also untouched.
     assert_eq!(app.default_font.font_size, 14.0);
 }

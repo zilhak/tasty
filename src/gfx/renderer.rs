@@ -419,16 +419,15 @@ impl CellRenderer {
             // Trailing cells in the row (incl. cursor on empty cell).
             let abs_row = row_offset + row_idx;
             for col_idx in last_col..cols {
-                let is_cursor = match cursor {
-                    Some((cx, cy, _)) if row_idx == cy && col_idx == cx => true,
-                    _ => false,
-                };
+                let is_cursor =
+                    matches!(cursor, Some((cx, cy, _)) if row_idx == cy && col_idx == cx);
                 let mut bg = if is_cursor { default_fg } else { default_bg };
                 // vi copy mode cursor cell: trailing 영역 (콘텐츠 없는 row 끝) 에 vi cursor 가 위치한 경우 강조.
-                if let Some((pt, cursor_bg)) = vi_cursor {
-                    if pt.col == col_idx && pt.absolute_row == abs_row {
-                        bg = *cursor_bg;
-                    }
+                if let Some((pt, cursor_bg)) = vi_cursor
+                    && pt.col == col_idx
+                    && pt.absolute_row == abs_row
+                {
+                    bg = *cursor_bg;
                 }
                 self.bg_instances.push(BgInstance {
                     pos: [col_idx as f32, row_idx as f32],

@@ -86,7 +86,7 @@ impl PaneNode {
                 );
                 // Put the real new leaf into second.
                 if let PaneNode::Split { second, .. } = self {
-                    *second = Box::new(new_leaf);
+                    **second = new_leaf;
                 }
                 None // success
             }

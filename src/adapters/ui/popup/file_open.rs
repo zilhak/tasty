@@ -328,8 +328,10 @@ mod tests {
         let mut path_input = String::new();
         let recents: Vec<String> = Vec::new();
 
-        let mut input = egui::RawInput::default();
-        input.events = inject_events;
+        let input = egui::RawInput {
+            events: inject_events,
+            ..Default::default()
+        };
 
         let mut captured = MarkdownOpenAction::None;
         let _full_output = ctx.run(input, |ctx| {

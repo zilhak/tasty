@@ -220,8 +220,8 @@ impl App {
 
     #[cfg(feature = "gui")]
     pub(crate) fn core_state_mut(&mut self) -> &mut crate::core::CoreState {
-        if self.core_state.is_some() {
-            return self.core_state.as_mut().unwrap();
+        if let Some(cs) = self.core_state.as_mut() {
+            return cs;
         }
         #[cfg(feature = "gui")]
         for w in self.view.views.values_mut() {
