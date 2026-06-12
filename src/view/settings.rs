@@ -207,13 +207,15 @@ impl View for SettingsView {
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
             action = settings_ui::draw_settings_panel(
                 ctx,
-                &mut settings,
-                ui_state,
-                captured_dt,
-                file_format.as_ref(),
-                file_handler.as_ref(),
-                user_config_path.as_deref(),
-                update_status.as_ref(),
+                settings_ui::SettingsPanelCtx {
+                    settings: &mut settings,
+                    ui_state,
+                    captured_double_tap: captured_dt,
+                    file_format: file_format.as_ref(),
+                    file_handler: file_handler.as_ref(),
+                    user_config_path: user_config_path.as_deref(),
+                    update_status: update_status.as_ref(),
+                },
             );
 
             let empty_layout = LayoutContext {

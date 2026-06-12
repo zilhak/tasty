@@ -219,20 +219,33 @@ impl SettingsUiState {
     }
 }
 
+/// [`draw_settings_panel`] 에 전달되는 렌더 컨텍스트 묶음.
+///
+/// settings modal 진입점의 인자가 시기별로 누적되어 clippy `too_many_arguments`
+/// 임계치를 넘어 struct 로 묶음 — 이후 인자 추가 시 시그니처 변경 없이 필드만 늘린다.
+pub struct SettingsPanelCtx<'a> {
+    pub settings: &'a mut Settings,
+    pub ui_state: &'a mut SettingsUiState,
+    pub captured_double_tap: &'a mut Option<String>,
+    pub file_format: &'a FileFormatRegistry,
+    pub file_handler: &'a FileHandlerRegistry,
+    pub user_config_path: Option<&'a std::path::Path>,
+    pub update_status:
+        Option<&'a std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>>,
+}
+
 /// Draw settings directly as a full-window panel (for modal windows).
 /// Returns true if Save was clicked, false if Cancel was clicked, None otherwise.
-pub fn draw_settings_panel(
-    ctx: &egui::Context,
-    settings: &mut Settings,
-    ui_state: &mut SettingsUiState,
-    captured_double_tap: &mut Option<String>,
-    file_format: &FileFormatRegistry,
-    file_handler: &FileHandlerRegistry,
-    user_config_path: Option<&std::path::Path>,
-    update_status: Option<
-        &std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
-    >,
-) -> Option<bool> {
+pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> Option<bool> {
+    let SettingsPanelCtx {
+        settings,
+        ui_state,
+        captured_double_tap,
+        file_format,
+        file_handler,
+        user_config_path,
+        update_status,
+    } = panel;
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
     }
