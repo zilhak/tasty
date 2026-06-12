@@ -275,6 +275,7 @@ pub struct AppState {
     /// Listening-port scanner async state machine. Driven by the port scanner
     /// popup: Idle → Loading (background thread + mpsc channel) → Ready / Failed.
     /// Reset to `Idle` when the popup closes.
+    #[cfg(feature = "gui")]
     pub(crate) port_scan: crate::adapters::ui::popup::port_scanner::PortScanState,
     /// Shared snapshot of background update-check state. Polled hourly.
     pub(crate) update_status:
@@ -655,6 +656,7 @@ impl AppState {
                 pm
             },
             search: crate::search_state::SearchState::new(),
+            #[cfg(feature = "gui")]
             port_scan: crate::adapters::ui::popup::port_scanner::PortScanState::Idle,
             update_status: crate::state::update_check::spawn_poller(
                 "zilhak",

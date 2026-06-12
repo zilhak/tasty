@@ -60,7 +60,7 @@ fn open(state: &mut AppState, id: &'static str, mode: &OpenPopupMode) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gui"))]
 mod tests {
     use super::*;
     use crate::adapters::ui::popup::{PopupScope, PopupState};

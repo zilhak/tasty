@@ -343,6 +343,12 @@ serde_json = "1"
 enigo = "0.6"
 tempfile = "3"
 
+# gui_common 이 objc2-app-kit 등 gui 전용 optional 의존을 쓰므로 headless
+# (`--no-default-features`) 테스트 빌드에서 제외한다.
+[[test]]
+name = "gui_tests"
+required-features = ["gui"]
+
 
 # TODO: winit PR #4478 (https://github.com/rust-windowing/winit/pull/4478) 머지 후 공식 버전으로 교체
 [patch.crates-io]

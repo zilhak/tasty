@@ -2,7 +2,7 @@ use super::*;
 use crate::model::SplitDirection;
 
 fn test_state() -> (AppState, crate::core::CoreState) {
-    let waker: crate::terminal::Waker = std::sync::Arc::new(|| {});
+    let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
     // markdown surface kind는 com.tasty.markdown plugin 이 hello 시 등록한다.
     // 테스트에서는 plugin manager 를 띄우지 않으므로 직접 등록해 host 빌트인과
