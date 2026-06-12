@@ -151,9 +151,9 @@ pub fn handle_revoke(core: &crate::core::Core, id: Value, params: &Value) -> Jso
             return JsonRpcResponse::invalid_params(id, "Missing 'token'");
         }
     };
-    let token = match tasty_ipc::caller::SessionToken::from_str(&token_str) {
-        Some(t) => t,
-        None => {
+    let token = match token_str.parse::<tasty_ipc::caller::SessionToken>() {
+        Ok(t) => t,
+        Err(_) => {
             return JsonRpcResponse::invalid_params(id, "Invalid 'token' (must be 64 hex chars)");
         }
     };

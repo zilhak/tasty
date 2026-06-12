@@ -36,16 +36,32 @@ impl SessionToken {
         Self(s)
     }
 
-    /// 외부 입력(envelope, env) 으로부터 token 을 받는다. hex 64 chars 검증.
-    pub fn from_str(s: &str) -> Option<Self> {
-        if s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
-        }
-        Some(Self(s.to_ascii_lowercase()))
-    }
-
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+/// [`SessionToken`] 파싱 에러 — hex 64 chars 형식 위반.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidSessionToken;
+
+impl fmt::Display for InvalidSessionToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid session token (expected 64 hex chars)")
+    }
+}
+
+impl std::error::Error for InvalidSessionToken {}
+
+impl std::str::FromStr for SessionToken {
+    type Err = InvalidSessionToken;
+
+    /// 외부 입력(envelope, env) 으로부터 token 을 받는다. hex 64 chars 검증.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(InvalidSessionToken);
+        }
+        Ok(Self(s.to_ascii_lowercase()))
     }
 }
 
@@ -242,7 +258,7 @@ pub fn resolve_caller_from_envelope(
         )
     };
     // 형식 위반 검증을 먼저 (trait 의 NotFound 와 invalid_format 구분 보존).
-    if SessionToken::from_str(token_str).is_none() {
+    if token_str.parse::<SessionToken>().is_err() {
         return Err(deny("invalid session_token format (expect 64 hex chars)"));
     }
     let now_ms = SystemTime::now()
@@ -380,19 +396,19 @@ mod tests {
 
     #[test]
     fn session_token_from_str_validates_length_and_charset() {
-        assert!(SessionToken::from_str("").is_none());
-        assert!(SessionToken::from_str("too short").is_none());
+        assert!("".parse::<SessionToken>().is_err());
+        assert!("too short".parse::<SessionToken>().is_err());
         let valid = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        assert_eq!(SessionToken::from_str(valid).unwrap().as_str(), valid);
+        assert_eq!(valid.parse::<SessionToken>().unwrap().as_str(), valid);
         let invalid = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdez";
-        assert!(SessionToken::from_str(invalid).is_none());
+        assert!(invalid.parse::<SessionToken>().is_err());
     }
 
     #[test]
     fn session_token_from_str_normalizes_case() {
         let upper = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
         assert_eq!(
-            SessionToken::from_str(upper).unwrap().as_str(),
+            upper.parse::<SessionToken>().unwrap().as_str(),
             upper.to_ascii_lowercase()
         );
     }

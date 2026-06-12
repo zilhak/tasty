@@ -183,7 +183,7 @@ pub fn handle_timeseries(
         .get("window")
         .and_then(|v| v.as_str())
         .unwrap_or("1m");
-    let window = match Window::from_str(window_str) {
+    let window = match window_str.parse::<Window>() {
         Ok(w) => w,
         Err(_) => {
             return JsonRpcResponse::invalid_params(

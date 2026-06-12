@@ -26,8 +26,10 @@ pub enum CapWindow {
     Day,
 }
 
-impl CapWindow {
-    pub fn from_str(s: &str) -> Result<Self> {
+impl std::str::FromStr for CapWindow {
+    type Err = TelemetryError;
+
+    fn from_str(s: &str) -> Result<Self> {
         match s {
             "total" => Ok(CapWindow::Total),
             "1h" => Ok(CapWindow::Hour),
@@ -35,7 +37,9 @@ impl CapWindow {
             _ => Err(TelemetryError::InvalidWindow),
         }
     }
+}
 
+impl CapWindow {
     pub fn as_str(self) -> &'static str {
         match self {
             CapWindow::Total => "total",
@@ -68,8 +72,10 @@ pub enum CapAction {
     Notify,
 }
 
-impl CapAction {
-    pub fn from_str(s: &str) -> Result<Self> {
+impl std::str::FromStr for CapAction {
+    type Err = TelemetryError;
+
+    fn from_str(s: &str) -> Result<Self> {
         match s {
             "stop" => Ok(CapAction::Stop),
             "pause" => Ok(CapAction::Pause),
@@ -78,7 +84,9 @@ impl CapAction {
             _ => Err(TelemetryError::Internal(format!("invalid action '{s}'"))),
         }
     }
+}
 
+impl CapAction {
     pub fn as_str(self) -> &'static str {
         match self {
             CapAction::Stop => "stop",

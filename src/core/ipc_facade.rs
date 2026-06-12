@@ -13,7 +13,7 @@ use crate::core::Core;
 
 impl IpcHostFacade for Core {
     fn session_resolve(&self, token: &str, now_ms: u64) -> SessionResolution {
-        let Some(parsed) = SessionToken::from_str(token) else {
+        let Ok(parsed) = token.parse::<SessionToken>() else {
             // 형식 위반은 NotFound 와 동일 처리 — caller.rs 가 별도 invalid_format
             // 에러를 띄우려면 token 검증을 자체적으로 한 번 더 한다 (현재 그렇게 됨).
             return SessionResolution::NotFound;

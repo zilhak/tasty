@@ -186,7 +186,7 @@ fn build_event(
         .ok_or_else(|| "Missing or non-numeric 'value'".to_string())?;
 
     let op_str = params.get("op").and_then(|v| v.as_str()).unwrap_or("inc");
-    let op = Op::from_str(op_str).map_err(|e| e.to_string())?;
+    let op = op_str.parse::<Op>().map_err(|e| e.to_string())?;
 
     let agent = params
         .get("agent")

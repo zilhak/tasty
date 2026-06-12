@@ -330,9 +330,9 @@ impl<'a> SessionStore<'a> {
                 continue;
             }
             let token_str = e.key.strip_prefix(SESSION_KEY_PREFIX).unwrap_or(&e.key);
-            let token = match SessionToken::from_str(token_str) {
-                Some(t) => t,
-                None => continue,
+            let token = match token_str.parse::<SessionToken>() {
+                Ok(t) => t,
+                Err(_) => continue,
             };
             if session.evict_expired_grants(now_ms) {
                 self.put(&token, &session)?;
@@ -383,7 +383,7 @@ impl<'a> SessionStore<'a> {
             }
             if session.evict_expired_grants(now_ms) {
                 let token_str = e.key.strip_prefix(SESSION_KEY_PREFIX).unwrap_or(&e.key);
-                if let Some(t) = SessionToken::from_str(token_str) {
+                if let Ok(t) = token_str.parse::<SessionToken>() {
                     to_resave.push((t, session.clone()));
                 }
             }

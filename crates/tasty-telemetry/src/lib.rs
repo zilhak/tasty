@@ -68,8 +68,10 @@ pub enum Op {
     Dec,
 }
 
-impl Op {
-    pub fn from_str(s: &str) -> Result<Self> {
+impl std::str::FromStr for Op {
+    type Err = TelemetryError;
+
+    fn from_str(s: &str) -> Result<Self> {
         match s {
             "set" => Ok(Op::Set),
             "inc" => Ok(Op::Inc),
@@ -77,7 +79,9 @@ impl Op {
             _ => Err(TelemetryError::InvalidOp),
         }
     }
+}
 
+impl Op {
     /// 부호 조정된 effective value (inc 양수, dec 음수, set 그대로).
     pub fn signed(self, v: f64) -> f64 {
         match self {
@@ -168,8 +172,10 @@ pub enum Window {
     OneDay,
 }
 
-impl Window {
-    pub fn from_str(s: &str) -> Result<Self> {
+impl std::str::FromStr for Window {
+    type Err = TelemetryError;
+
+    fn from_str(s: &str) -> Result<Self> {
         match s {
             "1m" => Ok(Window::OneMinute),
             "1h" => Ok(Window::OneHour),
@@ -177,7 +183,9 @@ impl Window {
             _ => Err(TelemetryError::InvalidWindow),
         }
     }
+}
 
+impl Window {
     pub fn size_ms(self) -> u64 {
         match self {
             Window::OneMinute => 60_000,

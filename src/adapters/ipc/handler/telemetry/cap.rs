@@ -102,7 +102,7 @@ pub fn handle_cap_set(
         .get("window")
         .and_then(|v| v.as_str())
         .unwrap_or("total");
-    let window = match CapWindow::from_str(window_str) {
+    let window = match window_str.parse::<CapWindow>() {
         Ok(w) => w,
         Err(_) => {
             return JsonRpcResponse::invalid_params(
@@ -115,7 +115,7 @@ pub fn handle_cap_set(
         .get("action")
         .and_then(|v| v.as_str())
         .unwrap_or("notify");
-    let action = match CapAction::from_str(action_str) {
+    let action = match action_str.parse::<CapAction>() {
         Ok(a) => a,
         Err(_) => {
             return JsonRpcResponse::invalid_params(
