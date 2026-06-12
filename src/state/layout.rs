@@ -4,24 +4,6 @@ use crate::model::{PaneId, PhysicalPx, PhysicalRect, SurfaceRegion};
 use super::AppState;
 
 impl AppState {
-    /// Process all terminals in ALL workspaces to drain PTY channels.
-    /// Returns true if the active workspace had any changes (for redraw).
-    pub fn process_all(&mut self, engine: &mut CoreState) -> bool {
-        let active_idx = self.active_workspace;
-        let active_ids: std::collections::HashSet<u32> = engine
-            .workspaces
-            .get(active_idx)
-            .map(|ws| ws.all_surface_ids().into_iter().collect())
-            .unwrap_or_default();
-        let mut active_changed = false;
-        for (sid, t) in engine.terminals.iter_mut() {
-            if t.process() && active_ids.contains(&sid) {
-                active_changed = true;
-            }
-        }
-        active_changed
-    }
-
     /// Compute all surface regions for the active workspace.
     /// Returns: for each pane, the pane rect and all surface regions within it.
     pub fn surface_regions<'a>(

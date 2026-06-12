@@ -22,13 +22,11 @@ impl MainView {
             crate::shortcuts::send_app_event(&self.proxy, crate::AppEvent::OpenPlugins);
         }
 
-        // When targeted_pty_polling is off, process all terminals every frame.
-        // When on, individual terminals are processed via TerminalOutput(Some(id)) events,
-        // but we still call process_all() as a safety net (it's a no-op if channels are empty).
-        if self.state.process_all(&mut self.core_state) {
-            self.recalc_ime_preedit_anchor();
-            self.base.dirty = true;
-        }
+        // PTY drain 은 전적으로 AppEvent::TerminalOutput 핸들러 몫이다. 과거의
+        // per-frame process_all safety net 은 제거됨 — 코얼레싱 게이트의
+        // early-reset(drain 전 게이트 해제)과 reader 의 EOF 최종 wake 가
+        // 스킵된 wake 의 데이터까지 커버한다 (형식적 메모리모델 잔여 윈도우는
+        // 실하드웨어에서 사실상 0 — ns 급 store 가시화 지연 vs µs 급 핸들러 경로).
 
         // D.3.C.C.8: TerminalEvent → CoreEvent 변환은 Core::process_pty_output 이
         // event_handler 의 AppEvent::TerminalOutput 처리 안에서 수행한다.

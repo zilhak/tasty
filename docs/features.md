@@ -463,8 +463,8 @@ terminal 의 시작 명령어는 PTY 가 ready 된 직후 stdin 에 한 줄로 �
 
 ### 이벤트 수집 파이프라인
 - AppState.collect_events()가 모든 워크스페이스의 모든 터미널에서 이벤트 수집
-- AppState.process_all()이 모든 워크스페이스의 PTY 채널을 처리 (비활성 워크스페이스 메모리 누수 방지)
-- main.rs 이벤트 루프에서 process_all() 후 이벤트 수집 및 알림 처리
+- PTY drain 은 `AppEvent::TerminalOutput` 핸들러가 수행 — targeted wake 는 `Core::process_pty_output`(해당 surface 만), default wake 는 `Core::process_all_pty_output`(전 engine)
+- 같은 핸들러가 drain 직후 TerminalEvent → CoreEvent 변환과 알림 cascade 까지 처리 (redraw 는 렌더링만 담당)
 - 윈도우 포커스 상태 추적으로 시스템 알림 발송 조건 판단
 
 ### 터미널 뷰포트 관리

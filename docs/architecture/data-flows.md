@@ -21,8 +21,9 @@ winit KeyEvent
               → PTY stdout
           → 리더 스레드 (Terminal 내부, 8KB 청크)
           → EventLoopProxy::send_event(TerminalOutput)
+  → app/event_handler.rs (AppEvent::TerminalOutput) — PTY drain
+      → core/mod.rs (Core::process_pty_output / process_all_pty_output)
   → view/main/redraw.rs (handle_redraw)
-      → state/layout.rs (process_all) — 모든 터미널 process()
       → gpu/mod.rs (render)
           → renderer/mod.rs (prepare_terminal_viewport)
           → gpu/render_pass.rs (render_clear_pass → render_terminals → render_egui_pass)
