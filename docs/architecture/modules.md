@@ -59,7 +59,7 @@ AppState 구조체를 mod.rs에서 정의하고, 각 서브모듈이 도메인�
 | `focus.rs` | 포커스 이동 (순차, 방향별, 마우스 위치 기반) |
 | `claude.rs` | Claude 부모-자식 관계 등록/해제/상태 관리 |
 | `message.rs` | Surface 간 메시지 송수신 (큐 기반) |
-| `layout.rs` | resize_all, surface_regions, update_grid_size |
+| `layout.rs` | resize_all, surface_regions, focused_surface_rect, surface_cell_rect, surface_rect_by_id, surface_id_at_position |
 | `mouse.rs` | 디바이더 탐색/드래그, `winit_cursor_icon_at` (디바이더 위 ResizeHorizontal/Vertical, terminal kind는 Text, 그 외 None) |
 | `mark.rs` | Read mark, 타이핑 감지 |
 | `tests.rs` | 유닛 테스트 |

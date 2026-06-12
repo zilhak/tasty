@@ -1,4 +1,4 @@
-//! Production DI wiring — `Core` 의 9 port 에 production adapter 주입.
+//! Production DI wiring — `Core` 의 10 port 에 production adapter 주입.
 //!
 //! 호출처는 `App::new` (또는 향후 entrypoint). test 시 별 wiring (`CoreBuilder`
 //! 에 mock adapter 주입).

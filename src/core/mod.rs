@@ -96,7 +96,7 @@ fn terminal_surface_in_tab(
         .downcast_ref::<crate::model::TerminalSurface>()
 }
 
-/// 도메인 본체. 9 outbound port (5 external + 4 internal) + preset_store 직속.
+/// 도메인 본체. 10 outbound port (6 external + 4 internal) + preset_store 직속.
 ///
 /// 도메인 데이터 (`crate::core::CoreState`) 는 본 struct 가 아닌
 /// `App.core_state` 가 main owner — Phase D 진행 중의 *공존 layer*. D.3.C

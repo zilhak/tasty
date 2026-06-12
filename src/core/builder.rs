@@ -97,7 +97,7 @@ impl CoreBuilder {
         self
     }
 
-    /// 모든 9 port 가 주입됐는지 확인 후 Core 생성.
+    /// 모든 10 port 가 주입됐는지 확인 후 Core 생성.
     pub(crate) fn build(self) -> anyhow::Result<Core> {
         let preset_store = self
             .preset_store

@@ -9,7 +9,8 @@
 //! ## 위치 분기
 //!
 //! - **External crate 의존** — 본 모듈 (`src/ports/`).
-//!   FileSystem, Clock, ClipboardSystem, ProcessSpawner, HomeDirectory.
+//!   FileSystem, Clock, ClipboardSystem, ProcessSpawner, HomeDirectory,
+//!   NotificationSoundPlayer.
 //!
 //! ## Hub 의 외부 통신
 //!
