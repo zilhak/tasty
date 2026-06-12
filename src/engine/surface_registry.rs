@@ -33,6 +33,10 @@ pub fn snapshot_fn_for(
     move |s| registry.get(s.kind()).and_then(|def| (def.snapshot)(s))
 }
 
+/// surface 의 직렬화 가능한 영속 데이터를 추출하는 콜백 타입. `None` 은
+/// 영속화 제외 (휘발성 surface). [`SurfaceKindDef::snapshot`] 이 사용한다.
+pub type SurfaceSnapshotFn = Arc<dyn Fn(&dyn Surface) -> Option<serde_json::Value> + Send + Sync>;
+
 /// surface 종류별 메타 + 동작 함수 묶음.
 ///
 /// 모든 함수는 `Send + Sync + 'static`이며, `Arc<SurfaceKindDef>` 단위로 보관되어
@@ -75,7 +79,7 @@ pub struct SurfaceKindDef {
     /// surface의 직렬화 가능한 영속 데이터를 반환한다. `None`이면 영속화에서 제외.
     /// 03E의 `SavedSurface::capture_surface`가 호출한다. 휘발성 surface는 `None`을
     /// 반환하여 layout 저장에서 빠진다.
-    pub snapshot: Arc<dyn Fn(&dyn Surface) -> Option<serde_json::Value> + Send + Sync>,
+    pub snapshot: SurfaceSnapshotFn,
 }
 
 /// surface 종류 lookup 테이블. `Arc<SurfaceKindRegistry>` 단위로 CoreState에 보관되어

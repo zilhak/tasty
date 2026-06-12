@@ -34,6 +34,10 @@ use crate::model::{
 };
 use crate::view::ui::View as _;
 
+/// reader thread 가 누적하고 메인 스레드의 apply 가 drain 하는 원격 출력 버퍼.
+/// 항목은 `(remote_surface_id, bytes)`.
+pub(crate) type RemoteOutputBuffer = Arc<Mutex<Vec<(u32, Vec<u8>)>>>;
+
 /// client 가 점유한 원격 워크스페이스의 로컬 mirror 세션(작업 J).
 pub(crate) struct AttachClientSession {
     /// 로컬에 추가된 mirror Workspace 의 id.
@@ -41,7 +45,7 @@ pub(crate) struct AttachClientSession {
     /// 원격 surface_id → 로컬 mirror surface_id. 출력 demux 적용에 사용.
     remote_to_local: HashMap<u32, u32>,
     /// reader thread 가 누적하는 원격 출력 `(remote_surface_id, bytes)`.
-    output: Arc<Mutex<Vec<(u32, Vec<u8>)>>>,
+    output: RemoteOutputBuffer,
     /// reader thread 가 EOF/force-detach 를 만나면 set. apply 가 보고 mirror 정리.
     disconnected: Arc<AtomicBool>,
     /// 입력/Detach 프레임 송신용 writer(다중 forwarder 와 직렬화 공유).
@@ -182,7 +186,7 @@ impl App {
         }
 
         // 3. reader thread: 원격 출력 → 버퍼(remote_id 키). EOF/force → disconnected.
-        let output: Arc<Mutex<Vec<(u32, Vec<u8>)>>> = Arc::new(Mutex::new(Vec::new()));
+        let output: RemoteOutputBuffer = Arc::new(Mutex::new(Vec::new()));
         let disconnected = Arc::new(AtomicBool::new(false));
         {
             let output = output.clone();
