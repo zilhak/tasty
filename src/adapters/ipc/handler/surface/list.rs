@@ -3,8 +3,11 @@ use serde_json::json;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
+// `_state` 는 미사용이지만 시그니처는 유지 — `App::collect_list` 의
+// `Fn(&AppState, &CoreState, Value)` generic 으로 workspace.list / pane.list
+// 핸들러와 공유하는 호출 컨벤션이다.
 pub(crate) fn handle_surface_list(
-    state: &AppState,
+    _state: &AppState,
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
@@ -13,15 +16,7 @@ pub(crate) fn handle_surface_list(
         for &pane_id in &ws.pane_layout().all_pane_ids() {
             if let Some(pane) = ws.pane_layout().find_pane(pane_id) {
                 for (tab_idx, tab) in pane.tabs.iter().enumerate() {
-                    collect_tab_surface_info(
-                        state,
-                        engine,
-                        tab,
-                        pane_id,
-                        ws.id,
-                        tab_idx,
-                        &mut surfaces,
-                    );
+                    collect_tab_surface_info(engine, tab, pane_id, ws.id, tab_idx, &mut surfaces);
                 }
             }
         }
@@ -30,7 +25,6 @@ pub(crate) fn handle_surface_list(
 }
 
 fn collect_tab_surface_info(
-    state: &AppState,
     engine: &crate::core::CoreState,
     tab: &crate::model::Tab,
     pane_id: u32,
@@ -40,15 +34,7 @@ fn collect_tab_surface_info(
 ) {
     if tab.is_split() {
         // Split tab: iterate through the layout
-        collect_surface_layout_info(
-            state,
-            engine,
-            tab.layout(),
-            pane_id,
-            workspace_id,
-            tab_idx,
-            out,
-        );
+        collect_surface_layout_info(engine, tab.layout(), pane_id, workspace_id, tab_idx, out);
     } else {
         // Single surface tab
         let surface = tab.surface();
@@ -99,7 +85,6 @@ fn collect_tab_surface_info(
 }
 
 fn collect_surface_layout_info(
-    state: &AppState,
     engine: &crate::core::CoreState,
     layout: &crate::model::SurfaceLayout,
     pane_id: u32,
@@ -133,8 +118,8 @@ fn collect_surface_layout_info(
             out.push(entry);
         }
         crate::model::SurfaceLayout::Split { first, second, .. } => {
-            collect_surface_layout_info(state, engine, first, pane_id, workspace_id, tab_idx, out);
-            collect_surface_layout_info(state, engine, second, pane_id, workspace_id, tab_idx, out);
+            collect_surface_layout_info(engine, first, pane_id, workspace_id, tab_idx, out);
+            collect_surface_layout_info(engine, second, pane_id, workspace_id, tab_idx, out);
         }
     }
 }

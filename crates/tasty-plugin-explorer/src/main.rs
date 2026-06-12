@@ -138,7 +138,7 @@ impl ExplorerSurface {
     }
 
     fn build_tree(&self, bookmarks: &BookmarkStore, tr: &Translator) -> UiNode {
-        let root_node = build_node(&self.root, &self.expanded, &self.selected, 0);
+        let root_node = build_node(&self.root, &self.expanded, &self.selected);
         let tree_pane = scroll_v(tree_view(
             TREE_NODE_ID,
             vec![root_node],
@@ -222,12 +222,7 @@ fn build_bookmarks_section(bookmarks: &BookmarkStore, tr: &Translator) -> UiNode
     vbox(children)
 }
 
-fn build_node(
-    path: &Path,
-    expanded: &HashSet<PathBuf>,
-    selected: &Option<PathBuf>,
-    depth: usize,
-) -> TreeNode {
+fn build_node(path: &Path, expanded: &HashSet<PathBuf>, selected: &Option<PathBuf>) -> TreeNode {
     let name = path
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -239,7 +234,7 @@ fn build_node(
     let children: Vec<TreeNode> = if is_dir && is_expanded {
         list_children(path)
             .into_iter()
-            .map(|child_path| build_node(&child_path, expanded, selected, depth + 1))
+            .map(|child_path| build_node(&child_path, expanded, selected))
             .collect()
     } else {
         Vec::new()
