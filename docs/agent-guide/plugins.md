@@ -11,7 +11,7 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 
 1. **새 Window 추가** — OS-level 별도 윈도우. `[[contributes.window]]` schema + 등록 stub 까지 동작 (1.0). 실 spawn handler / multi-window 라우팅은 별도 영역.
 2. **새 Surface 추가** — 탭/스플릿 안에서 생성 가능한 새 surface 종류를 등록한다.
-3. **새 Popup 추가** — Window 내부 가상 창. 포커스를 빼앗지 않고 터미널/surface 위에 떠 있는다 (`PopupDef` + `PopupManager` 기반, 상세는 `docs/design/popup-system.md`). 클립보드 히스토리, 알림 패널 같은 일시적 UI가 이 카테고리. plugin이 `[[contributes.popup]]`으로 contribute 가능.
+3. **새 Popup 추가** — Window 내부 가상 창. 포커스를 빼앗지 않고 터미널/surface 위에 떠 있는다 (`PopupDef` + `PopupManager` 기반, 상세는 `docs/design/systems/popup.md`). 클립보드 히스토리, 알림 패널 같은 일시적 UI가 이 카테고리. plugin이 `[[contributes.popup]]`으로 contribute 가능.
 4. **새 Tool 추가** — 좌측 사이드바 하단의 "도구" 메뉴에 항목을 꽂는다.
 5. **이벤트별 동작 추가** — 외부 이벤트(사용자 키 입력, 다른 surface lifecycle, IPC/CLI 호출 등)에 반응한다.
 
@@ -30,7 +30,7 @@ Plugin의 근본 역할은 다음 5가지로 분류된다.
 
 이벤트의 "사용자 키 입력 **등**"은 단축키만이 아니라 surface lifecycle / IPC / CLI 호출 등 **모든 외부 트리거**를 포함한다. 어떤 카테고리를 몇 개 contribute할지는 plugin이 자유롭게 정한다 — 0개여도 valid다.
 
-> **Window / Surface / Popup의 차이**는 `docs/concepts/ubiquitous-language.md` 참조. 요약하면: Window는 OS-level 별도 창, Surface는 탭/스플릿 안의 콘텐츠 영역, Popup은 Window 내부에 떠 있으며 포커스를 빼앗지 않는 일시적 가상 창이다. 휘발성 알림인 Toast는 plugin contribute 대상이 아니다 — Toast는 사용자 행동에서만 발사된다는 원칙(`docs/design/toast-system.md`) 때문.
+> **Window / Surface / Popup의 차이**는 `docs/concepts/ubiquitous-language.md` 참조. 요약하면: Window는 OS-level 별도 창, Surface는 탭/스플릿 안의 콘텐츠 영역, Popup은 Window 내부에 떠 있으며 포커스를 빼앗지 않는 일시적 가상 창이다. 휘발성 알림인 Toast는 plugin contribute 대상이 아니다 — Toast는 사용자 행동에서만 발사된다는 원칙(`docs/design/systems/toast.md`) 때문.
 
 ### 매니페스트 선언 원칙
 

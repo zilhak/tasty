@@ -147,7 +147,7 @@
 
 ### 새 surface 생성 시 cwd 상속
 
-단축키나 IPC/CLI(cwd 미지정)로 새 surface를 만들 때, 분할 대상 또는 포커스된 source surface의 `Surface::source_cwd()` 값을 새 터미널의 시작 디렉터리로 사용한다 (`docs/design/split-command.md` 참조).
+단축키나 IPC/CLI(cwd 미지정)로 새 surface를 만들 때, 분할 대상 또는 포커스된 source surface의 `Surface::source_cwd()` 값을 새 터미널의 시작 디렉터리로 사용한다 (`docs/design/flows/split-command.md` 참조).
 
 - Terminal: OSC 7로 알린 cwd
 - Explorer: `root_path` (주소바 편집 텍스트는 무시)
@@ -293,7 +293,7 @@
   - **복사**: 선택된 파일/폴더를 OS 파일 클립보드에 복사
   - **삭제**: OS 휴지통으로 이동 (`trash` 크레이트 사용)
   - 우클릭 대상이 현재 선택 목록에 포함되면 선택 전체가 메뉴 대상, 포함되지 않으면 선택 초기화 후 클릭 항목만 대상 (VS Code 방식)
-  - 상세 동작 분기: `docs/design/explorer-context-menu.md` 참조
+  - 상세 동작 분기: `docs/design/flows/explorer-context-menu.md` 참조
 
 #### 컨텍스트 메뉴
 - 터미널 영역 또는 탭 바 빈 공간에서 마우스 우클릭 시 컨텍스트 메뉴 표시
@@ -444,7 +444,7 @@ terminal 의 시작 명령어는 PTY 가 ready 된 직후 stdin 에 한 줄로 �
   - 탭 라벨 우측에 녹색 점 (active 탭은 진한, inactive 탭은 dim 알파)
   - 워크스페이스 사이드바: 접힘 모드는 번호 버튼 우상단의 점, 펼침 모드는 카드 우측의 점 + 카운트
 - IPC: `surface.list`에 `busy: bool`, `tab.list` / `workspace.list` / `tree`에 `busy_count: number`
-- focus와 무관하게 동작 (focus-policy.md §6 참조). 상세: `docs/design/busy-indicator.md`
+- focus와 무관하게 동작 (policies/focus.md §6 참조). 상세: `docs/design/policies/busy-indicator.md`
 
 ### 알림 패널 (Ctrl+I) — Popup (Window 스코프)
 - Popup으로 분류: 터미널 입력을 차단하지 않으며, 포커스를 빼앗지 않음
@@ -894,7 +894,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 - `custom_font_path`: 커스텀 폰트 파일(.ttf/.otf) 경로. 지정 시 FontSystem 또는 egui FontDefinitions에 해당 파일을 추가 로드한 후 `font_family`로 참조 가능
 - `line_height`: 행간 배수. 1.0(기본, 틈 없음 - ASCII 아트에 최적) ~ 2.0. 값이 클수록 행 간격이 넓어짐
 - `font_scale_mode`: "auto"는 `font_size * scale_factor`(고DPI에서 동일 물리 크기 유지), "fixed"는 픽셀 크기 고정
-- `settings.appearance.theme`: 현재 선택된 테마 id (= `~/.tasty/themes/<id>.toml` 의 파일명 stem). 빌트인은 `mocha`(기본 다크), `latte`(라이트). 사용자는 themes 폴더에 자유롭게 `*.toml` 추가 가능. 알려지지 않은 id 는 부팅 시 `tasty_themes::apply_theme()` 가 mocha 로 fallback 하고 InfoModal 로 사용자에게 알린다. 상세는 [docs/design/theme-system.md](design/theme-system.md), 사용자 가이드는 [docs/agent-guide/themes.md](agent-guide/themes.md)
+- `settings.appearance.theme`: 현재 선택된 테마 id (= `~/.tasty/themes/<id>.toml` 의 파일명 stem). 빌트인은 `mocha`(기본 다크), `latte`(라이트). 사용자는 themes 폴더에 자유롭게 `*.toml` 추가 가능. 알려지지 않은 id 는 부팅 시 `tasty_themes::apply_theme()` 가 mocha 로 fallback 하고 InfoModal 로 사용자에게 알린다. 상세는 [docs/design/systems/theme.md](design/systems/theme.md), 사용자 가이드는 [docs/agent-guide/themes.md](agent-guide/themes.md)
 - `settings.appearance.theme_base`: 누적된 테마 색상 풀 세트 (`ThemeColors`). 테마 변경 시 새 테마의 partial 이 이 위에 덮어쓰여진다 — 누락 필드는 보존되므로 partial 테마도 자연스럽게 적용
 - `settings.appearance.theme_overrides`: 사용자가 픽커로 직접 손댄 색상 흔적 (`PartialColors`, 모든 필드 `Option`). 테마 변경 시 클리어
 - `settings.appearance.theme_is_light`: 라이트/다크 플래그. `hover_overlay` / `active_overlay` / `separator` 같은 반투명 의미 색이 이 값에서 자동 도출됨

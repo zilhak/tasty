@@ -30,7 +30,7 @@ pub(crate) struct Envelope<B> {
 ///
 /// release 표면의 발화 주체는 `User` (단축키/메뉴/컨텍스트메뉴) 또는 `System`
 /// (cascade / 도메인 boot / Adapter 의 자동 작업). `Agent` 는 *release IPC/CLI*
-/// 의 도메인 발화 (popup 발화 불가 — `docs/design/popup-system.md` "Popup 발화
+/// 의 도메인 발화 (popup 발화 불가 — `docs/design/systems/popup.md` "Popup 발화
 /// 정책 (CRITICAL)") 와 *debug 빌드의 사용자 입력 재현* 양쪽을 의미한다.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]

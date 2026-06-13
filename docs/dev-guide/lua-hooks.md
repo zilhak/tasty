@@ -2,7 +2,7 @@
 
 이 문서는 Tasty 호스트가 Lua hook 을 발화하는 코드 경로와 wire payload 스키마를
 정리한다. 사용자 가이드는 `docs/agent-guide/lua-hooks.md`, 설계 배경은
-`docs/design/lua-hooks.md` 를 참고.
+`docs/design/policies/lua-hooks.md` 를 참고.
 
 ## 구성
 
@@ -108,7 +108,7 @@ LuaLS 의 `Lua.workspace.library` 에 추가하라:
    배치 (보통 polling lifecycle detection 또는 imperative push).
 2. `dispatch_pending_host_events` 의 매치 절에 plugin 버스 emit + `fire_lua`
    호출을 둔다.
-3. `docs/agent-guide/lua-hooks.md` 이벤트 표, `docs/design/lua-hooks.md` 매트릭스,
+3. `docs/agent-guide/lua-hooks.md` 이벤트 표, `docs/design/policies/lua-hooks.md` 매트릭스,
    `crates/tasty-lua/meta/tasty.lua` EmmyLua stub 셋 다 갱신.
 4. `tasty-lua` 의 통합 테스트가 있다면 시나리오 추가.
 

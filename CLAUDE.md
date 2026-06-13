@@ -97,7 +97,7 @@ debug 전용 코드는 **별도 디렉토리 (`debug/`) 에 모은다.** 다른 
 - 포커스된 대상의 ID 를 *기본값* 으로 제공하는 것은 편의 기능일 뿐, 포커스가 명령의 동작을 결정하는 것과는 다르다.
 - **release 빌드에는 포커스를 변경하는 CLI/IPC 가 존재하지 않는다.** (debug 빌드에서는 1 의 ② 정책에 따라 격리된 형태로만 존재 가능.)
 
-상세: [`docs/design/focus-policy.md`](docs/design/focus-policy.md), [`docs/design/split-command.md`](docs/design/split-command.md).
+상세: [`docs/design/policies/focus.md`](docs/design/policies/focus.md), [`docs/design/flows/split-command.md`](docs/design/flows/split-command.md).
 
 ---
 
@@ -188,7 +188,7 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프
 
 모든 색상·폰트 크기·선 굵기·간격은 `Theme` 에서 가져온다. `from_rgb(...)` 등으로 하드코딩하지 않는다.
 
-핵심 정책 (4px 그리드, 14px 폰트 상한, 1px 보더, 호버/액티브 오버레이 자동 도출, 4.5:1 대비, 터미널 콘텐츠 애니메이션 0ms): [`docs/design/theme-system.md`](docs/design/theme-system.md) 의 "UI 디자인 규칙" 섹션.
+핵심 정책 (4px 그리드, 14px 폰트 상한, 1px 보더, 호버/액티브 오버레이 자동 도출, 4.5:1 대비, 터미널 콘텐츠 애니메이션 0ms): [`docs/design/systems/theme.md`](docs/design/systems/theme.md) 의 "UI 디자인 규칙" 섹션.
 
 ## 국제화 (필수)
 
@@ -206,7 +206,7 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프
 
 tasty 특화 액션 (예: `tastyQuit:` / `tastyNewWindow:` / split / convert 등) 은 **반드시** `KeybindingSettings` 의 대응 필드를 읽어 key equivalent 를 설정해야 한다. binding 이 빈 vec 이면 key equivalent 도 비워두어 단축키 없는 메뉴 항목으로 표시한다.
 
-상세 (modifier 매핑 규칙, 위치 기반 추상화): [`docs/design/key-mapping.md`](docs/design/key-mapping.md).
+상세 (modifier 매핑 규칙, 위치 기반 추상화): [`docs/design/policies/key-mapping.md`](docs/design/policies/key-mapping.md).
 
 ## 에러 처리 (필수)
 

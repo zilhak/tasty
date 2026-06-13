@@ -1,6 +1,6 @@
 //! Popup 도메인 Intent 핸들러.
 //!
-//! 정책 차이 (TODO 01 결정 13 — `docs/design/action-dispatch.md` 참조):
+//! 정책 차이 (TODO 01 결정 13 — `docs/design/flows/action-dispatch.md` 참조):
 //! dispatcher 는 origin 정책을 강제하지 않는다. 호출자가 적절한 `OpenPopupMode` 를
 //! 선택하고 (예: agent origin 인데 focus 가 필요 없다면 `Default` 또는 `CenteredFocused`
 //! 대신 focus 없는 변형을 발화), PR 리뷰에서 정책 위반을 잡는다.
@@ -16,7 +16,7 @@ use crate::state::AppState;
 ///
 /// Headless 빌드 (no gui): popup 소비자가 없으므로 silent drop. `Intent::Ui`
 /// variant 자체는 model::popup_kind 경로로 컴파일 되므로 발화는 가능 — 본 핸들러
-/// 에서 무시한다. (`docs/design/popup-system.md`.)
+/// 에서 무시한다. (`docs/design/systems/popup.md`.)
 pub fn handle(state: &mut AppState, intent: &DispatchedIntent) {
     #[cfg(feature = "gui")]
     {

@@ -65,7 +65,7 @@ PopupDef {
 ### 3. 팝업 열기
 
 **Intent 큐로 발화** — 직접 `state.popups.open*` 호출은 금지된다 (자세한 이유:
-[design/action-dispatch.md](../design/action-dispatch.md)).
+[design/flows/action-dispatch.md](../design/flows/action-dispatch.md)).
 
 ```rust
 use crate::intent::{Intent, OpenPopupMode};
@@ -80,7 +80,7 @@ state.dispatch_intent(
 ```
 
 발화 origin (`from_user_*` / `from_agent_*`) 과 `OpenPopupMode` 선택 가이드는
-[design/popup-system.md](../design/popup-system.md#팝업-추가-방법) 의 표 참조.
+[design/systems/popup.md](../design/systems/popup.md#팝업-추가-방법) 의 표 참조.
 
 ### 4. 닫기 시 정리
 
@@ -141,6 +141,6 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
 
 ## 관련 설계 문서
 
-- `docs/design/popup-system.md`: 팝업 시스템 전체 설계
+- `docs/design/systems/popup.md`: 팝업 시스템 전체 설계
 - `docs/architecture/input-layer.md`: 마우스 입력 계층 (z-order와 입력 소비)
 - `docs/concepts/ubiquitous-language.md`: Window/Modal/Popup 용어 정의

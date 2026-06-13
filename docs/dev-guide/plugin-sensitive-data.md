@@ -16,7 +16,7 @@ Tasty 의 `memory.secret.*` 영역은 이름이 오해를 준다. 실제 보호 
 
 즉 secret 영역의 보호 약속은 **"plugin 간 IPC 격리"** 한 가지로 좁혀져 있다. 이게 전부다.
 
-자세한 설계 배경은 `docs/design/memory-system.md` 의 "왜 암호화를 하지 않는가" 섹션을 참고.
+자세한 설계 배경은 `docs/design/systems/memory.md` 의 "왜 암호화를 하지 않는가" 섹션을 참고.
 
 ## 권고
 

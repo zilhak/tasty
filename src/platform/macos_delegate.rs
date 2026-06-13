@@ -312,7 +312,7 @@ fn setup_main_menu(
 
 /// binding 문자열 (e.g. `"alt+shift+n"`) 을 NSMenuItem 의 key equivalent + modifier mask 로 변환.
 ///
-/// `docs/design/key-mapping.md` 의 macOS 매핑:
+/// `docs/design/policies/key-mapping.md` 의 macOS 매핑:
 /// - `ctrl` → Control, `shift` → Shift, `option` → Option
 /// - `alt` → **Cmd** (위치 기반 추상화: macOS 의 ⌘ 는 Windows 의 Alt 와 같은 손가락 위치)
 ///

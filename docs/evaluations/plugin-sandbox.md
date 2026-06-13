@@ -81,7 +81,7 @@ Object 모두 없다.
 
 | 영역 | sandbox 종류 | 강도 |
 |------|--------------|------|
-| Lua hooks (`crates/tasty-lua`, `docs/design/lua-hooks.md`) | mlua + 메모리 cap + 위험 글로벌 제거 | 약 (사용자 자기 머신, DoS 보호 한정) |
+| Lua hooks (`crates/tasty-lua`, `docs/design/policies/lua-hooks.md`) | mlua + 메모리 cap + 위험 글로벌 제거 | 약 (사용자 자기 머신, DoS 보호 한정) |
 | Lua plugin 출처 | install 시 drop + warn (`system` 사용 금지 serde reject) | 거부 |
 
 즉 *plugin 본체 sandbox 는 0* 이며 Lua 만 약한 격리를 갖는다.
@@ -211,7 +211,7 @@ TL;DR (§0) + 비교표 (§4) + 재검토 trigger (§2.4) 셋만 보면 미래�
 - `docs/dev-guide/plugin-ecosystem.md` §1 (WASM 보류 결정).
 - `docs/dev-guide/plugin-permissions.md` 「한계」 절 (권한 게이트 = IPC 호출만).
 - `docs/agent-guide/plugins.md` (entry type 정의 + 「한계」 절).
-- `docs/design/memory-system.md` (Plugin sandbox 부재 + 미래 경로).
+- `docs/design/systems/memory.md` (Plugin sandbox 부재 + 미래 경로).
 - `docs/architecture/index.md` (sandbox 경계 invariant, plugin layer 의존 규칙).
 - 코드: `crates/tasty-host-plugin/src/process.rs::PluginProcess::spawn` (실제 spawn).
 - 코드: `crates/tasty-plugin-manifest/src/types.rs::Permission` (권한 enum + 동적

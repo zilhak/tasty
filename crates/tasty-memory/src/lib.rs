@@ -17,7 +17,7 @@
 //! Secret value 는 **평문 BLOB** 으로 저장된다. AES-GCM/keyring 같은 데이터-앳-레스트
 //! 암호화는 하지 않는다. 현 시점에서 plugin process 가 OS-level sandbox 없이 호스트와
 //! 같은 권한으로 돌기 때문에, 어떤 종류의 디스크 암호화도 plugin 이 우회 가능하다
-//! (자세한 결정 배경은 `docs/design/memory-system.md`).
+//! (자세한 결정 배경은 `docs/design/systems/memory.md`).
 //!
 //! 따라서 secret 의 격리 약속은 **"plugin 간 IPC 격리"** 까지로 좁혀져 있다:
 //! plugin A 가 IPC 로 plugin B 의 secret 을 요청하면 owner 분리로 차단된다.

@@ -8,7 +8,7 @@ use crate::view::ui::View as _;
 
 impl App {
     /// 호스트 내부 Intent 큐를 모든 AppState 에서 drain 해 도메인별 핸들러로 분기한다.
-    /// 설계: `docs/design/action-dispatch.md`. 처리 순서 = 발화 순서.
+    /// 설계: `docs/design/flows/action-dispatch.md`. 처리 순서 = 발화 순서.
     /// drain 중 새로 발화된 Intent 는 다음 프레임에 처리 (재진입 방지).
     ///
     /// D.3.I.3 두 큐 통합 — `Intent::Domain(DomainIntent)` 도 본 메서드에서

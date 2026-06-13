@@ -10,7 +10,7 @@
 
 //! Host-internal action dispatch (Intent 큐).
 //!
-//! 설계: `docs/design/action-dispatch.md`.
+//! 설계: `docs/design/flows/action-dispatch.md`.
 //!
 //! 발화자는 `AppState::dispatch_intent`로 `DispatchedIntent`를 push만 한다.
 //! 메인 루프의 `App::dispatch_pending_intents`가 drain 하여 도메인별 핸들러
@@ -53,7 +53,7 @@ pub struct DispatchedIntent {
 /// - 그 외 variant: Domain Intent — 영속 도메인 mutate. headless 빌드에서도 동작.
 ///
 /// release 빌드에서 *시스템/Core/Domain handler 가 자동으로 `Ui` variant 를
-/// 발화* 하는 것은 금지된다 (`docs/design/popup-system.md` "Popup 발화 정책").
+/// 발화* 하는 것은 금지된다 (`docs/design/systems/popup.md` "Popup 발화 정책").
 /// debug 빌드의 `debug.popup.*` IPC 만 예외.
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼

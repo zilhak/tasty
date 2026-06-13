@@ -6,7 +6,7 @@ GUI 를 조작했을 때 외부 자동화 (로그/알림/CLI 호출) 를 트리�
 
 > **observe-only 입니다.** 콜백은 호스트의 흐름을 바꿀 수 없고 (cancel 불가),
 > 이벤트는 모두 사후(post) 발화입니다. 더 자세한 설계 배경은
-> `docs/design/lua-hooks.md` 참조.
+> `docs/design/policies/lua-hooks.md` 참조.
 
 ## 빠른 시작
 

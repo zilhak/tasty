@@ -6,7 +6,7 @@
 
 호스트는 `cwd_from_surface(engine, sid)` (`src/state.rs:898`) 로 surface 의 cwd 를 조회한다. terminal kind 면 `engine.terminals.get(sid).get_cwd()` 로 store 경유, 그 외는 `Surface::source_cwd()` trait method 호출.
 
-생성 시 cwd 가 *손실 없이 carry* 되는 invariant 는 [`docs/architecture/invariants/surface-cwd.md`](../architecture/invariants/surface-cwd.md) 참조. 본 문서는 **각 surface 가 자기 cwd 를 *어떻게 정의하고 갱신하는가*** 를 다룬다.
+생성 시 cwd 가 *손실 없이 carry* 되는 invariant 는 [`docs/architecture/invariants/surface-cwd.md`](../../architecture/invariants/surface-cwd.md) 참조. 본 문서는 **각 surface 가 자기 cwd 를 *어떻게 정의하고 갱신하는가*** 를 다룬다.
 
 ## Surface 별 cwd 동작
 
@@ -113,6 +113,6 @@ impl ExplorerSurface {
 
 ## 관련 문서
 
-- [`docs/architecture/invariants/surface-cwd.md`](../architecture/invariants/surface-cwd.md) — 생성 시 cwd carry invariant
-- [`docs/design/split-command.md`](split-command.md) — split/새 tab 시 cwd 상속 정책
-- [`docs/design/explorer-context-menu.md`](explorer-context-menu.md) — explorer 의 UI 동작
+- [`docs/architecture/invariants/surface-cwd.md`](../../architecture/invariants/surface-cwd.md) — 생성 시 cwd carry invariant
+- [`docs/design/flows/split-command.md`](../flows/split-command.md) — split/새 tab 시 cwd 상속 정책
+- [`docs/design/flows/explorer-context-menu.md`](../flows/explorer-context-menu.md) — explorer 의 UI 동작

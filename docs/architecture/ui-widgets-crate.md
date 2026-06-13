@@ -110,4 +110,4 @@ egui::ScrollArea::vertical()
 
 - [`tasty-egui-theme`](../../crates/tasty-egui-theme/src/lib.rs) — Theme → egui Visuals/Style 변환 어댑터.
 - [`tasty-gallery`](../../crates/tasty-gallery/) — widgets crate 의 호출 사이트 + 데모 카탈로그.
-- [`design/theme-system.md`](../design/theme-system.md) — 4px 그리드 / 1px 보더 등 UI 디자인 규칙.
+- [`design/systems/theme.md`](../design/systems/theme.md) — 4px 그리드 / 1px 보더 등 UI 디자인 규칙.

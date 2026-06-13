@@ -31,7 +31,7 @@ GNOME 이 데스크톱 Linux 점유율 1위인데 기본 미지원이라, 트레
 
 - **얻은 것**: Linux 런타임 의존성 0 (`libayatana-appindicator3-1` / `libdbusmenu-glib4` 불필요). DE 별 테스트 매트릭스 (KDE / GNOME+확장 / XFCE / Cinnamon) 부담 제거. `tray-icon` 은 `cfg(windows)` 한정 유지.
 - **잃은 것**: KDE Plasma 등 트레이를 네이티브 지원하는 DE 의 사용자도 트레이 아이콘을 받지 못한다.
-- **운영 비용 / 유지 부담**: 없음. 운영 측 정책 (의존성 한정 규칙, 백그라운드 동선) 은 [`design/linux-system-tray.md`](../design/linux-system-tray.md) 가 기술한다.
+- **운영 비용 / 유지 부담**: 없음. 운영 측 정책 (의존성 한정 규칙, 백그라운드 동선) 은 [`design/policies/linux-system-tray.md`](../design/policies/linux-system-tray.md) 가 기술한다.
 
 ## Alternatives Considered
 
@@ -48,6 +48,6 @@ GNOME 이 데스크톱 Linux 점유율 1위인데 기본 미지원이라, 트레
 
 ## References
 
-- [`design/linux-system-tray.md`](../design/linux-system-tray.md) — 현재 정책의 운영 측 상세
+- [`design/policies/linux-system-tray.md`](../design/policies/linux-system-tray.md) — 현재 정책의 운영 측 상세
 - commit `c18c32f3` (2026-05-01) — 결정 기록 원본. 요지: DE 분열로 일관된 동작 보장이 어렵고, 백그라운드 동선은 이미 태스크바 유지로 해결되어 있어 의존성·테스트 비용 대비 ROI 가 낮다
 - commit `e5fe9924` (2026-04-16) — Windows 시스템 트레이 구현 (현재 `src/platform/system_tray.rs`, 커밋 당시 경로는 `src/system_tray.rs`)

@@ -183,7 +183,7 @@ struct (`BgInstance.bg_color: GpuRgba` 등) 는 `tasty-type-appearance` 의 newt
 받으므로 `[f32; 4]` array literal 대입이 컴파일 에러. `HexColor::from_rgb` /
 `egui::Color32::from_rgb*` 직접 호출도 clippy 로 차단된다.
 
-상세는 [docs/dev-guide/color-policy.md](../dev-guide/color-policy.md) 참고.
+상세는 [docs/dev-guide/color-policy.md](../../dev-guide/color-policy.md) 참고.
 
 ## UI 코드의 색상 접근 규칙
 
@@ -235,7 +235,7 @@ ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui());
 | 포커스 링 | 2px accent-primary outline (`focus_ring_width`, egui `selection.stroke` 에 적용) |
 | 호버 오버레이 | `theme().hover_overlay` 사용 (라이트=검정 8%, 다크=흰색 8% 자동 도출). 직접 값 쓰지 말 것 |
 | 활성 오버레이 | `theme().active_overlay` (12% overlay) — 선택/active 행에 사용, hover(8%) 와 구분 |
-| 텍스트 대비 | 최소 4.5:1. 위반 시 [`ai-verification/visual-verification.md`](../ai-verification/visual-verification.md) 의 색상 대비 체크리스트 적용 |
+| 텍스트 대비 | 최소 4.5:1. 위반 시 [`ai-verification/visual-verification.md`](../../ai-verification/visual-verification.md) 의 색상 대비 체크리스트 적용 |
 | 터미널 콘텐츠 애니메이션 | **0ms**. 터미널 셀/스크롤 영역엔 어떤 transition 도 넣지 않는다 — 입력 응답성 우선 |
 | UI 위젯 애니메이션 | 짧게 (보통 100–150ms). 사용자 입력 직후의 시각 피드백에 한정 |
 | Host UI zoom | `AppearanceSettings.ui_scale` (`small / medium / large` = `0.85 / 1.0 / 1.2`). `Theme::with_colors_and_zoom` 이 빌드 시점에 토큰에 직접 곱해 박는다. UI 코드는 곱셈 무지 — `theme().spacing_xs` 가 이미 zoomed 값. |

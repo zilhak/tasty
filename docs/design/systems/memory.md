@@ -4,7 +4,7 @@
 누적·검색·공유하는 데이터의 backing store다. SQLite (WAL) 단일 파일, 본 바이너리
 `OnceLock<Mutex<MemoryStore>>` 싱글톤으로 동기 접근.
 
-상세 위치/계층 규칙은 [storage-system.md](storage-system.md) 의 `~/.tasty/` 표 참조.
+상세 위치/계층 규칙은 [storage.md](storage.md) 의 `~/.tasty/` 표 참조.
 본 문서는 **메모리 영역의 가시성·소유권 모델**을 정의한다.
 
 ## 원칙: 어디까지 책임지는가
@@ -367,6 +367,6 @@ SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory;
 ## 관련 문서
 
 - 코드: `crates/tasty-memory/`
-- 권한 모델 전체: [dev-guide/plugin-permissions.md](../dev-guide/plugin-permissions.md)
-- IPC/CLI 레퍼런스: [agent-guide/api-reference.md](../agent-guide/api-reference.md) (`memory.*` 섹션)
-- 저장 위치: [design/storage-system.md](storage-system.md)
+- 권한 모델 전체: [dev-guide/plugin-permissions.md](../../dev-guide/plugin-permissions.md)
+- IPC/CLI 레퍼런스: [agent-guide/api-reference.md](../../agent-guide/api-reference.md) (`memory.*` 섹션)
+- 저장 위치: [design/systems/storage.md](storage.md)

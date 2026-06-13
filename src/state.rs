@@ -380,7 +380,7 @@ pub struct AppState {
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. UI Intent (`Intent::Ui`) 와 Domain Intent
     /// (`Intent::Domain`) 가 한 큐 위에서 처리됨 (D.3.I.3 통합). 설계:
-    /// `docs/design/action-dispatch.md`, `intent-ui-vs-domain.md`.
+    /// `docs/design/flows/action-dispatch.md`, `intent-ui-vs-domain.md`.
     pub(crate) pending_intents: Vec<crate::intent::DispatchedIntent>,
 }
 

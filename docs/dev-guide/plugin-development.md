@@ -1036,7 +1036,7 @@ host.call("memory.put", json!({
 }))?;
 ```
 
-상세 모델(regular/secret 두 계층, owner 자동 도출, quota 정책)은 [design/memory-system.md](../design/memory-system.md) 참조.
+상세 모델(regular/secret 두 계층, owner 자동 도출, quota 정책)은 [design/systems/memory.md](../design/systems/memory.md) 참조.
 
 ### Regular vs Secret 선택 기준
 

@@ -6,7 +6,7 @@
 //!   origin 이면 active 전환, Agent/System 이면 background 유지.
 //! - **CloseWorkspace**: 미마이그레이션. 사용자 단축키의 cascade 가 `request_close` 결과
 //!   에 의존하므로 직접 호출 유지 (intent-exempt).
-//! - **ActivateWorkspace**: W1=B per `docs/design/action-dispatch.md` — focus 독립성
+//! - **ActivateWorkspace**: W1=B per `docs/design/flows/action-dispatch.md` — focus 독립성
 //!   원칙. 사용자 단축키/클릭으로만 가능.
 
 use super::{DispatchedIntent, Intent};

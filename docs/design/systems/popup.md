@@ -158,9 +158,9 @@ popup 에도 적용된다.
 이 정책은 *타입 차원에서 강제* 한다 — Core / Domain handler 는 `UiIntent`
 (즉 `OpenPopup` / `ClosePopup` / `TogglePopup`) 를 발화하는 메서드를 갖지 않는다.
 GUI adapter (단축키 핸들러, 메뉴 콜백, popup draw 함수) 에서만 발화 가능.
-상세: [`../plans/archived/phase-d/intent-ui-vs-domain.md`](../../.claude-workspace/plans/archived/phase-d/intent-ui-vs-domain.md).
+상세: [`../plans/archived/phase-d/intent-ui-vs-domain.md`](../../../.claude-workspace/plans/archived/phase-d/intent-ui-vs-domain.md).
 
-상세 설계: [action-dispatch.md](action-dispatch.md)
+상세 설계: [action-dispatch.md](../flows/action-dispatch.md)
 
 ### 등록된 팝업
 

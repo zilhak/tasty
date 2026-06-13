@@ -1,6 +1,6 @@
 # Linux 시스템 트레이 — 미지원 정책
 
-> 결정 근거 / 대안 / 재검토 조건은 [`adr/0001-linux-system-tray-unsupported.md`](../adr/0001-linux-system-tray-unsupported.md) 참조. 본 문서는 현재 정책의 운영 측 상세만 기술한다.
+> 결정 근거 / 대안 / 재검토 조건은 [`adr/0001-linux-system-tray-unsupported.md`](../../adr/0001-linux-system-tray-unsupported.md) 참조. 본 문서는 현재 정책의 운영 측 상세만 기술한다.
 
 Tasty는 **Linux에서 시스템 트레이 아이콘을 제공하지 않는다.** macOS는 메뉴바, Windows는 알림 영역(트레이)을 제공한다.
 

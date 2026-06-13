@@ -112,23 +112,19 @@
 
 ## 디자인 문서
 
+| 분류 | 진입 | 설명 |
+|------|------|------|
+| Systems | [design/systems/](design/systems/index.md) | popup, theme, settings, storage, toast, memory |
+| Policies | [design/policies/](design/policies/index.md) | focus, cwd, key-mapping, busy-indicator 등 |
+| Flows | [design/flows/](design/flows/index.md) | action-dispatch, intent-coroutine, split-command 등 |
+
+## 디자인 시스템 요청
+
+외부 디자인 시스템 (`.claude/Tasty Design System/`) 측에 *디자인 가이드를 요청* 하는 문서. 본체 docs 와는 별도 경로.
+
 | 문서 | 설명 |
 |------|------|
-| [design/theme-system.md](design/theme-system.md) | 테마 시스템 — 색상, 타이포그래피, 간격, 크기 규칙 |
-| [design/focus-policy.md](design/focus-policy.md) | 포커스 정책 — 윈도우/모달 간 입력 라우팅 규칙 |
-| [design/split-command.md](design/split-command.md) | Split 명령어 설계 — 통합 split 명령, 레벨/대상/방향 파라미터, 포커스 정책 |
-| [design/key-mapping.md](design/key-mapping.md) | 키 매핑 설계 — OS별 물리적 키 위치 매핑, 프리셋, 캡처/매칭 규칙 |
-| [design/popup-system.md](design/popup-system.md) | 내부 팝업 시스템 — 공통 규칙 7가지, PopupManager 구조 |
-| [design/action-dispatch.md](design/action-dispatch.md) | Action Dispatch (Intent 큐) — 호스트 내부 동작 디스패치, User/Agent origin, Event Bus bridge |
-| [design/intent-coroutine.md](design/intent-coroutine.md) | Intent Coroutine Runtime — 경량 thread + genawaiter 기반 multi-step workflow. 일반 Intent 큐 모델의 보강 |
-| [design/toast-system.md](design/toast-system.md) | 토스트 시스템 — 휘발성 인앱 알림, 스코프, 사용자 행동 트리거 정책 |
-| [design/settings-system.md](design/settings-system.md) | 설정 시스템 — 탭/서브탭 구조, 항목 순서 규칙, 배치 판단 기준 |
-| [design/cwd-policy.md](design/cwd-policy.md) | CWD 정책 — OSC 7 기반 CWD 감지 (모든 플랫폼 공통) |
-| [design/explorer-context-menu.md](design/explorer-context-menu.md) | Explorer 컨텍스트 메뉴 — 우클릭 대상 결정, 메뉴 항목 분기, 액션 동작 정의 |
-| [design/linux-system-tray.md](design/linux-system-tray.md) | Linux 시스템 트레이 미지원 정책 — 운영 측 상세 (백그라운드 동선, `tray-icon` cfg(windows) 한정). 결정 근거는 ADR-0001 |
-| [design/busy-indicator.md](design/busy-indicator.md) | 실행 중 표시 — 탭/워크스페이스 busy 판정 정책, 시각 표시, 플랫폼별 foreground 감지 |
-| [design/memory-system.md](design/memory-system.md) | 에이전트 메모리 — regular/secret 두 계층, owner 자동 도출, plugin 별 사전 분할 |
-| [design/lua-hooks.md](design/lua-hooks.md) | Lua hook 설계 — host 전용·observe-only·event matrix·사용자-직접 변경 의미 |
+| [design-requests/workspace-card-description.md](design-requests/workspace-card-description.md) | 워크스페이스 카드 설명 — 디자인 시스템 측 요청 |
 
 ## 아키텍처 문서
 

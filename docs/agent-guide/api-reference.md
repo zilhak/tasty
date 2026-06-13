@@ -252,7 +252,7 @@ tasty claude hook stop --surface 5  # 특정 surface 지정 (또는 TASTY_SURFAC
 
 ### 워크스페이스
 
-> `cwd` 파라미터를 생략하면, `general.inherit_cwd` 설정이 켜져 있을 때 호출 시점의 source surface(분할 대상 또는 포커스된 surface)에서 cwd를 상속한다. 자세한 매트릭스는 `docs/design/split-command.md` "cwd 결정 정책" 참조.
+> `cwd` 파라미터를 생략하면, `general.inherit_cwd` 설정이 켜져 있을 때 호출 시점의 source surface(분할 대상 또는 포커스된 surface)에서 cwd를 상속한다. 자세한 매트릭스는 `docs/design/flows/split-command.md` "cwd 결정 정책" 참조.
 
 | 메서드 | 파라미터 | 설명 |
 |--------|---------|------|

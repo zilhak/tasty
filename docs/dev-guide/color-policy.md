@@ -116,6 +116,6 @@ stable const fn 이 아니라 byte 단위 nibble lookup 으로 구현. 동작은
 
 ## 관련
 
-- `docs/design/theme-system.md` — 테마 두 레이어 모델
+- `docs/design/systems/theme.md` — 테마 두 레이어 모델
 - `crates/tasty-type-appearance/` — newtype 정의
 - `clippy.toml` — disallowed-methods 정책

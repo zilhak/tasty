@@ -468,7 +468,7 @@ debug 빌드의 위 경로는 *유일한 예외* — 사용자 입력 시뮬레�
 
 ## 관련 문서
 
-- [popup-system.md](popup-system.md) — popup 추가 방법, 공통 규칙
-- [focus-policy.md](focus-policy.md) — focus 독립성 원칙
-- [../agent-guide/event-catalog.md](../agent-guide/event-catalog.md) — Event Bus 1.0 envelope 명세
-- [../dev-guide/popup-implementation.md](../dev-guide/popup-implementation.md) — popup 구현 가이드
+- [popup-system.md](../systems/popup.md) — popup 추가 방법, 공통 규칙
+- [focus-policy.md](../policies/focus.md) — focus 독립성 원칙
+- [../agent-guide/event-catalog.md](../../agent-guide/event-catalog.md) — Event Bus 1.0 envelope 명세
+- [../dev-guide/popup-implementation.md](../../dev-guide/popup-implementation.md) — popup 구현 가이드

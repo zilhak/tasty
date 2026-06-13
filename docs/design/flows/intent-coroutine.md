@@ -396,5 +396,5 @@ fn handle_refresh_all_cwds(state: &mut AppState, engine: &CoreState) {
 ## 참조
 
 - [action-dispatch.md](./action-dispatch.md) — Intent 큐 모델의 본 문서.
-- [popup-system.md](./popup-system.md) — popup 의 PopupDef 구조 (workflow 가 발화하는 popup 의 정의).
+- [popup-system.md](../systems/popup.md) — popup 의 PopupDef 구조 (workflow 가 발화하는 popup 의 정의).
 - [genawaiter on crates.io](https://crates.io/crates/genawaiter) — coroutine runtime.
