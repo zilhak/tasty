@@ -270,6 +270,7 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("tool.ssh.list", plugin(&[])),
         ("tool.ssh.get", plugin(&[])),
         ("tool.ssh.add", plugin(&[])),
+        ("tool.ssh.detect", plugin(&[])),
         ("tool.ssh.remove", plugin(&[])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),

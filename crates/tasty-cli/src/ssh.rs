@@ -19,6 +19,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
+use tasty_ssh_profiles::{SshProfile, SshProfiles};
 
 /// 시스템 ssh 바이너리 경로.
 ///
@@ -130,6 +131,16 @@ impl PortMode {
                 "알 수 없는 --remote-port-mode '{other}' (auto|subcommand|file-unix|file-windows)"
             ),
         })
+    }
+
+    /// toml/CLI 직렬화용 문자열(`parse` 의 역). 프로필 `port_mode` 필드에 기록.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Subcommand => "subcommand",
+            Self::FileUnix => "file-unix",
+            Self::FileWindows => "file-windows",
+        }
     }
 }
 
@@ -269,23 +280,13 @@ pub fn discover_remote_port(
     verify: bool,
     debug: bool,
 ) -> Result<u16> {
-    // 단일 모드 1회 시도. `Auto` 는 호출 전에 체인으로 분해되므로 여기 도달하지 않는다.
-    let attempt = |m: PortMode| -> Result<u16> {
-        match m {
-            PortMode::Subcommand => discover_via_subcommand(ssh, target, remote_tasty, verify),
-            PortMode::FileUnix => discover_via_file(ssh, target, false, verify, debug),
-            PortMode::FileWindows => discover_via_file(ssh, target, true, verify, debug),
-            PortMode::Auto => unreachable!("Auto 는 AUTO_FALLBACK_CHAIN 으로 분해됨"),
-        }
-    };
-
     if mode != PortMode::Auto {
-        return attempt(mode);
+        return discover_single_mode(ssh, target, remote_tasty, mode, verify, debug);
     }
 
     let mut last_err = None;
     for m in AUTO_FALLBACK_CHAIN {
-        match attempt(m) {
+        match discover_single_mode(ssh, target, remote_tasty, m, verify, debug) {
             Ok(port) => return Ok(port),
             Err(e) => {
                 tracing::debug!("{m:?} 포트 발견 실패({e}) — 다음 모드로 fallback");
@@ -294,6 +295,115 @@ pub fn discover_remote_port(
         }
     }
     Err(last_err.expect("AUTO_FALLBACK_CHAIN 은 비어있지 않음"))
+}
+
+/// 단일(비-Auto) 모드 1회 시도. `Auto` 는 호출 전 체인으로 분해되므로 unreachable.
+fn discover_single_mode(
+    ssh: &Path,
+    target: &SshTarget,
+    remote_tasty: &str,
+    mode: PortMode,
+    verify: bool,
+    debug: bool,
+) -> Result<u16> {
+    match mode {
+        PortMode::Subcommand => discover_via_subcommand(ssh, target, remote_tasty, verify),
+        PortMode::FileUnix => discover_via_file(ssh, target, false, verify, debug),
+        PortMode::FileWindows => discover_via_file(ssh, target, true, verify, debug),
+        PortMode::Auto => unreachable!("Auto 는 AUTO_FALLBACK_CHAIN 으로 분해됨"),
+    }
+}
+
+/// 자동감지: 프로브 체인([`AUTO_FALLBACK_CHAIN`])을 순서대로 시도해 **첫 성공 모드**를
+/// 돌려준다(셸 종류를 묻는 단일 명령이 없으므로 프로브 성패가 곧 감지 결과 — TODO 04).
+/// 전 프로브 실패 시 마지막 에러를 반환한다.
+///
+/// `try_mode` 는 단일 모드를 시도해 포트를 내는 클로저 — 실제 SSH 실행([`detect_port_mode`])
+/// 또는 테스트용 mock 을 주입할 수 있다.
+fn detect_first_success<F>(mut try_mode: F) -> Result<PortMode>
+where
+    F: FnMut(PortMode) -> Result<u16>,
+{
+    let mut last_err = None;
+    for m in AUTO_FALLBACK_CHAIN {
+        match try_mode(m) {
+            Ok(_) => return Ok(m),
+            Err(e) => {
+                tracing::debug!("{m:?} 감지 프로브 실패({e}) — 다음 모드");
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("프로브 체인이 비어있음")))
+}
+
+/// 원격 셸 자동감지 — 프로브 체인을 실제 SSH 로 1회씩 돌려 첫 성공 모드를 반환한다.
+/// 네트워크 I/O(1~3 왕복)로 수 초 블록될 수 있다 — 호출자가 적절한 스레드에서 실행.
+pub fn detect_port_mode(
+    ssh: &Path,
+    target: &SshTarget,
+    remote_tasty: &str,
+    verify: bool,
+    debug: bool,
+) -> Result<PortMode> {
+    detect_first_success(|m| discover_single_mode(ssh, target, remote_tasty, m, verify, debug))
+}
+
+/// 한 프로필의 `shell` 값에 맞춰 `port_mode` / `detect_failed` 를 갱신한다.
+///
+/// - 명시 셸(powershell/cmd/bash/zsh) → [`shell_to_port_mode`] 로 `port_mode` 즉시 도출
+///   (네트워크 I/O 없음), `detect_failed=false`. 반환 `None`.
+/// - `auto` → 실제 SSH 프로브 체인 1회 실행(블록). 성공 시 `port_mode`=감지 모드 +
+///   `detect_failed=false`, 실패 시 `detect_failed=true`. 반환 `Some(결과)`.
+///
+/// `auto` 분기는 네트워크 I/O 로 수 초 블록될 수 있다 — GUI/host 는 워커 스레드에서 호출.
+pub fn apply_shell_to_profile(profile: &mut SshProfile) -> Option<Result<PortMode>> {
+    if let Some(mode) = tasty_ssh_profiles::shell_to_port_mode(&profile.shell) {
+        profile.port_mode = mode.to_string();
+        profile.detect_failed = false;
+        return None;
+    }
+    // shell == auto (또는 알 수 없는 값) → 감지.
+    let outcome = detect_for_profile(profile);
+    match &outcome {
+        Ok(mode) => {
+            profile.port_mode = mode.as_str().to_string();
+            profile.detect_failed = false;
+        }
+        Err(_) => profile.detect_failed = true,
+    }
+    Some(outcome)
+}
+
+/// 프로필 접속 정보로 자동감지를 1회 실행한다(셸 무관 — 항상 프로브 체인).
+fn detect_for_profile(profile: &SshProfile) -> Result<PortMode> {
+    let ssh = resolve_ssh_path();
+    let target = SshTarget::from_profile(profile);
+    let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
+    let debug = cfg!(debug_assertions);
+    detect_port_mode(&ssh, &target, &profile.remote_tasty, verify, debug)
+}
+
+/// 이름으로 프로필을 로드→재감지→저장한다(GUI 새로고침/IPC detect 워커 진입점).
+///
+/// 셸 무관하게 프로브 체인을 돌려, 성공 시 `port_mode`=감지 모드 + 활성화,
+/// 실패 시 `detect_failed=true`(비활성)로 toml 을 **항상 갱신**한다. 네트워크 I/O 블록.
+pub fn detect_and_persist(name: &str) -> Result<PortMode> {
+    let mut profiles = SshProfiles::load();
+    let Some(mut p) = profiles.get(name).cloned() else {
+        bail!("ssh 프로필 '{name}' 을 찾을 수 없습니다");
+    };
+    let result = detect_for_profile(&p);
+    match &result {
+        Ok(mode) => {
+            p.port_mode = mode.as_str().to_string();
+            p.detect_failed = false;
+        }
+        Err(_) => p.detect_failed = true,
+    }
+    profiles.upsert(p);
+    profiles.save()?;
+    result
 }
 
 /// `127.0.0.1:0` 바인드로 비어있는 로컬 포트를 확보한 뒤 즉시 해제한다(ssh 가 다시
@@ -517,6 +627,81 @@ mod tests {
         assert!(AUTO_FALLBACK_CHAIN.contains(&PortMode::FileWindows));
         // Auto 자기 자신은 체인에 들어가면 안 된다(무한 재귀 방지).
         assert!(!AUTO_FALLBACK_CHAIN.contains(&PortMode::Auto));
+    }
+
+    #[test]
+    fn port_mode_as_str_roundtrips_parse() {
+        for m in [
+            PortMode::Auto,
+            PortMode::Subcommand,
+            PortMode::FileUnix,
+            PortMode::FileWindows,
+        ] {
+            assert_eq!(PortMode::parse(m.as_str()).unwrap(), m);
+        }
+    }
+
+    #[test]
+    fn detect_first_success_records_first_passing_mode() {
+        // subcommand·file-unix 실패, file-windows 성공 → cmd 원격 감지 결과.
+        let order = std::cell::RefCell::new(Vec::new());
+        let mode = detect_first_success(|m| {
+            order.borrow_mut().push(m);
+            if m == PortMode::FileWindows {
+                Ok(45123)
+            } else {
+                Err(anyhow::anyhow!("probe {m:?} failed"))
+            }
+        })
+        .unwrap();
+        assert_eq!(mode, PortMode::FileWindows);
+        // 시도 순서가 체인과 동일해야 한다(subcommand → file-unix → file-windows).
+        assert_eq!(
+            *order.borrow(),
+            vec![
+                PortMode::Subcommand,
+                PortMode::FileUnix,
+                PortMode::FileWindows
+            ]
+        );
+    }
+
+    #[test]
+    fn detect_first_success_takes_earliest_mode() {
+        // 첫 모드가 성공하면 즉시 멈춘다.
+        let mut calls = 0;
+        let mode = detect_first_success(|_| {
+            calls += 1;
+            Ok(1234)
+        })
+        .unwrap();
+        assert_eq!(mode, PortMode::Subcommand);
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn detect_first_success_all_fail_is_err() {
+        let r = detect_first_success(|m| Err(anyhow::anyhow!("{m:?} down")));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn apply_shell_explicit_sets_mode_without_io() {
+        // 명시 셸 → 매핑으로 port_mode 즉시 도출(감지 미실행, None 반환).
+        let mut p = SshProfile::new("x", "h");
+        p.shell = "cmd".into();
+        let ran = apply_shell_to_profile(&mut p);
+        assert!(ran.is_none()); // 감지 미실행.
+        assert_eq!(p.port_mode, "file-windows");
+        assert!(!p.detect_failed);
+
+        p.shell = "powershell".into();
+        apply_shell_to_profile(&mut p);
+        assert_eq!(p.port_mode, "file-unix");
+
+        p.shell = "bash".into();
+        apply_shell_to_profile(&mut p);
+        assert_eq!(p.port_mode, "subcommand");
     }
 
     #[test]

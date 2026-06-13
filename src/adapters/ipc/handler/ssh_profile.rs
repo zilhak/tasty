@@ -77,16 +77,65 @@ pub(crate) fn handle_add(id: serde_json::Value, params: &serde_json::Value) -> J
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
+    // shell (원칙 2 — CLI `--shell` 동등). 명시 셸은 발견 모드를 즉시 도출(블록 없음).
+    // auto 는 등록 시 감지가 필요하나 SSH I/O 는 host 이벤트 루프를 막으므로 워커 스레드로
+    // 분리한다(완료 시 toml 재저장). 잘못된 셸 값은 거부.
+    if let Some(shell) = params.get("shell").and_then(|v| v.as_str()) {
+        if !tasty_ssh_profiles::is_valid_shell(shell) {
+            return JsonRpcResponse::invalid_params(
+                id,
+                "invalid 'shell' (powershell|cmd|bash|zsh|auto)",
+            );
+        }
+        p.shell = shell.to_string();
+    }
+    if let Some(mode) = tasty_ssh_profiles::shell_to_port_mode(&p.shell) {
+        // 명시 셸: 매핑으로 즉시 도출, 활성.
+        p.port_mode = mode.to_string();
+        p.detect_failed = false;
+    }
+    let will_detect = tasty_ssh_profiles::shell_to_port_mode(&p.shell).is_none();
+
     let mut profiles = SshProfiles::load();
     let replaced = profiles.get(name).is_some();
     profiles.upsert(p);
     match profiles.save() {
-        Ok(()) => JsonRpcResponse::success(
-            id,
-            json!({ "saved": true, "name": name, "replaced": replaced }),
-        ),
+        Ok(()) => {
+            // shell=auto → 등록 시 1회 감지를 워커 스레드에서 실행(host 무블록).
+            if will_detect {
+                spawn_detect(name.to_string());
+            }
+            JsonRpcResponse::success(
+                id,
+                json!({ "saved": true, "name": name, "replaced": replaced, "detecting": will_detect }),
+            )
+        }
         Err(e) => JsonRpcResponse::internal_error(id, format!("failed to save ssh profile: {e}")),
     }
+}
+
+/// `tool.ssh.detect` { name } → 재감지(프로브 체인)를 워커 스레드에서 실행하고 즉시
+/// 응답한다(원칙 2 — CLI `tasty tool ssh detect` 동등). 완료 시 toml 이 갱신된다
+/// (성공: 발견 모드 + 활성, 실패: detect_failed=true 비활성). host 이벤트 루프 무블록.
+pub(crate) fn handle_detect(id: serde_json::Value, params: &serde_json::Value) -> JsonRpcResponse {
+    let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
+    };
+    let profiles = SshProfiles::load();
+    if profiles.get(name).is_none() {
+        return JsonRpcResponse::error(id, -32040, format!("ssh profile '{name}' not found"));
+    }
+    spawn_detect(name.to_string());
+    JsonRpcResponse::success(id, json!({ "detecting": true, "name": name }))
+}
+
+/// 워커 스레드에서 `detect_and_persist` 실행(SSH 프로브 + toml 갱신). 결과는 toml 에
+/// 반영되며, 호출자는 즉시 반환한다(host 이벤트 루프 무블록).
+fn spawn_detect(name: String) {
+    std::thread::spawn(move || match tasty_cli::ssh::detect_and_persist(&name) {
+        Ok(mode) => tracing::info!("ssh profile '{name}' 감지 성공 → {}", mode.as_str()),
+        Err(e) => tracing::warn!("ssh profile '{name}' 감지 실패(비활성): {e}"),
+    });
 }
 
 /// `tool.ssh.remove` { name } → 제거.

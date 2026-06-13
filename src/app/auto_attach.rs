@@ -131,6 +131,12 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
             let p = profiles
                 .get(name)
                 .ok_or_else(|| anyhow::anyhow!("ssh 프로필 '{name}' 을 찾을 수 없습니다"))?;
+            if p.is_disabled() {
+                anyhow::bail!(
+                    "ssh 프로필 '{name}' 은 환경 감지에 실패해 비활성 상태입니다 \
+                     (tasty tool ssh detect {name} 로 재감지)"
+                );
+            }
             (
                 SshTarget::from_profile(p),
                 p.remote_tasty.clone(),

@@ -216,6 +216,8 @@ pub enum ExtensionCommands {
 }
 
 #[derive(Subcommand)]
+// reason: clap 파싱 1회용 enum — Box 화는 derive(Subcommand) 와 충돌하고 런타임 이득 없음.
+#[allow(clippy::large_enum_variant)]
 pub enum ToolCommands {
     /// Clipboard history operations (list, get, paste, remove, clear).
     Clipboard {

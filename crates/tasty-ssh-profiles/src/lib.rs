@@ -51,8 +51,18 @@ pub struct SshProfile {
     #[serde(default = "default_remote_tasty")]
     pub remote_tasty: String,
     /// 원격 포트 발견 모드: `auto`(기본) | `subcommand` | `file-unix` | `file-windows`.
+    /// `shell` 이 명시 셸이면 [`shell_to_port_mode`] 로, `auto` 면 등록 시 감지로 채워진다.
     #[serde(default = "default_port_mode")]
     pub port_mode: String,
+    /// 원격 셸 종류: `powershell` | `cmd` | `bash` | `zsh` | `auto`(기본). 사람이
+    /// 이해하는 단위. 명시 셸이면 [`shell_to_port_mode`] 로 `port_mode` 도출,
+    /// `auto` 면 등록 시 1회 감지(프로브 체인 첫 성공 모드를 `port_mode` 에 기록).
+    #[serde(default = "default_shell")]
+    pub shell: String,
+    /// `shell=auto` 감지가 전 프로브 실패한 상태. true 면 프로필을 지우지 않되
+    /// **비활성**(attach 거부 — 목록에 "감지 실패" 표시). 재감지 성공 시 false 로 복귀.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub detect_failed: bool,
 }
 
 fn default_true() -> bool {
@@ -63,6 +73,35 @@ fn default_remote_tasty() -> String {
 }
 fn default_port_mode() -> String {
     "auto".into()
+}
+fn default_shell() -> String {
+    "auto".into()
+}
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// 지정 가능한 셸 종류(GUI/CLI 검증·드롭다운 공용). `auto` 는 자동감지.
+pub const SHELLS: &[&str] = &["powershell", "cmd", "bash", "zsh", "auto"];
+
+/// 셸 문자열이 허용 값인지.
+pub fn is_valid_shell(s: &str) -> bool {
+    SHELLS.contains(&s)
+}
+
+/// 셸 종류 → 원격 포트 발견 모드 매핑 (2026-06-12 실측 기반).
+///
+/// - `powershell` → `file-unix` (`cat ~/...` — PowerShell 의 cat alias + `~` 확장)
+/// - `cmd` → `file-windows` (`type %USERPROFILE%\...` — cmd 전용)
+/// - `bash` / `zsh` → `subcommand` (`tasty port` — unix·git bash 성공)
+/// - `auto` / 알 수 없는 값 → `None` (자동감지 또는 fallback 체인 필요)
+pub fn shell_to_port_mode(shell: &str) -> Option<&'static str> {
+    match shell {
+        "powershell" => Some("file-unix"),
+        "cmd" => Some("file-windows"),
+        "bash" | "zsh" => Some("subcommand"),
+        _ => None,
+    }
 }
 
 impl SshProfile {
@@ -80,6 +119,8 @@ impl SshProfile {
             remote_command: None,
             remote_tasty: default_remote_tasty(),
             port_mode: default_port_mode(),
+            shell: default_shell(),
+            detect_failed: false,
         }
     }
 
@@ -90,6 +131,11 @@ impl SshProfile {
             Some(u) if !self.host.contains('@') => format!("{u}@{}", self.host),
             _ => self.host.clone(),
         }
+    }
+
+    /// 감지 실패로 **비활성** 상태인지. 비활성 프로필은 attach 가 거부한다(재감지 필요).
+    pub fn is_disabled(&self) -> bool {
+        self.detect_failed
     }
 }
 
@@ -264,5 +310,62 @@ mod tests {
         assert_eq!(p.remote_tasty, "tasty");
         assert_eq!(p.port_mode, "auto");
         assert!(p.port.is_none());
+    }
+
+    #[test]
+    fn legacy_toml_without_shell_loads_with_defaults() {
+        // shell 필드 신설 이전에 저장된 toml 도 그대로 로드되어야 한다(serde default).
+        let toml_str = r#"
+            [[profile]]
+            name = "old"
+            host = "h"
+            port_mode = "subcommand"
+        "#;
+        let ps: SshProfiles = toml::from_str(toml_str).unwrap();
+        let p = ps.get("old").unwrap();
+        assert_eq!(p.shell, "auto"); // 기본값
+        assert!(!p.detect_failed); // 기본 비활성 아님
+        assert!(!p.is_disabled());
+        assert_eq!(p.port_mode, "subcommand"); // 기존 값 보존
+    }
+
+    #[test]
+    fn shell_to_port_mode_mapping() {
+        assert_eq!(shell_to_port_mode("powershell"), Some("file-unix"));
+        assert_eq!(shell_to_port_mode("cmd"), Some("file-windows"));
+        assert_eq!(shell_to_port_mode("bash"), Some("subcommand"));
+        assert_eq!(shell_to_port_mode("zsh"), Some("subcommand"));
+        // auto / 알 수 없는 값은 매핑 없음(감지/폴백 필요).
+        assert_eq!(shell_to_port_mode("auto"), None);
+        assert_eq!(shell_to_port_mode("fish"), None);
+    }
+
+    #[test]
+    fn shell_validation() {
+        assert!(is_valid_shell("powershell"));
+        assert!(is_valid_shell("cmd"));
+        assert!(is_valid_shell("bash"));
+        assert!(is_valid_shell("zsh"));
+        assert!(is_valid_shell("auto"));
+        assert!(!is_valid_shell("fish"));
+        assert!(!is_valid_shell(""));
+    }
+
+    #[test]
+    fn detect_failed_roundtrip_and_skip_when_false() {
+        let mut ps = SshProfiles::default();
+        let mut p = SshProfile::new("x", "h");
+        p.detect_failed = true;
+        ps.upsert(p);
+        let toml_str = toml::to_string_pretty(&ps).unwrap();
+        assert!(toml_str.contains("detect_failed = true"));
+        let back: SshProfiles = toml::from_str(&toml_str).unwrap();
+        assert!(back.get("x").unwrap().is_disabled());
+
+        // false 면 toml 에 직렬화하지 않는다(파일 깔끔하게 유지).
+        let mut ps2 = SshProfiles::default();
+        ps2.upsert(SshProfile::new("y", "h"));
+        let toml2 = toml::to_string_pretty(&ps2).unwrap();
+        assert!(!toml2.contains("detect_failed"));
     }
 }

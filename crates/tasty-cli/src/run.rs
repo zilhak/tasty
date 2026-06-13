@@ -350,6 +350,12 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
                 let Some(p) = profiles.get(name) else {
                     anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty tool ssh list).");
                 };
+                if p.is_disabled() {
+                    anyhow::bail!(
+                        "SSH 프로필 '{name}' 은 환경 감지에 실패해 비활성 상태입니다. \
+                         'tasty tool ssh detect {name}' 로 재감지하세요."
+                    );
+                }
                 Some((
                     crate::ssh::SshTarget::from_profile(p),
                     p.remote_tasty.clone(),

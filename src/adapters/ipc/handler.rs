@@ -681,6 +681,7 @@ fn route_engine_handler(
         "tool.ssh.list" => ssh_profile::handle_list(id),
         "tool.ssh.get" => ssh_profile::handle_get(id, &request.params),
         "tool.ssh.add" => ssh_profile::handle_add(id, &request.params),
+        "tool.ssh.detect" => ssh_profile::handle_detect(id, &request.params),
         "tool.ssh.remove" => ssh_profile::handle_remove(id, &request.params),
         _ => return None,
     })
