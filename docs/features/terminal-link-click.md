@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **Surface**: 사용자 전용 (마우스 + 수식키 — CLI/IPC 비노출)
 - **Related ADR**: ADR 후보 (adr-candidates.md #0002 user-vs-agent-action-separation)
-- **Related design**: [`../concepts/ubiquitous-language.md`](../concepts/ubiquitous-language.md) (사용자/에이전트 분리), [`../design/cwd-policy.md`](../design/cwd-policy.md) (OSC 7 CWD)
+- **Related design**: [`../concepts/ubiquitous-language.md`](../concepts/ubiquitous-language.md) (사용자/에이전트 분리), [`../design/policies/cwd.md`](../design/policies/cwd.md) (OSC 7 CWD)
 
 ## 목적
 

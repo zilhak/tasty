@@ -64,4 +64,4 @@ tracing::warn!("hook {hook_id} failed for surface {surface_id}: {e}");
 
 ## anyhow / thiserror
 
-라이브러리 사용법(에러 타입 정의, `?` 전파, context 첨부)은 [`docs/libs/error-handling.md`](../libs/error-handling.md) 참조. 본 문서는 정책만 다룬다.
+라이브러리 사용법(에러 타입 정의, `?` 전파, context 첨부)은 [`docs/dev-guide/libs/error-handling.md`](libs/error-handling.md) 참조. 본 문서는 정책만 다룬다.
