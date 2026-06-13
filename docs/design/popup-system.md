@@ -189,7 +189,7 @@ GUI adapter (단축키 핸들러, 메뉴 콜백, popup draw 함수) 에서만 �
 - 팝업 닫기 → 자동 언포커스
 - `PopupManager::has_focused()`: 포커스된 팝업 존재 여부 확인
 
-이는 Modal의 전역 입력 독점과 다르다. 팝업 포커스는 **키보드만 차단**한다. 마우스 이벤트는 입력 계층(Input Layer)에 따라 팝업이 소비한다. 상세는 `input-layer.md` 참조.
+이는 Modal의 전역 입력 독점과 다르다. 팝업 포커스는 **키보드만 차단**한다. 마우스 이벤트는 입력 계층(Input Layer)에 따라 팝업이 소비한다. 상세는 `../architecture/input-layer.md` 참조.
 
 ### 포커스 고정 (sticky focus)
 

@@ -265,6 +265,9 @@ tasty (binary) ← 모든 위 크레이트
 
 | 문서 | 설명 |
 |------|------|
+| [멀티 윈도우](multi-window.md) | 멀티 윈도우 아키텍처 — 엔진/윈도우/모달 구조 |
+| [입력 계층](input-layer.md) | 마우스 입력 계층 — z-order 기반 이벤트 소비/버블링 구조 |
+| [Invariants](invariants/index.md) | *깨지면 안 되는 시스템 약속* 모음 — 코드 변경 시 가장 먼저 점검할 리스트 (surface-cwd 등) |
 | [모듈별 상세](modules.md) | 디렉토리 모듈별 책임, 설계 목적, 한계 |
 | [데이터 흐름](data-flows.md) | 주요 데이터 흐름 (파일+함수 기준 참조) |
 | [라이브러리 분리 분석](library-separation/index.md) | 크레이트 분리 후보 다관점 분석 |

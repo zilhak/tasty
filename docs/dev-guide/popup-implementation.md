@@ -142,5 +142,5 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
 ## 관련 설계 문서
 
 - `docs/design/popup-system.md`: 팝업 시스템 전체 설계
-- `docs/design/input-layer.md`: 마우스 입력 계층 (z-order와 입력 소비)
+- `docs/architecture/input-layer.md`: 마우스 입력 계층 (z-order와 입력 소비)
 - `docs/concepts/ubiquitous-language.md`: Window/Modal/Popup 용어 정의

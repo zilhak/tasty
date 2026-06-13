@@ -13,7 +13,7 @@ pub struct EmptySurface {
     /// 교체될 deferred terminal 자리표시자다.
     pub deferred_spawn: Option<DeferredSpawn>,
     /// 호스트가 carry 한 시작 cwd. fresh empty 면 None — Surface cwd invariant
-    /// (`docs/architecture/surface-cwd-invariant.md`) 에 따라 다음 변환 시 후보로 사용.
+    /// (`docs/architecture/invariants/surface-cwd.md`) 에 따라 다음 변환 시 후보로 사용.
     pub cwd: Option<PathBuf>,
 }
 

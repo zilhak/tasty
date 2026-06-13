@@ -89,7 +89,7 @@ impl Surface for AttachedSurface {
 
     /// attached marker 는 cwd 를 들지 않는다(서버측은 내부 Terminal 이, client측은
     /// mirror Terminal 이 별도 보유). Surface cwd invariant —
-    /// `docs/architecture/surface-cwd-invariant.md`.
+    /// `docs/architecture/invariants/surface-cwd.md`.
     fn source_cwd(&self) -> Option<std::path::PathBuf> {
         None
     }

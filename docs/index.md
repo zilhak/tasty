@@ -115,7 +115,6 @@
 | 문서 | 설명 |
 |------|------|
 | [design/theme-system.md](design/theme-system.md) | 테마 시스템 — 색상, 타이포그래피, 간격, 크기 규칙 |
-| [design/multi-window-architecture.md](design/multi-window-architecture.md) | 멀티 윈도우 아키텍처 — 엔진/윈도우/모달 구조 |
 | [design/focus-policy.md](design/focus-policy.md) | 포커스 정책 — 윈도우/모달 간 입력 라우팅 규칙 |
 | [design/split-command.md](design/split-command.md) | Split 명령어 설계 — 통합 split 명령, 레벨/대상/방향 파라미터, 포커스 정책 |
 | [design/key-mapping.md](design/key-mapping.md) | 키 매핑 설계 — OS별 물리적 키 위치 매핑, 프리셋, 캡처/매칭 규칙 |
@@ -124,7 +123,6 @@
 | [design/intent-coroutine.md](design/intent-coroutine.md) | Intent Coroutine Runtime — 경량 thread + genawaiter 기반 multi-step workflow. 일반 Intent 큐 모델의 보강 |
 | [design/toast-system.md](design/toast-system.md) | 토스트 시스템 — 휘발성 인앱 알림, 스코프, 사용자 행동 트리거 정책 |
 | [design/settings-system.md](design/settings-system.md) | 설정 시스템 — 탭/서브탭 구조, 항목 순서 규칙, 배치 판단 기준 |
-| [design/input-layer.md](design/input-layer.md) | 마우스 입력 계층 — z-order 기반 이벤트 소비/버블링 설계 |
 | [design/cwd-policy.md](design/cwd-policy.md) | CWD 정책 — OSC 7 기반 CWD 감지 (모든 플랫폼 공통) |
 | [design/explorer-context-menu.md](design/explorer-context-menu.md) | Explorer 컨텍스트 메뉴 — 우클릭 대상 결정, 메뉴 항목 분기, 액션 동작 정의 |
 | [design/linux-system-tray.md](design/linux-system-tray.md) | Linux 시스템 트레이 미지원 정책 — 운영 측 상세 (백그라운드 동선, `tray-icon` cfg(windows) 한정). 결정 근거는 ADR-0001 |
@@ -137,13 +135,16 @@
 | 문서 | 설명 |
 |------|------|
 | [아키텍처 개요](architecture/index.md) | 워크스페이스 크레이트 33개, 본 바이너리 모듈 구조, 의존성 DAG |
+| [멀티 윈도우](architecture/multi-window.md) | 멀티 윈도우 아키텍처 — 엔진/윈도우/모달 구조 |
+| [입력 계층](architecture/input-layer.md) | 마우스 입력 계층 — z-order 기반 이벤트 소비/버블링 구조 |
 | [모듈별 상세](architecture/modules.md) | 디렉토리 모듈별 책임, 설계 목적, 한계 |
 | [데이터 흐름](architecture/data-flows.md) | 5가지 주요 데이터 흐름 (파일+함수 기준) |
 | [라이브러리 분리](architecture/library-separation/index.md) | 워크스페이스 33 crate 현황 + 분리 의사결정 회고 (G.E — tasty-model 분리, Phase F.B — tasty-ipc / tasty-plugin-manifest / tasty-host-plugin / tasty-cli 4 crate 추가, plugin_bridge/ 본 바이너리 잔존) |
 | [UI widgets crate](architecture/ui-widgets-crate.md) | `tasty-ui-widgets` 의 목적·의존·위젯 카탈로그 — 본체와 갤러리가 공유하는 egui layout primitive (two_depth_layout / horizontal_tab_bar_with_arrows / tab_content_frame) + tokens (SUB_TAB_PANEL_WIDTH 등 layout 상수) |
 | [Plugin categories](architecture/plugin-categories.md) | host-native / bundled plugin / user plugin 3 카테고리 분류 정책 + 기존 "builtin" 표현 매핑 |
 | [성능 벤치마크](architecture/performance-benchmarks.md) | F.G GPU 최적화 실측 — terminals_ms p50/p99/max + draw call 수 + atlas eviction 카운터 (10 surface ASCII / CJK 4 surface, release / dist 프로필) |
-| [Surface cwd invariant](architecture/surface-cwd-invariant.md) | Surface 변환·생성 시 cwd carry 강제 규칙 + Surface trait / `SurfaceKindDef.create` / `ConvertSurfaceTarget::Kind` / `SurfaceCreateCtx.cwd` 의 compile-time guard |
+| [Invariants](architecture/invariants/index.md) | *깨지면 안 되는 시스템 약속* 모음 — 코드 변경 시 가장 먼저 점검할 리스트 (surface-cwd 등) |
+| [Surface cwd invariant](architecture/invariants/surface-cwd.md) | Surface 변환·생성 시 cwd carry 강제 규칙 + Surface trait / `SurfaceKindDef.create` / `ConvertSurfaceTarget::Kind` / `SurfaceCreateCtx.cwd` 의 compile-time guard |
 
 ## 평가 / POC
 

@@ -3,7 +3,7 @@
 - **Status**: Implemented
 - **Surface**: 사용자 (Alt+' 팝업) + 에이전트 (kind 별 IPC 경유 — 범용 convert 메서드는 없음)
 - **Related ADR**: ADR 후보 (adr-candidates.md #0013 surface-cwd-invariant)
-- **Related design**: [`../architecture/surface-cwd-invariant.md`](../architecture/surface-cwd-invariant.md) (전환 시 cwd carry), [`../dev-guide/popup-implementation.md`](../dev-guide/popup-implementation.md)
+- **Related design**: [`../architecture/invariants/surface-cwd.md`](../architecture/invariants/surface-cwd.md) (전환 시 cwd carry), [`../dev-guide/popup-implementation.md`](../dev-guide/popup-implementation.md)
 
 ## 목적
 
@@ -47,5 +47,5 @@
 ## 관련 문서
 
 - [`../features.md`](../features.md) "워크스페이스 & 탭 > Surface 타입 전환" 섹션
-- [`../architecture/surface-cwd-invariant.md`](../architecture/surface-cwd-invariant.md)
+- [`../architecture/invariants/surface-cwd.md`](../architecture/invariants/surface-cwd.md)
 - `.claude-workspace/todo/adr-candidates.md` #0013

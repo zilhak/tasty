@@ -29,7 +29,7 @@ pub enum HostCmd {
         plugin_id: String,
         kind: String,
         /// 호스트가 carry 한 시작 cwd. Surface cwd invariant —
-        /// `docs/architecture/surface-cwd-invariant.md`.
+        /// `docs/architecture/invariants/surface-cwd.md`.
         cwd: Option<PathBuf>,
         params: Value,
         handles: SurfaceHandles,
