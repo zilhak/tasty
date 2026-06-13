@@ -27,6 +27,10 @@ pub struct Workspace {
     /// `Some` 이면 활성화 시 호스트가 자동 attach(SSH 터널 + workspace mirror) 한다.
     /// layout.json 으로 영속(`SavedWorkspace.attach_mapping`).
     pub attach_mapping: Option<WorkspaceAttachMapping>,
+    /// attach/detach 작업 J — 이 워크스페이스가 원격을 attach 한 **client mirror** 인지.
+    /// `true` 면 사이드바 dot 을 항상 하늘색(`th.sky`)으로 표시해 로컬 워크스페이스와
+    /// 구분한다. 런타임 전용 상태(영속하지 않음 — 재시작 시 재attach).
+    pub mirror: bool,
 }
 
 impl Workspace {
@@ -49,6 +53,7 @@ impl Workspace {
             pane_layout_opt: Some(PaneNode::Leaf(pane)),
             focused_pane,
             attach_mapping: None,
+            mirror: false,
         }
     }
 
@@ -81,6 +86,7 @@ impl Workspace {
             pane_layout_opt: Some(PaneNode::Leaf(pane)),
             focused_pane,
             attach_mapping: None,
+            mirror: false,
         }
     }
 
@@ -100,6 +106,7 @@ impl Workspace {
             pane_layout_opt: Some(pane_layout),
             focused_pane,
             attach_mapping: None,
+            mirror: false,
         }
     }
 

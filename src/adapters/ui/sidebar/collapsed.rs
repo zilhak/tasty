@@ -39,6 +39,7 @@ pub fn draw_collapsed_sidebar(
                 busy_count: engine.busy_count(&surface_ids),
                 has_highlight: engine.notifications.has_highlighted_surface(&surface_ids),
                 attached: engine.attach.workspace_holder(ws.id).is_some(),
+                is_mirror: ws.mirror,
                 is_active: i == active_ws,
             }
         })

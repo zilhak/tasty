@@ -181,7 +181,7 @@ impl App {
             }
 
             local_ws_id = ids.next_workspace();
-            let ws = build_mirror_workspace(
+            let mut ws = build_mirror_workspace(
                 local_ws_id,
                 &name,
                 &tree,
@@ -189,6 +189,8 @@ impl App {
                 &remote_to_local,
                 &terminal_locals,
             );
+            // client mirror 표식 — 사이드바 dot 을 항상 하늘색으로 표시(로컬 ws 와 구분).
+            ws.mirror = true;
             engine.workspaces.push(ws);
             main.mark_dirty();
         }

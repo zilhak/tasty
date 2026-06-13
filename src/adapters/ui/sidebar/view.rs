@@ -25,6 +25,8 @@ pub struct WorkspaceEntryView {
     pub has_highlight: bool,
     /// 다른 client 가 해당 workspace 를 attach 한 상태 (빨간 인디케이터).
     pub attached: bool,
+    /// 이 워크스페이스가 원격을 attach 한 client mirror 인지 (하늘색 인디케이터, 항상 켜짐).
+    pub is_mirror: bool,
     pub is_active: bool,
 }
 
@@ -444,14 +446,22 @@ pub fn draw_collapsed_sidebar_view(
                     text_color.into(),
                 );
             }
-            if ws.busy_count > 0 {
+            // 우상단 dot — mirror(하늘색, 항상 켜짐) > running(초록). attached(빨강)는 우하단.
+            let top_dot = if ws.is_mirror {
+                Some(th.sky)
+            } else if ws.busy_count > 0 {
+                Some(th.green)
+            } else {
+                None
+            };
+            if let Some(c) = top_dot {
                 let dot_radius = 3.0;
                 let dot_pad = 4.0;
                 let dot_center = egui::pos2(
                     rect.max.x - dot_pad - dot_radius,
                     rect.min.y + dot_pad + dot_radius,
                 );
-                ui.painter().circle_filled(dot_center, dot_radius, th.green);
+                ui.painter().circle_filled(dot_center, dot_radius, c);
             }
             if ws.attached {
                 let dot_radius = 3.0;
@@ -672,15 +682,18 @@ fn draw_workspace_card(
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             // 좌측 상태 dot — 디자인 StatusDot (running/idle/agent/waiting/error)
-            // 중 ws-level 데이터로 결정 가능한 두 case 만 표시.
-            // 우선순위: running(busy_count>0) → green (accent-success)
+            // 중 ws-level 데이터로 결정 가능한 case 만 표시.
+            // 우선순위: mirror (원격 attach 한 client mirror) → sky (항상 켜짐)
+            //          > running(busy_count>0) → green (accent-success)
             //          > attached (다른 client 점유) → red (accent-danger)
             //          > 없음 (idle 은 무점 표시)
             // 디자인의 agent / waiting case 는 ws-level 데이터 부재로 보류.
             // 폴더 아이콘(16px) 슬롯과 동일 폭을 차지해 라벨 위치가 흔들리지 않게 한다.
             let dot_slot = egui::vec2(16.0, 16.0);
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
-            let dot_color: Option<egui::Color32> = if ws.busy_count > 0 {
+            let dot_color: Option<egui::Color32> = if ws.is_mirror {
+                Some(th.sky.into())
+            } else if ws.busy_count > 0 {
                 Some(th.green.into())
             } else if ws.attached {
                 Some(th.red.into())
@@ -775,6 +788,7 @@ mod tests {
             busy_count: 0,
             has_highlight: false,
             attached: false,
+            is_mirror: false,
             is_active,
         }
     }
@@ -852,6 +866,7 @@ mod tests {
             busy_count: 3,
             has_highlight: true,
             attached: true,
+            is_mirror: false,
             is_active: true,
         }];
         let actions = run_collapsed(ws);
