@@ -7,6 +7,7 @@ pub(crate) mod file_handler_picker;
 pub(crate) mod file_open;
 pub(crate) mod port_scanner;
 pub(crate) mod preset_apply;
+pub(crate) mod ssh_tool;
 pub(crate) mod update;
 
 use crate::state::AppState;
