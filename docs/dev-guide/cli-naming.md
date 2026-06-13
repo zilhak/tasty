@@ -68,7 +68,7 @@ DEBUG_METHODS / PREFIX_RULES / plugin 매니페스트 제공 namespace 는 제�
 | `system` | 1 |
 | `tab` | 4 |
 | `telemetry` | 12 |
-| `tool` | 9 |
+| `tool` | 10 |
 | `view` | 3 |
 | `webview` | 1 |
 | `window` | 3 |
