@@ -66,7 +66,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 default_scope: PopupScope::Window,
                 close_on_outside_click: false,
                 headless: true,
-                sticky_focus: true,
+                sticky_focus: false,
                 draw_fn: crate::adapters::ui::search_bar::draw_search_bar,
             },
             PopupDef {

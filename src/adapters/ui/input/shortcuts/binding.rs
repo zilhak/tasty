@@ -6,6 +6,63 @@ pub(crate) fn matches_any_binding(bindings: &[String], key: &Key, mods: Modifier
     bindings.iter().any(|b| matches_binding(b, key, mods))
 }
 
+/// egui 입력(`InputState`) 기준으로 바인딩 목록 중 하나라도 이번 프레임에 눌렸는지
+/// 판정한다. winit 단축키 경로가 닿지 않는 egui 위젯(검색 바 등) 안에서
+/// `KeybindingSettings` 바인딩을 그대로 매칭하기 위한 진입점.
+pub(crate) fn any_binding_pressed_egui(bindings: &[String], input: &egui::InputState) -> bool {
+    bindings.iter().any(|b| binding_pressed_egui(b, input))
+}
+
+/// 단일 바인딩 문자열이 egui 입력에서 이번 프레임에 눌렸는지 판정.
+fn binding_pressed_egui(binding: &str, input: &egui::InputState) -> bool {
+    let Some(parsed) = parse_binding(binding) else {
+        return false;
+    };
+    let mods = &input.modifiers;
+
+    // modifier 매핑은 winit 경로(`matches_binding`)와 동일한 플랫폼 규칙을 따른다.
+    // macOS: 바인딩 "alt" → Cmd(mac_cmd), "option" → Option(alt). 그 외: "alt" → alt.
+    #[cfg(target_os = "macos")]
+    let (alt_matches, option_matches) = (mods.mac_cmd == parsed.alt, mods.alt == parsed.option);
+    #[cfg(not(target_os = "macos"))]
+    let (alt_matches, option_matches) = (mods.alt == parsed.alt, !parsed.option);
+
+    if mods.ctrl != parsed.ctrl || mods.shift != parsed.shift || !alt_matches || !option_matches {
+        return false;
+    }
+
+    match token_to_egui_key(&parsed.key.to_ascii_lowercase()) {
+        Some(key) => input.key_pressed(key),
+        None => false,
+    }
+}
+
+/// 바인딩 키 토큰(소문자)을 egui `Key` 로 변환. named/function 토큰은 명시 매핑하고,
+/// 글자·숫자·기호는 egui `Key::from_name` 에 위임한다 (대문자 폴백 포함).
+fn token_to_egui_key(token: &str) -> Option<egui::Key> {
+    use egui::Key;
+    Some(match token {
+        "up" => Key::ArrowUp,
+        "down" => Key::ArrowDown,
+        "left" => Key::ArrowLeft,
+        "right" => Key::ArrowRight,
+        "pageup" => Key::PageUp,
+        "pagedown" => Key::PageDown,
+        "escape" => Key::Escape,
+        "tab" => Key::Tab,
+        "space" => Key::Space,
+        "enter" => Key::Enter,
+        "backspace" => Key::Backspace,
+        "delete" => Key::Delete,
+        "insert" => Key::Insert,
+        "home" => Key::Home,
+        "end" => Key::End,
+        _ => {
+            return Key::from_name(token).or_else(|| Key::from_name(&token.to_ascii_uppercase()));
+        }
+    })
+}
+
 /// Parsed binding: expected modifier state + the literal key token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ParsedBinding<'a> {

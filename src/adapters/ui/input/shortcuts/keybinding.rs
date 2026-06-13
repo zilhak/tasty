@@ -103,11 +103,12 @@ impl MainView {
             return true;
         }
         if matches_any_binding(&kb.find, key, mods) {
+            // 이 winit 경로는 검색창이 포커스되지 않은 상태(터미널 포커스)에서만 도달한다
+            // — 검색창 포커스 상태의 find 는 overlay 게이트에 막혀 egui 경로(search_bar)
+            //   가 처리한다. 따라서 여기서는 항상 "검색창으로 포커스 이동"이다.
             if state.popups.is_open("search_bar") {
-                state.search.clear();
-                state.dispatch_intent(
-                    UiIntent::ClosePopup { id: "search_bar" }.from_user_shortcut("find_close"),
-                );
+                // 이미 떠 있으면 닫지 않고 포커스만 검색창으로 옮긴다.
+                state.popups.set_focused("search_bar", true);
             } else if let Some(sid) = state.focused_surface_id(engine) {
                 state.search.surface_id = sid;
                 state.dispatch_intent(

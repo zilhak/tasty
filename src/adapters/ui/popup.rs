@@ -350,6 +350,21 @@ impl PopupManager {
         self.popups.iter().any(|p| p.open && p.focused)
     }
 
+    /// Check whether a specific popup currently has keyboard focus.
+    pub fn is_focused(&self, id: PopupId) -> bool {
+        self.popups
+            .iter()
+            .any(|p| p.id == id && p.open && p.focused)
+    }
+
+    /// Set the keyboard-focus flag of a specific popup. 다른 popup 의 포커스는
+    /// 건드리지 않는다 (검색창↔터미널 포커스 토글용).
+    pub fn set_focused(&mut self, id: PopupId, focused: bool) {
+        if let Some(p) = self.popups.iter_mut().find(|p| p.id == id) {
+            p.focused = focused;
+        }
+    }
+
     /// Check if any popup is currently open.
     pub fn has_any_open(&self) -> bool {
         self.popups.iter().any(|p| p.open)

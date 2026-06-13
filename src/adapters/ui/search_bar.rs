@@ -11,11 +11,11 @@ pub fn draw_search_bar(
 ) -> PopupAction {
     let theme = crate::theme::theme();
 
-    // Escape → close
-    if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
-        state.search.clear();
-        return PopupAction::Close;
-    }
+    // 키보드 포커스가 검색창에 있어야 하는지 — 포커스 토글의 단일 진실원
+    // (`popup.focused`). egui 텍스트필드 포커스는 이 값을 따라간다.
+    let want_focus = state.popups.is_focused("search_bar");
+
+    let mut action = PopupAction::None;
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
@@ -31,47 +31,60 @@ pub fn draw_search_bar(
                 .font(egui::TextStyle::Body),
         );
 
-        // Auto-focus the input field
-        if response.gained_focus()
-            || ui
-                .ctx()
-                .input(|i| i.key_pressed(egui::Key::F) && i.modifiers.command)
-        {
-            response.request_focus();
-        }
-        // Always keep focus on the text field while search is open
-        if !response.has_focus() {
+        // popup.focused 에 맞춰 egui 텍스트필드 포커스를 동기화한다. 열릴 때/검색창으로
+        // 토글될 때만 1회 요청 (이미 포커스면 재요청하지 않음 — 매 프레임 강제 포커스 금지).
+        if want_focus && !response.has_focus() {
             response.request_focus();
         }
 
-        // Run search when query changes
-        if response.changed() {
-            let surface_id = focused_terminal_surface_id(state, engine);
-            state.search.surface_id = surface_id;
-            run_search(state, engine);
-        }
-
-        // Enter → next match, Shift+Enter → prev match
-        let enter_pressed = ui.ctx().input(|i| i.key_pressed(egui::Key::Enter));
-        let shift_held = ui.ctx().input(|i| i.modifiers.shift);
-
-        if enter_pressed {
-            if shift_held {
-                state.search.prev_match();
+        // 검색 필드가 실제로 포커스일 때만 키 입력을 해석한다. 터미널 포커스 상태
+        // (검색창은 떠 있으나 비포커스)에서는 어떤 키도 가로채지 않고 PTY 로 흘려보낸다.
+        if response.has_focus() {
+            // find 단축키 → 검색창은 그대로 두고 포커스만 터미널로 되돌린다.
+            let find_pressed = ui.input(|i| {
+                crate::adapters::ui::input::shortcuts::any_binding_pressed_egui(
+                    &engine.settings.keybindings.find,
+                    i,
+                )
+            });
+            if find_pressed {
+                response.surrender_focus();
+                state.popups.set_focused("search_bar", false);
+            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                // Escape → 닫기 + 검색 상태 clear (하이라이트 제거) + 터미널 포커스 복귀.
+                state.search.clear();
+                action = PopupAction::Close;
             } else {
-                state.search.next_match();
-            }
-            scroll_to_current_match(state, engine);
-        }
+                // Run search when query changes
+                if response.changed() {
+                    let surface_id = focused_terminal_surface_id(state, engine);
+                    state.search.surface_id = surface_id;
+                    run_search(state, engine);
+                }
 
-        // Up/Down arrow navigation
-        if ui.ctx().input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-            state.search.prev_match();
-            scroll_to_current_match(state, engine);
-        }
-        if ui.ctx().input(|i| i.key_pressed(egui::Key::ArrowDown)) {
-            state.search.next_match();
-            scroll_to_current_match(state, engine);
+                // Enter → next match, Shift+Enter → prev match
+                let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let shift_held = ui.input(|i| i.modifiers.shift);
+
+                if enter_pressed {
+                    if shift_held {
+                        state.search.prev_match();
+                    } else {
+                        state.search.next_match();
+                    }
+                    scroll_to_current_match(state, engine);
+                }
+
+                // Up/Down arrow navigation
+                if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                    state.search.prev_match();
+                    scroll_to_current_match(state, engine);
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                    state.search.next_match();
+                    scroll_to_current_match(state, engine);
+                }
+            }
         }
 
         // Status text: error > no_matches > match counter
@@ -133,7 +146,7 @@ pub fn draw_search_bar(
         }
     });
 
-    PopupAction::None
+    action
 }
 
 /// A small toggle button that visually reflects its `active` state.

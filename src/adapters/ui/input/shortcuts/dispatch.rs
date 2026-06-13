@@ -235,11 +235,11 @@ impl MainView {
             "quit_minimize" => send_app_event(proxy, crate::AppEvent::Minimize),
             "new_window" => send_app_event(proxy, crate::AppEvent::CreateWindow),
             "find" => {
+                // winit 경로는 검색창 비포커스(터미널 포커스) 상태에서만 도달한다.
+                // 검색창 포커스 상태의 find 는 egui 경로(search_bar)가 처리한다.
+                // 여기서는 항상 "검색창으로 포커스 이동".
                 if state.popups.is_open("search_bar") {
-                    state.search.clear();
-                    state.dispatch_intent(
-                        UiIntent::ClosePopup { id: "search_bar" }.from_user_shortcut("find_close"),
-                    );
+                    state.popups.set_focused("search_bar", true);
                 } else if let Some(sid) = state.focused_surface_id(engine) {
                     state.search.surface_id = sid;
                     state.dispatch_intent(
