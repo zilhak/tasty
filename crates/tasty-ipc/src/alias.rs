@@ -5,12 +5,18 @@
 //! 1회 변환된 뒤 사라진다.
 //!
 //! deprecated 이름은 [`docs/dev-guide/cli-naming.md`](../../docs/dev-guide/cli-naming.md)에
-//! 옮긴 시점이 명시되어 있다. 0.7.0 에서 `surface.meta_*` 4 종이 제거되어
-//! 현재 ALIASES 는 비어 있음 — 다음 alias 등장 시 본 배열에 추가하면 된다.
+//! 옮긴 시점이 명시되어 있다. 0.7.0 에서 `surface.meta_*` 4 종이 제거되었고,
+//! 현재는 `ssh.profile.*` → `tool.ssh.*` 4 종이 alias 로 한시 호환 중이다
+//! (구이름 실제 제거는 다음 minor tag 직전).
 
 /// 옛 이름 → 새 이름 매핑. 새 이름은 반드시 `method_meta::METHOD_TABLE`에
 /// 등록되어 있어야 한다.
-const ALIASES: &[(&str, &str)] = &[];
+const ALIASES: &[(&str, &str)] = &[
+    ("ssh.profile.list", "tool.ssh.list"),
+    ("ssh.profile.get", "tool.ssh.get"),
+    ("ssh.profile.add", "tool.ssh.add"),
+    ("ssh.profile.remove", "tool.ssh.remove"),
+];
 
 /// 옛 이름이 들어오면 새 이름으로 정규화한다. 새 이름은 그대로 반환.
 pub fn canonicalize(method: &str) -> &str {
@@ -38,12 +44,23 @@ mod tests {
     }
 
     #[test]
-    fn empty_aliases_is_noop() {
-        // 0.7.0 에서 `surface.meta_*` 4 종 alias 제거 → ALIASES 빈 배열.
-        // 옛 이름은 더 이상 정규화되지 않고 그대로 통과한다 (= unknown_method).
+    fn removed_aliases_passthrough() {
+        // 0.7.0 에서 `surface.meta_*` 4 종 alias 제거 → 더 이상 정규화되지 않고
+        // 그대로 통과한다 (= unknown_method).
         assert_eq!(canonicalize("surface.meta_set"), "surface.meta_set");
         assert!(!is_deprecated("surface.meta_set"));
         assert!(!is_deprecated("surface.meta.set"));
+    }
+
+    #[test]
+    fn ssh_profile_aliases_canonicalize() {
+        // ssh.profile.* → tool.ssh.* 한시 호환 (다음 minor 에서 구이름 제거 예정).
+        assert_eq!(canonicalize("ssh.profile.list"), "tool.ssh.list");
+        assert_eq!(canonicalize("ssh.profile.remove"), "tool.ssh.remove");
+        assert!(is_deprecated("ssh.profile.list"));
+        // 새 이름은 deprecated 가 아니며 그대로 통과한다.
+        assert_eq!(canonicalize("tool.ssh.list"), "tool.ssh.list");
+        assert!(!is_deprecated("tool.ssh.list"));
     }
 
     // F.B.4-3: 본 테스트는 method_meta 가 아직 본 바이너리에 잔존하여 이 crate

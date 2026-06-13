@@ -3,6 +3,7 @@
 use clap::Subcommand;
 
 use super::super::ClipboardCommands;
+use super::ssh_profile::SshProfileCommands;
 
 #[derive(Subcommand)]
 pub enum PluginCommands {
@@ -220,5 +221,11 @@ pub enum ToolCommands {
     Clipboard {
         #[command(subcommand)]
         command: ClipboardCommands,
+    },
+    /// SSH connection profiles (`~/.tasty/ssh-profiles.toml`) — 워크스페이스를 원격
+    /// 컴퓨터에 매핑할 때 참조하는 장비 인벤토리. 로컬 파일 (no IPC).
+    Ssh {
+        #[command(subcommand)]
+        command: SshProfileCommands,
     },
 }

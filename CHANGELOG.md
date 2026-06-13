@@ -22,6 +22,10 @@
 
 ### Changed
 - **`tasty claude spawn` / `tasty claude tell` / `tasty codex spawn` / `tasty codex tell` 기본 동작 변경** — 호출자가 child 가 `idle` / `needs_input` / `exited` (codex 는 `untrusted` 포함) 에 도달할 때까지 block 한다. 응답은 line-delimited 두 JSON — 1 차 spawn/tell JSON + chain 된 wait 결과 JSON. 기존 fire-and-forget 동작은 `--no-wait` 옵트인으로 보존 (= 한 minor 이상 deprecation 경고 우선 — `docs/dev-guide/ipc-stability.md` 0.x 정책). `--timeout SECS` 로 wait deadline 명시 (default = 무한). 기타 명령 (`broadcast` / `kill` / `respawn` / `children` / `parent` / `wait` / `wait-any` / `launch` / `install` / `uninstall` / `hook`) 동작 불변.
+- **`tasty ssh-profile` → `tasty tool ssh` 재배치** — SSH 연결 프로필 CRUD CLI 가 "tool" 네임스페이스로 이동. 구 `tasty ssh-profile` 명령은 제거됨(저장된 프로필 부재 + 0.x). IPC 메서드도 `ssh.profile.list/get/add/remove` → `tool.ssh.list/get/add/remove` 로 이동.
+
+### Deprecated
+- **IPC `ssh.profile.list/get/add/remove`** → `tool.ssh.list/get/add/remove` 로 rename. 구이름은 `alias.rs` 의 alias 로 한시 호환되며 deprecated warn 을 출력한다. 실제 제거는 다음 minor tag 직전 (`docs/dev-guide/cli-naming.md` rename 절차).
 
 ## [0.8.1] - 2026-06-08
 

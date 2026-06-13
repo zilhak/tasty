@@ -1,4 +1,4 @@
-//! `tasty ssh-profile ...` — SSH 연결 프로필 CRUD (attach/detach 단계 7).
+//! `tasty tool ssh ...` — SSH 연결 프로필 CRUD (attach/detach 단계 7).
 //!
 //! `~/.tasty/ssh-profiles.toml` 는 client(이 머신)의 로컬 파일이라 IPC 미경유로 직접
 //! 읽고 쓴다(`tasty port` / `tasty file-handler` 와 같은 로컬 분기). 포커스 비의존
@@ -88,7 +88,7 @@ pub enum SshProfileCommands {
     },
 }
 
-/// `tasty ssh-profile ...` 로컬 분기 진입점(IPC 미경유).
+/// `tasty tool ssh ...` 로컬 분기 진입점(IPC 미경유).
 pub fn run(command: &SshProfileCommands) -> Result<()> {
     match command {
         SshProfileCommands::Add {
@@ -141,7 +141,7 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
                     .collect();
                 println!("{}", serde_json::to_string_pretty(&arr)?);
             } else if profiles.profiles.is_empty() {
-                println!("저장된 SSH 프로필이 없습니다 (tasty ssh-profile add ...).");
+                println!("저장된 SSH 프로필이 없습니다 (tasty tool ssh add ...).");
             } else {
                 println!(
                     "{:<16} {:<28} {:<10} REMOTE-TASTY",

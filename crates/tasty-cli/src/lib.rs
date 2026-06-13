@@ -219,7 +219,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: DebugCommands,
     },
-    /// Internal tools (clipboard history, etc.)
+    /// Internal tools (clipboard history, SSH connection profiles, etc.)
     Tool {
         #[command(subcommand)]
         command: ToolCommands,
@@ -268,12 +268,6 @@ pub enum Commands {
     Preset {
         #[command(subcommand)]
         command: PresetCommands,
-    },
-    /// Manage SSH connection profiles (`~/.tasty/ssh-profiles.toml`) — 워크스페이스를
-    /// 원격 컴퓨터에 매핑할 때 참조하는 장비 인벤토리 (단계 7). 로컬 파일 (no IPC).
-    SshProfile {
-        #[command(subcommand)]
-        command: SshProfileCommands,
     },
     /// Print this instance's IPC port to stdout (first step of the auto remote
     /// port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC.

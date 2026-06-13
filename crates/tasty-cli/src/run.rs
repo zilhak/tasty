@@ -293,8 +293,12 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     if let Commands::Port = &command {
         return crate::commands::port::run_port(port_file);
     }
-    // `tasty ssh-profile ...` — ssh-profiles.toml 은 client 로컬 파일이라 IPC 미경유 (단계 7).
-    if let Commands::SshProfile { command } = &command {
+    // `tasty tool ssh ...` — ssh-profiles.toml 은 client 로컬 파일이라 IPC 미경유 (단계 7).
+    // Tool 네임스페이스 안에서 Ssh 만 로컬 처리하고 나머지(clipboard)는 IPC 로 보낸다.
+    if let Commands::Tool {
+        command: crate::commands::ToolCommands::Ssh { command },
+    } = &command
+    {
         return crate::commands::ssh_profile::run(command);
     }
     // `--ssh` + `--force-detach` is out of scope for step 5 (remote force-detach
@@ -344,9 +348,7 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
             Some(name) => {
                 let profiles = tasty_ssh_profiles::SshProfiles::load();
                 let Some(p) = profiles.get(name) else {
-                    anyhow::bail!(
-                        "SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty ssh-profile list)."
-                    );
+                    anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty tool ssh list).");
                 };
                 Some((
                     crate::ssh::SshTarget::from_profile(p),

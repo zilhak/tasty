@@ -64,12 +64,11 @@ DEBUG_METHODS / PREFIX_RULES / plugin 매니페스트 제공 namespace 는 제�
 | `preset` | 7 |
 | `script` | 1 |
 | `session` | 3 |
-| `ssh` | 4 |
 | `surface` | 29 |
 | `system` | 1 |
 | `tab` | 4 |
 | `telemetry` | 12 |
-| `tool` | 5 |
+| `tool` | 9 |
 | `view` | 3 |
 | `webview` | 1 |
 | `window` | 3 |
@@ -268,5 +267,12 @@ method 로 chain* 인 경우 — 두 의미가 직교한다.
 - **새 verb/namespace 추가**: PR description에 "이 verb/namespace가 위 화이트리스트 어디에 속하는지, 또는 왜 예외인지" 한 문단. 별도 ADR 파일 불필요.
 - **이름 변경 (rename)**: alias map(`src/ipc/...`)에서 old → new 매핑 + `CHANGELOG.md` Deprecated 절. 옛 이름은 0.7 tag 직전 제거.
 - **메서드 제거**: minor 버전에서는 deprecated 표시만, 실제 제거는 major.
+
+### 현재 활성 alias (`crates/tasty-ipc/src/alias.rs`)
+
+- `ssh.profile.list/get/add/remove` → `tool.ssh.list/get/add/remove` — SSH 프로필
+  CRUD 를 "tool" 네임스페이스로 이동(CLI `tasty ssh-profile` → `tasty tool ssh`
+  재배치와 대칭). 구이름은 alias 로 한시 호환되며 deprecated warn 출력. 실제
+  제거는 다음 minor tag 직전.
 
 자세한 break 분류·deprecation 절차는 (예정) `docs/dev-guide/ipc-stability.md` 참조.

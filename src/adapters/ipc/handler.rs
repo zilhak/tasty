@@ -676,11 +676,12 @@ fn route_engine_handler(
         }
         "attach.into_gui" => attach::handle_into_gui(engine, id, &request.params),
         "attach.list" => attach::handle_list(engine, id),
-        // ssh.profile.* — SSH 연결 프로필 CRUD (단계 7, 원칙 2). 로컬 파일 I/O.
-        "ssh.profile.list" => ssh_profile::handle_list(id),
-        "ssh.profile.get" => ssh_profile::handle_get(id, &request.params),
-        "ssh.profile.add" => ssh_profile::handle_add(id, &request.params),
-        "ssh.profile.remove" => ssh_profile::handle_remove(id, &request.params),
+        // tool.ssh.* — SSH 연결 프로필 CRUD (단계 7, 원칙 2). 로컬 파일 I/O.
+        // (구 ssh.profile.* 는 alias.rs 에서 정규화되어 여기로 도달.)
+        "tool.ssh.list" => ssh_profile::handle_list(id),
+        "tool.ssh.get" => ssh_profile::handle_get(id, &request.params),
+        "tool.ssh.add" => ssh_profile::handle_add(id, &request.params),
+        "tool.ssh.remove" => ssh_profile::handle_remove(id, &request.params),
         _ => return None,
     })
 }
