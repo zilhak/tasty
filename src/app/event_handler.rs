@@ -196,6 +196,11 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::AttachPoll => {
                 self.poll_attach_views();
             }
+            // client mirror 실시간 갱신 — reader thread 가 원격 출력을 받을 때마다 깨운다.
+            // 서버 readonly 의 3초 cadence(AttachPoll)와 달리 즉시 적용/repaint.
+            AppEvent::AttachClientData => {
+                self.apply_attach_client_output();
+            }
             // 단계 7 — 자동 attach 워커가 SSH 터널 수립을 마쳤다(wake). 결과를 drain 해
             // mirror 를 띄운다(idle 상태에서도 즉시 반영).
             AppEvent::AutoAttachReady => {

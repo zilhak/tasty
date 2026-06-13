@@ -56,6 +56,12 @@ pub(crate) enum AppEvent {
     /// 3초 cadence 로 repaint 한다(실시간 stream 이 아니라 polling, plan §4).
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     AttachPoll,
+    /// attach/detach 작업 J — client mirror reader thread 가 원격 출력을 받으면 보내는
+    /// 실시간 wake 신호. 서버측 readonly 뷰의 3초 cadence(`AttachPoll`)와 달리, 내가 직접
+    /// 다루는 client mirror 는 로컬 워크스페이스처럼 데이터가 오는 즉시 적용/repaint 한다.
+    /// App 이 누적 출력 버퍼를 drain 해 mirror Terminal 에 feed 한다.
+    #[cfg(feature = "gui")]
+    AttachClientData,
     /// attach/detach 단계 7 — 자동 attach 워커 스레드가 SSH 터널 수립(또는 loopback
     /// 해석)을 마치면 보내는 wake 신호. App 이 결과 채널(`auto_attach_rx`)을 drain 해
     /// `start_gui_attach` 로 mirror 를 띄운다. 터널 핸들은 채널로 전달(AppEvent 는

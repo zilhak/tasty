@@ -25,8 +25,9 @@ impl App {
             let _ = engine.refresh_readonly_views();
         }
 
-        // ② client mirror(점유측): 누적된 원격 출력 버퍼를 mirror Terminal 에 적용 +
-        //    끊긴 세션 정리는 `apply_attach_client_output`(attach_client.rs, J-6).
+        // ② client mirror(점유측): 평소엔 reader thread 의 `AttachClientData` wake 로
+        //    실시간 적용된다. 여기서는 backstop 으로만 호출 — 혹시 누락된 출력 적용 +
+        //    끊긴 세션 정리(`apply_attach_client_output`, attach_client.rs, J-6).
         self.apply_attach_client_output();
     }
 }

@@ -9,12 +9,15 @@
 //!   디스크립터로 **로컬 mirror Workspace 트리 재구성**(mirror `Terminal::new_detached`
 //!   를 `TerminalStore` 삽입, remote↔local id 재매핑) → 기존 렌더러 재사용(신규 셰이더
 //!   0). 입력은 `set_input_sink` 로 forward(keyboard.rs 무변경).
-//! - `apply_attach_client_output`: 3초 `AttachPoll` 마다 누적된 원격 출력을 mirror 에
-//!   적용하고 화면을 repaint. 끊긴(force-detach/EOF) 세션의 mirror 를 정리.
+//! - `apply_attach_client_output`: reader thread 가 `AttachClientData` 로 깨울 때마다
+//!   누적된 원격 출력을 mirror 에 적용하고 화면을 repaint. 끊긴(force-detach/EOF) 세션의
+//!   mirror 를 정리. (`AttachPoll` 3초 tick 도 backstop 으로 같은 함수를 호출한다.)
 //!
-//! 사용자 확정 UX: 갱신은 **3초 polling**(stream 은 유지하되 적용/repaint 를 tick 으로
-//! 게이트, plan §4). 범위는 작업 J — 자동 매핑(ssh-profiles/workspace.attach_mapping)은
-//! 단계 7. 이 모듈의 `start_gui_attach` 가 단계 7 Phase B2 의 호출 진입점이다.
+//! client mirror 는 내가 직접 다루는 대상이라 로컬 워크스페이스처럼 **데이터가 오는 즉시**
+//! 갱신한다(로컬 PTY 의 TerminalOutput wake 와 동형). 서버측 readonly 뷰(`attach_poll` ①)만
+//! 3초 cadence 로 게이트한다(plan §4). 범위는 작업 J — 자동 매핑(ssh-profiles/
+//! workspace.attach_mapping)은 단계 7. 이 모듈의 `start_gui_attach` 가 단계 7 Phase B2 의
+//! 호출 진입점이다.
 
 use std::collections::{HashMap, HashSet};
 use std::net::TcpStream;
@@ -26,6 +29,7 @@ use serde_json::Value;
 use tasty_cli::stream::StreamConnection;
 use tasty_terminal::Terminal;
 
+use crate::AppEvent;
 use crate::app::App;
 use crate::ipc::stream::{self, STREAM_PROTO, StreamTag};
 use crate::model::{
@@ -131,12 +135,16 @@ impl App {
         // 2. focus 엔진에 mirror 구성(스코프 borrow). 로컬 id 재매핑 + mirror terminal +
         //    입력 sink forwarder.
         let local_ws_id;
+        // client mirror reader thread 가 원격 출력 수신 즉시 메인 루프를 깨우는 데 쓴다
+        // (실시간 갱신 — 서버 readonly 의 3초 cadence 와 분리).
+        let proxy;
         let mut remote_to_local: HashMap<u32, u32> = HashMap::new();
         let mut terminal_locals: HashSet<u32> = HashSet::new();
         {
             let Some(main) = self.focused_window_mut() else {
                 anyhow::bail!("no focused window to host mirror workspace");
             };
+            proxy = main.proxy.clone();
             let engine = &mut main.core_state;
             let ids = engine.next_ids.clone();
 
@@ -201,9 +209,13 @@ impl App {
                                 {
                                     buf.push((sid, payload.to_vec()));
                                 }
+                                // 실시간 갱신: 데이터가 오는 즉시 메인 루프를 깨워 mirror 에
+                                // 적용한다(로컬 PTY 의 TerminalOutput wake 와 동형).
+                                let _ = proxy.send_event(AppEvent::AttachClientData);
                             }
                             StreamTag::Detach => {
                                 disconnected.store(true, Ordering::SeqCst);
+                                let _ = proxy.send_event(AppEvent::AttachClientData);
                                 break;
                             }
                             StreamTag::Control => {
@@ -211,6 +223,7 @@ impl App {
                                     .contains("force_detached")
                                 {
                                     disconnected.store(true, Ordering::SeqCst);
+                                    let _ = proxy.send_event(AppEvent::AttachClientData);
                                     break;
                                 }
                             }
@@ -218,6 +231,7 @@ impl App {
                         },
                         Err(_) => {
                             disconnected.store(true, Ordering::SeqCst);
+                            let _ = proxy.send_event(AppEvent::AttachClientData);
                             break;
                         }
                     }
@@ -241,8 +255,9 @@ impl App {
         Ok(())
     }
 
-    /// AttachPoll(3초)마다 — 누적 원격 출력을 mirror Terminal 에 적용(repaint) +
-    /// 끊긴 세션 정리. 적용을 tick 으로 게이트해 화면 갱신 cadence 를 3초로 만든다.
+    /// `AttachClientData`(reader wake)마다 — 누적 원격 출력을 mirror Terminal 에
+    /// 적용(repaint) + 끊긴 세션 정리. client mirror 는 데이터가 오는 즉시 갱신한다
+    /// (로컬 워크스페이스와 동일한 반응성). `AttachPoll` 3초 tick 도 backstop 으로 호출.
     pub(crate) fn apply_attach_client_output(&mut self) {
         if self.attach_client_sessions.is_empty() {
             return;
