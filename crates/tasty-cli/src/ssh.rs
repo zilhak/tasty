@@ -6,7 +6,7 @@
 //!
 //! 흐름(단계 4 attach 를 SSH 너머로):
 //! 1. [`resolve_ssh_path`] — 시스템 ssh 경로(Windows 는 System32 OpenSSH 풀경로).
-//! 2. [`discover_remote_port`] — 원격 tasty 데몬의 IPC 포트 발견(셸 비의존 우선).
+//! 2. [`discover_remote_port`] — 원격 tasty 데몬의 IPC 포트 발견(auto fallback 체인).
 //! 3. [`SshTunnel::establish`] — `ssh -L 127.0.0.1:local:127.0.0.1:remote -N` 백그라운드.
 //! 4. client 가 `127.0.0.1:local` 로 단계 4 attach (commands::attach).
 //!
@@ -107,13 +107,15 @@ fn expand_tilde(path: &str) -> String {
 /// 원격 포트 발견 모드(plan §4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PortMode {
-    /// 셸 비의존: `ssh <dest> <remote-tasty> port` (권장).
+    /// auto 체인 첫 단계: `ssh <dest> <remote-tasty> port`. git bash·unix 에서 성공.
+    /// Windows GUI release 바이너리(PowerShell/cmd)는 빈 출력으로 실패할 수 있다.
     Subcommand,
     /// Unix 원격: `cat ~/.tasty/<port-file>`.
     FileUnix,
     /// Windows 원격: `type %USERPROFILE%\.tasty\<port-file>`.
     FileWindows,
-    /// subcommand 먼저, 실패 시 unix file fallback(기본).
+    /// subcommand → file-unix → file-windows 순서로 시도(기본). 원격 SSH
+    /// DefaultShell(PowerShell/cmd/bash/zsh)에 무관하게 4개 셸 전부를 커버한다.
     Auto,
 }
 
@@ -212,7 +214,7 @@ fn port_file_name(debug: bool) -> &'static str {
     }
 }
 
-/// 셸 비의존: `ssh <dest> <remote-tasty> port` → stdout 의 포트 숫자.
+/// auto 체인 첫 단계: `ssh <dest> <remote-tasty> port` → stdout 의 포트 숫자.
 fn discover_via_subcommand(
     ssh: &Path,
     target: &SshTarget,
@@ -241,11 +243,24 @@ fn discover_via_file(
     parse_port(&out)
 }
 
+/// `Auto` 모드의 고정 fallback 시도 순서. SSH 는 연결 수단일 뿐 원격
+/// DefaultShell(PowerShell/cmd/git bash/unix)이 무엇이든 동작해야 하므로, 단일 셸에
+/// 의존하지 않도록 3개 단일 모드를 순서대로 시도해 4개 셸 매트릭스를 전부 커버한다:
+/// - subcommand: git bash·unix 성공 (Windows GUI 바이너리 release 는 빈 출력으로 실패).
+/// - file-unix (`cat ~/...`): PowerShell(`cat` alias + `~` 확장)·git bash·unix 성공.
+/// - file-windows (`type %USERPROFILE%\...`): cmd 성공 — 위 둘이 모두 실패하는 유일 경로.
+const AUTO_FALLBACK_CHAIN: [PortMode; 3] = [
+    PortMode::Subcommand,
+    PortMode::FileUnix,
+    PortMode::FileWindows,
+];
+
 /// 원격 tasty 데몬의 IPC 포트를 발견한다(plan §4.4).
 ///
-/// `Auto` 는 셸 비의존 subcommand 를 먼저 시도하고, 실패하면 Unix file 로 fallback
-/// 한다(Windows 원격은 `--remote-port-mode subcommand` 권장 — file 모드의 type/셸
-/// 분기 위험 회피).
+/// `Auto` 는 [`AUTO_FALLBACK_CHAIN`] 순서로 단일 모드를 차례로 시도하고, 한 모드라도
+/// 포트를 내면 즉시 반환한다. subcommand 는 Windows release 에서 "빈 출력 + exit 0"
+/// 으로 조용히 실패할 수 있는데, 이 경우 [`parse_port`] 가 에러를 내며 다음 단계로
+/// 넘어간다(exit code 만으로는 감지 불가).
 pub fn discover_remote_port(
     ssh: &Path,
     target: &SshTarget,
@@ -254,15 +269,31 @@ pub fn discover_remote_port(
     verify: bool,
     debug: bool,
 ) -> Result<u16> {
-    match mode {
-        PortMode::Subcommand => discover_via_subcommand(ssh, target, remote_tasty, verify),
-        PortMode::FileUnix => discover_via_file(ssh, target, false, verify, debug),
-        PortMode::FileWindows => discover_via_file(ssh, target, true, verify, debug),
-        PortMode::Auto => discover_via_subcommand(ssh, target, remote_tasty, verify).or_else(|e| {
-            tracing::debug!("subcommand 포트 발견 실패({e}) — unix file fallback");
-            discover_via_file(ssh, target, false, verify, debug)
-        }),
+    // 단일 모드 1회 시도. `Auto` 는 호출 전에 체인으로 분해되므로 여기 도달하지 않는다.
+    let attempt = |m: PortMode| -> Result<u16> {
+        match m {
+            PortMode::Subcommand => discover_via_subcommand(ssh, target, remote_tasty, verify),
+            PortMode::FileUnix => discover_via_file(ssh, target, false, verify, debug),
+            PortMode::FileWindows => discover_via_file(ssh, target, true, verify, debug),
+            PortMode::Auto => unreachable!("Auto 는 AUTO_FALLBACK_CHAIN 으로 분해됨"),
+        }
+    };
+
+    if mode != PortMode::Auto {
+        return attempt(mode);
     }
+
+    let mut last_err = None;
+    for m in AUTO_FALLBACK_CHAIN {
+        match attempt(m) {
+            Ok(port) => return Ok(port),
+            Err(e) => {
+                tracing::debug!("{m:?} 포트 발견 실패({e}) — 다음 모드로 fallback");
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.expect("AUTO_FALLBACK_CHAIN 은 비어있지 않음"))
 }
 
 /// `127.0.0.1:0` 바인드로 비어있는 로컬 포트를 확보한 뒤 즉시 해제한다(ssh 가 다시
@@ -468,6 +499,24 @@ mod tests {
         assert_eq!(parse_port("Last login: ...\n45123\n").unwrap(), 45123);
         assert!(parse_port("not-a-port").is_err());
         assert!(parse_port("").is_err());
+    }
+
+    #[test]
+    fn auto_fallback_chain_order_covers_all_shells() {
+        // 회귀 고정: Auto 는 subcommand → file-unix → file-windows 순서여야 한다.
+        // 이 순서가 깨지면 cmd DefaultShell 원격(file-windows 만 성공)에서 attach 불가.
+        assert_eq!(
+            AUTO_FALLBACK_CHAIN,
+            [
+                PortMode::Subcommand,
+                PortMode::FileUnix,
+                PortMode::FileWindows,
+            ]
+        );
+        // file-windows 가 마지막 단계로 반드시 포함되어야 cmd 원격을 커버한다.
+        assert!(AUTO_FALLBACK_CHAIN.contains(&PortMode::FileWindows));
+        // Auto 자기 자신은 체인에 들어가면 안 된다(무한 재귀 방지).
+        assert!(!AUTO_FALLBACK_CHAIN.contains(&PortMode::Auto));
     }
 
     #[test]

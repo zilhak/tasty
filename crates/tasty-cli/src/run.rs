@@ -286,7 +286,10 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         return crate::commands::debug::run_stream_echo(payload, *count, port_file);
     }
     // `tasty port` — read the port file and print it. Local-only (no IPC):
-    // enables shell-independent remote port discovery via `ssh host tasty port`.
+    // serves as the first step of the auto remote-port-discovery chain
+    // (`ssh host tasty port`). Shell independence comes from the whole chain
+    // (subcommand → file-unix → file-windows), not this step alone — the
+    // subcommand step fails silently on Windows GUI release shells.
     if let Commands::Port = &command {
         return crate::commands::port::run_port(port_file);
     }

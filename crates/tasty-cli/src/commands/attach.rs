@@ -96,7 +96,7 @@ pub(crate) fn run_attach_on_port(
 
 /// `tasty attach --ssh user@host <surface>` (1회성 SSH 터널 attach — 단계 5).
 ///
-/// ① 원격 포트 발견(셸 비의존 우선) → ② `ssh -L` 터널 수립 → ③ 터널 localport 로
+/// ① 원격 포트 발견(auto fallback 체인) → ② `ssh -L` 터널 수립 → ③ 터널 localport 로
 /// 단계 4 attach. SSH 끊김 시 백오프 재연결(decisions 7, `--no-reconnect` 로 off).
 /// 세션은 서버에 상주하므로 재연결은 터널 재수립 + 재attach 만 하면 복구된다.
 #[allow(clippy::too_many_arguments)]

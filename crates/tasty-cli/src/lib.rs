@@ -151,8 +151,9 @@ pub enum Commands {
         /// 값으로 대체된다.
         #[arg(long)]
         profile: Option<String>,
-        /// 원격 tasty 바이너리 경로 (셸 비의존 포트 발견용 `ssh host <path> port`).
-        /// 기본 "tasty" (원격 PATH 가정). PATH 밖이면 풀경로 지정.
+        /// 원격 tasty 바이너리 경로 (auto 포트 발견 체인의 subcommand 단계
+        /// `ssh host <path> port` 에서 사용). 기본 "tasty" (원격 PATH 가정).
+        /// PATH 밖이면 풀경로 지정.
         #[arg(long, default_value = "tasty")]
         remote_tasty: String,
         /// 원격 포트 발견 모드: auto(기본) | subcommand | file-unix | file-windows.
@@ -274,8 +275,8 @@ pub enum Commands {
         #[command(subcommand)]
         command: SshProfileCommands,
     },
-    /// Print this instance's IPC port to stdout (shell-independent remote port
-    /// discovery for `ssh host tasty port`). Reads the port file only — no IPC.
+    /// Print this instance's IPC port to stdout (first step of the auto remote
+    /// port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC.
     Port,
     /// Check for and install a new tasty version (standalone — no host needed)
     Update(UpdateOpts),
