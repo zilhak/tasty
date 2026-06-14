@@ -126,13 +126,22 @@ impl Default for FilterState {
 }
 
 /// Async view payload the table renders from. `Loading`/`Failed` short-circuit
-/// the table; `Ready` carries the row slice + count so the header tag can be
-/// drawn consistently.
+/// the table; `Ready` carries the (search-filtered) row slice + the scope total
+/// (search-independent count) so the header tag and footer counter can be drawn
+/// per design (`{shown} of {total} ports`, `{total} listening`).
 #[derive(Clone, Copy)]
 pub enum PortScannerViewState<'a> {
     Loading,
-    Ready { rows: &'a [PortRowView] },
-    Failed { message: &'a str },
+    Ready {
+        rows: &'a [PortRowView],
+        /// Count of listening ports in the current scope, before the search
+        /// filter is applied. The backend returns LISTEN-only rows, so this is
+        /// also the LISTEN count the design's header tag wants.
+        total: usize,
+    },
+    Failed {
+        message: &'a str,
+    },
 }
 
 /// Filter inputs handed to the view (read-only projection of [`FilterState`]).
@@ -150,6 +159,8 @@ pub struct PortScannerProps<'a> {
     pub theme: &'a Theme,
     pub view_state: PortScannerViewState<'a>,
     pub filter: PortScannerFilter<'a>,
+    /// When true, the LISTEN state dot is drawn static (no pulse ring).
+    pub reduced_motion: bool,
     pub label_heading: &'a str,
     pub label_search_placeholder: &'a str,
     pub label_filter_show_all_system: &'a str,
@@ -248,8 +259,12 @@ pub fn draw_port_scanner_popup(
 
     let view_state = match &state.port_scan {
         PortScanState::Idle | PortScanState::Loading { .. } => PortScannerViewState::Loading,
-        PortScanState::Ready { .. } => PortScannerViewState::Ready {
+        // `total` = scope total (search-independent). The backend returns
+        // LISTEN-only rows, so the unfiltered row count is the design's
+        // `scoped.length` / LISTEN count for both the footer and header tag.
+        PortScanState::Ready { rows, .. } => PortScannerViewState::Ready {
             rows: &filtered_rows,
+            total: rows.len(),
         },
         PortScanState::Failed(msg) => PortScannerViewState::Failed { message: msg },
     };
@@ -257,6 +272,7 @@ pub fn draw_port_scanner_popup(
     let props = PortScannerProps {
         theme: &th,
         view_state,
+        reduced_motion: engine.settings.accessibility.reduced_motion,
         filter: PortScannerFilter {
             show_all_system: filter_state.show_all_system,
             query: &filter_state.query,
@@ -611,7 +627,7 @@ pub fn draw_port_scanner_view(
                     action = a;
                 }
             }
-            PortScannerViewState::Ready { rows } => {
+            PortScannerViewState::Ready { rows, .. } => {
                 if let Some(a) = draw_ready_body(ui, props, rows) {
                     action = a;
                 }
@@ -627,10 +643,11 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
     let text = match &props.view_state {
         PortScannerViewState::Loading => Some(props.label_footer_loading.to_string()),
-        PortScannerViewState::Ready { rows } => Some(
+        PortScannerViewState::Ready { rows, total } => Some(
             props
                 .label_footer_counter
-                .replace("{n}", &rows.len().to_string()),
+                .replace("{shown}", &rows.len().to_string())
+                .replace("{total}", &total.to_string()),
         ),
         PortScannerViewState::Failed { .. } => None,
     };
@@ -696,9 +713,11 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let tag = match &props.view_state {
                 PortScannerViewState::Loading => props.label_header_tag_scanning.to_string(),
-                PortScannerViewState::Ready { rows } => props
+                // Scope total (search-independent), per design: the header tag
+                // does not shrink as the user types into the filter.
+                PortScannerViewState::Ready { total, .. } => props
                     .label_header_tag_count
-                    .replace("{n}", &rows.len().to_string()),
+                    .replace("{n}", &total.to_string()),
                 PortScannerViewState::Failed { .. } => String::new(),
             };
             if !tag.is_empty() {
@@ -847,8 +866,15 @@ fn draw_table(
                         }
                     });
                     tr.col(|ui| {
+                        // Proto derived from the address family: IPv6 displays
+                        // (always containing a colon) → `tcp6`, IPv4 → `tcp`.
+                        let proto = if row.addr_display.contains(':') {
+                            "tcp6"
+                        } else {
+                            "tcp"
+                        };
                         ui.label(
-                            egui::RichText::new("TCP")
+                            egui::RichText::new(proto)
                                 .color(th.subtext0)
                                 .size(th.font_size_body.value()),
                         );
@@ -871,7 +897,7 @@ fn draw_table(
                         draw_tab_cell(ui, th, row, props.label_external_dash);
                     });
                     tr.col(|ui| {
-                        draw_state_cell(ui, th);
+                        draw_state_cell(ui, th, props.reduced_motion);
                     });
                 });
             }
@@ -984,11 +1010,29 @@ fn draw_tab_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
     }
 }
 
-/// State 셀: 초록 dot + "LISTEN".
-fn draw_state_cell(ui: &mut egui::Ui, th: &Theme) {
+/// State 셀: pulse 하는 초록 dot + "LISTEN".
+///
+/// Mirrors the design's `StatusDot status="running" pulse`: a static core dot
+/// plus an expanding, fading ring (scale 0.6→1.8, opacity 0.5→0, 1.6 s ease-out
+/// loop). With `reduced_motion`, the ring is omitted and only the static dot is
+/// drawn. The backend reports LISTEN-only rows, so the label stays "LISTEN".
+fn draw_state_cell(ui: &mut egui::Ui, th: &Theme, reduced_motion: bool) {
     ui.horizontal(|ui| {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-        ui.painter().circle_filled(rect.center(), 4.0, th.green);
+        let center = rect.center();
+        let dot_color = th.accent_success();
+        if !reduced_motion {
+            let t = ui.ctx().input(|i| i.time);
+            let phase = (t / 1.6).rem_euclid(1.0) as f32;
+            let eased = 1.0 - (1.0 - phase).powi(3); // ease-out cubic
+            // dot 8px + CSS `inset: -3px` → base ring radius 7px.
+            let radius = 7.0 * (0.6 + 1.2 * eased);
+            let opacity = 0.5 * (1.0 - eased);
+            let ring: egui::Color32 = egui::Color32::from(dot_color).gamma_multiply(opacity);
+            ui.painter().circle_filled(center, radius, ring);
+            ui.ctx().request_repaint();
+        }
+        ui.painter().circle_filled(center, 4.0, dot_color);
         ui.label(
             egui::RichText::new("LISTEN")
                 .color(th.subtext0)
@@ -997,21 +1041,24 @@ fn draw_state_cell(ui: &mut egui::Ui, th: &Theme) {
     });
 }
 
+/// Bracketless display form. IPv6 is shown bare (e.g. wildcard `::`) per the
+/// design table; URL brackets are added later in [`open_in_browser`].
 fn format_addr(addr: IpAddr) -> String {
     match addr {
         IpAddr::V4(v4) if v4.is_unspecified() => "0.0.0.0".to_string(),
-        IpAddr::V6(v6) if v6.is_unspecified() => "[::]".to_string(),
+        IpAddr::V6(v6) if v6.is_unspecified() => "::".to_string(),
         IpAddr::V4(v4) => v4.to_string(),
-        IpAddr::V6(v6) => format!("[{v6}]"),
+        IpAddr::V6(v6) => v6.to_string(),
     }
 }
 
-/// Pick a sensible host for the URL: wildcard binds use `localhost`,
-/// everything else uses the addr_display string as-is (already v6-bracketed
-/// by `format_addr`).
+/// Pick a sensible host for the URL: wildcard binds use `localhost`, IPv6
+/// literals (bare in `addr_display`) get bracketed for the URL, everything
+/// else is used as-is.
 fn open_in_browser(row: &PortRowView) {
     let host = match row.addr_display.as_str() {
-        "0.0.0.0" | "[::]" => "localhost".to_string(),
+        "0.0.0.0" | "::" => "localhost".to_string(),
+        other if other.contains(':') => format!("[{other}]"),
         other => other.to_string(),
     };
     let url = format!("http://{host}:{}", row.port);
@@ -1047,6 +1094,7 @@ mod tests {
         PortScannerProps {
             theme,
             view_state,
+            reduced_motion: false,
             filter: PortScannerFilter {
                 show_all_system,
                 query,
@@ -1067,7 +1115,7 @@ mod tests {
             label_footer_loading: "Scanning…",
             label_header_tag_scanning: "scanning…",
             label_header_tag_count: "{n} listening",
-            label_footer_counter: "{n} listening",
+            label_footer_counter: "{shown} of {total} ports",
             label_column_port: "Port",
             label_column_proto: "Proto",
             label_column_address: "Address",
@@ -1084,7 +1132,10 @@ mod tests {
         let theme = test_theme();
         drop(ctx.run(raw, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let view_state = PortScannerViewState::Ready { rows };
+                let view_state = PortScannerViewState::Ready {
+                    rows,
+                    total: rows.len(),
+                };
                 let props = default_props(&theme, view_state, "", false);
                 out = draw_port_scanner_view(ui, &props);
             });
@@ -1258,21 +1309,42 @@ mod tests {
     #[test]
     fn empty_ready_renders_tasty_empty_message() {
         let rows: Vec<PortRowView> = Vec::new();
-        let action = run_view_state(PortScannerViewState::Ready { rows: &rows }, "", false);
+        let action = run_view_state(
+            PortScannerViewState::Ready {
+                rows: &rows,
+                total: 0,
+            },
+            "",
+            false,
+        );
         assert_eq!(action, PortScannerAction::None);
     }
 
     #[test]
     fn empty_ready_renders_system_empty_message() {
         let rows: Vec<PortRowView> = Vec::new();
-        let action = run_view_state(PortScannerViewState::Ready { rows: &rows }, "", true);
+        let action = run_view_state(
+            PortScannerViewState::Ready {
+                rows: &rows,
+                total: 0,
+            },
+            "",
+            true,
+        );
         assert_eq!(action, PortScannerAction::None);
     }
 
     #[test]
     fn empty_ready_with_query_renders_search_zero_message() {
         let rows: Vec<PortRowView> = Vec::new();
-        let action = run_view_state(PortScannerViewState::Ready { rows: &rows }, "nginx", false);
+        let action = run_view_state(
+            PortScannerViewState::Ready {
+                rows: &rows,
+                total: 0,
+            },
+            "nginx",
+            false,
+        );
         assert_eq!(action, PortScannerAction::None);
     }
 
