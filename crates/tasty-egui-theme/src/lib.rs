@@ -85,15 +85,17 @@ pub fn apply_theme_to_egui(theme: &Theme, ctx: &egui::Context) {
     visuals.widgets.open.fg_stroke = stroke1(theme.text);
 
     // ── Selection / focus ring ──
-    // blue 의 ~31% alpha. straight RGBA → to_egui() 가 gamma-aware premultiply.
-    visuals.selection.bg_fill = theme.blue.with_alpha(80).to_egui();
-    // focus 외곽선은 디자인 시스템의 2px focus ring (accent-primary).
-    visuals.selection.stroke = egui::Stroke::new(theme.focus_ring_width.value(), theme.blue);
+    // A2 시범 이식: primitive 직접접근 → semantic 접근자(동일 primitive 리턴, 픽셀 동일).
+    // accent-primary 의 ~31% alpha. straight RGBA → to_egui() 가 gamma-aware premultiply.
+    visuals.selection.bg_fill = theme.accent_primary().with_alpha(80).to_egui();
+    // focus 외곽선은 디자인 시스템의 2px focus ring (border-focus).
+    visuals.selection.stroke =
+        egui::Stroke::new(theme.focus_ring_width.value(), theme.border_focus());
 
-    // ── 의미 색상 ──
-    visuals.hyperlink_color = theme.blue.into();
-    visuals.error_fg_color = theme.red.into();
-    visuals.warn_fg_color = theme.yellow.into();
+    // ── 의미 색상 ── (A2 시범 이식: semantic 접근자 사용)
+    visuals.hyperlink_color = theme.accent_primary().into();
+    visuals.error_fg_color = theme.accent_danger().into();
+    visuals.warn_fg_color = theme.accent_warning().into();
 
     // ── 텍스트 ──
     // override_text_color 를 박으면 egui 의 weak_text_color() 도 이 색의

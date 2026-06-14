@@ -90,6 +90,14 @@ let bg = GpuRgba::dangerously_force_from_array([srgba.0, srgba.1, srgba.2, srgba
 2. **theme 색의 alpha 변형이면**: `theme().X.with_alpha(N).to_egui()` (UI) 또는 `theme().X.to_gpu_rgba()` 후 alpha 처리
 3. **외부 입력이면**: `dangerously_force_from_array` 호출 + 사유 주석 + `#[allow]`
 
+## UI 색 접근은 semantic 접근자 우선
+
+UI 코드에서 테마 색을 읽을 때는 `theme().blue` 같은 primitive 직접접근보다 **semantic 접근자**(`theme().accent_primary()` / `text_muted()` / `surface_raised()` …)를 우선한다. 의미를 호출처에 드러내 다의성(`blue` = primary / border-focus / ansi-blue)을 구분하기 위함.
+
+- 접근자는 **additive** — primitive 필드를 리턴할 뿐이라 색값/픽셀 동일. 기존 직접접근도 계속 유효.
+- 매핑 정답지: [`token-crosswalk.md`](../design/systems/token-crosswalk.md), 규칙 상세: [`theme.md` "Semantic 접근자 우선"](../design/systems/theme.md).
+- **이식 미완**: 현재 시범 영역(`crates/tasty-egui-theme/src/lib.rs`)만 접근자로 옮겼고 나머지 호출처엔 primitive 직접접근이 잔존한다. 전수 이식 전까지 primitive 직접접근을 막는 **clippy 강제는 보류**.
+
 ## 컴파일 타임 hex 검증 — `hex!` 매크로
 
 const HexColor 정의 시 [`tasty_type_appearance::hex!`] 매크로 사용 시 잘못된 hex 가

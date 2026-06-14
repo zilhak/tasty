@@ -210,6 +210,24 @@ ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
 ui.painter().rect_filled(rect, 0.0, th.hover_overlay.to_egui());
 ```
 
+### Semantic 접근자 우선 (의미 기반 색 접근)
+
+`Theme` 은 평면 primitive 필드(`blue` / `surface0` / `subtext0` …) 외에 **semantic 접근자** 를 제공한다 (`accent_primary()` / `surface_raised()` / `text_muted()` …). 매핑 정답지는 [`token-crosswalk.md`](./token-crosswalk.md).
+
+```rust
+// ✅ 선호 — 의도가 드러난다. 같은 primitive 가 여러 role 로 갈리는 다의성을 호출처에서 표현
+visuals.hyperlink_color = th.accent_primary().into();   // = blue, "primary" 의도
+visuals.error_fg_color  = th.accent_danger().into();    // = red,  "danger" 의도
+
+// ⚠️ 허용(이식 미완) — primitive 직접접근. 의미는 호출처가 암묵적으로 들고 있음
+visuals.hyperlink_color = th.blue.into();
+```
+
+- **신규/수정 UI 코드는 semantic 접근자를 우선** 사용한다. primitive 직접접근(`th.blue` 등)은 의미가 호출처에 묻혀 다의성(`blue` = primary / border-focus / ansi-blue)을 드러내지 못한다.
+- **접근자는 additive 레이어** — primitive 필드는 그대로 남아 있고 기존 직접접근도 유효하다. 색값은 동일(접근자가 같은 필드를 리턴)하므로 교체는 **픽셀 동일**.
+- **이식은 점진적**: 현재 시범 영역(`crates/tasty-egui-theme/src/lib.rs` 의 의미 색상/selection 블록)만 접근자로 옮겼고, 나머지 ~495 호출처에는 primitive 직접접근이 **의도적으로 잔존**한다. 전수 이식이 끝나기 전까지 primitive 직접접근을 막는 **clippy 강제는 보류**한다.
+- `text_on_accent()` / `accent_info()` 등 **잠정 매핑** 접근자는 doc 주석에 사유를 명시했다 (Rust 전용 필드 부재 / latte role-remap 미반영). 후속에서 정식 필드 신설 후보.
+
 ## 새 테마 추가하기
 
 사용자 입장에서:

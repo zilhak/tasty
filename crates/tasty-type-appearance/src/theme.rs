@@ -864,6 +864,129 @@ impl Theme {
 }
 
 // ============================================================================
+//  Semantic 접근자 (additive) — A1 token-crosswalk 의 의미 라벨 기준
+// ============================================================================
+//
+// 현재 `Theme` 은 평면 primitive 필드만 노출하고, 의미(accent-primary 등) 매핑을
+// UI 호출처가 암묵적으로 들고 있다. 아래 접근자는 그 암묵 매핑을 **이름 있는
+// semantic 표면**으로 끌어올린다. primitive 필드를 대체하지 않는 additive 레이어 —
+// 기존 `theme().blue` 직접 접근은 그대로 유효하며, 호출처 이식이 끝날 때까지 공존한다.
+//
+// 매핑 근거: `docs/design/systems/token-crosswalk.md` (semantic 96 ↔ primitive ↔ 필드).
+// 같은 primitive 가 여러 role 로 갈리는 다의성(crosswalk §4)은 호출처가 어느 접근자를
+// 쓰는지로 표현된다 (예: blue → `accent_primary` / `border_focus` / ansi-blue).
+impl Theme {
+    // ── 배경 (bg-*) ──
+    #[inline]
+    pub fn bg_app(&self) -> HexColor {
+        self.crust
+    }
+    #[inline]
+    pub fn bg_sidebar(&self) -> HexColor {
+        self.mantle
+    }
+    #[inline]
+    pub fn bg_panel(&self) -> HexColor {
+        self.base
+    }
+
+    // ── 표면 (surface-*) ──
+    #[inline]
+    pub fn surface_raised(&self) -> HexColor {
+        self.surface0
+    }
+    #[inline]
+    pub fn surface_hover(&self) -> HexColor {
+        self.surface1
+    }
+    #[inline]
+    pub fn surface_active(&self) -> HexColor {
+        self.surface2
+    }
+
+    // ── 텍스트 (text-*) ──
+    #[inline]
+    pub fn text_primary(&self) -> HexColor {
+        self.text
+    }
+    #[inline]
+    pub fn text_secondary(&self) -> HexColor {
+        self.subtext1
+    }
+    #[inline]
+    pub fn text_muted(&self) -> HexColor {
+        self.subtext0
+    }
+    #[inline]
+    pub fn text_disabled(&self) -> HexColor {
+        self.overlay1
+    }
+    #[inline]
+    pub fn text_placeholder(&self) -> HexColor {
+        self.placeholder
+    }
+    /// semantic role-remap 미대응 — **잠정 매핑**. Mocha 에선 neutral-0(=`crust`) 와
+    /// 동일값이지만, Latte 에선 white 여야 한다(DTCG `text-on-accent`). 전용 필드가
+    /// 없어 현재는 mocha 기준 `crust` 를 리턴 — 후속에서 role-remap 필드 신설 후보.
+    #[inline]
+    pub fn text_on_accent(&self) -> HexColor {
+        self.crust
+    }
+
+    // ── accent (의미색) ──
+    #[inline]
+    pub fn accent_primary(&self) -> HexColor {
+        self.blue
+    }
+    /// **잠정 매핑** — DTCG `accent-info` → `color-sky`. 현재 실 UI 직접 사용처가
+    /// 없다(crosswalk §3.3 "확인 필요"). 매핑 자체는 sky 로 확정.
+    #[inline]
+    pub fn accent_info(&self) -> HexColor {
+        self.sky
+    }
+    #[inline]
+    pub fn accent_success(&self) -> HexColor {
+        self.green
+    }
+    #[inline]
+    pub fn accent_warning(&self) -> HexColor {
+        self.yellow
+    }
+    #[inline]
+    pub fn accent_danger(&self) -> HexColor {
+        self.red
+    }
+    #[inline]
+    pub fn accent_agent(&self) -> HexColor {
+        self.mauve
+    }
+
+    // ── 보더 (border-*) ──
+    #[inline]
+    pub fn border_default(&self) -> HexColor {
+        self.surface0
+    }
+    #[inline]
+    pub fn border_strong(&self) -> HexColor {
+        self.surface1
+    }
+    #[inline]
+    pub fn border_focus(&self) -> HexColor {
+        self.blue
+    }
+
+    // ── 오버레이 (overlay-*) — is_light 에서 도출된 필드를 semantic 이름으로 ──
+    #[inline]
+    pub fn overlay_hover(&self) -> HexColor {
+        self.hover_overlay
+    }
+    #[inline]
+    pub fn overlay_active(&self) -> HexColor {
+        self.active_overlay
+    }
+}
+
+// ============================================================================
 //  Tests
 // ============================================================================
 
@@ -925,6 +1048,73 @@ mod tests {
             ansi_bright_white: c,
             surface_themes: BTreeMap::new(),
         }
+    }
+
+    /// dummy 와 달리 semantic 접근자 매핑 검증용 — 비교 대상 필드마다 **고유 색**을
+    /// 줘서 `accent_primary()==blue` 가 `==green` 으로 잘못 매핑돼도 잡히게 한다.
+    fn distinct_colors() -> ThemeColors {
+        let mut c = dummy_colors();
+        c.crust = HexColor::from_rgb(1, 0, 0);
+        c.mantle = HexColor::from_rgb(2, 0, 0);
+        c.base = HexColor::from_rgb(3, 0, 0);
+        c.surface0 = HexColor::from_rgb(4, 0, 0);
+        c.surface1 = HexColor::from_rgb(5, 0, 0);
+        c.surface2 = HexColor::from_rgb(6, 0, 0);
+        c.overlay1 = HexColor::from_rgb(7, 0, 0);
+        c.subtext0 = HexColor::from_rgb(8, 0, 0);
+        c.subtext1 = HexColor::from_rgb(9, 0, 0);
+        c.text = HexColor::from_rgb(10, 0, 0);
+        c.placeholder = HexColor::from_rgb(11, 0, 0);
+        c.blue = HexColor::from_rgb(12, 0, 0);
+        c.green = HexColor::from_rgb(13, 0, 0);
+        c.red = HexColor::from_rgb(14, 0, 0);
+        c.yellow = HexColor::from_rgb(15, 0, 0);
+        c.sky = HexColor::from_rgb(16, 0, 0);
+        c.mauve = HexColor::from_rgb(17, 0, 0);
+        c
+    }
+
+    /// A2: semantic 접근자가 A1 크로스워크대로 primitive 필드에 매핑되는지 고정.
+    #[test]
+    fn semantic_accessors_map_to_primitives() {
+        let th = Theme::with_colors(distinct_colors(), false);
+
+        // accent (의미색)
+        assert_eq!(th.accent_primary(), th.blue);
+        assert_eq!(th.accent_info(), th.sky);
+        assert_eq!(th.accent_success(), th.green);
+        assert_eq!(th.accent_warning(), th.yellow);
+        assert_eq!(th.accent_danger(), th.red);
+        assert_eq!(th.accent_agent(), th.mauve);
+
+        // 배경 / 표면
+        assert_eq!(th.bg_app(), th.crust);
+        assert_eq!(th.bg_sidebar(), th.mantle);
+        assert_eq!(th.bg_panel(), th.base);
+        assert_eq!(th.surface_raised(), th.surface0);
+        assert_eq!(th.surface_hover(), th.surface1);
+        assert_eq!(th.surface_active(), th.surface2);
+
+        // 텍스트
+        assert_eq!(th.text_primary(), th.text);
+        assert_eq!(th.text_secondary(), th.subtext1);
+        assert_eq!(th.text_muted(), th.subtext0);
+        assert_eq!(th.text_disabled(), th.overlay1);
+        assert_eq!(th.text_placeholder(), th.placeholder);
+        assert_eq!(th.text_on_accent(), th.crust); // 잠정(mocha 기준)
+
+        // 보더
+        assert_eq!(th.border_default(), th.surface0);
+        assert_eq!(th.border_strong(), th.surface1);
+        assert_eq!(th.border_focus(), th.blue);
+
+        // 오버레이 (도출 필드)
+        assert_eq!(th.overlay_hover(), th.hover_overlay);
+        assert_eq!(th.overlay_active(), th.active_overlay);
+
+        // 다의성: 같은 primitive 로 수렴하는 role 들이 동일값인지 확인
+        assert_eq!(th.accent_primary(), th.border_focus()); // 둘 다 blue
+        assert_eq!(th.surface_raised(), th.border_default()); // 둘 다 surface0
     }
 
     #[test]
