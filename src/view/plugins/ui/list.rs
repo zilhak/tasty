@@ -19,6 +19,21 @@ pub(super) fn draw_list_tab(
         ui_state.selected_id = snapshot.plugins.first().map(|p| p.id.clone());
     }
 
+    // name / authors / description 부분일치 필터 (대소문자 무시).
+    let needle = ui_state.filter.trim().to_lowercase();
+    let visible: Vec<_> = snapshot
+        .plugins
+        .iter()
+        .filter(|e| {
+            if needle.is_empty() {
+                return true;
+            }
+            let hay =
+                format!("{} {} {}", e.name, e.authors.join(" "), e.description).to_lowercase();
+            hay.contains(&needle)
+        })
+        .collect();
+
     egui::SidePanel::left("plugins_list")
         .exact_width(240.0)
         .resizable(false)
@@ -31,8 +46,16 @@ pub(super) fn draw_list_tab(
                 );
                 return;
             }
+            if visible.is_empty() {
+                ui.add_space(16.0);
+                ui.label(
+                    egui::RichText::new(t("plugins.no_matches"))
+                        .color(egui::Color32::from(th.subtext0)),
+                );
+                return;
+            }
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for entry in &snapshot.plugins {
+                for entry in &visible {
                     let selected = ui_state.selected_id.as_ref() == Some(&entry.id);
                     let name_text = if entry.builtin {
                         format!("{}  •", entry.name)
@@ -105,7 +128,7 @@ pub(super) fn draw_list_tab(
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading(&entry.name);
-                ui.label(format!("v{}", entry.version));
+                super::tag(ui, &th, &format!("v{}", entry.version));
                 if entry.builtin {
                     ui.label(
                         egui::RichText::new(t("plugins.builtin_badge"))
@@ -149,6 +172,10 @@ pub(super) fn draw_list_tab(
                         enabled,
                     });
                 }
+                // lifecycle 창 → per-plugin config (Settings›Plugins) 연결 고리.
+                if ui.button(t("plugins.configure")).clicked() {
+                    actions.push(PluginsAction::OpenSettings);
+                }
             });
 
             ui.add_space(8.0);
@@ -181,6 +208,26 @@ pub(super) fn draw_list_tab(
                             });
                         }
                     }
+                }
+            }
+
+            if !entry.commands.is_empty() {
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(12.0);
+                ui.label(format!("{}:", t("plugins.commands")));
+                for cmd in &entry.commands {
+                    ui.horizontal(|ui| {
+                        ui.label(t(&cmd.title_key));
+                        if let Some(kb) = &cmd.keybinding {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    super::tag(ui, &th, kb);
+                                },
+                            );
+                        }
+                    });
                 }
             }
 

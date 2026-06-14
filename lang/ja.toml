@@ -60,6 +60,10 @@ trust_unknown_body = "このプラグインは検証済みの鍵で署名され�
 trust_fingerprint = "フィンガープリント: {}"
 trust_no_pubkey = "署名鍵サイドカー (tasty-plugin.toml.pub) が見つからないため信頼登録できません。配布元に公開鍵ファイルを依頼してください。"
 trust_sig_error_title = "署名検証エラー"
+configure = "設定"
+commands = "コマンド"
+filter_placeholder = "インストール済みを絞り込み…"
+no_matches = "一致なし"
 
 [settings]
 [settings.window]

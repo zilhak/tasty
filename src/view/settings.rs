@@ -80,6 +80,11 @@ impl SettingsView {
         self.settings_ui_state.plugin_shortcuts = snapshot;
     }
 
+    /// 첫 진입 탭을 `Plugin` 으로 설정 (Plugins 모달의 `Configure` 진입점).
+    pub fn focus_plugin_tab(&mut self) {
+        self.settings_ui_state.select_plugin_tab();
+    }
+
     /// Plugin 이 contribute 한 settings sub-page 스냅샷을 주입한다. 모달 오픈 직전에
     /// host App 이 호출. 빈 vec 으로 호출하면 plugin sub-tab 이 사라진다.
     pub fn set_plugin_settings_pages(&mut self, pages: Vec<tasty_host_plugin::SettingsPageEntry>) {

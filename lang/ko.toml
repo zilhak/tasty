@@ -60,6 +60,10 @@ trust_unknown_body = "이 플러그인은 검증된 키로 서명되지 않았�
 trust_fingerprint = "지문: {}"
 trust_no_pubkey = "서명 키 사이드카(tasty-plugin.toml.pub)가 없어 신뢰 등록이 불가능합니다. 게시자에게 공개 키 파일을 요청하세요."
 trust_sig_error_title = "서명 검증 오류"
+configure = "구성"
+commands = "명령"
+filter_placeholder = "설치된 플러그인 필터…"
+no_matches = "일치 항목 없음"
 
 [settings]
 [settings.window]

@@ -170,6 +170,11 @@ impl SettingsUiState {
         self.recording_field.is_some()
     }
 
+    /// Plugins 모달의 `Configure` 진입점에서 호출 — 첫 진입 탭을 `Plugin` 으로 설정.
+    pub fn select_plugin_tab(&mut self) {
+        self.active_tab = SettingsTab::Plugin;
+    }
+
     pub fn new() -> Self {
         let mut popups = PopupManager::new();
         popups.register(

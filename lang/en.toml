@@ -60,6 +60,10 @@ trust_unknown_body = "This plugin is not signed by a verified key. Adding it wil
 trust_fingerprint = "Fingerprint: {}"
 trust_no_pubkey = "Cannot register trust — public-key sidecar (tasty-plugin.toml.pub) is missing. Ask the publisher to supply the public key file."
 trust_sig_error_title = "Signature verification error"
+configure = "Configure"
+commands = "Commands"
+filter_placeholder = "Filter installed…"
+no_matches = "No matches"
 
 [settings]
 [settings.window]

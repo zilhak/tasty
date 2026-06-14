@@ -55,6 +55,9 @@ impl App {
         }
 
         let mut pending_toasts: Vec<(String, crate::adapters::ui::ToastKind)> = Vec::new();
+        // X 닫기 / Configure 진입점은 모달을 닫는다 (Configure 는 추가로 Settings 오픈).
+        let mut close_modal = false;
+        let mut open_settings_plugin_tab = false;
 
         for action in actions {
             match action {
@@ -99,6 +102,13 @@ impl App {
                             tracing::warn!("plugins modal: uninstall({id}) failed: {e}");
                         }
                     }
+                }
+                plugins_ui::PluginsAction::OpenSettings => {
+                    close_modal = true;
+                    open_settings_plugin_tab = true;
+                }
+                plugins_ui::PluginsAction::Close => {
+                    close_modal = true;
                 }
                 plugins_ui::PluginsAction::OpenInstallDir { path } => {
                     if !crate::terminal_link::open_uri(&path) {
@@ -178,6 +188,18 @@ impl App {
         // revoke/uninstall 어떤 경로든 ui.tool_item 권한 또는 plugin 활성 상태가
         // 바뀌었을 수 있으므로 매번 다시 수집한다 (low-cost).
         self.refresh_tool_registry();
+
+        // Close / Configure: 모달을 닫는다. 단일 모달 불변식상 Settings 를 열려면
+        // 먼저 plugins 모달을 닫아야 한다. Configure 는 닫은 뒤 Settings 오픈 이벤트
+        // 를 발행하고, open_settings_modal 이 Plugin 탭으로 진입한다.
+        if close_modal {
+            self.close_active_modal();
+            if open_settings_plugin_tab {
+                self.pending_settings_plugin_tab = true;
+                crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
+            }
+            return;
+        }
 
         let snapshot = self.snapshot_plugins();
         if let Some(modal) = self.view.views.get_mut(&modal_id)

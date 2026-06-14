@@ -33,6 +33,28 @@ impl App {
                         .collect(),
                     manifest_permissions: pkg.manifest.permissions.clone(),
                     granted_permissions: granted,
+                    commands: pkg
+                        .manifest
+                        .contributes
+                        .commands
+                        .iter()
+                        .map(|cmd| {
+                            // 효과 단축키 = override 우선, 없으면 매니페스트 default.
+                            // (단축키 하드코딩 금지 — 모두 선언/설정에서 도출.)
+                            let keybinding = match mgr.config.shortcut_override(id, &cmd.id) {
+                                Some(ov) => {
+                                    crate::plugin::registry_state::shortcut_override_display(Some(
+                                        ov,
+                                    ))
+                                }
+                                None => cmd.default_keybinding.clone(),
+                            };
+                            plugins_ui::PluginCommandEntry {
+                                title_key: cmd.title_i18n_key.clone(),
+                                keybinding,
+                            }
+                        })
+                        .collect(),
                     log_path: mgr.log_path(id).to_string_lossy().into_owned(),
                     install_dir: pkg.dir.to_string_lossy().into_owned(),
                 }

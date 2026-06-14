@@ -76,6 +76,10 @@ impl App {
         if let Some(main) = self.focused_window() {
             modal.set_update_status(main.state.update_status.clone());
         }
+        // Plugins 모달의 Configure 진입점이 요청했으면 Plugin 탭으로 진입.
+        if std::mem::take(&mut self.pending_settings_plugin_tab) {
+            modal.focus_plugin_tab();
+        }
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately instead of waiting for the event loop.
         // On other platforms, mark_dirty() + request_redraw() is sufficient.
