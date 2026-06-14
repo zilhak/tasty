@@ -102,6 +102,18 @@ pub const FALLBACK_SURFACE: SurfaceTheme = SurfaceTheme {
 };
 
 // ============================================================================
+//  Titlebar OS 리터럴 — 테마 불변 (mocha/latte 공통)
+// ============================================================================
+
+/// Windows 캡션 close 버튼 hover 시 시스템 red. OS 가 박아둔 리터럴이라 테마와
+/// 무관하게 고정 (`--tasty-color-os-windows-close` = `#c42b1c`). primitive 1곳에만.
+pub const ACCENT_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xc4, 0x2b, 0x1c);
+
+/// close 버튼 글리프 — 어두운 red 위 흰 글자라 두 테마 모두 white 고정
+/// (`--tasty-text-on-window-close`).
+pub const TEXT_ON_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
+
+// ============================================================================
 //  ThemeSizing — 모든 테마 공통
 // ============================================================================
 
@@ -156,6 +168,15 @@ pub struct ThemeSizing {
     pub tab_bar_label_font_size: LogicalPx,
     /// 좌/우 스크롤 화살표 폰트 크기.
     pub tab_bar_arrow_font_size: LogicalPx,
+    // ── Titlebar (CSD) 전용 (host UI zoom 영향 받지 않음) ──
+    // 디자인 jsx 가 px 고정이고, OS 데코 관습상 고정 px 가 맞다. tab_bar 와 동일하게
+    // with_colors_and_zoom 에서 SIZING 그대로 복사 (zoom 미적용).
+    /// CSD 타이틀바 높이.
+    pub titlebar_height: LogicalPx,
+    /// macOS 신호등(traffic light) 점 지름.
+    pub traffic_size: LogicalPx,
+    /// Windows 캡션 버튼(min·max·close) 폭.
+    pub caption_width: LogicalPx,
 }
 
 pub const SIZING: ThemeSizing = ThemeSizing {
@@ -188,6 +209,9 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     tab_bar_height: LogicalPx(24.0),
     tab_bar_label_font_size: LogicalPx(13.0),
     tab_bar_arrow_font_size: LogicalPx(11.0),
+    titlebar_height: LogicalPx(36.0),
+    traffic_size: LogicalPx(12.0),
+    caption_width: LogicalPx(46.0),
 };
 
 // ============================================================================
@@ -645,6 +669,10 @@ pub struct Theme {
     pub tab_bar_height: LogicalPx,
     pub tab_bar_label_font_size: LogicalPx,
     pub tab_bar_arrow_font_size: LogicalPx,
+    // ── Titlebar (CSD) 전용 (host UI zoom 영향 받지 않음) ──
+    pub titlebar_height: LogicalPx,
+    pub traffic_size: LogicalPx,
+    pub caption_width: LogicalPx,
 
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
@@ -769,6 +797,10 @@ impl Theme {
             tab_bar_height: SIZING.tab_bar_height,
             tab_bar_label_font_size: SIZING.tab_bar_label_font_size,
             tab_bar_arrow_font_size: SIZING.tab_bar_arrow_font_size,
+            // Titlebar (CSD) 전용 — px 고정 디자인, tab_bar 와 동일하게 zoom 미적용.
+            titlebar_height: SIZING.titlebar_height,
+            traffic_size: SIZING.traffic_size,
+            caption_width: SIZING.caption_width,
             is_light,
             surface_themes: c.surface_themes,
         }
@@ -998,6 +1030,43 @@ impl Theme {
     pub fn overlay_active(&self) -> HexColor {
         self.active_overlay
     }
+
+    // ── Titlebar (CSD) 컴포넌트 색 — 기존 semantic 접근자 조합 (changelog §Tokens) ──
+    /// 타이틀바 배경 (active/focused). `--tasty-titlebar-bg` → `bg-app`.
+    #[inline]
+    pub fn titlebar_bg(&self) -> HexColor {
+        self.bg_app()
+    }
+    /// 타이틀바 배경 (inactive/unfocused). `--tasty-titlebar-bg-inactive` → `bg-sidebar`.
+    #[inline]
+    pub fn titlebar_bg_inactive(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+    /// 타이틀바 하단 1px 보더. `--tasty-titlebar-border` → `separator`.
+    #[inline]
+    pub fn titlebar_border(&self) -> HexColor {
+        self.separator
+    }
+    /// 타이틀바 전경 (active/focused). `--tasty-titlebar-fg` → `text-secondary`.
+    #[inline]
+    pub fn titlebar_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+    /// 타이틀바 전경 (inactive/unfocused). `--tasty-titlebar-fg-inactive` → `text-muted`.
+    #[inline]
+    pub fn titlebar_fg_inactive(&self) -> HexColor {
+        self.text_muted()
+    }
+    /// Windows close 버튼 hover 의 시스템 red. 테마 불변 OS 리터럴.
+    #[inline]
+    pub fn accent_window_close(&self) -> HexColor {
+        ACCENT_WINDOW_CLOSE
+    }
+    /// close 버튼 글리프 — 두 테마 모두 white 고정.
+    #[inline]
+    pub fn text_on_window_close(&self) -> HexColor {
+        TEXT_ON_WINDOW_CLOSE
+    }
 }
 
 // ============================================================================
@@ -1211,6 +1280,9 @@ mod tests {
         assert_eq!(base.tab_bar_height, zoomed.tab_bar_height);
         assert_eq!(base.tab_bar_label_font_size, zoomed.tab_bar_label_font_size);
         assert_eq!(base.tab_bar_arrow_font_size, zoomed.tab_bar_arrow_font_size);
+        assert_eq!(base.titlebar_height, zoomed.titlebar_height);
+        assert_eq!(base.traffic_size, zoomed.traffic_size);
+        assert_eq!(base.caption_width, zoomed.caption_width);
     }
 
     #[test]
@@ -1262,6 +1334,50 @@ mod tests {
             t_large.tab_bar_arrow_font_size,
             SIZING.tab_bar_arrow_font_size
         );
+        // titlebar(CSD) 토큰도 zoom 무관 (px 고정 정책).
+        assert_eq!(t_small.titlebar_height, SIZING.titlebar_height);
+        assert_eq!(t_large.titlebar_height, SIZING.titlebar_height);
+        assert_eq!(t_small.traffic_size, SIZING.traffic_size);
+        assert_eq!(t_large.traffic_size, SIZING.traffic_size);
+        assert_eq!(t_small.caption_width, SIZING.caption_width);
+        assert_eq!(t_large.caption_width, SIZING.caption_width);
+    }
+
+    /// P1: CSD 타이틀바 길이 토큰 값 고정 (디자인 jsx px).
+    #[test]
+    fn titlebar_sizing_tokens_fixed() {
+        let t = Theme::with_colors(dummy_colors(), false);
+        assert_eq!(t.titlebar_height.value(), 36.0);
+        assert_eq!(t.traffic_size.value(), 12.0);
+        assert_eq!(t.caption_width.value(), 46.0);
+    }
+
+    /// P1: titlebar 컴포넌트 색 접근자가 changelog 매핑대로 semantic 에 묶이는지 고정.
+    #[test]
+    fn titlebar_color_accessors_map_to_semantics() {
+        let th = Theme::with_colors(distinct_colors(), false);
+        assert_eq!(th.titlebar_bg(), th.bg_app());
+        assert_eq!(th.titlebar_bg_inactive(), th.bg_sidebar());
+        assert_eq!(th.titlebar_border(), th.separator);
+        assert_eq!(th.titlebar_fg(), th.text_secondary());
+        assert_eq!(th.titlebar_fg_inactive(), th.text_muted());
+    }
+
+    /// P1: OS 리터럴(테마 불변) close red / white 글리프 값 고정.
+    #[test]
+    fn window_close_literals_are_theme_invariant() {
+        let dark = Theme::with_colors(distinct_colors(), false);
+        let light = Theme::with_colors(distinct_colors(), true);
+        assert_eq!(
+            dark.accent_window_close(),
+            HexColor::from_rgb(0xc4, 0x2b, 0x1c)
+        );
+        assert_eq!(dark.accent_window_close(), light.accent_window_close());
+        assert_eq!(
+            dark.text_on_window_close(),
+            HexColor::from_rgb(0xff, 0xff, 0xff)
+        );
+        assert_eq!(dark.text_on_window_close(), light.text_on_window_close());
     }
 
     #[test]
