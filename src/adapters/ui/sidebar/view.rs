@@ -191,7 +191,16 @@ pub fn draw_full_sidebar_view(
             ui.add_space(4.0);
             let mut card_rects: Vec<(usize, egui::Rect)> = Vec::new();
 
+            // 디자인 chrome.jsx:141-149 — 목록 블록 상단 보더 (separator).
+            if !props.workspaces.is_empty() {
+                draw_list_separator(ui, th, 0.0);
+            }
+
             for (i, ws) in props.workspaces.iter().enumerate() {
+                // 행 사이 1px 구분선, 좌측 32px 들여쓰기 (디자인 margin-left:32px).
+                if i > 0 {
+                    draw_list_separator(ui, th, 32.0);
+                }
                 let card_rect = draw_workspace_card(ui, th, ws, props.occupied_hover);
                 let card_response = ui.interact(
                     card_rect,
@@ -235,7 +244,11 @@ pub fn draw_full_sidebar_view(
                 }
 
                 card_rects.push((i, card_rect));
-                ui.add_space(2.0);
+            }
+
+            // 디자인 chrome.jsx:141-149 — 목록 블록 하단 보더 (separator).
+            if !props.workspaces.is_empty() {
+                draw_list_separator(ui, th, 0.0);
             }
 
             // Drag release / drop marker / ghost preview.
@@ -414,24 +427,19 @@ pub fn draw_collapsed_sidebar_view(
                 .next()
                 .map(|c| c.to_uppercase().to_string())
                 .unwrap_or_default();
-            let bg = if ws.is_active { th.surface0 } else { th.mantle };
-            let text_color = if ws.is_active {
-                th.text
-            } else if ws.has_highlight {
-                th.yellow
+            // G3: 디자인 IconButton.active — active = bg overlay-active + 글자색
+            // accent-primary(blue), 테두리 없음. inactive = bg 없음 + 글자색 text-muted.
+            // G4: notif 의 글자색(yellow) 표현은 제거 — notif 는 우상단 dot 으로만.
+            let text_color: egui::Color32 = if ws.is_active {
+                th.accent_primary().into()
             } else {
-                th.subtext0
+                th.text_muted().into()
             };
 
             let (rect, resp) = ui.allocate_exact_size(collapsed_ws_size(th), egui::Sense::click());
-            ui.painter().rect_filled(rect, 4.0, bg);
             if ws.is_active {
-                ui.painter().rect_stroke(
-                    rect,
-                    4.0,
-                    egui::Stroke::new(1.0, th.blue),
-                    egui::StrokeKind::Inside,
-                );
+                ui.painter()
+                    .rect_filled(rect, 4.0, th.overlay_active().to_egui_premultiplied());
             }
             if resp.hovered() {
                 ui.painter()
@@ -443,25 +451,26 @@ pub fn draw_collapsed_sidebar_view(
                     egui::Align2::CENTER_CENTER,
                     &label,
                     egui::FontId::monospace(th.font_size_body.value()),
-                    text_color.into(),
+                    text_color,
                 );
             }
-            // 우상단 dot — mirror(하늘색, 항상 켜짐) > running(초록). attached(빨강)는 우하단.
-            let top_dot = if ws.is_mirror {
-                Some(th.sky)
+            // 우상단 dot — mirror(하늘색) > notif(blue+링) > running(초록). attached(빨강)는 우하단.
+            let dot_radius = 3.0;
+            let dot_pad = 4.0;
+            let dot_center = egui::pos2(
+                rect.max.x - dot_pad - dot_radius,
+                rect.min.y + dot_pad + dot_radius,
+            );
+            if ws.is_mirror {
+                ui.painter().circle_filled(dot_center, dot_radius, th.sky);
+            } else if ws.has_highlight {
+                // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
+                ui.painter()
+                    .circle_filled(dot_center, dot_radius + 1.5, th.mantle);
+                ui.painter()
+                    .circle_filled(dot_center, dot_radius, th.accent_primary());
             } else if ws.busy_count > 0 {
-                Some(th.green)
-            } else {
-                None
-            };
-            if let Some(c) = top_dot {
-                let dot_radius = 3.0;
-                let dot_pad = 4.0;
-                let dot_center = egui::pos2(
-                    rect.max.x - dot_pad - dot_radius,
-                    rect.min.y + dot_pad + dot_radius,
-                );
-                ui.painter().circle_filled(dot_center, dot_radius, c);
+                ui.painter().circle_filled(dot_center, dot_radius, th.green);
             }
             if ws.attached {
                 let dot_radius = 3.0;
@@ -626,6 +635,21 @@ fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
     ui.painter().galley(pos, galley, th.subtext0.into());
 }
 
+/// 워크스페이스 목록의 1px 수평 구분선 (디자인 `separator` 토큰).
+/// 블록 상하 보더는 `left_inset=0`, 행 사이 구분선은 `left_inset=32`(디자인
+/// `margin-left:32px`). `separator` 는 premultiplied 반투명 바이트로 저장돼 있어
+/// `to_egui_premultiplied()` 로 변환한다.
+fn draw_list_separator(ui: &mut egui::Ui, th: &Theme, left_inset: f32) {
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    let line = egui::Rect::from_min_size(
+        egui::pos2(rect.min.x + left_inset, rect.min.y),
+        egui::vec2((rect.width() - left_inset).max(0.0), 1.0),
+    );
+    ui.painter()
+        .rect_filled(line, 0.0, th.separator.to_egui_premultiplied());
+}
+
 /// Collapsed 측 IconButton — hover 배경 + SVG icon 그리기 helper.
 fn paint_icon_button(
     ui: &mut egui::Ui,
@@ -682,55 +706,49 @@ fn draw_workspace_card(
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             // 좌측 상태 dot — 디자인 StatusDot (running/idle/agent/waiting/error)
-            // 중 ws-level 데이터로 결정 가능한 case 만 표시.
-            // 우선순위: mirror (원격 attach 한 client mirror) → sky (항상 켜짐)
+            // 중 ws-level 데이터로 결정 가능한 case 만 표시. dot 은 항상 렌더하고
+            // 색만 상태별로 분기한다 (디자인 StatusDot 은 idle 에도 점을 그림).
+            // 우선순위: mirror (원격 attach client mirror) → sky
             //          > running(busy_count>0) → green (accent-success)
             //          > attached (다른 client 점유) → red (accent-danger)
-            //          > 없음 (idle 은 무점 표시)
+            //          > idle → text-muted (회색)
             // 디자인의 agent / waiting case 는 ws-level 데이터 부재로 보류.
             // 폴더 아이콘(16px) 슬롯과 동일 폭을 차지해 라벨 위치가 흔들리지 않게 한다.
             let dot_slot = egui::vec2(16.0, 16.0);
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
-            let dot_color: Option<egui::Color32> = if ws.is_mirror {
-                Some(th.sky.into())
+            // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
+            let dot_color: egui::Color32 = if ws.is_mirror {
+                th.sky.into()
             } else if ws.busy_count > 0 {
-                Some(th.green.into())
+                th.accent_success().into()
             } else if ws.attached {
-                Some(th.red.into())
+                th.accent_danger().into()
             } else {
-                None
+                th.text_muted().into()
             };
-            if let Some(color) = dot_color {
-                // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
-                ui.painter().circle_filled(dot_rect.center(), 4.0, color);
-                if ws.attached && ws.busy_count == 0 {
-                    dot_resp.on_hover_text(occupied_hover);
-                }
+            ui.painter()
+                .circle_filled(dot_rect.center(), 4.0, dot_color);
+            if ws.attached && ws.busy_count == 0 {
+                dot_resp.on_hover_text(occupied_hover);
             }
-            let title_text = if ws.is_active {
-                egui::RichText::new(&ws.name).strong()
+            // G5/J4: active 이름 text-primary, inactive 이름 text-secondary (한 단계
+            // 어두움). 강조는 색으로만 — 디자인엔 굵기 차이가 없어 .strong() 미사용.
+            let name_color = if ws.is_active {
+                th.text_primary()
             } else {
-                egui::RichText::new(&ws.name)
+                th.text_secondary()
             };
-            ui.label(title_text);
+            ui.label(egui::RichText::new(&ws.name).color(name_color));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ws.has_highlight {
-                    let badge_size = egui::vec2(18.0, 16.0);
+                    // 디자인 Badge variant="primary" — accent-primary 채움 pill.
+                    // notif count 데이터가 ws-level 에 없어(props=bool) 숫자는 생략하고
+                    // pill 형태(채움 원형)만 표현한다. count 배선은 별도 TODO.
+                    let badge_size = egui::vec2(10.0, 10.0);
                     let (rect, _) = ui.allocate_exact_size(badge_size, egui::Sense::hover());
-                    ui.painter().rect_stroke(
-                        rect,
-                        3.0,
-                        egui::Stroke::new(1.0, th.blue),
-                        egui::StrokeKind::Inside,
-                    );
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "!",
-                        egui::FontId::proportional(10.0),
-                        th.blue.into(),
-                    );
+                    ui.painter()
+                        .circle_filled(rect.center(), 5.0, th.accent_primary());
                 }
             });
         });
@@ -738,7 +756,13 @@ fn draw_workspace_card(
         if !ws.subtitle.is_empty() {
             ui.horizontal(|ui| {
                 ui.add_space(20.0);
-                ui.label(egui::RichText::new(&ws.subtitle).small().color(th.subtext0));
+                // 디자인 chrome.jsx:62 — subtitle 은 font-mono, text-muted.
+                ui.label(
+                    egui::RichText::new(&ws.subtitle)
+                        .small()
+                        .monospace()
+                        .color(th.text_muted()),
+                );
             });
         }
 
