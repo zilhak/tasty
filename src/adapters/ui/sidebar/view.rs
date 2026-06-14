@@ -466,7 +466,7 @@ pub fn draw_collapsed_sidebar_view(
             } else if ws.has_highlight {
                 // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
                 ui.painter()
-                    .circle_filled(dot_center, dot_radius + 1.5, th.mantle);
+                    .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
                 ui.painter()
                     .circle_filled(dot_center, dot_radius, th.accent_primary());
             } else if ws.busy_count > 0 {

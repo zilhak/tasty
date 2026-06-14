@@ -611,9 +611,7 @@ body = "버전 {} 사용 가능. `tasty update` 또는 설정 → 업데이트�
 
 [search]
 placeholder = "검색..."
-no_matches = "일치 항목 없음"
 match_count = "{current}/{total}"
-invalid_regex = "잘못된 정규식"
 prev_match_tooltip = "이전 일치"
 next_match_tooltip = "다음 일치"
 case_tooltip = "대소문자 구분"

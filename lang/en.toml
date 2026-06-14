@@ -611,9 +611,7 @@ body = "Version {} is available. Run `tasty update` or open Settings → Updates
 
 [search]
 placeholder = "Search..."
-no_matches = "No matches"
 match_count = "{current}/{total}"
-invalid_regex = "Invalid regex"
 prev_match_tooltip = "Previous match"
 next_match_tooltip = "Next match"
 case_tooltip = "Match case"

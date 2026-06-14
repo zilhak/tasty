@@ -611,9 +611,7 @@ body = "バージョン {} が利用可能です。`tasty update` または 設�
 
 [search]
 placeholder = "検索..."
-no_matches = "一致なし"
 match_count = "{current}/{total}"
-invalid_regex = "無効な正規表現"
 prev_match_tooltip = "前の一致"
 next_match_tooltip = "次の一致"
 case_tooltip = "大文字と小文字を区別"
