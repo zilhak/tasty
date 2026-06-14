@@ -127,6 +127,7 @@
 - Pane별 탭 바: 각 Pane의 rect 상단에 egui Area로 렌더링
 - 탭 UI: 너비/폰트 크기를 Appearance settings 에서 직접 조정 (기본 150px / 11px). 모니터 scale 은 egui 가 자동 반영 (= auto). 1px 세로 구분선(surface1), active 탭 상단 강조선(blue)
 - 탭 스크롤: 탭이 영역을 초과하면 좌우 화살표 버튼(< >)으로 스크롤 가능
+- 탭 바 우측 아이콘 버튼: **Split**(해당 pane 분할 — 단축키 split_pane 과 동일 경로) + **Search**(해당 pane 활성 surface 검색 — find 와 동일 경로). 클릭 시 대상 pane 으로 focus 이동 후 동작
 - 탭 이름 정책:
   - 기본: 포커스된 surface의 현재 작업 디렉토리의 폴더 이름 (시스템/유저 루트는 `/` 또는 `~`)
   - 명시적 설정 시: 설정된 이름 (explicit_name) 우선

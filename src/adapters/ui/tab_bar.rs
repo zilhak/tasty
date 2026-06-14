@@ -87,6 +87,14 @@ pub enum TabBarAction {
     AddTab {
         pane_id: u32,
     },
+    /// 탭스트립 우측 Split 아이콘 — 해당 pane 을 분할 (기존 split_pane 경로 재사용).
+    RequestSplit {
+        pane_id: u32,
+    },
+    /// 탭스트립 우측 Search 아이콘 — 해당 pane 활성 surface 검색 (기존 find 경로 재사용).
+    OpenSearch {
+        pane_id: u32,
+    },
     ScrollLeft {
         pane_id: u32,
     },
@@ -143,6 +151,11 @@ pub fn draw_pane_tab_bars_view(
     // font_size_body / font_size_caption) 대신 zoom 미적용 tab_bar_* 토큰 사용.
     let bar_h = th.tab_bar_height.value();
     let plus_w: f32 = 28.0;
+    // 우측 고정 IconButton (Split / Search) — 디자인 TabStrip 우측 클러스터.
+    // 디자인 IconButton sm(control-height-tab) 에 맞춰 "+" 와 동일 폭.
+    let icon_btn_w: f32 = 28.0;
+    let right_icons_w: f32 = icon_btn_w * 2.0;
+    let icon_glyph: f32 = 14.0;
     let arrow_w: f32 = 20.0;
     let separator_w: f32 = 1.0;
     let h_padding: f32 = 8.0;
@@ -159,11 +172,13 @@ pub fn draw_pane_tab_bars_view(
         let n = info.tab_names.len();
         let content_w =
             n as f32 * tab_w + (n.max(1) - 1) as f32 * separator_w + separator_w + plus_w;
-        let needs_scroll = content_w > logical_w;
+        // 우측 IconButton 클러스터(Split/Search) 폭을 항상 확보한 뒤 남은 폭으로 탭/화살표 배치.
+        let avail_w = (logical_w - right_icons_w).max(0.0);
+        let needs_scroll = content_w > avail_w;
         let viewport_w = if needs_scroll {
-            (logical_w - arrow_w * 2.0).max(0.0)
+            (avail_w - arrow_w * 2.0).max(0.0)
         } else {
-            logical_w.max(0.0)
+            avail_w
         };
         let max_scroll = (content_w - viewport_w).max(0.0);
         let scroll = info.scroll_offset.clamp(0.0, max_scroll);
@@ -511,6 +526,35 @@ pub fn draw_pane_tab_bars_view(
                                     });
                                 }
                             }
+
+                            // 우측 IconButton 클러스터 — Split / Search (디자인 TabStrip).
+                            // 탭바는 zoom 비적용 → 고정 px. "+" 와 동일 호버 스타일.
+                            for (icon, is_split) in [(icons::SPLIT, true), (icons::SEARCH, false)] {
+                                let (r, resp) = ui.allocate_exact_size(
+                                    egui::vec2(icon_btn_w, bar_h),
+                                    egui::Sense::click(),
+                                );
+                                let color = if resp.hovered() { th.text } else { th.subtext0 };
+                                if resp.hovered() {
+                                    ui.painter().rect_filled(r, 0.0, th.surface0);
+                                }
+                                let icon_rect = egui::Rect::from_center_size(
+                                    r.center(),
+                                    egui::vec2(icon_glyph, icon_glyph),
+                                );
+                                icon.image(icon_glyph, color.into()).paint_at(ui, icon_rect);
+                                if resp.clicked() {
+                                    output.actions.push(if is_split {
+                                        TabBarAction::RequestSplit {
+                                            pane_id: info.pane_id,
+                                        }
+                                    } else {
+                                        TabBarAction::OpenSearch {
+                                            pane_id: info.pane_id,
+                                        }
+                                    });
+                                }
+                            }
                         });
                     });
             });
@@ -531,7 +575,8 @@ pub fn draw_pane_tab_bars_view(
         let n = pane_info.tab_names.len();
         let content_w =
             n as f32 * tab_w + (n.max(1) - 1) as f32 * separator_w + separator_w + plus_w;
-        let needs_scroll_arrows = content_w > pane_logical_w;
+        let avail_w = (pane_logical_w - right_icons_w).max(0.0);
+        let needs_scroll_arrows = content_w > avail_w;
         let viewport_start = if needs_scroll_arrows {
             pane_logical_x + arrow_w
         } else {
@@ -712,6 +757,37 @@ pub fn draw_pane_tab_bars(
                 state.active_workspace_mut(engine).focused_pane = pane_id;
                 if let Err(e) = state.add_tab(engine) {
                     tracing::warn!("add_tab failed: {e}");
+                }
+            }
+            TabBarAction::RequestSplit { pane_id } => {
+                // 단축키(`split_pane_vertical`)와 동일 경로. 사용자 클릭이므로 대상 pane
+                // 으로 focus 이동 후 split (cascade 가 새 pane 으로 focus 이동).
+                use crate::intent::Intent;
+                use crate::model::SplitDirection;
+                state.active_workspace_mut(engine).focused_pane = pane_id;
+                state.dispatch_intent(
+                    Intent::SplitPane {
+                        direction: SplitDirection::Vertical,
+                    }
+                    .from_user_shortcut("split_pane_vertical"),
+                );
+            }
+            TabBarAction::OpenSearch { pane_id } => {
+                // 단축키(`find`)와 동일 경로 — 대상 pane 활성 surface 에 검색창을 연다.
+                use crate::adapters::ui::popup::PopupScope;
+                use crate::intent::{OpenPopupMode, UiIntent};
+                state.active_workspace_mut(engine).focused_pane = pane_id;
+                if state.popups.is_open("search_bar") {
+                    state.popups.set_focused("search_bar", true);
+                } else if let Some(sid) = state.focused_surface_id(engine) {
+                    state.search.surface_id = sid;
+                    state.dispatch_intent(
+                        UiIntent::OpenPopup {
+                            id: "search_bar",
+                            mode: OpenPopupMode::AtTopOfScope(PopupScope::Surface(sid)),
+                        }
+                        .from_user_shortcut("find"),
+                    );
                 }
             }
             TabBarAction::ScrollLeft { pane_id } => {

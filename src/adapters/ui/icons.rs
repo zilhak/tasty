@@ -88,3 +88,13 @@ line_icon!(
     r#"<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>"#
 );
 line_icon!(CLOSE, "close", r#"<path d="M18 6 6 18M6 6l12 12"/>"#);
+line_icon!(
+    SPLIT,
+    "split",
+    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>"#
+);
+line_icon!(
+    SEARCH,
+    "search",
+    r#"<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>"#
+);
