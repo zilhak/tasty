@@ -659,20 +659,21 @@ fn paint_icon_button(
     icon: icons::Icon,
 ) {
     // pressed (마우스 누른 채 위) > hover > idle. pressed 가 우선, 배경만 강화.
+    let radius = th.corner_radius.value();
     let pressed = resp.is_pointer_button_down_on();
     if pressed {
         ui.painter()
-            .rect_filled(rect, 4.0, th.active_overlay.to_egui_premultiplied());
+            .rect_filled(rect, radius, th.active_overlay.to_egui_premultiplied());
     } else if resp.hovered() {
         ui.painter()
-            .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+            .rect_filled(rect, radius, th.hover_overlay.to_egui_premultiplied());
     }
     let color: egui::Color32 = if resp.hovered() || pressed {
         th.subtext1.into()
     } else {
         th.overlay0.into()
     };
-    let icon_size = 16.0;
+    let icon_size = th.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(icon_size, icon_size));
     icon.image(icon_size, color).paint_at(ui, icon_rect);
 }

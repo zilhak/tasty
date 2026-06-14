@@ -125,6 +125,11 @@ pub struct ThemeSizing {
     pub spacing_md: LogicalPx,
     pub spacing_lg: LogicalPx,
     pub spacing_xl: LogicalPx,
+    // ── IconButton 글리프 (정사각 프레임 = `item_height_tab`, 코너 = `corner_radius`) ──
+    /// IconButton `sm` 안의 SVG 글리프 크기 (search bar nav/toggle).
+    pub icon_glyph_size_sm: LogicalPx,
+    /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
+    pub icon_glyph_size_md: LogicalPx,
     // ── Sidebar 전용 (host UI zoom 영향 받음) ──
     /// Full sidebar 헤더의 수박 로고 크기.
     pub sidebar_logo_size: LogicalPx,
@@ -170,6 +175,8 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     spacing_md: LogicalPx(12.0),
     spacing_lg: LogicalPx(16.0),
     spacing_xl: LogicalPx(24.0),
+    icon_glyph_size_sm: LogicalPx(14.0),
+    icon_glyph_size_md: LogicalPx(16.0),
     sidebar_logo_size: LogicalPx(22.0),
     sidebar_logo_collapsed_size: LogicalPx(24.0),
     sidebar_wordmark_font_size: LogicalPx(17.0),
@@ -620,6 +627,11 @@ pub struct Theme {
     pub spacing_md: LogicalPx,
     pub spacing_lg: LogicalPx,
     pub spacing_xl: LogicalPx,
+    // ── IconButton 글리프 (정사각 프레임 = `item_height_tab`, 코너 = `corner_radius`) ──
+    /// IconButton `sm` 안의 SVG 글리프 크기 (search bar nav/toggle).
+    pub icon_glyph_size_sm: LogicalPx,
+    /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
+    pub icon_glyph_size_md: LogicalPx,
     // ── Sidebar 전용 (host UI zoom 영향 받음) ──
     pub sidebar_logo_size: LogicalPx,
     pub sidebar_logo_collapsed_size: LogicalPx,
@@ -743,6 +755,8 @@ impl Theme {
             spacing_md: zoomed(SIZING.spacing_md),
             spacing_lg: zoomed(SIZING.spacing_lg),
             spacing_xl: zoomed(SIZING.spacing_xl),
+            icon_glyph_size_sm: zoomed(SIZING.icon_glyph_size_sm),
+            icon_glyph_size_md: zoomed(SIZING.icon_glyph_size_md),
             sidebar_logo_size: zoomed(SIZING.sidebar_logo_size),
             sidebar_logo_collapsed_size: zoomed(SIZING.sidebar_logo_collapsed_size),
             sidebar_wordmark_font_size: zoomed(SIZING.sidebar_wordmark_font_size),

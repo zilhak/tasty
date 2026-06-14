@@ -24,6 +24,7 @@ use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
 use crate::core::state::SurfaceDisplayPath;
 use crate::i18n::t;
+use crate::model::LogicalPx;
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
@@ -1010,6 +1011,25 @@ fn draw_tab_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
     }
 }
 
+// ── StatusDot `running` pulse (디자인 명시값) ──
+// 길이는 LogicalPx, 무차원 모션 배율/opacity/주기는 디자인 명시 상수.
+/// dot 슬롯 한 변 (8px 정사각).
+const PULSE_DOT_SLOT: LogicalPx = LogicalPx(8.0);
+/// 정적 코어 dot 반경 (8px dot 의 절반).
+const PULSE_CORE_RADIUS: LogicalPx = LogicalPx(4.0);
+/// 링 base 반경 — dot 8px + CSS `inset: -3px` → 7px.
+const PULSE_RING_BASE_RADIUS: LogicalPx = LogicalPx(7.0);
+/// 링 스케일 시작 배율 (0.6→1.8 ease-out 의 최소).
+const PULSE_RING_SCALE_MIN: f32 = 0.6;
+/// 링 스케일 증가 폭 (0.6 + 1.2 = 1.8 최대).
+const PULSE_RING_SCALE_RANGE: f32 = 1.2;
+/// 링 시작 opacity (0.5→0 으로 페이드).
+const PULSE_RING_OPACITY_MAX: f32 = 0.5;
+/// pulse 1 주기 (초).
+const PULSE_PERIOD_SECS: f64 = 1.6;
+/// ease-out cubic 지수.
+const PULSE_EASE_EXP: i32 = 3;
+
 /// State 셀: pulse 하는 초록 dot + "LISTEN".
 ///
 /// Mirrors the design's `StatusDot status="running" pulse`: a static core dot
@@ -1018,21 +1038,23 @@ fn draw_tab_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
 /// drawn. The backend reports LISTEN-only rows, so the label stays "LISTEN".
 fn draw_state_cell(ui: &mut egui::Ui, th: &Theme, reduced_motion: bool) {
     ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+        let slot = PULSE_DOT_SLOT.value();
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(slot, slot), egui::Sense::hover());
         let center = rect.center();
         let dot_color = th.accent_success();
         if !reduced_motion {
             let t = ui.ctx().input(|i| i.time);
-            let phase = (t / 1.6).rem_euclid(1.0) as f32;
-            let eased = 1.0 - (1.0 - phase).powi(3); // ease-out cubic
-            // dot 8px + CSS `inset: -3px` → base ring radius 7px.
-            let radius = 7.0 * (0.6 + 1.2 * eased);
-            let opacity = 0.5 * (1.0 - eased);
+            let phase = (t / PULSE_PERIOD_SECS).rem_euclid(1.0) as f32;
+            let eased = 1.0 - (1.0 - phase).powi(PULSE_EASE_EXP); // ease-out cubic
+            let radius = PULSE_RING_BASE_RADIUS.value()
+                * (PULSE_RING_SCALE_MIN + PULSE_RING_SCALE_RANGE * eased);
+            let opacity = PULSE_RING_OPACITY_MAX * (1.0 - eased);
             let ring: egui::Color32 = egui::Color32::from(dot_color).gamma_multiply(opacity);
             ui.painter().circle_filled(center, radius, ring);
             ui.ctx().request_repaint();
         }
-        ui.painter().circle_filled(center, 4.0, dot_color);
+        ui.painter()
+            .circle_filled(center, PULSE_CORE_RADIUS.value(), dot_color);
         ui.label(
             egui::RichText::new("LISTEN")
                 .color(th.subtext0)

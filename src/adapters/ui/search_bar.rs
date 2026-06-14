@@ -5,13 +5,6 @@ use crate::state::AppState;
 use crate::theme::Theme;
 use tasty_terminal::search::{SearchError, SearchOptions};
 
-/// IconButton size="sm" 규격 — `--tasty-control-height-tab` (24px logical).
-const ICON_BTN_SIZE: f32 = 24.0;
-/// IconButton 코너 반경 — `--tasty-radius` (4px logical).
-const ICON_BTN_RADIUS: f32 = 4.0;
-/// IconButton sm 안의 SVG 아이콘 크기 (14px logical).
-const ICON_GLYPH_SIZE: f32 = 14.0;
-
 /// Draw the search bar popup content.
 pub fn draw_search_bar(
     ui: &mut egui::Ui,
@@ -203,19 +196,16 @@ fn icon_button_frame(
     } else {
         egui::Sense::hover()
     };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ICON_BTN_SIZE, ICON_BTN_SIZE), sense);
+    // IconButton sm 정사각 프레임 = `--tasty-control-height-tab` (item_height_tab), 코너 = `--tasty-radius` (corner_radius).
+    let btn_size = theme.item_height_tab.value();
+    let radius = theme.corner_radius.value();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(btn_size, btn_size), sense);
     if active || (enabled && resp.is_pointer_button_down_on()) {
-        ui.painter().rect_filled(
-            rect,
-            ICON_BTN_RADIUS,
-            theme.overlay_active().to_egui_premultiplied(),
-        );
+        ui.painter()
+            .rect_filled(rect, radius, theme.overlay_active().to_egui_premultiplied());
     } else if enabled && resp.hovered() {
-        ui.painter().rect_filled(
-            rect,
-            ICON_BTN_RADIUS,
-            theme.overlay_hover().to_egui_premultiplied(),
-        );
+        ui.painter()
+            .rect_filled(rect, radius, theme.overlay_hover().to_egui_premultiplied());
     }
     (rect, resp)
 }
@@ -237,9 +227,9 @@ fn nav_button(
     } else {
         theme.text_secondary().into()
     };
-    let icon_rect =
-        egui::Rect::from_center_size(rect.center(), egui::vec2(ICON_GLYPH_SIZE, ICON_GLYPH_SIZE));
-    icon.image(ICON_GLYPH_SIZE, color).paint_at(ui, icon_rect);
+    let glyph = theme.icon_glyph_size_sm.value();
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph, glyph));
+    icon.image(glyph, color).paint_at(ui, icon_rect);
     if enabled {
         resp.clone().on_hover_text(tooltip);
         resp.clicked()
