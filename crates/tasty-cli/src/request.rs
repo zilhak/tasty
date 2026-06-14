@@ -22,9 +22,54 @@ use telemetry::telemetry_command_to_method_params;
 
 use super::{
     ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands, NewCommands,
-    ReadCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
+    ReadCommands, RemoteCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
+    UnsetCommands,
 };
 use tasty_ipc::protocol::JsonRpcRequest;
+
+/// `tasty remote ...` → JsonRpcRequest 매핑. non-force/non-into_gui attach 는
+/// run_client 에서 raw 스트림으로 선처리되므로, 여기 도달하는 remote attach 는
+/// `--into-gui`(원격 GUI mirror 위임) 또는 `--force-detach`(이 서버에 붙은 원격
+/// 클라이언트 attach 락 강제해제 — 로컬 JSON-RPC)뿐이다.
+fn remote_command_to_method_params(command: &RemoteCommands) -> (&'static str, serde_json::Value) {
+    match command {
+        RemoteCommands::Attach {
+            surface,
+            workspace,
+            target_port,
+            into_gui,
+            force_detach,
+            ..
+        } => {
+            if *into_gui {
+                // 작업 J 트리거 — GUI 가 client 로서 원격 워크스페이스 mirror 재구성.
+                (
+                    "attach.into_gui",
+                    serde_json::json!({
+                        "port": target_port,
+                        "workspace": workspace,
+                    }),
+                )
+            } else {
+                debug_assert!(
+                    *force_detach,
+                    "non-force/non-into_gui remote attach is dispatched before request mapping"
+                );
+                if let Some(ws) = workspace {
+                    (
+                        "attach.force_detach_workspace",
+                        serde_json::json!({ "workspace_id": ws }),
+                    )
+                } else {
+                    (
+                        "attach.force_detach",
+                        serde_json::json!({ "surface_id": surface }),
+                    )
+                }
+            }
+        }
+    }
+}
 
 /// Resolve a target string for split/other commands.
 /// - "this" → numeric surface ID from TASTY_SURFACE_ID env var
@@ -138,37 +183,9 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
             )
         }
         Commands::Send { command } => send_command_to_method_params(command),
-        // attach 의 non-force 경로는 run_client 에서 raw 스트림으로 선처리된다.
-        // 여기 도달하는 건 `--force-detach` 뿐 → workspace 면 force_detach_workspace,
-        // 아니면 surface force_detach IPC.
-        Commands::Attach {
-            surface,
-            workspace,
-            into_gui,
-            target_port,
-            ..
-        } => {
-            if *into_gui {
-                // 작업 J 트리거 — GUI 가 client 로서 원격 워크스페이스 mirror 재구성.
-                (
-                    "attach.into_gui",
-                    serde_json::json!({
-                        "port": target_port,
-                        "workspace": workspace,
-                    }),
-                )
-            } else if let Some(ws) = workspace {
-                (
-                    "attach.force_detach_workspace",
-                    serde_json::json!({ "workspace_id": ws }),
-                )
-            } else {
-                (
-                    "attach.force_detach",
-                    serde_json::json!({ "surface_id": surface }),
-                )
-            }
-        }
+        // remote attach 의 non-into_gui 경로는 run_client 에서 raw 스트림으로 선처리된다.
+        // 여기 도달하는 건 `--into-gui`(원격 GUI mirror 위임)뿐.
+        Commands::Remote { command } => remote_command_to_method_params(command),
         Commands::Read { command } => read_command_to_method_params(command),
         Commands::Notify { body, title } => (
             "notification.create",

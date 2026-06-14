@@ -41,6 +41,44 @@ fn parse_attach_mapping(params: &serde_json::Value) -> Option<WorkspaceAttachMap
     None
 }
 
+/// `attach_ssh` host 가 self(loopback) 대상(`127.0.0.1:PORT`/`localhost:PORT`/
+/// `[::1]:PORT`)인지 판정한다. release 빌드의 self-attach 매핑 차단에 쓴다(원칙 1 ②).
+/// (`src/app/auto_attach.rs::parse_loopback_port` 의 판정과 동일 규칙 — 그쪽은
+/// 공유 실행단 헬퍼라 보존하고, 여기선 입력단 거부용 술어만 둔다.)
+#[cfg(not(debug_assertions))]
+fn is_loopback_attach_host(host: &str) -> bool {
+    let h = if host.strip_prefix("[::1]:").is_some() {
+        "::1"
+    } else if let Some((h, _port)) = host.rsplit_once(':') {
+        h
+    } else {
+        return false;
+    };
+    matches!(h, "127.0.0.1" | "localhost" | "::1")
+}
+
+/// release 빌드에서 self(loopback) attach 매핑을 입력단에서 거부한다(원칙 1 ②).
+/// 로컬 self-mirror 는 사용자 입력 재현 성격이라 debug 빌드 `tasty debug attach`
+/// 전용 — workspace 매핑(`--ssh 127.0.0.1:PORT`)으로 우회 self-attach 를 막는다.
+#[cfg(not(debug_assertions))]
+fn reject_loopback_attach(
+    params: &serde_json::Value,
+    id: &serde_json::Value,
+) -> Option<JsonRpcResponse> {
+    let host = params
+        .get("attach_ssh")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())?;
+    if is_loopback_attach_host(host) {
+        return Some(JsonRpcResponse::invalid_params(
+            id.clone(),
+            "loopback(self) attach 매핑은 release 빌드에서 지원되지 않습니다 \
+             (로컬 self-attach 는 debug 빌드 `tasty debug attach` 전용).",
+        ));
+    }
+    None
+}
+
 /// 매핑을 JSON 으로 노출(workspace.list 의 read — 원칙 3 read 허용).
 fn mapping_to_json(mapping: &Option<WorkspaceAttachMapping>) -> serde_json::Value {
     match mapping {
@@ -82,6 +120,11 @@ pub fn handle_workspace_create(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    // release: self(loopback) attach 매핑 입력단 거부(원칙 1 ②).
+    #[cfg(not(debug_assertions))]
+    if let Some(resp) = reject_loopback_attach(params, &id) {
+        return resp;
+    }
     let explicit_cwd = params
         .get("cwd")
         .and_then(|v| v.as_str())
@@ -207,6 +250,11 @@ pub fn handle_workspace_update(
     id: serde_json::Value,
     params: &serde_json::Value,
 ) -> JsonRpcResponse {
+    // release: self(loopback) attach 매핑 입력단 거부(원칙 1 ②).
+    #[cfg(not(debug_assertions))]
+    if let Some(resp) = reject_loopback_attach(params, &id) {
+        return resp;
+    }
     // workspace_id resolve — `id` 우선, 없으면 `index` 로 lookup.
     let workspace_id = if let Some(ws_id) = params.get("id").and_then(|v| v.as_u64()) {
         ws_id as u32

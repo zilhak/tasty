@@ -2,10 +2,39 @@
 
 #![cfg(debug_assertions)]
 
+pub mod attach;
+
 use clap::Subcommand;
 
 #[derive(Subcommand)]
 pub enum DebugCommands {
+    /// Local loopback attach to a surface/workspace and mirror it (debug builds
+    /// only — local self-attach simulates user-driven mirroring, so it is
+    /// isolated from the release surface per the agent/user action separation
+    /// policy). Remote attach is `tasty remote attach` (release).
+    Attach {
+        /// 대상 surface_id (포커스 비의존 — ID 직접 지정). `--workspace` 와 상호배타.
+        surface: Option<u32>,
+        /// 대상 workspace_id — 그 안 모든 터미널을 트리째 mirror.
+        /// `surface` positional 과 상호배타. 비-터미널은 placeholder 로 숨김.
+        #[arg(long)]
+        workspace: Option<u32>,
+        /// mirror-dump: attach 후 N ms 동안 출력 수집 → mirror 화면을 stdout 출력 후 종료.
+        #[arg(long)]
+        dump_after: Option<u64>,
+        /// attach 직후 1 회 전송할 입력 (escape 디코딩: \n \r \t \xNN). 비대화형 검증용.
+        #[arg(long)]
+        send: Option<String>,
+        /// workspace 모드에서 `--send` 입력을 보낼 대상 remote surface_id.
+        #[arg(long)]
+        send_to: Option<u32>,
+        /// raw 브리지 모드: stdin/stdout passthrough (detach = Ctrl+\).
+        #[arg(long)]
+        raw: bool,
+        /// 점유된 surface/workspace 를 강제로 끊는다 (서버 권한, attach 하지 않음).
+        #[arg(long)]
+        force_detach: bool,
+    },
     /// Show debug info from the running tasty instance
     Info,
     /// Enable IME composition mode

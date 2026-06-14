@@ -10,6 +10,31 @@ pub(super) fn debug_command_to_method_params(
     command: &DebugCommands,
 ) -> (&'static str, serde_json::Value) {
     match command {
+        // 로컬 attach 의 non-force 경로는 run_client 에서 raw 스트림으로 선처리된다.
+        // 여기 도달하는 건 `--force-detach` 뿐 → workspace 면 force_detach_workspace,
+        // 아니면 surface force_detach IPC.
+        DebugCommands::Attach {
+            surface,
+            workspace,
+            force_detach,
+            ..
+        } => {
+            debug_assert!(
+                *force_detach,
+                "non-force debug attach is dispatched before request mapping"
+            );
+            if let Some(ws) = workspace {
+                (
+                    "attach.force_detach_workspace",
+                    serde_json::json!({ "workspace_id": ws }),
+                )
+            } else {
+                (
+                    "attach.force_detach",
+                    serde_json::json!({ "surface_id": surface }),
+                )
+            }
+        }
         DebugCommands::Info => ("debug.info", serde_json::json!({})),
         DebugCommands::ImeEnable => ("surface.ime_enable", serde_json::json!({})),
         DebugCommands::ImeDisable => ("surface.ime_disable", serde_json::json!({})),

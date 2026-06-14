@@ -115,61 +115,10 @@ pub enum Commands {
         #[arg(long)]
         url: Option<String>,
     },
-    /// Attach to a terminal surface and mirror it (surface 단위, 로컬 loopback)
-    Attach {
-        /// 대상 surface_id (포커스 비의존 — ID 직접 지정). `--workspace` 와 상호배타.
-        surface: Option<u32>,
-        /// 대상 workspace_id — 그 안 모든 터미널을 트리째 mirror (단계 6).
-        /// `surface` positional 과 상호배타. 비-터미널은 placeholder 로 숨김.
-        #[arg(long)]
-        workspace: Option<u32>,
-        /// mirror-dump: attach 후 N ms 동안 출력 수집 → mirror 화면을 stdout 출력 후 종료
-        /// (GUI 없이 자동 검증용). workspace 모드는 surface 별 화면을 섹션으로 출력
-        #[arg(long)]
-        dump_after: Option<u64>,
-        /// attach 직후 1 회 전송할 입력 (escape 디코딩: \n \r \t \xNN). 비대화형 검증용
-        #[arg(long)]
-        send: Option<String>,
-        /// workspace 모드에서 `--send` 입력을 보낼 대상 remote surface_id.
-        /// 생략 시 surface 모드만 유효(surface 단위는 점유 surface 로 자동).
-        #[arg(long)]
-        send_to: Option<u32>,
-        /// raw 브리지 모드: stdin/stdout passthrough (detach = Ctrl+\)
-        #[arg(long)]
-        raw: bool,
-        /// 점유된 surface/workspace 를 강제로 끊는다 (서버 권한, attach 하지 않음)
-        #[arg(long)]
-        force_detach: bool,
-        /// SSH 너머 원격 surface 에 attach (1회성). 예: --ssh user@host, --ssh gx10.
-        /// 원격성은 ssh 가 흡수 — 내부적으로 ssh -L 터널 + 단계 4 attach 결합.
-        /// `--profile` 과 상호배타.
-        #[arg(long)]
-        ssh: Option<String>,
-        /// 저장된 SSH 프로필명으로 원격 attach (단계 7). `~/.tasty/ssh-profiles.toml`
-        /// 의 프로필을 resolve 해 user/port/identity/extra-options 를 결선한다.
-        /// `--ssh` 와 상호배타. 이 경우 `--remote-tasty`/`--remote-port-mode` 는 프로필
-        /// 값으로 대체된다.
-        #[arg(long)]
-        profile: Option<String>,
-        /// 원격 tasty 바이너리 경로 (auto 포트 발견 체인의 subcommand 단계
-        /// `ssh host <path> port` 에서 사용). 기본 "tasty" (원격 PATH 가정).
-        /// PATH 밖이면 풀경로 지정.
-        #[arg(long, default_value = "tasty")]
-        remote_tasty: String,
-        /// 원격 포트 발견 모드: auto(기본) | subcommand | file-unix | file-windows.
-        #[arg(long, default_value = "auto")]
-        remote_port_mode: String,
-        /// 자동 재연결 비활성 (기본: SSH 끊김 시 백오프 재연결).
-        #[arg(long)]
-        no_reconnect: bool,
-        /// 작업 J 트리거: 이 명령을 받은 *로컬 GUI* 가 client 가 되어 원격 워크스페이스를
-        /// mirror 로 재구성하게 한다(`attach.into_gui` IPC). `--workspace` 와
-        /// `--target-port` 필요. (스트림을 CLI 가 직접 열지 않고 GUI 에 위임.)
-        #[arg(long)]
-        into_gui: bool,
-        /// `--into-gui` 의 원격 tasty 서버 loopback 포트(GUI 가 접속할 대상).
-        #[arg(long)]
-        target_port: Option<u16>,
+    /// Remote (SSH) attach to a surface/workspace on another host — `remote attach`
+    Remote {
+        #[command(subcommand)]
+        command: RemoteCommands,
     },
     /// Send text, key, or queue message
     Send {
@@ -274,4 +223,176 @@ pub enum Commands {
     Port,
     /// Check for and install a new tasty version (standalone — no host needed)
     Update(UpdateOpts),
+}
+
+#[cfg(test)]
+mod attach_surface_tests {
+    use super::*;
+    use clap::Parser;
+
+    /// 원격 attach 는 `tasty remote attach` 네임스페이스로 파싱된다.
+    #[test]
+    fn remote_attach_parses() {
+        let cli =
+            Cli::try_parse_from(["tasty", "remote", "attach", "5", "--ssh", "user@host"]).unwrap();
+        let Some(Commands::Remote {
+            command: RemoteCommands::Attach { surface, ssh, .. },
+        }) = cli.command
+        else {
+            panic!("expected remote attach");
+        };
+        assert_eq!(surface, Some(5));
+        assert_eq!(ssh.as_deref(), Some("user@host"));
+    }
+
+    /// `--profile` / `--into-gui` 등 원격 부분집합 플래그가 remote 네임스페이스에 있다.
+    #[test]
+    fn remote_attach_into_gui_parses() {
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "attach",
+            "--profile",
+            "gx10",
+            "--workspace",
+            "2",
+            "--into-gui",
+            "--target-port",
+            "45123",
+        ])
+        .unwrap();
+        let Some(Commands::Remote {
+            command:
+                RemoteCommands::Attach {
+                    profile,
+                    workspace,
+                    into_gui,
+                    target_port,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected remote attach");
+        };
+        assert_eq!(profile.as_deref(), Some("gx10"));
+        assert_eq!(workspace, Some(2));
+        assert!(into_gui);
+        assert_eq!(target_port, Some(45123));
+    }
+
+    /// top-level `tasty attach` 는 release 표면에서 완전히 제거되었다.
+    #[test]
+    fn top_level_attach_removed() {
+        assert!(Cli::try_parse_from(["tasty", "attach", "5"]).is_err());
+    }
+
+    /// remote attach 는 `--force-detach`(원격 클라이언트 attach 락 강제해제)를 갖는다.
+    #[test]
+    fn remote_attach_force_detach_parses() {
+        let cli =
+            Cli::try_parse_from(["tasty", "remote", "attach", "5", "--force-detach"]).unwrap();
+        let Some(Commands::Remote {
+            command: RemoteCommands::Attach { force_detach, .. },
+        }) = cli.command
+        else {
+            panic!("expected remote attach");
+        };
+        assert!(force_detach);
+    }
+
+    /// remote attach 의 런타임 가드: `--ssh` 와 `--force-detach` 는 상호배타.
+    #[test]
+    fn remote_attach_ssh_force_detach_rejected() {
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "attach",
+            "5",
+            "--ssh",
+            "h",
+            "--force-detach",
+        ])
+        .unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("--ssh 와 --force-detach"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// 로컬 loopback attach 는 debug 빌드 `tasty debug attach` 로만 파싱된다.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_attach_parses() {
+        let cli = Cli::try_parse_from(["tasty", "debug", "attach", "5", "--raw"]).unwrap();
+        let Some(Commands::Debug {
+            command: DebugCommands::Attach { surface, raw, .. },
+        }) = cli.command
+        else {
+            panic!("expected debug attach");
+        };
+        assert_eq!(surface, Some(5));
+        assert!(raw);
+    }
+
+    /// debug 로컬 attach 에는 ssh/profile 같은 원격 플래그가 없다.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn debug_attach_has_no_ssh() {
+        assert!(Cli::try_parse_from(["tasty", "debug", "attach", "5", "--ssh", "h"]).is_err());
+    }
+
+    /// remote attach 의 런타임 가드: 원격 대상(--ssh/--profile) 없이는 거부된다
+    /// (로컬 attach 로 폴백하지 않는다 — 로컬은 debug 빌드 전용).
+    #[test]
+    fn remote_attach_without_target_rejected() {
+        let cli = Cli::try_parse_from(["tasty", "remote", "attach", "5"]).unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("원격 attach 대상이 필요"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// remote attach 의 런타임 가드: surface 와 --workspace 는 상호배타.
+    #[test]
+    fn remote_attach_surface_workspace_exclusive() {
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "attach",
+            "5",
+            "--workspace",
+            "2",
+            "--ssh",
+            "h",
+        ])
+        .unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("함께 쓸 수 없습니다"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// remote attach 의 런타임 가드: --ssh 와 --profile 은 상호배타.
+    #[test]
+    fn remote_attach_ssh_profile_exclusive() {
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "attach",
+            "5",
+            "--ssh",
+            "h",
+            "--profile",
+            "p",
+        ])
+        .unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("--ssh 와 --profile"),
+            "unexpected error: {err}"
+        );
+    }
 }

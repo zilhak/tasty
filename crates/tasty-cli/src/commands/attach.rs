@@ -21,7 +21,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
-use tasty_ipc::port_file as pf;
 use tasty_ipc::stream::{self, STREAM_PROTO, StreamFrame, StreamTag};
 use tasty_terminal::Terminal;
 
@@ -34,19 +33,6 @@ pub(crate) enum AttachExit {
     Completed,
     /// 연결이 예기치 않게 끊김(터널/서버 단절) — 재연결 대상.
     Disconnected,
-}
-
-/// `tasty attach <surface>` (로컬 loopback) 진입점. force-detach 는 별도(JSON-RPC).
-pub fn run_attach(
-    surface: u32,
-    dump_after: Option<u64>,
-    send: Option<&str>,
-    raw: bool,
-    port_file: Option<&str>,
-) -> Result<()> {
-    let port = pf::read_port_file_from(port_file)?;
-    run_attach_on_port(port, surface, dump_after, send, raw)?;
-    Ok(())
 }
 
 /// 단일 attach 세션 1 회: `127.0.0.1:port` 접속 → 핸드셰이크 → mirror/raw.
@@ -159,19 +145,6 @@ pub fn run_attach_ssh(
             AttachExit::Disconnected => return Ok(()),
         }
     }
-}
-
-/// `tasty attach --workspace <id>` (로컬 loopback, 단계 6) 진입점.
-pub fn run_attach_workspace(
-    workspace: u32,
-    dump_after: Option<u64>,
-    send: Option<&str>,
-    send_to: Option<u32>,
-    port_file: Option<&str>,
-) -> Result<()> {
-    let port = pf::read_port_file_from(port_file)?;
-    run_attach_workspace_on_port(port, workspace, dump_after, send, send_to)?;
-    Ok(())
 }
 
 /// workspace attach 1 회(로컬/SSH 공용). 핸드셰이크 → `attached_workspace` 디스크립터

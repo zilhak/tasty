@@ -8,6 +8,7 @@ use tasty_ipc::port_file;
 
 use super::Commands;
 use super::commands::PluginCommands;
+use super::commands::RemoteCommands;
 use super::dynamic;
 use super::format::format_output;
 use super::plugin::run_plugin_logs;
@@ -301,39 +302,46 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     {
         return crate::commands::ssh_profile::run(command);
     }
-    // `--ssh` + `--force-detach` is out of scope for step 5 (remote force-detach
-    // belongs to profile/management in step 7) — reject explicitly rather than
-    // silently force-detaching the *local* surface.
-    if let Commands::Attach {
-        ssh: Some(_),
-        force_detach: true,
-        ..
+    // `--ssh` + `--force-detach` 는 미지원 — 터널 너머 force-detach 가 아니라 로컬
+    // surface 를 강제해제할 위험이 있어 명시적으로 거부한다. `--force-detach`(no ssh)
+    // 는 로컬 JSON-RPC(attach.force_detach)라 아래 raw-stream 블록(force_detach:false)
+    // 에 안 걸리고 fall-through 한다.
+    if let Commands::Remote {
+        command:
+            RemoteCommands::Attach {
+                ssh: Some(_),
+                force_detach: true,
+                ..
+            },
     } = &command
     {
         anyhow::bail!(
             "--ssh 와 --force-detach 는 함께 쓸 수 없습니다 (원격 force-detach 는 미지원)."
         );
     }
-    // `tasty attach <id>` (non-force) uses the raw streaming channel, not the
-    // JSON-RPC path — dispatch it directly. `--force-detach` is a normal
-    // request-response (attach.force_detach) so it falls through.
-    // `--ssh user@host` routes through the SSH tunnel (discover port + ssh -L +
-    // attach over the tunnel localport), with auto-reconnect backoff.
-    if let Commands::Attach {
-        surface,
-        workspace,
-        dump_after,
-        send,
-        send_to,
-        raw,
-        force_detach: false,
-        ssh,
-        profile,
-        remote_tasty,
-        remote_port_mode,
-        no_reconnect,
-        into_gui: false,
-        target_port: _,
+    // `tasty remote attach` (non-force, non-into_gui) — SSH 터널(포트발견 + ssh -L) +
+    // 단계 4 raw 스트림 attach, 백오프 재연결. `--into-gui` 는 JSON-RPC(attach.into_gui)
+    // 로 fall-through(로컬 GUI 가 client 가 되어 원격 워크스페이스 mirror 재구성),
+    // `--force-detach` 는 JSON-RPC(attach.force_detach)로 fall-through.
+    // 로컬 loopback attach 는 release 표면에 없다 — `tasty debug attach`(debug 빌드).
+    if let Commands::Remote {
+        command:
+            RemoteCommands::Attach {
+                surface,
+                workspace,
+                dump_after,
+                send,
+                send_to,
+                raw,
+                force_detach: false,
+                ssh,
+                profile,
+                remote_tasty,
+                remote_port_mode,
+                no_reconnect,
+                into_gui: false,
+                target_port: _,
+            },
     } = &command
     {
         if surface.is_some() && workspace.is_some() {
@@ -342,9 +350,10 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         if ssh.is_some() && profile.is_some() {
             anyhow::bail!("--ssh 와 --profile 는 함께 쓸 수 없습니다.");
         }
-        // 단계 7 — 프로필 해석: 저장 프로필 → SshTarget(+remote_tasty/port_mode 대체).
-        // None 이면 1회성 `--ssh` 경로(아래 ssh: Some(dest)).
-        let profile_conn: Option<(crate::ssh::SshTarget, String, String)> = match profile {
+        // 원격 접속 스펙 결정: 저장 프로필(비활성 거부) → SshTarget(+remote_tasty/
+        // port_mode 대체), 없으면 1회성 `--ssh`. 둘 다 없으면 로컬 attach 시도 →
+        // release 표면엔 로컬 attach 가 없으므로 명확히 거부한다.
+        let (target, rt, pm): (crate::ssh::SshTarget, String, String) = match profile {
             Some(name) => {
                 let profiles = tasty_ssh_profiles::SshProfiles::load();
                 let Some(p) = profiles.get(name) else {
@@ -356,86 +365,97 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
                          'tasty tool ssh detect {name}' 로 재감지하세요."
                     );
                 }
-                Some((
+                (
                     crate::ssh::SshTarget::from_profile(p),
                     p.remote_tasty.clone(),
                     p.port_mode.clone(),
-                ))
+                )
             }
-            None => None,
+            None => match ssh {
+                Some(dest) => (
+                    crate::ssh::SshTarget::parse(dest),
+                    remote_tasty.clone(),
+                    remote_port_mode.clone(),
+                ),
+                None => anyhow::bail!(
+                    "원격 attach 대상이 필요합니다 (--ssh 또는 --profile). \
+                     로컬 attach 는 `tasty debug attach` (debug 빌드)."
+                ),
+            },
         };
         // workspace 단위 attach (단계 6): 트리 N-터미널 다중화 mirror.
         if let Some(ws) = workspace {
             if *raw {
                 anyhow::bail!("--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림).");
             }
-            if let Some((target, rt, pm)) = profile_conn {
-                return crate::commands::attach::run_attach_workspace_ssh(
-                    target,
-                    &rt,
-                    &pm,
-                    *ws,
-                    *dump_after,
-                    send.as_deref(),
-                    *send_to,
-                    !no_reconnect,
-                );
-            }
-            return match ssh {
-                Some(dest) => crate::commands::attach::run_attach_workspace_ssh(
-                    crate::ssh::SshTarget::parse(dest),
-                    remote_tasty,
-                    remote_port_mode,
-                    *ws,
-                    *dump_after,
-                    send.as_deref(),
-                    *send_to,
-                    !no_reconnect,
-                ),
-                None => crate::commands::attach::run_attach_workspace(
-                    *ws,
-                    *dump_after,
-                    send.as_deref(),
-                    *send_to,
-                    port_file,
-                ),
-            };
+            return crate::commands::attach::run_attach_workspace_ssh(
+                target,
+                &rt,
+                &pm,
+                *ws,
+                *dump_after,
+                send.as_deref(),
+                *send_to,
+                !no_reconnect,
+            );
         }
         // surface 단위 attach (단계 4/5).
         let Some(surface) = surface else {
             anyhow::bail!("attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>.");
         };
-        if let Some((target, rt, pm)) = profile_conn {
-            return crate::commands::attach::run_attach_ssh(
-                target,
-                &rt,
-                &pm,
-                *surface,
+        return crate::commands::attach::run_attach_ssh(
+            target,
+            &rt,
+            &pm,
+            *surface,
+            *dump_after,
+            send.as_deref(),
+            *raw,
+            !no_reconnect,
+        );
+    }
+    // `tasty debug attach <id>` (non-force, 로컬 loopback) — 단계 4 raw 스트림. 로컬
+    // self-attach 는 사용자 입력 재현 성격이라 debug 빌드 전용으로 격리한다(원칙 1 ②).
+    // `--force-detach` 는 일반 JSON-RPC(attach.force_detach)라 fall-through.
+    #[cfg(debug_assertions)]
+    if let Commands::Debug {
+        command:
+            super::commands::DebugCommands::Attach {
+                surface,
+                workspace,
+                dump_after,
+                send,
+                send_to,
+                raw,
+                force_detach: false,
+            },
+    } = &command
+    {
+        if surface.is_some() && workspace.is_some() {
+            anyhow::bail!("surface 와 --workspace 는 함께 쓸 수 없습니다.");
+        }
+        if let Some(ws) = workspace {
+            if *raw {
+                anyhow::bail!("--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림).");
+            }
+            return crate::commands::debug::attach::run_attach_workspace(
+                *ws,
                 *dump_after,
                 send.as_deref(),
-                *raw,
-                !no_reconnect,
+                *send_to,
+                port_file,
             );
         }
-        return match ssh {
-            Some(dest) => crate::commands::attach::run_attach_ssh(
-                crate::ssh::SshTarget::parse(dest),
-                remote_tasty,
-                remote_port_mode,
-                *surface,
-                *dump_after,
-                send.as_deref(),
-                *raw,
-                !no_reconnect,
-            ),
-            None => crate::commands::attach::run_attach(
-                *surface,
-                *dump_after,
-                send.as_deref(),
-                *raw,
-                port_file,
-            ),
+        let Some(surface) = surface else {
+            anyhow::bail!("attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>.");
         };
+        return crate::commands::debug::attach::run_attach(
+            *surface,
+            *dump_after,
+            send.as_deref(),
+            *raw,
+            port_file,
+        );
     }
     // plugin logs is local-only — read the log file directly.
     if let Commands::Plugin {

@@ -1,0 +1,68 @@
+//! `tasty remote ...` subcommand — 원격(SSH) attach 1급 표면.
+//!
+//! 원칙 1 ②: 원격 attach 는 에이전트의 정당한 행동(다른 호스트의 surface/workspace
+//! 를 mirror)이라 release 표면에 노출한다. 로컬 self(loopback) attach 는 사용자 입력
+//! 재현 성격이라 `tasty debug attach`(debug 빌드)로 격리한다(`commands/debug/attach.rs`).
+//!
+//! 실제 SSH 터널 + attach 세션 머신은 `commands/attach.rs` 의 `run_attach_ssh` /
+//! `run_attach_workspace_ssh` 에 공유 보존된다 — 이 네임스페이스는 디스패치만 한다.
+
+use clap::Subcommand;
+
+#[derive(Subcommand)]
+pub enum RemoteCommands {
+    /// SSH 너머 원격 surface/workspace 에 attach (1회성). 내부적으로 ssh -L 터널 +
+    /// 단계 4 attach 결합. 원격성은 `--ssh`/`--profile` 이 흡수한다.
+    Attach {
+        /// 대상 surface_id (포커스 비의존 — ID 직접 지정). `--workspace` 와 상호배타.
+        surface: Option<u32>,
+        /// 대상 workspace_id — 그 안 모든 터미널을 트리째 mirror.
+        /// `surface` positional 과 상호배타. 비-터미널은 placeholder 로 숨김.
+        #[arg(long)]
+        workspace: Option<u32>,
+        /// mirror-dump: attach 후 N ms 동안 출력 수집 → mirror 화면을 stdout 출력 후 종료
+        /// (GUI 없이 자동 검증용). workspace 모드는 surface 별 화면을 섹션으로 출력.
+        #[arg(long)]
+        dump_after: Option<u64>,
+        /// attach 직후 1 회 전송할 입력 (escape 디코딩: \n \r \t \xNN). 비대화형 검증용.
+        #[arg(long)]
+        send: Option<String>,
+        /// workspace 모드에서 `--send` 입력을 보낼 대상 remote surface_id.
+        #[arg(long)]
+        send_to: Option<u32>,
+        /// raw 브리지 모드: stdin/stdout passthrough (detach = Ctrl+\).
+        #[arg(long)]
+        raw: bool,
+        /// 점유된 surface/workspace 의 attach 락을 강제로 끊는다 (서버 권한, attach 하지
+        /// 않음). 원격 관리=에이전트 작업이라 release 에 노출 — 이 서버에 붙은 원격
+        /// 클라이언트의 락을 해제하는 로컬 JSON-RPC(`attach.force_detach`)다.
+        /// `--ssh` 와는 상호배타(터널 너머 force-detach 는 미지원).
+        #[arg(long)]
+        force_detach: bool,
+        /// SSH 너머 원격 대상. 예: --ssh user@host, --ssh gx10. `--profile` 과 상호배타.
+        #[arg(long)]
+        ssh: Option<String>,
+        /// 저장된 SSH 프로필명으로 원격 attach. `~/.tasty/ssh-profiles.toml` 의 프로필을
+        /// resolve 해 user/port/identity/extra-options 를 결선한다. `--ssh` 와 상호배타.
+        /// 이 경우 `--remote-tasty`/`--remote-port-mode` 는 프로필 값으로 대체된다.
+        #[arg(long)]
+        profile: Option<String>,
+        /// 원격 tasty 바이너리 경로 (auto 포트 발견 체인의 subcommand 단계
+        /// `ssh host <path> port` 에서 사용). 기본 "tasty" (원격 PATH 가정).
+        #[arg(long, default_value = "tasty")]
+        remote_tasty: String,
+        /// 원격 포트 발견 모드: auto(기본) | subcommand | file-unix | file-windows.
+        #[arg(long, default_value = "auto")]
+        remote_port_mode: String,
+        /// 자동 재연결 비활성 (기본: SSH 끊김 시 백오프 재연결).
+        #[arg(long)]
+        no_reconnect: bool,
+        /// 이 명령을 받은 *로컬 GUI* 가 client 가 되어 원격 워크스페이스를 mirror 로
+        /// 재구성하게 한다(`attach.into_gui` IPC). `--workspace` 와 `--target-port` 필요.
+        #[arg(long)]
+        into_gui: bool,
+        /// `--into-gui` 의 원격 tasty 서버 loopback 포트(GUI 가 접속할 대상).
+        #[arg(long)]
+        target_port: Option<u16>,
+    },
+}

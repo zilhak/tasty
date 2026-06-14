@@ -75,7 +75,21 @@ impl App {
         if let Some(e) = self.core_state.as_mut() {
             reqs.append(&mut e.pending_gui_attach);
         }
+        // self(loopback) GUI mirror 차단(원칙 1 ②): target port 가 이 인스턴스 자신의
+        // IPC 포트면 사용자 입력 재현(자기 화면 mirror) 성격이라 release 에서 거부한다.
+        // 원격 GUI mirror 는 ssh -L 터널의 local_port(자기 IPC 포트와 다름)라 통과한다.
+        // 로컬 self-mirror 검증은 debug 빌드 `tasty debug attach` 로 한다.
+        #[cfg(not(debug_assertions))]
+        let self_port = self.hub.ipc_server.as_ref().map(|s| s.port());
         for (port, workspace) in reqs {
+            #[cfg(not(debug_assertions))]
+            if self_port == Some(port) {
+                tracing::warn!(
+                    "self(loopback) attach.into_gui (port={port}) 는 release 빌드에서 \
+                     차단됩니다 — 로컬 self-attach 는 debug 빌드 전용."
+                );
+                continue;
+            }
             if let Err(e) = self.start_gui_attach(port, workspace, None, None) {
                 tracing::warn!("gui attach failed (port={port}, ws={workspace}): {e}");
             }
