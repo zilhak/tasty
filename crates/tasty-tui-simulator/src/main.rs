@@ -59,6 +59,24 @@ enum Commands {
         #[arg(long)]
         exit: bool,
     },
+    /// Stress mode: full-screen truecolor redraw every frame (reproduces input lag).
+    Flood {
+        /// Delay between frames in ms (0 = unthrottled / max throughput).
+        #[arg(long, default_value = "0")]
+        rate_ms: u64,
+        /// Columns (0 = auto via terminal size, fallback 200).
+        #[arg(long, default_value = "0")]
+        cols: u16,
+        /// Rows (0 = auto via terminal size, fallback 50).
+        #[arg(long, default_value = "0")]
+        rows: u16,
+        /// Number of frames (0 = infinite).
+        #[arg(long, default_value = "0")]
+        frames: u64,
+        /// Stay on the main screen instead of entering the alternate screen.
+        #[arg(long)]
+        inline: bool,
+    },
 }
 
 fn main() {
@@ -77,6 +95,13 @@ fn main() {
         Some(Commands::Altscreen { exit }) => scenario_altscreen(exit),
         Some(Commands::Unicode { exit }) => scenario_unicode(exit),
         Some(Commands::ScrollRegion { exit }) => scenario_scroll_region(exit),
+        Some(Commands::Flood {
+            rate_ms,
+            cols,
+            rows,
+            frames,
+            inline,
+        }) => flood_mode(rate_ms, cols, rows, frames, inline),
     }
 }
 
@@ -410,6 +435,91 @@ fn interactive_mode() {
         // Ack after every command so the test can synchronize
         write!(out, "OK\r\n").unwrap();
         out.flush().unwrap();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Flood stress mode
+// ═══════════════════════════════════════════════════════════════════
+
+/// Continuously redraw the full screen with per-cell truecolor SGR + glyph,
+/// changing colors every frame so every cell is dirty. Used to reproduce
+/// input-lag scenarios under heavy VTE throughput.
+fn flood_mode(rate_ms: u64, cols: u16, rows: u16, frames: u64, inline: bool) {
+    use std::fmt::Write as _;
+    use std::time::{Duration, Instant};
+
+    let (auto_cols, auto_rows) = crossterm::terminal::size().unwrap_or((200, 50));
+    let cols = if cols == 0 { auto_cols.max(1) } else { cols };
+    let rows = if rows == 0 { auto_rows.max(1) } else { rows };
+
+    let glyphs = [b'#', b'@', b'%', b'&', b'*', b'+', b'=', b'-'];
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+
+    // Enter alternate screen (unless --inline) and hide the cursor.
+    if !inline && out.write_all(b"\x1b[?1049h\x1b[?25l\x1b[2J").is_err() {
+        return;
+    }
+
+    let start = Instant::now();
+    let mut frame: u64 = 0;
+    let cell_capacity = cols as usize * rows as usize * 32 + 64;
+
+    loop {
+        frame += 1;
+
+        let mut buf = String::with_capacity(cell_capacity);
+        buf.push_str("\x1b[H");
+        for y in 0..rows {
+            for x in 0..cols {
+                let r = (x as u64 + frame) as u8;
+                let g = (y as u64 + frame.wrapping_mul(2)) as u8;
+                let b = (x as u64 + y as u64 + frame.wrapping_mul(3)) as u8;
+                let glyph = glyphs[(x as usize + y as usize + frame as usize) % glyphs.len()];
+                write!(
+                    buf,
+                    "\x1b[38;2;{};{};{};48;2;{};{};{}m{}",
+                    r,
+                    g,
+                    b,
+                    255 - r,
+                    255 - g,
+                    255 - b,
+                    glyph as char,
+                )
+                .expect("writing to a String is infallible");
+            }
+        }
+
+        let bytes = buf.len();
+        let elapsed = start.elapsed().as_millis();
+        // Counter on the last row, reset SGR first so it stays readable.
+        write!(
+            buf,
+            "\x1b[0m\x1b[{};1Hflood #{} {}ms {}B/frame",
+            rows, frame, elapsed, bytes,
+        )
+        .expect("writing to a String is infallible");
+
+        // Surface may close mid-write (BrokenPipe) — bail out without panicking.
+        if out.write_all(buf.as_bytes()).is_err() || out.flush().is_err() {
+            break;
+        }
+
+        if frames != 0 && frame >= frames {
+            break;
+        }
+        if rate_ms != 0 {
+            std::thread::sleep(Duration::from_millis(rate_ms));
+        }
+    }
+
+    // Best-effort restore: surface may already be gone (BrokenPipe), so ignore errors.
+    if !inline {
+        let _ = out.write_all(b"\x1b[?1049l\x1b[?25h"); // 정리: 복원 실패해도 무시
+        let _ = out.flush(); // 정리: 복원 실패해도 무시
     }
 }
 
