@@ -65,6 +65,8 @@ line_icon!(
     "chevrons_right",
     r#"<path d="m13 17 5-5-5-5M6 17l5-5-5-5"/>"#
 );
+line_icon!(CHEVRON_UP, "chevron_up", r#"<path d="m18 15-6-6-6 6"/>"#);
+line_icon!(CHEVRON_DOWN, "chevron_down", r#"<path d="m6 9 6 6 6-6"/>"#);
 line_icon!(
     TERM,
     "term",

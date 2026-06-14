@@ -1,7 +1,16 @@
+use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::state::AppState;
+use crate::theme::Theme;
 use tasty_terminal::search::{SearchError, SearchOptions};
+
+/// IconButton size="sm" 규격 — `--tasty-control-height-tab` (24px logical).
+const ICON_BTN_SIZE: f32 = 24.0;
+/// IconButton 코너 반경 — `--tasty-radius` (4px logical).
+const ICON_BTN_RADIUS: f32 = 4.0;
+/// IconButton sm 안의 SVG 아이콘 크기 (14px logical).
+const ICON_GLYPH_SIZE: f32 = 14.0;
 
 /// Draw the search bar popup content.
 pub fn draw_search_bar(
@@ -87,43 +96,53 @@ pub fn draw_search_bar(
             }
         }
 
-        // Status text: error > no_matches > match counter
-        let (status_text, status_color) = if state.search.query.is_empty() {
-            (String::new(), theme.subtext0)
-        } else if state.search.last_error.is_some() {
-            (t("search.invalid_regex").to_string(), theme.red)
-        } else if state.search.matches.is_empty() {
-            (t("search.no_matches").to_string(), theme.red)
+        // Status counter — 항상 고정폭(40px)으로 렌더. 빈 쿼리 / 무매치 / 정규식
+        // 에러 모두 `0/0`. 쿼리가 있는데 결과가 0(에러 포함)이면 danger(red),
+        // 그 외(빈 쿼리 / 정상 매치)는 muted. (디자인 search_bar.jsx:44-49)
+        let has_query = !state.search.query.is_empty();
+        let (counter_text, counter_color) = if state.search.matches.is_empty() {
+            let color = if has_query {
+                theme.accent_danger()
+            } else {
+                theme.text_muted()
+            };
+            ("0/0".to_string(), color)
         } else {
             let text = t("search.match_count")
                 .replace("{current}", &(state.search.current_index + 1).to_string())
                 .replace("{total}", &state.search.matches.len().to_string());
-            (text, theme.subtext0)
+            (text, theme.text_muted())
         };
+        draw_counter(ui, &counter_text, counter_color.into());
 
-        if !status_text.is_empty() {
-            ui.label(
-                egui::RichText::new(&status_text)
-                    .color(status_color)
-                    .size(12.0),
-            );
+        // Prev/Next buttons — 항상 렌더, 매치가 없으면 disabled. (디자인 IconButton
+        // size="sm", chevron SVG. search_bar.jsx:71-80)
+        let nav_enabled = !state.search.matches.is_empty();
+        if nav_button(
+            ui,
+            &theme,
+            icons::CHEVRON_UP,
+            nav_enabled,
+            t("search.prev_match_tooltip"),
+        ) {
+            state.search.prev_match();
+            scroll_to_current_match(state, engine);
         }
-
-        // Prev/Next buttons
-        if !state.search.matches.is_empty() {
-            if ui.small_button("▲").clicked() {
-                state.search.prev_match();
-                scroll_to_current_match(state, engine);
-            }
-            if ui.small_button("▼").clicked() {
-                state.search.next_match();
-                scroll_to_current_match(state, engine);
-            }
+        if nav_button(
+            ui,
+            &theme,
+            icons::CHEVRON_DOWN,
+            nav_enabled,
+            t("search.next_match_tooltip"),
+        ) {
+            state.search.next_match();
+            scroll_to_current_match(state, engine);
         }
 
         // Option toggles: case / regex / whole-word.
         if toggle_button(
             ui,
+            &theme,
             "Aa",
             !state.search.case_insensitive,
             t("search.case_tooltip"),
@@ -131,12 +150,19 @@ pub fn draw_search_bar(
             state.search.case_insensitive = !state.search.case_insensitive;
             run_search(state, engine);
         }
-        if toggle_button(ui, ".*", state.search.regex, t("search.regex_tooltip")) {
+        if toggle_button(
+            ui,
+            &theme,
+            ".*",
+            state.search.regex,
+            t("search.regex_tooltip"),
+        ) {
             state.search.regex = !state.search.regex;
             run_search(state, engine);
         }
         if toggle_button(
             ui,
+            &theme,
             "ab",
             state.search.whole_word,
             t("search.whole_word_tooltip"),
@@ -149,19 +175,101 @@ pub fn draw_search_bar(
     action
 }
 
-/// A small toggle button that visually reflects its `active` state.
-/// Returns true when clicked.
+/// 고정폭(40px) 매치 카운터를 가운데 정렬로 그린다. 텍스트 길이와 무관하게
+/// 폭이 고정되어 옆의 ▲▼/토글이 좌우로 밀리지 않는다. (디자인 width:40, center)
+fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(40.0, ui.available_height()),
+        egui::Sense::hover(),
+    );
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_string(), egui::FontId::proportional(12.0), color);
+    let pos = rect.center() - galley.size() * 0.5;
+    ui.painter().galley(pos, galley, color);
+}
+
+/// IconButton sm 규격의 정사각 슬롯을 할당하고 hover/active 배경 오버레이를
+/// 그린다. `active` 면 토글-on 배경, `enabled=false` 면 상호작용 비활성(배경 없음).
+/// rect 와 response 를 돌려준다.
+fn icon_button_frame(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    enabled: bool,
+    active: bool,
+) -> (egui::Rect, egui::Response) {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ICON_BTN_SIZE, ICON_BTN_SIZE), sense);
+    if active || (enabled && resp.is_pointer_button_down_on()) {
+        ui.painter().rect_filled(
+            rect,
+            ICON_BTN_RADIUS,
+            theme.overlay_active().to_egui_premultiplied(),
+        );
+    } else if enabled && resp.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            ICON_BTN_RADIUS,
+            theme.overlay_hover().to_egui_premultiplied(),
+        );
+    }
+    (rect, resp)
+}
+
+/// chevron SVG 를 담은 IconButton sm — prev/next 네비게이션. `enabled=false` 면
+/// opacity 0.45 로 흐리게 그리고 클릭을 받지 않는다. Returns true when clicked.
+fn nav_button(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    icon: icons::Icon,
+    enabled: bool,
+    tooltip: impl Into<egui::WidgetText>,
+) -> bool {
+    let (rect, resp) = icon_button_frame(ui, theme, enabled, false);
+    let color: egui::Color32 = if !enabled {
+        egui::Color32::from(theme.text_secondary()).gamma_multiply(0.45)
+    } else if resp.hovered() {
+        theme.text_primary().into()
+    } else {
+        theme.text_secondary().into()
+    };
+    let icon_rect =
+        egui::Rect::from_center_size(rect.center(), egui::vec2(ICON_GLYPH_SIZE, ICON_GLYPH_SIZE));
+    icon.image(ICON_GLYPH_SIZE, color).paint_at(ui, icon_rect);
+    if enabled {
+        resp.clone().on_hover_text(tooltip);
+        resp.clicked()
+    } else {
+        false
+    }
+}
+
+/// mono 라벨을 담은 IconButton sm 토글 — active 면 active_overlay 배경 + 라벨 색
+/// text_primary, 비활성이면 배경 없음 + text_muted. Returns true when clicked.
 fn toggle_button(
     ui: &mut egui::Ui,
+    theme: &Theme,
     label: &str,
     active: bool,
     tooltip: impl Into<egui::WidgetText>,
 ) -> bool {
-    let theme = crate::theme::theme();
-    let color = if active { theme.text } else { theme.subtext0 };
-    let rich = egui::RichText::new(label).color(color);
-    let btn = ui.small_button(rich).on_hover_text(tooltip);
-    btn.clicked()
+    let (rect, resp) = icon_button_frame(ui, theme, true, active);
+    let color: egui::Color32 = if active {
+        theme.text_primary().into()
+    } else {
+        theme.text_muted().into()
+    };
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::monospace(11.0), color);
+    let pos = rect.center() - galley.size() * 0.5;
+    ui.painter().galley(pos, galley, color);
+    resp.clone().on_hover_text(tooltip);
+    resp.clicked()
 }
 
 /// Run search, working around borrow checker by using search fields directly.
