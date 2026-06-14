@@ -62,13 +62,15 @@ pub fn draw_ui(
         }
     }
 
-    // Compute remaining terminal area in physical pixels
+    // Compute remaining terminal area in physical pixels (below the titlebar inset).
     use tasty_type_geometry::length::PhysicalPx;
     let screen_rect = ctx.screen_rect();
+    // No-op until the CSD titlebar is drawn (P3).
+    let top_inset = PhysicalPx(0.0);
     let terminal_x = PhysicalPx(sidebar_width * scale_factor);
-    let terminal_y = PhysicalPx(0.0);
+    let terminal_y = top_inset;
     let terminal_width = PhysicalPx((screen_rect.width() - sidebar_width) * scale_factor);
-    let terminal_height = PhysicalPx(screen_rect.height() * scale_factor);
+    let terminal_height = PhysicalPx(screen_rect.height() * scale_factor - top_inset.value());
 
     PhysicalRect {
         x: terminal_x,

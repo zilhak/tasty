@@ -458,6 +458,8 @@ impl GpuState {
             PhysicalPx(self.size.width as f32),
             PhysicalPx(self.size.height as f32),
             sidebar_width,
+            // No-op until the CSD titlebar is drawn (P3).
+            PhysicalPx(0.0),
             self.scale_factor,
         )
     }

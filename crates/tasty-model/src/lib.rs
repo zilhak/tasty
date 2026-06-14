@@ -42,13 +42,18 @@ pub const PANE_BORDER_WIDTH: PhysicalPx = PhysicalPx(2.0);
 /// Gap in physical pixels between split surfaces (within a tab).
 pub const SURFACE_BORDER_WIDTH: PhysicalPx = PhysicalPx(1.0);
 
-/// Compute the terminal area rectangle (everything right of the sidebar) in physical pixels.
+/// Compute the terminal area rectangle (everything right of the sidebar, below the
+/// titlebar) in physical pixels.
+///
+/// `top_inset` reserves space at the top for the custom titlebar (CSD). It is `0` until
+/// the titlebar is actually drawn, making the inset a no-op.
 ///
 /// This is the single canonical implementation. Both `main.rs` and `gpu.rs` should use this.
 pub fn compute_terminal_rect(
     surface_width: PhysicalPx,
     surface_height: PhysicalPx,
     sidebar_width: LogicalPx,
+    top_inset: PhysicalPx,
     scale_factor: f32,
 ) -> PhysicalRect {
     let sw = sidebar_width
@@ -56,9 +61,9 @@ pub fn compute_terminal_rect(
         .min(surface_width - PhysicalPx(1.0));
     PhysicalRect {
         x: sw,
-        y: PhysicalPx(0.0),
+        y: top_inset,
         width: (surface_width - sw).max(PhysicalPx(1.0)),
-        height: surface_height.max(PhysicalPx(1.0)),
+        height: (surface_height - top_inset).max(PhysicalPx(1.0)),
     }
 }
 

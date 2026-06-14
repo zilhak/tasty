@@ -127,6 +127,8 @@ impl MainView {
             PhysicalPx(size.width as f32),
             PhysicalPx(size.height as f32),
             self.state.sidebar_width,
+            // No-op until the CSD titlebar is drawn (P3).
+            PhysicalPx(0.0),
             self.base.gpu.scale_factor(),
         )
     }

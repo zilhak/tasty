@@ -874,7 +874,7 @@ fn surface_layout_to_tree_json_full_preserves_split_ratio() {
 
 #[test]
 fn compute_terminal_rect_basic() {
-    let r = super::compute_terminal_rect(px(1920.0), px(1080.0), lp(200.0), 1.0);
+    let r = super::compute_terminal_rect(px(1920.0), px(1080.0), lp(200.0), px(0.0), 1.0);
     assert_eq!(r.x, px(200.0));
     assert_eq!(r.y, px(0.0));
     assert_eq!(r.width, px(1720.0));
@@ -883,7 +883,7 @@ fn compute_terminal_rect_basic() {
 
 #[test]
 fn compute_terminal_rect_with_scale() {
-    let r = super::compute_terminal_rect(px(1920.0), px(1080.0), lp(100.0), 2.0);
+    let r = super::compute_terminal_rect(px(1920.0), px(1080.0), lp(100.0), px(0.0), 2.0);
     assert_eq!(r.x, px(200.0));
     assert_eq!(r.y, px(0.0));
     assert_eq!(r.width, px(1720.0));
@@ -893,16 +893,26 @@ fn compute_terminal_rect_with_scale() {
 #[test]
 fn compute_terminal_rect_sidebar_clamped() {
     // Sidebar wider than surface should be clamped
-    let r = super::compute_terminal_rect(px(100.0), px(100.0), lp(200.0), 1.0);
+    let r = super::compute_terminal_rect(px(100.0), px(100.0), lp(200.0), px(0.0), 1.0);
     assert_eq!(r.x, px(99.0));
     assert_eq!(r.width, px(1.0));
 }
 
 #[test]
 fn compute_terminal_rect_zero_sidebar() {
-    let r = super::compute_terminal_rect(px(800.0), px(600.0), lp(0.0), 1.5);
+    let r = super::compute_terminal_rect(px(800.0), px(600.0), lp(0.0), px(0.0), 1.5);
     assert_eq!(r.x, px(0.0));
     assert_eq!(r.width, px(800.0));
+}
+
+#[test]
+fn compute_terminal_rect_with_top_inset() {
+    // Titlebar inset shifts the terminal down and shrinks its height.
+    let r = super::compute_terminal_rect(px(1920.0), px(1080.0), lp(200.0), px(36.0), 1.0);
+    assert_eq!(r.x, px(200.0));
+    assert_eq!(r.y, px(36.0));
+    assert_eq!(r.width, px(1720.0));
+    assert_eq!(r.height, px(1044.0));
 }
 
 // ---- Surface::source_cwd ----
