@@ -4,6 +4,7 @@ use crate::core::CoreState;
 use crate::intent::Intent;
 use crate::model::PhysicalRect;
 use crate::state::AppState;
+use tasty_type_geometry::length::PhysicalPx;
 
 use super::sidebar;
 
@@ -63,10 +64,8 @@ pub fn draw_ui(
     }
 
     // Compute remaining terminal area in physical pixels (below the titlebar inset).
-    use tasty_type_geometry::length::PhysicalPx;
     let screen_rect = ctx.screen_rect();
-    // No-op until the CSD titlebar is drawn (P3).
-    let top_inset = PhysicalPx(0.0);
+    let top_inset = super::titlebar::top_inset(scale_factor);
     let terminal_x = PhysicalPx(sidebar_width * scale_factor);
     let terminal_y = top_inset;
     let terminal_width = PhysicalPx((screen_rect.width() - sidebar_width) * scale_factor);
