@@ -137,7 +137,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
-                headless: false,
+                headless: true,
                 sticky_focus: true,
                 draw_fn: super::command_palette::draw_command_palette_popup,
             },

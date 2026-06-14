@@ -9,6 +9,7 @@
 //! 담당하는 wrapper [`draw_command_palette_popup`] 로 나누어 gallery 에서 단독
 //! 시각 검증 가능.
 
+use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::i18n::t;
 use crate::state::AppState;
@@ -25,6 +26,9 @@ pub struct CommandItemView {
     pub label: String,
     /// 우측에 표시할 단축키 텍스트. None 이면 표시하지 않는다.
     pub shortcut: Option<String>,
+    /// 행 좌측 leading 아이콘. 디자인이 명시한 일부 명령에만 지정, 나머지는 None
+    /// (빈 슬롯으로 둬 라벨 정렬은 유지).
+    pub icon: Option<icons::Icon>,
 }
 
 /// View 입력 — palette 한 화면 분의 모든 데이터. AppState/CoreState 비의존.
@@ -42,6 +46,12 @@ pub struct CommandPaletteProps<'a> {
     pub selected_index: usize,
     /// 쿼리 입력 버퍼. View 가 `TextEdit` 으로 직접 mutate.
     pub query_buffer: &'a mut String,
+    /// 푸터 힌트 — 네비게이션 동작 라벨 (`↑↓ {navigate}`).
+    pub hint_navigate: String,
+    /// 푸터 힌트 — 실행 동작 라벨 (`↵ {run}`).
+    pub hint_run: String,
+    /// 푸터 힌트 — 닫기 동작 라벨 (`esc {close}`).
+    pub hint_close: String,
 }
 
 /// View 의 출력 — 사용자 의도. wrapper 가 state mutation 으로 변환.
@@ -101,19 +111,31 @@ pub fn draw_command_palette_view(
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 4.0;
 
-        let resp = ui.add(
-            egui::TextEdit::singleline(props.query_buffer)
-                .hint_text(tasty_egui_theme::hint_text(
-                    theme,
-                    props.placeholder.clone(),
-                ))
-                .desired_width(ui.available_width() - 8.0)
-                .font(egui::TextStyle::Body),
-        );
-        if !resp.has_focus() {
-            resp.request_focus();
-        }
-        if resp.changed() {
+        let mut query_changed = false;
+        ui.horizontal(|ui| {
+            let icon_size = 16.0;
+            let (icon_rect, _) =
+                ui.allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());
+            icons::SEARCH
+                .image(icon_size, theme.text_muted().to_egui())
+                .paint_at(ui, icon_rect);
+            let resp = ui.add(
+                egui::TextEdit::singleline(props.query_buffer)
+                    .hint_text(tasty_egui_theme::hint_text(
+                        theme,
+                        props.placeholder.clone(),
+                    ))
+                    .desired_width(ui.available_width())
+                    .font(egui::TextStyle::Body),
+            );
+            if !resp.has_focus() {
+                resp.request_focus();
+            }
+            if resp.changed() {
+                query_changed = true;
+            }
+        });
+        if query_changed {
             action = CommandPaletteAction::QueryChanged;
         }
 
@@ -155,8 +177,22 @@ pub fn draw_command_palette_view(
                         } else {
                             theme.subtext0.into()
                         };
+
+                        // leading 아이콘 컬럼은 항상 폭을 예약해 라벨 정렬을 유지한다.
+                        // 디자인 명시 명령만 아이콘이 들어가고 나머지는 빈 슬롯.
+                        let pad_x = 8.0;
+                        let icon_size = 16.0;
+                        let icon_gap = 8.0;
+                        if let Some(icon) = item.icon {
+                            let icon_rect = egui::Rect::from_min_size(
+                                egui::pos2(rect.min.x + pad_x, rect.center().y - icon_size / 2.0),
+                                egui::vec2(icon_size, icon_size),
+                            );
+                            icon.image(icon_size, color).paint_at(ui, icon_rect);
+                        }
+                        let label_x = rect.min.x + pad_x + icon_size + icon_gap;
                         ui.painter().text(
-                            egui::pos2(rect.min.x + 8.0, rect.center().y),
+                            egui::pos2(label_x, rect.center().y),
                             egui::Align2::LEFT_CENTER,
                             &item.label,
                             egui::FontId::proportional(theme.font_size_body.value()),
@@ -164,12 +200,41 @@ pub fn draw_command_palette_view(
                         );
 
                         if let Some(shortcut) = &item.shortcut {
-                            ui.painter().text(
-                                egui::pos2(rect.max.x - 8.0, rect.center().y),
-                                egui::Align2::RIGHT_CENTER,
-                                shortcut,
-                                egui::FontId::proportional(theme.font_size_body.value() - 1.0),
-                                theme.subtext0.into(),
+                            // Kbd 키캡 박스 — Theme 보더+배경 토큰으로 그린다.
+                            let kbd_font =
+                                egui::FontId::proportional(theme.font_size_caption.value());
+                            let galley = ui.painter().layout_no_wrap(
+                                shortcut.clone(),
+                                kbd_font,
+                                theme.text_muted().to_egui(),
+                            );
+                            let inner_pad = egui::vec2(6.0, 2.0);
+                            let box_size = galley.size() + inner_pad * 2.0;
+                            let box_rect = egui::Rect::from_min_size(
+                                egui::pos2(
+                                    rect.max.x - 8.0 - box_size.x,
+                                    rect.center().y - box_size.y / 2.0,
+                                ),
+                                box_size,
+                            );
+                            ui.painter().rect_filled(
+                                box_rect,
+                                4.0,
+                                theme.surface_hover().to_egui(),
+                            );
+                            ui.painter().rect_stroke(
+                                box_rect,
+                                4.0,
+                                egui::Stroke::new(
+                                    theme.border_width.value(),
+                                    theme.border_strong().to_egui(),
+                                ),
+                                egui::StrokeKind::Inside,
+                            );
+                            ui.painter().galley(
+                                box_rect.min + inner_pad,
+                                galley,
+                                theme.text_muted().to_egui(),
                             );
                         }
 
@@ -179,6 +244,26 @@ pub fn draw_command_palette_view(
                     }
                 });
         }
+
+        // 푸터 — 키보드 힌트 행. mono 폰트 + muted 색 (Theme). 기호는 고정키이므로
+        // 그대로 표기하고 동작 라벨만 i18n.
+        ui.separator();
+        let hint_color = theme.text_muted().to_egui();
+        let hint_font = egui::FontId::monospace(theme.font_size_caption.value());
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
+            for hint in [
+                format!("↑↓ {}", props.hint_navigate),
+                format!("↵ {}", props.hint_run),
+                format!("esc {}", props.hint_close),
+            ] {
+                ui.label(
+                    egui::RichText::new(hint)
+                        .font(hint_font.clone())
+                        .color(hint_color),
+                );
+            }
+        });
     });
 
     if enter && !props.items.is_empty() {
@@ -216,6 +301,7 @@ fn items_from_state(
         items.push(CommandItemView {
             label: raw_label,
             shortcut: bindings_for(cmd.id),
+            icon: icon_for(cmd.id),
         });
         ids.push(cmd.id);
     }
@@ -255,6 +341,9 @@ pub fn draw_command_palette_popup(
         items,
         selected_index: state.command_palette.selected,
         query_buffer: &mut state.command_palette.query,
+        hint_navigate: t("command_palette.hint_navigate").to_string(),
+        hint_run: t("command_palette.hint_run").to_string(),
+        hint_close: t("command_palette.hint_close").to_string(),
     };
 
     let view_action = draw_command_palette_view(ui, &theme::theme(), &mut props);
@@ -280,6 +369,20 @@ pub fn draw_command_palette_popup(
             state.command_palette.reset();
             PopupAction::Close
         }
+    }
+}
+
+/// keybinding `field_id` → leading 아이콘. 디자인(`command_palette.jsx`)이 명시한
+/// 6개 명령에만 매핑하고, 나머지는 None (빈 슬롯). 47개 전체 명세는 별도 진행 중.
+fn icon_for(field_id: &str) -> Option<icons::Icon> {
+    match field_id {
+        "new_workspace" => Some(icons::PLUS),
+        "new_tab" => Some(icons::TERM),
+        "open_markdown" => Some(icons::MD),
+        "toggle_settings" => Some(icons::SETTINGS),
+        "split_pane_vertical" => Some(icons::SPLIT),
+        "toggle_clipboard_viewer" => Some(icons::CLIPBOARD),
+        _ => None,
     }
 }
 
@@ -359,6 +462,7 @@ mod view_tests {
             .map(|i| CommandItemView {
                 label: format!("Item {i}"),
                 shortcut: None,
+                icon: None,
             })
             .collect()
     }
@@ -394,6 +498,9 @@ mod view_tests {
                     items: items_opt.take().unwrap_or_default(),
                     selected_index,
                     query_buffer: &mut buf,
+                    hint_navigate: "navigate".to_string(),
+                    hint_run: "run".to_string(),
+                    hint_close: "close".to_string(),
                 };
                 action = draw_command_palette_view(ui, &theme, &mut props);
             });

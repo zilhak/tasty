@@ -6,7 +6,7 @@
 //! stroke 는 white 로 고정 — tint 곱셈으로 임의 테마 색이 된다.
 
 /// 한 개의 line-icon. `svg` 는 완성된 SVG 문서, `uri` 는 egui 이미지 캐시 키.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Icon {
     svg: &'static str,
     uri: &'static str,
@@ -97,4 +97,9 @@ line_icon!(
     SEARCH,
     "search",
     r#"<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>"#
+);
+line_icon!(
+    CLIPBOARD,
+    "clipboard",
+    r#"<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>"#
 );

@@ -584,6 +584,9 @@ heading = "コマンドパレット"
 placeholder = "入力してコマンドを検索…"
 no_results = "一致するコマンドがありません"
 tools_menu_item = "コマンドパレット…"
+hint_navigate = "移動"
+hint_run = "実行"
+hint_close = "閉じる"
 
 [update]
 heading = "更新の確認"

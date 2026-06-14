@@ -584,6 +584,9 @@ heading = "Command palette"
 placeholder = "Type to search commands…"
 no_results = "No matching commands"
 tools_menu_item = "Command palette…"
+hint_navigate = "navigate"
+hint_run = "run"
+hint_close = "close"
 
 [update]
 heading = "Check for updates"
