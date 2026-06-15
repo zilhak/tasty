@@ -13,3 +13,5 @@ pub mod macos_delegate;
 pub mod native_menu;
 #[cfg(all(windows, feature = "gui"))]
 pub mod system_tray;
+#[cfg(feature = "gui")]
+pub mod window_chrome;

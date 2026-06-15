@@ -12,6 +12,15 @@ use tasty_type_geometry::length::PhysicalPx;
 
 pub use view::{TitlebarAction, TitlebarProps, draw_titlebar_view};
 
+/// macOS 네이티브 신호등(standardWindowButton) 클러스터가 차지하는 좌측 폭
+/// (logical points). fullsize-content-view 에서 신호등은 OS 가 좌상단 고정 위치에
+/// 그리므로, egui titlebar 의 드래그 영역은 이 폭만큼 비운다(carve-out). 디자인
+/// inset(padding 12 + 점 3×12 + gap 2×8) 기준 + 네이티브 클러스터 여유.
+/// OS 가 고정하는 geometry 라 테마 토큰이 아니다.
+#[cfg(target_os = "macos")]
+const MACOS_TRAFFIC_LIGHT_INSET: tasty_type_geometry::length::LogicalPx =
+    tasty_type_geometry::length::LogicalPx(78.0);
+
 /// titlebar 가 차지하는 상단 inset (physical px) — `compute_terminal_rect` 의
 /// `top_inset` 인자 + egui SidePanel 시작 오프셋의 단일 진실원.
 ///
@@ -26,10 +35,16 @@ pub fn top_inset(scale_factor: f32) -> PhysicalPx {
 /// 시작한다.
 pub fn draw_titlebar(ctx: &egui::Context, window: &Window) {
     let th = theme::theme();
+    // macOS 만 네이티브 신호등 폭만큼 좌측 슬롯을 비운다. 그 외 OS 는 0(P5/P6 후속).
+    #[cfg(target_os = "macos")]
+    let left_inset = MACOS_TRAFFIC_LIGHT_INSET.value();
+    #[cfg(not(target_os = "macos"))]
+    let left_inset = 0.0;
     let props = TitlebarProps {
         theme: &th,
         active: window.has_focus(),
         height: th.titlebar_height.value(),
+        left_inset,
     };
 
     for action in draw_titlebar_view(ctx, &props) {

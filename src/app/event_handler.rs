@@ -258,6 +258,8 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(icon) = crate::app_icon::winit_window_icon() {
             attrs = attrs.with_window_icon(Some(icon));
         }
+        // CSD: macOS 는 fullsize-content-view(네이티브 신호등 유지). 그 외 OS no-op.
+        attrs = crate::platform::window_chrome::apply_csd_attributes(attrs);
 
         let window = Arc::new(
             event_loop

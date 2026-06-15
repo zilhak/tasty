@@ -15,6 +15,10 @@ pub struct TitlebarProps<'a> {
     pub active: bool,
     /// titlebar 높이 (logical points = egui 좌표). theme `titlebar_height` 토큰.
     pub height: f32,
+    /// 좌측 컨트롤 슬롯 폭 (logical points). macOS 네이티브 신호등
+    /// (standardWindowButton)이 좌상단에 OS 렌더되는 영역 — 이 폭만큼은 드래그 hit 를
+    /// 두지 않아 신호등 클릭이 드래그로 새지 않게 한다. 신호등 없는 OS 에서는 0.
+    pub left_inset: f32,
 }
 
 /// titlebar view 가 보고하는 사용자 의도. wrapper 가 winit window 조작으로 변환.
@@ -48,10 +52,15 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Vec<Tit
         .show(ctx, |ui| {
             let rect = ui.max_rect();
 
-            // 전체 바를 드래그 영역으로. P4~P6 에서 컨트롤 슬롯이 carve-out 되면
-            // 그 rect 들은 별도 Sense::click 위젯이 우선 소비한다.
+            // 드래그 영역은 좌측 컨트롤 슬롯(macOS 네이티브 신호등 폭)을 제외한 나머지.
+            // 신호등 rect 위에는 OS 가 standardWindowButton 을 최상위로 렌더하므로
+            // egui 드래그(StartDrag)가 신호등 클릭을 가로채지 않게 한다.
+            let drag_rect = egui::Rect::from_min_max(
+                egui::pos2(rect.left() + props.left_inset, rect.top()),
+                rect.max,
+            );
             let resp = ui.interact(
-                rect,
+                drag_rect,
                 egui::Id::new("tasty_titlebar_drag"),
                 egui::Sense::click_and_drag(),
             );
