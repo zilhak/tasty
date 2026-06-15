@@ -5337,6 +5337,7 @@ dependencies = [
  "tasty-font",
  "tasty-hooks",
  "tasty-host-plugin",
+ "tasty-i18n",
  "tasty-ipc",
  "tasty-lua",
  "tasty-memory",
@@ -5408,6 +5409,7 @@ dependencies = [
  "serde_json",
  "tasty-approval",
  "tasty-host-plugin",
+ "tasty-i18n",
  "tasty-ipc",
  "tasty-plugin-manifest",
  "tasty-plugin-protocol",
@@ -5504,6 +5506,15 @@ dependencies = [
  "toml 0.8.2",
  "tracing",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "tasty-i18n"
+version = "0.1.0"
+dependencies = [
+ "tasty-utils",
+ "toml 0.8.2",
+ "tracing",
 ]
 
 [[package]]

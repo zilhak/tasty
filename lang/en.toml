@@ -705,3 +705,20 @@ held_workspace_body = "This workspace is attached by another client."
 force_detach = "Force detach"
 occupied_surface = "Held by another client (readonly). Force detach to take over."
 occupied_workspace = "Attached by a client"
+
+# CLI output strings. The `tasty-cli` crate reads these through the shared
+# i18n store (initialized on the CLI boot path before `run_client`).
+[cli.remote_check]
+not_found = "Remote tasty not found: port discovery failed (target={}, discovery mode={}). Check that tasty is running on the remote."
+tunnel_failed = "Remote tasty likely dead: port {} found but ssh -L tunnel setup failed (target={})."
+no_ipc_response = "Remote tasty dead (stale port): port {} found and tunnel established, but no IPC response (target={}). The port file remains but the server appears to be dead."
+alive_full = "alive: {} (port {}, version {}, {} workspaces)"
+alive_version = "alive: {} (port {}, version {})"
+alive_basic = "alive: {} (port {})"
+connect_failed = "Failed to connect to tunnel localport 127.0.0.1:{}"
+send_failed = "Failed to send IPC request"
+flush_failed = "Failed to flush IPC request"
+read_failed = "Failed to read IPC response (timeout/connection closed)"
+eof = "No IPC response (EOF) — the remote server is not responding"
+parse_failed = "Failed to parse IPC response JSON"
+error_response = "IPC error response (code={}): {}"

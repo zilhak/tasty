@@ -22,6 +22,7 @@ tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 tasty-host-plugin = { path = "../tasty-host-plugin" }
 tasty-approval = { path = "../tasty-approval" }
 tasty-utils = { path = "../tasty-utils" }
+tasty-i18n = { path = "../tasty-i18n" }
 tasty-update = { path = "../tasty-update" }
 tasty-ssh-profiles = { path = "../tasty-ssh-profiles" }
 tempfile = "3"

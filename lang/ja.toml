@@ -705,3 +705,20 @@ held_workspace_body = "このワークスペースは別のクライアントが
 force_detach = "強制切断"
 occupied_surface = "別のクライアントが占有中(読み取り専用)。取り戻すには強制切断。"
 occupied_workspace = "クライアントが接続中"
+
+# CLI 出力文字列。`tasty-cli` クレートが共有 i18n ストアを介して読み取る
+# (CLI ブートパスで `run_client` の前に初期化される)。
+[cli.remote_check]
+not_found = "リモート tasty が見つかりません: ポート探索に失敗 (対象={}, 探索モード={})。リモートで tasty が起動しているか確認してください。"
+tunnel_failed = "リモート tasty は停止している可能性があります: ポート {} は見つかりましたが ssh -L トンネルの確立に失敗 (対象={})。"
+no_ipc_response = "リモート tasty 停止 (stale ポート): ポート {} を発見・トンネル確立しましたが IPC 応答がありません (対象={})。ポートファイルは残っていますがサーバーは停止しているようです。"
+alive_full = "alive: {} (port {}, version {}, {} workspaces)"
+alive_version = "alive: {} (port {}, version {})"
+alive_basic = "alive: {} (port {})"
+connect_failed = "トンネル localport 127.0.0.1:{} への接続に失敗"
+send_failed = "IPC リクエスト送信に失敗"
+flush_failed = "IPC リクエストの flush に失敗"
+read_failed = "IPC 応答の読み取りに失敗 (タイムアウト/接続切断)"
+eof = "IPC 応答なし (EOF) — リモートサーバーが応答しません"
+parse_failed = "IPC 応答 JSON の解析に失敗"
+error_response = "IPC エラー応答 (code={}): {}"

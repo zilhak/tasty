@@ -15,6 +15,7 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+use tasty_i18n::{t, t_args};
 use tasty_ipc::protocol::{JsonRpcRequest, JsonRpcResponse};
 
 use crate::ssh::{self, PortMode, SshTarget, SshTunnel};
@@ -38,41 +39,51 @@ pub fn run_remote_check(target: SshTarget, remote_tasty: &str, port_mode: &str) 
     let debug = cfg!(debug_assertions);
 
     // ① 원격 포트 발견. 실패 = 미발견(포트 파일 없음/원격 명령 실패) → dead.
-    let remote_port = ssh::discover_remote_port(&ssh, &target, remote_tasty, mode, verify, debug)
-        .with_context(|| {
-        format!(
-            "원격 tasty 미발견: 포트 발견 실패 (대상={dest}, 발견 모드={port_mode}). \
-                 원격에 tasty 가 떠 있는지 확인하세요."
-        )
-    })?;
+    let remote_port =
+        ssh::discover_remote_port(&ssh, &target, remote_tasty, mode, verify, debug)
+            .with_context(|| t_args("cli.remote_check.not_found", &[dest.as_str(), port_mode]))?;
 
     // ② ssh -L 터널 (Drop 시 자식 ssh 자동 kill). 터널 수립 실패 = 인증/네트워크/포워드
     //    문제 → dead 로 판정(포트는 발견됐으나 접근 불가).
     let tunnel = SshTunnel::establish(&ssh, &target, remote_port, verify).with_context(|| {
-        format!(
-            "원격 tasty 죽음 추정: 포트 {remote_port} 발견했으나 ssh -L 터널 수립 실패 \
-             (대상={dest})."
+        t_args(
+            "cli.remote_check.tunnel_failed",
+            &[&remote_port.to_string(), dest.as_str()],
         )
     })?;
 
     // ③ 터널 localport 로 가벼운 IPC 1 회. 응답 OK = alive, 연결거부/EOF/타임아웃 = dead.
     //    포트 발견만으로 alive 단정 금지 — 이 단계가 stale 포트를 가려낸다.
     let info = probe_system_info(tunnel.local_port).with_context(|| {
-        format!(
-            "원격 tasty 죽음(stale 포트): 포트 {remote_port} 발견·터널 수립했으나 IPC 응답 없음 \
-             (대상={dest}). 포트 파일은 남았지만 서버가 죽은 상태로 보입니다."
+        t_args(
+            "cli.remote_check.no_ipc_response",
+            &[&remote_port.to_string(), dest.as_str()],
         )
     })?;
 
     // alive — 포트(+가능하면 버전/워크스페이스 수)를 stdout 출력, exit 0.
     let version = info.get("version").and_then(|v| v.as_str());
     let ws_count = info.get("workspace_count").and_then(|v| v.as_u64());
+    let port_str = remote_port.to_string();
     match (version, ws_count) {
-        (Some(v), Some(n)) => {
-            println!("alive: {dest} (port {remote_port}, version {v}, {n} workspaces)")
-        }
-        (Some(v), None) => println!("alive: {dest} (port {remote_port}, version {v})"),
-        _ => println!("alive: {dest} (port {remote_port})"),
+        (Some(v), Some(n)) => println!(
+            "{}",
+            t_args(
+                "cli.remote_check.alive_full",
+                &[dest.as_str(), &port_str, v, &n.to_string()],
+            )
+        ),
+        (Some(v), None) => println!(
+            "{}",
+            t_args(
+                "cli.remote_check.alive_version",
+                &[dest.as_str(), &port_str, v],
+            )
+        ),
+        _ => println!(
+            "{}",
+            t_args("cli.remote_check.alive_basic", &[dest.as_str(), &port_str])
+        ),
     }
     Ok(())
 }
@@ -85,7 +96,7 @@ pub fn run_remote_check(target: SshTarget, remote_tasty: &str, port_mode: &str) 
 /// 걸고 EOF/빈 응답을 명시적 에러로 변환한다.
 fn probe_system_info(port: u16) -> Result<serde_json::Value> {
     let stream = TcpStream::connect(("127.0.0.1", port))
-        .with_context(|| format!("터널 localport 127.0.0.1:{port} 접속 실패"))?;
+        .with_context(|| t_args("cli.remote_check.connect_failed", &[&port.to_string()]))?;
     stream.set_read_timeout(Some(PROBE_TIMEOUT))?;
     stream.set_write_timeout(Some(PROBE_TIMEOUT))?;
 
@@ -101,22 +112,28 @@ fn probe_system_info(port: u16) -> Result<serde_json::Value> {
 
     let mut writer = stream.try_clone()?;
     let json = serde_json::to_string(&request)?;
-    writeln!(writer, "{json}").context("IPC 요청 전송 실패")?;
-    writer.flush().context("IPC 요청 flush 실패")?;
+    writeln!(writer, "{json}").context(t("cli.remote_check.send_failed"))?;
+    writer.flush().context(t("cli.remote_check.flush_failed"))?;
 
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     let n = reader
         .read_line(&mut line)
-        .context("IPC 응답 읽기 실패(타임아웃/연결 끊김)")?;
+        .context(t("cli.remote_check.read_failed"))?;
     if n == 0 || line.trim().is_empty() {
-        bail!("IPC 응답 없음 (EOF) — 원격 서버가 응답하지 않습니다");
+        bail!("{}", t("cli.remote_check.eof"));
     }
 
     let response: JsonRpcResponse =
-        serde_json::from_str(line.trim()).context("IPC 응답 JSON 파싱 실패")?;
+        serde_json::from_str(line.trim()).context(t("cli.remote_check.parse_failed"))?;
     if let Some(err) = response.error {
-        bail!("IPC 에러 응답 (code={}): {}", err.code, err.message);
+        bail!(
+            "{}",
+            t_args(
+                "cli.remote_check.error_response",
+                &[&err.code.to_string(), err.message.as_str()],
+            )
+        );
     }
     Ok(response.result.unwrap_or(serde_json::Value::Null))
 }

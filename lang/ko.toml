@@ -705,3 +705,20 @@ held_workspace_body = "다른 client 가 이 워크스페이스를 attach 하고
 force_detach = "강제 끊기"
 occupied_surface = "다른 client 가 점유 중(읽기 전용). 회수하려면 강제 끊기."
 occupied_workspace = "client 가 attach 중"
+
+# CLI 출력 문자열. `tasty-cli` 크레이트가 공용 i18n 스토어를 통해 읽는다
+# (CLI 부트 경로에서 `run_client` 이전에 초기화됨).
+[cli.remote_check]
+not_found = "원격 tasty 미발견: 포트 발견 실패 (대상={}, 발견 모드={}). 원격에 tasty 가 떠 있는지 확인하세요."
+tunnel_failed = "원격 tasty 죽음 추정: 포트 {} 발견했으나 ssh -L 터널 수립 실패 (대상={})."
+no_ipc_response = "원격 tasty 죽음(stale 포트): 포트 {} 발견·터널 수립했으나 IPC 응답 없음 (대상={}). 포트 파일은 남았지만 서버가 죽은 상태로 보입니다."
+alive_full = "alive: {} (port {}, version {}, {} workspaces)"
+alive_version = "alive: {} (port {}, version {})"
+alive_basic = "alive: {} (port {})"
+connect_failed = "터널 localport 127.0.0.1:{} 접속 실패"
+send_failed = "IPC 요청 전송 실패"
+flush_failed = "IPC 요청 flush 실패"
+read_failed = "IPC 응답 읽기 실패(타임아웃/연결 끊김)"
+eof = "IPC 응답 없음 (EOF) — 원격 서버가 응답하지 않습니다"
+parse_failed = "IPC 응답 JSON 파싱 실패"
+error_response = "IPC 에러 응답 (code={}): {}"
