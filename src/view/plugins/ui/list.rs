@@ -105,8 +105,10 @@ pub(super) fn draw_list_tab(
                         egui::Color32::from(th.subtext0),
                     );
                     // 디자인 StatusDot(danger): spawn 반복 실패로 자동 비활성화된
-                    // plugin 은 행 우측에 빨간 dot 을 그린다. error 상태에만 표시.
-                    if entry.health_error {
+                    // plugin 은 행 우측에 빨간 dot 을 그린다. 상세 경고 박스와
+                    // 동일하게 enable 상태인 error plugin 에만 표시한다 (사용자가
+                    // 끈 plugin 은 정상 종료이므로 error 아님).
+                    if entry.health_error && entry.enabled {
                         let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
                         ui.painter().circle_filled(
                             dot_center,

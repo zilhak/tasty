@@ -10,14 +10,6 @@ impl PluginManager {
         self.auto_disabled.contains(plugin_id)
     }
 
-    /// 현재 실패 윈도우 내 누적된 spawn 실패 횟수.
-    /// auto-disable 되면 0 으로 정리되고 `is_auto_disabled` 가 true 가 된다.
-    pub fn spawn_failure_count(&self, plugin_id: &str) -> u32 {
-        self.spawn_failures
-            .get(plugin_id)
-            .map_or(0, |v| v.len() as u32)
-    }
-
     pub fn recompute_extensions(&mut self) {
         let manifests: Vec<&tasty_plugin_manifest::Manifest> =
             self.packages.iter().map(|p| &p.manifest).collect();
