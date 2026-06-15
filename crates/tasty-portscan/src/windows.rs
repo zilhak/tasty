@@ -8,15 +8,36 @@ use std::collections::HashMap;
 
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_INSUFFICIENT_BUFFER, NO_ERROR};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
-    GetExtendedTcpTable, MIB_TCP6ROW_OWNER_PID, MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_OWNER_PID,
-    MIB_TCPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_LISTENER,
+    GetExtendedTcpTable, MIB_TCP_STATE_CLOSE_WAIT, MIB_TCP_STATE_CLOSED, MIB_TCP_STATE_CLOSING,
+    MIB_TCP_STATE_ESTAB, MIB_TCP_STATE_FIN_WAIT1, MIB_TCP_STATE_FIN_WAIT2, MIB_TCP_STATE_LAST_ACK,
+    MIB_TCP_STATE_LISTEN, MIB_TCP_STATE_SYN_RCVD, MIB_TCP_STATE_SYN_SENT, MIB_TCP_STATE_TIME_WAIT,
+    MIB_TCP6ROW_OWNER_PID, MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID,
+    TCP_TABLE_OWNER_PID_ALL,
 };
 use windows_sys::Win32::Networking::WinSock::{AF_INET, AF_INET6};
 use windows_sys::Win32::System::Threading::{
     OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
 
-use crate::{ListeningPort, SystemListeningPort};
+use crate::{ListeningPort, PortState, SystemListeningPort};
+
+/// Map a Windows `MIB_TCP_STATE` (`dwState`) value to [`PortState`].
+fn state_from_windows(dw_state: u32) -> PortState {
+    match dw_state as i32 {
+        MIB_TCP_STATE_LISTEN => PortState::Listen,
+        MIB_TCP_STATE_ESTAB => PortState::Established,
+        MIB_TCP_STATE_SYN_SENT => PortState::SynSent,
+        MIB_TCP_STATE_SYN_RCVD => PortState::SynRecv,
+        MIB_TCP_STATE_FIN_WAIT1 => PortState::FinWait1,
+        MIB_TCP_STATE_FIN_WAIT2 => PortState::FinWait2,
+        MIB_TCP_STATE_TIME_WAIT => PortState::TimeWait,
+        MIB_TCP_STATE_CLOSED => PortState::Closed,
+        MIB_TCP_STATE_CLOSE_WAIT => PortState::CloseWait,
+        MIB_TCP_STATE_LAST_ACK => PortState::LastAck,
+        MIB_TCP_STATE_CLOSING => PortState::Closing,
+        _ => PortState::Unknown,
+    }
+}
 
 pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
     let mut out = Vec::new();
@@ -109,6 +130,7 @@ fn collect_v4(
                 port,
                 addr: IpAddr::V4(addr),
                 process_name,
+                state: state_from_windows(row.dwState),
             });
         }
     }
@@ -144,6 +166,7 @@ fn collect_v6(
                 port,
                 addr: IpAddr::V6(addr),
                 process_name,
+                state: state_from_windows(row.dwState),
             });
         }
     }
@@ -175,6 +198,7 @@ fn collect_v4_all(
                 port,
                 addr: IpAddr::V4(addr),
                 process_name,
+                state: state_from_windows(row.dwState),
             });
         }
     }
@@ -205,6 +229,7 @@ fn collect_v6_all(
                 port,
                 addr: IpAddr::V6(addr),
                 process_name,
+                state: state_from_windows(row.dwState),
             });
         }
     }
@@ -222,7 +247,7 @@ fn query_table(family: u32) -> io::Result<Vec<u8>> {
             &mut size,
             0,
             family,
-            TCP_TABLE_OWNER_PID_LISTENER,
+            TCP_TABLE_OWNER_PID_ALL,
             0,
         )
     };
@@ -241,7 +266,7 @@ fn query_table(family: u32) -> io::Result<Vec<u8>> {
             &mut size,
             0,
             family,
-            TCP_TABLE_OWNER_PID_LISTENER,
+            TCP_TABLE_OWNER_PID_ALL,
             0,
         )
     };

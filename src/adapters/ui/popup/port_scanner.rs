@@ -28,6 +28,7 @@ use crate::model::LogicalPx;
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
+use tasty_portscan::PortState;
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
 
@@ -60,6 +61,8 @@ pub struct PortRowView {
     pub pid: Option<u32>,
     pub process_name: Option<String>,
     pub source: SourceTag,
+    /// TCP connection state, drives the STATE column dot color/pulse + label.
+    pub state: PortState,
 }
 
 /// Async state machine for the port scanner popup. Owned by `AppState.port_scan`.
@@ -135,9 +138,8 @@ pub enum PortScannerViewState<'a> {
     Loading,
     Ready {
         rows: &'a [PortRowView],
-        /// Count of listening ports in the current scope, before the search
-        /// filter is applied. The backend returns LISTEN-only rows, so this is
-        /// also the LISTEN count the design's header tag wants.
+        /// Count of ports in the current scope, before the search filter is
+        /// applied. Feeds the design's header tag and footer total.
         total: usize,
     },
     Failed {
@@ -260,9 +262,8 @@ pub fn draw_port_scanner_popup(
 
     let view_state = match &state.port_scan {
         PortScanState::Idle | PortScanState::Loading { .. } => PortScannerViewState::Loading,
-        // `total` = scope total (search-independent). The backend returns
-        // LISTEN-only rows, so the unfiltered row count is the design's
-        // `scoped.length` / LISTEN count for both the footer and header tag.
+        // `total` = scope total (search-independent): the unfiltered row count
+        // feeds both the footer counter and the header tag.
         PortScanState::Ready { rows, .. } => PortScannerViewState::Ready {
             rows: &filtered_rows,
             total: rows.len(),
@@ -543,6 +544,7 @@ fn run_scan(snapshot: ScanSnapshot) -> Result<Vec<PortRowView>, String> {
                     pid: p.pid,
                     process_name: p.process_name,
                     source,
+                    state: p.state,
                 }
             })
             .collect();
@@ -566,6 +568,7 @@ fn run_scan(snapshot: ScanSnapshot) -> Result<Vec<PortRowView>, String> {
                     pid: Some(p.pid),
                     process_name: p.process_name,
                     source,
+                    state: p.state,
                 }
             })
             .collect();
@@ -898,7 +901,7 @@ fn draw_table(
                         draw_tab_cell(ui, th, row, props.label_external_dash);
                     });
                     tr.col(|ui| {
-                        draw_state_cell(ui, th, props.reduced_motion);
+                        draw_state_cell(ui, th, props.reduced_motion, row.state);
                     });
                 });
             }
@@ -1030,19 +1033,25 @@ const PULSE_PERIOD_SECS: f64 = 1.6;
 /// ease-out cubic 지수.
 const PULSE_EASE_EXP: i32 = 3;
 
-/// State 셀: pulse 하는 초록 dot + "LISTEN".
+/// State 셀: status dot + 실제 state 라벨.
 ///
-/// Mirrors the design's `StatusDot status="running" pulse`: a static core dot
-/// plus an expanding, fading ring (scale 0.6→1.8, opacity 0.5→0, 1.6 s ease-out
-/// loop). With `reduced_motion`, the ring is omitted and only the static dot is
-/// drawn. The backend reports LISTEN-only rows, so the label stays "LISTEN".
-fn draw_state_cell(ui: &mut egui::Ui, th: &Theme, reduced_motion: bool) {
+/// Mirrors the design's `StatusDot status={v==="LISTEN"?"running":"waiting"}
+/// pulse={v==="LISTEN"} label={v}`: `LISTEN` → green core + expanding/fading
+/// pulse ring (scale 0.6→1.8, opacity 0.5→0, 1.6 s ease-out loop); every other
+/// state → static yellow dot, no ring. With `reduced_motion`, the ring is
+/// omitted even for `LISTEN`. The label is the canonical TCP state token.
+fn draw_state_cell(ui: &mut egui::Ui, th: &Theme, reduced_motion: bool, state: PortState) {
     ui.horizontal(|ui| {
         let slot = PULSE_DOT_SLOT.value();
         let (rect, _) = ui.allocate_exact_size(egui::vec2(slot, slot), egui::Sense::hover());
         let center = rect.center();
-        let dot_color = th.accent_success();
-        if !reduced_motion {
+        let is_listen = state.is_listen();
+        let dot_color = if is_listen {
+            th.accent_success()
+        } else {
+            th.accent_warning()
+        };
+        if is_listen && !reduced_motion {
             let t = ui.ctx().input(|i| i.time);
             let phase = (t / PULSE_PERIOD_SECS).rem_euclid(1.0) as f32;
             let eased = 1.0 - (1.0 - phase).powi(PULSE_EASE_EXP); // ease-out cubic
@@ -1056,7 +1065,7 @@ fn draw_state_cell(ui: &mut egui::Ui, th: &Theme, reduced_motion: bool) {
         ui.painter()
             .circle_filled(center, PULSE_CORE_RADIUS.value(), dot_color);
         ui.label(
-            egui::RichText::new("LISTEN")
+            egui::RichText::new(state.label())
                 .color(th.subtext0)
                 .size(th.font_size_caption.value()),
         );
@@ -1104,6 +1113,7 @@ mod tests {
             pid: Some(42),
             process_name: None,
             source: SourceTag::External,
+            state: PortState::Listen,
         }
     }
 
@@ -1272,6 +1282,7 @@ mod tests {
                 workspace_name: ws.to_string(),
                 tab_name: tab.map(str::to_string),
             },
+            state: PortState::Listen,
         }
     }
 
@@ -1383,6 +1394,7 @@ mod tests {
             pid,
             process_name: process.map(str::to_string),
             source: SourceTag::External,
+            state: PortState::Listen,
         }
     }
 

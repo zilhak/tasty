@@ -59,6 +59,7 @@ impl PortScanCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PortState;
     use std::net::Ipv4Addr;
 
     fn lp(pid: u32, port: u16) -> ListeningPort {
@@ -67,6 +68,7 @@ mod tests {
             port,
             addr: Ipv4Addr::new(127, 0, 0, 1).into(),
             process_name: None,
+            state: PortState::Listen,
         }
     }
 

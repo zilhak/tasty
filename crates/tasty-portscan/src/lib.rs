@@ -1,12 +1,13 @@
-//! Cross-platform TCP listening port enumeration for tasty.
+//! Cross-platform TCP port enumeration for tasty.
 //!
 //! Given a set of process IDs (typically a PTY shell and its descendants),
-//! returns the TCP ports those processes are listening on.
+//! returns the TCP ports those processes own, each tagged with its connection
+//! state ([`PortState`]): `LISTEN`, `CLOSE_WAIT`, `ESTABLISHED`, etc.
 //!
 //! Implementation per OS:
 //! - Linux: parse `/proc/net/tcp` + `/proc/net/tcp6`, match inodes against `/proc/{pid}/fd/*`
-//! - macOS: `lsof -iTCP -sTCP:LISTEN -nP -p <pids>` subprocess (no good API in stable Rust)
-//! - Windows: `GetExtendedTcpTable` Win32 API with `TCP_TABLE_OWNER_PID_LISTENER`
+//! - macOS: `lsof -iTCP -nP -p <pids>` subprocess (no good API in stable Rust)
+//! - Windows: `GetExtendedTcpTable` Win32 API with `TCP_TABLE_OWNER_PID_ALL`
 
 mod cache;
 #[cfg(target_os = "linux")]
@@ -24,17 +25,68 @@ use std::time::{Duration, Instant};
 pub use cache::PortScanCache;
 pub use tree::collect_descendant_pids;
 
-/// A TCP listening port observed for one process.
+/// TCP connection state of an observed socket.
+///
+/// Cross-platform projection of the per-OS state values: Linux's
+/// `/proc/net/tcp` numeric codes, macOS `lsof`'s `(STATE)` tokens, and
+/// Windows' `MIB_TCP_STATE`. `Unknown` covers anything the platform reports
+/// that doesn't map to a canonical state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PortState {
+    Listen,
+    Established,
+    SynSent,
+    SynRecv,
+    FinWait1,
+    FinWait2,
+    TimeWait,
+    Closed,
+    CloseWait,
+    LastAck,
+    Closing,
+    Unknown,
+}
+
+impl PortState {
+    /// Whether this is the `LISTEN` state (drives the green + pulse dot in the UI).
+    #[inline]
+    pub fn is_listen(self) -> bool {
+        matches!(self, PortState::Listen)
+    }
+
+    /// Canonical uppercase label shown in the UI (a TCP protocol token, not
+    /// natural language).
+    pub fn label(self) -> &'static str {
+        match self {
+            PortState::Listen => "LISTEN",
+            PortState::Established => "ESTABLISHED",
+            PortState::SynSent => "SYN_SENT",
+            PortState::SynRecv => "SYN_RECV",
+            PortState::FinWait1 => "FIN_WAIT1",
+            PortState::FinWait2 => "FIN_WAIT2",
+            PortState::TimeWait => "TIME_WAIT",
+            PortState::Closed => "CLOSE",
+            PortState::CloseWait => "CLOSE_WAIT",
+            PortState::LastAck => "LAST_ACK",
+            PortState::Closing => "CLOSING",
+            PortState::Unknown => "UNKNOWN",
+        }
+    }
+}
+
+/// A TCP port observed for one process.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ListeningPort {
-    /// PID of the process holding the listening socket.
+    /// PID of the process holding the socket.
     pub pid: u32,
-    /// Local listening port.
+    /// Local port.
     pub port: u16,
     /// Local bind address (e.g. `0.0.0.0`, `127.0.0.1`, `::1`).
     pub addr: IpAddr,
     /// Process name (e.g. `node`, `python3`). `None` if unavailable.
     pub process_name: Option<String>,
+    /// TCP connection state (`LISTEN`, `CLOSE_WAIT`, …).
+    pub state: PortState,
 }
 
 /// A TCP listening port observed across the whole system.
@@ -47,9 +99,11 @@ pub struct SystemListeningPort {
     pub port: u16,
     pub addr: IpAddr,
     pub process_name: Option<String>,
+    /// TCP connection state (`LISTEN`, `CLOSE_WAIT`, …).
+    pub state: PortState,
 }
 
-/// Scan TCP listening ports owned by any of the given PIDs.
+/// Scan TCP ports owned by any of the given PIDs, across all connection states.
 ///
 /// Returns a sorted, deduplicated list (by port + pid + addr). Empty `pids` yields empty.
 /// Errors during enumeration are logged at warn level and result in an empty vec.
@@ -94,7 +148,7 @@ fn scan_impl(_pids: &HashSet<u32>) -> Vec<ListeningPort> {
     Vec::new()
 }
 
-/// Scan all TCP listening sockets on the system, regardless of owning PID.
+/// Scan all TCP sockets on the system (all connection states), regardless of owning PID.
 ///
 /// Returns a sorted, deduplicated list. Errors during enumeration are logged at
 /// warn level and result in an empty vec.

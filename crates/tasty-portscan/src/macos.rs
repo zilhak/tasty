@@ -1,15 +1,33 @@
 //! macOS port enumeration via `lsof`.
 //!
-//! Strategy: run `lsof -iTCP -sTCP:LISTEN -nP -p <pid1>,<pid2>,...`
-//! and parse each row. This avoids linking against libproc and is good enough
-//! for the typical case (a handful of pids per surface).
+//! Strategy: run `lsof -iTCP -nP -p <pid1>,<pid2>,...` and parse each row,
+//! capturing the `(STATE)` token. This avoids linking against libproc and is
+//! good enough for the typical case (a handful of pids per surface).
 
 use std::collections::HashSet;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::process::Command;
 
-use crate::{ListeningPort, SystemListeningPort};
+use crate::{ListeningPort, PortState, SystemListeningPort};
+
+/// Map an `lsof` `(STATE)` token to [`PortState`].
+fn state_from_lsof(s: &str) -> PortState {
+    match s {
+        "LISTEN" => PortState::Listen,
+        "ESTABLISHED" => PortState::Established,
+        "SYN_SENT" => PortState::SynSent,
+        "SYN_RCVD" => PortState::SynRecv,
+        "FIN_WAIT_1" => PortState::FinWait1,
+        "FIN_WAIT_2" => PortState::FinWait2,
+        "TIME_WAIT" => PortState::TimeWait,
+        "CLOSED" => PortState::Closed,
+        "CLOSE_WAIT" => PortState::CloseWait,
+        "LAST_ACK" => PortState::LastAck,
+        "CLOSING" => PortState::Closing,
+        _ => PortState::Unknown,
+    }
+}
 
 pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
     if pids.is_empty() {
@@ -22,7 +40,7 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
     // We use the default human-readable output for simplicity; structured `-F` parsing
     // is fiddly because each record is on a separate line.
     let output = Command::new("lsof")
-        .args(["-nP", "-iTCP", "-sTCP:LISTEN", "-p", &pid_arg])
+        .args(["-nP", "-iTCP", "-p", &pid_arg])
         .output()?;
     // lsof returns 1 when *some* pids have no matching descriptors; treat
     // non-empty stdout as success regardless of exit code.
@@ -32,9 +50,7 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
 
 /// System-wide scan (all PIDs). Uses the same lsof parser.
 pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
-    let output = Command::new("lsof")
-        .args(["-nP", "-iTCP", "-sTCP:LISTEN"])
-        .output()?;
+    let output = Command::new("lsof").args(["-nP", "-iTCP"]).output()?;
     let text = String::from_utf8_lossy(&output.stdout);
     Ok(parse_lsof(&text)
         .into_iter()
@@ -43,12 +59,14 @@ pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
             port: p.port,
             addr: p.addr,
             process_name: p.process_name,
+            state: p.state,
         })
         .collect())
 }
 
 /// Parse human-readable lsof output. Each line looks like:
 ///   `node 1234 user 22u IPv4 ... TCP *:8080 (LISTEN)`
+/// Established rows carry a remote endpoint: `... TCP 1.2.3.4:22->5.6.7.8:55 (ESTABLISHED)`.
 fn parse_lsof(text: &str) -> Vec<ListeningPort> {
     let mut out = Vec::new();
     for line in text.lines() {
@@ -60,28 +78,40 @@ fn parse_lsof(text: &str) -> Vec<ListeningPort> {
         if fields.len() < 9 {
             continue;
         }
-        // Sanity: must end with "(LISTEN)"
-        if !line.contains("(LISTEN)") {
-            continue;
-        }
+        // Only rows with a TCP `(STATE)` token; everything else is skipped.
+        let state = match parse_lsof_state(line) {
+            Some(s) => s,
+            None => continue,
+        };
         let pid: u32 = match fields[1].parse() {
             Ok(p) => p,
             Err(_) => continue,
         };
         let process_name = Some(fields[0].to_string());
-        // The `name` field looks like `*:8080`, `127.0.0.1:3000`, `[::1]:8080`, or `[::]:8080`.
-        // It's the 9th column when -nP is used.
-        let name = fields[8];
-        if let Some((addr, port)) = parse_lsof_addr(name) {
+        // The `name` field looks like `*:8080`, `127.0.0.1:3000`, `[::1]:8080`,
+        // `[::]:8080`, or for connected sockets `local->remote`. It's the 9th
+        // column when -nP is used; we keep only the local endpoint.
+        let local = fields[8].split("->").next().unwrap_or(fields[8]);
+        if let Some((addr, port)) = parse_lsof_addr(local) {
             out.push(ListeningPort {
                 pid,
                 port,
                 addr,
                 process_name,
+                state,
             });
         }
     }
     out
+}
+
+/// Extract the parenthesized TCP state token at the end of an lsof row
+/// (e.g. `(LISTEN)`, `(ESTABLISHED)`). Returns `None` when absent.
+fn parse_lsof_state(line: &str) -> Option<PortState> {
+    let start = line.rfind('(')?;
+    let rest = &line[start + 1..];
+    let end = rest.find(')')?;
+    Some(state_from_lsof(&rest[..end]))
 }
 
 fn parse_lsof_addr(s: &str) -> Option<(IpAddr, u16)> {
@@ -146,10 +176,28 @@ node    12345  ljh   23u  IPv6 0x1234567890abcdef      0t0  TCP [::1]:8080 (LIST
 ssh     54321  ljh   3u   IPv4 0x1234                  0t0  TCP 1.2.3.4:22->5.6.7.8:55 (ESTABLISHED)
 ";
         let results = parse_lsof(sample);
-        assert_eq!(results.len(), 2);
+        // All states are kept now; the established row uses its local endpoint.
+        assert_eq!(results.len(), 3);
         assert_eq!(results[0].pid, 12345);
         assert_eq!(results[0].port, 3000);
+        assert_eq!(results[0].state, PortState::Listen);
         assert_eq!(results[1].port, 8080);
+        assert_eq!(results[2].port, 22);
+        assert_eq!(results[2].state, PortState::Established);
+        assert_eq!(results[2].addr, IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)));
+    }
+
+    #[test]
+    fn parse_lsof_state_extracts_token() {
+        assert_eq!(
+            parse_lsof_state("... TCP *:3000 (LISTEN)"),
+            Some(PortState::Listen)
+        );
+        assert_eq!(
+            parse_lsof_state("... TCP 1.2.3.4:22->5.6.7.8:55 (CLOSE_WAIT)"),
+            Some(PortState::CloseWait)
+        );
+        assert_eq!(parse_lsof_state("... TCP *:3000"), None);
     }
 
     #[test]

@@ -1,8 +1,8 @@
 //! Linux port enumeration via `/proc`.
 //!
 //! Strategy:
-//! 1. Parse `/proc/net/tcp` + `/proc/net/tcp6` for LISTEN sockets (state == 0x0A).
-//!    Each row gives (local_addr, local_port, inode).
+//! 1. Parse `/proc/net/tcp` + `/proc/net/tcp6` for all TCP sockets.
+//!    Each row gives (local_addr, local_port, state, inode).
 //! 2. For each PID of interest, walk `/proc/{pid}/fd/*` symlinks. Each socket
 //!    fd is `socket:[<inode>]`. Match inode → port.
 
@@ -10,14 +10,29 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use crate::{ListeningPort, SystemListeningPort};
+use crate::{ListeningPort, PortState, SystemListeningPort};
 
-/// State value used by /proc/net/tcp* for LISTEN.
-const TCP_LISTEN: u32 = 0x0A;
+/// Map a `/proc/net/tcp*` numeric state code to [`PortState`].
+fn state_from_proc(state_val: u32) -> PortState {
+    match state_val {
+        0x01 => PortState::Established,
+        0x02 => PortState::SynSent,
+        0x03 => PortState::SynRecv,
+        0x04 => PortState::FinWait1,
+        0x05 => PortState::FinWait2,
+        0x06 => PortState::TimeWait,
+        0x07 => PortState::Closed,
+        0x08 => PortState::CloseWait,
+        0x09 => PortState::LastAck,
+        0x0A => PortState::Listen,
+        0x0B => PortState::Closing,
+        _ => PortState::Unknown,
+    }
+}
 
 pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
-    // inode → (addr, port)
-    let mut inode_map: HashMap<u64, (IpAddr, u16)> = HashMap::new();
+    // inode → (addr, port, state)
+    let mut inode_map: HashMap<u64, (IpAddr, u16, PortState)> = HashMap::new();
     if let Ok(text) = std::fs::read_to_string("/proc/net/tcp") {
         parse_proc_net_tcp(&text, false, &mut inode_map);
     }
@@ -47,12 +62,13 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
             };
             if let Some(inode_str) = s.strip_prefix("socket:[").and_then(|r| r.strip_suffix(']')) {
                 if let Ok(inode) = inode_str.parse::<u64>() {
-                    if let Some(&(addr, port)) = inode_map.get(&inode) {
+                    if let Some(&(addr, port, state)) = inode_map.get(&inode) {
                         out.push(ListeningPort {
                             pid,
                             port,
                             addr,
                             process_name: process_name.clone(),
+                            state,
                         });
                     }
                 }
@@ -64,7 +80,7 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
 
 /// System-wide scan: walk all of `/proc/<pid>/fd` and reverse-lookup socket inodes.
 pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
-    let mut inode_map: HashMap<u64, (IpAddr, u16)> = HashMap::new();
+    let mut inode_map: HashMap<u64, (IpAddr, u16, PortState)> = HashMap::new();
     if let Ok(text) = std::fs::read_to_string("/proc/net/tcp") {
         parse_proc_net_tcp(&text, false, &mut inode_map);
     }
@@ -120,7 +136,7 @@ pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
     }
 
     let mut out = Vec::new();
-    for (inode, (addr, port)) in inode_map {
+    for (inode, (addr, port, state)) in inode_map {
         let (pid, process_name) = match inode_owner.remove(&inode) {
             Some((p, n)) => (Some(p), n),
             None => (None, None),
@@ -130,6 +146,7 @@ pub fn scan_all() -> io::Result<Vec<SystemListeningPort>> {
             port,
             addr,
             process_name,
+            state,
         });
     }
     Ok(out)
@@ -141,7 +158,7 @@ fn read_comm(pid: u32) -> Option<String> {
         .map(|s| s.trim_end_matches('\n').to_string())
 }
 
-fn parse_proc_net_tcp(text: &str, ipv6: bool, out: &mut HashMap<u64, (IpAddr, u16)>) {
+fn parse_proc_net_tcp(text: &str, ipv6: bool, out: &mut HashMap<u64, (IpAddr, u16, PortState)>) {
     for line in text.lines().skip(1) {
         // Format (whitespace-separated):
         //   sl  local_address  rem_address  st  ...  inode ...
@@ -156,9 +173,7 @@ fn parse_proc_net_tcp(text: &str, ipv6: bool, out: &mut HashMap<u64, (IpAddr, u1
             Ok(v) => v,
             Err(_) => continue,
         };
-        if state_val != TCP_LISTEN {
-            continue;
-        }
+        let state = state_from_proc(state_val);
 
         let (addr, port) = match parse_hex_endpoint(local, ipv6) {
             Some(a) => a,
@@ -170,7 +185,7 @@ fn parse_proc_net_tcp(text: &str, ipv6: bool, out: &mut HashMap<u64, (IpAddr, u1
             Ok(i) => i,
             Err(_) => continue,
         };
-        out.insert(inode, (addr, port));
+        out.insert(inode, (addr, port, state));
     }
 }
 
@@ -243,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_proc_filters_to_listen() {
+    fn parse_proc_keeps_all_states_with_mapping() {
         let sample = "\
   sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
    0: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 12345
@@ -251,9 +266,13 @@ mod tests {
 ";
         let mut map = HashMap::new();
         parse_proc_net_tcp(sample, false, &mut map);
-        assert_eq!(map.len(), 1);
-        let (addr, port) = map[&12345];
+        // Both rows are kept now (no LISTEN-only filter).
+        assert_eq!(map.len(), 2);
+        let (addr, port, state) = map[&12345];
         assert_eq!(port, 8080);
         assert_eq!(addr, IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        assert_eq!(state, PortState::Listen);
+        // 0x01 → ESTABLISHED.
+        assert_eq!(map[&99999].2, PortState::Established);
     }
 }
