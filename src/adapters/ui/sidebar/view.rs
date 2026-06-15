@@ -697,10 +697,14 @@ fn draw_workspace_card(
         .fill(bg)
         .corner_radius(2.0)
         .outer_margin(egui::Margin::symmetric(6, 0))
-        .inner_margin(egui::Margin::symmetric(
-            card_inner_margin_x(th),
-            card_inner_margin_y(th),
-        ));
+        // 좌측은 상태 dot 여백을 줄이기 위해 spacing_xs(4), 우측은 "!" highlight
+        // 배지 위치 유지를 위해 spacing_sm(8) 으로 비대칭 적용.
+        .inner_margin(egui::Margin {
+            left: th.spacing_xs.value() as i8,
+            right: card_inner_margin_x(th),
+            top: card_inner_margin_y(th),
+            bottom: card_inner_margin_y(th),
+        });
 
     let response = frame.show(ui, |ui| {
         ui.set_min_width(ui.available_width());
@@ -714,8 +718,10 @@ fn draw_workspace_card(
             //          > attached (다른 client 점유) → red (accent-danger)
             //          > idle → text-muted (회색)
             // 디자인의 agent / waiting case 는 ws-level 데이터 부재로 보류.
-            // 폴더 아이콘(16px) 슬롯과 동일 폭을 차지해 라벨 위치가 흔들리지 않게 한다.
-            let dot_slot = egui::vec2(16.0, 16.0);
+            // 슬롯 폭 = dot 지름(spacing_sm=8) → 좌우 내부 패딩 0. dot 유무와
+            // 무관하게 항상 점유되어 라벨 시작 x 가 흔들리지 않는다. 높이는 행
+            // 높이 안정을 위해 16px 유지.
+            let dot_slot = egui::vec2(th.spacing_sm.value(), 16.0);
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
             // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
             let dot_color: egui::Color32 = if ws.is_mirror {
@@ -756,7 +762,8 @@ fn draw_workspace_card(
 
         if !ws.subtitle.is_empty() {
             ui.horizontal(|ui| {
-                ui.add_space(20.0);
+                // 타이틀 시작 x 정렬: dot 슬롯(spacing_sm=8) + item_spacing(spacing_xs=4).
+                ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
                 // 디자인 chrome.jsx:62 — subtitle 은 font-mono, text-muted.
                 ui.label(
                     egui::RichText::new(&ws.subtitle)
@@ -769,7 +776,8 @@ fn draw_workspace_card(
 
         if !ws.description.is_empty() {
             ui.horizontal(|ui| {
-                ui.add_space(20.0);
+                // 서브타이틀과 동일하게 타이틀 시작 x 정렬: 슬롯(spacing_sm=8)+spacing(spacing_xs=4).
+                ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
                 ui.label(
                     egui::RichText::new(&ws.description)
                         .small()
@@ -787,8 +795,8 @@ fn draw_workspace_card(
     }
 
     // Active 좌측 2px inset accent bar (디자인 `boxShadow: inset 2px 0 0 var(--accent-primary)`).
-    // 카드 좌측 가장 안쪽 모서리, 좌측 inner_margin(8px) 안에 위치 → dot 슬롯(좌측 8px 부터)
-    // 과 겹치지 않는다.
+    // 카드 좌측 가장 안쪽 모서리(x 0~2). dot 슬롯은 좌측 inner_margin(spacing_xs=4)
+    // 부터 시작 → bar(0~2)와 dot(4~12)가 2px 간격으로 겹치지 않는다.
     if ws.is_active {
         let bar = egui::Rect::from_min_size(card_rect.min, egui::vec2(2.0, card_rect.height()));
         ui.painter().rect_filled(bar, 0.0, th.blue);
