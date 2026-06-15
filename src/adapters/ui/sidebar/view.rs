@@ -454,7 +454,7 @@ pub fn draw_collapsed_sidebar_view(
                     text_color,
                 );
             }
-            // 우상단 dot — mirror(하늘색) > notif(blue+링) > running(초록). attached(빨강)는 우하단.
+            // 우상단 dot — mirror(하늘색) > notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring.
             let dot_radius = 3.0;
             let dot_pad = 4.0;
             let dot_center = egui::pos2(
@@ -472,14 +472,15 @@ pub fn draw_collapsed_sidebar_view(
             } else if ws.busy_count > 0 {
                 ui.painter().circle_filled(dot_center, dot_radius, th.green);
             }
+            // attached(다른 client 점유) → 아바타 둘레 lavender ring (디자인 2026-06-15
+            // CollapsedSidebar: outline 1.5px lavender). red(error) 재사용 분리.
             if ws.attached {
-                let dot_radius = 3.0;
-                let dot_pad = 4.0;
-                let dot_center = egui::pos2(
-                    rect.max.x - dot_pad - dot_radius,
-                    rect.max.y - dot_pad - dot_radius,
+                ui.painter().rect_stroke(
+                    rect,
+                    4.0,
+                    egui::Stroke::new(1.5, th.lavender),
+                    egui::StrokeKind::Inside,
                 );
-                ui.painter().circle_filled(dot_center, dot_radius, th.red);
             }
             if resp.clicked() {
                 actions.push(SidebarCollapsedAction::WorkspaceClicked(i));
@@ -713,10 +714,14 @@ fn draw_workspace_card(
             // 좌측 상태 dot — 디자인 StatusDot (running/idle/agent/waiting/error)
             // 중 ws-level 데이터로 결정 가능한 case 만 표시. dot 은 항상 렌더하고
             // 색만 상태별로 분기한다 (디자인 StatusDot 은 idle 에도 점을 그림).
-            // 우선순위: mirror (원격 attach client mirror) → sky
-            //          > running(busy_count>0) → green (accent-success)
-            //          > attached (다른 client 점유) → red (accent-danger)
-            //          > idle → text-muted (회색)
+            // 우선순위(fill): mirror (원격 attach client mirror) → sky
+            //               > running(busy_count>0) → green (accent-success)
+            //               > idle → overlay0 (디자인 2026-06-15: idle 을 neutral-900
+            //                 text-muted 대신 dim 한 neutral-600=overlay0,
+            //                 token-crosswalk.md:41 로 낮춰 active 상태가 도드라지게).
+            // attached(다른 client 점유)는 fill 이 아니라 dot 을 감싸는 lavender ring
+            //   (디자인 StatusDot attached prop: outline 1.5px + offset 1.5px). red 는
+            //   error 전용으로 보존 — attached 에 red 재사용 시 error 와 충돌하므로 분리.
             // 디자인의 agent / waiting case 는 ws-level 데이터 부재로 보류.
             // 슬롯 폭 = dot 지름(spacing_sm=8) → 좌우 내부 패딩 0. dot 유무와
             // 무관하게 항상 점유되어 라벨 시작 x 가 흔들리지 않는다. 높이는 행
@@ -728,13 +733,21 @@ fn draw_workspace_card(
                 th.sky.into()
             } else if ws.busy_count > 0 {
                 th.accent_success().into()
-            } else if ws.attached {
-                th.accent_danger().into()
             } else {
-                th.text_muted().into()
+                th.overlay0.into()
             };
             ui.painter()
                 .circle_filled(dot_rect.center(), 4.0, dot_color);
+            // attached → dot 을 감싸는 lavender ring. 디자인 CSS outline 1.5px +
+            // outline-offset 1.5px: dot 반지름(4) + offset(1.5) + stroke 절반(0.75)
+            // = ring 중심 반지름 6.25, 굵기 1.5.
+            if ws.attached {
+                ui.painter().circle_stroke(
+                    dot_rect.center(),
+                    6.25,
+                    egui::Stroke::new(1.5, th.lavender),
+                );
+            }
             if ws.attached && ws.busy_count == 0 {
                 dot_resp.on_hover_text(occupied_hover);
             }
