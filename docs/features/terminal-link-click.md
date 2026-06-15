@@ -14,7 +14,8 @@
 - 감지 대상:
   - URL: `http://`, `https://`, `ftp://`, `file://`
   - OSC 8 hyperlink
-  - 스키마 없는 경로: Unix 절대 (`/foo/bar`), Windows 절대 (`C:\foo`, `C:/foo`), 상대 (`./foo`, `../foo`) — **터미널의 OSC 7 기반 CWD 를 기준으로 실제 존재할 때만** 링크로 판정 (오탐 방지).
+  - 스키마 없는 경로: Unix 절대 (`/foo/bar`), Windows 절대 (`C:\foo`, `C:/foo`), 접두사 있는 상대 (`./foo`, `../foo`), **접두사 없는 상대 (`src/main.rs`, `crates/x/Cargo.toml`)** — **터미널의 OSC 7 기반 CWD 를 기준으로 실제 존재할 때만** 링크로 판정 (오탐 방지).
+    - 접두사 없는 상대경로는 **경로 구분자(`/`, Windows 는 `\` 포함)가 1개 이상인 토큰만** 후보로 잡는다. 단어 하나(`Makefile`)는 제외하고, 슬래시가 있어도 경로가 아닌 토큰(`and/or`, `TCP/IP`)은 CWD 기준 `exists()` 검사에서 배제된다 (2단 방어: 슬래시 prefilter → 실존 검사).
 - 트리거: 설정된 수식키 (기본 `Ctrl`, 설정 `general` 의 링크 클릭 수식키에서 `Alt`/`없음` 선택 가능 — `LinkModifier`) 를 누른 채:
   - hover → 해당 링크 blue 하이라이트 + PointingHand 커서.
   - 좌클릭 → `webbrowser` crate 로 기본 브라우저/연결 프로그램 실행.

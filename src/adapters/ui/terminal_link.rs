@@ -48,19 +48,31 @@ fn url_regex() -> &'static Regex {
 ///
 /// - Unix 절대: `/foo/bar`
 /// - Windows 절대: `C:\...` 또는 `C:/...`
-/// - 상대: `./foo`, `../foo`
+/// - 상대(접두사 있음): `./foo`, `../foo`
+/// - 상대(접두사 없음): `src/main.rs`, `crates/x/Cargo.toml` — 구분자(`/`, Windows 는 `\` 포함)
+///   가 1개 이상 포함된 토큰만. 단어 하나(`Makefile`)는 제외.
 ///
-/// 후보일 뿐이며 실제 파일 존재 여부는 별도로 검증한다.
+/// 후보일 뿐이며 실제 파일 존재 여부는 별도로 검증한다. 접두사 없는 상대경로는
+/// 슬래시 prefilter(이 regex) + cwd 기준 `exists()`(resolve_path) 2단으로 오탐을 억제한다.
 fn path_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
+        // 접두사 없는 상대경로(rel_bare)의 경로 구분자: Windows 는 `/` 와 `\` 모두,
+        // 그 외 플랫폼은 `/` 만(리눅스/macOS 에서 `\` 는 정상 파일명 문자라 산문 오탐 방지).
+        #[cfg(windows)]
+        let rel_bare = r"(?P<rel_bare>[A-Za-z0-9._\-]+(?:[\\/][A-Za-z0-9._\-]+)+)";
+        #[cfg(not(windows))]
+        let rel_bare = r"(?P<rel_bare>[A-Za-z0-9._\-]+(?:/[A-Za-z0-9._\-]+)+)";
+
         // 경로 문자: 영숫자, -, _, ., /, \, :, ~, (, ), 공백 제외. 한글 등 non-ASCII는 제외.
         // 단어 경계(앞)에서 시작해 공백/괄호/따옴표까지.
-        Regex::new(
+        // rel/unix/win 을 먼저 두어(leftmost-first) 절대경로·`./`·`../` 가 rel_bare 에
+        // 흡수되지 않게 한다.
+        let pattern = format!(
             r#"(?x)
             (?:
               (?:^|[\s"'(\[<])                              # 앞 경계(시작/공백/구두점)
-              (?P<rel>\.{1,2}/[A-Za-z0-9._\-/]+)            # ./foo, ../foo/bar
+              (?P<rel>\.{{1,2}}/[A-Za-z0-9._\-/]+)          # ./foo, ../foo/bar
             )
             |
             (?:
@@ -71,9 +83,14 @@ fn path_regex() -> &'static Regex {
             (?:
               \b(?P<win>[A-Za-z]:[\\/][A-Za-z0-9._\-\\/]+)  # C:\foo, C:/foo
             )
-            "#,
-        )
-        .expect("path regex compile")
+            |
+            (?:
+              (?:^|[\s"'(\[<])
+              {rel_bare}                                    # src/main.rs, crates/x/Cargo.toml
+            )
+            "#
+        );
+        Regex::new(&pattern).expect("path regex compile")
     })
 }
 
@@ -340,7 +357,8 @@ fn append_path_matches(
         let m = caps
             .name("rel")
             .or_else(|| caps.name("unix"))
-            .or_else(|| caps.name("win"));
+            .or_else(|| caps.name("win"))
+            .or_else(|| caps.name("rel_bare"));
         let Some(m) = m else { continue };
         let raw = m.as_str();
         let trimmed = trim_trailing_punct(raw);
@@ -413,6 +431,64 @@ mod tests {
                 .unwrap();
             assert_eq!(m.as_str(), expected, "input: {input}");
         }
+    }
+
+    #[test]
+    fn detects_bare_relative_path() {
+        // path_regex 가 "open src/main.rs now" 에서 "src/main.rs" 를 rel_bare 로 잡아야 함.
+        let re = path_regex();
+        let caps = re
+            .captures("open src/main.rs now")
+            .expect("bare relative path should match");
+        assert_eq!(caps.name("rel_bare").unwrap().as_str(), "src/main.rs");
+
+        let caps = re
+            .captures("see crates/x/Cargo.toml here")
+            .expect("nested bare relative path should match");
+        assert_eq!(
+            caps.name("rel_bare").unwrap().as_str(),
+            "crates/x/Cargo.toml"
+        );
+    }
+
+    #[test]
+    fn rejects_single_word_without_separator() {
+        // "see Makefile here" 에서 "Makefile" 은 구분자가 없어 후보가 아님.
+        let re = path_regex();
+        assert!(
+            re.captures("see Makefile here").is_none(),
+            "single word without separator must not match"
+        );
+    }
+
+    #[test]
+    fn bare_relative_does_not_steal_prefixed_or_absolute() {
+        // rel/unix/win 이 우선해 rel_bare 가 절대경로·`./`·`../` 를 흡수하지 않아야 함.
+        let re = path_regex();
+        let prefixed = re.captures("open ./src/main.rs now").unwrap();
+        assert!(prefixed.name("rel").is_some());
+        assert!(prefixed.name("rel_bare").is_none());
+
+        let unix = re.captures("see /etc/passwd").unwrap();
+        assert!(unix.name("unix").is_some());
+        assert!(unix.name("rel_bare").is_none());
+    }
+
+    #[test]
+    fn slash_non_path_rejected_by_exists() {
+        // 슬래시는 있지만 경로가 아닌 토큰은 regex 후보가 되어도 exists() 에서 배제된다.
+        assert!(resolve_path("and/or", Some(std::path::Path::new("."))).is_none());
+        assert!(resolve_path("TCP/IP", Some(std::path::Path::new("."))).is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn detects_bare_relative_path_with_backslash() {
+        let re = path_regex();
+        let caps = re
+            .captures("open src\\main.rs now")
+            .expect("windows bare relative path should match");
+        assert_eq!(caps.name("rel_bare").unwrap().as_str(), "src\\main.rs");
     }
 
     #[test]
