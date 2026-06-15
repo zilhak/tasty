@@ -172,8 +172,13 @@ pub(crate) fn ipc_set_preedit(
     let surface_id = w.state.focused_surface_id(engine)?;
     let (col, row, cols) = {
         let terminal = w.state.focused_terminal(engine)?;
-        let (col, row) = terminal.cursor_position();
-        (col, row, terminal.cols())
+        // Snapshot cursor and cols under one state lock so they share a
+        // generation (ADR-0002).
+        terminal.with_surface(|s| {
+            let (col, row) = s.cursor_position();
+            let (cols, _) = s.dimensions();
+            (col, row, cols)
+        })
     };
 
     if w.ime_cursor_advance > 0 {

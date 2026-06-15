@@ -123,35 +123,36 @@ impl MainView {
             Some(t) => t,
             None => return (col, col),
         };
-        let scrollback_len = terminal.scrollback_len();
-
-        // Get the text for this row
-        let row_text: Vec<(String, usize)> = if absolute_row < scrollback_len {
-            match terminal.scrollback_line_owned(absolute_row) {
-                Some(line) => {
-                    let mut result = Vec::new();
-                    let mut c = 0;
-                    for (text, _) in &line {
-                        let ch = text.chars().next().unwrap_or(' ');
-                        let w = crate::renderer::unicode_width(ch);
-                        result.push((text.clone(), c));
-                        c += w;
-                    }
-                    result
+        // Snapshot scrollback length and the target row under a single state lock
+        // so the parser thread cannot shift scrollback_len relative to the line
+        // read between locks (ADR-0002).
+        let row_text: Vec<(String, usize)> =
+            match terminal.with_render_view(|v| -> Option<Vec<(String, usize)>> {
+                let scrollback_len = v.scrollback_len();
+                if absolute_row < scrollback_len {
+                    v.scrollback_line(absolute_row).map(|line| {
+                        let mut result = Vec::new();
+                        let mut c = 0;
+                        for (text, _) in line {
+                            let ch = text.chars().next().unwrap_or(' ');
+                            let w = crate::renderer::unicode_width(ch);
+                            result.push((text.clone(), c));
+                            c += w;
+                        }
+                        result
+                    })
+                } else {
+                    let screen_row = absolute_row - scrollback_len;
+                    v.surface().screen_lines().get(screen_row).map(|line| {
+                        line.visible_cells()
+                            .map(|cell| (cell.str().to_string(), cell.cell_index()))
+                            .collect()
+                    })
                 }
+            }) {
+                Some(rt) => rt,
                 None => return (col, col),
-            }
-        } else {
-            let screen_row = absolute_row - scrollback_len;
-            let lines = terminal.screen_lines();
-            match lines.get(screen_row) {
-                Some(line) => line
-                    .visible_cells()
-                    .map(|cell| (cell.str().to_string(), cell.cell_index()))
-                    .collect(),
-                None => return (col, col),
-            }
-        };
+            };
 
         // Find which cell the col is in
         let is_word_char = |s: &str| -> bool {

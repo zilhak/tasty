@@ -52,9 +52,19 @@ impl EditableRegion {
             return None;
         }
 
-        let (cols, rows) = terminal.dimensions();
-        let (cursor_col, cursor_row) = terminal.cursor_position();
-        let screen_lines = terminal.screen_lines();
+        // Snapshot cols/rows, cursor, and the grid under a single state lock so
+        // the parser thread cannot ingest between reads and leave the cursor and
+        // screen_lines on different generations (ADR-0002).
+        let (cols, rows, cursor_col, cursor_row, screen_lines) = terminal.with_surface(|s| {
+            let (cols, rows) = s.dimensions();
+            let (cursor_col, cursor_row) = s.cursor_position();
+            let screen_lines: Vec<_> = s
+                .screen_lines()
+                .into_iter()
+                .map(|c| c.into_owned())
+                .collect();
+            (cols, rows, cursor_col, cursor_row, screen_lines)
+        });
 
         // Walk upward from cursor_row to find the first row of the editable region.
         // A row is part of the same soft-wrapped line if the row above it fills
