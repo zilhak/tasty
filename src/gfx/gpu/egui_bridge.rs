@@ -48,6 +48,7 @@ impl GpuState {
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, engine, pane_rects, scale_factor);
             ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor, canvas_cache);
+            ui::draw_status_bar(ctx, state, engine, terminal_rect, scale_factor);
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
             ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
             // Plugin popup 인스턴스(동적 instance_id) — host PopupManager와 별도 경로.

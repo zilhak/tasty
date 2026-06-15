@@ -168,6 +168,10 @@ pub struct ThemeSizing {
     pub tab_bar_label_font_size: LogicalPx,
     /// 좌/우 스크롤 화살표 폰트 크기.
     pub tab_bar_arrow_font_size: LogicalPx,
+    // ── 작업영역 하단 StatusBar 전용 (host UI zoom 영향 받지 않음) ──
+    // tab_bar 와 동일하게 px 고정 — with_colors_and_zoom 에서 SIZING 그대로 복사.
+    /// 작업영역 하단 StatusBar 높이.
+    pub status_bar_height: LogicalPx,
     // ── Titlebar (CSD) 전용 (host UI zoom 영향 받지 않음) ──
     // 디자인 jsx 가 px 고정이고, OS 데코 관습상 고정 px 가 맞다. tab_bar 와 동일하게
     // with_colors_and_zoom 에서 SIZING 그대로 복사 (zoom 미적용).
@@ -209,6 +213,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     tab_bar_height: LogicalPx(24.0),
     tab_bar_label_font_size: LogicalPx(13.0),
     tab_bar_arrow_font_size: LogicalPx(11.0),
+    status_bar_height: LogicalPx(24.0),
     titlebar_height: LogicalPx(36.0),
     traffic_size: LogicalPx(12.0),
     caption_width: LogicalPx(46.0),
@@ -669,6 +674,8 @@ pub struct Theme {
     pub tab_bar_height: LogicalPx,
     pub tab_bar_label_font_size: LogicalPx,
     pub tab_bar_arrow_font_size: LogicalPx,
+    // ── 작업영역 하단 StatusBar 전용 (host UI zoom 영향 받지 않음) ──
+    pub status_bar_height: LogicalPx,
     // ── Titlebar (CSD) 전용 (host UI zoom 영향 받지 않음) ──
     pub titlebar_height: LogicalPx,
     pub traffic_size: LogicalPx,
@@ -797,6 +804,8 @@ impl Theme {
             tab_bar_height: SIZING.tab_bar_height,
             tab_bar_label_font_size: SIZING.tab_bar_label_font_size,
             tab_bar_arrow_font_size: SIZING.tab_bar_arrow_font_size,
+            // 작업영역 하단 StatusBar — tab_bar 와 동일하게 zoom 미적용.
+            status_bar_height: SIZING.status_bar_height,
             // Titlebar (CSD) 전용 — px 고정 디자인, tab_bar 와 동일하게 zoom 미적용.
             titlebar_height: SIZING.titlebar_height,
             traffic_size: SIZING.traffic_size,

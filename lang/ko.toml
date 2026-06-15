@@ -428,6 +428,11 @@ copy = "복사"
 copy_no_newline = "줄바꿈 없이 복사"
 copy_surface_id = "터미널 ID 복사"
 
+[status_bar]
+palette = "팔레트"
+palette_tooltip = "커맨드 팔레트 열기"
+theme_tooltip = "테마 전환"
+
 [notification_panel]
 window_title = "알림"
 unread_count = "{}개 안 읽음"

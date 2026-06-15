@@ -18,6 +18,7 @@
 |----------|------|
 | 터미널 엔진 | [terminal-engine.md](terminal-engine.md) |
 | 워크스페이스 & 탭 | [workspace-tabs.md](workspace-tabs.md) |
+| 작업영역 StatusBar | [workspace-status-bar.md](workspace-status-bar.md) |
 | 레이아웃 프리셋 | [layout-presets.md](layout-presets.md) |
 | 알림 시스템 | [notifications.md](notifications.md) |
 | 휴먼 핸드오프 (Approval) | [human-handoff.md](human-handoff.md) |

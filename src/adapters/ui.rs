@@ -4,6 +4,7 @@ mod draw;
 mod egui_panels;
 pub(crate) mod icons;
 mod sidebar;
+pub(crate) mod status_bar;
 mod tab_bar;
 pub(crate) mod titlebar;
 
@@ -29,5 +30,6 @@ pub use egui_panels::draw_egui_panels;
 pub use layout_context::LayoutContext;
 pub use notification::draw_popups;
 pub use popup::{PopupAction, PopupManager};
+pub use status_bar::{draw_status_bar, status_bar_bottom_inset};
 pub use tab_bar::draw_pane_tab_bars;
 pub use toast::{ToastKind, ToastManager, ToastScope};

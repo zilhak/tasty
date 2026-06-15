@@ -128,6 +128,7 @@ impl MainView {
             PhysicalPx(size.height as f32),
             self.state.sidebar_width,
             crate::adapters::ui::titlebar::top_inset(self.base.gpu.scale_factor()),
+            crate::adapters::ui::status_bar_bottom_inset(self.base.gpu.scale_factor()),
             self.base.gpu.scale_factor(),
         )
     }

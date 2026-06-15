@@ -459,6 +459,7 @@ impl GpuState {
             PhysicalPx(self.size.height as f32),
             sidebar_width,
             crate::adapters::ui::titlebar::top_inset(self.scale_factor),
+            crate::adapters::ui::status_bar_bottom_inset(self.scale_factor),
             self.scale_factor,
         )
     }
