@@ -134,6 +134,31 @@ impl MainView {
         }
     }
 
+    /// 해당 surface 가 현재 사용자에게 보이는가.
+    ///
+    /// 가시 기준은 `sync_webviews` 의 webview 표시 기준(`ws_idx == active_ws &&
+    /// is_active_tab`)과 동일하다 — 활성 워크스페이스의 각 pane 에서 active_tab 에
+    /// 속한 surface 만 화면에 렌더되고, 비활성 탭/비활성 워크스페이스의 surface 는
+    /// 숨겨진다. split tab 은 active_tab 안의 모든 surface 가 동시에 보이므로
+    /// `tab.contains_surface` 로 판정한다.
+    ///
+    /// P3: 안 보이는 surface 의 PTY 출력은 보이는 창의 콘텐츠를 바꾸지 않으므로
+    /// 이 판정으로 redraw 요청을 게이트한다(데이터 drain 은 그대로 수행).
+    pub(crate) fn is_surface_visible(&self, surface_id: u32) -> bool {
+        let Some(ws) = self.core_state.workspaces.get(self.state.active_workspace) else {
+            return false;
+        };
+        for pane_id in ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pane_id)
+                && let Some(tab) = pane.tabs.get(pane.active_tab)
+                && tab.contains_surface(surface_id)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Synchronize native WebView instances with the current state.
     /// Creates webviews for new Html panels, destroys removed ones,
     /// updates bounds and visibility based on active workspace/tab.

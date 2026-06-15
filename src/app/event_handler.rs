@@ -55,7 +55,15 @@ impl ApplicationHandler<AppEvent> for App {
                                 pending.push((DispatchSource::Main(*wid), outcome.events));
                             }
                             main.recalc_ime_preedit_anchor();
-                            main.mark_dirty();
+                            // P3 visibility gate: 안 보이는 surface 의 출력은 보이는
+                            // 창의 콘텐츠를 바꾸지 않으므로 redraw 요청을 생략한다.
+                            // 데이터 drain(process_pty_output)·이벤트 cascade 는 위에서
+                            // 이미 수행됐다. 해당 surface 가 보이게 전환되는 경로(탭/
+                            // 워크스페이스 전환·split·복원)는 각자 dirty 를 설정하므로
+                            // 전환 시 최신 grid 가 렌더된다.
+                            if main.is_surface_visible(sid) {
+                                main.mark_dirty();
+                            }
                             found = true;
                             break;
                         }

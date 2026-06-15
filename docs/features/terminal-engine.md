@@ -91,10 +91,11 @@
 - `EventLoopProxy<AppEvent>` 기반 PTY 웨이크업: 터미널의 파서 스레드가 raw 바이트를 ingest(파싱·그리드 갱신)한 *직후* `AppEvent::TerminalOutput` 이벤트를 메인 이벤트 루프로 전송. 메인 루프는 파싱이 아니라 변경된 그리드의 렌더·이벤트 수집만 수행한다
 - 무조건적 `request_redraw()` 제거: 이전에는 매 프레임 끝에 `request_redraw()`를 호출하여 VSync 기반 busy-loop을 실행했으나, 이제는 실제 변경이 있을 때만 redraw 요청
 - 웨이크업 소스:
-  - PTY 출력 → `AppEvent::TerminalOutput` → `user_event()` → `request_redraw()`
+  - PTY 출력 → `AppEvent::TerminalOutput` → `user_event()` → (보이는 surface 일 때만) `request_redraw()`
   - 키보드/마우스 입력 → `window_event()` → dirty 플래그 설정 → `request_redraw()`
   - 윈도우 리사이즈/포커스 → `window_event()` → dirty 플래그 설정 → `request_redraw()`
   - IPC 명령 → `process_ipc()` → dirty 플래그 설정 → `request_redraw()`
+- 가시성 게이트 (안 보이는 surface 의 redraw 억제): `AppEvent::TerminalOutput` 핸들러는 대상 surface 의 PTY 출력을 **항상 drain·파싱·이벤트 cascade** 하지만, 그 surface 가 현재 보이지 않으면(비활성 워크스페이스 또는 비활성 탭) `request_redraw()` 를 **생략**한다. 안 보이는 곳의 출력은 보이는 창의 화면을 바꾸지 않으므로 재렌더가 낭비이기 때문이다. 가시성 판정은 `MainView::is_surface_visible()` — webview 표시 기준(`활성 워크스페이스 && 각 pane 의 active_tab 에 속한 surface`)과 동일하다. 그리드는 항상 최신으로 유지되고(데이터 무손실), 해당 surface 가 보이게 전환되는 경로(탭/워크스페이스 전환·split·복원)는 각자 dirty 를 설정하므로 전환 즉시 최신 화면이 렌더된다. 탭 인디케이터/busy 표시는 별도 `BusyPoll` cadence 로, 알림은 이벤트 cascade 로 갱신되어 이 게이트와 무관하다.
 - `Waker` 타입 (`Arc<dyn Fn() + Send + Sync>`): Terminal 생성 시 전달되어 파서 스레드가 이벤트 루프를 깨울 수 있게 함
 - Waker 전파 경로: `App` → `AppState` → `Workspace` → `Pane` → `Tab` → `Terminal`
 - CPU 유휴 시 0% 사용: 터미널 출력이 없고 사용자 입력이 없으면 이벤트 루프가 대기 상태로 진입
