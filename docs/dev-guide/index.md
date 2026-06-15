@@ -29,6 +29,7 @@ git hooks 디렉토리를 `.githooks/` 로 설정한다. 안 하면 pre-commit /
 | 수정 후 자체 검증 (커밋 전에 직접 돌려볼 것) | [self-verification.md](self-verification.md) |
 | 커밋 컨벤션 (Conventional Commits) | [commit-convention.md](commit-convention.md) |
 | 에러 처리 정책 (Result 무시 금지) | [error-handling.md](error-handling.md) |
+| Clippy 설정 정책 (워크스페이스 끄기 지양, 위치별 attr 선호) | [clippy-policy.md](clippy-policy.md) |
 | 국제화 (i18n — t() / lang 파일) | [i18n.md](i18n.md) |
 | 빌드 & 빌드 최적화 | [build.md](build.md) |
 | dist 빌드 명령 카탈로그 | [dist-build.md](dist-build.md) |

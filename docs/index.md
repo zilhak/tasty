@@ -131,6 +131,7 @@
 | [dev-guide/e2e-tests.md](dev-guide/e2e-tests.md) | e2e 테스트 환경 격리 정책 + spawn timeout 정책 + flaky 진단 절차 |
 | [dev-guide/i18n.md](dev-guide/i18n.md) | 국제화 정책 — `t()` API, lang 파일 위치, 새 문자열 추가 절차 |
 | [dev-guide/error-handling.md](dev-guide/error-handling.md) | 에러 처리 정책 — `Result` 무시 금지, `tracing::warn!`/`error!` 사용 규칙 |
+| [dev-guide/clippy-policy.md](dev-guide/clippy-policy.md) | Clippy 설정 정책 — 워크스페이스 단위 끄기 지양, 위치별 `#[allow]`/소스 수정 우선, threshold 미설정 |
 | [dev-guide/lua-hooks.md](dev-guide/lua-hooks.md) | Lua hook 호스트 매핑 — 이벤트별 발화 site / payload 스키마 / 추가 가이드 |
 | [dev-guide/agent-identification.md](dev-guide/agent-identification.md) | 에이전트 식별 — surface ↔ agent 매핑 (잠정 모델) |
 | [dev-guide/agent-runner.md](dev-guide/agent-runner.md) | Agent task runner — TaskExecutor trait, HostExecutor 매핑, RunnerRegistry, host→plugin sync IPC |
