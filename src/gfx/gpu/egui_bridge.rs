@@ -63,6 +63,10 @@ impl GpuState {
             // 외부 drag&drop hover 시각 피드백 — 모든 레이어 위에 그린다.
             ui::drop_overlay::draw_drop_overlay(ctx, state, engine, terminal_rect, scale_factor);
 
+            // Windows CSD 리사이즈 보더 — 데코 off 로 OS 보더가 없으므로 윈도우 둘레에
+            // egui 인터랙티브 스트립을 최상위로 깐다(Windows 외 OS no-op).
+            ui::titlebar::draw_resize_borders(ctx, window);
+
             // Settings UI is now rendered in the modal window (ModalView)
         })
     }

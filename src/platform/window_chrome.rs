@@ -4,7 +4,8 @@
 //! 패턴으로 **네이티브 신호등을 유지**하면서 콘텐츠를 타이틀바 영역(y=0)까지 확장한다.
 //! `with_decorations(false)` 는 신호등까지 없애므로 (a) 결정에서 쓰지 않는다.
 //! Linux 는 네이티브 데코를 끄고(`with_decorations(false)`) tasty 가 DE 가변 버튼을
-//! CSD titlebar 에 직접 그린다(P6). Windows 의 캡션 버튼/Snap 은 P5 후속이라 no-op.
+//! CSD titlebar 에 직접 그린다(P6). Windows 는 `with_decorations(false)` 로 OS 캡션을
+//! 제거하고 tasty 가 우측 캡션 버튼(min/max/restore/close)을 직접 그린다(P5).
 
 use winit::window::{ResizeDirection, WindowAttributes};
 
@@ -50,7 +51,11 @@ pub fn resize_direction_at(
 ///   `window.drag_resize_window` 로, 윈도우 이동은 `drag_window` 로 처리한다
 ///   (둘 다 winit 0.30 표준). 둥근 모서리/그림자 프레이밍은 윈도우 투명화 +
 ///   GPU 컴포지팅이 필요해 별도 후속.
-/// - **그 외 OS(Windows)**: 변경 없음(네이티브 데코 유지, P5 후속).
+/// - **Windows**: `with_decorations(false)` 로 OS 캡션/보더를 제거한다. tasty 가
+///   우측 캡션 버튼을 직접 그리고(P5), 드래그/더블클릭 maximize 는 공통 어댑터가
+///   처리한다. `with_undecorated_shadow(true)` 로 데코 제거 후에도 드롭 섀도를 복원해
+///   창 경계가 보이게 한다. 리사이즈 보더는 egui 오버레이 + `drag_resize_window` 로 처리.
+/// - **그 외 OS**: 변경 없음(네이티브 데코 유지).
 pub fn apply_csd_attributes(attrs: WindowAttributes) -> WindowAttributes {
     #[cfg(target_os = "macos")]
     {
@@ -64,7 +69,12 @@ pub fn apply_csd_attributes(attrs: WindowAttributes) -> WindowAttributes {
     {
         attrs.with_decorations(false)
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    {
+        use winit::platform::windows::WindowAttributesExtWindows;
+        attrs.with_decorations(false).with_undecorated_shadow(true)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         attrs
     }

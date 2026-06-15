@@ -52,12 +52,21 @@ pub struct TitlebarProps<'a> {
     /// 두지 않아 신호등 클릭이 드래그로 새지 않게 한다. 신호등 없는 OS 에서는 0.
     pub left_inset: f32,
     /// tasty 가 직접 그리는 윈도우 컨트롤 버튼 (Linux DE 가변). `None` 이면 그리지
-    /// 않는다(macOS 네이티브 신호등, Windows P5).
+    /// 않는다(macOS 네이티브 신호등; Windows 는 전용 caption.rs 로 그림).
     pub controls: Option<TitlebarControls>,
+    /// 윈도우 maximize 상태 — Windows 캡션 버튼의 maximize↔restore 글리프 토글에
+    /// 사용한다. 캡션 버튼이 없는 OS 에서는 무시된다.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    pub maximized: bool,
 }
 
 /// titlebar view 가 보고하는 사용자 의도. wrapper 가 winit window 조작 / app 이벤트로 변환.
+///
+/// `Minimize`/`Close` 는 Linux DE 버튼(`draw_window_buttons`)·Windows 캡션
+/// (`caption.rs`)에서 생성된다. macOS 는 네이티브 신호등이라 StartDrag/ToggleMaximize
+/// 만 생성하므로 그 빌드에선 미사용 variant 의 dead_code 를 허용한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub enum TitlebarAction {
     /// 비인터랙티브(드래그) 영역에서 드래그 시작 → 윈도우 이동.
     StartDrag,
@@ -92,7 +101,7 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Vec<Tit
         .show(ctx, |ui| {
             let rect = ui.max_rect();
 
-            // ── DE 가변 컨트롤 버튼(있으면) 먼저 배치해 strip 폭을 확정한다 ──
+            // ── DE 가변 컨트롤 버튼(Linux, 있으면) 먼저 배치해 strip 폭을 확정한다 ──
             let mut left_controls_w = 0.0_f32;
             let mut right_controls_w = 0.0_f32;
             if let Some(controls) = &props.controls
@@ -105,8 +114,27 @@ pub fn draw_titlebar_view(ctx: &egui::Context, props: &TitlebarProps) -> Vec<Tit
                 }
             }
 
-            // 드래그 영역 = 전체에서 좌측 inset(신호등/좌측버튼)·우측 버튼 strip 을 뺀 나머지.
-            // 버튼 rect 와 겹치지 않게 해 버튼 클릭이 드래그로 새는 것을 막는다.
+            // ── Windows 캡션 버튼(우측). 전용 caption.rs(46px, close-hover red)로 그리고
+            //    그 폭을 우측 strip 으로 잡는다. Windows 는 controls=None 이라 위 DE 블록과
+            //    배타적. ──
+            #[cfg(target_os = "windows")]
+            {
+                let caption_w = super::caption::cluster_width(th);
+                let caption_rect = egui::Rect::from_min_max(
+                    egui::pos2(rect.right() - caption_w, rect.top()),
+                    rect.max,
+                );
+                actions.extend(super::caption::draw_caption_buttons(
+                    ui,
+                    caption_rect,
+                    props,
+                ));
+                right_controls_w = caption_w;
+            }
+
+            // 드래그 영역 = 전체에서 좌측 inset(신호등/좌측버튼)·우측 strip(DE 버튼/Windows
+            // 캡션)을 뺀 나머지. 버튼 rect 와 겹치지 않게 해 버튼 클릭이 드래그로 새는 것을
+            // 막는다.
             let drag_left = rect.left() + props.left_inset + left_controls_w;
             let drag_right = rect.right() - right_controls_w;
             if drag_right > drag_left {
