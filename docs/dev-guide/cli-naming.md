@@ -175,6 +175,15 @@ DEBUG_METHODS / PREFIX_RULES / plugin 매니페스트 제공 namespace 는 제�
 
 `src/cli/dynamic.rs`의 plugin CLI 빌더는 **top/sub 2단 구조만** 지원한다. 따라서 plugin이 `surface.meta.set`을 노출하려면 `tasty <plugin> meta.set` 또는 `tasty <plugin> meta-set` 같은 2단으로 매핑한다. 호스트 본체 CLI(`src/cli/request.rs`)는 3단 구조 직접 빌드 가능.
 
+### `attach` namespace — CLI 표면이 `<namespace> <verb>` 규칙에서 벗어남
+
+`attach.*` IPC namespace(위 카운트 표 6개: acquire/release/force_detach/force_detach_workspace/into_gui/list)는 **`tasty attach` CLI 명령으로 노출되지 않는다.** 대신 CLI 표면이 용도별로 갈린다:
+
+- `tasty remote attach` / `tasty remote check` (release) — 원격(SSH) attach·생존확인.
+- `tasty debug attach` (debug 빌드 전용) — 로컬 loopback attach.
+
+`remote` / `debug attach` 는 그 자체로 IPC namespace 가 아니라 `attach.*`(+`system.info`) 위에서 원격성·debug 격리만 분기하는 **CLI 디스패치 계층**이다. 따라서 위 host namespace 카운트 표의 `attach` 행(6)은 이 CLI 재편과 무관하게 유지된다. 분리 근거(로컬 self-attach = 사용자 mirror 조작의 자동 재현 → release 제외)와 정확한 동작은 [attach-behavior.md](attach-behavior.md), 격리 정책은 [debug-ipc.md](debug-ipc.md).
+
 ## Plugin이 점유하는 namespace의 규칙
 
 plugin이 매니페스트에서 contribute하는 IPC namespace는 다음 호스트 예약어와 충돌 금지:

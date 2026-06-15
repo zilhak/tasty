@@ -125,6 +125,7 @@
 | [dev-guide/color-policy.md](dev-guide/color-policy.md) | 색 생성 정책 — newtype + clippy 강제, 테마 두 레이어 모델 |
 | [dev-guide/model-view-split.md](dev-guide/model-view-split.md) | Model + Host View 분리 패턴 (GUI-free 도메인 유지) |
 | [dev-guide/debug-ipc.md](dev-guide/debug-ipc.md) | Debug 빌드 전용 IPC 메서드 (사용자 입력 재현, popup 트리거) |
+| [dev-guide/attach-behavior.md](dev-guide/attach-behavior.md) | Attach 동작 명세 — 서버=항상 loopback / 로컬-원격=클라이언트 구분, 점유 모델, mirror/raw/dump, remote attach·check, debug attach, 자동 매핑, force-detach |
 | [dev-guide/crash-diagnostics.md](dev-guide/crash-diagnostics.md) | Crash & 에러 진단 (로그, strace, gdb) |
 | [dev-guide/tui-testing.md](dev-guide/tui-testing.md) | TUI 테스트 — 터미널 에뮬레이션 버그 재현 및 자동 검증 |
 | [dev-guide/e2e-tests.md](dev-guide/e2e-tests.md) | e2e 테스트 환경 격리 정책 + spawn timeout 정책 + flaky 진단 절차 |

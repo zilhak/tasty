@@ -48,6 +48,14 @@ pub fn handle(state: &mut AppState, request: &JsonRpcRequest) -> JsonRpcResponse
 
 CLI 서브커맨드도 동일하게 debug 빌드에서만 등록된다. 예를 들어 `tasty tool clipboard viewer`는 release 바이너리에 존재하지 않는다 (`src/cli/mod.rs::ClipboardCommands::Viewer`가 `#[cfg(debug_assertions)]`).
 
+### `tasty debug attach` (로컬 loopback attach — JSON-RPC 메서드 아님)
+
+로컬 self(loopback) attach 의 CLI 진입점. **debug 빌드 전용**(`crates/tasty-cli/src/commands/debug/attach.rs`, `#![cfg(debug_assertions)]`). 로컬 self-attach 는 *사용자가 직접 하는 mirror 조작* 을 자동 재현하는 성격이라 release 표면에 두지 않는다(원칙 1 ②). 원격 attach 는 release 의 `tasty remote attach`(에이전트가 다른 호스트를 mirror 하는 정당한 행동, 원칙 2).
+
+- 표면: `tasty debug attach [SURFACE] [--workspace <id>] [--dump-after <ms>] [--send <str>] [--send-to <sid>] [--raw] [--force-detach]`. `--ssh`/`--profile`/`--into-gui` 같은 원격 옵션은 없다(로컬 loopback 전용).
+- 포트 파일(`~/.tasty/tasty.port`, debug 는 `tasty-debug.port`)을 읽어 그 loopback 포트로 직결한다. 실제 attach 세션 머신(`run_attach_on_port` / `run_attach_workspace_on_port`)은 `commands/attach.rs` 에 로컬·원격 **공용**으로 보존되고, 이 모듈은 그 진입점일 뿐 — 통째 삭제하고 router 분기 한 줄만 정리하면 로컬 attach 가 깨끗이 사라진다(격리 기준선).
+- IPC 메서드(`attach.*`)가 아니라 stream 핸드셰이크 + framed 교환이라 위 "메서드 목록" 표·`DEBUG_METHODS` 에 등록하지 않는다. force-detach 는 별도 JSON-RPC(`attach.force_detach`). 정확한 동작은 [attach-behavior.md](attach-behavior.md).
+
 ### `tasty debug stream-echo` (JSON-RPC 메서드 아님)
 
 스트리밍 채널(`stream.open` 승격, [features.md](../features.md) "스트리밍 채널" 참조)의 server→client push 경로를 end-to-end 검증하는 **CLI 전용 debug 명령**이다. JSON-RPC 메서드가 아니라 raw framed 교환이라 위 "메서드 목록" 표에 없고 `DEBUG_METHODS` 에도 등록하지 않는다. `run_client` 가 request 매핑 전에 직접 dispatch 한다(`crates/tasty-cli/src/run.rs`). 동작: `stream.open` 핸드셰이크 → `Data` 프레임 N 개 전송 → 호스트 메인 루프가 echo 회신하는지 확인. release 빌드엔 명령 자체가 없다(`DebugCommands` 가 `#![cfg(debug_assertions)]`).

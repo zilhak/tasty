@@ -134,6 +134,29 @@ Tab 내의 최하위 컨테이너. **타입**을 가지며, 타입에 따라 콘
 
 Terminal은 기본 Surface 타입이며 PTY(가상 터미널)와 연결된다. plugin contribute 한 surface (예: explorer) 는 plugin 프로세스가 UI tree DSL 로 정의하고 host 가 그것을 egui 로 렌더링한다.
 
+## Attach / Remote / Mirror
+
+한 인스턴스의 surface/workspace 를 다른 client 가 점유해 실시간 입출력하는 기능군의 용어. 정확한 동작 명세는 [dev-guide/attach-behavior.md](../dev-guide/attach-behavior.md).
+
+### Attach (어태치)
+
+한 인스턴스(**server**)의 터미널 surface 또는 workspace 를 다른 인스턴스/CLI(**client**)가 **배타 점유**해 입출력을 잇는 동작. 점유 중 server 의 로컬 입력은 차단되고 client 입력만 PTY 에 도달한다. detach(연결 종료/force-detach)하면 lock 이 free 환원되지만 **server 의 PTY 세션은 생존**한다(server-owns-PTY persistence).
+
+### Server / Client (attach 문맥)
+
+- **Server** — 점유당하는 쪽. PTY/grid 의 권위 owner. **transport 를 모르고 항상 `127.0.0.1` 로만 client 를 받는다.** 로컬이든 SSH 너머든 server 입장에선 전부 loopback 접속이다.
+- **Client** — 점유하는 쪽. "원격성" 을 전부 흡수한다. 로컬 client 는 포트 파일로 loopback 직결(debug 전용 `tasty debug attach`), 원격 client 는 `ssh -L` 터널을 세운 뒤 그 터널의 localport 로 직결(release `tasty remote attach`).
+
+> **핵심**: "로컬/원격" 은 server 의 속성이 아니라 **client 측 개념**이다. 따라서 "로컬 attach 제거" 는 server 가 아니라 client 의 로컬 진입점만 제거한 것이다.
+
+### Remote (리모트)
+
+attach 의 *클라이언트가 SSH 너머에 있는* 경우. tasty 는 자체 원격 프로토콜을 만들지 않고 시스템 ssh 에 위임한다 — 원격 = "loopback 을 SSH 터널로 잇는 것". CLI 표면은 `tasty remote attach`(원격 attach) / `tasty remote check`(원격 생존 확인). `remote` 는 IPC namespace 가 아니라 `attach.*` 위의 CLI 디스패치 계층이다.
+
+### Mirror (미러)
+
+client 가 받은 원격 출력 바이트를 PTY 없는 `Terminal::new_detached` 에 먹여 server 와 같은 grid 를 재구성한 복제 화면. GUI mirror 는 원격 워크스페이스를 로컬 GUI 에 일반 워크스페이스로 재구성해 띄운 것(사이드바에서 하늘색 dot 으로 구분).
+
 ## 두 레벨의 레이아웃
 
 Tasty의 핵심 설계 특징. 기존 터미널에는 없는 구조.

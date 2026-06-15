@@ -1024,7 +1024,7 @@ bb 의 한 시점을 통째로 캡처해 복원. 키 컨벤션 `tasty.bb.<name>.
 
 ### 스트리밍 채널 (server→client push)
 
-요청-응답 JSON-RPC 위에 **서버가 클라이언트로 연속 push** 할 수 있는 스트리밍 채널을 같은 TCP listener 에 얹는다. attach/detach 의 실시간 PTY 출력 전송 토대이며, [surface 단위 attach](#surface-단위-attachdetach-로컬-loopback) 가 이 채널 위에서 동작한다.
+요청-응답 JSON-RPC 위에 **서버가 클라이언트로 연속 push** 할 수 있는 스트리밍 채널을 같은 TCP listener 에 얹는다. attach/detach 의 실시간 PTY 출력 전송 토대이며, [attach/detach](#attachdetach-surfaceworkspace-mirror) 가 이 채널 위에서 동작한다.
 
 - **연결 승격**(`src/adapters/production/tcp_ipc_server.rs`): 한 연결의 첫 줄이 `{"method":"stream.open",...}` 면 그 연결을 JSON-RPC 직렬 루프에서 빼내 **length-prefixed 바이너리 프레임** 양방향 파이프로 승격한다. 일반 요청-응답 경로는 무손상.
 - **프레임 포맷**(`crates/tasty-ipc/src/stream.rs`): `[tag u8][len u32 BE][payload]`. tag = `Data`/`Control`/`Ping`/`Detach`. 프레임 길이 상한 1 MiB(OOM 방어). 바이너리 1:1 (base64 없음).
@@ -1043,75 +1043,18 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - **스트리밍 채널 공존**: `StreamReady` 수신 시 `StreamHub::pump_inbound` 로 스트림 inbound 를 drain(PTY 펌프/IPC dispatch 와 독립 이벤트). push 는 non-blocking 이라 PTY drain 을 방해하지 않는다. ([스트리밍 채널](#스트리밍-채널-serverclient-push) 참조.)
 - **제약(현재 단계)**: layout 복원은 헤드리스에선 미적용(항상 default workspace). 데몬 종료는 프로세스 kill 로 한다(`system.shutdown` IPC 헤드리스 dispatch 미포함). busy indicator 미구현.
 
-### surface 단위 attach/detach (로컬 loopback)
+### attach/detach (surface/workspace mirror)
 
-한 인스턴스(server)의 터미널 surface 를 다른 인스턴스 또는 CLI client 가 **배타 점유해 attach** 한다. server 는 그 surface 를 placeholder 로 가리고, client 는 원격 grid 를 mirror 로 재구성해 실시간 입출력한다. 같은 머신 loopback 또는 [SSH 터널](#ssh-1회성-원격-attach) 너머로 동작한다(현재 범위 = surface 1 개; workspace 단위는 후속, SSH 프로필 저장도 후속).
+한 인스턴스(server)의 터미널 surface 또는 workspace 를 다른 인스턴스/CLI client 가 **배타 점유해 attach** 한다. client 는 원격 grid 를 mirror 로 재구성해 실시간 입출력하고, server 는 점유된 대상을 readonly 로 보인다(내용 보임, 조작은 차단·force-detach 로 회수). **server 는 transport 를 모르고 항상 `127.0.0.1` 로만 client 를 받는다 — 로컬/원격 구분은 전적으로 client 측 개념**이다(로컬=포트파일 직결, 원격=`ssh -L` 터널 후 터널 localport 직결).
 
-- **출력 결선**: attach 성립 시 server 가 그 터미널의 **output tap**(원시 PTY 바이트 fan-out, `Terminal::add_output_tap`)을 등록하고, forwarder 스레드가 tap → `StreamHub::push`(Data 프레임) → client 로 흘린다. client 는 받은 바이트를 PTY 없는 **mirror 터미널**(`Terminal::new_detached`+`feed_bytes`)에 먹여 같은 termwiz 파서로 grid 를 재구성한다(렌더러·스크롤백 재사용).
-- **초기 화면 스냅샷**(`Terminal::snapshot_as_vt`): attach 직후 server 가 현재 visible 화면을 VT 바이트로 1 회 직렬화해 push → client mirror 초기화. 셀 속성(fg/bg palette+truecolor, bold/dim/italic/underline/blink/reverse 등) + 커서 위치 + 모드(alt-screen/DECCKM/bracketed)를 복원한다. 이후 화면 변화는 tap delta.
-- **입력 결선**: client 키/바이트 → Data 프레임 → server 가 holder 검증 후 점유 surface 의 PTY 로 직접 전달(`CoreState::feed_attached_input`). server 본인의 로컬 입력(GUI 키/`surface.send`)은 점유 중 차단된다(`apply_send_to_surface` 의 is_attached 거부) — client 입력만 이 우회 경로로 PTY 에 닿는다.
-- **배타 점유 lock**(`AttachRegistry`, 단계 3): 한 surface 는 한 client 만 점유. 동시 attach 는 거부(`already_attached`). client 연결 종료(EOF) 시 lock 자동 free 환원.
-- **server readonly 렌더**(작업 J 정정): 점유된 surface 는 server 측에서 **숨기지 않고 readonly 로 보인다**(내용 보임, 조작만 차단). live grid 대신 3초 cadence 로 갱신되는 display-only mirror 를 `render_pass.rs` 의 is_attached 분기가 렌더한다. 입력 차단은 유지. 자세한 동작은 [GUI 통합](#gui-통합--readonly-뷰--점유-표시--workspace-mirror-작업-j) 참조. 트리 leaf 는 교체하지 않고 lock 플래그로만 분기한다(점유는 휘발성 — 재시작 시 free 환원).
-- **client mirror 렌더**: mirror 터미널을 store 에 넣으면 기존 터미널 렌더러가 그대로 그린다(신규 렌더 코드 없음).
-- **force-detach**: server 권한으로 점유를 강제 해제(`attach.force_detach`). holder client 에 `Control{force_detached}`+`Detach` 를 push → client 가 mirror 정리·종료, server surface free 환원.
-- **CLI**: `tasty attach <surface>` — mirror 모드. `--dump-after <ms>`: 출력 수집 후 mirror 화면을 stdout 출력(GUI 없이 검증). `--send <str>`: attach 직후 1 회 입력 주입(escape `\r \n \t \xNN`). `--raw`: stdin/stdout passthrough 브리지(detach 키 `Ctrl+\`). `--force-detach`: 강제 끊기.
-- **IPC**: `attach.acquire`/`release` 는 `stream.open{target}` 핸드셰이크로 일어나고, `attach.force_detach`/`attach.list` 는 JSON-RPC. 보안은 SSH + 127.0.0.1 loopback 위임(자체 토큰 없음).
-- **보안 격리**: attach 는 *에이전트 행동*(ID 직접 지정)이라 release 노출. force-detach 는 server 의 포커스/닫힌항목 히스토리를 건드리지 않는다(원칙 1①).
+정확한 동작 명세(서버/클라이언트 계층, 점유 모델, 초기 스냅샷+delta, 모드, workspace 다중화, GUI mirror, 자동 매핑, force-detach, SSH 터널, IPC 표면)는 **[dev-guide/attach-behavior.md](dev-guide/attach-behavior.md)** 단일 출처를 본다. 여기서는 사용자/에이전트가 보는 CLI 표면만 요약한다.
 
-### SSH 1회성 원격 attach
-
-위 surface 단위 attach 를 **SSH 터널 너머**로 확장한다. tasty 는 자체 원격 프로토콜을 만들지 않고 **시스템 ssh 에 위임** 한다 — 원격 = "loopback 을 SSH 터널로 잇는 것". 서버는 여전히 `127.0.0.1` 만 바인딩하고, 원격 접근·인증·암호화는 SSH 가 전담한다.
-
-- **CLI**: `tasty attach --ssh user@host <surface>` (1 회성; 프로필 저장은 후속). `--remote-tasty <path>`: 원격 tasty 바이너리 경로(기본 `tasty`, 원격 PATH 가정). `--remote-port-mode <auto|subcommand|file-unix|file-windows>`: 원격 포트 발견 방식(기본 auto). `--no-reconnect`: 자동 재연결 비활성.
-- **흐름**: ① 원격 데몬의 IPC 포트 발견 → ② `ssh -L 127.0.0.1:<localport>:127.0.0.1:<remoteport> -N user@host` 백그라운드 터널 → ③ 터널 localport 로 위 surface attach(터널은 바이트 파이프라 스트림 프로토콜에 투명). 원격 데몬(headless)은 미리 떠 있다고 가정한다.
-- **시스템 ssh spawn**: `ssh` 를 자식 프로세스로 실행한다. **Windows 는 시스템 OpenSSH 풀경로**(`%WINDIR%\System32\OpenSSH\ssh.exe`)를 우선 — git 번들 ssh 는 윈도우 ssh-agent(named pipe)를 못 봐 무암호 인증이 실패한다. mac/linux 는 PATH 의 `ssh`. 사용자의 `~/.ssh/config`(Host alias·ProxyJump·IdentityFile)·agent·known_hosts 를 그대로 재사용한다.
-- **원격 포트 발견**: 기본 `auto` 모드는 **subcommand → file-unix → file-windows** 를 순서대로 시도해 원격 SSH DefaultShell(PowerShell/cmd/git bash/unix) 4 종을 모두 커버한다. ① subcommand `ssh host tasty port`(`tasty port` 서브커맨드 — 포트 파일을 stdout 출력, IPC 불필요)는 git bash·unix 에서 동작하나 Windows GUI release 바이너리는 비-PTY 세션의 PowerShell/cmd 에서 빈 출력 + exit 0 으로 조용히 실패한다. ② file-unix `cat ~/.tasty/tasty.port` 는 PowerShell(`cat` alias)·git bash·unix 에서 성공. ③ file-windows `type %USERPROFILE%\.tasty\tasty.port` 는 cmd 를 커버(앞 둘이 모두 실패하는 유일 경로). debug 는 `tasty-debug.port`. 셸 독립성은 subcommand 단독이 아니라 이 fallback 체인 전체가 달성한다.
-- **터널 생명주기**: `ssh -L … -N` 자식의 생존을 `try_wait` 로 추적하고, ready 는 localport TCP probe(`ExitOnForwardFailure=yes`)로 감지한다. detach/종료 시 자식 ssh 를 kill 해 고아 터널을 막되, **원격 데몬은 생존**한다(server-owns-PTY persistence = detach 의 본질).
-- **자동 재연결**: SSH/터널 끊김 시 지수 백오프(0.5s→30s 상한)로 터널 재수립 + 재attach. 세션은 서버에 상주하므로 재attach 만 하면 복구된다(`--no-reconnect` 로 끈다). raw 브리지 모드의 attach 후 재연결은 후속(블로킹 stdin 제약).
-- **보안**: 로컬 끝점도 `127.0.0.1` 한정(`-L 127.0.0.1:…`, `-g` 금지). attach 채널에 자체 토큰을 강제하지 않고 SSH 사용자 인증 = attach 권한 경계로 환원한다("SSH 로 그 호스트에 들어올 수 있는 사람 = attach 자격", tmux 모델과 동일).
-
-### workspace 단위 attach
-
-위 surface 단위 attach 를 **workspace 전체**로 확장한다. 한 workspace 를 배타 점유하면 그 안의 **모든 터미널 surface 를 트리째 mirror** 하고, **비-터미널 surface(markdown/image/explorer 등)는 placeholder 로 숨긴다**(내용 안 보임). 로컬 loopback 과 [SSH 터널](#ssh-1회성-원격-attach) 양쪽에서 동작한다(SSH 프로필 저장·워크스페이스 매핑 자동 attach 는 후속).
-
-- **workspace lock**(`AttachRegistry`): workspace 점유 시 그 안 **모든 터미널 surface 를 surface lock 에도 동시 등록** → server 의 placeholder 렌더·입력차단이 surface 단위와 동일하게 자동 적용된다. 멤버 전체(터미널+비-터미널)는 `surface_to_workspace` 역매핑에 등록돼 비-터미널 숨김·일괄 정리에 쓰인다. **부분 점유 충돌 방지**: 멤버 터미널이 이미 다른 client 에 점유돼 있으면 workspace attach 를 거부한다.
-- **출력 다중화**: 한 연결로 N 개 터미널의 출력을 실어야 하므로, workspace 모드 연결의 모든 `Data` 프레임은 **surface-prefixed**(`[u32 surface_id BE][raw bytes]`, `encode_mux`/`decode_mux`)다. server forwarder 가 surface 별로 prefix 를 붙이고 client 가 demux 해 해당 mirror 로 보낸다. surface 단위(단일) 연결은 prefix 없이 그대로다.
-- **트리 디스크립터**: attach 직후 server 가 `attached_workspace` Control 로 트리(분할 방향·비율 포함)와 per-surface 정보(`{remote_id, role: terminal|placeholder, cols, rows, kind}`)를 보낸다. client 는 터미널마다 mirror(`new_detached`)를 만들고 비-터미널은 placeholder 로 표시하며, 원격↔로컬 surface_id 재매핑으로 트리를 재구성한다.
-- **입력/포커스(client 로컬)**: 포커스는 client 가 로컬로 들고(원칙 1·3 — server 는 client 포커스를 모름), 입력은 포커스된 mirror 의 remote surface_id 로 prefix 해 보낸다. server 는 `holder + workspace` 검증 후 그 surface 의 PTY 로 전달(`feed_attached_workspace_input`) — 타 workspace surface 주입은 차단.
-- **비-터미널 readonly**(작업 J 정정): server 측 점유 workspace 의 비-터미널도 숨기지 않고 readonly 로 보인다(내용 렌더 + 키 입력만 suppress). 트리 위치(레이아웃)는 보존한다.
-- **force-detach(workspace 일괄)**: `attach.force_detach_workspace{workspace_id}` 가 멤버 터미널 lock + 비-터미널 숨김을 일괄 free 환원하고 holder 에 종료 통지를 push 한다. 연결 종료(EOF)·정상 detach 도 workspace 멤버를 한꺼번에 정리한다.
-- **CLI**: `tasty attach --workspace <id>` — 트리 mirror. `--dump-after <ms>` 는 surface 별 화면을 `=== surface <id> ===` 섹션으로 stdout 출력(비-터미널은 `(placeholder: <kind>)`). `--send <str> --send-to <remote_sid>` 로 특정 surface 에 비대화형 입력. `--ssh user@host --workspace <id>` 로 SSH 터널 결합(단계 5 재사용). `--workspace <id> --force-detach` 로 workspace 강제 끊기.
-- **resize**: 현재 client mirror 는 server 보고 크기를 그대로 쓴다(배타 점유라 협상 불필요). 트리 비율 + N 터미널 동시 resize 협상은 후속.
-
-### GUI 통합 — readonly 뷰 + 점유 표시 + workspace mirror (작업 J)
-
-위 attach 데이터 경로(lock·mirror·스트림·트리 디스크립터)를 **GUI 에 통합**한다 — "원격 워크스페이스가 GUI 에 보이는" 마지막 단계. 두 머신(또는 로컬 두 인스턴스): **A=피점유 server**(PTY/grid 소유), **B=점유 client**(mirror 표시).
-
-- **server readonly 뷰(A)**: client 가 점유한 surface/workspace 를 server 측은 **숨기지 않고 readonly 로 본다**(내용 보임, 조작만 차단). server 는 PTY/grid 권위 owner 라 데이터가 있다. 점유 surface 마다 display-only mirror(detached `Terminal`, `readonly_views`)를 두고 **3초 `AttachPoll` tick** 에 live grid 를 `snapshot_as_vt` → mirror 에 feed → `render_pass` 가 그 mirror 를 렌더한다. 입력 차단(`apply_send_to_surface`)은 유지 — 보기만 가능, 조작은 force-detach 로 회수. 비-터미널도 동일(내용 렌더 + 키 suppress).
-- **점유 표시(A)**: 점유된 **workspace 는 좌측 사이드바에 빨간 인디케이터**(running 류지만 `th.red`), 점유된 **surface 는 주황 1px 테두리**(`th.peach`, focus 무관 유지 — "알림이 온 것처럼"). 색은 Theme 토큰만(하드코딩 없음). 테두리 오버레이의 force-detach 버튼으로 점유를 회수한다.
-- **client GUI 재구성(B)**: `attached_workspace` 디스크립터로 **로컬 mirror Workspace 를 재구성**한다 — 터미널마다 `Terminal::new_detached` 를 `TerminalStore` 에 삽입하고, `to_tree_json_full` 트리(분할 방향/비율/focus)를 보존해 pane/tab/`SurfaceLayout` 을 빌드, 원격↔로컬 surface_id 를 재매핑(`AttachClientSession`)한다. mirror Workspace 는 일반 워크스페이스로 사이드바에 노출되고 **기존 렌더러가 그대로 그린다**(신규 셰이더 0). 입력은 mirror 의 `set_input_sink` 로 forward(원격 PTY 까지) — keyboard.rs 무변경. 비-터미널은 mirror 불가라 placeholder. 사이드바에서 mirror Workspace 는 **항상 하늘색 상태 dot**(`th.sky`)으로 표시해 로컬 워크스페이스와 구분한다 — running(초록)·피점유(빨강)보다 우선하는 최상위 색(`Workspace.mirror` 플래그).
-- **갱신 cadence (server 3초 / client 실시간 분리)**: server readonly 뷰(A)는 대상 부하를 아끼려 **3초 cadence**(`AttachPoll` ticker, busy_tick 패턴)로 self-snapshot 을 적용한다. 반면 client mirror(B)는 내가 직접 다루는 대상이라 **로컬 워크스페이스처럼 실시간** 갱신한다 — reader thread 가 원격 출력을 받을 때마다 `AttachClientData` 로 메인 루프를 깨워 즉시 적용/repaint(로컬 PTY 의 `TerminalOutput` wake 와 동형). `AttachPoll` 은 client mirror 에 대해선 backstop(누락 출력 적용·끊긴 세션 정리)으로만 남는다.
-- **트리거**: `tasty attach --into-gui --target-port <원격포트> --workspace <원격ws>` → 실행 인스턴스의 GUI 가 client 가 되어 원격 워크스페이스를 mirror 로 띄운다(`attach.into_gui` IPC → App 이 연결·재구성). 자동 매핑(ssh-profiles/workspace 매핑)은 단계 7. (in-process 진입점 `start_gui_attach` 가 단계 7 의 호출 지점.)
-- **정리(원칙 1①)**: force-detach/EOF 시 client 는 mirror Workspace 와 mirror 터미널만 제거한다(사용자의 닫힌항목 히스토리·로컬 워크스페이스는 건드리지 않음). server 는 lock free 환원 + readonly mirror 제거.
-
-### SSH 프로필 + 워크스페이스↔컴퓨터 매핑 + 자동 attach
-
-위 attach 인프라(SSH 터널 + workspace mirror + GUI 통합)를 **선언적 매핑**으로 끌어올린다 — "워크스페이스1 = a컴퓨터, 워크스페이스2 = b컴퓨터". 매핑된 로컬 워크스페이스를 **활성화하면** 호스트가 자동으로 SSH 터널을 세워 원격 워크스페이스를 GUI mirror 로 띄운다.
-
-- **SSH 연결 프로필**(`~/.tasty/ssh-profiles.toml`, `tasty-ssh-profiles` 크레이트): 원격 컴퓨터의 *장비 인벤토리*. 필드 = `name`(고유 식별자) / `host`(ssh destination, `user@host`·alias 허용) / `user` / `port` / `identity_file`(`-i`) / `use_agent`(기본 true) / `extra_options`(`-o K=V`) / `remote_tasty`(원격 바이너리 경로, 기본 `tasty`) / `shell`(원격 셸: `powershell|cmd|bash|zsh|auto`, 기본 `auto`) / `port_mode`(원격 포트 발견 방식) / `detect_failed`(감지 실패=비활성 마커, 기본 false·`serde(skip)` when false). **비밀번호는 저장하지 않는다**(decisions 5) — 인증은 identity_file 또는 ssh-agent 위임. config.toml 과 별도 파일이라 손편집·동기화 충돌이 없다. 기존 `shell` 없는 toml 은 serde default 로 그대로 로드된다.
-  - **셸 → 발견 모드**: 사람은 "이 서버는 PowerShell"로 이해하고, tasty 가 셸을 원격 포트 발견 모드로 변환한다(`shell_to_port_mode`, 2026-06-12 실측): `powershell`→`file-unix`(cat alias+`~` 확장), `cmd`→`file-windows`(`type %USERPROFILE%\…`), `bash`/`zsh`→`subcommand`(`tasty port`). 명시 셸이면 등록 시 즉시 `port_mode` 를 도출해 attach 가 fallback 없이 1왕복으로 포트를 찾는다.
-  - **자동감지(`auto`)**: "무슨 셸이냐"를 묻는 단일 명령이 없으므로, 프로브 체인(`subcommand`→`file-unix`→`file-windows`)을 1회 실행해 **첫 성공 모드를 기록**한다(프로브 성패가 곧 감지 결과). `shell=auto` 로 등록하면 등록 시점에 1회 감지한다. 전 프로브 실패 시 프로필을 지우지 않고 `detect_failed=true`(**비활성**)로 기록 — 목록에 "감지 실패" 표시, attach 시도 시 명확한 에러 + 재감지 안내. **재감지**는 `tasty tool ssh detect <name>`(CLI/IPC) 또는 GUI 새로고침 버튼.
-  - **CLI**: `tasty tool ssh add/list/show/edit/remove/detect`. `add`/`edit` 에 `--shell`(명시 셸이면 모드 즉시 도출, `auto` 면 등록 시 SSH 프로브 1회). `detect <--name>` 은 재감지(성공→활성, 실패→비활성). `list` 에 SHELL·STATUS(감지 실패) 컬럼. (로컬 파일 I/O, IPC 미경유.) **IPC**: `tool.ssh.list/get/add/detect/remove`(소켓 에이전트도 관리 — 원칙 2). `add` 의 `shell` 파라미터 동등 지원 — `auto` 면 host 무블록을 위해 워커 스레드로 감지 후 toml 갱신, `detect` 도 워커. 모두 `--name`/`name` 으로 대상 지정(포커스 비의존).
-  - **attach 거부**: `detect_failed=true`(비활성) 프로필은 `tasty attach --profile`(CLI)·자동 attach(`src/app/auto_attach.rs`) 양쪽에서 거부되고 재감지(`tasty tool ssh detect <name>`)를 안내한다.
-  - **GUI**: 사이드바 **도구 메뉴 > "SSH 프로필…"** 에서 관리 팝업을 연다(`ssh_tool` PopupDef, headless). 목록(이름/대상/셸/감지 실패 표시) + 추가·편집 폼(셸 드롭다운 `auto` 포함) + 프로필별 **새로고침(재감지)** 버튼 + 삭제(인라인 확인). `auto` 선택 저장/새로고침 시 감지는 **워커 스레드**에서 실행되어 UI 가 멈추지 않으며(진행 중 스피너), 완료 시 toml 재로드. CLI·IPC 와 동일한 `SshProfiles::load/save`·감지 로직(`tasty_cli::ssh`)을 재사용해 양쪽 표면이 즉시 일관된다(편집 시 `use_agent`/`extra_options`/`remote_command` 등 폼 밖 필드는 보존). 비밀번호 입력란 없음(decisions 5). 팝업은 사용자가 도구 메뉴 클릭으로만 연다(원칙 1 — release IPC 로 강제 open 하지 않음).
-- **워크스페이스 매핑**(`Workspace.attach_mapping`): 워크스페이스가 attach 할 원격 대상. `WorkspaceAttachTarget` = 저장 프로필 참조(`Profile{name}`) 또는 1회성 인라인(`Inline{host,..}`). `remote_workspace`(원격 tasty 의 attach 대상 workspace_id — 원칙 3, ID 명시)를 함께 보관한다.
-  - **설정 CLI**: `tasty new workspace --ssh-profile <name> [--remote-workspace N]`(생성 시 매핑) / `--ssh <user@host>`(인라인). `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace N`(기존 워크스페이스 매핑), `--clear-mapping`(해제). **IPC**: `workspace.create`/`workspace.update` 의 `attach_profile`/`attach_ssh`/`attach_remote_workspace`/`attach_clear` 파라미터. `workspace.list` 가 `attach_mapping` 을 노출(read — 원칙 3).
-  - **영속**: `SavedWorkspace.attach_mapping`(`layout.json`, `#[serde(default)]` 로 구버전 호환). 재시작 후 매핑이 복원되어, 매핑 워크스페이스를 다시 활성화하면 자동 재attach 된다.
-- **자동 attach 결선**: 매핑된 워크스페이스가 **활성 상태가 되면**(`about_to_wait` polling 이 활성 워크스페이스의 매핑을 감지) 호스트가 자동으로 — ① 프로필 resolve → ② **SSH 터널 수립**(`tasty_cli::ssh::SshTunnel`, 단계 5 재사용; 포트 발견 + `ssh -L`)을 **워커 스레드**에서 수행(메인 루프 무블록, 터널 수립은 최대 수초 블록) → ③ 완료되면 `tunnel.local_port` 를 작업 J 의 in-process `start_gui_attach` 에 넘겨 원격 워크스페이스를 **GUI mirror** 로 띄운다. 터널 핸들은 client 세션(`AttachClientSession`)에 보관돼 세션 수명 동안 살아있고(Drop 시 자식 ssh kill — 고아 터널 방지), force-detach/EOF 시 정리된다.
-  - **loopback 직결**: 인라인 host 가 `127.0.0.1:PORT` / `localhost:PORT` 면 SSH 터널 없이 그 포트로 직접 attach(로컬 검증·동일 머신 다중 인스턴스).
-  - **중복 방지**: 매핑된(anchor) 워크스페이스가 이미 attach 중이거나 진행 중이면 재트리거하지 않는다. 다른 워크스페이스로 전환했다가 돌아와도 세션은 유지된다(끊김 시 정리 후 재활성에 재attach).
-  - **원칙 3**: `remote_workspace` 가 None 이면 자동 attach 를 skip 한다(ID 명시 필요). 자동 attach 는 mirror 워크스페이스를 *추가*만 하며 사용자의 포커스/active 전환을 강제하지 않는다(원칙 1①).
-  - **1회성 vs 저장**: `tasty attach --profile <name> --workspace <id>`(저장 프로필 해석 1회성 attach) / `tasty attach --ssh user@host`(즉석). 프로필 해석은 user/port/identity_file/extra_options 를 ssh 인자(`-i`/`-o`/`-p`)로 결선한다.
+- **원격 attach (release)**: `tasty remote attach [SURFACE] --ssh user@host` 또는 `--profile <name>`. surface 대신 `--workspace <id>` 로 워크스페이스 전체(트리 mirror). 모드 옵션 — `--dump-after <ms>`(출력 수집 후 mirror 화면 stdout, GUI 없이 검증), `--send <str>`(attach 직후 1회 입력, workspace 는 `--send-to <remote_sid>`), `--raw`(stdin/stdout passthrough, detach `Ctrl+\`, workspace 불가), `--no-reconnect`(SSH 끊김 시 자동 재연결 끄기), `--force-detach`(점유 강제 해제 — `--ssh` 와 상호배타). GUI mirror 트리거 — `--into-gui --target-port <원격포트> --workspace <원격ws>`.
+- **원격 생존 확인 (release)**: `tasty remote check --ssh user@host` / `--profile <name>`. 포트 발견만으론 stale 포트(이미 죽은 인스턴스의 포트 파일)를 alive 로 오판할 수 있어, 포트 발견 + `ssh -L` 터널 + `system.info` IPC 1회까지 거쳐 응답이 와야 alive(stdout + exit 0), 아니면 dead(stderr + exit≠0).
+- **로컬 loopback attach (debug 전용)**: `tasty debug attach [SURFACE] [--workspace <id>] [--dump-after|--send|--send-to|--raw|--force-detach]`. 같은 머신 self-attach 는 *사용자 mirror 조작의 자동 재현* 성격이라 release 표면에서 제거하고 debug 빌드로 격리한다(원칙 1 ②, [dev-guide/debug-ipc.md](dev-guide/debug-ipc.md)). 서버 수신 경로는 로컬·원격 공용으로 보존되므로 "로컬 attach 제거"는 **클라이언트 로컬 진입점만** 제거한 것이다.
+- **화면 스크래핑(정식)**: 단발 화면 읽기는 attach 세션이 아니라 `tasty read screen`(현재 화면) / `tasty read since-mark`(마크 이후 출력)를 쓴다. attach 의 `--dump-after` 는 mirror 검증용이다.
+- **자동 매핑**: `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace N`(또는 `--ssh <user@host>`)으로 로컬 워크스페이스 ↔ 원격 컴퓨터를 매핑하면, 그 워크스페이스를 활성화할 때 호스트가 자동으로 SSH 터널을 세워 원격 워크스페이스를 GUI mirror 로 띄운다(`src/app/auto_attach.rs`). SSH 연결 프로필(`~/.tasty/ssh-profiles.toml`)은 `tasty tool ssh add/list/show/edit/remove/detect` 로 관리한다(비밀번호 미저장 — identity_file/ssh-agent 위임, decision 5).
+- **IPC**: `attach.acquire`/`release`(`stream.open{target}` 핸드셰이크) + `attach.force_detach`/`force_detach_workspace`/`into_gui`/`list`(JSON-RPC). `remote`/`debug attach` 는 IPC 네임스페이스가 아니라 이 `attach.*`(+`system.info`) 위의 CLI 디스패치 계층이다. 보안은 SSH + 127.0.0.1 loopback 위임(자체 토큰 없음).
 
 ### 지원 메서드
 
@@ -1133,7 +1076,7 @@ GUI 없이 동작하는 PTY 호스트 데몬. `--no-default-features` 빌드는 
 - `debug.inject_mouse`: SGR 마우스 이벤트를 PTY에 주입 (`--enable-input-simulation` 필요)
 - `debug.inject_key`: 임의 바이트/텍스트를 PTY에 주입 (`--enable-input-simulation` 필요)
 - `--enable-input-simulation` CLI 플래그: debug 빌드에서 입력 시뮬레이션 IPC를 활성화. 이 플래그 없이는 inject_mouse/inject_key가 거부됨 (2단계 게이트: 컴파일 + 런타임)
-- `debug` CLI 서브커맨드: `tasty debug info`, `tasty debug ime-*`, `tasty debug cell-info`, `tasty debug screen-attrs`, `tasty debug glyph-color` 등 디버그 관련 CLI 명령
+- `debug` CLI 서브커맨드: `tasty debug info`, `tasty debug ime-*`, `tasty debug cell-info`, `tasty debug screen-attrs`, `tasty debug glyph-color`, `tasty debug attach`(로컬 loopback attach — 원격은 `tasty remote attach`) 등 디버그 관련 CLI 명령
 
 #### 워크스페이스
 - `workspace.list`: 전체 워크스페이스 목록 (이름, 활성 여부, 패인 수)

@@ -37,6 +37,7 @@ git hooks 디렉토리를 `.githooks/` 로 설정한다. 안 하면 pre-commit /
 | 의존성 이슈 모니터링 (future-incompat 등) | [dep-issues.md](dep-issues.md) |
 | Crash & 에러 진단 | [crash-diagnostics.md](crash-diagnostics.md) |
 | Debug 전용 IPC | [debug-ipc.md](debug-ipc.md) |
+| Attach 동작 명세 (서버=loopback / 로컬-원격=클라이언트) | [attach-behavior.md](attach-behavior.md) |
 | 컨텍스트 메뉴 구현 | [context-menu.md](context-menu.md) |
 | Popup 구현 | [popup-implementation.md](popup-implementation.md) |
 | GPU 렌더링 구조 | [gpu-rendering.md](gpu-rendering.md) |
