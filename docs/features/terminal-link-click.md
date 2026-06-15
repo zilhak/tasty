@@ -22,7 +22,19 @@
 - 예외:
   - 수식키+클릭이 링크 위가 아니면 아무 동작도 하지 않는다.
   - selection 과 충돌하지 않는다 — 수식키+클릭은 selection 을 시작하지도, 기존 selection 을 변경하지도 않는다.
-  - CWD 기준으로 존재하지 않는 경로 텍스트는 링크가 아니다.
+  - CWD 기준으로 존재하지 않는 경로 텍스트는 링크가 아니다 (로컬 surface 한정).
+
+## 원격(mirror) surface 라우팅
+
+attach 로 원격 tasty 데몬에 붙으면 로컬엔 **detached mirror surface** 가 뜨고(진짜 PTY 는 원격), 화면 경로는 **원격 호스트 경로**다. 로컬 핸들러(로컬 파일 전제)로는 열 수 없으므로 다음과 같이 분기한다.
+
+- **mirror 판별**: 클릭한 surface(`hovered_link.surface_id`)의 terminal 이 detached mirror — 자식 PTY 가 없어 `process_id()` 가 `None` — 인지로 판별한다. (mirror 생성처는 `attach_client::start_gui_attach` 의 `Terminal::new_detached` 단 하나라 현재 `process_id().is_none()` ⟺ mirror.)
+- **경로 감지**: mirror surface 는 로컬 `exists()` 검증을 건너뛰고(로컬에 없으니), OSC 7 원격 cwd 기준으로 결합한 원격 경로를 그대로 링크 대상으로 emit 한다. 따라서 원격 경로도 하이라이트된다.
+- **클릭 동작**: mirror surface 의 경로 ctrl+클릭은 로컬 핸들러 lookup/identify(`DispatchFile`)를 타지 않고 **빈 핸들러 picker 팝업(empty-state, placeholder)** 만 띄운다 — 실제 파일 동작은 없다(1차 placeholder). 로컬 파일을 잘못 열거나 브라우저로 새지 않는다.
+- **외부 URL**: `http://` 등 스킴 있는 URL 은 mirror 여부와 무관하게 기존대로 `webbrowser` 로 연다.
+- **로컬 surface**: 변경 없음 — 기존대로 실제 핸들러로 열린다.
+
+> **비-목표(후속)**: 실제 원격 파일을 여는 액션(`ssh host vim {path}`, `code --remote`, sftp fetch 등)과 그를 위한 host 컨텍스트(attach 프로필/destination) 주입. 1차는 placeholder + 빈 팝업 노출까지.
 
 ## 에이전트 행동 (CLI / IPC)
 

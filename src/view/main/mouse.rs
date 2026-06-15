@@ -259,18 +259,39 @@ impl MainView {
                         }
                     }
                     if let Some(hovered) = self.hovered_link.clone() {
+                        // 원격(mirror) surface 판별: 클릭한 surface 의 terminal 이 detached
+                        // mirror(자식 PTY 없음)면 화면 경로가 원격 호스트 경로라 로컬 핸들러로
+                        // 열 수 없다. ID(hovered.surface_id) 로 직접 판별 — 포커스 독립.
+                        let is_mirror = self
+                            .core_state
+                            .find_terminal_by_id(hovered.surface_id)
+                            .map(|t| t.process_id().is_none())
+                            .unwrap_or(false);
                         match crate::file_dispatch::parse_link(&hovered.uri) {
                             crate::file_dispatch::LinkKind::FileTarget(path) => {
-                                self.state.dispatch_intent(
-                                    crate::core::intent::DomainIntent::DispatchFile {
-                                        target: crate::file::format::FileTarget::new(path),
-                                        depth: crate::file::format::DetectDepth::Deep,
-                                        origin_surface_id: None,
-                                    }
-                                    .from_user_menu("terminal_link_click"),
-                                );
+                                if is_mirror {
+                                    // 원격 경로: 로컬 핸들러 lookup/identify 를 타지 않고 빈
+                                    // picker(placeholder)만 띄운다 — empty-state, 실제 동작 없음.
+                                    crate::file::dispatch::open_picker(
+                                        &mut self.state,
+                                        &mut self.core_state,
+                                        crate::file::format::FileTarget::new(path),
+                                        None,
+                                        Vec::new(),
+                                    );
+                                } else {
+                                    self.state.dispatch_intent(
+                                        crate::core::intent::DomainIntent::DispatchFile {
+                                            target: crate::file::format::FileTarget::new(path),
+                                            depth: crate::file::format::DetectDepth::Deep,
+                                            origin_surface_id: None,
+                                        }
+                                        .from_user_menu("terminal_link_click"),
+                                    );
+                                }
                             }
                             crate::file_dispatch::LinkKind::External(uri) => {
+                                // 외부 URL(http:// 등)은 mirror 여부와 무관하게 기존대로 처리.
                                 terminal_link::open_uri(&uri);
                             }
                         }

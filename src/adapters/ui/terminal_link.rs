@@ -120,6 +120,7 @@ pub fn detect_scrollback_line(
     line: &[(String, CellAttributes)],
     absolute_row: usize,
     cwd: Option<&Path>,
+    mirror: bool,
 ) -> Vec<LinkSpan> {
     // 1) OSC 8 hyperlink 수집 (연속된 동일 uri 셀을 하나로 묶음).
     let mut result = Vec::new();
@@ -170,8 +171,8 @@ pub fn detect_scrollback_line(
 
     // 2) 일반 텍스트에서 URL regex 검출. OSC8 범위와 겹치지 않는 경우만 추가.
     append_regex_matches(&text, &col_of_byte, absolute_row, &mut result);
-    // 3) 스키마 없는 경로 (CWD 기준 exists 검증).
-    append_path_matches(&text, &col_of_byte, absolute_row, cwd, &mut result);
+    // 3) 스키마 없는 경로 (CWD 기준 exists 검증; mirror 면 검증 건너뜀).
+    append_path_matches(&text, &col_of_byte, absolute_row, cwd, mirror, &mut result);
     result
 }
 
@@ -180,6 +181,7 @@ pub fn detect_screen_line(
     line: &termwiz::surface::line::Line,
     absolute_row: usize,
     cwd: Option<&Path>,
+    mirror: bool,
 ) -> Vec<LinkSpan> {
     let mut result = Vec::new();
     let mut text = String::new();
@@ -228,7 +230,7 @@ pub fn detect_screen_line(
     }
 
     append_regex_matches(&text, &col_of_byte, absolute_row, &mut result);
-    append_path_matches(&text, &col_of_byte, absolute_row, cwd, &mut result);
+    append_path_matches(&text, &col_of_byte, absolute_row, cwd, mirror, &mut result);
     result
 }
 
@@ -285,15 +287,22 @@ pub fn link_at(
     let scrollback_len = terminal.scrollback_len();
     let cwd = terminal.get_cwd();
     let cwd_ref = cwd.as_deref();
+    // 원격(mirror) surface 판별: detached mirror 는 자식 PTY 가 없어 process_id() 가
+    // None. 화면 경로는 원격 호스트 경로라 로컬 exists() 검증을 건너뛰어야 한다.
+    // (`Terminal::new_detached` 호출처는 여럿이지만 — attach_readonly/attach CLI 등 —
+    //  그것들은 GUI terminals store 밖이다. `link_at` 에 들어오는 terminal 은
+    //  find_terminal_by_id 가 보는 GUI store 기준이고, 그 store 안에서 detached 인 것은
+    //  attach_client::start_gui_attach 의 mirror 뿐이라 process_id().is_none() ⟺ mirror.)
+    let mirror = terminal.process_id().is_none();
     let spans = if absolute_row < scrollback_len {
         let line = terminal.scrollback_line_owned(absolute_row)?;
-        detect_scrollback_line(&line, absolute_row, cwd_ref)
+        detect_scrollback_line(&line, absolute_row, cwd_ref, mirror)
     } else {
         let screen_row = absolute_row - scrollback_len;
         let surface = terminal.surface();
         let lines = surface.screen_lines();
         let line = lines.get(screen_row)?;
-        detect_screen_line(line, absolute_row, cwd_ref)
+        detect_screen_line(line, absolute_row, cwd_ref, mirror)
     };
     spans.into_iter().find(|s| s.contains(col, absolute_row))
 }
@@ -315,22 +324,24 @@ impl LinkHighlight {
     }
 }
 
-/// 경로 후보가 실제로 존재하는 파일/디렉토리인지 확인하고, 존재하면
-/// `file://` URI 형식의 String으로 변환해서 반환.
+/// 경로 후보를 `file://` URI 형식의 String 으로 변환해서 반환.
 /// - 절대경로면 그대로 사용.
 /// - 상대경로면 `cwd` 기준으로 해석.
-fn resolve_path(candidate: &str, cwd: Option<&Path>) -> Option<String> {
+/// - `mirror` 가 false(로컬 surface)면 실제 존재하는 경로만 반환(오탐 방지).
+/// - `mirror` 가 true(원격 mirror surface)면 화면 경로가 원격 호스트 경로라
+///   로컬 `exists()` 검증을 건너뛰고 (원격 cwd 기준 결합한) 경로를 그대로 emit.
+fn resolve_link_target(candidate: &str, cwd: Option<&Path>, mirror: bool) -> Option<String> {
     let p = Path::new(candidate);
     let abs: PathBuf = if p.is_absolute() {
         p.to_path_buf()
     } else {
         cwd?.join(p)
     };
-    if !abs.exists() {
-        return None;
-    }
     // 정규화 (심볼릭/`.` `..`): canonicalize는 실패 가능하고 Windows에서 UNC 접두사를
     // 붙일 수 있어, 존재 확인만 하고 원본 abs 경로를 file:// URI로 변환.
+    if !mirror && !abs.exists() {
+        return None;
+    }
     Some(path_to_file_uri(&abs))
 }
 
@@ -351,6 +362,7 @@ fn append_path_matches(
     col_of_byte: &[usize],
     absolute_row: usize,
     cwd: Option<&Path>,
+    mirror: bool,
     out: &mut Vec<LinkSpan>,
 ) {
     for caps in path_regex().captures_iter(text) {
@@ -365,7 +377,7 @@ fn append_path_matches(
         if trimmed.is_empty() {
             continue;
         }
-        let Some(uri) = resolve_path(trimmed, cwd) else {
+        let Some(uri) = resolve_link_target(trimmed, cwd, mirror) else {
             continue;
         };
         let start_byte = m.start();
@@ -477,8 +489,8 @@ mod tests {
     #[test]
     fn slash_non_path_rejected_by_exists() {
         // 슬래시는 있지만 경로가 아닌 토큰은 regex 후보가 되어도 exists() 에서 배제된다.
-        assert!(resolve_path("and/or", Some(std::path::Path::new("."))).is_none());
-        assert!(resolve_path("TCP/IP", Some(std::path::Path::new("."))).is_none());
+        assert!(resolve_link_target("and/or", Some(std::path::Path::new(".")), false).is_none());
+        assert!(resolve_link_target("TCP/IP", Some(std::path::Path::new(".")), false).is_none());
     }
 
     #[cfg(windows)]
@@ -505,10 +517,32 @@ mod tests {
 
     #[test]
     fn resolve_path_rejects_nonexistent() {
-        assert!(resolve_path("/definitely/not/a/real/path/xyz123", None).is_none());
+        assert!(resolve_link_target("/definitely/not/a/real/path/xyz123", None, false).is_none());
         assert!(
-            resolve_path("./nope_does_not_exist_xyz", Some(std::path::Path::new("."))).is_none()
+            resolve_link_target(
+                "./nope_does_not_exist_xyz",
+                Some(std::path::Path::new(".")),
+                false
+            )
+            .is_none()
         );
+    }
+
+    #[test]
+    fn mirror_emits_path_without_exists_check() {
+        let cwd = std::path::Path::new("/remote/project");
+        // 로컬에 없는 경로라도 mirror(원격 surface)면 file:// URI 를 emit한다.
+        let uri = resolve_link_target("src/main.rs", Some(cwd), true);
+        assert_eq!(uri.as_deref(), Some("file:///remote/project/src/main.rs"));
+        // 같은 입력이라도 비-mirror(로컬)면 exists() 실패로 None.
+        assert!(resolve_link_target("src/main.rs", Some(cwd), false).is_none());
+    }
+
+    #[test]
+    fn mirror_absolute_path_without_cwd() {
+        // 원격 절대경로는 cwd 없이도 그대로 emit.
+        let uri = resolve_link_target("/remote/abs/file.rs", None, true);
+        assert_eq!(uri.as_deref(), Some("file:///remote/abs/file.rs"));
     }
 
     #[test]

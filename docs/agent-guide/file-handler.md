@@ -286,7 +286,8 @@ tasty file-handler reload
 
 | trigger | 진입 함수 | 비고 |
 |---------|----------|------|
-| 터미널의 hyperlink ctrl+click | `mouse.rs` → `parse_link` → `dispatch_file_target(Deep)` | `file://` 만 디스패치, http/mailto 등은 webbrowser 위임 |
+| 터미널의 hyperlink ctrl+click (로컬 surface) | `mouse.rs` → `parse_link` → `dispatch_file_target(Deep)` | `file://` 만 디스패치, http/mailto 등은 webbrowser 위임 |
+| 터미널의 경로 ctrl+click (mirror/원격 surface) | `mouse.rs` → mirror 판별(`find_terminal_by_id().process_id().is_none()`) → `open_picker(target, None, Vec::new())` 직접 호출 | 화면 경로가 원격 호스트 경로라 로컬 핸들러로 열 수 없다. identify/`DispatchFile` 을 타지 않고 **빈 picker(empty-state, placeholder)** 만 띄움 — 실제 동작 없음. 외부 URL(http://) 은 mirror 여부와 무관하게 기존 `open_uri` |
 | 외부 → Tasty drag&drop | winit `WindowEvent::DroppedFile` → `dispatch_file_target(Deep)` | hover 중 시각 overlay 표시, 다중 파일은 각각 dispatch |
 | explorer plugin 더블클릭 | tree node `double_clicked()` → `UiEvent::TreeActivate` → plugin `host.call("file_handler.dispatch")` → host `handle_dispatch` → `dispatch_file_target(Deep)` | 디렉토리는 plugin 내부 root 변경, 파일만 host 로 디스패치 |
 
