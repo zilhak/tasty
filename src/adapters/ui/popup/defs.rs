@@ -121,7 +121,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 id: super::port_scanner::PORT_SCANNER_POPUP_ID,
                 title_key: "port_scanner.heading",
                 title_fn: None,
-                default_size: egui::vec2(600.0, 420.0),
+                default_size: egui::vec2(660.0, 520.0),
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
