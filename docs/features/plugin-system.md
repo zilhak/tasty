@@ -21,6 +21,7 @@
 - 사이드바 좌측 메뉴의 🧩 버튼으로 PluginsView 모달 진입 (Settings 모달과 동일 패턴)
 - 상단 탭: **Installed**(설치된 플러그인 목록 + 상세) / **Add plugin**(외부 디렉터리에서 import)
 - Installed 탭: 좌측 plugin 목록 + 우측 상세 — 이름/버전/설명/저자/홈페이지, 활성 토글, 등록 surface kinds, 매니페스트 권한 / grant 상태, 설치 경로(폴더 열기 버튼 포함), 로그 파일 경로
+- **Error 상태 표시**: spawn 반복 실패로 자동 비활성화된(`auto_disabled`) plugin 은 좌측 목록 행 우측에 빨간 status dot(`accent_danger`), 우측 상세에 빨간 경고 박스("연결 실패 — Settings 에서 구성 확인")로 표시. enable 상태인 plugin 에만 나타난다 (사용자가 끈 plugin 은 정상 종료이므로 제외)
 - 권한 grant/revoke 버튼으로 즉시 반영 (process 재시작 없이)
 - "제거" 버튼은 사전 확인 다이얼로그를 거친 뒤 plugin 실행 종료 + 디스크 삭제. built-in plugin인 경우 추가 경고 표시
 - Add plugin 탭: 경로 입력 + "확인" 버튼, 하단 "찾기" 버튼(rfd 네이티브 폴더 선택). 검증 시 매니페스트 정보(id/name/version/설명/권한/surface kinds/원본 경로) 미리보기 + 추가/취소. 이미 같은 id가 설치되어 있으면 추가 버튼 비활성화. 추가 시 `~/.tasty/plugins/<id>/`로 복사 + discovery 재실행 + 매니페스트 권한 자동 grant + auto-enable. 결과는 모달 윈도우 영역의 toast로 통지

@@ -24,6 +24,8 @@ impl App {
                     homepage: pkg.manifest.homepage.clone(),
                     enabled: !mgr.config.is_disabled(id),
                     running: mgr.is_running(id),
+                    // spawn 반복 실패로 자동 비활성화된 plugin → error 상태로 표시.
+                    health_error: mgr.is_auto_disabled(id),
                     builtin: plugin::is_builtin_plugin(id),
                     surface_kinds: pkg
                         .manifest

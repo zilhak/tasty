@@ -104,6 +104,16 @@ pub(super) fn draw_list_tab(
                         egui::FontId::proportional(10.0),
                         egui::Color32::from(th.subtext0),
                     );
+                    // 디자인 StatusDot(danger): spawn 반복 실패로 자동 비활성화된
+                    // plugin 은 행 우측에 빨간 dot 을 그린다. error 상태에만 표시.
+                    if entry.health_error {
+                        let dot_center = egui::pos2(rect.max.x - 12.0, rect.center().y);
+                        ui.painter().circle_filled(
+                            dot_center,
+                            4.0,
+                            egui::Color32::from(th.accent_danger()),
+                        );
+                    }
                     if resp.clicked() {
                         ui_state.selected_id = Some(entry.id.clone());
                     }
@@ -148,6 +158,26 @@ pub(super) fn draw_list_tab(
                 ui.label(&entry.description);
                 ui.add_space(8.0);
             }
+
+            // 디자인 error 경고 박스: spawn 반복 실패로 자동 비활성화된 plugin 에
+            // 빨간 박스로 안내. config 상 enable 상태일 때만 (사용자가 끈 plugin 은
+            // 정상 종료이므로 error 가 아님).
+            if entry.health_error && entry.enabled {
+                let danger = egui::Color32::from(th.accent_danger());
+                egui::Frame::new()
+                    .fill(danger.gamma_multiply(0.12))
+                    .stroke(egui::Stroke::new(
+                        th.border_width.value(),
+                        danger.gamma_multiply(0.35),
+                    ))
+                    .corner_radius(th.corner_radius.value())
+                    .inner_margin(egui::Margin::symmetric(11, 8))
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new(t("plugins.health_error")).color(danger));
+                    });
+                ui.add_space(8.0);
+            }
+
             if !entry.authors.is_empty() {
                 ui.label(format!(
                     "{}: {}",

@@ -32,6 +32,9 @@ pub struct PluginEntry {
     pub homepage: String,
     pub enabled: bool,
     pub running: bool,
+    /// spawn 반복 실패로 자동 비활성화된 error 상태인지. 디자인의 error dot
+    /// (목록) + 경고 박스(상세) 표시 기준.
+    pub health_error: bool,
     pub builtin: bool,
     pub surface_kinds: Vec<String>,
     pub manifest_permissions: Vec<String>,
