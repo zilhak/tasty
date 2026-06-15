@@ -124,6 +124,15 @@ impl KeybindingSettings {
             "apply_pane_preset",
             "settings.keybindings.apply_pane_preset_label",
         ),
+        (
+            "minimize_window",
+            "settings.keybindings.minimize_window_label",
+        ),
+        (
+            "maximize_window",
+            "settings.keybindings.maximize_window_label",
+        ),
+        ("close_window", "settings.keybindings.close_window_label"),
     ];
 
     /// 필드 id로 Vec<String> 참조를 얻는다.
@@ -178,6 +187,9 @@ impl KeybindingSettings {
             "apply_workspace_preset" => self.apply_workspace_preset.as_slice(),
             "apply_tab_preset" => self.apply_tab_preset.as_slice(),
             "apply_pane_preset" => self.apply_pane_preset.as_slice(),
+            "minimize_window" => self.minimize_window.as_slice(),
+            "maximize_window" => self.maximize_window.as_slice(),
+            "close_window" => self.close_window.as_slice(),
             _ => return None,
         })
     }
@@ -233,6 +245,9 @@ impl KeybindingSettings {
             "apply_workspace_preset" => &mut self.apply_workspace_preset,
             "apply_tab_preset" => &mut self.apply_tab_preset,
             "apply_pane_preset" => &mut self.apply_pane_preset,
+            "minimize_window" => &mut self.minimize_window,
+            "maximize_window" => &mut self.maximize_window,
+            "close_window" => &mut self.close_window,
             _ => return None,
         })
     }

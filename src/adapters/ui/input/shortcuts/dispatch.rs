@@ -6,6 +6,8 @@ use winit::keyboard::{Key, ModifiersState};
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::view::main::MainView;
 
+#[cfg(not(target_os = "macos"))]
+use super::matches_any_binding;
 use super::{focused_image_surface_id, send_app_event};
 
 impl MainView {
@@ -360,6 +362,19 @@ impl MainView {
                     view.redo();
                 }
             }
+            // 윈도우 컨트롤 — CSD 캡션 버튼(P5)/Linux DE 버튼(P6)/macOS 네이티브
+            // 신호등과 동일한 winit window 조작을 그대로 수행한다(단일 동작 경로).
+            "minimize_window" => {
+                self.base.winit.set_minimized(true);
+            }
+            "maximize_window" => {
+                let maximized = self.base.winit.is_maximized();
+                self.base.winit.set_maximized(!maximized);
+            }
+            "close_window" => {
+                // CSD close 버튼과 동일 라이프사이클(quit/close 라우팅)로 보낸다.
+                send_app_event(proxy, crate::AppEvent::CloseWindow(self.base.winit.id()));
+            }
             other => {
                 tracing::warn!("dispatch_action_by_id: unknown action '{other}'");
                 return false;
@@ -367,6 +382,28 @@ impl MainView {
         }
         self.base.dirty = true;
         true
+    }
+
+    /// 윈도우 컨트롤 단축키(minimize/maximize/close)를 현재 window 에 적용한다.
+    /// 매칭 시 [`dispatch_action_by_id`](Self::dispatch_action_by_id) 로 위임해 CSD 버튼과
+    /// 동일 경로를 탄다. macOS 는 NSMenu 가 처리하므로 비활성(`cfg(not(macos))`).
+    #[cfg(not(target_os = "macos"))]
+    fn handle_window_control_shortcuts(
+        &mut self,
+        key: &Key,
+        mods: ModifiersState,
+        kb: &crate::settings::KeybindingSettings,
+    ) -> bool {
+        for (binding, action_id) in [
+            (&kb.minimize_window, "minimize_window"),
+            (&kb.maximize_window, "maximize_window"),
+            (&kb.close_window, "close_window"),
+        ] {
+            if matches_any_binding(binding, key, mods) {
+                return self.dispatch_action_by_id(action_id);
+            }
+        }
+        false
     }
 
     /// Handle keyboard shortcuts. Returns true if the event was consumed by a shortcut.
@@ -388,6 +425,14 @@ impl MainView {
         }
 
         let kb = self.core_state.settings.keybindings.clone();
+
+        // 윈도우 컨트롤(minimize/maximize/close)은 현재 winit window 를 직접 조작한다.
+        // macOS 는 이 액션을 NSMenu(performMiniaturize:/performZoom:/performClose:) 의
+        // key equivalent 로 처리하므로(AppKit 가 키를 소비) winit 경로를 끈다 — 이중 처리 방지.
+        #[cfg(not(target_os = "macos"))]
+        if self.handle_window_control_shortcuts(key, mods, &kb) {
+            return true;
+        }
 
         // Configurable keybinding shortcuts
         if Self::handle_keybinding_shortcuts(

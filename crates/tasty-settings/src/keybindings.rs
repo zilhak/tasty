@@ -92,6 +92,12 @@ pub struct KeybindingSettings {
     pub apply_pane_preset: Vec<String>,
     /// Enter vi-style keyboard copy mode in the focused terminal.
     pub enter_copy_mode: Vec<String>,
+    /// Minimize the current window (CSD caption / native traffic light parity).
+    pub minimize_window: Vec<String>,
+    /// Toggle maximize/restore the current window (macOS: zoom).
+    pub maximize_window: Vec<String>,
+    /// Close the current window.
+    pub close_window: Vec<String>,
 }
 
 impl Default for KeybindingSettings {

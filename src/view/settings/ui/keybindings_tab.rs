@@ -179,6 +179,15 @@ pub fn draw_keybindings_tab(
                                 "settings.keybindings.quit_immediate_label",
                             ),
                             ("quit_minimize", "settings.keybindings.quit_minimize_label"),
+                            (
+                                "minimize_window",
+                                "settings.keybindings.minimize_window_label",
+                            ),
+                            (
+                                "maximize_window",
+                                "settings.keybindings.maximize_window_label",
+                            ),
+                            ("close_window", "settings.keybindings.close_window_label"),
                         ],
                     );
                 }

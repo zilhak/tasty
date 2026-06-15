@@ -63,6 +63,9 @@ impl KeybindingSettings {
             apply_tab_preset: Vec::new(),
             apply_pane_preset: Vec::new(),
             enter_copy_mode: vec!["ctrl+shift+space".into()],
+            minimize_window: Vec::new(),
+            maximize_window: Vec::new(),
+            close_window: Vec::new(),
         }
     }
 
@@ -121,6 +124,9 @@ impl KeybindingSettings {
             apply_tab_preset: Vec::new(),
             apply_pane_preset: Vec::new(),
             enter_copy_mode: vec!["ctrl+shift+space".into()],
+            minimize_window: Vec::new(),
+            maximize_window: Vec::new(),
+            close_window: Vec::new(),
         }
     }
 
@@ -179,6 +185,9 @@ impl KeybindingSettings {
             apply_tab_preset: Vec::new(),
             apply_pane_preset: Vec::new(),
             enter_copy_mode: vec!["ctrl+shift+space".into()],
+            minimize_window: Vec::new(),
+            maximize_window: Vec::new(),
+            close_window: Vec::new(),
         }
     }
 
@@ -237,6 +246,9 @@ impl KeybindingSettings {
             apply_tab_preset: Vec::new(),
             apply_pane_preset: Vec::new(),
             enter_copy_mode: vec!["ctrl+shift+space".into()],
+            minimize_window: Vec::new(),
+            maximize_window: Vec::new(),
+            close_window: Vec::new(),
         }
     }
 

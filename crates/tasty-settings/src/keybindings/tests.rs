@@ -151,7 +151,7 @@ fn set_field_unknown_returns_false() {
 
 #[test]
 fn general_binding_fields_count() {
-    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 47);
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 50);
 }
 
 #[test]

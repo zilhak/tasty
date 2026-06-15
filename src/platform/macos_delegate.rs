@@ -207,15 +207,20 @@ pub fn rebuild_main_menu(keybindings: &crate::settings::KeybindingSettings) {
 
 /// macOS 표준 menubar 등록. winit `with_default_menu(false)` 와 짝.
 ///
-/// Application Menu (About/Hide/.../Quit) + File (New Window) 2 개 submenu 를 등록한다.
-/// 표준 selector 는 first responder chain 으로 전달 (target=nil), `tastyQuit:` /
-/// `tastyNewWindow:` 만 delegate target 지정.
+/// Application Menu (About/Hide/.../Quit) + File (New Window) + Window
+/// (Minimize/Zoom/Close Window) 3 개 submenu 를 등록한다. 표준 selector 는 first
+/// responder chain 으로 전달 (target=nil), `tastyQuit:` / `tastyNewWindow:` 만
+/// delegate target 지정.
 ///
-/// Edit / Window 메뉴는 의도적으로 노출하지 않는다 — Cut/Copy/Paste/Select All
-/// 및 Minimize/Zoom/Close Window 단축키는 winit `KeyboardInput` →
-/// [`crate::shortcuts`] 흐름이 처리하므로 NSMenu 표시가 불필요하며, 노출 시
-/// AppKit 의 standard selector 기본 단축키 자동 주입으로 [`KeybindingSettings`]
-/// 와 불일치할 위험이 있다.
+/// Window 메뉴(CSD 전환에 따른 신호등 컨트롤 대응)는 표준 selector
+/// (`performMiniaturize:`/`performZoom:`/`performClose:`)를 쓰되, key equivalent 는
+/// [`KeybindingSettings`] 의 `minimize_window`/`maximize_window`/`close_window` 에서
+/// 가져오거나(없으면 빈 값) — 정책상 NSMenu 항목 단축키 하드코딩 금지. NSMenuItem 을
+/// 수동 생성하고 key equivalent 를 명시 설정하므로 AppKit 의 기본 단축키 자동 주입은
+/// 일어나지 않는다.
+///
+/// Edit 메뉴는 의도적으로 노출하지 않는다 — Cut/Copy/Paste/Select All 단축키는 winit
+/// `KeyboardInput` → [`crate::shortcuts`] 흐름이 처리하므로 NSMenu 표시가 불필요하다.
 ///
 /// tasty 특화 액션 (Quit / New Window) 의 key equivalent + modifier mask 는
 /// `keybindings` 의 대응 binding 첫 값에서 동적으로 변환한다. 부팅 시 1 회 +
@@ -307,6 +312,36 @@ fn setup_main_menu(
     file_menu_item.setSubmenu(Some(&file_menu));
     main_menu.addItem(&file_menu_item);
 
+    // ── Window Menu ────────────────────────────────────────────────
+    // CSD 신호등(minimize/zoom/close) 과 일관된 표준 selector. key equivalent 는
+    // KeybindingSettings 에서 (없으면 빈 값).
+    let window_menu_item = NSMenuItem::new(mtm);
+    let window_menu = NSMenu::new(mtm);
+    window_menu.setTitle(&NSString::from_str("Window"));
+
+    window_menu.addItem(&make_keybound_std_item(
+        mtm,
+        &NSString::from_str("Minimize"),
+        sel!(performMiniaturize:),
+        keybindings.minimize_window.first().map(|s| s.as_str()),
+    ));
+    window_menu.addItem(&make_keybound_std_item(
+        mtm,
+        &NSString::from_str("Zoom"),
+        sel!(performZoom:),
+        keybindings.maximize_window.first().map(|s| s.as_str()),
+    ));
+    window_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    window_menu.addItem(&make_keybound_std_item(
+        mtm,
+        &NSString::from_str("Close Window"),
+        sel!(performClose:),
+        keybindings.close_window.first().map(|s| s.as_str()),
+    ));
+
+    window_menu_item.setSubmenu(Some(&window_menu));
+    main_menu.addItem(&window_menu_item);
+
     app.setMainMenu(Some(&main_menu));
 }
 
@@ -366,6 +401,36 @@ fn make_std_item(mtm: MainThreadMarker, title: &NSString, selector: Sel) -> Reta
     #[allow(clippy::multiple_unsafe_ops_per_block)]
     unsafe {
         item.setKeyEquivalentModifierMask(objc2_app_kit::NSEventModifierFlags::empty());
+        item.setAction(Some(selector));
+    }
+    item
+}
+
+/// 표준 NSResponder selector + [`KeybindingSettings`] 연동 key equivalent NSMenuItem 생성.
+///
+/// selector 는 OS 표준(`performMiniaturize:`/`performZoom:`/`performClose:` 등),
+/// target = nil → first responder chain (key window 에 라우팅). key equivalent 는
+/// `binding` 첫 값에서 [`binding_to_nsmenu_key`] 로 변환하며, `None`/빈 값이면 빈
+/// 문자열로 단축키 미표시 — 정책상 NSMenu 항목 단축키는 KeybindingSettings 연동
+/// 또는 빈 값만 허용한다([`make_std_item`] 과 달리 binding 을 명시적으로 받는다).
+fn make_keybound_std_item(
+    mtm: MainThreadMarker,
+    title: &NSString,
+    selector: Sel,
+    binding: Option<&str>,
+) -> Retained<NSMenuItem> {
+    use objc2_app_kit::NSEventModifierFlags;
+    let item = NSMenuItem::new(mtm);
+    item.setTitle(title);
+    let (key, mods) = binding
+        .map(binding_to_nsmenu_key)
+        .unwrap_or_else(|| (NSString::from_str(""), NSEventModifierFlags::empty()));
+    item.setKeyEquivalent(&key);
+    // SAFETY: main thread (mtm). setKeyEquivalentModifierMask / setAction 은 AppKit
+    // main-thread-only. target 미설정 = nil = first responder chain (표준 selector 용).
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    unsafe {
+        item.setKeyEquivalentModifierMask(mods);
         item.setAction(Some(selector));
     }
     item
