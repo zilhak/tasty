@@ -26,8 +26,8 @@ pub struct CommandItemView {
     pub label: String,
     /// 우측에 표시할 단축키 텍스트. None 이면 표시하지 않는다.
     pub shortcut: Option<String>,
-    /// 행 좌측 leading 아이콘. 디자인이 명시한 일부 명령에만 지정, 나머지는 None
-    /// (빈 슬롯으로 둬 라벨 정렬은 유지).
+    /// 행 좌측 leading 아이콘. 6개 디자인 명시 명령은 전용 아이콘, 나머지 동적
+    /// 명령은 `COMMAND` fallback 글리프. None 이면 빈 슬롯 (라벨 정렬은 유지).
     pub icon: Option<icons::Icon>,
 }
 
@@ -151,7 +151,7 @@ pub fn draw_command_palette_view(
             let row_height = 24.0;
             let selected_idx = props.selected_index;
             egui::ScrollArea::vertical()
-                .max_height(280.0)
+                .max_height(320.0)
                 .show(ui, |ui| {
                     for (i, item) in props.items.iter().enumerate() {
                         let (rect, resp) = ui.allocate_exact_size(
@@ -179,7 +179,7 @@ pub fn draw_command_palette_view(
                         };
 
                         // leading 아이콘 컬럼은 항상 폭을 예약해 라벨 정렬을 유지한다.
-                        // 디자인 명시 명령만 아이콘이 들어가고 나머지는 빈 슬롯.
+                        // 6개는 전용 아이콘, 나머지는 COMMAND fallback 글리프.
                         let pad_x = 8.0;
                         let icon_size = 16.0;
                         let icon_gap = 8.0;
@@ -373,17 +373,17 @@ pub fn draw_command_palette_popup(
 }
 
 /// keybinding `field_id` → leading 아이콘. 디자인(`command_palette.jsx`)이 명시한
-/// 6개 명령에만 매핑하고, 나머지는 None (빈 슬롯). 47개 전체 명세는 별도 진행 중.
+/// 6개 명령은 전용 아이콘, 나머지 동적 명령은 모두 `COMMAND` fallback 글리프.
 fn icon_for(field_id: &str) -> Option<icons::Icon> {
-    match field_id {
-        "new_workspace" => Some(icons::PLUS),
-        "new_tab" => Some(icons::TERM),
-        "open_markdown" => Some(icons::MD),
-        "toggle_settings" => Some(icons::SETTINGS),
-        "split_pane_vertical" => Some(icons::SPLIT),
-        "toggle_clipboard_viewer" => Some(icons::CLIPBOARD),
-        _ => None,
-    }
+    Some(match field_id {
+        "new_workspace" => icons::PLUS,
+        "new_tab" => icons::TERM,
+        "open_markdown" => icons::MD,
+        "toggle_settings" => icons::SETTINGS,
+        "split_pane_vertical" => icons::SPLIT,
+        "toggle_clipboard_viewer" => icons::CLIPBOARD,
+        _ => icons::COMMAND,
+    })
 }
 
 /// label_key를 통해 i18n 라벨을 얻되, 끝의 `:`는 떼어낸다 (Settings UI 라벨 재활용).

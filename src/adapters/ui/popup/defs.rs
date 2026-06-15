@@ -133,7 +133,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 id: super::command_palette::COMMAND_PALETTE_POPUP_ID,
                 title_key: "command_palette.heading",
                 title_fn: None,
-                default_size: egui::vec2(520.0, 360.0),
+                default_size: egui::vec2(540.0, 360.0),
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,
