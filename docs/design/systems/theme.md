@@ -228,6 +228,39 @@ visuals.hyperlink_color = th.blue.into();
 - **이식은 점진적**: 현재 시범 영역(`crates/tasty-egui-theme/src/lib.rs` 의 의미 색상/selection 블록)만 접근자로 옮겼고, 나머지 ~495 호출처에는 primitive 직접접근이 **의도적으로 잔존**한다. 전수 이식이 끝나기 전까지 primitive 직접접근을 막는 **clippy 강제는 보류**한다.
 - `text_on_accent()` / `accent_info()` 등 **잠정 매핑** 접근자는 doc 주석에 사유를 명시했다 (Rust 전용 필드 부재 / latte role-remap 미반영). 후속에서 정식 필드 신설 후보.
 
+## CSD 타이틀바 토큰
+
+[윈도우 크롬(CSD 타이틀바)](../../features/window-chrome.md)이 쓰는 전용 토큰. 색은 기존
+semantic 접근자 조합으로 노출하고, 길이는 `ThemeSizing` 에 둔다. 3-tier 계약(component →
+semantic → primitive)을 유지하며, 테마 불변 OS 리터럴(`#c42b1c`)만 primitive 1곳에 둔다.
+
+**색 접근자** (`titlebar_*` → semantic):
+
+| 접근자 | → semantic | 용도 |
+|--------|-----------|------|
+| `titlebar_bg()` | `bg_app` | 타이틀바 배경 (active/focused) |
+| `titlebar_bg_inactive()` | `bg_sidebar` | 타이틀바 배경 (inactive/unfocused) |
+| `titlebar_border()` | `separator` | 하단 1px 보더 |
+| `titlebar_fg()` | `text_secondary` | 전경 (active) |
+| `titlebar_fg_inactive()` | `text_muted` | 전경 (inactive) — 포커스 상실 시 디밍 |
+| `accent_window_close()` | `#c42b1c` (primitive 리터럴) | Windows/Linux close 버튼 hover 배경 — **테마 불변 OS 리터럴** |
+| `text_on_window_close()` | white (전용 상수) | close hover 글리프 — 어두운 red 위라 두 테마 모두 white 고정 |
+
+`accent_window_close` / `text_on_window_close` 는 OS 가 강제하는 close 버튼 시각이라
+다크/라이트 무관하게 동일하다(테스트로 고정).
+
+**길이 토큰** (`ThemeSizing`):
+
+| 토큰 | 값 | 용도 |
+|------|----|------|
+| `titlebar_height` | 36px | 타이틀바 높이 (4px 그리드) = `top_inset` |
+| `traffic_size` | 12px | macOS 신호등 점 지름 (네이티브 유지라 현재 미사용 예약) |
+| `caption_width` | 46px | Windows 캡션 버튼 폭 |
+| `window_button_size` | 24px | Linux DE 가변 버튼 원형 지름 |
+
+길이 토큰은 모두 **host UI zoom 제외**(아래 zoom 정책 참조) — OS 데코 관습상 고정 px 가
+맞고, 탭바 토큰과 동일 처리한다.
+
 ## 새 테마 추가하기
 
 사용자 입장에서:
@@ -269,6 +302,7 @@ visuals.hyperlink_color = th.blue.into();
 **zoom 영향 받지 않는 토큰** —
 - `border_width` (1px 보더 정책 — zoom 시 깨지면 안 됨)
 - `tab_width`, `tab_bar_height`, `tab_bar_label_font_size`, `tab_bar_arrow_font_size` (탭바 zoom 제외 정책)
+- `titlebar_height`, `traffic_size`, `caption_width`, `window_button_size` (CSD 타이틀바 — OS 데코 관습상 고정 px)
 - 터미널 콘텐츠 폰트는 `effective_terminal_font` 별도 경로로 GPU 셰이더에 전달되므로 host UI zoom 과 무관
 
 **14px 폰트 상한** — `font_size_max` 도 같이 곱셈만 적용 (cap 없음). zoom 변경은 사용자의 명시적 의도이므로 상한을 강제하지 않는다.
