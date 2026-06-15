@@ -123,8 +123,7 @@ impl ClosedSurface {
                 scrollback: VecDeque::new(),
             };
         };
-        let surface = terminal.surface();
-        let lines = surface.screen_lines();
+        let lines = terminal.screen_lines();
 
         let screen: Vec<Vec<(String, CellAttributes)>> = lines
             .iter()

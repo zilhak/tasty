@@ -52,9 +52,9 @@ impl EditableRegion {
             return None;
         }
 
-        let (cols, rows) = terminal.surface().dimensions();
-        let (cursor_col, cursor_row) = terminal.surface().cursor_position();
-        let screen_lines = terminal.surface().screen_lines();
+        let (cols, rows) = terminal.dimensions();
+        let (cursor_col, cursor_row) = terminal.cursor_position();
+        let screen_lines = terminal.screen_lines();
 
         // Walk upward from cursor_row to find the first row of the editable region.
         // A row is part of the same soft-wrapped line if the row above it fills
@@ -142,7 +142,7 @@ pub fn count_arrows(
     to_col: usize,
     cols: usize,
 ) -> usize {
-    let screen_lines = terminal.surface().screen_lines();
+    let screen_lines = terminal.screen_lines();
 
     let (start_row, start_col, end_row, end_col) = if (to_row, to_col) > (from_row, from_col) {
         (from_row, from_col, to_row, to_col)

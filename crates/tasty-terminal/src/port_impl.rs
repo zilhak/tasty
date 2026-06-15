@@ -48,7 +48,7 @@ impl TerminalProcess for Terminal {
     }
 
     fn cursor_position(&self) -> (usize, usize) {
-        self.surface().cursor_position()
+        Terminal::cursor_position(self)
     }
 
     fn cursor_visible(&self) -> bool {

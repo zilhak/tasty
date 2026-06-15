@@ -40,7 +40,7 @@ pub(crate) fn handle_cursor_position(
         Err(e) => return e,
     };
     if let Some(terminal) = engine.find_terminal_by_id(surface_id) {
-        let (x, y) = terminal.surface().cursor_position();
+        let (x, y) = terminal.cursor_position();
         JsonRpcResponse::success(id, json!({ "x": x, "y": y, "surface_id": surface_id }))
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))

@@ -3,9 +3,9 @@
 use termwiz::escape::OperatingSystemCommand;
 use termwiz::escape::csi::Device;
 
-use crate::{Terminal, TerminalEvent, TerminalEventKind};
+use crate::{TerminalEvent, TerminalEventKind, TerminalState};
 
-impl Terminal {
+impl TerminalState {
     pub(crate) fn map_osc(&mut self, osc: OperatingSystemCommand) {
         match osc {
             OperatingSystemCommand::SetIconNameAndWindowTitle(title) => {

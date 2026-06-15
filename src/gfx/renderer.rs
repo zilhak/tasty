@@ -159,124 +159,130 @@ impl CellRenderer {
         let glyph_start = self.glyph_instances.len() as u32;
         self.current_viewport_offset = [viewport.x.value(), viewport.y.value()];
 
-        let cursor = if show_cursor && terminal.cursor_visible() && terminal.scroll_offset() == 0 {
-            let (cx, cy) = terminal.surface().cursor_position();
-            let wide = terminal
-                .surface()
-                .screen_lines()
-                .get(cy)
-                .and_then(|line| {
-                    line.visible_cells()
-                        .find(|cell| cell.cell_index() == cx)
-                        .map(|cell| {
-                            let ch = cell.str().chars().next().unwrap_or(' ');
-                            unicode_width(ch) > 1
-                        })
-                })
-                .unwrap_or(false);
-            Some((cx, cy, wide))
-        } else {
-            None
-        };
+        // Lock the shared terminal state once for the whole viewport render
+        // (surface + scrollback + cursor/modes). The parser thread's per-chunk
+        // lock window is the only contention; a visible terminal is idle enough
+        // that this is uncontended in practice (ADR-0002).
+        terminal.with_render_view(|view| {
+            let cursor = if show_cursor && view.cursor_visible() && view.scroll_offset() == 0 {
+                let (cx, cy) = view.surface().cursor_position();
+                let wide = view
+                    .surface()
+                    .screen_lines()
+                    .get(cy)
+                    .and_then(|line| {
+                        line.visible_cells()
+                            .find(|cell| cell.cell_index() == cx)
+                            .map(|cell| {
+                                let ch = cell.str().chars().next().unwrap_or(' ');
+                                unicode_width(ch) > 1
+                            })
+                    })
+                    .unwrap_or(false);
+                Some((cx, cy, wide))
+            } else {
+                None
+            };
 
-        let (cols, rows) = terminal.surface().dimensions();
+            let (cols, rows) = view.dimensions();
 
-        if terminal.scroll_offset() == 0 {
-            let row_offset = terminal.scrollback_len();
-            self.fill_surface(
-                terminal.surface(),
-                queue,
-                default_bg,
-                default_fg,
-                ansi,
-                cursor,
-                selection,
-                vi_cursor,
-                row_offset,
-                preedit,
-                link,
-                search,
-            );
-            self.append_preedit_overlay(preedit, queue, cols, rows, 0);
-        } else {
-            let scroll_offset = terminal.scroll_offset();
-            let scrollback_len = terminal.scrollback_len();
-            let surface_lines = terminal.surface().screen_lines();
+            if view.scroll_offset() == 0 {
+                let row_offset = view.scrollback_len();
+                self.fill_surface(
+                    view.surface(),
+                    queue,
+                    default_bg,
+                    default_fg,
+                    ansi,
+                    cursor,
+                    selection,
+                    vi_cursor,
+                    row_offset,
+                    preedit,
+                    link,
+                    search,
+                );
+                self.append_preedit_overlay(preedit, queue, cols, rows, 0);
+            } else {
+                let scroll_offset = view.scroll_offset();
+                let scrollback_len = view.scrollback_len();
+                let surface_lines = view.surface().screen_lines();
 
-            for row_idx in 0..rows {
-                let source_line =
-                    scrollback_len as isize - scroll_offset as isize + row_idx as isize;
+                for row_idx in 0..rows {
+                    let source_line =
+                        scrollback_len as isize - scroll_offset as isize + row_idx as isize;
 
-                if source_line < 0 {
-                    let off = self.current_viewport_offset;
-                    for col_idx in 0..cols {
-                        self.bg_instances.push(BgInstance {
-                            pos: [col_idx as f32, row_idx as f32],
-                            viewport_offset: off,
-                            bg_color: default_bg,
-                        });
+                    if source_line < 0 {
+                        let off = self.current_viewport_offset;
+                        for col_idx in 0..cols {
+                            self.bg_instances.push(BgInstance {
+                                pos: [col_idx as f32, row_idx as f32],
+                                viewport_offset: off,
+                                bg_color: default_bg,
+                            });
+                        }
+                        continue;
                     }
-                    continue;
+                    let source_line = source_line as usize;
+
+                    if source_line < scrollback_len {
+                        if let Some(line) = view.scrollback_line(source_line) {
+                            self.render_scrollback_line(
+                                line,
+                                row_idx,
+                                cols,
+                                default_bg,
+                                default_fg,
+                                ansi,
+                                queue,
+                                selection,
+                                vi_cursor,
+                                source_line,
+                                link,
+                                search,
+                            );
+                        }
+                    } else {
+                        let surface_row = source_line - scrollback_len;
+                        if surface_row < surface_lines.len() {
+                            self.render_surface_line(
+                                &surface_lines[surface_row],
+                                row_idx,
+                                cols,
+                                default_bg,
+                                default_fg,
+                                ansi,
+                                queue,
+                                selection,
+                                vi_cursor,
+                                source_line,
+                                link,
+                                search,
+                            );
+                        }
+                    }
                 }
-                let source_line = source_line as usize;
 
-                if source_line < scrollback_len {
-                    if let Some(line) = terminal.scrollback_line(source_line) {
-                        self.render_scrollback_line(
-                            line,
-                            row_idx,
-                            cols,
-                            default_bg,
-                            default_fg,
-                            ansi,
-                            queue,
-                            selection,
-                            vi_cursor,
-                            source_line,
-                            link,
-                            search,
-                        );
-                    }
-                } else {
-                    let surface_row = source_line - scrollback_len;
-                    if surface_row < surface_lines.len() {
-                        self.render_surface_line(
-                            &surface_lines[surface_row],
-                            row_idx,
-                            cols,
-                            default_bg,
-                            default_fg,
-                            ansi,
-                            queue,
-                            selection,
-                            vi_cursor,
-                            source_line,
-                            link,
-                            search,
-                        );
-                    }
+                // Right + bottom gutter.
+                let off = self.current_viewport_offset;
+                for row_idx in 0..rows {
+                    self.bg_instances.push(BgInstance {
+                        pos: [cols as f32, row_idx as f32],
+                        viewport_offset: off,
+                        bg_color: default_bg,
+                    });
                 }
-            }
+                for col_idx in 0..=cols {
+                    self.bg_instances.push(BgInstance {
+                        pos: [col_idx as f32, rows as f32],
+                        viewport_offset: off,
+                        bg_color: default_bg,
+                    });
+                }
 
-            // Right + bottom gutter.
-            let off = self.current_viewport_offset;
-            for row_idx in 0..rows {
-                self.bg_instances.push(BgInstance {
-                    pos: [cols as f32, row_idx as f32],
-                    viewport_offset: off,
-                    bg_color: default_bg,
-                });
+                self.append_preedit_overlay(preedit, queue, cols, rows, scroll_offset);
             }
-            for col_idx in 0..=cols {
-                self.bg_instances.push(BgInstance {
-                    pos: [col_idx as f32, rows as f32],
-                    viewport_offset: off,
-                    bg_color: default_bg,
-                });
-            }
-
-            self.append_preedit_overlay(preedit, queue, cols, rows, scroll_offset);
-        }
+        });
 
         let bg_range = bg_start..self.bg_instances.len() as u32;
         let glyph_range = glyph_start..self.glyph_instances.len() as u32;

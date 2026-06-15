@@ -299,8 +299,7 @@ pub fn link_at(
         detect_scrollback_line(&line, absolute_row, cwd_ref, mirror)
     } else {
         let screen_row = absolute_row - scrollback_len;
-        let surface = terminal.surface();
-        let lines = surface.screen_lines();
+        let lines = terminal.screen_lines();
         let line = lines.get(screen_row)?;
         detect_screen_line(line, absolute_row, cwd_ref, mirror)
     };

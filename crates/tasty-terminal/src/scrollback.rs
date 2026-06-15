@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use termwiz::cell::CellAttributes;
 
-use crate::Terminal;
+use crate::TerminalState;
 use crate::disk_scrollback;
 use termwiz::surface::Change;
 
@@ -152,7 +152,7 @@ impl Scrollback {
     }
 }
 
-impl Terminal {
+impl TerminalState {
     /// Current scroll offset (0 = at bottom/live, >0 = scrolled up).
     pub fn scroll_offset(&self) -> usize {
         self.scrollback.scroll_offset

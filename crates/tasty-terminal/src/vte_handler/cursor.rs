@@ -3,9 +3,9 @@
 use termwiz::escape::csi::Cursor;
 use termwiz::surface::{Change, Position};
 
-use crate::Terminal;
+use crate::TerminalState;
 
-impl Terminal {
+impl TerminalState {
     pub(crate) fn perform_index(&mut self) -> Vec<Change> {
         let (_cx, cy) = self.surface().cursor_position();
         let (top, size) = self.scroll_region_params();

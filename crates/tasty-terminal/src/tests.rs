@@ -37,7 +37,7 @@ fn decset_application_cursor_keys() {
     let actions = parser.parse_as_vec(b"\x1b[?1h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(terminal.application_cursor_keys());
@@ -45,7 +45,7 @@ fn decset_application_cursor_keys() {
     let actions = parser.parse_as_vec(b"\x1b[?1l");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(!terminal.application_cursor_keys());
@@ -60,7 +60,7 @@ fn decset_cursor_visibility() {
     let actions = parser.parse_as_vec(b"\x1b[?25l");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(!terminal.cursor_visible());
@@ -68,7 +68,7 @@ fn decset_cursor_visibility() {
     let actions = parser.parse_as_vec(b"\x1b[?25h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(terminal.cursor_visible());
@@ -83,7 +83,7 @@ fn decset_bracketed_paste() {
     let actions = parser.parse_as_vec(b"\x1b[?2004h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(terminal.bracketed_paste());
@@ -91,7 +91,7 @@ fn decset_bracketed_paste() {
     let actions = parser.parse_as_vec(b"\x1b[?2004l");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(!terminal.bracketed_paste());
@@ -106,7 +106,7 @@ fn decset_mouse_tracking() {
     let actions = parser.parse_as_vec(b"\x1b[?1000h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::Click);
@@ -114,7 +114,7 @@ fn decset_mouse_tracking() {
     let actions = parser.parse_as_vec(b"\x1b[?1003h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::AllMotion);
@@ -122,7 +122,7 @@ fn decset_mouse_tracking() {
     let actions = parser.parse_as_vec(b"\x1b[?1003l");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
@@ -139,16 +139,16 @@ fn alternate_screen_switching() {
     let actions = parser.parse_as_vec(b"\x1b[?1049h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(terminal.is_alternate_screen());
-    assert!(terminal.alternate_surface.is_some());
+    assert!(terminal.lock_state().alternate_surface.is_some());
 
     let actions = parser.parse_as_vec(b"\x1b[?1049l");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(!terminal.is_alternate_screen());
@@ -162,7 +162,7 @@ fn alternate_screen_mode_47() {
     let actions = parser.parse_as_vec(b"\x1b[?47h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(terminal.is_alternate_screen());
@@ -170,7 +170,7 @@ fn alternate_screen_mode_47() {
     let actions = parser.parse_as_vec(b"\x1b[?47l");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(!terminal.is_alternate_screen());
@@ -184,14 +184,14 @@ fn alternate_screen_resize() {
     let actions = parser.parse_as_vec(b"\x1b[?1049h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
 
     terminal.resize(120, 40);
     assert_eq!(terminal.cols(), 120);
     assert_eq!(terminal.rows(), 40);
-    let (cols, rows) = terminal.surface().dimensions();
+    let (cols, rows) = terminal.dimensions();
     assert_eq!(cols, 120);
     assert_eq!(rows, 40);
 }
@@ -207,7 +207,7 @@ fn arrow_key_sequences_normal_vs_application() {
     let actions = parser.parse_as_vec(b"\x1b[?1h");
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(terminal.application_cursor_keys());
@@ -224,7 +224,7 @@ fn full_reset_clears_modes() {
     let actions = parser.parse_as_vec(data);
     for action in actions {
         if let Action::CSI(CSI::Mode(ref mode)) = action {
-            terminal.handle_mode(mode);
+            terminal.lock_state().handle_mode(mode);
         }
     }
     assert!(terminal.application_cursor_keys());
@@ -234,7 +234,7 @@ fn full_reset_clears_modes() {
 
     let actions = parser.parse_as_vec(b"\x1bc");
     for action in actions {
-        let _changes = terminal.action_to_changes(action);
+        let _changes = terminal.lock_state().action_to_changes(action);
     }
     assert!(!terminal.application_cursor_keys());
     assert!(terminal.cursor_visible());
@@ -246,6 +246,7 @@ fn full_reset_clears_modes() {
 
 fn first_scrollback_text(terminal: &Terminal, index: usize) -> String {
     terminal
+        .lock_state()
         .scrollback_line(index)
         .map(|l| {
             l.iter()
@@ -368,7 +369,7 @@ fn prefill_visible_from_scrollback_draws_lines_and_parks_cursor() {
     assert_eq!(terminal.scrollback_len(), 10); // 5 popped
 
     // Visible rows 0..4 should now hold the popped lines (oldest first).
-    let lines = terminal.surface().screen_lines();
+    let lines = terminal.screen_lines();
     for (row, expected_idx) in (10..15).enumerate() {
         let text: String = lines[row]
             .visible_cells()
@@ -382,7 +383,7 @@ fn prefill_visible_from_scrollback_draws_lines_and_parks_cursor() {
     }
 
     // Cursor parked on row right after prefilled block.
-    assert_eq!(terminal.surface().cursor_position(), (0, 5));
+    assert_eq!(terminal.cursor_position(), (0, 5));
 }
 
 #[test]
@@ -407,7 +408,7 @@ fn prefill_saturates_when_scrollback_is_shorter_than_requested() {
     let drawn = terminal.prefill_visible_from_scrollback(5);
     assert_eq!(drawn, 3);
     assert_eq!(terminal.scrollback_len(), 0);
-    assert_eq!(terminal.surface().cursor_position(), (0, 3));
+    assert_eq!(terminal.cursor_position(), (0, 3));
 }
 
 /// Regression: when scrollback contains injected/historical lines (e.g. from
@@ -456,7 +457,7 @@ fn resize_ping_pong_does_not_accumulate_visible_lines_when_cursor_is_high() {
     // The visible screen should still show only the prompt at row 0 plus
     // blank rows below — no historical OLD_NN lines should have leaked
     // into the visible area.
-    let lines = terminal.surface().screen_lines();
+    let lines = terminal.screen_lines();
     for (row, line) in lines.iter().enumerate() {
         let text: String = line.visible_cells().map(|c| c.str().to_string()).collect();
         assert!(
@@ -474,11 +475,7 @@ const MIRROR_SEQ: &[u8] = b"hello\r\n\x1b[31mred\x1b[0m world\r\n\x1b[2J\x1b[H\x
 
 fn assert_grid_eq(a: &Terminal, b: &Terminal, ctx: &str) {
     assert_eq!(a.screen_text(), b.screen_text(), "{ctx}: screen_text");
-    assert_eq!(
-        a.surface().cursor_position(),
-        b.surface().cursor_position(),
-        "{ctx}: cursor"
-    );
+    assert_eq!(a.cursor_position(), b.cursor_position(), "{ctx}: cursor");
     assert_eq!(
         a.application_cursor_keys(),
         b.application_cursor_keys(),
@@ -559,7 +556,7 @@ fn detached_terminal_has_no_pty_state() {
     assert_eq!(t.cols(), 80);
     assert_eq!(t.rows(), 24);
     assert!(!t.has_pending_pty_resize());
-    let (cols, rows) = t.surface().dimensions();
+    let (cols, rows) = t.dimensions();
     assert_eq!((cols, rows), (80, 24));
     // process() on a detached terminal is a harmless no-op (no child exit event).
     assert!(!t.process());
@@ -650,8 +647,8 @@ fn assert_snapshot_eq(server: &Terminal, mirror: &Terminal, ctx: &str) {
         "{ctx}: screen_text"
     );
     assert_eq!(
-        server.surface().cursor_position(),
-        mirror.surface().cursor_position(),
+        server.cursor_position(),
+        mirror.cursor_position(),
         "{ctx}: cursor"
     );
     assert_eq!(
@@ -787,7 +784,8 @@ fn process_exited_eventually_emitted() {
     let mut seen = false;
     while std::time::Instant::now() < deadline {
         t.process();
-        if t.events
+        if t.lock_state()
+            .events
             .iter()
             .any(|e| matches!(e.kind, TerminalEventKind::ProcessExited))
         {
@@ -852,7 +850,8 @@ fn detached_terminal_never_emits_process_exited() {
     std::thread::sleep(ALIVE_CHECK_INTERVAL + std::time::Duration::from_millis(50));
     t.process();
     assert!(
-        !t.events
+        !t.lock_state()
+            .events
             .iter()
             .any(|e| matches!(e.kind, TerminalEventKind::ProcessExited)),
         "detached mirror has no child to exit"

@@ -7,7 +7,7 @@
 - `TERM=xterm-256color` 환경 설정
 - PTY 리사이즈 전파: 윈도우 크기 변경 시 자식 프로세스에 새 크기 통보. rows 축소 시 커서 아래 빈 행을 먼저 제거하고 부족하면 위쪽 행을 scrollback으로 캡처하여 커서-콘텐츠 관계를 보존. rows 확대 시 scrollback에서 복원. 모든 워크스페이스/탭의 터미널에 리사이즈 전파
 - 자식 프로세스 핸들 관리: 생존 여부 확인 가능
-- PTY 채널 백프레셔: `sync_channel(32)`으로 버퍼 크기 제한 (32 * 8KB = 256KB), 버퍼 가득 차면 PTY 리더 스레드 블로킹
+- 입력 스레드 분리 파싱: 터미널마다 **파서 스레드**가 PTY raw 바이트를 읽는 즉시 그 스레드에서 VTE 파싱·그리드 갱신(`ingest`)을 수행한다. winit(메인) 이벤트 루프는 더 이상 파싱하지 않으므로, 백그라운드 터미널 다수가 출력해도 포그라운드 키 입력/IPC가 파싱 백로그에 막히지 않는다. 그리드 상태(`TerminalState`)는 `Arc<Mutex<_>>`로 공유하며 파서 스레드는 8KB 청크마다 락을 잡고 즉시 해제해, 메인 스레드의 렌더/IPC/이벤트 수집은 최대 1 청크 파싱 시간만 대기한다. 백프레셔는 파서 스레드의 blocking read 가 담당하고, `Terminal` 핸들이 drop 되면(surface 닫힘) 파서 스레드는 `Weak` 업그레이드 실패로 즉시 종료한다. 설계 근거·대안: [ADR-0002](../adr/0002-vte-parsing-off-input-thread.md).
 - 작업 디렉토리 상속: 새 surface/pane/workspace 생성 시 소스 surface의 현재 작업 디렉토리를 자동 상속. CWD 결정은 플랫폼별로 다르다 — **macOS/Linux**는 셸 PID로 OS를 직접 조회(`get_cwd_of_pid`: macOS `proc_pidinfo`, Linux `/proc/<pid>/cwd`)하므로 셸 설정과 무관하게 동작하며, OSC 7 캐시가 있으면 그 값을 우선 사용한다. **Windows**는 타 프로세스 cwd 조회 API가 없어 셸이 내보내는 OSC 7 시퀀스 캐시에만 의존한다 — tasty 가 bash 를 `--rcfile <합성 rc>` 로 띄워 **셸 모드(default/tasty)와 무관하게 OSC 7 emit·UTF-8·MSYS PATH 빌트인을 강제 주입**한다. VTE 파서가 `/C:/path` URI 형식을 Windows 경로로 정규화. 설정에서 on/off 가능 (`general.inherit_cwd`, 기본 on). CLI/IPC에서는 `--cwd` 옵션으로 명시적 경로 지정도 가능
 
 ### VTE 파싱 및 터미널 에뮬레이션
@@ -88,13 +88,13 @@
 - **Windows 자식 프로세스 콘솔 창 억제**: 호스트가 백그라운드로 spawn 하는 콘솔 서브시스템 자식 프로세스(플러그인 바이너리, `cmd`/`sh` 훅, agent 셸, Lua `run_cli` 등)에 `CREATE_NO_WINDOW` 플래그를 적용해 빈 콘솔 창이 뜨지 않음. `tasty_utils::process::hide_console` 헬퍼로 일원화(비-Windows no-op). pane 안에서 실제로 도는 사용자 셸은 `portable-pty`(ConPTY) 경로라 무관
 
 ### 이벤트 드리븐 렌더 루프
-- `EventLoopProxy<AppEvent>` 기반 PTY 웨이크업: PTY 리더 스레드에서 데이터 수신 시 `AppEvent::TerminalOutput` 이벤트를 메인 이벤트 루프로 전송
+- `EventLoopProxy<AppEvent>` 기반 PTY 웨이크업: 터미널의 파서 스레드가 raw 바이트를 ingest(파싱·그리드 갱신)한 *직후* `AppEvent::TerminalOutput` 이벤트를 메인 이벤트 루프로 전송. 메인 루프는 파싱이 아니라 변경된 그리드의 렌더·이벤트 수집만 수행한다
 - 무조건적 `request_redraw()` 제거: 이전에는 매 프레임 끝에 `request_redraw()`를 호출하여 VSync 기반 busy-loop을 실행했으나, 이제는 실제 변경이 있을 때만 redraw 요청
 - 웨이크업 소스:
   - PTY 출력 → `AppEvent::TerminalOutput` → `user_event()` → `request_redraw()`
   - 키보드/마우스 입력 → `window_event()` → dirty 플래그 설정 → `request_redraw()`
   - 윈도우 리사이즈/포커스 → `window_event()` → dirty 플래그 설정 → `request_redraw()`
   - IPC 명령 → `process_ipc()` → dirty 플래그 설정 → `request_redraw()`
-- `Waker` 타입 (`Arc<dyn Fn() + Send + Sync>`): Terminal 생성 시 전달되어 PTY 리더 스레드가 이벤트 루프를 깨울 수 있게 함
+- `Waker` 타입 (`Arc<dyn Fn() + Send + Sync>`): Terminal 생성 시 전달되어 파서 스레드가 이벤트 루프를 깨울 수 있게 함
 - Waker 전파 경로: `App` → `AppState` → `Workspace` → `Pane` → `Tab` → `Terminal`
 - CPU 유휴 시 0% 사용: 터미널 출력이 없고 사용자 입력이 없으면 이벤트 루프가 대기 상태로 진입

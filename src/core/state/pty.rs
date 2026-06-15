@@ -156,10 +156,17 @@ impl CoreState {
     }
 
     /// Collect events from all terminals. **D.3.E.4.f** — store iter.
+    ///
+    /// Uses a non-blocking take: a terminal whose parser thread currently holds
+    /// the state lock (mid-chunk ingest) is skipped this round, so the input
+    /// thread never serializes against busy parser threads (ADR-0002). Skipped
+    /// events are not lost — the parser wakes the loop again after each ingest.
     pub fn collect_events(&mut self) -> Vec<TerminalEvent> {
         let mut all_events = Vec::new();
         for (sid, terminal) in self.terminals.iter_mut() {
-            let mut events = terminal.take_events();
+            let Some(mut events) = terminal.try_take_events() else {
+                continue;
+            };
             for event in &mut events {
                 event.surface_id = sid;
             }

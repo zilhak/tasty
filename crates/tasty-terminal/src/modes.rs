@@ -2,9 +2,9 @@ use termwiz::color::ColorAttribute;
 use termwiz::escape::csi::{DecPrivateMode, DecPrivateModeCode, Mode as CsiMode};
 use termwiz::surface::{Change, CursorVisibility, Position, Surface};
 
-use super::{MouseTrackingMode, Terminal};
+use super::{MouseTrackingMode, TerminalState};
 
-impl Terminal {
+impl TerminalState {
     /// Handle DECSET/DECRST mode changes.
     pub(crate) fn handle_mode(&mut self, mode: &CsiMode) {
         match mode {
@@ -139,7 +139,7 @@ impl Terminal {
     }
 }
 
-impl Terminal {
+impl TerminalState {
     /// Whether application cursor keys mode is active (DECCKM).
     pub fn application_cursor_keys(&self) -> bool {
         self.application_cursor_keys

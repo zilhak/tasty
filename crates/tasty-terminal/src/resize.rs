@@ -1,15 +1,18 @@
-//! `Terminal` 의 resize 처리 — PTY 크기 변경, scroll region adjustments, line tails 보존.
+//! Resize 처리 — grid 크기 변경(`TerminalState`)과 PTY 크기 알림 throttle
+//! (`Terminal` 핸들)로 분리 (ADR-0002).
 
 use portable_pty::PtySize;
 use termwiz::cell::CellAttributes;
 use termwiz::surface::Change;
 
-use crate::Terminal;
+use crate::{Terminal, TerminalState};
 
-impl Terminal {
-    pub fn resize(&mut self, cols: usize, rows: usize) {
+impl TerminalState {
+    /// Resize the grid (surfaces, scroll region, line tails). Returns true if the
+    /// dimensions actually changed (the caller then schedules a PTY notify).
+    pub(crate) fn resize_grid(&mut self, cols: usize, rows: usize) -> bool {
         if self.cols == cols && self.rows == rows {
-            return;
+            return false;
         }
 
         let old_cols = self.cols;
@@ -47,9 +50,6 @@ impl Terminal {
         }
 
         // Always restore cursor position after all resize operations.
-        // restore_tails_to_surface and handle_rows_grow may leave cursor
-        // at unexpected positions. Final restore ensures shell's SIGWINCH
-        // response redraws at the correct location.
         if !self.use_alternate {
             use termwiz::surface::Position;
             let cursor_y = (old_cursor.1 + rows_restored).min(rows.saturating_sub(1));
@@ -62,66 +62,7 @@ impl Terminal {
 
         // Reset scroll region on resize
         self.scroll_region = None;
-
-        // Defer PTY resize notification to avoid SIGWINCH storms during drag.
-        // Call flush_pty_resize() after resize events settle. A detached mirror
-        // has no PTY to notify, so there is nothing to defer.
-        if self.pty.is_some() {
-            self.pending_pty_resize = Some((cols, rows));
-        }
-    }
-
-    /// Throttle interval for PTY resize notifications.
-    const PTY_RESIZE_THROTTLE: std::time::Duration = std::time::Duration::from_millis(100);
-
-    /// Try to flush pending PTY resize. Returns true if flushed, false if throttled.
-    /// When throttled, the pending resize is kept and the caller should retry later.
-    pub fn flush_pty_resize(&mut self) -> bool {
-        if self.pending_pty_resize.is_none() {
-            return false;
-        }
-
-        if self.last_pty_flush.elapsed() < Self::PTY_RESIZE_THROTTLE {
-            return false; // throttled — caller should retry later
-        }
-
-        if let Some((cols, rows)) = self.pending_pty_resize.take() {
-            if let Some(pty) = self.pty.as_ref()
-                && let Err(e) = pty.pty_master.resize(PtySize {
-                    rows: rows as u16,
-                    cols: cols as u16,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-            {
-                tracing::warn!("PTY resize failed: {e}");
-            }
-            self.last_pty_flush = std::time::Instant::now();
-        }
         true
-    }
-
-    /// Force flush pending PTY resize regardless of throttle.
-    /// Used for discrete events (pane close, split) where immediate notification is needed.
-    pub fn force_flush_pty_resize(&mut self) {
-        if let Some((cols, rows)) = self.pending_pty_resize.take() {
-            if let Some(pty) = self.pty.as_ref()
-                && let Err(e) = pty.pty_master.resize(PtySize {
-                    rows: rows as u16,
-                    cols: cols as u16,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-            {
-                tracing::warn!("PTY resize failed: {e}");
-            }
-            self.last_pty_flush = std::time::Instant::now();
-        }
-    }
-
-    /// Check if there is a pending PTY resize.
-    pub fn has_pending_pty_resize(&self) -> bool {
-        self.pending_pty_resize.is_some()
     }
 
     /// When rows shrink, capture top lines to scrollback so the cursor stays
@@ -173,12 +114,7 @@ impl Terminal {
         use termwiz::surface::Position;
 
         let rows_added = new_rows - old_rows;
-        // Only restore lines that were pushed by a prior shrink. Without this
-        // bound, every grow would unconditionally consume `rows_added` lines
-        // from scrollback — including injected/historical lines (previous-
-        // session restore) and shell-scrolled-off lines — causing visible
-        // content to accumulate on repeated resize cycles when the cursor
-        // sits high with blank rows below.
+        // Only restore lines that were pushed by a prior shrink.
         let restore_count = rows_added
             .min(self.scrollback.memory_len())
             .min(self.restorable_scrollback_count);
@@ -206,9 +142,7 @@ impl Terminal {
             scroll_count: actual_restored,
         });
 
-        // Write restored lines at the top. Wrap flag is dropped: termwiz tracks
-        // wrap on the live surface itself, and lines reinstated this way are
-        // treated as fresh screen content (no longer "scrolled-off wrap").
+        // Write restored lines at the top.
         for (row, line) in to_restore.iter().enumerate() {
             self.primary_surface.add_change(Change::CursorPosition {
                 x: Position::Absolute(0),
@@ -242,12 +176,8 @@ impl Terminal {
         true
     }
 
-    /// Heuristic: returns true when the line's rightmost cell is occupied by
-    /// a non-space grapheme — the signature of a soft-wrap (the cursor
-    /// reached the right edge and overflow advanced to the next row). Hard
-    /// newlines almost always leave at least one trailing space, so this
-    /// distinguishes the two cases without needing a wrap bit from termwiz
-    /// (which `Surface::print_text` does not maintain).
+    /// Heuristic: returns true when the line's rightmost cell is occupied by a
+    /// non-space grapheme — the signature of a soft-wrap.
     pub(crate) fn line_was_soft_wrapped(line: &termwiz::surface::line::Line, cols: usize) -> bool {
         if cols == 0 {
             return false;
@@ -264,8 +194,8 @@ impl Terminal {
         false
     }
 
-    /// Before termwiz truncates lines, capture cells that would be lost (cols shrinking)
-    /// or merge saved tails back when cols grow.
+    /// Before termwiz truncates lines, capture cells that would be lost (cols
+    /// shrinking) or merge saved tails back when cols grow.
     pub(crate) fn save_or_restore_line_tails(
         &mut self,
         old_cols: usize,
@@ -281,7 +211,7 @@ impl Terminal {
         }
 
         if new_cols < old_cols {
-            // Cols shrinking: capture cells at indices [new_cols..] before termwiz truncates them
+            // Cols shrinking: capture cells at indices [new_cols..] before termwiz truncates
             for (i, line) in lines.iter().enumerate() {
                 let mut tail_cells: Vec<(String, CellAttributes)> = line
                     .visible_cells()
@@ -294,9 +224,6 @@ impl Terminal {
                 }
                 self.saved_line_tails[i] = tail_cells;
             }
-        } else if new_cols > old_cols {
-            // Cols growing: trim saved tails — cells will be restored after resize
-            // (nothing to do here; restore_tails_to_surface handles it)
         }
 
         // Trim saved_line_tails to match new row count
@@ -327,8 +254,75 @@ impl Terminal {
                 self.primary_surface.add_change(Change::Text(text));
             }
         }
+    }
+}
 
-        // Restore cursor to where it was (bottom of screen, col 0 as safe default)
-        // The actual cursor position will be corrected by the next PTY output
+impl Terminal {
+    /// Throttle interval for PTY resize notifications.
+    const PTY_RESIZE_THROTTLE: std::time::Duration = std::time::Duration::from_millis(100);
+
+    /// Resize the terminal grid and (for PTY-backed terminals) schedule a
+    /// throttled SIGWINCH notification. Lock-free no-op when the dimensions are
+    /// unchanged — the per-frame `resize_all` sweep calls this on every terminal,
+    /// so the common case must not lock a busy background terminal's state.
+    pub fn resize(&mut self, cols: usize, rows: usize) {
+        if self.cached_dims == (cols, rows) {
+            return;
+        }
+        let changed = self.lock_state().resize_grid(cols, rows);
+        self.cached_dims = (cols, rows);
+        // Defer PTY resize notification to avoid SIGWINCH storms during drag.
+        if changed && self.pty.is_some() {
+            self.pending_pty_resize = Some((cols, rows));
+        }
+    }
+
+    /// Try to flush pending PTY resize. Returns true if flushed/cleared, false if
+    /// throttled (the pending resize is kept and the caller should retry later).
+    pub fn flush_pty_resize(&mut self) -> bool {
+        if self.pending_pty_resize.is_none() {
+            return false;
+        }
+
+        if self.last_pty_flush.elapsed() < Self::PTY_RESIZE_THROTTLE {
+            return false; // throttled — caller should retry later
+        }
+
+        if let Some((cols, rows)) = self.pending_pty_resize.take() {
+            if let Some(pty) = self.pty.as_ref()
+                && let Err(e) = pty.pty_master.resize(PtySize {
+                    rows: rows as u16,
+                    cols: cols as u16,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+            {
+                tracing::warn!("PTY resize failed: {e}");
+            }
+            self.last_pty_flush = std::time::Instant::now();
+        }
+        true
+    }
+
+    /// Force flush pending PTY resize regardless of throttle.
+    pub fn force_flush_pty_resize(&mut self) {
+        if let Some((cols, rows)) = self.pending_pty_resize.take() {
+            if let Some(pty) = self.pty.as_ref()
+                && let Err(e) = pty.pty_master.resize(PtySize {
+                    rows: rows as u16,
+                    cols: cols as u16,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+            {
+                tracing::warn!("PTY resize failed: {e}");
+            }
+            self.last_pty_flush = std::time::Instant::now();
+        }
+    }
+
+    /// Check if there is a pending PTY resize.
+    pub fn has_pending_pty_resize(&self) -> bool {
+        self.pending_pty_resize.is_some()
     }
 }

@@ -190,7 +190,7 @@ fn char_col_at_byte(s: &str, byte_offset: usize) -> usize {
     s[..byte_offset].chars().count()
 }
 
-impl crate::Terminal {
+impl crate::TerminalState {
     /// Search all terminal content (scrollback + screen) for `query`.
     /// Returns matches sorted by position (oldest first), or an error if the
     /// query options are invalid (e.g. malformed regex).

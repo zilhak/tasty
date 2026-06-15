@@ -3,9 +3,9 @@
 use termwiz::cell::{CellAttributes, Underline};
 use termwiz::color::ColorAttribute;
 
-use crate::{CellInfo, Terminal};
+use crate::{CellInfo, TerminalState};
 
-impl Terminal {
+impl TerminalState {
     /// Get the visible text content of the screen as a string.
     /// Each row is on its own line, trailing spaces are trimmed.
     pub fn screen_text(&self) -> String {

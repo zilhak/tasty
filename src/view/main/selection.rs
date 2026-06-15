@@ -81,7 +81,7 @@ impl MainView {
                     let cols = self
                         .state
                         .focused_terminal(&self.core_state)
-                        .map(|t| t.surface().dimensions().0)
+                        .map(|t| t.dimensions().0)
                         .unwrap_or(80);
                     (
                         SelectionPoint {
@@ -143,8 +143,7 @@ impl MainView {
             }
         } else {
             let screen_row = absolute_row - scrollback_len;
-            let surface = terminal.surface();
-            let lines = surface.screen_lines();
+            let lines = terminal.screen_lines();
             match lines.get(screen_row) {
                 Some(line) => line
                     .visible_cells()
@@ -239,7 +238,7 @@ impl MainView {
             None => return,
         };
 
-        let (cols, rows) = terminal.surface().dimensions();
+        let (cols, rows) = terminal.dimensions();
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = match self
             .state
@@ -318,7 +317,7 @@ impl MainView {
         let surface_id = self.state.focused_surface_id(engine)?;
         // Use the actual content rect (after tab bar) instead of the raw pane rect
         let surface_rect = self.state.focused_surface_rect(engine, *terminal_rect)?;
-        let (cols, rows) = terminal.surface().dimensions();
+        let (cols, rows) = terminal.dimensions();
         let point = selection::pixel_to_grid(
             x,
             y,

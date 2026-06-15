@@ -1,9 +1,9 @@
 use termwiz::escape::{Action, ControlCode};
 use termwiz::surface::Change;
 
-use super::{Terminal, TerminalEvent, TerminalEventKind};
+use super::{TerminalEvent, TerminalEventKind, TerminalState};
 
-impl Terminal {
+impl TerminalState {
     /// Convert a parsed VT action into Surface changes.
     pub(crate) fn action_to_changes(&mut self, action: Action) -> Vec<Change> {
         match action {

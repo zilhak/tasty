@@ -5,9 +5,9 @@ use termwiz::color::ColorAttribute;
 use termwiz::escape::esc::{Esc, EscCode};
 use termwiz::surface::{Change, CursorVisibility, Position};
 
-use crate::{MouseTrackingMode, Terminal};
+use crate::{MouseTrackingMode, TerminalState};
 
-impl Terminal {
+impl TerminalState {
     pub(crate) fn map_esc(&mut self, esc: Esc) -> Vec<Change> {
         match esc {
             Esc::Code(EscCode::DecSaveCursorPosition) => {

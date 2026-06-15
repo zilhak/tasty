@@ -5,9 +5,9 @@ use termwiz::color::ColorAttribute;
 use termwiz::escape::csi::{Edit, EraseInDisplay, EraseInLine};
 use termwiz::surface::{Change, Position};
 
-use crate::Terminal;
+use crate::TerminalState;
 
-impl Terminal {
+impl TerminalState {
     pub(crate) fn map_edit(&mut self, edit: Edit) -> Vec<Change> {
         match edit {
             Edit::EraseInDisplay(mode) => match mode {

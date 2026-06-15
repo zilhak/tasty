@@ -65,7 +65,7 @@ impl MainView {
             .state
             .surface_rect_by_id(engine, surface_id, terminal_rect)?;
 
-        let (cols, rows) = terminal.surface().dimensions();
+        let (cols, rows) = terminal.dimensions();
         let point = crate::selection::pixel_to_grid(
             x,
             y,
@@ -409,7 +409,7 @@ impl MainView {
                         t.sgr_mouse(),
                         t.scroll_offset(),
                         t.scrollback_len(),
-                        t.surface().dimensions(),
+                        t.dimensions(),
                     )
                 });
                 let Some((is_alt, tracking, sgr, scroll_offset, sb_len, (cols, rows))) = info

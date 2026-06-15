@@ -15,9 +15,9 @@ use termwiz::cell::{CellAttributes, Intensity, Underline};
 use termwiz::color::ColorAttribute;
 use termwiz::surface::Surface as TwSurface;
 
-use crate::Terminal;
+use crate::TerminalState;
 
-impl Terminal {
+impl TerminalState {
     /// 현재 화면을 mirror 가 `feed_bytes` 로 재구성할 VT 바이트로 직렬화한다.
     /// (attach 초기 bulk 스냅샷, decisions.md #6.)
     pub fn snapshot_as_vt(&self) -> Vec<u8> {

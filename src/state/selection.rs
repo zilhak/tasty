@@ -145,9 +145,8 @@ pub fn extract_selected_text(
 ) -> String {
     let norm = selection.normalized();
     let scrollback_len = terminal.scrollback_len();
-    let surface = terminal.surface();
-    let (cols, _) = surface.dimensions();
-    let screen_lines = surface.screen_lines();
+    let (cols, _) = terminal.dimensions();
+    let screen_lines = terminal.screen_lines();
 
     // Block (visual block) — soft-wrap join 무관, 각 row 의 [c0..=c1] 사각형을
     // join("\n") 으로 추출. 본질적으로 visual selection.
@@ -336,7 +335,7 @@ mod tests {
 
     fn select_all(terminal: &Terminal) -> TextSelection {
         let scrollback_len = terminal.scrollback_len();
-        let (cols, rows) = terminal.surface().dimensions();
+        let (cols, rows) = terminal.dimensions();
         TextSelection {
             anchor: SelectionPoint {
                 col: 0,

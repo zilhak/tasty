@@ -234,7 +234,7 @@ fn row_chars(terminal: &tasty_terminal::Terminal, abs_row: usize) -> Vec<(usize,
         }
     } else {
         let screen_row = abs_row - scrollback_len;
-        if let Some(line) = terminal.surface().screen_lines().get(screen_row) {
+        if let Some(line) = terminal.screen_lines().get(screen_row) {
             for cell in line.visible_cells() {
                 let col = cell.cell_index();
                 let ch = cell.str().chars().next().unwrap_or(' ');

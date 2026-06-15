@@ -5,9 +5,9 @@ use termwiz::escape::ControlCode;
 use termwiz::escape::csi::{CSI, Sgr};
 use termwiz::surface::{Change, Position};
 
-use crate::{Terminal, TerminalEvent, TerminalEventKind};
+use crate::{TerminalEvent, TerminalEventKind, TerminalState};
 
-impl Terminal {
+impl TerminalState {
     pub(crate) fn map_control(&mut self, code: ControlCode) -> Vec<Change> {
         match code {
             ControlCode::LineFeed | ControlCode::VerticalTab | ControlCode::FormFeed => {

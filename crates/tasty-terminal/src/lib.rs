@@ -1,5 +1,6 @@
 mod accessors;
 mod events;
+mod handle;
 mod io;
 mod modes;
 mod output_buffer;
@@ -20,7 +21,8 @@ pub mod testing;
 pub mod waker_factory;
 
 use std::io::{Read, Write};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread;
 
 use anyhow::Result;
@@ -82,14 +84,17 @@ pub struct CellInfo {
 /// PTY-bearing fields, grouped so a terminal is either fully PTY-backed
 /// (`Some`) or fully detached (`None`). Detached mirror terminals own no PTY,
 /// no child process, and no reader/writer threads.
+///
+/// 파싱은 `_parser_thread` 가 수행한다(ADR-0002). reader 스레드와 파서를 합쳐,
+/// PTY raw 바이트를 읽는 즉시 그 스레드에서 `TerminalState::ingest` 로 grid 를
+/// 갱신한다 — 메인(winit) 스레드는 파싱을 하지 않는다.
 struct PtyBackend {
-    /// Channel for non-blocking PTY writes. A background writer thread drains this.
-    pty_write_tx: mpsc::Sender<Vec<u8>>,
     _writer_thread: thread::JoinHandle<()>,
     pty_master: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
-    action_rx: mpsc::Receiver<Vec<u8>>,
-    _reader_thread: thread::JoinHandle<()>,
+    /// PTY reader + VTE parser thread. Reads raw chunks and ingests them into the
+    /// shared `TerminalState` off the input thread.
+    _parser_thread: thread::JoinHandle<()>,
 }
 
 /// A server-side subscriber to a terminal's raw PTY output.
@@ -105,7 +110,16 @@ const OUTPUT_TAP_CAP: usize = 1024;
 /// Consecutive `Full` sends after which a slow tap is unsubscribed.
 const OUTPUT_TAP_LAG_LIMIT: u32 = 64;
 
-pub struct Terminal {
+/// VTE 상태 머신 — surface grid · parser · modes · scrollback · output buffer ·
+/// events. **파서 스레드와 메인 스레드가 `Arc<Mutex<TerminalState>>` 로 공유** 한다
+/// (ADR-0002). 파서 스레드는 raw 청크마다 락을 잡아 [`TerminalState::ingest`] 를
+/// 수행하고 즉시 해제하므로, 메인 스레드의 렌더/IPC/이벤트 수집은 최대 1 청크
+/// 파싱 시간만 대기한다.
+///
+/// 필드 가시성은 기존 `Terminal` 과 동일 — crate root 에 정의되어 submodule
+/// (`accessors`/`resize`/`scrollback`/`modes`/…) 의 `impl TerminalState` 에서
+/// root-private 필드에 접근한다.
+pub(crate) struct TerminalState {
     /// Primary screen buffer.
     pub(crate) primary_surface: Surface,
     /// Alternate screen buffer (lazily created on DECSET 1049/47).
@@ -113,30 +127,25 @@ pub struct Terminal {
     /// Whether the alternate screen is active.
     pub(crate) use_alternate: bool,
     parser: Parser,
-    /// PTY backend (master/child/reader-writer threads/channels). `None` for a
-    /// detached mirror terminal created via [`Terminal::new_detached`], which
-    /// reconstructs its grid from externally supplied bytes (`feed_bytes`)
-    /// instead of owning a PTY.
-    pty: Option<PtyBackend>,
+    /// Channel that delivers input/response bytes to the PTY writer thread (PTY
+    /// terminals) or to the attach stream (detached mirror via `set_input_sink`).
+    /// `None` until wired. Lives in the shared state because VTE responses
+    /// (DSR/DA) are emitted from the parser thread during ingest.
+    input_tx: Option<mpsc::Sender<Vec<u8>>>,
     /// Server-side raw output subscribers. Each tap receives the exact raw PTY
     /// chunks (in apply order) so a remote mirror can replay them. Empty on a
     /// detached terminal and in the common no-subscriber case (zero overhead).
     output_taps: Vec<OutputTap>,
-    /// Detached-only: where `send_bytes`/`send_key` forward input when there is
-    /// no PTY. Wired to the attach stream in stage 3; `None` means drop.
-    input_sink: Option<mpsc::Sender<Vec<u8>>>,
     pub(crate) cols: usize,
     pub(crate) rows: usize,
     /// Saved cursor position for ESC 7 / ESC 8
     pub(crate) saved_cursor: Option<(usize, usize)>,
     /// Saved cursor position specifically for alternate screen enter/exit.
     pub(crate) alt_saved_cursor: Option<(usize, usize)>,
-    /// Events accumulated during process(), consumed via take_events().
+    /// Events accumulated during ingest(), consumed via take_events().
     pub(crate) events: Vec<TerminalEvent>,
     /// Raw PTY output buffer for read-mark API and ClaudeError scanner.
     output: output_buffer::OutputBuffer,
-    /// Whether we've already emitted a ProcessExited event.
-    process_exit_emitted: bool,
     /// DECCKM: application cursor keys mode.
     pub(crate) application_cursor_keys: bool,
     /// DECTCEM: cursor visibility.
@@ -161,214 +170,82 @@ pub struct Terminal {
     /// Used by get_cwd() to avoid spawning external processes.
     pub(crate) cached_cwd: Option<std::path::PathBuf>,
     /// Saved right-side cells for each line, preserved when cols shrink.
-    /// Each entry corresponds to a screen line and holds cells beyond the current cols.
-    /// Restored when cols grow again. Cleared on scrollback capture (scroll up).
     saved_line_tails: Vec<Vec<(String, CellAttributes)>>,
-    /// Pending PTY resize: surface is updated immediately, but PTY notification
-    /// is throttled to avoid SIGWINCH storms during continuous window drag.
-    pending_pty_resize: Option<(usize, usize)>,
-    /// Number of scrollback lines that were pushed by `handle_rows_shrink` and
-    /// are awaiting a symmetric `handle_rows_grow` to restore them. Without
-    /// this counter, every grow would unconditionally pop from scrollback —
-    /// pulling injected/historical lines (e.g. previous-session restore) into
-    /// the visible area even though no corresponding shrink pushed anything,
-    /// causing visible content to accumulate on repeated resize cycles.
+    /// Number of scrollback lines pushed by `handle_rows_shrink` awaiting a
+    /// symmetric `handle_rows_grow` to restore them.
     restorable_scrollback_count: usize,
-    /// Timestamp of the last actual PTY resize flush. Used for throttling.
-    last_pty_flush: std::time::Instant,
-    /// Timestamp of the most recent non-empty PTY output processed by this terminal.
-    /// Used by `is_busy()` to drop the busy state when a foreground program goes
-    /// quiet (e.g. claude waiting for the next prompt).
+    /// Timestamp of the most recent non-empty PTY output processed.
     last_output_at: std::time::Instant,
-    /// Timestamp of the most recent user input sent to the PTY via `send_key()`
-    /// or `send_bytes()`. Used by `is_busy()` to distinguish user-typing echo
-    /// from genuine program output.
+    /// Timestamp of the most recent user input sent to the PTY.
     last_input_at: std::time::Instant,
-    /// Timestamp of the last `check_process_alive()` syscall from `process()`.
-    /// Used to throttle per-chunk `try_wait` syscalls (ALIVE_CHECK_INTERVAL).
-    last_alive_check: std::time::Instant,
-    /// Whether `OutputAppended` events are pushed during ingest. Kept in sync
-    /// with the host's observer registrations; false (the default) skips the
-    /// per-character String allocation entirely.
+    /// Whether `OutputAppended` events are pushed during ingest.
     emit_output_events: bool,
 }
 
+/// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
+/// parser thread, and shares the VTE state machine ([`TerminalState`]) with that
+/// thread via `Arc<Mutex<_>>`. All grid/mode/scrollback accessors lock the shared
+/// state; the input (winit) thread never parses (ADR-0002).
+pub struct Terminal {
+    /// Shared VTE state. The parser thread locks this per raw chunk to ingest;
+    /// the main thread locks it for render/IPC/resize/event-drain.
+    state: Arc<Mutex<TerminalState>>,
+    /// PTY backend (master/child/writer-parser threads/channels). `None` for a
+    /// detached mirror terminal created via [`Terminal::new_detached`], which
+    /// reconstructs its grid from externally supplied bytes (`feed_bytes`).
+    pty: Option<PtyBackend>,
+    /// Set by the parser thread whenever it ingests a chunk; `process()` swaps it
+    /// to false and reports whether anything changed since the last poll.
+    dirty: Arc<AtomicBool>,
+    /// Set by the parser thread on PTY EOF — forces a prompt alive check.
+    parser_eof: Arc<AtomicBool>,
+    /// Last known grid dimensions `(cols, rows)`, mirrored on the handle so
+    /// `cols()`/`rows()` and the no-op `resize()` fast path avoid locking the
+    /// shared state. The per-frame `resize_all` sweep would otherwise lock every
+    /// terminal (including busy background ones) on each redraw (ADR-0002).
+    cached_dims: (usize, usize),
+    /// Handle-side mirror of `TerminalState::emit_output_events`, so the host's
+    /// per-wake `set_output_events_enabled` (called on every targeted poll) is a
+    /// lock-free no-op when the gate is unchanged — otherwise it would wait on a
+    /// busy background terminal's parser lock every wake, re-serializing the input
+    /// thread against parsing (ADR-0002).
+    cached_emit_events: bool,
+    /// Pending PTY resize: surface is updated immediately, but PTY notification
+    /// is throttled to avoid SIGWINCH storms during continuous window drag.
+    pending_pty_resize: Option<(usize, usize)>,
+    /// Timestamp of the last actual PTY resize flush. Used for throttling.
+    last_pty_flush: std::time::Instant,
+    /// Timestamp of the last `check_process_alive()` syscall from `process()`.
+    last_alive_check: std::time::Instant,
+    /// Whether we've already emitted a ProcessExited event.
+    process_exit_emitted: bool,
+}
+
 /// How long after the last PTY output a terminal still counts as busy.
-/// Tuned so that bursty token streams (claude, llms, tail -f) stay marked
-/// while genuinely idle TUIs (vim sitting still, claude waiting for input)
-/// drop out within a couple of polling intervals.
 pub(crate) const BUSY_OUTPUT_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Maximum delay between user input and its PTY echo. Output arriving within
-/// this window after the last `send_key()`/`send_bytes()` is treated as echo
-/// and does NOT count toward the busy indicator. Program-generated output
-/// (token streams, build logs) arrives well after this threshold.
+/// Maximum delay between user input and its PTY echo (echo is not "busy").
 pub(crate) const INPUT_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Minimum interval between child-alive `try_wait` syscalls in `process()`.
-/// Exit detection is still prompt: the reader thread fires a final wake on PTY
-/// EOF, and a disconnected channel forces an immediate check past the throttle.
 pub(crate) const ALIVE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
-impl Terminal {
-    /// Create a new terminal.
-    ///
-    /// If `config.shell` is `None` or empty, the platform default shell is used.
-    /// The `waker` callback is invoked from the PTY reader thread whenever new data
-    /// arrives, allowing the main event loop to wake up and process the output.
-    pub fn new(config: TerminalConfig<'_>, waker: Waker) -> Result<Self> {
-        let cols = config.cols;
-        let rows = config.rows;
-        let surface_id = config.surface_id;
-        let working_dir = config.working_dir;
-        let pty_system = NativePtySystem::default();
-
-        let pair = pty_system.openpty(PtySize {
-            rows: rows as u16,
-            cols: cols as u16,
-            pixel_width: 0,
-            pixel_height: 0,
-        })?;
-
-        let shell = match config.shell {
-            Some(s) if !s.is_empty() => s.to_string(),
-            _ => Self::default_shell(),
-        };
-        let mut cmd = CommandBuilder::new(&shell);
-        // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded.
-        // On Windows, cmd.exe and powershell don't understand Unix-style -li flags.
-        #[cfg(not(windows))]
-        cmd.arg("-li");
-        for arg in config.args {
-            if !arg.is_empty() {
-                cmd.arg(arg);
-            }
-        }
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
-
-        // Remove CMUX_* environment variables so cmux CLI doesn't work inside tasty terminals.
-        // tasty inherits these from the parent process when launched from cmux.
-        for (key, _) in std::env::vars() {
-            if key.starts_with("CMUX_") {
-                cmd.env_remove(&key);
-            }
-        }
-
-        // Add tasty's own binary directory to PATH so `tasty` CLI works inside the terminal
-        if let Ok(exe_path) = std::env::current_exe()
-            && let Some(exe_dir) = exe_path.parent()
-        {
-            let exe_dir_str = exe_dir.to_string_lossy();
-            let sep = if cfg!(windows) { ";" } else { ":" };
-            let new_path = if let Ok(existing) = std::env::var("PATH") {
-                format!("{}{}{}", exe_dir_str, sep, existing)
-            } else {
-                exe_dir_str.to_string()
-            };
-            cmd.env("PATH", new_path);
-        }
-
-        if let Some(dir) = working_dir {
-            cmd.cwd(dir);
-        }
-
-        let child = pair.slave.spawn_command(cmd)?;
-        drop(pair.slave);
-
-        let mut pty_writer = pair.master.take_writer()?;
-        let mut pty_reader = pair.master.try_clone_reader()?;
-
-        // PTY master 의 첫 바이트로 initial_input 을 동기 write. child 가 stdin 을
-        // 처음 read 하는 순간 이 바이트가 무조건 들어간다. writer thread 의 채널
-        // 경유로는 미세한 race 또는 첫 write 가 지연되는 케이스가 있어, 직접 master
-        // fd 에 써서 timing 을 결정적으로 만든다.
-        if let Some(input) = config.initial_input
-            && !input.is_empty()
-        {
-            if let Err(e) = pty_writer.write_all(input.as_bytes()) {
-                tracing::warn!("initial_input write_all failed: {e}");
-            } else if let Err(e) = pty_writer.flush() {
-                tracing::warn!("initial_input flush failed: {e}");
-            }
-        }
-
-        // Writer thread: drains queued writes to PTY without blocking the main thread.
-        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
-        let writer_thread = thread::spawn(move || {
-            while let Ok(data) = write_rx.recv() {
-                if pty_writer.write_all(&data).is_err() {
-                    break;
-                }
-                if pty_writer.flush().is_err() {
-                    break;
-                }
-            }
-        });
-
-        let (tx, rx) = mpsc::sync_channel(32); // 32 * 8KB = 256KB max buffered
-
-        let reader_thread = thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match pty_reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if tx.send(buf[..n].to_vec()).is_err() {
-                            break;
-                        }
-                        waker();
-                    }
-                    Err(_) => break,
-                }
-            }
-            // PTY EOF/error: drop the sender so the channel reads Disconnected,
-            // then fire one final wake — process() is guaranteed to run once
-            // more after the channel closed and detect the exit immediately
-            // (the Disconnected path bypasses the alive-check throttle).
-            drop(tx);
-            waker();
-        });
-
-        let pty = PtyBackend {
-            pty_write_tx: write_tx,
-            _writer_thread: writer_thread,
-            pty_master: pair.master,
-            child,
-            action_rx: rx,
-            _reader_thread: reader_thread,
-        };
-
-        Ok(Self::assemble(cols, rows, Some(pty)))
-    }
-
-    /// Create a detached mirror terminal with no PTY, child, or reader/writer
-    /// threads. Its grid is reconstructed purely from bytes pushed via
-    /// [`Terminal::feed_bytes`] — used by an attach client to mirror a remote
-    /// session through the same VTE parser the server uses.
-    pub fn new_detached(cols: usize, rows: usize) -> Self {
-        Self::assemble(cols, rows, None)
-    }
-
-    /// Build a `Terminal` from its PTY-independent initial state plus an optional
-    /// PTY backend. Shared by [`Terminal::new`] and [`Terminal::new_detached`]
-    /// so the two constructors can never drift on non-PTY field initialization.
-    fn assemble(cols: usize, rows: usize, pty: Option<PtyBackend>) -> Self {
+impl TerminalState {
+    /// Build the PTY-independent VTE state for a fresh terminal.
+    fn new(cols: usize, rows: usize) -> Self {
         Self {
             primary_surface: Surface::new(cols, rows),
             alternate_surface: None,
             use_alternate: false,
             parser: Parser::new(),
-            pty,
+            input_tx: None,
             output_taps: Vec::new(),
-            input_sink: None,
             cols,
             rows,
             saved_cursor: None,
             alt_saved_cursor: None,
             events: Vec::new(),
             output: output_buffer::OutputBuffer::new(),
-            process_exit_emitted: false,
             application_cursor_keys: false,
             cursor_visible: true,
             bracketed_paste: false,
@@ -380,118 +257,17 @@ impl Terminal {
             scrollback: scrollback::Scrollback::new(),
             cached_cwd: None,
             saved_line_tails: Vec::new(),
-            pending_pty_resize: None,
             restorable_scrollback_count: 0,
-            last_pty_flush: std::time::Instant::now(),
             last_output_at: std::time::Instant::now(),
             // Start in the past so the first PTY output is never mistaken for echo.
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
-            // Start in the past so the first process() always checks immediately.
-            last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
             emit_output_events: false,
         }
     }
 
-    /// Process pending PTY output. Returns true if surface changed.
-    pub fn process(&mut self) -> bool {
-        // Flush deferred PTY resize before processing new data
-        self.force_flush_pty_resize();
-
-        let mut changed = false;
-
-        // Drain raw PTY chunks first (the `action_rx` borrow lives inside
-        // `self.pty`, so we cannot hold it across the `&mut self` ingest call).
-        // `Disconnected` means the reader thread exited (PTY EOF — child very
-        // likely gone): force an alive check regardless of the throttle window
-        // so exit detection never depends on a future wake that may never come.
-        let mut reader_gone = false;
-        let chunks: Vec<Vec<u8>> = match self.pty.as_ref() {
-            Some(pty) => {
-                let mut chunks = Vec::new();
-                loop {
-                    match pty.action_rx.try_recv() {
-                        Ok(data) => chunks.push(data),
-                        Err(mpsc::TryRecvError::Empty) => break,
-                        Err(mpsc::TryRecvError::Disconnected) => {
-                            reader_gone = true;
-                            break;
-                        }
-                    }
-                }
-                chunks
-            }
-            None => Vec::new(),
-        };
-        for data in chunks {
-            if self.ingest(&data) {
-                changed = true;
-            }
-        }
-
-        // Check if the child process has exited (emit event once), throttled to
-        // one `try_wait` syscall per ALIVE_CHECK_INTERVAL. Only meaningful for
-        // PTY-backed terminals; a detached mirror has no child.
-        if self.pty.is_some()
-            && !self.process_exit_emitted
-            && (reader_gone || self.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL)
-        {
-            self.last_alive_check = std::time::Instant::now();
-            if !self.check_process_alive() {
-                self.process_exit_emitted = true;
-                self.events.push(TerminalEvent {
-                    surface_id: 0,
-                    kind: TerminalEventKind::ProcessExited,
-                });
-            }
-        }
-
-        changed
-    }
-
-    /// Feed externally supplied raw VT bytes into the parser, updating the
-    /// surface as if they had arrived from a PTY. Returns true if the surface
-    /// changed. This is the mirror ingestion path: a detached terminal has the
-    /// caller supply bytes instead of a reader thread.
-    pub fn feed_bytes(&mut self, data: &[u8]) -> bool {
-        self.ingest(data)
-    }
-
-    /// Register a server-side subscriber to this terminal's raw PTY output.
-    /// The returned receiver yields the exact raw chunks (in the order they are
-    /// applied to the local grid) so a remote mirror can replay them and
-    /// reconstruct an identical grid. Backpressure: a subscriber that falls too
-    /// far behind is dropped (see [`OUTPUT_TAP_LAG_LIMIT`]).
-    pub fn add_output_tap(&mut self) -> mpsc::Receiver<Vec<u8>> {
-        let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(OUTPUT_TAP_CAP);
-        self.output_taps.push(OutputTap { tx, lag: 0 });
-        rx
-    }
-
-    /// Fan a raw chunk out to all output subscribers without blocking the pump.
-    /// Closed or persistently-lagging taps are pruned. No-op (and no allocation)
-    /// when there are no subscribers — the common case.
-    fn fan_out_to_taps(&mut self, data: &[u8]) {
-        if self.output_taps.is_empty() {
-            return;
-        }
-        self.output_taps
-            .retain_mut(|tap| match tap.tx.try_send(data.to_vec()) {
-                Ok(()) => {
-                    tap.lag = 0;
-                    true
-                }
-                Err(mpsc::TrySendError::Full(_)) => {
-                    tap.lag += 1;
-                    tap.lag < OUTPUT_TAP_LAG_LIMIT
-                }
-                Err(mpsc::TrySendError::Disconnected(_)) => false,
-            });
-    }
-
-    /// Parse a chunk of raw VT bytes and apply it to the surface. Shared by
-    /// [`Terminal::process`] (PTY drain), [`Terminal::feed_bytes`] (mirror), and
-    /// `process_bytes` (test injection) so all three take an identical path —
-    /// guaranteeing a detached mirror reconstructs the same grid as the server.
+    /// Parse a chunk of raw VT bytes and apply it to the surface. Shared by the
+    /// parser thread (PTY drain), [`Terminal::feed_bytes`] (mirror), and
+    /// `process_bytes` (test injection) so all three take an identical path.
     /// Returns true if the surface changed.
     pub(crate) fn ingest(&mut self, data: &[u8]) -> bool {
         if data.is_empty() {
@@ -523,6 +299,280 @@ impl Terminal {
         changed
     }
 
+    /// Register a server-side subscriber to this terminal's raw PTY output.
+    pub(crate) fn add_output_tap(&mut self) -> mpsc::Receiver<Vec<u8>> {
+        let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(OUTPUT_TAP_CAP);
+        self.output_taps.push(OutputTap { tx, lag: 0 });
+        rx
+    }
+
+    /// Fan a raw chunk out to all output subscribers without blocking the pump.
+    fn fan_out_to_taps(&mut self, data: &[u8]) {
+        if self.output_taps.is_empty() {
+            return;
+        }
+        self.output_taps
+            .retain_mut(|tap| match tap.tx.try_send(data.to_vec()) {
+                Ok(()) => {
+                    tap.lag = 0;
+                    true
+                }
+                Err(mpsc::TrySendError::Full(_)) => {
+                    tap.lag += 1;
+                    tap.lag < OUTPUT_TAP_LAG_LIMIT
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => false,
+            });
+    }
+}
+
+impl Terminal {
+    /// Create a new terminal.
+    ///
+    /// If `config.shell` is `None` or empty, the platform default shell is used.
+    /// The `waker` callback is invoked from the parser thread whenever new data
+    /// has been ingested, allowing the main event loop to wake up and render.
+    pub fn new(config: TerminalConfig<'_>, waker: Waker) -> Result<Self> {
+        let cols = config.cols;
+        let rows = config.rows;
+        let surface_id = config.surface_id;
+        let working_dir = config.working_dir;
+        let pty_system = NativePtySystem::default();
+
+        let pair = pty_system.openpty(PtySize {
+            rows: rows as u16,
+            cols: cols as u16,
+            pixel_width: 0,
+            pixel_height: 0,
+        })?;
+
+        let shell = match config.shell {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => Self::default_shell(),
+        };
+        let mut cmd = CommandBuilder::new(&shell);
+        // Launch as interactive login shell so .zshrc/.bashrc and themes are loaded.
+        #[cfg(not(windows))]
+        cmd.arg("-li");
+        for arg in config.args {
+            if !arg.is_empty() {
+                cmd.arg(arg);
+            }
+        }
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("TASTY_SURFACE_ID", surface_id.to_string());
+
+        // Remove CMUX_* environment variables so cmux CLI doesn't work inside tasty terminals.
+        for (key, _) in std::env::vars() {
+            if key.starts_with("CMUX_") {
+                cmd.env_remove(&key);
+            }
+        }
+
+        // Add tasty's own binary directory to PATH so `tasty` CLI works inside the terminal
+        if let Ok(exe_path) = std::env::current_exe()
+            && let Some(exe_dir) = exe_path.parent()
+        {
+            let exe_dir_str = exe_dir.to_string_lossy();
+            let sep = if cfg!(windows) { ";" } else { ":" };
+            let new_path = if let Ok(existing) = std::env::var("PATH") {
+                format!("{}{}{}", exe_dir_str, sep, existing)
+            } else {
+                exe_dir_str.to_string()
+            };
+            cmd.env("PATH", new_path);
+        }
+
+        if let Some(dir) = working_dir {
+            cmd.cwd(dir);
+        }
+
+        let child = pair.slave.spawn_command(cmd)?;
+        drop(pair.slave);
+
+        let mut pty_writer = pair.master.take_writer()?;
+        let mut pty_reader = pair.master.try_clone_reader()?;
+
+        // PTY master 의 첫 바이트로 initial_input 을 동기 write — child 가 stdin 을
+        // 처음 read 하는 순간 이 바이트가 무조건 첫 입력으로 들어간다.
+        if let Some(input) = config.initial_input
+            && !input.is_empty()
+        {
+            if let Err(e) = pty_writer.write_all(input.as_bytes()) {
+                tracing::warn!("initial_input write_all failed: {e}");
+            } else if let Err(e) = pty_writer.flush() {
+                tracing::warn!("initial_input flush failed: {e}");
+            }
+        }
+
+        // Writer thread: drains queued writes to PTY without blocking the main thread.
+        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
+        let writer_thread = thread::spawn(move || {
+            while let Ok(data) = write_rx.recv() {
+                if pty_writer.write_all(&data).is_err() {
+                    break;
+                }
+                if pty_writer.flush().is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Shared VTE state + signalling flags (ADR-0002). The writer-thread sender
+        // is wired into the state so VTE responses (DSR/DA), emitted from the
+        // parser thread during ingest, reach the PTY.
+        let mut initial_state = TerminalState::new(cols, rows);
+        initial_state.input_tx = Some(write_tx);
+        let state = Arc::new(Mutex::new(initial_state));
+        let dirty = Arc::new(AtomicBool::new(false));
+        let parser_eof = Arc::new(AtomicBool::new(false));
+
+        // Parser thread: read raw PTY bytes and ingest them into the shared state
+        // OFF the input thread. The lock is taken per 8KB chunk and released
+        // immediately, so the main thread waits at most one chunk's parse time.
+        //
+        // The thread holds a *weak* ref to the state: once the `Terminal` handle
+        // is dropped (surface closed), `upgrade()` fails and the thread exits
+        // instead of parsing the orphaned child's output forever. This mirrors
+        // the old reader-thread behaviour, where a dropped `action_rx` made the
+        // next `send` fail and broke the loop — without it, a dropped terminal's
+        // parser thread would burn CPU and grow memory until the child exits.
+        let state_weak = Arc::downgrade(&state);
+        let dirty_t = Arc::clone(&dirty);
+        let eof_t = Arc::clone(&parser_eof);
+        let waker_t = waker.clone();
+        let parser_thread = thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            loop {
+                match pty_reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let Some(state) = state_weak.upgrade() else {
+                            // Terminal handle dropped — stop ingesting.
+                            return;
+                        };
+                        {
+                            let mut st = state.lock().unwrap_or_else(|p| p.into_inner());
+                            st.ingest(&buf[..n]);
+                        }
+                        dirty_t.store(true, Ordering::Release);
+                        waker_t();
+                    }
+                    Err(_) => break,
+                }
+            }
+            // PTY EOF/error: signal so the next process() does an immediate alive
+            // check (bypassing the throttle), and wake once more to drive it.
+            eof_t.store(true, Ordering::Release);
+            dirty_t.store(true, Ordering::Release);
+            waker_t();
+        });
+
+        let pty = PtyBackend {
+            _writer_thread: writer_thread,
+            pty_master: pair.master,
+            child,
+            _parser_thread: parser_thread,
+        };
+
+        Ok(Self {
+            state,
+            pty: Some(pty),
+            dirty,
+            parser_eof,
+            cached_dims: (cols, rows),
+            cached_emit_events: false,
+            pending_pty_resize: None,
+            last_pty_flush: std::time::Instant::now(),
+            // Start in the past so the first process() always checks immediately.
+            last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
+            process_exit_emitted: false,
+        })
+    }
+
+    /// Create a detached mirror terminal with no PTY, child, or threads. Its grid
+    /// is reconstructed purely from bytes pushed via [`Terminal::feed_bytes`].
+    pub fn new_detached(cols: usize, rows: usize) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(TerminalState::new(cols, rows))),
+            pty: None,
+            dirty: Arc::new(AtomicBool::new(false)),
+            parser_eof: Arc::new(AtomicBool::new(false)),
+            cached_dims: (cols, rows),
+            cached_emit_events: false,
+            pending_pty_resize: None,
+            last_pty_flush: std::time::Instant::now(),
+            last_alive_check: std::time::Instant::now() - ALIVE_CHECK_INTERVAL,
+            process_exit_emitted: false,
+        }
+    }
+
+    /// Lock the shared VTE state. Recovers from poisoning (a panicked ingest must
+    /// not wedge the whole terminal).
+    pub(crate) fn lock_state(&self) -> MutexGuard<'_, TerminalState> {
+        self.state.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Run a closure with shared read access to the active surface. The state lock
+    /// is held for the closure's duration — keep it short on the render path.
+    pub fn with_surface<R>(&self, f: impl FnOnce(&Surface) -> R) -> R {
+        let st = self.lock_state();
+        f(st.surface())
+    }
+
+    /// Run a closure with a read-only [`RenderView`] over the shared state. Locks
+    /// once for an entire terminal render (surface + scrollback + cursor/modes),
+    /// keeping the parser thread's per-chunk lock window the only contention.
+    pub fn with_render_view<R>(&self, f: impl FnOnce(RenderView<'_>) -> R) -> R {
+        let st = self.lock_state();
+        f(RenderView { state: &st })
+    }
+
+    /// Process pending terminal state. Parsing now happens on the parser thread
+    /// (ADR-0002), so this only: (1) flushes a deferred PTY resize, (2) reports
+    /// whether the parser ingested anything since the last call, (3) detects child
+    /// exit (emitting `ProcessExited` once). Returns true if the surface changed.
+    pub fn process(&mut self) -> bool {
+        // Flush deferred PTY resize before reporting.
+        self.force_flush_pty_resize();
+
+        let changed = self.dirty.swap(false, Ordering::AcqRel);
+
+        // Child exit detection (emit event once), throttled to one `try_wait`
+        // syscall per ALIVE_CHECK_INTERVAL. PTY EOF forces an immediate check.
+        if self.pty.is_some() && !self.process_exit_emitted {
+            let reader_gone = self.parser_eof.load(Ordering::Acquire);
+            if reader_gone || self.last_alive_check.elapsed() >= ALIVE_CHECK_INTERVAL {
+                self.last_alive_check = std::time::Instant::now();
+                if !self.check_process_alive() {
+                    self.process_exit_emitted = true;
+                    self.lock_state().events.push(TerminalEvent {
+                        surface_id: 0,
+                        kind: TerminalEventKind::ProcessExited,
+                    });
+                }
+            }
+        }
+
+        changed
+    }
+
+    /// Feed externally supplied raw VT bytes into the parser, updating the surface
+    /// as if they had arrived from a PTY. Returns true if the surface changed.
+    /// Mirror ingestion path: a detached terminal has the caller supply bytes.
+    pub fn feed_bytes(&mut self, data: &[u8]) -> bool {
+        let changed = self.lock_state().ingest(data);
+        if changed {
+            self.dirty.store(true, Ordering::Release);
+        }
+        changed
+    }
+
+    /// Register a server-side subscriber to this terminal's raw PTY output.
+    pub fn add_output_tap(&mut self) -> mpsc::Receiver<Vec<u8>> {
+        self.lock_state().add_output_tap()
+    }
+
     fn default_shell() -> String {
         #[cfg(windows)]
         {
@@ -532,6 +582,45 @@ impl Terminal {
         {
             std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
         }
+    }
+}
+
+/// Read-only render view over a terminal's shared [`TerminalState`], exposing
+/// exactly what the GPU renderer needs while the state lock is held (see
+/// [`Terminal::with_render_view`]).
+pub struct RenderView<'a> {
+    state: &'a TerminalState,
+}
+
+impl RenderView<'_> {
+    /// Active surface (primary or alternate).
+    pub fn surface(&self) -> &Surface {
+        self.state.surface()
+    }
+
+    /// Active surface dimensions `(cols, rows)`.
+    pub fn dimensions(&self) -> (usize, usize) {
+        self.state.surface().dimensions()
+    }
+
+    /// Whether the cursor is visible (DECTCEM).
+    pub fn cursor_visible(&self) -> bool {
+        self.state.cursor_visible()
+    }
+
+    /// Current scrollback scroll offset (0 = live bottom).
+    pub fn scroll_offset(&self) -> usize {
+        self.state.scroll_offset()
+    }
+
+    /// Number of scrollback lines.
+    pub fn scrollback_len(&self) -> usize {
+        self.state.scrollback_len()
+    }
+
+    /// Borrow a scrollback line by absolute index.
+    pub fn scrollback_line(&self, index: usize) -> Option<&Vec<(String, CellAttributes)>> {
+        self.state.scrollback_line(index)
     }
 }
 

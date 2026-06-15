@@ -172,7 +172,7 @@ pub(crate) fn ipc_set_preedit(
     let surface_id = w.state.focused_surface_id(engine)?;
     let (col, row, cols) = {
         let terminal = w.state.focused_terminal(engine)?;
-        let (col, row) = terminal.surface().cursor_position();
+        let (col, row) = terminal.cursor_position();
         (col, row, terminal.cols())
     };
 
@@ -206,7 +206,7 @@ pub(crate) fn ipc_commit(w: &mut MainView, text: &str) {
     if w.ime_cursor_advance == 0
         && let Some(terminal) = w.state.focused_terminal(engine)
     {
-        w.ime_advance_base = terminal.surface().cursor_position();
+        w.ime_advance_base = terminal.cursor_position();
     }
     for ch in text.chars() {
         w.ime_cursor_advance += crate::renderer::unicode_width(ch);
@@ -365,5 +365,5 @@ fn reference_cursor(terminal: &tasty_terminal::Terminal) -> (usize, usize) {
     {
         return fake;
     }
-    terminal.surface().cursor_position()
+    terminal.cursor_position()
 }
