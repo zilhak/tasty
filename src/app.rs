@@ -116,6 +116,11 @@ pub(crate) struct App {
     /// 이 id 의 view 로 포커스만 이동한다.
     #[cfg(feature = "gui")]
     pub(crate) preset_view_id: Option<WindowId>,
+    /// Linux CSD 리사이즈 엣지 — 마지막 CursorMoved 가 가리킨 가장자리 방향(있으면).
+    /// 마우스 press 시 이 값이 있으면 `drag_resize_window` 로 리사이즈를 시작한다.
+    /// 데코 없는 Linux 창에서만 채워진다(다른 OS 에선 항상 None).
+    #[cfg(feature = "gui")]
+    pub(crate) resize_hover_edge: Option<winit::window::ResizeDirection>,
     /// Plugins 모달의 `Configure` 진입점이 Settings 모달을 열 때, 첫 진입 탭을
     /// `Plugin` 으로 강제하기 위한 1회성 플래그. `open_settings_modal` 이 소비한다.
     #[cfg(feature = "gui")]
@@ -177,6 +182,7 @@ impl App {
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
             preset_view_id: None,
+            resize_hover_edge: None,
             pending_settings_plugin_tab: false,
             attach_client_sessions: Vec::new(),
             auto_attach_active: std::collections::HashSet::new(),

@@ -6,7 +6,38 @@
 //! Linux 는 네이티브 데코를 끄고(`with_decorations(false)`) tasty 가 DE 가변 버튼을
 //! CSD titlebar 에 직접 그린다(P6). Windows 의 캡션 버튼/Snap 은 P5 후속이라 no-op.
 
-use winit::window::WindowAttributes;
+use winit::window::{ResizeDirection, WindowAttributes};
+
+/// CSD 창의 가장자리 리사이즈 핸들 두께 (physical px). 네이티브 데코가 없는
+/// Linux 창에서 이 폭 안쪽을 가리키면 리사이즈 엣지로 친다.
+pub const RESIZE_EDGE_MARGIN: f64 = 8.0;
+
+/// 커서가 창 가장자리 리사이즈 존에 있으면 해당 8방향 [`ResizeDirection`] 을 돌려준다.
+/// 좌표·크기 모두 physical px. 모서리(코너)가 변보다 우선한다. 순수 함수라 OS 무관
+/// 하게 컴파일·테스트된다(실제 `drag_resize_window` 호출만 Linux 배선).
+pub fn resize_direction_at(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    margin: f64,
+) -> Option<ResizeDirection> {
+    let left = x <= margin;
+    let right = x >= width - margin;
+    let top = y <= margin;
+    let bottom = y >= height - margin;
+    Some(match (top, bottom, left, right) {
+        (true, _, true, _) => ResizeDirection::NorthWest,
+        (true, _, _, true) => ResizeDirection::NorthEast,
+        (_, true, true, _) => ResizeDirection::SouthWest,
+        (_, true, _, true) => ResizeDirection::SouthEast,
+        (true, _, _, _) => ResizeDirection::North,
+        (_, true, _, _) => ResizeDirection::South,
+        (_, _, true, _) => ResizeDirection::West,
+        (_, _, _, true) => ResizeDirection::East,
+        _ => return None,
+    })
+}
 
 /// 윈도우 생성부(첫 윈도우 + 추가 윈도우 공통)에서 호출해 OS별 CSD 속성을 적용한다.
 ///
@@ -36,5 +67,59 @@ pub fn apply_csd_attributes(attrs: WindowAttributes) -> WindowAttributes {
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         attrs
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const M: f64 = 8.0;
+    const W: f64 = 200.0;
+    const H: f64 = 100.0;
+
+    #[test]
+    fn center_is_no_resize() {
+        assert_eq!(resize_direction_at(100.0, 50.0, W, H, M), None);
+    }
+
+    #[test]
+    fn edges_map_to_directions() {
+        assert_eq!(
+            resize_direction_at(0.0, 50.0, W, H, M),
+            Some(ResizeDirection::West)
+        );
+        assert_eq!(
+            resize_direction_at(W, 50.0, W, H, M),
+            Some(ResizeDirection::East)
+        );
+        assert_eq!(
+            resize_direction_at(100.0, 0.0, W, H, M),
+            Some(ResizeDirection::North)
+        );
+        assert_eq!(
+            resize_direction_at(100.0, H, W, H, M),
+            Some(ResizeDirection::South)
+        );
+    }
+
+    #[test]
+    fn corners_take_priority_over_edges() {
+        assert_eq!(
+            resize_direction_at(1.0, 1.0, W, H, M),
+            Some(ResizeDirection::NorthWest)
+        );
+        assert_eq!(
+            resize_direction_at(W - 1.0, 1.0, W, H, M),
+            Some(ResizeDirection::NorthEast)
+        );
+        assert_eq!(
+            resize_direction_at(1.0, H - 1.0, W, H, M),
+            Some(ResizeDirection::SouthWest)
+        );
+        assert_eq!(
+            resize_direction_at(W - 1.0, H - 1.0, W, H, M),
+            Some(ResizeDirection::SouthEast)
+        );
     }
 }
