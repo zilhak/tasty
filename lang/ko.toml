@@ -433,6 +433,11 @@ copy = "복사"
 copy_no_newline = "줄바꿈 없이 복사"
 copy_surface_id = "터미널 ID 복사"
 
+[titlebar]
+minimize = "최소화"
+maximize = "최대화"
+close = "닫기"
+
 [status_bar]
 palette = "팔레트"
 palette_tooltip = "커맨드 팔레트 열기"

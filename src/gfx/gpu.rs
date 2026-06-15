@@ -63,6 +63,9 @@ pub struct GpuState {
     pub pending_screenshot: Option<std::path::PathBuf>,
     /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
     pub(super) perf: PerfAggregator,
+    /// winit 이벤트 루프 proxy — CSD titlebar close 버튼이 per-window 닫기
+    /// (`AppEvent::CloseWindow`)를 발화하는 경로. egui repaint callback 과 별개 사본.
+    pub(super) proxy: EventLoopProxy<AppEvent>,
 }
 
 impl GpuState {
@@ -171,7 +174,7 @@ impl GpuState {
         // Without this, egui's internal repaints (new window registration,
         // cursor blink, animations) are silently dropped, causing the
         // Settings window to appear only after the next user input.
-        let repaint_proxy = proxy;
+        let repaint_proxy = proxy.clone();
         egui_ctx.set_request_repaint_callback(move |info: egui::RequestRepaintInfo| {
             // delay 가 0 인 즉시 repaint 만 winit 큐로 보낸다.
             // delay > 0 (cursor blink, hover delay 등) 은 drop — 그렇지 않으면 매 frame 끝마다
@@ -222,6 +225,7 @@ impl GpuState {
             canvas_textures: canvas_texture::CanvasTextureCache::new(),
             pending_screenshot: None,
             perf: PerfAggregator::new(),
+            proxy,
         })
     }
 

@@ -183,6 +183,10 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::QuitRequested => {
                 self.handle_quit_requested(event_loop);
             }
+            AppEvent::CloseWindow(id) => {
+                // CSD titlebar close 버튼 — 네이티브 CloseRequested 와 동일 라우팅.
+                self.request_close_window(id, event_loop);
+            }
             #[cfg(windows)]
             AppEvent::TrayShowWindow => {
                 for w in self.view.views.values() {
@@ -412,48 +416,7 @@ impl ApplicationHandler<AppEvent> for App {
 
         // Normal mode — find the window by ID and delegate
         if let WindowEvent::CloseRequested = &event {
-            // PresetView (modeless editor) — 바로 닫힌다. quit 흐름 거치지 않음.
-            // 메인 윈도우 개수와 무관하게 자기 자신만 닫는 게 의도된 동작.
-            if self.preset_view_id == Some(id) {
-                self.on_preset_window_closed(id);
-                return;
-            }
-            // MainView 개수 기준으로 판단 (모달은 수에 포함되지 않음)
-            let main_window_count = self
-                .view
-                .views
-                .values()
-                .filter(|w| w.as_main().is_some())
-                .count();
-            if main_window_count > 1 {
-                // Multiple windows: just close this one
-                self.view.views.remove(&id);
-                if let Some(mgr) = self.plugin_manager.as_mut() {
-                    use tasty_plugin_protocol::events::payloads::WindowClosed;
-                    use tasty_plugin_protocol::{EventScope, LifecycleReason};
-                    let payload = WindowClosed {
-                        window_id: u64::from(id),
-                        reason: LifecycleReason::User,
-                    };
-                    mgr.emit_host_event("window.closed", &payload, EventScope::System);
-                    crate::hooks::lua::fire(
-                        self.lua_engine.as_ref(),
-                        "window.delete.post",
-                        &payload,
-                    );
-                }
-                if self.view.focused_view_id == Some(id) {
-                    self.view.focused_view_id = self
-                        .view
-                        .views
-                        .iter()
-                        .find(|(_, w)| w.as_main().is_some())
-                        .map(|(id, _)| *id);
-                }
-            } else {
-                // Last main window: route through quit logic
-                self.handle_quit_requested(event_loop);
-            }
+            self.request_close_window(id, event_loop);
             return;
         }
 
@@ -681,6 +644,51 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    /// 윈도우 닫기 요청을 라우팅한다 — 네이티브 `WindowEvent::CloseRequested` 와
+    /// CSD titlebar close 버튼(`AppEvent::CloseWindow`)의 공통 경로.
+    /// PresetView 는 즉시 닫고, MainView 가 여럿이면 해당 창만, 마지막 하나면 quit
+    /// 흐름으로 라우팅한다.
+    pub(crate) fn request_close_window(&mut self, id: WindowId, event_loop: &ActiveEventLoop) {
+        // PresetView (modeless editor) — 바로 닫힌다. quit 흐름 거치지 않음.
+        // 메인 윈도우 개수와 무관하게 자기 자신만 닫는 게 의도된 동작.
+        if self.preset_view_id == Some(id) {
+            self.on_preset_window_closed(id);
+            return;
+        }
+        // MainView 개수 기준으로 판단 (모달은 수에 포함되지 않음)
+        let main_window_count = self
+            .view
+            .views
+            .values()
+            .filter(|w| w.as_main().is_some())
+            .count();
+        if main_window_count > 1 {
+            // Multiple windows: just close this one
+            self.view.views.remove(&id);
+            if let Some(mgr) = self.plugin_manager.as_mut() {
+                use tasty_plugin_protocol::events::payloads::WindowClosed;
+                use tasty_plugin_protocol::{EventScope, LifecycleReason};
+                let payload = WindowClosed {
+                    window_id: u64::from(id),
+                    reason: LifecycleReason::User,
+                };
+                mgr.emit_host_event("window.closed", &payload, EventScope::System);
+                crate::hooks::lua::fire(self.lua_engine.as_ref(), "window.delete.post", &payload);
+            }
+            if self.view.focused_view_id == Some(id) {
+                self.view.focused_view_id = self
+                    .view
+                    .views
+                    .iter()
+                    .find(|(_, w)| w.as_main().is_some())
+                    .map(|(id, _)| *id);
+            }
+        } else {
+            // Last main window: route through quit logic
+            self.handle_quit_requested(event_loop);
+        }
+    }
+
     /// stream client 들이 끊겼을 때 그들이 잡고 있던 attach lock 을 모든 engine
     /// (활성 main view + parked)에서 자동 해제한다(attach/detach 단계 3 EOF 해제).
     /// 한 client_id 는 한 engine 에만 lock 을 가지므로 전 engine 순회는 멱등·안전.

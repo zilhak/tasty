@@ -27,6 +27,11 @@ pub(crate) enum AppEvent {
     /// Request to create a new window (triggered by IPC or shortcut).
     #[cfg(feature = "gui")]
     CreateWindow,
+    /// CSD titlebar close 버튼이 발화하는 per-window 닫기 요청 (사용자 클릭).
+    /// 네이티브 `WindowEvent::CloseRequested` 와 동일한 라이프사이클로 라우팅한다
+    /// (단일 창이면 quit 흐름, 다중 창이면 해당 창만 닫음).
+    #[cfg(feature = "gui")]
+    CloseWindow(winit::window::WindowId),
     /// Request to open settings modal.
     #[cfg(feature = "gui")]
     OpenSettings,

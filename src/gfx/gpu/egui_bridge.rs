@@ -38,11 +38,12 @@ impl GpuState {
         let raw_input = self.egui_state.take_egui_input(window);
         let scale_factor = self.scale_factor;
         let canvas_cache = &self.canvas_textures;
+        let proxy = &self.proxy;
 
         self.egui_ctx.run(raw_input, |ctx| {
             // CSD 공통 titlebar — TopBottomPanel::top 이 먼저 등록되어야 사이드바
             // SidePanel 이 그 아래에서 시작한다. 드래그/더블클릭을 winit window 로 브리지.
-            ui::titlebar::draw_titlebar(ctx, window);
+            ui::titlebar::draw_titlebar(ctx, window, proxy);
             ui::draw_ui(ctx, state, engine, scale_factor);
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);

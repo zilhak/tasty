@@ -433,6 +433,11 @@ copy = "Copy"
 copy_no_newline = "Copy Without Line Breaks"
 copy_surface_id = "Copy Terminal ID"
 
+[titlebar]
+minimize = "Minimize"
+maximize = "Maximize"
+close = "Close"
+
 [status_bar]
 palette = "palette"
 palette_tooltip = "Open command palette"

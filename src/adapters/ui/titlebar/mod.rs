@@ -5,12 +5,14 @@
 
 mod view;
 
+use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
+use crate::AppEvent;
 use crate::theme;
 use tasty_type_geometry::length::PhysicalPx;
 
-pub use view::{TitlebarAction, TitlebarProps, draw_titlebar_view};
+pub use view::{TitlebarAction, TitlebarControls, TitlebarProps, draw_titlebar_view};
 
 /// macOS 네이티브 신호등(standardWindowButton) 클러스터가 차지하는 좌측 폭
 /// (logical points). fullsize-content-view 에서 신호등은 OS 가 좌상단 고정 위치에
@@ -29,13 +31,36 @@ pub fn top_inset(scale_factor: f32) -> PhysicalPx {
     theme::theme().titlebar_height.to_physical(scale_factor)
 }
 
-/// 공통 CSD titlebar 를 그리고, view 가 보고한 드래그/더블클릭을 winit window
-/// 조작으로 브리지한다. `run_egui_frame` 의 egui 클로저 최상단에서 호출한다 —
-/// `TopBottomPanel::top` 이 먼저 등록되어야 사이드바 `SidePanel` 이 그 아래에서
-/// 시작한다.
-pub fn draw_titlebar(ctx: &egui::Context, window: &Window) {
+/// Linux CSD 의 DE 가변 버튼 프리셋을 반환한다.
+///
+/// 현재는 단일 기본 프리셋(우측 min·max·close, KDE-Breeze 류)으로 시작한다.
+/// DE 감지(GNOME=close만/우측 등) 및 사용자 설정 노출은 후속. macOS/Windows 는
+/// `None` — macOS 는 네이티브 신호등, Windows 캡션은 P5.
+#[cfg(target_os = "linux")]
+fn os_controls() -> Option<TitlebarControls> {
+    use view::{ControlSide, WindowButton};
+    Some(TitlebarControls {
+        buttons: vec![
+            WindowButton::Minimize,
+            WindowButton::Maximize,
+            WindowButton::Close,
+        ],
+        side: ControlSide::Right,
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn os_controls() -> Option<TitlebarControls> {
+    None
+}
+
+/// 공통 CSD titlebar 를 그리고, view 가 보고한 드래그/더블클릭/버튼 클릭을 winit
+/// window 조작 또는 app 이벤트로 브리지한다. `run_egui_frame` 의 egui 클로저
+/// 최상단에서 호출한다 — `TopBottomPanel::top` 이 먼저 등록되어야 사이드바
+/// `SidePanel` 이 그 아래에서 시작한다.
+pub fn draw_titlebar(ctx: &egui::Context, window: &Window, proxy: &EventLoopProxy<AppEvent>) {
     let th = theme::theme();
-    // macOS 만 네이티브 신호등 폭만큼 좌측 슬롯을 비운다. 그 외 OS 는 0(P5/P6 후속).
+    // macOS 만 네이티브 신호등 폭만큼 좌측 슬롯을 비운다. 그 외 OS 는 0.
     #[cfg(target_os = "macos")]
     let left_inset = MACOS_TRAFFIC_LIGHT_INSET.value();
     #[cfg(not(target_os = "macos"))]
@@ -45,6 +70,7 @@ pub fn draw_titlebar(ctx: &egui::Context, window: &Window) {
         active: window.has_focus(),
         height: th.titlebar_height.value(),
         left_inset,
+        controls: os_controls(),
     };
 
     for action in draw_titlebar_view(ctx, &props) {
@@ -58,6 +84,14 @@ pub fn draw_titlebar(ctx: &egui::Context, window: &Window) {
             }
             TitlebarAction::ToggleMaximize => {
                 window.set_maximized(!window.is_maximized());
+            }
+            TitlebarAction::Minimize => {
+                window.set_minimized(true);
+            }
+            TitlebarAction::Close => {
+                // 네이티브 CloseRequested 와 동일 라이프사이클로 라우팅(원칙 1: 사용자
+                // 클릭 → app 이벤트, IPC 비노출). App::user_event 가 per-window 처리.
+                crate::shortcuts::send_app_event(proxy, AppEvent::CloseWindow(window.id()));
             }
         }
     }

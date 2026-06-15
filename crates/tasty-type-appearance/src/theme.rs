@@ -181,6 +181,8 @@ pub struct ThemeSizing {
     pub traffic_size: LogicalPx,
     /// Windows 캡션 버튼(min·max·close) 폭.
     pub caption_width: LogicalPx,
+    /// Linux DE 버튼(min·max·close) 원형 지름.
+    pub window_button_size: LogicalPx,
 }
 
 pub const SIZING: ThemeSizing = ThemeSizing {
@@ -217,6 +219,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     titlebar_height: LogicalPx(36.0),
     traffic_size: LogicalPx(12.0),
     caption_width: LogicalPx(46.0),
+    window_button_size: LogicalPx(24.0),
 };
 
 // ============================================================================
@@ -680,6 +683,7 @@ pub struct Theme {
     pub titlebar_height: LogicalPx,
     pub traffic_size: LogicalPx,
     pub caption_width: LogicalPx,
+    pub window_button_size: LogicalPx,
 
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
@@ -810,6 +814,7 @@ impl Theme {
             titlebar_height: SIZING.titlebar_height,
             traffic_size: SIZING.traffic_size,
             caption_width: SIZING.caption_width,
+            window_button_size: SIZING.window_button_size,
             is_light,
             surface_themes: c.surface_themes,
         }
@@ -1292,6 +1297,7 @@ mod tests {
         assert_eq!(base.titlebar_height, zoomed.titlebar_height);
         assert_eq!(base.traffic_size, zoomed.traffic_size);
         assert_eq!(base.caption_width, zoomed.caption_width);
+        assert_eq!(base.window_button_size, zoomed.window_button_size);
     }
 
     #[test]
@@ -1350,15 +1356,18 @@ mod tests {
         assert_eq!(t_large.traffic_size, SIZING.traffic_size);
         assert_eq!(t_small.caption_width, SIZING.caption_width);
         assert_eq!(t_large.caption_width, SIZING.caption_width);
+        assert_eq!(t_small.window_button_size, SIZING.window_button_size);
+        assert_eq!(t_large.window_button_size, SIZING.window_button_size);
     }
 
-    /// P1: CSD 타이틀바 길이 토큰 값 고정 (디자인 jsx px).
+    /// P1/P6: CSD 타이틀바 길이 토큰 값 고정 (디자인 jsx px).
     #[test]
     fn titlebar_sizing_tokens_fixed() {
         let t = Theme::with_colors(dummy_colors(), false);
         assert_eq!(t.titlebar_height.value(), 36.0);
         assert_eq!(t.traffic_size.value(), 12.0);
         assert_eq!(t.caption_width.value(), 46.0);
+        assert_eq!(t.window_button_size.value(), 24.0);
     }
 
     /// P1: titlebar 컴포넌트 색 접근자가 changelog 매핑대로 semantic 에 묶이는지 고정.
