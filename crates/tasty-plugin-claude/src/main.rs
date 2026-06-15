@@ -88,7 +88,7 @@ impl Plugin for ClaudePlugin {
             "claude.set_needs_input" => handle_set_needs_input(&mut self.state, &ctx.params),
             "claude.parent" => handle_parent(&self.state, &ctx.params),
             // step 04b: 호스트 IPC(surface.foreground_process / surface.locate /
-            // pane.close)와 ClaudeState를 함께 조합하는 핸들러들.
+            // surface.close)와 ClaudeState를 함께 조합하는 핸들러들.
             "claude.children" => handle_children(&self.state, &ctx.host, &ctx.params),
             "claude.wait" => handle_wait(&self.state, &ctx.host, &ctx.params),
             "claude.wait_by_surface" => handle_wait_by_surface(&self.state, &ctx.host, &ctx.params),

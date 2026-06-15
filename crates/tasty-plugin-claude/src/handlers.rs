@@ -300,9 +300,15 @@ pub(crate) fn handle_wait_any(
 
 /// 호스트 `handle_claude_kill` 1:1 이주.
 /// 1. ClaudeState에서 (parent_surface_id, child_index) → child_surface_id 해석
-/// 2. `surface.locate` IPC로 pane_id 조회 (호스트의 `find_pane_for_surface`)
-/// 3. `pane.close` IPC로 pane 제거 (호스트의 `close_pane_by_id` + 부수 효과)
-/// 4. 성공 시 plugin state 정리 (unregister_child + mark_parent_closed)
+/// 2. `surface.close` IPC로 child 탭(surface) 제거
+/// 3. 성공 시 plugin state 정리 (unregister_child + mark_parent_closed)
+///
+/// **surface 단위 close 인 이유**: child 들은 child-workspace 의 단일 pane 에
+/// 탭(surface)으로 배치된다. 과거처럼 `pane.close` 를 호출하면 host 의 "마지막
+/// pane 보호" 에 막혀 (`{"closed": false, "reason": "cannot close the last
+/// pane"}`) child 가 종료되지 않았다. surface 단위 close 는 child 가 탭이든
+/// 단독 pane 을 점유하든 일관되게 그 surface 만 닫는다 (host 가 빈 pane/
+/// workspace 정리는 cascade 로 처리).
 pub(crate) fn handle_kill(
     state: &mut ClaudeState,
     host: &HostHandle,
@@ -325,20 +331,9 @@ pub(crate) fn handle_kill(
             ))
         })?;
 
-    let locate = host
-        .call("surface.locate", json!({ "surface_id": child_surface_id }))
-        .map_err(|e| IpcMethodError::new(format!("surface.locate failed: {e}")))?;
-    let pane_id = locate
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
-        .ok_or_else(|| {
-            IpcMethodError::invalid_params(&format!("Surface {} not found", child_surface_id))
-        })?;
-
     let close_resp = host
-        .call("pane.close", json!({ "pane_id": pane_id }))
-        .map_err(|e| IpcMethodError::new(format!("pane.close failed: {e}")))?;
+        .call("surface.close", json!({ "surface_id": child_surface_id }))
+        .map_err(|e| IpcMethodError::new(format!("surface.close failed: {e}")))?;
     let killed = close_resp
         .get("closed")
         .and_then(|v| v.as_bool())
@@ -346,12 +341,19 @@ pub(crate) fn handle_kill(
 
     if killed {
         kill_finalize(state, child_surface_id);
+        return Ok(json!({ "killed": true }));
     }
 
-    Ok(json!({ "killed": killed }))
+    // 실패 시 host 가 준 reason 을 전파한다 — 호출자가 "왜 실패했는지" 알 수
+    // 있도록. reason 이 없으면 generic 문자열.
+    let reason = close_resp
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("surface.close returned closed=false");
+    Ok(json!({ "killed": false, "reason": reason }))
 }
 
-/// pane.close 성공 후의 state mutation. 호스트와 동일하게 child_surface_id를
+/// surface.close 성공 후의 state mutation. 호스트와 동일하게 child_surface_id를
 /// `mark_parent_closed`에도 넘긴다 — 그 자식이 또 다른 parent를 가진 nested
 /// claude 시나리오에서만 의미가 있고, 그렇지 않으면 no-op.
 pub(crate) fn kill_finalize(state: &mut ClaudeState, child_surface_id: u32) {
