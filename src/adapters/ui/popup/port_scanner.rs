@@ -130,17 +130,21 @@ impl Default for FilterState {
 }
 
 /// Async view payload the table renders from. `Loading`/`Failed` short-circuit
-/// the table; `Ready` carries the (search-filtered) row slice + the scope total
-/// (search-independent count) so the header tag and footer counter can be drawn
-/// per design (`{shown} of {total} ports`, `{total} listening`).
+/// the table; `Ready` carries the (search-filtered) row slice plus two
+/// search-independent scope counts so the header tag and footer counter can be
+/// drawn per design: footer `{shown} of {total} ports`, header `{listening}
+/// listening` (LISTEN-only, since the backend now scans every TCP state).
 #[derive(Clone, Copy)]
 pub enum PortScannerViewState<'a> {
     Loading,
     Ready {
         rows: &'a [PortRowView],
-        /// Count of ports in the current scope, before the search filter is
-        /// applied. Feeds the design's header tag and footer total.
+        /// Count of all ports in the current scope, before the search filter is
+        /// applied. Feeds the footer total.
         total: usize,
+        /// Count of LISTEN-state ports in the current scope, before the search
+        /// filter. Feeds the header tag (`{listening} listening`).
+        listening: usize,
     },
     Failed {
         message: &'a str,
@@ -262,11 +266,13 @@ pub fn draw_port_scanner_popup(
 
     let view_state = match &state.port_scan {
         PortScanState::Idle | PortScanState::Loading { .. } => PortScannerViewState::Loading,
-        // `total` = scope total (search-independent): the unfiltered row count
-        // feeds both the footer counter and the header tag.
+        // Scope counts are search-independent (computed over the full scope
+        // `rows`, not `filtered_rows`): `total` = every port, `listening` =
+        // LISTEN-only (header tag), per design.
         PortScanState::Ready { rows, .. } => PortScannerViewState::Ready {
             rows: &filtered_rows,
             total: rows.len(),
+            listening: rows.iter().filter(|r| r.state.is_listen()).count(),
         },
         PortScanState::Failed(msg) => PortScannerViewState::Failed { message: msg },
     };
@@ -647,7 +653,7 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
     let text = match &props.view_state {
         PortScannerViewState::Loading => Some(props.label_footer_loading.to_string()),
-        PortScannerViewState::Ready { rows, total } => Some(
+        PortScannerViewState::Ready { rows, total, .. } => Some(
             props
                 .label_footer_counter
                 .replace("{shown}", &rows.len().to_string())
@@ -717,11 +723,12 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let tag = match &props.view_state {
                 PortScannerViewState::Loading => props.label_header_tag_scanning.to_string(),
-                // Scope total (search-independent), per design: the header tag
-                // does not shrink as the user types into the filter.
-                PortScannerViewState::Ready { total, .. } => props
+                // LISTEN-only scope count (search-independent), per design: the
+                // header tag counts listeners, not every TCP state, and does not
+                // shrink as the user types into the filter.
+                PortScannerViewState::Ready { listening, .. } => props
                     .label_header_tag_count
-                    .replace("{n}", &total.to_string()),
+                    .replace("{n}", &listening.to_string()),
                 PortScannerViewState::Failed { .. } => String::new(),
             };
             if !tag.is_empty() {
@@ -1167,6 +1174,7 @@ mod tests {
                 let view_state = PortScannerViewState::Ready {
                     rows,
                     total: rows.len(),
+                    listening: rows.iter().filter(|r| r.state.is_listen()).count(),
                 };
                 let props = default_props(&theme, view_state, "", false);
                 out = draw_port_scanner_view(ui, &props);
@@ -1346,6 +1354,7 @@ mod tests {
             PortScannerViewState::Ready {
                 rows: &rows,
                 total: 0,
+                listening: 0,
             },
             "",
             false,
@@ -1360,6 +1369,7 @@ mod tests {
             PortScannerViewState::Ready {
                 rows: &rows,
                 total: 0,
+                listening: 0,
             },
             "",
             true,
@@ -1374,6 +1384,7 @@ mod tests {
             PortScannerViewState::Ready {
                 rows: &rows,
                 total: 0,
+                listening: 0,
             },
             "nginx",
             false,
