@@ -138,7 +138,7 @@ impl ExplorerSurface {
     }
 
     fn build_tree(&self, bookmarks: &BookmarkStore, tr: &Translator) -> UiNode {
-        let root_node = build_node(&self.root, &self.expanded, &self.selected);
+        let root_node = build_node(&self.root, &self.expanded, &self.selected, true);
         let tree_pane = scroll_v(tree_view(
             TREE_NODE_ID,
             vec![root_node],
@@ -222,7 +222,15 @@ fn build_bookmarks_section(bookmarks: &BookmarkStore, tr: &Translator) -> UiNode
     vbox(children)
 }
 
-fn build_node(path: &Path, expanded: &HashSet<PathBuf>, selected: &Option<PathBuf>) -> TreeNode {
+/// 노드의 `id` 계약: **루트는 절대경로, 하위는 `file_name` 세그먼트**.
+/// 호스트(`ui_tree_render.rs`)가 `부모경로 + "/" + 자식.id` 로 path 를 합치므로,
+/// 비루트 노드의 id 가 풀패스면 경로가 중복되어 펼침/진입/선택이 깨진다.
+fn build_node(
+    path: &Path,
+    expanded: &HashSet<PathBuf>,
+    selected: &Option<PathBuf>,
+    is_root: bool,
+) -> TreeNode {
     let name = path
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -234,14 +242,22 @@ fn build_node(path: &Path, expanded: &HashSet<PathBuf>, selected: &Option<PathBu
     let children: Vec<TreeNode> = if is_dir && is_expanded {
         list_children(path)
             .into_iter()
-            .map(|child_path| build_node(&child_path, expanded, selected))
+            .map(|child_path| build_node(&child_path, expanded, selected, false))
             .collect()
     } else {
         Vec::new()
     };
 
+    // 루트는 호스트 join 의 시작점(parent="")이라 절대경로를 그대로 내보낸다.
+    // 하위 노드는 세그먼트(file_name)만 내보내 호스트가 절대경로를 재구성하게 한다.
+    let id = if is_root {
+        path.to_string_lossy().to_string()
+    } else {
+        name.clone()
+    };
+
     TreeNode {
-        id: path.to_string_lossy().to_string(),
+        id,
         label: name,
         icon: Some(if is_dir {
             "\u{1F4C1}".into()
@@ -552,4 +568,69 @@ fn main() -> anyhow::Result<()> {
     let env = PluginEnv::load()?;
     let tr = Translator::from_plugin_env(&env);
     tasty_plugin_sdk::run(ExplorerPlugin::new(tr))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    // 호스트 render_tree_node 의 path 조합을 동일하게 재현
+    // (`src/plugin_bridge/ui_tree_render.rs`: 부모 경로 + "/" + 자식.id).
+    fn host_join(parent: &str, node: &TreeNode) -> String {
+        if parent.is_empty() {
+            node.id.clone()
+        } else {
+            format!("{parent}/{}", node.id)
+        }
+    }
+
+    #[test]
+    fn host_join_reconstructs_real_absolute_path() {
+        // temp 디렉토리: <root>/sub/file.txt
+        let root = std::env::temp_dir().join("tasty_explorer_test_root_host_join");
+        // 이전 실행 잔재 정리
+        std::fs::remove_dir_all(&root).ok();
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("file.txt"), b"hi").unwrap();
+
+        // 루트와 sub 를 펼친 상태로 트리 구성
+        let mut expanded = HashSet::new();
+        expanded.insert(root.clone());
+        expanded.insert(sub.clone());
+
+        let tree = build_node(&root, &expanded, &None, true);
+
+        // 루트 join — id 는 절대경로 그대로
+        let root_path = host_join("", &tree);
+        assert_eq!(root_path, root.to_string_lossy());
+
+        // sub join 이 실제 sub 절대경로와 일치해야 함 (버그면 경로가 중복됨)
+        let sub_node = tree
+            .children
+            .iter()
+            .find(|c| c.label == "sub")
+            .expect("sub node");
+        // 비루트 노드의 id 는 세그먼트(file_name)여야 한다
+        assert_eq!(sub_node.id, "sub");
+        let sub_path = host_join(&root_path, sub_node);
+        assert_eq!(
+            sub_path,
+            sub.to_string_lossy(),
+            "host-join 결과가 실제 sub 절대경로와 달라짐 — id 가 세그먼트가 아닌 풀패스"
+        );
+
+        // sub 가 펼쳐졌으므로 file.txt 가 자식으로 존재해야 함
+        let file_node = sub_node
+            .children
+            .iter()
+            .find(|c| c.label == "file.txt")
+            .expect("file.txt node");
+        assert_eq!(file_node.id, "file.txt");
+        let file_path = host_join(&sub_path, file_node);
+        assert_eq!(file_path, sub.join("file.txt").to_string_lossy());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
 }
