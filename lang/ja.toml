@@ -82,6 +82,10 @@ misc = "その他"
 plugin = "プラグイン"
 updates = "アップデート"
 
+[settings.filter]
+sections = "セクションを絞り込み…"
+plugins = "プラグインを絞り込み…"
+
 [settings.plugin]
 empty = "項目がありません。"
 

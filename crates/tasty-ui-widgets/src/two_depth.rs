@@ -24,6 +24,41 @@ pub fn two_depth_layout(
     left: impl FnOnce(&mut egui::Ui),
     content: impl FnOnce(&mut egui::Ui),
 ) {
+    two_depth_layout_inner(ui, theme, available_height, None, left, content);
+}
+
+/// `two_depth_layout` + 좌측 패널 상단에 L2 섹션 필터 입력 슬롯.
+///
+/// `filter` 는 검색 문자열의 mutable backing store. 입력 박스는 widget 이 그리지만
+/// *실제 항목 필터링은 호출자의 `left` 클로저* 가 `*filter` 를 읽어 수행한다 —
+/// widget 은 어떤 항목이 있는지 모르기 때문. `placeholder` 는 hint 텍스트.
+pub fn two_depth_layout_filtered(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    available_height: f32,
+    filter: &mut String,
+    placeholder: &str,
+    left: impl FnOnce(&mut egui::Ui),
+    content: impl FnOnce(&mut egui::Ui),
+) {
+    two_depth_layout_inner(
+        ui,
+        theme,
+        available_height,
+        Some((filter, placeholder)),
+        left,
+        content,
+    );
+}
+
+fn two_depth_layout_inner(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    available_height: f32,
+    filter: Option<(&mut String, &str)>,
+    left: impl FnOnce(&mut egui::Ui),
+    content: impl FnOnce(&mut egui::Ui),
+) {
     ui.horizontal_top(|ui| {
         egui::Frame::new()
             .fill(egui::Color32::from(theme.crust))
@@ -40,7 +75,19 @@ pub fn two_depth_layout(
                 ui.set_width(tokens::SUB_TAB_PANEL_WIDTH);
                 ui.set_min_height(available_height);
 
-                ui.vertical(|ui| left(ui));
+                ui.vertical(|ui| {
+                    if let Some((filter, placeholder)) = filter {
+                        ui.add(
+                            egui::TextEdit::singleline(filter)
+                                .hint_text(placeholder)
+                                .desired_width(f32::INFINITY),
+                        );
+                        ui.add_space(tokens::PANEL_SPACING);
+                        ui.separator();
+                        ui.add_space(tokens::PANEL_SPACING);
+                    }
+                    left(ui);
+                });
             });
 
         ui.add_space(tokens::PANEL_SPACING);

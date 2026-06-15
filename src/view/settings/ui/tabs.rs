@@ -16,7 +16,8 @@ pub use accessibility::draw_accessibility_tab;
 pub use appearance::draw_appearance_tab;
 pub use clipboard::draw_clipboard_tab;
 pub use general::draw_general_tab;
-pub use misc::draw_misc_tab;
+#[cfg(windows)]
+pub use misc::draw_tastyrc_subtab;
 pub use notifications::draw_notifications_tab;
 pub use performance::draw_performance_tab;
 pub use plugin::draw_plugin_tab;

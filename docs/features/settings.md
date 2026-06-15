@@ -18,14 +18,14 @@
 - **Keybindings**: 서브탭으로 분류된 단축키 설정 (General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Preset). 유비쿼터스 언어 계층 구조(Workspace → Pane → Tab → Surface) 순서. 각 서브탭 내부 항목은 생성/분할 → 탐색 → 수정 → 닫기 순서로 정렬
   - 중복 바인딩 방지: 녹화한 조합이 다른 액션에 이미 할당되어 있으면 확인 팝업 표시. Enter/Y/Overwrite 수락 시 기존 바인딩을 비우고 새 필드에 적용, Esc/N/Cancel 취소 시 값 변경 없음. 팝업이 열린 동안 녹화 버튼은 비활성화됨.
   - **Preset 서브탭**: 좌측에 프리셋 목록, 우측에 미리보기 패널 (3열 테이블 — 기능 / 이전 / 이후). 변경되는 행은 bold 강조. 하단 "적용" 버튼으로 Draft에 반영 (실제 저장은 하단 Save 버튼). Draft가 이미 프리셋과 동일하면 적용 버튼 비활성화.
-- **Misc (기타)**: OS 무관 노출. 외관/단축키 탭과 동일한 2depth 레이아웃 (좌측 서브탭 메뉴 + 우측 콘텐츠, `tasty_ui_widgets::two_depth_layout` 공용 헬퍼 사용).
-  - **tastyrc 서브탭** (Windows 한정 노출): Tasty 모드 bashrc 편집기. 사용자 편집분은 `~/.tasty/bashrc.user`에 저장되고, 빌트인 블록(OSC 7 emission / UTF-8 / PATH 등 PRE 부분과 PROMPT_COMMAND 설정의 POST 부분)은 코드 상수로 유지되어 Save 시마다 `~/.tasty/bashrc`가 `BUILTIN_PRE + user + BUILTIN_PROMPT` 형태로 자동 재생성된다. PROMPT_COMMAND 설정이 사용자 본문 *뒤* 에 와서 사용자가 PROMPT_COMMAND 를 덮어쓰더라도 `__tasty_osc7` 이 prepend 되도록 보장한다. 빌트인 템플릿이 업데이트되면 기존 사용자에게도 즉시 반영된다. Reset 버튼으로 user 파트를 초기 기본값으로 되돌릴 수 있다.
-  - **접근성 서브탭**: reduced motion (UI fade/slide 애니메이션 스킵, 토스트 fade-in/out 비활성화 — 터미널 콘텐츠 애니메이션은 영향 없음), high contrast (placeholder).
-  - **성능 서브탭**: targeted PTY polling, scrollback disk swap, lazy PTY init (background 탭 생성 시 PTY를 즉시 spawn하지 않고 최초 접근 시점에 spawn — 레이아웃 복원으로 만들어진 비활성 워크스페이스의 deferred 터미널은 사용자가 워크스페이스를 전환하거나, 에이전트가 send/`surface.wake` IPC로 접근하는 시점에 PTY가 자동 생성된다. `surface.list`/`tree` 결과의 `pty_ready` 필드로 현재 상태를 확인할 수 있다).
+- **General 그룹 잠정 흡수 섹션**: 구 "Misc" 탭은 2-level IA 개편으로 해체되어 아래 섹션들이 General L1 의 L2 사이드바로 이관됨 (Performance / Tastyrc 는 디자인 IA 에 정의 없음 — 기능 회귀 방지용 잠정 배치, 최종 귀속은 제품 결정 대기).
+  - **tastyrc 섹션** (Windows 한정 노출): Tasty 모드 bashrc 편집기. 사용자 편집분은 `~/.tasty/bashrc.user`에 저장되고, 빌트인 블록(OSC 7 emission / UTF-8 / PATH 등 PRE 부분과 PROMPT_COMMAND 설정의 POST 부분)은 코드 상수로 유지되어 Save 시마다 `~/.tasty/bashrc`가 `BUILTIN_PRE + user + BUILTIN_PROMPT` 형태로 자동 재생성된다. PROMPT_COMMAND 설정이 사용자 본문 *뒤* 에 와서 사용자가 PROMPT_COMMAND 를 덮어쓰더라도 `__tasty_osc7` 이 prepend 되도록 보장한다. 빌트인 템플릿이 업데이트되면 기존 사용자에게도 즉시 반영된다. Reset 버튼으로 user 파트를 초기 기본값으로 되돌릴 수 있다.
+  - **접근성 섹션**: reduced motion (UI fade/slide 애니메이션 스킵, 토스트 fade-in/out 비활성화 — 터미널 콘텐츠 애니메이션은 영향 없음), high contrast (placeholder).
+  - **성능 섹션**: targeted PTY polling, scrollback disk swap, lazy PTY init (background 탭 생성 시 PTY를 즉시 spawn하지 않고 최초 접근 시점에 spawn — 레이아웃 복원으로 만들어진 비활성 워크스페이스의 deferred 터미널은 사용자가 워크스페이스를 전환하거나, 에이전트가 send/`surface.wake` IPC로 접근하는 시점에 PTY가 자동 생성된다. `surface.list`/`tree` 결과의 `pty_ready` 필드로 현재 상태를 확인할 수 있다).
 
 ### GUI 설정 윈도우
 - Ctrl+, 단축키로 설정 윈도우 토글
-- egui Window 기반 탭 인터페이스 (General / Terminal / Appearance / Clipboard / Notifications / Keybindings / FileHandler / Misc / Plugin / Updates). 접근성/성능은 Misc 탭의 서브탭으로 통합됨.
+- 2-level IA: 상단 L1 탭 4개 (General / Appearance / Keybindings / Plugins) + 각 L1 의 좌측 L2 사이드바 (상단 섹션 필터 입력 포함, `tasty_ui_widgets::two_depth_layout_filtered` 공용 헬퍼). L1 전환 시 L2 필터 초기화. General L1 의 L2 = General / Terminal / Clipboard / Notifications / Accessibility / Updates / Performance / File Handler / (Tastyrc, Windows). 디자인 정의(`ui_kits/.../settings_window.jsx`)에 없는 Performance / File Handler / Tastyrc / Appearance>HTML / Keybindings>Plugins 는 기능 회귀 방지용 잠정 배치 (최종 귀속 제품 결정 대기).
 - egui에 시스템 CJK 폰트 로드: Windows(맑은 고딕), macOS(AppleSDGothicNeo), Linux(Noto Sans CJK)
 - 편집 중 원본 설정을 보존하는 드래프트 패턴
 - Save 버튼: 디스크에 저장 후 즉시 적용

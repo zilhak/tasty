@@ -18,6 +18,7 @@ pub fn draw_plugin_tab(
     font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
     settings_pages: &[SettingsPageEntry],
+    l2_filter: &mut String,
 ) {
     use crate::settings_ui::PluginSubTab;
     let th = crate::theme::theme();
@@ -58,12 +59,18 @@ pub fn draw_plugin_tab(
 
     let current = sub_tab.clone();
     let mut selected_new: Option<PluginSubTab> = None;
-    tasty_ui_widgets::two_depth_layout(
+    let filter_lc = l2_filter.to_lowercase();
+    tasty_ui_widgets::two_depth_layout_filtered(
         ui,
         &th,
         available_height,
+        l2_filter,
+        t("settings.filter.plugins"),
         |ui| {
             for (tab, label) in &sub_tabs {
+                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
+                    continue;
+                }
                 let selected = current.as_ref() == Some(tab);
                 if ui.selectable_label(selected, label.as_str()).clicked() {
                     selected_new = Some(tab.clone());

@@ -79,8 +79,12 @@ notifications = "Notifications"
 keybindings = "Keybindings"
 file_handler = "File Handler"
 misc = "Misc"
-plugin = "Plugin"
+plugin = "Plugins"
 updates = "Updates"
+
+[settings.filter]
+sections = "Filter sections…"
+plugins = "Filter plugins…"
 
 [settings.plugin]
 empty = "No items."

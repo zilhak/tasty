@@ -13,19 +13,38 @@ Tasty의 설정 시스템 구조. 설정 파일, GUI 설정 윈도우, 카테고
 
 독립 OS 윈도우(ModalView). Ctrl+, 단축키로 토글. 모달 활성 시 다른 윈도우 입력 차단.
 
-### 탭 구성
+### IA 구조 — 2-level (L1 상단탭 + L2 사이드바)
 
-| 탭 | 설명 |
+상단 L1 탭 4개 + 각 L1 내부의 좌측 L2 사이드바(상단 섹션 필터 입력 포함)로 구성된다.
+L1 전환 시 L2 필터는 초기화된다.
+
+| L1 | L2 섹션 |
 |---|---|
-| General | 셸 경로, 시작 명령, 스크롤백, CWD 상속, 셸 모드, 레이아웃 복원 |
-| Appearance | 폰트, 테마, 배경 투명도, 사이드바 너비, surface별 색상 |
-| Clipboard | 복사/붙여넣기 활성화, 히스토리 설정 |
-| Notifications | 알림 활성화, 시스템 알림, 사운드, 병합 간격 |
-| Keybindings | 단축키 설정 (서브탭으로 분류) |
-| Language | UI 언어 선택 (en/ko/ja) |
-| Performance | PTY 폴링, 디스크 스왑, 지연 PTY 초기화 |
-| File Handler | Detectors / Handlers / Extension Mapping / Recent picks (`~/.tasty/file-handlers.toml` 사용자 영역 편집) |
-| Misc | tastyrc 편집기 등 기타 |
+| General | General, Terminal, Clipboard, Notifications, Accessibility, Updates, Performance, File Handler, (Tastyrc — Windows 전용) |
+| Appearance | Theme, General, Tasty, Terminal, (+ plugin 기여 페이지), HTML |
+| Keybindings | General, Workspace, Pane, Tab, Surface, Clipboard, Zoom, Image, Preset, Plugins |
+| Plugins | 설치된 plugin 이 기여한 settings page (per-plugin) |
+
+L2 섹션별 내용:
+
+| L2 섹션 | 설명 |
+|---|---|
+| General > General | 레이아웃 복원, 종료 동작, 언어 선택 |
+| General > Terminal | 셸 모드, 스크롤백 등 터미널 설정 |
+| General > Clipboard | 히스토리 활성화/최대 항목/폴링 간격 |
+| General > Notifications | 알림 활성화, 사운드, 병합 간격 |
+| General > Accessibility | 모션 감소, 고대비(예정) |
+| General > Updates | 현재/최신 버전, 업데이트 확인 |
+| General > Performance | PTY 폴링, 디스크 스왑, 지연 PTY 초기화 |
+| General > File Handler | Detectors / Handlers / Extension Mapping (`~/.tasty/file-handlers.toml` 사용자 영역 편집) |
+| Appearance | 폰트, 테마, 배경 투명도, surface별 색상 |
+| Keybindings | 단축키 설정 (아래 서브탭 구조) |
+| Plugins | plugin 권한/단축키/설정 |
+
+> **귀속 잠정성**: General L2 의 Performance / File Handler / Tastyrc, Appearance L2 의 HTML,
+> Keybindings L2 의 Plugins 는 디자인 IA(`ui_kits/.../settings_window.jsx`)에 정의가 없어
+> 기능 회귀 방지를 위해 잠정 배치된 항목이다. 최종 귀속은 제품 결정(D1 게이트 2-B~2-E)으로
+> 확정한다.
 
 ## Keybindings 탭 — 서브탭 구조
 

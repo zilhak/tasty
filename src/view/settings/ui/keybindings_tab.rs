@@ -63,6 +63,7 @@ pub fn draw_keybindings_tab(
         (String, String),
         Option<ShortcutOverride>,
     >,
+    l2_filter: &mut String,
 ) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
@@ -71,10 +72,13 @@ pub fn draw_keybindings_tab(
 
     let current = *sub_tab;
     let mut selected_new: Option<KeybindingsSubTab> = None;
-    tasty_ui_widgets::two_depth_layout(
+    let filter_lc = l2_filter.to_lowercase();
+    tasty_ui_widgets::two_depth_layout_filtered(
         ui,
         &th,
         available_height,
+        l2_filter,
+        t("settings.filter.sections"),
         |ui| {
             let sub_tabs = [
                 (
@@ -117,6 +121,9 @@ pub fn draw_keybindings_tab(
             ];
 
             for (tab, label) in &sub_tabs {
+                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
+                    continue;
+                }
                 let selected = current == *tab;
                 if ui.selectable_label(selected, *label).clicked() {
                     selected_new = Some(*tab);

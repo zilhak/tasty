@@ -14,4 +14,4 @@ pub mod tokens;
 mod two_depth;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
 pub use tab_content_frame::tab_content_frame;
-pub use two_depth::two_depth_layout;
+pub use two_depth::{two_depth_layout, two_depth_layout_filtered};
