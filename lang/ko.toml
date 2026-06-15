@@ -85,6 +85,7 @@ updates = "업데이트"
 [settings.filter]
 sections = "섹션 검색…"
 plugins = "플러그인 검색…"
+no_matches = "검색 결과 없음"
 
 [settings.plugin]
 empty = "항목이 없습니다."

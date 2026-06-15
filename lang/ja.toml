@@ -85,6 +85,7 @@ updates = "アップデート"
 [settings.filter]
 sections = "セクションを絞り込み…"
 plugins = "プラグインを絞り込み…"
+no_matches = "一致なし"
 
 [settings.plugin]
 empty = "項目がありません。"

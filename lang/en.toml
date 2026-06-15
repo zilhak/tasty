@@ -85,6 +85,7 @@ updates = "Updates"
 [settings.filter]
 sections = "Filter sections…"
 plugins = "Filter plugins…"
+no_matches = "No matches"
 
 [settings.plugin]
 empty = "No items."

@@ -67,14 +67,19 @@ pub fn draw_plugin_tab(
         l2_filter,
         t("settings.filter.plugins"),
         |ui| {
+            let mut any = false;
             for (tab, label) in &sub_tabs {
                 if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
                     continue;
                 }
+                any = true;
                 let selected = current.as_ref() == Some(tab);
                 if ui.selectable_label(selected, label.as_str()).clicked() {
                     selected_new = Some(tab.clone());
                 }
+            }
+            if !any {
+                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
             }
         },
         |ui| match current.as_ref() {

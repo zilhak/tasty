@@ -120,14 +120,19 @@ pub fn draw_keybindings_tab(
                 ),
             ];
 
+            let mut any = false;
             for (tab, label) in &sub_tabs {
                 if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
                     continue;
                 }
+                any = true;
                 let selected = current == *tab;
                 if ui.selectable_label(selected, *label).clicked() {
                     selected_new = Some(*tab);
                 }
+            }
+            if !any {
+                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
             }
         },
         |ui| {

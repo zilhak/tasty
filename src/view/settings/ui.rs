@@ -598,14 +598,19 @@ fn draw_general_group(
         &mut ui_state.l2_filter,
         t("settings.filter.sections"),
         |ui| {
+            let mut any = false;
             for (tab, label) in &sections {
                 if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
                     continue;
                 }
+                any = true;
                 let selected = current == *tab;
                 if ui.selectable_label(selected, label.as_str()).clicked() {
                     selected_new = Some(*tab);
                 }
+            }
+            if !any {
+                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
             }
         },
         |ui| match current {
