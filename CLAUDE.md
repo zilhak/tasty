@@ -127,7 +127,7 @@ Tasty 는 **Windows, macOS, Linux 를 모두 지원하는 크로스 플랫폼 �
 
 모든 작업 완료 시 docs 를 갱신한다.
 
-- 새 기능이 구현되면 [`docs/features.md`](docs/features.md) 에 추가.
+- 새 기능이 구현되면 [`docs/features/`](docs/features/index.md) 의 해당 카테고리 문서에 추가 (인덱스는 `docs/features/index.md`).
 - 기존 기능이 변경되면 해당 문서 업데이트.
 - [`docs/index.md`](docs/index.md) 의 목차도 갱신.
 - 구현 히스토리는 남기지 않는다. **현재 상태만** 기술한다.

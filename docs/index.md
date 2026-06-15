@@ -1,6 +1,6 @@
 # Tasty 문서 인덱스
 
-크로스 플랫폼 GPU 가속 네이티브 터미널 에뮬레이터. 본 인덱스는 현재 상태 문서로 진입하는 시작점이다. 구현된 기능의 상세는 [features.md](features.md), 설계는 `design/`, 아키텍처는 `architecture/`, 개발 가이드는 `dev-guide/`, 에이전트용 가이드는 `agent-guide/` 에 있다.
+크로스 플랫폼 GPU 가속 네이티브 터미널 에뮬레이터. 본 인덱스는 현재 상태 문서로 진입하는 시작점이다. 구현된 기능의 상세는 [features/](features/index.md), 설계는 `design/`, 아키텍처는 `architecture/`, 개발 가이드는 `dev-guide/`, 에이전트용 가이드는 `agent-guide/` 에 있다.
 
 ## 설치
 
@@ -68,12 +68,11 @@
 
 ## 기능 명세 (Features)
 
-구현된 기능의 *현재 상태 상세* 는 [features.md](features.md) 에 모두 흡수되어 있다. 기능 단위 *행동 명세 + Acceptance Criteria* 는 features/ 인덱스를 본다.
+구현된 기능의 *현재 상태 상세* 는 [features/](features/index.md) 하위에 카테고리별로 분할되어 있다 (옛 단일 `features.md` 는 인덱스로 redirect). 기능 단위 *행동 명세 + Acceptance Criteria* 도 같은 인덱스에서 본다.
 
 | 문서 | 설명 |
 |------|------|
-| [features.md](features.md) | 구현된 전체 기능의 현재 상태 상세 (터미널 엔진 / 워크스페이스·탭 / 알림 / 분할 / CLI 등) |
-| [features/index.md](features/index.md) | Feature Spec 인덱스 — 기능 단위 행동 명세 + Acceptance Criteria |
+| [features/index.md](features/index.md) | Feature Spec 인덱스 — 카테고리별 현재 상태 상세 + 기능 단위 행동 명세 + Acceptance Criteria |
 
 ## AI 에이전트 가이드
 
@@ -172,7 +171,7 @@
 
 ## 구현 현황 빠른 안내
 
-본 인덱스의 옛 "기능 목록 표" 는 구현 완료된 항목의 옛 기획 링크로 채워져 있었다. 현재는 모두 [features.md](features.md) 에 흡수되어 있으니, 어떤 기능이 어떻게 구현되어 있는지 확인하려면 그쪽을 본다. GPU 렌더링·테스트·설치 같은 횡단 주제는 dev-guide 와 design 의 해당 문서로 흡수되었다 (예: `dev-guide/gpu-rendering.md`, `dev-guide/tui-testing.md`, `installation.md`). (옛 docs/plans/* 파일은 제거되었으며, 아직 미구현인 기획은 `.claude-workspace/plans/archived-from-docs/` 로 옮겨졌다.)
+본 인덱스의 옛 "기능 목록 표" 는 구현 완료된 항목의 옛 기획 링크로 채워져 있었다. 현재는 모두 [features/](features/index.md) 의 카테고리별 문서에 흡수되어 있으니, 어떤 기능이 어떻게 구현되어 있는지 확인하려면 그쪽을 본다. GPU 렌더링·테스트·설치 같은 횡단 주제는 dev-guide 와 design 의 해당 문서로 흡수되었다 (예: `dev-guide/gpu-rendering.md`, `dev-guide/tui-testing.md`, `installation.md`). (옛 docs/plans/* 파일은 제거되었으며, 아직 미구현인 기획은 `.claude-workspace/plans/archived-from-docs/` 로 옮겨졌다.)
 
 ## 기술 스택
 
