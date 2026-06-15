@@ -17,6 +17,7 @@
 | 카테고리 | 문서 |
 |----------|------|
 | 터미널 엔진 | [terminal-engine.md](terminal-engine.md) |
+| 윈도우 크롬 (CSD 타이틀바) | [window-chrome.md](window-chrome.md) |
 | 워크스페이스 & 탭 | [workspace-tabs.md](workspace-tabs.md) |
 | 작업영역 StatusBar | [workspace-status-bar.md](workspace-status-bar.md) |
 | 레이아웃 프리셋 | [layout-presets.md](layout-presets.md) |
