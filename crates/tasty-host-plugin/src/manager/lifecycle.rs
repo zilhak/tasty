@@ -159,6 +159,14 @@ impl PluginManager {
         self.ensure_listener();
         for id in &to_start {
             if let Some(pkg) = self.packages.iter().find(|p| &p.manifest.id == id).cloned() {
+                // 부팅 경로에서도 enable() 과 대칭으로 정적 contribute 를 두 registry 에
+                // 등록한다. spawn 성공 여부와 무관하게 detector/handler 가 즉시
+                // 활성화되도록 start_plugin_internal(spawn) 과 분리해 enabled 판정 직후
+                // install. (멱등 — push_contribution 이 같은 owner 를 retain 으로 교체.)
+                self.file_format
+                    .install_plugin_detectors(&pkg.manifest.id, &pkg.manifest.contributes.detector);
+                self.file_handler
+                    .install_plugin_handlers(&pkg.manifest.id, &pkg.manifest.contributes.handler);
                 self.start_plugin_internal(&pkg);
             }
         }

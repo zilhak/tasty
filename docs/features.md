@@ -1817,6 +1817,8 @@ URI/경로 입력을 받아 **(1) 파일 형식 식별 → (2) 등록된 핸들�
   - `file_handler.extend:<id>`: 기존 detector 에 rule 추가
   - `file_handler.handle:<id>`: 기존 detector 에 handler 만 추가
   - `$unknown` 같은 sentinel 은 모든 토큰에서 reject (예약어)
+- **부팅 시 자동 등록**: enabled plugin(=builtin 공식 플러그인 포함)의 detector/handler 는 부팅 진입점 `discover_and_start()` 에서 plugin process spawn 과 **분리하여** 두 registry 에 install 된다 — 런타임 `enable()` 경로와 대칭. 따라서 앱을 켠 직후 별도 enable 조작 없이 공식 플러그인의 파일 동작(예: `.md` 더블클릭 → markdown surface 새 탭)이 기본으로 작동한다. 출처 무관(builtin/외부 동일), spawn 실패와 무관하게 정적 contribute 는 등록된다. `install_plugin_*` 는 같은 owner 의 기존 contribution 을 retain 으로 교체하므로 disable→enable 재등록·다중 윈도우(공유 registry Arc)에서도 중복 누적이 없다(멱등).
+- **다중 핸들러**: 같은 detector 에 핸들러가 둘 이상이면 picker 없이 `handlers_for` 정렬(priority→owner→id) 1순위가 자동 디스패치된다 — 정렬이 결정론적이라 1순위 선택도 결정론적.
 
 ### User config
 - `~/.tasty/file-handlers.toml` — 한 파일에 `[[detector]]` + `[[handler]]` 섹션 혼재 가능, 부팅 시 1회 로드

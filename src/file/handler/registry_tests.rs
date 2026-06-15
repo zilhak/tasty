@@ -459,6 +459,107 @@ fn attach_detector_info_stores_arc_and_returns_clone() {
     assert!(exts.contains(&"md".to_string()));
 }
 
+// ── 부팅 시 enabled plugin contribute 자동 등록 (boot registration) ──────
+//
+// `discover_and_start()` 는 enabled plugin 의 `contributes.detector` /
+// `contributes.handler`(둘 다 `Vec<serde_json::Value>`) 를 trait-impl
+// (`FileFormatRegistryPort` / `FileHandlerRegistryPort`) 의 JSON 디코드 경로로
+// install 한다. 아래 테스트는 그 부팅 경로를 manifest JSON 값 그대로 모사한다.
+
+/// markdown manifest 의 `[[contributes.detector]]` 와 동일한 JSON 값.
+fn markdown_detector_json() -> Vec<serde_json::Value> {
+    vec![serde_json::json!({
+        "id": "markdown",
+        "display_name_i18n_key": "file_handler.format.markdown",
+        "rule": [{ "kind": "extension", "values": ["md", "markdown"] }],
+    })]
+}
+
+/// markdown manifest 의 `[[contributes.handler]]` 와 동일한 JSON 값.
+fn markdown_handler_json() -> Vec<serde_json::Value> {
+    vec![serde_json::json!({
+        "id": "viewer",
+        "detector": "markdown",
+        "priority": 50,
+        "display_name_i18n_key": "file_handler.host.markdown-viewer",
+        "action": { "kind": "open_surface", "surface_kind": "markdown", "param_key": "file" },
+    })]
+}
+
+#[test]
+fn boot_registration_via_manifest_json_enables_dispatch() {
+    use tasty_plugin_protocol::host_port::{FileFormatRegistryPort, FileHandlerRegistryPort};
+    let formats = FileFormatRegistry::new();
+    formats.install_host_defaults(include_str!("../format/defaults/default-file-format.toml"));
+    let handlers = FileHandlerRegistry::new();
+    load_host(&handlers);
+
+    // 부팅 경로와 동일: enabled plugin 의 manifest contribute(JSON) 를 install.
+    FileFormatRegistryPort::install_plugin_detectors(
+        &formats,
+        "com.tasty.markdown",
+        &markdown_detector_json(),
+    );
+    FileHandlerRegistryPort::install_plugin_handlers(
+        &handlers,
+        "com.tasty.markdown",
+        &markdown_handler_json(),
+    );
+
+    // detector 가 .md 를 식별하고, 그 detector 로 핸들러가 조회되어야 한다
+    // (= 부팅 직후 별도 enable 없이 .md 디스패치 가능).
+    let id = formats.identify(
+        &FileTarget::new(std::path::PathBuf::from("README.md")),
+        DetectDepth::Cheap,
+    );
+    assert_eq!(id, Some(DetectorId("markdown".into())));
+    let v = handlers.handlers_for(&DetectorId("markdown".into()));
+    assert!(v.iter().any(|h| h.id.as_str() == MD_VIEWER_ID));
+}
+
+#[test]
+fn boot_registration_idempotent_and_first_is_deterministic() {
+    use tasty_plugin_protocol::host_port::FileHandlerRegistryPort;
+    let handlers = FileHandlerRegistry::new();
+    load_host(&handlers);
+
+    // 같은 detector 에 priority 동일(50) 핸들러 둘 — tie-break 는 plugin id 알파벳순.
+    let other = vec![serde_json::json!({
+        "id": "viewer",
+        "detector": "markdown",
+        "priority": 50,
+        "action": { "kind": "ipc", "method": "com.example.mdx.open" },
+    })];
+
+    // 부팅 등록 (1회).
+    FileHandlerRegistryPort::install_plugin_handlers(
+        &handlers,
+        "com.tasty.markdown",
+        &markdown_handler_json(),
+    );
+    FileHandlerRegistryPort::install_plugin_handlers(&handlers, "com.example.mdx", &other);
+    let first_id = handlers.handlers_for(&DetectorId("markdown".into()))[0]
+        .id
+        .as_str()
+        .to_string();
+
+    // 멱등: disable→enable 모사로 같은 plugin 을 재install 해도 중복 누적 없음
+    // (push_contribution 이 같은 owner 를 retain 으로 교체).
+    FileHandlerRegistryPort::install_plugin_handlers(
+        &handlers,
+        "com.tasty.markdown",
+        &markdown_handler_json(),
+    );
+    FileHandlerRegistryPort::install_plugin_handlers(&handlers, "com.example.mdx", &other);
+
+    let v = handlers.handlers_for(&DetectorId("markdown".into()));
+    assert_eq!(v.len(), 2, "재install 후에도 핸들러 2개 — 중복 누적 없음");
+    // 다중 핸들러 1순위 자동선택의 결정론: 재install 후에도 first 동일.
+    assert_eq!(v[0].id.as_str(), first_id);
+    // priority 동일 → plugin id 알파벳순. com.example.mdx < com.tasty.markdown.
+    assert_eq!(v[0].id.as_str(), "com.example.mdx/viewer");
+}
+
 #[test]
 fn attach_detector_info_second_call_is_ignored() {
     use crate::file::format::FileFormatRegistry;
