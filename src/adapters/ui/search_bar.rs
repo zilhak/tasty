@@ -22,14 +22,22 @@ pub fn draw_search_bar(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
 
-        // Search input field
+        // Search input field — flex: 남은 가용 폭을 채우되 최소 60px. (디자인 canonical:
+        // search_bar.jsx `flex:1; minWidth:60`.) 뒤따르는 고정폭 요소(카운터 40px +
+        // IconButton sm 5개)와 그 사이 간격을 가용 폭에서 빼서 input 폭을 산출한다.
+        let spacing = ui.spacing().item_spacing.x;
+        let btn_size = theme.item_height_tab.value();
+        // 카운터(40) + nav 2개 + 토글 3개 = 5개 버튼, input 뒤로 6개의 간격.
+        let reserved = 40.0 + 5.0 * btn_size + 6.0 * spacing;
+        let input_width = (ui.available_width() - reserved).max(60.0);
+
         let response = ui.add(
             egui::TextEdit::singleline(&mut state.search.query)
                 .hint_text(tasty_egui_theme::hint_text(
                     &crate::theme::theme(),
                     t("search.placeholder"),
                 ))
-                .desired_width(200.0)
+                .desired_width(input_width)
                 .font(egui::TextStyle::Body),
         );
 
