@@ -27,6 +27,7 @@
 |------|------|
 | [adr/index.md](adr/index.md) | ADR 목록 (번호 / 상태 / 날짜 / 태그) |
 | [adr/0001-linux-system-tray-unsupported.md](adr/0001-linux-system-tray-unsupported.md) | ADR-0001 — Linux 시스템 트레이 미지원 결정 (DE 분열, 태스크바 유지로 충분) |
+| [adr/0003-client-side-decorations.md](adr/0003-client-side-decorations.md) | ADR-0003 — 네이티브 데코 대신 CSD 타이틀바 채택 (3 OS 전략 분기, 크롬 소유) |
 
 ## 디자인 문서
 
