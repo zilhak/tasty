@@ -65,4 +65,29 @@ pub enum RemoteCommands {
         #[arg(long)]
         target_port: Option<u16>,
     },
+    /// SSH 너머 원격 tasty 인스턴스의 생존 여부를 확인한다(introspection).
+    ///
+    /// 포트 발견(`tasty port`/포트파일) 만으로는 stale 포트 파일(이미 죽은
+    /// 인스턴스가 남긴 파일)을 살아있다고 오판할 수 있으므로, 포트 발견 후
+    /// `ssh -L` 터널을 수립하고 그 포트로 가벼운 IPC(`system.info`) 1 회를
+    /// 실제로 보내 응답이 와야만 alive 로 판정한다. 연결 거부/타임아웃 =
+    /// dead(stale 포트). 인자 이름은 `remote attach` 와 통일한다.
+    Check {
+        /// SSH 너머 원격 대상. 예: --ssh user@host, --ssh gx10. `--profile` 과 상호배타.
+        #[arg(long)]
+        ssh: Option<String>,
+        /// 저장된 SSH 프로필명으로 원격 생존 확인. `~/.tasty/ssh-profiles.toml` 의
+        /// 프로필을 resolve 해 user/port/identity/extra-options 를 결선한다.
+        /// `--ssh` 와 상호배타. 이 경우 `--remote-tasty`/`--remote-port-mode` 는
+        /// 프로필 값으로 대체된다.
+        #[arg(long)]
+        profile: Option<String>,
+        /// 원격 tasty 바이너리 경로 (auto 포트 발견 체인의 subcommand 단계
+        /// `ssh host <path> port` 에서 사용). 기본 "tasty" (원격 PATH 가정).
+        #[arg(long, default_value = "tasty")]
+        remote_tasty: String,
+        /// 원격 포트 발견 모드: auto(기본) | subcommand | file-unix | file-windows.
+        #[arg(long, default_value = "auto")]
+        remote_port_mode: String,
+    },
 }

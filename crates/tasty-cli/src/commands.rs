@@ -16,6 +16,7 @@ pub mod port;
 pub mod preset;
 pub mod read_unset;
 pub mod remote;
+pub mod remote_check;
 pub mod ssh_profile;
 pub mod surface_meta;
 pub mod telemetry;

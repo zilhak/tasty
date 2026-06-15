@@ -320,6 +320,92 @@ mod attach_surface_tests {
         );
     }
 
+    /// `tasty remote check --ssh user@host` 가 Check 변형으로 파싱된다(기본값 포함).
+    #[test]
+    fn remote_check_parses() {
+        let cli = Cli::try_parse_from(["tasty", "remote", "check", "--ssh", "user@host"]).unwrap();
+        let Some(Commands::Remote {
+            command:
+                RemoteCommands::Check {
+                    ssh,
+                    profile,
+                    remote_tasty,
+                    remote_port_mode,
+                },
+        }) = cli.command
+        else {
+            panic!("expected remote check");
+        };
+        assert_eq!(ssh.as_deref(), Some("user@host"));
+        assert_eq!(profile, None);
+        // attach 와 동일한 기본값.
+        assert_eq!(remote_tasty, "tasty");
+        assert_eq!(remote_port_mode, "auto");
+    }
+
+    /// `remote check --profile <name>` + 발견 모드 오버라이드가 파싱된다.
+    #[test]
+    fn remote_check_profile_parses() {
+        let cli = Cli::try_parse_from([
+            "tasty",
+            "remote",
+            "check",
+            "--profile",
+            "gx10",
+            "--remote-port-mode",
+            "file-unix",
+        ])
+        .unwrap();
+        let Some(Commands::Remote {
+            command:
+                RemoteCommands::Check {
+                    profile,
+                    remote_port_mode,
+                    ..
+                },
+        }) = cli.command
+        else {
+            panic!("expected remote check");
+        };
+        assert_eq!(profile.as_deref(), Some("gx10"));
+        assert_eq!(remote_port_mode, "file-unix");
+    }
+
+    /// 런타임 가드: `remote check` 의 `--ssh` 와 `--profile` 는 상호배타.
+    #[test]
+    fn remote_check_ssh_profile_rejected() {
+        let cli = Cli::try_parse_from(["tasty", "remote", "check", "--ssh", "h", "--profile", "p"])
+            .unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("--ssh 와 --profile"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// 런타임 가드: 대상(`--ssh`/`--profile`) 없이 `remote check` → 명확한 거부.
+    #[test]
+    fn remote_check_no_target_rejected() {
+        let cli = Cli::try_parse_from(["tasty", "remote", "check"]).unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("원격 check 대상이 필요합니다"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// 존재하지 않는 프로필 `remote check --profile nope` → "찾을 수 없습니다".
+    #[test]
+    fn remote_check_unknown_profile_rejected() {
+        let cli =
+            Cli::try_parse_from(["tasty", "remote", "check", "--profile", "__nope__"]).unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("찾을 수 없습니다"),
+            "unexpected error: {err}"
+        );
+    }
+
     /// 로컬 loopback attach 는 debug 빌드 `tasty debug attach` 로만 파싱된다.
     #[cfg(debug_assertions)]
     #[test]

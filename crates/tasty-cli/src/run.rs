@@ -414,6 +414,55 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
             !no_reconnect,
         );
     }
+    // `tasty remote check` — 원격 tasty 생존 확인. 포트 발견 + ssh -L 터널 + 터널 포트로
+    // 가벼운 IPC(system.info) 1 회. 포트 발견만으로 alive 단정하지 않는다(stale 포트
+    // 거짓 alive 방지). attach 와 동일한 SSH 부품을 재사용 — 로컬 IPC 경로가 아니므로
+    // 일반 디스패치 전에 선처리한다.
+    if let Commands::Remote {
+        command:
+            RemoteCommands::Check {
+                ssh,
+                profile,
+                remote_tasty,
+                remote_port_mode,
+            },
+    } = &command
+    {
+        if ssh.is_some() && profile.is_some() {
+            anyhow::bail!("--ssh 와 --profile 는 함께 쓸 수 없습니다.");
+        }
+        // 접속 스펙 결정: 저장 프로필(비활성 거부) → SshTarget(+remote_tasty/port_mode
+        // 대체), 없으면 1회성 `--ssh`. 둘 다 없으면 대상 미지정 → 명확히 거부.
+        // (attach 와 동일 가드 — 포커스 비의존, ID/주소 직접 지정.)
+        let (target, rt, pm): (crate::ssh::SshTarget, String, String) = match profile {
+            Some(name) => {
+                let profiles = tasty_ssh_profiles::SshProfiles::load();
+                let Some(p) = profiles.get(name) else {
+                    anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty tool ssh list).");
+                };
+                if p.is_disabled() {
+                    anyhow::bail!(
+                        "SSH 프로필 '{name}' 은 환경 감지에 실패해 비활성 상태입니다. \
+                         'tasty tool ssh detect {name}' 로 재감지하세요."
+                    );
+                }
+                (
+                    crate::ssh::SshTarget::from_profile(p),
+                    p.remote_tasty.clone(),
+                    p.port_mode.clone(),
+                )
+            }
+            None => match ssh {
+                Some(dest) => (
+                    crate::ssh::SshTarget::parse(dest),
+                    remote_tasty.clone(),
+                    remote_port_mode.clone(),
+                ),
+                None => anyhow::bail!("원격 check 대상이 필요합니다 (--ssh 또는 --profile)."),
+            },
+        };
+        return crate::commands::remote_check::run_remote_check(target, &rt, &pm);
+    }
     // `tasty debug attach <id>` (non-force, 로컬 loopback) — 단계 4 raw 스트림. 로컬
     // self-attach 는 사용자 입력 재현 성격이라 debug 빌드 전용으로 격리한다(원칙 1 ②).
     // `--force-detach` 는 일반 JSON-RPC(attach.force_detach)라 fall-through.
