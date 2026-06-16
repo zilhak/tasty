@@ -312,6 +312,116 @@ fn hard_newline_line_is_not_wrapped() {
     );
 }
 
+// ---- Regression: wrap-induced scroll at the bottom row must be captured ----
+
+/// Join every scrollback line (oldest→newest) plus every visible row into a
+/// single string, so a marker can be counted across the whole buffer.
+fn all_buffer_text(terminal: &Terminal) -> String {
+    let state = terminal.lock_state();
+    let mut out = String::new();
+    for i in 0..state.scrollback_len() {
+        if let Some(cells) = state.scrollback_line_owned(i) {
+            for (s, _) in &cells {
+                out.push_str(s);
+            }
+            out.push('\n');
+        }
+    }
+    for line in state.surface().screen_lines().iter() {
+        for cell in line.visible_cells() {
+            out.push_str(cell.str());
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// When a long line auto-wraps at the right edge while the cursor is already on
+/// the bottom row, termwiz scrolls the grid internally (no `ScrollRegionUp`
+/// Change is emitted). The evicted top row MUST still land in scrollback;
+/// otherwise scrolling back loses content. This reproduces the loss bug.
+#[test]
+fn wrap_induced_scroll_at_bottom_row_reaches_scrollback() {
+    let mut terminal = test_terminal(10, 4);
+    // 8 visual rows of 10 identical chars each (no LF): "0000000000".."7777777777".
+    // The screen holds 4; the first 4 rows are scrolled off by wrap-scroll.
+    let mut payload = Vec::new();
+    for d in b'0'..=b'7' {
+        payload.extend(std::iter::repeat(d).take(10));
+    }
+    terminal.process_bytes(&payload);
+
+    assert_eq!(
+        terminal.scrollback_len(),
+        4,
+        "wrap-induced scroll at the bottom row must push the 4 evicted rows to scrollback"
+    );
+    assert_eq!(first_scrollback_text(&terminal, 0), "0000000000");
+    assert_eq!(first_scrollback_text(&terminal, 3), "3333333333");
+}
+
+/// Conservation property: when wrap (not LF) drives the scrolling, every unique
+/// marker must remain exactly once across (scrollback ∪ visible screen). A
+/// missing marker = loss; a marker appearing twice = duplication. Catches both
+/// faces of the bug in one assertion. Uses a continuous no-newline payload so
+/// the scroll path is purely auto-wrap (the uncaptured path).
+#[test]
+fn wrapping_lines_are_preserved_exactly_once() {
+    let mut terminal = test_terminal(10, 4);
+    // N visual rows, each exactly 10 chars beginning with a unique marker,
+    // concatenated with NO newlines so wrap alone drives the scrolling.
+    const N: usize = 8;
+    let mut payload = String::new();
+    for i in 0..N {
+        payload.push_str(&format!("MK{i:02}aaaaaa")); // "MKnn" + 6 = 10 cols
+    }
+    terminal.process_bytes(payload.as_bytes());
+
+    let buffer = all_buffer_text(&terminal);
+    for i in 0..N {
+        let marker = format!("MK{i:02}");
+        let count = buffer.matches(&marker).count();
+        assert_eq!(
+            count, 1,
+            "marker {marker} must appear exactly once (count={count}); \
+             0 = lost on wrap-scroll, >1 = duplicated"
+        );
+    }
+}
+
+/// Reproduces the on-screen duplication symptom: after content has wrap-scrolled
+/// into history, a TUI repaints the visible region in place (absolute cursor
+/// moves, no re-emission of committed lines). The committed markers must not end
+/// up both in scrollback AND on screen — i.e. still exactly once each.
+#[test]
+fn repaint_after_wrap_scroll_does_not_duplicate_committed_lines() {
+    let mut terminal = test_terminal(10, 4);
+    // 6 wrap-driven rows: MK00..MK05. 4 fit; MK00/MK01 scroll into history.
+    let mut payload = String::new();
+    for i in 0..6 {
+        payload.push_str(&format!("MK{i:02}aaaaaa"));
+    }
+    terminal.process_bytes(payload.as_bytes());
+
+    // TUI frame repaint: rewrite each of the 4 visible rows in place via
+    // absolute positioning + erase-line. No newline, so nothing scrolls.
+    for row in 0..4 {
+        terminal.process_bytes(format!("\x1b[{};1H\x1b[2K", row + 1).as_bytes());
+        terminal.process_bytes(format!("RP{row:02}bbbbbb").as_bytes());
+    }
+
+    let buffer = all_buffer_text(&terminal);
+    // Committed (scrolled-off) markers must survive exactly once.
+    for i in 0..2 {
+        let marker = format!("MK{i:02}");
+        let count = buffer.matches(&marker).count();
+        assert_eq!(
+            count, 1,
+            "committed marker {marker} must appear exactly once (count={count})"
+        );
+    }
+}
+
 fn join_line(line: &crate::ScrollbackLine) -> String {
     line.cells.iter().map(|(s, _)| s.as_str()).collect()
 }

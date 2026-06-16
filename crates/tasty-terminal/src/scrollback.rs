@@ -341,29 +341,126 @@ impl TerminalState {
         result
     }
 
+    /// Push lines that scrolled off the top into scrollback and keep the
+    /// viewport-relative bookkeeping consistent (line tails + scroll offset).
+    pub(crate) fn push_scrolled_off(&mut self, captured: Vec<crate::scrollback::ScrollbackLine>) {
+        let count = captured.len();
+        for line in captured {
+            self.scrollback.push_line(line);
+        }
+        // Shift saved_line_tails: remove top entries that scrolled off
+        for _ in 0..count.min(self.saved_line_tails.len()) {
+            self.saved_line_tails.remove(0);
+        }
+        // Compensate scroll_offset so the user's viewport stays in place
+        if self.scrollback.scroll_offset > 0 {
+            self.scrollback.scroll_offset += count;
+        }
+    }
+
     /// Inspect a change and capture scrollback lines before it's applied.
+    /// Only the explicit `ScrollRegionUp` path is handled here; the implicit
+    /// scroll caused by auto-wrapping text is handled in
+    /// [`apply_text_capturing_scrolls`] because the evicted rows are produced
+    /// mid-apply and would not exist in a pre-apply snapshot.
     pub(crate) fn capture_before_scroll(&mut self, change: &Change) {
-        match change {
-            Change::ScrollRegionUp {
-                first_row,
-                scroll_count,
-                ..
-            } if *first_row == 0 => {
-                let captured = self.capture_top_lines(*scroll_count);
-                let count = captured.len();
-                for line in captured {
-                    self.scrollback.push_line(line);
+        if let Change::ScrollRegionUp {
+            first_row: 0,
+            scroll_count,
+            ..
+        } = change
+        {
+            let captured = self.capture_top_lines(*scroll_count);
+            self.push_scrolled_off(captured);
+        }
+    }
+
+    /// Apply a `Change::Text`, capturing every row that termwiz scrolls off the
+    /// top while rendering it.
+    ///
+    /// termwiz `Surface::print_text` scrolls the grid *internally* (no
+    /// `ScrollRegionUp` Change) whenever auto-wrap or a newline runs past the
+    /// bottom row, discarding the evicted top line. Tasty owns the scrollback,
+    /// so we must observe each eviction. The evicted content is generated within
+    /// the same `add_change`, so a pre-apply snapshot is empty — instead we
+    /// split the text at the exact byte offsets where a scroll will occur, apply
+    /// each segment, and snapshot the (now-populated) top row right before the
+    /// scroll consumes it.
+    pub(crate) fn apply_text_capturing_scrolls(&mut self, text: String) {
+        let offsets = self.text_scroll_offsets(&text);
+        if offsets.is_empty() {
+            self.surface_mut().add_change(Change::Text(text));
+            return;
+        }
+        let mut prev = 0usize;
+        for off in offsets {
+            if off > prev {
+                self.surface_mut()
+                    .add_change(Change::Text(text[prev..off].to_string()));
+            }
+            // The top row is about to scroll off when the next segment's first
+            // grapheme is applied — snapshot it now.
+            let captured = self.capture_top_lines(1);
+            self.push_scrolled_off(captured);
+            prev = off;
+        }
+        if prev < text.len() {
+            self.surface_mut()
+                .add_change(Change::Text(text[prev..].to_string()));
+        }
+    }
+
+    /// Simulate termwiz `print_text` cursor advancement to find the byte offset
+    /// of every grapheme whose application scrolls the grid. Mirrors termwiz's
+    /// deferred-wrap logic exactly (same grapheme segmentation and column width)
+    /// so the offsets line up with the real scrolls.
+    fn text_scroll_offsets(&self, text: &str) -> Vec<usize> {
+        use finl_unicode::grapheme_clusters::Graphemes;
+
+        let mut offsets = Vec::new();
+        let width = self.cols;
+        let height = self.rows;
+        if width == 0 || height == 0 {
+            return offsets;
+        }
+        let (mut xpos, mut ypos) = self.surface().cursor_position();
+        let mut byte = 0usize;
+        for g in Graphemes::new(text) {
+            let at_bottom = ypos + 1 >= height;
+            let scrolls = match g {
+                "\r" => false,
+                "\r\n" | "\n" => at_bottom,
+                _ => xpos >= width && at_bottom,
+            };
+            if scrolls {
+                offsets.push(byte);
+            }
+            // Advance state exactly as termwiz print_text does.
+            match g {
+                "\r" => xpos = 0,
+                "\r\n" => {
+                    xpos = 0;
+                    if !at_bottom {
+                        ypos += 1;
+                    }
                 }
-                // Shift saved_line_tails: remove top entries that scrolled off
-                for _ in 0..count.min(self.saved_line_tails.len()) {
-                    self.saved_line_tails.remove(0);
+                "\n" => {
+                    if !at_bottom {
+                        ypos += 1;
+                    }
                 }
-                // Compensate scroll_offset so the user's viewport stays in place
-                if self.scrollback.scroll_offset > 0 {
-                    self.scrollback.scroll_offset += count;
+                _ => {
+                    if xpos >= width {
+                        if !at_bottom {
+                            ypos += 1;
+                        }
+                        xpos = 0;
+                    }
+                    xpos += termwiz::cell::grapheme_column_width(g, None).max(1);
                 }
             }
-            _ => {}
+            byte += g.len();
         }
+        offsets
     }
 }

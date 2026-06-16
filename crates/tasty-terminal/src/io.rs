@@ -48,6 +48,13 @@ impl TerminalState {
             return;
         }
 
+        // Text can scroll the grid internally (auto-wrap past the bottom row)
+        // without emitting a ScrollRegionUp; that path captures evictions itself.
+        if let Change::Text(text) = change {
+            self.apply_text_capturing_scrolls(text);
+            return;
+        }
+
         self.capture_before_scroll(&change);
         self.surface_mut().add_change(change);
     }
