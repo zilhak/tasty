@@ -10,6 +10,7 @@
 |------|------|
 | [identity.md](identity.md) | **Tasty 정체성과 불가침 원칙** — 동시성(로컬 사용자/AI Agent/원격 사용자), 사용자/에이전트 분리, headless, 점유. 모든 설계의 축. **가장 먼저 읽는다** |
 | [concepts/actors.md](concepts/actors.md) | **주체(Actors)** — 세 주체 + 점유 모델 canonical 정의 |
+| [concepts/hierarchy.md](concepts/hierarchy.md) | **구조 계층** — Window/View › Workspace › Pane › Tab › Surface + 두 레벨 레이아웃 |
 | [documentation-model.md](documentation-model.md) | **문서 모델** — 카테고리 지도 + 기획(동작, 1순위)/화면(투영, 2순위) 분리 규칙. 새 문서 작성 전 |
 
 ## 문서
