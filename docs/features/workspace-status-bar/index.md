@@ -6,9 +6,11 @@
 - **코드**: `src/adapters/ui/status_bar.rs`
 - **화면**: [screens/workspace-status-bar.md](screens/workspace-status-bar.md)
 
+> **표시 내용 미확정** — 상태바에 *무엇을* 보여줄지는 아직 확정되지 않았다. 아래 좌측 클러스터(브랜치/surfaceId/셸·그리드)·우측 액션(팔레트·테마)은 **현재 소스에 들어가 있는 잠정 구성**일 뿐이며, 더 알맞은 항목이 정해지면 교체될 수 있다. 확정된 것은 *위치·크기·구조*(하단 24px 바, `bottom_inset`, 좌/우 클러스터 레이아웃)이고, *항목 목록*은 변경 대상이다.
+
 ## 목적
 
-[작업 영역](../work-area/index.md) 하단의 24px 바. 현재 focus surface 의 컨텍스트(브랜치/surfaceId/셸·그리드)와 우측 빠른 액션(명령 팔레트·테마 토글)을 보여준다. 항상 그려지며 작업 컬럼 아래 strip 을 차지한다(타이틀바 `top_inset` 과 대칭인 `bottom_inset`).
+[작업 영역](../work-area/index.md) 하단의 24px 바. 작업 컬럼 아래 strip 을 항상 차지한다(타이틀바 `top_inset` 과 대칭인 `bottom_inset`). 현재는 focus surface 의 컨텍스트와 우측 빠른 액션을 보여주지만, **표시 항목은 잠정**이다(위 노트).
 
 ## 내부 동작 (headless-valid)
 
