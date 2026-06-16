@@ -29,8 +29,9 @@ docs 는 두 묶음으로 나뉜다. §1 의 **동작-우선 taxonomy 는 A(제�
 
 | 종류 | 위치 | 무엇을 | 소유 / 변경 |
 |------|------|--------|-------------|
-| 기획문서 | `docs/features/<f>/index.md` | 내부 동작 (1순위) | docs / 자유 |
+| 기획문서 | `docs/features/<f>/index.md` | 내부 동작 (1순위) — **host 제공** | docs / 자유 |
 | 화면정의서 | `docs/features/<f>/screens/<s>.md` | 시각 투영 (2순위) | docs / 자유 |
+| 번들 플러그인 | `docs/plugins/<id>/index.md` (+ `screens/`) | **플러그인이 제공**하는 동작·화면 (features 와 동일 구조, 제공자만 다름) | docs / 자유 |
 | 횡단 규칙·흐름 | `docs/design/{policies,flows,systems}/` | 여러 기능 공통 규칙/흐름 | docs / 자유 |
 | 용어 | `docs/concepts/` | 유비쿼터스 언어 | docs / 자유 |
 | 근거 (ADR) | `docs/adr/` | 왜 그렇게 결정했나 | docs / Accepted 후 불변 (supersede) |

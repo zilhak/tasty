@@ -1,0 +1,60 @@
+# 플러그인 (Plugins)
+
+tasty 의 많은 기능은 **플러그인**으로 제공된다 — 별도 프로세스가 매니페스트로 자기 기여(surface 종류·도구 항목·CLI·파일 핸들러 등)를 선언하고, host 가 권한 범위 안에서 그것을 통합한다. 이 문서는 *플러그인이란 무엇이고 어떤 축으로 분류·통합되는가* 의 단일 출처다. 개별 번들 플러그인의 동작은 [`plugins/`](../plugins/index.md), 제작 방법은 dev-guide(아래).
+
+## 두 분류 축
+
+플러그인은 **배포 축**과 **통합 축** 두 개로 독립적으로 분류된다. (예: `com.tasty.markdown` 은 배포=번들, 통합=host-rendered surface kind + 파일 핸들러.)
+
+### 배포 축 — 누가 설치/소유하나
+
+| 카테고리 | 위치 | 목록 표시 | 설치 | 교체 |
+|----------|------|-----------|------|------|
+| **host-native** (기본 내장) | host 코드(본 바이너리) | ✗ | tasty 바이너리 자체 | 불가 |
+| **bundled plugin** (기본 플러그인) | `~/.tasty/plugins/<id>/` | ✓ | 첫 부팅 시 `BUILTINS` 자동 install | ✓ disable/remove |
+| **user plugin** (사용자 플러그인) | `~/.tasty/plugins/<id>/` | ✓ | `tasty plugin install <path>` | ✓ |
+
+- **host-native** 는 플러그인 메커니즘을 거치지 않는 host 코드다. 현재 등록 항목 0 — 모든 viewer 가 bundled 로 이전됨. (사용자가 플러그인으로 인식하지 않아야 하고 교체 여지를 원천 차단할 때만 쓰는 카테고리.)
+- **bundled plugin** 은 tasty 에 동봉되어 첫 부팅에 자동 install 되지만, 이후엔 외부 플러그인과 동일 라이프사이클(활성/비활성/제거/권한)을 따른다. remove 하면 `removed_builtins` 에 박혀 재설치되지 않는다.
+- **user plugin** 은 사용자가 직접 install 한 외부 플러그인. host 가 자동 install 대상으로 인지하지 않을 뿐 디렉토리·라이프사이클은 동일.
+
+신규 추가 시 판단이 어려우면 **bundled 를 기본값**으로 검토한다(disable 여지를 남기는 편이 안전). 자세한 카테고리 결정 기준·`BUILTINS` 자동 upgrade 절차는 dev-guide(아래).
+
+### 통합 축 — host 에 무엇을 기여하나
+
+플러그인은 매니페스트(`tasty-plugin.toml`)의 `[[surface_kinds]]` / `[contributes]` 로 기여를 선언한다. 주요 종류:
+
+| 기여 | 무엇 | 예 |
+|------|------|----|
+| **surface_kind** | 새 Surface 종류 등록. `rendering` 으로 누가 그리나 결정 | explorer / markdown / image / html |
+| **tool** | [도구 메뉴](../features/tools-menu/index.md) 항목 추가 (`ui.tool_item`) | clipboard-history / git-viewer |
+| **popup** | host popup 등록 (`ui.popup`) | clipboard-history / git-viewer |
+| **cli / ipc_namespace** | `tasty <prefix> …` CLI + IPC 메서드 추가 | claude / codex / html / image / markdown |
+| **detector / handler** | 파일 확장자 → surface 매핑(파일 열기) | markdown / image / html |
+| **settings_pages** | [설정 창](../features/settings/index.md)에 플러그인 페이지 추가 (`ui.settings_page`) | explorer / markdown |
+| **commands** | 명령 팔레트/단축키용 명령 | explorer |
+| **event_subscribe / hooks** | host 이벤트 구독 / pre·post 훅 | claude·codex (`surface.closed`) |
+
+#### surface_kind 의 `rendering` — 누가 그리나
+
+surface kind 는 콘텐츠를 **누가 렌더하느냐**로 다시 갈린다 (→ [work-area Surface 종류](../features/work-area/index.md#surface-종류)):
+
+- **`rendering = "host"`** (host-rendered) — 플러그인은 *kind 를 선언만* 하고, host 화이트리스트에 매칭되면 **host 가 직접 그린다**(코드는 host 소유). 예: markdown(egui), image(egui+텍스처).
+- **`rendering = "webview"`** — host 의 네이티브 WebView 오버레이로 그린다. 예: html.
+- **(기본)** — 플러그인 프로세스가 직접 그린다. host 는 트리에 `RemoteSurface` marker 만 두고 plugin UI DSL 로 콘텐츠를 받는다. 예: explorer.
+
+## 권한 (Permissions)
+
+플러그인은 매니페스트의 `permissions` 로 필요한 권한을 선언하고, host 가 grant 한 범위에서만 동작한다. 현재 권한 토큰:
+
+`surface.read` · `surface.write` · `fs.read` · `fs.write` · `clipboard.read` · `clipboard.write` · `notification` · `process.spawn` · `ui.tool_item` · `ui.popup` · `ui.settings_page`
+
+권한 grant/표시 UI 와 관리는 [plugin-system](../features/plugin-system/index.md), 권한 설계·민감 데이터 취급은 dev-guide(아래).
+
+## 관련
+
+- **관리/설치/권한 UI** (사용자 기능) → [`features/plugin-system/`](../features/plugin-system/index.md)
+- **번들 플러그인 각각의 동작** → [`plugins/`](../plugins/index.md)
+- **제작 가이드 / 브리지 메커니즘 / 권한 설계 / 민감 데이터** → `dev-guide/plugin-*` *(재작성 예정 — docs-old)*
+- **surface 종류와 렌더 분기** → [`features/work-area/`](../features/work-area/index.md#surface-종류)
+</content>

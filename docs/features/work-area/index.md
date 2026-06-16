@@ -85,6 +85,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 - **host-rendered plugin**(`markdown`/`image`)은 plugin 매니페스트가 `rendering="host"` 로 선언하고 host 화이트리스트에 매칭되면 host 가 `SurfaceKindDef` 를 제공(코드는 host 소유).
 - **RemoteSurface plugin**(`explorer`/`html`)은 plugin 이 trait leaf 를 `RemoteSurface` marker 로 두고 plugin 프로세스가 콘텐츠를 그림.
 - 새 kind 는 `SurfaceKindRegistry` 에 동적 등록 — plugin 이 hello 후 추가 가능.
+- plugin 이 제공하는 kind 각각의 동작은 [번들 플러그인](../../plugins/index.md)(markdown/image/explorer/html). 분류 축·렌더 분기 개념은 [concepts/plugins](../../concepts/plugins.md).
 
 ## 인터페이스
 
