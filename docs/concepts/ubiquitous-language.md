@@ -4,30 +4,48 @@ Tasty 프로젝트에서 사용하는 용어 정의. 코드, 문서, IPC API 전
 
 ## 주체 (Actors)
 
-tasty 는 같은 인스턴스를 여러 주체가 **동시에** 사용하는 것을 전제로 설계된다 (→ [identity.md](../identity.md) 동시성). 주체는 두 부류 — *사람(사용자)* 과 *에이전트* — 로 나뉘고, 사람은 다시 로컬/원격으로 나뉜다. 이 세 주체가 tasty 의 거의 모든 격리·포커스·표면 규칙의 전제다.
+tasty 는 같은 인스턴스를 여러 주체가 **동시에** 사용하는 것을 전제로 설계된다 (→ [identity.md](../identity.md) 동시성). 세 주체는 *무엇을 통해 동작하는가* 와 *어떤 계약을 따르는가* 가 각각 다르다.
 
 ### 로컬 사용자 (Local user)
 
-이 머신에서 tasty GUI 를 직접 쓰는 사람. 입력 표면 = 키보드 단축키·마우스·OS 네이티브 입력. **포커스의 주인** (→ 포커스 독립성). 한 인스턴스에 보통 1명.
+이 머신에서 tasty GUI 를 직접 쓰는 사람. 입력 표면 = 키보드 단축키·마우스·OS 네이티브 입력. **포커스의 주인**. 일반(비점유) surface/workspace 를 자유롭게 다룬다. 한 인스턴스에 보통 1명. **점유를 끊을 수 있는 유일한 주체** (아래 점유 모델).
 
 ### AI Agent (에이전트)
 
-자기 작업을 수행하기 위해 tasty 를 조작하는 AI. 입력 표면 = IPC 메서드 / CLI 서브커맨드. 한 인스턴스에 **여럿** 이 동시에 동작하며, 서로 그리고 사용자와 격리된다 — 자기 행동의 부수효과가 사용자 상태(포커스/닫은 항목 히스토리/선택)에 닿지 않는다.
+자기 작업을 수행하기 위해 tasty 를 조작하는 AI. 입력 표면 = IPC 메서드 / CLI 서브커맨드, 대상은 ID 로 지정. 여럿이 동시에 동작하며 **격리 계약** 을 따른다 — 자기 행동의 부수효과가 사용자 상태(포커스/닫은 항목 히스토리/선택)에 닿지 않는다. **점유 없이** 동작한다.
 
 ### 원격 접속 사용자 (Remote user)
 
-SSH 너머에서 surface/workspace 를 **client-side mirror** 로 attach 해 쓰는 사람. *사람* 이므로 행동 분류는 로컬 사용자와 같다(사용자 행동). tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach/remote/mirror 의 정의는 아래 [Attach / Remote / Mirror](#attach--remote--mirror), 메커니즘은 [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md).
+SSH 너머에서 attach 로 접속하는 사람. **행동 분류는 로컬 사용자보다 AI Agent 에 가깝다** — 직접 GUI 입력이 아니라 *연결(attach 스트림)* 을 통해 동작하고, 로컬 포커스의 주인이 아니다. AI Agent 와의 결정적 차이는 **점유(occupation)** 다:
 
-### 행동 축 — 사용자 행동 ↔ 에이전트 행동
+- 원격 사용자는 무언가를 하기 전에 **반드시 surface 또는 workspace 를 점유(배타 claim) 선언** 해야 하고, **점유한 대상 안에서만** 동작할 수 있다. 원격 사용자가 건드릴 수 있는 것은 *점유된 터미널/workspace* 뿐이다.
+- AI Agent 는 점유 없이 ID 로 임의 대상을 조작하지만, 원격 사용자는 **점유라는 관문을 반드시 통과** 한다.
 
-| | 로컬 사용자 | 원격 접속 사용자 | AI Agent |
+tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach/remote/mirror 의 정의·메커니즘은 아래 [Attach / Remote / Mirror](#attach--remote--mirror), [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md).
+
+### 점유 (Occupation) 모델
+
+원격 사용자가 surface/workspace 를 점유하면:
+
+- 그 대상은 **점유한 원격 사용자만 조작** 할 수 있다 (배타 write).
+- 그동안 **로컬 사용자와 AI Agent 는 그 대상에 대해 readonly** — 무슨 일이 일어나는지 *볼 수만* 있다.
+- **로컬 사용자만** 점유를 명시적으로 끊을 수 있다(force-detach). 끊으면 대상은 다시 **일반 surface/workspace 로 복귀** 한다.
+
+(attach lock 의 정확한 동작은 아래 [Attach](#attach--remote--mirror) / attach-behavior.md.)
+
+### 정리
+
+| | 로컬 사용자 | AI Agent | 원격 접속 사용자 |
 |---|---|---|---|
-| 부류 | 사람 | 사람 | 에이전트 |
-| 입력 표면 | 키보드/마우스/OS | (mirror 위) 키보드/마우스 | IPC / CLI |
-| 행동 분류 | **사용자 행동** | **사용자 행동** | **에이전트 행동** |
+| 부류 | 사람 | AI | 사람 |
+| 동작 경로 | 직접 GUI 입력 | IPC / CLI | attach 연결 |
+| 분류 성격 | 사용자 행동 | 에이전트 행동 | **에이전트에 가까움 + 점유** |
+| 점유 | 불필요 | 불필요 | **필수** (점유 내에서만) |
+| 포커스 | 주인 | 안 건드림 | 로컬 포커스 비주인 |
+| 점유 해제 권한 | **있음** | 없음 | 없음 |
 | 동시 수 | 보통 1 | 0..N | 0..N |
 
-이 "사용자 행동 ↔ 에이전트 행동" 분리가 tasty 의 soul 이며, 모든 API 설계가 그 위에 얹힌다 (→ [identity.md](../identity.md) §2.1).
+"사용자 행동(로컬 직접 입력) ↔ 에이전트 행동(연결 기반)" 분리가 tasty 의 soul 이며, 모든 API 설계가 그 위에 얹힌다 (→ [identity.md](../identity.md) §2.1).
 
 ## 계층 구조
 

@@ -16,12 +16,12 @@ Tasty 의 가장 중요한 요소는 **동시성** 이다. **기반 가정: 같�
 
 - **여러 AI Agent 가 여러 터미널에서 동시에 동작** 하고, 그것을 **오케스트레이션** 할 수 있다.
 - **로컬 사용자는 독립적으로 자기 작업** 을 한다.
-- **원격 접속 사용자** 는 SSH 터널 너머에서 surface/workspace 를 client-side mirror 로 attach 해 작업한다 (메커니즘: [`dev-guide/attach-behavior.md`](dev-guide/attach-behavior.md)).
+- **원격 접속 사용자** 는 SSH 너머에서 surface/workspace 를 **점유(attach)** 한 뒤 *그 점유 안에서만* 작업한다 — 점유 중 그 대상은 로컬 사용자·AI Agent 에게 readonly 가 되고, 로컬 사용자만 점유를 끊을 수 있다 (메커니즘: [`dev-guide/attach-behavior.md`](dev-guide/attach-behavior.md)).
 - 즉 Tasty 는 *다중 에이전트 + 로컬/원격 사용자* 의 동시 작업에 초점을 맞춘 터미널이다.
 
 이 동시성이 아래 모든 불가침 원칙의 뿌리다 — 한 주체가 다른 주체를 침범하면 동시성이 깨진다.
 
-> **주체 분류**: ①③ 은 *사람(사용자)*, ② 는 *에이전트*. §2.1 의 사용자/에이전트 분리에서 '사용자' 는 **로컬·원격 인간을 모두 포함** 한다. 각 주체의 canonical 정의는 [`concepts/ubiquitous-language.md` 주체(Actors)](concepts/ubiquitous-language.md#주체-actors).
+> **주체 분류**: ① 로컬 사용자 = *사용자 행동*(직접 입력, 포커스 주인), ② AI Agent = *에이전트 행동*(IPC/CLI). ③ 원격 접속 사용자는 사람이지만 **연결(attach)+점유 기반** 이라 분류상 에이전트에 가깝다 (직접 GUI 입력 아님, 로컬 포커스 비주인, 점유 필수). 각 주체의 canonical 정의는 [`concepts/ubiquitous-language.md` 주체(Actors)](concepts/ubiquitous-language.md#주체-actors).
 
 ### 크로스 플랫폼
 
@@ -35,7 +35,7 @@ Windows · macOS · Linux 모두 1급 지원.
 
 동시성의 토대. 사용자와 에이전트가 같은 환경을 공유해도 서로를 침범하지 않아야 동시 작업이 성립한다.
 
-- **사용자 행동** = 키보드/마우스/OS 입력 (사람 본인 — **로컬 또는 원격 접속 사용자**). **에이전트 행동** = IPC/CLI (에이전트가 자기 작업을 수행).
+- **사용자 행동** = 로컬 사용자의 직접 입력 (키보드/마우스/OS). **에이전트 행동** = IPC/CLI 호출 (에이전트가 자기 작업 수행). (원격 접속 사용자는 사람이지만 연결(attach)+점유 기반이라 분류상 에이전트 쪽 — [주체](concepts/ubiquitous-language.md#주체-actors).)
 - **① 에이전트 행동의 부수효과가 사용자 상태에 닿지 않는다** — 포커스 / 닫은 항목 히스토리(Ctrl+Shift+T) / 선택·스크롤·커서. 에이전트가 surface 100개를 열었다 닫아도 사용자의 복원 스택은 *사용자가 닫은 것만* 복원한다.
 - **② 사용자 입력 재현은 release 에 없다** — 키/마우스 주입, popup 강제 open/close, 메뉴 강제 invoke, 프로그래밍적 포커스 전환은 release IPC/CLI 표면에 존재하지 않는다. debug 빌드(`#[cfg(debug_assertions)]`)에서만 격리 제공한다 (debug 코드는 `debug/` 디렉토리로 모은다 — 상세 [`dev-guide/debug-ipc.md`](dev-guide/debug-ipc.md)).
 - **②의 목적 — debug 에서는 사용자 전용 동작도 IPC 로 구동해 자기검증한다.** ②의 재현 기능을 *debug 에 제공하는 이유* 는 agent 가 자기가 만든 기능을 스스로 검증하기 위해서다. debug 빌드에서는 사용자에게만 허용되는 동작(키/마우스 주입 `debug.inject_key`/`inject_mouse`, popup 강제 open/close `debug.popup.*`, 도구 메뉴 클릭 `debug.tool.invoke` 등)을 **IPC 로 구동** 할 수 있어, 사용자 입력 흐름까지 포함한 기능을 release(= 사용자 환경)와 격리된 채 검증한다. → dev-guide [독립 검증](dev-guide/independent-verification.md).
@@ -56,7 +56,7 @@ tasty 의 기반 가정(로컬에서 한 명의 사용자 + 여러 AI Agent 동�
 - agent/IPC 행동은 **포커스를 바꾸지 않는다.** release 빌드엔 포커스를 바꾸는 API 가 없다.
 - 모든 명령은 대상을 **ID 로 직접 지정** 한다 (포커스에 의존하지 않음). list 는 **전 워크스페이스 순회**.
 - 활성 상태 *조회* 는 허용(`focused` 필드 등), 활성 상태에 *의존* 하는 동작은 금지.
-- 원격 접속 사용자도 **client-side mirror** 로 붙으므로 로컬 사용자의 포커스/시점을 가로채지 않는다.
+- 원격 접속 사용자는 대상을 **점유(attach)** 할 뿐 로컬 사용자의 포커스/시점을 옮기지 않는다 (점유는 로컬 사용자가 끊을 수 있다).
 - 상세 [`design/policies/focus.md`](design/policies/focus.md).
 
 ### 2.4 크로스 플랫폼
