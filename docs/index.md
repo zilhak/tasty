@@ -8,6 +8,7 @@
 
 | 문서 | 설명 |
 |------|------|
+| [identity.md](identity.md) | **Tasty 정체성과 불가침 원칙** — 동시성 중심 다중 에이전트 터미널, 사용자/에이전트 분리, headless, 개인화. 모든 설계의 축. **가장 먼저 읽는다** |
 | [documentation-model.md](documentation-model.md) | **문서 모델** — 전체 카테고리 지도 + 기획(동작, 1순위)/화면(투영, 2순위) 분리 규칙. 새 문서 작성 전 필독 |
 | [concepts/index.md](concepts/index.md) | 개념·용어 (유비쿼터스 언어, 레이아웃, typed-length) — 코드 작업 전 필독 |
 
