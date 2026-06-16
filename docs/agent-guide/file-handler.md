@@ -7,12 +7,6 @@ Tasty 는 경로/URI 입력을 두 단계로 라우팅한다:
 
 두 registry 는 **host default + plugin contribute + user TOML** 세 출처를 통합 보관한다. plugin 을 disable/uninstall 해도 host/user 항목은 그대로 남는다.
 
-> **현재 상태:** cheap path (확장자/glob/is-directory) + deep path (magic bytes / MIME / Lua) 평가 가능. `structure_check` 는 Phase D MD2 에서 구현 예정. mouse.rs 콜사이트 (Ctrl+click 시 picker 자동 표시) 변경은 별도 작업 — 현재는 기존 `terminal_link::open_uri` 가 그대로 동작한다.
->
-> **이관 상태 (E.G):** `com.tasty.image` 매니페스트가 image detector + viewer handler 를 contribute (host TOML 에서 제거). `com.tasty.html` 매니페스트는 viewer handler 만 contribute (detector 는 host 유지 — plugin disable 시 `html-system` fallback). plugin 의 owner tiebreak (user > plugin > host) 로 priority 동순위면 plugin 이 우선.
->
-> **Headless 동작:** `DispatchFile` 경로의 `OpenSurface` / `Ipc` 분기는 GUI crate 의존 0 (winit/wgpu/egui import 없음). `HandlerAction::System` 만 `terminal_link::open_uri` 호출 — 이 callsite 의 GUI feature gate 는 Phase E.B 작업.
-
 ---
 
 ## 1. 형식 식별 (Detector)
@@ -42,18 +36,18 @@ pattern = "README.*"
 [[detector.rule]]
 kind = "magic"
 offset = 0
-bytes_hex = "255044462D"  # %PDF- — Phase B 이상에서 평가
+bytes_hex = "255044462D"  # %PDF-
 ```
 
-| kind | 필드 | Phase A 평가 |
-|------|------|-------------|
+| kind | 필드 | 지원 |
+|------|------|------|
 | `extension` | `values: string[]` (대소문자 무시) | ✅ |
 | `path_glob` | `pattern: string` (`*` wildcard 만) | ✅ |
 | `is_directory` | (없음) | ✅ |
-| `magic` | `offset: int`, `bytes_hex: hex string` (대소문자 무관, 짝수 길이) | ✅ Phase B |
-| `mime` | `types: string[]` (예: `["image/png"]`, infer 추정) | ✅ Phase B |
-| `lua` | `script: string` (host/user TOML 만) | ✅ Phase D MD1 |
-| `structure_check` | `spec: string` | ⏳ Phase D MD2 |
+| `magic` | `offset: int`, `bytes_hex: hex string` (대소문자 무관, 짝수 길이) | ✅ |
+| `mime` | `types: string[]` (예: `["image/png"]`, infer 추정) | ✅ |
+| `lua` | `script: string` (host/user TOML 만) | ✅ |
+| `structure_check` | `spec: string` | ⏳ 미구현 |
 
 ### Pre-filter
 
@@ -284,12 +278,12 @@ tasty file-handler reload
 
 같은 dispatch 흐름이 들어오는 진입점:
 
-| trigger | 진입 함수 | 비고 |
-|---------|----------|------|
-| 터미널의 hyperlink ctrl+click (로컬 surface) | `mouse.rs` → `parse_link` → `dispatch_file_target(Deep)` | `file://` 만 디스패치, http/mailto 등은 webbrowser 위임 |
-| 터미널의 경로 ctrl+click (mirror/원격 surface) | `mouse.rs` → mirror 판별(`find_terminal_by_id().process_id().is_none()`) → `open_picker(target, None, Vec::new())` 직접 호출 | 화면 경로가 원격 호스트 경로라 로컬 핸들러로 열 수 없다. identify/`DispatchFile` 을 타지 않고 **빈 picker(empty-state, placeholder)** 만 띄움 — 실제 동작 없음. 외부 URL(http://) 은 mirror 여부와 무관하게 기존 `open_uri` |
-| 외부 → Tasty drag&drop | winit `WindowEvent::DroppedFile` → `dispatch_file_target(Deep)` | hover 중 시각 overlay 표시, 다중 파일은 각각 dispatch |
-| explorer plugin 더블클릭 | tree node `double_clicked()` → `UiEvent::TreeActivate` → plugin `host.call("file_handler.dispatch")` → host `handle_dispatch` → `dispatch_file_target(Deep)` | 디렉토리는 plugin 내부 root 변경, 파일만 host 로 디스패치 |
+| trigger | 비고 |
+|---------|------|
+| 터미널의 hyperlink ctrl+click (로컬 surface) | `file://` 만 디스패치, http/mailto 등은 webbrowser 위임 |
+| 터미널의 경로 ctrl+click (mirror/원격 surface) | 화면 경로가 원격 호스트 경로라 로컬 핸들러로 열 수 없다. **빈 picker(empty-state)** 만 띄움 — 실제 동작 없음. 외부 URL(http://) 은 기존 동작 |
+| 외부 → Tasty drag&drop | hover 중 시각 overlay 표시, 다중 파일은 각각 dispatch |
+| explorer plugin 더블클릭 | 디렉토리는 plugin 내부 root 변경, 파일만 host 로 디스패치 |
 
 drag&drop 좌표는 마지막 cursor 위치 기준. 터미널 영역 밖으로 드롭한 파일은
 toast 안내 후 무시된다. 다중 파일을 한 번에 드롭하면 각 파일이 별 surface tab
@@ -303,7 +297,6 @@ toast 안내 후 무시된다. 다중 파일을 한 번에 드롭하면 각 파�
 
 | 확인 사항 | 방법 |
 |-----------|------|
-| host default 등록 결과 | `cargo test --bin tasty file_format::registry::tests` |
 | user TOML 파싱 | `~/.tasty/file-handlers.toml` 작성 후 부팅, 로그에서 `file_handler:` / `file_format:` warn 확인 |
 | plugin contribute | plugin enable/disable 후 `tasty plugin list` + registry 호출 |
 | recent picks 파일 | `~/.tasty/file-handler-recent.json` (cap 10, JSON pretty) |

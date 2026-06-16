@@ -98,7 +98,7 @@ IPC: `plugin.request_permission { agent_id?, permission, reason? } → { approva
 
 ## Audit log
 
-모든 IPC 호출 — allow 와 deny 모두 — 이 dispatcher 의 단일 진입점에서 자동 영속된다. 호스트 자체 메서드 (`window.*`, `plugin.*` 등 main.rs 라우터 분기) 도 같은 hook 으로 기록.
+모든 IPC 호출 — allow 와 deny 모두 — 이 dispatcher 의 단일 진입점에서 자동 영속된다. 호스트 자체 메서드 (`window.*`, `plugin.*` 등) 도 같은 hook 으로 기록.
 
 레코드 형식:
 
