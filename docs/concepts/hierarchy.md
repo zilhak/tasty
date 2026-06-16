@@ -2,21 +2,37 @@
 
 tasty 화면 구조는 객체 계층 하나와, 그 위의 **두 레벨 레이아웃** 으로 이뤄진다. 모든 윈도우·surface 기능 문서가 이 용어를 쓴다. (화면을 보는 *주체* 는 [actors.md](actors.md).)
 
-## 객체 계층
+## Window 과 View
+
+- **`winit::window::Window`** — OS 가 주는 창 자원 (창틀 / 이벤트 소스 / 렌더 표면). winit `WindowId` 로 식별.
+- **`View`** — tasty 쪽 윈도우 표현. 그 창의 *종류 + 콘텐츠 + 행동*(render / 이벤트 / modality)을 묶은 객체로, winit Window 를 `Arc` 로 소유한다. **1 View : 1 Window.**
+
+> 옛 tasty `Window` trait 이 winit 의 `Window` 와 헷갈려서 **`View` 로 rename** 됐다 (`WindowBase`→`ViewBase`, `*Window`→`*View`). **tasty 쪽 `Window` trait 은 없다** — 지금 `Window` 는 winit OS 창만 가리킨다. 즉 *View = 윈도우의 tasty 쪽 용어*.
+
+## View 의 종류 (= 윈도우 종류)
+
+`View` trait 의 구현체가 곧 윈도우 종류다. **`MainView` 도 그중 하나** — 터미널을 호스팅하는 View 다. 각 구현체는 별개 OS 윈도우(winit Window)이고, 엔진은 이들을 `HashMap<WindowId, Box<dyn View>>` 로 균일하게 관리한다.
+
+| 구현체 | 계열 (supertrait) | 무엇 |
+|--------|-------------------|------|
+| **`MainView`** | `TerminalHostView` | **터미널 윈도우** — 사이드바 + 워크스페이스 호스팅. 여러 개 가능. ← 이 문서가 주로 다루는 것 |
+| `SettingsView` / `PluginsView` / `QuitView` | `ModalView` | 모달 윈도우 — 전역 1개, 활성 시 입력 차단 |
+| `PresetView` | `EditorView` | 에디터 윈도우 — modeless |
+
+(**Engine** = 진입점 + 서버. IPC 포트 소유, 모든 윈도우 생명주기 관리. headless 에선 View 없이 Engine 만 동작.)
+
+## MainView 의 내부 구조
+
+`MainView`(= 터미널 윈도우, **View 의 일종**) 안의 containment 계층 — 이게 "구조 계층" 의 본체다:
 
 ```
-Engine                  진입점 + 서버. IPC 포트 소유, 모든 Window 생명주기 관리.
-└── Window / View       OS frame(Window, winit) ↔ render target(View), 1:1.
-    └── MainView        터미널 계열 View. 사이드바 + 워크스페이스를 호스팅. (= "터미널 윈도우")
-        └── Workspace   MainView 의 최상위 컨테이너. 여러 개 가능, 사이드바에서 전환.
-            └── Pane    독립 탭 바를 가진 영역. **상위 레이아웃**이 위치 결정.
-                └── Tab        Pane 안의 탭 하나. **하위 레이아웃**(Surface 배치)을 가짐.
-                    └── Surface   최하위 컨테이너. 타입(Terminal/Markdown/…)을 가짐.
+MainView  (터미널 윈도우 — View 의 일종)
+└── Workspace   최상위 컨테이너. 여러 개, 사이드바에서 전환.
+    └── Pane    독립 탭 바. **상위 레이아웃**이 위치 결정 (탭 무관 고정).
+        └── Tab        **하위 레이아웃**(Surface 배치)을 가짐.
+            └── Surface   최하위. 타입(Terminal/Markdown/…)을 가짐.
 ```
 
-- **Engine** — 진입점이자 서버. IPC 포트를 소유하고 모든 윈도우의 생명주기를 관리한다. headless 에서도 Engine 은 동작한다 — View 가 없을 뿐.
-- **Window vs View** — Window = OS-level frame (winit `WindowId`), View = 그 위의 render target. 1:1 매핑.
-- **MainView** — 터미널 계열 Surface 를 호스팅하는 View. 사이드바·탭·워크스페이스 전체를 가진다. **우리가 "터미널 윈도우" 라 부르는 것.** (설정창 같은 모달 계열 View, preset 에디터 같은 에디터 계열 View 는 별도.)
 - **Workspace** — MainView 의 최상위 컨테이너. 한 MainView 가 여러 워크스페이스를 갖고 사이드바에서 전환한다.
 - **Pane** — 독립적인 탭 바를 가진 화면 영역. 위치는 **상위 레이아웃**으로 결정되고 탭 전환과 무관하게 고정된다. tmux/iTerm2 에 대응 개념이 없는 tasty 고유 설계.
 - **Tab** — Pane 안의 탭 하나. 내부에 Surface 들의 **하위 레이아웃**을 가진다. 탭 전환 시 하위 레이아웃 전체가 함께 전환된다.
