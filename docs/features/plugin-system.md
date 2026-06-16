@@ -20,9 +20,9 @@
 ### Plugin 관리 모달
 - 사이드바 좌측 메뉴의 🧩 버튼으로 PluginsView 모달 진입 (Settings 모달과 동일 패턴)
 - 상단 탭: **Installed**(설치된 플러그인 목록 + 상세) / **Add plugin**(외부 디렉터리에서 import)
-- Installed 탭: 좌측 plugin 목록 + 우측 상세 — 이름/버전/설명/저자/홈페이지, 활성 토글, 등록 surface kinds, 매니페스트 권한 / grant 상태, 설치 경로(폴더 열기 버튼 포함), 로그 파일 경로
+- Installed 탭: 좌측 plugin 목록 + 우측 상세 — 이름/버전/설명/저자/홈페이지, 활성 토글, 등록 surface kinds, 매니페스트 권한(읽기전용 Tag 나열), 설치 경로(폴더 열기 버튼 포함), 로그 파일 경로
 - **Error 상태 표시**: spawn 반복 실패로 자동 비활성화된(`auto_disabled`) plugin 은 좌측 목록 행 우측에 빨간 status dot(`accent_danger`), 우측 상세에 빨간 경고 박스("연결 실패 — Settings 에서 구성 확인")로 표시. enable 상태인 plugin 에만 나타난다 (사용자가 끈 plugin 은 정상 종료이므로 제외)
-- 권한 grant/revoke 버튼으로 즉시 반영 (process 재시작 없이)
+- 권한은 모달에서 **읽기전용 표시만** 한다 (per-permission 토글 없음 — 권한 게이트는 호스트 IPC 호출만 막는 것이라 사후 개별 revoke 가 사용자에게 false security 를 주고, 매니페스트 선언 권한을 끄면 대개 plugin 이 깨지기 때문). 권한 부여는 설치 시 일괄 승인으로, 사후 변경은 CLI/IPC `plugin.grant/revoke` 로 수행 (그 경로는 process 재시작 없이 즉시 반영). 모달의 plugin 단위 통제는 활성 토글 + 제거
 - "제거" 버튼은 사전 확인 다이얼로그를 거친 뒤 plugin 실행 종료 + 디스크 삭제. built-in plugin인 경우 추가 경고 표시
 - Add plugin 탭: 경로 입력 + "확인" 버튼, 하단 "찾기" 버튼(rfd 네이티브 폴더 선택). 검증 시 매니페스트 정보(id/name/version/설명/권한/surface kinds/원본 경로) 미리보기 + 추가/취소. 이미 같은 id가 설치되어 있으면 추가 버튼 비활성화. 추가 시 `~/.tasty/plugins/<id>/`로 복사 + discovery 재실행 + 매니페스트 권한 자동 grant + auto-enable. 결과는 모달 윈도우 영역의 toast로 통지
 
