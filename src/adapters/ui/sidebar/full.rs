@@ -70,6 +70,13 @@ pub fn draw_full_sidebar(
         .exact_width(sidebar_width)
         .resizable(false)
         .show_separator_line(false)
+        // 디자인 chrome.jsx Sidebar: 패널 자체엔 좌우 패딩이 없다 — 목록 행 배경 /
+        // 구분선이 사이드바 가장자리·우측 보더까지 꽉 차고, 좌우 padding 은 각 섹션
+        // (헤더 12 / 헤딩 10 / 행 10 / 버튼 10) 이 스스로 갖는다. egui SidePanel 기본
+        // 프레임은 inner_margin symmetric(8,2) 라 모든 내용물을 8px 안쪽으로 밀어
+        // 배경/구분선이 가장자리에 닿지 못했다 → inner_margin 0 으로 덮어쓴다.
+        // fill 은 기본 panel_fill 과 동일한 mantle(bg_sidebar) 로 유지.
+        .frame(egui::Frame::new().fill(th.bg_sidebar().to_egui()))
         .show(ctx, |ui| {
             let props = SidebarFullProps {
                 theme: &th,

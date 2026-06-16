@@ -186,6 +186,11 @@ pub fn draw_full_sidebar_view(
         .auto_shrink([false, false])
         .drag_to_scroll(false)
         .show(ui, |ui| {
+            // 디자인 chrome.jsx: 목록 블록은 행/구분선이 세로 gap 없이 맞붙는다
+            // (WorkspaceRow 들이 flex column, 사이 margin 0). egui 기본 item_spacing.y
+            // (=spacing_xs≈4) 가 선택 행 배경과 상/하 구분선 사이에 틈을 만들어 0 으로 둔다.
+            // 섹션 간 간격은 아래 add_space 들이 명시적으로 준다.
+            ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(8.0);
             draw_section_heading(ui, th, props.workspaces_heading);
             ui.add_space(4.0);
@@ -558,7 +563,8 @@ fn draw_ghost_block_button(
 fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> bool {
     let mut collapse = false;
     ui.horizontal(|ui| {
-        ui.add_space(6.0);
+        // 디자인 chrome.jsx Sidebar 헤더 padding-left 12 (패널 좌우 margin 0).
+        ui.add_space(12.0);
         // 로고 (수박 PNG) — 워드마크 좌측, gap 8.
         let logo_size = th.sidebar_logo_size.value();
         let logo_vec = egui::vec2(logo_size, logo_size);
@@ -593,7 +599,8 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
         ui.label(job);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_space(6.0);
+            // 디자인 chrome.jsx Sidebar 헤더 padding-right 12 (패널 좌우 margin 0).
+            ui.add_space(12.0);
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
             if resp.hovered() {
                 ui.painter()
@@ -694,10 +701,12 @@ fn draw_workspace_card(
         egui::Color32::TRANSPARENT
     };
 
+    // 디자인 chrome.jsx WorkspaceRow: 행은 좌우 margin 없이 사이드바 폭을 꽉 채우고
+    // (active bg full-bleed), 모서리는 사각(border-radius 없음). 좌우 padding 10 은
+    // inner_margin 이 갖는다. 과거 outer_margin(6,0) + corner_radius(2) 는 배경을
+    // 가장자리에서 6px 떼어 좌측 accent bar(아래)와 우측 보더 사이에 틈을 만들었다.
     let frame = egui::Frame::new()
         .fill(bg)
-        .corner_radius(2.0)
-        .outer_margin(egui::Margin::symmetric(6, 0))
         // 좌측은 상태 dot 여백을 줄이기 위해 spacing_xs(4), 우측은 "!" highlight
         // 배지 위치 유지를 위해 spacing_sm(8) 으로 비대칭 적용.
         .inner_margin(egui::Margin {
@@ -803,8 +812,9 @@ fn draw_workspace_card(
     let card_rect = response.response.rect;
 
     if !ws.is_active && response.response.hovered() {
+        // full-bleed 행 — bg 와 동일하게 사각(상/하 구분선과 틈 없이 맞붙도록).
         ui.painter()
-            .rect_filled(card_rect, 2.0, th.hover_overlay.to_egui_premultiplied());
+            .rect_filled(card_rect, 0.0, th.hover_overlay.to_egui_premultiplied());
     }
 
     // Active 좌측 2px inset accent bar (디자인 `boxShadow: inset 2px 0 0 var(--accent-primary)`).
