@@ -14,7 +14,7 @@
 # <기능 이름>
 
 - **Status**: Implemented | Partial | Planned
-- **주체**: 로컬 사용자 / AI Agent / 원격 접속 사용자 중 이 기능을 쓰는 주체 (복수 가능 — [주체](../../concepts/ubiquitous-language.md#주체-actors))
+- **주체**: 로컬 사용자 / AI Agent / 원격 접속 사용자 중 이 기능을 쓰는 주체 (복수 가능 — [주체](../../concepts/actors.md))
 - **ADR**: ADR-XXXX (있으면)
 - **코드**: `src/...` / `crates/...`
 - **화면**: `screens/<screen>.md` (없으면 "없음 — headless 전용")
