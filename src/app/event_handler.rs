@@ -171,13 +171,21 @@ impl ApplicationHandler<AppEvent> for App {
                         tracing::info!("minimized {} window(s) to taskbar", self.view.views.len());
                     }
                 }
-                #[cfg(not(any(target_os = "macos", windows)))]
+                #[cfg(target_os = "linux")]
                 {
-                    // Linux: minimize windows to taskbar (keep alive)
-                    for w in self.view.views.values() {
-                        w.base().winit.set_minimized(true);
+                    if self.tray_icon.is_some() {
+                        // Linux with tray: hide windows to tray (keep alive)
+                        for w in self.view.views.values() {
+                            w.base().winit.set_visible(false);
+                        }
+                        tracing::info!("hid {} window(s) to system tray", self.view.views.len());
+                    } else {
+                        // Linux without tray: minimize windows to taskbar (keep alive)
+                        for w in self.view.views.values() {
+                            w.base().winit.set_minimized(true);
+                        }
+                        tracing::info!("minimized {} window(s) to taskbar", self.view.views.len());
                     }
-                    tracing::info!("minimized {} window(s) to taskbar", self.view.views.len());
                 }
             }
             AppEvent::QuitRequested => {
@@ -187,7 +195,10 @@ impl ApplicationHandler<AppEvent> for App {
                 // CSD titlebar close 버튼 — 네이티브 CloseRequested 와 동일 라우팅.
                 self.request_close_window(id, event_loop);
             }
-            #[cfg(windows)]
+            // Windows / Linux: windows still exist while hidden to tray, so re-show
+            // them. (macOS parks state on background and re-creates a window via
+            // CreateWindow instead — the tray routes "Show Window" there.)
+            #[cfg(any(windows, target_os = "linux"))]
             AppEvent::TrayShowWindow => {
                 for w in self.view.views.values() {
                     w.base().winit.set_visible(true);
@@ -322,12 +333,16 @@ impl ApplicationHandler<AppEvent> for App {
         #[cfg(windows)]
         crate::jump_list::setup_jump_list();
 
-        #[cfg(windows)]
+        // System tray / status item (best-effort, ADR-0001). Create once and keep
+        // it alive across window create/destroy (macOS parks state and recreates
+        // windows, so guard against re-creating the tray each time). `None` =
+        // tray unavailable; the app degrades to taskbar/dock minimize.
+        #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
+        if self.tray_icon.is_none()
+            && let Some((tray, ids)) = crate::system_tray::create_tray_icon()
         {
-            if let Some((tray, ids)) = crate::system_tray::create_tray_icon() {
-                self.tray_icon = Some(tray);
-                self.tray_menu_ids = Some(ids);
-            }
+            self.tray_icon = Some(tray);
+            self.tray_menu_ids = Some(ids);
         }
     }
 
@@ -608,11 +623,25 @@ impl ApplicationHandler<AppEvent> for App {
         // 자체는 Intent 큐 (`dispatch_pending_intents`) 가 처리한다.
         self.process_pending_open_preset_window(event_loop);
 
-        // Poll system tray menu events (Windows only)
-        #[cfg(windows)]
+        // Pump GTK so the Linux tray (AppIndicator) can dispatch its menu clicks —
+        // tasty has no dedicated GTK main loop, so we drive it from the winit loop.
+        // No-op when no tray was created / off Linux.
+        #[cfg(target_os = "linux")]
+        if self.tray_icon.is_some() {
+            crate::system_tray::pump_gtk_events();
+        }
+
+        // Poll system tray menu events (Windows / macOS / Linux).
+        #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
         if let Some(ref ids) = self.tray_menu_ids {
             if let Some(menu_id) = crate::system_tray::poll_menu_event() {
                 if menu_id == ids.show_window {
+                    // macOS parks state on background and has no hidden windows to
+                    // re-show, so restore by creating a window (pops a parked state,
+                    // identical to dock reopen). Windows / Linux re-show in place.
+                    #[cfg(target_os = "macos")]
+                    crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
+                    #[cfg(any(windows, target_os = "linux"))]
                     crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::TrayShowWindow);
                 } else if menu_id == ids.new_window {
                     crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);

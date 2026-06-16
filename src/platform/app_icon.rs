@@ -3,8 +3,8 @@
 /// 256x256 PNG icon bytes (embedded at compile time).
 pub static ICON_PNG_256: &[u8] = include_bytes!("../../assets/icons/icon_256.png");
 
-/// 32x32 PNG icon bytes for small contexts (tray icon, taskbar).
-#[cfg(windows)]
+/// 32x32 PNG icon bytes for small contexts (tray / status item, taskbar).
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 pub static ICON_PNG_32: &[u8] = include_bytes!("../../assets/icons/icon_32.png");
 
 /// Decode a PNG byte slice into RGBA pixels and dimensions.
@@ -30,7 +30,7 @@ pub fn winit_window_icon() -> Option<winit::window::Icon> {
 }
 
 /// Create a tray-icon Icon from the embedded 32x32 PNG.
-#[cfg(windows)]
+#[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
 pub fn tray_icon() -> Option<tray_icon::Icon> {
     let (rgba, w, h) = decode_png(ICON_PNG_32)?;
     tray_icon::Icon::from_rgba(rgba, w, h).ok()

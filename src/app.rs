@@ -90,11 +90,12 @@ pub(crate) struct App {
     pub(crate) shell_setup_gpu: Option<GpuState>,
     #[cfg(feature = "gui")]
     pub(crate) shell_setup_window: Option<Arc<Window>>,
-    /// System tray icon (Windows only). Must be kept alive for the tray to remain visible.
-    #[cfg(all(windows, feature = "gui"))]
+    /// System tray / status item. Must be kept alive for the tray to remain visible.
+    /// `None` when the platform tray is unavailable (graceful degradation, ADR-0001).
+    #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
     pub(crate) tray_icon: Option<tray_icon::TrayIcon>,
-    /// Tray menu item IDs for event matching (Windows only).
-    #[cfg(all(windows, feature = "gui"))]
+    /// Tray menu item IDs for event matching.
+    #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
     pub(crate) tray_menu_ids: Option<crate::system_tray::TrayMenuIds>,
     /// Modal shake animation state.
     #[cfg(feature = "gui")]
@@ -171,9 +172,9 @@ impl App {
             shell_setup_path: String::new(),
             shell_setup_gpu: None,
             shell_setup_window: None,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             tray_icon: None,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
             tray_menu_ids: None,
             modal_shake: None,
             #[cfg(debug_assertions)]

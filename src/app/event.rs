@@ -47,8 +47,9 @@ pub(crate) enum AppEvent {
     /// Request quit following the close_behavior setting.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     QuitRequested,
-    /// Request to show window from system tray (Windows only).
-    #[cfg(all(windows, feature = "gui"))]
+    /// Request to re-show hidden windows from the system tray (Windows / Linux,
+    /// where windows persist while hidden). macOS restores via CreateWindow instead.
+    #[cfg(all(any(windows, target_os = "linux"), feature = "gui"))]
     TrayShowWindow,
     /// 백그라운드 스레드에서 클립보드 변경을 감지하여 데이터를 전달.
     #[cfg(feature = "gui")]
