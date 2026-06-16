@@ -153,7 +153,7 @@
 | 문서 | 설명 |
 |------|------|
 | [ai-verification/visual-verification.md](ai-verification/visual-verification.md) | UI 변경 시 색상 대비, 레이어 순서, 픽셀 수치 검증 규칙 |
-| [ai-verification/screenshot-methods.md](ai-verification/screenshot-methods.md) | GUI 스크린샷 촬영 방법 (IPC / PowerShell) |
+| [ai-verification/screenshot-methods.md](ai-verification/screenshot-methods.md) | GUI 스크린샷 — tasty 자체 `ui.screenshot` IPC 우선, OS 화면 캡처는 폴백 |
 | [ai-verification/egui-layout.md](ai-verification/egui-layout.md) | egui 레이아웃, 레이어 순서 주의사항 |
 | [ai-verification/state-none-gpu-separation.md](ai-verification/state-none-gpu-separation.md) | state None 시 GPU 호출 분리 패턴 |
 | [ai-verification/ipc-usage.md](ai-verification/ipc-usage.md) | IPC를 통한 Tasty 조작 방법 |
