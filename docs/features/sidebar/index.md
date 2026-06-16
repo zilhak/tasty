@@ -34,8 +34,8 @@
 - **사용자**: 클릭(전환/버튼), 드래그(재정렬), 접기 토글.
 - **하단 버튼은 다른 기능으로 위임** (연결 개념 — 사이드바는 진입점만, 내용은 각 문서):
   - 도구 버튼 → [`features/tools-menu/`](../tools-menu/index.md)
-  - 플러그인 버튼 → `features/plugin-system/` *(재작성 예정)*
-  - 설정 버튼 → `features/settings/` *(재작성 예정)*
+  - 플러그인 버튼 → [`features/plugin-system/`](../plugin-system/index.md)
+  - 설정 버튼 → [`features/settings/`](../settings/index.md)
 
 ## 비-목표
 
