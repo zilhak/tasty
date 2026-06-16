@@ -342,7 +342,7 @@ impl View for MainView {
 
     fn render(&mut self) {
         // 메인 윈도우는 별도 진입점인 handle_redraw 경로로 렌더한다.
-        // Window::render는 트레잇 디스패치 호환을 위해 존재하며 현재 Main
+        // View::render는 트레잇 디스패치 호환을 위해 존재하며 현재 Main
         // 창에서는 호출되지 않는다.
     }
 }

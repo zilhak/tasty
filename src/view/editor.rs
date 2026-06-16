@@ -7,7 +7,7 @@
 //! - Esc 자동 닫기 없음
 //! - 별도 엔진 전역 단일 인스턴스 제약은 host (App) 측이 관리
 //!
-//! 단순 supertrait — `Window` 를 통한 다운캐스트 hook 만 제공한다.
+//! 단순 supertrait — `View` 를 통한 다운캐스트 hook 만 제공한다.
 
 use crate::view::Modality;
 use crate::view::ui::View;

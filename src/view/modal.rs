@@ -27,10 +27,10 @@ pub(crate) trait ModalView: View {
     }
 }
 
-/// 모달 구현체가 `Window::modality`에 반환해야 하는 값.
-/// (blanket impl로 자동화하면 BaseWindow와 겹치므로 각 구현체에서 한 줄 반환.)
+/// 모달 구현체가 `View::modality`에 반환해야 하는 값.
+/// (blanket impl로 자동화하면 ViewBase와 겹치므로 각 구현체에서 한 줄 반환.)
 ///
-/// quit/preset/plugins/settings 4개 modal 구현체가 사용. `Window::modality()`
+/// quit/preset/plugins/settings 4개 modal 구현체가 사용. `View::modality()`
 /// trait dispatch가 호출 0이라 추적상 dead로 잡히지만 도메인 표현으로 보존.
 #[allow(dead_code)]
 pub(crate) const MODAL_MODALITY: Modality = Modality::Modal;
