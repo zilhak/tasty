@@ -2,7 +2,7 @@
 //!
 //! 상단 — 탭 바 (`Installed` / `Add plugin`).
 //! `Installed` 탭: 좌측 plugin 목록, 우측 상세(매니페스트, enable/disable,
-//! 권한 grant/revoke, 설치 경로, uninstall).
+//! 권한(읽기전용), 설치 경로, uninstall).
 //! `Add plugin` 탭: 경로 입력 → 검증 → 추가/취소.
 //!
 //! 모달은 `PluginsSnapshot`(읽기 전용 데이터)을 들고 있고, 사용자 조작은
@@ -38,7 +38,6 @@ pub struct PluginEntry {
     pub builtin: bool,
     pub surface_kinds: Vec<String>,
     pub manifest_permissions: Vec<String>,
-    pub granted_permissions: Vec<String>,
     /// plugin 이 contribute 한 command 목록 (`[[contributes.commands]]`).
     pub commands: Vec<PluginCommandEntry>,
     pub log_path: String,
@@ -57,14 +56,6 @@ pub enum PluginsAction {
     SetEnabled {
         id: String,
         enabled: bool,
-    },
-    Grant {
-        id: String,
-        permission: String,
-    },
-    Revoke {
-        id: String,
-        permission: String,
     },
     Uninstall {
         id: String,

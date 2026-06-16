@@ -14,7 +14,6 @@ impl App {
             .iter()
             .map(|pkg| {
                 let id = &pkg.manifest.id;
-                let granted: Vec<String> = mgr.config.granted_permissions(id).into_iter().collect();
                 plugins_ui::PluginEntry {
                     id: id.clone(),
                     name: pkg.manifest.name.clone(),
@@ -34,7 +33,6 @@ impl App {
                         .map(|k| k.kind.clone())
                         .collect(),
                     manifest_permissions: pkg.manifest.permissions.clone(),
-                    granted_permissions: granted,
                     commands: pkg
                         .manifest
                         .contributes

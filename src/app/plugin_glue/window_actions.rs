@@ -74,22 +74,6 @@ impl App {
                         ),
                     }
                 }
-                plugins_ui::PluginsAction::Grant { id, permission } => {
-                    match self.plugin_grant(id.clone(), permission.clone()) {
-                        Ok(events) => self.cascade_plugin_events(events),
-                        Err(e) => {
-                            tracing::warn!("plugins modal: grant({id}, {permission}) failed: {e}")
-                        }
-                    }
-                }
-                plugins_ui::PluginsAction::Revoke { id, permission } => {
-                    match self.plugin_revoke(id.clone(), permission.clone()) {
-                        Ok(events) => self.cascade_plugin_events(events),
-                        Err(e) => {
-                            tracing::warn!("plugins modal: revoke({id}, {permission}) failed: {e}")
-                        }
-                    }
-                }
                 plugins_ui::PluginsAction::Uninstall { id } => {
                     match self.plugin_remove(id.clone()) {
                         Ok(events) => {
@@ -184,8 +168,8 @@ impl App {
             }
         }
 
-        // 모든 lifecycle action 이후 도구 메뉴를 갱신. install/enable/disable/grant/
-        // revoke/uninstall 어떤 경로든 ui.tool_item 권한 또는 plugin 활성 상태가
+        // 모든 lifecycle action 이후 도구 메뉴를 갱신. install/enable/disable/
+        // uninstall 어떤 경로든 ui.tool_item 권한 또는 plugin 활성 상태가
         // 바뀌었을 수 있으므로 매번 다시 수집한다 (low-cost).
         self.refresh_tool_registry();
 

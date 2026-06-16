@@ -225,22 +225,11 @@ pub(super) fn draw_list_tab(
             if entry.manifest_permissions.is_empty() {
                 ui.label(t("plugins.none"));
             } else {
-                for token in &entry.manifest_permissions {
-                    let mut granted = entry.granted_permissions.iter().any(|t| t == token);
-                    if ui.checkbox(&mut granted, token).changed() {
-                        if granted {
-                            actions.push(PluginsAction::Grant {
-                                id: entry.id.clone(),
-                                permission: token.clone(),
-                            });
-                        } else {
-                            actions.push(PluginsAction::Revoke {
-                                id: entry.id.clone(),
-                                permission: token.clone(),
-                            });
-                        }
+                ui.horizontal_wrapped(|ui| {
+                    for token in &entry.manifest_permissions {
+                        super::tag(ui, &th, token);
                     }
-                }
+                });
             }
 
             if !entry.commands.is_empty() {
