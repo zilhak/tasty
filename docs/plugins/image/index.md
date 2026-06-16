@@ -7,6 +7,8 @@
 - **권한**: 매니페스트 `permissions`
 - **화면**: [screens/image.md](screens/image.md)
 
+> **예제로서**: host-rendered surface 의 **최소 예제**(61줄 단일 main.rs). 새 host-rendered surface 의 시작점 → [plugin-development](../../dev-guide/plugin-development.md#surface-kind--rendering-3-종).
+
 ## 목적
 
 이미지를 보고 간단히 그리는 **`image` surface 종류**(뷰어 + 그림판)를 제공한다. `rendering = "host"` — host 가 egui + 텍스처로 직접 그린다.

@@ -7,6 +7,8 @@
 - **권한**: 매니페스트 `permissions`
 - **화면**: [screens/html.md](screens/html.md)
 
+> **예제로서**: `rendering = "webview"` surface 의 예제 → [plugin-development](../../dev-guide/plugin-development.md#surface-kind--rendering-3-종).
+
 ## 목적
 
 HTML / 웹 콘텐츠를 보는 **`html` surface 종류**를 제공한다. `rendering = "webview"` — tasty 의 **네이티브 WebView 오버레이**로 그린다(host 가 surface 별 URL 을 동기화).

@@ -7,6 +7,8 @@
 - **권한**: `process.spawn` 등 (매니페스트 `permissions`)
 - **화면**: 없음 — CLI/IPC 오케스트레이션 플러그인 (headless).
 
+> **예제로서**: **cli + ipc namespace 멀티에이전트** 예제(claude 의 경량판) — state/handlers 모듈 분리 → [plugin-development](../../dev-guide/plugin-development.md#cli--ipc-namespace).
+
 ## 목적
 
 **Codex CLI 를 tasty 안에서 실행·오케스트레이션**하는 통합. [claude](../claude/index.md) 플러그인과 동형이며, 주로 작성한 코드/판단을 Codex 에게 교차 검증시키는 용도.

@@ -45,16 +45,21 @@ surface kind 는 콘텐츠를 **누가 렌더하느냐**로 다시 갈린다 (�
 
 ## 권한 (Permissions)
 
-플러그인은 매니페스트의 `permissions` 로 필요한 권한을 선언하고, host 가 grant 한 범위에서만 동작한다. 현재 권한 토큰:
+플러그인은 매니페스트의 `permissions` 로 필요한 권한을 선언하고, host 가 grant 한 범위에서만 **호스트 IPC 호출**을 한다(권한 게이트는 OS 자원이 아니라 호스트 API 호출을 막는다 — [plugin-permissions](../dev-guide/plugin-permissions.md)). 토큰은 `crates/tasty-plugin-manifest/src/types.rs` `Permission` enum 이 단일 출처.
 
-`surface.read` · `surface.write` · `fs.read` · `fs.write` · `clipboard.read` · `clipboard.write` · `notification` · `process.spawn` · `ui.tool_item` · `ui.popup` · `ui.settings_page`
+**Scope 없는 토큰**:
+`surface.read` · `surface.write` · `fs.read` · `fs.write` · `clipboard.read` · `clipboard.write` · `notification` · `process.spawn` · `terminal.spawn` · `terminal.write` · `terminal.read` · `network` · `memory.read` · `memory.write` · `memory.secret` · `approval` · `telemetry` · `agent` · `ui.tool_item` · `ui.popup` · `ui.settings_page` · `window.spawn` · `file_handler.define`
 
-권한 grant/표시 UI 와 관리는 [plugin-system](../features/plugin-system/index.md), 권한 설계·민감 데이터 취급은 dev-guide(아래).
+**Scope 있는 토큰** (`<name>:<scope>`):
+`ipc.invoke:<prefix>`(다른 플러그인 namespace 호출) · `ext:<plugin_id>`(다른 플러그인 확장) · `file_handler.extend:<id>` · `file_handler.handle:<id>`
+
+권한 grant/표시 UI 와 관리는 [plugin-system](../features/plugin-system/index.md), 권한 모델·새 토큰 추가 절차는 [dev-guide/plugin-permissions](../dev-guide/plugin-permissions.md), 민감 데이터 취급은 [dev-guide/plugin-sensitive-data](../dev-guide/plugin-sensitive-data.md).
 
 ## 관련
 
 - **관리/설치/권한 UI** (사용자 기능) → [`features/plugin-system/`](../features/plugin-system/index.md)
 - **번들 플러그인 각각의 동작** → [`plugins/`](../plugins/index.md)
-- **제작 가이드 / 브리지 메커니즘 / 권한 설계 / 민감 데이터** → `dev-guide/plugin-*` *(재작성 예정 — docs-old)*
+- **제작 가이드** → [dev-guide/plugin-development](../dev-guide/plugin-development.md) (기여 타입별 + 번들 플러그인을 예제로 인용)
+- **권한 모델 / 민감 데이터** → [dev-guide/plugin-permissions](../dev-guide/plugin-permissions.md) · [dev-guide/plugin-sensitive-data](../dev-guide/plugin-sensitive-data.md)
 - **surface 종류와 렌더 분기** → [`features/work-area/`](../features/work-area/index.md#surface-종류)
 </content>

@@ -7,6 +7,8 @@
 - **권한**: `surface.read` · `surface.write` · `fs.read` · `ui.settings_page`
 - **화면**: [screens/explorer.md](screens/explorer.md)
 
+> **예제로서**: **plugin-rendered surface(자가 렌더 + UI tree DSL)** 의 풀 레퍼런스(636줄) — `splitter`+`tree_view`+`addressbar`, commands, settings_page, snapshot/restore. 자가 렌더 surface 의 시작점 → [plugin-development](../../dev-guide/plugin-development.md#4-ui-tree-dsl-plugin-rendered-surface).
+
 ## 목적
 
 파일 트리를 보고 탐색하는 **`explorer` surface 종류**를 제공하는 번들 플러그인. surface 로 열려 작업 영역 타일 안에서 디렉토리를 탐색한다.

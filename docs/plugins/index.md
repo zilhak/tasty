@@ -19,9 +19,12 @@ tasty 에 **동봉되어 첫 부팅 시 자동 install** 되는 공식 플러그
 | [claude](claude/index.md) — `com.tasty.claude` | Claude Code CLI 통합 | cli · ipc · 멀티에이전트 |
 | [codex](codex/index.md) — `com.tasty.codex` | Codex CLI 통합 | cli · ipc · 멀티에이전트 |
 
+> 각 플러그인은 **제작 가이드의 예제**이기도 하다 — 각 문서 상단의 "예제로서" 노트가 어떤 기여 패턴의 레퍼런스인지와 [dev-guide/plugin-development](../dev-guide/plugin-development.md) 해당 절을 가리킨다.
+
 ## 관련
 
 - 개념·분류 축·권한: [concepts/plugins](../concepts/plugins.md)
+- **제작 가이드(예제 인용)**: [dev-guide/plugin-development](../dev-guide/plugin-development.md) · [plugin-permissions](../dev-guide/plugin-permissions.md) · [plugin-sensitive-data](../dev-guide/plugin-sensitive-data.md)
 - 관리/설치/권한 UI: [features/plugin-system](../features/plugin-system/index.md)
 - 도구 메뉴 기여 항목의 진입점: [features/tools-menu](../features/tools-menu/index.md)
 </content>

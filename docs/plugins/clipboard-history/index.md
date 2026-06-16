@@ -7,6 +7,8 @@
 - **권한**: `ui.tool_item` · `ui.popup` · `clipboard.read`
 - **화면**: [screens/clipboard-history.md](screens/clipboard-history.md)
 
+> **예제로서**: **도구 메뉴 항목 + popup** 예제이자 유일한 **wasm 양빌드**(`--features wasm`, `wasm32-wasip2` component) 레퍼런스 → [plugin-development](../../dev-guide/plugin-development.md#도구-메뉴-항목--popup).
+
 ## 목적
 
 최근 클립보드 항목을 목록으로 보여주고 다시 복사하게 하는 **클립보드 히스토리 popup** 을 제공한다.

@@ -7,6 +7,8 @@
 - **권한**: surface 읽기 등 (매니페스트 `permissions`)
 - **화면**: [screens/markdown.md](screens/markdown.md)
 
+> **예제로서**: host-rendered surface + **파일 detector/handler** + cli + settings_page 를 한 플러그인에 모은 예제 → [plugin-development](../../dev-guide/plugin-development.md#파일-핸들러-detector--handler).
+
 ## 목적
 
 마크다운 파일을 렌더해 보는 **`markdown` surface 종류**를 제공한다. `rendering = "host"` — 플러그인은 kind 를 선언만 하고 **host 가 egui 로 직접 그린다**(host-rendered whitelist).
