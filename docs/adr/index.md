@@ -13,3 +13,4 @@
 | 0001 | [Linux 시스템 트레이 미지원](0001-linux-system-tray-unsupported.md) | Accepted | 2026-06-12 | linux, system-tray, platform, dependencies |
 | 0002 | [VTE 파싱을 입력 스레드 밖 파서 스레드로 분리](0002-vte-parsing-off-input-thread.md) | Accepted | 2026-06-15 | performance, terminal, threading, input-latency, vte |
 | 0003 | [네이티브 데코 대신 CSD(Client-Side Decorations) 채택](0003-client-side-decorations.md) | Accepted | 2026-06-15 | window, csd, titlebar, cross-platform, winit, macos, windows, linux |
+| 0004 | [IPC transport = 127.0.0.1 loopback TCP (동적 포트)](0004-ipc-transport-tcp.md) | Accepted | 2026-06-16 | ipc, transport, tcp, loopback, security, trust-boundary, cross-platform |
