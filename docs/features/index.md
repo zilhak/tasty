@@ -11,6 +11,7 @@
 | 기능 | 주체 | 화면 |
 |------|------|------|
 | [main-view](main-view/index.md) — MainView (메인 윈도우) | 로컬 사용자 · AI Agent · 원격 | [전체 레이아웃](main-view/screens/main-view.md) |
+| [work-area](work-area/index.md) — 작업 영역 (Workspace/Pane/Tab/Surface 도메인) | 로컬 사용자 · AI Agent · 원격 | [화면](work-area/screens/work-area.md) |
 | [sidebar](sidebar/index.md) — 사이드바 (MainView 좌측 패널) | 로컬 사용자 | [화면](sidebar/screens/sidebar.md) |
 | [tools-menu](tools-menu/index.md) — 도구 메뉴 (사이드바 도구 버튼) | 로컬 사용자 | [메뉴](tools-menu/screens/tools-menu.md) |
 | [settings](settings/index.md) — 설정 창 (사이드바 설정 버튼) | 로컬 사용자 | [창](settings/screens/settings.md) |

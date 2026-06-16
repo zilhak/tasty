@@ -49,14 +49,17 @@ MainView  (View 의 일종)
 
 ## Surface 타입
 
-| 타입 | 출처 | 콘텐츠 | 렌더 |
+| kind | 출처 | 콘텐츠 | 렌더 |
 |------|------|--------|------|
-| Terminal | host (기본) | 쉘 세션 (PTY 연결) | GPU 셰이더 |
-| Markdown | host | 마크다운 뷰어 | egui |
-| Image | `com.tasty.image` plugin contribute | 이미지 뷰어/편집 | egui + 텍스처 |
-| Html | host | HTML/웹 뷰어 | 네이티브 WebView |
-| Empty | host | 빈 surface (타입 전환 버튼) | egui |
-| Explorer / 기타 | plugin contribute | plugin 이 `[[contributes.surface_kinds]]` 로 등록, host 는 `RemoteSurface` 로 보관 | egui (plugin UI DSL) |
+| `terminal` | **host 내장** | 쉘 세션 (PTY 연결) | GPU 셰이더 |
+| `empty` | **host 내장** | 빈 surface (타입 전환 버튼); deferred 터미널 자리 | egui |
+| `attached` | **host 내장** (런타임 marker) | attach 점유의 양쪽 표현 | readonly mirror |
+| `markdown` | `com.tasty.markdown` plugin (`rendering=host`) | 마크다운 뷰어 | egui (host 가 그림) |
+| `image` | `com.tasty.image` plugin (`rendering=host`) | 이미지 뷰어/편집 | egui + 텍스처 (host 가 그림) |
+| `explorer` | `com.tasty.explorer` plugin | 파일 탐색기 | plugin UI DSL (`RemoteSurface`) |
+| `html` | `com.tasty.html` plugin | HTML/웹 뷰어 | 네이티브 WebView (`RemoteSurface`) |
+
+출처 3종: **host 내장**(`register_builtin_kinds`) / **host-rendered plugin**(plugin 이 `rendering=host` 선언 + host 화이트리스트, 코드는 host 소유) / **RemoteSurface plugin**(plugin 이 직접 그림). 종류별 상세·동작은 [`features/work-area/`](../features/work-area/index.md#surface-종류).
 
 ## 관련
 
