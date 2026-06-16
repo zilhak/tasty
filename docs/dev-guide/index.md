@@ -4,6 +4,10 @@
 
 > Tasty를 **사용하는** AI 에이전트를 위한 가이드는 `docs/agent-guide/`를 참조.
 
+## 핵심 원칙 — 독립 검증
+
+**Tasty 의 모든 기능은, 그것을 개발하는 AI Agent 가 자기 수정을 독립적으로 띄워 검증할 수 있도록 만든다.** Tasty 를 개발하는 환경이 곧 Tasty 이므로(dogfooding), debug 빌드는 release 빌드와 환경을 격리한다(`tasty-debug.port` 등). Agent 는 *자신이 release tasty 안에서 동작 중이어도, 자기 debug 빌드를 따로 띄워 release·다른 작업과 충돌 없이 검증할 수 있음* 을 인지한다. 상세: [independent-verification.md](independent-verification.md).
+
 ## 최초 셋업 (clone 직후 1회)
 
 ```bash
@@ -25,6 +29,7 @@ git hooks 디렉토리를 `.githooks/` 로 설정한다. 안 하면 pre-commit /
 
 | 주제 | 문서 |
 |------|------|
+| **독립 검증 — 개발도 agent 가 스스로 확인 (dogfooding / debug↔release 격리)** | [independent-verification.md](independent-verification.md) |
 | 개발 환경 셋업 + git hooks 규칙 | [git-hooks.md](git-hooks.md) |
 | 수정 후 자체 검증 (커밋 전에 직접 돌려볼 것) | [self-verification.md](self-verification.md) |
 | 커밋 컨벤션 (Conventional Commits) | [commit-convention.md](commit-convention.md) |
