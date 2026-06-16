@@ -15,4 +15,6 @@
 | [tools-menu](tools-menu/index.md) — 도구 메뉴 (사이드바 도구 버튼) | 로컬 사용자 | [메뉴](tools-menu/screens/tools-menu.md) |
 | [settings](settings/index.md) — 설정 창 (사이드바 설정 버튼) | 로컬 사용자 | [창](settings/screens/settings.md) |
 | [plugin-system](plugin-system/index.md) — 플러그인 관리 (사이드바 플러그인 버튼) | 로컬 사용자 · AI Agent | [창](plugin-system/screens/plugins-window.md) |
+| [command-palette](command-palette/index.md) — 명령 팔레트 (도구 메뉴 항목) | 로컬 사용자 | [화면](command-palette/screens/command-palette.md) |
+| [ssh-tool](ssh-tool/index.md) — SSH 프로필 (도구 메뉴 항목) | 로컬 사용자 · AI Agent | [창](ssh-tool/screens/ssh-tool.md) |
 | [listening-ports](listening-ports/index.md) — 리스닝 포트 뷰어 | 로컬 사용자 | [팝업](listening-ports/screens/listening-ports.md) |

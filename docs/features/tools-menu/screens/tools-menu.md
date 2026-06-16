@@ -26,11 +26,11 @@
 ## UI 요소 인벤토리
 
 - **빌트인 항목** (각 → 해당 기능):
-  - **Command palette** — 명령 팔레트를 연다. → `features/command-palette/` *(재작성 예정)*
+  - **Command palette** — 명령 팔레트를 연다. → [`features/command-palette/`](../../command-palette/index.md)
   - **Listening ports** — 리스닝 포트 뷰어를 연다. → [`features/listening-ports/`](../../listening-ports/index.md)
-  - **SSH profiles** — SSH 도구를 연다. → `features/ssh-tool/` *(재작성 예정)*
+  - **SSH profiles** — SSH 도구를 연다. → [`features/ssh-tool/`](../../ssh-tool/index.md)
 - **구분선** — 빌트인과 플러그인 항목 사이 (둘 다 있을 때만).
-- **플러그인 기여 항목** — `ui.tool_item` 권한 플러그인이 추가한 항목 (예: Clipboard history). 각 항목은 해당 플러그인으로 위임.
+- **플러그인 기여 항목** — `ui.tool_item` 권한 플러그인이 추가한 항목 (예: Clipboard history). **이 문서엔 항목을 나열하지 않는다** — 공식(번들) 플러그인 메뉴는 *tasty 제공 플러그인 문서* 에서 다룬다 *(별도 영역, 재작성 예정)*.
 
 ## 상태별 시각
 

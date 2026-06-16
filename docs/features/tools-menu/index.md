@@ -33,10 +33,10 @@
 
 - **사용자**: 사이드바 도구 버튼 클릭 → 메뉴 표시, 항목 클릭 → 실행.
 - **각 항목은 그 기능으로 연결** (연결 개념):
-  - Command palette → `features/command-palette/` *(재작성 예정)*
+  - Command palette → [`features/command-palette/`](../command-palette/index.md)
   - Listening ports → [`features/listening-ports/`](../listening-ports/index.md)
-  - SSH profiles → `features/ssh-tool/` *(재작성 예정)*
-  - 플러그인 도구 → 각 플러그인
+  - SSH profiles → [`features/ssh-tool/`](../ssh-tool/index.md)
+  - 플러그인 기여 도구 → **tasty 제공(번들) 플러그인 문서** *(별도 영역, 재작성 예정)*. 이 메뉴 문서에는 기술하지 않는다 — 공식 플러그인 메뉴는 해당 플러그인 쪽에서 다룬다.
 
 ## 비-목표
 
