@@ -10,4 +10,5 @@
 
 | 기능 | 주체 | 화면 |
 |------|------|------|
+| [main-view](main-view/index.md) — MainView (메인 윈도우) | 로컬 사용자 · AI Agent · 원격 | [전체 레이아웃](main-view/screens/main-view.md) |
 | [listening-ports](listening-ports/index.md) — 리스닝 포트 뷰어 | 로컬 사용자 | [팝업](listening-ports/screens/listening-ports.md) |
