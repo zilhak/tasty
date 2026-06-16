@@ -20,7 +20,7 @@
 |----------|------|------|
 | 근거 (ADR) | [adr/index.md](adr/index.md) | ✅ 보존 (불변) |
 | 평가 / POC | [evaluations/index.md](evaluations/index.md) | ✅ 복원 |
-| 기능 (기획·화면) | `features/<f>/{index.md, screens/}` | 🚧 폴더 모델로 재작성 중 — _아직 없음_ |
+| 기능 (기획·화면) | [features/index.md](features/index.md) | 🚧 폴더 모델로 재작성 중 (양식: 기획/화면 템플릿 2종 준비됨, 카탈로그 비어있음) |
 | 횡단 규칙·흐름 | `design/{policies,flows,systems}/` | 🚧 재정비 대기 (docs-old) |
 | 시각 진실 | `design-system/` (vendor) | ⏳ vendor 예정 (claude design 산출물) |
 
