@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 원격 접속 사용자(점유 후 조작) · AI Agent(원격 mirror 를 정당한 행동으로 attach) · 로컬 사용자(force-detach 권한)
-- **ADR**: 없음 (보안 위임 근거는 attach decision 5 — [원격 보안 SSH 위임](../../identity.md))
+- **ADR**: [ADR-0007](../../adr/0007-attach-targets-remote.md) (attach 는 원격 대상 · 로컬 self-attach 는 debug 격리). 보안 위임 근거는 [ADR-0004](../../adr/0004-ipc-transport-tcp.md) (loopback trust boundary)
 - **코드**: `src/core/attach.rs`(`AttachRegistry`), `src/core/attach_runtime.rs`, `src/app/auto_attach.rs`, `src/adapters/ipc/handler/attach.rs`, CLI `crates/tasty-cli/src/commands/{remote,attach,remote_check}.rs`
 - **화면**: [screens/remote-attach.md](screens/remote-attach.md)
 

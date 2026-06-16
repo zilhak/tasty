@@ -15,3 +15,5 @@
 | 0003 | [네이티브 데코 대신 CSD(Client-Side Decorations) 채택](0003-client-side-decorations.md) | Accepted | 2026-06-15 | window, csd, titlebar, cross-platform, winit, macos, windows, linux |
 | 0004 | [IPC transport = 127.0.0.1 loopback TCP (동적 포트)](0004-ipc-transport-tcp.md) | Accepted | 2026-06-16 | ipc, transport, tcp, loopback, security, trust-boundary, cross-platform |
 | 0005 | [memory secret 영역은 "안전 보관소" 가 아니다](0005-memory-secret-not-a-vault.md) | Accepted | 2026-06-16 | memory, secret, security, encryption, plugin, trust-boundary |
+| 0006 | [문서 분류체계 — 동작 우선(behavior-first), 화면 종속](0006-docs-taxonomy-behavior-first.md) | Accepted | 2026-06-16 | docs, taxonomy, headless, screen-spec, design-system, behavior-first |
+| 0007 | [attach 는 원격을 대상으로 한다 (로컬 self-attach 는 debug 격리)](0007-attach-targets-remote.md) | Accepted | 2026-06-17 | attach, remote, debug-isolation, cli, user-agent-separation, security |

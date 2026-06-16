@@ -15,6 +15,8 @@ attach 는 **server**(피점유 — PTY/grid 소유)와 **client**(점유 — mi
 
 ### "로컬 attach 제거" 의 정확한 의미
 
+> **attach 는 원격을 대상으로 한다** — 로컬 self-attach 는 release 에서 제거하고 debug 격리한다. 이 결정의 *근거·대안·재검토 조건* 은 [ADR-0007](../adr/0007-attach-targets-remote.md). 아래는 그 결정이 구현에 어떻게 드러나는지다.
+
 원격 attach 도 **서버 입장엔 loopback** 이다. 따라서 release 에서 "로컬 attach 제거" 는 **서버를 바꾼 게 아니라 client 의 로컬 진입점(`tasty attach` → `tasty debug attach`)만 제거**한 것이다. 서버의 attach 수신 경로는 로컬/원격 공용으로 보존된다. SSH 터널 + attach 세션 머신(`run_attach_*`)은 `crates/tasty-cli/src/commands/attach.rs` 에 공용으로 남고, `remote`/`debug` 네임스페이스는 그 위에서 디스패치만 한다.
 
 ### `remote` / `debug` 는 CLI 디스패치 네임스페이스 (IPC 와 비대칭)
@@ -79,6 +81,7 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_as_vt` 로 **1회** �
 
 ## 관련
 
+- 결정 근거(원격 대상·로컬 debug 격리): [`ADR-0007`](../adr/0007-attach-targets-remote.md)
 - 동작·점유 규칙·CLI/IPC 사용법: [`features/remote-attach`](../features/remote-attach/index.md)
 - 주체(원격 사용자)·점유 모델 개념: [`concepts/actors`](../concepts/actors.md)
 - SSH 프로필 관리: [`features/ssh-tool`](../features/ssh-tool/index.md)
