@@ -1,0 +1,41 @@
+# 도구 메뉴 화면
+
+- **부모 기획**: [../index.md](../index.md)
+- **트리거 위치**: [사이드바](../../sidebar/screens/sidebar.md) 하단 **도구 버튼**
+- **시각 소스**: `design-system/ui_kits/terminal/overlays/tools_menu.jsx` — claude design, vendor 예정
+
+각 항목은 이름 + (있으면) 한 줄 + 해당 기능 문서 **링크만** — 항목 내용은 그 문서에 (연결 개념).
+
+## 트리거
+
+사이드바 하단 **도구 버튼** 클릭 → 버튼 위치에 메뉴 popup 이 뜬다.
+
+## 레이아웃
+
+```
+┌─────────────────────────┐
+│ Command palette          │  → command-palette
+│ Listening ports          │  → listening-ports
+│ SSH profiles             │  → ssh-tool
+├─────────────────────────┤  (빌트인 ↔ 플러그인 구분선)
+│ Clipboard history        │  → (플러그인 기여)
+│ …(plugin 항목)           │
+└─────────────────────────┘
+```
+
+## UI 요소 인벤토리
+
+- **빌트인 항목** (각 → 해당 기능):
+  - **Command palette** — 명령 팔레트를 연다. → `features/command-palette/` *(재작성 예정)*
+  - **Listening ports** — 리스닝 포트 뷰어를 연다. → [`features/listening-ports/`](../../listening-ports/index.md)
+  - **SSH profiles** — SSH 도구를 연다. → `features/ssh-tool/` *(재작성 예정)*
+- **구분선** — 빌트인과 플러그인 항목 사이 (둘 다 있을 때만).
+- **플러그인 기여 항목** — `ui.tool_item` 권한 플러그인이 추가한 항목 (예: Clipboard history). 각 항목은 해당 플러그인으로 위임.
+
+## 상태별 시각
+
+- **빌트인만 / 플러그인 포함**: 플러그인 항목 유무에 따라 구분선·높이가 달라진다 (동적 크기).
+
+## 시각 소스
+
+`design-system/ui_kits/terminal/overlays/tools_menu.jsx` — 메뉴 치수·항목 행·구분선의 단일 출처. 스크린샷: `design-system/assets/screens/tools_menu.png`, `tools_menu-ko.png`. (design-system vendor 후 링크 resolve.)

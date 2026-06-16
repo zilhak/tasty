@@ -32,7 +32,7 @@
 - **워크스페이스 영역** (남는 높이): `Workspaces` heading → 워크스페이스 카드 목록 → `New workspace` 버튼.
   - 카드: 클릭=전환, 드래그=재정렬, 점유 중이면 인디케이터.
 - **하단 버튼** (각 버튼이 뭘 하는지 한 줄 + 상세는 해당 문서로 링크 — 연결 개념):
-  - **도구** (`icons::TOOLS`) — 클릭 시 **도구 메뉴**를 연다 (리스닝 포트 등 빌트인 진단/유틸 항목 모음). → `features/tools-menu/` *(재작성 예정)*
+  - **도구** (`icons::TOOLS`) — 클릭 시 **도구 메뉴**를 연다 (리스닝 포트 등 빌트인 진단/유틸 항목 모음). → [`features/tools-menu/`](../../tools-menu/index.md)
   - **플러그인** (`icons::PLUG`) — **플러그인 관리 창**을 연다 (설치/활성·비활성/설정). → `features/plugin-system/` *(재작성 예정)*
   - **설정** (`icons::SETTINGS`) — **설정 창**을 연다 (탭별 환경설정). → `features/settings/` *(재작성 예정)*
 

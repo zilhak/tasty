@@ -49,7 +49,7 @@ header 태그 `{listening} listening`, footer `{shown} of {total} ports`.
 
 ## 인터페이스
 
-- **사용자 트리거**: 사이드바 Tools 메뉴 상단 `Listening ports…` → `port_scanner` popup (`PopupScope::Window`). 포트 번호 클릭 시 wildcard(`0.0.0.0` / `[::]`)는 `localhost` 로 치환해 브라우저로 연다.
+- **사용자 트리거**: 사이드바 [도구 메뉴](../tools-menu/index.md) 의 `Listening ports…` → `port_scanner` popup (`PopupScope::Window`). 포트 번호 클릭 시 wildcard(`0.0.0.0` / `[::]`)는 `localhost` 로 치환해 브라우저로 연다.
 - **IPC/CLI**: 없음 — **의도된 설계.** 포트 목록은 agent 가 일반 셸 명령(`ss` / `lsof` / `netstat`)으로 직접 조회 가능하므로 tasty 가 중복 제공하지 않는다. 이 기능은 *사람이 UI 로 편하게 보는* 편의일 뿐이다.
 
 ## 비-목표
