@@ -73,7 +73,14 @@ pub struct DiskScrollback {
 
 impl DiskScrollback {
     pub fn new(surface_id: u32) -> std::io::Result<Self> {
-        let dir = std::env::temp_dir().join("tasty-scrollback");
+        // debug 빌드는 별도 디렉터리를 써서 동시에 떠 있는 release 인스턴스와
+        // 같은 surface-id 파일을 서로 truncate 하지 않게 격리한다.
+        let subdir = if cfg!(debug_assertions) {
+            "tasty-scrollback-debug"
+        } else {
+            "tasty-scrollback"
+        };
+        let dir = std::env::temp_dir().join(subdir);
         std::fs::create_dir_all(&dir)?;
         let file_path = dir.join(format!("surface-{}.scrollback", surface_id));
         // Truncate any existing file and write the header.
