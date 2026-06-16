@@ -32,7 +32,9 @@ fn boot_apply_theme(appearance: &mut tasty_settings::AppearanceSettings) -> Opti
     }
     let requested = appearance.theme.clone();
     tasty_themes::apply_theme(appearance, &requested);
-    tasty_themes::install_global(appearance);
+    // host UI zoom 을 항상 실어 부팅 직후 steady state 도 올바른 배율로 설치한다.
+    let ui_zoom = appearance.ui_scale_factor();
+    tasty_themes::install_global_with_zoom(appearance, ui_zoom);
     if appearance.theme != requested {
         Some(requested)
     } else {

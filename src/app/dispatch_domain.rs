@@ -1205,8 +1205,11 @@ impl App {
         } else {
             // 색/zoom 외 변화 (예: tab_width / font 등) 면 broadcast 불필요하나,
             // 전역 Theme 가 settings 의 다른 partial 색 override 를 반영해야 할 수도
-            // 있어 install_global 로 그대로 갱신.
-            tasty_themes::install_global(&new_settings.appearance);
+            // 있어 install_global 로 그대로 갱신. host UI zoom 은 항상 실어야 한다
+            // — zoom 없이 install 하면 전역 Theme 가 1.0 으로 리셋돼 다른 윈도우의
+            // 사이드바/UI 배율이 줄어든다.
+            let ui_zoom = new_settings.appearance.ui_scale_factor();
+            tasty_themes::install_global_with_zoom(&new_settings.appearance, ui_zoom);
         }
 
         // Event Bus 1.0: theme/language 변경 발화.

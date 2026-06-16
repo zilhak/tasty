@@ -305,7 +305,9 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                     }
                     // 선택된 테마 즉시 적용 — 설정 화면에서 콤보 선택은 이미 apply_theme 으로
                     // base/overrides 를 갱신했고, 여기서는 전역 Theme 인스턴스만 install.
-                    tasty_themes::install_global(&settings.appearance);
+                    // host UI zoom 을 항상 실어야 배율이 1.0 으로 리셋되지 않는다.
+                    let ui_zoom = settings.appearance.ui_scale_factor();
+                    tasty_themes::install_global_with_zoom(&settings.appearance, ui_zoom);
                     // FileHandler 탭의 Extension Mapping + Detectors/Handlers 편집 draft 를
                     // registry 에 commit + 디스크 저장.
                     let mut fh_touched = false;
