@@ -19,18 +19,35 @@ Tasty 는 **headless 로 동작**한다. 따라서 한 기능의 진실은 *내�
 
 **기획 1 : 화면 0..N.** headless-only 기능은 화면 0개. 한 동작이 여러 화면에 투영되면 N개.
 
-## 2. 문서 종류와 소유
+## 2. 문서 지도 (전체 카테고리)
 
-| 종류 | 위치 | 무엇을 | 소유 | 변경 |
-|------|------|--------|------|------|
-| 기획문서 | `docs/features/<f>/index.md` | 내부 동작 (1순위) | docs | 자유 |
-| 화면정의서 | `docs/features/<f>/screens/<s>.md` | 시각 투영 (2순위) | docs | 자유 |
-| 시각 진실 | `design-system/…` (vendor) | 픽셀 / 토큰 / 컴포넌트 | **claude design** | design-request 경유만 |
-| 근거 | `docs/adr/` | 왜 그렇게 결정했나 | docs | Accepted 후 불변 (supersede) |
-| 횡단 규칙·흐름 | `docs/design/{policies,flows,systems}/` | 여러 기능 공통 규칙/흐름 | docs | 자유 |
-| 용어 | `docs/concepts/` | 유비쿼터스 언어 | docs | 자유 |
+docs 는 두 묶음으로 나뉜다. §1 의 **동작-우선 taxonomy 는 A(제품 명세)에만** 적용된다. B(개발·운영 가이드)는 화면/동작 축과 무관한 독립 카테고리다.
+
+### A. 제품 명세 — "tasty 가 무엇인가"
+
+| 종류 | 위치 | 무엇을 | 소유 / 변경 |
+|------|------|--------|-------------|
+| 기획문서 | `docs/features/<f>/index.md` | 내부 동작 (1순위) | docs / 자유 |
+| 화면정의서 | `docs/features/<f>/screens/<s>.md` | 시각 투영 (2순위) | docs / 자유 |
+| 횡단 규칙·흐름 | `docs/design/{policies,flows,systems}/` | 여러 기능 공통 규칙/흐름 | docs / 자유 |
+| 용어 | `docs/concepts/` | 유비쿼터스 언어 | docs / 자유 |
+| 근거 (ADR) | `docs/adr/` | 왜 그렇게 결정했나 | docs / Accepted 후 불변 (supersede) |
+| 평가 / POC | `docs/evaluations/` | ADR 근거 원본 (시점성 분석) | docs / 시점 보존 |
+| 시각 진실 | `design-system/…` (vendor) | 픽셀 / 토큰 / 컴포넌트 | **claude design** / design-request 경유만 |
 
 **시각은 절대 docs 에 재서술하지 않는다.** 화면정의서는 요소 인벤토리와 "동작 상태 → 시각" 매핑만 적고, 픽셀/토큰 값은 `design-system/` 을 링크한다. 복제하면 두 진실이 생겨 drift 한다.
+
+### B. 개발·운영 가이드 — "tasty 를 어떻게 다루나"
+
+| 종류 | 위치 | 무엇을 | 대상 독자 |
+|------|------|--------|-----------|
+| **개발 가이드** | `docs/dev-guide/` | **tasty 를 개발하는 법 — 빌드·커밋·릴리스·플러그인·i18n·에러처리·GPU·디버그 IPC·자체검증 등** | 개발 AI 에이전트 |
+| 아키텍처 | `docs/architecture/` | 크레이트 구조 / 데이터 흐름 / invariant | 개발 AI 에이전트 |
+| 자체 검증 | `docs/ai-verification/` | UI·렌더링 검증 절차 | 개발 AI 에이전트 |
+| 에이전트 가이드 | `docs/agent-guide/` | tasty 를 IPC/CLI 로 조작하는 법 (릴리스 에셋으로 배포) | 사용자의 AI 에이전트 |
+| 설치 | `docs/installation.md` | OS·아키텍처별 설치 | 사용자 / 에이전트 |
+
+> B 는 코드·프로세스에서 파생되어 claude design 도입과 무관하게 대체로 유효하다. 따라서 **백지 재작성 대상이 아니라 검토·교정 대상** 이다 (§ 재정비 절차는 [`index.md`](index.md) 참조).
 
 ## 3. 폴더 구조 (중첩)
 
