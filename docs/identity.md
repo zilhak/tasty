@@ -48,6 +48,7 @@ Windows · macOS · Linux 모두 1급 지원.
 - 에이전트 기능(surface/tab/workspace 생성·닫기·조회, 클립보드, 알림, 파일 열기, 메타데이터 등)은 **IPC + CLI 양면** 으로 동작해야 한다. GUI 전용 에이전트 기능 금지.
 - 에이전트가 문제를 직접 확인·조작할 기능이 부족하면, 그건 *Tasty 가 에이전트가 자유롭게 조작할 수 있는 터미널이 아니라는 의미* 이므로 기능을 추가한다.
 - **headless 동작-우선**: 기능의 진실은 내부 동작이고 화면은 그 투영이다 → [`documentation-model.md`](documentation-model.md).
+- **headless 환경을 의식한다**: headless 인스턴스에는 로컬 사용자(GUI)가 없다 — AI Agent(IPC/CLI)와 원격 접속 사용자(attach)만 쓴다. 새 기능을 넣을 때 *로컬 GUI 사용자가 늘 존재한다* 고 가정하지 않는다.
 
 ### 2.3 포커스 독립성 — 포커스는 사용자의 것
 
