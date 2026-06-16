@@ -23,7 +23,7 @@
 ## 영역
 
 - **타이틀바** (최상단, OS별 CSD) → `features/window-chrome/` 참조 *(재작성 예정)*
-- **사이드바** (좌측, 전체 높이) → `features/sidebar/` 참조 *(다음 작성)*
+- **사이드바** (좌측, 전체 높이) → [`features/sidebar/`](../../sidebar/index.md)
 - **작업 영역** (중앙) — 상단 탭 스트립 + 그 아래 surface 배치.
   - 탭 스트립 → `features/workspace-tabs/` 참조 *(재작성 예정)*
   - surface 배치(상위 레이아웃 Pane / 하위 레이아웃 Surface)와 surface 종류 → [구조 계층](../../../concepts/hierarchy.md)
