@@ -22,10 +22,10 @@
 
 ## 영역
 
-- **타이틀바** (최상단, OS별 CSD) → `features/window-chrome/` 참조 *(재작성 예정)*
+- **타이틀바** (최상단, OS별 CSD) → [`features/window-chrome/`](../../window-chrome/index.md)
 - **사이드바** (좌측, 전체 높이) → [`features/sidebar/`](../../sidebar/index.md)
-- **작업 영역** (중앙) — Workspace/Pane/Tab/Surface 도메인 + 두 레벨 레이아웃 → [`features/work-area/`](../../work-area/index.md). (탭 스트립 시각은 그 안에서 `features/workspace-tabs/` *재작성 예정* 으로 연결.)
-- **상태바** (하단) → `features/workspace-status-bar/` 참조 *(재작성 예정)*
+- **작업 영역** (중앙) — Workspace/Pane/Tab/Surface 도메인 + 두 레벨 레이아웃 → [`features/work-area/`](../../work-area/index.md). 탭 스트립 시각은 [`features/workspace-tabs/`](../../workspace-tabs/index.md).
+- **상태바** (하단) → [`features/workspace-status-bar/`](../../workspace-status-bar/index.md)
 
 ## 상태별 시각
 

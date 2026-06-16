@@ -1,0 +1,68 @@
+# 탭 스트립 (Workspace tabs)
+
+- **Status**: Implemented
+- **주체**: 로컬 사용자 (탭 도메인 조작은 AI Agent 도 — [work-area](../work-area/index.md))
+- **ADR**: 없음
+- **코드**: `src/adapters/ui/tab_bar.rs` (`PaneTabBarView`/`TabBarAction`/`draw_pane_tab_bars_view`), drag 상태 `src/state.rs` `TabDragState`
+- **화면**: [screens/workspace-tabs.md](screens/workspace-tabs.md)
+
+## 목적
+
+각 [Pane](../work-area/index.md#pane--상위-레이아웃-탭-무관) 상단의 탭 바. Pane 의 `tabs`/`active_tab` 도메인을 사용자가 보고 조작하는 GUI 표면이다. **Pane 마다 독립 탭 스트립**을 가진다(상위 레이아웃이 탭과 무관하므로). 도메인 자체(탭 생성/닫기/이동 의미)는 [work-area](../work-area/index.md), 여기선 그 스트립의 *시각 + 입력*.
+
+## 내부 동작 (headless-valid)
+
+탭 스트립은 순수 view(`draw_pane_tab_bars_view`)가 그리고, 사용자 입력을 `TabBarAction` 으로 보고하면 wrapper 가 work-area 도메인에 반영한다. view 는 AppState/CoreState 비의존(데이터 props 만 받음).
+
+### 입력 → 액션 (`TabBarAction`)
+
+- **SwitchTab** — 탭 클릭 → `active_tab` 전환.
+- **CloseTab** — 탭의 close 버튼(활성 탭 또는 hover 시 노출) → 탭 닫기. (마지막 탭은 work-area 규칙상 안 닫힘.)
+- **AddTab** — 우측 `+` → 새 탭. `+` 우클릭은 **OpenNewTabButtonContextMenu**(프리셋으로 탭/페인 생성).
+- **RequestSplit** / **OpenSearch** — 스트립 우측 split·search 아이콘 → 해당 Pane 분할 / 활성 surface 검색.
+- **ScrollLeft / ScrollRight** — 탭이 넘치면 좌우 스크롤 화살표(가로 스크롤 `scroll_offset`).
+- **DragStart / DragUpdate / DragEnd** — 탭 드래그로 순서 변경(`TabDragState`, drop 위치는 `compute_drop_index`). UI 전용 상태(영속 안 함).
+- **OpenContextMenu** / **OpenPaneContextMenu** — 탭 우클릭 / Pane 우클릭 컨텍스트 메뉴.
+
+### 탭 표시
+
+각 탭은 표시명(work-area 우선순위로 결정) + 상태 표지를 보인다:
+
+- **leading 아이콘** — surface kind 별(terminal/markdown/…).
+- **알림 표지** — 노란 라벨(`tab_has_notification`).
+- **busy 점** — 녹색 점(`tab_is_busy`, 포그라운드 프로세스 ≠ shell).
+- **활성/포커스** — active 탭 강조, 포커스된 Pane 인지에 따라 스트립 배경이 달라짐.
+
+탭 1개 너비·라벨 폰트 크기는 **사용자 옵션**(`tab_width`/`tab_font_size`).
+
+## 인터페이스
+
+- **사용자 트리거**: 탭 클릭(전환), close 버튼, `+`(추가, 우클릭=프리셋 메뉴), split/search 아이콘, 좌우 스크롤 화살표, 드래그(순서 변경), 우클릭(컨텍스트 메뉴). 단축키 경유 동작은 work-area/단축키.
+- **AI Agent**: 탭 *도메인* 조작은 [work-area](../work-area/index.md) CLI/IPC (`tasty new tab` / `close tab` / `list tabs`). 탭 *스트립 위젯* 은 GUI 전용.
+
+## 비-목표 (Out of scope)
+
+- **탭/Pane 도메인 동작 정의**(생성·닫기·이동·분할의 의미·규칙) — [work-area](../work-area/index.md).
+- **탭 표시명 우선순위 규칙** — work-area Tab.
+- **컨텍스트 메뉴 각 항목의 동작** — 해당 기능(프리셋 등).
+
+## Acceptance Criteria
+
+- [ ] Given Pane 에 탭 여럿 When 탭 클릭 Then 그 탭으로 전환되고 하위 레이아웃이 바뀐다.
+- [ ] Given 활성 탭 When close 버튼 클릭 Then 탭이 닫힌다(마지막 탭이면 안 닫힘).
+- [ ] Given 탭이 스트립 폭을 넘침 When 스크롤 화살표 Then 가로 스크롤된다.
+- [ ] Given 탭 드래그 Then drop 위치(`compute_drop_index`)대로 순서가 바뀐다.
+- [ ] Given busy/알림 상태 Then 녹색 점 / 노란 라벨이 표시된다.
+
+> GUI 위젯이라 시각은 스크린샷, 결과(탭 전환/닫기/순서)는 work-area `tasty list tabs` 로 교차 확인.
+
+## 구현
+
+- view: `src/adapters/ui/tab_bar.rs` — `draw_pane_tab_bars_view`(props→`PaneTabBarsOutput{actions, measured_height}`), `compute_drop_index`(드래그 drop 위치).
+- props: `PaneTabBarView`(pane별 탭명/kind/알림/busy/active/focus/scroll), `PaneTabBarsProps`(테마/탭폭/폰트/drag).
+- drag 상태: `src/state.rs` `TabDragState`(UI 전용, 비영속).
+
+## 화면
+
+- [screens/workspace-tabs.md](screens/workspace-tabs.md) — 스트립 레이아웃(탭/표지/아이콘/스크롤/우측 버튼).
+</content>
