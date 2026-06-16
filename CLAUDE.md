@@ -21,101 +21,20 @@ WezTerm/Alacritty 와 유사한 접근이지만 AI 코딩 에이전트에 특화
 
 # 핵심 원칙
 
-## 1. 사용자 행동과 에이전트 행동의 분리 (Tasty 정체성)
+Tasty 의 정체성과 거기서 나오는 **불가침 원칙** 전문은 [`docs/identity.md`](docs/identity.md) — **작업 전 필독.** 아래는 코드 작업 시 즉시 적용하는 집행 요지다 (배경·근거는 identity.md).
 
-**이 분리가 깨지는 순간 Tasty 는 사용자도 에이전트도 신뢰할 수 없는 도구가 된다. 모든 API 설계는 이 원칙 위에 얹힌다.**
-
-### 정의
-
-- **사용자의 행동** = 키보드 단축키, 마우스 클릭/드래그, OS 네이티브 입력. 사용자 본인이 직접 발생시키는 입력.
-- **에이전트의 행동** = CLI 서브커맨드, IPC 메서드 호출. AI 에이전트가 자기 작업을 수행하기 위해 발생시키는 호출.
-
-이 두 종류는 **각자 다른 표면** 을 갖는다. 단축키는 사용자만, IPC/CLI 는 에이전트만 (사용자도 직접 호출할 수는 있지만, "에이전트의 행동" 으로 분류되는 경로).
-
-### 양방향 격리
-
-**① 에이전트 행동의 부수효과가 사용자 상태에 닿지 않는다.**
-
-에이전트가 한 행동은 사용자의 다음과 같은 상태를 변경하면 안 된다:
-
-- 포커스 (활성 윈도우/탭/워크스페이스/Pane)
-- 닫힌 항목 히스토리 (Ctrl+Shift+T 복원 스택)
-- 선택 영역, 스크롤 위치, 커서 위치 등 사용자의 시점 상태
-
-예: 에이전트가 surface 를 100 개 열었다 닫아도, 사용자의 Ctrl+Shift+T 는 **사용자가 직접 닫은 항목만** 복원한다.
-
-**② 사용자 입력 재현 기능은 release IPC 에 노출되지 않는다.**
-
-다음과 같이 *사용자의 입력 그 자체를 시뮬레이션* 하는 기능은 release 빌드의 IPC/CLI 표면에 존재해서는 안 된다:
-
-- 키 입력 주입 (`debug.inject_key`)
-- 마우스 클릭/드래그 주입 (`debug.inject_mouse`)
-- 사용자가 단축키로만 여는 popup 의 강제 open/close
-- 사용자가 클릭으로만 트리거하는 메뉴 항목의 강제 invoke
-- 프로그래밍적 포커스 전환 — **release 빌드의 어떤 API 도 포커스를 직접 바꾸지 않는다.**
-
-이런 기능은 AI 에이전트가 *개발 중 자체 테스트* 를 위해 필요할 수 있으므로, **debug 빌드에서만** `#[cfg(debug_assertions)]` 로 격리하여 제공한다.
-
-### Debug 코드 격리 정책
-
-debug 전용 코드는 **별도 디렉토리 (`debug/`) 에 모은다.** 다른 기능 사이에 끼어 있으면 안 된다.
-
-기준선: *"디버그 폴더를 통째로 삭제하고 컴파일 에러 몇 개만 정리하면 깨끗하게 사라지는가?"* 그게 되면 격리 OK.
-
-- IPC 디버그 핸들러: `src/host_api/ipc/handler/debug/` 하위에 모은다
-- CLI 디버그 서브커맨드: `src/host_api/cli/commands/debug/` 하위에 모은다
-- 각 파일 첫 줄에 `#![cfg(debug_assertions)]` — 모듈 통째로 release 에서 사라짐
-- 외부 표면에 남는 cfg 가드는 router 분기 한 줄뿐
-- 일반 핸들러 파일 (`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 식으로 끼우지 않는다 — 그것도 `debug/` 디렉토리로 옮긴다
-
-상세: [`docs/dev-guide/debug-ipc.md`](docs/dev-guide/debug-ipc.md).
-
-### 판단 기준 (한 줄)
-
-> 이 기능은 **에이전트가 자기 작업을 수행하기 위해** 필요한가, 아니면 **사용자가 직접 하는 조작을 자동으로 재현** 하는 것인가? 전자면 release 노출, 후자면 debug 격리.
-
----
-
-## 2. AI 에이전트 조작 가능성
-
-원칙 1 의 positive 측면. 에이전트가 자기 작업을 수행하기 위해 필요한 기능은 **반드시 제공한다.**
-
-만약 AI 에이전트가 문제를 직접 확인하거나 조작하기에 기능이 부족한 상황이 발생한다면, 그것은 *Tasty 가 에이전트가 자유롭게 조작할 수 있는 터미널이 아니라는 의미* 이므로 필요한 기능을 추가한다.
-
-**에이전트 고유 기능** (surface/tab/workspace 생성·닫기·조회, 클립보드, 알림, 파일 열기, 메타데이터 set/get 등) 은 **IPC API 와 CLI 양쪽으로 동작 가능** 해야 한다. GUI 에서만 가능한 에이전트 기능이 있으면 안 된다.
-
----
-
-## 3. 포커스 독립성
-
-원칙 1 의 ① 을 API 차원에서 구체화한 규칙. CLI/IPC 명령의 *동작* 이 사용자의 포커스 상태에 따라 변하지 않게 한다.
-
-- **모든 명령은 대상 리소스를 ID 로 직접 지정** 한다 (`--surface ID`, `--pane ID`, `--tab ID` 등).
-- **list 명령은 전체 워크스페이스를 순회** 한다. 활성 워크스페이스만 반환하면 안 된다.
-- **조회(read) 목적으로 활성 상태 정보를 제공하는 것은 허용** 한다 (예: `focused: true` 필드, `tree` 의 `active` 표시).
-- **활성 상태에 "의존" 하는 동작은 금지** 한다. "활성 탭을 닫는다", "포커스된 pane 에 탭을 추가한다" 같은 동작은 ID 지정 없이는 동작하면 안 된다.
-- 포커스된 대상의 ID 를 *기본값* 으로 제공하는 것은 편의 기능일 뿐, 포커스가 명령의 동작을 결정하는 것과는 다르다.
-- **release 빌드에는 포커스를 변경하는 CLI/IPC 가 존재하지 않는다.** (debug 빌드에서는 1 의 ② 정책에 따라 격리된 형태로만 존재 가능.)
-
-상세: [`docs/design/policies/focus.md`](docs/design/policies/focus.md), [`docs/design/flows/split-command.md`](docs/design/flows/split-command.md).
-
----
-
-## 4. 크로스 플랫폼
-
-Tasty 는 **Windows, macOS, Linux 를 모두 지원하는 크로스 플랫폼 앱** 이다. 모든 코드 변경 시 이 점을 염두에 둔다.
-
-- 플랫폼 특정 코드는 `#[cfg(windows)]`, `#[cfg(target_os = "macos")]`, `#[cfg(not(windows))]` 등으로 분리한다.
-- 파일 경로, 쉘 감지, 프로세스 관리 등 OS 마다 다른 동작은 플랫폼별 분기를 작성한다.
-- 새 기능 추가 시 "이게 Windows / macOS / Linux 에서 모두 동작하는가?" 를 자문한다.
-- 특정 플랫폼에서만 동작하는 기능을 추가할 경우, 다른 플랫폼에서 컴파일 에러가 나지 않도록 조건부 컴파일을 적용한다.
+1. **사용자 행동 ↔ 에이전트 행동 분리** — 에이전트 행동(IPC/CLI)의 부수효과가 사용자 상태(포커스 / 닫은 항목 히스토리 / 선택·스크롤·커서)에 닿지 않는다. 사용자 입력 재현(키/마우스 주입, popup 강제 open/close, 메뉴 강제 invoke, 포커스 전환)은 release 에 없고 `#[cfg(debug_assertions)]` debug 격리로만 존재한다. debug 코드는 `debug/` 디렉토리로 모은다. 판단 기준: *에이전트가 자기 작업에 필요한가(→ release) vs 사용자 조작을 재현하는가(→ debug)*. 상세 [`docs/dev-guide/debug-ipc.md`](docs/dev-guide/debug-ipc.md).
+2. **AI 에이전트 조작 가능성** — 에이전트 기능(surface/tab/workspace 생성·닫기·조회, 클립보드, 알림, 파일 열기, 메타데이터 등)은 **IPC + CLI 양면** 으로 동작해야 한다. GUI 전용 에이전트 기능 금지. 부족하면 추가한다.
+3. **포커스 독립성** — 모든 명령은 대상을 ID 로 직접 지정, list 는 전 워크스페이스 순회, 활성 상태 의존 동작 금지, release 엔 포커스 변경 API 없음. 상세 [`docs/design/policies/focus.md`](docs/design/policies/focus.md).
+4. **크로스 플랫폼** — Windows/macOS/Linux 모두 1급. 플랫폼 분기는 `#[cfg(...)]`, 한 OS 전용 기능도 다른 OS 컴파일이 깨지지 않게.
 
 # 작업 규칙
 
 ## 시작 전 (필수)
 
-1. [`docs/concepts/ubiquitous-language.md`](docs/concepts/ubiquitous-language.md) 먼저 읽기 — 용어를 잘못 쓰면 코드/문서 일관성이 깨진다. 특히 Window / Pane / Tab / Surface 계층, 상위/하위 레이아웃 구분, Modal / Popup / Toast 구분.
-2. 해당 작업 영역의 가이드 문서 확인 — [`docs/index.md`](docs/index.md) 에서 전체 인덱스 확인.
+1. [`docs/identity.md`](docs/identity.md) 먼저 읽기 — Tasty 정체성과 불가침 원칙. 모든 설계의 축.
+2. [`docs/concepts/ubiquitous-language.md`](docs/concepts/ubiquitous-language.md) — 용어를 잘못 쓰면 코드/문서 일관성이 깨진다. 특히 Window / Pane / Tab / Surface 계층, 상위/하위 레이아웃 구분, Modal / Popup / Toast 구분.
+3. 해당 작업 영역의 가이드 문서 확인 — [`docs/index.md`](docs/index.md) 에서 전체 인덱스 확인.
 
 ## 임시 파일·계획 위치
 
