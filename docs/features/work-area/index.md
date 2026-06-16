@@ -94,7 +94,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
   - 닫기: `tasty close tab|pane|surface --… <ID>`.
   - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../identity.md)).
 - **사용자 트리거**: 단축키/마우스로 탭 추가·전환·이동, Pane/Surface 분할, 닫기. (단축키는 `KeybindingSettings` — 하드코딩 금지.)
-- **원격 / 점유**: 원격 접속 사용자는 surface/workspace 를 attach 로 **점유**해 조작 — 점유 중엔 로컬·AI 가 readonly. 규칙은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
+- **원격 / 점유**: **Workspace 와 Surface 는 점유(attach) 대상**이다. 원격 접속 사용자가 attach 로 배타 **점유**하면 그 대상은 점유자만 조작하고 로컬·AI 는 readonly 가 된다. 점유된 surface 는 트리에서 `attached` marker 로 표시되고, 점유된 워크스페이스는 mirror 면 사이드바 하늘색 dot 으로 구분된다. 동작은 [remote-attach](../remote-attach/index.md), 개념은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
 
 ## 비-목표 (Out of scope)
 
@@ -102,7 +102,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 - **탭 스트립의 시각/드래그 동작** — `features/workspace-tabs/` *(재작성 예정)*. 여기선 Pane 의 `tabs`/`active_tab` *도메인* 만.
 - **상태바** — `features/workspace-status-bar/` *(재작성 예정)*.
 - **터미널 PTY/그리드/스크롤백 내부** — surface 는 leaf marker 일 뿐, 터미널 데이터는 `TerminalStore`.
-- **attach/detach 실행 메커니즘** — surface 는 `attached` marker 만; 실행은 원격 attach 기능 *(재작성 예정)*.
+- **attach/detach 실행 메커니즘** — surface 는 `attached` marker 만; 점유 동작·실행은 [remote-attach](../remote-attach/index.md), 메커니즘은 [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
 
 ## Acceptance Criteria
 

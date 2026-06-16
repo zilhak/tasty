@@ -28,7 +28,7 @@ GUI · CLI · IPC 가 **동일 저장 로직**(`SshProfiles`)을 공유 — 어�
 
 - **사용자(GUI)**: 도구 메뉴 `SSH profiles` → 창, 프로필 CRUD.
 - **AI Agent(CLI)**: `tasty tool ssh …`.
-- **연결**: 프로필은 *원격 attach* 가 소비 → `features/remote-attach/`(점유/원격) *(재작성 예정)*, 메커니즘은 `dev-guide/attach-behavior` *(재작성 예정)*.
+- **연결**: 프로필은 *원격 attach* 가 소비 → [`features/remote-attach/`](../remote-attach/index.md)(점유/원격), 메커니즘은 [`dev-guide/attach-behavior`](../../dev-guide/attach-behavior.md).
 
 ## 비-목표
 

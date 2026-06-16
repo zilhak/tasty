@@ -19,7 +19,7 @@
 |----------|------|------|
 | 근거 (ADR) | [adr/index.md](adr/index.md) | ✅ 보존 (불변) |
 | 기능 (기획·화면) | [features/index.md](features/index.md) | 🚧 폴더 모델 재작성 중 (템플릿 준비됨, 카탈로그 비어있음) |
-| 개발 가이드 | [dev-guide/independent-verification.md](dev-guide/independent-verification.md) | 🚧 재작성 중 (핵심 원칙 "독립 검증" 만 우선 작성됨) |
+| 개발 가이드 | [dev-guide/independent-verification.md](dev-guide/independent-verification.md) · [attach-behavior.md](dev-guide/attach-behavior.md) | 🚧 재작성 중 (독립 검증 + attach 메커니즘 작성됨) |
 
 ## 재작성 대기 (docs-old)
 

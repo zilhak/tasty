@@ -17,7 +17,7 @@ SSH 너머에서 attach 로 접속하는 사람. **행동 분류는 로컬 사�
 - 원격 사용자는 무언가를 하기 전에 **반드시 surface 또는 workspace 를 점유(배타 claim) 선언** 해야 하고, **점유한 대상 안에서만** 동작할 수 있다. 원격 사용자가 건드릴 수 있는 것은 *점유된 터미널/workspace* 뿐이다.
 - AI Agent 는 점유 없이 ID 로 임의 대상을 조작하지만, 원격 사용자는 **점유라는 관문을 반드시 통과** 한다.
 
-tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach/remote/mirror 메커니즘은 [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) (재작성 대기).
+tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach 동작은 [`../features/remote-attach/`](../features/remote-attach/index.md), 메커니즘은 [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md).
 
 ## 점유 (Occupation) 모델
 
