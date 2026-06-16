@@ -8,4 +8,6 @@
 
 ## 카탈로그
 
-_(아직 없음)_
+| 기능 | 주체 | 화면 |
+|------|------|------|
+| [listening-ports](listening-ports/index.md) — 리스닝 포트 뷰어 | 로컬 사용자 | [팝업](listening-ports/screens/listening-ports.md) |
