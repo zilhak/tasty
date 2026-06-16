@@ -41,7 +41,7 @@ transport 차원의 노출 (같은 머신의 다른 OS user 가 IPC 로 secret �
 
 ## References
 
-- [`design/systems/memory.md`](../design/systems/memory.md) — "왜 암호화를 하지 않는가", "보안·신뢰 모델" 위협 모델, "미래 경로 — sandbox 가 도입되면"
+- `design/systems/memory.md` *(재작성 예정)* — "왜 암호화를 하지 않는가", "보안·신뢰 모델" 위협 모델, "미래 경로 — sandbox 가 도입되면"
 - [`dev-guide/plugin-sensitive-data.md`](../dev-guide/plugin-sensitive-data.md) — plugin 개발자용 가이드 + 보호 수준 표 + keyring 권고
 - 코드: `crates/tasty-memory/src/lib.rs:17`, `migrations.rs:46`, 회귀 테스트 `tests.rs:525 secret_at_rest_is_plaintext()`
 - 커밋: AES-GCM 도입 `e562fd53` → 철회 `34c01afe`
