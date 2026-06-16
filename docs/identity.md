@@ -58,7 +58,7 @@ tasty 의 기반 가정(로컬에서 한 명의 사용자 + 여러 AI Agent 동�
 - 모든 명령은 대상을 **ID 로 직접 지정** 한다 (포커스에 의존하지 않음). list 는 **전 워크스페이스 순회**.
 - 활성 상태 *조회* 는 허용(`focused` 필드 등), 활성 상태에 *의존* 하는 동작은 금지.
 - 원격 접속 사용자는 대상을 **점유(attach)** 할 뿐 로컬 사용자의 포커스/시점을 옮기지 않는다 (점유는 로컬 사용자가 끊을 수 있다).
-- 상세 `design/policies/focus.md` *재작성 예정*.
+- 상세 [`design/policies/focus.md`](design/policies/focus.md).
 
 ### 2.4 크로스 플랫폼
 
@@ -69,4 +69,4 @@ tasty 의 기반 가정(로컬에서 한 명의 사용자 + 여러 AI Agent 동�
 - [`documentation-model.md`](documentation-model.md) — 이 정체성(특히 headless 동작-우선)에서 도출된 문서 구조
 - [`adr/0006-docs-taxonomy-behavior-first.md`](adr/0006-docs-taxonomy-behavior-first.md) — 문서 분류체계 결정
 - 용어: [`concepts/actors.md`](concepts/actors.md)(주체) · [`concepts/hierarchy.md`](concepts/hierarchy.md)(구조 계층) · [`concepts/plugins.md`](concepts/plugins.md). 통합 용어집 `concepts/ubiquitous-language.md` 은 *재작성 예정*
-- `design/policies/focus.md` *재작성 예정* — 포커스 독립성 운영 상세
+- [`design/policies/focus.md`](design/policies/focus.md) — 포커스 독립성 운영 상세

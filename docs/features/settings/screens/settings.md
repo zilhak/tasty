@@ -29,8 +29,8 @@
 - **L1 탭바** (상단): General / Appearance / Keybindings / Plugins.
 - **L2 섹션 목록** (좌측): 현재 L1 의 하위 섹션 + **필터 검색**. (L1 전환 시 필터 클리어.)
 - **콘텐츠** (중앙): 선택된 L2 섹션의 설정 항목. 도메인별 내용은 해당 기능 문서로 위임 (연결 개념):
-  - Keybindings → `features/keybindings/` *(재작성 예정)*
-  - Theme(Appearance) → `design/systems/theme` *(재작성 예정)*
+  - Keybindings → `features/keybindings/` *(재작성 예정)* / [`design/policies/key-mapping`](../../../design/policies/key-mapping.md)
+  - Theme(Appearance) → [`design/systems/theme`](../../../design/systems/theme.md)
   - Clipboard / Notifications / Updates / FileHandler → 각 feature *(재작성 예정)*
   - Plugins → [`features/plugin-system/`](../../plugin-system/index.md)
 - **Save / Cancel** (하단): draft 커밋 / 폐기.

@@ -74,6 +74,6 @@ release IPC/CLI 에 노출하지 않는다.
 ## References
 
 - [features/window-chrome](../features/window-chrome/index.md) — CSD 타이틀바 현재 동작
-- `design/systems/theme.md` — CSD 타이틀바 토큰 *(재작성 예정)*
-- `design/policies/key-mapping.md` · `design/policies/focus.md` *(재작성 예정)*
+- [`design/systems/theme.md`](../design/systems/theme.md) — CSD 타이틀바 토큰
+- [`design/policies/key-mapping.md`](../design/policies/key-mapping.md) · [`design/policies/focus.md`](../design/policies/focus.md)
 - 구현: `src/platform/window_chrome.rs`, `src/adapters/ui/titlebar/`
