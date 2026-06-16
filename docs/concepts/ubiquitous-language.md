@@ -31,6 +31,12 @@ tasty 는 자체 원격 프로토콜이 없고 SSH 에 위임한다 — attach/r
 - 그동안 **로컬 사용자와 AI Agent 는 그 대상에 대해 readonly** — 무슨 일이 일어나는지 *볼 수만* 있다.
 - **로컬 사용자만** 점유를 명시적으로 끊을 수 있다(force-detach). 끊으면 대상은 다시 **일반 surface/workspace 로 복귀** 한다.
 
+다중성:
+
+- **원격 사용자는 여럿이 동시에 접속** 할 수 있다.
+- **한 원격 사용자가 여러 surface/workspace 를 동시에 점유** 할 수 있다.
+- 단 **한 대상(surface/workspace)은 한 번에 한 주체만 점유** 한다 (배타). 따라서 점유는 *원격 사용자 → 대상* 의 1:N 이지만, *대상 → 점유자* 는 1:1 이다.
+
 (attach lock 의 정확한 동작은 아래 [Attach](#attach--remote--mirror) / attach-behavior.md.)
 
 ### 정리
