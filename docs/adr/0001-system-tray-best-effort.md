@@ -49,6 +49,6 @@ Linux 는 데스크톱 환경(DE)별로 트레이 가용성이 갈린다 — KDE
 ## References
 
 - 코드: `src/platform/system_tray.rs` (Windows/macOS/Linux 단일 경로, `tray-icon` 0.22), 배선 `src/app/event_handler.rs`(생성·백그라운드·폴링), `src/app/event.rs`(`TrayShowWindow`)
-- `design/policies/system-tray` — OS 별 best-effort 동작·DE 매트릭스·폴백 동선 *(재작성 예정)*
+- [`design/policies/system-tray`](../design/policies/system-tray.md) — OS 별 best-effort 동작·DE 매트릭스·폴백 동선 (운영 상세)
 - 관련: ADR-0003 (CSD) — 같은 "OS 별 네이티브 표면을 어디까지 직접 다루나" 사고의 연장
 </content>

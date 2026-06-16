@@ -21,6 +21,7 @@
 | 근거 (ADR) | [adr/index.md](adr/index.md) | ✅ 보존 (불변) |
 | 기능 (기획·화면) | [features/index.md](features/index.md) | 🚧 폴더 모델 재작성 중 (템플릿 준비됨, 카탈로그 비어있음) |
 | 번들 플러그인 | [plugins/index.md](plugins/index.md) | 🚧 재작성 중 (8종 등재) |
+| 설계 (design) | [design/policies/system-tray.md](design/policies/system-tray.md) | 🚧 재작성 중 (system-tray 정책 작성됨) |
 | 개발 가이드 | [independent-verification](dev-guide/independent-verification.md) · [attach-behavior](dev-guide/attach-behavior.md) · [plugin-development](dev-guide/plugin-development.md) · [plugin-permissions](dev-guide/plugin-permissions.md) · [plugin-sensitive-data](dev-guide/plugin-sensitive-data.md) | 🚧 재작성 중 (독립검증·attach·플러그인 제작/권한 작성됨) |
 
 ## 재작성 대기 (docs-old)
