@@ -69,7 +69,6 @@ drain 하므로 최대 256KB(sync_channel(32)×8KB)의 escape sequence 를 메�
 
 ## References
 
-- `docs/dev-guide/build.md`, `docs/concepts/ubiquitous-language.md` (Surface 계층)
-- TODO: `.claude-workspace/todo-conductor/P2-vte-parse-on-main-thread.md`
+- `docs/dev-guide/build.md`, `docs/concepts/hierarchy.md` (Surface 계층)
 - 영향 파일: `crates/tasty-terminal/src/{lib,io,resize,accessors}.rs`,
   `src/gfx/renderer.rs`, selection/IME/mouse/IPC 의 `surface()` 접근자

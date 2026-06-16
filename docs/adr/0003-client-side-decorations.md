@@ -77,4 +77,3 @@ release IPC/CLI 에 노출하지 않는다.
 - `design/systems/theme.md` — CSD 타이틀바 토큰 *(재작성 예정)*
 - `design/policies/key-mapping.md` · `design/policies/focus.md` *(재작성 예정)*
 - 구현: `src/platform/window_chrome.rs`, `src/adapters/ui/titlebar/`
-- 디자인 보강 요청: `.claude-workspace/design-request/titlebar-{windows,linux}-*.md`
