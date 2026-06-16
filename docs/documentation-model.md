@@ -83,36 +83,11 @@ docs/features/<feature>/
 
 사이드바 문서는 "도구 메뉴에 무엇이 들었는지" 를 적지 않는다 — 버튼 설명 옆에 링크만 둔다.
 
-## 5. design ↔ code 연계 (claude design 협업 채널)
+## 5. design ↔ code 연계 (claude design 협업)
 
-디자인은 claude design 산출물(`design-system/`)이며 claude code 는 이를 **직접 수정하지 않는다.** 두 쪽은 두 개의 휘발성 채널로 연계한다.
+디자인은 claude design 산출물(`design-system/`)이며 claude code 는 **직접 수정하지 않는다.** 시각 진실은 `design-system/` 이 소유하고 docs 는 **링크만** 한다(재서술 금지).
 
-```
-요청서 (outbox)    claude code ──► design    반영되면 삭제
-changelog (inbox)  design ──► claude code    흡수되면 폐기
-```
-
-| 채널 | 위치 | git | 수명 |
-|------|------|-----|------|
-| 요청서 outbox | `.claude-workspace/design-request/` | ❌ ignore | 디자인 반영 후 삭제 |
-| changelog inbox | `design-system/changelog/` | ❌ ignore | docs 흡수 후 폐기 |
-
-### changelog 흡수 = 라우팅 (복붙 아님)
-
-changelog 엔트리 한 건은 성격이 다른 조각이 섞여 있으므로 조각별로 다른 주인에게 보낸다:
-
-| changelog 조각 | 흡수처 |
-|----------------|--------|
-| What (동작/요소 변경) | `docs/features/<f>/index.md` 또는 `screens/<s>.md` |
-| Tokens / .jsx / 시각 | ❌ 흡수 안 함 — `design-system/` 이 주인 (링크만) |
-| Rationale (왜) | 진짜 결정이면 `docs/adr/`, 사소하면 본문 한 줄 |
-| For-implementing-side (flag / OS 분기) | `docs/design/flows/` 또는 본문 |
-
-### watermark = 커밋이 장부 (별도 상태 파일 없음)
-
-- **디자인 회수**: `chore(design): sync design-system @ YYYY-MM-DD (<topics>)` — 이 날짜가 "어디까지 받았나" 의 watermark.
-- **구현 커밋**: 본문에 `Design: <흡수된 docs 경로 또는 changelog topic>` 줄.
-- **미반영 분** = docs 에 아직 흡수되지 않은 changelog 엔트리. docs 가 곧 소비 상태의 진실이다.
+디자인을 바꿔야 하면 소스를 먼저 고치지 말고 **claude design 에 변경을 요청**하고, **변경된 디자인을 받아 재적용**한다. 받은 변경 내용은 아래 §6 배치 규칙대로 docs 에 흡수한다(동작→features, 시각→design-system 링크, 근거→ADR). 요청 제출·회수의 구체 워크플로는 **로컬 전용**이라 `.claude/CLAUDE.md` 가 정의한다 — docs 에는 두지 않는다.
 
 ## 6. 작성 규칙 요약
 
@@ -121,7 +96,7 @@ changelog 엔트리 한 건은 성격이 다른 조각이 섞여 있으므로 �
 - 시각 수치/토큰은 적지 말고 `design-system/` 을 링크.
 - 결정의 근거는 본문에 길게 쓰지 말고 ADR 로 박고 링크.
 - 합성 화면은 언급/링크로만 잇는다.
-- 디자인 변경이 필요하면 `.claude-workspace/design-request/` 에 요청서(changelog 포함) 작성 → 사용자가 claude design 에 제출. 상세 워크플로는 `.claude/CLAUDE.md`.
+- 디자인 변경이 필요하면 소스를 먼저 고치지 말고 claude design 에 변경을 요청하고, 변경된 디자인을 받아 재적용한다 (구체 워크플로는 로컬 전용 — `.claude/CLAUDE.md`).
 
 ## 관련
 
