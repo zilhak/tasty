@@ -25,7 +25,7 @@ CLAUDE.md 정책의 운영 형태:
    ### Fixed
    - `fix(...)`: ...
    ```
-3. schema 변경이 있었다면 `crates/tasty-plugin-protocol/CHANGELOG.md` 도 동일 처리. break/deprecation 분류는 `ipc-stability.md` *(재작성 예정)*.
+3. schema 변경이 있었다면 `crates/tasty-plugin-protocol/CHANGELOG.md` 도 동일 처리. break/deprecation 분류는 [api-conventions](api-conventions.md) "안정성 정책".
 
 ### 2. Plugin 매니페스트 서명
 
@@ -35,7 +35,7 @@ CLAUDE.md 정책의 운영 형태:
 ./scripts/sign-bundle.sh --key secrets/dev-private.pem --all-builtins
 ```
 
-생성/갱신된 `*.toml.sig`(현재 8개)를 bump 커밋에 포함하거나 직전 커밋으로 분리. repo 의 `.sig` 는 *로컬 release 빌드·dev 검증용* — CI 정식 release 는 `TASTY_RELEASE_SIGN_KEY` secret 으로 **재서명**하므로 repo 와 다른 키로 덮어쓰는 게 정상. 알고리즘·키 보관은 `plugin-signing.md` *(재작성 예정)*.
+생성/갱신된 `*.toml.sig`(현재 8개)를 bump 커밋에 포함하거나 직전 커밋으로 분리. repo 의 `.sig` 는 *로컬 release 빌드·dev 검증용* — CI 정식 release 는 `TASTY_RELEASE_SIGN_KEY` secret 으로 **재서명**하므로 repo 와 다른 키로 덮어쓰는 게 정상. 알고리즘·키 보관은 [plugin-packaging](plugin-packaging.md).
 
 ### 3. 커밋 — body 가 곧 릴리스 노트
 
@@ -79,7 +79,7 @@ GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
 
 ## API 안정성 가드
 
-0.x 라인은 *추가만 가능, 제거 금지* 원칙으로 외부 표면 회귀를 막는다 (메서드 baseline, CHANGELOG break guard 등 `cargo test --workspace` 강제). 분류·freeze·major bump 추가 절차는 `ipc-stability.md` *(재작성 예정)*.
+0.x 라인은 *추가만 가능, 제거 금지* 원칙으로 외부 표면 회귀를 막는다 (메서드 baseline, CHANGELOG break guard 등 `cargo test --workspace` 강제). 분류·major bump 절차는 [api-conventions](api-conventions.md).
 
 ## 관련
 
