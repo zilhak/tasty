@@ -693,6 +693,48 @@ fn detached_input_forwards_to_sink() {
 }
 
 #[test]
+fn da2_query_emits_secondary_attributes_response() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.feed_bytes(b"\x1b[>c"); // DA2
+    let resp = rx.try_recv().expect("no DA2 response");
+    assert!(
+        resp.starts_with(b"\x1b[>") && resp.ends_with(b"c"),
+        "unexpected DA2 response: {resp:?}"
+    );
+}
+
+#[test]
+fn xtversion_query_emits_name_and_version_response() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.feed_bytes(b"\x1b[>0q"); // XTVERSION
+    let resp = rx.try_recv().expect("no XTVERSION response");
+    assert!(
+        resp.starts_with(b"\x1bP") && resp.ends_with(b"\x1b\\"),
+        "XTVERSION must be a DCS string terminated by ST: {resp:?}"
+    );
+    assert!(
+        resp.windows(5).any(|w| w == b"tasty"),
+        "XTVERSION must contain the terminal name: {resp:?}"
+    );
+}
+
+#[test]
+fn da1_query_still_emits_primary_attributes_response() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.feed_bytes(b"\x1b[c"); // DA1 — must be unchanged
+    assert_eq!(rx.try_recv().expect("no DA1 response"), b"\x1b[?1;2c".to_vec());
+}
+
+#[test]
 fn detached_input_without_sink_is_dropped() {
     // No sink wired: must not panic or hang, just drop.
     let mut t = Terminal::new_detached(40, 12);

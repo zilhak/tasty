@@ -149,6 +149,30 @@ impl TerminalState {
             Device::RequestPrimaryDeviceAttributes => {
                 self.send_terminal_response("\x1b[?1;2c");
             }
+            // DA2 (CSI > c): secondary device attributes — `CSI > Pp ; Pv ; Pc c`.
+            // Pp = terminal type (0, xterm-compatible class), Pv = version code,
+            // Pc = ROM cartridge (0). Apps identify the terminal by name via
+            // XTVERSION; DA2 just needs to answer with a recognizable triple.
+            Device::RequestSecondaryDeviceAttributes => {
+                self.send_terminal_response("\x1b[>0;10;0c");
+            }
+            // XTVERSION (CSI > q): terminal name and version, reported as a DCS
+            // string `DCS > | tasty(<version>) ST`. The name "tasty" is the
+            // identifier modern apps (neovim, tmux) key on. The version is the
+            // tasty-terminal crate version (policy: identification, not exact
+            // build); ST (ESC \) terminator per xterm convention.
+            Device::RequestTerminalNameAndVersion => {
+                self.send_terminal_response(concat!(
+                    "\x1bP>|tasty(",
+                    env!("CARGO_PKG_VERSION"),
+                    ")\x1b\\"
+                ));
+            }
+            // DA3 (CSI = c): tertiary device attributes — `DCS ! | <unit id> ST`.
+            // Unit id is a fixed hex string (very rarely queried).
+            Device::RequestTertiaryDeviceAttributes => {
+                self.send_terminal_response("\x1bP!|54415354\x1b\\");
+            }
             _ => {}
         }
     }
