@@ -42,6 +42,10 @@ impl TerminalState {
                     vec![Change::ClearScreen(ColorAttribute::Default)]
                 }
                 EraseInDisplay::EraseScrollback => {
+                    // ED3: erase scrollback history only — the visible screen is
+                    // preserved (no Change emitted). `clear` 같은 명령이 보내는
+                    // `\x1b[3J\x1b[2J` 류에서 ED2 가 화면을, ED3 가 스크롤백을 지운다.
+                    self.clear_scrollback();
                     vec![]
                 }
             },

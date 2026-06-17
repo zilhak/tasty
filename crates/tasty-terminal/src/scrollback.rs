@@ -136,6 +136,18 @@ impl Scrollback {
         }
     }
 
+    /// Discard all scrollback (memory + disk) and snap the viewport back to
+    /// live. Used by ED3 (`CSI 3J`) erase-scrollback.
+    pub fn clear(&mut self) {
+        self.lines.clear();
+        self.scroll_offset = 0;
+        if let Some(ds) = &mut self.disk
+            && let Err(e) = ds.clear()
+        {
+            tracing::warn!("disk scrollback clear failed: {e}");
+        }
+    }
+
     /// Flush excess scrollback lines to disk (if disk swap is enabled).
     pub(crate) fn flush_to_disk(&mut self) {
         while self.lines.len() > self.limit {
@@ -193,6 +205,18 @@ impl TerminalState {
     /// Number of lines in the scrollback buffer (memory + disk).
     pub fn scrollback_len(&self) -> usize {
         self.scrollback.total_len()
+    }
+
+    /// Erase all scrollback history (ED3 / `CSI 3J`). Clears the memory + disk
+    /// buffers and snaps the user viewport to live. The visible screen and its
+    /// `saved_line_tails` (per-row reflow data) are left untouched — ED3 only
+    /// touches scrollback. `restorable_scrollback_count` is reset because the
+    /// resize "restore debt" lines it counted have just been discarded; leaving
+    /// it set would let a later rows-grow wrongly pull fresh scrollback content
+    /// back onto the screen.
+    pub(crate) fn clear_scrollback(&mut self) {
+        self.scrollback.clear();
+        self.restorable_scrollback_count = 0;
     }
 
     /// Get a specific scrollback line by index (0 = oldest, memory only).

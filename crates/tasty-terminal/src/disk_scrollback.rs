@@ -139,6 +139,19 @@ impl DiskScrollback {
     pub fn line_count(&self) -> usize {
         self.disk_line_count
     }
+
+    /// Discard all on-disk scrollback, truncating the file back to just the
+    /// header. Used by ED3 (`CSI 3J`) erase-scrollback.
+    pub fn clear(&mut self) -> std::io::Result<()> {
+        let mut f = File::create(&self.file_path)?;
+        f.write_all(FILE_MAGIC)?;
+        f.write_all(&FORMAT_VERSION.to_le_bytes())?;
+        f.flush()?;
+        self.disk_line_count = 0;
+        self.line_offsets.clear();
+        self.file_size = HEADER_LEN;
+        Ok(())
+    }
 }
 
 impl Drop for DiskScrollback {
