@@ -19,21 +19,23 @@ tasty 화면 구조는 객체 계층 하나와, 그 위의 **두 레벨 레이�
 | `SettingsView` / `PluginsView` / `QuitView` | `ModalView` | 모달 윈도우 — 전역 1개, 활성 시 입력 차단 |
 | `PresetView` | `EditorView` | 에디터 윈도우 — modeless |
 
-(**Engine** = 진입점 + 서버. IPC 포트 소유, 모든 윈도우 생명주기 관리. headless 에선 View 없이 Engine 만 동작.)
+(**Engine** = 진입점 + 서버. IPC 포트 소유, 모든 윈도우 생명주기 관리. **headless 에선 View(GUI) 없이 Engine + `CoreState` 만 동작** — 아래 구조 계층은 그 `CoreState` 의 도메인이라 GUI 없이도 구성된다.)
 
-## MainView 의 내부 구조
+## 구조 계층 = CoreState 도메인 (GUI 없이도 구성)
 
-`MainView`(**View 의 일종**) 안의 containment 계층 — 이게 "구조 계층" 의 본체다:
+containment 계층 — 이게 "구조 계층" 의 본체다. 이것은 **`CoreState` 의 도메인 트리**이며 **GUI(View) 없이도 구성·동작한다.** headless 에선 부팅이 `CoreState` 를 직접 만들어 Workspace/Pane/Tab/Surface 와 PTY 가 살아있고, **`MainView` 는 GUI 가 있을 때 이 `CoreState` 를 호스팅·투영하는 셸**일 뿐이다 (→ [identity](../identity.md) headless 동작-우선; 도메인 동작은 [`features/work-area/`](../features/work-area/index.md)).
 
 ```
-MainView  (View 의 일종)
+CoreState   도메인 트리 — headless 에서도 구성·동작
 └── Workspace   최상위 컨테이너. 여러 개, 사이드바에서 전환.
     └── Pane    독립 탭 바. **상위 레이아웃**이 위치 결정 (탭 무관 고정).
         └── Tab        **하위 레이아웃**(Surface 배치)을 가짐.
             └── Surface   최하위. 타입(Terminal/Markdown/…)을 가짐.
 ```
 
-- **Workspace** — MainView 의 최상위 컨테이너. 한 MainView 가 여러 워크스페이스를 갖고 사이드바에서 전환한다.
+GUI 에서는 `MainView`(View) 가 이 `CoreState` 를 호스팅·렌더한다. 윈도우가 여럿이면 각 MainView 가 자기 `CoreState` 를 가진다. headless 엔 MainView 없이 `CoreState` 만 존재한다.
+
+- **Workspace** — 도메인의 최상위 컨테이너. (GUI 에선) 한 MainView 가 여러 워크스페이스를 갖고 사이드바에서 전환한다.
 - **Pane** — 독립적인 탭 바를 가진 화면 영역. 위치는 **상위 레이아웃**으로 결정되고 탭 전환과 무관하게 고정된다. tmux/iTerm2 에 대응 개념이 없는 tasty 고유 설계.
 - **Tab** — Pane 안의 탭 하나. 내부에 Surface 들의 **하위 레이아웃**을 가진다. 탭 전환 시 하위 레이아웃 전체가 함께 전환된다.
 - **Surface** — Tab 안의 최하위 컨테이너. **타입**을 가지며(아래), 고유 `surface_id` 를 갖는다. 닫기/포커스/리스트 동작은 타입과 무관하게 동일하다.
