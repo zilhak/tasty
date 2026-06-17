@@ -44,7 +44,7 @@
 ## 비-목표
 
 - 플러그인 *제작*(SDK·매니페스트·권한 모델·서명) — dev-guide.
-- 마켓플레이스(registry/install-by-id) — 현재 미도입(보류, evaluations 참조).
+- 마켓플레이스(registry/install-by-id) — 현재 미도입(보류, [ADR-0010](../../adr/0010-plugin-marketplace-deferred.md)).
 - 권한 *변경* UI — 창은 read-only. (권한은 설치 시 grant.)
 
 ## Acceptance Criteria

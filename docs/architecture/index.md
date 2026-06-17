@@ -105,4 +105,4 @@ ports-and-adapters 배치:
 | [ui-widgets-crate](ui-widgets-crate.md) | `tasty-ui-widgets` — 본체·갤러리 공유 UI primitive |
 | [invariants/](invariants/index.md) | 깨지면 안 되는 시스템 약속 (surface-cwd 등) |
 
-결정의 *근거/대안/재검토 조건* 은 [ADR](../adr/index.md), 시점성 평가/POC 는 evaluations.
+결정의 *근거/대안/재검토 조건*(보류 결정 포함)은 [ADR](../adr/index.md).

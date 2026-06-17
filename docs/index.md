@@ -33,4 +33,4 @@
 
 아래는 [`docs-old/`](../docs-old/) 에서 재작성 대기 중 — 새 모델로 옮겨오며 검토·교정한다:
 
-`ai-verification/`(나머지) · `evaluations/` · `installation.md`
+`ai-verification/`(나머지) · `installation.md`

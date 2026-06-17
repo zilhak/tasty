@@ -18,3 +18,5 @@
 | 0006 | [문서 분류체계 — 동작 우선(behavior-first), 화면 종속](0006-docs-taxonomy-behavior-first.md) | Accepted | 2026-06-16 | docs, taxonomy, headless, screen-spec, design-system, behavior-first |
 | 0007 | [attach 는 원격을 대상으로 한다 (로컬 self-attach 는 debug 격리)](0007-attach-targets-remote.md) | Accepted | 2026-06-17 | attach, remote, debug-isolation, cli, user-agent-separation, security |
 | 0008 | [인라인 그래픽 프로토콜(Sixel / Kitty / iTerm)은 보류](0008-inline-graphics-protocols-deferred.md) | Deferred | 2026-06-17 | terminal, graphics, sixel, kitty, image, vte, scope, deferred |
+| 0009 | [Plugin sandbox 보류 — OS-level opt-in 우선](0009-plugin-sandbox-deferred.md) | Deferred | 2026-06-17 | plugin, sandbox, security, wasm, seccomp, trust-boundary, deferred |
+| 0010 | [Plugin marketplace 보류 — 로컬 path install 유지](0010-plugin-marketplace-deferred.md) | Deferred | 2026-06-17 | plugin, marketplace, registry, trust, distribution, deferred |

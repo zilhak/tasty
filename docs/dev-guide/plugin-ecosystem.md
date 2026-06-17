@@ -4,7 +4,7 @@ plugin 시스템의 작성 형식·배포·신뢰·호환성·hot reload 정책�
 
 ## 정책 (현행)
 
-각 결정엔 사건 기반 재검토 trigger 가 있다. 수량 지표는 보조 신호로만 쓴다. 깊은 결정 근거·대안은 evaluations(plugin-sandbox / plugin-marketplace).
+각 결정엔 사건 기반 재검토 trigger 가 있다. 수량 지표는 보조 신호로만 쓴다. 깊은 결정 근거·대안은 [ADR-0009](../adr/0009-plugin-sandbox-deferred.md)(sandbox) · [ADR-0010](../adr/0010-plugin-marketplace-deferred.md)(marketplace).
 
 | 영역 | 결정 | 재검토 trigger |
 |------|------|---------------|
