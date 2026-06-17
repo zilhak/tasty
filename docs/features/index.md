@@ -38,3 +38,9 @@
 | [telemetry](telemetry/index.md) — 텔레메트리 (관측/비용/cap) | AI Agent · 로컬 사용자 | 없음 |
 | [terminal-output](terminal-output/index.md) — 출력 구조화 (parse/commands/observe) | AI Agent | 없음 |
 | [capability-elevation](capability-elevation/index.md) — 권한 상승 & 감사 | AI Agent · 로컬 사용자 | elevation popup |
+| [hooks](hooks/index.md) — 훅 (surface/global, 자동 실행) | 로컬 사용자 · AI Agent | 없음 |
+| [closed-tab-restore](closed-tab-restore/index.md) — 닫힌 항목 복원 (`Ctrl+Shift+T`) | 로컬 사용자 | 없음 |
+| [convert-surface](convert-surface/index.md) — Surface 타입 전환 (`Alt+'`) | 로컬 사용자 · AI Agent | convert popup |
+| [layout-persistence](layout-persistence/index.md) — 레이아웃 영속화 (layout.json·scrollback) | 로컬 사용자 | 없음 |
+| [layout-presets](layout-presets/index.md) — 레이아웃 프리셋 (`preset.*`) | 로컬 사용자 · AI Agent | PresetView |
+| [accessibility](accessibility/index.md) — 접근성 (reduced motion 등) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
