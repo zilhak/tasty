@@ -1,5 +1,7 @@
 use termwiz::color::ColorAttribute;
-use termwiz::escape::csi::{DecPrivateMode, DecPrivateModeCode, Mode as CsiMode};
+use termwiz::escape::csi::{
+    DecPrivateMode, DecPrivateModeCode, Mode as CsiMode, TerminalMode, TerminalModeCode,
+};
 use termwiz::surface::{Change, CursorVisibility, Position, Surface};
 
 use super::{MouseTrackingMode, TerminalState};
@@ -18,7 +20,34 @@ impl TerminalState {
             | CsiMode::ResetDecPrivateMode(DecPrivateMode::Unspecified(_)) => {
                 // Unknown mode, ignore
             }
+            CsiMode::SetMode(TerminalMode::Code(code)) => {
+                self.set_standard_mode(code, true);
+            }
+            CsiMode::ResetMode(TerminalMode::Code(code)) => {
+                self.set_standard_mode(code, false);
+            }
+            CsiMode::SetMode(TerminalMode::Unspecified(_))
+            | CsiMode::ResetMode(TerminalMode::Unspecified(_)) => {
+                // Unknown standard mode, ignore
+            }
             _ => {}
+        }
+    }
+
+    /// Handle standard ANSI mode (SM/RM, no `?` prefix) changes.
+    pub(crate) fn set_standard_mode(&mut self, code: &TerminalModeCode, enable: bool) {
+        match *code {
+            TerminalModeCode::Insert => {
+                // IRM: subsequent prints shift existing cells right (see action_to_changes).
+                self.insert_mode = enable;
+            }
+            TerminalModeCode::ShowCursor => {
+                // Standard mode 25 mirrors DEC private 25 (DECTCEM).
+                self.set_dec_mode(&DecPrivateModeCode::ShowCursor, enable);
+            }
+            _ => {
+                // KAM/SRM/LNM/BiDi: not supported, ignore.
+            }
         }
     }
 

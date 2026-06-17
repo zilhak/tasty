@@ -157,6 +157,9 @@ pub(crate) struct TerminalState {
     pub(crate) sgr_mouse: bool,
     /// Focus event tracking (mode 1004).
     pub(crate) focus_tracking: bool,
+    /// IRM: insert/replace mode (standard mode 4). When true, printed glyphs
+    /// shift existing cells right instead of overwriting them.
+    pub(crate) insert_mode: bool,
     /// Scroll region top/bottom (1-based inclusive, None = full screen).
     pub(crate) scroll_region: Option<(usize, usize)>,
     /// Whether synchronized output mode (DECSET 2026) is active.
@@ -251,6 +254,7 @@ impl TerminalState {
             mouse_tracking: MouseTrackingMode::None,
             sgr_mouse: false,
             focus_tracking: false,
+            insert_mode: false,
             scroll_region: None,
             synchronized_output: false,
             scrollback: scrollback::Scrollback::new(),

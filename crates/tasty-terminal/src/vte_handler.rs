@@ -1,3 +1,4 @@
+use termwiz::cell::unicode_column_width;
 use termwiz::escape::{Action, ControlCode};
 use termwiz::surface::Change;
 
@@ -9,11 +10,13 @@ impl TerminalState {
         match action {
             Action::Print(c) => {
                 self.emit_output_text(|| c.to_string());
-                vec![Change::Text(c.to_string())]
+                let text = c.to_string();
+                self.print_with_insert_mode(unicode_column_width(&text, None), text)
             }
             Action::PrintString(s) => {
                 self.emit_output_text(|| s.clone());
-                vec![Change::Text(s)]
+                let width = unicode_column_width(&s, None);
+                self.print_with_insert_mode(width, s)
             }
             Action::Control(code) => {
                 if matches!(code, ControlCode::LineFeed) {
@@ -29,6 +32,20 @@ impl TerminalState {
             }
             _ => vec![],
         }
+    }
+
+    /// Build the changes for printing `text` (column width `width`). When IRM
+    /// (insert mode) is active, existing cells are shifted right by `width`
+    /// columns first (ICH semantics) so the glyphs are inserted rather than
+    /// overwriting. The shift Change is emitted before the Text, keeping the
+    /// Print on its normal (non-scrolling) path.
+    fn print_with_insert_mode(&self, width: usize, text: String) -> Vec<Change> {
+        if !self.insert_mode {
+            return vec![Change::Text(text)];
+        }
+        let mut changes = self.insert_blank_changes(width);
+        changes.push(Change::Text(text));
+        changes
     }
 
     /// Push an `OutputAppended` event for the observer router. The text is

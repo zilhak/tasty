@@ -38,6 +38,7 @@ impl TerminalState {
                 self.mouse_tracking = MouseTrackingMode::None;
                 self.sgr_mouse = false;
                 self.focus_tracking = false;
+                self.insert_mode = false;
                 self.scroll_region = None;
                 vec![
                     Change::AllAttributes(CellAttributes::default()),

@@ -132,42 +132,7 @@ impl TerminalState {
                     },
                 ]
             }
-            Edit::InsertCharacter(n) => {
-                let (cx, cy) = self.surface().cursor_position();
-                let (cols, _rows) = self.surface().dimensions();
-                let remaining = cols.saturating_sub(cx);
-                let n = (n as usize).min(remaining);
-                if n == 0 {
-                    return vec![];
-                }
-                let line = self.read_line_from_surface(cy, cx, cols);
-                // Insert n blank columns, then append existing content that fits
-                let mut text = " ".repeat(n);
-                let mut used_cols = n;
-                for ch in line.chars() {
-                    let w = unicode_column_width(&ch.to_string(), None);
-                    if used_cols + w > remaining {
-                        break;
-                    }
-                    text.push(ch);
-                    used_cols += w;
-                }
-                while used_cols < remaining {
-                    text.push(' ');
-                    used_cols += 1;
-                }
-                vec![
-                    Change::CursorPosition {
-                        x: Position::Absolute(cx),
-                        y: Position::Absolute(cy),
-                    },
-                    Change::Text(text),
-                    Change::CursorPosition {
-                        x: Position::Absolute(cx),
-                        y: Position::Absolute(cy),
-                    },
-                ]
-            }
+            Edit::InsertCharacter(n) => self.insert_blank_changes(n as usize),
             Edit::DeleteLine(n) => {
                 let (_cx, cy) = self.surface().cursor_position();
                 let (first_row, region_size) = self.scroll_region_params();
@@ -233,5 +198,46 @@ impl TerminalState {
                 vec![]
             }
         }
+    }
+
+    /// Insert `n` blank columns at the cursor, shifting existing line content to
+    /// the right (ICH semantics). The cursor stays at its original position.
+    /// Shared by the ICH edit op and by IRM (insert-mode) printing. Returns an
+    /// empty change list when there is no room to shift.
+    pub(crate) fn insert_blank_changes(&self, n: usize) -> Vec<Change> {
+        let (cx, cy) = self.surface().cursor_position();
+        let (cols, _rows) = self.surface().dimensions();
+        let remaining = cols.saturating_sub(cx);
+        let n = n.min(remaining);
+        if n == 0 {
+            return vec![];
+        }
+        let line = self.read_line_from_surface(cy, cx, cols);
+        // Insert n blank columns, then append existing content that fits
+        let mut text = " ".repeat(n);
+        let mut used_cols = n;
+        for ch in line.chars() {
+            let w = unicode_column_width(&ch.to_string(), None);
+            if used_cols + w > remaining {
+                break;
+            }
+            text.push(ch);
+            used_cols += w;
+        }
+        while used_cols < remaining {
+            text.push(' ');
+            used_cols += 1;
+        }
+        vec![
+            Change::CursorPosition {
+                x: Position::Absolute(cx),
+                y: Position::Absolute(cy),
+            },
+            Change::Text(text),
+            Change::CursorPosition {
+                x: Position::Absolute(cx),
+                y: Position::Absolute(cy),
+            },
+        ]
     }
 }
