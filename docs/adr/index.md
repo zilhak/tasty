@@ -17,3 +17,4 @@
 | 0005 | [memory secret 영역은 "안전 보관소" 가 아니다](0005-memory-secret-not-a-vault.md) | Accepted | 2026-06-16 | memory, secret, security, encryption, plugin, trust-boundary |
 | 0006 | [문서 분류체계 — 동작 우선(behavior-first), 화면 종속](0006-docs-taxonomy-behavior-first.md) | Accepted | 2026-06-16 | docs, taxonomy, headless, screen-spec, design-system, behavior-first |
 | 0007 | [attach 는 원격을 대상으로 한다 (로컬 self-attach 는 debug 격리)](0007-attach-targets-remote.md) | Accepted | 2026-06-17 | attach, remote, debug-isolation, cli, user-agent-separation, security |
+| 0008 | [인라인 그래픽 프로토콜(Sixel / Kitty / iTerm)은 보류](0008-inline-graphics-protocols-deferred.md) | Deferred | 2026-06-17 | terminal, graphics, sixel, kitty, image, vte, scope, deferred |
