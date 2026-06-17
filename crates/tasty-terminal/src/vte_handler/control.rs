@@ -76,9 +76,32 @@ impl TerminalState {
                     color_spec.into(),
                 ))]
             }
-            Sgr::Font(_) | Sgr::Overline(_) | Sgr::UnderlineColor(_) | Sgr::VerticalAlign(_) => {
-                // Not commonly needed for basic terminal emulation
+            Sgr::Font(_) => {
+                // CellInfo has no font field, so dropping this keeps reporting
+                // consistent. Not commonly needed for basic terminal emulation.
                 vec![]
+            }
+            // These three SGRs have no `AttributeChange` variant in termwiz, so
+            // they cannot be applied as a single-field `Change::Attribute`.
+            // Clone the mirrored pen, set the one field, and replace the whole
+            // pen via `AllAttributes` so other attributes are preserved. Without
+            // this, `build_cell_info` would always report the default values
+            // (overline=false / underline_color="default" / vertical_align=
+            // "baseline") regardless of the actual sequence.
+            Sgr::Overline(on) => {
+                let mut pen = self.current_pen.clone();
+                pen.set_overline(on);
+                vec![Change::AllAttributes(pen)]
+            }
+            Sgr::UnderlineColor(color_spec) => {
+                let mut pen = self.current_pen.clone();
+                pen.set_underline_color(color_spec);
+                vec![Change::AllAttributes(pen)]
+            }
+            Sgr::VerticalAlign(align) => {
+                let mut pen = self.current_pen.clone();
+                pen.set_vertical_align(align);
+                vec![Change::AllAttributes(pen)]
             }
         }
     }

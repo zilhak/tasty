@@ -182,6 +182,13 @@ pub(crate) struct TerminalState {
     last_input_at: std::time::Instant,
     /// Whether `OutputAppended` events are pushed during ingest.
     emit_output_events: bool,
+    /// Mirror of the active Surface's current pen (text attributes). termwiz's
+    /// `Surface` mutates its pen internally but exposes no accessor, so we track
+    /// it here to support SGRs that have no `AttributeChange` variant
+    /// (Overline/UnderlineColor/VerticalAlign): those are applied by cloning the
+    /// pen, setting the one field, and emitting `Change::AllAttributes`. Kept in
+    /// sync by `mirror_pen()` on every change. See `vte_handler/control.rs`.
+    current_pen: CellAttributes,
 }
 
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
@@ -265,6 +272,7 @@ impl TerminalState {
             // Start in the past so the first PTY output is never mistaken for echo.
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
             emit_output_events: false,
+            current_pen: CellAttributes::default(),
         }
     }
 

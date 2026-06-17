@@ -1009,3 +1009,98 @@ fn detached_terminal_never_emits_process_exited() {
         "detached mirror has no child to exit"
     );
 }
+
+// ---- H4: SGR Overline(53) / UnderlineColor(58) / VerticalAlign(73-75) ----
+// These SGRs have no termwiz `AttributeChange` variant, so they are applied via
+// the mirrored pen + `Change::AllAttributes`. `cell_info` must report the real
+// cell state instead of the default values. Production path: new_detached +
+// feed_bytes (the `TestTerminal` map_sgr clone drops these, so it cannot be used
+// here without a false pass).
+
+#[test]
+fn sgr_overline_reflected_in_cell_info() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[53mX");
+    let info = t.cell_info(0, 0).expect("cell 0,0");
+    assert_eq!(info.text, "X");
+    assert!(info.overline, "SGR 53 should set overline");
+
+    // SGR 55 turns overline back off.
+    t.feed_bytes(b"\x1b[55mY");
+    let info = t.cell_info(0, 1).expect("cell 0,1");
+    assert_eq!(info.text, "Y");
+    assert!(!info.overline, "SGR 55 should clear overline");
+}
+
+#[test]
+fn sgr_underline_color_reflected_in_cell_info() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[58;5;9mX");
+    let info = t.cell_info(0, 0).expect("cell 0,0");
+    assert_eq!(info.text, "X");
+    assert_ne!(
+        info.underline_color, "default",
+        "SGR 58 should set a non-default underline color"
+    );
+    assert_eq!(info.underline_color, "palette:9");
+
+    // SGR 59 resets the underline color to default.
+    t.feed_bytes(b"\x1b[59mY");
+    let info = t.cell_info(0, 1).expect("cell 0,1");
+    assert_eq!(info.underline_color, "default", "SGR 59 should reset");
+}
+
+#[test]
+fn sgr_vertical_align_reflected_in_cell_info() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[73mS"); // superscript
+    let info = t.cell_info(0, 0).expect("cell 0,0");
+    assert_eq!(info.vertical_align, "super");
+
+    t.feed_bytes(b"\x1b[74mU"); // subscript
+    let info = t.cell_info(0, 1).expect("cell 0,1");
+    assert_eq!(info.vertical_align, "sub");
+
+    t.feed_bytes(b"\x1b[75mB"); // back to baseline
+    let info = t.cell_info(0, 2).expect("cell 0,2");
+    assert_eq!(info.vertical_align, "baseline");
+}
+
+#[test]
+fn sgr_overline_preserves_other_attributes() {
+    // Bold set before overline must survive the AllAttributes round-trip.
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[1m\x1b[53mX");
+    let info = t.cell_info(0, 0).expect("cell 0,0");
+    assert!(info.bold, "bold (SGR 1) must be preserved");
+    assert!(info.overline, "overline (SGR 53) must be applied");
+}
+
+#[test]
+fn sgr_reset_clears_overline_and_align() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[53;73mX"); // overline + superscript
+    let info = t.cell_info(0, 0).expect("cell 0,0");
+    assert!(info.overline);
+    assert_eq!(info.vertical_align, "super");
+
+    t.feed_bytes(b"\x1b[0mY"); // full SGR reset
+    let info = t.cell_info(0, 1).expect("cell 0,1");
+    assert!(!info.overline, "SGR 0 should clear overline");
+    assert_eq!(
+        info.vertical_align, "baseline",
+        "SGR 0 should reset vertical align"
+    );
+}
+
+#[test]
+fn sgr_overline_does_not_regress_basic_attributes() {
+    // Sanity: introducing the pen mirror must not break standard SGR reporting.
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[1;4;7mX");
+    let info = t.cell_info(0, 0).expect("cell 0,0");
+    assert!(info.bold);
+    assert!(info.underline);
+    assert!(info.inverse);
+    assert!(!info.overline, "overline must stay false when unset");
+}

@@ -7,6 +7,7 @@
 
 use std::sync::mpsc;
 
+use termwiz::cell::CellAttributes;
 use termwiz::surface::Change;
 
 use crate::{Terminal, TerminalState};
@@ -43,6 +44,7 @@ impl TerminalState {
     }
 
     pub(crate) fn apply_change(&mut self, change: Change) {
+        self.mirror_pen(&change);
         if self.use_alternate {
             self.surface_mut().add_change(change);
             return;
@@ -57,6 +59,25 @@ impl TerminalState {
 
         self.capture_before_scroll(&change);
         self.surface_mut().add_change(change);
+    }
+
+    /// Keep `current_pen` in sync with the pen mutations termwiz's `Surface`
+    /// performs internally (it offers no pen accessor). Mirrors exactly the
+    /// `Surface::apply_change` cases that touch the pen: full attribute replace,
+    /// single-attribute change, and the clear ops (which termwiz resets to
+    /// default with the clear color). Read back by `map_sgr` to apply SGRs that
+    /// lack an `AttributeChange` variant (Overline/UnderlineColor/VerticalAlign).
+    fn mirror_pen(&mut self, change: &Change) {
+        match change {
+            Change::AllAttributes(attr) => self.current_pen = attr.clone(),
+            Change::Attribute(attr_change) => self.current_pen.apply_change(attr_change),
+            Change::ClearScreen(color)
+            | Change::ClearToEndOfLine(color)
+            | Change::ClearToEndOfScreen(color) => {
+                self.current_pen = CellAttributes::default().set_background(*color).clone();
+            }
+            _ => {}
+        }
     }
 }
 
