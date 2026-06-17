@@ -12,6 +12,9 @@
 |------|------|------|
 | [main-view](main-view/index.md) — MainView (메인 윈도우) | 로컬 사용자 · AI Agent · 원격 | [전체 레이아웃](main-view/screens/main-view.md) |
 | [work-area](work-area/index.md) — 작업 영역 (Workspace/Pane/Tab/Surface 도메인) | 로컬 사용자 · AI Agent · 원격 | [화면](work-area/screens/work-area.md) |
+| [terminal](terminal/index.md) — 터미널 (PTY·VTE·scrollback·GPU) | 로컬 사용자 · AI Agent · 원격 | GPU 그리드 |
+| [terminal-search](terminal-search/index.md) — 터미널 검색 (스크롤백+화면) | 로컬 사용자 | 검색 바 popup |
+| [terminal-link](terminal-link/index.md) — 링크 hover·클릭 (수식키) | 로컬 사용자 | hover 하이라이트 |
 | [workspace-tabs](workspace-tabs/index.md) — 탭 스트립 (Pane 별 탭 바) | 로컬 사용자 | [화면](workspace-tabs/screens/workspace-tabs.md) |
 | [window-chrome](window-chrome/index.md) — 윈도우 크롬 (CSD 타이틀바) | 로컬 사용자 | [화면](window-chrome/screens/window-chrome.md) |
 | [workspace-status-bar](workspace-status-bar/index.md) — 상태바 (작업영역 하단) | 로컬 사용자 | [화면](workspace-status-bar/screens/workspace-status-bar.md) |
