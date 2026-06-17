@@ -1,0 +1,69 @@
+# 단축키 프리셋
+
+tasty 는 4개 프리셋을 제공한다. 각 프리셋은 **바인딩 문자열의 집합**이고, 그 문자열이 실제 물리 키에 매핑되는 방식은 [key-mapping](key-mapping.md) 의 OS별 레이어가 결정한다. 편집·액션은 [keybindings](../../features/keybindings/index.md).
+
+| 프리셋 | 참고 | 특징 |
+|--------|------|------|
+| **Tasty**(기본) | 자체 | 자체 키 조합 |
+| **Mac** | iTerm2/Terminal.app | `alt+`(=⌘) 중심 |
+| **Windows** | Windows Terminal | `ctrl+shift+` 중심 |
+| **Linux** | GNOME Terminal | `ctrl+shift+` 중심 |
+
+프리셋은 **권장**이지 플랫폼 강제가 아니다 — Mac 프리셋의 `alt+c` 는 macOS 에서 ⌘C, Windows 에서 Alt+C 로 동작한다([key-mapping](key-mapping.md) 의 위치 기반 매핑).
+
+## 전체 바인딩 비교 (빈 칸 = 바인딩 없음)
+
+### 생성/닫기
+| 필드 | Tasty | Mac | Windows | Linux |
+|------|-------|-----|---------|-------|
+| new_window | alt+shift+n | alt+shift+n | ctrl+shift+n | ctrl+shift+n |
+| new_workspace | alt+n | alt+n | alt+n | alt+n |
+| new_tab | alt+t | alt+t | alt+t | alt+t |
+| close_active | ctrl+w | alt+w | ctrl+w | ctrl+w |
+| close_pane | ctrl+shift+w | alt+shift+w | ctrl+shift+w | ctrl+shift+w |
+| close_workspace | alt+shift+w | | alt+shift+w | alt+shift+w |
+| restore_closed | ctrl+shift+t | ctrl+shift+t | ctrl+shift+t | ctrl+shift+t |
+
+### 분할 / 포커스
+| 필드 | Tasty | Mac | Windows | Linux |
+|------|-------|-----|---------|-------|
+| split_pane_vertical | alt+e | alt+e | alt+shift+e | alt+shift+e |
+| split_pane_horizontal | alt+shift+e | alt+shift+e | alt+shift+d | alt+shift+d |
+| split_surface_vertical | alt+d | alt+d | alt+d | alt+d |
+| split_surface_horizontal | alt+shift+d | alt+shift+d | alt+e | alt+e |
+| focus_pane_next/prev | ctrl+] / ctrl+[ | (동일) | (동일) | (동일) |
+| focus_surface_next/prev | alt+] / alt+[ | (동일) | (동일) | (동일) |
+| tab_switch_modifier / workspace_switch_modifier | ctrl / alt | (동일) | (동일) | (동일) |
+
+> Pane/Surface 분할·포커스는 tasty 고유라 전 프리셋 동일. `next_tab`/`prev_tab` 은 `ctrl+tab`/`alt+tab` 이 OS 단축키와 충돌해 기본값 없음.
+
+### 클립보드 / 줌
+| 필드 | Tasty | Mac | Windows | Linux |
+|------|-------|-----|---------|-------|
+| copy | ctrl+c, alt+c, ctrl+shift+c | alt+c | ctrl+c | ctrl+shift+c |
+| paste | ctrl+v, alt+v, ctrl+shift+v | alt+v | ctrl+v | ctrl+shift+v |
+| zoom_in/out/reset | ctrl/alt 계열 다중 | alt 계열 | ctrl 계열 | ctrl 계열 |
+
+> Tasty 프리셋 copy 는 세 관례를 다 바인딩 — `ctrl+c` 는 선택 있으면 복사, 없으면 SIGINT([clipboard](../../features/clipboard/index.md)).
+
+### UI 토글 / 종료 / 변환
+| 필드 | Tasty | Mac | Windows | Linux |
+|------|-------|-----|---------|-------|
+| toggle_settings | ctrl+, | alt+, | ctrl+, | ctrl+, |
+| toggle_notifications | ctrl+shift+i | alt+shift+i | ctrl+shift+i | ctrl+shift+i |
+| toggle_sidebar / _collapse | ctrl+shift+b / ctrl+b | alt+shift+b / alt+b | (ctrl 계열) | (ctrl 계열) |
+| toggle_clipboard_viewer | ctrl+shift+h | alt+shift+h | ctrl+shift+h | ctrl+shift+h |
+| quit | | alt+q | | ctrl+q |
+| quit_minimize | | alt+m | | |
+| convert_surface | alt+' | alt+' | alt+' | alt+' |
+
+> `quit_immediate` 는 실수 방지로 전 프리셋 기본값 없음. `apply_*_preset`(레이아웃 프리셋 적용)도 사용자가 직접 배정하도록 기본값 없음. Windows 는 Alt+F4 가 OS 종료라 `quit` 불요.
+
+## 설계 원칙
+
+1. **수정자 계층** — Mac: `alt`(⌘)=주요 동작 / `alt+shift`(⌘⇧)=보조 / `ctrl`(⌃)=surface 포커스. Windows·Linux: `ctrl+shift`=주요 / `ctrl`=보조/줌 / `alt`=분할·pane 포커스.
+2. **tasty 고유 기능**(Pane/Surface 분할·Workspace·변환)은 각 프리셋 수정자 계층에 맞추되 가능하면 문자 키 유지(`d`=분할, `e`=pane 분할).
+
+## 관련
+
+- [key-mapping](key-mapping.md) — 바인딩 문자열 → 물리 키 OS별 매핑 · [keybindings](../../features/keybindings/index.md) — 편집

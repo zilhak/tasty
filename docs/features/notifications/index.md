@@ -37,7 +37,7 @@ VecDeque FIFO(최대 100, 초과 시 `pop_front` O(1)). **병합(coalescing)**: 
 
 ## 비-목표
 
-- **busy indicator**(실행 중 표시)·**도구 메뉴**·**토스트** 는 별도 — 각각 design/policies(busy-indicator, 재작성 예정)·[tools-menu](../tools-menu/index.md)·[toast](../../design/systems/toast.md).
+- **busy indicator**(실행 중 표시)·**도구 메뉴**·**토스트** 는 별도 — 각각 [busy-indicator](../../design/policies/busy-indicator.md)·[tools-menu](../tools-menu/index.md)·[toast](../../design/systems/toast.md).
 
 ## 관련
 

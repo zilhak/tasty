@@ -23,7 +23,7 @@
 | 근거 (ADR) | [adr/index.md](adr/index.md) | ✅ 보존 (불변) |
 | 기능 (기획·화면) | [features/index.md](features/index.md) | 🚧 폴더 모델 재작성 중 (템플릿 준비됨, 카탈로그 비어있음) |
 | 번들 플러그인 | [plugins/index.md](plugins/index.md) | 🚧 재작성 중 (8종 등재) |
-| 설계 (design) | [policies/](design/policies/focus.md) · [systems/](design/systems/theme.md) | 🚧 재작성 중 (focus·key-mapping·system-tray 정책 · theme·memory·token-crosswalk 시스템) |
+| 설계 (design) | [policies/](design/policies/focus.md) · [systems/](design/systems/theme.md) | 🚧 재작성 중 (focus·key-mapping·system-tray·busy-indicator·cwd·keybinding-presets·lua-hooks 정책 · theme·memory·token-crosswalk·popup·toast 시스템) |
 | 레퍼런스 (조회) | [reference/index.md](reference/index.md) | 🚧 재작성 중 (api·event-catalog·output-parsers·environments) |
 | 개발 가이드 | [build](dev-guide/build.md) · [commit-convention](dev-guide/commit-convention.md) · [error-handling](dev-guide/error-handling.md) · [crash-diagnostics](dev-guide/crash-diagnostics.md) · [i18n](dev-guide/i18n.md) · [color-policy](dev-guide/color-policy.md) · [model-view-split](dev-guide/model-view-split.md) · [gpu-rendering](dev-guide/gpu-rendering.md) · [popup-implementation](dev-guide/popup-implementation.md) · [release](dev-guide/release.md) · [self-verification](dev-guide/self-verification.md) · [e2e-tests](dev-guide/e2e-tests.md) · [independent-verification](dev-guide/independent-verification.md) · [debug-ipc](dev-guide/debug-ipc.md) · [attach-behavior](dev-guide/attach-behavior.md) · [plugin-development](dev-guide/plugin-development.md) · [plugin-permissions](dev-guide/plugin-permissions.md) · [plugin-sensitive-data](dev-guide/plugin-sensitive-data.md) | 🚧 재작성 중 |
 | 아키텍처 (불변식) | [architecture/invariants/surface-cwd](architecture/invariants/surface-cwd.md) | 🚧 일부 (surface-cwd invariant) |

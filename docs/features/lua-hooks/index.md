@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 (자기 머신의 자기 스크립트)
-- **ADR**: 없음 (설계 배경 `design/policies/lua-hooks` *재작성 예정*)
+- **ADR**: 없음 (설계 배경 [`design/policies/lua-hooks`](../../design/policies/lua-hooks.md))
 - **코드**: `tasty-lua` 크레이트(engine/host_api/sandbox), `script.reload` IPC
 - **화면**: 없음
 
@@ -39,4 +39,4 @@
 ## 관련
 
 - [reference/event-catalog](../../reference/event-catalog.md) — plugin 용 Event Bus(별개 경로)
-- `design/policies/lua-hooks` *(재작성 예정)* — observe-only 설계 배경 · `dev-guide/lua-hooks` *(재작성 예정)* — payload 매핑
+- [`design/policies/lua-hooks`](../../design/policies/lua-hooks.md) — observe-only 설계 배경 · `dev-guide/lua-hooks` *(재작성 예정)* — payload 매핑
