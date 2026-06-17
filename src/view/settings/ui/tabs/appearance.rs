@@ -4,7 +4,8 @@ use crate::i18n::t;
 use crate::settings::{EffectiveFont, FontOverride, FontSettings, HexColor, Settings};
 use tasty_host_plugin::SettingsPageEntry;
 use tasty_plugin_manifest::{SettingsCategory, SettingsItemDecl, SettingsPageContribute};
-use tasty_type_appearance::theme::SurfaceTheme;
+use tasty_type_appearance::theme::{PartialColors, SurfaceTheme, Theme, ThemeColors};
+use tasty_type_geometry::length::LogicalPx;
 
 /// Plugin sub-tab 식별: `(plugin_id, page_id)` 복합키로 일치하는 entry 를 찾는다.
 ///
@@ -57,6 +58,10 @@ pub fn draw_appearance_tab(
         (
             AppearanceSubTab::Theme,
             t("settings.appearance.subtab.theme").to_string(),
+        ),
+        (
+            AppearanceSubTab::Colors,
+            t("settings.appearance.subtab.colors").to_string(),
         ),
         (
             AppearanceSubTab::General,
@@ -140,6 +145,9 @@ pub fn draw_appearance_tab(
                     font_filter,
                     preview_font_loaded,
                 );
+            }
+            AppearanceSubTab::Colors => {
+                draw_appearance_colors(ui, settings);
             }
             AppearanceSubTab::General => {
                 draw_appearance_general(ui, settings);
@@ -436,37 +444,368 @@ fn draw_surface_font_section(
     });
 }
 
-/// Draw a single color row: label + color picker button + hex text input.
-/// 현재 사용처 없음 — surface 색 picker 가 사라지면서 dead.
-/// 향후 theme override picker (palette / accent 등) 도입 시 부활시킨다.
-#[allow(dead_code)]
-fn draw_color_row(ui: &mut egui::Ui, label: &str, color: &mut HexColor) {
-    ui.label(label);
-    ui.horizontal(|ui| {
-        // egui color picker는 mutable Color32 참조를 요구하므로 임시 변환 후 반영.
-        let mut egui_color = color.to_egui();
-        egui::widgets::color_picker::color_edit_button_srgba(
-            ui,
-            &mut egui_color,
-            egui::color_picker::Alpha::Opaque,
-        );
-        if egui_color != color.to_egui() {
-            // egui 픽커가 alpha를 안 건드리므로 RGB만 수확.
-            // 사용자 입력 (color picker) → HexColor — 정당한 외부 입력.
-            #[allow(clippy::disallowed_methods)]
-            let new_color =
-                HexColor::from_rgba(egui_color.r(), egui_color.g(), egui_color.b(), color.a);
-            *color = new_color;
+// ── Theme-color override picker (Appearance › Colors) ──────────────────
+// `AppearanceSettings.theme_overrides`(= flat `PartialColors`) 의 46 색 필드를
+// 6개 collapsible 그룹으로 편집한다. 각 행은 한 `PartialColors` 필드에 1:1 바인딩:
+// per-row "Default" 체크 = 필드 `None`(프리셋 base 추종) / 해제 = `Some(hex)`(override).
+// base 값은 resolved `theme_base` 에서 읽는다(하드코딩 없음). 프리셋 전환 시
+// `theme_overrides` 가 통째로 클리어되는 모델(`apply_theme`)과 일관 — picker 는
+// 그 단일 출처를 채울 뿐이다.
+
+/// swatch 한 변 / override dot 지름 / hex 입력 폭 (디자인 jsx: 18·5·96 px).
+const COLOR_SWATCH_SIZE: LogicalPx = LogicalPx(18.0);
+const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
+const COLOR_HEX_INPUT_WIDTH: LogicalPx = LogicalPx(96.0);
+/// 색 토큰 이름 컬럼 폭 — 행 간 입력/스와치/체크박스 정렬용.
+const COLOR_FIELD_NAME_WIDTH: LogicalPx = LogicalPx(150.0);
+
+/// 한 색 행: 표시 이름(기술 토큰, 비번역) + base/override 접근자(fn 포인터).
+struct ColorRowDef {
+    /// 색 토큰 이름(`crust`/`blue`/`ansi_black` …). 자연어가 아닌 기술 식별자라
+    /// 번역하지 않는다(i18n 예외 — 디자인도 mono 리터럴로 표기).
+    name: &'static str,
+    /// resolved `theme_base` 에서 이 필드의 base 색을 읽는다.
+    base: fn(&ThemeColors) -> HexColor,
+    /// `theme_overrides` 에서 현재 override 값(없으면 `None`).
+    get: fn(&PartialColors) -> Option<HexColor>,
+    /// `theme_overrides` 의 이 필드를 설정/클리어.
+    set: fn(&mut PartialColors, Option<HexColor>),
+}
+
+/// collapsible 그룹: 표시명(i18n) + 선택적 note(i18n) + 기본 열림 + 행들.
+struct ColorGroupDef {
+    name_key: &'static str,
+    note_key: Option<&'static str>,
+    default_open: bool,
+    rows: Vec<ColorRowDef>,
+}
+
+/// `PartialColors`/`ThemeColors` 의 한 필드를 fn 포인터 묶음으로 바인딩.
+macro_rules! color_row {
+    ($field:ident) => {
+        ColorRowDef {
+            name: stringify!($field),
+            base: |c| c.$field,
+            get: |p| p.$field,
+            set: |p, v| p.$field = v,
         }
-        let mut hex = color.to_hex();
-        let response = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(80.0));
-        if response.changed()
-            && let Some(parsed) = HexColor::from_hex(&hex)
-        {
-            *color = parsed;
+    };
+}
+
+/// 디자인 `PALETTE_GROUPS` 와 동일한 6그룹/46필드 구성.
+/// 기본 열림: Surfaces · Text · Accents / 기본 접힘: Overlays · Terminal-specific · ANSI 16.
+fn color_groups() -> Vec<ColorGroupDef> {
+    vec![
+        ColorGroupDef {
+            name_key: "settings.appearance.colors.group.surfaces",
+            note_key: Some("settings.appearance.colors.group.surfaces_note"),
+            default_open: true,
+            rows: vec![
+                color_row!(crust),
+                color_row!(mantle),
+                color_row!(base),
+                color_row!(surface0),
+                color_row!(surface1),
+                color_row!(surface2),
+            ],
+        },
+        ColorGroupDef {
+            name_key: "settings.appearance.colors.group.overlays",
+            note_key: None,
+            default_open: false,
+            rows: vec![
+                color_row!(overlay0),
+                color_row!(overlay1),
+                color_row!(overlay2),
+            ],
+        },
+        ColorGroupDef {
+            name_key: "settings.appearance.colors.group.text",
+            note_key: None,
+            default_open: true,
+            rows: vec![
+                color_row!(text),
+                color_row!(subtext1),
+                color_row!(subtext0),
+                color_row!(placeholder),
+            ],
+        },
+        ColorGroupDef {
+            name_key: "settings.appearance.colors.group.accents",
+            note_key: None,
+            default_open: true,
+            rows: vec![
+                color_row!(blue),
+                color_row!(green),
+                color_row!(red),
+                color_row!(yellow),
+                color_row!(peach),
+                color_row!(mauve),
+                color_row!(teal),
+                color_row!(sky),
+                color_row!(lavender),
+                color_row!(flamingo),
+                color_row!(pink),
+                color_row!(maroon),
+                color_row!(rosewater),
+            ],
+        },
+        ColorGroupDef {
+            name_key: "settings.appearance.colors.group.terminal",
+            note_key: None,
+            default_open: false,
+            rows: vec![
+                color_row!(selection_bg),
+                color_row!(vi_cursor_bg),
+                color_row!(search_match_bg),
+                color_row!(search_match_active_bg),
+            ],
+        },
+        ColorGroupDef {
+            name_key: "settings.appearance.colors.group.ansi",
+            note_key: None,
+            default_open: false,
+            rows: vec![
+                color_row!(ansi_black),
+                color_row!(ansi_red),
+                color_row!(ansi_green),
+                color_row!(ansi_yellow),
+                color_row!(ansi_blue),
+                color_row!(ansi_magenta),
+                color_row!(ansi_cyan),
+                color_row!(ansi_white),
+                color_row!(ansi_bright_black),
+                color_row!(ansi_bright_red),
+                color_row!(ansi_bright_green),
+                color_row!(ansi_bright_yellow),
+                color_row!(ansi_bright_blue),
+                color_row!(ansi_bright_magenta),
+                color_row!(ansi_bright_cyan),
+                color_row!(ansi_bright_white),
+            ],
+        },
+    ]
+}
+
+/// 그룹 내 현재 override 가 걸린 행 수.
+fn group_changed_count(group: &ColorGroupDef, overrides: &PartialColors) -> usize {
+    group
+        .rows
+        .iter()
+        .filter(|r| (r.get)(overrides).is_some())
+        .count()
+}
+
+/// Appearance > Colors: 프리셋 색 개별 override picker.
+fn draw_appearance_colors(ui: &mut egui::Ui, settings: &mut Settings) {
+    let th = crate::theme::theme();
+    ui.add_space(8.0);
+
+    let groups = color_groups();
+
+    // 전체 override 개수 (picker 가 다루는 46 flat 필드 한정 — surface_themes 등
+    // 비-picker override 는 세지도 지우지도 않는다).
+    let total: usize = {
+        let ov = &settings.appearance.theme_overrides;
+        groups
+            .iter()
+            .map(|g| group_changed_count(g, ov))
+            .sum()
+    };
+
+    // 헤더: 설명 + 우측 Reset all (N).
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let label = if total > 0 {
+                crate::i18n::t_fmt(
+                    "settings.appearance.colors.reset_all_n",
+                    &total.to_string(),
+                )
+            } else {
+                t("settings.appearance.colors.reset_all").to_string()
+            };
+            if ui.add_enabled(total > 0, egui::Button::new(label)).clicked() {
+                let ov = &mut settings.appearance.theme_overrides;
+                for r in groups.iter().flat_map(|g| &g.rows) {
+                    (r.set)(ov, None);
+                }
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(t("settings.appearance.colors.intro"))
+                            .small()
+                            .color(th.subtext0),
+                    )
+                    .wrap(),
+                );
+            });
+        });
+    });
+
+    ui.add_space(4.0);
+
+    for group in &groups {
+        draw_color_group(ui, &th, settings, group);
+    }
+}
+
+/// 한 collapsible 색 그룹 — 헤더(이름·note·N changed·Reset) + 행 목록.
+fn draw_color_group(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    settings: &mut Settings,
+    group: &ColorGroupDef,
+) {
+    let changed = group_changed_count(group, &settings.appearance.theme_overrides);
+
+    let id = ui.make_persistent_id(("appearance_colors_group", group.name_key));
+    let state = egui::collapsing_header::CollapsingState::load_with_default_open(
+        ui.ctx(),
+        id,
+        group.default_open,
+    );
+
+    ui.add_space(4.0);
+    let header = state.show_header(ui, |ui| {
+        ui.label(
+            egui::RichText::new(t(group.name_key))
+                .monospace()
+                .size(th.font_size_caption.value())
+                .strong()
+                .color(th.subtext0),
+        );
+        if let Some(note_key) = group.note_key {
+            ui.label(
+                egui::RichText::new(format!("· {}", t(note_key)))
+                    .small()
+                    .color(th.subtext0),
+            );
+        }
+        if changed > 0 {
+            ui.label(
+                egui::RichText::new(crate::i18n::t_fmt(
+                    "settings.appearance.colors.changed_n",
+                    &changed.to_string(),
+                ))
+                .monospace()
+                .size(th.font_size_caption.value())
+                .color(th.blue),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(t("settings.appearance.colors.reset")).clicked() {
+                    let ov = &mut settings.appearance.theme_overrides;
+                    for r in &group.rows {
+                        (r.set)(ov, None);
+                    }
+                }
+            });
         }
     });
-    ui.end_row();
+    header.body(|ui| {
+        for row in &group.rows {
+            draw_color_picker_row(ui, th, settings, row);
+        }
+    });
+}
+
+/// 한 색 행: [override dot] 이름(mono) · hex 입력 · swatch · "Default" 체크박스.
+/// "Default" 체크 = `None`(base 추종, 입력 비활성+swatch dim) / 해제 = `Some(hex)`.
+fn draw_color_picker_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    settings: &mut Settings,
+    row: &ColorRowDef,
+) {
+    let base = (row.base)(&settings.appearance.theme_base);
+    let cur = (row.get)(&settings.appearance.theme_overrides);
+    let is_ov = cur.is_some();
+    let val = cur.unwrap_or(base);
+    // hex 입력 버퍼는 egui 메모리에 행별로 보관 — override 값을 매 프레임 문자열로
+    // 되돌리면 편집 중 부분 입력(`#89b4f`)이 즉시 덮어써져 타이핑이 불가능해진다.
+    let buf_id = ui.make_persistent_id(("appearance_colors_hex", row.name));
+
+    ui.horizontal(|ui| {
+        // ── override dot ──
+        let dot = COLOR_OVERRIDE_DOT_SIZE.value();
+        let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
+        if is_ov {
+            ui.painter()
+                .circle_filled(dot_rect.center(), dot / 2.0, egui::Color32::from(th.blue));
+        }
+
+        // ── 색 토큰 이름 (mono, override 시 강조) ──
+        ui.add_sized(
+            egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
+            egui::Label::new(
+                egui::RichText::new(row.name)
+                    .monospace()
+                    .color(if is_ov { th.text } else { th.subtext0 }),
+            ),
+        );
+
+        // ── hex 입력 ──
+        if is_ov {
+            let mut text = ui
+                .data(|d| d.get_temp::<String>(buf_id))
+                .unwrap_or_else(|| val.to_hex());
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut text)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
+            );
+            if resp.changed()
+                && let Some(parsed) = HexColor::from_hex(text.trim())
+            {
+                (row.set)(&mut settings.appearance.theme_overrides, Some(parsed));
+            }
+            ui.data_mut(|d| d.insert_temp(buf_id, text));
+        } else {
+            // base 값을 읽기 전용으로 보여준다 (비활성·dim).
+            let mut text = base.to_hex();
+            ui.add_enabled(
+                false,
+                egui::TextEdit::singleline(&mut text)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
+            );
+        }
+
+        // ── swatch (override 시 full, base 시 40% dim) ──
+        let sw = COLOR_SWATCH_SIZE.value();
+        let (sw_rect, _) = ui.allocate_exact_size(egui::vec2(sw, sw), egui::Sense::hover());
+        let fill = if is_ov {
+            egui::Color32::from(val)
+        } else {
+            // opacity 0.4 (디자인) — 패널 위에 얹혀 dim 하게 보인다.
+            egui::Color32::from_rgba_unmultiplied(val.r, val.g, val.b, 102)
+        };
+        ui.painter().rect_filled(sw_rect, 3.0, fill);
+        ui.painter().rect_stroke(
+            sw_rect,
+            3.0,
+            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.surface1)),
+            egui::StrokeKind::Inside,
+        );
+
+        // ── "Default" 체크박스 ──
+        let mut use_default = !is_ov;
+        if ui
+            .checkbox(&mut use_default, t("settings.appearance.colors.default"))
+            .changed()
+        {
+            let ov = &mut settings.appearance.theme_overrides;
+            if use_default {
+                (row.set)(ov, None);
+            } else {
+                // override 활성화: base 값으로 시드 + 입력 버퍼도 base 로 재설정해
+                // 이전 세션의 stale 버퍼가 base 시드를 덮어쓰지 않게 한다.
+                (row.set)(ov, Some(base));
+                let seed = base.to_hex();
+                ui.data_mut(|d| d.insert_temp(buf_id, seed));
+            }
+        }
+    });
 }
 
 /// Appearance > Plugin-contributed page. Renders each `SettingsItemDecl` in the
@@ -994,5 +1333,121 @@ mod tests {
         let entries = vec![entry("alpha", "theme")];
         assert!(find_plugin_settings_entry(&entries, "gamma", "theme").is_none());
         assert!(find_plugin_settings_entry(&entries, "alpha", "other").is_none());
+    }
+
+    // ── Colors override picker — 상태 변환 로직 (egui 위젯 외) ──
+    use super::{ColorGroupDef, color_groups, group_changed_count};
+    use crate::settings::HexColor;
+    use tasty_type_appearance::theme::PartialColors;
+
+    fn find_row<'a>(groups: &'a [ColorGroupDef], name: &str) -> &'a super::ColorRowDef {
+        groups
+            .iter()
+            .flat_map(|g| &g.rows)
+            .find(|r| r.name == name)
+            .unwrap_or_else(|| panic!("row {name} should exist"))
+    }
+
+    /// 디자인 `PALETTE_GROUPS` 와 동일한 6그룹/46필드 + 기본 열림/접힘 분류.
+    #[test]
+    fn color_groups_match_design_layout() {
+        let groups = color_groups();
+        let counts: Vec<(usize, bool)> =
+            groups.iter().map(|g| (g.rows.len(), g.default_open)).collect();
+        // Surfaces(6,열림) Overlays(3,접힘) Text(4,열림) Accents(13,열림)
+        // Terminal-specific(4,접힘) ANSI 16(16,접힘).
+        assert_eq!(
+            counts,
+            vec![
+                (6, true),
+                (3, false),
+                (4, true),
+                (13, true),
+                (4, false),
+                (16, false),
+            ]
+        );
+        let total: usize = groups.iter().map(|g| g.rows.len()).sum();
+        assert_eq!(total, 46, "flat PartialColors 46 fields");
+    }
+
+    /// "Default" 체크박스 토글 = 필드 Some(base)⇄None — set/get 라운드트립.
+    #[test]
+    fn toggle_sets_and_clears_override_field() {
+        let groups = color_groups();
+        let blue = find_row(&groups, "blue");
+        let mut ov = PartialColors::default();
+        assert!((blue.get)(&ov).is_none());
+
+        let c = HexColor::from_hex("#112233").unwrap();
+        (blue.set)(&mut ov, Some(c)); // 체크 해제 → Some
+        assert_eq!((blue.get)(&ov), Some(c));
+
+        (blue.set)(&mut ov, None); // 다시 체크 → None
+        assert!((blue.get)(&ov).is_none());
+    }
+
+    /// base 접근자는 resolved `theme_base` 의 해당 필드를 읽는다 (하드코딩 아님).
+    #[test]
+    fn base_reads_from_theme_base() {
+        let mut base = tasty_themes::mocha_fallback_colors();
+        let marker = HexColor::from_hex("#abcdef").unwrap();
+        base.crust = marker;
+        let groups = color_groups();
+        let crust = find_row(&groups, "crust");
+        assert_eq!((crust.base)(&base), marker);
+    }
+
+    /// 그룹 Reset 은 그 그룹 필드만 클리어하고 다른 그룹 override 는 보존.
+    #[test]
+    fn group_reset_clears_only_its_fields() {
+        let groups = color_groups();
+        let blue = find_row(&groups, "blue"); // Accents
+        let crust = find_row(&groups, "crust"); // Surfaces
+        let c = HexColor::from_hex("#010203").unwrap();
+
+        let mut ov = PartialColors::default();
+        (blue.set)(&mut ov, Some(c));
+        (crust.set)(&mut ov, Some(c));
+
+        // Accents 그룹만 reset.
+        let accents = groups
+            .iter()
+            .find(|g| g.name_key.ends_with(".accents"))
+            .unwrap();
+        for r in &accents.rows {
+            (r.set)(&mut ov, None);
+        }
+        assert!((blue.get)(&ov).is_none(), "blue cleared");
+        assert_eq!((crust.get)(&ov), Some(c), "crust preserved");
+        assert_eq!(group_changed_count(accents, &ov), 0);
+    }
+
+    /// Reset all 은 46 flat 필드만 클리어하고 surface_themes(비-picker) 는 보존.
+    #[test]
+    fn reset_all_preserves_surface_themes() {
+        let groups = color_groups();
+        let mut ov = PartialColors::default();
+        let c = HexColor::from_hex("#0a0b0c").unwrap();
+        find_row(&groups, "blue");
+        (find_row(&groups, "blue").set)(&mut ov, Some(c));
+        ov.surface_themes.insert(
+            "terminal".to_string(),
+            tasty_type_appearance::theme::PartialSurfaceTheme {
+                focused_bg: Some(c),
+                ..Default::default()
+            },
+        );
+
+        // Reset all = picker 가 다루는 flat 필드만 None.
+        for r in groups.iter().flat_map(|g| &g.rows) {
+            (r.set)(&mut ov, None);
+        }
+        let flat_changed: usize = groups.iter().map(|g| group_changed_count(g, &ov)).sum();
+        assert_eq!(flat_changed, 0, "all 46 flat overrides cleared");
+        assert!(
+            ov.surface_themes.contains_key("terminal"),
+            "surface_themes override preserved"
+        );
     }
 }

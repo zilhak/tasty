@@ -48,6 +48,8 @@ pub struct PluginShortcutSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AppearanceSubTab {
     Theme,
+    /// 현재 프리셋의 색을 개별 override 하는 picker (theme_overrides 편집).
+    Colors,
     General,
     /// UI scale (sm/md/lg) 전용 섹션.
     Display,

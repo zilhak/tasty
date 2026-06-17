@@ -30,7 +30,7 @@
 - **L2 섹션 목록** (좌측): 현재 L1 의 하위 섹션 + **필터 검색**. (L1 전환 시 필터 클리어.) L1 별 L2:
   - **General**: General / Clipboard / Notifications / Accessibility / Updates
   - **Terminal**: General(터미널 동작 설정) / Performance
-  - **Appearance**: Theme / General / Display(UI 스케일 전용) / Terminal / (플러그인 기여 페이지 동적) / HTML
+  - **Appearance**: Theme / Colors(프리셋 색 개별 override picker) / General / Display(UI 스케일 전용) / Terminal / (플러그인 기여 페이지 동적) / HTML
   - **Keybindings**: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins
   - **FileHandler**: Extension Mapping / Detectors / Handlers
   - **Misc**: Tastyrc (Windows 전용; 비-Windows 는 섹션 0개 → empty state)

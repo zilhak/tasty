@@ -1169,6 +1169,9 @@ impl App {
         });
         let prev_theme = prev_appearance.as_ref().map(|a| a.theme.clone());
         let prev_ui_scale = prev_appearance.as_ref().map(|a| a.ui_scale.clone());
+        // Colors picker 가 채우는 색 override 도 라이브 반영 대상 — theme/ui_scale 과
+        // 함께 비교해 broadcast 여부를 정한다.
+        let prev_overrides = prev_appearance.as_ref().map(|a| a.theme_overrides.clone());
         let prev_language = self
             .main_windows_iter_mut()
             .next()
@@ -1194,7 +1197,8 @@ impl App {
         // 발화 → dispatcher 가 모든 윈도우 (main + modal) 의 GpuState 에 broadcast.
         let appearance_changed = prev_theme.as_deref()
             != Some(new_settings.appearance.theme.as_str())
-            || prev_ui_scale.as_deref() != Some(new_settings.appearance.ui_scale.as_str());
+            || prev_ui_scale.as_deref() != Some(new_settings.appearance.ui_scale.as_str())
+            || prev_overrides.as_ref() != Some(&new_settings.appearance.theme_overrides);
         if appearance_changed {
             use crate::intent::UiIntent;
             if let Some(main) = self.main_windows_iter_mut().next() {
