@@ -39,7 +39,7 @@ pkill -f "target/debug/tasty\$"                          # 종료
 
 ### GUI 시각 검증
 
-색상·정렬·폰트처럼 스크린샷이 필요한 변경은 CLI 만으로 잡지 못한다 — `ai-verification/` *(재작성 예정)* 의 visual-verification 체크리스트를 따른다.
+색상·정렬·폰트처럼 스크린샷이 필요한 변경은 CLI 만으로 잡지 못한다 — [`ai-verification/visual-verification`](../ai-verification/visual-verification.md) 체크리스트를 따른다.
 
 ## 안티패턴 / 패턴
 
@@ -53,4 +53,4 @@ pkill -f "target/debug/tasty\$"                          # 종료
 
 - [debug-ipc.md](debug-ipc.md) — debug 전용 IPC (사용자 입력 재현)
 - [independent-verification.md](independent-verification.md) — debug 격리 + 자기검증 배경
-- `ai-verification/` *(재작성 예정)* — 시각 검증
+- [`ai-verification/visual-verification`](../ai-verification/visual-verification.md) — 시각 검증

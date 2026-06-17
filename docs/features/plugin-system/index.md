@@ -6,7 +6,7 @@
 - **코드**: `src/view/plugins.rs`, `src/view/plugins/ui/`, `crates/tasty-cli/src/commands/plugin_cmd.rs`
 - **화면**: [screens/plugins-window.md](screens/plugins-window.md)
 
-> 이 문서는 *플러그인을 설치·관리* 하는 사용자/에이전트 기능이다. *플러그인을 제작* 하는 법(매니페스트·권한 모델·SDK·서명)은 dev-guide 영역 *(재작성 예정)*.
+> 이 문서는 *플러그인을 설치·관리* 하는 사용자/에이전트 기능이다. *플러그인을 제작* 하는 법은 [plugin-development](../../dev-guide/plugin-development.md) · [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-sensitive-data](../../dev-guide/plugin-sensitive-data.md).
 
 ## 목적
 
@@ -39,7 +39,7 @@
 - **AI Agent(CLI)**: `tasty plugin {list,show,install,remove,enable}`.
 - **연결**:
   - 플러그인 설정 → [`features/settings/`](../settings/index.md) (Plugins 탭)
-  - 플러그인 제작/권한/매니페스트/서명 → dev-guide *(재작성 예정)*
+  - 플러그인 제작/권한/민감데이터 → [plugin-development](../../dev-guide/plugin-development.md) · [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-sensitive-data](../../dev-guide/plugin-sensitive-data.md)
 
 ## 비-목표
 

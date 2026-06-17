@@ -100,8 +100,8 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 ## 비-목표 (Out of scope)
 
 - **사이드바의 워크스페이스 목록/전환 UI** — [sidebar](../sidebar/index.md) 영역.
-- **탭 스트립의 시각/드래그 동작** — `features/workspace-tabs/` *(재작성 예정)*. 여기선 Pane 의 `tabs`/`active_tab` *도메인* 만.
-- **상태바** — `features/workspace-status-bar/` *(재작성 예정)*.
+- **탭 스트립의 시각/드래그 동작** — [`features/workspace-tabs/`](../workspace-tabs/index.md). 여기선 Pane 의 `tabs`/`active_tab` *도메인* 만.
+- **상태바** — [`features/workspace-status-bar/`](../workspace-status-bar/index.md).
 - **터미널 PTY/그리드/스크롤백 내부** — surface 는 leaf marker 일 뿐, 터미널 데이터는 `TerminalStore`.
 - **attach/detach 실행 메커니즘** — surface 는 `attached` marker 만; 점유 동작·실행은 [remote-attach](../remote-attach/index.md), 메커니즘은 [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
 

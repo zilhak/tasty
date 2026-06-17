@@ -75,7 +75,7 @@ GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
 - macOS `*.dmg` / Windows `*.zip`·`*.msi` / Linux x64·arm64 각 `.tar.gz`·`.deb`·`.rpm`·`.AppImage`
 - `SHA256SUMS-{macos,windows,linux-x64,linux-arm64}.txt` 4종 (없으면 `tasty update` 가 hard fail)
 
-> **사용자 업그레이드**: publish 되면 호스트 백그라운드 폴러가 1시간 내 감지 → in-app 알림 + Settings의 Updates 탭 표시. 사용자는 `tasty update` 로 다운로드 + SHA256 검증 + atomic swap 후 수동 재시작. (자동 업데이트 기능 문서: `features/auto-update/` *재작성 예정*.)
+> **사용자 업그레이드**: publish 되면 호스트 백그라운드 폴러가 1시간 내 감지 → in-app 알림 + Settings의 Updates 탭 표시. 사용자는 `tasty update` 로 다운로드 + SHA256 검증 + atomic swap 후 수동 재시작. (자동 업데이트 기능 문서: [`features/auto-update/`](../features/auto-update/index.md).)
 
 ## API 안정성 가드
 
