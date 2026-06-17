@@ -264,6 +264,7 @@ theme = "テーマ"
 general = "一般"
 display = "ディスプレイ"
 terminal = "ターミナル"
+html = "HTML"
 
 [settings.appearance.theme]
 heading = "テーマプリセット"

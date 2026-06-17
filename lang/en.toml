@@ -264,6 +264,7 @@ theme = "Theme"
 general = "General"
 display = "Display"
 terminal = "Terminal"
+html = "HTML"
 
 [settings.appearance.theme]
 heading = "Theme Preset"

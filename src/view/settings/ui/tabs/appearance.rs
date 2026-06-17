@@ -83,7 +83,10 @@ pub fn draw_appearance_tab(
             t(&entry.page.title_key).to_string(),
         ));
     }
-    sub_tabs.push((AppearanceSubTab::HtmlViewer, "HTML".to_string()));
+    sub_tabs.push((
+        AppearanceSubTab::HtmlViewer,
+        t("settings.appearance.subtab.html").to_string(),
+    ));
 
     // If the currently active sub-tab points at a plugin page that's no longer
     // present (plugin disabled mid-session), fall back to Theme so the right
