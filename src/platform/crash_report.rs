@@ -103,7 +103,7 @@ fn write_crash_report(info: &panic::PanicHookInfo<'_>, backtrace: &Backtrace) ->
 ///
 /// - **All builds**: Installs a panic hook that writes crash reports to `~/.tasty/crash-reports/`.
 ///   Initializes tracing with stderr output.
-/// - **Debug builds only**: Additionally writes all tracing output to `~/.tasty/debug.log`.
+/// - **Debug builds only**: Additionally writes all tracing output to `~/.tasty/debug-dev.log`.
 pub fn init() {
     // Install panic hook (always, no runtime cost until panic)
     panic::set_hook(Box::new(|info| {
