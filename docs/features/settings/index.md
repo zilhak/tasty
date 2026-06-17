@@ -12,12 +12,17 @@
 
 ## 내부 동작
 
-### 2-level IA — L1 4탭 × L2 섹션
+### 2-level IA — L1 7탭 × L2 섹션
 
-- **General** — L2: General / Terminal / Clipboard / Notifications / Accessibility / Updates (+ 현재 Performance / FileHandler / Windows 전용 Tastyrc 가 잠정 귀속).
-- **Appearance** — L2: Theme / General / Tasty / Terminal / HtmlViewer (+ 플러그인 기여 페이지).
-- **Keybindings** — 단축키 편집 (아래).
-- **Plugins** — 플러그인 기여 설정 페이지.
+상단 L1 7탭, 각 탭은 좌측에 L2 섹션 목록을 가진다 (이 순서):
+
+- **General** — L2: General / Clipboard / Notifications / Accessibility / Updates.
+- **Terminal** — L2: General(터미널 동작 설정) / Performance.
+- **Appearance** — L2: Theme / General / Display / Terminal / (플러그인 기여 페이지 동적) / HTML. Display = UI 스케일(sm/md/lg) 전용. (앱 크롬 색상용 Tasty 섹션은 현재 미구현 — 추후 추가 예정.)
+- **Keybindings** — L2: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins. 단축키 편집 (아래).
+- **FileHandler** — L2: Extension Mapping / Detectors / Handlers.
+- **Misc** — L2: Tastyrc (Windows 전용; 비-Windows 는 섹션 0개 → empty state).
+- **Plugins** — 플러그인 기여 설정 페이지 (동적).
 
 L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능 (L1 전환 시 클리어).
 
@@ -48,7 +53,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 ## Acceptance Criteria
 
-- [ ] 사이드바 설정 버튼 클릭 시 설정 모달이 열린다 (L1 4탭).
+- [ ] 사이드바 설정 버튼 클릭 시 설정 모달이 열린다 (L1 7탭).
 - [ ] L1 탭 전환 시 좌측 L2 섹션 목록이 그 탭의 것으로 바뀌고 필터가 클리어된다.
 - [ ] 편집 후 Save 시 영속 Settings 에 반영되고, Cancel 시 폐기된다.
 - [ ] Keybindings 에서 키 조합 녹화 시 충돌이 있으면 확인 팝업이 뜬다.
@@ -59,7 +64,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 ## 구현
 
 - `src/view/settings.rs` — `SettingsView`, `SettingsUiState`(draft/active_tab/sub-tab 상태).
-- `src/view/settings/ui.rs` — `SettingsTab`(L1 4탭), `GeneralSubTab`/`AppearanceSubTab`/`PluginSubTab`(L2), L2 필터.
+- `src/view/settings/ui.rs` — `SettingsTab`(L1 7탭: General / Terminal / Appearance / Keybindings / FileHandler / Misc / Plugins), L2 enum 군 `GeneralSubTab` / `TerminalSubTab` / `AppearanceSubTab`(Theme / General / Display / Terminal / Plugin / HtmlViewer) / `MiscSubTab` / `PluginSubTab`, L2 필터. FileHandler 는 L1 으로 승격되어 기존 내부 3depth(Extension Mapping / Detectors / Handlers)가 그 L2 가 된다.
 - 탭별: `src/view/settings/ui/tabs/*` + `keybindings_tab.rs` + `file_handler_tab.rs`.
 
 ## 화면

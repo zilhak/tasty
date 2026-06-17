@@ -11,23 +11,30 @@
 ## 레이아웃 (2-level IA)
 
 ```
-┌──────────────────────────────────────────────┐
-│ [General] [Appearance] [Keybindings] [Plugins]│  L1 탭바
-├───────────────┬──────────────────────────────┤
-│ 🔍 필터        │                              │
-│ ▸ General     │   (선택된 L2 섹션의 설정 항목)  │  콘텐츠
-│   Terminal    │                              │
-│   Clipboard   │                              │
-│   …(L2 섹션)   │                              │
-├───────────────┴──────────────────────────────┤
-│                          [ Cancel ] [ Save ] │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ [General][Terminal][Appearance][Keybindings][FileHandler][Misc][Plugins]│  L1 탭바 (7탭, 폭 넘치면 화살표 스크롤)
+├───────────────┬────────────────────────────────────────────────────────┤
+│ 🔍 필터        │                                                        │
+│ ▸ General     │   (선택된 L2 섹션의 설정 항목)                            │  콘텐츠
+│   Clipboard   │                                                        │
+│   Notifications│                                                       │
+│   …(L2 섹션)   │                                                        │
+├───────────────┴────────────────────────────────────────────────────────┤
+│                                              [ Cancel ] [ Save ]        │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## UI 요소 인벤토리
 
-- **L1 탭바** (상단): General / Appearance / Keybindings / Plugins.
-- **L2 섹션 목록** (좌측): 현재 L1 의 하위 섹션 + **필터 검색**. (L1 전환 시 필터 클리어.)
+- **L1 탭바** (상단, 7탭, 이 순서): General / Terminal / Appearance / Keybindings / FileHandler / Misc / Plugins.
+- **L2 섹션 목록** (좌측): 현재 L1 의 하위 섹션 + **필터 검색**. (L1 전환 시 필터 클리어.) L1 별 L2:
+  - **General**: General / Clipboard / Notifications / Accessibility / Updates
+  - **Terminal**: General(터미널 동작 설정) / Performance
+  - **Appearance**: Theme / General / Display(UI 스케일 전용) / Terminal / (플러그인 기여 페이지 동적) / HTML
+  - **Keybindings**: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins
+  - **FileHandler**: Extension Mapping / Detectors / Handlers
+  - **Misc**: Tastyrc (Windows 전용; 비-Windows 는 섹션 0개 → empty state)
+  - **Plugins**: 플러그인 기여 설정 페이지 (동적)
 - **콘텐츠** (중앙): 선택된 L2 섹션의 설정 항목. 도메인별 내용은 해당 기능 문서로 위임 (연결 개념):
   - Keybindings → [`features/keybindings/`](../../keybindings/index.md) / [`design/policies/key-mapping`](../../../design/policies/key-mapping.md)
   - Theme(Appearance) → [`design/systems/theme`](../../../design/systems/theme.md)
