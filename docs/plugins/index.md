@@ -4,8 +4,6 @@ tasty 에 **동봉되어 첫 부팅 시 자동 install** 되는 공식 플러그
 
 각 플러그인은 폴더 하나다 — `plugins/<id>/index.md`(동작) + `screens/`(UI 가 있으면). 이 영역은 [features/](../features/index.md) 와 구조가 같되, **host 가 아니라 플러그인이 제공**하는 동작이라 분리되어 있다. 양식은 features 템플릿을 그대로 쓴다.
 
-> **재작성 중** — 검증된 항목만 등재한다. 옛 명세는 [`docs-old/`](../../docs-old/) 참고.
-
 ## 카탈로그 (`BUILTINS`)
 
 | 플러그인 (id) | 무엇 | 주요 기여 |

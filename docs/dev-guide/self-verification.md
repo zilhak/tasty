@@ -41,6 +41,8 @@ pkill -f "target/debug/tasty\$"                          # 종료
 
 색상·정렬·폰트처럼 스크린샷이 필요한 변경은 CLI 만으로 잡지 못한다 — [`ai-verification/visual-verification`](../ai-verification/visual-verification.md) 체크리스트를 따른다.
 
+**스크린샷은 OS 화면 캡처(`screencapture` / PowerShell `CopyFromScreen` 등)를 쓰지 말고 tasty 자체 `ui.screenshot` IPC 를 쓴다.** OS 화면 캡처는 화면 녹화 권한이 필요해 *빌드할 때마다 사용자가 권한을 다시 풀어주지 않는 한 막힌다* — 자기검증 흐름이 권한 프롬프트에서 멈춘다. `ui.screenshot` 은 tasty 가 실제 렌더한 프레임을 권한 없이 PNG 로 떨구므로 자동 검증에 적합하다(다른 창 가림·포커스 상태에도 영향 없음). 호출법·격리 실행은 [`ai-verification/screenshot-methods`](../ai-verification/screenshot-methods.md). OS 캡처는 IPC 를 못 쓰는 셸 설정 모드 등에서만 폴백.
+
 ## 안티패턴 / 패턴
 
 - ❌ "빌드 통과했어요, 확인해 주세요" — 빌드는 검증이 아니다.
@@ -53,4 +55,4 @@ pkill -f "target/debug/tasty\$"                          # 종료
 
 - [debug-ipc.md](debug-ipc.md) — debug 전용 IPC (사용자 입력 재현)
 - [independent-verification.md](independent-verification.md) — debug 격리 + 자기검증 배경
-- [`ai-verification/visual-verification`](../ai-verification/visual-verification.md) — 시각 검증
+- [`ai-verification/visual-verification`](../ai-verification/visual-verification.md) — 시각 검증 · [`ai-verification/screenshot-methods`](../ai-verification/screenshot-methods.md) — `ui.screenshot`(OS 캡처 금지)

@@ -8,5 +8,6 @@
 | [event-catalog.md](event-catalog.md) | Event Bus 1.0 wire 계약 (plugin 공개 API) | `tasty_plugin_protocol::events` |
 | [output-parsers.md](output-parsers.md) | 터미널 출력 파서 카탈로그 | `tasty-output` |
 | [environments.md](environments.md) | OS별 경로·에이전트 부트스트랩 패턴 | — |
+| [plan.schema.json](plan.schema.json) | 공유 컨텍스트 Plan 의 JSON Schema (memory 키 `tasty.plan.<id>`) | `crates/tasty-memory/src/plan.rs` |
 
 > 메서드 시그니처·권한의 *정답*은 항상 코드(`method_meta.rs` / 각 핸들러)다. 이 문서들은 사람이 읽기 위한 요약이며, 충돌 시 코드를 따른다.

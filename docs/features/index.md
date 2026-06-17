@@ -4,7 +4,6 @@
 
 양식: [`_feature.template.md`](_feature.template.md) (기획) · [`_screen.template.md`](_screen.template.md) (화면). 새 기능은 양식을 복사해 채운다.
 
-> **재작성 중** — 검증된 기능만 아래에 등재한다. 옛 명세는 [`docs-old/features/`](../../docs-old/features/) 참고(현재 상태와 다를 수 있음).
 
 ## 카탈로그
 

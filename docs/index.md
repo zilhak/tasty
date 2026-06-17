@@ -2,7 +2,7 @@
 
 크로스 플랫폼 GPU 가속 네이티브 터미널 에뮬레이터의 설계·명세·개발 문서. 이 인덱스가 진입점이다.
 
-> **재정비 중**: docs 를 새 [문서 모델](documentation-model.md)에 맞춰 다시 쓰는 중이다. 기존 문서는 [`docs-old/`](../docs-old/) 에 참고용으로 보존되어 있다(현재 상태와 다를 수 있음). **새로 작성·검증된 문서만 아래에 등재한다.**
+> 모든 문서는 [문서 모델](documentation-model.md)(behavior-first)에 맞춰 재작성·검증을 마쳤다. 옛 `docs-old/` 는 전부 이관/흡수/폐기되어 제거됐다.
 
 ## 작업 전 필독
 
@@ -20,17 +20,13 @@
 
 | 카테고리 | 진입 | 상태 |
 |----------|------|------|
-| 근거 (ADR) | [adr/index.md](adr/index.md) | ✅ 보존 (불변) |
-| 기능 (기획·화면) | [features/index.md](features/index.md) | 🚧 폴더 모델 재작성 중 (템플릿 준비됨, 카탈로그 비어있음) |
-| 번들 플러그인 | [plugins/index.md](plugins/index.md) | 🚧 재작성 중 (8종 등재) |
-| 설계 (design) | [policies/](design/policies/focus.md) · [systems/](design/systems/theme.md) · [flows/](design/flows/index.md) | 🚧 재작성 중 (정책 7 · 시스템 6 · 흐름 2[action-dispatch·split-command]) |
-| 레퍼런스 (조회) | [reference/index.md](reference/index.md) | 🚧 재작성 중 (api·event-catalog·output-parsers·environments) |
-| 개발 가이드 | [dev-guide/index.md](dev-guide/index.md) — 시작·검증 / 코드 정책 / 빌드·릴리스 / 구현 패턴 / IPC·Agent / 테스트 / Plugin (34 문서) | ✅ 이관 완료 |
-| 아키텍처 | [개요](architecture/index.md) · [multi-window](architecture/multi-window.md) · [input-layer](architecture/input-layer.md) · [data-flows](architecture/data-flows.md) · [ui-widgets-crate](architecture/ui-widgets-crate.md) · [invariants/](architecture/invariants/index.md) | 🚧 재작성 중 (개요·흐름·불변식) |
-| AI 자체 검증 | [ai-verification/index.md](ai-verification/index.md) — visual · screenshot · ipc · ime | ✅ 이관 완료 |
-
-## 재작성 대기 (docs-old)
-
-아래는 [`docs-old/`](../docs-old/) 에서 재작성 대기 중 — 새 모델로 옮겨오며 검토·교정한다:
-
-잔여 정리: `installation.md` + 옛 단일 파일(`features.md`/`index.md`) + 디렉토리 residual
+| 개념 (concepts) | [concepts/index.md](concepts/index.md) | ✅ |
+| 기능 (기획·화면) | [features/index.md](features/index.md) | ✅ |
+| 번들 플러그인 | [plugins/index.md](plugins/index.md) | ✅ (8종) |
+| 설계 (design) | [policies/](design/policies/focus.md) · [systems/](design/systems/theme.md) · [flows/](design/flows/index.md) | ✅ (정책 · 시스템 · 흐름) |
+| 레퍼런스 (조회) | [reference/index.md](reference/index.md) | ✅ |
+| 개발 가이드 | [dev-guide/index.md](dev-guide/index.md) | ✅ |
+| 아키텍처 | [architecture/index.md](architecture/index.md) | ✅ |
+| AI 자체 검증 | [ai-verification/index.md](ai-verification/index.md) | ✅ |
+| 근거 (ADR) | [adr/index.md](adr/index.md) | ✅ (Accepted 후 불변) |
+| 설치 | [installation.md](installation.md) | ✅ |
