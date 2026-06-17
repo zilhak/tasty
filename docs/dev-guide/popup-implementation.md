@@ -94,4 +94,4 @@ if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) { /* apply
 
 - [concepts/ubiquitous-language](../concepts/ubiquitous-language.md) — Window/Modal/Popup/Toast 구분
 - [`design/systems/popup.md`](../design/systems/popup.md) — 팝업 시스템 전체 설계 (스코프·z-order·입력 계층)
-- `architecture/input-layer.md` *(재작성 예정)* — 마우스 입력 계층/소비
+- [architecture/input-layer](../architecture/input-layer.md) — 마우스 입력 계층/소비
