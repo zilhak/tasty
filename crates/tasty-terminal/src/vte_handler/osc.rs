@@ -1,7 +1,9 @@
 //! VTE handler: osc 도메인.
 
+use termwiz::cell::CellAttributes;
 use termwiz::escape::OperatingSystemCommand;
 use termwiz::escape::csi::Device;
+use termwiz::surface::{Change, CursorVisibility};
 
 use crate::{TerminalEvent, TerminalEventKind, TerminalState};
 
@@ -172,6 +174,26 @@ impl TerminalState {
             // Unit id is a fixed hex string (very rarely queried).
             Device::RequestTertiaryDeviceAttributes => {
                 self.send_terminal_response("\x1bP!|54415354\x1b\\");
+            }
+            // DECSTR (CSI ! p): soft terminal reset. Unlike RIS (ESC c), this does
+            // NOT clear the screen, switch the alternate screen, or touch the
+            // palette/tab stops — screen content and alt-screen state are preserved.
+            // It restores the cursor/SGR/mode subset apps rely on at init time.
+            Device::SoftReset => {
+                // Margins → full screen (DECSTBM).
+                self.scroll_region = None;
+                // Saved cursor → cleared (DECSC store).
+                self.saved_cursor = None;
+                // Application cursor keys (DECCKM) → reset.
+                self.application_cursor_keys = false;
+                // Insert/replace mode (IRM) → replace.
+                self.insert_mode = false;
+                // Text cursor enable (DECTCEM) → visible.
+                self.cursor_visible = true;
+                // SGR → default, cursor → visible. Applied via the surface since
+                // handle_device returns (); screen content stays intact.
+                self.apply_or_stage_change(Change::AllAttributes(CellAttributes::default()));
+                self.apply_or_stage_change(Change::CursorVisibility(CursorVisibility::Visible));
             }
             _ => {}
         }

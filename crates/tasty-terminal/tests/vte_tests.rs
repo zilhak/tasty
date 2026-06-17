@@ -455,3 +455,76 @@ fn mixed_ascii_and_escape() {
     t.feed(b"\x1b[32m$ \x1b[0mhello");
     assert_eq!(t.row(0), "$ hello");
 }
+
+// ============================================================
+// DECSTR — Soft Reset (CSI ! p)
+// ============================================================
+
+#[test]
+fn decstr_resets_sgr_to_default() {
+    let mut t = Term::new(80, 24);
+    t.feed_str("\x1b[1m"); // bold on
+    t.feed_str("\x1b[!p"); // DECSTR
+    t.feed_str("X");
+    let info = t.term.cell_info(0, 0).unwrap();
+    assert!(!info.bold, "SGR should be reset after DECSTR");
+}
+
+#[test]
+fn decstr_resets_cursor_visibility_and_app_keys() {
+    let mut t = Term::new(80, 24);
+    t.feed_str("\x1b[?1h"); // DECCKM: application cursor keys on
+    t.feed_str("\x1b[?25l"); // DECTCEM: hide cursor
+    assert!(t.application_cursor_keys());
+    assert!(!t.term.cursor_visible());
+    t.feed_str("\x1b[!p"); // DECSTR
+    assert!(
+        !t.application_cursor_keys(),
+        "application cursor keys reset"
+    );
+    assert!(t.term.cursor_visible(), "cursor visibility restored");
+}
+
+#[test]
+fn decstr_preserves_screen_content() {
+    let mut t = Term::new(80, 24);
+    t.feed_str("keep me");
+    t.feed_str("\x1b[!p"); // DECSTR must NOT clear the screen
+    assert_eq!(t.row(0), "keep me");
+}
+
+#[test]
+fn decstr_clears_saved_cursor() {
+    let mut t = Term::new(80, 24);
+    t.feed_str("\x1b[3;6H"); // move to row 3, col 6 (1-indexed)
+    t.feed_str("\x1b7"); // DECSC: save cursor
+    t.feed_str("\x1b[!p"); // DECSTR clears the saved cursor
+    t.feed_str("\x1b[H"); // home → (0, 0)
+    t.feed_str("Z"); // writes at (0, 0), cursor → (1, 0)
+    t.feed_str("\x1b8"); // DECRC: no-op since saved cursor cleared
+    t.feed_str("Q"); // writes at (1, 0)
+    assert_eq!(t.row(0), "ZQ");
+}
+
+#[test]
+fn decstr_resets_insert_mode() {
+    let mut t = Term::new(80, 24);
+    t.feed_str("ABCDE");
+    t.feed_str("\r"); // cursor → col 0
+    t.feed_str("\x1b[4h"); // IRM: insert mode on
+    t.feed_str("\x1b[!p"); // DECSTR resets insert mode
+    t.feed_str("XY"); // replace mode → overwrites
+    assert_eq!(t.row(0), "XYCDE");
+}
+
+#[test]
+fn decstr_resets_scroll_region() {
+    let mut t = Term::new(80, 3);
+    t.feed_str("\x1b[2;3r"); // DECSTBM: scroll region rows 2-3
+    t.feed_str("\x1b[!p"); // DECSTR resets region to full screen
+    t.feed_str("\x1b[H"); // cursor home
+    t.feed_str("L0\r\nL1\r\nL2\r\n"); // bottom newline scrolls full screen
+    // Full-screen scroll: L0 evicted, rows shift up.
+    assert_eq!(t.row(0), "L1");
+    assert_eq!(t.row(1), "L2");
+}
