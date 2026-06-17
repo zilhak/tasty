@@ -1,0 +1,90 @@
+# 유비쿼터스 언어 (통합 용어집)
+
+tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 문서는 **용어집(색인)** 이다 — 각 용어의 *정의 본체* 는 해당 개념 문서에 있고, 여기서는 한 줄 정의 + 정본(canonical) 링크만 둔다. 깊이가 필요하면 링크로 간다.
+
+> 용어를 잘못 쓰면 코드·문서·API 일관성이 깨진다. 특히 **Window/View**, **Workspace/Pane/Tab/Surface** 계층, **상위/하위 레이아웃**, **Modal/Popup/Toast** 구분을 혼동하지 않는다.
+
+## 정본 문서
+
+| 영역 | 정본 | 다루는 용어 |
+|------|------|-------------|
+| 주체 | [actors.md](actors.md) | 로컬 사용자 · AI Agent · 원격 사용자 · 점유 |
+| 구조 | [hierarchy.md](hierarchy.md) | Engine · View · Workspace · Pane · Tab · Surface · 두 레벨 레이아웃 |
+| 플러그인 | [plugins.md](plugins.md) | 배포/통합 축 · surface_kind · 권한 |
+| attach | [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) | server/client · mirror · lock |
+
+## 용어 한 줄 정의
+
+### 주체 (→ [actors.md](actors.md))
+
+- **로컬 사용자** — 이 머신에서 GUI 를 직접 쓰는 사람. 포커스의 주인. 점유 불필요. 점유를 끊을 수 있는 유일한 주체.
+- **AI Agent** — IPC/CLI 로 tasty 를 조작하는 AI. 대상은 ID 직접 지정. 점유 없이 동작, **격리 계약**(부수효과가 사용자 상태에 안 닿음)을 따른다.
+- **원격 접속 사용자** — SSH 너머에서 attach 로 접속하는 사람. 행동은 AI Agent 에 가깝고(연결 기반), **점유**라는 관문을 반드시 통과한다.
+- **점유(occupation)** — 원격 사용자가 surface/workspace 를 **배타 claim**. 점유 중 다른 주체는 readonly. 대상→점유자는 1:1, 원격 사용자→대상은 1:N.
+
+### 구조 (→ [hierarchy.md](hierarchy.md))
+
+- **Engine** — 진입점 + 서버. IPC 포트 소유, 모든 View 생명주기 관리. **headless 에선 View 없이 Engine + `CoreState` 만 동작.**
+- **Window** — winit OS 창 자원(`winit::window::Window`). tasty 쪽 `Window` 타입은 **없다** — 이 단어는 OS 창만 가리킨다.
+- **View** — tasty 쪽 윈도우 표현(종류+콘텐츠+행동). winit Window 를 소유. **1 View : 1 Window.** `MainView`/`SettingsView`/… 가 구현체.
+- **CoreState** — 구조 계층의 도메인 트리(Workspace…Surface). **GUI 없이도 구성**되며, GUI 에선 `MainView` 가 이를 호스팅·투영.
+- **Workspace** — 도메인 최상위 컨테이너. 사이드바에서 전환.
+- **Pane** — 독립 탭 바를 가진 영역. **상위 레이아웃**이 위치 결정(탭 무관 고정). tasty 고유.
+- **Tab** — Pane 안의 탭 하나. 내부에 Surface 들의 **하위 레이아웃**을 가짐(탭 전환 시 함께 전환).
+- **Surface** — 최하위 컨테이너. `surface_id` + **kind(타입)** 를 가짐. 닫기/포커스/리스트는 kind 무관 동일.
+- **상위 레이아웃 / 하위 레이아웃** — Pane 배치(탭 무관) / Surface 배치(탭 종속). 두 레벨을 **둘 다** 제공하는 게 tasty 핵심 설계.
+
+### View 내부 (→ hierarchy.md, `design/systems/`)
+
+- **Modal** — 전역 1개, 활성 시 입력 차단하는 View 의 한 형태(별개 엔티티 아님). `SettingsView`/`QuitView`/`PluginsView`.
+- **Popup** — View 내부 가상 창(타이틀바+콘텐츠, 드래그·z-order). 스코프 가짐. 상세 `design/systems/popup.md` *(재작성 예정)*.
+- **Toast** — View 내부 휘발성 알림. 포커스 안 받고 입력 비소비. **사용자 행동에서만** 발사(에이전트 IPC 는 발사 안 함). 상세 `design/systems/toast.md` *(재작성 예정)*.
+
+### Surface 종류 (→ [hierarchy.md](hierarchy.md#surface-타입) · [plugins.md](plugins.md))
+
+- **host 내장** — `terminal`(PTY+GPU 셰이더) / `empty` / `attached`(점유 mirror).
+- **host-rendered plugin** — `markdown` / `image` (plugin 이 `rendering=host` 선언, host 가 egui 로 그림).
+- **RemoteSurface plugin** — `explorer` / `html` (plugin 이 직접 그림).
+
+### attach (→ [attach-behavior.md](../dev-guide/attach-behavior.md))
+
+- **server / client** — 점유당하는 쪽(PTY 권위 owner, 항상 loopback 으로만 받음) / 점유하는 쪽(원격성을 흡수). "로컬/원격" 은 **client 측 개념**.
+- **mirror** — client 가 받은 출력으로 PTY 없이 재구성한 복제 화면. GUI mirror = 원격 워크스페이스를 로컬 GUI 에 일반 워크스페이스로 띄운 것.
+- **remote** — client 가 SSH 너머인 경우. tasty 는 자체 원격 프로토콜 없이 SSH 에 위임 → release CLI `tasty remote attach`. (로컬 self-attach 는 debug 전용, [ADR-0007](../adr/0007-attach-targets-remote.md).)
+
+## 기존 터미널과의 대응
+
+Pane 은 tmux/iTerm2 에 대응 개념이 **없는** tasty 고유 설계다. 그래서 분할 정책을 두 레벨로 가진다.
+
+| 동작 | tmux | iTerm2 | tasty |
+|------|------|--------|-------|
+| 화면 분할 위치 | window 고정 | tab 종속 | **두 레벨 선택** (상위=Pane / 하위=Surface) |
+| 탭 전환 시 분할 | 유지 | 전환 | 상위 유지 + 하위 전환 |
+
+| tasty | tmux | iTerm2 |
+|-------|------|--------|
+| Workspace | Session | Window |
+| Pane | — | — |
+| Tab | Window(탭) | Tab |
+| Surface(terminal) | Pane | Pane(split) |
+
+## 코드 심볼 크로스워크
+
+| 용어 | Rust 심볼 |
+|------|-----------|
+| Engine | `core::Core` + `core::CoreState` |
+| 구조 도메인 트리 | `core::CoreState` (Workspace…Surface 보유) |
+| View(상위) | `view::ui::View` (sealed trait) |
+| View 계열 | `ModalView` / `TerminalHostView` / `EditorView` supertrait |
+| View 구현체 | `MainView` / `SettingsView` / `QuitView` / `PluginsView` / `PresetView` |
+| 상위 레이아웃 | `PaneNode` (이진 트리: Leaf/Split) |
+| Pane / Tab | `Pane` / `Tab` |
+| 하위 레이아웃 | `SurfaceLayout` (이진 트리: Leaf/Split) |
+| Surface | `Surface` trait; plugin surface 는 host 에 `RemoteSurface` 로 보관 |
+| Popup / Toast | `PopupDef`+`PopupManager` / `ToastState`+`ToastManager` |
+| 길이 타입 | `PhysicalPx` / `LogicalPx` (→ [typed-length.md](typed-length.md)) |
+
+## 관련
+
+- [identity.md](../identity.md) — 정체성·불가침 원칙 (이 용어들의 *왜*)
+- [typed-length.md](typed-length.md) — 길이 타입 newtype
