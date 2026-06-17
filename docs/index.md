@@ -27,10 +27,10 @@
 | 레퍼런스 (조회) | [reference/index.md](reference/index.md) | 🚧 재작성 중 (api·event-catalog·output-parsers·environments) |
 | 개발 가이드 | [dev-guide/index.md](dev-guide/index.md) — 시작·검증 / 코드 정책 / 빌드·릴리스 / 구현 패턴 / IPC·Agent / 테스트 / Plugin (34 문서) | ✅ 이관 완료 |
 | 아키텍처 | [개요](architecture/index.md) · [multi-window](architecture/multi-window.md) · [input-layer](architecture/input-layer.md) · [data-flows](architecture/data-flows.md) · [ui-widgets-crate](architecture/ui-widgets-crate.md) · [invariants/](architecture/invariants/index.md) | 🚧 재작성 중 (개요·흐름·불변식) |
-| AI 자체 검증 | [ai-verification/visual-verification](ai-verification/visual-verification.md) | 🚧 일부 (시각 검증) |
+| AI 자체 검증 | [ai-verification/index.md](ai-verification/index.md) — visual · screenshot · ipc · ime | ✅ 이관 완료 |
 
 ## 재작성 대기 (docs-old)
 
 아래는 [`docs-old/`](../docs-old/) 에서 재작성 대기 중 — 새 모델로 옮겨오며 검토·교정한다:
 
-`ai-verification/`(나머지) · `installation.md`
+잔여 정리: `installation.md` + 옛 단일 파일(`features.md`/`index.md`) + 디렉토리 residual
