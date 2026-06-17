@@ -5,6 +5,7 @@ use std::sync::Arc;
 use termwiz::cell::{AttributeChange, CellAttributes};
 use termwiz::escape::OperatingSystemCommand;
 use termwiz::escape::csi::Device;
+use termwiz::escape::osc::ColorOrQuery;
 use termwiz::surface::{Change, CursorVisibility};
 
 use crate::{TerminalEvent, TerminalEventKind, TerminalState};
@@ -89,6 +90,54 @@ impl TerminalState {
                 self.apply_or_stage_change(Change::Attribute(AttributeChange::Hyperlink(
                     opt.map(Arc::new),
                 )));
+            }
+            // OSC 10/11/12 (… up to 19): dynamic colors. `OSC 10 ; spec ; spec …`
+            // assigns fg, then bg, then cursor in sequence, so the n-th entry maps
+            // to color number `base + n`. Only *queries* (`?`) are answered — with
+            // the plumbed theme RGB; set requests are ignored (no palette-override
+            // storage yet — H3 scope). Color numbers tasty has no source for
+            // (13..=19) are left unanswered. The response reflects the OSC number
+            // and uses ST termination (xterm convention; neovim rejects the BEL
+            // form).
+            OperatingSystemCommand::ChangeDynamicColors(first_color, colors) => {
+                let Some(palette) = self.color_palette.clone() else {
+                    return;
+                };
+                let base = first_color as u8;
+                for (offset, color) in colors.iter().enumerate() {
+                    if !matches!(color, ColorOrQuery::Query) {
+                        continue;
+                    }
+                    let number = base + offset as u8;
+                    if let Some(rgb) = palette.dynamic_color(number) {
+                        self.send_terminal_response(&format!(
+                            "\x1b]{};{}\x1b\\",
+                            number,
+                            rgb.to_x11_16bit()
+                        ));
+                    }
+                }
+            }
+            // OSC 4: ANSI palette colors. Each pair queries one palette index;
+            // a query (`?`) is answered with the theme RGB for that index. Indices
+            // outside the 16 theme-defined ANSI colors (the fixed xterm cube/ramp)
+            // are left unanswered. Set requests are ignored (H3 scope).
+            OperatingSystemCommand::ChangeColorNumber(pairs) => {
+                let Some(palette) = self.color_palette.clone() else {
+                    return;
+                };
+                for pair in &pairs {
+                    if !matches!(pair.color, ColorOrQuery::Query) {
+                        continue;
+                    }
+                    if let Some(rgb) = palette.ansi_color(pair.palette_index) {
+                        self.send_terminal_response(&format!(
+                            "\x1b]4;{};{}\x1b\\",
+                            pair.palette_index,
+                            rgb.to_x11_16bit()
+                        ));
+                    }
+                }
             }
             OperatingSystemCommand::SetSelection(_selection, data) => {
                 self.events.push(TerminalEvent {

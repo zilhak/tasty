@@ -1206,3 +1206,116 @@ fn decscusr_survives_soft_reset() {
     t.feed_bytes(b"\x1b[!p"); // DECSTR soft reset
     assert_eq!(t.cursor_shape(), CursorShape::BlinkingBar);
 }
+
+// ---- OSC color queries (H3): answer with the plumbed theme palette ----
+
+/// Distinct per-channel test palette so each color number's response is
+/// unambiguous. fg/bg/cursor and a couple of ANSI entries use values that
+/// survive the 8→16-bit widening unchanged in the low byte.
+fn test_palette() -> ColorPalette {
+    let mut ansi = [TerminalRgb::new(0, 0, 0); 16];
+    ansi[1] = TerminalRgb::new(0xff, 0x00, 0x00); // ANSI 1 (red)
+    ansi[4] = TerminalRgb::new(0x12, 0x34, 0x56); // ANSI 4 (blue), arbitrary
+    ColorPalette {
+        foreground: TerminalRgb::new(0xab, 0xcd, 0xef),
+        background: TerminalRgb::new(0x10, 0x20, 0x30),
+        cursor: TerminalRgb::new(0x11, 0x22, 0x33),
+        ansi,
+    }
+}
+
+#[test]
+fn osc11_bg_query_responds_with_palette_background() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.set_color_palette(test_palette());
+    t.feed_bytes(b"\x1b]11;?\x1b\\"); // bg color query (ST terminated)
+    let resp = rx.try_recv().expect("no OSC 11 response");
+    // bg = 0x10/0x20/0x30 → widened by *0x101.
+    assert_eq!(resp, b"\x1b]11;rgb:1010/2020/3030\x1b\\".to_vec());
+}
+
+#[test]
+fn osc10_fg_query_responds_with_palette_foreground() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.set_color_palette(test_palette());
+    t.feed_bytes(b"\x1b]10;?\x1b\\"); // fg color query
+    let resp = rx.try_recv().expect("no OSC 10 response");
+    assert_eq!(resp, b"\x1b]10;rgb:abab/cdcd/efef\x1b\\".to_vec());
+}
+
+#[test]
+fn osc12_cursor_query_responds_with_palette_cursor() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.set_color_palette(test_palette());
+    t.feed_bytes(b"\x1b]12;?\x1b\\"); // cursor color query
+    let resp = rx.try_recv().expect("no OSC 12 response");
+    assert_eq!(resp, b"\x1b]12;rgb:1111/2222/3333\x1b\\".to_vec());
+}
+
+#[test]
+fn osc4_palette_query_responds_with_ansi_color() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.set_color_palette(test_palette());
+    t.feed_bytes(b"\x1b]4;4;?\x1b\\"); // query ANSI index 4
+    let resp = rx.try_recv().expect("no OSC 4 response");
+    assert_eq!(resp, b"\x1b]4;4;rgb:1212/3434/5656\x1b\\".to_vec());
+}
+
+#[test]
+fn osc10_multi_query_reflects_fg_bg_cursor_in_sequence() {
+    // `OSC 10 ; ? ; ? ; ?` walks fg(10) → bg(11) → cursor(12); each `?` answers
+    // the next color number.
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.set_color_palette(test_palette());
+    t.feed_bytes(b"\x1b]10;?;?;?\x1b\\");
+    assert_eq!(
+        rx.try_recv().expect("no fg response"),
+        b"\x1b]10;rgb:abab/cdcd/efef\x1b\\".to_vec()
+    );
+    assert_eq!(
+        rx.try_recv().expect("no bg response"),
+        b"\x1b]11;rgb:1010/2020/3030\x1b\\".to_vec()
+    );
+    assert_eq!(
+        rx.try_recv().expect("no cursor response"),
+        b"\x1b]12;rgb:1111/2222/3333\x1b\\".to_vec()
+    );
+}
+
+#[test]
+fn osc_color_query_without_palette_is_silent() {
+    // No palette plumbed → no source → leave the query unanswered (don't guess).
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.feed_bytes(b"\x1b]11;?\x1b\\");
+    assert!(rx.try_recv().is_err(), "unset palette must not respond");
+}
+
+#[test]
+fn osc_color_set_request_is_not_answered() {
+    // A *set* (color spec, not `?`) must not emit any response — only queries do.
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.set_color_palette(test_palette());
+    t.feed_bytes(b"\x1b]11;rgb:0000/0000/0000\x1b\\"); // set bg, no query
+    assert!(rx.try_recv().is_err(), "set request must not respond");
+}

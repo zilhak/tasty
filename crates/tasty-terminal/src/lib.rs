@@ -1,4 +1,5 @@
 mod accessors;
+mod color;
 mod events;
 mod handle;
 mod io;
@@ -32,6 +33,7 @@ use termwiz::escape::csi::CSI;
 use termwiz::escape::parser::Parser;
 use termwiz::surface::Surface;
 
+pub use color::{ColorPalette, TerminalRgb};
 pub use events::*;
 pub use port::TerminalProcess;
 pub use scrollback::ScrollbackLine;
@@ -192,6 +194,11 @@ pub(crate) struct TerminalState {
     /// pen, setting the one field, and emitting `Change::AllAttributes`. Kept in
     /// sync by `mirror_pen()` on every change. See `vte_handler/control.rs`.
     current_pen: CellAttributes,
+    /// Resolved theme palette plumbed in by the host so OSC 10/11/12/4 color
+    /// *queries* report the colors the renderer actually draws. `None` until the
+    /// host sets it (a query before plumbing is left unanswered). Refreshed on
+    /// terminal creation and on every theme change. See `vte_handler/osc.rs`.
+    pub(crate) color_palette: Option<crate::color::ColorPalette>,
 }
 
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
@@ -277,6 +284,7 @@ impl TerminalState {
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
             emit_output_events: false,
             current_pen: CellAttributes::default(),
+            color_palette: None,
         }
     }
 

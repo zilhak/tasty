@@ -98,6 +98,13 @@ impl Terminal {
         self.lock_state().input_tx = Some(sink);
     }
 
+    /// Plumb the host's resolved theme palette so OSC 10/11/12/4 color *queries*
+    /// are answered with the colors the renderer actually draws. The host calls
+    /// this on terminal creation and whenever the theme changes.
+    pub fn set_color_palette(&mut self, palette: crate::color::ColorPalette) {
+        self.lock_state().color_palette = Some(palette);
+    }
+
     /// Send keyboard input to PTY (non-blocking, queued to writer thread).
     pub fn send_key(&mut self, text: &str) {
         self.lock_state().write_input(text.as_bytes().to_vec());

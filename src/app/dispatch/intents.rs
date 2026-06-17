@@ -150,6 +150,16 @@ impl App {
             w.base_mut().gpu.refresh_theme();
             w.mark_dirty();
         }
+
+        // Re-plumb the new theme palette into every terminal so OSC 10/11/12/4
+        // color queries report the new colors (decision H3 (가)). Covers main +
+        // parked engines, mirroring `cascade_internal_clipboard_copy`.
+        for main in self.main_windows_iter_mut() {
+            main.core_state.resync_terminal_palettes();
+        }
+        for (_, engine) in self.parked_states.iter_mut() {
+            engine.resync_terminal_palettes();
+        }
     }
 
     /// 단일 Intent 를 도메인 핸들러로 분기한다.

@@ -16,9 +16,51 @@
 
 use std::collections::HashMap;
 
-use tasty_terminal::Terminal;
+use tasty_terminal::{ColorPalette, Terminal, TerminalRgb};
+use tasty_type_appearance::color::HexColor;
 
 use crate::model::SurfaceId;
+
+fn rgb(c: HexColor) -> TerminalRgb {
+    TerminalRgb::new(c.r, c.g, c.b)
+}
+
+/// Build the OSC color-query palette from the current global theme. Mirrors the
+/// renderer's color sources (`gfx/gpu/render_pass.rs`): default fg/bg are the
+/// "terminal" surface's focused colors, the cursor is drawn in the fg color, and
+/// the ANSI 16 come from the theme palette (same order as `Theme::ansi_palette`).
+/// Plumbed into each terminal so OSC 10/11/12/4 *queries* report the colors the
+/// renderer actually draws (decision H3 (가)).
+fn current_terminal_palette() -> ColorPalette {
+    let theme = crate::theme::theme();
+    let surface = theme.surface("terminal");
+    let fg = rgb(surface.focused_fg);
+    let bg = rgb(surface.focused_bg);
+    let ansi = [
+        rgb(theme.ansi_black),
+        rgb(theme.ansi_red),
+        rgb(theme.ansi_green),
+        rgb(theme.ansi_yellow),
+        rgb(theme.ansi_blue),
+        rgb(theme.ansi_magenta),
+        rgb(theme.ansi_cyan),
+        rgb(theme.ansi_white),
+        rgb(theme.ansi_bright_black),
+        rgb(theme.ansi_bright_red),
+        rgb(theme.ansi_bright_green),
+        rgb(theme.ansi_bright_yellow),
+        rgb(theme.ansi_bright_blue),
+        rgb(theme.ansi_bright_magenta),
+        rgb(theme.ansi_bright_cyan),
+        rgb(theme.ansi_bright_white),
+    ];
+    ColorPalette {
+        foreground: fg,
+        background: bg,
+        cursor: fg,
+        ansi,
+    }
+}
 
 /// PTY/Terminal 데이터 owner. surface_id ↔ terminal 매핑 (1:1).
 ///
@@ -46,7 +88,8 @@ impl TerminalStore {
 
     /// Terminal 등록. 같은 id 가 이미 있으면 *overwrite* (옛 Terminal 의 PTY 는
     /// drop → SIGHUP). respawn 경로에서는 `replace` 가 더 명확하므로 그쪽 사용.
-    pub(crate) fn insert(&mut self, id: SurfaceId, terminal: Terminal) {
+    pub(crate) fn insert(&mut self, id: SurfaceId, mut terminal: Terminal) {
+        terminal.set_color_palette(current_terminal_palette());
         self.terminals.insert(id, terminal);
     }
 
@@ -59,8 +102,22 @@ impl TerminalStore {
 
     /// PTY 교체 (respawn). 옛 Terminal 이 drop 되며 SIGHUP. 같은 surface_id 가
     /// 유지되어 layout 의 leaf 위치는 그대로. 옛 메서드: `replace_terminal_by_id`.
-    pub(crate) fn replace(&mut self, id: SurfaceId, new_terminal: Terminal) -> Option<Terminal> {
+    pub(crate) fn replace(
+        &mut self,
+        id: SurfaceId,
+        mut new_terminal: Terminal,
+    ) -> Option<Terminal> {
+        new_terminal.set_color_palette(current_terminal_palette());
         self.terminals.insert(id, new_terminal)
+    }
+
+    /// Re-plumb the current theme palette into every terminal. Called after a
+    /// theme change so subsequent OSC color queries report the new theme.
+    pub(crate) fn resync_palettes(&mut self) {
+        let palette = current_terminal_palette();
+        for t in self.terminals.values_mut() {
+            t.set_color_palette(palette.clone());
+        }
     }
 
     pub(crate) fn get(&self, id: SurfaceId) -> Option<&Terminal> {

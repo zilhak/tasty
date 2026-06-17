@@ -447,6 +447,12 @@ impl CoreState {
         );
     }
 
+    /// Re-plumb the current global theme palette into every terminal so OSC
+    /// 10/11/12/4 color queries report the new theme. Called on theme change.
+    pub fn resync_terminal_palettes(&mut self) {
+        self.terminals.resync_palettes();
+    }
+
     /// Returns true if the surface received key input within the last 5 seconds.
     pub fn is_typing(&self, surface_id: u32) -> bool {
         if let Some(last) = self.last_key_input.get(&surface_id) {
