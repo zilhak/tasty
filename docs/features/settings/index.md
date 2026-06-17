@@ -37,9 +37,9 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 - **사용자**: 사이드바 설정 버튼 → 모달, L1/L2 탐색, 편집 → Save/Cancel.
 - **각 설정 도메인은 해당 기능으로 연결** (연결 개념 — 설정 창은 편집 UI, 도메인 규칙은 각 문서):
-  - Keybindings → `features/keybindings/` *(재작성 예정)* / 키 매핑 정책 [`design/policies/key-mapping`](../../design/policies/key-mapping.md)
+  - Keybindings → [`features/keybindings/`](../keybindings/index.md) / 키 매핑 정책 [`design/policies/key-mapping`](../../design/policies/key-mapping.md)
   - Appearance/Theme → [`design/systems/theme`](../../design/systems/theme.md)
-  - Clipboard → `features/clipboard/` · Notifications → `features/notifications/` · Updates → `features/auto-update/` · FileHandler → `features/file-handler/` *(모두 재작성 예정)*
+  - Clipboard → [`features/clipboard/`](../clipboard/index.md) · Notifications → [`features/notifications/`](../notifications/index.md) · Updates → [`features/auto-update/`](../auto-update/index.md) · FileHandler → [`features/file-handler/`](../file-handler/index.md)
   - Plugins → [`features/plugin-system/`](../plugin-system/index.md)
 
 ## 비-목표
