@@ -1,0 +1,43 @@
+# 개발 가이드 — Linux
+
+tasty 를 개발하는 AI 에이전트용 Linux 환경 가이드. (경로 예시는 Linux dev 머신 기준 — 본인 환경에 맞춰 치환.)
+
+## 바이너리 / 실행
+
+```
+target/debug/tasty     # 디버그
+target/release/tasty   # 릴리스
+```
+
+`tasty` 는 PATH 에 없다 — 직접 경로 또는 `cargo run`.
+
+```bash
+# 실행 여부
+pgrep -x tasty >/dev/null && echo running || echo "not running"
+
+# stale 포트 파일 정리 (프로세스 없는데 포트 파일만 남음)
+if [ -f ~/.tasty/tasty.port ] && ! pgrep -x tasty >/dev/null; then rm ~/.tasty/tasty.port; fi
+
+# GUI 실행 + 준비 대기
+./target/debug/tasty &
+while [ ! -f ~/.tasty/tasty.port ]; do sleep 0.2; done
+
+# 다중 인스턴스
+./target/debug/tasty --port-file /tmp/tasty-a.port &
+```
+
+종료: `tasty system shutdown`(IPC) 권장. `kill $(pgrep -x tasty)` 으로 죽이면 포트 파일 수동 삭제(`rm -f ~/.tasty/tasty.port`).
+
+## 빌드 후 재시작
+
+Linux 는 실행 중 바이너리를 `cargo build` 로 교체해도 실행 프로세스에 영향 없다(inode 참조). 실행 중 인스턴스는 옛 바이너리로 계속 동작, 다음 실행부터 새 바이너리.
+
+## 스크린샷
+
+GUI 모드 전용(headless 불가):
+
+```python
+call("ui.screenshot", {"path": "/tmp/tasty-capture.png"})   # PNG
+```
+
+hover/애니메이션 등 상태 의존 UI 는 정적 캡처로 확인 불가 — 조건(`if response.hovered()` 등)을 임시 제거해 항상 적용 → 빌드/재시작/캡처 → 확인 후 복원. (시각 검증 휴리스틱: [ai-verification/visual-verification](../ai-verification/visual-verification.md).)
