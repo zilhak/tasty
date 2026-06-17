@@ -353,8 +353,9 @@ fn draw_appearance_terminal(
         SurfaceFontTarget::Terminal,
     );
 
-    // Note: surface 색 picker 가 사라졌다. theme TOML
-    // (`~/.tasty/themes/<id>.toml` 의 `[surfaces.terminal]`) 에서 직접 편집.
+    // Note: surface 색 커스터마이징은 `theme_overrides`(settings) 레이어로 들어간다
+    // — 테마 파일은 앱 소유라 직접 편집해도 다음 부팅에 정본으로 덮어써진다.
+    // 이를 채우는 색 override picker UI 는 settings 디자인 확정 후 추가 예정(TODO).
 }
 
 /// Target of a font override section: either the host-internal `terminal_font`

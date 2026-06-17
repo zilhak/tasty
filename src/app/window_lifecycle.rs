@@ -24,8 +24,10 @@ fn boot_apply_theme(appearance: &mut tasty_settings::AppearanceSettings) -> Opti
     if let Err(e) = tasty_themes::first_run_init() {
         tracing::warn!("themes first_run_init failed: {e}");
     }
-    if let Err(e) = tasty_themes::ensure_mocha_exists() {
-        tracing::warn!("ensure_mocha_exists failed: {e}");
+    // 빌트인 테마(앱 소유)를 임베드 정본과 동기화 — 옛 스키마/색의 디스크 복사본을
+    // 갱신한다. mocha 정본 보장도 겸한다(ensure_mocha_exists 의 상위 집합).
+    if let Err(e) = tasty_themes::sync_builtin_themes() {
+        tracing::warn!("sync_builtin_themes failed: {e}");
     }
     if let Err(e) = tasty_themes::rescan() {
         tracing::warn!("themes rescan failed: {e}");

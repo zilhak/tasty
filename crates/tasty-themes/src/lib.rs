@@ -43,7 +43,7 @@ pub use state::{
 };
 pub use store::{
     BUILTIN_LATTE_ID, BUILTIN_MOCHA_ID, ThemeStoreError, ensure_mocha_exists, first_run_init,
-    rewrite_mocha_fallback, themes_dir,
+    rewrite_mocha_fallback, sync_builtin_themes, themes_dir,
 };
 pub use store_instance::ThemeStore;
 
@@ -58,6 +58,7 @@ pub use tasty_type_appearance::theme::{
 /// detecting a missing or corrupt mocha file.
 pub const MOCHA_TOML_TEXT: &str = include_str!("../themes/mocha.toml");
 
-/// Embedded built-in `latte.toml` text. Written to disk only when the themes
-/// directory is empty (first run). No automatic fallback otherwise.
+/// Embedded built-in `latte.toml` text. Seeded on first run (empty themes dir)
+/// and re-synced by `sync_builtin_themes()` when the file is present. Not
+/// recreated if the user deleted it (deletion is respected).
 pub const LATTE_TOML_TEXT: &str = include_str!("../themes/latte.toml");

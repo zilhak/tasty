@@ -22,10 +22,16 @@
 
 | 레이어 | 타입 | 의미 | 테마 변경 시 |
 |--------|------|------|--------------|
-| `theme_base` | `ThemeColors`(풀 세트) | 적용된 테마들의 누적 결과 | partial 덮어쓰기로 누적 |
-| `theme_overrides` | `PartialColors`(모든 필드 `Option`) | 사용자가 픽커로 손댄 흔적 | **클리어** |
+| `theme_base` | `ThemeColors`(풀 세트) | 적용된 테마 파일의 누적 결과 (**앱 소유**) | partial 덮어쓰기로 누적 |
+| `theme_overrides` | `PartialColors`(모든 필드 `Option`) | 사용자가 손댄 색 (**사용자 커스터마이징의 단일 출처**) | **클리어(의도된 설계)** |
 
 화면 적용 색 = `theme_base ▷ theme_overrides`(override 의 `Some` 필드만 덮어쓰기). partial 테마(일부 색만 정의)를 적용하면 누락 필드는 이전 base 값을 유지한다(누적).
+
+#### 커스터마이징 모델 (불변)
+
+- **`theme_base` 는 앱 소유다.** 테마 파일(`<id>.toml`)의 내용은 앱이 관리하며, 사용자가 직접 편집하는 경로가 아니다(빌트인은 부팅 시 임베드 정본으로 동기화됨 → "빌트인 테마 정책" 참고).
+- **사용자 색 변경은 오직 `theme_overrides` 로만 들어간다.** settings 가 보관하는 partial 레이어로, base 위에 resolve 시점에 얹힌다. base(파일)를 어떻게 바꾸거나 동기화해도 사용자 override 는 보존된다 — 두 레이어가 분리돼 충돌이 없다.
+- **테마를 바꾸면 `theme_overrides` 를 비운다(설계).** `apply_theme` 의 `theme_overrides.clear()` 는 부수효과가 아니라 의도다 — 테마 전환 = 그 테마의 색을 깨끗하게 적용하고 이전 테마에 얹어둔 사용자 변경분은 폐기한다.
 
 ### Crate 책임
 
@@ -33,16 +39,19 @@
 |-------|------|----|
 | `tasty-type-appearance::color` | `HexColor`, `GpuRgba`/`GpuRgb` newtype | 없음 |
 | `tasty-type-appearance::theme` | `Theme` · `ThemeColors` · `PartialColors` · `ThemeSizing`/`SIZING` · `SurfaceTheme`/`FALLBACK_SURFACE` · `derive_overlays` · `Theme::surface(id)` | 없음 |
-| `tasty-themes` | 전역 `RwLock<Theme>` + `theme()/set_theme()` · `ThemeFile`(TOML) · mocha/latte 임베드 · scan/load/apply/resolve/install · `first_run_init`/`ensure_mocha_exists` | `~/.tasty/themes/` |
+| `tasty-themes` | 전역 `RwLock<Theme>` + `theme()/set_theme()` · `ThemeFile`(TOML) · mocha/latte 임베드 · scan/load/apply/resolve/install · `first_run_init`/`sync_builtin_themes` | `~/.tasty/themes/` |
 | `tasty-settings::appearance` | `AppearanceSettings.{theme,theme_base,theme_overrides,theme_is_light,ui_scale}` | settings IO |
 
 의존: `type-geometry ← type-appearance ← tasty-themes ← tasty-settings`. 순환 없음 — `tasty-core` 는 시각 schema 를 모른다(GUI-free).
 
 ## 빌트인 테마 정책
 
-- **mocha**: 항상 존재 보장. 임베드 `MOCHA_TOML_TEXT` + `MOCHA_FALLBACK_COLORS` const. 부팅 시 `ensure_mocha_exists()` 가 누락/파싱 실패면 복구. 로드 실패해도 const 가 fallback. unit test 가 `parse(MOCHA_TOML_TEXT) == MOCHA_FALLBACK_COLORS` 강제.
-- **latte**: first-run(themes 폴더가 완전히 빈 경우)에만 자동 풀림. 사용자가 지우면 존중하고 다시 풀지 않음(fallback 없음).
-- **사용자 테마**: 로드 실패 시 mocha fallback.
+빌트인 테마 파일은 **앱 소유**다. 부팅 시 `sync_builtin_themes()` 가 디스크 복사본을 임베드 정본과 맞춘다 — 빌트인 색/스키마가 바뀌면 이미 풀려있던 옛 파일도 자동 갱신된다. 사용자 색 변경은 파일이 아니라 `theme_overrides` 에 있으므로 동기화가 사용자 커스터마이징을 덮어쓰지 않는다.
+
+- **mocha**: 항상 정본 보장. 임베드 `MOCHA_TOML_TEXT` + `MOCHA_FALLBACK_COLORS` const. 부팅 시 sync 가 누락/파싱 실패/**내용 불일치** 면 임베드로 덮어쓴다. 로드 실패해도 const 가 fallback. unit test 가 `parse(MOCHA_TOML_TEXT) == MOCHA_FALLBACK_COLORS` 강제.
+- **latte**: first-run(themes 폴더가 완전히 빈 경우)에 자동 풀림. 이후엔 **파일이 있으면 임베드와 동기화**, 사용자가 지우면 존중하고 다시 풀지 않음(fallback 없음).
+- **사용자 테마**: 자동 동기화/복구 없음. 로드 실패 시 mocha fallback.
+- **"사용자 의도 존중" 의 범위 = 파일 삭제(부재)뿐.** 빌트인 파일의 *내용* 은 존중 대상이 아니다 — 사용자가 손으로 고쳐도 다음 부팅에 정본으로 되돌아간다(편집 경로가 아님, 커스터마이징은 `theme_overrides`).
 
 ## ThemeFile TOML
 
@@ -63,10 +72,11 @@ is_light = false      # 선택. 없으면 이전 is_light 보존
 - `hover_overlay`/`active_overlay`/`separator` 같은 반투명 의미색은 TOML 에 없다 — `is_light` 로부터 자동 도출(라이트=검정 +8%/+12%, 다크=흰색 +8%/+12%).
 - UI 크기/간격(`spacing_*`/`border_width`/`item_height_*`/`font_size_*`)도 TOML 에 없다 — 모든 테마 공통 `SIZING` const.
 - **HexColor**: `#RGB` / `#RRGGBB`(alpha=255) / `#RRGGBBAA`. 직렬화는 alpha=255 면 6자리, 아니면 8자리.
+- **빌트인(`mocha`/`latte`) 파일은 직접 편집하지 말 것** — 앱 소유라 부팅 시 임베드 정본으로 되돌아간다. 커스텀 테마는 별도 id(예: `my-theme.toml`)로 만들고, 기존 테마 위 색 조정은 settings 의 `theme_overrides` 로 한다.
 
 ## 부팅 흐름 (`window_lifecycle.rs::boot_apply_theme`)
 
-`first_run_init()`(빈 폴더면 mocha+latte) → `ensure_mocha_exists()` → `rescan()` → `apply_theme(요청 id)`(실패 시 mocha) → `install_global(resolve())`. 요청 id ≠ 적용 id 면 InfoModal 로 알림.
+`first_run_init()`(빈 폴더면 mocha+latte 시드) → `sync_builtin_themes()`(빌트인을 임베드 정본과 동기화) → `rescan()` → `apply_theme(요청 id)`(실패 시 mocha) → `install_global(resolve())`. 요청 id ≠ 적용 id 면 InfoModal 로 알림.
 
 ## UI 코드의 색상 접근
 
