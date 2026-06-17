@@ -1104,3 +1104,27 @@ fn sgr_overline_does_not_regress_basic_attributes() {
     assert!(info.inverse);
     assert!(!info.overline, "overline must stay false when unset");
 }
+
+#[test]
+fn osc8_hyperlink_attaches_uri_to_cells_then_clears() {
+    // OSC 8 opens a hyperlink, prints "LINK", then closes it. The four LINK
+    // cells must carry the URI; cells printed after the close must not.
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]8;;https://example.com\x1b\\LINK\x1b]8;;\x1b\\");
+
+    for col in 0..4 {
+        let attrs = t.cell_attrs(0, col).expect("LINK cell");
+        let link = attrs
+            .hyperlink()
+            .unwrap_or_else(|| panic!("cell {col} should carry a hyperlink"));
+        assert_eq!(link.uri(), "https://example.com");
+    }
+
+    // After the OSC 8 close (empty URI), subsequent cells have no hyperlink.
+    t.feed_bytes(b"PLAIN");
+    let attrs = t.cell_attrs(0, 4).expect("PLAIN cell");
+    assert!(
+        attrs.hyperlink().is_none(),
+        "hyperlink must not leak past the OSC 8 close"
+    );
+}

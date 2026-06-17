@@ -1,6 +1,8 @@
 //! VTE handler: osc 도메인.
 
-use termwiz::cell::CellAttributes;
+use std::sync::Arc;
+
+use termwiz::cell::{AttributeChange, CellAttributes};
 use termwiz::escape::OperatingSystemCommand;
 use termwiz::escape::csi::Device;
 use termwiz::surface::{Change, CursorVisibility};
@@ -75,6 +77,18 @@ impl TerminalState {
                         kind: TerminalEventKind::Notification { title, body },
                     });
                 }
+            }
+            // OSC 8 (SetHyperlink): state-transition command. An open
+            // (`OSC 8 ; params ; URI`) attaches the hyperlink to every cell
+            // printed afterward; a close (`OSC 8 ; ;`, empty URI) clears it.
+            // Emitting it as an attribute change lets termwiz's surface pen
+            // hold the state, so subsequent Print cells inherit it automatically
+            // — no separate current_hyperlink field is needed. FullReset/DECSTR
+            // clear it via AllAttributes(default), which zeroes the pen hyperlink.
+            OperatingSystemCommand::SetHyperlink(opt) => {
+                self.apply_or_stage_change(Change::Attribute(AttributeChange::Hyperlink(
+                    opt.map(Arc::new),
+                )));
             }
             OperatingSystemCommand::SetSelection(_selection, data) => {
                 self.events.push(TerminalEvent {
