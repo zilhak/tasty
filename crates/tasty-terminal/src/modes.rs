@@ -175,6 +175,11 @@ impl TerminalState {
         self.use_alternate
     }
 
+    /// Whether synchronized output mode (DEC 2026) is active.
+    pub fn synchronized_output(&self) -> bool {
+        self.synchronized_output
+    }
+
     /// Scan the active surface for an isolated reverse-video cell.
     ///
     /// Some TUIs (notably Ink-based ones like Claude Code) hide the real terminal

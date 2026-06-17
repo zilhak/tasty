@@ -62,6 +62,10 @@ impl Terminal {
         self.lock_state().is_alternate_screen()
     }
 
+    pub fn synchronized_output(&self) -> bool {
+        self.lock_state().synchronized_output()
+    }
+
     pub fn find_fake_cursor_cell(&self) -> Option<(usize, usize)> {
         self.lock_state().find_fake_cursor_cell()
     }

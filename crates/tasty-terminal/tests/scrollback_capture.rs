@@ -1,7 +1,6 @@
 //! Scrollback-capture integrity verification (E1 width-mismatch, E2 partial-region
 //! over-scroll). Drives the REAL ingest path via `Terminal::new_detached` +
-//! `feed_bytes` — NOT `test_helpers::TestTerminal` (a clone that skips production
-//! handlers). Oracles:
+//! `feed_bytes`, so the production VTE handlers are exercised directly. Oracles:
 //!   A) "tall screen" ground truth: feed the same bytes into a screen tall enough
 //!      that nothing scrolls, so capture logic never fires and the pure termwiz
 //!      layout is the oracle. subject(scrollback ++ visible) must equal it.
