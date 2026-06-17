@@ -45,6 +45,10 @@ spawn timeout panic 시 child stderr 마지막 30 라인을 panic 메시지에 �
 
 > `tests/gui_common/mod.rs`(gui_tests)는 전수 `#[ignore]` 라 일반 `cargo test --workspace` 에서 실행되지 않는다.
 
+## VTE 시뮬레이터 (`tasty-tui-simulator`)
+
+터미널 동작 검증용 도구 — 고수준 명령을 raw VTE escape 시퀀스로 변환해 출력한다(터미널 입장에선 실제 TUI 앱과 같은 바이트 스트림). **인터랙티브 모드**(stdin REPL — 외부에서 `surface.send` 로 명령 단계 전송, 명령마다 `OK` 동기화)와 원샷 시나리오를 제공한다. 명령: cursor/print/sgr/fg·bg/altscreen/scroll-region/erase/raw/esc 등, 종료 제어 `quit`/`exit-code N`/`crash`(SIGABRT)/`panic`. debug 의 `debug.cell_info`/`debug.screen_attrs`([debug-ipc](debug-ipc.md))와 조합하면 셀 속성을 결정적으로 자동 검증할 수 있다.
+
 ## 관련
 
 - [self-verification.md](self-verification.md) — 커밋 전 시나리오 재현
