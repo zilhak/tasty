@@ -8,6 +8,8 @@ tasty 화면 구조는 객체 계층 하나와, 그 위의 **두 레벨 레이�
 - **`View`** — tasty 쪽 윈도우 표현. 그 창의 *종류 + 콘텐츠 + 행동*(render / 이벤트 / modality)을 묶은 객체로, winit Window 를 `Arc` 로 소유한다. **1 View : 1 Window.**
 
 > 옛 tasty `Window` trait 이 winit 의 `Window` 와 헷갈려서 **`View` 로 rename** 됐다 (`WindowBase`→`ViewBase`, `*Window`→`*View`). **tasty 쪽 `Window` trait 은 없다** — 지금 `Window` 는 winit OS 창만 가리킨다. 즉 *View = 윈도우의 tasty 쪽 용어*. 같은 맥락에서 옛 gloss **"터미널 윈도우" 도 쓰지 않는다** — 정식 명칭은 `MainView`.
+>
+> **AI Agent 지침**: 유비쿼터스 언어상 "window(윈도우)" 는 모호하다 — 사용자가 *View*(tasty 쪽 윈도우, 예: `MainView`)를 의도했을 수도, *진짜 winit OS 창*을 의도했을 수도 있다. 대화/요청에서 이 용어가 나오면 둘 중 무엇인지 단정하지 말고 **한 번 되물어 확인하는 것을 권장한다.**
 
 ## View 의 종류 (= 윈도우 종류)
 
