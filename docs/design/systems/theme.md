@@ -80,7 +80,7 @@ let pad = th.spacing_sm;                               // sizing 동일 방식
 
 - **색 생성 경로 단일화**: GPU 버퍼 struct 는 newtype(`GpuRgba` 등)을 받아 `[f32;4]` 대입이 컴파일 에러. `from_rgb` 직접 호출은 clippy 차단. 상세 `dev-guide/color-policy` *(재작성 예정)*.
 - **premultiplied 주의**: `hover_overlay`/`active_overlay`/`separator` 는 premultiplied 바이트라 `to_egui_premultiplied()` 를 써야 한다. `to_egui()` 를 쓰면 sRGB-aware premultiplication 이 한 번 더 적용돼 색이 어긋난다.
-- **Semantic 접근자 우선**: 평면 primitive(`th.blue`) 외에 의미 기반 접근자(`accent_primary()`/`surface_raised()`/`text_muted()`)를 제공. 신규/수정 UI 는 의미가 드러나는 접근자를 우선(같은 primitive 가 여러 role 로 갈리는 다의성 표현). primitive 직접접근도 유효(additive, 픽셀 동일)하나 의미가 호출처에 묻힌다 — 전수 이식 전까지 clippy 강제는 보류. 매핑은 `token-crosswalk` *(재작성 예정)*.
+- **Semantic 접근자 우선**: 평면 primitive(`th.blue`) 외에 의미 기반 접근자(`accent_primary()`/`surface_raised()`/`text_muted()`)를 제공. 신규/수정 UI 는 의미가 드러나는 접근자를 우선(같은 primitive 가 여러 role 로 갈리는 다의성 표현). primitive 직접접근도 유효(additive, 픽셀 동일)하나 의미가 호출처에 묻힌다 — 전수 이식 전까지 clippy 강제는 보류. 매핑·다의성 핫스팟은 [`token-crosswalk`](token-crosswalk.md).
 
 ## CSD 타이틀바 토큰
 
