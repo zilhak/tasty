@@ -71,34 +71,46 @@ pub(crate) enum PluginSubTab {
 
 /// L2 section within the General L1 tab.
 ///
-/// 디자인 General L2 = General / Terminal / Clipboard / Notifications /
-/// Accessibility / Updates. 그 뒤 `Performance` / `FileHandler` / `Tastyrc`
-/// 는 디자인엔 없으나 기능 회귀를 막기 위해 잠정적으로 General 에 흡수한 항목
-/// (귀속 최종 결정은 conductor 영역 — D1 제품 게이트 2-B/2-C).
-///
-/// `Tastyrc` 는 Windows 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는
-/// 사이드바에 push 되지 않아 dead variant 가 되지만, exhaustive match 안전성을
-/// 위해 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
+/// 디자인 General L2 = General / Clipboard / Notifications / Accessibility /
+/// Updates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GeneralSubTab {
     General,
-    Terminal,
     Clipboard,
     Notifications,
     Accessibility,
     Updates,
+}
+
+/// L2 section within the Terminal L1 tab.
+///
+/// 디자인 Terminal L2 = General(터미널 동작 설정) / Performance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TerminalSubTab {
+    General,
     Performance,
-    FileHandler,
+}
+
+/// L2 section within the Misc L1 tab.
+///
+/// `Tastyrc` 는 Windows 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는
+/// Misc 의 L2 섹션이 0개(empty state)가 되어 dead variant 가 되지만, exhaustive
+/// match 안전성을 위해 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MiscSubTab {
     #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
 }
 
-/// Active L1 tab in the settings window. 디자인 2-level IA 의 상단 4탭.
+/// Active L1 tab in the settings window. 디자인 2-level IA 의 상단 7탭.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsTab {
     General,
+    Terminal,
     Appearance,
     Keybindings,
+    FileHandler,
+    Misc,
     Plugins,
 }
 
@@ -118,7 +130,13 @@ pub struct SettingsUiState {
     pub(crate) plugin_sub_tab: Option<PluginSubTab>,
     /// Active L2 section within the General L1 tab.
     general_sub_tab: GeneralSubTab,
-    /// L2 사이드바 섹션 필터 텍스트. L1 전환 시 클리어. 4개 L1 탭이 공유한다
+    /// Active L2 section within the Terminal L1 tab.
+    terminal_sub_tab: TerminalSubTab,
+    /// Active L2 section within the Misc L1 tab. 비-Windows 에서는 Misc 가
+    /// 섹션 0개라 읽히지 않으므로 dead field 가 되어 dead_code 를 억제한다.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    misc_sub_tab: MiscSubTab,
+    /// L2 사이드바 섹션 필터 텍스트. L1 전환 시 클리어. 7개 L1 탭이 공유한다
     /// (디자인은 한 번에 하나의 L1 만 보이므로 단일 필드로 충분).
     l2_filter: String,
     /// Active sub-tab within FileHandler.
@@ -201,6 +219,8 @@ impl SettingsUiState {
             appearance_sub_tab: AppearanceSubTab::General,
             plugin_sub_tab: None,
             general_sub_tab: GeneralSubTab::General,
+            terminal_sub_tab: TerminalSubTab::General,
+            misc_sub_tab: MiscSubTab::Tastyrc,
             l2_filter: String::new(),
             file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
             extension_priority_draft: None,
@@ -349,12 +369,15 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
         ui.add_space(8.0);
 
         ui.horizontal(|ui| {
-            // L1 — 디자인 2-level IA 의 상단 4탭. 나머지 섹션은 각 L1 의 좌측
+            // L1 — 디자인 2-level IA 의 상단 7탭. 나머지 섹션은 각 L1 의 좌측
             // L2 사이드바로 들어간다.
             let tabs = vec![
                 (SettingsTab::General, t("settings.tab.general")),
+                (SettingsTab::Terminal, t("settings.tab.terminal")),
                 (SettingsTab::Appearance, t("settings.tab.appearance")),
                 (SettingsTab::Keybindings, t("settings.tab.keybindings")),
+                (SettingsTab::FileHandler, t("settings.tab.file_handler")),
+                (SettingsTab::Misc, t("settings.tab.misc")),
                 (SettingsTab::Plugins, t("settings.tab.plugin")),
             ];
 
@@ -381,14 +404,12 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
                     tasty_ui_widgets::tab_content_frame(ui, |ui| match active_tab {
-                        SettingsTab::General => draw_general_group(
-                            ui,
-                            &mut draft,
-                            ui_state,
-                            file_format,
-                            file_handler,
-                            update_status,
-                        ),
+                        SettingsTab::General => {
+                            draw_general_group(ui, &mut draft, ui_state, update_status)
+                        }
+                        SettingsTab::Terminal => {
+                            draw_terminal_group(ui, &mut draft, ui_state)
+                        }
                         SettingsTab::Appearance => draw_appearance_tab(
                             ui,
                             &mut draft,
@@ -413,6 +434,16 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             &mut ui_state.plugin_shortcuts_draft,
                             &mut ui_state.l2_filter,
                         ),
+                        SettingsTab::FileHandler => draw_file_handler_tab(
+                            ui,
+                            &mut ui_state.file_handler_sub_tab,
+                            &mut ui_state.extension_priority_draft,
+                            &mut ui_state.extension_priority_new_input,
+                            &mut ui_state.fh_edit_draft,
+                            file_format,
+                            file_handler,
+                        ),
+                        SettingsTab::Misc => draw_misc_group(ui, ui_state),
                         SettingsTab::Plugins => draw_plugin_tab(
                             ui,
                             &mut draft,
@@ -528,17 +559,12 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
 
 /// General L1 탭: 좌측 L2 사이드바(필터 포함) + 우측 섹션 콘텐츠.
 ///
-/// 디자인 General L2 = General / Terminal / Clipboard / Notifications /
-/// Accessibility / Updates. 그 뒤 Performance / FileHandler / Tastyrc 는 디자인엔
-/// 없으나 기능 회귀(설정 도달 불가)를 막기 위해 잠정 흡수 — 최종 귀속은 conductor
-/// 결정(제품 게이트 2-B/2-C).
-#[allow(clippy::too_many_arguments)]
+/// 디자인 General L2 = General / Clipboard / Notifications / Accessibility /
+/// Updates.
 fn draw_general_group(
     ui: &mut egui::Ui,
     draft: &mut Settings,
     ui_state: &mut SettingsUiState,
-    file_format: &FileFormatRegistry,
-    file_handler: &FileHandlerRegistry,
     update_status: Option<
         &std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
     >,
@@ -548,16 +574,10 @@ fn draw_general_group(
 
     let available_height = ui.available_height() - 8.0 - 14.0;
 
-    // `mut` 는 Windows 에서만 (Tastyrc push) 필요 — 비-Windows 에선 push 가 cfg-out.
-    #[cfg_attr(not(windows), allow(unused_mut))]
-    let mut sections: Vec<(GeneralSubTab, String)> = vec![
+    let sections: Vec<(GeneralSubTab, String)> = vec![
         (
             GeneralSubTab::General,
             t("settings.tab.general").to_string(),
-        ),
-        (
-            GeneralSubTab::Terminal,
-            t("settings.tab.terminal").to_string(),
         ),
         (
             GeneralSubTab::Clipboard,
@@ -575,20 +595,7 @@ fn draw_general_group(
             GeneralSubTab::Updates,
             t("settings.tab.updates").to_string(),
         ),
-        (
-            GeneralSubTab::Performance,
-            t("settings.misc.subtab.performance").to_string(),
-        ),
-        (
-            GeneralSubTab::FileHandler,
-            t("settings.tab.file_handler").to_string(),
-        ),
     ];
-    #[cfg(windows)]
-    sections.push((
-        GeneralSubTab::Tastyrc,
-        t("settings.misc.subtab.tastyrc").to_string(),
-    ));
 
     let current = ui_state.general_sub_tab;
     let mut selected_new: Option<GeneralSubTab> = None;
@@ -617,29 +624,137 @@ fn draw_general_group(
         },
         |ui| match current {
             GeneralSubTab::General => draw_general_tab(ui, draft),
-            GeneralSubTab::Terminal => draw_terminal_tab(ui, draft),
             GeneralSubTab::Clipboard => draw_clipboard_tab(ui, draft),
             GeneralSubTab::Notifications => draw_notifications_tab(ui, draft),
             GeneralSubTab::Accessibility => draw_accessibility_tab(ui, draft),
             GeneralSubTab::Updates => draw_updates_tab(ui, update_status),
-            GeneralSubTab::Performance => draw_performance_tab(ui, draft),
-            GeneralSubTab::FileHandler => draw_file_handler_tab(
-                ui,
-                &mut ui_state.file_handler_sub_tab,
-                &mut ui_state.extension_priority_draft,
-                &mut ui_state.extension_priority_new_input,
-                &mut ui_state.fh_edit_draft,
-                file_format,
-                file_handler,
-            ),
-            #[cfg(windows)]
-            GeneralSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
-            #[cfg(not(windows))]
-            // 도달 불가: 비-Windows 에서는 sections 에 push 되지 않는다.
-            GeneralSubTab::Tastyrc => {}
         },
     );
     if let Some(new) = selected_new {
         ui_state.general_sub_tab = new;
+    }
+}
+
+/// Terminal L1 탭: 좌측 L2 사이드바(필터 포함) + 우측 섹션 콘텐츠.
+///
+/// 디자인 Terminal L2 = General(터미널 동작 설정) / Performance.
+fn draw_terminal_group(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut SettingsUiState) {
+    let th = crate::theme::theme();
+    ui.add_space(8.0);
+
+    let available_height = ui.available_height() - 8.0 - 14.0;
+
+    let sections: Vec<(TerminalSubTab, String)> = vec![
+        (
+            TerminalSubTab::General,
+            t("settings.tab.general").to_string(),
+        ),
+        (
+            TerminalSubTab::Performance,
+            t("settings.misc.subtab.performance").to_string(),
+        ),
+    ];
+
+    let current = ui_state.terminal_sub_tab;
+    let mut selected_new: Option<TerminalSubTab> = None;
+    let filter_lc = ui_state.l2_filter.to_lowercase();
+    tasty_ui_widgets::two_depth_layout_filtered(
+        ui,
+        &th,
+        available_height,
+        &mut ui_state.l2_filter,
+        t("settings.filter.sections"),
+        |ui| {
+            let mut any = false;
+            for (tab, label) in &sections {
+                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
+                    continue;
+                }
+                any = true;
+                let selected = current == *tab;
+                if ui.selectable_label(selected, label.as_str()).clicked() {
+                    selected_new = Some(*tab);
+                }
+            }
+            if !any {
+                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
+            }
+        },
+        |ui| match current {
+            TerminalSubTab::General => draw_terminal_tab(ui, draft),
+            TerminalSubTab::Performance => draw_performance_tab(ui, draft),
+        },
+    );
+    if let Some(new) = selected_new {
+        ui_state.terminal_sub_tab = new;
+    }
+}
+
+/// Misc L1 탭. Windows 에선 좌측 L2 = [Tastyrc] (tasty 빌트인 bashrc 편집),
+/// 비-Windows 에선 섹션 0개 → 콘텐츠 중앙 empty state.
+fn draw_misc_group(ui: &mut egui::Ui, ui_state: &mut SettingsUiState) {
+    let th = crate::theme::theme();
+    ui.add_space(8.0);
+
+    let available_height = ui.available_height() - 8.0 - 14.0;
+
+    #[cfg(windows)]
+    {
+        let sections: Vec<(MiscSubTab, String)> = vec![(
+            MiscSubTab::Tastyrc,
+            t("settings.misc.subtab.tastyrc").to_string(),
+        )];
+
+        let current = ui_state.misc_sub_tab;
+        let mut selected_new: Option<MiscSubTab> = None;
+        let filter_lc = ui_state.l2_filter.to_lowercase();
+        tasty_ui_widgets::two_depth_layout_filtered(
+            ui,
+            &th,
+            available_height,
+            &mut ui_state.l2_filter,
+            t("settings.filter.sections"),
+            |ui| {
+                let mut any = false;
+                for (tab, label) in &sections {
+                    if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
+                        continue;
+                    }
+                    any = true;
+                    let selected = current == *tab;
+                    if ui.selectable_label(selected, label.as_str()).clicked() {
+                        selected_new = Some(*tab);
+                    }
+                }
+                if !any {
+                    ui.label(
+                        egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0),
+                    );
+                }
+            },
+            |ui| match current {
+                MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
+            },
+        );
+        if let Some(new) = selected_new {
+            ui_state.misc_sub_tab = new;
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = ui_state;
+        tasty_ui_widgets::two_depth_layout(
+            ui,
+            &th,
+            available_height,
+            |_ui| {},
+            |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(available_height / 3.0);
+                    ui.label(egui::RichText::new(t("settings.misc.empty")).color(th.subtext0));
+                });
+            },
+        );
     }
 }

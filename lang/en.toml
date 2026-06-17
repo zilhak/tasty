@@ -499,6 +499,9 @@ hint_bar = "Enter: copy & close    Delete: remove    Shift+Delete: clear all    
 title = "Tools"
 clipboard_history = "Clipboard History"
 
+[settings.misc]
+empty = "No settings on this platform"
+
 [settings.misc.subtab]
 tastyrc = "tastyrc"
 accessibility = "Accessibility"

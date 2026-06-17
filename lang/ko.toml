@@ -499,6 +499,9 @@ hint_bar = "Enter: 복사 후 닫기    Delete: 삭제    Shift+Delete: 전체 �
 title = "도구"
 clipboard_history = "클립보드 히스토리"
 
+[settings.misc]
+empty = "이 플랫폼에는 설정 항목이 없습니다"
+
 [settings.misc.subtab]
 tastyrc = "tastyrc"
 accessibility = "접근성"
