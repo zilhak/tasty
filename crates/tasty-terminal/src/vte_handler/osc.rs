@@ -204,6 +204,8 @@ impl TerminalState {
                 self.insert_mode = false;
                 // Text cursor enable (DECTCEM) → visible.
                 self.cursor_visible = true;
+                // DECSCUSR cursor shape is intentionally NOT reset by DECSTR
+                // (matches xterm — only RIS restores the default shape).
                 // SGR → default, cursor → visible. Applied via the surface since
                 // handle_device returns (); screen content stays intact.
                 self.apply_or_stage_change(Change::AllAttributes(CellAttributes::default()));

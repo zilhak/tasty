@@ -1160,3 +1160,14 @@ fn decscusr_reset_by_full_reset() {
     t.feed_bytes(b"\x1bc"); // RIS / FullReset
     assert_eq!(t.cursor_shape(), CursorShape::Default);
 }
+
+#[test]
+fn decscusr_survives_soft_reset() {
+    // DECSTR (CSI ! p) intentionally does NOT reset the cursor shape (matches
+    // xterm — only RIS restores the default). Regression guard.
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[5 q"); // blinking bar
+    assert_eq!(t.cursor_shape(), CursorShape::BlinkingBar);
+    t.feed_bytes(b"\x1b[!p"); // DECSTR soft reset
+    assert_eq!(t.cursor_shape(), CursorShape::BlinkingBar);
+}
