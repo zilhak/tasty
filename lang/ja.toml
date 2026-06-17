@@ -262,6 +262,7 @@ fg_label = "文字色:"
 [settings.appearance.subtab]
 theme = "テーマ"
 general = "一般"
+display = "ディスプレイ"
 terminal = "ターミナル"
 
 [settings.appearance.theme]

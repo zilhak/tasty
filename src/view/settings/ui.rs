@@ -39,7 +39,7 @@ pub struct PluginShortcutSnapshot {
 
 /// Sub-tab within the Appearance tab.
 ///
-/// Host-internal variants (`Theme` / `General` / `Tasty` / `Terminal` /
+/// Host-internal variants (`Theme` / `General` / `Display` / `Terminal` /
 /// `HtmlViewer`) are hardcoded; plugin-contributed pages appear as
 /// `Plugin { plugin_id, page_id }` and are resolved against
 /// `SettingsUiState::settings_pages` at render time. `page_id` 단독으로는
@@ -49,9 +49,9 @@ pub struct PluginShortcutSnapshot {
 pub(crate) enum AppearanceSubTab {
     Theme,
     General,
-    Tasty,
+    /// UI scale (sm/md/lg) 전용 섹션.
+    Display,
     Terminal,
-    HtmlViewer,
     /// Plugin-contributed sub-tab. 복합키:
     /// - `plugin_id` = `SettingsPageEntry::plugin_id`
     /// - `page_id` = `SettingsPageContribute::id` (plugin scope 내)
@@ -59,6 +59,7 @@ pub(crate) enum AppearanceSubTab {
         plugin_id: String,
         page_id: String,
     },
+    HtmlViewer,
 }
 
 /// Sub-tab within the Plugin tab. Plugin-contributed pages keyed by

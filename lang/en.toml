@@ -262,6 +262,7 @@ fg_label = "Text:"
 [settings.appearance.subtab]
 theme = "Theme"
 general = "General"
+display = "Display"
 terminal = "Terminal"
 
 [settings.appearance.theme]

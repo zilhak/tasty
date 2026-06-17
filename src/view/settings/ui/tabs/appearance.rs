@@ -62,7 +62,10 @@ pub fn draw_appearance_tab(
             AppearanceSubTab::General,
             t("settings.appearance.subtab.general").to_string(),
         ),
-        (AppearanceSubTab::Tasty, "Tasty".to_string()),
+        (
+            AppearanceSubTab::Display,
+            t("settings.appearance.subtab.display").to_string(),
+        ),
         (
             AppearanceSubTab::Terminal,
             t("settings.appearance.subtab.terminal").to_string(),
@@ -138,8 +141,8 @@ pub fn draw_appearance_tab(
             AppearanceSubTab::General => {
                 draw_appearance_general(ui, settings);
             }
-            AppearanceSubTab::Tasty => {
-                draw_appearance_tasty(ui, settings);
+            AppearanceSubTab::Display => {
+                draw_appearance_display(ui, settings);
             }
             AppearanceSubTab::Terminal => {
                 draw_appearance_terminal(
@@ -278,9 +281,9 @@ fn draw_appearance_general(ui: &mut egui::Ui, settings: &mut Settings) {
         });
 }
 
-/// Appearance > Tasty: UI scale, sidebar width
-fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
-    egui::Grid::new("appearance_tasty_grid")
+/// Appearance > Display: UI scale (sm/md/lg) 전용.
+fn draw_appearance_display(ui: &mut egui::Ui, settings: &mut Settings) {
+    egui::Grid::new("appearance_display_grid")
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
@@ -308,30 +311,6 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
                         t("settings.appearance.ui_scale_large"),
                     );
                 });
-            ui.end_row();
-
-            ui.label(t("settings.appearance.sidebar_width_label"));
-            ui.add(
-                egui::DragValue::new(&mut settings.appearance.sidebar_width.0)
-                    .range(100.0..=400.0)
-                    .speed(1.0),
-            );
-            ui.end_row();
-
-            ui.label(t("settings.appearance.tab_width_label"));
-            ui.add(
-                egui::DragValue::new(&mut settings.appearance.tab_width)
-                    .range(40.0..=400.0)
-                    .speed(1.0),
-            );
-            ui.end_row();
-
-            ui.label(t("settings.appearance.tab_font_size_label"));
-            ui.add(
-                egui::DragValue::new(&mut settings.appearance.tab_font_size)
-                    .range(6.0..=32.0)
-                    .speed(0.5),
-            );
             ui.end_row();
         });
 }
