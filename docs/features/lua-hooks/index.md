@@ -39,4 +39,4 @@
 ## 관련
 
 - [reference/event-catalog](../../reference/event-catalog.md) — plugin 용 Event Bus(별개 경로)
-- [`design/policies/lua-hooks`](../../design/policies/lua-hooks.md) — observe-only 설계 배경 · `dev-guide/lua-hooks` *(재작성 예정)* — payload 매핑
+- [`design/policies/lua-hooks`](../../design/policies/lua-hooks.md) — observe-only 설계 배경 · [dev-guide/lua-hooks](../../dev-guide/lua-hooks.md) — payload 매핑

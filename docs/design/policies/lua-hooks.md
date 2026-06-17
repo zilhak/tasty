@@ -1,6 +1,6 @@
 # Lua 훅 — 설계 정책
 
-사용자가 `~/.tasty/init.lua` 로 tasty 이벤트에 외부 자동화를 붙이는 시스템의 *설계 근거*. 사용법은 [features/lua-hooks](../../features/lua-hooks/index.md), payload 매핑은 `dev-guide/lua-hooks` *(재작성 예정)*.
+사용자가 `~/.tasty/init.lua` 로 tasty 이벤트에 외부 자동화를 붙이는 시스템의 *설계 근거*. 사용법은 [features/lua-hooks](../../features/lua-hooks/index.md), payload 매핑은 [dev-guide/lua-hooks](../../dev-guide/lua-hooks.md).
 
 ## 위치 결정
 
