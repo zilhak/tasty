@@ -138,6 +138,102 @@ fn wait_decide_returns_check_existence_when_child_in_state() {
     );
 }
 
+// ─── wait-fix Gate4: find_child None 의 (a)/(b)/(c) 순수 분류 ───────────────
+
+/// (a) child_surface_id 를 --child 자리에 입력 → InvalidChildSurfaceId 이고
+/// correct_index 가 그 child 의 올바른 index 로 채워진다.
+#[test]
+fn wait_decide_detects_child_surface_id_misuse_with_correct_index() {
+    let mut state = ClaudeState::default();
+    let i = state.next_child_index(10); // 1
+    state.register_child(10, entry(170, i)); // surface_id 170, index 1
+    assert_eq!(
+        wait_decide(&state, 10, 170),
+        WaitDecision::InvalidChildSurfaceId {
+            owner: 10,
+            correct_index: Some(1),
+        }
+    );
+}
+
+/// (a) surface_id 가 호출 parent 가 아닌 다른 parent 의 child 인 경우 → owner
+/// 필드가 그 다른 parent 로 세팅된다 (handle_wait 메시지 분기 입력 검증).
+#[test]
+fn wait_decide_surface_id_owner_differs_from_calling_parent() {
+    let mut state = ClaudeState::default();
+    let i = state.next_child_index(20); // 1
+    state.register_child(20, entry(200, i)); // parent 20 의 child
+    // 호출 parent 는 10 인데 200 은 parent 20 소유.
+    assert_eq!(
+        wait_decide(&state, 10, 200),
+        WaitDecision::InvalidChildSurfaceId {
+            owner: 20,
+            correct_index: Some(1),
+        }
+    );
+}
+
+/// (b) child_index > high-water → NeverIssued{highest} 에 올바른 high-water.
+#[test]
+fn wait_decide_never_issued_when_above_high_water() {
+    let mut state = ClaudeState::default();
+    let i = state.next_child_index(10); // 1 → high_water=1
+    state.register_child(10, entry(100, i));
+    assert_eq!(state.high_water(10), Some(1));
+    assert_eq!(
+        wait_decide(&state, 10, 5),
+        WaitDecision::NeverIssued { highest: 1 }
+    );
+}
+
+/// (c) unregister 로 정리된 index (N <= high-water, find_child None) → Exited.
+#[test]
+fn wait_decide_exited_for_cleaned_up_index() {
+    let mut state = ClaudeState::default();
+    let i1 = state.next_child_index(10); // 1
+    state.register_child(10, entry(100, i1));
+    let i2 = state.next_child_index(10); // 2
+    state.register_child(10, entry(101, i2));
+    state.unregister_child(101); // index 2 제거; parent 10 에 100 남아 high_water 보존.
+    assert!(state.find_child(10, 2).is_none());
+    assert_eq!(state.high_water(10), Some(2));
+    assert_eq!(wait_decide(&state, 10, 2), WaitDecision::Exited);
+}
+
+/// (c) high-water None (한 번도 spawn 안 한 parent / 자식 0명) → Exited.
+#[test]
+fn wait_decide_exited_when_no_high_water() {
+    let state = ClaudeState::default();
+    assert_eq!(state.high_water(99), None);
+    assert_eq!(wait_decide(&state, 99, 1), WaitDecision::Exited);
+}
+
+/// 경계값 N == high-water (정리된 최댓값) → Exited (off-by-one 가드: (b) 미해당).
+#[test]
+fn wait_decide_boundary_index_equals_high_water_is_exited() {
+    let mut state = ClaudeState::default();
+    let i1 = state.next_child_index(10); // 1
+    state.register_child(10, entry(100, i1));
+    let i2 = state.next_child_index(10); // 2
+    state.register_child(10, entry(101, i2));
+    let i3 = state.next_child_index(10); // 3 → high_water=3
+    state.register_child(10, entry(102, i3));
+    state.unregister_child(102); // 최댓값 index 3 제거; 100/101 남아 high_water=3 보존.
+    assert_eq!(state.high_water(10), Some(3));
+    assert!(state.find_child(10, 3).is_none());
+    // N(3) == high_water(3) 이므로 NeverIssued(N > hw)에 해당하지 않고 (c) Exited.
+    assert_eq!(wait_decide(&state, 10, 3), WaitDecision::Exited);
+}
+
+/// (회귀 가드) 정당한 현존 index → CheckExistence (오류 분기 미진입).
+#[test]
+fn wait_decide_valid_existing_index_returns_check_existence() {
+    let mut state = ClaudeState::default();
+    let i = state.next_child_index(10); // 1
+    state.register_child(10, entry(100, i));
+    assert_eq!(wait_decide(&state, 10, 1), WaitDecision::CheckExistence(100));
+}
+
 // ─── G.F.b: wait_any_decide 순수 함수 ─────────────────────────────────
 
 /// 모든 children 이 state 에 등록돼 있을 때 각각의 CheckExistence 가
@@ -235,6 +331,41 @@ fn wait_any_response_returns_first_idle_even_when_later_child_exited() {
     );
     assert_eq!(resp["state"], "idle");
     assert_eq!(resp["child_index"], 1);
+}
+
+/// 회귀 가드: NeverIssued variant 도 wait_any 에서 해당 child_index 의 terminal
+/// "exited" 로 매핑된다 (기존 wait-any 테스트는 high_water 미설정이라 Exited 로만
+/// 빠져 이 arm 을 안 태운다). host/state 주입 closure 는 호출되면 안 됨.
+#[test]
+fn wait_any_response_treats_never_issued_as_exited() {
+    let decisions = vec![(7u32, WaitDecision::NeverIssued { highest: 3 })];
+    let resp = wait_any_response(
+        &decisions,
+        |_| panic!("exists_fn must not be called for NeverIssued"),
+        |_| panic!("state_of_fn must not be called for NeverIssued"),
+    );
+    assert_eq!(resp["state"], "exited");
+    assert_eq!(resp["child_index"], 7);
+}
+
+/// 회귀 가드: InvalidChildSurfaceId variant 도 wait_any 에서 해당 child_index 의
+/// terminal "exited" 로 매핑된다. host/state 주입 closure 는 호출되면 안 됨.
+#[test]
+fn wait_any_response_treats_invalid_child_surface_id_as_exited() {
+    let decisions = vec![(
+        9u32,
+        WaitDecision::InvalidChildSurfaceId {
+            owner: 20,
+            correct_index: Some(2),
+        },
+    )];
+    let resp = wait_any_response(
+        &decisions,
+        |_| panic!("exists_fn must not be called for InvalidChildSurfaceId"),
+        |_| panic!("state_of_fn must not be called for InvalidChildSurfaceId"),
+    );
+    assert_eq!(resp["state"], "exited");
+    assert_eq!(resp["child_index"], 9);
 }
 
 /// empty `--children` 입력은 invalid_params (G.F-Q3). params parsing 단계에서

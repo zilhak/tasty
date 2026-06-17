@@ -118,6 +118,29 @@ pub(crate) fn handle_wait(
     let decision = wait_decide(state, parent_surface_id, child_index);
     let response_state = match decision {
         WaitDecision::Exited => "exited",
+        // (a) surface_id 오입력 → 정밀 에러 (correct_index 있으면 올바른 --child 안내).
+        WaitDecision::InvalidChildSurfaceId {
+            owner,
+            correct_index,
+        } => {
+            let mut msg = format!("{child_index} is a child_surface_id, not a child index.");
+            if let Some(i) = correct_index {
+                msg.push_str(&format!(" That child's index is {i}; use --child {i}."));
+            }
+            if owner != parent_surface_id {
+                msg.push_str(&format!(
+                    " (It belongs to parent {owner}, not parent {parent_surface_id}.)"
+                ));
+            }
+            return Err(IpcMethodError::invalid_params(&msg));
+        }
+        // (b) 발급된 적 없는 index → 정밀 에러.
+        WaitDecision::NeverIssued { highest } => {
+            return Err(IpcMethodError::invalid_params(&format!(
+                "No child with index {child_index} was ever issued under parent \
+                 {parent_surface_id} (highest issued index {highest})."
+            )));
+        }
         WaitDecision::CheckExistence(child_surface_id) => {
             let exists = host
                 .call("surface.locate", json!({ "surface_id": child_surface_id }))
@@ -166,23 +189,58 @@ pub(crate) fn handle_wait_by_surface(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WaitDecision {
-    /// child가 ClaudeState에 없다 → 즉시 "exited".
+    /// child_index 가 발급됐다 정리됨(reconcile/unregister) 또는 parent 에 자식이
+    /// 0명 → 정당한 "exited". (조사문서 6-보강 (4) 의 (c))
     Exited,
+    /// child_index 자리에 사실은 살아있는 child_surface_id 가 들어온 오입력.
+    /// `owner` 는 그 surface 의 실제 parent, `correct_index` 는 (찾을 수 있으면)
+    /// 그 child 의 올바른 index. (조사문서 6-보강 (4) 의 (a))
+    InvalidChildSurfaceId {
+        owner: u32,
+        correct_index: Option<u32>,
+    },
+    /// parent 에서 한 번도 발급된 적 없는 index (child_index > high-water).
+    /// `highest` 는 그 parent 의 최대 발급 index. (조사문서 6-보강 (4) 의 (b))
+    NeverIssued { highest: u32 },
     /// child가 state에 있다 → 호스트 트리에 surface가 살아있는지 확인 필요.
     /// 살아있으면 `state.state_of(child_surface_id)`, 죽었으면 "exited".
     CheckExistence(u32),
 }
 
 /// state만으로 결정 가능한 wait 분기. host IPC 없이 단위 테스트 가능.
+///
+/// `find_child` 가 None 일 때 (a)/(b)/(c) 를 우선순위대로 분류한다 (조사문서
+/// 6-보강 (4)). 분류는 전부 state-only 순수 읽기(`parent_of_child` / `high_water`
+/// / `list_children`)이므로 host 가 필요 없다.
 pub(crate) fn wait_decide(
     state: &ClaudeState,
     parent_surface_id: u32,
     child_index: u32,
 ) -> WaitDecision {
-    match state.find_child(parent_surface_id, child_index) {
-        Some(c) => WaitDecision::CheckExistence(c.child_surface_id),
-        None => WaitDecision::Exited,
+    if let Some(c) = state.find_child(parent_surface_id, child_index) {
+        return WaitDecision::CheckExistence(c.child_surface_id);
     }
+    // (a) child_index 가 살아있는 child_surface_id 면 오입력으로 확정.
+    if let Some(owner) = state.parent_of_child(child_index) {
+        let correct_index = state
+            .list_children(owner)
+            .iter()
+            .find(|c| c.child_surface_id == child_index)
+            .map(|c| c.index);
+        return WaitDecision::InvalidChildSurfaceId {
+            owner,
+            correct_index,
+        };
+    }
+    // (b) parent 에서 한 번도 발급된 적 없는 index.
+    if let Some(hw) = state.high_water(parent_surface_id)
+        && child_index > hw
+    {
+        return WaitDecision::NeverIssued { highest: hw };
+    }
+    // (c) child_index <= high-water 이거나 high-water 없음 → 발급됐다 정리됨 /
+    // 자식 0명 parent. 정당한 종료로 본다.
+    WaitDecision::Exited
 }
 
 /// `wait-any` 의 *state-only* 결정. 입력 children 순서를 보존하며 각 child 의
@@ -256,7 +314,11 @@ where
 {
     for &(child_index, decision) in decisions {
         match decision {
-            WaitDecision::Exited => {
+            // wait-any 는 잘못된 식별자(surface_id 오입력/미발급)도 기존과 동일하게
+            // 해당 child_index 자리의 terminal "exited" 로 취급한다 (동작 보존).
+            WaitDecision::Exited
+            | WaitDecision::InvalidChildSurfaceId { .. }
+            | WaitDecision::NeverIssued { .. } => {
                 return json!({ "state": "exited", "child_index": child_index });
             }
             WaitDecision::CheckExistence(child_surface_id) => {

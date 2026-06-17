@@ -143,6 +143,13 @@ impl ClaudeState {
         self.parent_of.get(&child_surface).copied()
     }
 
+    /// parent별 마지막으로 발급된 child index (high-water mark). 아직 한 번도
+    /// 자식을 발급하지 않았거나 자식이 0명이 되어 키가 정리된 parent면 None.
+    /// `wait` 의 index 미스매치 분기에서 "발급된 적 없는 index" 판정에 사용.
+    pub fn high_water(&self, parent: u32) -> Option<u32> {
+        self.last_index.get(&parent).copied()
+    }
+
     /// 주어진 surface_id가 자식을 가진 부모로 registry에 있는지.
     /// surface lifecycle observer에서 parent close 판정에 사용.
     pub fn is_known_parent(&self, parent_surface: u32) -> bool {
