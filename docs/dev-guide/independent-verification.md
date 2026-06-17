@@ -36,7 +36,7 @@ Tasty 를 개발하는 환경이 곧 Tasty 다 (dogfooding). 보통 사용자·�
 
 ## 관련
 
-- `self-verification.md` *재작성 예정* — 실제 검증 절차 (cargo run & + CLI 시나리오)
+- [`self-verification.md`](self-verification.md) — 실제 검증 절차 (cargo run & + CLI 시나리오)
 - [`debug-ipc.md`](debug-ipc.md) — debug 전용 IPC (사용자 입력 재현, release 미노출)
 - `e2e-tests.md` *재작성 예정* — 테스트 환경 격리 정책
 - [identity.md](../identity.md) — 동시성 정체성 (이 원칙의 뿌리)
