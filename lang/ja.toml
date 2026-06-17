@@ -224,6 +224,8 @@ link_modifier_label = "リンククリック修飾キー:"
 link_modifier_ctrl = "Ctrl"
 link_modifier_alt = "Alt"
 link_modifier_none = "なし (通常クリック)"
+allow_clipboard_read_label = "クリップボード読み取りを許可 (OSC 52):"
+allow_clipboard_read_notice = "オンにすると、ターミナル内のプログラム(リモート/SSH プロセスを含む)がシステムのクリップボードを読み取れます。セキュリティのため既定はオフです。"
 
 [settings.appearance]
 heading = "外観"

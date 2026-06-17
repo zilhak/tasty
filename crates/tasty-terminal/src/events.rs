@@ -24,6 +24,12 @@ pub enum TerminalEventKind {
     ProcessExited,
     /// Terminal requested clipboard set via OSC 52.
     ClipboardSet(String),
+    /// Terminal requested a clipboard read via OSC 52 (`OSC 52 ; c ; ? ST`).
+    /// The terminal crate cannot read the system clipboard or know the user's
+    /// privacy setting, so it only signals that a query arrived; the host gates
+    /// it on `allow_clipboard_read` (default off) and, if allowed, replies with
+    /// the base64-encoded clipboard contents.
+    ClipboardQuery,
     /// OSC 133 prompt / command boundary marker.
     /// `phase` is one of `'A'` (prompt start), `'B'` (prompt end / cmd start point),
     /// `'C'` (output start), `'D'` (command finished). `payload` is the raw

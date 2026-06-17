@@ -96,6 +96,17 @@ impl TerminalState {
                     kind: TerminalEventKind::ClipboardSet(data),
                 });
             }
+            // OSC 52 read query (`OSC 52 ; c ; ? ST`). Emit an event only — the
+            // terminal crate has no access to the system clipboard or the user's
+            // privacy setting. The host decides whether to answer (gated on
+            // `allow_clipboard_read`, default off → no reply). The selection kind
+            // is ignored; the host always answers for the clipboard (`c`).
+            OperatingSystemCommand::QuerySelection(_selection) => {
+                self.events.push(TerminalEvent {
+                    surface_id: 0,
+                    kind: TerminalEventKind::ClipboardQuery,
+                });
+            }
             OperatingSystemCommand::Unspecified(params) => {
                 if let Some(first) = params.first() {
                     if first == b"133" {

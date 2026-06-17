@@ -692,6 +692,41 @@ fn detached_input_forwards_to_sink() {
     assert_eq!(rx.recv().unwrap(), b"Z".to_vec());
 }
 
+// OSC 52 read query (`OSC 52 ; c ; ? ST`) must surface a single ClipboardQuery
+// event through the production ingest path — the host gates the actual reply.
+#[test]
+fn osc52_read_query_emits_clipboard_query_event() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]52;c;?\x07");
+    let queries = t
+        .take_events()
+        .into_iter()
+        .filter(|e| matches!(e.kind, TerminalEventKind::ClipboardQuery))
+        .count();
+    assert_eq!(queries, 1, "exactly one ClipboardQuery expected");
+}
+
+// Regression: OSC 52 write (set) still produces a ClipboardSet event, not a
+// ClipboardQuery. `aGk=` is base64 for "hi".
+#[test]
+fn osc52_write_still_emits_clipboard_set() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]52;c;aGk=\x07");
+    let events = t.take_events();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(&e.kind, TerminalEventKind::ClipboardSet(s) if s == "hi")),
+        "OSC 52 write should emit ClipboardSet(\"hi\")"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e.kind, TerminalEventKind::ClipboardQuery)),
+        "a write must not emit a ClipboardQuery"
+    );
+}
+
 #[test]
 fn da2_query_emits_secondary_attributes_response() {
     use std::sync::mpsc;

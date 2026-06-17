@@ -5297,6 +5297,7 @@ version = "0.8.5"
 dependencies = [
  "anyhow",
  "arboard",
+ "base64 0.22.1",
  "bytemuck",
  "chrono",
  "clap",

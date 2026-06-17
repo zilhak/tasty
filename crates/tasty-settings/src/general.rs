@@ -86,6 +86,11 @@ pub struct GeneralSettings {
     /// 터미널 내 링크 클릭 시 요구되는 수식키. "ctrl" | "alt" | "none".
     /// "none"이면 평범한 클릭으로 링크가 열리므로 텍스트 선택과 구분되지 않는 점에 유의.
     pub link_click_modifier: String,
+    /// Allow programs in the terminal to read the system clipboard via OSC 52
+    /// (`OSC 52 ; c ; ? ST`). Off by default: clipboard read lets any program —
+    /// including untrusted remote/SSH processes — silently exfiltrate clipboard
+    /// contents (passwords, tokens). When off, read queries get no reply.
+    pub allow_clipboard_read: bool,
 }
 
 /// 파싱된 링크 클릭 수식키.
@@ -134,6 +139,7 @@ impl Default for GeneralSettings {
             restore_layout: true,
             restore_terminal_content: true,
             link_click_modifier: "ctrl".to_string(),
+            allow_clipboard_read: false,
         }
     }
 }

@@ -224,6 +224,8 @@ link_modifier_label = "Link click modifier:"
 link_modifier_ctrl = "Ctrl"
 link_modifier_alt = "Alt"
 link_modifier_none = "None (plain click)"
+allow_clipboard_read_label = "Allow clipboard read (OSC 52):"
+allow_clipboard_read_notice = "When on, programs in the terminal (including remote/SSH processes) can read your system clipboard. Off by default for security."
 
 [settings.appearance]
 heading = "Appearance"
