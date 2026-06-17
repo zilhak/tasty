@@ -68,4 +68,4 @@ GUI 에서는 `MainView`(View) 가 이 `CoreState` 를 호스팅·렌더한다. 
 ## 관련
 
 - [actors.md](actors.md) — 이 구조를 사용하는 주체 (로컬/AI/원격)
-- View 내부 오버레이(Popup / Toast)·모달 계열 View 는 별도 개념 (재작성 예정)
+- View 내부 오버레이: [`design/systems/popup.md`](../design/systems/popup.md) · [`design/systems/toast.md`](../design/systems/toast.md). 모달 계열 View 는 위 "View 의 종류" 표 참조.

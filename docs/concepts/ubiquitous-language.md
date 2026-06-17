@@ -37,8 +37,8 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 ### View 내부 (→ hierarchy.md, `design/systems/`)
 
 - **Modal** — 전역 1개, 활성 시 입력 차단하는 View 의 한 형태(별개 엔티티 아님). `SettingsView`/`QuitView`/`PluginsView`.
-- **Popup** — View 내부 가상 창(타이틀바+콘텐츠, 드래그·z-order). 스코프 가짐. 상세 `design/systems/popup.md` *(재작성 예정)*.
-- **Toast** — View 내부 휘발성 알림. 포커스 안 받고 입력 비소비. **사용자 행동에서만** 발사(에이전트 IPC 는 발사 안 함). 상세 `design/systems/toast.md` *(재작성 예정)*.
+- **Popup** — View 내부 가상 창(타이틀바+콘텐츠, 드래그·z-order). 스코프 가짐. 상세 [`design/systems/popup.md`](../design/systems/popup.md).
+- **Toast** — View 내부 휘발성 알림. 포커스 안 받고 입력 비소비. **사용자 행동에서만** 발사(에이전트 IPC 는 발사 안 함). 상세 [`design/systems/toast.md`](../design/systems/toast.md).
 
 ### Surface 종류 (→ [hierarchy.md](hierarchy.md#surface-타입) · [plugins.md](plugins.md))
 
