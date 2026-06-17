@@ -78,7 +78,7 @@ let pad = th.spacing_sm;                               // sizing 동일 방식
 // ❌ egui::Color32::from_rgb(80,140,255)             // 하드코딩 금지 (clippy 차단)
 ```
 
-- **색 생성 경로 단일화**: GPU 버퍼 struct 는 newtype(`GpuRgba` 등)을 받아 `[f32;4]` 대입이 컴파일 에러. `from_rgb` 직접 호출은 clippy 차단. 상세 `dev-guide/color-policy` *(재작성 예정)*.
+- **색 생성 경로 단일화**: GPU 버퍼 struct 는 newtype(`GpuRgba` 등)을 받아 `[f32;4]` 대입이 컴파일 에러. `from_rgb` 직접 호출은 clippy 차단. 상세 [`dev-guide/color-policy`](../../dev-guide/color-policy.md).
 - **premultiplied 주의**: `hover_overlay`/`active_overlay`/`separator` 는 premultiplied 바이트라 `to_egui_premultiplied()` 를 써야 한다. `to_egui()` 를 쓰면 sRGB-aware premultiplication 이 한 번 더 적용돼 색이 어긋난다.
 - **Semantic 접근자 우선**: 평면 primitive(`th.blue`) 외에 의미 기반 접근자(`accent_primary()`/`surface_raised()`/`text_muted()`)를 제공. 신규/수정 UI 는 의미가 드러나는 접근자를 우선(같은 primitive 가 여러 role 로 갈리는 다의성 표현). primitive 직접접근도 유효(additive, 픽셀 동일)하나 의미가 호출처에 묻힌다 — 전수 이식 전까지 clippy 강제는 보류. 매핑·다의성 핫스팟은 [`token-crosswalk`](token-crosswalk.md).
 
@@ -109,7 +109,7 @@ let pad = th.spacing_sm;                               // sizing 동일 방식
 | 포커스 링 | 2px accent-primary(`focus_ring_width`) |
 | 호버 오버레이 | `hover_overlay`(라이트 검정 8% / 다크 흰색 8% 자동 도출) — 직접 값 금지 |
 | 활성 오버레이 | `active_overlay`(12%) — 선택/active 행, hover(8%)와 구분 |
-| 텍스트 대비 | 최소 **4.5:1**. 위반 시 `ai-verification/visual-verification` *(재작성 예정)* 체크리스트 |
+| 텍스트 대비 | 최소 **4.5:1**. 위반 시 [`ai-verification/visual-verification`](../../ai-verification/visual-verification.md) 체크리스트 |
 | 터미널 콘텐츠 애니메이션 | **0ms** — 셀/스크롤엔 어떤 transition 도 금지(입력 응답성 우선) |
 | UI 위젯 애니메이션 | 짧게(보통 100–150ms), 입력 직후 피드백 한정 |
 
