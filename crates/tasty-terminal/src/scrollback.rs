@@ -366,11 +366,21 @@ impl TerminalState {
     pub(crate) fn capture_before_scroll(&mut self, change: &Change) {
         if let Change::ScrollRegionUp {
             first_row: 0,
+            region_size,
             scroll_count,
-            ..
         } = change
         {
-            let captured = self.capture_top_lines(*scroll_count);
+            // termwiz `scroll_region_up` evicts at most `region_size` rows. When
+            // `scroll_count` exceeds the region (a top-anchored partial region with
+            // an over-sized SU), capturing `scroll_count` rows would also copy rows
+            // *below* the region — which stay on screen — producing duplicates in
+            // scrollback. Clamp to the region so only genuinely evicted top rows
+            // are captured (see ADR/verification: E2). The clamp lives here at the
+            // callsite, not in `capture_top_lines`, because the auto-wrap path
+            // (`apply_text_capturing_scrolls`) calls `capture_top_lines(1)` and is
+            // region-agnostic.
+            let count = (*scroll_count).min(*region_size);
+            let captured = self.capture_top_lines(count);
             self.push_scrolled_off(captured);
         }
     }
