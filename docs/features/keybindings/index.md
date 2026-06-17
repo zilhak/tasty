@@ -26,6 +26,25 @@ Settings Keybindings 탭에서 키 조합을 직접 **녹화**해 할당한다. 
 
 키바인딩 **프리셋**(기본 세트 전환)을 제공한다(`keybindings/presets.rs`). 레이아웃 프리셋(`tasty-presets` crate, Workspace/Tab/Pane)과는 별개 — 이름만 비슷한 다른 시스템이다.
 
+### 설정 탭 구성 (서브탭·항목 순서)
+
+Settings 의 Keybindings 탭은 액션을 서브탭으로 묶고, 그 순서는 **유비쿼터스 언어 계층**을 따른다. 서브탭 enum: `KeybindingsSubTab`(`src/view/settings/ui/keybindings_tab.rs`).
+
+```
+General → Workspace → Pane → Tab → Surface → Clipboard → Zoom → Image → Preset → Plugins
+          \________ 계층 순서 ________/
+```
+
+- **General / Clipboard / Zoom / Image**: 계층에 속하지 않는 전역·기능별 단축키.
+- **Workspace → Pane → Tab → Surface**: [구조 계층](../../concepts/hierarchy.md) 순서.
+- **Preset / Plugins**: 프리셋 적용 · 플러그인 기여 단축키(항상 끝).
+
+각 서브탭 *내부* 항목 순서: **① 생성/분할 → ② 탐색(next/prev/focus) → ③ 수정(rename/convert) → ④ 닫기 → ⑤ 수식키(modifier, separator 로 구분)**.
+
+**어느 서브탭에 두는가** — 그 동작의 *대상 엔티티* 이름을 가진 서브탭에 둔다. `new_tab`→Tab, `split_pane_*`→Pane, `close_surface`→Surface. 수식키도 대상 엔티티 서브탭(`tab_switch_modifier`→Tab, `workspace_switch_modifier`→Workspace). cascade 인 `close_active` 는 가장 먼저 닫히는 대상이 탭이라 Tab. `open_markdown` 은 새 탭으로 열려 Tab.
+
+> explorer / html 이 plugin 으로 분리되며 `open_explorer`·`convert_to_explorer` 호스트 키바인딩은 사라졌다(plugin 이 자기 command 로 기여). 현재 Surface 의 convert 계열은 `convert_surface`·`convert_to_markdown` 만 호스트에 남는다.
+
 ## 인터페이스
 
 - **사용자**: Settings → Keybindings 탭에서 녹화/편집. (단축키는 사용자 행동이라 release IPC/CLI 로 *발동* 하지 않는다 — 키 주입은 debug 전용, [debug-ipc](../../dev-guide/debug-ipc.md).)

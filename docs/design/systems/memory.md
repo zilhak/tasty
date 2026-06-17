@@ -88,4 +88,4 @@ Secret 의 격리 약속은 **"plugin 간 IPC 격리" 하나로 좁혀져 있다
 - 코드: `crates/tasty-memory/`
 - [ADR-0005](../../adr/0005-memory-secret-not-a-vault.md) · [ADR-0004](../../adr/0004-ipc-transport-tcp.md)
 - [plugin-permissions](../../dev-guide/plugin-permissions.md) · [plugin-sensitive-data](../../dev-guide/plugin-sensitive-data.md)
-- 저장 위치 규칙: `design/systems/storage.md` *(재작성 예정)*
+- 저장 위치 규칙: [storage.md](storage.md) (`~/.tasty/` 전체 저장소 지도; `memory.db` 는 `state.db` 와 별도 연결)
