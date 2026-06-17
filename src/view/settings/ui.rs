@@ -443,6 +443,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             &mut ui_state.fh_edit_draft,
                             file_format,
                             file_handler,
+                            &mut ui_state.l2_filter,
                         ),
                         SettingsTab::Misc => draw_misc_group(ui, ui_state),
                         SettingsTab::Plugins => draw_plugin_tab(
