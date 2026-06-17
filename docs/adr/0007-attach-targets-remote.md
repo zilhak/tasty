@@ -19,7 +19,7 @@ attach 의 **server 는 transport 를 모르고 항상 `127.0.0.1` 로만 client
 **attach 의 release CLI 표면은 원격(다른 호스트/인스턴스)만 대상으로 한다.**
 
 - 원격 attach 는 release 에 노출한다 — `tasty remote attach …` / `tasty remote check …`.
-- **로컬 loopback self-attach 는 release 표면에서 제거하고 debug 빌드로 격리한다** — `tasty attach` → `tasty debug attach`. debug 에 남기는 이유는 **e2e 테스트 등 attach 파이프라인 검증**을 위해서다(원칙 1 ②, `dev-guide/debug-ipc` *재작성 예정*).
+- **로컬 loopback self-attach 는 release 표면에서 제거하고 debug 빌드로 격리한다** — `tasty attach` → `tasty debug attach`. debug 에 남기는 이유는 **e2e 테스트 등 attach 파이프라인 검증**을 위해서다(원칙 1 ②, [`dev-guide/debug-ipc`](../dev-guide/debug-ipc.md)).
 - **"로컬 attach 제거" 는 서버를 바꾼 게 아니라 client 의 로컬 진입점만 제거한 것이다.** 서버의 attach 수신 경로(`attach.*` IPC, `run_attach_*` 세션 머신)는 로컬/원격 공용으로 그대로 보존된다 — 원격 attach 도 결국 loopback 이라 같은 경로를 탄다.
 - **막는 강도 — hard-block 이 아니라 "제공하지 않음"이다.** 로컬 self-attach 는 *쓸모없는 행위*라 release 에 **진입점을 두지 않을 뿐**이고, 명시적으로 수행하려는 시도를 실수로 간주해 막는 수준이다. 사용자가 우회(예: `127.0.0.1:PORT` loopback 직결로 원격 경로 타기)로 굳이 self-attach 하는 것은 **따로 막지 않는다** — 서버 경로가 공용으로 보존되므로 가능하며, 이는 의도된 비강제다.
 - **단발 화면 읽기는 attach 가 아니다** — 정식 경로는 `tasty read screen` / `tasty read since-mark`. attach 의 `--dump-after` 는 mirror 파이프라인 *검증용*이지 일반 스크래핑 용도가 아니다.
@@ -47,7 +47,7 @@ attach 의 **server 는 transport 를 모르고 항상 `127.0.0.1` 로만 client
 - [`identity.md`](../identity.md) §2.1 — 사용자 행동 ↔ 에이전트 행동 분리, 원칙 1 ②(debug 격리)
 - [`dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) — "서버/클라이언트 계층", "로컬 attach 제거의 정확한 의미"
 - [`features/remote-attach/`](../features/remote-attach/index.md) — 원격 attach 동작·CLI 표면
-- `dev-guide/debug-ipc` — debug 격리 정책 *(재작성 예정)*
+- [`dev-guide/debug-ipc`](../dev-guide/debug-ipc.md) — debug 격리 정책
 - [`0004-ipc-transport-tcp.md`](0004-ipc-transport-tcp.md) — attach 가 깔고 앉은 loopback trust boundary (SSH 위임 보안)
 - 코드: `crates/tasty-cli/src/commands/remote.rs`(디스패치) · `attach.rs`(`run_attach_*` 공용) · `debug/`(로컬 격리)
 </content>

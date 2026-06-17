@@ -85,5 +85,5 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_as_vt` 로 **1회** �
 - 동작·점유 규칙·CLI/IPC 사용법: [`features/remote-attach`](../features/remote-attach/index.md)
 - 주체(원격 사용자)·점유 모델 개념: [`concepts/actors`](../concepts/actors.md)
 - SSH 프로필 관리: [`features/ssh-tool`](../features/ssh-tool/index.md)
-- 로컬 self attach 격리: `dev-guide/debug-ipc` *(재작성 예정)*
+- 로컬 self attach 격리: [`dev-guide/debug-ipc`](debug-ipc.md)
 </content>
