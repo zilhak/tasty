@@ -49,4 +49,4 @@ tracing::warn!("hook {hook_id} failed for surface {surface_id}: {e}"); // ✅
 
 ## anyhow / thiserror
 
-에러 타입 정의·`?` 전파·context 첨부 등 라이브러리 사용법은 별도 — 본 문서는 *정책* 만 다룬다. (라이브러리별 가이드는 docs-old `dev-guide/libs/` *재작성 예정*.)
+에러 타입 정의·`?` 전파·context 첨부 등 `anyhow`/`thiserror` 사용법은 상류 문서를 따른다 — 본 문서는 tasty 의 *정책* 만 다룬다.
