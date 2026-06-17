@@ -1319,3 +1319,81 @@ fn osc_color_set_request_is_not_answered() {
     t.feed_bytes(b"\x1b]11;rgb:0000/0000/0000\x1b\\"); // set bg, no query
     assert!(rx.try_recv().is_err(), "set request must not respond");
 }
+
+// ---- pen-mirror surface-boundary sync (07/H4 follow-up) ----
+// termwiz keeps a separate pen per surface; the direct `add_change` paths
+// (alt-screen switch, resize reflow, scrollback prefill) bypass `mirror_pen`.
+// These assert that `current_pen` stays aligned with the *active* surface so
+// cell_info never reports a stale attribute leaked across a surface boundary.
+
+#[test]
+fn alt_screen_entry_does_not_leak_primary_pen_into_cell_info() {
+    let mut t = Terminal::new_detached(80, 24);
+    // Primary: set bold, write a cell.
+    t.feed_bytes(b"\x1b[1mP");
+    assert!(t.cell_info(0, 0).expect("primary cell").bold);
+
+    // Enter alt screen (1049h), then apply overline only.
+    t.feed_bytes(b"\x1b[?1049h");
+    t.feed_bytes(b"\x1b[53mX");
+    let a = t.cell_info(0, 0).expect("alt cell");
+    assert_eq!(a.text, "X");
+    assert!(a.overline, "alt cell should have overline");
+    assert!(
+        !a.bold,
+        "stale primary bold must not leak onto the alt cell"
+    );
+}
+
+#[test]
+fn alt_screen_exit_restores_primary_pen() {
+    let mut t = Terminal::new_detached(80, 24);
+    // Primary bold, write P at 0,0 (cursor advances to col 1).
+    t.feed_bytes(b"\x1b[1mP");
+    // Round-trip through the alt screen with a different pen.
+    t.feed_bytes(b"\x1b[?1049h");
+    t.feed_bytes(b"\x1b[53mX"); // overline on alt, no bold
+    t.feed_bytes(b"\x1b[?1049l"); // leave alt; cursor restored to (col 1, row 0)
+    // Apply overline on primary; the restored pen still carries bold.
+    t.feed_bytes(b"\x1b[53mQ");
+    let q = t.cell_info(0, 1).expect("primary cell after exit");
+    assert_eq!(q.text, "Q");
+    assert!(q.bold, "primary pen (bold) must be restored after leaving alt");
+    assert!(q.overline, "overline applied on primary after exit");
+    // Original primary cell intact.
+    let p = t.cell_info(0, 0).expect("original primary cell");
+    assert_eq!(p.text, "P");
+    assert!(p.bold);
+    assert!(!p.overline, "original cell never had overline");
+}
+
+#[test]
+fn alt_screen_47_switch_does_not_leak_pen() {
+    // Mode 47 switches without clearing; the pen must still track the surface.
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[1mP"); // primary bold
+    t.feed_bytes(b"\x1b[?47h"); // enter alt (no clear)
+    t.feed_bytes(b"\x1b[53mX"); // overline only on alt
+    let a = t.cell_info(0, 0).expect("alt cell");
+    assert!(a.overline);
+    assert!(!a.bold, "primary bold must not leak across the 47h switch");
+}
+
+#[test]
+fn resize_restore_does_not_leave_stale_pen() {
+    // Shrink then grow forces the grow/tail restore paths to emit
+    // `AllAttributes` per restored cell directly on the surface. After that the
+    // active pen must still be the logical pen (bold), not the plain attrs left
+    // by the last restored cell.
+    let mut t = Terminal::new_detached(80, 6);
+    t.feed_bytes(b"L1\r\nL2\r\nL3\r\nL4\r\n");
+    t.feed_bytes(b"\x1b[1m"); // logical pen = bold (no cell written yet)
+    t.resize(80, 3); // shrink: pushes top lines to scrollback
+    t.resize(80, 6); // grow: restores them via direct AllAttributes(plain)
+    // Home + plain cell: should pick up the logical bold pen, not the
+    // restoration artifact left on the surface by the restore loop.
+    t.feed_bytes(b"\x1b[HZ");
+    let z = t.cell_info(0, 0).expect("cell 0,0");
+    assert_eq!(z.text, "Z");
+    assert!(z.bold, "resize restore must not leave a stale (non-bold) pen");
+}

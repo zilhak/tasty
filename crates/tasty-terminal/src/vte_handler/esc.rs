@@ -32,6 +32,10 @@ impl TerminalState {
                 self.alt_saved_cursor = None;
                 self.use_alternate = false;
                 self.alternate_surface = None;
+                // The returned AllAttributes(default) resets `current_pen` via the
+                // normal apply path; reset the inactive-surface mirror too so no
+                // stale pen survives the full reset.
+                self.saved_pen = CellAttributes::default();
                 self.application_cursor_keys = false;
                 self.cursor_visible = true;
                 self.cursor_shape = CursorShape::Default;

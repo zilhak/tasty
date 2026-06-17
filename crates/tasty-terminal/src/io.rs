@@ -79,6 +79,16 @@ impl TerminalState {
             _ => {}
         }
     }
+
+    /// Swap the active/inactive pen mirrors when crossing the primary↔alternate
+    /// screen boundary. termwiz holds a separate pen per surface but exposes no
+    /// accessor, so `current_pen` tracks the active surface and `saved_pen` holds
+    /// the other; swapping on each transition keeps the mirror aligned with the
+    /// surface that subsequent changes land on. Call exactly on a real transition
+    /// of `use_alternate`. See `modes.rs` (alt-screen modes 1049 / 47 / 1047).
+    pub(crate) fn swap_pen_for_surface_switch(&mut self) {
+        std::mem::swap(&mut self.current_pen, &mut self.saved_pen);
+    }
 }
 
 impl Terminal {

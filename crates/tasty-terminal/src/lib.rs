@@ -194,6 +194,13 @@ pub(crate) struct TerminalState {
     /// pen, setting the one field, and emitting `Change::AllAttributes`. Kept in
     /// sync by `mirror_pen()` on every change. See `vte_handler/control.rs`.
     current_pen: CellAttributes,
+    /// Pen mirror of the *inactive* surface while the active one is tracked by
+    /// `current_pen`. termwiz keeps an independent pen per surface, so on every
+    /// primary↔alternate transition we swap this with `current_pen` to keep the
+    /// mirror aligned with the surface that actually receives changes — without
+    /// this, an SGR applied on the alt screen would clone the primary's stale pen
+    /// (e.g. leftover bold) into `cell_info`. See `swap_pen_for_surface_switch`.
+    saved_pen: CellAttributes,
     /// Resolved theme palette plumbed in by the host so OSC 10/11/12/4 color
     /// *queries* report the colors the renderer actually draws. `None` until the
     /// host sets it (a query before plumbing is left unanswered). Refreshed on
@@ -284,6 +291,7 @@ impl TerminalState {
             last_input_at: std::time::Instant::now() - INPUT_ECHO_WINDOW,
             emit_output_events: false,
             current_pen: CellAttributes::default(),
+            saved_pen: CellAttributes::default(),
             color_palette: None,
         }
     }

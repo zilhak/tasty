@@ -326,6 +326,13 @@ impl TerminalState {
             }
         }
 
+        // The loop above emits `AllAttributes` per restored cell directly on the
+        // surface, leaving its pen at the last cell's attrs (a restoration
+        // artifact that bypasses `mirror_pen`). Re-apply the logical pen so the
+        // surface pen stays aligned with `current_pen`.
+        self.primary_surface
+            .add_change(Change::AllAttributes(self.current_pen.clone()));
+
         // Park the cursor on the row right after the prefilled block so the
         // shell's first prompt is emitted there.
         let cursor_y = to_draw.len();

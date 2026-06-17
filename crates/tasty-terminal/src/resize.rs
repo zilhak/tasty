@@ -58,6 +58,14 @@ impl TerminalState {
                 x: Position::Absolute(cursor_x),
                 y: Position::Absolute(cursor_y),
             });
+            // The grow/tail restore paths emit `AllAttributes` per restored cell
+            // directly on the surface, leaving its pen at the last cell's attrs —
+            // a restoration artifact that bypasses `mirror_pen`. Re-apply the
+            // logical pen so the surface pen and `current_pen` stay aligned and a
+            // subsequent plain `Text` (or Overline/UnderlineColor/VerticalAlign
+            // SGR) is not painted with the leftover attributes.
+            self.primary_surface
+                .add_change(Change::AllAttributes(self.current_pen.clone()));
         }
 
         // Reset scroll region on resize

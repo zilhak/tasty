@@ -1,3 +1,4 @@
+use termwiz::cell::CellAttributes;
 use termwiz::color::ColorAttribute;
 use termwiz::escape::csi::{
     DecPrivateMode, DecPrivateModeCode, Mode as CsiMode, TerminalMode, TerminalModeCode,
@@ -78,6 +79,11 @@ impl TerminalState {
                     if self.alternate_surface.is_none() {
                         self.alternate_surface = Some(Surface::new(self.cols, self.rows));
                     }
+                    // Stash the primary pen and adopt the alt surface's pen mirror
+                    // (only on a real primary→alt transition).
+                    if !self.use_alternate {
+                        self.swap_pen_for_surface_switch();
+                    }
                     self.use_alternate = true;
                     // Clear alternate screen
                     if let Some(alt) = &mut self.alternate_surface {
@@ -87,8 +93,14 @@ impl TerminalState {
                             y: Position::Absolute(0),
                         });
                     }
+                    // The clear above resets the alt surface pen to default
+                    // (ClearScreen bypasses `apply_change`/`mirror_pen`).
+                    self.current_pen = CellAttributes::default();
                 } else {
-                    // Leave alternate screen
+                    // Leave alternate screen — restore the primary pen mirror.
+                    if self.use_alternate {
+                        self.swap_pen_for_surface_switch();
+                    }
                     self.use_alternate = false;
                     // Restore cursor on primary
                     if let Some((x, y)) = self.alt_saved_cursor.take() {
@@ -106,8 +118,15 @@ impl TerminalState {
                     if self.alternate_surface.is_none() {
                         self.alternate_surface = Some(Surface::new(self.cols, self.rows));
                     }
+                    // No clear here: adopt the alt surface's retained pen mirror.
+                    if !self.use_alternate {
+                        self.swap_pen_for_surface_switch();
+                    }
                     self.use_alternate = true;
                 } else {
+                    if self.use_alternate {
+                        self.swap_pen_for_surface_switch();
+                    }
                     self.use_alternate = false;
                 }
             }
