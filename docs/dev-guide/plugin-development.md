@@ -140,7 +140,39 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 `memory.secret` 의 유일한 보장은 **플러그인 간 IPC 격리**다 — 디스크엔 평문. regular vs secret vs keyring 선택은 [plugin-sensitive-data](plugin-sensitive-data.md).
 
-## 7. 규약
+## 7. 호스트 런타임 계약 (env · 생명주기 · 핸드셰이크)
+
+플러그인 *작성* 과 별개로, 호스트가 플러그인 프로세스를 어떻게 띄우고 살려두는지 — SDK 가 의존하는 런타임 계약(`crates/tasty-host-plugin/`).
+
+### spawn 시 주입 환경변수
+
+호스트가 자식 프로세스에 넘기는 env (`process.rs`). SDK 가 이걸로 자기 위치·로그·호스트 접속을 안다.
+
+| 환경변수 | 값 |
+|----------|-----|
+| `TASTY_PLUGIN_ID` | plugin id |
+| `TASTY_PLUGIN_DIR` | 본체 디렉터리(읽기 전용) |
+| `TASTY_PLUGIN_DATA_DIR` / `TASTY_PLUGIN_CONFIG_PATH` / `TASTY_PLUGIN_LOG_PATH` | 데이터·설정·로그 경로 |
+| `TASTY_HOST_IPC_PORT` | 호스트 listener 포트 |
+| `TASTY_PLUGIN_TOKEN` | 핸드셰이크 토큰(1회용) |
+| `TASTY_HOST_API_VERSION` | 호스트 protocol 메이저 |
+| `TASTY_PLUGIN_HANDLE_ENDPOINT` | handle 채널 엔드포인트(있을 때) |
+| `TASTY_LOCALE` | 활성 로케일(i18n Translator) |
+
+### 생명주기 (healthcheck / 자동 재시작·비활성화)
+
+`manager.rs` 상수 기준:
+
+- **부팅**: `~/.tasty/plugins/` 스캔 → enabled 전부 spawn.
+- **헬스체크**: `PING_INTERVAL`(15s)마다 ping, `HEALTHCHECK_TIMEOUT`(60s) 무응답이면 강제 재시작.
+- **자동 비활성화**: `RESTART_FAILURE_WINDOW`(10s) 내 `RESTART_FAILURE_LIMIT`(3)회 spawn 실패 → 정지(사용자가 `tasty plugin enable` 로 수동 재개까지).
+- **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
+
+### 토큰 핸드셰이크 (보안)
+
+호스트가 `127.0.0.1:0`(랜덤 포트) listen → spawn 시 `TASTY_HOST_IPC_PORT` + `TASTY_PLUGIN_TOKEN` 전달 → 플러그인이 그 포트로 connect 후 **첫 줄에 `AuthMessage{plugin_id, token}`** 전송 → 토큰 일치해야 인증 통과(`HANDSHAKE_TIMEOUT` 내), mismatch 면 즉시 끊음. SDK transport 가 이 핸드셰이크를 자동 수행하므로 작성자는 보통 신경 쓸 필요 없다.
+
+## 8. 규약
 
 - **이름**: crate `tasty-plugin-<name>` = binary 이름, id `com.x.<name>`(다어절 hyphen), IPC prefix = id 마지막 segment 의 `_` 변환, i18n key root = prefix.
 - **i18n**: 매니페스트 `*_i18n_key` 는 host 가 lookup. 플러그인이 직접 그리는 텍스트는 `tasty_plugin_sdk::i18n::Translator`(`TASTY_LOCALE` 주입). 키는 자기 prefix 안에만(`surface.kind.<own>` 만 예외).
@@ -148,7 +180,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 - **모듈 분리**: main.rs 가 ~300줄 넘으면 `state.rs`/`handlers.rs`/`install.rs` 로 분리(claude/codex 가 reference). 단순 플러그인(image 61줄)은 단일 main.rs.
 - **Cargo**: `tasty-plugin-protocol` 직접 의존 금지 — SDK 가 re-export. `[lints] workspace = true`.
 
-## 8. 빌드 & 설치
+## 9. 빌드 & 설치
 
 ```bash
 cargo build --release -p my-plugin
@@ -159,7 +191,7 @@ tasty plugin install ./          # 매니페스트 권한 자동 grant + spawn
 
 디버깅: `tasty plugin logs <id> --follow` / `~/.tasty/plugins-logs/<id>.log` / `RUST_LOG=debug`.
 
-## 9. 한계 (현재 SDK)
+## 10. 한계 (현재 SDK)
 
 - async 미지원 — 모든 콜백 동기(무거운 I/O 는 플러그인 내부 thread).
 - HotReload 미지원 — 코드 변경은 `disable && enable`.
