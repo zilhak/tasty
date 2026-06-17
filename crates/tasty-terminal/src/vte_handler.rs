@@ -30,6 +30,12 @@ impl TerminalState {
                 self.map_osc(*osc);
                 vec![]
             }
+            // XtGetTcap (DCS + q ... ST): termcap/terminfo capability query.
+            // Answered with a "currently not supported" reply (see handler).
+            Action::XtGetTcap(names) => {
+                self.handle_xtgettcap(&names);
+                vec![]
+            }
             _ => vec![],
         }
     }

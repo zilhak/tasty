@@ -760,6 +760,35 @@ fn xtversion_query_emits_name_and_version_response() {
 }
 
 #[test]
+fn xtgettcap_query_emits_unsupported_reply() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    // XtGetTcap for "Co" (436f). Currently unsupported → DCS 0 + r 436f ST.
+    t.feed_bytes(b"\x1bP+q436f\x1b\\");
+    let resp = rx.try_recv().expect("no XtGetTcap response");
+    assert_eq!(
+        resp, b"\x1bP0+r436f\x1b\\",
+        "XtGetTcap must answer status 0 (currently unsupported): {resp:?}"
+    );
+}
+
+#[test]
+fn xtgettcap_multi_cap_query_emits_one_reply_each() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    // Two caps in one query: "Co" (436f) ; "TN" (544e).
+    t.feed_bytes(b"\x1bP+q436f;544e\x1b\\");
+    let first = rx.try_recv().expect("no reply for first cap");
+    assert_eq!(first, b"\x1bP0+r436f\x1b\\", "unexpected first reply: {first:?}");
+    let second = rx.try_recv().expect("no reply for second cap");
+    assert_eq!(second, b"\x1bP0+r544e\x1b\\", "unexpected second reply: {second:?}");
+}
+
+#[test]
 fn da1_query_still_emits_primary_attributes_response() {
     use std::sync::mpsc;
     let mut t = Terminal::new_detached(80, 24);

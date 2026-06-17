@@ -219,6 +219,26 @@ impl TerminalState {
         }
     }
 
+    /// XtGetTcap (`DCS + q Pt ST`): a request for termcap/terminfo capability
+    /// strings, where `Pt` is one or more hex-encoded capability names joined by
+    /// `;` (termwiz decodes them to ASCII for us). tasty does not yet expose a
+    /// capability database, so every queried cap is answered with the invalid /
+    /// unsupported reply `DCS 0 + r <hexcap> ST` (status 0), echoing the
+    /// requested name back as hex. This says "that cap is currently not provided"
+    /// — distinct from silence, which leaves the querying app waiting on a
+    /// timeout. This is a *current* limitation; real cap answers (status 1,
+    /// `DCS 1 + r <cap>=<hexvalue> ST`) may be added later.
+    pub(crate) fn handle_xtgettcap(&mut self, names: &[String]) {
+        for name in names {
+            let mut response = String::from("\x1bP0+r");
+            for &b in name.as_bytes() {
+                response.push_str(&format!("{b:02x}"));
+            }
+            response.push_str("\x1b\\");
+            self.send_terminal_response(&response);
+        }
+    }
+
     pub(crate) fn handle_device(&mut self, device: Device) {
         match device {
             Device::StatusReport => self.send_terminal_response("\x1b[0n"),
