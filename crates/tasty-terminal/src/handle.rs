@@ -6,7 +6,7 @@ use termwiz::cell::CellAttributes;
 use termwiz::surface::line::Line;
 
 use crate::search::{SearchError, SearchMatch, SearchOptions};
-use crate::{CellInfo, MouseTrackingMode, ScrollbackLine, Terminal};
+use crate::{CellInfo, CursorShape, MouseTrackingMode, ScrollbackLine, Terminal};
 
 impl Terminal {
     // ── Surface (owned snapshots — guard 밖으로 ref 를 빼낼 수 없으므로 복제) ──
@@ -40,6 +40,10 @@ impl Terminal {
 
     pub fn cursor_visible(&self) -> bool {
         self.lock_state().cursor_visible()
+    }
+
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.lock_state().cursor_shape()
     }
 
     pub fn bracketed_paste(&self) -> bool {

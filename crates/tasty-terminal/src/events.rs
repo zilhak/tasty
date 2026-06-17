@@ -44,3 +44,20 @@ pub enum MouseTrackingMode {
     CellMotion, // 1002
     AllMotion,  // 1003
 }
+
+/// Cursor shape set via DECSCUSR (`CSI Ps SP q`). Variants mirror the xterm
+/// parameter mapping (and termwiz `CursorStyle`): `Default` restores the
+/// terminal default (typically a steady block); the others select block /
+/// underline / bar with an explicit blink flag. The renderer reads this via the
+/// `cursor_shape()` accessor; storing it does not itself drive a redraw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorShape {
+    #[default]
+    Default, // 0
+    BlinkingBlock,     // 1
+    SteadyBlock,       // 2
+    BlinkingUnderline, // 3
+    SteadyUnderline,   // 4
+    BlinkingBar,       // 5
+    SteadyBar,         // 6
+}

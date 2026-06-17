@@ -149,6 +149,9 @@ pub(crate) struct TerminalState {
     pub(crate) application_cursor_keys: bool,
     /// DECTCEM: cursor visibility.
     pub(crate) cursor_visible: bool,
+    /// DECSCUSR: cursor shape (block/underline/bar + blink). The renderer reads
+    /// this via `cursor_shape()`; storing it does not itself drive a redraw.
+    pub(crate) cursor_shape: CursorShape,
     /// Bracketed paste mode (mode 2004).
     pub(crate) bracketed_paste: bool,
     /// Mouse tracking mode.
@@ -257,6 +260,7 @@ impl TerminalState {
             output: output_buffer::OutputBuffer::new(),
             application_cursor_keys: false,
             cursor_visible: true,
+            cursor_shape: CursorShape::default(),
             bracketed_paste: false,
             mouse_tracking: MouseTrackingMode::None,
             sgr_mouse: false,
@@ -617,6 +621,11 @@ impl RenderView<'_> {
     /// Whether the cursor is visible (DECTCEM).
     pub fn cursor_visible(&self) -> bool {
         self.state.cursor_visible()
+    }
+
+    /// Current cursor shape (DECSCUSR). Defaults to [`CursorShape::Default`].
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.state.cursor_shape()
     }
 
     /// Current scrollback scroll offset (0 = live bottom).

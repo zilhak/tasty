@@ -4,7 +4,7 @@ use termwiz::escape::csi::{
 };
 use termwiz::surface::{Change, CursorVisibility, Position, Surface};
 
-use super::{MouseTrackingMode, TerminalState};
+use super::{CursorShape, MouseTrackingMode, TerminalState};
 
 impl TerminalState {
     /// Handle DECSET/DECRST mode changes.
@@ -177,6 +177,11 @@ impl TerminalState {
     /// Whether the cursor is visible (DECTCEM).
     pub fn cursor_visible(&self) -> bool {
         self.cursor_visible
+    }
+
+    /// Current cursor shape (DECSCUSR).
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.cursor_shape
     }
 
     /// Whether bracketed paste mode is active.

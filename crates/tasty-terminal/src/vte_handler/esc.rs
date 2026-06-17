@@ -5,7 +5,7 @@ use termwiz::color::ColorAttribute;
 use termwiz::escape::esc::{Esc, EscCode};
 use termwiz::surface::{Change, CursorVisibility, Position};
 
-use crate::{MouseTrackingMode, TerminalState};
+use crate::{CursorShape, MouseTrackingMode, TerminalState};
 
 impl TerminalState {
     pub(crate) fn map_esc(&mut self, esc: Esc) -> Vec<Change> {
@@ -34,6 +34,7 @@ impl TerminalState {
                 self.alternate_surface = None;
                 self.application_cursor_keys = false;
                 self.cursor_visible = true;
+                self.cursor_shape = CursorShape::Default;
                 self.bracketed_paste = false;
                 self.mouse_tracking = MouseTrackingMode::None;
                 self.sgr_mouse = false;

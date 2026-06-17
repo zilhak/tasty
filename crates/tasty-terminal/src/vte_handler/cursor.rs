@@ -1,9 +1,9 @@
 //! VTE handler: cursor 도메인.
 
-use termwiz::escape::csi::Cursor;
+use termwiz::escape::csi::{Cursor, CursorStyle};
 use termwiz::surface::{Change, Position};
 
-use crate::TerminalState;
+use crate::{CursorShape, TerminalState};
 
 impl TerminalState {
     pub(crate) fn perform_index(&mut self) -> Vec<Change> {
@@ -155,8 +155,19 @@ impl TerminalState {
                     y: Position::Absolute(0),
                 }]
             }
-            Cursor::CursorStyle(_style) => {
-                // TODO: map to CursorShape change
+            Cursor::CursorStyle(style) => {
+                // DECSCUSR (CSI Ps SP q): record the requested cursor shape so the
+                // renderer can read it via cursor_shape(). xterm parameter mapping:
+                // 0/Default → default, odd = blinking, even = steady.
+                self.cursor_shape = match style {
+                    CursorStyle::Default => CursorShape::Default,
+                    CursorStyle::BlinkingBlock => CursorShape::BlinkingBlock,
+                    CursorStyle::SteadyBlock => CursorShape::SteadyBlock,
+                    CursorStyle::BlinkingUnderline => CursorShape::BlinkingUnderline,
+                    CursorStyle::SteadyUnderline => CursorShape::SteadyUnderline,
+                    CursorStyle::BlinkingBar => CursorShape::BlinkingBar,
+                    CursorStyle::SteadyBar => CursorShape::SteadyBar,
+                };
                 vec![]
             }
             _ => vec![],

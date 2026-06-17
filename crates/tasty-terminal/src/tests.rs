@@ -1128,3 +1128,35 @@ fn osc8_hyperlink_attaches_uri_to_cells_then_clears() {
         "hyperlink must not leak past the OSC 8 close"
     );
 }
+
+// ---- DECSCUSR (CSI Ps SP q): cursor shape ----
+
+#[test]
+fn decscusr_sets_cursor_shape() {
+    // Default on a fresh terminal.
+    let mut t = Terminal::new_detached(80, 24);
+    assert_eq!(t.cursor_shape(), CursorShape::Default);
+
+    // Each xterm parameter maps to its shape + blink flag.
+    for (seq, expected) in [
+        (&b"\x1b[1 q"[..], CursorShape::BlinkingBlock),
+        (&b"\x1b[2 q"[..], CursorShape::SteadyBlock),
+        (&b"\x1b[3 q"[..], CursorShape::BlinkingUnderline),
+        (&b"\x1b[4 q"[..], CursorShape::SteadyUnderline),
+        (&b"\x1b[5 q"[..], CursorShape::BlinkingBar),
+        (&b"\x1b[6 q"[..], CursorShape::SteadyBar),
+        (&b"\x1b[0 q"[..], CursorShape::Default),
+    ] {
+        t.feed_bytes(seq);
+        assert_eq!(t.cursor_shape(), expected, "seq {seq:?}");
+    }
+}
+
+#[test]
+fn decscusr_reset_by_full_reset() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b[5 q"); // blinking bar
+    assert_eq!(t.cursor_shape(), CursorShape::BlinkingBar);
+    t.feed_bytes(b"\x1bc"); // RIS / FullReset
+    assert_eq!(t.cursor_shape(), CursorShape::Default);
+}
