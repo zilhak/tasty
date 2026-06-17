@@ -41,5 +41,5 @@
 
 ## 관련
 
-- [surface-cwd invariant](../../architecture/invariants/surface-cwd.md) — 생성 시 cwd carry · `design/flows/split-command` *(재작성 예정)* — split/새 탭 상속
+- [surface-cwd invariant](../../architecture/invariants/surface-cwd.md) — 생성 시 cwd carry · [`design/flows/split-command`](../flows/split-command.md) — split/새 탭 상속
 - [terminal](../../features/terminal/index.md) · [terminal-link](../../features/terminal-link/index.md)(OSC 7 경로 해석)

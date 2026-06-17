@@ -51,7 +51,7 @@ PopupDef {
 
 ### 3. 팝업 열기 — Intent 큐로 발화
 
-`state.popups.open*` 직접 호출 금지 — **Intent 로 발화**한다 (origin 정책·디스패치 이유는 `design/flows/action-dispatch.md` *재작성 예정*).
+`state.popups.open*` 직접 호출 금지 — **Intent 로 발화**한다 (origin 정책·디스패치 이유는 [`design/flows/action-dispatch.md`](../design/flows/action-dispatch.md)).
 
 ```rust
 use crate::intent::{UiIntent, OpenPopupMode};
