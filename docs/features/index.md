@@ -28,3 +28,10 @@
 | [notifications](notifications/index.md) — 알림 (OSC/시스템/패널/배지) | 로컬 사용자 · AI Agent | 패널 popup |
 | [auto-update](auto-update/index.md) — 자동 업데이트 확인 (`tasty update`) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [file-handler](file-handler/index.md) — 파일 핸들러 (식별→디스패치) | 로컬 사용자 · AI Agent · plugin | [설정 탭](settings/screens/settings.md) · picker |
+| [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
+| [lua-hooks](lua-hooks/index.md) — 사용자 init.lua 자동화 | 로컬 사용자 | 없음 |
+| [agent-collaboration](agent-collaboration/index.md) — 다중 에이전트 협업 (`agent.*`) | AI Agent | 없음 |
+| [human-handoff](human-handoff/index.md) — 휴먼 핸드오프 (approval) | AI Agent · 로컬 사용자 | approval popup |
+| [telemetry](telemetry/index.md) — 텔레메트리 (관측/비용/cap) | AI Agent · 로컬 사용자 | 없음 |
+| [terminal-output](terminal-output/index.md) — 출력 구조화 (parse/commands/observe) | AI Agent | 없음 |
+| [capability-elevation](capability-elevation/index.md) — 권한 상승 & 감사 | AI Agent · 로컬 사용자 | elevation popup |
