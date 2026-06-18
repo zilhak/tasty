@@ -164,6 +164,14 @@ impl CellRenderer {
         // lock window is the only contention; a visible terminal is idle enough
         // that this is uncontended in practice (ADR-0002).
         terminal.with_render_view(|view| {
+            // DECSCNM (reverse screen): swap the default fg/bg for the whole
+            // viewport. Cell-level attributes are unaffected; only the default
+            // (unstyled) colors invert.
+            let (default_bg, default_fg) = if view.screen_reverse() {
+                (default_fg, default_bg)
+            } else {
+                (default_bg, default_fg)
+            };
             let cursor = if show_cursor && view.cursor_visible() && view.scroll_offset() == 0 {
                 let (cx, cy) = view.surface().cursor_position();
                 let wide = view

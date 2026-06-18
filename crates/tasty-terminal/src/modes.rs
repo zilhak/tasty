@@ -177,6 +177,12 @@ impl TerminalState {
             DecPrivateModeCode::SynchronizedOutput => {
                 self.synchronized_output = enable;
             }
+            DecPrivateModeCode::ReverseVideo => {
+                // DECSCNM (mode 5): reverse the whole screen. Stored as a flag the
+                // renderer consumes by swapping the default fg/bg; the grid content
+                // is untouched.
+                self.reverse_screen = enable;
+            }
             DecPrivateModeCode::AutoWrap => {
                 // AutoWrap is handled by termwiz Surface internally, ignore for now
             }
@@ -231,6 +237,12 @@ impl TerminalState {
     /// Whether synchronized output mode (DEC 2026) is active.
     pub fn synchronized_output(&self) -> bool {
         self.synchronized_output
+    }
+
+    /// Whether reverse-screen mode (DECSCNM, DEC private mode 5) is active. The
+    /// renderer swaps the default foreground/background when this is set.
+    pub fn screen_reverse(&self) -> bool {
+        self.reverse_screen
     }
 
     /// Scan the active surface for an isolated reverse-video cell.

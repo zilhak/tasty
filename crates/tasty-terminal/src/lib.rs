@@ -213,6 +213,10 @@ pub(crate) struct TerminalState {
     /// Initialised to every 8th column; mutated by HTS/TBC, rebuilt to the
     /// default on resize and RIS. HT/CHT/CBT navigate between stops.
     pub(crate) tab_stops: Vec<bool>,
+    /// DECSCNM (DEC private mode 5): reverse screen. When set, the renderer
+    /// swaps the default foreground/background so the whole screen is inverted.
+    /// Reset by RIS. Read by the host via `screen_reverse()`.
+    pub(crate) reverse_screen: bool,
 }
 
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
@@ -307,6 +311,7 @@ impl TerminalState {
             color_palette: None,
             last_print: None,
             tab_stops: default_tab_stops(cols),
+            reverse_screen: false,
         }
     }
 
@@ -656,6 +661,12 @@ impl RenderView<'_> {
     /// Current cursor shape (DECSCUSR). Defaults to [`CursorShape::Default`].
     pub fn cursor_shape(&self) -> CursorShape {
         self.state.cursor_shape()
+    }
+
+    /// Whether reverse-screen mode (DECSCNM) is active. The renderer swaps the
+    /// default foreground/background when this is set.
+    pub fn screen_reverse(&self) -> bool {
+        self.state.screen_reverse()
     }
 
     /// Current scrollback scroll offset (0 = live bottom).

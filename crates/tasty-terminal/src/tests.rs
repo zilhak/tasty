@@ -1554,3 +1554,24 @@ fn tbc_3_clears_all_stops() {
     t.feed_bytes(b"\t"); // no stops → clamp at right margin (39)
     assert_eq!(t.cursor_position().0, 39);
 }
+
+// ---- DECSCNM (DEC private mode 5): reverse screen ----
+
+#[test]
+fn decscnm_toggles_reverse_flag() {
+    let mut t = Terminal::new_detached(10, 2);
+    assert!(!t.screen_reverse());
+    t.feed_bytes(b"\x1b[?5h"); // set DECSCNM
+    assert!(t.screen_reverse());
+    t.feed_bytes(b"\x1b[?5l"); // reset
+    assert!(!t.screen_reverse());
+}
+
+#[test]
+fn decscnm_reset_by_full_reset() {
+    let mut t = Terminal::new_detached(10, 2);
+    t.feed_bytes(b"\x1b[?5h");
+    assert!(t.screen_reverse());
+    t.feed_bytes(b"\x1bc"); // RIS
+    assert!(!t.screen_reverse());
+}

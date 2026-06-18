@@ -46,6 +46,11 @@ impl Terminal {
         self.lock_state().cursor_shape()
     }
 
+    /// Whether reverse-screen mode (DECSCNM) is active.
+    pub fn screen_reverse(&self) -> bool {
+        self.lock_state().screen_reverse()
+    }
+
     pub fn bracketed_paste(&self) -> bool {
         self.lock_state().bracketed_paste()
     }
