@@ -778,7 +778,7 @@ fn draw_color_picker_row(
             egui::Color32::from(val)
         } else {
             // opacity 0.4 (디자인) — 패널 위에 얹혀 dim 하게 보인다.
-            egui::Color32::from_rgba_unmultiplied(val.r, val.g, val.b, 102)
+            val.with_alpha(102).to_egui()
         };
         ui.painter().rect_filled(sw_rect, 3.0, fill);
         ui.painter().rect_stroke(
