@@ -94,10 +94,6 @@ pub fn draw_appearance_tab(
             t(&entry.page.title_key).to_string(),
         ));
     }
-    sub_tabs.push((
-        AppearanceSubTab::HtmlViewer,
-        t("settings.appearance.subtab.html").to_string(),
-    ));
 
     // If the currently active sub-tab points at a plugin page that's no longer
     // present (plugin disabled mid-session), fall back to Theme so the right
@@ -172,9 +168,6 @@ pub fn draw_appearance_tab(
                     font_filter,
                     preview_font_loaded,
                 );
-            }
-            AppearanceSubTab::HtmlViewer => {
-                draw_appearance_placeholder(ui, "HTML Viewer");
             }
             AppearanceSubTab::Plugin { plugin_id, page_id } => {
                 if let Some(entry) = find_plugin_settings_entry(settings_pages, plugin_id, page_id)
@@ -1047,16 +1040,6 @@ pub(super) fn draw_plugin_settings_page(
             }
         }
     }
-}
-
-/// Placeholder for sub-tabs not yet populated with settings.
-fn draw_appearance_placeholder(ui: &mut egui::Ui, name: &str) {
-    let th = crate::theme::theme();
-    ui.add_space(20.0);
-    ui.label(
-        egui::RichText::new(format!("{} appearance settings (coming soon)", name))
-            .color(th.subtext0),
-    );
 }
 
 /// Searchable font family combo. `value` is the family name in the underlying

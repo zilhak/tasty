@@ -39,8 +39,8 @@ pub struct PluginShortcutSnapshot {
 
 /// Sub-tab within the Appearance tab.
 ///
-/// Host-internal variants (`Theme` / `General` / `Display` / `Terminal` /
-/// `HtmlViewer`) are hardcoded; plugin-contributed pages appear as
+/// Host-internal variants (`Theme` / `General` / `Display` / `Terminal`) are
+/// hardcoded; plugin-contributed pages appear as
 /// `Plugin { plugin_id, page_id }` and are resolved against
 /// `SettingsUiState::settings_pages` at render time. `page_id` 단독으로는
 /// 서로 다른 plugin 이 동일 id 를 contribute 할 경우 충돌하므로
@@ -63,7 +63,6 @@ pub(crate) enum AppearanceSubTab {
         plugin_id: String,
         page_id: String,
     },
-    HtmlViewer,
 }
 
 /// Sub-tab within the Plugin tab. Plugin-contributed pages keyed by

@@ -283,7 +283,6 @@ general = "General"
 display = "Display"
 tasty = "Tasty"
 terminal = "Terminal"
-html = "HTML"
 
 [settings.appearance.tasty]
 heading = "App Chrome"

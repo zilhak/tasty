@@ -283,7 +283,6 @@ general = "一般"
 display = "ディスプレイ"
 tasty = "Tasty"
 terminal = "ターミナル"
-html = "HTML"
 
 [settings.appearance.tasty]
 heading = "アプリクローム"
