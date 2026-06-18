@@ -295,6 +295,13 @@ indicator_fill = "채움"
 indicator_dot = "점"
 use_defaults = "테마 기본값 사용"
 
+[settings.appearance.terminal]
+surface_heading = "Surface 색"
+surface_hint = "터미널 surface 배경색을 재정의합니다. 행의 \"기본값 사용\"을 해제하면 직접 색을 지정할 수 있습니다."
+focused_bg = "포커스 배경"
+unfocused_bg = "비포커스 배경"
+use_default = "기본값 사용"
+
 [settings.appearance.theme]
 heading = "테마 프리셋"
 hint = "프리셋을 선택하면 모든 surface 색상이 초기화됩니다. 개별 서브탭에서 커스텀할 수 있습니다."

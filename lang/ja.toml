@@ -295,6 +295,13 @@ indicator_fill = "塗りつぶし"
 indicator_dot = "ドット"
 use_defaults = "テーマのデフォルトを使用"
 
+[settings.appearance.terminal]
+surface_heading = "Surface 色"
+surface_hint = "ターミナル surface の背景色を上書きします。行の \"デフォルトを使用\" のチェックを外すと色を指定できます。"
+focused_bg = "フォーカス時の背景"
+unfocused_bg = "非フォーカス時の背景"
+use_default = "デフォルトを使用"
+
 [settings.appearance.theme]
 heading = "テーマプリセット"
 hint = "プリセットを選択すると全サーフェスの色がリセットされます。各サブタブで個別にカスタマイズできます。"

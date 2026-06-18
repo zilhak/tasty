@@ -295,6 +295,13 @@ indicator_fill = "Fill"
 indicator_dot = "Dot"
 use_defaults = "Use theme defaults"
 
+[settings.appearance.terminal]
+surface_heading = "Surface colors"
+surface_hint = "Override the terminal surface background. Uncheck \"Use default\" on a row to set a custom color."
+focused_bg = "Focused background"
+unfocused_bg = "Unfocused background"
+use_default = "Use default"
+
 [settings.appearance.theme]
 heading = "Theme Preset"
 hint = "Selecting a preset will reset all surface colors. You can customize them individually in each sub-tab."

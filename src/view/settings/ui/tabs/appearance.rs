@@ -6,7 +6,9 @@ use crate::settings::{
 };
 use tasty_host_plugin::SettingsPageEntry;
 use tasty_plugin_manifest::{SettingsCategory, SettingsItemDecl, SettingsPageContribute};
-use tasty_type_appearance::theme::{PartialColors, SurfaceTheme, Theme, ThemeColors};
+use tasty_type_appearance::theme::{
+    FALLBACK_SURFACE, PartialColors, PartialSurfaceTheme, SurfaceTheme, Theme, ThemeColors,
+};
 use tasty_type_geometry::length::LogicalPx;
 
 /// Plugin sub-tab 식별: `(plugin_id, page_id)` 복합키로 일치하는 entry 를 찾는다.
@@ -715,9 +717,226 @@ fn draw_appearance_terminal(
         SurfaceFontTarget::Terminal,
     );
 
-    // Note: surface 색 커스터마이징은 `theme_overrides`(settings) 레이어로 들어간다
-    // — 테마 파일은 앱 소유라 직접 편집해도 다음 부팅에 정본으로 덮어써진다.
-    // 이를 채우는 색 override picker UI 는 settings 디자인 확정 후 추가 예정(TODO).
+    draw_terminal_surface_colors(ui, settings);
+}
+
+/// surface kind id for the terminal — the `theme_overrides.surface_themes` /
+/// `theme_base.surface_themes` map key the background pickers bind to.
+const TERMINAL_SURFACE_ID: &str = "terminal";
+
+/// Which terminal surface background a picker row binds to (Focused/Unfocused).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SurfaceBgField {
+    Focused,
+    Unfocused,
+}
+
+impl SurfaceBgField {
+    /// Stable, language-independent key for the per-row hex edit buffer id.
+    fn key(self) -> &'static str {
+        match self {
+            SurfaceBgField::Focused => "surface_focused_bg",
+            SurfaceBgField::Unfocused => "surface_unfocused_bg",
+        }
+    }
+    fn get(self, p: &PartialSurfaceTheme) -> Option<HexColor> {
+        match self {
+            SurfaceBgField::Focused => p.focused_bg,
+            SurfaceBgField::Unfocused => p.unfocused_bg,
+        }
+    }
+    fn set(self, p: &mut PartialSurfaceTheme, v: Option<HexColor>) {
+        match self {
+            SurfaceBgField::Focused => p.focused_bg = v,
+            SurfaceBgField::Unfocused => p.unfocused_bg = v,
+        }
+    }
+    fn base(self, st: &SurfaceTheme) -> HexColor {
+        match self {
+            SurfaceBgField::Focused => st.focused_bg,
+            SurfaceBgField::Unfocused => st.unfocused_bg,
+        }
+    }
+}
+
+/// Current terminal surface bg override for `field` (`None` = follow base).
+/// Pure (no egui) so set/clear/resolve can be unit-tested.
+fn surface_bg_override(ov: &PartialColors, field: SurfaceBgField) -> Option<HexColor> {
+    ov.surface_themes
+        .get(TERMINAL_SURFACE_ID)
+        .and_then(|p| field.get(p))
+}
+
+/// Set (`Some`) or clear (`None`) the terminal surface bg override for `field`.
+/// Clearing prunes the map entry once its `PartialSurfaceTheme` is empty so the
+/// override map doesn't accumulate `{"terminal": {}}` husks.
+fn set_surface_bg_override(ov: &mut PartialColors, field: SurfaceBgField, val: Option<HexColor>) {
+    match val {
+        Some(c) => {
+            let entry = ov
+                .surface_themes
+                .entry(TERMINAL_SURFACE_ID.to_string())
+                .or_default();
+            field.set(entry, Some(c));
+        }
+        None => {
+            if let Some(p) = ov.surface_themes.get_mut(TERMINAL_SURFACE_ID) {
+                field.set(p, None);
+                if p.is_empty() {
+                    ov.surface_themes.remove(TERMINAL_SURFACE_ID);
+                }
+            }
+        }
+    }
+}
+
+/// Base (preset) terminal surface bg for `field`, read from resolved
+/// `theme_base` (no hardcoding). Falls back to `FALLBACK_SURFACE` if the base
+/// has no `terminal` entry.
+fn surface_bg_base(base: &ThemeColors, field: SurfaceBgField) -> HexColor {
+    base.surface_themes
+        .get(TERMINAL_SURFACE_ID)
+        .map(|st| field.base(st))
+        .unwrap_or_else(|| field.base(&FALLBACK_SURFACE))
+}
+
+/// Appearance › Terminal: surface background override pickers (Focused /
+/// Unfocused). Writes into `theme_overrides.surface_themes["terminal"]`, the
+/// same override layer the Colors picker edits (resolve via `apply_partial`).
+fn draw_terminal_surface_colors(ui: &mut egui::Ui, settings: &mut Settings) {
+    let th = crate::theme::theme();
+    ui.add_space(8.0);
+    ui.label(
+        egui::RichText::new(t("settings.appearance.terminal.surface_heading"))
+            .strong()
+            .color(th.text),
+    );
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(t("settings.appearance.terminal.surface_hint"))
+            .small()
+            .color(th.subtext0),
+    );
+    ui.add_space(8.0);
+    draw_surface_bg_row(
+        ui,
+        &th,
+        settings,
+        t("settings.appearance.terminal.focused_bg"),
+        SurfaceBgField::Focused,
+    );
+    draw_surface_bg_row(
+        ui,
+        &th,
+        settings,
+        t("settings.appearance.terminal.unfocused_bg"),
+        SurfaceBgField::Unfocused,
+    );
+}
+
+/// One terminal surface bg row — mirrors `draw_color_picker_row`'s visual
+/// ([override dot] label · hex input · swatch · "Use default" checkbox) but
+/// binds to the nested `surface_themes["terminal"]` override instead of a flat
+/// `PartialColors` field. "Use default" checked = base-following (input
+/// disabled, swatch dim) / unchecked = `Some(hex)` override.
+fn draw_surface_bg_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    settings: &mut Settings,
+    label: &str,
+    field: SurfaceBgField,
+) {
+    let base = surface_bg_base(&settings.appearance.theme_base, field);
+    let cur = surface_bg_override(&settings.appearance.theme_overrides, field);
+    let is_ov = cur.is_some();
+    let val = cur.unwrap_or(base);
+    let buf_id = ui.make_persistent_id(("appearance_surface_hex", field.key()));
+
+    ui.horizontal(|ui| {
+        // ── override dot ──
+        let dot = COLOR_OVERRIDE_DOT_SIZE.value();
+        let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
+        if is_ov {
+            ui.painter().circle_filled(
+                dot_rect.center(),
+                dot / 2.0,
+                egui::Color32::from(th.accent_primary()),
+            );
+        }
+
+        // ── 행 라벨 (자연어 — 번역) ──
+        ui.add_sized(
+            egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
+            egui::Label::new(
+                egui::RichText::new(label).color(if is_ov { th.text } else { th.subtext0 }),
+            ),
+        );
+
+        // ── hex 입력 ──
+        if is_ov {
+            let mut text = ui
+                .data(|d| d.get_temp::<String>(buf_id))
+                .unwrap_or_else(|| val.to_hex());
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut text)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
+            );
+            if resp.changed()
+                && let Some(parsed) = HexColor::from_hex(text.trim())
+            {
+                set_surface_bg_override(
+                    &mut settings.appearance.theme_overrides,
+                    field,
+                    Some(parsed),
+                );
+            }
+            ui.data_mut(|d| d.insert_temp(buf_id, text));
+        } else {
+            let mut text = base.to_hex();
+            ui.add_enabled(
+                false,
+                egui::TextEdit::singleline(&mut text)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
+            );
+        }
+
+        // ── swatch (override 시 full, base 시 40% dim) ──
+        let sw = COLOR_SWATCH_SIZE.value();
+        let (sw_rect, _) = ui.allocate_exact_size(egui::vec2(sw, sw), egui::Sense::hover());
+        let fill = if is_ov {
+            egui::Color32::from(val)
+        } else {
+            val.with_alpha(102).to_egui()
+        };
+        ui.painter().rect_filled(sw_rect, 3.0, fill);
+        ui.painter().rect_stroke(
+            sw_rect,
+            3.0,
+            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.surface1)),
+            egui::StrokeKind::Inside,
+        );
+
+        // ── "Use default" 체크박스 ──
+        let mut use_default = !is_ov;
+        if ui
+            .checkbox(
+                &mut use_default,
+                t("settings.appearance.terminal.use_default"),
+            )
+            .changed()
+        {
+            let ov = &mut settings.appearance.theme_overrides;
+            if use_default {
+                set_surface_bg_override(ov, field, None);
+            } else {
+                set_surface_bg_override(ov, field, Some(base));
+                let seed = base.to_hex();
+                ui.data_mut(|d| d.insert_temp(buf_id, seed));
+            }
+        }
+    });
 }
 
 /// Target of a font override section: either the host-internal `terminal_font`
@@ -1898,5 +2117,58 @@ mod tests {
             ov.surface_themes.contains_key("terminal"),
             "surface_themes override preserved"
         );
+    }
+
+    // ── Terminal surface bg picker (focused/unfocused background) ──
+    use super::{SurfaceBgField, set_surface_bg_override, surface_bg_base, surface_bg_override};
+
+    /// override set → resolve = override 색, clear(None) → entry pruned + base 추종.
+    #[test]
+    fn surface_bg_override_set_clear_roundtrip() {
+        let mut ov = PartialColors::default();
+        assert!(surface_bg_override(&ov, SurfaceBgField::Focused).is_none());
+
+        let c = HexColor::from_hex("#123456").unwrap();
+        set_surface_bg_override(&mut ov, SurfaceBgField::Focused, Some(c));
+        assert_eq!(surface_bg_override(&ov, SurfaceBgField::Focused), Some(c));
+        // 다른 필드는 독립.
+        assert!(surface_bg_override(&ov, SurfaceBgField::Unfocused).is_none());
+
+        // clear → None + 빈 entry 제거.
+        set_surface_bg_override(&mut ov, SurfaceBgField::Focused, None);
+        assert!(surface_bg_override(&ov, SurfaceBgField::Focused).is_none());
+        assert!(
+            !ov.surface_themes.contains_key("terminal"),
+            "empty surface override entry pruned"
+        );
+    }
+
+    /// 한 필드 clear 시 같은 entry 의 다른 필드 override 는 보존(entry 유지).
+    #[test]
+    fn surface_bg_clear_preserves_sibling_field() {
+        let mut ov = PartialColors::default();
+        let c = HexColor::from_hex("#111111").unwrap();
+        set_surface_bg_override(&mut ov, SurfaceBgField::Focused, Some(c));
+        set_surface_bg_override(&mut ov, SurfaceBgField::Unfocused, Some(c));
+
+        set_surface_bg_override(&mut ov, SurfaceBgField::Focused, None);
+        assert!(surface_bg_override(&ov, SurfaceBgField::Focused).is_none());
+        assert_eq!(surface_bg_override(&ov, SurfaceBgField::Unfocused), Some(c));
+        assert!(
+            ov.surface_themes.contains_key("terminal"),
+            "entry kept while sibling override remains"
+        );
+    }
+
+    /// base 색은 resolved `theme_base.surface_themes["terminal"]` 에서 읽는다.
+    #[test]
+    fn surface_bg_base_reads_theme_base() {
+        let mut base = tasty_themes::mocha_fallback_colors();
+        let marker = HexColor::from_hex("#abcdef").unwrap();
+        base.surface_themes
+            .get_mut("terminal")
+            .expect("mocha base has terminal surface")
+            .focused_bg = marker;
+        assert_eq!(surface_bg_base(&base, SurfaceBgField::Focused), marker);
     }
 }
