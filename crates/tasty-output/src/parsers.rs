@@ -6,6 +6,8 @@ mod progress;
 mod shell;
 mod test_result;
 #[cfg(test)]
+mod fuzz;
+#[cfg(test)]
 mod tests;
 
 pub use errors::{CompileErrorParser, StackTraceParser};
