@@ -74,7 +74,6 @@ title = "Settings"
 general = "General"
 terminal = "Terminal"
 appearance = "Appearance"
-clipboard = "Clipboard"
 notifications = "Notifications"
 keybindings = "Keybindings"
 file_handler = "File Handler"
@@ -98,7 +97,6 @@ check_now = "Check now"
 install = "Open release page…"
 no_update = "You're up to date."
 unavailable = "Update status unavailable."
-cli_hint = "Tip: run `tasty update` to install in one step."
 
 [settings.accessibility]
 heading = "Accessibility"
@@ -315,14 +313,6 @@ override_heading = "Font override"
 override_hint = "Uncheck \"Use default\" on a row to set a surface-specific value."
 use_default_label = "Use default"
 
-[settings.clipboard]
-heading = "Clipboard"
-history_heading = "History"
-history_enabled_label = "Record clipboard history"
-history_max_label = "Max entries:"
-poll_interval_ms_label = "Poll interval (ms):"
-poll_interval_restart_notice = "Poll interval requires restart to apply."
-
 [settings.notifications]
 heading = "Notifications"
 enabled = "Notifications enabled"
@@ -536,9 +526,6 @@ hint_bar = "Enter: copy & close    Delete: remove    Shift+Delete: clear all    
 [tools_menu]
 title = "Tools"
 clipboard_history = "Clipboard History"
-
-[settings.misc]
-empty = "No settings on this platform"
 
 [settings.misc.subtab]
 tastyrc = "tastyrc"

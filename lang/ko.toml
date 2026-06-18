@@ -74,7 +74,6 @@ title = "설정"
 general = "일반"
 terminal = "터미널"
 appearance = "외관"
-clipboard = "클립보드"
 notifications = "알림"
 keybindings = "단축키"
 file_handler = "파일 핸들러"
@@ -98,7 +97,6 @@ check_now = "지금 확인"
 install = "릴리스 페이지 열기…"
 no_update = "최신 버전을 사용 중입니다."
 unavailable = "업데이트 상태를 사용할 수 없습니다."
-cli_hint = "팁: `tasty update` 명령으로 한 번에 설치할 수 있습니다."
 
 [settings.accessibility]
 heading = "접근성"
@@ -315,14 +313,6 @@ override_heading = "폰트 override"
 override_hint = "각 항목에 대해 \"기본값 사용\"을 끄면 이 surface 전용 값을 지정할 수 있습니다."
 use_default_label = "기본값 사용"
 
-[settings.clipboard]
-heading = "클립보드"
-history_heading = "히스토리"
-history_enabled_label = "클립보드 히스토리 기록"
-history_max_label = "최대 항목 수:"
-poll_interval_ms_label = "폴링 주기 (ms):"
-poll_interval_restart_notice = "폴링 주기 변경은 재시작 후 적용됩니다."
-
 [settings.notifications]
 heading = "알림"
 enabled = "알림 활성화"
@@ -536,9 +526,6 @@ hint_bar = "Enter: 복사 후 닫기    Delete: 삭제    Shift+Delete: 전체 �
 [tools_menu]
 title = "도구"
 clipboard_history = "클립보드 히스토리"
-
-[settings.misc]
-empty = "이 플랫폼에는 설정 항목이 없습니다"
 
 [settings.misc.subtab]
 tastyrc = "tastyrc"

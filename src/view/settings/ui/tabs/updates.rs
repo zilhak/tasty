@@ -85,13 +85,6 @@ pub fn draw_updates_tab(ui: &mut egui::Ui, update_status: Option<&Arc<Mutex<Upda
             tracing::warn!("settings updates: open browser failed: {e}");
         }
     });
-
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new(t("settings.updates.cli_hint"))
-            .color(th.subtext0)
-            .size(12.0),
-    );
 }
 
 fn format_last_checked(snapshot: &UpdateStatus) -> String {

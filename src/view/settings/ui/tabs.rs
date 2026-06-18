@@ -3,7 +3,6 @@
 
 mod accessibility;
 mod appearance;
-mod clipboard;
 mod general;
 mod misc;
 mod notifications;
@@ -14,7 +13,6 @@ mod updates;
 
 pub use accessibility::draw_accessibility_tab;
 pub use appearance::draw_appearance_tab;
-pub use clipboard::draw_clipboard_tab;
 pub use general::draw_general_tab;
 #[cfg(windows)]
 pub use misc::draw_tastyrc_subtab;

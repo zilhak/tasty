@@ -74,7 +74,6 @@ title = "設定"
 general = "一般"
 terminal = "ターミナル"
 appearance = "外観"
-clipboard = "クリップボード"
 notifications = "通知"
 keybindings = "キーバインド"
 file_handler = "ファイルハンドラ"
@@ -98,7 +97,6 @@ check_now = "今すぐ確認"
 install = "リリースページを開く…"
 no_update = "最新バージョンです。"
 unavailable = "アップデート状態を取得できません。"
-cli_hint = "ヒント: `tasty update` で一括インストールできます。"
 
 [settings.accessibility]
 heading = "アクセシビリティ"
@@ -315,14 +313,6 @@ override_heading = "フォント override"
 override_hint = "各項目で「デフォルトを使用」をオフにすると、このサーフェス専用の値を指定できます。"
 use_default_label = "デフォルトを使用"
 
-[settings.clipboard]
-heading = "クリップボード"
-history_heading = "履歴"
-history_enabled_label = "クリップボード履歴を記録"
-history_max_label = "最大エントリ数:"
-poll_interval_ms_label = "ポーリング間隔 (ms):"
-poll_interval_restart_notice = "ポーリング間隔の変更は再起動後に反映されます。"
-
 [settings.notifications]
 heading = "通知"
 enabled = "通知を有効化"
@@ -536,9 +526,6 @@ hint_bar = "Enter: コピーして閉じる    Delete: 削除    Shift+Delete: �
 [tools_menu]
 title = "ツール"
 clipboard_history = "クリップボード履歴"
-
-[settings.misc]
-empty = "このプラットフォームには設定がありません"
 
 [settings.misc.subtab]
 tastyrc = "tastyrc"

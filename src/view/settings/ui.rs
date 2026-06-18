@@ -75,15 +75,13 @@ pub(crate) enum PluginSubTab {
 
 /// L2 section within the General L1 tab.
 ///
-/// 디자인 General L2 = General / Clipboard / Notifications / Accessibility /
-/// Updates.
+/// 디자인 General L2 = General / Notifications / Accessibility.
+/// (Clipboard 는 플러그인 기능이라 네이티브 설정에서 제외, Updates 는 Misc 로 이동.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GeneralSubTab {
     General,
-    Clipboard,
     Notifications,
     Accessibility,
-    Updates,
 }
 
 /// L2 section within the Terminal L1 tab.
@@ -97,11 +95,14 @@ pub(crate) enum TerminalSubTab {
 
 /// L2 section within the Misc L1 tab.
 ///
-/// `Tastyrc` 는 Windows 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는
-/// Misc 의 L2 섹션이 0개(empty state)가 되어 dead variant 가 되지만, exhaustive
-/// match 안전성을 위해 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
+/// 디자인 Misc L2 = Updates / Tastyrc(Windows 전용). `Updates` 는 모든 OS 에서
+/// 표시되어 Misc 가 더 이상 비-Windows 에서 빈 탭이 되지 않는다. `Tastyrc` 는
+/// Windows 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는 dead variant 가
+/// 되지만 exhaustive match 안전성을 위해 variant 자체는 유지하고
+/// `allow(dead_code)` 로 경고만 억제한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
+    Updates,
     #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
 }
@@ -136,9 +137,8 @@ pub struct SettingsUiState {
     general_sub_tab: GeneralSubTab,
     /// Active L2 section within the Terminal L1 tab.
     terminal_sub_tab: TerminalSubTab,
-    /// Active L2 section within the Misc L1 tab. 비-Windows 에서는 Misc 가
-    /// 섹션 0개라 읽히지 않으므로 dead field 가 되어 dead_code 를 억제한다.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    /// Active L2 section within the Misc L1 tab. Updates 가 모든 OS 에서
+    /// 표시되므로 항상 읽힌다.
     misc_sub_tab: MiscSubTab,
     /// L2 사이드바 섹션 필터 텍스트. L1 전환 시 클리어. 7개 L1 탭이 공유한다
     /// (디자인은 한 번에 하나의 L1 만 보이므로 단일 필드로 충분).
@@ -224,7 +224,7 @@ impl SettingsUiState {
             plugin_sub_tab: None,
             general_sub_tab: GeneralSubTab::General,
             terminal_sub_tab: TerminalSubTab::General,
-            misc_sub_tab: MiscSubTab::Tastyrc,
+            misc_sub_tab: MiscSubTab::Updates,
             l2_filter: String::new(),
             file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
             extension_priority_draft: None,
@@ -409,7 +409,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 .show(ui, |ui| {
                     tasty_ui_widgets::tab_content_frame(ui, |ui| match active_tab {
                         SettingsTab::General => {
-                            draw_general_group(ui, &mut draft, ui_state, update_status)
+                            draw_general_group(ui, &mut draft, ui_state)
                         }
                         SettingsTab::Terminal => {
                             draw_terminal_group(ui, &mut draft, ui_state)
@@ -448,7 +448,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             file_handler,
                             &mut ui_state.l2_filter,
                         ),
-                        SettingsTab::Misc => draw_misc_group(ui, ui_state),
+                        SettingsTab::Misc => draw_misc_group(ui, ui_state, update_status),
                         SettingsTab::Plugins => draw_plugin_tab(
                             ui,
                             &mut draft,
@@ -564,16 +564,8 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
 
 /// General L1 탭: 좌측 L2 사이드바(필터 포함) + 우측 섹션 콘텐츠.
 ///
-/// 디자인 General L2 = General / Clipboard / Notifications / Accessibility /
-/// Updates.
-fn draw_general_group(
-    ui: &mut egui::Ui,
-    draft: &mut Settings,
-    ui_state: &mut SettingsUiState,
-    update_status: Option<
-        &std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
-    >,
-) {
+/// 디자인 General L2 = General / Notifications / Accessibility.
+fn draw_general_group(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut SettingsUiState) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
@@ -585,20 +577,12 @@ fn draw_general_group(
             t("settings.tab.general").to_string(),
         ),
         (
-            GeneralSubTab::Clipboard,
-            t("settings.tab.clipboard").to_string(),
-        ),
-        (
             GeneralSubTab::Notifications,
             t("settings.tab.notifications").to_string(),
         ),
         (
             GeneralSubTab::Accessibility,
             t("settings.misc.subtab.accessibility").to_string(),
-        ),
-        (
-            GeneralSubTab::Updates,
-            t("settings.tab.updates").to_string(),
         ),
     ];
 
@@ -629,10 +613,8 @@ fn draw_general_group(
         },
         |ui| match current {
             GeneralSubTab::General => draw_general_tab(ui, draft),
-            GeneralSubTab::Clipboard => draw_clipboard_tab(ui, draft),
             GeneralSubTab::Notifications => draw_notifications_tab(ui, draft),
             GeneralSubTab::Accessibility => draw_accessibility_tab(ui, draft),
-            GeneralSubTab::Updates => draw_updates_tab(ui, update_status),
         },
     );
     if let Some(new) = selected_new {
@@ -695,71 +677,68 @@ fn draw_terminal_group(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut S
     }
 }
 
-/// Misc L1 탭. Windows 에선 좌측 L2 = [Tastyrc] (tasty 빌트인 bashrc 편집),
-/// 비-Windows 에선 섹션 0개 → 콘텐츠 중앙 empty state.
-fn draw_misc_group(ui: &mut egui::Ui, ui_state: &mut SettingsUiState) {
+/// Misc L1 탭: 좌측 L2 사이드바(필터 포함) + 우측 섹션 콘텐츠.
+///
+/// 디자인 Misc L2 = Updates / Tastyrc(Windows 전용). Updates 가 모든 OS 에서
+/// 표시되므로 비-Windows 에서도 더 이상 빈 탭이 아니다.
+fn draw_misc_group(
+    ui: &mut egui::Ui,
+    ui_state: &mut SettingsUiState,
+    update_status: Option<
+        &std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
+    >,
+) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
     let available_height = ui.available_height() - 8.0 - 14.0;
 
+    // Windows 에서만 Tastyrc 섹션을 push 하므로 비-Windows 에선 mut 가 불필요.
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut sections: Vec<(MiscSubTab, String)> = vec![(
+        MiscSubTab::Updates,
+        t("settings.tab.updates").to_string(),
+    )];
     #[cfg(windows)]
-    {
-        let sections: Vec<(MiscSubTab, String)> = vec![(
-            MiscSubTab::Tastyrc,
-            t("settings.misc.subtab.tastyrc").to_string(),
-        )];
+    sections.push((
+        MiscSubTab::Tastyrc,
+        t("settings.misc.subtab.tastyrc").to_string(),
+    ));
 
-        let current = ui_state.misc_sub_tab;
-        let mut selected_new: Option<MiscSubTab> = None;
-        let filter_lc = ui_state.l2_filter.to_lowercase();
-        tasty_ui_widgets::two_depth_layout_filtered(
-            ui,
-            &th,
-            available_height,
-            &mut ui_state.l2_filter,
-            t("settings.filter.sections"),
-            |ui| {
-                let mut any = false;
-                for (tab, label) in &sections {
-                    if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
-                        continue;
-                    }
-                    any = true;
-                    let selected = current == *tab;
-                    if ui.selectable_label(selected, label.as_str()).clicked() {
-                        selected_new = Some(*tab);
-                    }
+    let current = ui_state.misc_sub_tab;
+    let mut selected_new: Option<MiscSubTab> = None;
+    let filter_lc = ui_state.l2_filter.to_lowercase();
+    tasty_ui_widgets::two_depth_layout_filtered(
+        ui,
+        &th,
+        available_height,
+        &mut ui_state.l2_filter,
+        t("settings.filter.sections"),
+        |ui| {
+            let mut any = false;
+            for (tab, label) in &sections {
+                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
+                    continue;
                 }
-                if !any {
-                    ui.label(
-                        egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0),
-                    );
+                any = true;
+                let selected = current == *tab;
+                if ui.selectable_label(selected, label.as_str()).clicked() {
+                    selected_new = Some(*tab);
                 }
-            },
-            |ui| match current {
-                MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
-            },
-        );
-        if let Some(new) = selected_new {
-            ui_state.misc_sub_tab = new;
-        }
-    }
-
-    #[cfg(not(windows))]
-    {
-        let _ = ui_state;
-        tasty_ui_widgets::two_depth_layout(
-            ui,
-            &th,
-            available_height,
-            |_ui| {},
-            |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(available_height / 3.0);
-                    ui.label(egui::RichText::new(t("settings.misc.empty")).color(th.subtext0));
-                });
-            },
-        );
+            }
+            if !any {
+                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
+            }
+        },
+        |ui| match current {
+            MiscSubTab::Updates => draw_updates_tab(ui, update_status),
+            #[cfg(windows)]
+            MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
+            #[cfg(not(windows))]
+            MiscSubTab::Tastyrc => {}
+        },
+    );
+    if let Some(new) = selected_new {
+        ui_state.misc_sub_tab = new;
     }
 }
