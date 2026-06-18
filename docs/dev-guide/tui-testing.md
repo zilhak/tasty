@@ -71,6 +71,20 @@ tasty.wait_for_output(sid, "BYE", Duration::from_secs(2));
 
 같은 프로세스에서 여러 단계 연속 수행 가능. 프리셋 시나리오의 기대 출력(cursor/colors/attrs/altscreen/unicode/scroll-region 의 행·열별 값)은 `tasty-tui-sim` 소스의 각 `scenario_*` 함수가 SoT — 검증값은 거기서 읽는다.
 
+## 골든 셀 그리드 스냅샷 (`cargo test`, headless)
+
+E2E 와 달리 **GUI surface 없이** 도는 결정적 회귀 가드. `crates/tasty-terminal/tests/golden_grid.rs` 가 production VTE ingest 경로(`Terminal::new_detached` → `feed_bytes`, 실제 PTY 와 동일한 핸들러)에 `tasty-tui-sim` 의 고수준 명령에 대응하는 raw escape 를 먹이고, 결과 셀 그리드의 **결정적 텍스트 표현**을 골든으로 고정한다. `cargo test --workspace` 에 자동 포함되어 `test.yml` CI 채널에서 돈다(별도 인프라 불필요).
+
+- `grid_text()` — 가시 그리드를 행당 한 줄로(후행 공백 trim, 빈 행 보존) 덤프. 레이아웃/커서/줄바꿈/스크롤/지우기 회귀용.
+- `styled_cells()` — populated 셀별 SGR 속성(bold/italic/underline/inverse/strike + palette fg/bg)을 `"{row},{col} {glyph} {flags}"` 로 덤프. SGR 적용 회귀의 정식 가드(예: bold 처리 누락 시 `0,0 B bold` → `0,0 B -` 로 골든이 깨짐).
+
+**커버 범위(의도적으로 좁게):**
+
+- 커버: 커서 절대 위치/레이아웃, autowrap 줄바꿈, scroll-region(DECSTBM) 스크롤업, erase-display(CSI J), per-cell SGR 속성.
+- **미커버**: GPU 픽셀 렌더(환경의존 → 골든 부적합, `debug.glyph_color` 로 검증), chrome/위젯 레이아웃(`src/view` — GUI 하니스 필요). 둘 다 수동 시각 검증(`docs/ai-verification/visual-verification.md`) 영역으로 남는다.
+
+픽셀이 아닌 **텍스트**를 고정하는 이유: 그리드의 텍스트 표현은 OS/GPU 무관하게 안정적이라, 로직 회귀가 골든 한 줄을 뒤집어 실패시키되 픽셀 골든처럼 flaky 하지 않다.
+
 ## 시나리오 추가
 
 `crates/tasty-tui-simulator/src/main.rs` 에 서브커맨드 + 함수 추가. `clear_and_setup()` 시작 → raw escape 직접 출력 → `finish(out, "{NAME}_TEST_DONE", exit)`.
