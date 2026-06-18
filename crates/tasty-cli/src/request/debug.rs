@@ -91,6 +91,11 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::StreamEcho { .. } => {
             unreachable!("debug stream-echo is dispatched before request mapping")
         }
+        // sim emits raw VTE locally — handled directly in `run_client` before
+        // request mapping is reached.
+        DebugCommands::Sim { .. } => {
+            unreachable!("debug sim is dispatched before request mapping")
+        }
     }
 }
 

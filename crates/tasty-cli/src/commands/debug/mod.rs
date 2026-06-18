@@ -118,6 +118,14 @@ pub enum DebugCommands {
     /// Plugin popup inspection and open/close (debug builds only)
     #[command(subcommand)]
     Popup(PopupDebugCommands),
+    /// VTE sequence simulator — identical to the standalone `tasty-tui-sim`
+    /// binary, run from inside the current surface (emits raw VTE to stdout, no
+    /// IPC). No subcommand = interactive REPL. Use `sim flood` for a heavy
+    /// full-screen redraw stress load. Debug builds only.
+    Sim {
+        #[command(subcommand)]
+        cmd: Option<tasty_tui_simulator::Commands>,
+    },
     /// Open a streaming channel and verify the server→client push path: send N
     /// data frames and expect each one echoed back (debug builds only).
     StreamEcho {

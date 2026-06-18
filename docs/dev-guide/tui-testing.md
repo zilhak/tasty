@@ -10,6 +10,11 @@ TUI 버그 발견 시: ① 최소 재현 VTE 시퀀스 특정 → ② `tasty-tui
 
 `crates/tasty-tui-simulator/` — 고수준 명령("cursor 5 3", "bold", "print hello")을 raw VTE escape 로 변환해 출력한다. 터미널 입장에선 실제 TUI 앱과 동일한 바이트 스트림. 테스트 전용이 아닌 독립 도구(`cargo build -p tasty-tui-simulator`).
 
+로직은 `lib.rs` 에 있고 두 진입점이 공유한다(SoT 하나):
+
+- 독립 바이너리 `tasty-tui-sim` — release 빌드 가능. PATH 에서 어느 surface 든 실행(부하 테스트는 보통 release 본체 대상이라 이쪽).
+- `tasty debug sim <subcommand>` — debug 빌드 한정. **별도 빌드/PATH 설정 없이** 바로 호출 가능(이미 `tasty` 가 PATH 에 있으므로). surface 안에서 stdout 에 직접 VTE 를 뿜는 로컬 동작(IPC 미경유). `tasty debug sim flood` 가 화면 갱신 부하(full-screen truecolor redraw)를 거는 스트레스 모드.
+
 ### 인터랙티브 모드 (핵심)
 
 서브커맨드 없이 실행하면 stdin REPL. E2E 가 `surface.send` 로 명령을 한 줄씩 보내 터미널 상태를 단계 구성한다. 시작 시 `READY`, 매 명령 후 `OK` 출력 → 테스트는 `wait_for_output("OK")` 로 동기화.

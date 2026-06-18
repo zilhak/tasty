@@ -5,6 +5,10 @@ edition = "2024"
 license = "MIT"
 description = "VTE sequence simulator for testing tasty terminal emulation"
 
+[lib]
+name = "tasty_tui_simulator"
+path = "src/lib.rs"
+
 [[bin]]
 name = "tasty-tui-sim"
 path = "src/main.rs"

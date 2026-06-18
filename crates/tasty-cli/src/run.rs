@@ -286,6 +286,16 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     {
         return crate::commands::debug::run_stream_echo(payload, *count, port_file);
     }
+    // debug sim emits raw VTE to its own stdout from inside the current surface —
+    // no host instance / IPC involved. Dispatch directly (debug builds only).
+    #[cfg(debug_assertions)]
+    if let Commands::Debug {
+        command: super::commands::DebugCommands::Sim { cmd },
+    } = &command
+    {
+        tasty_tui_simulator::run(cmd);
+        return Ok(());
+    }
     // `tasty port` — read the port file and print it. Local-only (no IPC):
     // serves as the first step of the auto remote-port-discovery chain
     // (`ssh host tasty port`). Shell independence comes from the whole chain
