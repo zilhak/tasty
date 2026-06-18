@@ -767,8 +767,10 @@ fn draw_workspace_card(
             } else {
                 th.text_secondary()
             };
-            ui.label(egui::RichText::new(&ws.name).color(name_color));
 
+            // 디자인 위계: title 13px(font_size_body), 단일 줄 ellipsis. badge 를 먼저
+            // 우측에 점유시킨 뒤 남은 좌측 폭을 title 이 채우며 길면 말줄임한다
+            // (truncate 가 가용폭을 모두 먹어 badge 를 밀어내지 않도록 reserve-first).
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ws.has_highlight {
                     // 디자인 Badge variant="primary" — accent-primary 채움 pill.
@@ -779,32 +781,69 @@ fn draw_workspace_card(
                     ui.painter()
                         .circle_filled(rect.center(), 5.0, th.accent_primary());
                 }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(&ws.name)
+                                .size(th.font_size_body.value())
+                                .color(name_color),
+                        )
+                        .truncate(),
+                    );
+                });
             });
         });
 
         if !ws.subtitle.is_empty() {
+            // 디자인 margin-top 1px (title 과의 위계 간격).
+            ui.add_space(1.0);
             ui.horizontal(|ui| {
                 // 타이틀 시작 x 정렬: dot 슬롯(spacing_sm=8) + item_spacing(spacing_xs=4).
                 ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
-                // 디자인 chrome.jsx:62 — subtitle 은 font-mono, text-muted.
-                ui.label(
-                    egui::RichText::new(&ws.subtitle)
-                        .small()
-                        .monospace()
-                        .color(th.text_muted()),
+                // 디자인 WorkspaceRow subtitle: 12px(sidebar_button_label_font_size)
+                // 본문 sans, text-muted, 단일 줄 ellipsis. "짧은 라벨"로 읽히도록
+                // 코드체(mono) 가 아니라 일반 UI 폰트로 그린다 (위계: description 보다
+                // 한 단계 크고 진함).
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(&ws.subtitle)
+                            .size(th.sidebar_button_label_font_size.value())
+                            .color(th.text_muted()),
+                    )
+                    .truncate(),
                 );
             });
         }
 
         if !ws.description.is_empty() {
+            // 디자인 margin-top 3px (subtitle 보다 한 단계 넓은 위계 간격).
+            ui.add_space(3.0);
             ui.horizontal(|ui| {
                 // 서브타이틀과 동일하게 타이틀 시작 x 정렬: 슬롯(spacing_sm=8)+spacing(spacing_xs=4).
                 ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
-                ui.label(
-                    egui::RichText::new(&ws.description)
-                        .small()
-                        .color(th.overlay0),
+                // 디자인 description: 11px(font_size_caption), text-placeholder(가장 흐린
+                // 톤), line-height 1.35, 긴 설명문은 최대 2줄 후 말줄임(2-line clamp).
+                let size = th.font_size_caption.value();
+                let mut job = egui::text::LayoutJob {
+                    wrap: egui::text::TextWrapping {
+                        max_width: ui.available_width(),
+                        max_rows: 2,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                job.append(
+                    &ws.description,
+                    0.0,
+                    egui::TextFormat {
+                        font_id: egui::FontId::proportional(size),
+                        color: th.text_placeholder().into(),
+                        line_height: Some(size * 1.35),
+                        ..Default::default()
+                    },
                 );
+                let galley = ui.fonts(|f| f.layout_job(job));
+                ui.label(galley);
             });
         }
     });
@@ -902,6 +941,50 @@ mod tests {
         let ws: Vec<_> = (0..10)
             .map(|i| mock_ws(&format!("ws-{i}"), i == 0))
             .collect();
+        let actions = run_full(ws);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn full_view_renders_subtitle_and_description_hierarchy_without_panic() {
+        // title + subtitle + description (long, to exercise the 2-line clamp +
+        // single-line ellipsis paths) must lay out without panicking.
+        let long_desc = "This is a deliberately long workspace description that \
+            should wrap onto multiple lines and then be clamped to at most two \
+            rows with a trailing ellipsis by the description renderer.";
+        let ws = vec![
+            WorkspaceEntryView {
+                name: "A workspace name long enough to require single-line ellipsis".into(),
+                subtitle: "a subtitle label that is also fairly long for ellipsis".into(),
+                description: long_desc.into(),
+                busy_count: 0,
+                has_highlight: true,
+                attached: false,
+                is_mirror: false,
+                is_active: true,
+            },
+            // title-only and title+subtitle and title+description combinations.
+            WorkspaceEntryView {
+                name: "title only".into(),
+                subtitle: String::new(),
+                description: String::new(),
+                busy_count: 0,
+                has_highlight: false,
+                attached: false,
+                is_mirror: false,
+                is_active: false,
+            },
+            WorkspaceEntryView {
+                name: "title + description".into(),
+                subtitle: String::new(),
+                description: "short desc".into(),
+                busy_count: 0,
+                has_highlight: false,
+                attached: false,
+                is_mirror: false,
+                is_active: false,
+            },
+        ];
         let actions = run_full(ws);
         assert!(actions.is_empty());
     }
