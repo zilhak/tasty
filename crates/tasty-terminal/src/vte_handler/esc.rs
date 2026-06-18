@@ -27,6 +27,12 @@ impl TerminalState {
             }
             Esc::Code(EscCode::Index) => self.perform_index(),
             Esc::Code(EscCode::ReverseIndex) => self.perform_reverse_index(),
+            Esc::Code(EscCode::HorizontalTabSet) => {
+                // HTS (ESC H): set a tab stop at the current cursor column.
+                let (cx, _cy) = self.surface().cursor_position();
+                self.set_tab_stop(cx);
+                vec![]
+            }
             Esc::Code(EscCode::NextLine) => {
                 // NEL (ESC E): index (line feed, scrolling at the region bottom)
                 // followed by a carriage return — cursor lands at column 0 of the
@@ -76,6 +82,7 @@ impl TerminalState {
                 self.insert_mode = false;
                 self.scroll_region = None;
                 self.last_print = None;
+                self.tab_stops = crate::default_tab_stops(self.cols);
                 vec![
                     Change::AllAttributes(CellAttributes::default()),
                     Change::ClearScreen(ColorAttribute::Default),

@@ -209,6 +209,10 @@ pub(crate) struct TerminalState {
     /// Last character printed to the grid, used by REP (CSI b) to repeat it.
     /// `None` until the first print; reset by RIS (full reset).
     pub(crate) last_print: Option<String>,
+    /// Horizontal tab stops, indexed by column (`true` = stop at that column).
+    /// Initialised to every 8th column; mutated by HTS/TBC, rebuilt to the
+    /// default on resize and RIS. HT/CHT/CBT navigate between stops.
+    pub(crate) tab_stops: Vec<bool>,
 }
 
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
@@ -259,6 +263,11 @@ pub(crate) const INPUT_ECHO_WINDOW: std::time::Duration = std::time::Duration::f
 /// Minimum interval between child-alive `try_wait` syscalls in `process()`.
 pub(crate) const ALIVE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// Default horizontal tab stops: a stop at column 0 and every 8th column.
+pub(crate) fn default_tab_stops(cols: usize) -> Vec<bool> {
+    (0..cols).map(|c| c % 8 == 0).collect()
+}
+
 impl TerminalState {
     /// Build the PTY-independent VTE state for a fresh terminal.
     fn new(cols: usize, rows: usize) -> Self {
@@ -297,6 +306,7 @@ impl TerminalState {
             saved_pen: CellAttributes::default(),
             color_palette: None,
             last_print: None,
+            tab_stops: default_tab_stops(cols),
         }
     }
 

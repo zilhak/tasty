@@ -103,6 +103,49 @@ impl TerminalState {
         result
     }
 
+    /// Column of the next tab stop strictly to the right of `col`. Falls back to
+    /// the last column when no further stop exists (HT never wraps to the next
+    /// line; it clamps at the right margin).
+    pub(crate) fn next_tab_stop(&self, col: usize) -> usize {
+        let last = self.cols.saturating_sub(1);
+        for c in (col + 1)..self.cols {
+            if self.tab_stops.get(c).copied().unwrap_or(false) {
+                return c;
+            }
+        }
+        last
+    }
+
+    /// Column of the previous tab stop strictly to the left of `col`. Falls back
+    /// to column 0 (CBT clamps at the left margin).
+    pub(crate) fn prev_tab_stop(&self, col: usize) -> usize {
+        for c in (0..col).rev() {
+            if self.tab_stops.get(c).copied().unwrap_or(false) {
+                return c;
+            }
+        }
+        0
+    }
+
+    /// Set a tab stop at `col` (HTS).
+    pub(crate) fn set_tab_stop(&mut self, col: usize) {
+        if let Some(slot) = self.tab_stops.get_mut(col) {
+            *slot = true;
+        }
+    }
+
+    /// Clear the tab stop at `col` (TBC 0).
+    pub(crate) fn clear_tab_stop(&mut self, col: usize) {
+        if let Some(slot) = self.tab_stops.get_mut(col) {
+            *slot = false;
+        }
+    }
+
+    /// Clear every tab stop (TBC 3).
+    pub(crate) fn clear_all_tab_stops(&mut self) {
+        self.tab_stops.iter_mut().for_each(|s| *s = false);
+    }
+
     /// Get scroll region parameters for ScrollRegionUp/Down changes.
     pub(crate) fn scroll_region_params(&self) -> (usize, usize) {
         match self.scroll_region {

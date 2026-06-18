@@ -1,6 +1,6 @@
 //! VTE handler: cursor 도메인.
 
-use termwiz::escape::csi::{Cursor, CursorStyle};
+use termwiz::escape::csi::{Cursor, CursorStyle, CursorTabulationControl, TabulationClear};
 use termwiz::surface::{Change, Position};
 
 use crate::{CursorShape, TerminalState};
@@ -122,8 +122,61 @@ impl TerminalState {
                 vec![]
             }
             Cursor::ForwardTabulation(n) => {
-                // Move forward n tab stops
-                vec![Change::Text("\t".repeat(n as usize))]
+                // CHT: move forward n tab stops, clamped at the right margin.
+                let (cx, _cy) = self.surface().cursor_position();
+                let mut col = cx;
+                for _ in 0..n {
+                    col = self.next_tab_stop(col);
+                }
+                vec![Change::CursorPosition {
+                    x: Position::Absolute(col),
+                    y: Position::Relative(0),
+                }]
+            }
+            Cursor::BackwardTabulation(n) => {
+                // CBT: move backward n tab stops, clamped at the left margin.
+                let (cx, _cy) = self.surface().cursor_position();
+                let mut col = cx;
+                for _ in 0..n {
+                    col = self.prev_tab_stop(col);
+                }
+                vec![Change::CursorPosition {
+                    x: Position::Absolute(col),
+                    y: Position::Relative(0),
+                }]
+            }
+            Cursor::TabulationClear(mode) => {
+                // TBC: clear character tab stops. Line tab stops are unsupported.
+                match mode {
+                    TabulationClear::ClearCharacterTabStopAtActivePosition => {
+                        let (cx, _cy) = self.surface().cursor_position();
+                        self.clear_tab_stop(cx);
+                    }
+                    TabulationClear::ClearAllCharacterTabStops
+                    | TabulationClear::ClearAllTabStops => {
+                        self.clear_all_tab_stops();
+                    }
+                    _ => {}
+                }
+                vec![]
+            }
+            Cursor::TabulationControl(ctrl) => {
+                // CTC (CSI W): set/clear character tab stops at the active column.
+                match ctrl {
+                    CursorTabulationControl::SetCharacterTabStopAtActivePosition => {
+                        let (cx, _cy) = self.surface().cursor_position();
+                        self.set_tab_stop(cx);
+                    }
+                    CursorTabulationControl::ClearCharacterTabStopAtActivePosition => {
+                        let (cx, _cy) = self.surface().cursor_position();
+                        self.clear_tab_stop(cx);
+                    }
+                    CursorTabulationControl::ClearAllCharacterTabStops => {
+                        self.clear_all_tab_stops();
+                    }
+                    _ => {}
+                }
+                vec![]
             }
             Cursor::SaveCursor => {
                 let pos = self.surface().cursor_position();

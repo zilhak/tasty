@@ -18,7 +18,18 @@ impl TerminalState {
                 x: Position::Relative(-1),
                 y: Position::Relative(0),
             }],
-            ControlCode::HorizontalTab => vec![Change::Text("\t".into())],
+            ControlCode::HorizontalTab => {
+                // HT advances the cursor to the next tab stop (default every 8
+                // columns), clamped at the right margin. termwiz `print_text` does
+                // not expand "\t", so emitting a literal tab would advance only one
+                // column — move the cursor explicitly instead.
+                let (cx, _cy) = self.surface().cursor_position();
+                let target = self.next_tab_stop(cx);
+                vec![Change::CursorPosition {
+                    x: Position::Absolute(target),
+                    y: Position::Relative(0),
+                }]
+            }
             ControlCode::Bell => {
                 self.events.push(TerminalEvent {
                     surface_id: 0,

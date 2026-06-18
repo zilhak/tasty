@@ -1485,3 +1485,72 @@ fn rep_without_prior_print_is_noop() {
     t.feed_bytes(b"\x1b[5b"); // nothing printed yet
     assert_eq!(t.screen_row(0), "");
 }
+
+// ---- HT / CHT / CBT / HTS / TBC: tab stops ----
+
+#[test]
+fn ht_advances_to_8col_tab_stop() {
+    let mut t = Terminal::new_detached(40, 2);
+    t.feed_bytes(b"\tX");
+    // Default tab stop at column 8.
+    assert_eq!(t.cursor_position().0, 9); // 8 (stop) + 1 (X)
+    let row = t.screen_row(0);
+    assert_eq!(row.chars().nth(8), Some('X'));
+}
+
+#[test]
+fn ht_between_text_aligns_columns() {
+    let mut t = Terminal::new_detached(40, 2);
+    t.feed_bytes(b"A\tB");
+    let row = t.screen_row(0);
+    assert_eq!(row.chars().next(), Some('A'));
+    assert_eq!(row.chars().nth(8), Some('B'));
+}
+
+#[test]
+fn ht_clamps_at_right_margin() {
+    let mut t = Terminal::new_detached(5, 2);
+    // No tab stop beyond column 0 within 5 cols → clamps at last column (4).
+    t.feed_bytes(b"\t");
+    assert_eq!(t.cursor_position().0, 4);
+}
+
+#[test]
+fn cbt_moves_back_a_tab_stop() {
+    let mut t = Terminal::new_detached(40, 2);
+    t.feed_bytes(b"\t\t"); // → column 16
+    assert_eq!(t.cursor_position().0, 16);
+    t.feed_bytes(b"\x1b[Z"); // CBT 1 → column 8
+    assert_eq!(t.cursor_position().0, 8);
+}
+
+#[test]
+fn cht_moves_forward_n_tab_stops() {
+    let mut t = Terminal::new_detached(40, 2);
+    t.feed_bytes(b"\x1b[2I"); // CHT 2 → column 16
+    assert_eq!(t.cursor_position().0, 16);
+}
+
+#[test]
+fn hts_sets_and_tbc_clears_custom_stop() {
+    let mut t = Terminal::new_detached(40, 2);
+    // Move to column 3, set a custom tab stop there.
+    t.feed_bytes(b"\x1b[4G"); // CHA to column 4 (1-based) → col 3
+    assert_eq!(t.cursor_position().0, 3);
+    t.feed_bytes(b"\x1bH"); // HTS at col 3
+    // From home, HT should now stop at the custom column 3.
+    t.feed_bytes(b"\r\t");
+    assert_eq!(t.cursor_position().0, 3);
+    // Clear that stop (TBC 0) at col 3, then HT from home jumps to default 8.
+    t.feed_bytes(b"\x1b[g"); // TBC 0 at current col (3)
+    t.feed_bytes(b"\r\t");
+    assert_eq!(t.cursor_position().0, 8);
+}
+
+#[test]
+fn tbc_3_clears_all_stops() {
+    let mut t = Terminal::new_detached(40, 2);
+    t.feed_bytes(b"\x1b[3g"); // clear all stops
+    t.feed_bytes(b"\t"); // no stops → clamp at right margin (39)
+    assert_eq!(t.cursor_position().0, 39);
+}

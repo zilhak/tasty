@@ -33,6 +33,12 @@ impl TerminalState {
 
         self.cols = cols;
         self.rows = rows;
+        // Tab stops are column-indexed; rebuild the default grid when the width
+        // changes (custom HTS/TBC stops are reset on resize, matching xterm's
+        // default-on-resize behaviour).
+        if cols != old_cols {
+            self.tab_stops = crate::default_tab_stops(cols);
+        }
         self.primary_surface.resize(cols, rows);
         if let Some(alt) = &mut self.alternate_surface {
             alt.resize(cols, rows);
