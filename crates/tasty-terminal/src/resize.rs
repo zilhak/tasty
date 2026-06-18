@@ -162,10 +162,11 @@ impl TerminalState {
                 x: Position::Absolute(0),
                 y: Position::Absolute(row),
             });
-            for (text, attrs) in &line.cells {
+            for (text, attrs) in line.cells() {
                 self.primary_surface
                     .add_change(Change::AllAttributes(attrs.clone()));
-                self.primary_surface.add_change(Change::Text(text.clone()));
+                self.primary_surface
+                    .add_change(Change::Text(text.to_string()));
             }
         }
 

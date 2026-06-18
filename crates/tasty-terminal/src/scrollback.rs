@@ -6,20 +6,198 @@ use crate::TerminalState;
 use crate::disk_scrollback;
 use termwiz::surface::Change;
 
-/// One scrollback line with its cells and a soft-wrap flag.
+/// One scrollback line, stored column-compactly to avoid a heap allocation per
+/// cell.
+///
+/// The naive `Vec<(String, CellAttributes)>` form allocates one `String` plus
+/// one `CellAttributes` clone *per column*; a full scrollback (10k lines ×
+/// ~180 columns) turns into millions of tiny allocations. Instead a line keeps:
+/// - `text`: every cell's grapheme concatenated into a single buffer,
+/// - `cell_lens`: the byte length of each cell's grapheme within `text` (so
+///   exact per-cell boundaries are preserved, including multi-byte graphemes),
+/// - `attr_runs`: run-length-encoded attributes — adjacent cells that share the
+///   same `CellAttributes` collapse into one `(run_len, attrs)` entry.
+///
+/// This makes the allocation count per line constant (3 headers) instead of
+/// column-proportional, while reproducing the original cell stream exactly via
+/// [`ScrollbackLine::cells`].
 ///
 /// `wrapped == true` means this line was scrolled off because the terminal
 /// auto-wrapped at the right edge — i.e. the next line is a logical
 /// continuation, not a hard newline. Used for wrap-aware copy.
 #[derive(Debug, Clone)]
 pub struct ScrollbackLine {
-    pub cells: Vec<(String, CellAttributes)>,
+    pub(crate) text: String,
+    pub(crate) cell_lens: Vec<u16>,
+    pub(crate) attr_runs: Vec<(u32, CellAttributes)>,
     pub wrapped: bool,
 }
 
 impl ScrollbackLine {
+    /// Build from the legacy owned `Vec<(String, CellAttributes)>` form (cells
+    /// in column order). Kept for producers and tests that still hand over owned
+    /// cells; the cells are compressed on the way in.
     pub fn new(cells: Vec<(String, CellAttributes)>, wrapped: bool) -> Self {
-        Self { cells, wrapped }
+        Self::from_cells(cells.iter().map(|(s, a)| (s.as_str(), a)), wrapped)
+    }
+
+    /// Build from any iterator of borrowed `(grapheme, attrs)` cells in column
+    /// order. This is the allocation-light path — producers can stream cells
+    /// straight in without materializing per-cell `String`s.
+    pub fn from_cells<'a, I>(cells: I, wrapped: bool) -> Self
+    where
+        I: IntoIterator<Item = (&'a str, &'a CellAttributes)>,
+    {
+        let mut builder = ScrollbackLineBuilder::new();
+        for (s, a) in cells {
+            builder.push(s, a);
+        }
+        builder.finish(wrapped)
+    }
+
+    /// Reassemble from raw compact parts (used by disk deserialization). If the
+    /// data was truncated such that cells exist with no attribute run, a single
+    /// default run is synthesized so [`cells`](Self::cells) stays panic-free and
+    /// always has a run to borrow.
+    pub(crate) fn from_raw_parts(
+        text: String,
+        cell_lens: Vec<u16>,
+        mut attr_runs: Vec<(u32, CellAttributes)>,
+        wrapped: bool,
+    ) -> Self {
+        if !cell_lens.is_empty() && attr_runs.is_empty() {
+            attr_runs.push((cell_lens.len() as u32, CellAttributes::default()));
+        }
+        Self {
+            text,
+            cell_lens,
+            attr_runs,
+            wrapped,
+        }
+    }
+
+    /// Number of cells (occupied columns) in this line.
+    pub fn cell_count(&self) -> usize {
+        self.cell_lens.len()
+    }
+
+    /// Iterate cells in column order as borrowed `(grapheme, attrs)` pairs.
+    /// No per-cell allocation — the grapheme is sliced out of `text` and the
+    /// attributes are borrowed from the RLE runs.
+    pub fn cells(&self) -> CellsIter<'_> {
+        CellsIter {
+            text: &self.text,
+            byte_pos: 0,
+            lens: self.cell_lens.iter(),
+            runs: &self.attr_runs,
+            run_idx: 0,
+            run_remaining: self.attr_runs.first().map(|(n, _)| *n).unwrap_or(0),
+        }
+    }
+
+    /// Reconstruct the legacy owned `Vec<(String, CellAttributes)>` form. Used
+    /// by consumers that still need owned cells (search, selection, IPC); the
+    /// allocation is transient, not retained in the scrollback buffer.
+    pub fn to_cells(&self) -> Vec<(String, CellAttributes)> {
+        self.cells()
+            .map(|(s, a)| (s.to_string(), a.clone()))
+            .collect()
+    }
+
+    /// True when every cell is empty or whitespace-only (used to trim trailing
+    /// blank rows from snapshots).
+    pub fn is_blank(&self) -> bool {
+        self.cells()
+            .all(|(s, _)| s.is_empty() || s.chars().all(char::is_whitespace))
+    }
+}
+
+/// Borrowing iterator over a [`ScrollbackLine`]'s cells, yielding
+/// `(grapheme, attrs)` in column order without allocating.
+pub struct CellsIter<'a> {
+    text: &'a str,
+    byte_pos: usize,
+    lens: std::slice::Iter<'a, u16>,
+    runs: &'a [(u32, CellAttributes)],
+    run_idx: usize,
+    run_remaining: u32,
+}
+
+impl<'a> Iterator for CellsIter<'a> {
+    type Item = (&'a str, &'a CellAttributes);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let &len = self.lens.next()?;
+        let start = self.byte_pos;
+        let end = start + len as usize;
+        // `get` (not direct slicing) guards against a corrupted disk line whose
+        // recorded lengths don't land on char boundaries — fall back to empty.
+        let s = self.text.get(start..end).unwrap_or("");
+        self.byte_pos = end;
+        // Advance past any exhausted runs to the run covering this cell.
+        while self.run_remaining == 0 {
+            self.run_idx += 1;
+            self.run_remaining = self.runs.get(self.run_idx).map(|(n, _)| *n).unwrap_or(1);
+        }
+        let attrs = self
+            .runs
+            .get(self.run_idx)
+            .map(|(_, a)| a)
+            .unwrap_or(&self.runs[0].1);
+        self.run_remaining -= 1;
+        Some((s, attrs))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.lens.size_hint()
+    }
+}
+
+impl ExactSizeIterator for CellsIter<'_> {}
+
+/// Incremental builder for a [`ScrollbackLine`]. Cells are pushed one at a time
+/// (`grapheme`, `attrs`) so producers can stream borrowed termwiz `CellRef`s —
+/// whose `str()`/`attrs()` borrows cannot escape the per-cell scope — directly
+/// into the compact form without an intermediate owned `Vec`.
+pub struct ScrollbackLineBuilder {
+    text: String,
+    cell_lens: Vec<u16>,
+    attr_runs: Vec<(u32, CellAttributes)>,
+}
+
+impl Default for ScrollbackLineBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ScrollbackLineBuilder {
+    pub fn new() -> Self {
+        Self {
+            text: String::new(),
+            cell_lens: Vec::new(),
+            attr_runs: Vec::new(),
+        }
+    }
+
+    /// Append one cell, coalescing into the current attribute run when its
+    /// attributes match the previous cell's.
+    pub fn push(&mut self, grapheme: &str, attrs: &CellAttributes) {
+        self.text.push_str(grapheme);
+        self.cell_lens.push(grapheme.len() as u16);
+        match self.attr_runs.last_mut() {
+            Some((run, a)) if a == attrs => *run += 1,
+            _ => self.attr_runs.push((1, attrs.clone())),
+        }
+    }
+
+    pub fn finish(self, wrapped: bool) -> ScrollbackLine {
+        ScrollbackLine {
+            text: self.text,
+            cell_lens: self.cell_lens,
+            attr_runs: self.attr_runs,
+            wrapped,
+        }
     }
 }
 
@@ -96,14 +274,14 @@ impl Scrollback {
         self.scroll_offset = 0;
     }
 
-    /// Get a specific scrollback line's cells by index (0 = oldest, memory only).
+    /// Borrow a specific scrollback line by index (0 = oldest, memory only).
     /// For disk-backed lines, use `line_owned()`.
-    pub fn line(&self, index: usize) -> Option<&Vec<(String, CellAttributes)>> {
+    pub fn line(&self, index: usize) -> Option<&ScrollbackLine> {
         let disk_count = self.disk.as_ref().map(|ds| ds.line_count()).unwrap_or(0);
         if index < disk_count {
             None // Disk lines can't be returned as reference — use line_owned()
         } else {
-            self.lines.get(index - disk_count).map(|l| &l.cells)
+            self.lines.get(index - disk_count)
         }
     }
 
@@ -115,9 +293,9 @@ impl Scrollback {
             self.disk
                 .as_ref()
                 .and_then(|ds| ds.read_line(index).ok().flatten())
-                .map(|l| l.cells)
+                .map(|l| l.to_cells())
         } else {
-            self.lines.get(index - disk_count).map(|l| l.cells.clone())
+            self.lines.get(index - disk_count).map(|l| l.to_cells())
         }
     }
 
@@ -221,7 +399,7 @@ impl TerminalState {
 
     /// Get a specific scrollback line by index (0 = oldest, memory only).
     /// For disk-backed lines, use scrollback_line_owned().
-    pub fn scrollback_line(&self, index: usize) -> Option<&Vec<(String, CellAttributes)>> {
+    pub fn scrollback_line(&self, index: usize) -> Option<&crate::ScrollbackLine> {
         self.scrollback.line(index)
     }
 
@@ -258,20 +436,16 @@ impl TerminalState {
         let lines = surface.screen_lines();
         let mut result: Vec<crate::ScrollbackLine> = Vec::with_capacity(lines.len());
         for line in lines.iter() {
-            let cells: Vec<(String, CellAttributes)> = line
-                .visible_cells()
-                .map(|cell| (cell.str().to_string(), cell.attrs().clone()))
-                .collect();
             let wrapped = Self::line_was_soft_wrapped(line, cols);
-            result.push(crate::ScrollbackLine::new(cells, wrapped));
+            let mut builder = crate::scrollback::ScrollbackLineBuilder::new();
+            for cell in line.visible_cells() {
+                builder.push(cell.str(), cell.attrs());
+            }
+            result.push(builder.finish(wrapped));
         }
         // Trim trailing blank rows: cells 가 비거나 모두 whitespace-only.
         while let Some(last) = result.last() {
-            let blank = last
-                .cells
-                .iter()
-                .all(|(s, _)| s.is_empty() || s.chars().all(char::is_whitespace));
-            if blank {
+            if last.is_blank() {
                 result.pop();
             } else {
                 break;
@@ -319,10 +493,11 @@ impl TerminalState {
                 x: Position::Absolute(0),
                 y: Position::Absolute(row),
             });
-            for (text, attrs) in &line.cells {
+            for (text, attrs) in line.cells() {
                 self.primary_surface
                     .add_change(Change::AllAttributes(attrs.clone()));
-                self.primary_surface.add_change(Change::Text(text.clone()));
+                self.primary_surface
+                    .add_change(Change::Text(text.to_string()));
             }
         }
 
@@ -362,12 +537,12 @@ impl TerminalState {
         let lines = surface.screen_lines();
         let mut result = Vec::new();
         for line in lines.iter().take(count.min(lines.len())) {
-            let cells: Vec<(String, CellAttributes)> = line
-                .visible_cells()
-                .map(|cell| (cell.str().to_string(), cell.attrs().clone()))
-                .collect();
             let wrapped = Self::line_was_soft_wrapped(line, cols);
-            result.push(crate::scrollback::ScrollbackLine::new(cells, wrapped));
+            let mut builder = crate::scrollback::ScrollbackLineBuilder::new();
+            for cell in line.visible_cells() {
+                builder.push(cell.str(), cell.attrs());
+            }
+            result.push(builder.finish(wrapped));
         }
         result
     }

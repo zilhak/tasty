@@ -11,7 +11,7 @@ use crate::scrollback::ScrollbackLine;
 /// whenever the on-disk layout changes; old files are simply truncated and
 /// re-created (no backwards compatibility — Tasty is pre-1.0).
 pub const FILE_MAGIC: &[u8; 4] = b"TSSB";
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 const HEADER_LEN: u64 = 8; // 4-byte magic + 4-byte version
 
 /// Serialize a batch of scrollback lines into a self-contained byte blob.
@@ -167,44 +167,57 @@ impl Drop for DiskScrollback {
     }
 }
 
-/// Serialize a scrollback line to bytes.
-/// Layout: [wrapped:u8][cell_count:u32] then per cell:
-///   [text_len:u16][text_bytes][fg_type:u8][fg_data:0-3][bg_type:u8][bg_data:0-3][flags:u8]
+/// Pack a cell's attributes into the flags byte.
+/// bit0=bold, bit1=italic, bit2=underline, bit3=strikethrough, bit4=dim (Intensity::Half).
+fn attr_flags(attrs: &CellAttributes) -> u8 {
+    let mut flags: u8 = 0;
+    match attrs.intensity() {
+        termwiz::cell::Intensity::Bold => flags |= 1,
+        termwiz::cell::Intensity::Half => flags |= 16,
+        termwiz::cell::Intensity::Normal => {}
+    }
+    if attrs.italic() {
+        flags |= 2;
+    }
+    if attrs.underline() != termwiz::cell::Underline::None {
+        flags |= 4;
+    }
+    if attrs.strikethrough() {
+        flags |= 8;
+    }
+    flags
+}
+
+/// Serialize a scrollback line to bytes, mirroring the in-memory compact form
+/// (single text buffer + per-cell lengths + RLE attribute runs).
+/// Layout:
+///   [wrapped:u8]
+///   [text_len:u32][text_bytes]
+///   [cell_count:u32][cell_len:u16 × cell_count]
+///   [run_count:u32] then per run:
+///     [run_len:u32][fg_type:u8][fg_data:0-3][bg_type:u8][bg_data:0-3][flags:u8]
 fn serialize_line(line: &ScrollbackLine) -> Vec<u8> {
     let mut buf = Vec::new();
     buf.push(if line.wrapped { 1 } else { 0 });
-    let cell_count = line.cells.len() as u32;
-    buf.extend_from_slice(&cell_count.to_le_bytes());
 
-    for (text, attrs) in &line.cells {
-        // Text
-        let text_bytes = text.as_bytes();
-        let text_len = text_bytes.len() as u16;
-        buf.extend_from_slice(&text_len.to_le_bytes());
-        buf.extend_from_slice(text_bytes);
+    // Concatenated cell text.
+    let text_bytes = line.text.as_bytes();
+    buf.extend_from_slice(&(text_bytes.len() as u32).to_le_bytes());
+    buf.extend_from_slice(text_bytes);
 
-        // Foreground color
+    // Per-cell grapheme byte lengths.
+    buf.extend_from_slice(&(line.cell_lens.len() as u32).to_le_bytes());
+    for &len in &line.cell_lens {
+        buf.extend_from_slice(&len.to_le_bytes());
+    }
+
+    // RLE attribute runs.
+    buf.extend_from_slice(&(line.attr_runs.len() as u32).to_le_bytes());
+    for (run_len, attrs) in &line.attr_runs {
+        buf.extend_from_slice(&run_len.to_le_bytes());
         serialize_color(&attrs.foreground(), &mut buf);
-        // Background color
         serialize_color(&attrs.background(), &mut buf);
-
-        // Flags: bit0=bold, bit1=italic, bit2=underline, bit3=strikethrough, bit4=dim (Intensity::Half).
-        let mut flags: u8 = 0;
-        match attrs.intensity() {
-            termwiz::cell::Intensity::Bold => flags |= 1,
-            termwiz::cell::Intensity::Half => flags |= 16,
-            termwiz::cell::Intensity::Normal => {}
-        }
-        if attrs.italic() {
-            flags |= 2;
-        }
-        if attrs.underline() != termwiz::cell::Underline::None {
-            flags |= 4;
-        }
-        if attrs.strikethrough() {
-            flags |= 8;
-        }
-        buf.push(flags);
+        buf.push(attr_flags(attrs));
     }
     buf
 }
@@ -236,57 +249,84 @@ fn deserialize_line(data: &[u8]) -> ScrollbackLine {
     let wrapped = data[0] != 0;
     pos += 1;
 
+    // Concatenated cell text.
+    if pos + 4 > data.len() {
+        return ScrollbackLine::new(Vec::new(), wrapped);
+    }
+    let text_len =
+        u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+    pos += 4;
+    if pos + text_len > data.len() {
+        return ScrollbackLine::new(Vec::new(), wrapped);
+    }
+    let text = String::from_utf8_lossy(&data[pos..pos + text_len]).to_string();
+    pos += text_len;
+
+    // Per-cell grapheme byte lengths.
+    if pos + 4 > data.len() {
+        return ScrollbackLine::from_raw_parts(text, Vec::new(), Vec::new(), wrapped);
+    }
     let cell_count =
         u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
     pos += 4;
-
-    let mut cells = Vec::with_capacity(cell_count);
-
+    let mut cell_lens = Vec::with_capacity(cell_count);
     for _ in 0..cell_count {
         if pos + 2 > data.len() {
             break;
         }
-        let text_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+        cell_lens.push(u16::from_le_bytes([data[pos], data[pos + 1]]));
         pos += 2;
-
-        if pos + text_len > data.len() {
-            break;
-        }
-        let text = String::from_utf8_lossy(&data[pos..pos + text_len]).to_string();
-        pos += text_len;
-
-        let (fg, advance) = deserialize_color(&data[pos..]);
-        pos += advance;
-        let (bg, advance) = deserialize_color(&data[pos..]);
-        pos += advance;
-
-        if pos >= data.len() {
-            break;
-        }
-        let flags = data[pos];
-        pos += 1;
-
-        let mut attrs = CellAttributes::default();
-        attrs.set_foreground(fg);
-        attrs.set_background(bg);
-        if flags & 1 != 0 {
-            attrs.set_intensity(termwiz::cell::Intensity::Bold);
-        } else if flags & 16 != 0 {
-            attrs.set_intensity(termwiz::cell::Intensity::Half);
-        }
-        if flags & 2 != 0 {
-            attrs.set_italic(true);
-        }
-        if flags & 4 != 0 {
-            attrs.set_underline(termwiz::cell::Underline::Single);
-        }
-        if flags & 8 != 0 {
-            attrs.set_strikethrough(true);
-        }
-
-        cells.push((text, attrs));
     }
-    ScrollbackLine::new(cells, wrapped)
+
+    // RLE attribute runs.
+    let mut attr_runs = Vec::new();
+    if pos + 4 <= data.len() {
+        let run_count =
+            u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        pos += 4;
+        attr_runs.reserve(run_count);
+        for _ in 0..run_count {
+            if pos + 4 > data.len() {
+                break;
+            }
+            let run_len =
+                u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+            pos += 4;
+
+            let (fg, advance) = deserialize_color(&data[pos..]);
+            pos += advance;
+            let (bg, advance) = deserialize_color(&data[pos..]);
+            pos += advance;
+
+            if pos >= data.len() {
+                break;
+            }
+            let flags = data[pos];
+            pos += 1;
+
+            let mut attrs = CellAttributes::default();
+            attrs.set_foreground(fg);
+            attrs.set_background(bg);
+            if flags & 1 != 0 {
+                attrs.set_intensity(termwiz::cell::Intensity::Bold);
+            } else if flags & 16 != 0 {
+                attrs.set_intensity(termwiz::cell::Intensity::Half);
+            }
+            if flags & 2 != 0 {
+                attrs.set_italic(true);
+            }
+            if flags & 4 != 0 {
+                attrs.set_underline(termwiz::cell::Underline::Single);
+            }
+            if flags & 8 != 0 {
+                attrs.set_strikethrough(true);
+            }
+
+            attr_runs.push((run_len, attrs));
+        }
+    }
+
+    ScrollbackLine::from_raw_parts(text, cell_lens, attr_runs, wrapped)
 }
 
 fn deserialize_color(data: &[u8]) -> (ColorAttribute, usize) {
@@ -332,9 +372,10 @@ mod tests {
         let mut a = CellAttributes::default();
         a.set_intensity(Intensity::Half);
         let out = round_trip(ScrollbackLine::new(vec![("D".into(), a)], false));
-        assert_eq!(out.cells.len(), 1);
-        assert_eq!(out.cells[0].0, "D");
-        assert_eq!(out.cells[0].1.intensity(), Intensity::Half);
+        let cells = out.to_cells();
+        assert_eq!(cells.len(), 1);
+        assert_eq!(cells[0].0, "D");
+        assert_eq!(cells[0].1.intensity(), Intensity::Half);
         assert!(!out.wrapped);
     }
 
@@ -343,7 +384,7 @@ mod tests {
         let mut a = CellAttributes::default();
         a.set_intensity(Intensity::Bold);
         let out = round_trip(ScrollbackLine::new(vec![("B".into(), a)], false));
-        assert_eq!(out.cells[0].1.intensity(), Intensity::Bold);
+        assert_eq!(out.to_cells()[0].1.intensity(), Intensity::Bold);
     }
 
     #[test]
@@ -354,7 +395,8 @@ mod tests {
         a.set_underline(Underline::Single);
         a.set_strikethrough(true);
         let out = round_trip(ScrollbackLine::new(vec![("X".into(), a)], false));
-        let r = &out.cells[0].1;
+        let cells = out.to_cells();
+        let r = &cells[0].1;
         assert_eq!(r.intensity(), Intensity::Half);
         assert!(r.italic());
         assert_ne!(r.underline(), Underline::None);
@@ -366,7 +408,51 @@ mod tests {
         let a = CellAttributes::default();
         let out = round_trip(ScrollbackLine::new(vec![("W".into(), a)], true));
         assert!(out.wrapped);
-        assert_eq!(out.cells[0].0, "W");
+        assert_eq!(out.to_cells()[0].0, "W");
+    }
+
+    #[test]
+    fn preserves_multibyte_unicode_cells() {
+        // CJK (3-byte UTF-8), an emoji (4-byte), and an attributed wide char —
+        // exercises exact per-cell byte boundaries + attrs across the compact
+        // text+lens+RLE form (regression guard against grapheme byte desync).
+        let mut bold = CellAttributes::default();
+        bold.set_intensity(Intensity::Bold);
+        let mut italic = CellAttributes::default();
+        italic.set_italic(true);
+
+        let input = ScrollbackLine::new(
+            vec![
+                ("가".into(), bold.clone()),
+                ("나".into(), CellAttributes::default()),
+                ("다".into(), CellAttributes::default()),
+                ("🦀".into(), italic.clone()),
+                ("漢".into(), CellAttributes::default()),
+            ],
+            true,
+        );
+        let out = round_trip(input);
+        let cells = out.to_cells();
+
+        assert!(out.wrapped);
+        assert_eq!(cells.len(), 5);
+
+        // Exact grapheme content + byte length preserved per cell.
+        assert_eq!(cells[0].0, "가");
+        assert_eq!(cells[0].0.len(), 3);
+        assert_eq!(cells[1].0, "나");
+        assert_eq!(cells[2].0, "다");
+        assert_eq!(cells[3].0, "🦀");
+        assert_eq!(cells[3].0.len(), 4);
+        assert_eq!(cells[4].0, "漢");
+        assert_eq!(cells[4].0.len(), 3);
+
+        // Attributes preserved (incl. RLE runs straddling multibyte cells).
+        assert_eq!(cells[0].1.intensity(), Intensity::Bold);
+        assert_eq!(cells[1].1.intensity(), Intensity::Normal);
+        assert!(!cells[1].1.italic());
+        assert!(cells[3].1.italic());
+        assert!(!cells[4].1.italic());
     }
 
     #[test]
@@ -380,11 +466,12 @@ mod tests {
         let bytes = serialize_lines(&lines);
         let out = deserialize_lines(&bytes).expect("deserialize");
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0].cells[0].0, "hello");
+        assert_eq!(out[0].to_cells()[0].0, "hello");
         assert!(!out[0].wrapped);
-        assert_eq!(out[1].cells[0].0, "world");
+        let l1 = out[1].to_cells();
+        assert_eq!(l1[0].0, "world");
         assert!(out[1].wrapped);
-        assert_eq!(out[1].cells[0].1.intensity(), Intensity::Bold);
+        assert_eq!(l1[0].1.intensity(), Intensity::Bold);
     }
 
     #[test]

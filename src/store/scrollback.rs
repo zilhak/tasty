@@ -160,9 +160,9 @@ mod tests {
         write_in(dir.path(), &id, &sample_lines()).expect("write");
         let out = read_in(dir.path(), &id).expect("read");
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0].cells[0].0, "alpha");
+        assert_eq!(out[0].to_cells()[0].0, "alpha");
         assert!(!out[0].wrapped);
-        assert_eq!(out[1].cells[0].0, "beta");
+        assert_eq!(out[1].to_cells()[0].0, "beta");
         assert!(out[1].wrapped);
     }
 

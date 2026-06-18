@@ -133,10 +133,10 @@ impl MainView {
                     v.scrollback_line(absolute_row).map(|line| {
                         let mut result = Vec::new();
                         let mut c = 0;
-                        for (text, _) in line {
+                        for (text, _) in line.cells() {
                             let ch = text.chars().next().unwrap_or(' ');
                             let w = crate::renderer::unicode_width(ch);
-                            result.push((text.clone(), c));
+                            result.push((text.to_string(), c));
                             c += w;
                         }
                         result

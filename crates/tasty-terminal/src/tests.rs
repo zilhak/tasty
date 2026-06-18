@@ -249,8 +249,8 @@ fn first_scrollback_text(terminal: &Terminal, index: usize) -> String {
         .lock_state()
         .scrollback_line(index)
         .map(|l| {
-            l.iter()
-                .map(|(s, _)| s.clone())
+            l.cells()
+                .map(|(s, _)| s)
                 .collect::<String>()
                 .trim_end()
                 .to_string()
@@ -423,7 +423,7 @@ fn repaint_after_wrap_scroll_does_not_duplicate_committed_lines() {
 }
 
 fn join_line(line: &crate::ScrollbackLine) -> String {
-    line.cells.iter().map(|(s, _)| s.as_str()).collect()
+    line.cells().map(|(s, _)| s).collect()
 }
 
 #[test]

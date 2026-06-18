@@ -1,3 +1,4 @@
+use tasty_terminal::ScrollbackLine;
 use tasty_type_appearance::color::{GpuRgb, GpuRgba};
 use termwiz::cell::CellAttributes;
 
@@ -107,12 +108,13 @@ impl CellRenderer {
         }
     }
 
-    /// Render a single scrollback line (stored as Vec<(String, CellAttributes)>).
-    /// Fills remaining columns with default_bg.
+    /// Render a single scrollback line (compact `ScrollbackLine`).
+    /// Cells are streamed via the borrowing `cells()` iterator — no per-cell
+    /// allocation. Fills remaining columns with default_bg.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn render_scrollback_line(
         &mut self,
-        line: &[(String, CellAttributes)],
+        line: &ScrollbackLine,
         row_idx: usize,
         cols: usize,
         default_bg: GpuRgba,
@@ -126,7 +128,7 @@ impl CellRenderer {
         search: Option<&super::SearchHighlights<'_>>,
     ) {
         let mut col_idx: usize = 0;
-        for (text, attrs) in line.iter() {
+        for (text, attrs) in line.cells() {
             if col_idx >= cols {
                 break;
             }
@@ -135,7 +137,7 @@ impl CellRenderer {
             self.render_cell(
                 col_idx,
                 row_idx,
-                text.as_str(),
+                text,
                 attrs,
                 width,
                 cols,

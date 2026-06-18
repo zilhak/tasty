@@ -703,7 +703,7 @@ impl RenderView<'_> {
     }
 
     /// Borrow a scrollback line by absolute index.
-    pub fn scrollback_line(&self, index: usize) -> Option<&Vec<(String, CellAttributes)>> {
+    pub fn scrollback_line(&self, index: usize) -> Option<&ScrollbackLine> {
         self.state.scrollback_line(index)
     }
 }
