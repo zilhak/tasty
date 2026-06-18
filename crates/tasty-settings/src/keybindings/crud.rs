@@ -396,12 +396,23 @@ impl KeybindingSettings {
 
     /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").
     ///
+    /// [`Self::format_display_parts`] 의 토큰을 `+` 로 join 한 단일 문자열.
+    pub fn format_display(binding: &str) -> String {
+        Self::format_display_parts(binding).join("+")
+    }
+
+    /// Tokenize a binding into display키캡 단위 (e.g. "ctrl+shift+n" → ["Ctrl","Shift","N"]).
+    ///
+    /// 키캡 분해 렌더(명령 팔레트 Kbd 등)가 `+` 구분자 모호성 없이 토큰을 받도록 하는
+    /// 정식 경로. 반환 문자열을 `split('+')` 하면 `"ctrl++"`(Ctrl+`+키`) 같은 케이스가
+    /// 깨지므로, 표시 문자열 대신 **이 함수**를 써야 한다.
+    ///
     /// 주의: `split('+')`은 쓸 수 없다. `"ctrl++"`(Ctrl+`+키`) 같은 바인딩에서 구분자
     /// `+`와 키 이름 `+`를 구분하지 못하기 때문. 왼쪽부터 모디파이어 프리픽스를 하나씩
     /// 떼어내고, 남은 부분을 통째로 키 토큰으로 본다.
-    pub fn format_display(binding: &str) -> String {
+    pub fn format_display_parts(binding: &str) -> Vec<String> {
         if binding.is_empty() {
-            return String::new();
+            return Vec::new();
         }
 
         let mut parts: Vec<String> = Vec::new();
@@ -446,6 +457,6 @@ impl KeybindingSettings {
             parts.push(key_display);
         }
 
-        parts.join("+")
+        parts
     }
 }

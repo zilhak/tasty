@@ -128,6 +128,8 @@ pub struct ThemeSizing {
     /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
     pub focus_ring_width: LogicalPx,
     pub corner_radius: LogicalPx,
+    /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
+    pub corner_radius_sm: LogicalPx,
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
     pub item_height_tab: LogicalPx,
@@ -193,6 +195,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     border_width: LogicalPx(1.0),
     focus_ring_width: LogicalPx(2.0),
     corner_radius: LogicalPx(4.0),
+    corner_radius_sm: LogicalPx(2.0),
     item_height_tree: LogicalPx(22.0),
     item_height_interactive: LogicalPx(28.0),
     item_height_tab: LogicalPx(24.0),
@@ -650,6 +653,8 @@ pub struct Theme {
     /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
     pub focus_ring_width: LogicalPx,
     pub corner_radius: LogicalPx,
+    /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
+    pub corner_radius_sm: LogicalPx,
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
     pub item_height_tab: LogicalPx,
@@ -785,6 +790,7 @@ impl Theme {
             border_width: SIZING.border_width,
             focus_ring_width: zoomed(SIZING.focus_ring_width),
             corner_radius: zoomed(SIZING.corner_radius),
+            corner_radius_sm: zoomed(SIZING.corner_radius_sm),
             item_height_tree: zoomed(SIZING.item_height_tree),
             item_height_interactive: zoomed(SIZING.item_height_interactive),
             item_height_tab: zoomed(SIZING.item_height_tab),

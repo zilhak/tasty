@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use tasty_type_appearance::theme::Theme;
 
 const CONTENT_MARGIN: f32 = 4.0;
-const POPUP_W: f32 = 520.0;
+const POPUP_W: f32 = 540.0;
 
 /// 본체 `icons::Icon` 의 로컬 mock. inline SVG 를 `egui_extras` svg 로더로
 /// 텍스처화하고 `tint` 로 테마 색을 입힌다. SVG path 는 본체 `icons.rs` 에서 복제.
@@ -79,7 +79,8 @@ mock_icon!(
 #[derive(Debug, Clone)]
 struct MockItem {
     label: String,
-    shortcut: Option<String>,
+    /// 단축키 키캡 토큰 (`["Ctrl","Shift","N"]`). 빈 vec 이면 표시 안 함.
+    shortcut_keys: Vec<String>,
     /// 행 좌측 leading 아이콘. 디자인 명시 명령에만 지정, 나머지는 빈 슬롯.
     icon: Option<MockIcon>,
 }
@@ -133,15 +134,17 @@ fn draw_mock_view(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
         } else {
             let row_height = 24.0;
             let selected_idx = props.selected_index;
+            // 빈 쿼리면 어떤 행도 강조하지 않는다 (본체 `row_highlighted` 미러).
+            let query_empty = props.query_buffer.borrow().is_empty();
             egui::ScrollArea::vertical()
-                .max_height(280.0)
+                .max_height(320.0)
                 .show(ui, |ui| {
                     for (i, item) in props.items.iter().enumerate() {
                         let (rect, resp) = ui.allocate_exact_size(
                             egui::vec2(ui.available_width(), row_height),
                             egui::Sense::click(),
                         );
-                        let is_selected = i == selected_idx;
+                        let is_selected = !query_empty && i == selected_idx;
                         if is_selected {
                             ui.painter().rect_filled(
                                 rect,
@@ -181,44 +184,14 @@ fn draw_mock_view(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
                             color,
                         );
 
-                        if let Some(shortcut) = &item.shortcut {
-                            // Kbd 키캡 박스 — Theme 보더+배경 토큰으로 그린다.
-                            let kbd_font =
-                                egui::FontId::proportional(theme.font_size_caption.value());
-                            let galley = ui.painter().layout_no_wrap(
-                                shortcut.clone(),
-                                kbd_font,
-                                theme.text_muted().to_egui(),
-                            );
-                            let inner_pad = egui::vec2(6.0, 2.0);
-                            let box_size = galley.size() + inner_pad * 2.0;
-                            let box_rect = egui::Rect::from_min_size(
-                                egui::pos2(
-                                    rect.max.x - 8.0 - box_size.x,
-                                    rect.center().y - box_size.y / 2.0,
-                                ),
-                                box_size,
-                            );
-                            ui.painter().rect_filled(
-                                box_rect,
-                                4.0,
-                                theme.surface_hover().to_egui(),
-                            );
-                            ui.painter().rect_stroke(
-                                box_rect,
-                                4.0,
-                                egui::Stroke::new(
-                                    theme.border_width.value(),
-                                    theme.border_strong().to_egui(),
-                                ),
-                                egui::StrokeKind::Inside,
-                            );
-                            ui.painter().galley(
-                                box_rect.min + inner_pad,
-                                galley,
-                                theme.text_muted().to_egui(),
-                            );
-                        }
+                        // Kbd — 키별 개별 키캡 + muted `+` (본체 draw_keycaps 미러).
+                        draw_keycaps(
+                            ui,
+                            theme,
+                            rect.max.x - 8.0,
+                            rect.center().y,
+                            &item.shortcut_keys,
+                        );
                     }
                 });
         }
@@ -242,6 +215,73 @@ fn draw_mock_view(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
             }
         });
     });
+}
+
+/// 본체 `command_palette::draw_keycaps` 미러 — 키별 개별 키캡 + muted `+`.
+/// 우측 정렬. 키캡: min 18/h 18/padding 5/radius-sm/surface-raised/border-strong,
+/// mono caption + text-secondary; `+` 는 text-muted.
+fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys: &[String]) {
+    if keys.is_empty() {
+        return;
+    }
+    let cap_h = 18.0;
+    let min_w = 18.0;
+    let pad_x = 5.0;
+    let sep_gap = 4.0;
+    let radius = theme.corner_radius_sm.value();
+    let key_font = egui::FontId::monospace(theme.font_size_caption.value());
+    let key_color = theme.text_secondary().to_egui();
+    let sep_color = theme.text_muted().to_egui();
+
+    let galleys: Vec<_> = keys
+        .iter()
+        .map(|k| {
+            ui.painter()
+                .layout_no_wrap(k.clone(), key_font.clone(), key_color)
+        })
+        .collect();
+    let cap_widths: Vec<f32> = galleys
+        .iter()
+        .map(|g| (g.size().x + pad_x * 2.0).max(min_w))
+        .collect();
+    let sep_galley =
+        ui.painter()
+            .layout_no_wrap("+".to_string(), key_font.clone(), sep_color);
+    let sep_w = sep_galley.size().x + sep_gap * 2.0;
+
+    let total: f32 =
+        cap_widths.iter().sum::<f32>() + sep_w * keys.len().saturating_sub(1) as f32;
+    let mut x = right_x - total;
+    let top = center_y - cap_h / 2.0;
+
+    for (idx, galley) in galleys.into_iter().enumerate() {
+        if idx > 0 {
+            let sep = ui
+                .painter()
+                .layout_no_wrap("+".to_string(), key_font.clone(), sep_color);
+            ui.painter().galley(
+                egui::pos2(x + sep_gap, center_y - sep.size().y / 2.0),
+                sep,
+                sep_color,
+            );
+            x += sep_w;
+        }
+        let cap_w = cap_widths[idx];
+        let box_rect =
+            egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(cap_w, cap_h));
+        ui.painter()
+            .rect_filled(box_rect, radius, theme.surface_raised().to_egui());
+        ui.painter().rect_stroke(
+            box_rect,
+            radius,
+            egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
+            egui::StrokeKind::Inside,
+        );
+        let gx = box_rect.center().x - galley.size().x / 2.0;
+        let gy = center_y - galley.size().y / 2.0;
+        ui.painter().galley(egui::pos2(gx, gy), galley, key_color);
+        x += cap_w;
+    }
 }
 
 /// "Popup frame" 처럼 보이도록 surface0 배경 + border 카드를 두르는 헬퍼.
@@ -276,10 +316,10 @@ fn with_popup_frame(
     paint(&mut child);
 }
 
-fn mk_item(label: &str, shortcut: Option<&str>, icon: Option<MockIcon>) -> MockItem {
+fn mk_item(label: &str, shortcut_keys: &[&str], icon: Option<MockIcon>) -> MockItem {
     MockItem {
         label: label.to_string(),
-        shortcut: shortcut.map(|s| s.to_string()),
+        shortcut_keys: shortcut_keys.iter().map(|s| s.to_string()).collect(),
         icon,
     }
 }
@@ -316,14 +356,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         placeholder: "Type a command…",
         no_results_text: "No matching commands",
         items: vec![
-            mk_item("New workspace", Some("Ctrl+Shift+N"), Some(PLUS)),
-            mk_item("New tab", Some("Ctrl+T"), Some(TERM)),
-            mk_item("Open markdown", None, Some(MD)),
-            mk_item("Split pane vertical", Some("Ctrl+\\"), Some(SPLIT)),
-            mk_item("Toggle sidebar", None, None),
-            mk_item("Open settings", Some("Ctrl+,"), Some(SETTINGS)),
-            mk_item("Clipboard viewer", None, Some(CLIPBOARD)),
-            mk_item("Quit", Some("Ctrl+Q"), None),
+            mk_item("New workspace", &["Ctrl", "Shift", "N"], Some(PLUS)),
+            mk_item("New tab", &["Ctrl", "T"], Some(TERM)),
+            mk_item("Open markdown", &[], Some(MD)),
+            mk_item("Split pane vertical", &["Ctrl", "\\"], Some(SPLIT)),
+            mk_item("Toggle sidebar", &[], None),
+            mk_item("Open settings", &["Ctrl", ","], Some(SETTINGS)),
+            mk_item("Clipboard viewer", &[], Some(CLIPBOARD)),
+            mk_item("Quit", &["Ctrl", "Q"], None),
         ],
         selected_index: 0,
         query_buffer: &buf1,
@@ -346,11 +386,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         placeholder: "Type a command…",
         no_results_text: "No matching commands",
         items: vec![
-            mk_item("Close tab", Some("Ctrl+W"), None),
-            mk_item("Close pane", Some("Ctrl+Shift+W"), None),
-            mk_item("Close workspace", Some("Ctrl+Alt+W"), None),
-            mk_item("Close all tabs in pane", None, None),
-            mk_item("Close window", Some("Ctrl+Shift+Q"), None),
+            mk_item("Close tab", &["Ctrl", "W"], None),
+            mk_item("Close pane", &["Ctrl", "Shift", "W"], None),
+            mk_item("Close workspace", &["Ctrl", "Alt", "W"], None),
+            mk_item("Close all tabs in pane", &[], None),
+            mk_item("Close window", &["Ctrl", "Shift", "Q"], None),
         ],
         selected_index: 2,
         query_buffer: &buf2,
@@ -389,16 +429,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         egui::RichText::new("④ 100건 — ScrollArea 가상화:").color(egui::Color32::from(theme.text)),
     );
     ui.add_space(4.0);
+    const DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
     let many: Vec<MockItem> = (0..100)
         .map(|i| {
-            let shortcut = if i % 5 == 0 {
-                Some(format!("Ctrl+Alt+{}", i % 10))
+            let keys: Vec<&str> = if i % 5 == 0 {
+                vec!["Ctrl", "Alt", DIGITS[i % 10]]
             } else {
-                None
+                vec![]
             };
             mk_item(
                 &format!("Action #{i:03} — generated for scroll test"),
-                shortcut.as_deref(),
+                &keys,
                 None,
             )
         })
@@ -428,19 +469,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         placeholder: "Type a command…",
         no_results_text: "No matching commands",
         items: vec![
-            mk_item("Reload window", Some("Ctrl+R"), None),
+            mk_item("Reload window", &["Ctrl", "R"], None),
             mk_item(
                 "Toggle file handler picker preview overlay (debug only)",
-                None,
+                &[],
                 None,
             ),
-            mk_item("Open recent workspace", Some("Ctrl+Shift+O"), None),
+            mk_item("Open recent workspace", &["Ctrl", "Shift", "O"], None),
             mk_item(
                 "Run extremely-long-named diagnostic command that should overflow the row width",
-                None,
+                &[],
                 None,
             ),
-            mk_item("Focus next pane", Some("Alt+Tab"), None),
+            mk_item("Focus next pane", &["Alt", "Tab"], None),
         ],
         selected_index: 1,
         query_buffer: &buf5,

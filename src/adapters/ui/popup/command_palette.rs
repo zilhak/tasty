@@ -16,6 +16,7 @@ use crate::state::AppState;
 use crate::state::command_palette::{self, PaletteCommand};
 use crate::theme;
 use crate::theme::Theme;
+use tasty_settings::KeybindingSettings;
 
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 
@@ -24,8 +25,9 @@ pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 pub struct CommandItemView {
     /// 사용자에게 보이는 라벨 (i18n 해결 + 끝 `:` 제거).
     pub label: String,
-    /// 우측에 표시할 단축키 텍스트. None 이면 표시하지 않는다.
-    pub shortcut: Option<String>,
+    /// 우측에 표시할 단축키 — 키캡 토큰 단위(`["Ctrl","Shift","N"]`). 빈 vec 이면
+    /// 표시하지 않는다. `+` 구분자 모호성 회피를 위해 단일 문자열이 아닌 토큰 벡터.
+    pub shortcut_keys: Vec<String>,
     /// 행 좌측 leading 아이콘. 6개 디자인 명시 명령은 전용 아이콘, 나머지 동적
     /// 명령은 `COMMAND` fallback 글리프. None 이면 빈 슬롯 (라벨 정렬은 유지).
     pub icon: Option<icons::Icon>,
@@ -93,6 +95,10 @@ pub fn draw_command_palette_view(
 
     let mut action = CommandPaletteAction::None;
 
+    // 디자인(command_palette.jsx:51 `active = n===0 && q!==""`): 쿼리가 비면 어떤
+    // 행도 강조하지 않는다. 한 글자라도 입력하면 첫 매칭 행이 강조된다.
+    let query_empty = props.query_buffer.is_empty();
+
     if !props.items.is_empty() {
         if down {
             let next = (props.selected_index + 1).min(props.items.len() - 1);
@@ -158,7 +164,7 @@ pub fn draw_command_palette_view(
                             egui::vec2(ui.available_width(), row_height),
                             egui::Sense::click(),
                         );
-                        let is_selected = i == selected_idx;
+                        let is_selected = row_highlighted(query_empty, i, selected_idx);
                         if is_selected {
                             ui.painter().rect_filled(
                                 rect,
@@ -199,44 +205,14 @@ pub fn draw_command_palette_view(
                             color,
                         );
 
-                        if let Some(shortcut) = &item.shortcut {
-                            // Kbd 키캡 박스 — Theme 보더+배경 토큰으로 그린다.
-                            let kbd_font =
-                                egui::FontId::proportional(theme.font_size_caption.value());
-                            let galley = ui.painter().layout_no_wrap(
-                                shortcut.clone(),
-                                kbd_font,
-                                theme.text_muted().to_egui(),
-                            );
-                            let inner_pad = egui::vec2(6.0, 2.0);
-                            let box_size = galley.size() + inner_pad * 2.0;
-                            let box_rect = egui::Rect::from_min_size(
-                                egui::pos2(
-                                    rect.max.x - 8.0 - box_size.x,
-                                    rect.center().y - box_size.y / 2.0,
-                                ),
-                                box_size,
-                            );
-                            ui.painter().rect_filled(
-                                box_rect,
-                                4.0,
-                                theme.surface_hover().to_egui(),
-                            );
-                            ui.painter().rect_stroke(
-                                box_rect,
-                                4.0,
-                                egui::Stroke::new(
-                                    theme.border_width.value(),
-                                    theme.border_strong().to_egui(),
-                                ),
-                                egui::StrokeKind::Inside,
-                            );
-                            ui.painter().galley(
-                                box_rect.min + inner_pad,
-                                galley,
-                                theme.text_muted().to_egui(),
-                            );
-                        }
+                        // Kbd — 키별 개별 키캡 박스 + 사이 muted `+` (디자인 Kbd.jsx).
+                        draw_keycaps(
+                            ui,
+                            theme,
+                            rect.max.x - 8.0,
+                            rect.center().y,
+                            &item.shortcut_keys,
+                        );
 
                         if resp.clicked() {
                             action = CommandPaletteAction::Execute { index: i };
@@ -275,6 +251,84 @@ pub fn draw_command_palette_view(
     action
 }
 
+/// 행 강조 여부 — 쿼리가 비어있지 않고(`!query_empty`) 선택 인덱스와 일치할 때만.
+/// 디자인 `command_palette.jsx:51 active = n===0 && q!==""` 의 일반화(선택 인덱스 n).
+fn row_highlighted(query_empty: bool, row: usize, selected: usize) -> bool {
+    !query_empty && row == selected
+}
+
+/// Kbd 키캡 그룹을 우측 정렬로 그린다 (디자인 `components/core/Kbd.jsx`).
+///
+/// 각 키는 개별 키캡 박스(`[Ctrl] [Shift] [N]`), 사이에 muted `+` 구분자. `right_x`
+/// 에서 좌측으로 정렬한다. 키캡 스펙: min-width/height 18, h-padding 5, radius-sm,
+/// surface-raised 배경, border-strong 1px, mono caption + text-secondary. `+` 는
+/// text-muted. (디자인의 border-bottom 2px 깊이감은 egui 균일 stroke 로 근사 — 생략.)
+fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys: &[String]) {
+    if keys.is_empty() {
+        return;
+    }
+    let cap_h = 18.0;
+    let min_w = 18.0;
+    let pad_x = 5.0;
+    let sep_gap = 4.0;
+    let radius = theme.corner_radius_sm.value();
+    let key_font = egui::FontId::monospace(theme.font_size_caption.value());
+    let key_color = theme.text_secondary().to_egui();
+    let sep_color = theme.text_muted().to_egui();
+
+    // 키 galley + 키캡 너비(좁은 키도 min_w 확보).
+    let galleys: Vec<_> = keys
+        .iter()
+        .map(|k| {
+            ui.painter()
+                .layout_no_wrap(k.clone(), key_font.clone(), key_color)
+        })
+        .collect();
+    let cap_widths: Vec<f32> = galleys
+        .iter()
+        .map(|g| (g.size().x + pad_x * 2.0).max(min_w))
+        .collect();
+    let sep_galley =
+        ui.painter()
+            .layout_no_wrap("+".to_string(), key_font.clone(), sep_color);
+    let sep_w = sep_galley.size().x + sep_gap * 2.0;
+
+    // 총 너비 → 좌측 시작점 (우측 정렬).
+    let total: f32 = cap_widths.iter().sum::<f32>()
+        + sep_w * keys.len().saturating_sub(1) as f32;
+    let mut x = right_x - total;
+    let top = center_y - cap_h / 2.0;
+
+    for (idx, galley) in galleys.into_iter().enumerate() {
+        if idx > 0 {
+            let sep = ui
+                .painter()
+                .layout_no_wrap("+".to_string(), key_font.clone(), sep_color);
+            ui.painter().galley(
+                egui::pos2(x + sep_gap, center_y - sep.size().y / 2.0),
+                sep,
+                sep_color,
+            );
+            x += sep_w;
+        }
+        let cap_w = cap_widths[idx];
+        let box_rect =
+            egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(cap_w, cap_h));
+        ui.painter()
+            .rect_filled(box_rect, radius, theme.surface_raised().to_egui());
+        ui.painter().rect_stroke(
+            box_rect,
+            radius,
+            egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
+            egui::StrokeKind::Inside,
+        );
+        let gx = box_rect.center().x - galley.size().x / 2.0;
+        let gy = center_y - galley.size().y / 2.0;
+        ui.painter().galley(egui::pos2(gx, gy), galley, key_color);
+        x += cap_w;
+    }
+}
+
 /// 매칭 결과를 `(items, static_ids)` 쌍으로 변환.
 ///
 /// `static_ids[i]` 는 `items[i]` 의 원 `PaletteCommand.id` (`&'static str`).
@@ -286,7 +340,7 @@ fn items_from_state(
     commands: &[PaletteCommand],
     labels: &[String],
     query: &str,
-    bindings_for: impl Fn(&str) -> Option<String>,
+    keys_for: impl Fn(&str) -> Vec<String>,
 ) -> (Vec<CommandItemView>, Vec<&'static str>) {
     let matches = command_palette::search(query, commands, labels);
     let mut items = Vec::with_capacity(matches.len());
@@ -300,7 +354,7 @@ fn items_from_state(
             .unwrap_or_default();
         items.push(CommandItemView {
             label: raw_label,
-            shortcut: bindings_for(cmd.id),
+            shortcut_keys: keys_for(cmd.id),
             icon: icon_for(cmd.id),
         });
         ids.push(cmd.id);
@@ -319,12 +373,15 @@ pub fn draw_command_palette_popup(
     let labels: Vec<String> = commands.iter().map(label_for).collect();
     let (items, static_ids) =
         items_from_state(&commands, &labels, &state.command_palette.query, |id| {
+            // 첫 바인딩(원문 `alt+n`)을 키캡 토큰(`["Alt","N"]`)으로 변환. `+`키
+            // 모호성 회피를 위해 display 문자열 split 대신 format_display_parts 사용.
             engine
                 .settings
                 .keybindings
-                .get_bindings(id)?
-                .first()
-                .cloned()
+                .get_bindings(id)
+                .and_then(|b| b.first())
+                .map(|s| KeybindingSettings::format_display_parts(s))
+                .unwrap_or_default()
         });
 
     // Clamp selection within result range — view 가 받는 selected_index 가 항상
@@ -410,14 +467,14 @@ mod props_tests {
         ];
         let labels = vec!["Alpha".to_string(), "Beta".to_string()];
         let (items, ids) = items_from_state(&cmds, &labels, "", |id| match id {
-            "a" => Some("Ctrl+A".to_string()),
-            _ => None,
+            "a" => vec!["Ctrl".to_string(), "A".to_string()],
+            _ => Vec::new(),
         });
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].label, "Alpha");
-        assert_eq!(items[0].shortcut.as_deref(), Some("Ctrl+A"));
+        assert_eq!(items[0].shortcut_keys, vec!["Ctrl", "A"]);
         assert_eq!(items[1].label, "Beta");
-        assert!(items[1].shortcut.is_none());
+        assert!(items[1].shortcut_keys.is_empty());
         assert_eq!(ids, vec!["a", "b"]);
     }
 
@@ -434,7 +491,7 @@ mod props_tests {
             },
         ];
         let labels = vec!["New workspace".to_string(), "Close tab".to_string()];
-        let (items, ids) = items_from_state(&cmds, &labels, "close", |_| None);
+        let (items, ids) = items_from_state(&cmds, &labels, "close", |_| Vec::new());
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "Close tab");
         assert_eq!(ids, vec!["close_tab"]);
@@ -447,7 +504,7 @@ mod props_tests {
             label_key: "k.a",
         }];
         let labels = vec!["Settings: New window:".to_string()];
-        let (items, _ids) = items_from_state(&cmds, &labels, "", |_| None);
+        let (items, _ids) = items_from_state(&cmds, &labels, "", |_| Vec::new());
         assert_eq!(items[0].label, "Settings: New window");
     }
 }
@@ -461,7 +518,7 @@ mod view_tests {
         (0..count)
             .map(|i| CommandItemView {
                 label: format!("Item {i}"),
-                shortcut: None,
+                shortcut_keys: Vec::new(),
                 icon: None,
             })
             .collect()
@@ -549,5 +606,20 @@ mod view_tests {
     fn no_input_returns_none() {
         let action = run_view(make_items(3), 0, None);
         assert_eq!(action, CommandPaletteAction::None);
+    }
+
+    #[test]
+    fn empty_query_never_highlights() {
+        // 빈 쿼리: 선택 인덱스와 일치해도 강조하지 않는다.
+        assert!(!row_highlighted(true, 0, 0));
+        assert!(!row_highlighted(true, 2, 2));
+    }
+
+    #[test]
+    fn non_empty_query_highlights_selected_row_only() {
+        // 비어있지 않은 쿼리: 선택 인덱스 행만 강조.
+        assert!(row_highlighted(false, 0, 0));
+        assert!(row_highlighted(false, 3, 3));
+        assert!(!row_highlighted(false, 1, 0));
     }
 }

@@ -222,6 +222,36 @@ fn format_display_empty_and_minus() {
     assert_eq!(KeybindingSettings::format_display("ctrl+="), "Ctrl+=");
 }
 
+#[test]
+fn format_display_parts_tokenizes() {
+    assert_eq!(
+        KeybindingSettings::format_display_parts("alt+n"),
+        vec!["Alt", "N"]
+    );
+    assert_eq!(
+        KeybindingSettings::format_display_parts("ctrl+shift+v"),
+        vec!["Ctrl", "Shift", "V"]
+    );
+}
+
+#[test]
+fn format_display_parts_plus_key_not_split() {
+    // "ctrl++"는 Ctrl + `+`키 — 키캡 2개 [Ctrl][+] 로 분해되어야 한다.
+    assert_eq!(
+        KeybindingSettings::format_display_parts("ctrl++"),
+        vec!["Ctrl", "+"]
+    );
+    assert_eq!(
+        KeybindingSettings::format_display_parts("ctrl+plus"),
+        vec!["Ctrl", "+"]
+    );
+}
+
+#[test]
+fn format_display_parts_empty() {
+    assert!(KeybindingSettings::format_display_parts("").is_empty());
+}
+
 /// TOML에 일부 필드만 있고 나머지가 누락된 경우,
 /// 누락된 필드가 preset_tasty() 기본값을 따르는지 확인.
 #[test]
