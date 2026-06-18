@@ -17,6 +17,21 @@ const MAX_CLOSED_ITEMS: usize = 10;
 /// 참조로 들어오면 `&|id| store.get(id)` 같은 closure 로 wrapping 한다.
 pub type TerminalLookup<'a> = dyn Fn(SurfaceId) -> Option<&'a tasty_terminal::Terminal> + 'a;
 
+/// Scrollback payload of a closed surface.
+///
+/// A freshly-captured surface holds [`Inline`](ClosedScrollback::Inline) — a
+/// transient in-memory copy that lives only until [`persist_closed_scrollback`]
+/// runs (during the host's `push_closed_item`). Once persisted, the closed item
+/// retains only a [`Persisted`](ClosedScrollback::Persisted) reference into
+/// `~/.tasty/scrollback/`, so its retained scrollback cost is a single id
+/// string instead of up to 10k lines per surface.
+/// [`Empty`](ClosedScrollback::Empty) means the surface had no scrollback.
+pub enum ClosedScrollback {
+    Empty,
+    Inline(VecDeque<ScrollbackLine>),
+    Persisted(String),
+}
+
 /// Snapshot of a surface's content at close time.
 pub struct ClosedSurface {
     pub id: SurfaceId,
@@ -25,8 +40,9 @@ pub struct ClosedSurface {
     pub restore_command: Option<String>,
     /// Screen content: rows of (text, attrs) cells.
     pub screen: Vec<Vec<(String, CellAttributes)>>,
-    /// Scrollback buffer (oldest first). Each line carries cells + soft-wrap flag.
-    pub scrollback: VecDeque<ScrollbackLine>,
+    /// Scrollback buffer. Captured `Inline`, then persisted to disk and held as
+    /// a `Persisted(persist_id)` reference (see [`ClosedScrollback`]).
+    pub scrollback: ClosedScrollback,
 }
 
 /// Snapshot of a closed panel (terminal, tab with split surfaces, etc).
@@ -120,7 +136,7 @@ impl ClosedSurface {
                 cwd: None,
                 restore_command,
                 screen: Vec::new(),
-                scrollback: VecDeque::new(),
+                scrollback: ClosedScrollback::Empty,
             };
         };
         let lines = terminal.screen_lines();
@@ -134,7 +150,10 @@ impl ClosedSurface {
             })
             .collect();
 
-        // Move scrollback data (capture owned copies with wrapped flag)
+        // Capture scrollback as a transient inline copy. The host's
+        // `push_closed_item` persists it to disk (see `persist_closed_scrollback`)
+        // and replaces it with a lightweight reference, so the retained closed
+        // item does not hold the full scrollback in memory.
         let scrollback_len = terminal.scrollback_len();
         let mut scrollback = VecDeque::with_capacity(scrollback_len);
         for i in 0..scrollback_len {
@@ -142,6 +161,11 @@ impl ClosedSurface {
                 scrollback.push_back(line);
             }
         }
+        let scrollback = if scrollback.is_empty() {
+            ClosedScrollback::Empty
+        } else {
+            ClosedScrollback::Inline(scrollback)
+        };
 
         Self {
             id,
@@ -174,7 +198,7 @@ impl ClosedSurfaceLayout {
                         cwd: None,
                         restore_command: None,
                         screen: Vec::new(),
-                        scrollback: VecDeque::new(),
+                        scrollback: ClosedScrollback::Empty,
                     })
                 }
             }
@@ -376,6 +400,128 @@ fn inject_into_pane_node(node: &mut ClosedPaneNode, lookup: &dyn Fn(SurfaceId) -
     }
 }
 
+// ── Scrollback persistence: host-driven post-pass over a ClosedItem ──
+//
+// `tasty-model` cannot reach the host's disk store (`src/store/scrollback.rs`),
+// so the host supplies the I/O via closures and these walkers apply it across
+// every `ClosedSurface` in the tree — mirroring `inject_restore_commands`.
+
+/// Visit every [`ClosedSurface`] in a [`ClosedItem`] mutably.
+fn visit_surfaces_mut(item: &mut ClosedItem, f: &mut dyn FnMut(&mut ClosedSurface)) {
+    match item {
+        ClosedItem::Surface { surface, .. } => f(surface),
+        ClosedItem::Tab(tab) => visit_panel_mut(&mut tab.panel, f),
+        ClosedItem::Workspace { pane_layout, .. } => visit_pane_node_mut(pane_layout, f),
+    }
+}
+
+fn visit_panel_mut(panel: &mut ClosedPanel, f: &mut dyn FnMut(&mut ClosedSurface)) {
+    match panel {
+        ClosedPanel::Terminal(s) => f(s),
+        ClosedPanel::Tab { layout, .. } => visit_surface_layout_mut(layout, f),
+        ClosedPanel::Generic { .. } => {}
+    }
+}
+
+fn visit_surface_layout_mut(layout: &mut ClosedSurfaceLayout, f: &mut dyn FnMut(&mut ClosedSurface)) {
+    match layout {
+        ClosedSurfaceLayout::Single(s) => f(s),
+        ClosedSurfaceLayout::Split { first, second, .. } => {
+            visit_surface_layout_mut(first, f);
+            visit_surface_layout_mut(second, f);
+        }
+    }
+}
+
+fn visit_pane_node_mut(node: &mut ClosedPaneNode, f: &mut dyn FnMut(&mut ClosedSurface)) {
+    match node {
+        ClosedPaneNode::Leaf(pane) => {
+            for tab in &mut pane.tabs {
+                visit_panel_mut(&mut tab.panel, f);
+            }
+        }
+        ClosedPaneNode::Split { first, second, .. } => {
+            visit_pane_node_mut(first, f);
+            visit_pane_node_mut(second, f);
+        }
+    }
+}
+
+/// Visit every [`ClosedSurface`] in a [`ClosedItem`] by shared reference.
+fn visit_surfaces(item: &ClosedItem, f: &mut dyn FnMut(&ClosedSurface)) {
+    match item {
+        ClosedItem::Surface { surface, .. } => f(surface),
+        ClosedItem::Tab(tab) => visit_panel(&tab.panel, f),
+        ClosedItem::Workspace { pane_layout, .. } => visit_pane_node(pane_layout, f),
+    }
+}
+
+fn visit_panel(panel: &ClosedPanel, f: &mut dyn FnMut(&ClosedSurface)) {
+    match panel {
+        ClosedPanel::Terminal(s) => f(s),
+        ClosedPanel::Tab { layout, .. } => visit_surface_layout(layout, f),
+        ClosedPanel::Generic { .. } => {}
+    }
+}
+
+fn visit_surface_layout(layout: &ClosedSurfaceLayout, f: &mut dyn FnMut(&ClosedSurface)) {
+    match layout {
+        ClosedSurfaceLayout::Single(s) => f(s),
+        ClosedSurfaceLayout::Split { first, second, .. } => {
+            visit_surface_layout(first, f);
+            visit_surface_layout(second, f);
+        }
+    }
+}
+
+fn visit_pane_node(node: &ClosedPaneNode, f: &mut dyn FnMut(&ClosedSurface)) {
+    match node {
+        ClosedPaneNode::Leaf(pane) => {
+            for tab in &pane.tabs {
+                visit_panel(&tab.panel, f);
+            }
+        }
+        ClosedPaneNode::Split { first, second, .. } => {
+            visit_pane_node(first, f);
+            visit_pane_node(second, f);
+        }
+    }
+}
+
+/// Persist every surface's `Inline` scrollback to disk (via `persist`, which
+/// returns a `persist_id`) and replace it with a `Persisted` reference,
+/// dropping the in-memory copy. Empty entries collapse to `Empty`; if `persist`
+/// returns `None` (write failed) the `Inline` copy is kept so restore still
+/// works from memory. Called by the host once per close, after capture.
+pub fn persist_closed_scrollback(
+    item: &mut ClosedItem,
+    persist: &mut dyn FnMut(&[ScrollbackLine]) -> Option<String>,
+) {
+    visit_surfaces_mut(item, &mut |s| {
+        let taken = std::mem::replace(&mut s.scrollback, ClosedScrollback::Empty);
+        s.scrollback = match taken {
+            ClosedScrollback::Inline(mut lines) if !lines.is_empty() => {
+                match persist(lines.make_contiguous()) {
+                    Some(id) => ClosedScrollback::Persisted(id),
+                    None => ClosedScrollback::Inline(lines),
+                }
+            }
+            ClosedScrollback::Inline(_) => ClosedScrollback::Empty,
+            other => other,
+        };
+    });
+}
+
+/// Collect every `Persisted` scrollback reference in a [`ClosedItem`] (used by
+/// the host to delete the backing files when an item is evicted).
+pub fn collect_scrollback_refs(item: &ClosedItem, out: &mut Vec<String>) {
+    visit_surfaces(item, &mut |s| {
+        if let ClosedScrollback::Persisted(id) = &s.scrollback {
+            out.push(id.clone());
+        }
+    });
+}
+
 /// LIFO store for recently closed items.
 pub struct ClosedItemStore {
     items: VecDeque<ClosedItem>,
@@ -394,11 +540,17 @@ impl ClosedItemStore {
         }
     }
 
-    pub fn push(&mut self, item: ClosedItem) {
-        if self.items.len() >= MAX_CLOSED_ITEMS {
-            self.items.pop_front(); // Drop oldest
-        }
+    /// Push a closed item. Returns the item evicted when the store is already at
+    /// `MAX_CLOSED_ITEMS`, so the host can release its backing scrollback files.
+    #[must_use = "evicted item may own disk-backed scrollback that needs cleanup"]
+    pub fn push(&mut self, item: ClosedItem) -> Option<ClosedItem> {
+        let evicted = if self.items.len() >= MAX_CLOSED_ITEMS {
+            self.items.pop_front() // Drop oldest
+        } else {
+            None
+        };
         self.items.push_back(item);
+        evicted
     }
 
     pub fn pop(&mut self) -> Option<ClosedItem> {
@@ -417,5 +569,95 @@ impl ClosedItemStore {
     /// List items for display (newest first).
     pub fn list(&self) -> impl Iterator<Item = &ClosedItem> {
         self.items.iter().rev()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(text: &str) -> ScrollbackLine {
+        ScrollbackLine::new(vec![(text.to_string(), CellAttributes::default())], false)
+    }
+
+    fn surface_item(id: SurfaceId, scrollback: ClosedScrollback) -> ClosedItem {
+        ClosedItem::Surface {
+            surface: ClosedSurface {
+                id,
+                cwd: None,
+                restore_command: None,
+                screen: Vec::new(),
+                scrollback,
+            },
+            tab_name: String::new(),
+        }
+    }
+
+    fn scrollback_of(item: &ClosedItem) -> &ClosedScrollback {
+        match item {
+            ClosedItem::Surface { surface, .. } => &surface.scrollback,
+            _ => panic!("expected Surface"),
+        }
+    }
+
+    #[test]
+    fn persist_replaces_inline_with_reference_and_drops_lines() {
+        let inline: VecDeque<ScrollbackLine> = [line("a"), line("b")].into();
+        let mut item = surface_item(1, ClosedScrollback::Inline(inline));
+
+        let mut captured_len = 0usize;
+        persist_closed_scrollback(&mut item, &mut |lines| {
+            captured_len = lines.len();
+            Some("ref-1".to_string())
+        });
+
+        // Inline copy is gone; only a reference remains.
+        assert_eq!(captured_len, 2);
+        match scrollback_of(&item) {
+            ClosedScrollback::Persisted(id) => assert_eq!(id, "ref-1"),
+            _ => panic!("expected Persisted"),
+        }
+
+        // collect_scrollback_refs surfaces the reference for cleanup.
+        let mut refs = Vec::new();
+        collect_scrollback_refs(&item, &mut refs);
+        assert_eq!(refs, vec!["ref-1".to_string()]);
+    }
+
+    #[test]
+    fn persist_normalizes_empty_inline_and_keeps_inline_on_write_failure() {
+        // Empty inline → Empty (no reference, no persist call).
+        let mut empty = surface_item(1, ClosedScrollback::Inline(VecDeque::new()));
+        persist_closed_scrollback(&mut empty, &mut |_| panic!("must not persist empty"));
+        assert!(matches!(scrollback_of(&empty), ClosedScrollback::Empty));
+
+        // Write failure (None) keeps the Inline copy so restore still works.
+        let mut item = surface_item(2, ClosedScrollback::Inline([line("x")].into()));
+        persist_closed_scrollback(&mut item, &mut |_| None);
+        match scrollback_of(&item) {
+            ClosedScrollback::Inline(lines) => assert_eq!(lines.len(), 1),
+            _ => panic!("expected Inline kept on failure"),
+        }
+        // No reference to clean up when nothing was persisted.
+        let mut refs = Vec::new();
+        collect_scrollback_refs(&item, &mut refs);
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn push_returns_evicted_item_over_capacity() {
+        let mut store = ClosedItemStore::new();
+        for i in 0..MAX_CLOSED_ITEMS {
+            assert!(store.push(surface_item(i as u32, ClosedScrollback::Empty)).is_none());
+        }
+        // The (MAX+1)-th push evicts the oldest (id 0) so its files can be freed.
+        let evicted = store
+            .push(surface_item(999, ClosedScrollback::Persisted("ref-evicted".into())))
+            .expect("eviction over capacity");
+        match evicted {
+            ClosedItem::Surface { surface, .. } => assert_eq!(surface.id, 0),
+            _ => panic!("expected Surface"),
+        }
+        assert_eq!(store.len(), MAX_CLOSED_ITEMS);
     }
 }

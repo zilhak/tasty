@@ -115,8 +115,20 @@ pub(crate) fn rebuild_surface_node(
     )
     .ok()?;
 
-    if !closed.scrollback.is_empty() {
-        terminal.inject_scrollback(closed.scrollback.into_iter().collect());
+    // Scrollback is persisted to disk at close time (see `push_closed_item`),
+    // so read it back by reference here. A restore consumes the closed item, so
+    // the backing file is deleted after the one-time read to avoid orphans.
+    let scrollback_lines: Vec<tasty_terminal::ScrollbackLine> = match closed.scrollback {
+        ClosedScrollback::Persisted(id) => {
+            let lines = crate::scrollback_store::read(&id).unwrap_or_default();
+            crate::scrollback_store::delete(&id);
+            lines
+        }
+        ClosedScrollback::Inline(lines) => lines.into_iter().collect(),
+        ClosedScrollback::Empty => Vec::new(),
+    };
+    if !scrollback_lines.is_empty() {
+        terminal.inject_scrollback(scrollback_lines);
         // 새 prompt 가 화면 중간부터 시작하도록 visible 상단 절반에 옛
         // 라인을 미리 그려둔다.
         let prefill = terminal.rows() / 2;

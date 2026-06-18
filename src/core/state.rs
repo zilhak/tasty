@@ -426,7 +426,32 @@ impl CoreState {
             };
             crate::surface_meta::SurfaceMetaStore::get(&mut *guard, sid, "restore.command")
         });
-        self.closed_items.push(item);
+        // Persist the captured scrollback to disk so the retained closed item
+        // holds only a reference (persist_id), not up to 10k lines per surface.
+        // A fresh id is used (not the live surface's layout persist_id, which
+        // `cleanup_surface` deletes on close), so the two never collide. Stale
+        // closed-item files are reclaimed by `gc_orphans` on the next startup,
+        // since closed items do not survive a restart.
+        crate::model::closed_item::persist_closed_scrollback(&mut item, &mut |lines| {
+            let id = crate::scrollback_store::new_persist_id();
+            match crate::scrollback_store::write(&id, lines) {
+                Ok(()) => Some(id),
+                Err(e) => {
+                    tracing::warn!("closed-item scrollback persist failed: {e}");
+                    None
+                }
+            }
+        });
+        // Evicting the oldest item must release its backing scrollback files,
+        // otherwise `~/.tasty/scrollback/*.bin` orphans accumulate for the rest
+        // of the session.
+        if let Some(evicted) = self.closed_items.push(item) {
+            let mut refs = Vec::new();
+            crate::model::closed_item::collect_scrollback_refs(&evicted, &mut refs);
+            for id in refs {
+                crate::scrollback_store::delete(&id);
+            }
+        }
     }
 
     /// Record that the user typed on the given surface.
