@@ -298,38 +298,116 @@ fn draw_appearance_general(
         });
 }
 
-/// Appearance > Display: UI scale (sm/md/lg) 전용.
+/// UI-scale 토글 카드 치수 (디자인 jsx: Display scale cards). 새 컴포넌트라
+/// 파일 내 색-picker 상수와 동일하게 LogicalPx 로 둔다.
+const DISPLAY_CARD_WIDTH: LogicalPx = LogicalPx(96.0);
+const DISPLAY_CARD_HEIGHT: LogicalPx = LogicalPx(76.0);
+
+/// Appearance > Display: UI scale (sm/md/lg) 토글 카드. 위젯만 교체 —
+/// 적용 범위(전역 egui zoom)는 불변. 각 카드는 실제 배율로 렌더된 "Aa"
+/// 프리뷰 + 라벨을 표시하고, 활성 카드는 accent 보더 + ring 으로 강조한다.
 fn draw_appearance_display(ui: &mut egui::Ui, settings: &mut Settings) {
-    egui::Grid::new("appearance_display_grid")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            ui.label(t("settings.appearance.ui_scale_label"));
-            egui::ComboBox::from_id_salt("ui_scale")
-                .selected_text(match settings.appearance.ui_scale.as_str() {
-                    "small" => t("settings.appearance.ui_scale_small"),
-                    "large" => t("settings.appearance.ui_scale_large"),
-                    _ => t("settings.appearance.ui_scale_medium"),
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut settings.appearance.ui_scale,
-                        "small".to_string(),
-                        t("settings.appearance.ui_scale_small"),
-                    );
-                    ui.selectable_value(
-                        &mut settings.appearance.ui_scale,
-                        "medium".to_string(),
-                        t("settings.appearance.ui_scale_medium"),
-                    );
-                    ui.selectable_value(
-                        &mut settings.appearance.ui_scale,
-                        "large".to_string(),
-                        t("settings.appearance.ui_scale_large"),
-                    );
-                });
-            ui.end_row();
-        });
+    let th = crate::theme::theme();
+    ui.add_space(8.0);
+    ui.label(t("settings.appearance.ui_scale_label"));
+    ui.add_space(8.0);
+
+    // (scale_key, label_key) — 순서대로 가로 배치.
+    let cards = [
+        ("small", "settings.appearance.ui_scale_small"),
+        ("medium", "settings.appearance.ui_scale_medium"),
+        ("large", "settings.appearance.ui_scale_large"),
+    ];
+
+    let mut selected: Option<&str> = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+        for (scale_key, label_key) in cards {
+            if display_scale_card(ui, &th, settings, scale_key, label_key) {
+                selected = Some(scale_key);
+            }
+        }
+    });
+    if let Some(scale_key) = selected {
+        settings.appearance.ui_scale = scale_key.to_string();
+    }
+}
+
+/// 한 UI-scale 토글 카드 — surface-raised 배경 + 실제 배율의 "Aa" 프리뷰 +
+/// 라벨. 활성 카드는 accent 보더 + 1px ring. 클릭되면 `true`.
+fn display_scale_card(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    settings: &Settings,
+    scale_key: &str,
+    label_key: &str,
+) -> bool {
+    let is_active = settings.appearance.ui_scale == scale_key;
+    let factor = crate::settings::AppearanceSettings::ui_scale_factor_for(scale_key);
+
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(DISPLAY_CARD_WIDTH.value(), DISPLAY_CARD_HEIGHT.value()),
+        egui::Sense::click(),
+    );
+
+    // 배경 (surface-raised).
+    let radius = th.corner_radius.value();
+    ui.painter()
+        .rect_filled(rect, radius, egui::Color32::from(th.surface0));
+
+    // 보더 / ring.
+    if is_active {
+        // accent 보더 (내측 1px) + 바깥 1px accent ring.
+        ui.painter().rect_stroke(
+            rect,
+            radius,
+            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.blue)),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter().rect_stroke(
+            rect.expand(th.border_width.value()),
+            radius,
+            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.blue)),
+            egui::StrokeKind::Outside,
+        );
+    } else {
+        ui.painter().rect_stroke(
+            rect,
+            radius,
+            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.surface2)),
+            egui::StrokeKind::Inside,
+        );
+    }
+
+    let text_color = egui::Color32::from(if is_active { th.text } else { th.subtext0 });
+
+    // "Aa" 프리뷰 — 실제 배율로 스케일된 글리프 샘플 (자연어 아님 → i18n 예외).
+    let preview_size = th.font_size_heading.value() * factor;
+    ui.painter().text(
+        egui::pos2(rect.center().x, rect.min.y + DISPLAY_CARD_HEIGHT.value() * 0.4),
+        egui::Align2::CENTER_CENTER,
+        "Aa",
+        egui::FontId::proportional(preview_size),
+        text_color,
+    );
+
+    // 라벨 (Small / Medium / Large).
+    ui.painter().text(
+        egui::pos2(
+            rect.center().x,
+            rect.max.y - DISPLAY_CARD_HEIGHT.value() * 0.2,
+        ),
+        egui::Align2::CENTER_CENTER,
+        t(label_key),
+        egui::FontId::proportional(th.font_size_body.value()),
+        text_color,
+    );
+
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+
+    resp.clicked()
 }
 
 /// Reset the Tasty curated overrides (accent / sidebar bg) + active tab

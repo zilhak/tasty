@@ -205,7 +205,13 @@ impl ThemeApplyContext for AppearanceSettings {
 impl AppearanceSettings {
     /// Get the UI scale factor based on the ui_scale setting.
     pub fn ui_scale_factor(&self) -> f32 {
-        match self.ui_scale.as_str() {
+        Self::ui_scale_factor_for(&self.ui_scale)
+    }
+
+    /// UI scale 배율의 단일 출처. 인스턴스의 `ui_scale_factor` 와 Display 설정의
+    /// "Aa" 프리뷰가 공유한다 (배율 숫자가 한 곳에만 존재하도록).
+    pub fn ui_scale_factor_for(scale: &str) -> f32 {
+        match scale {
             "small" => 0.85,
             "large" => 1.2,
             _ => 1.0, // medium
