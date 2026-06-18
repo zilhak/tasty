@@ -1621,3 +1621,58 @@ fn decom_reset_by_full_reset() {
     t.feed_bytes(b"\x1b[1;1HA");
     assert_eq!(t.screen_row(0), "A");
 }
+
+// ---- XTWINOPS (CSI ... t): size reports + title stack ----
+
+#[test]
+fn xtwinops_reports_text_area_cells() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.feed_bytes(b"\x1b[18t"); // report text area size in cells
+    let resp = rx.try_recv().expect("no XTWINOPS 18t response");
+    assert_eq!(resp, b"\x1b[8;24;80t");
+}
+
+#[test]
+fn xtwinops_reports_screen_cells() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(100, 30);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.feed_bytes(b"\x1b[19t");
+    let resp = rx.try_recv().expect("no XTWINOPS 19t response");
+    assert_eq!(resp, b"\x1b[9;30;100t");
+}
+
+#[test]
+fn xtwinops_pixel_reports_are_unanswered() {
+    use std::sync::mpsc;
+    let mut t = Terminal::new_detached(80, 24);
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    t.set_input_sink(tx);
+    t.feed_bytes(b"\x1b[14t"); // text area pixels — intentionally no response
+    t.feed_bytes(b"\x1b[16t"); // cell pixels — intentionally no response
+    assert!(rx.try_recv().is_err(), "pixel reports must not respond");
+}
+
+#[test]
+fn xtwinops_title_stack_push_pop() {
+    let mut t = Terminal::new_detached(80, 24);
+    t.feed_bytes(b"\x1b]2;first\x07"); // set title "first"
+    t.take_events(); // drain
+    t.feed_bytes(b"\x1b[22;0t"); // push "first"
+    t.feed_bytes(b"\x1b]2;second\x07"); // set title "second"
+    t.take_events();
+    t.feed_bytes(b"\x1b[23;0t"); // pop → restore "first"
+    let restored = t
+        .take_events()
+        .into_iter()
+        .find_map(|e| match e.kind {
+            TerminalEventKind::TitleChanged(s) => Some(s),
+            _ => None,
+        })
+        .expect("no TitleChanged on pop");
+    assert_eq!(restored, "first");
+}

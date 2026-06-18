@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use termwiz::cell::{AttributeChange, CellAttributes};
 use termwiz::escape::OperatingSystemCommand;
-use termwiz::escape::csi::Device;
+use termwiz::escape::csi::{Device, Window};
 use termwiz::escape::osc::ColorOrQuery;
 use termwiz::surface::{Change, CursorVisibility};
 
@@ -14,6 +14,7 @@ impl TerminalState {
     pub(crate) fn map_osc(&mut self, osc: OperatingSystemCommand) {
         match osc {
             OperatingSystemCommand::SetIconNameAndWindowTitle(title) => {
+                self.current_title = Some(title.clone());
                 self.events.push(TerminalEvent {
                     surface_id: 0,
                     kind: TerminalEventKind::TitleChanged(title),
@@ -21,6 +22,7 @@ impl TerminalState {
             }
             OperatingSystemCommand::SetWindowTitle(title)
             | OperatingSystemCommand::SetWindowTitleSun(title) => {
+                self.current_title = Some(title.clone());
                 self.events.push(TerminalEvent {
                     surface_id: 0,
                     kind: TerminalEventKind::TitleChanged(title),
@@ -236,6 +238,50 @@ impl TerminalState {
             }
             response.push_str("\x1b\\");
             self.send_terminal_response(&response);
+        }
+    }
+
+    /// XTWINOPS (`CSI Ps ; ... t`): window operations. tasty answers only the
+    /// cell-based size reports and the title stack. Window *manipulation*
+    /// (move/resize/maximize/iconify/fullscreen/raise/lower) and window
+    /// position/state/title probes are deliberately ignored — an agent-driven
+    /// escape must not manipulate or probe the user's window (identity: user vs
+    /// agent separation). Pixel size reports (14t/16t) are also unanswered:
+    /// tasty has no pixel/image model (ADR-0008) and cell pixel metrics live in
+    /// the renderer, not the terminal model. See ADR-0011.
+    pub(crate) fn handle_window(&mut self, window: Window) {
+        match window {
+            // Text area / screen size in character cells: `CSI 8 ; rows ; cols t`
+            // and `CSI 9 ; rows ; cols t`.
+            Window::ReportTextAreaSizeCells => {
+                self.send_terminal_response(&format!("\x1b[8;{};{}t", self.rows, self.cols));
+            }
+            Window::ReportScreenSizeCells => {
+                self.send_terminal_response(&format!("\x1b[9;{};{}t", self.rows, self.cols));
+            }
+            // Title stack: push saves the current title; pop restores it and
+            // re-emits a TitleChanged event. The single title backs all three
+            // (icon / window / both) variants. The stack is bounded.
+            Window::PushWindowTitle
+            | Window::PushIconAndWindowTitle
+            | Window::PushIconTitle => {
+                self.title_stack.push(self.current_title.clone());
+                if self.title_stack.len() > 64 {
+                    self.title_stack.remove(0);
+                }
+            }
+            Window::PopWindowTitle | Window::PopIconAndWindowTitle | Window::PopIconTitle => {
+                if let Some(restored) = self.title_stack.pop() {
+                    self.current_title = restored.clone();
+                    if let Some(title) = restored {
+                        self.events.push(TerminalEvent {
+                            surface_id: 0,
+                            kind: TerminalEventKind::TitleChanged(title),
+                        });
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

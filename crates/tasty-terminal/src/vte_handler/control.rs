@@ -55,7 +55,10 @@ impl TerminalState {
                 vec![]
             }
             CSI::Mouse(_) => vec![],
-            CSI::Window(_) => vec![],
+            CSI::Window(window) => {
+                self.handle_window(*window);
+                vec![]
+            }
             CSI::Keyboard(_) => vec![],
             _ => vec![],
         }

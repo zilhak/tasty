@@ -221,6 +221,11 @@ pub(crate) struct TerminalState {
     /// positioning (CUP/VPA/HVP) is relative to the scroll-region top and the
     /// cursor is confined to the region. Reset by RIS and DECSTR.
     pub(crate) origin_mode: bool,
+    /// Current window title (last value emitted via OSC 0/2). Tracked so the
+    /// XTWINOPS title stack (CSI 22/23 t) can save and restore it.
+    pub(crate) current_title: Option<String>,
+    /// Saved window titles for the XTWINOPS title stack (push/pop).
+    pub(crate) title_stack: Vec<Option<String>>,
 }
 
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
@@ -317,6 +322,8 @@ impl TerminalState {
             tab_stops: default_tab_stops(cols),
             reverse_screen: false,
             origin_mode: false,
+            current_title: None,
+            title_stack: Vec::new(),
         }
     }
 
