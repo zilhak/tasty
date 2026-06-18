@@ -84,29 +84,58 @@ fn linux_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
 
 #[cfg(target_os = "macos")]
 fn macos_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
-    use std::process::Command;
-    // Get tpgid (foreground process group ID) for the shell's terminal
-    let output = Command::new("ps")
-        .args(["-o", "tpgid=", "-p", &shell_pid.to_string()])
-        .output()
-        .ok()?;
-    let tpgid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let tpgid: u32 = tpgid_str.parse().ok()?;
+    // Use the proc_pidinfo libproc syscall instead of forking `ps`. The old path
+    // forked `ps` twice per call (~ms each in posix_spawn); at 1Hz over every live
+    // surface that blocked the main thread enough to stall workspace switching.
+    // proc_bsdinfo carries both the controlling-terminal foreground pgid (e_tpgid)
+    // and the process name, so two syscalls (µs each) replace the two forks.
+    // Same approach as cwd.rs (lsof fork -> proc_pidinfo).
+    let bsd = macos_proc_bsdinfo(shell_pid)?;
+    let tpgid = bsd.e_tpgid;
     if tpgid == 0 {
         return None;
     }
-    // Get the process name of the PGID leader (PID == PGID for the leader)
-    let output = Command::new("ps")
-        .args(["-o", "comm=", "-p", &tpgid.to_string()])
-        .output()
-        .ok()?;
-    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // Name of the foreground process-group leader (PID == PGID for the leader).
+    let leader = macos_proc_bsdinfo(tpgid)?;
+    let name = cstr_field_to_string(&leader.pbi_name)
+        .or_else(|| cstr_field_to_string(&leader.pbi_comm))?;
     if name.is_empty() {
         return None;
     }
-    // Extract binary name from full path (e.g., /usr/bin/zsh -> zsh)
-    let name = name.rsplit('/').next().unwrap_or(&name).to_string();
     Some(ForegroundProcessInfo { name, pid: tpgid })
+}
+
+/// Query `proc_bsdinfo` for `pid` via the libproc `proc_pidinfo` syscall.
+#[cfg(target_os = "macos")]
+fn macos_proc_bsdinfo(pid: u32) -> Option<libc::proc_bsdinfo> {
+    // SAFETY: proc_bsdinfo is a plain-old-data C struct; an all-zero bit pattern is
+    // a valid initial value (every field is an integer/array). proc_pidinfo overwrites it.
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+    // SAFETY: proc_pidinfo is the darwin libproc syscall, thread-safe (Apple docs).
+    // PROC_PIDTBSDINFO fills a proc_bsdinfo of exactly `size` bytes. Same pattern as
+    // cwd.rs::macos_proc_cwd. A full write returns `size`; anything else is a miss.
+    let ret = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            &mut info as *mut _ as *mut libc::c_void,
+            size,
+        )
+    };
+    (ret == size).then_some(info)
+}
+
+/// Read a NUL-terminated C-char field (e.g. `pbi_name`) into an owned `String`.
+#[cfg(target_os = "macos")]
+fn cstr_field_to_string(buf: &[libc::c_char]) -> Option<String> {
+    let bytes: Vec<u8> = buf.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
+    if bytes.is_empty() {
+        None
+    } else {
+        Some(String::from_utf8_lossy(&bytes).into_owned())
+    }
 }
 
 #[cfg(windows)]

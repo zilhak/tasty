@@ -38,8 +38,10 @@
 | 플랫폼 | 메커니즘 | 정확도 |
 |--------|---------|--------|
 | Linux | `/proc/<pid>/stat` 의 tpgid → `/proc/<tpgid>/comm` | 정확 |
-| macOS | `ps -o tpgid=` → `ps -o comm=` | 정확 |
+| macOS | `proc_pidinfo(PROC_PIDTBSDINFO)` 의 `e_tpgid` → 같은 syscall 로 leader 의 `pbi_name` | 정확 |
 | Windows | `CreateToolhelp32Snapshot` 트리 enum → shell 자손 leaf 이름 | 근사(ConPTY 가 foreground PGID 미노출 — WezTerm/Windows Terminal 동일 방식) |
+
+> 모든 플랫폼의 조회는 fork 없는 syscall/파일읽기다. macOS 는 과거 `ps` 를 2회 fork 했으나, live surface 수 × 1Hz 의 `posix_spawn` 이 메인 스레드를 블록해 워크스페이스 전환을 지연시켜(66 live shell 기준 전환 p90 251ms→2.8ms) libproc 으로 교체했다. Windows 의 전체 프로세스 스냅샷은 surface 수 × 전체 프로세스 수 비용이 있으나 fork 는 없다.
 
 ## CLI/IPC
 
