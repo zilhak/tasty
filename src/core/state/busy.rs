@@ -7,9 +7,28 @@ impl CoreState {
     /// Recompute `busy_surfaces` by polling every PTY's foreground
     /// process. Returns true if the set changed (caller should redraw).
     pub fn refresh_busy_surfaces(&mut self) -> bool {
-        let mut busy: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        // Resolve every live surface's foreground program from a single system
+        // snapshot. On Windows the foreground lookup snapshots all processes
+        // (≈6ms with a few hundred); doing it per surface put O(surfaces ×
+        // processes) on the main thread every 1Hz tick (≈370ms at 60 live
+        // surfaces), stalling workspace switches and input. One snapshot per
+        // tick collapses that to O(processes + surfaces).
+        let mut sids: Vec<u32> = Vec::new();
+        let mut shell_pids: Vec<u32> = Vec::new();
         for (sid, terminal) in self.terminals.iter() {
-            if terminal.is_busy() {
+            if let Some(pid) = terminal.process_id() {
+                sids.push(sid);
+                shell_pids.push(pid);
+            }
+        }
+        let foregrounds = tasty_terminal::foreground_process::resolve_foreground_many(&shell_pids);
+
+        let mut busy: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        for ((&sid, &shell_pid), fg) in sids.iter().zip(shell_pids.iter()).zip(foregrounds.iter()) {
+            let Some(terminal) = self.terminals.get(sid) else {
+                continue;
+            };
+            if terminal.busy_with_foreground(shell_pid, fg.as_ref()) {
                 busy.insert(sid);
             }
         }

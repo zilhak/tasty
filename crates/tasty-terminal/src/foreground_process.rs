@@ -59,6 +59,37 @@ pub fn get_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
     }
 }
 
+/// Resolve the foreground process for many shell PIDs at once.
+///
+/// On Windows the per-PID lookup snapshots *every* system process
+/// (`CreateToolhelp32Snapshot`, ≈ several ms with a few hundred processes).
+/// Calling [`get_foreground_process`] once per surface therefore put
+/// `O(surfaces × processes)` on the main thread every busy-poll tick. This
+/// batch path takes **one** snapshot and resolves all PIDs against it.
+///
+/// On Linux/macOS the per-PID lookup is already a single `/proc` read or
+/// libproc syscall, so this just maps [`get_foreground_process`] over the slice.
+///
+/// The returned vector is index-aligned with `shell_pids`.
+pub fn resolve_foreground_many(shell_pids: &[u32]) -> Vec<Option<ForegroundProcessInfo>> {
+    #[cfg(windows)]
+    {
+        let snapshot = WindowsProcessSnapshot::capture();
+        shell_pids
+            .iter()
+            .map(|&pid| snapshot.as_ref().and_then(|s| s.resolve(pid)))
+            .collect()
+    }
+
+    #[cfg(not(windows))]
+    {
+        shell_pids
+            .iter()
+            .map(|&pid| get_foreground_process(pid))
+            .collect()
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn linux_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
     // Read /proc/<pid>/stat to get tpgid (foreground process group ID)
@@ -140,86 +171,111 @@ fn cstr_field_to_string(buf: &[libc::c_char]) -> Option<String> {
 
 #[cfg(windows)]
 fn windows_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
-    // Windows has no Unix-style tcgetpgrp; ConPTY does not expose a foreground
-    // process group. Walk the process tree and return the deepest leaf descendant
-    // of the shell. If the shell has no descendants, return the shell's own info
-    // so the caller still receives a name (matching Linux/macOS semantics where
-    // tpgid points at the shell itself when idle).
+    WindowsProcessSnapshot::capture()?.resolve(shell_pid)
+}
 
-    use std::collections::HashMap;
-    use windows::Win32::Foundation::{CloseHandle, HANDLE};
-    use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
-        TH32CS_SNAPPROCESS,
-    };
+/// One system-wide process snapshot, reusable for resolving the foreground
+/// program of many shell PIDs in a single tick.
+///
+/// Windows has no Unix-style `tcgetpgrp`; ConPTY does not expose a foreground
+/// process group, so each shell's foreground must be found by walking the
+/// process tree. The expensive part — `CreateToolhelp32Snapshot` plus building
+/// the parent→child map — is identical for every shell in one poll, so it is
+/// captured once here and reused by [`resolve`](Self::resolve).
+#[cfg(windows)]
+struct WindowsProcessSnapshot {
+    /// `(pid, parent_pid, name)` for every process in the system.
+    entries: Vec<(u32, u32, String)>,
+    /// `parent_pid` → indices into `entries`.
+    children: std::collections::HashMap<u32, Vec<usize>>,
+}
 
-    struct HandleGuard(HANDLE);
-    impl Drop for HandleGuard {
-        fn drop(&mut self) {
-            // SAFETY: CloseHandle on a HANDLE obtained from
-            // CreateToolhelp32Snapshot is the documented release path.
-            // self.0이 INVALID_HANDLE_VALUE이거나 이미 닫혔어도 CloseHandle은
-            // Err만 반환하고 UB를 일으키지 않는다 (Win32 보장).
-            unsafe {
-                // CloseHandle은 invalid handle에 대해 ERROR_INVALID_HANDLE을 반환할 뿐
-                // UB를 일으키지 않는다. Drop 경로에서 추가로 로그를 남길 가치 없음.
-                if let Err(e) = CloseHandle(self.0) {
-                    tracing::trace!("ToolHelp snapshot CloseHandle: {e}");
+#[cfg(windows)]
+impl WindowsProcessSnapshot {
+    /// Take a single `TH32CS_SNAPPROCESS` snapshot and build the child map.
+    /// Returns `None` if the snapshot could not be created.
+    fn capture() -> Option<Self> {
+        use std::collections::HashMap;
+        use windows::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+            TH32CS_SNAPPROCESS,
+        };
+
+        struct HandleGuard(HANDLE);
+        impl Drop for HandleGuard {
+            fn drop(&mut self) {
+                // SAFETY: CloseHandle on a HANDLE obtained from
+                // CreateToolhelp32Snapshot is the documented release path.
+                // self.0이 INVALID_HANDLE_VALUE이거나 이미 닫혔어도 CloseHandle은
+                // Err만 반환하고 UB를 일으키지 않는다 (Win32 보장).
+                unsafe {
+                    // CloseHandle은 invalid handle에 대해 ERROR_INVALID_HANDLE을 반환할 뿐
+                    // UB를 일으키지 않는다. Drop 경로에서 추가로 로그를 남길 가치 없음.
+                    if let Err(e) = CloseHandle(self.0) {
+                        tracing::trace!("ToolHelp snapshot CloseHandle: {e}");
+                    }
                 }
             }
+        }
+
+        // SAFETY: 본 블록은 ToolHelp snapshot 위에서 Process32FirstW/NextW를
+        // 순차 호출하는 표준 패턴. 모든 호출은 단일 흐름으로 실행되며 snapshot
+        // HANDLE은 HandleGuard로 Drop-시 close된다. PROCESSENTRY32W는 dwSize를
+        // 명시한 뒤 zeroed로 초기화 — Win32 API 요구사항. 반환된 entry.szExeFile은
+        // 함수 호출 후 entry가 살아있는 동안만 valid.
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
+            let _guard = HandleGuard(snapshot);
+
+            let mut entry = PROCESSENTRY32W {
+                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+                ..std::mem::zeroed()
+            };
+
+            let mut entries: Vec<(u32, u32, String)> = Vec::new();
+            if Process32FirstW(snapshot, &mut entry).is_ok() {
+                loop {
+                    let name_len = entry
+                        .szExeFile
+                        .iter()
+                        .position(|&c| c == 0)
+                        .unwrap_or(entry.szExeFile.len());
+                    let name = String::from_utf16_lossy(&entry.szExeFile[..name_len]);
+                    entries.push((entry.th32ProcessID, entry.th32ParentProcessID, name));
+                    if Process32NextW(snapshot, &mut entry).is_err() {
+                        break;
+                    }
+                }
+            }
+
+            let mut children: HashMap<u32, Vec<usize>> = HashMap::new();
+            for (i, (_, ppid, _)) in entries.iter().enumerate() {
+                children.entry(*ppid).or_default().push(i);
+            }
+
+            Some(Self { entries, children })
         }
     }
 
-    // SAFETY: 본 블록은 ToolHelp snapshot 위에서 Process32FirstW/NextW를
-    // 순차 호출하는 표준 패턴. 모든 호출은 PTY worker thread에서 단일
-    // 흐름으로 실행되며 snapshot HANDLE은 HandleGuard로 Drop-시 close된다.
-    // PROCESSENTRY32W는 dwSize를 명시한 뒤 zeroed로 초기화 — Win32 API 요구사항.
-    // 반환된 entry.szExeFile은 함수 호출 후 entry가 살아있는 동안만 valid.
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
-        let _guard = HandleGuard(snapshot);
-
-        let mut entry = PROCESSENTRY32W {
-            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
-            ..std::mem::zeroed()
-        };
-
-        // (pid, parent_pid, name)
-        let mut entries: Vec<(u32, u32, String)> = Vec::new();
-        if Process32FirstW(snapshot, &mut entry).is_ok() {
-            loop {
-                let name_len = entry
-                    .szExeFile
-                    .iter()
-                    .position(|&c| c == 0)
-                    .unwrap_or(entry.szExeFile.len());
-                let name = String::from_utf16_lossy(&entry.szExeFile[..name_len]);
-                entries.push((entry.th32ProcessID, entry.th32ParentProcessID, name));
-                if Process32NextW(snapshot, &mut entry).is_err() {
-                    break;
-                }
-            }
-        }
-
-        // parent_pid -> Vec<entry index>
-        let mut children: HashMap<u32, Vec<usize>> = HashMap::new();
-        for (i, (_, ppid, _)) in entries.iter().enumerate() {
-            children.entry(*ppid).or_default().push(i);
-        }
-
+    /// Resolve the foreground program for `shell_pid`: the deepest leaf
+    /// descendant in the process tree. If the shell has no descendants, return
+    /// the shell's own info so the caller still receives a name (matching
+    /// Linux/macOS where tpgid resolves to the shell itself when idle).
+    fn resolve(&self, shell_pid: u32) -> Option<ForegroundProcessInfo> {
         // DFS from shell_pid; track the deepest leaf descendant.
         let mut stack: Vec<(u32, u32)> = vec![(shell_pid, 0)];
         let mut best_leaf: Option<(u32, String, u32)> = None; // (pid, name, depth)
         let mut found_descendant = false;
 
         while let Some((pid, depth)) = stack.pop() {
-            let Some(child_idxs) = children.get(&pid) else {
+            let Some(child_idxs) = self.children.get(&pid) else {
                 continue;
             };
             for &idx in child_idxs {
-                let (cpid, _, cname) = &entries[idx];
+                let (cpid, _, cname) = &self.entries[idx];
                 found_descendant = true;
-                let has_grandchildren = children.get(cpid).map_or(false, |v| !v.is_empty());
+                let has_grandchildren = self.children.get(cpid).map_or(false, |v| !v.is_empty());
                 if has_grandchildren {
                     stack.push((*cpid, depth + 1));
                 } else {
@@ -237,7 +293,7 @@ fn windows_foreground_process(shell_pid: u32) -> Option<ForegroundProcessInfo> {
         } else {
             // Shell is its own foreground process — return its name for parity
             // with Linux/macOS where tpgid resolves to the shell when idle.
-            let (pid, _, name) = entries.iter().find(|(p, _, _)| *p == shell_pid)?;
+            let (pid, _, name) = self.entries.iter().find(|(p, _, _)| *p == shell_pid)?;
             (*pid, name.clone())
         };
 

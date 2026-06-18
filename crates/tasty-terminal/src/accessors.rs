@@ -93,7 +93,22 @@ impl Terminal {
         let Some(shell_pid) = self.process_id() else {
             return false;
         };
-        let Some(info) = foreground_process::get_foreground_process(shell_pid) else {
+        let info = foreground_process::get_foreground_process(shell_pid);
+        self.busy_with_foreground(shell_pid, info.as_ref())
+    }
+
+    /// Same busy decision as [`is_busy`](Self::is_busy), but the (expensive on
+    /// Windows) foreground lookup is supplied by the caller. The batch poll in
+    /// `refresh_busy_surfaces` resolves every surface's foreground from a single
+    /// system snapshot and then calls this per terminal, turning a per-surface
+    /// snapshot into one snapshot per tick. `shell_pid` must be this terminal's
+    /// own child PID and `foreground` the result of resolving it.
+    pub fn busy_with_foreground(
+        &self,
+        shell_pid: u32,
+        foreground: Option<&foreground_process::ForegroundProcessInfo>,
+    ) -> bool {
+        let Some(info) = foreground else {
             return false;
         };
         if info.pid == shell_pid {
