@@ -1,0 +1,46 @@
+name: Cross-platform Check
+
+# 불가침 원칙 #4(크로스플랫폼: 한 OS 전용 코드가 다른 OS 컴파일을 깨뜨리지 않게)를
+# 매 PR 단위로 자동 강제하는 가벼운 가드.
+#
+# build-check.yml / release.yml 의 build-* 잡은 dist 빌드 스크립트(무거움) + 수동
+# 트리거라 매-커밋 가드 역할을 못 한다. 본 워크플로는 dist 산출물 없이
+# `cargo check` 만 돌려 Windows/macOS 컴파일 정합성만 빠르게 확인한다.
+#
+# self-hosted runner 사용 근거: cross-compile(`cargo check --target`)은
+# winit/wgpu 네이티브 의존성 때문에 Linux 에서 자주 실패한다. release.yml 이
+# 이미 보유한 각 OS self-hosted runner 에서 네이티브 check 를 돌리는 편이 확실하다.
+# 네이티브 host 타깃이 곧 x86_64-pc-windows-msvc / aarch64-apple-darwin 이므로
+# 별도 `--target` 지정은 불필요(오히려 rustup target 설치를 요구).
+#
+# Linux x64 컴파일은 test.yml(cargo test --workspace)이 이미 커버하므로 여기서 생략.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 같은 ref 의 중복 실행은 자동 취소 (self-hosted runner 점유 회피).
+# test.yml / build-check.yml 와 동일 정책.
+concurrency:
+  group: crossplatform-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-macos:
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+
+      # gui 는 default feature 이므로 별도 feature 지정 없이 GUI 의존성이 활성화된다.
+      - name: cargo check
+        run: cargo check --workspace --locked
+
+  check-windows:
+    runs-on: [self-hosted, Windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: cargo check
+        shell: pwsh
+        run: cargo check --workspace --locked

@@ -15,6 +15,8 @@
 
 macOS/Windows 러너도 동일 패턴(라벨만 `[self-hosted, macOS]` / `[self-hosted, Windows]`).
 
+같은 mac/win 러너를 `.github/workflows/crossplatform-check.yml` 이 재사용한다 — `main` 대상 PR 마다 자동으로 `cargo check --workspace --locked` 만 돌려(dist 빌드 없음) Windows/macOS 컴파일 정합성을 머지 전에 검증하는 가벼운 가드. 네이티브 host 타깃이 곧 `x86_64-pc-windows-msvc` / `aarch64-apple-darwin` 이라 `--target` 지정은 불필요. (무거운 dist 빌드 검증은 여전히 수동 `build-check.yml`.)
+
 ## 1회 도구 설치 (러너 추가 / 새 도구 의존성 시)
 
 각 OS 빌드 스크립트가 시작 시 도구를 검사하고 미설치면 명시적 에러로 안내한다.
