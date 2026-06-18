@@ -355,9 +355,11 @@ name = "gui_tests"
 required-features = ["gui"]
 
 
+# 한글 IME 수정을 위한 개인 포크 핀. 재현성을 위해 movable branch 가 아니라 고정 commit(rev)에 핀한다.
+# 탈출 조건·근거·대비책: docs/dev-guide/dep-issues.md 참조.
 # TODO: winit PR #4478 (https://github.com/rust-windowing/winit/pull/4478) 머지 후 공식 버전으로 교체
 [patch.crates-io]
-winit = { git = "https://github.com/zilhak/winit-ime-fix.git", branch = "fix-korean-ime" }
+winit = { git = "https://github.com/zilhak/winit-ime-fix.git", rev = "dfe2ec8d5bf55bfbca274a7cf56e5fae0d20c1f5" }
 
 [lints]
 workspace = true
