@@ -98,8 +98,8 @@ impl Matcher {
                         // Skip zero-width matches (e.g. `a*` against empty positions).
                         continue;
                     }
-                    let col_start = char_col_at_byte(haystack, m.start());
-                    let col_end = char_col_at_byte(haystack, m.end());
+                    let col_start = cell_col_at_byte(haystack, m.start());
+                    let col_end = cell_col_at_byte(haystack, m.end());
                     out.push((col_start, col_end));
                 }
                 out
@@ -140,8 +140,8 @@ fn find_literal(
         let match_byte_end = match_byte_start + search_for.len();
 
         if !whole_word || is_whole_word_boundary(&search_in, match_byte_start, match_byte_end) {
-            let col_start = char_col_at_byte(haystack, match_byte_start);
-            let col_end = char_col_at_byte(haystack, match_byte_end);
+            let col_start = cell_col_at_byte(haystack, match_byte_start);
+            let col_end = cell_col_at_byte(haystack, match_byte_end);
             matches.push((col_start, col_end));
         }
 
@@ -183,11 +183,14 @@ fn line_text(cells: &[(String, termwiz::cell::CellAttributes)]) -> String {
     cells.iter().map(|(s, _)| s.as_str()).collect()
 }
 
-/// Convert a byte offset in a string to the cell column index.
-/// Each char maps to 1 cell column (wide chars are handled by termwiz cells,
-/// which already split wide chars into separate cell entries).
-fn char_col_at_byte(s: &str, byte_offset: usize) -> usize {
-    s[..byte_offset].chars().count()
+/// Convert a byte offset in the line's text to its cell column index.
+///
+/// Cell columns account for wide characters (CJK, fullwidth, …) occupying 2
+/// columns, matching the renderer's column layout (`cell_index()` /
+/// `unicode_width`). Counting chars instead would under-count every preceding
+/// wide character and shift the highlight left.
+fn cell_col_at_byte(s: &str, byte_offset: usize) -> usize {
+    termwiz::cell::unicode_column_width(&s[..byte_offset], None)
 }
 
 impl crate::TerminalState {
@@ -270,8 +273,20 @@ mod tests {
 
     #[test]
     fn find_literal_multibyte() {
+        // Columns are cell columns: each wide (CJK) char occupies 2 columns, so
+        // "나다" inside "가나다라" starts at column 2 (after the 2-wide "가") and
+        // ends at column 6. Char-index counting would wrongly yield (1, 3) and
+        // shift the highlight left.
         let results = find_literal("가나다라", "나다", false, false);
-        assert_eq!(results, vec![(1, 3)]);
+        assert_eq!(results, vec![(2, 6)]);
+    }
+
+    #[test]
+    fn find_literal_wide_then_ascii() {
+        // Mixed wide + ASCII: "한글code" → "code" starts after two 2-wide chars
+        // (columns 0..4), so it spans columns 4..8.
+        let results = find_literal("한글code", "code", false, false);
+        assert_eq!(results, vec![(4, 8)]);
     }
 
     #[test]
