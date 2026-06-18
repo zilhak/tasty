@@ -1460,3 +1460,28 @@ fn nel_scrolls_at_bottom() {
     assert_eq!(t.screen_row(0), "r1");
     assert_eq!(t.screen_row(1), "r2");
 }
+
+// ---- REP (CSI b): repeat last printed character ----
+
+#[test]
+fn rep_repeats_last_character() {
+    let mut t = Terminal::new_detached(10, 2);
+    // 'a' then REP 4 → "aaaaa" (1 original + 4 repeats).
+    t.feed_bytes(b"a\x1b[4b");
+    assert_eq!(t.screen_row(0), "aaaaa");
+    assert_eq!(t.cursor_position(), (5, 0));
+}
+
+#[test]
+fn rep_default_count_is_one() {
+    let mut t = Terminal::new_detached(10, 2);
+    t.feed_bytes(b"X\x1b[b"); // no param → repeat once
+    assert_eq!(t.screen_row(0), "XX");
+}
+
+#[test]
+fn rep_without_prior_print_is_noop() {
+    let mut t = Terminal::new_detached(10, 2);
+    t.feed_bytes(b"\x1b[5b"); // nothing printed yet
+    assert_eq!(t.screen_row(0), "");
+}

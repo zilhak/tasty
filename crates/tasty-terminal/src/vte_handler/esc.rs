@@ -75,6 +75,7 @@ impl TerminalState {
                 self.focus_tracking = false;
                 self.insert_mode = false;
                 self.scroll_region = None;
+                self.last_print = None;
                 vec![
                     Change::AllAttributes(CellAttributes::default()),
                     Change::ClearScreen(ColorAttribute::Default),

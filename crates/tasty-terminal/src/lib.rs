@@ -206,6 +206,9 @@ pub(crate) struct TerminalState {
     /// host sets it (a query before plumbing is left unanswered). Refreshed on
     /// terminal creation and on every theme change. See `vte_handler/osc.rs`.
     pub(crate) color_palette: Option<crate::color::ColorPalette>,
+    /// Last character printed to the grid, used by REP (CSI b) to repeat it.
+    /// `None` until the first print; reset by RIS (full reset).
+    pub(crate) last_print: Option<String>,
 }
 
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
@@ -293,6 +296,7 @@ impl TerminalState {
             current_pen: CellAttributes::default(),
             saved_pen: CellAttributes::default(),
             color_palette: None,
+            last_print: None,
         }
     }
 

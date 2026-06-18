@@ -196,10 +196,18 @@ impl TerminalState {
                     },
                 ]
             }
-            Edit::Repeat(_n) => {
-                // REP (CSI b) — 마지막 문자 반복. 우리는 termwiz Surface 위에서
-                // 합성하는 구조라 "마지막 문자" 컨텍스트가 없어 미구현.
-                vec![]
+            Edit::Repeat(n) => {
+                // REP (CSI b): repeat the last printed character n times. We track
+                // the last printed grapheme in `last_print` (set in
+                // action_to_changes). Clamp the count to the grid area to bound
+                // allocation against a hostile parameter.
+                let Some(ch) = self.last_print.clone() else {
+                    return vec![];
+                };
+                let count = (n.max(1) as usize).min(self.cols.saturating_mul(self.rows));
+                let text = ch.repeat(count);
+                let width = unicode_column_width(&text, None);
+                self.print_with_insert_mode(width, text)
             }
         }
     }

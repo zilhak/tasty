@@ -11,10 +11,14 @@ impl TerminalState {
             Action::Print(c) => {
                 self.emit_output_text(|| c.to_string());
                 let text = c.to_string();
+                self.last_print = Some(text.clone());
                 self.print_with_insert_mode(unicode_column_width(&text, None), text)
             }
             Action::PrintString(s) => {
                 self.emit_output_text(|| s.clone());
+                if let Some(last) = s.chars().last() {
+                    self.last_print = Some(last.to_string());
+                }
                 let width = unicode_column_width(&s, None);
                 self.print_with_insert_mode(width, s)
             }
