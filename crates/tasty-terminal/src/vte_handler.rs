@@ -9,18 +9,19 @@ impl TerminalState {
     pub(crate) fn action_to_changes(&mut self, action: Action) -> Vec<Change> {
         match action {
             Action::Print(c) => {
-                self.emit_output_text(|| c.to_string());
-                let text = c.to_string();
+                let text = self.apply_charset(&c.to_string());
+                self.emit_output_text(|| text.clone());
                 self.last_print = Some(text.clone());
                 self.print_with_insert_mode(unicode_column_width(&text, None), text)
             }
             Action::PrintString(s) => {
-                self.emit_output_text(|| s.clone());
-                if let Some(last) = s.chars().last() {
+                let text = self.apply_charset(&s);
+                self.emit_output_text(|| text.clone());
+                if let Some(last) = text.chars().last() {
                     self.last_print = Some(last.to_string());
                 }
-                let width = unicode_column_width(&s, None);
-                self.print_with_insert_mode(width, s)
+                let width = unicode_column_width(&text, None);
+                self.print_with_insert_mode(width, text)
             }
             Action::Control(code) => {
                 if matches!(code, ControlCode::LineFeed) {
@@ -42,6 +43,28 @@ impl TerminalState {
             }
             _ => vec![],
         }
+    }
+
+    /// Whether the charset currently invoked into GL is the DEC line-drawing set.
+    pub(crate) fn active_charset_line_drawing(&self) -> bool {
+        if self.charset_active_g1 {
+            self.charset_g1_line_drawing
+        } else {
+            self.charset_g0_line_drawing
+        }
+    }
+
+    /// Translate printed text through the active charset. When the DEC special
+    /// line-drawing set is invoked, ASCII bytes `0x60..=0x7e` map to box-drawing
+    /// glyphs; everything else passes through. Fast path (no allocation beyond
+    /// the clone) when line drawing is inactive.
+    pub(crate) fn apply_charset(&self, text: &str) -> String {
+        if !self.active_charset_line_drawing() {
+            return text.to_string();
+        }
+        text.chars()
+            .map(|c| dec_line_drawing_glyph(c).unwrap_or(c))
+            .collect()
     }
 
     /// Build the changes for printing `text` (column width `width`). When IRM
@@ -189,6 +212,46 @@ impl TerminalState {
             }
         }
     }
+}
+
+/// Map an ASCII byte to its DEC special graphics (line-drawing) glyph. Covers
+/// the standard `0x60..=0x7e` range; returns `None` for anything outside it
+/// (which prints unchanged). Reference: VT100 special graphics charset.
+fn dec_line_drawing_glyph(c: char) -> Option<char> {
+    Some(match c {
+        '`' => '◆',
+        'a' => '▒',
+        'b' => '\u{2409}', // HT symbol
+        'c' => '\u{240c}', // FF symbol
+        'd' => '\u{240d}', // CR symbol
+        'e' => '\u{240a}', // LF symbol
+        'f' => '°',
+        'g' => '±',
+        'h' => '\u{2424}', // NL symbol
+        'i' => '\u{240b}', // VT symbol
+        'j' => '┘',
+        'k' => '┐',
+        'l' => '┌',
+        'm' => '└',
+        'n' => '┼',
+        'o' => '⎺',
+        'p' => '⎻',
+        'q' => '─',
+        'r' => '⎼',
+        's' => '⎽',
+        't' => '├',
+        'u' => '┤',
+        'v' => '┴',
+        'w' => '┬',
+        'x' => '│',
+        'y' => '≤',
+        'z' => '≥',
+        '{' => 'π',
+        '|' => '≠',
+        '}' => '£',
+        '~' => '·',
+        _ => return None,
+    })
 }
 
 mod control;

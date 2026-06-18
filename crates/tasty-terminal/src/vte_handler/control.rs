@@ -30,6 +30,16 @@ impl TerminalState {
                     y: Position::Relative(0),
                 }]
             }
+            ControlCode::ShiftOut => {
+                // SO: invoke G1 into GL.
+                self.charset_active_g1 = true;
+                vec![]
+            }
+            ControlCode::ShiftIn => {
+                // SI: invoke G0 into GL.
+                self.charset_active_g1 = false;
+                vec![]
+            }
             ControlCode::Bell => {
                 self.events.push(TerminalEvent {
                     surface_id: 0,

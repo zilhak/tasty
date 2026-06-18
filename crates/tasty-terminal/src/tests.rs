@@ -1676,3 +1676,34 @@ fn xtwinops_title_stack_push_pop() {
         .expect("no TitleChanged on pop");
     assert_eq!(restored, "first");
 }
+
+// ---- DEC line drawing charset (ESC ( 0 / SO / SI) ----
+
+#[test]
+fn dec_line_drawing_maps_box_chars() {
+    let mut t = Terminal::new_detached(10, 2);
+    // Designate G0 = line drawing, print "lqk" → "┌─┐".
+    t.feed_bytes(b"\x1b(0lqk");
+    assert_eq!(t.screen_row(0), "┌─┐");
+    // Back to ASCII: "lqk" prints literally.
+    t.feed_bytes(b"\x1b(B\r\nlqk");
+    assert_eq!(t.screen_row(1), "lqk");
+}
+
+#[test]
+fn dec_line_drawing_so_si_switches_g1() {
+    let mut t = Terminal::new_detached(10, 2);
+    // G1 = line drawing; G0 stays ASCII. SO invokes G1, SI back to G0.
+    t.feed_bytes(b"\x1b)0"); // designate G1 line drawing
+    t.feed_bytes(b"a\x0eq\x0fb"); // 'a' (G0/ascii), SO, 'q'→─, SI, 'b'
+    assert_eq!(t.screen_row(0), "a─b");
+}
+
+#[test]
+fn dec_line_drawing_reset_by_ris() {
+    let mut t = Terminal::new_detached(10, 2);
+    t.feed_bytes(b"\x1b(0");
+    t.feed_bytes(b"\x1bc"); // RIS clears charset designation
+    t.feed_bytes(b"q");
+    assert_eq!(t.screen_row(0), "q");
+}

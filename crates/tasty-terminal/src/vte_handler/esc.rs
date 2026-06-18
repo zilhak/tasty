@@ -33,6 +33,25 @@ impl TerminalState {
                 self.set_tab_stop(cx);
                 vec![]
             }
+            // Charset designation. Only DEC line drawing vs ASCII matters for
+            // rendering; UK differs from ASCII by a single glyph (# → £) which we
+            // treat as ASCII. SO/SI (control.rs) pick which G set is active.
+            Esc::Code(EscCode::DecLineDrawingG0) => {
+                self.charset_g0_line_drawing = true;
+                vec![]
+            }
+            Esc::Code(EscCode::AsciiCharacterSetG0) | Esc::Code(EscCode::UkCharacterSetG0) => {
+                self.charset_g0_line_drawing = false;
+                vec![]
+            }
+            Esc::Code(EscCode::DecLineDrawingG1) => {
+                self.charset_g1_line_drawing = true;
+                vec![]
+            }
+            Esc::Code(EscCode::AsciiCharacterSetG1) | Esc::Code(EscCode::UkCharacterSetG1) => {
+                self.charset_g1_line_drawing = false;
+                vec![]
+            }
             Esc::Code(EscCode::NextLine) => {
                 // NEL (ESC E): index (line feed, scrolling at the region bottom)
                 // followed by a carriage return — cursor lands at column 0 of the
@@ -85,6 +104,9 @@ impl TerminalState {
                 self.tab_stops = crate::default_tab_stops(self.cols);
                 self.reverse_screen = false;
                 self.origin_mode = false;
+                self.charset_g0_line_drawing = false;
+                self.charset_g1_line_drawing = false;
+                self.charset_active_g1 = false;
                 vec![
                     Change::AllAttributes(CellAttributes::default()),
                     Change::ClearScreen(ColorAttribute::Default),

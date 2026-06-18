@@ -226,6 +226,14 @@ pub(crate) struct TerminalState {
     pub(crate) current_title: Option<String>,
     /// Saved window titles for the XTWINOPS title stack (push/pop).
     pub(crate) title_stack: Vec<Option<String>>,
+    /// G0 designated as the DEC special line-drawing charset (`ESC ( 0`).
+    pub(crate) charset_g0_line_drawing: bool,
+    /// G1 designated as the DEC special line-drawing charset (`ESC ) 0`).
+    pub(crate) charset_g1_line_drawing: bool,
+    /// Whether G1 is currently invoked into GL (SO/`ESC N` selects G1, SI
+    /// selects G0). When the active set is line-drawing, printed ASCII in
+    /// `0x60..=0x7e` is mapped to box-drawing glyphs.
+    pub(crate) charset_active_g1: bool,
 }
 
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
@@ -324,6 +332,9 @@ impl TerminalState {
             origin_mode: false,
             current_title: None,
             title_stack: Vec::new(),
+            charset_g0_line_drawing: false,
+            charset_g1_line_drawing: false,
+            charset_active_g1: false,
         }
     }
 
