@@ -125,7 +125,7 @@ impl GpuState {
                         text: ime.text.clone(),
                         anchor_col: ime.anchor_col,
                         anchor_row: ime.anchor_row,
-                        bg_color: theme.blue.to_gpu_rgba(),
+                        bg_color: theme.accent_primary().to_gpu_rgba(),
                         fg_color: theme.base.to_gpu_rgba(),
                     });
                 let render_preedit_ref = render_preedit.as_ref();

@@ -476,7 +476,7 @@ fn draw_profile_row(
                 } else if p.is_disabled() {
                     ui.label(
                         egui::RichText::new(t("ssh_tool.detect_failed"))
-                            .color(th.red)
+                            .color(th.accent_danger())
                             .size(th.font_size_caption.value()),
                     );
                 }
@@ -566,7 +566,7 @@ fn draw_form(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SshUiState) -> Option
         ui.add_space(th.spacing_xs.value());
         ui.label(
             egui::RichText::new(t(err.i18n_key()))
-                .color(th.red)
+                .color(th.accent_danger())
                 .size(th.font_size_caption.value()),
         );
     }
@@ -610,7 +610,7 @@ fn draw_confirm_delete(ui: &mut egui::Ui, th: &Theme, name: &str) -> Option<SshA
     ui.add_space(th.spacing_sm.value());
     ui.horizontal(|ui| {
         if ui
-            .button(egui::RichText::new(t("ssh_tool.delete")).color(th.red))
+            .button(egui::RichText::new(t("ssh_tool.delete")).color(th.accent_danger()))
             .clicked()
         {
             out = Some(SshAction::ConfirmDelete(name.to_string()));

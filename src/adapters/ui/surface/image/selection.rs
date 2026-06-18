@@ -39,14 +39,14 @@ pub(super) fn draw_floating_selection(
                 .image(tex.id(), sel_rect, uv, egui::Color32::WHITE);
         }
 
-        let stroke = egui::Stroke::new(1.0, th.blue);
+        let stroke = egui::Stroke::new(1.0, th.accent_primary());
         ui.painter()
             .rect_stroke(sel_rect, 0.0, stroke, egui::StrokeKind::Outside);
 
         let handle_size = 6.0;
         let handles = resize_handle_rects(sel_rect, handle_size);
         for (_handle, handle_rect) in &handles {
-            ui.painter().rect_filled(*handle_rect, 0.0, th.blue);
+            ui.painter().rect_filled(*handle_rect, 0.0, th.accent_primary());
         }
 
         (sel_rect, selection.texture.is_some())

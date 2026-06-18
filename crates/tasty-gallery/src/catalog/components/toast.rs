@@ -56,10 +56,10 @@ struct ToastViewProps<'a> {
 
 fn accent_color(kind: ToastKind, theme: &Theme) -> egui::Color32 {
     match kind {
-        ToastKind::Info => theme.blue.into(),
-        ToastKind::Success => theme.green.into(),
-        ToastKind::Warning => theme.yellow.into(),
-        ToastKind::Error => theme.red.into(),
+        ToastKind::Info => theme.accent_primary().into(),
+        ToastKind::Success => theme.accent_success().into(),
+        ToastKind::Warning => theme.accent_warning().into(),
+        ToastKind::Error => theme.accent_danger().into(),
     }
 }
 

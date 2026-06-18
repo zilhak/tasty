@@ -35,7 +35,7 @@ pub fn draw_updates_tab(ui: &mut egui::Ui, update_status: Option<&Arc<Mutex<Upda
             ui.label(t("settings.updates.latest"));
             match &snapshot.latest {
                 Some(info) => {
-                    ui.label(egui::RichText::new(&info.version).color(th.green).strong());
+                    ui.label(egui::RichText::new(&info.version).color(th.accent_success()).strong());
                 }
                 None => {
                     ui.label(
@@ -54,7 +54,7 @@ pub fn draw_updates_tab(ui: &mut egui::Ui, update_status: Option<&Arc<Mutex<Upda
         ui.add_space(8.0);
         ui.label(
             egui::RichText::new(format!("{}: {err}", t("update.error_label")))
-                .color(th.red)
+                .color(th.accent_danger())
                 .size(12.0),
         );
     }

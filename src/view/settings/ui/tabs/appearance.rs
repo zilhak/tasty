@@ -445,7 +445,7 @@ fn draw_tasty_color_row(
         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
         if is_ov {
             ui.painter()
-                .circle_filled(dot_rect.center(), dot / 2.0, egui::Color32::from(th.blue));
+                .circle_filled(dot_rect.center(), dot / 2.0, egui::Color32::from(th.accent_primary()));
         }
 
         // ── friendly label ──
@@ -880,7 +880,7 @@ fn draw_color_group(
                 ))
                 .monospace()
                 .size(th.font_size_caption.value())
-                .color(th.blue),
+                .color(th.accent_primary()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button(t("settings.appearance.colors.reset")).clicked() {
@@ -921,7 +921,7 @@ fn draw_color_picker_row(
         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
         if is_ov {
             ui.painter()
-                .circle_filled(dot_rect.center(), dot / 2.0, egui::Color32::from(th.blue));
+                .circle_filled(dot_rect.center(), dot / 2.0, egui::Color32::from(th.accent_primary()));
         }
 
         // ── 색 토큰 이름 (mono, override 시 강조) ──

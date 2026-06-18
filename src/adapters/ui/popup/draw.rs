@@ -225,7 +225,7 @@ impl PopupManager {
                 }
                 let x_size = 5.0;
                 let x_color = if is_close_hovered {
-                    th.red
+                    th.accent_danger()
                 } else {
                     th.subtext0
                 };

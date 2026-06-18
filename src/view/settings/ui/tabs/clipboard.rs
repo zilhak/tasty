@@ -37,6 +37,6 @@ pub fn draw_clipboard_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.clipboard.poll_interval_restart_notice"))
             .small()
-            .color(th.yellow),
+            .color(th.accent_warning()),
     );
 }

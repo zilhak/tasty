@@ -62,7 +62,7 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.general.language_restart_notice"))
             .small()
-            .color(th.yellow),
+            .color(th.accent_warning()),
     );
 }
 

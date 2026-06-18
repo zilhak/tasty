@@ -135,7 +135,7 @@ pub fn draw_update_view(ui: &mut egui::Ui, th: &Theme, props: &UpdateProps) -> U
             } => {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(t("update.latest_label")).color(th.subtext0));
-                    ui.label(egui::RichText::new(version).color(th.green).strong());
+                    ui.label(egui::RichText::new(version).color(th.accent_success()).strong());
                 });
                 ui.separator();
                 ui.label(
@@ -166,7 +166,7 @@ pub fn draw_update_view(ui: &mut egui::Ui, th: &Theme, props: &UpdateProps) -> U
                     UpdateStatusView::Failed { reason } => {
                         ui.label(
                             egui::RichText::new(format!("{}: {reason}", t("update.error_label")))
-                                .color(th.red)
+                                .color(th.accent_danger())
                                 .size(12.0),
                         );
                     }
@@ -174,7 +174,7 @@ pub fn draw_update_view(ui: &mut egui::Ui, th: &Theme, props: &UpdateProps) -> U
                         ui.label(egui::RichText::new(t("update.never_checked")).color(th.subtext0));
                     }
                     UpdateStatusView::UpToDate => {
-                        ui.label(egui::RichText::new(t("update.up_to_date")).color(th.green));
+                        ui.label(egui::RichText::new(t("update.up_to_date")).color(th.accent_success()));
                     }
                     UpdateStatusView::Checking => {
                         // 메시지는 아래 in_flight 라벨이 담당.

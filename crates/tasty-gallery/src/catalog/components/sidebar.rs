@@ -212,7 +212,7 @@ fn draw_workspace_card(
         egui::Color32::TRANSPARENT
     };
     let border = if ws.is_active {
-        egui::Color32::from(th.blue)
+        egui::Color32::from(th.accent_primary())
     } else {
         egui::Color32::from(th.surface0)
     };
@@ -243,7 +243,7 @@ fn draw_workspace_card(
                     ui.painter().circle_filled(
                         dot_rect.center(),
                         dot_radius,
-                        egui::Color32::from(th.red),
+                        egui::Color32::from(th.accent_danger()),
                     );
                     resp.on_hover_text(occupied_hover);
                 }
@@ -254,7 +254,7 @@ fn draw_workspace_card(
                     ui.painter().rect_stroke(
                         rect,
                         3.0,
-                        egui::Stroke::new(1.0, egui::Color32::from(th.blue)),
+                        egui::Stroke::new(1.0, egui::Color32::from(th.accent_primary())),
                         egui::StrokeKind::Inside,
                     );
                     ui.painter().text(
@@ -262,7 +262,7 @@ fn draw_workspace_card(
                         egui::Align2::CENTER_CENTER,
                         "!",
                         egui::FontId::proportional(10.0),
-                        egui::Color32::from(th.blue),
+                        egui::Color32::from(th.accent_primary()),
                     );
                 }
 
@@ -271,7 +271,7 @@ fn draw_workspace_card(
                     ui.label(
                         egui::RichText::new(&count_text)
                             .small()
-                            .color(egui::Color32::from(th.green)),
+                            .color(egui::Color32::from(th.accent_success())),
                     );
                     let dot_radius = 3.0;
                     let (dot_rect, _) = ui.allocate_exact_size(
@@ -281,7 +281,7 @@ fn draw_workspace_card(
                     ui.painter().circle_filled(
                         dot_rect.center(),
                         dot_radius,
-                        egui::Color32::from(th.green),
+                        egui::Color32::from(th.accent_success()),
                     );
                 }
             });
@@ -326,7 +326,7 @@ fn draw_collapsed_ws(ui: &mut egui::Ui, th: &Theme, ws: &WorkspaceEntryView, num
         ui.painter().rect_stroke(
             rect,
             4.0,
-            egui::Stroke::new(1.0, egui::Color32::from(th.blue)),
+            egui::Stroke::new(1.0, egui::Color32::from(th.accent_primary())),
             egui::StrokeKind::Inside,
         );
     }
@@ -349,7 +349,7 @@ fn draw_collapsed_ws(ui: &mut egui::Ui, th: &Theme, ws: &WorkspaceEntryView, num
             rect.min.y + dot_pad + dot_radius,
         );
         ui.painter()
-            .circle_filled(dot_center, dot_radius, egui::Color32::from(th.green));
+            .circle_filled(dot_center, dot_radius, egui::Color32::from(th.accent_success()));
     }
     if ws.attached {
         let dot_radius = 3.0;
@@ -359,7 +359,7 @@ fn draw_collapsed_ws(ui: &mut egui::Ui, th: &Theme, ws: &WorkspaceEntryView, num
             rect.max.y - dot_pad - dot_radius,
         );
         ui.painter()
-            .circle_filled(dot_center, dot_radius, egui::Color32::from(th.red));
+            .circle_filled(dot_center, dot_radius, egui::Color32::from(th.accent_danger()));
     }
 }
 

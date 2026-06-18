@@ -100,7 +100,7 @@ fn draw_markdown_open_view(
         ui.label(
             egui::RichText::new(err)
                 .size(th.font_size_caption.value())
-                .color(egui::Color32::from(th.red)),
+                .color(egui::Color32::from(th.accent_danger())),
         );
     }
 

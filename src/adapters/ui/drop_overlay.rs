@@ -39,14 +39,14 @@ pub fn draw_drop_overlay(
     let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drop_overlay"));
     let painter = ctx.layer_painter(layer);
 
-    // 반투명 fill — theme.blue 의 12% alpha.
-    let fill = theme.blue.with_alpha(31).to_egui();
+    // 반투명 fill — accent_primary 의 12% alpha.
+    let fill = theme.accent_primary().with_alpha(31).to_egui();
     painter.rect_filled(rect, theme.corner_radius.value(), fill);
 
-    // 1px 보더 — theme.blue, alpha 0.6.
+    // 1px 보더 — accent_primary, alpha 0.6.
     let stroke = egui::Stroke::new(
         theme.border_width.value(),
-        theme.blue.with_alpha(153).to_egui(),
+        theme.accent_primary().with_alpha(153).to_egui(),
     );
     painter.rect_stroke(
         rect.shrink(theme.spacing_sm.value()),

@@ -42,7 +42,7 @@ pub fn draw_markdown(
             // Apply theme colors to egui visuals for commonmark rendering
             let visuals = &mut ui.style_mut().visuals;
             visuals.override_text_color = Some(th.subtext1.into());
-            visuals.hyperlink_color = th.blue.into();
+            visuals.hyperlink_color = th.accent_primary().into();
             visuals.code_bg_color = th.surface0.into();
 
             let content = view.content.clone();

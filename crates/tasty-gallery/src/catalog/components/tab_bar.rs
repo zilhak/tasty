@@ -146,15 +146,15 @@ fn draw_pane_tab_bar_mock(
                 egui::pos2(tab_rect.min.x, tab_rect.min.y),
                 egui::vec2(tab_w, ACTIVE_INDICATOR_H),
             );
-            tab_painter.rect_filled(line_rect, 0.0, th.blue);
+            tab_painter.rect_filled(line_rect, 0.0, th.accent_primary());
         }
 
         if tab.is_busy {
             let dot_center = egui::pos2(tab_rect.max.x - DOT_PAD - DOT_RADIUS, tab_rect.center().y);
             let dot_color: egui::Color32 = if is_active {
-                th.green.into()
+                th.accent_success().into()
             } else {
-                th.green.with_alpha(180).to_egui()
+                th.accent_success().with_alpha(180).to_egui()
             };
             tab_painter.circle_filled(dot_center, DOT_RADIUS, dot_color);
         }

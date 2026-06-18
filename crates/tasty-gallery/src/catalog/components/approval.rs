@@ -51,8 +51,8 @@ struct MockApprovalProps<'a> {
 fn draw_mock_approval_view(ui: &mut egui::Ui, theme: &Theme, props: &MockApprovalProps<'_>) {
     let sev_color: egui::Color32 = match props.severity {
         MockSeverity::Info => theme.subtext0.into(),
-        MockSeverity::Warn => theme.yellow.into(),
-        MockSeverity::Danger => theme.red.into(),
+        MockSeverity::Warn => theme.accent_warning().into(),
+        MockSeverity::Danger => theme.accent_danger().into(),
     };
     ui.horizontal(|ui| {
         ui.label(
@@ -100,7 +100,7 @@ fn draw_mock_approval_view(ui: &mut egui::Ui, theme: &Theme, props: &MockApprova
             };
             let mut btn = egui::Button::new(egui::RichText::new(label_text).size(13.0));
             if choice.destructive {
-                let red: egui::Color32 = theme.red.into();
+                let red: egui::Color32 = theme.accent_danger().into();
                 btn = btn.fill(red.linear_multiply(0.18));
             }
             let _ = ui.add(btn); // 갤러리는 클릭 핸들 없음 — 시각만.

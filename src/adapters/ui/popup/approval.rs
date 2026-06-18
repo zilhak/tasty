@@ -117,8 +117,8 @@ pub fn draw_approval_view(
 ) -> ApprovalViewAction {
     let sev_color = match props.severity {
         Severity::Info => theme.subtext0.to_egui(),
-        Severity::Warn => theme.yellow.to_egui(),
-        Severity::Danger => theme.red.to_egui(),
+        Severity::Warn => theme.accent_warning().to_egui(),
+        Severity::Danger => theme.accent_danger().to_egui(),
     };
     ui.horizontal(|ui| {
         ui.label(
@@ -165,7 +165,7 @@ pub fn draw_approval_view(
             };
             let mut btn = egui::Button::new(egui::RichText::new(label_text).size(13.0));
             if choice.destructive {
-                btn = btn.fill(theme.red.to_egui().linear_multiply(0.18));
+                btn = btn.fill(theme.accent_danger().to_egui().linear_multiply(0.18));
             }
             if ui.add(btn).clicked() {
                 action = ApprovalViewAction::Chosen {

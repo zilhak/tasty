@@ -166,10 +166,10 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
 
 fn accent_color(kind: ToastKind, th: &Theme) -> egui::Color32 {
     match kind {
-        ToastKind::Info => th.blue.into(),
-        ToastKind::Success => th.green.into(),
-        ToastKind::Warning => th.yellow.into(),
-        ToastKind::Error => th.red.into(),
+        ToastKind::Info => th.accent_primary().into(),
+        ToastKind::Success => th.accent_success().into(),
+        ToastKind::Warning => th.accent_warning().into(),
+        ToastKind::Error => th.accent_danger().into(),
     }
 }
 

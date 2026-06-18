@@ -523,7 +523,7 @@ fn render_splitter(
         let th = crate::theme::theme();
         let painter = ui.painter();
         let handle_color = if resp.hovered() || resp.dragged() {
-            th.blue
+            th.accent_primary()
         } else {
             th.surface1
         };

@@ -226,7 +226,7 @@ fn draw_update_view_mock(ui: &mut egui::Ui, theme: &Theme, props: &UpdateProps) 
                     );
                     ui.label(
                         egui::RichText::new(version)
-                            .color(egui::Color32::from(theme.green))
+                            .color(egui::Color32::from(theme.accent_success()))
                             .strong(),
                     );
                 });
@@ -263,7 +263,7 @@ fn draw_update_view_mock(ui: &mut egui::Ui, theme: &Theme, props: &UpdateProps) 
                     UpdateStatusView::Failed { reason } => {
                         ui.label(
                             egui::RichText::new(format!("Error: {reason}"))
-                                .color(egui::Color32::from(theme.red))
+                                .color(egui::Color32::from(theme.accent_danger()))
                                 .size(12.0),
                         );
                     }
@@ -276,7 +276,7 @@ fn draw_update_view_mock(ui: &mut egui::Ui, theme: &Theme, props: &UpdateProps) 
                     UpdateStatusView::UpToDate => {
                         ui.label(
                             egui::RichText::new("You're up to date.")
-                                .color(egui::Color32::from(theme.green)),
+                                .color(egui::Color32::from(theme.accent_success())),
                         );
                     }
                     UpdateStatusView::Checking => {

@@ -62,7 +62,7 @@ pub struct SurfaceHighlightsProps<'a> {
 
 /// Pure 시각 view. AppState/CoreState/`theme::theme()` 비의존.
 ///
-/// `is_highlighted` 가 true 인 region 의 외곽선만 (`th.blue`, 2px) 그린다.
+/// `is_highlighted` 가 true 인 region 의 외곽선만 (`accent_primary`, 2px) 그린다.
 /// Action 없음 — 상시 그리기 위젯이라 사용자 의도 산출이 없다.
 pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighlightsProps<'_>) {
     if props.regions.iter().all(|r| !r.is_highlighted) {
@@ -73,7 +73,7 @@ pub fn draw_surface_highlights_view(ctx: &egui::Context, props: &SurfaceHighligh
         egui::Id::new("surface_highlights"),
     ));
     let scale_factor = props.scale_factor;
-    let stroke_color = props.theme.blue;
+    let stroke_color = props.theme.accent_primary();
     for region in props.regions {
         if !region.is_highlighted {
             continue;

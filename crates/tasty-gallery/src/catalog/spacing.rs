@@ -32,7 +32,7 @@ fn row(ui: &mut egui::Ui, name: &str, gap: f32, theme: &Theme) {
     for i in 0..3 {
         let x = rect.left() + (box_size.x + gap) * i as f32;
         let r = egui::Rect::from_min_size(egui::pos2(x, rect.top()), box_size);
-        painter.rect_filled(r, 2.0, egui::Color32::from(theme.blue));
+        painter.rect_filled(r, 2.0, egui::Color32::from(theme.accent_primary()));
     }
 }
 

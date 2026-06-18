@@ -41,9 +41,9 @@ impl GpuState {
             let bg_card = th.mantle;
             let border = th.surface0;
             let text_dim = th.subtext0;
-            let amber = th.yellow;
-            let red_err = th.red;
-            let accent_ok = th.green;
+            let amber = th.accent_warning();
+            let red_err = th.accent_danger();
+            let accent_ok = th.accent_success();
             let accent_dis = th.surface1;
 
             // Dark background panel
@@ -177,7 +177,7 @@ impl GpuState {
 
                             // OK
                             let (ok_fill, ok_stroke, ok_text) = if is_valid {
-                                (th.green, egui::Stroke::new(1.0, th.green), th.base)
+                                (th.accent_success(), egui::Stroke::new(1.0, th.accent_success()), th.base)
                             } else {
                                 (accent_dis, egui::Stroke::new(1.0, th.surface2), th.overlay0)
                             };

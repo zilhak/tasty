@@ -31,7 +31,7 @@ fn draw_mock_highlights(ui: &mut egui::Ui, theme: &Theme, regions: &[MockRegion]
 
     let bg: egui::Color32 = theme.crust.into();
     let pane_bg: egui::Color32 = theme.surface0.into();
-    let stroke: egui::Color32 = theme.blue.into();
+    let stroke: egui::Color32 = theme.accent_primary().into();
     let label_color: egui::Color32 = theme.subtext0.into();
 
     painter.rect_filled(frame_rect, theme.corner_radius.value(), bg);

@@ -7,7 +7,7 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.performance.restart_notice"))
             .small()
-            .color(th.yellow),
+            .color(th.accent_warning()),
     );
     ui.add_space(12.0);
 

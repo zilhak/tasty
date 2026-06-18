@@ -6,7 +6,7 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.add_space(8.0);
 
     if !settings.general.is_shell_valid() {
-        ui.label(egui::RichText::new(t("settings.terminal.shell_not_found")).color(th.yellow));
+        ui.label(egui::RichText::new(t("settings.terminal.shell_not_found")).color(th.accent_warning()));
         ui.add_space(4.0);
     }
 
@@ -103,6 +103,6 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.terminal.allow_clipboard_read_notice"))
             .small()
-            .color(th.yellow),
+            .color(th.accent_warning()),
     );
 }

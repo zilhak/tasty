@@ -56,7 +56,7 @@ fn draw_add_input(
 
     if let Some(err) = &ui_state.add_error {
         ui.add_space(8.0);
-        ui.label(egui::RichText::new(err).color(egui::Color32::from(th.red)));
+        ui.label(egui::RichText::new(err).color(egui::Color32::from(th.accent_danger())));
     }
 
     ui.add_space(20.0);
@@ -199,9 +199,9 @@ fn draw_add_preview(
     });
 }
 
-/// `Add Plugin` 탭 하단의 출처 미상 plugin 경고 영역. theme.red 빨간색 박스.
+/// `Add Plugin` 탭 하단의 출처 미상 plugin 경고 영역. accent_danger 빨간 박스.
 fn draw_untrusted_warning(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::Theme) {
-    let red = egui::Color32::from(th.red);
+    let red = egui::Color32::from(th.accent_danger());
     match &preview.trust_state {
         AddTrustState::Trusted => {}
         AddTrustState::UntrustedWithPubkey {

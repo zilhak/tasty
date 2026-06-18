@@ -227,7 +227,7 @@ pub fn draw_full_sidebar_view(
                     ui.painter().rect_stroke(
                         card_rect,
                         4.0,
-                        egui::Stroke::new(2.0, th.green),
+                        egui::Stroke::new(2.0, th.accent_success()),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -287,7 +287,7 @@ pub fn draw_full_sidebar_view(
                             egui::pos2(marker_rect.min.x, marker_y),
                             egui::vec2(marker_rect.width(), 2.0),
                         );
-                        ui.painter().rect_filled(line, 0.0, th.blue);
+                        ui.painter().rect_filled(line, 0.0, th.accent_primary());
                     }
 
                     // Ghost card.
@@ -327,7 +327,7 @@ pub fn draw_full_sidebar_view(
                 ui.painter().rect_stroke(
                     new_ws_resp.rect,
                     4.0,
-                    egui::Stroke::new(2.0, th.green),
+                    egui::Stroke::new(2.0, th.accent_success()),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -467,7 +467,7 @@ pub fn draw_collapsed_sidebar_view(
                 rect.min.y + dot_pad + dot_radius,
             );
             if ws.is_mirror {
-                ui.painter().circle_filled(dot_center, dot_radius, th.sky);
+                ui.painter().circle_filled(dot_center, dot_radius, th.accent_info());
             } else if ws.has_highlight {
                 // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
                 ui.painter()
@@ -475,7 +475,7 @@ pub fn draw_collapsed_sidebar_view(
                 ui.painter()
                     .circle_filled(dot_center, dot_radius, th.accent_primary());
             } else if ws.busy_count > 0 {
-                ui.painter().circle_filled(dot_center, dot_radius, th.green);
+                ui.painter().circle_filled(dot_center, dot_radius, th.accent_success());
             }
             // attached(다른 client 점유) → 아바타 둘레 lavender ring (디자인 2026-06-15
             // CollapsedSidebar: outline 1.5px lavender). red(error) 재사용 분리.
@@ -504,7 +504,7 @@ pub fn draw_collapsed_sidebar_view(
             ui.painter().rect_stroke(
                 rect,
                 4.0,
-                egui::Stroke::new(2.0, th.green),
+                egui::Stroke::new(2.0, th.accent_success()),
                 egui::StrokeKind::Inside,
             );
         }
@@ -739,7 +739,7 @@ fn draw_workspace_card(
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
             // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
             let dot_color: egui::Color32 = if ws.is_mirror {
-                th.sky.into()
+                th.accent_info().into()
             } else if ws.busy_count > 0 {
                 th.accent_success().into()
             } else {
@@ -861,7 +861,7 @@ fn draw_workspace_card(
     // 부터 시작 → bar(0~2)와 dot(4~12)가 2px 간격으로 겹치지 않는다.
     if ws.is_active {
         let bar = egui::Rect::from_min_size(card_rect.min, egui::vec2(2.0, card_rect.height()));
-        ui.painter().rect_filled(bar, 0.0, th.blue);
+        ui.painter().rect_filled(bar, 0.0, th.accent_primary());
     }
 
     card_rect

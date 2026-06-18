@@ -250,7 +250,7 @@ pub fn draw_pane_tab_bars_view(
                                 ui.painter().rect_stroke(
                                     clip_rect,
                                     0.0,
-                                    egui::Stroke::new(2.0, th.green),
+                                    egui::Stroke::new(2.0, th.accent_success()),
                                     egui::StrokeKind::Inside,
                                 );
                             }
@@ -305,7 +305,7 @@ pub fn draw_pane_tab_bars_view(
                                                 egui::pos2(tab_rect.min.x, tab_rect.min.y),
                                                 egui::vec2(tab_w, active_indicator_h),
                                             );
-                                            painter.rect_filled(line_rect, 0.0, th.blue);
+                                            painter.rect_filled(line_rect, 0.0, th.accent_primary());
                                         }
                                         // Fill: 배경은 위에서 이미 th.base 로 채움 — 추가 마커 없음.
                                         ActiveTabIndicator::Fill => {}
@@ -316,7 +316,7 @@ pub fn draw_pane_tab_bars_view(
                                                 tab_rect.center().x,
                                                 tab_rect.min.y + r * 2.0,
                                             );
-                                            painter.circle_filled(center, r, th.blue);
+                                            painter.circle_filled(center, r, th.accent_primary());
                                         }
                                     }
                                 }
@@ -327,7 +327,7 @@ pub fn draw_pane_tab_bars_view(
                                 if is_busy {
                                     let dot_center =
                                         egui::pos2(dot_right - dot_radius, tab_rect.center().y);
-                                    let color: egui::Color32 = th.green.into();
+                                    let color: egui::Color32 = th.accent_success().into();
                                     painter.circle_filled(dot_center, dot_radius, color);
                                 }
 
@@ -444,7 +444,7 @@ pub fn draw_pane_tab_bars_view(
                                         painter.rect_stroke(
                                             tab_clip,
                                             0.0,
-                                            egui::Stroke::new(2.0, th.green),
+                                            egui::Stroke::new(2.0, th.accent_success()),
                                             egui::StrokeKind::Inside,
                                         );
                                     }
@@ -522,7 +522,7 @@ pub fn draw_pane_tab_bars_view(
                                         painter.rect_stroke(
                                             plus_clip,
                                             0.0,
-                                            egui::Stroke::new(2.0, th.green),
+                                            egui::Stroke::new(2.0, th.accent_success()),
                                             egui::StrokeKind::Inside,
                                         );
                                     }
@@ -630,7 +630,7 @@ pub fn draw_pane_tab_bars_view(
             egui::Order::Tooltip,
             egui::Id::new("tab_drag_overlay"),
         ));
-        overlay_painter.rect_filled(marker_rect, 0.0, th.blue);
+        overlay_painter.rect_filled(marker_rect, 0.0, th.accent_primary());
 
         let ghost_name = pane_info
             .tab_names

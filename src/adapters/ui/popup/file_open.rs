@@ -120,7 +120,7 @@ pub fn draw_markdown_open_view(
         ui.label(
             egui::RichText::new(err)
                 .size(th.font_size_caption.value())
-                .color(th.red),
+                .color(th.accent_danger()),
         );
     }
 

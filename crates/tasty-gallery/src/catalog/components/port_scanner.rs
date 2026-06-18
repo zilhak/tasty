@@ -526,7 +526,7 @@ fn draw_state_cell(ui: &mut egui::Ui, th: &Theme) {
     ui.horizontal(|ui| {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
         ui.painter()
-            .circle_filled(rect.center(), 4.0, egui::Color32::from(th.green));
+            .circle_filled(rect.center(), 4.0, egui::Color32::from(th.accent_success()));
         ui.label(
             egui::RichText::new("LISTEN")
                 .color(egui::Color32::from(th.subtext0))
