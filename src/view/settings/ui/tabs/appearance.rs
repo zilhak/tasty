@@ -138,19 +138,19 @@ pub fn draw_appearance_tab(
         },
         |ui| match &current {
             AppearanceSubTab::Theme => {
-                draw_appearance_theme(
+                draw_appearance_theme(ui, settings);
+            }
+            AppearanceSubTab::Colors => {
+                draw_appearance_colors(ui, settings);
+            }
+            AppearanceSubTab::General => {
+                draw_appearance_general(
                     ui,
                     settings,
                     font_families,
                     font_filter,
                     preview_font_loaded,
                 );
-            }
-            AppearanceSubTab::Colors => {
-                draw_appearance_colors(ui, settings);
-            }
-            AppearanceSubTab::General => {
-                draw_appearance_general(ui, settings);
             }
             AppearanceSubTab::Display => {
                 draw_appearance_display(ui, settings);
@@ -187,15 +187,9 @@ pub fn draw_appearance_tab(
     }
 }
 
-/// Appearance > Theme: preset selection + default font settings (single source
-/// of truth for fields not overridden per-surface).
-fn draw_appearance_theme(
-    ui: &mut egui::Ui,
-    settings: &mut Settings,
-    font_families: &mut Option<Vec<String>>,
-    font_filter: &mut HashMap<String, String>,
-    preview_font_loaded: &mut HashMap<String, String>,
-) {
+/// Appearance > Theme: preset selection + note. Font settings live in
+/// Appearance › General.
+fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
@@ -227,9 +221,29 @@ fn draw_appearance_theme(
             .small()
             .color(th.subtext0),
     );
+}
 
-    ui.add_space(16.0);
-    ui.separator();
+/// Convert FontSettings → EffectiveFont (used for default-font preview).
+fn effective_from_settings(s: &FontSettings) -> EffectiveFont {
+    EffectiveFont {
+        font_family: s.font_family.clone(),
+        font_size: s.font_size,
+        custom_font_path: s.custom_font_path.clone(),
+        line_height: s.line_height,
+        font_scale_mode: s.font_scale_mode.clone(),
+    }
+}
+
+/// Appearance > General: default font settings (single source of truth for
+/// fields not overridden per-surface) + background opacity.
+fn draw_appearance_general(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
+) {
+    let th = crate::theme::theme();
     ui.add_space(8.0);
 
     ui.label(
@@ -264,21 +278,11 @@ fn draw_appearance_theme(
             preview_font_loaded,
         );
     });
-}
 
-/// Convert FontSettings → EffectiveFont (used for default-font preview).
-fn effective_from_settings(s: &FontSettings) -> EffectiveFont {
-    EffectiveFont {
-        font_family: s.font_family.clone(),
-        font_size: s.font_size,
-        custom_font_path: s.custom_font_path.clone(),
-        line_height: s.line_height,
-        font_scale_mode: s.font_scale_mode.clone(),
-    }
-}
+    ui.add_space(16.0);
+    ui.separator();
+    ui.add_space(8.0);
 
-/// Appearance > General: theme, background opacity, focused surface bg
-fn draw_appearance_general(ui: &mut egui::Ui, settings: &mut Settings) {
     egui::Grid::new("appearance_general_grid")
         .num_columns(2)
         .spacing([12.0, 8.0])
