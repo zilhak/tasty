@@ -217,6 +217,10 @@ pub(crate) struct TerminalState {
     /// swaps the default foreground/background so the whole screen is inverted.
     /// Reset by RIS. Read by the host via `screen_reverse()`.
     pub(crate) reverse_screen: bool,
+    /// DECOM (DEC private mode 6): origin mode. When set, absolute cursor
+    /// positioning (CUP/VPA/HVP) is relative to the scroll-region top and the
+    /// cursor is confined to the region. Reset by RIS and DECSTR.
+    pub(crate) origin_mode: bool,
 }
 
 /// PTY-backed (or detached mirror) terminal **handle**. Owns PTY I/O and the
@@ -312,6 +316,7 @@ impl TerminalState {
             last_print: None,
             tab_stops: default_tab_stops(cols),
             reverse_screen: false,
+            origin_mode: false,
         }
     }
 

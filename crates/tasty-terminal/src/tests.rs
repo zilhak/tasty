@@ -1575,3 +1575,49 @@ fn decscnm_reset_by_full_reset() {
     t.feed_bytes(b"\x1bc"); // RIS
     assert!(!t.screen_reverse());
 }
+
+// ---- DECOM (DEC private mode 6): origin mode ----
+
+#[test]
+fn decom_makes_cup_region_relative() {
+    let mut t = Terminal::new_detached(20, 10);
+    // Scroll region rows 3..=6 (1-based 4..7).
+    t.feed_bytes(b"\x1b[4;7r");
+    // Enable origin mode — cursor homes to region top (row 3).
+    t.feed_bytes(b"\x1b[?6h");
+    assert_eq!(t.cursor_position(), (0, 3));
+    // CUP to line 1 (region-relative) → physical row 3.
+    t.feed_bytes(b"\x1b[1;1HA");
+    assert_eq!(t.screen_row(3), "A");
+    // CUP to line 2 → physical row 4.
+    t.feed_bytes(b"\x1b[2;1HB");
+    assert_eq!(t.screen_row(4), "B");
+}
+
+#[test]
+fn decom_clamps_to_region_bottom() {
+    let mut t = Terminal::new_detached(20, 10);
+    t.feed_bytes(b"\x1b[4;7r"); // region rows 3..=6
+    t.feed_bytes(b"\x1b[?6h");
+    // Line 99 (region-relative) clamps to region bottom (row 6).
+    t.feed_bytes(b"\x1b[99;1HZ");
+    assert_eq!(t.screen_row(6), "Z");
+}
+
+#[test]
+fn decom_off_is_absolute() {
+    let mut t = Terminal::new_detached(20, 10);
+    t.feed_bytes(b"\x1b[4;7r");
+    // Without origin mode, CUP line 1 is absolute row 0.
+    t.feed_bytes(b"\x1b[1;1HA");
+    assert_eq!(t.screen_row(0), "A");
+}
+
+#[test]
+fn decom_reset_by_full_reset() {
+    let mut t = Terminal::new_detached(20, 10);
+    t.feed_bytes(b"\x1b[4;7r\x1b[?6h");
+    t.feed_bytes(b"\x1bc"); // RIS
+    t.feed_bytes(b"\x1b[1;1HA");
+    assert_eq!(t.screen_row(0), "A");
+}

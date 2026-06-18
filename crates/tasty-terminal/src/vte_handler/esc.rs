@@ -84,6 +84,7 @@ impl TerminalState {
                 self.last_print = None;
                 self.tab_stops = crate::default_tab_stops(self.cols);
                 self.reverse_screen = false;
+                self.origin_mode = false;
                 vec![
                     Change::AllAttributes(CellAttributes::default()),
                     Change::ClearScreen(ColorAttribute::Default),

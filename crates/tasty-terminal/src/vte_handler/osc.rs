@@ -280,6 +280,8 @@ impl TerminalState {
                 self.saved_cursor = None;
                 // Application cursor keys (DECCKM) → reset.
                 self.application_cursor_keys = false;
+                // Origin mode (DECOM) → reset (cursor positioning becomes absolute).
+                self.origin_mode = false;
                 // Insert/replace mode (IRM) → replace.
                 self.insert_mode = false;
                 // Text cursor enable (DECTCEM) → visible.

@@ -146,6 +146,36 @@ impl TerminalState {
         self.tab_stops.iter_mut().for_each(|s| *s = false);
     }
 
+    /// Scroll-region row bounds `(top, bottom)`, 0-based inclusive. Full screen
+    /// when no region is set.
+    pub(crate) fn region_bounds(&self) -> (usize, usize) {
+        match self.scroll_region {
+            Some((top, bottom)) => (top, bottom),
+            None => (0, self.rows.saturating_sub(1)),
+        }
+    }
+
+    /// Translate a logical (0-based) absolute row to a physical surface row,
+    /// honoring DECOM origin mode. In origin mode the row is offset by the
+    /// region top and clamped to the region bottom; otherwise it is unchanged.
+    pub(crate) fn resolve_origin_row(&self, logical_row: usize) -> usize {
+        if self.origin_mode {
+            let (top, bottom) = self.region_bounds();
+            (top + logical_row).min(bottom)
+        } else {
+            logical_row
+        }
+    }
+
+    /// Home row for cursor positioning: region top in origin mode, else 0.
+    pub(crate) fn origin_home_row(&self) -> usize {
+        if self.origin_mode {
+            self.region_bounds().0
+        } else {
+            0
+        }
+    }
+
     /// Get scroll region parameters for ScrollRegionUp/Down changes.
     pub(crate) fn scroll_region_params(&self) -> (usize, usize) {
         match self.scroll_region {

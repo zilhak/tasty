@@ -183,6 +183,19 @@ impl TerminalState {
                 // is untouched.
                 self.reverse_screen = enable;
             }
+            DecPrivateModeCode::OriginMode => {
+                // DECOM (mode 6): origin mode. Setting or resetting it always homes
+                // the cursor — to the region top-left in origin mode, else to the
+                // screen top-left. Absolute positioning honors this via
+                // resolve_origin_row(); relative-move confinement to the region is
+                // not modeled (rarely relied upon).
+                self.origin_mode = enable;
+                let home_row = self.origin_home_row();
+                self.apply_or_stage_change(Change::CursorPosition {
+                    x: Position::Absolute(0),
+                    y: Position::Absolute(home_row),
+                });
+            }
             DecPrivateModeCode::AutoWrap => {
                 // AutoWrap is handled by termwiz Surface internally, ignore for now
             }

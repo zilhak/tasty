@@ -76,7 +76,7 @@ impl TerminalState {
             }],
             Cursor::Position { line, col } => vec![Change::CursorPosition {
                 x: Position::Absolute(col.as_zero_based() as usize),
-                y: Position::Absolute(line.as_zero_based() as usize),
+                y: Position::Absolute(self.resolve_origin_row(line.as_zero_based() as usize)),
             }],
             Cursor::CharacterAbsolute(col) | Cursor::CharacterPositionAbsolute(col) => {
                 vec![Change::CursorPosition {
@@ -86,7 +86,7 @@ impl TerminalState {
             }
             Cursor::LinePositionAbsolute(line) => vec![Change::CursorPosition {
                 x: Position::Relative(0),
-                y: Position::Absolute(line.saturating_sub(1) as usize),
+                y: Position::Absolute(self.resolve_origin_row(line.saturating_sub(1) as usize)),
             }],
             Cursor::CharacterPositionBackward(n) => vec![Change::CursorPosition {
                 x: Position::Relative(-(n as isize)),
@@ -98,7 +98,7 @@ impl TerminalState {
             }],
             Cursor::CharacterAndLinePosition { line, col } => vec![Change::CursorPosition {
                 x: Position::Absolute(col.as_zero_based() as usize),
-                y: Position::Absolute(line.as_zero_based() as usize),
+                y: Position::Absolute(self.resolve_origin_row(line.as_zero_based() as usize)),
             }],
             Cursor::LinePositionBackward(n) => vec![Change::CursorPosition {
                 x: Position::Relative(0),
@@ -202,10 +202,11 @@ impl TerminalState {
                 } else {
                     self.scroll_region = Some((top_val, bottom_val));
                 }
-                // DECSTBM also resets cursor to home
+                // DECSTBM also resets the cursor to home, which is the region top
+                // in origin mode (computed after the region change above).
                 vec![Change::CursorPosition {
                     x: Position::Absolute(0),
-                    y: Position::Absolute(0),
+                    y: Position::Absolute(self.origin_home_row()),
                 }]
             }
             Cursor::CursorStyle(style) => {
