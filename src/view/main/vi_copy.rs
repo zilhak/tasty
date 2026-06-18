@@ -414,6 +414,8 @@ pub enum ViKeyOutcome {
     /// 검색 실행: mini-prompt 가 commit 됨. 호출자가 query 로 검색.
     SearchCommit {
         query: String,
+        /// commit 시점의 검색 방향 — 현재 호출자는 query 만 쓰지만 액션의 완전한
+        /// 의미를 위해 함께 담는다(`SearchNext`/`SearchPrev` 와 짝).
         #[allow(dead_code)]
         direction: SearchDir,
     },

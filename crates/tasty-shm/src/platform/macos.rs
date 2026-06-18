@@ -45,6 +45,8 @@ impl PlatformPayload {
         self.fd.as_raw_fd()
     }
 
+    /// fd 소유권을 호출자로 명시 이양 — `raw_fd`(빌림)와 짝. `round_trip` 통합
+    /// 테스트가 이 경로(호출자 fd 소유권 회수)를 검증한다.
     #[allow(dead_code)]
     pub(crate) fn into_raw_fd(self) -> RawFd {
         self.fd.into_raw_fd()

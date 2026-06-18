@@ -30,6 +30,8 @@ struct MarkdownOpenProps<'a> {
     error: Option<&'a str>,
 }
 
+/// 본체 markdown-open view 와의 action API 동등성 유지를 위해 보존 — 갤러리
+/// 단독 demo 는 일부 variant(예: Close)를 trigger 할 경로가 없다.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MarkdownOpenAction {
