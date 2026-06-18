@@ -572,7 +572,6 @@ impl Core {
     /// 처럼 *결과 정보가 필요한* variant 는 본 메서드 안에서 직접 mutate 후
     /// event 에 결과를 담아 반환한다. CreateWorkspace 분기만 engine 을
     /// 사용하므로 rustc 는 unused 경고를 내지 않는다.
-    #[allow(dead_code)]
     pub(crate) fn apply(
         &mut self,
         engine: &mut crate::core::CoreState,

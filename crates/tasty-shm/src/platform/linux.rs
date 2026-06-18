@@ -174,7 +174,6 @@ fn set_cloexec(fd: RawFd) -> Result<(), ShmError> {
 impl PlatformPayload {
     /// 호출자가 sendmsg 후 fd 소유권을 명시적으로 회수하고 싶을 때.
     /// 일반적으로는 Drop으로 자동 close되므로 사용 불요.
-    #[allow(dead_code)]
     pub(crate) fn into_raw_fd(self) -> RawFd {
         self.fd.into_raw_fd()
     }

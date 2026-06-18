@@ -278,20 +278,17 @@ fn error_tree(msg: &str) -> String {
 struct PopupOpenCtx {
     instance_id: u64,
     #[serde(default)]
-    #[allow(dead_code)]
     popup_id: String,
 }
 
 #[derive(Deserialize)]
 struct PopupEventCtx {
-    #[allow(dead_code)]
     instance_id: u64,
     event: UiEvent,
 }
 
 #[derive(Deserialize)]
 struct UiEvent {
-    #[allow(dead_code)]
     #[serde(rename = "type")]
     kind: Option<String>,
     node_id: Option<String>,
@@ -303,6 +300,5 @@ struct PopupClosedCtx {
 }
 
 // silence unused-imports warnings on serde::Serialize when no fields require it.
-#[allow(dead_code)]
 #[derive(Serialize)]
 struct _PocPlaceholder;

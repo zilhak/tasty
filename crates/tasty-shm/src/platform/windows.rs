@@ -239,7 +239,6 @@ fn duplicate_to_self(source: HANDLE) -> Result<HANDLE, ShmError> {
 
 impl PlatformPayload {
     /// 핸들 값을 회수. 일반적으로는 호출 불요 (Drop이 없음 — peer 소유라서).
-    #[allow(dead_code)]
     pub(crate) fn into_raw(self) -> u64 {
         let h = self.duplicated;
         std::mem::forget(self);

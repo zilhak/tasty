@@ -1000,7 +1000,6 @@ impl MainView {
 
 /// 표준 입력 path 에서 호출하는 진입점. core_state 를 다시 한번 참조하지 않도록
 /// 별도 모듈로 분리하지 않고 same module.
-#[allow(dead_code)]
 fn _module_uses_core_state(_: &CoreState) {}
 
 #[cfg(test)]

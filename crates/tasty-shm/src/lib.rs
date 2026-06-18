@@ -180,7 +180,6 @@ pub enum ReceivedPayload {
 /// 단일 프로세스 내 단조 카운터 (macOS의 shm_open 이름 충돌 방지용).
 static MONO_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[allow(dead_code)]
 pub(crate) fn next_unique_id() -> u64 {
     MONO_COUNTER.fetch_add(1, Ordering::Relaxed)
 }

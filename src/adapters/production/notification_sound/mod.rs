@@ -5,7 +5,6 @@
 //! `feature = "gui"` 조건이 추가로 붙는다. headless macOS 빌드에서는
 //! NoopPlayer alias 로 fallback.
 
-#![allow(dead_code)]
 #![allow(unused_imports)]
 
 #[cfg(target_os = "linux")]

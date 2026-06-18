@@ -1,7 +1,6 @@
 //! Tasty CLI — clap subcommand surface + transport/request/run dispatch.
 //!
 //! Phase F.B.13-3 에서 본 바이너리 src/adapters/cli/ 의 전 내용을 흡수.
-#![allow(dead_code)]
 
 pub mod commands;
 pub mod cwd_resolve;

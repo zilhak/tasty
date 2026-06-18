@@ -14,7 +14,6 @@ pub enum PopupScope {
     /// 지정된 워크스페이스가 활성일 때만 표시.
     Workspace(usize),
     /// 지정된 pane 이 보일 때만 표시 (pane 영역 클램프).
-    #[allow(dead_code)]
     Pane(u32),
     /// 지정된 tab 이 활성일 때만 표시 (pane 영역 클램프).
     Tab(u32, usize),

@@ -39,7 +39,6 @@ pub(crate) enum ConvertSurfaceTarget {
 /// - `Bytes`: 변환 완료된 raw bytes (control sequences 포함). `send_bytes` 호출.
 /// - `Text`: raw text. `send_key` 호출 (escape 처리 없음 — UTF-8 그대로).
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) enum SendPayload {
     Bytes(Vec<u8>),
     Text(String),
@@ -47,7 +46,6 @@ pub(crate) enum SendPayload {
 
 /// 도메인 변경 요청. Core 만이 자기 메서드로 적용한다.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 #[allow(clippy::large_enum_variant)] // reason: hot intent queue 에 Box 화 시 alloc 비용 큼
 pub(crate) enum DomainIntent {
     // ─── Settings (D.3.C.A.2) ───
@@ -501,7 +499,6 @@ pub(crate) enum CoreEvent {
 
 /// `CoreEvent::PluginRegistryChanged` 의 변경 종류.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) enum PluginRegistryChange {
     Installed { version: String },
     Removed,
@@ -525,7 +522,6 @@ pub(crate) enum RestoredKind {
 
 /// `CoreEvent::SurfaceClosed` 의 cascade 깊이 정보.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum CascadeLevel {
     Surface,
     Tab,

@@ -11,7 +11,6 @@ pub trait ClipboardSystem: Send + Sync {
     fn write_image(&self, image: &ClipboardImage) -> anyhow::Result<()>;
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ClipboardImage {
     pub width: u32,

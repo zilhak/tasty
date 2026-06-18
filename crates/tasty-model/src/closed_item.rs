@@ -406,12 +406,10 @@ impl ClosedItemStore {
     }
 
     /// 라이브러리 표준 accessor — "복원 가능 항목 없음" UI 분기 후보.
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.items.len()
     }

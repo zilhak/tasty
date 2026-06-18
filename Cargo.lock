@@ -5648,7 +5648,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-history"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -5718,7 +5718,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-manifest"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "semver 1.0.27",

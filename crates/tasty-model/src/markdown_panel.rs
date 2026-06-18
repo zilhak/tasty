@@ -52,7 +52,6 @@ impl MarkdownPanel {
 
     /// Force a reload regardless of throttle/mtime. Returns new content on success.
     /// 향후 hot-reload 단축키 hook 시 호출.
-    #[allow(dead_code)]
     pub fn force_reload(&mut self) -> Option<String> {
         self.last_mtime = std::fs::metadata(&self.file_path)
             .and_then(|m| m.modified())

@@ -217,7 +217,6 @@ fn log_err<T>(r: Result<T>, task_id: &str) {
 // 대신 ImmediateFail 가 어떻게 처리돼야 하는지는 host executor 의 의무로 — 본
 // trait 의 `poll` 이 ImmediateFail handle 을 받으면 PollOutcome::Failed 를 반환
 // 해야 한다 (host 측 구현 명세).
-#[allow(dead_code)]
 fn _agent_error_link(_e: AgentError) {}
 
 #[cfg(test)]

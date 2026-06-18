@@ -22,7 +22,6 @@ use crate::ports::process::ProcessSpawner;
 /// `preset_store` 는 구체 Arc 로 받고, trait `presets` port 는 빌더가 내부에서
 /// *같은 allocation* 으로 coerce — 호출처가 별 두 인자 주입할 필요 없음 +
 /// 두 필드의 owner 일관성 자동 보장.
-#[allow(dead_code)]
 pub(crate) struct CoreBuilder {
     fs: Option<Arc<dyn FileSystem>>,
     clock: Option<Arc<dyn Clock>>,
@@ -36,7 +35,6 @@ pub(crate) struct CoreBuilder {
     settings_storage: Option<Arc<dyn SettingsStorage>>,
 }
 
-#[allow(dead_code)]
 impl CoreBuilder {
     pub(crate) fn new() -> Self {
         Self {

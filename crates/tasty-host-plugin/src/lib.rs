@@ -5,7 +5,6 @@
 //! 모듈을 흡수한다. host 본 바이너리 결합은 Phase F.B.0 의 6 host_port trait
 //! (SurfaceRegistry / FileFormatRegistryPort / FileHandlerRegistryPort /
 //! I18nNamespaceRegistrar / IpcHostFacade) + plugin_bridge/ 잔존 5 모듈로 격리.
-#![allow(dead_code)]
 
 pub mod builtin;
 pub mod bundle_sig;
