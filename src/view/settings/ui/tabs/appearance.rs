@@ -209,12 +209,13 @@ fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
     let entries = tasty_themes::scan_themes();
     for entry in &entries {
         let is_current = settings.appearance.theme == entry.id;
-        let response = ui.selectable_label(is_current, &entry.label);
-        if response.clicked() && !is_current {
+        let clicked = draw_theme_swatch(ui, &th, &entry.label, &entry.file, is_current);
+        if clicked && !is_current {
             // 테마 변경 = base 누적 + overrides 클리어. 적용은 settings 저장 후
             // (modal::on_save) GPU bridge 가 install_global 로 반영.
             tasty_themes::apply_theme(&mut settings.appearance, &entry.id);
         }
+        ui.add_space(th.spacing_xs.value());
     }
 
     ui.add_space(8.0);
@@ -223,6 +224,109 @@ fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
             .small()
             .color(th.subtext0),
     );
+}
+
+/// 한 테마의 대표 5색 `[bg, surface, accent, accent_alt, success]` 을 `ThemeFile`
+/// 에서 파생한다. 디자인(changelog 2026-06-16 #5, `ThemeSwatch`) 매핑:
+/// bg=`palette.crust`, surface=`palette.base`, accent=`accent.blue`,
+/// accent_alt=`accent.mauve`, success=`accent.green`.
+///
+/// 각 필드는 테마가 일부만 지정할 수 있어 `Option` 이며, `None` 이면 빌트인 mocha
+/// fallback 색으로 대체한다(전역 적용 시 실제로 보이는 색과 일치).
+fn representative_swatch(file: &tasty_themes::ThemeFile) -> [HexColor; 5] {
+    let base = tasty_themes::mocha_fallback_colors();
+    [
+        file.palette.crust.unwrap_or(base.crust),
+        file.palette.base.unwrap_or(base.base),
+        file.accent.blue.unwrap_or(base.blue),
+        file.accent.mauve.unwrap_or(base.mauve),
+        file.accent.green.unwrap_or(base.green),
+    ]
+}
+
+/// 프리셋 한 개를 5색 스와치 카드(스트라이프 38px + 라벨)로 그린다. 활성(현재
+/// 선택) 시 accent 보더 + 1px ring 으로 강조. 반환값은 클릭 여부.
+///
+/// 색·보더·간격은 모두 `Theme` 토큰 경유(하드코딩 금지). 스와치 색은 `entry.file`
+/// 에서 파생([`representative_swatch`]).
+fn draw_theme_swatch(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    label: &str,
+    file: &tasty_themes::ThemeFile,
+    is_current: bool,
+) -> bool {
+    let swatch = representative_swatch(file);
+
+    let pad = th.spacing_sm.value();
+    let stripe_h = THEME_SWATCH_STRIPE_HEIGHT.value();
+    let label_h = th.font_size_body.value() + THEME_SWATCH_LABEL_PAD.value();
+    let gap = th.spacing_xs.value();
+    let card_w = ui.available_width();
+    let card_h = pad + stripe_h + gap + label_h + pad;
+
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let painter = ui.painter();
+    let corner = th.corner_radius.value();
+
+    // 카드 배경 (surface-raised).
+    painter.rect_filled(rect, corner, th.surface_raised().to_egui());
+
+    // 5색 스트라이프 — 동일 폭 5분할.
+    let stripe_rect = egui::Rect::from_min_size(
+        egui::pos2(rect.min.x + pad, rect.min.y + pad),
+        egui::vec2(card_w - pad * 2.0, stripe_h),
+    );
+    let seg_w = stripe_rect.width() / swatch.len() as f32;
+    for (i, color) in swatch.iter().enumerate() {
+        let seg = egui::Rect::from_min_size(
+            egui::pos2(stripe_rect.min.x + seg_w * i as f32, stripe_rect.min.y),
+            egui::vec2(seg_w, stripe_h),
+        );
+        painter.rect_filled(seg, 0.0, color.to_egui());
+    }
+
+    // 라벨 (스트라이프 하단).
+    painter.text(
+        egui::pos2(rect.min.x + pad, stripe_rect.max.y + gap),
+        egui::Align2::LEFT_TOP,
+        label,
+        egui::FontId::proportional(th.font_size_body.value()),
+        th.text.to_egui(),
+    );
+
+    // 보더 — 활성: accent 보더 + 1px inner ring. 비활성: border-default(hover 시 강조).
+    if is_current {
+        painter.rect_stroke(
+            rect,
+            corner,
+            egui::Stroke::new(th.border_width.value(), th.accent_primary().to_egui()),
+            egui::StrokeKind::Inside,
+        );
+        let inner = rect.shrink(th.spacing_xs.value() / 2.0);
+        painter.rect_stroke(
+            inner,
+            (corner - 1.0).max(0.0),
+            egui::Stroke::new(th.border_width.value(), th.accent_primary().to_egui()),
+            egui::StrokeKind::Inside,
+        );
+    } else {
+        let border = if resp.hovered() {
+            th.border_strong().to_egui()
+        } else {
+            th.border_default().to_egui()
+        };
+        painter.rect_stroke(
+            rect,
+            corner,
+            egui::Stroke::new(th.border_width.value(), border),
+            egui::StrokeKind::Inside,
+        );
+    }
+
+    resp.clicked()
 }
 
 /// Convert FontSettings → EffectiveFont (used for default-font preview).
@@ -726,6 +830,10 @@ const COLOR_OVERRIDE_DOT_SIZE: LogicalPx = LogicalPx(5.0);
 const COLOR_HEX_INPUT_WIDTH: LogicalPx = LogicalPx(96.0);
 /// 색 토큰 이름 컬럼 폭 — 행 간 입력/스와치/체크박스 정렬용.
 const COLOR_FIELD_NAME_WIDTH: LogicalPx = LogicalPx(150.0);
+
+/// Theme 프리셋 스와치(design #5): 5색 스트라이프 높이 / 스트라이프~라벨 사이 여백.
+const THEME_SWATCH_STRIPE_HEIGHT: LogicalPx = LogicalPx(38.0);
+const THEME_SWATCH_LABEL_PAD: LogicalPx = LogicalPx(4.0);
 
 /// 한 색 행: 표시 이름(기술 토큰, 비번역) + base/override 접근자(fn 포인터).
 struct ColorRowDef {
@@ -1547,6 +1655,48 @@ fn draw_font_preview(
         .size(th.font_size_caption.value())
         .color(th.subtext0),
     );
+}
+
+#[cfg(test)]
+mod swatch_tests {
+    use super::{HexColor, representative_swatch};
+    use tasty_themes::ThemeFile;
+
+    #[test]
+    fn swatch_derives_from_theme_file_colors() {
+        let text = r##"
+            [palette]
+            crust = "#11111b"
+            base = "#1e1e2e"
+            [accent]
+            blue = "#89b4fa"
+            mauve = "#cba6f7"
+            green = "#a6e3a1"
+        "##;
+        let file = ThemeFile::parse(text).expect("parse");
+        // [bg, surface, accent, accent_alt, success]
+        assert_eq!(
+            representative_swatch(&file),
+            [
+                HexColor::from_rgb(0x11, 0x11, 0x1b),
+                HexColor::from_rgb(0x1e, 0x1e, 0x2e),
+                HexColor::from_rgb(0x89, 0xb4, 0xfa),
+                HexColor::from_rgb(0xcb, 0xa6, 0xf7),
+                HexColor::from_rgb(0xa6, 0xe3, 0xa1),
+            ]
+        );
+    }
+
+    #[test]
+    fn swatch_falls_back_to_mocha_base_when_unspecified() {
+        // 색을 하나도 지정하지 않은 테마 → 5색 모두 mocha fallback.
+        let file = ThemeFile::default();
+        let base = tasty_themes::mocha_fallback_colors();
+        assert_eq!(
+            representative_swatch(&file),
+            [base.crust, base.base, base.blue, base.mauve, base.green]
+        );
+    }
 }
 
 #[cfg(test)]
