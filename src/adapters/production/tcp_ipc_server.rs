@@ -260,7 +260,7 @@ impl TcpIpcServer {
         }
 
         ctx.hub.unregister(client_id); // drops the sink sender → write thread exits
-        let _ = write_handle.join();
+        let _ = write_handle.join();  // writer 스레드 join 실패(패닉) 무시 — 종료 경로
         // Notify the main loop so it releases any attach locks this client held
         // (attach/detach step 3). Best-effort: if the main loop is gone, nothing
         // to release anyway.

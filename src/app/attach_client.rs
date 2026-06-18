@@ -227,11 +227,11 @@ impl App {
                                 }
                                 // 실시간 갱신: 데이터가 오는 즉시 메인 루프를 깨워 mirror 에
                                 // 적용한다(로컬 PTY 의 TerminalOutput wake 와 동형).
-                                let _ = proxy.send_event(AppEvent::AttachClientData);
+                                let _ = proxy.send_event(AppEvent::AttachClientData);  // event loop 종료 시에만 실패 — 무시
                             }
                             StreamTag::Detach => {
                                 disconnected.store(true, Ordering::SeqCst);
-                                let _ = proxy.send_event(AppEvent::AttachClientData);
+                                let _ = proxy.send_event(AppEvent::AttachClientData);  // event loop 종료 시에만 실패 — 무시
                                 break;
                             }
                             StreamTag::Control => {
@@ -239,7 +239,7 @@ impl App {
                                     .contains("force_detached")
                                 {
                                     disconnected.store(true, Ordering::SeqCst);
-                                    let _ = proxy.send_event(AppEvent::AttachClientData);
+                                    let _ = proxy.send_event(AppEvent::AttachClientData);  // event loop 종료 시에만 실패 — 무시
                                     break;
                                 }
                             }
@@ -247,7 +247,7 @@ impl App {
                         },
                         Err(_) => {
                             disconnected.store(true, Ordering::SeqCst);
-                            let _ = proxy.send_event(AppEvent::AttachClientData);
+                            let _ = proxy.send_event(AppEvent::AttachClientData);  // event loop 종료 시에만 실패 — 무시
                             break;
                         }
                     }
@@ -354,7 +354,7 @@ impl App {
         }
         // 원격에 detach 통지(best-effort).
         if let Ok(mut w) = sess.writer.lock() {
-            let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]);
+            let _ = stream::write_frame(&mut *w, StreamTag::Detach, &[]);  // best-effort detach 통지 — 종료 경로, 실패 무시
         }
         // 단계 7 — 자동 attach 였다면 anchor 게이트 해제(재활성 시 재attach 가능).
         if let Some(anchor) = sess.anchor_ws_id {

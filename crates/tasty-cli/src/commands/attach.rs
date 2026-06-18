@@ -363,11 +363,11 @@ fn run_workspace_mirror_dump(
 
     let mut writer = writer;
     if !forced && !disconnected {
-        let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]);
+        let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]);  // best-effort detach 통지 — 무시
     } else if forced {
         eprintln!("force-detached by server");
     }
-    let _ = reader.join();
+    let _ = reader.join();  // reader 스레드 join 실패(패닉) 무시 — 종료 경로
     Ok(if disconnected {
         AttachExit::Disconnected
     } else {
@@ -446,11 +446,11 @@ fn run_mirror_dump(
     // 정상 종료 시 detach 통지(force-detach/단절이면 서버가 이미 끊음).
     let mut writer = writer;
     if !forced && !disconnected {
-        let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]);
+        let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]);  // best-effort detach 통지 — 무시
     } else if forced {
         eprintln!("force-detached by server");
     }
-    let _ = reader.join();
+    let _ = reader.join();  // reader 스레드 join 실패(패닉) 무시 — 종료 경로
     Ok(if disconnected {
         AttachExit::Disconnected
     } else {
@@ -478,8 +478,8 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
             match frame.tag {
                 StreamTag::Data => {
                     let mut h = stdout.lock();
-                    let _ = h.write_all(&frame.payload);
-                    let _ = h.flush();
+                    let _ = h.write_all(&frame.payload);  // best-effort stdout 미러 — 무시
+                    let _ = h.flush();  // best-effort flush — 무시
                 }
                 StreamTag::Detach => break,
                 StreamTag::Control => {
@@ -504,9 +504,9 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
                 if let Some(pos) = buf[..n].iter().position(|&b| b == 0x1c) {
                     // Ctrl+\ 이전 바이트만 보내고 detach.
                     if pos > 0 {
-                        let _ = stream::write_frame(&mut writer, StreamTag::Data, &buf[..pos]);
+                        let _ = stream::write_frame(&mut writer, StreamTag::Data, &buf[..pos]);  // 종료 경로 best-effort 송신 — 무시
                     }
-                    let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]);
+                    let _ = stream::write_frame(&mut writer, StreamTag::Detach, &[]);  // best-effort detach 통지 — 무시
                     break;
                 }
                 if stream::write_frame(&mut writer, StreamTag::Data, &buf[..n]).is_err() {
@@ -516,7 +516,7 @@ fn run_raw_bridge(conn: StreamConnection, send: Option<&str>) -> Result<AttachEx
             Err(_) => break,
         }
     }
-    let _ = reader.join();
+    let _ = reader.join();  // reader 스레드 join 실패(패닉) 무시 — 종료 경로
     Ok(AttachExit::Completed)
 }
 

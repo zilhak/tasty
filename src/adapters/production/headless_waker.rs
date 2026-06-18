@@ -92,6 +92,7 @@ impl WakerFactory for HeadlessWakerFactory {
             if gate.swap(true, Ordering::AcqRel) {
                 return;
             }
+            // headless receiver shutdown race 는 무시 (정상 shutdown 시퀀스).
             let _ = tx.send(AppEvent::TerminalOutput(None));
         })
     }

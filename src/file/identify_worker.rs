@@ -57,7 +57,7 @@ impl IdentifyWorker {
         let target_for_thread = target.clone();
         std::thread::spawn(move || {
             let detector = registry.identify(&target_for_thread, depth);
-            let _ = proxy.send_event(AppEvent::IdentifyDone {
+            let _ = proxy.send_event(AppEvent::IdentifyDone { // event loop 종료 시에만 실패 — 무시
                 request_id: id,
                 target: target_for_thread,
                 detector,

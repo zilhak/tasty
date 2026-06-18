@@ -489,8 +489,8 @@ impl SshTunnel {
 
 impl Drop for SshTunnel {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        let _ = self.child.kill();  // best-effort 자식 종료 — 이미 종료됐을 수 있음, 무시
+        let _ = self.child.wait();  // 좀비 방지 reaping — 실패 무시
     }
 }
 

@@ -81,13 +81,13 @@ impl App {
         // 워커: 프로필 resolve + 포트 발견 + ssh -L 터널(최대 ~수초 블록).
         std::thread::spawn(move || {
             let result = resolve_endpoint(&target);
-            let _ = tx.send(AutoAttachOutcome {
+            let _ = tx.send(AutoAttachOutcome { // 수신자가 이미 drop 됐을 수 있음(메인 루프 종료) — 무시
                 anchor_ws_id: anchor,
                 remote_ws,
                 result,
             });
             // 메인 루프를 깨워 결과를 drain 시킨다(idle 상태에서도 즉시 반영).
-            let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady);
+            let _ = proxy.send_event(crate::app::event::AppEvent::AutoAttachReady);  // event loop 종료 시에만 실패 — 무시
         });
     }
 

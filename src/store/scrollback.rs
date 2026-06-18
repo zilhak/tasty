@@ -136,7 +136,7 @@ pub fn new_persist_id() -> String {
     let mut s = String::with_capacity(32);
     for b in bytes {
         use std::fmt::Write;
-        let _ = write!(s, "{b:02x}");
+        let _ = write!(s, "{b:02x}"); // String 의 fmt::Write 는 infallible — 항상 Ok, 무시.
     }
     s
 }

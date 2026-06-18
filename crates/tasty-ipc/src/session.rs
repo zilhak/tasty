@@ -390,10 +390,10 @@ impl<'a> SessionStore<'a> {
             alive.push(session);
         }
         for key in to_evict {
-            let _ = self.mem.delete(&self.owner, &Scope::Global, &key, None);
+            let _ = self.mem.delete(&self.owner, &Scope::Global, &key, None);  // best-effort 만료 키 제거 — 실패 무시
         }
         for (t, s) in to_resave {
-            let _ = self.put(&t, &s);
+            let _ = self.put(&t, &s);  // best-effort 재저장 — 실패 무시
         }
         Ok(alive)
     }

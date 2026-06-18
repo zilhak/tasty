@@ -212,7 +212,7 @@ impl<'a> AuditStore<'a> {
             }
         }
         for key in to_evict {
-            let _ = self.mem.delete(&self.owner, &Scope::Global, &key, None);
+            let _ = self.mem.delete(&self.owner, &Scope::Global, &key, None);  // best-effort 만료 레코드 제거 — 실패 무시
         }
         alive.sort_by_key(|r| (r.ts_ms, r.seq));
         Ok(alive)

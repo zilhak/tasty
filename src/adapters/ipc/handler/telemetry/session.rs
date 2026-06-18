@@ -243,89 +243,95 @@ pub(super) fn collect_anomalies(
 pub(super) fn render_summary_markdown(s: &SessionSummary) -> String {
     use std::fmt::Write;
     let mut out = String::new();
-    let _ = writeln!(out, "# 세션 요약");
-    let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "- workspace_id: {}",
-        s.workspace_id
-            .map(|w| w.to_string())
-            .unwrap_or_else(|| "(all)".into())
-    );
-    let _ = writeln!(
-        out,
-        "- 기간: {} ~ {}",
-        s.since
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "(시작 없음)".into()),
-        s.until
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "(끝 없음)".into()),
-    );
-    let _ = writeln!(out);
+    // `String` 의 `fmt::Write` 는 절대 실패하지 않으므로(infallible) 내부에서 `?` 로
+    // 묶고 마지막에 한 번만 단언한다. 네트워크 전송이 아니라 인메모리 포맷팅이다.
+    let build = |out: &mut String| -> std::fmt::Result {
+        writeln!(out, "# 세션 요약")?;
+        writeln!(out)?;
+        writeln!(
+            out,
+            "- workspace_id: {}",
+            s.workspace_id
+                .map(|w| w.to_string())
+                .unwrap_or_else(|| "(all)".into())
+        )?;
+        writeln!(
+            out,
+            "- 기간: {} ~ {}",
+            s.since
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "(시작 없음)".into()),
+            s.until
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "(끝 없음)".into()),
+        )?;
+        writeln!(out)?;
 
-    let _ = writeln!(out, "## 메트릭 합계");
-    if s.tokens.is_empty() {
-        let _ = writeln!(out, "_없음_");
-    } else {
-        let _ = writeln!(out, "| metric | sum |");
-        let _ = writeln!(out, "|---|---|");
-        for (k, v) in s.tokens.iter() {
-            let _ = writeln!(out, "| `{k}` | {v} |");
+        writeln!(out, "## 메트릭 합계")?;
+        if s.tokens.is_empty() {
+            writeln!(out, "_없음_")?;
+        } else {
+            writeln!(out, "| metric | sum |")?;
+            writeln!(out, "|---|---|")?;
+            for (k, v) in s.tokens.iter() {
+                writeln!(out, "| `{k}` | {v} |")?;
+            }
         }
-    }
-    let _ = writeln!(out);
+        writeln!(out)?;
 
-    let _ = writeln!(out, "## IPC 호출");
-    let _ = writeln!(out, "- 총 {} 회", s.ipc_calls_total);
-    if !s.ipc_calls_top.is_empty() {
-        let _ = writeln!(out);
-        let _ = writeln!(out, "| method | count |");
-        let _ = writeln!(out, "|---|---|");
-        for (m, c) in &s.ipc_calls_top {
-            let _ = writeln!(out, "| `{m}` | {c} |");
+        writeln!(out, "## IPC 호출")?;
+        writeln!(out, "- 총 {} 회", s.ipc_calls_total)?;
+        if !s.ipc_calls_top.is_empty() {
+            writeln!(out)?;
+            writeln!(out, "| method | count |")?;
+            writeln!(out, "|---|---|")?;
+            for (m, c) in &s.ipc_calls_top {
+                writeln!(out, "| `{m}` | {c} |")?;
+            }
         }
-    }
-    let _ = writeln!(out);
+        writeln!(out)?;
 
-    let _ = writeln!(out, "## 승인");
-    let _ = writeln!(
-        out,
-        "- total {}, responded {} (pending {}, timed_out {}, cancelled {})",
-        s.approvals.total,
-        s.approvals.responded,
-        s.approvals.pending,
-        s.approvals.timed_out,
-        s.approvals.cancelled,
-    );
-    if !s.approvals.by_choice.is_empty() {
-        let _ = writeln!(out);
-        let _ = writeln!(out, "| choice | count |");
-        let _ = writeln!(out, "|---|---|");
-        for (k, v) in s.approvals.by_choice.iter() {
-            let _ = writeln!(out, "| `{k}` | {v} |");
+        writeln!(out, "## 승인")?;
+        writeln!(
+            out,
+            "- total {}, responded {} (pending {}, timed_out {}, cancelled {})",
+            s.approvals.total,
+            s.approvals.responded,
+            s.approvals.pending,
+            s.approvals.timed_out,
+            s.approvals.cancelled,
+        )?;
+        if !s.approvals.by_choice.is_empty() {
+            writeln!(out)?;
+            writeln!(out, "| choice | count |")?;
+            writeln!(out, "|---|---|")?;
+            for (k, v) in s.approvals.by_choice.iter() {
+                writeln!(out, "| `{k}` | {v} |")?;
+            }
         }
-    }
-    let _ = writeln!(out);
+        writeln!(out)?;
 
-    let _ = writeln!(out, "## 이상 신호 (anomalies)");
-    if s.anomalies.is_empty() {
-        let _ = writeln!(out, "_없음_");
-    } else {
-        let _ = writeln!(out, "| detected_at | kind | agent | subject | count |");
-        let _ = writeln!(out, "|---|---|---|---|---|");
-        for a in &s.anomalies {
-            let cnt = a.detail.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
-            let _ = writeln!(
-                out,
-                "| {} | `{}` | `{}` | `{}` | {} |",
-                a.detected_at,
-                a.kind.as_token(),
-                a.agent,
-                a.subject,
-                cnt,
-            );
+        writeln!(out, "## 이상 신호 (anomalies)")?;
+        if s.anomalies.is_empty() {
+            writeln!(out, "_없음_")?;
+        } else {
+            writeln!(out, "| detected_at | kind | agent | subject | count |")?;
+            writeln!(out, "|---|---|---|---|---|")?;
+            for a in &s.anomalies {
+                let cnt = a.detail.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+                writeln!(
+                    out,
+                    "| {} | `{}` | `{}` | `{}` | {} |",
+                    a.detected_at,
+                    a.kind.as_token(),
+                    a.agent,
+                    a.subject,
+                    cnt,
+                )?;
+            }
         }
-    }
+        Ok(())
+    };
+    build(&mut out).expect("String 으로의 fmt::Write 는 infallible");
     out
 }
