@@ -1439,3 +1439,24 @@ fn decaln_fills_screen_with_e() {
     // DECALN homes the cursor.
     assert_eq!(t.cursor_position(), (0, 0));
 }
+
+// ---- NEL (ESC E): next line (index + carriage return) ----
+
+#[test]
+fn nel_moves_to_next_line_col0() {
+    let mut t = Terminal::new_detached(10, 4);
+    t.feed_bytes(b"abc\x1bEx");
+    // 'x' should land at column 0 of row 1, not after 'abc'.
+    assert_eq!(t.screen_row(0), "abc");
+    assert_eq!(t.screen_row(1), "x");
+    assert_eq!(t.cursor_position(), (1, 1));
+}
+
+#[test]
+fn nel_scrolls_at_bottom() {
+    let mut t = Terminal::new_detached(10, 2);
+    t.feed_bytes(b"r0\x1bEr1\x1bEr2");
+    // After two NELs on a 2-row screen, the first row scrolled off.
+    assert_eq!(t.screen_row(0), "r1");
+    assert_eq!(t.screen_row(1), "r2");
+}

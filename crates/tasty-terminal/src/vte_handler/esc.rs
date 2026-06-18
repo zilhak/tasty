@@ -27,6 +27,17 @@ impl TerminalState {
             }
             Esc::Code(EscCode::Index) => self.perform_index(),
             Esc::Code(EscCode::ReverseIndex) => self.perform_reverse_index(),
+            Esc::Code(EscCode::NextLine) => {
+                // NEL (ESC E): index (line feed, scrolling at the region bottom)
+                // followed by a carriage return — cursor lands at column 0 of the
+                // next line.
+                let mut changes = self.perform_index();
+                changes.push(Change::CursorPosition {
+                    x: Position::Absolute(0),
+                    y: Position::Relative(0),
+                });
+                changes
+            }
             Esc::Code(EscCode::DecScreenAlignmentDisplay) => {
                 // DECALN (ESC # 8): fill the entire screen with 'E' for alignment
                 // testing. Resets pen attributes and homes the cursor. Each row is
