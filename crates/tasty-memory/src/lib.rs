@@ -239,6 +239,11 @@ pub struct MemoryStore {
     /// Regular 영역 변경 누적 버퍼. 호스트가 매 tick `take_pending_changes()` 로
     /// drain 해 `memory.changed` host event 로 발화한다.
     pending_changes: Vec<MemoryChange>,
+    /// Regular `memory` 테이블 value 바이트 총합 캐시. quota 검사를 호출마다
+    /// `SUM(LENGTH(value))` 전체 스캔(O(rows)) 하던 것을 O(1) 로 대체한다.
+    /// open 시 1회 계산하고, 모든 regular 변이 경로(put/delete/purge_*)에서
+    /// 증분 유지한다 (purge 는 드물어 재계산으로 정합 자동 교정).
+    regular_used_bytes: i64,
 }
 
 impl MemoryStore {
@@ -286,11 +291,24 @@ impl MemoryStore {
             }
             DbSchemaError::Sql(e) => classify_sql(e, path),
         })?;
+        let regular_used_bytes = Self::scan_regular_used(&conn);
         Ok(Self {
             conn,
             config,
             pending_changes: Vec::new(),
+            regular_used_bytes,
         })
+    }
+
+    /// Regular 테이블의 value 바이트 총합을 전체 스캔으로 계산. open 시 1회,
+    /// purge(드뭄) 후 재계산에만 쓴다 — hot path(put/delete)에서는 호출하지 않는다.
+    fn scan_regular_used(conn: &Connection) -> i64 {
+        conn.query_row(
+            "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
     }
 
     /// 현재 적용 중인 정책.
@@ -329,6 +347,7 @@ impl MemoryStore {
         let scope_token = scope.as_token();
         let now = unix_ms_now();
         let content_type = value.content_type();
+        let used_before = self.regular_used_bytes;
 
         let tx = self.conn.transaction()?;
 
@@ -347,13 +366,10 @@ impl MemoryStore {
             .optional()?;
 
         // Quota: 추가될 byte 가 regular total 한도를 넘기지 않는지.
+        // `used_before`(캐시) - 기존 entry 크기 + 신규 크기 로 O(1) 계산.
+        // 전체 스캔(`SUM(LENGTH(value))`) 대신 증분 카운터 사용.
         let existing_size = existing.as_ref().map(|(_, _, sz)| *sz).unwrap_or(0);
-        let current_used: i64 = tx.query_row(
-            "SELECT COALESCE(SUM(LENGTH(value)), 0) FROM memory",
-            [],
-            |r| r.get(0),
-        )?;
-        let projected = current_used - existing_size + bytes.len() as i64;
+        let projected = used_before - existing_size + bytes.len() as i64;
         if (projected as u64) > self.config.regular_quota_total_bytes {
             return Err(MemoryError::QuotaExceeded {
                 area: MemoryArea::Regular,
@@ -416,6 +432,9 @@ impl MemoryStore {
         };
 
         tx.commit()?;
+        // commit 성공 후에만 카운터 반영 — 위 에러/거부 경로는 모두 commit 이전에
+        // return 하므로 카운터는 항상 실제 테이블과 정합.
+        self.regular_used_bytes = projected;
         self.pending_changes.push(MemoryChange {
             scope: scope_token,
             key: key.to_string(),
@@ -490,13 +509,22 @@ impl MemoryStore {
         let scope_token = scope.as_token();
 
         let tx = self.conn.transaction()?;
-        let existing: Option<(u64, String)> = tx
+        let existing: Option<(u64, String, i64)> = tx
             .query_row(
-                "SELECT version, owner FROM memory WHERE scope=?1 AND key=?2",
+                "SELECT version, owner, LENGTH(value) FROM memory WHERE scope=?1 AND key=?2",
                 params![&scope_token, key],
-                |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, String>(1)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)? as u64,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .optional()?;
+
+        // 삭제될 entry 의 크기 (없으면 0). commit 후 카운터 감산에 사용.
+        let deleted_size = existing.as_ref().map(|(_, _, sz)| *sz).unwrap_or(0);
 
         match (existing, cas) {
             (None, _) => {
@@ -505,10 +533,10 @@ impl MemoryStore {
                     key: key.to_string(),
                 });
             }
-            (Some((actual, _)), Some(expected)) if actual != expected => {
+            (Some((actual, _, _)), Some(expected)) if actual != expected => {
                 return Err(MemoryError::CasConflict { expected, actual });
             }
-            (Some((_, existing_owner)), _) if !owner_can_modify(owner, &existing_owner) => {
+            (Some((_, existing_owner, _)), _) if !owner_can_modify(owner, &existing_owner) => {
                 return Err(MemoryError::OwnedByOther {
                     owner: existing_owner,
                 });
@@ -521,6 +549,8 @@ impl MemoryStore {
             params![&scope_token, key],
         )?;
         tx.commit()?;
+        // 위 에러 경로는 commit 이전에 return → 여기 도달 시 실제 삭제됨.
+        self.regular_used_bytes = (self.regular_used_bytes - deleted_size).max(0);
         self.pending_changes.push(MemoryChange {
             scope: scope_token,
             key: key.to_string(),
@@ -1169,6 +1199,8 @@ impl MemoryStore {
                 version: None,
             });
         }
+        // bulk delete 후 카운터 재계산 (purge 는 드물어 1회 스캔 허용 + 드리프트 교정).
+        self.regular_used_bytes = Self::scan_regular_used(&self.conn);
         Ok(PurgeStats {
             regular: regular as u64,
             secret: secret as u64,
@@ -1199,6 +1231,8 @@ impl MemoryStore {
                 version: None,
             });
         }
+        // bulk delete 후 카운터 재계산 (purge 는 드물어 1회 스캔 허용 + 드리프트 교정).
+        self.regular_used_bytes = Self::scan_regular_used(&self.conn);
         Ok(PurgeStats {
             regular: regular as u64,
             secret: secret as u64,

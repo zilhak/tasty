@@ -285,6 +285,65 @@ fn regular_quota_exceeded() {
     .unwrap();
 }
 
+/// `regular_used_bytes` 증분 카운터가 모든 변이 경로 후 실제 전체 스캔과 일치하는지
+/// (드리프트 회귀 가드). put(insert/update-grow/update-shrink)/delete/purge_scope 검증.
+#[test]
+fn regular_used_bytes_stays_consistent() {
+    let mut s = store();
+    fn assert_consistent(s: &MemoryStore) {
+        assert_eq!(
+            s.regular_used_bytes,
+            MemoryStore::scan_regular_used(&s.conn),
+            "regular_used_bytes drifted from actual SUM(LENGTH(value))"
+        );
+    }
+    assert_consistent(&s);
+
+    s.put(HOST_OWNER, &Scope::Global, "a", &text("hello"), &PutOpts::default())
+        .unwrap();
+    assert_consistent(&s);
+
+    // update grow
+    s.put(HOST_OWNER, &Scope::Global, "a", &text("hello world"), &PutOpts::default())
+        .unwrap();
+    assert_consistent(&s);
+
+    // update shrink
+    s.put(HOST_OWNER, &Scope::Global, "a", &text("x"), &PutOpts::default())
+        .unwrap();
+    assert_consistent(&s);
+
+    s.put(HOST_OWNER, &Scope::Surface(1), "b", &text("0123456789"), &PutOpts::default())
+        .unwrap();
+    assert_consistent(&s);
+
+    s.delete(HOST_OWNER, &Scope::Global, "a", None).unwrap();
+    assert_consistent(&s);
+
+    // purge_scope 후에도 정합 (재계산 경로).
+    s.purge_scope(&Scope::Surface(1)).unwrap();
+    assert_consistent(&s);
+    assert_eq!(s.regular_used_bytes, 0, "all entries removed → 0");
+}
+
+/// quota 거부 시 카운터가 변하지 않아야 한다 (commit 이전 return).
+#[test]
+fn regular_used_bytes_unchanged_on_quota_reject() {
+    let mut s = MemoryStore::open_in_memory_with_config(MemoryConfig {
+        entry_max_bytes: 1024,
+        regular_quota_total_bytes: 20,
+        ..MemoryConfig::default()
+    })
+    .unwrap();
+    s.put(HOST_OWNER, &Scope::Global, "a", &text("0123456789ab"), &PutOpts::default())
+        .unwrap();
+    let before = s.regular_used_bytes;
+    let err = s.put(HOST_OWNER, &Scope::Global, "b", &text("0123456789ab"), &PutOpts::default());
+    assert!(matches!(err, Err(MemoryError::QuotaExceeded { .. })));
+    assert_eq!(s.regular_used_bytes, before, "counter must not change on rejected put");
+    assert_eq!(s.regular_used_bytes, MemoryStore::scan_regular_used(&s.conn));
+}
+
 #[test]
 fn secret_quota_exceeded_per_owner() {
     // entry 1개 = 12 byte. 한도 20 이면 1 통과, 2 거부.
