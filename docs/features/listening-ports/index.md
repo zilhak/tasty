@@ -8,7 +8,7 @@
 
 ## 목적
 
-로컬 사용자가 워크스페이스(또는 시스템 전체)의 listening TCP 포트를 한눈에 보고, 포트를 클릭해 브라우저로 열 수 있게 하는 **GUI 진단 편의 기능**. "내 dev 서버가 몇 번에 떴지?" 를 셸 명령 없이 UI 로 확인한다.
+로컬 사용자가 워크스페이스(또는 시스템 전체)의 listening TCP 포트를 한눈에 보고, 행을 선택해 그 주소를 클립보드로 복사할 수 있게 하는 **GUI 진단 편의 기능**. "내 dev 서버가 몇 번에 떴지?" 를 셸 명령 없이 UI 로 확인한다.
 
 ## 내부 동작
 
@@ -43,13 +43,19 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 `Ready` 인데 행이 0개일 때 우선순위: **search_zero**(검색어 있음) → **system_empty**(System scope) → **tasty_empty**(Tasty scope). `Loading` / `Failed` 는 별도 분기.
 
-### 카운트 표시
+### 헤더 / footer 구성
 
-header 태그 `{listening} listening`, footer `{shown} of {total} ports`.
+- **헤더**: leading 포트 아이콘 + 제목 + accent Tag(`{listening} listening` / `scanning…`) + 검색 입력 + Refresh 아이콘 버튼(상시 노출, 현재 scope 재스캔) + close(`×`).
+- **footer**: 카운터(`{shown} of {total} ports`) + `Copy address`(행 미선택 시 disabled) + `Close`.
+
+### 행 선택 / 주소 복사
+
+- 행을 클릭하면 선택(강조)되고, 같은 행을 다시 클릭하면 해제된다(`selected_port`, `egui::Memory` 영속).
+- footer `Copy address` 는 선택 행의 `host:port`(IPv6 는 `[..]` bracket)를 클립보드에 복사한다(egui platform-output copy → `handle_platform_output`).
 
 ## 인터페이스
 
-- **사용자 트리거**: 사이드바 [도구 메뉴](../tools-menu/index.md) 의 `Listening ports…` → `port_scanner` popup (`PopupScope::Window`). 포트 번호 클릭 시 wildcard(`0.0.0.0` / `[::]`)는 `localhost` 로 치환해 브라우저로 연다.
+- **사용자 트리거**: 사이드바 [도구 메뉴](../tools-menu/index.md) 의 `Listening ports…` → `port_scanner` popup (`PopupScope::Window`). 행 클릭으로 선택 후 footer `Copy address` 로 주소를 복사한다.
 - **IPC/CLI**: 없음 — **의도된 설계.** 포트 목록은 agent 가 일반 셸 명령(`ss` / `lsof` / `netstat`)으로 직접 조회 가능하므로 tasty 가 중복 제공하지 않는다. 이 기능은 *사람이 UI 로 편하게 보는* 편의일 뿐이다.
 
 ## 비-목표
@@ -65,7 +71,9 @@ header 태그 `{listening} listening`, footer `{shown} of {total} ports`.
 - [ ] scope 를 System 으로 토글하면 재스캔되어 host 전체 포트가 나온다.
 - [ ] 검색어 입력 시 모든 컬럼에 substring 매칭으로 행이 필터된다.
 - [ ] 행이 0개일 때 scope/검색 조합에 맞는 빈 메시지(search_zero / system_empty / tasty_empty)가 뜬다.
-- [ ] 포트 번호 클릭 시 `http://<host>:<port>` 가 브라우저로 열린다 (wildcard → localhost).
+- [ ] 행 클릭 시 선택 강조되고 재클릭 시 해제된다. 클릭으로 브라우저가 열리지 않는다.
+- [ ] footer `Copy address` 는 선택 시에만 활성화되고, 클릭 시 선택 행의 주소가 클립보드에 복사된다.
+- [ ] 헤더 Refresh 버튼이 상시 노출되어 정상 상태에서도 재스캔할 수 있다.
 
 > GUI 기능이라 검증은 gallery 데모 + 스크린샷(시각)으로 한다. scan/filter 로직은 `tasty-portscan` 단위 테스트로 독립 검증 가능.
 

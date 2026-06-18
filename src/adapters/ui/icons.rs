@@ -108,3 +108,13 @@ line_icon!(
     "command",
     r#"<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/>"#
 );
+line_icon!(
+    PORT,
+    "port",
+    r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>"#
+);
+line_icon!(
+    REFRESH,
+    "refresh",
+    r#"<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>"#
+);

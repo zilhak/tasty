@@ -16,6 +16,45 @@
 use egui_extras::{Column, TableBuilder};
 use tasty_type_appearance::theme::Theme;
 
+/// 본체 `icons::Icon` 의 로컬 mock. SVG path 는 본체 `icons.rs` 에서 복제.
+#[derive(Debug, Clone, Copy)]
+struct MockIcon {
+    svg: &'static str,
+    uri: &'static str,
+}
+
+impl MockIcon {
+    fn image(self, size: f32, tint: egui::Color32) -> egui::Image<'static> {
+        egui::Image::from_bytes(self.uri, self.svg.as_bytes())
+            .fit_to_exact_size(egui::vec2(size, size))
+            .tint(tint)
+    }
+}
+
+macro_rules! mock_icon {
+    ($name:ident, $uri:literal, $body:literal) => {
+        const $name: MockIcon = MockIcon {
+            uri: concat!("bytes://gallery_port_icon_", $uri, ".svg"),
+            svg: concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">"#,
+                $body,
+                "</svg>"
+            ),
+        };
+    };
+}
+
+mock_icon!(
+    PORT,
+    "port",
+    r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>"#
+);
+mock_icon!(
+    REFRESH,
+    "refresh",
+    r#"<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>"#
+);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum SourceTag {
     Tasty {
@@ -60,6 +99,7 @@ struct PortScannerFilter<'a> {
     query: &'a str,
     sort_key: SortKey,
     sort_dir: SortDir,
+    selected_port: Option<u16>,
 }
 
 struct PortScannerProps<'a> {
@@ -71,6 +111,8 @@ struct PortScannerProps<'a> {
     label_filter_show_all_system: &'a str,
     label_loading: &'a str,
     label_close: &'a str,
+    label_refresh: &'a str,
+    label_copy_address: &'a str,
     label_external_dash: &'a str,
     label_no_ports_tasty_empty: &'a str,
     label_no_ports_search_zero: &'a str,
@@ -122,15 +164,44 @@ fn draw_mock_port_scanner_view(ui: &mut egui::Ui, props: &PortScannerProps<'_>) 
     });
 }
 
+/// 헤더 accent Tag pill 텍스트: Loading → `scanning…`, Ready → `{n} listening`.
+fn header_tag_text(props: &PortScannerProps<'_>) -> String {
+    match &props.view_state {
+        PortScannerViewState::Loading => props.label_header_tag_scanning.to_string(),
+        PortScannerViewState::Ready { rows } => props
+            .label_header_tag_count
+            .replace("{n}", &rows.len().to_string()),
+    }
+}
+
+/// accent Tag pill (pid 뱃지 패턴 재사용, accent 변형).
+fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
+    egui::Frame::default()
+        .fill(egui::Color32::from(th.accent_primary()))
+        .corner_radius(egui::CornerRadius::same(3))
+        .inner_margin(egui::Margin::symmetric(4, 1))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(text)
+                    .color(egui::Color32::from(th.text_on_accent()))
+                    .size(th.font_size_caption.value()),
+            );
+        });
+}
+
 fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
     ui.horizontal(|ui| {
+        // B1: leading 포트 아이콘.
+        ui.add(PORT.image(16.0, egui::Color32::from(th.subtext0)));
         ui.label(
             egui::RichText::new(props.label_heading)
                 .color(egui::Color32::from(th.text))
                 .size(th.font_size_heading.value())
                 .strong(),
         );
+        // B2: 헤더 안 accent Tag.
+        draw_header_count_tag(ui, th, &header_tag_text(props));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // mock — 갤러리에선 클릭 처리 없이 hover tooltip 만 보임.
             let _btn = ui
@@ -140,6 +211,13 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
                         .color(egui::Color32::from(th.text)),
                 )
                 .on_hover_text(props.label_close);
+            // B3: Refresh 아이콘 버튼.
+            let _refresh = ui
+                .add(
+                    egui::ImageButton::new(REFRESH.image(16.0, egui::Color32::from(th.subtext0)))
+                        .frame(false),
+                )
+                .on_hover_text(props.label_refresh);
             let avail = ui.available_width().max(120.0);
             let mut buf = props.filter.query.to_string();
             ui.add_sized(
@@ -153,25 +231,9 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
 }
 
 fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
-    let th = props.theme;
     ui.horizontal(|ui| {
         let mut checked = props.filter.show_all_system;
         ui.checkbox(&mut checked, props.label_filter_show_all_system);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let tag = match &props.view_state {
-                PortScannerViewState::Loading => props.label_header_tag_scanning.to_string(),
-                PortScannerViewState::Ready { rows } => props
-                    .label_header_tag_count
-                    .replace("{n}", &rows.len().to_string()),
-            };
-            if !tag.is_empty() {
-                ui.label(
-                    egui::RichText::new(tag)
-                        .color(egui::Color32::from(th.subtext0))
-                        .size(th.font_size_caption.value()),
-                );
-            }
-        });
     });
 }
 
@@ -195,9 +257,19 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     });
 }
 
+/// 복사 대상 주소 문자열: `host:port`, IPv6 리터럴은 bracket.
+fn row_copy_address(row: &PortRowView) -> String {
+    let host = if row.addr_display.contains(':') {
+        format!("[{}]", row.addr_display)
+    } else {
+        row.addr_display.clone()
+    };
+    format!("{host}:{}", row.port)
+}
+
 fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
-    let text = match &props.view_state {
+    let counter = match &props.view_state {
         PortScannerViewState::Loading => Some(props.label_footer_loading.to_string()),
         PortScannerViewState::Ready { rows } => Some(
             props
@@ -205,15 +277,33 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
                 .replace("{n}", &rows.len().to_string()),
         ),
     };
-    if let Some(s) = text {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    let selected_addr = match &props.view_state {
+        PortScannerViewState::Ready { rows } => props
+            .filter
+            .selected_port
+            .and_then(|p| rows.iter().find(|r| r.port == p))
+            .map(row_copy_address),
+        PortScannerViewState::Loading => None,
+    };
+    ui.horizontal(|ui| {
+        if let Some(s) = &counter {
             ui.label(
                 egui::RichText::new(s)
                     .color(egui::Color32::from(th.overlay0))
                     .size(th.font_size_caption.value()),
             );
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let _close = ui
+                .button(egui::RichText::new(props.label_close).size(th.font_size_body.value()));
+            let _copy = ui.add_enabled(
+                selected_addr.is_some(),
+                egui::Button::new(
+                    egui::RichText::new(props.label_copy_address).size(th.font_size_body.value()),
+                ),
+            );
         });
-    }
+    });
 }
 
 fn draw_table(ui: &mut egui::Ui, props: &PortScannerProps<'_>, rows: &[PortRowView]) {
@@ -232,6 +322,8 @@ fn draw_table(ui: &mut egui::Ui, props: &PortScannerProps<'_>, rows: &[PortRowVi
     TableBuilder::new(ui)
         .striped(false)
         .resizable(false)
+        // Whole-row click selection (design `onRowClick`); highlight via set_selected.
+        .sense(egui::Sense::click())
         .max_scroll_height(max_scroll)
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
         .column(Column::initial(84.0).at_least(60.0))
@@ -296,7 +388,9 @@ fn draw_table(ui: &mut egui::Ui, props: &PortScannerProps<'_>, rows: &[PortRowVi
         })
         .body(|mut body| {
             for row in rows.iter() {
+                let selected = props.filter.selected_port == Some(row.port);
                 body.row(text_h + 8.0, |mut tr| {
+                    tr.set_selected(selected);
                     tr.col(|ui| {
                         ui.label(
                             egui::RichText::new(row.port.to_string())
@@ -512,6 +606,7 @@ fn props<'a>(
     show_all_system: bool,
     sort_key: SortKey,
     sort_dir: SortDir,
+    selected_port: Option<u16>,
 ) -> PortScannerProps<'a> {
     PortScannerProps {
         theme,
@@ -521,12 +616,15 @@ fn props<'a>(
             query,
             sort_key,
             sort_dir,
+            selected_port,
         },
         label_heading: "Listening ports",
         label_search_placeholder: "Search…",
         label_filter_show_all_system: "전체 보기 (system)",
         label_loading: "Scanning…",
         label_close: "Close",
+        label_refresh: "Refresh",
+        label_copy_address: "Copy address",
         label_external_dash: "—",
         label_no_ports_tasty_empty: "이 터미널에서 listening 포트가 없습니다.",
         label_no_ports_search_zero: "검색 결과가 없습니다.",
@@ -593,13 +691,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         false,
         SortKey::Port,
         SortDir::Asc,
+        None,
     );
     frame_card(ui, theme, card_width, |ui| {
         draw_mock_port_scanner_view(ui, &p);
     });
 
-    // ── Case 2: Tasty 기본 7 컬럼.
-    case_label(ui, theme, "Case 2 — Tasty 기본 (7컬럼, 4건)");
+    // ── Case 2: Tasty 기본 7 컬럼 (선택 행 강조 + footer Copy address 활성).
+    case_label(
+        ui,
+        theme,
+        "Case 2 — Tasty 기본 (7컬럼, 4건; 5173 행 선택 강조 + Copy address 활성)",
+    );
     let rows = mock_tasty_rows();
     let p = props(
         theme,
@@ -608,6 +711,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         false,
         SortKey::Port,
         SortDir::Asc,
+        Some(5173),
     );
     frame_card(ui, theme, card_width, |ui| {
         draw_mock_port_scanner_view(ui, &p);
@@ -627,6 +731,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         true,
         SortKey::Port,
         SortDir::Asc,
+        None,
     );
     frame_card(ui, theme, card_width, |ui| {
         draw_mock_port_scanner_view(ui, &p);
@@ -642,6 +747,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         false,
         SortKey::Port,
         SortDir::Asc,
+        None,
     );
     frame_card(ui, theme, card_width, |ui| {
         draw_mock_port_scanner_view(ui, &p);
@@ -661,6 +767,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         false,
         SortKey::Port,
         SortDir::Asc,
+        None,
     );
     frame_card(ui, theme, card_width, |ui| {
         draw_mock_port_scanner_view(ui, &p);
@@ -681,6 +788,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         false,
         SortKey::Port,
         SortDir::Desc,
+        None,
     );
     frame_card(ui, theme, card_width, |ui| {
         draw_mock_port_scanner_view(ui, &p);

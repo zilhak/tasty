@@ -1,7 +1,8 @@
 //! Listening-port viewer popup.
 //!
 //! Lists TCP ports that the active surface's process tree is listening on.
-//! Clicking a port opens `http://<host>:<port>` in the system browser.
+//! Clicking a row selects it (re-clicking deselects); the footer's
+//! "Copy address" button copies the selected row's address to the clipboard.
 //!
 //! The scan is driven lazily: on each draw we check the cache; if stale we
 //! re-scan the descendants of the active terminal's shell PID. Results are
@@ -20,6 +21,7 @@ use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::mpsc;
 
+use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
 use crate::core::state::SurfaceDisplayPath;
@@ -116,6 +118,10 @@ pub struct FilterState {
     pub query: String,
     pub sort_key: SortKey,
     pub sort_dir: SortDir,
+    /// Port number of the currently selected row (design `selectedKey`), or
+    /// `None` when nothing is selected. Drives the row highlight + footer
+    /// "Copy address" enablement.
+    pub selected_port: Option<u16>,
 }
 
 impl Default for FilterState {
@@ -125,6 +131,7 @@ impl Default for FilterState {
             query: String::new(),
             sort_key: SortKey::Port,
             sort_dir: SortDir::Asc,
+            selected_port: None,
         }
     }
 }
@@ -157,6 +164,9 @@ pub struct PortScannerFilter<'a> {
     pub query: &'a str,
     pub sort_key: SortKey,
     pub sort_dir: SortDir,
+    /// Currently selected row's port (design `selectedKey`). `None` = no
+    /// selection.
+    pub selected_port: Option<u16>,
 }
 
 /// Pure inputs to `draw_port_scanner_view`. Contains no `AppState` /
@@ -175,6 +185,7 @@ pub struct PortScannerProps<'a> {
     pub label_failed: &'a str,
     pub label_close: &'a str,
     pub label_refresh: &'a str,
+    pub label_copy_address: &'a str,
     pub label_external_dash: &'a str,
     pub label_no_ports_tasty_empty: &'a str,
     pub label_no_ports_system_empty: &'a str,
@@ -201,7 +212,10 @@ pub enum PortScannerAction {
     None,
     Close,
     Refresh,
-    OpenEntry(usize),
+    /// Row clicked → toggle selection of the given port (design `onRowClick`).
+    Select(u16),
+    /// Footer "Copy address" clicked → copy this address string to clipboard.
+    CopyAddress(String),
     SetShowAllSystem(bool),
     SetQuery(String),
     /// Emitted by header click → toggle sort.
@@ -249,8 +263,8 @@ pub fn draw_port_scanner_popup(
         kick_off_scan(state, engine, &ctx, target_show_all_system);
     }
 
-    // 검색 필터링 + 정렬: Ready rows 에 대해서만 적용. OpenEntry(i) 가 view 에 보이는
-    // 그대로의 index 를 가리키도록 sort 도 wrapper 에서 적용.
+    // 검색 필터링 + 정렬: Ready rows 에 대해서만 적용. 정렬을 wrapper 에서 적용해
+    // view 가 보이는 순서 그대로 행을 렌더(선택 키는 port 번호라 정렬과 무관).
     let filtered_rows: Vec<PortRowView> = match &state.port_scan {
         PortScanState::Ready { rows, .. } => {
             let mut v: Vec<PortRowView> = rows
@@ -286,6 +300,7 @@ pub fn draw_port_scanner_popup(
             query: &filter_state.query,
             sort_key: filter_state.sort_key,
             sort_dir: filter_state.sort_dir,
+            selected_port: filter_state.selected_port,
         },
         label_heading: t("port_scanner.heading"),
         label_search_placeholder: t("port_scanner.search_placeholder"),
@@ -294,6 +309,7 @@ pub fn draw_port_scanner_popup(
         label_failed: t("port_scanner.failed_label"),
         label_close: t("port_scanner.close"),
         label_refresh: t("port_scanner.refresh"),
+        label_copy_address: t("port_scanner.copy_address"),
         label_external_dash: t("port_scanner.external_dash"),
         label_no_ports_tasty_empty: t("port_scanner.no_ports_tasty_empty"),
         label_no_ports_system_empty: t("port_scanner.no_ports_system_empty"),
@@ -325,10 +341,20 @@ pub fn draw_port_scanner_popup(
             kick_off_scan(state, engine, &ctx, target_show_all_system);
             PopupAction::None
         }
-        PortScannerAction::OpenEntry(i) => {
-            if let Some(row) = filtered_rows.get(i) {
-                open_in_browser(row);
-            }
+        PortScannerAction::Select(port) => {
+            // Toggle: re-clicking the selected row clears the selection.
+            filter_state.selected_port = if filter_state.selected_port == Some(port) {
+                None
+            } else {
+                Some(port)
+            };
+            write_filter_state(&ctx, filter_state);
+            PopupAction::None
+        }
+        PortScannerAction::CopyAddress(addr) => {
+            // egui 의 platform-output copy 명령으로 OS clipboard 에 복사
+            // (`egui_winit` 의 `handle_platform_output` 가 기록).
+            ui.ctx().copy_text(addr);
             PopupAction::None
         }
         PortScannerAction::SetShowAllSystem(v) => {
@@ -632,26 +658,37 @@ pub fn draw_port_scanner_view(
         ui.separator();
         match &props.view_state {
             PortScannerViewState::Loading => draw_loading_body(ui, props),
-            PortScannerViewState::Failed { message } => {
-                if let Some(a) = draw_failed_body(ui, props, message) {
-                    action = a;
-                }
-            }
+            PortScannerViewState::Failed { message } => draw_failed_body(ui, props, message),
             PortScannerViewState::Ready { rows, .. } => {
                 if let Some(a) = draw_ready_body(ui, props, rows) {
                     action = a;
                 }
             }
         }
-        draw_footer(ui, props);
+        if let Some(a) = draw_footer(ui, props) {
+            action = a;
+        }
     });
 
     action
 }
 
-fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
+/// Address string copied by the footer "Copy address" button: `host:port`,
+/// bracketing bare IPv6 literals (e.g. `[::]:8080`, `127.0.0.1:3000`).
+fn row_copy_address(row: &PortRowView) -> String {
+    let host = if row.addr_display.contains(':') {
+        format!("[{}]", row.addr_display)
+    } else {
+        row.addr_display.clone()
+    };
+    format!("{host}:{}", row.port)
+}
+
+/// footer: 좌측 카운터 + 우측 `Copy address`(선택 없으면 disabled) + `Close`.
+fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
     let th = props.theme;
-    let text = match &props.view_state {
+    let mut out: Option<PortScannerAction> = None;
+    let counter = match &props.view_state {
         PortScannerViewState::Loading => Some(props.label_footer_loading.to_string()),
         PortScannerViewState::Ready { rows, total, .. } => Some(
             props
@@ -661,29 +698,94 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         ),
         PortScannerViewState::Failed { .. } => None,
     };
-    if let Some(s) = text {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    // 선택 행이 현재 표시 중일 때만 복사 대상 주소가 존재한다.
+    let selected_addr = match &props.view_state {
+        PortScannerViewState::Ready { rows, .. } => props
+            .filter
+            .selected_port
+            .and_then(|p| rows.iter().find(|r| r.port == p))
+            .map(row_copy_address),
+        _ => None,
+    };
+    ui.horizontal(|ui| {
+        if let Some(s) = &counter {
             ui.label(
                 egui::RichText::new(s)
                     .color(th.overlay0)
                     .size(th.font_size_caption.value()),
             );
+        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button(egui::RichText::new(props.label_close).size(th.font_size_body.value()))
+                .clicked()
+            {
+                out = Some(PortScannerAction::Close);
+            }
+            let copy_resp = ui.add_enabled(
+                selected_addr.is_some(),
+                egui::Button::new(
+                    egui::RichText::new(props.label_copy_address).size(th.font_size_body.value()),
+                ),
+            );
+            if copy_resp.clicked()
+                && let Some(addr) = &selected_addr
+            {
+                out = Some(PortScannerAction::CopyAddress(addr.clone()));
+            }
         });
+    });
+    out
+}
+
+/// 헤더 accent Tag pill 텍스트: Loading → `scanning…`, Ready → `{n} listening`
+/// (LISTEN-only scope count, search-independent), Failed → 없음.
+fn header_tag_text(props: &PortScannerProps<'_>) -> Option<String> {
+    match &props.view_state {
+        PortScannerViewState::Loading => Some(props.label_header_tag_scanning.to_string()),
+        PortScannerViewState::Ready { listening, .. } => Some(
+            props
+                .label_header_tag_count
+                .replace("{n}", &listening.to_string()),
+        ),
+        PortScannerViewState::Failed { .. } => None,
     }
 }
 
-/// 1줄 헤더: 좌측 heading + 우측 search TextEdit + 우측 끝 close 버튼.
+/// accent Tag pill 렌더 (pid 뱃지 패턴 재사용, accent 변형).
+fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
+    egui::Frame::default()
+        .fill(th.accent_primary().into())
+        .corner_radius(egui::CornerRadius::same(3))
+        .inner_margin(egui::Margin::symmetric(4, 1))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(text)
+                    .color(th.text_on_accent())
+                    .size(th.font_size_caption.value()),
+            );
+        });
+}
+
+/// 1줄 헤더: 좌측 포트 아이콘 + heading + accent count Tag, 우측 search +
+/// Refresh + close.
 fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
     let th = props.theme;
     let mut out: Option<PortScannerAction> = None;
     ui.horizontal(|ui| {
+        // B1: leading 포트 아이콘.
+        ui.add(icons::PORT.image(16.0, th.subtext0.into()));
         ui.label(
             egui::RichText::new(props.label_heading)
                 .color(th.text)
                 .size(th.font_size_heading.value())
                 .strong(),
         );
-        // 우측에 close 버튼 + search.
+        // B2: 헤더 안 accent Tag(`{n} listening` / `scanning…`).
+        if let Some(tag) = header_tag_text(props) {
+            draw_header_count_tag(ui, th, &tag);
+        }
+        // 우측에 close 버튼 + Refresh + search.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .button(egui::RichText::new("×").size(16.0).color(th.text))
@@ -691,6 +793,14 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
                 .clicked()
             {
                 out = Some(PortScannerAction::Close);
+            }
+            // B3: 헤더 우측 Refresh 아이콘 버튼 (상시 노출, 현재 scope 재스캔).
+            if ui
+                .add(egui::ImageButton::new(icons::REFRESH.image(16.0, th.subtext0.into())).frame(false))
+                .on_hover_text(props.label_refresh)
+                .clicked()
+            {
+                out = Some(PortScannerAction::Refresh);
             }
             let avail = ui.available_width().max(120.0);
             let mut buf = props.filter.query.to_string();
@@ -708,9 +818,8 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     out
 }
 
-/// 2줄 헤더: "전체 보기" 체크박스 + 헤더 카운터 Tag.
+/// 2줄 헤더(필터 줄): "전체 보기" 체크박스만.
 fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
-    let th = props.theme;
     let mut out: Option<PortScannerAction> = None;
     ui.horizontal(|ui| {
         let mut checked = props.filter.show_all_system;
@@ -720,25 +829,6 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
         {
             out = Some(PortScannerAction::SetShowAllSystem(checked));
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let tag = match &props.view_state {
-                PortScannerViewState::Loading => props.label_header_tag_scanning.to_string(),
-                // LISTEN-only scope count (search-independent), per design: the
-                // header tag counts listeners, not every TCP state, and does not
-                // shrink as the user types into the filter.
-                PortScannerViewState::Ready { listening, .. } => props
-                    .label_header_tag_count
-                    .replace("{n}", &listening.to_string()),
-                PortScannerViewState::Failed { .. } => String::new(),
-            };
-            if !tag.is_empty() {
-                ui.label(
-                    egui::RichText::new(tag)
-                        .color(th.subtext0)
-                        .size(th.font_size_caption.value()),
-                );
-            }
-        });
     });
     out
 }
@@ -759,14 +849,9 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     });
 }
 
-/// Failed: 에러 메시지 + Refresh 버튼.
-fn draw_failed_body(
-    ui: &mut egui::Ui,
-    props: &PortScannerProps<'_>,
-    message: &str,
-) -> Option<PortScannerAction> {
+/// Failed: 에러 메시지만. Refresh 는 헤더 우측 버튼(상시 노출)에서 처리한다.
+fn draw_failed_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>, message: &str) {
     let th = props.theme;
-    let mut out: Option<PortScannerAction> = None;
     ui.vertical_centered(|ui| {
         ui.add_space(32.0);
         ui.label(
@@ -780,12 +865,7 @@ fn draw_failed_body(
                 .color(th.subtext0)
                 .size(th.font_size_caption.value()),
         );
-        ui.add_space(8.0);
-        if ui.button(props.label_refresh).clicked() {
-            out = Some(PortScannerAction::Refresh);
-        }
     });
-    out
 }
 
 /// Ready: 빈 결과 분기 3종 OR TableBuilder 7컬럼.
@@ -842,6 +922,9 @@ fn draw_table(
     TableBuilder::new(ui)
         .striped(false)
         .resizable(false)
+        // Whole-row click selection (design `onRowClick`). The row's unioned
+        // response reports the click; `set_selected` paints the highlight.
+        .sense(egui::Sense::click())
         .max_scroll_height(max_scroll)
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
         .column(Column::initial(84.0).at_least(60.0))
@@ -873,20 +956,16 @@ fn draw_table(
             header.col(|ui| sort_click(None, ui, props.label_column_state));
         })
         .body(|mut body| {
-            for (i, row) in rows.iter().enumerate() {
+            for row in rows.iter() {
+                let selected = props.filter.selected_port == Some(row.port);
                 body.row(text_h + 8.0, |mut tr| {
+                    tr.set_selected(selected);
                     tr.col(|ui| {
-                        let resp = ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(row.port.to_string())
-                                    .color(th.text)
-                                    .size(th.font_size_body.value()),
-                            )
-                            .sense(egui::Sense::click()),
+                        ui.label(
+                            egui::RichText::new(row.port.to_string())
+                                .color(th.text)
+                                .size(th.font_size_body.value()),
                         );
-                        if resp.clicked() {
-                            out = Some(PortScannerAction::OpenEntry(i));
-                        }
                     });
                     tr.col(|ui| {
                         // Proto derived from the address family: IPv6 displays
@@ -922,6 +1001,10 @@ fn draw_table(
                     tr.col(|ui| {
                         draw_state_cell(ui, th, props.reduced_motion, row.state);
                     });
+                    // B5: 행 어디를 클릭하든 선택 토글 (wrapper 에서 처리).
+                    if tr.response().clicked() {
+                        out = Some(PortScannerAction::Select(row.port));
+                    }
                 });
             }
         });
@@ -1092,28 +1175,14 @@ fn draw_state_cell(ui: &mut egui::Ui, th: &Theme, reduced_motion: bool, state: P
 }
 
 /// Bracketless display form. IPv6 is shown bare (e.g. wildcard `::`) per the
-/// design table; URL brackets are added later in [`open_in_browser`].
+/// design table; brackets are added later in [`row_copy_address`] when building
+/// the copyable `host:port` string.
 fn format_addr(addr: IpAddr) -> String {
     match addr {
         IpAddr::V4(v4) if v4.is_unspecified() => "0.0.0.0".to_string(),
         IpAddr::V6(v6) if v6.is_unspecified() => "::".to_string(),
         IpAddr::V4(v4) => v4.to_string(),
         IpAddr::V6(v6) => v6.to_string(),
-    }
-}
-
-/// Pick a sensible host for the URL: wildcard binds use `localhost`, IPv6
-/// literals (bare in `addr_display`) get bracketed for the URL, everything
-/// else is used as-is.
-fn open_in_browser(row: &PortRowView) {
-    let host = match row.addr_display.as_str() {
-        "0.0.0.0" | "::" => "localhost".to_string(),
-        other if other.contains(':') => format!("[{other}]"),
-        other => other.to_string(),
-    };
-    let url = format!("http://{host}:{}", row.port);
-    if let Err(e) = webbrowser::open(&url) {
-        tracing::warn!("port_scanner: failed to open {url}: {e}");
     }
 }
 
@@ -1151,6 +1220,7 @@ mod tests {
                 query,
                 sort_key: SortKey::Port,
                 sort_dir: SortDir::Asc,
+                selected_port: None,
             },
             label_heading: "Listening ports",
             label_search_placeholder: "Search…",
@@ -1159,6 +1229,7 @@ mod tests {
             label_failed: "Scan failed",
             label_close: "Close",
             label_refresh: "Refresh",
+            label_copy_address: "Copy address",
             label_external_dash: "—",
             label_no_ports_tasty_empty: "No Tasty ports.",
             label_no_ports_system_empty: "No system ports.",
@@ -1529,5 +1600,73 @@ mod tests {
     fn failed_state_renders_without_panic() {
         let action = run_view_state(PortScannerViewState::Failed { message: "boom" }, "", false);
         assert_eq!(action, PortScannerAction::None);
+    }
+
+    #[test]
+    fn copy_address_formats_ipv4_host_port() {
+        let mut row = dummy_row(3000);
+        row.addr_display = "127.0.0.1".into();
+        assert_eq!(row_copy_address(&row), "127.0.0.1:3000");
+    }
+
+    #[test]
+    fn copy_address_brackets_ipv6_literal() {
+        let mut row = dummy_row(8080);
+        row.addr_display = "::".into();
+        assert_eq!(row_copy_address(&row), "[::]:8080");
+    }
+
+    #[test]
+    fn header_tag_reflects_listen_count_not_total() {
+        let rows = vec![dummy_row(3000)];
+        let theme = test_theme();
+        // Ready: tag uses the search-independent LISTEN count, not rows.len().
+        let ready = default_props(
+            &theme,
+            PortScannerViewState::Ready {
+                rows: &rows,
+                total: 5,
+                listening: 3,
+            },
+            "",
+            false,
+        );
+        assert_eq!(header_tag_text(&ready).as_deref(), Some("3 listening"));
+        // Loading: scanning placeholder.
+        let loading = default_props(&theme, PortScannerViewState::Loading, "", false);
+        assert_eq!(header_tag_text(&loading).as_deref(), Some("scanning…"));
+        // Failed: no tag.
+        let failed = default_props(
+            &theme,
+            PortScannerViewState::Failed { message: "boom" },
+            "",
+            false,
+        );
+        assert_eq!(header_tag_text(&failed), None);
+    }
+
+    #[test]
+    fn selection_toggle_clears_on_same_port() {
+        // Mirrors the wrapper's Select handling — re-selecting the same port
+        // clears it; a different port replaces the selection.
+        let mut fs = FilterState::default();
+        assert_eq!(fs.selected_port, None);
+
+        let toggle = |fs: &mut FilterState, port: u16| {
+            fs.selected_port = if fs.selected_port == Some(port) {
+                None
+            } else {
+                Some(port)
+            };
+        };
+
+        toggle(&mut fs, 3000);
+        assert_eq!(fs.selected_port, Some(3000));
+        // Same port again → cleared.
+        toggle(&mut fs, 3000);
+        assert_eq!(fs.selected_port, None);
+        // Different port → selected.
+        toggle(&mut fs, 8080);
+        assert_eq!(fs.selected_port, Some(8080));
     }
 }
