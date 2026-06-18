@@ -23,6 +23,40 @@ pub struct SearchHighlights<'a> {
     pub active_bg: GpuRgba,
 }
 
+/// How the text cursor cell is painted, derived from DECSCUSR (`cursor_shape()`).
+/// Blink variants collapse to their steady shape — terminal content does not
+/// animate (theme policy), so the cursor is drawn statically.
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum CursorPaint {
+    /// Full-cell reverse (default fg/bg swap).
+    Block,
+    /// Thin vertical bar at the cell's left edge.
+    Bar,
+    /// Thin horizontal bar at the cell's bottom.
+    Underline,
+}
+
+impl CursorPaint {
+    fn from_shape(shape: tasty_terminal::CursorShape) -> Self {
+        use tasty_terminal::CursorShape as S;
+        match shape {
+            S::Default | S::SteadyBlock | S::BlinkingBlock => CursorPaint::Block,
+            S::SteadyUnderline | S::BlinkingUnderline => CursorPaint::Underline,
+            S::SteadyBar | S::BlinkingBar => CursorPaint::Bar,
+        }
+    }
+
+    /// Block-element glyph that draws this shape as a sub-cell overlay, or `None`
+    /// for Block (which is drawn by the fg/bg swap, not a glyph).
+    fn overlay_glyph(self) -> Option<char> {
+        match self {
+            CursorPaint::Block => None,
+            CursorPaint::Bar => Some('\u{258f}'),       // ▏ LEFT ONE EIGHTH BLOCK
+            CursorPaint::Underline => Some('\u{2581}'), // ▁ LOWER ONE EIGHTH BLOCK
+        }
+    }
+}
+
 /// Check if a character is a wide (2-cell) character (CJK, fullwidth, etc.)
 pub fn unicode_width(ch: char) -> usize {
     // CJK Unified Ideographs, Hangul, Fullwidth forms, etc.
@@ -187,7 +221,7 @@ impl CellRenderer {
                             })
                     })
                     .unwrap_or(false);
-                Some((cx, cy, wide))
+                Some((cx, cy, wide, CursorPaint::from_shape(view.cursor_shape())))
             } else {
                 None
             };
@@ -307,7 +341,7 @@ impl CellRenderer {
         default_bg: GpuRgba,
         default_fg: GpuRgba,
         ansi: &[GpuRgb; 16],
-        cursor: Option<(usize, usize, bool)>,
+        cursor: Option<(usize, usize, bool, CursorPaint)>,
         selection: Option<&(NormalizedSelection, GpuRgba)>,
         vi_cursor: Option<&(SelectionPoint, GpuRgba)>,
         row_offset: usize,
@@ -331,15 +365,20 @@ impl CellRenderer {
                 }
 
                 let attrs = cell_ref.attrs();
-                let is_cursor = match cursor {
-                    Some((cx, cy, wide)) if row_idx == cy => {
-                        col_idx == cx || (wide && col_idx == cx + 1)
+                // Cursor paint for this cell, if any. Only the Block shape swaps
+                // fg/bg; Bar/Underline render the cell normally and get a sub-cell
+                // overlay glyph after the loop.
+                let cursor_paint = match cursor {
+                    Some((cx, cy, wide, shape))
+                        if row_idx == cy && (col_idx == cx || (wide && col_idx == cx + 1)) =>
+                    {
+                        Some(shape)
                     }
-                    _ => false,
+                    _ => None,
                 };
                 let (mut bg_color, mut fg_color) =
                     compute_cell_colors(attrs, default_bg, default_fg, ansi);
-                if is_cursor {
+                if cursor_paint == Some(CursorPaint::Block) {
                     std::mem::swap(&mut bg_color, &mut fg_color);
                 }
 
@@ -433,9 +472,13 @@ impl CellRenderer {
             // Trailing cells in the row (incl. cursor on empty cell).
             let abs_row = row_offset + row_idx;
             for col_idx in last_col..cols {
-                let is_cursor =
-                    matches!(cursor, Some((cx, cy, _)) if row_idx == cy && col_idx == cx);
-                let mut bg = if is_cursor { default_fg } else { default_bg };
+                // Only a Block cursor fills the empty trailing cell; Bar/Underline
+                // get an overlay glyph after the loop instead.
+                let is_block_cursor = matches!(
+                    cursor,
+                    Some((cx, cy, _, CursorPaint::Block)) if row_idx == cy && col_idx == cx
+                );
+                let mut bg = if is_block_cursor { default_fg } else { default_bg };
                 // vi copy mode cursor cell: trailing 영역 (콘텐츠 없는 row 끝) 에 vi cursor 가 위치한 경우 강조.
                 if let Some((pt, cursor_bg)) = vi_cursor
                     && pt.col == col_idx
@@ -448,6 +491,28 @@ impl CellRenderer {
                     viewport_offset: off,
                     bg_color: bg,
                 });
+            }
+        }
+
+        // Bar/Underline cursor overlay: pushed after every cell glyph so the
+        // block element renders on top of the character under the cursor. Block
+        // cursors are already drawn via the fg/bg swap above.
+        if let Some((cx, cy, wide, shape)) = cursor
+            && let Some(glyph_ch) = shape.overlay_glyph()
+            && cy < rows
+        {
+            // Underline spans both cells of a wide glyph; a bar marks only the
+            // primary (left) cell.
+            let span = if shape == CursorPaint::Underline && wide {
+                2
+            } else {
+                1
+            };
+            for i in 0..span {
+                let col = cx + i;
+                if col < cols {
+                    self.push_overlay_glyph(glyph_ch, col, cy, default_fg, off, queue);
+                }
             }
         }
 
@@ -464,6 +529,40 @@ impl CellRenderer {
                 pos: [col_idx as f32, rows as f32],
                 viewport_offset: off,
                 bg_color: default_bg,
+            });
+        }
+    }
+
+    /// Push a single glyph instance used to overlay a sub-cell cursor shape
+    /// (bar/underline block element) on top of the cell under the cursor.
+    fn push_overlay_glyph(
+        &mut self,
+        ch: char,
+        col: usize,
+        row: usize,
+        color: GpuRgba,
+        off: [f32; 2],
+        queue: &wgpu::Queue,
+    ) {
+        let key = GlyphKey {
+            ch,
+            bold: false,
+            italic: false,
+        };
+        if let Some(entry) = self.atlas.get_or_insert(key, &mut self.font_config, queue)
+            && entry.width > 0.0
+            && entry.height > 0.0
+        {
+            self.glyph_instances.push(GlyphInstance {
+                pos: [col as f32, row as f32],
+                viewport_offset: off,
+                uv_offset: [entry.uv_x, entry.uv_y],
+                uv_size: [entry.uv_w, entry.uv_h],
+                fg_color: color,
+                glyph_offset: [entry.offset_x, entry.offset_y],
+                glyph_size: [entry.width, entry.height],
+                page: entry.page,
+                _pad: 0,
             });
         }
     }
