@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use crate::i18n::t;
-use crate::settings::{EffectiveFont, FontOverride, FontSettings, HexColor, Settings};
+use crate::settings::{
+    ActiveTabIndicator, EffectiveFont, FontOverride, FontSettings, HexColor, Settings,
+};
 use tasty_host_plugin::SettingsPageEntry;
 use tasty_plugin_manifest::{SettingsCategory, SettingsItemDecl, SettingsPageContribute};
 use tasty_type_appearance::theme::{PartialColors, SurfaceTheme, Theme, ThemeColors};
@@ -70,6 +72,10 @@ pub fn draw_appearance_tab(
         (
             AppearanceSubTab::Display,
             t("settings.appearance.subtab.display").to_string(),
+        ),
+        (
+            AppearanceSubTab::Tasty,
+            t("settings.appearance.subtab.tasty").to_string(),
         ),
         (
             AppearanceSubTab::Terminal,
@@ -154,6 +160,9 @@ pub fn draw_appearance_tab(
             }
             AppearanceSubTab::Display => {
                 draw_appearance_display(ui, settings);
+            }
+            AppearanceSubTab::Tasty => {
+                draw_appearance_tasty(ui, settings);
             }
             AppearanceSubTab::Terminal => {
                 draw_appearance_terminal(
@@ -328,6 +337,190 @@ fn draw_appearance_display(ui: &mut egui::Ui, settings: &mut Settings) {
                 });
             ui.end_row();
         });
+}
+
+/// Reset the Tasty curated overrides (accent / sidebar bg) + active tab
+/// indicator back to the current theme's defaults. Pure (no egui) so the reset
+/// semantics can be unit-tested.
+fn reset_tasty_to_theme_defaults(app: &mut crate::settings::AppearanceSettings) {
+    app.theme_overrides.blue = None;
+    app.theme_overrides.mantle = None;
+    app.active_tab_indicator = ActiveTabIndicator::default();
+}
+
+/// Appearance > Tasty: app-chrome theming. Accent / Sidebar background are
+/// curated shortcuts into `theme_overrides` (`blue` / `mantle`) — the same
+/// single source the Colors picker edits. Active tab indicator selects the
+/// `active_tab_indicator` style. "Use theme defaults" clears the curated
+/// overrides and resets the indicator.
+fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
+    let th = crate::theme::theme();
+    ui.add_space(8.0);
+
+    ui.label(
+        egui::RichText::new(t("settings.appearance.tasty.heading"))
+            .strong()
+            .color(th.text),
+    );
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(t("settings.appearance.tasty.hint"))
+            .small()
+            .color(th.subtext0),
+    );
+    ui.add_space(8.0);
+
+    // ── Accent → theme_overrides.blue ──
+    draw_tasty_color_row(
+        ui,
+        &th,
+        settings,
+        "settings.appearance.tasty.accent",
+        |c| c.blue,
+        |p| p.blue,
+        |p, v| p.blue = v,
+    );
+    // ── Sidebar background → theme_overrides.mantle ──
+    draw_tasty_color_row(
+        ui,
+        &th,
+        settings,
+        "settings.appearance.tasty.sidebar_bg",
+        |c| c.mantle,
+        |p| p.mantle,
+        |p, v| p.mantle = v,
+    );
+
+    ui.add_space(12.0);
+
+    // ── Active tab indicator (Underline / Fill / Dot) ──
+    ui.label(egui::RichText::new(t("settings.appearance.tasty.indicator_label")).color(th.text));
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        for (variant, key) in [
+            (
+                ActiveTabIndicator::Underline,
+                "settings.appearance.tasty.indicator_underline",
+            ),
+            (
+                ActiveTabIndicator::Fill,
+                "settings.appearance.tasty.indicator_fill",
+            ),
+            (
+                ActiveTabIndicator::Dot,
+                "settings.appearance.tasty.indicator_dot",
+            ),
+        ] {
+            ui.selectable_value(&mut settings.appearance.active_tab_indicator, variant, t(key));
+        }
+    });
+
+    ui.add_space(12.0);
+
+    // ── Use theme defaults ──
+    if ui
+        .button(t("settings.appearance.tasty.use_defaults"))
+        .clicked()
+    {
+        reset_tasty_to_theme_defaults(&mut settings.appearance);
+    }
+}
+
+/// A single Tasty curated color row — friendly label (i18n), hex input, swatch,
+/// and a "Default" checkbox. `base`/`get`/`set` point at one field of
+/// `theme_base`/`theme_overrides`, giving identical set/clear semantics to the
+/// Colors picker's [`draw_color_picker_row`] but with a friendly label instead
+/// of the raw mono token name.
+fn draw_tasty_color_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    settings: &mut Settings,
+    label_key: &str,
+    base: fn(&ThemeColors) -> HexColor,
+    get: fn(&PartialColors) -> Option<HexColor>,
+    set: fn(&mut PartialColors, Option<HexColor>),
+) {
+    let base_color = base(&settings.appearance.theme_base);
+    let cur = get(&settings.appearance.theme_overrides);
+    let is_ov = cur.is_some();
+    let val = cur.unwrap_or(base_color);
+    let buf_id = ui.make_persistent_id(("appearance_tasty_hex", label_key));
+
+    ui.horizontal(|ui| {
+        // ── override dot ──
+        let dot = COLOR_OVERRIDE_DOT_SIZE.value();
+        let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
+        if is_ov {
+            ui.painter()
+                .circle_filled(dot_rect.center(), dot / 2.0, egui::Color32::from(th.blue));
+        }
+
+        // ── friendly label ──
+        ui.add_sized(
+            egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
+            egui::Label::new(
+                egui::RichText::new(t(label_key)).color(if is_ov { th.text } else { th.subtext0 }),
+            ),
+        );
+
+        // ── hex 입력 ──
+        if is_ov {
+            let mut text = ui
+                .data(|d| d.get_temp::<String>(buf_id))
+                .unwrap_or_else(|| val.to_hex());
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut text)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
+            );
+            if resp.changed()
+                && let Some(parsed) = HexColor::from_hex(text.trim())
+            {
+                set(&mut settings.appearance.theme_overrides, Some(parsed));
+            }
+            ui.data_mut(|d| d.insert_temp(buf_id, text));
+        } else {
+            let mut text = base_color.to_hex();
+            ui.add_enabled(
+                false,
+                egui::TextEdit::singleline(&mut text)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(COLOR_HEX_INPUT_WIDTH.value()),
+            );
+        }
+
+        // ── swatch (override 시 full, base 시 40% dim) ──
+        let sw = COLOR_SWATCH_SIZE.value();
+        let (sw_rect, _) = ui.allocate_exact_size(egui::vec2(sw, sw), egui::Sense::hover());
+        let fill = if is_ov {
+            egui::Color32::from(val)
+        } else {
+            val.with_alpha(102).to_egui()
+        };
+        ui.painter().rect_filled(sw_rect, 3.0, fill);
+        ui.painter().rect_stroke(
+            sw_rect,
+            3.0,
+            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.surface1)),
+            egui::StrokeKind::Inside,
+        );
+
+        // ── "Default" 체크박스 ──
+        let mut use_default = !is_ov;
+        if ui
+            .checkbox(&mut use_default, t("settings.appearance.colors.default"))
+            .changed()
+        {
+            let ov = &mut settings.appearance.theme_overrides;
+            if use_default {
+                set(ov, None);
+            } else {
+                set(ov, Some(base_color));
+                let seed = base_color.to_hex();
+                ui.data_mut(|d| d.insert_temp(buf_id, seed));
+            }
+        }
+    });
 }
 
 /// Appearance > Terminal: font override + preview + colors
@@ -1425,6 +1618,47 @@ mod tests {
         assert!((blue.get)(&ov).is_none(), "blue cleared");
         assert_eq!((crust.get)(&ov), Some(c), "crust preserved");
         assert_eq!(group_changed_count(accents, &ov), 0);
+    }
+
+    // ── Tasty curated section (accent/sidebar bg → theme_overrides + indicator) ──
+    use super::reset_tasty_to_theme_defaults;
+    use crate::settings::{ActiveTabIndicator, AppearanceSettings};
+
+    /// Tasty › Accent/Sidebar bg 는 `theme_overrides.blue`/`.mantle` 에 set/clear.
+    #[test]
+    fn tasty_accent_sidebar_map_to_blue_and_mantle() {
+        let mut app = AppearanceSettings::default();
+        let c = HexColor::from_hex("#445566").unwrap();
+        assert!(app.theme_overrides.blue.is_none());
+        assert!(app.theme_overrides.mantle.is_none());
+
+        app.theme_overrides.blue = Some(c); // Accent
+        app.theme_overrides.mantle = Some(c); // Sidebar bg
+        assert_eq!(app.theme_overrides.blue, Some(c));
+        assert_eq!(app.theme_overrides.mantle, Some(c));
+    }
+
+    /// "Use theme defaults" = accent/sidebar override clear + indicator 기본값 복귀.
+    #[test]
+    fn tasty_use_defaults_clears_overrides_and_resets_indicator() {
+        let mut app = AppearanceSettings::default();
+        let c = HexColor::from_hex("#778899").unwrap();
+        app.theme_overrides.blue = Some(c);
+        app.theme_overrides.mantle = Some(c);
+        app.active_tab_indicator = ActiveTabIndicator::Dot;
+        // 무관 override 는 보존되어야 한다 (curated 두 필드만 건드림).
+        app.theme_overrides.red = Some(c);
+
+        reset_tasty_to_theme_defaults(&mut app);
+
+        assert!(app.theme_overrides.blue.is_none(), "accent cleared");
+        assert!(app.theme_overrides.mantle.is_none(), "sidebar bg cleared");
+        assert_eq!(
+            app.active_tab_indicator,
+            ActiveTabIndicator::default(),
+            "indicator reset to default"
+        );
+        assert_eq!(app.theme_overrides.red, Some(c), "unrelated override preserved");
     }
 
     /// Reset all 은 46 flat 필드만 클리어하고 surface_themes(비-picker) 는 보존.

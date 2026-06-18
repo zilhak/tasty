@@ -53,6 +53,8 @@ pub(crate) enum AppearanceSubTab {
     General,
     /// UI scale (sm/md/lg) 전용 섹션.
     Display,
+    /// app-chrome 테마 (accent / sidebar bg / active tab indicator) 전용 섹션.
+    Tasty,
     Terminal,
     /// Plugin-contributed sub-tab. 복합키:
     /// - `plugin_id` = `SettingsPageEntry::plugin_id`

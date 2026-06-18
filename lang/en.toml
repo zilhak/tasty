@@ -281,8 +281,20 @@ theme = "Theme"
 colors = "Colors"
 general = "General"
 display = "Display"
+tasty = "Tasty"
 terminal = "Terminal"
 html = "HTML"
+
+[settings.appearance.tasty]
+heading = "App Chrome"
+hint = "Curated shortcuts for the app's own chrome — accent, sidebar background and the active tab indicator."
+accent = "Accent"
+sidebar_bg = "Sidebar background"
+indicator_label = "Active tab indicator"
+indicator_underline = "Underline"
+indicator_fill = "Fill"
+indicator_dot = "Dot"
+use_defaults = "Use theme defaults"
 
 [settings.appearance.theme]
 heading = "Theme Preset"

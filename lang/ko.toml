@@ -281,8 +281,20 @@ theme = "테마"
 colors = "색상"
 general = "일반"
 display = "디스플레이"
+tasty = "Tasty"
 terminal = "터미널"
 html = "HTML"
+
+[settings.appearance.tasty]
+heading = "앱 크롬"
+hint = "앱 자체 크롬을 위한 큐레이션 단축 — 액센트, 사이드바 배경, 활성 탭 인디케이터."
+accent = "액센트"
+sidebar_bg = "사이드바 배경"
+indicator_label = "활성 탭 인디케이터"
+indicator_underline = "밑줄"
+indicator_fill = "채움"
+indicator_dot = "점"
+use_defaults = "테마 기본값 사용"
 
 [settings.appearance.theme]
 heading = "테마 프리셋"

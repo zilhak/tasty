@@ -281,8 +281,20 @@ theme = "テーマ"
 colors = "色"
 general = "一般"
 display = "ディスプレイ"
+tasty = "Tasty"
 terminal = "ターミナル"
 html = "HTML"
+
+[settings.appearance.tasty]
+heading = "アプリクローム"
+hint = "アプリ自体のクロム向けのキュレーションされたショートカット — アクセント、サイドバー背景、アクティブタブインジケーター。"
+accent = "アクセント"
+sidebar_bg = "サイドバー背景"
+indicator_label = "アクティブタブインジケーター"
+indicator_underline = "下線"
+indicator_fill = "塗りつぶし"
+indicator_dot = "ドット"
+use_defaults = "テーマのデフォルトを使用"
 
 [settings.appearance.theme]
 heading = "テーマプリセット"

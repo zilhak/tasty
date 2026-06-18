@@ -7,6 +7,23 @@ use tasty_type_geometry::length::LogicalPx;
 
 pub use tasty_type_appearance::color::HexColor;
 
+/// Active tab indicator style for the app-chrome tab bar (Appearance › Tasty).
+///
+/// Mutually exclusive — the renderer draws exactly one marker per active tab.
+/// Default `Underline` keeps the accent line that has always marked the active
+/// tab; serde `default` makes older settings files migrate safely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveTabIndicator {
+    /// Accent underline; tab background matches inactive tabs.
+    #[default]
+    Underline,
+    /// Filled tab background; no underline.
+    Fill,
+    /// Small accent dot marker; tab background matches inactive tabs.
+    Dot,
+}
+
 /// Default font settings applied when a surface override field is `None`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -111,6 +128,9 @@ pub struct AppearanceSettings {
     pub sidebar_width: LogicalPx,
     /// UI scale: "small", "medium", or "large". Affects all egui UI elements.
     pub ui_scale: String,
+    /// Active tab indicator style (Underline / Fill / Dot) for the tab bar.
+    #[serde(default)]
+    pub active_tab_indicator: ActiveTabIndicator,
     /// 탭 바 base 너비 (logical px). 모니터 scale 은 egui 가 자동 반영 (= auto).
     pub tab_width: f32,
     /// 탭 라벨 base 폰트 크기 (logical px). 모니터 scale 은 egui 가 자동 반영.
@@ -143,6 +163,7 @@ impl Default for AppearanceSettings {
             background_opacity: 1.0,
             sidebar_width: LogicalPx(180.0),
             ui_scale: "medium".to_string(),
+            active_tab_indicator: ActiveTabIndicator::default(),
             tab_width: 150.0,
             tab_font_size: 11.0,
             default_font: FontSettings::default(),
@@ -340,6 +361,23 @@ font_family = "Iosevka"
         let parsed: AppearanceSettings = toml::from_str("").unwrap();
         assert_eq!(parsed.default_font.font_size, 14.0);
         assert!(parsed.terminal_font.font_size.is_none());
+    }
+
+    #[test]
+    fn active_tab_indicator_defaults_to_underline() {
+        assert_eq!(ActiveTabIndicator::default(), ActiveTabIndicator::Underline);
+        let parsed: AppearanceSettings = toml::from_str("").unwrap();
+        assert_eq!(parsed.active_tab_indicator, ActiveTabIndicator::Underline);
+    }
+
+    #[test]
+    fn active_tab_indicator_round_trips() {
+        let mut s = AppearanceSettings::default();
+        s.active_tab_indicator = ActiveTabIndicator::Dot;
+        let dumped = toml::to_string(&s).unwrap();
+        assert!(dumped.contains("active_tab_indicator = \"dot\""));
+        let reparsed: AppearanceSettings = toml::from_str(&dumped).unwrap();
+        assert_eq!(reparsed.active_tab_indicator, ActiveTabIndicator::Dot);
     }
 
     #[test]

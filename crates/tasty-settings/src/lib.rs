@@ -15,7 +15,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tasty_utils::path::tasty_home;
 
-pub use appearance::{AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor};
+pub use appearance::{
+    ActiveTabIndicator, AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor,
+};
 pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use port::SettingsStorage;

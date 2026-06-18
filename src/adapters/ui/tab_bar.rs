@@ -69,6 +69,8 @@ pub struct PaneTabBarsProps<'a> {
     pub tab_width: f32,
     /// 사용자 옵션 — 탭 라벨 폰트 크기 (logical px).
     pub tab_font_size: f32,
+    /// 사용자 옵션 — 활성 탭 인디케이터 스타일 (Underline / Fill / Dot).
+    pub active_tab_indicator: crate::settings::ActiveTabIndicator,
     /// 현재 drag 진행 상태 (None 이면 overlay 미표시).
     pub drag: Option<TabDragView>,
 }
@@ -270,7 +272,16 @@ pub fn draw_pane_tab_bars_view(
                                 let has_notif =
                                     info.tab_has_notification.get(i).copied().unwrap_or(false);
                                 let is_busy = info.tab_is_busy.get(i).copied().unwrap_or(false);
-                                let tab_bg = if is_active { th.base } else { bg };
+                                // Fill 스타일만 활성 탭 배경을 채운다. Underline/Dot 은
+                                // 배경을 비활성과 동일하게 두고 별도 마커로 표시.
+                                let tab_bg = if is_active
+                                    && props.active_tab_indicator
+                                        == crate::settings::ActiveTabIndicator::Fill
+                                {
+                                    th.base
+                                } else {
+                                    bg
+                                };
                                 let text_color = if is_active {
                                     th.text
                                 } else if has_notif {
@@ -287,11 +298,27 @@ pub fn draw_pane_tab_bars_view(
                                 painter.rect_filled(tab_rect, 0.0, tab_bg);
 
                                 if is_active {
-                                    let line_rect = egui::Rect::from_min_size(
-                                        egui::pos2(tab_rect.min.x, tab_rect.min.y),
-                                        egui::vec2(tab_w, active_indicator_h),
-                                    );
-                                    painter.rect_filled(line_rect, 0.0, th.blue);
+                                    use crate::settings::ActiveTabIndicator;
+                                    match props.active_tab_indicator {
+                                        ActiveTabIndicator::Underline => {
+                                            let line_rect = egui::Rect::from_min_size(
+                                                egui::pos2(tab_rect.min.x, tab_rect.min.y),
+                                                egui::vec2(tab_w, active_indicator_h),
+                                            );
+                                            painter.rect_filled(line_rect, 0.0, th.blue);
+                                        }
+                                        // Fill: 배경은 위에서 이미 th.base 로 채움 — 추가 마커 없음.
+                                        ActiveTabIndicator::Fill => {}
+                                        ActiveTabIndicator::Dot => {
+                                            // 탭 상단 중앙의 accent 점 마커.
+                                            let r = active_indicator_h;
+                                            let center = egui::pos2(
+                                                tab_rect.center().x,
+                                                tab_rect.min.y + r * 2.0,
+                                            );
+                                            painter.circle_filled(center, r, th.blue);
+                                        }
+                                    }
                                 }
 
                                 // close 버튼 슬롯(우측 h_padding + 14px)을 비워두고 dot 은
@@ -721,6 +748,7 @@ pub fn draw_pane_tab_bars(
         scale_factor,
         tab_width: tab_w,
         tab_font_size,
+        active_tab_indicator: appearance.active_tab_indicator,
         drag,
     };
 
@@ -925,6 +953,7 @@ mod tests {
                 scale_factor: 1.0,
                 tab_width: 160.0,
                 tab_font_size: 12.0,
+                active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
                 drag: drag.clone(),
             };
             out = draw_pane_tab_bars_view(ctx, &props);
