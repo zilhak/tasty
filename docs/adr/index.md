@@ -20,3 +20,6 @@
 | 0008 | [인라인 그래픽 프로토콜(Sixel / Kitty / iTerm)은 보류](0008-inline-graphics-protocols-deferred.md) | Deferred | 2026-06-17 | terminal, graphics, sixel, kitty, image, vte, scope, deferred |
 | 0009 | [Plugin sandbox 보류 — OS-level opt-in 우선](0009-plugin-sandbox-deferred.md) | Deferred | 2026-06-17 | plugin, sandbox, security, wasm, seccomp, trust-boundary, deferred |
 | 0010 | [Plugin marketplace 보류 — 로컬 path install 유지](0010-plugin-marketplace-deferred.md) | Deferred | 2026-06-17 | plugin, marketplace, registry, trust, distribution, deferred |
+| 0011 | [XTWINOPS 창 조작·창 상태 질의는 미지원 (크기/타이틀 스택만 응답)](0011-xtwinops-window-ops-unsupported.md) | Accepted | 2026-06-18 | terminal, xtwinops, vte, window, user-agent-separation, security, scope |
+| 0012 | [tmux control mode(DCS) 및 DECRQSS 는 미지원](0012-tmux-dcs-decrqss-unsupported.md) | Deferred | 2026-06-18 | terminal, vte, dcs, tmux, decrqss, scope, deferred |
+| 0013 | [레거시·니치 입력 사설 모드는 미지원](0013-niche-input-private-modes-unsupported.md) | Deferred | 2026-06-18 | terminal, vte, dec-private-mode, mouse, input, scope, deferred |
