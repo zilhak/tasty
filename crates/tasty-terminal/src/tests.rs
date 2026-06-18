@@ -1426,3 +1426,16 @@ fn resize_restore_does_not_leave_stale_pen() {
     assert_eq!(z.text, "Z");
     assert!(z.bold, "resize restore must not leave a stale (non-bold) pen");
 }
+
+// ---- DECALN (ESC # 8): screen alignment fill ----
+
+#[test]
+fn decaln_fills_screen_with_e() {
+    let mut t = Terminal::new_detached(8, 3);
+    t.feed_bytes(b"\x1b#8");
+    for row in 0..3 {
+        assert_eq!(t.screen_row(row), "EEEEEEEE", "row {row} should be all E");
+    }
+    // DECALN homes the cursor.
+    assert_eq!(t.cursor_position(), (0, 0));
+}
