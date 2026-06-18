@@ -23,3 +23,4 @@
 | 0011 | [XTWINOPS 창 조작·창 상태 질의는 미지원 (크기/타이틀 스택만 응답)](0011-xtwinops-window-ops-unsupported.md) | Accepted | 2026-06-18 | terminal, xtwinops, vte, window, user-agent-separation, security, scope |
 | 0012 | [tmux control mode(DCS) 및 DECRQSS 는 미지원](0012-tmux-dcs-decrqss-unsupported.md) | Deferred | 2026-06-18 | terminal, vte, dcs, tmux, decrqss, scope, deferred |
 | 0013 | [레거시·니치 입력 사설 모드는 미지원](0013-niche-input-private-modes-unsupported.md) | Deferred | 2026-06-18 | terminal, vte, dec-private-mode, mouse, input, scope, deferred |
+| 0014 | [폰트 ligature 는 보류 (현재 미지원, 추후 지원 계획)](0014-font-ligatures-deferred.md) | Deferred | 2026-06-18 | font, ligatures, appearance, settings, rendering, cell-grid, scope, deferred |
