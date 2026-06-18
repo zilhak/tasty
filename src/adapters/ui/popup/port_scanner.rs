@@ -828,9 +828,21 @@ fn draw_table(
     let mut out: Option<PortScannerAction> = None;
     let text_h = th.font_size_body.value() + 6.0;
 
+    // Cap the inner ScrollArea so the table scrolls *within* the bounded popup
+    // content rect instead of overflowing (and being clipped) past it. Reserve
+    // the sticky header row, the pinned footer, and the inter-widget gap from
+    // the height still available below the header/filter/separator.
+    // (egui_extras' default max_scroll_height is 800px, far taller than the
+    // 520px popup, so the body never scrolls without this cap.)
+    let header_h = text_h + 4.0;
+    let footer_h = th.font_size_caption.value() + 6.0;
+    let gap = ui.spacing().item_spacing.y;
+    let max_scroll = (ui.available_height() - header_h - footer_h - gap).max(text_h + 8.0);
+
     TableBuilder::new(ui)
         .striped(false)
         .resizable(false)
+        .max_scroll_height(max_scroll)
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
         .column(Column::initial(84.0).at_least(60.0))
         .column(Column::initial(76.0).at_least(60.0))
