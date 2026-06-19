@@ -3,6 +3,7 @@
 use clap::Subcommand;
 
 use super::super::ClipboardCommands;
+use super::passkey::PasskeyCommands;
 use super::ssh_profile::SshProfileCommands;
 
 #[derive(Subcommand)]
@@ -224,10 +225,16 @@ pub enum ToolCommands {
         #[command(subcommand)]
         command: ClipboardCommands,
     },
-    /// SSH connection profiles (`~/.tasty/ssh-profiles.toml`) — 워크스페이스를 원격
-    /// 컴퓨터에 매핑할 때 참조하는 장비 인벤토리. 로컬 파일 (no IPC).
+    /// SSH connection profiles (`~/.tasty/remote-profiles.toml`, ssh kind) — 워크스페이스를
+    /// 원격 컴퓨터에 매핑할 때 참조하는 장비 인벤토리. 로컬 파일 (no IPC).
     Ssh {
         #[command(subcommand)]
         command: SshProfileCommands,
+    },
+    /// Passkeys (`~/.tasty/passkeys.toml`) — 프로필이 이름으로 참조하는 자격증명 저장소.
+    /// list/show 는 값을 노출하지 않는다. 로컬 파일 (no IPC).
+    Passkey {
+        #[command(subcommand)]
+        command: PasskeyCommands,
     },
 }

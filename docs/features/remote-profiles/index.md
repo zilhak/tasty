@@ -24,7 +24,7 @@
 | 표면 | 진입 |
 |---|---|
 | GUI | 도구 메뉴 > Remote connections (popup `remote_tool`, 2탭) |
-| CLI | `tasty tool ssh add\|list\|show\|edit\|remove\|detect` (ssh kind. `--identity` → path passkey 자동 생성) |
+| CLI | `tasty tool ssh add\|list\|show\|edit\|remove\|detect` (ssh kind. `--identity` → path passkey 자동 생성) · `tasty tool passkey add\|list\|show\|remove` (`--path`/`--inline`; list/show 는 값 비노출) |
 | IPC | `remote.profile.{list,get,add,detect,remove}` · `remote.passkey.{list,get,add,remove}` (값 마스킹). 구 `tool.ssh.*`/`ssh.profile.*` 는 alias 한시 호환 |
 
 ## 마이그레이션

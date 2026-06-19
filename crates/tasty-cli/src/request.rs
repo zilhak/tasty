@@ -597,8 +597,9 @@ fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde
             ),
             ClipboardCommands::Clear => ("tool.clipboard.clear", serde_json::json!({})),
         },
-        // `tasty tool ssh ...` 는 run.rs 에서 로컬 처리 (IPC 미경유) — 미도달 arm.
+        // `tasty tool ssh|passkey ...` 는 run.rs 에서 로컬 처리 (IPC 미경유) — 미도달 arm.
         ToolCommands::Ssh { .. } => ("tool.ssh.noop", serde_json::json!({})),
+        ToolCommands::Passkey { .. } => ("tool.passkey.noop", serde_json::json!({})),
     }
 }
 

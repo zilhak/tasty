@@ -312,6 +312,13 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     {
         return crate::commands::ssh_profile::run(command);
     }
+    // `tasty tool passkey ...` — passkeys.toml 로컬 파일 (IPC 미경유).
+    if let Commands::Tool {
+        command: crate::commands::ToolCommands::Passkey { command },
+    } = &command
+    {
+        return crate::commands::passkey::run(command);
+    }
     // `--ssh` + `--force-detach` 는 미지원 — 터널 너머 force-detach 가 아니라 로컬
     // surface 를 강제해제할 위험이 있어 명시적으로 거부한다. `--force-detach`(no ssh)
     // 는 로컬 JSON-RPC(attach.force_detach)라 아래 raw-stream 블록(force_detach:false)

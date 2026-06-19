@@ -11,6 +11,7 @@ pub mod memory;
 pub mod move_send;
 pub mod new_close;
 pub mod output;
+pub mod passkey;
 pub mod plugin_cmd;
 pub mod port;
 pub mod preset;
