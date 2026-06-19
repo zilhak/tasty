@@ -116,6 +116,10 @@ pub fn draw_command_palette_view(
 
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 4.0;
+        // 고정 content_rect — footer 를 바닥에 고정하고 그 위 list 가 가용 공간을
+        // 모두 채운다 (디자인 command_palette.jsx: search 상단 / list flex / footer 하단).
+        let full = ui.max_rect();
+        let sep_stroke = egui::Stroke::new(theme.border_width.value(), theme.surface1);
 
         let mut query_changed = false;
         ui.horizontal(|ui| {
@@ -145,7 +149,17 @@ pub fn draw_command_palette_view(
             action = CommandPaletteAction::QueryChanged;
         }
 
-        ui.separator();
+        // 검색창 아래 구분선 (디자인 borderBottom). egui `ui.separator()` 는 theme
+        // stroke 색이 배경과 가까워 사실상 비가시 → 명시적 hline 으로 그린다.
+        ui.add_space(4.0);
+        ui.painter().hline(full.x_range(), ui.cursor().top(), sep_stroke);
+        ui.add_space(5.0);
+
+        // 하단 footer 높이 예약 후, list scroll 이 그 위 공간을 모두 채운다(auto_shrink
+        // false). 항목이 320 캡을 넘으면 내부 스크롤, 적으면 빈 공간이 list 영역에 남고
+        // footer 는 항상 바닥에 고정된다.
+        let footer_h = theme.font_size_caption.value() + 14.0;
+        let list_h = (full.bottom() - ui.cursor().top() - footer_h).max(24.0);
 
         if props.items.is_empty() {
             ui.label(
@@ -157,7 +171,8 @@ pub fn draw_command_palette_view(
             let row_height = 24.0;
             let selected_idx = props.selected_index;
             egui::ScrollArea::vertical()
-                .max_height(320.0)
+                .max_height(list_h)
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     for (i, item) in props.items.iter().enumerate() {
                         let (rect, resp) = ui.allocate_exact_size(
@@ -221,9 +236,14 @@ pub fn draw_command_palette_view(
                 });
         }
 
-        // 푸터 — 키보드 힌트 행. mono 폰트 + muted 색 (Theme). 기호는 고정키이므로
-        // 그대로 표기하고 동작 라벨만 i18n.
-        ui.separator();
+        // footer 를 content_rect 바닥에 고정 + 그 위 구분선 (디자인 borderTop).
+        // 푸터 키보드 힌트 — mono + muted. 기호는 고정키, 동작 라벨만 i18n.
+        let footer_top = full.bottom() - footer_h;
+        if ui.cursor().top() < footer_top {
+            ui.add_space(footer_top - ui.cursor().top());
+        }
+        ui.painter().hline(full.x_range(), ui.cursor().top(), sep_stroke);
+        ui.add_space(6.0);
         let hint_color = theme.text_muted().to_egui();
         let hint_font = egui::FontId::monospace(theme.font_size_caption.value());
         ui.horizontal(|ui| {
