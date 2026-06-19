@@ -1,0 +1,23 @@
+[package]
+name = "tasty-remote-profiles"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Remote connection profiles + passkeys for Tasty (~/.tasty/remote-profiles.toml, passkeys.toml) — typed-tagged registry consumed by attach/explorer/plugins"
+
+[dependencies]
+# Workspace crates
+tasty-utils = { path = "../tasty-utils" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+
+# Error handling
+anyhow = "1"
+
+[lints]
+workspace = true
