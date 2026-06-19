@@ -86,6 +86,7 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::Extension(sub) => extension_debug_command_to_method_params(sub),
         DebugCommands::Tool(sub) => tool_debug_command_to_method_params(sub),
         DebugCommands::Popup(sub) => popup_debug_command_to_method_params(sub),
+        DebugCommands::HostPopup(sub) => host_popup_debug_command_to_method_params(sub),
         // stream-echo is a raw framed exchange, not a JSON-RPC request — it is
         // handled directly in `run_client` before request mapping is reached.
         DebugCommands::StreamEcho { .. } => {
@@ -127,6 +128,24 @@ pub(super) fn popup_debug_command_to_method_params(
         PopupDebugCommands::Close { instance_id } => (
             "debug.popup.close",
             serde_json::json!({ "instance_id": instance_id }),
+        ),
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn host_popup_debug_command_to_method_params(
+    command: &crate::HostPopupDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::HostPopupDebugCommands;
+    match command {
+        HostPopupDebugCommands::List => ("debug.host_popup.list", serde_json::json!({})),
+        HostPopupDebugCommands::Open { popup_id } => (
+            "debug.host_popup.open",
+            serde_json::json!({ "popup_id": popup_id }),
+        ),
+        HostPopupDebugCommands::Close { popup_id } => (
+            "debug.host_popup.close",
+            serde_json::json!({ "popup_id": popup_id }),
         ),
     }
 }

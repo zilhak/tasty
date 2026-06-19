@@ -726,6 +726,18 @@ fn route_debug_handler(
         "debug.tool.list" => tool::handle_list(state, engine, id),
         #[cfg(feature = "gui")]
         "debug.tool.invoke" => tool::handle_invoke(state, engine, id, &request.params),
+        // 호스트 빌트인 popup 직접 open/close — 사용자 클릭 경로 없이 시각 검증용.
+        // release 미노출. (plugin popup 은 debug.popup.* 가 담당.)
+        #[cfg(feature = "gui")]
+        "debug.host_popup.list" => debug::handle_debug_host_popup_list(state, id),
+        #[cfg(feature = "gui")]
+        "debug.host_popup.open" => {
+            debug::handle_debug_host_popup_open(state, id, &request.params)
+        }
+        #[cfg(feature = "gui")]
+        "debug.host_popup.close" => {
+            debug::handle_debug_host_popup_close(state, id, &request.params)
+        }
         _ => return None,
     })
 }

@@ -118,6 +118,11 @@ pub enum DebugCommands {
     /// Plugin popup inspection and open/close (debug builds only)
     #[command(subcommand)]
     Popup(PopupDebugCommands),
+    /// Host built-in popup inspection and direct open/close (debug builds only).
+    /// Forces a host popup (tools_menu / port_scanner / command_palette /
+    /// remote_tool ...) open without the user-click path, for visual verification.
+    #[command(subcommand)]
+    HostPopup(HostPopupDebugCommands),
     /// VTE sequence simulator — identical to the standalone `tasty-tui-sim`
     /// binary, run from inside the current surface (emits raw VTE to stdout, no
     /// IPC). No subcommand = interactive REPL. Use `sim flood` for a heavy
@@ -227,6 +232,25 @@ pub enum PopupDebugCommands {
         /// Popup instance id returned by `popup open`
         #[arg(long)]
         instance_id: u64,
+    },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum HostPopupDebugCommands {
+    /// List all host built-in popups (id + title key)
+    List,
+    /// Force-open a host popup by id, centered on the focused window
+    Open {
+        /// Host popup id (e.g. "tools_menu", "port_scanner", "command_palette")
+        #[arg(long)]
+        popup_id: String,
+    },
+    /// Close a host popup by id
+    Close {
+        /// Host popup id
+        #[arg(long)]
+        popup_id: String,
     },
 }
 

@@ -48,6 +48,9 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.popup.list` | `{}` | contribute 된 popup 정의 + 현재 열린 instance |
 | `debug.popup.open` | `plugin_id, popup_id, context?` | popup 인스턴스 강제 open (응답에 `instance_id`) |
 | `debug.popup.close` | `instance_id` | popup 인스턴스 강제 close |
+| `debug.host_popup.list` | `{}` | 호스트 빌트인 popup(`PopupDef`) 전체 목록 (id + title_key) |
+| `debug.host_popup.open` | `popup_id` | 호스트 빌트인 popup 을 focused window 중앙에 강제 open (사용자 클릭 경로 우회, 시각 검증용) |
+| `debug.host_popup.close` | `popup_id` | 호스트 빌트인 popup 강제 close |
 | `debug.event_bus.list_subscribers` | `key` | 해당 키 구독 plugin 목록 |
 | `debug.event_bus.publish` | `key, payload, scope` | 임의 키로 host envelope 발화 |
 | `debug.event_bus.trace` | `trace_id` | 같은 trace_id envelope 들을 발화 순서로 |
@@ -58,7 +61,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ## CLI 노출
 
-CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug/mod.rs`)가 모듈째 `#![cfg(debug_assertions)]`. 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key` · `event-bus` · `extension` · `tool` · `popup` · `stream-echo` · `attach`.
+CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug/mod.rs`)가 모듈째 `#![cfg(debug_assertions)]`. 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key` · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `stream-echo` · `attach`.
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 

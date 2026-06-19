@@ -303,6 +303,77 @@ pub(super) fn handle_debug_inject_mouse(
     }
 }
 
+/// `debug.host_popup.list` — 호스트 빌트인 popup(`PopupDef`) 전체 목록을 반환.
+///
+/// plugin 이 contribute 한 popup 은 `debug.popup.list` 가 담당한다. 이쪽은 tasty
+/// 본체가 `popup::defs::all_defs()` 로 정의한 빌트인 popup (tools_menu / port_scanner
+/// / command_palette / remote_tool 등) 전용이다. 사용자 클릭 경로 없이 popup 을
+/// 직접 띄워 시각 검증하기 위한 debug 격리 표면.
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_host_popup_list(
+    _state: &AppState,
+    id: serde_json::Value,
+) -> JsonRpcResponse {
+    let items: Vec<_> = crate::adapters::ui::popup::defs::all_defs()
+        .iter()
+        .map(|def| {
+            json!({
+                "id": def.id,
+                "title_key": def.title_key,
+                "headless": def.headless,
+                "close_on_outside_click": def.close_on_outside_click,
+            })
+        })
+        .collect();
+    JsonRpcResponse::success(id, json!({ "popups": items }))
+}
+
+/// `debug.host_popup.open` — `{ popup_id }` 로 호스트 빌트인 popup 을 화면 중앙에
+/// 강제로 띄운다. 사용자 클릭(사이드바 도구 버튼 → 메뉴 → 항목) 을 재현하는
+/// 디버그 동작이므로 release 에 노출되지 않는다.
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_host_popup_open(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let Some(popup_id) = params.get("popup_id").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'popup_id' parameter");
+    };
+    // 런타임 문자열 → 정적 def id (`PopupId` 는 &'static str). 정의에 없는 id 는 거부.
+    let Some(def) = crate::adapters::ui::popup::defs::find(popup_id) else {
+        return JsonRpcResponse::error(id, -32602, format!("host popup '{popup_id}' not found"));
+    };
+    state.dispatch_intent(
+        crate::intent::UiIntent::OpenPopup {
+            id: def.id,
+            mode: crate::intent::OpenPopupMode::CenteredFocused,
+        }
+        .from_agent_ipc(),
+    );
+    JsonRpcResponse::success(id, json!({ "opened": def.id }))
+}
+
+/// `debug.host_popup.close` — `{ popup_id }` 로 호스트 빌트인 popup 을 닫는다.
+/// 여러 popup 을 차례로 스크린샷할 때 직전 popup 을 정리하는 용도.
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_host_popup_close(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let Some(popup_id) = params.get("popup_id").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'popup_id' parameter");
+    };
+    let Some(def) = crate::adapters::ui::popup::defs::find(popup_id) else {
+        return JsonRpcResponse::error(id, -32602, format!("host popup '{popup_id}' not found"));
+    };
+    state.dispatch_intent(
+        crate::intent::UiIntent::ClosePopup { id: def.id }.from_agent_ipc(),
+    );
+    JsonRpcResponse::success(id, json!({ "closed": def.id }))
+}
+
 /// Inject a key event into a surface's PTY.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_inject_key(
