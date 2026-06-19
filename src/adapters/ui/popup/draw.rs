@@ -172,8 +172,14 @@ impl PopupManager {
 
             let painter = ctx.layer_painter(layer_id);
 
-            // Popup background
-            painter.rect_filled(popup_rect, th.corner_radius.value(), th.surface0);
+            // Popup background. 디자인 semantic 토큰 매핑: 대부분 popup 은
+            // surface-raised(=surface0). 단 헤더+리스트형 "패널" popup 은 bg-panel
+            // (=base, 한 단계 더 어두움). remote_tool / port_scanner 가 후자.
+            let bg_fill: egui::Color32 = match popup_id {
+                "remote_tool" | "port_scanner" => th.base.into(),
+                _ => th.surface0.into(),
+            };
+            painter.rect_filled(popup_rect, th.corner_radius.value(), bg_fill);
             painter.rect_stroke(
                 popup_rect,
                 th.corner_radius.value(),

@@ -131,19 +131,31 @@ pub fn draw_remote_tool_popup(
     }
 
     let mut close = false;
-    egui::Frame::NONE.show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-        if draw_header(ui, &th) {
-            close = true;
-        }
-        hsep(ui, &th);
-        draw_tab_bar(ui, &th, &mut st);
-        hsep(ui, &th);
-        match st.tab {
-            Tab::Profiles => draw_profiles_tab(ui, &th, &ctx, &mut st, &mut profiles, &passkeys),
-            Tab::Passkeys => draw_passkeys_tab(ui, &th, &mut st, &passkeys),
-        }
-    });
+    // 디자인(remote_tool.jsx)은 콘텐츠에 ~14px 좌우 패딩을 둔다. popup content_rect
+    // 의 content_margin(~4px) 위에 추가 inset 을 얹어 헤더/탭/리스트가 가장자리에
+    // 붙지 않게 한다.
+    egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: 10,
+            right: 10,
+            top: 4,
+            bottom: 4,
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+            if draw_header(ui, &th) {
+                close = true;
+            }
+            hsep(ui, &th);
+            draw_tab_bar(ui, &th, &mut st);
+            hsep(ui, &th);
+            match st.tab {
+                Tab::Profiles => {
+                    draw_profiles_tab(ui, &th, &ctx, &mut st, &mut profiles, &passkeys)
+                }
+                Tab::Passkeys => draw_passkeys_tab(ui, &th, &mut st, &passkeys),
+            }
+        });
 
     if close {
         clear_ui(&ctx);
@@ -152,6 +164,17 @@ pub fn draw_remote_tool_popup(
         write_ui(&ctx, st);
         PopupAction::None
     }
+}
+
+/// 디자인 secondary 버튼 (Button.jsx `--secondary`): surface-raised(surface0) 채움.
+/// base(bg-panel) 패널 배경 위에서 한 단계 밝게 떠 보인다. (egui inactive 기본 버튼은
+/// fill=base 라 base 패널 위에서 묻히므로 fill 을 명시한다.)
+fn secondary_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(egui::RichText::new(label).color(th.text).size(th.font_size_body.value()))
+            .fill(th.surface0)
+            .stroke(egui::Stroke::new(th.border_width.value(), th.surface1)),
+    )
 }
 
 /// 디자인 separator 선. egui `ui.separator()` 는 theme stroke 색이 배경과 가까워
@@ -284,7 +307,7 @@ fn draw_profile_list(
     profiles: &RemoteProfiles,
     passkeys: &Passkeys,
 ) {
-    if ui.button(t("remote_tool.profile_add")).clicked() {
+    if secondary_button(ui, th, t("remote_tool.profile_add")).clicked() {
         st.pform = ProfileForm {
             kind: "ssh".into(),
             shell: "auto".into(),
@@ -781,7 +804,7 @@ fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
 }
 
 fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
-    if ui.button(t("remote_tool.passkey_add")).clicked() {
+    if secondary_button(ui, th, t("remote_tool.passkey_add")).clicked() {
         st.kform = PasskeyForm { kind: "path".into(), ..Default::default() };
         st.kerr = None;
         st.passkey_view = Sub::Form;
