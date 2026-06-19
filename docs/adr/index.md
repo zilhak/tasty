@@ -24,3 +24,5 @@
 | 0012 | [tmux control mode(DCS) 및 DECRQSS 는 미지원](0012-tmux-dcs-decrqss-unsupported.md) | Deferred | 2026-06-18 | terminal, vte, dcs, tmux, decrqss, scope, deferred |
 | 0013 | [레거시·니치 입력 사설 모드는 미지원](0013-niche-input-private-modes-unsupported.md) | Deferred | 2026-06-18 | terminal, vte, dec-private-mode, mouse, input, scope, deferred |
 | 0014 | [폰트 ligature 는 보류 (현재 미지원, 추후 지원 계획)](0014-font-ligatures-deferred.md) | Deferred | 2026-06-18 | font, ligatures, appearance, settings, rendering, cell-grid, scope, deferred |
+| 0015 | [원격 접속 프로필 = 범용 typed 레지스트리, attach 는 소비자](0015-remote-profiles-typed-registry.md) | Accepted | 2026-06-19 | remote, profile, registry, attach, ssh, smb, extensibility, plugin, ubiquitous-language |
+| 0016 | [Passkey 저장소 — path 수렴 · 파일권한 위임 · 참조 모델](0016-passkey-store-path-convergence.md) | Accepted | 2026-06-19 | passkey, secret, security, file-permission, trust-boundary, remote-profile |

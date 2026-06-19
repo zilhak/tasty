@@ -59,7 +59,7 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
   - `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>` — 자동 매핑 선언.
 - **IPC (`attach.*`)**: `acquire`/`release`(stream 핸드셰이크), `force_detach`/`force_detach_workspace`, `into_gui`, `list`(점유 목록 조회). 표 상세 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md#ipc-표면-attach).
 - **로컬 self attach**: 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)).
-- **SSH 프로필**: `--profile` 이 참조하는 프로필은 [ssh-tool](../ssh-tool/index.md) 이 관리.
+- **SSH 프로필**: `--profile` 이 참조하는 프로필은 [ssh-tool](../remote-profiles/index.md) 이 관리.
 
 ## 비-목표 (Out of scope)
 
@@ -67,7 +67,7 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 - **단발 화면 읽기** — attach 세션을 열 필요 없음. 정식 경로는 `tasty read screen` / `tasty read since-mark`(별도 기능).
 - **로컬 loopback attach 의 release 노출** — debug 전용.
 - **프로토콜 프레임/터널 결선/재연결 백오프 등 메커니즘** — [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md).
-- **SSH 프로필 CRUD** — [ssh-tool](../ssh-tool/index.md).
+- **SSH 프로필 CRUD** — [ssh-tool](../remote-profiles/index.md).
 
 ## Acceptance Criteria
 

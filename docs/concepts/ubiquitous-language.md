@@ -12,6 +12,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 | 구조 | [hierarchy.md](hierarchy.md) | Engine · View · Workspace · Pane · Tab · Surface · 두 레벨 레이아웃 |
 | 플러그인 | [plugins.md](plugins.md) | 배포/통합 축 · surface_kind · 권한 |
 | attach | [`../dev-guide/attach-behavior.md`](../dev-guide/attach-behavior.md) | server/client · mirror · lock |
+| 원격 연결 | [`../features/remote-profiles/index.md`](../features/remote-profiles/index.md) | 원격 접속 프로필 · Passkey · kind |
 
 ## 용어 한 줄 정의
 
@@ -21,6 +22,12 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **AI Agent** — IPC/CLI 로 tasty 를 조작하는 AI. 대상은 ID 직접 지정. 점유 없이 동작, **격리 계약**(부수효과가 사용자 상태에 안 닿음)을 따른다.
 - **원격 접속 사용자** — SSH 너머에서 attach 로 접속하는 사람. 행동은 AI Agent 에 가깝고(연결 기반), **점유**라는 관문을 반드시 통과한다.
 - **점유(occupation)** — 원격 사용자가 surface/workspace 를 **배타 claim**. 점유 중 다른 주체는 readonly. 대상→점유자는 1:1, 원격 사용자→대상은 1:N.
+
+### 원격 연결 (→ [features/remote-profiles](../features/remote-profiles/index.md))
+
+- **원격 접속 프로필(Remote profile)** — 타입(`kind`, 열린 string) 태그가 붙은 범용 연결 디스크립터. 비밀을 담지 않고 Passkey 를 이름으로 참조만 한다. attach 는 이 중 ssh kind 를 읽는 **소비자**일 뿐 — "주소 저장 ≠ attach".
+- **Passkey** — 별도 named 자격증명 저장소. `kind = path`(파일 참조) | `inline`(0600 파일로 materialize). at-rest 는 항상 파일 경로(toml 에 비밀 0). 값은 로컬 GUI Reveal 로만 열람, IPC/agent 엔 영구 마스킹([ADR-0016](../adr/0016-passkey-store-path-convergence.md)).
+- **미등록 타입** — core 내장(ssh/smb)도 설치 플러그인도 claim 하지 않는 `kind`. 등록은 허용하되 노란 배지로 경고.
 
 ### 구조 (→ [hierarchy.md](hierarchy.md))
 

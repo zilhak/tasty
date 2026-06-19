@@ -56,7 +56,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 - 클립보드 히스토리: `tool.clipboard.{list,get,paste}` — [clipboard](../features/clipboard/index.md)
 - 파일 핸들러: `file_handler.{reload,dispatch}` — [file-handler](../features/file-handler/index.md)
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../plugins/image/index.md)
-- SSH 프로필: `tool.ssh.{list,get,add,detect,remove}` — [ssh-tool](../features/ssh-tool/index.md)
+- SSH 프로필: `tool.ssh.{list,get,add,detect,remove}` — [ssh-tool](../features/remote-profiles/index.md)
 - webview: `webview.set_url`
 - 시스템: `system.info`
 

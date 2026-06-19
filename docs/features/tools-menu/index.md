@@ -35,7 +35,7 @@
 - **각 항목은 그 기능으로 연결** (연결 개념):
   - Command palette → [`features/command-palette/`](../command-palette/index.md)
   - Listening ports → [`features/listening-ports/`](../listening-ports/index.md)
-  - SSH profiles → [`features/ssh-tool/`](../ssh-tool/index.md)
+  - SSH profiles → [`features/remote-profiles/`](../remote-profiles/index.md)
   - 플러그인 기여 도구 → **[번들 플러그인 문서](../../plugins/index.md)** (예: [clipboard-history](../../plugins/clipboard-history/index.md) · [git-viewer](../../plugins/git-viewer/index.md)). 이 메뉴 문서에는 항목을 나열하지 않는다 — 공식 플러그인 메뉴는 해당 플러그인 쪽에서 다룬다.
 
 ## 비-목표

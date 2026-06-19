@@ -84,6 +84,6 @@ attach 직후 서버가 현재 visible 화면을 `snapshot_as_vt` 로 **1회** �
 - 결정 근거(원격 대상·로컬 debug 격리): [`ADR-0007`](../adr/0007-attach-targets-remote.md)
 - 동작·점유 규칙·CLI/IPC 사용법: [`features/remote-attach`](../features/remote-attach/index.md)
 - 주체(원격 사용자)·점유 모델 개념: [`concepts/actors`](../concepts/actors.md)
-- SSH 프로필 관리: [`features/ssh-tool`](../features/ssh-tool/index.md)
+- SSH 프로필 관리: [`features/ssh-tool`](../features/remote-profiles/index.md)
 - 로컬 self attach 격리: [`dev-guide/debug-ipc`](debug-ipc.md)
 </content>
