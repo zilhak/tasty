@@ -263,15 +263,22 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("attach.force_detach_workspace", plugin(&[])),
         ("attach.into_gui", plugin(&[])),
         ("attach.list", plugin(&[])),
-        // ── tool.ssh.* (SSH 연결 프로필 CRUD — attach/detach 단계 7) ──────
-        // 프로필은 비밀 없는 장비 인벤토리(decision 5: 비번 미저장). attach.* 와 동일하게
+        // ── remote.profile.* (원격 접속 프로필 CRUD) ─────────────────────
+        // 프로필은 비밀 없는 장비 인벤토리(passkey 를 이름으로 참조만). attach.* 와 동일하게
         // 연결 경계(소켓 도달)에 신뢰를 위임 — 추가 Permission 불요.
-        // (구 ssh.profile.* → tool.ssh.* 로 이동; 구이름은 alias.rs 로 한시 호환.)
-        ("tool.ssh.list", plugin(&[])),
-        ("tool.ssh.get", plugin(&[])),
-        ("tool.ssh.add", plugin(&[])),
-        ("tool.ssh.detect", plugin(&[])),
-        ("tool.ssh.remove", plugin(&[])),
+        // (구 tool.ssh.* / ssh.profile.* 는 alias.rs 로 한시 호환.)
+        ("remote.profile.list", plugin(&[])),
+        ("remote.profile.get", plugin(&[])),
+        ("remote.profile.add", plugin(&[])),
+        ("remote.profile.detect", plugin(&[])),
+        ("remote.profile.remove", plugin(&[])),
+        // ── remote.passkey.* (자격증명 CRUD) ─────────────────────────────
+        // 값 마스킹은 핸들러가 보장(list/get 은 name+kind 만, 파일 내용 미반환). 등록은
+        // 쓰기라 허용. 권한은 프로필과 동일 — 연결 경계 위임(ADR-0016 / decision 7).
+        ("remote.passkey.list", plugin(&[])),
+        ("remote.passkey.get", plugin(&[])),
+        ("remote.passkey.add", plugin(&[])),
+        ("remote.passkey.remove", plugin(&[])),
         // ── notification ──────────────────────────────────────────────
         ("notification.list", plugin(&[Notification])),
         ("notification.create", plugin(&[Notification])),

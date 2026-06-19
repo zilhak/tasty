@@ -22,8 +22,9 @@ mod meta;
 mod notification;
 mod output;
 pub(crate) mod pane;
+mod passkey;
 mod preset;
-mod ssh_profile;
+mod remote_profile;
 pub(crate) mod surface;
 mod tab;
 mod telemetry;
@@ -676,13 +677,18 @@ fn route_engine_handler(
         }
         "attach.into_gui" => attach::handle_into_gui(engine, id, &request.params),
         "attach.list" => attach::handle_list(engine, id),
-        // tool.ssh.* — SSH 연결 프로필 CRUD (단계 7, 원칙 2). 로컬 파일 I/O.
-        // (구 ssh.profile.* 는 alias.rs 에서 정규화되어 여기로 도달.)
-        "tool.ssh.list" => ssh_profile::handle_list(id),
-        "tool.ssh.get" => ssh_profile::handle_get(id, &request.params),
-        "tool.ssh.add" => ssh_profile::handle_add(id, &request.params),
-        "tool.ssh.detect" => ssh_profile::handle_detect(id, &request.params),
-        "tool.ssh.remove" => ssh_profile::handle_remove(id, &request.params),
+        // remote.profile.* — 원격 접속 프로필 CRUD (원칙 2). 로컬 파일 I/O.
+        // (구 tool.ssh.* / ssh.profile.* 는 alias.rs 에서 정규화되어 여기로 도달.)
+        "remote.profile.list" => remote_profile::handle_list(id),
+        "remote.profile.get" => remote_profile::handle_get(id, &request.params),
+        "remote.profile.add" => remote_profile::handle_add(id, &request.params),
+        "remote.profile.detect" => remote_profile::handle_detect(id, &request.params),
+        "remote.profile.remove" => remote_profile::handle_remove(id, &request.params),
+        // remote.passkey.* — 자격증명 CRUD (값 마스킹 — 경로/내용 미반환).
+        "remote.passkey.list" => passkey::handle_list(id),
+        "remote.passkey.get" => passkey::handle_get(id, &request.params),
+        "remote.passkey.add" => passkey::handle_add(id, &request.params),
+        "remote.passkey.remove" => passkey::handle_remove(id, &request.params),
         _ => return None,
     })
 }
@@ -712,6 +718,9 @@ fn route_debug_handler(
         }
         #[cfg(feature = "gui")]
         "debug.inject_key" => debug::handle_debug_inject_key(state, engine, id, &request.params),
+        "debug.switch_workspace" => {
+            debug::handle_debug_switch_workspace(state, engine, id, &request.params)
+        }
         // 도구 메뉴 — 사용자 클릭 자동화. release 미노출.
         #[cfg(feature = "gui")]
         "debug.tool.list" => tool::handle_list(state, engine, id),
