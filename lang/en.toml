@@ -769,3 +769,11 @@ read_failed = "Failed to read IPC response (timeout/connection closed)"
 eof = "No IPC response (EOF) — the remote server is not responding"
 parse_failed = "Failed to parse IPC response JSON"
 error_response = "IPC error response (code={}): {}"
+
+[command_index.cap.soft]
+title = "Command history is large"
+body = "This surface has recorded {} commands. Old entries are cleared when the surface closes."
+
+[command_index.cap.hard]
+title = "Command history limit reached"
+body = "This surface hit the command-history limit; new commands are no longer recorded."

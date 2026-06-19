@@ -464,7 +464,27 @@ impl Core {
                 }
                 TerminalEventKind::PromptBoundary { phase, payload } => {
                     let mem = engine.memory.clone();
-                    engine.command_index.on_boundary(&mem, sid, phase, &payload);
+                    if let Some(cap) = engine.command_index.on_boundary(&mem, sid, phase, &payload) {
+                        use crate::engine::command_index::CommandCapEvent;
+                        let (title, body) = match cap {
+                            CommandCapEvent::SoftWarn { count, .. } => (
+                                crate::i18n::t("command_index.cap.soft.title").to_string(),
+                                crate::i18n::t_fmt(
+                                    "command_index.cap.soft.body",
+                                    &count.to_string(),
+                                ),
+                            ),
+                            CommandCapEvent::HardBlocked { .. } => (
+                                crate::i18n::t("command_index.cap.hard.title").to_string(),
+                                crate::i18n::t("command_index.cap.hard.body").to_string(),
+                            ),
+                        };
+                        out.push(CoreEvent::TerminalNotification {
+                            surface_id: sid,
+                            title,
+                            body,
+                        });
+                    }
                 }
                 TerminalEventKind::ClipboardSet(text) => {
                     if let Err(e) = self.clipboard.write_text(&text) {

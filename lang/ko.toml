@@ -769,3 +769,11 @@ read_failed = "IPC 응답 읽기 실패(타임아웃/연결 끊김)"
 eof = "IPC 응답 없음 (EOF) — 원격 서버가 응답하지 않습니다"
 parse_failed = "IPC 응답 JSON 파싱 실패"
 error_response = "IPC 에러 응답 (code={}): {}"
+
+[command_index.cap.soft]
+title = "명령 이력이 많습니다"
+body = "이 서피스에 명령 {}개가 기록되었습니다. 오래된 항목은 서피스를 닫을 때 정리됩니다."
+
+[command_index.cap.hard]
+title = "명령 이력 한도 도달"
+body = "이 서피스가 명령 이력 한도에 도달해 새 명령은 더 이상 기록되지 않습니다."

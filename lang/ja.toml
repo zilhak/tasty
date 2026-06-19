@@ -769,3 +769,11 @@ read_failed = "IPC 応答の読み取りに失敗 (タイムアウト/接続切�
 eof = "IPC 応答なし (EOF) — リモートサーバーが応答しません"
 parse_failed = "IPC 応答 JSON の解析に失敗"
 error_response = "IPC エラー応答 (code={}): {}"
+
+[command_index.cap.soft]
+title = "コマンド履歴が大量です"
+body = "このサーフェスにコマンドが {} 件記録されています。古い項目はサーフェスを閉じると整理されます。"
+
+[command_index.cap.hard]
+title = "コマンド履歴の上限に到達"
+body = "このサーフェスがコマンド履歴の上限に達したため、新しいコマンドは記録されません。"
