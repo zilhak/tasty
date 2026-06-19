@@ -655,7 +655,17 @@ pub fn draw_port_scanner_view(
         if let Some(a) = draw_filter_row(ui, props) {
             action = a;
         }
-        ui.separator();
+        // 필터 행 아래 구분선 (디자인 borderBottom). egui `ui.separator()` 는 theme
+        // stroke 가 배경과 가까워 비가시 → surface1 hline 으로 그린다.
+        {
+            let r = ui.max_rect();
+            ui.painter().hline(
+                r.x_range(),
+                ui.cursor().top(),
+                egui::Stroke::new(props.theme.border_width.value(), props.theme.surface1),
+            );
+            ui.add_space(2.0);
+        }
         match &props.view_state {
             PortScannerViewState::Loading => draw_loading_body(ui, props),
             PortScannerViewState::Failed { message } => draw_failed_body(ui, props, message),
@@ -707,6 +717,16 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortSc
             .map(row_copy_address),
         _ => None,
     };
+    // footer 위 구분선 (디자인 borderTop).
+    {
+        let r = ui.max_rect();
+        ui.painter().hline(
+            r.x_range(),
+            ui.cursor().top(),
+            egui::Stroke::new(th.border_width.value(), th.surface1),
+        );
+        ui.add_space(2.0);
+    }
     ui.horizontal(|ui| {
         if let Some(s) = &counter {
             ui.label(
@@ -915,7 +935,10 @@ fn draw_table(
     // (egui_extras' default max_scroll_height is 800px, far taller than the
     // 520px popup, so the body never scrolls without this cap.)
     let header_h = text_h + 4.0;
-    let footer_h = th.font_size_caption.value() + 6.0;
+    // footer 에는 `주소 복사` / `닫기` 버튼이 있어 caption 텍스트보다 높다. 버튼 행
+    // (interact_size.y) + 상하 패딩(디자인 footer padding 9px)을 넉넉히 예약하지
+    // 않으면 footer 가 popup 하단에서 잘린다. caption 기준 과소평가였던 값을 교체.
+    let footer_h = ui.spacing().interact_size.y + 20.0;
     let gap = ui.spacing().item_spacing.y;
     let max_scroll = (ui.available_height() - header_h - footer_h - gap).max(text_h + 8.0);
 
@@ -927,13 +950,18 @@ fn draw_table(
         .sense(egui::Sense::click())
         .max_scroll_height(max_scroll)
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-        .column(Column::initial(84.0).at_least(60.0))
-        .column(Column::initial(76.0).at_least(60.0))
-        .column(Column::remainder().at_least(80.0))
-        .column(Column::remainder().at_least(100.0))
-        .column(Column::initial(120.0).at_least(80.0))
-        .column(Column::remainder().at_least(80.0))
-        .column(Column::initial(140.0).at_least(100.0))
+        // flex(remainder) 컬럼의 at_least floor 합이 가용 폭을 넘으면 테이블이 popup
+        // 폭 밖으로 넘쳐 footer 의 right_to_left 기준점까지 밀려 `닫기` 가 잘린다.
+        // 디자인(port_scanner.jsx)은 flex 컬럼에 최소폭이 없다(CSS 축소) → floor 를
+        // 내용이 읽히는 선에서 낮춰 660 폭 안에 맞춘다. 여유가 있으면 remainder 가
+        // 알아서 넓어진다.
+        .column(Column::initial(84.0).at_least(60.0)) // Port
+        .column(Column::initial(76.0).at_least(60.0)) // Proto
+        .column(Column::remainder().at_least(64.0)) // Address (flex)
+        .column(Column::remainder().at_least(64.0)) // Process (flex)
+        .column(Column::initial(120.0).at_least(80.0)) // Workspace
+        .column(Column::remainder().at_least(36.0)) // Tab (flex, 대개 "—")
+        .column(Column::initial(140.0).at_least(100.0)) // State
         .header(text_h + 4.0, |mut header| {
             let mut sort_click = |this: Option<SortKey>, ui: &mut egui::Ui, label: &str| {
                 if let Some(k) = draw_header_cell(
