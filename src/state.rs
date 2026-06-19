@@ -769,6 +769,10 @@ impl AppState {
         }
         engine.command_index.drop_surface(surface_id);
         engine.observer_router.drop_surface(surface_id);
+        // waker dedup 게이트 제거 — 미제거 시 surface 마다 영구 누적(누수).
+        if let Some(factory) = engine.waker_factory.as_ref() {
+            factory.forget_surface(surface_id);
+        }
         let scope = tasty_memory::Scope::Surface(surface_id);
         match self.with_memory(|m| m.purge_scope(&scope)) {
             Ok(stats) if stats.regular + stats.secret > 0 => tracing::debug!(

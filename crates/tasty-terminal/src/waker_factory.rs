@@ -25,6 +25,11 @@ pub trait WakerFactory: Send + Sync + 'static {
     /// default 게이트를 푼다. event handler 가 PTY 채널 drain *직전* 에 호출해야,
     /// drain 과 경합하는 wake 가 스킵되어 유실되는 것을 막는다.
     fn note_drained(&self, surface_id: Option<u32>);
+
+    /// surface 가 닫힐 때 호출 — 해당 surface 의 dedup 게이트를 내부 맵에서 제거한다.
+    /// 호출하지 않으면 게이트가 프로세스 수명 동안 surface 마다 누적된다(누수).
+    /// 기본 구현은 no-op (게이트를 보관하지 않는 impl 용).
+    fn forget_surface(&self, _surface_id: u32) {}
 }
 
 /// 공용 핸들 — `CoreState` 에 보관되며 `Arc::clone` 으로 PTY 리더 스레드에 분배된다.

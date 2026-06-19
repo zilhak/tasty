@@ -112,6 +112,14 @@ impl WakerFactory for HeadlessWakerFactory {
             None => self.default_gate.store(false, Ordering::Release),
         }
     }
+
+    fn forget_surface(&self, surface_id: u32) {
+        // surface 닫힘 — 게이트 제거(미제거 시 surface 마다 영구 누적).
+        self.targeted_gates
+            .lock()
+            .expect("HeadlessWakerFactory targeted_gates poisoned")
+            .remove(&surface_id);
+    }
 }
 
 #[cfg(test)]
@@ -175,5 +183,24 @@ mod tests {
         waker_a();
         waker_b();
         assert_eq!(drain_counts(&rx), (0, 1), "only surface 1 re-armed");
+    }
+
+    #[test]
+    fn forget_surface_removes_gate() {
+        let (tx, rx) = mpsc::channel();
+        let factory = HeadlessWaker::new(tx).waker_factory();
+        let waker = factory.make_targeted_waker(1);
+
+        waker(); // 큐잉(게이트 true)
+        assert_eq!(drain_counts(&rx), (0, 1));
+        waker(); // drain 안 했으니 게이트 여전히 true → coalesce
+        assert_eq!(drain_counts(&rx), (0, 0));
+
+        // surface 닫힘 → 게이트 제거. 새 waker 는 fresh 게이트(false)를 만든다.
+        factory.forget_surface(1);
+        let waker2 = factory.make_targeted_waker(1);
+        waker2();
+        // 게이트가 제거됐으므로 다시 큐잉됨(미제거였다면 옛 true 게이트 재사용 → 0).
+        assert_eq!(drain_counts(&rx), (0, 1), "gate was removed → re-armed");
     }
 }

@@ -79,4 +79,12 @@ impl WakerFactory for WinitWakerFactory {
             None => self.default_gate.store(false, Ordering::Release),
         }
     }
+
+    fn forget_surface(&self, surface_id: u32) {
+        // surface 닫힘 — 게이트 제거(미제거 시 surface 마다 영구 누적).
+        self.targeted_gates
+            .lock()
+            .expect("WinitWakerFactory targeted_gates poisoned")
+            .remove(&surface_id);
+    }
 }
