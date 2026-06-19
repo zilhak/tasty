@@ -166,6 +166,7 @@ tasty-ipc = { path = "crates/tasty-ipc" }
 tasty-cli = { path = "crates/tasty-cli" }
 tasty-model = { path = "crates/tasty-model" }
 tasty-ssh-profiles = { path = "crates/tasty-ssh-profiles" }
+tasty-remote-profiles = { path = "crates/tasty-remote-profiles" }
 tasty-presets = { path = "crates/tasty-presets" }
 tasty-settings = { path = "crates/tasty-settings" }
 tasty-themes = { path = "crates/tasty-themes" }

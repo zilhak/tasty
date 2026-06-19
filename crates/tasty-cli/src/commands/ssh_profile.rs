@@ -1,17 +1,20 @@
-//! `tasty tool ssh ...` — SSH 연결 프로필 CRUD (attach/detach 단계 7).
+//! `tasty tool ssh ...` — ssh kind 원격 프로필 CRUD (attach/detach 단계 7).
 //!
-//! `~/.tasty/ssh-profiles.toml` 는 client(이 머신)의 로컬 파일이라 IPC 미경유로 직접
-//! 읽고 쓴다(`tasty port` / `tasty file-handler` 와 같은 로컬 분기). 포커스 비의존
-//! (원칙 3): 모든 명령이 `--name` 으로 대상을 지정한다. 비밀번호는 저장하지 않는다.
+//! `~/.tasty/remote-profiles.toml` / `passkeys.toml` 는 client(이 머신) 로컬 파일이라
+//! IPC 미경유로 직접 읽고 쓴다. 포커스 비의존(원칙 3): 모든 명령이 `--name` 으로 대상을
+//! 지정한다. 비밀 값은 저장하지 않는다 — `--identity <path>` 는 path kind passkey
+//! `<name>-key` 로 분리 저장되고, 프로필은 그 passkey 를 이름으로 참조한다.
 
 use anyhow::Result;
 use clap::Subcommand;
 
-use tasty_ssh_profiles::{SshProfile, SshProfiles};
+use tasty_remote_profiles::{
+    Passkeys, RemoteProfile, RemoteProfiles, is_valid_shell, sanitize_passkey_name,
+};
 
 #[derive(Subcommand)]
 pub enum SshProfileCommands {
-    /// 새 SSH 프로필 추가(같은 name 이 있으면 교체).
+    /// 새 ssh 프로필 추가(같은 name 이 있으면 교체).
     Add {
         /// 프로필 고유 식별자(워크스페이스 매핑이 참조).
         #[arg(long)]
@@ -25,12 +28,9 @@ pub enum SshProfileCommands {
         /// ssh 포트(기본: ssh config / 22).
         #[arg(long)]
         port: Option<u16>,
-        /// identity 파일 경로(-i). 없고 agent 사용 시 agent 위임.
+        /// identity 파일 경로(-i). path kind passkey `<name>-key` 로 분리 저장된다.
         #[arg(long)]
         identity: Option<String>,
-        /// ssh-agent 위임 비활성(기본: agent 사용).
-        #[arg(long)]
-        no_agent: bool,
         /// 추가 ssh -o 옵션(반복 가능). 예: --option ServerAliveInterval=30
         #[arg(long = "option")]
         options: Vec<String>,
@@ -38,11 +38,9 @@ pub enum SshProfileCommands {
         #[arg(long, default_value = "tasty")]
         remote_tasty: String,
         /// 원격 포트 발견 모드: auto | subcommand | file-unix | file-windows.
-        /// (`--shell` 이 명시 셸이거나 auto 감지 성공 시 덮어쓰여진다.)
         #[arg(long, default_value = "auto")]
         port_mode: String,
-        /// 원격 셸: powershell | cmd | bash | zsh | auto(기본). 명시 셸이면 발견
-        /// 모드를 즉시 도출하고, auto 면 등록 시점에 1회 자동감지(SSH 프로브)한다.
+        /// 원격 셸: powershell | cmd | bash | zsh | auto(기본).
         #[arg(long, default_value = "auto")]
         shell: String,
         /// UI 표시용 라벨(옵션).
@@ -51,7 +49,6 @@ pub enum SshProfileCommands {
     },
     /// 저장된 프로필 목록 출력.
     List {
-        /// JSON 출력.
         #[arg(long)]
         json: bool,
     },
@@ -74,33 +71,36 @@ pub enum SshProfileCommands {
         port: Option<u16>,
         #[arg(long)]
         identity: Option<String>,
-        /// agent 사용 강제(true) / 비활성(false).
-        #[arg(long)]
-        use_agent: Option<bool>,
         #[arg(long = "option")]
         options: Vec<String>,
         #[arg(long)]
         remote_tasty: Option<String>,
         #[arg(long)]
         port_mode: Option<String>,
-        /// 원격 셸: powershell | cmd | bash | zsh | auto. 지정 시 발견 모드를 재도출
-        /// (명시 셸) 하거나 자동감지(auto)를 다시 실행한다.
+        /// 원격 셸: powershell | cmd | bash | zsh | auto.
         #[arg(long)]
         shell: Option<String>,
         #[arg(long)]
         label: Option<String>,
     },
-    /// 프로필 제거.
+    /// 프로필 제거(참조 passkey 는 공유 가능성 때문에 보존).
     Remove {
         #[arg(long)]
         name: String,
     },
     /// 저장된 프로필을 재감지한다(프로브 체인 1회 — SSH 접속 발생).
-    /// 성공 시 발견 모드를 갱신·활성화, 전 프로브 실패 시 "감지 실패"(비활성)로 기록.
     Detect {
         #[arg(long)]
         name: String,
     },
+}
+
+/// `--identity <path>` 를 path kind passkey `<name>-key` 로 분리 저장하고 그 이름을
+/// 반환한다(프로필 `passkey_ref` 로 연결). 같은 path 면 그대로 갱신(upsert).
+fn link_identity_passkey(passkeys: &mut Passkeys, name: &str, identity: &str) -> Result<String> {
+    let pk_name = format!("{}-key", sanitize_passkey_name(name));
+    passkeys.upsert_path(&pk_name, identity.to_string())?;
+    Ok(pk_name)
 }
 
 /// `tasty tool ssh ...` 로컬 분기 진입점(IPC 미경유).
@@ -112,111 +112,134 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
             user,
             port,
             identity,
-            no_agent,
             options,
             remote_tasty,
             port_mode,
             shell,
             label,
         } => {
-            if !tasty_ssh_profiles::is_valid_shell(shell) {
+            if !is_valid_shell(shell) {
                 anyhow::bail!("알 수 없는 --shell '{shell}' (powershell|cmd|bash|zsh|auto)");
             }
-            let mut profiles = SshProfiles::load();
-            let mut p = SshProfile::new(name.clone(), host.clone());
-            p.user = user.clone();
-            p.port = *port;
-            p.identity_file = identity.clone();
-            p.use_agent = !*no_agent;
-            p.extra_options = options.clone();
-            p.remote_tasty = remote_tasty.clone();
-            p.port_mode = port_mode.clone();
-            p.shell = shell.clone();
+            let mut profiles = RemoteProfiles::load();
+            let mut passkeys = Passkeys::load();
+            let mut p = RemoteProfile::new(name.clone(), "ssh");
+            p.set_field("host", host.clone());
+            if let Some(u) = user {
+                p.set_field("user", u.clone());
+            }
+            if let Some(pt) = port {
+                p.set_field("port", pt.to_string());
+            }
+            if !options.is_empty() {
+                p.set_field("extra_options", options.clone());
+            }
+            p.set_field("remote_tasty", remote_tasty.clone());
+            p.set_field("port_mode", port_mode.clone());
+            p.set_field("shell", shell.clone());
             p.label = label.clone();
+            if let Some(idf) = identity {
+                p.passkey_ref = Some(link_identity_passkey(&mut passkeys, name, idf)?);
+            }
             let replaced = profiles.get(name).is_some();
             // shell 적용: 명시 셸 → 매핑(즉시), auto → SSH 프로브 1회(수 초 블록 가능).
-            let detect = crate::ssh::apply_shell_to_profile(&mut p);
+            let detect = crate::ssh::apply_shell_to_profile(&mut p, &passkeys);
             profiles.upsert(p);
+            passkeys.save()?;
             profiles.save()?;
             println!(
-                "{} SSH 프로필 '{name}' ({host}).",
+                "{} ssh 프로필 '{name}' ({host}).",
                 if replaced { "갱신:" } else { "추가:" }
             );
             report_detect(name, &detect);
             Ok(())
         }
         SshProfileCommands::List { json } => {
-            let profiles = SshProfiles::load();
+            let profiles = RemoteProfiles::load();
             if *json {
                 let arr: Vec<_> = profiles
                     .profiles
                     .iter()
                     .map(|p| {
+                        let v = p.as_ssh();
                         serde_json::json!({
                             "name": p.name,
-                            "host": p.host,
-                            "user": p.user,
-                            "port": p.port,
-                            "remote_tasty": p.remote_tasty,
-                            "port_mode": p.port_mode,
-                            "shell": p.shell,
-                            "detect_failed": p.detect_failed,
+                            "kind": p.kind,
+                            "host": v.as_ref().and_then(|v| v.host()),
+                            "user": v.as_ref().and_then(|v| v.user()),
+                            "port": v.as_ref().and_then(|v| v.port()),
+                            "passkey_ref": p.passkey_ref,
+                            "remote_tasty": v.as_ref().map(|v| v.remote_tasty()),
+                            "port_mode": v.as_ref().map(|v| v.port_mode()),
+                            "shell": v.as_ref().map(|v| v.shell()),
+                            "detect_failed": v.as_ref().map(|v| v.detect_failed()).unwrap_or(false),
                         })
                     })
                     .collect();
                 println!("{}", serde_json::to_string_pretty(&arr)?);
             } else if profiles.profiles.is_empty() {
-                println!("저장된 SSH 프로필이 없습니다 (tasty tool ssh add ...).");
+                println!("저장된 원격 프로필이 없습니다 (tasty tool ssh add ...).");
             } else {
                 println!(
-                    "{:<16} {:<24} {:<11} {:<11} STATUS",
-                    "NAME", "HOST", "SHELL", "PORT-MODE"
+                    "{:<16} {:<8} {:<24} {:<11} {:<11} STATUS",
+                    "NAME", "TYPE", "HOST", "SHELL", "PORT-MODE"
                 );
                 for p in &profiles.profiles {
-                    let dest = p.ssh_destination();
-                    let status = if p.is_disabled() {
+                    let v = p.as_ssh();
+                    let dest = v.as_ref().map(|v| v.ssh_destination()).unwrap_or_default();
+                    let shell = v.as_ref().map(|v| v.shell()).unwrap_or("");
+                    let pm = v.as_ref().map(|v| v.port_mode()).unwrap_or("");
+                    let status = if v.as_ref().map(|v| v.is_disabled()).unwrap_or(false) {
                         "감지 실패(비활성)"
+                    } else if !p.is_builtin_kind() {
+                        "미등록 타입"
                     } else {
                         ""
                     };
                     println!(
-                        "{:<16} {:<24} {:<11} {:<11} {}",
-                        p.name, dest, p.shell, p.port_mode, status
+                        "{:<16} {:<8} {:<24} {:<11} {:<11} {}",
+                        p.name, p.kind, dest, shell, pm, status
                     );
                 }
             }
             Ok(())
         }
         SshProfileCommands::Show { name, json } => {
-            let profiles = SshProfiles::load();
+            let profiles = RemoteProfiles::load();
+            let passkeys = Passkeys::load();
             let Some(p) = profiles.get(name) else {
-                anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다.");
+                anyhow::bail!("원격 프로필 '{name}' 을 찾을 수 없습니다.");
             };
             if *json {
                 println!("{}", serde_json::to_string_pretty(p)?);
             } else {
                 println!("name          : {}", p.name);
+                println!("type          : {}", p.kind);
                 if let Some(l) = &p.label {
                     println!("label         : {l}");
                 }
-                println!("host          : {}", p.host);
-                println!("destination   : {}", p.ssh_destination());
-                if let Some(port) = p.port {
-                    println!("port          : {port}");
+                if let Some(pk) = &p.passkey_ref {
+                    let status = if passkeys.get(pk).is_some() { "" } else { "  (passkey 없음)" };
+                    println!("passkey       : {pk}{status}");
                 }
-                println!(
-                    "identity_file : {}",
-                    p.identity_file.as_deref().unwrap_or("(none)")
-                );
-                println!("use_agent     : {}", p.use_agent);
-                if !p.extra_options.is_empty() {
-                    println!("extra_options : {}", p.extra_options.join(", "));
-                }
-                println!("remote_tasty  : {}", p.remote_tasty);
-                println!("shell         : {}", p.shell);
-                println!("port_mode     : {}", p.port_mode);
-                if p.is_disabled() {
-                    println!("status        : 감지 실패(비활성) — tasty tool ssh detect {name}");
+                if let Some(v) = p.as_ssh() {
+                    println!("destination   : {}", v.ssh_destination());
+                    if let Some(port) = v.port() {
+                        println!("port          : {port}");
+                    }
+                    if !v.extra_options().is_empty() {
+                        println!("extra_options : {}", v.extra_options().join(", "));
+                    }
+                    println!("remote_tasty  : {}", v.remote_tasty());
+                    println!("shell         : {}", v.shell());
+                    println!("port_mode     : {}", v.port_mode());
+                    if v.is_disabled() {
+                        println!("status        : 감지 실패(비활성) — tasty tool ssh detect {name}");
+                    }
+                } else {
+                    for (k, val) in &p.fields {
+                        println!("{k:<14}: {val:?}");
+                    }
                 }
             }
             Ok(())
@@ -227,7 +250,6 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
             user,
             port,
             identity,
-            use_agent,
             options,
             remote_tasty,
             port_mode,
@@ -235,69 +257,62 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
             label,
         } => {
             if let Some(s) = shell
-                && !tasty_ssh_profiles::is_valid_shell(s)
+                && !is_valid_shell(s)
             {
                 anyhow::bail!("알 수 없는 --shell '{s}' (powershell|cmd|bash|zsh|auto)");
             }
-            let mut profiles = SshProfiles::load();
-            let Some(existing) = profiles.get(name).cloned() else {
-                anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다.");
+            let mut profiles = RemoteProfiles::load();
+            let mut passkeys = Passkeys::load();
+            let Some(mut p) = profiles.get(name).cloned() else {
+                anyhow::bail!("원격 프로필 '{name}' 을 찾을 수 없습니다.");
             };
-            let mut p = existing;
             if let Some(h) = host {
-                p.host = h.clone();
+                p.set_field("host", h.clone());
             }
-            if user.is_some() {
-                p.user = user.clone();
+            if let Some(u) = user {
+                p.set_field("user", u.clone());
             }
-            if port.is_some() {
-                p.port = *port;
+            if let Some(pt) = port {
+                p.set_field("port", pt.to_string());
             }
-            if identity.is_some() {
-                p.identity_file = identity.clone();
-            }
-            if let Some(a) = use_agent {
-                p.use_agent = *a;
+            if let Some(idf) = identity {
+                p.passkey_ref = Some(link_identity_passkey(&mut passkeys, name, idf)?);
             }
             if !options.is_empty() {
-                p.extra_options = options.clone();
+                p.set_field("extra_options", options.clone());
             }
             if let Some(rt) = remote_tasty {
-                p.remote_tasty = rt.clone();
+                p.set_field("remote_tasty", rt.clone());
             }
             if let Some(pm) = port_mode {
-                p.port_mode = pm.clone();
+                p.set_field("port_mode", pm.clone());
             }
             if label.is_some() {
                 p.label = label.clone();
             }
-            // --shell 이 주어지면 셸을 갱신하고 발견 모드를 재도출(명시) / 재감지(auto).
-            // 주어지지 않으면 기존 shell/port_mode/detect_failed 를 보존한다.
+            // --shell 이 주어지면 셸 갱신 + 발견 모드 재도출(명시) / 재감지(auto).
             let detect = if let Some(s) = shell {
-                p.shell = s.clone();
-                crate::ssh::apply_shell_to_profile(&mut p)
+                p.set_field("shell", s.clone());
+                crate::ssh::apply_shell_to_profile(&mut p, &passkeys)
             } else {
                 None
             };
             profiles.upsert(p);
+            passkeys.save()?;
             profiles.save()?;
-            println!("갱신: SSH 프로필 '{name}'.");
+            println!("갱신: 원격 프로필 '{name}'.");
             report_detect(name, &detect);
             Ok(())
         }
         SshProfileCommands::Detect { name } => {
             {
-                let profiles = SshProfiles::load();
+                let profiles = RemoteProfiles::load();
                 if profiles.get(name).is_none() {
-                    anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다.");
+                    anyhow::bail!("원격 프로필 '{name}' 을 찾을 수 없습니다.");
                 }
             }
-            // 셸 무관하게 프로브 체인을 다시 돌려 발견 모드를 갱신·저장(비활성 복귀 포함).
             match crate::ssh::detect_and_persist(name) {
-                Ok(mode) => println!(
-                    "재감지 성공: '{name}' → port_mode={} (활성).",
-                    mode.as_str()
-                ),
+                Ok(mode) => println!("재감지 성공: '{name}' → port_mode={} (활성).", mode.as_str()),
                 Err(e) => println!(
                     "재감지 실패: {e}\n  '{name}' 은 비활성 상태입니다 — 원격 환경 확인 후 \
                      다시 'tasty tool ssh detect {name}'."
@@ -306,12 +321,12 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
             Ok(())
         }
         SshProfileCommands::Remove { name } => {
-            let mut profiles = SshProfiles::load();
+            let mut profiles = RemoteProfiles::load();
             if profiles.remove(name) {
                 profiles.save()?;
-                println!("제거: SSH 프로필 '{name}'.");
+                println!("제거: 원격 프로필 '{name}'.");
             } else {
-                anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다.");
+                anyhow::bail!("원격 프로필 '{name}' 을 찾을 수 없습니다.");
             }
             Ok(())
         }
@@ -322,10 +337,7 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
 fn report_detect(name: &str, detect: &Option<Result<crate::ssh::PortMode>>) {
     match detect {
         Some(Ok(mode)) => {
-            println!(
-                "자동감지 성공: 원격 환경 → port_mode={} (활성).",
-                mode.as_str()
-            )
+            println!("자동감지 성공: 원격 환경 → port_mode={} (활성).", mode.as_str())
         }
         Some(Err(e)) => println!(
             "자동감지 실패: {e}\n  '{name}' 은 비활성 상태로 저장되었습니다 — \

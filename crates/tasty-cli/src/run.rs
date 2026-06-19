@@ -365,21 +365,14 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         // release 표면엔 로컬 attach 가 없으므로 명확히 거부한다.
         let (target, rt, pm): (crate::ssh::SshTarget, String, String) = match profile {
             Some(name) => {
-                let profiles = tasty_ssh_profiles::SshProfiles::load();
+                let profiles = tasty_remote_profiles::RemoteProfiles::load();
+                let passkeys = tasty_remote_profiles::Passkeys::load();
                 let Some(p) = profiles.get(name) else {
-                    anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty tool ssh list).");
-                };
-                if p.is_disabled() {
                     anyhow::bail!(
-                        "SSH 프로필 '{name}' 은 환경 감지에 실패해 비활성 상태입니다. \
-                         'tasty tool ssh detect {name}' 로 재감지하세요."
+                        "원격 프로필 '{name}' 을 찾을 수 없습니다 (tasty remote profile list)."
                     );
-                }
-                (
-                    crate::ssh::SshTarget::from_profile(p),
-                    p.remote_tasty.clone(),
-                    p.port_mode.clone(),
-                )
+                };
+                crate::ssh::resolve_attach_target(p, &passkeys)?
             }
             None => match ssh {
                 Some(dest) => (
@@ -446,21 +439,14 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         // (attach 와 동일 가드 — 포커스 비의존, ID/주소 직접 지정.)
         let (target, rt, pm): (crate::ssh::SshTarget, String, String) = match profile {
             Some(name) => {
-                let profiles = tasty_ssh_profiles::SshProfiles::load();
+                let profiles = tasty_remote_profiles::RemoteProfiles::load();
+                let passkeys = tasty_remote_profiles::Passkeys::load();
                 let Some(p) = profiles.get(name) else {
-                    anyhow::bail!("SSH 프로필 '{name}' 을 찾을 수 없습니다 (tasty tool ssh list).");
-                };
-                if p.is_disabled() {
                     anyhow::bail!(
-                        "SSH 프로필 '{name}' 은 환경 감지에 실패해 비활성 상태입니다. \
-                         'tasty tool ssh detect {name}' 로 재감지하세요."
+                        "원격 프로필 '{name}' 을 찾을 수 없습니다 (tasty remote profile list)."
                     );
-                }
-                (
-                    crate::ssh::SshTarget::from_profile(p),
-                    p.remote_tasty.clone(),
-                    p.port_mode.clone(),
-                )
+                };
+                crate::ssh::resolve_attach_target(p, &passkeys)?
             }
             None => match ssh {
                 Some(dest) => (

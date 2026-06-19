@@ -19,7 +19,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
-use tasty_ssh_profiles::{SshProfile, SshProfiles};
+use tasty_remote_profiles::{Passkeys, RemoteProfile, RemoteProfiles, shell_to_port_mode};
 
 /// 시스템 ssh 바이너리 경로.
 ///
@@ -79,15 +79,50 @@ impl SshTarget {
     }
 
     /// 저장 프로필을 ssh 연결 대상으로 변환한다(단계 7 `attach --profile` / 자동 attach).
-    /// destination = `user@host` 합성, port/identity_file/extra_options 결선.
-    pub fn from_profile(p: &tasty_ssh_profiles::SshProfile) -> Self {
-        Self {
-            destination: p.ssh_destination(),
-            ssh_port: p.port,
-            identity_file: p.identity_file.clone(),
-            extra_options: p.extra_options.clone(),
-        }
+    /// destination = `user@host` 합성, port/extra_options 결선. `identity_file` 은
+    /// `passkey_ref` → [`Passkeys`] 에서 resolve 한 **파일 경로**(inline/path 무관).
+    ///
+    /// ssh kind 가 아니거나(`attach` 는 ssh 전용) passkey 참조가 깨졌으면 에러.
+    pub fn from_remote_profile(p: &RemoteProfile, passkeys: &Passkeys) -> Result<Self> {
+        let v = p.as_ssh().ok_or_else(|| {
+            anyhow::anyhow!("attach 는 ssh kind 프로필만 지원합니다 (kind='{}')", p.kind)
+        })?;
+        let identity_file = match &p.passkey_ref {
+            Some(name) => Some(
+                passkeys
+                    .get(name)
+                    .ok_or_else(|| anyhow::anyhow!("passkey '{name}' 을 찾을 수 없습니다"))?
+                    .path
+                    .clone(),
+            ),
+            None => None,
+        };
+        Ok(Self {
+            destination: v.ssh_destination(),
+            ssh_port: v.port(),
+            identity_file,
+            extra_options: v.extra_options(),
+        })
     }
+}
+
+/// attach 소비자용 헬퍼 — 프로필을 `(SshTarget, remote_tasty, port_mode)` 로 resolve.
+/// ssh kind 검증 + 비활성(detect 실패) 게이트 + passkey resolve 를 한곳에서 처리한다
+/// (auto_attach / `remote attach` / `remote check` 3곳의 중복 제거).
+pub fn resolve_attach_target(
+    p: &RemoteProfile,
+    passkeys: &Passkeys,
+) -> Result<(SshTarget, String, String)> {
+    let v = p.as_ssh().ok_or_else(|| {
+        anyhow::anyhow!("attach 는 ssh kind 프로필만 지원합니다 (kind='{}')", p.kind)
+    })?;
+    if v.is_disabled() {
+        bail!("프로필 '{}' 은 비활성(셸 감지 실패) — 재감지가 필요합니다", p.name);
+    }
+    let remote_tasty = v.remote_tasty().to_string();
+    let port_mode = v.port_mode().to_string();
+    let target = SshTarget::from_remote_profile(p, passkeys)?;
+    Ok((target, remote_tasty, port_mode))
 }
 
 /// 경로 앞의 `~` / `~/` 를 홈 디렉토리로 확장한다. ssh 를 셸 없이 spawn 하면 셸의
@@ -357,31 +392,39 @@ pub fn detect_port_mode(
 ///   `detect_failed=false`, 실패 시 `detect_failed=true`. 반환 `Some(결과)`.
 ///
 /// `auto` 분기는 네트워크 I/O 로 수 초 블록될 수 있다 — GUI/host 는 워커 스레드에서 호출.
-pub fn apply_shell_to_profile(profile: &mut SshProfile) -> Option<Result<PortMode>> {
-    if let Some(mode) = tasty_ssh_profiles::shell_to_port_mode(&profile.shell) {
-        profile.port_mode = mode.to_string();
-        profile.detect_failed = false;
+pub fn apply_shell_to_profile(
+    profile: &mut RemoteProfile,
+    passkeys: &Passkeys,
+) -> Option<Result<PortMode>> {
+    let shell = profile.as_ssh().map(|v| v.shell().to_string()).unwrap_or_else(|| "auto".into());
+    if let Some(mode) = shell_to_port_mode(&shell) {
+        profile.set_field("port_mode", mode);
+        profile.remove_field("detect_failed");
         return None;
     }
     // shell == auto (또는 알 수 없는 값) → 감지.
-    let outcome = detect_for_profile(profile);
+    let outcome = detect_for_profile(profile, passkeys);
     match &outcome {
         Ok(mode) => {
-            profile.port_mode = mode.as_str().to_string();
-            profile.detect_failed = false;
+            profile.set_field("port_mode", mode.as_str());
+            profile.remove_field("detect_failed");
         }
-        Err(_) => profile.detect_failed = true,
+        Err(_) => profile.set_field("detect_failed", "true"),
     }
     Some(outcome)
 }
 
 /// 프로필 접속 정보로 자동감지를 1회 실행한다(셸 무관 — 항상 프로브 체인).
-fn detect_for_profile(profile: &SshProfile) -> Result<PortMode> {
+fn detect_for_profile(profile: &RemoteProfile, passkeys: &Passkeys) -> Result<PortMode> {
     let ssh = resolve_ssh_path();
-    let target = SshTarget::from_profile(profile);
+    let target = SshTarget::from_remote_profile(profile, passkeys)?;
+    let remote_tasty = profile
+        .as_ssh()
+        .map(|v| v.remote_tasty().to_string())
+        .unwrap_or_else(|| "tasty".into());
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
     let debug = cfg!(debug_assertions);
-    detect_port_mode(&ssh, &target, &profile.remote_tasty, verify, debug)
+    detect_port_mode(&ssh, &target, &remote_tasty, verify, debug)
 }
 
 /// 이름으로 프로필을 로드→재감지→저장한다(GUI 새로고침/IPC detect 워커 진입점).
@@ -389,17 +432,18 @@ fn detect_for_profile(profile: &SshProfile) -> Result<PortMode> {
 /// 셸 무관하게 프로브 체인을 돌려, 성공 시 `port_mode`=감지 모드 + 활성화,
 /// 실패 시 `detect_failed=true`(비활성)로 toml 을 **항상 갱신**한다. 네트워크 I/O 블록.
 pub fn detect_and_persist(name: &str) -> Result<PortMode> {
-    let mut profiles = SshProfiles::load();
+    let mut profiles = RemoteProfiles::load();
+    let passkeys = Passkeys::load();
     let Some(mut p) = profiles.get(name).cloned() else {
-        bail!("ssh 프로필 '{name}' 을 찾을 수 없습니다");
+        bail!("원격 프로필 '{name}' 을 찾을 수 없습니다");
     };
-    let result = detect_for_profile(&p);
+    let result = detect_for_profile(&p, &passkeys);
     match &result {
         Ok(mode) => {
-            p.port_mode = mode.as_str().to_string();
-            p.detect_failed = false;
+            p.set_field("port_mode", mode.as_str());
+            p.remove_field("detect_failed");
         }
-        Err(_) => p.detect_failed = true,
+        Err(_) => p.set_field("detect_failed", "true"),
     }
     profiles.upsert(p);
     profiles.save()?;
@@ -545,17 +589,51 @@ mod tests {
     }
 
     #[test]
-    fn from_profile_threads_user_port_identity_options() {
-        let mut p = tasty_ssh_profiles::SshProfile::new("gx10", "gx10");
-        p.user = Some("zilhak".into());
-        p.port = Some(2222);
-        p.identity_file = Some("~/.ssh/id_ed25519".into());
-        p.extra_options = vec!["ServerAliveInterval=30".into()];
-        let t = SshTarget::from_profile(&p);
+    fn from_remote_profile_threads_user_port_identity_options() {
+        // identity_file 은 이제 passkey_ref → Passkey.path 로 resolve.
+        let mut pk = Passkeys::default();
+        pk.upsert_path("gx10-key", "~/.ssh/id_ed25519").unwrap();
+        let mut p = RemoteProfile::new("gx10", "ssh")
+            .with_field("host", "gx10")
+            .with_field("user", "zilhak")
+            .with_field("port", "2222")
+            .with_field("extra_options", vec!["ServerAliveInterval=30".to_string()]);
+        p.passkey_ref = Some("gx10-key".into());
+        let t = SshTarget::from_remote_profile(&p, &pk).unwrap();
         assert_eq!(t.destination, "zilhak@gx10");
         assert_eq!(t.ssh_port, Some(2222));
         assert_eq!(t.identity_file.as_deref(), Some("~/.ssh/id_ed25519"));
         assert_eq!(t.extra_options, vec!["ServerAliveInterval=30".to_string()]);
+    }
+
+    #[test]
+    fn from_remote_profile_dangling_passkey_errors() {
+        let pk = Passkeys::default();
+        let mut p = RemoteProfile::new("x", "ssh").with_field("host", "h");
+        p.passkey_ref = Some("missing".into());
+        assert!(SshTarget::from_remote_profile(&p, &pk).is_err());
+    }
+
+    #[test]
+    fn resolve_attach_target_rejects_non_ssh_and_disabled() {
+        let pk = Passkeys::default();
+        // 비-ssh kind 거부.
+        let http = RemoteProfile::new("site", "http").with_field("url", "https://x");
+        assert!(resolve_attach_target(&http, &pk).is_err());
+        // 비활성(detect 실패) 거부.
+        let disabled = RemoteProfile::new("x", "ssh")
+            .with_field("host", "h")
+            .with_field("detect_failed", "true");
+        assert!(resolve_attach_target(&disabled, &pk).is_err());
+        // 정상 — (target, remote_tasty, port_mode).
+        let ok = RemoteProfile::new("y", "ssh")
+            .with_field("host", "h")
+            .with_field("remote_tasty", "/usr/bin/tasty")
+            .with_field("port_mode", "file-unix");
+        let (t, rt, pm) = resolve_attach_target(&ok, &pk).unwrap();
+        assert_eq!(t.destination, "h");
+        assert_eq!(rt, "/usr/bin/tasty");
+        assert_eq!(pm, "file-unix");
     }
 
     #[test]
@@ -688,20 +766,20 @@ mod tests {
     #[test]
     fn apply_shell_explicit_sets_mode_without_io() {
         // 명시 셸 → 매핑으로 port_mode 즉시 도출(감지 미실행, None 반환).
-        let mut p = SshProfile::new("x", "h");
-        p.shell = "cmd".into();
-        let ran = apply_shell_to_profile(&mut p);
+        let pk = Passkeys::default();
+        let mut p = RemoteProfile::new("x", "ssh").with_field("host", "h").with_field("shell", "cmd");
+        let ran = apply_shell_to_profile(&mut p, &pk);
         assert!(ran.is_none()); // 감지 미실행.
-        assert_eq!(p.port_mode, "file-windows");
-        assert!(!p.detect_failed);
+        assert_eq!(p.as_ssh().unwrap().port_mode(), "file-windows");
+        assert!(!p.as_ssh().unwrap().is_disabled());
 
-        p.shell = "powershell".into();
-        apply_shell_to_profile(&mut p);
-        assert_eq!(p.port_mode, "file-unix");
+        p.set_field("shell", "powershell");
+        apply_shell_to_profile(&mut p, &pk);
+        assert_eq!(p.as_ssh().unwrap().port_mode(), "file-unix");
 
-        p.shell = "bash".into();
-        apply_shell_to_profile(&mut p);
-        assert_eq!(p.port_mode, "subcommand");
+        p.set_field("shell", "bash");
+        apply_shell_to_profile(&mut p, &pk);
+        assert_eq!(p.as_ssh().unwrap().port_mode(), "subcommand");
     }
 
     #[test]

@@ -71,6 +71,12 @@ pub(crate) fn run() -> anyhow::Result<()> {
     os::attach_windows_console_if_needed();
     os::init_crash_report();
 
+    // 멱등 마이그레이션: 구 `ssh-profiles.toml` → `remote-profiles.toml` + `passkeys.toml`.
+    // 모든 진입점(GUI/headless/CLI) 공통 — `remote-profiles.toml` 이 있으면 즉시 skip.
+    if let Err(e) = tasty_remote_profiles::migration::migrate_if_needed() {
+        tracing::warn!("remote-profiles 마이그레이션 실패: {e}");
+    }
+
     match cli_routing::parse_or_route()? {
         cli_routing::Routed::AlreadyHandled => Ok(()),
         cli_routing::Routed::Subcommand(cmd, port_file) => run_subcommand(cmd, port_file),

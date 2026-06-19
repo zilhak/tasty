@@ -161,11 +161,9 @@ pub fn migrate_if_needed() -> Result<bool> {
     // passkeys 먼저 저장(0600) — 프로필이 참조하므로.
     passkeys.save()?;
     profiles.save()?;
-    // 구파일 보존(삭제 아님).
-    let bak = home.join("ssh-profiles.toml.bak");
-    if let Err(e) = fs::rename(&legacy_path, &bak) {
-        tracing::warn!("migrated ssh-profiles but failed to rename to .bak: {e}");
-    }
+    // 과도기: 구파일을 **보존(copy 시맨틱)** 한다 — 아직 구 CRUD surface(GUI/IPC/CLI)
+    // 가 `ssh-profiles.toml` 을 읽으므로 rename 하면 그쪽이 빈 목록이 된다. 모든 surface
+    // 이관이 끝나는 Phase E 에서 `.bak` rename + 구 크레이트 제거로 전환한다.
     tracing::info!(
         "migrated {} ssh profile(s) → remote-profiles.toml ({} passkey(s))",
         profiles.profiles.len(),

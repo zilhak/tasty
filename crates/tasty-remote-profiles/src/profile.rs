@@ -19,6 +19,30 @@ pub fn is_builtin_kind(kind: &str) -> bool {
     BUILTIN_KINDS.contains(&kind)
 }
 
+/// ssh kind 의 `shell` 필드가 가질 수 있는 값(GUI/CLI 드롭다운·검증 공용). `auto` 는
+/// 자동감지. ssh 도메인 지식이라 이 크레이트가 단일 출처로 보관한다.
+pub const SHELLS: &[&str] = &["powershell", "cmd", "bash", "zsh", "auto"];
+
+/// 셸 문자열이 허용 값인지.
+pub fn is_valid_shell(s: &str) -> bool {
+    SHELLS.contains(&s)
+}
+
+/// 셸 종류 → 원격 포트 발견 모드 매핑(2026-06-12 실측 기반).
+///
+/// - `powershell` → `file-unix` (`cat ~/...` — PowerShell 의 cat alias + `~` 확장)
+/// - `cmd` → `file-windows` (`type %USERPROFILE%\...` — cmd 전용)
+/// - `bash` / `zsh` → `subcommand` (`tasty port` — unix·git bash 성공)
+/// - `auto` / 알 수 없는 값 → `None` (자동감지 또는 fallback 체인 필요)
+pub fn shell_to_port_mode(shell: &str) -> Option<&'static str> {
+    match shell {
+        "powershell" => Some("file-unix"),
+        "cmd" => Some("file-windows"),
+        "bash" | "zsh" => Some("subcommand"),
+        _ => None,
+    }
+}
+
 /// 필드 값 = 스칼라 string 또는 string 리스트. TOML 의 스칼라/배열에 네이티브 매핑되어
 /// `extra_options` 같은 리스트도 인코딩 꼼수 없이 그대로 표현된다.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +123,16 @@ impl RemoteProfile {
     pub fn with_field(mut self, key: impl Into<String>, value: impl Into<FieldValue>) -> Self {
         self.fields.insert(key.into(), value.into());
         self
+    }
+
+    /// fields 의 한 키를 설정(가변).
+    pub fn set_field(&mut self, key: impl Into<String>, value: impl Into<FieldValue>) {
+        self.fields.insert(key.into(), value.into());
+    }
+
+    /// fields 에서 한 키를 제거(가변). 제거됐으면 true.
+    pub fn remove_field(&mut self, key: &str) -> bool {
+        self.fields.remove(key).is_some()
     }
 
     /// `kind` 이 core 내장인지(런타임 known 집합 판정은 상위에서).

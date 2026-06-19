@@ -23,7 +23,7 @@
 //! - **원칙 3**: `remote_workspace` 가 None 이면 자동 attach skip(ID 명시 필요).
 
 use tasty_cli::ssh::{self, PortMode, SshTarget, SshTunnel};
-use tasty_ssh_profiles::SshProfiles;
+use tasty_remote_profiles::{Passkeys, RemoteProfiles};
 
 use crate::app::App;
 use crate::model::WorkspaceAttachTarget;
@@ -127,21 +127,13 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
     // ① 접속 스펙 결정(destination + remote_tasty + port_mode).
     let (ssh_target, remote_tasty, port_mode) = match target {
         WorkspaceAttachTarget::Profile { name } => {
-            let profiles = SshProfiles::load();
+            let profiles = RemoteProfiles::load();
+            let passkeys = Passkeys::load();
             let p = profiles
                 .get(name)
-                .ok_or_else(|| anyhow::anyhow!("ssh 프로필 '{name}' 을 찾을 수 없습니다"))?;
-            if p.is_disabled() {
-                anyhow::bail!(
-                    "ssh 프로필 '{name}' 은 환경 감지에 실패해 비활성 상태입니다 \
-                     (tasty tool ssh detect {name} 로 재감지)"
-                );
-            }
-            (
-                SshTarget::from_profile(p),
-                p.remote_tasty.clone(),
-                p.port_mode.clone(),
-            )
+                .ok_or_else(|| anyhow::anyhow!("원격 프로필 '{name}' 을 찾을 수 없습니다"))?;
+            // ssh kind 검증 + 비활성 게이트 + passkey resolve 를 한곳에서.
+            ssh::resolve_attach_target(p, &passkeys)?
         }
         WorkspaceAttachTarget::Inline {
             host,
