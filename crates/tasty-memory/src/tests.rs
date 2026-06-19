@@ -344,6 +344,37 @@ fn regular_used_bytes_unchanged_on_quota_reject() {
     assert_eq!(s.regular_used_bytes, MemoryStore::scan_regular_used(&s.conn));
 }
 
+/// count 기반 retention: 최근 N 개만 남기고 prefix 매칭 로그를 삭제. 비매칭 키는 보존,
+/// 카운터 정합 유지, N 이하면 no-op.
+#[test]
+fn prune_prefix_keep_recent_caps_logs() {
+    let mut s = store();
+    // 시간순 정렬되는 zero-padded 키 (audit/telemetry 와 동형).
+    for i in 0..10 {
+        s.put(HOST_OWNER, &Scope::Global, &format!("tasty.audit.{i:04}"), &text("x"), &PutOpts::default())
+            .unwrap();
+    }
+    // 비-로그 키는 prune 영향 없어야 함.
+    s.put(HOST_OWNER, &Scope::Global, "real.data", &text("keep"), &PutOpts::default())
+        .unwrap();
+
+    // 최근 3개만 유지 → 7개 삭제.
+    let deleted = s.prune_prefix_keep_recent("tasty.audit.", 3).unwrap();
+    assert_eq!(deleted, 7);
+    assert!(s.get(&Scope::Global, "tasty.audit.0009").unwrap().is_some());
+    assert!(s.get(&Scope::Global, "tasty.audit.0007").unwrap().is_some());
+    assert!(s.get(&Scope::Global, "tasty.audit.0006").unwrap().is_none());
+    assert!(s.get(&Scope::Global, "tasty.audit.0000").unwrap().is_none());
+    // 비-로그 키 보존.
+    assert!(s.get(&Scope::Global, "real.data").unwrap().is_some());
+    // 카운터 정합.
+    assert_eq!(s.regular_used_bytes, MemoryStore::scan_regular_used(&s.conn));
+
+    // 남은 개수(3) 이하 cap → no-op.
+    let deleted2 = s.prune_prefix_keep_recent("tasty.audit.", 5).unwrap();
+    assert_eq!(deleted2, 0);
+}
+
 #[test]
 fn secret_quota_exceeded_per_owner() {
     // entry 1개 = 12 byte. 한도 20 이면 1 통과, 2 거부.

@@ -1244,6 +1244,51 @@ impl MemoryStore {
     pub fn take_pending_changes(&mut self) -> Vec<MemoryChange> {
         std::mem::take(&mut self.pending_changes)
     }
+
+    /// `prefix` 로 시작하는 regular 로그 키 중 **가장 최근 `keep_recent` 개만 남기고**
+    /// 나머지를 **조용히(이벤트 없이)** 일괄 삭제. append-only 로그(audit/telemetry:
+    /// 키가 `prefix<zero-padded ts>.<seq>` 라 lexical=chronological)의 count 기반
+    /// retention 용 — `purge_*` 와 달리 `pending_changes` 를 만들지 않아 대량(수십만 행)
+    /// 정리 시 이벤트 폭발을 피한다. 삭제된 행 수를 반환.
+    ///
+    /// 나이 기반 retention 은 최근 활동량이 많으면(예: 에이전트 대량 IPC) 거의 줄지
+    /// 않으므로, count cap 으로 DB 를 확실히 bound 한다. 매칭 행이 `keep_recent` 이하면
+    /// no-op. `prefix` 의 `_`/`%`/`\` 는 escape.
+    pub fn prune_prefix_keep_recent(&mut self, prefix: &str, keep_recent: u64) -> Result<u64> {
+        let like = format!(
+            "{}%",
+            prefix.replace('\\', "\\\\").replace('_', "\\_").replace('%', "\\%")
+        );
+        // OFFSET=keep_recent 위치(0-based)의 키 = "최신에서 N+1번째" = 첫 삭제 대상.
+        // 그 키 이하(`<=`)를 모두 삭제 → 최신 N개만 남는다. 매칭 행 ≤ keep_recent 면
+        // OFFSET 이 범위를 벗어나 cutoff=NULL → `key <= NULL` = NULL → 삭제 0 (no-op).
+        let n = self.conn.execute(
+            "DELETE FROM memory WHERE key LIKE ?1 ESCAPE '\\' AND key <= (
+                 SELECT key FROM memory WHERE key LIKE ?1 ESCAPE '\\'
+                 ORDER BY key DESC LIMIT 1 OFFSET ?2
+             )",
+            params![like, keep_recent as i64],
+        )?;
+        if n > 0 {
+            self.regular_used_bytes = Self::scan_regular_used(&self.conn);
+        }
+        Ok(n as u64)
+    }
+
+    /// freelist 가 `min_free_pages` 이상이면 `VACUUM` 으로 파일을 압축해 디스크를
+    /// 회수한다(대량 prune 직후 1회용). VACUUM 은 파일 전체를 재작성하므로 평소엔
+    /// 호출하지 않는다. 압축 수행 시 true.
+    pub fn vacuum_if_fragmented(&mut self, min_free_pages: i64) -> Result<bool> {
+        let free: i64 = self
+            .conn
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        if free < min_free_pages {
+            return Ok(false);
+        }
+        self.conn.execute_batch("VACUUM")?;
+        Ok(true)
+    }
 }
 
 /// GC 결과. regular/secret 영역별 삭제 row 수.

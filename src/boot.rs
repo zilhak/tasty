@@ -30,6 +30,43 @@ pub(crate) mod wiring;
 use crate::{App, clipboard};
 use crate::{cli, hooks};
 
+/// boot 시 1회 memory.db 위생 정리.
+///
+/// audit/telemetry 는 append-only 로그라 `memory` 테이블을 무한 채운다(per-IPC audit
+/// 가 수십만 행 누적). put 은 이제 O(1)(전체 스캔 제거)이라 성능 목적은 아니며, 무한
+/// 누적으로 인한 디스크 증가와 1GB regular quota 도달을 막는 count 기반 retention 이다.
+/// 최근 N 개만 남기고 조용히(이벤트 없이) 삭제 후, 단편화가 크면 1회 VACUUM 으로 회수.
+/// 최초 1회만 대량(수십만 행) 삭제로 ~2s 소요될 수 있고 이후 부팅은 초과분만 정리한다.
+fn maintain_memory_at_boot(arc: &std::sync::Arc<std::sync::Mutex<tasty_memory::MemoryStore>>) {
+    // 로그 키별 보존 개수 상한. audit 은 보안 감사용이라 넉넉히, telemetry 는 짧게.
+    const AUDIT_KEEP: u64 = 50_000;
+    const TELEMETRY_KEEP: u64 = 20_000;
+
+    let mut store = match arc.lock() {
+        Ok(s) => s,
+        Err(p) => p.into_inner(),
+    };
+    let mut pruned = 0u64;
+    for (prefix, keep) in [
+        (crate::adapters::ipc::audit::AUDIT_KEY_PREFIX, AUDIT_KEEP),
+        (tasty_telemetry::EVENT_KEY_PREFIX, TELEMETRY_KEEP),
+    ] {
+        match store.prune_prefix_keep_recent(prefix, keep) {
+            Ok(n) => pruned += n,
+            Err(e) => tracing::warn!("boot memory maintenance: prune {prefix} failed: {e}"),
+        }
+    }
+    if pruned > 0 {
+        tracing::info!("boot memory maintenance: pruned {pruned} stale log rows");
+        // 대량 삭제 직후에만 압축 (freelist 가 클 때). 평소 부팅은 no-op.
+        match store.vacuum_if_fragmented(10_000) {
+            Ok(true) => tracing::info!("boot memory maintenance: vacuumed memory.db"),
+            Ok(false) => {}
+            Err(e) => tracing::warn!("boot memory maintenance: vacuum failed: {e}"),
+        }
+    }
+}
+
 pub(crate) fn run() -> anyhow::Result<()> {
     os::attach_windows_console_if_needed();
     os::init_crash_report();
@@ -103,7 +140,10 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
             .saturating_mul(1024 * 1024),
     };
     let memory_arc = match tasty_memory::init_with_config(memory_config) {
-        Ok(arc) => Some(arc),
+        Ok(arc) => {
+            maintain_memory_at_boot(&arc);
+            Some(arc)
+        }
         Err(e) => {
             tracing::warn!("memory.db init at boot failed: {e}");
             None
@@ -164,7 +204,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
             .saturating_mul(1024 * 1024),
     };
     let memory_arc = match tasty_memory::init_with_config(memory_config) {
-        Ok(arc) => Some(arc),
+        Ok(arc) => {
+            maintain_memory_at_boot(&arc);
+            Some(arc)
+        }
         Err(e) => {
             tracing::warn!("memory.db init at boot failed: {e}");
             None
