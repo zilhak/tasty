@@ -55,8 +55,8 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
         action: BuiltinAction::OpenPopup(super::popup::port_scanner::PORT_SCANNER_POPUP_ID),
     },
     BuiltinTool {
-        label_key: "ssh_tool.tools_menu_item",
-        action: BuiltinAction::OpenPopup(super::popup::ssh_tool::SSH_TOOL_POPUP_ID),
+        label_key: "remote_tool.tools_menu_item",
+        action: BuiltinAction::OpenPopup(super::popup::remote_tool::REMOTE_TOOL_POPUP_ID),
     },
     BuiltinTool {
         label_key: "update.tools_menu_item",
