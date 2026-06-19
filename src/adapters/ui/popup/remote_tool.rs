@@ -13,6 +13,7 @@ use tasty_remote_profiles::{
     is_builtin_kind, is_valid_passkey_name, is_valid_shell,
 };
 
+use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
 use crate::i18n::t;
@@ -135,9 +136,9 @@ pub fn draw_remote_tool_popup(
         if draw_header(ui, &th) {
             close = true;
         }
-        ui.separator();
+        hsep(ui, &th);
         draw_tab_bar(ui, &th, &mut st);
-        ui.separator();
+        hsep(ui, &th);
         match st.tab {
             Tab::Profiles => draw_profiles_tab(ui, &th, &ctx, &mut st, &mut profiles, &passkeys),
             Tab::Passkeys => draw_passkeys_tab(ui, &th, &mut st, &passkeys),
@@ -153,9 +154,24 @@ pub fn draw_remote_tool_popup(
     }
 }
 
+/// 디자인 separator 선. egui `ui.separator()` 는 theme stroke 색이 배경과 가까워
+/// 사실상 비가시 → surface1 색 명시적 hline 으로 그린다.
+fn hsep(ui: &mut egui::Ui, th: &Theme) {
+    ui.add_space(2.0);
+    let r = ui.max_rect();
+    ui.painter().hline(
+        r.x_range(),
+        ui.cursor().top(),
+        egui::Stroke::new(th.border_width.value(), th.surface1),
+    );
+    ui.add_space(2.0);
+}
+
 fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
+        // 헤더 앞 터미널 프롬프트 아이콘(`>_`) — 디자인 remote_tool.jsx 헤더.
+        ui.add(icons::TERMINAL_PROMPT.image(16.0, th.subtext0.into()));
         ui.label(
             egui::RichText::new(t("remote_tool.heading"))
                 .color(th.text)
@@ -164,7 +180,7 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
-                .button(egui::RichText::new("×").size(th.font_size_heading.value()).color(th.text))
+                .add(egui::ImageButton::new(icons::CLOSE.image(16.0, th.subtext0.into())).frame(false))
                 .on_hover_text(t("remote_tool.close"))
                 .clicked()
             {
@@ -176,17 +192,45 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
 }
 
 fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
+    // 언더라인 탭 (디자인 remote_tool.jsx TabBtn): 활성 탭은 text-primary + 하단
+    // 2px accent 선, 비활성은 text-muted. pill/selectable_label 아님.
+    let tab_h = 32.0;
+    let pad_x = 13.0;
+    let font = egui::FontId::proportional(th.font_size_body.value());
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
         for (tab, key) in [
             (Tab::Profiles, "remote_tool.tab_profiles"),
             (Tab::Passkeys, "remote_tool.tab_passkeys"),
         ] {
             let on = st.tab == tab;
-            let txt = egui::RichText::new(t(key))
-                .size(th.font_size_body.value())
-                .color(if on { th.text } else { th.subtext0 })
-                .strong();
-            if ui.selectable_label(on, txt).clicked() && st.tab != tab {
+            let label = t(key);
+            let text_w = ui.fonts(|f| {
+                f.layout_no_wrap(label.to_string(), font.clone(), th.text.into())
+                    .size()
+                    .x
+            });
+            let (rect, resp) = ui
+                .allocate_exact_size(egui::vec2(text_w + pad_x * 2.0, tab_h), egui::Sense::click());
+            if resp.hovered() && !on {
+                ui.painter()
+                    .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
+            }
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                label,
+                font.clone(),
+                if on { th.text.into() } else { th.subtext0.into() },
+            );
+            if on {
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.max.y - 1.0,
+                    egui::Stroke::new(2.0, th.accent_primary()),
+                );
+            }
+            if resp.clicked() && st.tab != tab {
                 st.tab = tab;
                 st.profile_view = Sub::List;
                 st.passkey_view = Sub::List;
@@ -387,15 +431,30 @@ fn draw_profile_row(
             });
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(t("remote_tool.delete")).clicked() {
+            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+            // 아이콘 버튼 (디자인 IconButton): delete / edit / re-detect.
+            // right_to_left 이라 추가 순서 = 우→좌. 디자인 우측 끝이 trash.
+            if ui
+                .add(egui::ImageButton::new(icons::TRASH.image(15.0, th.subtext0.into())).frame(false))
+                .on_hover_text(t("remote_tool.delete"))
+                .clicked()
+            {
                 out = Some(ProfileRowAction::Delete);
             }
-            if ui.button(t("remote_tool.edit")).clicked() {
+            if ui
+                .add(egui::ImageButton::new(icons::EDIT.image(15.0, th.subtext0.into())).frame(false))
+                .on_hover_text(t("remote_tool.edit"))
+                .clicked()
+            {
                 out = Some(ProfileRowAction::Edit);
             }
             if is_ssh
                 && ui
-                    .add_enabled(!detecting_now, egui::Button::new(t("remote_tool.refresh")))
+                    .add_enabled(
+                        !detecting_now,
+                        egui::ImageButton::new(icons::REFRESH.image(15.0, th.subtext0.into()))
+                            .frame(false),
+                    )
                     .on_hover_text(t("remote_tool.refresh_tooltip"))
                     .clicked()
             {
@@ -403,7 +462,7 @@ fn draw_profile_row(
             }
         });
     });
-    ui.separator();
+    hsep(ui, th);
     out
 }
 
@@ -808,19 +867,38 @@ fn draw_passkey_row(ui: &mut egui::Ui, th: &Theme, k: &Passkey, revealed: bool) 
             );
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(t("remote_tool.delete")).clicked() {
+            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+            // 아이콘 버튼 (디자인 IconButton): delete / edit / reveal(eye 토글).
+            if ui
+                .add(egui::ImageButton::new(icons::TRASH.image(15.0, th.subtext0.into())).frame(false))
+                .on_hover_text(t("remote_tool.delete"))
+                .clicked()
+            {
                 out = Some(PasskeyRowAction::Delete);
             }
-            if ui.button(t("remote_tool.edit")).clicked() {
+            if ui
+                .add(egui::ImageButton::new(icons::EDIT.image(15.0, th.subtext0.into())).frame(false))
+                .on_hover_text(t("remote_tool.edit"))
+                .clicked()
+            {
                 out = Some(PasskeyRowAction::Edit);
             }
-            let reveal_label = if revealed { t("remote_tool.hide") } else { t("remote_tool.reveal") };
-            if ui.button(reveal_label).on_hover_text(t("remote_tool.reveal_tooltip")).clicked() {
+            // revealed 면 eye-off + active(밝은) tint, 아니면 eye + muted.
+            let (reveal_icon, reveal_tint) = if revealed {
+                (icons::EYE_OFF, th.text)
+            } else {
+                (icons::EYE, th.subtext0)
+            };
+            if ui
+                .add(egui::ImageButton::new(reveal_icon.image(15.0, reveal_tint.into())).frame(false))
+                .on_hover_text(t("remote_tool.reveal_tooltip"))
+                .clicked()
+            {
                 out = Some(PasskeyRowAction::Reveal);
             }
         });
     });
-    ui.separator();
+    hsep(ui, th);
     out
 }
 
