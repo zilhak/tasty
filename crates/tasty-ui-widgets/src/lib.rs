@@ -8,10 +8,18 @@
 //!
 //! 위젯 함수는 후속 step 에서 점진적으로 추가된다.
 
+mod button;
+mod control;
 mod horizontal_tab_bar;
+mod icon_button;
+mod input;
 mod tab_content_frame;
 pub mod tokens;
 mod two_depth;
+pub use button::{Button, ButtonVariant};
+pub use control::ControlSize;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
+pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
+pub use input::Input;
 pub use tab_content_frame::tab_content_frame;
 pub use two_depth::{two_depth_layout, two_depth_layout_filtered};

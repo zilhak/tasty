@@ -28,3 +28,14 @@ pub const PANEL_SPACING: f32 = SIZING.spacing_sm.0;
 /// 탭 컨텐츠 영역의 inner padding (px, 4 면 동일). = `SIZING.spacing_lg`.
 /// settings 모달 본체와 갤러리의 layout idiom 공통 표준.
 pub const TAB_CONTENT_PADDING: i8 = SIZING.spacing_lg.0 as i8;
+
+// ── 디자인 컴포넌트 const — Theme 토큰에 대응값이 없어 위젯 레벨로 둔다 ──
+
+/// Button lg 높이 = 디자인 control-height-lg(32). Theme 에 32 토큰 없음.
+pub const CONTROL_HEIGHT_LG: f32 = 32.0;
+
+/// IconButton md/lg 글리프 = 디자인 icon scale 기본 16. (sm 은 `theme.icon_glyph_size_sm`=14.)
+pub const ICON_GLYPH_MD: f32 = 16.0;
+
+/// Input leading 아이콘 글리프 = 디자인 Input `__icon` 15px.
+pub const INPUT_ICON_GLYPH: f32 = 15.0;
