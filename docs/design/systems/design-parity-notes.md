@@ -1,0 +1,72 @@
+# Design Parity 히스토리 — 디자인(html/CSS) ↔ 구현(winit/egui) 구조적 차이
+
+`design-parity` 스킬이 발동 시 먼저 읽는 노트. **검증으로 확인된 사실만** 적는다(추정이면
+명시). 같은 함정을 두 번 파지 않기 위함. 형식: 증상 / 원인 / 처방 / 근거.
+
+---
+
+## 일반 — egui `item_spacing` 자동 삽입이 divider·gap 을 밀어낸다
+
+- **증상**: 구역 사이/위젯 사이에 의도치 않은 간격이 생겨 divider 위치가 디자인보다 밀린다.
+- **원인**: egui 는 위젯마다 `item_spacing`(기본 ~6px)을 자동 삽입한다. CSS 와 달리 "내 값 +
+  egui 기본값 = 결과".
+- **처방**: 구역 배치는 `item_spacing.y = 0` 으로 죽이고 간격은 명시 `add_space`/Frame
+  inner_margin 으로만. divider 는 add_space 뒤 커서가 아니라 구역 Frame 의 실제 `rect.bottom()`
+  좌표에 그린다.
+- **주의(회귀)**: `item_spacing` 을 vec2(0,0) 으로 통째 죽이면 **콘텐츠 행 내부 가로 gap 까지
+  사라진다**(텍스트가 다 붙음). y 만 0 으로 하거나, 콘텐츠 영역 진입 시 원래 spacing 을 복원할 것.
+- **근거**: remote_tool 2026-06-20. 최상위 vec2(0,0) → "gb10...ssh", "passkey:—shell:bash"
+  처럼 행 내부가 붙음. y 만 0 + 콘텐츠에서 saved_spacing 복원으로 해결.
+
+## 일반 — 픽셀 검증 시 터미널 unfocused 배경이 popup `base` 와 동색
+
+- **증상**: 스크린샷에서 popup 경계를 배경색 전환으로 찾으려 하면 실패한다.
+- **원인**: 터미널 surface 의 unfocused_bg = `base`(#1e1e2e) = 패널형 popup 배경과 같은 색.
+  또 `bg-sidebar`(mantle) 는 tasty 사이드바와도 동색이라 가로 mantle run 에 사이드바가 섞인다.
+- **처방**: popup 경계/구역을 **고유 색 랜드마크**로 잡는다. remote_tool 은 탭바 `mantle`
+  띠가 터미널엔 없으므로 그걸 기준점으로. 사이드바 혼입은 x 범위 필터(x>700 등)로 배제.
+- **근거**: remote_tool 2026-06-20 검증.
+
+## 일반 — ui_scale(zoom)이 popup default_size 에만 곱해진다 (비균일)
+
+- **증상**: ui_scale=large(1.2) 에서 popup 은 1.2배 커지는데 내부 하드코딩 px(탭 높이 등)는
+  안 커져, 디자인 대비 내부 요소가 작아 보인다(탭바 35→측정 28.8).
+- **원인**: `PopupManager::register_def` 가 `default_size * ui_zoom` 만 적용. draw_fn 내부의
+  logical px 는 zoom 곱이 없다. → zoom≠1.0 이면 popup 과 내부의 비율이 깨진다.
+- **처방**: **디자인 픽셀 검증은 ui_scale=medium(1.0) 에서 한다**(config.toml
+  `appearance.ui_scale="medium"` 임시 변경 → 검증 → 복원). 1.0 이면 popup·내부 모두 device
+  scale 만 적용돼 디자인과 1:1.
+- **근거**: remote_tool 2026-06-20. large(scale 2.4) → medium(scale 2.0) 전환 후 측정이
+  디자인과 일치.
+- **추정**: popup 도 egui ctx zoom 으로 균일 처리하면 근본 해결이나, 현재 구조는 default_size
+  곱 방식 — 별도 과제.
+
+## remote_tool — CSS line-height vs egui 텍스트 박스 높이 (헤더 8px 얕음)
+
+- **증상**: 헤더가 디자인보다 ~8px(logical) 얕아 divider Y 가 위로 밀린다(40 vs 48).
+- **원인**: 디자인 헤더 콘텐츠 높이는 title `fontSize:14` 의 line-height(~24)가 결정. egui 의
+  label/icon 텍스트 박스는 더 낮다(~18). 같은 폰트 크기여도 박스 높이가 다르다.
+- **처방**: 헤더 행에 `ui.set_min_height(<디자인 콘텐츠 높이>)` 로 높이를 강제. remote_tool 은
+  26 (디자인 24 + popup border Outside 보정 2)에서 divider Y 48.0 일치.
+- **근거**: remote_tool 2026-06-20. min_height 26 + tab_h 36 → header divider 48.0/tab
+  divider 84.0 (diff 0).
+
+## remote_tool — popup border 가 stroke Outside → 콘텐츠가 1px 위에서 시작
+
+- **증상**: 구역 Y 좌표가 디자인보다 1~2px 일정하게 위에 있다.
+- **원인**: `draw.rs` 가 popup 외곽선을 `StrokeKind::Outside` 로 그린다 → 콘텐츠(content_rect)
+  는 popup_rect.top 부터이고, 측정한 popup border 는 그 1px 바깥. 디자인은 border 가 컨테이너
+  안쪽(box-sizing border-box).
+- **처방**: 콘텐츠 시작 좌표 계산 시 +1~2px 보정(또는 min_height 등에 흡수). 정밀(±1px) 단계
+  에서만 신경 쓰면 된다.
+- **근거**: remote_tool 2026-06-20.
+
+## remote_tool — 컨테이너 패딩 0 + 구역별 패딩 (통짜 패딩 금지)
+
+- **증상**: 단일 Frame inner_margin 으로 전체를 감싸면 헤더(14L/12R)·탭바(8)·리스트(14)의
+  서로 다른 패딩을 못 맞춘다.
+- **처방**: popup content_margin 을 0 으로(`popup.rs` content_rect 에서 id 분기) 두고, 헤더/
+  탭바/콘텐츠를 각자 Frame inner_margin 으로 디자인 패딩만큼 들여쓴다. 탭바 `bg-sidebar`
+  배경은 전체폭 `rect_filled(mantle)` 로 직접 칠한다(Frame.fill 은 자식 폭만큼이라 전체폭이
+  안 됨).
+- **근거**: remote_tool 2026-06-20.

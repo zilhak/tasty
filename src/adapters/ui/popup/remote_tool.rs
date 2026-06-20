@@ -131,24 +131,48 @@ pub fn draw_remote_tool_popup(
     }
 
     let mut close = false;
-    // 디자인(remote_tool.jsx)은 콘텐츠에 ~14px 좌우 패딩을 둔다. popup content_rect
-    // 의 content_margin(~4px) 위에 추가 inset 을 얹어 헤더/탭/리스트가 가장자리에
-    // 붙지 않게 한다.
+    // 디자인(remote_tool.jsx) 컨테이너는 패딩 0 이고 각 구역이 자체 패딩을 가진다.
+    // popup content_margin 은 remote_tool 한정 0 (popup.rs) 이라 full 은 popup 가장자리.
+    // egui 자동 간격을 죽이고(아래) 구역 divider 는 각 구역 Frame 의 실제 bottom 좌표에
+    // 그린다 (design-parity: 어림 add_space 금지).
+    let full = ui.max_rect();
+    // 구역(헤더/탭바/콘텐츠)을 디자인처럼 딱 붙이려면 세로 자동간격만 죽인다. x 간격은
+    // 건드리지 않는다(콘텐츠 행 내부 gap 이 망가지지 않게). 콘텐츠 영역은 아래에서
+    // 원래 spacing 을 복원해 행 레이아웃을 보존한다.
+    let saved_spacing = ui.spacing().item_spacing;
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let sep = egui::Stroke::new(th.border_width.value(), th.surface1);
+
+    // 헤더 — 디자인 padding T11 R12 B11 L14 + borderBottom separator.
+    let header_ir = egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: 14,
+            right: 12,
+            top: 11,
+            bottom: 11,
+        })
+        .show(ui, |ui| draw_header(ui, &th));
+    if header_ir.inner {
+        close = true;
+    }
+    ui.painter()
+        .hline(full.x_range(), header_ir.response.rect.bottom(), sep);
+
+    // 탭바 — 디자인 bg-sidebar(mantle) 전체폭, TabBtn height 35, padding L8.
+    // 자체 하단 borderBottom 까지 내부에서 그린다.
+    draw_tab_bar(ui, &th, &mut st, full.x_range());
+
+    // 콘텐츠 — 디자인 리스트 좌우 14, add bar top 10, 하단 8.
     egui::Frame::NONE
         .inner_margin(egui::Margin {
-            left: 10,
-            right: 10,
-            top: 4,
-            bottom: 4,
+            left: 14,
+            right: 14,
+            top: 10,
+            bottom: 8,
         })
         .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
-            if draw_header(ui, &th) {
-                close = true;
-            }
-            hsep(ui, &th);
-            draw_tab_bar(ui, &th, &mut st);
-            hsep(ui, &th);
+            // 콘텐츠 행 레이아웃은 기존 spacing 으로 복원(프레임 정합과 분리).
+            ui.spacing_mut().item_spacing = saved_spacing;
             match st.tab {
                 Tab::Profiles => {
                     draw_profiles_tab(ui, &th, &ctx, &mut st, &mut profiles, &passkeys)
@@ -193,6 +217,12 @@ fn hsep(ui: &mut egui::Ui, th: &Theme) {
 fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
     let mut close = false;
     ui.horizontal(|ui| {
+        // 디자인 헤더 콘텐츠 높이 ~24 (title fontSize14 line-height). egui label/icon 은
+        // 텍스트 박스가 더 낮아(~18) 헤더가 얕아진다 → min_height 로 디자인 높이 강제.
+        // popup border 가 stroke Outside 라 콘텐츠가 1px 위에서 시작 → +2 보정해 26.
+        ui.set_min_height(26.0);
+        // 디자인 헤더 gap 9 (토큰 아닌 raw — 가장 가까운 토큰 spacing_sm=8 과 1px 차).
+        ui.spacing_mut().item_spacing.x = 9.0;
         // 헤더 앞 터미널 프롬프트 아이콘(`>_`) — 디자인 remote_tool.jsx 헤더.
         ui.add(icons::TERMINAL_PROMPT.image(16.0, th.subtext0.into()));
         ui.label(
@@ -214,54 +244,74 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
     close
 }
 
-fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
-    // 언더라인 탭 (디자인 remote_tool.jsx TabBtn): 활성 탭은 text-primary + 하단
-    // 2px accent 선, 비활성은 text-muted. pill/selectable_label 아님.
-    let tab_h = 32.0;
-    let pad_x = 13.0;
+fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::Rangef) {
+    // 언더라인 탭 (디자인 remote_tool.jsx TabBtn): 전체폭 bg-sidebar(mantle), height 35,
+    // padding L8 / TabBtn padding 0 13 / gap 2. 활성 = text-primary + 하단 2px accent,
+    // 비활성 = text-muted. 좌표를 직접 계산해 그린다(egui 자동 배치 우회).
+    let tab_h = 36.0; // 디자인 TabBtn 35 + borderBottom 1 = 탭바 컨테이너 36
+    let pad_l = 8.0; // 디자인 탭바 padding-left
+    let pad_x = 13.0; // 디자인 TabBtn padding 0 13
+    let gap = 2.0; // 디자인 탭바 gap
     let font = egui::FontId::proportional(th.font_size_body.value());
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
-        for (tab, key) in [
-            (Tab::Profiles, "remote_tool.tab_profiles"),
-            (Tab::Passkeys, "remote_tool.tab_passkeys"),
-        ] {
-            let on = st.tab == tab;
-            let label = t(key);
-            let text_w = ui.fonts(|f| {
-                f.layout_no_wrap(label.to_string(), font.clone(), th.text.into())
-                    .size()
-                    .x
-            });
-            let (rect, resp) = ui
-                .allocate_exact_size(egui::vec2(text_w + pad_x * 2.0, tab_h), egui::Sense::click());
-            if resp.hovered() && !on {
-                ui.painter()
-                    .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
-            }
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                label,
-                font.clone(),
-                if on { th.text.into() } else { th.subtext0.into() },
-            );
-            if on {
-                ui.painter().hline(
-                    rect.x_range(),
-                    rect.max.y - 1.0,
-                    egui::Stroke::new(2.0, th.accent_primary()),
-                );
-            }
-            if resp.clicked() && st.tab != tab {
-                st.tab = tab;
-                st.profile_view = Sub::List;
-                st.passkey_view = Sub::List;
-                st.perr = None;
-                st.kerr = None;
-            }
+
+    let top = ui.cursor().top();
+    let bar = egui::Rect::from_min_size(
+        egui::pos2(x_range.min, top),
+        egui::vec2(x_range.span(), tab_h),
+    );
+    // bg-sidebar 전체폭 + 하단 borderBottom separator (mantle 위 → surface1 근사).
+    ui.painter().rect_filled(bar, 0.0, th.mantle);
+    ui.painter().hline(
+        x_range,
+        bar.max.y,
+        egui::Stroke::new(th.border_width.value(), th.surface1),
+    );
+
+    let mut x = x_range.min + pad_l;
+    for (tab, key) in [
+        (Tab::Profiles, "remote_tool.tab_profiles"),
+        (Tab::Passkeys, "remote_tool.tab_passkeys"),
+    ] {
+        let on = st.tab == tab;
+        let label = t(key);
+        let text_w = ui.fonts(|f| {
+            f.layout_no_wrap(label.to_string(), font.clone(), th.text.into())
+                .size()
+                .x
+        });
+        let w = text_w + pad_x * 2.0;
+        let rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(w, tab_h));
+        let resp = ui.interact(rect, ui.id().with((key, "rt_tab")), egui::Sense::click());
+        if resp.hovered() && !on {
+            ui.painter()
+                .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
         }
-    });
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            font.clone(),
+            if on { th.text.into() } else { th.subtext0.into() },
+        );
+        // 활성 탭 하단 2px accent — separator 위에 그려 덮는다.
+        if on {
+            ui.painter().hline(
+                rect.x_range(),
+                bar.max.y - 1.0,
+                egui::Stroke::new(2.0, th.accent_primary()),
+            );
+        }
+        if resp.clicked() && st.tab != tab {
+            st.tab = tab;
+            st.profile_view = Sub::List;
+            st.passkey_view = Sub::List;
+            st.perr = None;
+            st.kerr = None;
+        }
+        x += w + gap;
+    }
+    // 탭바 영역만큼 커서 전진 → 다음 구역(콘텐츠)이 그 아래로.
+    ui.allocate_rect(bar, egui::Sense::hover());
 }
 
 // ── 경고 배지 ────────────────────────────────────────────────────────────
