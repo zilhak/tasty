@@ -83,6 +83,40 @@
 - **추정**: 완전 일치는 popup 높이를 매 프레임 콘텐츠로 재계산하는 기능이 필요 — 별도 과제.
 - **근거**: command_palette 2026-06-20. default_size 360→412 + 구역별 패딩으로 디자인 비율 일치.
 
+## port_scanner — 테이블 컬럼 floor 가 footer 잘림의 근본 원인 (디자인 Table 구조 미준수)
+
+- **증상**: footer 의 `주소 복사`/`닫기` 버튼이 popup 우측에서 잘린다.
+- **원인**: 디자인 Table 은 고정폭 4개(port 84/proto 76/ws 120/state 140) + **flex 3개
+  (addr/proc/tab, CSS `max-width:0`+ellipsis, 최소폭 없음)** 구조다. 구현이 flex 컬럼에
+  `at_least` floor 를 줘서 floor 합이 가용폭을 넘으면 테이블이 popup 폭을 초과 → footer 의
+  right_to_left 기준점이 화면 밖으로 밀려 버튼이 잘렸다. "footer 높이"가 아니라 **테이블 가로
+  오버플로**가 진짜 원인.
+- **처방**: 디자인 구조 그대로 — 고정폭은 `Column::exact`, flex 는 `Column::remainder().
+  clip(true)`(floor 없음, 말줄임). exact 합 + flex 분배 = 항상 컨테이너 폭에 fit → 잘림 자체가
+  구조적으로 안 생긴다. Tab 은 대개 "—" 라 디자인상 좁으므로(measured 62) flex 에서 빼 exact
+  62 로 두면 addr/proc 가 89 로 넓어진다(egui remainder 는 균등 분배라 Tab 까지 flex 면
+  addr/proc 가 좁아짐).
+- **교훈**: "회귀 위험" 으로 우회할 게 아니라, 디자인 컴포넌트 구조(컬럼 정의)를 그대로
+  따르면 얽힘이 사라진다. 단계 0 "컴포넌트 구조 정합" 을 테이블에도 적용할 것.
+- **근거**: port_scanner 2026-06-20. floor 제거 후 `주소 복사`+`닫기` 둘 다 온전.
+
+## port_scanner — 테이블 헤더 th 배경(mantle)은 painter 로 직접 칠한다
+
+- **증상**: egui_extras Table 은 헤더 셀 배경 API 가 없어 디자인 th `bg-sidebar`(mantle) 가
+  안 칠해진다.
+- **처방**: TableBuilder 전에 header 영역 rect(`cursor.top` ~ `+header_h`, 전체폭)를 계산해
+  `painter().rect_filled(mantle)`. sticky header 텍스트는 그 위에 그려진다.
+- **근거**: port_scanner 2026-06-20.
+
+## port_scanner — 테이블 행 구분선이 divider 자동 측정을 교란
+
+- **증상**: wide-surf1 라인 랜드마크로 구역 divider 를 찾으면 테이블 행마다의 borderBottom
+  (surf1)이 다수 잡혀 header/filter/footer divider 를 가려낼 수 없다.
+- **처방**: 테이블 헤더의 `mantle` 띠를 기준으로 잡고(행엔 mantle 없음), 그 위/아래로 구역
+  divider 를 센다. 정밀 ±1px 가 어려우면 구역 패딩을 디자인값 그대로(코드 상수) 넣어 구조로
+  보장하고 시각 비교로 갈음.
+- **근거**: port_scanner 2026-06-20. 구역 패딩 header 12/14·filter 8/14·footer 9/14 상수 적용.
+
 ## remote_tool — 컨테이너 패딩 0 + 구역별 패딩 (통짜 패딩 금지)
 
 - **증상**: 단일 Frame inner_margin 으로 전체를 감싸면 헤더(14L/12R)·탭바(8)·리스트(14)의

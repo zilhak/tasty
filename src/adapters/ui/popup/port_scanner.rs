@@ -647,38 +647,77 @@ pub fn draw_port_scanner_view(
 
     let mut action = PortScannerAction::None;
 
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 6.0;
-        if let Some(a) = draw_header_row(ui, props) {
-            action = a;
-        }
-        if let Some(a) = draw_filter_row(ui, props) {
-            action = a;
-        }
-        // 필터 행 아래 구분선 (디자인 borderBottom). egui `ui.separator()` 는 theme
-        // stroke 가 배경과 가까워 비가시 → surface1 hline 으로 그린다.
-        {
-            let r = ui.max_rect();
-            ui.painter().hline(
-                r.x_range(),
-                ui.cursor().top(),
-                egui::Stroke::new(props.theme.border_width.value(), props.theme.surface1),
-            );
-            ui.add_space(2.0);
-        }
-        match &props.view_state {
-            PortScannerViewState::Loading => draw_loading_body(ui, props),
-            PortScannerViewState::Failed { message } => draw_failed_body(ui, props, message),
-            PortScannerViewState::Ready { rows, .. } => {
-                if let Some(a) = draw_ready_body(ui, props, rows) {
-                    action = a;
-                }
+    // design-parity: 디자인 port_scanner.jsx 컨테이너 패딩 0 + 구역별 패딩
+    // (header 12/14 / filter 8/14 / body 0 / footer 9/14). content_margin 은
+    // port_scanner 한정 0(popup.rs). 구역 밀착은 세로 간격만 0, 구역 내부는 복원.
+    let full = ui.max_rect();
+    let sep = egui::Stroke::new(props.theme.border_width.value(), props.theme.surface1);
+    let saved_spacing = ui.spacing().item_spacing;
+    ui.spacing_mut().item_spacing.y = 0.0;
+
+    // 헤더 — 디자인 padding 12 14 + borderBottom.
+    let h_ir = egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: 14,
+            right: 14,
+            top: 12,
+            bottom: 12,
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing = saved_spacing;
+            draw_header_row(ui, props)
+        });
+    if let Some(a) = h_ir.inner {
+        action = a;
+    }
+    ui.painter()
+        .hline(full.x_range(), h_ir.response.rect.bottom(), sep);
+
+    // 필터 행 — 디자인 padding 8 14 + borderBottom.
+    let f_ir = egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: 14,
+            right: 14,
+            top: 8,
+            bottom: 8,
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing = saved_spacing;
+            draw_filter_row(ui, props)
+        });
+    if let Some(a) = f_ir.inner {
+        action = a;
+    }
+    ui.painter()
+        .hline(full.x_range(), f_ir.response.rect.bottom(), sep);
+
+    // 본문 (테이블/로딩/빈 상태) — draw_table 이 max_scroll 로 footer 높이를 예약.
+    match &props.view_state {
+        PortScannerViewState::Loading => draw_loading_body(ui, props),
+        PortScannerViewState::Failed { message } => draw_failed_body(ui, props, message),
+        PortScannerViewState::Ready { rows, .. } => {
+            if let Some(a) = draw_ready_body(ui, props, rows) {
+                action = a;
             }
         }
-        if let Some(a) = draw_footer(ui, props) {
-            action = a;
-        }
-    });
+    }
+
+    // footer — 디자인 padding 9 14 + borderTop. 테이블 아래.
+    ui.painter().hline(full.x_range(), ui.cursor().top(), sep);
+    let foot_ir = egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: 14,
+            right: 14,
+            top: 9,
+            bottom: 9,
+        })
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing = saved_spacing;
+            draw_footer(ui, props)
+        });
+    if let Some(a) = foot_ir.inner {
+        action = a;
+    }
 
     action
 }
@@ -942,6 +981,14 @@ fn draw_table(
     let gap = ui.spacing().item_spacing.y;
     let max_scroll = (ui.available_height() - header_h - footer_h - gap).max(text_h + 8.0);
 
+    // 디자인 Table 헤더 th 배경 = bg-sidebar(mantle). sticky header 영역 전체폭에 칠한다
+    // (egui_extras 는 셀 배경 API 가 없어 painter 로 직접). header 텍스트는 그 위에.
+    let header_bg = egui::Rect::from_min_size(
+        egui::pos2(ui.max_rect().left(), ui.cursor().top()),
+        egui::vec2(ui.max_rect().width(), header_h),
+    );
+    ui.painter().rect_filled(header_bg, 0.0, th.mantle);
+
     TableBuilder::new(ui)
         .striped(false)
         .resizable(false)
@@ -951,17 +998,23 @@ fn draw_table(
         .max_scroll_height(max_scroll)
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
         // flex(remainder) 컬럼의 at_least floor 합이 가용 폭을 넘으면 테이블이 popup
-        // 폭 밖으로 넘쳐 footer 의 right_to_left 기준점까지 밀려 `닫기` 가 잘린다.
-        // 디자인(port_scanner.jsx)은 flex 컬럼에 최소폭이 없다(CSS 축소) → floor 를
-        // 내용이 읽히는 선에서 낮춰 660 폭 안에 맞춘다. 여유가 있으면 remainder 가
-        // 알아서 넓어진다.
-        .column(Column::initial(84.0).at_least(60.0)) // Port
-        .column(Column::initial(76.0).at_least(60.0)) // Proto
-        .column(Column::remainder().at_least(64.0)) // Address (flex)
-        .column(Column::remainder().at_least(64.0)) // Process (flex)
-        .column(Column::initial(120.0).at_least(80.0)) // Workspace
-        .column(Column::remainder().at_least(36.0)) // Tab (flex, 대개 "—")
-        .column(Column::initial(140.0).at_least(100.0)) // State
+        // design-parity: 디자인 Table 컬럼은 고정폭 4개(port/proto/ws/state) + flex 3개
+        // (addr/proc/tab, CSS `max-width:0` + ellipsis, **최소폭 없음**). flex 에 floor 를
+        // 주면 합이 가용폭 초과 시 테이블이 넘쳐 footer 가 밀리고 `닫기` 가 잘린다 → 디자인
+        // 구조 그대로 고정폭은 exact, flex 는 remainder().clip(말줄임)로 둔다. exact 합
+        // 420 + flex 3 분배 = 항상 660 안에 fit.
+        // 디자인 measured 폭: Port 84 / Proto 76 / Address~88 / Process~88 /
+        // Workspace 120 / Tab 62 / State 140. addr·proc 는 내용이 길어 flex 로 넓게,
+        // Tab 은 대개 "—" 라 좁다(62 고정). egui remainder 는 균등 분배라 Tab 까지
+        // flex 로 두면 addr·proc 가 좁아진다 → Tab 만 exact 62 로 빼서 addr·proc 가
+        // (660-482)/2≈89 로 넓어지게 한다(디자인 88 과 일치).
+        .column(Column::exact(84.0)) // Port (고정)
+        .column(Column::exact(76.0)) // Proto (고정)
+        .column(Column::remainder().clip(true)) // Address (flex)
+        .column(Column::remainder().clip(true)) // Process (flex)
+        .column(Column::exact(120.0)) // Workspace (고정)
+        .column(Column::exact(62.0)) // Tab (디자인 measured 62)
+        .column(Column::exact(140.0)) // State (고정)
         .header(text_h + 4.0, |mut header| {
             let mut sort_click = |this: Option<SortKey>, ui: &mut egui::Ui, label: &str| {
                 if let Some(k) = draw_header_cell(
