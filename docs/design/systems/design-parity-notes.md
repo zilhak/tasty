@@ -153,3 +153,34 @@
   배경은 전체폭 `rect_filled(mantle)` 로 직접 칠한다(Frame.fill 은 자식 폭만큼이라 전체폭이
   안 됨).
 - **근거**: remote_tool 2026-06-20.
+
+## 공용 위젯 레이어 (2026-06-21) — primitive 컴포넌트화에서 얻은 것
+
+### 위젯의 집 = `crates/tasty-ui-widgets` (신규 디렉토리 아님)
+갤러리(`tasty-gallery`)는 별도 크레이트라 메인 바이너리(`src/`)를 의존할 수 없다. 공용
+위젯을 `src/adapters/ui/` 에 두면 갤러리가 또 mirror 를 떠야 한다. `tasty-ui-widgets` 는
+**메인+갤러리 양쪽이 이미 의존**하고 `&Theme` 명시·본체 미의존 → primitive 의 올바른 집.
+효과: 팝업과 갤러리 specimen 이 동일 함수 호출(demo=main, mirror 불필요).
+
+### egui 세금 (디자인 → 즉시모드 변환 시)
+- **폰트 weight**(medium/semibold/bold): egui 는 별도 bold family 없이는 굵기 재현 불가.
+  크기+색(또는 `.strong()` 색 보정)만 따른다 — 디자인 weight 차이는 시각상 미세 손실.
+- **radius-pill**(완전 둥금): egui CornerRadius 로 `height/2` 사용.
+- **`color-mix(accent 40%, transparent)`**(Tag 상태 보더): `accent.gamma_multiply(0.4)`.
+- **`::after` 오버레이 틴트**(Button/IconButton hover/active): pseudo-element 없음 →
+  `rect_filled(overlay_*.to_egui_premultiplied())` 수동.
+- **focus ring**(box-shadow 0 0 0 1px): box-shadow 없음 → `rect_stroke(outer.expand(bw),
+  border_focus, Outside)`. **Motion 계약상 즉시**(focus-ring/invalid/checked 는 기능 → fade 금지).
+- **separator 토큰**: 디자인 `--tasty-separator`(white@8%)는 tasty 에서 `surface1` hline 으로.
+- **icon 글리프**: 위젯이 색을 상태별로 정해 `IconPainter` 클로저에 전달(아이콘 시스템은
+  호출측 소유 — 본체 `icons::Icon`, 갤러리 mock 모두 동일 인터페이스).
+
+### Motion 계약 (디자인 changelog 2026-06-21-motion-contract)
+rest/hover/active/focus/disabled **정지 상태가 canonical** — 파리티는 정지상태로 판정.
+상태 사이 트랜지션(hover 틴트 fade)은 **장식** → 즉시모드 **스냅 허용**. 단 **기능적 외형은
+즉시**(focus-ring 가시성, invalid 보더, checked/selected/active) — fade 금지. 터미널 0ms 별개.
+
+### 검증
+갤러리는 IPC 스크린샷이 없고 OS 캡처는 권한 불가 → 본체 격리 인스턴스
+(`HOME=tmp ./target/debug/tasty --launch`, debug 포트 `tasty-debug.port`) + `ui.screenshot`
+JSON-RPC + `debug.host_popup.open` 으로 검증. primitive 는 본체 팝업에 adopt 한 뒤 대조한다.

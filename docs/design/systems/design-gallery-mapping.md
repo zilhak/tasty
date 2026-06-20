@@ -35,3 +35,37 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 `catalog/components/` 에 등록된 것: `command_palette` · `port_scanner` · `convert` ·
 `approval` · `file_handler_picker` · `markdown_open` · `rename_popup` · `update` · `toast` ·
 `sidebar` · `tab_bar` · `apply_preset`. 이들은 props 분리가 돼 있어 갤러리로 즉시 검증 가능.
+
+## Primitive 컴포넌트 레이어 (Components)
+
+디자인 `components/**` 의 atomic primitive ↔ `tasty-ui-widgets` 공용 함수 ↔ 갤러리
+`Components` specimen 3자 매핑. 본체 팝업과 갤러리가 **동일** `tasty_ui_widgets::*` 를
+호출(mirror 아님 — demo=main). 위젯의 집은 `crates/tasty-ui-widgets/`(메인+갤러리 양쪽 의존).
+
+| 디자인 컴포넌트 | tasty-ui-widgets | 갤러리 specimen | 시각검증 |
+|---|---|---|---|
+| `core/IconButton` | `IconButton` (ghost/solid/active, sm/md) | `prim_icon_button` | ✓ port_scanner |
+| `core/Button` | `Button` (primary/secondary/ghost/danger/agent × sm/md/lg) | `prim_button` | ✓ port_scanner |
+| `forms/Input` | `Input` (icon/addon/mono/invalid/disabled, focus ring) | `prim_input` | ✓ port_scanner |
+| `core/Tag` | `tag` (default/accent/agent/success/warning/danger + dot) | `prim_chips` | ✓ port_scanner(PID) |
+| `core/Badge` | `badge` / `badge_dot` | `prim_chips` | 전사+빌드 |
+| `core/Kbd` | `kbd`(키캡 시퀀스) | `prim_chips` | 전사+빌드 |
+| `forms/Checkbox` | `checkbox` | `prim_forms` | ✓ port_scanner(필터) |
+| `forms/Switch` | `switch` | `prim_forms` | 전사+빌드 |
+| `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | 전사+빌드 |
+| `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
+| `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | 전사+빌드 |
+| `navigation/TreeRow` | `tree_row` | `prim_nav` | 전사+빌드 |
+| `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | Layouts `Pane Tab Bar` | — |
+| `data/Table` | egui_extras(앱별) | Overlays `Port Scanner popup` | — |
+| `feedback/Toast` | `src/adapters/ui/toast.rs` | Components `Toast (card visual)` | — |
+
+**시각검증 주**: "✓ port_scanner" = 본체 격리 인스턴스 + `ui.screenshot`(ui_scale medium)로
+대조 완료. "전사+빌드" = 디자인 토큰 충실 전사 + build/clippy 통과(갤러리는 IPC 스크린샷이
+없고 OS 캡처는 권한 불가 → 격리 자동검증 미수행). 추가 검증은 해당 위젯을 본체 팝업에
+adopt 한 뒤 `ui.screenshot` 으로 한다.
+
+### Components 재분류
+
+디자인 gallery `components.html` 구조에 맞춰 갤러리 `Components` = primitive 전용으로 정리.
+통팝업/컴포지션 데모(Dialog/Convert/Port Scanner/Approval/Toast Stack)는 `Overlays` 로 이동.
