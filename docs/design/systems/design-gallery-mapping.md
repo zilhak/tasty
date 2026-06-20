@@ -48,22 +48,23 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 | `core/Button` | `Button` (primary/secondary/ghost/danger/agent × sm/md/lg) | `prim_button` | ✓ port_scanner |
 | `forms/Input` | `Input` (icon/addon/mono/invalid/disabled, focus ring) | `prim_input` | ✓ port_scanner |
 | `core/Tag` | `tag` (default/accent/agent/success/warning/danger + dot) | `prim_chips` | ✓ port_scanner(PID) |
-| `core/Badge` | `badge` / `badge_dot` | `prim_chips` | 전사+빌드 |
-| `core/Kbd` | `kbd`(키캡 시퀀스) | `prim_chips` | 전사+빌드 |
-| `forms/Checkbox` | `checkbox` | `prim_forms` | ✓ port_scanner(필터) |
-| `forms/Switch` | `switch` | `prim_forms` | 전사+빌드 |
-| `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | 전사+빌드 |
+| `core/Badge` | `badge` / `badge_dot` | `prim_chips` | ✓ gallery |
+| `core/Kbd` | `kbd`(키캡 시퀀스) | `prim_chips` | ✓ gallery |
+| `forms/Checkbox` | `checkbox` | `prim_forms` | ✓ port_scanner(필터)+gallery |
+| `forms/Switch` | `switch` | `prim_forms` | ✓ gallery |
+| `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | ✓ gallery |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
-| `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | 전사+빌드 |
-| `navigation/TreeRow` | `tree_row` | `prim_nav` | 전사+빌드 |
+| `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | ✓ gallery |
+| `navigation/TreeRow` | `tree_row` | `prim_nav` | ✓ gallery |
 | `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | Layouts `Pane Tab Bar` | — |
 | `data/Table` | egui_extras(앱별) | Overlays `Port Scanner popup` | — |
 | `feedback/Toast` | `src/adapters/ui/toast.rs` | Components `Toast (card visual)` | — |
 
-**시각검증 주**: "✓ port_scanner" = 본체 격리 인스턴스 + `ui.screenshot`(ui_scale medium)로
-대조 완료. "전사+빌드" = 디자인 토큰 충실 전사 + build/clippy 통과(갤러리는 IPC 스크린샷이
-없고 OS 캡처는 권한 불가 → 격리 자동검증 미수행). 추가 검증은 해당 위젯을 본체 팝업에
-adopt 한 뒤 `ui.screenshot` 으로 한다.
+**시각검증 주**: primitive 12종 전부 시각검증 완료. "✓ port_scanner" = 본체 격리 인스턴스 +
+`ui.screenshot`(ui_scale medium) 대조. "✓ gallery" = 갤러리 GPU readback 스크린샷
+(`TASTY_GALLERY_SHOT=<idx>:<png> ./target/debug/tasty-gallery`, 지정 specimen 선택→4프레임
+settle→캡처→종료)으로 디자인 `components.html` 과 대조. 갤러리는 IPC/OS 캡처가 없어 이
+env 일회성 캡처가 격리 자동검증 경로다.
 
 ### Components 재분류
 
