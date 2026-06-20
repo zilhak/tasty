@@ -18,6 +18,7 @@ pub mod prim_chips;
 pub mod prim_forms;
 pub mod prim_icon_button;
 pub mod prim_input;
+pub mod prim_nav;
 pub mod prim_status_dot;
 pub mod rename_popup;
 pub mod sidebar;

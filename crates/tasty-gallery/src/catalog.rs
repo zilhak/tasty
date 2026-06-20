@@ -109,6 +109,11 @@ pub fn all() -> Vec<CatalogItem> {
         },
         CatalogItem {
             category: Category::Components,
+            name: "MenuItem · TreeRow",
+            draw: components::prim_nav::draw,
+        },
+        CatalogItem {
+            category: Category::Components,
             name: "Hint text",
             draw: widgets::hint_text::draw,
         },
@@ -117,32 +122,32 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Toast (card visual)",
             draw: widgets::toast::draw,
         },
+        // ── Overlays ── (통팝업/컴포지션 — 디자인 gallery 구조: primitive 는 Components)
         CatalogItem {
-            category: Category::Components,
+            category: Category::Overlays,
             name: "Dialog (rename popup frame)",
             draw: widgets::dialog::draw,
         },
         CatalogItem {
-            category: Category::Components,
+            category: Category::Overlays,
             name: "Convert popup (props view)",
             draw: components::convert::draw,
         },
         CatalogItem {
-            category: Category::Components,
+            category: Category::Overlays,
             name: "Port Scanner popup",
             draw: components::port_scanner::draw,
         },
         CatalogItem {
-            category: Category::Components,
+            category: Category::Overlays,
             name: "Approval popup",
             draw: components::approval::draw,
         },
         CatalogItem {
-            category: Category::Components,
+            category: Category::Overlays,
             name: "Toast Stack (Tier 3)",
             draw: components::toast::draw,
         },
-        // ── Overlays ──
         CatalogItem {
             category: Category::Overlays,
             name: "Markdown Open",

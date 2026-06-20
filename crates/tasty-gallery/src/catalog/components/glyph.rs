@@ -35,3 +35,8 @@ macro_rules! glyph {
 glyph!(SEARCH, "search", r#"<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>"#);
 glyph!(PLUS, "plus", r#"<path d="M12 5v14M5 12h14"/>"#);
 glyph!(CLOSE, "close", r#"<path d="M18 6 6 18M6 6l12 12"/>"#);
+glyph!(TERMINAL, "terminal", r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>"#);
+glyph!(SETTINGS, "settings", r#"<circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>"#);
+glyph!(TRASH, "trash", r#"<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>"#);
+glyph!(FOLDER, "folder", r#"<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/>"#);
+glyph!(FILE, "file", r#"<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>"#);
