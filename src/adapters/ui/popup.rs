@@ -164,10 +164,10 @@ impl PopupState {
 
     fn content_rect(&self) -> egui::Rect {
         let popup = self.popup_rect();
-        // remote_tool 은 디자인상 컨테이너 패딩이 0 이고 각 구역(헤더/탭바/리스트)이
-        // 자체 패딩을 가진다 → content_margin 을 0 으로 둬 draw_fn 이 popup 가장자리부터
-        // 구역별 패딩을 직접 준다 (design-parity: 통짜 패딩으로 뭉개지 않기 위함).
-        let margin = if self.id == "remote_tool" {
+        // 디자인상 컨테이너 패딩이 0 이고 각 구역이 자체 패딩을 가지는 popup 은
+        // content_margin 을 0 으로 둬 draw_fn 이 popup 가장자리부터 구역별 패딩을
+        // 직접 준다 (design-parity: 통짜 패딩으로 뭉개지 않기 위함).
+        let margin = if matches!(self.id, "remote_tool" | "command_palette") {
             0.0
         } else {
             content_margin()

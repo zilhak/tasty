@@ -114,62 +114,65 @@ pub fn draw_command_palette_view(
         }
     }
 
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 4.0;
-        // 고정 content_rect — footer 를 바닥에 고정하고 그 위 list 가 가용 공간을
-        // 모두 채운다 (디자인 command_palette.jsx: search 상단 / list flex / footer 하단).
-        let full = ui.max_rect();
-        let sep_stroke = egui::Stroke::new(theme.border_width.value(), theme.surface1);
+    // design-parity: 디자인 command_palette.jsx 는 컨테이너 패딩 0 + 구역별 패딩
+    // (search 10 / list 6 / footer 8,12). content_margin 은 command_palette 한정 0
+    // (popup.rs) 이라 full 은 popup 가장자리. 구역 divider 는 Frame 실제 좌표에 그린다.
+    let full = ui.max_rect();
+    let sep = egui::Stroke::new(theme.border_width.value(), theme.surface1);
+    ui.spacing_mut().item_spacing.y = 0.0;
 
-        let mut query_changed = false;
-        ui.horizontal(|ui| {
-            let icon_size = 16.0;
-            let (icon_rect, _) =
-                ui.allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());
-            icons::SEARCH
-                .image(icon_size, theme.text_muted().to_egui())
-                .paint_at(ui, icon_rect);
-            let resp = ui.add(
-                egui::TextEdit::singleline(props.query_buffer)
-                    .hint_text(tasty_egui_theme::hint_text(
-                        theme,
-                        props.placeholder.clone(),
-                    ))
-                    .desired_width(ui.available_width())
-                    .font(egui::TextStyle::Body),
-            );
-            if !resp.has_focus() {
-                resp.request_focus();
-            }
-            if resp.changed() {
-                query_changed = true;
-            }
+    // ── 검색 구역 (디자인 padding 10, Input control-height 28, borderBottom) ──
+    let mut query_changed = false;
+    let search_ir = egui::Frame::NONE
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.set_min_height(28.0); // 디자인 Input control-height
+                let icon_size = 16.0;
+                let (icon_rect, _) = ui
+                    .allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());
+                icons::SEARCH
+                    .image(icon_size, theme.text_muted().to_egui())
+                    .paint_at(ui, icon_rect);
+                let resp = ui.add(
+                    egui::TextEdit::singleline(props.query_buffer)
+                        .hint_text(tasty_egui_theme::hint_text(theme, props.placeholder.clone()))
+                        .desired_width(ui.available_width())
+                        .font(egui::TextStyle::Body),
+                );
+                if !resp.has_focus() {
+                    resp.request_focus();
+                }
+                if resp.changed() {
+                    query_changed = true;
+                }
+            });
         });
-        if query_changed {
-            action = CommandPaletteAction::QueryChanged;
-        }
+    if query_changed {
+        action = CommandPaletteAction::QueryChanged;
+    }
+    ui.painter()
+        .hline(full.x_range(), search_ir.response.rect.bottom(), sep);
 
-        // 검색창 아래 구분선 (디자인 borderBottom). egui `ui.separator()` 는 theme
-        // stroke 색이 배경과 가까워 사실상 비가시 → 명시적 hline 으로 그린다.
-        ui.add_space(4.0);
-        ui.painter().hline(full.x_range(), ui.cursor().top(), sep_stroke);
-        ui.add_space(5.0);
+    // footer 높이 예약 (디자인 footer ≈ hint row + pad8*2 + border1 = 31).
+    let footer_h = theme.font_size_caption.value() + 20.0;
+    let footer_top = full.bottom() - footer_h;
 
-        // 하단 footer 높이 예약 후, list scroll 이 그 위 공간을 모두 채운다(auto_shrink
-        // false). 항목이 320 캡을 넘으면 내부 스크롤, 적으면 빈 공간이 list 영역에 남고
-        // footer 는 항상 바닥에 고정된다.
-        let footer_h = theme.font_size_caption.value() + 14.0;
-        let list_h = (full.bottom() - ui.cursor().top() - footer_h).max(24.0);
-
-        if props.items.is_empty() {
-            ui.label(
-                egui::RichText::new(&props.no_results_text)
-                    .color(theme.subtext0.to_egui())
-                    .italics(),
-            );
-        } else {
-            let row_height = 24.0;
+    // ── 리스트 구역 (디자인 padding 6, MenuItem height 28) ──
+    egui::Frame::NONE
+        .inner_margin(egui::Margin::same(6))
+        .show(ui, |ui| {
+            if props.items.is_empty() {
+                ui.label(
+                    egui::RichText::new(&props.no_results_text)
+                        .color(theme.subtext0.to_egui())
+                        .italics(),
+                );
+                return;
+            }
+            let row_height = 28.0; // 디자인 MenuItem control-height
             let selected_idx = props.selected_index;
+            let list_h = (footer_top - ui.cursor().top() - 6.0).max(row_height);
             egui::ScrollArea::vertical()
                 .max_height(list_h)
                 .auto_shrink([false, false])
@@ -183,13 +186,13 @@ pub fn draw_command_palette_view(
                         if is_selected {
                             ui.painter().rect_filled(
                                 rect,
-                                4.0,
+                                2.0,
                                 theme.active_overlay.to_egui_premultiplied(),
                             );
                         } else if resp.hovered() {
                             ui.painter().rect_filled(
                                 rect,
-                                4.0,
+                                2.0,
                                 theme.hover_overlay.to_egui_premultiplied(),
                             );
                         }
@@ -199,10 +202,9 @@ pub fn draw_command_palette_view(
                             theme.subtext0.into()
                         };
 
-                        // leading 아이콘 컬럼은 항상 폭을 예약해 라벨 정렬을 유지한다.
-                        // 6개는 전용 아이콘, 나머지는 COMMAND fallback 글리프.
-                        let pad_x = 8.0;
-                        let icon_size = 16.0;
+                        // 디자인 MenuItem: padding 0 12, icon 15, gap 8.
+                        let pad_x = 12.0;
+                        let icon_size = 15.0;
                         let icon_gap = 8.0;
                         if let Some(icon) = item.icon {
                             let icon_rect = egui::Rect::from_min_size(
@@ -219,48 +221,52 @@ pub fn draw_command_palette_view(
                             egui::FontId::proportional(theme.font_size_body.value()),
                             color,
                         );
-
-                        // Kbd — 키별 개별 키캡 박스 + 사이 muted `+` (디자인 Kbd.jsx).
                         draw_keycaps(
                             ui,
                             theme,
-                            rect.max.x - 8.0,
+                            rect.max.x - pad_x,
                             rect.center().y,
                             &item.shortcut_keys,
                         );
-
                         if resp.clicked() {
                             action = CommandPaletteAction::Execute { index: i };
                         }
                     }
                 });
-        }
-
-        // footer 를 content_rect 바닥에 고정 + 그 위 구분선 (디자인 borderTop).
-        // 푸터 키보드 힌트 — mono + muted. 기호는 고정키, 동작 라벨만 i18n.
-        let footer_top = full.bottom() - footer_h;
-        if ui.cursor().top() < footer_top {
-            ui.add_space(footer_top - ui.cursor().top());
-        }
-        ui.painter().hline(full.x_range(), ui.cursor().top(), sep_stroke);
-        ui.add_space(6.0);
-        let hint_color = theme.text_muted().to_egui();
-        let hint_font = egui::FontId::monospace(theme.font_size_caption.value());
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 14.0;
-            for hint in [
-                format!("↑↓ {}", props.hint_navigate),
-                format!("↵ {}", props.hint_run),
-                format!("esc {}", props.hint_close),
-            ] {
-                ui.label(
-                    egui::RichText::new(hint)
-                        .font(hint_font.clone())
-                        .color(hint_color),
-                );
-            }
         });
-    });
+
+    // ── footer (디자인 padding 8 12, gap 14, mono 10.5, borderTop) — 바닥 고정 ──
+    let cur = ui.cursor().top();
+    if cur < footer_top {
+        ui.add_space(footer_top - cur);
+    }
+    ui.painter().hline(full.x_range(), footer_top, sep);
+    egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: 12,
+            right: 12,
+            top: 8,
+            bottom: 8,
+        })
+        .show(ui, |ui| {
+            let hint_color = theme.text_muted().to_egui();
+            // 디자인 footer fontSize 10.5 (토큰 아닌 raw).
+            let hint_font = egui::FontId::monospace(10.5);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 14.0;
+                for hint in [
+                    format!("↑↓ {}", props.hint_navigate),
+                    format!("↵ {}", props.hint_run),
+                    format!("esc {}", props.hint_close),
+                ] {
+                    ui.label(
+                        egui::RichText::new(hint)
+                            .font(hint_font.clone())
+                            .color(hint_color),
+                    );
+                }
+            });
+        });
 
     if enter && !props.items.is_empty() {
         action = CommandPaletteAction::Execute {

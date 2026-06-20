@@ -133,7 +133,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 id: super::command_palette::COMMAND_PALETTE_POPUP_ID,
                 title_key: "command_palette.heading",
                 title_fn: None,
-                default_size: egui::vec2(540.0, 360.0),
+                // 디자인 콘텐츠 높이 ≈ search(49) + list(maxH320 + pad12=332) + footer(31)
+                // = 412. design-parity: list 가 320 꽉 차는 실사용 기준 높이.
+                default_size: egui::vec2(540.0, 412.0),
                 sizer: None,
                 default_scope: PopupScope::Window,
                 close_on_outside_click: true,

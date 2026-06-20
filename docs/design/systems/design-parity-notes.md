@@ -61,6 +61,28 @@
   에서만 신경 쓰면 된다.
 - **근거**: remote_tool 2026-06-20.
 
+## command_palette — surface0 배경은 popup 밖에도 쓰여 색 bbox 가 오염된다
+
+- **증상**: surface0(=`surface-raised`) 픽셀의 bounding box 로 popup 을 잡으면 화면 우측 끝까지
+  잡혀 폭이 틀린다(scale 오검출).
+- **원인**: command_palette 본문 bg 는 surface0 인데, 같은 surface0 가 비활성 탭·hover
+  오버레이·스크롤바 등 **popup 밖 여러 위젯**에도 쓰인다. 단색 bbox 로는 popup 만 못 가린다.
+- **처방**: popup 의 **전체폭 가로 divider(surf1 line)** 를 랜드마크로 쓴다. x 범위 안에서
+  surf1 픽셀이 일정 수 이상인 행 = search/footer divider + popup top/bottom border. 그 행들의
+  surf1 run 으로 popup 좌우, 행 Y 로 구역 경계를 잡는다.
+- **근거**: command_palette 2026-06-20. wide-surf1 행 [top, search_div, footer_div, bottom]
+  → search divider 49.6(design 50), footer h 31.3(design 31). diff <1.
+
+## command_palette — height 가변(콘텐츠 맞춤) vs tasty 고정 popup
+
+- **증상**: 디자인은 항목 수에 따라 카드 높이가 변하고 footer 가 list 바로 아래 붙는다. tasty
+  popup 은 default_size 고정이라 빈 공간/잘림이 생긴다.
+- **처방**: command_palette 는 실사용에서 거의 항상 항목이 많아 list 가 maxHeight(320) 꽉
+  차므로, default_size.height 를 "꽉 찬" 콘텐츠 높이(search 49 + list 332 + footer 31 ≈ 412)로
+  두고 footer 를 바닥 고정. 항목이 적을 때만(검색 좁힘) 약간 다르다(허용).
+- **추정**: 완전 일치는 popup 높이를 매 프레임 콘텐츠로 재계산하는 기능이 필요 — 별도 과제.
+- **근거**: command_palette 2026-06-20. default_size 360→412 + 구역별 패딩으로 디자인 비율 일치.
+
 ## remote_tool — 컨테이너 패딩 0 + 구역별 패딩 (통짜 패딩 금지)
 
 - **증상**: 단일 Frame inner_margin 으로 전체를 감싸면 헤더(14L/12R)·탭바(8)·리스트(14)의
