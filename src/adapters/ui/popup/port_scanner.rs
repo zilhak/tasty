@@ -26,12 +26,14 @@ use crate::adapters::ui::popup::PopupAction;
 use crate::core::CoreState;
 use crate::core::state::SurfaceDisplayPath;
 use crate::i18n::t;
-use crate::model::LogicalPx;
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
-use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Input};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, IconButton, IconButtonVariant, Input, StatusKind, TagVariant, checkbox,
+    status_dot, tag,
+};
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
 
@@ -892,9 +894,7 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     let mut out: Option<PortScannerAction> = None;
     ui.horizontal(|ui| {
         let mut checked = props.filter.show_all_system;
-        if ui
-            .checkbox(&mut checked, props.label_filter_show_all_system)
-            .changed()
+        if checkbox(ui, props.theme, &mut checked, props.label_filter_show_all_system, true).changed()
         {
             out = Some(PortScannerAction::SetShowAllSystem(checked));
         }
@@ -1196,18 +1196,8 @@ fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView) {
                 .size(th.font_size_body.value()),
         );
         if let Some(pid) = row.pid {
-            let txt = format!("PID {pid}");
-            let badge = egui::RichText::new(txt)
-                .color(th.subtext0)
-                .size(th.font_size_caption.value())
-                .monospace();
-            egui::Frame::default()
-                .fill(th.surface1.into())
-                .corner_radius(egui::CornerRadius::same(3))
-                .inner_margin(egui::Margin::symmetric(4, 1))
-                .show(ui, |ui| {
-                    ui.label(badge);
-                });
+            // 디자인 process 셀의 PID 는 Tag(outlined default).
+            tag(ui, th, &format!("PID {pid}"), TagVariant::Default, false);
         }
     });
 }
@@ -1250,62 +1240,19 @@ fn draw_tab_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
     }
 }
 
-// ── StatusDot `running` pulse (디자인 명시값) ──
-// 길이는 LogicalPx, 무차원 모션 배율/opacity/주기는 디자인 명시 상수.
-/// dot 슬롯 한 변 (8px 정사각).
-const PULSE_DOT_SLOT: LogicalPx = LogicalPx(8.0);
-/// 정적 코어 dot 반경 (8px dot 의 절반).
-const PULSE_CORE_RADIUS: LogicalPx = LogicalPx(4.0);
-/// 링 base 반경 — dot 8px + CSS `inset: -3px` → 7px.
-const PULSE_RING_BASE_RADIUS: LogicalPx = LogicalPx(7.0);
-/// 링 스케일 시작 배율 (0.6→1.8 ease-out 의 최소).
-const PULSE_RING_SCALE_MIN: f32 = 0.6;
-/// 링 스케일 증가 폭 (0.6 + 1.2 = 1.8 최대).
-const PULSE_RING_SCALE_RANGE: f32 = 1.2;
-/// 링 시작 opacity (0.5→0 으로 페이드).
-const PULSE_RING_OPACITY_MAX: f32 = 0.5;
-/// pulse 1 주기 (초).
-const PULSE_PERIOD_SECS: f64 = 1.6;
-/// ease-out cubic 지수.
-const PULSE_EASE_EXP: i32 = 3;
-
-/// State 셀: status dot + 실제 state 라벨.
+/// State 셀: 공용 StatusDot 위젯 (디자인 `StatusDot status pulse label`).
 ///
-/// Mirrors the design's `StatusDot status={v==="LISTEN"?"running":"waiting"}
-/// pulse={v==="LISTEN"} label={v}`: `LISTEN` → green core + expanding/fading
-/// pulse ring (scale 0.6→1.8, opacity 0.5→0, 1.6 s ease-out loop); every other
-/// state → static yellow dot, no ring. With `reduced_motion`, the ring is
-/// omitted even for `LISTEN`. The label is the canonical TCP state token.
+/// `LISTEN` → running + pulse, 그 외 → waiting(정적). `reduced_motion` 이면
+/// pulse 생략. 위젯이 디자인 pulse(scale 0.6→1.8, opacity 0.5→0, 1.6s)와
+/// 라벨을 그린다.
 fn draw_state_cell(ui: &mut egui::Ui, th: &Theme, reduced_motion: bool, state: PortState) {
-    ui.horizontal(|ui| {
-        let slot = PULSE_DOT_SLOT.value();
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(slot, slot), egui::Sense::hover());
-        let center = rect.center();
-        let is_listen = state.is_listen();
-        let dot_color = if is_listen {
-            th.accent_success()
-        } else {
-            th.accent_warning()
-        };
-        if is_listen && !reduced_motion {
-            let t = ui.ctx().input(|i| i.time);
-            let phase = (t / PULSE_PERIOD_SECS).rem_euclid(1.0) as f32;
-            let eased = 1.0 - (1.0 - phase).powi(PULSE_EASE_EXP); // ease-out cubic
-            let radius = PULSE_RING_BASE_RADIUS.value()
-                * (PULSE_RING_SCALE_MIN + PULSE_RING_SCALE_RANGE * eased);
-            let opacity = PULSE_RING_OPACITY_MAX * (1.0 - eased);
-            let ring: egui::Color32 = egui::Color32::from(dot_color).gamma_multiply(opacity);
-            ui.painter().circle_filled(center, radius, ring);
-            ui.ctx().request_repaint();
-        }
-        ui.painter()
-            .circle_filled(center, PULSE_CORE_RADIUS.value(), dot_color);
-        ui.label(
-            egui::RichText::new(state.label())
-                .color(th.subtext0)
-                .size(th.font_size_caption.value()),
-        );
-    });
+    let is_listen = state.is_listen();
+    let kind = if is_listen {
+        StatusKind::Running
+    } else {
+        StatusKind::Waiting
+    };
+    status_dot(ui, th, kind, state.label(), is_listen, reduced_motion);
 }
 
 /// Bracketless display form. IPv6 is shown bare (e.g. wildcard `::`) per the
