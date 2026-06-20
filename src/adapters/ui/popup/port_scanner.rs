@@ -31,6 +31,7 @@ use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
+use tasty_ui_widgets::{Button, ButtonVariant, IconButton, IconButtonVariant, Input};
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
 
@@ -765,16 +766,8 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortSc
             .map(row_copy_address),
         _ => None,
     };
-    // footer 위 구분선 (디자인 borderTop).
-    {
-        let r = ui.max_rect();
-        ui.painter().hline(
-            r.x_range(),
-            ui.cursor().top(),
-            egui::Stroke::new(th.border_width.value(), th.surface1),
-        );
-        ui.add_space(2.0);
-    }
+    // footer 위 구분선은 caller(draw_port_scanner_view)가 foot_top 에 이미 그린다.
+    // 디자인 borderTop 은 1개 — 여기서 중복으로 그리지 않는다(이전 중복선 버그 제거).
     ui.horizontal(|ui| {
         if let Some(s) = &counter {
             ui.label(
@@ -784,19 +777,19 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortSc
             );
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .button(egui::RichText::new(props.label_close).size(th.font_size_body.value()))
+            // 디자인 footer: Close = secondary, Copy address = ghost(미선택 시 disabled).
+            if Button::new(props.label_close)
+                .variant(ButtonVariant::Secondary)
+                .show(ui, th)
                 .clicked()
             {
                 out = Some(PortScannerAction::Close);
             }
-            let copy_resp = ui.add_enabled(
-                selected_addr.is_some(),
-                egui::Button::new(
-                    egui::RichText::new(props.label_copy_address).size(th.font_size_body.value()),
-                ),
-            );
-            if copy_resp.clicked()
+            if Button::new(props.label_copy_address)
+                .variant(ButtonVariant::Ghost)
+                .enabled(selected_addr.is_some())
+                .show(ui, th)
+                .clicked()
                 && let Some(addr) = &selected_addr
             {
                 out = Some(PortScannerAction::CopyAddress(addr.clone()));
@@ -853,31 +846,39 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
         if let Some(tag) = header_tag_text(props) {
             draw_header_count_tag(ui, th, &tag);
         }
-        // 우측에 close 버튼 + Refresh + search.
+        // 우측에 close 버튼 + Refresh + search (디자인 IconButton ghost + Input).
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .button(egui::RichText::new("×").size(16.0).color(th.text))
+            // 디자인 close: IconButton ghost(테두리 없음) — 이전 egui 기본 프레임 버그 제거.
+            if IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .show(ui, th, &|ui, rect, c| {
+                    icons::CLOSE.image(16.0, c).paint_at(ui, rect)
+                })
                 .on_hover_text(props.label_close)
                 .clicked()
             {
                 out = Some(PortScannerAction::Close);
             }
             // B3: 헤더 우측 Refresh 아이콘 버튼 (상시 노출, 현재 scope 재스캔).
-            if ui
-                .add(egui::ImageButton::new(icons::REFRESH.image(16.0, th.subtext0.into())).frame(false))
+            if IconButton::new()
+                .variant(IconButtonVariant::Ghost)
+                .show(ui, th, &|ui, rect, c| {
+                    icons::REFRESH.image(16.0, c).paint_at(ui, rect)
+                })
                 .on_hover_text(props.label_refresh)
                 .clicked()
             {
                 out = Some(PortScannerAction::Refresh);
             }
-            let avail = ui.available_width().max(120.0);
+            // 디자인 search: Input width 200 + leading search 아이콘.
             let mut buf = props.filter.query.to_string();
-            let resp = ui.add_sized(
-                egui::vec2(avail, 22.0),
-                egui::TextEdit::singleline(&mut buf)
-                    .hint_text(props.label_search_placeholder)
-                    .desired_width(avail),
-            );
+            let resp = Input::new()
+                .placeholder(props.label_search_placeholder)
+                .width(200.0)
+                .icon(&|ui, rect, c| {
+                    icons::SEARCH.image(15.0, c).paint_at(ui, rect)
+                })
+                .show(ui, th, &mut buf);
             if resp.changed() && buf != props.filter.query {
                 out = Some(PortScannerAction::SetQuery(buf));
             }
