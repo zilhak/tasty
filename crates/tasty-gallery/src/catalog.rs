@@ -76,7 +76,22 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Spacing",
             draw: spacing::draw,
         },
-        // ── Components ──
+        // ── Components ── (primitive 먼저 — 디자인 gallery components.html 순서)
+        CatalogItem {
+            category: Category::Components,
+            name: "Button",
+            draw: components::prim_button::draw,
+        },
+        CatalogItem {
+            category: Category::Components,
+            name: "IconButton",
+            draw: components::prim_icon_button::draw,
+        },
+        CatalogItem {
+            category: Category::Components,
+            name: "Input",
+            draw: components::prim_input::draw,
+        },
         CatalogItem {
             category: Category::Components,
             name: "Hint text",
