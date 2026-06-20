@@ -39,3 +39,6 @@ pub const ICON_GLYPH_MD: f32 = 16.0;
 
 /// Input leading 아이콘 글리프 = 디자인 Input `__icon` 15px.
 pub const INPUT_ICON_GLYPH: f32 = 15.0;
+
+/// TreeRow 높이 = 디자인 control-height-tree(22). Theme 에 대응 토큰 없음.
+pub const TREE_ROW_HEIGHT: f32 = 22.0;
