@@ -23,14 +23,37 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let event_loop = EventLoop::new()?;
-    let mut app = App::default();
+    let mut app = App {
+        shot: parse_shot_env(),
+        ..App::default()
+    };
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+/// 일회성 스크린샷 요청 — `TASTY_GALLERY_SHOT=<item_index>:<png_path>`.
+/// 지정 카탈로그 항목을 선택해 몇 프레임 settle 후 캡처하고 종료한다.
+/// (갤러리는 IPC 가 없어 격리 자동 시각검증을 이 경로로 한다.)
+struct Shot {
+    idx: usize,
+    path: std::path::PathBuf,
+    frame: u32,
+}
+
+fn parse_shot_env() -> Option<Shot> {
+    let raw = std::env::var("TASTY_GALLERY_SHOT").ok()?;
+    let (idx, path) = raw.split_once(':')?;
+    Some(Shot {
+        idx: idx.trim().parse().ok()?,
+        path: std::path::PathBuf::from(path.trim()),
+        frame: 0,
+    })
 }
 
 #[derive(Default)]
 struct App {
     runtime: Option<Runtime>,
+    shot: Option<Shot>,
 }
 
 struct Runtime {
@@ -55,7 +78,14 @@ impl ApplicationHandler for App {
             .with_inner_size(winit::dpi::LogicalSize::new(1100.0, 720.0));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
-        let rt = pollster::block_on(init_runtime(window)).expect("gallery runtime init");
+        let mut rt = pollster::block_on(init_runtime(window)).expect("gallery runtime init");
+        // 스크린샷 모드: 지정 카탈로그 항목을 선택해 둔다.
+        if let Some(shot) = &self.shot
+            && let Some(item) = rt.gallery.items.get(shot.idx)
+        {
+            rt.gallery.active_category = item.category;
+            rt.gallery.selected = shot.idx;
+        }
         self.runtime = Some(rt);
     }
 
@@ -84,8 +114,18 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let Err(err) = render_frame(rt) {
+                // 스크린샷 모드: 몇 프레임 settle 후 캡처하고 종료.
+                let capture_path = if let Some(shot) = self.shot.as_mut() {
+                    shot.frame += 1;
+                    (shot.frame >= 4).then(|| shot.path.clone())
+                } else {
+                    None
+                };
+                if let Err(err) = render_frame(rt, capture_path.as_deref()) {
                     tracing::error!("render error: {err:?}");
+                }
+                if capture_path.is_some() {
+                    event_loop.exit();
                 }
             }
             _ => {}
@@ -140,7 +180,8 @@ async fn init_runtime(window: Arc<Window>) -> anyhow::Result<Runtime> {
         .ok_or_else(|| anyhow::anyhow!("no surface format"))?;
 
     let config = wgpu::SurfaceConfiguration {
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        // COPY_SRC: 스크린샷 모드에서 surface 텍스처를 버퍼로 복사하기 위함.
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         format: surface_format,
         width: size.width.max(1),
         height: size.height.max(1),
@@ -187,7 +228,7 @@ async fn init_runtime(window: Arc<Window>) -> anyhow::Result<Runtime> {
     })
 }
 
-fn render_frame(rt: &mut Runtime) -> anyhow::Result<()> {
+fn render_frame(rt: &mut Runtime, capture: Option<&std::path::Path>) -> anyhow::Result<()> {
     let raw_input = rt.egui_state.take_egui_input(&rt.window);
     let full_output = rt.egui_ctx.run(raw_input, |ctx| {
         host_shell::draw(ctx, &mut rt.gallery);
@@ -262,6 +303,99 @@ fn render_frame(rt: &mut Runtime) -> anyhow::Result<()> {
     }
 
     rt.queue.submit(std::iter::once(encoder.finish()));
+
+    // 스크린샷 모드: present 전에 surface 텍스처를 PNG 로 떨군다.
+    if let Some(path) = capture {
+        capture_to_png(
+            &rt.device,
+            &rt.queue,
+            &frame.texture,
+            rt.config.width,
+            rt.config.height,
+            path,
+        );
+    }
+
     frame.present();
     Ok(())
+}
+
+/// surface 텍스처(BGRA)를 RGB PNG 로 저장. 본체 `gpu/screenshot.rs` 의 readback
+/// 로직과 동일(256B row 정렬, BGRA→RGB, map_async + Wait poll).
+fn capture_to_png(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    width: u32,
+    height: u32,
+    path: &std::path::Path,
+) {
+    let bpp = 4u32;
+    let unpadded = width * bpp;
+    let padded = (unpadded + 255) & !255;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("gallery_screenshot_buffer"),
+        size: (padded * height) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("gallery_screenshot_encoder"),
+    });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(padded),
+                rows_per_image: Some(height),
+            },
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit(std::iter::once(encoder.finish()));
+
+    let slice = buffer.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    let _ = device.poll(wgpu::Maintain::Wait);
+    if let Ok(Ok(())) = rx.recv() {
+        let data = slice.get_mapped_range();
+        let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+        for row in 0..height {
+            let off = (row * padded) as usize;
+            for col in 0..width {
+                let px = off + (col * bpp) as usize;
+                pixels.push(data[px + 2]); // R
+                pixels.push(data[px + 1]); // G
+                pixels.push(data[px]); // B
+            }
+        }
+        drop(data);
+        buffer.unmap();
+        if let Ok(file) = std::fs::File::create(path) {
+            let w = std::io::BufWriter::new(file);
+            let mut enc = png::Encoder::new(w, width, height);
+            enc.set_color(png::ColorType::Rgb);
+            enc.set_depth(png::BitDepth::Eight);
+            if let Ok(mut writer) = enc.write_header() {
+                let _ = writer.write_image_data(&pixels);
+                tracing::info!("gallery screenshot saved to {}", path.display());
+            }
+        }
+    } else {
+        tracing::warn!("gallery screenshot capture failed");
+    }
 }
