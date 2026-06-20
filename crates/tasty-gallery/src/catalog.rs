@@ -94,6 +94,21 @@ pub fn all() -> Vec<CatalogItem> {
         },
         CatalogItem {
             category: Category::Components,
+            name: "Badge · Tag · Kbd",
+            draw: components::prim_chips::draw,
+        },
+        CatalogItem {
+            category: Category::Components,
+            name: "Select · Checkbox · Switch",
+            draw: components::prim_forms::draw,
+        },
+        CatalogItem {
+            category: Category::Components,
+            name: "StatusDot",
+            draw: components::prim_status_dot::draw,
+        },
+        CatalogItem {
+            category: Category::Components,
             name: "Hint text",
             draw: widgets::hint_text::draw,
         },
