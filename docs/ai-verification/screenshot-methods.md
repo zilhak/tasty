@@ -5,6 +5,7 @@
 | 상태 | 방법 |
 |------|------|
 | 정상 모드 (IPC 가능) | **`ui.screenshot` IPC** (권장·기본) |
+| **`tasty-gallery` 검증** | **`TASTY_GALLERY_SHOT` env GPU 캡처** (갤러리는 IPC 없음 — 아래) |
 | IPC 불가 (셸 설정 모드 등) | OS 화면 캡처 (최후 폴백) |
 
 시각 판단 휴리스틱·체크리스트는 [visual-verification](visual-verification.md).
@@ -38,7 +39,21 @@ HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서면 GUI 
 
 테스트 격리용 `--port-file <PATH>` 옵션도 있다(클라이언트가 읽을 포트 파일 지정).
 
+## `tasty-gallery` 캡처 (`TASTY_GALLERY_SHOT`)
+
+갤러리(`tasty-gallery`)는 **별도 바이너리라 `ui.screenshot` IPC 가 없다.** 그렇다고 OS 캡처로 가면 권한 벽에 막힌다(아래). 대신 갤러리에 내장된 **env 트리거 일회성 GPU readback 캡처**를 쓴다 — 본체 `ui.screenshot` 과 동일한 swapchain readback(BGRA→RGB, 256B row 정렬)이라 권한 불요·결정적.
+
+- 형식: `TASTY_GALLERY_SHOT=<item_index>:<png_절대경로>`. 지정 카탈로그 항목을 선택해 4 프레임 settle 후 캡처하고 **자체 종료**한다(`crates/tasty-gallery/src/main.rs`).
+- `item_index` 는 `catalog::all()` 순서(0-base). 목록: `grep -n 'name: "' crates/tasty-gallery/src/catalog.rs`.
+- 갤러리는 캡처 후 스스로 종료하므로 `timeout` 불필요(macOS 엔 `timeout` 명령도 없다).
+
+```bash
+out="$PWD/.claude-workspace/temp/gallery-button.png"
+TASTY_GALLERY_SHOT="3:$out" ./target/debug/tasty-gallery   # idx 3 = "Button"
+# 윈도우 1100x720, 1:1(논-레티나) → 좌측 사이드바 ~240px, 우측이 specimen 패널
+```
+
 ## OS 화면 캡처 (폴백만)
 
-- **macOS** `screencapture` — 해당 프로세스에 화면 녹화 권한 필요(없으면 `could not create image from display` 실패 → `ui.screenshot` 사용).
+- **macOS** `screencapture` — 해당 프로세스에 화면 녹화 권한 필요(없으면 `could not create image from display` 실패 → `ui.screenshot` 또는 갤러리는 `TASTY_GALLERY_SHOT` 사용).
 - **Windows** PowerShell `CopyFromScreen`. 윈도우가 가려져 있으면 `ShowWindow`+`SetForegroundWindow` 로 최대화 후 캡처. tasty.exe 실행 중이면 `cargo build` 가 exe 를 못 덮어쓰니 빌드 전 종료(`Stop-Process -Force`).
