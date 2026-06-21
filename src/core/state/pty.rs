@@ -135,6 +135,30 @@ impl CoreState {
         self.terminals.process_all()
     }
 
+    /// OS 절전 복귀 후 헬스 패스 (Windows, ADR-0017). 살아있는 PTY 자식을 wake
+    /// nudge 해 hang 에서 깨어나도록 유도하고, **자식 TUI 가 실행 중인(foreground
+    /// 가 셸이 아닌) 살아있는 surface 들의 ID** 를 의심 목록으로 반환한다. 죽은
+    /// 자식은 여기서 건드리지 않고 곧이은 `process_all` 의 `ProcessExited` cascade
+    /// 가 정리한다. 호출자는 의심 목록으로 사용자 알림을 발행한다.
+    #[cfg(windows)]
+    pub(crate) fn wake_terminals_after_resume(&mut self) -> Vec<u32> {
+        let mut suspects = Vec::new();
+        for (sid, term) in self.terminals.iter_mut() {
+            if !term.check_process_alive() {
+                continue; // 죽음 — process_all 의 ProcessExited cascade 가 정리.
+            }
+            term.wake_nudge();
+            let shell_pid = term.process_id();
+            if let Some(info) = term.foreground_process_info()
+                && Some(info.pid) != shell_pid
+                && !tasty_terminal::foreground_process::is_known_shell_name(&info.name)
+            {
+                suspects.push(sid);
+            }
+        }
+        suspects
+    }
+
     /// Process a single terminal by surface ID (read PTY output).
     /// Returns true if data was processed.
     pub fn process_surface(&mut self, surface_id: u32) -> bool {

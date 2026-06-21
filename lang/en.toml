@@ -797,6 +797,10 @@ error_response = "IPC error response (code={}): {}"
 title = "Command history is large"
 body = "This surface has recorded {} commands. Old entries are cleared when the surface closes."
 
+[resume.suspect]
+title = "Terminal may be unresponsive after resume"
+body = "A program was running in this terminal when the system slept. It may not respond after resume — if input does nothing, restart it."
+
 [command_index.cap.hard]
 title = "Command history limit reached"
 body = "This surface hit the command-history limit; new commands are no longer recorded."

@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **주체**: 로컬 사용자 · AI Agent(입력 주입은 [terminal-output](../terminal-output/index.md)/`surface.send*`) · 원격(mirror)
-- **ADR**: [ADR-0002](../../adr/0002-vte-parsing-off-input-thread.md)(파서 스레드) · [ADR-0008](../../adr/0008-inline-graphics-protocols-deferred.md)(인라인 그래픽 보류)
+- **ADR**: [ADR-0002](../../adr/0002-vte-parsing-off-input-thread.md)(파서 스레드) · [ADR-0008](../../adr/0008-inline-graphics-protocols-deferred.md)(인라인 그래픽 보류) · [ADR-0017](../../adr/0017-windows-suspend-resume-pty-recovery.md)(Windows 절전 PTY 복구)
 - **코드**: `crates/tasty-terminal/` (PTY·VTE·grid·scrollback), 렌더 `src/gfx/`
 - **화면**: GPU 렌더링 셀 그리드 (egui 아님)
 
@@ -17,6 +17,12 @@
 ConPTY(Windows) / Unix PTY 로 네이티브 셸 실행(`TERM=xterm-256color`). 윈도우 리사이즈 시 자식에 새 크기 전파 — rows 축소 시 커서 아래 빈 행 먼저 제거 후 부족분은 위쪽 행을 scrollback 으로 캡처(커서-콘텐츠 관계 보존), 확대 시 scrollback 에서 복원.
 
 **작업 디렉토리 상속**: 새 surface 생성 시 소스의 현재 cwd 를 상속(`general.inherit_cwd`, 기본 on). macOS/Linux 는 셸 PID 로 OS 직접 조회(`proc_pidinfo` / `/proc/<pid>/cwd`, OSC 7 캐시 우선), Windows 는 타 프로세스 cwd API 부재로 셸이 내보내는 OSC 7 캐시에만 의존(합성 rcfile 로 OSC 7 emit 강제). carry 규칙은 [surface-cwd invariant](../../architecture/invariants/surface-cwd.md).
+
+### 프로세스 종료 / 절전 복귀
+
+자식 프로세스가 종료하면(파서 스레드의 PTY EOF 또는 throttled `try_wait`) `ProcessExited` 이벤트가 한 번 발화되고, cascade 가 해당 surface 를 자동 정리한다(hook 발화 → host event → surface close).
+
+**Windows 절전(suspend/resume) 복구**(Windows 전용, [ADR-0017](../../adr/0017-windows-suspend-resume-pty-recovery.md)): ConPTY 는 `conhost.exe` + named pipe 기반이라, OS 절전(특히 modern standby/hibernate) 복귀 후 자식이 stdin 을 읽지 않고 멈출(hang) 수 있다. 메인 윈도우에 `WM_POWERBROADCAST` 서브클래스를 붙여 resume 를 감지하고 헬스 패스를 돈다 — (1) 죽은 자식은 즉시 `ProcessExited` cascade 로 정리, (2) 살아있는 자식은 현재 크기로 ConPTY resize 를 재발행해 wake nudge, (3) wake 로도 깨어나지 못할 수 있는(자식 TUI 가 도는) surface 는 알림으로 가시화. Unix PTY(macOS/Linux)는 sleep 이 프로세스를 freeze→thaw 하며 fd/파이프를 보존해 hang 이 생기지 않으므로 이 경로는 적용하지 않는다(`#[cfg(windows)]`). hang 은 idle 과 구분 불가해 자동 *완전* 복구는 보장하지 않으며, 최종 수단은 사용자 재시작이다.
 
 ### VTE 에뮬레이션
 

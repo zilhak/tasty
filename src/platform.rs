@@ -11,6 +11,8 @@ pub mod jump_list;
 pub mod macos_delegate;
 #[cfg(feature = "gui")]
 pub mod native_menu;
+#[cfg(all(windows, feature = "gui"))]
+pub mod power_windows;
 #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
 pub mod system_tray;
 #[cfg(feature = "gui")]

@@ -419,6 +419,13 @@ impl App {
         );
         window.set_ime_allowed(true);
 
+        // Windows 절전(suspend/resume) 감지 — WM_POWERBROADCAST 후킹. resume 시
+        // 죽은 ConPTY 자식 정리 + 살아있는 자식 wake nudge (ADR-0017). power
+        // broadcast 는 시스템 전역이라 어느 윈도우든 받으므로, 창마다 설치해 두면
+        // ≥1 개 창이 살아있는 한 동작한다 (resume 헬스 패스는 idempotent).
+        #[cfg(windows)]
+        crate::platform::power_windows::install_resume_hook(&window, self.view.proxy.clone());
+
         // state.db 초기화. 실패하면 InfoModal로 안내 후 종료(Exit 1).
         // create_app_state 이전에 호출해야 plugin/recent_files 등이 정상 동작.
         let db_init_error = crate::db::init().err();

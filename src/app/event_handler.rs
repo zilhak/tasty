@@ -117,6 +117,10 @@ impl ApplicationHandler<AppEvent> for App {
                 let outcome = self.stream_hub.pump_inbound(&self.stream_inbound_rx);
                 self.apply_stream_outcome(outcome);
             }
+            #[cfg(all(windows, feature = "gui"))]
+            AppEvent::SystemResumed => {
+                self.resume_health_pass();
+            }
             AppEvent::EguiRepaint { viewport_id } => {
                 // viewport_id 가 매칭되는 view 한 개만 dirty 처리.
                 // 매 frame 모든 view 를 dirty 로 만들면 한 window 의 repaint 요청이
@@ -682,6 +686,62 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    /// OS 절전 복귀(`AppEvent::SystemResumed`, Windows) 헬스 패스 (ADR-0017).
+    /// 전 view/parked engine 을 순회하며 (1) 살아있는 PTY 자식을 wake nudge,
+    /// (2) `process_all_pty_output` 로 절전 중 죽은 자식의 `ProcessExited` cascade
+    /// 를 즉시 트리거(→ surface 정리), (3) 자식 TUI 가 도는데 깨어나지 못할 수도
+    /// 있는 surface 를 알림으로 가시화한다.
+    #[cfg(all(windows, feature = "gui"))]
+    pub(crate) fn resume_health_pass(&mut self) {
+        use crate::app::dispatch_domain::DispatchSource;
+        use crate::core::intent::CoreEvent;
+        tracing::info!("system resumed — running PTY health pass (ADR-0017)");
+        let core = &mut self.core;
+        let mut pending: Vec<(DispatchSource, Vec<CoreEvent>)> = Vec::new();
+        for (wid, w) in self.view.views.iter_mut() {
+            let Some(main) = w.as_main_mut() else {
+                continue;
+            };
+            let suspects = main.core_state.wake_terminals_after_resume();
+            let outcome = core.process_all_pty_output(&mut main.core_state);
+            if !outcome.events.is_empty() {
+                pending.push((DispatchSource::Main(*wid), outcome.events));
+            }
+            Self::notify_resume_suspects(&mut main.core_state, &suspects);
+            w.mark_dirty();
+        }
+        for (idx, (_, engine)) in self.parked_states.iter_mut().enumerate() {
+            let suspects = engine.wake_terminals_after_resume();
+            let outcome = core.process_all_pty_output(engine);
+            if !outcome.events.is_empty() {
+                pending.push((DispatchSource::Parked(idx), outcome.events));
+            }
+            Self::notify_resume_suspects(engine, &suspects);
+        }
+        for (source, events) in pending {
+            for ev in events {
+                self.handle_core_event_system(source, ev);
+            }
+        }
+    }
+
+    /// resume 헬스 패스가 찾은 "절전 복귀 후 응답하지 않을 수 있는" surface 들에 대해
+    /// 알림을 발행한다 (각 surface 의 workspace 로 귀속, surface highlight 포함).
+    #[cfg(all(windows, feature = "gui"))]
+    fn notify_resume_suspects(engine: &mut crate::core::CoreState, suspects: &[u32]) {
+        for &sid in suspects {
+            let ws_id = engine
+                .workspaces
+                .iter()
+                .find(|w| w.all_surface_ids().contains(&sid))
+                .map(|w| w.id)
+                .unwrap_or(0);
+            let title = crate::i18n::t("resume.suspect.title").to_string();
+            let body = crate::i18n::t("resume.suspect.body").to_string();
+            engine.notifications.add(ws_id, sid, title, body);
+        }
+    }
+
     /// 윈도우 닫기 요청을 라우팅한다 — 네이티브 `WindowEvent::CloseRequested` 와
     /// CSD titlebar close 버튼(`AppEvent::CloseWindow`)의 공통 경로.
     /// PresetView 는 즉시 닫고, MainView 가 여럿이면 해당 창만, 마지막 하나면 quit

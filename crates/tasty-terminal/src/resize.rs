@@ -319,6 +319,28 @@ impl Terminal {
         true
     }
 
+    /// Best-effort wake of a possibly-stalled child after an OS suspend/resume
+    /// (Windows ConPTY). Re-issues a `ResizePseudoConsole` at the *current* size
+    /// to nudge the child into repainting and resuming its input loop. Unlike
+    /// [`resize`](Self::resize) this bypasses the `cached_dims` no-op guard, so it
+    /// fires even though the dimensions are unchanged. Caller decides when (the
+    /// resume health pass); the crate stays platform-neutral and only no-ops when
+    /// there is no PTY. The nudge is not guaranteed to revive a fully hung child
+    /// (see ADR-0017).
+    pub fn wake_nudge(&mut self) {
+        let (cols, rows) = self.cached_dims;
+        if let Some(pty) = self.pty.as_ref()
+            && let Err(e) = pty.pty_master.resize(PtySize {
+                rows: rows as u16,
+                cols: cols as u16,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+        {
+            tracing::warn!("wake_nudge PTY resize failed: {e}");
+        }
+    }
+
     /// Force flush pending PTY resize regardless of throttle.
     pub fn force_flush_pty_resize(&mut self) {
         if let Some((cols, rows)) = self.pending_pty_resize.take() {

@@ -54,6 +54,11 @@ pub(crate) enum AppEvent {
     /// 백그라운드 스레드에서 클립보드 변경을 감지하여 데이터를 전달.
     #[cfg(feature = "gui")]
     ClipboardChanged(ClipboardData),
+    /// OS 가 절전(suspend)에서 복귀했다 (Windows `WM_POWERBROADCAST`). resume
+    /// 헬스 패스를 돌려 죽은 ConPTY 자식을 정리하고 살아있는 자식을 wake nudge
+    /// 한다 (ADR-0017). Windows 전용 — Unix PTY 는 절전에 강건해 불필요하다.
+    #[cfg(all(windows, feature = "gui"))]
+    SystemResumed,
     /// ~1초 간격 ticker. 모든 surface의 busy 상태를 다시 평가한다.
     #[cfg_attr(not(feature = "gui"), allow(dead_code))]
     BusyPoll,
