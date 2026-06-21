@@ -1,0 +1,5 @@
+# dev-pubkey.bin 은 개발자별 로컬 키 — 추적하지 않는다.
+# build.rs 가 OUT_DIR 로 staging 하며, 부재 시 all-zero placeholder 로 채운다.
+# 실제 dev 키는 scripts/gen-dev-key.sh 로 생성한다.
+# release-pubkey.bin (신뢰 루트) 은 추적 유지한다.
+/dev-pubkey.bin

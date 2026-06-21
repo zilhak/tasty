@@ -11,7 +11,8 @@
 # 생성 후 흐름:
 #   1. sign-bundle.sh 로 모든 builtin plugin manifest 서명
 #   2. dev 빌드 / cargo run 시 tasty 가 dev-pubkey.bin (임베드) 으로 자동 trust
-#   3. dev-pubkey.bin 은 git commit 안전 (공개키 = 비밀 아님)
+#   3. dev-pubkey.bin 은 추적하지 않는 로컬 전용 파일 (keys/.gitignore).
+#      build.rs 가 OUT_DIR 로 staging 하므로 커밋하지 않는다.
 
 set -euo pipefail
 
@@ -78,7 +79,7 @@ cat <<EOF
 ==> Generated Ed25519 dev keypair.
 
   Private (gitignored, chmod 600): $PRIV_PATH
-  Public  (commit safe):           $PUB_PATH
+  Public  (local, untracked):      $PUB_PATH
 
 다음 단계:
   ./scripts/sign-bundle.sh --key "$PRIV_PATH" --all-builtins

@@ -29,12 +29,14 @@ use crate::known_plugins::KnownPlugins;
 
 /// 임베드 trust 키 목록. release-pubkey + dev-pubkey 가 자동 trust.
 ///
-/// 두 키 파일 모두 `crates/tasty-host-plugin/keys/` 하위에 raw 32 byte 로 위치.
-/// 길이 mismatch 는 `include_bytes!` 가 컴파일타임에 잡는다. zeroed placeholder 는
-/// `VerifyingKey::from_bytes` 가 정상 파싱하더라도 어떤 서명도 통과시키지 못한다.
+/// 두 키는 build.rs 가 `OUT_DIR` 로 staging 한 raw 32 byte 를 가리킨다 (소스
+/// 트리 `keys/` 직접 참조 아님). `dev-pubkey.bin` 은 개발자별 로컬 키라 추적되지
+/// 않으므로, 부재 시 build.rs 가 all-zero placeholder 로 슬롯을 채워 컴파일이
+/// 깨지지 않게 한다. 자세한 배경은 `build.rs` 모듈 주석 참고. zeroed placeholder
+/// 는 `VerifyingKey::from_bytes` 가 정상 파싱하더라도 어떤 서명도 통과시키지 못한다.
 pub const TRUSTED_PUBKEYS: &[[u8; 32]] = &[
-    *include_bytes!("../keys/release-pubkey.bin"),
-    *include_bytes!("../keys/dev-pubkey.bin"),
+    *include_bytes!(concat!(env!("OUT_DIR"), "/release-pubkey.bin")),
+    *include_bytes!(concat!(env!("OUT_DIR"), "/dev-pubkey.bin")),
 ];
 
 /// 하위 호환 alias — 외부 crate 가 본 상수를 참조할 가능성에 대비.

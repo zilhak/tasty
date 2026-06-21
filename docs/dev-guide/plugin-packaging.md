@@ -35,11 +35,11 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 
 ```bash
 ./scripts/gen-dev-key.sh
-# → secrets/dev-private.pem  (600, gitignored)
-# → crates/tasty-host-plugin/keys/dev-pubkey.bin  (public 32B, commit 가능 — 본인 키로 덮어쓰고 빌드)
+# → ~/.tasty-keys/dev.pem  (600, gitignored)
+# → crates/tasty-host-plugin/keys/dev-pubkey.bin  (public 32B, 로컬 전용 — 추적 안 함)
 ```
 
-commit 된 `dev-pubkey.bin` 은 placeholder — 본인 키로 덮어쓴 뒤 `cargo build --release` 해야 dev key 서명 plugin 을 자동 trust.
+`dev-pubkey.bin` 은 개발자별 로컬 키라 **추적하지 않는다** (`keys/.gitignore`). 파일이 없어도 build.rs 가 OUT_DIR 슬롯을 all-zero placeholder 로 채워 컴파일은 안 깨지지만, dev key 서명 plugin 을 자동 trust 하려면 `gen-dev-key.sh` 로 키를 생성한 뒤 빌드해야 한다.
 
 ### 재서명 (로컬)
 
