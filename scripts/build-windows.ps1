@@ -8,7 +8,7 @@
 #
 # Output:
 #   dist\tasty-{version}-windows-x64.zip   (portable)
-#   dist\tasty-{version}-windows-x64.msi   (installer, requires WiX 3.x)
+#   dist\tasty-{version}-windows-x64.msi   (installer; cargo-wix + WiX 3.x auto-installed if missing)
 
 param(
     [switch]$Release,
@@ -244,30 +244,62 @@ if (-not $SkipMsi) {
     if ($BuildProfile -eq "debug") {
         Write-Host "  (skipping MSI for debug build)"
     } else {
+        # --- Ensure cargo-wix is installed (zero-touch, mirrors signing-key auto-gen) ---
         $cargoWix = Get-Command cargo-wix -ErrorAction SilentlyContinue
         if (-not $cargoWix) {
-            Write-Warning "cargo-wix not found. Install with: cargo install cargo-wix"
-            Write-Warning "Skipping MSI build."
-        } else {
-            # WiX 3.x (winget package WiXToolset.WiXToolset) registers the WIX
-            # environment variable but does NOT add WIX\bin to PATH, so cargo-wix
-            # can't find candle.exe / light.exe. Prepend it for this process.
-            if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
-                $wixRoot = $env:WIX
-                if (-not $wixRoot) {
-                    $wixRoot = [Environment]::GetEnvironmentVariable("WIX", "Machine")
-                }
-                $wixBin = if ($wixRoot) { Join-Path $wixRoot "bin" } else { $null }
-                if ($wixBin -and (Test-Path (Join-Path $wixBin "candle.exe"))) {
-                    $env:Path = "$wixBin;$env:Path"
-                    Write-Host "  (added $wixBin to PATH for cargo-wix)"
-                } else {
-                    Write-Warning "WiX Toolset not found. Install with: winget install WiXToolset.WiXToolset"
-                    Write-Warning "Skipping MSI build."
-                    $cargoWix = $null
-                }
+            Write-Host "==> cargo-wix not found — installing via 'cargo install cargo-wix'..."
+            cargo install cargo-wix
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "cargo install cargo-wix failed with exit code $LASTEXITCODE"
+                exit 1
+            }
+            $cargoWix = Get-Command cargo-wix -ErrorAction SilentlyContinue
+            if (-not $cargoWix) {
+                Write-Error "cargo-wix still not on PATH after install. Ensure ~\.cargo\bin is on PATH, then re-run."
+                exit 1
             }
         }
+
+        # --- Ensure WiX 3.x is installed and discoverable ---
+        # WiX 3.x (winget package WiXToolset.WiXToolset) registers the WIX
+        # environment variable but does NOT add WIX\bin to PATH, so cargo-wix
+        # can't find candle.exe / light.exe. Prepend it for this process.
+        if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            $wixRoot = $env:WIX
+            if (-not $wixRoot) {
+                $wixRoot = [Environment]::GetEnvironmentVariable("WIX", "Machine")
+            }
+            $wixBin = if ($wixRoot) { Join-Path $wixRoot "bin" } else { $null }
+
+            # Not installed yet — install via winget (zero-touch).
+            if (-not ($wixBin -and (Test-Path (Join-Path $wixBin "candle.exe")))) {
+                Write-Host "==> WiX Toolset not found — installing via winget..."
+                $winget = Get-Command winget -ErrorAction SilentlyContinue
+                if (-not $winget) {
+                    Write-Error "winget not found. Install WiX 3.x manually: winget install -e --id WiXToolset.WiXToolset"
+                    exit 1
+                }
+                & winget install -e --id WiXToolset.WiXToolset --accept-source-agreements --accept-package-agreements
+                # Don't hard-fail on winget's exit code (e.g. 'already installed'
+                # returns non-zero); the candle.exe check below is the real gate.
+                # winget registers WIX at Machine scope but not in this process —
+                # re-read it live from the registry.
+                $wixRoot = [Environment]::GetEnvironmentVariable("WIX", "Machine")
+                if (-not $wixRoot) {
+                    $wixRoot = [Environment]::GetEnvironmentVariable("WIX", "User")
+                }
+                $wixBin = if ($wixRoot) { Join-Path $wixRoot "bin" } else { $null }
+            }
+
+            if ($wixBin -and (Test-Path (Join-Path $wixBin "candle.exe"))) {
+                $env:Path = "$wixBin;$env:Path"
+                Write-Host "  (added $wixBin to PATH for cargo-wix)"
+            } else {
+                Write-Error "WiX candle.exe not found after install. The WIX env var is set at machine scope on install — open a new shell and re-run so it propagates."
+                exit 1
+            }
+        }
+
         if ($cargoWix) {
             $WixArgs = @(
                 "wix",
