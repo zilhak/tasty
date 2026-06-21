@@ -36,11 +36,12 @@ pub fn scan(pids: &HashSet<u32>) -> io::Result<Vec<ListeningPort>> {
     let pid_list: Vec<String> = pids.iter().map(|p| p.to_string()).collect();
     let pid_arg = pid_list.join(",");
 
-    // -F pPnT — fields: p (pid), n (name e.g. *:8080), T (TCP state).
-    // We use the default human-readable output for simplicity; structured `-F` parsing
-    // is fiddly because each record is on a separate line.
+    // `-a` 는 필수: lsof 는 선택 조건(`-iTCP`, `-p`)을 기본 **OR** 로 결합한다.
+    // `-a` 없이는 "모든 TCP 소켓" OR "이 pid 들의 파일" = 사실상 전체 시스템 TCP 가
+    // 반환되어 pid 필터가 무력화된다(전체보기 OFF 가 전체 포트를 보이던 버그).
+    // `-a` 로 AND 결합 → 정확히 "이 pid 들이 소유한 TCP 소켓" 만.
     let output = Command::new("lsof")
-        .args(["-nP", "-iTCP", "-p", &pid_arg])
+        .args(["-nP", "-a", "-iTCP", "-p", &pid_arg])
         .output()?;
     // lsof returns 1 when *some* pids have no matching descriptors; treat
     // non-empty stdout as success regardless of exit code.
