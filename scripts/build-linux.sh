@@ -66,16 +66,86 @@ for lib in freetype2 fontconfig; do
     fi
 done
 # libxdo (tray-icon → muda) has no reliable .pc file and ships only the runtime
-# .so.N without the dev symlink unless libxdo-dev is installed. Probe the linker
-# directly so this works on any arch (the -L search path differs per arch, but
-# `cc -lxdo` resolves it the same way the real build link step does).
+# .so.N without the dev symlink unless the dev package is installed. Probe the
+# linker directly so this works on any arch (the -L search path differs per
+# arch, but `cc -lxdo` resolves it the same way the real build link step does).
 if ! echo 'int main(void){return 0;}' | cc -xc - -lxdo -o /dev/null 2>/dev/null; then
-    MISSING_DEPS+=("libxdo-dev")
+    MISSING_DEPS+=("libxdo")
 fi
+
 if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+    # Detect the distro package manager. Package names differ across distros
+    # (e.g. libxdo-dev / libxdo-devel / xdotool), so map each dep per manager.
+    PKG_MGR=""
+    for m in apt-get dnf pacman zypper; do
+        if command -v "$m" &>/dev/null; then PKG_MGR="$m"; break; fi
+    done
+    pkg_name_for() {
+        case "$PKG_MGR:$1" in
+            *:cmake) echo cmake ;;
+            apt-get:pkg-config|zypper:pkg-config) echo pkg-config ;;
+            dnf:pkg-config) echo pkgconf-pkg-config ;;
+            pacman:pkg-config) echo pkgconf ;;
+            apt-get:freetype2) echo libfreetype6-dev ;;
+            dnf:freetype2)     echo freetype-devel ;;
+            pacman:freetype2)  echo freetype2 ;;
+            zypper:freetype2)  echo freetype2-devel ;;
+            apt-get:fontconfig) echo libfontconfig1-dev ;;
+            dnf:fontconfig)     echo fontconfig-devel ;;
+            pacman:fontconfig)  echo fontconfig ;;
+            zypper:fontconfig)  echo fontconfig-devel ;;
+            apt-get:libxdo)        echo libxdo-dev ;;
+            dnf:libxdo|zypper:libxdo) echo libxdo-devel ;;
+            pacman:libxdo)         echo xdotool ;;
+            *) echo "" ;;
+        esac
+    }
+
+    PKGS=()
+    UNMAPPED=()
+    for key in "${MISSING_DEPS[@]}"; do
+        name="$(pkg_name_for "$key")"
+        if [[ -n "$name" ]]; then PKGS+=("$name"); else UNMAPPED+=("$key"); fi
+    done
+
     echo "Error: Missing build dependencies: ${MISSING_DEPS[*]}" >&2
-    echo "  Install with: sudo apt install cmake pkg-config libfreetype6-dev libfontconfig1-dev libxdo-dev" >&2
-    exit 1
+
+    # Resolve privilege escalation (root needs none; non-root needs sudo).
+    SUDO=""
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        command -v sudo &>/dev/null && SUDO="sudo"
+    fi
+
+    # Build the install command for the detected manager.
+    INSTALL_ARGS=()
+    case "$PKG_MGR" in
+        apt-get) INSTALL_ARGS=(apt-get install -y "${PKGS[@]}") ;;
+        dnf)     INSTALL_ARGS=(dnf install -y "${PKGS[@]}") ;;
+        pacman)  INSTALL_ARGS=(pacman -S --noconfirm "${PKGS[@]}") ;;
+        zypper)  INSTALL_ARGS=(zypper install -y "${PKGS[@]}") ;;
+    esac
+    SHOW="${SUDO:+sudo }${INSTALL_ARGS[*]}"
+
+    # Offer to install only with a known manager, a fully mapped package set, an
+    # interactive TTY, and a usable privilege path. Otherwise (CI / unknown
+    # distro / no sudo) print a manual hint and exit.
+    if [[ -n "$PKG_MGR" && ${#UNMAPPED[@]} -eq 0 && -t 0 \
+          && ( -n "$SUDO" || "${EUID:-$(id -u)}" -eq 0 ) ]]; then
+        printf "  Install now? [%s] [y/N] " "$SHOW" >&2
+        read -r reply || reply=""
+        if [[ "$reply" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+            echo "==> $SHOW"
+            if [[ -n "$SUDO" ]]; then sudo "${INSTALL_ARGS[@]}"; else "${INSTALL_ARGS[@]}"; fi \
+                || { echo "Error: dependency install failed." >&2; exit 1; }
+        else
+            echo "  Aborted. Run: $SHOW" >&2
+            exit 1
+        fi
+    else
+        echo "  Install with your package manager, e.g.: sudo apt install ${PKGS[*]:-${MISSING_DEPS[*]}}" >&2
+        [[ ${#UNMAPPED[@]} -gt 0 ]] && echo "  (no package mapping for: ${UNMAPPED[*]})" >&2
+        exit 1
+    fi
 fi
 
 # Discover signing key BEFORE cargo build — so that any newly generated
