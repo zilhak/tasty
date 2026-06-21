@@ -1,0 +1,2 @@
+# Ed25519 raw pubkey 들 — git 이 텍스트로 오인해 CRLF 변환하면 키가 손상된다.
+crates/tasty-host-plugin/keys/*.bin binary
