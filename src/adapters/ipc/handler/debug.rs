@@ -416,3 +416,25 @@ pub(super) fn handle_debug_inject_key(
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
     }
 }
+
+/// 워크스페이스 활성 전환 — 사용자의 포커스 조작(워크스페이스 전환) 재현. release 미노출.
+/// `active_workspace` 인덱스 변경뿐이라 OS 의존성 없음.
+pub(super) fn handle_debug_switch_workspace(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let index = match params.get("index").and_then(|v| v.as_u64()) {
+        Some(i) => i as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
+    };
+    if index >= engine.workspaces.len() {
+        return JsonRpcResponse::invalid_params(
+            id,
+            format!("Workspace index {index} out of range"),
+        );
+    }
+    state.switch_workspace(engine, index);
+    JsonRpcResponse::success(id, json!({"switched": true, "active": index}))
+}

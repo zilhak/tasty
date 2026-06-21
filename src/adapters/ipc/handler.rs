@@ -718,6 +718,7 @@ fn route_debug_handler(
         }
         #[cfg(feature = "gui")]
         "debug.inject_key" => debug::handle_debug_inject_key(state, engine, id, &request.params),
+        #[cfg(feature = "gui")]
         "debug.switch_workspace" => {
             debug::handle_debug_switch_workspace(state, engine, id, &request.params)
         }
