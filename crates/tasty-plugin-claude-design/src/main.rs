@@ -9,15 +9,19 @@
 //! `tasty-plugin-sdk` 만 사용한다.
 //!
 //! 설계: `.claude-workspace/plans/claude-design-plugin.md`.
-//! 현재 단계: M1 — 크레이트 골격 + 매니페스트 + i18n. 각 핸들러는 후속 마일스톤에서 구현.
+//! 현재 단계: M2 — 시스템 런타임 탐지(`design.detect` / `design.status`). 나머지
+//! 핸들러(login/projects/chat)는 후속 마일스톤에서 구현.
 
-use serde_json::Value;
+mod detect;
+
+use detect::RuntimeDetection;
+use serde_json::{Value, json};
 use tasty_plugin_sdk::{
     IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.0";
+const PLUGIN_VERSION: &str = "0.1.1";
 
 struct ClaudeDesignPlugin;
 
@@ -53,9 +57,9 @@ impl Plugin for ClaudeDesignPlugin {
         // 단계별로 안전하다 (claude plugin 의 step 분할 패턴과 동일).
         match ctx.method.as_str() {
             // M2: 시스템 Playwright/node/chromium 탐지.
-            "design.detect" => Err(not_yet("design.detect", "M2")),
-            // M2: 런타임·runner·로그인·CF·attach 상태 보고.
-            "design.status" => Err(not_yet("design.status", "M2")),
+            "design.detect" => Ok(handle_detect()),
+            // M2: 런타임 + (후속) runner·로그인·CF·attach 상태 보고.
+            "design.status" => Ok(handle_status()),
             // M4: 헤드풀 1회 로그인 → storageState → keyring.
             "design.login" => Err(not_yet("design.login", "M4")),
             // M5: ListProjects 위임.
@@ -65,6 +69,34 @@ impl Plugin for ClaudeDesignPlugin {
             other => Err(IpcMethodError::not_found(other)),
         }
     }
+}
+
+/// `design.detect` — 시스템 Playwright/node/chromium 을 탐지해 경로를 보고한다.
+/// 설정 UI 의 "자동 감지" 버튼 백엔드이기도 하다 (설계 §4·§12).
+fn handle_detect() -> Value {
+    let det = RuntimeDetection::run();
+    let mut out = det.to_json();
+    out["runtime"] = Value::String(det.runtime_status());
+    out
+}
+
+/// `design.status` — 런타임 탐지 결과 + 후속 마일스톤 상태를 보고한다.
+///
+/// M2 시점에 runner(M3)·login(M4)·CF(M3+)·project(M4/M5)는 아직 구현 전이므로
+/// 거짓 성공 대신 명시적 미구현 상태로 보고한다 (main.rs `not_yet` 스텁과 동일 철학).
+fn handle_status() -> Value {
+    let det = RuntimeDetection::run();
+    json!({
+        "runtime": det.runtime_status(),
+        "node": det.to_json()["node"],
+        "playwright": det.to_json()["playwright"],
+        "chromium": det.to_json()["chromium"],
+        // 후속 마일스톤. 아직 가동/연결되지 않았음을 명시 (거짓 false 아님).
+        "runner": "not_implemented",   // M3
+        "logged_in": "not_implemented", // M4
+        "cf_ok": "not_implemented",     // M3+
+        "project": Value::Null,         // M4/M5
+    })
 }
 
 /// 후속 마일스톤에서 구현될 메서드의 임시 응답. 빈 핸들러가 조용히 성공한 것처럼
