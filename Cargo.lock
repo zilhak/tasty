@@ -5501,6 +5501,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "egui_extras",
+ "png 0.18.1",
  "pollster",
  "tasty-egui-theme",
  "tasty-themes",
