@@ -27,3 +27,4 @@
 | 0015 | [원격 접속 프로필 = 범용 typed 레지스트리, attach 는 소비자](0015-remote-profiles-typed-registry.md) | Accepted | 2026-06-19 | remote, profile, registry, attach, ssh, smb, extensibility, plugin, ubiquitous-language |
 | 0016 | [Passkey 저장소 — path 수렴 · 파일권한 위임 · 참조 모델](0016-passkey-store-path-convergence.md) | Accepted | 2026-06-19 | passkey, secret, security, file-permission, trust-boundary, remote-profile |
 | 0017 | [Windows 절전(suspend/resume) 후 PTY 헬스 복구는 Windows 전용](0017-windows-suspend-resume-pty-recovery.md) | Accepted | 2026-06-21 | pty, conpty, suspend, resume, power-management, windows, platform, lifecycle, terminal, cross-platform |
+| 0018 | [Claude Design 세션 자격증명은 평문으로 저장한다](0018-claude-design-auth-at-rest-plaintext.md) | Accepted | 2026-06-22 | claude-design, plugin, secret, security, encryption, auth, trust-boundary |

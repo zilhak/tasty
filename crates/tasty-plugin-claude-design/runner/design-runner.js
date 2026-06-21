@@ -29,6 +29,9 @@ let playwright = null;
 let browser = null;
 let context = null;
 let page = null;
+// 파싱된 storageState 객체(또는 null). set_auth 로 주입되며 ensureBrowser 가
+// newContext 에 사용한다. 디스크엔 plugin(Rust auth.rs)이 평문 저장(ADR-0018).
+let authState = null;
 
 function log(...args) {
   process.stderr.write(`[design-runner] ${args.join(' ')}\n`);
@@ -55,7 +58,10 @@ async function ensureBrowser() {
     headless: false,
     args: OFFSCREEN_ARGS,
   });
-  context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctxOpts = { viewport: { width: 1280, height: 800 } };
+  // 저장된 로그인 세션이 있으면 주입 — CF 통과 + 로그인 유지(조사 §6 Test 3).
+  if (authState) ctxOpts.storageState = authState;
+  context = await browser.newContext(ctxOpts);
   page = await context.newPage();
   log('browser ready');
 }
@@ -116,6 +122,60 @@ async function handle(req) {
         send({ id, kind: 'status', ...info });
       } catch (e) {
         send({ id, kind: 'error', code: 'probe_failed', message: e.message });
+      }
+      break;
+    }
+
+    case 'set_auth': {
+      // 저장된(또는 비우는) 세션을 주입. 떠 있는 컨텍스트는 닫아 다음 기동 때
+      // 새 auth 로 재생성한다.
+      try {
+        authState = req.storage_state ? JSON.parse(req.storage_state) : null;
+        if (context) {
+          await context.close();
+          context = null;
+          page = null;
+        }
+        send({ id, kind: 'ok' });
+      } catch (e) {
+        send({ id, kind: 'error', code: 'bad_auth', message: e.message });
+      }
+      break;
+    }
+
+    case 'login': {
+      // 사용자가 직접 로그인해야 하므로 화면 안(visible)에 별도 브라우저를 띄운다.
+      // 상주 off-screen 브라우저와 독립. 로그인 완료를 폴링해 storageState 를 추출.
+      let loginBrowser = null;
+      try {
+        const pw = loadPlaywright();
+        loginBrowser = await pw.chromium.launch({ headless: false });
+        const lctx = await loginBrowser.newContext({ viewport: { width: 1280, height: 900 } });
+        const lpage = await lctx.newPage();
+        await lpage.goto(DESIGN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        log('login: waiting for user to authenticate (up to 5 min)...');
+        const deadline = Date.now() + 5 * 60 * 1000;
+        let ok = false;
+        while (Date.now() < deadline) {
+          await lpage.waitForTimeout(1000);
+          let url = '';
+          try { url = lpage.url(); } catch (_) { /* navigating */ }
+          // design 앱 도달(로그인 페이지 아님) = 로그인 성공.
+          if (/\/design/i.test(url) && !/\/login|\/sign-in|\/auth/i.test(url)) { ok = true; break; }
+        }
+        if (!ok) {
+          await loginBrowser.close();
+          send({ id, kind: 'login_needed', message: 'login not completed within timeout' });
+          break;
+        }
+        await lpage.waitForTimeout(1500); // 세션 쿠키 정착 대기.
+        const state = await lctx.storageState();
+        await loginBrowser.close();
+        authState = state; // 즉시 사용 가능하게.
+        send({ id, kind: 'login_ok', storage_state: JSON.stringify(state) });
+      } catch (e) {
+        try { if (loginBrowser) await loginBrowser.close(); } catch (_) { /* ignore */ }
+        send({ id, kind: 'error', code: 'login_failed', message: e.message });
       }
       break;
     }

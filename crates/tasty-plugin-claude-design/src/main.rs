@@ -1,6 +1,6 @@
 //! Tasty Claude Design plugin — `claude.ai/design` 캔버스 통합 (외부 plugin).
 //!
-//! `tasty design login|status|projects|detect|probe|chat` CLI 세트를 제공한다.
+//! `tasty design login|logout|status|projects|detect|probe|chat` CLI 세트를 제공한다.
 //! **시스템에 이미 설치된** Playwright(off-screen 헤드풀)를 자식 프로세스로 띄워
 //! `claude.ai/design` 에 attach 하고 Omelette RPC 로 Chat 을 주고받는다.
 //!
@@ -9,13 +9,14 @@
 //! `tasty-plugin-sdk` 만 사용한다.
 //!
 //! 설계: `.claude-workspace/plans/claude-design-plugin.md`.
-//! 현재 단계: M3 — 자식 node 런너 감독 + off-screen 헤드풀 기동(`design.probe`).
-//! login/projects/chat 은 후속 마일스톤.
+//! 현재 단계: M4 — 로그인 + 자격증명 저장(평문, ADR-0018). chat 은 M5.
 
+mod auth;
 mod detect;
 mod runner;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use detect::RuntimeDetection;
 use runner::{PROBE_TIMEOUT, Runner};
@@ -26,13 +27,17 @@ use tasty_plugin_sdk::{
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.2"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.3"; // tasty-plugin.toml / Cargo.toml 과 일치
+
+/// 로그인은 사용자가 브라우저에서 직접 인증해야 하므로 최대 대기를 길게 둔다.
+/// runner JS 의 폴링 한계(5분)보다 약간 길게 잡아 마지막 응답을 받는다.
+const LOGIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(330);
 
 struct ClaudeDesignPlugin {
-    /// 자식 node 런너. on_start 에서 런타임이 갖춰져 있으면 기동한다. 런타임 부재/
-    /// 기동 실패 시 `None` 으로 두고, design.* 호출 시 명시적 에러로 안내한다.
-    runner: Option<Runner>,
-    /// 임베드 런너 스크립트를 기록할 위치. 호스트가 `TASTY_PLUGIN_DATA_DIR` 로 주입.
+    /// 자식 node 런너. Arc 로 보관해 비동기 로그인 thread 와 공유한다(런너 프로토콜은
+    /// id 기반이라 동시 in-flight 요청 안전).
+    runner: Option<Arc<Runner>>,
+    /// 임베드 런너 스크립트 기록 + auth.json 저장 위치. 호스트가 주입.
     data_dir: Option<PathBuf>,
 }
 
@@ -44,9 +49,9 @@ impl ClaudeDesignPlugin {
         }
     }
 
-    /// 런너가 살아있으면 그대로, 죽었거나 없으면 (재)기동한다. 런타임 부재 시 Err.
-    fn ensure_runner(&mut self) -> Result<&Runner, IpcMethodError> {
-        let alive = self.runner.as_ref().is_some_and(Runner::is_alive);
+    /// 런너가 살아있으면 그 Arc 를, 죽었거나 없으면 (재)기동한다. 런타임 부재 시 Err.
+    fn ensure_runner(&mut self) -> Result<Arc<Runner>, IpcMethodError> {
+        let alive = self.runner.as_ref().is_some_and(|r| r.is_alive());
         if !alive {
             self.runner = None;
             let det = RuntimeDetection::run();
@@ -58,12 +63,14 @@ impl ClaudeDesignPlugin {
             let data_dir = self.data_dir.clone().ok_or_else(|| {
                 IpcMethodError::new("TASTY_PLUGIN_DATA_DIR not set — cannot materialize runner")
             })?;
-            match Runner::start(&det, &data_dir) {
-                Ok(r) => self.runner = Some(r),
-                Err(e) => return Err(IpcMethodError::new(format!("runner start failed: {e}"))),
-            }
+            let runner = Runner::start(&det, &data_dir)
+                .map_err(|e| IpcMethodError::new(format!("runner start failed: {e}")))?;
+            let runner = Arc::new(runner);
+            // 저장된 세션이 있으면 런너에 주입.
+            inject_saved_auth(&runner, &data_dir);
+            self.runner = Some(runner);
         }
-        Ok(self.runner.as_ref().expect("runner just ensured"))
+        Ok(Arc::clone(self.runner.as_ref().expect("runner just ensured")))
     }
 }
 
@@ -77,9 +84,8 @@ impl Plugin for ClaudeDesignPlugin {
     }
 
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        // 자체 surface_kind 를 등록하지 않는다 — 이 plugin 은 CLI/IPC 만 노출하며
-        // 브라우저 자동화는 자식 node 프로세스가 담당한다. 매니페스트에
-        // surface_kinds 가 없으므로 이 콜백은 호출되지 않는다.
+        // 자체 surface_kind 를 등록하지 않는다 — CLI/IPC 만 노출하며 브라우저 자동화는
+        // 자식 node 프로세스가 담당한다. 이 콜백은 호출되지 않는다.
         SurfaceResult::default()
     }
 
@@ -87,9 +93,8 @@ impl Plugin for ClaudeDesignPlugin {
         SurfaceResult::default()
     }
 
-    /// 부트스트랩 후 1회. 런타임이 갖춰져 있으면 런너를 미리 기동해 둔다(브라우저는
-    /// lazy — 런너 node 프로세스만 상주). 런타임이 없으면 조용히 건너뛰고 status/
-    /// probe 호출 시 안내한다.
+    /// 부트스트랩 후 1회. 런타임이 갖춰져 있으면 런너를 상주 기동하고 저장된 세션을
+    /// 주입한다(브라우저는 lazy). 런타임 부재 시 건너뛰고 호출 시 안내한다.
     fn on_start(&mut self, _host: HostHandle, _bus: BusHandle) {
         let det = RuntimeDetection::run();
         if det.missing().is_some() {
@@ -101,8 +106,14 @@ impl Plugin for ClaudeDesignPlugin {
             return;
         };
         match Runner::start(&det, &data_dir) {
-            Ok(r) => self.runner = Some(r),
-            Err(e) => tracing::warn!(error = %e, "runner start at on_start failed — will retry on demand"),
+            Ok(r) => {
+                let runner = Arc::new(r);
+                inject_saved_auth(&runner, &data_dir);
+                self.runner = Some(runner);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "runner start at on_start failed — will retry on demand")
+            }
         }
     }
 
@@ -110,12 +121,14 @@ impl Plugin for ClaudeDesignPlugin {
         match ctx.method.as_str() {
             // M2: 시스템 Playwright/node/chromium 탐지.
             "design.detect" => Ok(handle_detect()),
-            // M3: 런타임 탐지 + 런너 상태 보고.
+            // M3: 런타임 탐지 + 런너/세션 상태.
             "design.status" => Ok(self.handle_status()),
-            // M3: off-screen 헤드풀 기동 → claude.ai/design 도달성/CF 통과 진단.
+            // M3: off-screen 헤드풀 → claude.ai/design 도달성/CF 진단.
             "design.probe" => self.handle_probe(),
-            // M4: 헤드풀 1회 로그인 → storageState → keyring.
-            "design.login" => Err(not_yet("design.login", "M4")),
+            // M4: 화면 안 헤드풀로 사용자 로그인 → storageState 저장(비동기).
+            "design.login" => self.handle_login(),
+            // M4: 저장된 세션 삭제.
+            "design.logout" => self.handle_logout(),
             // M5: ListProjects 위임.
             "design.projects" => Err(not_yet("design.projects", "M5")),
             // M5: Chat 전송 + 스트림 응답.
@@ -126,20 +139,23 @@ impl Plugin for ClaudeDesignPlugin {
 }
 
 impl ClaudeDesignPlugin {
-    /// `design.status` — 런타임 탐지 + 런너 상태. 부작용 없음(브라우저 강제 기동 안 함).
+    /// `design.status` — 런타임 탐지 + 런너 + 저장 세션 상태. 부작용 없음.
     fn handle_status(&mut self) -> Value {
         let det = RuntimeDetection::run();
         let detail = det.to_json();
+        let stored_auth = self
+            .data_dir
+            .as_ref()
+            .is_some_and(|d| auth::has_auth(d));
         let mut out = json!({
             "runtime": det.runtime_status(),
             "node": detail["node"],
             "playwright": detail["playwright"],
             "chromium": detail["chromium"],
-            "project": Value::Null, // M4/M5
+            "stored_auth": stored_auth, // 디스크에 저장된 로그인 세션 존재 여부.
+            "project": Value::Null,     // M5
         });
 
-        // 런너가 살아있으면 cheap status op 으로 브라우저/로그인/CF 상태를 묻는다.
-        // (브라우저는 강제로 띄우지 않는다 — probe/login/chat 에서만 기동.)
         match self.runner.as_ref().filter(|r| r.is_alive()) {
             Some(r) => match r.request("status", json!({}), runner::DEFAULT_OP_TIMEOUT) {
                 Ok(msg) => {
@@ -160,18 +176,94 @@ impl ClaudeDesignPlugin {
         out
     }
 
-    /// `design.probe` — off-screen 헤드풀을 실제로 띄워 claude.ai/design 도달성과
-    /// Cloudflare 통과를 진단한다(자격증명 불필요). M3 end-to-end 검증 + 운영 진단용.
+    /// `design.probe` — off-screen 헤드풀 도달성/CF 진단(자격증명 불필요).
     fn handle_probe(&mut self) -> Result<Value, IpcMethodError> {
         let runner = self.ensure_runner()?;
         runner
             .request("probe", json!({}), PROBE_TIMEOUT)
             .map_err(IpcMethodError::new)
     }
+
+    /// `design.login` — 화면 안 브라우저를 열어 사용자가 직접 로그인하게 하고, 완료되면
+    /// storageState 를 디스크에 저장한다. 로그인 대기는 수 분이 걸릴 수 있어 **백그라운드
+    /// thread** 에서 처리하고 즉시 반환한다(핸들러가 막히면 호스트 health ping 이 끊긴다).
+    /// 사용자는 로그인 후 `tasty design status` 로 결과를 확인한다.
+    fn handle_login(&mut self) -> Result<Value, IpcMethodError> {
+        let runner = self.ensure_runner()?;
+        let data_dir = self
+            .data_dir
+            .clone()
+            .ok_or_else(|| IpcMethodError::new("TASTY_PLUGIN_DATA_DIR not set"))?;
+
+        std::thread::Builder::new()
+            .name("design-login".into())
+            .spawn(move || run_login(runner, data_dir))
+            .map_err(|e| IpcMethodError::new(format!("spawn login thread failed: {e}")))?;
+
+        Ok(json!({
+            "kind": "login_started",
+            "message": "A browser window opened. Complete the login there, then run `tasty design status` to confirm.",
+        }))
+    }
+
+    /// `design.logout` — 저장된 세션을 삭제하고 런너의 in-memory auth 도 비운다.
+    fn handle_logout(&mut self) -> Result<Value, IpcMethodError> {
+        let data_dir = self
+            .data_dir
+            .clone()
+            .ok_or_else(|| IpcMethodError::new("TASTY_PLUGIN_DATA_DIR not set"))?;
+        auth::clear_auth(&data_dir)
+            .map_err(|e| IpcMethodError::new(format!("clear auth failed: {e}")))?;
+        if let Some(runner) = self.runner.as_ref().filter(|r| r.is_alive())
+            && let Err(e) =
+                runner.request("set_auth", json!({ "storage_state": null }), runner::DEFAULT_OP_TIMEOUT)
+        {
+            tracing::warn!(error = %e, "runner set_auth(null) on logout failed");
+        }
+        Ok(json!({ "ok": true }))
+    }
 }
 
-/// `design.detect` — 시스템 Playwright/node/chromium 을 탐지해 경로를 보고한다.
-/// 설정 UI 의 "자동 감지" 버튼 백엔드이기도 하다 (설계 §4·§12).
+/// 저장된 storageState 를 런너에 주입(set_auth). 없으면 no-op.
+fn inject_saved_auth(runner: &Runner, data_dir: &Path) {
+    match auth::load_auth(data_dir) {
+        Ok(Some(state)) => {
+            if let Err(e) =
+                runner.request("set_auth", json!({ "storage_state": state }), runner::DEFAULT_OP_TIMEOUT)
+            {
+                tracing::warn!(error = %e, "inject saved auth failed");
+            } else {
+                tracing::info!("saved design session injected into runner");
+            }
+        }
+        Ok(None) => {}
+        Err(e) => tracing::warn!(error = %e, "load saved auth failed"),
+    }
+}
+
+/// 백그라운드 로그인: runner 에 login op 를 보내 사용자 인증을 기다리고, 성공하면
+/// storageState 를 디스크에 저장한다(런너 JS 가 자기 in-memory authState 도 갱신).
+fn run_login(runner: Arc<Runner>, data_dir: PathBuf) {
+    match runner.request("login", json!({}), LOGIN_TIMEOUT) {
+        Ok(msg) => match msg.get("kind").and_then(Value::as_str) {
+            Some("login_ok") => {
+                let Some(state) = msg.get("storage_state").and_then(Value::as_str) else {
+                    tracing::error!("login_ok without storage_state");
+                    return;
+                };
+                match auth::save_auth(state, &data_dir) {
+                    Ok(()) => tracing::info!("design login captured and saved"),
+                    Err(e) => tracing::error!(error = %e, "save auth failed after login"),
+                }
+            }
+            Some("login_needed") => tracing::warn!("design login not completed within timeout"),
+            other => tracing::warn!(?other, "unexpected login response kind"),
+        },
+        Err(e) => tracing::error!(error = %e, "design login op failed"),
+    }
+}
+
+/// `design.detect` — 시스템 Playwright/node/chromium 탐지. 설정 UI "자동 감지" 백엔드(§12).
 fn handle_detect() -> Value {
     let det = RuntimeDetection::run();
     let mut out = det.to_json();
@@ -179,8 +271,7 @@ fn handle_detect() -> Value {
     out
 }
 
-/// 후속 마일스톤에서 구현될 메서드의 임시 응답. 빈 핸들러가 조용히 성공한 것처럼
-/// 보이지 않도록 명시적 에러를 돌려 호출자(CLI/에이전트)가 미구현임을 알 수 있게 한다.
+/// 후속 마일스톤 미구현 메서드의 명시적 에러(빈 핸들러가 조용히 성공한 척하지 않게).
 fn not_yet(method: &str, milestone: &str) -> IpcMethodError {
     IpcMethodError::new(format!("{method} is not implemented yet (planned for {milestone})"))
 }

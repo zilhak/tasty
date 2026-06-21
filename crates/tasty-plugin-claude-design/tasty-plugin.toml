@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude-design"
 name = "Claude Design"
-version = "0.1.2"
+version = "0.1.3"
 description = "Claude Design (claude.ai/design) canvas integration for Tasty"
 api_version = "1"
 permissions = [
@@ -27,8 +27,9 @@ name = "design"
 description = "Claude Design canvas integration (login, chat, status)"
 description_i18n_key = "design.cli.desc"
 subcommands = [
-    { name = "login",    ipc_method = "design.login",    args = "no_args",   description = "Open a headful browser once to log in; store auth into the OS keyring" },
-    { name = "status",   ipc_method = "design.status",   args = "no_args",   description = "Show runtime / login / session / Cloudflare-pass / runner state" },
+    { name = "login",    ipc_method = "design.login",    args = "no_args",   description = "Open a visible browser to log in; capture and store the session (plaintext file, ADR-0018). Returns immediately; check `design status`." },
+    { name = "logout",   ipc_method = "design.logout",   args = "no_args",   description = "Delete the stored Claude Design session" },
+    { name = "status",   ipc_method = "design.status",   args = "no_args",   description = "Show runtime / stored-session / runner / Cloudflare-pass state" },
     { name = "projects", ipc_method = "design.projects", args = "no_args",   description = "List Claude Design projects" },
     { name = "detect",   ipc_method = "design.detect",   args = "no_args",   description = "Auto-detect system Playwright / node / chromium and report paths" },
     { name = "probe",    ipc_method = "design.probe",    args = "no_args",   description = "Launch an off-screen headful browser and check claude.ai/design reachability + Cloudflare pass (no credentials needed)" },
