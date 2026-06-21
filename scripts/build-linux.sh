@@ -65,9 +65,16 @@ for lib in freetype2 fontconfig; do
         MISSING_DEPS+=("$lib")
     fi
 done
+# libxdo (tray-icon → muda) has no reliable .pc file and ships only the runtime
+# .so.N without the dev symlink unless libxdo-dev is installed. Probe the linker
+# directly so this works on any arch (the -L search path differs per arch, but
+# `cc -lxdo` resolves it the same way the real build link step does).
+if ! echo 'int main(void){return 0;}' | cc -xc - -lxdo -o /dev/null 2>/dev/null; then
+    MISSING_DEPS+=("libxdo-dev")
+fi
 if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
     echo "Error: Missing build dependencies: ${MISSING_DEPS[*]}" >&2
-    echo "  Install with: sudo apt install cmake pkg-config libfreetype6-dev libfontconfig1-dev" >&2
+    echo "  Install with: sudo apt install cmake pkg-config libfreetype6-dev libfontconfig1-dev libxdo-dev" >&2
     exit 1
 fi
 
