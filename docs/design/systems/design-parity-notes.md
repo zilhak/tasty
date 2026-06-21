@@ -184,3 +184,30 @@ rest/hover/active/focus/disabled **정지 상태가 canonical** — 파리티는
 갤러리는 IPC 스크린샷이 없고 OS 캡처는 권한 불가 → 본체 격리 인스턴스
 (`HOME=tmp ./target/debug/tasty --launch`, debug 포트 `tasty-debug.port`) + `ui.screenshot`
 JSON-RPC + `debug.host_popup.open` 으로 검증. primitive 는 본체 팝업에 adopt 한 뒤 대조한다.
+
+## 팝업 — egui Area 미등록 → ScrollArea 스크롤 불가 + 클립 누출 (2026-06-21)
+
+팝업 콘텐츠가 bare `Ui::new(layer_id)` 라 **egui Area 미등록** → `Memory::layer_id_at`
+이 팝업 레이어를 못 찾음 → `ScrollArea::ui_contains_pointer()`=false → **휠/드래그
+스크롤 입력 무시**(모든 팝업 공통). 위젯 클릭은 widget hit-test(다른 경로)라 정상이라
+"클릭은 되는데 스크롤만 안 됨" 으로 드러난다.
+
+수정: 콘텐츠를 동일 layer_id 의 `egui::Area`(movable(false)+sense(hover))로 등록.
+부수 함정 2개:
+- Area 는 콘텐츠에 auto-shrink → footer(allocate_new_ui 별도 배치)가 빠져 hit-rect 가
+  줄어 layer_id_at 이 팝업 하단을 못 잡음 → `set_min_size(content_rect)` 로 강제.
+- `Ui::new(max_rect(r))` 는 clip_rect=r 였지만 Area 는 기본 clip 이 더 넓음 → State 컬럼
+  긴 라벨(ESTABLISHED)·선택 하이라이트·스크롤바가 팝업 경계 밖으로 누출 →
+  `set_clip_rect(content_rect)` 로 클립 복원.
+
+검증은 스크롤 주입 수단이 없어 `ctx.layer_id_at(content중심)` 이 Background→팝업
+Foreground area 로 전환됨을 로깅으로 확인(기계적 증명) + 팝업 스크린샷 z-order 회귀 확인.
+상세 아키텍처: [`dev-guide/popup-implementation.md`](../../dev-guide/popup-implementation.md) "콘텐츠 레이어".
+
+## port_scanner — State 컬럼 긴 라벨(ESTABLISHED)이 140px 초과 (폰트 메트릭, 클립으로 가림)
+
+State 컬럼 `Column::exact(140)` + `.clip(true)` 미적용. tasty 폰트가 디자인보다 넓어
+가장 긴 상태값(`ESTABLISHED`)이 140 을 넘쳐 셀 밖으로 그려진다. 팝업 클립이 이를 경계
+에서 자르므로(위 항목) "ESTABL" 로 보인다. 디자인 스펙은 140 이나 디자인 mockup 상태값은
+LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 flex(addr/proc)에서
+양보해야 하며, 이는 폰트 메트릭 보정(디자인 변경 아님). 현재는 디자인 140 유지 + 클립.
