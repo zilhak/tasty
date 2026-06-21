@@ -401,6 +401,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.tasty-plugin-claude]
 opt-level = 3
+[profile.dev.package.tasty-plugin-claude-design]
+opt-level = 3
 [profile.dev.package.tasty-plugin-clipboard-history]
 opt-level = 3
 [profile.dev.package.tasty-plugin-codex]
