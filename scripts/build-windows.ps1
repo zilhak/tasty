@@ -271,17 +271,32 @@ if (-not $SkipMsi) {
             }
             $wixBin = if ($wixRoot) { Join-Path $wixRoot "bin" } else { $null }
 
-            # Not installed yet — install via winget (zero-touch).
+            # Not installed yet — install via winget. WiX 3.14 REQUIRES admin:
+            # it enables the NetFx3 Windows feature (DISM) and installs at machine
+            # scope, neither of which a non-elevated shell can do. Self-elevate
+            # just the install via UAC, then return here. A single UAC click is
+            # the minimum Windows allows — there is no silent/no-prompt path.
             if (-not ($wixBin -and (Test-Path (Join-Path $wixBin "candle.exe")))) {
-                Write-Host "==> WiX Toolset not found — installing via winget..."
+                Write-Host "==> WiX Toolset not found — installing via winget (a UAC admin prompt will appear)..."
                 $winget = Get-Command winget -ErrorAction SilentlyContinue
                 if (-not $winget) {
                     Write-Error "winget not found. Install WiX 3.x manually: winget install -e --id WiXToolset.WiXToolset"
                     exit 1
                 }
-                & winget install -e --id WiXToolset.WiXToolset --accept-source-agreements --accept-package-agreements
-                # Don't hard-fail on winget's exit code (e.g. 'already installed'
+                # Elevated child: enable NetFx3 (WiX 3.x dependency) then install WiX.
+                $elevCmd = 'Enable-WindowsOptionalFeature -Online -FeatureName NetFx3 -All -NoRestart -ErrorAction SilentlyContinue | Out-Null; winget install -e --id WiXToolset.WiXToolset --accept-source-agreements --accept-package-agreements; exit $LASTEXITCODE'
+                try {
+                    $proc = Start-Process -FilePath "powershell.exe" -Verb RunAs -Wait -PassThru `
+                        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $elevCmd)
+                } catch {
+                    Write-Error "Could not elevate to install WiX (UAC declined or unavailable): $($_.Exception.Message). Install manually: winget install -e --id WiXToolset.WiXToolset"
+                    exit 1
+                }
+                # Don't hard-fail on the child's exit code (e.g. 'already installed'
                 # returns non-zero); the candle.exe check below is the real gate.
+                if ($proc.ExitCode -ne 0) {
+                    Write-Warning "Elevated WiX install returned exit code $($proc.ExitCode) — verifying candle.exe anyway..."
+                }
                 # winget registers WIX at Machine scope but not in this process —
                 # re-read it live from the registry.
                 $wixRoot = [Environment]::GetEnvironmentVariable("WIX", "Machine")
