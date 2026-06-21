@@ -252,16 +252,31 @@ impl PopupManager {
                 );
             }
 
-            // Content
+            // Content — egui::Area 로 등록해야 egui 의 layer_id_at(스크롤/호버 라우팅)이
+            // 팝업을 인식한다. 이전엔 bare `Ui::new(layer_id)` 라 Area 미등록 → layer_id_at
+            // 이 팝업 레이어를 못 찾음 → ScrollArea 의 ui_contains_pointer()=false →
+            // 휠/드래그 스크롤 입력이 무시됐다. Area id 를 bg painter 와 동일한 layer_id 의
+            // Id 로 맞춰 같은 레이어를 공유(bg→content z-order 자동 정합).
+            // movable(false): tasty 가 수동 드래그. sense(hover): layer_id_at 등록만,
+            // 클릭/드래그는 내부 위젯이 처리하게 둠.
             {
-                let mut child_ui = egui::Ui::new(
-                    ctx.clone(),
-                    egui::Id::new("popup_content").with(popup_id),
-                    egui::UiBuilder::new()
-                        .layer_id(layer_id)
-                        .max_rect(content_rect),
-                );
-                content_fn(popup_id, &mut child_ui);
+                let area_id = egui::Id::new("popup").with(popup_id).with(z_idx);
+                egui::Area::new(area_id)
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(content_rect.min)
+                    .movable(false)
+                    .interactable(true)
+                    .sense(egui::Sense::hover())
+                    .constrain(false)
+                    .show(ctx, |ui| {
+                        // Area 의 hit-rect 를 content_rect 전체로 강제한다. set_min_size 가
+                        // 없으면 Area 가 콘텐츠(헤더+필터 등)에 맞춰 auto-shrink → footer
+                        // (allocate_new_ui 로 별도 배치)와 빈 공간이 빠져 hit-rect 가 줄고
+                        // layer_id_at 이 팝업 하단을 인식 못 한다.
+                        ui.set_min_size(content_rect.size());
+                        ui.set_max_size(content_rect.size());
+                        content_fn(popup_id, ui);
+                    });
             }
         }
 
