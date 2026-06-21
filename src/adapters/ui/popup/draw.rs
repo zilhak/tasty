@@ -275,6 +275,11 @@ impl PopupManager {
                         // layer_id_at 이 팝업 하단을 인식 못 한다.
                         ui.set_min_size(content_rect.size());
                         ui.set_max_size(content_rect.size());
+                        // 이전 `Ui::new(max_rect(content_rect))` 는 clip_rect=content_rect
+                        // 라 콘텐츠 넘침(State 컬럼의 긴 라벨, 선택 하이라이트, 스크롤바)이
+                        // 팝업 경계에서 잘렸다. Area 는 기본 clip 이 더 넓어 넘침이 팝업
+                        // 밖으로 샌다 → content_rect 로 clip 복원.
+                        ui.set_clip_rect(content_rect);
                         content_fn(popup_id, ui);
                     });
             }
