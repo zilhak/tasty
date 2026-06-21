@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude-design"
 name = "Claude Design"
-version = "0.1.1"
+version = "0.1.2"
 description = "Claude Design (claude.ai/design) canvas integration for Tasty"
 api_version = "1"
 permissions = [
@@ -31,6 +31,7 @@ subcommands = [
     { name = "status",   ipc_method = "design.status",   args = "no_args",   description = "Show runtime / login / session / Cloudflare-pass / runner state" },
     { name = "projects", ipc_method = "design.projects", args = "no_args",   description = "List Claude Design projects" },
     { name = "detect",   ipc_method = "design.detect",   args = "no_args",   description = "Auto-detect system Playwright / node / chromium and report paths" },
+    { name = "probe",    ipc_method = "design.probe",    args = "no_args",   description = "Launch an off-screen headful browser and check claude.ai/design reachability + Cloudflare pass (no credentials needed)" },
     { name = "chat",     ipc_method = "design.chat",     args = "chat_args", description = "Send a message to a design project canvas and stream the reply" },
 ]
 
