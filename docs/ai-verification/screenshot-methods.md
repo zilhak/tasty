@@ -43,13 +43,14 @@ HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서면 GUI 
 
 갤러리(`tasty-gallery`)는 **별도 바이너리라 `ui.screenshot` IPC 가 없다.** 그렇다고 OS 캡처로 가면 권한 벽에 막힌다(아래). 대신 갤러리에 내장된 **env 트리거 일회성 GPU readback 캡처**를 쓴다 — 본체 `ui.screenshot` 과 동일한 swapchain readback(BGRA→RGB, 256B row 정렬)이라 권한 불요·결정적.
 
-- 형식: `TASTY_GALLERY_SHOT=<item_index>:<png_절대경로>`. 지정 카탈로그 항목을 선택해 4 프레임 settle 후 캡처하고 **자체 종료**한다(`crates/tasty-gallery/src/main.rs`).
-- `item_index` 는 `catalog::all()` 순서(0-base). 목록: `grep -n 'name: "' crates/tasty-gallery/src/catalog.rs`.
+- 형식: `TASTY_GALLERY_SHOT=<idx>:<png>[,<idx>:<png>...]` — **배치**. 콤마로 여러 항목을 주면 **한 인스턴스에서** 순차로 선택→4프레임 settle→캡처하고 마지막에 **자체 종료**한다(콜드스타트 1회. `crates/tasty-gallery/src/main.rs`).
+- `idx` 는 `catalog::all()` 순서(0-base). 목록: `grep -n 'name: "' crates/tasty-gallery/src/catalog.rs`.
 - 갤러리는 캡처 후 스스로 종료하므로 `timeout` 불필요(macOS 엔 `timeout` 명령도 없다).
 
 ```bash
-out="$PWD/.claude-workspace/temp/gallery-button.png"
-TASTY_GALLERY_SHOT="3:$out" ./target/debug/tasty-gallery   # idx 3 = "Button"
+B="$PWD/.claude-workspace/temp"
+# 여러 specimen 한 방에 (init 1회): idx 3=Button, 6=Badge·Tag·Kbd, 9=MenuItem·TreeRow
+TASTY_GALLERY_SHOT="3:$B/button.png,6:$B/chips.png,9:$B/nav.png" ./target/debug/tasty-gallery
 # 윈도우 1100x720, 1:1(논-레티나) → 좌측 사이드바 ~240px, 우측이 specimen 패널
 ```
 

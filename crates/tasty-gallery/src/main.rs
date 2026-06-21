@@ -31,21 +31,34 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 일회성 스크린샷 요청 — `TASTY_GALLERY_SHOT=<item_index>:<png_path>`.
-/// 지정 카탈로그 항목을 선택해 몇 프레임 settle 후 캡처하고 종료한다.
-/// (갤러리는 IPC 가 없어 격리 자동 시각검증을 이 경로로 한다.)
-struct Shot {
-    idx: usize,
-    path: std::path::PathBuf,
+/// 배치 스크린샷 계획 — `TASTY_GALLERY_SHOT=<idx>:<png>[,<idx>:<png>...]`.
+/// 지정 카탈로그 항목들을 **한 인스턴스에서** 순차로 선택→settle→캡처하고
+/// 마지막에 종료한다(콜드스타트 1회). 갤러리는 IPC 가 없어 격리 자동 시각검증을
+/// 이 경로로 한다.
+struct ShotPlan {
+    /// (catalog index, png 경로) 목록.
+    items: Vec<(usize, std::path::PathBuf)>,
+    /// 현재 캡처 중인 항목.
+    current: usize,
+    /// 현재 항목을 띄운 뒤 지난 프레임 수(settle 카운터).
     frame: u32,
 }
 
-fn parse_shot_env() -> Option<Shot> {
+fn parse_shot_env() -> Option<ShotPlan> {
     let raw = std::env::var("TASTY_GALLERY_SHOT").ok()?;
-    let (idx, path) = raw.split_once(':')?;
-    Some(Shot {
-        idx: idx.trim().parse().ok()?,
-        path: std::path::PathBuf::from(path.trim()),
+    let items: Vec<(usize, std::path::PathBuf)> = raw
+        .split(',')
+        .filter_map(|entry| {
+            let (idx, path) = entry.split_once(':')?;
+            Some((
+                idx.trim().parse().ok()?,
+                std::path::PathBuf::from(path.trim()),
+            ))
+        })
+        .collect();
+    (!items.is_empty()).then_some(ShotPlan {
+        items,
+        current: 0,
         frame: 0,
     })
 }
@@ -53,7 +66,7 @@ fn parse_shot_env() -> Option<Shot> {
 #[derive(Default)]
 struct App {
     runtime: Option<Runtime>,
-    shot: Option<Shot>,
+    shot: Option<ShotPlan>,
 }
 
 struct Runtime {
@@ -79,12 +92,13 @@ impl ApplicationHandler for App {
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
         let mut rt = pollster::block_on(init_runtime(window)).expect("gallery runtime init");
-        // 스크린샷 모드: 지정 카탈로그 항목을 선택해 둔다.
-        if let Some(shot) = &self.shot
-            && let Some(item) = rt.gallery.items.get(shot.idx)
+        // 스크린샷 모드: 첫 항목을 선택해 둔다.
+        if let Some(plan) = &self.shot
+            && let Some(&(idx, _)) = plan.items.first()
+            && let Some(item) = rt.gallery.items.get(idx)
         {
             rt.gallery.active_category = item.category;
-            rt.gallery.selected = shot.idx;
+            rt.gallery.selected = idx;
         }
         self.runtime = Some(rt);
     }
@@ -114,18 +128,33 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                // 스크린샷 모드: 몇 프레임 settle 후 캡처하고 종료.
-                let capture_path = if let Some(shot) = self.shot.as_mut() {
-                    shot.frame += 1;
-                    (shot.frame >= 4).then(|| shot.path.clone())
+                // 배치 스크린샷: 현재 항목을 4프레임 settle 후 캡처.
+                let capture_path = if let Some(plan) = self.shot.as_mut() {
+                    plan.frame += 1;
+                    (plan.frame >= 4)
+                        .then(|| plan.items.get(plan.current).map(|(_, p)| p.clone()))
+                        .flatten()
                 } else {
                     None
                 };
                 if let Err(err) = render_frame(rt, capture_path.as_deref()) {
                     tracing::error!("render error: {err:?}");
                 }
-                if capture_path.is_some() {
-                    event_loop.exit();
+                // 캡처했으면 다음 항목으로 진행, 끝났으면 종료.
+                if capture_path.is_some()
+                    && let Some(plan) = self.shot.as_mut()
+                {
+                    plan.current += 1;
+                    plan.frame = 0;
+                    match plan.items.get(plan.current) {
+                        Some(&(idx, _)) => {
+                            if let Some(item) = rt.gallery.items.get(idx) {
+                                rt.gallery.active_category = item.category;
+                                rt.gallery.selected = idx;
+                            }
+                        }
+                        None => event_loop.exit(),
+                    }
                 }
             }
             _ => {}
