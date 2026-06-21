@@ -9,7 +9,9 @@
 //! `tasty-plugin-sdk` 만 사용한다.
 //!
 //! 설계: `.claude-workspace/plans/claude-design-plugin.md`.
-//! 현재 단계: M4 — 로그인 + 자격증명 저장(평문, ADR-0018). chat 은 M5.
+//! 현재 단계: M5 — 기계적 chat(composer+send+Chat스트림 종료대기) + projects 스크랩.
+//! 셀렉터/턴종료 신호는 실측 관찰로 확정(chat-composer-input / chat-send-button /
+//! OmeletteService/Chat 응답 종료). 자격증명 저장은 평문(ADR-0018).
 
 mod auth;
 mod detect;
@@ -27,7 +29,7 @@ use tasty_plugin_sdk::{
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.3"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.4"; // tasty-plugin.toml / Cargo.toml 과 일치
 
 /// 로그인은 사용자가 브라우저에서 직접 인증해야 하므로 최대 대기를 길게 둔다.
 /// runner JS 의 폴링 한계(5분)보다 약간 길게 잡아 마지막 응답을 받는다.
@@ -129,10 +131,10 @@ impl Plugin for ClaudeDesignPlugin {
             "design.login" => self.handle_login(),
             // M4: 저장된 세션 삭제.
             "design.logout" => self.handle_logout(),
-            // M5: ListProjects 위임.
-            "design.projects" => Err(not_yet("design.projects", "M5")),
-            // M5: Chat 전송 + 스트림 응답.
-            "design.chat" => Err(not_yet("design.chat", "M5")),
+            // M5: 런너로 프로젝트 목록 스크랩.
+            "design.projects" => self.handle_projects(),
+            // M5: 기계적 chat — composer 입력 + send + Chat 스트림 종료 대기 + 응답.
+            "design.chat" => self.handle_chat(&ctx.params),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -206,6 +208,82 @@ impl ClaudeDesignPlugin {
         }))
     }
 
+    /// `design.projects` — 로그인된 런너로 `/design` 홈의 프로젝트 목록을 스크랩한다.
+    fn handle_projects(&mut self) -> Result<Value, IpcMethodError> {
+        self.require_logged_in()?;
+        let runner = self.ensure_runner()?;
+        runner
+            .request("list_projects", json!({}), runner::PROBE_TIMEOUT)
+            .map_err(IpcMethodError::new)
+    }
+
+    /// `design.chat` — 대상 프로젝트 캔버스에 메시지를 보내고 턴 종료까지 기다려 응답을
+    /// 반환한다. 디자인 턴은 수 분 걸릴 수 있으나 worker 블로킹은 host ping(별도 스레드)을
+    /// 막지 않으므로 동기로 둔다(다른 design.* ipc 만 그동안 대기).
+    fn handle_chat(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
+        self.require_logged_in()?;
+        let message = params
+            .get("message")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| IpcMethodError::invalid_params("message is required"))?;
+        let project = self.resolve_project(params.get("project").and_then(Value::as_str))?;
+        let timeout_s = params.get("timeout").and_then(Value::as_u64).unwrap_or(180);
+
+        let mut req = json!({ "message": message, "timeout_ms": timeout_s * 1000 });
+        if let Some(uuid) = project {
+            req["project"] = json!(uuid);
+        }
+        let runner = self.ensure_runner()?;
+        // 런너 op timeout 보다 약간 길게 줘 마지막 응답을 받는다.
+        let wait = std::time::Duration::from_secs(timeout_s + 30);
+        runner.request("chat", req, wait).map_err(IpcMethodError::new)
+    }
+
+    /// `--project` 값을 UUID 로 해석한다. UUID 형식이면 그대로, 별칭이면 data_dir/
+    /// projects.json(`{ "alias": "uuid" }`)에서 찾는다. 사용자가 UUID/별칭을 미리
+    /// 적어두면 런너가 `/design/p/<uuid>` 로 바로 점프한다.
+    fn resolve_project(&self, project: Option<&str>) -> Result<Option<String>, IpcMethodError> {
+        let Some(p) = project.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok(None); // 미지정 — 런너가 현재 열린 프로젝트를 사용.
+        };
+        if is_uuid(p) {
+            return Ok(Some(p.to_string()));
+        }
+        // 별칭 → UUID.
+        let data_dir = self
+            .data_dir
+            .as_ref()
+            .ok_or_else(|| IpcMethodError::new("TASTY_PLUGIN_DATA_DIR not set"))?;
+        let map_path = data_dir.join("projects.json");
+        let raw = std::fs::read_to_string(&map_path).map_err(|_| {
+            IpcMethodError::invalid_params(&format!(
+                "'{p}' is not a UUID and no projects.json alias map found at {}",
+                map_path.display()
+            ))
+        })?;
+        let map: Value = serde_json::from_str(&raw)
+            .map_err(|e| IpcMethodError::new(format!("projects.json parse error: {e}")))?;
+        match map.get(p).and_then(Value::as_str) {
+            Some(uuid) => Ok(Some(uuid.to_string())),
+            None => Err(IpcMethodError::invalid_params(&format!(
+                "alias '{p}' not found in projects.json"
+            ))),
+        }
+    }
+
+    /// 저장된 세션이 없으면 명확한 안내 에러.
+    fn require_logged_in(&self) -> Result<(), IpcMethodError> {
+        let logged_in = self.data_dir.as_ref().is_some_and(|d| auth::has_auth(d));
+        if logged_in {
+            Ok(())
+        } else {
+            Err(IpcMethodError::new(
+                "not logged in — run `tasty design login` first",
+            ))
+        }
+    }
+
     /// `design.logout` — 저장된 세션을 삭제하고 런너의 in-memory auth 도 비운다.
     fn handle_logout(&mut self) -> Result<Value, IpcMethodError> {
         let data_dir = self
@@ -271,9 +349,30 @@ fn handle_detect() -> Value {
     out
 }
 
-/// 후속 마일스톤 미구현 메서드의 명시적 에러(빈 핸들러가 조용히 성공한 척하지 않게).
-fn not_yet(method: &str, milestone: &str) -> IpcMethodError {
-    IpcMethodError::new(format!("{method} is not implemented yet (planned for {milestone})"))
+/// `8-4-4-4-12` hex UUID 형식 검사 (별칭과 구분용).
+fn is_uuid(s: &str) -> bool {
+    let groups = [8usize, 4, 4, 4, 12];
+    let parts: Vec<&str> = s.split('-').collect();
+    parts.len() == 5
+        && parts
+            .iter()
+            .zip(groups)
+            .all(|(part, n)| part.len() == n && part.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_uuid;
+
+    #[test]
+    fn uuid_detection() {
+        assert!(is_uuid("41fd3f5a-4bb9-4877-999f-db5124dc2925"));
+        assert!(is_uuid("b57d6c0a-4bdc-4114-9a7d-d63d27284ef3"));
+        assert!(!is_uuid("tasty")); // 별칭
+        assert!(!is_uuid("41fd3f5a4bb94877999fdb5124dc2925")); // 하이픈 없음
+        assert!(!is_uuid("zzzzzzzz-4bb9-4877-999f-db5124dc2925")); // non-hex
+        assert!(!is_uuid(""));
+    }
 }
 
 fn main() -> anyhow::Result<()> {

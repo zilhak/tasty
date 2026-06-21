@@ -20,7 +20,17 @@
 
 const readline = require('readline');
 
-const DESIGN_URL = 'https://claude.ai/design';
+const DESIGN_ORIGIN = 'https://claude.ai';
+const DESIGN_URL = `${DESIGN_ORIGIN}/design`;
+const projectUrl = (uuid) => `${DESIGN_ORIGIN}/design/p/${uuid}`;
+
+// 채팅 UI 셀렉터 (실측 확정, 설계 관찰 기록 참조).
+const SEL_COMPOSER = '[data-testid="chat-composer-input"], div[role="textbox"].ProseMirror';
+const SEL_SEND = '[data-testid="chat-send-button"]';
+const SEL_MESSAGES = '[data-testid="chat-messages"]';
+// 턴 종료 신호: 모델 턴 스트리밍 RPC 가 닫히는 시점.
+const CHAT_RPC_RE = /\/OmeletteService\/Chat$/;
+
 // off-screen: 화면 밖으로 던져 사용자 포커스/시야를 방해하지 않는다(설계 §1·§8).
 // bringToFront() 는 절대 호출하지 않는다.
 const OFFSCREEN_ARGS = ['--window-position=-32000,-32000'];
@@ -176,6 +186,78 @@ async function handle(req) {
       } catch (e) {
         try { if (loginBrowser) await loginBrowser.close(); } catch (_) { /* ignore */ }
         send({ id, kind: 'error', code: 'login_failed', message: e.message });
+      }
+      break;
+    }
+
+    case 'list_projects': {
+      // /design 홈의 프로젝트 행에서 UUID/이름 추출 (a[href^="/design/p/"]).
+      try {
+        await ensureBrowser();
+        if (!/\/design\/?$/.test(page.url())) {
+          await page.goto(DESIGN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        }
+        await page.waitForTimeout(1500);
+        const raw = await page.evaluate(() =>
+          [...document.querySelectorAll('a[href^="/design/p/"]')].map((a) => ({
+            uuid: (a.getAttribute('href') || '').replace('/design/p/', '').split(/[/?#]/)[0],
+            name: (a.textContent || '').trim(),
+          })),
+        );
+        const seen = new Set();
+        const projects = [];
+        for (const p of raw) {
+          if (p.uuid && !seen.has(p.uuid)) { seen.add(p.uuid); projects.push(p); }
+        }
+        send({ id, kind: 'projects', projects });
+      } catch (e) {
+        send({ id, kind: 'error', code: 'list_failed', message: e.message });
+      }
+      break;
+    }
+
+    case 'chat': {
+      // 기계적 chat: 프로젝트 진입 → composer 입력 → send 클릭 → Chat 스트림 종료 대기
+      // → 응답 델타 추출. (관찰로 확정한 결정론적 레시피.)
+      try {
+        await ensureBrowser();
+        if (req.project) {
+          const want = `/design/p/${req.project}`;
+          if (!page.url().includes(want)) {
+            await page.goto(projectUrl(req.project), { waitUntil: 'domcontentloaded', timeout: 30000 });
+          }
+        }
+        const composer = page.locator(SEL_COMPOSER).first();
+        await composer.waitFor({ state: 'visible', timeout: 20000 });
+        await composer.click();
+        await composer.fill(req.message);
+
+        // 전송 전 스레드 텍스트 baseline.
+        const before = await page.evaluate((sel) => {
+          const c = document.querySelector(sel);
+          return c ? (c.innerText || '') : '';
+        }, SEL_MESSAGES);
+
+        // 턴 종료 신호를 클릭 전에 건다. timeout 은 디자인 턴이 길 수 있어 넉넉히.
+        const timeoutMs = req.timeout_ms || 180000;
+        const chatDone = page.waitForResponse((r) => CHAT_RPC_RE.test(r.url()), { timeout: timeoutMs });
+        await page.locator(SEL_SEND).click();
+        const resp = await chatDone;
+        await resp.finished(); // 스트림 닫힘 = 모델 턴 종료.
+        await page.waitForTimeout(800); // DOM 반영 여유.
+
+        const reply = await page.evaluate(({ sel, before }) => {
+          const c = document.querySelector(sel);
+          if (!c) return null;
+          const after = (c.innerText || '');
+          // 새로 붙은 텍스트(= 내 메시지 echo + assistant 응답 + 도구 흔적). best-effort.
+          const delta = after.startsWith(before) ? after.slice(before.length) : after;
+          return delta.trim();
+        }, { sel: SEL_MESSAGES, before });
+
+        send({ id, kind: 'chat_done', reply, url: page.url() });
+      } catch (e) {
+        send({ id, kind: 'error', code: 'chat_failed', message: e.message });
       }
       break;
     }
