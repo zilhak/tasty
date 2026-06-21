@@ -675,6 +675,16 @@ up_to_date = "You're up to date."
 checking = "Checking…"
 tools_menu_item = "Check for updates…"
 
+[update.network]
+offline = "Network unavailable"
+timeout = "Connection timed out"
+connection_refused = "Connection refused"
+dns = "Could not resolve GitHub"
+tls = "Secure connection failed"
+http = "GitHub returned an error"
+bad_response = "Unexpected server response"
+other = "Network error"
+
 [update.notify]
 title = "Tasty update available"
 body = "Version {} is available. Run `tasty update` or open Settings → Updates."

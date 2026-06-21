@@ -675,6 +675,16 @@ up_to_date = "最新バージョンを使用中です。"
 checking = "確認中…"
 tools_menu_item = "更新を確認…"
 
+[update.network]
+offline = "ネットワークに接続できません"
+timeout = "接続がタイムアウトしました"
+connection_refused = "接続が拒否されました"
+dns = "GitHub のアドレスを解決できません"
+tls = "セキュア接続に失敗しました"
+http = "GitHub サーバーエラー"
+bad_response = "サーバー応答が不正です"
+other = "ネットワークエラー"
+
 [update.notify]
 title = "Tasty の新しいバージョンが利用可能"
 body = "バージョン {} が利用可能です。`tasty update` または 設定 → アップデート から導入できます。"

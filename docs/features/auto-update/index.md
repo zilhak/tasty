@@ -22,6 +22,10 @@ GitHub Releases 를 폴링해 새 버전을 감지하고, **알림 + Settings Up
 
 `tasty_update::check_latest(owner, repo, current, allow_prerelease)` → semver 비교(`v` prefix 자동 제거)로 `latest > current` 일 때만 `ReleaseInfo` 반환. 폴러(`UpdateStatus`)가 None→Some 전이 시 `pending_notify` 설정 → 매 프레임 drain 이 `PushNotification { source: "update" }` 발행.
 
+### 에러 표시
+
+네트워크 실패는 `UpdateError::Network { kind, detail }` 로 분류된다. `kind`(`NetworkErrorKind`: Offline/Timeout/ConnectionRefused/Dns/Tls/Http/BadResponse/Other)는 ureq 에러를 정제한 것으로, ureq 가 io 에러를 이중 Transport 래핑해 만드는 중복 메시지("Network Error: Network Error: …")와 URL·내부 단계 노이즈를 제거하고 **소스 체인의 최심부 원인(detail)** 만 남긴다. 호스트는 `UpdateStatus::localized_error()` 에서 `kind` 를 `update.network.*` 번역 키로 매핑해 `카테고리 — 원본 원인` 형태로 표시(Settings Updates 탭 · update_check popup 공통). CLI 는 `UpdateError` Display(`network: {detail}`)를 그대로 출력.
+
 ### `tasty update` CLI 흐름
 
 standalone(호스트 미실행 OK — `run.rs` 가 IPC connect 이전에 가로챔): check → 사용자 확인(`--yes` skip) → **asset 선택**(OS×arch) → 다운로드(진행률) → `SHA256SUMS-{platform}.txt` 검증(**hard fail**) → atomic swap → 재시작 안내.

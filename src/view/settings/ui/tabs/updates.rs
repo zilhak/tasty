@@ -50,7 +50,7 @@ pub fn draw_updates_tab(ui: &mut egui::Ui, update_status: Option<&Arc<Mutex<Upda
             ui.end_row();
         });
 
-    if let Some(err) = &snapshot.last_error {
+    if let Some(err) = snapshot.localized_error() {
         ui.add_space(8.0);
         ui.label(
             egui::RichText::new(format!("{}: {err}", t("update.error_label")))

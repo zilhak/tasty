@@ -77,10 +77,8 @@ pub fn build_update_props(
             html_url: info.html_url.clone(),
         },
         None => {
-            if let Some(err) = &snapshot.last_error {
-                UpdateStatusView::Failed {
-                    reason: err.clone(),
-                }
+            if let Some(reason) = snapshot.localized_error() {
+                UpdateStatusView::Failed { reason }
             } else if snapshot.in_flight {
                 UpdateStatusView::Checking
             } else if snapshot.last_checked.is_none() {

@@ -41,6 +41,29 @@ pub struct ReleaseInfo {
     pub assets: Vec<String>,
 }
 
+/// Coarse classification of a failed network poll, suitable for picking a
+/// localized message on the host side. The host maps each variant to a
+/// translation key; CLI shows the raw [`UpdateError`] Display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkErrorKind {
+    /// Host unreachable / no route — typically offline.
+    Offline,
+    /// Connection or read timed out.
+    Timeout,
+    /// Connection actively refused or reset by the peer.
+    ConnectionRefused,
+    /// DNS resolution failed.
+    Dns,
+    /// TLS or proxy negotiation problem.
+    Tls,
+    /// Server responded with an HTTP error status.
+    Http,
+    /// Server replied but the response was malformed / unparseable.
+    BadResponse,
+    /// Anything not covered above.
+    Other,
+}
+
 /// Errors raised by `check_latest`.
 #[derive(Debug, thiserror::Error)]
 pub enum UpdateError {
@@ -52,8 +75,107 @@ pub enum UpdateError {
         #[source]
         source: semver::Error,
     },
-    #[error("network: {0}")]
-    Network(String),
+    /// A network/transport failure. `detail` is the concise root cause (the
+    /// deepest source error), already stripped of ureq's redundant wrapper
+    /// chain. `kind` drives localized messaging on the host.
+    #[error("network: {detail}")]
+    Network {
+        kind: NetworkErrorKind,
+        detail: String,
+    },
+}
+
+impl UpdateError {
+    /// The network classification, if this is a [`UpdateError::Network`].
+    pub fn network_kind(&self) -> Option<NetworkErrorKind> {
+        match self {
+            UpdateError::Network { kind, .. } => Some(*kind),
+            _ => None,
+        }
+    }
+
+    /// A concise, human-readable detail for the UI: the root cause for network
+    /// errors (no redundant ureq chrome), or the full Display otherwise.
+    pub fn user_detail(&self) -> String {
+        match self {
+            UpdateError::Network { detail, .. } => detail.clone(),
+            other => other.to_string(),
+        }
+    }
+}
+
+/// Walk the `source()` chain to the deepest error and return its message.
+///
+/// ureq 2.x wraps a socket `io::Error` in *two* nested `Transport`s, so the
+/// naive `e.to_string()` repeats the kind ("Network Error: Network Error: …")
+/// and prepends the URL. The deepest source is the original OS error — the only
+/// part a user can act on.
+fn root_cause_message(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut deepest = e;
+    while let Some(src) = deepest.source() {
+        deepest = src;
+    }
+    deepest.to_string()
+}
+
+/// Find the deepest `io::Error` in the source chain and map its kind to a
+/// `NetworkErrorKind`. Returns `None` if no `io::Error` is present.
+fn classify_io(e: &(dyn std::error::Error + 'static)) -> Option<NetworkErrorKind> {
+    use std::io::ErrorKind as Io;
+
+    let mut io_kind = None;
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(e);
+    while let Some(c) = cur {
+        if let Some(io) = c.downcast_ref::<std::io::Error>() {
+            io_kind = Some(io.kind());
+        }
+        cur = c.source();
+    }
+
+    io_kind.map(|k| match k {
+        Io::TimedOut => NetworkErrorKind::Timeout,
+        Io::ConnectionRefused | Io::ConnectionReset | Io::ConnectionAborted => {
+            NetworkErrorKind::ConnectionRefused
+        }
+        Io::HostUnreachable
+        | Io::NetworkUnreachable
+        | Io::NetworkDown
+        | Io::NotConnected
+        | Io::AddrNotAvailable => NetworkErrorKind::Offline,
+        _ => NetworkErrorKind::Other,
+    })
+}
+
+/// Classify a ureq error into `(kind, concise detail)`.
+fn classify_ureq(e: &ureq::Error) -> (NetworkErrorKind, String) {
+    use ureq::ErrorKind as K;
+
+    let detail = root_cause_message(e);
+    let kind = match e {
+        ureq::Error::Status(code, _) => {
+            return (NetworkErrorKind::Http, format!("HTTP {code}"));
+        }
+        ureq::Error::Transport(t) => match t.kind() {
+            K::Dns => NetworkErrorKind::Dns,
+            K::ConnectionFailed | K::ProxyConnect => {
+                classify_io(e).unwrap_or(NetworkErrorKind::Offline)
+            }
+            K::Io => classify_io(e).unwrap_or(NetworkErrorKind::Other),
+            K::InsecureRequestHttpsOnly | K::InvalidProxyUrl | K::ProxyUnauthorized => {
+                NetworkErrorKind::Tls
+            }
+            K::BadStatus | K::BadHeader | K::TooManyRedirects => NetworkErrorKind::BadResponse,
+            K::HTTP => NetworkErrorKind::Http,
+            K::InvalidUrl | K::UnknownScheme => NetworkErrorKind::Other,
+        },
+    };
+    (kind, detail)
+}
+
+/// Build a [`UpdateError::Network`] from a ureq error.
+fn network_err(e: &ureq::Error) -> UpdateError {
+    let (kind, detail) = classify_ureq(e);
+    UpdateError::Network { kind, detail }
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,11 +222,12 @@ pub fn check_latest(
         .get(&url)
         .set("Accept", "application/vnd.github+json")
         .call()
-        .map_err(|e| UpdateError::Network(e.to_string()))?;
+        .map_err(|e| network_err(&e))?;
 
-    let release: GithubRelease = resp
-        .into_json()
-        .map_err(|e| UpdateError::Network(e.to_string()))?;
+    let release: GithubRelease = resp.into_json().map_err(|e| UpdateError::Network {
+        kind: NetworkErrorKind::BadResponse,
+        detail: e.to_string(),
+    })?;
 
     if release.draft {
         return Ok(None);
@@ -174,5 +297,46 @@ mod tests {
     fn invalid_remote_propagates() {
         let err = is_newer("0.5.0", "not-a-version").unwrap_err();
         assert!(matches!(err, UpdateError::InvalidRemote { .. }));
+    }
+
+    fn ureq_io(kind: std::io::ErrorKind, msg: &str) -> ureq::Error {
+        ureq::Error::from(std::io::Error::new(kind, msg.to_string()))
+    }
+
+    #[test]
+    fn classify_maps_timeout_and_keeps_root_detail() {
+        let (kind, detail) = classify_ureq(&ureq_io(std::io::ErrorKind::TimedOut, "timed out"));
+        assert_eq!(kind, NetworkErrorKind::Timeout);
+        // Concise root cause only — no doubled "Network Error" chrome.
+        assert_eq!(detail, "timed out");
+    }
+
+    #[test]
+    fn classify_maps_connection_refused() {
+        let (kind, _) =
+            classify_ureq(&ureq_io(std::io::ErrorKind::ConnectionRefused, "refused"));
+        assert_eq!(kind, NetworkErrorKind::ConnectionRefused);
+    }
+
+    #[test]
+    fn classify_maps_unreachable_to_offline() {
+        let (kind, _) =
+            classify_ureq(&ureq_io(std::io::ErrorKind::HostUnreachable, "no route"));
+        assert_eq!(kind, NetworkErrorKind::Offline);
+    }
+
+    #[test]
+    fn network_err_exposes_kind_and_detail() {
+        let e = network_err(&ureq_io(std::io::ErrorKind::TimedOut, "timed out"));
+        assert_eq!(e.network_kind(), Some(NetworkErrorKind::Timeout));
+        assert_eq!(e.user_detail(), "timed out");
+        // CLI Display stays concise.
+        assert_eq!(e.to_string(), "network: timed out");
+    }
+
+    #[test]
+    fn non_network_error_has_no_kind() {
+        let err = is_newer("0.5.0", "not-a-version").unwrap_err();
+        assert_eq!(err.network_kind(), None);
     }
 }

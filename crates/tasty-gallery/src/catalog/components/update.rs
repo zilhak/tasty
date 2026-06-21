@@ -75,9 +75,11 @@ impl DemoStateKey {
                 html_url: "https://github.com/zilhak/tasty/releases/tag/v0.7.0".to_string(),
             },
             DemoStateKey::Failed => UpdateStatusView::Failed {
-                reason: "network: connection timed out after 10s while fetching \
-                    https://api.github.com/repos/zilhak/tasty/releases/latest \
-                    — check your internet connection or HTTPS proxy settings"
+                // 본체는 ureq 에러를 카테고리 + 근본 원인으로 정제해 표시한다.
+                // (host `UpdateStatus::localized_error` 참고.)
+                reason: "Connection timed out — A connection attempt failed because the \
+                    connected party did not properly respond after a period of time \
+                    (os error 10060)"
                     .to_string(),
             },
         };

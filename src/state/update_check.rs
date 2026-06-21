@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tasty_update::ReleaseInfo;
+use tasty_update::{NetworkErrorKind, ReleaseInfo};
 
 /// Public-facing snapshot of the current update-check state.
 #[derive(Debug, Clone, Default)]
@@ -18,8 +18,12 @@ pub struct UpdateStatus {
     /// Last successful poll result. `None` until the first poll, or after
     /// a poll that found no newer version.
     pub latest: Option<ReleaseInfo>,
-    /// Latest error string from a failed poll, for diagnostics.
+    /// Concise root-cause detail from the last failed poll. `None` when the
+    /// last poll succeeded.
     pub last_error: Option<String>,
+    /// Network classification of the last failure, used to pick a localized
+    /// category label. `None` for non-network errors (e.g. version parsing).
+    pub last_error_kind: Option<NetworkErrorKind>,
     /// When the last poll completed (success or failure).
     pub last_checked: Option<Instant>,
     /// Whether a poll is currently running.
@@ -37,6 +41,36 @@ impl UpdateStatus {
     #[allow(dead_code)]
     pub fn has_update(&self) -> bool {
         self.latest.is_some()
+    }
+
+    /// 마지막 실패를 사용자에게 보여줄 localized 메시지로 조립한다. 실패가 없으면
+    /// `None`. 네트워크 분류가 있으면 번역된 카테고리 + 원본 원인을, 없으면
+    /// 원본 detail 만 반환한다.
+    pub fn localized_error(&self) -> Option<String> {
+        let detail = self.last_error.as_ref()?;
+        let Some(kind) = self.last_error_kind else {
+            return Some(detail.clone());
+        };
+        let category = crate::i18n::t(network_kind_key(kind));
+        Some(if detail.is_empty() {
+            category.to_string()
+        } else {
+            format!("{category} — {detail}")
+        })
+    }
+}
+
+/// 네트워크 에러 분류 → i18n 키.
+fn network_kind_key(kind: NetworkErrorKind) -> &'static str {
+    match kind {
+        NetworkErrorKind::Offline => "update.network.offline",
+        NetworkErrorKind::Timeout => "update.network.timeout",
+        NetworkErrorKind::ConnectionRefused => "update.network.connection_refused",
+        NetworkErrorKind::Dns => "update.network.dns",
+        NetworkErrorKind::Tls => "update.network.tls",
+        NetworkErrorKind::Http => "update.network.http",
+        NetworkErrorKind::BadResponse => "update.network.bad_response",
+        NetworkErrorKind::Other => "update.network.other",
     }
 }
 
@@ -77,13 +111,16 @@ pub fn spawn_poller(
                             }
                             guard.latest = Some(info);
                             guard.last_error = None;
+                            guard.last_error_kind = None;
                         }
                         Ok(None) => {
                             guard.latest = None;
                             guard.last_error = None;
+                            guard.last_error_kind = None;
                         }
                         Err(e) => {
-                            guard.last_error = Some(e.to_string());
+                            guard.last_error = Some(e.user_detail());
+                            guard.last_error_kind = e.network_kind();
                         }
                     }
                 }
@@ -123,13 +160,16 @@ pub fn trigger_check(
                     }
                     guard.latest = Some(info);
                     guard.last_error = None;
+                    guard.last_error_kind = None;
                 }
                 Ok(None) => {
                     guard.latest = None;
                     guard.last_error = None;
+                    guard.last_error_kind = None;
                 }
                 Err(e) => {
-                    guard.last_error = Some(e.to_string());
+                    guard.last_error = Some(e.user_detail());
+                    guard.last_error_kind = e.network_kind();
                 }
             }
         })
