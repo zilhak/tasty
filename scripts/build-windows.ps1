@@ -53,6 +53,32 @@ $DistDir = "dist"
 $ArchiveName = "tasty-${Version}-windows-x64.zip"
 $StageDir = Join-Path $DistDir "tasty-windows"
 
+# Resolve a usable bash for the POSIX helper scripts. Prefer **Git Bash** — on
+# Windows a bare `bash` frequently resolves to WSL's bash, which fails for these
+# scripts (no distro installed / relay error: "execvpe(/bin/bash) failed").
+function Resolve-Bash {
+    $candidates = @()
+    $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+    if ($gitCmd) {
+        # .../Git/cmd/git.exe -> .../Git
+        $gitRoot = Split-Path (Split-Path $gitCmd.Source -Parent) -Parent
+        $candidates += (Join-Path $gitRoot 'bin\bash.exe')
+        $candidates += (Join-Path $gitRoot 'usr\bin\bash.exe')
+    }
+    $candidates += 'C:\Program Files\Git\bin\bash.exe'
+    $candidates += 'C:\Program Files\Git\usr\bin\bash.exe'
+    if (${env:ProgramFiles(x86)}) {
+        $candidates += (Join-Path ${env:ProgramFiles(x86)} 'Git\bin\bash.exe')
+    }
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    # Last resort: bare bash from PATH (may be WSL, but better than nothing).
+    $b = Get-Command bash -ErrorAction SilentlyContinue
+    if ($b) { return $b.Source }
+    return $null
+}
+
 # Discover signing key BEFORE cargo build — so that any newly generated
 # dev-pubkey.bin is embedded into the host-plugin binary at compile time.
 if ($BuildProfile -ne "debug") {
@@ -66,12 +92,12 @@ if ($BuildProfile -ne "debug") {
             $SignKeyPath = $DevKey
         } else {
             Write-Host "==> No signing key found — auto-generating dev key for zero-touch build..."
-            $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
-            if (-not $bashCmd) {
-                Write-Error "bash not found in PATH. Install Git Bash or WSL to run scripts/gen-dev-key.sh."
+            $Bash = Resolve-Bash
+            if (-not $Bash) {
+                Write-Error "Git Bash not found. Install Git for Windows to run scripts/gen-dev-key.sh."
                 exit 1
             }
-            & bash ./scripts/gen-dev-key.sh
+            & $Bash ./scripts/gen-dev-key.sh
             if ($LASTEXITCODE -ne 0) {
                 Write-Error "gen-dev-key.sh failed with exit code $LASTEXITCODE"
                 exit 1
@@ -118,13 +144,13 @@ if ($LASTEXITCODE -ne 0) {
 # discovered (or auto-generated) before cargo build.
 if ($BuildProfile -ne "debug") {
     $SignKeyPath = $env:SIGN_KEY_PATH
-    $bashCmd = Get-Command bash -ErrorAction SilentlyContinue
-    if (-not $bashCmd) {
-        Write-Error "bash not found in PATH. Install Git Bash or WSL to run scripts/sign-bundle.sh."
+    $Bash = Resolve-Bash
+    if (-not $Bash) {
+        Write-Error "Git Bash not found. Install Git for Windows to run scripts/sign-bundle.sh."
         exit 1
     }
     Write-Host "==> Signing plugin manifests with $SignKeyPath..."
-    & bash ./scripts/sign-bundle.sh --key $SignKeyPath --all-builtins
+    & $Bash ./scripts/sign-bundle.sh --key $SignKeyPath --all-builtins
     if ($LASTEXITCODE -ne 0) {
         Write-Error "sign-bundle.sh failed with exit code $LASTEXITCODE"
         exit 1
