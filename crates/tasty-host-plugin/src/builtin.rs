@@ -47,6 +47,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         bin_name: "tasty-plugin-claude.exe",
     },
     BuiltinSpec {
+        id: "com.tasty.claude-design",
+        crate_dir: "tasty-plugin-claude-design",
+        bin_name: "tasty-plugin-claude-design.exe",
+    },
+    BuiltinSpec {
         id: "com.tasty.image",
         crate_dir: "tasty-plugin-image",
         bin_name: "tasty-plugin-image.exe",
@@ -89,6 +94,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         id: "com.tasty.claude",
         crate_dir: "tasty-plugin-claude",
         bin_name: "tasty-plugin-claude",
+    },
+    BuiltinSpec {
+        id: "com.tasty.claude-design",
+        crate_dir: "tasty-plugin-claude-design",
+        bin_name: "tasty-plugin-claude-design",
     },
     BuiltinSpec {
         id: "com.tasty.image",

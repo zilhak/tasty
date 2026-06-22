@@ -148,6 +148,28 @@
                                     </Component>
                                 </Directory>
                             </Directory>
+                            <Directory Id='PluginClaudeDesignDir' Name='com.tasty.claude-design'>
+                                <Component Id='PluginClaudeDesignBin' Guid='*'>
+                                    <File Id='PluginClaudeDesignBinFile' Source='$(var.CargoTargetBinDir)\tasty-plugin-claude-design.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginClaudeDesignManifest' Guid='*'>
+                                    <File Id='PluginClaudeDesignManifestFile' Source='crates\tasty-plugin-claude-design\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginClaudeDesignSig' Guid='*'>
+                                    <File Id='PluginClaudeDesignSigFile' Source='crates\tasty-plugin-claude-design\tasty-plugin.toml.sig' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginClaudeDesignLangDir' Name='lang'>
+                                    <Component Id='PluginClaudeDesignLangEn' Guid='*'>
+                                        <File Id='PluginClaudeDesignLangEnFile' Source='crates\tasty-plugin-claude-design\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginClaudeDesignLangJa' Guid='*'>
+                                        <File Id='PluginClaudeDesignLangJaFile' Source='crates\tasty-plugin-claude-design\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginClaudeDesignLangKo' Guid='*'>
+                                        <File Id='PluginClaudeDesignLangKoFile' Source='crates\tasty-plugin-claude-design\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
                             <Directory Id='PluginClipboardHistoryDir' Name='com.tasty.clipboard-history'>
                                 <Component Id='PluginClipboardHistoryBin' Guid='*'>
                                     <File Id='PluginClipboardHistoryBinFile' Source='$(var.CargoTargetBinDir)\tasty-plugin-clipboard-history.exe' KeyPath='yes'/>
@@ -354,6 +376,12 @@
             <ComponentRef Id='PluginClaudeLangEn'/>
             <ComponentRef Id='PluginClaudeLangJa'/>
             <ComponentRef Id='PluginClaudeLangKo'/>
+            <ComponentRef Id='PluginClaudeDesignBin'/>
+            <ComponentRef Id='PluginClaudeDesignManifest'/>
+            <ComponentRef Id='PluginClaudeDesignSig'/>
+            <ComponentRef Id='PluginClaudeDesignLangEn'/>
+            <ComponentRef Id='PluginClaudeDesignLangJa'/>
+            <ComponentRef Id='PluginClaudeDesignLangKo'/>
             <ComponentRef Id='PluginClipboardHistoryBin'/>
             <ComponentRef Id='PluginClipboardHistoryManifest'/>
             <ComponentRef Id='PluginClipboardHistorySig'/>
