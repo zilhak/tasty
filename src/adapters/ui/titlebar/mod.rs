@@ -106,8 +106,10 @@ pub fn draw_titlebar(ctx: &egui::Context, window: &Window, proxy: &EventLoopProx
 /// Windows CSD 리사이즈 보더를 윈도우 둘레에 깐다(데코 off 로 OS 보더가 사라지므로
 /// tasty 가 직접 처리). `run_egui_frame` 의 가장 마지막에 호출해 모든 패널 위 레이어에
 /// 둔다. Windows 외 OS 에서는 no-op.
+/// `sidebar_inset` = 좌측 사이드바 폭(logical px, 없으면 0). 리사이즈 보더가 사이드바
+/// 버튼 클릭을 가로채지 않도록 좌측 존을 그만큼 잘라낸다.
 #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
-pub fn draw_resize_borders(ctx: &egui::Context, window: &Window) {
+pub fn draw_resize_borders(ctx: &egui::Context, window: &Window, sidebar_inset: f32) {
     #[cfg(target_os = "windows")]
-    resize::draw_resize_borders(ctx, window);
+    resize::draw_resize_borders(ctx, window, sidebar_inset);
 }

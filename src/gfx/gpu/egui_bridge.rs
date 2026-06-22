@@ -64,8 +64,15 @@ impl GpuState {
             ui::drop_overlay::draw_drop_overlay(ctx, state, engine, terminal_rect, scale_factor);
 
             // Windows CSD 리사이즈 보더 — 데코 off 로 OS 보더가 없으므로 윈도우 둘레에
-            // egui 인터랙티브 스트립을 최상위로 깐다(Windows 외 OS no-op).
-            ui::titlebar::draw_resize_borders(ctx, window);
+            // egui 인터랙티브 스트립을 최상위로 깐다(Windows 외 OS no-op). 좌변은
+            // 사이드바가 덮으므로(버튼 클릭이 리사이즈로 흡수되는 버그) 사이드바 폭만큼
+            // 좌측 존을 잘라낸다.
+            let sidebar_inset = if state.sidebar_visible {
+                terminal_rect.x.value() / scale_factor
+            } else {
+                0.0
+            };
+            ui::titlebar::draw_resize_borders(ctx, window, sidebar_inset);
 
             // Settings UI is now rendered in the modal window (ModalView)
         })
