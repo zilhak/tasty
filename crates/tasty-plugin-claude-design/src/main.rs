@@ -18,7 +18,7 @@ mod detect;
 mod runner;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use detect::RuntimeDetection;
 use runner::{PROBE_TIMEOUT, Runner};
@@ -28,18 +28,22 @@ use tasty_plugin_sdk::{
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.5"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.10"; // tasty-plugin.toml / Cargo.toml 과 일치
 
 /// 로그인은 사용자가 브라우저에서 직접 인증해야 하므로 최대 대기를 길게 둔다.
 /// runner JS 의 폴링 한계(5분)보다 약간 길게 잡아 마지막 응답을 받는다.
 const LOGIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(330);
 
 struct ClaudeDesignPlugin {
-    /// 자식 node 런너. Arc 로 보관해 비동기 로그인 thread 와 공유한다(런너 프로토콜은
-    /// id 기반이라 동시 in-flight 요청 안전).
+    /// 자식 node 런너. Arc 로 보관해 비동기 로그인/chat thread 와 공유한다(런너
+    /// 프로토콜은 id 기반이라 동시 in-flight 요청 안전).
     runner: Option<Arc<Runner>>,
     /// 임베드 런너 스크립트 기록 + auth.json 저장 위치. 호스트가 주입.
     data_dir: Option<PathBuf>,
+    /// 최근 chat 결과. 디자인 턴은 수 분 걸려 worker 를 막으면 host health-check(60s)가
+    /// 플러그인을 재시작하므로, chat 은 bg thread 에서 돌리고 결과를 여기 적재해 status/
+    /// chat_status 로 노출한다. `{state: idle|running|done|error, reply?, error?}`.
+    last_chat: Arc<Mutex<Value>>,
 }
 
 impl ClaudeDesignPlugin {
@@ -47,6 +51,7 @@ impl ClaudeDesignPlugin {
         Self {
             runner: None,
             data_dir: std::env::var_os("TASTY_PLUGIN_DATA_DIR").map(PathBuf::from),
+            last_chat: Arc::new(Mutex::new(json!({ "state": "idle" }))),
         }
     }
 
@@ -112,8 +117,10 @@ impl Plugin for ClaudeDesignPlugin {
             "design.logout" => self.handle_logout(),
             // M5: 런너로 프로젝트 목록 스크랩.
             "design.projects" => self.handle_projects(),
-            // M5: 기계적 chat — composer 입력 + send + Chat 스트림 종료 대기 + 응답.
+            // M5: 기계적 chat — bg thread 시작(즉시 반환), 결과는 chat_status 로.
             "design.chat" => self.handle_chat(&ctx.params),
+            // M5: 최근 chat 상태/응답 (auto_wait 폴링 대상).
+            "design.chat_status" => Ok(self.handle_chat_status()),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -135,6 +142,7 @@ impl ClaudeDesignPlugin {
             "chromium": detail["chromium"],
             "stored_auth": stored_auth, // 디스크에 저장된 로그인 세션 존재 여부.
             "project": Value::Null,     // M5
+            "last_chat": self.handle_chat_status(), // 최근 chat 상태/응답.
         });
 
         match self.runner.as_ref().filter(|r| r.is_alive()) {
@@ -196,16 +204,18 @@ impl ClaudeDesignPlugin {
             .map_err(IpcMethodError::new)
     }
 
-    /// `design.chat` — 대상 프로젝트 캔버스에 메시지를 보내고 턴 종료까지 기다려 응답을
-    /// 반환한다. 디자인 턴은 수 분 걸릴 수 있으나 worker 블로킹은 host ping(별도 스레드)을
-    /// 막지 않으므로 동기로 둔다(다른 design.* ipc 만 그동안 대기).
+    /// `design.chat` — 대상 프로젝트 캔버스에 메시지를 보낸다. 디자인 턴은 수 분 걸릴 수
+    /// 있어 worker 를 막으면 host health-check(60s)가 플러그인을 재시작하므로, **bg
+    /// thread** 에서 돌리고 즉시 `{state:"running"}` 을 반환한다. 결과는 `design.chat_status`
+    /// (또는 status 의 last_chat)로 확인한다. CLI 는 매니페스트 auto_wait 로 자동 폴링.
     fn handle_chat(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
         self.require_logged_in()?;
         let message = params
             .get("message")
             .and_then(Value::as_str)
             .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| IpcMethodError::invalid_params("message is required"))?;
+            .ok_or_else(|| IpcMethodError::invalid_params("message is required"))?
+            .to_string();
         let project = self.resolve_project(params.get("project").and_then(Value::as_str))?;
         let timeout_s = params.get("timeout").and_then(Value::as_u64).unwrap_or(180);
 
@@ -214,9 +224,26 @@ impl ClaudeDesignPlugin {
             req["project"] = json!(uuid);
         }
         let runner = self.ensure_runner()?;
-        // 런너 op timeout 보다 약간 길게 줘 마지막 응답을 받는다.
         let wait = std::time::Duration::from_secs(timeout_s + 30);
-        runner.request("chat", req, wait).map_err(IpcMethodError::new)
+
+        let last_chat = Arc::clone(&self.last_chat);
+        if let Ok(mut g) = last_chat.lock() {
+            *g = json!({ "state": "running" });
+        }
+        std::thread::Builder::new()
+            .name("design-chat".into())
+            .spawn(move || run_chat(runner, req, wait, last_chat))
+            .map_err(|e| IpcMethodError::new(format!("spawn chat thread failed: {e}")))?;
+
+        Ok(json!({ "state": "running" }))
+    }
+
+    /// `design.chat_status` — 최근 chat 의 상태/응답. auto_wait 폴링 대상.
+    fn handle_chat_status(&self) -> Value {
+        self.last_chat
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| json!({ "state": "error", "error": "last_chat poisoned" }))
     }
 
     /// `--project` 값을 UUID 로 해석한다. UUID 형식이면 그대로, 별칭이면 data_dir/
@@ -278,6 +305,27 @@ impl ClaudeDesignPlugin {
             tracing::warn!(error = %e, "runner set_auth(null) on logout failed");
         }
         Ok(json!({ "ok": true }))
+    }
+}
+
+/// 백그라운드 chat: 런너에 chat op 를 보내 턴 종료까지 기다리고, 결과를 last_chat 에
+/// 적재한다(worker 비차단). chat_status/status 가 노출.
+fn run_chat(
+    runner: Arc<Runner>,
+    req: Value,
+    wait: std::time::Duration,
+    last_chat: Arc<Mutex<Value>>,
+) {
+    let result = match runner.request("chat", req, wait) {
+        Ok(msg) => json!({
+            "state": "done",
+            "reply": msg.get("reply").cloned().unwrap_or(Value::Null),
+            "url": msg.get("url").cloned().unwrap_or(Value::Null),
+        }),
+        Err(e) => json!({ "state": "error", "error": e }),
+    };
+    if let Ok(mut g) = last_chat.lock() {
+        *g = result;
     }
 }
 

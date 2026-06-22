@@ -55,22 +55,17 @@ impl Runner {
             .ok_or_else(|| "playwright path has no parent".to_string())?;
         let runner_js = materialize_runner(data_dir)?;
 
-        let mut cmd = Command::new(node);
-        cmd.arg(&runner_js)
+        // NOTE: Windows 에서 node 를 CREATE_NO_WINDOW 로 띄우면 node 가 launch 하는
+        // 로그인 chrome 창까지 숨겨져(자식 GUI 창 가시성 영향) 사용자가 로그인을 못 한다.
+        // 따라서 플래그를 쓰지 않는다 — node 콘솔 창이 잠깐 뜰 수 있으나 로그인 가시성
+        // 우선. (콘솔 억제가 필요하면 login 과 off-screen op 의 브라우저를 분리 spawn 해야.)
+        let mut child = Command::new(node)
+            .arg(&runner_js)
             .env("NODE_PATH", node_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // 런너 진단 로그(stderr)는 plugin 로그로 흘려보낸다.
-            .stderr(Stdio::inherit());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // CREATE_NO_WINDOW: GUI 호스트가 콘솔 앱(node)을 spawn 할 때 빈 콘솔 창이
-            // 뜨지 않게 한다(claude/codex 는 터미널 surface 로 띄워 무관하나, 본 런너는
-            // raw spawn 이라 명시 필요).
-            cmd.creation_flags(0x0800_0000);
-        }
-        let mut child = cmd
+            .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| format!("spawn node runner failed: {e}"))?;
 

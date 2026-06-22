@@ -28,12 +28,22 @@ const projectUrl = (uuid) => `${DESIGN_ORIGIN}/design/p/${uuid}`;
 const SEL_COMPOSER = '[data-testid="chat-composer-input"], div[role="textbox"].ProseMirror';
 const SEL_SEND = '[data-testid="chat-send-button"]';
 const SEL_MESSAGES = '[data-testid="chat-messages"]';
-// 턴 종료 신호: 모델 턴 스트리밍 RPC 가 닫히는 시점.
-const CHAT_RPC_RE = /\/OmeletteService\/Chat$/;
+// 턴 종료 신호: 모델 턴 스트리밍 RPC 가 닫히는 시점. 주의: 서비스명이
+// `anthropic.omelette.api.v1alpha.OmeletteService` 라 "OmeletteService" 앞은 `/` 가
+// 아니라 `.` 다. 따라서 leading slash 를 넣으면 안 된다(과거 버그). 쿼리스트링 허용.
+const CHAT_RPC_RE = /OmeletteService\/Chat(\?|$)/;
 
 // off-screen: 화면 밖으로 던져 사용자 포커스/시야를 방해하지 않는다(설계 §1·§8).
 // bringToFront() 는 절대 호출하지 않는다.
-const OFFSCREEN_ARGS = ['--window-position=-32000,-32000'];
+// anti-throttle: Chrome 은 occluded/off-screen 창을 idle 시 렌더링 throttle 하는데,
+// 그러면 idle 후 navigate 시 요소가 'visible' 로 안 잡혀 chat composer 대기가 타임아웃
+// 난다. 아래 플래그로 백그라운드 throttling 을 끈다.
+const OFFSCREEN_ARGS = [
+  '--window-position=-32000,-32000',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding',
+  '--disable-background-timer-throttling',
+];
 
 let playwright = null;
 let browser = null;
@@ -56,6 +66,24 @@ function loadPlaywright() {
   // NODE_PATH(시스템 설치 playwright 의 부모 디렉토리)로 해석된다.
   playwright = require('playwright');
   return playwright;
+}
+
+// 로그인 전용 브라우저. Google OAuth 는 자동화 지문(navigator.webdriver /
+// --enable-automation)을 탐지하면 "안전하지 않은 브라우저"로 로그인을 차단한다.
+// 번들 Chromium 은 CF 는 통과하나 Google 에 걸리므로, 실제 시스템 Chrome
+// (channel:'chrome')을 자동화 플래그 숨겨 띄운다. Chrome 미설치 시 번들로 폴백.
+async function launchLoginBrowser(pw) {
+  const base = {
+    headless: false,
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: ['--disable-blink-features=AutomationControlled'],
+  };
+  try {
+    return await pw.chromium.launch({ ...base, channel: 'chrome' });
+  } catch (e) {
+    log('chrome channel unavailable, falling back to bundled chromium:', e.message);
+    return await pw.chromium.launch(base);
+  }
 }
 
 async function ensureBrowser() {
@@ -159,7 +187,7 @@ async function handle(req) {
       let loginBrowser = null;
       try {
         const pw = loadPlaywright();
-        loginBrowser = await pw.chromium.launch({ headless: false });
+        loginBrowser = await launchLoginBrowser(pw);
         const lctx = await loginBrowser.newContext({ viewport: { width: 1280, height: 900 } });
         const lpage = await lctx.newPage();
         await lpage.goto(DESIGN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -228,7 +256,7 @@ async function handle(req) {
           }
         }
         const composer = page.locator(SEL_COMPOSER).first();
-        await composer.waitFor({ state: 'visible', timeout: 20000 });
+        await composer.waitFor({ state: 'visible', timeout: 30000 });
         await composer.click();
         await composer.fill(req.message);
 
