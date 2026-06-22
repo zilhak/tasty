@@ -437,6 +437,39 @@
 
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
 
+        <!--
+          Purge user data on uninstall.
+
+          `%USERPROFILE%\.tasty\` (config, state, scrollback, themes, and the
+          per-user plugin copies the runtime syncs on first launch) is created
+          by the tasty runtime, NOT installed by this MSI — so the standard
+          component/RemoveFile machinery never touches it. Without this action
+          an uninstall leaves the whole `~/.tasty/` tree behind, which (among
+          other things) lets stale/untrusted plugin copies survive a
+          reinstall.
+
+          Policy (per project decision): a full uninstall wipes ALL user data
+          by default. The action is `deferred` + `Impersonate='yes'` so it runs
+          under the invoking user's token (correct `%USERPROFILE%` even for a
+          perMachine install) and `Return='ignore'` so a locked file never
+          blocks removal.
+
+          Condition: `REMOVE="ALL"` (a real uninstall, not a partial
+          feature removal) AND `NOT UPGRADINGPRODUCTCODE` (do NOT wipe data
+          when a newer version's install removes this one — upgrades must
+          preserve user data).
+        -->
+        <CustomAction Id='PurgeTastyUserData'
+            Directory='APPLICATIONFOLDER'
+            ExeCommand='cmd.exe /c rmdir /s /q "%USERPROFILE%\.tasty"'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='ignore'/>
+
+        <InstallExecuteSequence>
+            <Custom Action='PurgeTastyUserData' Before='RemoveFiles'>REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+        </InstallExecuteSequence>
+
         
         <Icon Id='ProductIcon.ico' SourceFile='assets\icons\icon.ico'/>
         <Property Id='ARPPRODUCTICON' Value='ProductIcon.ico' />

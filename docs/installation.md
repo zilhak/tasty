@@ -50,6 +50,16 @@ tar -xzf tasty-{ver}-linux-x64.tar.gz && ./tasty-linux-x64/tasty
 Expand-Archive tasty-{ver}-windows-x64.zip; .\tasty\tasty.exe
 ```
 
+### 제거 (.msi)
+
+"설정 > 앱" 또는 제어판 > 프로그램 제거에서 Tasty 를 제거한다(`msiexec /x` 등록됨). 제거 시:
+
+- `Program Files\tasty\` 의 바이너리·플러그인 일체, 시작 메뉴 바로가기, PATH 항목이 정리된다.
+- **사용자 데이터(`~/.tasty/`)도 함께 전부 삭제된다** — config·세션·테마·런타임이 복사한 플러그인 사본까지 모두. 정책상 완전 제거를 기본으로 한다(잔존 플러그인 사본이 재설치 시 trust 를 깨뜨리는 문제 방지). 보존하려면 제거 전에 `~/.tasty/` 를 백업한다.
+- **업그레이드(같은 제품 재설치)는 `~/.tasty/` 를 보존한다** — 데이터 삭제는 진짜 제거(`REMOVE="ALL"`)일 때만 일어난다.
+
+> `.zip` 은 설치 개념이 없으므로 압축 해제한 폴더를 지우면 끝. 단 `~/.tasty/` 사용자 데이터는 수동 삭제해야 한다.
+
 빌드 측면은 [dev-guide/build](dev-guide/build.md) "Windows MSI".
 
 ## 검증
@@ -65,7 +75,7 @@ tasty list info       # GUI 인스턴스가 떠 있을 때 시스템 정보 IPC
 |----|---------|--------------|
 | Linux | `/usr/bin/tasty`(.deb/.rpm) 또는 추출 위치 | `~/.tasty/` |
 | macOS | `/Applications/Tasty.app/Contents/MacOS/tasty` | `~/.tasty/` |
-| Windows | `%LOCALAPPDATA%\tasty\tasty.exe`(.msi) | `~/.tasty/` |
+| Windows | `C:\Program Files\tasty\bin\tasty.exe`(.msi, perMachine) | `~/.tasty/` |
 
 `~/.tasty/` 에 `tasty.port`(IPC 포트)·`config.toml`·세션 등 사용자 데이터가 들어간다(전체 지도: [design/systems/storage](design/systems/storage.md), OS별 경로: [reference/environments](reference/environments.md)).
 
