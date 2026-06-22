@@ -24,12 +24,11 @@ use detect::RuntimeDetection;
 use runner::{PROBE_TIMEOUT, Runner};
 use serde_json::{Value, json};
 use tasty_plugin_sdk::{
-    BusHandle, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx,
-    SurfaceResult,
+    IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.4"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.5"; // tasty-plugin.toml / Cargo.toml 과 일치
 
 /// 로그인은 사용자가 브라우저에서 직접 인증해야 하므로 최대 대기를 길게 둔다.
 /// runner JS 의 폴링 한계(5분)보다 약간 길게 잡아 마지막 응답을 받는다.
@@ -95,29 +94,9 @@ impl Plugin for ClaudeDesignPlugin {
         SurfaceResult::default()
     }
 
-    /// 부트스트랩 후 1회. 런타임이 갖춰져 있으면 런너를 상주 기동하고 저장된 세션을
-    /// 주입한다(브라우저는 lazy). 런타임 부재 시 건너뛰고 호출 시 안내한다.
-    fn on_start(&mut self, _host: HostHandle, _bus: BusHandle) {
-        let det = RuntimeDetection::run();
-        if det.missing().is_some() {
-            tracing::info!(status = %det.runtime_status(), "runtime not ready — runner deferred");
-            return;
-        }
-        let Some(data_dir) = self.data_dir.clone() else {
-            tracing::warn!("TASTY_PLUGIN_DATA_DIR not set — runner deferred");
-            return;
-        };
-        match Runner::start(&det, &data_dir) {
-            Ok(r) => {
-                let runner = Arc::new(r);
-                inject_saved_auth(&runner, &data_dir);
-                self.runner = Some(runner);
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "runner start at on_start failed — will retry on demand")
-            }
-        }
-    }
+    // on_start 없음 — 런너는 lazy 기동(첫 probe/login/chat 시 ensure_runner 가 spawn).
+    // 디자인을 쓰지 않는 세션에서 매 부팅마다 node 를 띄우지 않기 위함. 저장된 세션
+    // 주입도 ensure_runner 안에서 처리한다.
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {

@@ -55,13 +55,22 @@ impl Runner {
             .ok_or_else(|| "playwright path has no parent".to_string())?;
         let runner_js = materialize_runner(data_dir)?;
 
-        let mut child = Command::new(node)
-            .arg(&runner_js)
+        let mut cmd = Command::new(node);
+        cmd.arg(&runner_js)
             .env("NODE_PATH", node_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // 런너 진단 로그(stderr)는 plugin 로그로 흘려보낸다.
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW: GUI 호스트가 콘솔 앱(node)을 spawn 할 때 빈 콘솔 창이
+            // 뜨지 않게 한다(claude/codex 는 터미널 surface 로 띄워 무관하나, 본 런너는
+            // raw spawn 이라 명시 필요).
+            cmd.creation_flags(0x0800_0000);
+        }
+        let mut child = cmd
             .spawn()
             .map_err(|e| format!("spawn node runner failed: {e}"))?;
 
