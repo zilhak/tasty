@@ -18,6 +18,7 @@
 - **dangling 참조** — 없는 passkey 를 가리켜도 정상 저장, "passkey 없음" 노란 배지 + 소비 시점 에러.
 - **값 마스킹** — passkey 값은 기본 마스킹(`••••••••`). GUI 의 **Reveal**(로컬 전용)만 실제 값을 본다(path=경로, inline=관리 파일 내용). AI Agent/원격은 IPC 로 값을 **영구 읽을 수 없다**(쓰기만).
 - **소비자 분리** — attach 는 ssh kind 프로필을 읽는 소비자 중 하나. "주소 저장"과 "attach"가 분리됐다(→ [remote-attach](../remote-attach/index.md)).
+- **입력 격리** — 팝업이 터미널 위에 떠 있어도 팝업 위 클릭/스크롤은 팝업이 소비하며, 뒤 터미널의 포커스·선택·스크롤을 건드리지 않는다. remote_tool 고유 규칙이 아니라 모든 팝업에 적용되는 입력 레이어 계약(Layer 3 = Popup, "팝업 위면 터미널 무시")을 따른 것이다(→ [input-layer](../../architecture/input-layer.md)).
 
 ## 인터페이스
 

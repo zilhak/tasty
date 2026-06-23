@@ -164,8 +164,15 @@ impl MainView {
         if egui_consumed || overlay_open || self.state.popup_hovered {
             // Even when egui consumes the event (e.g. egui-rendered panels),
             // we still need to update pane focus on left-click within the terminal area.
+            //
+            // 단, 팝업 위(`popup_hovered`)일 때는 제외한다. 입력 레이어 계약(Layer 3 =
+            // Popup, docs/architecture/input-layer.md)상 "팝업 위면 터미널 무시"이므로,
+            // 터미널 영역 위에 떠 있는 팝업을 클릭해도 뒤 pane/surface 로 포커스가
+            // 넘어가면 안 된다. 형제 핸들러(handle_cursor_moved/handle_mouse_wheel)는
+            // 이미 popup_hovered 가드를 가진다 — 이 블록만 누락돼 있었다.
             if egui_consumed
                 && !overlay_open
+                && !self.state.popup_hovered
                 && button == MouseButton::Left
                 && button_state == ElementState::Pressed
             {
