@@ -24,7 +24,7 @@ fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
 
-    caption(ui, theme, "MenuItem — icon · label · shortcut · active · danger · separator");
+    caption(ui, theme, "MenuItem — icon · label · shortcut · active · disabled · danger · separator");
     ui.vertical(|ui| {
         ui.set_max_width(260.0);
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -51,6 +51,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     *sel = i;
                 }
             }
+            // disabled — opacity 0.45, hover/클릭 비활성 (enabled=false).
+            menu_item(
+                ui,
+                theme,
+                Some(&|ui, rect, c| glyph::FILE.image(rect.height(), c).paint_at(ui, rect)),
+                "Paste (nothing copied)",
+                Some("Ctrl+V"),
+                MenuItemVariant::Normal,
+                false,
+                false,
+            );
             menu_separator(ui, theme);
             menu_item(
                 ui,

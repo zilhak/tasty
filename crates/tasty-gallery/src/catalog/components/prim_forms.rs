@@ -7,12 +7,13 @@ use tasty_ui_widgets::{checkbox, select, switch};
 
 thread_local! {
     static STATE: RefCell<FormState> = const {
-        RefCell::new(FormState { sel: 0, check_a: true, check_b: false, switch_a: true, switch_b: false })
+        RefCell::new(FormState { sel: 0, sel_block: 1, check_a: true, check_b: false, switch_a: true, switch_b: false })
     };
 }
 
 struct FormState {
     sel: usize,
+    sel_block: usize,
     check_a: bool,
     check_b: bool,
     switch_a: bool,
@@ -35,6 +36,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         caption(ui, theme, "Select — 토큰 트리거 + 드롭다운");
         let opts = ["Mocha (dark)", "Latte (light)", "Auto"];
         select(ui, theme, "gallery_theme", &mut st.sel, &opts, 200.0, true);
+
+        ui.add_space(10.0);
+        caption(ui, theme, "Select block — fill container width");
+        ui.vertical(|ui| {
+            ui.set_max_width(360.0);
+            // 가용 폭을 폭으로 넘겨 컨테이너를 채운다(디자인 `block`).
+            let w = ui.available_width();
+            select(ui, theme, "gallery_theme_block", &mut st.sel_block, &opts, w, true);
+        });
 
         ui.add_space(10.0);
         caption(ui, theme, "Checkbox — checked · unchecked · disabled");

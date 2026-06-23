@@ -12,8 +12,9 @@ use tasty_ui_widgets::Input;
 use super::glyph;
 
 thread_local! {
-    static BUFS: RefCell<[String; 6]> = const {
+    static BUFS: RefCell<[String; 7]> = const {
         RefCell::new([
+            String::new(),
             String::new(),
             String::new(),
             String::new(),
@@ -74,6 +75,17 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 .placeholder("Disabled")
                 .width(160.0)
                 .show(ui, theme, &mut bufs[5]);
+        });
+
+        ui.add_space(8.0);
+        caption(ui, theme, "block — fill container width (width 미지정 → 가용 폭)");
+        ui.vertical(|ui| {
+            ui.set_max_width(360.0);
+            // width() 미호출 → Input 이 가용 폭을 채운다(디자인 `block`).
+            Input::new()
+                .placeholder("Type to search commands…")
+                .icon(&|ui, rect, c| glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect))
+                .show(ui, theme, &mut bufs[6]);
         });
     });
 }

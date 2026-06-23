@@ -7,6 +7,8 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
+use super::glyph;
+
 fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text)
@@ -41,6 +43,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         Button::new("Primary").variant(ButtonVariant::Primary).enabled(false).show(ui, theme);
         Button::new("Secondary").variant(ButtonVariant::Secondary).enabled(false).show(ui, theme);
         Button::new("Ghost").variant(ButtonVariant::Ghost).enabled(false).show(ui, theme);
+    });
+
+    ui.add_space(8.0);
+    caption(ui, theme, "icon — leadingIcon · trailingIcon · 양쪽 (icon-size-md, gap space-sm)");
+    ui.horizontal(|ui| {
+        Button::new("New tab")
+            .variant(ButtonVariant::Primary)
+            .leading_icon(&|ui, rect, c| glyph::PLUS.image(rect.height(), c).paint_at(ui, rect))
+            .show(ui, theme);
+        Button::new("Settings")
+            .variant(ButtonVariant::Secondary)
+            .trailing_icon(&|ui, rect, c| glyph::SETTINGS.image(rect.height(), c).paint_at(ui, rect))
+            .show(ui, theme);
+        Button::new("Search")
+            .variant(ButtonVariant::Ghost)
+            .leading_icon(&|ui, rect, c| glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect))
+            .trailing_icon(&|ui, rect, c| glyph::CLOSE.image(rect.height(), c).paint_at(ui, rect))
+            .show(ui, theme);
     });
 
     ui.add_space(8.0);
