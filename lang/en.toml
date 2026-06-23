@@ -579,6 +579,7 @@ undo = "Undo"
 redo = "Redo"
 
 [toast]
+char_limit_notice = "(200 character limit)"
 copied = "Copied"
 copied_path = "Path copied"
 copied_files = "Files copied"

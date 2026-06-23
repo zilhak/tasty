@@ -579,6 +579,7 @@ undo = "元に戻す"
 redo = "やり直し"
 
 [toast]
+char_limit_notice = "(200文字制限)"
 copied = "コピーしました"
 copied_path = "パスをコピーしました"
 copied_files = "ファイルをコピーしました"

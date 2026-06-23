@@ -43,6 +43,10 @@ const FADE_IN_MS: f32 = 80.0;
 const FADE_OUT_MS: f32 = 160.0;
 /// 스코프당 최대 동시 표시 개수.
 const MAX_PER_SCOPE: usize = 5;
+/// 토스트 본문 최대 문자 수(유니코드 char 기준, 바이트 아님). 초과 시 앞
+/// `MAX_MESSAGE_CHARS` 자만 남기고 줄바꿈 + 안내 접미를 붙인다 — 비정상적으로
+/// 긴 입력(경로/에러/plugin 텍스트)이 토스트를 세로로 폭주시키는 것을 막는다.
+const MAX_MESSAGE_CHARS: usize = 200;
 /// 토스트 사이 세로 간격 (px).
 const TOAST_GAP: f32 = 6.0;
 /// 스코프 가장자리에서의 안쪽 여백 (px).
@@ -188,7 +192,7 @@ impl ToastManager {
 
     /// 토스트 발사. 사용자 행동에서만 호출되어야 한다.
     pub fn push(&mut self, message: impl Into<String>, kind: ToastKind, scope: ToastScope) {
-        let message = message.into();
+        let message = truncate_message(message.into());
         let now = Instant::now();
 
         // Coalesce: 같은 스코프·같은 메시지가 짧은 시간 내에 또 오면 수명만 갱신한다.
@@ -343,6 +347,24 @@ pub fn compute_alpha(t: &ToastState, now: Instant, reduced_motion: bool) -> f32 
     }
 }
 
+/// 본문이 `MAX_MESSAGE_CHARS`(유니코드 char) 를 초과하면 앞부분만 남기고 줄바꿈
+/// + 안내 접미(`toast.char_limit_notice`)를 붙인다.
+///
+/// - 길이는 `chars().count()`(문자 수), 자르기는 `chars().take(..)`(char 경계)로
+///   처리해 멀티바이트(한글/일문 등)에서 바이트 슬라이싱 panic 을 피한다.
+/// - 경계 정책: 원본이 `MAX_MESSAGE_CHARS` 를 *초과* 할 때만 자른다(정확히 같거나
+///   이하는 변경 없음). 접미는 본문 200자 *바깥* 에 추가로 붙는다.
+/// - coalesce 비교 이전(push 진입부)에 적용되므로 같은 긴 메시지는 동일하게
+///   잘려 정상 coalesce 된다.
+fn truncate_message(message: String) -> String {
+    if message.chars().count() <= MAX_MESSAGE_CHARS {
+        return message;
+    }
+    let truncated: String = message.chars().take(MAX_MESSAGE_CHARS).collect();
+    let notice = crate::i18n::t("toast.char_limit_notice");
+    format!("{truncated}\n{notice}")
+}
+
 impl Default for ToastManager {
     fn default() -> Self {
         Self::new()
@@ -355,6 +377,32 @@ mod tests {
 
     fn test_theme() -> Theme {
         tasty_themes::mocha_fallback()
+    }
+
+    #[test]
+    fn truncate_over_limit_keeps_200_chars_and_appends_notice() {
+        // 멀티바이트 250자 → 첫 줄 200 char + 줄바꿈 + 접미.
+        let out = truncate_message("あ".repeat(250));
+        let first_line = out.lines().next().unwrap();
+        assert_eq!(first_line.chars().count(), MAX_MESSAGE_CHARS);
+        assert!(out.contains('\n'));
+        // 접미 줄(번역값/키)이 존재한다(로케일 의존이라 내용은 단정하지 않음).
+        assert!(!out.lines().last().unwrap().is_empty());
+    }
+
+    #[test]
+    fn truncate_at_or_under_limit_unchanged() {
+        let exact = "x".repeat(MAX_MESSAGE_CHARS);
+        assert_eq!(truncate_message(exact.clone()), exact);
+        let under = "y".repeat(10);
+        assert_eq!(truncate_message(under.clone()), under);
+    }
+
+    #[test]
+    fn truncate_no_panic_on_multibyte_boundary() {
+        // 한글(자당 3바이트) 300자 — 바이트 슬라이싱이면 panic. char 경계라 안전.
+        let out = truncate_message("한".repeat(300));
+        assert_eq!(out.lines().next().unwrap().chars().count(), MAX_MESSAGE_CHARS);
     }
 
     fn mk_state(id: u64, kind: ToastKind, msg: &str) -> ToastState {

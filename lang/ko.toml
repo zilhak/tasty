@@ -579,6 +579,7 @@ undo = "실행 취소"
 redo = "다시 실행"
 
 [toast]
+char_limit_notice = "(200자 제한)"
 copied = "복사됨"
 copied_path = "경로 복사됨"
 copied_files = "파일 복사됨"
