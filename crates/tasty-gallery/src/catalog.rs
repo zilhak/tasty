@@ -10,6 +10,7 @@
 
 pub mod components;
 pub mod spacing;
+pub mod specimen;
 pub mod theme;
 pub mod typography;
 pub mod widgets;

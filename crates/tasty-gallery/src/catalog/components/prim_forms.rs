@@ -5,6 +5,8 @@ use std::cell::RefCell;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{checkbox, select, switch};
 
+use crate::catalog::specimen::caption;
+
 thread_local! {
     static STATE: RefCell<FormState> = const {
         RefCell::new(FormState { sel: 0, sel_block: 1, check_a: true, check_b: false, switch_a: true, switch_b: false })
@@ -18,14 +20,6 @@ struct FormState {
     check_b: bool,
     switch_a: bool,
     switch_b: bool,
-}
-
-fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(theme.font_size_caption.value())
-            .color(egui::Color32::from(theme.subtext0)),
-    );
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {

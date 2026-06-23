@@ -3,13 +3,7 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{badge, badge_dot, kbd, tag, BadgeVariant, TagVariant};
 
-fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(theme.font_size_caption.value())
-            .color(egui::Color32::from(theme.subtext0)),
-    );
-}
+use crate::catalog::specimen::caption;
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);

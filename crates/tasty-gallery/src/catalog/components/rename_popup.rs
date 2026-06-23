@@ -22,6 +22,8 @@
 use std::cell::RefCell;
 use tasty_type_appearance::theme::Theme;
 
+use crate::catalog::specimen::case_title;
+
 struct RenamePopupProps<'a> {
     theme: &'a Theme,
     buffer: &'a mut String,
@@ -95,15 +97,6 @@ thread_local! {
         "한글 이름 예시".to_string(),
         "이것은 잘리는 매우 매우 매우 긴 텍스트입니다 — gallery 회귀 확인용".to_string(),
     ]);
-}
-
-fn case_title(ui: &mut egui::Ui, theme: &Theme, title: &str) {
-    ui.label(
-        egui::RichText::new(title)
-            .strong()
-            .color(egui::Color32::from(theme.text)),
-    );
-    ui.add_space(2.0);
 }
 
 fn case_box(ui: &mut egui::Ui, theme: &Theme, title: &str, idx: usize) {

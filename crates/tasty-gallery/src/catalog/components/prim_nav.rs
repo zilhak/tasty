@@ -8,17 +8,11 @@ use tasty_ui_widgets::{menu_item, menu_separator, tree_row, MenuItemVariant};
 
 use super::glyph;
 
+use crate::catalog::specimen::caption;
+
 thread_local! {
     static SEL: RefCell<usize> = const { RefCell::new(0) };
     static TREE_SEL: RefCell<usize> = const { RefCell::new(1) };
-}
-
-fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(theme.font_size_caption.value())
-            .color(egui::Color32::from(theme.subtext0)),
-    );
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {

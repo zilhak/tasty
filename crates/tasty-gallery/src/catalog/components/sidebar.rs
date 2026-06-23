@@ -19,6 +19,8 @@
 use std::cell::RefCell;
 use tasty_type_appearance::theme::Theme;
 
+use crate::catalog::specimen::case_title;
+
 #[derive(Debug, Clone)]
 struct WorkspaceEntryView {
     name: String,
@@ -487,15 +489,6 @@ fn mock_indicators() -> Vec<WorkspaceEntryView> {
             is_active: false,
         },
     ]
-}
-
-fn case_title(ui: &mut egui::Ui, theme: &Theme, title: &str) {
-    ui.label(
-        egui::RichText::new(title)
-            .strong()
-            .color(egui::Color32::from(theme.text)),
-    );
-    ui.add_space(2.0);
 }
 
 fn full_props<'a>(theme: &'a Theme, workspaces: &'a [WorkspaceEntryView]) -> SidebarFullProps<'a> {

@@ -20,6 +20,8 @@
 
 use tasty_type_appearance::theme::Theme;
 
+use crate::catalog::specimen::case_title;
+
 struct ApplyPresetProps<'a> {
     theme: &'a Theme,
     empty_label: &'a str,
@@ -168,12 +170,7 @@ fn case_box(
     names: &[String],
     selected: Option<&str>,
 ) {
-    ui.label(
-        egui::RichText::new(title)
-            .strong()
-            .color(egui::Color32::from(theme.text)),
-    );
-    ui.add_space(2.0);
+    case_title(ui, theme, title);
     egui::Frame::group(ui.style())
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {

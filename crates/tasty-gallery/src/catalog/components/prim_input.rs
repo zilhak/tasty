@@ -10,6 +10,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::Input;
 
 use super::glyph;
+use crate::catalog::specimen::caption;
 
 thread_local! {
     static BUFS: RefCell<[String; 7]> = const {
@@ -23,14 +24,6 @@ thread_local! {
             String::new(),
         ])
     };
-}
-
-fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(theme.font_size_caption.value())
-            .color(egui::Color32::from(theme.subtext0)),
-    );
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
