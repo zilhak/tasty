@@ -109,6 +109,11 @@ pub fn all() -> Vec<CatalogItem> {
         },
         CatalogItem {
             category: Category::Components,
+            name: "Spinner",
+            draw: components::prim_spinner::draw,
+        },
+        CatalogItem {
+            category: Category::Components,
             name: "MenuItem · TreeRow",
             draw: components::prim_nav::draw,
         },
