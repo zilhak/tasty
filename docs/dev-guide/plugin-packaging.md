@@ -105,7 +105,7 @@ base64 -w 0 release-private.pem   # → GitHub Secret TASTY_RELEASE_SIGN_KEY (�
 
 | 증상 | 조치 |
 |------|------|
-| `Skipped { signature-invalid }` 로 builtin 미설치 | release/dist 인데 `.sig` 부재 → `sign-bundle.sh` 후 재빌드 |
+| `Skipped { signature-invalid }` 로 builtin 미설치 | non-debug 인데 `.sig` 부재. 패키징본(exe-relative `plugins/`)은 `sign-bundle.sh` 후 재빌드. workspace 산출물 직접 실행(`target/<profile>/tasty.exe`)은 dev bundle 이 `crates/<plugin>/tasty-plugin.toml.sig` 를 동기화하므로, crates 에 `.sig` 만 있으면(=`sign-bundle.sh --all-builtins` 1 회) 통과 |
 | 로컬 release 에서 dev key 서명 검증 실패 | `dev-pubkey.bin` 이 사용 private key 와 불일치 → `gen-dev-key.sh` 로 두 파일 함께 갱신 |
 | CI sign step `signing key not found` | `TASTY_RELEASE_SIGN_KEY` 미등록 또는 base64 디코딩이 PEM 아님 |
 | Windows `candle could not be found` | WiX 3.x 미설치/`WIX` env 누락 → `winget install WiXToolset.WiXToolset` |
