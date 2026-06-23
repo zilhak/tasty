@@ -183,6 +183,16 @@ pub fn all() -> Vec<CatalogItem> {
             name: "Rename (workspace / tab)",
             draw: components::rename_popup::draw,
         },
+        CatalogItem {
+            category: Category::Overlays,
+            name: "Search Bar",
+            draw: components::search_bar::draw,
+        },
+        CatalogItem {
+            category: Category::Overlays,
+            name: "Tools Menu",
+            draw: components::tools_menu::draw,
+        },
         // ── Layouts ──
         CatalogItem {
             category: Category::Layouts,
