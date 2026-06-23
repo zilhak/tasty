@@ -11,7 +11,7 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 
-const CONTENT_MARGIN: f32 = 4.0;
+/// 디자인 canonical 폭 (command_palette.jsx: `width: 540`).
 const POPUP_W: f32 = 540.0;
 
 /// 본체 `icons::Icon` 의 로컬 mock. inline SVG 를 `egui_extras` svg 로더로
@@ -104,46 +104,82 @@ struct MockProps<'a> {
 /// 은 생략 — gallery container 가 popup 이 아니라 일반 ui 영역이라 키 입력이
 /// 다른 panel 로 가는 게 자연스러움.
 fn draw_mock_view(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
+    // 디자인 토큰 (command_palette.jsx).
+    let space_md = theme.spacing_md.value(); // header padding · footer h-padding
+    let space_sm = theme.spacing_sm.value(); // list padding · footer v-padding
+    // separator 색 = `--tasty-separator`(alpha-white-8) → overlay-hover 와 동일.
+    let separator = theme.overlay_hover().to_egui_premultiplied();
+    let sep_w = theme.border_width.value();
+
+    // 섹션 사이 전폭 separator (디자인: borderBottom/borderTop, 1px separator).
+    let full_separator = |ui: &mut egui::Ui| {
+        let r = ui.max_rect();
+        let y = ui.cursor().top();
+        ui.painter()
+            .hline(r.x_range(), y, egui::Stroke::new(sep_w, separator));
+    };
+
     ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = 4.0;
+        ui.spacing_mut().item_spacing.y = 0.0;
 
-        // 검색 Input — leading 검색 아이콘 + TextEdit.
-        ui.horizontal(|ui| {
-            let icon_size = 16.0;
-            let (icon_rect, _) =
-                ui.allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());
-            SEARCH
-                .image(icon_size, theme.text_muted().to_egui())
-                .paint_at(ui, icon_rect);
-            let mut buf = props.query_buffer.borrow_mut();
-            ui.add(
-                egui::TextEdit::singleline(&mut *buf)
-                    .hint_text(props.placeholder)
-                    .desired_width(ui.available_width())
-                    .font(egui::TextStyle::Body),
-            );
-        });
-        ui.separator();
+        // ── Header (padding space-md) — leading 검색 아이콘 + TextEdit. ──
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.add_space(space_md);
+                ui.horizontal(|ui| {
+                    ui.add_space(space_md);
+                    let icon_size = 16.0;
+                    let (icon_rect, _) = ui.allocate_exact_size(
+                        egui::vec2(icon_size, icon_size),
+                        egui::Sense::hover(),
+                    );
+                    SEARCH
+                        .image(icon_size, theme.text_muted().to_egui())
+                        .paint_at(ui, icon_rect);
+                    let mut buf = props.query_buffer.borrow_mut();
+                    ui.add(
+                        egui::TextEdit::singleline(&mut *buf)
+                            .hint_text(props.placeholder)
+                            .desired_width(ui.available_width() - space_md)
+                            .font(egui::TextStyle::Body),
+                    );
+                });
+                ui.add_space(space_md);
+            },
+        );
+        full_separator(ui);
 
+        // ── List (padding space-sm, maxHeight 320). ──
         if props.items.is_empty() {
-            ui.label(
-                egui::RichText::new(props.no_results_text)
-                    .color(theme.subtext0.to_egui())
-                    .italics(),
-            );
+            // 빈 상태: padding 14, font-size-body, text-muted (디자인 명시값).
+            ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                ui.add_space(14.0);
+                ui.label(
+                    egui::RichText::new(props.no_results_text)
+                        .size(theme.font_size_body.value())
+                        .color(theme.text_muted().to_egui()),
+                );
+            });
+            ui.add_space(14.0);
         } else {
             let row_height = 24.0;
             let selected_idx = props.selected_index;
             // 빈 쿼리면 어떤 행도 강조하지 않는다 (본체 `row_highlighted` 미러).
             let query_empty = props.query_buffer.borrow().is_empty();
+            ui.add_space(space_sm);
             egui::ScrollArea::vertical()
                 .max_height(320.0)
                 .show(ui, |ui| {
                     for (i, item) in props.items.iter().enumerate() {
-                        let (rect, resp) = ui.allocate_exact_size(
+                        // 리스트 좌우 패딩 space-sm — 행을 안쪽으로 들여 정렬.
+                        let (slot, resp) = ui.allocate_exact_size(
                             egui::vec2(ui.available_width(), row_height),
                             egui::Sense::click(),
                         );
+                        let rect = slot.shrink2(egui::vec2(space_sm, 0.0));
                         let is_selected = !query_empty && i == selected_idx;
                         if is_selected {
                             ui.painter().rect_filled(
@@ -164,10 +200,10 @@ fn draw_mock_view(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
                             theme.subtext0.into()
                         };
 
-                        // leading 아이콘 컬럼은 항상 폭을 예약해 라벨 정렬을 유지한다.
-                        let pad_x = 8.0;
+                        // MenuItem 내부 패딩 space-md (디자인 `.tasty-menuitem`).
+                        let pad_x = space_md;
                         let icon_size = 16.0;
-                        let icon_gap = 8.0;
+                        let icon_gap = space_sm;
                         if let Some(icon) = item.icon {
                             let icon_rect = egui::Rect::from_min_size(
                                 egui::pos2(rect.min.x + pad_x, rect.center().y - icon_size / 2.0),
@@ -188,19 +224,23 @@ fn draw_mock_view(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
                         draw_keycaps(
                             ui,
                             theme,
-                            rect.max.x - 8.0,
+                            rect.max.x - pad_x,
                             rect.center().y,
                             &item.shortcut_keys,
                         );
                     }
                 });
+            ui.add_space(space_sm);
         }
 
-        // 푸터 — 키보드 힌트 행. mono 폰트 + muted 색. 기호는 고정키.
-        ui.separator();
+        // ── Footer — 키보드 힌트 행 (padding space-sm space-md). ──
+        // mono 폰트, font-size-micro, text-muted. 기호는 고정키.
+        full_separator(ui);
         let hint_color = theme.text_muted().to_egui();
-        let hint_font = egui::FontId::monospace(theme.font_size_caption.value());
+        let hint_font = egui::FontId::monospace(theme.font_size_micro.value());
+        ui.add_space(space_sm);
         ui.horizontal(|ui| {
+            ui.add_space(space_md);
             ui.spacing_mut().item_spacing.x = 14.0;
             for hint in [
                 format!("↑↓ {}", props.hint_navigate),
@@ -214,6 +254,7 @@ fn draw_mock_view(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
                 );
             }
         });
+        ui.add_space(space_sm);
     });
 }
 
@@ -284,8 +325,13 @@ fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys:
     }
 }
 
-/// "Popup frame" 처럼 보이도록 surface0 배경 + border 카드를 두르는 헬퍼.
+/// "Popup frame" 처럼 보이도록 카드 배경 + border 를 두르는 헬퍼.
+///
+/// 디자인 canonical (command_palette.jsx): `background: surface-raised`,
+/// `border: border-width solid border-strong`, `border-radius: radius`.
 /// 본체 command_palette popup 은 headless (타이틀바 없음) 이므로 mock 도 동일.
+/// 섹션별 패딩(header space-md / list space-sm / footer)은 [`draw_mock_view`]
+/// 내부에서 처리하므로 frame 은 추가 inset 없이 전폭을 그대로 넘긴다.
 fn with_popup_frame(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -293,12 +339,11 @@ fn with_popup_frame(
     body_h: f32,
     paint: impl FnOnce(&mut egui::Ui),
 ) {
-    let total_h = CONTENT_MARGIN * 2.0 + body_h;
-    let (frame_rect, _) = ui.allocate_exact_size(egui::vec2(width, total_h), egui::Sense::hover());
+    let (frame_rect, _) = ui.allocate_exact_size(egui::vec2(width, body_h), egui::Sense::hover());
     let painter = ui.painter_at(frame_rect);
 
-    let bg: egui::Color32 = theme.surface0.into();
-    let border: egui::Color32 = theme.surface2.into();
+    let bg: egui::Color32 = theme.surface_raised().to_egui();
+    let border: egui::Color32 = theme.border_strong().to_egui();
 
     painter.rect_filled(frame_rect, theme.corner_radius.value(), bg);
     painter.rect_stroke(
@@ -308,11 +353,7 @@ fn with_popup_frame(
         egui::StrokeKind::Inside,
     );
 
-    let content_rect = egui::Rect::from_min_max(
-        egui::pos2(frame_rect.min.x + 8.0, frame_rect.min.y + CONTENT_MARGIN),
-        egui::pos2(frame_rect.max.x - 8.0, frame_rect.max.y - CONTENT_MARGIN),
-    );
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(frame_rect));
     paint(&mut child);
 }
 
