@@ -20,21 +20,14 @@
 
 use tasty_type_appearance::theme::Theme;
 
+use crate::catalog::toast_card::{
+    self, ACCENT_BAR_WIDTH, PADDING_X, PADDING_Y, ToastKind, accent_color,
+};
+
 const TOAST_GAP: f32 = 6.0;
 const SCOPE_MARGIN: f32 = 12.0;
-const PADDING_X: f32 = 12.0;
-const PADDING_Y: f32 = 8.0;
-const ACCENT_BAR_WIDTH: f32 = 4.0;
 /// 본체 `toast.rs` 와 동일 — 좁은 surface 에서 max_width 클램프 하한.
 const MIN_TOAST_INNER_WIDTH: f32 = 48.0;
-
-#[derive(Clone, Copy, Debug)]
-enum ToastKind {
-    Info,
-    Success,
-    Warning,
-    Error,
-}
 
 #[derive(Clone, Debug)]
 struct ToastEntryView {
@@ -54,15 +47,6 @@ struct ToastScopeView {
 struct ToastViewProps<'a> {
     theme: &'a Theme,
     scopes: &'a [ToastScopeView],
-}
-
-fn accent_color(kind: ToastKind, theme: &Theme) -> egui::Color32 {
-    match kind {
-        ToastKind::Info => theme.accent_primary().into(),
-        ToastKind::Success => theme.accent_success().into(),
-        ToastKind::Warning => theme.accent_warning().into(),
-        ToastKind::Error => theme.accent_danger().into(),
-    }
 }
 
 /// 본체 `draw_toast_view` 의 카드 스택 시각 미러. Tooltip 레이어 대신 painter_at
@@ -116,31 +100,18 @@ fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
             let border = th.surface1.gamma_multiply(alpha);
             let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
 
-            painter.rect_filled(rect, th.corner_radius.value(), bg);
-            painter.rect_stroke(
+            toast_card::draw_card(
+                &painter,
+                th,
                 rect,
-                th.corner_radius.value(),
-                egui::Stroke::new(th.border_width.value(), border),
-                egui::StrokeKind::Inside,
+                toast_card::CardColors {
+                    bg: bg.into(),
+                    border: border.into(),
+                    accent,
+                    text: text_color.into(),
+                },
+                galley,
             );
-
-            let bar_rect = egui::Rect::from_min_max(
-                rect.min,
-                egui::pos2(rect.min.x + ACCENT_BAR_WIDTH, rect.max.y),
-            );
-            let bar_radius = egui::CornerRadius {
-                nw: th.corner_radius.value() as u8,
-                sw: th.corner_radius.value() as u8,
-                ne: 0,
-                se: 0,
-            };
-            painter.rect_filled(bar_rect, bar_radius, accent);
-
-            let text_pos = egui::pos2(
-                rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
-                rect.min.y + PADDING_Y,
-            );
-            painter.galley(text_pos, galley, text_color.into());
 
             cursor_y = top_y - TOAST_GAP;
         }

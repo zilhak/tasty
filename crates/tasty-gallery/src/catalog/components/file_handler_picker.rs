@@ -14,6 +14,8 @@
 
 use tasty_type_appearance::theme::Theme;
 
+use crate::catalog::popup_frame::{self, CONTENT_MARGIN, ContentInset, TITLE_BAR_HEIGHT};
+
 const ITEM_HEIGHT: f32 = 22.0;
 const LIST_MIN_HEIGHT: f32 = 4.0 * ITEM_HEIGHT;
 const LIST_MAX_HEIGHT: f32 = 10.0 * ITEM_HEIGHT;
@@ -183,62 +185,23 @@ fn draw_list(
     }
 }
 
-fn popup_frame<R>(
+fn popup_frame(
     ui: &mut egui::Ui,
     theme: &Theme,
     title: &str,
     body_h: f32,
-    paint: impl FnOnce(&mut egui::Ui) -> R,
+    paint: impl FnOnce(&mut egui::Ui),
 ) {
-    const TITLE_BAR_HEIGHT: f32 = 28.0;
-    const CONTENT_MARGIN: f32 = 4.0;
-
     let total_h = TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + body_h;
-    let (frame_rect, _) =
-        ui.allocate_exact_size(egui::vec2(POPUP_WIDTH, total_h), egui::Sense::hover());
-    let painter = ui.painter_at(frame_rect);
-
-    let bg = egui::Color32::from(theme.surface0);
-    let title_bg = egui::Color32::from(theme.surface1);
-    let border = egui::Color32::from(theme.surface2);
-
-    painter.rect_filled(frame_rect, theme.corner_radius.value(), bg);
-    painter.rect_stroke(
-        frame_rect,
-        theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), border),
-        egui::StrokeKind::Inside,
-    );
-
-    let title_rect = egui::Rect::from_min_size(
-        frame_rect.min,
-        egui::vec2(frame_rect.width(), TITLE_BAR_HEIGHT),
-    );
-    painter.rect_filled(
-        title_rect,
-        egui::CornerRadius {
-            nw: theme.corner_radius.value() as u8,
-            ne: theme.corner_radius.value() as u8,
-            sw: 0,
-            se: 0,
-        },
-        title_bg,
-    );
-    painter.text(
-        egui::pos2(title_rect.min.x + 8.0, title_rect.center().y),
-        egui::Align2::LEFT_CENTER,
+    popup_frame::draw(
+        ui,
+        theme,
         title,
-        egui::FontId::proportional(theme.font_size_body.value()),
-        egui::Color32::from(theme.text),
+        POPUP_WIDTH,
+        total_h,
+        ContentInset::FLUSH,
+        paint,
     );
-
-    let content_top = title_rect.bottom() + CONTENT_MARGIN;
-    let content_rect = egui::Rect::from_min_max(
-        egui::pos2(frame_rect.min.x, content_top),
-        egui::pos2(frame_rect.max.x, frame_rect.max.y - CONTENT_MARGIN),
-    );
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
-    let _ = paint(&mut child); // paint 반환값은 데모 컨텍스트에서 사용 안 함
 }
 
 fn estimate_body_height(cand_n: usize, recent_n: usize, is_empty: bool) -> f32 {

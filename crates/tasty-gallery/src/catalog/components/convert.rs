@@ -8,6 +8,8 @@
 
 use tasty_type_appearance::theme::Theme;
 
+use crate::catalog::popup_frame::{self, CONTENT_MARGIN, ContentInset, TITLE_BAR_HEIGHT};
+
 /// 본체 src/adapters/ui/popup/convert.rs 의 상수와 동등.
 const ITEM_HEIGHT: f32 = 24.0;
 
@@ -81,61 +83,24 @@ fn with_popup_frame(
     item_count: usize,
     paint: impl FnOnce(&mut egui::Ui),
 ) {
-    const TITLE_BAR_HEIGHT: f32 = 28.0;
-    const CONTENT_MARGIN: f32 = 4.0;
     const ITEM_SPACING: f32 = 4.0;
 
     let content_h =
         item_count as f32 * ITEM_HEIGHT + (item_count.saturating_sub(1)) as f32 * ITEM_SPACING;
+    // 본체 convert popup 과 동일: 콘텐츠 높이에 +1px 보정.
     let total_h = TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + content_h + 1.0;
-    let (frame_rect, _) = ui.allocate_exact_size(egui::vec2(width, total_h), egui::Sense::hover());
-    let painter = ui.painter_at(frame_rect);
-
-    let bg: egui::Color32 = theme.surface0.into();
-    let title_bg: egui::Color32 = theme.surface1.into();
-    let border: egui::Color32 = theme.surface2.into();
-    let text_color: egui::Color32 = theme.text.into();
-
-    painter.rect_filled(frame_rect, theme.corner_radius.value(), bg);
-    painter.rect_stroke(
-        frame_rect,
-        theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), border),
-        egui::StrokeKind::Inside,
-    );
-
-    // Title bar.
-    let title_rect = egui::Rect::from_min_size(
-        frame_rect.min,
-        egui::vec2(frame_rect.width(), TITLE_BAR_HEIGHT),
-    );
-    painter.rect_filled(
-        title_rect,
-        egui::CornerRadius {
-            nw: theme.corner_radius.value() as u8,
-            ne: theme.corner_radius.value() as u8,
-            sw: 0,
-            se: 0,
-        },
-        title_bg,
-    );
-    painter.text(
-        egui::pos2(title_rect.min.x + 8.0, title_rect.center().y),
-        egui::Align2::LEFT_CENTER,
+    popup_frame::draw(
+        ui,
+        theme,
         "Convert surface",
-        egui::FontId::proportional(theme.font_size_body.value()),
-        text_color,
+        width,
+        total_h,
+        ContentInset::FLUSH,
+        |child| {
+            child.spacing_mut().item_spacing.y = ITEM_SPACING;
+            paint(child);
+        },
     );
-
-    // Content 영역에 child Ui 생성.
-    let content_top = title_rect.bottom() + CONTENT_MARGIN;
-    let content_rect = egui::Rect::from_min_max(
-        egui::pos2(frame_rect.min.x, content_top),
-        egui::pos2(frame_rect.max.x, frame_rect.max.y - CONTENT_MARGIN),
-    );
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
-    child.spacing_mut().item_spacing.y = ITEM_SPACING;
-    paint(&mut child);
 }
 
 /// 4 가지 대표 상태:

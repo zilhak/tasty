@@ -11,8 +11,7 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 
-const TITLE_BAR_HEIGHT: f32 = 28.0;
-const CONTENT_MARGIN: f32 = 4.0;
+use crate::catalog::popup_frame::{self, CONTENT_MARGIN, ContentInset, TITLE_BAR_HEIGHT};
 
 /// 본체 `tasty_approval::Severity` 와 동등한 로컬 mock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,51 +117,7 @@ fn with_popup_frame(
     paint: impl FnOnce(&mut egui::Ui),
 ) {
     let total_h = TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + body_h;
-    let (frame_rect, _) = ui.allocate_exact_size(egui::vec2(width, total_h), egui::Sense::hover());
-    let painter = ui.painter_at(frame_rect);
-
-    let bg: egui::Color32 = theme.surface0.into();
-    let title_bg: egui::Color32 = theme.surface1.into();
-    let border: egui::Color32 = theme.surface2.into();
-    let text_color: egui::Color32 = theme.text.into();
-
-    painter.rect_filled(frame_rect, theme.corner_radius.value(), bg);
-    painter.rect_stroke(
-        frame_rect,
-        theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), border),
-        egui::StrokeKind::Inside,
-    );
-
-    let title_rect = egui::Rect::from_min_size(
-        frame_rect.min,
-        egui::vec2(frame_rect.width(), TITLE_BAR_HEIGHT),
-    );
-    painter.rect_filled(
-        title_rect,
-        egui::CornerRadius {
-            nw: theme.corner_radius.value() as u8,
-            ne: theme.corner_radius.value() as u8,
-            sw: 0,
-            se: 0,
-        },
-        title_bg,
-    );
-    painter.text(
-        egui::pos2(title_rect.min.x + 8.0, title_rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        title,
-        egui::FontId::proportional(theme.font_size_body.value()),
-        text_color,
-    );
-
-    let content_top = title_rect.bottom() + CONTENT_MARGIN;
-    let content_rect = egui::Rect::from_min_max(
-        egui::pos2(frame_rect.min.x + 8.0, content_top + 4.0),
-        egui::pos2(frame_rect.max.x - 8.0, frame_rect.max.y - CONTENT_MARGIN),
-    );
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
-    paint(&mut child);
+    popup_frame::draw(ui, theme, title, width, total_h, ContentInset::INSET, paint);
 }
 
 /// 대표 상태 5 종:

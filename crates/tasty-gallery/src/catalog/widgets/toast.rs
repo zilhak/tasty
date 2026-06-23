@@ -10,26 +10,11 @@
 
 use tasty_type_appearance::theme::Theme;
 
-#[derive(Clone, Copy)]
-enum ToastKind {
-    Info,
-    Success,
-    Warning,
-    Error,
-}
+use crate::catalog::toast_card::{self, ACCENT_BAR_WIDTH, PADDING_X, PADDING_Y, ToastKind};
 
 struct ToastCardProps {
     kind: ToastKind,
     message: &'static str,
-}
-
-fn accent_color(kind: ToastKind, theme: &Theme) -> egui::Color32 {
-    match kind {
-        ToastKind::Info => theme.accent_primary().into(),
-        ToastKind::Success => theme.accent_success().into(),
-        ToastKind::Warning => theme.accent_warning().into(),
-        ToastKind::Error => theme.accent_danger().into(),
-    }
 }
 
 fn kind_label(kind: ToastKind) -> &'static str {
@@ -43,14 +28,9 @@ fn kind_label(kind: ToastKind) -> &'static str {
 
 /// 본체 `ToastManager::draw` 의 카드 1장 그리기와 동등한 시각.
 fn draw_toast_card(ui: &mut egui::Ui, theme: &Theme, props: &ToastCardProps) {
-    // 상수 — 본체 toast.rs 와 같은 값.
-    const PADDING_X: f32 = 12.0;
-    const PADDING_Y: f32 = 8.0;
-    const ACCENT_BAR_WIDTH: f32 = 4.0;
-
     let bg = egui::Color32::from(theme.surface0);
     let border = egui::Color32::from(theme.surface1);
-    let accent = accent_color(props.kind, theme);
+    let accent = toast_card::accent_color(props.kind, theme);
     let text_color = egui::Color32::from(theme.text);
 
     let max_width = 320.0;
@@ -71,31 +51,18 @@ fn draw_toast_card(ui: &mut egui::Ui, theme: &Theme, props: &ToastCardProps) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(toast_w, toast_h), egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    painter.rect_filled(rect, theme.corner_radius.value(), bg);
-    painter.rect_stroke(
+    toast_card::draw_card(
+        &painter,
+        theme,
         rect,
-        theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), border),
-        egui::StrokeKind::Inside,
+        toast_card::CardColors {
+            bg,
+            border,
+            accent,
+            text: text_color,
+        },
+        galley,
     );
-
-    let bar_rect = egui::Rect::from_min_max(
-        rect.min,
-        egui::pos2(rect.min.x + ACCENT_BAR_WIDTH, rect.max.y),
-    );
-    let bar_radius = egui::CornerRadius {
-        nw: theme.corner_radius.value() as u8,
-        sw: theme.corner_radius.value() as u8,
-        ne: 0,
-        se: 0,
-    };
-    painter.rect_filled(bar_rect, bar_radius, accent);
-
-    let text_pos = egui::pos2(
-        rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
-        rect.min.y + PADDING_Y,
-    );
-    painter.galley(text_pos, galley, text_color);
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
