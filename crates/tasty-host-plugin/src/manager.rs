@@ -210,6 +210,10 @@ pub(super) struct RemoteSurfaceEntry {
 
 pub struct PluginManager {
     pub packages: Vec<PluginPackage>,
+    /// trust gate 에서 거부된 plugin 들 (서명 미신뢰/검증 실패/권한 변경).
+    /// `refresh_packages` 가 `packages` 와 함께 갱신한다. UI "확인 필요" 탭 +
+    /// 사이드바 경고 배지가 소비. debug 빌드는 trust gate 우회라 항상 비어 있다.
+    pub rejected: Vec<crate::discovery::RejectedPlugin>,
     pub processes: HashMap<String, PluginProcess>,
     pub config: PluginsConfig,
     pub(super) waker: tasty_terminal::waker_factory::SharedWakerFactory,

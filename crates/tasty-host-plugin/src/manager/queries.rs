@@ -10,6 +10,20 @@ impl PluginManager {
         self.auto_disabled.contains(plugin_id)
     }
 
+    /// "확인 필요" plugin 개수 — trust gate 거부분 + enable 상태인데 자동
+    /// 비활성화된(health error) plugin. 사이드바 경고 배지 / Attention 탭 카운트가
+    /// 쓴다. `snapshot_plugins` 의 attention 목록과 동일 기준으로 센다.
+    pub fn attention_count(&self) -> usize {
+        let health = self
+            .packages
+            .iter()
+            .filter(|p| {
+                self.is_auto_disabled(&p.manifest.id) && !self.config.is_disabled(&p.manifest.id)
+            })
+            .count();
+        self.rejected.len() + health
+    }
+
     pub fn recompute_extensions(&mut self) {
         let manifests: Vec<&tasty_plugin_manifest::Manifest> =
             self.packages.iter().map(|p| &p.manifest).collect();

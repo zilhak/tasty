@@ -55,6 +55,7 @@ impl PluginManager {
         let (host_cmd_tx, host_cmd_rx) = mpsc::channel();
         Self {
             packages: Vec::new(),
+            rejected: Vec::new(),
             processes: HashMap::new(),
             config: PluginsConfig::load(),
             waker,
@@ -116,6 +117,14 @@ impl PluginManager {
 
     /// 디스커버리 + 활성 plugin 모두 spawn. listener도 여기서 한 번만 bind.
     /// plugin이 없으면 listener 자체를 만들지 않음 (포트 점유 회피).
+    /// `~/.tasty/plugins/` 를 다시 스캔해 `packages` 와 `rejected` 를 함께 갱신.
+    /// 모든 discover 호출 지점은 이 헬퍼를 거쳐 거부 목록이 누락되지 않게 한다.
+    pub fn refresh_packages(&mut self) {
+        let (packages, rejected) = crate::discovery::discover_with_rejections();
+        self.packages = packages;
+        self.rejected = rejected;
+    }
+
     pub fn discover_and_start(&mut self) {
         // H.b — env flag 한 번 평가. TASTY_PLUGIN_AUTO_RELOAD 가 비어있지 않고
         // "0" 이 아니면 enable. 기본 false (production 부작용 0).
@@ -125,7 +134,7 @@ impl PluginManager {
         if self.auto_reload_enabled {
             tracing::info!("plugin auto-reload: enabled (TASTY_PLUGIN_AUTO_RELOAD)");
         }
-        self.packages = crate::discovery::discover();
+        self.refresh_packages();
 
         // command registry에 모든 발견된 plugin의 commands를 등록.
         // disabled 여부와 무관 — 설정 UI는 비활성 plugin도 단축키 항목을

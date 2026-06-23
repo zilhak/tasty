@@ -910,7 +910,7 @@ pub fn upgrade_builtins(
 
     if !changed_ids.is_empty() {
         // 디스크가 바뀌었으니 PluginManager state 재계산.
-        mgr.packages = discovery::discover();
+        mgr.refresh_packages();
         mgr.recompute_extensions();
         // 매니페스트 신규 permission 자동 grant — install_builtins_if_needed step 2 와 동일.
         let mut config_dirty = false;
