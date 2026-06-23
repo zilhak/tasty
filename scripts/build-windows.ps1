@@ -79,8 +79,8 @@ function Resolve-Bash {
     return $null
 }
 
-# Discover signing key BEFORE cargo build — so that any newly generated
-# dev-pubkey.bin is embedded into the host-plugin binary at compile time.
+# Discover signing key BEFORE cargo build — so that the matching dev-pubkey.bin
+# is (re)derived and embedded into the host-plugin binary at compile time.
 if ($BuildProfile -ne "debug") {
     $SignKeyPath = $env:SIGN_KEY_PATH
     if (-not $SignKeyPath) {
@@ -88,10 +88,12 @@ if ($BuildProfile -ne "debug") {
         $DevKey = Join-Path $env:USERPROFILE ".tasty-keys\dev.pem"
         if (Test-Path $ReleaseKey) {
             $SignKeyPath = $ReleaseKey
-        } elseif (Test-Path $DevKey) {
-            $SignKeyPath = $DevKey
         } else {
-            Write-Host "==> No signing key found — auto-generating dev key for zero-touch build..."
+            # dev 키 경로: 없으면 생성, 있으면 추적되지 않는 dev-pubkey.bin 을
+            # dev.pem 에서 재도출한다. gen-dev-key.sh 가 두 경우 모두 처리
+            # (idempotent) → 빌드가 all-zero placeholder 대신 서명 키와 일치하는
+            # trust 키를 임베드한다.
+            Write-Host "==> Ensuring dev signing key + embedded pubkey..."
             $Bash = Resolve-Bash
             if (-not $Bash) {
                 Write-Error "Git Bash not found. Install Git for Windows to run scripts/gen-dev-key.sh."

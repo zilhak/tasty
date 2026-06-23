@@ -39,17 +39,19 @@ DIST_DIR="dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 DMG_NAME="$APP_NAME-$VERSION-macos.dmg"
 
-# Discover signing key BEFORE cargo build — so that any newly generated
-# dev-pubkey.bin is embedded into the host-plugin binary at compile time.
+# Discover signing key BEFORE cargo build — so that the matching dev-pubkey.bin
+# is (re)derived and embedded into the host-plugin binary at compile time.
 # release/dist builds require a signing key; debug skips entirely.
 if [[ "$PROFILE" != "debug" ]]; then
     if [[ -z "${SIGN_KEY_PATH:-}" ]]; then
         if [[ -f "$HOME/.tasty-keys/release.pem" ]]; then
             SIGN_KEY_PATH="$HOME/.tasty-keys/release.pem"
-        elif [[ -f "$HOME/.tasty-keys/dev.pem" ]]; then
-            SIGN_KEY_PATH="$HOME/.tasty-keys/dev.pem"
         else
-            echo "==> No signing key found — auto-generating dev key for zero-touch build..."
+            # dev 키 경로: 없으면 생성, 있으면 추적되지 않는 dev-pubkey.bin 을
+            # dev.pem 에서 재도출한다. gen-dev-key.sh 가 두 경우 모두 처리
+            # (idempotent) → 빌드가 all-zero placeholder 대신 서명 키와 일치하는
+            # trust 키를 임베드한다.
+            echo "==> Ensuring dev signing key + embedded pubkey..."
             ./scripts/gen-dev-key.sh
             SIGN_KEY_PATH="$HOME/.tasty-keys/dev.pem"
         fi

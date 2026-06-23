@@ -51,9 +51,34 @@ PUB_PATH="${REPO_ROOT}/crates/tasty-host-plugin/keys/dev-pubkey.bin"
 mkdir -p "$KEY_DIR"
 chmod 700 "$KEY_DIR"
 
+# raw 32 byte Ed25519 public key 를 private key 에서 추출해 $2 에 기록.
+# openssl 의 DER 출력 마지막 32 byte 가 raw key
+# (44 byte DER = 12 byte SubjectPublicKeyInfo prefix + 32 byte key).
+#
+# dev-pubkey.bin 은 추적되지 않는 로컬 전용 파일이다 (build.rs 가 OUT_DIR 로
+# staging). private key 가 이미 있어도 빌드 전 이 함수로 매번 재도출해야
+# 임베드되는 trust 키가 서명 키와 일치한다. 누락 시 build.rs 가 all-zero
+# placeholder 를 임베드해 dev 서명 plugin 이 전부 거부된다.
+derive_pubkey() {
+    local priv="$1" out="$2"
+    mkdir -p "$(dirname "$out")"
+    openssl pkey -in "$priv" -pubout -outform DER | tail -c 32 > "$out"
+    local len
+    len=$(wc -c < "$out" | tr -d ' ')
+    if [[ "$len" != "32" ]]; then
+        echo "Error: extracted pubkey is $len bytes, expected 32" >&2
+        echo "  (openssl 버전 또는 OS 차이로 인한 DER 헤더 변경 가능성)" >&2
+        rm -f "$out"
+        exit 1
+    fi
+}
+
 if [[ -f "$PRIV_PATH" && "$FORCE" -ne 1 ]]; then
-    echo "Already exists: $PRIV_PATH"
-    echo "  Use --force to regenerate (NOTE: 기존 키로 서명된 .sig 는 모두 무효화됨)"
+    # private key 는 유지하되, 추적되지 않는 공개키는 항상 (재)도출한다.
+    derive_pubkey "$PRIV_PATH" "$PUB_PATH"
+    echo "Private key exists: $PRIV_PATH (kept)"
+    echo "Re-derived public key: $PUB_PATH"
+    echo "  Use --force to regenerate the private key (NOTE: 기존 .sig 는 모두 무효화됨)."
     exit 0
 fi
 
@@ -61,19 +86,8 @@ fi
 openssl genpkey -algorithm Ed25519 -out "$PRIV_PATH"
 chmod 600 "$PRIV_PATH"
 
-# 2) raw 32 byte public key 추출. openssl 의 DER 출력 마지막 32 byte 가
-#    raw key (44 byte DER = 12 byte SubjectPublicKeyInfo prefix + 32 byte key).
-mkdir -p "$(dirname "$PUB_PATH")"
-openssl pkey -in "$PRIV_PATH" -pubout -outform DER | tail -c 32 > "$PUB_PATH"
-
-# 3) 길이 검증.
-pub_len=$(wc -c < "$PUB_PATH" | tr -d ' ')
-if [[ "$pub_len" != "32" ]]; then
-    echo "Error: extracted pubkey is $pub_len bytes, expected 32" >&2
-    echo "  (openssl 버전 또는 OS 차이로 인한 DER 헤더 변경 가능성)" >&2
-    rm -f "$PUB_PATH"
-    exit 1
-fi
+# 2) raw 32 byte public key 추출.
+derive_pubkey "$PRIV_PATH" "$PUB_PATH"
 
 cat <<EOF
 ==> Generated Ed25519 dev keypair.
