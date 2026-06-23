@@ -25,6 +25,8 @@ const SCOPE_MARGIN: f32 = 12.0;
 const PADDING_X: f32 = 12.0;
 const PADDING_Y: f32 = 8.0;
 const ACCENT_BAR_WIDTH: f32 = 4.0;
+/// 본체 `toast.rs` 와 동일 — 좁은 surface 에서 max_width 클램프 하한.
+const MIN_TOAST_INNER_WIDTH: f32 = 48.0;
 
 #[derive(Clone, Copy, Debug)]
 enum ToastKind {
@@ -78,16 +80,20 @@ fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
                 continue;
             }
 
-            let max_width = (scope_rect.width() * 0.8).max(80.0);
+            // 본체 toast.rs 와 동일: 좁은 surface 에서 좌측 누출 방지 클램프
+            // (정상 폭에서는 0.8 폭 그대로 = 시각 무변경) + wrap_width 음수 가드.
+            let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
+            let max_width = (scope_rect.width() * 0.8).max(80.0).min(inner_limit);
             let font = egui::FontId::proportional(th.font_size_body.value());
             let text_color = th.text.gamma_multiply(alpha);
+            let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
 
             let galley = ui.ctx().fonts(|f| {
                 f.layout(
                     entry.message.clone(),
                     font.clone(),
                     text_color.into(),
-                    max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH,
+                    wrap_width,
                 )
             });
 
@@ -97,6 +103,10 @@ fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
             let max_x = scope_rect.max.x - SCOPE_MARGIN;
             let bottom_y = cursor_y;
             let top_y = bottom_y - toast_h;
+            // 본체 toast.rs 와 동일: scope 상단 초과 시 옛 토스트 생략(클립 보완).
+            if top_y < scope_rect.min.y {
+                break;
+            }
             let left_x = max_x - toast_w;
 
             let rect =

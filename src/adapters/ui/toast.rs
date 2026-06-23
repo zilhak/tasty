@@ -56,6 +56,10 @@ const PADDING_X: f32 = 12.0;
 const PADDING_Y: f32 = 8.0;
 /// 좌측 컬러 바 두께 (px).
 const ACCENT_BAR_WIDTH: f32 = 4.0;
+/// 매우 좁은 surface 에서 `max_width` 를 surface 안쪽 폭으로 클램프할 때의 하한.
+/// `wrap_width`(= max_width - PADDING_X*2 - ACCENT_BAR_WIDTH)가 음수가 되지 않도록
+/// 최소 한 글자 분량의 여유를 보장한다.
+const MIN_TOAST_INNER_WIDTH: f32 = 48.0;
 
 /// View 입력 — 그릴 준비가 끝난 토스트 1 개의 시각 데이터.
 ///
@@ -100,6 +104,10 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
 
     for scope in props.scopes {
         let scope_rect = scope.scope_rect;
+        // 스코프 경계로 클립 — 폭/세로 클램프 후에도 1px 단위로 새는 것을 막는
+        // 안전망. 토스트는 자기 스코프 영역 안에 머물러야 한다(이웃 pane/탭바를
+        // 덮지 않음).
+        let painter = painter.with_clip_rect(scope_rect);
         let mut cursor_y = scope_rect.max.y - SCOPE_MARGIN;
 
         // 새것부터 그리며 위로 올라간다 (id 오름차순으로 받았으므로 reverse).
@@ -110,15 +118,22 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
             }
 
             let body_text = entry.message.as_str();
-            let max_width = (scope_rect.width() * 0.8).max(80.0);
+            // 좁은 surface 에서 토스트가 좌측 경계를 넘지 않도록 max_width 를 surface
+            // 안쪽 폭(width - 2*margin)으로 클램프한다. 정상 폭 surface 에서는
+            // 0.8*width < width-2*margin (width>120) 이라 0.8 폭이 그대로 — 시각
+            // 무변경이고, 좁은 surface 에서만 클램프가 발동한다.
+            let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
+            let max_width = (scope_rect.width() * 0.8).max(80.0).min(inner_limit);
             let font = egui::FontId::proportional(th.font_size_body.value());
+            // wrap_width 음수 방지(클램프로 max_width 가 작아질 때).
+            let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
 
             let galley = ctx.fonts(|f| {
                 f.layout(
                     body_text.to_string(),
                     font.clone(),
                     th.text.into(),
-                    max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH,
+                    wrap_width,
                 )
             });
 
@@ -128,6 +143,12 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
             let max_x = scope_rect.max.x - SCOPE_MARGIN;
             let bottom_y = cursor_y;
             let top_y = bottom_y - toast_h;
+            // 스택이 scope 상단을 넘으면 더 오래된(위쪽) 토스트는 그리지 않는다.
+            // 새것부터 그리므로(reverse) break 가 곧 "넘치는 옛것 생략". 단일
+            // 토스트가 scope 보다 높은 극단은 위의 clip 이 처리한다.
+            if top_y < scope_rect.min.y {
+                break;
+            }
             let left_x = max_x - toast_w;
 
             let rect =
