@@ -341,6 +341,20 @@ fn sync_builtin_dev(
         tracing::warn!("dev bundle: copy manifest for {} failed: {e}", spec.id);
         return false;
     }
+    // 매니페스트 서명 sidecar(.sig)가 있으면 함께 동기화한다. 없으면 (미서명 dev
+    // workspace) skip — debug 빌드는 trust gate 를 우회하므로 무방하지만,
+    // release/dist 산출물을 *직접 실행* 할 때는 sign-bundle.sh 로 생성된 .sig 가
+    // bundle 에 있어야 install 후 trust gate(임베드 dev-pubkey)를 통과한다.
+    // 복사 실패는 비치명 (debug 는 어차피 우회) 이므로 warn 만 남긴다.
+    let src_sig = workspace
+        .join("crates")
+        .join(spec.crate_dir)
+        .join("tasty-plugin.toml.sig");
+    if src_sig.exists()
+        && let Err(e) = copy_if_newer(&src_sig, &dest_dir.join("tasty-plugin.toml.sig"))
+    {
+        tracing::warn!("dev bundle: copy sig for {} failed: {e}", spec.id);
+    }
     if let Err(e) = copy_if_newer(&plugin_bin, &dest_dir.join(spec.bin_name)) {
         tracing::warn!("dev bundle: copy binary for {} failed: {e}", spec.id);
         return false;
