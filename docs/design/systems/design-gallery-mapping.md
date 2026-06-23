@@ -36,6 +36,27 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 `approval` · `file_handler_picker` · `markdown_open` · `rename_popup` · `update` · `toast` ·
 `sidebar` · `tab_bar` · `apply_preset`. 이들은 props 분리가 돼 있어 갤러리로 즉시 검증 가능.
 
+## Overlay 시각 복제 specimen (본체 의존 0)
+
+본체 view 의 시각만 로컬 mock props 로 복제한 Overlays 항목. 본체 binary crate(`tasty`)에
+의존 불가하므로 layout·색·폰트·간격·보더는 모두 Theme 토큰에서 가져오고 상태는 mock 으로
+주입한다. 본체 view 변경 시 시각 동기화는 수동 검증.
+
+| 디자인 canonical | 본체 view | 갤러리 specimen |
+|---|---|---|
+| `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
+| `overlays/tools_menu.jsx` (160px) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
+
+## Specimen 공용 헬퍼 (dedup)
+
+specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates/tasty-gallery/src/catalog/`):
+
+| 헬퍼 | 제공 | 쓰는 곳 |
+|---|---|---|
+| `specimen.rs` | `caption` / `case_title` | 전 prim_* + rename_popup·sidebar |
+| `toast_card.rs` | `accent_color` / `draw_card` (`CardColors`) | toast(components/widgets) |
+| `popup_frame.rs` | `draw` (`ContentInset`) — surface-raised 프레임 + border-strong | approval · convert · file_handler_picker · dialog |
+
 ## Primitive 컴포넌트 레이어 (Components)
 
 디자인 `components/**` 의 atomic primitive ↔ `tasty-ui-widgets` 공용 함수 ↔ 갤러리
@@ -45,7 +66,7 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 | 디자인 컴포넌트 | tasty-ui-widgets | 갤러리 specimen | 시각검증 |
 |---|---|---|---|
 | `core/IconButton` | `IconButton` (ghost/solid/active, sm/md) | `prim_icon_button` | ✓ port_scanner |
-| `core/Button` | `Button` (primary/secondary/ghost/danger/agent × sm/md/lg) | `prim_button` | ✓ port_scanner |
+| `core/Button` | `Button` (primary/secondary/ghost/danger/agent × sm/md/lg, leading_icon/trailing_icon) | `prim_button` | ✓ port_scanner |
 | `forms/Input` | `Input` (icon/addon/mono/invalid/disabled, focus ring) | `prim_input` | ✓ port_scanner |
 | `core/Tag` | `tag` (default/accent/agent/success/warning/danger + dot) | `prim_chips` | ✓ port_scanner(PID) |
 | `core/Badge` | `badge` / `badge_dot` | `prim_chips` | ✓ gallery |
@@ -54,13 +75,18 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 | `forms/Switch` | `switch` | `prim_forms` | ✓ gallery |
 | `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | ✓ gallery |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
+| `feedback/Spinner` | `Spinner`(size/color/reduced_motion) | `prim_spinner` | ✓ port_scanner(loading) |
 | `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | ✓ gallery |
 | `navigation/TreeRow` | `tree_row` | `prim_nav` | ✓ gallery |
 | `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | Layouts `Pane Tab Bar` | — |
 | `data/Table` | egui_extras(앱별) | Overlays `Port Scanner popup` | — |
 | `feedback/Toast` | `src/adapters/ui/toast.rs` | Components `Toast (card visual)` | — |
 
-**시각검증 주**: primitive 12종 전부 시각검증 완료. "✓ port_scanner" = 본체 격리 인스턴스 +
+**primitive 케이스 커버리지**: 디자인 jsx 의 변형까지 specimen 에 포함 — Button
+`leadingIcon`/`trailingIcon`(prim_button), Input `block`(width 미지정 시 가용폭 채움),
+Select `block`(가용폭을 width 로 전달), MenuItem `disabled`(enabled=false).
+
+**시각검증 주**: primitive 13종 전부 시각검증 완료. "✓ port_scanner" = 본체 격리 인스턴스 +
 `ui.screenshot`(ui_scale medium) 대조. "✓ gallery" = 갤러리 GPU readback 스크린샷
 (`TASTY_GALLERY_SHOT=<idx>:<png> ./target/debug/tasty-gallery`, 지정 specimen 선택→4프레임
 settle→캡처→종료)으로 디자인 `components.html` 과 대조. 갤러리는 IPC/OS 캡처가 없어 이

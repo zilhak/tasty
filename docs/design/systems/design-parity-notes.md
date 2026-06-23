@@ -211,3 +211,47 @@ State 컬럼 `Column::exact(140)` + `.clip(true)` 미적용. tasty 폰트가 디
 에서 자르므로(위 항목) "ESTABL" 로 보인다. 디자인 스펙은 140 이나 디자인 mockup 상태값은
 LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 flex(addr/proc)에서
 양보해야 하며, 이는 폰트 메트릭 보정(디자인 변경 아님). 현재는 디자인 140 유지 + 클립.
+
+## Spinner — egui 엔 `prefers-reduced-motion` 매체 질의 없음 → 파라미터로 받음
+
+- **증상**: 디자인 Spinner 는 `prefers-reduced-motion` 에서 회전을 멈추고 3-dot fallback 을
+  쓰는데, egui 엔 그 매체 질의가 없다.
+- **처방**: `Spinner` 가 `reduced_motion: bool` 을 호출부 파라미터(빌더)로 받는다(StatusDot
+  의 pulse 와 동일 패턴 — 모션 결정을 호출측이 소유). true 면 정지 3-dot.
+- **근거**: `crates/tasty-ui-widgets/src/spinner.rs`.
+
+## Button variant — egui 엔 CSS variant 없음 → fill/stroke 수동 조합
+
+- **증상**: 디자인 Button 의 primary/ghost 같은 variant 는 CSS 클래스로 갈리는데 egui 엔
+  variant 개념이 없다.
+- **처방**: variant 별로 fill·stroke 를 수동 조합해 그린다. remote_tool 은 view-local
+  `primary_button`(accent fill) / `ghost_button`(투명 fill + 보더) 헬퍼로 분리.
+- **근거**: `src/adapters/ui/popup/remote_tool.rs`. (primitive 레이어는 `tasty_ui_widgets::
+  Button` 의 `ButtonVariant` 가 동일 역할.)
+
+## 폼 라벨 — egui Grid 컬럼폭 고정 미지원 → 고정폭 우측정렬 흉내
+
+- **증상**: 디자인 ProfileForm 은 `gridTemplateColumns: 112px 1fr` 로 라벨 컬럼이 112px
+  고정·우측정렬인데, egui `Grid` 는 컬럼 폭을 고정값으로 못 박는다(콘텐츠 맞춤).
+- **처방**: `field_label` 이 `allocate_ui_with_layout(112px, right_to_left)` 로 고정폭 우측정렬
+  컬럼을 흉내(`LABEL_COL_WIDTH=112`). hint/error 는 `112 + columnGap(12)` 만큼 들여써 입력
+  컬럼에 정렬.
+- **근거**: `src/adapters/ui/popup/remote_tool.rs`.
+
+## footer 우측정렬 — flex `justify-end` 흉내
+
+- **증상**: 디자인 footer 버튼군은 `justify-content: flex-end` 로 우측에 붙는데 egui 엔
+  flex justify 가 없다.
+- **처방**: `Layout::right_to_left(Align::Center)` 로 우측부터 배치(먼저 add 한 위젯이 우측
+  끝). port_scanner footer·remote_tool form 액션이 이 패턴.
+- **근거**: `src/adapters/ui/popup/remote_tool.rs`, `crates/tasty-gallery/src/catalog/components/
+  port_scanner.rs`. (우측 기준 레이아웃을 ui 폭 확장과 무관하게 고정하는 건 위 port_scanner
+  footer 항목 참고.)
+
+## 타이포그래피 — letter-spacing / line-height / font-weight 세분화 미지원
+
+- **증상**: 디자인 토큰엔 letter-spacing(ui 0 / caps 0.04em)·line-height(tight 1.0 / term 1.2
+  / ui 1.4 / prose 1.6)·세분 font-weight 가 있으나 egui `Label` 은 이를 직접 제어하지 못한다.
+- **처방**: 재현 불가 — typography specimen 에 토큰 값만 기록해 둔다(weight 는 크기+색으로만
+  근사, 위 "공용 위젯 레이어 — 폰트 weight" 항목과 동일 한계).
+- **근거**: `crates/tasty-gallery/src/catalog/typography.rs`.
