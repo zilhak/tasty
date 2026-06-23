@@ -227,7 +227,7 @@ fn draw_pane_tab_bar_mock(
         label_pos,
         egui::Align2::LEFT_TOP,
         format!("pane {}", info.pane_id),
-        egui::FontId::proportional(10.0),
+        egui::FontId::proportional(th.font_size_micro.value()),
         egui::Color32::from(th.overlay0),
     );
 }

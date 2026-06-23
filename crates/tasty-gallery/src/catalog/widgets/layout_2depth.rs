@@ -38,7 +38,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
              상단 탭은 가로 ScrollArea + overlay chevron (스크롤 필요시).",
         )
         .color(egui::Color32::from(theme.subtext0))
-        .size(11.0),
+        .size(theme.font_size_caption.value()),
     );
     ui.add_space(8.0);
 
@@ -128,7 +128,7 @@ fn draw_content(ui: &mut egui::Ui, theme: &Theme) {
                 ui.label(
                     egui::RichText::new("(여기에 라벨 + 입력 위젯 grid)")
                         .color(egui::Color32::from(theme.subtext0))
-                        .size(11.0),
+                        .size(theme.font_size_caption.value()),
                 );
                 ui.add_space(40.0);
                 // 스크롤 데모용 더미 행
@@ -136,7 +136,7 @@ fn draw_content(ui: &mut egui::Ui, theme: &Theme) {
                     ui.label(
                         egui::RichText::new(format!("dummy row #{i}"))
                             .color(egui::Color32::from(theme.subtext1))
-                            .size(11.0),
+                            .size(theme.font_size_caption.value()),
                     );
                 }
             });

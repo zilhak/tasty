@@ -261,7 +261,7 @@ fn draw_workspace_card(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         "!",
-                        egui::FontId::proportional(10.0),
+                        egui::FontId::proportional(th.font_size_micro.value()),
                         egui::Color32::from(th.accent_primary()),
                     );
                 }

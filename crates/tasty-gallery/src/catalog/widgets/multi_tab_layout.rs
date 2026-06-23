@@ -67,7 +67,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
              3단: 같은 segmented 패턴 + 작은 사이즈.",
         )
         .color(egui::Color32::from(theme.subtext0))
-        .size(11.0),
+        .size(theme.font_size_caption.value()),
     );
     ui.add_space(8.0);
 
@@ -248,7 +248,7 @@ fn draw_subsub_segmented(ui: &mut egui::Ui, theme: &Theme, tabs: &[&str]) {
                 let cur = STATE.with(|s| s.borrow().subsub);
                 for (idx, label) in tabs.iter().enumerate() {
                     let rt = egui::RichText::new(*label)
-                        .size(11.0)
+                        .size(theme.font_size_caption.value())
                         .color(egui::Color32::from(theme.text));
                     if ui.selectable_label(cur == idx, rt).clicked() {
                         STATE.with(|s| s.borrow_mut().subsub = idx);
@@ -284,6 +284,6 @@ fn draw_content(ui: &mut egui::Ui, theme: &Theme, case: Case) {
     ui.label(
         egui::RichText::new("(여기에 분기된 폼/리스트/그리드를 그린다)")
             .color(egui::Color32::from(theme.subtext0))
-            .size(11.0),
+            .size(theme.font_size_caption.value()),
     );
 }

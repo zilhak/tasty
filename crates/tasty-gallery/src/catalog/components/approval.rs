@@ -11,7 +11,6 @@ use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 
-const BODY_FONT_SIZE: f32 = 13.0;
 const TITLE_BAR_HEIGHT: f32 = 28.0;
 const CONTENT_MARGIN: f32 = 4.0;
 
@@ -57,12 +56,12 @@ fn draw_mock_approval_view(ui: &mut egui::Ui, theme: &Theme, props: &MockApprova
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(props.severity_label)
-                .size(11.0)
+                .size(theme.font_size_caption.value())
                 .color(sev_color),
         );
         ui.label(
             egui::RichText::new(format!("· {}", props.id))
-                .size(11.0)
+                .size(theme.font_size_caption.value())
                 .color(egui::Color32::from(theme.subtext0)),
         );
     });
@@ -72,14 +71,14 @@ fn draw_mock_approval_view(ui: &mut egui::Ui, theme: &Theme, props: &MockApprova
         ui.label(
             egui::RichText::new(body)
                 .color(egui::Color32::from(theme.text))
-                .size(BODY_FONT_SIZE),
+                .size(theme.font_size_body.value()),
         );
         ui.add_space(8.0);
     }
 
     ui.label(
         egui::RichText::new(props.comment_label)
-            .size(11.0)
+            .size(theme.font_size_caption.value())
             .color(egui::Color32::from(theme.subtext0)),
     );
     let mut buf = props.comment_buffer.borrow_mut();
@@ -98,7 +97,8 @@ fn draw_mock_approval_view(ui: &mut egui::Ui, theme: &Theme, props: &MockApprova
             } else {
                 choice.label.clone()
             };
-            let mut btn = egui::Button::new(egui::RichText::new(label_text).size(13.0));
+            let mut btn =
+                egui::Button::new(egui::RichText::new(label_text).size(theme.font_size_body.value()));
             if choice.destructive {
                 let red: egui::Color32 = theme.accent_danger().into();
                 btn = btn.fill(red.linear_multiply(0.18));

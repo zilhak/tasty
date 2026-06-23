@@ -200,7 +200,7 @@ fn draw_update_view_mock(ui: &mut egui::Ui, theme: &Theme, props: &UpdateProps) 
         ui.label(
             egui::RichText::new("Check for updates")
                 .color(egui::Color32::from(theme.text))
-                .size(13.0),
+                .size(theme.font_size_body.value()),
         );
         ui.separator();
 

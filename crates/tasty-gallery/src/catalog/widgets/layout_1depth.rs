@@ -48,7 +48,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "본체 src/view/plugins/ui.rs 의 *상단 헤더 + 1단 탭 + 좌측 리스트 + 우측 디테일* 패턴.",
         )
         .color(egui::Color32::from(theme.subtext0))
-        .size(11.0),
+        .size(theme.font_size_caption.value()),
     );
     ui.add_space(8.0);
 
@@ -74,7 +74,7 @@ fn draw_header(ui: &mut egui::Ui, theme: &Theme) {
         ui.label(
             egui::RichText::new("Plugins")
                 .color(egui::Color32::from(theme.text))
-                .size(14.0),
+                .size(theme.font_size_max.value()),
         );
     });
     ui.horizontal(|ui| {
@@ -136,7 +136,7 @@ fn draw_list_tab(ui: &mut egui::Ui, theme: &Theme) {
                         ui.label(
                             egui::RichText::new(format!("Status: {status}"))
                                 .color(egui::Color32::from(theme.subtext0))
-                                .size(11.0),
+                                .size(theme.font_size_caption.value()),
                         );
                         ui.add_space(8.0);
                         ui.label(
@@ -144,7 +144,7 @@ fn draw_list_tab(ui: &mut egui::Ui, theme: &Theme) {
                                 "(여기에 권한, surface_kinds, 로그 경로 등 디테일)",
                             )
                             .color(egui::Color32::from(theme.subtext1))
-                            .size(11.0),
+                            .size(theme.font_size_caption.value()),
                         );
                     });
             },
@@ -159,7 +159,7 @@ fn draw_add_tab(ui: &mut egui::Ui, theme: &Theme) {
             ui.label(
                 egui::RichText::new("Plugin folder path")
                     .color(egui::Color32::from(theme.subtext0))
-                    .size(11.0),
+                    .size(theme.font_size_caption.value()),
             );
             let mut buf = String::new();
             ui.add(
@@ -177,7 +177,7 @@ fn draw_add_tab(ui: &mut egui::Ui, theme: &Theme) {
             ui.label(
                 egui::RichText::new("(여기에 매니페스트 프리뷰, 신뢰 경고, 추가 버튼)")
                     .color(egui::Color32::from(theme.subtext1))
-                    .size(11.0),
+                    .size(theme.font_size_caption.value()),
             );
         });
 }

@@ -179,7 +179,7 @@ fn frame_case(
         egui::pos2(rect.min.x + 8.0, rect.min.y + 6.0),
         egui::Align2::LEFT_TOP,
         "scope (frame)",
-        egui::FontId::proportional(10.0),
+        egui::FontId::proportional(theme.font_size_micro.value()),
         egui::Color32::from(theme.overlay0),
     );
 

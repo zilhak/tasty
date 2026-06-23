@@ -58,7 +58,7 @@ fn draw_mock_highlights(ui: &mut egui::Ui, theme: &Theme, regions: &[MockRegion]
             egui::pos2(translated.min.x + 4.0, translated.min.y + 4.0),
             egui::Align2::LEFT_TOP,
             tag,
-            egui::FontId::proportional(10.0),
+            egui::FontId::proportional(theme.font_size_micro.value()),
             label_color,
         );
     }
