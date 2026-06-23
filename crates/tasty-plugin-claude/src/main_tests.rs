@@ -448,32 +448,32 @@ fn broadcast_targets_empty_when_unknown_parent() {
 }
 
 #[test]
-fn build_tell_pty_text_single_line_ends_with_cr() {
+fn build_tell_pty_text_single_line_plain_cr() {
+    // 단일라인은 평문 + 즉시 제출 \r (paste 미지원 수신측 회귀 위험 0).
     assert_eq!(build_tell_pty_text("hello"), "hello\r");
 }
 
 #[test]
-fn build_tell_pty_text_multi_line_uses_backslash_cr() {
-    // "a\nb" → "a\<CR>b<CR>"
-    assert_eq!(build_tell_pty_text("a\nb"), "a\\\rb\r");
+fn build_tell_pty_text_multi_line_bracketed() {
+    // "a\nb" → ESC[200~ a\nb ESC[201~ (멀티라인만 paste, 개행 그대로, 제출 \r 미포함).
+    assert_eq!(build_tell_pty_text("a\nb"), "\u{1b}[200~a\nb\u{1b}[201~");
 }
 
 #[test]
-fn build_tell_pty_text_trailing_backslash_gets_space() {
-    // 마지막 라인이 `\`로 끝나면 ` ` 삽입 후 `\r`.
-    // "foo\\" → "foo\\ \r"
-    assert_eq!(build_tell_pty_text("foo\\"), "foo\\ \r");
+fn build_tell_pty_text_trailing_backslash_single_line() {
+    // 개행 없는 단일라인이므로 평문 + \r (paste 아님).
+    assert_eq!(build_tell_pty_text("foo\\"), "foo\\\r");
 }
 
 #[test]
 fn build_tell_pty_text_three_lines() {
-    // "x\ny\nz" → "x\<CR>y\<CR>z<CR>"
-    assert_eq!(build_tell_pty_text("x\ny\nz"), "x\\\ry\\\rz\r");
+    // "x\ny\nz" → ESC[200~ x\ny\nz ESC[201~ (제출 \r 미포함).
+    assert_eq!(build_tell_pty_text("x\ny\nz"), "\u{1b}[200~x\ny\nz\u{1b}[201~");
 }
 
 #[test]
 fn build_tell_pty_text_empty_message() {
-    // "" → "\r" (single empty line + submit)
+    // "" → 개행 없으므로 단일라인 경로: 평문 + \r.
     assert_eq!(build_tell_pty_text(""), "\r");
 }
 

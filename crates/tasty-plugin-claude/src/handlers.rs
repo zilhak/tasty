@@ -483,8 +483,13 @@ pub(crate) fn broadcast_targets(
 
 /// 호스트 `handle_claude_tell` 1:1 이주.
 ///
-/// Claude Code의 handleEnter 로직과 맞물리는 PTY 시퀀스를 만들어 surface.send로
-/// 보낸다 — 줄바꿈은 `\` + `\r` (newline 삽입), 마지막 `\r`이 submit.
+/// 단일라인(개행 없음)은 기존처럼 평문 + 즉시 제출 `\r` 한 번으로 보낸다 —
+/// bracketed paste 를 거치지 않으므로 paste 미지원 수신측에서의 회귀 위험이 0.
+/// 멀티라인(개행 있음)만 본문을 bracketed paste(`ESC[200~ … ESC[201~`)로 감싸
+/// surface.send 로 보낸 뒤, 제출 `\r` 을 **별도** surface.send 로 보낸다. 본문과
+/// 제출을 다른 IPC 호출(=다른 PTY write)로 분리해 수신측이 마지막 `\r` 을 paste
+/// 가 아닌 제출 Enter 로 결정적으로 처리하게 한다. (옛 `\`+`\r` 줄-연속 트릭은
+/// burst 가 paste 로 오인되면 리터럴 `\`/미제출을 유발하므로 폐기)
 ///
 /// **주의 — 미세한 동작 차이**: `handle_broadcast`와 동일하게 surface.send를
 /// 거치므로 deferred surface는 auto-init된다.
@@ -494,18 +499,31 @@ pub(crate) fn handle_tell(host: &HostHandle, params: &Value) -> Result<Value, Ip
         .get("message")
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params("Missing 'message' parameter"))?;
-    let pty_text = build_tell_pty_text(message);
+    let payload = build_tell_pty_text(message);
 
+    // 1) 본문 전송. 단일라인은 평문+`\r`, 멀티라인은 bracketed paste 본문.
     let resp = host
         .call(
             "surface.send",
-            json!({ "surface_id": surface_id, "text": pty_text }),
+            json!({ "surface_id": surface_id, "text": payload }),
         )
         .map_err(IpcMethodError::from)?;
 
-    // surface.send는 `{sent: true, surface_id}` 응답. 호스트 claude.tell과 동일
-    // 필드 구성이므로 그대로 반환.
-    Ok(resp)
+    // 2) 멀티라인일 때만 제출 Enter 를 paste 종료(201~)와 다른 IPC 호출로 분리 —
+    //    write 경계가 끊겨 수신측이 `\r` 을 제출로 처리한다. 단일라인은 payload 에
+    //    이미 `\r` 이 포함돼 별도 전송 불필요. surface.send 응답
+    //    `{sent: true, surface_id}` 을 그대로 반환(호스트 claude.tell 과 동일 필드).
+    if message.contains('\n') {
+        let resp = host
+            .call(
+                "surface.send",
+                json!({ "surface_id": surface_id, "text": "\r" }),
+            )
+            .map_err(IpcMethodError::from)?;
+        Ok(resp)
+    } else {
+        Ok(resp)
+    }
 }
 
 /// 호스트 `handle_claude_launch` 1:1 이주.
@@ -919,25 +937,18 @@ fn first_pane_in_workspace(host: &HostHandle, ws_id: u32) -> Result<u32, IpcMeth
         .ok_or_else(|| IpcMethodError::new(format!("No panes in workspace {ws_id}")))
 }
 
-/// 호스트 코드의 PTY 시퀀스 생성 로직을 1:1 옮긴 순수 함수.
-/// - 라인 사이: `\` + `\r` (Claude Code에서 newline 삽입)
-/// - 마지막 라인이 `\`로 끝나면 ` ` 한 칸을 덧붙여 final `\r`이 submit으로 해석되게
-/// - 끝에 `\r` 추가 = submit
+/// tell 본문 PTY 텍스트를 만드는 순수 함수.
+/// - 단일라인(개행 없음): 기존처럼 평문 + 즉시 제출 `\r` (paste 미지원 수신측
+///   회귀 위험 0).
+/// - 멀티라인(개행 있음): bracketed paste 시퀀스(`ESC[200~ … ESC[201~`)로 감싸고
+///   개행은 그대로 두어 수신측이 한 덩어리 paste 로 삽입하게 한다. 제출 `\r` 은
+///   포함하지 않는다 — 호출자(`handle_tell`)가 별도 IPC 로 보낸다.
 pub(crate) fn build_tell_pty_text(message: &str) -> String {
-    let lines: Vec<&str> = message.split('\n').collect();
-    let mut pty_text = String::new();
-    for (i, line) in lines.iter().enumerate() {
-        pty_text.push_str(line);
-        if i < lines.len() - 1 {
-            pty_text.push('\\');
-            pty_text.push('\r');
-        }
+    if message.contains('\n') {
+        format!("\u{1b}[200~{message}\u{1b}[201~")
+    } else {
+        format!("{message}\r")
     }
-    if pty_text.ends_with('\\') {
-        pty_text.push(' ');
-    }
-    pty_text.push('\r');
-    pty_text
 }
 
 pub(crate) fn handle_parent(state: &ClaudeState, params: &Value) -> Result<Value, IpcMethodError> {

@@ -59,26 +59,17 @@ fn make_codex_command(surface_id: u32, prompt: Option<&str>) -> String {
     }
 }
 
-/// codex 메시지를 PTY로 보낼 escape된 문자열을 만든다.
-/// claude의 `handle_claude_tell`과 동일한 규칙:
-/// - 줄바꿈(`\n`)은 `\` + `\r`로 변환 (codex CLI에서 newline 입력)
-/// - 마지막 라인이 `\`로 끝나면 공백 추가 (`\r`이 escape되지 않도록)
-/// - 끝에 `\r` 추가 = submit
+/// codex tell 본문 PTY 텍스트를 만든다. claude `build_tell_pty_text` 와 동일 규칙:
+/// - 단일라인(개행 없음): 평문 + 즉시 제출 `\r` (paste 미지원 수신측 회귀 위험 0).
+/// - 멀티라인(개행 있음): bracketed paste 시퀀스(`ESC[200~ … ESC[201~`)로 감싸고
+///   개행은 그대로 두어 한 덩어리 paste 로 삽입하게 한다. 제출 `\r` 은 포함하지
+///   않는다 — 호출자가 별도 IPC 로 보낸다.
 fn build_tell_payload(message: &str) -> String {
-    let lines: Vec<&str> = message.split('\n').collect();
-    let mut pty_text = String::new();
-    for (i, line) in lines.iter().enumerate() {
-        pty_text.push_str(line);
-        if i < lines.len() - 1 {
-            pty_text.push('\\');
-            pty_text.push('\r');
-        }
+    if message.contains('\n') {
+        format!("\u{1b}[200~{message}\u{1b}[201~")
+    } else {
+        format!("{message}\r")
     }
-    if pty_text.ends_with('\\') {
-        pty_text.push(' ');
-    }
-    pty_text.push('\r');
-    pty_text
 }
 
 pub fn handle_launch(
@@ -153,11 +144,22 @@ pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params("missing 'message'"))?;
     let payload = build_tell_payload(message);
+    // 1) 본문 전송. 단일라인은 평문+`\r`, 멀티라인은 bracketed paste 본문.
     host_call(
         host,
         "surface.send",
         json!({"surface_id": surface_id, "text": payload}),
     )?;
+    // 2) 멀티라인일 때만 제출 Enter 를 paste 종료(201~)와 다른 IPC 호출로 분리 —
+    //    write 경계가 끊겨 수신측이 `\r` 을 제출로 처리한다. 단일라인은 payload 에
+    //    이미 `\r` 이 포함돼 별도 전송 불필요.
+    if message.contains('\n') {
+        host_call(
+            host,
+            "surface.send",
+            json!({"surface_id": surface_id, "text": "\r"}),
+        )?;
+    }
     Ok(json!({ "sent": true, "surface_id": surface_id }))
 }
 
@@ -809,6 +811,36 @@ mod tests {
     fn make_codex_command_with_prompt_escapes_backslash() {
         let cmd = make_codex_command(7, Some(r"path\to\file"));
         assert_eq!(cmd, "TASTY_SURFACE_ID=7 codex \"path\\\\to\\\\file\"\r");
+    }
+
+    #[test]
+    fn build_tell_payload_single_line_plain_cr() {
+        // 단일라인은 평문 + 즉시 제출 \r (paste 미지원 수신측 회귀 위험 0).
+        assert_eq!(build_tell_payload("hello"), "hello\r");
+    }
+
+    #[test]
+    fn build_tell_payload_multi_line_bracketed() {
+        // "a\nb" → ESC[200~ a\nb ESC[201~ (멀티라인만 paste, 개행 그대로, 제출 \r 미포함).
+        assert_eq!(build_tell_payload("a\nb"), "\u{1b}[200~a\nb\u{1b}[201~");
+    }
+
+    #[test]
+    fn build_tell_payload_trailing_backslash_single_line() {
+        // 개행 없는 단일라인이므로 평문 + \r (paste 아님).
+        assert_eq!(build_tell_payload("foo\\"), "foo\\\r");
+    }
+
+    #[test]
+    fn build_tell_payload_three_lines() {
+        // "x\ny\nz" → ESC[200~ x\ny\nz ESC[201~ (제출 \r 미포함).
+        assert_eq!(build_tell_payload("x\ny\nz"), "\u{1b}[200~x\ny\nz\u{1b}[201~");
+    }
+
+    #[test]
+    fn build_tell_payload_empty_message() {
+        // "" → 개행 없으므로 단일라인 경로: 평문 + \r.
+        assert_eq!(build_tell_payload(""), "\r");
     }
 
     fn parse_toml(text: &str) -> toml::Value {
