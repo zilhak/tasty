@@ -149,9 +149,9 @@ fn classify_sql(err: rusqlite::Error, path: &Path) -> DbInitError {
 
 static DB: OnceLock<Mutex<Db>> = OnceLock::new();
 
-/// `~/.tasty/state.db` 경로. `None`이면 홈 디렉터리 미확인.
+/// `state.db` 경로 (`tasty_home()/state.db`). `None`이면 홈 디렉터리 미확인.
 pub fn default_db_path() -> Option<PathBuf> {
-    directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty").join("state.db"))
+    tasty_utils::path::tasty_home().map(|d| d.join("state.db"))
 }
 
 /// 앱 시작 시 1회 호출. 실패하면 호출자가 사용자에게 안내하고 종료해야 한다.

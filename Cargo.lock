@@ -5600,10 +5600,10 @@ dependencies = [
 name = "tasty-memory"
 version = "0.1.0"
 dependencies = [
- "directories",
  "rusqlite",
  "serde",
  "serde_json",
+ "tasty-utils",
  "thiserror 2.0.18",
  "tracing",
 ]

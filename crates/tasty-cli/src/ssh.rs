@@ -146,9 +146,9 @@ pub enum PortMode {
     /// auto 체인 첫 단계: `ssh <dest> <remote-tasty> port`. git bash·unix 에서 성공.
     /// Windows GUI release 바이너리(PowerShell/cmd)는 빈 출력으로 실패할 수 있다.
     Subcommand,
-    /// Unix 원격: `cat ~/.tasty/<port-file>`.
+    /// Unix 원격: `cat ~/<.tasty|.tasty-debug>/tasty.port`.
     FileUnix,
-    /// Windows 원격: `type %USERPROFILE%\.tasty\<port-file>`.
+    /// Windows 원격: `type %USERPROFILE%\<.tasty|.tasty-debug>\tasty.port`.
     FileWindows,
     /// subcommand → file-unix → file-windows 순서로 시도(기본). 원격 SSH
     /// DefaultShell(PowerShell/cmd/bash/zsh)에 무관하게 4개 셸 전부를 커버한다.
@@ -251,13 +251,12 @@ fn parse_port(stdout: &str) -> Result<u16> {
         .map_err(|_| anyhow::anyhow!("원격 포트 파싱 실패: {:?}", stdout.trim()))
 }
 
-/// debug/release 빌드에 맞는 포트 파일명.
-fn port_file_name(debug: bool) -> &'static str {
-    if debug {
-        "tasty-debug.port"
-    } else {
-        "tasty.port"
-    }
+/// debug/release 빌드에 맞는 원격 루트 디렉터리명.
+///
+/// 데이터 루트 자체가 debug/release 로 갈리므로(`~/.tasty-debug` vs `~/.tasty`),
+/// 디스커버리도 디렉터리로 구분한다. 포트 파일명은 양쪽 모두 `tasty.port` 로 통일.
+fn remote_tasty_dir(debug: bool) -> &'static str {
+    if debug { ".tasty-debug" } else { ".tasty" }
 }
 
 /// auto 체인 첫 단계: `ssh <dest> <remote-tasty> port` → stdout 의 포트 숫자.
@@ -279,11 +278,11 @@ fn discover_via_file(
     verify: bool,
     debug: bool,
 ) -> Result<u16> {
-    let fname = port_file_name(debug);
+    let dir = remote_tasty_dir(debug);
     let remote_cmd = if windows {
-        format!("type %USERPROFILE%\\.tasty\\{fname}")
+        format!("type %USERPROFILE%\\{dir}\\tasty.port")
     } else {
-        format!("cat ~/.tasty/{fname}")
+        format!("cat ~/{dir}/tasty.port")
     };
     let out = run_ssh_capture(ssh, target, verify, &[&remote_cmd])?;
     parse_port(&out)
@@ -783,9 +782,9 @@ mod tests {
     }
 
     #[test]
-    fn port_file_name_branches() {
-        assert_eq!(port_file_name(true), "tasty-debug.port");
-        assert_eq!(port_file_name(false), "tasty.port");
+    fn remote_tasty_dir_branches() {
+        assert_eq!(remote_tasty_dir(true), ".tasty-debug");
+        assert_eq!(remote_tasty_dir(false), ".tasty");
     }
 
     #[test]

@@ -25,18 +25,13 @@ pub(super) const LAYOUT_VERSION: u32 = 2;
 
 // ── Disk I/O ──
 
-/// Release: `~/.tasty/layout.json`, Debug: `~/.tasty/layout-debug.json`.
+/// `layout.json` 경로 (`tasty_home()/layout.json`).
 ///
-/// debug 빌드를 release 빌드와 격리한다 — port file (`tasty-debug.port`) 과
-/// 동일한 패턴. 개발용 debug 인스턴스가 release 빌드의 레이아웃/스크롤백을
-/// 덮어쓰거나 복원하지 않도록 분리한다.
+/// debug/release 격리는 루트(`tasty_home()`)가 담당한다 — debug 빌드는
+/// `~/.tasty-debug/layout.json`, release 는 `~/.tasty/layout.json`. 루트가
+/// 갈리므로 파일명 접미사(`-debug`)는 두지 않는다.
 fn layout_path() -> Option<PathBuf> {
-    let filename = if cfg!(debug_assertions) {
-        "layout-debug.json"
-    } else {
-        "layout.json"
-    };
-    directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty").join(filename))
+    tasty_utils::path::tasty_home().map(|d| d.join("layout.json"))
 }
 
 /// Save layout to disk. Non-blocking best-effort.

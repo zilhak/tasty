@@ -10,14 +10,13 @@ use anyhow::Result;
 
 use tasty_utils::path::tasty_home;
 
-/// Release: `~/.tasty/tasty.port`, Debug: `~/.tasty/tasty-debug.port`.
+/// Port file 경로 (`tasty_home()/tasty.port`).
+///
+/// debug/release 격리는 루트(`tasty_home()`)가 담당한다 — debug 빌드는
+/// `~/.tasty-debug/tasty.port`, release 는 `~/.tasty/tasty.port`. 루트가 갈리므로
+/// 파일명 접미사(`-debug`)는 두지 않는다.
 pub fn port_file_path() -> Option<PathBuf> {
-    let filename = if cfg!(debug_assertions) {
-        "tasty-debug.port"
-    } else {
-        "tasty.port"
-    };
-    tasty_home().map(|dir| dir.join(filename))
+    tasty_home().map(|dir| dir.join("tasty.port"))
 }
 
 /// 기본 port file 에서 포트 읽기 — CLI 클라이언트가 사용.

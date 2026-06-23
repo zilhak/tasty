@@ -8,12 +8,32 @@ use std::path::PathBuf;
 
 use directories::BaseDirs;
 
-/// Tasty 의 사용자 데이터 디렉토리. 모든 플랫폼에서 `~/.tasty/`.
+/// Tasty 의 사용자 데이터 디렉토리.
+///
+/// 우선순위:
+/// 1. 환경변수 `TASTY_HOME` 이 비어있지 않으면 그 경로를 그대로 루트로 사용
+///    (임시 루트 override — 테스트/샌드박스/다중 인스턴스용).
+/// 2. fallback: debug 빌드 → `~/.tasty-debug/`, release 빌드 → `~/.tasty/`.
+///    루트 자체를 갈라 debug 인스턴스가 release 데이터(state.db / layout.json /
+///    memory.db / plugins / 포트파일 등)를 공유·오염하지 않게 격리한다.
 ///
 /// AI 에이전트가 경로를 외우기 쉽게 단일화 (Linux 규약상 `~/.config/tasty/` 가
 /// 자연스럽지만, agent 접근성 우선).
 pub fn tasty_home() -> Option<PathBuf> {
-    BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty"))
+    // 1) TASTY_HOME 환경변수 우선 (임시 루트 override)
+    if let Ok(custom) = std::env::var("TASTY_HOME") {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+    // 2) fallback: debug → ~/.tasty-debug, release → ~/.tasty
+    let dirname = if cfg!(debug_assertions) {
+        ".tasty-debug"
+    } else {
+        ".tasty"
+    };
+    BaseDirs::new().map(|dirs| dirs.home_dir().join(dirname))
 }
 
 /// 자식 프로세스·외부 도구에 넘길 경로에서 Windows verbatim(extended-length,

@@ -507,9 +507,12 @@ mod integration_tests {
         sk.verifying_key().to_bytes()
     }
 
-    /// `~/.tasty/known-plugins.toml` 에 trust 항목 1 개 작성.
+    /// `<home>/.tasty-debug/known-plugins.toml` 에 trust 항목 1 개 작성.
+    ///
+    /// cargo test 는 debug 컴파일이라 코드(`tasty_home()`)가 `.tasty-debug` 루트를
+    /// 본다 — HOME override 기반 테스트도 같은 디렉터리에 써야 정합한다.
     fn write_known_db(home: &Path, plugin_id: &str, pk: &[u8; 32], perms: &[&str]) {
-        let tasty_dir = home.join(".tasty");
+        let tasty_dir = home.join(".tasty-debug");
         std::fs::create_dir_all(&tasty_dir).unwrap();
         let perms_lines = perms
             .iter()

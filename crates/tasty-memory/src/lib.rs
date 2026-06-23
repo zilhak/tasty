@@ -1425,9 +1425,9 @@ fn classify_sql(err: rusqlite::Error, path: &Path) -> MemoryInitError {
     MemoryInitError::Other(format!("{}: {err}", path.display()))
 }
 
-/// `~/.tasty/memory.db` 기본 경로. 홈 디렉터리 미확인 시 `None`.
+/// `memory.db` 기본 경로 (`tasty_home()/memory.db`). 홈 디렉터리 미확인 시 `None`.
 pub fn default_db_path() -> Option<PathBuf> {
-    directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".tasty").join("memory.db"))
+    tasty_utils::path::tasty_home().map(|d| d.join("memory.db"))
 }
 
 // ---- Init helper ----

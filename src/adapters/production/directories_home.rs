@@ -13,7 +13,9 @@ impl HomeDirectory for DirectoriesHome {
     }
 
     fn tasty_config(&self) -> Option<PathBuf> {
-        self.home().map(|h| h.join(".tasty"))
+        // 루트 진실원천(SoT)을 tasty_home() 하나로 단일화 — debug/release 격리
+        // 및 TASTY_HOME override 가 포트 경유 경로에도 일관 적용된다.
+        tasty_utils::path::tasty_home()
     }
 
     fn tasty_data(&self) -> Option<PathBuf> {

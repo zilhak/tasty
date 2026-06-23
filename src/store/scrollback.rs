@@ -22,17 +22,13 @@ use std::path::{Path, PathBuf};
 use tasty_terminal::ScrollbackLine;
 use tasty_terminal::disk_scrollback::{deserialize_lines, serialize_lines};
 
-/// Release: `scrollback`, Debug: `scrollback-debug`. debug 빌드를 release 와
-/// 격리한다 — port file (`tasty-debug.port`) / layout (`layout-debug.json`) 과
-/// 동일한 패턴.
-const SUBDIR: &str = if cfg!(debug_assertions) {
-    "scrollback-debug"
-} else {
-    "scrollback"
-};
+/// scrollback 서브디렉. debug/release 격리는 루트(`tasty_home()`)가 담당하므로
+/// 서브디렉 접미사(`-debug`)는 두지 않는다 — debug 는 `~/.tasty-debug/scrollback/`,
+/// release 는 `~/.tasty/scrollback/`.
+const SUBDIR: &str = "scrollback";
 const EXT: &str = "bin";
 
-/// Return `~/.tasty/scrollback/` (debug: `~/.tasty/scrollback-debug/`).
+/// Return `~/.tasty/scrollback/` (debug: `~/.tasty-debug/scrollback/`).
 /// `None` 이면 home 디렉터리를 알 수 없음.
 pub fn scrollback_dir() -> Option<PathBuf> {
     tasty_utils::path::tasty_home().map(|h| h.join(SUBDIR))

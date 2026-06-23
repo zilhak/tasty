@@ -319,11 +319,9 @@ pub fn compose_tasty_mode_bashrc(user_content: &str) -> String {
 }
 
 fn tasty_dir() -> std::path::PathBuf {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default();
-    home.join(".tasty")
+    // 루트는 SoT 인 tasty_home() 으로 통일 (debug/release 격리 + TASTY_HOME override).
+    // 홈 해석 실패 시 기존 동작과 동일하게 빈 경로로 폴백.
+    tasty_utils::path::tasty_home().unwrap_or_default()
 }
 
 /// 사용자 편집 파일을 로드. 파일이 없으면 `INITIAL_USER_BASHRC`를 반환(파일은 생성하지 않음).

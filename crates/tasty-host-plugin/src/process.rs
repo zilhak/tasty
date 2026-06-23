@@ -146,6 +146,11 @@ impl PluginProcess {
             cmd.env("TASTY_PLUGIN_DATA_DIR", &data_dir);
             cmd.env("TASTY_PLUGIN_CONFIG_PATH", &config_path);
             cmd.env("TASTY_PLUGIN_LOG_PATH", &log_path);
+            // host 가 부팅 시 확정한 데이터 루트(TASTY_HOME override 또는 cfg fallback
+            // 결과)를 자식에 그대로 내려준다. plugin 이 자기 cfg!(debug_assertions) 로
+            // 루트를 재계산해 host 와 어긋나는 일을 막는다 — env 가 tasty_home() 의
+            // 1순위라 plugin 은 무조건 host 와 동일 루트를 본다.
+            cmd.env("TASTY_HOME", &home);
         }
 
         let child = cmd.spawn().map_err(|e| {
