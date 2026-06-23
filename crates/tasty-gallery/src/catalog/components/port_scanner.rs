@@ -15,6 +15,14 @@
 
 use egui_extras::{Column, TableBuilder};
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::{Button, ButtonVariant, IconButton, Input, Spinner};
+
+/// 헤더 검색 Input 폭 = 디자인 `--tasty-field-width-lg`(200). prim_input 과 동일.
+const SEARCH_FIELD_WIDTH: f32 = 200.0;
+
+/// footer 좌우 패딩 = 디자인 `--tasty-size-14`(14). Theme 토큰에 대응값이 없어
+/// 디자인 값을 유지(off-grid 12/16 사이의 디자인 고정값).
+const FOOTER_PAD_X: i8 = 14;
 
 /// 본체 `icons::Icon` 의 로컬 mock. SVG path 는 본체 `icons.rs` 에서 복제.
 #[derive(Debug, Clone, Copy)]
@@ -53,6 +61,12 @@ mock_icon!(
     REFRESH,
     "refresh",
     r#"<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>"#
+);
+mock_icon!(CLOSE, "close", r#"<path d="M18 6 6 18M6 6l12 12"/>"#);
+mock_icon!(
+    SEARCH,
+    "search",
+    r#"<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>"#
 );
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,14 +143,31 @@ struct PortScannerProps<'a> {
     label_column_state: &'a str,
 }
 
+/// 디자인 `border*` (header/filter/footer 구분선) — full-width 1px hairline,
+/// `--tasty-separator` 색. egui 기본 `ui.separator()` 의 짧은 폭/마진을 쓰지 않고
+/// 컨테이너 폭 전체에 정확히 한 줄만 그려 중복 라인을 제거한다(R3 버그 #2).
+fn hairline(ui: &mut egui::Ui, th: &Theme) {
+    let bw = th.border_width.value();
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), bw),
+        egui::Sense::hover(),
+    );
+    ui.painter()
+        .hline(rect.x_range(), rect.center().y, egui::Stroke::new(bw, egui::Color32::from(th.separator)));
+}
+
 /// 본체 view 의 시각 미러 (gallery 측 복제). Action 은 catalog 에서 실행되지 않음.
 fn draw_mock_port_scanner_view(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
         draw_header_row(ui, props);
+        // 디자인: header borderBottom.
+        hairline(ui, th);
         draw_filter_row(ui, props);
-        ui.separator();
+        // 디자인: filter borderBottom. (이전엔 여기 ui.separator() 하나뿐이라
+        // header/footer 구분선이 누락·불일치했고, table 영역과 겹쳐 중복으로 보였다.)
+        hairline(ui, th);
         match &props.view_state {
             PortScannerViewState::Loading => draw_loading_body(ui, props),
             PortScannerViewState::Ready { rows } => {
@@ -160,6 +191,8 @@ fn draw_mock_port_scanner_view(ui: &mut egui::Ui, props: &PortScannerProps<'_>) 
                 }
             }
         }
+        // 디자인: footer borderTop.
+        hairline(ui, th);
         draw_footer(ui, props);
     });
 }
@@ -203,29 +236,21 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         // B2: 헤더 안 accent Tag.
         draw_header_count_tag(ui, th, &header_tag_text(props));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // mock — 갤러리에선 클릭 처리 없이 hover tooltip 만 보임.
-            let _btn = ui
-                .button(
-                    egui::RichText::new("×")
-                        .size(16.0)
-                        .color(egui::Color32::from(th.text)),
-                )
+            // B1(R3): Close 는 ghost IconButton — egui 기본 버튼 테두리 제거.
+            let _close = IconButton::new()
+                .show(ui, th, &|ui, rect, c| CLOSE.image(rect.height(), c).paint_at(ui, rect))
                 .on_hover_text(props.label_close);
-            // B3: Refresh 아이콘 버튼.
-            let _refresh = ui
-                .add(
-                    egui::ImageButton::new(REFRESH.image(16.0, egui::Color32::from(th.subtext0)))
-                        .frame(false),
-                )
+            // B3: Refresh 도 동일 ghost IconButton 로 통일.
+            let _refresh = IconButton::new()
+                .show(ui, th, &|ui, rect, c| REFRESH.image(rect.height(), c).paint_at(ui, rect))
                 .on_hover_text(props.label_refresh);
-            let avail = ui.available_width().max(120.0);
+            // B4(R3): 검색 필터를 Input(고정폭 + search 아이콘 + border/bg)으로 교체.
             let mut buf = props.filter.query.to_string();
-            ui.add_sized(
-                egui::vec2(avail, 22.0),
-                egui::TextEdit::singleline(&mut buf)
-                    .hint_text(props.label_search_placeholder)
-                    .desired_width(avail),
-            );
+            Input::new()
+                .placeholder(props.label_search_placeholder)
+                .width(SEARCH_FIELD_WIDTH)
+                .icon(&|ui, rect, c| SEARCH.image(rect.height(), c).paint_at(ui, rect))
+                .show(ui, th, &mut buf);
         });
     });
 }
@@ -242,11 +267,11 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     ui.vertical_centered(|ui| {
         ui.add_space(28.0);
         ui.horizontal(|ui| {
-            ui.add(
-                egui::Spinner::new()
-                    .size(16.0)
-                    .color(egui::Color32::from(th.subtext0)),
-            );
+            // R3: egui 기본 spinner → 신설 공용 Spinner 위젯(디자인 정합).
+            Spinner::new()
+                .size(16.0)
+                .color(egui::Color32::from(th.subtext0))
+                .show(ui, th);
             ui.label(
                 egui::RichText::new(props.label_loading)
                     .color(egui::Color32::from(th.subtext0))
@@ -285,25 +310,36 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
             .map(row_copy_address),
         PortScannerViewState::Loading => None,
     };
-    ui.horizontal(|ui| {
-        if let Some(s) = &counter {
-            ui.label(
-                egui::RichText::new(s)
-                    .color(egui::Color32::from(th.overlay0))
-                    .size(th.font_size_caption.value()),
-            );
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let _close = ui
-                .button(egui::RichText::new(props.label_close).size(th.font_size_body.value()));
-            let _copy = ui.add_enabled(
-                selected_addr.is_some(),
-                egui::Button::new(
-                    egui::RichText::new(props.label_copy_address).size(th.font_size_body.value()),
-                ),
-            );
+    // B3(R3): footer 패딩 정합 — 디자인 padding: space-sm(상하) / size-14(좌우).
+    // 좌우 14 는 Theme 토큰에 대응값이 없어 디자인 값을 유지(FOOTER_PAD_X).
+    let pad_y = th.spacing_sm.value() as i8;
+    egui::Frame::default()
+        .inner_margin(egui::Margin {
+            left: FOOTER_PAD_X,
+            right: FOOTER_PAD_X,
+            top: pad_y,
+            bottom: pad_y,
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(s) = &counter {
+                    ui.label(
+                        egui::RichText::new(s)
+                            .color(egui::Color32::from(th.overlay0))
+                            .size(th.font_size_caption.value()),
+                    );
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let _close = Button::new(props.label_close)
+                        .variant(ButtonVariant::Secondary)
+                        .show(ui, th);
+                    let _copy = Button::new(props.label_copy_address)
+                        .variant(ButtonVariant::Ghost)
+                        .enabled(selected_addr.is_some())
+                        .show(ui, th);
+                });
+            });
         });
-    });
 }
 
 fn draw_table(ui: &mut egui::Ui, props: &PortScannerProps<'_>, rows: &[PortRowView]) {
