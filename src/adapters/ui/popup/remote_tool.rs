@@ -201,6 +201,33 @@ fn secondary_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Respons
     )
 }
 
+/// Primary 버튼 — accent 채움 + on-accent 텍스트. 디자인 `Button variant="primary"`.
+/// 폼 footer 의 Save 액션에 사용.
+fn primary_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(
+            egui::RichText::new(label)
+                .color(th.text_on_accent())
+                .size(th.font_size_body.value()),
+        )
+        .fill(th.accent_primary()),
+    )
+}
+
+/// Ghost 버튼 — 투명 배경 + secondary 텍스트(hover 시 overlay). 디자인
+/// `Button variant="ghost"`. 폼 footer 의 Cancel, generic 폼의 Add field 에 사용.
+fn ghost_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(
+            egui::RichText::new(label)
+                .color(th.text_secondary())
+                .size(th.font_size_body.value()),
+        )
+        .fill(egui::Color32::TRANSPARENT)
+        .stroke(egui::Stroke::NONE),
+    )
+}
+
 /// 디자인 separator 선. egui `ui.separator()` 는 theme stroke 색이 배경과 가까워
 /// 사실상 비가시 → surface1 색 명시적 hline 으로 그린다.
 fn hsep(ui: &mut egui::Ui, th: &Theme) {
@@ -605,7 +632,7 @@ fn draw_profile_form(
         .size(th.font_size_body.value())
         .strong(),
     );
-    ui.add_space(th.spacing_xs.value());
+    ui.add_space(th.spacing_md.value());
 
     let f = &mut st.pform;
     let is_ssh = f.kind.trim() == "ssh";
@@ -617,7 +644,11 @@ fn draw_profile_form(
         // Type (열린 콤보 — 텍스트 + 제안 드롭다운)
         ui.horizontal(|ui| {
             field_label(ui, th, t("remote_tool.field_type"));
-            ui.add(egui::TextEdit::singleline(&mut f.kind).desired_width(160.0));
+            ui.add(
+                egui::TextEdit::singleline(&mut f.kind)
+                    .desired_width(160.0)
+                    .font(egui::TextStyle::Monospace),
+            );
             egui::ComboBox::from_id_salt("remote_tool.type_suggest")
                 .selected_text("▾")
                 .width(24.0)
@@ -628,7 +659,8 @@ fn draw_profile_form(
                 });
         });
         if unknown {
-            ui.label(
+            indented_hint(
+                ui,
                 egui::RichText::new(t("remote_tool.type_unknown_hint"))
                     .color(th.yellow)
                     .size(th.font_size_caption.value()),
@@ -638,12 +670,20 @@ fn draw_profile_form(
 
         if is_ssh {
             egui::Grid::new("remote_tool.ssh_grid").num_columns(2).show(ui, |ui| {
-                text_row(ui, th, t("remote_tool.field_name"), &mut f.name);
-                text_row(ui, th, t("remote_tool.field_host"), &mut f.host);
-                text_row(ui, th, t("remote_tool.field_user"), &mut f.user);
-                text_row(ui, th, t("remote_tool.field_port"), &mut f.port);
-                text_row(ui, th, t("remote_tool.field_label"), &mut f.label);
-                text_row(ui, th, t("remote_tool.field_remote_tasty"), &mut f.remote_tasty);
+                // placeholder/mono 는 디자인 SSH_FIELDS 표(remote_tool.jsx).
+                text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "prod-web", false);
+                text_row(ui, th, t("remote_tool.field_host"), &mut f.host, "10.0.4.12", true);
+                text_row(ui, th, t("remote_tool.field_user"), &mut f.user, "deploy", false);
+                text_row(ui, th, t("remote_tool.field_port"), &mut f.port, "22", true);
+                text_row(ui, th, t("remote_tool.field_label"), &mut f.label, "us-east", false);
+                text_row(
+                    ui,
+                    th,
+                    t("remote_tool.field_remote_tasty"),
+                    &mut f.remote_tasty,
+                    "/usr/local/bin/tasty",
+                    true,
+                );
                 field_label(ui, th, t("remote_tool.field_shell"));
                 egui::ComboBox::from_id_salt("remote_tool.shell")
                     .selected_text(f.shell.clone())
@@ -656,7 +696,8 @@ fn draw_profile_form(
                 passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
             });
             if f.shell == "auto" {
-                ui.label(
+                indented_hint(
+                    ui,
                     egui::RichText::new(t("remote_tool.shell_auto_hint"))
                         .color(th.subtext0)
                         .size(th.font_size_caption.value()),
@@ -664,27 +705,50 @@ fn draw_profile_form(
             }
         } else {
             egui::Grid::new("remote_tool.gen_grid").num_columns(2).show(ui, |ui| {
-                text_row(ui, th, t("remote_tool.field_name"), &mut f.name);
-                text_row(ui, th, t("remote_tool.field_label"), &mut f.label);
+                text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "media-nas", false);
+                text_row(ui, th, t("remote_tool.field_label"), &mut f.label, "lab", false);
                 passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
             });
-            ui.add_space(th.spacing_xs.value());
+            ui.add_space(th.spacing_sm.value());
+            // Fields 헤더 — 좌측 mono caption 라벨 + 우측 ghost "Add field"(space-between).
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(t("remote_tool.fields_section"))
                         .color(th.subtext0)
+                        .size(th.font_size_caption.value())
+                        .monospace(),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ghost_button(ui, th, t("remote_tool.field_add")).clicked() {
+                        f.fields.push((String::new(), String::new()));
+                    }
+                });
+            });
+            if f.fields.is_empty() {
+                indented_hint(
+                    ui,
+                    egui::RichText::new(t("remote_tool.fields_empty"))
+                        .color(th.subtext0)
+                        .italics()
                         .size(th.font_size_caption.value()),
                 );
-                if ui.button(t("remote_tool.field_add")).clicked() {
-                    f.fields.push((String::new(), String::new()));
-                }
-            });
+            }
             let mut remove_idx = None;
             for (i, (k, v)) in f.fields.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(k).desired_width(110.0).hint_text("key"));
-                    ui.add(egui::TextEdit::singleline(v).desired_width(180.0).hint_text("value"));
-                    if ui.button("×").clicked() {
+                    ui.add(
+                        egui::TextEdit::singleline(k)
+                            .desired_width(110.0)
+                            .hint_text("key")
+                            .font(egui::TextStyle::Monospace),
+                    );
+                    ui.add(
+                        egui::TextEdit::singleline(v)
+                            .desired_width(180.0)
+                            .hint_text("value")
+                            .font(egui::TextStyle::Monospace),
+                    );
+                    if ghost_button(ui, th, "×").clicked() {
                         remove_idx = Some(i);
                     }
                 });
@@ -696,20 +760,25 @@ fn draw_profile_form(
 
         if let Some(err) = &st.perr {
             ui.add_space(th.spacing_xs.value());
-            ui.label(
+            indented_hint(
+                ui,
                 egui::RichText::new(err).color(th.accent_danger()).size(th.font_size_caption.value()),
             );
         }
     });
 
+    // footer: 디자인 rtFooter — 상단 1px 분리선 + 우측 정렬 [Cancel(ghost)] [Save(primary)].
+    hsep(ui, th);
     ui.add_space(th.spacing_sm.value());
     let mut do_save = false;
     let mut do_cancel = false;
-    ui.horizontal(|ui| {
-        if ui.button(t("remote_tool.save")).clicked() {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        // right_to_left: 먼저 추가한 위젯이 우측 끝 → Save(우측), 그 왼쪽에 Cancel.
+        if primary_button(ui, th, t("remote_tool.save")).clicked() {
             do_save = true;
         }
-        if ui.button(t("remote_tool.cancel")).clicked() {
+        ui.add_space(th.spacing_sm.value());
+        if ghost_button(ui, th, t("remote_tool.cancel")).clicked() {
             do_cancel = true;
         }
     });
@@ -1000,7 +1069,7 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
 
     let f = &mut st.kform;
     egui::Grid::new("remote_tool.passkey_grid").num_columns(2).show(ui, |ui| {
-        text_row(ui, th, t("remote_tool.field_name"), &mut f.name);
+        text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "", false);
         field_label(ui, th, t("remote_tool.field_kind"));
         ui.horizontal(|ui| {
             for opt in KNOWN_PASSKEY_KINDS {
@@ -1115,14 +1184,61 @@ fn draw_confirm_delete(
     out
 }
 
-fn text_row(ui: &mut egui::Ui, th: &Theme, label: &str, value: &mut String) {
+/// 그리드 한 행(라벨 + 입력). `placeholder` 는 빈 입력 시 보일 예시값(기술 예시라
+/// 번역 비대상 — i18n 하드코딩 예외), `mono` 면 입력을 monospace 폰트로 그린다
+/// (host/port/remote-tasty 처럼 식별자/경로 성격 필드).
+fn text_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    label: &str,
+    value: &mut String,
+    placeholder: &str,
+    mono: bool,
+) {
     field_label(ui, th, label);
-    ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY));
+    let mut edit = egui::TextEdit::singleline(value)
+        .desired_width(f32::INFINITY)
+        .hint_text(placeholder);
+    if mono {
+        edit = edit.font(egui::TextStyle::Monospace);
+    }
+    ui.add(edit);
     ui.end_row();
 }
 
+/// 디자인 ProfileForm 의 라벨 컬럼 폭 (LogicalPx). grid `gridTemplateColumns: 112px 1fr`.
+/// egui 위젯 좌표는 logical points 라 f32 로 둔다(Theme 상수가 아닌 화면전용 고정값).
+const LABEL_COL_WIDTH: f32 = 112.0;
+/// hint/error 문구를 입력 컬럼에 맞춰 들여쓸 폭 = 라벨 컬럼(112) + columnGap(12).
+/// 디자인 `marginLeft: 124px`.
+const HINT_INDENT: f32 = LABEL_COL_WIDTH + 12.0;
+
+/// 폼 라벨 — 112px 고정폭 컬럼 + 우측 정렬(디자인 `rtLabel`). Grid 첫 컬럼과
+/// Type 행/passkey 행이 모두 같은 컬럼 폭으로 정렬되도록 폭을 강제한다.
 fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
-    ui.label(egui::RichText::new(label).color(th.subtext0).size(th.font_size_body.value()));
+    ui.allocate_ui_with_layout(
+        egui::vec2(LABEL_COL_WIDTH, ui.spacing().interact_size.y),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(label)
+                        .color(th.subtext0)
+                        .size(th.font_size_body.value()),
+                )
+                .truncate(),
+            );
+        },
+    );
+}
+
+/// hint/error 문구를 입력 컬럼(124px)에 맞춰 들여써서 출력. 디자인의
+/// `marginLeft: 124px` 정합 — 라벨 컬럼 아래가 아니라 입력 칸에 맞춘다.
+fn indented_hint(ui: &mut egui::Ui, text: egui::RichText) {
+    ui.horizontal(|ui| {
+        ui.add_space(HINT_INDENT);
+        ui.add(egui::Label::new(text).wrap());
+    });
 }
 
 // ── detect 워커 (ssh_tool 과 동일 패턴) ───────────────────────────────────
