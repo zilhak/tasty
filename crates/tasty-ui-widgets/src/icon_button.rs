@@ -7,7 +7,7 @@
 //! - ghost: fg `text-secondary` → hover `text-primary`, hover bg `overlay-hover`.
 //! - solid: bg `surface-raised` + border `border-default` + fg `text-primary`.
 //! - active(지속 선택): fg `accent-primary` + bg `overlay-active`.
-//! - disabled: opacity 0.45.
+//! - disabled: opacity 0.5 (`--tasty-opacity-disabled`).
 //!
 //! Motion(디자인 .prompt.md): hover 틴트 fade 는 장식 → 스냅 OK. `active` 선택
 //! 틴트와 focus-ring 은 기능 → 즉시(여기선 즉시 그린다).
@@ -117,7 +117,7 @@ impl IconButton {
         let color = if self.enabled {
             color
         } else {
-            color.gamma_multiply(0.45)
+            color.gamma_multiply(theme.opacity_disabled())
         };
 
         let glyph = self.size.icon_glyph(theme);

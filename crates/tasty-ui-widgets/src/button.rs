@@ -7,7 +7,7 @@
 //! - secondary: `surface-raised` + `border-default`(hover `border-strong`) + `text-primary`.
 //! - ghost: 투명 + `text-secondary`(hover `text-primary`).
 //! - hover/active overlay 틴트(`::after`) = `overlay-hover`/`overlay-active`.
-//! - disabled: opacity 0.45.
+//! - disabled: opacity 0.5 (`--tasty-opacity-disabled`).
 //!
 //! Motion(디자인 .prompt.md): rest/hover/active/disabled 채움이 canonical, hover
 //! 틴트 fade 는 장식 → 즉시모드 스냅. (focus-ring 은 기능이나 텍스트 버튼은 해당 없음.)
@@ -100,7 +100,7 @@ impl<'a> Button<'a> {
             if self.enabled {
                 c
             } else {
-                c.gamma_multiply(0.45)
+                c.gamma_multiply(theme.opacity_disabled())
             }
         };
 

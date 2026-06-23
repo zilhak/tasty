@@ -8,8 +8,9 @@ use tasty_type_appearance::theme::Theme;
 
 const BOX: f32 = 16.0;
 const CHECK_GLYPH: f32 = 12.0;
-const SWITCH_W: f32 = 32.0;
-const SWITCH_H: f32 = 18.0;
+// Switch track 28×16 (token-policy: on-grid; 이전 32×18 은 off-grid 18 포함).
+const SWITCH_W: f32 = 28.0;
+const SWITCH_H: f32 = 16.0;
 const SWITCH_THUMB: f32 = 12.0;
 const SWITCH_INSET: f32 = 2.0;
 
@@ -44,7 +45,13 @@ pub fn checkbox(
         resp.mark_changed();
     }
 
-    let dim = |c: egui::Color32| if enabled { c } else { c.gamma_multiply(0.5) };
+    let dim = |c: egui::Color32| {
+        if enabled {
+            c
+        } else {
+            c.gamma_multiply(theme.opacity_disabled())
+        }
+    };
     let box_rect = egui::Rect::from_min_size(
         egui::pos2(rect.left(), rect.center().y - BOX * 0.5),
         egui::vec2(BOX, BOX),
@@ -78,7 +85,7 @@ pub fn checkbox(
     resp
 }
 
-/// Switch — 32×18 토글 트랙 + 라벨(옵션). 클릭 시 토글.
+/// Switch — 28×16 토글 트랙 + 라벨(옵션). 클릭 시 토글.
 pub fn switch(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -110,7 +117,13 @@ pub fn switch(
         resp.mark_changed();
     }
 
-    let dim = |c: egui::Color32| if enabled { c } else { c.gamma_multiply(0.5) };
+    let dim = |c: egui::Color32| {
+        if enabled {
+            c
+        } else {
+            c.gamma_multiply(theme.opacity_disabled())
+        }
+    };
     let track = egui::Rect::from_min_size(
         egui::pos2(rect.left(), rect.center().y - SWITCH_H * 0.5),
         egui::vec2(SWITCH_W, SWITCH_H),

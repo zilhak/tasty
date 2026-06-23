@@ -37,8 +37,9 @@ pub const CONTROL_HEIGHT_LG: f32 = 32.0;
 /// IconButton md/lg 글리프 = 디자인 icon scale 기본 16. (sm 은 `theme.icon_glyph_size_sm`=14.)
 pub const ICON_GLYPH_MD: f32 = 16.0;
 
-/// Input leading 아이콘 글리프 = 디자인 Input `__icon` 15px.
-pub const INPUT_ICON_GLYPH: f32 = 15.0;
+/// Input leading 아이콘 글리프 = 디자인 icon-size-md(16). (token-policy: 15 → 16 snap.)
+/// = `SIZING.icon_glyph_size_md`.
+pub const INPUT_ICON_GLYPH: f32 = SIZING.icon_glyph_size_md.0;
 
 /// TreeRow 높이 = 디자인 control-height-tree(22). Theme 에 대응 토큰 없음.
 pub const TREE_ROW_HEIGHT: f32 = 22.0;

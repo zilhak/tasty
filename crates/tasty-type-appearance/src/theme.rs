@@ -113,6 +113,19 @@ pub const ACCENT_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xc4, 0x2b, 0x1c);
 /// (`--tasty-text-on-window-close`).
 pub const TEXT_ON_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
 
+/// macOS 신호등(traffic light) 색. OS 가 인식하는 affordance 라 사용자가 정확한
+/// 시스템 red/amber/green 을 기대한다 — Catppuccin accent 가 아니다. Windows close
+/// 처럼 테마 불변 OS-system 리터럴 (`--tasty-color-os-macos-*`). mocha/latte 동일값.
+pub const OS_MACOS_CLOSE: HexColor = HexColor::from_rgb(0xec, 0x6a, 0x5e);
+/// macOS 신호등 — minimize (amber).
+pub const OS_MACOS_MIN: HexColor = HexColor::from_rgb(0xf4, 0xbf, 0x4f);
+/// macOS 신호등 — zoom (green).
+pub const OS_MACOS_ZOOM: HexColor = HexColor::from_rgb(0x61, 0xc5, 0x54);
+
+/// disabled 컨트롤 공통 톤 (`--tasty-opacity-disabled` = 0.5). 모든 위젯이 이 값으로
+/// 통일한다. LogicalPx 가 아닌 순수 비율이므로 별도 f32 상수.
+pub const OPACITY_DISABLED: f32 = 0.5;
+
 // ============================================================================
 //  ThemeSizing — 모든 테마 공통
 // ============================================================================
@@ -120,10 +133,22 @@ pub const TEXT_ON_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
 /// UI 크기/간격. 모든 테마에서 공통. Theme 인스턴스에도 동일 값이 복사된다.
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeSizing {
+    /// 서브-caption micro-label (kbd / badge / tag / tree·menu meta) — 10px.
+    pub font_size_micro: LogicalPx,
     pub font_size_caption: LogicalPx,
     pub font_size_body: LogicalPx,
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
+    /// markdown surface H1 — 렌더 CONTENT 라 UI 14px 상한 예외 (20px).
+    pub font_size_prose_h1: LogicalPx,
+    /// markdown surface H2 — 14px (= font_size_max).
+    pub font_size_prose_h2: LogicalPx,
+    /// terminal cell 스케일 — small (12px).
+    pub font_size_term_sm: LogicalPx,
+    /// terminal cell 스케일 — 기본 (14px).
+    pub font_size_term: LogicalPx,
+    /// terminal cell 스케일 — large (16px).
+    pub font_size_term_lg: LogicalPx,
     pub border_width: LogicalPx,
     /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
     pub focus_ring_width: LogicalPx,
@@ -140,6 +165,8 @@ pub struct ThemeSizing {
     pub spacing_lg: LogicalPx,
     pub spacing_xl: LogicalPx,
     // ── IconButton 글리프 (정사각 프레임 = `item_height_tab`, 코너 = `corner_radius`) ──
+    /// 인라인 글리프 (chevron / close 등) 최소 글리프 크기 (12px, design `--tasty-icon-size-xs`).
+    pub icon_glyph_size_xs: LogicalPx,
     /// IconButton `sm` 안의 SVG 글리프 크기 (search bar nav/toggle).
     pub icon_glyph_size_sm: LogicalPx,
     /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
@@ -188,10 +215,16 @@ pub struct ThemeSizing {
 }
 
 pub const SIZING: ThemeSizing = ThemeSizing {
+    font_size_micro: LogicalPx(10.0),
     font_size_caption: LogicalPx(11.0),
     font_size_body: LogicalPx(13.0),
     font_size_heading: LogicalPx(13.0), // semibold 로 구분, 크기는 같음
     font_size_max: LogicalPx(14.0),
+    font_size_prose_h1: LogicalPx(20.0),
+    font_size_prose_h2: LogicalPx(14.0),
+    font_size_term_sm: LogicalPx(12.0),
+    font_size_term: LogicalPx(14.0),
+    font_size_term_lg: LogicalPx(16.0),
     border_width: LogicalPx(1.0),
     focus_ring_width: LogicalPx(2.0),
     corner_radius: LogicalPx(4.0),
@@ -205,6 +238,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     spacing_md: LogicalPx(12.0),
     spacing_lg: LogicalPx(16.0),
     spacing_xl: LogicalPx(24.0),
+    icon_glyph_size_xs: LogicalPx(12.0),
     icon_glyph_size_sm: LogicalPx(14.0),
     icon_glyph_size_md: LogicalPx(16.0),
     sidebar_logo_size: LogicalPx(22.0),
@@ -645,10 +679,22 @@ pub struct Theme {
     pub separator: HexColor,
 
     // ── 모든 테마 공통 sizing (SIZING 에서 복사) ──
+    /// 서브-caption micro-label (kbd / badge / tag / tree·menu meta) — 10px.
+    pub font_size_micro: LogicalPx,
     pub font_size_caption: LogicalPx,
     pub font_size_body: LogicalPx,
     pub font_size_heading: LogicalPx,
     pub font_size_max: LogicalPx,
+    /// markdown surface H1 — 렌더 CONTENT 라 UI 14px 상한 예외 (20px).
+    pub font_size_prose_h1: LogicalPx,
+    /// markdown surface H2 — 14px (= font_size_max).
+    pub font_size_prose_h2: LogicalPx,
+    /// terminal cell 스케일 — small (12px).
+    pub font_size_term_sm: LogicalPx,
+    /// terminal cell 스케일 — 기본 (14px).
+    pub font_size_term: LogicalPx,
+    /// terminal cell 스케일 — large (16px).
+    pub font_size_term_lg: LogicalPx,
     pub border_width: LogicalPx,
     /// Focus ring 두께 (2px). accent-primary 색 outline (egui selection.stroke).
     pub focus_ring_width: LogicalPx,
@@ -665,6 +711,8 @@ pub struct Theme {
     pub spacing_lg: LogicalPx,
     pub spacing_xl: LogicalPx,
     // ── IconButton 글리프 (정사각 프레임 = `item_height_tab`, 코너 = `corner_radius`) ──
+    /// 인라인 글리프 (chevron / close 등) 최소 글리프 크기 (12px, design `--tasty-icon-size-xs`).
+    pub icon_glyph_size_xs: LogicalPx,
     /// IconButton `sm` 안의 SVG 글리프 크기 (search bar nav/toggle).
     pub icon_glyph_size_sm: LogicalPx,
     /// IconButton `md` 안의 SVG 글리프 크기 (sidebar tools/plugins/settings 등).
@@ -783,10 +831,18 @@ impl Theme {
             hover_overlay,
             active_overlay,
             separator,
+            font_size_micro: zoomed(SIZING.font_size_micro),
             font_size_caption: zoomed(SIZING.font_size_caption),
             font_size_body: zoomed(SIZING.font_size_body),
             font_size_heading: zoomed(SIZING.font_size_heading),
             font_size_max: zoomed(SIZING.font_size_max),
+            // prose / term 스케일 = surface CONTENT 폰트 (markdown/terminal). UI zoom
+            // 영향 받지 않는다 — 터미널/마크다운 셀 폰트는 자체 설정 경로를 따른다.
+            font_size_prose_h1: SIZING.font_size_prose_h1,
+            font_size_prose_h2: SIZING.font_size_prose_h2,
+            font_size_term_sm: SIZING.font_size_term_sm,
+            font_size_term: SIZING.font_size_term,
+            font_size_term_lg: SIZING.font_size_term_lg,
             border_width: SIZING.border_width,
             focus_ring_width: zoomed(SIZING.focus_ring_width),
             corner_radius: zoomed(SIZING.corner_radius),
@@ -800,6 +856,7 @@ impl Theme {
             spacing_md: zoomed(SIZING.spacing_md),
             spacing_lg: zoomed(SIZING.spacing_lg),
             spacing_xl: zoomed(SIZING.spacing_xl),
+            icon_glyph_size_xs: zoomed(SIZING.icon_glyph_size_xs),
             icon_glyph_size_sm: zoomed(SIZING.icon_glyph_size_sm),
             icon_glyph_size_md: zoomed(SIZING.icon_glyph_size_md),
             sidebar_logo_size: zoomed(SIZING.sidebar_logo_size),
@@ -1086,6 +1143,29 @@ impl Theme {
     #[inline]
     pub fn text_on_window_close(&self) -> HexColor {
         TEXT_ON_WINDOW_CLOSE
+    }
+
+    /// macOS 신호등 close 색 (테마 불변 OS 리터럴). macOS 네이티브 신호등이 OS 렌더되는
+    /// 경로에서는 미사용 — tasty 가 자체 신호등을 그리게 되는 경우의 색 소스.
+    #[inline]
+    pub fn accent_macos_close(&self) -> HexColor {
+        OS_MACOS_CLOSE
+    }
+    /// macOS 신호등 minimize 색 (테마 불변 OS 리터럴).
+    #[inline]
+    pub fn accent_macos_min(&self) -> HexColor {
+        OS_MACOS_MIN
+    }
+    /// macOS 신호등 zoom 색 (테마 불변 OS 리터럴).
+    #[inline]
+    pub fn accent_macos_zoom(&self) -> HexColor {
+        OS_MACOS_ZOOM
+    }
+
+    /// disabled 컨트롤 공통 opacity (0.5). 모든 위젯이 disabled 디밍에 이 값을 쓴다.
+    #[inline]
+    pub fn opacity_disabled(&self) -> f32 {
+        OPACITY_DISABLED
     }
 }
 
@@ -1402,6 +1482,46 @@ mod tests {
             HexColor::from_rgb(0xff, 0xff, 0xff)
         );
         assert_eq!(dark.text_on_window_close(), light.text_on_window_close());
+    }
+
+    /// token-policy 신설 토큰 값 고정 (semantic.css 의 role 값).
+    #[test]
+    fn token_policy_new_sizing_values() {
+        let t = Theme::with_colors(dummy_colors(), false);
+        assert_eq!(t.font_size_micro.value(), 10.0);
+        assert_eq!(t.font_size_prose_h1.value(), 20.0);
+        assert_eq!(t.font_size_prose_h2.value(), 14.0);
+        assert_eq!(t.font_size_term_sm.value(), 12.0);
+        assert_eq!(t.font_size_term.value(), 14.0);
+        assert_eq!(t.font_size_term_lg.value(), 16.0);
+        assert_eq!(t.icon_glyph_size_xs.value(), 12.0);
+        // icon sm/md 정합 확인
+        assert_eq!(t.icon_glyph_size_sm.value(), 14.0);
+        assert_eq!(t.icon_glyph_size_md.value(), 16.0);
+    }
+
+    /// macOS 신호등 색 + disabled opacity 는 테마 불변 OS/정책 리터럴.
+    #[test]
+    fn macos_traffic_and_disabled_opacity_are_invariant() {
+        let dark = Theme::with_colors(distinct_colors(), false);
+        let light = Theme::with_colors(distinct_colors(), true);
+        assert_eq!(dark.accent_macos_close(), HexColor::from_rgb(0xec, 0x6a, 0x5e));
+        assert_eq!(dark.accent_macos_min(), HexColor::from_rgb(0xf4, 0xbf, 0x4f));
+        assert_eq!(dark.accent_macos_zoom(), HexColor::from_rgb(0x61, 0xc5, 0x54));
+        assert_eq!(dark.accent_macos_close(), light.accent_macos_close());
+        assert_eq!(dark.accent_macos_min(), light.accent_macos_min());
+        assert_eq!(dark.accent_macos_zoom(), light.accent_macos_zoom());
+        assert_eq!(dark.opacity_disabled(), 0.5);
+    }
+
+    /// prose / term 폰트는 surface CONTENT 라 UI zoom 미적용 (micro 는 적용).
+    #[test]
+    fn prose_term_fonts_unaffected_by_zoom() {
+        let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
+        assert_eq!(t.font_size_prose_h1, SIZING.font_size_prose_h1);
+        assert_eq!(t.font_size_term, SIZING.font_size_term);
+        // micro 는 caption 처럼 zoom 적용: 10 * 1.5 = 15.
+        assert_eq!(t.font_size_micro.value(), 15.0);
     }
 
     #[test]

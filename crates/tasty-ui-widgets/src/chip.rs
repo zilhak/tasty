@@ -6,21 +6,21 @@
 
 use tasty_type_appearance::theme::Theme;
 
-// ── 디자인 고정 px (components/core 의 CSS 값) ──
-const TAG_HEIGHT: f32 = 18.0;
-const TAG_PAD_X: f32 = 7.0;
-const TAG_GAP: f32 = 5.0;
-const TAG_FONT: f32 = 10.5;
-const TAG_DOT: f32 = 6.0;
+// ── 디자인 고정 px (components/core 의 token-policy 반영 값) ──
+// pill 높이 16(size-16), 폰트는 micro(10) — 모두 Theme 토큰에서. padding/gap/dot 은
+// space/size 스케일에 정합 (Tag pad sm=8, Badge pad xs=4, dot 8).
+const TAG_HEIGHT: f32 = 16.0;
+const TAG_PAD_X: f32 = 8.0; // space-sm — 외곽선 chip
+const TAG_GAP: f32 = 4.0; // space-xs
+const TAG_DOT: f32 = 8.0; // status-dot-size
 const BADGE_HEIGHT: f32 = 16.0;
 const BADGE_MIN_W: f32 = 16.0;
-const BADGE_PAD_X: f32 = 5.0;
-const BADGE_FONT: f32 = 10.0;
+const BADGE_PAD_X: f32 = 4.0; // space-xs — tight count pill
 const BADGE_DOT: f32 = 8.0;
-const KBD_HEIGHT: f32 = 18.0;
-const KBD_MIN_W: f32 = 18.0;
-const KBD_PAD_X: f32 = 5.0;
-const KBD_FONT: f32 = 10.5;
+const KBD_HEIGHT: f32 = 16.0;
+const KBD_MIN_W: f32 = 16.0;
+const KBD_PAD_X: f32 = 4.0; // space-xs
+const KBD_GAP: f32 = 3.0; // kbd 키캡 간 간격(off-grid 키캡 관습)
 const KBD_BOTTOM_BORDER: f32 = 2.0;
 
 /// Tag variant (디자인 `core/Tag`).
@@ -78,9 +78,11 @@ pub fn tag(ui: &mut egui::Ui, theme: &Theme, label: &str, variant: TagVariant, d
     };
     let radius = theme.corner_radius_sm.value();
     let bw = theme.border_width.value();
-    let galley = ui
-        .painter()
-        .layout_no_wrap(label.to_owned(), mono(TAG_FONT), egui::Color32::PLACEHOLDER);
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        mono(theme.font_size_micro.value()),
+        egui::Color32::PLACEHOLDER,
+    );
     let dot_w = if dot { TAG_DOT + TAG_GAP } else { 0.0 };
     let w = galley.rect.width() + dot_w + 2.0 * TAG_PAD_X;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, TAG_HEIGHT), egui::Sense::hover());
@@ -111,9 +113,11 @@ pub fn badge(ui: &mut egui::Ui, theme: &Theme, label: &str, variant: BadgeVarian
         BadgeVariant::Success => (theme.accent_success().to_egui(), theme.text_on_accent().to_egui()),
         BadgeVariant::Neutral => (theme.surface_active().to_egui(), theme.text_primary().to_egui()),
     };
-    let galley = ui
-        .painter()
-        .layout_no_wrap(label.to_owned(), mono(BADGE_FONT), egui::Color32::PLACEHOLDER);
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        mono(theme.font_size_micro.value()),
+        egui::Color32::PLACEHOLDER,
+    );
     let w = (galley.rect.width() + 2.0 * BADGE_PAD_X).max(BADGE_MIN_W);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT), egui::Sense::hover());
     ui.painter().rect_filled(rect, BADGE_HEIGHT * 0.5, fill); // radius-pill = 완전 둥금
@@ -144,21 +148,22 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
     let fill = theme.surface_raised().to_egui();
     let fg = theme.text_secondary().to_egui();
     let plus = theme.subtext0.to_egui();
+    let micro = theme.font_size_micro.value();
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 3.0;
+        ui.spacing_mut().item_spacing.x = KBD_GAP;
         let parts: Vec<&str> = keys.split('+').collect();
         for (i, key) in parts.iter().enumerate() {
             if i > 0 {
                 ui.label(
                     egui::RichText::new("+")
-                        .size(10.0)
+                        .size(micro)
                         .color(plus)
                         .monospace(),
                 );
             }
             let galley = ui.painter().layout_no_wrap(
                 (*key).to_owned(),
-                mono(KBD_FONT),
+                mono(micro),
                 egui::Color32::PLACEHOLDER,
             );
             let w = (galley.rect.width() + 2.0 * KBD_PAD_X).max(KBD_MIN_W);

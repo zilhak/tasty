@@ -2,13 +2,11 @@
 //!
 //! 전체폭 행: [icon] label [shortcut]. height control-height(28), pad space-md.
 //! hover overlay-hover, active surface-active, danger accent-danger. 아이콘은
-//! 호출측 [`IconPainter`] 로 주입(15px, text-muted / danger 면 accent-danger).
+//! 호출측 [`IconPainter`] 로 주입(icon-size-md=16, text-muted / danger 면 accent-danger).
 
 use tasty_type_appearance::theme::Theme;
 
 use crate::icon_button::IconPainter;
-
-const ICON_GLYPH: f32 = 15.0;
 
 /// MenuItem variant.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,6 +32,8 @@ pub fn menu_item(
     let gap = theme.spacing_sm.value();
     let radius = theme.corner_radius_sm.value();
     let body = theme.font_size_body.value();
+    // 아이콘 글리프 = icon-size-md(16). (token-policy: 15 → 16 snap.)
+    let icon_glyph = theme.icon_glyph_size_md.value();
     let width = ui.available_width();
 
     let sense = if enabled {
@@ -42,7 +42,13 @@ pub fn menu_item(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
-    let dim = |c: egui::Color32| if enabled { c } else { c.gamma_multiply(0.45) };
+    let dim = |c: egui::Color32| {
+        if enabled {
+            c
+        } else {
+            c.gamma_multiply(theme.opacity_disabled())
+        }
+    };
 
     // 배경: active → surface-active, hover → overlay-hover.
     if active {
@@ -65,19 +71,19 @@ pub fn menu_item(
     let mut x = rect.left() + pad_x;
     if let Some(paint) = icon {
         let irect = egui::Rect::from_center_size(
-            egui::pos2(x + ICON_GLYPH * 0.5, rect.center().y),
-            egui::vec2(ICON_GLYPH, ICON_GLYPH),
+            egui::pos2(x + icon_glyph * 0.5, rect.center().y),
+            egui::vec2(icon_glyph, icon_glyph),
         );
         paint(ui, irect, dim(icon_color));
-        x += ICON_GLYPH + gap;
+        x += icon_glyph + gap;
     }
 
-    // shortcut (우측 정렬, mono 10.5 muted).
+    // shortcut (우측 정렬, mono micro(10) muted).
     let mut right = rect.right() - pad_x;
     if let Some(sc) = shortcut {
         let g = ui.painter().layout_no_wrap(
             sc.to_owned(),
-            egui::FontId::monospace(10.5),
+            egui::FontId::monospace(theme.font_size_micro.value()),
             egui::Color32::PLACEHOLDER,
         );
         let pos = egui::pos2(right - g.rect.width(), rect.center().y - g.rect.height() * 0.5);

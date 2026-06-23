@@ -11,7 +11,7 @@ use crate::tokens;
 
 const CHEVRON_SLOT: f32 = 14.0;
 const ICON_GLYPH: f32 = 14.0;
-const INDENT_PER_DEPTH: f32 = 14.0;
+// per-level indent 는 디자인 `--tasty-tree-row-indent` = space-md(12) → theme 토큰에서.
 const GAP: f32 = 6.0;
 
 /// 트리 행. `selected` 면 surface-active. 클릭 응답 반환(행 전체 클릭).
@@ -41,7 +41,14 @@ pub fn tree_row(
         egui::Sense::hover()
     };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
-    let dim = |c: egui::Color32| if enabled { c } else { c.gamma_multiply(0.45) };
+    let dim = |c: egui::Color32| {
+        if enabled {
+            c
+        } else {
+            c.gamma_multiply(theme.opacity_disabled())
+        }
+    };
+    let indent_per_depth = theme.spacing_md.value();
 
     if selected {
         ui.painter()
@@ -58,7 +65,7 @@ pub fn tree_row(
     };
     let muted = theme.subtext0.to_egui();
 
-    let mut x = rect.left() + pad_l + depth as f32 * INDENT_PER_DEPTH;
+    let mut x = rect.left() + pad_l + depth as f32 * indent_per_depth;
 
     // chevron (has_children 일 때만 — leaf 면 슬롯만 비움).
     let chev_c = egui::pos2(x + CHEVRON_SLOT * 0.5, rect.center().y);
@@ -97,12 +104,12 @@ pub fn tree_row(
         x += ICON_GLYPH + GAP;
     }
 
-    // meta (우측, mono 10 muted).
+    // meta (우측, mono micro(10) muted).
     let mut right = rect.right() - pad_r;
     if let Some(m) = meta {
         let g = ui.painter().layout_no_wrap(
             m.to_owned(),
-            egui::FontId::monospace(10.0),
+            egui::FontId::monospace(theme.font_size_micro.value()),
             egui::Color32::PLACEHOLDER,
         );
         let pos = egui::pos2(right - g.rect.width(), rect.center().y - g.rect.height() * 0.5);
