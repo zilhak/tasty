@@ -4,11 +4,12 @@
 
 ## 번들 plugin 목록 (SoT)
 
-`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처. 8 종:
+`crates/tasty-host-plugin/src/builtin.rs::BUILTINS` 가 단일 출처. 9 종:
 
 | crate | plugin ID |
 |-------|-----------|
 | `tasty-plugin-claude` | `com.tasty.claude` |
+| `tasty-plugin-claude-design` | `com.tasty.claude-design` |
 | `tasty-plugin-clipboard-history` | `com.tasty.clipboard-history` |
 | `tasty-plugin-codex` | `com.tasty.codex` |
 | `tasty-plugin-explorer` | `com.tasty.explorer` |
@@ -48,7 +49,7 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 `tasty-plugin.toml` 을 한 줄이라도 고치면 기존 `.sig` 무효화. 빌드 직전 재서명:
 
 ```bash
-./scripts/sign-bundle.sh --key secrets/dev-private.pem --all-builtins
+./scripts/sign-bundle.sh --key ~/.tasty-keys/dev.pem --all-builtins
 ```
 
 빌드 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)는 패키징 직전 자동으로 `sign-bundle.sh` 를 호출 — 매니페스트만 고치고 빌드 없이 확인할 때만 수동 호출.
@@ -58,7 +59,7 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 `.github/workflows/release.yml` 이 tag push(`v*`)/manual dispatch 시:
 
 1. GitHub Secret `TASTY_RELEASE_SIGN_KEY`(Ed25519 PEM 의 base64)를 `$RUNNER_TEMP` 에 mode 600 으로 디코딩.
-2. `scripts/sign-bundle.sh --key "$TASTY_SIGN_KEY" --all-builtins` 로 8 plugin 서명.
+2. `scripts/sign-bundle.sh --key "$TASTY_SIGN_KEY" --all-builtins` 로 9 plugin 서명.
 3. 빌드 실행 → 결과 무관하게 `Wipe release signing key` step 으로 키 삭제.
 
 PR CI 는 secret 미주입(debug 빌드라 검증 우회). repo 의 `.sig` 는 *로컬 release/dev 검증용* — CI 정식 release 는 secret 키로 재서명하므로 repo 와 다른 키로 덮어쓰는 게 정상.
