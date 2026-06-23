@@ -14,13 +14,14 @@ pub fn draw_ui(
     state: &mut AppState,
     engine: &mut CoreState,
     scale_factor: f32,
+    plugin_alert: usize,
 ) -> PhysicalRect {
     let sidebar_width = state.sidebar_width.value();
 
     if !state.sidebar_visible {
         // Sidebar hidden — skip rendering entirely
     } else if state.sidebar_collapsed {
-        let r = sidebar::draw_collapsed_sidebar(ctx, state, engine, sidebar_width);
+        let r = sidebar::draw_collapsed_sidebar(ctx, state, engine, sidebar_width, plugin_alert);
 
         if r.expand_clicked {
             state.sidebar_collapsed = false;
@@ -47,7 +48,7 @@ pub fn draw_ui(
             );
         }
     } else {
-        let r = sidebar::draw_full_sidebar(ctx, state, engine, sidebar_width);
+        let r = sidebar::draw_full_sidebar(ctx, state, engine, sidebar_width, plugin_alert);
 
         if r.collapse_clicked {
             state.sidebar_collapsed = true;

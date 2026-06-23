@@ -82,7 +82,7 @@ impl App {
             .map_err(|e| anyhow::anyhow!("create dir failed: {e}"))?;
         copy_dir_recursive(&src_path, &dest).map_err(|e| anyhow::anyhow!("copy failed: {e}"))?;
 
-        mgr.packages = crate::plugin::discovery::discover();
+        mgr.refresh_packages();
         mgr.command_registry.register_plugin(&manifest);
         mgr.recompute_extensions();
         let lang_dir = dest.join(&manifest.lang_dir);

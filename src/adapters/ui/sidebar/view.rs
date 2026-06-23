@@ -42,6 +42,8 @@ pub struct SidebarFullProps<'a> {
     pub new_workspace_label: &'a str,
     pub workspaces_heading: &'a str,
     pub occupied_hover: &'a str,
+    /// "확인 필요" plugin 개수. >0 이면 Plugins 버튼에 danger 배지를 그린다.
+    pub plugin_alert: usize,
 }
 
 /// 진행 중인 workspace drag-and-drop 의 스냅샷. 호출처가 매 프레임 view 에 전달.
@@ -56,6 +58,8 @@ pub struct SidebarCollapsedProps<'a> {
     pub theme: &'a Theme,
     pub workspaces: &'a [WorkspaceEntryView],
     pub tools_hover: &'a str,
+    /// "확인 필요" plugin 개수. >0 이면 Plugins 레일 버튼에 danger 배지.
+    pub plugin_alert: usize,
 }
 
 /// Full sidebar view 가 보고하는 사용자 의도. wrapper 가 state mutation 으로 변환.
@@ -117,6 +121,34 @@ fn collapsed_icon_size(th: &Theme) -> egui::Vec2 {
         th.sidebar_collapsed_icon_height.value(),
     )
 }
+
+/// Plugins 버튼의 "확인 필요" danger 배지 (개수 표기 pill). `inline_right=true`
+/// (확장 사이드바)는 버튼 우측 가장자리 세로 중앙에, false(축소 레일)는 아이콘
+/// 우상단 모서리에 그린다.
+fn paint_alert_badge(ui: &egui::Ui, th: &Theme, btn_rect: egui::Rect, count: usize, inline_right: bool) {
+    let h = 15.0;
+    let galley = ui.painter().layout_no_wrap(
+        count.to_string(),
+        egui::FontId::proportional(9.5),
+        egui::Color32::from(th.text_on_accent()),
+    );
+    let pad = 4.0;
+    let w = (galley.size().x + pad * 2.0).max(h);
+    let center = if inline_right {
+        egui::pos2(btn_rect.right() - w / 2.0 - 10.0, btn_rect.center().y)
+    } else {
+        egui::pos2(btn_rect.right() - w / 2.0 - 1.0, btn_rect.top() + h / 2.0 + 1.0)
+    };
+    let badge_rect = egui::Rect::from_center_size(center, egui::vec2(w, h));
+    ui.painter()
+        .rect_filled(badge_rect, h / 2.0, egui::Color32::from(th.accent_danger()));
+    let gp = egui::pos2(
+        badge_rect.center().x - galley.size().x / 2.0,
+        badge_rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter()
+        .galley(gp, galley, egui::Color32::from(th.text_on_accent()));
+}
 fn collapsed_ws_size(th: &Theme) -> egui::Vec2 {
     egui::vec2(
         th.sidebar_collapsed_slot_width.value(),
@@ -167,9 +199,14 @@ pub fn draw_full_sidebar_view(
             }
             ui.add_space(2.0);
 
-            // Plugins
-            if draw_ghost_block_button(ui, th, Some(icons::PLUG), props.plugins_label).clicked() {
+            // Plugins (확인 필요 plugin 있으면 우측에 danger 배지)
+            let plug_resp =
+                draw_ghost_block_button(ui, th, Some(icons::PLUG), props.plugins_label);
+            if plug_resp.clicked() {
                 actions.push(SidebarFullAction::Plugins);
+            }
+            if props.plugin_alert > 0 {
+                paint_alert_badge(ui, th, plug_resp.rect, props.plugin_alert, true);
             }
             ui.add_space(2.0);
 
@@ -401,12 +438,15 @@ pub fn draw_collapsed_sidebar_view(
                 }
                 ui.add_space(2.0);
 
-                // Plugins
+                // Plugins (확인 필요 plugin 있으면 우상단에 danger 배지)
                 let (rect, resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 paint_icon_button(ui, th, rect, &resp, icons::PLUG);
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Plugins);
+                }
+                if props.plugin_alert > 0 {
+                    paint_alert_badge(ui, th, rect, props.plugin_alert, false);
                 }
                 ui.add_space(2.0);
 
@@ -905,6 +945,7 @@ mod tests {
                     new_workspace_label: "New Workspace",
                     workspaces_heading: "WORKSPACES",
                     occupied_hover: "Held by another client",
+                    plugin_alert: 0,
                 };
                 out = draw_full_sidebar_view(ui, &props);
             });
@@ -922,6 +963,7 @@ mod tests {
                     theme: &theme,
                     workspaces: &workspaces,
                     tools_hover: "Tools menu",
+                    plugin_alert: 0,
                 };
                 out = draw_collapsed_sidebar_view(ui, &props);
             });

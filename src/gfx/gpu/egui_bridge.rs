@@ -44,7 +44,8 @@ impl GpuState {
             // CSD 공통 titlebar — TopBottomPanel::top 이 먼저 등록되어야 사이드바
             // SidePanel 이 그 아래에서 시작한다. 드래그/더블클릭을 winit window 로 브리지.
             ui::titlebar::draw_titlebar(ctx, window, proxy);
-            ui::draw_ui(ctx, state, engine, scale_factor);
+            let plugin_alert = plugin_manager.map_or(0, |m| m.attention_count());
+            ui::draw_ui(ctx, state, engine, scale_factor, plugin_alert);
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, engine, pane_rects, scale_factor);

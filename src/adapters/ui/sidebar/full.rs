@@ -22,6 +22,7 @@ pub fn draw_full_sidebar(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     sidebar_width: f32,
+    plugin_alert: usize,
 ) -> FullSidebarResult {
     let th = theme::theme();
     let active_ws = state.active_workspace;
@@ -89,6 +90,7 @@ pub fn draw_full_sidebar(
                 new_workspace_label,
                 workspaces_heading,
                 occupied_hover,
+                plugin_alert,
             };
             deferred_actions = draw_full_sidebar_view(ui, &props);
         });

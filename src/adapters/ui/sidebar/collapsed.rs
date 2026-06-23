@@ -23,6 +23,7 @@ pub fn draw_collapsed_sidebar(
     state: &mut AppState,
     engine: &crate::core::CoreState,
     sidebar_width: f32,
+    plugin_alert: usize,
 ) -> CollapsedSidebarResult {
     let th = theme::theme();
     let active_ws = state.active_workspace;
@@ -67,6 +68,7 @@ pub fn draw_collapsed_sidebar(
                 theme: &th,
                 workspaces: &workspaces,
                 tools_hover,
+                plugin_alert,
             };
             deferred_actions = draw_collapsed_sidebar_view(ui, &props);
         });

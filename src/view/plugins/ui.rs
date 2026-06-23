@@ -48,6 +48,47 @@ pub struct PluginEntry {
 #[derive(Debug, Clone, Default)]
 pub struct PluginsSnapshot {
     pub plugins: Vec<PluginEntry>,
+    /// 등록 거부(서명/신뢰) 또는 실행 실패(health error) 로 "확인 필요" 한
+    /// plugin 들. `Attention` 탭 목록 + 사이드바 경고 배지가 소비.
+    pub attention: Vec<AttentionEntry>,
+}
+
+/// "확인 필요" 사유 — `host-plugin` 의 `RejectionReason` + health error 를 합친 것.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttentionKind {
+    /// 신뢰 목록에 없는 키로 서명 → 등록 거부.
+    UnknownKey,
+    /// 서명 누락/손상/검증 실패 → 등록 거부.
+    SignatureInvalid,
+    /// 매니페스트 권한 변경 → 재승인 필요.
+    PermissionsChanged,
+    /// enable 됐으나 런타임 반복 실패로 자동 비활성화.
+    HealthError,
+}
+
+impl AttentionKind {
+    /// danger(등록 거부) 면 true, warning(재검토) 면 false.
+    pub fn is_danger(self) -> bool {
+        matches!(self, Self::UnknownKey | Self::SignatureInvalid)
+    }
+}
+
+/// "확인 필요" 목록의 한 항목.
+#[derive(Debug, Clone)]
+pub struct AttentionEntry {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub authors: Vec<String>,
+    pub builtin: bool,
+    pub kind: AttentionKind,
+    /// 서명 키 지문 (UnknownKey/PermissionsChanged). 표시용.
+    pub fingerprint: Option<String>,
+    /// PermissionsChanged 일 때 새로 요구된 / 더 이상 안 쓰는 권한.
+    pub permissions_added: Vec<String>,
+    pub permissions_removed: Vec<String>,
+    /// HealthError 일 때 표시할 사유 (로그 경로 등). 없으면 일반 문구.
+    pub health_detail: Option<String>,
 }
 
 /// `PluginsView`가 메인 루프에 발행하는 동작.
@@ -63,6 +104,12 @@ pub enum PluginsAction {
     /// 상세의 `Configure` 버튼 — 이 모달을 닫고 Settings›Plugins 탭을 연다.
     /// (lifecycle 창 → per-plugin config 의 연결 고리.)
     OpenSettings,
+    /// "확인 필요" 탭의 `Re-approve` — 권한 변경으로 거부된 plugin 을 현재
+    /// 매니페스트 권한으로 재신뢰한다. 호스트가 known-plugins.toml 의 권한 스냅샷을
+    /// 갱신 + 재grant + discover 재호출.
+    Reapprove {
+        id: String,
+    },
     /// 헤더 X 버튼 — 모달을 닫는다.
     Close,
     /// 설치 디렉터리를 OS 파일 매니저로 연다.
@@ -98,6 +145,7 @@ pub enum PluginsAction {
 pub enum PluginsTab {
     #[default]
     List,
+    Attention,
     Add,
 }
 
@@ -153,6 +201,8 @@ pub enum AddTrustReason {
 pub struct PluginsUiState {
     pub active_tab: PluginsTab,
     pub selected_id: Option<String>,
+    /// `Attention` 탭의 선택 항목 — `selected_id`(Installed) 와 독립.
+    pub attention_selected_id: Option<String>,
     pub confirm_uninstall_id: Option<String>,
     /// `Installed` 탭 목록 검색/필터 입력 버퍼 (name/authors/description 부분일치).
     pub filter: String,
@@ -191,16 +241,30 @@ pub fn draw_plugins_panel(
                 draw_header_divider(ui, &th);
                 ui.add_space(8.0);
 
-                // 세그먼트 탭 (Installed N / Add plugin). Installed 만 카운트 노출.
+                // 세그먼트 탭 (Installed N / Attention N / Add plugin).
                 let installed_count = snapshot.plugins.len();
                 if segment_tab(
                     ui,
                     &th,
                     t("plugins.tab_list"),
                     Some(installed_count),
+                    false,
                     ui_state.active_tab == PluginsTab::List,
                 ) {
                     ui_state.active_tab = PluginsTab::List;
+                }
+                ui.add_space(2.0);
+                // Attention 탭 — 확인 필요 plugin 개수를 danger 배지로 노출.
+                let attention_count = snapshot.attention.len();
+                if segment_tab(
+                    ui,
+                    &th,
+                    t("plugins.tab_attention"),
+                    Some(attention_count),
+                    true,
+                    ui_state.active_tab == PluginsTab::Attention,
+                ) {
+                    ui_state.active_tab = PluginsTab::Attention;
                 }
                 ui.add_space(2.0);
                 if segment_tab(
@@ -208,6 +272,7 @@ pub fn draw_plugins_panel(
                     &th,
                     t("plugins.tab_add"),
                     None,
+                    false,
                     ui_state.active_tab == PluginsTab::Add,
                 ) {
                     ui_state.active_tab = PluginsTab::Add;
@@ -237,6 +302,7 @@ pub fn draw_plugins_panel(
 
     match ui_state.active_tab {
         PluginsTab::List => draw_list_tab(ctx, snapshot, ui_state, actions),
+        PluginsTab::Attention => draw_attention_tab(ctx, snapshot, ui_state, actions),
         PluginsTab::Add => draw_add_tab(ctx, snapshot, ui_state, actions),
     }
 }
@@ -278,12 +344,15 @@ fn close_icon_button(ui: &mut egui::Ui, th: &theme::Theme) -> bool {
 }
 
 /// 디자인 pill 세그먼트 탭 한 개. active 면 surface-raised 배경 + inset border,
-/// hover 면 overlay. `count` 가 있으면 라벨 우측에 mono 카운트를 덧붙인다.
+/// hover 면 overlay. `count` 가 있으면 라벨 우측에 카운트를 덧붙인다.
+/// `danger` 면 카운트를 mono 텍스트 대신 accent-danger 필 배지로 그리고,
+/// `count == 0` 일 땐 배지를 숨긴다 (확인 필요 0건이면 깔끔하게).
 fn segment_tab(
     ui: &mut egui::Ui,
     th: &theme::Theme,
     label: &str,
     count: Option<usize>,
+    danger: bool,
     selected: bool,
 ) -> bool {
     let label_color = if selected {
@@ -301,17 +370,38 @@ fn segment_tab(
         egui::FontId::proportional(12.5),
         label_color,
     );
-    let count_galley = count.map(|c| {
-        ui.painter()
-            .layout_no_wrap(c.to_string(), egui::FontId::monospace(10.5), count_color)
-    });
+
+    // danger 배지로 그릴지 / mono 카운트로 그릴지 결정.
+    let badge = danger && count.is_some_and(|c| c > 0);
+    let badge_galley = if badge {
+        Some(ui.painter().layout_no_wrap(
+            count.unwrap().to_string(),
+            egui::FontId::proportional(9.5),
+            egui::Color32::from(th.text_on_accent()),
+        ))
+    } else {
+        None
+    };
+    let count_galley = if !danger {
+        count.map(|c| {
+            ui.painter()
+                .layout_no_wrap(c.to_string(), egui::FontId::monospace(10.5), count_color)
+        })
+    } else {
+        None
+    };
 
     let pad_x = 12.0;
     let gap = 7.0;
     let height = 26.0;
+    let badge_h = 15.0;
+    let badge_pad = 4.0;
     let mut width = label_galley.size().x + pad_x * 2.0;
     if let Some(g) = &count_galley {
         width += gap + g.size().x;
+    }
+    if let Some(g) = &badge_galley {
+        width += gap + (g.size().x + badge_pad * 2.0).max(badge_h);
     }
 
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
@@ -342,6 +432,25 @@ fn segment_tab(
         let cy = rect.center().y - g.size().y / 2.0;
         ui.painter().galley(egui::pos2(x, cy), g, count_color);
     }
+    if let Some(g) = badge_galley {
+        x += label_w + gap;
+        let badge_w = (g.size().x + badge_pad * 2.0).max(badge_h);
+        let badge_rect = egui::Rect::from_min_size(
+            egui::pos2(x, rect.center().y - badge_h / 2.0),
+            egui::vec2(badge_w, badge_h),
+        );
+        ui.painter().rect_filled(
+            badge_rect,
+            badge_h / 2.0,
+            egui::Color32::from(th.accent_danger()),
+        );
+        let gp = egui::pos2(
+            badge_rect.center().x - g.size().x / 2.0,
+            badge_rect.center().y - g.size().y / 2.0,
+        );
+        ui.painter()
+            .galley(gp, g, egui::Color32::from(th.text_on_accent()));
+    }
     resp.clicked()
 }
 
@@ -369,7 +478,9 @@ pub(super) fn tag(ui: &mut egui::Ui, th: &theme::Theme, text: &str) {
 }
 
 mod add;
+mod attention;
 mod list;
 
 use add::draw_add_tab;
+use attention::draw_attention_tab;
 use list::draw_list_tab;

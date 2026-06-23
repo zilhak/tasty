@@ -33,6 +33,48 @@ fn record_trust_then_install(
 }
 
 impl App {
+    /// `Attention` 탭의 `Re-approve` — 권한 변경으로 거부된 plugin 을 현재 매니페스트
+    /// 권한으로 재신뢰한다. known-plugins.toml 의 권한 스냅샷을 디스크 매니페스트와
+    /// 맞추고(다음 trust 검증 통과), grant 갱신 + discover 재호출 + enable 으로 즉시
+    /// 로드한다. UnknownKey/SignatureInvalid 는 키 자체가 신뢰 불가라 대상 아님.
+    fn reapprove_plugin(&mut self, id: &str) -> anyhow::Result<()> {
+        use tasty_host_plugin::known_plugins::{KnownPluginEntry, KnownPlugins};
+
+        let dir = plugin::plugin_root()
+            .ok_or_else(|| anyhow::anyhow!("plugin root unresolved"))?
+            .join(id);
+        let manifest = plugin::Manifest::load(&dir)
+            .map_err(|e| anyhow::anyhow!("load manifest failed: {e}"))?;
+
+        let mut db = KnownPlugins::load()
+            .map_err(|e| anyhow::anyhow!("load known-plugins.toml failed: {e}"))?;
+        let prev = db
+            .lookup(id)
+            .ok_or_else(|| anyhow::anyhow!("no known-plugins entry for {id}"))?;
+        let entry = KnownPluginEntry {
+            pubkey: prev.pubkey.clone(),
+            permissions: manifest.permissions.clone(),
+            trusted_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            publisher_fingerprint: prev.publisher_fingerprint.clone(),
+        };
+        db.add(id.to_string(), entry);
+        db.save()
+            .map_err(|e| anyhow::anyhow!("save known-plugins.toml failed: {e}"))?;
+
+        let mgr = self
+            .plugin_manager
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no plugin manager"))?;
+        mgr.config.set_granted(id, manifest.permissions.clone());
+        if let Err(e) = mgr.config.save() {
+            tracing::warn!("reapprove: plugins config save failed: {e}");
+        }
+        mgr.refresh_packages();
+        mgr.command_registry.register_plugin(&manifest);
+        mgr.enable(id)?;
+        Ok(())
+    }
+
     /// Drain pending actions from the plugins modal and apply them to the manager.
     /// Refreshes the modal's snapshot after applying.
     pub(crate) fn process_plugins_window_actions(&mut self) {
@@ -90,6 +132,25 @@ impl App {
                 plugins_ui::PluginsAction::OpenSettings => {
                     close_modal = true;
                     open_settings_plugin_tab = true;
+                }
+                plugins_ui::PluginsAction::Reapprove { id } => {
+                    let toast = match self.reapprove_plugin(&id) {
+                        Ok(()) => (
+                            crate::i18n::t_fmt("plugins.attn_reapproved", &id),
+                            crate::adapters::ui::ToastKind::Success,
+                        ),
+                        Err(e) => {
+                            tracing::warn!("plugins modal: reapprove({id}) failed: {e}");
+                            (
+                                crate::i18n::t_fmt(
+                                    "plugins.attn_reapprove_failed",
+                                    &e.to_string(),
+                                ),
+                                crate::adapters::ui::ToastKind::Error,
+                            )
+                        }
+                    };
+                    pending_toasts.push(toast);
                 }
                 plugins_ui::PluginsAction::Close => {
                     close_modal = true;
