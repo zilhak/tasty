@@ -2,6 +2,8 @@
 
 View 내부 가상 창은 모두 **`PopupManager` + `PopupDef` 시스템**으로 만든다. `egui::Window` 를 직접 쓰지 않는다. 용어(Window/Modal/Popup/Toast 구분)는 [concepts/ubiquitous-language](../concepts/ubiquitous-language.md), 시스템 설계는 [`design/systems/popup.md`](../design/systems/popup.md).
 
+> **0단계 — gallery-first**: 새 팝업은 본체에 넣기 **전에** 갤러리에 먼저 만든다(디자인 수령 → 갤러리 specimen → 본체). 아래 3단계는 그 "본체 반영" 단계다. 절차·근거는 [gallery-first](gallery-first.md) · [ADR-0020](../adr/0020-gallery-complete-component-source.md).
+
 ## 왜 `egui::Window` 직접 사용 금지
 
 - `PopupManager` 의 입력 계층(`popup_hovered`)을 우회 → 팝업 위를 클릭해도 뒤 surface 가 클릭을 받는다.
