@@ -96,6 +96,7 @@ impl TerminalState {
                 self.cursor_shape = CursorShape::Default;
                 self.bracketed_paste = false;
                 self.mouse_tracking = MouseTrackingMode::None;
+                self.right_click_hint_armed = false;
                 self.sgr_mouse = false;
                 self.focus_tracking = false;
                 self.insert_mode = false;

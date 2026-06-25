@@ -146,27 +146,27 @@ impl TerminalState {
                 self.bracketed_paste = enable;
             }
             DecPrivateModeCode::MouseTracking => {
-                self.mouse_tracking = if enable {
+                self.set_mouse_tracking(if enable {
                     MouseTrackingMode::Click
                 } else {
                     MouseTrackingMode::None
-                };
+                });
             }
             DecPrivateModeCode::ButtonEventMouse => {
                 // Mode 1002
-                self.mouse_tracking = if enable {
+                self.set_mouse_tracking(if enable {
                     MouseTrackingMode::CellMotion
                 } else {
                     MouseTrackingMode::None
-                };
+                });
             }
             DecPrivateModeCode::AnyEventMouse => {
                 // Mode 1003
-                self.mouse_tracking = if enable {
+                self.set_mouse_tracking(if enable {
                     MouseTrackingMode::AllMotion
                 } else {
                     MouseTrackingMode::None
-                };
+                });
             }
             DecPrivateModeCode::SGRMouse => {
                 self.sgr_mouse = enable;
@@ -230,6 +230,28 @@ impl TerminalState {
     /// Current mouse tracking mode.
     pub fn mouse_tracking(&self) -> MouseTrackingMode {
         self.mouse_tracking
+    }
+
+    /// 마우스 트래킹 모드를 바꾸며 "첫 우클릭 안내" 플래그를 관리한다.
+    /// `None → ON` 엣지에서만 무장하고(ON→ON 전환, 예 1000→1002 는 재무장 안 함),
+    /// `ON → None`(disable)에서는 disarm 한다 (세션당 1회, ADR-0022 ②).
+    fn set_mouse_tracking(&mut self, mode: MouseTrackingMode) {
+        if mode != MouseTrackingMode::None {
+            if self.mouse_tracking == MouseTrackingMode::None {
+                self.right_click_hint_armed = true;
+            }
+        } else {
+            self.right_click_hint_armed = false;
+        }
+        self.mouse_tracking = mode;
+    }
+
+    /// 무장된 "첫 우클릭 안내" 플래그를 소비한다 — 무장돼 있었으면 `true` 를 반환하고
+    /// 즉시 disarm 해 같은 트래킹 세션에서 다시 뜨지 않게 한다.
+    pub fn take_right_click_hint(&mut self) -> bool {
+        let armed = self.right_click_hint_armed;
+        self.right_click_hint_armed = false;
+        armed
     }
 
     /// Whether SGR mouse encoding is active.

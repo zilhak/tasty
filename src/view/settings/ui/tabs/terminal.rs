@@ -99,6 +99,10 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.label(t("settings.terminal.allow_clipboard_read_label"));
             ui.checkbox(&mut settings.general.allow_clipboard_read, "");
             ui.end_row();
+
+            ui.label(t("settings.terminal.right_click_hint_label"));
+            ui.checkbox(&mut settings.general.right_click_capture_hint, "");
+            ui.end_row();
         });
 
     ui.add_space(8.0);

@@ -94,6 +94,10 @@ pub struct GeneralSettings {
     /// including untrusted remote/SSH processes — silently exfiltrate clipboard
     /// contents (passwords, tokens). When off, read queries get no reply.
     pub allow_clipboard_read: bool,
+    /// 마우스 트래킹 앱(vim/htop 등) 위에서 처음 우클릭할 때, 마우스가 앱에 캡처 중이며
+    /// tasty 메뉴는 Shift+우클릭으로 띄울 수 있음을 안내하는 toast 를 트래킹 세션당 1회
+    /// 표시한다(발견성, ADR-0022 ②). off 면 안내하지 않는다.
+    pub right_click_capture_hint: bool,
 }
 
 /// 파싱된 링크 클릭 수식키.
@@ -143,6 +147,7 @@ impl Default for GeneralSettings {
             restore_surface_content: true,
             link_click_modifier: "ctrl".to_string(),
             allow_clipboard_read: false,
+            right_click_capture_hint: true,
         }
     }
 }

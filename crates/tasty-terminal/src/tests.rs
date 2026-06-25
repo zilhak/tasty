@@ -128,6 +128,56 @@ fn decset_mouse_tracking() {
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
 }
 
+#[test]
+fn right_click_hint_arms_on_none_to_on_edge() {
+    let mut terminal = test_terminal(80, 24);
+    let mut parser = Parser::new();
+    let mut apply = |terminal: &mut Terminal, bytes: &[u8]| {
+        for action in parser.parse_as_vec(bytes) {
+            if let Action::CSI(CSI::Mode(ref mode)) = action {
+                terminal.lock_state().handle_mode(mode);
+            }
+        }
+    };
+
+    // None → ON(1000h): 무장 → 첫 take 만 true, 소비 후 false.
+    apply(&mut terminal, b"\x1b[?1000h");
+    assert!(terminal.take_right_click_hint());
+    assert!(!terminal.take_right_click_hint());
+
+    // ON → ON(1000 켜진 채 1002h 전환): 재무장하지 않는다.
+    apply(&mut terminal, b"\x1b[?1002h");
+    assert!(!terminal.take_right_click_hint());
+
+    // OFF(→None) 후 다시 None → ON: 재무장.
+    apply(&mut terminal, b"\x1b[?1002l");
+    apply(&mut terminal, b"\x1b[?1000h");
+    assert!(terminal.take_right_click_hint());
+}
+
+#[test]
+fn right_click_hint_disarms_on_ris() {
+    let mut terminal = test_terminal(80, 24);
+    let mut parser = Parser::new();
+    let mut apply = |terminal: &mut Terminal, bytes: &[u8]| {
+        for action in parser.parse_as_vec(bytes) {
+            if let Action::CSI(CSI::Mode(ref mode)) = action {
+                terminal.lock_state().handle_mode(mode);
+            }
+        }
+    };
+
+    // 트래킹 ON 으로 무장한 뒤 RIS(ESC c): mouse_tracking 리셋 + 안내 disarm.
+    apply(&mut terminal, b"\x1b[?1000h");
+    terminal.process_bytes(b"\x1bc");
+    assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
+    assert!(!terminal.take_right_click_hint());
+
+    // 재진입 시 다시 무장된다.
+    apply(&mut terminal, b"\x1b[?1000h");
+    assert!(terminal.take_right_click_hint());
+}
+
 // ---- Alternate screen tests ----
 
 #[test]
