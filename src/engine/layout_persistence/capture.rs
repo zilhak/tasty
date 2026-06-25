@@ -45,7 +45,7 @@ impl SavedLayout {
     /// ID 를 재사용한다 (orphan 누적 방지).
     pub fn capture(engine: &mut CoreState, active_workspace: usize) -> Self {
         let registry = engine.surface_registry.clone();
-        let capture_scrollback = engine.settings.general.restore_terminal_content;
+        let capture_scrollback = engine.settings.general.restore_surface_content;
         let memory = engine.memory.clone();
         let mut seen_refs = SeenRefs::new();
         let workspaces: Vec<SavedWorkspace> = {

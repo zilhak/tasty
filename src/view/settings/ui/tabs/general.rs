@@ -13,8 +13,8 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.checkbox(&mut settings.general.restore_layout, "");
             ui.end_row();
 
-            ui.label(t("settings.general.restore_terminal_content_label"));
-            ui.checkbox(&mut settings.general.restore_terminal_content, "");
+            ui.label(t("settings.general.restore_surface_content_label"));
+            ui.checkbox(&mut settings.general.restore_surface_content, "");
             ui.end_row();
 
             ui.label(t("settings.general.close_behavior_label"));

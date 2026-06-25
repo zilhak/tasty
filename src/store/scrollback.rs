@@ -4,7 +4,7 @@
 //! 파일을 관리한다. 직렬화 포맷은 `tasty_terminal::disk_scrollback::serialize_lines`
 //! 와 동일 (magic + version + line records). lifecycle 은 host 책임:
 //!
-//! - capture: `restore_terminal_content` 옵션 on 일 때 `write` 호출
+//! - capture: `restore_surface_content` 옵션 on 일 때 `write` 호출
 //! - restore: 파일이 존재하면 `read` 후 inject
 //! - surface close: `delete`
 //! - 앱 시작: `gc_orphans(known_ids)` 로 layout.json 에 없는 파일 정리

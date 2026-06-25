@@ -212,7 +212,7 @@ pub(crate) enum DomainIntent {
     /// 현재 layout 을 ~/.tasty/layout.json 에 저장.
     /// - `active_workspace`: 호출자가 결정한 active workspace 인덱스 (AppState 가
     ///   들고 있는 정보이므로 Intent 발화 시 동봉).
-    /// - `force=true`: shutdown 경로용. debounce 무시 + `restore_terminal_content`
+    /// - `force=true`: shutdown 경로용. debounce 무시 + `restore_surface_content`
     ///   설정이 켜져 있으면 layout_dirty 가 false 여도 저장.
     /// - `force=false`: main loop tick 경로. debounce 통과 시에만 저장.
     ///

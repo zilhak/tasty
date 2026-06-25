@@ -14,7 +14,7 @@
 
 - 트리거: `restore_closed` 단축키([keybindings](../keybindings/index.md), 4 프리셋 공통 `Ctrl+Shift+T`).
 - 스택 top 의 항목 복원. Surface/Tab 은 호출 시점 focused pane 에. workspace 가 0개일 때 Surface/Tab 복원은 default workspace 를 먼저 만든 뒤.
-- **scrollback 은 `general.restore_terminal_content` 와 무관하게 항상** 복원(메모리 보관분 즉시 재사용, 디스크 미경유).
+- **scrollback 은 `general.restore_surface_content` 와 무관하게 항상** 복원(메모리 보관분 즉시 재사용, 디스크 미경유).
 - 닫기 시점 surface 메타 `restore.command`(예: claude plugin 의 `claude -r <id>`)가 있었으면 셸 시작 직후 자동 실행 → TUI 세션 재개([layout-persistence](../layout-persistence/index.md) 의 동일 메커니즘).
 - 복원할 항목 없으면 no-op (토스트/알림 없음).
 

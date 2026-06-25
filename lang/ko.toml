@@ -207,7 +207,7 @@ disabled = "비활성"
 [settings.general]
 heading = "일반"
 restore_layout_label = "시작 시 레이아웃 복원:"
-restore_terminal_content_label = "재시작 시 터미널 내용 복원:"
+restore_surface_content_label = "재시작 시 Surface 내용 복원:"
 close_behavior_label = "종료 동작:"
 close_behavior_ask = "물어보기"
 close_behavior_minimize = "백그라운드로 최소화"

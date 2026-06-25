@@ -53,7 +53,7 @@ click_to_move_cursor = true
 inherit_cwd = false
 close_behavior = "ask"
 restore_layout = false
-restore_terminal_content = false
+restore_surface_content = false
 link_click_modifier = "ctrl"
 "#,
         shell = shell_path

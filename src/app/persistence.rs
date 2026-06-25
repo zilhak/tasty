@@ -8,7 +8,7 @@ impl App {
     ///
     /// `force=false`: main loop tick. settings.restore_layout + debounce
     ///   (`layout_dirty.should_flush()`) 통과 시에만 저장.
-    /// `force=true`: shutdown / quit modal. debounce 무시, `restore_terminal_content`
+    /// `force=true`: shutdown / quit modal. debounce 무시, `restore_surface_content`
     ///   설정이 켜져 있으면 layout_dirty 가 false 여도 저장.
     ///
     /// 조건 분기 + `layout_dirty.clear()` 는 Core::apply 안에서 처리.

@@ -207,7 +207,7 @@ disabled = "無効"
 [settings.general]
 heading = "一般"
 restore_layout_label = "起動時にレイアウトを復元:"
-restore_terminal_content_label = "再起動時にターミナル内容を復元:"
+restore_surface_content_label = "再起動時に Surface 内容を復元:"
 close_behavior_label = "終了時の動作:"
 close_behavior_ask = "確認する"
 close_behavior_minimize = "バックグラウンドに最小化"

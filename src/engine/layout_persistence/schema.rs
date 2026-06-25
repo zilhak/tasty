@@ -88,7 +88,7 @@ pub enum SavedSurface {
         /// Populated from surface-meta `restore.command` at capture time; plugins own the format.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         restore_command: Option<String>,
-        /// `~/.tasty/scrollback/<id>.bin` 파일 식별자. `restore_terminal_content` 옵션
+        /// `~/.tasty/scrollback/<id>.bin` 파일 식별자. `restore_surface_content` 옵션
         /// on 일 때만 발급된다. `None` 이면 scrollback 복원을 시도하지 않는다.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scrollback_ref: Option<String>,

@@ -18,9 +18,9 @@
 
 복원은 앱 시작 1회. 파싱 실패/파일 없음 → 기본 "Workspace 1" 폴백. 개별 서피스 복원 실패 시 그 서피스만 스킵.
 
-### 터미널 내용 복원 (scrollback)
+### Surface 내용 복원 (현재: 터미널 scrollback)
 
-`general.restore_terminal_content`(기본 **on**) 시 각 터미널의 scrollback + 현재 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`(magic `TSSB`)에 보존 → 재시작 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순. `persist_id` 는 surface-meta(`scrollback.persist_id`)에 보관, 같은 surface 면 atomic 덮어쓰기(orphan 없음). 옵션 OFF→ON 전환 시 capture/restore 스킵, ON→OFF 시 `~/.tasty/scrollback/` 전체 삭제. Lifecycle: surface 닫힘 시 `.bin` 삭제, 앱 시작 시 `layout.json` 의 `scrollback_ref` 집합 외 `.bin` 일괄 정리(크래시 잔재).
+`general.restore_surface_content`(기본 **on**) 시 각 터미널의 scrollback + 현재 화면 라인을 `~/.tasty/scrollback/<persist_id>.bin`(magic `TSSB`)에 보존 → 재시작 후 위로 스크롤하면 [이전 scrollback → 이전 화면 → 새 prompt] 순. `persist_id` 는 surface-meta(`scrollback.persist_id`)에 보관, 같은 surface 면 atomic 덮어쓰기(orphan 없음). 옵션 OFF→ON 전환 시 capture/restore 스킵, ON→OFF 시 `~/.tasty/scrollback/` 전체 삭제. Lifecycle: surface 닫힘 시 `.bin` 삭제, 앱 시작 시 `layout.json` 의 `scrollback_ref` 집합 외 `.bin` 일괄 정리(크래시 잔재).
 
 ### TUI 세션 복원 (`restore.command`)
 

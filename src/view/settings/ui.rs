@@ -307,13 +307,13 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                     result = Some(false);
                 }
                 if ui.button(t("button.save")).clicked() {
-                    let prev_restore_terminal_content = settings.general.restore_terminal_content;
+                    let prev_restore_surface_content = settings.general.restore_surface_content;
                     if let Some(draft) = &ui_state.draft {
                         *settings = draft.clone();
                     }
-                    // restore_terminal_content 를 끈 경우 기존에 쌓인 scrollback
+                    // restore_surface_content 를 끈 경우 기존에 쌓인 scrollback
                     // 파일을 모두 정리 (사용자가 더 이상 안 쓴다고 명시).
-                    if prev_restore_terminal_content && !settings.general.restore_terminal_content {
+                    if prev_restore_surface_content && !settings.general.restore_surface_content {
                         crate::scrollback_store::clear_all();
                     }
                     // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭). 비-Windows 는

@@ -788,7 +788,7 @@ impl Core {
     ) -> CoreEvent {
         let g = &engine.settings.general;
         let should_save = if force {
-            g.restore_layout && (engine.layout_dirty.is_dirty() || g.restore_terminal_content)
+            g.restore_layout && (engine.layout_dirty.is_dirty() || g.restore_surface_content)
         } else {
             g.restore_layout && engine.layout_dirty.should_flush()
         };

@@ -81,8 +81,11 @@ pub struct GeneralSettings {
     pub close_behavior: String,
     /// Save and restore layout (workspaces, panes, tabs) on restart.
     pub restore_layout: bool,
-    /// Restore terminal scrollback content on restart (requires `restore_layout`).
-    pub restore_terminal_content: bool,
+    /// Restore surface content on restart (requires `restore_layout`). 현재 보존되는
+    /// "내용"은 터미널 scrollback 이며, 옵션명만 surface 일반으로 넓힌 것이다(메커니즘 동일).
+    /// `alias`: 구버전 settings.toml 의 `restore_terminal_content` 키를 계속 읽는다.
+    #[serde(alias = "restore_terminal_content")]
+    pub restore_surface_content: bool,
     /// 터미널 내 링크 클릭 시 요구되는 수식키. "ctrl" | "alt" | "none".
     /// "none"이면 평범한 클릭으로 링크가 열리므로 텍스트 선택과 구분되지 않는 점에 유의.
     pub link_click_modifier: String,
@@ -137,7 +140,7 @@ impl Default for GeneralSettings {
             inherit_cwd: true,
             close_behavior: "ask".to_string(),
             restore_layout: true,
-            restore_terminal_content: true,
+            restore_surface_content: true,
             link_click_modifier: "ctrl".to_string(),
             allow_clipboard_read: false,
         }
@@ -384,6 +387,20 @@ fn ensure_compiled_bashrc() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_restore_terminal_content_key_still_loads() {
+        // 구버전 키(`restore_terminal_content`)로 저장된 값이 새 필드로 매핑되어야 한다
+        // (serde alias). 구버전 settings 호환. (settings 는 toml 직렬화.)
+        let g: GeneralSettings = toml::from_str("restore_terminal_content = false").unwrap();
+        assert!(!g.restore_surface_content);
+    }
+
+    #[test]
+    fn new_restore_surface_content_key_loads() {
+        let g: GeneralSettings = toml::from_str("restore_surface_content = false").unwrap();
+        assert!(!g.restore_surface_content);
+    }
 
     #[cfg(windows)]
     fn settings_with_mode(mode: &str) -> GeneralSettings {
