@@ -1811,6 +1811,7 @@ fn settings_pages_with_font_override_parses() {
             assert_eq!(label_key, "settings.markdown.font");
             assert_eq!(storage_key, "markdown");
         }
+        other => panic!("expected FontOverride, got {other:?}"),
     }
     // permission token round-trip
     assert_eq!(
@@ -1818,6 +1819,163 @@ fn settings_pages_with_font_override_parses() {
         Some(Permission::UiSettingsPage)
     );
     assert_eq!(Permission::UiSettingsPage.as_token(), "ui.settings_page");
+}
+
+/// 공통 manifest preamble + 주어진 items toml 을 합쳐 한 페이지짜리 매니페스트를 만든다.
+fn settings_items_manifest(items: &str) -> String {
+    format!(
+        r#"
+        manifest_version = 1
+        id = "com.tasty.x"
+        name = "X"
+        version = "0.1.0"
+        api_version = "1"
+        permissions = ["ui.settings_page"]
+        [entry]
+        type = "process"
+        command = "x"
+
+        [[contributes.settings_pages]]
+        id = "x"
+        title_key = "settings.subtab.x"
+        category = "appearance"
+{items}
+    "#
+    )
+}
+
+#[test]
+fn settings_pages_toggle_select_number_parse() {
+    let s = settings_items_manifest(
+        r#"
+        [[contributes.settings_pages.items]]
+        kind = "toggle"
+        id = "wrap"
+        label_key = "x.wrap"
+        storage_key = "wrap"
+        default = true
+
+        [[contributes.settings_pages.items]]
+        kind = "select"
+        id = "scheme"
+        label_key = "x.scheme"
+        storage_key = "scheme"
+        default = "dark"
+        [[contributes.settings_pages.items.options]]
+        value = "light"
+        label_key = "x.light"
+        [[contributes.settings_pages.items.options]]
+        value = "dark"
+        label_key = "x.dark"
+
+        [[contributes.settings_pages.items]]
+        kind = "number"
+        id = "zoom"
+        label_key = "x.zoom"
+        storage_key = "zoom"
+        default = 100.0
+        min = 50.0
+        max = 200.0
+        suffix_key = "x.percent"
+        "#,
+    );
+    let m = parse(&s).expect("toggle/select/number page should parse + validate");
+    let items = &m.contributes.settings_pages[0].items;
+    assert_eq!(items.len(), 3);
+    match &items[0] {
+        SettingsItemDecl::Toggle { id, default: d, .. } => {
+            assert_eq!(id, "wrap");
+            assert!(*d);
+        }
+        other => panic!("expected Toggle, got {other:?}"),
+    }
+    match &items[1] {
+        SettingsItemDecl::Select {
+            options, default, ..
+        } => {
+            assert_eq!(default, "dark");
+            assert_eq!(options.len(), 2);
+            assert_eq!(options[0].value, "light");
+            assert_eq!(options[1].label_key, "x.dark");
+        }
+        other => panic!("expected Select, got {other:?}"),
+    }
+    match &items[2] {
+        SettingsItemDecl::Number {
+            default,
+            min,
+            max,
+            suffix_key,
+            ..
+        } => {
+            assert_eq!(*default, 100.0);
+            assert_eq!(*min, Some(50.0));
+            assert_eq!(*max, Some(200.0));
+            assert_eq!(suffix_key.as_deref(), Some("x.percent"));
+        }
+        other => panic!("expected Number, got {other:?}"),
+    }
+}
+
+#[test]
+fn settings_pages_select_default_not_in_options_rejected() {
+    let s = settings_items_manifest(
+        r#"
+        [[contributes.settings_pages.items]]
+        kind = "select"
+        id = "scheme"
+        label_key = "x.scheme"
+        storage_key = "scheme"
+        default = "sepia"
+        [[contributes.settings_pages.items.options]]
+        value = "light"
+        label_key = "x.light"
+        [[contributes.settings_pages.items.options]]
+        value = "dark"
+        label_key = "x.dark"
+        "#,
+    );
+    let err = parse(&s).expect_err("select default not in options must fail");
+    assert!(
+        err.to_string().contains("not among options"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn settings_pages_number_min_gt_max_rejected() {
+    let s = settings_items_manifest(
+        r#"
+        [[contributes.settings_pages.items]]
+        kind = "number"
+        id = "zoom"
+        label_key = "x.zoom"
+        storage_key = "zoom"
+        default = 100.0
+        min = 200.0
+        max = 50.0
+        "#,
+    );
+    let err = parse(&s).expect_err("number min > max must fail");
+    assert!(err.to_string().contains("min"), "unexpected error: {err}");
+}
+
+#[test]
+fn settings_pages_invalid_storage_key_rejected() {
+    let s = settings_items_manifest(
+        r#"
+        [[contributes.settings_pages.items]]
+        kind = "toggle"
+        id = "wrap"
+        label_key = "x.wrap"
+        storage_key = "Wrap!"
+        "#,
+    );
+    let err = parse(&s).expect_err("invalid storage_key must fail");
+    assert!(
+        err.to_string().contains("storage_key"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

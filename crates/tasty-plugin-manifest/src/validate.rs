@@ -547,38 +547,91 @@ impl Manifest {
                 }
                 let mut seen_item_ids = HashSet::new();
                 for item in &page.items {
-                    match item {
-                        SettingsItemDecl::FontOverride {
+                    // 공통 형식 검사 (모든 variant): id·storage_key 는 settings id 규칙
+                    // (소문자/숫자/`_`/`-`, 1..=64), label_key 비어있지 않음, id 중복 금지.
+                    let (id, label_key, storage_key) = item.common();
+                    if !is_valid_settings_id(id) {
+                        anyhow::bail!(
+                            "invalid contributes.settings_pages '{}' item id '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
+                            page.id,
+                            id
+                        );
+                    }
+                    if !seen_item_ids.insert(id.to_string()) {
+                        anyhow::bail!(
+                            "contributes.settings_pages '{}' item id '{}' declared twice",
+                            page.id,
+                            id
+                        );
+                    }
+                    if label_key.is_empty() {
+                        anyhow::bail!(
+                            "contributes.settings_pages '{}' item '{}': label_key must not be empty",
+                            page.id,
+                            id
+                        );
+                    }
+                    if !is_valid_settings_id(storage_key) {
+                        anyhow::bail!(
+                            "invalid contributes.settings_pages '{}' item '{}' storage_key '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
+                            page.id,
                             id,
-                            label_key,
-                            storage_key,
+                            storage_key
+                        );
+                    }
+
+                    // variant 별 추가 검사.
+                    match item {
+                        SettingsItemDecl::FontOverride { .. } | SettingsItemDecl::Toggle { .. } => {
+                        }
+                        SettingsItemDecl::Select {
+                            options, default, ..
                         } => {
-                            if !is_valid_settings_id(id) {
+                            // default 는 options.value 중 하나여야 한다.
+                            if !options.iter().any(|o| &o.value == default) {
                                 anyhow::bail!(
-                                    "invalid contributes.settings_pages '{}' item id '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
+                                    "contributes.settings_pages '{}' item '{}': select default '{}' is not among options",
                                     page.id,
-                                    id
+                                    id,
+                                    default
                                 );
                             }
-                            if !seen_item_ids.insert(id.clone()) {
+                        }
+                        SettingsItemDecl::Number {
+                            default, min, max, ..
+                        } => {
+                            // min/max 둘 다 주어지면 min ≤ max, default 는 [min,max] 안.
+                            if let (Some(mn), Some(mx)) = (min, max)
+                                && mn > mx
+                            {
                                 anyhow::bail!(
-                                    "contributes.settings_pages '{}' item id '{}' declared twice",
+                                    "contributes.settings_pages '{}' item '{}': number min ({}) > max ({})",
                                     page.id,
-                                    id
+                                    id,
+                                    mn,
+                                    mx
                                 );
                             }
-                            if label_key.is_empty() {
+                            if let Some(mn) = min
+                                && default < mn
+                            {
                                 anyhow::bail!(
-                                    "contributes.settings_pages '{}' item '{}': label_key must not be empty",
+                                    "contributes.settings_pages '{}' item '{}': number default ({}) < min ({})",
                                     page.id,
-                                    id
+                                    id,
+                                    default,
+                                    mn
                                 );
                             }
-                            if storage_key.is_empty() {
+                            if let Some(mx) = max
+                                && default > mx
+                            {
                                 anyhow::bail!(
-                                    "contributes.settings_pages '{}' item '{}': storage_key must not be empty",
+                                    "contributes.settings_pages '{}' item '{}': number default ({}) > max ({})",
                                     page.id,
-                                    id
+                                    id,
+                                    default,
+                                    mx
                                 );
                             }
                         }

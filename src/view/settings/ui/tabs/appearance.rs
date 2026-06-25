@@ -1457,6 +1457,11 @@ pub(super) fn draw_plugin_settings_page(
                     },
                 );
             }
+            SettingsItemDecl::Toggle { .. }
+            | SettingsItemDecl::Select { .. }
+            | SettingsItemDecl::Number { .. } => {
+                // TODO(16-B Phase 2): host 렌더링(Switch/Select/Input) — 16b-plan.md 참조. 현재는 미렌더.
+            }
         }
     }
 }

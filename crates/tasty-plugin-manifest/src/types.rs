@@ -500,9 +500,10 @@ impl<'de> Deserialize<'de> for SettingsCategory {
 
 /// `[[contributes.settings_pages.items]]` 의 한 항목.
 ///
-/// 1 차에서는 `FontOverride` 한 종류만 지원. 향후 Color/Bool/Enum variants 가
-/// 추가될 수 있으므로 `#[serde(tag = "kind", rename_all = "snake_case")]` 로
-/// 직렬화한다.
+/// `#[serde(tag = "kind", rename_all = "snake_case")]` 로 직렬화한다(toml `kind = "..."`).
+/// 1 차는 `FontOverride` 만 지원했고, 16-B 에서 generic 컨트롤(`Toggle`/`Select`/`Number`)
+/// 이 추가됐다. 모든 variant 는 공통으로 `id`(page 내 식별자) · `label_key`(라벨 i18n 키) ·
+/// `storage_key`(host 측 저장 슬롯 키) 를 갖는다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SettingsItemDecl {
@@ -517,6 +518,82 @@ pub enum SettingsItemDecl {
         label_key: String,
         storage_key: String,
     },
+
+    /// on/off 토글. host 는 디자인 Switch 로 그리고 `plugin_settings.<plugin_id>.<storage_key>`
+    /// 에 bool 로 저장한다. `default` 는 키 부재 시 적용할 초기값.
+    Toggle {
+        id: String,
+        label_key: String,
+        storage_key: String,
+        #[serde(default)]
+        default: bool,
+    },
+
+    /// 선택지(드롭다운). host 는 디자인 Select 로 그리고 선택된 `value` 를 문자열로 저장한다.
+    /// `default` 는 `options` 의 `value` 중 하나여야 한다(검증). 옵션 라벨은 `label_key` i18n.
+    Select {
+        id: String,
+        label_key: String,
+        storage_key: String,
+        options: Vec<SelectOptionDecl>,
+        default: String,
+    },
+
+    /// 수치 입력. host 는 Input(+선택적 suffix) 으로 그리고 f64 로 저장한다(정수 표기 가능).
+    /// `min`/`max` 가 주어지면 clamp 범위이며 `default` 는 그 범위 안이어야 한다(검증).
+    Number {
+        id: String,
+        label_key: String,
+        storage_key: String,
+        #[serde(default)]
+        default: f64,
+        #[serde(default)]
+        min: Option<f64>,
+        #[serde(default)]
+        max: Option<f64>,
+        /// 값 뒤에 붙일 단위 라벨 i18n 키 (예 `"%"`). 없으면 suffix 미표시.
+        #[serde(default)]
+        suffix_key: Option<String>,
+    },
+}
+
+/// `Select` 항목의 한 선택지 — 저장될 `value` 와 표시용 `label_key`(i18n).
+#[derive(Debug, Clone, Deserialize)]
+pub struct SelectOptionDecl {
+    pub value: String,
+    pub label_key: String,
+}
+
+impl SettingsItemDecl {
+    /// 모든 variant 가 공통으로 갖는 `(id, label_key, storage_key)`. 검증이 variant 무관하게
+    /// 공통 형식 검사를 한 곳에서 수행하도록 노출한다.
+    pub(crate) fn common(&self) -> (&str, &str, &str) {
+        match self {
+            SettingsItemDecl::FontOverride {
+                id,
+                label_key,
+                storage_key,
+            }
+            | SettingsItemDecl::Toggle {
+                id,
+                label_key,
+                storage_key,
+                ..
+            }
+            | SettingsItemDecl::Select {
+                id,
+                label_key,
+                storage_key,
+                ..
+            }
+            | SettingsItemDecl::Number {
+                id,
+                label_key,
+                storage_key,
+                ..
+            } => (id, label_key, storage_key),
+        }
+    }
 }
 
 /// Plugin 이 contribute 하는 OS-level 윈도우 정의 (`[[contributes.window]]`).
