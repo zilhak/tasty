@@ -572,6 +572,7 @@ redo = "다시 실행"
 [toast]
 char_limit_notice = "(200자 제한)"
 copied = "복사됨"
+copied_osc52 = "복사됨 (OSC 52)"
 copied_path = "경로 복사됨"
 copied_files = "파일 복사됨"
 cut_files = "파일 잘라냄"

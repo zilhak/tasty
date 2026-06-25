@@ -572,6 +572,7 @@ redo = "やり直し"
 [toast]
 char_limit_notice = "(200文字制限)"
 copied = "コピーしました"
+copied_osc52 = "コピーしました (OSC 52)"
 copied_path = "パスをコピーしました"
 copied_files = "ファイルをコピーしました"
 cut_files = "ファイルを切り取りました"

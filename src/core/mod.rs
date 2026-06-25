@@ -491,7 +491,10 @@ impl Core {
                     if let Err(e) = self.clipboard.write_text(&text) {
                         tracing::warn!("OSC 52 clipboard write failed: {e}");
                     }
-                    out.push(CoreEvent::TerminalClipboardSet { text });
+                    out.push(CoreEvent::TerminalClipboardSet {
+                        surface_id: sid,
+                        text,
+                    });
                 }
                 TerminalEventKind::ClipboardQuery => {
                     // OSC 52 read query. Security gate: off by default so an

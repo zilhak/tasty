@@ -298,8 +298,8 @@ impl App {
             CoreEvent::TerminalCwdChanged { surface_id } => {
                 self.cascade_terminal_pty_cwd_changed(source, surface_id);
             }
-            CoreEvent::TerminalClipboardSet { text } => {
-                self.cascade_terminal_clipboard_set(source, text);
+            CoreEvent::TerminalClipboardSet { surface_id, text } => {
+                self.cascade_terminal_clipboard_set(source, surface_id, text);
             }
             CoreEvent::TerminalProcessExited { surface_id } => {
                 self.cascade_terminal_process_exited(source, surface_id);
@@ -537,9 +537,16 @@ impl App {
         }
     }
 
-    /// `TerminalClipboardSet` cascade — `RecordInternalClipboardCopy` Intent 큐잉.
-    /// 시스템 clipboard 쓰기는 `Core::process_pty_output` 이 이미 처리.
-    fn cascade_terminal_clipboard_set(&mut self, source: DispatchSource, text: String) {
+    /// `TerminalClipboardSet` cascade — `RecordInternalClipboardCopy` Intent 큐잉 +
+    /// OSC 52 write 가시화 토스트(`toast.copied_osc52`). 시스템 clipboard 쓰기는
+    /// `Core::process_pty_output` 이 이미 처리. 같은 surface 의 반복 OSC 52 는 토스트
+    /// 매니저의 동일-메시지-동일-스코프 coalesce 로 합쳐져 스택되지 않는다.
+    fn cascade_terminal_clipboard_set(
+        &mut self,
+        source: DispatchSource,
+        surface_id: u32,
+        text: String,
+    ) {
         let state = match source {
             DispatchSource::Main(wid) => {
                 let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut()) else {
@@ -554,6 +561,10 @@ impl App {
                 state
             }
         };
+        state.toasts.push_info(
+            crate::i18n::t("toast.copied_osc52"),
+            crate::adapters::ui::ToastScope::Surface(surface_id),
+        );
         state.dispatch_intent(
             crate::core::intent::DomainIntent::RecordInternalClipboardCopy { text }.from_system(),
         );
