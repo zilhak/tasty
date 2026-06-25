@@ -12,6 +12,8 @@
 //! specimen 콘텐츠의 디자인 정합 재작성은 Round 2 의 책임이다.
 
 pub mod components;
+pub mod foundations_shape;
+pub mod foundations_uiscale;
 pub mod icons;
 pub mod popup_frame;
 pub mod spacing;
@@ -158,13 +160,33 @@ pub fn pages() -> Vec<Page> {
             category: Category::Foundations,
             sections: vec![
                 section(
-                    "color",
-                    "Color",
+                    "elevation",
+                    "Color — elevation (surface ramp)",
                     vec![spec(
-                        "swatches",
-                        "Color swatches",
-                        Some("Surface ramp, text hierarchy, accent roles"),
-                        theme::draw,
+                        "elevation",
+                        "Depth reads through surface tint, never shadow",
+                        Some("bg-app → sidebar → panel → surface-raised, one tint step apart"),
+                        theme::elevation,
+                    )],
+                ),
+                section(
+                    "text",
+                    "Color — text",
+                    vec![spec(
+                        "text",
+                        "Hierarchy by text color, on any surface",
+                        Some("primary → secondary → muted → disabled → placeholder"),
+                        theme::text,
+                    )],
+                ),
+                section(
+                    "accents",
+                    "Color — accent roles",
+                    vec![spec(
+                        "accents",
+                        "Accents map to roles, not decoration",
+                        Some("primary · info · success · warning · danger · agent"),
+                        theme::accents,
                     )],
                 ),
                 section(
@@ -172,19 +194,39 @@ pub fn pages() -> Vec<Page> {
                     "Type",
                     vec![spec(
                         "type",
-                        "Typography",
-                        Some("Two families, hard 14px cap, hierarchy by weight"),
+                        "Two families, hard 14px cap, hierarchy by weight",
+                        Some("heading 13/600 · body 13 · caption 11 · mono 14"),
                         typography::draw,
                     )],
                 ),
                 section(
                     "spacing",
-                    "Spacing",
+                    "Spacing — the 4px grid, in use",
                     vec![spec(
                         "spacing",
-                        "Spacing — the 4px grid",
-                        Some("Five steps, each with a job"),
+                        "Five steps, each with a job",
+                        Some("xs chip · sm pair · md card · lg column · xl region"),
                         spacing::draw,
+                    )],
+                ),
+                section(
+                    "shape",
+                    "Radius · border · motion",
+                    vec![spec(
+                        "shape",
+                        "Crisp and rectilinear — it's a terminal",
+                        Some("radius 4/2 · 1px border · UI 90–120ms · terminal 0ms"),
+                        foundations_shape::draw,
+                    )],
+                ),
+                section(
+                    "uiscale",
+                    "UI scale — sidebar zoom",
+                    vec![spec(
+                        "uiscale",
+                        "One multiplier scales the sidebar; everything else stays fixed",
+                        Some("stops 0.8 / 1.0 / 1.2 — sidebar root zoom only"),
+                        foundations_uiscale::draw,
                     )],
                 ),
             ],

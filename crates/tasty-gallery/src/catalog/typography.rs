@@ -1,94 +1,84 @@
-//! Typography 데모: UI type scale (micro~max) + markdown prose + terminal scale,
-//! 그리고 weight 롤. line-height / letter-spacing 은 egui Label 이 직접 제어를
-//! 노출하지 않아 토큰 값만 표기(아래 주석 섹션).
+//! Foundations Type specimen — 디자인(4) "Type" Spec.
+//!
+//! Spec "Two families, hard 14px cap, hierarchy by weight". 두 패밀리(UI sans /
+//! mono D2Coding), 14px UI 상한, 위계는 크기가 아니라 weight 로. typeScaleRow
+//! 4 행 (heading 13/600 · body 13/400 · caption 11/400 · mono 14).
 
 use tasty_type_appearance::theme::Theme;
 
+use crate::catalog::spec::{meta, note, stage, StageVariant, TokenChip};
+
 const SAMPLE: &str = "The quick brown fox jumps over the lazy dog";
-const SAMPLE_KO: &str = "다람쥐 헌 쳇바퀴에 타고파";
+
+#[inline]
+fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
+    c.into()
+}
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            section(ui, theme, "UI type scale");
-            row(ui, "micro", theme.font_size_micro.value(), theme);
-            row(ui, "caption", theme.font_size_caption.value(), theme);
-            row(ui, "body", theme.font_size_body.value(), theme);
-            row(ui, "heading (body size + 600)", theme.font_size_heading.value(), theme);
-            row(ui, "max (UI cap)", theme.font_size_max.value(), theme);
+    stage(ui, theme, StageVariant::Column, |ui| {
+        scale_row(
+            ui,
+            theme,
+            "heading",
+            egui::RichText::new(SAMPLE).size(theme.font_size_heading.value()).strong(),
+        );
+        scale_row(
+            ui,
+            theme,
+            "body",
+            egui::RichText::new(SAMPLE).size(theme.font_size_body.value()),
+        );
+        scale_row(
+            ui,
+            theme,
+            "caption",
+            egui::RichText::new(SAMPLE).size(theme.font_size_caption.value()),
+        );
+        scale_row(
+            ui,
+            theme,
+            "mono",
+            egui::RichText::new(SAMPLE).monospace().size(theme.font_size_max.value()),
+        );
+    });
 
-            section(ui, theme, "Markdown prose — rendered content, exempt from the UI cap");
-            row(ui, "prose-h1", theme.font_size_prose_h1.value(), theme);
-            row(ui, "prose-h2", theme.font_size_prose_h2.value(), theme);
+    meta(
+        ui,
+        theme,
+        &[
+            ("UI cap", "font-size-max 14px — UI never exceeds"),
+            ("heading", "body size + weight 600 (not larger)"),
+            ("mono", "D2Coding, term/code surfaces"),
+        ],
+        &[
+            TokenChip::new("font-ui", "sans family", ec(theme.text_primary())),
+            TokenChip::new("font-mono", "D2Coding", ec(theme.text_secondary())),
+            TokenChip::new("font-size-body", "13px", ec(theme.text_primary())),
+            TokenChip::new("font-size-caption", "11px", ec(theme.text_muted())),
+            TokenChip::new("font-weight-semibold", "600 heading", ec(theme.accent_primary())),
+        ],
+    );
+    note(
+        ui,
+        theme,
+        "위계는 크기가 아니라 weight 로 — heading 은 body 와 같은 13px 에 600 weight 만 더한다. \
+         egui RichText 는 normal / strong(600) 만 노출해 medium(500)·bold(700) 세분화는 미지원.",
+    );
+}
 
-            section(ui, theme, "Terminal scale");
-            row(ui, "term-sm", theme.font_size_term_sm.value(), theme);
-            row(ui, "term", theme.font_size_term.value(), theme);
-            row(ui, "term-lg", theme.font_size_term_lg.value(), theme);
-
-            section(ui, theme, "Monospace (body size)");
+/// typeScaleRow — [150px 라벨(토큰 + px)] [샘플].
+fn scale_row(ui: &mut egui::Ui, theme: &Theme, name: &str, sample: egui::RichText) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+        ui.allocate_ui(egui::vec2(theme.tab_width.value(), theme.item_height_interactive.value()), |ui| {
             ui.label(
-                egui::RichText::new(SAMPLE)
+                egui::RichText::new(name)
                     .monospace()
-                    .size(theme.font_size_body.value()),
-            );
-
-            section(ui, theme, "Font weight");
-            ui.label(
-                egui::RichText::new(format!("{SAMPLE} — normal (400)"))
-                    .size(theme.font_size_body.value()),
-            );
-            ui.label(
-                egui::RichText::new(format!("{SAMPLE} — strong / semibold (600)"))
-                    .strong()
-                    .size(theme.font_size_body.value()),
-            );
-            note(
-                ui,
-                theme,
-                "egui RichText 는 normal / strong(bold) 만 노출 — medium(500)·bold(700) 세분화는 미지원.",
-            );
-
-            section(ui, theme, "Line-height / letter-spacing");
-            note(
-                ui,
-                theme,
-                "line-height(tight 1.0 / term 1.2 / ui 1.4 / prose 1.6) 와 \
-                 letter-spacing(ui 0 / caps 0.04em) 은 egui Label 이 직접 제어를 \
-                 노출하지 않아 토큰 값만 기록한다(터미널 surface 는 자체 셰이더로 행간 제어).",
+                    .size(theme.font_size_micro.value())
+                    .color(ec(theme.text_muted())),
             );
         });
-}
-
-fn section(ui: &mut egui::Ui, theme: &Theme, title: &str) {
-    ui.add_space(16.0);
-    ui.separator();
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new(title)
-            .strong()
-            .color(egui::Color32::from(theme.text)),
-    );
-}
-
-fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new(text)
-            .small()
-            .italics()
-            .color(egui::Color32::from(theme.subtext0)),
-    );
-}
-
-fn row(ui: &mut egui::Ui, name: &str, size: f32, theme: &Theme) {
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new(format!("{name} — {size:.1}px"))
-            .small()
-            .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.label(egui::RichText::new(SAMPLE).size(size));
-    ui.label(egui::RichText::new(SAMPLE_KO).size(size));
+        ui.label(sample.color(ec(theme.text_primary())));
+    });
 }
