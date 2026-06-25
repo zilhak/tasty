@@ -1,17 +1,19 @@
 //! Foundations 색 specimen — 디자인(4) Foundations 의 색 3 Spec.
 //!
 //! 디자인은 색을 토큰 grid 가 아니라 **역할 데모**로 보여준다. 한 `draw` 가 아니라
-//! 3 개로 분할:
+//! 4 개로 분할:
 //! - [`elevation`] — surface ramp (bg-app→…→surface-active 중첩, 그림자 없이 tint 로만 깊이)
 //! - [`text`] — text tint 위계 (primary→placeholder) + placeholder Input
 //! - [`accents`] — accent 역할 매핑 (primary/info/success/warning/danger/agent + demo 위젯)
+//! - [`terminal`] — 터미널 콘텐츠 셀 색 (ANSI 16 + selection/vi-cursor/search 상태 채움),
+//!   UI accent role 과 구분되는 별개 축
 //!
 //! 모든 색·치수는 `Theme` 토큰에서만 가져온다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{status_dot, tag, Input, StatusKind, TagVariant};
 
-use crate::catalog::spec::{meta, note, stage, StageVariant, TokenChip};
+use crate::catalog::spec::{dont, meta, note, stage, StageVariant, TokenChip};
 
 #[inline]
 fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
@@ -233,4 +235,207 @@ fn accent_row(
         });
         demo(ui, theme);
     });
+}
+
+// ── terminal / ANSI palette ──────────────────────────────────────────────────
+
+/// Spec "The colors a terminal cell paints with — not UI chrome".
+///
+/// 터미널 셀이 칠하는 16 ANSI(normal 8 + bright 8) + Tasty 가 셀 위에 직접 칠하는
+/// 4 상태 채움(selection / vi cursor / search). UI accent role 과 같은 hue 를
+/// 공유해도 **다른 축** — accent-success(green) 와 ansi-green 은 서로 다른 역할이다.
+pub fn terminal(ui: &mut egui::Ui, theme: &Theme) {
+    let normal: [(&str, &str, egui::Color32); 8] = [
+        ("ansi-black", "30", ec(theme.ansi_black)),
+        ("ansi-red", "31", ec(theme.ansi_red)),
+        ("ansi-green", "32", ec(theme.ansi_green)),
+        ("ansi-yellow", "33", ec(theme.ansi_yellow)),
+        ("ansi-blue", "34", ec(theme.ansi_blue)),
+        ("ansi-magenta", "35", ec(theme.ansi_magenta)),
+        ("ansi-cyan", "36", ec(theme.ansi_cyan)),
+        ("ansi-white", "37", ec(theme.ansi_white)),
+    ];
+    let bright: [(&str, &str, egui::Color32); 8] = [
+        ("ansi-bright-black", "90", ec(theme.ansi_bright_black)),
+        ("ansi-bright-red", "91", ec(theme.ansi_bright_red)),
+        ("ansi-bright-green", "92", ec(theme.ansi_bright_green)),
+        ("ansi-bright-yellow", "93", ec(theme.ansi_bright_yellow)),
+        ("ansi-bright-blue", "94", ec(theme.ansi_bright_blue)),
+        ("ansi-bright-magenta", "95", ec(theme.ansi_bright_magenta)),
+        ("ansi-bright-cyan", "96", ec(theme.ansi_bright_cyan)),
+        ("ansi-bright-white", "97", ec(theme.ansi_bright_white)),
+    ];
+
+    stage(ui, theme, StageVariant::Column, |ui| {
+        // ANSI 16 — normal / bright 를 hue 로 짝지어 2열.
+        ui.columns(2, |cols| {
+            ansi_col(&mut cols[0], theme, "normal · SGR 30–37", &normal);
+            ansi_col(&mut cols[1], theme, "bright · SGR 90–97", &bright);
+        });
+
+        // 터미널 상태 채움 — 가짜 터미널 줄 위에 시연 + 토큰 행.
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("TERMINAL STATE FILLS — PAINTED ONTO CELLS")
+                    .monospace()
+                    .size(theme.font_size_micro.value())
+                    .color(ec(theme.text_muted())),
+            );
+            ui.add_space(theme.spacing_sm.value());
+            faux_terminal(ui, theme);
+            ui.add_space(theme.spacing_sm.value());
+            sem_row(ui, theme, ec(theme.selection_bg), "selection-bg", "mouse / keyboard selection region");
+            sem_row(ui, theme, ec(theme.vi_cursor_bg), "vi-cursor-bg", "vi-mode block cursor");
+            sem_row(ui, theme, ec(theme.search_match_bg), "search-match-bg", "search matches in scrollback");
+            sem_row(
+                ui,
+                theme,
+                ec(theme.search_match_active_bg),
+                "search-match-active-bg",
+                "the current / active match",
+            );
+        });
+    });
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("set", "16 ANSI (8 normal + 8 bright)"),
+            ("source", "derived from the Catppuccin palette"),
+            ("scope", "terminal cells — not UI chrome"),
+            ("state fills", "selection · vi cursor · search"),
+        ],
+        &[
+            TokenChip::new("ansi-red", "SGR 31 red", ec(theme.ansi_red)),
+            TokenChip::new("ansi-green", "SGR 32 green", ec(theme.ansi_green)),
+            TokenChip::new("ansi-bright-blue", "SGR 94 br.blue", ec(theme.ansi_bright_blue)),
+            TokenChip::new("selection-bg", "selection fill", ec(theme.selection_bg)),
+            TokenChip::new("search-match-active-bg", "active match", ec(theme.search_match_active_bg)),
+        ],
+    );
+    dont(
+        ui,
+        theme,
+        "Don't use an ANSI color for UI chrome or an accent for terminal output — \
+         ansi-green and accent-success are different roles that only share a hue.",
+    );
+}
+
+/// ANSI 한 열 — micro uppercase 라벨 + 8 개 `ansi_row`.
+fn ansi_col(ui: &mut egui::Ui, theme: &Theme, heading: &str, rows: &[(&str, &str, egui::Color32)]) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+        ui.label(
+            egui::RichText::new(heading.to_uppercase())
+                .monospace()
+                .size(theme.font_size_micro.value())
+                .color(ec(theme.text_muted())),
+        );
+        for (tok, sgr, color) in rows {
+            ansi_row(ui, theme, *color, tok, sgr);
+        }
+    });
+}
+
+/// ANSI 한 행 — [16px swatch] [token 1fr] [SGR NN 우측정렬].
+fn ansi_row(ui: &mut egui::Ui, theme: &Theme, swatch: egui::Color32, tok: &str, sgr: &str) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        swatch_box(ui, theme, swatch);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(format!("SGR {sgr}"))
+                    .monospace()
+                    .size(theme.font_size_micro.value())
+                    .color(ec(theme.text_muted())),
+            );
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(tok)
+                        .monospace()
+                        .size(theme.font_size_caption.value())
+                        .color(ec(theme.text_primary())),
+                );
+            });
+        });
+    });
+}
+
+/// 터미널 상태 채움 한 행 — [16px swatch] [token] [role muted].
+fn sem_row(ui: &mut egui::Ui, theme: &Theme, swatch: egui::Color32, tok: &str, role: &str) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        swatch_box(ui, theme, swatch);
+        ui.label(
+            egui::RichText::new(tok)
+                .monospace()
+                .size(theme.font_size_caption.value())
+                .color(ec(theme.text_primary())),
+        );
+        ui.label(
+            egui::RichText::new(role)
+                .size(theme.font_size_caption.value())
+                .color(ec(theme.text_muted())),
+        );
+    });
+}
+
+/// 16px 색 swatch (border-strong 1px).
+fn swatch_box(ui: &mut egui::Ui, theme: &Theme, fill: egui::Color32) {
+    let s = theme.spacing_lg.value();
+    let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
+    ui.painter().rect_filled(r, theme.corner_radius_sm.value(), fill);
+    ui.painter().rect_stroke(
+        r,
+        theme.corner_radius_sm.value(),
+        egui::Stroke::new(theme.border_width.value(), ec(theme.border_strong())),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// 상태 채움을 보여주는 가짜 터미널 줄 — 가장 깊은 surface(bg-app) 위 mono 텍스트.
+fn faux_terminal(ui: &mut egui::Ui, theme: &Theme) {
+    let fg = ec(theme.text_primary());
+    let mono = theme.font_size_caption.value();
+    egui::Frame::new()
+        .fill(ec(theme.bg_app()))
+        .stroke(egui::Stroke::new(theme.border_width.value(), ec(theme.separator)))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            // 줄 1: 프롬프트.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.label(
+                    egui::RichText::new("~/tasty")
+                        .monospace()
+                        .size(mono)
+                        .color(ec(theme.ansi_green)),
+                );
+                ui.label(egui::RichText::new(" $ vi notes.md").monospace().size(mono).color(fg));
+            });
+            // 줄 2: selection / search-match / active-match / vi-cursor 채움.
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                let seg = |ui: &mut egui::Ui, txt: &str, bg: Option<egui::Color32>, color: egui::Color32| {
+                    let mut rt = egui::RichText::new(txt).monospace().size(mono).color(color);
+                    if let Some(b) = bg {
+                        rt = rt.background_color(b);
+                    }
+                    ui.label(rt);
+                };
+                seg(ui, "The ", None, fg);
+                seg(ui, "selected words", Some(ec(theme.selection_bg)), fg);
+                seg(ui, " wrap the ", None, fg);
+                seg(ui, "match", Some(ec(theme.search_match_bg)), fg);
+                seg(ui, " and the ", None, fg);
+                seg(ui, "active match", Some(ec(theme.search_match_active_bg)), fg);
+                seg(ui, " sit ", None, fg);
+                // vi 블록 커서: 밝은 채움 위 어두운 글리프.
+                seg(ui, "h", Some(ec(theme.vi_cursor_bg)), ec(theme.text_on_accent()));
+                seg(ui, "ere", None, fg);
+            });
+        });
 }

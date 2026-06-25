@@ -190,6 +190,16 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "terminal",
+                    "Color — terminal / ANSI palette",
+                    vec![spec(
+                        "terminal",
+                        "The colors a terminal cell paints with — not UI chrome",
+                        Some("ANSI 16 (SGR 30–37 / 90–97) + selection · vi cursor · search fills"),
+                        theme::terminal,
+                    )],
+                ),
+                section(
                     "type",
                     "Type",
                     vec![spec(
