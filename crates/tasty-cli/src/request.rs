@@ -221,8 +221,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),
         Commands::Script { command } => script_command_to_method_params(command),
         Commands::Preset { command } => preset_command_to_method_params(command),
-        // standalone — handled before IPC in run.rs; never reaches this match.
-        Commands::Update(_) => ("update.noop", serde_json::json!({})),
         // `tasty port` 는 run.rs 에서 IPC 전에 로컬 처리됨 — 여기 도달하지 않음.
         Commands::Port => ("port.noop", serde_json::json!({})),
     };

@@ -269,14 +269,6 @@ fn run_dynamic_client_polling(
 
 /// Run the CLI client: connect to a running tasty instance and execute the command.
 pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
-    // `tasty update` is standalone — no host instance required.
-    if let Commands::Update(opts) = &command {
-        let code = crate::commands::update::run(opts, env!("CARGO_PKG_VERSION"));
-        if code == 0 {
-            return Ok(());
-        }
-        std::process::exit(code);
-    }
     // debug stream-echo uses a raw framed streaming channel, not the JSON-RPC
     // request-response path — dispatch it directly (debug builds only).
     #[cfg(debug_assertions)]

@@ -220,8 +220,6 @@ pub enum Commands {
     /// Print this instance's IPC port to stdout (first step of the auto remote
     /// port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC.
     Port,
-    /// Check for and install a new tasty version (standalone — no host needed)
-    Update(UpdateOpts),
 }
 
 #[cfg(test)]

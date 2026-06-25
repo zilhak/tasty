@@ -21,7 +21,6 @@ pub mod remote_check;
 pub mod ssh_profile;
 pub mod surface_meta;
 pub mod telemetry;
-pub mod update;
 
 pub use agent::AgentCommands;
 pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
@@ -46,4 +45,3 @@ pub use remote::RemoteCommands;
 pub use ssh_profile::SshProfileCommands;
 pub use surface_meta::SurfaceMetaCommands;
 pub use telemetry::{TelemetryAnomalyCommands, TelemetryCapCommands, TelemetryCommands};
-pub use update::UpdateOpts;
