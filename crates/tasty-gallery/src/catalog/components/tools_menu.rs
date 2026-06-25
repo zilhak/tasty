@@ -1,7 +1,7 @@
 //! Tools menu — 디자인(4) Overlays `tools` Spec.
 //!
 //! 160px 팝오버 메뉴. 사이드바 하단(Tools 버튼)에 anchored, **scrim 없음**.
-//! builtin 5 + separator + plugin 2. 색·치수는 Theme 토큰.
+//! builtin 4 + separator + plugin 2. 색·치수는 Theme 토큰.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{menu_item, menu_separator, MenuItemVariant};
@@ -19,7 +19,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 row(ui, theme, icons::PORT, "Ports", false);
                 row(ui, theme, icons::REMOTE, "Remote", false);
                 row(ui, theme, icons::SETTINGS, "Settings", false);
-                row(ui, theme, icons::ROCKET, "Check updates", false);
                 row(ui, theme, icons::PLUG, "Plugins", false);
                 menu_separator(ui, theme);
                 row(ui, theme, icons::TERMINAL, "Session logger", false);
