@@ -180,6 +180,7 @@ pub fn draw_appearance_tab(
                         font_families,
                         font_filter,
                         preview_font_loaded,
+                        plugin_id,
                         &entry.page,
                     );
                 }
@@ -1433,6 +1434,7 @@ pub(super) fn draw_plugin_settings_page(
     font_families: &mut Option<Vec<String>>,
     font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
+    plugin_id: &str,
     page: &SettingsPageContribute,
 ) {
     for item in &page.items {
@@ -1457,12 +1459,196 @@ pub(super) fn draw_plugin_settings_page(
                     },
                 );
             }
-            SettingsItemDecl::Toggle { .. }
-            | SettingsItemDecl::Select { .. }
-            | SettingsItemDecl::Number { .. } => {
-                // TODO(16-B Phase 2): host 렌더링(Switch/Select/Input) — 16b-plan.md 참조. 현재는 미렌더.
+            SettingsItemDecl::Toggle {
+                id: _,
+                label_key,
+                storage_key,
+                default,
+            } => {
+                draw_plugin_toggle(ui, settings, plugin_id, label_key, storage_key, *default);
+            }
+            SettingsItemDecl::Select {
+                id: _,
+                label_key,
+                storage_key,
+                options,
+                default,
+            } => {
+                draw_plugin_select(
+                    ui,
+                    settings,
+                    plugin_id,
+                    label_key,
+                    storage_key,
+                    options,
+                    default,
+                );
+            }
+            SettingsItemDecl::Number {
+                id: _,
+                label_key,
+                storage_key,
+                default,
+                min,
+                max,
+                suffix_key,
+            } => {
+                draw_plugin_number(
+                    ui,
+                    settings,
+                    plugin_id,
+                    label_key,
+                    storage_key,
+                    *default,
+                    *min,
+                    *max,
+                    suffix_key.as_deref(),
+                );
             }
         }
+    }
+}
+
+/// Plugin settings row 의 공통 레이아웃 — 라벨 좌 / 컨트롤 우 (디자인
+/// `settings_window.jsx:240-248` HTML 행: label 좌, 컨트롤 우 Row). 컨트롤은
+/// `right_to_left` 클로저 안에서 그려진다.
+fn plugin_setting_row(ui: &mut egui::Ui, label: &str, control: impl FnOnce(&mut egui::Ui)) {
+    let th = crate::theme::theme();
+    ui.add_space(th.spacing_sm.value());
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).color(th.text));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
+    });
+}
+
+/// `Toggle` → 디자인 Switch (host `tasty_ui_widgets::switch`). bool read/write.
+fn draw_plugin_toggle(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    plugin_id: &str,
+    label_key: &str,
+    storage_key: &str,
+    default: bool,
+) {
+    let cur = match settings.plugin_setting(plugin_id, storage_key) {
+        Some(crate::settings::PluginSettingValue::Bool(b)) => *b,
+        _ => default,
+    };
+    let mut val = cur;
+    let th = crate::theme::theme();
+    plugin_setting_row(ui, &t(label_key), |ui| {
+        tasty_ui_widgets::switch(ui, &th, &mut val, None, true);
+    });
+    if val != cur {
+        settings.set_plugin_setting(
+            plugin_id,
+            storage_key,
+            crate::settings::PluginSettingValue::Bool(val),
+        );
+    }
+}
+
+/// `Select` → 디자인 Select (host `tasty_ui_widgets::select`). options label_key 를
+/// `t()` 로 표시하고 선택 `value`(String) read/write.
+fn draw_plugin_select(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    plugin_id: &str,
+    label_key: &str,
+    storage_key: &str,
+    options: &[tasty_plugin_manifest::SelectOptionDecl],
+    default: &str,
+) {
+    let cur = match settings.plugin_setting(plugin_id, storage_key) {
+        Some(crate::settings::PluginSettingValue::Text(s)) => s.clone(),
+        _ => default.to_string(),
+    };
+    let mut idx = options.iter().position(|o| o.value == cur).unwrap_or(0);
+    let labels: Vec<String> = options
+        .iter()
+        .map(|o| t(&o.label_key).to_string())
+        .collect();
+    let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+    let th = crate::theme::theme();
+    let salt = format!("plugin_select_{plugin_id}_{storage_key}");
+    let mut changed = false;
+    plugin_setting_row(ui, &t(label_key), |ui| {
+        changed = tasty_ui_widgets::select(
+            ui,
+            &th,
+            &salt,
+            &mut idx,
+            &label_refs,
+            th.field_width_md.value(),
+            true,
+        );
+    });
+    if changed && idx < options.len() {
+        let new_val = options[idx].value.clone();
+        if new_val != cur {
+            settings.set_plugin_setting(
+                plugin_id,
+                storage_key,
+                crate::settings::PluginSettingValue::Text(new_val),
+            );
+        }
+    }
+}
+
+/// `Number` → Input(egui `DragValue`) + 선택적 suffix. min/max clamp. f64 read/write
+/// (정수면 정수 표기).
+#[allow(clippy::too_many_arguments)]
+fn draw_plugin_number(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    plugin_id: &str,
+    label_key: &str,
+    storage_key: &str,
+    default: f64,
+    min: Option<f64>,
+    max: Option<f64>,
+    suffix_key: Option<&str>,
+) {
+    let cur = match settings.plugin_setting(plugin_id, storage_key) {
+        Some(crate::settings::PluginSettingValue::Number(n)) => *n,
+        _ => default,
+    };
+    let mut val = cur;
+    let th = crate::theme::theme();
+    plugin_setting_row(ui, &t(label_key), |ui| {
+        // right_to_left: 먼저 add 한 suffix 가 가장 우측, 그 왼쪽에 입력 필드.
+        if let Some(sk) = suffix_key {
+            ui.label(egui::RichText::new(t(sk)).color(th.text_muted()));
+        }
+        let mut dv = egui::DragValue::new(&mut val).custom_formatter(|n, _| {
+            if n.fract() == 0.0 {
+                format!("{n:.0}")
+            } else {
+                format!("{n}")
+            }
+        });
+        dv = match (min, max) {
+            (Some(lo), Some(hi)) => dv.range(lo..=hi),
+            (Some(lo), None) => dv.range(lo..=f64::MAX),
+            (None, Some(hi)) => dv.range(f64::MIN..=hi),
+            (None, None) => dv,
+        };
+        ui.add(dv);
+    });
+    // DragValue.range 가 입력을 clamp 하지만, 저장 전에 한 번 더 보정한다.
+    let mut clamped = val;
+    if let Some(lo) = min {
+        clamped = clamped.max(lo);
+    }
+    if let Some(hi) = max {
+        clamped = clamped.min(hi);
+    }
+    if clamped != cur {
+        settings.set_plugin_setting(
+            plugin_id,
+            storage_key,
+            crate::settings::PluginSettingValue::Number(clamped),
+        );
     }
 }
 

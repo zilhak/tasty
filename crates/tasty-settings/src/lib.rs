@@ -17,6 +17,7 @@ use tasty_utils::path::tasty_home;
 
 pub use appearance::{
     ActiveTabIndicator, AppearanceSettings, EffectiveFont, FontOverride, FontSettings, HexColor,
+    PluginSettingValue,
 };
 pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
@@ -39,6 +40,39 @@ pub struct Settings {
     pub performance: PerformanceSettings,
     pub memory: MemorySettings,
     pub accessibility: AccessibilitySettings,
+    /// Plugin-contributed settings page 의 generic 값 저장소.
+    /// `plugin_settings[plugin_id][storage_key]` = `PluginSettingValue`.
+    /// FontOverride(`appearance.plugin_font_overrides`)와 별개 네임스페이스.
+    /// 키 부재 시 host 렌더러가 manifest item 의 default 로 fallback 한다.
+    /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 빈 맵).
+    pub plugin_settings:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, PluginSettingValue>>,
+}
+
+impl Settings {
+    /// Plugin settings 슬롯 조회. 부재 시 `None` — 호출자가 manifest default 로 fallback.
+    pub fn plugin_setting(
+        &self,
+        plugin_id: &str,
+        storage_key: &str,
+    ) -> Option<&PluginSettingValue> {
+        self.plugin_settings
+            .get(plugin_id)
+            .and_then(|m| m.get(storage_key))
+    }
+
+    /// Plugin settings 슬롯 write. 영속(save)은 기존 Settings 흐름이 담당.
+    pub fn set_plugin_setting(
+        &mut self,
+        plugin_id: &str,
+        storage_key: &str,
+        value: PluginSettingValue,
+    ) {
+        self.plugin_settings
+            .entry(plugin_id.to_string())
+            .or_default()
+            .insert(storage_key.to_string(), value);
+    }
 }
 
 // ---- Settings file operations ----

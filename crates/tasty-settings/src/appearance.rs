@@ -7,6 +7,21 @@ use tasty_type_geometry::length::LogicalPx;
 
 pub use tasty_type_appearance::color::HexColor;
 
+/// Plugin-contributed settings page 의 generic 값. host 가 `Settings::plugin_settings`
+/// 의 `[plugin_id][storage_key]` 슬롯에 저장한다 (FontOverride 의 전역
+/// `plugin_font_overrides` 슬롯과 **별개 네임스페이스**). manifest 의
+/// `SettingsItemDecl::{Toggle,Select,Number}` 가 각각 `Bool`/`Text`/`Number` 로 매핑된다.
+///
+/// `#[serde(untagged)]` — TOML 스칼라(`true` / `100.0` / `"follow"`)로 그대로 저장돼
+/// 손편집/디버깅이 자연스럽다. host 는 항상 타입을 맞춰 write 하므로 round-trip 안정적.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PluginSettingValue {
+    Bool(bool),
+    Number(f64),
+    Text(String),
+}
+
 /// Active tab indicator style for the app-chrome tab bar (Appearance › Tasty).
 ///
 /// Mutually exclusive — the renderer draws exactly one marker per active tab.

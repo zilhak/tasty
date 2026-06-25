@@ -92,6 +92,7 @@ pub fn draw_plugin_tab(
                         font_families,
                         font_filter,
                         preview_font_loaded,
+                        plugin_id,
                         &entry.page,
                     );
                 } else {
