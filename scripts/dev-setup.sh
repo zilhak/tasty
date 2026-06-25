@@ -45,7 +45,7 @@ if [ ! -d .githooks ]; then
 fi
 
 # hook 실행 권한 보장 (clone 시 일부 환경에서 실행 권한 누락)
-chmod +x .githooks/pre-commit .githooks/pre-push 2>/dev/null || true
+chmod +x .githooks/pre-commit .githooks/pre-push .githooks/pre-merge-commit 2>/dev/null || true
 
 echo
 green "✓ 셋업 완료"

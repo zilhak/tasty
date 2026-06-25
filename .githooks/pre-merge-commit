@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Tasty pre-merge-commit hook — non-fast-forward merge 차단.
+#
+# 설치: `git config core.hooksPath .githooks` 1회 실행 (scripts/dev-setup.sh).
+# bypass: `git merge --no-verify` (정말 ff/rebase 가 불가능할 때만).
+#
+# 동작: 이 훅은 merge 가 **merge 커밋을 만들 때**, 즉 non-fast-forward merge
+# 일 때만 실행된다. fast-forward merge 는 커밋을 만들지 않으므로 훅이 돌지
+# 않고 그대로 통과한다. 따라서 "ff 가 아닌 merge 시도" 만 정확히 잡는다.
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
+
+red    "✘ fast-forward 가 아닌 merge 가 차단되었습니다."
+echo
+yellow "▸ 프로젝트 정책: merge 는 ff-merge(fast-forward) 를 권장한다."
+yellow "  rebase 또는 ff-merge 가 정말로 불가능한 경우에만 일반 merge 를 허용한다."
+echo
+yellow "▸ 먼저 아래를 시도하라:"
+yellow "    git rebase <대상-브랜치>   # 작업 브랜치 위로 선형화"
+yellow "    git merge --ff-only <브랜치>"
+echo
+yellow "▸ rebase 중 충돌이 나면 — 단순히 '충돌 마커만 지워서' 해결하지 마라."
+yellow "  각 충돌이 어떤 변경끼리 부딪힌 것인지, 양쪽 의도가 무엇인지 정확히"
+yellow "  확인하고, 어느 쪽을 어떻게 합쳐야 '맞는' 결과인지 판단한 뒤 진행하라."
+yellow "  애매하면 rebase --abort 후 원인을 분석하고 다시 시도하라."
+echo
+yellow "▸ 지금 이 merge 는 '진행 중' 상태(MERGE_HEAD)로 멈춰 있다."
+yellow "    되돌리기:  git merge --abort   → 위의 rebase + --ff-only 로 재시도"
+echo
+yellow "▸ 검토 끝에 정말로 ff/rebase 가 불가능하다고 확인했다면, 그 사실을"
+yellow "  명시적으로 인지한 상태에서만 이 merge 를 그대로 마무리하라:"
+yellow "    git commit --no-verify"
+echo
+
+exit 1
