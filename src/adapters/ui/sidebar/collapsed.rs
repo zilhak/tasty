@@ -59,6 +59,16 @@ pub fn draw_collapsed_sidebar(
 
     let mut deferred_actions: Vec<SidebarCollapsedAction> = Vec::new();
 
+    // switch-number overlay — 사용자가 workspace_switch_modifier 를 누르고 있으면 rail 의
+    // letter avatar 를 숫자 키캡으로 그린다 (full 사이드바·탭과 동일 공통 배선).
+    let workspace_switch_held = {
+        let mods = ctx.input(|i| i.modifiers);
+        crate::adapters::ui::switch_overlay::workspace_switch_held(
+            mods,
+            &engine.settings.keybindings,
+        )
+    };
+
     let panel_resp = egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
@@ -69,6 +79,7 @@ pub fn draw_collapsed_sidebar(
                 workspaces: &workspaces,
                 tools_hover,
                 plugin_alert,
+                workspace_switch_held,
             };
             deferred_actions = draw_collapsed_sidebar_view(ui, &props);
         });

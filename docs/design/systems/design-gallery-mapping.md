@@ -47,15 +47,18 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 |---|---|---|
 | `NumCap`(키캡) | `num_cap` (헬퍼) — 본체 `kbd()`(`chip.rs`) 형상 재현 + active accent 변종 | ✅ `switch_overlay::paint_keycap` (공통, P2a) |
 | `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar.rs` `draw_pane_tab_bars_view` (leading 교체, P2a) |
-| `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | P2b: `sidebar/full.rs` status dot 교체 |
-| `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | P2b: `sidebar/collapsed.rs` letter avatar 교체 |
+| `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | ✅ `sidebar/view.rs` `draw_workspace_card` (status dot 교체, P2b) |
+| `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_collapsed_sidebar_view` (letter avatar 교체, P2b) |
 
-**P2a 본체 배선 (구현 완료)**: 공통 모듈 `src/adapters/ui/switch_overlay.rs` — modifier 일치
-판정(`tab_switch_held`/`workspace_switch_held`, numeric.rs 규칙 1:1) + 키캡 painter(`paint_keycap`,
-갤러리 `num_cap` 와 동일 레시피) + 숫자 매핑(`tab_digit`/`workspace_digit`). `tab_bar.rs` wrapper 가
-`ctx.input` modifier + `engine.settings.keybindings` 로 `PaneTabBarsProps.tab_switch_held` 를 계산해
-순수 view 로 전달, view 가 leading 아이콘 자리에 `paint_keycap`. **P2b 사이드바는 같은 모듈의
-`workspace_switch_held`/`workspace_digit`/`paint_keycap` 재사용**(현재 `#[allow(dead_code)]` 선반영).
+**본체 배선 (P2a 탭 + P2b 사이드바 모두 구현 완료)**: 공통 모듈 `src/adapters/ui/switch_overlay.rs`
+— modifier 일치 판정(`tab_switch_held`/`workspace_switch_held`, numeric.rs 규칙 1:1) + 키캡
+painter(`paint_keycap`, 갤러리 `num_cap` 와 동일 레시피) + 숫자 매핑(`tab_digit` 0~9/`workspace_digit`
+1~9). 각 wrapper(`tab_bar.rs` / `sidebar/{full,collapsed}.rs`)가 `ctx.input` modifier +
+`engine.settings.keybindings` 로 held bool 을 계산해 순수 view props 로 전달
+(`PaneTabBarsProps.tab_switch_held` / `Sidebar{Full,Collapsed}Props.workspace_switch_held`), view 가
+leading indicator(탭 아이콘 / ws status dot / rail letter avatar) 자리에 `paint_keycap`. 모두 16px
+slot in-place 교체라 리플로 0, release 시 원복. `ctx.input` modifier 만 보므로 IPC/에이전트 강제
+표시 불가(사용자 입력 전용).
 
 **등록**: `catalog.rs` Overlays 페이지 `section("switch", "Switch-number overlay", [spec("switch-tab",
 …, draw_tab), spec("switch-ws", …, draw_workspace)])` — search 와 approval 사이(디자인 순서와 동일).

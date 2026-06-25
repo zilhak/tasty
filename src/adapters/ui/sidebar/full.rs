@@ -67,6 +67,18 @@ pub fn draw_full_sidebar(
 
     let mut deferred_actions: Vec<SidebarFullAction> = Vec::new();
 
+    // switch-number overlay — 현재 눌린(사용자 입력) modifier 가 workspace_switch_modifier
+    // 와 일치하면 워크스페이스 leading 을 숫자 키캡으로 그린다. P2a 탭과 동일하게 공통
+    // 모듈 `switch_overlay` 의 판정을 재사용하고, egui ctx.input 의 modifier 만 보므로
+    // 에이전트/IPC 로는 표시될 수 없다(사용자 입력 전용).
+    let workspace_switch_held = {
+        let mods = ctx.input(|i| i.modifiers);
+        crate::adapters::ui::switch_overlay::workspace_switch_held(
+            mods,
+            &engine.settings.keybindings,
+        )
+    };
+
     let panel_resp = egui::SidePanel::left("workspace_sidebar")
         .exact_width(sidebar_width)
         .resizable(false)
@@ -91,6 +103,7 @@ pub fn draw_full_sidebar(
                 workspaces_heading,
                 occupied_hover,
                 plugin_alert,
+                workspace_switch_held,
             };
             deferred_actions = draw_full_sidebar_view(ui, &props);
         });

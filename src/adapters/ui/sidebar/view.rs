@@ -44,6 +44,9 @@ pub struct SidebarFullProps<'a> {
     pub occupied_hover: &'a str,
     /// "확인 필요" plugin 개수. >0 이면 Plugins 버튼에 danger 배지를 그린다.
     pub plugin_alert: usize,
+    /// switch-number overlay — 사용자가 `workspace_switch_modifier` 를 누르고 있는 동안 true.
+    /// 각 워크스페이스의 leading status dot 을 숫자 키캡(`Alt+1`…`9`)으로 in-place 교체.
+    pub workspace_switch_held: bool,
 }
 
 /// 진행 중인 workspace drag-and-drop 의 스냅샷. 호출처가 매 프레임 view 에 전달.
@@ -60,6 +63,9 @@ pub struct SidebarCollapsedProps<'a> {
     pub tools_hover: &'a str,
     /// "확인 필요" plugin 개수. >0 이면 Plugins 레일 버튼에 danger 배지.
     pub plugin_alert: usize,
+    /// switch-number overlay — 사용자가 `workspace_switch_modifier` 를 누르고 있는 동안 true.
+    /// 각 워크스페이스의 leading letter avatar 를 숫자 키캡(`Alt+1`…`9`)으로 in-place 교체.
+    pub workspace_switch_held: bool,
 }
 
 /// Full sidebar view 가 보고하는 사용자 의도. wrapper 가 state mutation 으로 변환.
@@ -251,7 +257,14 @@ pub fn draw_full_sidebar_view(
                 if i > 0 {
                     draw_list_separator(ui, th, 32.0);
                 }
-                let card_rect = draw_workspace_card(ui, th, ws, props.occupied_hover);
+                // switch-number overlay: workspace_switch_modifier 홀드 + 단축키 있는
+                // 워크스페이스(1–9)는 leading status dot 을 숫자 키캡으로 in-place 교체.
+                let switch_digit = if props.workspace_switch_held {
+                    crate::adapters::ui::switch_overlay::workspace_digit(i)
+                } else {
+                    None
+                };
+                let card_rect = draw_workspace_card(ui, th, ws, props.occupied_hover, switch_digit);
                 let card_response = ui.interact(
                     card_rect,
                     egui::Id::new(("ws_card", i)),
@@ -498,7 +511,22 @@ pub fn draw_collapsed_sidebar_view(
                 ui.painter()
                     .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
             }
-            if !label.is_empty() {
+            // switch-number overlay: workspace_switch_modifier 홀드 + 단축키 있는 ws(1–9)는
+            // letter avatar 자리에 숫자 키캡을 in-place 그린다(코너 상태 dot 은 유지).
+            let switch_digit = if props.workspace_switch_held {
+                crate::adapters::ui::switch_overlay::workspace_digit(i)
+            } else {
+                None
+            };
+            if let Some(digit) = switch_digit {
+                crate::adapters::ui::switch_overlay::paint_keycap(
+                    ui.painter(),
+                    th,
+                    rect.center(),
+                    digit,
+                    ws.is_active,
+                );
+            } else if !label.is_empty() {
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -742,6 +770,8 @@ fn draw_workspace_card(
     th: &Theme,
     ws: &WorkspaceEntryView,
     occupied_hover: &str,
+    // Some(digit) 면 status dot 자리에 숫자 키캡(switch-number overlay)을 그린다.
+    switch_digit: Option<&str>,
 ) -> egui::Rect {
     // ui_kit WorkspaceRow — 테두리 없는 플랫 행. active 만 배경 채움 (`--surface-active`
     // = catppuccin surface2).
@@ -787,28 +817,41 @@ fn draw_workspace_card(
             // 높이 안정을 위해 16px 유지.
             let dot_slot = egui::vec2(th.spacing_sm.value(), 16.0);
             let (dot_rect, dot_resp) = ui.allocate_exact_size(dot_slot, egui::Sense::hover());
-            // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
-            let dot_color: egui::Color32 = if ws.is_mirror {
-                th.accent_info().into()
-            } else if ws.busy_count > 0 {
-                th.accent_success().into()
-            } else {
-                th.overlay0.into()
-            };
-            ui.painter()
-                .circle_filled(dot_rect.center(), 4.0, dot_color);
-            // attached → dot 을 감싸는 lavender ring. 디자인 CSS outline 1.5px +
-            // outline-offset 1.5px: dot 반지름(4) + offset(1.5) + stroke 절반(0.75)
-            // = ring 중심 반지름 6.25, 굵기 1.5.
-            if ws.attached {
-                ui.painter().circle_stroke(
+            if let Some(digit) = switch_digit {
+                // switch-number overlay: dot 슬롯(8px) 중앙에 16px 키캡을 그린다. 슬롯
+                // 할당은 그대로라 라벨 시작 x 불변 → 리플로 없음. 키캡 좌/우 edge 는
+                // 카드 좌측 inner edge ~ 라벨 시작 사이에 정확히 들어간다(겹침 0).
+                crate::adapters::ui::switch_overlay::paint_keycap(
+                    ui.painter(),
+                    th,
                     dot_rect.center(),
-                    6.25,
-                    egui::Stroke::new(1.5, th.lavender),
+                    digit,
+                    ws.is_active,
                 );
-            }
-            if ws.attached && ws.busy_count == 0 {
-                dot_resp.on_hover_text(occupied_hover);
+            } else {
+                // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
+                let dot_color: egui::Color32 = if ws.is_mirror {
+                    th.accent_info().into()
+                } else if ws.busy_count > 0 {
+                    th.accent_success().into()
+                } else {
+                    th.overlay0.into()
+                };
+                ui.painter()
+                    .circle_filled(dot_rect.center(), 4.0, dot_color);
+                // attached → dot 을 감싸는 lavender ring. 디자인 CSS outline 1.5px +
+                // outline-offset 1.5px: dot 반지름(4) + offset(1.5) + stroke 절반(0.75)
+                // = ring 중심 반지름 6.25, 굵기 1.5.
+                if ws.attached {
+                    ui.painter().circle_stroke(
+                        dot_rect.center(),
+                        6.25,
+                        egui::Stroke::new(1.5, th.lavender),
+                    );
+                }
+                if ws.attached && ws.busy_count == 0 {
+                    dot_resp.on_hover_text(occupied_hover);
+                }
             }
             // G5/J4: active 이름 text-primary, inactive 이름 text-secondary (한 단계
             // 어두움). 강조는 색으로만 — 디자인엔 굵기 차이가 없어 .strong() 미사용.
@@ -938,7 +981,7 @@ mod tests {
         }
     }
 
-    fn run_full(workspaces: Vec<WorkspaceEntryView>) -> Vec<SidebarFullAction> {
+    fn run_full(workspaces: Vec<WorkspaceEntryView>, switch_held: bool) -> Vec<SidebarFullAction> {
         let ctx = egui::Context::default();
         let mut out: Vec<SidebarFullAction> = Vec::new();
         let theme = test_theme();
@@ -956,6 +999,7 @@ mod tests {
                     workspaces_heading: "WORKSPACES",
                     occupied_hover: "Held by another client",
                     plugin_alert: 0,
+                    workspace_switch_held: switch_held,
                 };
                 out = draw_full_sidebar_view(ui, &props);
             });
@@ -963,7 +1007,10 @@ mod tests {
         out
     }
 
-    fn run_collapsed(workspaces: Vec<WorkspaceEntryView>) -> Vec<SidebarCollapsedAction> {
+    fn run_collapsed(
+        workspaces: Vec<WorkspaceEntryView>,
+        switch_held: bool,
+    ) -> Vec<SidebarCollapsedAction> {
         let ctx = egui::Context::default();
         let mut out: Vec<SidebarCollapsedAction> = Vec::new();
         let theme = test_theme();
@@ -974,6 +1021,7 @@ mod tests {
                     workspaces: &workspaces,
                     tools_hover: "Tools menu",
                     plugin_alert: 0,
+                    workspace_switch_held: switch_held,
                 };
                 out = draw_collapsed_sidebar_view(ui, &props);
             });
@@ -984,7 +1032,7 @@ mod tests {
     #[test]
     fn full_view_no_input_yields_no_actions() {
         let ws = vec![mock_ws("Default", true)];
-        let actions = run_full(ws);
+        let actions = run_full(ws, false);
         assert!(actions.is_empty(), "expected no actions, got {actions:?}");
     }
 
@@ -993,7 +1041,27 @@ mod tests {
         let ws: Vec<_> = (0..10)
             .map(|i| mock_ws(&format!("ws-{i}"), i == 0))
             .collect();
-        let actions = run_full(ws);
+        let actions = run_full(ws, false);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn full_view_switch_overlay_held_renders_keycaps_without_panic() {
+        // switch-number overlay 활성(workspace_switch_held=true): 11개 ws — 1~9 는 키캡,
+        // 10번째+(index ≥ 9)는 status dot 유지. keycap draw 경로가 패닉 없이 layout 되는지.
+        let ws: Vec<_> = (0..11)
+            .map(|i| mock_ws(&format!("ws-{i}"), i == 1))
+            .collect();
+        let actions = run_full(ws, true);
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn collapsed_view_switch_overlay_held_renders_keycaps_without_panic() {
+        let ws: Vec<_> = (0..11)
+            .map(|i| mock_ws(&format!("ws-{i}"), i == 2))
+            .collect();
+        let actions = run_collapsed(ws, true);
         assert!(actions.is_empty());
     }
 
@@ -1037,14 +1105,14 @@ mod tests {
                 is_active: false,
             },
         ];
-        let actions = run_full(ws);
+        let actions = run_full(ws, false);
         assert!(actions.is_empty());
     }
 
     #[test]
     fn collapsed_view_no_input_yields_no_actions() {
         let ws = vec![mock_ws("Default", true), mock_ws("Other", false)];
-        let actions = run_collapsed(ws);
+        let actions = run_collapsed(ws, false);
         assert!(actions.is_empty());
     }
 
@@ -1060,7 +1128,7 @@ mod tests {
             is_mirror: false,
             is_active: true,
         }];
-        let actions = run_collapsed(ws);
+        let actions = run_collapsed(ws, false);
         assert!(actions.is_empty());
     }
 }

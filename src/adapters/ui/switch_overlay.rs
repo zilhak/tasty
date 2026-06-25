@@ -37,9 +37,7 @@ pub fn tab_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
     }
 }
 
-/// 현재 눌린 modifier 가 `workspace_switch_modifier` 와 단독 일치하는지 (P2b 사이드바용).
-// P2b(사이드바 워크스페이스 오버레이)에서 호출 예정 — 공통 배선 선반영.
-#[allow(dead_code)]
+/// 현재 눌린 modifier 가 `workspace_switch_modifier` 와 단독 일치하는지 (사이드바 오버레이).
 pub fn workspace_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
     match kb.workspace_switch_modifier.to_lowercase().as_str() {
         "ctrl" => mods.ctrl && !mods.shift && !mods.alt,
@@ -53,9 +51,7 @@ pub fn tab_digit(index: usize) -> Option<&'static str> {
     TAB_DIGITS.get(index).copied()
 }
 
-/// 워크스페이스 index → 숫자 키캡 문자. 1–9 만(0 없음) → index ≥ 9 부터 None (P2b 사이드바용).
-// P2b(사이드바 워크스페이스 오버레이)에서 호출 예정 — 공통 배선 선반영.
-#[allow(dead_code)]
+/// 워크스페이스 index → 숫자 키캡 문자. 1–9 만(0 없음) → index ≥ 9 부터 None (사이드바 오버레이).
 pub fn workspace_digit(index: usize) -> Option<&'static str> {
     if index < 9 {
         TAB_DIGITS.get(index).copied()
