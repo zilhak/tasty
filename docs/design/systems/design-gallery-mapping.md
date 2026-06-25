@@ -17,6 +17,8 @@
 | `TabBtn`(내부) | `draw_tab_bar` | — |
 | `WarnBadge` | `warn_badge` | — |
 | `ListShell` | `draw_profile_list` / `draw_passkey_list` (add-bar+scroll 합침) | — |
+| `ProtocolFilter`(add-bar 버튼) | `filter_button` (`draw_profile_list` 내, funnel+라벨) | ✗ 미등록 (remote_tool 예외 동일) |
+| `ProtocolFilter`(드롭다운/팝오버) | `draw_protocol_filter` (체크박스 + Apply-on-confirm) | ✗ 미등록 (remote_tool 예외 동일) |
 | `ProfileRow` | `draw_profile_row` | — |
 | `ProfileForm` | `draw_profile_form` | — |
 | `PasskeyRow` | `draw_passkey_row` | — |
@@ -29,6 +31,11 @@ CoreState)` 로 호스트 상태에 의존한다(UiState 를 egui ctx memory 에
 load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(ui, &Theme)` 뿐이라
 직접 호출 불가. view-only props 분리(model-view-split) 가 선행돼야 등록 가능. → **후속 과제.**
 그 전까지 검증은 본체 `debug.host_popup.open remote_tool` + `ui.screenshot` 로 한다.
+
+프로토콜 필터(`filter_button` / `draw_protocol_filter`)도 같은 예외에 포함된다 — `draw_profile_list`
+하위에서 `egui::Context` memory(`read_filter`/`write_filter`, `FILTER_MEMORY_ID`)와 popup
+상태(`FILTER_POPUP_ID`)에 의존하므로 `(ui, &Theme)` 시그니처로 분리 불가. 컨테이너가 등록 가능해질
+때 함께 등록한다. 검증 경로 동일(`debug.host_popup.open remote_tool` + `ui.screenshot`).
 
 ## 이미 갤러리에 있는 관련 항목 (참고)
 
