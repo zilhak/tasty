@@ -297,11 +297,16 @@ impl Tab {
         let layout = self.layout_opt.as_mut()?;
         let leaf = layout.find_leaf_mut(surface_id)?;
         let empty = leaf.as_any_mut().downcast_mut::<super::EmptySurface>()?;
-        let spawn = empty.take_deferred_spawn()?;
-        // DeferredSpawn 의 scrollback_persist_id 를 spawn 직후 store 로 옮길 수
-        // 있도록 미리 빼둔다 (spawn 함수가 spawn 을 consume).
+        // spawn 정보를 take 하지 않고 clone 한다. PTY spawn 이 실패해도
+        // placeholder 의 deferred_spawn 이 남아 있어야 다음 reify 트리거에서
+        // 재시도된다. (waker 는 Arc, 나머지는 작은 문자열/벡터라 clone 이 저렴.)
+        let spawn = empty.deferred_spawn.clone()?;
         let persist_id = spawn.scrollback_persist_id.clone();
+        // 실패 시 `?` 로 None 반환 — 이때 leaf 는 여전히 deferred EmptySurface 라
+        // is_surface_deferred == true 가 유지되어 재시도 경로가 살아 있다.
         let terminal = spawn_terminal_from_deferred(surface_id, spawn)?;
+        // spawn 성공: 이제 placeholder 를 TerminalSurface marker 로 교체한다.
+        // (EmptySurface 전체가 drop 되므로 deferred_spawn 도 함께 사라진다.)
         let ts: Box<dyn Surface> = Box::new(TerminalSurface { id: surface_id });
         *leaf = ts;
         Some((terminal, persist_id))
@@ -496,5 +501,70 @@ fn dirs_home() -> Option<std::path::PathBuf> {
         std::env::var("USERPROFILE")
             .ok()
             .map(std::path::PathBuf::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::EmptySurface;
+    use crate::terminal_surface::DeferredSpawn;
+    use std::sync::Arc;
+
+    fn deferred_spawn(shell: Option<&str>) -> DeferredSpawn {
+        DeferredSpawn {
+            shell: shell.map(|s| s.to_string()),
+            shell_args: Vec::new(),
+            cols: 80,
+            rows: 24,
+            waker: Arc::new(|| {}) as tasty_terminal::Waker,
+            working_dir: None,
+            restore_command: None,
+            scrollback_persist_id: None,
+        }
+    }
+
+    fn deferred_tab(sid: SurfaceId, spawn: DeferredSpawn) -> Tab {
+        let surface: Box<dyn Surface> = Box::new(EmptySurface::new_deferred(sid, spawn));
+        Tab::new_with_surface(1, "t".to_string(), surface)
+    }
+
+    /// 핵심 회귀: PTY spawn 이 실패해도 placeholder 의 deferred_spawn 이 보존되어
+    /// surface 가 deferred 로 남고 다음 reify 트리거에서 재시도 가능해야 한다.
+    /// (수정 전: take-before-spawn 이라 실패 시 정보가 소실되어 영구 빈 surface.)
+    #[test]
+    fn ensure_initialized_failure_keeps_surface_deferred() {
+        let sid: SurfaceId = 42;
+        // 존재하지 않는 shell → Terminal::new 의 spawn_command 가 실패한다.
+        let mut tab = deferred_tab(sid, deferred_spawn(Some("/nonexistent/tasty_no_such_shell")));
+        assert!(tab.is_surface_deferred(sid));
+
+        let result = tab.ensure_initialized(sid);
+        assert!(result.is_none(), "spawn 실패 시 None");
+        assert!(
+            tab.is_surface_deferred(sid),
+            "spawn 실패 후에도 deferred 유지되어 재시도 가능해야 함 (수정 전엔 stranded)"
+        );
+
+        // 정보가 보존되었으므로 두 번째 reify 호출도 동일하게 재시도 가능.
+        assert!(tab.ensure_initialized(sid).is_none());
+        assert!(tab.is_surface_deferred(sid));
+    }
+
+    /// 성공 경로 회귀 고정: spawn 이 성공하면 leaf 가 TerminalSurface 로 교체되고
+    /// deferred 가 해제된다.
+    #[test]
+    fn ensure_initialized_success_replaces_leaf() {
+        let sid: SurfaceId = 7;
+        // shell None → default_shell 로 실제 PTY spawn (테스트 머신에 shell 존재).
+        let mut tab = deferred_tab(sid, deferred_spawn(None));
+        assert!(tab.is_surface_deferred(sid));
+
+        let result = tab.ensure_initialized(sid);
+        assert!(result.is_some(), "정상 shell 은 spawn 성공");
+        assert!(
+            !tab.is_surface_deferred(sid),
+            "성공 시 deferred 해제 + TerminalSurface 로 교체"
+        );
     }
 }
