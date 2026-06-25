@@ -64,7 +64,9 @@ impl Default for HtmlWebViewSettings {
 }
 
 impl HtmlWebViewSettings {
-    /// 4개 backend 제어 메서드에 적용한다 (zoom·JS 는 실효, color/remote 는 backend no-op 가능).
+    /// 4개 backend 제어 메서드에 적용한다. zoom·JS 는 3 OS 실효. remote 는 3 OS 모두
+    /// 실효(macOS=WKContentRuleList / Windows=WebResourceRequested / Linux=decide-policy,
+    /// 단 Win/Linux 는 이 세션 미검증·Linux 는 서브리소스 한계). color_scheme 은 macOS 만 실효.
     pub fn apply(&self, wv: &PlatformWebView) {
         wv.set_zoom(self.zoom_percent / 100.0);
         wv.set_javascript_enabled(self.javascript_enabled);

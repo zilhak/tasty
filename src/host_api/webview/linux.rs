@@ -4,9 +4,16 @@
 //! Creates an X11 child window inside the parent, then hosts a GTK window
 //! with a WebKitGTK WebView inside it.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gtk::glib::Cast;
 use gtk::prelude::*;
-use webkit2gtk::{SettingsExt, WebView, WebViewExt};
+use webkit2gtk::{
+    NavigationPolicyDecision, NavigationPolicyDecisionExt, PolicyDecisionExt, PolicyDecisionType,
+    ResponsePolicyDecision, ResponsePolicyDecisionExt, SettingsExt, URIRequestExt, WebView,
+    WebViewExt,
+};
 use winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
@@ -19,6 +26,8 @@ pub struct PlatformWebView {
     x11_window: std::os::raw::c_ulong,
     xlib: x11_dl::xlib::Xlib,
     x11_display: *mut std::os::raw::c_void,
+    /// 원격(http/https) 차단 여부(기본 true=차단). decide-policy 핸들러가 read.
+    block_remote: Rc<Cell<bool>>,
 }
 
 impl PlatformWebView {
@@ -110,6 +119,43 @@ impl PlatformWebView {
         let webview = WebView::new();
         vbox.pack_start(&webview, true, true, 0);
 
+        // 원격 콘텐츠 차단(기본 ON). webkit2gtk 2.0.2 바인딩은 UserContentFilterStore/
+        // UserContentFilter 를 노출하지 않으므로(content-blocker 불가) decide-policy 로
+        // navigation/response URI 를 검사해 원격 http/https 면 무시한다.
+        // **한계**: decide-policy 는 최상위/프레임 네비게이션과 정책 협의 대상 응답에만
+        // 발화하고, 페이지 내 서브리소스(img/css/js)는 잡지 못할 수 있다 — 완전한
+        // 서브리소스 차단은 UserContentFilter 바인딩(상위 webkit2gtk)이 필요(후속).
+        let block_remote = Rc::new(Cell::new(true));
+        {
+            let block = block_remote.clone();
+            webview.connect_decide_policy(move |_wv, decision, decision_type| {
+                if !block.get() {
+                    return false;
+                }
+                let uri = match decision_type {
+                    PolicyDecisionType::Response => decision
+                        .downcast_ref::<ResponsePolicyDecision>()
+                        .and_then(|d| d.request())
+                        .and_then(|r| r.uri()),
+                    PolicyDecisionType::NavigationAction | PolicyDecisionType::NewWindowAction => {
+                        decision
+                            .downcast_ref::<NavigationPolicyDecision>()
+                            .and_then(|d| d.request())
+                            .and_then(|r| r.uri())
+                    }
+                    _ => None,
+                };
+                if let Some(uri) = uri {
+                    let s = uri.as_str();
+                    if s.starts_with("http://") || s.starts_with("https://") {
+                        decision.ignore();
+                        return true;
+                    }
+                }
+                false
+            });
+        }
+
         gtk_window.show_all();
 
         Ok(Self {
@@ -118,6 +164,7 @@ impl PlatformWebView {
             x11_window,
             xlib,
             x11_display: display as _,
+            block_remote,
         })
     }
 
@@ -189,10 +236,12 @@ impl PlatformWebView {
         tracing::debug!("set_color_scheme({scheme:?}) — Linux WebKitGTK no-op (후속)");
     }
 
-    /// 원격(http/https) 콘텐츠 허용 여부. WebKitGTK 는 깔끔한 toggle 이 없어
-    /// (resource-load policy 필요) 현재 no-op — 후속.
+    /// 원격(http/https) 콘텐츠 허용 여부. `new()` 의 decide-policy 핸들러가 이 플래그를
+    /// read 해 `false`면 원격 URI navigation/response 를 무시한다(서브리소스 한계는 new 주석
+    /// 참조). 여기서는 플래그만 갱신.
     pub fn set_remote_content_allowed(&self, allowed: bool) {
-        tracing::debug!("set_remote_content_allowed({allowed}) — Linux WebKitGTK no-op (후속)");
+        self.block_remote.set(!allowed);
+        tracing::debug!("Linux WebKitGTK set_remote_content_allowed({allowed})");
     }
 }
 
