@@ -390,9 +390,9 @@ fn capture_to_png(
     let slice = buffer.slice(..);
     let (tx, rx) = std::sync::mpsc::channel();
     slice.map_async(wgpu::MapMode::Read, move |r| {
-        let _ = tx.send(r);
+        let _ = tx.send(r); // rx 는 같은 스코프 — 송신 실패 시 결과만 유실(스크린샷 skip), 안전
     });
-    let _ = device.poll(wgpu::Maintain::Wait);
+    let _ = device.poll(wgpu::Maintain::Wait); // map 콜백 구동용 동기 poll — 반환(queue 상태) 불필요
     if let Ok(Ok(())) = rx.recv() {
         let data = slice.get_mapped_range();
         let mut pixels = Vec::with_capacity((width * height * 3) as usize);
@@ -413,8 +413,14 @@ fn capture_to_png(
             enc.set_color(png::ColorType::Rgb);
             enc.set_depth(png::BitDepth::Eight);
             if let Ok(mut writer) = enc.write_header() {
-                let _ = writer.write_image_data(&pixels);
-                tracing::info!("gallery screenshot saved to {}", path.display());
+                if let Err(e) = writer.write_image_data(&pixels) {
+                    tracing::warn!(
+                        "gallery screenshot write failed for {}: {e}",
+                        path.display()
+                    );
+                } else {
+                    tracing::info!("gallery screenshot saved to {}", path.display());
+                }
             }
         }
     } else {
