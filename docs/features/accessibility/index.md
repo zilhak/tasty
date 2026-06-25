@@ -16,10 +16,6 @@
 
 `accessibility.reduced_motion: bool`(기본 false). 활성 시 토스트 페이드인/아웃이 0ms — lifetime 동안 100%, 만료 즉시 0%. 터미널 콘텐츠는 영향 없음([theme](../../design/systems/theme.md) "터미널 콘텐츠 애니메이션 0ms" 원칙상 이미 모션 없음).
 
-### High contrast (placeholder)
-
-`accessibility.high_contrast: bool` — UI 체크박스는 **비활성(disabled)**. Phase 2 에서 Theme 분기 추가 예정.
-
 ## 인터페이스
 
 - **사용자**: Settings Accessibility 탭 토글. i18n 키 `settings.accessibility.*`.

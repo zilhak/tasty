@@ -115,8 +115,6 @@ empty = "항목이 없습니다."
 heading = "접근성"
 reduced_motion = "모션 줄이기"
 reduced_motion_desc = "UI 페이드/슬라이드 애니메이션을 생략합니다. 토스트 페이드 인/아웃이 비활성화됩니다. 터미널 출력 애니메이션은 영향을 받지 않습니다."
-high_contrast = "고대비 (준비 중)"
-high_contrast_desc = "더 강한 대비 팔레트를 강제합니다. 아직 구현되지 않았습니다."
 
 [settings.file_handler]
 coming_soon = "이 서브탭은 향후 업데이트에서 제공됩니다."

@@ -16,17 +16,4 @@ pub fn draw_accessibility_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .small()
             .color(th.subtext0),
     );
-    ui.add_space(12.0);
-
-    ui.add_enabled_ui(false, |ui| {
-        ui.checkbox(
-            &mut settings.accessibility.high_contrast,
-            t("settings.accessibility.high_contrast"),
-        );
-    });
-    ui.label(
-        egui::RichText::new(t("settings.accessibility.high_contrast_desc"))
-            .small()
-            .color(th.subtext0),
-    );
 }

@@ -54,8 +54,6 @@ pub struct NotificationSettings {
 pub struct AccessibilitySettings {
     /// 활성 시 모든 UI 페이드/슬라이드 애니메이션을 즉시 끝낸다. 토스트 페이드인/페이드아웃은 0ms로 적용.
     pub reduced_motion: bool,
-    /// 활성 시 강제 고대비 팔레트(아직 미구현 — placeholder). Phase 2에서 Theme 분기 추가 예정.
-    pub high_contrast: bool,
 }
 
 /// `~/.tasty/memory.db` 의 quota 정책. 모든 byte cap 은 MiB 단위 정수.

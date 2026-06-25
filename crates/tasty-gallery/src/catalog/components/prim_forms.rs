@@ -54,7 +54,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             );
             cluster(ui, theme, "Switch — on · off · disabled", |ui| {
                 switch(ui, theme, &mut st.switch_a, Some("Reduced motion"), true);
-                switch(ui, theme, &mut st.switch_b, Some("High contrast"), true);
+                switch(ui, theme, &mut st.switch_b, Some("Telemetry"), true);
                 let mut off = false;
                 switch(ui, theme, &mut off, Some("Disabled"), false);
             });
