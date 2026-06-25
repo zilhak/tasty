@@ -4,7 +4,11 @@
 //! Creates a child HWND inside the parent window, then hosts a WebView2
 //! controller inside it. Requires WebView2 runtime (Edge Chromium).
 
+use std::cell::Cell;
+use std::ffi::c_void;
+use std::rc::Rc;
 use std::sync::mpsc;
+
 use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Com::*;
@@ -19,6 +23,10 @@ pub struct PlatformWebView {
     hwnd: HWND,
     controller: ICoreWebView2Controller,
     webview: ICoreWebView2,
+    /// blocked response 생성에 필요해 보관(요청 가로채기 핸들러가 사용).
+    _environment: ICoreWebView2Environment,
+    /// 원격 허용 여부(기본 false=차단). WebResourceRequested 핸들러가 매 요청 read.
+    allow_remote: Rc<Cell<bool>>,
 }
 
 impl PlatformWebView {
@@ -135,10 +143,43 @@ impl PlatformWebView {
                 .CoreWebView2()
                 .map_err(|e| format!("CoreWebView2 failed: {e}"))?;
 
+            // 원격 콘텐츠 차단: 모든 리소스 요청을 WebResourceRequested 로 가로채,
+            // allow_remote=false 일 때 http/https URI 면 403 빈 응답으로 대체한다(기본 차단).
+            let allow_remote = Rc::new(Cell::new(false));
+            webview
+                .AddWebResourceRequestedFilter(w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
+                .map_err(|e| format!("AddWebResourceRequestedFilter failed: {e}"))?;
+            let env_cb = env.clone();
+            let allow_cb = allow_remote.clone();
+            let mut token = EventRegistrationToken::default();
+            let handler = WebResourceRequestedEventHandler::create(Box::new(
+                move |_sender, args| -> Result<()> {
+                    let Some(args) = args else { return Ok(()) };
+                    let request = args.Request()?;
+                    let uri = request.Uri()?;
+                    let uri_str = uri.to_string().unwrap_or_default();
+                    // WebView2 가 할당한 URI 문자열은 호출자가 CoTaskMemFree 로 해제해야 한다.
+                    CoTaskMemFree(Some(uri.0 as *const c_void));
+                    let is_remote =
+                        uri_str.starts_with("http://") || uri_str.starts_with("https://");
+                    if is_remote && !allow_cb.get() {
+                        let resp =
+                            env_cb.CreateWebResourceResponse(None, 403, w!("Blocked"), w!(""))?;
+                        args.SetResponse(&resp)?;
+                    }
+                    Ok(())
+                },
+            ));
+            webview
+                .add_WebResourceRequested(&handler, &mut token)
+                .map_err(|e| format!("add_WebResourceRequested failed: {e}"))?;
+
             Ok(Self {
                 hwnd,
                 controller,
                 webview,
+                _environment: env,
+                allow_remote,
             })
         }
     }
@@ -240,12 +281,12 @@ impl PlatformWebView {
         );
     }
 
-    /// 원격(http/https) 콘텐츠 허용 여부. WebView2 는 깔끔한 toggle 이 없어
-    /// (WebResourceRequested 필터 필요) 현재 no-op — 후속.
+    /// 원격(http/https) 콘텐츠 허용 여부. `new()` 에서 등록한 WebResourceRequested
+    /// 핸들러가 매 요청마다 이 플래그를 read 해 `false`면 원격 URI 를 403 으로 차단한다.
+    /// 여기서는 플래그만 갱신(다음 리소스 요청부터 반영).
     pub fn set_remote_content_allowed(&self, allowed: bool) {
-        tracing::debug!(
-            "set_remote_content_allowed({allowed}) — Windows WebView2 no-op (후속: WebResourceRequested 필터)"
-        );
+        self.allow_remote.set(allowed);
+        tracing::debug!("Windows WebView2 set_remote_content_allowed({allowed})");
     }
 }
 
