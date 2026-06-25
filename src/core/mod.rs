@@ -1710,7 +1710,6 @@ impl Core {
 
         let cols = engine.default_cols;
         let rows = engine.default_rows;
-        let lazy_init = engine.settings.performance.lazy_pty_init;
         let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
         let waker = engine.make_waker(surface_id);
 
@@ -1729,13 +1728,13 @@ impl Core {
 
         // Terminal spawn 은 *pane 가변 borrow 시작 전* 에 끝낸다 — store 에 insert
         // 한 뒤 marker 만 pane 에 부착.
-        let prepared_terminal = if is_terminal && !lazy_init {
+        let prepared_terminal = if is_terminal {
             let spawn = crate::model::ShellSpawnOpts {
                 cols,
                 rows,
                 shell: sh.shell_ref(),
                 shell_args: &sh.args_ref(),
-                waker: waker.clone(),
+                waker,
                 working_dir: cwd.as_deref(),
             };
             let terminal = crate::model::Pane::spawn_terminal(surface_id, spawn)?;
@@ -1750,27 +1749,15 @@ impl Core {
                 .find_pane_by_id_mut(pane_id)
                 .ok_or_else(|| anyhow::anyhow!("pane {pane_id} not found"))?;
             if is_terminal {
-                if lazy_init {
-                    let spawn = crate::model::ShellSpawnOpts {
-                        cols,
-                        rows,
-                        shell: sh.shell_ref(),
-                        shell_args: &sh.args_ref(),
-                        waker,
-                        working_dir: cwd.as_deref(),
-                    };
-                    pane.add_tab_deferred(tab_id, surface_id, spawn, explicit_name);
-                } else {
-                    debug_assert!(prepared_terminal);
-                    pane.add_terminal_marker_tab_background(tab_id, surface_id, explicit_name);
-                }
+                debug_assert!(prepared_terminal);
+                pane.add_terminal_marker_tab_background(tab_id, surface_id, explicit_name);
             } else {
                 let (surface, name) = prepared_non_terminal.unwrap();
                 pane.add_surface_tab(tab_id, name, explicit_name, surface);
             }
         }
 
-        if is_terminal && !lazy_init {
+        if is_terminal {
             engine.send_fast_init(surface_id);
         }
         engine.mark_layout_dirty();

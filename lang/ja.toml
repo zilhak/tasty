@@ -430,8 +430,6 @@ targeted_pty_polling = "選択的PTYポーリング"
 targeted_pty_polling_desc = "すべてのターミナルではなく、新しい出力があるターミナルのみを処理します。サーフェスが多い場合にCPU使用量を削減します。"
 scrollback_disk_swap = "スクロールバックディスクスワップ"
 scrollback_disk_swap_desc = "古いスクロールバック行をディスクにスワップしてメモリ使用量を削減します。"
-lazy_pty_init = "遅延PTY初期化"
-lazy_pty_init_desc = "タブ作成時ではなく、初めてフォーカスされた時にシェルプロセスを生成します。"
 
 [quit_modal]
 title = "Tasty を閉じる"

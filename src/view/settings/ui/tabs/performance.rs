@@ -31,15 +31,4 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .small()
             .color(th.subtext0),
     );
-    ui.add_space(8.0);
-
-    ui.checkbox(
-        &mut settings.performance.lazy_pty_init,
-        t("settings.performance.lazy_pty_init"),
-    );
-    ui.label(
-        egui::RichText::new(t("settings.performance.lazy_pty_init_desc"))
-            .small()
-            .color(th.subtext0),
-    );
 }

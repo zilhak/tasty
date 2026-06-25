@@ -23,10 +23,6 @@ pub struct PerformanceSettings {
     /// When enabled, swap old scrollback lines to disk to reduce memory usage.
     /// Requires restart to apply.
     pub scrollback_disk_swap: bool,
-    /// When enabled, PTY processes are only spawned when a tab is first focused,
-    /// instead of at tab creation time. Reduces initial resource usage.
-    /// Requires restart to apply.
-    pub lazy_pty_init: bool,
 }
 
 impl Default for PerformanceSettings {
@@ -34,7 +30,6 @@ impl Default for PerformanceSettings {
         Self {
             targeted_pty_polling: true,
             scrollback_disk_swap: false,
-            lazy_pty_init: false,
         }
     }
 }

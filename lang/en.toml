@@ -430,8 +430,6 @@ targeted_pty_polling = "Targeted PTY polling"
 targeted_pty_polling_desc = "Only process terminals with new output instead of polling all. Reduces CPU with many surfaces."
 scrollback_disk_swap = "Scrollback disk swap"
 scrollback_disk_swap_desc = "Swap old scrollback lines to disk to reduce memory usage."
-lazy_pty_init = "Lazy PTY initialization"
-lazy_pty_init_desc = "Spawn shell processes only when a tab is first focused, not at creation."
 
 [quit_modal]
 title = "Close Tasty"
