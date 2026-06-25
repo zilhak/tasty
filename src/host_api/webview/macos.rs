@@ -3,7 +3,7 @@
 
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::NSView;
+use objc2_app_kit::{NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSView};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_web_kit::{WKWebView, WKWebViewConfiguration};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -126,19 +126,34 @@ impl PlatformWebView {
         }
     }
 
-    /// `prefers-color-scheme` 강제. WKWebView 는 깔끔한 단일 toggle 이 없어(NSAppearance 교체나
-    /// content rule 필요) 현재 no-op — 후속(NSAppearance light/dark 강제). `scheme` 만 로깅.
+    /// `prefers-color-scheme` 강제. WKWebView 는 NSView 라 `setAppearance:`
+    /// (NSAppearanceCustomization) 로 effective appearance 를 고정할 수 있고, 웹 콘텐츠의
+    /// `prefers-color-scheme` 미디어쿼리가 이를 따른다. Follow=상속(nil), Light=Aqua,
+    /// Dark=DarkAqua. 적용은 즉시(렌더 갱신).
     pub fn set_color_scheme(&self, scheme: super::ColorScheme) {
-        tracing::debug!(
-            "set_color_scheme({scheme:?}) — macOS WKWebView no-op (후속: NSAppearance 강제)"
-        );
+        // SAFETY: main thread AppKit. self 는 main thread 객체(Retained<WKWebView>),
+        // WKWebView : NSView 가 setAppearance: 에 응답한다. appearanceNamed: 와
+        // NSAppearanceName* 정적은 main thread AppKit API.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        unsafe {
+            let appearance: Option<Retained<NSAppearance>> = match scheme {
+                super::ColorScheme::Follow => None,
+                super::ColorScheme::Light => NSAppearance::appearanceNamed(NSAppearanceNameAqua),
+                super::ColorScheme::Dark => NSAppearance::appearanceNamed(NSAppearanceNameDarkAqua),
+            };
+            let _: () = objc2::msg_send![&self.webview, setAppearance: appearance.as_deref()];
+        }
     }
 
-    /// 원격(http/https) 콘텐츠 허용 여부. WKWebView 는 깔끔한 toggle 이 없어
-    /// (WKNavigationDelegate/WKContentRuleList 필요) 현재 no-op — 후속.
+    /// 원격(http/https) 콘텐츠 허용 여부. WKWebView 에는 동기 toggle 이 없다 — 차단하려면
+    /// `WKContentRuleList`(`compileContentRuleList...` 는 **completion-handler block 기반
+    /// async** 컴파일 후 `userContentController` 에 add/remove) 또는 `WKNavigationDelegate`
+    /// 객체(별도 objc2 class 정의)가 필요하다. 둘 다 block/delegate 수명 관리가 얽혀
+    /// half-baked 위험이 커 현재 no-op 으로 둔다(후속 backend 작업 필요).
     pub fn set_remote_content_allowed(&self, allowed: bool) {
         tracing::debug!(
-            "set_remote_content_allowed({allowed}) — macOS WKWebView no-op (후속: navigation delegate)"
+            "set_remote_content_allowed({allowed}) — macOS WKWebView no-op \
+             (WKContentRuleList async 컴파일 또는 WKNavigationDelegate 객체 필요)"
         );
     }
 
