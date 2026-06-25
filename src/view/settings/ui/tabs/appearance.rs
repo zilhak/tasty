@@ -466,13 +466,19 @@ fn display_scale_card(
         ui.painter().rect_stroke(
             rect,
             radius,
-            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.blue)),
+            egui::Stroke::new(
+                th.border_width.value(),
+                egui::Color32::from(th.border_focus()),
+            ),
             egui::StrokeKind::Inside,
         );
         ui.painter().rect_stroke(
             rect.expand(th.border_width.value()),
             radius,
-            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.blue)),
+            egui::Stroke::new(
+                th.border_width.value(),
+                egui::Color32::from(th.border_focus()),
+            ),
             egui::StrokeKind::Outside,
         );
     } else {

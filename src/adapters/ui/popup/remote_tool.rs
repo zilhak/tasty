@@ -422,7 +422,7 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
 fn warn_badge(ui: &mut egui::Ui, th: &Theme, text: &str, tooltip: &str) {
     ui.label(
         egui::RichText::new(format!("⚠ {text}"))
-            .color(th.yellow)
+            .color(th.accent_warning())
             .size(th.font_size_caption.value()),
     )
     .on_hover_text(tooltip);
@@ -943,7 +943,7 @@ fn draw_profile_form(
                 indented_hint(
                     ui,
                     egui::RichText::new(t("remote_tool.type_unknown_hint"))
-                        .color(th.yellow)
+                        .color(th.accent_warning())
                         .size(th.font_size_caption.value()),
                 );
             }

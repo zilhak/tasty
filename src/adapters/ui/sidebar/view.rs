@@ -561,7 +561,7 @@ pub fn draw_collapsed_sidebar_view(
                 ui.painter().rect_stroke(
                     rect,
                     4.0,
-                    egui::Stroke::new(1.5, th.lavender),
+                    egui::Stroke::new(1.5, th.border_attached()),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -846,7 +846,7 @@ fn draw_workspace_card(
                     ui.painter().circle_stroke(
                         dot_rect.center(),
                         6.25,
-                        egui::Stroke::new(1.5, th.lavender),
+                        egui::Stroke::new(1.5, th.border_attached()),
                     );
                 }
                 if ws.attached && ws.busy_count == 0 {

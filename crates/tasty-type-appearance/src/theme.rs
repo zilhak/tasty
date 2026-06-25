@@ -1178,6 +1178,12 @@ impl Theme {
     pub fn border_focus(&self) -> HexColor {
         self.blue
     }
+    /// attached(다른 client 가 점유한) workspace 의 표시 outline/ring 색.
+    /// 디자인 2026-06-15 CollapsedSidebar: lavender outline (error red 와 분리).
+    #[inline]
+    pub fn border_attached(&self) -> HexColor {
+        self.lavender
+    }
 
     // ── 오버레이 (overlay-*) — is_light 에서 도출된 필드를 semantic 이름으로 ──
     #[inline]
