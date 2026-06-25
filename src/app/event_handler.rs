@@ -603,9 +603,6 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_memory_changes();
         // 도구 메뉴 클릭으로 enqueue된 이벤트 publish.
         self.dispatch_pending_tool_events();
-        // Background update poller → "Tasty update available" notification.
-        // None→Some 전이 시 1회만, notified_version 으로 중복 차단.
-        self.dispatch_pending_update_notifications();
         // 호스트 내부 Intent 큐 drain — UI Intent 와 Domain Intent (Intent::Domain
         // wrapper) 모두 매 frame 일관 처리 (intent-ui-vs-domain.md §4.4).
         // dispatch_pending_intents 가 domain_batch 를 따로 모아 cascade 까지 일괄.

@@ -186,7 +186,6 @@ tasty-i18n = { path = "crates/tasty-i18n" }
 tasty-shm = { path = "crates/tasty-shm" }
 tasty-terminal = { path = "crates/tasty-terminal" }
 tasty-portscan = { path = "crates/tasty-portscan" }
-tasty-update = { path = "crates/tasty-update" }
 # Window & Input
 winit = { version = "0.30", optional = true }
 
@@ -456,8 +455,6 @@ opt-level = 3
 [profile.dev.package.tasty-type-appearance]
 opt-level = 3
 [profile.dev.package.tasty-type-geometry]
-opt-level = 3
-[profile.dev.package.tasty-update]
 opt-level = 3
 [profile.dev.package.tasty-utils]
 opt-level = 3

@@ -26,8 +26,6 @@ pub struct SettingsView {
     file_handler: Arc<FileHandlerRegistry>,
     /// user TOML 저장 경로. CI/CD 등 홈 디렉토리가 없으면 `None` 으로 들어와 저장 skip.
     user_config_path: Option<std::path::PathBuf>,
-    /// "Updates" 탭이 읽는 background poller 결과. 모달 오픈 시 main view 에서 주입.
-    update_status: Option<Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>>,
     shown: bool,
     double_tap: crate::double_tap::DoubleTapDetector,
     captured_double_tap: Option<String>,
@@ -51,7 +49,6 @@ impl SettingsView {
             file_format,
             file_handler,
             user_config_path,
-            update_status: None,
             shown: false,
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             captured_double_tap: None,
@@ -64,15 +61,6 @@ impl SettingsView {
     #[allow(dead_code)]
     pub fn render_settings(&mut self) {
         self.render();
-    }
-
-    /// "Updates" 탭이 background poller 결과를 읽도록 host main view 의 공유 핸들을
-    /// 주입한다. 모달 오픈 직후 한 번만 호출된다.
-    pub fn set_update_status(
-        &mut self,
-        status: Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
-    ) {
-        self.update_status = Some(status);
     }
 
     /// Plugins 서브탭에서 표시할 plugin command snapshot을 주입한다.
@@ -213,7 +201,6 @@ impl View for SettingsView {
         let file_format = self.file_format.clone();
         let file_handler = self.file_handler.clone();
         let user_config_path = self.user_config_path.clone();
-        let update_status = self.update_status.clone();
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
             action = settings_ui::draw_settings_panel(
                 ctx,
@@ -224,7 +211,6 @@ impl View for SettingsView {
                     file_format: file_format.as_ref(),
                     file_handler: file_handler.as_ref(),
                     user_config_path: user_config_path.as_deref(),
-                    update_status: update_status.as_ref(),
                 },
             );
 

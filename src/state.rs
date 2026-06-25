@@ -20,7 +20,6 @@ pub mod command_palette;
 pub mod preset_apply;
 pub mod search;
 pub mod selection;
-pub mod update_check;
 
 use std::collections::VecDeque;
 
@@ -277,9 +276,6 @@ pub struct AppState {
     /// Reset to `Idle` when the popup closes.
     #[cfg(feature = "gui")]
     pub(crate) port_scan: crate::adapters::ui::popup::port_scanner::PortScanState,
-    /// Shared snapshot of background update-check state. Polled hourly.
-    pub(crate) update_status:
-        std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
     /// Command palette UI state — query buffer, selection cursor, and a pending
     /// dispatch slot that MainView drains each frame.
     pub(crate) command_palette: crate::state::command_palette::CommandPaletteState,
@@ -658,12 +654,6 @@ impl AppState {
             search: crate::search_state::SearchState::new(),
             #[cfg(feature = "gui")]
             port_scan: crate::adapters::ui::popup::port_scanner::PortScanState::Idle,
-            update_status: crate::state::update_check::spawn_poller(
-                "zilhak",
-                "tasty",
-                env!("CARGO_PKG_VERSION"),
-                std::time::Duration::from_secs(60 * 60),
-            ),
             command_palette: crate::state::command_palette::CommandPaletteState::default(),
             #[cfg(feature = "gui")]
             toasts: crate::adapters::ui::ToastManager::new(),

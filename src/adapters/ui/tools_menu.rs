@@ -59,10 +59,6 @@ const BUILTIN_TOOLS: &[BuiltinTool] = &[
         action: BuiltinAction::OpenPopup(super::popup::remote_tool::REMOTE_TOOL_POPUP_ID),
     },
     BuiltinTool {
-        label_key: "update.tools_menu_item",
-        action: BuiltinAction::OpenPopup(super::popup::update::UPDATE_POPUP_ID),
-    },
-    BuiltinTool {
         label_key: "preset.tools.menu_item",
         action: BuiltinAction::OpenWindow(WindowKind::Preset),
     },

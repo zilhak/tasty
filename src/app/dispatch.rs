@@ -14,4 +14,3 @@ pub(crate) mod plugin_popup_events;
 pub(crate) mod popup_opens;
 pub(crate) mod surface_lifecycle;
 pub(crate) mod tool_events;
-pub(crate) mod update_notifications;

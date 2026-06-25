@@ -95,14 +95,12 @@ pub(crate) enum TerminalSubTab {
 
 /// L2 section within the Misc L1 tab.
 ///
-/// 디자인 Misc L2 = Updates / Tastyrc(Windows 전용). `Updates` 는 모든 OS 에서
-/// 표시되어 Misc 가 더 이상 비-Windows 에서 빈 탭이 되지 않는다. `Tastyrc` 는
-/// Windows 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는 dead variant 가
-/// 되지만 exhaustive match 안전성을 위해 variant 자체는 유지하고
-/// `allow(dead_code)` 로 경고만 억제한다.
+/// 디자인 Misc L2 = Tastyrc(Windows 전용). 비-Windows 에서는 L2 항목이 없어
+/// Misc 가 빈 탭(empty-state)이 된다. `Tastyrc` 는 Windows 전용 (tasty 빌트인
+/// bashrc 편집) — 비-Windows 에서는 dead variant 가 되지만 exhaustive match
+/// 안전성을 위해 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
-    Updates,
     #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
 }
@@ -137,8 +135,8 @@ pub struct SettingsUiState {
     general_sub_tab: GeneralSubTab,
     /// Active L2 section within the Terminal L1 tab.
     terminal_sub_tab: TerminalSubTab,
-    /// Active L2 section within the Misc L1 tab. Updates 가 모든 OS 에서
-    /// 표시되므로 항상 읽힌다.
+    /// Active L2 section within the Misc L1 tab. 비-Windows 에서는 live variant 가
+    /// 없어 empty-state 가 그려지며 이 값은 사용되지 않는다.
     misc_sub_tab: MiscSubTab,
     /// L2 사이드바 섹션 필터 텍스트. L1 전환 시 클리어. 7개 L1 탭이 공유한다
     /// (디자인은 한 번에 하나의 L1 만 보이므로 단일 필드로 충분).
@@ -224,7 +222,7 @@ impl SettingsUiState {
             plugin_sub_tab: None,
             general_sub_tab: GeneralSubTab::General,
             terminal_sub_tab: TerminalSubTab::General,
-            misc_sub_tab: MiscSubTab::Updates,
+            misc_sub_tab: MiscSubTab::Tastyrc,
             l2_filter: String::new(),
             file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
             extension_priority_draft: None,
@@ -265,8 +263,6 @@ pub struct SettingsPanelCtx<'a> {
     pub file_format: &'a FileFormatRegistry,
     pub file_handler: &'a FileHandlerRegistry,
     pub user_config_path: Option<&'a std::path::Path>,
-    pub update_status:
-        Option<&'a std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>>,
 }
 
 /// Draw settings directly as a full-window panel (for modal windows).
@@ -279,7 +275,6 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
         file_format,
         file_handler,
         user_config_path,
-        update_status,
     } = panel;
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
@@ -448,7 +443,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             file_handler,
                             &mut ui_state.l2_filter,
                         ),
-                        SettingsTab::Misc => draw_misc_group(ui, ui_state, update_status),
+                        SettingsTab::Misc => draw_misc_group(ui, ui_state),
                         SettingsTab::Plugins => draw_plugin_tab(
                             ui,
                             &mut draft,
@@ -679,26 +674,17 @@ fn draw_terminal_group(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut S
 
 /// Misc L1 탭: 좌측 L2 사이드바(필터 포함) + 우측 섹션 콘텐츠.
 ///
-/// 디자인 Misc L2 = Updates / Tastyrc(Windows 전용). Updates 가 모든 OS 에서
-/// 표시되므로 비-Windows 에서도 더 이상 빈 탭이 아니다.
-fn draw_misc_group(
-    ui: &mut egui::Ui,
-    ui_state: &mut SettingsUiState,
-    update_status: Option<
-        &std::sync::Arc<std::sync::Mutex<crate::state::update_check::UpdateStatus>>,
-    >,
-) {
+/// 디자인 Misc L2 = Tastyrc(Windows 전용). 비-Windows 에서는 L2 항목이 없어
+/// 사이드바가 비고 콘텐츠 영역에 empty-state 를 그린다.
+fn draw_misc_group(ui: &mut egui::Ui, ui_state: &mut SettingsUiState) {
     let th = crate::theme::theme();
     ui.add_space(8.0);
 
     let available_height = ui.available_height() - 8.0 - 14.0;
 
-    // Windows 에서만 Tastyrc 섹션을 push 하므로 비-Windows 에선 mut 가 불필요.
+    // Windows 에서만 Tastyrc 섹션을 push 한다. 비-Windows 에선 L2 가 없다.
     #[cfg_attr(not(windows), allow(unused_mut))]
-    let mut sections: Vec<(MiscSubTab, String)> = vec![(
-        MiscSubTab::Updates,
-        t("settings.tab.updates").to_string(),
-    )];
+    let mut sections: Vec<(MiscSubTab, String)> = Vec::new();
     #[cfg(windows)]
     sections.push((
         MiscSubTab::Tastyrc,
@@ -726,16 +712,24 @@ fn draw_misc_group(
                     selected_new = Some(*tab);
                 }
             }
-            if !any {
+            // 필터로 0건이 된 경우에만 안내. 섹션 자체가 없는(비-Windows) 경우는
+            // 우측 콘텐츠의 empty-state 가 설명을 대신하므로 사이드바는 비워둔다.
+            if !any && !filter_lc.is_empty() {
                 ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
             }
         },
         |ui| match current {
-            MiscSubTab::Updates => draw_updates_tab(ui, update_status),
             #[cfg(windows)]
             MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
             #[cfg(not(windows))]
-            MiscSubTab::Tastyrc => {}
+            MiscSubTab::Tastyrc => {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(24.0);
+                    ui.label(
+                        egui::RichText::new(t("settings.misc.empty")).color(th.subtext0),
+                    );
+                });
+            }
         },
     );
     if let Some(new) = selected_new {

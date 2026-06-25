@@ -550,6 +550,9 @@ hint_bar = "Enter: コピーして閉じる    Delete: 削除    Shift+Delete: �
 title = "ツール"
 clipboard_history = "クリップボード履歴"
 
+[settings.misc]
+empty = "このプラットフォームには設定がありません。"
+
 [settings.misc.subtab]
 tastyrc = "tastyrc"
 accessibility = "アクセシビリティ"
