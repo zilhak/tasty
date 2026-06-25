@@ -6,7 +6,7 @@
 
 use gtk::glib::Cast;
 use gtk::prelude::*;
-use webkit2gtk::{WebView, WebViewExt};
+use webkit2gtk::{SettingsExt, WebView, WebViewExt};
 use winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
@@ -168,6 +168,31 @@ impl PlatformWebView {
 
     pub fn load_html(&self, html: &str) {
         self.webview.load_html(html, None);
+    }
+
+    /// Content zoom (1.0 = 100%). WebKitGTK `WebView::zoom_level`.
+    pub fn set_zoom(&self, factor: f64) {
+        self.webview.set_zoom_level(factor);
+    }
+
+    /// JavaScript 실행 허용 여부. WebKitGTK `WebKitSettings::enable_javascript` — 다음
+    /// 네비게이션부터 적용. host 는 "Sandbox scripts" on(기본) → `enabled=false`.
+    pub fn set_javascript_enabled(&self, enabled: bool) {
+        if let Some(settings) = WebViewExt::settings(&self.webview) {
+            settings.set_enable_javascript(enabled);
+        }
+    }
+
+    /// `prefers-color-scheme` 강제. WebKitGTK 는 깔끔한 단일 toggle 이 없어 현재 no-op —
+    /// 후속. `scheme` 만 로깅.
+    pub fn set_color_scheme(&self, scheme: super::ColorScheme) {
+        tracing::debug!("set_color_scheme({scheme:?}) — Linux WebKitGTK no-op (후속)");
+    }
+
+    /// 원격(http/https) 콘텐츠 허용 여부. WebKitGTK 는 깔끔한 toggle 이 없어
+    /// (resource-load policy 필요) 현재 no-op — 후속.
+    pub fn set_remote_content_allowed(&self, allowed: bool) {
+        tracing::debug!("set_remote_content_allowed({allowed}) — Linux WebKitGTK no-op (후속)");
     }
 }
 

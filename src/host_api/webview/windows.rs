@@ -205,6 +205,48 @@ impl PlatformWebView {
             }
         }
     }
+
+    /// Content zoom (1.0 = 100%). WebView2 `ICoreWebView2Controller::SetZoomFactor`.
+    pub fn set_zoom(&self, factor: f64) {
+        // SAFETY: controller는 self가 살아있는 동안 valid, main thread 호출.
+        unsafe {
+            if let Err(e) = self.controller.SetZoomFactor(factor) {
+                tracing::warn!("WebView2 SetZoomFactor failed: {e}");
+            }
+        }
+    }
+
+    /// JavaScript 실행 허용 여부. WebView2 `ICoreWebView2Settings::IsScriptEnabled` —
+    /// 다음 네비게이션부터 적용. host 는 "Sandbox scripts" on(기본) → `enabled=false`.
+    pub fn set_javascript_enabled(&self, enabled: bool) {
+        // SAFETY: webview/settings는 self가 살아있는 동안 valid, main thread 호출.
+        unsafe {
+            match self.webview.Settings() {
+                Ok(settings) => {
+                    if let Err(e) = settings.SetIsScriptEnabled(enabled) {
+                        tracing::warn!("WebView2 SetIsScriptEnabled failed: {e}");
+                    }
+                }
+                Err(e) => tracing::warn!("WebView2 Settings() failed: {e}"),
+            }
+        }
+    }
+
+    /// `prefers-color-scheme` 강제. WebView2 Profile.PreferredColorScheme 으로 가능하나
+    /// 현재 no-op — 후속(`ICoreWebView2_13::Profile` 캐스팅). `scheme` 만 로깅.
+    pub fn set_color_scheme(&self, scheme: super::ColorScheme) {
+        tracing::debug!(
+            "set_color_scheme({scheme:?}) — Windows WebView2 no-op (후속: Profile.PreferredColorScheme)"
+        );
+    }
+
+    /// 원격(http/https) 콘텐츠 허용 여부. WebView2 는 깔끔한 toggle 이 없어
+    /// (WebResourceRequested 필터 필요) 현재 no-op — 후속.
+    pub fn set_remote_content_allowed(&self, allowed: bool) {
+        tracing::debug!(
+            "set_remote_content_allowed({allowed}) — Windows WebView2 no-op (후속: WebResourceRequested 필터)"
+        );
+    }
 }
 
 impl Drop for PlatformWebView {

@@ -106,6 +106,42 @@ impl PlatformWebView {
         }
     }
 
+    /// Content zoom (1.0 = 100%). WKWebView `pageZoom` 은 텍스트+이미지 전체를 배율 적용한다.
+    pub fn set_zoom(&self, factor: f64) {
+        // SAFETY: main thread WKWebView property. self 는 main thread 객체(Retained<WKWebView>).
+        unsafe {
+            let _: () = objc2::msg_send![&self.webview, setPageZoom: factor];
+        }
+    }
+
+    /// JavaScript 실행 허용 여부. WKPreferences `javaScriptEnabled` — 다음 네비게이션부터 적용.
+    /// host 는 "Sandbox scripts" on(기본) → `enabled=false`(스크립트 격리), off → `true` 로 건다.
+    pub fn set_javascript_enabled(&self, enabled: bool) {
+        // SAFETY: main thread. configuration().preferences() 는 main thread KVC 대상.
+        #[allow(clippy::multiple_unsafe_ops_per_block)]
+        unsafe {
+            let config = self.webview.configuration();
+            let prefs = config.preferences();
+            let _: () = objc2::msg_send![&prefs, setJavaScriptEnabled: enabled];
+        }
+    }
+
+    /// `prefers-color-scheme` 강제. WKWebView 는 깔끔한 단일 toggle 이 없어(NSAppearance 교체나
+    /// content rule 필요) 현재 no-op — 후속(NSAppearance light/dark 강제). `scheme` 만 로깅.
+    pub fn set_color_scheme(&self, scheme: super::ColorScheme) {
+        tracing::debug!(
+            "set_color_scheme({scheme:?}) — macOS WKWebView no-op (후속: NSAppearance 강제)"
+        );
+    }
+
+    /// 원격(http/https) 콘텐츠 허용 여부. WKWebView 는 깔끔한 toggle 이 없어
+    /// (WKNavigationDelegate/WKContentRuleList 필요) 현재 no-op — 후속.
+    pub fn set_remote_content_allowed(&self, allowed: bool) {
+        tracing::debug!(
+            "set_remote_content_allowed({allowed}) — macOS WKWebView no-op (후속: navigation delegate)"
+        );
+    }
+
     /// Load HTML string directly.
     pub fn load_html(&self, html: &str) {
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.

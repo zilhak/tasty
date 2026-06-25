@@ -27,3 +27,48 @@ pub struct WebViewBounds {
     pub width: f64,
     pub height: f64,
 }
+
+/// `prefers-color-scheme` override applied to an HTML webview (host-driven from
+/// the `com.tasty.html` plugin's `color_scheme` setting).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorScheme {
+    /// Follow the system / app appearance (no override).
+    Follow,
+    Light,
+    Dark,
+}
+
+/// Host 가 webview 에 적용하는 해석된 HTML viewer 설정. `com.tasty.html` 의
+/// `plugin_settings` 슬롯(또는 부재 시 manifest default)에서 도출한다.
+///
+/// `javascript_enabled` = `!sandbox_scripts` — "Sandbox scripts" 토글이 on(기본)이면
+/// 스크립트를 보수적으로 격리(JS off)하고, off 면 실행을 허용한다.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HtmlWebViewSettings {
+    pub zoom_percent: f64,
+    pub javascript_enabled: bool,
+    pub allow_remote_content: bool,
+    pub color_scheme: ColorScheme,
+}
+
+impl Default for HtmlWebViewSettings {
+    fn default() -> Self {
+        // manifest default: zoom 100 / sandbox true(→JS off) / remote false / scheme follow.
+        Self {
+            zoom_percent: 100.0,
+            javascript_enabled: false,
+            allow_remote_content: false,
+            color_scheme: ColorScheme::Follow,
+        }
+    }
+}
+
+impl HtmlWebViewSettings {
+    /// 4개 backend 제어 메서드에 적용한다 (zoom·JS 는 실효, color/remote 는 backend no-op 가능).
+    pub fn apply(&self, wv: &PlatformWebView) {
+        wv.set_zoom(self.zoom_percent / 100.0);
+        wv.set_javascript_enabled(self.javascript_enabled);
+        wv.set_color_scheme(self.color_scheme);
+        wv.set_remote_content_allowed(self.allow_remote_content);
+    }
+}

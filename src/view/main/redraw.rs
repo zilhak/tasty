@@ -214,6 +214,8 @@ impl MainView {
             if !self.webviews.contains_key(&sid) {
                 // Find the URL for this surface
                 let url = self.find_webview_url(sid);
+                // 생성 시 적용할 plugin 설정(부재 시 default) 을 미리 해석한다.
+                let settings = self.resolve_webview_settings(sid);
                 match crate::webview::PlatformWebView::new(
                     self.base.winit.as_ref(),
                     active_html
@@ -238,11 +240,14 @@ impl MainView {
                                 wv.load_html(url);
                             }
                         }
+                        // 생성 직후 HTML viewer 설정(zoom/JS/scheme/remote) 적용 + 기록.
+                        settings.apply(&wv);
                         // Start hidden if not active
                         if !active_html.contains_key(&sid) {
                             wv.set_visible(false);
                         }
                         self.webviews.insert(sid, wv);
+                        self.webview_applied_settings.insert(sid, settings);
                     }
                     Err(e) => {
                         tracing::warn!("Failed to create WebView for surface {}: {}", sid, e);
@@ -270,6 +275,78 @@ impl MainView {
 
         // Remove webviews for closed Html surfaces
         self.webviews.retain(|sid, _| all_html_ids.contains(sid));
+        self.webview_applied_settings
+            .retain(|sid, _| all_html_ids.contains(sid));
+
+        // 설정 변경 재적용 — 살아있는 webview 마다 현재 설정을 해석해, 마지막 적용값과
+        // 다를 때만 backend 에 재적용한다(변경 없으면 backend 호출 0 — 매 프레임 호출 회피).
+        let live_sids: Vec<u32> = self.webviews.keys().copied().collect();
+        for sid in live_sids {
+            let resolved = self.resolve_webview_settings(sid);
+            if self.webview_applied_settings.get(&sid) != Some(&resolved) {
+                if let Some(wv) = self.webviews.get(&sid) {
+                    resolved.apply(wv);
+                }
+                self.webview_applied_settings.insert(sid, resolved);
+            }
+        }
+    }
+
+    /// webview surface 의 kind. `find_webview_url` 과 같은 순회.
+    fn webview_surface_kind(&self, surface_id: u32) -> Option<&'static str> {
+        for ws in &self.core_state.workspaces {
+            for &pid in &ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        let surface = tab.surface();
+                        if surface.surface_id() == Some(surface_id) {
+                            return Some(surface.kind());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// surface 의 plugin 설정을 해석해 webview 에 적용할 값으로 만든다. html webview(`com.tasty.html`)
+    /// 만 generic 설정을 소비하고, 그 외 webview kind 는 default 를 쓴다(미래 kind 안전).
+    /// 키 부재 시 manifest default(zoom 100 / sandbox true→JS off / remote false / scheme follow).
+    fn resolve_webview_settings(&self, surface_id: u32) -> crate::webview::HtmlWebViewSettings {
+        use crate::settings::PluginSettingValue;
+        use crate::webview::{ColorScheme, HtmlWebViewSettings};
+
+        let plugin_id = match self.webview_surface_kind(surface_id) {
+            Some("html") => "com.tasty.html",
+            _ => return HtmlWebViewSettings::default(),
+        };
+        let s = &self.core_state.settings;
+        let zoom_percent = match s.plugin_setting(plugin_id, "zoom") {
+            Some(PluginSettingValue::Number(n)) => *n,
+            _ => 100.0,
+        };
+        let sandbox = match s.plugin_setting(plugin_id, "sandbox_scripts") {
+            Some(PluginSettingValue::Bool(b)) => *b,
+            _ => true,
+        };
+        let allow_remote_content = match s.plugin_setting(plugin_id, "allow_remote_content") {
+            Some(PluginSettingValue::Bool(b)) => *b,
+            _ => false,
+        };
+        let color_scheme = match s.plugin_setting(plugin_id, "color_scheme") {
+            Some(PluginSettingValue::Text(t)) => match t.as_str() {
+                "light" => ColorScheme::Light,
+                "dark" => ColorScheme::Dark,
+                _ => ColorScheme::Follow,
+            },
+            _ => ColorScheme::Follow,
+        };
+        HtmlWebViewSettings {
+            zoom_percent,
+            javascript_enabled: !sandbox, // "Sandbox scripts" on(기본) → JS off
+            allow_remote_content,
+            color_scheme,
+        }
     }
 
     /// Find the URL for an Html panel by surface ID.

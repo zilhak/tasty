@@ -68,6 +68,9 @@ pub struct MainView {
     pub(crate) double_tap: crate::double_tap::DoubleTapDetector,
     /// Native WebView instances keyed by surface ID.
     pub(crate) webviews: std::collections::HashMap<u32, crate::webview::PlatformWebView>,
+    /// surface 별 마지막으로 webview 에 적용한 HTML 설정 — 변경 시에만 재적용(매 프레임 호출 회피).
+    pub(crate) webview_applied_settings:
+        std::collections::HashMap<u32, crate::webview::HtmlWebViewSettings>,
     /// 현재 마우스 hover 중이고 수식키 조건을 만족한 링크. 렌더 및 클릭에 사용.
     pub(crate) hovered_link: Option<HoveredLink>,
     /// 가장 최근에 터미널에 paste한 시각. Ctrl+V 직후 사용자가 옆 키 Ctrl+C를 잘못 눌러
@@ -115,6 +118,7 @@ impl MainView {
             ime_advance_base: (0, 0),
             double_tap: crate::double_tap::DoubleTapDetector::new(),
             webviews: std::collections::HashMap::new(),
+            webview_applied_settings: std::collections::HashMap::new(),
             hovered_link: None,
             last_terminal_paste_at: None,
         }
