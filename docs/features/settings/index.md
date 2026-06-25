@@ -28,9 +28,12 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 
 ### 플러그인 기여 설정 (generic 컨트롤)
 
-플러그인이 `[[contributes.settings_pages]]` 로 기여한 페이지를 host 가 `draw_plugin_settings_page` 로 렌더한다. manifest item `kind` 별로 generic 컨트롤을 그린다 — `toggle` → Switch, `select` → Select(드롭다운), `number` → DragValue(+ `suffix_key` 단위), `font_override` → surface 폰트 섹션. `toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Number/Text)에 저장·영속되며(`font_override` 의 전역 `plugin_font_overrides` 와 별개 네임스페이스), 변경 즉시 write + persist 된다. 첫 소비자는 `com.tasty.html` — Appearance 에 HTML viewer 설정(zoom / color scheme / allow remote content / sandbox scripts)을 이 방식으로 노출한다.
+플러그인이 `[[contributes.settings_pages]]` 로 기여한 페이지를 host 가 `draw_plugin_settings_page` 로 렌더한다. manifest item `kind` 별로 generic 컨트롤을 그린다 — `toggle` → Switch, `select` → Select(드롭다운), `number` → text Input(mono, + `suffix_key` 단위), `font_override` → surface 폰트 섹션. `toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Number/Text)에 저장·영속되며(`font_override` 의 전역 `plugin_font_overrides` 와 별개 네임스페이스), 변경 즉시 write + persist 된다. 첫 소비자는 `com.tasty.html` — Appearance 에 HTML viewer 설정(zoom / color scheme / allow remote content / sandbox scripts)을 이 방식으로 노출한다.
 
-> **현재 범위**: 위는 *설정 페이지 렌더 + 저장 + 영속* 까지다. `com.tasty.html` 의 zoom/color scheme 등을 실제 webview 에 **적용하는 소비 배선은 아직 없다**(host webview 제어 IPC + plugin 측 설정 읽기 경로 미구현 — 후속).
+> **소비 배선**: host 가 `resolve_webview_settings` 로 `plugin_settings."com.tasty.html"` 을 읽어 네이티브 webview 에 직접 적용한다(별도 host→plugin IPC 없음 — `font_override` 호스트 적용과 같은 선례). 적용 현황:
+> - **zoom · sandbox(JS on/off)**: 3 OS 모두 실효.
+> - **color_scheme**(`prefers-color-scheme` 강제): macOS 실효(NSAppearance). Windows/Linux 는 no-op(후속).
+> - **allow remote content**(원격 http/https 서브리소스 차단): macOS 실효(WKContentRuleList), Windows 실효(WebResourceRequested 403), Linux 부분 실효(decide-policy — 최상위/프레임 네비게이션은 차단하나 페이지 내 서브리소스는 미차단, UserContentFilter 바인딩 부재로 후속). 단 Windows/Linux 백엔드는 macOS 호스트에서 컴파일 불가라 CI(self-hosted Win / `test.yml` Linux)에서만 검증된다.
 
 ### draft / save 모델
 
