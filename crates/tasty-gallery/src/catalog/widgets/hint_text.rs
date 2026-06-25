@@ -1,40 +1,84 @@
-//! `tasty_egui_theme::hint_text` 데모.
+//! `Hint text` specimen — 디자인(4) `components/text/Hint text` 카드.
 //!
-//! 본체 (`tasty`) 의 모든 placeholder 텍스트가 같은 함수를 거치므로 여기서
-//! 보이는 색이 곧 메인 앱에서 보이는 색이다.
+//! 입력/컨트롤 *아래* 에 붙는 보조 설명 텍스트. 작은 크기(caption) · text-muted ·
+//! sentence case · 줄높이 1.5 · 대상 바로 아래. 본체의 placeholder 도 같은 muted
+//! 색을 쓴다(`tasty_egui_theme::hint_text`).
 
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::Input;
+
+use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
 
 thread_local! {
-    static BUF: RefCell<String> = const { RefCell::new(String::new()) };
+    static BUFS: RefCell<[String; 2]> = const { RefCell::new([String::new(), String::new()]) };
+}
+
+/// field + 그 아래 hint 한 줄.
+fn field_with_hint(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, placeholder: &str, hint: &str) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+        Input::new()
+            .placeholder(placeholder)
+            .width(theme.measure_sm.value())
+            .show(ui, theme, buf);
+        ui.label(
+            egui::RichText::new(hint)
+                .size(theme.font_size_caption.value())
+                .color(egui::Color32::from(theme.text_muted())),
+        );
+    });
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    ui.label(
-        egui::RichText::new("TextEdit::hint_text(tasty_egui_theme::hint_text(&theme, \"...\"))")
-            .small()
-            .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.add_space(8.0);
-
-    BUF.with(|b| {
-        let mut buf = b.borrow_mut();
-        ui.add(
-            egui::TextEdit::singleline(&mut *buf)
-                .hint_text(tasty_egui_theme::hint_text(theme, "Type something here…"))
-                .desired_width(320.0),
-        );
+    BUFS.with(|b| {
+        let mut bufs = b.borrow_mut();
+        stage(ui, theme, StageVariant::Column, |ui| {
+            ui.set_max_width(theme.measure_md.value());
+            field_with_hint(
+                ui,
+                theme,
+                &mut bufs[0],
+                "Workspace name",
+                "Shown in the sidebar and window title. You can rename it later.",
+            );
+            field_with_hint(
+                ui,
+                theme,
+                &mut bufs[1],
+                "s_01HXK9",
+                "Surface ids are immutable — copy this to address it from the CLI.",
+            );
+        });
     });
 
-    ui.add_space(12.0);
-    ui.label(
-        egui::RichText::new(format!(
-            "placeholder = #{:02x}{:02x}{:02x}",
-            theme.placeholder.r, theme.placeholder.g, theme.placeholder.b
-        ))
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
+    meta(
+        ui,
+        theme,
+        &[
+            ("size", "caption 11–12"),
+            ("color", "text-muted"),
+            ("case", "sentence"),
+            ("line-height", "1.5"),
+            ("position", "below the field"),
+        ],
+        &[
+            TokenChip::new(
+                "text-muted",
+                "hint color",
+                egui::Color32::from(theme.text_muted()),
+            ),
+            TokenChip::new(
+                "font-size-caption",
+                "hint size",
+                egui::Color32::from(theme.text_muted()),
+            ),
+            TokenChip::new(
+                "font-mono",
+                "id hint",
+                egui::Color32::from(theme.text_secondary()),
+            ),
+        ],
     );
 }

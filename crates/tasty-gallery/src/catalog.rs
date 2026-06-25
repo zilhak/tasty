@@ -239,11 +239,16 @@ pub fn pages() -> Vec<Page> {
                     "buttons",
                     "Buttons",
                     vec![
-                        spec("button", "Button", None, components::prim_button::draw),
+                        spec(
+                            "button",
+                            "Button",
+                            Some("Primary action and its variants — primary, secondary, ghost, danger, agent"),
+                            components::prim_button::draw,
+                        ),
                         spec(
                             "icon-button",
                             "IconButton",
-                            None,
+                            Some("Square icon-only control for toolbars and row affordances"),
                             components::prim_icon_button::draw,
                         ),
                     ],
@@ -251,54 +256,124 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "chips",
                     "Badge · Tag · Kbd",
-                    vec![spec(
-                        "chips",
-                        "Badge · Tag · Kbd",
-                        None,
-                        components::prim_chips::draw,
-                    )],
+                    vec![
+                        spec(
+                            "badge",
+                            "Badge",
+                            Some("Count or short status pill"),
+                            components::prim_chips::draw_badge,
+                        ),
+                        spec(
+                            "tag",
+                            "Tag",
+                            Some("Outlined label for surface kind or state"),
+                            components::prim_chips::draw_tag,
+                        ),
+                        spec(
+                            "kbd",
+                            "Kbd",
+                            Some("Keyboard shortcut keycaps"),
+                            components::prim_chips::draw_kbd,
+                        ),
+                    ],
                 ),
                 section(
                     "forms",
                     "Form controls",
                     vec![
-                        spec("input", "Input", None, components::prim_input::draw),
+                        spec(
+                            "input",
+                            "Input",
+                            Some("Single-line text field — icon, addon, mono, invalid, block"),
+                            components::prim_input::draw,
+                        ),
                         spec(
                             "forms",
                             "Select · Checkbox · Switch",
-                            None,
+                            Some("Choice and toggle controls"),
                             components::prim_forms::draw,
                         ),
                     ],
                 ),
                 section(
                     "nav",
-                    "MenuItem · TreeRow",
-                    vec![spec(
-                        "nav",
-                        "MenuItem · TreeRow",
-                        None,
-                        components::prim_nav::draw,
-                    )],
+                    "Tab · TreeRow · MenuItem",
+                    vec![
+                        spec(
+                            "tab",
+                            "Tab",
+                            Some("A surface tab and its status — active, idle, notification"),
+                            components::prim_tab::draw,
+                        ),
+                        spec(
+                            "tree-row",
+                            "TreeRow",
+                            Some("Disclosure row in the sidebar tree"),
+                            components::prim_nav::draw_tree_row,
+                        ),
+                        spec(
+                            "menu-item",
+                            "MenuItem",
+                            Some("Row in a context or command menu"),
+                            components::prim_nav::draw_menu_item,
+                        ),
+                    ],
                 ),
                 section(
                     "feedback",
-                    "StatusDot · Spinner · Toast",
+                    "StatusDot · Status resolution · Spinner · Toast · Toast stack",
                     vec![
                         spec(
                             "status-dot",
                             "StatusDot",
-                            None,
+                            Some("One dot for a surface's live state"),
                             components::prim_status_dot::draw,
                         ),
-                        spec("spinner", "Spinner", None, components::prim_spinner::draw),
-                        spec("toast", "Toast", None, widgets::toast::draw),
+                        spec(
+                            "status-resolution",
+                            "Status resolution",
+                            Some("How owner and activity collapse to a single dot"),
+                            components::prim_status_resolution::draw,
+                        ),
+                        spec(
+                            "spinner",
+                            "Spinner",
+                            Some("Indeterminate progress — sizes and reduced-motion fallback"),
+                            components::prim_spinner::draw,
+                        ),
+                        spec(
+                            "toast",
+                            "Toast",
+                            Some("Transient notification card"),
+                            widgets::toast::draw,
+                        ),
+                        spec(
+                            "toast-stack",
+                            "Toast stack",
+                            Some("Bottom-right stack with newest-on-top and +N more overflow"),
+                            widgets::toast::draw_stack,
+                        ),
                     ],
                 ),
                 section(
                     "text",
                     "Hint text",
-                    vec![spec("hint", "Hint text", None, widgets::hint_text::draw)],
+                    vec![spec(
+                        "hint",
+                        "Hint text",
+                        Some("Helper text below a field"),
+                        widgets::hint_text::draw,
+                    )],
+                ),
+                section(
+                    "data",
+                    "Table",
+                    vec![spec(
+                        "table",
+                        "Table",
+                        Some("Sticky-header data grid — the shared Table widget"),
+                        components::prim_table::draw,
+                    )],
                 ),
             ],
         },

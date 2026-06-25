@@ -1,63 +1,126 @@
-//! `Button` primitive specimen — `tasty_ui_widgets::Button` 격리 카탈로그.
+//! `Button` primitive specimen — 디자인(4) `components/buttons/Button` 카드.
 //!
-//! 디자인 gallery `components.html` 의 Button Spec 과 1:1 대조용. 본체 팝업과
-//! **동일한** `tasty_ui_widgets::Button` 을 호출한다(mirror 아님 — demo=main).
-//! variant(primary/secondary/ghost/danger/agent) × size(sm/md/lg) × state.
+//! 본체 팝업과 **동일한** `tasty_ui_widgets::Button` 을 호출한다(mirror 아님 —
+//! demo=main). variant(primary/secondary/ghost/danger/agent) × size(sm/md/lg) ×
+//! icon × state 를 `cluster` 로 묶고, 하단 `meta` 로 치수/토큰을 노출한다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize};
 
 use super::glyph;
-
-use crate::catalog::specimen::caption;
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-
-    caption(ui, theme, "variant — primary · secondary · ghost · danger · agent (md)");
-    ui.horizontal(|ui| {
-        Button::new("Primary").variant(ButtonVariant::Primary).show(ui, theme);
-        Button::new("Secondary").variant(ButtonVariant::Secondary).show(ui, theme);
-        Button::new("Ghost").variant(ButtonVariant::Ghost).show(ui, theme);
-        Button::new("Danger").variant(ButtonVariant::Danger).show(ui, theme);
-        Button::new("Agent").variant(ButtonVariant::Agent).show(ui, theme);
+    stage(ui, theme, StageVariant::Column, |ui| {
+        cluster(
+            ui,
+            theme,
+            "variant — primary · secondary · ghost · danger · agent",
+            |ui| {
+                Button::new("Primary")
+                    .variant(ButtonVariant::Primary)
+                    .show(ui, theme);
+                Button::new("Secondary")
+                    .variant(ButtonVariant::Secondary)
+                    .show(ui, theme);
+                Button::new("Ghost")
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, theme);
+                Button::new("Danger")
+                    .variant(ButtonVariant::Danger)
+                    .show(ui, theme);
+                Button::new("Agent")
+                    .variant(ButtonVariant::Agent)
+                    .show(ui, theme);
+            },
+        );
+        cluster(ui, theme, "size — sm 24 · md 28 · lg 32", |ui| {
+            Button::new("Small")
+                .variant(ButtonVariant::Secondary)
+                .size(ControlSize::Sm)
+                .show(ui, theme);
+            Button::new("Medium")
+                .variant(ButtonVariant::Secondary)
+                .size(ControlSize::Md)
+                .show(ui, theme);
+            Button::new("Large")
+                .variant(ButtonVariant::Secondary)
+                .size(ControlSize::Lg)
+                .show(ui, theme);
+        });
+        cluster(ui, theme, "icon — leading · trailing · both", |ui| {
+            Button::new("New tab")
+                .variant(ButtonVariant::Primary)
+                .leading_icon(&|ui, rect, c| glyph::PLUS.image(rect.height(), c).paint_at(ui, rect))
+                .show(ui, theme);
+            Button::new("Settings")
+                .variant(ButtonVariant::Secondary)
+                .trailing_icon(&|ui, rect, c| {
+                    glyph::SETTINGS.image(rect.height(), c).paint_at(ui, rect)
+                })
+                .show(ui, theme);
+            Button::new("Search")
+                .variant(ButtonVariant::Ghost)
+                .leading_icon(&|ui, rect, c| {
+                    glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
+                })
+                .trailing_icon(&|ui, rect, c| {
+                    glyph::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+                })
+                .show(ui, theme);
+        });
+        cluster(ui, theme, "state — disabled (opacity 0.45)", |ui| {
+            Button::new("Primary")
+                .variant(ButtonVariant::Primary)
+                .enabled(false)
+                .show(ui, theme);
+            Button::new("Secondary")
+                .variant(ButtonVariant::Secondary)
+                .enabled(false)
+                .show(ui, theme);
+            Button::new("Ghost")
+                .variant(ButtonVariant::Ghost)
+                .enabled(false)
+                .show(ui, theme);
+        });
     });
 
-    ui.add_space(8.0);
-    caption(ui, theme, "size — sm(24) · md(28) · lg(32) (secondary)");
-    ui.horizontal(|ui| {
-        Button::new("Small").variant(ButtonVariant::Secondary).size(ControlSize::Sm).show(ui, theme);
-        Button::new("Medium").variant(ButtonVariant::Secondary).size(ControlSize::Md).show(ui, theme);
-        Button::new("Large").variant(ButtonVariant::Secondary).size(ControlSize::Lg).show(ui, theme);
-    });
-
-    ui.add_space(8.0);
-    caption(ui, theme, "state — disabled (opacity 0.45)");
-    ui.horizontal(|ui| {
-        Button::new("Primary").variant(ButtonVariant::Primary).enabled(false).show(ui, theme);
-        Button::new("Secondary").variant(ButtonVariant::Secondary).enabled(false).show(ui, theme);
-        Button::new("Ghost").variant(ButtonVariant::Ghost).enabled(false).show(ui, theme);
-    });
-
-    ui.add_space(8.0);
-    caption(ui, theme, "icon — leadingIcon · trailingIcon · 양쪽 (icon-size-md, gap space-sm)");
-    ui.horizontal(|ui| {
-        Button::new("New tab")
-            .variant(ButtonVariant::Primary)
-            .leading_icon(&|ui, rect, c| glyph::PLUS.image(rect.height(), c).paint_at(ui, rect))
-            .show(ui, theme);
-        Button::new("Settings")
-            .variant(ButtonVariant::Secondary)
-            .trailing_icon(&|ui, rect, c| glyph::SETTINGS.image(rect.height(), c).paint_at(ui, rect))
-            .show(ui, theme);
-        Button::new("Search")
-            .variant(ButtonVariant::Ghost)
-            .leading_icon(&|ui, rect, c| glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect))
-            .trailing_icon(&|ui, rect, c| glyph::CLOSE.image(rect.height(), c).paint_at(ui, rect))
-            .show(ui, theme);
-    });
-
-    ui.add_space(8.0);
-    caption(ui, theme, "block — fill container width");
-    Button::new("Block primary").variant(ButtonVariant::Primary).block(true).show(ui, theme);
+    meta(
+        ui,
+        theme,
+        &[
+            ("height", "28 · sm 24 · lg 32"),
+            ("padding", "0 space-md"),
+            ("radius", "4"),
+            ("overlay", "hover 8% · active 12%"),
+            ("focus", "2px ring"),
+        ],
+        &[
+            TokenChip::new(
+                "accent-primary",
+                "primary fill",
+                egui::Color32::from(theme.accent_primary()),
+            ),
+            TokenChip::new(
+                "accent-danger",
+                "danger fill",
+                egui::Color32::from(theme.accent_danger()),
+            ),
+            TokenChip::new(
+                "accent-agent",
+                "agent fill",
+                egui::Color32::from(theme.accent_agent()),
+            ),
+            TokenChip::new(
+                "overlay-hover",
+                "hover 8%",
+                egui::Color32::from(theme.overlay_hover()),
+            ),
+            TokenChip::new(
+                "text-on-accent",
+                "label on fill",
+                egui::Color32::from(theme.text_on_accent()),
+            ),
+        ],
+    );
 }

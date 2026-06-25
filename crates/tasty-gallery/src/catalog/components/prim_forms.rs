@@ -1,21 +1,23 @@
-//! Select · Checkbox · Switch primitive specimen — 디자인 gallery 대조.
+//! Select · Checkbox · Switch primitive specimen — 디자인(4) `components/forms` 카드.
+//!
+//! Select(토큰 트리거 + 드롭다운) · Checkbox(16px square) · Switch(28×16 track).
+//! 상태는 thread_local 로 보관. 하단 `meta` 로 치수/토큰 노출.
 
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{checkbox, select, switch};
 
-use crate::catalog::specimen::caption;
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 thread_local! {
     static STATE: RefCell<FormState> = const {
-        RefCell::new(FormState { sel: 0, sel_block: 1, check_a: true, check_b: false, switch_a: true, switch_b: false })
+        RefCell::new(FormState { sel: 0, check_a: true, check_b: false, switch_a: true, switch_b: false })
     };
 }
 
 struct FormState {
     sel: usize,
-    sel_block: usize,
     check_a: bool,
     check_b: bool,
     switch_a: bool,
@@ -23,39 +25,54 @@ struct FormState {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    ui.spacing_mut().item_spacing = egui::vec2(8.0, 10.0);
+    let field_md = theme.field_width_md.value();
     STATE.with(|s| {
         let mut st = s.borrow_mut();
-
-        caption(ui, theme, "Select — 토큰 트리거 + 드롭다운");
-        let opts = ["Mocha (dark)", "Latte (light)", "Auto"];
-        select(ui, theme, "gallery_theme", &mut st.sel, &opts, 200.0, true);
-
-        ui.add_space(10.0);
-        caption(ui, theme, "Select block — fill container width");
-        ui.vertical(|ui| {
-            ui.set_max_width(360.0);
-            // 가용 폭을 폭으로 넘겨 컨테이너를 채운다(디자인 `block`).
-            let w = ui.available_width();
-            select(ui, theme, "gallery_theme_block", &mut st.sel_block, &opts, w, true);
-        });
-
-        ui.add_space(10.0);
-        caption(ui, theme, "Checkbox — checked · unchecked · disabled");
-        ui.horizontal(|ui| {
-            checkbox(ui, theme, &mut st.check_a, "Restore layout", true);
-            checkbox(ui, theme, &mut st.check_b, "Confirm on close", true);
-            let mut off = false;
-            checkbox(ui, theme, &mut off, "Disabled", false);
-        });
-
-        ui.add_space(10.0);
-        caption(ui, theme, "Switch — on · off · disabled");
-        ui.horizontal(|ui| {
-            switch(ui, theme, &mut st.switch_a, Some("Reduced motion"), true);
-            switch(ui, theme, &mut st.switch_b, Some("High contrast"), true);
-            let mut off = false;
-            switch(ui, theme, &mut off, Some("Disabled"), false);
+        stage(ui, theme, StageVariant::Column, |ui| {
+            cluster(ui, theme, "Select — token trigger + dropdown", |ui| {
+                let opts = ["Mocha (dark)", "Latte (light)", "Auto"];
+                select(ui, theme, "gallery_theme", &mut st.sel, &opts, field_md, true);
+            });
+            cluster(ui, theme, "Checkbox — checked · unchecked · disabled", |ui| {
+                checkbox(ui, theme, &mut st.check_a, "Restore layout", true);
+                checkbox(ui, theme, &mut st.check_b, "Confirm on close", true);
+                let mut off = false;
+                checkbox(ui, theme, &mut off, "Disabled", false);
+            });
+            cluster(ui, theme, "Switch — on · off · disabled", |ui| {
+                switch(ui, theme, &mut st.switch_a, Some("Reduced motion"), true);
+                switch(ui, theme, &mut st.switch_b, Some("High contrast"), true);
+                let mut off = false;
+                switch(ui, theme, &mut off, Some("Disabled"), false);
+            });
         });
     });
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("height", "28 control-height"),
+            ("checkbox", "16px square"),
+            ("switch", "28×16 track"),
+            ("accent", "primary"),
+        ],
+        &[
+            TokenChip::new(
+                "accent-primary",
+                "checked fill",
+                egui::Color32::from(theme.accent_primary()),
+            ),
+            TokenChip::new(
+                "surface-raised",
+                "control fill",
+                egui::Color32::from(theme.surface_raised()),
+            ),
+            TokenChip::new(
+                "border-default",
+                "control edge",
+                egui::Color32::from(theme.border_default()),
+            ),
+        ],
+    );
 }
