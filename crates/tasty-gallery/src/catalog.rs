@@ -150,7 +150,7 @@ fn section(id: &'static str, title: &'static str, specs: Vec<Spec>) -> Section {
 /// 모든 페이지의 Section/Spec 트리.
 ///
 /// 기존 specimen `draw` 들을 디자인 분류(research §3.1)에 따라 page/section 으로
-/// 임시 매핑한다 — 33 개 기존 draw 전수 연결. 콘텐츠 재작성은 Round 2.
+/// 임시 매핑한다 — 34 개 기존 draw 전수 연결. 콘텐츠 재작성은 Round 2.
 pub fn pages() -> Vec<Page> {
     vec![
         // ── Foundations ──────────────────────────────────────────────

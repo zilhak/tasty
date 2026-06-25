@@ -296,6 +296,9 @@ fn nav_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     let pad_sm = state.theme.spacing_sm.value();
     let pad_lg = state.theme.spacing_lg.value();
     let row_h = state.theme.item_height_interactive.value();
+    let border_w = state.theme.border_width.value();
+    let margin_h = state.theme.spacing_sm.value() as i8;
+    let margin_v = state.theme.spacing_xs.value() as i8;
 
     let active = state.active_page;
     let pages: Vec<(&'static str, &'static str)> = state
@@ -326,7 +329,8 @@ fn nav_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
                         radius: radius_sm,
                         font_lbl: f_lbl,
                         font_desc: f_desc,
-                        height: row_h,
+                        margin_h,
+                        margin_v,
                     },
                     lbl,
                     desc,
@@ -343,13 +347,13 @@ fn nav_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
                     ui.add_space(pad_lg);
                     // border-left separator.
                     let (r, _) = ui.allocate_exact_size(
-                        egui::vec2(1.0, row_h * 0.8),
+                        egui::vec2(border_w, row_h * 0.8),
                         egui::Sense::hover(),
                     );
                     ui.painter().vline(
                         r.center().x,
                         r.y_range(),
-                        egui::Stroke::new(1.0, separator),
+                        egui::Stroke::new(border_w, separator),
                     );
                     ui.add_space(pad_sm);
                     ui.label(
@@ -468,7 +472,8 @@ struct NavLinkStyle {
     radius: f32,
     font_lbl: f32,
     font_desc: f32,
-    height: f32,
+    margin_h: i8,
+    margin_v: i8,
 }
 
 /// nav Catalog 링크 한 줄 — 좌 lbl + 우 desc, 활성 시 surface-active 배경.
@@ -488,7 +493,7 @@ fn nav_link(
     let frame = egui::Frame::new()
         .fill(bg)
         .corner_radius(s.radius)
-        .inner_margin(egui::Margin::symmetric(8, 4));
+        .inner_margin(egui::Margin::symmetric(s.margin_h, s.margin_v));
     let resp = frame
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
@@ -501,7 +506,6 @@ fn nav_link(
         })
         .response;
     let resp = resp.interact(egui::Sense::click());
-    let _ = s.height;
     resp.clicked()
 }
 
