@@ -3,7 +3,7 @@
 //! `~/.tasty/remote-profiles.toml`(`RemoteProfiles`) + `~/.tasty/passkeys.toml`(`Passkeys`)
 //! 를 GUI 에서 CRUD 한다. CLI/IPC 와 같은 저장 로직을 재사용하므로 표면이 즉시 일관된다.
 //! 프로필은 비밀을 담지 않고 passkey 를 이름으로 참조만 한다. 한 탭 안에서 List/Form/
-//! ConfirmDelete 를 라우팅한다(ssh_tool 과 동일 패턴, 두 번 인스턴스화). headless PopupDef.
+//! ConfirmDelete 를 라우팅한다(Profile·Passkey 두 탭이 동일 패턴, 두 번 인스턴스화). headless PopupDef.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -1629,7 +1629,7 @@ fn indented_hint(ui: &mut egui::Ui, text: egui::RichText) {
     });
 }
 
-// ── detect 워커 (ssh_tool 과 동일 패턴) ───────────────────────────────────
+// ── detect 워커 ───────────────────────────────────
 fn spawn_detect(ctx: &egui::Context, name: String) -> DetectJob {
     let slot: Arc<Mutex<Option<Result<String, String>>>> = Arc::new(Mutex::new(None));
     let slot_w = Arc::clone(&slot);
