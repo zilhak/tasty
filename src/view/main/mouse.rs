@@ -245,8 +245,12 @@ impl MainView {
                 let Some(tracking) = tracking else {
                     return; // terminal 없음
                 };
-                // 트래킹 ON: 우클릭도 앱에 보고 (컨텍스트 메뉴는 트래킹 OFF 에서만).
-                if tracking != tasty_terminal::MouseTrackingMode::None {
+                let shift = self.base.modifiers.shift_key();
+                // 트래킹 ON + Shift 없음: 우클릭을 앱에 보고 (ADR-0019 앱 위임 유지).
+                // Shift+우클릭은 앱에 보고하지 않고 tasty 컨텍스트 메뉴로 우회한다 (ADR-0022
+                // — 앱 위임을 깨지 않는 opt-in modifier 우회, xterm/iTerm2 표준 관례).
+                // press·release 모두 report 경로로 새지 않도록 Shift 시 분기를 먼저 빠진다.
+                if right_click_delegates_to_app(tracking, shift) {
                     self.report_mouse_event(
                         surface_id,
                         x,
@@ -694,6 +698,12 @@ fn encode_wheel_report(sgr: bool, btn: u32, col: usize, row: usize, count: usize
     bytes
 }
 
+/// 우클릭을 앱(PTY)에 위임할지 결정한다. 트래킹 ON 이고 Shift 가 없을 때만 위임하고
+/// (ADR-0019), 트래킹 OFF 이거나 Shift+우클릭이면 tasty 컨텍스트 메뉴로 우회한다 (ADR-0022).
+fn right_click_delegates_to_app(tracking: tasty_terminal::MouseTrackingMode, shift: bool) -> bool {
+    tracking != tasty_terminal::MouseTrackingMode::None && !shift
+}
+
 #[cfg(test)]
 mod wheel_tests {
     use super::encode_wheel_report;
@@ -726,5 +736,51 @@ mod wheel_tests {
         // 32 + 300 = 332 → clamp 255.
         let out = encode_wheel_report(false, 64, 300, 1, 1);
         assert_eq!(out[4], 255);
+    }
+}
+
+#[cfg(test)]
+mod right_click_tests {
+    use super::right_click_delegates_to_app;
+    use tasty_terminal::MouseTrackingMode;
+
+    #[test]
+    fn tracking_on_no_shift_delegates_to_app() {
+        // ADR-0019: 트래킹 ON + Shift 없음 → 앱에 위임 (tasty 메뉴 안 뜸).
+        assert!(right_click_delegates_to_app(
+            MouseTrackingMode::Click,
+            false
+        ));
+        assert!(right_click_delegates_to_app(
+            MouseTrackingMode::CellMotion,
+            false
+        ));
+        assert!(right_click_delegates_to_app(
+            MouseTrackingMode::AllMotion,
+            false
+        ));
+    }
+
+    #[test]
+    fn tracking_on_with_shift_bypasses_to_menu() {
+        // ADR-0022: 트래킹 ON + Shift → 앱에 보고 안 하고 tasty 컨텍스트 메뉴로 우회.
+        assert!(!right_click_delegates_to_app(
+            MouseTrackingMode::Click,
+            true
+        ));
+        assert!(!right_click_delegates_to_app(
+            MouseTrackingMode::AllMotion,
+            true
+        ));
+    }
+
+    #[test]
+    fn tracking_off_always_shows_menu() {
+        // 트래킹 OFF: Shift 유무와 무관하게 메뉴 (위임 안 함).
+        assert!(!right_click_delegates_to_app(
+            MouseTrackingMode::None,
+            false
+        ));
+        assert!(!right_click_delegates_to_app(MouseTrackingMode::None, true));
     }
 }

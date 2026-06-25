@@ -31,3 +31,4 @@
 | 0019 | [마우스 버튼/드래그 리포팅 — 트래킹 앱에 전면 위임, 로컬 선택 우회는 보류](0019-mouse-button-reporting-app-delegation.md) | Accepted | 2026-06-24 | terminal, vte, mouse, mouse-reporting, sgr, input, selection, scope |
 | 0020 | [갤러리는 본체 UI 컴포넌트의 완전한 단일 출처 — cut 금지, gallery-first](0020-gallery-complete-component-source.md) | Accepted | 2026-06-24 | gallery, design-parity, demo-main, component-catalog, workflow, ui |
 | 0021 | [자체 업데이트 확인 기능(update-check) 전면 제거](0021-remove-update-check-feature.md) | Accepted | 2026-06-25 | update, auto-update, scope, distribution, removal, maintenance, cli, plugin |
+| 0022 | [Shift+우클릭 modifier 우회 + 트래킹 안내 toast](0022-shift-rightclick-context-menu-bypass.md) | Accepted | 2026-06-25 | terminal, mouse, mouse-reporting, context-menu, modifier, discoverability, ux |
