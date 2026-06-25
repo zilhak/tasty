@@ -286,6 +286,11 @@ impl Tab {
 
     // ── Initialization ──
 
+    /// deferred PTY spawn 을 영구 실패로 판단하기까지 허용하는 연속 시도 횟수.
+    /// transient 실패는 보통 1~2 프레임 내 성공하므로 그 전에 치유되고, 이 상한에
+    /// 도달하면 reify 의 매 프레임 재시도 폭주를 멈춘다.
+    const MAX_SPAWN_ATTEMPTS: u32 = 5;
+
     /// 특정 surface_id에 해당하는 deferred placeholder를 찾아 PTY를 spawn하고
     /// `TerminalSurface` marker로 교체. spawn된 경우 `Some((terminal, persist_id))`
     /// 를 반환 — caller가 `engine.terminals.insert` + `set_scrollback_persist_id`
@@ -297,14 +302,34 @@ impl Tab {
         let layout = self.layout_opt.as_mut()?;
         let leaf = layout.find_leaf_mut(surface_id)?;
         let empty = leaf.as_any_mut().downcast_mut::<super::EmptySurface>()?;
+        // 영구 실패로 판단된 placeholder 는 더 이상 재시도하지 않는다. reify 는 매
+        // 프레임(~60fps) 호출되므로 이 가드가 없으면 초당 수십 회 spawn + 로그 플러드.
+        if empty.spawn_attempts >= Self::MAX_SPAWN_ATTEMPTS {
+            return None;
+        }
         // spawn 정보를 take 하지 않고 clone 한다. PTY spawn 이 실패해도
         // placeholder 의 deferred_spawn 이 남아 있어야 다음 reify 트리거에서
         // 재시도된다. (waker 는 Arc, 나머지는 작은 문자열/벡터라 clone 이 저렴.)
         let spawn = empty.deferred_spawn.clone()?;
         let persist_id = spawn.scrollback_persist_id.clone();
-        // 실패 시 `?` 로 None 반환 — 이때 leaf 는 여전히 deferred EmptySurface 라
-        // is_surface_deferred == true 가 유지되어 재시도 경로가 살아 있다.
-        let terminal = spawn_terminal_from_deferred(surface_id, spawn)?;
+        let terminal = match spawn_terminal_from_deferred(surface_id, spawn) {
+            Ok(t) => t,
+            Err(e) => {
+                // 실패: leaf 는 여전히 deferred EmptySurface 라 재시도 경로가 살아 있다.
+                // 실패 횟수를 누적해 상한에서 폭주를 멈춘다. transient 실패는 상한 전에
+                // 성공해 자가 치유된다.
+                empty.spawn_attempts += 1;
+                if empty.spawn_attempts >= Self::MAX_SPAWN_ATTEMPTS {
+                    tracing::error!(
+                        "surface {surface_id}: PTY spawn {}회 연속 실패 — 재시도 중단: {e}",
+                        Self::MAX_SPAWN_ATTEMPTS
+                    );
+                } else if empty.spawn_attempts == 1 {
+                    tracing::warn!("surface {surface_id}: PTY spawn 실패 (재시도 예정): {e}");
+                }
+                return None;
+            }
+        };
         // spawn 성공: 이제 placeholder 를 TerminalSurface marker 로 교체한다.
         // (EmptySurface 전체가 drop 되므로 deferred_spawn 도 함께 사라진다.)
         let ts: Box<dyn Surface> = Box::new(TerminalSurface { id: surface_id });
@@ -462,7 +487,7 @@ fn collect_deferred_ids(layout: &SurfaceLayout, out: &mut Vec<SurfaceId>) {
 fn spawn_terminal_from_deferred(
     surface_id: SurfaceId,
     spawn: super::terminal_surface::DeferredSpawn,
-) -> Option<Terminal> {
+) -> Result<Terminal, String> {
     let shell_ref = spawn.shell.as_deref();
     let shell_args: Vec<&str> = spawn.shell_args.iter().map(|s| s.as_str()).collect();
     let working_dir = spawn.working_dir.as_deref();
@@ -483,11 +508,8 @@ fn spawn_terminal_from_deferred(
         },
         spawn.waker,
     ) {
-        Ok(terminal) => Some(terminal),
-        Err(e) => {
-            tracing::error!("lazy PTY init failed: {e}");
-            None
-        }
+        Ok(terminal) => Ok(terminal),
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -551,6 +573,45 @@ mod tests {
 
         // 정보가 보존되었으므로 두 번째 reify 호출도 동일하게 재시도 가능.
         assert!(tab.ensure_initialized(sid).is_none());
+        assert!(tab.is_surface_deferred(sid));
+    }
+
+    /// 테스트 헬퍼: layout 안 EmptySurface 의 spawn_attempts 를 읽는다.
+    fn spawn_attempts_of(tab: &Tab, sid: SurfaceId) -> Option<u32> {
+        tab.layout_opt
+            .as_ref()?
+            .find_surface(sid)?
+            .as_any()
+            .downcast_ref::<EmptySurface>()
+            .map(|e| e.spawn_attempts)
+    }
+
+    /// 영구 실패 케이스: 연속 실패가 MAX_SPAWN_ATTEMPTS 에서 capped 되어 더 이상
+    /// spawn 을 재시도하지 않는다 (reify 매 프레임 폭주 차단). placeholder 는 남는다.
+    #[test]
+    fn ensure_initialized_stops_after_max_attempts() {
+        let sid: SurfaceId = 99;
+        let mut tab = deferred_tab(
+            sid,
+            deferred_spawn(Some("/nonexistent/tasty_no_such_shell")),
+        );
+        assert!(tab.is_surface_deferred(sid));
+
+        // 상한보다 넉넉히 더 호출해도 매번 None.
+        for _ in 0..(Tab::MAX_SPAWN_ATTEMPTS + 3) {
+            assert!(
+                tab.ensure_initialized(sid).is_none(),
+                "영구 실패는 항상 None"
+            );
+        }
+
+        // 실패 카운터가 상한에서 capped — 더 늘지 않아 폭주가 멈췄다는 증거.
+        assert_eq!(
+            spawn_attempts_of(&tab, sid),
+            Some(Tab::MAX_SPAWN_ATTEMPTS),
+            "spawn_attempts 가 MAX 에서 capped 되어야 함"
+        );
+        // placeholder 는 여전히 남는다 (TerminalSurface 로 교체되지 않음).
         assert!(tab.is_surface_deferred(sid));
     }
 
