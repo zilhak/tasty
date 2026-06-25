@@ -27,7 +27,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 row(ui, theme, icons::SPLIT, "Split right", "⌘D", false);
                 row(ui, theme, icons::SETTINGS, "Open settings", "⌘,", false);
                 row(ui, theme, icons::PORT, "Show listening ports", "", false);
-                row(ui, theme, icons::ROCKET, "Check for updates", "", false);
             });
             kit::hsep(ui, theme);
 
