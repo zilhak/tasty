@@ -12,6 +12,7 @@ use crate::{
 };
 
 #[derive(Debug)]
+// 이유: test 전용 mock(`MemoryStorage` impl). `secret` 필드는 아직 미구현 메서드용 — test helper 유지.
 #[allow(dead_code)]
 pub struct InMemoryStorage {
     config: MemoryConfig,

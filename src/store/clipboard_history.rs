@@ -62,6 +62,7 @@ impl ClipboardEntry {
 
     /// The raw text content, if any.
     /// std-style accessor — UI 의 "text vs image" 분기 추가 시 호출.
+    // 이유: 미배선 미래용 accessor (호출처 0). `is_image()` 와 짝, 부활 계획 흔적 有 → scaffolding 유지.
     #[allow(dead_code)]
     pub fn text(&self) -> Option<&str> {
         match &self.content {
@@ -100,6 +101,7 @@ impl ClipboardHistory {
     }
 
     /// std-style accessor — UI 의 "history empty" 분기 추가 시 호출.
+    // 이유: `len()` 과 짝 (clippy len_without_is_empty 관례) + 미배선 미래용 → 유지.
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()

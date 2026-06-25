@@ -17,6 +17,7 @@ pub(crate) struct PlatformMapping {
     ptr: *mut u8,
     len: usize,
     /// fd는 mmap 영역의 backing — munmap 이후 자동 close. 명시 사용처는 없다.
+    // 이유: RAII 가드 — 읽히지 않지만 munmap 까지 fd 를 살려둬야 함(삭제 시 즉시 close 버그).
     #[allow(dead_code)]
     fd: OwnedFd,
 }
@@ -47,6 +48,7 @@ impl PlatformPayload {
 
     /// fd 소유권을 호출자로 명시 이양 — `raw_fd`(빌림)와 짝. `round_trip` 통합
     /// 테스트가 이 경로(호출자 fd 소유권 회수)를 검증한다.
+    // 이유: linux.rs 의 동명 메서드와 플랫폼 대칭 API (한쪽만 삭제 시 분기). 판단필요 — conductor 검토.
     #[allow(dead_code)]
     pub(crate) fn into_raw_fd(self) -> RawFd {
         self.fd.into_raw_fd()

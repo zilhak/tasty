@@ -158,6 +158,7 @@ impl CodexState {
     /// codex 0.130 의 hook 시스템은 Notification event 가 없어 현재 fire 되지
     /// 않지만, codex 가 향후 추가하거나 외부에서 manual invoke 할 경우를 위해
     /// 보존. `state_of` 의 needs_input 분기와 짝.
+    // 이유: codex hook 미지원으로 현재 미호출 — 향후 codex Notification event/manual invoke 대비 보존.
     #[allow(dead_code)]
     pub fn set_needs_input(&mut self, child_surface: u32, val: bool) {
         self.needs_input.insert(child_surface, val);

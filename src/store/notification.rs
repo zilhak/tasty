@@ -105,6 +105,7 @@ impl NotificationStore {
 
     /// Unread count for a specific workspace.
     /// per-workspace 변종 — workspace tab badge 추가 시 호출.
+    // 이유: 단위 테스트(이 파일 #[cfg(test)])가 검증하는 production API. 비-test 빌드에선 미사용 → 유지.
     #[allow(dead_code)]
     pub fn unread_count_for_workspace(&self, workspace_id: WorkspaceId) -> usize {
         self.notifications
