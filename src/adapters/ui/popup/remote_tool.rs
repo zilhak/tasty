@@ -448,7 +448,9 @@ fn draw_profiles_tab(
             {
                 if act {
                     profiles.remove(&name);
-                    let _ = profiles.save();
+                    if let Err(e) = profiles.save() {
+                        tracing::warn!("remote profile 삭제 후 저장 실패: {e}");
+                    }
                 }
                 st.profile_view = Sub::List;
             }
@@ -1249,7 +1251,9 @@ fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
                 if act {
                     let mut pk = Passkeys::load();
                     pk.remove(&name);
-                    let _ = pk.save();
+                    if let Err(e) = pk.save() {
+                        tracing::warn!("passkey 삭제 후 저장 실패: {e}");
+                    }
                 }
                 st.passkey_view = Sub::List;
             }
