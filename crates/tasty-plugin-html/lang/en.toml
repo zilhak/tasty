@@ -4,3 +4,15 @@ html = "HTML"
 [html]
 "namespace.desc" = "HTML viewer surface namespace"
 "cli.desc" = "HTML viewer commands"
+"settings.zoom" = "Default zoom"
+"settings.zoom_suffix" = "%"
+"settings.color_scheme" = "Color scheme"
+"settings.allow_remote" = "Allow remote content"
+"settings.sandbox" = "Sandbox scripts"
+"settings.note" = "Controls how the built-in HTML viewer renders previews opened from the terminal. Remote content is blocked by default."
+"settings.scheme.follow" = "Follow theme"
+"settings.scheme.light" = "Light"
+"settings.scheme.dark" = "Dark"
+
+[settings.subtab]
+html = "HTML"

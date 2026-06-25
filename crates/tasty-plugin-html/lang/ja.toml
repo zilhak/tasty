@@ -4,3 +4,15 @@ html = "HTML"
 [html]
 "namespace.desc" = "HTML ビューア surface namespace"
 "cli.desc" = "HTML ビューアコマンド"
+"settings.zoom" = "既定のズーム"
+"settings.zoom_suffix" = "%"
+"settings.color_scheme" = "カラースキーム"
+"settings.allow_remote" = "リモートコンテンツを許可"
+"settings.sandbox" = "スクリプトをサンドボックス化"
+"settings.note" = "ターミナルから開いたプレビューを組み込み HTML ビューアがどのように描画するかを制御します。リモートコンテンツは既定でブロックされます。"
+"settings.scheme.follow" = "テーマに従う"
+"settings.scheme.light" = "ライト"
+"settings.scheme.dark" = "ダーク"
+
+[settings.subtab]
+html = "HTML"
