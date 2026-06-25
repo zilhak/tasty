@@ -30,6 +30,7 @@ pub mod search_bar;
 pub mod settings;
 pub mod sidebar;
 pub mod surface_highlights;
+pub mod switch_overlay;
 pub mod tab_bar;
 pub mod toast;
 pub mod tools_menu;

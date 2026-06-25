@@ -548,6 +548,24 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "switch",
+                    "Switch-number overlay",
+                    vec![
+                        spec(
+                            "switch-tab",
+                            "Tab switch — modifier held",
+                            Some("Ctrl held · number keycap replaces each tab icon, in place"),
+                            components::switch_overlay::draw_tab,
+                        ),
+                        spec(
+                            "switch-ws",
+                            "Workspace switch — modifier held",
+                            Some("Alt held · keycap replaces status dot / letter avatar"),
+                            components::switch_overlay::draw_workspace,
+                        ),
+                    ],
+                ),
+                section(
                     "approval",
                     "Agent approval",
                     vec![spec(

@@ -1,0 +1,469 @@
+//! `switch-overlay` specimen — Switch-number overlay (디자인 `gallery/overlays.jsx`
+//! Switch-number overlay 섹션).
+//!
+//! modifier(탭=tab_switch_modifier·기본 Ctrl / 워크스페이스=workspace_switch_modifier·
+//! 기본 Alt)를 **누르고 있는 동안** 각 항목의 leading indicator(탭 아이콘 / ws status
+//! dot / collapsed letter avatar)를 숫자 키캡으로 **제자리 교체**한다. 폭/리플로 변화
+//! 없는 16px slot, scrim 없음. 현재 항목은 **accent-filled** 키캡으로 구분.
+//!
+//! 키캡 형상은 본체 `kbd()` (`crates/tasty-ui-widgets/src/chip.rs`) 와 동일 레시피
+//! (surface-raised fill + border-strong + 하단 2px edge + mono micro). active 변종만
+//! accent_primary fill + text_on_accent 숫자. 신규 Theme 필드 없음 — P0 매핑대로 기존
+//! 접근자(`docs/design/systems/design-token-mapping.md` switch-overlay 섹션).
+
+use tasty_type_appearance::theme::Theme;
+
+use crate::catalog::icons::{FILE, MockGlyph, TERMINAL};
+use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+// 디자인 고정 px (= switch-overlay 토큰, chip.rs Kbd const 와 동일):
+//   size       = switch-overlay-size = kbd-size = size-16
+//   shadow-depth = switch-overlay-shadow-depth = kbd-shadow-depth = size-2
+const KEYCAP_SIZE: f32 = 16.0;
+const KEYCAP_BOTTOM_BORDER: f32 = 2.0;
+
+/// 한 자리 숫자 키캡을 16px slot 에 그린다 (본체 `kbd()` 형상 재현).
+/// `active` = 현재 탭/워크스페이스 → accent_primary fill + text_on_accent 숫자.
+fn num_cap(p: &egui::Painter, theme: &Theme, center: egui::Pos2, digit: &str, active: bool) {
+    let rect = egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE, KEYCAP_SIZE));
+    let radius = theme.corner_radius_sm.value();
+    let bw = theme.border_width.value();
+    let (fill, edge, fg) = if active {
+        (
+            theme.accent_primary(),
+            theme.accent_primary(),
+            theme.text_on_accent(),
+        )
+    } else {
+        (
+            theme.surface_raised(),
+            theme.border_strong(),
+            theme.text_secondary(),
+        )
+    };
+    p.rect_filled(rect, radius, egui::Color32::from(fill));
+    p.rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(bw, egui::Color32::from(edge)),
+        egui::StrokeKind::Inside,
+    );
+    // 하단 2px edge (switch-overlay-shadow-depth = size-2), Kbd 키캡과 동일.
+    p.line_segment(
+        [
+            egui::pos2(rect.left() + radius, rect.bottom() - bw),
+            egui::pos2(rect.right() - radius, rect.bottom() - bw),
+        ],
+        egui::Stroke::new(KEYCAP_BOTTOM_BORDER, egui::Color32::from(edge)),
+    );
+    p.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        digit,
+        egui::FontId::monospace(theme.font_size_micro.value()),
+        egui::Color32::from(fg),
+    );
+}
+
+fn paint_glyph(
+    ui: &mut egui::Ui,
+    glyph: MockGlyph,
+    center: egui::Pos2,
+    size: f32,
+    color: egui::Color32,
+) {
+    let r = egui::Rect::from_center_size(center, egui::vec2(size, size));
+    glyph.image(size, color).paint_at(ui, r);
+}
+
+// ── Tab switch overlay ──────────────────────────────────────────────
+
+/// (glyph, label, digit, active)
+const TABS: &[(MockGlyph, &str, &str, bool)] = &[
+    (TERMINAL, "server", "1", false),
+    (TERMINAL, "dev", "2", false),
+    (TERMINAL, "agent", "3", true),
+    (FILE, "README.md", "4", false),
+];
+
+fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
+    let h = theme.item_height_interactive.value(); // 28
+    let pad = theme.spacing_md.value(); // 12
+    let gap = theme.spacing_sm.value(); // 8
+    let bw = theme.border_width.value();
+    let font = egui::FontId::proportional(theme.font_size_body.value());
+
+    // 탭 폭 = pad + 아이콘slot(16) + gap + 라벨폭 + pad (디자인 fit-content).
+    let widths: Vec<f32> = TABS
+        .iter()
+        .map(|(_, label, _, _)| {
+            let lw = ui.fonts(|f| {
+                f.layout_no_wrap(
+                    (*label).to_owned(),
+                    font.clone(),
+                    egui::Color32::PLACEHOLDER,
+                )
+                .size()
+                .x
+            });
+            pad + KEYCAP_SIZE + gap + lw + pad
+        })
+        .collect();
+    let total: f32 = widths.iter().sum();
+
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(total, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+
+    let mut x = rect.min.x;
+    for (i, (glyph, label, digit, active)) in TABS.iter().enumerate() {
+        let tw = widths[i];
+        let tab = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(tw, h));
+        if *active {
+            p.rect_filled(tab, 0.0, egui::Color32::from(theme.bg_panel()));
+            let ind = theme.tab_indicator_width.value();
+            let bar = egui::Rect::from_min_size(
+                egui::pos2(tab.min.x, tab.max.y - ind),
+                egui::vec2(tw, ind),
+            );
+            p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
+        }
+        if i > 0 {
+            p.vline(
+                x,
+                rect.y_range(),
+                egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+            );
+        }
+        // leading 16px slot: held → 숫자 키캡, else 표면 아이콘.
+        let slot_c = egui::pos2(tab.min.x + pad + KEYCAP_SIZE * 0.5, tab.center().y);
+        if held {
+            num_cap(&p, theme, slot_c, digit, *active);
+        } else {
+            paint_glyph(
+                ui,
+                *glyph,
+                slot_c,
+                theme.icon_glyph_size_md.value(),
+                egui::Color32::from(if *active {
+                    theme.text_primary()
+                } else {
+                    theme.text_muted()
+                }),
+            );
+        }
+        p.text(
+            egui::pos2(tab.min.x + pad + KEYCAP_SIZE + gap, tab.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            font.clone(),
+            egui::Color32::from(if *active {
+                theme.text_primary()
+            } else {
+                theme.text_muted()
+            }),
+        );
+        x += tw;
+    }
+    // strip 외곽선 (corner 위 덮어쓰기 방지 위해 콘텐츠 뒤).
+    p.rect_stroke(
+        rect,
+        theme.corner_radius.value(),
+        egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+        egui::StrokeKind::Inside,
+    );
+}
+
+pub fn draw_tab(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        spec::cluster(ui, theme, "released — surface icon", |ui| {
+            tab_strip(ui, theme, false)
+        });
+        spec::cluster(
+            ui,
+            theme,
+            "Ctrl held — icon slot becomes the keycap",
+            |ui| tab_strip(ui, theme, true),
+        );
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("widget", "Kbd keycap · 16px"),
+            ("content", "digit only · 0 = 10th tab"),
+            ("placement", "replaces leading icon, in place"),
+            ("range", "1–9 + 0; 11th tab onward: none"),
+            ("active tab", "accent-filled keycap"),
+            ("scrim", "none"),
+            ("appear", "90ms fade · release 0ms"),
+        ],
+        &[
+            TokenChip::new(
+                "switch-overlay-bg",
+                "keycap fill",
+                theme.surface_raised().into(),
+            ),
+            TokenChip::new(
+                "switch-overlay-active-bg",
+                "active-tab keycap",
+                theme.accent_primary().into(),
+            ),
+            TokenChip::new(
+                "switch-overlay-border",
+                "keycap edge",
+                theme.border_strong().into(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "숫자 = 누르는 키 그 자체 → 10번째 탭은 \"10\" 이 아니라 0 (Ctrl+0 대응). 11번째 \
+         탭부터는 단축키가 없으니 키캡도 없다 — 작동 안 할 숫자는 칠하지 않는다.",
+    );
+}
+
+// ── Workspace switch overlay ────────────────────────────────────────
+
+/// (digit, name, sub, status, active)
+const WS_ROWS: &[(&str, &str, &str, WsStatus, bool)] = &[
+    ("1", "tasty-core", "main · 2 tabs", WsStatus::Running, false),
+    ("2", "ai-review", "agent", WsStatus::Agent, true),
+    ("3", "infra", "idle", WsStatus::Idle, false),
+    ("4", "docs-site", "idle", WsStatus::Idle, false),
+];
+
+#[derive(Clone, Copy)]
+enum WsStatus {
+    Running,
+    Agent,
+    Idle,
+}
+
+fn status_color(theme: &Theme, s: WsStatus) -> egui::Color32 {
+    egui::Color32::from(match s {
+        WsStatus::Running => theme.accent_success(),
+        WsStatus::Agent => theme.accent_agent(),
+        WsStatus::Idle => theme.text_muted(),
+    })
+}
+
+fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
+    let w = theme.field_width_lg.value() - theme.spacing_md.value() * 1.0; // ≈188
+    let pad = theme.spacing_sm.value(); // 8
+    let gap = theme.spacing_sm.value(); // 8
+    let bw = theme.border_width.value();
+    let lead = KEYCAP_SIZE; // 16px slot (dot/numcap 공통)
+    let text_x_off = pad + lead + gap; // 32 — divider margin-left 와 동일
+
+    let head_h = theme.spacing_lg.value() + theme.spacing_xs.value(); // 10+4 ≈ 헤더 영역
+    let name_lh = theme.font_size_body.value() + theme.spacing_xs.value(); // ≈17
+    let sub_lh = theme.font_size_caption.value() + theme.spacing_xs.value() * 0.75; // ≈14
+    let row_h = pad + name_lh + 1.0 + sub_lh + pad;
+    let h = head_h + row_h * WS_ROWS.len() as f32;
+
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+
+    // 헤더 "WORKSPACES".
+    p.text(
+        egui::pos2(
+            rect.min.x + theme.spacing_sm.value(),
+            rect.min.y + theme.spacing_sm.value(),
+        ),
+        egui::Align2::LEFT_TOP,
+        "WORKSPACES",
+        egui::FontId::proportional(theme.sidebar_section_heading_font_size.value()),
+        egui::Color32::from(theme.text_muted()),
+    );
+
+    let mut y = rect.min.y + head_h;
+    for (i, (digit, name, sub, status, active)) in WS_ROWS.iter().enumerate() {
+        let row = egui::Rect::from_min_size(egui::pos2(rect.min.x, y), egui::vec2(w, row_h));
+        if *active {
+            p.rect_filled(row, 0.0, egui::Color32::from(theme.surface_active()));
+            let bar = egui::Rect::from_min_size(
+                row.min,
+                egui::vec2(theme.focus_ring_width.value(), row.height()),
+            );
+            p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
+        } else if i > 0 {
+            // 행간 divider — 텍스트 시작(32)부터 우측 끝까지.
+            p.hline(
+                (rect.min.x + text_x_off)..=rect.max.x,
+                row.min.y,
+                egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+            );
+        }
+
+        let name_cy = row.min.y + pad + name_lh * 0.5;
+        let slot_c = egui::pos2(row.min.x + pad + lead * 0.5, name_cy);
+        if held {
+            num_cap(&p, theme, slot_c, digit, *active);
+        } else {
+            // status dot — 16px slot 중앙에 8px dot.
+            p.circle_filled(
+                slot_c,
+                theme.status_dot_size.value() * 0.5,
+                status_color(theme, *status),
+            );
+        }
+        p.text(
+            egui::pos2(row.min.x + text_x_off, name_cy),
+            egui::Align2::LEFT_CENTER,
+            name,
+            egui::FontId::proportional(theme.font_size_body.value()),
+            egui::Color32::from(if *active {
+                theme.text_primary()
+            } else {
+                theme.text_secondary()
+            }),
+        );
+        p.text(
+            egui::pos2(
+                row.min.x + text_x_off,
+                name_cy + name_lh * 0.5 + 1.0 + sub_lh * 0.5,
+            ),
+            egui::Align2::LEFT_CENTER,
+            sub,
+            egui::FontId::proportional(theme.font_size_caption.value()),
+            egui::Color32::from(theme.text_muted()),
+        );
+        y += row_h;
+    }
+
+    p.rect_stroke(
+        rect,
+        theme.corner_radius.value(),
+        egui::Stroke::new(bw, egui::Color32::from(theme.separator)),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// (digit | None=letter only, letter, status, active)
+const RAIL_ITEMS: &[(Option<&str>, &str, WsStatus, bool)] = &[
+    (Some("1"), "T", WsStatus::Running, false),
+    (Some("2"), "A", WsStatus::Agent, true),
+    (Some("3"), "I", WsStatus::Idle, false),
+    (None, "D", WsStatus::Idle, false), // 10번째 밖 가정 — letter 유지
+];
+
+fn rail_ws(ui: &mut egui::Ui, theme: &Theme) {
+    let slot = theme.item_height_interactive.value(); // 28
+    let pad = theme.spacing_sm.value(); // 8
+    let gap = theme.spacing_xs.value(); // 4
+    let bw = theme.border_width.value();
+    let w = slot + theme.spacing_lg.value(); // 28+16 ≈ 44
+
+    let h = pad + (slot + gap) * RAIL_ITEMS.len() as f32;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+
+    let cx = rect.center().x;
+    let mut y = rect.min.y + pad;
+    for (digit, letter, _status, active) in RAIL_ITEMS {
+        let area =
+            egui::Rect::from_center_size(egui::pos2(cx, y + slot * 0.5), egui::vec2(slot, slot));
+        if *active {
+            p.rect_filled(
+                area,
+                theme.corner_radius.value(),
+                egui::Color32::from(theme.surface_active()),
+            );
+            p.rect_stroke(
+                area,
+                theme.corner_radius.value(),
+                egui::Stroke::new(bw, egui::Color32::from(theme.accent_primary())),
+                egui::StrokeKind::Inside,
+            );
+        }
+        match digit {
+            Some(d) => num_cap(&p, theme, area.center(), d, *active),
+            None => {
+                p.text(
+                    area.center(),
+                    egui::Align2::CENTER_CENTER,
+                    letter,
+                    egui::FontId::monospace(theme.font_size_body.value()),
+                    egui::Color32::from(theme.text_secondary()),
+                );
+            }
+        }
+        y += slot + gap;
+    }
+}
+
+pub fn draw_workspace(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(ui, theme, "Full · released", |ui| {
+            full_ws(ui, theme, false)
+        });
+        spec::cluster(ui, theme, "Full · Alt held", |ui| full_ws(ui, theme, true));
+        spec::cluster(ui, theme, "Collapsed rail · Alt held", |ui| {
+            rail_ws(ui, theme)
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("widget", "Kbd keycap · 16px"),
+            ("content", "digit only (1–9)"),
+            ("full placement", "replaces status dot"),
+            ("collapsed", "replaces letter avatar"),
+            ("range", "1–9 only; 10th onward: none"),
+            ("active ws", "accent-filled keycap"),
+            ("scrim", "none"),
+        ],
+        &[
+            TokenChip::new(
+                "switch-overlay-bg",
+                "keycap fill",
+                theme.surface_raised().into(),
+            ),
+            TokenChip::new(
+                "switch-overlay-active-bg",
+                "active-ws keycap",
+                theme.accent_primary().into(),
+            ),
+            TokenChip::new(
+                "switch-overlay-active-fg",
+                "digit on accent",
+                theme.text_on_accent().into(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "워크스페이스 단축키는 1–9 뿐(0 없음) → 10번째부터는 키캡 없음. collapsed rail 은 \
+         그 항목의 letter avatar 를 그대로 유지한다(맨 아래 D). 바인딩은 단축키와 같은 \
+         keybindings 소스에서 읽으므로 modifier 를 재바인딩하면 오버레이도 따라간다.",
+    );
+
+    spec::do_(
+        ui,
+        theme,
+        "라벨을 덮지 말고 leading indicator 를 교체한다 — 키캡 자체의 surface-raised \
+         fill + border 가 탭/사이드바 배경 위에서 4.5:1 을 확보해 scrim 이 필요 없다.",
+    );
+}

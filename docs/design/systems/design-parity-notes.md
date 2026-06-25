@@ -318,3 +318,21 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - **근거(2026-06-25)**: switch-number overlay 8 토큰 전부 기존 접근자/`Kbd` 위젯 상수(`chip.rs`
   `KBD_HEIGHT/KBD_BOTTOM_BORDER`)·`font_size_micro` 로 커버 → P0 에서 theme.rs 무변경. 매핑은
   `design-token-mapping.md` "switch-number overlay (chrome)" 섹션.
+
+---
+
+## 갤러리 — inline 키캡 위젯은 좌표 slot 에 못 끼운다 → 형상 재현
+
+- **증상**: switch-number overlay 는 탭 스트립/사이드바 행 중간의 *정해진 16px slot*(아이콘/
+  dot 자리)에 키캡을 그려야 한다. 본체 `kbd()`(`crates/tasty-ui-widgets/src/chip.rs`)를 그대로
+  부르고 싶지만, kbd 는 `ui.horizontal` + `allocate_exact_size` 로 **자체 레이아웃 흐름에 inline
+  배치**하는 위젯이라 임의 좌표 slot 에 끼울 수 없다.
+- **원인**: 갤러리 mock(tab_bar/sidebar specimen)은 `ui.painter_at(rect)` 로 좌표 painting 한다.
+  inline 위젯(kbd)과 좌표 painting 은 배치 모델이 달라 섞이지 않는다.
+- **처방**: 키캡 *형상*을 painter 로 재현하는 헬퍼(`num_cap`)를 둔다. 레시피는 `chip.rs` 의 kbd
+  와 1:1 — `corner_radius_sm` radius, `border_width` 1px stroke(Inside), 하단 2px line(=
+  switch-overlay-shadow-depth=size-2), `font_size_micro` mono, fill `surface_raised`/border
+  `border_strong`/fg `text_secondary`. active 변종만 `accent_primary` fill + `text_on_accent`
+  숫자. tab_bar.rs 가 본체 tab 시각을 painter 로 재현하는 것과 같은 방식.
+- **근거(2026-06-25)**: `crates/tasty-gallery/src/catalog/components/switch_overlay.rs`. 신규
+  Theme 필드 없음(P0). 본체 P2 draw 도 같은 좌표 painting 이 될 것이므로 형상 로직 공유 가능.

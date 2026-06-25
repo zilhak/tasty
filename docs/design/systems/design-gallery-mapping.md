@@ -37,6 +37,29 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 상태(`FILTER_POPUP_ID`)에 의존하므로 `(ui, &Theme)` 시그니처로 분리 불가. 컨테이너가 등록 가능해질
 때 함께 등록한다. 검증 경로 동일(`debug.host_popup.open remote_tool` + `ui.screenshot`).
 
+## switch_overlay (Overlays)
+
+디자인 `gallery/overlays.jsx` "Switch-number overlay" 섹션 ↔ 본체 draw 는 **P2 예정**
+(`src/adapters/ui/.../tab_bar.rs` 탭 스트립 + `sidebar/{full,collapsed}.rs`). 갤러리 specimen
+은 P1 에서 본체보다 먼저 추가됨 (gallery-first, ADR-0020).
+
+| 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |
+|---|---|---|
+| `NumCap`(키캡) | `num_cap` (헬퍼) — 본체 `kbd()`(`chip.rs`) 형상 재현 + active accent 변종 | P2: 동일 키캡 draw |
+| `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | P2: `tab_bar.rs` 탭 leading 교체 |
+| `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | P2: `sidebar/full.rs` status dot 교체 |
+| `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | P2: `sidebar/collapsed.rs` letter avatar 교체 |
+
+**등록**: `catalog.rs` Overlays 페이지 `section("switch", "Switch-number overlay", [spec("switch-tab",
+…, draw_tab), spec("switch-ws", …, draw_workspace)])` — search 와 approval 사이(디자인 순서와 동일).
+2 specimen(tab / workspace), workspace 는 released / held-full / held-rail 3 cluster.
+
+**키캡 형상 재현 근거**: 본체 `kbd()` 는 inline egui 위젯(자체 allocate)이라 탭 스트립/사이드바
+중간의 *정해진 16px slot 좌표*에 끼워 그릴 수 없다. 그래서 tab_bar/sidebar specimen 과 동일하게
+painter + Theme 토큰으로 키캡을 좌표 painting 한다(`num_cap`). 레시피는 `chip.rs` 와 1:1
+(corner_radius_sm / border_width / 하단 2px / font_size_micro / surface_raised·border_strong·
+text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme 필드 없음(P0 확정).
+
 ## 이미 갤러리에 있는 관련 항목 (참고)
 
 `catalog/components/` 에 등록된 것: `command_palette` · `port_scanner` · `convert` ·
