@@ -416,7 +416,7 @@ pub enum ViKeyOutcome {
         query: String,
         /// commit 시점의 검색 방향 — 현재 호출자는 query 만 쓰지만 액션의 완전한
         /// 의미를 위해 함께 담는다(`SearchNext`/`SearchPrev` 와 짝).
-        #[allow(dead_code)]
+        #[allow(dead_code)] // variant 필드 — 액션 의미 완전성 위해 보존, 현재 미read
         direction: SearchDir,
     },
     /// search next/prev (n / N).

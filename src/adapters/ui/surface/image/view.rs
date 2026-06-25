@@ -127,7 +127,7 @@ pub enum DragState {
     },
     Resizing {
         /// 향후 hit-area 별 resize 동작 분기 시 사용 — debug 인식용.
-        #[allow(dead_code)]
+        #[allow(dead_code)] // variant 필드 — 현재 미read, 향후 resize 분기용 보존
         handle: ResizeHandle,
         drag_start_pos: Pos2,
         initial_rect: Rect,

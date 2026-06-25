@@ -48,7 +48,7 @@ pub(crate) fn unbox_main(w: Box<dyn ui::View>) -> Option<Box<MainView>> {
 /// (Modeless/Modal)와 계열(ModalView/TerminalHostView/EditorView)을 속성으로 갖는다.
 /// 현재 trait dispatch 경로에서 호출 0이지만 5개 구현체가 `fn modality()`로
 /// 반환하는 도메인 표현이라 보존한다. modal 활성 판정 dispatch가 도입되면 활성화.
-#[allow(dead_code)]
+#[allow(dead_code)] // view 추상화 scaffolding — *_MODALITY const 가 구현체별로 보유, dispatch 미배선
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Modality {
     /// 일반 View. 다른 View 와 독립적으로 포커스됨.

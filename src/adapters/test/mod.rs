@@ -2,9 +2,8 @@
 //!
 //! Core 의 단위 test 시 외부 자원 없이 도메인 로직 검증. 모든 in-memory.
 
-// SAFETY-net: 이 mock adapter 는 core 단위 test(cfg(test)) 에서만 쓰인다.
-// 일반 `cargo build` 에는 일부 mock 메서드가 미사용으로 보이지만 test 빌드에선 사용된다.
-#![allow(dead_code)]
+// 이 mock adapter 모듈은 `#[cfg(test)]` 로 게이트되어(`adapters/mod.rs`) 비-test 빌드에는
+// 컴파일되지 않는다. test 빌드에선 mock 들이 전부 사용되므로 dead_code allow 가 불필요하다.
 
 pub mod fake_clock;
 pub mod mem_fs;

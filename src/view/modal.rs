@@ -32,5 +32,5 @@ pub(crate) trait ModalView: View {
 ///
 /// quit/preset/plugins/settings 4개 modal 구현체가 사용. `View::modality()`
 /// trait dispatch가 호출 0이라 추적상 dead로 잡히지만 도메인 표현으로 보존.
-#[allow(dead_code)]
+#[allow(dead_code)] // view 추상화 scaffolding — quit/preset/plugins/settings 구현체가 import, dispatch 미배선
 pub(crate) const MODAL_MODALITY: Modality = Modality::Modal;

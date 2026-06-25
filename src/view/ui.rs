@@ -35,7 +35,7 @@ pub(crate) trait View: sealed::Sealed + std::any::Any {
     fn base_mut(&mut self) -> &mut ViewBase;
     /// 도메인 표현 보존. trait dispatch 호출 0이지만 5개 구현체가 `fn modality()`로
     /// 반환하는 도메인 표현이라 보존한다. modal 활성 판정 dispatch가 도입되면 활성화.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // view 추상화 scaffolding — 5개 구현체 보유, dispatch 미배선
     fn modality(&self) -> Modality;
 
     fn handle_event(&mut self, event: WindowEvent, ctx: &mut ViewCtx<'_>) -> ViewAction;
@@ -43,11 +43,11 @@ pub(crate) trait View: sealed::Sealed + std::any::Any {
 
     /// 모달 계열 다운캐스트. 모달이 아니면 `None`.
     /// 도메인 placeholder — `ModalView` 다운캐스트 dispatch가 도입되면 활성화.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // view 추상화 scaffolding — 다운캐스트 dispatch 미배선
     fn as_modal(&self) -> Option<&dyn ModalView> {
         None
     }
-    #[allow(dead_code)]
+    #[allow(dead_code)] // view 추상화 scaffolding — 다운캐스트 dispatch 미배선
     fn as_modal_mut(&mut self) -> Option<&mut dyn ModalView> {
         None
     }

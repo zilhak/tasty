@@ -18,7 +18,7 @@ use crate::view::ui::View;
 /// `impl TerminalHostView for MainView {}` 가 존재하지만 trait object 사용 0.
 /// 도메인 계열 표현과 미래 StandaloneSurfaceWindow/StandaloneWorkspaceWindow
 /// placeholder로 보존.
-#[allow(dead_code)]
+#[allow(dead_code)] // view 추상화 scaffolding — `impl TerminalHostView for MainView` 존재, trait object 미사용
 pub(crate) trait TerminalHostView: View {
     /// 사이드바(워크스페이스 목록)를 가지는지. 기본 true.
     /// StandaloneSurfaceWindow 등은 override.
@@ -30,5 +30,5 @@ pub(crate) trait TerminalHostView: View {
 /// 터미널 호스트 윈도우 구현체가 `Window::modality`에 반환해야 하는 값.
 /// MainView가 사용. `Window::modality()` trait dispatch가 호출 0이라
 /// 추적상 dead로 잡히지만 도메인 표현으로 보존.
-#[allow(dead_code)]
+#[allow(dead_code)] // view 추상화 scaffolding — MainView 의 modality 표현(main.rs import), dispatch 미배선
 pub(crate) const MODELESS_MODALITY: Modality = Modality::Modeless;

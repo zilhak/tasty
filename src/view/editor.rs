@@ -15,8 +15,8 @@ use crate::view::ui::View;
 /// `impl EditorView for PresetView {}` 가 존재하지만 trait object 사용 0.
 /// 도메인 계열 표현(`docs/concepts/ubiquitous-language.md`)과 미래 에디터(키바인딩/테마)
 /// placeholder로 보존.
-#[allow(dead_code)]
+#[allow(dead_code)] // view 추상화 scaffolding — `impl EditorView for PresetView` 존재, trait object 미사용
 pub(crate) trait EditorView: View {}
 
-#[allow(dead_code)]
+#[allow(dead_code)] // view 추상화 scaffolding — EditorView 구현체의 modality 표현, dispatch 미배선
 pub(crate) const EDITOR_MODALITY: Modality = Modality::Modeless;

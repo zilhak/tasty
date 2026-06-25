@@ -1,9 +1,7 @@
 //! Production adapter — `src/ports/` 의 7 external trait 의 실제 구현.
 //!
-//! Phase D 진행 중 — D.3.A.5 (Core 가 trait object 보유) 전까지 호출처 0.
-//! 그 때까지 dead_code 경고 억제.
-
-#![allow(dead_code)]
+//! Core 가 이 구현들을 trait object 로 보유해(D.3.A.5) 실제 호출 경로가 있으므로,
+//! 일반 빌드에서 사용된다 — dead_code allow 가 필요 없다.
 
 #[cfg(feature = "gui")]
 pub mod arboard_clip;

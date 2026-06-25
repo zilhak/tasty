@@ -40,7 +40,7 @@ pub struct RenamePopupProps<'a> {
     /// Tier 3 popup props 일관성 보존용. 현재 view 본문은 egui 기본 스타일에
     /// 의존해 theme 토큰 직접 사용은 없지만, 다른 popup props 와 시그니처
     /// 통일성 (gallery mirror 도 동일 field 보유) 을 위해 유지.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // popup props 시그니처 일관성 — 현재 미read, 생성부(타 파일) 유지
     pub theme: &'a Theme,
     pub buffer: &'a mut String,
     pub save_label: &'a str,

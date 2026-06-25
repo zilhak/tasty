@@ -58,7 +58,7 @@ impl SettingsView {
     }
 
     /// modal entry 의 일부 — view/* 재구성 시 활성화.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // scaffolding — view/* 재구성 시 modal entry 로 배선 예정, 현 호출처 0
     pub fn render_settings(&mut self) {
         self.render();
     }
