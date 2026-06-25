@@ -1,17 +1,21 @@
-//! 카탈로그 항목 등록.
+//! 카탈로그 모델 — 디자인(4) gallery 의 **page > section > spec** 문서 계층.
 //!
-//! 한 항목은 `(name, draw)` 의 페어. `draw` 는 선택 시 우측 디테일 패널에
-//! 호출되는 함수로, `Theme` 을 받아 egui 위젯을 그린다.
+//! 한 페이지(`Page`)는 1차 분류(`Category`) 하나에 대응하고, 여러 `Section` 을
+//! 가진다. 각 `Section` 은 여러 `Spec` 을 묶는다. `Spec::draw` 는 선택된 한
+//! specimen 의 라이브 데모(stage/cluster/meta)를 그린다.
 //!
-//! 1 차 분류는 웹 디자인 시스템 gallery 와 동일한 4 분류:
-//! Foundations / Components / Overlays / Layouts.
-//! (이전 5 분류 Appearance/Widget/Popup/Component/Layout 에서 Widget+Component 를
-//!  Components 로 통합하고, Popup 을 Overlays, Appearance 를 Foundations 로 재편.)
+//! 셸(`host_shell`)은 활성 페이지의 전 Section/Spec 을 한 문서로 스크롤 렌더하고,
+//! 좌측 nav 의 "On this page" 앵커는 이 Section 목록에서 도출한다.
+//!
+//! 이 단계(인프라)는 모델/셸/헬퍼의 토대만 만든다. 각 `Spec::draw` 는 기존
+//! specimen 의 `draw` 함수를 그대로 연결해 컴파일/실행을 유지하며, 페이지별
+//! specimen 콘텐츠의 디자인 정합 재작성은 Round 2 의 책임이다.
 
 pub mod components;
 pub mod icons;
 pub mod popup_frame;
 pub mod spacing;
+pub mod spec;
 pub mod specimen;
 pub mod theme;
 pub mod toast_card;
@@ -20,12 +24,12 @@ pub mod widgets;
 
 use tasty_type_appearance::theme::Theme;
 
-/// 카탈로그 1차 분류. 상단 탭 + 좌측 사이드바 필터링에 사용.
+/// 카탈로그 1차 분류 = 문서 페이지 하나. 상단 crumb + 좌측 nav Catalog 그룹에 사용.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {
-    /// 토큰·기초 (색/타입/간격).
+    /// 토큰·기초 (색/타입/간격/형태/스케일).
     Foundations,
-    /// 위젯·컴포넌트 (단일 UI 요소).
+    /// 위젯·컴포넌트 (단일 UI primitive).
     Components,
     /// canonical 글리프 세트.
     Icons,
@@ -36,6 +40,7 @@ pub enum Category {
 }
 
 impl Category {
+    /// 페이지 라벨 (crumb / nav 링크 lbl).
     pub fn label(self) -> &'static str {
         match self {
             Category::Foundations => "Foundations",
@@ -44,6 +49,48 @@ impl Category {
             Category::Overlays => "Overlays",
             Category::Layouts => "Layouts",
         }
+    }
+
+    /// nav 링크 우측 desc (research §1.2 의 5 페이지 메타).
+    pub fn desc(self) -> &'static str {
+        match self {
+            Category::Foundations => "tokens",
+            Category::Components => "primitives",
+            Category::Icons => "glyphs",
+            Category::Overlays => "modals",
+            Category::Layouts => "shells",
+        }
+    }
+
+    /// 페이지 헤더 intro 산문 (pagehead `p`).
+    pub fn intro(self) -> &'static str {
+        match self {
+            Category::Foundations => {
+                "The token layer — surface ramp, text hierarchy, accent roles, type, \
+                 the 4px spacing grid, shape and motion. Everything else is built from these."
+            }
+            Category::Components => {
+                "Single-purpose primitives — buttons, chips, form controls, navigation rows, \
+                 status feedback. Each maps to one Theme-driven widget."
+            }
+            Category::Icons => {
+                "The canonical glyph set — 24×24, 2px stroke, round caps, no fill, currentColor. \
+                 One family across every surface."
+            }
+            Category::Overlays => {
+                "Modal and popup layers — palettes, dialogs, pickers, agent approval. \
+                 Scrim, frame, and lift composed from semantic tokens."
+            }
+            Category::Layouts => {
+                "Structural shells — sidebars, tab strips, list→detail, dividers, surface focus. \
+                 How panes and workspaces are framed."
+            }
+        }
+    }
+
+    /// pagehead 의 HowTo 3컬럼 배너 노출 여부 (디자인은 Foundations 만 `howto:true`).
+    pub fn howto(self) -> bool {
+        matches!(self, Category::Foundations)
     }
 
     pub fn all() -> &'static [Category] {
@@ -57,191 +104,320 @@ impl Category {
     }
 }
 
-/// 좌측 사이드바에 표시되는 카탈로그 한 항목.
-#[derive(Clone, Copy)]
-pub struct CatalogItem {
-    pub category: Category,
-    pub name: &'static str,
+/// 카탈로그 한 항목 — 한 specimen 의 헤딩 메타 + 라이브 데모 draw.
+pub struct Spec {
+    /// 앵커/스크롤 식별자.
+    pub id: &'static str,
+    /// 항목 제목 (h3).
+    pub title: &'static str,
+    /// "언제 쓰나" 한 줄 설명 (선택).
+    pub when: Option<&'static str>,
+    /// 라이브 데모 draw — `Theme` 만 받아 egui 위젯을 그린다.
     pub draw: fn(&mut egui::Ui, &Theme),
 }
 
-/// 모든 카탈로그 항목. 좌측 트리는 이 목록을 순회한다.
-pub fn all() -> Vec<CatalogItem> {
+/// 페이지 내 한 구역 — nav "On this page" 앵커의 단위.
+pub struct Section {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub specs: Vec<Spec>,
+}
+
+/// 문서 페이지 하나 = 한 `Category`.
+pub struct Page {
+    pub category: Category,
+    pub sections: Vec<Section>,
+}
+
+fn spec(
+    id: &'static str,
+    title: &'static str,
+    when: Option<&'static str>,
+    draw: fn(&mut egui::Ui, &Theme),
+) -> Spec {
+    Spec {
+        id,
+        title,
+        when,
+        draw,
+    }
+}
+
+fn section(id: &'static str, title: &'static str, specs: Vec<Spec>) -> Section {
+    Section { id, title, specs }
+}
+
+/// 모든 페이지의 Section/Spec 트리.
+///
+/// 기존 specimen `draw` 들을 디자인 분류(research §3.1)에 따라 page/section 으로
+/// 임시 매핑한다 — 33 개 기존 draw 전수 연결. 콘텐츠 재작성은 Round 2.
+pub fn pages() -> Vec<Page> {
     vec![
-        // ── Foundations ──
-        CatalogItem {
+        // ── Foundations ──────────────────────────────────────────────
+        Page {
             category: Category::Foundations,
-            name: "Color Swatches",
-            draw: theme::draw,
+            sections: vec![
+                section(
+                    "color",
+                    "Color",
+                    vec![spec(
+                        "swatches",
+                        "Color swatches",
+                        Some("Surface ramp, text hierarchy, accent roles"),
+                        theme::draw,
+                    )],
+                ),
+                section(
+                    "type",
+                    "Type",
+                    vec![spec(
+                        "type",
+                        "Typography",
+                        Some("Two families, hard 14px cap, hierarchy by weight"),
+                        typography::draw,
+                    )],
+                ),
+                section(
+                    "spacing",
+                    "Spacing",
+                    vec![spec(
+                        "spacing",
+                        "Spacing — the 4px grid",
+                        Some("Five steps, each with a job"),
+                        spacing::draw,
+                    )],
+                ),
+            ],
         },
-        CatalogItem {
-            category: Category::Foundations,
-            name: "Typography",
-            draw: typography::draw,
-        },
-        CatalogItem {
-            category: Category::Foundations,
-            name: "Spacing",
-            draw: spacing::draw,
-        },
-        // ── Components ── (primitive 먼저 — 디자인 gallery components.html 순서)
-        CatalogItem {
+        // ── Components ───────────────────────────────────────────────
+        Page {
             category: Category::Components,
-            name: "Button",
-            draw: components::prim_button::draw,
+            sections: vec![
+                section(
+                    "buttons",
+                    "Buttons",
+                    vec![
+                        spec("button", "Button", None, components::prim_button::draw),
+                        spec(
+                            "icon-button",
+                            "IconButton",
+                            None,
+                            components::prim_icon_button::draw,
+                        ),
+                    ],
+                ),
+                section(
+                    "chips",
+                    "Badge · Tag · Kbd",
+                    vec![spec(
+                        "chips",
+                        "Badge · Tag · Kbd",
+                        None,
+                        components::prim_chips::draw,
+                    )],
+                ),
+                section(
+                    "forms",
+                    "Form controls",
+                    vec![
+                        spec("input", "Input", None, components::prim_input::draw),
+                        spec(
+                            "forms",
+                            "Select · Checkbox · Switch",
+                            None,
+                            components::prim_forms::draw,
+                        ),
+                    ],
+                ),
+                section(
+                    "nav",
+                    "MenuItem · TreeRow",
+                    vec![spec(
+                        "nav",
+                        "MenuItem · TreeRow",
+                        None,
+                        components::prim_nav::draw,
+                    )],
+                ),
+                section(
+                    "feedback",
+                    "StatusDot · Spinner · Toast",
+                    vec![
+                        spec(
+                            "status-dot",
+                            "StatusDot",
+                            None,
+                            components::prim_status_dot::draw,
+                        ),
+                        spec("spinner", "Spinner", None, components::prim_spinner::draw),
+                        spec("toast", "Toast", None, widgets::toast::draw),
+                    ],
+                ),
+                section(
+                    "text",
+                    "Hint text",
+                    vec![spec("hint", "Hint text", None, widgets::hint_text::draw)],
+                ),
+            ],
         },
-        CatalogItem {
-            category: Category::Components,
-            name: "IconButton",
-            draw: components::prim_icon_button::draw,
-        },
-        CatalogItem {
-            category: Category::Components,
-            name: "Input",
-            draw: components::prim_input::draw,
-        },
-        CatalogItem {
-            category: Category::Components,
-            name: "Badge · Tag · Kbd",
-            draw: components::prim_chips::draw,
-        },
-        CatalogItem {
-            category: Category::Components,
-            name: "Select · Checkbox · Switch",
-            draw: components::prim_forms::draw,
-        },
-        CatalogItem {
-            category: Category::Components,
-            name: "StatusDot",
-            draw: components::prim_status_dot::draw,
-        },
-        CatalogItem {
-            category: Category::Components,
-            name: "Spinner",
-            draw: components::prim_spinner::draw,
-        },
-        CatalogItem {
-            category: Category::Components,
-            name: "MenuItem · TreeRow",
-            draw: components::prim_nav::draw,
-        },
-        CatalogItem {
-            category: Category::Components,
-            name: "Hint text",
-            draw: widgets::hint_text::draw,
-        },
-        CatalogItem {
-            category: Category::Components,
-            name: "Toast (card visual)",
-            draw: widgets::toast::draw,
-        },
-        // ── Icons ── (canonical 글리프 세트 — 디자인 gallery/icons.jsx)
-        CatalogItem {
+        // ── Icons ────────────────────────────────────────────────────
+        Page {
             category: Category::Icons,
-            name: "Icon Set (canonical glyphs)",
-            draw: icons::draw,
+            sections: vec![section(
+                "glyphs",
+                "Icon set",
+                vec![spec(
+                    "glyphs",
+                    "Canonical glyphs",
+                    Some("24×24, 2px stroke, round, no fill, currentColor"),
+                    icons::draw,
+                )],
+            )],
         },
-        // ── Overlays ── (통팝업/컴포지션 — 디자인 gallery 구조: primitive 는 Components)
-        CatalogItem {
+        // ── Overlays ─────────────────────────────────────────────────
+        Page {
             category: Category::Overlays,
-            name: "Dialog (rename popup frame)",
-            draw: widgets::dialog::draw,
+            sections: vec![
+                section(
+                    "command",
+                    "Command & menus",
+                    vec![
+                        spec(
+                            "palette",
+                            "Command palette",
+                            None,
+                            components::command_palette::draw,
+                        ),
+                        spec("tools", "Tools menu", None, components::tools_menu::draw),
+                    ],
+                ),
+                section(
+                    "dialogs",
+                    "Dialogs & pickers",
+                    vec![
+                        spec("dialog", "Dialog frame", None, widgets::dialog::draw),
+                        spec(
+                            "rename",
+                            "Rename popup",
+                            None,
+                            components::rename_popup::draw,
+                        ),
+                        spec("convert", "Convert surface", None, components::convert::draw),
+                        spec(
+                            "markdown",
+                            "Markdown open",
+                            None,
+                            components::markdown_open::draw,
+                        ),
+                        spec(
+                            "preset",
+                            "Apply preset",
+                            None,
+                            components::apply_preset::draw,
+                        ),
+                        spec(
+                            "filehandler",
+                            "File handler picker",
+                            None,
+                            components::file_handler_picker::draw,
+                        ),
+                        spec("update", "Update (Tier 3)", None, components::update::draw),
+                    ],
+                ),
+                section(
+                    "agent",
+                    "Agent approval",
+                    vec![spec(
+                        "approval",
+                        "Agent approval",
+                        None,
+                        components::approval::draw,
+                    )],
+                ),
+                section(
+                    "ports",
+                    "Ports & search",
+                    vec![
+                        spec(
+                            "ports",
+                            "Listening ports",
+                            None,
+                            components::port_scanner::draw,
+                        ),
+                        spec("search", "Search bar", None, components::search_bar::draw),
+                    ],
+                ),
+                section(
+                    "toast-stack",
+                    "Toast stack",
+                    vec![spec(
+                        "toast-stack",
+                        "Toast stack (Tier 3)",
+                        None,
+                        components::toast::draw,
+                    )],
+                ),
+            ],
         },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Convert popup (props view)",
-            draw: components::convert::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Port Scanner popup",
-            draw: components::port_scanner::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Approval popup",
-            draw: components::approval::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Toast Stack (Tier 3)",
-            draw: components::toast::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Markdown Open",
-            draw: components::markdown_open::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Update (Tier 3)",
-            draw: components::update::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Apply Preset (Workspace/Tab/Pane)",
-            draw: components::apply_preset::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "File Handler Picker",
-            draw: components::file_handler_picker::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Command Palette",
-            draw: components::command_palette::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Rename (workspace / tab)",
-            draw: components::rename_popup::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Search Bar",
-            draw: components::search_bar::draw,
-        },
-        CatalogItem {
-            category: Category::Overlays,
-            name: "Tools Menu",
-            draw: components::tools_menu::draw,
-        },
-        // ── Layouts ──
-        CatalogItem {
+        // ── Layouts ──────────────────────────────────────────────────
+        Page {
             category: Category::Layouts,
-            name: "Sidebar (Full / Collapsed)",
-            draw: components::sidebar::draw,
-        },
-        CatalogItem {
-            category: Category::Layouts,
-            name: "Pane Tab Bar",
-            draw: components::tab_bar::draw,
-        },
-        CatalogItem {
-            category: Category::Layouts,
-            name: "Divider (pane borders)",
-            draw: widgets::divider::draw,
-        },
-        CatalogItem {
-            category: Category::Layouts,
-            name: "Surface Highlights",
-            draw: components::surface_highlights::draw,
-        },
-        CatalogItem {
-            category: Category::Layouts,
-            name: "Multi-tier Tab Layout",
-            draw: widgets::multi_tab_layout::draw,
-        },
-        CatalogItem {
-            category: Category::Layouts,
-            name: "1 depth (Plugins idiom)",
-            draw: widgets::layout_1depth::draw,
-        },
-        CatalogItem {
-            category: Category::Layouts,
-            name: "2 depth (Settings idiom)",
-            draw: widgets::layout_2depth::draw,
+            sections: vec![
+                section(
+                    "sidebar",
+                    "Sidebar & rail",
+                    vec![spec(
+                        "sidebar",
+                        "Sidebar (Full / Collapsed)",
+                        None,
+                        components::sidebar::draw,
+                    )],
+                ),
+                section(
+                    "tabs",
+                    "Tab strips",
+                    vec![
+                        spec("tabbar", "Pane tab strip", None, components::tab_bar::draw),
+                        spec(
+                            "multitab",
+                            "Multi-tier tabs",
+                            None,
+                            widgets::multi_tab_layout::draw,
+                        ),
+                    ],
+                ),
+                section(
+                    "depth",
+                    "List → detail",
+                    vec![
+                        spec(
+                            "onedepth",
+                            "1-depth (Plugins idiom)",
+                            None,
+                            widgets::layout_1depth::draw,
+                        ),
+                        spec(
+                            "twodepth",
+                            "2-depth (Settings idiom)",
+                            None,
+                            widgets::layout_2depth::draw,
+                        ),
+                    ],
+                ),
+                section(
+                    "surfaces",
+                    "Dividers & surfaces",
+                    vec![
+                        spec("divider", "Pane divider", None, widgets::divider::draw),
+                        spec(
+                            "surface",
+                            "Surface focus states",
+                            None,
+                            components::surface_highlights::draw,
+                        ),
+                    ],
+                ),
+            ],
         },
     ]
 }

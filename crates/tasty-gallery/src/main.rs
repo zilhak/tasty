@@ -92,13 +92,11 @@ impl ApplicationHandler for App {
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
         let mut rt = pollster::block_on(init_runtime(window)).expect("gallery runtime init");
-        // 스크린샷 모드: 첫 항목을 선택해 둔다.
+        // 스크린샷 모드: 첫 페이지를 선택해 둔다 (idx = 페이지 index).
         if let Some(plan) = &self.shot
             && let Some(&(idx, _)) = plan.items.first()
-            && let Some(item) = rt.gallery.items.get(idx)
         {
-            rt.gallery.active_category = item.category;
-            rt.gallery.selected = idx;
+            rt.gallery.select_page(idx);
         }
         self.runtime = Some(rt);
     }
@@ -147,12 +145,7 @@ impl ApplicationHandler for App {
                     plan.current += 1;
                     plan.frame = 0;
                     match plan.items.get(plan.current) {
-                        Some(&(idx, _)) => {
-                            if let Some(item) = rt.gallery.items.get(idx) {
-                                rt.gallery.active_category = item.category;
-                                rt.gallery.selected = idx;
-                            }
-                        }
+                        Some(&(idx, _)) => rt.gallery.select_page(idx),
                         None => event_loop.exit(),
                     }
                 }
