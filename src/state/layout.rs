@@ -34,6 +34,45 @@ impl AppState {
         result
     }
 
+    /// Reify (lazy PTY spawn) every deferred placeholder that is about to be
+    /// drawn this frame: the active workspace's panes, each pane's active tab,
+    /// and every deferred leaf within it.
+    ///
+    /// This is the single display-point that enforces the invariant "a surface
+    /// visible on screen has a live PTY". Calling it once per frame (before the
+    /// render passes) covers every exposure path at once — keyboard tab switch
+    /// (next/prev/goto), tab close moving active_tab onto a deferred tab, pane
+    /// focus change, workspace switch, window restore — without scattering reify
+    /// hooks across each input handler.
+    ///
+    /// Cheap when nothing is deferred: it only walks the active workspace's
+    /// active-tab layout trees (`deferred_surface_ids` returns early per tab).
+    /// `ensure_surface_initialized` is a no-op for already-reified surfaces, so
+    /// there is no double-spawn with the existing eager reify paths (mouse tab
+    /// click / workspace switch / boot).
+    pub fn reify_displayed_surfaces(&self, engine: &mut CoreState) {
+        if engine.workspaces.is_empty() {
+            return;
+        }
+        let idx = self
+            .active_workspace
+            .min(engine.workspaces.len().saturating_sub(1));
+        let mut deferred: Vec<u32> = Vec::new();
+        {
+            let ws = &engine.workspaces[idx];
+            for pane_id in ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pane_id)
+                    && let Some(tab) = pane.tabs.get(pane.active_tab)
+                {
+                    deferred.extend(tab.deferred_surface_ids());
+                }
+            }
+        }
+        for sid in deferred {
+            engine.ensure_surface_initialized(sid);
+        }
+    }
+
     /// Get the actual content rect for the focused surface (accounting for tab bar).
     /// Returns None if no surface is focused.
     pub fn focused_surface_rect(

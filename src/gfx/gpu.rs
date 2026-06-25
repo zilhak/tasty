@@ -278,6 +278,12 @@ impl GpuState {
             engine.settings.appearance.scaled_sidebar_width()
         };
         let terminal_rect = self.compute_terminal_rect(state.sidebar_width);
+        // Single display-point reify: any deferred placeholder about to be drawn
+        // (active workspace → each pane's active tab) gets its PTY spawned here,
+        // before resize_all/render. Covers every exposure path (keyboard tab
+        // switch, tab close, pane focus, ws switch, restore) without per-handler
+        // hooks. No-op when nothing is deferred.
+        state.reify_displayed_surfaces(engine);
         state.resize_all(
             engine,
             terminal_rect,

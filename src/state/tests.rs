@@ -174,6 +174,95 @@ fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
     assert_ne!(new_surface_ids[0], sid);
 }
 
+// ---- deferred surface reify (display-point) ----
+
+/// 포커스된 pane 에 deferred(lazy PTY) 탭을 하나 추가하고 그 surface_id 를 반환한다.
+/// restore 경로가 만드는 `EmptySurface { deferred_spawn: Some(..) }` placeholder 와
+/// 동등한 상태를 구성한다.
+fn add_deferred_tab(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
+    let tab_id = engine.next_ids.next_tab();
+    let surface_id = engine.next_ids.next_surface();
+    let cols = engine.default_cols;
+    let rows = engine.default_rows;
+    let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
+    let waker = engine.make_waker(surface_id);
+    let shell = sh.shell_ref();
+    let args = sh.args_ref();
+    let opts = crate::model::ShellSpawnOpts {
+        cols,
+        rows,
+        shell,
+        shell_args: &args,
+        waker,
+        working_dir: None,
+    };
+    let pane = state.focused_pane_mut(engine).expect("focused pane");
+    pane.add_tab_deferred(tab_id, surface_id, opts, None);
+    surface_id
+}
+
+#[test]
+fn keyboard_tab_switch_reifies_deferred_surface() {
+    // given: pane 에 tab0(활성, 즉시) + tab1(deferred placeholder)
+    let (mut state, mut engine) = test_state();
+    let sid = add_deferred_tab(&mut state, &mut engine);
+    assert!(
+        engine.is_surface_deferred(sid),
+        "precondition: tab1 은 deferred"
+    );
+
+    // 키보드 next_tab 경로는 active_tab 만 바꾸고 reify 하지 않는다(설계상 분리).
+    state.next_tab_in_pane(&mut engine);
+    assert!(
+        engine.is_surface_deferred(sid),
+        "전환 핸들러 자체는 reify 하지 않는다(표시 지점에서 처리)"
+    );
+
+    // 표시 지점(매 프레임 렌더 직전)에서 reify 되어야 한다.
+    state.reify_displayed_surfaces(&mut engine);
+    assert!(
+        !engine.is_surface_deferred(sid),
+        "표시 즉시 reify 되어야 함"
+    );
+    assert!(
+        engine.terminals.contains(sid),
+        "PTY 가 store 에 insert 되어야 함"
+    );
+}
+
+#[test]
+fn close_active_tab_reifies_newly_active_deferred_surface() {
+    // given: tab0(활성, 즉시) + tab1(deferred). close 시 active 가 tab1 로 이동.
+    let (mut state, mut engine) = test_state();
+    let sid = add_deferred_tab(&mut state, &mut engine);
+    assert!(engine.is_surface_deferred(sid));
+
+    // when: 활성 탭(tab0) close → tab1 이 새 활성 탭(deferred)
+    assert!(state.close_active_tab(&mut engine));
+    assert!(
+        engine.is_surface_deferred(sid),
+        "close 직후엔 아직 deferred"
+    );
+
+    // then: 표시 지점 reify 가 새 활성 deferred surface 를 살린다.
+    state.reify_displayed_surfaces(&mut engine);
+    assert!(
+        !engine.is_surface_deferred(sid),
+        "close 로 활성된 deferred 탭이 reify 되어야 함"
+    );
+    assert!(engine.terminals.contains(sid));
+}
+
+#[test]
+fn reify_displayed_surfaces_is_noop_without_deferred() {
+    // deferred 가 없으면 표시 지점 호출은 아무 것도 spawn 하지 않는다(이중 spawn 방지).
+    let (mut state, mut engine) = test_state();
+    let before = collect_all_surface_ids(&mut state, &mut engine);
+    state.reify_displayed_surfaces(&mut engine);
+    let after = collect_all_surface_ids(&mut state, &mut engine);
+    assert_eq!(before.len(), after.len(), "deferred 없으면 no-op");
+}
+
 // ---- workspace operations ----
 
 fn add_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState) {
