@@ -28,7 +28,7 @@ use tasty_plugin_sdk::{
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
-const PLUGIN_VERSION: &str = "0.1.10"; // tasty-plugin.toml / Cargo.toml 과 일치
+const PLUGIN_VERSION: &str = "0.1.11"; // tasty-plugin.toml / Cargo.toml 과 일치
 
 /// 로그인은 사용자가 브라우저에서 직접 인증해야 하므로 최대 대기를 길게 둔다.
 /// runner JS 의 폴링 한계(5분)보다 약간 길게 잡아 마지막 응답을 받는다.
