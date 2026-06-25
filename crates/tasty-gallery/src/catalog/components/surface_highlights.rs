@@ -1,215 +1,141 @@
-//! Surface highlight overlay 데모 (Tier 3 재분류).
+//! `surfaces` specimen — Surface focus states (research §2.5 Layouts).
 //!
-//! 본체 `src/adapters/ui/divider.rs::draw_surface_highlights_view` 와 동등한
-//! 시각을 mock props 로 재현. AppState/CoreState 비의존이라는 props 분리의 성과를
-//! 가시화한다.
+//! 터미널 surface 가 포커스 상태에 따라 어떻게 보이는지. 디자인 3 상태:
+//! - **focused**: bg = `surface("terminal").focused_bg`(#000), 선명.
+//! - **unfocused**: bg = `unfocused_bg`, opacity 0.92 로 살짝 가라앉음.
+//! - **agent**: focused 와 같은 bg + pulsing `accent-agent` dot 으로 에이전트 점유 표시.
 //!
-//! 본체 의존: 0. 본체 view 변경 시 시각 동기화는 수동 검증 (gallery 가 binary
-//! crate `tasty` 에 의존 불가).
-//!
-//! 본체 view 는 `ctx.layer_painter(Order::Middle)` 로 전역 좌표에 그리므로 갤러리
-//! 패널 안에 직접 mirror 할 수 없다. 대신 데모는 *동일한 stroke / 좌표 변환 식* 을
-//! 로컬 ui-relative 좌표로 그려, "어떤 rect 가 highlight 됐을 때 어떻게 보이는가"
-//! 를 단독 검증할 수 있게 한다.
+//! fakePane = 헤더(StatusDot + Tag) + 프롬프트(mono + blink 커서 8×15).
+//! 본체 view 변경 시 시각 동기화는 수동 (gallery 는 binary 미의존).
 
 use tasty_type_appearance::theme::Theme;
 
-/// 본체 `SurfaceHighlightRegion` 와 동등한 로컬 mock.
-#[derive(Debug, Clone, Copy)]
-struct MockRegion {
-    /// 데모 패널 내 로컬 좌표 (logical px).
-    rect: egui::Rect,
-    is_highlighted: bool,
+use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum State {
+    Focused,
+    Unfocused,
+    Agent,
 }
 
-fn draw_mock_highlights(ui: &mut egui::Ui, theme: &Theme, regions: &[MockRegion], frame_h: f32) {
-    let (frame_rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width().min(560.0), frame_h),
-        egui::Sense::hover(),
+/// 디자인 fakePane — 헤더(dot+tag) + 프롬프트 한 줄 + blink 커서.
+fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
+    let term = theme.surface("terminal");
+    let w = theme.field_width_lg.value(); // 200
+    let h = theme.spacing_xl.value() * 6.0; // 144
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+
+    // 배경: focused/agent = focused_bg(#000), unfocused = unfocused_bg + 0.92 dim.
+    let bg = match state {
+        State::Focused | State::Agent => egui::Color32::from(term.focused_bg),
+        State::Unfocused => egui::Color32::from(term.unfocused_bg).gamma_multiply(0.92),
+    };
+    let fg = match state {
+        State::Unfocused => egui::Color32::from(term.unfocused_fg),
+        _ => egui::Color32::from(term.focused_fg),
+    };
+    p.rect_filled(rect, theme.corner_radius.value(), bg);
+    p.rect_stroke(
+        rect,
+        theme.corner_radius.value(),
+        egui::Stroke::new(theme.border_width.value(), egui::Color32::from(theme.border_default())),
+        egui::StrokeKind::Inside,
     );
-    let painter = ui.painter_at(frame_rect);
 
-    let bg: egui::Color32 = theme.crust.into();
-    let pane_bg: egui::Color32 = theme.surface0.into();
-    let stroke: egui::Color32 = theme.accent_primary().into();
-    let label_color: egui::Color32 = theme.subtext0.into();
+    let pad = theme.spacing_sm.value();
+    // 헤더: status dot + tag.
+    let dot_r = theme.status_dot_size.value() * 0.5;
+    let dot_c = egui::pos2(rect.min.x + pad + dot_r, rect.min.y + pad + dot_r);
+    let (dot, tag) = match state {
+        State::Focused => (egui::Color32::from(theme.accent_success()), "focused"),
+        State::Unfocused => (egui::Color32::from(theme.text_muted()), "idle"),
+        State::Agent => (egui::Color32::from(theme.accent_agent()), "agent"),
+    };
+    p.circle_filled(dot_c, dot_r, dot);
+    p.text(
+        egui::pos2(dot_c.x + dot_r + theme.spacing_xs.value(), rect.min.y + pad),
+        egui::Align2::LEFT_TOP,
+        tag,
+        egui::FontId::proportional(theme.font_size_micro.value()),
+        match state {
+            State::Unfocused => egui::Color32::from(theme.text_muted()),
+            _ => fg,
+        },
+    );
 
-    painter.rect_filled(frame_rect, theme.corner_radius.value(), bg);
+    // 프롬프트: mono 한 줄 + blink 커서 블록 8×15.
+    let prompt_y = rect.min.y + pad + theme.status_dot_size.value() + theme.spacing_md.value();
+    let prompt = "$ cargo build";
+    let font = egui::FontId::monospace(theme.font_size_term_sm.value());
+    let galley = p.layout_no_wrap(prompt.to_string(), font.clone(), fg);
+    p.galley(egui::pos2(rect.min.x + pad, prompt_y), galley.clone(), fg);
 
-    for region in regions {
-        let translated = region
-            .rect
-            .translate(frame_rect.min.to_vec2() + egui::vec2(8.0, 8.0));
-        painter.rect_filled(translated, 2.0, pane_bg);
-        if region.is_highlighted {
-            painter.rect_stroke(
-                translated,
+    // 커서 블록: 8×15 (status_dot_size × spacing_lg 근사).
+    let cur_x = rect.min.x + pad + galley.size().x + theme.spacing_xs.value();
+    let cur_rect = egui::Rect::from_min_size(
+        egui::pos2(cur_x, prompt_y),
+        egui::vec2(theme.status_dot_size.value(), theme.spacing_lg.value()),
+    );
+    match state {
+        State::Unfocused => {
+            // 비포커스: 빈 커서(테두리만).
+            p.rect_stroke(
+                cur_rect,
                 0.0,
-                egui::Stroke::new(2.0, stroke),
+                egui::Stroke::new(theme.border_width.value(), fg),
                 egui::StrokeKind::Inside,
             );
         }
-        let tag = if region.is_highlighted {
-            "highlighted"
-        } else {
-            "idle"
-        };
-        painter.text(
-            egui::pos2(translated.min.x + 4.0, translated.min.y + 4.0),
-            egui::Align2::LEFT_TOP,
-            tag,
-            egui::FontId::proportional(theme.font_size_micro.value()),
-            label_color,
-        );
+        State::Agent => {
+            p.rect_filled(cur_rect, 0.0, egui::Color32::from(theme.accent_agent()));
+        }
+        State::Focused => {
+            p.rect_filled(cur_rect, 0.0, fg);
+        }
     }
 }
 
-/// 대표 mock 상태 5 종:
-/// 1. 단일 surface highlighted — 가장 기본 모양 (notification on)
-/// 2. 2×1 split — 한 쪽만 highlight (인접 비교)
-/// 3. 2×2 grid — 대각선 두 칸 highlight (다중 highlight)
-/// 4. 좁고 긴 surface — 가로 grid, edge case
-/// 5. 작은 surface 다수 (6 개 grid) — 일부만 highlight (밀집 시 가독성)
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    ui.label(
-        egui::RichText::new(
-            "SurfaceHighlightsProps + draw_surface_highlights_view — AppState/CoreState 비의존.",
-        )
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.add_space(8.0);
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(ui, theme, "focused", |ui| fake_pane(ui, theme, State::Focused));
+        spec::cluster(ui, theme, "unfocused · 0.92", |ui| {
+            fake_pane(ui, theme, State::Unfocused)
+        });
+        spec::cluster(ui, theme, "agent", |ui| fake_pane(ui, theme, State::Agent));
+    });
 
-    // ① 단일 surface highlight
-    ui.label(
-        egui::RichText::new("① 단일 surface — focused notification on:")
-            .color(egui::Color32::from(theme.text)),
-    );
-    ui.add_space(4.0);
-    draw_mock_highlights(
-        ui,
-        theme,
-        &[MockRegion {
-            rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(520.0, 120.0)),
-            is_highlighted: true,
-        }],
-        144.0,
-    );
-    ui.add_space(16.0);
-
-    // ② 2×1 split, 한쪽만 highlight
-    ui.label(
-        egui::RichText::new("② 2×1 split — 왼쪽만 highlight:")
-            .color(egui::Color32::from(theme.text)),
-    );
-    ui.add_space(4.0);
-    draw_mock_highlights(
+    spec::meta(
         ui,
         theme,
         &[
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(254.0, 120.0)),
-                is_highlighted: true,
-            },
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(264.0, 0.0), egui::vec2(256.0, 120.0)),
-                is_highlighted: false,
-            },
+            ("focused bg", "#000 (terminal.focused_bg)"),
+            ("unfocused bg", "unfocused_bg · opacity 0.92"),
+            ("agent", "pulsing accent-agent dot"),
+            ("header", "StatusDot + Tag"),
+            ("cursor", "blink block 8×15"),
         ],
-        144.0,
+        &[
+            TokenChip::new(
+                "terminal.focused-bg",
+                "focused fill",
+                theme.surface("terminal").focused_bg.into(),
+            ),
+            TokenChip::new(
+                "terminal.unfocused-bg",
+                "unfocused fill",
+                theme.surface("terminal").unfocused_bg.into(),
+            ),
+            TokenChip::new("accent-agent", "agent dot", theme.accent_agent().into()),
+            TokenChip::new("accent-success", "focused dot", theme.accent_success().into()),
+        ],
     );
-    ui.add_space(16.0);
 
-    // ③ 2×2 grid — 대각선 highlight
-    ui.label(
-        egui::RichText::new("③ 2×2 grid — 대각선 highlight (다중):")
-            .color(egui::Color32::from(theme.text)),
-    );
-    ui.add_space(4.0);
-    draw_mock_highlights(
+    spec::note(
         ui,
         theme,
-        &[
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(254.0, 90.0)),
-                is_highlighted: true,
-            },
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(264.0, 0.0), egui::vec2(256.0, 90.0)),
-                is_highlighted: false,
-            },
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(0.0, 100.0), egui::vec2(254.0, 90.0)),
-                is_highlighted: false,
-            },
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(264.0, 100.0), egui::vec2(256.0, 90.0)),
-                is_highlighted: true,
-            },
-        ],
-        214.0,
-    );
-    ui.add_space(16.0);
-
-    // ④ 가로 split (좁고 긴 surface) — edge case
-    ui.label(
-        egui::RichText::new("④ 좁고 긴 가로 split — 가운데 highlight:")
-            .color(egui::Color32::from(theme.text)),
-    );
-    ui.add_space(4.0);
-    draw_mock_highlights(
-        ui,
-        theme,
-        &[
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(166.0, 120.0)),
-                is_highlighted: false,
-            },
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(176.0, 0.0), egui::vec2(166.0, 120.0)),
-                is_highlighted: true,
-            },
-            MockRegion {
-                rect: egui::Rect::from_min_size(egui::pos2(352.0, 0.0), egui::vec2(168.0, 120.0)),
-                is_highlighted: false,
-            },
-        ],
-        144.0,
-    );
-    ui.add_space(16.0);
-
-    // ⑤ 6 surface grid — 일부 highlight
-    ui.label(
-        egui::RichText::new("⑤ 3×2 grid (6 surface) — 2 개 highlight, 밀집 시 가독성:")
-            .color(egui::Color32::from(theme.text)),
-    );
-    ui.add_space(4.0);
-    let cell_w = 166.0;
-    let cell_h = 84.0;
-    let gap = 10.0;
-    let highlighted_indices = [1usize, 4];
-    let regions: Vec<MockRegion> = (0..6)
-        .map(|i| {
-            let col = (i % 3) as f32;
-            let row = (i / 3) as f32;
-            MockRegion {
-                rect: egui::Rect::from_min_size(
-                    egui::pos2(col * (cell_w + gap), row * (cell_h + gap)),
-                    egui::vec2(cell_w, cell_h),
-                ),
-                is_highlighted: highlighted_indices.contains(&i),
-            }
-        })
-        .collect();
-    draw_mock_highlights(ui, theme, &regions, 2.0 * cell_h + gap + 16.0);
-
-    ui.add_space(12.0);
-    ui.label(
-        egui::RichText::new(
-            "⚠ 본체 view 는 ctx.layer_painter(Order::Middle) 로 전역 좌표에 그림 — \
-             gallery 는 패널 로컬 좌표로 재현 (시각 식별 목적).",
-        )
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
+        "포커스된 surface 만 순흑(#000) — 나머지는 0.92 로 살짝 가라앉혀 \
+         '지금 어디에 입력되는가' 를 한눈에 구분한다. agent 점유는 별도 색 dot 으로.",
     );
 }

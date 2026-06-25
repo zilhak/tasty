@@ -411,7 +411,7 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "sidebar",
                         "Sidebar (Full / Collapsed)",
-                        None,
+                        Some("Full 212 expands names; collapsed 52 rail keeps icon slots"),
                         components::sidebar::draw,
                     )],
                 ),
@@ -419,11 +419,16 @@ pub fn pages() -> Vec<Page> {
                     "tabs",
                     "Tab strips",
                     vec![
-                        spec("tabbar", "Pane tab strip", None, components::tab_bar::draw),
+                        spec(
+                            "tabbar",
+                            "Pane tab strip",
+                            Some("24×150 tabs on bg-sidebar; active lifts to bg-panel + accent bar"),
+                            components::tab_bar::draw,
+                        ),
                         spec(
                             "multitab",
                             "Multi-tier tabs",
-                            None,
+                            Some("Workspace tier + pane tier, two levels max"),
                             widgets::multi_tab_layout::draw,
                         ),
                     ],
@@ -435,13 +440,13 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "onedepth",
                             "1-depth (Plugins idiom)",
-                            None,
+                            Some("Fixed list selects, detail fills the rest"),
                             widgets::layout_1depth::draw,
                         ),
                         spec(
                             "twodepth",
                             "2-depth (Settings idiom)",
-                            None,
+                            Some("L1 tabs (underline) + L2 sections (surface-active)"),
                             widgets::layout_2depth::draw,
                         ),
                     ],
@@ -450,11 +455,16 @@ pub fn pages() -> Vec<Page> {
                     "surfaces",
                     "Dividers & surfaces",
                     vec![
-                        spec("divider", "Pane divider", None, widgets::divider::draw),
+                        spec(
+                            "divider",
+                            "Pane divider",
+                            Some("1px line, ~7px hit-band, accent on hover, both axes"),
+                            widgets::divider::draw,
+                        ),
                         spec(
                             "surface",
                             "Surface focus states",
-                            None,
+                            Some("Focused #000, unfocused 0.92, agent dot"),
                             components::surface_highlights::draw,
                         ),
                     ],

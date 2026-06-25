@@ -1,604 +1,253 @@
-//! Sidebar (Full / Collapsed) 데모 (Tier 3).
+//! `sidebar` specimen — Sidebar & rail (research §2.5 Layouts).
 //!
-//! 본체 `src/adapters/ui/sidebar/view.rs::draw_{full,collapsed}_sidebar_view`
-//! 가 표현하는 시각 상태를 mock props 로 재현. 본체와 *시각 동일* 하지만
-//! gallery 가 본체 binary 에 의존할 수 없으므로 view 로직은 로컬 미러
-//! (POC 패턴 — `.claude-workspace/conductor/tier-3-props-extraction-pattern.md`).
+//! 좌측 네비게이션. 두 폭:
+//! - **Full 212**: 로고+워드마크 헤더 / "Workspaces" railHead / 워크스페이스 행
+//!   (dot + name + badge, 활성행 surface-active + 2px inset accent) / footer
+//!   (Tools·Plugins·Settings ghost 블록, 상단 border).
+//! - **Collapsed rail 52**: 로고 24 + IconButton 28 슬롯들.
 //!
-//! 카탈로그 한 항목 안에서 Full ↔ Collapsed 모드 토글 + workspace 다양화.
-//! 매 프레임 호출되는 catalog `draw` 함수는 stateless 라 mode 토글은 마지막
-//! 클릭 시점의 thread-local 상태로 보존.
-//!
-//! 대표 상태:
-//! - Full / 1 workspace
-//! - Full / 5 workspaces (스크롤 + busy/highlight/attached 인디케이터)
-//! - Full / 매우 긴 이름 + subtitle/description
-//! - Collapsed / 5 workspaces
-//! - Collapsed / busy/attached/highlight 인디케이터
+//! Theme 토큰만으로 정적 재현 (binary 미의존).
 
-use std::cell::RefCell;
 use tasty_type_appearance::theme::Theme;
 
-use crate::catalog::specimen::case_title;
+use crate::catalog::icons::{FOLDER, MockGlyph, PLUG, SETTINGS, TERMINAL};
+use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-#[derive(Debug, Clone)]
-struct WorkspaceEntryView {
-    name: String,
-    subtitle: String,
-    description: String,
-    busy_count: usize,
-    has_highlight: bool,
-    attached: bool,
-    is_active: bool,
-}
+/// (name, badge, active)
+const WORKSPACES: &[(&str, Option<&str>, bool)] =
+    &[("main", None, true), ("review", Some("3"), false), ("agent", None, false)];
+/// footer ghost rows.
+const FOOTER: &[(MockGlyph, &str)] =
+    &[(TERMINAL, "Tools"), (PLUG, "Plugins"), (SETTINGS, "Settings")];
+/// collapsed rail slots.
+const RAIL_SLOTS: &[MockGlyph] = &[TERMINAL, FOLDER, PLUG, SETTINGS];
 
-struct SidebarFullProps<'a> {
-    theme: &'a Theme,
-    workspaces: &'a [WorkspaceEntryView],
-    tools_label: &'a str,
-    collapse_label: &'a str,
-    plugins_label: &'a str,
-    settings_label: &'a str,
-    new_workspace_label: &'a str,
-    occupied_hover: &'a str,
-}
-
-struct SidebarCollapsedProps<'a> {
-    theme: &'a Theme,
-    workspaces: &'a [WorkspaceEntryView],
-    tools_hover: &'a str,
-}
-
-const BTN_HEIGHT: f32 = 28.0;
-const COLLAPSED_ICON_SIZE: egui::Vec2 = egui::vec2(32.0, 22.0);
-const COLLAPSED_WS_SIZE: egui::Vec2 = egui::vec2(32.0, 28.0);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SidebarMode {
-    Full,
-    Collapsed,
-}
-
-thread_local! {
-    static CURRENT_MODE: RefCell<SidebarMode> = const { RefCell::new(SidebarMode::Full) };
-}
-
-/// Full sidebar view 미러 — embedded box. SidePanel 없이 sized frame 안에 그려
-/// 카탈로그 패널에 맞춘다.
-fn draw_full_sidebar_box(ui: &mut egui::Ui, props: &SidebarFullProps<'_>) {
-    let th = props.theme;
-    let width = 220.0;
-    let height = 320.0;
-
-    egui::Frame::new()
-        .fill(egui::Color32::from(th.base))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from(th.surface0)))
-        .corner_radius(4.0)
-        .show(ui, |ui| {
-            ui.set_min_size(egui::vec2(width, height));
-            ui.set_max_size(egui::vec2(width, height));
-
-            // 바닥 버튼 4 개를 먼저 그려 시각 위계 유지.
-            egui::TopBottomPanel::bottom("gallery_full_bottom")
-                .frame(egui::Frame::NONE)
-                .show_separator_line(false)
-                .show_inside(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    ui.separator();
-                    ui.add_space(2.0);
-                    full_bottom_button(ui, th, props.tools_label);
-                    ui.add_space(2.0);
-                    full_bottom_button(ui, th, props.collapse_label);
-                    ui.add_space(2.0);
-                    full_bottom_button(ui, th, props.plugins_label);
-                    ui.add_space(2.0);
-                    full_bottom_button(ui, th, props.settings_label);
-                    ui.add_space(8.0);
-                });
-
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.add_space(4.0);
-                    for ws in props.workspaces {
-                        draw_workspace_card(ui, th, ws, props.occupied_hover);
-                        ui.add_space(2.0);
-                    }
-                    ui.add_space(4.0);
-                    let full_width = ui.available_width();
-                    // 카탈로그는 시각 검증 전용 — 버튼 click response 무시.
-                    ui.add_sized(
-                        [full_width, BTN_HEIGHT],
-                        egui::Button::new(props.new_workspace_label),
-                    );
-                    ui.add_space(4.0);
-                });
-        });
-}
-
-fn draw_collapsed_sidebar_box(ui: &mut egui::Ui, props: &SidebarCollapsedProps<'_>) {
-    let th = props.theme;
-    let width = 56.0;
-    let height = 320.0;
-
-    egui::Frame::new()
-        .fill(egui::Color32::from(th.base))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from(th.surface0)))
-        .corner_radius(4.0)
-        .show(ui, |ui| {
-            ui.set_min_size(egui::vec2(width, height));
-            ui.set_max_size(egui::vec2(width, height));
-
-            egui::TopBottomPanel::bottom("gallery_collapsed_bottom")
-                .frame(egui::Frame::NONE)
-                .show_separator_line(false)
-                .show_inside(ui, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        ui.separator();
-                        ui.add_space(2.0);
-                        collapsed_icon(ui, th, "T", 12.0).on_hover_text(props.tools_hover);
-                        ui.add_space(2.0);
-                        collapsed_icon(ui, th, ">", 14.0);
-                        ui.add_space(2.0);
-                        collapsed_icon(ui, th, "\u{1F9E9}", 14.0);
-                        ui.add_space(2.0);
-                        collapsed_icon(ui, th, "\u{2699}", 14.0);
-                        ui.add_space(12.0);
-                    });
-                });
-
-            ui.vertical_centered(|ui| {
-                ui.add_space(4.0);
-                for (i, ws) in props.workspaces.iter().enumerate() {
-                    draw_collapsed_ws(ui, th, ws, i + 1);
-                }
-                ui.add_space(2.0);
-                collapsed_icon(ui, th, "+", 14.0);
-            });
-        });
-}
-
-fn full_bottom_button(ui: &mut egui::Ui, th: &Theme, label: &str) {
-    let full_width = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(full_width, BTN_HEIGHT),
-        egui::Sense::click().union(egui::Sense::hover()),
-    );
-    if resp.hovered() {
-        let hover = egui::Color32::from(th.surface1);
-        ui.painter().rect_filled(rect, 4.0, hover);
-    }
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        label,
-        egui::FontId::proportional(th.sidebar_button_label_font_size.value()),
-        if resp.hovered() {
-            egui::Color32::from(th.subtext1)
-        } else {
-            egui::Color32::from(th.overlay0)
-        },
-    );
-}
-
-fn collapsed_icon(ui: &mut egui::Ui, th: &Theme, glyph: &str, font_size: f32) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(COLLAPSED_ICON_SIZE, egui::Sense::click());
-    if resp.hovered() {
-        let hover = egui::Color32::from(th.surface1);
-        ui.painter().rect_filled(rect, 4.0, hover);
-    }
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        glyph,
-        egui::FontId::proportional(font_size),
-        if resp.hovered() {
-            egui::Color32::from(th.subtext1)
-        } else {
-            egui::Color32::from(th.overlay0)
-        },
-    );
-    resp
-}
-
-fn draw_workspace_card(
+fn paint_icon(
     ui: &mut egui::Ui,
-    th: &Theme,
-    ws: &WorkspaceEntryView,
-    occupied_hover: &str,
+    glyph: MockGlyph,
+    center: egui::Pos2,
+    size: f32,
+    color: egui::Color32,
 ) {
-    let bg = if ws.is_active {
-        egui::Color32::from(th.surface0)
-    } else {
-        egui::Color32::TRANSPARENT
-    };
-    let border = if ws.is_active {
-        egui::Color32::from(th.accent_primary())
-    } else {
-        egui::Color32::from(th.surface0)
-    };
-
-    let frame = egui::Frame::new()
-        .fill(bg)
-        .stroke(egui::Stroke::new(1.0, border))
-        .corner_radius(4.0)
-        .inner_margin(egui::Margin::symmetric(8, 6));
-
-    frame.show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
-        ui.horizontal(|ui| {
-            let title_text = if ws.is_active {
-                egui::RichText::new(&ws.name).strong()
-            } else {
-                egui::RichText::new(&ws.name)
-            };
-            ui.label(title_text);
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ws.attached {
-                    let dot_radius = 3.0;
-                    let (dot_rect, resp) = ui.allocate_exact_size(
-                        egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
-                        egui::Sense::hover(),
-                    );
-                    ui.painter().circle_filled(
-                        dot_rect.center(),
-                        dot_radius,
-                        egui::Color32::from(th.accent_danger()),
-                    );
-                    resp.on_hover_text(occupied_hover);
-                }
-
-                if ws.has_highlight {
-                    let badge_size = egui::vec2(18.0, 16.0);
-                    let (rect, _) = ui.allocate_exact_size(badge_size, egui::Sense::hover());
-                    ui.painter().rect_stroke(
-                        rect,
-                        3.0,
-                        egui::Stroke::new(1.0, egui::Color32::from(th.accent_primary())),
-                        egui::StrokeKind::Inside,
-                    );
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "!",
-                        egui::FontId::proportional(th.font_size_micro.value()),
-                        egui::Color32::from(th.accent_primary()),
-                    );
-                }
-
-                if ws.busy_count > 0 {
-                    let count_text = format!("{}", ws.busy_count);
-                    ui.label(
-                        egui::RichText::new(&count_text)
-                            .small()
-                            .color(egui::Color32::from(th.accent_success())),
-                    );
-                    let dot_radius = 3.0;
-                    let (dot_rect, _) = ui.allocate_exact_size(
-                        egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
-                        egui::Sense::hover(),
-                    );
-                    ui.painter().circle_filled(
-                        dot_rect.center(),
-                        dot_radius,
-                        egui::Color32::from(th.accent_success()),
-                    );
-                }
-            });
-        });
-
-        if !ws.subtitle.is_empty() {
-            ui.label(
-                egui::RichText::new(&ws.subtitle)
-                    .small()
-                    .color(egui::Color32::from(th.subtext0)),
-            );
-        }
-
-        if !ws.description.is_empty() {
-            ui.label(
-                egui::RichText::new(&ws.description)
-                    .small()
-                    .color(egui::Color32::from(th.overlay0)),
-            );
-        }
-    });
+    let r = egui::Rect::from_center_size(center, egui::vec2(size, size));
+    glyph.image(size, color).paint_at(ui, r);
 }
 
-fn draw_collapsed_ws(ui: &mut egui::Ui, th: &Theme, ws: &WorkspaceEntryView, number: usize) {
-    let label = format!("{number}");
-    let bg = if ws.is_active {
-        egui::Color32::from(th.surface0)
-    } else {
-        egui::Color32::from(th.mantle)
-    };
-    let text_color = if ws.is_active {
-        egui::Color32::from(th.text)
-    } else if ws.has_highlight {
-        egui::Color32::from(th.yellow)
-    } else {
-        egui::Color32::from(th.subtext0)
-    };
+fn full(ui: &mut egui::Ui, theme: &Theme) {
+    let w = theme.field_width_lg.value() + theme.spacing_md.value(); // 212
+    let h = theme.spacing_xl.value() * 15.0; // 360
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from(theme.bg_sidebar()));
 
-    let (rect, resp) = ui.allocate_exact_size(COLLAPSED_WS_SIZE, egui::Sense::click());
-    ui.painter().rect_filled(rect, 4.0, bg);
-    if ws.is_active {
-        ui.painter().rect_stroke(
-            rect,
-            4.0,
-            egui::Stroke::new(1.0, egui::Color32::from(th.accent_primary())),
-            egui::StrokeKind::Inside,
-        );
-    }
-    if resp.hovered() {
-        let hover = egui::Color32::from(th.surface1);
-        ui.painter().rect_filled(rect, 4.0, hover);
-    }
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        &label,
-        egui::FontId::proportional(th.sidebar_button_label_font_size.value()),
-        text_color,
+    let pad = theme.spacing_md.value(); // 12
+    let row_h = theme.item_height_interactive.value(); // 28
+    let mut y = rect.min.y + pad;
+
+    // ── header: logo + wordmark ──
+    let logo = theme.sidebar_logo_size.value(); // 22
+    let logo_c = egui::pos2(rect.min.x + pad + logo * 0.5, y + logo * 0.5);
+    paint_icon(ui, TERMINAL, logo_c, logo, egui::Color32::from(theme.accent_primary()));
+    p.text(
+        egui::pos2(logo_c.x + logo * 0.5 + theme.spacing_sm.value(), logo_c.y),
+        egui::Align2::LEFT_CENTER,
+        "Tasty",
+        egui::FontId::proportional(theme.sidebar_wordmark_font_size.value()),
+        egui::Color32::from(theme.text_primary()),
     );
-    if ws.busy_count > 0 {
-        let dot_radius = 3.0;
-        let dot_pad = 4.0;
-        let dot_center = egui::pos2(
-            rect.max.x - dot_pad - dot_radius,
-            rect.min.y + dot_pad + dot_radius,
+    y += logo + theme.spacing_xs.value() + theme.spacing_md.value();
+
+    // ── railHead: "WORKSPACES" ──
+    p.text(
+        egui::pos2(rect.min.x + pad, y),
+        egui::Align2::LEFT_TOP,
+        "WORKSPACES",
+        egui::FontId::proportional(theme.sidebar_section_heading_font_size.value()),
+        egui::Color32::from(theme.text_muted()),
+    );
+    y += theme.spacing_lg.value();
+
+    // ── workspace rows ──
+    for (name, badge, active) in WORKSPACES {
+        let row = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
+            egui::vec2(w - theme.spacing_xs.value() * 2.0, row_h),
         );
-        ui.painter()
-            .circle_filled(dot_center, dot_radius, egui::Color32::from(th.accent_success()));
-    }
-    if ws.attached {
-        let dot_radius = 3.0;
-        let dot_pad = 4.0;
-        let dot_center = egui::pos2(
-            rect.max.x - dot_pad - dot_radius,
-            rect.max.y - dot_pad - dot_radius,
+        if *active {
+            p.rect_filled(
+                row,
+                theme.corner_radius_sm.value(),
+                egui::Color32::from(theme.surface_active()),
+            );
+            // 2px inset accent bar.
+            let bar = egui::Rect::from_min_size(
+                row.min,
+                egui::vec2(theme.focus_ring_width.value(), row.height()),
+            );
+            p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
+        }
+        let dot_r = theme.status_dot_size.value() * 0.5;
+        let dc = egui::pos2(row.min.x + theme.spacing_md.value() + dot_r, row.center().y);
+        p.circle_filled(
+            dc,
+            dot_r,
+            egui::Color32::from(if *active {
+                theme.accent_success()
+            } else {
+                theme.text_muted()
+            }),
         );
-        ui.painter()
-            .circle_filled(dot_center, dot_radius, egui::Color32::from(th.accent_danger()));
+        p.text(
+            egui::pos2(dc.x + dot_r + theme.spacing_sm.value(), row.center().y),
+            egui::Align2::LEFT_CENTER,
+            name,
+            egui::FontId::proportional(theme.font_size_body.value()),
+            egui::Color32::from(if *active {
+                theme.text_primary()
+            } else {
+                theme.text_secondary()
+            }),
+        );
+        if let Some(b) = badge {
+            let bw = theme.spacing_lg.value();
+            let badge_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    row.max.x - theme.spacing_sm.value() - bw,
+                    row.center().y - theme.spacing_sm.value(),
+                ),
+                egui::vec2(bw, theme.spacing_lg.value()),
+            );
+            p.rect_filled(
+                badge_rect,
+                theme.corner_radius_sm.value(),
+                egui::Color32::from(theme.surface_raised()),
+            );
+            p.text(
+                badge_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                *b,
+                egui::FontId::proportional(theme.font_size_micro.value()),
+                egui::Color32::from(theme.text_secondary()),
+            );
+        }
+        y += row_h + theme.spacing_xs.value();
+    }
+
+    // ── footer: border-top + ghost rows (bottom-anchored) ──
+    let footer_h = row_h * FOOTER.len() as f32 + pad;
+    let footer_top = rect.max.y - footer_h;
+    p.hline(
+        rect.x_range(),
+        footer_top,
+        egui::Stroke::new(
+            theme.border_width.value(),
+            egui::Color32::from(theme.border_default()),
+        ),
+    );
+    let mut fy = footer_top + theme.spacing_sm.value();
+    for (glyph, label) in FOOTER {
+        let cy = fy + row_h * 0.5;
+        paint_icon(
+            ui,
+            *glyph,
+            egui::pos2(rect.min.x + pad + theme.icon_glyph_size_sm.value() * 0.5, cy),
+            theme.icon_glyph_size_sm.value(),
+            egui::Color32::from(theme.text_muted()),
+        );
+        p.text(
+            egui::pos2(
+                rect.min.x + pad + theme.icon_glyph_size_sm.value() + theme.spacing_sm.value(),
+                cy,
+            ),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::proportional(theme.sidebar_button_label_font_size.value()),
+            egui::Color32::from(theme.text_secondary()),
+        );
+        fy += row_h;
     }
 }
 
-fn mock_single() -> Vec<WorkspaceEntryView> {
-    vec![WorkspaceEntryView {
-        name: "Default".into(),
-        subtitle: String::new(),
-        description: String::new(),
-        busy_count: 0,
-        has_highlight: false,
-        attached: false,
-        is_active: true,
-    }]
-}
+fn rail(ui: &mut egui::Ui, theme: &Theme) {
+    // 52 = collapsed slot 32 + lg 16 + xs 4.
+    let w = theme.sidebar_collapsed_slot_width.value()
+        + theme.spacing_lg.value()
+        + theme.spacing_xs.value();
+    let h = theme.spacing_xl.value() * 15.0; // 360
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from(theme.bg_sidebar()));
 
-fn mock_many() -> Vec<WorkspaceEntryView> {
-    vec![
-        WorkspaceEntryView {
-            name: "main".into(),
-            subtitle: "user shell".into(),
-            description: String::new(),
-            busy_count: 0,
-            has_highlight: false,
-            attached: false,
-            is_active: true,
-        },
-        WorkspaceEntryView {
-            name: "build".into(),
-            subtitle: "cargo watch".into(),
-            description: String::new(),
-            busy_count: 2,
-            has_highlight: false,
-            attached: false,
-            is_active: false,
-        },
-        WorkspaceEntryView {
-            name: "docs".into(),
-            subtitle: String::new(),
-            description: String::new(),
-            busy_count: 0,
-            has_highlight: true,
-            attached: false,
-            is_active: false,
-        },
-        WorkspaceEntryView {
-            name: "remote".into(),
-            subtitle: "ssh prod-01".into(),
-            description: String::new(),
-            busy_count: 0,
-            has_highlight: false,
-            attached: true,
-            is_active: false,
-        },
-        WorkspaceEntryView {
-            name: "scratch".into(),
-            subtitle: String::new(),
-            description: String::new(),
-            busy_count: 0,
-            has_highlight: false,
-            attached: false,
-            is_active: false,
-        },
-    ]
-}
+    let cx = rect.center().x;
+    let mut y = rect.min.y + theme.spacing_md.value();
 
-fn mock_long_names() -> Vec<WorkspaceEntryView> {
-    vec![
-        WorkspaceEntryView {
-            name: "Very long workspace name that probably overflows".into(),
-            subtitle: "And here is a subtitle that is also pretty long".into(),
-            description: "Optional description giving extra context.".into(),
-            busy_count: 1,
-            has_highlight: false,
-            attached: false,
-            is_active: true,
-        },
-        WorkspaceEntryView {
-            name: "second".into(),
-            subtitle: String::new(),
-            description: String::new(),
-            busy_count: 0,
-            has_highlight: false,
-            attached: false,
-            is_active: false,
-        },
-    ]
-}
+    // 로고 24.
+    let logo = theme.sidebar_logo_collapsed_size.value(); // 24
+    paint_icon(
+        ui,
+        TERMINAL,
+        egui::pos2(cx, y + logo * 0.5),
+        logo,
+        egui::Color32::from(theme.accent_primary()),
+    );
+    y += logo + theme.spacing_md.value();
 
-fn mock_indicators() -> Vec<WorkspaceEntryView> {
-    vec![
-        WorkspaceEntryView {
-            name: "a".into(),
-            subtitle: String::new(),
-            description: String::new(),
-            busy_count: 5,
-            has_highlight: false,
-            attached: false,
-            is_active: true,
-        },
-        WorkspaceEntryView {
-            name: "b".into(),
-            subtitle: String::new(),
-            description: String::new(),
-            busy_count: 0,
-            has_highlight: true,
-            attached: false,
-            is_active: false,
-        },
-        WorkspaceEntryView {
-            name: "c".into(),
-            subtitle: String::new(),
-            description: String::new(),
-            busy_count: 0,
-            has_highlight: false,
-            attached: true,
-            is_active: false,
-        },
-        WorkspaceEntryView {
-            name: "d".into(),
-            subtitle: String::new(),
-            description: String::new(),
-            busy_count: 3,
-            has_highlight: true,
-            attached: true,
-            is_active: false,
-        },
-    ]
-}
-
-fn full_props<'a>(theme: &'a Theme, workspaces: &'a [WorkspaceEntryView]) -> SidebarFullProps<'a> {
-    SidebarFullProps {
-        theme,
-        workspaces,
-        tools_label: "Tools",
-        collapse_label: "<  Collapse",
-        plugins_label: "Plugins",
-        settings_label: "Settings",
-        new_workspace_label: "+ New workspace",
-        occupied_hover: "Held by another client",
-    }
-}
-
-fn collapsed_props<'a>(
-    theme: &'a Theme,
-    workspaces: &'a [WorkspaceEntryView],
-) -> SidebarCollapsedProps<'a> {
-    SidebarCollapsedProps {
-        theme,
-        workspaces,
-        tools_hover: "Tools menu",
+    // IconButton 28 슬롯들.
+    let slot = theme.item_height_interactive.value(); // 28
+    for (i, glyph) in RAIL_SLOTS.iter().enumerate() {
+        let area =
+            egui::Rect::from_center_size(egui::pos2(cx, y + slot * 0.5), egui::vec2(slot, slot));
+        if i == 0 {
+            p.rect_filled(
+                area,
+                theme.corner_radius_sm.value(),
+                egui::Color32::from(theme.surface_active()),
+            );
+        }
+        paint_icon(
+            ui,
+            *glyph,
+            area.center(),
+            theme.icon_glyph_size_md.value(),
+            egui::Color32::from(if i == 0 {
+                theme.text_primary()
+            } else {
+                theme.text_muted()
+            }),
+        );
+        y += slot + theme.spacing_sm.value();
     }
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    ui.label(
-        egui::RichText::new(
-            "draw_full_sidebar_view / draw_collapsed_sidebar_view — workspace navigation",
-        )
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new(
-            "Wrappers: src/adapters/ui/sidebar/{full,collapsed}.rs::draw_{full,collapsed}_sidebar",
-        )
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.add_space(8.0);
-
-    // Mode toggle.
-    let mut mode = CURRENT_MODE.with(|m| *m.borrow());
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Mode:").color(egui::Color32::from(theme.subtext0)));
-        if ui
-            .selectable_label(mode == SidebarMode::Full, "Full")
-            .clicked()
-        {
-            mode = SidebarMode::Full;
-        }
-        if ui
-            .selectable_label(mode == SidebarMode::Collapsed, "Collapsed")
-            .clicked()
-        {
-            mode = SidebarMode::Collapsed;
-        }
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(ui, theme, "Full · 212", |ui| full(ui, theme));
+        spec::cluster(ui, theme, "Collapsed rail · 52", |ui| rail(ui, theme));
     });
-    CURRENT_MODE.with(|m| *m.borrow_mut() = mode);
-    ui.add_space(12.0);
 
-    match mode {
-        SidebarMode::Full => {
-            case_title(ui, theme, "Case 1 — Single workspace");
-            let ws = mock_single();
-            draw_full_sidebar_box(ui, &full_props(theme, &ws));
-            ui.add_space(16.0);
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("full width", "212"),
+            ("rail width", "52"),
+            ("logo", "22 full / 24 rail"),
+            ("row", "dot + name + badge"),
+            ("active row", "surface-active + 2px inset accent"),
+            ("footer", "Tools·Plugins·Settings, border-top"),
+        ],
+        &[
+            TokenChip::new("bg-sidebar", "sidebar fill", theme.bg_sidebar().into()),
+            TokenChip::new("surface-active", "active row", theme.surface_active().into()),
+            TokenChip::new("accent-primary", "inset bar + logo", theme.accent_primary().into()),
+            TokenChip::new("border-default", "footer divider", theme.border_default().into()),
+        ],
+    );
 
-            case_title(
-                ui,
-                theme,
-                "Case 2 — Five workspaces (busy / highlight / attached indicators)",
-            );
-            let ws = mock_many();
-            draw_full_sidebar_box(ui, &full_props(theme, &ws));
-            ui.add_space(16.0);
-
-            case_title(ui, theme, "Case 3 — Long names + subtitle + description");
-            let ws = mock_long_names();
-            draw_full_sidebar_box(ui, &full_props(theme, &ws));
-        }
-        SidebarMode::Collapsed => {
-            case_title(ui, theme, "Case 1 — Five workspaces");
-            let ws = mock_many();
-            draw_collapsed_sidebar_box(ui, &collapsed_props(theme, &ws));
-            ui.add_space(16.0);
-
-            case_title(
-                ui,
-                theme,
-                "Case 2 — Mixed indicators (busy / highlight / attached / combined)",
-            );
-            let ws = mock_indicators();
-            draw_collapsed_sidebar_box(ui, &collapsed_props(theme, &ws));
-        }
-    }
-
-    ui.add_space(12.0);
-    ui.label(
-        egui::RichText::new(
-            "Note: hover overlay 색은 본체의 theme.hover_overlay (premultiplied) 대신 \
-             surface1 로 미러. 본체 wrapper 는 workspace tree + attach holder + busy \
-             count + notification highlight 를 매 프레임 snapshot 으로 만들어 view 에 \
-             넘기고, action 을 state.switch_workspace / Intent::NewWorkspace / \
-             state.dialogs.ws_drag 로 번역한다.",
-        )
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
+    spec::note(
+        ui,
+        theme,
+        "Full 은 워크스페이스를 이름·badge 까지 펼치고, 접으면 52px rail 로 줄어 \
+         아이콘 슬롯만 남는다. 활성 행은 surface-active + 좌측 2px accent 로 표시.",
     );
 }

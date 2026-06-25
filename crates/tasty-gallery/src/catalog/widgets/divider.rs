@@ -1,110 +1,94 @@
-//! Divider 데모.
+//! `divider` specimen — Pane divider (research §2.5 Layouts).
 //!
-//! 본체 `src/adapters/ui/divider.rs::draw_pane_dividers` 의 *시각 패턴* 재현.
-//! 본 함수는 props 만 받는 view (Theme + divider rect 목록 + scale_factor) — Tier 2 확정.
+//! 분할된 pane 사이의 리사이즈 핸들. 1px `separator` 선 + 그 위에 얹힌
+//! ~7px hit-band(드래그 잡는 영역). 포인터가 band 위에 오면 선이 accent-primary 로
+//! 바뀌고 커서가 col/row-resize 로 전환된다. 가로·세로 양축 동일.
 //!
-//! 본체 의존: 없음. `Theme.surface2` 색만 사용.
+//! 본체 `src/adapters/ui/divider.rs::draw_pane_dividers` 의 시각 패턴을 Theme
+//! 토큰만으로 재현 (binary 미의존).
 
 use tasty_type_appearance::theme::Theme;
-use tasty_type_geometry::length::PhysicalPx;
-use tasty_type_geometry::rect::PhysicalRect;
 
-/// 데모용 mock — 본체 PaneTree::collect_dividers 결과와 같은 형태 (`PhysicalRect` 리스트).
-struct DemoCase {
-    label: &'static str,
-    dividers: Vec<PhysicalRect>,
-}
+use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-fn cases() -> Vec<DemoCase> {
-    vec![
-        DemoCase {
-            label: "vertical split (2 panes)",
-            dividers: vec![PhysicalRect {
-                x: PhysicalPx(160.0),
-                y: PhysicalPx(0.0),
-                width: PhysicalPx(2.0),
-                height: PhysicalPx(120.0),
-            }],
-        },
-        DemoCase {
-            label: "horizontal split (2 panes)",
-            dividers: vec![PhysicalRect {
-                x: PhysicalPx(0.0),
-                y: PhysicalPx(60.0),
-                width: PhysicalPx(320.0),
-                height: PhysicalPx(2.0),
-            }],
-        },
-        DemoCase {
-            label: "nested 2×2 grid",
-            dividers: vec![
-                PhysicalRect {
-                    x: PhysicalPx(160.0),
-                    y: PhysicalPx(0.0),
-                    width: PhysicalPx(2.0),
-                    height: PhysicalPx(120.0),
-                },
-                PhysicalRect {
-                    x: PhysicalPx(0.0),
-                    y: PhysicalPx(60.0),
-                    width: PhysicalPx(320.0),
-                    height: PhysicalPx(2.0),
-                },
-            ],
-        },
-    ]
+/// 한 분할 데모 — 두 pane + 가운데 divider(선 + hit-band).
+/// `vertical=true` 면 좌우 분할(col-resize), false 면 상하 분할(row-resize).
+/// `hover=true` 면 선을 accent-primary 로, 아니면 separator 로 그린다.
+fn split(ui: &mut egui::Ui, theme: &Theme, vertical: bool, hover: bool) {
+    // 캔버스: 폭 field_width_lg(200), 높이 spacing_xl×5(120) — 디자인 데모 비율.
+    let w = theme.field_width_lg.value();
+    let h = theme.spacing_xl.value() * 5.0;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+
+    let pane = egui::Color32::from(theme.bg_panel());
+    let line = if hover {
+        egui::Color32::from(theme.accent_primary())
+    } else {
+        egui::Color32::from(theme.separator)
+    };
+    // hit-band: accent-primary 저알파 tint (드래그 영역 가시화).
+    let band = theme.accent_primary().with_alpha(36).to_egui();
+    let band_w = theme.spacing_sm.value(); // ~8 hit-band
+    let line_w = theme.border_width.value();
+
+    p.rect_filled(rect, theme.corner_radius_sm.value(), pane);
+    if vertical {
+        let cx = rect.center().x;
+        let band_rect = egui::Rect::from_center_size(
+            egui::pos2(cx, rect.center().y),
+            egui::vec2(band_w, rect.height()),
+        );
+        p.rect_filled(band_rect, 0.0, band);
+        p.vline(cx, rect.y_range(), egui::Stroke::new(line_w, line));
+    } else {
+        let cy = rect.center().y;
+        let band_rect = egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, cy),
+            egui::vec2(rect.width(), band_w),
+        );
+        p.rect_filled(band_rect, 0.0, band);
+        p.hline(rect.x_range(), cy, egui::Stroke::new(line_w, line));
+    }
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    ui.label(
-        egui::RichText::new("draw_pane_dividers(ctx, dividers: &[PhysicalRect], scale_factor)")
-            .small()
-            .color(egui::Color32::from(theme.subtext0)),
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        spec::cluster(ui, theme, "vertical · col-resize", |ui| {
+            split(ui, theme, true, false);
+        });
+        spec::cluster(ui, theme, "horizontal · row-resize", |ui| {
+            split(ui, theme, false, false);
+        });
+        spec::cluster(ui, theme, "hover → accent-primary", |ui| {
+            split(ui, theme, true, true);
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("line", "1px separator"),
+            ("hit-band", "~7px (8 token)"),
+            ("hover", "line → accent-primary"),
+            ("cursor", "col-resize / row-resize"),
+            ("axes", "vertical + horizontal"),
+        ],
+        &[
+            TokenChip::new("separator", "idle line", theme.separator.into()),
+            TokenChip::new(
+                "accent-primary",
+                "hover line + band",
+                theme.accent_primary().into(),
+            ),
+        ],
     );
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new("border_color = theme.surface2")
-            .small()
-            .color(egui::Color32::from(theme.subtext0)),
+
+    spec::note(
+        ui,
+        theme,
+        "선은 1px 이지만 잡는 영역은 ~7px hit-band — 정밀하게 겨냥하지 않아도 \
+         리사이즈가 시작된다. 양축 모두 같은 규칙.",
     );
-    ui.add_space(12.0);
-
-    let scale_factor: f32 = 1.0;
-    let border_color = egui::Color32::from(theme.surface2);
-    let bg_color = egui::Color32::from(theme.surface0);
-    let pane_color = egui::Color32::from(theme.surface1);
-
-    for case in cases() {
-        ui.label(
-            egui::RichText::new(case.label)
-                .small()
-                .color(egui::Color32::from(theme.subtext0)),
-        );
-        ui.add_space(4.0);
-
-        let canvas_size = egui::vec2(320.0, 120.0);
-        let (canvas_rect, _) = ui.allocate_exact_size(canvas_size, egui::Sense::hover());
-        let painter = ui.painter_at(canvas_rect);
-
-        // 배경 + pane filler (divider 가 어떤 영역을 나누는지 보이게).
-        painter.rect_filled(canvas_rect, 0.0, bg_color);
-        painter.rect_filled(canvas_rect.shrink(2.0), 0.0, pane_color);
-
-        // 본체와 동일 로직: divider 좌표 / scale_factor 후 painter.rect_filled.
-        for div in &case.dividers {
-            let rect = egui::Rect::from_min_size(
-                egui::pos2(
-                    canvas_rect.min.x + div.x.value() / scale_factor,
-                    canvas_rect.min.y + div.y.value() / scale_factor,
-                ),
-                egui::vec2(
-                    div.width.value() / scale_factor,
-                    div.height.value() / scale_factor,
-                ),
-            );
-            painter.rect_filled(rect, 0.0, border_color);
-        }
-
-        ui.add_space(16.0);
-    }
 }

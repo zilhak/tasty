@@ -1,289 +1,156 @@
-//! Multi-tier tab layout 데모 (Tier 2 widget).
+//! `multitab` specimen — Multi-tier tab layout (research §2.5 Layouts).
 //!
-//! 같은 *가로 축* 에 탭이 N단 쌓일 때 depth 별로 시각 위계를 부여하는 패턴.
+//! 같은 가로 축에 탭이 2단 쌓일 때의 위계:
+//! - **tier1 (workspace)**: height 32, bg-app. StatusDot + name, 활성 탭 surface-active.
+//! - **tier2 (pane tab strip)**: height 24, bg-sidebar. 활성 탭 bg-panel + accent top bar.
+//! - **content**: #000(terminal.focused_bg), margin 8.
 //!
-//! - **1단 (top)**: 일반 `selectable_label` + 아래 `ui.separator()` (밑줄).
-//! - **2단 (sub)**: 외곽 `Frame` 으로 묶은 *segmented control* — Frame 이
-//!   "이 탭들은 한 그룹" 임을 시각적으로 표명. 활성 항목은 `selectable_label`
-//!   기본 selection 색으로 강조.
-//! - **3단 (subsub)**: 같은 segmented 패턴을 *작은 사이즈* 로 한 번 더.
-//!   글씨 11 + 더 얇은 inner padding + 더 작은 corner.
-//!
-//! `Theme` 만 의존. 본체 binary 미의존.
-
-use std::cell::RefCell;
+//! 최대 2 tier. Theme 토큰만으로 정적 재현 (binary 미의존).
 
 use tasty_type_appearance::theme::Theme;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Case {
-    SingleTier,
-    TwoTier,
-    ThreeTier,
-    ManyTopTabs,
+use crate::catalog::spec::{self, StageVariant, TokenChip};
+
+const WORKSPACES: &[(&str, bool)] = &[("main", true), ("review", false), ("agent", false)];
+const PANE_TABS: &[(&str, bool)] = &[("README.md", false), ("build.rs", true), ("run.rs", false)];
+
+fn window(ui: &mut egui::Ui, theme: &Theme) {
+    let w = theme.measure_lg.value(); // 460
+    let tier1_h = theme.spacing_xl.value() + theme.spacing_sm.value(); // 32
+    let tier2_h = theme.item_height_tab.value(); // 24
+    let content_h = theme.spacing_xl.value() * 4.0; // 96
+    let total_h = tier1_h + tier2_h + content_h;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, total_h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from(theme.bg_app()));
+
+    let pad = theme.spacing_md.value(); // 12 tab padding
+    let dot_r = theme.status_dot_size.value() * 0.5;
+    let font = egui::FontId::proportional(theme.font_size_body.value());
+
+    // ── tier1: workspace tabs (bg-app) ──
+    let tier1 = egui::Rect::from_min_size(rect.min, egui::vec2(w, tier1_h));
+    let mut x = tier1.min.x;
+    for (name, active) in WORKSPACES {
+        let label_w = font_w(&p, name, &font) + dot_r * 2.0 + theme.spacing_xs.value();
+        let tab_w = label_w + pad * 2.0;
+        let tab = egui::Rect::from_min_size(egui::pos2(x, tier1.min.y), egui::vec2(tab_w, tier1_h));
+        if *active {
+            p.rect_filled(tab, 0.0, egui::Color32::from(theme.surface_active()));
+        }
+        let cy = tab.center().y;
+        let dc = egui::pos2(tab.min.x + pad + dot_r, cy);
+        p.circle_filled(
+            dc,
+            dot_r,
+            egui::Color32::from(if *active {
+                theme.accent_success()
+            } else {
+                theme.text_muted()
+            }),
+        );
+        p.text(
+            egui::pos2(dc.x + dot_r + theme.spacing_xs.value(), cy),
+            egui::Align2::LEFT_CENTER,
+            name,
+            font.clone(),
+            egui::Color32::from(if *active {
+                theme.text_primary()
+            } else {
+                theme.text_secondary()
+            }),
+        );
+        x += tab_w;
+    }
+
+    // ── tier2: pane tab strip (bg-sidebar) ──
+    let tier2 = egui::Rect::from_min_size(
+        egui::pos2(rect.min.x, tier1.max.y),
+        egui::vec2(w, tier2_h),
+    );
+    p.rect_filled(tier2, 0.0, egui::Color32::from(theme.bg_sidebar()));
+    let tab_w = theme.field_width_md.value() * 0.625; // 100
+    let small = egui::FontId::proportional(theme.font_size_caption.value());
+    let mut tx = tier2.min.x;
+    for (i, (name, active)) in PANE_TABS.iter().enumerate() {
+        let tab = egui::Rect::from_min_size(egui::pos2(tx, tier2.min.y), egui::vec2(tab_w, tier2_h));
+        if *active {
+            p.rect_filled(tab, 0.0, egui::Color32::from(theme.bg_panel()));
+            // accent top bar.
+            let bar = egui::Rect::from_min_size(
+                tab.min,
+                egui::vec2(tab_w, theme.tab_indicator_width.value()),
+            );
+            p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
+        }
+        if i > 0 {
+            p.vline(
+                tx,
+                tier2.y_range(),
+                egui::Stroke::new(theme.border_width.value(), egui::Color32::from(theme.separator)),
+            );
+        }
+        p.text(
+            tab.center(),
+            egui::Align2::CENTER_CENTER,
+            name,
+            small.clone(),
+            egui::Color32::from(if *active {
+                theme.text_primary()
+            } else {
+                theme.text_muted()
+            }),
+        );
+        tx += tab_w;
+    }
+
+    // ── content: #000 with margin 8 ──
+    let content = egui::Rect::from_min_max(
+        egui::pos2(rect.min.x, tier2.max.y),
+        rect.max,
+    )
+    .shrink(theme.spacing_sm.value());
+    p.rect_filled(
+        content,
+        theme.corner_radius_sm.value(),
+        egui::Color32::from(theme.surface("terminal").focused_bg),
+    );
 }
 
-struct DemoState {
-    case: Case,
-    top: usize,
-    sub: usize,
-    subsub: usize,
+fn font_w(p: &egui::Painter, text: &str, font: &egui::FontId) -> f32 {
+    p.layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE)
+        .size()
+        .x
 }
-
-thread_local! {
-    static STATE: RefCell<DemoState> = const {
-        RefCell::new(DemoState {
-            case: Case::TwoTier,
-            top: 0,
-            sub: 0,
-            subsub: 0,
-        })
-    };
-}
-
-const TOP_TABS_FEW: &[&str] = &["General", "Terminal", "Appearance", "Plugins"];
-
-const TOP_TABS_MANY: &[&str] = &[
-    "General",
-    "Terminal",
-    "Appearance",
-    "Clipboard",
-    "Notifications",
-    "Keybindings",
-    "Performance",
-    "Accessibility",
-    "File Handler",
-    "Updates",
-];
-
-const SUB_TABS: &[&str] = &["Tasty", "Editor", "Cursor"];
-const SUBSUB_TABS: &[&str] = &["Light", "Dark", "Auto"];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    ui.label(
-        egui::RichText::new(
-            "같은 가로 축에서 depth 를 시각 위계로 표현. \
-             1단: 일반 탭 + 밑줄. 2단: 외곽 Frame 으로 묶은 segmented control. \
-             3단: 같은 segmented 패턴 + 작은 사이즈.",
-        )
-        .color(egui::Color32::from(theme.subtext0))
-        .size(theme.font_size_caption.value()),
+    spec::stage(ui, theme, StageVariant::Solo, |ui| {
+        window(ui, theme);
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("tier1", "32 · bg-app · workspace tabs"),
+            ("tier2", "24 · bg-sidebar · pane tabs"),
+            ("active tier1", "surface-active fill"),
+            ("active tier2", "bg-panel + accent top bar"),
+            ("content", "#000 · margin 8"),
+            ("depth", "2 tier max"),
+        ],
+        &[
+            TokenChip::new("bg-app", "tier1 strip", theme.bg_app().into()),
+            TokenChip::new("bg-sidebar", "tier2 strip", theme.bg_sidebar().into()),
+            TokenChip::new("surface-active", "active workspace", theme.surface_active().into()),
+            TokenChip::new("accent-primary", "active pane bar", theme.accent_primary().into()),
+        ],
     );
-    ui.add_space(8.0);
 
-    // Case 선택 (데모 자체)
-    let mut case = STATE.with(|s| s.borrow().case);
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("Case:")
-                .color(egui::Color32::from(theme.subtext0))
-                .strong(),
-        );
-        for (label, value) in [
-            ("1 단", Case::SingleTier),
-            ("2 단", Case::TwoTier),
-            ("3 단", Case::ThreeTier),
-            ("스크롤 필요 (탭 많음)", Case::ManyTopTabs),
-        ] {
-            if ui.selectable_label(case == value, label).clicked() {
-                case = value;
-                STATE.with(|s| {
-                    let mut st = s.borrow_mut();
-                    st.case = value;
-                    st.top = 0;
-                    st.sub = 0;
-                    st.subsub = 0;
-                });
-            }
-        }
-    });
-    ui.add_space(8.0);
-
-    // 본 데모 패널 — 본체 settings 의 modal 상단 영역과 같은 시각 idiom.
-    let panel_h = match case {
-        Case::SingleTier => 90.0,
-        Case::TwoTier => 150.0,
-        Case::ThreeTier => 210.0,
-        Case::ManyTopTabs => 200.0,
-    };
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.set_min_size(egui::vec2(ui.available_width(), panel_h));
-        ui.set_max_height(panel_h);
-
-        let top_tabs = if case == Case::ManyTopTabs {
-            TOP_TABS_MANY
-        } else {
-            TOP_TABS_FEW
-        };
-
-        // 1단: 일반 탭 + 밑줄 separator.
-        draw_top_tab_bar(ui, theme, top_tabs);
-        ui.separator();
-
-        if matches!(case, Case::TwoTier | Case::ThreeTier) {
-            ui.add_space(6.0);
-            // 2단: segmented control.
-            draw_sub_segmented(ui, theme, SUB_TABS, |idx| {
-                STATE.with(|s| s.borrow_mut().sub = idx);
-            });
-        }
-        if matches!(case, Case::ThreeTier) {
-            ui.add_space(4.0);
-            // 3단: segmented control (작은 사이즈).
-            draw_subsub_segmented(ui, theme, SUBSUB_TABS);
-        }
-
-        ui.add_space(8.0);
-        draw_content(ui, theme, case);
-    });
-}
-
-fn draw_top_tab_bar(ui: &mut egui::Ui, theme: &Theme, tabs: &[&str]) {
-    const SCROLL_STEP: f32 = 80.0;
-    ui.horizontal(|ui| {
-        let output = egui::ScrollArea::horizontal()
-            .id_salt("demo_top_scroll")
-            .auto_shrink([false, true])
-            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-            .max_width(ui.available_width())
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let cur = STATE.with(|s| s.borrow().top);
-                    for (idx, label) in tabs.iter().enumerate() {
-                        if ui.selectable_label(cur == idx, *label).clicked() {
-                            STATE.with(|s| s.borrow_mut().top = idx);
-                        }
-                    }
-                });
-            });
-
-        let viewport_w = output.inner_rect.width();
-        let content_w = output.content_size.x;
-        let needs_scroll = content_w > viewport_w + 0.5;
-
-        let max_offset = (content_w - viewport_w).max(0.0);
-        let mut new_offset = output.state.offset.x;
-        if needs_scroll {
-            let bar_rect = output.inner_rect;
-            let icon_size = 14.0_f32;
-            let arrow_area_w = icon_size * 1.6;
-            let icon_tint = egui::Color32::from(theme.text).gamma_multiply(0.4);
-
-            let left_rect = egui::Rect::from_min_size(
-                bar_rect.left_top(),
-                egui::vec2(arrow_area_w, bar_rect.height()),
-            );
-            let right_rect = egui::Rect::from_min_max(
-                egui::pos2(bar_rect.right() - arrow_area_w, bar_rect.top()),
-                bar_rect.right_bottom(),
-            );
-            let l = ui.put(
-                left_rect,
-                egui::Button::image(
-                    egui::Image::new(egui::include_image!(
-                        "../../../../../assets/icons/chevron-left.svg"
-                    ))
-                    .tint(icon_tint)
-                    .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
-                )
-                .frame(false)
-                .min_size(left_rect.size()),
-            );
-            let r = ui.put(
-                right_rect,
-                egui::Button::image(
-                    egui::Image::new(egui::include_image!(
-                        "../../../../../assets/icons/chevron-right.svg"
-                    ))
-                    .tint(icon_tint)
-                    .fit_to_exact_size(egui::vec2(icon_size, icon_size)),
-                )
-                .frame(false)
-                .min_size(right_rect.size()),
-            );
-            if l.clicked() {
-                new_offset = (new_offset - SCROLL_STEP).max(0.0);
-            }
-            if r.clicked() {
-                new_offset = (new_offset + SCROLL_STEP).min(max_offset);
-            }
-        }
-        if (new_offset - output.state.offset.x).abs() > f32::EPSILON {
-            let mut s = output.state;
-            s.offset.x = new_offset;
-            s.store(ui.ctx(), output.id);
-            ui.ctx().request_repaint();
-        }
-    });
-}
-
-/// 2단: 외곽 Frame 으로 묶은 segmented control. *이 탭들은 한 그룹* 임을 시각화.
-fn draw_sub_segmented(ui: &mut egui::Ui, theme: &Theme, tabs: &[&str], on_click: impl Fn(usize)) {
-    egui::Frame::new()
-        .fill(egui::Color32::from(theme.mantle))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from(theme.surface0)))
-        .corner_radius(6.0)
-        .inner_margin(egui::Margin::symmetric(4, 3))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let cur = STATE.with(|s| s.borrow().sub);
-                for (idx, label) in tabs.iter().enumerate() {
-                    if ui.selectable_label(cur == idx, *label).clicked() {
-                        on_click(idx);
-                    }
-                }
-            });
-        });
-}
-
-/// 3단: 같은 segmented 패턴, 글씨 11 + 더 얇은 inner padding + 작은 corner.
-fn draw_subsub_segmented(ui: &mut egui::Ui, theme: &Theme, tabs: &[&str]) {
-    egui::Frame::new()
-        .fill(egui::Color32::from(theme.mantle))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from(theme.surface0)))
-        .corner_radius(4.0)
-        .inner_margin(egui::Margin::symmetric(3, 2))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let cur = STATE.with(|s| s.borrow().subsub);
-                for (idx, label) in tabs.iter().enumerate() {
-                    let rt = egui::RichText::new(*label)
-                        .size(theme.font_size_caption.value())
-                        .color(egui::Color32::from(theme.text));
-                    if ui.selectable_label(cur == idx, rt).clicked() {
-                        STATE.with(|s| s.borrow_mut().subsub = idx);
-                    }
-                }
-            });
-        });
-}
-
-fn draw_content(ui: &mut egui::Ui, theme: &Theme, case: Case) {
-    let (top, sub, subsub) = STATE.with(|s| {
-        let st = s.borrow();
-        (st.top, st.sub, st.subsub)
-    });
-    let top_label = if case == Case::ManyTopTabs {
-        TOP_TABS_MANY.get(top).copied().unwrap_or("?")
-    } else {
-        TOP_TABS_FEW.get(top).copied().unwrap_or("?")
-    };
-    let sub_label = SUB_TABS.get(sub).copied().unwrap_or("?");
-    let subsub_label = SUBSUB_TABS.get(subsub).copied().unwrap_or("?");
-    let path = match case {
-        Case::SingleTier => top_label.to_string(),
-        Case::TwoTier => format!("{top_label} / {sub_label}"),
-        Case::ThreeTier => format!("{top_label} / {sub_label} / {subsub_label}"),
-        Case::ManyTopTabs => top_label.to_string(),
-    };
-    ui.label(
-        egui::RichText::new(format!("Content: {path}"))
-            .color(egui::Color32::from(theme.text))
-            .size(theme.font_size_term_sm.value()),
-    );
-    ui.label(
-        egui::RichText::new("(여기에 분기된 폼/리스트/그리드를 그린다)")
-            .color(egui::Color32::from(theme.subtext0))
-            .size(theme.font_size_caption.value()),
+    spec::note(
+        ui,
+        theme,
+        "워크스페이스(tier1)와 그 안의 pane 탭(tier2)은 서로 다른 배경·강조로 \
+         depth 를 구분한다. 2단을 넘지 않는다 — 그 이상은 위계가 무너진다.",
     );
 }
