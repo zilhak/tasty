@@ -298,3 +298,23 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   믹스 = `Color32::from_rgba_unmultiplied(r,g,b, t*255)` (= C 를 알파 t 로). 후자는 Tag 위젯의
   `gamma_multiply(0.4)`(=border 40% transparent) 와 같은 의도.
 - **근거**: `crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs` (plugins `mix`/`alpha`).
+
+---
+
+## 일반 — component-tier 디자인 토큰은 신규 Theme 필드를 만들지 않는다 (semantic 접근자 직접 매핑)
+
+- **증상**: 디자인 `tokens/components.css` 에 새 컴포넌트 토큰 블록이 추가되면(예
+  `switch-overlay-active-bg: var(--tasty-accent-primary)`), Theme 에 대응 필드를 새로
+  만들어야 할 것처럼 보인다.
+- **원인(검증)**: tasty `Theme` 은 **semantic-tier 값만 필드/접근자로 보유**하고, component-tier
+  토큰은 코드가 그 접근자를 직접 호출해 표현한다. `components.css` 의 `button-primary-bg`
+  · `checkbox-bg-checked` · `switch-track-bg-on` 이 모두 `--tasty-accent-primary` alias 지만
+  Theme 엔 전용 필드가 없고 호출부가 `accent_primary()` 를 직접 부른다(매핑표 `design-token-mapping.md`
+  에 dedicated 필드 0개). 즉 디자인의 3-tier(component→semantic→primitive)에서 tasty Theme 은
+  semantic tier 에 해당하고, component tier 는 호출부의 책임.
+- **처방**: 새 component 토큰이 기존 semantic 접근자(`accent_primary()`/`text_on_accent()`/
+  `surface0`/`subtext1`/`surface1` 등)나 위젯 상수로 해석되면 **신규 필드를 만들지 말고 매핑만
+  기록**. 새 *semantic* 색/치수가 진짜로 도입될 때만 Theme 필드를 추가한다.
+- **근거(2026-06-25)**: switch-number overlay 8 토큰 전부 기존 접근자/`Kbd` 위젯 상수(`chip.rs`
+  `KBD_HEIGHT/KBD_BOTTOM_BORDER`)·`font_size_micro` 로 커버 → P0 에서 theme.rs 무변경. 매핑은
+  `design-token-mapping.md` "switch-number overlay (chrome)" 섹션.

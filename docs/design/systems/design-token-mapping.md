@@ -62,6 +62,28 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 | MenuItem | 아이콘 글리프 | 16 | icon-size-md (15 → 16 snap), `icon_glyph_size_md` |
 | (공용) | disabled opacity | 0.5 | `opacity_disabled()` |
 
+## switch-number overlay (chrome)
+
+디자인 `tokens/components.css` 의 `CHROME · SWITCH-NUMBER OVERLAY` 블록(8 토큰). modifier 홀드 중
+탭/워크스페이스의 leading indicator(탭 아이콘 / 워크스페이스 status dot / collapsed letter avatar)를
+숫자 키캡으로 제자리 교체하는 패턴. **비active 키캡은 기존 `Kbd` 키캡 그대로** (디자인도
+`var(--tasty-kbd-*)` 로 alias) → tasty 의 `kbd()`(`crates/tasty-ui-widgets/src/chip.rs`) 가 이미 커버.
+**신규는 active(현재 탭/ws) 키캡의 accent-filled bg/fg 뿐**이고, 그조차 기존 semantic 접근자로
+표현된다 → **신규 Theme 필드 0개** (component→semantic 직접 매핑, button-primary-bg→accent_primary() 와 동일 관습).
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme / 위젯 | 비고 |
+|---|---|---|---|
+| `--tasty-switch-overlay-size` | → `kbd-size` → `size-16` (16px) | `chip.rs` `KBD_HEIGHT`/`KBD_MIN_W = 16.0` (위젯 상수) | 키캡 footprint = 아이콘/dot slot. Theme 필드 아님(Kbd 위젯 상수) |
+| `--tasty-switch-overlay-bg` | → `kbd-bg` → `surface-raised` | `Theme::surface0` | 비active 키캡 fill |
+| `--tasty-switch-overlay-fg` | → `kbd-fg` → `text-secondary` | `Theme::subtext1` | 비active 키캡 숫자 |
+| `--tasty-switch-overlay-border` | → `kbd-border` → `border-strong` | `Theme::surface1` | 키캡 외곽선 |
+| `--tasty-switch-overlay-shadow-depth` | → `kbd-shadow-depth` → `size-2` (2px) | `chip.rs` `KBD_BOTTOM_BORDER = 2.0` (위젯 상수) | 키캡 하단 3D edge. Theme 필드 아님 |
+| `--tasty-switch-overlay-active-bg` | → `accent-primary` → `color-blue` | `Theme::accent_primary()` | **현재 항목 = accent-filled 키캡 bg.** 기존 접근자 |
+| `--tasty-switch-overlay-active-fg` | → `text-on-accent` → `color-neutral-0` | `Theme::text_on_accent()` | accent fill 위 숫자. 기존 접근자 (⚠ text_on_accent 는 잠정 `crust` 매핑 — mocha OK, latte white 미반영. button-primary-fg/checkbox-check 등과 공유하는 선재 한계, switch-overlay 고유 이슈 아님) |
+| `--tasty-switch-overlay-fade` | → `motion-ui-fast` → `duration-90` (90ms) | (없음 — 모션 토큰 미보유) | 등장 90ms ease, release 0ms. egui immediate-mode 는 end-state 로 snap = readme 상 compliant. P2 draw 의 선택적 연출, Theme 필드 불필요 |
+
+> **결론(검증 완료)**: switch-number overlay 8 토큰 모두 **기존 Theme 접근자(`accent_primary()`/`text_on_accent()`/`surface0`/`subtext1`/`surface1`)·위젯 상수·`font_size_micro` 로 커버** → P0 에서 추가할 신규 Theme 필드 없음. P2(draw)는 비active 키캡=`kbd()` 재사용, active 키캡=`accent_primary()` fill + `text_on_accent()` 숫자로 그린다.
+
 ## 토큰이 아닌 raw 값 주의
 
 디자인 inline style 에는 토큰이 아닌 raw px 도 섞여 있다 (전사 시 그대로 옮기되 기록):
