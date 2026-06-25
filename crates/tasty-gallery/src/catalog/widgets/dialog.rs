@@ -1,86 +1,246 @@
-//! Dialog helper 데모.
+//! Scrim & frame — overlay 공통 레시피 Spec + 다른 overlay specimen 이 공유하는
+//! 모달 프레임 키트.
 //!
-//! 본체 `src/adapters/ui/dialog.rs::rename_popup_default_size()` 의 시각화 +
-//! rename popup 의 시각 layout (title bar / TextEdit / 버튼) 을 mock 으로 표현.
+//! 디자인(4) Overlays 의 모든 모달은 같은 frame 레시피를 공유한다:
+//! `bg-panel`(palette/search/tools 는 `surface-raised`) + 1px `border-strong` +
+//! modal shadow, scrim `rgba(0,0,0,.5)` + blur. 이 모듈은 그 레시피를 한 Spec 으로
+//! 보여주고(`draw`), 동시에 14 Spec 전부가 호출하는 frame/region/field 헬퍼를
+//! `pub` 으로 노출한다 (research §2.4 공통).
 //!
-//! **Tier 2 범위**: popup frame 의 *시각 구성* 만. 실제 입력 처리, AppState mutation,
-//! Enter/Escape 핸들링, callback 등은 *모두 빠져있다* — 그 부분은 Tier 3.
-//!
-//! - `rename_popup_default_size()` = `(280, TITLE_BAR_HEIGHT + CONTENT_MARGIN*2 + 64)` 상수.
-//! - 본체 의존: 없음. 상수는 gallery 에 로컬 복제 (POC 후 공유 lib crate 분리 검토 — Tier 3 패턴 문서).
-
-use std::cell::RefCell;
+//! 색·치수·간격·보더는 모두 `Theme` 토큰. scrim/shadow 의 alpha 는 디자인 토큰
+//! (`scrim-bg` black 50% / `shadow-modal` black .55) 을 black-alpha 로 도출한다.
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::catalog::popup_frame::{self, CONTENT_MARGIN, ContentInset, TITLE_BAR_HEIGHT};
+use crate::catalog::icons::MockGlyph;
+use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// 본체 dialog::rename_popup_default_size() 와 동등.
-fn rename_popup_default_size() -> egui::Vec2 {
-    egui::vec2(280.0, TITLE_BAR_HEIGHT + CONTENT_MARGIN * 2.0 + 64.0)
+// ── 공유 frame 키트 (모든 overlay specimen 이 호출) ────────────────────────
+
+/// 모달 프레임 — 지정 `fill` + 1px border-strong + modal shadow, 고정 폭.
+/// 내부 콘텐츠는 region/hsep/field 로 채운다. item_spacing 은 0 으로 둔다
+/// (각 region 이 자체 패딩을 가짐).
+pub fn frame_card(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: f32,
+    fill: egui::Color32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    egui::Frame::new()
+        .fill(fill)
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_strong().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .shadow(egui::epaint::Shadow {
+            offset: [0, 10],
+            blur: 28,
+            spread: 0,
+            color: egui::Color32::from_black_alpha(120),
+        })
+        .show(ui, |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            add(ui);
+        });
 }
 
-thread_local! {
-    static MOCK_BUF: RefCell<String> = RefCell::new(String::from("My Tab"));
+/// 인라인 글리프 — `size` 정사각 영역을 할당해 `color` tint 로 그린다.
+pub fn icon(ui: &mut egui::Ui, glyph: MockGlyph, size: f32, color: egui::Color32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    glyph.image(size, color).paint_at(ui, rect);
 }
+
+/// 모달 기본 배경 (bg-panel).
+pub fn panel_fill(theme: &Theme) -> egui::Color32 {
+    theme.bg_panel().to_egui()
+}
+
+/// 팝오버/팔레트 배경 (surface-raised).
+pub fn raised_fill(theme: &Theme) -> egui::Color32 {
+    theme.surface_raised().to_egui()
+}
+
+/// 패딩 영역 — 전체 폭을 차지하는 child Ui 를 margin 안에 그린다.
+pub fn region(
+    ui: &mut egui::Ui,
+    margin: egui::Margin,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    egui::Frame::new().inner_margin(margin).show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        add(ui);
+    });
+}
+
+/// 대칭 패딩 region (좌우 `x`, 상하 `y`).
+pub fn region_sym(ui: &mut egui::Ui, x: f32, y: f32, add: impl FnOnce(&mut egui::Ui)) {
+    region(ui, egui::Margin::symmetric(x as i8, y as i8), add);
+}
+
+/// 전체 폭 1px separator (모달 region 구분선 — border-bottom).
+pub fn hsep(ui: &mut egui::Ui, theme: &Theme) {
+    let w = ui.available_width();
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(w, theme.border_width.value()), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+}
+
+/// 모달 제목 — 14px(font-size-max) semibold, text-primary.
+pub fn title(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .size(theme.font_size_max.value())
+            .strong()
+            .color(theme.text_primary().to_egui()),
+    );
+}
+
+/// 본문 산문 — 13px(body), text-secondary.
+pub fn body(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .size(theme.font_size_body.value())
+            .color(theme.text_secondary().to_egui()),
+    );
+}
+
+/// 보조 caption — 11px(caption), text-muted (mono 옵션).
+pub fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str, mono: bool) {
+    let mut rt = egui::RichText::new(text)
+        .size(theme.font_size_caption.value())
+        .color(theme.text_muted().to_egui());
+    if mono {
+        rt = rt.monospace();
+    }
+    ui.label(rt);
+}
+
+/// 정적 입력 필드 박스 (height 28, surface-raised + border-default). 데모 전용 —
+/// 실 입력 없이 placeholder/값 텍스트만 표시 (gallery 는 focus 경합을 피한다).
+pub fn field(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: Option<f32>,
+    text: &str,
+    placeholder: bool,
+    mono: bool,
+) {
+    let h = theme.item_height_interactive.value();
+    let w = width.unwrap_or_else(|| ui.available_width());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, theme.corner_radius.value(), theme.surface_raised().to_egui());
+    p.rect_stroke(
+        rect,
+        theme.corner_radius.value(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    let color = if placeholder {
+        theme.text_placeholder()
+    } else {
+        theme.text_primary()
+    };
+    let font = if mono {
+        egui::FontId::monospace(theme.font_size_body.value())
+    } else {
+        egui::FontId::proportional(theme.font_size_body.value())
+    };
+    p.text(
+        egui::pos2(rect.left() + theme.spacing_md.value(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        text,
+        font,
+        color.to_egui(),
+    );
+}
+
+/// faux 앱 배경 + scrim — 모달이 그 위에 뜨는 무대. `add` 가 scrim 위 모달을
+/// 그린다. `top_space` 만큼 위에서 띄워 anchor(center/top) 를 표현한다.
+pub fn scrim_backdrop(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: f32,
+    height: f32,
+    top_space: f32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    // faux app (bg-app).
+    p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
+    // scrim — black 50% (디자인 scrim-bg).
+    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from_black_alpha(128));
+
+    // 모달을 위에서 top_space 만큼 띄워 가로 중앙 배치.
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::top_down(egui::Align::Center)),
+    );
+    child.add_space(top_space);
+    add(&mut child);
+}
+
+// ── scrim & frame Spec ────────────────────────────────────────────────────
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    ui.label(
-        egui::RichText::new(
-            "rename_popup_default_size() → 280 × (TITLE_BAR_HEIGHT + CONTENT_MARGIN*2 + 64)",
-        )
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new(format!(
-            "= {:.0} × {:.0} (logical px)",
-            rename_popup_default_size().x,
-            rename_popup_default_size().y,
-        ))
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.add_space(12.0);
-
-    // Popup frame mock: title bar + content area + 버튼.
-    let size = rename_popup_default_size();
-    popup_frame::draw(
-        ui,
-        theme,
-        "Rename tab",
-        size.x,
-        size.y,
-        ContentInset::INSET,
-        |child_ui| {
-            MOCK_BUF.with(|b| {
-                let mut buf = b.borrow_mut();
-                child_ui.add_sized(
-                    [child_ui.available_width(), 22.0],
-                    egui::TextEdit::singleline(&mut *buf)
-                        .font(egui::FontId::proportional(theme.font_size_body.value()))
-                        .margin(egui::Margin::symmetric(4, 2)),
-                );
-            });
-
-            child_ui.add_space(8.0);
-            child_ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // 갤러리 mock — 클릭 응답 의도적으로 무시 (시각 layout 검증 전용).
-                    let _cancel_resp = ui.button("Cancel");
-                    let _save_resp = ui.button("Save");
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        // center anchor.
+        spec::cluster(ui, theme, "center anchor", |ui| {
+            scrim_backdrop(ui, theme, theme.measure_sm.value(), 200.0, 64.0, |ui| {
+                frame_card(ui, theme, 240.0, panel_fill(theme), |ui| {
+                    region_sym(ui, theme.spacing_lg.value(), theme.spacing_md.value(), |ui| {
+                        title(ui, theme, "Frame");
+                        ui.add_space(theme.spacing_sm.value());
+                        body(ui, theme, "bg-panel · 1px border-strong · modal shadow");
+                    });
                 });
             });
-        },
+        });
+        // top anchor (~88px offset).
+        spec::cluster(ui, theme, "top anchor (~88px)", |ui| {
+            scrim_backdrop(ui, theme, theme.measure_sm.value(), 200.0, 28.0, |ui| {
+                frame_card(ui, theme, 240.0, raised_fill(theme), |ui| {
+                    region_sym(ui, theme.spacing_lg.value(), theme.spacing_md.value(), |ui| {
+                        title(ui, theme, "Palette-style");
+                        ui.add_space(theme.spacing_sm.value());
+                        body(ui, theme, "surface-raised · spawns under the title bar");
+                    });
+                });
+            });
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("scrim", "black 50% + blur 1px"),
+            ("frame bg", "bg-panel / surface-raised"),
+            ("frame border", "1px border-strong"),
+            ("shadow", "modal — 0 20px 60px /.55"),
+            ("dismiss", "scrim click / Esc"),
+            ("anchors", "center · top (~88px)"),
+        ],
+        &[
+            TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
+            TokenChip::new("border-strong", "frame edge", theme.border_strong().to_egui()),
+            TokenChip::new("surface-raised", "popover frame", theme.surface_raised().to_egui()),
+        ],
     );
 
-    ui.add_space(12.0);
-    ui.label(
-        egui::RichText::new(
-            "⚠ POC visual mock — 실제 입력 처리 / AppState mutation 은 Tier 3 (draw_rename_popup).",
-        )
-        .small()
-        .color(egui::Color32::from(theme.subtext0)),
+    spec::note(
+        ui,
+        theme,
+        "Every overlay on this page is built from this recipe — the frame, the \
+         scrim, and the lift never change; only the contents and the anchor do.",
     );
 }

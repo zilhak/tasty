@@ -392,86 +392,149 @@ pub fn pages() -> Vec<Page> {
             )],
         },
         // ── Overlays ─────────────────────────────────────────────────
+        // 디자인(4) §2.4 의 14 Spec 을 1:1 Section 으로 — 모든 모달이 공유하는
+        // scrim/frame 레시피(scrim)부터 2-tier settings 까지.
         Page {
             category: Category::Overlays,
             sections: vec![
                 section(
-                    "command",
-                    "Command & menus",
-                    vec![
-                        spec(
-                            "palette",
-                            "Command palette",
-                            None,
-                            components::command_palette::draw,
-                        ),
-                        spec("tools", "Tools menu", None, components::tools_menu::draw),
-                    ],
-                ),
-                section(
-                    "dialogs",
-                    "Dialogs & pickers",
-                    vec![
-                        spec("dialog", "Dialog frame", None, widgets::dialog::draw),
-                        spec(
-                            "rename",
-                            "Rename popup",
-                            None,
-                            components::rename_popup::draw,
-                        ),
-                        spec("convert", "Convert surface", None, components::convert::draw),
-                        spec(
-                            "markdown",
-                            "Markdown open",
-                            None,
-                            components::markdown_open::draw,
-                        ),
-                        spec(
-                            "preset",
-                            "Apply preset",
-                            None,
-                            components::apply_preset::draw,
-                        ),
-                        spec(
-                            "filehandler",
-                            "File handler picker",
-                            None,
-                            components::file_handler_picker::draw,
-                        ),
-                        spec("update", "Update (Tier 3)", None, components::update::draw),
-                    ],
-                ),
-                section(
-                    "agent",
-                    "Agent approval",
+                    "scrim",
+                    "Scrim & frame",
                     vec![spec(
-                        "approval",
-                        "Agent approval",
-                        None,
-                        components::approval::draw,
+                        "scrim",
+                        "Dismiss on scrim or Esc",
+                        Some("The shared recipe — bg-panel frame, 1px border-strong, modal shadow, scrim + blur"),
+                        widgets::dialog::draw,
+                    )],
+                ),
+                section(
+                    "palette",
+                    "Command palette",
+                    vec![spec(
+                        "palette",
+                        "Top-anchored, fuzzy, keyboard-first",
+                        Some("480px · surface-raised · spawns under the title bar"),
+                        components::command_palette::draw,
+                    )],
+                ),
+                section(
+                    "tools",
+                    "Tools menu",
+                    vec![spec(
+                        "tools",
+                        "Anchored to the sidebar, no scrim",
+                        Some("160px popover · builtin actions + plugins"),
+                        components::tools_menu::draw,
                     )],
                 ),
                 section(
                     "ports",
-                    "Ports & search",
-                    vec![
-                        spec(
-                            "ports",
-                            "Listening ports",
-                            None,
-                            components::port_scanner::draw,
-                        ),
-                        spec("search", "Search bar", None, components::search_bar::draw),
-                    ],
+                    "Listening ports",
+                    vec![spec(
+                        "ports",
+                        "Live listeners, copy address",
+                        Some("660×520 · 7-column table · sticky header"),
+                        components::port_scanner::draw,
+                    )],
                 ),
                 section(
-                    "toast-stack",
-                    "Toast stack",
+                    "remote",
+                    "Remote connections",
                     vec![spec(
-                        "toast-stack",
-                        "Toast stack (Tier 3)",
-                        None,
-                        components::toast::draw,
+                        "remote",
+                        "Profiles & passkeys",
+                        Some("520×460 · two tabs · SSH targets, identity at the boundary"),
+                        components::remote::draw,
+                    )],
+                ),
+                section(
+                    "search",
+                    "Search bar",
+                    vec![spec(
+                        "search",
+                        "Headless, sticky, top-right",
+                        Some("360×28 · find bar on the focused surface, no scrim"),
+                        components::search_bar::draw,
+                    )],
+                ),
+                section(
+                    "approval",
+                    "Agent approval",
+                    vec![spec(
+                        "approval",
+                        "Review the command before it runs",
+                        Some("440px · the command and its grants, verbatim"),
+                        components::approval::draw,
+                    )],
+                ),
+                section(
+                    "convert",
+                    "Convert surface",
+                    vec![spec(
+                        "convert",
+                        "Swap a surface's type in place",
+                        Some("400px · From → To, scrollback preserved"),
+                        components::convert::draw,
+                    )],
+                ),
+                section(
+                    "filehandler",
+                    "File handler picker",
+                    vec![spec(
+                        "filehandler",
+                        "Pick who opens this file",
+                        Some("420px · built-in + plugin handlers, Always for type"),
+                        components::file_handler_picker::draw,
+                    )],
+                ),
+                section(
+                    "preset",
+                    "Apply preset",
+                    vec![spec(
+                        "preset",
+                        "Apply a saved layout",
+                        Some("440px · Workspace / Tab / Pane scope"),
+                        components::apply_preset::draw,
+                    )],
+                ),
+                section(
+                    "markdown",
+                    "Markdown open",
+                    vec![spec(
+                        "markdown",
+                        "Edit or preview",
+                        Some("420px · two choice cards"),
+                        components::markdown_open::draw,
+                    )],
+                ),
+                section(
+                    "rename",
+                    "Rename popup",
+                    vec![spec(
+                        "rename",
+                        "One field, autofocused",
+                        Some("360px · workspace / subtitle / tab — one view"),
+                        components::rename_popup::draw,
+                    )],
+                ),
+                section(
+                    "update",
+                    "Update",
+                    vec![spec(
+                        "update",
+                        "Tier 3 release available",
+                        Some("380px · version delta + release notes"),
+                        components::update::draw,
+                    )],
+                ),
+                section(
+                    "settings",
+                    "Settings window",
+                    vec![spec(
+                        "settings",
+                        "Two-tier: tabs over sidebar over content",
+                        Some("620×380 · L1 tabs · L2 sidebar · content · footer"),
+                        components::settings::draw,
                     )],
                 ),
             ],
