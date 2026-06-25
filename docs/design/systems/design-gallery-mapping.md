@@ -40,7 +40,7 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 ## 이미 갤러리에 있는 관련 항목 (참고)
 
 `catalog/components/` 에 등록된 것: `command_palette` · `port_scanner` · `convert` ·
-`approval` · `file_handler_picker` · `markdown_open` · `rename_popup` · `update` · `toast` ·
+`approval` · `file_handler_picker` · `markdown_open` · `rename_popup` · `toast` ·
 `sidebar` · `tab_bar` · `apply_preset`. 이들은 props 분리가 돼 있어 갤러리로 즉시 검증 가능.
 
 ## Overlay 시각 복제 specimen (본체 의존 0)

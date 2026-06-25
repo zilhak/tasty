@@ -33,12 +33,12 @@
   - **Appearance**: Theme / Colors(프리셋 색 개별 override picker) / General / Display(UI 스케일 전용) / Terminal / (플러그인 기여 페이지 동적) / HTML
   - **Keybindings**: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins
   - **FileHandler**: Extension Mapping / Detectors / Handlers
-  - **Misc**: Updates / Tastyrc (Windows 전용). Updates 가 모든 OS 에서 표시되어 빈 탭 상태가 없다.
+  - **Misc**: Tastyrc (Windows 전용; 비-Windows 는 섹션 0개 → empty state).
   - **Plugins**: 플러그인 기여 설정 페이지 (동적)
 - **콘텐츠** (중앙): 선택된 L2 섹션의 설정 항목. 도메인별 내용은 해당 기능 문서로 위임 (연결 개념):
   - Keybindings → [`features/keybindings/`](../../keybindings/index.md) / [`design/policies/key-mapping`](../../../design/policies/key-mapping.md)
   - Theme(Appearance) → [`design/systems/theme`](../../../design/systems/theme.md)
-  - Notifications → [`features/notifications/`](../../notifications/index.md) · Updates(Misc) → [`features/auto-update/`](../../auto-update/index.md) · FileHandler → [`features/file-handler/`](../../file-handler/index.md)
+  - Notifications → [`features/notifications/`](../../notifications/index.md) · FileHandler → [`features/file-handler/`](../../file-handler/index.md)
   - Plugins → [`features/plugin-system/`](../../plugin-system/index.md)
 - **Save / Cancel** (하단): draft 커밋 / 폐기.
 

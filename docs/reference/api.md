@@ -74,7 +74,7 @@ plugin 이 `[[contributes.ipc_namespace]]` 로 prefix 를 선언하면 `<prefix>
 
 ## CLI 매핑
 
-CLI 는 위 IPC 를 감싼다(`tasty workspace list`, `tasty send text`, `tasty memory put`, `tasty agent task-create`, `tasty approval request`, `tasty plugin list` …). standalone 예외: `tasty update`(호스트 미실행 OK). debug 서브커맨드는 debug 빌드만. 환경별 접속/실행/종료 패턴은 [environments](environments.md).
+CLI 는 위 IPC 를 감싼다(`tasty workspace list`, `tasty send text`, `tasty memory put`, `tasty agent task-create`, `tasty approval request`, `tasty plugin list` …). debug 서브커맨드는 debug 빌드만. 환경별 접속/실행/종료 패턴은 [environments](environments.md).
 
 ## 관련
 

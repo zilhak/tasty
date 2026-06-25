@@ -16,7 +16,7 @@
 
 상단 L1 7탭, 각 탭은 좌측에 L2 섹션 목록을 가진다 (이 순서):
 
-- **General** — L2: General / Clipboard / Notifications / Accessibility / Updates.
+- **General** — L2: General / Clipboard / Notifications / Accessibility.
 - **Terminal** — L2: General(터미널 동작 설정) / Performance.
 - **Appearance** — L2: Theme / General / Display / Terminal / (플러그인 기여 페이지 동적) / HTML. Display = UI 스케일(sm/md/lg) 전용. (앱 크롬 색상용 Tasty 섹션은 현재 미구현 — 추후 추가 예정.)
 - **Keybindings** — L2: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins. 단축키 편집 (아래).
@@ -44,7 +44,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 - **각 설정 도메인은 해당 기능으로 연결** (연결 개념 — 설정 창은 편집 UI, 도메인 규칙은 각 문서):
   - Keybindings → [`features/keybindings/`](../keybindings/index.md) / 키 매핑 정책 [`design/policies/key-mapping`](../../design/policies/key-mapping.md)
   - Appearance/Theme → [`design/systems/theme`](../../design/systems/theme.md)
-  - Clipboard → [`features/clipboard/`](../clipboard/index.md) · Notifications → [`features/notifications/`](../notifications/index.md) · Updates → [`features/auto-update/`](../auto-update/index.md) · FileHandler → [`features/file-handler/`](../file-handler/index.md)
+  - Clipboard → [`features/clipboard/`](../clipboard/index.md) · Notifications → [`features/notifications/`](../notifications/index.md) · FileHandler → [`features/file-handler/`](../file-handler/index.md)
   - Plugins → [`features/plugin-system/`](../plugin-system/index.md)
 
 ## 비-목표

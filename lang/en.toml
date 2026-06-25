@@ -102,7 +102,6 @@ keybindings = "Keybindings"
 file_handler = "File Handler"
 misc = "Misc"
 plugin = "Plugins"
-updates = "Updates"
 
 [settings.filter]
 sections = "Filter sections…"
@@ -111,15 +110,6 @@ no_matches = "No matches"
 
 [settings.plugin]
 empty = "No items."
-
-[settings.updates]
-current = "Current version:"
-latest = "Latest available:"
-last_checked = "Last checked:"
-check_now = "Check now"
-install = "Open release page…"
-no_update = "You're up to date."
-unavailable = "Update status unavailable."
 
 [settings.accessibility]
 heading = "Accessibility"
@@ -697,33 +687,6 @@ tools_menu_item = "Command palette…"
 hint_navigate = "navigate"
 hint_run = "run"
 hint_close = "close"
-
-[update]
-heading = "Check for updates"
-current_label = "Current version:"
-latest_label = "Latest version:"
-notes_label = "Release notes"
-open_release = "Open release page"
-check_now = "Check now"
-error_label = "Error"
-never_checked = "Not checked yet."
-up_to_date = "You're up to date."
-checking = "Checking…"
-tools_menu_item = "Check for updates…"
-
-[update.network]
-offline = "Network unavailable"
-timeout = "Connection timed out"
-connection_refused = "Connection refused"
-dns = "Could not resolve GitHub"
-tls = "Secure connection failed"
-http = "GitHub returned an error"
-bad_response = "Unexpected server response"
-other = "Network error"
-
-[update.notify]
-title = "Tasty update available"
-body = "Version {} is available. Run `tasty update` or open Settings → Updates."
 
 [search]
 placeholder = "Search..."

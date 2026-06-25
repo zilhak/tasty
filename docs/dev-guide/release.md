@@ -73,9 +73,9 @@ git push origin main --tags
 GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
 
 - macOS `*.dmg` / Windows `*.zip`·`*.msi` / Linux x64·arm64 각 `.tar.gz`·`.deb`·`.rpm`·`.AppImage`
-- `SHA256SUMS-{macos,windows,linux-x64,linux-arm64}.txt` 4종 (없으면 `tasty update` 가 hard fail)
+- `SHA256SUMS-{macos,windows,linux-x64,linux-arm64}.txt` 4종 (다운로드 무결성 수동 검증용)
 
-> **사용자 업그레이드**: publish 되면 호스트 백그라운드 폴러가 1시간 내 감지 → in-app 알림 + Settings의 Updates 탭 표시. 사용자는 `tasty update` 로 다운로드 + SHA256 검증 + atomic swap 후 수동 재시작. (자동 업데이트 기능 문서: [`features/auto-update/`](../features/auto-update/index.md).)
+> **사용자 업그레이드**: publish 되면 사용자는 GitHub Releases 에서 새 아티팩트를 직접 내려받아 SHA256SUMS 로 검증한 뒤 수동 설치한다.
 
 ## API 안정성 가드
 

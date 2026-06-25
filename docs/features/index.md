@@ -28,7 +28,6 @@
 | [keybindings](keybindings/index.md) — 단축키 (KeybindingSettings 도메인) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [clipboard](clipboard/index.md) — 클립보드 (복사/붙여넣기/선택/히스토리) | 로컬 사용자 | [뷰어 plugin](../plugins/clipboard-history/index.md) |
 | [notifications](notifications/index.md) — 알림 (OSC/시스템/패널/배지) | 로컬 사용자 · AI Agent | 패널 popup |
-| [auto-update](auto-update/index.md) — 자동 업데이트 확인 (`tasty update`) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [file-handler](file-handler/index.md) — 파일 핸들러 (식별→디스패치) | 로컬 사용자 · AI Agent · plugin | [설정 탭](settings/screens/settings.md) · picker |
 | [themes](themes/index.md) — 테마 추가/관리 (TOML) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
 | [lua-hooks](lua-hooks/index.md) — 사용자 init.lua 자동화 | 로컬 사용자 | 없음 |
