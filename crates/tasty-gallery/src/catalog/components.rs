@@ -12,6 +12,7 @@ pub mod convert;
 pub mod file_handler_picker;
 pub mod glyph;
 pub mod markdown_open;
+pub mod plugin_settings;
 pub mod port_scanner;
 pub mod preset_editor;
 pub mod prim_button;

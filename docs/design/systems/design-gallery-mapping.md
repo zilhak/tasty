@@ -180,3 +180,24 @@ form-control 폭: `field-width-{xs,color,md,lg}` = 90/110/160/200 (specimen cons
 
 디자인 gallery `components.html` 구조에 맞춰 갤러리 `Components` = primitive 전용으로 정리.
 통팝업/컴포지션 데모(Dialog/Convert/Port Scanner/Approval/Toast Stack)는 `Overlays` 로 이동.
+
+## Plugin settings page (16-B) — `Tasty Design System (3)`
+
+디자인 `ui_kits/terminal/overlays/settings_window.jsx:240-248`(Appearance › HTML viewer 페이지) ↔
+본체 `src/view/settings/ui/tabs/appearance.rs` `draw_plugin_settings_page`(+ `plugin_setting_row` /
+`draw_plugin_toggle` / `draw_plugin_select` / `draw_plugin_number`) ↔ 갤러리
+`components/plugin_settings.rs::draw` (Components › `Plugin settings page`).
+
+**미러 방식**: 갤러리는 main 바이너리에 비의존이므로 본체 렌더러(`Settings` 저장소 read/write 포함)를
+그대로 호출할 수 없다. 따라서 행 레이아웃·토큰만 공유 위젯(`tasty_ui_widgets::{switch,select}`)으로
+**미러**한다(렌더러 공유크레이트 이전 불필요 — `prim_forms`/`settings` specimen 과 동일 패턴).
+
+| 디자인 jsx | 본체 함수 | 갤러리 미러 | 비고 |
+|---|---|---|---|
+| `Row`(label 좌 + 컨트롤 우) | `plugin_setting_row` | `row` | `add_space spacing_sm` → horizontal: label(`th.text`) 좌, `right_to_left` 컨트롤 우 |
+| `Mono`("HTML viewer") | 페이지 헤더 | mono micro · text-muted | |
+| `Default zoom:` `Input`(mono)+`%` | `draw_plugin_number` | `DragValue` + suffix(text-muted) | **차이**: 디자인 text Input ↔ 본체/갤러리 egui `DragValue` (본체 일치 우선). min/max clamp |
+| `Color scheme:` `Select` | `draw_plugin_select` | `select`(width `field_width_md`) | follow/light/dark |
+| `Allow remote content:` `Switch` | `draw_plugin_toggle` | `switch`(28×16) off | |
+| `Sandbox scripts:` `Switch` | `draw_plugin_toggle` | `switch`(28×16) on | |
+| `Note` | Note 라벨 | caption · text-muted | |

@@ -308,6 +308,16 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "plugin-settings",
+                    "Plugin settings page",
+                    vec![spec(
+                        "plugin-settings",
+                        "Plugin-contributed settings rows",
+                        Some("label · control rows — toggle / select / number"),
+                        components::plugin_settings::draw,
+                    )],
+                ),
+                section(
                     "nav",
                     "Tab · TreeRow · MenuItem",
                     vec![
