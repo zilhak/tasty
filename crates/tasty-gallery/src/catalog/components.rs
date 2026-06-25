@@ -13,6 +13,7 @@ pub mod file_handler_picker;
 pub mod glyph;
 pub mod markdown_open;
 pub mod port_scanner;
+pub mod preset_editor;
 pub mod prim_button;
 pub mod prim_chips;
 pub mod prim_forms;

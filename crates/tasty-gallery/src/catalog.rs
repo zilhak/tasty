@@ -606,6 +606,16 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "preseteditor",
+                    "Preset demo-layout preview",
+                    vec![spec(
+                        "preseteditor",
+                        "Demo-layout preview — read-only",
+                        Some("Workspace / Tab / Pane · pane card + tab strip + surface hairline"),
+                        components::preset_editor::draw,
+                    )],
+                ),
+                section(
                     "markdown",
                     "Markdown open",
                     vec![spec(

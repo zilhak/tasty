@@ -132,6 +132,7 @@ glyph!(
     "remote",
     r#"<path d="M4 17l6-6-6-6"/><path d="M12 19h8"/>"#
 );
+glyph!(LOG, "log", r#"<path d="M4 6h16M4 10h16M4 14h10M4 18h7"/>"#);
 glyph!(
     PORT,
     "port",
