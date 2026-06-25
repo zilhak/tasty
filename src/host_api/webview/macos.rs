@@ -1,17 +1,32 @@
 //! macOS WKWebView wrapper.
 //! Reference: wry/src/wkwebview/mod.rs (MIT license, Tauri)
 
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSView};
-use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, NSURL};
-use objc2_web_kit::{WKWebView, WKWebViewConfiguration};
+use objc2_foundation::{NSError, NSPoint, NSRect, NSSize, NSString, NSURL};
+use objc2_web_kit::{
+    WKContentRuleList, WKContentRuleListStore, WKUserContentController, WKWebView,
+    WKWebViewConfiguration,
+};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 use super::WebViewBounds;
 
+/// 원격(http/https) 서브리소스 전체를 차단하는 WKContentRuleList JSON. 로컬 file:// 는 통과.
+const REMOTE_BLOCK_RULE_JSON: &str =
+    r#"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#;
+
 pub struct PlatformWebView {
     webview: Retained<WKWebView>,
+    /// 비동기 컴파일된 원격-차단 룰 캐시(완료 전 None). handler 와 공유.
+    content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>>,
+    /// 현재 원하는 차단 상태(true=원격 차단, allow_remote=false 대응. 기본 true).
+    block_remote: Rc<Cell<bool>>,
 }
 
 impl PlatformWebView {
@@ -52,7 +67,52 @@ impl PlatformWebView {
 
             ns_view.addSubview(&webview);
 
-            Ok(Self { webview })
+            // 원격-차단 룰을 비동기 컴파일. 기본 차단(block_remote=true) — completion handler 가
+            // 컴파일 완료 시 캐시에 저장하고 현재 상태를 적용한다.
+            let content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>> =
+                Rc::new(RefCell::new(None));
+            let block_remote = Rc::new(Cell::new(true));
+            if let Some(store) = WKContentRuleListStore::defaultStore(mtm) {
+                let webview_cb = webview.clone();
+                let rule_cb = content_rule_list.clone();
+                let block_cb = block_remote.clone();
+                // completion handler: main thread 에서 컴파일 완료 시 호출(WebKit 보장).
+                let handler =
+                    RcBlock::new(move |list: *mut WKContentRuleList, err: *mut NSError| {
+                        // SAFETY(외부 unsafe 블록 상속): WebKit 이 main thread 에서 컴파일 완료를
+                        // 호출하며 list/err 는 이 시점 valid. list non-null 이면 +0 참조라 보관 위해
+                        // retain 한다.
+                        if let Some(retained) = Retained::retain(list) {
+                            tracing::debug!("WKContentRuleList 컴파일 성공 — 원격 차단 룰 설치");
+                            *rule_cb.borrow_mut() = Some(retained);
+                            apply_block_state(
+                                &webview_cb,
+                                block_cb.get(),
+                                rule_cb.borrow().as_deref(),
+                            );
+                        } else if let Some(err) = err.as_ref() {
+                            tracing::warn!(
+                                "WKContentRuleList compile 실패: {}",
+                                err.localizedDescription()
+                            );
+                        }
+                    });
+                let id = NSString::from_str("tasty-block-remote");
+                let json = NSString::from_str(REMOTE_BLOCK_RULE_JSON);
+                store.compileContentRuleListForIdentifier_encodedContentRuleList_completionHandler(
+                    Some(&id),
+                    Some(&json),
+                    Some(&handler),
+                );
+            } else {
+                tracing::warn!("WKContentRuleListStore::defaultStore 없음 — 원격 차단 비활성");
+            }
+
+            Ok(Self {
+                webview,
+                content_rule_list,
+                block_remote,
+            })
         }
     }
 
@@ -145,15 +205,15 @@ impl PlatformWebView {
         }
     }
 
-    /// 원격(http/https) 콘텐츠 허용 여부. WKWebView 에는 동기 toggle 이 없다 — 차단하려면
-    /// `WKContentRuleList`(`compileContentRuleList...` 는 **completion-handler block 기반
-    /// async** 컴파일 후 `userContentController` 에 add/remove) 또는 `WKNavigationDelegate`
-    /// 객체(별도 objc2 class 정의)가 필요하다. 둘 다 block/delegate 수명 관리가 얽혀
-    /// half-baked 위험이 커 현재 no-op 으로 둔다(후속 backend 작업 필요).
+    /// 원격(http/https) 콘텐츠 허용 여부. `false`(기본)면 `^https?://` 서브리소스를
+    /// `WKContentRuleList` 로 차단, `true`면 차단 해제. 룰이 아직 비동기 컴파일 중이면
+    /// (`content_rule_list` None) 상태만 기록하고 컴파일 완료 handler 가 적용한다.
     pub fn set_remote_content_allowed(&self, allowed: bool) {
-        tracing::debug!(
-            "set_remote_content_allowed({allowed}) — macOS WKWebView no-op \
-             (WKContentRuleList async 컴파일 또는 WKNavigationDelegate 객체 필요)"
+        self.block_remote.set(!allowed);
+        apply_block_state(
+            &self.webview,
+            self.block_remote.get(),
+            self.content_rule_list.borrow().as_deref(),
         );
     }
 
@@ -173,6 +233,33 @@ impl Drop for PlatformWebView {
     fn drop(&mut self) {
         self.webview.removeFromSuperview();
     }
+}
+
+/// 차단 상태를 webview 의 `userContentController` 에 idempotent 하게 반영한다.
+/// 항상 기존 룰을 모두 제거한 뒤, 차단이면 룰을 다시 추가(중복 add 방지). 룰이 아직
+/// 컴파일되지 않았으면(None) 추가는 생략(완료 handler 가 재적용).
+fn apply_block_state(
+    webview: &WKWebView,
+    block_remote: bool,
+    rule_list: Option<&WKContentRuleList>,
+) {
+    // SAFETY: main thread WKWebView API — configuration()/userContentController() 및
+    // add/removeAllContentRuleLists 는 main thread only. 호출 경로(new 의 main-thread
+    // completion handler / set_remote_content_allowed)가 main thread 를 보장한다.
+    #[allow(clippy::multiple_unsafe_ops_per_block)]
+    unsafe {
+        let ucc: Retained<WKUserContentController> =
+            webview.configuration().userContentController();
+        ucc.removeAllContentRuleLists();
+        if block_remote && let Some(list) = rule_list {
+            ucc.addContentRuleList(list);
+        }
+    }
+    tracing::debug!(
+        block_remote,
+        rule_compiled = rule_list.is_some(),
+        "webview 원격 차단 상태 적용 (removeAll + 차단 시 add)"
+    );
 }
 
 /// Convert logical bounds (top-left origin) to NSRect,

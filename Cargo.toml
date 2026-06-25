@@ -286,8 +286,10 @@ tray-icon = { version = "0.22", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", optional = true }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSURLRequest", "NSObject", "NSArray"], optional = true }
-objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore", "WKNavigation"], optional = true }
+objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPreferences", "WKWebsiteDataStore", "WKNavigation", "WKContentRuleList", "WKContentRuleListStore", "WKUserContentController", "block2"], optional = true }
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSResponder", "NSMenu", "NSMenuItem", "NSEvent", "NSGraphics", "NSPasteboard", "NSPasteboardItem", "NSApplication", "NSRunningApplication", "NSImage", "libc"], optional = true }
+# objc2-web-kit 0.3 의 WKContentRuleList completion handler block 타입(>=0.6.1).
+block2 = { version = "0.6", optional = true }
 drag = { version = "2.1", optional = true }
 
 # WebView (Windows)
@@ -341,6 +343,7 @@ gui = [
     "dep:objc2-foundation",
     "dep:objc2-web-kit",
     "dep:objc2-app-kit",
+    "dep:block2",
     "dep:drag",
     "dep:webview2-com",
     "dep:tray-icon",
