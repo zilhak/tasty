@@ -1,5 +1,5 @@
-//! Icons 카탈로그 페이지 — 디자인 `gallery/icons.jsx` + 루트 `icons.json` 의
-//! canonical 29 글리프 단일 소스.
+//! Icons 카탈로그 페이지 — 디자인(4) `gallery/icons.jsx` 의 `system-rules` Section
+//! + 6 job 그룹 Section 미러. 루트 `icons.json` 의 canonical 글리프 단일 소스.
 //!
 //! 한 지오메트리(24×24 viewBox, 2px stroke, round cap/join, no fill, currentColor)
 //! 를 job 별로 묶어 보여준다. 색은 글리프에 박지 않고 감싸는 컨트롤의 전경색을
@@ -7,8 +7,16 @@
 //!
 //! 여기 정의된 `MockGlyph` 상수가 **유일 소스**다. primitive specimen 이 쓰던
 //! `components/glyph.rs` 는 이 모듈에서 재노출만 한다(중복 path 정의 제거).
+//!
+//! 페이지 트리(Section/Spec 헤딩)는 `catalog.rs` 가, 각 Spec 본문은 여기의 draw
+//! 함수가 그린다 — `draw_system_rules` + 6 그룹 draw(`draw_actions` 등).
+
+use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::{IconButton, Input};
+
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, dont, meta, note, stage};
 
 /// `<svg>` children 을 담은 글리프. `image()` 로 tint 된 egui 이미지를 만든다
 /// (painter 클로저에서 `paint_at`). stroke 는 white 로 고정하고 `.tint(color)` 로
@@ -85,239 +93,255 @@ glyph!(ROCKET, "rocket", r#"<path d="M5 13c-1.5 1.5-2 5-2 5s3.5-.5 5-2a3.5 3.5 0
 /// 한 글리프 카탈로그 항목: (글리프, canonical name, role).
 type Entry = (MockGlyph, &'static str, &'static str);
 
-/// job 별 그룹 — `icons.jsx` GROUPS 순서/구성 미러.
-struct Group {
-    title: &'static str,
-    when: &'static str,
-    icons: &'static [Entry],
-}
+// ── job 그룹별 글리프 슬라이스 (icons.jsx GROUPS 순서/구성 미러) ──
 
-const GROUPS: &[Group] = &[
-    Group {
-        title: "Actions",
-        when: "The verbs — what an IconButton wraps in a toolbar or row. close/refresh sit in every overlay header.",
-        icons: &[
-            (PLUS, "plus", "create / add"),
-            (CLOSE, "close", "dismiss overlay (header X)"),
-            (REFRESH, "refresh", "re-scan / reload"),
-            (EDIT, "edit", "edit a row / value"),
-            (TRASH, "trash", "delete / remove"),
-            (COPY, "copy", "copy to clipboard"),
-            (SEARCH, "search", "filter / search affordance"),
-        ],
-    },
-    Group {
-        title: "Navigation & disclosure",
-        when: "Movement and open/closed state. Single chevrons = tree-row disclosure; doubled = collapse/expand the sidebar rail.",
-        icons: &[
-            (CHEVRON_RIGHT, "chevronRight", "collapsed row · forward"),
-            (CHEVRON_DOWN, "chevronDown", "expanded row"),
-            (CHEVRON_LEFT, "chevronLeft", "back"),
-            (CHEVRONS_LEFT, "chevronsLeft", "collapse sidebar"),
-            (CHEVRONS_RIGHT, "chevronsRight", "expand sidebar rail"),
-        ],
-    },
-    Group {
-        title: "Surfaces & workspace",
-        when: "The nouns of the workspace — what a tab, tree row, or new-surface button shows. terminal/markdown are the two core surface kinds.",
-        icons: &[
-            (TERMINAL, "terminal", "terminal surface / tab"),
-            (MARKDOWN, "markdown", "markdown surface / tab"),
-            (SPLIT, "split", "split a pane"),
-            (FOLDER, "folder", "folder / workspace"),
-            (FILE, "file", "file leaf"),
-            (REMOTE, "remote", "remote connection"),
-            (PORT, "port", "listening port / target"),
-        ],
-    },
-    Group {
-        title: "Visibility",
-        when: "The reveal toggle on secret values (passkeys, env). eye when hidden, eyeOff when shown.",
-        icons: &[
-            (EYE, "eye", "reveal value"),
-            (EYE_OFF, "eyeOff", "hide value"),
-        ],
-    },
-    Group {
-        title: "Status & alerts",
-        when: "Inline meaning markers, tinted by the line they sit in (warning amber, success green, danger red) via currentColor.",
-        icons: &[
-            (ALERT_TRIANGLE, "alertTriangle", "warning / unverified"),
-            (ALERT_CIRCLE, "alertCircle", "error / failed"),
-            (SHIELD_CHECK, "shieldCheck", "trusted / signed"),
-            (BELL, "bell", "notification"),
-        ],
-    },
-    Group {
-        title: "Tools & system",
-        when: "The sidebar footer and global tools — each anchors a menu or window.",
-        icons: &[
-            (TOOLS, "tools", "Tools menu"),
-            (SETTINGS, "settings", "Settings window"),
-            (PLUG, "plug", "Plugins"),
-            (ROCKET, "rocket", "getting started / launch"),
-        ],
-    },
+const ACTIONS: &[Entry] = &[
+    (PLUS, "plus", "create / add"),
+    (CLOSE, "close", "dismiss overlay (header X)"),
+    (REFRESH, "refresh", "re-scan / reload"),
+    (EDIT, "edit", "edit a row / value"),
+    (TRASH, "trash", "delete / remove"),
+    (COPY, "copy", "copy to clipboard"),
+    (SEARCH, "search", "filter / search affordance"),
 ];
 
-/// 타일 크기 — `icons.jsx` `.icongrid` auto-fill `minmax(132px, 1fr)` 대응.
-const TILE_W: f32 = 132.0;
-const TILE_H: f32 = 88.0;
-/// 타일 안 글리프 크기 — jsx `<GIcon size={22}>`.
-const TILE_GLYPH: f32 = 22.0;
+const NAV: &[Entry] = &[
+    (CHEVRON_RIGHT, "chevronRight", "collapsed row · forward"),
+    (CHEVRON_DOWN, "chevronDown", "expanded row"),
+    (CHEVRON_LEFT, "chevronLeft", "back"),
+    (CHEVRONS_LEFT, "chevronsLeft", "collapse sidebar"),
+    (CHEVRONS_RIGHT, "chevronsRight", "expand sidebar rail"),
+];
 
-pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            icon_system(ui, theme);
-            for group in GROUPS {
-                section(ui, theme, group.title, group.when);
-                grid(ui, theme, group.icons);
-            }
-        });
+const SURFACES: &[Entry] = &[
+    (TERMINAL, "terminal", "terminal surface / tab"),
+    (MARKDOWN, "markdown", "markdown surface / tab"),
+    (SPLIT, "split", "split a pane"),
+    (FOLDER, "folder", "folder / workspace"),
+    (FILE, "file", "file leaf"),
+    (REMOTE, "remote", "remote connection"),
+    (PORT, "port", "listening port / target"),
+];
+
+const VISIBILITY: &[Entry] = &[
+    (EYE, "eye", "reveal value"),
+    (EYE_OFF, "eyeOff", "hide value"),
+];
+
+const STATUS: &[Entry] = &[
+    (ALERT_TRIANGLE, "alertTriangle", "warning / unverified"),
+    (ALERT_CIRCLE, "alertCircle", "error / failed"),
+    (SHIELD_CHECK, "shieldCheck", "trusted / signed"),
+    (BELL, "bell", "notification"),
+];
+
+const SYSTEM: &[Entry] = &[
+    (TOOLS, "tools", "Tools menu"),
+    (SETTINGS, "settings", "Settings window"),
+    (PLUG, "plug", "Plugins"),
+    (ROCKET, "rocket", "getting started / launch"),
+];
+
+// ── icongrid 타일 치수 (icons.jsx `.icongrid` / `.icontile`) ──
+//
+// Theme 에 대응 토큰이 없는 카탈로그 그리드 전용 치수 — 디자인 px 를 주석으로 명시.
+/// `.icongrid` auto-fill `minmax(132px, 1fr)` 의 셀 폭.
+const TILE_W: f32 = 132.0;
+/// `.icontile` 높이 — padding 18/13 + glyph-box 36 + name/role.
+const TILE_H: f32 = 110.0;
+/// `.icontile .glyph` 박스 36×36 안에 그리는 글리프 — jsx `<GIcon size={22}>`.
+const TILE_GLYPH: f32 = 22.0;
+/// `.glyph` 박스 한 변 — 글리프 수직 중심 산출용.
+const GLYPH_BOX: f32 = 36.0;
+
+thread_local! {
+    /// system-rules 데모의 filter Input 버퍼 (egui memory 에 포커스 유지).
+    static FILTER_BUF: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
-/// 상단 "icon system" — 불변식 + size 스케일 + currentColor 데모.
-fn icon_system(ui: &mut egui::Ui, theme: &Theme) {
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new("The icon system")
-            .strong()
-            .color(egui::Color32::from(theme.text)),
+#[inline]
+fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
+    c.into()
+}
+
+// ── system-rules Section ──────────────────────────────────────────────
+
+/// 아이콘 시스템 규칙 — size 스케일 / currentColor / IconButton 데모 + meta.
+pub fn draw_system_rules(ui: &mut egui::Ui, theme: &Theme) {
+    stage(ui, theme, StageVariant::Wrap, |ui| {
+        cluster(ui, theme, "size scale — set via size prop", |ui| {
+            // 26 / 20 / 16(default) / 14 / 12 — 데모 대상이 곧 size 스케일이라
+            // 직접 값을 쓴다(prim_spinner 전례). 16 = icon-glyph-size-md.
+            for s in [26.0_f32, 20.0, 16.0, 14.0, 12.0] {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(26.0, 26.0),
+                        egui::Sense::hover(),
+                    );
+                    paint_glyph(ui, PORT, rect.center(), s, ec(theme.text_secondary()));
+                    ui.label(
+                        egui::RichText::new(format!("{s:.0}px"))
+                            .monospace()
+                            .size(theme.font_size_micro.value())
+                            .color(ec(theme.text_muted())),
+                    );
+                });
+            }
+        });
+        cluster(ui, theme, "inherits currentColor", |ui| {
+            let size = theme.icon_glyph_size_md.value() + theme.spacing_xs.value(); // 16+4≈18
+            let tints: [(MockGlyph, egui::Color32); 4] = [
+                (REFRESH, ec(theme.text_muted())),
+                (ALERT_TRIANGLE, ec(theme.accent_warning())),
+                (SHIELD_CHECK, ec(theme.accent_success())),
+                (ALERT_CIRCLE, ec(theme.accent_danger())),
+            ];
+            for (g, color) in tints {
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(size, size),
+                    egui::Sense::hover(),
+                );
+                paint_glyph(ui, g, rect.center(), size, color);
+            }
+        });
+        cluster(ui, theme, "in an IconButton — the common case", |ui| {
+            IconButton::new().show(ui, theme, &|ui, rect, c| {
+                REFRESH.image(rect.height(), c).paint_at(ui, rect)
+            });
+            IconButton::new().show(ui, theme, &|ui, rect, c| {
+                CLOSE.image(rect.height(), c).paint_at(ui, rect)
+            });
+            FILTER_BUF.with(|b| {
+                let mut buf = b.borrow_mut();
+                Input::new()
+                    .placeholder("Filter…")
+                    .width(theme.field_width_md.value())
+                    .icon(&|ui, rect, c| SEARCH.image(rect.height(), c).paint_at(ui, rect))
+                    .show(ui, theme, &mut buf);
+            });
+        });
+    });
+
+    meta(
+        ui,
+        theme,
+        &[
+            ("viewBox", "0 0 24 24"),
+            ("stroke", "2px · round cap + join"),
+            ("fill", "none — stroke only"),
+            ("color", "inherits currentColor"),
+            ("sizes", "26 / 20 / 16 (default) / 14 / 12"),
+            ("in IconButton", "28px square control-height"),
+        ],
+        &[
+            TokenChip::new("text-muted", "rest glyph", ec(theme.text_muted())),
+            TokenChip::new("accent-warning", "warn tint", ec(theme.accent_warning())),
+            TokenChip::new("accent-success", "ok tint", ec(theme.accent_success())),
+            TokenChip::new("accent-danger", "error tint", ec(theme.accent_danger())),
+        ],
     );
     note(
         ui,
         theme,
-        "Every glyph: 24×24 viewBox, 2px stroke, round cap + join, no fill, currentColor. \
-         An icon never carries its own color — it inherits from the control around it. \
-         Size is set via a size prop (26 / 20 / 16 default / 14 / 12), not by editing the path.",
+        "This page is the single source for these glyphs. A new overlay's header X, \
+         refresh, and filter-search all pull close / refresh / search from here — \
+         never re-inline a <path>.",
     );
+    dont(
+        ui,
+        theme,
+        "Don't bake a color into a glyph, mix stroke widths, or add a fill. A filled \
+         state indicator is StatusDot / Badge, not an icon.",
+    );
+}
 
-    ui.add_space(10.0);
-    ui.label(
-        egui::RichText::new("size scale — set via size prop")
-            .small()
-            .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 18.0;
-        for s in [26.0_f32, 20.0, 16.0, 14.0, 12.0] {
-            ui.vertical(|ui| {
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::hover());
-                paint_glyph(ui, PORT, rect.center(), s, egui::Color32::from(theme.subtext1));
-                ui.label(
-                    egui::RichText::new(format!("{s:.0}px"))
-                        .monospace()
-                        .size(theme.font_size_micro.value())
-                        .color(egui::Color32::from(theme.subtext0)),
-                );
+// ── 6 job 그룹 Section — 각자 icongrid 만 그린다 ──────────────────────
+
+pub fn draw_actions(ui: &mut egui::Ui, theme: &Theme) {
+    icongrid(ui, theme, ACTIONS);
+}
+pub fn draw_nav(ui: &mut egui::Ui, theme: &Theme) {
+    icongrid(ui, theme, NAV);
+}
+pub fn draw_surfaces(ui: &mut egui::Ui, theme: &Theme) {
+    icongrid(ui, theme, SURFACES);
+}
+pub fn draw_visibility(ui: &mut egui::Ui, theme: &Theme) {
+    icongrid(ui, theme, VISIBILITY);
+}
+pub fn draw_status(ui: &mut egui::Ui, theme: &Theme) {
+    icongrid(ui, theme, STATUS);
+}
+pub fn draw_system(ui: &mut egui::Ui, theme: &Theme) {
+    icongrid(ui, theme, SYSTEM);
+}
+
+/// 글리프 타일 그리드 — separator 배경 위에 1px gap 으로 panel 셀을 깐다
+/// (`.icongrid` gap 1px on `--tasty-separator`, solo stage padding 0).
+fn icongrid(ui: &mut egui::Ui, theme: &Theme, icons: &[Entry]) {
+    egui::Frame::new()
+        .fill(ec(theme.separator))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            ec(theme.border_default()),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                // gap 1px → 사이로 separator 배경이 비쳐 hairline 격자.
+                ui.spacing_mut().item_spacing =
+                    egui::vec2(theme.border_width.value(), theme.border_width.value());
+                for (g, name, role) in icons {
+                    tile(ui, theme, *g, name, role);
+                }
             });
-        }
-    });
-
-    ui.add_space(10.0);
-    ui.label(
-        egui::RichText::new("inherits currentColor — same glyph, tinted by context")
-            .small()
-            .color(egui::Color32::from(theme.subtext0)),
-    );
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 16.0;
-        let tints: [(MockGlyph, egui::Color32); 4] = [
-            (REFRESH, egui::Color32::from(theme.subtext0)),
-            (ALERT_TRIANGLE, egui::Color32::from(theme.accent_warning())),
-            (SHIELD_CHECK, egui::Color32::from(theme.accent_success())),
-            (ALERT_CIRCLE, egui::Color32::from(theme.accent_danger())),
-        ];
-        for (g, color) in tints {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-            paint_glyph(ui, g, rect.center(), 18.0, color);
-        }
-    });
-}
-
-fn section(ui: &mut egui::Ui, theme: &Theme, title: &str, when: &str) {
-    ui.add_space(16.0);
-    ui.separator();
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new(title)
-            .strong()
-            .color(egui::Color32::from(theme.text)),
-    );
-    note(ui, theme, when);
-    ui.add_space(6.0);
-}
-
-fn note(ui: &mut egui::Ui, theme: &Theme, text: &str) {
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new(text)
-            .small()
-            .italics()
-            .color(egui::Color32::from(theme.subtext0)),
-    );
-}
-
-/// 타일 그리드 — 가용 너비에 맞춰 wrap.
-fn grid(ui: &mut egui::Ui, theme: &Theme, icons: &[Entry]) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-        for (g, name, role) in icons {
-            tile(ui, theme, *g, name, role);
-        }
-    });
+        });
 }
 
 fn tile(ui: &mut egui::Ui, theme: &Theme, g: MockGlyph, name: &str, role: &str) {
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(TILE_W, TILE_H), egui::Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(TILE_W, TILE_H), egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    // 타일 배경 — 1px 보더, hover 시 옅은 강조(웹 .icontile hover tint 대응).
+    // 셀 배경 — panel, hover 시 overlay-hover (web .icontile:hover).
     let bg = if resp.hovered() {
-        egui::Color32::from(theme.surface1)
+        ec(theme.overlay_hover())
     } else {
-        egui::Color32::from(theme.surface0)
+        ec(theme.bg_panel())
     };
-    painter.rect_filled(rect, theme.corner_radius_sm.value(), bg);
-    painter.rect_stroke(
-        rect,
-        theme.corner_radius_sm.value(),
-        egui::Stroke::new(
-            theme.border_width.value(),
-            egui::Color32::from(theme.surface2),
-        ),
-        egui::StrokeKind::Inside,
-    );
+    painter.rect_filled(rect, 0.0, bg);
 
-    // 글리프 — 상단 가운데.
-    let glyph_center = egui::pos2(rect.center().x, rect.top() + 22.0);
+    // 글리프 — padding-top 18 + glyph-box 36 중심.
+    let glyph_cy = rect.top() + theme.spacing_lg.value() + 2.0 + GLYPH_BOX / 2.0;
+    // hover 시 글리프도 secondary→primary 로 (web .icontile:hover .glyph).
+    let glyph_color = if resp.hovered() {
+        ec(theme.text_primary())
+    } else {
+        ec(theme.text_secondary())
+    };
     paint_glyph(
         ui,
         g,
-        glyph_center,
+        egui::pos2(rect.center().x, glyph_cy),
         TILE_GLYPH,
-        egui::Color32::from(theme.subtext1),
+        glyph_color,
     );
 
-    // name (caption) + role (micro).
+    // name (mono 12 primary) + role (micro muted).
+    let name_y = glyph_cy + GLYPH_BOX / 2.0 + theme.spacing_sm.value();
     painter.text(
-        egui::pos2(rect.center().x, rect.top() + 44.0),
+        egui::pos2(rect.center().x, name_y),
         egui::Align2::CENTER_TOP,
         name,
-        egui::FontId::proportional(theme.font_size_caption.value()),
-        egui::Color32::from(theme.text),
+        egui::FontId::monospace(theme.font_size_term_sm.value()),
+        ec(theme.text_primary()),
     );
     painter.text(
-        egui::pos2(rect.center().x, rect.top() + 62.0),
+        egui::pos2(rect.center().x, name_y + theme.spacing_lg.value()),
         egui::Align2::CENTER_TOP,
         role,
         egui::FontId::proportional(theme.font_size_micro.value()),
-        egui::Color32::from(theme.subtext0),
+        ec(theme.text_muted()),
     );
 
     resp.on_hover_text(role);

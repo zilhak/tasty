@@ -378,18 +378,84 @@ pub fn pages() -> Vec<Page> {
             ],
         },
         // ── Icons ────────────────────────────────────────────────────
+        // 디자인(4) §2.3 — system-rules Section 1개 + 6 job 그룹 Section.
+        // 모든 글리프 24×24, 2px stroke, round, no fill, currentColor.
         Page {
             category: Category::Icons,
-            sections: vec![section(
-                "glyphs",
-                "Icon set",
-                vec![spec(
-                    "glyphs",
-                    "Canonical glyphs",
-                    Some("24×24, 2px stroke, round, no fill, currentColor"),
-                    icons::draw,
-                )],
-            )],
+            sections: vec![
+                section(
+                    "system-rules",
+                    "The icon system",
+                    vec![spec(
+                        "system-rules",
+                        "One geometry, recolored by context",
+                        Some(
+                            "24×24 viewBox · 2px stroke round · no fill · currentColor — sized via prop (26/20/16/14/12)",
+                        ),
+                        icons::draw_system_rules,
+                    )],
+                ),
+                section(
+                    "actions",
+                    "Actions",
+                    vec![spec(
+                        "actions",
+                        "The verbs",
+                        Some("What an IconButton wraps in a toolbar or row — close/refresh in every overlay header, edit/trash/copy in list rows"),
+                        icons::draw_actions,
+                    )],
+                ),
+                section(
+                    "nav",
+                    "Navigation & disclosure",
+                    vec![spec(
+                        "nav",
+                        "Movement and open/closed state",
+                        Some("Single chevrons = tree-row disclosure; doubled = collapse/expand the sidebar rail"),
+                        icons::draw_nav,
+                    )],
+                ),
+                section(
+                    "surfaces",
+                    "Surfaces & workspace",
+                    vec![spec(
+                        "surfaces",
+                        "The nouns of the workspace",
+                        Some("What a tab, tree row, or new-surface button shows — terminal/markdown are the two core surface kinds"),
+                        icons::draw_surfaces,
+                    )],
+                ),
+                section(
+                    "visibility",
+                    "Visibility",
+                    vec![spec(
+                        "visibility",
+                        "Reveal toggle on secret values",
+                        Some("Passkeys, env — eye when hidden, eyeOff when shown; swap in place on the same IconButton"),
+                        icons::draw_visibility,
+                    )],
+                ),
+                section(
+                    "status",
+                    "Status & alerts",
+                    vec![spec(
+                        "status",
+                        "Inline meaning markers",
+                        Some("Tinted by the line they sit in (warning amber, success green, danger red) via currentColor — not state dots"),
+                        icons::draw_status,
+                    )],
+                ),
+                section(
+                    "system",
+                    "Tools & system",
+                    vec![spec(
+                        "system",
+                        "Sidebar footer & global tools",
+                        Some("Each anchors a menu or window — tools, settings, plug, rocket"),
+                        icons::draw_system,
+                    )],
+                ),
+            ],
         },
         // ── Overlays ─────────────────────────────────────────────────
         // 디자인(4) §2.4 의 14 Spec 을 1:1 Section 으로 — 모든 모달이 공유하는
