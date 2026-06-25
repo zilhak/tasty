@@ -33,4 +33,3 @@ pub mod surface_highlights;
 pub mod tab_bar;
 pub mod toast;
 pub mod tools_menu;
-pub mod update;

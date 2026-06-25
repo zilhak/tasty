@@ -594,16 +594,6 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
-                    "update",
-                    "Update",
-                    vec![spec(
-                        "update",
-                        "Tier 3 release available",
-                        Some("380px · version delta + release notes"),
-                        components::update::draw,
-                    )],
-                ),
-                section(
                     "settings",
                     "Settings window",
                     vec![spec(
