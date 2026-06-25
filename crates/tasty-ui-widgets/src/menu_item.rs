@@ -86,8 +86,12 @@ pub fn menu_item(
             egui::FontId::monospace(theme.font_size_micro.value()),
             egui::Color32::PLACEHOLDER,
         );
-        let pos = egui::pos2(right - g.rect.width(), rect.center().y - g.rect.height() * 0.5);
-        ui.painter().galley(pos, g.clone(), dim(theme.subtext0.to_egui()));
+        let pos = egui::pos2(
+            right - g.rect.width(),
+            rect.center().y - g.rect.height() * 0.5,
+        );
+        ui.painter()
+            .galley(pos, g.clone(), dim(theme.subtext0.to_egui()));
         right -= g.rect.width() + gap;
     }
 
@@ -102,7 +106,9 @@ pub fn menu_item(
         egui::pos2(right.max(x), rect.bottom()),
     );
     let pos = egui::pos2(x, rect.center().y - g.rect.height() * 0.5);
-    ui.painter().with_clip_rect(label_rect).galley(pos, g, dim(fg));
+    ui.painter()
+        .with_clip_rect(label_rect)
+        .galley(pos, g, dim(fg));
 
     resp
 }

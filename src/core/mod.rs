@@ -464,7 +464,8 @@ impl Core {
                 }
                 TerminalEventKind::PromptBoundary { phase, payload } => {
                     let mem = engine.memory.clone();
-                    if let Some(cap) = engine.command_index.on_boundary(&mem, sid, phase, &payload) {
+                    if let Some(cap) = engine.command_index.on_boundary(&mem, sid, phase, &payload)
+                    {
                         use crate::engine::command_index::CommandCapEvent;
                         let (title, body) = match cap {
                             CommandCapEvent::SoftWarn { count, .. } => (

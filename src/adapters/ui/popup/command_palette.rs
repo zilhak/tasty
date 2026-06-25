@@ -129,14 +129,17 @@ pub fn draw_command_palette_view(
             ui.horizontal(|ui| {
                 ui.set_min_height(28.0); // 디자인 Input control-height
                 let icon_size = 16.0;
-                let (icon_rect, _) = ui
-                    .allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());
+                let (icon_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(icon_size, icon_size), egui::Sense::hover());
                 icons::SEARCH
                     .image(icon_size, theme.text_muted().to_egui())
                     .paint_at(ui, icon_rect);
                 let resp = ui.add(
                     egui::TextEdit::singleline(props.query_buffer)
-                        .hint_text(tasty_egui_theme::hint_text(theme, props.placeholder.clone()))
+                        .hint_text(tasty_egui_theme::hint_text(
+                            theme,
+                            props.placeholder.clone(),
+                        ))
                         .desired_width(ui.available_width())
                         .font(egui::TextStyle::Body),
                 );
@@ -314,14 +317,13 @@ fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys:
         .iter()
         .map(|g| (g.size().x + pad_x * 2.0).max(min_w))
         .collect();
-    let sep_galley =
-        ui.painter()
-            .layout_no_wrap("+".to_string(), key_font.clone(), sep_color);
+    let sep_galley = ui
+        .painter()
+        .layout_no_wrap("+".to_string(), key_font.clone(), sep_color);
     let sep_w = sep_galley.size().x + sep_gap * 2.0;
 
     // 총 너비 → 좌측 시작점 (우측 정렬).
-    let total: f32 = cap_widths.iter().sum::<f32>()
-        + sep_w * keys.len().saturating_sub(1) as f32;
+    let total: f32 = cap_widths.iter().sum::<f32>() + sep_w * keys.len().saturating_sub(1) as f32;
     let mut x = right_x - total;
     let top = center_y - cap_h / 2.0;
 
@@ -338,8 +340,7 @@ fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys:
             x += sep_w;
         }
         let cap_w = cap_widths[idx];
-        let box_rect =
-            egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(cap_w, cap_h));
+        let box_rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(cap_w, cap_h));
         ui.painter()
             .rect_filled(box_rect, radius, theme.surface_raised().to_egui());
         ui.painter().rect_stroke(

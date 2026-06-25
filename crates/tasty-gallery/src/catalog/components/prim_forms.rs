@@ -31,14 +31,27 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         stage(ui, theme, StageVariant::Column, |ui| {
             cluster(ui, theme, "Select — token trigger + dropdown", |ui| {
                 let opts = ["Mocha (dark)", "Latte (light)", "Auto"];
-                select(ui, theme, "gallery_theme", &mut st.sel, &opts, field_md, true);
+                select(
+                    ui,
+                    theme,
+                    "gallery_theme",
+                    &mut st.sel,
+                    &opts,
+                    field_md,
+                    true,
+                );
             });
-            cluster(ui, theme, "Checkbox — checked · unchecked · disabled", |ui| {
-                checkbox(ui, theme, &mut st.check_a, "Restore layout", true);
-                checkbox(ui, theme, &mut st.check_b, "Confirm on close", true);
-                let mut off = false;
-                checkbox(ui, theme, &mut off, "Disabled", false);
-            });
+            cluster(
+                ui,
+                theme,
+                "Checkbox — checked · unchecked · disabled",
+                |ui| {
+                    checkbox(ui, theme, &mut st.check_a, "Restore layout", true);
+                    checkbox(ui, theme, &mut st.check_b, "Confirm on close", true);
+                    let mut off = false;
+                    checkbox(ui, theme, &mut off, "Disabled", false);
+                },
+            );
             cluster(ui, theme, "Switch — on · off · disabled", |ui| {
                 switch(ui, theme, &mut st.switch_a, Some("Reduced motion"), true);
                 switch(ui, theme, &mut st.switch_b, Some("High contrast"), true);

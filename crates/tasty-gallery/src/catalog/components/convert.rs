@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{select, tag, Button, ButtonVariant, TagVariant};
+use tasty_ui_widgets::{Button, ButtonVariant, TagVariant, select, tag};
 
 use crate::catalog::icons;
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -23,36 +23,63 @@ const TYPES: &[&str] = &["Terminal", "Markdown", "Explorer", "HTML preview"];
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_md.value(), |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-                kit::title(ui, theme, "Convert surface");
-                // From → To 행.
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                        kit::caption(ui, theme, "From", false);
-                        tag(ui, theme, "Terminal", TagVariant::Default, false);
-                    });
-                    kit::icon(ui, icons::CHEVRON_RIGHT, theme.icon_glyph_size_md.value(), theme.text_muted().to_egui());
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                        kit::caption(ui, theme, "To", false);
-                        TO_SEL.with(|s| {
-                            let mut sel = s.borrow_mut();
-                            select(ui, theme, "convert_to", &mut sel, TYPES, theme.field_width_md.value(), true);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_md.value(),
+                |ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                    kit::title(ui, theme, "Convert surface");
+                    // From → To 행.
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                            kit::caption(ui, theme, "From", false);
+                            tag(ui, theme, "Terminal", TagVariant::Default, false);
+                        });
+                        kit::icon(
+                            ui,
+                            icons::CHEVRON_RIGHT,
+                            theme.icon_glyph_size_md.value(),
+                            theme.text_muted().to_egui(),
+                        );
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                            kit::caption(ui, theme, "To", false);
+                            TO_SEL.with(|s| {
+                                let mut sel = s.borrow_mut();
+                                select(
+                                    ui,
+                                    theme,
+                                    "convert_to",
+                                    &mut sel,
+                                    TYPES,
+                                    theme.field_width_md.value(),
+                                    true,
+                                );
+                            });
                         });
                     });
-                });
-                kit::caption(ui, theme, "Scrollback is preserved; the surface keeps its tab and split.", false);
-                // footer 버튼.
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Convert").variant(ButtonVariant::Primary).show(ui, theme);
-                        Button::new("Cancel").variant(ButtonVariant::Ghost).show(ui, theme);
+                    kit::caption(
+                        ui,
+                        theme,
+                        "Scrollback is preserved; the surface keeps its tab and split.",
+                        false,
+                    );
+                    // footer 버튼.
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            Button::new("Convert")
+                                .variant(ButtonVariant::Primary)
+                                .show(ui, theme);
+                            Button::new("Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .show(ui, theme);
+                        });
                     });
-                });
-            });
+                },
+            );
         });
     });
 
@@ -68,7 +95,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
-            TokenChip::new("surface-raised", "Select trigger", theme.surface_raised().to_egui()),
+            TokenChip::new(
+                "surface-raised",
+                "Select trigger",
+                theme.surface_raised().to_egui(),
+            ),
             TokenChip::new("text-muted", "hint", theme.text_muted().to_egui()),
         ],
     );

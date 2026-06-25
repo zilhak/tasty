@@ -85,7 +85,7 @@ pub fn run_audit_follow(
                 println!("{}", serde_json::to_string(rec).unwrap_or_default());
             }
             use std::io::Write;
-            let _ = std::io::stdout().flush();  // best-effort flush — 무시
+            let _ = std::io::stdout().flush(); // best-effort flush — 무시
         }
         std::thread::sleep(std::time::Duration::from_millis(interval_ms));
     }

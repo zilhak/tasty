@@ -16,7 +16,13 @@ thread_local! {
 }
 
 /// field + 그 아래 hint 한 줄.
-fn field_with_hint(ui: &mut egui::Ui, theme: &Theme, buf: &mut String, placeholder: &str, hint: &str) {
+fn field_with_hint(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    buf: &mut String,
+    placeholder: &str,
+    hint: &str,
+) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
         Input::new()

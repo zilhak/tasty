@@ -90,7 +90,11 @@ fn oracle_a(name: &str, cols: usize, h_small: usize, h_tall: usize, bytes: &[u8]
     }
 
     if got == want {
-        eprintln!("[{name}] PASS  ({} rows, subject scrollback={})", got.len(), subject.scrollback_len());
+        eprintln!(
+            "[{name}] PASS  ({} rows, subject scrollback={})",
+            got.len(),
+            subject.scrollback_len()
+        );
         true
     } else {
         eprintln!("[{name}] FAIL: subject(scrollback++visible) != tall reference");
@@ -128,7 +132,10 @@ fn oracle_b(name: &str, t: &Terminal, markers: &[&str]) -> bool {
         }
     }
     if ok {
-        eprintln!("[{name}] PASS  (all {} markers exactly once)", markers.len());
+        eprintln!(
+            "[{name}] PASS  (all {} markers exactly once)",
+            markers.len()
+        );
     } else {
         eprintln!("[{name}] FAIL — buffer dump:");
         dump_rows("buffer", &reconstruct(t));
@@ -143,7 +150,7 @@ fn oracle_b(name: &str, t: &Terminal, markers: &[&str]) -> bool {
 /// (it characterizes the divergence regardless of whether capture misaligns).
 #[test]
 fn e1_width_function_divergence_report() {
-    use termwiz::cell::{grapheme_column_width, Cell, CellAttributes};
+    use termwiz::cell::{Cell, CellAttributes, grapheme_column_width};
 
     // (label, grapheme)
     let cases: &[(&str, &str)] = &[
@@ -166,7 +173,11 @@ fn e1_width_function_divergence_report() {
         let capture_w = grapheme_column_width(g, None).max(1);
         let cell = Cell::new_grapheme(g, CellAttributes::default(), None);
         let cell_w = cell.width();
-        let mark = if capture_w == cell_w { "" } else { "  <-- DIVERGE" };
+        let mark = if capture_w == cell_w {
+            ""
+        } else {
+            "  <-- DIVERGE"
+        };
         if capture_w != cell_w {
             divergences += 1;
         }
@@ -251,7 +262,10 @@ fn s4_mixed_width_boundary() {
     }
     let pass_b = oracle_a("S4b", COLS, H_SMALL, H_TALL, b.as_bytes());
 
-    assert!(pass_a && pass_b, "S4 mixed-width boundary diverged — see dump");
+    assert!(
+        pass_a && pass_b,
+        "S4 mixed-width boundary diverged — see dump"
+    );
 }
 
 /// S5 — ⚠️E2: partial top-anchored region, scroll_count > region_size.
@@ -281,7 +295,10 @@ fn s5_partial_region_overscroll() {
 
     let markers = ["L00", "L01", "L02", "L03", "L04", "L05"];
     let pass = oracle_b("S5", &t, &markers);
-    assert!(pass, "S5 partial-region over-scroll: marker duplication/loss — see dump");
+    assert!(
+        pass,
+        "S5 partial-region over-scroll: marker duplication/loss — see dump"
+    );
 }
 
 /// S6 — control: full-screen region (no partial). Same SU should be clean.
@@ -330,5 +347,8 @@ fn s7_partial_region_lf_scroll() {
     // L04, L05 are outside the region and must never duplicate.
     let markers = ["L04", "L05"];
     let pass = oracle_b("S7", &t, &markers);
-    assert!(pass, "S7 partial-region LF scroll: L04/L05 must stay unique — see dump");
+    assert!(
+        pass,
+        "S7 partial-region LF scroll: L04/L05 must stay unique — see dump"
+    );
 }

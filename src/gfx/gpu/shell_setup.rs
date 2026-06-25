@@ -177,7 +177,11 @@ impl GpuState {
 
                             // OK
                             let (ok_fill, ok_stroke, ok_text) = if is_valid {
-                                (th.accent_success(), egui::Stroke::new(1.0, th.accent_success()), th.base)
+                                (
+                                    th.accent_success(),
+                                    egui::Stroke::new(1.0, th.accent_success()),
+                                    th.base,
+                                )
                             } else {
                                 (accent_dis, egui::Stroke::new(1.0, th.surface2), th.overlay0)
                             };

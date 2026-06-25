@@ -338,7 +338,10 @@ impl ApplicationHandler<AppEvent> for App {
         // it alive across window create/destroy (macOS parks state and recreates
         // windows, so guard against re-creating the tray each time). `None` =
         // tray unavailable; the app degrades to taskbar/dock minimize.
-        #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
+        #[cfg(all(
+            any(windows, target_os = "macos", target_os = "linux"),
+            feature = "gui"
+        ))]
         if self.tray_icon.is_none()
             && let Some((tray, ids)) = crate::system_tray::create_tray_icon()
         {
@@ -630,7 +633,10 @@ impl ApplicationHandler<AppEvent> for App {
         }
 
         // Poll system tray menu events (Windows / macOS / Linux).
-        #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
+        #[cfg(all(
+            any(windows, target_os = "macos", target_os = "linux"),
+            feature = "gui"
+        ))]
         if let Some(ref ids) = self.tray_menu_ids {
             if let Some(menu_id) = crate::system_tray::poll_menu_event() {
                 if menu_id == ids.show_window {

@@ -371,9 +371,7 @@ pub(super) fn handle_debug_host_popup_close(
     let Some(def) = crate::adapters::ui::popup::defs::find(popup_id) else {
         return JsonRpcResponse::error(id, -32602, format!("host popup '{popup_id}' not found"));
     };
-    state.dispatch_intent(
-        crate::intent::UiIntent::ClosePopup { id: def.id }.from_agent_ipc(),
-    );
+    state.dispatch_intent(crate::intent::UiIntent::ClosePopup { id: def.id }.from_agent_ipc());
     JsonRpcResponse::success(id, json!({ "closed": def.id }))
 }
 

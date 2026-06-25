@@ -51,7 +51,12 @@ pub enum PasskeyCommands {
 /// `tasty tool passkey ...` 로컬 분기 진입점(IPC 미경유).
 pub fn run(command: &PasskeyCommands) -> Result<()> {
     match command {
-        PasskeyCommands::Add { name, path, inline, value } => {
+        PasskeyCommands::Add {
+            name,
+            path,
+            inline,
+            value,
+        } => {
             if path.is_some() && *inline {
                 anyhow::bail!("--path 와 --inline 은 함께 쓸 수 없습니다.");
             }
@@ -83,7 +88,10 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
                 anyhow::bail!("--path <file> 또는 --inline 중 하나가 필요합니다.");
             }
             passkeys.save()?;
-            println!("{} passkey '{name}'.", if replaced { "갱신:" } else { "추가:" });
+            println!(
+                "{} passkey '{name}'.",
+                if replaced { "갱신:" } else { "추가:" }
+            );
             Ok(())
         }
         PasskeyCommands::List { json } => {
@@ -113,7 +121,12 @@ pub fn run(command: &PasskeyCommands) -> Result<()> {
             };
             // 값(경로/내용)은 노출하지 않는다 — name + kind 만.
             if *json {
-                println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "name": k.name, "kind": k.kind }))?);
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({ "name": k.name, "kind": k.kind })
+                    )?
+                );
             } else {
                 println!("name : {}", k.name);
                 println!("kind : {}", k.kind);

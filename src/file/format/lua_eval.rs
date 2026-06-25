@@ -97,9 +97,9 @@ fn build_sandboxed_lua() -> mlua::Result<Lua> {
         g.set(*name, Value::Nil)?;
     }
     if let Ok(pkg) = g.get::<Table>("package") {
-        let _ = pkg.set("loadlib", Value::Nil);  // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
-        let _ = pkg.set("searchers", Value::Nil);  // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
-        let _ = pkg.set("loaders", Value::Nil);  // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
+        let _ = pkg.set("loadlib", Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
+        let _ = pkg.set("searchers", Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
+        let _ = pkg.set("loaders", Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
     }
     g.set("package", Value::Nil)?;
 

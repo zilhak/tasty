@@ -433,7 +433,8 @@ impl ApprovalStore {
         let record = record.clone();
         if let Some(waiters) = g.waiters.remove(id) {
             for tx in waiters {
-                let _ = tx.try_send(WaitResult::Responded { // 수신측이 이미 drop 됐을 수 있음 — 무시
+                let _ = tx.try_send(WaitResult::Responded {
+                    // 수신측이 이미 drop 됐을 수 있음 — 무시
                     choice: choice.clone(),
                     by: by.clone(),
                     comment: comment.clone(),
@@ -569,7 +570,8 @@ impl ApprovalStore {
                 // 같은 id 의 다른 waiter 도 모두 깨운다.
                 if let Some(waiters) = g.waiters.remove(id) {
                     for tx in waiters {
-                        let _ = tx.try_send(WaitResult::TimedOut { // 수신측이 이미 drop 됐을 수 있음 — 무시
+                        let _ = tx.try_send(WaitResult::TimedOut {
+                            // 수신측이 이미 drop 됐을 수 있음 — 무시
                             default_choice: default_choice.clone(),
                         });
                     }

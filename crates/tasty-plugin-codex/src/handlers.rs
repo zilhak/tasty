@@ -834,7 +834,10 @@ mod tests {
     #[test]
     fn build_tell_payload_three_lines() {
         // "x\ny\nz" → ESC[200~ x\ny\nz ESC[201~ (제출 \r 미포함).
-        assert_eq!(build_tell_payload("x\ny\nz"), "\u{1b}[200~x\ny\nz\u{1b}[201~");
+        assert_eq!(
+            build_tell_payload("x\ny\nz"),
+            "\u{1b}[200~x\ny\nz\u{1b}[201~"
+        );
     }
 
     #[test]

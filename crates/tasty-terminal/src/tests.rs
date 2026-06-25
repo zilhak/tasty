@@ -783,9 +783,15 @@ fn xtgettcap_multi_cap_query_emits_one_reply_each() {
     // Two caps in one query: "Co" (436f) ; "TN" (544e).
     t.feed_bytes(b"\x1bP+q436f;544e\x1b\\");
     let first = rx.try_recv().expect("no reply for first cap");
-    assert_eq!(first, b"\x1bP0+r436f\x1b\\", "unexpected first reply: {first:?}");
+    assert_eq!(
+        first, b"\x1bP0+r436f\x1b\\",
+        "unexpected first reply: {first:?}"
+    );
     let second = rx.try_recv().expect("no reply for second cap");
-    assert_eq!(second, b"\x1bP0+r544e\x1b\\", "unexpected second reply: {second:?}");
+    assert_eq!(
+        second, b"\x1bP0+r544e\x1b\\",
+        "unexpected second reply: {second:?}"
+    );
 }
 
 #[test]
@@ -795,7 +801,10 @@ fn da1_query_still_emits_primary_attributes_response() {
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
     t.set_input_sink(tx);
     t.feed_bytes(b"\x1b[c"); // DA1 — must be unchanged
-    assert_eq!(rx.try_recv().expect("no DA1 response"), b"\x1b[?1;2c".to_vec());
+    assert_eq!(
+        rx.try_recv().expect("no DA1 response"),
+        b"\x1b[?1;2c".to_vec()
+    );
 }
 
 #[test]
@@ -1387,7 +1396,10 @@ fn alt_screen_exit_restores_primary_pen() {
     t.feed_bytes(b"\x1b[53mQ");
     let q = t.cell_info(0, 1).expect("primary cell after exit");
     assert_eq!(q.text, "Q");
-    assert!(q.bold, "primary pen (bold) must be restored after leaving alt");
+    assert!(
+        q.bold,
+        "primary pen (bold) must be restored after leaving alt"
+    );
     assert!(q.overline, "overline applied on primary after exit");
     // Original primary cell intact.
     let p = t.cell_info(0, 0).expect("original primary cell");
@@ -1424,7 +1436,10 @@ fn resize_restore_does_not_leave_stale_pen() {
     t.feed_bytes(b"\x1b[HZ");
     let z = t.cell_info(0, 0).expect("cell 0,0");
     assert_eq!(z.text, "Z");
-    assert!(z.bold, "resize restore must not leave a stale (non-bold) pen");
+    assert!(
+        z.bold,
+        "resize restore must not leave a stale (non-bold) pen"
+    );
 }
 
 // ---- DECALN (ESC # 8): screen alignment fill ----

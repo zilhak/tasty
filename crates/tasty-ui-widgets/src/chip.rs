@@ -51,15 +51,29 @@ fn mono(size: f32) -> egui::FontId {
 }
 
 /// Tag — 모노 라벨 chip. `dot` 이 true 면 선행 상태 점(현재 fg 색).
-pub fn tag(ui: &mut egui::Ui, theme: &Theme, label: &str, variant: TagVariant, dot: bool) -> egui::Response {
+pub fn tag(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    variant: TagVariant,
+    dot: bool,
+) -> egui::Response {
     let (fill, border, fg) = match variant {
         TagVariant::Default => (
             theme.surface_raised().to_egui(),
             Some(theme.border_default().to_egui()),
             theme.text_secondary().to_egui(),
         ),
-        TagVariant::Accent => (theme.accent_primary().to_egui(), None, theme.text_on_accent().to_egui()),
-        TagVariant::Agent => (theme.accent_agent().to_egui(), None, theme.text_on_accent().to_egui()),
+        TagVariant::Accent => (
+            theme.accent_primary().to_egui(),
+            None,
+            theme.text_on_accent().to_egui(),
+        ),
+        TagVariant::Agent => (
+            theme.accent_agent().to_egui(),
+            None,
+            theme.text_on_accent().to_egui(),
+        ),
         TagVariant::Success => (
             egui::Color32::TRANSPARENT,
             Some(theme.accent_success().to_egui().gamma_multiply(0.4)),
@@ -90,8 +104,12 @@ pub fn tag(ui: &mut egui::Ui, theme: &Theme, label: &str, variant: TagVariant, d
         ui.painter().rect_filled(rect, radius, fill);
     }
     if let Some(bc) = border {
-        ui.painter()
-            .rect_stroke(rect, radius, egui::Stroke::new(bw, bc), egui::StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            rect,
+            radius,
+            egui::Stroke::new(bw, bc),
+            egui::StrokeKind::Inside,
+        );
     }
     let mut x = rect.left() + TAG_PAD_X;
     if dot {
@@ -105,13 +123,33 @@ pub fn tag(ui: &mut egui::Ui, theme: &Theme, label: &str, variant: TagVariant, d
 }
 
 /// Badge — 채움 count/status pill (디자인 `core/Badge`).
-pub fn badge(ui: &mut egui::Ui, theme: &Theme, label: &str, variant: BadgeVariant) -> egui::Response {
+pub fn badge(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    variant: BadgeVariant,
+) -> egui::Response {
     let (fill, fg) = match variant {
-        BadgeVariant::Danger => (theme.accent_danger().to_egui(), theme.text_on_accent().to_egui()),
-        BadgeVariant::Primary => (theme.accent_primary().to_egui(), theme.text_on_accent().to_egui()),
-        BadgeVariant::Agent => (theme.accent_agent().to_egui(), theme.text_on_accent().to_egui()),
-        BadgeVariant::Success => (theme.accent_success().to_egui(), theme.text_on_accent().to_egui()),
-        BadgeVariant::Neutral => (theme.surface_active().to_egui(), theme.text_primary().to_egui()),
+        BadgeVariant::Danger => (
+            theme.accent_danger().to_egui(),
+            theme.text_on_accent().to_egui(),
+        ),
+        BadgeVariant::Primary => (
+            theme.accent_primary().to_egui(),
+            theme.text_on_accent().to_egui(),
+        ),
+        BadgeVariant::Agent => (
+            theme.accent_agent().to_egui(),
+            theme.text_on_accent().to_egui(),
+        ),
+        BadgeVariant::Success => (
+            theme.accent_success().to_egui(),
+            theme.text_on_accent().to_egui(),
+        ),
+        BadgeVariant::Neutral => (
+            theme.surface_active().to_egui(),
+            theme.text_primary().to_egui(),
+        ),
     };
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
@@ -135,8 +173,10 @@ pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egu
         BadgeVariant::Success => theme.accent_success().to_egui(),
         BadgeVariant::Neutral => theme.surface_active().to_egui(),
     };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(BADGE_DOT, BADGE_DOT), egui::Sense::hover());
-    ui.painter().circle_filled(rect.center(), BADGE_DOT * 0.5, fill);
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(BADGE_DOT, BADGE_DOT), egui::Sense::hover());
+    ui.painter()
+        .circle_filled(rect.center(), BADGE_DOT * 0.5, fill);
     resp
 }
 
@@ -154,12 +194,7 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
         let parts: Vec<&str> = keys.split('+').collect();
         for (i, key) in parts.iter().enumerate() {
             if i > 0 {
-                ui.label(
-                    egui::RichText::new("+")
-                        .size(micro)
-                        .color(plus)
-                        .monospace(),
-                );
+                ui.label(egui::RichText::new("+").size(micro).color(plus).monospace());
             }
             let galley = ui.painter().layout_no_wrap(
                 (*key).to_owned(),
@@ -170,8 +205,12 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(w, KBD_HEIGHT), egui::Sense::hover());
             ui.painter().rect_filled(rect, radius, fill);
             // 키캡 하단 보더 2px 강조 → 윗변은 1px, 아랫변은 2px 로 따로 그린다.
-            ui.painter()
-                .rect_stroke(rect, radius, egui::Stroke::new(bw, border), egui::StrokeKind::Inside);
+            ui.painter().rect_stroke(
+                rect,
+                radius,
+                egui::Stroke::new(bw, border),
+                egui::StrokeKind::Inside,
+            );
             ui.painter().line_segment(
                 [
                     egui::pos2(rect.left() + radius, rect.bottom() - bw),

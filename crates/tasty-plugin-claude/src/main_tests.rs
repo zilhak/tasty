@@ -231,7 +231,10 @@ fn wait_decide_valid_existing_index_returns_check_existence() {
     let mut state = ClaudeState::default();
     let i = state.next_child_index(10); // 1
     state.register_child(10, entry(100, i));
-    assert_eq!(wait_decide(&state, 10, 1), WaitDecision::CheckExistence(100));
+    assert_eq!(
+        wait_decide(&state, 10, 1),
+        WaitDecision::CheckExistence(100)
+    );
 }
 
 // ─── G.F.b: wait_any_decide 순수 함수 ─────────────────────────────────
@@ -468,7 +471,10 @@ fn build_tell_pty_text_trailing_backslash_single_line() {
 #[test]
 fn build_tell_pty_text_three_lines() {
     // "x\ny\nz" → ESC[200~ x\ny\nz ESC[201~ (제출 \r 미포함).
-    assert_eq!(build_tell_pty_text("x\ny\nz"), "\u{1b}[200~x\ny\nz\u{1b}[201~");
+    assert_eq!(
+        build_tell_pty_text("x\ny\nz"),
+        "\u{1b}[200~x\ny\nz\u{1b}[201~"
+    );
 }
 
 #[test]

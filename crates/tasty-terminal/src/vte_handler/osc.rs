@@ -262,9 +262,7 @@ impl TerminalState {
             // Title stack: push saves the current title; pop restores it and
             // re-emits a TitleChanged event. The single title backs all three
             // (icon / window / both) variants. The stack is bounded.
-            Window::PushWindowTitle
-            | Window::PushIconAndWindowTitle
-            | Window::PushIconTitle => {
+            Window::PushWindowTitle | Window::PushIconAndWindowTitle | Window::PushIconTitle => {
                 self.title_stack.push(self.current_title.clone());
                 if self.title_stack.len() > 64 {
                     self.title_stack.remove(0);

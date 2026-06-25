@@ -23,12 +23,25 @@ const PERMISSIONS: &[&str] = &["fs:read", "net", "clipboard"];
 
 fn tag(p: &egui::Painter, theme: &Theme, pos: egui::Pos2, text: &str) -> f32 {
     let font = egui::FontId::proportional(theme.font_size_micro.value());
-    let tw = p.layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE).size().x;
+    let tw = p
+        .layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE)
+        .size()
+        .x;
     let pad = theme.spacing_xs.value();
     let h = theme.spacing_lg.value();
     let r = egui::Rect::from_min_size(pos, egui::vec2(tw + pad * 2.0, h));
-    p.rect_filled(r, theme.corner_radius_sm.value(), egui::Color32::from(theme.surface_raised()));
-    p.text(r.center(), egui::Align2::CENTER_CENTER, text, font, egui::Color32::from(theme.text_secondary()));
+    p.rect_filled(
+        r,
+        theme.corner_radius_sm.value(),
+        egui::Color32::from(theme.surface_raised()),
+    );
+    p.text(
+        r.center(),
+        egui::Align2::CENTER_CENTER,
+        text,
+        font,
+        egui::Color32::from(theme.text_secondary()),
+    );
     r.width()
 }
 
@@ -39,11 +52,23 @@ fn toggle(p: &egui::Painter, theme: &Theme, center: egui::Pos2, on: bool) {
     p.rect_filled(
         track,
         h * 0.5,
-        egui::Color32::from(if on { theme.accent_primary() } else { theme.surface_raised() }),
+        egui::Color32::from(if on {
+            theme.accent_primary()
+        } else {
+            theme.surface_raised()
+        }),
     );
     let knob_r = h * 0.5 - theme.border_width.value();
-    let kx = if on { track.max.x - knob_r - theme.border_width.value() } else { track.min.x + knob_r + theme.border_width.value() };
-    p.circle_filled(egui::pos2(kx, center.y), knob_r, egui::Color32::from(theme.text_on_accent()));
+    let kx = if on {
+        track.max.x - knob_r - theme.border_width.value()
+    } else {
+        track.min.x + knob_r + theme.border_width.value()
+    };
+    p.circle_filled(
+        egui::pos2(kx, center.y),
+        knob_r,
+        egui::Color32::from(theme.text_on_accent()),
+    );
 }
 
 fn layout(ui: &mut egui::Ui, theme: &Theme) {
@@ -52,7 +77,11 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
     let list_w = theme.field_width_lg.value(); // 200
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from(theme.bg_panel()));
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_panel()),
+    );
 
     // ── 좌측 리스트 (bg-sidebar) ──
     let list = egui::Rect::from_min_size(rect.min, egui::vec2(list_w, h));
@@ -66,7 +95,10 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
     p.rect_stroke(
         filter,
         theme.corner_radius_sm.value(),
-        egui::Stroke::new(theme.border_width.value(), egui::Color32::from(theme.border_default())),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            egui::Color32::from(theme.border_default()),
+        ),
         egui::StrokeKind::Inside,
     );
     p.text(
@@ -86,7 +118,11 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
             egui::vec2(list_w - theme.spacing_xs.value() * 2.0, row_h),
         );
         if *selected {
-            p.rect_filled(row, theme.corner_radius_sm.value(), egui::Color32::from(theme.surface_active()));
+            p.rect_filled(
+                row,
+                theme.corner_radius_sm.value(),
+                egui::Color32::from(theme.surface_active()),
+            );
         }
         let dc = egui::pos2(row.min.x + theme.spacing_sm.value() + dot_r, row.center().y);
         p.circle_filled(dc, dot_r, egui::Color32::from(theme.accent_agent()));
@@ -95,7 +131,11 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
             egui::Align2::LEFT_CENTER,
             name,
             egui::FontId::proportional(theme.font_size_body.value()),
-            egui::Color32::from(if *selected { theme.text_primary() } else { theme.text_secondary() }),
+            egui::Color32::from(if *selected {
+                theme.text_primary()
+            } else {
+                theme.text_secondary()
+            }),
         );
         y += row_h + theme.spacing_xs.value();
     }
@@ -113,10 +153,19 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
         egui::Color32::from(theme.text_primary()),
     );
     let title_w = p
-        .layout_no_wrap("agent-runner".into(), egui::FontId::proportional(theme.font_size_term_lg.value()), egui::Color32::WHITE)
+        .layout_no_wrap(
+            "agent-runner".into(),
+            egui::FontId::proportional(theme.font_size_term_lg.value()),
+            egui::Color32::WHITE,
+        )
         .size()
         .x;
-    tag(&p, theme, egui::pos2(dx + title_w + theme.spacing_sm.value(), dy), "agent");
+    tag(
+        &p,
+        theme,
+        egui::pos2(dx + title_w + theme.spacing_sm.value(), dy),
+        "agent",
+    );
     dy += theme.font_size_term_lg.value() + theme.spacing_lg.value();
 
     // Switch 행 (label 130).
@@ -129,7 +178,15 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
             egui::FontId::proportional(theme.font_size_body.value()),
             egui::Color32::from(theme.text_secondary()),
         );
-        toggle(&p, theme, egui::pos2(dx + label_w + theme.spacing_md.value(), dy + theme.spacing_sm.value() + theme.font_size_body.value() * 0.5), *on);
+        toggle(
+            &p,
+            theme,
+            egui::pos2(
+                dx + label_w + theme.spacing_md.value(),
+                dy + theme.spacing_sm.value() + theme.font_size_body.value() * 0.5,
+            ),
+            *on,
+        );
         dy += theme.item_height_interactive.value();
     }
 
@@ -169,7 +226,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("bg-sidebar", "list fill", theme.bg_sidebar().into()),
             TokenChip::new("bg-panel", "detail fill", theme.bg_panel().into()),
-            TokenChip::new("surface-active", "selected item", theme.surface_active().into()),
+            TokenChip::new(
+                "surface-active",
+                "selected item",
+                theme.surface_active().into(),
+            ),
             TokenChip::new("accent-agent", "agent dot", theme.accent_agent().into()),
         ],
     );

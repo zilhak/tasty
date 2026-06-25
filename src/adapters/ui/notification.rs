@@ -103,7 +103,9 @@ pub(crate) fn draw_notification_content_inner(
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             if !*read {
-                                ui.label(egui::RichText::new("*").color(th.accent_primary()).strong());
+                                ui.label(
+                                    egui::RichText::new("*").color(th.accent_primary()).strong(),
+                                );
                             }
                             ui.label(egui::RichText::new(title).strong().small());
                             ui.with_layout(
@@ -121,7 +123,11 @@ pub(crate) fn draw_notification_content_inner(
                         }
 
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(ws_name).small().color(th.accent_primary()));
+                            ui.label(
+                                egui::RichText::new(ws_name)
+                                    .small()
+                                    .color(th.accent_primary()),
+                            );
 
                             if ui
                                 .small_button(t("button.jump_to_workspace"))

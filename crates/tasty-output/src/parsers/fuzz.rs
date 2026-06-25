@@ -124,8 +124,7 @@ const FRAGMENTS: &[&str] = &[
 
 /// FRAGMENTS 를 0~14개 무작위로 이어붙인 문자열 (escape 경로 집중).
 fn fragment_soup() -> impl Strategy<Value = String> {
-    prop::collection::vec(prop::sample::select(FRAGMENTS), 0..14)
-        .prop_map(|parts| parts.concat())
+    prop::collection::vec(prop::sample::select(FRAGMENTS), 0..14).prop_map(|parts| parts.concat())
 }
 
 /// 순수 임의 유니코드 문자열 (정규식 선두만 매치되는 경계 케이스 포함).

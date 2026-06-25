@@ -305,7 +305,11 @@ pub fn draw_pane_tab_bars_view(
                                                 egui::pos2(tab_rect.min.x, tab_rect.min.y),
                                                 egui::vec2(tab_w, active_indicator_h),
                                             );
-                                            painter.rect_filled(line_rect, 0.0, th.accent_primary());
+                                            painter.rect_filled(
+                                                line_rect,
+                                                0.0,
+                                                th.accent_primary(),
+                                            );
                                         }
                                         // Fill: 배경은 위에서 이미 th.base 로 채움 — 추가 마커 없음.
                                         ActiveTabIndicator::Fill => {}

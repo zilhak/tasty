@@ -30,7 +30,11 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
     let l2_w = theme.field_width_md.value() + theme.spacing_sm.value(); // 168
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, l1_h + body_h), egui::Sense::hover());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from(theme.bg_panel()));
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_panel()),
+    );
 
     // ── L1 bar (bg-sidebar, 활성 2px accent underline) ──
     let l1 = egui::Rect::from_min_size(rect.min, egui::vec2(w, l1_h));
@@ -39,13 +43,20 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
     let font = egui::FontId::proportional(theme.font_size_body.value());
     let mut x = l1.min.x + pad;
     for (label, active) in L1_TABS {
-        let tw = p.layout_no_wrap((*label).into(), font.clone(), egui::Color32::WHITE).size().x;
+        let tw = p
+            .layout_no_wrap((*label).into(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x;
         p.text(
             egui::pos2(x, l1.center().y),
             egui::Align2::LEFT_CENTER,
             label,
             font.clone(),
-            egui::Color32::from(if *active { theme.text_primary() } else { theme.text_secondary() }),
+            egui::Color32::from(if *active {
+                theme.text_primary()
+            } else {
+                theme.text_secondary()
+            }),
         );
         if *active {
             let underline = egui::Rect::from_min_size(
@@ -68,7 +79,10 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
     p.rect_stroke(
         filter,
         theme.corner_radius_sm.value(),
-        egui::Stroke::new(theme.border_width.value(), egui::Color32::from(theme.border_default())),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            egui::Color32::from(theme.border_default()),
+        ),
         egui::StrokeKind::Inside,
     );
     p.text(
@@ -86,14 +100,22 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
             egui::vec2(l2_w - theme.spacing_xs.value() * 2.0, row_h),
         );
         if *selected {
-            p.rect_filled(row, theme.corner_radius_sm.value(), egui::Color32::from(theme.surface_active()));
+            p.rect_filled(
+                row,
+                theme.corner_radius_sm.value(),
+                egui::Color32::from(theme.surface_active()),
+            );
         }
         p.text(
             egui::pos2(row.min.x + theme.spacing_sm.value(), row.center().y),
             egui::Align2::LEFT_CENTER,
             name,
             font.clone(),
-            egui::Color32::from(if *selected { theme.text_primary() } else { theme.text_secondary() }),
+            egui::Color32::from(if *selected {
+                theme.text_primary()
+            } else {
+                theme.text_secondary()
+            }),
         );
         y += row_h + theme.spacing_xs.value();
     }
@@ -134,7 +156,10 @@ fn layout(ui: &mut egui::Ui, theme: &Theme) {
             p.rect_stroke(
                 c,
                 theme.corner_radius.value(),
-                egui::Stroke::new(theme.focus_ring_width.value(), egui::Color32::from(theme.text_primary())),
+                egui::Stroke::new(
+                    theme.focus_ring_width.value(),
+                    egui::Color32::from(theme.text_primary()),
+                ),
                 egui::StrokeKind::Outside,
             );
         }
@@ -160,8 +185,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("bg-sidebar", "L1/L2 fill", theme.bg_sidebar().into()),
             TokenChip::new("bg-panel", "content fill", theme.bg_panel().into()),
-            TokenChip::new("surface-active", "selected section", theme.surface_active().into()),
-            TokenChip::new("accent-primary", "L1 underline", theme.accent_primary().into()),
+            TokenChip::new(
+                "surface-active",
+                "selected section",
+                theme.surface_active().into(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "L1 underline",
+                theme.accent_primary().into(),
+            ),
         ],
     );
 

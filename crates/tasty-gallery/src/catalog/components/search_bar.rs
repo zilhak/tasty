@@ -32,7 +32,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("surface-raised", "bar", theme.surface_raised().to_egui()),
             TokenChip::new("border-strong", "edge", theme.border_strong().to_egui()),
-            TokenChip::new("accent-danger", "0 matches", theme.accent_danger().to_egui()),
+            TokenChip::new(
+                "accent-danger",
+                "0 matches",
+                theme.accent_danger().to_egui(),
+            ),
         ],
     );
 
@@ -46,42 +50,55 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
 fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
     kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
-        kit::region_sym(ui, theme.spacing_sm.value(), theme.spacing_xs.value(), |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
-                // 검색어 Input (flex).
-                let counter_w = theme.field_width_xs.value() * 0.5;
-                let trailing = counter_w + theme.item_height_interactive.value() * 4.0
-                    + theme.spacing_md.value() * 4.0;
-                let input_w = (WIDTH - theme.spacing_sm.value() * 2.0 - trailing).max(80.0);
-                kit::field(ui, theme, Some(input_w), "Find", true, false);
-                // 카운터.
-                let counter_color = if no_match {
-                    theme.accent_danger()
-                } else {
-                    theme.text_muted()
-                };
-                ui.label(
-                    egui::RichText::new(count)
-                        .monospace()
-                        .size(theme.font_size_caption.value())
-                        .color(counter_color.to_egui()),
-                );
-                // ▲▼.
-                icon_btn(ui, theme, icons::CHEVRON_DOWN, false);
-                icon_btn(ui, theme, icons::CHEVRON_RIGHT, false);
-                // Aa / .* / ab 토글.
-                toggle_chip(ui, theme, "Aa", true);
-                toggle_chip(ui, theme, ".*", false);
-                toggle_chip(ui, theme, "ab", false);
-                // divider.
-                let h = theme.item_height_interactive.value() * 0.6;
-                let (r, _) = ui.allocate_exact_size(egui::vec2(theme.border_width.value(), h), egui::Sense::hover());
-                ui.painter().vline(r.center().x, r.y_range(), egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()));
-                // close.
-                icon_btn(ui, theme, icons::CLOSE, false);
-            });
-        });
+        kit::region_sym(
+            ui,
+            theme.spacing_sm.value(),
+            theme.spacing_xs.value(),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                    // 검색어 Input (flex).
+                    let counter_w = theme.field_width_xs.value() * 0.5;
+                    let trailing = counter_w
+                        + theme.item_height_interactive.value() * 4.0
+                        + theme.spacing_md.value() * 4.0;
+                    let input_w = (WIDTH - theme.spacing_sm.value() * 2.0 - trailing).max(80.0);
+                    kit::field(ui, theme, Some(input_w), "Find", true, false);
+                    // 카운터.
+                    let counter_color = if no_match {
+                        theme.accent_danger()
+                    } else {
+                        theme.text_muted()
+                    };
+                    ui.label(
+                        egui::RichText::new(count)
+                            .monospace()
+                            .size(theme.font_size_caption.value())
+                            .color(counter_color.to_egui()),
+                    );
+                    // ▲▼.
+                    icon_btn(ui, theme, icons::CHEVRON_DOWN, false);
+                    icon_btn(ui, theme, icons::CHEVRON_RIGHT, false);
+                    // Aa / .* / ab 토글.
+                    toggle_chip(ui, theme, "Aa", true);
+                    toggle_chip(ui, theme, ".*", false);
+                    toggle_chip(ui, theme, "ab", false);
+                    // divider.
+                    let h = theme.item_height_interactive.value() * 0.6;
+                    let (r, _) = ui.allocate_exact_size(
+                        egui::vec2(theme.border_width.value(), h),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().vline(
+                        r.center().x,
+                        r.y_range(),
+                        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+                    );
+                    // close.
+                    icon_btn(ui, theme, icons::CLOSE, false);
+                });
+            },
+        );
     });
 }
 
@@ -89,12 +106,17 @@ fn icon_btn(ui: &mut egui::Ui, theme: &Theme, glyph: icons::MockGlyph, active: b
     IconButton::new()
         .variant(IconButtonVariant::Ghost)
         .active(active)
-        .show(ui, theme, &|ui, rect, c| glyph.image(rect.height(), c).paint_at(ui, rect));
+        .show(ui, theme, &|ui, rect, c| {
+            glyph.image(rect.height(), c).paint_at(ui, rect)
+        });
 }
 
 fn toggle_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
     let (fill, fg) = if active {
-        (theme.surface_active().to_egui(), theme.text_primary().to_egui())
+        (
+            theme.surface_active().to_egui(),
+            theme.text_primary().to_egui(),
+        )
     } else {
         (egui::Color32::TRANSPARENT, theme.text_muted().to_egui())
     };
@@ -106,7 +128,9 @@ fn toggle_chip(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
     let s = theme.item_height_interactive.value() * 0.78;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
     if fill != egui::Color32::TRANSPARENT {
-        ui.painter().rect_filled(rect, theme.corner_radius_sm.value(), fill);
+        ui.painter()
+            .rect_filled(rect, theme.corner_radius_sm.value(), fill);
     }
-    ui.painter().galley(rect.center() - galley.rect.size() * 0.5, galley, fg);
+    ui.painter()
+        .galley(rect.center() - galley.rect.size() * 0.5, galley, fg);
 }

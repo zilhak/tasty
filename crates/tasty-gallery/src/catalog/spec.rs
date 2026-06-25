@@ -100,24 +100,22 @@ pub fn stage(
         ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(pad as i8))
-        .show(ui, |ui| {
-            match variant {
-                StageVariant::Column => {
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
-                        add_contents(ui);
-                    });
-                }
-                StageVariant::Center => {
-                    ui.vertical_centered(add_contents);
-                }
-                _ => {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing =
-                            egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
-                        add_contents(ui);
-                    });
-                }
+        .show(ui, |ui| match variant {
+            StageVariant::Column => {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_lg.value();
+                    add_contents(ui);
+                });
+            }
+            StageVariant::Center => {
+                ui.vertical_centered(add_contents);
+            }
+            _ => {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing =
+                        egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
+                    add_contents(ui);
+                });
             }
         });
 }
@@ -260,8 +258,10 @@ fn accent_bar(ui: &mut egui::Ui, theme: &Theme, text: &str, accent: egui::Color3
 /// 현재 ui 폭 전체에 1px separator 라인을 그린다 (세로 공간도 예약).
 fn hline(ui: &mut egui::Ui, theme: &Theme, color: egui::Color32) {
     let w = ui.available_width();
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(w, theme.border_width.value()), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(w, theme.border_width.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,

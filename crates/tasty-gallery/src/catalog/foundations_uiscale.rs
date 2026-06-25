@@ -10,7 +10,7 @@
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::catalog::spec::{cluster, meta, note, stage, StageVariant, TokenChip};
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 
 /// 디자인 `--tasty-ui-scale-{sm,md,lg}` stop 값.
 const STOPS: [(&str, f32); 3] = [("sm · 0.8", 0.8), ("md · 1.0", 1.0), ("lg · 1.2", 1.2)];
@@ -57,7 +57,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn scaled_sidebar_row(ui: &mut egui::Ui, theme: &Theme, scale: f32) {
     egui::Frame::new()
         .fill(ec(theme.bg_sidebar()))
-        .stroke(egui::Stroke::new(theme.border_width.value(), ec(theme.separator)))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            ec(theme.separator),
+        ))
         .corner_radius(theme.corner_radius_sm.value())
         .inner_margin(egui::Margin {
             left: (theme.spacing_md.value() * scale) as i8,
@@ -71,7 +74,8 @@ fn scaled_sidebar_row(ui: &mut egui::Ui, theme: &Theme, scale: f32) {
                 // dot (agent).
                 let d = theme.status_dot_size.value() * scale;
                 let (r, _) = ui.allocate_exact_size(egui::vec2(d, d), egui::Sense::hover());
-                ui.painter().circle_filled(r.center(), d * 0.5, ec(theme.accent_agent()));
+                ui.painter()
+                    .circle_filled(r.center(), d * 0.5, ec(theme.accent_agent()));
                 // 라벨.
                 ui.label(
                     egui::RichText::new("agent · zsh")
@@ -96,7 +100,8 @@ fn mini_badge(ui: &mut egui::Ui, theme: &Theme, count: &str, scale: f32) {
     let h = galley.rect.height() + pad * 2.0;
     let w = galley.rect.width() + pad * 3.0;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w.max(h), h), egui::Sense::hover());
-    ui.painter().rect_filled(rect, h * 0.5, ec(theme.accent_danger()));
+    ui.painter()
+        .rect_filled(rect, h * 0.5, ec(theme.accent_danger()));
     ui.painter().galley(
         rect.center() - galley.rect.size() * 0.5,
         galley,

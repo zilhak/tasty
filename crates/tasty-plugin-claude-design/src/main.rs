@@ -76,7 +76,9 @@ impl ClaudeDesignPlugin {
             inject_saved_auth(&runner, &data_dir);
             self.runner = Some(runner);
         }
-        Ok(Arc::clone(self.runner.as_ref().expect("runner just ensured")))
+        Ok(Arc::clone(
+            self.runner.as_ref().expect("runner just ensured"),
+        ))
     }
 }
 
@@ -131,10 +133,7 @@ impl ClaudeDesignPlugin {
     fn handle_status(&mut self) -> Value {
         let det = RuntimeDetection::run();
         let detail = det.to_json();
-        let stored_auth = self
-            .data_dir
-            .as_ref()
-            .is_some_and(|d| auth::has_auth(d));
+        let stored_auth = self.data_dir.as_ref().is_some_and(|d| auth::has_auth(d));
         let mut out = json!({
             "runtime": det.runtime_status(),
             "node": detail["node"],
@@ -299,8 +298,11 @@ impl ClaudeDesignPlugin {
         auth::clear_auth(&data_dir)
             .map_err(|e| IpcMethodError::new(format!("clear auth failed: {e}")))?;
         if let Some(runner) = self.runner.as_ref().filter(|r| r.is_alive())
-            && let Err(e) =
-                runner.request("set_auth", json!({ "storage_state": null }), runner::DEFAULT_OP_TIMEOUT)
+            && let Err(e) = runner.request(
+                "set_auth",
+                json!({ "storage_state": null }),
+                runner::DEFAULT_OP_TIMEOUT,
+            )
         {
             tracing::warn!(error = %e, "runner set_auth(null) on logout failed");
         }
@@ -333,9 +335,11 @@ fn run_chat(
 fn inject_saved_auth(runner: &Runner, data_dir: &Path) {
     match auth::load_auth(data_dir) {
         Ok(Some(state)) => {
-            if let Err(e) =
-                runner.request("set_auth", json!({ "storage_state": state }), runner::DEFAULT_OP_TIMEOUT)
-            {
+            if let Err(e) = runner.request(
+                "set_auth",
+                json!({ "storage_state": state }),
+                runner::DEFAULT_OP_TIMEOUT,
+            ) {
                 tracing::warn!(error = %e, "inject saved auth failed");
             } else {
                 tracing::info!("saved design session injected into runner");

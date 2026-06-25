@@ -732,9 +732,7 @@ fn route_debug_handler(
         #[cfg(feature = "gui")]
         "debug.host_popup.list" => debug::handle_debug_host_popup_list(state, id),
         #[cfg(feature = "gui")]
-        "debug.host_popup.open" => {
-            debug::handle_debug_host_popup_open(state, id, &request.params)
-        }
+        "debug.host_popup.open" => debug::handle_debug_host_popup_open(state, id, &request.params),
         #[cfg(feature = "gui")]
         "debug.host_popup.close" => {
             debug::handle_debug_host_popup_close(state, id, &request.params)

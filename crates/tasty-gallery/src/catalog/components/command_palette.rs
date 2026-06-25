@@ -4,7 +4,7 @@
 //! + mono 힌트 footer. 색·치수는 Theme 토큰, 프레임/필드는 공유 kit.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{menu_item, MenuItemVariant};
+use tasty_ui_widgets::{MenuItemVariant, menu_item};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -16,29 +16,44 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
             // 헤더 — 검색 Input (padding 10).
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                kit::field(ui, theme, None, "Search commands…", true, false);
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    kit::field(ui, theme, None, "Search commands…", true, false);
+                },
+            );
             kit::hsep(ui, theme);
 
             // 리스트 — MenuItem 행 (첫 active). padding 6.
-            kit::region_sym(ui, theme.spacing_sm.value(), theme.spacing_sm.value(), |ui| {
-                row(ui, theme, icons::TERMINAL, "New terminal tab", "⌘T", true);
-                row(ui, theme, icons::SPLIT, "Split right", "⌘D", false);
-                row(ui, theme, icons::SETTINGS, "Open settings", "⌘,", false);
-                row(ui, theme, icons::PORT, "Show listening ports", "", false);
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_sm.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    row(ui, theme, icons::TERMINAL, "New terminal tab", "⌘T", true);
+                    row(ui, theme, icons::SPLIT, "Split right", "⌘D", false);
+                    row(ui, theme, icons::SETTINGS, "Open settings", "⌘,", false);
+                    row(ui, theme, icons::PORT, "Show listening ports", "", false);
+                },
+            );
             kit::hsep(ui, theme);
 
             // footer — mono 힌트 (padding 8x12).
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                    kit::caption(ui, theme, "↵ open", true);
-                    kit::caption(ui, theme, "↑↓ navigate", true);
-                    kit::caption(ui, theme, "esc close", true);
-                });
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
+                        kit::caption(ui, theme, "↵ open", true);
+                        kit::caption(ui, theme, "↑↓ navigate", true);
+                        kit::caption(ui, theme, "esc close", true);
+                    });
+                },
+            );
         });
     });
 
@@ -54,7 +69,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("surface-raised", "frame", theme.surface_raised().to_egui()),
-            TokenChip::new("surface-active", "active row", theme.surface_active().to_egui()),
+            TokenChip::new(
+                "surface-active",
+                "active row",
+                theme.surface_active().to_egui(),
+            ),
             TokenChip::new("accent-primary", "match", theme.accent_primary().to_egui()),
         ],
     );

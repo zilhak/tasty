@@ -30,7 +30,10 @@ pub fn winit_window_icon() -> Option<winit::window::Icon> {
 }
 
 /// Create a tray-icon Icon from the embedded 32x32 PNG.
-#[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
+#[cfg(all(
+    any(windows, target_os = "macos", target_os = "linux"),
+    feature = "gui"
+))]
 pub fn tray_icon() -> Option<tray_icon::Icon> {
     let (rgba, w, h) = decode_png(ICON_PNG_32)?;
     tray_icon::Icon::from_rgba(rgba, w, h).ok()

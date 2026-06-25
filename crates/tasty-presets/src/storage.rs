@@ -195,7 +195,7 @@ impl PresetStore {
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
                 atomic_write(&to_path, serialized.as_bytes())?;
-                let _ = std::fs::remove_file(&from_path);  // best-effort 원본 정리 — 실패 무시
+                let _ = std::fs::remove_file(&from_path); // best-effort 원본 정리 — 실패 무시
                 self.workspaces.insert(to.into(), preset);
             }
             PresetKind::Tab => {
@@ -203,7 +203,7 @@ impl PresetStore {
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
                 atomic_write(&to_path, serialized.as_bytes())?;
-                let _ = std::fs::remove_file(&from_path);  // best-effort 원본 정리 — 실패 무시
+                let _ = std::fs::remove_file(&from_path); // best-effort 원본 정리 — 실패 무시
                 self.tabs.insert(to.into(), preset);
             }
             PresetKind::Pane => {
@@ -211,7 +211,7 @@ impl PresetStore {
                 preset.set_name(to.into());
                 let serialized = toml::to_string_pretty(&preset)?;
                 atomic_write(&to_path, serialized.as_bytes())?;
-                let _ = std::fs::remove_file(&from_path);  // best-effort 원본 정리 — 실패 무시
+                let _ = std::fs::remove_file(&from_path); // best-effort 원본 정리 — 실패 무시
                 self.panes.insert(to.into(), preset);
             }
         }
@@ -364,7 +364,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {
-            let _ = std::fs::remove_file(&tmp);  // best-effort 임시파일 정리 — 실패 무시
+            let _ = std::fs::remove_file(&tmp); // best-effort 임시파일 정리 — 실패 무시
             Err(e)
         }
     }

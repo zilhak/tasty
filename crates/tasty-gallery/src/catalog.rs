@@ -252,7 +252,9 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "button",
                             "Button",
-                            Some("Primary action and its variants — primary, secondary, ghost, danger, agent"),
+                            Some(
+                                "Primary action and its variants — primary, secondary, ghost, danger, agent",
+                            ),
                             components::prim_button::draw,
                         ),
                         spec(
@@ -411,7 +413,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "actions",
                         "The verbs",
-                        Some("What an IconButton wraps in a toolbar or row — close/refresh in every overlay header, edit/trash/copy in list rows"),
+                        Some(
+                            "What an IconButton wraps in a toolbar or row — close/refresh in every overlay header, edit/trash/copy in list rows",
+                        ),
                         icons::draw_actions,
                     )],
                 ),
@@ -421,7 +425,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "nav",
                         "Movement and open/closed state",
-                        Some("Single chevrons = tree-row disclosure; doubled = collapse/expand the sidebar rail"),
+                        Some(
+                            "Single chevrons = tree-row disclosure; doubled = collapse/expand the sidebar rail",
+                        ),
                         icons::draw_nav,
                     )],
                 ),
@@ -431,7 +437,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "surfaces",
                         "The nouns of the workspace",
-                        Some("What a tab, tree row, or new-surface button shows — terminal/markdown are the two core surface kinds"),
+                        Some(
+                            "What a tab, tree row, or new-surface button shows — terminal/markdown are the two core surface kinds",
+                        ),
                         icons::draw_surfaces,
                     )],
                 ),
@@ -441,7 +449,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "visibility",
                         "Reveal toggle on secret values",
-                        Some("Passkeys, env — eye when hidden, eyeOff when shown; swap in place on the same IconButton"),
+                        Some(
+                            "Passkeys, env — eye when hidden, eyeOff when shown; swap in place on the same IconButton",
+                        ),
                         icons::draw_visibility,
                     )],
                 ),
@@ -451,7 +461,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "status",
                         "Inline meaning markers",
-                        Some("Tinted by the line they sit in (warning amber, success green, danger red) via currentColor — not state dots"),
+                        Some(
+                            "Tinted by the line they sit in (warning amber, success green, danger red) via currentColor — not state dots",
+                        ),
                         icons::draw_status,
                     )],
                 ),
@@ -479,7 +491,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "scrim",
                         "Dismiss on scrim or Esc",
-                        Some("The shared recipe — bg-panel frame, 1px border-strong, modal shadow, scrim + blur"),
+                        Some(
+                            "The shared recipe — bg-panel frame, 1px border-strong, modal shadow, scrim + blur",
+                        ),
                         widgets::dialog::draw,
                     )],
                 ),
@@ -626,7 +640,9 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "tabbar",
                             "Pane tab strip",
-                            Some("24×150 tabs on bg-sidebar; active lifts to bg-panel + accent bar"),
+                            Some(
+                                "24×150 tabs on bg-sidebar; active lifts to bg-panel + accent bar",
+                            ),
                             components::tab_bar::draw,
                         ),
                         spec(

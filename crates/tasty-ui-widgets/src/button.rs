@@ -184,11 +184,17 @@ impl<'a> Button<'a> {
         // hover/active 오버레이 틴트(::after) — 장식, 스냅.
         if self.enabled {
             if resp.is_pointer_button_down_on() {
-                ui.painter()
-                    .rect_filled(rect, radius, theme.overlay_active().to_egui_premultiplied());
+                ui.painter().rect_filled(
+                    rect,
+                    radius,
+                    theme.overlay_active().to_egui_premultiplied(),
+                );
             } else if resp.hovered() {
-                ui.painter()
-                    .rect_filled(rect, radius, theme.overlay_hover().to_egui_premultiplied());
+                ui.painter().rect_filled(
+                    rect,
+                    radius,
+                    theme.overlay_hover().to_egui_premultiplied(),
+                );
             }
         }
 

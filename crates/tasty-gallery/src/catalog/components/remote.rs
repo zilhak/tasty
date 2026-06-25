@@ -6,7 +6,7 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    tag, Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, TagVariant,
+    Button, ButtonVariant, IconButton, IconButtonVariant, Spinner, TagVariant, tag,
 };
 
 use crate::catalog::icons;
@@ -25,29 +25,62 @@ struct Profile {
 }
 
 const PROFILES: &[Profile] = &[
-    Profile { name: "prod-bastion", tag: "online", variant: TagVariant::Success, target: "ssh://deploy@10.0.4.2:22", detail: "passkey · ed25519", detecting: false },
-    Profile { name: "build-box", tag: "passkey", variant: TagVariant::Agent, target: "ssh://ci@build.internal:22", detail: "", detecting: true },
-    Profile { name: "db-replica", tag: "offline", variant: TagVariant::Default, target: "ssh://psql@10.0.9.7:22", detail: "passkey · rsa-4096", detecting: false },
+    Profile {
+        name: "prod-bastion",
+        tag: "online",
+        variant: TagVariant::Success,
+        target: "ssh://deploy@10.0.4.2:22",
+        detail: "passkey · ed25519",
+        detecting: false,
+    },
+    Profile {
+        name: "build-box",
+        tag: "passkey",
+        variant: TagVariant::Agent,
+        target: "ssh://ci@build.internal:22",
+        detail: "",
+        detecting: true,
+    },
+    Profile {
+        name: "db-replica",
+        tag: "offline",
+        variant: TagVariant::Default,
+        target: "ssh://psql@10.0.9.7:22",
+        detail: "passkey · rsa-4096",
+        detecting: false,
+    },
 ];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             // 헤더.
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    kit::icon(ui, icons::REMOTE, theme.icon_glyph_size_md.value(), theme.text_secondary().to_egui());
-                    kit::title(ui, theme, "Remote connections");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        IconButton::new()
-                            .variant(IconButtonVariant::Ghost)
-                            .show(ui, theme, &|ui, rect, c| {
-                                icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
-                            });
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                        kit::icon(
+                            ui,
+                            icons::REMOTE,
+                            theme.icon_glyph_size_md.value(),
+                            theme.text_secondary().to_egui(),
+                        );
+                        kit::title(ui, theme, "Remote connections");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            IconButton::new().variant(IconButtonVariant::Ghost).show(
+                                ui,
+                                theme,
+                                &|ui, rect, c| {
+                                    icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+                                },
+                            );
+                        });
                     });
-                });
-            });
+                },
+            );
             // 2 탭 (bg-sidebar).
             egui::Frame::new()
                 .fill(theme.bg_sidebar().to_egui())
@@ -63,14 +96,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             kit::hsep(ui, theme);
 
             // Add profile 버튼행.
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    Button::new("Add profile")
-                        .variant(ButtonVariant::Secondary)
-                        .leading_icon(&|ui, rect, c| icons::PLUS.image(rect.height(), c).paint_at(ui, rect))
-                        .show(ui, theme);
-                });
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        Button::new("Add profile")
+                            .variant(ButtonVariant::Secondary)
+                            .leading_icon(&|ui, rect, c| {
+                                icons::PLUS.image(rect.height(), c).paint_at(ui, rect)
+                            })
+                            .show(ui, theme);
+                    });
+                },
+            );
 
             // ProfileRow 리스트.
             kit::region_sym(ui, theme.spacing_md.value(), 0.0, |ui| {
@@ -117,8 +157,13 @@ fn tab_btn(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
         egui::FontId::proportional(theme.font_size_body.value()),
         egui::Color32::PLACEHOLDER,
     );
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(galley.rect.width(), h), egui::Sense::hover());
-    let fg = if active { theme.text_primary() } else { theme.text_muted() };
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(galley.rect.width(), h), egui::Sense::hover());
+    let fg = if active {
+        theme.text_primary()
+    } else {
+        theme.text_muted()
+    };
     ui.painter().galley(
         egui::pos2(rect.left(), rect.center().y - galley.rect.height() * 0.5),
         galley,
@@ -126,10 +171,14 @@ fn tab_btn(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
     );
     if active {
         let bar = egui::Rect::from_min_size(
-            egui::pos2(rect.left(), rect.bottom() - theme.tab_indicator_width.value()),
+            egui::pos2(
+                rect.left(),
+                rect.bottom() - theme.tab_indicator_width.value(),
+            ),
             egui::vec2(rect.width(), theme.tab_indicator_width.value()),
         );
-        ui.painter().rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        ui.painter()
+            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
     }
 }
 
@@ -157,7 +206,9 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
                             .color(theme.text_muted().to_egui()),
                     );
                     if p.detecting {
-                        Spinner::new().size(theme.font_size_term_sm.value()).show(ui, theme);
+                        Spinner::new()
+                            .size(theme.font_size_term_sm.value())
+                            .show(ui, theme);
                         kit::caption(ui, theme, "detecting…", false);
                     } else {
                         kit::caption(ui, theme, p.detail, false);
@@ -169,7 +220,9 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
                     IconButton::new()
                         .variant(IconButtonVariant::Ghost)
                         .size(tasty_ui_widgets::ControlSize::Sm)
-                        .show(ui, theme, &|ui, rect, c| glyph.image(rect.height(), c).paint_at(ui, rect));
+                        .show(ui, theme, &|ui, rect, c| {
+                            glyph.image(rect.height(), c).paint_at(ui, rect)
+                        });
                 }
             });
         });

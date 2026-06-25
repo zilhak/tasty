@@ -24,7 +24,10 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
     p.hline(
         rect.x_range(),
         rect.max.y - theme.border_width.value() * 0.5,
-        egui::Stroke::new(theme.border_width.value(), egui::Color32::from(theme.border_default())),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            egui::Color32::from(theme.border_default()),
+        ),
     );
 
     let font = egui::FontId::proportional(theme.tab_bar_label_font_size.value());
@@ -43,7 +46,10 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
             p.vline(
                 x,
                 rect.y_range(),
-                egui::Stroke::new(theme.border_width.value(), egui::Color32::from(theme.separator)),
+                egui::Stroke::new(
+                    theme.border_width.value(),
+                    egui::Color32::from(theme.separator),
+                ),
             );
         }
         p.text(
@@ -63,7 +69,13 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
     // `+` IconButton (탭 뒤).
     let icon = theme.icon_glyph_size_md.value();
     let plus_rect = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(bar_h, bar_h));
-    paint_icon(ui, PLUS, plus_rect, icon, egui::Color32::from(theme.text_secondary()));
+    paint_icon(
+        ui,
+        PLUS,
+        plus_rect,
+        icon,
+        egui::Color32::from(theme.text_secondary()),
+    );
 
     // 우측: Split + Search.
     let search_rect = egui::Rect::from_min_size(
@@ -71,8 +83,20 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         egui::vec2(bar_h, bar_h),
     );
     let split_rect = search_rect.translate(egui::vec2(-bar_h, 0.0));
-    paint_icon(ui, SPLIT, split_rect, icon, egui::Color32::from(theme.text_secondary()));
-    paint_icon(ui, SEARCH, search_rect, icon, egui::Color32::from(theme.text_secondary()));
+    paint_icon(
+        ui,
+        SPLIT,
+        split_rect,
+        icon,
+        egui::Color32::from(theme.text_secondary()),
+    );
+    paint_icon(
+        ui,
+        SEARCH,
+        search_rect,
+        icon,
+        egui::Color32::from(theme.text_secondary()),
+    );
 }
 
 fn paint_icon(
@@ -104,7 +128,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("bg-sidebar", "strip fill", theme.bg_sidebar().into()),
             TokenChip::new("bg-panel", "active tab", theme.bg_panel().into()),
-            TokenChip::new("accent-primary", "active top bar", theme.accent_primary().into()),
+            TokenChip::new(
+                "accent-primary",
+                "active top bar",
+                theme.accent_primary().into(),
+            ),
             TokenChip::new("separator", "tab divider", theme.separator.into()),
         ],
     );

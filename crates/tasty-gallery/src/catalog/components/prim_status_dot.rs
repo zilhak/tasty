@@ -10,13 +10,18 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(ui, theme, "status — running(pulse) · idle · agent · waiting · error", |ui| {
-            status_dot(ui, theme, StatusKind::Running, "LISTEN", true, false);
-            status_dot(ui, theme, StatusKind::Idle, "idle", false, false);
-            status_dot(ui, theme, StatusKind::Agent, "agent", true, false);
-            status_dot(ui, theme, StatusKind::Waiting, "CLOSE_WAIT", false, false);
-            status_dot(ui, theme, StatusKind::Error, "error", false, false);
-        });
+        cluster(
+            ui,
+            theme,
+            "status — running(pulse) · idle · agent · waiting · error",
+            |ui| {
+                status_dot(ui, theme, StatusKind::Running, "LISTEN", true, false);
+                status_dot(ui, theme, StatusKind::Idle, "idle", false, false);
+                status_dot(ui, theme, StatusKind::Agent, "agent", true, false);
+                status_dot(ui, theme, StatusKind::Waiting, "CLOSE_WAIT", false, false);
+                status_dot(ui, theme, StatusKind::Error, "error", false, false);
+            },
+        );
         cluster(ui, theme, "reduced motion — pulse 생략", |ui| {
             status_dot(ui, theme, StatusKind::Running, "LISTEN", true, true);
             status_dot(ui, theme, StatusKind::Agent, "agent", true, true);

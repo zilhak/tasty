@@ -180,7 +180,10 @@ fn draw_detail(
         // 사유 배너 (severity 색 프레임).
         egui::Frame::new()
             .fill(color.gamma_multiply(0.11))
-            .stroke(egui::Stroke::new(th.border_width.value(), color.gamma_multiply(0.36)))
+            .stroke(egui::Stroke::new(
+                th.border_width.value(),
+                color.gamma_multiply(0.36),
+            ))
             .corner_radius(th.corner_radius.value())
             .inner_margin(egui::Margin::symmetric(14, 12))
             .show(ui, |ui| {
@@ -325,8 +328,9 @@ fn draw_action_bar(
         ui.add_space(11.0);
         ui.label(egui::RichText::new(t(status_key)).size(12.0).color(color));
 
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            match entry.kind {
+        ui.with_layout(
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| match entry.kind {
                 AttentionKind::PermissionsChanged => {
                     if ui.button(t("plugins.attn_reapprove")).clicked() {
                         actions.push(PluginsAction::Reapprove {
@@ -342,14 +346,17 @@ fn draw_action_bar(
                 AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {
                     let enabled = entry.fingerprint.is_some();
                     if ui
-                        .add_enabled(enabled, egui::Button::new(t("plugins.attn_copy_fingerprint")))
+                        .add_enabled(
+                            enabled,
+                            egui::Button::new(t("plugins.attn_copy_fingerprint")),
+                        )
                         .clicked()
                         && let Some(fp) = &entry.fingerprint
                     {
                         ui.ctx().copy_text(fp.clone());
                     }
                 }
-            }
-        });
+            },
+        );
     });
 }

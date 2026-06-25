@@ -267,7 +267,10 @@ mod tests {
         assert!(!latte.exists(), "absent latte must not be recreated");
 
         // 낡은 latte 존재 → 임베드로 동기화.
-        write_text(&latte, "label = \"old latte\"\n[terminal]\nbg = \"#eff1f5\"\n");
+        write_text(
+            &latte,
+            "label = \"old latte\"\n[terminal]\nbg = \"#eff1f5\"\n",
+        );
         if latte.exists() && needs_sync(&latte, crate::LATTE_TOML_TEXT) {
             write_text(&latte, crate::LATTE_TOML_TEXT);
         }

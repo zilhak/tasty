@@ -1592,13 +1592,25 @@ mod tests {
     fn macos_traffic_and_disabled_opacity_are_invariant() {
         let dark = Theme::with_colors(distinct_colors(), false);
         let light = Theme::with_colors(distinct_colors(), true);
-        assert_eq!(dark.accent_macos_close(), HexColor::from_rgb(0xec, 0x6a, 0x5e));
-        assert_eq!(dark.accent_macos_min(), HexColor::from_rgb(0xf4, 0xbf, 0x4f));
-        assert_eq!(dark.accent_macos_zoom(), HexColor::from_rgb(0x61, 0xc5, 0x54));
+        assert_eq!(
+            dark.accent_macos_close(),
+            HexColor::from_rgb(0xec, 0x6a, 0x5e)
+        );
+        assert_eq!(
+            dark.accent_macos_min(),
+            HexColor::from_rgb(0xf4, 0xbf, 0x4f)
+        );
+        assert_eq!(
+            dark.accent_macos_zoom(),
+            HexColor::from_rgb(0x61, 0xc5, 0x54)
+        );
         assert_eq!(dark.accent_macos_close(), light.accent_macos_close());
         assert_eq!(dark.accent_macos_min(), light.accent_macos_min());
         assert_eq!(dark.accent_macos_zoom(), light.accent_macos_zoom());
-        assert_eq!(dark.brand_melon_flesh(), HexColor::from_rgb(0xf2, 0x5d, 0x6b));
+        assert_eq!(
+            dark.brand_melon_flesh(),
+            HexColor::from_rgb(0xf2, 0x5d, 0x6b)
+        );
         assert_eq!(dark.brand_melon_flesh(), light.brand_melon_flesh());
         assert_eq!(dark.opacity_disabled(), 0.5);
     }

@@ -109,9 +109,6 @@ impl App {
             })
         }));
 
-        plugins_ui::PluginsSnapshot {
-            plugins,
-            attention,
-        }
+        plugins_ui::PluginsSnapshot { plugins, attention }
     }
 }

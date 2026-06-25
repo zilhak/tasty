@@ -44,7 +44,10 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");
     };
     let Some(kind) = params.get("kind").and_then(|v| v.as_str()) else {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'kind' parameter (path|inline)");
+        return JsonRpcResponse::invalid_params(
+            id,
+            "Missing required 'kind' parameter (path|inline)",
+        );
     };
     let Some(value) = params.get("value").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'value' parameter");
@@ -56,7 +59,10 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
         "path" => passkeys.upsert_path(name, value.to_string()),
         "inline" => passkeys.upsert_inline(name, value),
         other => {
-            return JsonRpcResponse::invalid_params(id, format!("unknown kind '{other}' (path|inline)"));
+            return JsonRpcResponse::invalid_params(
+                id,
+                format!("unknown kind '{other}' (path|inline)"),
+            );
         }
     };
     if let Err(e) = res {

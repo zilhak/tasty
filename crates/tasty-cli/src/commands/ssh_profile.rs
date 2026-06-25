@@ -219,7 +219,11 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
                     println!("label         : {l}");
                 }
                 if let Some(pk) = &p.passkey_ref {
-                    let status = if passkeys.get(pk).is_some() { "" } else { "  (passkey 없음)" };
+                    let status = if passkeys.get(pk).is_some() {
+                        ""
+                    } else {
+                        "  (passkey 없음)"
+                    };
                     println!("passkey       : {pk}{status}");
                 }
                 if let Some(v) = p.as_ssh() {
@@ -234,7 +238,9 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
                     println!("shell         : {}", v.shell());
                     println!("port_mode     : {}", v.port_mode());
                     if v.is_disabled() {
-                        println!("status        : 감지 실패(비활성) — tasty tool ssh detect {name}");
+                        println!(
+                            "status        : 감지 실패(비활성) — tasty tool ssh detect {name}"
+                        );
                     }
                 } else {
                     for (k, val) in &p.fields {
@@ -312,7 +318,10 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
                 }
             }
             match crate::ssh::detect_and_persist(name) {
-                Ok(mode) => println!("재감지 성공: '{name}' → port_mode={} (활성).", mode.as_str()),
+                Ok(mode) => println!(
+                    "재감지 성공: '{name}' → port_mode={} (활성).",
+                    mode.as_str()
+                ),
                 Err(e) => println!(
                     "재감지 실패: {e}\n  '{name}' 은 비활성 상태입니다 — 원격 환경 확인 후 \
                      다시 'tasty tool ssh detect {name}'."
@@ -337,7 +346,10 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
 fn report_detect(name: &str, detect: &Option<Result<crate::ssh::PortMode>>) {
     match detect {
         Some(Ok(mode)) => {
-            println!("자동감지 성공: 원격 환경 → port_mode={} (활성).", mode.as_str())
+            println!(
+                "자동감지 성공: 원격 환경 → port_mode={} (활성).",
+                mode.as_str()
+            )
         }
         Some(Err(e)) => println!(
             "자동감지 실패: {e}\n  '{name}' 은 비활성 상태로 저장되었습니다 — \

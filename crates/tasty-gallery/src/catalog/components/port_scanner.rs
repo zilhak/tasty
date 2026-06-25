@@ -6,8 +6,8 @@
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
-    tag, Button, ButtonVariant, IconButton, IconButtonVariant, Table, TableAlign, TableColumn,
-    TableColumnWidth, TagVariant,
+    Button, ButtonVariant, IconButton, IconButtonVariant, Table, TableAlign, TableColumn,
+    TableColumnWidth, TagVariant, tag,
 };
 
 use crate::catalog::icons;
@@ -27,63 +27,157 @@ struct PortRow {
 }
 
 const ROWS: &[PortRow] = &[
-    PortRow { port: "3000", proto: "tcp", addr: "127.0.0.1", proc: "node", ws: "web", state: "listening", selected: true },
-    PortRow { port: "5173", proto: "tcp", addr: "127.0.0.1", proc: "vite", ws: "web", state: "listening", selected: false },
-    PortRow { port: "8080", proto: "tcp", addr: "0.0.0.0", proc: "caddy", ws: "infra", state: "listening", selected: false },
-    PortRow { port: "5432", proto: "tcp", addr: "127.0.0.1", proc: "postgres", ws: "db", state: "listening", selected: false },
-    PortRow { port: "6379", proto: "tcp", addr: "127.0.0.1", proc: "redis", ws: "db", state: "established", selected: false },
+    PortRow {
+        port: "3000",
+        proto: "tcp",
+        addr: "127.0.0.1",
+        proc: "node",
+        ws: "web",
+        state: "listening",
+        selected: true,
+    },
+    PortRow {
+        port: "5173",
+        proto: "tcp",
+        addr: "127.0.0.1",
+        proc: "vite",
+        ws: "web",
+        state: "listening",
+        selected: false,
+    },
+    PortRow {
+        port: "8080",
+        proto: "tcp",
+        addr: "0.0.0.0",
+        proc: "caddy",
+        ws: "infra",
+        state: "listening",
+        selected: false,
+    },
+    PortRow {
+        port: "5432",
+        proto: "tcp",
+        addr: "127.0.0.1",
+        proc: "postgres",
+        ws: "db",
+        state: "listening",
+        selected: false,
+    },
+    PortRow {
+        port: "6379",
+        proto: "tcp",
+        addr: "127.0.0.1",
+        proc: "redis",
+        ws: "db",
+        state: "established",
+        selected: false,
+    },
 ];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             // 헤더 (padding 10x14).
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    kit::icon(ui, icons::PORT, theme.icon_glyph_size_md.value(), theme.text_secondary().to_egui());
-                    kit::title(ui, theme, "Listening ports");
-                    tag(ui, theme, "5", TagVariant::Default, false);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        IconButton::new()
-                            .variant(IconButtonVariant::Ghost)
-                            .show(ui, theme, &|ui, rect, c| {
-                                icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
-                            });
-                        IconButton::new()
-                            .variant(IconButtonVariant::Ghost)
-                            .show(ui, theme, &|ui, rect, c| {
-                                icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
-                            });
-                        kit::field(ui, theme, Some(theme.field_width_md.value()), "Filter…", true, false);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                        kit::icon(
+                            ui,
+                            icons::PORT,
+                            theme.icon_glyph_size_md.value(),
+                            theme.text_secondary().to_egui(),
+                        );
+                        kit::title(ui, theme, "Listening ports");
+                        tag(ui, theme, "5", TagVariant::Default, false);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            IconButton::new().variant(IconButtonVariant::Ghost).show(
+                                ui,
+                                theme,
+                                &|ui, rect, c| {
+                                    icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+                                },
+                            );
+                            IconButton::new().variant(IconButtonVariant::Ghost).show(
+                                ui,
+                                theme,
+                                &|ui, rect, c| {
+                                    icons::REFRESH.image(rect.height(), c).paint_at(ui, rect)
+                                },
+                            );
+                            kit::field(
+                                ui,
+                                theme,
+                                Some(theme.field_width_md.value()),
+                                "Filter…",
+                                true,
+                                false,
+                            );
+                        });
                     });
-                });
-            });
+                },
+            );
             kit::hsep(ui, theme);
 
             // Show-all 체크행 (padding 8x14).
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    // 체크박스 mock (checked).
-                    let s = theme.icon_glyph_size_md.value();
-                    let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
-                    ui.painter().rect_filled(r, theme.corner_radius_sm.value(), theme.accent_primary().to_egui());
-                    icons::SHIELD_CHECK.image(s, theme.text_on_accent().to_egui()).paint_at(ui, r);
-                    kit::body(ui, theme, "Show all interfaces (0.0.0.0)");
-                });
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                        // 체크박스 mock (checked).
+                        let s = theme.icon_glyph_size_md.value();
+                        let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
+                        ui.painter().rect_filled(
+                            r,
+                            theme.corner_radius_sm.value(),
+                            theme.accent_primary().to_egui(),
+                        );
+                        icons::SHIELD_CHECK
+                            .image(s, theme.text_on_accent().to_egui())
+                            .paint_at(ui, r);
+                        kit::body(ui, theme, "Show all interfaces (0.0.0.0)");
+                    });
+                },
+            );
 
             // Table (7컬럼).
             kit::region_sym(ui, theme.spacing_sm.value(), 0.0, |ui| {
                 let cols = vec![
                     col("Port", TableColumnWidth::Exact(72.0), TableAlign::Left),
                     col("Proto", TableColumnWidth::Exact(64.0), TableAlign::Left),
-                    col("Address", TableColumnWidth::Remainder { at_least: 110.0, clip: true }, TableAlign::Left),
-                    col("Process", TableColumnWidth::Remainder { at_least: 90.0, clip: true }, TableAlign::Left),
-                    col("Workspace", TableColumnWidth::Exact(104.0), TableAlign::Left),
+                    col(
+                        "Address",
+                        TableColumnWidth::Remainder {
+                            at_least: 110.0,
+                            clip: true,
+                        },
+                        TableAlign::Left,
+                    ),
+                    col(
+                        "Process",
+                        TableColumnWidth::Remainder {
+                            at_least: 90.0,
+                            clip: true,
+                        },
+                        TableAlign::Left,
+                    ),
+                    col(
+                        "Workspace",
+                        TableColumnWidth::Exact(104.0),
+                        TableAlign::Left,
+                    ),
                     col("State", TableColumnWidth::Exact(132.0), TableAlign::Left),
-                    col("", TableColumnWidth::Exact(theme.item_height_interactive.value()), TableAlign::Right),
+                    col(
+                        "",
+                        TableColumnWidth::Exact(theme.item_height_interactive.value()),
+                        TableAlign::Right,
+                    ),
                 ];
                 Table::new(cols)
                     .id_salt("ports_table")
@@ -97,15 +191,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             kit::hsep(ui, theme);
 
             // footer (padding 8x14).
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    kit::caption(ui, theme, "5 ports · 1 selected", false);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Close").variant(ButtonVariant::Ghost).show(ui, theme);
-                        Button::new("Copy address").variant(ButtonVariant::Secondary).show(ui, theme);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        kit::caption(ui, theme, "5 ports · 1 selected", false);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            Button::new("Close")
+                                .variant(ButtonVariant::Ghost)
+                                .show(ui, theme);
+                            Button::new("Copy address")
+                                .variant(ButtonVariant::Secondary)
+                                .show(ui, theme);
+                        });
                     });
-                });
-            });
+                },
+            );
         });
     });
 
@@ -122,8 +225,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
             TokenChip::new("bg-sidebar", "header row", theme.bg_sidebar().to_egui()),
-            TokenChip::new("surface-active", "selected row", theme.surface_active().to_egui()),
-            TokenChip::new("accent-success", "listening", theme.accent_success().to_egui()),
+            TokenChip::new(
+                "surface-active",
+                "selected row",
+                theme.surface_active().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-success",
+                "listening",
+                theme.accent_success().to_egui(),
+            ),
         ],
     );
 
@@ -136,7 +247,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 fn col(title: &str, width: TableColumnWidth, align: TableAlign) -> TableColumn<'_, ()> {
-    TableColumn { title, width, align, sort_id: None }
+    TableColumn {
+        title,
+        width,
+        align,
+        sort_id: None,
+    }
 }
 
 fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
@@ -165,7 +281,12 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
             tag(ui, theme, row.state, v, true);
         }
         _ => {
-            kit::icon(ui, icons::COPY, theme.icon_glyph_size_sm.value(), theme.text_muted().to_egui());
+            kit::icon(
+                ui,
+                icons::COPY,
+                theme.icon_glyph_size_sm.value(),
+                theme.text_muted().to_egui(),
+            );
         }
     }
 }

@@ -70,7 +70,9 @@ pub fn draw_menu_item(ui: &mut egui::Ui, theme: &Theme) {
                     menu_item(
                         ui,
                         theme,
-                        Some(&|ui, rect, c| glyph::TRASH.image(rect.height(), c).paint_at(ui, rect)),
+                        Some(&|ui, rect, c| {
+                            glyph::TRASH.image(rect.height(), c).paint_at(ui, rect)
+                        }),
                         "Move to Trash",
                         None,
                         MenuItemVariant::Danger,

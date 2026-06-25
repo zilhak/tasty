@@ -54,8 +54,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             },
         ];
         let strip_w = tab_w * tabs.len() as f32;
-        let (rect, _) =
-            ui.allocate_exact_size(egui::vec2(strip_w, strip_h), egui::Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(strip_w, strip_h), egui::Sense::hover());
         let painter = ui.painter_at(rect);
 
         // strip 배경 = bg-sidebar, 하단 separator.
@@ -134,7 +133,11 @@ fn draw_tab(painter: &egui::Painter, theme: &Theme, rect: egui::Rect, tab: &TabS
 
     // status dot.
     let dot_x = rect.left() + pad + dot_r;
-    painter.circle_filled(egui::pos2(dot_x, cy), dot_r, status_color(theme, tab.status));
+    painter.circle_filled(
+        egui::pos2(dot_x, cy),
+        dot_r,
+        status_color(theme, tab.status),
+    );
 
     // label.
     let label_color = if tab.active {

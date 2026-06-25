@@ -442,14 +442,17 @@ impl MainView {
                     }
                     // 트래킹 ON 이면 release 를 앱에 보고, 아니면 로컬 선택 완료.
                     let report_surface =
-                        self.state.focused_surface_id(&self.core_state).filter(|sid| {
-                            self.core_state
-                                .find_terminal_by_id(*sid)
-                                .map(|t| {
-                                    t.mouse_tracking() != tasty_terminal::MouseTrackingMode::None
-                                })
-                                .unwrap_or(false)
-                        });
+                        self.state
+                            .focused_surface_id(&self.core_state)
+                            .filter(|sid| {
+                                self.core_state
+                                    .find_terminal_by_id(*sid)
+                                    .map(|t| {
+                                        t.mouse_tracking()
+                                            != tasty_terminal::MouseTrackingMode::None
+                                    })
+                                    .unwrap_or(false)
+                            });
                     if let Some(sid) = report_surface {
                         self.report_mouse_event(sid, x, y, 0, false, true);
                     } else if let Some(sel) = &mut self.text_selection {
@@ -479,14 +482,22 @@ impl MainView {
         else {
             return (1, 1);
         };
-        let Some(rect) =
-            self.state
-                .surface_rect_by_id(&self.core_state, surface_id, terminal_rect)
+        let Some(rect) = self
+            .state
+            .surface_rect_by_id(&self.core_state, surface_id, terminal_rect)
         else {
             return (1, 1);
         };
         let point = crate::selection::pixel_to_grid(
-            x, y, &rect, cell_w, cell_h, cols, rows, scroll_offset, sb_len,
+            x,
+            y,
+            &rect,
+            cell_w,
+            cell_h,
+            cols,
+            rows,
+            scroll_offset,
+            sb_len,
         );
         let viewport_top = sb_len.saturating_sub(scroll_offset);
         let row = point

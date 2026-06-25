@@ -877,9 +877,7 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             let resp = Input::new()
                 .placeholder(props.label_search_placeholder)
                 .width(200.0)
-                .icon(&|ui, rect, c| {
-                    icons::SEARCH.image(15.0, c).paint_at(ui, rect)
-                })
+                .icon(&|ui, rect, c| icons::SEARCH.image(15.0, c).paint_at(ui, rect))
                 .show(ui, th, &mut buf);
             if resp.changed() && buf != props.filter.query {
                 out = Some(PortScannerAction::SetQuery(buf));
@@ -894,7 +892,14 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     let mut out: Option<PortScannerAction> = None;
     ui.horizontal(|ui| {
         let mut checked = props.filter.show_all_system;
-        if checkbox(ui, props.theme, &mut checked, props.label_filter_show_all_system, true).changed()
+        if checkbox(
+            ui,
+            props.theme,
+            &mut checked,
+            props.label_filter_show_all_system,
+            true,
+        )
+        .changed()
         {
             out = Some(PortScannerAction::SetShowAllSystem(checked));
         }
@@ -1112,9 +1117,15 @@ fn draw_table(
                     );
                 }),
                 3 => cell_l(ui, |ui| draw_process_cell(ui, th, row)),
-                4 => cell_l(ui, |ui| draw_workspace_cell(ui, th, row, props.label_external_dash)),
-                5 => cell_l(ui, |ui| draw_tab_cell(ui, th, row, props.label_external_dash)),
-                6 => cell_l(ui, |ui| draw_state_cell(ui, th, props.reduced_motion, row.state)),
+                4 => cell_l(ui, |ui| {
+                    draw_workspace_cell(ui, th, row, props.label_external_dash)
+                }),
+                5 => cell_l(ui, |ui| {
+                    draw_tab_cell(ui, th, row, props.label_external_dash)
+                }),
+                6 => cell_l(ui, |ui| {
+                    draw_state_cell(ui, th, props.reduced_motion, row.state)
+                }),
                 _ => {}
             },
         );

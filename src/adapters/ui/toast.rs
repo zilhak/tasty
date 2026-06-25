@@ -423,7 +423,10 @@ mod tests {
     fn truncate_no_panic_on_multibyte_boundary() {
         // 한글(자당 3바이트) 300자 — 바이트 슬라이싱이면 panic. char 경계라 안전.
         let out = truncate_message("한".repeat(300));
-        assert_eq!(out.lines().next().unwrap().chars().count(), MAX_MESSAGE_CHARS);
+        assert_eq!(
+            out.lines().next().unwrap().chars().count(),
+            MAX_MESSAGE_CHARS
+        );
     }
 
     fn mk_state(id: u64, kind: ToastKind, msg: &str) -> ToastState {

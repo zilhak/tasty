@@ -14,11 +14,17 @@ use crate::catalog::icons::{FOLDER, MockGlyph, PLUG, SETTINGS, TERMINAL};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// (name, badge, active)
-const WORKSPACES: &[(&str, Option<&str>, bool)] =
-    &[("main", None, true), ("review", Some("3"), false), ("agent", None, false)];
+const WORKSPACES: &[(&str, Option<&str>, bool)] = &[
+    ("main", None, true),
+    ("review", Some("3"), false),
+    ("agent", None, false),
+];
 /// footer ghost rows.
-const FOOTER: &[(MockGlyph, &str)] =
-    &[(TERMINAL, "Tools"), (PLUG, "Plugins"), (SETTINGS, "Settings")];
+const FOOTER: &[(MockGlyph, &str)] = &[
+    (TERMINAL, "Tools"),
+    (PLUG, "Plugins"),
+    (SETTINGS, "Settings"),
+];
 /// collapsed rail slots.
 const RAIL_SLOTS: &[MockGlyph] = &[TERMINAL, FOLDER, PLUG, SETTINGS];
 
@@ -38,7 +44,11 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     let h = theme.spacing_xl.value() * 15.0; // 360
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from(theme.bg_sidebar()));
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
 
     let pad = theme.spacing_md.value(); // 12
     let row_h = theme.item_height_interactive.value(); // 28
@@ -47,7 +57,13 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     // ── header: logo + wordmark ──
     let logo = theme.sidebar_logo_size.value(); // 22
     let logo_c = egui::pos2(rect.min.x + pad + logo * 0.5, y + logo * 0.5);
-    paint_icon(ui, TERMINAL, logo_c, logo, egui::Color32::from(theme.accent_primary()));
+    paint_icon(
+        ui,
+        TERMINAL,
+        logo_c,
+        logo,
+        egui::Color32::from(theme.accent_primary()),
+    );
     p.text(
         egui::pos2(logo_c.x + logo * 0.5 + theme.spacing_sm.value(), logo_c.y),
         egui::Align2::LEFT_CENTER,
@@ -150,7 +166,10 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
         paint_icon(
             ui,
             *glyph,
-            egui::pos2(rect.min.x + pad + theme.icon_glyph_size_sm.value() * 0.5, cy),
+            egui::pos2(
+                rect.min.x + pad + theme.icon_glyph_size_sm.value() * 0.5,
+                cy,
+            ),
             theme.icon_glyph_size_sm.value(),
             egui::Color32::from(theme.text_muted()),
         );
@@ -176,7 +195,11 @@ fn rail(ui: &mut egui::Ui, theme: &Theme) {
     let h = theme.spacing_xl.value() * 15.0; // 360
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from(theme.bg_sidebar()));
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
 
     let cx = rect.center().x;
     let mut y = rect.min.y + theme.spacing_md.value();
@@ -238,9 +261,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-sidebar", "sidebar fill", theme.bg_sidebar().into()),
-            TokenChip::new("surface-active", "active row", theme.surface_active().into()),
-            TokenChip::new("accent-primary", "inset bar + logo", theme.accent_primary().into()),
-            TokenChip::new("border-default", "footer divider", theme.border_default().into()),
+            TokenChip::new(
+                "surface-active",
+                "active row",
+                theme.surface_active().into(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "inset bar + logo",
+                theme.accent_primary().into(),
+            ),
+            TokenChip::new(
+                "border-default",
+                "footer divider",
+                theme.border_default().into(),
+            ),
         ],
     );
 

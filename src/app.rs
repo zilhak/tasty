@@ -92,10 +92,16 @@ pub(crate) struct App {
     pub(crate) shell_setup_window: Option<Arc<Window>>,
     /// System tray / status item. Must be kept alive for the tray to remain visible.
     /// `None` when the platform tray is unavailable (graceful degradation, ADR-0001).
-    #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
+    #[cfg(all(
+        any(windows, target_os = "macos", target_os = "linux"),
+        feature = "gui"
+    ))]
     pub(crate) tray_icon: Option<tray_icon::TrayIcon>,
     /// Tray menu item IDs for event matching.
-    #[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
+    #[cfg(all(
+        any(windows, target_os = "macos", target_os = "linux"),
+        feature = "gui"
+    ))]
     pub(crate) tray_menu_ids: Option<crate::system_tray::TrayMenuIds>,
     /// Modal shake animation state.
     #[cfg(feature = "gui")]

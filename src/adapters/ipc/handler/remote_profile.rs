@@ -47,7 +47,10 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
     };
     let kind = params.get("kind").and_then(|v| v.as_str()).unwrap_or("ssh");
     let mut p = RemoteProfile::new(name, kind);
-    p.label = params.get("label").and_then(|v| v.as_str()).map(str::to_string);
+    p.label = params
+        .get("label")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
 
     // 제네릭 fields (스칼라/문자열 리스트).
     if let Some(obj) = params.get("fields").and_then(|v| v.as_object()) {
@@ -55,8 +58,10 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
             if let Some(s) = v.as_str() {
                 p.set_field(k.clone(), s.to_string());
             } else if let Some(arr) = v.as_array() {
-                let list: Vec<String> =
-                    arr.iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
+                let list: Vec<String> = arr
+                    .iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect();
                 p.set_field(k.clone(), list);
             }
         }
@@ -84,8 +89,10 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
             p.set_field("port", port.to_string());
         }
         if let Some(opts) = params.get("extra_options").and_then(|v| v.as_array()) {
-            let list: Vec<String> =
-                opts.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+            let list: Vec<String> = opts
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect();
             if !list.is_empty() {
                 p.set_field("extra_options", list);
             }
@@ -96,9 +103,15 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
         if let Some(pm) = params.get("port_mode").and_then(|v| v.as_str()) {
             p.set_field("port_mode", pm.to_string());
         }
-        let shell = params.get("shell").and_then(|v| v.as_str()).unwrap_or("auto");
+        let shell = params
+            .get("shell")
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto");
         if !is_valid_shell(shell) {
-            return JsonRpcResponse::invalid_params(id, "invalid 'shell' (powershell|cmd|bash|zsh|auto)");
+            return JsonRpcResponse::invalid_params(
+                id,
+                "invalid 'shell' (powershell|cmd|bash|zsh|auto)",
+            );
         }
         p.set_field("shell", shell.to_string());
         if let Some(mode) = shell_to_port_mode(shell) {
@@ -136,7 +149,9 @@ pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
                 json!({ "saved": true, "name": name, "replaced": replaced, "detecting": will_detect }),
             )
         }
-        Err(e) => JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}")),
+        Err(e) => {
+            JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}"))
+        }
     }
 }
 
@@ -171,6 +186,8 @@ pub(crate) fn handle_remove(id: Value, params: &Value) -> JsonRpcResponse {
     }
     match profiles.save() {
         Ok(()) => JsonRpcResponse::success(id, json!({ "removed": true, "name": name })),
-        Err(e) => JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}")),
+        Err(e) => {
+            JsonRpcResponse::internal_error(id, format!("failed to save remote profile: {e}"))
+        }
     }
 }

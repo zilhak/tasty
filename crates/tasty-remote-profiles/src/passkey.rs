@@ -111,8 +111,7 @@ pub fn materialize_inline_in(dir: &Path, name: &str, secret: &str) -> Result<Pat
     set_private_dir(dir).ok(); // best-effort(이미 존재하던 dir 권한 강제는 실패 무시)
     let path = dir.join(name);
     fs::write(&path, secret).with_context(|| format!("write passkey file {}", path.display()))?;
-    set_private_file(&path)
-        .with_context(|| format!("chmod 0600 {}", path.display()))?;
+    set_private_file(&path).with_context(|| format!("chmod 0600 {}", path.display()))?;
     Ok(path)
 }
 
@@ -140,7 +139,11 @@ impl Passkeys {
         match fs::read_to_string(&path) {
             Ok(contents) => match toml::from_str::<Passkeys>(&contents) {
                 Ok(p) => {
-                    tracing::info!("loaded {} passkey(s) from {}", p.passkeys.len(), path.display());
+                    tracing::info!(
+                        "loaded {} passkey(s) from {}",
+                        p.passkeys.len(),
+                        path.display()
+                    );
                     p
                 }
                 Err(e) => {
@@ -168,7 +171,11 @@ impl Passkeys {
         let contents = toml::to_string_pretty(&to_write)?;
         fs::write(&path, contents)?;
         set_private_file(&path).ok(); // best-effort
-        tracing::info!("saved {} passkey(s) to {}", to_write.passkeys.len(), path.display());
+        tracing::info!(
+            "saved {} passkey(s) to {}",
+            to_write.passkeys.len(),
+            path.display()
+        );
         Ok(())
     }
 
@@ -187,12 +194,20 @@ impl Passkeys {
     }
 
     /// path kind passkey 등록(이름 검증). 메모리만 변경.
-    pub fn upsert_path(&mut self, name: impl Into<String>, file_path: impl Into<String>) -> Result<()> {
+    pub fn upsert_path(
+        &mut self,
+        name: impl Into<String>,
+        file_path: impl Into<String>,
+    ) -> Result<()> {
         let name = name.into();
         if !is_valid_passkey_name(&name) {
             bail!("invalid passkey name '{name}' (allowed: letters, digits, - and _)");
         }
-        self.upsert(Passkey { name, kind: "path".into(), path: file_path.into() });
+        self.upsert(Passkey {
+            name,
+            kind: "path".into(),
+            path: file_path.into(),
+        });
         Ok(())
     }
 
@@ -249,14 +264,21 @@ mod tests {
         assert_eq!(sanitize_passkey_name("키"), "_"); // 전부 치환되어도 비지 않음
         // 결과는 항상 화이트리스트 통과
         for raw in ["내 서버", "a b/c", "x", ""] {
-            assert!(is_valid_passkey_name(&sanitize_passkey_name(raw)) || sanitize_passkey_name(raw) == "_");
+            assert!(
+                is_valid_passkey_name(&sanitize_passkey_name(raw))
+                    || sanitize_passkey_name(raw) == "_"
+            );
         }
     }
 
     #[test]
     fn passkeys_toml_roundtrip() {
         let mut pk = Passkeys::default();
-        pk.upsert(Passkey { name: "k1".into(), kind: "path".into(), path: "~/.ssh/id".into() });
+        pk.upsert(Passkey {
+            name: "k1".into(),
+            kind: "path".into(),
+            path: "~/.ssh/id".into(),
+        });
         let s = toml::to_string_pretty(&pk).unwrap();
         let back: Passkeys = toml::from_str(&s).unwrap();
         assert_eq!(back.get("k1").unwrap().path, "~/.ssh/id");

@@ -114,8 +114,11 @@ impl<'a> Input<'a> {
         };
         let addon_font = egui::FontId::monospace(caption);
         let addon_galley = self.addon.map(|a| {
-            ui.painter()
-                .layout_no_wrap(a.to_owned(), addon_font.clone(), egui::Color32::PLACEHOLDER)
+            ui.painter().layout_no_wrap(
+                a.to_owned(),
+                addon_font.clone(),
+                egui::Color32::PLACEHOLDER,
+            )
         });
         let addon_w = addon_galley
             .as_ref()
@@ -132,8 +135,10 @@ impl<'a> Input<'a> {
                 |ui| {
                     ui.spacing_mut().item_spacing.x = gap;
                     if let Some(paint) = self.icon {
-                        let (irect, _) =
-                            ui.allocate_exact_size(egui::vec2(icon_glyph, icon_glyph), egui::Sense::hover());
+                        let (irect, _) = ui.allocate_exact_size(
+                            egui::vec2(icon_glyph, icon_glyph),
+                            egui::Sense::hover(),
+                        );
                         paint(ui, irect, muted);
                     }
                     let font = if self.mono {

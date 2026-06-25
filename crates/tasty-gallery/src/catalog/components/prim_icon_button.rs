@@ -22,9 +22,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 .show(ui, theme, &|ui, rect, c| {
                     glyph::PLUS.image(rect.height(), c).paint_at(ui, rect)
                 });
-            IconButton::new().active(true).show(ui, theme, &|ui, rect, c| {
-                glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
-            });
+            IconButton::new()
+                .active(true)
+                .show(ui, theme, &|ui, rect, c| {
+                    glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
+                });
             IconButton::new()
                 .size(ControlSize::Sm)
                 .show(ui, theme, &|ui, rect, c| {

@@ -125,7 +125,13 @@ fn collapsed_icon_size(th: &Theme) -> egui::Vec2 {
 /// Plugins 버튼의 "확인 필요" danger 배지 (개수 표기 pill). `inline_right=true`
 /// (확장 사이드바)는 버튼 우측 가장자리 세로 중앙에, false(축소 레일)는 아이콘
 /// 우상단 모서리에 그린다.
-fn paint_alert_badge(ui: &egui::Ui, th: &Theme, btn_rect: egui::Rect, count: usize, inline_right: bool) {
+fn paint_alert_badge(
+    ui: &egui::Ui,
+    th: &Theme,
+    btn_rect: egui::Rect,
+    count: usize,
+    inline_right: bool,
+) {
     let h = 15.0;
     let galley = ui.painter().layout_no_wrap(
         count.to_string(),
@@ -137,7 +143,10 @@ fn paint_alert_badge(ui: &egui::Ui, th: &Theme, btn_rect: egui::Rect, count: usi
     let center = if inline_right {
         egui::pos2(btn_rect.right() - w / 2.0 - 10.0, btn_rect.center().y)
     } else {
-        egui::pos2(btn_rect.right() - w / 2.0 - 1.0, btn_rect.top() + h / 2.0 + 1.0)
+        egui::pos2(
+            btn_rect.right() - w / 2.0 - 1.0,
+            btn_rect.top() + h / 2.0 + 1.0,
+        )
     };
     let badge_rect = egui::Rect::from_center_size(center, egui::vec2(w, h));
     ui.painter()
@@ -200,8 +209,7 @@ pub fn draw_full_sidebar_view(
             ui.add_space(2.0);
 
             // Plugins (확인 필요 plugin 있으면 우측에 danger 배지)
-            let plug_resp =
-                draw_ghost_block_button(ui, th, Some(icons::PLUG), props.plugins_label);
+            let plug_resp = draw_ghost_block_button(ui, th, Some(icons::PLUG), props.plugins_label);
             if plug_resp.clicked() {
                 actions.push(SidebarFullAction::Plugins);
             }
@@ -507,7 +515,8 @@ pub fn draw_collapsed_sidebar_view(
                 rect.min.y + dot_pad + dot_radius,
             );
             if ws.is_mirror {
-                ui.painter().circle_filled(dot_center, dot_radius, th.accent_info());
+                ui.painter()
+                    .circle_filled(dot_center, dot_radius, th.accent_info());
             } else if ws.has_highlight {
                 // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
                 ui.painter()
@@ -515,7 +524,8 @@ pub fn draw_collapsed_sidebar_view(
                 ui.painter()
                     .circle_filled(dot_center, dot_radius, th.accent_primary());
             } else if ws.busy_count > 0 {
-                ui.painter().circle_filled(dot_center, dot_radius, th.accent_success());
+                ui.painter()
+                    .circle_filled(dot_center, dot_radius, th.accent_success());
             }
             // attached(다른 client 점유) → 아바타 둘레 lavender ring (디자인 2026-06-15
             // CollapsedSidebar: outline 1.5px lavender). red(error) 재사용 분리.

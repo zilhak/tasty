@@ -303,9 +303,10 @@ fn header_cell<K: Copy + PartialEq>(
 
     match col.align {
         TableAlign::Left => do_cell(ui),
-        TableAlign::Right => ui
-            .with_layout(egui::Layout::right_to_left(egui::Align::Center), do_cell)
-            .inner,
+        TableAlign::Right => {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), do_cell)
+                .inner
+        }
     }
 }
 

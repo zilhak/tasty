@@ -403,12 +403,8 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 .drag_to_scroll(false)
                 .show(ui, |ui| {
                     tasty_ui_widgets::tab_content_frame(ui, |ui| match active_tab {
-                        SettingsTab::General => {
-                            draw_general_group(ui, &mut draft, ui_state)
-                        }
-                        SettingsTab::Terminal => {
-                            draw_terminal_group(ui, &mut draft, ui_state)
-                        }
+                        SettingsTab::General => draw_general_group(ui, &mut draft, ui_state),
+                        SettingsTab::Terminal => draw_terminal_group(ui, &mut draft, ui_state),
                         SettingsTab::Appearance => draw_appearance_tab(
                             ui,
                             &mut draft,
@@ -725,9 +721,7 @@ fn draw_misc_group(ui: &mut egui::Ui, ui_state: &mut SettingsUiState) {
             MiscSubTab::Tastyrc => {
                 ui.vertical_centered(|ui| {
                     ui.add_space(24.0);
-                    ui.label(
-                        egui::RichText::new(t("settings.misc.empty")).color(th.subtext0),
-                    );
+                    ui.label(egui::RichText::new(t("settings.misc.empty")).color(th.subtext0));
                 });
             }
         },

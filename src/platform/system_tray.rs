@@ -20,7 +20,10 @@
 //!   main loop (see the caller's polling site) rather than running a dedicated
 //!   GTK main loop.
 
-#![cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
+#![cfg(all(
+    any(windows, target_os = "macos", target_os = "linux"),
+    feature = "gui"
+))]
 
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{TrayIcon, TrayIconBuilder};

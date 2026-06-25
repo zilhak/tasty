@@ -5,9 +5,9 @@
 //! tab 24). UI 모션은 90–120ms, 터미널 콘텐츠 모션은 0ms.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{badge, BadgeVariant};
+use tasty_ui_widgets::{BadgeVariant, badge};
 
-use crate::catalog::spec::{cluster, meta, note, stage, StageVariant, TokenChip};
+use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 
 #[inline]
 fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
@@ -31,7 +31,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
         cluster(ui, theme, "fixed heights", |ui| {
             height_box(ui, theme, "tree 22", theme.item_height_tree.value());
-            height_box(ui, theme, "control 28", theme.item_height_interactive.value());
+            height_box(
+                ui,
+                theme,
+                "control 28",
+                theme.item_height_interactive.value(),
+            );
             height_box(ui, theme, "tab 24", theme.item_height_tab.value());
         });
     });
@@ -75,7 +80,10 @@ fn radius_box(ui: &mut egui::Ui, theme: &Theme, w: f32, h: f32, radius: f32) {
 fn height_box(ui: &mut egui::Ui, theme: &Theme, label: &str, h: f32) {
     egui::Frame::new()
         .fill(ec(theme.surface_raised()))
-        .stroke(egui::Stroke::new(theme.border_width.value(), ec(theme.border_default())))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            ec(theme.border_default()),
+        ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin {
             left: theme.spacing_md.value() as i8,

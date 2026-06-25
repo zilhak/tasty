@@ -38,9 +38,9 @@ pub(crate) fn apply(lua: &Lua) -> Result<(), LuaEngineError> {
 
     // package.loadlib 제거 — native dylib 로드 경로 차단.
     if let Ok(package) = globals.get::<mlua::Table>("package") {
-        let _ = package.set("loadlib", mlua::Value::Nil);  // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
-        let _ = package.set("searchers", mlua::Value::Nil);  // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
-        let _ = package.set("cpath", "");  // 샌드박스 하드닝: cpath 비움, set 실패 무시
+        let _ = package.set("loadlib", mlua::Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
+        let _ = package.set("searchers", mlua::Value::Nil); // 샌드박스 하드닝: 위험 로더 제거, set 실패 무시
+        let _ = package.set("cpath", ""); // 샌드박스 하드닝: cpath 비움, set 실패 무시
     }
 
     Ok(())

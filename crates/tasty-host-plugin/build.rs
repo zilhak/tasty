@@ -70,7 +70,10 @@ fn main() {
     // 산출물에는 영향 없지만 (release 빌드는 임베드 키 슬롯 2개 중 release-pubkey
     // 만 trust 로 의도), 두 슬롯 다 zero 면 verify 루프 자체가 NoValidTrustedKeys
     // 로 떨어지므로 한 줄 더 경고.
-    if read_key(dev_key).map(|b| b.iter().all(|x| *x == 0)).unwrap_or(true) {
+    if read_key(dev_key)
+        .map(|b| b.iter().all(|x| *x == 0))
+        .unwrap_or(true)
+    {
         println!(
             "cargo:warning=tasty-host-plugin: dev-pubkey.bin is a placeholder or absent. \
              Both embed slots may be zero — verify_bundle_signature will return \

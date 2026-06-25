@@ -63,7 +63,7 @@ impl CoreState {
 
         let Some(terminal) = self.terminals.get_mut(surface_id) else {
             // 점유는 됐으나 터미널이 없다(spawn 실패) → lock 환원 + 에러.
-            let _ = self.attach.release(surface_id, client_id);  // best-effort release — 실패 무시
+            let _ = self.attach.release(surface_id, client_id); // best-effort release — 실패 무시
             reject_attach(hub, client_id, "spawn_failed", None);
             return;
         };

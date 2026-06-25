@@ -128,7 +128,7 @@ impl RecentPicks {
             Ok(()) => Ok(()),
             Err(e) => {
                 // rename 실패 시 임시 파일 정리 시도 — 결과는 무시 (정리만 함).
-                let _ = std::fs::remove_file(&tmp);  // best-effort 임시파일 정리 — 실패 무시
+                let _ = std::fs::remove_file(&tmp); // best-effort 임시파일 정리 — 실패 무시
                 Err(e)
             }
         }

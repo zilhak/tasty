@@ -51,7 +51,7 @@ impl CursorPaint {
     fn overlay_glyph(self) -> Option<char> {
         match self {
             CursorPaint::Block => None,
-            CursorPaint::Bar => Some('\u{258f}'),       // ▏ LEFT ONE EIGHTH BLOCK
+            CursorPaint::Bar => Some('\u{258f}'), // ▏ LEFT ONE EIGHTH BLOCK
             CursorPaint::Underline => Some('\u{2581}'), // ▁ LOWER ONE EIGHTH BLOCK
         }
     }
@@ -478,7 +478,11 @@ impl CellRenderer {
                     cursor,
                     Some((cx, cy, _, CursorPaint::Block)) if row_idx == cy && col_idx == cx
                 );
-                let mut bg = if is_block_cursor { default_fg } else { default_bg };
+                let mut bg = if is_block_cursor {
+                    default_fg
+                } else {
+                    default_bg
+                };
                 // vi copy mode cursor cell: trailing 영역 (콘텐츠 없는 row 끝) 에 vi cursor 가 위치한 경우 강조.
                 if let Some((pt, cursor_bg)) = vi_cursor
                     && pt.col == col_idx

@@ -136,7 +136,10 @@ fn find_playwright() -> Option<PathBuf> {
 /// `npm root -g` 결과 디렉토리. npm 미설치/실패 시 `None`.
 fn npm_global_root() -> Option<PathBuf> {
     let npm = find_on_path("npm")?;
-    let output = match std::process::Command::new(&npm).args(["root", "-g"]).output() {
+    let output = match std::process::Command::new(&npm)
+        .args(["root", "-g"])
+        .output()
+    {
         Ok(out) => out,
         Err(e) => {
             tracing::warn!(error = %e, "`npm root -g` 실행 실패");
@@ -188,8 +191,12 @@ fn ms_playwright_cache_dir() -> Option<PathBuf> {
     if cfg!(windows) {
         std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("ms-playwright"))
     } else if cfg!(target_os = "macos") {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Library").join("Caches").join("ms-playwright"))
+        std::env::var_os("HOME").map(|h| {
+            PathBuf::from(h)
+                .join("Library")
+                .join("Caches")
+                .join("ms-playwright")
+        })
     } else {
         std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache").join("ms-playwright"))
     }

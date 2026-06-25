@@ -82,8 +82,14 @@ fn unique_name(base: &str, used: &std::collections::BTreeSet<String>) -> String 
 pub fn parse_and_transform(legacy_toml: &str) -> Result<(RemoteProfiles, Passkeys)> {
     let legacy: LegacySshProfiles = toml::from_str(legacy_toml)?;
 
-    let mut profiles = RemoteProfiles { version: 1, profiles: Vec::new() };
-    let mut passkeys = Passkeys { version: 1, passkeys: Vec::new() };
+    let mut profiles = RemoteProfiles {
+        version: 1,
+        profiles: Vec::new(),
+    };
+    let mut passkeys = Passkeys {
+        version: 1,
+        passkeys: Vec::new(),
+    };
     let mut by_path: BTreeMap<String, String> = BTreeMap::new(); // identity_file → passkey name
     let mut used: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
@@ -216,7 +222,10 @@ mod tests {
         assert_eq!(v.remote_tasty(), "/usr/local/bin/tasty");
         assert_eq!(v.port_mode(), "file-unix");
         assert_eq!(v.shell(), "powershell");
-        assert_eq!(v.extra_options(), vec!["ServerAliveInterval=30".to_string()]);
+        assert_eq!(
+            v.extra_options(),
+            vec!["ServerAliveInterval=30".to_string()]
+        );
     }
 
     #[test]
@@ -233,8 +242,18 @@ mod tests {
     fn transform_dedups_shared_identity_file() {
         let (profiles, passkeys) = parse_and_transform(SAMPLE).unwrap();
         // gx10 과 shared 가 같은 identity_file → 같은 passkey 하나만.
-        let gx_ref = profiles.get("gx10").unwrap().passkey_ref.as_deref().unwrap();
-        let shared_ref = profiles.get("shared").unwrap().passkey_ref.as_deref().unwrap();
+        let gx_ref = profiles
+            .get("gx10")
+            .unwrap()
+            .passkey_ref
+            .as_deref()
+            .unwrap();
+        let shared_ref = profiles
+            .get("shared")
+            .unwrap()
+            .passkey_ref
+            .as_deref()
+            .unwrap();
         assert_eq!(gx_ref, shared_ref);
         assert_eq!(passkeys.passkeys.len(), 1);
     }
@@ -243,7 +262,10 @@ mod tests {
     fn transform_no_identity_file_has_no_passkey() {
         let (profiles, _) = parse_and_transform(SAMPLE).unwrap();
         assert!(profiles.get("agent-box").unwrap().passkey_ref.is_none());
-        assert_eq!(profiles.get("agent-box").unwrap().as_ssh().unwrap().host(), Some("box"));
+        assert_eq!(
+            profiles.get("agent-box").unwrap().as_ssh().unwrap().host(),
+            Some("box")
+        );
     }
 
     #[test]

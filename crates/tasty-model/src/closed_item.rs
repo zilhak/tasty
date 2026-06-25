@@ -423,7 +423,10 @@ fn visit_panel_mut(panel: &mut ClosedPanel, f: &mut dyn FnMut(&mut ClosedSurface
     }
 }
 
-fn visit_surface_layout_mut(layout: &mut ClosedSurfaceLayout, f: &mut dyn FnMut(&mut ClosedSurface)) {
+fn visit_surface_layout_mut(
+    layout: &mut ClosedSurfaceLayout,
+    f: &mut dyn FnMut(&mut ClosedSurface),
+) {
     match layout {
         ClosedSurfaceLayout::Single(s) => f(s),
         ClosedSurfaceLayout::Split { first, second, .. } => {
@@ -648,11 +651,18 @@ mod tests {
     fn push_returns_evicted_item_over_capacity() {
         let mut store = ClosedItemStore::new();
         for i in 0..MAX_CLOSED_ITEMS {
-            assert!(store.push(surface_item(i as u32, ClosedScrollback::Empty)).is_none());
+            assert!(
+                store
+                    .push(surface_item(i as u32, ClosedScrollback::Empty))
+                    .is_none()
+            );
         }
         // The (MAX+1)-th push evicts the oldest (id 0) so its files can be freed.
         let evicted = store
-            .push(surface_item(999, ClosedScrollback::Persisted("ref-evicted".into())))
+            .push(surface_item(
+                999,
+                ClosedScrollback::Persisted("ref-evicted".into()),
+            ))
             .expect("eviction over capacity");
         match evicted {
             ClosedItem::Surface { surface, .. } => assert_eq!(surface.id, 0),

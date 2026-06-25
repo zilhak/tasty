@@ -181,9 +181,12 @@ fn trust_outcome(dir: &std::path::Path, manifest: &Manifest) -> TrustOutcome {
                         removed,
                     )
                 }
-                UntrustedReason::UnknownKey => {
-                    mk(RejectionReason::UnknownKey, Some(fingerprint), vec![], vec![])
-                }
+                UntrustedReason::UnknownKey => mk(
+                    RejectionReason::UnknownKey,
+                    Some(fingerprint),
+                    vec![],
+                    vec![],
+                ),
             },
             Err(e) => {
                 tracing::warn!("plugin '{}' signature check failed: {e}", manifest.id);

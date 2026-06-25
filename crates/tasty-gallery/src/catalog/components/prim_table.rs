@@ -31,42 +31,87 @@ thread_local! {
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let rows = [
-        Row { port: 3000, proto: "TCP", addr: "127.0.0.1", proc: "node", state: "LISTEN" },
-        Row { port: 5432, proto: "TCP", addr: "127.0.0.1", proc: "postgres", state: "LISTEN" },
-        Row { port: 6379, proto: "TCP", addr: "127.0.0.1", proc: "redis-server", state: "LISTEN" },
-        Row { port: 8080, proto: "TCP", addr: "0.0.0.0", proc: "tasty", state: "LISTEN" },
-        Row { port: 9229, proto: "TCP", addr: "127.0.0.1", proc: "node", state: "CLOSE_WAIT" },
+        Row {
+            port: 3000,
+            proto: "TCP",
+            addr: "127.0.0.1",
+            proc: "node",
+            state: "LISTEN",
+        },
+        Row {
+            port: 5432,
+            proto: "TCP",
+            addr: "127.0.0.1",
+            proc: "postgres",
+            state: "LISTEN",
+        },
+        Row {
+            port: 6379,
+            proto: "TCP",
+            addr: "127.0.0.1",
+            proc: "redis-server",
+            state: "LISTEN",
+        },
+        Row {
+            port: 8080,
+            proto: "TCP",
+            addr: "0.0.0.0",
+            proc: "tasty",
+            state: "LISTEN",
+        },
+        Row {
+            port: 9229,
+            proto: "TCP",
+            addr: "127.0.0.1",
+            proc: "node",
+            state: "CLOSE_WAIT",
+        },
     ];
 
     stage(ui, theme, StageVariant::Tight, |ui| {
         let columns = vec![
             TableColumn {
                 title: "port",
-                width: TableColumnWidth::Initial { initial: 84.0, at_least: 60.0 },
+                width: TableColumnWidth::Initial {
+                    initial: 84.0,
+                    at_least: 60.0,
+                },
                 align: TableAlign::Left,
                 sort_id: Some(SortKey::Port),
             },
             TableColumn {
                 title: "proto",
-                width: TableColumnWidth::Initial { initial: 76.0, at_least: 60.0 },
+                width: TableColumnWidth::Initial {
+                    initial: 76.0,
+                    at_least: 60.0,
+                },
                 align: TableAlign::Left,
                 sort_id: None,
             },
             TableColumn {
                 title: "address",
-                width: TableColumnWidth::Remainder { at_least: 100.0, clip: false },
+                width: TableColumnWidth::Remainder {
+                    at_least: 100.0,
+                    clip: false,
+                },
                 align: TableAlign::Left,
                 sort_id: None,
             },
             TableColumn {
                 title: "process",
-                width: TableColumnWidth::Remainder { at_least: 100.0, clip: false },
+                width: TableColumnWidth::Remainder {
+                    at_least: 100.0,
+                    clip: false,
+                },
                 align: TableAlign::Left,
                 sort_id: None,
             },
             TableColumn {
                 title: "state",
-                width: TableColumnWidth::Initial { initial: 140.0, at_least: 100.0 },
+                width: TableColumnWidth::Initial {
+                    initial: 140.0,
+                    at_least: 100.0,
+                },
                 align: TableAlign::Left,
                 sort_id: None,
             },

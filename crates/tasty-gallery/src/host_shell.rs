@@ -116,12 +116,16 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
     egui::SidePanel::left("g_nav")
         .exact_width(NAV_WIDTH.value())
         .resizable(false)
-        .frame(egui::Frame::new().fill(sidebar_bg).inner_margin(egui::Margin {
-            left: 10,
-            right: 10,
-            top: 12,
-            bottom: 24,
-        }))
+        .frame(
+            egui::Frame::new()
+                .fill(sidebar_bg)
+                .inner_margin(egui::Margin {
+                    left: 10,
+                    right: 10,
+                    top: 12,
+                    bottom: 24,
+                }),
+        )
         .show(ctx, |ui| nav_ui(ui, state));
 
     // ── 우측: main 문서 본문 ──
@@ -186,8 +190,7 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.add_space(pad_lg);
-                let (r, _) =
-                    ui.allocate_exact_size(egui::vec2(logo, logo), egui::Sense::hover());
+                let (r, _) = ui.allocate_exact_size(egui::vec2(logo, logo), egui::Sense::hover());
                 ui.painter().rect_filled(r, radius_sm, accent);
                 ui.add_space(pad_sm);
                 ui.spacing_mut().item_spacing.x = 0.0;
@@ -226,7 +229,11 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
                     ("Latte", theme_id == ThemeId::Latte),
                 ],
             ) {
-                act_theme = Some(if i == 0 { ThemeId::Mocha } else { ThemeId::Latte });
+                act_theme = Some(if i == 0 {
+                    ThemeId::Mocha
+                } else {
+                    ThemeId::Latte
+                });
             }
             ui.add_space(pad_lg);
             // UI scale 세그.
@@ -356,11 +363,7 @@ fn nav_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
                         egui::Stroke::new(border_w, separator),
                     );
                     ui.add_space(pad_sm);
-                    ui.label(
-                        egui::RichText::new(*title)
-                            .size(f_lbl)
-                            .color(secondary),
-                    );
+                    ui.label(egui::RichText::new(*title).size(f_lbl).color(secondary));
                 });
             }
         });
@@ -460,7 +463,11 @@ fn page_head(ui: &mut egui::Ui, theme: &Theme, category: Category) {
 
 fn nav_heading(ui: &mut egui::Ui, text: &str, size: f32, color: egui::Color32) {
     ui.add_space(size);
-    ui.label(egui::RichText::new(text.to_uppercase()).size(size).color(color));
+    ui.label(
+        egui::RichText::new(text.to_uppercase())
+            .size(size)
+            .color(color),
+    );
     ui.add_space(size * 0.4);
 }
 
@@ -477,13 +484,7 @@ struct NavLinkStyle {
 }
 
 /// nav Catalog 링크 한 줄 — 좌 lbl + 우 desc, 활성 시 surface-active 배경.
-fn nav_link(
-    ui: &mut egui::Ui,
-    s: NavLinkStyle,
-    lbl: &str,
-    desc: &str,
-    active: bool,
-) -> bool {
+fn nav_link(ui: &mut egui::Ui, s: NavLinkStyle, lbl: &str, desc: &str, active: bool) -> bool {
     let fg = if active { s.primary } else { s.muted };
     let bg = if active {
         s.surf_active
@@ -568,13 +569,11 @@ fn seg(ui: &mut egui::Ui, s: &SegStyle, items: &[(&str, bool)]) -> Option<usize>
                     } else {
                         egui::Color32::TRANSPARENT
                     };
-                    let btn = egui::Button::new(
-                        egui::RichText::new(*label).size(s.font).color(fg),
-                    )
-                    .fill(bg)
-                    .stroke(egui::Stroke::NONE)
-                    .corner_radius(0.0)
-                    .min_size(egui::vec2(0.0, s.height));
+                    let btn = egui::Button::new(egui::RichText::new(*label).size(s.font).color(fg))
+                        .fill(bg)
+                        .stroke(egui::Stroke::NONE)
+                        .corner_radius(0.0)
+                        .min_size(egui::vec2(0.0, s.height));
                     if ui.add(btn).clicked() {
                         clicked = Some(i);
                     }

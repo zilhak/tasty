@@ -46,7 +46,8 @@ pub(super) fn draw_floating_selection(
         let handle_size = 6.0;
         let handles = resize_handle_rects(sel_rect, handle_size);
         for (_handle, handle_rect) in &handles {
-            ui.painter().rect_filled(*handle_rect, 0.0, th.accent_primary());
+            ui.painter()
+                .rect_filled(*handle_rect, 0.0, th.accent_primary());
         }
 
         (sel_rect, selection.texture.is_some())

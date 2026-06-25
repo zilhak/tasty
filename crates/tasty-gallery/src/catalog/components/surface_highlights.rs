@@ -40,7 +40,10 @@ fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
     p.rect_stroke(
         rect,
         theme.corner_radius.value(),
-        egui::Stroke::new(theme.border_width.value(), egui::Color32::from(theme.border_default())),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            egui::Color32::from(theme.border_default()),
+        ),
         egui::StrokeKind::Inside,
     );
 
@@ -99,7 +102,9 @@ fn fake_pane(ui: &mut egui::Ui, theme: &Theme, state: State) {
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        spec::cluster(ui, theme, "focused", |ui| fake_pane(ui, theme, State::Focused));
+        spec::cluster(ui, theme, "focused", |ui| {
+            fake_pane(ui, theme, State::Focused)
+        });
         spec::cluster(ui, theme, "unfocused · 0.92", |ui| {
             fake_pane(ui, theme, State::Unfocused)
         });
@@ -128,7 +133,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.surface("terminal").unfocused_bg.into(),
             ),
             TokenChip::new("accent-agent", "agent dot", theme.accent_agent().into()),
-            TokenChip::new("accent-success", "focused dot", theme.accent_success().into()),
+            TokenChip::new(
+                "accent-success",
+                "focused dot",
+                theme.accent_success().into(),
+            ),
         ],
     );
 

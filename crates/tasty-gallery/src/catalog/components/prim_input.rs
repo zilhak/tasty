@@ -34,22 +34,30 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     BUFS.with(|b| {
         let mut bufs = b.borrow_mut();
         stage(ui, theme, StageVariant::Column, |ui| {
-            cluster(ui, theme, "default · icon(search) · addon — click to focus", |ui| {
-                Input::new()
-                    .placeholder("Workspace name")
-                    .width(md)
-                    .show(ui, theme, &mut bufs[0]);
-                Input::new()
-                    .placeholder("Filter…")
-                    .width(md)
-                    .icon(&|ui, rect, c| glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect))
-                    .show(ui, theme, &mut bufs[1]);
-                Input::new()
-                    .mono(true)
-                    .addon("px")
-                    .width(xs)
-                    .show(ui, theme, &mut bufs[2]);
-            });
+            cluster(
+                ui,
+                theme,
+                "default · icon(search) · addon — click to focus",
+                |ui| {
+                    Input::new().placeholder("Workspace name").width(md).show(
+                        ui,
+                        theme,
+                        &mut bufs[0],
+                    );
+                    Input::new()
+                        .placeholder("Filter…")
+                        .width(md)
+                        .icon(&|ui, rect, c| {
+                            glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
+                        })
+                        .show(ui, theme, &mut bufs[1]);
+                    Input::new()
+                        .mono(true)
+                        .addon("px")
+                        .width(xs)
+                        .show(ui, theme, &mut bufs[2]);
+                },
+            );
             cluster(ui, theme, "mono · invalid · disabled", |ui| {
                 Input::new()
                     .mono(true)

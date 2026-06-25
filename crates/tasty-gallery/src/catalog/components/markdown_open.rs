@@ -15,27 +15,52 @@ const WIDTH: f32 = 420.0;
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_md.value(), |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                    kit::title(ui, theme, "Open markdown");
-                    kit::caption(ui, theme, "docs/identity.md", true);
-                });
-                // 2 Choice 카드.
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                    let cw = (WIDTH - theme.spacing_md.value() * 3.0) * 0.5;
-                    choice(ui, theme, cw, icons::EDIT, "Edit", "Raw text in a terminal editor", false);
-                    choice(ui, theme, cw, icons::MARKDOWN, "Preview", "Rendered markdown surface", true);
-                });
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Open preview").variant(ButtonVariant::Primary).show(ui, theme);
-                        Button::new("Cancel").variant(ButtonVariant::Ghost).show(ui, theme);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_md.value(),
+                |ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                        kit::title(ui, theme, "Open markdown");
+                        kit::caption(ui, theme, "docs/identity.md", true);
                     });
-                });
-            });
+                    // 2 Choice 카드.
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+                        let cw = (WIDTH - theme.spacing_md.value() * 3.0) * 0.5;
+                        choice(
+                            ui,
+                            theme,
+                            cw,
+                            icons::EDIT,
+                            "Edit",
+                            "Raw text in a terminal editor",
+                            false,
+                        );
+                        choice(
+                            ui,
+                            theme,
+                            cw,
+                            icons::MARKDOWN,
+                            "Preview",
+                            "Rendered markdown surface",
+                            true,
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            Button::new("Open preview")
+                                .variant(ButtonVariant::Primary)
+                                .show(ui, theme);
+                            Button::new("Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .show(ui, theme);
+                        });
+                    });
+                },
+            );
         });
     });
 
@@ -50,14 +75,34 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("footer", "Cancel · Open <choice>"),
         ],
         &[
-            TokenChip::new("accent-primary", "selected card", theme.accent_primary().to_egui()),
-            TokenChip::new("border-default", "idle card", theme.border_default().to_egui()),
-            TokenChip::new("surface-raised", "card fill", theme.surface_raised().to_egui()),
+            TokenChip::new(
+                "accent-primary",
+                "selected card",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "border-default",
+                "idle card",
+                theme.border_default().to_egui(),
+            ),
+            TokenChip::new(
+                "surface-raised",
+                "card fill",
+                theme.surface_raised().to_egui(),
+            ),
         ],
     );
 }
 
-fn choice(ui: &mut egui::Ui, theme: &Theme, width: f32, glyph: MockGlyph, title: &str, sub: &str, selected: bool) {
+fn choice(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: f32,
+    glyph: MockGlyph,
+    title: &str,
+    sub: &str,
+    selected: bool,
+) {
     let border = if selected {
         theme.accent_primary()
     } else {
@@ -76,8 +121,17 @@ fn choice(ui: &mut egui::Ui, theme: &Theme, width: f32, glyph: MockGlyph, title:
         .show(ui, |ui| {
             ui.set_width(width - theme.spacing_md.value() * 2.0);
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-            let icon_color = if selected { theme.accent_primary() } else { theme.text_secondary() };
-            kit::icon(ui, glyph, theme.icon_glyph_size_md.value(), icon_color.to_egui());
+            let icon_color = if selected {
+                theme.accent_primary()
+            } else {
+                theme.text_secondary()
+            };
+            kit::icon(
+                ui,
+                glyph,
+                theme.icon_glyph_size_md.value(),
+                icon_color.to_egui(),
+            );
             ui.label(
                 egui::RichText::new(title)
                     .size(theme.font_size_body.value())

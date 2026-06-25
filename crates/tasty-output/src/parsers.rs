@@ -1,12 +1,12 @@
 //! tasty-output 빌트인 파서 도메인 sub-module.
 
 mod errors;
+#[cfg(test)]
+mod fuzz;
 mod links;
 mod progress;
 mod shell;
 mod test_result;
-#[cfg(test)]
-mod fuzz;
 #[cfg(test)]
 mod tests;
 

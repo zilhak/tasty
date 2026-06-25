@@ -22,7 +22,11 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
     let total_h = tier1_h + tier2_h + content_h;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, total_h), egui::Sense::hover());
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from(theme.bg_app()));
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_app()),
+    );
 
     let pad = theme.spacing_md.value(); // 12 tab padding
     let dot_r = theme.status_dot_size.value() * 0.5;
@@ -64,16 +68,15 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
     }
 
     // ── tier2: pane tab strip (bg-sidebar) ──
-    let tier2 = egui::Rect::from_min_size(
-        egui::pos2(rect.min.x, tier1.max.y),
-        egui::vec2(w, tier2_h),
-    );
+    let tier2 =
+        egui::Rect::from_min_size(egui::pos2(rect.min.x, tier1.max.y), egui::vec2(w, tier2_h));
     p.rect_filled(tier2, 0.0, egui::Color32::from(theme.bg_sidebar()));
     let tab_w = theme.field_width_md.value() * 0.625; // 100
     let small = egui::FontId::proportional(theme.font_size_caption.value());
     let mut tx = tier2.min.x;
     for (i, (name, active)) in PANE_TABS.iter().enumerate() {
-        let tab = egui::Rect::from_min_size(egui::pos2(tx, tier2.min.y), egui::vec2(tab_w, tier2_h));
+        let tab =
+            egui::Rect::from_min_size(egui::pos2(tx, tier2.min.y), egui::vec2(tab_w, tier2_h));
         if *active {
             p.rect_filled(tab, 0.0, egui::Color32::from(theme.bg_panel()));
             // accent top bar.
@@ -87,7 +90,10 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
             p.vline(
                 tx,
                 tier2.y_range(),
-                egui::Stroke::new(theme.border_width.value(), egui::Color32::from(theme.separator)),
+                egui::Stroke::new(
+                    theme.border_width.value(),
+                    egui::Color32::from(theme.separator),
+                ),
             );
         }
         p.text(
@@ -105,11 +111,8 @@ fn window(ui: &mut egui::Ui, theme: &Theme) {
     }
 
     // ── content: #000 with margin 8 ──
-    let content = egui::Rect::from_min_max(
-        egui::pos2(rect.min.x, tier2.max.y),
-        rect.max,
-    )
-    .shrink(theme.spacing_sm.value());
+    let content = egui::Rect::from_min_max(egui::pos2(rect.min.x, tier2.max.y), rect.max)
+        .shrink(theme.spacing_sm.value());
     p.rect_filled(
         content,
         theme.corner_radius_sm.value(),
@@ -142,8 +145,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("bg-app", "tier1 strip", theme.bg_app().into()),
             TokenChip::new("bg-sidebar", "tier2 strip", theme.bg_sidebar().into()),
-            TokenChip::new("surface-active", "active workspace", theme.surface_active().into()),
-            TokenChip::new("accent-primary", "active pane bar", theme.accent_primary().into()),
+            TokenChip::new(
+                "surface-active",
+                "active workspace",
+                theme.surface_active().into(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "active pane bar",
+                theme.accent_primary().into(),
+            ),
         ],
     );
 

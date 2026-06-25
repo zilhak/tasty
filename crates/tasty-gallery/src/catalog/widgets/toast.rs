@@ -155,7 +155,10 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
                     }
                     // "+N more" overflow 행 (height 22 ≈ control-height-tree).
                     let (r, _) = ui.allocate_exact_size(
-                        egui::vec2(theme.toast_max_width.value(), theme.item_height_tree.value()),
+                        egui::vec2(
+                            theme.toast_max_width.value(),
+                            theme.item_height_tree.value(),
+                        ),
                         egui::Sense::hover(),
                     );
                     ui.painter().text(

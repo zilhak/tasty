@@ -11,14 +11,19 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 /// Badge — count pill + dot.
 pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(ui, theme, "count — danger · primary · agent · success · neutral", |ui| {
-            badge(ui, theme, "3", BadgeVariant::Danger);
-            badge(ui, theme, "99+", BadgeVariant::Danger);
-            badge(ui, theme, "12", BadgeVariant::Primary);
-            badge(ui, theme, "new", BadgeVariant::Agent);
-            badge(ui, theme, "ok", BadgeVariant::Success);
-            badge(ui, theme, "7", BadgeVariant::Neutral);
-        });
+        cluster(
+            ui,
+            theme,
+            "count — danger · primary · agent · success · neutral",
+            |ui| {
+                badge(ui, theme, "3", BadgeVariant::Danger);
+                badge(ui, theme, "99+", BadgeVariant::Danger);
+                badge(ui, theme, "12", BadgeVariant::Primary);
+                badge(ui, theme, "new", BadgeVariant::Agent);
+                badge(ui, theme, "ok", BadgeVariant::Success);
+                badge(ui, theme, "7", BadgeVariant::Neutral);
+            },
+        );
         cluster(ui, theme, "dot — danger · agent · success", |ui| {
             badge_dot(ui, theme, BadgeVariant::Danger);
             badge_dot(ui, theme, BadgeVariant::Agent);
@@ -62,11 +67,16 @@ pub fn draw_tag(ui: &mut egui::Ui, theme: &Theme) {
             tag(ui, theme, "markdown", TagVariant::Accent, false);
             tag(ui, theme, "plugin", TagVariant::Agent, false);
         });
-        cluster(ui, theme, "state dot — running · readonly · error", |ui| {
-            tag(ui, theme, "running", TagVariant::Success, true);
-            tag(ui, theme, "readonly", TagVariant::Warning, true);
-            tag(ui, theme, "error", TagVariant::Danger, true);
-        });
+        cluster(
+            ui,
+            theme,
+            "state dot — running · readonly · error",
+            |ui| {
+                tag(ui, theme, "running", TagVariant::Success, true);
+                tag(ui, theme, "readonly", TagVariant::Warning, true);
+                tag(ui, theme, "error", TagVariant::Danger, true);
+            },
+        );
     });
 
     meta(
@@ -111,7 +121,11 @@ pub fn draw_kbd(ui: &mut egui::Ui, theme: &Theme) {
     meta(
         ui,
         theme,
-        &[("font", "mono"), ("radius", "radius-sm 2"), ("fill", "surface-raised")],
+        &[
+            ("font", "mono"),
+            ("radius", "radius-sm 2"),
+            ("fill", "surface-raised"),
+        ],
         &[
             TokenChip::new(
                 "font-mono",

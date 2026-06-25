@@ -76,7 +76,12 @@ impl IconButton {
     }
 
     /// 그리고 클릭 응답을 반환한다. `paint_icon` 으로 글리프를 주입.
-    pub fn show(self, ui: &mut egui::Ui, theme: &Theme, paint_icon: IconPainter<'_>) -> egui::Response {
+    pub fn show(
+        self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        paint_icon: IconPainter<'_>,
+    ) -> egui::Response {
         let side = self.size.height(theme);
         let sense = if self.enabled {
             egui::Sense::click()

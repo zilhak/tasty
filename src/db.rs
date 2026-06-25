@@ -165,7 +165,7 @@ pub fn init() -> Result<(), DbInitError> {
     // OnceLock::set은 이미 set된 경우(Err)에만 실패하며, 위의 is_some() 검사가
     // 통과해 여기 도달했으므로 race(다른 스레드가 동시 호출)인 경우만 Err.
     // 두 스레드가 동일한 default_db_path를 두고 경쟁하는 케이스라 결과는 동일하다.
-    let _ = DB.set(Mutex::new(db));  // 이미 초기화된 경우 무시 (OnceLock idempotent)
+    let _ = DB.set(Mutex::new(db)); // 이미 초기화된 경우 무시 (OnceLock idempotent)
     Ok(())
 }
 

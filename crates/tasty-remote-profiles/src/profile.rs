@@ -285,7 +285,10 @@ impl RemoteProfiles {
                 }
             },
             Err(_) => {
-                tracing::info!("no remote-profiles file at {}, using empty list", path.display());
+                tracing::info!(
+                    "no remote-profiles file at {}, using empty list",
+                    path.display()
+                );
                 Self::default()
             }
         }
@@ -345,7 +348,10 @@ mod tests {
             .with_field("port", "2222")
             .with_field(
                 "extra_options",
-                vec!["ServerAliveInterval=30".to_string(), "Compression=yes".to_string()],
+                vec![
+                    "ServerAliveInterval=30".to_string(),
+                    "Compression=yes".to_string(),
+                ],
             );
         p.passkey_ref = Some("gx10-key".into());
         let mut ps = RemoteProfiles::default();
@@ -359,7 +365,10 @@ mod tests {
         assert_eq!(bp.passkey_ref.as_deref(), Some("gx10-key"));
         assert_eq!(
             bp.fields.get("extra_options").unwrap().as_list().unwrap(),
-            &["ServerAliveInterval=30".to_string(), "Compression=yes".to_string()]
+            &[
+                "ServerAliveInterval=30".to_string(),
+                "Compression=yes".to_string()
+            ]
         );
         assert_eq!(bp.fields.get("host").unwrap().as_str(), Some("gx10"));
     }
@@ -412,7 +421,10 @@ mod tests {
     #[test]
     fn extra_options_absorbs_scalar() {
         let p = RemoteProfile::new("x", "ssh").with_field("extra_options", "Compression=yes");
-        assert_eq!(p.as_ssh().unwrap().extra_options(), vec!["Compression=yes".to_string()]);
+        assert_eq!(
+            p.as_ssh().unwrap().extra_options(),
+            vec!["Compression=yes".to_string()]
+        );
     }
 
     #[test]
@@ -421,7 +433,10 @@ mod tests {
         ps.upsert(RemoteProfile::new("a", "ssh").with_field("host", "h1"));
         ps.upsert(RemoteProfile::new("a", "ssh").with_field("host", "h2")); // 교체
         assert_eq!(ps.profiles.len(), 1);
-        assert_eq!(ps.get("a").unwrap().fields.get("host").unwrap().as_str(), Some("h2"));
+        assert_eq!(
+            ps.get("a").unwrap().fields.get("host").unwrap().as_str(),
+            Some("h2")
+        );
         assert!(ps.remove("a"));
         assert!(!ps.remove("a"));
         assert!(ps.get("a").is_none());

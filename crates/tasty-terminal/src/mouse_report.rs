@@ -46,7 +46,10 @@ mod tests {
         // release → 'm', 버튼 코드 유지
         assert_eq!(encode_mouse_report(true, 0, 3, 5, true), b"\x1b[<0;3;5m");
         // drag(motion) = cb | 32
-        assert_eq!(encode_mouse_report(true, 32, 10, 2, false), b"\x1b[<32;10;2M");
+        assert_eq!(
+            encode_mouse_report(true, 32, 10, 2, false),
+            b"\x1b[<32;10;2M"
+        );
     }
 
     #[test]

@@ -117,7 +117,10 @@ pub fn resolve_attach_target(
         anyhow::anyhow!("attach 는 ssh kind 프로필만 지원합니다 (kind='{}')", p.kind)
     })?;
     if v.is_disabled() {
-        bail!("프로필 '{}' 은 비활성(셸 감지 실패) — 재감지가 필요합니다", p.name);
+        bail!(
+            "프로필 '{}' 은 비활성(셸 감지 실패) — 재감지가 필요합니다",
+            p.name
+        );
     }
     let remote_tasty = v.remote_tasty().to_string();
     let port_mode = v.port_mode().to_string();
@@ -395,7 +398,10 @@ pub fn apply_shell_to_profile(
     profile: &mut RemoteProfile,
     passkeys: &Passkeys,
 ) -> Option<Result<PortMode>> {
-    let shell = profile.as_ssh().map(|v| v.shell().to_string()).unwrap_or_else(|| "auto".into());
+    let shell = profile
+        .as_ssh()
+        .map(|v| v.shell().to_string())
+        .unwrap_or_else(|| "auto".into());
     if let Some(mode) = shell_to_port_mode(&shell) {
         profile.set_field("port_mode", mode);
         profile.remove_field("detect_failed");
@@ -532,8 +538,8 @@ impl SshTunnel {
 
 impl Drop for SshTunnel {
     fn drop(&mut self) {
-        let _ = self.child.kill();  // best-effort 자식 종료 — 이미 종료됐을 수 있음, 무시
-        let _ = self.child.wait();  // 좀비 방지 reaping — 실패 무시
+        let _ = self.child.kill(); // best-effort 자식 종료 — 이미 종료됐을 수 있음, 무시
+        let _ = self.child.wait(); // 좀비 방지 reaping — 실패 무시
     }
 }
 
@@ -766,7 +772,9 @@ mod tests {
     fn apply_shell_explicit_sets_mode_without_io() {
         // 명시 셸 → 매핑으로 port_mode 즉시 도출(감지 미실행, None 반환).
         let pk = Passkeys::default();
-        let mut p = RemoteProfile::new("x", "ssh").with_field("host", "h").with_field("shell", "cmd");
+        let mut p = RemoteProfile::new("x", "ssh")
+            .with_field("host", "h")
+            .with_field("shell", "cmd");
         let ran = apply_shell_to_profile(&mut p, &pk);
         assert!(ran.is_none()); // 감지 미실행.
         assert_eq!(p.as_ssh().unwrap().port_mode(), "file-windows");

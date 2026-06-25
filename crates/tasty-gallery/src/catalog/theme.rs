@@ -11,9 +11,9 @@
 //! 모든 색·치수는 `Theme` 토큰에서만 가져온다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{status_dot, tag, Input, StatusKind, TagVariant};
+use tasty_ui_widgets::{Input, StatusKind, TagVariant, status_dot, tag};
 
-use crate::catalog::spec::{dont, meta, note, stage, StageVariant, TokenChip};
+use crate::catalog::spec::{StageVariant, TokenChip, dont, meta, note, stage};
 
 #[inline]
 fn ec(c: impl Into<egui::Color32>) -> egui::Color32 {
@@ -31,11 +31,17 @@ pub fn elevation(ui: &mut egui::Ui, theme: &Theme) {
             ramp(ui, theme, ec(theme.bg_app()), "bg-app", |ui| {
                 ramp(ui, theme, ec(theme.bg_sidebar()), "bg-sidebar", |ui| {
                     ramp(ui, theme, ec(theme.bg_panel()), "bg-panel", |ui| {
-                        ramp(ui, theme, ec(theme.surface_raised()), "surface-raised", |ui| {
-                            tile(ui, theme, ec(theme.surface_hover()), "surface-hover");
-                            ui.add_space(theme.spacing_sm.value());
-                            tile(ui, theme, ec(theme.surface_active()), "surface-active");
-                        });
+                        ramp(
+                            ui,
+                            theme,
+                            ec(theme.surface_raised()),
+                            "surface-raised",
+                            |ui| {
+                                tile(ui, theme, ec(theme.surface_hover()), "surface-hover");
+                                ui.add_space(theme.spacing_sm.value());
+                                tile(ui, theme, ec(theme.surface_active()), "surface-active");
+                            },
+                        );
                     });
                 });
             });
@@ -55,9 +61,17 @@ pub fn elevation(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("bg-app", "outermost frame", ec(theme.bg_app())),
             TokenChip::new("bg-sidebar", "nav / sidebar", ec(theme.bg_sidebar())),
             TokenChip::new("bg-panel", "content panel", ec(theme.bg_panel())),
-            TokenChip::new("surface-raised", "raised control", ec(theme.surface_raised())),
+            TokenChip::new(
+                "surface-raised",
+                "raised control",
+                ec(theme.surface_raised()),
+            ),
             TokenChip::new("surface-hover", "hover overlay", ec(theme.surface_hover())),
-            TokenChip::new("surface-active", "active / selected", ec(theme.surface_active())),
+            TokenChip::new(
+                "surface-active",
+                "active / selected",
+                ec(theme.surface_active()),
+            ),
         ],
     );
     note(
@@ -68,10 +82,19 @@ pub fn elevation(ui: &mut egui::Ui, theme: &Theme) {
 }
 
 /// 한 단계 ramp 프레임 — fill + 1px border + 토큰 라벨 + 중첩 콘텐츠.
-fn ramp(ui: &mut egui::Ui, theme: &Theme, fill: egui::Color32, label: &str, inner: impl FnOnce(&mut egui::Ui)) {
+fn ramp(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    fill: egui::Color32,
+    label: &str,
+    inner: impl FnOnce(&mut egui::Ui),
+) {
     egui::Frame::new()
         .fill(fill)
-        .stroke(egui::Stroke::new(theme.border_width.value(), ec(theme.border_default())))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            ec(theme.border_default()),
+        ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
         .show(ui, |ui| {
@@ -113,10 +136,34 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, fill: egui::Color32, label: &str) {
 /// Spec "Hierarchy by text color, on any surface".
 pub fn text(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        text_row(ui, theme, ec(theme.text_primary()), "text-primary", "Primary — titles, active labels");
-        text_row(ui, theme, ec(theme.text_secondary()), "text-secondary", "Secondary — body, descriptions");
-        text_row(ui, theme, ec(theme.text_muted()), "text-muted", "Muted — captions, meta, hints");
-        text_row(ui, theme, ec(theme.text_disabled()), "text-disabled", "Disabled — inert controls");
+        text_row(
+            ui,
+            theme,
+            ec(theme.text_primary()),
+            "text-primary",
+            "Primary — titles, active labels",
+        );
+        text_row(
+            ui,
+            theme,
+            ec(theme.text_secondary()),
+            "text-secondary",
+            "Secondary — body, descriptions",
+        );
+        text_row(
+            ui,
+            theme,
+            ec(theme.text_muted()),
+            "text-muted",
+            "Muted — captions, meta, hints",
+        );
+        text_row(
+            ui,
+            theme,
+            ec(theme.text_disabled()),
+            "text-disabled",
+            "Disabled — inert controls",
+        );
         // placeholder 는 Input 의 빈 상태로 시연.
         let mut buf = String::new();
         Input::new()
@@ -137,7 +184,11 @@ pub fn text(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("text-secondary", "body", ec(theme.text_secondary())),
             TokenChip::new("text-muted", "captions", ec(theme.text_muted())),
             TokenChip::new("text-disabled", "inert", ec(theme.text_disabled())),
-            TokenChip::new("text-placeholder", "empty input", ec(theme.text_placeholder())),
+            TokenChip::new(
+                "text-placeholder",
+                "empty input",
+                ec(theme.text_placeholder()),
+            ),
         ],
     );
 }
@@ -145,7 +196,11 @@ pub fn text(ui: &mut egui::Ui, theme: &Theme) {
 fn text_row(ui: &mut egui::Ui, theme: &Theme, color: egui::Color32, tok: &str, sample: &str) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-        ui.label(egui::RichText::new(sample).size(theme.font_size_body.value()).color(color));
+        ui.label(
+            egui::RichText::new(sample)
+                .size(theme.font_size_body.value())
+                .color(color),
+        );
         ui.label(
             egui::RichText::new(tok)
                 .monospace()
@@ -160,27 +215,69 @@ fn text_row(ui: &mut egui::Ui, theme: &Theme, color: egui::Color32, tok: &str, s
 /// Spec "Accents map to roles, not decoration".
 pub fn accents(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        accent_row(ui, theme, ec(theme.accent_primary()), "accent-primary", "primary action", |ui, theme| {
-            tasty_ui_widgets::Button::new("Open").show(ui, theme);
-        });
-        accent_row(ui, theme, ec(theme.accent_info()), "accent-info", "informational", |ui, theme| {
-            tag(ui, theme, "info", TagVariant::Accent, false);
-        });
-        accent_row(ui, theme, ec(theme.accent_success()), "accent-success", "running / ok", |ui, theme| {
-            status_dot(ui, theme, StatusKind::Running, "running", false, false);
-        });
-        accent_row(ui, theme, ec(theme.accent_warning()), "accent-warning", "caution / readonly", |ui, theme| {
-            tag(ui, theme, "readonly", TagVariant::Warning, true);
-        });
-        accent_row(ui, theme, ec(theme.accent_danger()), "accent-danger", "destructive / error", |ui, theme| {
-            tasty_ui_widgets::Button::new("Delete")
-                .variant(tasty_ui_widgets::ButtonVariant::Danger)
-                .show(ui, theme);
-        });
-        accent_row(ui, theme, ec(theme.accent_agent()), "accent-agent", "agent — always mauve", |ui, theme| {
-            status_dot(ui, theme, StatusKind::Agent, "agent", false, false);
-            tag(ui, theme, "plugin", TagVariant::Agent, false);
-        });
+        accent_row(
+            ui,
+            theme,
+            ec(theme.accent_primary()),
+            "accent-primary",
+            "primary action",
+            |ui, theme| {
+                tasty_ui_widgets::Button::new("Open").show(ui, theme);
+            },
+        );
+        accent_row(
+            ui,
+            theme,
+            ec(theme.accent_info()),
+            "accent-info",
+            "informational",
+            |ui, theme| {
+                tag(ui, theme, "info", TagVariant::Accent, false);
+            },
+        );
+        accent_row(
+            ui,
+            theme,
+            ec(theme.accent_success()),
+            "accent-success",
+            "running / ok",
+            |ui, theme| {
+                status_dot(ui, theme, StatusKind::Running, "running", false, false);
+            },
+        );
+        accent_row(
+            ui,
+            theme,
+            ec(theme.accent_warning()),
+            "accent-warning",
+            "caution / readonly",
+            |ui, theme| {
+                tag(ui, theme, "readonly", TagVariant::Warning, true);
+            },
+        );
+        accent_row(
+            ui,
+            theme,
+            ec(theme.accent_danger()),
+            "accent-danger",
+            "destructive / error",
+            |ui, theme| {
+                tasty_ui_widgets::Button::new("Delete")
+                    .variant(tasty_ui_widgets::ButtonVariant::Danger)
+                    .show(ui, theme);
+            },
+        );
+        accent_row(
+            ui,
+            theme,
+            ec(theme.accent_agent()),
+            "accent-agent",
+            "agent — always mauve",
+            |ui, theme| {
+                status_dot(ui, theme, StatusKind::Agent, "agent", false, false);
+                tag(ui, theme, "plugin", TagVariant::Agent, false);
+            },
+        );
     });
 
     meta(
@@ -216,7 +313,8 @@ fn accent_row(
         // 16px 색 swatch.
         let s = theme.spacing_lg.value();
         let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
-        ui.painter().rect_filled(r, theme.corner_radius_sm.value(), swatch);
+        ui.painter()
+            .rect_filled(r, theme.corner_radius_sm.value(), swatch);
         // role 라벨 (token + 용도) 고정폭.
         ui.allocate_ui(egui::vec2(theme.tab_width.value(), s), |ui| {
             ui.vertical(|ui| {
@@ -284,9 +382,27 @@ pub fn terminal(ui: &mut egui::Ui, theme: &Theme) {
             ui.add_space(theme.spacing_sm.value());
             faux_terminal(ui, theme);
             ui.add_space(theme.spacing_sm.value());
-            sem_row(ui, theme, ec(theme.selection_bg), "selection-bg", "mouse / keyboard selection region");
-            sem_row(ui, theme, ec(theme.vi_cursor_bg), "vi-cursor-bg", "vi-mode block cursor");
-            sem_row(ui, theme, ec(theme.search_match_bg), "search-match-bg", "search matches in scrollback");
+            sem_row(
+                ui,
+                theme,
+                ec(theme.selection_bg),
+                "selection-bg",
+                "mouse / keyboard selection region",
+            );
+            sem_row(
+                ui,
+                theme,
+                ec(theme.vi_cursor_bg),
+                "vi-cursor-bg",
+                "vi-mode block cursor",
+            );
+            sem_row(
+                ui,
+                theme,
+                ec(theme.search_match_bg),
+                "search-match-bg",
+                "search matches in scrollback",
+            );
             sem_row(
                 ui,
                 theme,
@@ -309,9 +425,17 @@ pub fn terminal(ui: &mut egui::Ui, theme: &Theme) {
         &[
             TokenChip::new("ansi-red", "SGR 31 red", ec(theme.ansi_red)),
             TokenChip::new("ansi-green", "SGR 32 green", ec(theme.ansi_green)),
-            TokenChip::new("ansi-bright-blue", "SGR 94 br.blue", ec(theme.ansi_bright_blue)),
+            TokenChip::new(
+                "ansi-bright-blue",
+                "SGR 94 br.blue",
+                ec(theme.ansi_bright_blue),
+            ),
             TokenChip::new("selection-bg", "selection fill", ec(theme.selection_bg)),
-            TokenChip::new("search-match-active-bg", "active match", ec(theme.search_match_active_bg)),
+            TokenChip::new(
+                "search-match-active-bg",
+                "active match",
+                ec(theme.search_match_active_bg),
+            ),
         ],
     );
     dont(
@@ -385,7 +509,8 @@ fn sem_row(ui: &mut egui::Ui, theme: &Theme, swatch: egui::Color32, tok: &str, r
 fn swatch_box(ui: &mut egui::Ui, theme: &Theme, fill: egui::Color32) {
     let s = theme.spacing_lg.value();
     let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
-    ui.painter().rect_filled(r, theme.corner_radius_sm.value(), fill);
+    ui.painter()
+        .rect_filled(r, theme.corner_radius_sm.value(), fill);
     ui.painter().rect_stroke(
         r,
         theme.corner_radius_sm.value(),
@@ -400,7 +525,10 @@ fn faux_terminal(ui: &mut egui::Ui, theme: &Theme) {
     let mono = theme.font_size_caption.value();
     egui::Frame::new()
         .fill(ec(theme.bg_app()))
-        .stroke(egui::Stroke::new(theme.border_width.value(), ec(theme.separator)))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            ec(theme.separator),
+        ))
         .corner_radius(theme.corner_radius.value())
         .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
         .show(ui, |ui| {
@@ -414,12 +542,20 @@ fn faux_terminal(ui: &mut egui::Ui, theme: &Theme) {
                         .size(mono)
                         .color(ec(theme.ansi_green)),
                 );
-                ui.label(egui::RichText::new(" $ vi notes.md").monospace().size(mono).color(fg));
+                ui.label(
+                    egui::RichText::new(" $ vi notes.md")
+                        .monospace()
+                        .size(mono)
+                        .color(fg),
+                );
             });
             // 줄 2: selection / search-match / active-match / vi-cursor 채움.
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                let seg = |ui: &mut egui::Ui, txt: &str, bg: Option<egui::Color32>, color: egui::Color32| {
+                let seg = |ui: &mut egui::Ui,
+                           txt: &str,
+                           bg: Option<egui::Color32>,
+                           color: egui::Color32| {
                     let mut rt = egui::RichText::new(txt).monospace().size(mono).color(color);
                     if let Some(b) = bg {
                         rt = rt.background_color(b);
@@ -431,10 +567,20 @@ fn faux_terminal(ui: &mut egui::Ui, theme: &Theme) {
                 seg(ui, " wrap the ", None, fg);
                 seg(ui, "match", Some(ec(theme.search_match_bg)), fg);
                 seg(ui, " and the ", None, fg);
-                seg(ui, "active match", Some(ec(theme.search_match_active_bg)), fg);
+                seg(
+                    ui,
+                    "active match",
+                    Some(ec(theme.search_match_active_bg)),
+                    fg,
+                );
                 seg(ui, " sit ", None, fg);
                 // vi 블록 커서: 밝은 채움 위 어두운 글리프.
-                seg(ui, "h", Some(ec(theme.vi_cursor_bg)), ec(theme.text_on_accent()));
+                seg(
+                    ui,
+                    "h",
+                    Some(ec(theme.vi_cursor_bg)),
+                    ec(theme.text_on_accent()),
+                );
                 seg(ui, "ere", None, fg);
             });
         });

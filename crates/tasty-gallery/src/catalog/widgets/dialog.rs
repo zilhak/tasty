@@ -64,11 +64,7 @@ pub fn raised_fill(theme: &Theme) -> egui::Color32 {
 }
 
 /// 패딩 영역 — 전체 폭을 차지하는 child Ui 를 margin 안에 그린다.
-pub fn region(
-    ui: &mut egui::Ui,
-    margin: egui::Margin,
-    add: impl FnOnce(&mut egui::Ui),
-) {
+pub fn region(ui: &mut egui::Ui, margin: egui::Margin, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new().inner_margin(margin).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
         add(ui);
@@ -83,8 +79,10 @@ pub fn region_sym(ui: &mut egui::Ui, x: f32, y: f32, add: impl FnOnce(&mut egui:
 /// 전체 폭 1px separator (모달 region 구분선 — border-bottom).
 pub fn hsep(ui: &mut egui::Ui, theme: &Theme) {
     let w = ui.available_width();
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(w, theme.border_width.value()), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(w, theme.border_width.value()),
+        egui::Sense::hover(),
+    );
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
@@ -136,7 +134,11 @@ pub fn field(
     let w = width.unwrap_or_else(|| ui.available_width());
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     let p = ui.painter();
-    p.rect_filled(rect, theme.corner_radius.value(), theme.surface_raised().to_egui());
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+    );
     p.rect_stroke(
         rect,
         theme.corner_radius.value(),
@@ -177,7 +179,11 @@ pub fn scrim_backdrop(
     // faux app (bg-app).
     p.rect_filled(rect, theme.corner_radius.value(), theme.bg_app().to_egui());
     // scrim — black 50% (디자인 scrim-bg).
-    p.rect_filled(rect, theme.corner_radius.value(), egui::Color32::from_black_alpha(128));
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from_black_alpha(128),
+    );
 
     // 모달을 위에서 top_space 만큼 띄워 가로 중앙 배치.
     let mut child = ui.new_child(
@@ -197,11 +203,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         spec::cluster(ui, theme, "center anchor", |ui| {
             scrim_backdrop(ui, theme, theme.measure_sm.value(), 200.0, 64.0, |ui| {
                 frame_card(ui, theme, 240.0, panel_fill(theme), |ui| {
-                    region_sym(ui, theme.spacing_lg.value(), theme.spacing_md.value(), |ui| {
-                        title(ui, theme, "Frame");
-                        ui.add_space(theme.spacing_sm.value());
-                        body(ui, theme, "bg-panel · 1px border-strong · modal shadow");
-                    });
+                    region_sym(
+                        ui,
+                        theme.spacing_lg.value(),
+                        theme.spacing_md.value(),
+                        |ui| {
+                            title(ui, theme, "Frame");
+                            ui.add_space(theme.spacing_sm.value());
+                            body(ui, theme, "bg-panel · 1px border-strong · modal shadow");
+                        },
+                    );
                 });
             });
         });
@@ -209,11 +220,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         spec::cluster(ui, theme, "top anchor (~88px)", |ui| {
             scrim_backdrop(ui, theme, theme.measure_sm.value(), 200.0, 28.0, |ui| {
                 frame_card(ui, theme, 240.0, raised_fill(theme), |ui| {
-                    region_sym(ui, theme.spacing_lg.value(), theme.spacing_md.value(), |ui| {
-                        title(ui, theme, "Palette-style");
-                        ui.add_space(theme.spacing_sm.value());
-                        body(ui, theme, "surface-raised · spawns under the title bar");
-                    });
+                    region_sym(
+                        ui,
+                        theme.spacing_lg.value(),
+                        theme.spacing_md.value(),
+                        |ui| {
+                            title(ui, theme, "Palette-style");
+                            ui.add_space(theme.spacing_sm.value());
+                            body(ui, theme, "surface-raised · spawns under the title bar");
+                        },
+                    );
                 });
             });
         });
@@ -232,8 +248,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-panel", "frame", theme.bg_panel().to_egui()),
-            TokenChip::new("border-strong", "frame edge", theme.border_strong().to_egui()),
-            TokenChip::new("surface-raised", "popover frame", theme.surface_raised().to_egui()),
+            TokenChip::new(
+                "border-strong",
+                "frame edge",
+                theme.border_strong().to_egui(),
+            ),
+            TokenChip::new(
+                "surface-raised",
+                "popover frame",
+                theme.surface_raised().to_egui(),
+            ),
         ],
     );
 

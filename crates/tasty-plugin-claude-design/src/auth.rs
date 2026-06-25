@@ -72,8 +72,7 @@ mod tests {
 
     #[test]
     fn save_load_clear_roundtrip() {
-        let dir =
-            std::env::temp_dir().join(format!("tasty-design-auth-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("tasty-design-auth-{}", std::process::id()));
         assert_eq!(load_auth(&dir).unwrap(), None);
         assert!(!has_auth(&dir));
 
@@ -97,7 +96,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("tasty-design-perm-{}", std::process::id()));
         save_auth("{}", &dir).unwrap();
-        let mode = std::fs::metadata(auth_path(&dir)).unwrap().permissions().mode();
+        let mode = std::fs::metadata(auth_path(&dir))
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600, "auth file must be 0600");
         if let Err(e) = std::fs::remove_dir_all(&dir) {
             eprintln!("cleanup failed: {e}");

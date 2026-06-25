@@ -112,7 +112,10 @@ pub fn tree_row(
             egui::FontId::monospace(theme.font_size_micro.value()),
             egui::Color32::PLACEHOLDER,
         );
-        let pos = egui::pos2(right - g.rect.width(), rect.center().y - g.rect.height() * 0.5);
+        let pos = egui::pos2(
+            right - g.rect.width(),
+            rect.center().y - g.rect.height() * 0.5,
+        );
         ui.painter().galley(pos, g.clone(), dim(muted));
         right -= g.rect.width() + GAP;
     }
@@ -122,10 +125,14 @@ pub fn tree_row(
         egui::FontId::proportional(body),
         egui::Color32::PLACEHOLDER,
     );
-    let label_rect =
-        egui::Rect::from_min_max(egui::pos2(x, rect.top()), egui::pos2(right.max(x), rect.bottom()));
+    let label_rect = egui::Rect::from_min_max(
+        egui::pos2(x, rect.top()),
+        egui::pos2(right.max(x), rect.bottom()),
+    );
     let pos = egui::pos2(x, rect.center().y - g.rect.height() * 0.5);
-    ui.painter().with_clip_rect(label_rect).galley(pos, g, dim(fg));
+    ui.painter()
+        .with_clip_rect(label_rect)
+        .galley(pos, g, dim(fg));
 
     resp
 }

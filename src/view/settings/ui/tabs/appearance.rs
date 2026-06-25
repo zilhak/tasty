@@ -267,8 +267,7 @@ fn draw_theme_swatch(
     let card_w = ui.available_width();
     let card_h = pad + stripe_h + gap + label_h + pad;
 
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let painter = ui.painter();
     let corner = th.corner_radius.value();
@@ -490,7 +489,10 @@ fn display_scale_card(
     // "Aa" 프리뷰 — 실제 배율로 스케일된 글리프 샘플 (자연어 아님 → i18n 예외).
     let preview_size = th.font_size_heading.value() * factor;
     ui.painter().text(
-        egui::pos2(rect.center().x, rect.min.y + DISPLAY_CARD_HEIGHT.value() * 0.4),
+        egui::pos2(
+            rect.center().x,
+            rect.min.y + DISPLAY_CARD_HEIGHT.value() * 0.4,
+        ),
         egui::Align2::CENTER_CENTER,
         "Aa",
         egui::FontId::proportional(preview_size),
@@ -588,7 +590,11 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
                 "settings.appearance.tasty.indicator_dot",
             ),
         ] {
-            ui.selectable_value(&mut settings.appearance.active_tab_indicator, variant, t(key));
+            ui.selectable_value(
+                &mut settings.appearance.active_tab_indicator,
+                variant,
+                t(key),
+            );
         }
     });
 
@@ -628,16 +634,21 @@ fn draw_tasty_color_row(
         let dot = COLOR_OVERRIDE_DOT_SIZE.value();
         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
         if is_ov {
-            ui.painter()
-                .circle_filled(dot_rect.center(), dot / 2.0, egui::Color32::from(th.accent_primary()));
+            ui.painter().circle_filled(
+                dot_rect.center(),
+                dot / 2.0,
+                egui::Color32::from(th.accent_primary()),
+            );
         }
 
         // ── friendly label ──
         ui.add_sized(
             egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
-            egui::Label::new(
-                egui::RichText::new(t(label_key)).color(if is_ov { th.text } else { th.subtext0 }),
-            ),
+            egui::Label::new(egui::RichText::new(t(label_key)).color(if is_ov {
+                th.text
+            } else {
+                th.subtext0
+            })),
         );
 
         // ── hex 입력 ──
@@ -867,9 +878,11 @@ fn draw_surface_bg_row(
         // ── 행 라벨 (자연어 — 번역) ──
         ui.add_sized(
             egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
-            egui::Label::new(
-                egui::RichText::new(label).color(if is_ov { th.text } else { th.subtext0 }),
-            ),
+            egui::Label::new(egui::RichText::new(label).color(if is_ov {
+                th.text
+            } else {
+                th.subtext0
+            })),
         );
 
         // ── hex 입력 ──
@@ -1202,24 +1215,21 @@ fn draw_appearance_colors(ui: &mut egui::Ui, settings: &mut Settings) {
     // 비-picker override 는 세지도 지우지도 않는다).
     let total: usize = {
         let ov = &settings.appearance.theme_overrides;
-        groups
-            .iter()
-            .map(|g| group_changed_count(g, ov))
-            .sum()
+        groups.iter().map(|g| group_changed_count(g, ov)).sum()
     };
 
     // 헤더: 설명 + 우측 Reset all (N).
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let label = if total > 0 {
-                crate::i18n::t_fmt(
-                    "settings.appearance.colors.reset_all_n",
-                    &total.to_string(),
-                )
+                crate::i18n::t_fmt("settings.appearance.colors.reset_all_n", &total.to_string())
             } else {
                 t("settings.appearance.colors.reset_all").to_string()
             };
-            if ui.add_enabled(total > 0, egui::Button::new(label)).clicked() {
+            if ui
+                .add_enabled(total > 0, egui::Button::new(label))
+                .clicked()
+            {
                 let ov = &mut settings.appearance.theme_overrides;
                 for r in groups.iter().flat_map(|g| &g.rows) {
                     (r.set)(ov, None);
@@ -1246,12 +1256,7 @@ fn draw_appearance_colors(ui: &mut egui::Ui, settings: &mut Settings) {
 }
 
 /// 한 collapsible 색 그룹 — 헤더(이름·note·N changed·Reset) + 행 목록.
-fn draw_color_group(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    settings: &mut Settings,
-    group: &ColorGroupDef,
-) {
+fn draw_color_group(ui: &mut egui::Ui, th: &Theme, settings: &mut Settings, group: &ColorGroupDef) {
     let changed = group_changed_count(group, &settings.appearance.theme_overrides);
 
     let id = ui.make_persistent_id(("appearance_colors_group", group.name_key));
@@ -1325,18 +1330,21 @@ fn draw_color_picker_row(
         let dot = COLOR_OVERRIDE_DOT_SIZE.value();
         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(dot, dot), egui::Sense::hover());
         if is_ov {
-            ui.painter()
-                .circle_filled(dot_rect.center(), dot / 2.0, egui::Color32::from(th.accent_primary()));
+            ui.painter().circle_filled(
+                dot_rect.center(),
+                dot / 2.0,
+                egui::Color32::from(th.accent_primary()),
+            );
         }
 
         // ── 색 토큰 이름 (mono, override 시 강조) ──
         ui.add_sized(
             egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
-            egui::Label::new(
-                egui::RichText::new(row.name)
-                    .monospace()
-                    .color(if is_ov { th.text } else { th.subtext0 }),
-            ),
+            egui::Label::new(egui::RichText::new(row.name).monospace().color(if is_ov {
+                th.text
+            } else {
+                th.subtext0
+            })),
         );
 
         // ── hex 입력 ──
@@ -1979,8 +1987,10 @@ mod tests {
     #[test]
     fn color_groups_match_design_layout() {
         let groups = color_groups();
-        let counts: Vec<(usize, bool)> =
-            groups.iter().map(|g| (g.rows.len(), g.default_open)).collect();
+        let counts: Vec<(usize, bool)> = groups
+            .iter()
+            .map(|g| (g.rows.len(), g.default_open))
+            .collect();
         // Surfaces(6,열림) Overlays(3,접힘) Text(4,열림) Accents(13,열림)
         // Terminal-specific(4,접힘) ANSI 16(16,접힘).
         assert_eq!(
@@ -2088,7 +2098,11 @@ mod tests {
             ActiveTabIndicator::default(),
             "indicator reset to default"
         );
-        assert_eq!(app.theme_overrides.red, Some(c), "unrelated override preserved");
+        assert_eq!(
+            app.theme_overrides.red,
+            Some(c),
+            "unrelated override preserved"
+        );
     }
 
     /// Reset all 은 46 flat 필드만 클리어하고 surface_themes(비-picker) 는 보존.

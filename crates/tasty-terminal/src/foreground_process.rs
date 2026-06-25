@@ -161,7 +161,11 @@ fn macos_proc_bsdinfo(pid: u32) -> Option<libc::proc_bsdinfo> {
 /// Read a NUL-terminated C-char field (e.g. `pbi_name`) into an owned `String`.
 #[cfg(target_os = "macos")]
 fn cstr_field_to_string(buf: &[libc::c_char]) -> Option<String> {
-    let bytes: Vec<u8> = buf.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
+    let bytes: Vec<u8> = buf
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect();
     if bytes.is_empty() {
         None
     } else {

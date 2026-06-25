@@ -536,7 +536,10 @@ mod tests {
     fn ensure_initialized_failure_keeps_surface_deferred() {
         let sid: SurfaceId = 42;
         // 존재하지 않는 shell → Terminal::new 의 spawn_command 가 실패한다.
-        let mut tab = deferred_tab(sid, deferred_spawn(Some("/nonexistent/tasty_no_such_shell")));
+        let mut tab = deferred_tab(
+            sid,
+            deferred_spawn(Some("/nonexistent/tasty_no_such_shell")),
+        );
         assert!(tab.is_surface_deferred(sid));
 
         let result = tab.ensure_initialized(sid);

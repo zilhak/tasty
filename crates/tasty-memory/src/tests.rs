@@ -299,22 +299,46 @@ fn regular_used_bytes_stays_consistent() {
     }
     assert_consistent(&s);
 
-    s.put(HOST_OWNER, &Scope::Global, "a", &text("hello"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "a",
+        &text("hello"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     assert_consistent(&s);
 
     // update grow
-    s.put(HOST_OWNER, &Scope::Global, "a", &text("hello world"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "a",
+        &text("hello world"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     assert_consistent(&s);
 
     // update shrink
-    s.put(HOST_OWNER, &Scope::Global, "a", &text("x"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "a",
+        &text("x"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     assert_consistent(&s);
 
-    s.put(HOST_OWNER, &Scope::Surface(1), "b", &text("0123456789"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Surface(1),
+        "b",
+        &text("0123456789"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     assert_consistent(&s);
 
     s.delete(HOST_OWNER, &Scope::Global, "a", None).unwrap();
@@ -335,13 +359,31 @@ fn regular_used_bytes_unchanged_on_quota_reject() {
         ..MemoryConfig::default()
     })
     .unwrap();
-    s.put(HOST_OWNER, &Scope::Global, "a", &text("0123456789ab"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "a",
+        &text("0123456789ab"),
+        &PutOpts::default(),
+    )
+    .unwrap();
     let before = s.regular_used_bytes;
-    let err = s.put(HOST_OWNER, &Scope::Global, "b", &text("0123456789ab"), &PutOpts::default());
+    let err = s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "b",
+        &text("0123456789ab"),
+        &PutOpts::default(),
+    );
     assert!(matches!(err, Err(MemoryError::QuotaExceeded { .. })));
-    assert_eq!(s.regular_used_bytes, before, "counter must not change on rejected put");
-    assert_eq!(s.regular_used_bytes, MemoryStore::scan_regular_used(&s.conn));
+    assert_eq!(
+        s.regular_used_bytes, before,
+        "counter must not change on rejected put"
+    );
+    assert_eq!(
+        s.regular_used_bytes,
+        MemoryStore::scan_regular_used(&s.conn)
+    );
 }
 
 /// count 기반 retention: 최근 N 개만 남기고 prefix 매칭 로그를 삭제. 비매칭 키는 보존,
@@ -351,12 +393,24 @@ fn prune_prefix_keep_recent_caps_logs() {
     let mut s = store();
     // 시간순 정렬되는 zero-padded 키 (audit/telemetry 와 동형).
     for i in 0..10 {
-        s.put(HOST_OWNER, &Scope::Global, &format!("tasty.audit.{i:04}"), &text("x"), &PutOpts::default())
-            .unwrap();
+        s.put(
+            HOST_OWNER,
+            &Scope::Global,
+            &format!("tasty.audit.{i:04}"),
+            &text("x"),
+            &PutOpts::default(),
+        )
+        .unwrap();
     }
     // 비-로그 키는 prune 영향 없어야 함.
-    s.put(HOST_OWNER, &Scope::Global, "real.data", &text("keep"), &PutOpts::default())
-        .unwrap();
+    s.put(
+        HOST_OWNER,
+        &Scope::Global,
+        "real.data",
+        &text("keep"),
+        &PutOpts::default(),
+    )
+    .unwrap();
 
     // 최근 3개만 유지 → 7개 삭제.
     let deleted = s.prune_prefix_keep_recent("tasty.audit.", 3).unwrap();
@@ -368,7 +422,10 @@ fn prune_prefix_keep_recent_caps_logs() {
     // 비-로그 키 보존.
     assert!(s.get(&Scope::Global, "real.data").unwrap().is_some());
     // 카운터 정합.
-    assert_eq!(s.regular_used_bytes, MemoryStore::scan_regular_used(&s.conn));
+    assert_eq!(
+        s.regular_used_bytes,
+        MemoryStore::scan_regular_used(&s.conn)
+    );
 
     // 남은 개수(3) 이하 cap → no-op.
     let deleted2 = s.prune_prefix_keep_recent("tasty.audit.", 5).unwrap();

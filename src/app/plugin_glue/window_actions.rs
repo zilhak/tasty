@@ -142,10 +142,7 @@ impl App {
                         Err(e) => {
                             tracing::warn!("plugins modal: reapprove({id}) failed: {e}");
                             (
-                                crate::i18n::t_fmt(
-                                    "plugins.attn_reapprove_failed",
-                                    &e.to_string(),
-                                ),
+                                crate::i18n::t_fmt("plugins.attn_reapprove_failed", &e.to_string()),
                                 crate::adapters::ui::ToastKind::Error,
                             )
                         }

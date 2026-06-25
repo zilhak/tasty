@@ -84,7 +84,10 @@ pub(crate) use platform::debug_info;
 pub(crate) use platform::jump_list;
 #[cfg(all(target_os = "macos", feature = "gui"))]
 pub(crate) use platform::macos_delegate;
-#[cfg(all(any(windows, target_os = "macos", target_os = "linux"), feature = "gui"))]
+#[cfg(all(
+    any(windows, target_os = "macos", target_os = "linux"),
+    feature = "gui"
+))]
 pub(crate) use platform::system_tray;
 pub(crate) use state::search as search_state;
 #[cfg(feature = "gui")]

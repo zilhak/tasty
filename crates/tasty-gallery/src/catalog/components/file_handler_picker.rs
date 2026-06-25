@@ -17,33 +17,76 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             // 헤더.
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                kit::title(ui, theme, "Open with");
-                kit::caption(ui, theme, "~/projects/web/README.md", true);
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                    kit::title(ui, theme, "Open with");
+                    kit::caption(ui, theme, "~/projects/web/README.md", true);
+                },
+            );
             kit::hsep(ui, theme);
 
             // 핸들러 행.
-            kit::region_sym(ui, theme.spacing_sm.value(), theme.spacing_sm.value(), |ui| {
-                handler(ui, theme, icons::MARKDOWN, "Markdown preview", "built-in", true, false);
-                handler(ui, theme, icons::TERMINAL, "Editor (terminal)", "built-in", false, false);
-                handler(ui, theme, icons::ROCKET, "Notion importer", "plugin · notion", false, true);
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_sm.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    handler(
+                        ui,
+                        theme,
+                        icons::MARKDOWN,
+                        "Markdown preview",
+                        "built-in",
+                        true,
+                        false,
+                    );
+                    handler(
+                        ui,
+                        theme,
+                        icons::TERMINAL,
+                        "Editor (terminal)",
+                        "built-in",
+                        false,
+                        false,
+                    );
+                    handler(
+                        ui,
+                        theme,
+                        icons::ROCKET,
+                        "Notion importer",
+                        "plugin · notion",
+                        false,
+                        true,
+                    );
+                },
+            );
             kit::hsep(ui, theme);
 
             // footer.
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                    check(ui, theme, true);
-                    kit::body(ui, theme, "Always for .md");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Open").variant(ButtonVariant::Primary).show(ui, theme);
-                        Button::new("Cancel").variant(ButtonVariant::Ghost).show(ui, theme);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                        check(ui, theme, true);
+                        kit::body(ui, theme, "Always for .md");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            Button::new("Open")
+                                .variant(ButtonVariant::Primary)
+                                .show(ui, theme);
+                            Button::new("Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .show(ui, theme);
+                        });
                     });
-                });
-            });
+                },
+            );
         });
     });
 
@@ -59,9 +102,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("footer", "Always check · Cancel · Open"),
         ],
         &[
-            TokenChip::new("surface-active", "selected row", theme.surface_active().to_egui()),
-            TokenChip::new("accent-primary", "inset bar", theme.accent_primary().to_egui()),
-            TokenChip::new("accent-agent", "plugin origin", theme.accent_agent().to_egui()),
+            TokenChip::new(
+                "surface-active",
+                "selected row",
+                theme.surface_active().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "inset bar",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-agent",
+                "plugin origin",
+                theme.accent_agent().to_egui(),
+            ),
         ],
     );
 }
@@ -79,9 +134,17 @@ fn handler(
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     if selected {
-        ui.painter().rect_filled(rect, theme.corner_radius_sm.value(), theme.surface_active().to_egui());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(theme.tab_indicator_width.value(), rect.height()));
-        ui.painter().rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        ui.painter().rect_filled(
+            rect,
+            theme.corner_radius_sm.value(),
+            theme.surface_active().to_egui(),
+        );
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
+        );
+        ui.painter()
+            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
     }
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -89,7 +152,12 @@ fn handler(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    kit::icon(&mut child, glyph, theme.icon_glyph_size_md.value(), theme.text_secondary().to_egui());
+    kit::icon(
+        &mut child,
+        glyph,
+        theme.icon_glyph_size_md.value(),
+        theme.text_secondary().to_egui(),
+    );
     child.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 1.0;
         ui.label(
@@ -97,7 +165,11 @@ fn handler(
                 .size(theme.font_size_body.value())
                 .color(theme.text_primary().to_egui()),
         );
-        let origin_color = if plugin { theme.accent_agent() } else { theme.text_muted() };
+        let origin_color = if plugin {
+            theme.accent_agent()
+        } else {
+            theme.text_muted()
+        };
         ui.label(
             egui::RichText::new(origin)
                 .size(theme.font_size_caption.value())
@@ -110,8 +182,14 @@ fn check(ui: &mut egui::Ui, theme: &Theme, checked: bool) {
     let s = theme.icon_glyph_size_md.value();
     let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
     if checked {
-        ui.painter().rect_filled(r, theme.corner_radius_sm.value(), theme.accent_primary().to_egui());
-        icons::SHIELD_CHECK.image(s, theme.text_on_accent().to_egui()).paint_at(ui, r);
+        ui.painter().rect_filled(
+            r,
+            theme.corner_radius_sm.value(),
+            theme.accent_primary().to_egui(),
+        );
+        icons::SHIELD_CHECK
+            .image(s, theme.text_on_accent().to_egui())
+            .paint_at(ui, r);
     } else {
         ui.painter().rect_stroke(
             r,

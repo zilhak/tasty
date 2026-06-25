@@ -17,33 +17,64 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::panel_fill(theme), |ui| {
             // 헤더 — title + 세그먼트.
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    kit::title(ui, theme, "Apply preset");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        seg(ui, theme, &["Workspace", "Tab", "Pane"], 0);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        kit::title(ui, theme, "Apply preset");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            seg(ui, theme, &["Workspace", "Tab", "Pane"], 0);
+                        });
                     });
-                });
-            });
+                },
+            );
             kit::hsep(ui, theme);
 
             // preset 행.
-            kit::region_sym(ui, theme.spacing_sm.value(), theme.spacing_sm.value(), |ui| {
-                preset(ui, theme, "Dev — web", "3 panes · terminal + editor + preview", true);
-                preset(ui, theme, "Review", "2 panes · diff + terminal", false);
-                preset(ui, theme, "Ops", "4 panes · logs + ssh + db + metrics", false);
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_sm.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    preset(
+                        ui,
+                        theme,
+                        "Dev — web",
+                        "3 panes · terminal + editor + preview",
+                        true,
+                    );
+                    preset(ui, theme, "Review", "2 panes · diff + terminal", false);
+                    preset(
+                        ui,
+                        theme,
+                        "Ops",
+                        "4 panes · logs + ssh + db + metrics",
+                        false,
+                    );
+                },
+            );
             kit::hsep(ui, theme);
 
             // footer.
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Apply to workspace").variant(ButtonVariant::Primary).show(ui, theme);
-                        Button::new("Cancel").variant(ButtonVariant::Ghost).show(ui, theme);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            Button::new("Apply to workspace")
+                                .variant(ButtonVariant::Primary)
+                                .show(ui, theme);
+                            Button::new("Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .show(ui, theme);
+                        });
                     });
-                });
-            });
+                },
+            );
         });
     });
 
@@ -58,9 +89,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("footer", "Cancel · Apply to <scope>"),
         ],
         &[
-            TokenChip::new("surface-active", "selected row", theme.surface_active().to_egui()),
-            TokenChip::new("accent-primary", "inset bar · seg", theme.accent_primary().to_egui()),
-            TokenChip::new("surface-raised", "seg track", theme.surface_raised().to_egui()),
+            TokenChip::new(
+                "surface-active",
+                "selected row",
+                theme.surface_active().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-primary",
+                "inset bar · seg",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "surface-raised",
+                "seg track",
+                theme.surface_raised().to_egui(),
+            ),
         ],
     );
 }
@@ -70,9 +113,17 @@ fn preset(ui: &mut egui::Ui, theme: &Theme, name: &str, meta: &str, selected: bo
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     if selected {
-        ui.painter().rect_filled(rect, theme.corner_radius_sm.value(), theme.surface_active().to_egui());
-        let bar = egui::Rect::from_min_size(rect.min, egui::vec2(theme.tab_indicator_width.value(), rect.height()));
-        ui.painter().rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        ui.painter().rect_filled(
+            rect,
+            theme.corner_radius_sm.value(),
+            theme.surface_active().to_egui(),
+        );
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(theme.tab_indicator_width.value(), rect.height()),
+        );
+        ui.painter()
+            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
     }
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -80,7 +131,12 @@ fn preset(ui: &mut egui::Ui, theme: &Theme, name: &str, meta: &str, selected: bo
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-    kit::icon(&mut child, icons::SPLIT, theme.icon_glyph_size_md.value(), theme.text_secondary().to_egui());
+    kit::icon(
+        &mut child,
+        icons::SPLIT,
+        theme.icon_glyph_size_md.value(),
+        theme.text_secondary().to_egui(),
+    );
     child.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 1.0;
         ui.label(
@@ -102,18 +158,34 @@ fn seg(ui: &mut egui::Ui, theme: &Theme, items: &[&str], active: usize) {
     let h = theme.item_height_interactive.value() - theme.spacing_xs.value() * 0.5;
     egui::Frame::new()
         .fill(theme.surface_raised().to_egui())
-        .stroke(egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
         .corner_radius(theme.corner_radius_sm.value())
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.horizontal(|ui| {
                 for (i, label) in items.iter().enumerate() {
                     if i > 0 {
-                        let (r, _) = ui.allocate_exact_size(egui::vec2(theme.border_width.value(), h), egui::Sense::hover());
-                        ui.painter().vline(r.center().x, r.y_range(), egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()));
+                        let (r, _) = ui.allocate_exact_size(
+                            egui::vec2(theme.border_width.value(), h),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().vline(
+                            r.center().x,
+                            r.y_range(),
+                            egui::Stroke::new(
+                                theme.border_width.value(),
+                                theme.border_default().to_egui(),
+                            ),
+                        );
                     }
                     let (fg, bg) = if i == active {
-                        (theme.text_primary().to_egui(), theme.surface_active().to_egui())
+                        (
+                            theme.text_primary().to_egui(),
+                            theme.surface_active().to_egui(),
+                        )
                     } else {
                         (theme.text_muted().to_egui(), egui::Color32::TRANSPARENT)
                     };
@@ -123,11 +195,15 @@ fn seg(ui: &mut egui::Ui, theme: &Theme, items: &[&str], active: usize) {
                         egui::Color32::PLACEHOLDER,
                     );
                     let pad = theme.spacing_sm.value();
-                    let (rect, _) = ui.allocate_exact_size(egui::vec2(galley.rect.width() + pad * 2.0, h), egui::Sense::hover());
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(galley.rect.width() + pad * 2.0, h),
+                        egui::Sense::hover(),
+                    );
                     if bg != egui::Color32::TRANSPARENT {
                         ui.painter().rect_filled(rect, 0.0, bg);
                     }
-                    ui.painter().galley(rect.center() - galley.rect.size() * 0.5, galley, fg);
+                    ui.painter()
+                        .galley(rect.center() - galley.rect.size() * 0.5, galley, fg);
                 }
             });
         });

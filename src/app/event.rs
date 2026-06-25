@@ -24,9 +24,7 @@ pub(crate) enum AppEvent {
     /// 만 쓰므로 `viewport_id` 는 항상 `ROOT` 라 윈도우 구분에 못 쓴다 — window_id 로 라우팅.)
     /// delay-aware repaint (`Duration > 0`) 는 idle frame loop 방지 위해 callback 단계에서 drop 된다.
     #[cfg(feature = "gui")]
-    EguiRepaint {
-        window_id: winit::window::WindowId,
-    },
+    EguiRepaint { window_id: winit::window::WindowId },
     /// Request to create a new window (triggered by IPC or shortcut).
     #[cfg(feature = "gui")]
     CreateWindow,

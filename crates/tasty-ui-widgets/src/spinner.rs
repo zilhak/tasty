@@ -72,8 +72,7 @@ impl Spinner {
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
         let size = self.size;
         let color = self.color.unwrap_or_else(|| theme.text_muted().to_egui());
-        let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
 
         if !ui.is_rect_visible(rect) {
             return resp;

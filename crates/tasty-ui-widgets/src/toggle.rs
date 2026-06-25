@@ -57,9 +57,15 @@ pub fn checkbox(
         egui::vec2(BOX, BOX),
     );
     let (fill, border) = if *checked {
-        (theme.accent_primary().to_egui(), theme.accent_primary().to_egui())
+        (
+            theme.accent_primary().to_egui(),
+            theme.accent_primary().to_egui(),
+        )
     } else {
-        (theme.surface_raised().to_egui(), theme.border_strong().to_egui())
+        (
+            theme.surface_raised().to_egui(),
+            theme.border_strong().to_egui(),
+        )
     };
     ui.painter().rect(
         box_rect,
@@ -73,8 +79,10 @@ pub fn checkbox(
         let o = box_rect.center() - egui::vec2(CHECK_GLYPH, CHECK_GLYPH) * 0.5;
         let p = |fx: f32, fy: f32| o + egui::vec2(CHECK_GLYPH * fx, CHECK_GLYPH * fy);
         let stroke = egui::Stroke::new(2.0, dim(theme.text_on_accent().to_egui()));
-        ui.painter().line_segment([p(0.22, 0.55), p(0.42, 0.74)], stroke);
-        ui.painter().line_segment([p(0.42, 0.74), p(0.80, 0.30)], stroke);
+        ui.painter()
+            .line_segment([p(0.22, 0.55), p(0.42, 0.74)], stroke);
+        ui.painter()
+            .line_segment([p(0.42, 0.74), p(0.80, 0.30)], stroke);
     }
     let label_pos = egui::pos2(
         rect.left() + BOX + gap,
@@ -129,9 +137,15 @@ pub fn switch(
         egui::vec2(SWITCH_W, SWITCH_H),
     );
     let (track_fill, track_border) = if *checked {
-        (theme.accent_primary().to_egui(), theme.accent_primary().to_egui())
+        (
+            theme.accent_primary().to_egui(),
+            theme.accent_primary().to_egui(),
+        )
     } else {
-        (theme.surface_active().to_egui(), theme.border_default().to_egui())
+        (
+            theme.surface_active().to_egui(),
+            theme.border_default().to_egui(),
+        )
     };
     ui.painter().rect(
         track,
@@ -150,15 +164,16 @@ pub fn switch(
     } else {
         theme.subtext0.to_egui()
     };
-    ui.painter()
-        .circle_filled(egui::pos2(thumb_x, track.center().y), SWITCH_THUMB * 0.5, dim(thumb_color));
+    ui.painter().circle_filled(
+        egui::pos2(thumb_x, track.center().y),
+        SWITCH_THUMB * 0.5,
+        dim(thumb_color),
+    );
 
     if let Some(g) = galley {
-        let pos = egui::pos2(
-            track.right() + gap,
-            rect.center().y - g.rect.height() * 0.5,
-        );
-        ui.painter().galley(pos, g, dim(theme.text_primary().to_egui()));
+        let pos = egui::pos2(track.right() + gap, rect.center().y - g.rect.height() * 0.5);
+        ui.painter()
+            .galley(pos, g, dim(theme.text_primary().to_egui()));
     }
     resp
 }

@@ -1257,7 +1257,10 @@ impl MemoryStore {
     pub fn prune_prefix_keep_recent(&mut self, prefix: &str, keep_recent: u64) -> Result<u64> {
         let like = format!(
             "{}%",
-            prefix.replace('\\', "\\\\").replace('_', "\\_").replace('%', "\\%")
+            prefix
+                .replace('\\', "\\\\")
+                .replace('_', "\\_")
+                .replace('%', "\\%")
         );
         // OFFSET=keep_recent 위치(0-based)의 키 = "최신에서 N+1번째" = 첫 삭제 대상.
         // 그 키 이하(`<=`)를 모두 삭제 → 최신 N개만 남는다. 매칭 행 ≤ keep_recent 면

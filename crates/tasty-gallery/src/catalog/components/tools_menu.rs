@@ -4,7 +4,7 @@
 //! builtin 4 + separator + plugin 2. 색·치수는 Theme 토큰.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{menu_item, menu_separator, MenuItemVariant};
+use tasty_ui_widgets::{MenuItemVariant, menu_item, menu_separator};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -15,15 +15,20 @@ const WIDTH: f32 = 160.0;
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         kit::frame_card(ui, theme, WIDTH, kit::raised_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_sm.value(), theme.spacing_sm.value(), |ui| {
-                row(ui, theme, icons::PORT, "Ports", false);
-                row(ui, theme, icons::REMOTE, "Remote", false);
-                row(ui, theme, icons::SETTINGS, "Settings", false);
-                row(ui, theme, icons::PLUG, "Plugins", false);
-                menu_separator(ui, theme);
-                row(ui, theme, icons::TERMINAL, "Session logger", false);
-                row(ui, theme, icons::SEARCH, "Quick grep", false);
-            });
+            kit::region_sym(
+                ui,
+                theme.spacing_sm.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    row(ui, theme, icons::PORT, "Ports", false);
+                    row(ui, theme, icons::REMOTE, "Remote", false);
+                    row(ui, theme, icons::SETTINGS, "Settings", false);
+                    row(ui, theme, icons::PLUG, "Plugins", false);
+                    menu_separator(ui, theme);
+                    row(ui, theme, icons::TERMINAL, "Session logger", false);
+                    row(ui, theme, icons::SEARCH, "Quick grep", false);
+                },
+            );
         });
     });
 
@@ -38,7 +43,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("surface-raised", "frame", theme.surface_raised().to_egui()),
-            TokenChip::new("overlay-hover", "row hover", theme.overlay_hover().to_egui_premultiplied()),
+            TokenChip::new(
+                "overlay-hover",
+                "row hover",
+                theme.overlay_hover().to_egui_premultiplied(),
+            ),
             TokenChip::new("separator", "group divide", theme.separator.to_egui()),
         ],
     );

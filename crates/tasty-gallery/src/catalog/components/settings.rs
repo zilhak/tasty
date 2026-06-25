@@ -17,7 +17,12 @@ const MID_HEIGHT: f32 = 248.0;
 
 const L1_TABS: &[&str] = &["Appearance", "Keybindings", "Plugins", "Advanced"];
 const L2_SECTIONS: &[&str] = &["Theme", "Typography", "Cursor", "Window", "Display"];
-const PRESETS: &[(&str, bool)] = &[("Mocha", true), ("Latte", false), ("Macchiato", false), ("Frappé", false)];
+const PRESETS: &[(&str, bool)] = &[
+    ("Mocha", true),
+    ("Latte", false),
+    ("Macchiato", false),
+    ("Frappé", false),
+];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -34,11 +39,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             l1_tab(ui, theme, t, i == 0);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            IconButton::new()
-                                .variant(IconButtonVariant::Ghost)
-                                .show(ui, theme, &|ui, rect, c| {
+                            IconButton::new().variant(IconButtonVariant::Ghost).show(
+                                ui,
+                                theme,
+                                &|ui, rect, c| {
                                     icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
-                                });
+                                },
+                            );
                         });
                     });
                 });
@@ -68,8 +75,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         }
                     });
                 // separator + content.
-                let (r, _) = ui.allocate_exact_size(egui::vec2(theme.border_width.value(), MID_HEIGHT), egui::Sense::hover());
-                ui.painter().vline(r.center().x, r.y_range(), egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()));
+                let (r, _) = ui.allocate_exact_size(
+                    egui::vec2(theme.border_width.value(), MID_HEIGHT),
+                    egui::Sense::hover(),
+                );
+                ui.painter().vline(
+                    r.center().x,
+                    r.y_range(),
+                    egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+                );
                 egui::Frame::new()
                     .inner_margin(egui::Margin::same(theme.spacing_lg.value() as i8))
                     .show(ui, |ui| {
@@ -99,14 +113,23 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             kit::hsep(ui, theme);
 
             // footer.
-            kit::region_sym(ui, theme.spacing_md.value(), theme.spacing_sm.value(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Save").variant(ButtonVariant::Primary).show(ui, theme);
-                        Button::new("Cancel").variant(ButtonVariant::Ghost).show(ui, theme);
+            kit::region_sym(
+                ui,
+                theme.spacing_md.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            Button::new("Save")
+                                .variant(ButtonVariant::Primary)
+                                .show(ui, theme);
+                            Button::new("Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .show(ui, theme);
+                        });
                     });
-                });
-            });
+                },
+            );
         });
     });
 
@@ -116,15 +139,26 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("frame", "620×380 · bg-panel"),
             ("L1", "top tabs · height 44 · active 2px accent underline"),
-            ("L2", "sidebar 168 · filter + sections · selected surface-active"),
+            (
+                "L2",
+                "sidebar 168 · filter + sections · selected surface-active",
+            ),
             ("content", "padding 18 · preset grid 2col · swatch row 34"),
             ("footer", "Cancel · Save"),
         ],
         &[
             TokenChip::new("bg-sidebar", "L1 + L2", theme.bg_sidebar().to_egui()),
             TokenChip::new("bg-panel", "content", theme.bg_panel().to_egui()),
-            TokenChip::new("accent-primary", "active tab", theme.accent_primary().to_egui()),
-            TokenChip::new("surface-active", "selected section", theme.surface_active().to_egui()),
+            TokenChip::new(
+                "accent-primary",
+                "active tab",
+                theme.accent_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "surface-active",
+                "selected section",
+                theme.surface_active().to_egui(),
+            ),
         ],
     );
 
@@ -144,15 +178,30 @@ fn l1_tab(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
         egui::Color32::PLACEHOLDER,
     );
     let pad = theme.spacing_md.value();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(galley.rect.width() + pad * 2.0, h), egui::Sense::hover());
-    let fg = if active { theme.text_primary() } else { theme.text_muted() };
-    ui.painter().galley(rect.center() - galley.rect.size() * 0.5, galley, fg.to_egui());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(galley.rect.width() + pad * 2.0, h),
+        egui::Sense::hover(),
+    );
+    let fg = if active {
+        theme.text_primary()
+    } else {
+        theme.text_muted()
+    };
+    ui.painter().galley(
+        rect.center() - galley.rect.size() * 0.5,
+        galley,
+        fg.to_egui(),
+    );
     if active {
         let bar = egui::Rect::from_min_size(
-            egui::pos2(rect.left(), rect.bottom() - theme.tab_indicator_width.value()),
+            egui::pos2(
+                rect.left(),
+                rect.bottom() - theme.tab_indicator_width.value(),
+            ),
             egui::vec2(rect.width(), theme.tab_indicator_width.value()),
         );
-        ui.painter().rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        ui.painter()
+            .rect_filled(bar, 0.0, theme.accent_primary().to_egui());
     }
 }
 
@@ -161,9 +210,17 @@ fn l2_item(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
     if active {
-        ui.painter().rect_filled(rect, theme.corner_radius_sm.value(), theme.surface_active().to_egui());
+        ui.painter().rect_filled(
+            rect,
+            theme.corner_radius_sm.value(),
+            theme.surface_active().to_egui(),
+        );
     }
-    let fg = if active { theme.text_primary() } else { theme.text_secondary() };
+    let fg = if active {
+        theme.text_primary()
+    } else {
+        theme.text_secondary()
+    };
     ui.painter().text(
         egui::pos2(rect.left() + theme.spacing_sm.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,
@@ -176,17 +233,41 @@ fn l2_item(ui: &mut egui::Ui, theme: &Theme, label: &str, active: bool) {
 fn swatch_row(ui: &mut egui::Ui, theme: &Theme, width: f32, name: &str, selected: bool) {
     let h = theme.item_height_interactive.value() + theme.spacing_xs.value();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, h), egui::Sense::hover());
-    let border = if selected { theme.accent_primary() } else { theme.border_default() };
-    let bw = if selected { theme.focus_ring_width.value() } else { theme.border_width.value() };
-    ui.painter().rect_filled(rect, theme.corner_radius_sm.value(), theme.surface_raised().to_egui());
-    ui.painter().rect_stroke(rect, theme.corner_radius_sm.value(), egui::Stroke::new(bw, border.to_egui()), egui::StrokeKind::Inside);
+    let border = if selected {
+        theme.accent_primary()
+    } else {
+        theme.border_default()
+    };
+    let bw = if selected {
+        theme.focus_ring_width.value()
+    } else {
+        theme.border_width.value()
+    };
+    ui.painter().rect_filled(
+        rect,
+        theme.corner_radius_sm.value(),
+        theme.surface_raised().to_egui(),
+    );
+    ui.painter().rect_stroke(
+        rect,
+        theme.corner_radius_sm.value(),
+        egui::Stroke::new(bw, border.to_egui()),
+        egui::StrokeKind::Inside,
+    );
     // swatch.
     let s = theme.icon_glyph_size_sm.value();
     let sw = egui::Rect::from_center_size(
-        egui::pos2(rect.left() + theme.spacing_sm.value() + s * 0.5, rect.center().y),
+        egui::pos2(
+            rect.left() + theme.spacing_sm.value() + s * 0.5,
+            rect.center().y,
+        ),
         egui::vec2(s, s),
     );
-    ui.painter().rect_filled(sw, theme.corner_radius_sm.value(), theme.accent_primary().to_egui());
+    ui.painter().rect_filled(
+        sw,
+        theme.corner_radius_sm.value(),
+        theme.accent_primary().to_egui(),
+    );
     ui.painter().text(
         egui::pos2(sw.right() + theme.spacing_sm.value(), rect.center().y),
         egui::Align2::LEFT_CENTER,

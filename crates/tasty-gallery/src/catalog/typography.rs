@@ -6,7 +6,7 @@
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::catalog::spec::{meta, note, stage, StageVariant, TokenChip};
+use crate::catalog::spec::{StageVariant, TokenChip, meta, note, stage};
 
 const SAMPLE: &str = "The quick brown fox jumps over the lazy dog";
 
@@ -21,7 +21,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui,
             theme,
             "heading",
-            egui::RichText::new(SAMPLE).size(theme.font_size_heading.value()).strong(),
+            egui::RichText::new(SAMPLE)
+                .size(theme.font_size_heading.value())
+                .strong(),
         );
         scale_row(
             ui,
@@ -39,7 +41,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui,
             theme,
             "mono",
-            egui::RichText::new(SAMPLE).monospace().size(theme.font_size_max.value()),
+            egui::RichText::new(SAMPLE)
+                .monospace()
+                .size(theme.font_size_max.value()),
         );
     });
 
@@ -56,7 +60,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("font-mono", "D2Coding", ec(theme.text_secondary())),
             TokenChip::new("font-size-body", "13px", ec(theme.text_primary())),
             TokenChip::new("font-size-caption", "11px", ec(theme.text_muted())),
-            TokenChip::new("font-weight-semibold", "600 heading", ec(theme.accent_primary())),
+            TokenChip::new(
+                "font-weight-semibold",
+                "600 heading",
+                ec(theme.accent_primary()),
+            ),
         ],
     );
     note(
@@ -71,14 +79,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn scale_row(ui: &mut egui::Ui, theme: &Theme, name: &str, sample: egui::RichText) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-        ui.allocate_ui(egui::vec2(theme.tab_width.value(), theme.item_height_interactive.value()), |ui| {
-            ui.label(
-                egui::RichText::new(name)
-                    .monospace()
-                    .size(theme.font_size_micro.value())
-                    .color(ec(theme.text_muted())),
-            );
-        });
+        ui.allocate_ui(
+            egui::vec2(
+                theme.tab_width.value(),
+                theme.item_height_interactive.value(),
+            ),
+            |ui| {
+                ui.label(
+                    egui::RichText::new(name)
+                        .monospace()
+                        .size(theme.font_size_micro.value())
+                        .color(ec(theme.text_muted())),
+                );
+            },
+        );
         ui.label(sample.color(ec(theme.text_primary())));
     });
 }
