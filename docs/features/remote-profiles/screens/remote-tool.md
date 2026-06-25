@@ -7,14 +7,17 @@
 
 ## 트리거
 
-도구 메뉴 `SSH profiles` 클릭 → SSH 프로필 popup.
+도구 메뉴 `Remote connections` 클릭 → 원격 접속 popup.
 
 ## 레이아웃
 
 ```
 ┌──────────────────────────────────┐
-│ SSH profiles            [+ 추가]  │
+│ Remote connections          [×]   │  공통 헤더
 ├──────────────────────────────────┤
+│ [원격 접속 프로필] [Passkey]       │  상단 2탭
+├──────────────────────────────────┤
+│ 프로필 목록         [+ 추가][⤓필터]│  add-bar
 │ ▸ prod-box   user@host:22   [✎][⌫]│  목록 — 편집/삭제
 │ ▸ staging    …                   │
 ├──────────────────────────────────┤
@@ -41,4 +44,4 @@
 
 ## 시각 소스
 
-`design-system/ui_kits/terminal/overlays/ssh_tool.jsx` — 창·목록·폼 배치의 단일 출처. (design-system vendor 시 SSH 도구 디자인 파일 존재 여부 확인 후 resolve.)
+`design-system/ui_kits/terminal/overlays/remote_tool.jsx` — 창·2탭·목록·폼 배치의 단일 출처. (design-system vendor 시 원격 접속 도구 디자인 파일 존재 여부 확인 후 resolve.)

@@ -16,7 +16,7 @@
 ┌─────────────────────────┐
 │ Command palette          │  → command-palette
 │ Listening ports          │  → listening-ports
-│ SSH profiles             │  → ssh-tool
+│ Remote connections       │  → remote_tool
 ├─────────────────────────┤  (빌트인 ↔ 플러그인 구분선)
 │ Clipboard history        │  → (플러그인 기여)
 │ …(plugin 항목)           │
@@ -28,7 +28,7 @@
 - **빌트인 항목** (각 → 해당 기능):
   - **Command palette** — 명령 팔레트를 연다. → [`features/command-palette/`](../../command-palette/index.md)
   - **Listening ports** — 리스닝 포트 뷰어를 연다. → [`features/listening-ports/`](../../listening-ports/index.md)
-  - **SSH profiles** — SSH 도구를 연다. → [`features/remote-profiles/`](../../remote-profiles/index.md)
+  - **Remote connections** — 원격 접속 도구를 연다. → [`features/remote-profiles/`](../../remote-profiles/index.md)
 - **구분선** — 빌트인과 플러그인 항목 사이 (둘 다 있을 때만).
 - **플러그인 기여 항목** — `ui.tool_item` 권한 플러그인이 추가한 항목 (예: Clipboard history). **이 문서엔 항목을 나열하지 않는다** — 공식(번들) 플러그인 메뉴는 [번들 플러그인 문서](../../../plugins/index.md)에서 다룬다.
 
