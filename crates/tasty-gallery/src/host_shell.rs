@@ -383,18 +383,28 @@ fn main_ui(ui: &mut egui::Ui, state: &GalleryState) {
         return;
     };
 
+    // 중앙정렬 좌측 여백(side)은 **뷰포트 폭**(CentralPanel 가용폭, ScrollArea 바깥)으로만
+    // 계산한다. ScrollArea inner 의 `available_width()` 는 자식 specimen 이 뷰포트보다 넓게
+    // 그리면(가로 overflow) 그 폭으로 팽창해, 중앙정렬 여백을 부풀려 콘텐츠가 페이지마다
+    // 다르게 우측으로 밀리는 버그가 있었다(예: Components 만 +124px). 디자인 `.g-page`
+    // (max-width 1080 · margin 0 auto · padding 0 40)처럼 좌측 여백은 콘텐츠가 아니라
+    // 뷰포트에만 종속돼야 한다 → 여기서 한 번만 계산한다.
+    let viewport_w = ui.available_width();
+    let content_w = viewport_w.min(PAGE_MAX_WIDTH.value());
+    let side = ((viewport_w - content_w) / 2.0).max(0.0);
+    // 디자인 .g-page 좌우 대칭 패딩 40 (= space-xl 24 + space-lg 16).
+    let pad_x = theme.spacing_xl.value() + theme.spacing_lg.value();
+
     egui::ScrollArea::vertical()
         .id_salt("g_main_scroll")
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                let avail = ui.available_width();
-                let content_w = avail.min(PAGE_MAX_WIDTH.value());
-                let side = ((avail - content_w) / 2.0).max(0.0);
-                // 좌우 여백 + 본문 컬럼 (research §1.2 padding 34 40).
-                ui.add_space(side + theme.spacing_xl.value() + theme.spacing_lg.value());
+                // 좌측 = 중앙정렬 여백(뷰포트 기준) + 페이지 좌패딩 40.
+                ui.add_space(side + pad_x);
                 ui.vertical(|ui| {
-                    ui.set_max_width(content_w - theme.spacing_xl.value() * 2.0);
+                    // 본문 컬럼 = 페이지폭 − 좌우 대칭 패딩(40×2).
+                    ui.set_max_width(content_w - pad_x * 2.0);
                     ui.add_space(theme.spacing_xl.value() + theme.spacing_md.value());
                     page_head(ui, theme, page.category);
                     for sec in &page.sections {
