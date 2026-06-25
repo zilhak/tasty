@@ -17,6 +17,7 @@
 - **타입별 폼** — ssh 는 전용 그리드(host/user/port/label/remote tasty/shell + Passkey 드롭다운), 그 외(smb/http/미등록)는 generic key-value 에디터. 셸 `auto` 는 저장 시 1회 SSH 프로브로 포트 발견 모드를 감지.
 - **dangling 참조** — 없는 passkey 를 가리켜도 정상 저장, "passkey 없음" 노란 배지 + 소비 시점 에러.
 - **값 마스킹** — passkey 값은 기본 마스킹(`••••••••`). GUI 의 **Reveal**(로컬 전용)만 실제 값을 본다(path=경로, inline=관리 파일 내용). AI Agent/원격은 IPC 로 값을 **영구 읽을 수 없다**(쓰기만).
+- **프로토콜 필터** (GUI 전용·세션 한정) — 원격 접속 프로필 탭에서 현재 프로필의 `kind` 가 2종 이상일 때만 필터 버튼이 뜬다. 체크박스 드롭다운에서 프로토콜을 고르고 적용(apply-on-confirm)하면 선택한 `kind` 의 프로필만 목록에 남는다. 결과 0건이면 빈 상태 안내를 표시한다. 필터 상태는 **비영속** — popup 재오픈에는 유지되지만 tasty 재시작 시 전체 선택으로 리셋되며, 저장 파일/CLI/IPC 표면에는 영향이 없다(순수 표시 필터).
 - **소비자 분리** — attach 는 ssh kind 프로필을 읽는 소비자 중 하나. "주소 저장"과 "attach"가 분리됐다(→ [remote-attach](../remote-attach/index.md)).
 - **입력 격리** — 팝업이 터미널 위에 떠 있어도 팝업 위 클릭/스크롤은 팝업이 소비하며, 뒤 터미널의 포커스·선택·스크롤을 건드리지 않는다. remote_tool 고유 규칙이 아니라 모든 팝업에 적용되는 입력 레이어 계약(Layer 3 = Popup, "팝업 위면 터미널 무시")을 따른 것이다(→ [input-layer](../../architecture/input-layer.md)).
 
