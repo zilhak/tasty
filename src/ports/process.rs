@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: ProcessSpawner port — std_process 어댑터 존재, hook 실행 호출 경로 배선 대기
 pub trait ProcessSpawner: Send + Sync {
     fn spawn(
         &self,
@@ -13,7 +13,7 @@ pub trait ProcessSpawner: Send + Sync {
     ) -> anyhow::Result<Box<dyn ProcessChild>>;
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: ProcessSpawner port — std_process 어댑터 존재, hook 실행 호출 경로 배선 대기
 pub trait ProcessChild: Send {
     fn pid(&self) -> u32;
     fn try_wait(&mut self) -> anyhow::Result<Option<ExitStatus>>;
@@ -21,6 +21,7 @@ pub trait ProcessChild: Send {
 }
 
 #[allow(dead_code)]
+// 이유: ProcessSpawner port — std_process 어댑터 존재, hook 실행 호출 경로 배선 대기
 #[derive(Debug, Clone, Copy)]
 pub enum ExitStatus {
     Exited(i32),

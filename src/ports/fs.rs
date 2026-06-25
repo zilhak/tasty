@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: FileSystem port — DI 빌더 배선·test mock 존재, 호출 경로 배선 대기
 pub trait FileSystem: Send + Sync {
     fn read_to_string(&self, path: &Path) -> anyhow::Result<String>;
     fn read_bytes(&self, path: &Path) -> anyhow::Result<Vec<u8>>;
@@ -18,7 +18,7 @@ pub trait FileSystem: Send + Sync {
     fn read_dir(&self, path: &Path) -> anyhow::Result<Vec<PathBuf>>;
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: FileSystem port — DI 빌더 배선·test mock 존재, 호출 경로 배선 대기
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
     pub size: u64,

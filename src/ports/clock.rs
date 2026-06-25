@@ -2,7 +2,7 @@
 
 use std::time::{Instant, SystemTime};
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: Clock port — DI 빌더 배선·std_clock 어댑터 존재, 호출 경로 배선 대기
 pub trait Clock: Send + Sync {
     fn now_instant(&self) -> Instant;
     fn now_system(&self) -> SystemTime;

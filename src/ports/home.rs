@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: HomeDirectory port — DI 빌더 배선·tmp_home 어댑터 존재, 호출 경로 배선 대기
 pub trait HomeDirectory: Send + Sync {
     fn home(&self) -> Option<PathBuf>;
     /// `~/.tasty/` (config root).

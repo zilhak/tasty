@@ -54,6 +54,7 @@ pub(crate) struct AttachClientSession {
     disconnected: Arc<AtomicBool>,
     /// 입력/Detach 프레임 송신용 writer(다중 forwarder 와 직렬화 공유).
     writer: Arc<Mutex<TcpStream>>,
+    // 이유: 서버가 할당한 mirror 세션 식별자 — 현재 read 경로 없음(진단/향후 프레임 라우팅용 보관).
     #[allow(dead_code)]
     client_id: u32,
     /// 단계 7 — 자동 attach 의 SSH 터널 핸들. 세션이 살아있는 동안 보관해 Drop(자식

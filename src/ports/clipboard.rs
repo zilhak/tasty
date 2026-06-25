@@ -2,7 +2,7 @@
 //!
 //! Headless 시 NoOp adapter.
 
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: ClipboardSystem port — DI 빌더 배선 존재, read_image/write_image 호출 경로 배선 대기
 pub trait ClipboardSystem: Send + Sync {
     fn read_text(&self) -> anyhow::Result<String>;
     fn write_text(&self, text: &str) -> anyhow::Result<()>;

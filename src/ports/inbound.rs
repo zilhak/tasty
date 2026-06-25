@@ -11,7 +11,7 @@ use crate::core::intent::{CoreEvent, DomainIntent};
 /// - `dispatch`: sync 처리 + 결과 반환 (IPC handler 의 응답 contract).
 /// - `enqueue`: fire-and-forget (UI 의 click handler 등).
 /// - `drain_queue`: dispatcher loop 가 enqueue 된 Intent 들을 dispatch.
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: inbound port 추상화 — hexagonal 진입점 정의 선행, 구현/호출 경로 배선 대기
 pub trait IntentDispatcher: Send + Sync {
     fn dispatch(&mut self, intent: DomainIntent) -> anyhow::Result<ApplyResult>;
     fn enqueue(&mut self, intent: DomainIntent);
@@ -19,13 +19,13 @@ pub trait IntentDispatcher: Send + Sync {
 }
 
 /// Core 의 read-only 접근.
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: inbound port 추상화 — hexagonal 진입점 정의 선행, 구현/호출 경로 배선 대기
 pub trait CoreReader {
     fn state(&self) -> &CoreState;
 }
 
 /// Core 의 event 구독 — observer / plugin notification / lua hook.
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: inbound port 추상화 — hexagonal 진입점 정의 선행, 구현/호출 경로 배선 대기
 pub trait EventSubscriber {
     type Subscription;
 
@@ -40,6 +40,7 @@ pub trait EventSubscriber {
 
 /// `Core::apply` 의 반환 — 발행된 event 목록 + 선택적 sync 반환 data.
 #[allow(dead_code)]
+// 이유: inbound port 추상화 — hexagonal 진입점 정의 선행, 구현/호출 경로 배선 대기
 #[derive(Debug, Default)]
 pub struct ApplyResult {
     pub events: Vec<CoreEvent>,
@@ -48,6 +49,7 @@ pub struct ApplyResult {
 
 /// Event 구독 필터 (필요 시 변형 추가).
 #[allow(dead_code)]
+// 이유: inbound port 추상화 — hexagonal 진입점 정의 선행, 구현/호출 경로 배선 대기
 #[derive(Debug, Clone, Default)]
 pub struct EventFilter {
     pub kinds: Option<Vec<String>>,
