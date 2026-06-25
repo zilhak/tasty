@@ -370,3 +370,26 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   로 held bool 을 계산해 **순수 view props 로 전달**(view 는 settings 비의존 유지, model-view-split).
 - **근거(2026-06-25)**: `tab_bar.rs` (`PaneTabBarsProps.tab_switch_held`), `switch_overlay.rs`.
   P2b 사이드바도 같은 모듈의 `workspace_switch_held`/`workspace_digit`/`paint_keycap` 재사용.
+
+---
+
+## command_palette — 키캡은 본체 custom draw, 갤러리는 menu_item kit-widget (미러 비대칭)
+
+- **증상**: 명령 팔레트 단축키를 디자인 Kbd(키별 keycap)로 정렬하는 작업에서, 본체와 갤러리
+  미러의 구현 아키텍처가 다르다.
+- **사실(검증, 2026-06-25)**:
+  - 본체 `src/adapters/ui/popup/command_palette.rs` 는 `draw_keycaps()` 로 **좌표 painting** 해
+    키별 keycap + muted `+` 구분자를 그린다(우측 정렬). casing 은 `KeybindingSettings::
+    format_display_parts()`(crud.rs:413, `ctrl++` 모호성 안전 토큰화) 결과를 `shortcut_keys:
+    Vec<String>` 로 받는다. 빈 쿼리 무강조는 `row_highlighted(query_empty,…)`. 색은
+    surface_raised/border_strong/text_secondary, radius 는 `corner_radius_sm`. 모두 단위 테스트 있음.
+  - 갤러리 `crates/tasty-gallery/src/catalog/components/command_palette.rs` 는 공유
+    `tasty_ui_widgets::menu_item` 위젯에 **단일 문자열 shortcut**(`"⌘T"`)을 넘기는 kit-widget
+    표현(WIDTH=480)이다 — 본체의 custom draw_keycaps 를 줄단위 복제하지 않는다.
+- **처방/한계**: 본체 키캡에 디자인 Kbd 의 하단 2px edge(`--tasty-kbd-shadow-depth`=size-2)를
+  `line_segment` 로 덧그려 깊이감을 맞춘다(chip.rs `kbd()` 와 동일 근사). 갤러리 미러에 키별
+  keycap 을 넣으려면 **공유 `menu_item` 위젯**이 keycap 벡터를 지원하도록 바꿔야 해(모든
+  menu_item 사용처 영향) 단일 컴포넌트 작업 범위를 넘는다 — 별도 결정 필요.
+- **근거**: design (3) `components/core/Kbd.jsx`(키별 `<kbd>`, `border-bottom-width: kbd-shadow-depth`),
+  `command_palette.jsx:50`(`active = n===0 && q!==""`). 디자인 Kbd 토큰 치수는 size-16/micro(10)
+  인데 본체 draw_keycaps 는 18/caption(11) 로 그려 미세 치수 차가 남아 있다(재조정은 별도 판단).

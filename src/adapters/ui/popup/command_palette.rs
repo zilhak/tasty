@@ -290,8 +290,13 @@ fn row_highlighted(query_empty: bool, row: usize, selected: usize) -> bool {
 ///
 /// 각 키는 개별 키캡 박스(`[Ctrl] [Shift] [N]`), 사이에 muted `+` 구분자. `right_x`
 /// 에서 좌측으로 정렬한다. 키캡 스펙: min-width/height 18, h-padding 5, radius-sm,
-/// surface-raised 배경, border-strong 1px, mono caption + text-secondary. `+` 는
-/// text-muted. (디자인의 border-bottom 2px 깊이감은 egui 균일 stroke 로 근사 — 생략.)
+/// surface-raised 배경, border-strong 1px + 하단 2px(물리 키캡 깊이감), mono caption +
+/// text-secondary. `+` 는 text-muted. (디자인 Kbd `border-bottom-width: kbd-shadow-depth`
+/// = size-2. egui rect_stroke 는 균일 두께라 하단만 별도 2px 라인으로 근사 — chip.rs kbd 동일.)
+/// 키캡 하단 edge 두께 = 디자인 `--tasty-kbd-shadow-depth`(size-2). Theme 에 size-2 토큰이
+/// 없어 chip.rs `kbd()` 와 동일하게 고정 2px 로 둔다(디자인 고정 px).
+const KEYCAP_BOTTOM_BORDER: f32 = 2.0;
+
 fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys: &[String]) {
     if keys.is_empty() {
         return;
@@ -341,13 +346,23 @@ fn draw_keycaps(ui: &egui::Ui, theme: &Theme, right_x: f32, center_y: f32, keys:
         }
         let cap_w = cap_widths[idx];
         let box_rect = egui::Rect::from_min_size(egui::pos2(x, top), egui::vec2(cap_w, cap_h));
+        let bw = theme.border_width.value();
+        let border = theme.border_strong().to_egui();
         ui.painter()
             .rect_filled(box_rect, radius, theme.surface_raised().to_egui());
         ui.painter().rect_stroke(
             box_rect,
             radius,
-            egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
+            egui::Stroke::new(bw, border),
             egui::StrokeKind::Inside,
+        );
+        // 하단 2px edge (디자인 Kbd shadow-depth = size-2) — 균일 stroke 위에 덧그린다.
+        ui.painter().line_segment(
+            [
+                egui::pos2(box_rect.left() + radius, box_rect.bottom() - bw),
+                egui::pos2(box_rect.right() - radius, box_rect.bottom() - bw),
+            ],
+            egui::Stroke::new(KEYCAP_BOTTOM_BORDER, border),
         );
         let gx = box_rect.center().x - galley.size().x / 2.0;
         let gy = center_y - galley.size().y / 2.0;
