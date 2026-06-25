@@ -216,6 +216,37 @@ pub struct ThemeSizing {
     pub caption_width: LogicalPx,
     /// Linux DE 버튼(min·max·close) 원형 지름.
     pub window_button_size: LogicalPx,
+    // ── 가독 폭 (Note / content / 모달 컬럼용) ──
+    /// 좁은 가독 폭 (300px).
+    pub measure_sm: LogicalPx,
+    /// 중간 가독 폭 (400px).
+    pub measure_md: LogicalPx,
+    /// 넓은 가독 폭 (460px).
+    pub measure_lg: LogicalPx,
+    /// 최대 가독 폭 (560px).
+    pub measure_xl: LogicalPx,
+    // ── form-control 폭 ──
+    /// 극소 입력 폭 (90px).
+    pub field_width_xs: LogicalPx,
+    /// 색상 입력 폭 (110px).
+    pub field_width_color: LogicalPx,
+    /// 중간 입력 폭 (160px).
+    pub field_width_md: LogicalPx,
+    /// 넓은 입력 폭 (200px).
+    pub field_width_lg: LogicalPx,
+    // ── 세부 치수 ──
+    /// 토스트 최대 폭 (320px).
+    pub toast_max_width: LogicalPx,
+    /// 상태 점(status dot) 지름 (8px).
+    pub status_dot_size: LogicalPx,
+    /// 스피너 지름 (16px).
+    pub spinner_size: LogicalPx,
+    /// 토스트 좌측 accent 바 두께 (3px).
+    pub toast_accent_width: LogicalPx,
+    /// 탭 active indicator 두께 (2px).
+    pub tab_indicator_width: LogicalPx,
+    /// 상단 정렬 모달(command palette) 상단 gap (88px).
+    pub overlay_top_offset: LogicalPx,
 }
 
 pub const SIZING: ThemeSizing = ThemeSizing {
@@ -261,6 +292,20 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     traffic_size: LogicalPx(12.0),
     caption_width: LogicalPx(46.0),
     window_button_size: LogicalPx(24.0),
+    measure_sm: LogicalPx(300.0),
+    measure_md: LogicalPx(400.0),
+    measure_lg: LogicalPx(460.0),
+    measure_xl: LogicalPx(560.0),
+    field_width_xs: LogicalPx(90.0),
+    field_width_color: LogicalPx(110.0),
+    field_width_md: LogicalPx(160.0),
+    field_width_lg: LogicalPx(200.0),
+    toast_max_width: LogicalPx(320.0),
+    status_dot_size: LogicalPx(8.0),
+    spinner_size: LogicalPx(16.0),
+    toast_accent_width: LogicalPx(3.0),
+    tab_indicator_width: LogicalPx(2.0),
+    overlay_top_offset: LogicalPx(88.0),
 };
 
 // ============================================================================
@@ -741,6 +786,23 @@ pub struct Theme {
     pub traffic_size: LogicalPx,
     pub caption_width: LogicalPx,
     pub window_button_size: LogicalPx,
+    // ── 가독 폭 (Note / content / 모달 컬럼용) ──
+    pub measure_sm: LogicalPx,
+    pub measure_md: LogicalPx,
+    pub measure_lg: LogicalPx,
+    pub measure_xl: LogicalPx,
+    // ── form-control 폭 ──
+    pub field_width_xs: LogicalPx,
+    pub field_width_color: LogicalPx,
+    pub field_width_md: LogicalPx,
+    pub field_width_lg: LogicalPx,
+    // ── 세부 치수 ──
+    pub toast_max_width: LogicalPx,
+    pub status_dot_size: LogicalPx,
+    pub spinner_size: LogicalPx,
+    pub toast_accent_width: LogicalPx,
+    pub tab_indicator_width: LogicalPx,
+    pub overlay_top_offset: LogicalPx,
 
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
@@ -882,6 +944,21 @@ impl Theme {
             traffic_size: SIZING.traffic_size,
             caption_width: SIZING.caption_width,
             window_button_size: SIZING.window_button_size,
+            // 가독 폭 / form-control 폭 / 세부 치수 — host UI content, zoom 적용.
+            measure_sm: zoomed(SIZING.measure_sm),
+            measure_md: zoomed(SIZING.measure_md),
+            measure_lg: zoomed(SIZING.measure_lg),
+            measure_xl: zoomed(SIZING.measure_xl),
+            field_width_xs: zoomed(SIZING.field_width_xs),
+            field_width_color: zoomed(SIZING.field_width_color),
+            field_width_md: zoomed(SIZING.field_width_md),
+            field_width_lg: zoomed(SIZING.field_width_lg),
+            toast_max_width: zoomed(SIZING.toast_max_width),
+            status_dot_size: zoomed(SIZING.status_dot_size),
+            spinner_size: zoomed(SIZING.spinner_size),
+            toast_accent_width: zoomed(SIZING.toast_accent_width),
+            tab_indicator_width: SIZING.tab_indicator_width,
+            overlay_top_offset: zoomed(SIZING.overlay_top_offset),
             is_light,
             surface_themes: c.surface_themes,
         }
