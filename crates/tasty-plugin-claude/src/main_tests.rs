@@ -451,21 +451,35 @@ fn broadcast_targets_empty_when_unknown_parent() {
 }
 
 #[test]
-fn build_tell_pty_text_single_line_plain_cr() {
-    // 단일라인은 평문 + 즉시 제출 \r (paste 미지원 수신측 회귀 위험 0).
-    assert_eq!(build_tell_pty_text("hello"), "hello\r");
+fn build_tell_pty_text_single_line_plain_no_cr() {
+    // 단일라인 본문은 평문 그대로 — 제출 `\r` 은 handle_tell 이 별도 PTY write 로 보낸다.
+    let body = build_tell_pty_text("hello");
+    assert_eq!(body, "hello");
+    assert!(!body.contains('\r'), "본문에 제출 CR 이 섞이면 안 됨");
+}
+
+#[test]
+fn build_tell_pty_text_single_line_long_has_no_cr() {
+    // 회귀 가드: 63자+ 단일라인도 본문에 `\r` 이 붙으면 안 된다. 붙으면 본문+CR 이 한
+    // burst 로 보내져 수신측이 paste 로 오인 → 미제출. 제출 CR 분리는 handle_tell 책임.
+    let msg = "a".repeat(80);
+    let body = build_tell_pty_text(&msg);
+    assert_eq!(body, msg);
+    assert!(!body.contains('\r'));
 }
 
 #[test]
 fn build_tell_pty_text_multi_line_bracketed() {
     // "a\nb" → ESC[200~ a\nb ESC[201~ (멀티라인만 paste, 개행 그대로, 제출 \r 미포함).
-    assert_eq!(build_tell_pty_text("a\nb"), "\u{1b}[200~a\nb\u{1b}[201~");
+    let body = build_tell_pty_text("a\nb");
+    assert_eq!(body, "\u{1b}[200~a\nb\u{1b}[201~");
+    assert!(!body.contains('\r'), "본문에 제출 CR 이 섞이면 안 됨");
 }
 
 #[test]
 fn build_tell_pty_text_trailing_backslash_single_line() {
-    // 개행 없는 단일라인이므로 평문 + \r (paste 아님).
-    assert_eq!(build_tell_pty_text("foo\\"), "foo\\\r");
+    // 개행 없는 단일라인이므로 평문 그대로 (paste 아님, CR 미포함).
+    assert_eq!(build_tell_pty_text("foo\\"), "foo\\");
 }
 
 #[test]
@@ -479,8 +493,8 @@ fn build_tell_pty_text_three_lines() {
 
 #[test]
 fn build_tell_pty_text_empty_message() {
-    // "" → 개행 없으므로 단일라인 경로: 평문 + \r.
-    assert_eq!(build_tell_pty_text(""), "\r");
+    // "" → 단일라인 경로: 빈 본문. 제출 `\r` 은 handle_tell 이 별도로 보낸다.
+    assert_eq!(build_tell_pty_text(""), "");
 }
 
 // ─── step 04d.1: launch helper tests ────────────────────────────────────

@@ -57,6 +57,12 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [agent-identification](agent-identification.md) | `AgentId` 도출(잠정 모델) |
 | [lua-hooks](lua-hooks.md) | Lua hook 호스트 측 매핑 |
 
+## 외부 프로그램 구동
+
+| 문서 | 내용 |
+|------|------|
+| [external-interaction](external-interaction/index.md) | PTY 로 구동하는 외부 TUI(child Claude Code / codex 등)의 동작 때문에 생기는 함정 모음 |
+
 ## 테스트
 
 | 문서 | 내용 |

@@ -59,16 +59,17 @@ fn make_codex_command(surface_id: u32, prompt: Option<&str>) -> String {
     }
 }
 
-/// codex tell 본문 PTY 텍스트를 만든다. claude `build_tell_pty_text` 와 동일 규칙:
-/// - 단일라인(개행 없음): 평문 + 즉시 제출 `\r` (paste 미지원 수신측 회귀 위험 0).
+/// codex tell 본문 PTY 텍스트를 만든다. claude `build_tell_pty_text` 와 동일 규칙.
+/// **제출 `\r` 은 포함하지 않는다** — 호출자(`handle_tell`)가 본문과 별도 IPC 호출로
+/// 보낸다(길이 무관 결정적 제출).
+/// - 단일라인(개행 없음): 평문 그대로.
 /// - 멀티라인(개행 있음): bracketed paste 시퀀스(`ESC[200~ … ESC[201~`)로 감싸고
-///   개행은 그대로 두어 한 덩어리 paste 로 삽입하게 한다. 제출 `\r` 은 포함하지
-///   않는다 — 호출자가 별도 IPC 로 보낸다.
+///   개행은 그대로 두어 한 덩어리 paste 로 삽입하게 한다.
 fn build_tell_payload(message: &str) -> String {
     if message.contains('\n') {
         format!("\u{1b}[200~{message}\u{1b}[201~")
     } else {
-        format!("{message}\r")
+        message.to_string()
     }
 }
 
@@ -144,22 +145,20 @@ pub fn handle_tell(host: &HostHandle, params: Value) -> Result<Value, IpcMethodE
         .and_then(|v| v.as_str())
         .ok_or_else(|| IpcMethodError::invalid_params("missing 'message'"))?;
     let payload = build_tell_payload(message);
-    // 1) 본문 전송. 단일라인은 평문+`\r`, 멀티라인은 bracketed paste 본문.
+    // 1) 본문 전송 (제출 `\r` 미포함). 단일라인=평문, 멀티라인=bracketed paste 본문.
     host_call(
         host,
         "surface.send",
         json!({"surface_id": surface_id, "text": payload}),
     )?;
-    // 2) 멀티라인일 때만 제출 Enter 를 paste 종료(201~)와 다른 IPC 호출로 분리 —
-    //    write 경계가 끊겨 수신측이 `\r` 을 제출로 처리한다. 단일라인은 payload 에
-    //    이미 `\r` 이 포함돼 별도 전송 불필요.
-    if message.contains('\n') {
-        host_call(
-            host,
-            "surface.send",
-            json!({"surface_id": surface_id, "text": "\r"}),
-        )?;
-    }
+    // 2) 제출 Enter 를 본문과 다른 IPC 호출(=다른 PTY write)로 분리 — write 경계가
+    //    끊겨 수신측이 길이와 무관하게 `\r` 을 제출로 처리한다(단일라인 63자+ burst 가
+    //    paste 로 오인돼 미제출되던 회귀 차단).
+    host_call(
+        host,
+        "surface.send",
+        json!({"surface_id": surface_id, "text": "\r"}),
+    )?;
     Ok(json!({ "sent": true, "surface_id": surface_id }))
 }
 
@@ -814,21 +813,35 @@ mod tests {
     }
 
     #[test]
-    fn build_tell_payload_single_line_plain_cr() {
-        // 단일라인은 평문 + 즉시 제출 \r (paste 미지원 수신측 회귀 위험 0).
-        assert_eq!(build_tell_payload("hello"), "hello\r");
+    fn build_tell_payload_single_line_plain_no_cr() {
+        // 단일라인 본문은 평문 그대로 — 제출 `\r` 은 handle_tell 이 별도 PTY write 로 보낸다.
+        let body = build_tell_payload("hello");
+        assert_eq!(body, "hello");
+        assert!(!body.contains('\r'), "본문에 제출 CR 이 섞이면 안 됨");
+    }
+
+    #[test]
+    fn build_tell_payload_single_line_long_has_no_cr() {
+        // 회귀 가드: 63자+ 단일라인도 본문에 `\r` 이 붙으면 안 된다(붙으면 본문+CR 한
+        // burst → paste 오인 → 미제출). 제출 CR 분리는 handle_tell 책임.
+        let msg = "a".repeat(80);
+        let body = build_tell_payload(&msg);
+        assert_eq!(body, msg);
+        assert!(!body.contains('\r'));
     }
 
     #[test]
     fn build_tell_payload_multi_line_bracketed() {
         // "a\nb" → ESC[200~ a\nb ESC[201~ (멀티라인만 paste, 개행 그대로, 제출 \r 미포함).
-        assert_eq!(build_tell_payload("a\nb"), "\u{1b}[200~a\nb\u{1b}[201~");
+        let body = build_tell_payload("a\nb");
+        assert_eq!(body, "\u{1b}[200~a\nb\u{1b}[201~");
+        assert!(!body.contains('\r'), "본문에 제출 CR 이 섞이면 안 됨");
     }
 
     #[test]
     fn build_tell_payload_trailing_backslash_single_line() {
-        // 개행 없는 단일라인이므로 평문 + \r (paste 아님).
-        assert_eq!(build_tell_payload("foo\\"), "foo\\\r");
+        // 개행 없는 단일라인이므로 평문 그대로 (paste 아님, CR 미포함).
+        assert_eq!(build_tell_payload("foo\\"), "foo\\");
     }
 
     #[test]
@@ -842,8 +855,8 @@ mod tests {
 
     #[test]
     fn build_tell_payload_empty_message() {
-        // "" → 개행 없으므로 단일라인 경로: 평문 + \r.
-        assert_eq!(build_tell_payload(""), "\r");
+        // "" → 단일라인 경로: 빈 본문. 제출 `\r` 은 handle_tell 이 별도로 보낸다.
+        assert_eq!(build_tell_payload(""), "");
     }
 
     fn parse_toml(text: &str) -> toml::Value {
