@@ -31,7 +31,7 @@ Linux 는 데스크톱 환경(DE)별로 트레이 가용성이 갈린다 — KDE
 - **얻은 것**: 백그라운드 복귀 동선이 OS 표준 트레이로 일관된다. "앱을 닫아도 트레이로 들어간다" 는 사용자 기대에 부합. graceful degradation 이라 트레이 없는 환경에서도 앱은 정상 동작(트레이만 빠짐). **세 OS 모두 구현됨** — `system_tray.rs` 는 `tray-icon` 0.22 로 Windows/macOS/Linux 를 단일 코드 경로로 다룬다.
 - **OS 별 백그라운드/복귀 동선 차이**:
   - **Windows / Linux**: 트레이가 있으면 윈도우를 *숨김*(`set_visible(false)`) 해 트레이로 보내고, 트레이 "Show Window" 가 다시 보이게 한다. 트레이가 없으면 태스크바 최소화로 폴백.
-  - **macOS**: 기존 백그라운드 모델(윈도우 파기 + state 파킹, dock reopen 시 복원)을 유지한다. 메뉴 바 상태 항목은 dock 과 동일한 *추가* 재진입 경로로, "Show Window" 는 `CreateWindow`(파킹 state 복원)로 라우팅한다. macOS 에는 "숨겨진 윈도우" 가 없기 때문.
+  - **macOS**: 기존 백그라운드 모델(윈도우 파기 + state 파킹, dock reopen 시 복원)을 유지한다. 메뉴 바 상태 항목은 dock 과 동일한 *추가* 재진입 경로다. "Show Window" 는 **살아있는 main 윈도우가 있으면 그 창을 focus(앞으로 가져오기)하고, 살아있는 창이 하나도 없을 때(전부 파킹)만** `CreateWindow`(파킹 state 복원)로 새 창을 만든다. 이미 떠 있는 창이 있으면 중복 생성하지 않는다. (2026-06 트레이 재진입 동작 정밀화로 갱신 — 과거엔 "숨겨진 윈도우가 없다" 는 전제로 무조건 `CreateWindow` 로 라우팅했으나, 살아있는 창이 남아 있는 경우 중복 생성 문제가 있어 정정.)
 - **잃은 것 / 비용**: Linux 트레이는 `tray-icon`(AppIndicator)이 GTK 초기화·실행 중인 GTK 이벤트 루프를 요구한다 — tasty 는 전용 GTK 메인 루프 대신 winit `about_to_wait` 에서 비차단 `gtk::main_iteration_do(false)` 로 펌프한다. 런타임 의존(`libgtk-3`, `libappindicator3` 또는 `libayatana-appindicator3`, `libxdo`)이 따라온다. Linux 는 DE 별 동작 차이가 있어 best-effort 범위를 정책 문서로 관리한다.
 - **운영 비용**: best-effort 범위(지원 DE 매트릭스)와 폴백 동선을 정책 문서가 기술한다.
 

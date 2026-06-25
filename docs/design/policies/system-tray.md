@@ -17,7 +17,7 @@ tasty 는 GUI 환경에서 백그라운드로 갈 때 **가능한 모든 OS 에�
 |----|----------------|---------------------|
 | **Windows** | 트레이 있으면 윈도우 `set_visible(false)` 로 숨김(생존 유지), 없으면 `set_minimized(true)` 태스크바 | `TrayShowWindow` → `set_visible(true)` + `set_minimized(false)` |
 | **Linux** | Windows 와 동일 (트레이 있으면 숨김, 없으면 최소화) | Windows 와 동일 |
-| **macOS** | 기존 모델 유지 — 윈도우 **파기 + state 파킹**(dock reopen 시 복원). 트레이와 무관하게 동작 | 트레이 "Show Window" 는 `CreateWindow` 로 라우팅 → 파킹된 state 를 꺼내 복원(dock reopen 과 동일 경로). macOS 엔 숨겨진 윈도우가 없기 때문 |
+| **macOS** | 기존 모델 유지 — 윈도우 **파기 + state 파킹**(dock reopen 시 복원). 트레이와 무관하게 동작 | 트레이 "Show Window" 는 **살아있는 main view 가 있으면** 그 창을 `set_minimized(false)` + `focus_window()` 로 맨 앞에 올리고(`focused_view_id` 우선, 없으면 첫 main view), **하나도 없을 때(전부 파킹)만** `CreateWindow` 로 라우팅 → 파킹된 state 를 꺼내 복원(dock reopen 과 동일 경로). 이미 떠 있는 창이 있는데 중복 생성하지 않는다 |
 
 - **New Window**: 세 OS 모두 `CreateWindow`.
 - **Quit**: 세 OS 모두 `Shutdown`.
