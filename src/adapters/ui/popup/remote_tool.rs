@@ -28,6 +28,15 @@ const KNOWN_TYPES: &[&str] = &["ssh", "smb", "http"];
 
 const UI_MEMORY_ID: &str = "remote_tool.ui";
 
+/// 프로토콜 필터의 *적용된* hidden(=제외) 집합 저장 키. **`UI_MEMORY_ID` 와 분리** —
+/// `clear_ui` 가 popup 닫힘마다 `UI_MEMORY_ID` 만 지우므로 이 키는 보존되어 popup
+/// 재오픈에도 필터가 유지된다(디자인: session-only / NON-PERSISTENT). egui temp
+/// 메모리라 tasty 종료 시 사라져 "재시작 = 전체 선택" 비영속 정책도 자동 충족.
+const FILTER_MEMORY_ID: &str = "remote_tool.filter";
+
+/// 프로토콜 필터 드롭다운 egui popup id. Escape/바깥클릭 닫힘 판정에 사용.
+const FILTER_POPUP_ID: &str = "remote_tool.filter_popup";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 enum Tab {
     #[default]
@@ -87,6 +96,10 @@ struct UiState {
     kerr: Option<String>,
     revealed: HashSet<String>,
     detecting: Option<DetectJob>,
+    /// 필터 드롭다운이 열려 있는 동안의 편집 중 제외 집합(draft). Apply 눌러야
+    /// `FILTER_MEMORY_ID` 의 적용 집합에 반영(Apply-on-confirm). popup 닫힘 시
+    /// `clear_ui` 로 함께 사라지는 순수 편집 상태라 여기 둔다.
+    filter_draft: HashSet<String>,
 }
 
 fn read_ui(ctx: &egui::Context) -> UiState {
@@ -97,6 +110,40 @@ fn write_ui(ctx: &egui::Context, ui: UiState) {
 }
 fn clear_ui(ctx: &egui::Context) {
     ctx.memory_mut(|m| m.data.remove::<UiState>(egui::Id::new(UI_MEMORY_ID)));
+}
+
+/// 적용된 필터 제외 집합(hidden) 읽기. 미설정=빈 set=필터 없음(전체 표시).
+fn read_filter(ctx: &egui::Context) -> HashSet<String> {
+    ctx.memory(|m| {
+        m.data.get_temp::<HashSet<String>>(egui::Id::new(FILTER_MEMORY_ID)).unwrap_or_default()
+    })
+}
+fn write_filter(ctx: &egui::Context, hidden: HashSet<String>) {
+    ctx.memory_mut(|m| m.data.insert_temp(egui::Id::new(FILTER_MEMORY_ID), hidden));
+}
+
+/// 현재 프로필들의 `kind` 집합(=프로토콜). KNOWN_TYPES 순서 우선, 나머지(플러그인/
+/// unknown)는 알파벳. 디자인 `protocols` 도출 로직 전사. 프로필 0개인 kind 는 없음.
+fn protocol_set(profiles: &[RemoteProfile]) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    for p in profiles {
+        let k = p.kind.trim();
+        if !k.is_empty() && !seen.iter().any(|s| s == k) {
+            seen.push(k.to_string());
+        }
+    }
+    let mut out: Vec<String> =
+        KNOWN_TYPES.iter().filter(|t| seen.iter().any(|s| s == *t)).map(|t| t.to_string()).collect();
+    let mut extra: Vec<String> =
+        seen.into_iter().filter(|s| !KNOWN_TYPES.contains(&s.as_str())).collect();
+    extra.sort();
+    out.extend(extra);
+    out
+}
+
+/// 코어/플러그인이 모르는 kind(필터 목록에서 ⚠ 표식 대상). row 배지 로직과 동일.
+fn is_unknown_kind(kind: &str) -> bool {
+    !is_builtin_kind(kind) && !KNOWN_TYPES.contains(&kind)
 }
 
 /// PopupDef.draw_fn 진입점.
@@ -117,6 +164,14 @@ pub fn draw_remote_tool_popup(
 
     // Escape: Form/Confirm 은 뒤로, List 면 닫기.
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        // 필터 드롭다운이 열려 있으면 그것만 닫고 popup 은 유지(디자인 ProtocolFilter
+        // 의 stopImmediatePropagation 대응). popup 위젯이 같은 프레임에 닫히지 않으므로
+        // 여기서 명시적으로 닫는다.
+        if ctx.memory(|m| m.is_popup_open(egui::Id::new(FILTER_POPUP_ID))) {
+            ctx.memory_mut(|m| m.close_popup());
+            write_ui(&ctx, st);
+            return PopupAction::None;
+        }
         let sub = match st.tab {
             Tab::Profiles => &mut st.profile_view,
             Tab::Passkeys => &mut st.passkey_view,
@@ -384,7 +439,28 @@ fn draw_profile_list(
     profiles: &RemoteProfiles,
     passkeys: &Passkeys,
 ) {
-    if secondary_button(ui, th, t("remote_tool.profile_add")).clicked() {
+    let ctx = ui.ctx().clone();
+    let protocols = protocol_set(&profiles.profiles);
+    let applied_hidden = read_filter(&ctx);
+
+    // add-bar: 좌측 Add + (프로토콜 2종 이상이면) 우측 정렬 프로토콜 필터 버튼.
+    let mut add_clicked = false;
+    let mut new_filter: Option<HashSet<String>> = None;
+    ui.horizontal(|ui| {
+        add_clicked = secondary_button(ui, th, t("remote_tool.profile_add")).clicked();
+        if protocols.len() >= 2 {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                new_filter = draw_protocol_filter(ui, th, st, &protocols, &applied_hidden);
+            });
+        }
+    });
+    if let Some(h) = &new_filter {
+        write_filter(&ctx, h.clone());
+    }
+    // 이 프레임에 Apply 됐으면 즉시 반영된 집합으로 목록을 그린다.
+    let applied_hidden = new_filter.unwrap_or(applied_hidden);
+
+    if add_clicked {
         st.pform = ProfileForm {
             kind: "ssh".into(),
             shell: "auto".into(),
@@ -408,11 +484,28 @@ fn draw_profile_list(
         });
         return;
     }
+    // 필터로 전부 가려졌으면 "프로필 없음" 과 구분되는 별도 빈 상태.
+    let any_visible = profiles.profiles.iter().any(|p| !applied_hidden.contains(p.kind.trim()));
+    if !any_visible {
+        ui.vertical_centered(|ui| {
+            ui.add_space(th.spacing_lg.value());
+            ui.label(
+                egui::RichText::new(t("remote_tool.profile_filter_empty"))
+                    .color(th.subtext0)
+                    .italics()
+                    .size(th.font_size_body.value()),
+            );
+        });
+        return;
+    }
     let detecting = st.detecting.as_ref().map(|j| j.name.clone());
     let known: Vec<String> = passkeys.passkeys.iter().map(|k| k.name.clone()).collect();
     let mut action: Option<(usize, ProfileRowAction)> = None;
     egui::ScrollArea::vertical().show(ui, |ui| {
         for (i, p) in profiles.profiles.iter().enumerate() {
+            if applied_hidden.contains(p.kind.trim()) {
+                continue;
+            }
             if let Some(a) = draw_profile_row(ui, th, p, detecting.as_deref(), &known) {
                 action = Some((i, a));
             }
@@ -436,6 +529,130 @@ fn draw_profile_list(
             }
         }
     }
+}
+
+/// 프로토콜 필터 버튼(funnel + 라벨). filtered 면 primary(accent), 아니면 secondary.
+fn filter_button(ui: &mut egui::Ui, th: &Theme, label: &str, filtered: bool) -> egui::Response {
+    let text_col: egui::Color32 =
+        if filtered { th.text_on_accent().into() } else { th.text.into() };
+    let fill: egui::Color32 = if filtered { th.accent_primary().into() } else { th.surface0.into() };
+    let stroke = if filtered {
+        egui::Stroke::NONE
+    } else {
+        egui::Stroke::new(th.border_width.value(), th.surface1)
+    };
+    ui.add(
+        egui::Button::image_and_text(
+            icons::FUNNEL.image(14.0, text_col),
+            egui::RichText::new(label).color(text_col).size(th.font_size_body.value()),
+        )
+        .fill(fill)
+        .stroke(stroke),
+    )
+}
+
+/// 프로토콜 필터 버튼 + 드롭다운(체크박스 목록 + 모두선택/모두해제/초기화/적용).
+/// Apply-on-confirm: 패널 편집은 `st.filter_draft` 에만 쌓이고 Apply 눌러야 반영.
+/// Apply 시 `draft ∩ protocols` 로 보정한 새 hidden 집합을 반환(없으면 None).
+fn draw_protocol_filter(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    st: &mut UiState,
+    protocols: &[String],
+    applied_hidden: &HashSet<String>,
+) -> Option<HashSet<String>> {
+    let popup_id = egui::Id::new(FILTER_POPUP_ID);
+    let total = protocols.len();
+    let active_hidden = protocols.iter().filter(|p| applied_hidden.contains(*p)).count();
+    let filtered = active_hidden > 0;
+    let selected = total - active_hidden;
+    let label = if filtered {
+        format!("{} · {}/{}", t("remote_tool.filter"), selected, total)
+    } else {
+        t("remote_tool.filter").to_string()
+    };
+
+    let btn = filter_button(ui, th, &label, filtered);
+    if btn.clicked() {
+        // 열릴 때 draft 를 현재 적용 집합으로 시드.
+        if !ui.memory(|m| m.is_popup_open(popup_id)) {
+            st.filter_draft = applied_hidden.clone();
+        }
+        ui.memory_mut(|m| m.toggle_popup(popup_id));
+    }
+
+    let mut applied: Option<HashSet<String>> = None;
+    egui::popup::popup_above_or_below_widget(
+        ui,
+        popup_id,
+        &btn,
+        egui::AboveOrBelow::Below,
+        egui::PopupCloseBehavior::CloseOnClickOutside,
+        |ui| {
+            ui.set_min_width(216.0);
+            ui.label(
+                egui::RichText::new(t("remote_tool.filter_title"))
+                    .color(th.subtext0)
+                    .size(th.font_size_caption.value())
+                    .monospace(),
+            );
+            ui.add_space(th.spacing_xs.value());
+            egui::ScrollArea::vertical().max_height(168.0).show(ui, |ui| {
+                for proto in protocols {
+                    ui.horizontal(|ui| {
+                        // draft 는 제외 집합 → checked = 미제외.
+                        let mut checked = !st.filter_draft.contains(proto);
+                        if tasty_ui_widgets::checkbox(ui, th, &mut checked, proto, true).changed() {
+                            if checked {
+                                st.filter_draft.remove(proto);
+                            } else {
+                                st.filter_draft.insert(proto.clone());
+                            }
+                        }
+                        if is_unknown_kind(proto) {
+                            warn_badge(
+                                ui,
+                                th,
+                                t("remote_tool.filter_unknown"),
+                                t("remote_tool.type_unknown_hint"),
+                            );
+                        }
+                    });
+                }
+            });
+            hsep(ui, th);
+            // 일괄 조작: 모두 선택(=빈 제외) / 모두 해제(=전체 제외).
+            ui.horizontal(|ui| {
+                if ghost_button(ui, th, t("remote_tool.filter_select_all")).clicked() {
+                    st.filter_draft.clear();
+                }
+                if ghost_button(ui, th, t("remote_tool.filter_deselect_all")).clicked() {
+                    st.filter_draft = protocols.iter().cloned().collect();
+                }
+            });
+            // 초기화(=전체 선택) / 적용.
+            ui.horizontal(|ui| {
+                if ghost_button(ui, th, t("remote_tool.filter_reset")).clicked() {
+                    st.filter_draft.clear();
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if primary_button(ui, th, t("remote_tool.filter_apply")).clicked() {
+                        applied = Some(
+                            st.filter_draft
+                                .iter()
+                                .filter(|p| protocols.iter().any(|x| x == *p))
+                                .cloned()
+                                .collect(),
+                        );
+                    }
+                });
+            });
+        },
+    );
+    if applied.is_some() {
+        ui.memory_mut(|m| m.close_popup());
+    }
+    applied
 }
 
 enum ProfileRowAction {
@@ -1268,4 +1485,64 @@ fn poll_detect(st: &mut UiState) -> bool {
         st.detecting = None;
     }
     done
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prof(name: &str, kind: &str) -> RemoteProfile {
+        RemoteProfile::new(name, kind)
+    }
+
+    #[test]
+    fn protocol_set_known_first_then_alpha() {
+        let ps = vec![
+            prof("a", "http"),
+            prof("b", "zeta"),
+            prof("c", "ssh"),
+            prof("d", "smb"),
+            prof("e", "ssh"), // 중복
+            prof("f", "alpha"),
+        ];
+        // KNOWN_TYPES = [ssh, smb, http] 순서 우선, 나머지(alpha, zeta)는 알파벳.
+        assert_eq!(protocol_set(&ps), vec!["ssh", "smb", "http", "alpha", "zeta"]);
+    }
+
+    #[test]
+    fn protocol_set_dedup_and_skip_blank() {
+        let ps = vec![prof("a", "ssh"), prof("b", "ssh"), prof("c", "  ")];
+        assert_eq!(protocol_set(&ps), vec!["ssh"]);
+    }
+
+    #[test]
+    fn filter_excludes_hidden_kinds() {
+        let ps = vec![prof("a", "ssh"), prof("b", "smb"), prof("c", "http")];
+        // excluded = {} → 전체.
+        let none: HashSet<String> = HashSet::new();
+        let all: Vec<&str> =
+            ps.iter().filter(|p| !none.contains(p.kind.trim())).map(|p| p.name.as_str()).collect();
+        assert_eq!(all, vec!["a", "b", "c"]);
+        // excluded = {ssh} → ssh 제외.
+        let hidden: HashSet<String> = ["ssh".to_string()].into_iter().collect();
+        let vis: Vec<&str> =
+            ps.iter().filter(|p| !hidden.contains(p.kind.trim())).map(|p| p.name.as_str()).collect();
+        assert_eq!(vis, vec!["b", "c"]);
+    }
+
+    #[test]
+    fn new_kind_visible_by_default() {
+        // exclude-set 에 없는 새 kind(ftp)는 기본 표시(가정 4 자동 충족).
+        let p = prof("x", "ftp");
+        let hidden: HashSet<String> = ["ssh".to_string()].into_iter().collect();
+        assert!(!hidden.contains(p.kind.trim()));
+    }
+
+    #[test]
+    fn unknown_kind_detection() {
+        assert!(is_unknown_kind("ftp")); // 코어/known 모두 모름
+        assert!(!is_unknown_kind("ssh")); // builtin
+        assert!(!is_unknown_kind("smb")); // builtin
+        assert!(!is_unknown_kind("http")); // KNOWN_TYPES
+    }
 }

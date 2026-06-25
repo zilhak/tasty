@@ -145,3 +145,5 @@ line_icon!(
     "eye_off",
     r#"<path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2M6.6 6.6A18.5 18.5 0 0 0 2 11s3.5 7 10 7a10.9 10.9 0 0 0 4-.7M3 3l18 18"/>"#
 );
+// 프로토콜 필터 버튼(remote_tool.jsx ProtocolFilter funnel). 디자인 path 그대로.
+line_icon!(FUNNEL, "funnel", r#"<path d="M3 4h18l-7 8v6l-4 2v-8z"/>"#);

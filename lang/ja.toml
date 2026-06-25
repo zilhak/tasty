@@ -677,6 +677,14 @@ err_port_invalid = "ポートは 1〜65535 の数値である必要がありま�
 err_name_dup = "同じ名前の項目が既に存在します。"
 err_name_format = "名前には英数字・-・_ のみ使用できます。"
 err_value_empty = "値は必須です。"
+filter = "フィルター"
+filter_title = "プロトコルで絞り込み"
+filter_select_all = "すべて選択"
+filter_deselect_all = "すべて解除"
+filter_reset = "リセット"
+filter_apply = "適用"
+filter_unknown = "不明"
+profile_filter_empty = "選択したプロトコルに一致するプロファイルがありません。フィルターを調整またはリセットしてください。"
 
 [command_palette]
 heading = "コマンドパレット"
