@@ -41,9 +41,17 @@ pub fn frame_card(
             color: egui::Color32::from_black_alpha(120),
         })
         .show(ui, |ui| {
+            // 부모 stage 가 `horizontal_wrapped`(`StageVariant::Wrap`) 여도 모달
+            // 콘텐츠는 항상 세로(top_down)로 적층 + 폭을 `width` 로 bound 한다.
+            // `Frame::show` 의 콘텐츠 ui 는 부모 레이아웃을 상속하므로, 명시적
+            // vertical child 없이는 region 들이 가로 흐름에 얹혀 본문이 글자당
+            // 줄바꿈으로 붕괴한다 (scrim_backdrop 의 top_down child 와 동일 원리).
             ui.set_width(width);
-            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            add(ui);
+            ui.vertical(|ui| {
+                ui.set_width(width);
+                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                add(ui);
+            });
         });
 }
 
