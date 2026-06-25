@@ -9,13 +9,14 @@
 //! (`tasty_ui_widgets::{switch,select}`)로 **미러**한다 (갤러리 확립 패턴 — `prim_forms` /
 //! `settings` specimen 과 동일).
 //!
-//! ⚠️ number 행 차이: 디자인은 text `Input`(mono) 이지만 본체가 egui `DragValue` 를 쓰므로
-//!    specimen 도 `DragValue` 로 미러한다 (본체 `draw_plugin_number` 와의 일치를 우선).
+//! number 행: 디자인·본체·specimen 모두 text `Input`(mono, width xs) + suffix 로 일치한다
+//! (본체 `draw_plugin_number` 가 `tasty_ui_widgets::Input` 를 쓰며, 과거의 `DragValue` 차이는
+//! 해소됨).
 
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{select, switch};
+use tasty_ui_widgets::{Input, select, switch};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
@@ -28,6 +29,8 @@ const SCHEME: &[&str] = &["Follow theme", "Light", "Dark"];
 
 struct State {
     zoom: f64,
+    /// number Input 의 프레임 간 편집 버퍼(본체 egui-memory 버퍼 미러). 초기 "100".
+    zoom_buf: String,
     scheme_idx: usize,
     allow_remote: bool,
     sandbox: bool,
@@ -35,14 +38,13 @@ struct State {
 
 thread_local! {
     /// specimen 상호작용 상태(디자인 기본값: zoom 100 · Follow theme · remote off · sandbox on).
-    static STATE: RefCell<State> = const {
-        RefCell::new(State {
-            zoom: 100.0,
-            scheme_idx: 0,
-            allow_remote: false,
-            sandbox: true,
-        })
-    };
+    static STATE: RefCell<State> = RefCell::new(State {
+        zoom: 100.0,
+        zoom_buf: String::from("100"),
+        scheme_idx: 0,
+        allow_remote: false,
+        sandbox: true,
+    });
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
@@ -62,21 +64,30 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     );
                     STATE.with(|s| {
                         let st = &mut *s.borrow_mut();
-                        // Default zoom — DragValue + "%" suffix (본체 draw_plugin_number 미러:
-                        // right_to_left 에서 suffix 가 가장 우측, 그 왼쪽에 입력 필드).
+                        // Default zoom — Input(mono, width xs) + "%" suffix (본체
+                        // draw_plugin_number 미러: right_to_left 에서 suffix 가 가장 우측,
+                        // 그 왼쪽에 입력 필드. 유효 f64 → 25..=500 clamp, 빈/무효는 무시,
+                        // 비포커스 시 버퍼를 값으로 정규화).
                         row(ui, theme, "Default zoom:", |ui| {
                             ui.label(egui::RichText::new("%").color(theme.text_muted().to_egui()));
-                            ui.add(
-                                egui::DragValue::new(&mut st.zoom)
-                                    .range(25.0..=500.0)
-                                    .custom_formatter(|n, _| {
-                                        if n.fract() == 0.0 {
-                                            format!("{n:.0}")
-                                        } else {
-                                            format!("{n}")
-                                        }
-                                    }),
-                            );
+                            let resp = Input::new()
+                                .mono(true)
+                                .width(theme.field_width_xs.value())
+                                .show(ui, theme, &mut st.zoom_buf);
+                            if !resp.has_focus() {
+                                let synced = if st.zoom.fract() == 0.0 {
+                                    format!("{:.0}", st.zoom)
+                                } else {
+                                    format!("{}", st.zoom)
+                                };
+                                if st.zoom_buf != synced {
+                                    st.zoom_buf = synced;
+                                }
+                            } else if resp.changed()
+                                && let Ok(parsed) = st.zoom_buf.trim().parse::<f64>()
+                            {
+                                st.zoom = parsed.clamp(25.0, 500.0);
+                            }
                         });
                         // Color scheme — Select(width field_width_md).
                         row(ui, theme, "Color scheme:", |ui| {
@@ -122,7 +133,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("row gap", "spacing_sm"),
             ("select width", "field_width_md"),
             ("switch", "28×16 track"),
-            ("number", "DragValue + suffix"),
+            ("number", "Input(mono) + suffix"),
         ],
         &[
             TokenChip::new("text", "row label", theme.text.to_egui()),

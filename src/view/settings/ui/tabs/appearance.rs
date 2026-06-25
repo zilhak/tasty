@@ -1595,8 +1595,9 @@ fn draw_plugin_select(
     }
 }
 
-/// `Number` → Input(egui `DragValue`) + 선택적 suffix. min/max clamp. f64 read/write
-/// (정수면 정수 표기).
+/// `Number` → 디자인 text `Input`(mono, width xs) + 선택적 suffix. min/max clamp.
+/// f64 read/write (정수면 정수 표기). immediate mode 라 편집 버퍼는 egui 메모리에
+/// `plugin_id`+`storage_key` id 로 프레임 간 보관한다.
 #[allow(clippy::too_many_arguments)]
 fn draw_plugin_number(
     ui: &mut egui::Ui,
@@ -1613,43 +1614,63 @@ fn draw_plugin_number(
         Some(crate::settings::PluginSettingValue::Number(n)) => *n,
         _ => default,
     };
-    let mut val = cur;
     let th = crate::theme::theme();
+    // 정수면 정수 표기.
+    let fmt = |n: f64| -> String {
+        if n.fract() == 0.0 {
+            format!("{n:.0}")
+        } else {
+            format!("{n}")
+        }
+    };
+    // 프레임 간 유지되는 편집 버퍼.
+    let buf_id = egui::Id::new(("plugin_number_buf", plugin_id, storage_key));
+    let mut buf = ui
+        .data_mut(|d| d.get_temp::<String>(buf_id))
+        .unwrap_or_else(|| fmt(cur));
+
+    let mut resp = None;
     plugin_setting_row(ui, &t(label_key), |ui| {
         // right_to_left: 먼저 add 한 suffix 가 가장 우측, 그 왼쪽에 입력 필드.
         if let Some(sk) = suffix_key {
             ui.label(egui::RichText::new(t(sk)).color(th.text_muted()));
         }
-        let mut dv = egui::DragValue::new(&mut val).custom_formatter(|n, _| {
-            if n.fract() == 0.0 {
-                format!("{n:.0}")
-            } else {
-                format!("{n}")
-            }
-        });
-        dv = match (min, max) {
-            (Some(lo), Some(hi)) => dv.range(lo..=hi),
-            (Some(lo), None) => dv.range(lo..=f64::MAX),
-            (None, Some(hi)) => dv.range(f64::MIN..=hi),
-            (None, None) => dv,
-        };
-        ui.add(dv);
-    });
-    // DragValue.range 가 입력을 clamp 하지만, 저장 전에 한 번 더 보정한다.
-    let mut clamped = val;
-    if let Some(lo) = min {
-        clamped = clamped.max(lo);
-    }
-    if let Some(hi) = max {
-        clamped = clamped.min(hi);
-    }
-    if clamped != cur {
-        settings.set_plugin_setting(
-            plugin_id,
-            storage_key,
-            crate::settings::PluginSettingValue::Number(clamped),
+        resp = Some(
+            tasty_ui_widgets::Input::new()
+                .mono(true)
+                .width(th.field_width_xs.value())
+                .show(ui, &th, &mut buf),
         );
+    });
+    let resp = resp.expect("input always drawn");
+
+    if !resp.has_focus() {
+        // 편집 중이 아니면 버퍼를 저장값으로 동기화(초기 표시 + 포커스 아웃 시 정규화).
+        let synced = fmt(cur);
+        if buf != synced {
+            buf = synced;
+        }
+    } else if resp.changed() {
+        // 편집 중 유효 f64 → clamp 후 저장(변경 시에만). 빈/무효 입력은 무시(마지막 유효값 유지).
+        if let Ok(parsed) = buf.trim().parse::<f64>() {
+            let mut clamped = parsed;
+            if let Some(lo) = min {
+                clamped = clamped.max(lo);
+            }
+            if let Some(hi) = max {
+                clamped = clamped.min(hi);
+            }
+            if clamped != cur {
+                settings.set_plugin_setting(
+                    plugin_id,
+                    storage_key,
+                    crate::settings::PluginSettingValue::Number(clamped),
+                );
+            }
+        }
     }
+
+    ui.data_mut(|d| d.insert_temp(buf_id, buf));
 }
 
 /// Searchable font family combo. `value` is the family name in the underlying
