@@ -121,19 +121,16 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::SystemResumed => {
                 self.resume_health_pass();
             }
-            AppEvent::EguiRepaint { viewport_id } => {
-                // viewport_id 가 매칭되는 view 한 개만 dirty 처리.
-                // 매 frame 모든 view 를 dirty 로 만들면 한 window 의 repaint 요청이
-                // 전체 fan-out 을 일으켜 single-window 환경에서도 불필요한 비용 발생.
-                let matched = self
-                    .view
-                    .views
-                    .values_mut()
-                    .find(|w| w.base().gpu.egui_ctx.viewport_id() == viewport_id);
-                if let Some(w) = matched {
+            AppEvent::EguiRepaint { window_id } => {
+                // 요청한 윈도우 한 개만 dirty 처리. window_id 직접 조회 —
+                // 과거엔 egui_ctx.viewport_id() 로 매칭했으나 모든 Context 가 root
+                // viewport(=ROOT)만 써서 모달이 열리면 두 윈도우가 같은 id 로 충돌,
+                // find() 가 첫 윈도우로만 repaint 를 라우팅해 다른 윈도우(보통 main)의
+                // egui repaint 가 새어나가 렌더가 멈췄다.
+                if let Some(w) = self.view.views.get_mut(&window_id) {
                     w.mark_dirty();
                 }
-                // 매칭 실패 (shell_setup gpu 등 view 에 등록되지 않은 ctx 가 callback 을 보낸 경우)
+                // 매칭 실패 (shell_setup gpu 등 view 에 등록되지 않은 윈도우가 callback 을 보낸 경우)
                 // 는 silently drop — 본 핸들러는 등록된 view 만 책임진다.
             }
             AppEvent::Shutdown => {

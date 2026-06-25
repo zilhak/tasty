@@ -7,6 +7,7 @@ description = "Reusable egui layout/widget primitives shared by main app and gal
 
 [dependencies]
 egui = "0.31"
+egui_extras = "0.31"
 tasty-egui-theme = { path = "../tasty-egui-theme" }
 tasty-type-appearance = { path = "../tasty-type-appearance" }
 tasty-type-geometry = { path = "../tasty-type-geometry" }

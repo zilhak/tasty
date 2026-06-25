@@ -62,7 +62,7 @@ if let Some(new) = selected_new { *sub_tab = new; }
 
 위젯을 새로 추가할 때:
 
-1. **본체·갤러리 양쪽에 같은 idiom 이 ≥ 2 곳** 있는지 확인. 1 곳뿐이면 단일 사용처용 abstraction 이 된다.
+1. **표·드롭다운·버튼처럼 고유 이름으로 식별되는 보편 컴포넌트**(`data/Table`, `forms/Select` 등)는 **단 한 곳에서만 쓰여도 무조건 공용 위젯으로 제작**한다 — 이 경우 사용처 수를 따지지 않는다(상세: `docs/design/policies/shared-widgets.md`). 그 외 *layout idiom* 류는 본체·갤러리 양쪽에 같은 형태가 ≥ 2 곳 있는지 확인하고, 1 곳뿐이면 단일 사용처용 abstraction 임을 인지한다.
 2. **시그니처는 전역 의존 0** — `theme: &Theme` 인자로 받고 전역 `theme()` 직접 호출 금지.
 3. **매직넘버는 `tokens` 모듈에** — 함수 본문에 `f32` 리터럴 직접 박지 않는다.
 4. **borrow 충돌은 호출자에서 snapshot 으로** — widget 함수는 `impl FnOnce(&mut egui::Ui)` 클로저 1~2 개를 받는 단순 시그니처 유지.

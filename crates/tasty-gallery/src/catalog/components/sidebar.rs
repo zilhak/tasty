@@ -173,7 +173,7 @@ fn full_bottom_button(ui: &mut egui::Ui, th: &Theme, label: &str) {
         rect.center(),
         egui::Align2::CENTER_CENTER,
         label,
-        egui::FontId::proportional(12.0),
+        egui::FontId::proportional(th.sidebar_button_label_font_size.value()),
         if resp.hovered() {
             egui::Color32::from(th.subtext1)
         } else {
@@ -340,7 +340,7 @@ fn draw_collapsed_ws(ui: &mut egui::Ui, th: &Theme, ws: &WorkspaceEntryView, num
         rect.center(),
         egui::Align2::CENTER_CENTER,
         &label,
-        egui::FontId::proportional(12.0),
+        egui::FontId::proportional(th.sidebar_button_label_font_size.value()),
         text_color,
     );
     if ws.busy_count > 0 {

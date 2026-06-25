@@ -46,6 +46,9 @@ pub struct MainView {
     /// vi_copy::handle_vi_key 가 가로채 cursor/visual/yank 등을 처리.
     pub(crate) vi_copy: Option<vi_copy::ViCopyMode>,
     pub(crate) left_mouse_down: bool,
+    /// 마우스 리포팅(트래킹 앱)으로 마지막 보고한 셀 좌표. 드래그 motion 을 셀 단위로만
+    /// 보고(중복 억제)하기 위해 사용. press/release/motion 보고 시 갱신.
+    pub(crate) last_mouse_report_cell: Option<(usize, usize)>,
     pub(crate) last_click_time: Option<std::time::Instant>,
     pub(crate) last_click_pos: Option<(usize, usize)>,
     pub(crate) click_count: u8,
@@ -103,6 +106,7 @@ impl MainView {
             text_selection: None,
             vi_copy: None,
             left_mouse_down: false,
+            last_mouse_report_cell: None,
             last_click_time: None,
             last_click_pos: None,
             click_count: 0,

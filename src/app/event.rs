@@ -19,11 +19,14 @@ pub(crate) enum AppEvent {
     /// stream inbound queue (StreamHub::pump_inbound).
     StreamReady,
     /// egui requested a repaint (new window, animation, cursor blink).
-    /// `viewport_id` 는 어느 egui 컨텍스트가 repaint 를 요청했는지 식별 — 핸들러는
-    /// 해당 viewport 의 view 만 dirty 로 표시한다.
+    /// `window_id` 는 어느 윈도우의 egui 컨텍스트가 repaint 를 요청했는지 식별 —
+    /// 핸들러는 해당 윈도우만 dirty 로 표시한다. (모든 egui Context 는 root viewport
+    /// 만 쓰므로 `viewport_id` 는 항상 `ROOT` 라 윈도우 구분에 못 쓴다 — window_id 로 라우팅.)
     /// delay-aware repaint (`Duration > 0`) 는 idle frame loop 방지 위해 callback 단계에서 drop 된다.
     #[cfg(feature = "gui")]
-    EguiRepaint { viewport_id: egui::ViewportId },
+    EguiRepaint {
+        window_id: winit::window::WindowId,
+    },
     /// Request to create a new window (triggered by IPC or shortcut).
     #[cfg(feature = "gui")]
     CreateWindow,

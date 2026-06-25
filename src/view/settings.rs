@@ -134,7 +134,12 @@ impl View for SettingsView {
         let is_recording = self.settings_ui_state.is_recording();
         let skip_egui = is_recording && matches!(&event, WindowEvent::KeyboardInput { .. });
 
-        if !skip_egui {
+        // RedrawRequested 를 egui 에 전달하면 항상 repaint=true 를 반환해
+        // mark_dirty → request_redraw → RedrawRequested 무한 루프(120fps busy-loop)가
+        // 된다. egui 렌더는 아래 RedrawRequested arm 의 render() 가 담당하므로
+        // 이 이벤트는 egui input 으로 넘기지 않는다 (MainView 와 동일 정책).
+        let is_redraw = matches!(&event, WindowEvent::RedrawRequested);
+        if !skip_egui && !is_redraw {
             let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
             if egui_repaint {
                 self.mark_dirty();

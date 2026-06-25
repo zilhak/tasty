@@ -5903,6 +5903,7 @@ name = "tasty-ui-widgets"
 version = "0.1.0"
 dependencies = [
  "egui",
+ "egui_extras",
  "tasty-egui-theme",
  "tasty-type-appearance",
  "tasty-type-geometry",

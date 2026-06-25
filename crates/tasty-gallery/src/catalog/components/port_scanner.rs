@@ -13,9 +13,11 @@
 //! 5. Tasty Empty — show_all_system=false 인데 Ready rows 0 건 → tasty_empty 메시지.
 //! 6. Desc Sort — 동일 행 셋을 SortKey::Port + SortDir::Desc 로 역순 표시.
 
-use egui_extras::{Column, TableBuilder};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, IconButton, Input, Spinner};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, IconButton, Input, Spinner, Table, TableAlign, TableColumn,
+    TableColumnWidth, TableSortDir,
+};
 
 /// 헤더 검색 Input 폭 = 디자인 `--tasty-field-width-lg`(200). prim_input 과 동일.
 const SEARCH_FIELD_WIDTH: f32 = 200.0;
@@ -157,7 +159,7 @@ fn hairline(ui: &mut egui::Ui, th: &Theme) {
 }
 
 /// 본체 view 의 시각 미러 (gallery 측 복제). Action 은 catalog 에서 실행되지 않음.
-fn draw_mock_port_scanner_view(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
+fn draw_mock_port_scanner_view(ui: &mut egui::Ui, props: &PortScannerProps<'_>, salt: &str) {
     let th = props.theme;
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
@@ -187,7 +189,7 @@ fn draw_mock_port_scanner_view(ui: &mut egui::Ui, props: &PortScannerProps<'_>) 
                         );
                     });
                 } else {
-                    draw_table(ui, props, rows);
+                    draw_table(ui, props, rows, salt);
                 }
             }
         }
@@ -342,160 +344,114 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         });
 }
 
-fn draw_table(ui: &mut egui::Ui, props: &PortScannerProps<'_>, rows: &[PortRowView]) {
+/// 디자인 `components/data/Table` 의 공용 [`Table`] 위젯으로 7컬럼 표를 그린다.
+/// 컬럼 폭·정렬·정렬 인디케이터·sticky 헤더·행 선택은 위젯이 담당하고, 셀 내용만
+/// `cell` 클로저로 컬럼 인덱스에 맞춰 렌더한다. 본체 wrapper 와 시각 동일.
+fn draw_table(ui: &mut egui::Ui, props: &PortScannerProps<'_>, rows: &[PortRowView], salt: &str) {
     let th = props.theme;
     let text_h = th.font_size_body.value() + 6.0;
 
-    // Mirror of the wrapper: cap the inner ScrollArea so the table scrolls
-    // within its bounded host instead of overflowing it. Reserve the sticky
-    // header row, the pinned footer, and the inter-widget gap from the
-    // remaining height. (egui_extras' default max_scroll_height is 800px.)
+    // Cap the inner ScrollArea so the table scrolls within its bounded host
+    // instead of overflowing it. Reserve the sticky header row, the pinned
+    // footer, and the inter-widget gap from the remaining height.
+    // (egui_extras' default max_scroll_height is 800px.)
     let header_h = text_h + 4.0;
     let footer_h = th.font_size_caption.value() + 6.0;
     let gap = ui.spacing().item_spacing.y;
     let max_scroll = (ui.available_height() - header_h - footer_h - gap).max(text_h + 8.0);
 
-    TableBuilder::new(ui)
-        .striped(false)
-        .resizable(false)
-        // Whole-row click selection (design `onRowClick`); highlight via set_selected.
-        .sense(egui::Sense::click())
-        .max_scroll_height(max_scroll)
-        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-        .column(Column::initial(84.0).at_least(60.0))
-        .column(Column::initial(76.0).at_least(60.0))
-        .column(Column::remainder().at_least(80.0))
-        .column(Column::remainder().at_least(100.0))
-        .column(Column::initial(120.0).at_least(80.0))
-        .column(Column::remainder().at_least(80.0))
-        .column(Column::initial(140.0).at_least(100.0))
-        .header(text_h + 4.0, |mut header| {
-            header.col(|ui| {
-                draw_header_cell(
-                    ui,
-                    th,
-                    props.label_column_port,
-                    Some(SortKey::Port),
-                    &props.filter,
-                );
-            });
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_proto, None, &props.filter);
-            });
-            header.col(|ui| {
-                draw_header_cell(
-                    ui,
-                    th,
-                    props.label_column_address,
-                    Some(SortKey::Address),
-                    &props.filter,
-                );
-            });
-            header.col(|ui| {
-                draw_header_cell(
-                    ui,
-                    th,
-                    props.label_column_process,
-                    Some(SortKey::Process),
-                    &props.filter,
-                );
-            });
-            header.col(|ui| {
-                draw_header_cell(
-                    ui,
-                    th,
-                    props.label_column_workspace,
-                    Some(SortKey::Workspace),
-                    &props.filter,
-                );
-            });
-            header.col(|ui| {
-                draw_header_cell(
-                    ui,
-                    th,
-                    props.label_column_tab,
-                    Some(SortKey::Tab),
-                    &props.filter,
-                );
-            });
-            header.col(|ui| {
-                draw_header_cell(ui, th, props.label_column_state, None, &props.filter);
-            });
-        })
-        .body(|mut body| {
-            for row in rows.iter() {
-                let selected = props.filter.selected_port == Some(row.port);
-                body.row(text_h + 8.0, |mut tr| {
-                    tr.set_selected(selected);
-                    tr.col(|ui| {
-                        ui.label(
-                            egui::RichText::new(row.port.to_string())
-                                .color(egui::Color32::from(th.text))
-                                .size(th.font_size_body.value()),
-                        );
-                    });
-                    tr.col(|ui| {
-                        ui.label(
-                            egui::RichText::new("TCP")
-                                .color(egui::Color32::from(th.subtext0))
-                                .size(th.font_size_body.value()),
-                        );
-                    });
-                    tr.col(|ui| {
-                        ui.label(
-                            egui::RichText::new(&row.addr_display)
-                                .color(egui::Color32::from(th.subtext0))
-                                .size(th.font_size_body.value())
-                                .monospace(),
-                        );
-                    });
-                    tr.col(|ui| {
-                        draw_process_cell(ui, th, row);
-                    });
-                    tr.col(|ui| {
-                        draw_workspace_cell(ui, th, row, props.label_external_dash);
-                    });
-                    tr.col(|ui| {
-                        draw_tab_cell(ui, th, row, props.label_external_dash);
-                    });
-                    tr.col(|ui| {
-                        draw_state_cell(ui, th);
-                    });
-                });
-            }
-        });
-}
+    let dash = props.label_external_dash;
+    let columns = vec![
+        TableColumn {
+            title: props.label_column_port,
+            width: TableColumnWidth::Initial { initial: 84.0, at_least: 60.0 },
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Port),
+        },
+        TableColumn {
+            title: props.label_column_proto,
+            width: TableColumnWidth::Initial { initial: 76.0, at_least: 60.0 },
+            align: TableAlign::Left,
+            sort_id: None,
+        },
+        TableColumn {
+            title: props.label_column_address,
+            width: TableColumnWidth::Remainder { at_least: 80.0, clip: false },
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Address),
+        },
+        TableColumn {
+            title: props.label_column_process,
+            width: TableColumnWidth::Remainder { at_least: 100.0, clip: false },
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Process),
+        },
+        TableColumn {
+            title: props.label_column_workspace,
+            width: TableColumnWidth::Initial { initial: 120.0, at_least: 80.0 },
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Workspace),
+        },
+        TableColumn {
+            title: props.label_column_tab,
+            width: TableColumnWidth::Remainder { at_least: 80.0, clip: false },
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Tab),
+        },
+        TableColumn {
+            title: props.label_column_state,
+            width: TableColumnWidth::Initial { initial: 140.0, at_least: 100.0 },
+            align: TableAlign::Left,
+            sort_id: None,
+        },
+    ];
 
-fn draw_header_cell(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    label: &str,
-    this_col: Option<SortKey>,
-    filter: &PortScannerFilter<'_>,
-) {
-    let is_active = this_col.map(|k| k == filter.sort_key).unwrap_or(false);
-    let arrow = if is_active {
-        match filter.sort_dir {
-            SortDir::Asc => " ▲",
-            SortDir::Desc => " ▼",
-        }
-    } else {
-        ""
+    let sort_dir = match props.filter.sort_dir {
+        SortDir::Asc => TableSortDir::Asc,
+        SortDir::Desc => TableSortDir::Desc,
     };
-    let text = if arrow.is_empty() {
-        label.to_string()
-    } else {
-        format!("{label}{arrow}")
-    };
-    let rich = egui::RichText::new(text)
-        .color(if is_active {
-            egui::Color32::from(th.text)
-        } else {
-            egui::Color32::from(th.subtext0)
-        })
-        .size(th.font_size_caption.value())
-        .strong();
-    ui.label(rich);
+    let selected = props.filter.selected_port;
+
+    Table::new(columns)
+        .active_sort(props.filter.sort_key, sort_dir)
+        .selectable(true)
+        .max_scroll_height(max_scroll)
+        .id_salt(salt)
+        .show(
+            ui,
+            th,
+            rows,
+            |row: &PortRowView| selected == Some(row.port),
+            |ui, th, row, col| match col {
+                0 => {
+                    ui.label(
+                        egui::RichText::new(row.port.to_string())
+                            .color(egui::Color32::from(th.text))
+                            .size(th.font_size_body.value()),
+                    );
+                }
+                1 => {
+                    ui.label(
+                        egui::RichText::new("TCP")
+                            .color(egui::Color32::from(th.subtext0))
+                            .size(th.font_size_body.value()),
+                    );
+                }
+                2 => {
+                    ui.label(
+                        egui::RichText::new(&row.addr_display)
+                            .color(egui::Color32::from(th.subtext0))
+                            .size(th.font_size_body.value())
+                            .monospace(),
+                    );
+                }
+                3 => draw_process_cell(ui, th, row),
+                4 => draw_workspace_cell(ui, th, row, dash),
+                5 => draw_tab_cell(ui, th, row, dash),
+                6 => draw_state_cell(ui, th),
+                _ => {}
+            },
+        );
 }
 
 fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView) {
@@ -730,7 +686,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         None,
     );
     frame_card(ui, theme, card_width, |ui| {
-        draw_mock_port_scanner_view(ui, &p);
+        draw_mock_port_scanner_view(ui, &p, "ps-case1");
     });
 
     // ── Case 2: Tasty 기본 7 컬럼 (선택 행 강조 + footer Copy address 활성).
@@ -750,7 +706,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         Some(5173),
     );
     frame_card(ui, theme, card_width, |ui| {
-        draw_mock_port_scanner_view(ui, &p);
+        draw_mock_port_scanner_view(ui, &p, "ps-case2");
     });
 
     // ── Case 3: System (전체 보기) — Tasty + External 혼합.
@@ -770,7 +726,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         None,
     );
     frame_card(ui, theme, card_width, |ui| {
-        draw_mock_port_scanner_view(ui, &p);
+        draw_mock_port_scanner_view(ui, &p, "ps-case3");
     });
 
     // ── Case 4: Search Zero.
@@ -786,7 +742,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         None,
     );
     frame_card(ui, theme, card_width, |ui| {
-        draw_mock_port_scanner_view(ui, &p);
+        draw_mock_port_scanner_view(ui, &p, "ps-case4");
     });
 
     // ── Case 5: Tasty Empty (Ready rows 0 건, 검색어 없음).
@@ -806,7 +762,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         None,
     );
     frame_card(ui, theme, card_width, |ui| {
-        draw_mock_port_scanner_view(ui, &p);
+        draw_mock_port_scanner_view(ui, &p, "ps-case5");
     });
 
     // ── Case 6: Desc 정렬 — 동일 rows 를 Port Desc 로 정렬.
@@ -827,7 +783,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         None,
     );
     frame_card(ui, theme, card_width, |ui| {
-        draw_mock_port_scanner_view(ui, &p);
+        draw_mock_port_scanner_view(ui, &p, "ps-case6");
     });
 
     ui.label(

@@ -255,3 +255,46 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - **처방**: 재현 불가 — typography specimen 에 토큰 값만 기록해 둔다(weight 는 크기+색으로만
   근사, 위 "공용 위젯 레이어 — 폰트 weight" 항목과 동일 한계).
 - **근거**: `crates/tasty-gallery/src/catalog/typography.rs`.
+
+## settings_window — 디자인 flex Row 의 gap 은 모든 자식 사이에 적용된다
+
+- **증상**: settings 폼 Row(`Accent:` 등)에서 Input↔색스와치 간격을 `add_space(space-sm)` 로
+  주면 디자인보다 좁다(또는 row item_spacing 과 겹쳐 과넓음).
+- **원인**: 디자인 `Row` 는 `display:flex; gap:16` 이고 children 이 fragment(`<Input/><span
+  swatch/>`)면 **label·Input·swatch 가 전부 형제 flex 자식** → 셋 사이 간격이 모두 16. 한
+  쌍만 좁게 본 것은 오독.
+- **처방**: row 진입 시 `ui.spacing_mut().item_spacing.x = space-lg(16)` 한 번만 설정하고
+  형제 위젯 사이엔 `add_space` 를 추가하지 않는다(item_spacing 이 곧 flex gap). label 은
+  `allocate_exact_size(150)` 고정컬럼 + `painter().text` 로 그려도 다음 위젯에 item_spacing 이
+  붙는다.
+- **근거**: `crates/tasty-gallery/src/catalog/widgets/layout_2depth.rs` 2026-06-24. settings_window.jsx `Row`.
+
+## gallery — tasty-gallery 는 i18n(t()) 을 쓰지 않는다 (specimen 하드코딩 라벨)
+
+- **증상**: 갤러리 specimen 에 `t()` 를 적용하려다 의존성/관례 충돌.
+- **원인**: `tasty-gallery` 는 `tasty-i18n` 에 의존하지 않는다(Cargo.toml). 모든 specimen 이
+  하드코딩 mock 영문 라벨을 쓴다(Storybook 류 격리 시각 카탈로그 — `host_shell.rs` 도 "본체
+  i18n 시스템 미사용" 명시). CLAUDE.md 의 `t()` 규칙은 *본체 shipping UI* 대상이며 갤러리
+  specimen 은 범위 밖.
+- **처방**: 갤러리 specimen 라벨은 대상 디자인 jsx 의 영문 라벨을 그대로 미러(하드코딩). i18n
+  의존 추가는 단일 specimen 작업 범위 밖.
+- **근거**: `crates/tasty-gallery/Cargo.toml`(i18n 미의존) + 30+ 기존 specimen 관례. 2026-06-24.
+## Kbd 우측정렬 — `ui.horizontal` 이 부모 RTL 을 상속해 키캡 순서 역전
+
+- **증상**: command 행에서 `Kbd`("Ctrl+Alt+G")를 `with_layout(right_to_left)` 안에서 그리면
+  키캡이 "G + Alt + Ctrl" 로 뒤집혀 렌더된다.
+- **원인(검증)**: egui `Ui::horizontal` 은 부모의 `prefer_right_to_left()` 를 상속한다. RTL
+  부모 안에서 `kbd`(내부 `ui.horizontal` 사용) 를 호출하면 키캡 시퀀스가 RTL 로 배치된다.
+- **처방**: 우측정렬은 RTL 레이아웃이 아니라 *폭을 직접 재서* spacer 로 민다 — `kbd_width()`
+  로 폭 측정 → `add_space(available - w)` → LTR 그대로 `kbd` 호출. (chip.rs 의 키캡 min16 /
+  pad-x4 / gap3 / micro 폰트 상수를 미러해 폭 계산.)
+- **근거**: `crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs` (plugins Command 행).
+
+## color-mix(in srgb …) 재현 — lerp / alpha 헬퍼
+
+- **증상**: 디자인이 아바타·배너에 `color-mix(in srgb, C 18%, surface)`(불투명 블렌드)와
+  `color-mix(in srgb, C 11%, transparent)`(알파 감소)를 쓴다. egui 엔 color-mix 가 없다.
+- **처방**: 두 케이스를 분리. 불투명 블렌드 = srgb 바이트 선형보간 `mix(a,b,t)`. transparent
+  믹스 = `Color32::from_rgba_unmultiplied(r,g,b, t*255)` (= C 를 알파 t 로). 후자는 Tag 위젯의
+  `gamma_multiply(0.4)`(=border 40% transparent) 와 같은 의도.
+- **근거**: `crates/tasty-gallery/src/catalog/widgets/layout_1depth.rs` (plugins `mix`/`alpha`).

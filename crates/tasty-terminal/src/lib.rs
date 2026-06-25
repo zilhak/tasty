@@ -4,6 +4,7 @@ mod events;
 mod handle;
 mod io;
 mod modes;
+mod mouse_report;
 mod output_buffer;
 mod port;
 mod port_impl;
@@ -35,6 +36,7 @@ use termwiz::surface::Surface;
 
 pub use color::{ColorPalette, TerminalRgb};
 pub use events::*;
+pub use mouse_report::encode_mouse_report;
 pub use port::TerminalProcess;
 pub use scrollback::ScrollbackLine;
 

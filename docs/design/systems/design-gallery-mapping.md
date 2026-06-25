@@ -47,6 +47,24 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 | `overlays/search_bar.jsx` (360×28) | `src/adapters/ui/search_bar.rs::draw_search_bar` | `search_bar` (Overlays) |
 | `overlays/tools_menu.jsx` (160px) | `src/adapters/ui/tools_menu.rs::draw_tools_menu` | `tools_menu` (Overlays) |
 
+## Layouts — plugins window (1-depth idiom)
+
+디자인 `ui_kits/terminal/overlays/plugins_window.jsx` (820×540 모달) ↔ 본체 `src/view/plugins/`
+↔ 갤러리 `1 depth (Plugins idiom)` (Layouts). 본체 binary 의존 0 — 로컬 mock 데이터로 시각 복제.
+
+| 디자인 jsx 컴포넌트 | 갤러리 함수 (`widgets/layout_1depth.rs`) | 비고 |
+|---|---|---|
+| `PluginsWindow`(container) | `draw_modal` | 820×540 고정, 48px 헤더 |
+| header + `Seg` 세그먼트 | `draw_header` / `draw_segments` | Installed \| Attention(danger badge) \| Add |
+| installed list+detail | `draw_installed` (`with_list_panel`/`with_detail`) | 288 리스트 + 디테일 + 액션바 |
+| `AttentionPanel` (4케이스) | `draw_attention` / `reason_banner` / `reason_detail` | unknown-key·signature-invalid·permissions-changed·health-error |
+| `AddPluginForm` (trust 흐름) | `draw_add` (`add_path_picker`/`add_manifest_preview`) | 매니페스트 프리뷰 + 미신뢰 배너 + Trust & add |
+| `PluginAvatar` | `cat_avatar` / `draw_avatar` | color-mix → `mix`/`alpha` 헬퍼 |
+
+검증: `TASTY_GALLERY_SHOT=31:<png>` (Installed)·기본탭 임시 변경으로 Attention 4케이스/Add 캡처.
+좌표 ±1px(모달 820×540, 헤더 48, 리스트 288), RGB 정확(bg_sidebar/bg_panel/border_strong). 화면전용
+고정값(820/540/48/288/26/14/22)은 token-policy §c verbatim const, 브랜드 마크색은 테마불변 const.
+
 ## Specimen 공용 헬퍼 (dedup)
 
 specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates/tasty-gallery/src/catalog/`):
@@ -79,7 +97,7 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | ✓ gallery |
 | `navigation/TreeRow` | `tree_row` | `prim_nav` | ✓ gallery |
 | `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | Layouts `Pane Tab Bar` | — |
-| `data/Table` | egui_extras(앱별) | Overlays `Port Scanner popup` | — |
+| `data/Table` | `Table`(컬럼 정의[제목·폭·정렬]·정렬 인디케이터·sticky 헤더·행 선택) | Overlays `Port Scanner popup` | ✓ port_scanner |
 | `feedback/Toast` | `src/adapters/ui/toast.rs` | Components `Toast (card visual)` | — |
 
 **primitive 케이스 커버리지**: 디자인 jsx 의 변형까지 specimen 에 포함 — Button
@@ -91,6 +109,32 @@ Select `block`(가용폭을 width 로 전달), MenuItem `disabled`(enabled=false
 (`TASTY_GALLERY_SHOT=<idx>:<png> ./target/debug/tasty-gallery`, 지정 specimen 선택→4프레임
 settle→캡처→종료)으로 디자인 `components.html` 과 대조. 갤러리는 IPC/OS 캡처가 없어 이
 env 일회성 캡처가 격리 자동검증 경로다.
+
+## Layouts (composition specimens)
+
+상위 화면 idiom 데모. 본체 binary 의존 0 — layout·색·폰트·간격은 Theme 토큰, 상태는
+thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
+
+### 2 depth (Settings idiom)
+
+디자인 `ui_kits/terminal/overlays/settings_window.jsx` ↔ 본체
+`src/view/settings/ui.rs`(+ `settings/ui/tabs/*`, `keybindings_tab.rs`) ↔ 갤러리
+`widgets/layout_2depth.rs` (Layouts `2 depth (Settings idiom)`).
+
+| 디자인 jsx 컴포넌트 | tasty 함수 (갤러리) | 비고 |
+|---|---|---|
+| `SettingsWindow`(container, 824×472) | `draw` | 모달 고정폭 `MODAL_W/H` |
+| L1 top tabs (underline) | `draw_top_tabs` → `horizontal_tab_bar_with_arrows` | `gallery-alignment §3`: underline fork 금지, scroll-arrows 공유 위젯 유지 (underline = 스킨) |
+| L2 sidebar(필터+리스트, 200) | `draw_split` → `two_depth_layout_filtered` | 필터 Input + sub-section 리스트. 패널 폭은 공유 위젯값(`tab_width` 150) — 디자인 settings sidebar 200 과 차이는 공유 위젯 fork 회피로 미적용 |
+| `Row`(label-150 + 컨트롤) | `form_row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`) |
+| `Mono`(섹션 헤딩) | `section_heading` | micro(10)·uppercase·text-muted |
+| `Note` | `note` | `measure-md`(400) 폭·text-muted |
+| 색 스와치(16, radius 2) | `swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |
+| footer Cancel/Save | `draw_bottom_buttons` | ghost/primary, gap 8 |
+
+form-control 폭: `field-width-{xs,color,md,lg}` = 90/110/160/200 (specimen const, 디자인
+`tokens/semantic.css` 미러). content 는 Appearance 탭(Theme/Tasty)을 대표 골격으로 보여준다
+(전 7탭 전수 구현 아님 — skeleton).
 
 ### Components 재분류
 

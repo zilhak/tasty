@@ -175,6 +175,9 @@ impl GpuState {
         // cursor blink, animations) are silently dropped, causing the
         // Settings window to appear only after the next user input.
         let repaint_proxy = proxy.clone();
+        // window_id 로 라우팅한다 — 모든 egui Context 는 root viewport 만 쓰므로
+        // info.viewport_id 는 항상 ROOT 라 멀티 윈도우(모달 등)에서 윈도우를 구분할 수 없다.
+        let repaint_window_id = window.id();
         egui_ctx.set_request_repaint_callback(move |info: egui::RequestRepaintInfo| {
             // delay 가 0 인 즉시 repaint 만 winit 큐로 보낸다.
             // delay > 0 (cursor blink, hover delay 등) 은 drop — 그렇지 않으면 매 frame 끝마다
@@ -185,7 +188,7 @@ impl GpuState {
                 crate::shortcuts::send_app_event(
                     &repaint_proxy,
                     AppEvent::EguiRepaint {
-                        viewport_id: info.viewport_id,
+                        window_id: repaint_window_id,
                     },
                 );
             }

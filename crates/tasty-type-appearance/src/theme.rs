@@ -122,6 +122,10 @@ pub const OS_MACOS_MIN: HexColor = HexColor::from_rgb(0xf4, 0xbf, 0x4f);
 /// macOS 신호등 — zoom (green).
 pub const OS_MACOS_ZOOM: HexColor = HexColor::from_rgb(0x61, 0xc5, 0x54);
 
+/// 워터멜론 브랜드(수박) 마크 색. OS 신호등처럼 테마 불변 브랜드 고정 리터럴
+/// (`--tasty-color-melon-flesh` = `#f25d6b`, primitives.css). mocha/latte 동일값.
+pub const BRAND_MELON_FLESH: HexColor = HexColor::from_rgb(0xf2, 0x5d, 0x6b);
+
 /// disabled 컨트롤 공통 톤 (`--tasty-opacity-disabled` = 0.5). 모든 위젯이 이 값으로
 /// 통일한다. LogicalPx 가 아닌 순수 비율이므로 별도 f32 상수.
 pub const OPACITY_DISABLED: f32 = 0.5;
@@ -1162,6 +1166,12 @@ impl Theme {
         OS_MACOS_ZOOM
     }
 
+    /// 워터멜론 브랜드(수박) 마크 색 (테마 불변 브랜드 리터럴).
+    #[inline]
+    pub fn brand_melon_flesh(&self) -> HexColor {
+        BRAND_MELON_FLESH
+    }
+
     /// disabled 컨트롤 공통 opacity (0.5). 모든 위젯이 disabled 디밍에 이 값을 쓴다.
     #[inline]
     pub fn opacity_disabled(&self) -> f32 {
@@ -1511,6 +1521,8 @@ mod tests {
         assert_eq!(dark.accent_macos_close(), light.accent_macos_close());
         assert_eq!(dark.accent_macos_min(), light.accent_macos_min());
         assert_eq!(dark.accent_macos_zoom(), light.accent_macos_zoom());
+        assert_eq!(dark.brand_melon_flesh(), HexColor::from_rgb(0xf2, 0x5d, 0x6b));
+        assert_eq!(dark.brand_melon_flesh(), light.brand_melon_flesh());
         assert_eq!(dark.opacity_disabled(), 0.5);
     }
 

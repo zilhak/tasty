@@ -279,7 +279,7 @@ fn draw_content(ui: &mut egui::Ui, theme: &Theme, case: Case) {
     ui.label(
         egui::RichText::new(format!("Content: {path}"))
             .color(egui::Color32::from(theme.text))
-            .size(12.0),
+            .size(theme.font_size_term_sm.value()),
     );
     ui.label(
         egui::RichText::new("(여기에 분기된 폼/리스트/그리드를 그린다)")

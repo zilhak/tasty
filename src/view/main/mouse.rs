@@ -118,6 +118,29 @@ impl MainView {
 
         // Handle selection drag
         if self.left_mouse_down && self.dragging_divider.is_none() {
+            // 트래킹 ON(CellMotion/AllMotion): 드래그 motion 을 앱에 보고 (셀 바뀔 때만).
+            // 앱이 마우스를 소유하므로 로컬 선택 확장은 하지 않는다.
+            let track = self
+                .state
+                .focused_surface_id(&self.core_state)
+                .and_then(|sid| {
+                    self.core_state
+                        .find_terminal_by_id(sid)
+                        .map(|t| (sid, t.mouse_tracking()))
+                });
+            if let Some((sid, mode)) = track
+                && matches!(
+                    mode,
+                    tasty_terminal::MouseTrackingMode::CellMotion
+                        | tasty_terminal::MouseTrackingMode::AllMotion
+                )
+            {
+                let cell = self.mouse_cell_for_report(sid, x, y);
+                if self.last_mouse_report_cell != Some(cell) {
+                    self.report_mouse_event(sid, x, y, 0, true, false);
+                }
+                return;
+            }
             let is_dragging = self.text_selection.as_ref().is_some_and(|s| s.dragging);
             if is_dragging && let Some((point, _)) = self.mouse_to_grid(x, y, &terminal_rect) {
                 if let Some(sel) = &mut self.text_selection {
@@ -202,31 +225,75 @@ impl MainView {
             }
             return;
         }
-        if button == MouseButton::Right && button_state == ElementState::Pressed {
+        if button == MouseButton::Right {
             let terminal_rect = self.compute_terminal_rect();
             if let Some(pos) = self.cursor_position {
                 let (x, y) = (pos.x as f32, pos.y as f32);
                 if !terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
                     return;
                 }
-                let sf = self.base.gpu.scale_factor();
-                let engine = &mut self.core_state;
                 let Some(surface_id) =
                     self.state
-                        .surface_id_at_position(engine, x, y, terminal_rect)
+                        .surface_id_at_position(&self.core_state, x, y, terminal_rect)
                 else {
                     return;
                 };
-                if engine.find_terminal_by_id(surface_id).is_none() {
+                let tracking = self
+                    .core_state
+                    .find_terminal_by_id(surface_id)
+                    .map(|t| t.mouse_tracking());
+                let Some(tracking) = tracking else {
+                    return; // terminal 없음
+                };
+                // 트래킹 ON: 우클릭도 앱에 보고 (컨텍스트 메뉴는 트래킹 OFF 에서만).
+                if tracking != tasty_terminal::MouseTrackingMode::None {
+                    self.report_mouse_event(
+                        surface_id,
+                        x,
+                        y,
+                        2,
+                        false,
+                        button_state == ElementState::Released,
+                    );
                     return;
                 }
-                self.state.dialogs.pending_native_menu =
-                    Some(crate::state::PendingNativeMenu::TerminalSurface {
+                if button_state == ElementState::Pressed {
+                    let sf = self.base.gpu.scale_factor();
+                    self.state.dialogs.pending_native_menu =
+                        Some(crate::state::PendingNativeMenu::TerminalSurface {
+                            surface_id,
+                            x: x / sf,
+                            y: y / sf,
+                        });
+                    self.mark_dirty();
+                }
+            }
+            return;
+        }
+        if button == MouseButton::Middle {
+            // 트래킹 ON 에서만 미들클릭 보고 (트래킹 OFF 는 현재 무동작 유지).
+            let terminal_rect = self.compute_terminal_rect();
+            if let Some(pos) = self.cursor_position {
+                let (x, y) = (pos.x as f32, pos.y as f32);
+                if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y))
+                    && let Some(surface_id) =
+                        self.state
+                            .surface_id_at_position(&self.core_state, x, y, terminal_rect)
+                    && self
+                        .core_state
+                        .find_terminal_by_id(surface_id)
+                        .map(|t| t.mouse_tracking() != tasty_terminal::MouseTrackingMode::None)
+                        .unwrap_or(false)
+                {
+                    self.report_mouse_event(
                         surface_id,
-                        x: x / sf,
-                        y: y / sf,
-                    });
-                self.mark_dirty();
+                        x,
+                        y,
+                        1,
+                        false,
+                        button_state == ElementState::Released,
+                    );
+                }
             }
             return;
         }
@@ -352,12 +419,16 @@ impl MainView {
                             self.flush_ime_preedit();
                         }
                         let shift = self.base.modifiers.shift_key();
-                        if mouse_tracking == tasty_terminal::MouseTrackingMode::None || shift {
-                            if shift {
-                                self.extend_selection(x, y, &terminal_rect);
-                            } else {
-                                self.start_selection(x, y, &terminal_rect);
+                        if mouse_tracking != tasty_terminal::MouseTrackingMode::None {
+                            // 트래킹 ON: 버튼 press 를 앱에 보고. 앱이 마우스를 소유하므로
+                            // tasty 로컬 선택은 하지 않는다 (modifier 우회는 후속 과제).
+                            if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
+                                self.report_mouse_event(sid, x, y, 0, false, false);
                             }
+                        } else if shift {
+                            self.extend_selection(x, y, &terminal_rect);
+                        } else {
+                            self.start_selection(x, y, &terminal_rect);
                         }
                     }
                 } else if button_state == ElementState::Released {
@@ -369,8 +440,19 @@ impl MainView {
                         self.state.resize_all(engine, terminal_rect, cell_w, cell_h);
                         self.base.dirty = true;
                     }
-                    // Finish selection drag
-                    if let Some(sel) = &mut self.text_selection {
+                    // 트래킹 ON 이면 release 를 앱에 보고, 아니면 로컬 선택 완료.
+                    let report_surface =
+                        self.state.focused_surface_id(&self.core_state).filter(|sid| {
+                            self.core_state
+                                .find_terminal_by_id(*sid)
+                                .map(|t| {
+                                    t.mouse_tracking() != tasty_terminal::MouseTrackingMode::None
+                                })
+                                .unwrap_or(false)
+                        });
+                    if let Some(sid) = report_surface {
+                        self.report_mouse_event(sid, x, y, 0, false, true);
+                    } else if let Some(sel) = &mut self.text_selection {
                         sel.dragging = false;
                         if sel.is_empty() {
                             // Single click (no drag) — move cursor to clicked position
@@ -382,6 +464,69 @@ impl MainView {
                 }
             }
         }
+    }
+
+    /// 클릭/드래그 픽셀 좌표를 해당 surface 의 viewport 1-based `(col, row)` 로 변환
+    /// (마우스 리포팅 전송용). surface 를 못 찾으면 `(1, 1)`.
+    fn mouse_cell_for_report(&self, surface_id: u32, x: f32, y: f32) -> (usize, usize) {
+        let terminal_rect = self.compute_terminal_rect();
+        let cell_w = self.base.gpu.cell_width();
+        let cell_h = self.base.gpu.cell_height();
+        let Some((scroll_offset, sb_len, (cols, rows))) = self
+            .core_state
+            .find_terminal_by_id(surface_id)
+            .map(|t| (t.scroll_offset(), t.scrollback_len(), t.dimensions()))
+        else {
+            return (1, 1);
+        };
+        let Some(rect) =
+            self.state
+                .surface_rect_by_id(&self.core_state, surface_id, terminal_rect)
+        else {
+            return (1, 1);
+        };
+        let point = crate::selection::pixel_to_grid(
+            x, y, &rect, cell_w, cell_h, cols, rows, scroll_offset, sb_len,
+        );
+        let viewport_top = sb_len.saturating_sub(scroll_offset);
+        let row = point
+            .absolute_row
+            .saturating_sub(viewport_top)
+            .min(rows.saturating_sub(1))
+            + 1;
+        let col = point.col.min(cols.saturating_sub(1)) + 1;
+        (col, row)
+    }
+
+    /// 마우스 버튼/드래그 이벤트를 트래킹 앱(PTY)에 보고한다. `button` 0=left /
+    /// 1=middle / 2=right, `motion` 드래그 여부, `release` 버튼 떼기. 좌표/SGR 여부는
+    /// 보고 시점에 해당 surface 에서 조회한다.
+    fn report_mouse_event(
+        &mut self,
+        surface_id: u32,
+        x: f32,
+        y: f32,
+        button: u8,
+        motion: bool,
+        release: bool,
+    ) {
+        let (col, row) = self.mouse_cell_for_report(surface_id, x, y);
+        let sgr = self
+            .core_state
+            .find_terminal_by_id(surface_id)
+            .map(|t| t.sgr_mouse())
+            .unwrap_or(false);
+        let m = &self.base.modifiers;
+        let cb = mouse_report_cb(button, motion, m.shift_key(), m.alt_key(), m.control_key());
+        let bytes = tasty_terminal::encode_mouse_report(sgr, cb, col, row, release);
+        self.state.dispatch_intent(
+            DomainIntent::SendToSurface {
+                surface_id,
+                payload: SendPayload::Bytes(bytes),
+            }
+            .from_user_shortcut("mouse_report"),
+        );
+        self.last_mouse_report_cell = Some((col, row));
     }
 
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta, egui_consumed: bool) {
@@ -509,18 +654,31 @@ impl MainView {
 /// 마우스 휠 이벤트를 마우스 리포팅 시퀀스로 인코딩한다. `sgr` 가 true 면 SGR
 /// (`ESC [ < btn ; col ; row M`), 아니면 legacy X10 (`ESC [ M` + 32-offset 3 bytes).
 /// `count` 만큼 반복 발행. `btn` 은 64(up)/65(down), `col`/`row` 는 1-based.
+/// winit 버튼(0=left / 1=middle / 2=right) + 드래그/modifier → 마우스 리포팅 `cb` 코드.
+/// shift=4 · alt(meta)=8 · ctrl=16, 드래그 motion=32. (xterm 표준 비트)
+fn mouse_report_cb(button: u8, motion: bool, shift: bool, alt: bool, ctrl: bool) -> u8 {
+    let mut cb = button;
+    if motion {
+        cb |= 32;
+    }
+    if shift {
+        cb |= 4;
+    }
+    if alt {
+        cb |= 8;
+    }
+    if ctrl {
+        cb |= 16;
+    }
+    cb
+}
+
 fn encode_wheel_report(sgr: bool, btn: u32, col: usize, row: usize, count: usize) -> Vec<u8> {
     let mut bytes = Vec::new();
     for _ in 0..count {
-        if sgr {
-            bytes.extend_from_slice(format!("\x1b[<{btn};{col};{row}M").as_bytes());
-        } else {
-            // X10: 각 값에 32 를 더하고 255 로 clamp (legacy 인코딩 한계).
-            let cb = (32 + btn).min(255) as u8;
-            let cx = (32 + col as u32).min(255) as u8;
-            let cy = (32 + row as u32).min(255) as u8;
-            bytes.extend_from_slice(&[0x1b, b'[', b'M', cb, cx, cy]);
-        }
+        bytes.extend_from_slice(&tasty_terminal::encode_mouse_report(
+            sgr, btn as u8, col, row, false,
+        ));
     }
     bytes
 }

@@ -236,7 +236,7 @@ fn draw_update_view_mock(ui: &mut egui::Ui, theme: &Theme, props: &UpdateProps) 
                 ui.label(
                     egui::RichText::new("Release notes")
                         .color(egui::Color32::from(theme.subtext0))
-                        .size(12.0),
+                        .size(theme.font_size_term_sm.value()),
                 );
                 egui::ScrollArea::vertical()
                     .max_height(140.0)
@@ -245,7 +245,7 @@ fn draw_update_view_mock(ui: &mut egui::Ui, theme: &Theme, props: &UpdateProps) 
                             egui::Label::new(
                                 egui::RichText::new(body)
                                     .color(egui::Color32::from(theme.text))
-                                    .size(12.0),
+                                    .size(theme.font_size_term_sm.value()),
                             )
                             .wrap(),
                         );
@@ -266,7 +266,7 @@ fn draw_update_view_mock(ui: &mut egui::Ui, theme: &Theme, props: &UpdateProps) 
                         ui.label(
                             egui::RichText::new(format!("Error: {reason}"))
                                 .color(egui::Color32::from(theme.accent_danger()))
-                                .size(12.0),
+                                .size(theme.font_size_term_sm.value()),
                         );
                     }
                     UpdateStatusView::NeverChecked => {

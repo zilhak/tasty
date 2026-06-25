@@ -9,6 +9,7 @@
 //!  Components 로 통합하고, Popup 을 Overlays, Appearance 를 Foundations 로 재편.)
 
 pub mod components;
+pub mod icons;
 pub mod popup_frame;
 pub mod spacing;
 pub mod specimen;
@@ -26,6 +27,8 @@ pub enum Category {
     Foundations,
     /// 위젯·컴포넌트 (단일 UI 요소).
     Components,
+    /// canonical 글리프 세트.
+    Icons,
     /// 모달·팝업 레이어.
     Overlays,
     /// 구조 셸 (사이드바/탭바/분할/하이라이트).
@@ -37,6 +40,7 @@ impl Category {
         match self {
             Category::Foundations => "Foundations",
             Category::Components => "Components",
+            Category::Icons => "Icons",
             Category::Overlays => "Overlays",
             Category::Layouts => "Layouts",
         }
@@ -46,6 +50,7 @@ impl Category {
         &[
             Category::Foundations,
             Category::Components,
+            Category::Icons,
             Category::Overlays,
             Category::Layouts,
         ]
@@ -129,6 +134,12 @@ pub fn all() -> Vec<CatalogItem> {
             category: Category::Components,
             name: "Toast (card visual)",
             draw: widgets::toast::draw,
+        },
+        // ── Icons ── (canonical 글리프 세트 — 디자인 gallery/icons.jsx)
+        CatalogItem {
+            category: Category::Icons,
+            name: "Icon Set (canonical glyphs)",
+            draw: icons::draw,
         },
         // ── Overlays ── (통팝업/컴포지션 — 디자인 gallery 구조: primitive 는 Components)
         CatalogItem {

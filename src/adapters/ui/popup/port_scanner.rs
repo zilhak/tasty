@@ -31,8 +31,8 @@ use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
 use tasty_ui_widgets::{
-    Button, ButtonVariant, IconButton, IconButtonVariant, Input, StatusKind, TagVariant, checkbox,
-    status_dot, tag,
+    Button, ButtonVariant, IconButton, IconButtonVariant, Input, StatusKind, Table, TableAlign,
+    TableColumn, TableColumnWidth, TableSortDir, TagVariant, checkbox, status_dot, tag,
 };
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
@@ -972,23 +972,13 @@ fn cell_l(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
     content(ui);
 }
 
-/// 디자인 Port 컬럼 `align: right` + padding 12 — 우측 정렬, 우측 12 여백.
-fn cell_r(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.add_space(12.0);
-        content(ui);
-    });
-}
-
-/// 7컬럼 TableBuilder. 컬럼 폭은 디자이너 확정값.
+/// 7컬럼 공용 [`Table`] 위젯. 컬럼 폭은 디자이너 확정값.
 fn draw_table(
     ui: &mut egui::Ui,
     props: &PortScannerProps<'_>,
     rows: &[PortRowView],
 ) -> Option<PortScannerAction> {
-    use egui_extras::{Column, TableBuilder};
     let th = props.theme;
-    let mut out: Option<PortScannerAction> = None;
     let text_h = th.font_size_body.value() + 6.0;
 
     // Cap the inner ScrollArea so the table scrolls *within* the bounded popup
@@ -1005,185 +995,139 @@ fn draw_table(
     let gap = ui.spacing().item_spacing.y;
     let max_scroll = (ui.available_height() - header_h - footer_h - gap).max(text_h + 8.0);
 
-    // 디자인 Table 헤더 th 배경 = bg-sidebar(mantle). sticky header 영역 전체폭에 칠한다
-    // (egui_extras 는 셀 배경 API 가 없어 painter 로 직접). header 텍스트는 그 위에.
-    let header_bg = egui::Rect::from_min_size(
-        egui::pos2(ui.max_rect().left(), ui.cursor().top()),
-        egui::vec2(ui.max_rect().width(), header_h),
-    );
-    ui.painter().rect_filled(header_bg, 0.0, th.mantle);
+    // design-parity: 디자인 Table 컬럼은 고정폭 4개(port/proto/ws/state) + flex 3개
+    // (addr/proc/tab, CSS `max-width:0` + ellipsis, **최소폭 없음**). flex 에 floor 를
+    // 주면 합이 가용폭 초과 시 테이블이 넘쳐 footer 가 밀리고 `닫기` 가 잘린다 → 디자인
+    // 구조 그대로 고정폭은 Exact, flex 는 Remainder{at_least:0, clip}(말줄임)로 둔다.
+    // 디자인 measured 폭: Port 84 / Proto 76 / Address~88 / Process~88 /
+    // Workspace 120 / Tab 62 / State 140. addr·proc 는 내용이 길어 flex 로 넓게,
+    // Tab 은 대개 "—" 라 좁다. egui remainder 는 균등 분배라 Tab 까지 flex 로 두면
+    // addr·proc 가 좁아진다 → Tab 만 Exact 56 으로 빼서 addr·proc 가 넓어지게 한다.
+    // Tab 56 은 디자인 62 보다 약간 좁힌 값 — tasty mono(D2Coding)가 디자인 폰트보다
+    // 넓어 "127.0.0.1"이 88px 에서 1~2px 넘쳐 말줄임되는 폰트 메트릭 세금 보정.
+    // Port 만 우측 정렬(디자인 align right), 나머지 좌측. 정렬 가능: Port/Address/
+    // Process/Workspace/Tab (Proto/State 는 정적 헤더).
+    let columns = vec![
+        TableColumn {
+            title: props.label_column_port,
+            width: TableColumnWidth::Exact(84.0),
+            align: TableAlign::Right,
+            sort_id: Some(SortKey::Port),
+        },
+        TableColumn {
+            title: props.label_column_proto,
+            width: TableColumnWidth::Exact(76.0),
+            align: TableAlign::Left,
+            sort_id: None,
+        },
+        TableColumn {
+            title: props.label_column_address,
+            width: TableColumnWidth::Remainder {
+                at_least: 0.0,
+                clip: true,
+            },
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Address),
+        },
+        TableColumn {
+            title: props.label_column_process,
+            width: TableColumnWidth::Remainder {
+                at_least: 0.0,
+                clip: true,
+            },
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Process),
+        },
+        TableColumn {
+            title: props.label_column_workspace,
+            width: TableColumnWidth::Exact(120.0),
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Workspace),
+        },
+        TableColumn {
+            title: props.label_column_tab,
+            width: TableColumnWidth::Exact(56.0),
+            align: TableAlign::Left,
+            sort_id: Some(SortKey::Tab),
+        },
+        TableColumn {
+            title: props.label_column_state,
+            width: TableColumnWidth::Exact(140.0),
+            align: TableAlign::Left,
+            sort_id: None,
+        },
+    ];
 
-    TableBuilder::new(ui)
-        .striped(false)
-        .resizable(false)
-        // Whole-row click selection (design `onRowClick`). The row's unioned
-        // response reports the click; `set_selected` paints the highlight.
-        .sense(egui::Sense::click())
+    let sort_dir = match props.filter.sort_dir {
+        SortDir::Asc => TableSortDir::Asc,
+        SortDir::Desc => TableSortDir::Desc,
+    };
+    let selected_port = props.filter.selected_port;
+
+    let output = Table::new(columns)
+        .active_sort(props.filter.sort_key, sort_dir)
+        .selectable(true)
+        // 디자인 Table 헤더 th 배경 = bg-sidebar(mantle), sticky header 전체폭. 디자인
+        // th padding 0/12 → header_pad_x 12. 헤더/행 높이는 기존 TableBuilder 값 그대로.
+        .header_fill(th.mantle.into())
+        .header_pad_x(12.0)
+        .header_height(header_h)
+        .row_height(text_h + 8.0)
         .max_scroll_height(max_scroll)
-        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-        // flex(remainder) 컬럼의 at_least floor 합이 가용 폭을 넘으면 테이블이 popup
-        // design-parity: 디자인 Table 컬럼은 고정폭 4개(port/proto/ws/state) + flex 3개
-        // (addr/proc/tab, CSS `max-width:0` + ellipsis, **최소폭 없음**). flex 에 floor 를
-        // 주면 합이 가용폭 초과 시 테이블이 넘쳐 footer 가 밀리고 `닫기` 가 잘린다 → 디자인
-        // 구조 그대로 고정폭은 exact, flex 는 remainder().clip(말줄임)로 둔다. exact 합
-        // 420 + flex 3 분배 = 항상 660 안에 fit.
-        // 디자인 measured 폭: Port 84 / Proto 76 / Address~88 / Process~88 /
-        // Workspace 120 / Tab 62 / State 140. addr·proc 는 내용이 길어 flex 로 넓게,
-        // Tab 은 대개 "—" 라 좁다(62 고정). egui remainder 는 균등 분배라 Tab 까지
-        // flex 로 두면 addr·proc 가 좁아진다 → Tab 만 exact 62 로 빼서 addr·proc 가
-        // (660-482)/2≈89 로 넓어지게 한다(디자인 88 과 일치).
-        .column(Column::exact(84.0)) // Port (고정)
-        .column(Column::exact(76.0)) // Proto (고정)
-        .column(Column::remainder().clip(true)) // Address (flex)
-        .column(Column::remainder().clip(true)) // Process (flex)
-        .column(Column::exact(120.0)) // Workspace (고정)
-        // Tab(대개 "—")을 디자인 62 보다 약간 좁혀 addr/proc 에 폭을 양보 — tasty mono
-        // (D2Coding)가 디자인 폰트보다 넓어 셀 패딩 24 까지 빼면 "127.0.0.1"이 88px 에서
-        // 1~2px 넘쳐 말줄임되기 때문(폰트 메트릭 세금 보정).
-        .column(Column::exact(56.0)) // Tab
-        .column(Column::exact(140.0)) // State (고정)
-        .header(text_h + 4.0, |mut header| {
-            let mut sort_click = |this: Option<SortKey>, ui: &mut egui::Ui, label: &str, right: bool| {
-                if let Some(k) = draw_header_cell(
-                    ui,
-                    th,
-                    label,
-                    this,
-                    props.filter.sort_key,
-                    props.filter.sort_dir,
-                    right,
-                ) {
-                    out = Some(PortScannerAction::SetSort(k));
+        .show(
+            ui,
+            th,
+            rows,
+            |row: &PortRowView| selected_port == Some(row.port),
+            |ui, th, row, col| match col {
+                // Port — 디자인 align right (위젯이 right_to_left 로 감쌈). 셀 padding 12.
+                0 => {
+                    ui.add_space(12.0);
+                    ui.label(
+                        egui::RichText::new(row.port.to_string())
+                            .color(th.text)
+                            .size(th.font_size_body.value()),
+                    );
                 }
-            };
-            // Port 만 우측 정렬(디자인 align right), 나머지 좌측.
-            header.col(|ui| sort_click(Some(SortKey::Port), ui, props.label_column_port, true));
-            header.col(|ui| sort_click(None, ui, props.label_column_proto, false));
-            header.col(|ui| sort_click(Some(SortKey::Address), ui, props.label_column_address, false));
-            header.col(|ui| sort_click(Some(SortKey::Process), ui, props.label_column_process, false));
-            header.col(|ui| sort_click(Some(SortKey::Workspace), ui, props.label_column_workspace, false));
-            header.col(|ui| sort_click(Some(SortKey::Tab), ui, props.label_column_tab, false));
-            header.col(|ui| sort_click(None, ui, props.label_column_state, false));
-        })
-        .body(|mut body| {
-            for row in rows.iter() {
-                let selected = props.filter.selected_port == Some(row.port);
-                body.row(text_h + 8.0, |mut tr| {
-                    tr.set_selected(selected);
-                    tr.col(|ui| {
-                        // Port — 디자인 align right.
-                        cell_r(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(row.port.to_string())
-                                    .color(th.text)
-                                    .size(th.font_size_body.value()),
-                            );
-                        });
-                    });
-                    tr.col(|ui| {
-                        cell_l(ui, |ui| {
-                            // Proto derived from the address family: IPv6 displays
-                            // (always containing a colon) → `tcp6`, IPv4 → `tcp`.
-                            let proto = if row.addr_display.contains(':') {
-                                "tcp6"
-                            } else {
-                                "tcp"
-                            };
-                            ui.label(
-                                egui::RichText::new(proto)
-                                    .color(th.subtext0)
-                                    .size(th.font_size_body.value()),
-                            );
-                        });
-                    });
-                    tr.col(|ui| {
-                        cell_l(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new(&row.addr_display)
-                                    .color(th.subtext0)
-                                    .size(th.font_size_body.value())
-                                    .monospace(),
-                            );
-                        });
-                    });
-                    tr.col(|ui| cell_l(ui, |ui| draw_process_cell(ui, th, row)));
-                    tr.col(|ui| {
-                        cell_l(ui, |ui| draw_workspace_cell(ui, th, row, props.label_external_dash))
-                    });
-                    tr.col(|ui| {
-                        cell_l(ui, |ui| draw_tab_cell(ui, th, row, props.label_external_dash))
-                    });
-                    tr.col(|ui| {
-                        cell_l(ui, |ui| draw_state_cell(ui, th, props.reduced_motion, row.state))
-                    });
-                    // B5: 행 어디를 클릭하든 선택 토글 (wrapper 에서 처리).
-                    if tr.response().clicked() {
-                        out = Some(PortScannerAction::Select(row.port));
-                    }
-                });
-            }
-        });
-    out
-}
+                1 => cell_l(ui, |ui| {
+                    // Proto derived from the address family: IPv6 displays
+                    // (always containing a colon) → `tcp6`, IPv4 → `tcp`.
+                    let proto = if row.addr_display.contains(':') {
+                        "tcp6"
+                    } else {
+                        "tcp"
+                    };
+                    ui.label(
+                        egui::RichText::new(proto)
+                            .color(th.subtext0)
+                            .size(th.font_size_body.value()),
+                    );
+                }),
+                2 => cell_l(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(&row.addr_display)
+                            .color(th.subtext0)
+                            .size(th.font_size_body.value())
+                            .monospace(),
+                    );
+                }),
+                3 => cell_l(ui, |ui| draw_process_cell(ui, th, row)),
+                4 => cell_l(ui, |ui| draw_workspace_cell(ui, th, row, props.label_external_dash)),
+                5 => cell_l(ui, |ui| draw_tab_cell(ui, th, row, props.label_external_dash)),
+                6 => cell_l(ui, |ui| draw_state_cell(ui, th, props.reduced_motion, row.state)),
+                _ => {}
+            },
+        );
 
-/// Header cell. When `this_col` is `Some`, the cell is sortable: it picks up
-/// a click sense, draws ▲/▼ when active, and returns the [`SortKey`] on click.
-/// When `None` (Proto / State), the cell is static text.
-fn header_cell_inner(
-    ui: &mut egui::Ui,
-    this_col: Option<SortKey>,
-    rich: egui::RichText,
-) -> Option<SortKey> {
-    match this_col {
-        Some(key) => {
-            let resp = ui.add(egui::Label::new(rich).sense(egui::Sense::click()));
-            if resp.clicked() { Some(key) } else { None }
-        }
-        None => {
-            ui.label(rich);
-            None
-        }
+    // B5: 행 클릭 → 선택 토글, 헤더 클릭 → 정렬 토글 (wrapper 에서 처리). 두 영역은
+    // 상호 배타라 한 프레임에 동시 발생하지 않는다.
+    if let Some(i) = output.clicked_row {
+        return Some(PortScannerAction::Select(rows[i].port));
     }
-}
-
-fn draw_header_cell(
-    ui: &mut egui::Ui,
-    th: &Theme,
-    label: &str,
-    this_col: Option<SortKey>,
-    active_key: SortKey,
-    active_dir: SortDir,
-    right: bool,
-) -> Option<SortKey> {
-    let is_active = this_col.map(|k| k == active_key).unwrap_or(false);
-    let arrow = if is_active {
-        match active_dir {
-            SortDir::Asc => " ▲",
-            SortDir::Desc => " ▼",
-        }
-    } else {
-        ""
-    };
-    let text = if arrow.is_empty() {
-        label.to_string()
-    } else {
-        format!("{label}{arrow}")
-    };
-    let rich = egui::RichText::new(text)
-        .color(if is_active { th.text } else { th.subtext0 })
-        .size(th.font_size_caption.value())
-        .strong();
-    // 디자인 th padding 0/12, Port 컬럼만 align right.
-    if right {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_space(12.0);
-            header_cell_inner(ui, this_col, rich)
-        })
-        .inner
-    } else {
-        ui.add_space(12.0);
-        header_cell_inner(ui, this_col, rich)
+    if let Some(k) = output.clicked_sort {
+        return Some(PortScannerAction::SetSort(k));
     }
+    None
 }
 
 /// Process 셀: process_name + PID 배지.

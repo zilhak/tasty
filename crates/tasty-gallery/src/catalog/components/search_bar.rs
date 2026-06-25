@@ -107,7 +107,7 @@ fn draw_mock_bar(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
                 theme.text_muted(),
             )
         };
-        draw_counter(ui, &counter_text, counter_color.into());
+        draw_counter(ui, theme, &counter_text, counter_color.into());
 
         // Prev / Next — 항상 렌더, 매치 없으면 disabled.
         let nav_enabled = props.match_count > 0;
@@ -136,12 +136,14 @@ fn draw_mock_bar(ui: &mut egui::Ui, theme: &Theme, props: &MockProps<'_>) {
 }
 
 /// 고정폭(40px) 매치 카운터를 가운데 정렬로 그린다. (본체 draw_counter 미러)
-fn draw_counter(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
+fn draw_counter(ui: &mut egui::Ui, theme: &Theme, text: &str, color: egui::Color32) {
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(40.0, ui.available_height()), egui::Sense::hover());
-    let galley =
-        ui.painter()
-            .layout_no_wrap(text.to_string(), egui::FontId::proportional(12.0), color);
+    let galley = ui.painter().layout_no_wrap(
+        text.to_string(),
+        egui::FontId::proportional(theme.font_size_term_sm.value()),
+        color,
+    );
     let pos = rect.center() - galley.size() * 0.5;
     ui.painter().galley(pos, galley, color);
 }

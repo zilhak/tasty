@@ -84,9 +84,14 @@ impl View for PluginsView {
     }
 
     fn handle_event(&mut self, event: WindowEvent, _ctx: &mut ViewCtx<'_>) -> ViewAction {
-        let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
-        if egui_repaint {
-            self.mark_dirty();
+        // RedrawRequested 를 egui 에 넘기면 항상 repaint=true → mark_dirty →
+        // request_redraw → RedrawRequested 무한 루프(busy-loop)가 된다. 렌더는
+        // 아래 RedrawRequested arm 이 담당하므로 egui input 으로 넘기지 않는다.
+        if !matches!(&event, WindowEvent::RedrawRequested) {
+            let (_, egui_repaint) = self.base.gpu.handle_egui_event(&self.base.winit, &event);
+            if egui_repaint {
+                self.mark_dirty();
+            }
         }
 
         match event {

@@ -23,15 +23,23 @@ const PLUS_W: f32 = 28.0;
 const ARROW_W: f32 = 20.0;
 const SEPARATOR_W: f32 = 1.0;
 const H_PADDING: f32 = 8.0;
-const DOT_RADIUS: f32 = 3.0;
+const DOT_RADIUS: f32 = 4.0; // status-dot-size 8 (디자인 (3) --tasty-status-dot-size)
 const DOT_PAD: f32 = 6.0;
 const ACTIVE_INDICATOR_H: f32 = 2.0;
+// attached(다른 클라이언트 점유) lavender ring — 디자인 (3)
+// --tasty-status-dot-attached-ring-{width,offset} = size-2.
+const ATTACHED_RING_WIDTH: f32 = 2.0;
+const ATTACHED_RING_OFFSET: f32 = 2.0;
 
 #[derive(Clone, Debug)]
 struct TabEntryView {
     name: String,
     has_notification: bool,
     is_busy: bool,
+    /// 다른 클라이언트가 점유한 surface (orthogonal axis). busy/idle 무관하게
+    /// dot 둘레에 lavender ring 을 그린다. idle+attached 면 ring 을 받칠
+    /// neutral idle dot 을 강제한다 (디자인 (3) tab-status.md).
+    is_attached: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -149,14 +157,28 @@ fn draw_pane_tab_bar_mock(
             tab_painter.rect_filled(line_rect, 0.0, th.accent_primary());
         }
 
-        if tab.is_busy {
+        if tab.is_busy || tab.is_attached {
             let dot_center = egui::pos2(tab_rect.max.x - DOT_PAD - DOT_RADIUS, tab_rect.center().y);
-            let dot_color: egui::Color32 = if is_active {
-                th.accent_success().into()
+            let dot_color: egui::Color32 = if tab.is_busy {
+                if is_active {
+                    th.accent_success().into()
+                } else {
+                    th.accent_success().with_alpha(180).to_egui()
+                }
             } else {
-                th.accent_success().with_alpha(180).to_egui()
+                // attached-only → ring 을 받칠 neutral idle dot (subtext0).
+                th.subtext0.into()
             };
             tab_painter.circle_filled(dot_center, DOT_RADIUS, dot_color);
+            if tab.is_attached {
+                // outline-offset:2 + width:2 → stroke 중심 = dot edge + offset + width/2.
+                let ring_radius = DOT_RADIUS + ATTACHED_RING_OFFSET + ATTACHED_RING_WIDTH / 2.0;
+                tab_painter.circle_stroke(
+                    dot_center,
+                    ring_radius,
+                    egui::Stroke::new(ATTACHED_RING_WIDTH, egui::Color32::from(th.lavender)),
+                );
+            }
         }
 
         // 라벨 (잘림 처리 — 본체와 동일 알고리즘)
@@ -267,6 +289,7 @@ fn tab(name: &str) -> TabEntryView {
         name: name.to_string(),
         has_notification: false,
         is_busy: false,
+        is_attached: false,
     }
 }
 
@@ -275,6 +298,7 @@ fn tab_notif(name: &str) -> TabEntryView {
         name: name.to_string(),
         has_notification: true,
         is_busy: false,
+        is_attached: false,
     }
 }
 
@@ -283,6 +307,27 @@ fn tab_busy(name: &str) -> TabEntryView {
         name: name.to_string(),
         has_notification: false,
         is_busy: true,
+        is_attached: false,
+    }
+}
+
+/// 다른 클라이언트가 점유한 surface — lavender ring (idle dot 위).
+fn tab_attached(name: &str) -> TabEntryView {
+    TabEntryView {
+        name: name.to_string(),
+        has_notification: false,
+        is_busy: false,
+        is_attached: true,
+    }
+}
+
+/// busy + attached 동시 — green dot + lavender ring.
+fn tab_busy_attached(name: &str) -> TabEntryView {
+    TabEntryView {
+        name: name.to_string(),
+        has_notification: false,
+        is_busy: true,
+        is_attached: true,
     }
 }
 
@@ -302,8 +347,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
     ui.add_space(12.0);
 
-    let tab_width: f32 = 160.0;
-    let tab_font_size: f32 = 12.0;
+    // 디자인 (3) 토큰 — tab_width=150(--tasty-tab-width), 라벨 폰트=13(body).
+    let tab_width: f32 = theme.tab_width.value();
+    let tab_font_size: f32 = theme.tab_bar_label_font_size.value();
 
     egui::ScrollArea::vertical()
         .id_salt("tab_bar_demo_scroll")
@@ -442,6 +488,36 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     0.0,
                 ),
             ];
+            let props = PaneTabBarsProps {
+                theme,
+                panes: &panes,
+                tab_width,
+                tab_font_size,
+            };
+            draw_pane_tab_bars_mock(ui, &props);
+            ui.add_space(16.0);
+
+            // Case 6 — attached (다른 클라이언트 점유 → lavender ring)
+            ui.label(
+                egui::RichText::new(
+                    "Case 6 — attached (다른 클라이언트 점유 — lavender ring, idle dot 위)",
+                )
+                .strong()
+                .color(egui::Color32::from(theme.text)),
+            );
+            ui.add_space(2.0);
+            let panes = vec![mk_pane(
+                6,
+                700.0,
+                vec![
+                    tab_attached("session.log"),
+                    tab_busy_attached("agent/run.rs"),
+                    tab("local.md"),
+                ],
+                0,
+                true,
+                0.0,
+            )];
             let props = PaneTabBarsProps {
                 theme,
                 panes: &panes,

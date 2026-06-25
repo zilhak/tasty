@@ -104,7 +104,7 @@ fn draw_apply_preset_view(ui: &mut egui::Ui, props: &ApplyPresetProps<'_>) -> Ap
                             egui::pos2(rect.min.x + 8.0, rect.center().y),
                             egui::Align2::LEFT_CENTER,
                             name,
-                            egui::FontId::proportional(12.0),
+                            egui::FontId::proportional(th.font_size_term_sm.value()),
                             if is_selected {
                                 egui::Color32::from(th.text)
                             } else {

@@ -24,6 +24,8 @@
 
 마우스 드래그(Normal) / 더블클릭(Word) / 트리플클릭(Line) / vi 복사 모드의 `Ctrl+v`(Block). 선택은 화면↔스크롤백을 넘나들고 전각(CJK) 2셀 폭을 정확히 처리. vi 스타일 키보드 복사 모드(`enter_copy_mode` 액션)는 hjkl 이동·visual 선택·`/`·`?` 검색·`y` 복사를 제공.
 
+마우스 선택은 **마우스 트래킹이 꺼진 화면에서만** 동작한다. 앱이 마우스 트래킹(DECSET 1000/1002/1003)을 켜면(vim `:set mouse=a`, htop, Claude Code 등) 마우스가 앱에 전면 위임되어 로컬 드래그 선택이 비활성화된다 — 이때 텍스트 복사는 **키보드 vi 복사 모드**로 한다. modifier 우회나 "리포팅 무시" 토글은 현재 미도입(후속 과제). 근거: [ADR-0019](../../adr/0019-mouse-button-reporting-app-delegation.md).
+
 ### OSC 52
 
 **쓰기(set)**: 터미널 프로그램이 OSC 52 로 시스템 클립보드에 텍스트를 설정할 수 있다(termwiz `SetSelection` → arboard 반영). 사용자가 누른 동작이 아니라 **토스트 없음**.

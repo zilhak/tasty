@@ -285,18 +285,21 @@ pub(super) fn handle_debug_inject_mouse(
         .unwrap_or("press");
 
     let cb = match event_type {
-        "press" => button as u8,
-        "release" => button as u8,
+        "press" | "release" => button as u8,
         "move" => 32 + button as u8,
         _ => return JsonRpcResponse::invalid_params(id, "event_type must be press/release/move"),
     };
-    let suffix = if event_type == "release" { "m" } else { "M" };
-
-    // SGR mouse encoding: ESC [ < Cb ; Cx ; Cy M/m (1-indexed)
-    let seq = format!("\x1b[<{};{};{}{}", cb, col + 1, row + 1, suffix);
+    // SGR mouse(1006). col/row 입력은 0-indexed → 1-based 로. 공용 인코더 사용.
+    let bytes = tasty_terminal::encode_mouse_report(
+        true,
+        cb,
+        (col + 1) as usize,
+        (row + 1) as usize,
+        event_type == "release",
+    );
 
     if let Some(terminal) = engine.find_terminal_by_id_mut(surface_id) {
-        terminal.send_key(&seq);
+        terminal.send_bytes(&bytes);
         JsonRpcResponse::success(id, json!({"sent": true}))
     } else {
         JsonRpcResponse::invalid_params(id, format!("Surface {} not found", surface_id))
