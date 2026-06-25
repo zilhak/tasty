@@ -45,10 +45,17 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 
 | 디자인 jsx 컴포넌트 | 갤러리 항목 (`catalog/components/switch_overlay.rs`) | 본체 함수 |
 |---|---|---|
-| `NumCap`(키캡) | `num_cap` (헬퍼) — 본체 `kbd()`(`chip.rs`) 형상 재현 + active accent 변종 | P2: 동일 키캡 draw |
-| `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | P2: `tab_bar.rs` 탭 leading 교체 |
-| `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | P2: `sidebar/full.rs` status dot 교체 |
-| `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | P2: `sidebar/collapsed.rs` letter avatar 교체 |
+| `NumCap`(키캡) | `num_cap` (헬퍼) — 본체 `kbd()`(`chip.rs`) 형상 재현 + active accent 변종 | ✅ `switch_overlay::paint_keycap` (공통, P2a) |
+| `TabStripMock` | `tab_strip` → `draw_tab` (`switch-tab` specimen) | ✅ `tab_bar.rs` `draw_pane_tab_bars_view` (leading 교체, P2a) |
+| `WsRowMock` / `SidebarMock` | `full_ws` → `draw_workspace` (`switch-ws` specimen, full) | P2b: `sidebar/full.rs` status dot 교체 |
+| `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | P2b: `sidebar/collapsed.rs` letter avatar 교체 |
+
+**P2a 본체 배선 (구현 완료)**: 공통 모듈 `src/adapters/ui/switch_overlay.rs` — modifier 일치
+판정(`tab_switch_held`/`workspace_switch_held`, numeric.rs 규칙 1:1) + 키캡 painter(`paint_keycap`,
+갤러리 `num_cap` 와 동일 레시피) + 숫자 매핑(`tab_digit`/`workspace_digit`). `tab_bar.rs` wrapper 가
+`ctx.input` modifier + `engine.settings.keybindings` 로 `PaneTabBarsProps.tab_switch_held` 를 계산해
+순수 view 로 전달, view 가 leading 아이콘 자리에 `paint_keycap`. **P2b 사이드바는 같은 모듈의
+`workspace_switch_held`/`workspace_digit`/`paint_keycap` 재사용**(현재 `#[allow(dead_code)]` 선반영).
 
 **등록**: `catalog.rs` Overlays 페이지 `section("switch", "Switch-number overlay", [spec("switch-tab",
 …, draw_tab), spec("switch-ws", …, draw_workspace)])` — search 와 approval 사이(디자인 순서와 동일).

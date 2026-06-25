@@ -336,3 +336,25 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   숫자. tab_bar.rs 가 본체 tab 시각을 painter 로 재현하는 것과 같은 방식.
 - **근거(2026-06-25)**: `crates/tasty-gallery/src/catalog/components/switch_overlay.rs`. 신규
   Theme 필드 없음(P0). 본체 P2 draw 도 같은 좌표 painting 이 될 것이므로 형상 로직 공유 가능.
+
+---
+
+## switch-number overlay — modifier 상태 소스 & 이벤트 구동 redraw
+
+- **증상**: "modifier 를 누르고 있는 동안" 만 보이는 오버레이는 (a) 무엇으로 modifier 상태를
+  읽을지, (b) 다른 키 입력 없이 modifier press/release 만으로 redraw 가 도는지가 관건.
+- **원인/사실(검증)**:
+  - tasty 는 `WindowEvent::ModifiersChanged` 를 egui 에 전달하고(`src/view/main.rs:256-258`),
+    egui 가 반환하는 `repaint` 가 true 면 `mark_dirty()` → RedrawRequested → `run_egui_frame`.
+    즉 **bare Ctrl press/release 도 redraw 를 유발**한다(별도 배선 불필요). focus 상실 시
+    `base.modifiers = empty()` (main.rs:289) 로도 정리되고 egui 도 동일.
+  - draw 단계 modifier 소스는 **egui `ctx.input(|i| i.modifiers)`** 가 가장 깔끔. winit→egui
+    raw_input 으로 들어온 **실제 사용자 입력만** 반영 → IPC/에이전트가 raw_input 에 주입
+    불가 → 사용자↔에이전트 분리 자동 충족. tasty `base.modifiers`(MainView) 를 draw 까지
+    plumbing 할 필요 없음.
+- **처방**: 공통 모듈 `src/adapters/ui/switch_overlay.rs` 에 ① modifier 일치 판정
+  (`tab_switch_held`/`workspace_switch_held`, numeric.rs 규칙 1:1) ② 키캡 painter
+  (`paint_keycap`) 를 모은다. wrapper 가 `ctx.input` modifier + `engine.settings.keybindings`
+  로 held bool 을 계산해 **순수 view props 로 전달**(view 는 settings 비의존 유지, model-view-split).
+- **근거(2026-06-25)**: `tab_bar.rs` (`PaneTabBarsProps.tab_switch_held`), `switch_overlay.rs`.
+  P2b 사이드바도 같은 모듈의 `workspace_switch_held`/`workspace_digit`/`paint_keycap` 재사용.

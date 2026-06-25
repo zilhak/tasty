@@ -73,6 +73,9 @@ pub struct PaneTabBarsProps<'a> {
     pub active_tab_indicator: crate::settings::ActiveTabIndicator,
     /// 현재 drag 진행 상태 (None 이면 overlay 미표시).
     pub drag: Option<TabDragView>,
+    /// switch-number overlay — 사용자가 `tab_switch_modifier` 를 누르고 있는 동안 true.
+    /// 각 탭의 leading 아이콘을 숫자 키캡(`Ctrl+1`…`0`)으로 in-place 교체한다. release 시 원복.
+    pub tab_switch_held: bool,
 }
 
 /// View 가 발생시킨 사용자 의도. wrapper 가 state/engine 으로 반영.
@@ -344,10 +347,28 @@ pub fn draw_pane_tab_bars_view(
                                     ),
                                     egui::vec2(icon_size, icon_size),
                                 );
-                                let kind = info.tab_kinds.get(i).copied().unwrap_or("terminal");
-                                kind_icon(kind)
-                                    .image(icon_size, text_color.into())
-                                    .paint_at(ui, icon_rect);
+                                // switch-number overlay: tab_switch_modifier 홀드 + 단축키
+                                // 있는 탭(1–9,0)은 아이콘 자리를 숫자 키캡으로 in-place 교체.
+                                // 폭/text_x 는 불변(아이콘 slot 중앙에 키캡) → 리플로 없음.
+                                let switch_digit = if props.tab_switch_held {
+                                    crate::adapters::ui::switch_overlay::tab_digit(i)
+                                } else {
+                                    None
+                                };
+                                if let Some(digit) = switch_digit {
+                                    crate::adapters::ui::switch_overlay::paint_keycap(
+                                        &painter,
+                                        th,
+                                        icon_rect.center(),
+                                        digit,
+                                        is_active,
+                                    );
+                                } else {
+                                    let kind = info.tab_kinds.get(i).copied().unwrap_or("terminal");
+                                    kind_icon(kind)
+                                        .image(icon_size, text_color.into())
+                                        .paint_at(ui, icon_rect);
+                                }
 
                                 // 텍스트 — 아이콘 뒤, 좌측 정렬. 우측엔 dot 공간 확보.
                                 let text_x = icon_rect.max.x + 6.0;
@@ -746,6 +767,14 @@ pub fn draw_pane_tab_bars(
         current_x: d.current_x,
     });
 
+    // switch-number overlay — 현재 눌린(사용자 입력) modifier 가 tab_switch_modifier 와
+    // 일치하면 탭 leading 을 숫자 키캡으로 그린다. egui ctx.input 의 modifier 만 보므로
+    // 에이전트/IPC 로는 표시될 수 없다(사용자 입력 전용). 공통 배선: `switch_overlay`.
+    let tab_switch_held = {
+        let mods = ctx.input(|i| i.modifiers);
+        crate::adapters::ui::switch_overlay::tab_switch_held(mods, &engine.settings.keybindings)
+    };
+
     let props = PaneTabBarsProps {
         theme: &th,
         panes: &panes,
@@ -754,6 +783,7 @@ pub fn draw_pane_tab_bars(
         tab_font_size,
         active_tab_indicator: appearance.active_tab_indicator,
         drag,
+        tab_switch_held,
     };
 
     let output = draw_pane_tab_bars_view(ctx, &props);
@@ -959,6 +989,7 @@ mod tests {
                 tab_font_size: 12.0,
                 active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
                 drag: drag.clone(),
+                tab_switch_held: false,
             };
             out = draw_pane_tab_bars_view(ctx, &props);
         }));

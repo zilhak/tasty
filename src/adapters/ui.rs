@@ -5,6 +5,7 @@ mod egui_panels;
 pub(crate) mod icons;
 mod sidebar;
 pub(crate) mod status_bar;
+pub(crate) mod switch_overlay;
 mod tab_bar;
 pub(crate) mod titlebar;
 
