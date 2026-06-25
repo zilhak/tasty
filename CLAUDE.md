@@ -115,6 +115,8 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프
 
 상세·근거: [`docs/adr/0020-gallery-complete-component-source.md`](docs/adr/0020-gallery-complete-component-source.md) · [`docs/dev-guide/gallery-first.md`](docs/dev-guide/gallery-first.md) · [`docs/design/policies/gallery-completeness.md`](docs/design/policies/gallery-completeness.md).
 
+**UI 를 디자인에 정합시킬 때는** [`docs/design/systems/design-parity-notes.md`](docs/design/systems/design-parity-notes.md) 의 **구조 전사(structural transcription)** 원칙과 [`docs/design/systems/design-gallery-mapping.md`](docs/design/systems/design-gallery-mapping.md)(jsx↔함수 매핑)을 읽는다 — egui flow 로 눈대중 흉내 내지 말고 디자인의 레이아웃 구조(grid·컬럼·패딩·정렬)를 소스에 1:1 전사한다. (색·치수 토큰 정합과 **별개 축**이다.)
+
 ## 국제화 (필수)
 
 모든 UI 문자열은 `t()` 함수를 통한 번역 키로 노출한다. 자연어 하드코딩 금지. 새 문자열 추가 시 `lang/{en,ko,ja}.toml` 세 파일에 모두 키 추가.
