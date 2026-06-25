@@ -295,6 +295,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn plugin_setting_value_untagged_round_trip() {
+        // `#[serde(untagged)]` 가 TOML 스칼라를 Bool/Number/Text 로 정확히 분류·복원하는지.
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct W {
+            v: PluginSettingValue,
+        }
+        for v in [
+            PluginSettingValue::Bool(true),
+            PluginSettingValue::Number(100.0),
+            PluginSettingValue::Text("follow".to_string()),
+        ] {
+            let w = W { v: v.clone() };
+            let dumped = toml::to_string(&w).unwrap();
+            let back: W = toml::from_str(&dumped).unwrap();
+            assert_eq!(back.v, v, "round-trip changed value (dumped: {dumped:?})");
+        }
+        // 명시적 TOML 스칼라 → 기대 variant (분류 순서 확인).
+        assert_eq!(
+            toml::from_str::<W>("v = true").unwrap().v,
+            PluginSettingValue::Bool(true)
+        );
+        assert_eq!(
+            toml::from_str::<W>("v = 100.0").unwrap().v,
+            PluginSettingValue::Number(100.0)
+        );
+        assert_eq!(
+            toml::from_str::<W>(r#"v = "follow""#).unwrap().v,
+            PluginSettingValue::Text("follow".to_string())
+        );
+    }
+
+    #[test]
     fn apply_override_falls_back_to_defaults() {
         let defaults = FontSettings {
             font_family: "Default".to_string(),

@@ -18,13 +18,19 @@
 
 - **General** — L2: General / Clipboard / Notifications / Accessibility.
 - **Terminal** — L2: General(터미널 동작 설정) / Performance.
-- **Appearance** — L2: Theme / General / Display / Terminal / (플러그인 기여 페이지 동적) / HTML. Display = UI 스케일(sm/md/lg) 전용. (앱 크롬 색상용 Tasty 섹션은 현재 미구현 — 추후 추가 예정.)
+- **Appearance** — L2: Theme / Colors / General / Display / Tasty / Terminal + 플러그인 기여 페이지(동적). Display = UI 스케일(sm/md/lg) 전용. Tasty = 앱 크롬 색상(accent / sidebar bg / active tab indicator). HTML viewer 설정은 호스트 고정 탭이 아니라 `com.tasty.html` 플러그인이 기여하는 동적 페이지다.
 - **Keybindings** — L2: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins. 단축키 편집 (아래).
 - **FileHandler** — L2: Extension Mapping / Detectors / Handlers.
 - **Misc** — L2: Tastyrc (Windows 전용; 비-Windows 는 섹션 0개 → empty state).
 - **Plugins** — 플러그인 기여 설정 페이지 (동적).
 
 L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능 (L1 전환 시 클리어).
+
+### 플러그인 기여 설정 (generic 컨트롤)
+
+플러그인이 `[[contributes.settings_pages]]` 로 기여한 페이지를 host 가 `draw_plugin_settings_page` 로 렌더한다. manifest item `kind` 별로 generic 컨트롤을 그린다 — `toggle` → Switch, `select` → Select(드롭다운), `number` → DragValue(+ `suffix_key` 단위), `font_override` → surface 폰트 섹션. `toggle`/`select`/`number` 값은 `plugin_settings.<plugin_id>.<storage_key>` 슬롯(`PluginSettingValue` = Bool/Number/Text)에 저장·영속되며(`font_override` 의 전역 `plugin_font_overrides` 와 별개 네임스페이스), 변경 즉시 write + persist 된다. 첫 소비자는 `com.tasty.html` — Appearance 에 HTML viewer 설정(zoom / color scheme / allow remote content / sandbox scripts)을 이 방식으로 노출한다.
+
+> **현재 범위**: 위는 *설정 페이지 렌더 + 저장 + 영속* 까지다. `com.tasty.html` 의 zoom/color scheme 등을 실제 webview 에 **적용하는 소비 배선은 아직 없다**(host webview 제어 IPC + plugin 측 설정 읽기 경로 미구현 — 후속).
 
 ### draft / save 모델
 
@@ -64,7 +70,7 @@ L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능
 ## 구현
 
 - `src/view/settings.rs` — `SettingsView`, `SettingsUiState`(draft/active_tab/sub-tab 상태).
-- `src/view/settings/ui.rs` — `SettingsTab`(L1 7탭: General / Terminal / Appearance / Keybindings / FileHandler / Misc / Plugins), L2 enum 군 `GeneralSubTab` / `TerminalSubTab` / `AppearanceSubTab`(Theme / General / Display / Terminal / Plugin / HtmlViewer) / `MiscSubTab` / `PluginSubTab`, L2 필터. FileHandler 는 L1 으로 승격되어 기존 내부 3depth(Extension Mapping / Detectors / Handlers)가 그 L2 가 된다.
+- `src/view/settings/ui.rs` — `SettingsTab`(L1 7탭: General / Terminal / Appearance / Keybindings / FileHandler / Misc / Plugins), L2 enum 군 `GeneralSubTab` / `TerminalSubTab` / `AppearanceSubTab`(Theme / Colors / General / Display / Tasty / Terminal / Plugin) / `MiscSubTab` / `PluginSubTab`, L2 필터. FileHandler 는 L1 으로 승격되어 기존 내부 3depth(Extension Mapping / Detectors / Handlers)가 그 L2 가 된다.
 - 탭별: `src/view/settings/ui/tabs/*` + `keybindings_tab.rs` + `file_handler_tab.rs`.
 
 ## 화면
