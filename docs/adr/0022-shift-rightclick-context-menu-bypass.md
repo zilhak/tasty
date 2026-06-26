@@ -69,4 +69,6 @@ ADR-0019 의 앱 위임 원칙을 **유지한 채**, 두 가지를 추가한다.
   안내 toast 배선(연계 작업 11).
 - 관련: [ADR-0019](0019-mouse-button-reporting-app-delegation.md) — 본 ADR 이 그 "후속 과제 /
   Reconsideration Trigger(트래킹 앱 우클릭 메뉴 요구 → modifier 우회)" 를 해소한다.
+- 관련: [ADR-0023](0023-shift-leftclick-selection-bypass.md) — 좌클릭 선택 우회를 대칭으로 추가하며,
+  본 ADR 의 안내 toast 를 좌·우 첫 상호작용 1회 + 범용 메시지로 확장한다.
 - 표준 관례: xterm/iTerm2 의 Shift+마우스 리포팅 우회.

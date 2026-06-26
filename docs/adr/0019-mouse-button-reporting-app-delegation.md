@@ -69,3 +69,4 @@ ADR-0013 이 "마우스는 표준 경로(1000/1002/1003 + 1006 SGR)로 충분"�
   `crates/tasty-terminal/src/modes.rs`(`MouseTrackingMode`).
 - 관련: ADR-0013(레거시·니치 입력 사설 모드 — "마우스 표준 경로로 충분" 전제를 본 ADR 이 실현),
   CLAUDE.md "크로스 플랫폼" 원칙.
+- 후속(본 ADR 의 Reconsideration Trigger "modifier 우회" 해소): [ADR-0022](0022-shift-rightclick-context-menu-bypass.md)(우클릭 축), [ADR-0023](0023-shift-leftclick-selection-bypass.md)(좌클릭 선택 축).

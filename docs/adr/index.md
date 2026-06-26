@@ -32,3 +32,4 @@
 | 0020 | [갤러리는 본체 UI 컴포넌트의 완전한 단일 출처 — cut 금지, gallery-first](0020-gallery-complete-component-source.md) | Accepted | 2026-06-24 | gallery, design-parity, demo-main, component-catalog, workflow, ui |
 | 0021 | [자체 업데이트 확인 기능(update-check) 전면 제거](0021-remove-update-check-feature.md) | Accepted | 2026-06-25 | update, auto-update, scope, distribution, removal, maintenance, cli, plugin |
 | 0022 | [Shift+우클릭 modifier 우회 + 트래킹 안내 toast](0022-shift-rightclick-context-menu-bypass.md) | Accepted | 2026-06-25 | terminal, mouse, mouse-reporting, context-menu, modifier, discoverability, ux |
+| 0023 | [Shift+좌클릭 드래그 = 마우스 리포팅 우회 로컬 텍스트 선택 + 안내 toast 범용화](0023-shift-leftclick-selection-bypass.md) | Accepted | 2026-06-26 | terminal, mouse, mouse-reporting, selection, modifier, clipboard, discoverability, ux |
