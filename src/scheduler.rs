@@ -33,7 +33,7 @@ pub(crate) struct Envelope<B> {
 /// 의 도메인 발화 (popup 발화 불가 — `docs/design/systems/popup.md` "Popup 발화
 /// 정책 (CRITICAL)") 와 *debug 빌드의 사용자 입력 재현* 양쪽을 의미한다.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // D.3.I.3 까지 사용처 없음 (모듈 doc 참조).
 pub(crate) enum Origin {
     User(UserSource),
     Agent(AgentSource),
@@ -46,7 +46,7 @@ pub(crate) enum Origin {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // D.3.I.3 까지 사용처 없음 (모듈 doc 참조).
 pub(crate) enum UserSource {
     Shortcut(&'static str),
     Menu(&'static str),
@@ -54,7 +54,7 @@ pub(crate) enum UserSource {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // D.3.I.3 까지 사용처 없음 (모듈 doc 참조).
 pub(crate) enum AgentSource {
     Ipc,
     Plugin(String),
@@ -68,12 +68,12 @@ pub(crate) enum AgentSource {
 /// 멀티-thread 발화는 *호출자가 channel 로 main loop 에 전달* 후 main loop 가
 /// `enqueue` 한다 — Scheduler 가 직접 thread-safe 가 되지는 않음.
 #[derive(Debug, Default)]
-#[allow(dead_code)]
+#[allow(dead_code)] // D.3.I.3 까지 사용처 없음 (모듈 doc 참조).
 pub(crate) struct Scheduler<B> {
     queue: VecDeque<Envelope<B>>,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // D.3.I.3 까지 사용처 없음 (모듈 doc 참조).
 impl<B> Scheduler<B> {
     pub fn new() -> Self {
         Self {

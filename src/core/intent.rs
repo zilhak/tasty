@@ -247,7 +247,7 @@ pub(crate) enum DomainIntent {
 /// `Core::apply` 의 결과 — 도메인이 *변경 후 알리는* 이벤트.
 /// observer / replay / remote attach 의 기반.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: Core::apply 이벤트 — observer/replay/remote attach consumer 미배선(D.3.C).
 #[allow(clippy::large_enum_variant)] // reason: event queue 의 Box 화는 alloc/clone 비용 큼
 pub(crate) enum CoreEvent {
     // ─── Settings (D.3.C.A.2) ───
@@ -509,7 +509,7 @@ pub(crate) enum PluginRegistryChange {
 
 /// `CoreEvent::ClosedItemRestored` 의 복원 결과 분류.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: CoreEvent::ClosedItemRestored 페이로드 — cascade consumer 미배선(D.3.C).
 pub(crate) enum RestoredKind {
     /// 비어있는 스택 또는 rebuild 실패.
     Nothing,
@@ -536,7 +536,7 @@ pub(crate) enum CascadeLevel {
 /// `events` 는 cascade dispatcher 가 처리할 CoreEvent. `processed` 는 어느
 /// surface 든 데이터를 실제 drain 했는지 (mark_dirty 결정 신호).
 #[derive(Debug, Default)]
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: Core::process_pty_output 반환 — event_handler cascade 배선 후 사용(D.3.C).
 pub(crate) struct ProcessPtyOutcome {
     pub events: Vec<CoreEvent>,
     pub processed: bool,

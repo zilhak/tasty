@@ -101,7 +101,7 @@ fn terminal_surface_in_tab(
 /// 도메인 데이터 (`crate::core::CoreState`) 는 본 struct 가 아닌
 /// `App.core_state` 가 main owner — Phase D 진행 중의 *공존 layer*. D.3.C
 /// 에서 점진 흡수.
-#[allow(dead_code)]
+#[allow(dead_code)] // 이유: Phase D 공존 layer scaffolding — App.core_state 가 main owner, D.3.C 흡수 대기.
 pub(crate) struct Core {
     // ─── External ports (bin 안 정의, src/ports/) ───
     fs: Arc<dyn FileSystem>,
@@ -318,7 +318,7 @@ impl Core {
     }
 
     /// runner thread 가 plugin IPC 메서드를 동기 호출. injector 미초기화 시 Err.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 이유: Core 흡수 layer(D.3.C) — runner thread plugin IPC dispatch 경로 미배선.
     pub(crate) fn host_dispatch_plugin_method(
         &self,
         method: &str,
@@ -333,7 +333,7 @@ impl Core {
     }
 
     /// Arc<OnceLock<HostIpcInjector>> 의 사본. runner thread 가 자체 호출 시 사용.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // 이유: Core 흡수 layer(D.3.C) — runner thread 자체 dispatch 경로 미배선.
     pub(crate) fn host_ipc_injector_arc(
         &self,
     ) -> Arc<OnceLock<crate::ipc::host_call::HostIpcInjector>> {

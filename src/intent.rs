@@ -324,6 +324,7 @@ impl IntentOrigin {
         matches!(self, IntentOrigin::Agent { .. })
     }
 
+    /// `is_agent` 와 짝인 audit/branch helper — origin 분기 호출처 추가 시 사용.
     #[allow(dead_code)]
     pub fn is_system(&self) -> bool {
         matches!(self, IntentOrigin::System)
