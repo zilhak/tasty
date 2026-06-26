@@ -746,8 +746,23 @@ workspace = "Workspace"
 tab = "Tab"
 pane = "Pane"
 
-[preset.list]
-placeholder = "Saved presets will appear here."
+[preset.header]
+count = "{} presets"
+new = "New preset"
+
+[preset.toolbar]
+rename = "Rename"
+duplicate = "Duplicate"
+delete = "Delete"
+edit = "Edit"
+
+[preset.count]
+pane_one = "1 pane"
+pane_many = "{} panes"
+tab_one = "1 tab"
+tab_many = "{} tabs"
+surface_one = "1 surface"
+surface_many = "{} surfaces"
 
 [preset.context]
 save_as_workspace_preset = "Save as workspace preset"

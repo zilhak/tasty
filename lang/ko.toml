@@ -746,8 +746,23 @@ workspace = "워크스페이스"
 tab = "탭"
 pane = "패인"
 
-[preset.list]
-placeholder = "저장된 프리셋이 여기에 표시됩니다."
+[preset.header]
+count = "프리셋 {}개"
+new = "새 프리셋"
+
+[preset.toolbar]
+rename = "이름 변경"
+duplicate = "복제"
+delete = "삭제"
+edit = "편집"
+
+[preset.count]
+pane_one = "패인 1개"
+pane_many = "패인 {}개"
+tab_one = "탭 1개"
+tab_many = "탭 {}개"
+surface_one = "서피스 1개"
+surface_many = "서피스 {}개"
 
 [preset.context]
 save_as_workspace_preset = "워크스페이스 프리셋으로 저장"
