@@ -25,7 +25,16 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 - **좌측 리스트**(196px): 현재 scope 의 저장된 preset 목록. row = 이름 + mono subtitle(workspace 는 저장된 subtitle, 없으면 pane/tab 개수 / tab·pane 은 surface·tab 개수). 선택 row 는 `surface-active` 채움 + 2px accent 좌측 bar. 헤더에 `N presets` + New preset(`+`) 버튼(현재 레이아웃 capture 가 아니라 terminal 1개짜리 최소 preset 생성 — 본문 capture 경로는 컨텍스트 메뉴 저장이 담당). 빈 scope → "저장된 프리셋이 없습니다.".
 - **우측 detail**: 44px 툴바(좌: preset 이름+subtitle / 우: rename·duplicate·delete 아이콘 + Edit 버튼) 위에 선택 preset 의 **데모 레이아웃 미리보기**(상위 pane split = 카드+gap, 하위 surface split = hairline, leaf = kind 라벨, mini-tab 클릭 전환 — 구조만, 내용 렌더 없음). 툴바 rename·duplicate·delete 는 store 에 직결돼 즉시 동작(rename 은 인라인 입력).
 
-각 leaf 의 (kind, cwd, 시작 명령어, params)를 미리보기 위에서 직접 고치는 **WYSIWYG 편집 모드(Edit 버튼)** 는 후속 단계로, 현재 Edit 버튼은 자리만 차지(disabled)한다. 시작 명령어 폼은 kind=`terminal` 일 때만 노출 예정.
+#### WYSIWYG 편집 모드 (Edit 버튼)
+
+툴바 **Edit** 버튼을 누르면 같은 미리보기 영역이 그 자리에서 편집 가능한 WYSIWYG 모드로 전환된다(별도 화면·모달 없음). Edit 는 primary **Done** 으로 바뀌고, 옆에 "자동 저장됨" 안내가 표시된다 — **별도 Save 버튼 없음**. 모든 변경은 `PresetStore::save_*_overwrite` 로 즉시 디스크에 write-through 된다(기존 preset 의 메타데이터는 보존하고 레이아웃 트리만 교체).
+
+- **surface 선택**: 편집 모드에서는 모든 surface 가 1px hairline 윤곽을 얻고, 클릭으로 한 surface 를 선택하면 2px accent inset 윤곽 + 핸들 클러스터(우측 split `dir=row` · 하단 split `dir=col` · 제거 danger)가 붙는다. 마지막 한 장 남은 surface 제거는 무효(트리에 0-surface 탭을 쓰지 않음).
+- **leaf 인라인 폼**: 선택한 leaf 의 중앙 라벨이 인라인 폼으로 바뀐다 — kind 드롭다운(Select) + 작업 디렉터리 Input(mono) + 시작 명령어 Input(mono, **kind=`terminal` 일 때만** 노출). kind 를 바꾸면 라벨이 즉시 갱신되고 시작 명령어 필드가 토글된다.
+- **이름/subtitle 인라인 편집**: 편집 모드에서 툴바의 preset 이름은 텍스트 입력으로, subtitle 은 (Workspace 한정 실제 필드일 때) 입력으로 바뀌어 포커스 해제 시 store 에 commit 된다.
+- **트리 변형**: split(우측/하단) · 제거 · 탭 추가(+) 가 실제 트리를 변형하고 자동 저장된다.
+
+mini-tab strip 은 `tab_bar.rs`, split 라인은 `divider.rs` 위젯을 재사용한다.
 
 ### 적용 — 포커스 규칙
 

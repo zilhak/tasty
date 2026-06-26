@@ -755,6 +755,15 @@ rename = "이름 변경"
 duplicate = "복제"
 delete = "삭제"
 edit = "편집"
+done = "완료"
+saved = "자동 저장됨"
+
+[preset.edit]
+kind = "종류"
+cwd = "작업 디렉터리"
+startup = "시작 명령어"
+startup_hint = "시작 시 실행할 명령어"
+subtitle_hint = "부제목"
 
 [preset.count]
 pane_one = "패인 1개"
@@ -777,6 +786,7 @@ saved_workspace = "워크스페이스 프리셋 저장됨"
 saved_tab = "탭 프리셋 저장됨"
 saved_pane = "패인 프리셋 저장됨"
 save_failed = "프리셋 저장 실패"
+rename_failed = "프리셋 이름 변경 실패"
 apply_failed = "프리셋 적용 실패"
 
 [preset.tools]

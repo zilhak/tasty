@@ -10,16 +10,17 @@
 //! 편집(WYSIWYG) 모드는 TODO 09 — 여기선 Edit 버튼 자리만(disabled). rename·
 //! duplicate·delete 는 기존 store API 에 직결돼 동작한다.
 
-use tasty_presets::{PresetKind, PresetPaneNode, PresetStore, PresetSurfaceLayout};
+use tasty_presets::{PresetKind, PresetPaneNode, PresetResult, PresetStore, PresetSurfaceLayout};
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant};
 
 use crate::adapters::ui::icons;
+use crate::adapters::ui::{ToastKind, ToastManager, ToastScope};
 use crate::i18n::{t, t_fmt};
 
 pub mod demo_layout;
 
-use demo_layout::{DemoLayout, fallback_kind_label};
+use demo_layout::{DemoLayout, ShowOutcome, fallback_kind_label};
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preset-window 셸 전용 치수 — specimen 전사).
 /// 좌측 리스트 폭.
@@ -48,6 +49,16 @@ struct RenameState {
     request_focus: bool,
 }
 
+/// 편집 모드 툴바의 name/subtitle 인라인 버퍼 (egui temp memory 보관). `key`
+/// (`{kind}:{name}`)가 바뀌면 store 값으로 재초기화한다. subtitle 은 Workspace 만
+/// 실제 필드를 가지며 Tab/Pane 은 구조 파생이라 편집 불가(버퍼 미사용).
+#[derive(Clone, Default)]
+struct EditMetaState {
+    key: String,
+    name: String,
+    subtitle: String,
+}
+
 /// 선택된 preset 으로부터 미리보기 위젯을 만든다.
 fn build_demo(store: &PresetStore, kind: PresetKind, name: &str) -> Option<DemoLayout> {
     match kind {
@@ -60,6 +71,50 @@ fn build_demo(store: &PresetStore, kind: PresetKind, name: &str) -> Option<DemoL
         PresetKind::Pane => store
             .get_pane(name)
             .map(|p| DemoLayout::from_pane(p, fallback_kind_label)),
+    }
+}
+
+/// 편집된 `layout` 을 store/disk 에 write-through(auto-save). 메타데이터
+/// (name/subtitle/description/explicit_name)는 기존 preset 에서 보존하고 **레이아웃
+/// 트리만** 교체한다 — 편집 모드는 구조/leaf 파라미터만 건드리므로. scope 가
+/// layout 종류와 안 맞거나 preset 이 사라졌으면 no-op(Ok).
+fn persist_layout(
+    store: &mut PresetStore,
+    kind: PresetKind,
+    name: &str,
+    layout: &DemoLayout,
+) -> PresetResult<()> {
+    match kind {
+        PresetKind::Workspace => {
+            let Some(node) = layout.rebuild_pane_node() else {
+                return Ok(());
+            };
+            let Some(mut p) = store.get_workspace(name).cloned() else {
+                return Ok(());
+            };
+            p.layout = node;
+            store.save_workspace_overwrite(p)
+        }
+        PresetKind::Tab => {
+            let Some(surf) = layout.rebuild_surface_layout() else {
+                return Ok(());
+            };
+            let Some(mut p) = store.get_tab(name).cloned() else {
+                return Ok(());
+            };
+            p.tab.layout = surf;
+            store.save_tab_overwrite(p)
+        }
+        PresetKind::Pane => {
+            let Some(pane) = layout.rebuild_single_pane() else {
+                return Ok(());
+            };
+            let Some(mut p) = store.get_pane(name).cloned() else {
+                return Ok(());
+            };
+            p.pane = pane;
+            store.save_pane_overwrite(p)
+        }
     }
 }
 
@@ -98,6 +153,19 @@ fn count_label(n: usize, one_key: &str, many_key: &str) -> String {
         t(one_key).to_string()
     } else {
         t_fmt(many_key, &n.to_string())
+    }
+}
+
+/// 편집 가능한 **실제** subtitle 필드값(Workspace 만 보유). Tab/Pane 은 구조 파생
+/// subtitle 이라 편집 불가 → 빈 문자열.
+fn workspace_subtitle_field(store: &PresetStore, kind: PresetKind, name: &str) -> String {
+    if kind == PresetKind::Workspace {
+        store
+            .get_workspace(name)
+            .map(|p| p.subtitle.clone())
+            .unwrap_or_default()
+    } else {
+        String::new()
     }
 }
 
@@ -309,14 +377,20 @@ fn draw_list_row(
 // ── 미리보기 ─────────────────────────────────────────────────────────────
 
 /// `rect`(bg-app) 안에 선택 preset 의 데모 레이아웃을 그린다. demo 인스턴스는 egui
-/// temp memory 에 (key, layout) 으로 캐시해 탭 클릭 전환이 프레임 간 지속되게 한다.
+/// temp memory 에 (key, layout) 으로 캐시해 탭 클릭 전환·편집 결과가 프레임 간
+/// 지속되게 한다. `editing` 이면 WYSIWYG 편집 모드로 그리고, 변경 발생 시 즉시
+/// store/disk 에 write-through(auto-save) + 실패 시 toast.
+#[allow(clippy::too_many_arguments)]
 fn draw_preview(
     ui: &mut egui::Ui,
-    store: &PresetStore,
+    store: &mut PresetStore,
     theme: &Theme,
     kind: PresetKind,
     name: &str,
     rect: egui::Rect,
+    editing: bool,
+    selected_node: &mut Option<usize>,
+    toasts: &mut ToastManager,
 ) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_app().to_egui());
@@ -337,9 +411,27 @@ fn draw_preview(
         },
     };
 
-    let changed = layout.show(ui, theme, canvas);
-    if changed {
-        ui.ctx().request_repaint();
+    if editing {
+        match layout.show_edit(ui, theme, canvas, selected_node) {
+            ShowOutcome::None => {}
+            ShowOutcome::Repaint => ui.ctx().request_repaint(),
+            ShowOutcome::Mutated => {
+                ui.ctx().request_repaint();
+                if let Err(e) = persist_layout(store, kind, name, &layout) {
+                    tracing::warn!("preset auto-save failed: {e}");
+                    toasts.push(
+                        t("preset.toast.save_failed"),
+                        ToastKind::Error,
+                        ToastScope::Window,
+                    );
+                }
+            }
+        }
+    } else {
+        let changed = layout.show(ui, theme, canvas);
+        if changed {
+            ui.ctx().request_repaint();
+        }
     }
     ui.data_mut(|d| d.insert_temp(cache_id, (key, layout)));
 }
@@ -347,6 +439,7 @@ fn draw_preview(
 // ── 본문 ─────────────────────────────────────────────────────────────────
 
 /// PresetView 의 본문을 그린다.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_preset_panel(
     ctx: &egui::Context,
     store: &mut PresetStore,
@@ -354,12 +447,16 @@ pub fn draw_preset_panel(
     selected_workspace: &mut Option<String>,
     selected_tab: &mut Option<String>,
     selected_pane: &mut Option<String>,
+    editing: &mut bool,
+    selected_node: &mut Option<usize>,
+    toasts: &mut ToastManager,
 ) {
     let theme = crate::theme::theme();
     let rename_id = egui::Id::new("preset_rename_state");
     let mut rename: Option<RenameState> = ctx
         .data_mut(|d| d.get_temp::<Option<RenameState>>(rename_id))
         .flatten();
+    let edit_meta_id = egui::Id::new("preset_edit_meta");
 
     egui::CentralPanel::default().show(ctx, |ui| {
         // ── L1 scope 탭 (유지) ──────────────────────────────────────────
@@ -505,12 +602,103 @@ pub fn draw_preset_panel(
         let mut rename_clicked = false;
         let mut duplicate_clicked = false;
         let mut delete_clicked = false;
+        let mut edit_clicked = false;
+        let mut done_clicked = false;
+        // 편집 모드 name/subtitle 인라인 버퍼 — 편집 시에만 로드/저장.
+        let mut edit_meta: Option<EditMetaState> = None;
 
         if let Some(name) = current.clone() {
             let toolbar_inner = toolbar_rect.shrink2(egui::vec2(theme.spacing_md.value(), 0.0));
             let mut tui = ui.new_child(egui::UiBuilder::new().max_rect(toolbar_inner));
             tui.set_clip_rect(toolbar_rect);
             tui.horizontal_centered(|ui| {
+                if *editing {
+                    // ── 편집 상태 툴바: name/subtitle 인라인 입력 ──────────────
+                    let key = format!("{}:{}", kind.as_str(), name);
+                    let mut meta = ctx
+                        .data_mut(|d| d.get_temp::<EditMetaState>(edit_meta_id))
+                        .filter(|m| m.key == key)
+                        .unwrap_or_else(|| EditMetaState {
+                            key: key.clone(),
+                            name: name.clone(),
+                            subtitle: workspace_subtitle_field(store, kind, &name),
+                        });
+
+                    // name input — lost_focus 시 rename 커밋.
+                    let name_resp = ui.add(
+                        egui::TextEdit::singleline(&mut meta.name)
+                            .desired_width(RENAME_W)
+                            .id(egui::Id::new(("preset_edit_name", kind.as_str()))),
+                    );
+                    if name_resp.lost_focus() {
+                        let buf = meta.name.trim().to_string();
+                        if buf.is_empty() {
+                            meta.name = name.clone(); // 빈 이름 거부 — 되돌림.
+                        } else if buf != name {
+                            match store.rename(kind, &name, &buf) {
+                                Ok(()) => {
+                                    *selected = Some(buf.clone());
+                                    meta.key = format!("{}:{}", kind.as_str(), buf);
+                                    meta.name = buf;
+                                }
+                                Err(e) => {
+                                    tracing::warn!("preset rename failed: {e}");
+                                    toasts.push(
+                                        t("preset.toast.rename_failed"),
+                                        ToastKind::Error,
+                                        ToastScope::Window,
+                                    );
+                                    meta.name = name.clone();
+                                }
+                            }
+                        }
+                    }
+
+                    // subtitle input — Workspace 만(실제 필드). changed 시 즉시 저장.
+                    if kind == PresetKind::Workspace {
+                        let sub_resp = ui.add(
+                            egui::TextEdit::singleline(&mut meta.subtitle)
+                                .desired_width(RENAME_W)
+                                .hint_text(t("preset.edit.subtitle_hint"))
+                                .id(egui::Id::new("preset_edit_subtitle")),
+                        );
+                        if sub_resp.changed() {
+                            if let Some(mut p) = store.get_workspace(&name).cloned() {
+                                p.subtitle = meta.subtitle.clone();
+                                if let Err(e) = store.save_workspace_overwrite(p) {
+                                    tracing::warn!("preset subtitle save failed: {e}");
+                                    toasts.push(
+                                        t("preset.toast.save_failed"),
+                                        ToastKind::Error,
+                                        ToastScope::Window,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    edit_meta = Some(meta);
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Done (primary) — 우측 끝.
+                        if Button::new(t("preset.toolbar.done"))
+                            .variant(ButtonVariant::Primary)
+                            .size(ControlSize::Sm)
+                            .show(ui, &theme)
+                            .clicked()
+                        {
+                            done_clicked = true;
+                        }
+                        // "saved automatically" affordance — Save 버튼 없음을 명시.
+                        ui.label(
+                            egui::RichText::new(t("preset.toolbar.saved"))
+                                .size(theme.font_size_caption.value())
+                                .color(theme.text_muted().to_egui()),
+                        );
+                    });
+                    return;
+                }
+
                 let renaming = rename
                     .as_ref()
                     .is_some_and(|r| r.kind == kind && r.original == name);
@@ -557,11 +745,10 @@ pub fn draw_preset_panel(
                         .leading_icon(&|ui, rect, c| {
                             icons::EDIT.image(rect.width(), c).paint_at(ui, rect)
                         })
-                        .enabled(false) // 편집 모드 = TODO 09
                         .show(ui, &theme)
                         .clicked()
                     {
-                        // Phase 1: no-op.
+                        edit_clicked = true;
                     }
                     // separator.
                     ui.add_space(theme.spacing_xs.value());
@@ -610,6 +797,24 @@ pub fn draw_preset_panel(
             });
         }
 
+        // 편집 메타 버퍼를 메모리에 반영.
+        if let Some(meta) = edit_meta {
+            ctx.data_mut(|d| d.insert_temp(edit_meta_id, meta));
+        }
+
+        // Edit↔Done 토글 — 진입/이탈 시 선택 노드 초기화.
+        if edit_clicked {
+            *editing = true;
+            *selected_node = None;
+            rename = None;
+            ctx.request_repaint();
+        }
+        if done_clicked {
+            *editing = false;
+            *selected_node = None;
+            ctx.request_repaint();
+        }
+
         // ── 툴바 액션 적용 ───────────────────────────────────────────────
         if let Some(name) = current.clone() {
             if rename_clicked {
@@ -644,7 +849,17 @@ pub fn draw_preset_panel(
             .clone()
             .or_else(|| store.list(kind).first().cloned());
         match preview_name {
-            Some(n) => draw_preview(ui, store, &theme, kind, &n, preview_rect),
+            Some(n) => draw_preview(
+                ui,
+                store,
+                &theme,
+                kind,
+                &n,
+                preview_rect,
+                *editing,
+                selected_node,
+                toasts,
+            ),
             None => {
                 ui.painter_at(preview_rect).rect_filled(
                     preview_rect,

@@ -28,6 +28,10 @@ pub struct PresetView {
     selected_workspace: Option<String>,
     selected_tab: Option<String>,
     selected_pane: Option<String>,
+    /// WYSIWYG 편집 모드 여부(Edit↔Done 토글).
+    editing: bool,
+    /// 편집 모드에서 선택된 surface leaf 의 안정 id.
+    selected_node: Option<usize>,
     toasts: ToastManager,
     shown: bool,
 }
@@ -45,6 +49,8 @@ impl PresetView {
             selected_workspace: None,
             selected_tab: None,
             selected_pane: None,
+            editing: false,
+            selected_node: None,
             toasts: ToastManager::new(),
             shown: false,
         }
@@ -127,6 +133,8 @@ impl View for PresetView {
         let sel_ws = &mut self.selected_workspace;
         let sel_tab = &mut self.selected_tab;
         let sel_pane = &mut self.selected_pane;
+        let editing = &mut self.editing;
+        let selected_node = &mut self.selected_node;
         let toasts = &mut self.toasts;
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
@@ -144,6 +152,9 @@ impl View for PresetView {
                 sel_ws,
                 sel_tab,
                 sel_pane,
+                editing,
+                selected_node,
+                toasts,
             );
             drop(store_guard);
 

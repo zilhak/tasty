@@ -31,6 +31,20 @@ const LEAF_GAP: f32 = 6.0;
 const TAB_PAD_X: f32 = 9.0;
 /// mini tab 아이콘↔라벨 `gap:5`.
 const TAB_GAP: f32 = 5.0;
+/// 편집 상태 `MiniHandle` 한 변 크기.
+const E_HANDLE_SZ: f32 = 18.0;
+/// 편집 핸들 사이 gap.
+const E_HANDLE_GAP: f32 = 2.0;
+/// 편집 핸들 클러스터 모서리 inset.
+const E_HANDLE_INSET: f32 = 4.0;
+/// inline leaf form 좌우 padding.
+const E_FORM_PAD: f32 = 6.0;
+/// inline leaf form 필드 세로 gap.
+const E_FORM_GAP: f32 = 4.0;
+/// inline leaf form 필드 입력 박스 높이.
+const E_FIELD_H: f32 = 20.0;
+/// inline leaf form 라벨 높이.
+const E_LABEL_H: f32 = 12.0;
 
 // ── 정적 preview 모델 (디자인 build* 트리 전사) ──────────────────────
 
@@ -390,6 +404,213 @@ fn tab_kind(t: &DemoTab) -> Kind {
     }
 }
 
+// ── 편집 상태 렌더 (디자인 `SurfaceBox` edit + `MiniHandle` + `LeafEditor`) ──
+//
+// 정적 specimen 이라 인터랙션은 없다 — "편집 모드의 시각"만 보인다. 모든 surface 가
+// 1px separator outline 을 달고, `selected`(방문 순서 index) surface 는 2px accent
+// inset outline + 우상단 handle cluster(split-right/split-down/remove) + 중앙 라벨
+// 대신 inline leaf form(kind/cwd/startup) 을 보인다. startup 은 terminal 한정.
+
+/// 편집 트리 순회 상태 — leaf 방문 순서 index 로 선택 leaf 를 지정한다.
+struct EditWalk {
+    next: usize,
+    selected: usize,
+}
+
+fn draw_surf_edit(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    node: &Surf,
+    w: &mut EditWalk,
+) {
+    match node {
+        Surf::Leaf(k) => {
+            let idx = w.next;
+            w.next += 1;
+            draw_surface_box_edit(ui, theme, rect, *k, idx == w.selected);
+        }
+        Surf::Split {
+            row,
+            ratio,
+            first,
+            second,
+        } => {
+            let (r1, line, r2) = split_rects(rect, *row, *ratio, theme.border_width.value());
+            draw_surf_edit(ui, theme, r1, first, w);
+            ui.painter_at(rect)
+                .rect_filled(line, 0.0, theme.border_default().to_egui());
+            draw_surf_edit(ui, theme, r2, second, w);
+        }
+    }
+}
+
+/// 편집 상태 surface — 비선택: 중앙 라벨 + 1px separator outline. 선택: inline form +
+/// 2px accent outline + handle cluster.
+fn draw_surface_box_edit(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    kind: Kind,
+    selected: bool,
+) {
+    ui.painter_at(rect)
+        .rect_filled(rect, 0.0, theme.bg_app().to_egui());
+
+    if selected {
+        draw_leaf_form_mock(ui, theme, rect, kind);
+    } else {
+        let icon = theme.icon_glyph_size_md.value();
+        let label_h = theme.font_size_caption.value();
+        let total = icon + LEAF_GAP + label_h;
+        let icon_cy = rect.center().y - total * 0.5 + icon * 0.5;
+        paint_glyph(
+            ui,
+            kind.icon(),
+            egui::pos2(rect.center().x, icon_cy),
+            icon,
+            kind.accent(theme),
+        );
+        ui.painter_at(rect).text(
+            egui::pos2(
+                rect.center().x,
+                icon_cy + icon * 0.5 + LEAF_GAP + label_h * 0.5,
+            ),
+            egui::Align2::CENTER_CENTER,
+            kind.label(),
+            egui::FontId::monospace(label_h),
+            theme.text_secondary().to_egui(),
+        );
+    }
+
+    // outline: 선택 = 2px accent, 비선택 = 1px separator (편집 가능 영역 표시).
+    if selected {
+        let bw = theme.tab_indicator_width.value();
+        ui.painter_at(rect).rect_stroke(
+            rect.shrink(bw * 0.5),
+            0.0,
+            egui::Stroke::new(bw, theme.accent_primary().to_egui()),
+            egui::StrokeKind::Inside,
+        );
+        draw_handle_cluster_mock(ui, theme, rect);
+    } else {
+        let bw = theme.border_width.value();
+        ui.painter_at(rect).rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(bw, theme.separator.to_egui()),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
+/// 우상단 handle cluster mock — split-right · split-down · remove(danger).
+fn draw_handle_cluster_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+    let step = E_HANDLE_SZ + E_HANDLE_GAP;
+    let x0 = rect.max.x - E_HANDLE_INSET - E_HANDLE_SZ * 3.0 - E_HANDLE_GAP * 2.0;
+    let y = rect.min.y + E_HANDLE_INSET;
+    let cell = |i: f32| {
+        egui::Rect::from_min_size(
+            egui::pos2(x0 + step * i, y),
+            egui::vec2(E_HANDLE_SZ, E_HANDLE_SZ),
+        )
+    };
+    mini_handle_mock(ui, theme, cell(0.0), icons::SPLIT, false);
+    mini_handle_mock(ui, theme, cell(1.0), icons::SPLIT_DOWN, false);
+    mini_handle_mock(ui, theme, cell(2.0), icons::TRASH, true);
+}
+
+fn mini_handle_mock(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    glyph: MockGlyph,
+    danger: bool,
+) {
+    let radius = theme.corner_radius_sm.value();
+    ui.painter_at(rect).rect(
+        rect,
+        radius,
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    let color = if danger {
+        theme.accent_danger().to_egui()
+    } else {
+        theme.text_secondary().to_egui()
+    };
+    paint_glyph(ui, glyph, rect.center(), E_HANDLE_SZ * 0.62, color);
+}
+
+/// inline leaf form mock — kind / cwd / startup(terminal 한정) 필드.
+fn draw_leaf_form_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, kind: Kind) {
+    let inner_w = (rect.width() - E_FORM_PAD * 2.0).max(0.0);
+    let mut y = rect.min.y + E_HANDLE_INSET * 2.0 + E_HANDLE_SZ;
+    let x = rect.center().x - inner_w * 0.5;
+    let terminal = matches!(kind, Kind::Terminal);
+    let fields: &[(&str, &str)] = if terminal {
+        &[
+            ("KIND", "Terminal"),
+            ("WORKING DIR", "~/project"),
+            ("STARTUP COMMAND", "npm run dev"),
+        ]
+    } else {
+        &[("KIND", "Markdown"), ("WORKING DIR", "~/project")]
+    };
+    for (label, value) in fields {
+        if y + E_LABEL_H + E_FIELD_H > rect.max.y - E_FORM_PAD {
+            break;
+        }
+        ui.painter_at(rect).text(
+            egui::pos2(x, y),
+            egui::Align2::LEFT_TOP,
+            label,
+            egui::FontId::monospace(theme.font_size_micro.value()),
+            theme.text_muted().to_egui(),
+        );
+        y += E_LABEL_H;
+        let fr = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(inner_w, E_FIELD_H));
+        ui.painter_at(rect).rect(
+            fr,
+            theme.corner_radius.value(),
+            theme.surface_raised().to_egui(),
+            egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter_at(fr).text(
+            egui::pos2(fr.min.x + E_FORM_PAD, fr.center().y),
+            egui::Align2::LEFT_CENTER,
+            value,
+            egui::FontId::monospace(theme.font_size_caption.value()),
+            theme.text_primary().to_egui(),
+        );
+        y += E_FIELD_H + E_FORM_GAP;
+    }
+}
+
+/// 편집 상태 Tab scope mock 프레임(strip 없음 + selected surface).
+fn draw_scope_body_edit(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    surf: &Surf,
+    selected: usize,
+) {
+    let radius = theme.corner_radius.value();
+    let bw = theme.border_width.value();
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, radius, theme.bg_app().to_egui());
+    let mut w = EditWalk { next: 0, selected };
+    draw_surf_edit(ui, theme, rect.shrink(BODY_PAD), surf, &mut w);
+    ui.painter_at(rect).rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(bw, theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+}
+
 fn draw_scope_body(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, scope: &Scope) {
     match scope {
         Scope::PaneTree(p) => draw_pane_tree(ui, theme, rect, p),
@@ -453,6 +674,55 @@ fn scope_demo(
     });
 }
 
+/// 라벨 붙은 **편집 상태** scope 데모 한 칸 — selected surface 기준.
+fn scope_demo_edit(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    label: &str,
+    sub: &str,
+    surf: &Surf,
+    selected: usize,
+    w: f32,
+    h: f32,
+) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            ui.label(
+                egui::RichText::new(label)
+                    .size(theme.font_size_body.value())
+                    .strong()
+                    .color(theme.text_primary().to_egui()),
+            );
+            ui.label(
+                egui::RichText::new(sub)
+                    .monospace()
+                    .size(theme.font_size_micro.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+        });
+        let (canvas, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+        let radius = theme.corner_radius.value();
+        let bw = theme.border_width.value();
+        let p = ui.painter_at(canvas);
+        p.rect_filled(canvas, radius, theme.bg_app().to_egui());
+        p.rect_stroke(
+            canvas,
+            radius,
+            egui::Stroke::new(bw, theme.border_default().to_egui()),
+            egui::StrokeKind::Inside,
+        );
+        draw_scope_body_edit(
+            ui,
+            theme,
+            canvas.shrink(theme.spacing_sm.value()),
+            surf,
+            selected,
+        );
+    });
+}
+
 fn paint_glyph(
     ui: &mut egui::Ui,
     glyph: MockGlyph,
@@ -507,6 +777,26 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         );
     });
 
+    // 편집 상태(Phase 2 / TODO 09): selected surface 2px accent outline + handle
+    // cluster + inline leaf form. 선택 = Terminal leaf(startup 필드 노출).
+    let edit_tab = build_tab();
+    let edit_surf = match &edit_tab {
+        Scope::TabFrame(s) => s,
+        Scope::PaneTree(_) => unreachable!("build_tab is a TabFrame"),
+    };
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        scope_demo_edit(
+            ui,
+            theme,
+            "Edit mode",
+            "selected surface + handles + form",
+            edit_surf,
+            1,
+            300.0,
+            240.0,
+        );
+    });
+
     spec::meta(
         ui,
         theme,
@@ -516,6 +806,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("surface split", "1px hairline (lower layout)"),
             ("leaf", "kind icon + label, centered (mono)"),
             ("interactive", "mini tabs switch live (in app)"),
+            ("edit: selected", "2px accent outline + handle cluster"),
+            ("edit: handles", "split-right · split-down · remove"),
+            ("edit: form", "kind / cwd / startup (terminal only)"),
         ],
         &[
             TokenChip::new("bg-app", "leaf fill / pane gap", theme.bg_app().to_egui()),
@@ -540,10 +833,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Read-only preview (TODO 07). The two split levels read by weight — a heavy bg-app \
-         gap + border for pane (upper) splits, a 1px hairline for surface (lower) splits. A leaf \
-         shows only its kind (Terminal / Markdown / Editor / Log), never its contents. Mini-tab \
-         click-to-switch and WYSIWYG edit are wired in the host component (TODO 08/09).",
+        "Two split levels read by weight — a heavy bg-app gap + border for pane (upper) splits, a \
+         1px hairline for surface (lower) splits. A leaf shows only its kind (Terminal / Markdown / \
+         Editor / Log), never its contents. The Edit-mode stage shows the WYSIWYG state: every \
+         surface gets a faint 1px separator outline, the selected surface gets a 2px accent inset \
+         outline + corner handle cluster (split-right=row / split-down=col / remove=danger), and \
+         its center label is replaced by the inline leaf form (kind / cwd / startup — startup only \
+         when kind=terminal). Mini-tab click-to-switch and live editing are wired in the host \
+         component (TODO 08/09).",
     );
 
     spec::dont(

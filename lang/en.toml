@@ -755,6 +755,15 @@ rename = "Rename"
 duplicate = "Duplicate"
 delete = "Delete"
 edit = "Edit"
+done = "Done"
+saved = "saved automatically"
+
+[preset.edit]
+kind = "Kind"
+cwd = "Working dir"
+startup = "Startup command"
+startup_hint = "command to run on start"
+subtitle_hint = "subtitle"
 
 [preset.count]
 pane_one = "1 pane"
@@ -777,6 +786,7 @@ saved_workspace = "Workspace preset saved"
 saved_tab = "Tab preset saved"
 saved_pane = "Pane preset saved"
 save_failed = "Failed to save preset"
+rename_failed = "Failed to rename preset"
 apply_failed = "Failed to apply preset"
 
 [preset.tools]

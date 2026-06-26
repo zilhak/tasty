@@ -755,6 +755,15 @@ rename = "名前変更"
 duplicate = "複製"
 delete = "削除"
 edit = "編集"
+done = "完了"
+saved = "自動保存されます"
+
+[preset.edit]
+kind = "種類"
+cwd = "作業ディレクトリ"
+startup = "起動コマンド"
+startup_hint = "起動時に実行するコマンド"
+subtitle_hint = "サブタイトル"
 
 [preset.count]
 pane_one = "ペイン 1個"
@@ -777,6 +786,7 @@ saved_workspace = "ワークスペースプリセットを保存しました"
 saved_tab = "タブプリセットを保存しました"
 saved_pane = "ペインプリセットを保存しました"
 save_failed = "プリセット保存に失敗"
+rename_failed = "プリセット名の変更に失敗"
 apply_failed = "プリセット適用に失敗"
 
 [preset.tools]
