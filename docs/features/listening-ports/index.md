@@ -35,9 +35,20 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 ### 검색 / 정렬
 
-- **검색**: 전 컬럼 case-insensitive substring (port / addr / pid / process / workspace / tab). 빈 query 는 전체 통과.
-- **정렬**: Port / Address / Process / Workspace / Tab 가능, **Proto / State 는 불가**. None·빈 값은 정렬 방향과 무관하게 항상 tail.
-- 필터·정렬 상태는 `egui::Memory` 에 영속.
+- **검색**: 전 컬럼 case-insensitive substring (port / addr / pid / process / workspace / tab). 빈 query 는 전체 통과. **데이터 기준**이라 컬럼 숨김과 독립(숨긴 컬럼도 검색 대상).
+- **정렬**: Port / Address / Process / Workspace / Tab 가능, **Proto / State 는 불가**. None·빈 값은 정렬 방향과 무관하게 항상 tail. 숨긴 컬럼이 활성 sort key 여도 정렬은 그대로 유지(데이터 정렬은 표시와 독립).
+- 필터·정렬·컬럼 표시 상태는 `egui::Memory` 에 영속.
+
+### 컬럼 폭 / 가로 스크롤
+
+- 각 컬럼은 **최소폭**을 가진다 (Port 84 / Proto 76 / Address 140 / Process 200 / Workspace 120 / Tab 80 / State 140). 보이는 컬럼 최소폭 합이 본문 가용폭을 넘으면 **테이블 본문이 가로 스크롤**된다(말줄임 대신). 가용폭이 남으면 flex 컬럼(Address / Process)이 여유폭을 나눠 받아 빈 공간 없이 채운다.
+- 가로 스크롤은 **본문 영역에만** 갇힌다. sticky 헤더는 본문과 수평 동기 이동(세로로는 고정), footer / 구역 divider 는 popup 폭에 고정 유지된다.
+
+### 컬럼 표시/숨김 (column chooser)
+
+- 헤더 우측 컬럼 아이콘 버튼을 누르면 컬럼 목록 팝업이 열리고, 컬럼별 체크박스로 표시/숨김을 토글한다 (예: System scope 에서 의미가 옅은 Workspace / Tab 숨김).
+- **Port 는 식별 / 기본 정렬 컬럼이라 항상 표시**(체크박스 잠금) — 전부 숨김이 구조적으로 불가능하다.
+- 표시 상태는 `egui::Memory` 에 영속하여 팝업을 닫았다 열어도 유지된다. (per-column 값 필터가 아니라 컬럼 전체의 표시/숨김이다.)
 
 ### 빈 결과 3분기
 
@@ -45,7 +56,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 ### 헤더 / footer 구성
 
-- **헤더**: leading 포트 아이콘 + 제목 + accent Tag(`{listening} listening` / `scanning…`) + 검색 입력 + Refresh 아이콘 버튼(상시 노출, 현재 scope 재스캔) + close(`×`).
+- **헤더**: leading 포트 아이콘 + 제목 + accent Tag(`{listening} listening` / `scanning…`) + 검색 입력 + 컬럼 chooser 아이콘 버튼 + Refresh 아이콘 버튼(상시 노출, 현재 scope 재스캔) + close(`×`).
 - **footer**: 카운터(`{shown} of {total} ports`) + `Copy address`(행 미선택 시 disabled) + `Close`.
 
 ### 행 선택 / 주소 복사
@@ -74,6 +85,8 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - [ ] 행 클릭 시 선택 강조되고 재클릭 시 해제된다. 클릭으로 브라우저가 열리지 않는다.
 - [ ] footer `Copy address` 는 선택 시에만 활성화되고, 클릭 시 선택 행의 주소가 클립보드에 복사된다.
 - [ ] 헤더 Refresh 버튼이 상시 노출되어 정상 상태에서도 재스캔할 수 있다.
+- [ ] 보이는 컬럼 최소폭 합이 본문 폭을 넘으면 테이블이 가로 스크롤되고, footer `Close` / `Copy address` 와 헤더 구역은 잘리지 않고 popup 폭에 고정된다.
+- [ ] 헤더 컬럼 chooser 로 컬럼을 숨기면 폭이 줄고, 팝업을 닫았다 열어도 표시 상태가 유지된다. Port 컬럼은 숨길 수 없다.
 
 > GUI 기능이라 검증은 gallery 데모 + 스크린샷(시각)으로 한다. scan/filter 로직은 `tasty-portscan` 단위 테스트로 독립 검증 가능.
 

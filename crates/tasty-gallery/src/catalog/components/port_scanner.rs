@@ -1,8 +1,8 @@
 //! Listening ports — 디자인(4) Overlays `ports` Spec.
 //!
-//! 660×520 모달. 헤더(port icon + title + count Tag + filter + refresh + close) ·
-//! Show-all 체크행 · 7컬럼 Table · footer(count + Copy address + Close).
-//! 색·치수는 Theme 토큰, Table 은 공용 위젯.
+//! 660×520 모달. 헤더(port icon + title + count Tag + filter + columns + refresh +
+//! close) · Show-all 체크행 · 최소폭 컬럼 Table(가로 스크롤, Workspace 숨김 케이스) ·
+//! footer(count + Copy address + Close). 색·치수는 Theme 토큰, Table 은 공용 위젯.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
@@ -101,6 +101,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                     icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
                                 },
                             );
+                            // 컬럼 chooser 트리거(컬럼 표시/숨김). Refresh 옆.
+                            IconButton::new().variant(IconButtonVariant::Ghost).show(
+                                ui,
+                                theme,
+                                &|ui, rect, c| {
+                                    icons::COLUMNS.image(rect.height(), c).paint_at(ui, rect)
+                                },
+                            );
                             IconButton::new().variant(IconButtonVariant::Ghost).show(
                                 ui,
                                 theme,
@@ -146,33 +154,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 },
             );
 
-            // Table (7컬럼).
+            // Table — 컬럼별 최소폭 + 가로 스크롤. 최소폭 합(708)이 660 프레임을 넘어
+            // 본문이 좌우 스크롤된다(말줄임 대신). Workspace 컬럼은 chooser 로 숨긴
+            // 상태(컬럼 표시/숨김 시각 케이스).
             kit::region_sym(ui, theme.spacing_sm.value(), 0.0, |ui| {
                 let cols = vec![
-                    col("Port", TableColumnWidth::Exact(72.0), TableAlign::Left),
-                    col("Proto", TableColumnWidth::Exact(64.0), TableAlign::Left),
-                    col(
-                        "Address",
-                        TableColumnWidth::Remainder {
-                            at_least: 110.0,
-                            clip: true,
-                        },
-                        TableAlign::Left,
-                    ),
-                    col(
-                        "Process",
-                        TableColumnWidth::Remainder {
-                            at_least: 90.0,
-                            clip: true,
-                        },
-                        TableAlign::Left,
-                    ),
-                    col(
-                        "Workspace",
-                        TableColumnWidth::Exact(104.0),
-                        TableAlign::Left,
-                    ),
-                    col("State", TableColumnWidth::Exact(132.0), TableAlign::Left),
+                    col("Port", TableColumnWidth::Exact(84.0), TableAlign::Right),
+                    col("Proto", TableColumnWidth::Exact(76.0), TableAlign::Left),
+                    col("Address", TableColumnWidth::Exact(140.0), TableAlign::Left),
+                    col("Process", TableColumnWidth::Exact(200.0), TableAlign::Left),
+                    col("State", TableColumnWidth::Exact(140.0), TableAlign::Left),
                     col(
                         "",
                         TableColumnWidth::Exact(theme.item_height_interactive.value()),
@@ -181,6 +172,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ];
                 Table::new(cols)
                     .id_salt("ports_table")
+                    .horizontal_scroll(true)
                     .header_fill(theme.bg_sidebar().to_egui())
                     .header_pad_x(theme.spacing_sm.value())
                     .row_height(theme.item_height_interactive.value())
@@ -217,8 +209,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         &[
             ("frame", "660×520 · bg-panel"),
-            ("header", "icon · title · count · filter · refresh · close"),
-            ("table", "7 cols · row 28 · sticky header"),
+            (
+                "header",
+                "icon · title · count · filter · columns · refresh · close",
+            ),
+            ("table", "min-width cols · h-scroll · sticky header"),
+            ("columns", "chooser hides cols (Workspace hidden here)"),
             ("header bg", "bg-sidebar · mono caption"),
             ("footer", "count · Copy address · Close"),
         ],
@@ -241,8 +237,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Cells are monospace for scannable columns. Selecting a row enables Copy \
-         address; the sticky header keeps column labels visible while scrolling.",
+        "Cells are monospace for scannable columns. Each column has a minimum \
+         width; when the visible columns' minimums exceed the frame the table \
+         scrolls horizontally (instead of ellipsizing). The columns chooser \
+         (header) toggles which columns show — here Workspace is hidden. \
+         Selecting a row enables Copy address; the sticky header keeps column \
+         labels visible while scrolling.",
     );
 }
 
@@ -264,15 +264,14 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
                 .color(color),
         );
     };
+    // 컬럼: Port / Proto / Address / Process / State / copy (Workspace 는 chooser 로 숨김).
+    let _ = row.ws;
     match c {
         0 => mono(ui, row.port, theme.text_primary().to_egui()),
         1 => mono(ui, row.proto, theme.text_muted().to_egui()),
         2 => mono(ui, row.addr, theme.text_secondary().to_egui()),
         3 => mono(ui, row.proc, theme.text_secondary().to_egui()),
         4 => {
-            tag(ui, theme, row.ws, TagVariant::Default, false);
-        }
-        5 => {
             let v = if row.state == "listening" {
                 TagVariant::Success
             } else {

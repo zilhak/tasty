@@ -154,3 +154,9 @@ line_icon!(
 );
 // 프로토콜 필터 버튼(remote_tool.jsx ProtocolFilter funnel). 디자인 path 그대로.
 line_icon!(FUNNEL, "funnel", r#"<path d="M3 4h18l-7 8v6l-4 2v-8z"/>"#);
+// 컬럼 표시/숨김(column chooser) 트리거. 세로 분할 막대 3개(테이블 컬럼 메타포).
+line_icon!(
+    COLUMNS,
+    "columns",
+    r#"<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>"#
+);

@@ -73,6 +73,7 @@ pub struct Table<'a, K> {
     id_salt: Option<egui::Id>,
     selectable: bool,
     striped: bool,
+    horizontal_scroll: bool,
 }
 
 impl<'a, K> Table<'a, K> {
@@ -89,6 +90,7 @@ impl<'a, K> Table<'a, K> {
             id_salt: None,
             selectable: false,
             striped: false,
+            horizontal_scroll: false,
         }
     }
 
@@ -149,6 +151,17 @@ impl<'a, K> Table<'a, K> {
         self
     }
 
+    /// 가로 스크롤. 켜면 본문(헤더+행)을 [`egui::ScrollArea::horizontal`] 로 감싸,
+    /// 컬럼 고정폭 합이 가용폭을 넘으면 좌우 스크롤이 생긴다(말줄임 대신). 이 모드에선
+    /// 모든 컬럼이 고정폭([`TableColumnWidth::Exact`])이어야 한다 — `Remainder` 는
+    /// 스크롤 영역 안에서 폭이 발산한다. sticky 헤더는 본문과 수평 동기 이동하며
+    /// 세로로는 고정 유지된다. egui_extras `TableBuilder` 는 네이티브 가로 스크롤이
+    /// 없어 이 래핑이 필요하다.
+    pub fn horizontal_scroll(mut self, on: bool) -> Self {
+        self.horizontal_scroll = on;
+        self
+    }
+
     /// 표를 그린다.
     ///
     /// - `rows`: 본문 행 데이터.
@@ -169,15 +182,6 @@ impl<'a, K> Table<'a, K> {
         let header_h = self.header_height.unwrap_or(body_f + 10.0);
         let row_h = self.row_height.unwrap_or(body_f + 14.0);
 
-        // sticky 헤더 배경: egui_extras 는 셀 배경 API 가 없어 painter 로 직접 칠한다.
-        if let Some(fill) = self.header_fill {
-            let rect = egui::Rect::from_min_size(
-                egui::pos2(ui.max_rect().left(), ui.cursor().top()),
-                egui::vec2(ui.max_rect().width(), header_h),
-            );
-            ui.painter().rect_filled(rect, 0.0, fill);
-        }
-
         let mut clicked_sort: Option<K> = None;
         let mut clicked_row: Option<usize> = None;
 
@@ -187,11 +191,24 @@ impl<'a, K> Table<'a, K> {
         let selectable = self.selectable;
         let striped = self.striped;
         let max_scroll_height = self.max_scroll_height;
+        let header_fill = self.header_fill;
+        let horizontal_scroll = self.horizontal_scroll;
+        // 가로 스크롤 모드에서 sticky 헤더 띠가 본문 전체폭을 덮도록, 컬럼 고정폭
+        // 합(+컬럼 간 간격)을 미리 잰다. 비-스크롤 모드에선 쓰이지 않는다.
+        let total_w = fixed_total_width(columns, ui.spacing().item_spacing.x);
 
-        // 표 본체(헤더 + ScrollArea/Body). `id_salt` 가 있으면 `push_id` 로 감싸
-        // 인스턴스마다 Id 네임스페이스를 분리한다. push_id 는 동일 가용 영역을
-        // 상속하는 투명 scope 라 시각엔 영향이 없다.
-        let mut draw = |ui: &mut egui::Ui| {
+        // 헤더 띠 + TableBuilder 본체를 그리는 코어. `band_w` 는 sticky 헤더 배경 띠의
+        // 가로 폭(가로 스크롤 시 본문 전체폭, 아니면 ui 폭).
+        let mut draw_core = |ui: &mut egui::Ui, band_w: f32| {
+            // sticky 헤더 배경: egui_extras 는 셀 배경 API 가 없어 painter 로 직접 칠한다.
+            if let Some(fill) = header_fill {
+                let rect = egui::Rect::from_min_size(
+                    egui::pos2(ui.max_rect().left(), ui.cursor().top()),
+                    egui::vec2(band_w, header_h),
+                );
+                ui.painter().rect_filled(rect, 0.0, fill);
+            }
+
             let mut builder = TableBuilder::new(ui)
                 .striped(striped)
                 .resizable(false)
@@ -239,11 +256,32 @@ impl<'a, K> Table<'a, K> {
                 });
         };
 
+        // 표 본체(헤더 + ScrollArea/Body). `id_salt` 가 있으면 `push_id` 로 감싸
+        // 인스턴스마다 Id 네임스페이스를 분리한다. push_id 는 동일 가용 영역을
+        // 상속하는 투명 scope 라 시각엔 영향이 없다.
+        let mut run = |ui: &mut egui::Ui| {
+            if horizontal_scroll {
+                // 본문 전체(헤더+행)를 가로 ScrollArea 로 감싼다 → 컬럼 합이 가용폭을
+                // 넘으면 좌우 스크롤. set_min_width 로 컨텐츠 폭을 고정폭 합으로 잡아
+                // 헤더/본문이 함께 수평 이동한다(헤더는 세로로는 TableBuilder 가 고정).
+                egui::ScrollArea::horizontal()
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        ui.set_min_width(total_w);
+                        let band = total_w.max(ui.available_width());
+                        draw_core(ui, band);
+                    });
+            } else {
+                let band = ui.max_rect().width();
+                draw_core(ui, band);
+            }
+        };
+
         match self.id_salt {
             Some(salt) => {
-                ui.push_id(salt, draw);
+                ui.push_id(salt, run);
             }
-            None => draw(ui),
+            None => run(ui),
         }
 
         TableOutput {
@@ -308,6 +346,21 @@ fn header_cell<K: Copy + PartialEq>(
                 .inner
         }
     }
+}
+
+/// 컬럼 고정폭의 합(+컬럼 사이 item_spacing.x). 가로 스크롤 모드에서 sticky 헤더
+/// 띠 폭과 ScrollArea 컨텐츠 최소폭을 잡는 데 쓴다. `Remainder` 는 floor(`at_least`)
+/// 기준으로 더한다(스크롤 모드에선 호출자가 `Exact` 만 쓰도록 권장).
+fn fixed_total_width<K>(columns: &[TableColumn<'_, K>], spacing_x: f32) -> f32 {
+    let sum: f32 = columns
+        .iter()
+        .map(|c| match c.width {
+            TableColumnWidth::Exact(w) => w,
+            TableColumnWidth::Initial { initial, .. } => initial,
+            TableColumnWidth::Remainder { at_least, .. } => at_least,
+        })
+        .sum();
+    sum + spacing_x * columns.len().saturating_sub(1) as f32
 }
 
 fn to_column(width: TableColumnWidth) -> Column {

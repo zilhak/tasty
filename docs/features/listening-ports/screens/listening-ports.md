@@ -10,9 +10,11 @@
 ## UI 요소 인벤토리
 
 - **팝업 프레임**: 660×520 (디자인 canonical), headless.
-- **헤더 행**: leading 포트 아이콘 + 제목 "Listening ports" + accent Tag(`{listening} listening` / `scanning…`) + 단일 라인 검색 입력 + Refresh 아이콘 버튼(상시 노출) + close(`×`).
+- **헤더 행**: leading 포트 아이콘 + 제목 "Listening ports" + accent Tag(`{listening} listening` / `scanning…`) + 단일 라인 검색 입력 + 컬럼 chooser 아이콘 버튼 + Refresh 아이콘 버튼(상시 노출) + close(`×`).
 - **필터 행**: `전체 보기 (system)` 체크박스 — scope 토글 (Tasty ↔ System).
-- **테이블 (7컬럼)**: Port / Proto / Address / Process / Workspace / Tab / State.
+- **컬럼 chooser 팝업**: 헤더 컬럼 아이콘 버튼 클릭 시 열린다. 컬럼별 체크박스로 표시/숨김 토글. Port 는 잠금(항상 표시).
+- **테이블 (최대 7컬럼)**: Port / Proto / Address / Process / Workspace / Tab / State (chooser 로 숨긴 컬럼은 제외).
+  - 각 컬럼 최소폭 보유 — 보이는 컬럼 최소폭 합 > 본문 폭이면 본문이 **가로 스크롤**(말줄임 대신). sticky 헤더는 본문과 수평 동기 이동.
   - 정렬 가능 헤더(Port/Address/Process/Workspace/Tab) 클릭 시 `▲`/`▼` 인디케이터. Proto/State 헤더는 비정렬.
   - State 셀: 상태 dot(색 + pulse) + 상태 텍스트.
   - 행 클릭: 선택 토글(선택 행 강조). 브라우저 오픈 없음.

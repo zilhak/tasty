@@ -113,6 +113,84 @@ pub enum SortDir {
     Desc,
 }
 
+/// One of the seven table columns. Drives column visibility (chooser) and width
+/// computation. The order here is the table's left-to-right order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColumnId {
+    Port,
+    Proto,
+    Address,
+    Process,
+    Workspace,
+    Tab,
+    State,
+}
+
+impl ColumnId {
+    /// Left-to-right table order. Also the bit order of [`ColumnVisibility`].
+    pub const ALL: [ColumnId; 7] = [
+        ColumnId::Port,
+        ColumnId::Proto,
+        ColumnId::Address,
+        ColumnId::Process,
+        ColumnId::Workspace,
+        ColumnId::Tab,
+        ColumnId::State,
+    ];
+
+    /// Bit index in [`ColumnVisibility`].
+    fn bit(self) -> u8 {
+        match self {
+            ColumnId::Port => 0,
+            ColumnId::Proto => 1,
+            ColumnId::Address => 2,
+            ColumnId::Process => 3,
+            ColumnId::Workspace => 4,
+            ColumnId::Tab => 5,
+            ColumnId::State => 6,
+        }
+    }
+
+    /// Port is the identity / default sort column and is always shown (its
+    /// chooser checkbox is locked). This also guarantees ≥1 visible column, so
+    /// no extra "can't hide the last column" rule is needed.
+    fn mandatory(self) -> bool {
+        matches!(self, ColumnId::Port)
+    }
+}
+
+/// Per-column show/hide state, persisted in [`FilterState`]. Bit `i` set =
+/// column `ColumnId::ALL[i]` visible. `Default` shows every column.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ColumnVisibility(u8);
+
+impl Default for ColumnVisibility {
+    fn default() -> Self {
+        // All seven low bits set → every column visible.
+        Self(0b0111_1111)
+    }
+}
+
+impl ColumnVisibility {
+    /// Whether `col` is currently shown. Mandatory columns are always shown.
+    pub fn is_visible(self, col: ColumnId) -> bool {
+        col.mandatory() || (self.0 & (1 << col.bit())) != 0
+    }
+
+    /// Show/hide `col`. Mandatory columns ignore a hide request (stay shown).
+    pub fn set(&mut self, col: ColumnId, visible: bool) {
+        if col.mandatory() {
+            self.0 |= 1 << col.bit();
+            return;
+        }
+        if visible {
+            self.0 |= 1 << col.bit();
+        } else {
+            self.0 &= !(1 << col.bit());
+        }
+    }
+}
+
 /// User-controlled view state, persisted in `egui::Memory` across frames
 /// (Id: `"port_scanner.filter"`).
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +203,8 @@ pub struct FilterState {
     /// `None` when nothing is selected. Drives the row highlight + footer
     /// "Copy address" enablement.
     pub selected_port: Option<u16>,
+    /// Per-column show/hide state (column chooser). Default shows all columns.
+    pub columns: ColumnVisibility,
 }
 
 impl Default for FilterState {
@@ -135,6 +215,7 @@ impl Default for FilterState {
             sort_key: SortKey::Port,
             sort_dir: SortDir::Asc,
             selected_port: None,
+            columns: ColumnVisibility::default(),
         }
     }
 }
@@ -170,6 +251,8 @@ pub struct PortScannerFilter<'a> {
     /// Currently selected row's port (design `selectedKey`). `None` = no
     /// selection.
     pub selected_port: Option<u16>,
+    /// Per-column show/hide state (column chooser projection).
+    pub columns: ColumnVisibility,
 }
 
 /// Pure inputs to `draw_port_scanner_view`. Contains no `AppState` /
@@ -206,6 +289,10 @@ pub struct PortScannerProps<'a> {
     pub label_column_workspace: &'a str,
     pub label_column_tab: &'a str,
     pub label_column_state: &'a str,
+    /// Column-chooser trigger tooltip (header IconButton).
+    pub label_columns_button: &'a str,
+    /// Column-chooser popup title.
+    pub label_columns_menu_title: &'a str,
 }
 
 /// User intent surfaced by the view. The wrapper translates these into
@@ -223,6 +310,8 @@ pub enum PortScannerAction {
     SetQuery(String),
     /// Emitted by header click → toggle sort.
     SetSort(SortKey),
+    /// Column chooser toggled a column's visibility.
+    SetColumnVisible(ColumnId, bool),
 }
 
 const FILTER_MEMORY_ID: &str = "port_scanner.filter";
@@ -304,6 +393,7 @@ pub fn draw_port_scanner_popup(
             sort_key: filter_state.sort_key,
             sort_dir: filter_state.sort_dir,
             selected_port: filter_state.selected_port,
+            columns: filter_state.columns,
         },
         label_heading: t("port_scanner.heading"),
         label_search_placeholder: t("port_scanner.search_placeholder"),
@@ -328,6 +418,8 @@ pub fn draw_port_scanner_popup(
         label_column_workspace: t("port_scanner.column_workspace"),
         label_column_tab: t("port_scanner.column_tab"),
         label_column_state: t("port_scanner.column_state"),
+        label_columns_button: t("port_scanner.columns_button"),
+        label_columns_menu_title: t("port_scanner.columns_menu_title"),
     };
 
     let action = draw_port_scanner_view(ui, &props);
@@ -367,6 +459,13 @@ pub fn draw_port_scanner_popup(
         }
         PortScannerAction::SetQuery(q) => {
             filter_state.query = q;
+            write_filter_state(&ctx, filter_state);
+            PopupAction::None
+        }
+        PortScannerAction::SetColumnVisible(col, visible) => {
+            // 컬럼 표시/숨김 토글 → 영속. 숨긴 컬럼이 활성 sort key 여도 정렬은 그대로
+            // 유지한다(데이터 정렬은 표시와 독립 — 명세 권장). selected_port 도 보존.
+            filter_state.columns.set(col, visible);
             write_filter_state(&ctx, filter_state);
             PopupAction::None
         }
@@ -872,6 +971,11 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             {
                 out = Some(PortScannerAction::Refresh);
             }
+            // 컬럼 chooser 트리거: Refresh 옆 COLUMNS IconButton. 클릭 시 컬럼 목록
+            // 팝업(컬럼별 checkbox)을 토글한다. 토글은 SetColumnVisible 액션으로 emit.
+            if let Some(a) = draw_column_chooser(ui, props) {
+                out = Some(a);
+            }
             // 디자인 search: Input width 200 + leading search 아이콘.
             let mut buf = props.filter.query.to_string();
             let resp = Input::new()
@@ -884,6 +988,70 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
             }
         });
     });
+    out
+}
+
+/// 컬럼별 표시 라벨 (props 의 i18n 컬럼 라벨로 투영).
+fn column_label<'a>(col: ColumnId, props: &PortScannerProps<'a>) -> &'a str {
+    match col {
+        ColumnId::Port => props.label_column_port,
+        ColumnId::Proto => props.label_column_proto,
+        ColumnId::Address => props.label_column_address,
+        ColumnId::Process => props.label_column_process,
+        ColumnId::Workspace => props.label_column_workspace,
+        ColumnId::Tab => props.label_column_tab,
+        ColumnId::State => props.label_column_state,
+    }
+}
+
+/// 헤더 우측 COLUMNS IconButton + 컬럼 표시/숨김 chooser 팝업.
+///
+/// 팝업 본문은 컬럼별 [`checkbox`] 목록(전체폭). Port 는 식별/기본 정렬 컬럼이라
+/// 항상 표시(checkbox disabled). 토글 시 `SetColumnVisible` 액션을 반환한다. 팝업은
+/// `CloseOnClickOutside` 라 한 번 열어 여러 컬럼을 연속 토글할 수 있다.
+fn draw_column_chooser(
+    ui: &mut egui::Ui,
+    props: &PortScannerProps<'_>,
+) -> Option<PortScannerAction> {
+    let th = props.theme;
+    let mut out: Option<PortScannerAction> = None;
+
+    let resp = IconButton::new()
+        .variant(IconButtonVariant::Ghost)
+        .show(ui, th, &|ui, rect, c| {
+            icons::COLUMNS.image(16.0, c).paint_at(ui, rect)
+        })
+        .on_hover_text(props.label_columns_button);
+
+    let popup_id = ui.make_persistent_id("port_scanner.columns_chooser");
+    if resp.clicked() {
+        ui.memory_mut(|m| m.toggle_popup(popup_id));
+    }
+
+    egui::popup_below_widget(
+        ui,
+        popup_id,
+        &resp,
+        egui::PopupCloseBehavior::CloseOnClickOutside,
+        |ui| {
+            ui.set_min_width(180.0);
+            ui.label(
+                egui::RichText::new(props.label_columns_menu_title)
+                    .color(th.subtext0)
+                    .size(th.font_size_caption.value())
+                    .strong(),
+            );
+            ui.add_space(th.spacing_xs.value());
+            for col in ColumnId::ALL {
+                let mut checked = props.filter.columns.is_visible(col);
+                let enabled = !col.mandatory();
+                if checkbox(ui, th, &mut checked, column_label(col, props), enabled).changed() {
+                    out = Some(PortScannerAction::SetColumnVisible(col, checked));
+                }
+            }
+        },
+    );
+
     out
 }
 
@@ -1000,68 +1168,42 @@ fn draw_table(
     let gap = ui.spacing().item_spacing.y;
     let max_scroll = (ui.available_height() - header_h - footer_h - gap).max(text_h + 8.0);
 
-    // design-parity: 디자인 Table 컬럼은 고정폭 4개(port/proto/ws/state) + flex 3개
-    // (addr/proc/tab, CSS `max-width:0` + ellipsis, **최소폭 없음**). flex 에 floor 를
-    // 주면 합이 가용폭 초과 시 테이블이 넘쳐 footer 가 밀리고 `닫기` 가 잘린다 → 디자인
-    // 구조 그대로 고정폭은 Exact, flex 는 Remainder{at_least:0, clip}(말줄임)로 둔다.
-    // 디자인 measured 폭: Port 84 / Proto 76 / Address~88 / Process~88 /
-    // Workspace 120 / Tab 62 / State 140. addr·proc 는 내용이 길어 flex 로 넓게,
-    // Tab 은 대개 "—" 라 좁다. egui remainder 는 균등 분배라 Tab 까지 flex 로 두면
-    // addr·proc 가 좁아진다 → Tab 만 Exact 56 으로 빼서 addr·proc 가 넓어지게 한다.
-    // Tab 56 은 디자인 62 보다 약간 좁힌 값 — tasty mono(D2Coding)가 디자인 폰트보다
-    // 넓어 "127.0.0.1"이 88px 에서 1~2px 넘쳐 말줄임되는 폰트 메트릭 세금 보정.
-    // Port 만 우측 정렬(디자인 align right), 나머지 좌측. 정렬 가능: Port/Address/
-    // Process/Workspace/Tab (Proto/State 는 정적 헤더).
-    let columns = vec![
-        TableColumn {
-            title: props.label_column_port,
-            width: TableColumnWidth::Exact(84.0),
-            align: TableAlign::Right,
-            sort_id: Some(SortKey::Port),
-        },
-        TableColumn {
-            title: props.label_column_proto,
-            width: TableColumnWidth::Exact(76.0),
-            align: TableAlign::Left,
-            sort_id: None,
-        },
-        TableColumn {
-            title: props.label_column_address,
-            width: TableColumnWidth::Remainder {
-                at_least: 0.0,
-                clip: true,
-            },
-            align: TableAlign::Left,
-            sort_id: Some(SortKey::Address),
-        },
-        TableColumn {
-            title: props.label_column_process,
-            width: TableColumnWidth::Remainder {
-                at_least: 0.0,
-                clip: true,
-            },
-            align: TableAlign::Left,
-            sort_id: Some(SortKey::Process),
-        },
-        TableColumn {
-            title: props.label_column_workspace,
-            width: TableColumnWidth::Exact(120.0),
-            align: TableAlign::Left,
-            sort_id: Some(SortKey::Workspace),
-        },
-        TableColumn {
-            title: props.label_column_tab,
-            width: TableColumnWidth::Exact(56.0),
-            align: TableAlign::Left,
-            sort_id: Some(SortKey::Tab),
-        },
-        TableColumn {
-            title: props.label_column_state,
-            width: TableColumnWidth::Exact(140.0),
-            align: TableAlign::Left,
-            sort_id: None,
-        },
-    ];
+    // 폭 모델 (이번 작업이 뒤집은 지점): 과거엔 고정폭 + flex(remainder) 로 테이블이
+    // 항상 popup 안에 fit 되도록 강제했고, 폭이 모자라면 addr/proc 가 말줄임됐다.
+    // 이제는 컬럼별 **최소폭**을 주고, 보이는 컬럼 최소폭 합이 본문 가용폭을 넘으면
+    // Table 위젯이 본문을 가로 스크롤한다(말줄임 대신). 가로 스크롤은 본문 영역에만
+    // 갇혀 footer/header divider 는 popup 폭에 고정 유지된다(아래 회귀 검증 참조).
+    //
+    // 최소폭: Port 84 / Proto 76 / Address 140(IPv6 fe80::… 고려) / Process 200
+    // (asus_framework.exe PID 10316 고려) / Workspace 120 / Tab 80 / State 140.
+    // tasty mono(D2Coding)가 디자인 폰트보다 넓은 메트릭 세금을 min 값에 반영.
+    // 가용폭이 최소폭 합보다 넓으면 flex 컬럼(Address/Process)에 여유폭을 분배해
+    // 빈 공간 없이 채운다. Port 만 우측 정렬, 정렬 가능: Port/Address/Process/
+    // Workspace/Tab (Proto/State 는 정적 헤더).
+    let visible: Vec<ColumnId> = ColumnId::ALL
+        .into_iter()
+        .filter(|c| props.filter.columns.is_visible(*c))
+        .collect();
+
+    // 본문 가용폭: 세로 스크롤바 폭만큼 빼서, 세로 스크롤이 생겨도 가짜 가로 스크롤이
+    // 뜨지 않게 한다.
+    let scrollbar_reserve = ui.spacing().scroll.bar_width + ui.spacing().scroll.bar_inner_margin;
+    let available = (ui.available_width() - scrollbar_reserve).max(0.0);
+    let widths = compute_column_widths(&visible, ui.spacing().item_spacing.x, available);
+
+    let columns: Vec<TableColumn<SortKey>> = visible
+        .iter()
+        .zip(&widths)
+        .map(|(id, w)| {
+            let (_, _, align, sort_id) = column_layout(*id);
+            TableColumn {
+                title: column_label(*id, props),
+                width: TableColumnWidth::Exact(*w),
+                align,
+                sort_id,
+            }
+        })
+        .collect();
 
     let sort_dir = match props.filter.sort_dir {
         SortDir::Asc => TableSortDir::Asc,
@@ -1070,8 +1212,10 @@ fn draw_table(
     let selected_port = props.filter.selected_port;
 
     let output = Table::new(columns)
+        .id_salt("port_scanner.table")
         .active_sort(props.filter.sort_key, sort_dir)
         .selectable(true)
+        .horizontal_scroll(true)
         // 디자인 Table 헤더 th 배경 = bg-sidebar(mantle), sticky header 전체폭. 디자인
         // th padding 0/12 → header_pad_x 12. 헤더/행 높이는 기존 TableBuilder 값 그대로.
         .header_fill(th.mantle.into())
@@ -1084,9 +1228,11 @@ fn draw_table(
             th,
             rows,
             |row: &PortRowView| selected_port == Some(row.port),
-            |ui, th, row, col| match col {
+            // 컬럼이 숨겨지면 인덱스가 밀리므로, 보이는 컬럼 인덱스 → ColumnId 로
+            // 매핑해 셀을 분기한다(위치 인덱스 하드코딩 금지).
+            |ui, th, row, col_index| match visible[col_index] {
                 // Port — 디자인 align right (위젯이 right_to_left 로 감쌈). 셀 padding 12.
-                0 => {
+                ColumnId::Port => {
                     ui.add_space(12.0);
                     ui.label(
                         egui::RichText::new(row.port.to_string())
@@ -1094,7 +1240,7 @@ fn draw_table(
                             .size(th.font_size_body.value()),
                     );
                 }
-                1 => cell_l(ui, |ui| {
+                ColumnId::Proto => cell_l(ui, |ui| {
                     // Proto derived from the address family: IPv6 displays
                     // (always containing a colon) → `tcp6`, IPv4 → `tcp`.
                     let proto = if row.addr_display.contains(':') {
@@ -1108,7 +1254,7 @@ fn draw_table(
                             .size(th.font_size_body.value()),
                     );
                 }),
-                2 => cell_l(ui, |ui| {
+                ColumnId::Address => cell_l(ui, |ui| {
                     ui.label(
                         egui::RichText::new(&row.addr_display)
                             .color(th.subtext0)
@@ -1116,17 +1262,16 @@ fn draw_table(
                             .monospace(),
                     );
                 }),
-                3 => cell_l(ui, |ui| draw_process_cell(ui, th, row)),
-                4 => cell_l(ui, |ui| {
+                ColumnId::Process => cell_l(ui, |ui| draw_process_cell(ui, th, row)),
+                ColumnId::Workspace => cell_l(ui, |ui| {
                     draw_workspace_cell(ui, th, row, props.label_external_dash)
                 }),
-                5 => cell_l(ui, |ui| {
+                ColumnId::Tab => cell_l(ui, |ui| {
                     draw_tab_cell(ui, th, row, props.label_external_dash)
                 }),
-                6 => cell_l(ui, |ui| {
+                ColumnId::State => cell_l(ui, |ui| {
                     draw_state_cell(ui, th, props.reduced_motion, row.state)
                 }),
-                _ => {}
             },
         );
 
@@ -1139,6 +1284,55 @@ fn draw_table(
         return Some(PortScannerAction::SetSort(k));
     }
     None
+}
+
+/// 컬럼의 폭 모델 메타: (최소폭, flex 여부, 정렬, 정렬키). flex 컬럼은 가용폭이 남을 때
+/// 여유폭을 나눠 받는다(Address/Process). Port 만 우측 정렬.
+fn column_layout(col: ColumnId) -> (f32, bool, TableAlign, Option<SortKey>) {
+    match col {
+        ColumnId::Port => (84.0, false, TableAlign::Right, Some(SortKey::Port)),
+        ColumnId::Proto => (76.0, false, TableAlign::Left, None),
+        ColumnId::Address => (140.0, true, TableAlign::Left, Some(SortKey::Address)),
+        ColumnId::Process => (200.0, true, TableAlign::Left, Some(SortKey::Process)),
+        ColumnId::Workspace => (120.0, false, TableAlign::Left, Some(SortKey::Workspace)),
+        ColumnId::Tab => (80.0, false, TableAlign::Left, Some(SortKey::Tab)),
+        ColumnId::State => (140.0, false, TableAlign::Left, None),
+    }
+}
+
+/// 보이는 컬럼들의 픽셀 폭을 계산한다.
+///
+/// 최소폭 합 ≥ 가용폭 → 각 컬럼은 최소폭 그대로(합이 가용폭 초과 → Table 위젯이
+/// 가로 스크롤). 최소폭 합 < 가용폭 → 남는 폭(slack)을 flex 컬럼(Address/Process)에
+/// 균등 분배해 빈 공간 없이 채운다. flex 컬럼이 하나도 안 보이면 마지막 컬럼이 slack 을
+/// 흡수해 테이블이 가용폭을 채운다. (순수 함수 — 단위 테스트로 분기 검증.)
+fn compute_column_widths(visible: &[ColumnId], item_spacing_x: f32, available: f32) -> Vec<f32> {
+    let mins: Vec<f32> = visible.iter().map(|c| column_layout(*c).0).collect();
+    if visible.is_empty() {
+        return mins;
+    }
+    // 컬럼 사이 간격도 가용폭을 잡아먹으므로 콘텐츠 가용폭에서 제외하고 분배한다.
+    let gaps = item_spacing_x * (visible.len() - 1) as f32;
+    let sum_min: f32 = mins.iter().sum();
+    let mut widths = mins;
+    let slack = available - gaps - sum_min;
+    if slack > 0.0 {
+        let flex: Vec<usize> = visible
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| column_layout(**c).1)
+            .map(|(i, _)| i)
+            .collect();
+        if !flex.is_empty() {
+            let per = slack / flex.len() as f32;
+            for i in flex {
+                widths[i] += per;
+            }
+        } else if let Some(last) = widths.last_mut() {
+            *last += slack;
+        }
+    }
+    widths
 }
 
 /// Process 셀: process_name + PID 배지.
@@ -1257,6 +1451,7 @@ mod tests {
                 sort_key: SortKey::Port,
                 sort_dir: SortDir::Asc,
                 selected_port: None,
+                columns: ColumnVisibility::default(),
             },
             label_heading: "Listening ports",
             label_search_placeholder: "Search…",
@@ -1281,6 +1476,8 @@ mod tests {
             label_column_workspace: "Workspace",
             label_column_tab: "Tab",
             label_column_state: "State",
+            label_columns_button: "Columns",
+            label_columns_menu_title: "Show columns",
         }
     }
 
@@ -1679,6 +1876,98 @@ mod tests {
             false,
         );
         assert_eq!(header_tag_text(&failed), None);
+    }
+
+    #[test]
+    fn column_visibility_default_shows_all() {
+        let vis = ColumnVisibility::default();
+        for col in ColumnId::ALL {
+            assert!(vis.is_visible(col), "{col:?} should be visible by default");
+        }
+    }
+
+    #[test]
+    fn column_visibility_hide_then_show() {
+        let mut vis = ColumnVisibility::default();
+        vis.set(ColumnId::Workspace, false);
+        assert!(!vis.is_visible(ColumnId::Workspace));
+        // Other columns stay visible.
+        assert!(vis.is_visible(ColumnId::Tab));
+        assert!(vis.is_visible(ColumnId::Port));
+        vis.set(ColumnId::Workspace, true);
+        assert!(vis.is_visible(ColumnId::Workspace));
+    }
+
+    #[test]
+    fn column_visibility_port_is_mandatory() {
+        let mut vis = ColumnVisibility::default();
+        // Hiding the mandatory Port column is a no-op — it stays visible.
+        vis.set(ColumnId::Port, false);
+        assert!(vis.is_visible(ColumnId::Port));
+        // Persistence round-trips through FilterState default too.
+        assert!(FilterState::default().columns.is_visible(ColumnId::Port));
+    }
+
+    #[test]
+    fn compute_widths_overflow_keeps_mins_for_scroll() {
+        // All seven columns, but a narrow body → min-width sum exceeds available,
+        // so every column stays at its min (the table then scrolls horizontally).
+        let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
+        let widths = compute_column_widths(&visible, 0.0, 100.0);
+        for (id, w) in visible.iter().zip(&widths) {
+            assert_eq!(*w, column_layout(*id).0, "{id:?} should keep its min width");
+        }
+        let sum: f32 = widths.iter().sum();
+        assert!(
+            sum > 100.0,
+            "min-width sum must overflow the available width"
+        );
+    }
+
+    #[test]
+    fn compute_widths_distributes_slack_to_flex_columns() {
+        let visible: Vec<ColumnId> = ColumnId::ALL.to_vec();
+        let sum_min: f32 = visible.iter().map(|c| column_layout(*c).0).sum();
+        // Generous width → slack distributed to the two flex columns only.
+        let available = sum_min + 200.0;
+        let widths = compute_column_widths(&visible, 0.0, available);
+        for (id, w) in visible.iter().zip(&widths) {
+            let (min, flex, ..) = column_layout(*id);
+            if flex {
+                assert!(*w > min, "flex {id:?} should grow past its min");
+            } else {
+                assert_eq!(*w, min, "non-flex {id:?} should stay at its min");
+            }
+        }
+        // Address + Process split 200 evenly → +100 each.
+        let addr_i = visible
+            .iter()
+            .position(|c| *c == ColumnId::Address)
+            .unwrap();
+        assert!((widths[addr_i] - (140.0 + 100.0)).abs() < 0.5);
+    }
+
+    #[test]
+    fn compute_widths_no_flex_visible_fills_last_column() {
+        // Only fixed (non-flex) columns visible: slack goes to the last column so
+        // the table still fills the available width (no trailing gap).
+        let visible = vec![ColumnId::Port, ColumnId::Proto, ColumnId::State];
+        let sum_min: f32 = visible.iter().map(|c| column_layout(*c).0).sum();
+        let available = sum_min + 60.0;
+        let widths = compute_column_widths(&visible, 0.0, available);
+        assert_eq!(widths[0], column_layout(ColumnId::Port).0);
+        assert_eq!(widths[1], column_layout(ColumnId::Proto).0);
+        assert!((widths[2] - (column_layout(ColumnId::State).0 + 60.0)).abs() < 0.5);
+    }
+
+    #[test]
+    fn set_column_visible_action_round_trips_filter_state() {
+        // Mirrors the wrapper's SetColumnVisible handling.
+        let mut fs = FilterState::default();
+        fs.columns.set(ColumnId::Tab, false);
+        assert!(!fs.columns.is_visible(ColumnId::Tab));
+        fs.columns.set(ColumnId::Tab, true);
+        assert!(fs.columns.is_visible(ColumnId::Tab));
     }
 
     #[test]

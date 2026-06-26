@@ -77,6 +77,11 @@ glyph!(
     "search",
     r#"<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>"#
 );
+glyph!(
+    COLUMNS,
+    "columns",
+    r#"<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>"#
+);
 
 // ── Navigation & disclosure ──
 glyph!(
