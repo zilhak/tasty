@@ -265,7 +265,7 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
         );
     };
     // 컬럼: Port / Proto / Address / Process / State / copy (Workspace 는 chooser 로 숨김).
-    let _ = row.ws;
+    let _ = row.ws; // Workspace 는 chooser 로 숨겨 렌더 안 함 — 필드 미사용(값 drop, Result 아님).
     match c {
         0 => mono(ui, row.port, theme.text_primary().to_egui()),
         1 => mono(ui, row.proto, theme.text_muted().to_egui()),

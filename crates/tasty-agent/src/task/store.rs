@@ -308,7 +308,7 @@ impl<'a> TaskStore<'a> {
                 transitioned.extend(self.cascade_downstream(workspace_id, &main_id)?);
             }
         }
-        let _ = became;
+        let _ = became; // 이전 state 스냅샷 — 현재 미사용(향후 전이 로그 후보). 값 drop, Result 아님.
         Ok((task, transitioned))
     }
 

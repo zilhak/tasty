@@ -49,7 +49,7 @@ fn dispatch_send_text(w: &mut MainView, surface_id: Option<u32>, text: &str) {
 
 pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if egui_consumed {
         w.mark_dirty();
         return;
@@ -86,7 +86,7 @@ pub(super) fn handle_event(w: &mut MainView, event: Ime, egui_consumed: bool) {
 /// 포착해 preedit anchor를 재계산한다.
 pub(super) fn recalc_anchor(w: &mut MainView) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if w.ime_cursor_advance == 0 {
         return;
     }
@@ -120,7 +120,7 @@ pub(super) fn recalc_anchor(w: &mut MainView) {
 /// 현재 preedit이 있으면 확정해서 PTY로 보낸다 (단축키 소비 전 호출).
 pub(super) fn flush_preedit(w: &mut MainView) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let preedit = match w.ime_preedit.take() {
         Some(p) if !p.text.is_empty() => p,
         _ => {
@@ -140,7 +140,7 @@ pub(super) fn flush_preedit(w: &mut MainView) {
 /// 팝업/오버레이가 열릴 때 조합 중 문자가 터미널로 전달되지 않도록 사용.
 pub(super) fn clear_preedit(w: &mut MainView) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     w.ime_preedit = None;
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
@@ -152,7 +152,7 @@ pub(super) fn clear_preedit(w: &mut MainView) {
 #[cfg(target_os = "macos")]
 fn clear_all(w: &mut MainView) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     w.ime_preedit = None;
     w.ime_cursor_advance = 0;
     w.ime_advance_base = (0, 0);
@@ -168,7 +168,7 @@ pub(crate) fn ipc_set_preedit(
     cursor: Option<(usize, usize)>,
 ) -> Option<(usize, usize, u32)> {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let surface_id = w.state.focused_surface_id(engine)?;
     let (col, row, cols) = {
         let terminal = w.state.focused_terminal(engine)?;
@@ -207,7 +207,7 @@ pub(crate) fn ipc_set_preedit(
 
 pub(crate) fn ipc_commit(w: &mut MainView, text: &str) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if w.ime_cursor_advance == 0
         && let Some(terminal) = w.state.focused_terminal(engine)
     {
@@ -236,7 +236,7 @@ pub(crate) fn ipc_commit(w: &mut MainView, text: &str) {
 /// macOS: 실제 IME 세션 종료이므로 advance/base까지 완전 리셋.
 fn on_composition_end(w: &mut MainView) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     #[cfg(windows)]
     {
         w.ime_preedit = None;
@@ -253,14 +253,14 @@ fn on_composition_end(w: &mut MainView) {
 
 fn on_disabled(w: &mut MainView) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     w.ime_active = false;
     on_composition_end(w);
 }
 
 fn on_preedit(w: &mut MainView, text: String, cursor: Option<(usize, usize)>) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if text.is_empty() {
         on_composition_end(w);
         w.mark_dirty();
@@ -286,7 +286,7 @@ fn on_preedit(w: &mut MainView, text: String, cursor: Option<(usize, usize)>) {
 
 fn on_commit(w: &mut MainView, text: String) {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     if w.ime_cursor_advance == 0
         && let Some(terminal) = w.state.focused_terminal(engine)
     {
@@ -334,7 +334,7 @@ fn advanced_anchor(col: usize, row: usize, cols: usize, advance: usize) -> (usiz
 
 fn reconcile_and_compute_anchor(w: &mut MainView) -> Option<(usize, usize)> {
     let engine = &mut w.core_state;
-    let _ = &mut *engine;
+    let _ = &mut *engine; // engine alias: 일부 분기/cfg 에서 미사용 — reborrow 로 unused 경고 억제(값 drop, Result 아님).
     let terminal = w.state.focused_terminal(engine)?;
     let cols = terminal.cols();
 

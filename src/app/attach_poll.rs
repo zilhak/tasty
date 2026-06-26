@@ -22,7 +22,7 @@ impl App {
         }
         for (_, engine) in self.parked_states.iter_mut() {
             // parked 는 window 가 없어 렌더 의미 없음. mirror 만 정리/갱신(no repaint).
-            let _ = engine.refresh_readonly_views();
+            let _ = engine.refresh_readonly_views(); // dirty 여부 반환값 무시 — parked 는 repaint 안 함.
         }
 
         // ② client mirror(점유측): 평소엔 reader thread 의 `AttachClientData` wake 로

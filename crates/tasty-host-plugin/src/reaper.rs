@@ -230,6 +230,6 @@ mod tests {
         // disabled() 는 child 핸들 없이도 만들어지고, 실제 adopt 는 spawn 경로에서만
         // 호출되므로 여기선 생성만 검증한다(이미 죽은/없는 child 로 adopt 호출 시
         // 호출부가 warn 으로 흡수하는 계약).
-        let _ = PluginReaper::disabled();
+        let _ = PluginReaper::disabled(); // 생성만 검증 — 반환 Result 의도적 무시(아래 단순 construct 테스트).
     }
 }

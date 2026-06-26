@@ -20,6 +20,13 @@ multiple_unsafe_ops_per_block = "warn"
 # Box 화는 hot path 영향 + 호출 사이트의 ? 흐름이 어색해진다. 22개 위치를
 # 일괄 allow. 신규 Error enum 추가 시 sizeof 확인 + Box 화 검토 필요.
 result_large_err = "allow"
+# `let_underscore_must_use`: `let _ = <Result/#[must_use]>` 형태의 무음 무시 적발.
+#   error-handling.md 정책("Result 를 let _ 로 삼키지 않는다 — 로그 또는 사유 주석")의
+#   구조적 강제. 의도적 무시는 같은 줄 사유 주석을 단다(주석은 clippy 를 끄지 않으므로
+#   warn 가 그대로 남지만, 리뷰에서 "주석 유무"로 판정한다). reference/단순 값 drop 은
+#   must_use 가 아니라 걸리지 않는다 — 정확히 Result/must_use 누락만 표면화한다.
+#   CI 에 `-D warnings` 가 없어 빌드를 막지 않는다. 신규 Result 삼킴이 clippy 에 뜨면 처리.
+let_underscore_must_use = "warn"
 
 # `unsafe fn` 내부의 unsafe op도 명시적 unsafe block을 강제. 호출 사이트에서
 # unsafe 의도가 항상 드러난다. Rust 2024 edition에선 기본 deny지만, 워크스페이스

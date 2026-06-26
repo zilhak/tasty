@@ -82,14 +82,12 @@ impl CoreState {
             "cols": cols,
             "rows": rows,
         });
-        let _ = hub.push(
-            client_id,
-            StreamFrame::new(
-                StreamTag::Control,
-                serde_json::to_vec(&attached).unwrap_or_default(),
-            ),
+        let attached_frame = StreamFrame::new(
+            StreamTag::Control,
+            serde_json::to_vec(&attached).unwrap_or_default(),
         );
-        let _ = hub.push(client_id, StreamFrame::new(StreamTag::Data, snapshot));
+        let _ = hub.push(client_id, attached_frame); // best-effort 통지 — PushResult(Result 아님) 무시: client 끊김 시 forwarder 가 정리.
+        let _ = hub.push(client_id, StreamFrame::new(StreamTag::Data, snapshot)); // best-effort 스냅샷 push — client 끊김 시 무시.
 
         // forwarder: 서버 PTY 출력 tap → client. client 끊김 시 자동 종료(다음 출력
         // 때 terminal 의 tap 도 prune 됨, design 단계 4 §8-R4).
@@ -166,13 +164,11 @@ impl CoreState {
 
         // 트리 디스크립터(client mirror 트리 재구성 + per-surface role/cols/rows).
         let descriptor = self.build_workspace_descriptor(idx, workspace_id, &class);
-        let _ = hub.push(
-            client_id,
-            StreamFrame::new(
-                StreamTag::Control,
-                serde_json::to_vec(&descriptor).unwrap_or_default(),
-            ),
+        let descriptor_frame = StreamFrame::new(
+            StreamTag::Control,
+            serde_json::to_vec(&descriptor).unwrap_or_default(),
         );
+        let _ = hub.push(client_id, descriptor_frame); // best-effort 디스크립터 push — PushResult(Result 아님) 무시: client 끊김 시 forwarder 가 정리.
 
         // 각 터미널: 초기 스냅샷(mux) + 출력 forwarder(mux). client 끊김 시 자동 종료.
         for &sid in &class.terminals {
@@ -181,10 +177,8 @@ impl CoreState {
             };
             let snapshot = terminal.snapshot_as_vt();
             let tap_rx = terminal.add_output_tap();
-            let _ = hub.push(
-                client_id,
-                StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot)),
-            );
+            let snapshot_frame = StreamFrame::new(StreamTag::Data, encode_mux(sid, &snapshot));
+            let _ = hub.push(client_id, snapshot_frame); // best-effort 초기 mux 스냅샷 push — PushResult 무시: client 끊김 시 forwarder 가 정리.
             let hub2 = hub.clone();
             thread::spawn(move || {
                 for chunk in tap_rx {
@@ -293,12 +287,10 @@ pub(crate) fn reject_attach(
         "reason": reason,
         "holder": holder,
     });
-    let _ = hub.push(
-        client_id,
-        StreamFrame::new(
-            StreamTag::Control,
-            serde_json::to_vec(&msg).unwrap_or_default(),
-        ),
+    let error_frame = StreamFrame::new(
+        StreamTag::Control,
+        serde_json::to_vec(&msg).unwrap_or_default(),
     );
-    let _ = hub.push(client_id, StreamFrame::new(StreamTag::Detach, Vec::new()));
+    let _ = hub.push(client_id, error_frame); // best-effort attach_error 통지 — PushResult(Result 아님) 무시: client 끊겼으면 무해.
+    let _ = hub.push(client_id, StreamFrame::new(StreamTag::Detach, Vec::new())); // best-effort detach 신호 — 무시.
 }

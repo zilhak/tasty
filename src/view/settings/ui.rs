@@ -673,7 +673,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             }
             #[cfg(not(windows))]
             {
-                let _ = ui_state;
+                let _ = ui_state; // non-windows: tastyrc 서브탭 없어 인자 미사용 — 값 drop(Result 아님).
                 Vec::new()
             }
         }

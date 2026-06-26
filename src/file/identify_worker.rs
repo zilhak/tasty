@@ -57,13 +57,13 @@ impl IdentifyWorker {
         let target_for_thread = target.clone();
         std::thread::spawn(move || {
             let detector = registry.identify(&target_for_thread, depth);
-            let _ = proxy.send_event(AppEvent::IdentifyDone {
-                // event loop 종료 시에만 실패 — 무시
+            let done = AppEvent::IdentifyDone {
                 request_id: id,
                 target: target_for_thread,
                 detector,
                 origin_surface_id,
-            });
+            };
+            let _ = proxy.send_event(done); // event loop 종료 시에만 실패 — 무시.
         });
         id
     }

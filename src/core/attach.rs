@@ -304,8 +304,8 @@ impl AttachRegistry {
         };
         let msg = serde_json::json!({ "event": "force_detached", "reason": reason });
         let payload = serde_json::to_vec(&msg).unwrap_or_default();
-        let _ = hub.push(holder, StreamFrame::new(StreamTag::Control, payload));
-        let _ = hub.push(holder, StreamFrame::new(StreamTag::Detach, Vec::new()));
+        let _ = hub.push(holder, StreamFrame::new(StreamTag::Control, payload)); // best-effort 강제분리 통지 — PushResult 무시(위 doc 참조).
+        let _ = hub.push(holder, StreamFrame::new(StreamTag::Detach, Vec::new())); // best-effort detach 신호 — holder 끊겼으면 무해.
     }
 }
 

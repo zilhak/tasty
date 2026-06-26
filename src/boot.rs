@@ -312,16 +312,14 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                     #[cfg(debug_assertions)]
                     if !routed {
                         // 단계 1 echo client(점유 surface 없음): debug 빌드 회신.
-                        let _ = app.stream_hub.push(
-                            client_id,
-                            crate::ipc::stream::StreamFrame::new(
-                                crate::ipc::stream::StreamTag::Data,
-                                bytes,
-                            ),
+                        let echo_frame = crate::ipc::stream::StreamFrame::new(
+                            crate::ipc::stream::StreamTag::Data,
+                            bytes,
                         );
+                        let _ = app.stream_hub.push(client_id, echo_frame); // best-effort echo — PushResult(Result 아님) 무시: client 끊김 시 무해.
                     }
                     #[cfg(not(debug_assertions))]
-                    let _ = routed;
+                    let _ = routed; // release: echo 분기 없어 routed 미사용 — 값 drop(Result 아님).
                 }
                 for client_id in outcome.disconnected {
                     engine.attach.release_all_for_client(client_id);

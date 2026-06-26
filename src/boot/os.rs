@@ -19,7 +19,7 @@ pub(crate) fn attach_windows_console_if_needed() {
         // SAFETY: AttachConsole은 thread-safe Win32 호출. main 진입 첫 단계로,
         // 다른 thread가 아직 spawn되지 않은 시점. 결과 무시는 의도적 (부모가 GUI 셸이면 실패).
         unsafe {
-            let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+            let _ = AttachConsole(ATTACH_PARENT_PROCESS); // 부모가 GUI 셸이면 Err — 콘솔 부재는 정상, 무시.
         }
     }
 }

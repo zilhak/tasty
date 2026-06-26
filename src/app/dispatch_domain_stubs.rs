@@ -48,18 +48,13 @@ pub(crate) fn cascade_surface_closed(
     engine: &mut CoreState,
     cascade_level: CascadeLevel,
     cleanup_targets: Vec<(u32, Option<String>)>,
-    closed_tab_ids: Vec<u32>,
-    closed_pane_ids: Vec<u32>,
-    workspace_id_purged: Option<u32>,
+    // headless: lifecycle 통지용 인자 — drain 주체가 없어 미사용(_ 접두). 자원 해제만 수행.
+    _closed_tab_ids: Vec<u32>,
+    _closed_pane_ids: Vec<u32>,
+    _workspace_id_purged: Option<u32>,
     workspaces_now_empty: bool,
-    is_user_close: bool,
+    _is_user_close: bool,
 ) {
-    let _ = (
-        closed_tab_ids,
-        closed_pane_ids,
-        workspace_id_purged,
-        is_user_close,
-    );
     // headless: PTY/scrollback/메모리 scope 등 *자원* 만 실제 해제. host event /
     // surface.closed lifecycle 통지는 drain 주체(plugin manager / view)가 없으므로
     // 생략 — 통지를 enqueue 하면 pending 큐가 무한 적재된다.
@@ -91,7 +86,7 @@ pub(crate) fn cascade_pane_closed_full(
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
 ) {
-    let _ = (pane_id, is_user_close);
+    let _ = (pane_id, is_user_close); // headless: lifecycle 통지용 인자 미사용 — 값 drop(Result 아님).
     for (sid, pid) in cleanup_targets {
         state.cleanup_surface(engine, sid, pid);
     }
@@ -107,7 +102,7 @@ pub(crate) fn cascade_tab_closed_full(
     cleanup_targets: Vec<(u32, Option<String>)>,
     is_user_close: bool,
 ) {
-    let _ = (tab_id, pane_id, is_user_close);
+    let _ = (tab_id, pane_id, is_user_close); // headless: lifecycle 통지용 인자 미사용 — 값 drop(Result 아님).
     for (sid, pid) in cleanup_targets {
         state.cleanup_surface(engine, sid, pid);
     }

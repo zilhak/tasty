@@ -225,7 +225,7 @@ impl PlatformWebView {
         unsafe {
             // ShowWindow는 BOOL을 반환하지만 windows-rs는 Result로 wrapping —
             // "이전 상태가 visible이었는가"라서 첫 호출 시 Err 형태일 수 있다. 무해.
-            let _ = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE });
+            let _ = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE }); // 반환은 "이전 visible 상태" — 첫 호출 Err 형태 가능, 무해(위 주석 참조).
             if let Err(e) = self.controller.SetIsVisible(visible) {
                 tracing::warn!("WebView2 SetIsVisible failed: {e}");
             }

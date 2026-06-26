@@ -210,7 +210,7 @@ impl TcpIpcServer {
             error: None,
         };
         let ack_bytes = serde_json::to_vec(&ack).unwrap_or_default();
-        let _ = ctx
+        let _ = ctx // best-effort ack push — PushResult(Result 아님) 무시: client 끊겼으면 무해.
             .hub
             .push(client_id, StreamFrame::new(StreamTag::Control, ack_bytes));
 

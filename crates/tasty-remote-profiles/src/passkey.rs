@@ -86,7 +86,7 @@ fn set_private_file(path: &Path) -> std::io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     }
-    let _ = path;
+    let _ = path; // non-unix: 권한 설정 no-op — 인자 미사용(값 drop, Result 아님).
     Ok(())
 }
 
@@ -97,7 +97,7 @@ fn set_private_dir(path: &Path) -> std::io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     }
-    let _ = path;
+    let _ = path; // non-unix: 권한 설정 no-op — 인자 미사용(값 drop, Result 아님).
     Ok(())
 }
 
@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn materialize_inline_writes_file_and_rejects_bad_name() {
         let dir = std::env::temp_dir().join(format!("tasty-pk-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
         // 정상
         let path = materialize_inline_in(&dir, "tok", "s3cr3t").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "s3cr3t");
@@ -308,13 +308,13 @@ mod tests {
         }
         // 잘못된 이름
         assert!(materialize_inline_in(&dir, "../escape", "x").is_err());
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
     }
 
     #[test]
     fn remove_managed_deletes_file() {
         let dir = std::env::temp_dir().join(format!("tasty-pk-rm-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
         let path = materialize_inline_in(&dir, "tok", "x").unwrap();
         let mut pk = Passkeys::default();
         pk.upsert(Passkey {
@@ -326,14 +326,14 @@ mod tests {
         assert!(pk.remove("tok"));
         assert!(!path.exists()); // 관리 파일 삭제됨
         assert!(!pk.remove("tok")); // 이미 없음
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
     }
 
     #[test]
     fn remove_path_kind_keeps_file() {
         // path kind 는 사용자 소유라 파일을 지우지 않는다.
         let dir = std::env::temp_dir().join(format!("tasty-pk-keep-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
         fs::create_dir_all(&dir).unwrap();
         let file = dir.join("user-key");
         fs::write(&file, "owned").unwrap();
@@ -345,6 +345,6 @@ mod tests {
         });
         assert!(pk.remove("ref"));
         assert!(file.exists()); // 참조 해제했을 뿐 파일 보존
-        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dir); // 테스트 정리 — 디렉토리 부재 에러는 정상, 무시.
     }
 }

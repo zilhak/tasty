@@ -202,7 +202,7 @@ pub fn handle_timeseries(
     }
     // since/until 을 window 경계로 정렬 보존하지는 않는다 — 도메인 함수가 align 처리.
     // (재할당하지 않더라도 의미 없음 — 필터링 후 aggregate.)
-    let _ = &mut filter;
+    let _ = &mut filter; // 재할당 안 함 — reborrow 로 mut 바인딩 의도 표시(값 drop, Result 아님).
     let events = match collect_events(core, &filter) {
         Ok(e) => e,
         Err(e) => return JsonRpcResponse::error(id, -32603, e),
