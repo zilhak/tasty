@@ -322,8 +322,8 @@ fn purge_stale_lease_holders(ctx: &RunnerContext, workspace_id: u32) {
 /// - `ShellProcess { pid }` : `process_alive::is_alive(pid)` 검사. alive → 복원,
 ///   dead → K.A-1 `run_result.<task_id>` 영속이 있으면 정확한 exit_code 로 Succeeded /
 ///   Failed 마감 (precise), 없으면 `Failed("host restart: pid {pid} died (exit_code unknown)")`.
-/// - `ClaudeChild` / `BarrierPoll` : 그대로 복원 (insert only). 다음 정상 tick 에서 poll.
-///   ClaudeChild 의 첫 poll 이 injector 미준비여도 K.A-2 grace (30s) 안에서는 Active 유지.
+/// - `PolledDispatch` / `BarrierPoll` : 그대로 복원 (insert only). 다음 정상 tick 에서 poll.
+///   PolledDispatch 의 첫 poll 이 injector 미준비여도 K.A-2 grace (30s) 안에서는 Active 유지.
 /// - `Immediate*` / `ImmediateFail` : 영속 대상 아니므로 도달 안 됨 (방어적 evict).
 ///
 /// 반환: 복원할 (task_id, handle) 쌍 — RunnerLoop.running 에 insert.
@@ -395,9 +395,9 @@ fn reload_persistent_handles(
                     ));
                 }
             }
-            // Claude/Barrier: 그대로 복원 — 다음 정상 tick 에서 poll.
-            // ClaudeChild 의 첫 poll 이 injector 미준비로 실패하면 task=Failed (R3 정책).
-            DispatchHandle::ClaudeChild { .. } | DispatchHandle::BarrierPoll { .. } => {
+            // PolledDispatch/Barrier: 그대로 복원 — 다음 정상 tick 에서 poll.
+            // PolledDispatch 의 첫 poll 이 injector 미준비로 실패하면 task=Failed (R3 정책).
+            DispatchHandle::PolledDispatch { .. } | DispatchHandle::BarrierPoll { .. } => {
                 alive.push((task_id, handle));
             }
             // Immediate* / ImmediateFail 은 영속 대상 아님 — 도달 시 방어적 evict.

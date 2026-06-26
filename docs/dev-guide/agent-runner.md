@@ -30,17 +30,19 @@ state 전이는 `tasty-agent` 의 `is_valid_transition` 표를 따른다. `Ready
 
 ### DispatchHandle
 
-`ClaudeChild { parent_sid, child_index, workspace_id }`(`claude.spawn` 결과) · `ShellProcess { pid }`(`Run` task 자식; `Child` 객체는 Clone 불가라 executor 의 `shell_children` map 에 별도 보관) · `BarrierPoll { workspace_id, name }` · `ReduceImmediate`/`CustomImmediate`/`ImmediateFail`(dispatch 시점 즉시 결정).
+`PolledDispatch { workspace_id, poll_method, poll_params, state_field, terminal_states, interval_ms, deadline_ms }`(범용 폴링 — dispatch 시점에 완성된 `poll_params` 로 terminal 상태 도달까지 `poll_method` 반복 호출) · `ShellProcess { pid }`(`Run` task 자식; `Child` 객체는 Clone 불가라 executor 의 `shell_children` map 에 별도 보관) · `BarrierPoll { workspace_id, name }` · `ReduceImmediate`/`CustomImmediate`/`ImmediateFail`(dispatch 시점 즉시 결정).
 
 ### HostExecutor 매핑
 
 | TaskCommand | dispatch | poll |
 |-------------|----------|------|
-| `ClaudeSpawn` | `claude.spawn` 동기 IPC → `child_index` → `ClaudeChild`. parent 없으면 Err | `claude.wait` → `idle`/`needs_input`/`exited` 면 Done |
 | `Run { command, cwd }` | `Command::spawn` → pid → `ShellProcess`. 빈 command Err | watcher thread 의 `child.wait()` 결과 cell 조회 → exit 0 Done / 아니면 Failed |
-| `Custom { ipc_method, params }` | host IPC dispatch(timeout 5s) → `CustomImmediate` | 즉시 Done |
+| `Custom { ipc_method, params, poll: None }` | host IPC dispatch(timeout 5s) → `CustomImmediate` | 즉시 Done |
+| `Custom { ipc_method, params, poll: Some(spec) }` | host IPC dispatch → `map_from_request`/`map_from_response` 로 `poll_params` 완성 → `PolledDispatch` | `poll_method` 호출 → `state_field` 가 `terminal_states` 중 하나면 Done(응답 전체가 산출물) / 아니면 Active(`deadline_ms` 초과 시 Failed) |
 | `Reduce { inputs, strategy }` | input 결과 collect → `reduce_with_custom` → `ReduceImmediate` | 즉시 Done |
 | `WaitBarrier { name }` | `BarrierPoll` | `Open`→Active / `Closed`→Done / `TimedOut`→Failed |
+
+> 자식 에이전트(예: `claude.spawn` + `claude.wait`)는 이 범용 `Custom { poll }` 메커니즘의 한 사용자다 — 코어는 특정 에이전트를 모른 채 임의 IPC dispatch→폴링을 표현한다. CLI auto_wait(`AutoWaitDecl`/`PollingDecl`)와 동형 스펙으로 폴링 semantics 를 통일한다.
 
 ## RunnerRegistry
 
@@ -76,7 +78,7 @@ runner thread 는 off-main 이라 `PluginManager`(App main thread 단독 소유)
 `held_permits`/`held_handles` 는 in-memory only이라 재시작 시 비지만, store 의 holders/handle 은 영속이라 leak 가능. runner thread 진입 직전 1회:
 
 - `purge_stale_{semaphore,lease}_holders` — Running task 중 `metadata.*.holder == task.id` 만 release + task=Failed("host restart").
-- `reload_persistent_handles`(key `tasty.agent.handle.<task_id>`, workspace scope) — `ShellProcess` 는 `process_alive::is_alive(pid)` 검사(alive 복원 / dead 는 영속 `run_result` 로 정확한 exit_code 마감 또는 Failed). `ClaudeChild`/`BarrierPoll` 은 insert-only 복원(다음 tick poll). ClaudeChild 첫 poll 이 injector 미준비면 `INJECTOR_GRACE_MS=30s` 안에서 Active 유지.
+- `reload_persistent_handles`(key `tasty.agent.handle.<task_id>`, workspace scope) — `ShellProcess` 는 `process_alive::is_alive(pid)` 검사(alive 복원 / dead 는 영속 `run_result` 로 정확한 exit_code 마감 또는 Failed). `PolledDispatch`/`BarrierPoll` 은 insert-only 복원(다음 tick poll). PolledDispatch 첫 poll 이 injector 미준비면 `INJECTOR_GRACE_MS=30s` 안에서 Active 유지.
 
 `ReduceImmediate`/`CustomImmediate`/`ImmediateFail` 은 영속 안 함(다음 tick 즉시 흡수 + reload 시 재dispatch side-effect 위험).
 

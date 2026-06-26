@@ -27,6 +27,9 @@
 ### Deprecated
 - **IPC `ssh.profile.list/get/add/remove`** → `tool.ssh.list/get/add/remove` 로 rename. 구이름은 `alias.rs` 의 alias 로 한시 호환되며 deprecated warn 을 출력한다. 실제 제거는 다음 minor tag 직전 (`docs/dev-guide/cli-naming.md` rename 절차).
 
+### Removed
+- **agent task command `claude_spawn` kind 제거** — `agent.task_create` IPC / `tasty agent create --command` 의 `{"kind":"claude_spawn",...}` JSON 표면이 사라졌다. 코어 task 레이어에서 특정 에이전트 결합을 제거하고, `custom` kind 에 옵션 `poll` 폴링 사양(`PollSpec`)을 일반화했다. 동일 능력(자식 spawn 후 `idle`/`needs_input`/`exited` 도달까지 폴링 대기)은 `{"kind":"custom","ipc_method":"claude.spawn","params":{...},"poll":{"poll_method":"claude.wait","map_from_request":{"surface_id":"surface_id"},"map_from_response":{"child_index":"child_index"},"state_field":"state","terminal_states":["idle","needs_input","exited"],"interval_ms":500}}` 로 표현한다 (0.x 정책상 직접 대체 — 호환 alias 없음). 진행 중이던 `claude_spawn` 기반 task 는 업그레이드 후 미복원. (`tasty claude spawn` 등 manifest auto_wait CLI 경로는 무관 — 회귀 없음.)
+
 ## [0.8.1] - 2026-06-08
 
 > 마지막 publish (0.3.1) 이후 누적된 변경이 매우 많아 세부 entry 를 모두 나열하지 않고 큼직한 축만 정리한다. 자세한 내역은 `git log v0.3.1..v0.8.1` 참조.

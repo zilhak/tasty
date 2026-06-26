@@ -1,15 +1,16 @@
 //! Task primitive — DAG, 상태 머신, memory 영속.
 //!
 //! 의도적으로 IPC/GUI와 독립적이다. 호스트는 본 모듈의 API를 호출해 task 모델을
-//! 영속하고, 별도 스케줄러가 `Ready` 상태 task를 실제로 실행한다 (`ClaudeSpawn`은
-//! `claude.spawn` IPC, `Run`은 `tab.create + cmd`, `Custom`은 임의 IPC dispatch,
-//! `Reduce`는 본 크레이트 내부 reducer로). 실행 완료 신호가 들어오면 호스트가
-//! `TaskStore::set_state`로 진행시키고 downstream의 readiness가 갱신된다.
+//! 영속하고, 별도 스케줄러가 `Ready` 상태 task를 실제로 실행한다 (`Run`은
+//! `tab.create + cmd`, `Custom`은 임의 IPC dispatch — 옵션 폴링 포함, `Reduce`는 본
+//! 크레이트 내부 reducer로). 실행 완료 신호가 들어오면 호스트가 `TaskStore::set_state`로
+//! 진행시키고 downstream의 readiness가 갱신된다.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tasty_utils::id::{SurfaceId, WorkspaceId};
+use tasty_utils::id::WorkspaceId;
 
 /// Task의 고유 식별자. 형식 `t-<timestamp_ms>-<seq>` (예: `t-1716800000123-7`).
 /// 호스트가 본 크레이트 외부에서 임의 문자열로 생성해도 무방하지만, 본 모듈의
@@ -115,20 +116,6 @@ pub struct InlineFallbackSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskCommand {
-    /// `claude.spawn` IPC를 호출해 자식 Claude를 띄운다.
-    ClaudeSpawn {
-        prompt: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        role: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        nickname: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cwd: Option<PathBuf>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parent_surface: Option<SurfaceId>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<String>, // "vertical" | "horizontal"
-    },
     /// 새 terminal surface에서 일반 명령 실행.
     Run {
         command: Vec<String>,
@@ -137,10 +124,17 @@ pub enum TaskCommand {
         cwd: Option<PathBuf>,
     },
     /// 임의 IPC 메서드 호출 위임 (호출자가 해당 메서드의 권한을 보유해야 함).
+    ///
+    /// `poll` 이 `None` 이면 dispatch 응답으로 즉시 종결한다(`CustomImmediate`).
+    /// `Some(..)` 이면 dispatch 후 terminal 상태 도달까지 `poll` 사양대로 폴링한다
+    /// — 코어가 모르는 임의 비동기 작업(예: 자식 에이전트 spawn 후 idle 까지 대기)을
+    /// 어떤 플러그인이든 표현할 수 있는 범용 메커니즘.
     Custom {
         ipc_method: String,
         #[serde(default)]
         params: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        poll: Option<PollSpec>,
     },
     /// 다른 task의 결과를 합성.
     Reduce {
@@ -150,6 +144,35 @@ pub enum TaskCommand {
     /// 명시적 barrier 대기. barrier 가 Closed 되면 Succeeded, TimedOut 이면 Failed.
     /// timeout 은 barrier 자체의 `timeout_ms` 가 단일 출처.
     WaitBarrier { name: String },
+}
+
+/// 범용 폴링 사양 — `TaskCommand::Custom { poll: Some(..) }` 에서 사용.
+///
+/// dispatch IPC 호출 후, 응답의 `state_field` 가 `terminal_states` 중 하나에 도달할
+/// 때까지 `poll_method` 를 반복 호출한다. 필드 의미는 plugin manifest 의
+/// `AutoWaitDecl`/`PollingDecl`(CLI auto_wait 경로)와 동형으로 맞춘다 — 폴링 semantics 를
+/// CLI/agent 양쪽에서 통일하기 위함. 두 곳의 필드 의미는 동기화 책임을 가진다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PollSpec {
+    /// 폴링 시 호출할 IPC method (예: `"<plugin>.wait"`).
+    pub poll_method: String,
+    /// dispatch 응답 키 → poll params 키 매핑 (예: `{"child_index":"child_index"}`).
+    /// 응답이 원 요청보다 우선해 poll params 를 채운다.
+    #[serde(default)]
+    pub map_from_response: HashMap<String, String>,
+    /// 원 dispatch params 키 → poll params 키 매핑 (예: `{"surface_id":"surface_id"}`).
+    #[serde(default)]
+    pub map_from_request: HashMap<String, String>,
+    /// 응답에서 상태를 읽을 필드명 (예: `"state"`).
+    pub state_field: String,
+    /// terminal 로 간주할 상태값 목록 (예: `["idle","needs_input","exited"]`).
+    /// 비-terminal 상태는 모두 계속 폴링(Active)으로 취급한다.
+    pub terminal_states: Vec<String>,
+    /// 폴링 간격 (ms). 핸들에 보존된다.
+    pub interval_ms: u64,
+    /// 전체 폴링 timeout (ms). `None` 이면 무한 대기.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 /// Reducer 합성 전략.
@@ -169,10 +192,10 @@ pub enum ReducerStrategy {
 /// Task 실행 결과. `Succeeded`/`Failed` 상태에서만 채워진다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskResult {
-    /// 종료 코드 (Run의 exit_code, ClaudeSpawn의 wait 결과 등).
+    /// 종료 코드 (Run의 exit_code 등).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
-    /// 실행 산출물 (claude의 surface id, Custom의 IPC 응답 등).
+    /// 실행 산출물 (Custom의 IPC 응답, 폴링 종료 시 마지막 응답 등).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<serde_json::Value>,
     /// 에러 사유 (Failed 상태에서만).

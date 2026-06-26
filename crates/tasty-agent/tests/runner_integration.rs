@@ -904,10 +904,14 @@ fn lease_gated_dispatch_serializes_two_tasks() {
 fn dispatch_handle_persistence_round_trip_all_variants() {
     use tasty_agent::DispatchHandle;
     let variants = vec![
-        DispatchHandle::ClaudeChild {
-            parent_sid: 42,
-            child_index: 3,
+        DispatchHandle::PolledDispatch {
             workspace_id: 1,
+            poll_method: "fake.poll".into(),
+            poll_params: serde_json::json!({ "surface_id": 42, "child_index": 3 }),
+            state_field: "state".into(),
+            terminal_states: vec!["idle".into(), "needs_input".into(), "exited".into()],
+            interval_ms: 500,
+            deadline_ms: None,
         },
         DispatchHandle::ShellProcess { pid: 99999 },
         DispatchHandle::ReduceImmediate(TaskResult {

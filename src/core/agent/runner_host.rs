@@ -1,8 +1,10 @@
 //! Host-side `TaskExecutor` 구현 — runner thread 가 사용.
 //!
-//! - `ClaudeSpawn` → `claude.spawn` IPC 동기 호출 + `claude.wait` 로 poll.
+//! - `Custom { poll: None }` → IPC 동기 호출, 응답으로 즉시 종결.
+//! - `Custom { poll: Some(..) }` → dispatch 후 `poll_method` 를 terminal 상태 도달까지
+//!   반복 호출하는 범용 폴링 (코어가 모르는 임의 비동기 작업).
 //! - `Reduce` → 즉시 collect + `reduce_with_custom`.
-//! - `Run` / `Custom` → F.6 에서 채움.
+//! - `Run` → shell process spawn + watcher.
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
@@ -40,9 +42,8 @@ pub fn run_result_key(task_id: &str) -> String {
 use crate::adapters::ipc::handler::agent::task::run_custom_shell;
 use crate::ipc::host_call::HostIpcInjector;
 
-/// Host→plugin dispatch timeout — claude.spawn 은 자식 프로세스 생성/디스크 I/O
-/// 까지 포함하므로 비교적 여유. claude.wait 는 1tick 만이라 짧아도 되지만
-/// 같은 값으로 통일.
+/// Host→plugin dispatch timeout — 자식 프로세스 생성/디스크 I/O 까지 포함할 수 있는
+/// dispatch 와 1tick 만인 poll 양쪽에 같은 값으로 통일.
 const HOST_DISPATCH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// K.A-2: host IPC injector 미초기화 시 dispatch_plugin 이 반환하는 정적 메시지.
@@ -56,7 +57,7 @@ pub(crate) const INJECTOR_UNINIT_MSG: &str = "host IPC injector not initialized"
 pub(crate) const INJECTOR_GRACE_MS: u64 = 30_000;
 
 /// K.A-2: 에러 메시지가 injector 미초기화 사유인지 분류 (`dispatch_plugin` 의
-/// 정적 prefix 매칭). claude.wait 등 메서드명 prefix 가 붙은 형태도 함께 흡수.
+/// 정적 prefix 매칭). poll method 명 prefix 가 붙은 형태도 함께 흡수.
 pub(crate) fn is_injector_not_initialized(msg: &str) -> bool {
     msg.contains(INJECTOR_UNINIT_MSG)
 }
@@ -127,8 +128,8 @@ pub struct HostExecutor {
     /// ws 가 필요한데 handle 자체에서 식별 불가 (ShellProcess { pid } 등) 이므로
     /// persist_handle 시점에 함께 저장.
     held_handles: HashMap<TaskId, u32>,
-    /// K.A-2: ClaudeChild poll 이 injector 미초기화로 실패하기 시작한 시각 +
-    /// `INJECTOR_GRACE_MS`. 한 executor (= 한 workspace runner) 가 모든 ClaudeChild
+    /// K.A-2: `PolledDispatch` poll 이 injector 미초기화로 실패하기 시작한 시각 +
+    /// `INJECTOR_GRACE_MS`. 한 executor (= 한 workspace runner) 가 모든 PolledDispatch
     /// 핸들에 공유 — reload 직후 injector init 까지의 window 를 흡수. injector 가
     /// ready 가 되어 정상 dispatch 가 1회라도 성공하면 None 으로 reset.
     injector_grace_deadline_ms: Option<u64>,
@@ -374,50 +375,6 @@ impl HostExecutor {
     /// 내부 dispatch 본체. `?` 로 `String` 에러 흡수 후 호출자가 `DispatchOutcome` 변환.
     fn dispatch_command(&mut self, task: &Task) -> Result<DispatchHandle, String> {
         match &task.command {
-            TaskCommand::ClaudeSpawn {
-                prompt,
-                role,
-                nickname,
-                cwd,
-                parent_surface,
-                direction,
-            } => {
-                let parent_sid = parent_surface
-                    .ok_or_else(|| "ClaudeSpawn requires parent_surface".to_string())?;
-                let mut params = json!({
-                    "surface_id": parent_sid,
-                    "workspace": task.workspace_id.to_string(),
-                    "prompt": prompt,
-                });
-                if let Some(r) = role {
-                    params["role"] = json!(r);
-                }
-                if let Some(n) = nickname {
-                    params["nickname"] = json!(n);
-                }
-                if let Some(c) = cwd {
-                    params["cwd"] = json!(c.to_string_lossy());
-                }
-                if let Some(d) = direction {
-                    params["direction"] = json!(d);
-                }
-                let resp = self
-                    .ctx
-                    .dispatch_plugin(
-                        &format!("{}.spawn", "claude"), // claude.spawn — plugin namespace
-                        params,
-                    )
-                    .map_err(|e| format!("claude.spawn: {e}"))?;
-                let child_index = resp["child_index"]
-                    .as_u64()
-                    .ok_or_else(|| "claude.spawn response missing child_index".to_string())?
-                    as u32;
-                Ok(DispatchHandle::ClaudeChild {
-                    parent_sid,
-                    child_index,
-                    workspace_id: task.workspace_id,
-                })
-            }
             TaskCommand::Reduce { inputs, strategy } => {
                 // 1단계: 입력 task 결과 수집 (memory lock).
                 let collected: Result<Vec<ReducerInput>, String> = self.ctx.with_memory(|mem| {
@@ -493,18 +450,46 @@ impl HostExecutor {
                 );
                 Ok(DispatchHandle::ShellProcess { pid })
             }
-            TaskCommand::Custom { ipc_method, params } => {
-                // 동기 IPC dispatch — 즉시 완료 가정. 응답이 즉시 안 오면 timeout
-                // 으로 Failed 처리됨 (HostIpcInjector::dispatch).
+            TaskCommand::Custom {
+                ipc_method,
+                params,
+                poll,
+            } => {
+                // 동기 IPC dispatch. poll=None 이면 응답으로 즉시 종결, poll=Some 이면
+                // dispatch 후 terminal 상태 도달까지 범용 폴링.
                 let value = self
                     .ctx
                     .dispatch_plugin(ipc_method, params.clone())
                     .map_err(|e| format!("Custom '{ipc_method}': {e}"))?;
-                Ok(DispatchHandle::CustomImmediate(TaskResult {
-                    exit_code: Some(0),
-                    output: Some(value),
-                    error: None,
-                }))
+                let Some(spec) = poll else {
+                    return Ok(DispatchHandle::CustomImmediate(TaskResult {
+                        exit_code: Some(0),
+                        output: Some(value),
+                        error: None,
+                    }));
+                };
+                // poll params 사전 해석: 원 요청 → 응답 순으로 채움 (응답이 요청보다 우선).
+                let mut poll_params = serde_json::Map::new();
+                for (req_key, poll_key) in &spec.map_from_request {
+                    if let Some(v) = params.get(req_key) {
+                        poll_params.insert(poll_key.clone(), v.clone());
+                    }
+                }
+                for (resp_key, poll_key) in &spec.map_from_response {
+                    if let Some(v) = value.get(resp_key) {
+                        poll_params.insert(poll_key.clone(), v.clone());
+                    }
+                }
+                let deadline_ms = spec.timeout_ms.map(|t| now_ms() + t);
+                Ok(DispatchHandle::PolledDispatch {
+                    workspace_id: task.workspace_id,
+                    poll_method: spec.poll_method.clone(),
+                    poll_params: serde_json::Value::Object(poll_params),
+                    state_field: spec.state_field.clone(),
+                    terminal_states: spec.terminal_states.clone(),
+                    interval_ms: spec.interval_ms,
+                    deadline_ms,
+                })
             }
             TaskCommand::WaitBarrier { name } => Ok(DispatchHandle::BarrierPoll {
                 workspace_id: task.workspace_id,
@@ -516,16 +501,15 @@ impl HostExecutor {
     /// 내부 poll 본체.
     fn poll_handle(&mut self, handle: &DispatchHandle) -> PollOutcome {
         match handle {
-            DispatchHandle::ClaudeChild {
-                parent_sid,
-                child_index,
+            DispatchHandle::PolledDispatch {
+                poll_method,
+                poll_params,
+                state_field,
+                terminal_states,
+                deadline_ms,
                 ..
             } => {
-                let params = json!({
-                    "surface_id": parent_sid,
-                    "child_index": child_index,
-                });
-                let resp = match self.ctx.dispatch_plugin("claude.wait", params) {
+                let resp = match self.ctx.dispatch_plugin(poll_method, poll_params.clone()) {
                     Ok(v) => {
                         // K.A-2: injector 가 ready → grace deadline reset.
                         self.injector_grace_deadline_ms = None;
@@ -542,23 +526,27 @@ impl HostExecutor {
                             return PollOutcome::Active;
                         }
                         return PollOutcome::Failed(format!(
-                            "claude.wait: injector grace expired ({INJECTOR_GRACE_MS}ms)"
+                            "{poll_method}: injector grace expired ({INJECTOR_GRACE_MS}ms)"
                         ));
                     }
-                    Err(e) => return PollOutcome::Failed(format!("claude.wait: {e}")),
+                    Err(e) => return PollOutcome::Failed(format!("{poll_method}: {e}")),
                 };
-                match resp["state"].as_str().unwrap_or("active") {
-                    "active" => PollOutcome::Active,
-                    s @ ("idle" | "needs_input" | "exited") => PollOutcome::Done(TaskResult {
+                let state = resp.get(state_field).and_then(|v| v.as_str()).unwrap_or("");
+                if terminal_states.iter().any(|s| s == state) {
+                    // terminal 도달 → 전체 응답을 산출물로 종결.
+                    PollOutcome::Done(TaskResult {
                         exit_code: None,
-                        output: Some(json!({
-                            "final_state": s,
-                            "child_index": child_index,
-                            "parent_surface_id": parent_sid,
-                        })),
+                        output: Some(resp),
                         error: None,
-                    }),
-                    other => PollOutcome::Failed(format!("unknown claude.wait state: {other}")),
+                    })
+                } else {
+                    // 비-terminal → 계속 폴링(Active). 단 전체 timeout deadline 초과 시 Failed.
+                    if let Some(deadline) = deadline_ms {
+                        if now_ms() >= *deadline {
+                            return PollOutcome::Failed(format!("{poll_method}: poll timeout"));
+                        }
+                    }
+                    PollOutcome::Active
                 }
             }
             DispatchHandle::ReduceImmediate(r) | DispatchHandle::CustomImmediate(r) => {
@@ -898,17 +886,26 @@ mod tests {
         assert!(!exec.shell_children.contains_key(&pid));
     }
 
+    /// 범용 폴링 핸들 헬퍼 — 특정 에이전트와 무관한 임의 poll method 로.
+    fn mk_polled(method: &str) -> DispatchHandle {
+        DispatchHandle::PolledDispatch {
+            workspace_id: 1,
+            poll_method: method.to_string(),
+            poll_params: json!({}),
+            state_field: "state".to_string(),
+            terminal_states: vec!["done".to_string()],
+            interval_ms: 1,
+            deadline_ms: None,
+        }
+    }
+
     /// K.A.2: injector 미초기화 1회 → Active + grace deadline 세팅.
     #[test]
-    fn claude_child_poll_injector_uninit_returns_active_within_grace() {
+    fn polled_dispatch_poll_injector_uninit_returns_active_within_grace() {
         let (_td, ctx) = fresh_ctx();
         // host_ipc OnceLock 비어있는 상태 — set_host_ipc_injector 호출 X.
         let mut exec = HostExecutor::new(ctx);
-        let handle = DispatchHandle::ClaudeChild {
-            parent_sid: 1,
-            child_index: 0,
-            workspace_id: 1,
-        };
+        let handle = mk_polled("fake.poll");
         let outcome = exec.poll(&handle);
         assert!(
             matches!(outcome, PollOutcome::Active),
@@ -922,14 +919,10 @@ mod tests {
 
     /// K.A.2: grace deadline 을 과거로 강제 → 다음 poll 은 Failed("grace expired").
     #[test]
-    fn claude_child_poll_after_grace_expired_returns_failed() {
+    fn polled_dispatch_poll_after_grace_expired_returns_failed() {
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx);
-        let handle = DispatchHandle::ClaudeChild {
-            parent_sid: 1,
-            child_index: 0,
-            workspace_id: 1,
-        };
+        let handle = mk_polled("fake.poll");
         // 첫 poll 로 deadline 세팅 — 반환값은 Active (검증은 다음 라인의 덮어쓰기 후).
         let _first = exec.poll(&handle);
         debug_assert!(matches!(_first, PollOutcome::Active));
@@ -938,16 +931,16 @@ mod tests {
         match outcome {
             PollOutcome::Failed(err) => {
                 assert!(err.contains("injector grace expired"), "got {err}");
-                assert!(err.contains("claude.wait"));
+                assert!(err.contains("fake.poll"));
             }
             other => panic!("expected Failed, got {other:?}"),
         }
     }
 
     /// K.A.2: injector ready 가 되어 정상 dispatch 가 응답하면 grace deadline reset.
-    /// 테스트 worker thread 가 claude.wait 응답 — `idle` 상태로 종결.
+    /// 테스트 worker thread 가 poll method 에 terminal 상태 응답 — Done 으로 종결.
     #[test]
-    fn claude_child_poll_recovers_after_injector_ready() {
+    fn polled_dispatch_recovers_after_injector_ready() {
         use crate::ipc::host_call::HostIpcInjector;
         use crate::ipc::protocol::JsonRpcResponse;
         use std::sync::mpsc;
@@ -955,31 +948,27 @@ mod tests {
 
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx.clone());
-        let handle = DispatchHandle::ClaudeChild {
-            parent_sid: 1,
-            child_index: 0,
-            workspace_id: 1,
-        };
+        let handle = mk_polled("fake.poll");
         // 1차 poll — injector 미초기화 → Active + deadline 세팅.
         let outcome1 = exec.poll(&handle);
         assert!(matches!(outcome1, PollOutcome::Active));
         assert!(exec.injector_grace_deadline_ms.is_some());
 
-        // Fake injector + worker thread: claude.wait 에 idle 응답.
+        // Fake injector + worker thread: fake.poll 에 terminal("done") 응답.
         let (tx, rx) = mpsc::channel::<IpcCommand>();
         let waker = std::sync::Arc::new(|| {});
         let injector = HostIpcInjector::new(tx, waker);
         ctx.host_ipc.set(injector).ok().expect("set once");
         let worker = std::thread::spawn(move || {
-            let cmd = rx.recv().expect("recv claude.wait");
-            assert_eq!(cmd.request.method, "claude.wait");
+            let cmd = rx.recv().expect("recv fake.poll");
+            assert_eq!(cmd.request.method, "fake.poll");
             let resp = JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
-                serde_json::json!({ "state": "idle" }),
+                serde_json::json!({ "state": "done" }),
             );
             cmd.response_tx.send(resp).expect("send resp");
         });
-        // 2차 poll — injector ready → claude.wait 응답 "idle" → Done.
+        // 2차 poll — injector ready → fake.poll 응답 "done"(terminal) → Done.
         let outcome2 = exec.poll(&handle);
         worker.join().unwrap();
         match outcome2 {
@@ -995,18 +984,14 @@ mod tests {
 
     /// K.A.2: injector 외 사유 Err 는 grace 우회 — 즉시 Failed.
     #[test]
-    fn claude_child_poll_non_injector_error_fails_immediately() {
+    fn polled_dispatch_non_injector_error_fails_immediately() {
         use crate::ipc::host_call::HostIpcInjector;
         use std::sync::mpsc;
         use tasty_ipc::server::IpcCommand;
 
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx.clone());
-        let handle = DispatchHandle::ClaudeChild {
-            parent_sid: 1,
-            child_index: 0,
-            workspace_id: 1,
-        };
+        let handle = mk_polled("fake.poll");
         // injector 를 ready 로 만들되 worker 가 응답을 보내지 않게 두면 dispatch 가
         // HOST_DISPATCH_TIMEOUT (5s) 후 timeout Err. 본 테스트는 channel disconnect 로
         // 빠르게 Err 유도 — sender 만 drop.
@@ -1018,7 +1003,7 @@ mod tests {
         let outcome = exec.poll(&handle);
         match outcome {
             PollOutcome::Failed(err) => {
-                assert!(err.contains("claude.wait"), "got {err}");
+                assert!(err.contains("fake.poll"), "got {err}");
                 assert!(
                     !err.contains("grace expired"),
                     "non-injector error must not use grace path: {err}"
@@ -1034,17 +1019,185 @@ mod tests {
         assert!(exec.injector_grace_deadline_ms.is_none());
     }
 
+    /// 범용 폴링: Custom{poll:Some} → dispatch 응답/요청 키를 poll_params 로 매핑한 뒤
+    /// terminal 상태 도달까지 폴링. (fake.start → {"job":"J1"}, fake.poll → running→done)
+    #[test]
+    fn custom_with_poll_maps_params_and_polls_to_done() {
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::collections::HashMap;
+        use std::sync::mpsc;
+        use tasty_agent::{OnFailure, PollSpec};
+        use tasty_ipc::server::IpcCommand;
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        // worker: fake.start → {"job":"J1"}, fake.poll(1) → running, fake.poll(2) → done.
+        let worker = std::thread::spawn(move || {
+            let start = rx.recv().expect("recv fake.start");
+            assert_eq!(start.request.method, "fake.start");
+            start
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    start.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({ "job": "J1" }),
+                ))
+                .expect("send start resp");
+
+            let poll1 = rx.recv().expect("recv fake.poll 1");
+            assert_eq!(poll1.request.method, "fake.poll");
+            // poll_params 매핑 검증: 요청(surface_id) + 응답(job) 양쪽 반영.
+            assert_eq!(poll1.request.params.get("surface_id"), Some(&json!(7)));
+            assert_eq!(poll1.request.params.get("job"), Some(&json!("J1")));
+            poll1
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    poll1.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({ "state": "running" }),
+                ))
+                .expect("send poll1 resp");
+
+            let poll2 = rx.recv().expect("recv fake.poll 2");
+            poll2
+                .response_tx
+                .send(JsonRpcResponse::success(
+                    poll2.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({ "state": "done" }),
+                ))
+                .expect("send poll2 resp");
+        });
+
+        let mut map_from_request = HashMap::new();
+        map_from_request.insert("surface_id".to_string(), "surface_id".to_string());
+        let mut map_from_response = HashMap::new();
+        map_from_response.insert("job".to_string(), "job".to_string());
+        let task = Task {
+            id: "t-poll".to_string(),
+            workspace_id: 1,
+            name: "poll".into(),
+            command: TaskCommand::Custom {
+                ipc_method: "fake.start".into(),
+                params: json!({ "surface_id": 7 }),
+                poll: Some(PollSpec {
+                    poll_method: "fake.poll".into(),
+                    map_from_response,
+                    map_from_request,
+                    state_field: "state".into(),
+                    terminal_states: vec!["done".into()],
+                    interval_ms: 1,
+                    timeout_ms: None,
+                }),
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+
+        // dispatch → PolledDispatch 핸들 + poll_params 매핑.
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        match &handle {
+            DispatchHandle::PolledDispatch {
+                poll_method,
+                poll_params,
+                ..
+            } => {
+                assert_eq!(poll_method, "fake.poll");
+                assert_eq!(poll_params.get("surface_id"), Some(&json!(7)));
+                assert_eq!(poll_params.get("job"), Some(&json!("J1")));
+            }
+            other => panic!("expected PolledDispatch, got {other:?}"),
+        }
+        // 1차 poll → running(비-terminal) → Active.
+        assert!(matches!(exec.poll(&handle), PollOutcome::Active));
+        // 2차 poll → done(terminal) → Done.
+        match exec.poll(&handle) {
+            PollOutcome::Done(r) => {
+                assert_eq!(r.output, Some(json!({ "state": "done" })));
+            }
+            other => panic!("expected Done, got {other:?}"),
+        }
+        worker.join().unwrap();
+    }
+
+    /// 회귀: Custom{poll:None} → dispatch 응답으로 즉시 CustomImmediate.
+    #[test]
+    fn custom_without_poll_is_immediate() {
+        use crate::ipc::host_call::HostIpcInjector;
+        use crate::ipc::protocol::JsonRpcResponse;
+        use std::sync::mpsc;
+        use tasty_agent::OnFailure;
+        use tasty_ipc::server::IpcCommand;
+
+        let (_td, ctx) = fresh_ctx();
+        let mut exec = HostExecutor::new(ctx.clone());
+        let (tx, rx) = mpsc::channel::<IpcCommand>();
+        let waker = std::sync::Arc::new(|| {});
+        ctx.host_ipc
+            .set(HostIpcInjector::new(tx, waker))
+            .ok()
+            .expect("set once");
+        let worker = std::thread::spawn(move || {
+            let cmd = rx.recv().expect("recv fake.do");
+            cmd.response_tx
+                .send(JsonRpcResponse::success(
+                    cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                    serde_json::json!({ "ok": true }),
+                ))
+                .expect("send resp");
+        });
+        let task = Task {
+            id: "t-imm".to_string(),
+            workspace_id: 1,
+            name: "imm".into(),
+            command: TaskCommand::Custom {
+                ipc_method: "fake.do".into(),
+                params: json!({}),
+                poll: None,
+            },
+            state: tasty_agent::TaskState::Ready,
+            depends_on: vec![],
+            on_failure: OnFailure::Abort,
+            metadata: serde_json::Value::Null,
+            result: None,
+            created_at: 0,
+            started_at: None,
+            finished_at: None,
+        };
+        let handle = match exec.dispatch(&task) {
+            DispatchOutcome::Started(h) => h,
+            other => panic!("expected Started, got {other:?}"),
+        };
+        worker.join().unwrap();
+        match handle {
+            DispatchHandle::CustomImmediate(r) => {
+                assert_eq!(r.output, Some(json!({ "ok": true })));
+            }
+            other => panic!("expected CustomImmediate, got {other:?}"),
+        }
+    }
+
     /// J.A.S2: evict 후 store 에서 사라짐.
     #[test]
     fn evict_handle_removes_from_store() {
         let (_td, ctx) = fresh_ctx();
         let mut exec = HostExecutor::new(ctx.clone());
         let task_id = "t-evict".to_string();
-        let handle = DispatchHandle::ClaudeChild {
-            parent_sid: 1,
-            child_index: 0,
-            workspace_id: 1,
-        };
+        let handle = mk_polled("fake.poll");
         exec.persist_handle(1, &task_id, &handle);
         let present_before: bool = ctx.with_memory(|mem| {
             mem.get(&Scope::Workspace(1), &handle_key(&task_id))

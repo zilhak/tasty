@@ -6,8 +6,8 @@
 //!
 //! 영속은 `tasty-memory` 위에 얹는다 (scope = workspace, key prefix =
 //! `tasty.agent.task.<id>`). 본 크레이트는 GUI/IPC와 독립적이며 순수 상태
-//! 머신 + 영속 헬퍼만 담당한다. IPC dispatcher와 실제 실행 엔진(claude.spawn,
-//! run, custom IPC)은 호스트가 본 크레이트의 API를 호출해 조율한다.
+//! 머신 + 영속 헬퍼만 담당한다. IPC dispatcher와 실제 실행 엔진(run, custom IPC —
+//! 옵션 폴링 포함)은 호스트가 본 크레이트의 API를 호출해 조율한다.
 #![allow(clippy::result_large_err)]
 
 pub mod barrier;
@@ -28,7 +28,7 @@ pub use reducer::{ReducerInput, reduce_in_process, reduce_with_custom};
 pub use runner::{DispatchHandle, DispatchOutcome, PollOutcome, RunnerLoop, TaskExecutor};
 pub use semaphore::{AcquireOutcome, ReleaseOutcome, Semaphore, SemaphoreStore};
 pub use task::{
-    InlineFallbackSpec, OnFailure, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId,
+    InlineFallbackSpec, OnFailure, PollSpec, ReducerStrategy, Task, TaskCommand, TaskGraph, TaskId,
     TaskResult, TaskState, TaskStore,
 };
 

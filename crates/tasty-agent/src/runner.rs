@@ -1,7 +1,7 @@
 //! Task runner — Ready task 를 dispatch 하고 Running task 를 poll 하는 순수 루프.
 //!
-//! 본 모듈은 *IPC / GUI / OS 와 독립적*. 실제 host-side 동작 (claude.spawn,
-//! shell process, Custom IPC dispatch) 은 [`TaskExecutor`] trait 의 host 측
+//! 본 모듈은 *IPC / GUI / OS 와 독립적*. 실제 host-side 동작 (shell process,
+//! Custom IPC dispatch, 범용 폴링) 은 [`TaskExecutor`] trait 의 host 측
 //! 구현에 위임한다 — 테스트는 mock executor 로 검증.
 //!
 //! 한 번의 `tick()` 호출이 다음을 수행:
@@ -21,7 +21,8 @@ use crate::task::{Task, TaskId, TaskResult, TaskState};
 use crate::{AgentError, Result};
 
 /// dispatch / poll 결과를 묶는 핸들. variant 별 의미:
-/// - `ClaudeChild`: parent surface 와 child_index 보관. poll 은 `claude.wait` 결과로.
+/// - `PolledDispatch`: 범용 비동기 폴링. dispatch 후 `poll_method` 를 terminal 상태
+///   도달까지 반복 호출. `poll_params` 는 dispatch 시점에 완성된 폴링 인자.
 /// - `ShellProcess`: pid 만. host executor 가 `Child` 객체를 별 map 으로 보관.
 /// - `ReduceImmediate` / `CustomImmediate`: dispatch 시점에 결과가 즉시 결정.
 /// - `ImmediateFail`: dispatch 가 실패. transition 표상 Ready → Failed 직접 전이가
@@ -30,10 +31,17 @@ use crate::{AgentError, Result};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum DispatchHandle {
-    ClaudeChild {
-        parent_sid: u32,
-        child_index: u32,
+    /// 범용 폴링 핸들 — dispatch 응답으로 채워진 `poll_params` 로 `poll_method` 를
+    /// terminal 상태(`state_field` 가 `terminal_states` 중 하나) 도달까지 반복 호출.
+    PolledDispatch {
         workspace_id: u32,
+        poll_method: String,
+        poll_params: serde_json::Value,
+        state_field: String,
+        terminal_states: Vec<String>,
+        interval_ms: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        deadline_ms: Option<u64>,
     },
     ShellProcess {
         pid: u32,
@@ -484,10 +492,14 @@ mod tests {
     #[test]
     fn dispatch_handle_serde_roundtrip_all_variants() {
         let cases = vec![
-            DispatchHandle::ClaudeChild {
-                parent_sid: 7,
-                child_index: 1,
+            DispatchHandle::PolledDispatch {
                 workspace_id: 42,
+                poll_method: "fake.poll".into(),
+                poll_params: serde_json::json!({ "job": "J1" }),
+                state_field: "state".into(),
+                terminal_states: vec!["done".into()],
+                interval_ms: 500,
+                deadline_ms: Some(1234),
             },
             DispatchHandle::ShellProcess { pid: 12345 },
             DispatchHandle::ReduceImmediate(TaskResult {
