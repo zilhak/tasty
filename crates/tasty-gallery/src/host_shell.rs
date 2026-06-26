@@ -67,6 +67,8 @@ pub struct GalleryState {
     pub specs_on: bool,
     /// 다음 frame 에서 visuals/zoom 을 ctx 에 재적용할지.
     pub needs_reapply: bool,
+    /// 좌상단 brand 로고 텍스처 (앱 아이콘 PNG 디코드 결과, 1회 캐시).
+    brand_logo: Option<egui::TextureHandle>,
 }
 
 impl GalleryState {
@@ -80,6 +82,7 @@ impl GalleryState {
             ui_scale: 1.0,
             specs_on: false,
             needs_reapply: true,
+            brand_logo: None,
         }
     }
 
@@ -137,12 +140,11 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
 /// 상단 헤더 — brand 블록(좌 232) + top bar(crumb + Specs/Theme/Scale 세그).
 fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     // Theme 의존 색/치수를 Copy 로 스냅샷 (이후 state 변이와 borrow 충돌 방지).
-    let (primary, muted, accent, melon, border, surf_raised, surf_active, separator) = {
+    let (primary, muted, melon, border, surf_raised, surf_active, separator) = {
         let t = &state.theme;
         (
             egui::Color32::from(t.text_primary()),
             egui::Color32::from(t.text_muted()),
-            egui::Color32::from(t.accent_primary()),
             egui::Color32::from(t.brand_melon_flesh()),
             egui::Color32::from(t.border_default()),
             egui::Color32::from(t.surface_raised()),
@@ -165,7 +167,6 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     let f_word = state.theme.sidebar_wordmark_font_size.value();
     let f_micro = state.theme.font_size_micro.value();
     let f_body = state.theme.font_size_body.value();
-    let radius_sm = state.theme.corner_radius_sm.value();
     let pad_lg = state.theme.spacing_lg.value();
     let pad_sm = state.theme.spacing_sm.value();
 
@@ -183,6 +184,8 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
     let mut act_specs: Option<bool> = None;
     let mut act_scale: Option<f32> = None;
 
+    let logo_tex = brand_logo_texture(ui.ctx(), &mut state.brand_logo);
+
     ui.horizontal_centered(|ui| {
         // brand 블록 (좌 232).
         ui.allocate_ui_with_layout(
@@ -191,7 +194,10 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
             |ui| {
                 ui.add_space(pad_lg);
                 let (r, _) = ui.allocate_exact_size(egui::vec2(logo, logo), egui::Sense::hover());
-                ui.painter().rect_filled(r, radius_sm, accent);
+                // 디자인 `.g-brand img`(22px, border-radius 없음) — 앱 아이콘을 그대로 렌더.
+                egui::Image::from_texture(&logo_tex)
+                    .fit_to_exact_size(egui::vec2(logo, logo))
+                    .paint_at(ui, r);
                 ui.add_space(pad_sm);
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.label(
@@ -282,6 +288,35 @@ fn header_ui(ui: &mut egui::Ui, state: &mut GalleryState) {
         state.ui_scale = s;
         state.needs_reapply = true;
     }
+}
+
+/// 좌상단 brand 로고 텍스처를 1회 디코드/업로드 후 캐시에서 핸들 반환.
+fn brand_logo_texture(
+    ctx: &egui::Context,
+    cache: &mut Option<egui::TextureHandle>,
+) -> egui::TextureHandle {
+    cache
+        .get_or_insert_with(|| {
+            ctx.load_texture(
+                "brand_logo",
+                decode_brand_logo(),
+                egui::TextureOptions::LINEAR,
+            )
+        })
+        .clone()
+}
+
+/// 임베드한 256×256 앱 아이콘 PNG 를 egui 이미지로 디코드 (cwd 무관).
+fn decode_brand_logo() -> egui::ColorImage {
+    static ICON_PNG: &[u8] = include_bytes!("../../../assets/icons/icon_256.png");
+    let decoder = png::Decoder::new(std::io::Cursor::new(ICON_PNG));
+    let mut reader = decoder.read_info().expect("builtin brand icon PNG decodes");
+    let mut buf = vec![0u8; reader.output_buffer_size().expect("brand icon buffer size")];
+    let info = reader
+        .next_frame(&mut buf)
+        .expect("brand icon frame decodes");
+    buf.truncate(info.buffer_size());
+    egui::ColorImage::from_rgba_unmultiplied([info.width as usize, info.height as usize], &buf)
 }
 
 /// 좌측 nav — Catalog(5 페이지 링크) + On this page(활성 페이지 Section 앵커).
