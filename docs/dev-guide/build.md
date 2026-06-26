@@ -44,6 +44,13 @@ cargo build --release       # thin LTO 검증
 cargo build --profile dist  # 배포용
 ```
 
+본체+플러그인을 한 번에 빌드·실행하려면 `just run` 을 쓴다 — 플러그인까지 빌드·스테이징한 뒤 호스트를 실행하고, 부팅 시 builtin 을 강제 덮어쓰기 설치하므로 플러그인 소스 변경이 매 실행 반영된다.
+
+```bash
+just run                    # 본체+플러그인 debug 빌드 + 실행
+just run --release          # 동일, release 프로필 (나머지 인자는 호스트로 passthrough)
+```
+
 ## Plugin 빌드 / 스테이징
 
 번들 plugin(`crates/tasty-plugin-*` 중 `tasty-plugin.toml` 보유)은 부팅 시 `install_builtins_if_needed` 가 `~/.tasty/plugins/<id>/` 로 자동 sync 한다. `bundle_root()` fallback 이 `<exe_dir>/builtin-plugins/`(= `target/<profile>/builtin-plugins/`)라, **그 경로에 스테이징만 해두면** 부팅 시 user dir 까지 흐른다. debug 빌드는 `ensure_dev_bundle` 이 매 부팅 mtime 기반으로 workspace→bundle 을 sync 하므로 `cargo build` → `cargo run` 만으로 동작.
@@ -68,6 +75,8 @@ just link-plugins                 # cp 대신 symlink (rebuild 즉시 반영)
 - **Linux** `.deb`/`.rpm` 은 `cargo-deb` / `cargo-generate-rpm`, `.AppImage` 는 `linuxdeploy`(ELF 의존 라이브러리를 전부 번들 + rpath `$ORIGIN` → distro 무관 동작). 패키지 메타데이터는 `Cargo.toml` 의 `[package.metadata.deb]` / `[package.metadata.generate-rpm]`.
 - **Windows** MSI 는 `cargo-wix` + `wix/main.wxs`. **UpgradeCode GUID 는 절대 변경 금지** — 바뀌면 새 제품으로 인식되어 구버전과 공존.
 - CI: `.github/workflows/release.yml` (self-hosted runner, Linux x64/arm64 라벨 분기, Windows). `workflow_dispatch` 로 태그 없는 수동 검증 빌드 가능.
+
+현재 머신에 바로 설치하려면 `just install` — 본체+플러그인을 dist 빌드해 현재 OS 에 설치한다 (자동 감지). macOS 는 `scripts/install-macos.sh` 가 `build-macos-dmg.sh` 를 `NO_DMG=1` 로 재사용해 `dist/Tasty.app` 만 조립한 뒤 `/Applications/Tasty.app` 을 덮어쓴다. 번들 플러그인은 앱 첫 실행 시 `~/.tasty/plugins` 로 강제 동기화된다. (Linux/Windows 자동 설치는 미구현 — `just dist-linux`/`dist-windows` 산출물로 수동 설치.)
 
 ## 빌드 시간 진단
 
