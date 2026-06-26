@@ -572,7 +572,6 @@ redo = "やり直し"
 char_limit_notice = "(200文字制限)"
 copied = "コピーしました"
 copied_osc52 = "コピーしました (OSC 52)"
-mouse_capture_hint = "このアプリがマウス入力をキャプチャしています。テキスト選択は Shift+ドラッグ、tasty メニューは Shift+右クリックを使用してください。"
 copied_path = "パスをコピーしました"
 copied_files = "ファイルをコピーしました"
 cut_files = "ファイルを切り取りました"
@@ -586,7 +585,7 @@ vi_copy_macro_replay_failed = "マクロ再生に失敗しました (空のレ�
 
 [banner.mouse_capture]
 title = "マウス入力をキャプチャ中"
-body = "このアプリがマウスをキャプチャしています。テキスト選択や tasty メニューは Shift を押しながら操作してください。"
+body = "このアプリがマウスをキャプチャしています。テキスト選択は Shift+ドラッグ、tasty メニューは Shift+右クリックを使用してください。"
 
 [port_scanner]
 heading = "受信ポート"

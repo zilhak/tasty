@@ -274,10 +274,12 @@ impl MainView {
                             .find_terminal_by_id(surface_id)
                             .is_some_and(|t| t.take_mouse_capture_hint());
                         if show {
-                            self.state.toasts.push_info(
-                                crate::i18n::t("toast.mouse_capture_hint"),
-                                crate::adapters::ui::ToastScope::Surface(surface_id),
-                            );
+                            self.state
+                                .banners
+                                .push(crate::adapters::ui::BannerState::persistent(
+                                    crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
+                                    crate::adapters::ui::BannerScope::Surface(surface_id),
+                                ));
                         }
                     }
                     self.report_mouse_event(
@@ -474,9 +476,11 @@ impl MainView {
                                             .find_terminal_by_id(sid)
                                             .is_some_and(|t| t.take_mouse_capture_hint());
                                         if show {
-                                            self.state.toasts.push_info(
-                                                crate::i18n::t("toast.mouse_capture_hint"),
-                                                crate::adapters::ui::ToastScope::Surface(sid),
+                                            self.state.banners.push(
+                                                crate::adapters::ui::BannerState::persistent(
+                                                    crate::adapters::ui::banner::defs::BANNER_MOUSE_CAPTURE,
+                                                    crate::adapters::ui::BannerScope::Surface(sid),
+                                                ),
                                             );
                                         }
                                     }

@@ -572,7 +572,6 @@ redo = "다시 실행"
 char_limit_notice = "(200자 제한)"
 copied = "복사됨"
 copied_osc52 = "복사됨 (OSC 52)"
-mouse_capture_hint = "이 앱이 마우스 입력을 캡처 중입니다. 텍스트 선택은 Shift+드래그, tasty 메뉴는 Shift+우클릭을 사용하세요."
 copied_path = "경로 복사됨"
 copied_files = "파일 복사됨"
 cut_files = "파일 잘라냄"
@@ -586,7 +585,7 @@ vi_copy_macro_replay_failed = "매크로 재생 실패 (빈 register 또는 재�
 
 [banner.mouse_capture]
 title = "마우스 입력 캡처 중"
-body = "이 앱이 마우스를 캡처하고 있습니다. 텍스트 선택이나 tasty 메뉴는 Shift를 누른 채 사용하세요."
+body = "이 앱이 마우스를 캡처하고 있습니다. 텍스트 선택은 Shift+드래그, tasty 메뉴는 Shift+우클릭을 사용하세요."
 
 [port_scanner]
 heading = "리스닝 포트"
