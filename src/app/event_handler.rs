@@ -301,12 +301,9 @@ impl ApplicationHandler<AppEvent> for App {
             tracing::warn!("failed to persist normalized settings: {e}");
         }
 
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &init_settings.appearance,
-            self.view.proxy.clone(),
-        ))
-        .expect("failed to initialize GPU");
+        let gpu = self
+            .create_gpu_state(window.clone(), &init_settings.appearance)
+            .expect("failed to initialize GPU");
 
         if !init_settings.general.is_shell_valid() {
             if let Some(detected) = crate::settings::GeneralSettings::detect_bash() {

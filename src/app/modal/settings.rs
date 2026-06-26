@@ -35,12 +35,9 @@ impl App {
             crate::settings::Settings::load()
         };
 
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &settings.appearance,
-            self.view.proxy.clone(),
-        ))
-        .expect("failed to initialize GPU for settings");
+        let gpu = self
+            .create_gpu_state(window.clone(), &settings.appearance)
+            .expect("failed to initialize GPU for settings");
 
         let modal_window_id = window.id();
         let (file_format, file_handler) = if let Some(w) = self.focused_window() {

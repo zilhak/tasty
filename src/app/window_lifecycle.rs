@@ -449,12 +449,9 @@ impl App {
         {
             tracing::warn!("failed to persist settings after theme apply: {e}");
         }
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &settings.appearance,
-            self.view.proxy.clone(),
-        ))
-        .expect("failed to initialize GPU");
+        let gpu = self
+            .create_gpu_state(window.clone(), &settings.appearance)
+            .expect("failed to initialize GPU");
 
         // Reuse parked state if available (restoring previous session)
         let (mut state, parked_engine) = if !self.parked_states.is_empty() {

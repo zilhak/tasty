@@ -69,7 +69,18 @@ pub struct GpuState {
 }
 
 impl GpuState {
-    pub(crate) async fn new(
+    /// Per-window GPU 초기화. `instance`/`adapter` 는 App 이 부트 시 1회 생성해
+    /// 모든 윈도우가 공유하는 컨텍스트(`Arc`)를 주입받는다 — 창마다 `Instance::new`
+    /// (~50ms) + `request_adapter`(다중 백엔드 어댑터 열거, ~137ms) 를 반복하지 않는다.
+    /// surface/device/config/CellRenderer/egui 는 per-window 로 새로 만든다.
+    ///
+    /// ⚠️ wgpu 제약: 모든 surface 는 동일 `Instance` 에서 생성돼야 하고, surface 는
+    /// 그 `Instance` 수명에 의존한다 → App 이 `Arc<Instance>` 를 모든 창보다 오래
+    /// 소유하므로 충족된다. `Backends::all()` 은 instance 생성 측(App)에서 유지되어
+    /// 백엔드 자동 선택은 불변이다.
+    pub(crate) async fn new_shared(
+        instance: &Arc<wgpu::Instance>,
+        adapter: &Arc<wgpu::Adapter>,
         window: Arc<Window>,
         appearance: &AppearanceSettings,
         proxy: EventLoopProxy<AppEvent>,
@@ -77,21 +88,7 @@ impl GpuState {
         let size = window.inner_size();
         let scale_factor = window.scale_factor() as f32;
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-
         let surface = instance.create_surface(window.clone())?;
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .ok_or_else(|| anyhow::anyhow!("no compatible GPU adapter found"))?;
 
         tracing::info!(
             "GPU adapter: {} ({:?})",

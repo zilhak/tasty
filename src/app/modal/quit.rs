@@ -76,12 +76,12 @@ impl App {
                 .expect("failed to create quit modal window"),
         );
 
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &crate::settings::Settings::load().appearance,
-            self.view.proxy.clone(),
-        ))
-        .expect("failed to initialize GPU for quit modal");
+        let gpu = self
+            .create_gpu_state(
+                window.clone(),
+                &crate::settings::Settings::load().appearance,
+            )
+            .expect("failed to initialize GPU for quit modal");
 
         let window_id = window.id();
         let mut modal = crate::view::QuitView::new(gpu, window);

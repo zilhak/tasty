@@ -141,6 +141,17 @@ pub(crate) struct App {
     pub(crate) auto_attach_tx: std::sync::mpsc::Sender<auto_attach::AutoAttachOutcome>,
     #[cfg(feature = "gui")]
     pub(crate) auto_attach_rx: std::sync::mpsc::Receiver<auto_attach::AutoAttachOutcome>,
+    /// 모든 윈도우가 공유하는 wgpu `Instance`. 부트(`App::new`) 시 `Backends::all()`
+    /// 로 1회 생성한다. 창마다 `Instance::new`(~50ms) 를 반복하지 않으려고 App 이
+    /// 소유 — 모든 surface 가 이 instance 에서 만들어지고 그 수명에 의존하므로
+    /// (App 이 모든 창보다 오래 삶) wgpu 의 "동일 instance" 제약도 충족한다.
+    #[cfg(feature = "gui")]
+    pub(crate) gpu_instance: Arc<wgpu::Instance>,
+    /// 공유 wgpu `Adapter`. 첫 윈도우의 surface 로 `request_adapter`(다중 백엔드
+    /// 어댑터 열거, ~137ms) 를 1회만 수행해 캐시한다. 이후 창들은 이 adapter 로
+    /// 곧장 `request_device` 한다(어댑터 선택은 첫 창과 동일 → 렌더 결과 불변).
+    #[cfg(feature = "gui")]
+    pub(crate) gpu_adapter: Option<Arc<wgpu::Adapter>>,
 }
 
 /// State for the modal window shake animation.
@@ -189,6 +200,13 @@ impl App {
             auto_attach_active: std::collections::HashSet::new(),
             auto_attach_tx,
             auto_attach_rx,
+            // 공유 wgpu instance — 부트 시 1회. `Backends::all()` 로 백엔드 자동
+            // 선택을 유지한다(어댑터는 첫 윈도우 surface 로 지연 생성 → gpu_adapter).
+            gpu_instance: Arc::new(wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::all(),
+                ..Default::default()
+            })),
+            gpu_adapter: None,
         })
     }
 
@@ -228,6 +246,47 @@ impl App {
             }
         }
         panic!("App.core_state accessed before initialization");
+    }
+
+    /// 공유 instance/adapter 를 사용해 per-window `GpuState` 를 생성한다. 6개 윈도우
+    /// 오픈 경로(메인창/새창/settings/preset/plugins/quit)가 모두 이 헬퍼를 거친다.
+    ///
+    /// adapter 는 첫 호출 때 이 윈도우의 surface 를 `compatible_surface` 로 1회만
+    /// 생성·캐시한다(현재 코드와 동일한 어댑터 선택 → 렌더 결과 불변). 이후 호출은
+    /// 캐시된 adapter 로 곧장 `request_device` 만 수행한다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn create_gpu_state(
+        &mut self,
+        window: Arc<Window>,
+        appearance: &crate::settings::AppearanceSettings,
+    ) -> anyhow::Result<GpuState> {
+        let instance = Arc::clone(&self.gpu_instance);
+        let proxy = self.view.proxy.clone();
+        pollster::block_on(async move {
+            if self.gpu_adapter.is_none() {
+                // 첫 윈도우: 어댑터 선택용 probe surface 로 request_adapter 1회.
+                // probe surface 는 이 스코프에서 drop 되고, 실제 surface 는 아래
+                // new_shared 가 다시 생성한다(같은 윈도우, 순차 — 동시 보유 아님).
+                let adapter = {
+                    let probe = instance.create_surface(window.clone())?;
+                    instance
+                        .request_adapter(&wgpu::RequestAdapterOptions {
+                            power_preference: wgpu::PowerPreference::default(),
+                            compatible_surface: Some(&probe),
+                            force_fallback_adapter: false,
+                        })
+                        .await
+                        .ok_or_else(|| anyhow::anyhow!("no compatible GPU adapter found"))?
+                };
+                self.gpu_adapter = Some(Arc::new(adapter));
+            }
+            let adapter = Arc::clone(
+                self.gpu_adapter
+                    .as_ref()
+                    .expect("gpu_adapter set above when None"),
+            );
+            GpuState::new_shared(&instance, &adapter, window, appearance, proxy).await
+        })
     }
 
     #[cfg(feature = "gui")]

@@ -34,12 +34,9 @@ impl App {
             .map(|w| w.core_state.settings.appearance.clone())
             .unwrap_or_else(|| crate::settings::Settings::load().appearance);
 
-        let gpu = pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &appearance,
-            self.view.proxy.clone(),
-        ))
-        .expect("failed to initialize GPU for plugins window");
+        let gpu = self
+            .create_gpu_state(window.clone(), &appearance)
+            .expect("failed to initialize GPU for plugins window");
 
         let snapshot = self.snapshot_plugins();
         let modal_window_id = window.id();

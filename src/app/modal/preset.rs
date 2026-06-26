@@ -40,11 +40,7 @@ impl App {
             .focused_window()
             .map(|w| w.core_state.settings.appearance.clone())
             .unwrap_or_else(|| crate::settings::Settings::load().appearance);
-        let gpu = match pollster::block_on(crate::gpu::GpuState::new(
-            window.clone(),
-            &appearance,
-            self.view.proxy.clone(),
-        )) {
+        let gpu = match self.create_gpu_state(window.clone(), &appearance) {
             Ok(g) => g,
             Err(e) => {
                 tracing::warn!("failed to init GPU for preset window: {e}");
