@@ -28,20 +28,10 @@ pub enum HookEvent {
     /// TODO: Implement IdleTimeout by tracking last output timestamp per terminal and
     /// emitting an event when the idle threshold is exceeded.
     IdleTimeout(u64),
-    /// Claude Code became idle (finished processing).
-    ClaudeIdle,
-    /// Claude Code needs user input.
-    NeedsInput,
-    /// A child Claude (spawned by this surface via `claude.spawn`) became idle.
-    /// Fired on the parent surface so a conductor can react to child completion
-    /// without polling. Self-idle still fires `ClaudeIdle`.
-    ClaudeChildIdle,
-    /// A child Claude needs user input. Fired on the parent surface.
-    ClaudeChildNeedsInput,
-    /// Claude child PTY emitted a known error pattern (API Error, content filter,
-    /// rate limit, network failure, …). The pattern catalog lives outside this
-    /// crate; this variant is matched without arguments.
-    ClaudeError,
+    /// An arbitrary event identifier owned by a plugin (or any caller). The core
+    /// does not know these names — it matches them by exact string equality. This
+    /// keeps agent-specific events (e.g. claude's `claude-idle`) out of the core.
+    Custom(String),
 }
 
 impl HookEvent {
@@ -50,11 +40,7 @@ impl HookEvent {
             (HookEvent::ProcessExit, HookEvent::ProcessExit) => true,
             (HookEvent::Bell, HookEvent::Bell) => true,
             (HookEvent::Notification, HookEvent::Notification) => true,
-            (HookEvent::ClaudeIdle, HookEvent::ClaudeIdle) => true,
-            (HookEvent::NeedsInput, HookEvent::NeedsInput) => true,
-            (HookEvent::ClaudeChildIdle, HookEvent::ClaudeChildIdle) => true,
-            (HookEvent::ClaudeChildNeedsInput, HookEvent::ClaudeChildNeedsInput) => true,
-            (HookEvent::ClaudeError, HookEvent::ClaudeError) => true,
+            (HookEvent::Custom(a), HookEvent::Custom(b)) => a == b,
             (HookEvent::OutputMatch(_pattern), HookEvent::OutputMatch(text)) => {
                 // Use pre-compiled regex if available, otherwise compile on-the-fly
                 if let Some(re) = compiled_regex {
@@ -81,18 +67,10 @@ impl HookEvent {
             Some(HookEvent::OutputMatch(pattern.to_string()))
         } else if let Some(secs) = s.strip_prefix("idle-timeout:") {
             secs.parse::<u64>().ok().map(HookEvent::IdleTimeout)
-        } else if s == "claude-idle" {
-            Some(HookEvent::ClaudeIdle)
-        } else if s == "needs-input" {
-            Some(HookEvent::NeedsInput)
-        } else if s == "claude-child-idle" {
-            Some(HookEvent::ClaudeChildIdle)
-        } else if s == "claude-child-needs-input" {
-            Some(HookEvent::ClaudeChildNeedsInput)
-        } else if s == "claude-error" {
-            Some(HookEvent::ClaudeError)
         } else {
-            None
+            // Unknown identifiers fall back to a plugin-owned custom event,
+            // matched later by exact string equality.
+            Some(HookEvent::Custom(s.to_string()))
         }
     }
 
@@ -104,11 +82,7 @@ impl HookEvent {
             HookEvent::Notification => "notification".to_string(),
             HookEvent::OutputMatch(pattern) => format!("output-match:{}", pattern),
             HookEvent::IdleTimeout(secs) => format!("idle-timeout:{}", secs),
-            HookEvent::ClaudeIdle => "claude-idle".to_string(),
-            HookEvent::NeedsInput => "needs-input".to_string(),
-            HookEvent::ClaudeChildIdle => "claude-child-idle".to_string(),
-            HookEvent::ClaudeChildNeedsInput => "claude-child-needs-input".to_string(),
-            HookEvent::ClaudeError => "claude-error".to_string(),
+            HookEvent::Custom(s) => s.clone(),
         }
     }
 }
@@ -259,66 +233,31 @@ mod tests {
     }
 
     #[test]
-    fn hook_event_parse_claude_error() {
+    fn parse_unknown_event_becomes_custom() {
         assert_eq!(
-            HookEvent::parse("claude-error"),
-            Some(HookEvent::ClaudeError)
+            HookEvent::parse("claude-idle"),
+            Some(HookEvent::Custom("claude-idle".to_string()))
+        );
+        assert_eq!(
+            HookEvent::parse("anything-a-plugin-invents"),
+            Some(HookEvent::Custom("anything-a-plugin-invents".to_string()))
         );
     }
 
     #[test]
-    fn hook_event_display_claude_error() {
-        assert_eq!(HookEvent::ClaudeError.to_display_string(), "claude-error");
+    fn custom_events_match_by_exact_string() {
+        let registered = HookEvent::Custom("claude-idle".into());
+        let fired_same = HookEvent::Custom("claude-idle".into());
+        let fired_other = HookEvent::Custom("claude-child-idle".into());
+        assert!(registered.matches(&fired_same, None));
+        assert!(!registered.matches(&fired_other, None));
     }
 
     #[test]
-    fn hook_event_matches_claude_error() {
-        assert!(HookEvent::ClaudeError.matches(&HookEvent::ClaudeError, None));
-        assert!(!HookEvent::ClaudeError.matches(&HookEvent::ClaudeIdle, None));
-    }
-
-    #[test]
-    fn hook_event_parse_claude_child_idle() {
-        assert_eq!(
-            HookEvent::parse("claude-child-idle"),
-            Some(HookEvent::ClaudeChildIdle)
-        );
-    }
-
-    #[test]
-    fn hook_event_parse_claude_child_needs_input() {
-        assert_eq!(
-            HookEvent::parse("claude-child-needs-input"),
-            Some(HookEvent::ClaudeChildNeedsInput)
-        );
-    }
-
-    #[test]
-    fn hook_event_display_claude_child_idle() {
-        assert_eq!(
-            HookEvent::ClaudeChildIdle.to_display_string(),
-            "claude-child-idle"
-        );
-        assert_eq!(
-            HookEvent::ClaudeChildNeedsInput.to_display_string(),
-            "claude-child-needs-input"
-        );
-    }
-
-    #[test]
-    fn hook_event_child_events_distinct_from_self() {
-        // child variants must not match self variants and vice versa.
-        assert!(!HookEvent::ClaudeChildIdle.matches(&HookEvent::ClaudeIdle, None));
-        assert!(!HookEvent::ClaudeIdle.matches(&HookEvent::ClaudeChildIdle, None));
-        assert!(!HookEvent::ClaudeChildNeedsInput.matches(&HookEvent::NeedsInput, None));
-        assert!(!HookEvent::NeedsInput.matches(&HookEvent::ClaudeChildNeedsInput, None));
-        assert!(HookEvent::ClaudeChildIdle.matches(&HookEvent::ClaudeChildIdle, None));
-        assert!(HookEvent::ClaudeChildNeedsInput.matches(&HookEvent::ClaudeChildNeedsInput, None));
-    }
-
-    #[test]
-    fn hook_event_parse_unknown() {
-        assert!(HookEvent::parse("unknown").is_none());
+    fn custom_roundtrip_display_parse() {
+        let ev = HookEvent::Custom("claude-error".into());
+        assert_eq!(ev.to_display_string(), "claude-error");
+        assert_eq!(HookEvent::parse(&ev.to_display_string()), Some(ev));
     }
 
     #[test]

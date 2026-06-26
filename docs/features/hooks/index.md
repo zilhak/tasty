@@ -23,8 +23,7 @@
 | `Bell` | BEL 수신 |
 | `Notification` | OSC 알림 수신 |
 | `IdleTimeout(secs)` | N초간 PTY 출력 없음 |
-| `ClaudeIdle` / `NeedsInput` / `ClaudeError` | Claude Code 작업 완료 / 입력 필요 / 비정상 패턴(claude plugin 이 fire) |
-| `ClaudeChildIdle` / `ClaudeChildNeedsInput` | 자식 Claude 상태를 **parent surface** 로 fan-out |
+| `Custom(string)` | 코어가 모르는 임의 이벤트 식별자. 정확 문자열 일치로 매칭. 플러그인 소유 이벤트(예: claude plugin 이 fire 하는 `claude-idle` / `needs-input` / `claude-error` / `claude-child-idle` / `claude-child-needs-input`)는 모두 이 변형으로 처리된다 — 코어에 에이전트 고유 이벤트명을 박지 않는다. |
 
 - **once** 옵션: true 면 한 번 실행 후 자동 삭제. 기본은 persistent.
 - **비동기 실행**: 훅 명령은 백그라운드 스레드에서(메인 루프 블로킹 없음). 각 이벤트의 발생 surface ID 를 추적해 올바른 surface 에서 실행.
