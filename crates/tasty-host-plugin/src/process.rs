@@ -86,6 +86,7 @@ impl PluginProcess {
         handle_listener: Option<&HandleListener>,
         log_dir: &Path,
         waker: tasty_terminal::waker_factory::SharedWakerFactory,
+        reaper: &crate::reaper::PluginReaper,
     ) -> anyhow::Result<Self> {
         let token = generate_token();
         std::fs::create_dir_all(log_dir).ok();
@@ -98,6 +99,9 @@ impl PluginProcess {
         // Windows GUI 서브시스템 호스트가 콘솔 서브시스템 플러그인 바이너리를
         // spawn 할 때 빈 콘솔 창이 뜨는 것을 막는다 (비-Windows 에서는 no-op).
         tasty_utils::process::hide_console(&mut cmd);
+        // 플러그인 수명을 호스트에 결박: spawn *전* 준비(Linux PDEATHSIG pre_exec /
+        // macOS TASTY_HOST_PID env 주입). Windows assign 은 spawn *후*(adopt).
+        reaper.prepare(&mut cmd);
         cmd.args(package.entry_args())
             .env("TASTY_PLUGIN_ID", &package.manifest.id)
             .env("TASTY_HOST_API_VERSION", HOST_API_VERSION)
@@ -161,6 +165,15 @@ impl PluginProcess {
                 e
             )
         })?;
+
+        // spawn 직후 자식이 살아있는 시점에 Job 에 assign(Windows). 실패해도
+        // 플러그인 기능은 정상이며 수명 결박만 누락되므로 warn 후 진행한다.
+        if let Err(e) = reaper.adopt(&child) {
+            tracing::warn!(
+                "plugin '{}' lifetime adopt failed — process not bound to host lifetime: {e}",
+                package.manifest.id
+            );
+        }
 
         let stream = match listener.expect_connection(&token, HANDSHAKE_TIMEOUT) {
             Some(s) => s,

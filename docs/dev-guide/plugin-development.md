@@ -167,6 +167,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 | `TASTY_HOST_API_VERSION` | 호스트 protocol 메이저 |
 | `TASTY_PLUGIN_HANDLE_ENDPOINT` | handle 채널 엔드포인트(있을 때) |
 | `TASTY_LOCALE` | 활성 로케일(i18n Translator) |
+| `TASTY_HOST_PID` | 호스트 프로세스 PID (**macOS 만** — SDK watchdog 가 부모 사망 감지에 사용) |
 
 ### 생명주기 (healthcheck / 자동 재시작·비활성화)
 
@@ -176,6 +177,18 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 - **헬스체크**: `PING_INTERVAL`(15s)마다 ping, `HEALTHCHECK_TIMEOUT`(60s) 무응답이면 강제 재시작.
 - **자동 비활성화**: `RESTART_FAILURE_WINDOW`(10s) 내 `RESTART_FAILURE_LIMIT`(3)회 spawn 실패 → 정지(사용자가 `tasty plugin enable` 로 수동 재개까지).
 - **종료**: shutdown 메서드 송신 후 timeout, 초과 시 kill.
+
+### 프로세스 수명 결박 (3 OS — 크래시·강제종료 포함)
+
+위 "종료" 경로는 `PluginProcess::shutdown` / `Drop` 의 `child.kill()` 에 의존하므로 **정상 종료만** 커버한다. 하드 크래시·`taskkill /f`·디버거 강제종료 등 Drop 이 돌지 않는 경로에서는 플러그인이 고아로 잔존할 수 있다. 이를 OS 커널 레벨에서 막기 위해, 호스트가 어떤 식으로 죽든 플러그인이 함께 종료되도록 결박한다 (`crate::reaper::PluginReaper`, spawn 시 `prepare`/`adopt` 배선). OS 별 메커니즘이 비대칭이라 단일 추상화 뒤에 숨긴다:
+
+| OS | 메커니즘 | 통합 지점 | 손자(node/chrome) |
+|----|----------|-----------|--------------------|
+| **Windows** | Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`). 호스트가 Job 핸들을 `PluginManager` 수명 동안 소유 → 호스트 사망 시 핸들 닫히며 OS 가 Job 내 전 프로세스 강제 종료. | 호스트 `adopt`(각 자식 assign) | **자동 커버**(Job 멤버십 자식 상속) |
+| **Linux** | `prctl(PR_SET_PDEATHSIG, SIGKILL)` (자식 `pre_exec`). 부모 사망 시 커널이 직속 플러그인에 SIGKILL. | 호스트 `prepare`(pre_exec) | 고아 허용(범위 밖) |
+| **macOS** | PDEATHSIG 등가물 부재 → SDK 런타임 watchdog 이 `getppid` 폴링(500ms)해 부모 PID 변화 감지 시 self-exit. 호스트는 `TASTY_HOST_PID` env 만 주입. | 플러그인 SDK(`runtime.rs`) | 고아 허용(범위 밖) |
+
+모든 결박 실패(Job 생성/assign 실패 등)는 `tracing::warn!` 으로 흡수하고 기존 kill 기반 정리로 degrade — 결박 실패가 플러그인 기능이나 호스트를 죽이지 않는다. **결박 대상은 호스트가 직접 띄운 플러그인 프로세스뿐** — PTY pane 의 사용자 셸/AI 에이전트와 그 자식(MCP 서버 등)은 *사용자 프로세스*라 결박하지 않는다(정체성 원칙: 사용자 프로세스 비결박, PTY hangup 으로 정상 정리).
 
 ### 토큰 핸드셰이크 (보안)
 

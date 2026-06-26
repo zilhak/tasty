@@ -61,6 +61,10 @@ impl DispatchError {
 
 pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     let env = PluginEnv::load()?;
+    // macOS: 부모(tasty) 사망 감시 watchdog 시작. PDEATHSIG 등가물이 없어 자식
+    // 측에서 부모 PID 변화를 폴링해 self-exit 한다. Windows(Job)/Linux(PDEATHSIG)
+    // 는 호스트 측 메커니즘이 처리하므로 다른 OS 에선 no-op.
+    spawn_parent_death_watchdog();
     // connect + AuthMessage 송신 + AuthAck 5s 대기.
     // 호스트가 토큰을 거부하면 PluginError::HandshakeRejected가 즉시 올라온다.
     let conn = Connection::connect_and_authenticate(&env)?;
@@ -201,6 +205,47 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
     }
     Ok(())
 }
+
+/// macOS 전용: 부모(tasty) 프로세스 사망을 감시해 self-exit 하는 watchdog 스레드.
+///
+/// macOS 는 Linux 의 `PR_SET_PDEATHSIG` 등가물이 없어 호스트 측에서 자식 수명을
+/// 커널 레벨로 결박할 수 없다. 대신 자식이 직접 부모 PID 를 폴링한다 — 호스트가
+/// 주입한 `TASTY_HOST_PID`(없으면 시작 시점의 `getppid`)를 기준으로, 부모가 죽어
+/// 재부모화되면 `getppid` 값이 달라지므로 그때 프로세스를 종료한다.
+///
+/// 폴링 주기는 500ms — 종료 지연 수백 ms 는 명세상 허용. 즉시성이 문제되면
+/// kqueue `EVFILT_PROC`/`NOTE_EXIT` 로 교체 검토.
+#[cfg(target_os = "macos")]
+fn spawn_parent_death_watchdog() {
+    // SAFETY: getppid 는 부작용 없는 async-signal-safe 호출이다.
+    let baseline_ppid = unsafe { libc::getppid() };
+    let host_pid: i32 = std::env::var("TASTY_HOST_PID")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(baseline_ppid);
+    let spawned = std::thread::Builder::new()
+        .name("plugin-parent-watchdog".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                // SAFETY: getppid 는 부작용 없는 안전한 호출이다.
+                let ppid = unsafe { libc::getppid() };
+                if ppid != host_pid {
+                    tracing::info!(
+                        "parent host process gone (ppid {ppid} != {host_pid}) — plugin self-exit"
+                    );
+                    std::process::exit(0);
+                }
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!("parent-death watchdog thread spawn failed: {e}");
+    }
+}
+
+/// 비-macOS: 수명 결박은 호스트 측(Windows Job / Linux PDEATHSIG)이 처리하므로 no-op.
+#[cfg(not(target_os = "macos"))]
+fn spawn_parent_death_watchdog() {}
 
 /// 보조 채널의 reader thread loop. host가 보낸 `HandleAttach`의 fd를 fd_pending에
 /// 매칭해 `HostHandle::create_shared_buffer` 대기자에게 push하고, ping을 받으면 pong을

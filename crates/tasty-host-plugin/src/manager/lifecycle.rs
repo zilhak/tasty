@@ -53,6 +53,12 @@ impl PluginManager {
             tracing::warn!("plugin log dir {} create failed: {e}", log_dir.display());
         }
         let (host_cmd_tx, host_cmd_rx) = mpsc::channel();
+        // 플러그인 수명 결박 reaper. Windows 는 Job Object 생성을 시도하고, 실패 시
+        // 결박 없이 기존 kill 기반 정리로 degrade. 비-Windows 는 무조건 성공(stub).
+        let plugin_reaper = crate::reaper::PluginReaper::new().unwrap_or_else(|e| {
+            tracing::warn!("plugin reaper init failed — plugin lifetime binding disabled: {e}");
+            crate::reaper::PluginReaper::disabled()
+        });
         Self {
             packages: Vec::new(),
             rejected: Vec::new(),
@@ -92,6 +98,7 @@ impl PluginManager {
             file_format,
             file_handler,
             i18n_registrar: None,
+            plugin_reaper,
         }
     }
 
@@ -225,6 +232,7 @@ impl PluginManager {
             self.handle_listener.as_ref(),
             &self.log_dir,
             self.waker.clone(),
+            &self.plugin_reaper,
         ) {
             Ok(p) => {
                 tracing::info!("plugin started: {}", p.plugin_id);

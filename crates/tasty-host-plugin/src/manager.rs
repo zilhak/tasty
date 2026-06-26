@@ -295,6 +295,10 @@ pub struct PluginManager {
     pub file_handler: Arc<dyn tasty_plugin_protocol::host_port::FileHandlerRegistryPort>,
     /// i18n namespace 등록 trait. None 이면 등록 skip (headless/test).
     pub i18n_registrar: Option<Arc<dyn tasty_plugin_protocol::host_port::I18nNamespaceRegistrar>>,
+    /// 플러그인 자식 프로세스 수명을 호스트에 결박하는 크로스 플랫폼 reaper.
+    /// Windows 는 Job Object 핸들을 여기 보유해야 tasty 수명과 KILL_ON_JOB_CLOSE
+    /// 가 연동된다. spawn 경로가 prepare/adopt 를 호출. 상세 [`crate::reaper`].
+    pub(super) plugin_reaper: crate::reaper::PluginReaper,
 }
 
 /// 호스트가 추적 중인 popup 인스턴스 한 건. plugin process가 죽으면 함께 제거된다.

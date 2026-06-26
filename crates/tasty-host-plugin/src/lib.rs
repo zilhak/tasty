@@ -21,6 +21,7 @@ pub mod listener;
 pub mod manager;
 pub mod process;
 pub mod protocol;
+pub mod reaper;
 pub mod registry_state;
 pub mod settings_registry;
 pub mod tool_registry;
