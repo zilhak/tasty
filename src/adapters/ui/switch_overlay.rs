@@ -7,8 +7,9 @@
 //! 1. **modifier↔대상 판정** ([`switch_target_for`]) — 현재 눌린 modifier 가 tab/workspace
 //!    전환 단축키와 단독 일치하면 그 대상([`SwitchTarget`])을 돌려주는 단일 소스.
 //!    단축키 소비처 `input/shortcuts/numeric.rs` 와 동일 조건/우선순위를 공유한다(중복
-//!    구현 없음). egui modifier 용 얇은 래퍼 [`tab_switch_held`] / [`workspace_switch_held`]
-//!    도 이 함수를 통해 판정한다. draw 경로가 매 프레임 읽는 스냅샷은 [`SwitchOverlayState`].
+//!    구현 없음). 사이드바 draw 경로용 egui modifier 래퍼 [`workspace_switch_held`] 도 이
+//!    함수를 통해 판정한다. 탭 draw 경로가 매 프레임 읽는 스냅샷은 [`SwitchOverlayState`]
+//!    (focused pane 한정 표시를 위해 `pane_id` 를 함께 담는다).
 //! 2. **키캡 그리기** ([`paint_keycap`]) — 갤러리 `switch_overlay::num_cap` 형상과 동일
 //!    (본체 `kbd()` 키캡 + active accent 변종). 좌표 painting 이라 탭 스트립·사이드바
 //!    어디서든 정해진 slot 에 그릴 수 있다.
@@ -83,11 +84,6 @@ pub fn switch_target_for(
     None
 }
 
-/// 현재 눌린 modifier 가 `tab_switch_modifier` 와 단독 일치하는지 (numeric.rs 와 동일 규칙).
-pub fn tab_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
-    switch_target_for(kb, mods.ctrl, mods.shift, mods.alt) == Some(SwitchTarget::Tab)
-}
-
 /// 현재 눌린 modifier 가 `workspace_switch_modifier` 와 단독 일치하는지 (사이드바 오버레이).
 pub fn workspace_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
     switch_target_for(kb, mods.ctrl, mods.shift, mods.alt) == Some(SwitchTarget::Workspace)
@@ -96,6 +92,24 @@ pub fn workspace_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> 
 /// 탭 index → 표시할 숫자 키캡 문자. 단축키가 없는 11번째 탭(index ≥ 10)부터 None.
 pub fn tab_digit(index: usize) -> Option<&'static str> {
     TAB_DIGITS.get(index).copied()
+}
+
+/// 이 pane 의 탭 `index` 에 그릴 숫자 키캡 문자.
+///
+/// `tab_switch_modifier` hold 시 [`SwitchOverlayState::pane_id`] 가 가리키는 **focused
+/// pane 의 탭바에서만** 키캡을 그린다. 단축키(`goto_tab_in_pane`)는 focused pane 의 탭만
+/// 전환하므로, 비-focused pane 탭바에 번호를 띄우면 "눌러도 거기로 안 가는" 거짓 안내가
+/// 된다 → `overlay_pane != Some(pane_id)` 이면 held 여도 `None`(아이콘 유지).
+pub fn tab_keycap_for(
+    overlay_pane: Option<u32>,
+    pane_id: u32,
+    index: usize,
+) -> Option<&'static str> {
+    if overlay_pane == Some(pane_id) {
+        tab_digit(index)
+    } else {
+        None
+    }
 }
 
 /// 워크스페이스 index → 숫자 키캡 문자. 1–9 만(0 없음) → index ≥ 9 부터 None (사이드바 오버레이).
@@ -180,15 +194,6 @@ mod tests {
     }
 
     #[test]
-    fn tab_held_matches_default_ctrl_alone() {
-        let kb = kb_with("ctrl", "alt");
-        assert!(tab_switch_held(mods(true, false, false), &kb));
-        // 다른 modifier 가 섞이면 불일치 (단축키와 동일).
-        assert!(!tab_switch_held(mods(true, false, true), &kb));
-        assert!(!tab_switch_held(mods(false, true, false), &kb));
-    }
-
-    #[test]
     fn workspace_held_matches_default_alt_alone() {
         let kb = kb_with("ctrl", "alt");
         assert!(workspace_switch_held(mods(false, true, false), &kb));
@@ -199,8 +204,8 @@ mod tests {
     fn rebound_modifiers_follow_settings() {
         // tab=alt / ws=ctrl 로 재바인딩하면 판정도 따라간다.
         let kb = kb_with("alt", "ctrl");
-        assert!(tab_switch_held(mods(false, true, false), &kb));
         assert!(workspace_switch_held(mods(true, false, false), &kb));
+        assert!(!workspace_switch_held(mods(false, true, false), &kb));
     }
 
     #[test]
@@ -246,6 +251,23 @@ mod tests {
         assert_eq!(tab_digit(8), Some("9"));
         assert_eq!(tab_digit(9), Some("0")); // 10번째 = Ctrl+0
         assert_eq!(tab_digit(10), None); // 11번째부터 키캡 없음
+    }
+
+    #[test]
+    fn tab_keycap_only_on_focused_pane() {
+        // overlay 대상 = pane 7 (focused). pane 7 탭바만 키캡, pane 3 은 아이콘 유지.
+        assert_eq!(tab_keycap_for(Some(7), 7, 0), Some("1"));
+        assert_eq!(tab_keycap_for(Some(7), 7, 9), Some("0"));
+        assert_eq!(tab_keycap_for(Some(7), 3, 0), None); // 비-focused pane
+        // 범위 가드는 focused pane 에서도 그대로(11번째+ 키캡 없음).
+        assert_eq!(tab_keycap_for(Some(7), 7, 10), None);
+    }
+
+    #[test]
+    fn tab_keycap_none_when_not_held() {
+        // held 아님(overlay None) → 어느 pane 도 키캡 없음.
+        assert_eq!(tab_keycap_for(None, 7, 0), None);
+        assert_eq!(tab_keycap_for(None, 3, 0), None);
     }
 
     #[test]

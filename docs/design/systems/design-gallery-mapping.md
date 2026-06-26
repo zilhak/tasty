@@ -51,13 +51,17 @@ load()` / `Passkeys::load()` 로 파일 IO). 갤러리 `CatalogItem.draw` 는 `(
 | `RailMock` | `rail_ws` → `draw_workspace` (collapsed cluster) | ✅ `sidebar/view.rs` `draw_collapsed_sidebar_view` (letter avatar 교체, P2b) |
 
 **본체 배선 (P2a 탭 + P2b 사이드바 모두 구현 완료)**: 공통 모듈 `src/adapters/ui/switch_overlay.rs`
-— modifier 일치 판정(`tab_switch_held`/`workspace_switch_held`, numeric.rs 규칙 1:1) + 키캡
+— modifier↔대상 판정(`switch_target_for`, numeric.rs 규칙 1:1) + 키캡
 painter(`paint_keycap`, 갤러리 `num_cap` 와 동일 레시피) + 숫자 매핑(`tab_digit` 0~9/`workspace_digit`
-1~9). 각 wrapper(`tab_bar.rs` / `sidebar/{full,collapsed}.rs`)가 `ctx.input` modifier +
-`engine.settings.keybindings` 로 held bool 을 계산해 순수 view props 로 전달
-(`PaneTabBarsProps.tab_switch_held` / `Sidebar{Full,Collapsed}Props.workspace_switch_held`), view 가
-leading indicator(탭 아이콘 / ws status dot / rail letter avatar) 자리에 `paint_keycap`. 모두 16px
-slot in-place 교체라 리플로 0, release 시 원복. `ctx.input` modifier 만 보므로 IPC/에이전트 강제
+1~9). **탭(P2a)**: `tab_bar.rs` wrapper 가 `state.switch_overlay()` 스냅샷(`ModifiersChanged` 로만
+갱신, `Tab` 대상이면 focused pane id 동봉)에서 `switch_overlay_pane: Option<u32>` 를 뽑아
+`PaneTabBarsProps` 로 전달 → view 는 `tab_keycap_for(switch_overlay_pane, pane_id, i)` 로 **focused
+pane 의 탭바에서만** 키캡을 그린다(비-focused pane 은 held 여도 아이콘 유지 — 단축키가 focused pane
+탭만 전환하므로). **사이드바(P2b)**: `sidebar/{full,collapsed}.rs` wrapper 가 `ctx.input` modifier +
+`engine.settings.keybindings` 로 `workspace_switch_held` bool 을 계산해 `Sidebar{Full,Collapsed}Props.
+workspace_switch_held` 로 전달(워크스페이스 전환은 전역이라 pane 한정 불필요). view 가 leading
+indicator(탭 아이콘 / ws status dot / rail letter avatar) 자리에 `paint_keycap`. 모두 16px slot
+in-place 교체라 리플로 0, release 시 원복. 사용자 입력 modifier 만 보므로 IPC/에이전트 강제
 표시 불가(사용자 입력 전용).
 
 **등록**: `catalog.rs` Overlays 페이지 `section("switch", "Switch-number overlay", [spec("switch-tab",

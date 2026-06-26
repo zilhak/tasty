@@ -73,9 +73,11 @@ pub struct PaneTabBarsProps<'a> {
     pub active_tab_indicator: crate::settings::ActiveTabIndicator,
     /// 현재 drag 진행 상태 (None 이면 overlay 미표시).
     pub drag: Option<TabDragView>,
-    /// switch-number overlay — 사용자가 `tab_switch_modifier` 를 누르고 있는 동안 true.
-    /// 각 탭의 leading 아이콘을 숫자 키캡(`Ctrl+1`…`0`)으로 in-place 교체한다. release 시 원복.
-    pub tab_switch_held: bool,
+    /// switch-number overlay — 키캡을 그릴 **focused pane id**.
+    /// 사용자가 `tab_switch_modifier`(대상=Tab)를 누르고 있는 동안만 `Some(focused_pane)`,
+    /// 그 외엔 `None`. 이 pane 의 탭바에서만 leading 아이콘을 숫자 키캡(`Ctrl+1`…`0`)으로
+    /// in-place 교체한다(비-focused pane 은 held 여도 아이콘 유지). release 시 `None` → 원복.
+    pub switch_overlay_pane: Option<u32>,
 }
 
 /// View 가 발생시킨 사용자 의도. wrapper 가 state/engine 으로 반영.
@@ -349,12 +351,15 @@ pub fn draw_pane_tab_bars_view(
                                 );
                                 // switch-number overlay: tab_switch_modifier 홀드 + 단축키
                                 // 있는 탭(1–9,0)은 아이콘 자리를 숫자 키캡으로 in-place 교체.
+                                // focused pane(switch_overlay_pane) 의 탭바에서만 — 비-focused
+                                // pane 은 held 여도 아이콘 유지(거짓 안내 방지).
                                 // 폭/text_x 는 불변(아이콘 slot 중앙에 키캡) → 리플로 없음.
-                                let switch_digit = if props.tab_switch_held {
-                                    crate::adapters::ui::switch_overlay::tab_digit(i)
-                                } else {
-                                    None
-                                };
+                                let switch_digit =
+                                    crate::adapters::ui::switch_overlay::tab_keycap_for(
+                                        props.switch_overlay_pane,
+                                        info.pane_id,
+                                        i,
+                                    );
                                 if let Some(digit) = switch_digit {
                                     crate::adapters::ui::switch_overlay::paint_keycap(
                                         &painter,
@@ -767,13 +772,14 @@ pub fn draw_pane_tab_bars(
         current_x: d.current_x,
     });
 
-    // switch-number overlay — 현재 눌린(사용자 입력) modifier 가 tab_switch_modifier 와
-    // 일치하면 탭 leading 을 숫자 키캡으로 그린다. egui ctx.input 의 modifier 만 보므로
-    // 에이전트/IPC 로는 표시될 수 없다(사용자 입력 전용). 공통 배선: `switch_overlay`.
-    let tab_switch_held = {
-        let mods = ctx.input(|i| i.modifiers);
-        crate::adapters::ui::switch_overlay::tab_switch_held(mods, &engine.settings.keybindings)
-    };
+    // switch-number overlay — `switch_overlay()` 스냅샷(사용자 입력 ModifiersChanged 로만
+    // 갱신)에서 Tab 대상 + 그릴 focused pane id 를 읽는다. 그 pane 의 탭바에서만 키캡을
+    // 그리므로 비-focused pane 에는 거짓 안내가 뜨지 않는다. 스냅샷은 egui raw_input 의
+    // 사용자 키 입력만 반영 → IPC/CLI/에이전트로는 강제 표시될 수 없다(순수 미리보기).
+    let switch_overlay_pane = state.switch_overlay().and_then(|o| match o.target {
+        crate::adapters::ui::switch_overlay::SwitchTarget::Tab => o.pane_id,
+        crate::adapters::ui::switch_overlay::SwitchTarget::Workspace => None,
+    });
 
     let props = PaneTabBarsProps {
         theme: &th,
@@ -783,7 +789,7 @@ pub fn draw_pane_tab_bars(
         tab_font_size,
         active_tab_indicator: appearance.active_tab_indicator,
         drag,
-        tab_switch_held,
+        switch_overlay_pane,
     };
 
     let output = draw_pane_tab_bars_view(ctx, &props);
@@ -989,7 +995,7 @@ mod tests {
                 tab_font_size: 12.0,
                 active_tab_indicator: crate::settings::ActiveTabIndicator::default(),
                 drag: drag.clone(),
-                tab_switch_held: false,
+                switch_overlay_pane: None,
             };
             out = draw_pane_tab_bars_view(ctx, &props);
         }));

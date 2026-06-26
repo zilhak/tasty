@@ -370,12 +370,19 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
     raw_input 으로 들어온 **실제 사용자 입력만** 반영 → IPC/에이전트가 raw_input 에 주입
     불가 → 사용자↔에이전트 분리 자동 충족. tasty `base.modifiers`(MainView) 를 draw 까지
     plumbing 할 필요 없음.
-- **처방**: 공통 모듈 `src/adapters/ui/switch_overlay.rs` 에 ① modifier 일치 판정
-  (`tab_switch_held`/`workspace_switch_held`, numeric.rs 규칙 1:1) ② 키캡 painter
-  (`paint_keycap`) 를 모은다. wrapper 가 `ctx.input` modifier + `engine.settings.keybindings`
-  로 held bool 을 계산해 **순수 view props 로 전달**(view 는 settings 비의존 유지, model-view-split).
-- **근거(2026-06-25)**: `tab_bar.rs` (`PaneTabBarsProps.tab_switch_held`), `switch_overlay.rs`.
-  P2b 사이드바도 같은 모듈의 `workspace_switch_held`/`workspace_digit`/`paint_keycap` 재사용.
+- **처방**: 공통 모듈 `src/adapters/ui/switch_overlay.rs` 에 ① modifier↔대상 판정
+  (`switch_target_for`, numeric.rs 규칙 1:1; 사이드바용 얇은 래퍼 `workspace_switch_held`) ②
+  키캡 painter(`paint_keycap`) 를 모은다. wrapper 가 **순수 view props 로 전달**(view 는 settings
+  비의존 유지, model-view-split).
+- **focused pane 한정(탭)**: 탭 전환 단축키는 focused pane 의 탭만 전환하므로, 키캡도 focused
+  pane 의 탭바에만 그린다. `tab_bar.rs` wrapper 는 `ctx.input` 대신 `state.switch_overlay()`
+  스냅샷(`Tab` 대상일 때 focused pane id 동봉)에서 `switch_overlay_pane: Option<u32>` 를 뽑아
+  `PaneTabBarsProps` 로 넘기고, view 는 `tab_keycap_for(switch_overlay_pane, pane_id, i)` 로 매칭되는
+  pane 에서만 키캡(비-focused pane 은 held 여도 아이콘 유지). 사이드바는 워크스페이스 전역 전환이라
+  pane 한정이 없어 `ctx.input` modifier → `workspace_switch_held` bool 직접 사용.
+- **근거(2026-06-27)**: `tab_bar.rs` (`PaneTabBarsProps.switch_overlay_pane`), `accessors.rs`
+  (`switch_overlay()`), `switch_overlay.rs` (`tab_keycap_for`). P2b 사이드바도 같은 모듈의
+  `workspace_switch_held`/`workspace_digit`/`paint_keycap` 재사용.
 
 ---
 

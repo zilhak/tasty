@@ -133,12 +133,9 @@ impl AppState {
         self.active_workspace(engine).focused_pane
     }
 
-    /// 현재 switch-number overlay 스냅샷. draw 경로(04 탭 / 05 사이드바)가 매 프레임
-    /// 읽어 숫자 키캡 오버레이를 표시할지/대상이 무엇인지 판단한다.
-    // 04(탭)/05(사이드바) 구현 전까지 소비처가 없어 dead_code 로 잡힌다 — 본 트랙은
-    // 배선까지가 범위이고, 이 접근자가 후행 트랙이 읽을 노출 인터페이스다.
+    /// 현재 switch-number overlay 스냅샷. draw 경로(04 탭 `draw_pane_tab_bars` / 05 사이드바)가
+    /// 매 프레임 읽어 숫자 키캡 오버레이를 표시할 focused pane / 대상을 판단한다.
     #[cfg(feature = "gui")]
-    #[allow(dead_code)]
     pub(crate) fn switch_overlay(
         &self,
     ) -> Option<crate::adapters::ui::switch_overlay::SwitchOverlayState> {
