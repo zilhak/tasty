@@ -119,71 +119,23 @@ enum AddHandlerActionKind {
     System,
 }
 
+/// FileHandler 탭 콘텐츠. L2 사이드바(섹션 목록·필터·선택)는 settings 셸이
+/// 소유하므로 여기서는 활성 `sub_tab` 의 콘텐츠만 그린다.
 pub(crate) fn draw_file_handler_tab(
     ui: &mut egui::Ui,
-    sub_tab: &mut FileHandlerSubTab,
+    sub_tab: FileHandlerSubTab,
     draft: &mut Option<BTreeMap<String, Vec<DetectorId>>>,
     new_ext_input: &mut String,
     fh_draft: &mut FileHandlerEditDraft,
     file_format: &FileFormatRegistry,
     file_handler: &FileHandlerRegistry,
-    l2_filter: &mut String,
 ) {
-    let th = crate::theme::theme();
-    ui.add_space(8.0);
-
-    let available_height = ui.available_height() - 8.0 - 14.0;
-
-    let sections: Vec<(FileHandlerSubTab, String)> = vec![
-        (
-            FileHandlerSubTab::ExtensionMapping,
-            t("settings.file_handler.sub.extension_mapping").to_string(),
-        ),
-        (
-            FileHandlerSubTab::Detectors,
-            t("settings.file_handler.sub.detectors").to_string(),
-        ),
-        (
-            FileHandlerSubTab::Handlers,
-            t("settings.file_handler.sub.handlers").to_string(),
-        ),
-    ];
-
-    let current = *sub_tab;
-    let mut selected_new: Option<FileHandlerSubTab> = None;
-    let filter_lc = l2_filter.to_lowercase();
-    tasty_ui_widgets::two_depth_layout_filtered(
-        ui,
-        &th,
-        available_height,
-        l2_filter,
-        t("settings.filter.sections"),
-        |ui| {
-            let mut any = false;
-            for (tab, label) in &sections {
-                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
-                    continue;
-                }
-                any = true;
-                let selected = current == *tab;
-                if ui.selectable_label(selected, label.as_str()).clicked() {
-                    selected_new = Some(*tab);
-                }
-            }
-            if !any {
-                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
-            }
-        },
-        |ui| match current {
-            FileHandlerSubTab::ExtensionMapping => {
-                draw_extension_mapping(ui, draft, new_ext_input, file_format)
-            }
-            FileHandlerSubTab::Detectors => draw_detectors(ui, fh_draft, file_format),
-            FileHandlerSubTab::Handlers => draw_handlers(ui, fh_draft, file_format, file_handler),
-        },
-    );
-    if let Some(new) = selected_new {
-        *sub_tab = new;
+    match sub_tab {
+        FileHandlerSubTab::ExtensionMapping => {
+            draw_extension_mapping(ui, draft, new_ext_input, file_format)
+        }
+        FileHandlerSubTab::Detectors => draw_detectors(ui, fh_draft, file_format),
+        FileHandlerSubTab::Handlers => draw_handlers(ui, fh_draft, file_format, file_handler),
     }
 }
 

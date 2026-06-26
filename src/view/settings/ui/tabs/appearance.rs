@@ -5,7 +5,7 @@ use crate::settings::{
     ActiveTabIndicator, EffectiveFont, FontOverride, FontSettings, HexColor, Settings,
 };
 use tasty_host_plugin::SettingsPageEntry;
-use tasty_plugin_manifest::{SettingsCategory, SettingsItemDecl, SettingsPageContribute};
+use tasty_plugin_manifest::{SettingsItemDecl, SettingsPageContribute};
 use tasty_type_appearance::theme::{
     FALLBACK_SURFACE, PartialColors, PartialSurfaceTheme, SurfaceTheme, Theme, ThemeColors,
 };
@@ -38,157 +38,63 @@ fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
     }
 }
 
+/// Appearance 탭 콘텐츠. L2 사이드바(고정 6 섹션 + Appearance plugin page 합성·
+/// 필터·선택·fallback)는 settings 셸이 소유하므로 여기서는 활성 `sub_tab` 의
+/// 콘텐츠만 그린다.
 pub fn draw_appearance_tab(
     ui: &mut egui::Ui,
     settings: &mut Settings,
-    sub_tab: &mut crate::settings_ui::AppearanceSubTab,
+    sub_tab: &crate::settings_ui::AppearanceSubTab,
     font_families: &mut Option<Vec<String>>,
     font_filter: &mut HashMap<String, String>,
     preview_font_loaded: &mut HashMap<String, String>,
     settings_pages: &[SettingsPageEntry],
-    l2_filter: &mut String,
 ) {
     use crate::settings_ui::AppearanceSubTab;
-    let th = crate::theme::theme();
-    ui.add_space(8.0);
-
-    let available_height = ui.available_height() - 8.0 - 14.0;
-
-    // Host-internal sub-tabs (always present) + dynamically composed plugin
-    // pages (Appearance category). Markdown is no longer hardcoded — it now
-    // appears only if `tasty-plugin-markdown` is loaded and contributes a
-    // settings_page.
-    let mut sub_tabs: Vec<(AppearanceSubTab, String)> = vec![
-        (
-            AppearanceSubTab::Theme,
-            t("settings.appearance.subtab.theme").to_string(),
-        ),
-        (
-            AppearanceSubTab::Colors,
-            t("settings.appearance.subtab.colors").to_string(),
-        ),
-        (
-            AppearanceSubTab::General,
-            t("settings.appearance.subtab.general").to_string(),
-        ),
-        (
-            AppearanceSubTab::Display,
-            t("settings.appearance.subtab.display").to_string(),
-        ),
-        (
-            AppearanceSubTab::Tasty,
-            t("settings.appearance.subtab.tasty").to_string(),
-        ),
-        (
-            AppearanceSubTab::Terminal,
-            t("settings.appearance.subtab.terminal").to_string(),
-        ),
-    ];
-    for entry in settings_pages
-        .iter()
-        .filter(|e| e.page.category == SettingsCategory::Appearance)
-    {
-        sub_tabs.push((
-            AppearanceSubTab::Plugin {
-                plugin_id: entry.plugin_id.clone(),
-                page_id: entry.page.id.clone(),
-            },
-            t(&entry.page.title_key).to_string(),
-        ));
-    }
-
-    // If the currently active sub-tab points at a plugin page that's no longer
-    // present (plugin disabled mid-session), fall back to Theme so the right
-    // panel doesn't render blank.
-    if let AppearanceSubTab::Plugin {
-        plugin_id: active_plugin,
-        page_id: active_page,
-    } = &*sub_tab
-        && !sub_tabs.iter().any(|(tab, _)| {
-            matches!(
-                tab,
-                AppearanceSubTab::Plugin { plugin_id, page_id }
-                    if plugin_id == active_plugin && page_id == active_page
-            )
-        })
-    {
-        *sub_tab = AppearanceSubTab::Theme;
-    }
-
-    let current = sub_tab.clone();
-    let mut selected_new: Option<AppearanceSubTab> = None;
-    let filter_lc = l2_filter.to_lowercase();
-    tasty_ui_widgets::two_depth_layout_filtered(
-        ui,
-        &th,
-        available_height,
-        l2_filter,
-        t("settings.filter.sections"),
-        |ui| {
-            let mut any = false;
-            for (tab, label) in &sub_tabs {
-                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
-                    continue;
-                }
-                any = true;
-                let selected = &current == tab;
-                if ui.selectable_label(selected, label.as_str()).clicked() {
-                    selected_new = Some(tab.clone());
-                }
-            }
-            if !any {
-                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
-            }
-        },
-        |ui| match &current {
-            AppearanceSubTab::Theme => {
-                draw_appearance_theme(ui, settings);
-            }
-            AppearanceSubTab::Colors => {
-                draw_appearance_colors(ui, settings);
-            }
-            AppearanceSubTab::General => {
-                draw_appearance_general(
+    match sub_tab {
+        AppearanceSubTab::Theme => {
+            draw_appearance_theme(ui, settings);
+        }
+        AppearanceSubTab::Colors => {
+            draw_appearance_colors(ui, settings);
+        }
+        AppearanceSubTab::General => {
+            draw_appearance_general(
+                ui,
+                settings,
+                font_families,
+                font_filter,
+                preview_font_loaded,
+            );
+        }
+        AppearanceSubTab::Display => {
+            draw_appearance_display(ui, settings);
+        }
+        AppearanceSubTab::Tasty => {
+            draw_appearance_tasty(ui, settings);
+        }
+        AppearanceSubTab::Terminal => {
+            draw_appearance_terminal(
+                ui,
+                settings,
+                font_families,
+                font_filter,
+                preview_font_loaded,
+            );
+        }
+        AppearanceSubTab::Plugin { plugin_id, page_id } => {
+            if let Some(entry) = find_plugin_settings_entry(settings_pages, plugin_id, page_id) {
+                draw_plugin_settings_page(
                     ui,
                     settings,
                     font_families,
                     font_filter,
                     preview_font_loaded,
+                    plugin_id,
+                    &entry.page,
                 );
             }
-            AppearanceSubTab::Display => {
-                draw_appearance_display(ui, settings);
-            }
-            AppearanceSubTab::Tasty => {
-                draw_appearance_tasty(ui, settings);
-            }
-            AppearanceSubTab::Terminal => {
-                draw_appearance_terminal(
-                    ui,
-                    settings,
-                    font_families,
-                    font_filter,
-                    preview_font_loaded,
-                );
-            }
-            AppearanceSubTab::Plugin { plugin_id, page_id } => {
-                if let Some(entry) = find_plugin_settings_entry(settings_pages, plugin_id, page_id)
-                {
-                    draw_plugin_settings_page(
-                        ui,
-                        settings,
-                        font_families,
-                        font_filter,
-                        preview_font_loaded,
-                        plugin_id,
-                        &entry.page,
-                    );
-                }
-            }
-        },
-    );
-    if let Some(new) = selected_new {
-        *sub_tab = new;
+        }
     }
 }
 

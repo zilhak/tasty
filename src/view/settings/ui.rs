@@ -16,6 +16,21 @@ use crate::plugin::manifest::BindingMode;
 use crate::plugin::registry_state::ShortcutOverride;
 use crate::settings::Settings;
 use tasty_host_plugin::SettingsPageEntry;
+use tasty_plugin_manifest::SettingsCategory;
+use tasty_type_appearance::theme::Theme;
+use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::{Button, ButtonVariant};
+
+/// L2 사이드바 폭. 디자인 `--tasty-settings-sidebar-width` = 200.
+const SETTINGS_SIDEBAR_WIDTH: LogicalPx = LogicalPx(200.0);
+/// L1 헤더 밴드 높이. 디자인 header `height: 44`.
+const SETTINGS_HEADER_HEIGHT: LogicalPx = LogicalPx(44.0);
+/// active L1 탭 하단 인디케이터 두께. 디자인 `border-bottom: 2px accent`.
+const SETTINGS_TAB_UNDERLINE: LogicalPx = LogicalPx(2.0);
+/// L1 탭 사이 간격. 디자인 header `gap: 2`.
+const L1_TAB_GAP: LogicalPx = LogicalPx(2.0);
+/// 푸터 좌우 패딩. 디자인 footer `padding: space-md size-14` 의 수평값.
+const SETTINGS_FOOTER_PAD_X: i8 = 14;
 
 /// 단계 E: Plugins 서브탭에서 표시할 한 row.
 ///
@@ -294,200 +309,143 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     }
 
     let mut result = None;
+    let th = crate::theme::theme();
+    let sep = egui::Stroke::new(th.border_width.value(), th.surface1.to_egui());
 
-    egui::TopBottomPanel::bottom("settings_buttons").show(ctx, |ui| {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(t("button.cancel")).clicked() {
-                    // Cancel: discard bashrc draft so next open reloads from disk.
-                    ui_state.bashrc_user_draft = None;
-                    ui_state.extension_priority_draft = None;
-                    ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
-                    result = Some(false);
-                }
-                if ui.button(t("button.save")).clicked() {
-                    let prev_restore_surface_content = settings.general.restore_surface_content;
-                    if let Some(draft) = &ui_state.draft {
-                        *settings = draft.clone();
-                    }
-                    // restore_surface_content 를 끈 경우 기존에 쌓인 scrollback
-                    // 파일을 모두 정리 (사용자가 더 이상 안 쓴다고 명시).
-                    if prev_restore_surface_content && !settings.general.restore_surface_content {
-                        crate::scrollback_store::clear_all();
-                    }
-                    // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭). 비-Windows 는
-                    // draft 가 비어 있고 저장할 것도 없다.
-                    #[cfg(windows)]
-                    if let Some(bashrc) = &ui_state.bashrc_user_draft {
-                        crate::settings::general::save_user_bashrc(bashrc);
-                    }
-                    // 선택된 테마 즉시 적용 — 설정 화면에서 콤보 선택은 이미 apply_theme 으로
-                    // base/overrides 를 갱신했고, 여기서는 전역 Theme 인스턴스만 install.
-                    // host UI zoom 을 항상 실어야 배율이 1.0 으로 리셋되지 않는다.
-                    let ui_zoom = settings.appearance.ui_scale_factor();
-                    tasty_themes::install_global_with_zoom(&settings.appearance, ui_zoom);
-                    // FileHandler 탭의 Extension Mapping + Detectors/Handlers 편집 draft 를
-                    // registry 에 commit + 디스크 저장.
-                    let mut fh_touched = false;
-                    if let Some(draft) = ui_state.extension_priority_draft.take() {
-                        for (ext, order) in &draft {
-                            if order.is_empty() {
-                                file_format.clear_user_extension_priority(ext);
-                            } else {
-                                file_format.set_user_extension_priority(ext, order.clone());
-                            }
-                        }
-                        fh_touched = true;
-                    }
-                    {
-                        let fh = std::mem::take(&mut ui_state.fh_edit_draft);
-                        if fh.has_changes() {
-                            fh.apply(file_format, file_handler);
-                            fh_touched = true;
-                        }
-                    }
-                    if fh_touched
-                        && let Some(path) = user_config_path
-                        && let Err(e) = crate::file::handler::save::save_combined_user_config(
-                            file_format,
-                            file_handler,
-                            path,
-                        )
-                    {
-                        tracing::warn!("file_handler tab: save_combined_user_config failed: {e}");
-                    }
-                    result = Some(true);
-                }
-            });
-        });
-        ui.add_space(4.0);
-    });
-
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.add_space(8.0);
-
-        ui.horizontal(|ui| {
-            // L1 — 디자인 2-level IA 의 상단 7탭. 나머지 섹션은 각 L1 의 좌측
-            // L2 사이드바로 들어간다.
-            let tabs = vec![
-                (SettingsTab::General, t("settings.tab.general")),
-                (SettingsTab::Terminal, t("settings.tab.terminal")),
-                (SettingsTab::Appearance, t("settings.tab.appearance")),
-                (SettingsTab::Keybindings, t("settings.tab.keybindings")),
-                (SettingsTab::FileHandler, t("settings.tab.file_handler")),
-                (SettingsTab::Misc, t("settings.tab.misc")),
-                (SettingsTab::Plugins, t("settings.tab.plugin")),
-            ];
-
-            let prev_tab = ui_state.active_tab;
-            tasty_ui_widgets::horizontal_tab_bar_with_arrows(
-                ui,
-                "settings_l1_tabs",
-                &tabs,
-                &mut ui_state.active_tab,
-            );
-            // L1 전환 시 L2 필터를 초기화 (디자인: pickL1 → setFilter("")).
-            if ui_state.active_tab != prev_tab {
-                ui_state.l2_filter.clear();
-            }
-        });
-        ui.separator();
-
-        {
-            let mut draft = ui_state.draft.take().unwrap();
-            let active_tab = ui_state.active_tab;
-
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .drag_to_scroll(false)
-                .show(ui, |ui| {
-                    tasty_ui_widgets::tab_content_frame(ui, |ui| match active_tab {
-                        SettingsTab::General => draw_general_group(ui, &mut draft, ui_state),
-                        SettingsTab::Terminal => draw_terminal_group(ui, &mut draft, ui_state),
-                        SettingsTab::Appearance => draw_appearance_tab(
-                            ui,
-                            &mut draft,
-                            &mut ui_state.appearance_sub_tab,
-                            &mut ui_state.font_families,
-                            &mut ui_state.font_filter,
-                            &mut ui_state.preview_font_loaded,
-                            &ui_state.settings_pages,
-                            &mut ui_state.l2_filter,
-                        ),
-                        SettingsTab::Keybindings => draw_keybindings_tab(
-                            ui,
-                            &mut draft,
-                            &mut ui_state.recording_field,
-                            &mut ui_state.keybindings_sub_tab,
-                            &mut ui_state.selected_preset,
-                            &mut ui_state.pending_binding,
-                            captured_double_tap,
-                            &mut ui_state.captured_winit_combo,
-                            &ui_state.plugin_shortcuts,
-                            &mut ui_state.plugin_shortcuts_selected,
-                            &mut ui_state.plugin_shortcuts_draft,
-                            &mut ui_state.l2_filter,
-                        ),
-                        SettingsTab::FileHandler => draw_file_handler_tab(
-                            ui,
-                            &mut ui_state.file_handler_sub_tab,
-                            &mut ui_state.extension_priority_draft,
-                            &mut ui_state.extension_priority_new_input,
-                            &mut ui_state.fh_edit_draft,
-                            file_format,
-                            file_handler,
-                            &mut ui_state.l2_filter,
-                        ),
-                        SettingsTab::Misc => draw_misc_group(ui, ui_state),
-                        SettingsTab::Plugins => draw_plugin_tab(
-                            ui,
-                            &mut draft,
-                            &mut ui_state.plugin_sub_tab,
-                            &mut ui_state.font_families,
-                            &mut ui_state.font_filter,
-                            &mut ui_state.preview_font_loaded,
-                            &ui_state.settings_pages,
-                            &mut ui_state.l2_filter,
-                        ),
-                    });
+    egui::CentralPanel::default()
+        .frame(egui::Frame::NONE.fill(th.bg_panel().to_egui()))
+        .show(ctx, |ui| {
+            // ── L1 헤더 밴드 (디자인 header height44 / bg-sidebar / border-bottom) ──
+            let header = egui::TopBottomPanel::top("settings_header")
+                .exact_height(SETTINGS_HEADER_HEIGHT.value())
+                .resizable(false)
+                .show_separator_line(false)
+                .frame(egui::Frame::NONE.fill(th.bg_sidebar().to_egui()))
+                .show_inside(ui, |ui| {
+                    draw_l1_tab_band(ui, &th, ui_state);
                 });
+            let hr = header.response.rect;
+            ui.painter().hline(hr.x_range(), hr.bottom() - 0.5, sep);
 
-            // 충돌 감지 시 팝업 열기.
-            // intent-exempt: `ui_state.popups` 는 settings 윈도우 내부의 별도 PopupManager.
-            // host Intent 큐(AppState.popups) 와 별개 — sub-modal 내부 lifecycle 이므로
-            // 직접 호출 유지.
-            if ui_state.pending_binding.is_some() && !ui_state.popups.is_open("keybinding_conflict")
-            {
-                ui_state.popups.open_centered_focused("keybinding_conflict");
+            // ── L2 영속 사이드바 (디자인 width200 / bg-sidebar / border-right) ──
+            let sections = build_l2_sections(ui_state);
+            let l2_placeholder = if ui_state.active_tab == SettingsTab::Plugins {
+                t("settings.filter.plugins")
+            } else {
+                t("settings.filter.sections")
+            };
+            let side = egui::SidePanel::left("settings_l2_sidebar")
+                .exact_width(SETTINGS_SIDEBAR_WIDTH.value())
+                .resizable(false)
+                .show_separator_line(false)
+                .frame(egui::Frame::NONE.fill(th.bg_sidebar().to_egui()))
+                .show_inside(ui, |ui| {
+                    draw_l2_sidebar(ui, &th, &sections, &mut ui_state.l2_filter, l2_placeholder)
+                });
+            let sr = side.response.rect;
+            // SidePanel response.rect 은 exact_width 를 넘는 resize handle 영역을
+            // 포함하므로 border 는 left + width 에 그린다 (design-parity-notes).
+            ui.painter().vline(
+                sr.left() + SETTINGS_SIDEBAR_WIDTH.value() - 0.5,
+                sr.y_range(),
+                sep,
+            );
+            if let Some(i) = side.inner {
+                apply_l2_select(ui_state, &sections[i].select);
             }
 
-            // 충돌 팝업에서 수락/거부 처리
-            if ui_state.conflict_accepted {
-                ui_state.conflict_accepted = false;
-                if let Some(pending) = ui_state.pending_binding.take() {
-                    draft
-                        .keybindings
-                        .remove_binding(&pending.conflicting_field, pending.conflicting_idx);
-                    draft.keybindings.replace_binding_at(
-                        &pending.target_field,
-                        pending.target_idx,
-                        pending.combo,
-                    );
-                }
-                // intent-exempt: settings 윈도우 내부 sub-modal close (위 주석 참조).
-                ui_state.popups.close("keybinding_conflict");
-            }
-            if ui_state.conflict_cancelled {
-                ui_state.conflict_cancelled = false;
-                ui_state.pending_binding = None;
-                // intent-exempt: settings 윈도우 내부 sub-modal close.
-                ui_state.popups.close("keybinding_conflict");
-            }
+            // ── 콘텐츠 컬럼 (스크롤 본문 + 내부 footer) ──
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(th.bg_panel().to_egui()))
+                .show_inside(ui, |ui| {
+                    // footer (디자인 border-top / justify-flex-end / Cancel ghost + Save primary)
+                    let footer = egui::TopBottomPanel::bottom("settings_footer")
+                        .resizable(false)
+                        .show_separator_line(false)
+                        .frame(
+                            egui::Frame::NONE
+                                .fill(th.bg_panel().to_egui())
+                                .inner_margin(egui::Margin {
+                                    left: SETTINGS_FOOTER_PAD_X,
+                                    right: SETTINGS_FOOTER_PAD_X,
+                                    top: th.spacing_md.value() as i8,
+                                    bottom: th.spacing_md.value() as i8,
+                                }),
+                        )
+                        .show_inside(ui, |ui| {
+                            draw_settings_footer(
+                                ui,
+                                &th,
+                                settings,
+                                ui_state,
+                                file_format,
+                                file_handler,
+                                user_config_path,
+                                &mut result,
+                            );
+                        });
+                    let fr = footer.response.rect;
+                    ui.painter().hline(fr.x_range(), fr.top() + 0.5, sep);
 
-            ui_state.draft = Some(draft);
-        }
-    });
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE)
+                        .show_inside(ui, |ui| {
+                            let mut draft = ui_state.draft.take().unwrap();
+
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .drag_to_scroll(false)
+                                .show(ui, |ui| {
+                                    tasty_ui_widgets::tab_content_frame(ui, |ui| {
+                                        draw_active_content(
+                                            ui,
+                                            &mut draft,
+                                            ui_state,
+                                            captured_double_tap,
+                                            file_format,
+                                            file_handler,
+                                        );
+                                    });
+                                });
+
+                            // 충돌 감지 시 팝업 열기.
+                            // intent-exempt: `ui_state.popups` 는 settings 윈도우 내부의
+                            // 별도 PopupManager. host Intent 큐(AppState.popups) 와 별개 —
+                            // sub-modal 내부 lifecycle 이므로 직접 호출 유지.
+                            if ui_state.pending_binding.is_some()
+                                && !ui_state.popups.is_open("keybinding_conflict")
+                            {
+                                ui_state.popups.open_centered_focused("keybinding_conflict");
+                            }
+
+                            // 충돌 팝업에서 수락/거부 처리
+                            if ui_state.conflict_accepted {
+                                ui_state.conflict_accepted = false;
+                                if let Some(pending) = ui_state.pending_binding.take() {
+                                    draft.keybindings.remove_binding(
+                                        &pending.conflicting_field,
+                                        pending.conflicting_idx,
+                                    );
+                                    draft.keybindings.replace_binding_at(
+                                        &pending.target_field,
+                                        pending.target_idx,
+                                        pending.combo,
+                                    );
+                                }
+                                // intent-exempt: settings 윈도우 내부 sub-modal close.
+                                ui_state.popups.close("keybinding_conflict");
+                            }
+                            if ui_state.conflict_cancelled {
+                                ui_state.conflict_cancelled = false;
+                                ui_state.pending_binding = None;
+                                // intent-exempt: settings 윈도우 내부 sub-modal close.
+                                ui_state.popups.close("keybinding_conflict");
+                            }
+
+                            ui_state.draft = Some(draft);
+                        });
+                });
+        });
 
     // Draw popups (충돌 확인 등)
     let popup_result = {
@@ -553,180 +511,669 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     result
 }
 
-/// General L1 탭: 좌측 L2 사이드바(필터 포함) + 우측 섹션 콘텐츠.
-///
-/// 디자인 General L2 = General / Notifications / Accessibility.
-fn draw_general_group(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut SettingsUiState) {
-    let th = crate::theme::theme();
-    ui.add_space(8.0);
+// ── L2 사이드바 모델 ──────────────────────────────────────────────────────
+//
+// 디자인의 L2 영속 사이드바는 7 개 L1 탭의 sub-tab 집합을 한 컬럼으로 통합한다.
+// 각 row 는 클릭 시 적용할 typed sub-tab 선택값(`L2Select`)을 들고 있어, 셸이
+// sub-tab enum 별 분기를 모르고도 선택을 위임할 수 있다.
 
-    let available_height = ui.available_height() - 8.0 - 14.0;
+/// L2 사이드바 한 row 가 클릭됐을 때 적용할 sub-tab 선택값.
+enum L2Select {
+    General(GeneralSubTab),
+    Terminal(TerminalSubTab),
+    Appearance(AppearanceSubTab),
+    Keybindings(KeybindingsSubTab),
+    FileHandler(FileHandlerSubTab),
+    Misc(MiscSubTab),
+    Plugin(PluginSubTab),
+}
 
-    let sections: Vec<(GeneralSubTab, String)> = vec![
+/// L2 사이드바 한 row 의 표시 모델.
+struct L2Section {
+    label: String,
+    /// plugin-contributed 섹션이면 true → 라벨 앞에 accent-agent dot.
+    is_plugin: bool,
+    selected: bool,
+    select: L2Select,
+}
+
+/// 현재 활성 L1 탭의 L2 섹션 목록을 만든다. Appearance / Plugins 는 plugin 이
+/// contribute 한 page 를 동적으로 합성하고, 사라진 page 를 가리키던 sub-tab 은
+/// 여기서 리셋한다.
+fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
+    match ui_state.active_tab {
+        SettingsTab::General => {
+            let cur = ui_state.general_sub_tab;
+            [
+                (GeneralSubTab::General, t("settings.tab.general")),
+                (
+                    GeneralSubTab::Notifications,
+                    t("settings.tab.notifications"),
+                ),
+                (
+                    GeneralSubTab::Accessibility,
+                    t("settings.misc.subtab.accessibility"),
+                ),
+            ]
+            .into_iter()
+            .map(|(tab, label)| L2Section {
+                label: label.to_string(),
+                is_plugin: false,
+                selected: cur == tab,
+                select: L2Select::General(tab),
+            })
+            .collect()
+        }
+        SettingsTab::Terminal => {
+            let cur = ui_state.terminal_sub_tab;
+            [
+                (TerminalSubTab::General, t("settings.tab.general")),
+                (
+                    TerminalSubTab::Performance,
+                    t("settings.misc.subtab.performance"),
+                ),
+            ]
+            .into_iter()
+            .map(|(tab, label)| L2Section {
+                label: label.to_string(),
+                is_plugin: false,
+                selected: cur == tab,
+                select: L2Select::Terminal(tab),
+            })
+            .collect()
+        }
+        SettingsTab::Appearance => build_appearance_sections(ui_state),
+        SettingsTab::Keybindings => {
+            let cur = ui_state.keybindings_sub_tab;
+            [
+                (
+                    KeybindingsSubTab::General,
+                    t("settings.keybindings.subtab.general"),
+                ),
+                (
+                    KeybindingsSubTab::Workspace,
+                    t("settings.keybindings.subtab.workspace"),
+                ),
+                (
+                    KeybindingsSubTab::Pane,
+                    t("settings.keybindings.subtab.pane"),
+                ),
+                (KeybindingsSubTab::Tab, t("settings.keybindings.subtab.tab")),
+                (
+                    KeybindingsSubTab::Surface,
+                    t("settings.keybindings.subtab.surface"),
+                ),
+                (
+                    KeybindingsSubTab::Clipboard,
+                    t("settings.keybindings.subtab.clipboard"),
+                ),
+                (
+                    KeybindingsSubTab::Zoom,
+                    t("settings.keybindings.subtab.zoom"),
+                ),
+                (
+                    KeybindingsSubTab::Image,
+                    t("settings.keybindings.subtab.image"),
+                ),
+                (
+                    KeybindingsSubTab::Preset,
+                    t("settings.keybindings.subtab.preset"),
+                ),
+                (
+                    KeybindingsSubTab::Plugins,
+                    t("settings.keybindings.subtab.plugins"),
+                ),
+            ]
+            .into_iter()
+            .map(|(tab, label)| L2Section {
+                label: label.to_string(),
+                is_plugin: false,
+                selected: cur == tab,
+                select: L2Select::Keybindings(tab),
+            })
+            .collect()
+        }
+        SettingsTab::FileHandler => {
+            let cur = ui_state.file_handler_sub_tab;
+            [
+                (
+                    FileHandlerSubTab::ExtensionMapping,
+                    t("settings.file_handler.sub.extension_mapping"),
+                ),
+                (
+                    FileHandlerSubTab::Detectors,
+                    t("settings.file_handler.sub.detectors"),
+                ),
+                (
+                    FileHandlerSubTab::Handlers,
+                    t("settings.file_handler.sub.handlers"),
+                ),
+            ]
+            .into_iter()
+            .map(|(tab, label)| L2Section {
+                label: label.to_string(),
+                is_plugin: false,
+                selected: cur == tab,
+                select: L2Select::FileHandler(tab),
+            })
+            .collect()
+        }
+        SettingsTab::Misc => {
+            // Windows 에서만 Tastyrc 섹션. 비-Windows 는 L2 가 없어 콘텐츠
+            // empty-state 가 설명을 대신한다.
+            #[cfg(windows)]
+            {
+                let cur = ui_state.misc_sub_tab;
+                vec![L2Section {
+                    label: t("settings.misc.subtab.tastyrc").to_string(),
+                    is_plugin: false,
+                    selected: cur == MiscSubTab::Tastyrc,
+                    select: L2Select::Misc(MiscSubTab::Tastyrc),
+                }]
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = ui_state;
+                Vec::new()
+            }
+        }
+        SettingsTab::Plugins => build_plugin_sections(ui_state),
+    }
+}
+
+/// Appearance L2: 고정 6 섹션 + Appearance category plugin page.
+fn build_appearance_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
+    let mut items: Vec<(AppearanceSubTab, String, bool)> = vec![
         (
-            GeneralSubTab::General,
-            t("settings.tab.general").to_string(),
+            AppearanceSubTab::Theme,
+            t("settings.appearance.subtab.theme").to_string(),
+            false,
         ),
         (
-            GeneralSubTab::Notifications,
-            t("settings.tab.notifications").to_string(),
+            AppearanceSubTab::Colors,
+            t("settings.appearance.subtab.colors").to_string(),
+            false,
         ),
         (
-            GeneralSubTab::Accessibility,
-            t("settings.misc.subtab.accessibility").to_string(),
+            AppearanceSubTab::General,
+            t("settings.appearance.subtab.general").to_string(),
+            false,
+        ),
+        (
+            AppearanceSubTab::Display,
+            t("settings.appearance.subtab.display").to_string(),
+            false,
+        ),
+        (
+            AppearanceSubTab::Tasty,
+            t("settings.appearance.subtab.tasty").to_string(),
+            false,
+        ),
+        (
+            AppearanceSubTab::Terminal,
+            t("settings.appearance.subtab.terminal").to_string(),
+            false,
         ),
     ];
+    for entry in ui_state
+        .settings_pages
+        .iter()
+        .filter(|e| e.page.category == SettingsCategory::Appearance)
+    {
+        items.push((
+            AppearanceSubTab::Plugin {
+                plugin_id: entry.plugin_id.clone(),
+                page_id: entry.page.id.clone(),
+            },
+            t(&entry.page.title_key).to_string(),
+            true,
+        ));
+    }
+    // 활성 plugin page 가 사라졌으면 Theme 로 fallback.
+    let needs_reset = if let AppearanceSubTab::Plugin {
+        plugin_id: ap,
+        page_id: pg,
+    } = &ui_state.appearance_sub_tab
+    {
+        !items.iter().any(|(tab, _, _)| {
+            matches!(
+                tab,
+                AppearanceSubTab::Plugin { plugin_id, page_id }
+                    if plugin_id == ap && page_id == pg
+            )
+        })
+    } else {
+        false
+    };
+    if needs_reset {
+        ui_state.appearance_sub_tab = AppearanceSubTab::Theme;
+    }
+    let cur = ui_state.appearance_sub_tab.clone();
+    items
+        .into_iter()
+        .map(|(tab, label, is_plugin)| L2Section {
+            selected: tab == cur,
+            label,
+            is_plugin,
+            select: L2Select::Appearance(tab),
+        })
+        .collect()
+}
 
-    let current = ui_state.general_sub_tab;
-    let mut selected_new: Option<GeneralSubTab> = None;
-    let filter_lc = ui_state.l2_filter.to_lowercase();
-    tasty_ui_widgets::two_depth_layout_filtered(
-        ui,
-        &th,
-        available_height,
-        &mut ui_state.l2_filter,
-        t("settings.filter.sections"),
-        |ui| {
-            let mut any = false;
-            for (tab, label) in &sections {
-                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
-                    continue;
+/// Plugins L2: Plugin category page 만으로 구성. 미선택 상태에서 page 가 있으면
+/// 첫 page 를 자동 선택한다 (디자인: 진입 시 L2[t][0] 활성).
+fn build_plugin_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
+    let pages: Vec<(PluginSubTab, String)> = ui_state
+        .settings_pages
+        .iter()
+        .filter(|e| e.page.category == SettingsCategory::Plugin)
+        .map(|e| {
+            (
+                PluginSubTab::Plugin {
+                    plugin_id: e.plugin_id.clone(),
+                    page_id: e.page.id.clone(),
+                },
+                t(&e.page.title_key).to_string(),
+            )
+        })
+        .collect();
+
+    let needs_reset = if let Some(PluginSubTab::Plugin {
+        plugin_id: ap,
+        page_id: pg,
+    }) = ui_state.plugin_sub_tab.as_ref()
+    {
+        !pages.iter().any(|(tab, _)| {
+            matches!(
+                tab,
+                PluginSubTab::Plugin { plugin_id, page_id }
+                    if plugin_id == ap && page_id == pg
+            )
+        })
+    } else {
+        false
+    };
+    if needs_reset {
+        ui_state.plugin_sub_tab = None;
+    }
+    if ui_state.plugin_sub_tab.is_none()
+        && let Some((first, _)) = pages.first()
+    {
+        ui_state.plugin_sub_tab = Some(first.clone());
+    }
+
+    let cur = ui_state.plugin_sub_tab.clone();
+    pages
+        .into_iter()
+        .map(|(tab, label)| L2Section {
+            selected: cur.as_ref() == Some(&tab),
+            label,
+            is_plugin: true,
+            select: L2Select::Plugin(tab),
+        })
+        .collect()
+}
+
+/// L2 row 클릭 → 해당 L1 의 sub-tab 상태에 반영.
+fn apply_l2_select(ui_state: &mut SettingsUiState, select: &L2Select) {
+    match select {
+        L2Select::General(v) => ui_state.general_sub_tab = *v,
+        L2Select::Terminal(v) => ui_state.terminal_sub_tab = *v,
+        L2Select::Appearance(v) => ui_state.appearance_sub_tab = v.clone(),
+        L2Select::Keybindings(v) => {
+            ui_state.keybindings_sub_tab = *v;
+            // 다른 sub-tab 으로 이동 시 진행 중이던 녹화를 취소.
+            ui_state.recording_field = None;
+        }
+        L2Select::FileHandler(v) => ui_state.file_handler_sub_tab = *v,
+        L2Select::Misc(v) => ui_state.misc_sub_tab = *v,
+        L2Select::Plugin(v) => ui_state.plugin_sub_tab = Some(v.clone()),
+    }
+}
+
+// ── L1 헤더 밴드 ──────────────────────────────────────────────────────────
+
+/// 디자인 header band 전사: bg-sidebar 위 7 개 L1 탭, active 는 text-primary +
+/// 2px accent underline, inactive 는 text-muted. (Option A — 카드 내 "Settings"
+/// 타이틀 / close X 는 OS 타이틀바가 제공하므로 생략.)
+fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiState) {
+    let tabs = [
+        (SettingsTab::General, t("settings.tab.general")),
+        (SettingsTab::Terminal, t("settings.tab.terminal")),
+        (SettingsTab::Appearance, t("settings.tab.appearance")),
+        (SettingsTab::Keybindings, t("settings.tab.keybindings")),
+        (SettingsTab::FileHandler, t("settings.tab.file_handler")),
+        (SettingsTab::Misc, t("settings.tab.misc")),
+        (SettingsTab::Plugins, t("settings.tab.plugin")),
+    ];
+    let prev = ui_state.active_tab;
+    egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: th.spacing_md.value() as i8,
+            right: th.spacing_md.value() as i8,
+            top: 0,
+            bottom: 0,
+        })
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = L1_TAB_GAP.value();
+                for (tab, label) in tabs {
+                    if l1_tab_button(ui, th, label, ui_state.active_tab == tab) {
+                        ui_state.active_tab = tab;
+                    }
                 }
-                any = true;
-                let selected = current == *tab;
-                if ui.selectable_label(selected, label.as_str()).clicked() {
-                    selected_new = Some(*tab);
+            });
+        });
+    // L1 전환 시 L2 필터 초기화 (디자인: pickL1 → setFilter("")).
+    if ui_state.active_tab != prev {
+        ui_state.l2_filter.clear();
+    }
+}
+
+/// 헤더 밴드의 한 L1 탭 버튼. 밴드 높이를 가득 채워 active underline 이
+/// border-bottom 위치에 정렬되게 한다.
+fn l1_tab_button(ui: &mut egui::Ui, th: &Theme, label: &str, active: bool) -> bool {
+    let font = egui::FontId::proportional(th.font_size_body.value());
+    let pad_x = th.spacing_md.value();
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font, egui::Color32::PLACEHOLDER);
+    let galley_size = galley.size();
+    let w = galley_size.x + pad_x * 2.0;
+    let h = ui.available_height();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let color = if active {
+        th.text_primary().to_egui()
+    } else if resp.hovered() {
+        th.text_secondary().to_egui()
+    } else {
+        th.text_muted().to_egui()
+    };
+    let pos = egui::pos2(
+        rect.center().x - galley_size.x * 0.5,
+        rect.center().y - galley_size.y * 0.5,
+    );
+    ui.painter().galley(pos, galley, color);
+    if active {
+        let thickness = SETTINGS_TAB_UNDERLINE.value();
+        ui.painter().hline(
+            rect.x_range(),
+            rect.bottom() - thickness * 0.5,
+            egui::Stroke::new(thickness, th.accent_primary().to_egui()),
+        );
+    }
+    resp.clicked()
+}
+
+// ── L2 사이드바 뷰 ────────────────────────────────────────────────────────
+
+/// 영속 L2 사이드바: 상단 필터 Input(+ border-bottom) + 스크롤 섹션 리스트.
+/// 클릭된 섹션 인덱스를 반환한다.
+fn draw_l2_sidebar(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    sections: &[L2Section],
+    filter: &mut String,
+    placeholder: &str,
+) -> Option<usize> {
+    let mut clicked = None;
+    let sep = egui::Stroke::new(th.border_width.value(), th.surface1.to_egui());
+    let pad = th.spacing_sm.value() as i8;
+
+    // 필터 입력 — padding space-sm, 하단 border-bottom separator.
+    let filter_resp = egui::Frame::NONE
+        .inner_margin(egui::Margin::same(pad))
+        .show(ui, |ui| {
+            tasty_ui_widgets::Input::new()
+                .placeholder(placeholder)
+                .show(ui, th, filter);
+        });
+    let frect = filter_resp.response.rect;
+    ui.painter()
+        .hline(frect.x_range(), frect.bottom() - 0.5, sep);
+
+    // 섹션 리스트 — 스크롤, padding space-sm.
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::Frame::NONE
+                .inner_margin(egui::Margin::same(pad))
+                .show(ui, |ui| {
+                    let filter_lc = filter.to_lowercase();
+                    let mut any = false;
+                    for (i, s) in sections.iter().enumerate() {
+                        if !filter_lc.is_empty() && !s.label.to_lowercase().contains(&filter_lc) {
+                            continue;
+                        }
+                        any = true;
+                        if sidebar_row(ui, th, &s.label, s.is_plugin, s.selected) {
+                            clicked = Some(i);
+                        }
+                    }
+                    // 필터로 0건일 때만 안내. 섹션 자체가 0개(비-Windows Misc)면
+                    // 콘텐츠 empty-state 가 대신하므로 사이드바는 비워둔다.
+                    if !any && !filter_lc.is_empty() {
+                        ui.label(
+                            egui::RichText::new(t("settings.filter.no_matches"))
+                                .color(th.text_muted().to_egui()),
+                        );
+                    }
+                });
+        });
+    clicked
+}
+
+/// L2 사이드바 한 row. selected = surface-active 배경 + radius-sm, plugin row 는
+/// 라벨 앞에 accent-agent dot.
+fn sidebar_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    label: &str,
+    is_plugin: bool,
+    selected: bool,
+) -> bool {
+    let pad_x = th.spacing_sm.value();
+    let pad_y = th.spacing_xs.value();
+    let font = egui::FontId::proportional(th.font_size_body.value());
+    let row_h = th.font_size_body.value() + pad_y * 2.0;
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, row_h), egui::Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let radius = th.corner_radius_sm.value();
+    if selected {
+        ui.painter()
+            .rect_filled(rect, radius, th.surface_active().to_egui());
+    } else if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, radius, th.overlay_hover().to_egui_premultiplied());
+    }
+    let mut x = rect.left() + pad_x;
+    if is_plugin {
+        let d = th.status_dot_size.value();
+        ui.painter().circle_filled(
+            egui::pos2(x + d * 0.5, rect.center().y),
+            d * 0.5,
+            th.accent_agent().to_egui(),
+        );
+        x += d + th.spacing_sm.value();
+    }
+    let color = if selected {
+        th.text_primary().to_egui()
+    } else {
+        th.text_muted().to_egui()
+    };
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, color);
+    let gy = rect.center().y - galley.size().y * 0.5;
+    ui.painter().galley(egui::pos2(x, gy), galley, color);
+    resp.clicked()
+}
+
+// ── 푸터 ──────────────────────────────────────────────────────────────────
+
+/// 콘텐츠 컬럼 하단 footer: 우측 정렬 Cancel(ghost) + Save(primary).
+/// Save 핸들러는 draft commit / scrollback 정리 / 테마 install / file-handler
+/// draft 커밋을 수행한다.
+#[allow(clippy::too_many_arguments)]
+fn draw_settings_footer(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    settings: &mut Settings,
+    ui_state: &mut SettingsUiState,
+    file_format: &FileFormatRegistry,
+    file_handler: &FileHandlerRegistry,
+    user_config_path: Option<&std::path::Path>,
+    result: &mut Option<bool>,
+) {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+        // RTL: 먼저 추가한 위젯이 가장 우측. 디자인 [Cancel] [Save] (Save 우측).
+        if Button::new(t("button.save"))
+            .variant(ButtonVariant::Primary)
+            .show(ui, th)
+            .clicked()
+        {
+            let prev_restore_surface_content = settings.general.restore_surface_content;
+            if let Some(draft) = &ui_state.draft {
+                *settings = draft.clone();
+            }
+            // restore_surface_content 를 끈 경우 기존 scrollback 정리.
+            if prev_restore_surface_content && !settings.general.restore_surface_content {
+                crate::scrollback_store::clear_all();
+            }
+            // tasty 빌트인 bashrc 편집은 Windows 전용 (Misc 탭).
+            #[cfg(windows)]
+            if let Some(bashrc) = &ui_state.bashrc_user_draft {
+                crate::settings::general::save_user_bashrc(bashrc);
+            }
+            // 선택 테마 즉시 적용 — 전역 Theme 인스턴스 install (host UI zoom 유지).
+            let ui_zoom = settings.appearance.ui_scale_factor();
+            tasty_themes::install_global_with_zoom(&settings.appearance, ui_zoom);
+            // FileHandler 탭 편집 draft 를 registry commit + 디스크 저장.
+            let mut fh_touched = false;
+            if let Some(draft) = ui_state.extension_priority_draft.take() {
+                for (ext, order) in &draft {
+                    if order.is_empty() {
+                        file_format.clear_user_extension_priority(ext);
+                    } else {
+                        file_format.set_user_extension_priority(ext, order.clone());
+                    }
+                }
+                fh_touched = true;
+            }
+            {
+                let fh = std::mem::take(&mut ui_state.fh_edit_draft);
+                if fh.has_changes() {
+                    fh.apply(file_format, file_handler);
+                    fh_touched = true;
                 }
             }
-            if !any {
-                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
+            if fh_touched
+                && let Some(path) = user_config_path
+                && let Err(e) = crate::file::handler::save::save_combined_user_config(
+                    file_format,
+                    file_handler,
+                    path,
+                )
+            {
+                tracing::warn!("file_handler tab: save_combined_user_config failed: {e}");
             }
-        },
-        |ui| match current {
+            *result = Some(true);
+        }
+        if Button::new(t("button.cancel"))
+            .variant(ButtonVariant::Ghost)
+            .show(ui, th)
+            .clicked()
+        {
+            // Cancel: 다음 오픈 시 디스크에서 다시 로드되도록 draft 폐기.
+            ui_state.bashrc_user_draft = None;
+            ui_state.extension_priority_draft = None;
+            ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
+            *result = Some(false);
+        }
+    });
+}
+
+// ── 콘텐츠 디스패치 ───────────────────────────────────────────────────────
+
+/// 활성 L1/L2 에 해당하는 콘텐츠를 그린다. L2 사이드바는 셸이 소유하므로 각 탭
+/// draw 는 content-only.
+fn draw_active_content(
+    ui: &mut egui::Ui,
+    draft: &mut Settings,
+    ui_state: &mut SettingsUiState,
+    captured_double_tap: &mut Option<String>,
+    file_format: &FileFormatRegistry,
+    file_handler: &FileHandlerRegistry,
+) {
+    match ui_state.active_tab {
+        SettingsTab::General => match ui_state.general_sub_tab {
             GeneralSubTab::General => draw_general_tab(ui, draft),
             GeneralSubTab::Notifications => draw_notifications_tab(ui, draft),
             GeneralSubTab::Accessibility => draw_accessibility_tab(ui, draft),
         },
-    );
-    if let Some(new) = selected_new {
-        ui_state.general_sub_tab = new;
-    }
-}
-
-/// Terminal L1 탭: 좌측 L2 사이드바(필터 포함) + 우측 섹션 콘텐츠.
-///
-/// 디자인 Terminal L2 = General(터미널 동작 설정) / Performance.
-fn draw_terminal_group(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut SettingsUiState) {
-    let th = crate::theme::theme();
-    ui.add_space(8.0);
-
-    let available_height = ui.available_height() - 8.0 - 14.0;
-
-    let sections: Vec<(TerminalSubTab, String)> = vec![
-        (
-            TerminalSubTab::General,
-            t("settings.tab.general").to_string(),
-        ),
-        (
-            TerminalSubTab::Performance,
-            t("settings.misc.subtab.performance").to_string(),
-        ),
-    ];
-
-    let current = ui_state.terminal_sub_tab;
-    let mut selected_new: Option<TerminalSubTab> = None;
-    let filter_lc = ui_state.l2_filter.to_lowercase();
-    tasty_ui_widgets::two_depth_layout_filtered(
-        ui,
-        &th,
-        available_height,
-        &mut ui_state.l2_filter,
-        t("settings.filter.sections"),
-        |ui| {
-            let mut any = false;
-            for (tab, label) in &sections {
-                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
-                    continue;
-                }
-                any = true;
-                let selected = current == *tab;
-                if ui.selectable_label(selected, label.as_str()).clicked() {
-                    selected_new = Some(*tab);
-                }
-            }
-            if !any {
-                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
-            }
-        },
-        |ui| match current {
+        SettingsTab::Terminal => match ui_state.terminal_sub_tab {
             TerminalSubTab::General => draw_terminal_tab(ui, draft),
             TerminalSubTab::Performance => draw_performance_tab(ui, draft),
         },
-    );
-    if let Some(new) = selected_new {
-        ui_state.terminal_sub_tab = new;
+        SettingsTab::Appearance => draw_appearance_tab(
+            ui,
+            draft,
+            &ui_state.appearance_sub_tab,
+            &mut ui_state.font_families,
+            &mut ui_state.font_filter,
+            &mut ui_state.preview_font_loaded,
+            &ui_state.settings_pages,
+        ),
+        SettingsTab::Keybindings => draw_keybindings_tab(
+            ui,
+            draft,
+            &mut ui_state.recording_field,
+            ui_state.keybindings_sub_tab,
+            &mut ui_state.selected_preset,
+            &mut ui_state.pending_binding,
+            captured_double_tap,
+            &mut ui_state.captured_winit_combo,
+            &ui_state.plugin_shortcuts,
+            &mut ui_state.plugin_shortcuts_selected,
+            &mut ui_state.plugin_shortcuts_draft,
+        ),
+        SettingsTab::FileHandler => draw_file_handler_tab(
+            ui,
+            ui_state.file_handler_sub_tab,
+            &mut ui_state.extension_priority_draft,
+            &mut ui_state.extension_priority_new_input,
+            &mut ui_state.fh_edit_draft,
+            file_format,
+            file_handler,
+        ),
+        SettingsTab::Misc => draw_misc_content(ui, ui_state),
+        SettingsTab::Plugins => draw_plugin_tab(
+            ui,
+            draft,
+            ui_state.plugin_sub_tab.as_ref(),
+            &mut ui_state.font_families,
+            &mut ui_state.font_filter,
+            &mut ui_state.preview_font_loaded,
+            &ui_state.settings_pages,
+        ),
     }
 }
 
-/// Misc L1 탭: 좌측 L2 사이드바(필터 포함) + 우측 섹션 콘텐츠.
-///
-/// 디자인 Misc L2 = Tastyrc(Windows 전용). 비-Windows 에서는 L2 항목이 없어
-/// 사이드바가 비고 콘텐츠 영역에 empty-state 를 그린다.
-fn draw_misc_group(ui: &mut egui::Ui, ui_state: &mut SettingsUiState) {
-    let th = crate::theme::theme();
-    ui.add_space(8.0);
-
-    let available_height = ui.available_height() - 8.0 - 14.0;
-
-    // Windows 에서만 Tastyrc 섹션을 push 한다. 비-Windows 에선 L2 가 없다.
-    #[cfg_attr(not(windows), allow(unused_mut))]
-    let mut sections: Vec<(MiscSubTab, String)> = Vec::new();
-    #[cfg(windows)]
-    sections.push((
-        MiscSubTab::Tastyrc,
-        t("settings.misc.subtab.tastyrc").to_string(),
-    ));
-
-    let current = ui_state.misc_sub_tab;
-    let mut selected_new: Option<MiscSubTab> = None;
-    let filter_lc = ui_state.l2_filter.to_lowercase();
-    tasty_ui_widgets::two_depth_layout_filtered(
-        ui,
-        &th,
-        available_height,
-        &mut ui_state.l2_filter,
-        t("settings.filter.sections"),
-        |ui| {
-            let mut any = false;
-            for (tab, label) in &sections {
-                if !filter_lc.is_empty() && !label.to_lowercase().contains(&filter_lc) {
-                    continue;
-                }
-                any = true;
-                let selected = current == *tab;
-                if ui.selectable_label(selected, label.as_str()).clicked() {
-                    selected_new = Some(*tab);
-                }
-            }
-            // 필터로 0건이 된 경우에만 안내. 섹션 자체가 없는(비-Windows) 경우는
-            // 우측 콘텐츠의 empty-state 가 설명을 대신하므로 사이드바는 비워둔다.
-            if !any && !filter_lc.is_empty() {
-                ui.label(egui::RichText::new(t("settings.filter.no_matches")).color(th.subtext0));
-            }
-        },
-        |ui| match current {
-            #[cfg(windows)]
-            MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
-            #[cfg(not(windows))]
-            MiscSubTab::Tastyrc => {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(24.0);
-                    ui.label(egui::RichText::new(t("settings.misc.empty")).color(th.subtext0));
-                });
-            }
-        },
-    );
-    if let Some(new) = selected_new {
-        ui_state.misc_sub_tab = new;
+/// Misc 콘텐츠. Windows = tasty 빌트인 bashrc 편집, 비-Windows = empty-state.
+fn draw_misc_content(ui: &mut egui::Ui, ui_state: &mut SettingsUiState) {
+    match ui_state.misc_sub_tab {
+        #[cfg(windows)]
+        MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
+        #[cfg(not(windows))]
+        MiscSubTab::Tastyrc => {
+            let th = crate::theme::theme();
+            ui.vertical_centered(|ui| {
+                ui.add_space(24.0);
+                ui.label(
+                    egui::RichText::new(t("settings.misc.empty")).color(th.text_muted().to_egui()),
+                );
+            });
+        }
     }
 }
