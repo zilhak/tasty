@@ -458,6 +458,11 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
     };
     let bundle = bundle_root();
 
+    // `just run` 등 개발 경로가 TASTY_FORCE_BUILTIN_OVERWRITE 를 설정하면, builtin 을
+    // 버전/mtime 비교 없이 번들본으로 무조건 덮어쓴다(소스 변경이 bump 없이도 매 실행 반영).
+    // env 미설정인 일반/배포 실행은 기존 semver 정책(force=false)을 그대로 따른다.
+    let force = std::env::var_os("TASTY_FORCE_BUILTIN_OVERWRITE").is_some();
+
     let mut config_dirty = false;
     for spec in BUILTINS {
         let dest = dest_root.join(spec.id);
@@ -488,7 +493,7 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
                 if already_present {
                     let installed_v = read_installed_version(&dest);
                     let bundle_v = read_bundle_version(&src);
-                    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), false) {
+                    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
                         BuiltinUpgradeDecision::Skip => {
                             tracing::debug!(
                                 "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
@@ -517,11 +522,20 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
                             }
                         }
                         BuiltinUpgradeDecision::ForceOverwrite => {
-                            // force 는 신 upgrade_builtins(force=true) 경로 전용 — 부팅 시 자동 갱신에선 도달 불가.
-                            tracing::warn!(
-                                "install_builtins: unexpected ForceOverwrite branch for '{}'",
-                                spec.id
+                            // TASTY_FORCE_BUILTIN_OVERWRITE 경로 — 버전/mtime 무시하고 덮어쓴다.
+                            tracing::info!(
+                                "force-overwriting builtin '{}' (installed v{:?}, bundle v{:?})",
+                                spec.id,
+                                installed_v.as_ref().map(|v| v.to_string()),
+                                bundle_v.as_ref().map(|v| v.to_string()),
                             );
+                            if let Err(e) = overwrite_builtin_dir(&src, &dest) {
+                                tracing::warn!(
+                                    "install_builtins: force-overwrite '{}' failed: {e}",
+                                    spec.id
+                                );
+                                continue;
+                            }
                         }
                     }
                 } else {
