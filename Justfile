@@ -19,7 +19,17 @@
 #   just dist-setup-linux   # cargo-deb / generate-rpm / linuxdeploy 자동 설치
 #   just dist-verify        # SHA256SUMS 재검증
 #
-# 사전 조건: cargo install just
+# 사전 조건:
+#   - cargo install just  (또는 winget install Casey.Just)
+#   - 모든 레시피는 bash 스크립트다. Windows 에서는 Git for Windows 의 bash 가
+#     필요하며, just 가 shebang 경로를 변환할 때 cygpath 를 쓰므로
+#     `C:\Program Files\Git\usr\bin` 이 PATH 에 있어야 한다(cygpath 위치).
+#     이 조건만 충족하면 PowerShell / cmd / Git Bash 어디서 실행해도 동작한다.
+#
+# 주의: shebang 은 반드시 `#!/bin/bash` (절대경로) 를 쓴다. `#!/usr/bin/env bash`
+# 로 하면 Windows 에서 env 가 PATH 를 2차 탐색해 System32 의 WSL bash 를 잡아
+# 실패한다. `/bin/bash` 는 cygpath 가 Git bash 로 직접 변환하므로 안전하고,
+# macOS(/bin/bash) · Linux 에도 그대로 호환된다.
 
 default:
     @just --list
@@ -27,7 +37,7 @@ default:
 # 호스트 OS 자동 감지 → 해당 스크립트 실행
 # (Windows 는 Git Bash 환경에서만 자동 감지 가능, 일반적으로 just dist-windows 권장)
 dist:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     case "$(uname -s)" in
         Darwin)
@@ -45,7 +55,7 @@ dist:
 # 호스트 OS 자동 감지. macOS 는 /Applications/Tasty.app 으로 설치하고, 플러그인은 앱 첫
 # 실행 시 호스트가 ~/.tasty/plugins 로 강제 덮어쓰기 동기화한다.
 install:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     case "$(uname -s)" in
         Darwin)
@@ -78,7 +88,7 @@ dist-clean:
 # Linux 사전 도구 자동 설치 (cargo-deb, cargo-generate-rpm, linuxdeploy).
 # sudo 권한 필요 (apt install 단계).
 dist-setup-linux:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     sudo apt install -y cmake pkg-config libfreetype6-dev libfontconfig1-dev
     cargo install cargo-deb cargo-generate-rpm
@@ -114,7 +124,7 @@ PROFILE := env_var_or_default('PROFILE', 'release')
 # 판별 기준: crates/tasty-plugin-* 중 tasty-plugin.toml 보유 = bin plugin.
 # manifest 없는 lib-only crate (protocol, sdk, manifest, sdk-wasm) 는 자동 skip.
 build-plugins:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     profile="{{PROFILE}}"
     case "$profile" in
@@ -176,7 +186,7 @@ build-plugins:
 # 단일 plugin build + 스테이징.
 # 인자 허용 형태: "claude" / "tasty-plugin-claude" / "com.tasty.claude"
 build-plugin name:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     name="{{name}}"
     profile="{{PROFILE}}"
@@ -241,7 +251,7 @@ build-plugin name:
 
 # main bin + 모든 plugin 한 번에.
 build-all: build-plugins
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     profile="{{PROFILE}}"
     case "$profile" in
@@ -258,7 +268,7 @@ build-all: build-plugins
 # 않으므로, 스테이징본(target/<profile>/builtin-plugins)이 ~/.tasty/plugins 로 강제
 # 덮어쓰기되는 건 다음 호스트 실행 시점이다.
 build *ARGS:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     profile="${PROFILE:-debug}"
     for arg in {{ARGS}}; do
@@ -284,7 +294,7 @@ build *ARGS:
 #   just run --release  # release 빌드
 # --release 는 ARGS 에서 분리해 프로필로 해석하고, 나머지 인자는 호스트로 passthrough.
 run *ARGS:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     profile="${PROFILE:-debug}"
     passthrough=()
@@ -313,7 +323,7 @@ run *ARGS:
 # (debug 빌드는 이미 ensure_dev_bundle 이 mtime 기반 자동 sync 하므로
 #  주로 release 빌드의 dev 반복 가속용.)
 link-plugins:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     profile="{{PROFILE}}"
     case "$profile" in
@@ -366,7 +376,7 @@ link-plugins:
 
 # SHA256SUMS 재검증.
 dist-verify:
-    #!/usr/bin/env bash
+    #!/bin/bash
     set -euo pipefail
     cd dist
     case "$(uname -s)" in
