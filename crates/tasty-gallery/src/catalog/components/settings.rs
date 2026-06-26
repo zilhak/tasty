@@ -15,14 +15,9 @@ const WIDTH: f32 = 620.0;
 const L2_WIDTH: f32 = 168.0;
 const MID_HEIGHT: f32 = 248.0;
 
-const L1_TABS: &[&str] = &["Appearance", "Keybindings", "Plugins", "Advanced"];
-const L2_SECTIONS: &[&str] = &["Theme", "Typography", "Cursor", "Window", "Display"];
-const PRESETS: &[(&str, bool)] = &[
-    ("Mocha", true),
-    ("Latte", false),
-    ("Macchiato", false),
-    ("Frappé", false),
-];
+const L1_TABS: &[&str] = &["General", "Appearance", "Keybindings", "Plugins"];
+const L2_SECTIONS: &[&str] = &["Theme", "General", "Terminal"];
+const PRESETS: &[(&str, bool)] = &[("Catppuccin Mocha", true), ("Catppuccin Latte", false)];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -36,7 +31,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
                         for (i, t) in L1_TABS.iter().enumerate() {
-                            l1_tab(ui, theme, t, i == 0);
+                            l1_tab(ui, theme, t, i == 1);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             IconButton::new().variant(IconButtonVariant::Ghost).show(
@@ -68,7 +63,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         ui.set_width(L2_WIDTH);
                         ui.set_min_height(MID_HEIGHT);
                         ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                        kit::field(ui, theme, None, "Filter settings…", true, false);
+                        kit::field(ui, theme, None, "Filter…", true, false);
                         ui.add_space(theme.spacing_xs.value());
                         for (i, s) in L2_SECTIONS.iter().enumerate() {
                             l2_item(ui, theme, s, i == 0);
@@ -91,7 +86,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         ui.set_min_height(MID_HEIGHT);
                         ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
                         ui.label(
-                            egui::RichText::new("Theme")
+                            egui::RichText::new("Theme preset")
                                 .size(theme.font_size_max.value())
                                 .strong()
                                 .color(theme.text_primary().to_egui()),

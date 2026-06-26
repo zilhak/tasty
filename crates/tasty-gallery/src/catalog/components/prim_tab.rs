@@ -35,20 +35,20 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         let tab_w = theme.tab_width.value();
         let tabs = [
             TabSpec {
-                label: "server.rs",
+                label: "build.sh",
                 status: StatusKind::Running,
                 active: true,
                 notification: false,
             },
             TabSpec {
-                label: "config.toml",
+                label: "README.md",
                 status: StatusKind::Idle,
                 active: false,
                 notification: false,
             },
             TabSpec {
-                label: "agent",
-                status: StatusKind::Agent,
+                label: "server.log",
+                status: StatusKind::Idle,
                 active: false,
                 notification: true,
             },

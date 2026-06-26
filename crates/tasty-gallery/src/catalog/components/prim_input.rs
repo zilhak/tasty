@@ -13,31 +13,33 @@ use super::glyph;
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 thread_local! {
-    static BUFS: RefCell<[String; 7]> = const {
-        RefCell::new([
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-        ])
-    };
+    // 디자인 jsx 의 defaultValue 를 그대로 전사하기 위해 1회만 초기화한다.
+    // [0] Workspace name(placeholder) · [1] Filter(placeholder) · [2] "14"(addon px) ·
+    // [3] "s_01HXK9"(mono) · [4] "bad value"(invalid) · [5] Disabled(placeholder)
+    static BUFS: RefCell<Option<[String; 6]>> = const { RefCell::new(None) };
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let xs = theme.field_width_xs.value();
     let md = theme.field_width_md.value();
-    let lg = theme.measure_sm.value();
 
     BUFS.with(|b| {
-        let mut bufs = b.borrow_mut();
+        let mut slot = b.borrow_mut();
+        let bufs = slot.get_or_insert_with(|| {
+            [
+                String::new(),
+                String::new(),
+                "14".to_string(),
+                "s_01HXK9".to_string(),
+                "bad value".to_string(),
+                String::new(),
+            ]
+        });
         stage(ui, theme, StageVariant::Column, |ui| {
             cluster(
                 ui,
                 theme,
-                "default · icon(search) · addon — click to focus",
+                "default · icon · addon — click to focus",
                 |ui| {
                     Input::new().placeholder("Workspace name").width(md).show(
                         ui,
@@ -61,12 +63,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             cluster(ui, theme, "mono · invalid · disabled", |ui| {
                 Input::new()
                     .mono(true)
-                    .placeholder("s_01HXK9")
                     .width(md)
                     .show(ui, theme, &mut bufs[3]);
                 Input::new()
                     .invalid(true)
-                    .placeholder("bad value")
                     .width(md)
                     .show(ui, theme, &mut bufs[4]);
                 Input::new()
@@ -74,17 +74,6 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .placeholder("Disabled")
                     .width(md)
                     .show(ui, theme, &mut bufs[5]);
-            });
-            cluster(ui, theme, "block — fill container width", |ui| {
-                ui.vertical(|ui| {
-                    ui.set_max_width(lg);
-                    Input::new()
-                        .placeholder("Type to search commands…")
-                        .icon(&|ui, rect, c| {
-                            glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
-                        })
-                        .show(ui, theme, &mut bufs[6]);
-                });
             });
         });
     });

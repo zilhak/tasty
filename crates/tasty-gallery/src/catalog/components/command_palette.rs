@@ -21,7 +21,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.spacing_md.value(),
                 theme.spacing_sm.value(),
                 |ui| {
-                    kit::field(ui, theme, None, "Search commands…", true, false);
+                    kit::field(ui, theme, None, "Type to search commands…", true, false);
                 },
             );
             kit::hsep(ui, theme);
@@ -32,10 +32,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.spacing_sm.value(),
                 theme.spacing_sm.value(),
                 |ui| {
-                    row(ui, theme, icons::TERMINAL, "New terminal tab", "⌘T", true);
-                    row(ui, theme, icons::SPLIT, "Split right", "⌘D", false);
-                    row(ui, theme, icons::SETTINGS, "Open settings", "⌘,", false);
-                    row(ui, theme, icons::PORT, "Show listening ports", "", false);
+                    row(ui, theme, icons::TERMINAL, "New Terminal", "Ctrl+T", true);
+                    row(
+                        ui,
+                        theme,
+                        icons::SPLIT,
+                        "Split Pane Vertical",
+                        "Ctrl+D",
+                        false,
+                    );
+                    row(
+                        ui,
+                        theme,
+                        icons::PORT,
+                        "Toggle Theme (Mocha / Latte)",
+                        "",
+                        false,
+                    );
+                    row(ui, theme, icons::SETTINGS, "Settings", "Ctrl+,", false);
                 },
             );
             kit::hsep(ui, theme);
@@ -48,8 +62,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = theme.spacing_lg.value();
-                        kit::caption(ui, theme, "↵ open", true);
                         kit::caption(ui, theme, "↑↓ navigate", true);
+                        kit::caption(ui, theme, "↵ run", true);
                         kit::caption(ui, theme, "esc close", true);
                     });
                 },

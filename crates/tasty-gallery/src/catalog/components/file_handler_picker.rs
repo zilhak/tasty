@@ -23,8 +23,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.spacing_sm.value(),
                 |ui| {
                     ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                    kit::title(ui, theme, "Open with");
-                    kit::caption(ui, theme, "~/projects/web/README.md", true);
+                    kit::title(ui, theme, "Open file with…");
+                    kit::caption(ui, theme, "docs/architecture.md", true);
                 },
             );
             kit::hsep(ui, theme);
@@ -47,8 +47,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     handler(
                         ui,
                         theme,
-                        icons::TERMINAL,
-                        "Editor (terminal)",
+                        icons::EDIT,
+                        "Text editor",
                         "built-in",
                         false,
                         false,
@@ -56,9 +56,18 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     handler(
                         ui,
                         theme,
-                        icons::ROCKET,
-                        "Notion importer",
-                        "plugin · notion",
+                        icons::TERMINAL,
+                        "Terminal (less)",
+                        "built-in",
+                        false,
+                        false,
+                    );
+                    handler(
+                        ui,
+                        theme,
+                        icons::FILE,
+                        "Git diff",
+                        "plugin · git-helper",
                         false,
                         true,
                     );
@@ -75,7 +84,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                         check(ui, theme, true);
-                        kit::body(ui, theme, "Always for .md");
+                        kit::body(ui, theme, "Always open .md with this");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             Button::new("Open")
                                 .variant(ButtonVariant::Primary)

@@ -147,13 +147,16 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
 
 pub fn draw_tab(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
-        spec::cluster(ui, theme, "released — surface icon", |ui| {
-            tab_strip(ui, theme, false)
-        });
         spec::cluster(
             ui,
             theme,
-            "Ctrl held — icon slot becomes the keycap",
+            "released — each tab shows its surface icon",
+            |ui| tab_strip(ui, theme, false),
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "Ctrl held — icon slot becomes the number keycap",
             |ui| tab_strip(ui, theme, true),
         );
     });
@@ -379,13 +382,21 @@ fn rail_ws(ui: &mut egui::Ui, theme: &Theme) {
 
 pub fn draw_workspace(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
-        spec::cluster(ui, theme, "Full · released", |ui| {
+        spec::cluster(ui, theme, "released — full sidebar", |ui| {
             full_ws(ui, theme, false)
         });
-        spec::cluster(ui, theme, "Full · Alt held", |ui| full_ws(ui, theme, true));
-        spec::cluster(ui, theme, "Collapsed rail · Alt held", |ui| {
-            rail_ws(ui, theme)
-        });
+        spec::cluster(
+            ui,
+            theme,
+            "Alt held — status dot becomes the keycap",
+            |ui| full_ws(ui, theme, true),
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "Alt held — collapsed rail · letter becomes the keycap",
+            |ui| rail_ws(ui, theme),
+        );
     });
 
     spec::meta(

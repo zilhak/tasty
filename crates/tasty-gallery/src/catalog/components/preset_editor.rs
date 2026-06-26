@@ -552,11 +552,11 @@ fn draw_leaf_form_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, kind:
     let fields: &[(&str, &str)] = if terminal {
         &[
             ("KIND", "Terminal"),
-            ("WORKING DIR", "~/project"),
-            ("STARTUP COMMAND", "npm run dev"),
+            ("CWD", "~/tasty"),
+            ("STARTUP COMMAND", "cargo build"),
         ]
     } else {
-        &[("KIND", "Markdown"), ("WORKING DIR", "~/project")]
+        &[("KIND", "Markdown"), ("CWD", "~/tasty")]
     };
     for (label, value) in fields {
         if y + E_LABEL_H + E_FIELD_H > rect.max.y - E_FORM_PAD {

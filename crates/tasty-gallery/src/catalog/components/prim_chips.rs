@@ -11,20 +11,14 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 /// Badge — count pill + dot.
 pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(
-            ui,
-            theme,
-            "count — danger · primary · agent · success · neutral",
-            |ui| {
-                badge(ui, theme, "3", BadgeVariant::Danger);
-                badge(ui, theme, "99+", BadgeVariant::Danger);
-                badge(ui, theme, "12", BadgeVariant::Primary);
-                badge(ui, theme, "new", BadgeVariant::Agent);
-                badge(ui, theme, "ok", BadgeVariant::Success);
-                badge(ui, theme, "7", BadgeVariant::Neutral);
-            },
-        );
-        cluster(ui, theme, "dot — danger · agent · success", |ui| {
+        cluster(ui, theme, "counts", |ui| {
+            badge(ui, theme, "3", BadgeVariant::Danger);
+            badge(ui, theme, "99+", BadgeVariant::Danger);
+            badge(ui, theme, "12", BadgeVariant::Primary);
+            badge(ui, theme, "new", BadgeVariant::Agent);
+            badge(ui, theme, "ok", BadgeVariant::Success);
+        });
+        cluster(ui, theme, "dot", |ui| {
             badge_dot(ui, theme, BadgeVariant::Danger);
             badge_dot(ui, theme, BadgeVariant::Agent);
             badge_dot(ui, theme, BadgeVariant::Success);
@@ -62,21 +56,14 @@ pub fn draw_badge(ui: &mut egui::Ui, theme: &Theme) {
 /// Tag — outlined chip + state dot.
 pub fn draw_tag(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(ui, theme, "variant — default · accent · agent", |ui| {
+        cluster(ui, theme, "variants", |ui| {
             tag(ui, theme, "terminal", TagVariant::Default, false);
             tag(ui, theme, "markdown", TagVariant::Accent, false);
             tag(ui, theme, "plugin", TagVariant::Agent, false);
+            tag(ui, theme, "running", TagVariant::Success, true);
+            tag(ui, theme, "readonly", TagVariant::Warning, true);
+            tag(ui, theme, "error", TagVariant::Danger, true);
         });
-        cluster(
-            ui,
-            theme,
-            "state dot — running · readonly · error",
-            |ui| {
-                tag(ui, theme, "running", TagVariant::Success, true);
-                tag(ui, theme, "readonly", TagVariant::Warning, true);
-                tag(ui, theme, "error", TagVariant::Danger, true);
-            },
-        );
     });
 
     meta(
@@ -110,7 +97,7 @@ pub fn draw_tag(ui: &mut egui::Ui, theme: &Theme) {
 /// Kbd — keycaps.
 pub fn draw_kbd(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(ui, theme, "keycaps — single · chord · named", |ui| {
+        cluster(ui, theme, "shortcuts", |ui| {
             kbd(ui, theme, "Ctrl+K");
             kbd(ui, theme, "Ctrl+Shift+N");
             kbd(ui, theme, "⌘,");

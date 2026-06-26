@@ -22,13 +22,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 |ui| {
                     ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
                     ui.horizontal(|ui| {
-                        kit::title(ui, theme, "Rename tab");
+                        kit::title(ui, theme, "Rename workspace");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            kit::caption(ui, theme, "↵ rename   Esc cancel", false);
+                            kit::caption(ui, theme, "Press ↵ to confirm, Esc to cancel.", false);
                         });
                     });
                     // autofocus Input (block) — gallery 는 정적 값으로 표시(focus 경합 회피).
-                    kit::field(ui, theme, None, "web", false, false);
+                    kit::field(ui, theme, None, "tasty-core", false, false);
                     ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             Button::new("Rename")

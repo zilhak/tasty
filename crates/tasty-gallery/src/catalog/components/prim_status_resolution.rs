@@ -40,13 +40,15 @@ fn label(k: StatusKind) -> &'static str {
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    let cases: [(StatusKind, StatusKind); 6] = [
-        (StatusKind::Idle, StatusKind::Running),
-        (StatusKind::Running, StatusKind::Idle),
-        (StatusKind::Agent, StatusKind::Running),
-        (StatusKind::Idle, StatusKind::Agent),
-        (StatusKind::Running, StatusKind::Error),
-        (StatusKind::Waiting, StatusKind::Running),
+    // (owner 표시 라벨, owner dot 종류, activity). 디자인 owner 어휘는 user / agent —
+    // StatusKind 엔 User 가 없어 user 는 Idle dot 으로 표현하고 라벨만 "user".
+    let cases: [(&str, StatusKind, StatusKind); 6] = [
+        ("agent", StatusKind::Agent, StatusKind::Running),
+        ("agent", StatusKind::Agent, StatusKind::Idle),
+        ("agent", StatusKind::Agent, StatusKind::Waiting),
+        ("user", StatusKind::Idle, StatusKind::Running),
+        ("user", StatusKind::Idle, StatusKind::Idle),
+        ("agent", StatusKind::Agent, StatusKind::Error),
     ];
 
     let cw = theme.field_width_color.value();
@@ -56,13 +58,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             header_cell(ui, theme, cw, "owner");
             header_cell(ui, theme, cw, "activity");
             header_cell(ui, theme, cw, "=");
-            header_cell(ui, theme, cw, "resolved");
+            header_cell(ui, theme, cw, "resolved dot");
         });
-        for (owner, activity) in cases {
+        for (owner_label, owner, activity) in cases {
             let resolved = resolve(owner, activity);
             ui.horizontal(|ui| {
                 cell(ui, cw, |ui| {
-                    status_dot(ui, theme, owner, label(owner), false, true);
+                    status_dot(ui, theme, owner, owner_label, false, true);
                 });
                 cell(ui, cw, |ui| {
                     status_dot(ui, theme, activity, label(activity), false, true);

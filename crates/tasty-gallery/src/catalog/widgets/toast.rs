@@ -58,20 +58,20 @@ fn draw_toast_card(ui: &mut egui::Ui, theme: &Theme, props: &ToastCardProps, alp
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let cards = [
         ToastCardProps {
-            kind: ToastKind::Info,
-            message: "Reloaded settings.json",
+            kind: ToastKind::Success,
+            message: "Path copied to clipboard",
         },
         ToastCardProps {
-            kind: ToastKind::Success,
-            message: "Workspace saved.",
+            kind: ToastKind::Agent,
+            message: "Agent opened 3 surfaces in background",
         },
         ToastCardProps {
             kind: ToastKind::Warning,
-            message: "Low disk space — clean up downloads.",
+            message: "Held by another client (readonly)",
         },
         ToastCardProps {
             kind: ToastKind::Error,
-            message: "Plugin crashed: tasty-plugin-foo. See logs.",
+            message: "Force detach — connection dropped",
         },
     ];
 
@@ -117,22 +117,22 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
     let stack = [
         (
             ToastCardProps {
-                kind: ToastKind::Error,
-                message: "Failed to start 'bar': missing entrypoint.",
+                kind: ToastKind::Agent,
+                message: "Agent opened 3 surfaces in background",
             },
             1.0,
         ),
         (
             ToastCardProps {
-                kind: ToastKind::Warning,
-                message: "Plugin 'foo' missing signature.",
+                kind: ToastKind::Success,
+                message: "Path copied to clipboard",
             },
             0.85,
         ),
         (
             ToastCardProps {
-                kind: ToastKind::Success,
-                message: "Loaded 3 plugins.",
+                kind: ToastKind::Warning,
+                message: "Held by another client (readonly)",
             },
             0.6,
         ),

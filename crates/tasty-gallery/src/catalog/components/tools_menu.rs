@@ -20,13 +20,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.spacing_sm.value(),
                 theme.spacing_sm.value(),
                 |ui| {
-                    row(ui, theme, icons::PORT, "Ports", false);
-                    row(ui, theme, icons::REMOTE, "Remote", false);
-                    row(ui, theme, icons::SETTINGS, "Settings", false);
-                    row(ui, theme, icons::PLUG, "Plugins", false);
+                    row(ui, theme, icons::PORT, "Command palette…", false);
+                    row(ui, theme, icons::REMOTE, "Listening ports...", false);
+                    row(ui, theme, icons::SETTINGS, "Remote connections…", false);
+                    row(ui, theme, icons::PLUG, "Presets", false);
                     menu_separator(ui, theme);
-                    row(ui, theme, icons::TERMINAL, "Session logger", false);
-                    row(ui, theme, icons::SEARCH, "Quick grep", false);
+                    row(ui, theme, icons::TERMINAL, "Clipboard History", false);
+                    row(ui, theme, icons::SEARCH, "Git", false);
                 },
             );
         });

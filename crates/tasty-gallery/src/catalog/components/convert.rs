@@ -18,7 +18,7 @@ thread_local! {
     static TO_SEL: RefCell<usize> = const { RefCell::new(1) };
 }
 
-const TYPES: &[&str] = &["Terminal", "Markdown", "Explorer", "HTML preview"];
+const TYPES: &[&str] = &["markdown", "editor", "log viewer"];
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
@@ -36,7 +36,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
                             kit::caption(ui, theme, "From", false);
-                            tag(ui, theme, "Terminal", TagVariant::Default, false);
+                            tag(ui, theme, "terminal", TagVariant::Default, false);
                         });
                         kit::icon(
                             ui,
@@ -64,7 +64,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     kit::caption(
                         ui,
                         theme,
-                        "Scrollback is preserved; the surface keeps its tab and split.",
+                        "The running process keeps its scrollback; only the surface renderer changes.",
                         false,
                     );
                     // footer 버튼.

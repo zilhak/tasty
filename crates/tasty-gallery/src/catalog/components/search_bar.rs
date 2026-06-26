@@ -63,7 +63,7 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
                         + theme.item_height_interactive.value() * 4.0
                         + theme.spacing_md.value() * 4.0;
                     let input_w = (WIDTH - theme.spacing_sm.value() * 2.0 - trailing).max(80.0);
-                    kit::field(ui, theme, Some(input_w), "Find", true, false);
+                    kit::field(ui, theme, Some(input_w), "tasty", false, false);
                     // 카운터.
                     let counter_color = if no_match {
                         theme.accent_danger()
@@ -80,9 +80,9 @@ fn bar(ui: &mut egui::Ui, theme: &Theme, count: &str, no_match: bool) {
                     icon_btn(ui, theme, icons::CHEVRON_DOWN, false);
                     icon_btn(ui, theme, icons::CHEVRON_RIGHT, false);
                     // Aa / .* / ab 토글.
-                    toggle_chip(ui, theme, "Aa", true);
+                    toggle_chip(ui, theme, "Aa", false);
                     toggle_chip(ui, theme, ".*", false);
-                    toggle_chip(ui, theme, "ab", false);
+                    toggle_chip(ui, theme, "ab", true);
                     // divider.
                     let h = theme.item_height_interactive.value() * 0.6;
                     let (r, _) = ui.allocate_exact_size(

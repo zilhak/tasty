@@ -4,72 +4,58 @@
 //! reduced-motion 3-dot fallback. 하단 `meta` 로 치수/토큰 노출.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::Spinner;
+use tasty_ui_widgets::{Button, ButtonVariant, Spinner};
 
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let base = theme.spinner_size.value();
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(
-            ui,
-            theme,
-            "default — spinner-size arc + low-contrast track",
-            |ui| {
-                Spinner::new().show(ui, theme);
-                ui.label(
-                    egui::RichText::new("Collecting…")
-                        .size(theme.font_size_body.value())
-                        .color(egui::Color32::from(theme.text_muted())),
-                );
-            },
-        );
-        cluster(ui, theme, "size — 12 · 16 · 20 · 24", |ui| {
+        cluster(ui, theme, "sizes — 12 · 16 · 20 · 24", |ui| {
             Spinner::new().size(12.0).show(ui, theme);
             Spinner::new().size(base).show(ui, theme);
             Spinner::new().size(20.0).show(ui, theme);
             Spinner::new().size(24.0).show(ui, theme);
         });
-        cluster(
-            ui,
-            theme,
-            "color — accent (currentColor 덮어씀)",
-            |ui| {
-                Spinner::new()
-                    .size(24.0)
-                    .color(egui::Color32::from(theme.accent_primary()))
-                    .show(ui, theme);
-                Spinner::new()
-                    .size(24.0)
-                    .color(egui::Color32::from(theme.accent_success()))
-                    .show(ui, theme);
-            },
-        );
-        cluster(
-            ui,
-            theme,
-            "reduced motion — 정지 + 3-dot fallback",
-            |ui| {
-                Spinner::new()
-                    .size(base)
-                    .reduced_motion(true)
-                    .show(ui, theme);
-                Spinner::new()
-                    .size(24.0)
-                    .reduced_motion(true)
-                    .show(ui, theme);
-            },
-        );
+        cluster(ui, theme, "inline with text", |ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            Spinner::new().size(14.0).show(ui, theme);
+            ui.label(
+                egui::RichText::new("Collecting…")
+                    .size(theme.font_size_body.value())
+                    .color(egui::Color32::from(theme.text_muted())),
+            );
+        });
+        cluster(ui, theme, "in a button · detecting row", |ui| {
+            // 디자인: <Button variant=secondary disabled leadingIcon={<Spinner 14/>}>Installing…</Button>.
+            // Button.leading_icon 은 정적 글리프(IconPainter)만 받아 Spinner 를 임베드할 수
+            // 없으므로, spinner 를 버튼 앞에 두어 근사한다(구조적 갭 — 요약 기록).
+            Spinner::new().size(14.0).show(ui, theme);
+            Button::new("Installing…")
+                .variant(ButtonVariant::Secondary)
+                .enabled(false)
+                .show(ui, theme);
+            ui.add_space(theme.spacing_md.value());
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            Spinner::new().size(12.0).show(ui, theme);
+            ui.label(
+                egui::RichText::new("detecting shell…")
+                    .size(theme.font_size_caption.value())
+                    .monospace()
+                    .color(egui::Color32::from(theme.text_muted())),
+            );
+        });
     });
 
     meta(
         ui,
         theme,
         &[
-            ("sizes", "12 · 16 · 20 · 24"),
-            ("stroke", "2px arc + track"),
-            ("spin", "0.9s"),
-            ("reduced", "→ 3 dots"),
+            ("sizes", "12 / 16 / 20 / 24px"),
+            ("stroke", "2px arc + faint track"),
+            ("spin", "0.9s linear"),
+            ("color", "currentColor"),
+            ("reduced motion", "→ 3 static dots"),
         ],
         &[
             TokenChip::new(

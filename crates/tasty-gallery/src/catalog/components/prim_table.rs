@@ -7,7 +7,10 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir};
+use tasty_ui_widgets::{
+    StatusKind, Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, TagVariant,
+    status_dot, tag,
+};
 
 use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
 
@@ -22,48 +25,55 @@ struct Row {
     proto: &'static str,
     addr: &'static str,
     proc: &'static str,
+    pid: u32,
     state: &'static str,
 }
 
 thread_local! {
-    static SELECTED: RefCell<usize> = const { RefCell::new(1) };
+    // 디자인 selectedKey = 8080 → index 3.
+    static SELECTED: RefCell<usize> = const { RefCell::new(3) };
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     let rows = [
         Row {
+            port: 22,
+            proto: "tcp",
+            addr: "0.0.0.0",
+            proc: "sshd",
+            pid: 712,
+            state: "LISTEN",
+        },
+        Row {
             port: 3000,
-            proto: "TCP",
+            proto: "tcp",
             addr: "127.0.0.1",
             proc: "node",
+            pid: 48213,
             state: "LISTEN",
         },
         Row {
             port: 5432,
-            proto: "TCP",
+            proto: "tcp",
             addr: "127.0.0.1",
             proc: "postgres",
-            state: "LISTEN",
-        },
-        Row {
-            port: 6379,
-            proto: "TCP",
-            addr: "127.0.0.1",
-            proc: "redis-server",
+            pid: 1192,
             state: "LISTEN",
         },
         Row {
             port: 8080,
-            proto: "TCP",
+            proto: "tcp",
             addr: "0.0.0.0",
-            proc: "tasty",
+            proc: "tasty-agent",
+            pid: 50321,
             state: "LISTEN",
         },
         Row {
             port: 9229,
-            proto: "TCP",
+            proto: "tcp",
             addr: "127.0.0.1",
             proc: "node",
+            pid: 48213,
             state: "CLOSE_WAIT",
         },
     ];
@@ -71,16 +81,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Tight, |ui| {
         let columns = vec![
             TableColumn {
-                title: "port",
+                title: "Port",
                 width: TableColumnWidth::Initial {
                     initial: 84.0,
                     at_least: 60.0,
                 },
-                align: TableAlign::Left,
+                align: TableAlign::Right,
                 sort_id: Some(SortKey::Port),
             },
             TableColumn {
-                title: "proto",
+                title: "Proto",
                 width: TableColumnWidth::Initial {
                     initial: 76.0,
                     at_least: 60.0,
@@ -89,7 +99,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 sort_id: None,
             },
             TableColumn {
-                title: "address",
+                title: "Address",
                 width: TableColumnWidth::Remainder {
                     at_least: 100.0,
                     clip: false,
@@ -98,7 +108,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 sort_id: None,
             },
             TableColumn {
-                title: "process",
+                title: "Process",
                 width: TableColumnWidth::Remainder {
                     at_least: 100.0,
                     clip: false,
@@ -107,7 +117,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 sort_id: None,
             },
             TableColumn {
-                title: "state",
+                title: "State",
                 width: TableColumnWidth::Initial {
                     initial: 140.0,
                     at_least: 100.0,
@@ -132,24 +142,49 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     &rows,
                     |row: &Row| rows.iter().position(|r| r.port == row.port) == Some(selected),
                     |ui, th, row, col| {
-                        let (text, muted) = match col {
-                            0 => (row.port.to_string(), false),
-                            1 => (row.proto.to_string(), true),
-                            2 => (row.addr.to_string(), true),
-                            3 => (row.proc.to_string(), false),
-                            _ => (row.state.to_string(), true),
-                        };
-                        let color = if muted {
-                            egui::Color32::from(th.text_muted())
-                        } else {
-                            egui::Color32::from(th.text_primary())
-                        };
-                        ui.label(
-                            egui::RichText::new(text)
-                                .size(th.font_size_body.value())
-                                .monospace()
-                                .color(color),
-                        );
+                        // process 셀은 proc 라벨 + pid Tag, state 셀은 StatusDot 로 구성
+                        // (디자인 render(value, row) 전사). 나머지는 mono 텍스트.
+                        match col {
+                            3 => {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                                    ui.label(
+                                        egui::RichText::new(row.proc)
+                                            .size(th.font_size_body.value())
+                                            .monospace()
+                                            .color(egui::Color32::from(th.text_primary())),
+                                    );
+                                    tag(ui, th, &row.pid.to_string(), TagVariant::Default, false);
+                                });
+                            }
+                            4 => {
+                                let listen = row.state == "LISTEN";
+                                let kind = if listen {
+                                    StatusKind::Running
+                                } else {
+                                    StatusKind::Waiting
+                                };
+                                status_dot(ui, th, kind, row.state, listen, false);
+                            }
+                            _ => {
+                                let (text, muted) = match col {
+                                    0 => (row.port.to_string(), false),
+                                    1 => (row.proto.to_string(), true),
+                                    _ => (row.addr.to_string(), true),
+                                };
+                                let color = if muted {
+                                    egui::Color32::from(th.text_muted())
+                                } else {
+                                    egui::Color32::from(th.text_primary())
+                                };
+                                ui.label(
+                                    egui::RichText::new(text)
+                                        .size(th.font_size_body.value())
+                                        .monospace()
+                                        .color(color),
+                                );
+                            }
+                        }
                     },
                 );
             if let Some(i) = out.clicked_row {

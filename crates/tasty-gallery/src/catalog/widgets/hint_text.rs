@@ -7,55 +7,71 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::Input;
+use tasty_ui_widgets::{Input, kbd};
 
 use crate::catalog::spec::{StageVariant, TokenChip, meta, stage};
 
 thread_local! {
-    static BUFS: RefCell<[String; 2]> = const { RefCell::new([String::new(), String::new()]) };
+    static BUF: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
-/// field + 그 아래 hint 한 줄.
-fn field_with_hint(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    buf: &mut String,
-    placeholder: &str,
-    hint: &str,
-) {
-    ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-        Input::new()
-            .placeholder(placeholder)
-            .width(theme.measure_sm.value())
-            .show(ui, theme, buf);
-        ui.label(
-            egui::RichText::new(hint)
-                .size(theme.font_size_caption.value())
-                .color(egui::Color32::from(theme.text_muted())),
-        );
-    });
+/// 상단 라벨 (text-primary, body) — 힌트가 설명하는 대상.
+fn field_label(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .size(theme.font_size_body.value())
+            .color(egui::Color32::from(theme.text_primary())),
+    );
+}
+
+/// hint 한 줄 (caption, text-muted, line-height 1.5).
+fn hint_line(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .size(theme.font_size_caption.value())
+            .color(egui::Color32::from(theme.text_muted())),
+    );
 }
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
-    BUFS.with(|b| {
-        let mut bufs = b.borrow_mut();
+    BUF.with(|b| {
+        let mut buf = b.borrow_mut();
         stage(ui, theme, StageVariant::Column, |ui| {
             ui.set_max_width(theme.measure_md.value());
-            field_with_hint(
-                ui,
-                theme,
-                &mut bufs[0],
-                "Workspace name",
-                "Shown in the sidebar and window title. You can rename it later.",
-            );
-            field_with_hint(
-                ui,
-                theme,
-                &mut bufs[1],
-                "s_01HXK9",
-                "Surface ids are immutable — copy this to address it from the CLI.",
-            );
+            ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
+
+            // 1) 라벨 + mono 입력 + 힌트 (Remote tasty path).
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                field_label(ui, theme, "Remote tasty path");
+                Input::new()
+                    .mono(true)
+                    .placeholder("/usr/local/bin/tasty")
+                    .width(theme.measure_md.value())
+                    .show(ui, theme, &mut buf);
+                hint_line(ui, theme, "Leave empty to auto-detect on first connect.");
+            });
+
+            // 2) 라벨 + 힌트 (Reduced motion, 입력 없음).
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                field_label(ui, theme, "Reduced motion");
+                hint_line(
+                    ui,
+                    theme,
+                    "Disables the terminal cursor blink and spinner animation.",
+                );
+            });
+
+            // 3) 인라인 Kbd 가 섞인 다이얼로그 힌트 한 줄.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                hint_line(ui, theme, "Press");
+                kbd(ui, theme, "↵");
+                hint_line(ui, theme, "to confirm,");
+                kbd(ui, theme, "Esc");
+                hint_line(ui, theme, "to cancel.");
+            });
         });
     });
 
@@ -63,11 +79,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("size", "caption 11–12"),
+            ("size", "11–12px"),
             ("color", "text-muted"),
-            ("case", "sentence"),
+            ("case", "sentence case"),
             ("line-height", "1.5"),
-            ("position", "below the field"),
+            ("placement", "below the thing it explains"),
         ],
         &[
             TokenChip::new(

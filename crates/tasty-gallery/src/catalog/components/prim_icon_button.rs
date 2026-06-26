@@ -11,33 +11,26 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(ui, theme, "ghost(기본) · solid · active · sm", |ui| {
+        cluster(ui, theme, "ghost · solid · active", |ui| {
             IconButton::new()
                 .variant(IconButtonVariant::Ghost)
                 .show(ui, theme, &|ui, rect, c| {
-                    glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
+                    glyph::SPLIT.image(rect.height(), c).paint_at(ui, rect)
                 });
             IconButton::new()
                 .variant(IconButtonVariant::Solid)
                 .show(ui, theme, &|ui, rect, c| {
-                    glyph::PLUS.image(rect.height(), c).paint_at(ui, rect)
+                    glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
                 });
             IconButton::new()
                 .active(true)
                 .show(ui, theme, &|ui, rect, c| {
-                    glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
+                    glyph::TERMINAL.image(rect.height(), c).paint_at(ui, rect)
                 });
             IconButton::new()
                 .size(ControlSize::Sm)
                 .show(ui, theme, &|ui, rect, c| {
                     glyph::PLUS.image(rect.height(), c).paint_at(ui, rect)
-                });
-        });
-        cluster(ui, theme, "state — disabled (opacity 0.45)", |ui| {
-            IconButton::new()
-                .enabled(false)
-                .show(ui, theme, &|ui, rect, c| {
-                    glyph::CLOSE.image(rect.height(), c).paint_at(ui, rect)
                 });
         });
     });

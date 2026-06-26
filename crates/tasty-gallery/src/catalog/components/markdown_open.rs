@@ -23,8 +23,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     ui.spacing_mut().item_spacing.y = theme.spacing_md.value();
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                        kit::title(ui, theme, "Open markdown");
-                        kit::caption(ui, theme, "docs/identity.md", true);
+                        kit::title(ui, theme, "Open markdown file");
+                        kit::caption(ui, theme, "README.md", true);
                     });
                     // 2 Choice 카드.
                     ui.horizontal(|ui| {
@@ -34,19 +34,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             ui,
                             theme,
                             cw,
-                            icons::EDIT,
-                            "Edit",
-                            "Raw text in a terminal editor",
-                            false,
+                            icons::MARKDOWN,
+                            "Rendered preview",
+                            "Formatted view with headings and links.",
+                            true,
                         );
                         choice(
                             ui,
                             theme,
                             cw,
-                            icons::MARKDOWN,
-                            "Preview",
-                            "Rendered markdown surface",
-                            true,
+                            icons::EDIT,
+                            "Raw text",
+                            "Edit the source in the editor surface.",
+                            false,
                         );
                     });
                     ui.horizontal(|ui| {

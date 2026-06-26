@@ -38,21 +38,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.spacing_sm.value(),
                 theme.spacing_sm.value(),
                 |ui| {
-                    preset(
-                        ui,
-                        theme,
-                        "Dev — web",
-                        "3 panes · terminal + editor + preview",
-                        true,
-                    );
-                    preset(ui, theme, "Review", "2 panes · diff + terminal", false);
-                    preset(
-                        ui,
-                        theme,
-                        "Ops",
-                        "4 panes · logs + ssh + db + metrics",
-                        false,
-                    );
+                    preset(ui, theme, "Dev split", "2 panes · editor + shell", true);
+                    preset(ui, theme, "Logs grid", "4 panes · tail -f", false);
+                    preset(ui, theme, "Single shell", "1 pane · zsh", false);
                 },
             );
             kit::hsep(ui, theme);

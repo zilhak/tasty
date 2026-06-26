@@ -1,8 +1,8 @@
 //! Remote connections — 디자인(4) Overlays `remote` Spec (신규).
 //!
 //! 520×460 모달. 헤더(remote icon + title + close) · 2 탭(Remote profiles /
-//! Passkeys, bg-sidebar) · Add profile 버튼행 · ProfileRow 리스트(name + Tag +
-//! target mono + passkey/detecting Spinner + 우측 IconButton ×3).
+//! Passkeys, bg-sidebar) · Add profile 버튼행 · ProfileRow 리스트(name + (label)
+//! + type Tag + target mono + passkey caption/detecting Spinner + 우측 IconButton ×3).
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{
@@ -17,36 +17,44 @@ const WIDTH: f32 = 520.0;
 
 struct Profile {
     name: &'static str,
+    label: &'static str,
     tag: &'static str,
-    variant: TagVariant,
     target: &'static str,
-    detail: &'static str,
+    passkey: &'static str,
     detecting: bool,
 }
 
 const PROFILES: &[Profile] = &[
     Profile {
-        name: "prod-bastion",
-        tag: "online",
-        variant: TagVariant::Success,
-        target: "ssh://deploy@10.0.4.2:22",
-        detail: "passkey · ed25519",
+        name: "prod-web",
+        label: "us-east",
+        tag: "ssh",
+        target: "deploy@10.0.4.12",
+        passkey: "ed25519-main",
         detecting: false,
     },
     Profile {
-        name: "build-box",
-        tag: "passkey",
-        variant: TagVariant::Agent,
-        target: "ssh://ci@build.internal:22",
-        detail: "",
+        name: "db-primary",
+        label: "",
+        tag: "ssh",
+        target: "postgres@db.internal:2222",
+        passkey: "",
+        detecting: false,
+    },
+    Profile {
+        name: "edge-cache",
+        label: "staging",
+        tag: "ssh",
+        target: "root@edge.example.com",
+        passkey: "edge-pem",
         detecting: true,
     },
     Profile {
-        name: "db-replica",
-        tag: "offline",
-        variant: TagVariant::Default,
-        target: "ssh://psql@10.0.9.7:22",
-        detail: "passkey · rsa-4096",
+        name: "media-nas",
+        label: "lab",
+        tag: "smb",
+        target: "host=nas.local  share=media",
+        passkey: "nas-cred",
         detecting: false,
     },
 ];
@@ -195,7 +203,14 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
                             .strong()
                             .color(theme.text_primary().to_egui()),
                     );
-                    tag(ui, theme, p.tag, p.variant, false);
+                    if !p.label.is_empty() {
+                        ui.label(
+                            egui::RichText::new(format!("({})", p.label))
+                                .size(theme.font_size_body.value())
+                                .color(theme.text_muted().to_egui()),
+                        );
+                    }
+                    tag(ui, theme, p.tag, TagVariant::Default, false);
                 });
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
@@ -205,13 +220,20 @@ fn profile_row(ui: &mut egui::Ui, theme: &Theme, p: &Profile) {
                             .size(theme.font_size_caption.value())
                             .color(theme.text_muted().to_egui()),
                     );
+                });
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                    let passkey = if p.passkey.is_empty() {
+                        "—"
+                    } else {
+                        p.passkey
+                    };
+                    kit::caption(ui, theme, &format!("passkey: {passkey}"), true);
                     if p.detecting {
                         Spinner::new()
                             .size(theme.font_size_term_sm.value())
                             .show(ui, theme);
                         kit::caption(ui, theme, "detecting…", false);
-                    } else {
-                        kit::caption(ui, theme, p.detail, false);
                     }
                 });
             });

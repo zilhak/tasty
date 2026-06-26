@@ -22,6 +22,7 @@ pub enum ToastKind {
     Success,
     Warning,
     Error,
+    Agent,
 }
 
 /// kind → accent 색. 본체 `toast.rs` 와 동일한 accent 매핑.
@@ -31,6 +32,7 @@ pub fn accent_color(kind: ToastKind, theme: &Theme) -> egui::Color32 {
         ToastKind::Success => theme.accent_success().into(),
         ToastKind::Warning => theme.accent_warning().into(),
         ToastKind::Error => theme.accent_danger().into(),
+        ToastKind::Agent => theme.accent_agent().into(),
     }
 }
 

@@ -21,6 +21,7 @@ struct PortRow {
     proto: &'static str,
     addr: &'static str,
     proc: &'static str,
+    pid: &'static str,
     ws: &'static str,
     state: &'static str,
     selected: bool,
@@ -32,44 +33,49 @@ const ROWS: &[PortRow] = &[
         proto: "tcp",
         addr: "127.0.0.1",
         proc: "node",
-        ws: "web",
-        state: "listening",
-        selected: true,
+        pid: "48213",
+        ws: "Project A",
+        state: "LISTEN",
+        selected: false,
     },
     PortRow {
         port: "5173",
         proto: "tcp",
         addr: "127.0.0.1",
         proc: "vite",
-        ws: "web",
-        state: "listening",
+        pid: "48990",
+        ws: "Project A",
+        state: "LISTEN",
         selected: false,
     },
     PortRow {
         port: "8080",
         proto: "tcp",
         addr: "0.0.0.0",
-        proc: "caddy",
-        ws: "infra",
-        state: "listening",
+        proc: "tasty-agent",
+        pid: "50321",
+        ws: "Project B",
+        state: "LISTEN",
+        selected: true,
+    },
+    PortRow {
+        port: "8443",
+        proto: "tcp6",
+        addr: "::",
+        proc: "tasty-agent",
+        pid: "50321",
+        ws: "Project B",
+        state: "LISTEN",
         selected: false,
     },
     PortRow {
-        port: "5432",
+        port: "9229",
         proto: "tcp",
         addr: "127.0.0.1",
-        proc: "postgres",
-        ws: "db",
-        state: "listening",
-        selected: false,
-    },
-    PortRow {
-        port: "6379",
-        proto: "tcp",
-        addr: "127.0.0.1",
-        proc: "redis",
-        ws: "db",
-        state: "established",
+        proc: "node",
+        pid: "48213",
+        ws: "Project A",
+        state: "CLOSE_WAIT",
         selected: false,
     },
 ];
@@ -92,7 +98,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             theme.text_secondary().to_egui(),
                         );
                         kit::title(ui, theme, "Listening ports");
-                        tag(ui, theme, "5", TagVariant::Default, false);
+                        tag(ui, theme, "5 listening", TagVariant::Accent, false);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             IconButton::new().variant(IconButtonVariant::Ghost).show(
                                 ui,
@@ -149,7 +155,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         icons::SHIELD_CHECK
                             .image(s, theme.text_on_accent().to_egui())
                             .paint_at(ui, r);
-                        kit::body(ui, theme, "Show all interfaces (0.0.0.0)");
+                        kit::body(ui, theme, "Show all (system-wide)");
                     });
                 },
             );
@@ -189,13 +195,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.spacing_sm.value(),
                 |ui| {
                     ui.horizontal(|ui| {
-                        kit::caption(ui, theme, "5 ports · 1 selected", false);
+                        kit::caption(ui, theme, "5 of 5 ports", false);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             Button::new("Close")
-                                .variant(ButtonVariant::Ghost)
+                                .variant(ButtonVariant::Secondary)
                                 .show(ui, theme);
                             Button::new("Copy address")
-                                .variant(ButtonVariant::Secondary)
+                                .variant(ButtonVariant::Ghost)
                                 .show(ui, theme);
                         });
                     });
@@ -270,9 +276,13 @@ fn cell(ui: &mut egui::Ui, theme: &Theme, row: &PortRow, c: usize) {
         0 => mono(ui, row.port, theme.text_primary().to_egui()),
         1 => mono(ui, row.proto, theme.text_muted().to_egui()),
         2 => mono(ui, row.addr, theme.text_secondary().to_egui()),
-        3 => mono(ui, row.proc, theme.text_secondary().to_egui()),
+        3 => {
+            // Process name + pid Tag (design: <span>{proc}<Tag>{pid}</Tag></span>).
+            mono(ui, row.proc, theme.text_secondary().to_egui());
+            tag(ui, theme, row.pid, TagVariant::Default, false);
+        }
         4 => {
-            let v = if row.state == "listening" {
+            let v = if row.state == "LISTEN" {
                 TagVariant::Success
             } else {
                 TagVariant::Default

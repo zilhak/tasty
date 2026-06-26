@@ -29,8 +29,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     STATE.with(|s| {
         let mut st = s.borrow_mut();
         stage(ui, theme, StageVariant::Column, |ui| {
-            cluster(ui, theme, "Select — token trigger + dropdown", |ui| {
-                let opts = ["Mocha (dark)", "Latte (light)", "Auto"];
+            cluster(ui, theme, "Select", |ui| {
+                let opts = ["Default (full rc)", "Tasty rc", "Custom"];
                 select(
                     ui,
                     theme,
@@ -41,22 +41,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     true,
                 );
             });
-            cluster(
-                ui,
-                theme,
-                "Checkbox — checked · unchecked · disabled",
-                |ui| {
-                    checkbox(ui, theme, &mut st.check_a, "Restore layout", true);
-                    checkbox(ui, theme, &mut st.check_b, "Confirm on close", true);
-                    let mut off = false;
-                    checkbox(ui, theme, &mut off, "Disabled", false);
-                },
-            );
-            cluster(ui, theme, "Switch — on · off · disabled", |ui| {
-                switch(ui, theme, &mut st.switch_a, Some("Reduced motion"), true);
-                switch(ui, theme, &mut st.switch_b, Some("Telemetry"), true);
-                let mut off = false;
-                switch(ui, theme, &mut off, Some("Disabled"), false);
+            cluster(ui, theme, "Checkbox", |ui| {
+                checkbox(ui, theme, &mut st.check_a, "Confirm on close", true);
+                checkbox(ui, theme, &mut st.check_b, "Restore layout", true);
+            });
+            cluster(ui, theme, "Switch", |ui| {
+                switch(ui, theme, &mut st.switch_a, Some("Ligatures"), true);
+                switch(ui, theme, &mut st.switch_b, Some("Reduced motion"), true);
             });
         });
     });

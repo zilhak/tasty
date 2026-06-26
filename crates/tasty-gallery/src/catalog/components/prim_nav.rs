@@ -34,10 +34,10 @@ pub fn draw_menu_item(ui: &mut egui::Ui, theme: &Theme) {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 SEL.with(|s| {
                     let mut sel = s.borrow_mut();
-                    let items: [(glyph::MockGlyph, &str, &str); 3] = [
-                        (glyph::TERMINAL, "New tab", "Ctrl+T"),
-                        (glyph::SPLIT, "Split right", "Ctrl+\\"),
-                        (glyph::COPY, "Copy path", "Ctrl+C"),
+                    let items: [(glyph::MockGlyph, &str, Option<&str>); 3] = [
+                        (glyph::TERMINAL, "New tab", Some("Ctrl+T")),
+                        (glyph::SPLIT, "Split pane", Some("Ctrl+D")),
+                        (glyph::COPY, "Copy path", None),
                     ];
                     for (i, (g, label, sc)) in items.iter().enumerate() {
                         let gg = *g;
@@ -46,7 +46,7 @@ pub fn draw_menu_item(ui: &mut egui::Ui, theme: &Theme) {
                             theme,
                             Some(&|ui, rect, c| gg.image(rect.height(), c).paint_at(ui, rect)),
                             label,
-                            Some(sc),
+                            *sc,
                             MenuItemVariant::Normal,
                             i == *sel,
                             true,
@@ -55,17 +55,6 @@ pub fn draw_menu_item(ui: &mut egui::Ui, theme: &Theme) {
                             *sel = i;
                         }
                     }
-                    // disabled — opacity 0.45, hover/클릭 비활성.
-                    menu_item(
-                        ui,
-                        theme,
-                        Some(&|ui, rect, c| glyph::FILE.image(rect.height(), c).paint_at(ui, rect)),
-                        "Paste (nothing copied)",
-                        Some("Ctrl+V"),
-                        MenuItemVariant::Normal,
-                        false,
-                        false,
-                    );
                     menu_separator(ui, theme);
                     menu_item(
                         ui,
@@ -130,10 +119,10 @@ pub fn draw_tree_row(ui: &mut egui::Ui, theme: &Theme) {
                     let mut sel = s.borrow_mut();
                     // (depth, has_children, open, glyph, label, meta)
                     let rows: [(u16, bool, bool, glyph::MockGlyph, &str, &str); 4] = [
-                        (0, true, true, glyph::FOLDER, "Project A", "3"),
-                        (1, false, false, glyph::TERMINAL, "server", "48213"),
-                        (1, false, false, glyph::FILE, "readme.md", "4.7k"),
-                        (0, true, false, glyph::FOLDER, "Project B", "1"),
+                        (0, true, true, glyph::FOLDER, "tasty", "34"),
+                        (1, true, false, glyph::FOLDER, "crates", "39"),
+                        (1, false, false, glyph::FILE, "Cargo.toml", ""),
+                        (1, false, false, glyph::FILE, "README.md", "4.7k"),
                     ];
                     for (i, (depth, hc, open, g, label, meta)) in rows.iter().enumerate() {
                         let gg = *g;
@@ -145,7 +134,7 @@ pub fn draw_tree_row(ui: &mut egui::Ui, theme: &Theme) {
                             *open,
                             Some(&|ui, rect, c| gg.image(rect.height(), c).paint_at(ui, rect)),
                             label,
-                            Some(meta),
+                            (!meta.is_empty()).then_some(*meta),
                             i == *sel,
                             true,
                         );
