@@ -6,63 +6,30 @@
 //! dot / collapsed letter avatar)를 숫자 키캡으로 **제자리 교체**한다. 폭/리플로 변화
 //! 없는 16px slot, scrim 없음. 현재 항목은 **accent-filled** 키캡으로 구분.
 //!
-//! 키캡 형상은 본체 `kbd()` (`crates/tasty-ui-widgets/src/chip.rs`) 와 동일 레시피
-//! (surface-raised fill + border-strong + 하단 2px edge + mono micro). active 변종만
-//! accent_primary fill + text_on_accent 숫자. 신규 Theme 필드 없음 — P0 매핑대로 기존
-//! 접근자(`docs/design/systems/design-token-mapping.md` switch-overlay 섹션).
+//! 키캡은 본체 공용 위젯 `tasty_ui_widgets::num_keycap` 을 그대로 호출한다 — specimen
+//! 이 자체 키캡을 재구현하지 않고 본체와 **동일 위젯을 공유**한다(gallery-first). 형상은
+//! `kbd()` 레시피(surface-raised fill + border-strong + 하단 2px edge + mono micro),
+//! active 변종만 accent_primary fill + text_on_accent 숫자. 신규 Theme 필드 없음 —
+//! P0 매핑대로 기존 접근자(`docs/design/systems/design-token-mapping.md` switch-overlay).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::num_keycap;
 
 use crate::catalog::icons::{FILE, MockGlyph, TERMINAL};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-// 디자인 고정 px (= switch-overlay 토큰, chip.rs Kbd const 와 동일):
-//   size       = switch-overlay-size = kbd-size = size-16
-//   shadow-depth = switch-overlay-shadow-depth = kbd-shadow-depth = size-2
+// 키캡 slot 의 디자인 고정 px = switch-overlay-size = kbd-size = size-16.
+// 본체 `num_keycap` 위젯이 같은 16px 를 할당하므로 slot 폭/오프셋 계산과 정합한다.
 const KEYCAP_SIZE: f32 = 16.0;
-const KEYCAP_BOTTOM_BORDER: f32 = 2.0;
 
-/// 한 자리 숫자 키캡을 16px slot 에 그린다 (본체 `kbd()` 형상 재현).
+/// 공용 `num_keycap` 위젯을 16px slot 중앙(`center`)에 배치한다.
+/// specimen 은 painter 로 절대 위치에 레이아웃하므로, 위젯을 키캡 rect 크기의 child UI
+/// 안에서 호출해 제자리에 그린다(본체와 동일 위젯 공유 — 재구현 금지).
 /// `active` = 현재 탭/워크스페이스 → accent_primary fill + text_on_accent 숫자.
-fn num_cap(p: &egui::Painter, theme: &Theme, center: egui::Pos2, digit: &str, active: bool) {
+fn keycap_at(ui: &mut egui::Ui, theme: &Theme, center: egui::Pos2, digit: &str, active: bool) {
     let rect = egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE, KEYCAP_SIZE));
-    let radius = theme.corner_radius_sm.value();
-    let bw = theme.border_width.value();
-    let (fill, edge, fg) = if active {
-        (
-            theme.accent_primary(),
-            theme.accent_primary(),
-            theme.text_on_accent(),
-        )
-    } else {
-        (
-            theme.surface_raised(),
-            theme.border_strong(),
-            theme.text_secondary(),
-        )
-    };
-    p.rect_filled(rect, radius, egui::Color32::from(fill));
-    p.rect_stroke(
-        rect,
-        radius,
-        egui::Stroke::new(bw, egui::Color32::from(edge)),
-        egui::StrokeKind::Inside,
-    );
-    // 하단 2px edge (switch-overlay-shadow-depth = size-2), Kbd 키캡과 동일.
-    p.line_segment(
-        [
-            egui::pos2(rect.left() + radius, rect.bottom() - bw),
-            egui::pos2(rect.right() - radius, rect.bottom() - bw),
-        ],
-        egui::Stroke::new(KEYCAP_BOTTOM_BORDER, egui::Color32::from(edge)),
-    );
-    p.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        digit,
-        egui::FontId::monospace(theme.font_size_micro.value()),
-        egui::Color32::from(fg),
-    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    num_keycap(&mut child, theme, digit, active);
 }
 
 fn paint_glyph(
@@ -142,7 +109,7 @@ fn tab_strip(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         // leading 16px slot: held → 숫자 키캡, else 표면 아이콘.
         let slot_c = egui::pos2(tab.min.x + pad + KEYCAP_SIZE * 0.5, tab.center().y);
         if held {
-            num_cap(&p, theme, slot_c, digit, *active);
+            keycap_at(ui, theme, slot_c, digit, *active);
         } else {
             paint_glyph(
                 ui,
@@ -311,7 +278,7 @@ fn full_ws(ui: &mut egui::Ui, theme: &Theme, held: bool) {
         let name_cy = row.min.y + pad + name_lh * 0.5;
         let slot_c = egui::pos2(row.min.x + pad + lead * 0.5, name_cy);
         if held {
-            num_cap(&p, theme, slot_c, digit, *active);
+            keycap_at(ui, theme, slot_c, digit, *active);
         } else {
             // status dot — 16px slot 중앙에 8px dot.
             p.circle_filled(
@@ -395,7 +362,7 @@ fn rail_ws(ui: &mut egui::Ui, theme: &Theme) {
             );
         }
         match digit {
-            Some(d) => num_cap(&p, theme, area.center(), d, *active),
+            Some(d) => keycap_at(ui, theme, area.center(), d, *active),
             None => {
                 p.text(
                     area.center(),
