@@ -225,11 +225,11 @@ build-all: build-plugins
     esac
     cargo build $profile_flag --bin tasty
 
-# 개발 실행 — 플러그인 풀빌드 + 호스트 실행, builtin 무조건 덮어쓰기 설치.
-# build-plugins 로 플러그인을 빌드·스테이징한 뒤 호스트를 실행한다.
-# 호스트는 TASTY_FORCE_BUILTIN_OVERWRITE=1 을 받아 시작 시 builtin 을 버전/mtime 비교 없이
-# ~/.tasty/plugins 로 무조건 덮어쓰기 설치하므로, 플러그인 소스 변경이 버전 bump 없이도
-# 매 실행 반영된다. PROFILE 은 debug 기본(cargo run 과 경로 일치) — 릴리즈는 `PROFILE=release just run`.
+# 개발 실행 — 플러그인 풀빌드 + 호스트 실행.
+# build-plugins 로 플러그인을 빌드·스테이징한 뒤 호스트를 실행한다. 호스트는 시작 시
+# builtin 을 번들본으로 항상 무조건 덮어쓰기 설치하므로(install_builtins_if_needed),
+# 플러그인 소스 변경이 버전 bump 없이도 매 실행 반영된다. PROFILE 은 debug 기본
+# (cargo run 과 경로 일치) — 릴리즈는 `PROFILE=release just run`.
 run *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -240,7 +240,7 @@ run *ARGS:
         *)       profile_flag="--profile $profile" ;;
     esac
     PROFILE="$profile" just build-plugins
-    TASTY_FORCE_BUILTIN_OVERWRITE=1 cargo run $profile_flag --bin tasty {{ARGS}}
+    cargo run $profile_flag --bin tasty {{ARGS}}
 
 # 빌드된 plugin 산출물을 cp 대신 symlink 로 스테이징.
 # rebuild 후 별도 sync 단계 없이 새 binary 즉시 반영 — H (auto-reload) 시너지.

@@ -458,20 +458,17 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
     };
     let bundle = bundle_root();
 
-    // `just run` 등 개발 경로가 TASTY_FORCE_BUILTIN_OVERWRITE 를 설정하면, builtin 을
-    // 버전/mtime 비교 없이 번들본으로 무조건 덮어쓴다(소스 변경이 bump 없이도 매 실행 반영).
-    // env 미설정인 일반/배포 실행은 기존 semver 정책(force=false)을 그대로 따른다.
-    let force = std::env::var_os("TASTY_FORCE_BUILTIN_OVERWRITE").is_some();
-
     let mut config_dirty = false;
     for spec in BUILTINS {
         let dest = dest_root.join(spec.id);
         let already_present = dest.exists();
 
         // Step 1: 번들에서 복사. 신규 설치 + 기존 설치된 builtin의 manifest/binary
-        // 갱신을 동일 경로에서 처리한다. builtin은 호스트 소유 리소스이므로 사용자
-        // 디렉터리에 있더라도 번들이 더 새것이면 덮어쓴다 (사용자가 직접 편집하는
-        // 용도가 아님).
+        // 갱신을 동일 경로에서 처리한다. builtin은 호스트 소유 리소스이므로(사용자가
+        // 직접 편집하는 용도가 아님) 버전/mtime 비교 없이 번들본으로 **항상 무조건
+        // 덮어쓴다** — dev(`just run`)·배포(dmg) 모두 동일 정책이라, 새 빌드/설치를
+        // 띄우면 plugin 버전 bump 여부와 무관하게 최신 번들이 반영된다. 단 사용자가
+        // 명시 제거한 builtin(is_builtin_removed)은 복원하지 않는다(아래 가드).
         if !mgr.config.is_builtin_removed(spec.id)
             && let Some(bundle) = bundle.as_ref()
         {
@@ -493,7 +490,7 @@ pub fn install_builtins_if_needed(mgr: &mut PluginManager) {
                 if already_present {
                     let installed_v = read_installed_version(&dest);
                     let bundle_v = read_bundle_version(&src);
-                    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), force) {
+                    match decide_builtin_upgrade(installed_v.as_ref(), bundle_v.as_ref(), true) {
                         BuiltinUpgradeDecision::Skip => {
                             tracing::debug!(
                                 "builtin '{}' up-to-date (installed v{:?}, bundle v{:?})",
