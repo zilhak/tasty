@@ -168,6 +168,31 @@ cat > "$APP_DIR/Contents/Info.plist" << PLIST
 </plist>
 PLIST
 
+# Verify the assembled .app (both install and DMG paths share this).
+echo "==> Verifying $APP_NAME.app..."
+"$APP_DIR/Contents/MacOS/tasty" --version >/dev/null || {
+    echo "Error: binary failed to invoke --version" >&2
+    exit 1
+}
+ARCH_LINE=$(file "$APP_DIR/Contents/MacOS/tasty")
+[[ "$ARCH_LINE" == *"Mach-O"* ]] || {
+    echo "Error: not a Mach-O binary: $ARCH_LINE" >&2
+    exit 1
+}
+PLIST_VER=$(plutil -extract CFBundleVersion raw "$APP_DIR/Contents/Info.plist")
+[[ "$PLIST_VER" == "$VERSION" ]] || {
+    echo "Error: Info.plist version $PLIST_VER != Cargo.toml $VERSION" >&2
+    exit 1
+}
+
+# Install path (NO_DMG=1, used by install-macos.sh): stop after assembling the
+# .app; skip DMG packaging. The caller copies dist/Tasty.app to /Applications.
+if [[ "${NO_DMG:-}" == "1" ]]; then
+    echo "==> NO_DMG set — skipping DMG packaging."
+    echo "  App:  $APP_DIR"
+    exit 0
+fi
+
 echo "==> Creating $DMG_NAME..."
 rm -f "$DIST_DIR/$DMG_NAME"
 
@@ -185,21 +210,7 @@ hdiutil create -volname "$APP_NAME" \
 
 rm -rf "$DMG_STAGE"
 
-echo "==> Verifying artifacts..."
-"$APP_DIR/Contents/MacOS/tasty" --version >/dev/null || {
-    echo "Error: binary failed to invoke --version" >&2
-    exit 1
-}
-ARCH_LINE=$(file "$APP_DIR/Contents/MacOS/tasty")
-[[ "$ARCH_LINE" == *"Mach-O"* ]] || {
-    echo "Error: not a Mach-O binary: $ARCH_LINE" >&2
-    exit 1
-}
-PLIST_VER=$(plutil -extract CFBundleVersion raw "$APP_DIR/Contents/Info.plist")
-[[ "$PLIST_VER" == "$VERSION" ]] || {
-    echo "Error: Info.plist version $PLIST_VER != Cargo.toml $VERSION" >&2
-    exit 1
-}
+echo "==> Verifying DMG..."
 [[ -f "$DIST_DIR/$DMG_NAME" ]] || {
     echo "Error: DMG missing: $DIST_DIR/$DMG_NAME" >&2
     exit 1

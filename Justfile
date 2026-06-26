@@ -4,7 +4,9 @@
 # 개발 실행(just run)을 제공한다.
 #
 # 사용:
-#   just run [ARGS]         # 플러그인(debug) 빌드 + 호스트 실행 (개발용)
+#   just run [ARGS]         # 본체+플러그인 debug 빌드 + 호스트 실행 (개발용)
+#   just run --release      # 본체+플러그인 release 빌드 + 호스트 실행
+#   just install            # 본체+플러그인 dist 빌드 + 현재 머신에 설치 (OS 자동 감지)
 #   just build-plugins      # 플러그인 빌드·스테이징
 #   just build-all          # main bin + 플러그인
 #   just dist               # 호스트 OS 자동 감지 (배포 산출물)
@@ -32,6 +34,28 @@ dist:
             exec ./scripts/build-linux.sh ;;
         MINGW*|MSYS*|CYGWIN*)
             exec pwsh -File ./scripts/build-windows.ps1 ;;
+        *)
+            echo "Unsupported OS: $(uname -s)" >&2
+            exit 1 ;;
+    esac
+
+# 본체 + 플러그인 전체를 dist 프로필로 빌드해 현재 머신에 설치 (전부 최신본으로 덮어쓰기).
+# 호스트 OS 자동 감지. macOS 는 /Applications/Tasty.app 으로 설치하고, 플러그인은 앱 첫
+# 실행 시 호스트가 ~/.tasty/plugins 로 강제 덮어쓰기 동기화한다.
+install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(uname -s)" in
+        Darwin)
+            exec ./scripts/install-macos.sh ;;
+        Linux)
+            echo "Linux 자동 설치는 아직 미구현입니다." >&2
+            echo "  just dist-linux 로 산출물(.deb/.rpm/AppImage)을 빌드한 뒤 수동 설치하세요." >&2
+            exit 1 ;;
+        MINGW*|MSYS*|CYGWIN*)
+            echo "Windows 자동 설치는 아직 미구현입니다." >&2
+            echo "  just dist-windows 로 .msi 를 빌드한 뒤 설치하세요." >&2
+            exit 1 ;;
         *)
             echo "Unsupported OS: $(uname -s)" >&2
             exit 1 ;;
@@ -228,19 +252,34 @@ build-all: build-plugins
 # 개발 실행 — 플러그인 풀빌드 + 호스트 실행.
 # build-plugins 로 플러그인을 빌드·스테이징한 뒤 호스트를 실행한다. 호스트는 시작 시
 # builtin 을 번들본으로 항상 무조건 덮어쓰기 설치하므로(install_builtins_if_needed),
-# 플러그인 소스 변경이 버전 bump 없이도 매 실행 반영된다. PROFILE 은 debug 기본
-# (cargo run 과 경로 일치) — 릴리즈는 `PROFILE=release just run`.
+# 플러그인 소스 변경이 버전 bump 없이도 매 실행 반영된다.
+#   just run            # debug 빌드 (기본)
+#   just run --release  # release 빌드
+# --release 는 ARGS 에서 분리해 프로필로 해석하고, 나머지 인자는 호스트로 passthrough.
 run *ARGS:
     #!/usr/bin/env bash
     set -euo pipefail
     profile="${PROFILE:-debug}"
+    passthrough=()
+    for arg in {{ARGS}}; do
+        case "$arg" in
+            --release) profile="release" ;;
+            --debug)   profile="debug" ;;
+            *)         passthrough+=("$arg") ;;
+        esac
+    done
     case "$profile" in
         release) profile_flag="--release" ;;
         debug)   profile_flag="" ;;
         *)       profile_flag="--profile $profile" ;;
     esac
     PROFILE="$profile" just build-plugins
-    cargo run $profile_flag --bin tasty {{ARGS}}
+    # bash 3.2: 빈 배열 "${arr[@]}" 가 set -u 에서 unbound 이므로 분기.
+    if [ "${#passthrough[@]}" -gt 0 ]; then
+        cargo run $profile_flag --bin tasty -- "${passthrough[@]}"
+    else
+        cargo run $profile_flag --bin tasty
+    fi
 
 # 빌드된 plugin 산출물을 cp 대신 symlink 로 스테이징.
 # rebuild 후 별도 sync 단계 없이 새 binary 즉시 반영 — H (auto-reload) 시너지.
