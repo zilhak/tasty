@@ -74,5 +74,6 @@ Modal 의 전역 입력 독점과 다르다 — 팝업 포커스는 **키보드�
 ## 관련
 
 - [toast.md](toast.md) — 휘발성 알림 (별도 시스템)
+- [banner.md](banner.md) — parent 상단 info+action 오버레이 (별도 시스템)
 - [dev-guide/popup-implementation](../../dev-guide/popup-implementation.md) — 팝업 추가 절차
-- [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Window/Modal/Popup/Toast 구분
+- [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md) — Window/Modal/Popup/Toast/Banner 구분

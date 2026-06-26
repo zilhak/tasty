@@ -64,4 +64,5 @@ Toast 위에서 마우스 클릭/드래그해도 토스트는 무시하고 이�
 ## 관련
 
 - [popup.md](popup.md) — 내부 팝업 시스템
+- [banner.md](banner.md) — parent 상단 info+action 오버레이 (내용 적으면 Toast 권장)
 - [identity](../../identity.md) — 사용자/에이전트 행동 분리

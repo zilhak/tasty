@@ -33,3 +33,4 @@
 | 0021 | [자체 업데이트 확인 기능(update-check) 전면 제거](0021-remove-update-check-feature.md) | Accepted | 2026-06-25 | update, auto-update, scope, distribution, removal, maintenance, cli, plugin |
 | 0022 | [Shift+우클릭 modifier 우회 + 트래킹 안내 toast](0022-shift-rightclick-context-menu-bypass.md) | Accepted | 2026-06-25 | terminal, mouse, mouse-reporting, context-menu, modifier, discoverability, ux |
 | 0023 | [Shift+좌클릭 드래그 = 마우스 리포팅 우회 로컬 텍스트 선택 + 안내 toast 범용화](0023-shift-leftclick-selection-bypass.md) | Accepted | 2026-06-26 | terminal, mouse, mouse-reporting, selection, modifier, clipboard, discoverability, ux |
+| 0024 | [Banner — Modal/Popup/Toast 에 이은 4번째 오버레이 개념(별도 매니저)](0024-banner-fourth-overlay-concept.md) | Accepted | 2026-06-26 | ui, overlay, banner, popup, toast, ubiquitous-language, user-agent-separation |
