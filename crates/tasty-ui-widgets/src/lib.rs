@@ -25,7 +25,7 @@ pub mod tokens;
 mod tree_row;
 mod two_depth;
 pub use button::{Button, ButtonVariant};
-pub use chip::{BadgeVariant, TagVariant, badge, badge_dot, kbd, tag};
+pub use chip::{BadgeVariant, TagVariant, badge, badge_dot, kbd, num_keycap, tag};
 pub use control::ControlSize;
 pub use horizontal_tab_bar::horizontal_tab_bar_with_arrows;
 pub use icon_button::{IconButton, IconButtonVariant, IconPainter};
