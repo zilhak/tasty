@@ -118,28 +118,33 @@ impl MainView {
 
         // Handle selection drag
         if self.left_mouse_down && self.dragging_divider.is_none() {
-            // 트래킹 ON(CellMotion/AllMotion): 드래그 motion 을 앱에 보고 (셀 바뀔 때만).
-            // 앱이 마우스를 소유하므로 로컬 선택 확장은 하지 않는다.
-            let track = self
-                .state
-                .focused_surface_id(&self.core_state)
-                .and_then(|sid| {
-                    self.core_state
-                        .find_terminal_by_id(sid)
-                        .map(|t| (sid, t.mouse_tracking()))
-                });
-            if let Some((sid, mode)) = track
-                && matches!(
-                    mode,
-                    tasty_terminal::MouseTrackingMode::CellMotion
-                        | tasty_terminal::MouseTrackingMode::AllMotion
-                )
-            {
-                let cell = self.mouse_cell_for_report(sid, x, y);
-                if self.last_mouse_report_cell != Some(cell) {
-                    self.report_mouse_event(sid, x, y, 0, true, false);
+            // Shift+좌클릭 우회 시퀀스(left_select_bypass)면 트래킹 motion 보고를 건너뛰고
+            // 곧장 로컬 선택 확장 경로로 떨어진다. 플래그 검사를 트래킹 보고 블록 *이전* 에
+            // 두어 early-return 으로 로컬 경로가 막히는 것을 방지한다.
+            if !self.left_select_bypass {
+                // 트래킹 ON(CellMotion/AllMotion): 드래그 motion 을 앱에 보고 (셀 바뀔 때만).
+                // 앱이 마우스를 소유하므로 로컬 선택 확장은 하지 않는다.
+                let track = self
+                    .state
+                    .focused_surface_id(&self.core_state)
+                    .and_then(|sid| {
+                        self.core_state
+                            .find_terminal_by_id(sid)
+                            .map(|t| (sid, t.mouse_tracking()))
+                    });
+                if let Some((sid, mode)) = track
+                    && matches!(
+                        mode,
+                        tasty_terminal::MouseTrackingMode::CellMotion
+                            | tasty_terminal::MouseTrackingMode::AllMotion
+                    )
+                {
+                    let cell = self.mouse_cell_for_report(sid, x, y);
+                    if self.last_mouse_report_cell != Some(cell) {
+                        self.report_mouse_event(sid, x, y, 0, true, false);
+                    }
+                    return;
                 }
-                return;
             }
             let is_dragging = self.text_selection.as_ref().is_some_and(|s| s.dragging);
             if is_dragging && let Some((point, _)) = self.mouse_to_grid(x, y, &terminal_rect) {
@@ -219,6 +224,7 @@ impl MainView {
             if button_state == ElementState::Released {
                 self.dragging_divider = None;
                 self.left_mouse_down = false;
+                self.left_select_bypass = false;
             }
             if egui_consumed {
                 self.mark_dirty();
@@ -441,10 +447,19 @@ impl MainView {
                         }
                         let shift = self.base.modifiers.shift_key();
                         if mouse_tracking != tasty_terminal::MouseTrackingMode::None {
-                            // 트래킹 ON: 버튼 press 를 앱에 보고. 앱이 마우스를 소유하므로
-                            // tasty 로컬 선택은 하지 않는다 (modifier 우회는 후속 과제).
-                            if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
-                                self.report_mouse_event(sid, x, y, 0, false, false);
+                            if left_click_local_select(mouse_tracking, shift, false) {
+                                // 트래킹 ON + Shift: 앱에 보고하지 않고 로컬 선택을 시작한다
+                                // (xterm/iTerm2 표준 modifier 우회). press 시점 1회 판정을
+                                // left_select_bypass 로 release 까지 유지 — motion/release 는
+                                // 이 플래그로 라우팅한다(드래그 중 Shift 해제·멀티클릭 무관).
+                                // 트래킹 ON 엔 이전 로컬 앵커가 없어 extend 가 아니라 start.
+                                self.left_select_bypass = true;
+                                self.start_selection(x, y, &terminal_rect);
+                            } else {
+                                // 트래킹 ON + Shift 없음: 버튼 press 를 앱에 보고 (ADR-0019 앱 위임).
+                                if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
+                                    self.report_mouse_event(sid, x, y, 0, false, false);
+                                }
                             }
                         } else if shift {
                             self.extend_selection(x, y, &terminal_rect);
@@ -462,7 +477,13 @@ impl MainView {
                         self.base.dirty = true;
                     }
                     // 트래킹 ON 이면 release 를 앱에 보고, 아니면 로컬 선택 완료.
-                    let report_surface =
+                    // 단, Shift+좌클릭 우회 시퀀스(left_select_bypass)면 — dragging 여부와
+                    // 무관하게(멀티클릭 word/line 은 dragging=false) — 앱 보고를 스킵하고
+                    // 로컬 선택을 확정한다. 이게 dragging 가드 대신 전용 플래그를 쓰는 이유다.
+                    let bypass = self.left_select_bypass;
+                    let report_surface = if bypass {
+                        None
+                    } else {
                         self.state
                             .focused_surface_id(&self.core_state)
                             .filter(|sid| {
@@ -473,17 +494,27 @@ impl MainView {
                                             != tasty_terminal::MouseTrackingMode::None
                                     })
                                     .unwrap_or(false)
-                            });
+                            })
+                    };
                     if let Some(sid) = report_surface {
                         self.report_mouse_event(sid, x, y, 0, false, true);
-                    } else if let Some(sel) = &mut self.text_selection {
-                        sel.dragging = false;
-                        if sel.is_empty() {
-                            // Single click (no drag) — move cursor to clicked position
-                            self.move_cursor_to_click(x, y, &terminal_rect);
+                    } else {
+                        let empty = if let Some(sel) = &mut self.text_selection {
+                            sel.dragging = false;
+                            sel.is_empty()
+                        } else {
+                            false
+                        };
+                        if empty {
+                            // bypass 단일(빈) 클릭은 커서 이동 없이 선택만 클리어한다.
+                            // 일반 단일 클릭은 클릭 위치로 커서 이동 후 클리어.
+                            if !bypass {
+                                self.move_cursor_to_click(x, y, &terminal_rect);
+                            }
                             self.text_selection = None;
                         }
                     }
+                    self.left_select_bypass = false;
                     self.mark_dirty();
                 }
             }
@@ -721,6 +752,19 @@ fn right_click_delegates_to_app(tracking: tasty_terminal::MouseTrackingMode, shi
     tracking != tasty_terminal::MouseTrackingMode::None && !shift
 }
 
+/// 좌클릭을 tasty 로컬 텍스트 선택으로 처리할지(true), 아니면 앱(PTY)에 보고할지(false)
+/// 결정한다. 트래킹 OFF 면 항상 로컬. 트래킹 ON 이면 press 시점 Shift 우회이거나
+/// (`shift`), 이미 우회 시퀀스가 활성(`bypass_active`)일 때만 로컬 — 그 외엔 앱에 보고.
+/// `bypass_active` 는 press 에서 set 된 `left_select_bypass` 로, motion/release 가
+/// Shift 재검사 없이 이 플래그만으로 같은 결정을 유지하게 한다 (멀티클릭 dragging=false 포함).
+fn left_click_local_select(
+    tracking: tasty_terminal::MouseTrackingMode,
+    shift: bool,
+    bypass_active: bool,
+) -> bool {
+    tracking == tasty_terminal::MouseTrackingMode::None || shift || bypass_active
+}
+
 #[cfg(test)]
 mod wheel_tests {
     use super::encode_wheel_report;
@@ -799,5 +843,78 @@ mod right_click_tests {
             false
         ));
         assert!(!right_click_delegates_to_app(MouseTrackingMode::None, true));
+    }
+}
+
+#[cfg(test)]
+mod left_click_tests {
+    use super::left_click_local_select;
+    use tasty_terminal::MouseTrackingMode;
+
+    #[test]
+    fn tracking_on_shift_press_starts_local_select() {
+        // 트래킹 ON + Shift+press → 로컬 선택 시작 (앱에 보고 안 함).
+        assert!(left_click_local_select(
+            MouseTrackingMode::AllMotion,
+            true,
+            false
+        ));
+        assert!(left_click_local_select(
+            MouseTrackingMode::CellMotion,
+            true,
+            false
+        ));
+        assert!(left_click_local_select(
+            MouseTrackingMode::Click,
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn tracking_on_no_shift_reports_to_app() {
+        // 트래킹 ON + Shift 없음 + bypass 비활성 → 앱에 보고 (로컬 선택 안 함).
+        assert!(!left_click_local_select(
+            MouseTrackingMode::AllMotion,
+            false,
+            false
+        ));
+        assert!(!left_click_local_select(
+            MouseTrackingMode::CellMotion,
+            false,
+            false
+        ));
+    }
+
+    #[test]
+    fn tracking_on_bypass_active_stays_local() {
+        // 트래킹 ON + bypass 활성(press 에서 set) → motion/release 는 로컬 경로 유지.
+        // shift 가 false 여도(드래그 중 Shift 해제) bypass 가 결정을 유지한다.
+        // 멀티클릭 word/line(dragging=false)도 같은 플래그로 로컬 유지 — 앱에 안 샌다.
+        assert!(left_click_local_select(
+            MouseTrackingMode::AllMotion,
+            false,
+            true
+        ));
+    }
+
+    #[test]
+    fn tracking_off_always_local() {
+        // 트래킹 OFF → 항상 로컬 (Shift/bypass 무관).
+        assert!(left_click_local_select(
+            MouseTrackingMode::None,
+            false,
+            false
+        ));
+        assert!(left_click_local_select(
+            MouseTrackingMode::None,
+            true,
+            false
+        ));
+        assert!(left_click_local_select(
+            MouseTrackingMode::None,
+            false,
+            true
+        ));
     }
 }

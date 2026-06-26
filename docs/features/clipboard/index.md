@@ -24,7 +24,9 @@
 
 마우스 드래그(Normal) / 더블클릭(Word) / 트리플클릭(Line) / vi 복사 모드의 `Ctrl+v`(Block). 선택은 화면↔스크롤백을 넘나들고 전각(CJK) 2셀 폭을 정확히 처리. vi 스타일 키보드 복사 모드(`enter_copy_mode` 액션)는 hjkl 이동·visual 선택·`/`·`?` 검색·`y` 복사를 제공.
 
-마우스 선택은 **마우스 트래킹이 꺼진 화면에서만** 동작한다. 앱이 마우스 트래킹(DECSET 1000/1002/1003)을 켜면(vim `:set mouse=a`, htop, Claude Code 등) 마우스가 앱에 전면 위임되어 로컬 드래그 선택이 비활성화된다 — 이때 텍스트 복사는 **키보드 vi 복사 모드**로 한다. modifier 우회나 "리포팅 무시" 토글은 현재 미도입(후속 과제). 근거: [ADR-0019](../../adr/0019-mouse-button-reporting-app-delegation.md).
+마우스 선택은 기본적으로 **마우스 트래킹이 꺼진 화면에서만** 동작한다. 앱이 마우스 트래킹(DECSET 1000/1002/1003)을 켜면(vim `:set mouse=a`, htop, Claude Code 등) 마우스가 앱에 전면 위임되어 plain 좌클릭 드래그는 앱으로 보고된다 — 근거: [ADR-0019](../../adr/0019-mouse-button-reporting-app-delegation.md).
+
+**트래킹 ON 에서도 `Shift`+좌클릭 드래그로 로컬 텍스트 선택이 가능하다** (xterm/iTerm2 표준 modifier 우회). Shift 여부는 press 시점에 1회만 판정해 release 까지 유지하므로, 드래그 도중 Shift 를 떼도 선택이 깨지지 않는다. `Shift`+더블/트리플클릭은 word/line 선택. 선택 후 복사 단축키로 클립보드에 복사된다 — 즉 트래킹 앱 위에서도 키보드 vi 복사 모드 외에 마우스 선택 경로가 열려 있다. plain 좌클릭은 그대로 앱에 위임되어 회귀가 없다 (우클릭 `Shift` 우회는 [ADR-0022](../../adr/0022-shift-rightclick-context-menu-bypass.md) 의 동일 패턴).
 
 ### OSC 52
 

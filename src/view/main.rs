@@ -46,6 +46,11 @@ pub struct MainView {
     /// vi_copy::handle_vi_key 가 가로채 cursor/visual/yank 등을 처리.
     pub(crate) vi_copy: Option<vi_copy::ViCopyMode>,
     pub(crate) left_mouse_down: bool,
+    /// 트래킹 ON 에서 Shift+좌클릭으로 시작한 "마우스 리포팅 우회 로컬 선택" 시퀀스인지.
+    /// press 시점에 1회만 판정해 release 까지 유지한다 — motion/release 는 이 플래그로
+    /// 라우팅하며, 드래그 도중 Shift 를 떼도(또는 멀티클릭으로 dragging=false 여도)
+    /// 선택이 깨지지 않는다 (iTerm 동작). press 에서 set, release 에서 clear.
+    pub(crate) left_select_bypass: bool,
     /// 마우스 리포팅(트래킹 앱)으로 마지막 보고한 셀 좌표. 드래그 motion 을 셀 단위로만
     /// 보고(중복 억제)하기 위해 사용. press/release/motion 보고 시 갱신.
     pub(crate) last_mouse_report_cell: Option<(usize, usize)>,
@@ -109,6 +114,7 @@ impl MainView {
             text_selection: None,
             vi_copy: None,
             left_mouse_down: false,
+            left_select_bypass: false,
             last_mouse_report_cell: None,
             last_click_time: None,
             last_click_pos: None,
