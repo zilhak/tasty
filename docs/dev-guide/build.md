@@ -44,9 +44,11 @@ cargo build --release       # thin LTO 검증
 cargo build --profile dist  # 배포용
 ```
 
-본체+플러그인을 한 번에 빌드·실행하려면 `just run` 을 쓴다 — 플러그인까지 빌드·스테이징한 뒤 호스트를 실행하고, 부팅 시 builtin 을 강제 덮어쓰기 설치하므로 플러그인 소스 변경이 매 실행 반영된다.
+본체+플러그인을 한 번에 다루는 래퍼가 있다. `just build` 는 빌드·스테이징만(실행 X), `just run` 은 빌드 후 호스트까지 실행한다. 둘 다 플러그인을 빌드·스테이징하며, 호스트는 부팅 시 builtin 을 강제 덮어쓰기 설치하므로 플러그인 소스 변경이 (`just build` 면 다음 실행 시, `just run` 이면 그 실행에서) 반영된다.
 
 ```bash
+just build                  # 본체+플러그인 debug 빌드·스테이징 (실행 X)
+just build --release        # 동일, release 프로필
 just run                    # 본체+플러그인 debug 빌드 + 실행
 just run --release          # 동일, release 프로필 (나머지 인자는 호스트로 passthrough)
 ```

@@ -4,6 +4,8 @@
 # 개발 실행(just run)을 제공한다.
 #
 # 사용:
+#   just build              # 본체+플러그인 debug 빌드·스테이징 (실행 X)
+#   just build --release    # 본체+플러그인 release 빌드·스테이징 (실행 X)
 #   just run [ARGS]         # 본체+플러그인 debug 빌드 + 호스트 실행 (개발용)
 #   just run --release      # 본체+플러그인 release 빌드 + 호스트 실행
 #   just install            # 본체+플러그인 dist 빌드 + 현재 머신에 설치 (OS 자동 감지)
@@ -247,6 +249,31 @@ build-all: build-plugins
         debug)   profile_flag="" ;;
         *)       profile_flag="--profile $profile" ;;
     esac
+    cargo build $profile_flag --bin tasty
+
+# 풀빌드 — 본체+플러그인 빌드·스테이징 (실행 없음).
+#   just build            # debug 빌드 (기본)
+#   just build --release  # release 빌드
+# run 과 동일하게 플러그인을 빌드·스테이징하고 본 바이너리도 빌드한다. 다만 실행은 하지
+# 않으므로, 스테이징본(target/<profile>/builtin-plugins)이 ~/.tasty/plugins 로 강제
+# 덮어쓰기되는 건 다음 호스트 실행 시점이다.
+build *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    profile="${PROFILE:-debug}"
+    for arg in {{ARGS}}; do
+        case "$arg" in
+            --release) profile="release" ;;
+            --debug)   profile="debug" ;;
+            *) echo "build: 알 수 없는 인자 '$arg'" >&2; exit 1 ;;
+        esac
+    done
+    case "$profile" in
+        release) profile_flag="--release" ;;
+        debug)   profile_flag="" ;;
+        *)       profile_flag="--profile $profile" ;;
+    esac
+    PROFILE="$profile" just build-plugins
     cargo build $profile_flag --bin tasty
 
 # 개발 실행 — 플러그인 풀빌드 + 호스트 실행.
