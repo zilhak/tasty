@@ -56,7 +56,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 
 #### Deferred 터미널
 
-탭/분할을 만들 때 PTY 를 **지연 생성**할 수 있다. 이 경우 트리 leaf 는 `deferred_spawn` 을 가진 `EmptySurface` placeholder 로 들어가고(빈 layout 이 아님), **화면에 표시되기 직전 단일 지점**(`AppState::reify_displayed_surfaces`, 매 프레임 렌더 직전 호출)에서 `ensure_initialized` 가 PTY 를 띄워 `TerminalSurface` marker 로 교체한다. "표시되는 deferred 는 반드시 reify 된다" 가 불변식이며, 이 단일 지점이 모든 노출 경로(키보드 탭 전환, 탭 close, pane focus 전환, 워크스페이스 전환, window 복원)를 한 번에 커버한다 — 전환 입력 핸들러마다 reify 를 흩뿌리지 않는다. 외부(IPC `surface.list`, 트리 JSON)에는 `type:"Terminal"`, `pty_ready:false` 로 보고된다 — 아직 안 뜬 터미널 자리. (IPC `surface.send` 등 표시와 무관한 경로는 여전히 `ensure_surface_initialized` 로 개별 reify.)
+레이아웃 복원 시 비활성 탭의 PTY 는 **지연 생성**된다(런타임에 새로 만드는 탭/분할은 항상 즉시 spawn — 지연 대상은 복원되는 비활성 탭뿐이다). 이 경우 트리 leaf 는 `deferred_spawn` 을 가진 `EmptySurface` placeholder 로 들어가고(빈 layout 이 아님), **화면에 표시되기 직전 단일 지점**(`AppState::reify_displayed_surfaces`, 매 프레임 렌더 직전 호출)에서 `ensure_initialized` 가 PTY 를 띄워 `TerminalSurface` marker 로 교체한다. "표시되는 deferred 는 반드시 reify 된다" 가 불변식이며, 이 단일 지점이 모든 노출 경로(키보드 탭 전환, 탭 close, pane focus 전환, 워크스페이스 전환, window 복원)를 한 번에 커버한다 — 전환 입력 핸들러마다 reify 를 흩뿌리지 않는다. 외부(IPC `surface.list`, 트리 JSON)에는 `type:"Terminal"`, `pty_ready:false` 로 보고된다 — 아직 안 뜬 터미널 자리. (IPC `surface.send` 등 표시와 무관한 경로는 여전히 `ensure_surface_initialized` 로 개별 reify.)
 
 ### 두 레벨 레이아웃 (tasty 핵심 설계)
 

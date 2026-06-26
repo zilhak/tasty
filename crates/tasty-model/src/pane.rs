@@ -5,8 +5,8 @@ use tasty_terminal::{Terminal, Waker};
 /// Pane 의 shell-spawning 함수들이 공유하는 옵션 묶음.
 ///
 /// `new_with_shell`, `add_tab_with_shell`, `add_tab_background_with_shell`,
-/// `add_tab_deferred`, `split_active_surface_with_shell`,
-/// `split_surface_by_id_with_shell` 6개 함수가 모두 `(cols, rows, shell,
+/// `split_active_surface_with_shell`,
+/// `split_surface_by_id_with_shell` 함수들이 모두 `(cols, rows, shell,
 /// shell_args, waker, working_dir)` 6 인자를 가져 너무 많았다 (`too_many_arguments`).
 /// 공통 옵션을 struct 로 묶어 각 함수 시그니처 인자 수를 lint 임계값 내로 줄임.
 pub struct ShellSpawnOpts<'a> {
@@ -109,43 +109,6 @@ impl Pane {
     ) {
         let surface: Box<dyn super::Surface> = Box::new(TerminalSurface { id: surface_id });
         let tab = Tab::new_named(tab_id, "Shell".to_string(), explicit_name, surface);
-        self.tabs.push(tab);
-    }
-
-    /// Add a deferred tab (lazy PTY init). The terminal will be spawned when the tab is first accessed.
-    /// 내부적으로 layout에 deferred_spawn을 가진 `EmptySurface` placeholder를 둔다.
-    pub fn add_tab_deferred(
-        &mut self,
-        tab_id: TabId,
-        surface_id: SurfaceId,
-        spawn_opts: ShellSpawnOpts<'_>,
-        explicit_name: Option<String>,
-    ) {
-        let spawn = super::terminal_surface::DeferredSpawn {
-            shell: spawn_opts.shell.map(|s| s.to_string()),
-            shell_args: spawn_opts
-                .shell_args
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            cols: spawn_opts.cols,
-            rows: spawn_opts.rows,
-            waker: spawn_opts.waker,
-            working_dir: spawn_opts.working_dir.map(|p| p.to_path_buf()),
-            restore_command: None,
-            scrollback_persist_id: None,
-        };
-        let placeholder = super::empty_surface::EmptySurface::new_deferred(surface_id, spawn);
-        let surface: Box<dyn super::Surface> = Box::new(placeholder);
-        let tab = Tab {
-            id: tab_id,
-            name: "Shell".to_string(),
-            explicit_name,
-            layout_opt: Some(super::SurfaceLayout::Leaf(surface)),
-            focused_surface: surface_id,
-            osc_title: None,
-            cached_display_name: None,
-        };
         self.tabs.push(tab);
     }
 

@@ -182,22 +182,24 @@ fn close_surface_by_id_no_snapshot_recreates_when_emptied() {
 fn add_deferred_tab(state: &mut AppState, engine: &mut crate::core::CoreState) -> u32 {
     let tab_id = engine.next_ids.next_tab();
     let surface_id = engine.next_ids.next_surface();
-    let cols = engine.default_cols;
-    let rows = engine.default_rows;
     let sh = crate::core::state::ShellConfig::from_settings(&engine.settings);
     let waker = engine.make_waker(surface_id);
-    let shell = sh.shell_ref();
-    let args = sh.args_ref();
-    let opts = crate::model::ShellSpawnOpts {
-        cols,
-        rows,
-        shell,
-        shell_args: &args,
+    // 복원 경로(restore.rs)가 만드는 deferred placeholder 와 동등하게 직접 구성한다.
+    let spawn = crate::model::DeferredSpawn {
+        shell: sh.shell_ref().map(|s| s.to_string()),
+        shell_args: sh.args_ref().iter().map(|s| s.to_string()).collect(),
+        cols: engine.default_cols,
+        rows: engine.default_rows,
         waker,
         working_dir: None,
+        restore_command: None,
+        scrollback_persist_id: None,
     };
+    let placeholder = crate::model::EmptySurface::new_deferred(surface_id, spawn);
+    let tab =
+        crate::model::Tab::new_named(tab_id, "Shell".to_string(), None, Box::new(placeholder));
     let pane = state.focused_pane_mut(engine).expect("focused pane");
-    pane.add_tab_deferred(tab_id, surface_id, opts, None);
+    pane.tabs.push(tab);
     surface_id
 }
 
