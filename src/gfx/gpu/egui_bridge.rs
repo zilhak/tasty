@@ -64,16 +64,13 @@ impl GpuState {
             // 외부 drag&drop hover 시각 피드백 — 모든 레이어 위에 그린다.
             ui::drop_overlay::draw_drop_overlay(ctx, state, engine, terminal_rect, scale_factor);
 
-            // Windows CSD 리사이즈 보더 — 데코 off 로 OS 보더가 없으므로 윈도우 둘레에
-            // egui 인터랙티브 스트립을 최상위로 깐다(Windows 외 OS no-op). 좌변은
-            // 사이드바가 덮으므로(버튼 클릭이 리사이즈로 흡수되는 버그) 사이드바 폭만큼
-            // 좌측 존을 잘라낸다.
-            let sidebar_inset = if state.sidebar_visible {
-                terminal_rect.x.value() / scale_factor
-            } else {
-                0.0
-            };
-            ui::titlebar::draw_resize_borders(ctx, window, sidebar_inset);
+            // 통합 리사이즈 커서 — `handle_cursor_moved` 가 창 가장자리 hover 시
+            // 저장한 8방향을 egui 프레임 내에서 적용한다. egui 가 매 프레임 winit
+            // 커서를 덮으므로 여기서만 적용할 수 있다. macOS 는 네이티브 데코라
+            // `pending_resize_cursor` 가 항상 None (write 경로가 cfg 로 제외됨).
+            if let Some(dir) = state.pending_resize_cursor {
+                ctx.set_cursor_icon(ui::titlebar::resize_cursor(dir));
+            }
 
             // Settings UI is now rendered in the modal window (ModalView)
         })

@@ -30,10 +30,17 @@ release IPC/CLI 에 노출하지 않는다.
   유지**한다. 신호등의 클릭·hover·풀스크린·접근성·디밍은 OS 가 처리하고, tasty 는 드래그/
   더블클릭과 신호등 폭 carve-out 만 담당한다.
 - **Windows**: `with_decorations(false)` + `with_undecorated_shadow(true)`. tasty 가 우측
-  캡션 버튼(min/max/restore/close)과 가장자리 리사이즈 보더(egui 오버레이 + `drag_resize_window`)
-  를 직접 그린다.
-- **Linux**: `with_decorations(false)`. tasty 가 DE 가변 버튼(데이터 드리븐)과 가장자리
-  리사이즈(`drag_resize_window`)를 직접 그린다.
+  캡션 버튼(min/max/restore/close)을 직접 그린다.
+- **Linux**: `with_decorations(false)`. tasty 가 DE 가변 버튼(데이터 드리븐)을 직접 그린다.
+
+데코 없는 Windows/Linux 창의 **가장자리 리사이즈는 단일 MainView 경로**로 통일한다 —
+`handle_mouse_input` 이 좌클릭 press 에서 `egui_consumed == false`(콘텐츠가 포인터를
+원하지 않음) AND 가장자리 margin(`resize_direction_at`) AND 비최대화 AND 오버레이/팝업/
+배너 없음일 때만 `drag_resize_window` 를 호출한다. 이전의 Windows egui 오버레이(`Order::Foreground`
+흡수 레이어 + carve-out)와 Linux pre-interception 은 제거됐다. 모든 egui 인터랙티브
+콘텐츠가 자동으로 입력 우선권을 가지므로(콘텐츠 우선 입력모델) 가장자리 콘텐츠마다
+carve-out 을 뚫어야 하던 O(n) 부채가 종결된다. macOS 는 데코 있는 창이라 이 경로를 타지
+않고(cfg 가드) OS 네이티브 보더가 리사이즈를 처리한다.
 
 공통 타이틀바(36px, full-width, 드래그/더블클릭→maximize)는 `src/adapters/ui/titlebar/`
 의 단일 어댑터가 그리고, `top_inset` 으로 사이드바·터미널 영역을 밀어낸다.

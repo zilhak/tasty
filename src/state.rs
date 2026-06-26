@@ -262,6 +262,14 @@ pub struct AppState {
     pub(crate) sidebar_visible: bool,
     /// Sidebar collapsed: true = compact mode (narrow width, icons only).
     pub(crate) sidebar_collapsed: bool,
+    /// 통합 리사이즈 커서 피드백 — `handle_cursor_moved` 가 창 가장자리 hover 를
+    /// 감지하면 그 8방향을 저장하고, egui 프레임(`run_egui_frame`)이 매 프레임
+    /// `set_cursor_icon` 으로 적용한다. egui 가 winit 커서를 매 프레임 덮으므로
+    /// 프레임 내에서만 적용할 수 있어 상태로 보관한다. 데코 없는 Windows/Linux
+    /// 창에서만 채워진다(macOS 는 네이티브 데코라 항상 None). 콘텐츠/오버레이 위에서는
+    /// None 으로 리셋된다(콘텐츠 우선 입력모델).
+    #[cfg(feature = "gui")]
+    pub(crate) pending_resize_cursor: Option<winit::window::ResizeDirection>,
     /// switch-number overlay 활성 스냅샷. 현재 눌린 modifier 가 tab/workspace 전환
     /// 단축키와 일치하면 그 대상(+Tab 이면 focused pane id)을 담는다. `MainView` 의
     /// `ModifiersChanged` 가 [`crate::adapters::ui::switch_overlay::switch_target_for`]
@@ -646,6 +654,8 @@ impl AppState {
             sidebar_width,
             sidebar_visible: true,
             sidebar_collapsed: false,
+            #[cfg(feature = "gui")]
+            pending_resize_cursor: None,
             #[cfg(feature = "gui")]
             switch_overlay: None,
             dialogs: DialogState::new(),

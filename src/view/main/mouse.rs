@@ -105,11 +105,35 @@ impl MainView {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered || self.state.banner_hovered {
+            // 콘텐츠/오버레이 위에서는 리사이즈 커서를 띄우지 않는다(콘텐츠 우선).
+            // early-return 경로에서도 반드시 리셋해야 가장자리→콘텐츠 이동 시 ↔ 커서가
+            // 남지 않는다.
+            self.state.pending_resize_cursor = None;
             if self.hovered_link.take().is_some() {
                 self.mark_dirty();
             }
             self.mark_dirty();
             return;
+        }
+
+        // 통합 리사이즈 커서 피드백 — 가장자리 margin 안이면 8방향을 저장하고
+        // egui 프레임(`run_egui_frame`)이 `set_cursor_icon` 으로 적용한다(egui 가 매
+        // 프레임 winit 커서를 덮으므로 프레임 내에서만 적용 가능). macOS 는 네이티브
+        // 데코라 제외(cfg 가드) — 그 외 OS 는 항상 None 유지.
+        #[cfg(not(target_os = "macos"))]
+        {
+            let size = self.base.gpu.size();
+            self.state.pending_resize_cursor = if self.base.winit.is_maximized() {
+                None
+            } else {
+                crate::platform::window_chrome::resize_direction_at(
+                    position.x,
+                    position.y,
+                    f64::from(size.width),
+                    f64::from(size.height),
+                    crate::platform::window_chrome::RESIZE_EDGE_MARGIN,
+                )
+            };
         }
 
         let terminal_rect = self.compute_terminal_rect();
@@ -192,6 +216,38 @@ impl MainView {
         button: MouseButton,
         egui_consumed: bool,
     ) {
+        // 통합 리사이즈 hit-test (콘텐츠 우선 입력모델). 모든 egui 인터랙티브
+        // 콘텐츠(사이드바 버튼·캡션 버튼·상태바 등)가 자동으로 우선권을 가지므로
+        // (`!egui_consumed` && 오버레이류 없음), 좌클릭 press 가 창 가장자리 margin
+        // 안일 때만 OS 리사이즈를 시작한다 — carve-out 불필요. egui_consumed
+        // early-return 보다 위에 두되 `!egui_consumed` 와 오버레이 가드를 모두 검사한다.
+        // macOS 는 네이티브 데코 창(`window_chrome::apply_csd_attributes`)이라 OS 가
+        // 가장자리 리사이즈를 처리하므로 이 경로를 타지 않는다(cfg 가드).
+        #[cfg(not(target_os = "macos"))]
+        if button == MouseButton::Left
+            && button_state == ElementState::Pressed
+            && !egui_consumed
+            && !self.state.settings_open
+            && !self.state.popup_hovered
+            && !self.state.banner_hovered
+            && !self.base.winit.is_maximized()
+            && let Some(pos) = self.cursor_position
+        {
+            let size = self.base.gpu.size();
+            if let Some(dir) = crate::platform::window_chrome::resize_direction_at(
+                pos.x,
+                pos.y,
+                f64::from(size.width),
+                f64::from(size.height),
+                crate::platform::window_chrome::RESIZE_EDGE_MARGIN,
+            ) {
+                if let Err(e) = self.base.winit.drag_resize_window(dir) {
+                    tracing::warn!("window resize drag failed: {e}");
+                }
+                return;
+            }
+        }
+
         let overlay_open = self.state.settings_open;
         if egui_consumed || overlay_open || self.state.popup_hovered || self.state.banner_hovered {
             // Even when egui consumes the event (e.g. egui-rendered panels),

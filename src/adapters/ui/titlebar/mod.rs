@@ -4,7 +4,6 @@
 //! action → winit window 조작 브리지). OS별 컨트롤(신호등/캡션 버튼)은 P4~P6.
 
 mod caption;
-mod resize;
 mod view;
 
 use winit::event_loop::EventLoopProxy;
@@ -103,13 +102,19 @@ pub fn draw_titlebar(ctx: &egui::Context, window: &Window, proxy: &EventLoopProx
     }
 }
 
-/// Windows CSD 리사이즈 보더를 윈도우 둘레에 깐다(데코 off 로 OS 보더가 사라지므로
-/// tasty 가 직접 처리). `run_egui_frame` 의 가장 마지막에 호출해 모든 패널 위 레이어에
-/// 둔다. Windows 외 OS 에서는 no-op.
-/// `sidebar_inset` = 좌측 사이드바 폭(logical px, 없으면 0). 리사이즈 보더가 사이드바
-/// 버튼 클릭을 가로채지 않도록 좌측 존을 그만큼 잘라낸다.
-#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
-pub fn draw_resize_borders(ctx: &egui::Context, window: &Window, sidebar_inset: f32) {
-    #[cfg(target_os = "windows")]
-    resize::draw_resize_borders(ctx, window, sidebar_inset);
+/// 8방향 [`winit::window::ResizeDirection`] → egui 리사이즈 커서 아이콘 매핑.
+/// 통합 리사이즈 경로(MainView hit-test)가 저장한 hover 방향을 egui 프레임에서
+/// 커서로 적용할 때 쓴다. 순수 매핑이라 OS 무관하게 컴파일된다.
+pub fn resize_cursor(dir: winit::window::ResizeDirection) -> egui::CursorIcon {
+    use winit::window::ResizeDirection as D;
+    match dir {
+        D::North => egui::CursorIcon::ResizeNorth,
+        D::South => egui::CursorIcon::ResizeSouth,
+        D::East => egui::CursorIcon::ResizeEast,
+        D::West => egui::CursorIcon::ResizeWest,
+        D::NorthEast => egui::CursorIcon::ResizeNorthEast,
+        D::NorthWest => egui::CursorIcon::ResizeNorthWest,
+        D::SouthEast => egui::CursorIcon::ResizeSouthEast,
+        D::SouthWest => egui::CursorIcon::ResizeSouthWest,
+    }
 }

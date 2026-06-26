@@ -15,7 +15,8 @@ pub const RESIZE_EDGE_MARGIN: f64 = 8.0;
 
 /// 커서가 창 가장자리 리사이즈 존에 있으면 해당 8방향 [`ResizeDirection`] 을 돌려준다.
 /// 좌표·크기 모두 physical px. 모서리(코너)가 변보다 우선한다. 순수 함수라 OS 무관
-/// 하게 컴파일·테스트된다(실제 `drag_resize_window` 호출만 Linux 배선).
+/// 하게 컴파일·테스트된다. 데코 없는 Windows/Linux 창의 단일 MainView 리사이즈 경로가
+/// 공유 호출한다(macOS 는 네이티브 데코라 호출하지 않음).
 pub fn resize_direction_at(
     x: f64,
     y: f64,
@@ -54,7 +55,9 @@ pub fn resize_direction_at(
 /// - **Windows**: `with_decorations(false)` 로 OS 캡션/보더를 제거한다. tasty 가
 ///   우측 캡션 버튼을 직접 그리고(P5), 드래그/더블클릭 maximize 는 공통 어댑터가
 ///   처리한다. `with_undecorated_shadow(true)` 로 데코 제거 후에도 드롭 섀도를 복원해
-///   창 경계가 보이게 한다. 리사이즈 보더는 egui 오버레이 + `drag_resize_window` 로 처리.
+///   창 경계가 보이게 한다. 가장자리 리사이즈는 Linux 와 동일한 단일 MainView 경로
+///   (raw hit-test + `egui_consumed` 게이트 + `resize_direction_at` + `drag_resize_window`)로
+///   처리한다 — 별도 egui 오버레이 레이어 없음(콘텐츠 우선 입력모델).
 /// - **그 외 OS**: 변경 없음(네이티브 데코 유지).
 pub fn apply_csd_attributes(attrs: WindowAttributes) -> WindowAttributes {
     #[cfg(target_os = "macos")]

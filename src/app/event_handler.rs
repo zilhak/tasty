@@ -493,15 +493,6 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
 
-        // Linux CSD: 데코 없는 창의 가장자리 리사이즈를 일반 마우스 처리보다 먼저 가로챈다.
-        #[cfg(target_os = "linux")]
-        if !self.view.is_modal_active()
-            && let Some(win) = self.view.views.get(&id).map(|w| w.base().winit.clone())
-            && self.handle_csd_resize_edge(&win, &event)
-        {
-            return;
-        }
-
         let modal_active = self.view.is_modal_active();
         let action = {
             if let Some(w) = self.view.views.get_mut(&id) {
@@ -818,51 +809,6 @@ impl App {
         } else {
             // Last main window: route through quit logic
             self.handle_quit_requested(event_loop);
-        }
-    }
-
-    /// Linux CSD 창의 가장자리 리사이즈 처리. CursorMoved 로 hover 엣지를 갱신하고,
-    /// 가장자리에서 좌클릭 press 가 들어오면 `drag_resize_window` 로 리사이즈를
-    /// 시작한다(소비 시 `true`). 본문은 cross-platform winit API 만 쓰므로 전 플랫폼
-    /// 컴파일되지만 호출은 Linux 에서만 한다(데코 없는 창 전용).
-    ///
-    /// 커서 모양(↔ 등) 피드백은 egui 가 프레임마다 set_cursor 로 덮으므로 여기서
-    /// 강제하지 않는다 — egui 커서 통합은 후속.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    fn handle_csd_resize_edge(
-        &mut self,
-        window: &winit::window::Window,
-        event: &WindowEvent,
-    ) -> bool {
-        match event {
-            WindowEvent::CursorMoved { position, .. } => {
-                let size = window.inner_size();
-                self.resize_hover_edge = crate::platform::window_chrome::resize_direction_at(
-                    position.x,
-                    position.y,
-                    f64::from(size.width),
-                    f64::from(size.height),
-                    crate::platform::window_chrome::RESIZE_EDGE_MARGIN,
-                );
-                false
-            }
-            WindowEvent::MouseInput {
-                state: winit::event::ElementState::Pressed,
-                button: winit::event::MouseButton::Left,
-                ..
-            } => {
-                // 최대화 창은 가장자리 리사이즈 불가.
-                if let Some(dir) = self.resize_hover_edge
-                    && !window.is_maximized()
-                {
-                    if let Err(e) = window.drag_resize_window(dir) {
-                        tracing::warn!("CSD drag_resize_window failed: {e}");
-                    }
-                    return true;
-                }
-                false
-            }
-            _ => false,
         }
     }
 
