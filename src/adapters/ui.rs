@@ -9,6 +9,7 @@ pub(crate) mod switch_overlay;
 mod tab_bar;
 pub(crate) mod titlebar;
 
+pub mod banner;
 pub(crate) mod dialog;
 pub(crate) mod drop_overlay;
 pub mod font_registry;
@@ -25,6 +26,7 @@ pub(crate) mod tools_menu;
 
 pub mod input;
 
+pub use banner::{BannerManager, BannerScope, BannerState};
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use draw::draw_ui;
 pub use egui_panels::draw_egui_panels;

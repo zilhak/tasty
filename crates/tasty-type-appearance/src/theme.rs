@@ -130,6 +130,52 @@ pub const BRAND_MELON_FLESH: HexColor = HexColor::from_rgb(0xf2, 0x5d, 0x6b);
 /// 통일한다. LogicalPx 가 아닌 순수 비율이므로 별도 f32 상수.
 pub const OPACITY_DISABLED: f32 = 0.5;
 
+/// 뒤로 물러난(recessed) 요소 공통 톤 (`--tasty-opacity-recessed` = 0.4). 상위 스코프
+/// 배너 뒤로 디밍되는 하위 스코프 배너가 이 값(≈60% 투명)을 쓴다. OPACITY_DISABLED
+/// 와 같은 이유로 순수 비율 f32 상수.
+pub const OPACITY_RECESSED: f32 = 0.4;
+
+/// 비-터미널 chrome(배너 등장/소멸 등)의 UI 모션 지속시간 (`--tasty-motion-ui` →
+/// `--tasty-duration-120` = 120ms). theme.md 의 "터미널 콘텐츠 애니메이션 0ms" 는
+/// 터미널 콘텐츠 한정이라, 알림류 chrome 에는 페이드를 허용한다.
+pub const MOTION_UI_MS: f32 = 120.0;
+
+/// 떠 있는 패널(popover / banner)의 lift 그림자 토큰. egui 비의존 순수 표현 —
+/// egui 변환은 `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
+///
+/// design `--tasty-shadow-popover` (= 허용된 단 하나의 popover scrim 그림자, 새 그림자
+/// 시스템을 만들지 않고 재사용). `alpha` 는 0~255 straight 검정 알파.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShadowToken {
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub blur: f32,
+    pub spread: f32,
+    pub alpha: u8,
+}
+
+#[cfg(feature = "egui-compat")]
+impl ShadowToken {
+    /// egui epaint Shadow 로 변환. offset/blur/spread 는 px 정수로 반올림.
+    pub fn to_egui(self) -> egui::epaint::Shadow {
+        egui::epaint::Shadow {
+            offset: [self.offset_x.round() as i8, self.offset_y.round() as i8],
+            blur: self.blur.round() as u8,
+            spread: self.spread.round() as u8,
+            color: egui::Color32::from_black_alpha(self.alpha),
+        }
+    }
+}
+
+/// `--tasty-shadow-popover` 값. 배너/popover 가 떠 있음을 나타내는 단차.
+pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
+    offset_x: 0.0,
+    offset_y: 8.0,
+    blur: 24.0,
+    spread: 0.0,
+    alpha: 90,
+};
+
 // ============================================================================
 //  ThemeSizing — 모든 테마 공통
 // ============================================================================
@@ -159,6 +205,9 @@ pub struct ThemeSizing {
     pub corner_radius: LogicalPx,
     /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
     pub corner_radius_sm: LogicalPx,
+    /// 떠 있는 패널(배너)용 큰 코너 반경 (8px, design `--tasty-radius-8`). 시스템
+    /// 기본 4px 의 의도적 2배 — CSD 윈도우 코너 / floating 패널 느낌. 배너 셸이 사용.
+    pub corner_radius_lg: LogicalPx,
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
     pub item_height_tab: LogicalPx,
@@ -264,6 +313,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     focus_ring_width: LogicalPx(2.0),
     corner_radius: LogicalPx(4.0),
     corner_radius_sm: LogicalPx(2.0),
+    corner_radius_lg: LogicalPx(8.0),
     item_height_tree: LogicalPx(22.0),
     item_height_interactive: LogicalPx(28.0),
     item_height_tab: LogicalPx(24.0),
@@ -750,6 +800,8 @@ pub struct Theme {
     pub corner_radius: LogicalPx,
     /// 작은 inner element(키캡 등)용 코너 반경 (2px, design `--tasty-radius-sm`).
     pub corner_radius_sm: LogicalPx,
+    /// 떠 있는 패널(배너)용 큰 코너 반경 (8px, design `--tasty-radius-8`).
+    pub corner_radius_lg: LogicalPx,
     pub item_height_tree: LogicalPx,
     pub item_height_interactive: LogicalPx,
     pub item_height_tab: LogicalPx,
@@ -913,6 +965,7 @@ impl Theme {
             focus_ring_width: zoomed(SIZING.focus_ring_width),
             corner_radius: zoomed(SIZING.corner_radius),
             corner_radius_sm: zoomed(SIZING.corner_radius_sm),
+            corner_radius_lg: zoomed(SIZING.corner_radius_lg),
             item_height_tree: zoomed(SIZING.item_height_tree),
             item_height_interactive: zoomed(SIZING.item_height_interactive),
             item_height_tab: zoomed(SIZING.item_height_tab),
@@ -1259,6 +1312,53 @@ impl Theme {
     #[inline]
     pub fn opacity_disabled(&self) -> f32 {
         OPACITY_DISABLED
+    }
+
+    /// recessed(뒤로 물러난) 요소 공통 opacity (0.4). 상위 스코프 배너 뒤로 디밍되는
+    /// 하위 스코프 배너가 이 값(≈60% 투명)을 쓴다. `--tasty-opacity-recessed`.
+    #[inline]
+    pub fn opacity_recessed(&self) -> f32 {
+        OPACITY_RECESSED
+    }
+
+    /// 비-터미널 chrome UI 모션 지속시간 (120ms). 배너 등장/소멸 알파 페이드 등.
+    /// `--tasty-motion-ui` → `--tasty-duration-120`.
+    #[inline]
+    pub fn motion_ui_ms(&self) -> f32 {
+        MOTION_UI_MS
+    }
+
+    // ── 컴포넌트 토큰 (banner) — 기존 semantic 접근자 / 신규 primitive 조합 ──
+    /// 배너 셸 배경. `--tasty-banner-bg` → `surface-raised` (surface0).
+    #[inline]
+    pub fn banner_bg(&self) -> HexColor {
+        self.surface_raised()
+    }
+    /// 배너 셸 보더. `--tasty-banner-border` → `border-strong`.
+    #[inline]
+    pub fn banner_border(&self) -> HexColor {
+        self.border_strong()
+    }
+    /// 배너 전경(본문). `--tasty-banner-fg` → `text-primary`.
+    #[inline]
+    pub fn banner_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+    /// 배너 leading 글리프 기본색. `--tasty-banner-icon-fg` → `text-muted`
+    /// (배너별 심각도 표현이 override 가능).
+    #[inline]
+    pub fn banner_icon_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+    /// 배너 우상단 TTL 카운트다운 색. `--tasty-banner-countdown-fg` → `text-muted`.
+    #[inline]
+    pub fn banner_countdown_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+    /// 떠 있는 패널 그림자. `--tasty-banner-shadow` → `--tasty-shadow-popover`.
+    #[inline]
+    pub fn shadow_popover(&self) -> ShadowToken {
+        SHADOW_POPOVER
     }
 }
 

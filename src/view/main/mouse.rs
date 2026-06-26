@@ -26,7 +26,11 @@ impl MainView {
         let mods = &self.base.modifiers;
         let matches_mods = modifier.matches(mods.control_key(), mods.alt_key(), mods.super_key());
 
-        let new_link = if !matches_mods || self.state.settings_open || self.state.popup_hovered {
+        let new_link = if !matches_mods
+            || self.state.settings_open
+            || self.state.popup_hovered
+            || self.state.banner_hovered
+        {
             None
         } else {
             self.compute_hovered_link()
@@ -100,7 +104,7 @@ impl MainView {
     ) {
         self.cursor_position = Some(position);
         let overlay_open = self.state.settings_open;
-        if egui_consumed || overlay_open || self.state.popup_hovered {
+        if egui_consumed || overlay_open || self.state.popup_hovered || self.state.banner_hovered {
             if self.hovered_link.take().is_some() {
                 self.mark_dirty();
             }
@@ -189,7 +193,7 @@ impl MainView {
         egui_consumed: bool,
     ) {
         let overlay_open = self.state.settings_open;
-        if egui_consumed || overlay_open || self.state.popup_hovered {
+        if egui_consumed || overlay_open || self.state.popup_hovered || self.state.banner_hovered {
             // Even when egui consumes the event (e.g. egui-rendered panels),
             // we still need to update pane focus on left-click within the terminal area.
             //
@@ -201,6 +205,7 @@ impl MainView {
             if egui_consumed
                 && !overlay_open
                 && !self.state.popup_hovered
+                && !self.state.banner_hovered
                 && button == MouseButton::Left
                 && button_state == ElementState::Pressed
             {
@@ -614,7 +619,11 @@ impl MainView {
         if egui_consumed {
             self.mark_dirty();
         }
-        if !egui_consumed && !overlay_open && !self.state.popup_hovered {
+        if !egui_consumed
+            && !overlay_open
+            && !self.state.popup_hovered
+            && !self.state.banner_hovered
+        {
             // Find the surface under the cursor, falling back to the focused surface
             let terminal_rect = self.compute_terminal_rect();
             let target_id = self

@@ -73,6 +73,7 @@ pub fn compute_terminal_rect(
 
 mod attach_mapping;
 mod attached_surface;
+pub mod banner_kind;
 mod binary_tree;
 pub mod closed_item;
 mod empty_surface;

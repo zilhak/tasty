@@ -27,8 +27,8 @@ pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
 pub use clipboard::ClipboardCommands;
 #[cfg(debug_assertions)]
 pub use debug::{
-    DebugCommands, EventBusCommands, ExtensionDebugCommands, HostPopupDebugCommands,
-    PopupDebugCommands, ToolDebugCommands,
+    BannerDebugCommands, DebugCommands, EventBusCommands, ExtensionDebugCommands,
+    HostPopupDebugCommands, PopupDebugCommands, ToolDebugCommands,
 };
 pub use file_handler::{FileHandlerCommands, ScriptCommands};
 pub use list_set::{ListCommands, SetCommands};

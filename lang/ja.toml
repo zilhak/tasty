@@ -584,6 +584,10 @@ vi_copy_macro_recording_started = "マクロ録画を開始しました"
 vi_copy_macro_recording_stopped = "マクロ録画を停止しました"
 vi_copy_macro_replay_failed = "マクロ再生に失敗しました (空のレジスタ または再帰回数超過)"
 
+[banner.mouse_capture]
+title = "マウス入力をキャプチャ中"
+body = "このアプリがマウスをキャプチャしています。テキスト選択や tasty メニューは Shift を押しながら操作してください。"
+
 [port_scanner]
 heading = "受信ポート"
 no_ports = "このターミナルのプロセスツリーには受信中の TCP ポートがありません。"

@@ -375,6 +375,117 @@ pub(super) fn handle_debug_host_popup_close(
     JsonRpcResponse::success(id, json!({ "closed": def.id }))
 }
 
+/// `debug.banner.list` — 빌트인 배너 정의 목록 + 현재 표시/대기 상태를 반환.
+///
+/// 배너는 사용자 행동에서만 발사되므로(발화 정책 §불가침) 이 표면은 release 에
+/// 노출되지 않는다. plugin 기여 배너는 (도입 시) 별도 표면이 담당한다.
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_banner_list(state: &AppState, id: serde_json::Value) -> JsonRpcResponse {
+    let defs: Vec<_> = crate::adapters::ui::banner::defs::all_defs()
+        .iter()
+        .map(|def| {
+            json!({
+                "id": def.id,
+                "ttl_seconds": def.ttl_seconds,
+            })
+        })
+        .collect();
+    let shown: Vec<_> = state
+        .banners
+        .shown_banners()
+        .map(|b| {
+            let queued: Vec<&str> = state
+                .banners
+                .queued_banners(&b.scope)
+                .map(|q| q.id)
+                .collect();
+            json!({
+                "id": b.id,
+                "scope": b.scope.to_token(),
+                "remaining_seconds": b.remaining_seconds(),
+                "queued": queued,
+            })
+        })
+        .collect();
+    JsonRpcResponse::success(
+        id,
+        json!({
+            "defs": defs,
+            "shown": shown,
+            "total_queued": state.banners.total_queued(),
+        }),
+    )
+}
+
+/// `debug.banner.show` — `{ banner_id, scope }` 로 배너를 직접 발화한다.
+///
+/// 사용자 조작(마우스 캡쳐 surface 에서 드래그 등) 을 재현하는 디버그 동작이라
+/// release 에 없다. `scope` 는 `view` / `workspace:<i>` / `pane:<id>` /
+/// `tab:<pane>:<i>` / `surface:<id>` 토큰. def 의 ttl 을 그대로 적용한다.
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_banner_show(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let Some(banner_id) = params.get("banner_id").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'banner_id' parameter");
+    };
+    let Some(scope_token) = params.get("scope").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'scope' parameter");
+    };
+    let Some(def) = crate::adapters::ui::banner::defs::find(banner_id) else {
+        return JsonRpcResponse::error(id, -32602, format!("banner '{banner_id}' not found"));
+    };
+    let Some(scope) = crate::adapters::ui::BannerScope::from_token(scope_token) else {
+        return JsonRpcResponse::error(id, -32602, format!("invalid scope '{scope_token}'"));
+    };
+    let banner = match def.ttl_seconds {
+        Some(secs) => crate::adapters::ui::BannerState::with_ttl(def.id, scope, secs),
+        None => crate::adapters::ui::BannerState::persistent(def.id, scope),
+    };
+    let outcome = state.banners.push(banner);
+    JsonRpcResponse::success(id, json!({ "outcome": format!("{outcome:?}") }))
+}
+
+/// `debug.banner.close` — `{ banner_id }` 로 배너를 닫는다 (표시 중이면 큐 head 승격).
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_banner_close(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let Some(banner_id) = params.get("banner_id").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'banner_id' parameter");
+    };
+    let Some(def) = crate::adapters::ui::banner::defs::find(banner_id) else {
+        return JsonRpcResponse::error(id, -32602, format!("banner '{banner_id}' not found"));
+    };
+    let closed = state.banners.close_by_id(def.id);
+    JsonRpcResponse::success(id, json!({ "closed": closed }))
+}
+
+/// `debug.banner.set_countdown` — `{ scope, seconds }` 로 표시 중 TTL 배너의
+/// 남은 시간을 강제 설정한다 (만료 직전 상태 등 시각 검증용).
+#[cfg(all(debug_assertions, feature = "gui"))]
+pub(super) fn handle_debug_banner_set_countdown(
+    state: &mut AppState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let Some(scope_token) = params.get("scope").and_then(|v| v.as_str()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'scope' parameter");
+    };
+    let Some(seconds) = params.get("seconds").and_then(|v| v.as_u64()) else {
+        return JsonRpcResponse::invalid_params(id, "Missing required 'seconds' parameter");
+    };
+    let Some(scope) = crate::adapters::ui::BannerScope::from_token(scope_token) else {
+        return JsonRpcResponse::error(id, -32602, format!("invalid scope '{scope_token}'"));
+    };
+    let applied = state.banners.set_countdown(&scope, seconds as u32);
+    JsonRpcResponse::success(id, json!({ "applied": applied }))
+}
+
 /// Inject a key event into a surface's PTY.
 #[cfg(debug_assertions)]
 pub(super) fn handle_debug_inject_key(

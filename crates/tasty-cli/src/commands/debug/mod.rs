@@ -123,6 +123,11 @@ pub enum DebugCommands {
     /// remote_tool ...) open without the user-click path, for visual verification.
     #[command(subcommand)]
     HostPopup(HostPopupDebugCommands),
+    /// Banner inspection and direct fire/close (debug builds only).
+    /// Fires a banner without the user-action path (banners only fire from user
+    /// actions in release), for visual verification of the overlay.
+    #[command(subcommand)]
+    Banner(BannerDebugCommands),
     /// VTE sequence simulator — identical to the standalone `tasty-tui-sim`
     /// binary, run from inside the current surface (emits raw VTE to stdout, no
     /// IPC). No subcommand = interactive REPL. Use `sim flood` for a heavy
@@ -251,6 +256,37 @@ pub enum HostPopupDebugCommands {
         /// Host popup id
         #[arg(long)]
         popup_id: String,
+    },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum BannerDebugCommands {
+    /// List built-in banner definitions + current shown/queued state
+    List,
+    /// Fire a banner by id into a scope
+    Show {
+        /// Banner id (e.g. "mouse-capture")
+        #[arg(long)]
+        banner_id: String,
+        /// Target scope token: view | workspace:<i> | pane:<id> | tab:<pane>:<i> | surface:<id>
+        #[arg(long)]
+        scope: String,
+    },
+    /// Close a banner by id (promotes the queue head if it was shown)
+    Close {
+        /// Banner id
+        #[arg(long)]
+        banner_id: String,
+    },
+    /// Force the remaining countdown of a shown TTL banner in a scope
+    SetCountdown {
+        /// Target scope token (same format as `show --scope`)
+        #[arg(long)]
+        scope: String,
+        /// New remaining seconds
+        #[arg(long)]
+        seconds: u32,
     },
 }
 

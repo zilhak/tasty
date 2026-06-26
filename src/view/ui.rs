@@ -60,6 +60,22 @@ pub(crate) trait View: sealed::Sealed + std::any::Any {
         self.as_any_mut().downcast_mut::<MainView>()
     }
 
+    /// 배너(View 스코프) 표시 플레이스홀더 — 이 View 위에 View-스코프 배너가 뜰
+    /// 위치. `screen` 은 현재 화면 rect. 기본값은 **콘텐츠 영역 최상단(탭바 아래)**
+    /// 으로, 모든 View 가 별도 지정 없이도 합리적 위치를 갖는다(Modal 포함). 각 View
+    /// 구현체는 자기에게 알맞은 곳으로 override 할 수 있다.
+    ///
+    /// 워크스페이스 전환과 무관하게 View 위에 유지된다(배너 발화 정책 §View 배너).
+    /// `tab_bar_height` 만큼 내려 탭 바를 가리지 않는다.
+    #[allow(dead_code)] // View 스코프 배너 플레이스홀더 — 호스트 루프 배선은 후속.
+    fn banner_placeholder(&self, screen: egui::Rect) -> Option<egui::Rect> {
+        let tab_bar = crate::theme::theme().tab_bar_height.value();
+        Some(egui::Rect::from_min_max(
+            egui::pos2(screen.left(), screen.top() + tab_bar),
+            screen.max,
+        ))
+    }
+
     /// `std::any::Any` 다운캐스트용.
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;

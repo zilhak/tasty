@@ -333,6 +333,7 @@ impl GpuState {
         // 3. Cursor decision: egui first, then winit area (dividers + surfaces)
         if !self.egui_ctx.is_pointer_over_area()
             && !state.popup_hovered
+            && !state.banner_hovered
             && let Some(pos) = self.egui_ctx.input(|i| i.pointer.hover_pos())
         {
             let px = pos.x * self.scale_factor;

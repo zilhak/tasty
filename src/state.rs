@@ -290,6 +290,10 @@ pub struct AppState {
     /// 사용자 행동에서만 발사한다. CLI/IPC 경유 동작은 토스트를 만들지 않는다.
     #[cfg(feature = "gui")]
     pub(crate) toasts: crate::adapters::ui::ToastManager,
+    /// Banner manager — 4번째 오버레이(공지+action). Toast/Popup 과 별도 매니저.
+    /// 사용자 행동에서만 발사한다. IPC/release cascade 는 배너를 띄울 수 없다.
+    #[cfg(feature = "gui")]
+    pub(crate) banners: crate::adapters::ui::BannerManager,
     /// Cached recent files list (markdown/html open popups). Loaded from disk at
     /// startup and mutated in-place; each mutation saves back to disk.
     pub(crate) recent_files: crate::recent_files::RecentFiles,
@@ -297,6 +301,12 @@ pub struct AppState {
     /// Updated each frame by PopupManager::draw(). Mouse handlers check this
     /// to block events from reaching lower layers (terminal, dividers).
     pub(crate) popup_hovered: bool,
+    /// Whether the mouse is currently over a banner (input layer state).
+    /// Updated each frame by BannerManager::draw(). 배너는 자기 영역의 마우스를
+    /// 소비(뒤로 전파 X)하므로 mouse 핸들러가 이 값으로 하위 레이어 전파를 막는다.
+    /// (포커스는 받지 않음 — 마우스 소비만.) popup_hovered 와 동일하게 비-gui 빌드도
+    /// 필드를 갖는다(입력 가드가 공유).
+    pub(crate) banner_hovered: bool,
     /// Preset store 의 Arc clone — Core 가 owner. UI popup 이 draw 흐름에서
     /// core 인자 없이 lock 으로 read 할 수 있도록 AppState 에 *clone 보유* 만
     /// 한다 (allocation 동일, owner 는 Core). `create_app_state` 가 inject.
@@ -650,6 +660,7 @@ impl AppState {
             last_focused_tab: None,
             last_tab_locations: None,
             popup_hovered: false,
+            banner_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             #[cfg(feature = "gui")]
             popups: {
@@ -666,6 +677,8 @@ impl AppState {
             command_palette: crate::state::command_palette::CommandPaletteState::default(),
             #[cfg(feature = "gui")]
             toasts: crate::adapters::ui::ToastManager::new(),
+            #[cfg(feature = "gui")]
+            banners: crate::adapters::ui::BannerManager::new(),
             #[cfg(feature = "gui")]
             markdown_views: Default::default(),
             #[cfg(feature = "gui")]

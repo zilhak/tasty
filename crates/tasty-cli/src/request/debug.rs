@@ -87,6 +87,7 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::Tool(sub) => tool_debug_command_to_method_params(sub),
         DebugCommands::Popup(sub) => popup_debug_command_to_method_params(sub),
         DebugCommands::HostPopup(sub) => host_popup_debug_command_to_method_params(sub),
+        DebugCommands::Banner(sub) => banner_debug_command_to_method_params(sub),
         // stream-echo is a raw framed exchange, not a JSON-RPC request — it is
         // handled directly in `run_client` before request mapping is reached.
         DebugCommands::StreamEcho { .. } => {
@@ -146,6 +147,28 @@ pub(super) fn host_popup_debug_command_to_method_params(
         HostPopupDebugCommands::Close { popup_id } => (
             "debug.host_popup.close",
             serde_json::json!({ "popup_id": popup_id }),
+        ),
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn banner_debug_command_to_method_params(
+    command: &crate::BannerDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::BannerDebugCommands;
+    match command {
+        BannerDebugCommands::List => ("debug.banner.list", serde_json::json!({})),
+        BannerDebugCommands::Show { banner_id, scope } => (
+            "debug.banner.show",
+            serde_json::json!({ "banner_id": banner_id, "scope": scope }),
+        ),
+        BannerDebugCommands::Close { banner_id } => (
+            "debug.banner.close",
+            serde_json::json!({ "banner_id": banner_id }),
+        ),
+        BannerDebugCommands::SetCountdown { scope, seconds } => (
+            "debug.banner.set_countdown",
+            serde_json::json!({ "scope": scope, "seconds": seconds }),
         ),
     }
 }

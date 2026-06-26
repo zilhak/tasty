@@ -11,37 +11,17 @@
 //! 3. **queue & stacking** — 상위 스코프 배너(전면) + 하위 스코프 배너(40% 디밍, 후면).
 //!
 //! 색·치수·폰트는 모두 `Theme` 토큰 경유(`from_rgb`/hex 리터럴 금지). 배너 전용
-//! Tier-3 토큰(`--tasty-banner-*`)은 아직 본체 Theme 에 없으므로 changelog 의 semantic
-//! 체인을 따라 기존 접근자로 매핑한다(아래 상수 주석 참조 — banner-03 에서 토큰화).
+//! Tier-3 토큰은 banner-03 에서 본체 Theme 에 도입되어, 이 specimen 도 근사 없이
+//! 토큰 접근자를 직접 쓴다: 디밍 = `opacity_recessed()`(0.4), 라운드 = `corner_radius_lg`
+//! (radius-8), 그림자 = `shadow_popover()`. semantic 매핑(`banner_bg` → surface-raised 등)도
+//! 전용 접근자(`banner_bg()`/`banner_border()`/`banner_icon_fg()`/`banner_countdown_fg()`)로
+//! 노출된다.
 
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, kbd};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
-
-/// `--tasty-banner-recessed-opacity` → `--tasty-opacity-recessed` (0.4). 본체 Theme 에
-/// 아직 없는 primitive — banner-03 에서 `opacity_recessed()` 로 토큰화. 하위 스코프 배너를
-/// 상위 배너 뒤로 디밍하는 값(≈60% 투명).
-const RECESSED_OPACITY: f32 = 0.4;
-
-/// `--tasty-banner-radius` → `--tasty-radius-8` (8px). 시스템 기본 4px 의 의도적 2배
-/// (떠 있는 패널 느낌). 본체에 radius-8 토큰이 없어 `corner_radius`(4) ×2 로 도출 —
-/// banner-03 에서 `--tasty-banner-radius` 로 토큰화.
-fn banner_radius(theme: &Theme) -> f32 {
-    theme.corner_radius.value() * 2.0
-}
-
-/// `--tasty-banner-shadow` → `--tasty-shadow-popover`. 떠 있는 lift. 본체에 shadow 토큰
-/// struct 가 없어 popover 급 그림자를 근사(modal frame 보다 옅게) — banner-03 에서 정합.
-fn banner_shadow() -> egui::epaint::Shadow {
-    egui::epaint::Shadow {
-        offset: [0, 8],
-        blur: 24,
-        spread: 0,
-        color: egui::Color32::from_black_alpha(90),
-    }
-}
 
 /// 색을 opacity 로 곱한다(하위 스코프 배너 디밍 — toast 스택 fade 와 같은 관습).
 fn dim(color: egui::Color32, opacity: f32) -> egui::Color32 {
@@ -57,13 +37,15 @@ fn banner_shell(
     opacity: f32,
     content: impl FnOnce(&mut egui::Ui),
 ) {
-    let bg = dim(theme.surface_raised().to_egui(), opacity);
-    let border = dim(theme.border_strong().to_egui(), opacity);
+    let bg = dim(theme.banner_bg().to_egui(), opacity);
+    let border = dim(theme.banner_border().to_egui(), opacity);
+    let mut shadow = theme.shadow_popover().to_egui();
+    shadow.color = shadow.color.gamma_multiply(opacity);
     egui::Frame::new()
         .fill(bg)
         .stroke(egui::Stroke::new(theme.border_width.value(), border))
-        .corner_radius(banner_radius(theme))
-        .shadow(banner_shadow())
+        .corner_radius(theme.corner_radius_lg.value())
+        .shadow(shadow)
         .inner_margin(egui::Margin::symmetric(
             theme.spacing_md.value() as i8,
             theme.spacing_sm.value() as i8,
@@ -115,7 +97,7 @@ fn countdown(ui: &mut egui::Ui, theme: &Theme, seconds: u32) {
         egui::RichText::new(seconds.to_string())
             .monospace()
             .size(theme.font_size_micro.value())
-            .color(theme.text_muted().to_egui()),
+            .color(theme.banner_countdown_fg().to_egui()),
     );
 }
 
@@ -200,7 +182,7 @@ fn faux_scope(
         egui::Align2::LEFT_TOP,
         "~/tasty $ vim src/main.rs",
         egui::FontId::monospace(theme.font_size_term_sm.value()),
-        dim(theme.text_muted().to_egui(), RECESSED_OPACITY),
+        dim(theme.text_muted().to_egui(), theme.opacity_recessed()),
     );
 
     // 배너 존 — 탭바 아래 8px, 양옆 8px margin, 하단 margin 없음.
@@ -224,7 +206,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         ui,
                         icons::MOUSE,
                         theme.icon_glyph_size_md.value(),
-                        theme.text_secondary().to_egui(),
+                        theme.banner_icon_fg().to_egui(),
                     );
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
@@ -270,16 +252,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("fires on", "user action only (never IPC)"),
         ],
         &[
-            TokenChip::new(
-                "banner-bg",
-                "surface0 fill",
-                theme.surface_raised().to_egui(),
-            ),
-            TokenChip::new("banner-border", "1px edge", theme.border_strong().to_egui()),
+            TokenChip::new("banner-bg", "surface0 fill", theme.banner_bg().to_egui()),
+            TokenChip::new("banner-border", "1px edge", theme.banner_border().to_egui()),
             TokenChip::new(
                 "banner-icon-fg",
                 "leading glyph",
-                theme.text_muted().to_egui(),
+                theme.banner_icon_fg().to_egui(),
             ),
         ],
     );
@@ -367,7 +345,7 @@ pub fn draw_dismiss(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "banner-countdown-fg",
                 "seconds",
-                theme.text_muted().to_egui(),
+                theme.banner_countdown_fg().to_egui(),
             ),
             TokenChip::new(
                 "accent-success",
@@ -399,7 +377,7 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
             egui::pos2(rect.right(), rect.bottom()),
         );
         let mut lower_ui = ui.new_child(egui::UiBuilder::new().max_rect(lower));
-        banner_shell(&mut lower_ui, theme, RECESSED_OPACITY, |ui| {
+        banner_shell(&mut lower_ui, theme, theme.opacity_recessed(), |ui| {
             ui.set_min_height(84.0);
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 body_line(
@@ -446,9 +424,9 @@ pub fn draw_stack(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new(
                 "banner-recessed-opacity",
                 "dimmed lower",
-                dim(theme.surface_raised().to_egui(), RECESSED_OPACITY),
+                dim(theme.banner_bg().to_egui(), theme.opacity_recessed()),
             ),
-            TokenChip::new("banner-bg", "both shells", theme.surface_raised().to_egui()),
+            TokenChip::new("banner-bg", "both shells", theme.banner_bg().to_egui()),
         ],
     );
 

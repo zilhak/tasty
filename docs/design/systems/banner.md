@@ -2,7 +2,7 @@
 
 **Banner** 는 parent(스코프) 상단에 떠서 **안내(info) + 그에 따른 즉시·임시 조치(action)** 를 제공하는 지속·인터랙티브 오버레이다 — 예: TUI 가 마우스를 캡쳐(DECSET 1000/1002/1003)해 드래그 선택이 막혔을 때 "왜 막혔는지 + 우회 방법" 을 띄우는 안내. Modal / Popup / Toast 에 이은 **4번째 오버레이 개념** 이며, `PopupManager`/`ToastManager` 가 아니라 별도 매니저로 관리된다. 용어 구분은 [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md).
 
-> **시각 토큰(색·치수·그림자·타이포·전환)은 디자인 수령 후 보강.** 이 문서는 현재 확정된 *개념·동작·정책* 만 기술한다. 아래에 등장하는 px 수치(margin 8px, radius 8px 등)는 디자인 요청서에서 확정된 **레이아웃 규칙** 이며, 최종 토큰 값은 claude design 수령 시 Theme 토큰으로 확정·교체한다.
+> **시각 토큰은 디자인 수령 후 Theme 토큰으로 확정됨.** 배너 전용 Tier-3 토큰이 본체 Theme 에 도입되어, 아래 px 수치(margin 8px, radius 8px 등)는 모두 토큰 접근자로 노출된다(섹션 "형태" 참조). 하드코딩 없음.
 
 ## 정체성 — 왜 별도 개념인가
 
@@ -55,10 +55,10 @@
 
 - **floating overlay** — parent 영역을 나눠 차지하지 않고 그 **위에 떠서 덮는다**(Toast/Popup 과 동일). 배너 height 이외의 모든 공간이 그대로 하단 콘텐츠 공간이 된다.
 - 너비: parent 폭 **100% − 좌우 margin**.
-- margin: **상 8px / 좌 8px / 우 8px**, **하단 margin 없음**.
-- border-radius: **8px**(약간 둥근 사각형 패널).
-- 높이: **콘텐츠에 따라 가변** — 각 배너 구현체가 자체 결정. 시스템은 "프레임/셸" 과 내부 패딩 규칙만 정의.
-- 배경 / 보더 / 그림자: **Theme 토큰**(`surface0` 배경 + 1px 보더 + 떠 있음을 나타내는 그림자/단차). **구체 토큰 값은 디자인 수령 후 보강.**
+- margin: **상 8px / 좌 8px / 우 8px**, **하단 margin 없음**(`spacing_sm`).
+- border-radius: **8px**(약간 둥근 사각형 패널) — `corner_radius_lg`(= `--tasty-radius-8`, 시스템 기본 4px 의 의도적 2배). 이 단차는 ADR 근거로 토큰화.
+- 높이: **콘텐츠에 따라 가변** — 각 배너 구현체가 자체 결정. 시스템은 "프레임/셸"(`draw_shell`) 과 내부 패딩(좌우 `spacing_md` 12 / 상하 `spacing_sm` 8) 규칙만 정의.
+- 배경 / 보더 / 그림자: **Theme 토큰** — `banner_bg()`(→ `surface_raised`/surface0) 배경 + 1px `banner_border()`(→ `border_strong`) 보더 + `shadow_popover()`(= `--tasty-shadow-popover`) 그림자. 본문 색은 `banner_fg()`(→ text_primary), leading 글리프 기본색은 `banner_icon_fg()`(→ text_muted, 심각도 배너는 override), 카운트다운은 `banner_countdown_fg()`(→ text_muted). 하위 스코프 디밍은 `opacity_recessed()`(0.4), 페이드 모션은 `motion_ui_ms()`(120ms).
 
 ## 닫기 버튼 / 카운트다운 (우측 상단, 같은 자리)
 
@@ -115,18 +115,20 @@ tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 
 ## IPC / debug
 
 - **터미널 텍스트 읽기**(`surface.read_since_mark` 등)에는 **배너 정보를 포함하지 않는다**(텍스트 오염 방지).
-- **debug 빌드 전용** 으로만 배너를 읽고 제어한다. debug 메서드는 사용자 입력 재현/내부 상태 덤프 격리 정책(`#[cfg(debug_assertions)]`, `local_only`, [debug-ipc](../../dev-guide/debug-ipc.md))을 따른다. 필요한 debug 동작:
-  - 배너 **띄우기**(표시), 떠 있는 배너 **확인**
-  - 큐에 배너 **넣기**, 큐에 있는 배너 **확인**
-  - 배너 **닫기**, **카운트다운 조절**
-  - 반환 정보는 별도 구조를 새로 만들지 않고 **"배너 호출 함수 정보 + 인자값"** 수준 — 어떤 배너가 떠 있거나 큐에 있는지 파악 가능한 정도.
+- **debug 빌드 전용** 으로만 배너를 읽고 제어한다. debug 메서드는 사용자 입력 재현/내부 상태 덤프 격리 정책(`#[cfg(debug_assertions)]` + `feature="gui"`, [debug-ipc](../../dev-guide/debug-ipc.md))을 따르며, release 라우터에는 등록되지 않는다. IPC 메서드(= CLI `tasty debug banner <sub>`):
+  - `debug.banner.list` (`list`) — 빌트인 def 목록 + 현재 표시/대기 상태 덤프.
+  - `debug.banner.show` (`show --banner-id <id> --scope <token>`) — 배너 발화. `outcome`(`Shown`/`Queued`/`ResetCountdown`/`Ignored`) 반환.
+  - `debug.banner.close` (`close --banner-id <id>`) — id 로 닫기(표시 중이면 큐 head 승격).
+  - `debug.banner.set_countdown` (`set-countdown --scope <token> --seconds <n>`) — 표시 중 TTL 배너 남은 시간 강제 설정.
+  - `scope` 토큰: `view` / `workspace:<i>` / `pane:<id>` / `tab:<pane>:<i>` / `surface:<id>` ([`BannerScope::from_token`]). 반환은 별도 구조 없이 "호출 함수 정보 + 인자값" 수준.
 
-## 구조 (예정)
+## 구조
 
-배너 매니저는 별도 모듈로 둔다(Toast 가 `src/adapters/ui/toast.rs` 로 분리된 것과 동일). 명명·시그니처는 구현 시 확정하되 개념상 다음을 갖는다.
+배너 매니저는 별도 모듈(`src/adapters/ui/banner.rs`)로 둔다(Toast 가 `toast.rs` 로 분리된 것과 동일). 분류 enum(`BannerId`/`BannerScope`)은 GUI 비의존이라 `crates/tasty-model/src/banner_kind.rs` 에 잔류한다([model-view-split](../../dev-guide/model-view-split.md)).
 
-- **`BannerDef`** — 정적·데이터 지향 정의(고유 id, 대상 스코프 종류, TTL 유무, draw/콘텐츠 함수). id 가 곧 kind.
-- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·60% 투명 스택, 마우스 소비를 중앙 관리. `LayoutContext` 를 재사용해 스코프 정의·스코프-rect 계산을 popup/toast 와 일관되게 유지.
+- **`BannerDef`** — 정적·데이터 지향 정의(고유 id, TTL 유무, 콘텐츠 draw 함수). id 가 곧 kind. `defs::all_defs()`/`defs::find(&str)` 로 조회.
+- **`BannerState`** — 큐/TTL 단위 인스턴스(id, scope, ttl_ms, remaining_ms). `persistent`/`with_ttl` 생성자.
+- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·디밍 스택, 마우스 소비를 중앙 관리. 큐/TTL 로직(`push`/`close_shown`/`advance`)은 egui 비의존 순수 함수라 단위 테스트로 결정론 검증. 시각 `draw()` 는 `LayoutContext` 로 스코프-rect 를 계산(popup/toast 와 일관)하고 `BannerDrawResult { hovered }` 를 돌려준다. `hovered` 는 `AppState.banner_hovered` 로 입력 레이어에 배선([input-layer](../../architecture/input-layer.md)).
 
 모든 배너 문자열은 `t("banner.*")` 키 — `lang/{en,ko,ja}.toml` 세 파일 동시 추가([i18n](../../dev-guide/i18n.md)). 모든 색·치수는 Theme 토큰([theme.md](theme.md)).
 

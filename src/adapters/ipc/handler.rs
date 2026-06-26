@@ -737,6 +737,18 @@ fn route_debug_handler(
         "debug.host_popup.close" => {
             debug::handle_debug_host_popup_close(state, id, &request.params)
         }
+        // 배너 직접 발화/조회/닫기 — 사용자 조작 없이 시각 검증용. release 미노출.
+        // 배너는 사용자 행동에서만 발사되므로(발화 정책 §불가침) 이 표면은 debug 전용.
+        #[cfg(feature = "gui")]
+        "debug.banner.list" => debug::handle_debug_banner_list(state, id),
+        #[cfg(feature = "gui")]
+        "debug.banner.show" => debug::handle_debug_banner_show(state, id, &request.params),
+        #[cfg(feature = "gui")]
+        "debug.banner.close" => debug::handle_debug_banner_close(state, id, &request.params),
+        #[cfg(feature = "gui")]
+        "debug.banner.set_countdown" => {
+            debug::handle_debug_banner_set_countdown(state, id, &request.params)
+        }
         _ => return None,
     })
 }

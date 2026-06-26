@@ -584,6 +584,10 @@ vi_copy_macro_recording_started = "Macro recording started"
 vi_copy_macro_recording_stopped = "Macro recording stopped"
 vi_copy_macro_replay_failed = "Macro replay failed (empty register or recursion limit)"
 
+[banner.mouse_capture]
+title = "Mouse input captured"
+body = "This app is capturing the mouse. Hold Shift to select text or open the tasty menu."
+
 [port_scanner]
 heading = "Listening ports"
 no_ports = "No listening TCP ports in this terminal's process tree."

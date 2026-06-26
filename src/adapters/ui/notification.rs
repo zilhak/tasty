@@ -282,6 +282,21 @@ pub fn draw_popups(
     // Toast 렌더링 (popup 위 레이어). 같은 LayoutContext를 공유한다.
     let reduced_motion = engine.settings.accessibility.reduced_motion;
     state.toasts.draw(ctx, &draw_ctx, reduced_motion);
+
+    // Banner 렌더링 (toast 와 동일 LayoutContext). 배너는 스코프 콘텐츠 최상단(탭바
+    // 아래)에 뜨며 자기 영역의 마우스를 소비한다 — `banner_hovered` 로 하위 레이어
+    // 전파를 막는다(포커스는 받지 않음). View 스코프 배너는 각 View 가 지정한
+    // 플레이스홀더에 뜬다 — 화면 상단(탭바 아래)을 기본 플레이스홀더로 둔다.
+    let th = theme::theme();
+    let screen = ctx.screen_rect();
+    let view_placeholder = Some(egui::Rect::from_min_max(
+        egui::pos2(screen.left(), screen.top() + th.tab_bar_height.value()),
+        screen.max,
+    ));
+    let banner_result = state
+        .banners
+        .draw(ctx, &draw_ctx, &th, view_placeholder, reduced_motion);
+    state.banner_hovered = banner_result.hovered;
 }
 
 /// Build LayoutContext from current AppState and layout info.
