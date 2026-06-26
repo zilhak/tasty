@@ -100,8 +100,8 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.checkbox(&mut settings.general.allow_clipboard_read, "");
             ui.end_row();
 
-            ui.label(t("settings.terminal.right_click_hint_label"));
-            ui.checkbox(&mut settings.general.right_click_capture_hint, "");
+            ui.label(t("settings.terminal.mouse_capture_hint_label"));
+            ui.checkbox(&mut settings.general.mouse_capture_hint, "");
             ui.end_row();
         });
 

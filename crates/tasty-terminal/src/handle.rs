@@ -59,9 +59,9 @@ impl Terminal {
         self.lock_state().mouse_tracking()
     }
 
-    /// 무장된 "첫 우클릭 안내" 플래그를 소비한다(읽고 disarm). 트래킹 세션당 1회 true.
-    pub fn take_right_click_hint(&self) -> bool {
-        self.lock_state().take_right_click_hint()
+    /// 무장된 "첫 마우스 캡처 안내" 플래그를 소비한다(읽고 disarm). 트래킹 세션당 1회 true.
+    pub fn take_mouse_capture_hint(&self) -> bool {
+        self.lock_state().take_mouse_capture_hint()
     }
 
     pub fn sgr_mouse(&self) -> bool {

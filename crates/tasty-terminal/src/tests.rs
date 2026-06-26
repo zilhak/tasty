@@ -129,7 +129,7 @@ fn decset_mouse_tracking() {
 }
 
 #[test]
-fn right_click_hint_arms_on_none_to_on_edge() {
+fn mouse_capture_hint_arms_on_none_to_on_edge() {
     let mut terminal = test_terminal(80, 24);
     let mut parser = Parser::new();
     let mut apply = |terminal: &mut Terminal, bytes: &[u8]| {
@@ -141,22 +141,23 @@ fn right_click_hint_arms_on_none_to_on_edge() {
     };
 
     // None → ON(1000h): 무장 → 첫 take 만 true, 소비 후 false.
+    // (좌·우 클릭 중 먼저 호출한 쪽만 true 를 받는다 — 첫 상호작용 1회.)
     apply(&mut terminal, b"\x1b[?1000h");
-    assert!(terminal.take_right_click_hint());
-    assert!(!terminal.take_right_click_hint());
+    assert!(terminal.take_mouse_capture_hint());
+    assert!(!terminal.take_mouse_capture_hint());
 
     // ON → ON(1000 켜진 채 1002h 전환): 재무장하지 않는다.
     apply(&mut terminal, b"\x1b[?1002h");
-    assert!(!terminal.take_right_click_hint());
+    assert!(!terminal.take_mouse_capture_hint());
 
     // OFF(→None) 후 다시 None → ON: 재무장.
     apply(&mut terminal, b"\x1b[?1002l");
     apply(&mut terminal, b"\x1b[?1000h");
-    assert!(terminal.take_right_click_hint());
+    assert!(terminal.take_mouse_capture_hint());
 }
 
 #[test]
-fn right_click_hint_disarms_on_ris() {
+fn mouse_capture_hint_disarms_on_ris() {
     let mut terminal = test_terminal(80, 24);
     let mut parser = Parser::new();
     let mut apply = |terminal: &mut Terminal, bytes: &[u8]| {
@@ -171,11 +172,11 @@ fn right_click_hint_disarms_on_ris() {
     apply(&mut terminal, b"\x1b[?1000h");
     terminal.process_bytes(b"\x1bc");
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
-    assert!(!terminal.take_right_click_hint());
+    assert!(!terminal.take_mouse_capture_hint());
 
     // 재진입 시 다시 무장된다.
     apply(&mut terminal, b"\x1b[?1000h");
-    assert!(terminal.take_right_click_hint());
+    assert!(terminal.take_mouse_capture_hint());
 }
 
 // ---- Alternate screen tests ----

@@ -257,16 +257,17 @@ impl MainView {
                 // — 앱 위임을 깨지 않는 opt-in modifier 우회, xterm/iTerm2 표준 관례).
                 // press·release 모두 report 경로로 새지 않도록 Shift 시 분기를 먼저 빠진다.
                 if right_click_delegates_to_app(tracking, shift) {
-                    // 트래킹 앱이 마우스를 캡처 중이라 우클릭이 앱으로 간다 — tasty 메뉴는
-                    // Shift+우클릭으로 띄울 수 있음을 트래킹 세션당 1회 안내한다(Pressed 에서만,
-                    // 설정 ON 일 때, ADR-0022 ②). take_right_click_hint() 가 무장분을 소비한다.
+                    // 트래킹 앱이 마우스를 캡처 중이라 우클릭이 앱으로 간다 — 텍스트 선택은
+                    // Shift+드래그, tasty 메뉴는 Shift+우클릭으로 우회 가능함을 트래킹 세션당
+                    // 1회 안내한다(Pressed 에서만, 설정 ON 일 때, ADR-0022 ②). 좌클릭 보고
+                    // 경로와 같은 take_mouse_capture_hint() 를 공유해 먼저 발생한 쪽만 뜬다.
                     if button_state == ElementState::Pressed
-                        && self.core_state.settings.general.right_click_capture_hint
+                        && self.core_state.settings.general.mouse_capture_hint
                     {
                         let show = self
                             .core_state
                             .find_terminal_by_id(surface_id)
-                            .is_some_and(|t| t.take_right_click_hint());
+                            .is_some_and(|t| t.take_mouse_capture_hint());
                         if show {
                             self.state.toasts.push_info(
                                 crate::i18n::t("toast.mouse_capture_hint"),
@@ -457,7 +458,23 @@ impl MainView {
                                 self.start_selection(x, y, &terminal_rect);
                             } else {
                                 // 트래킹 ON + Shift 없음: 버튼 press 를 앱에 보고 (ADR-0019 앱 위임).
+                                // 단, 트래킹 진입 후 첫 캡처 상호작용이면 "마우스 캡처 중 —
+                                // Shift 로 우회 가능" 안내를 1회 띄운다. 우클릭 경로와 같은
+                                // take_mouse_capture_hint() 를 공유하므로 좌·우 중 먼저 발생한
+                                // 쪽만 뜬다 (설정 ON 일 때만, ADR-0022 ②).
                                 if let Some(sid) = self.state.focused_surface_id(&self.core_state) {
+                                    if self.core_state.settings.general.mouse_capture_hint {
+                                        let show = self
+                                            .core_state
+                                            .find_terminal_by_id(sid)
+                                            .is_some_and(|t| t.take_mouse_capture_hint());
+                                        if show {
+                                            self.state.toasts.push_info(
+                                                crate::i18n::t("toast.mouse_capture_hint"),
+                                                crate::adapters::ui::ToastScope::Surface(sid),
+                                            );
+                                        }
+                                    }
                                     self.report_mouse_event(sid, x, y, 0, false, false);
                                 }
                             }

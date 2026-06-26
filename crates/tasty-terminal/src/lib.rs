@@ -160,9 +160,10 @@ pub(crate) struct TerminalState {
     pub(crate) bracketed_paste: bool,
     /// Mouse tracking mode.
     pub(crate) mouse_tracking: MouseTrackingMode,
-    /// 트래킹 `None → ON` 엣지에서 무장되는 "첫 우클릭 안내 toast" 플래그. 호스트가
-    /// `take_right_click_hint()` 로 1회 소비(읽고 disarm)한다. 세션당 1회 안내용 (ADR-0022 ②).
-    pub(crate) right_click_hint_armed: bool,
+    /// 트래킹 `None → ON` 엣지에서 무장되는 "첫 마우스 캡처 안내 toast" 플래그. 호스트가
+    /// `take_mouse_capture_hint()` 로 1회 소비(읽고 disarm)한다. 좌·우 클릭 중 먼저 발생한
+    /// 캡처 상호작용이 소비해 세션당 1회만 안내된다 (ADR-0022 ②).
+    pub(crate) mouse_capture_hint_armed: bool,
     /// SGR mouse encoding (mode 1006).
     pub(crate) sgr_mouse: bool,
     /// Focus event tracking (mode 1004).
@@ -315,7 +316,7 @@ impl TerminalState {
             cursor_shape: CursorShape::default(),
             bracketed_paste: false,
             mouse_tracking: MouseTrackingMode::None,
-            right_click_hint_armed: false,
+            mouse_capture_hint_armed: false,
             sgr_mouse: false,
             focus_tracking: false,
             insert_mode: false,
