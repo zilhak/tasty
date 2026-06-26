@@ -58,6 +58,7 @@ impl Parser for CompileErrorParser {
                     let next_clean = strip_ansi(next);
                     let next_trim = next_clean.trim_end_matches(['\n', '\r']);
                     if let Some(loc) = RUSTC_LOC_RE.captures(next_trim) {
+                        // path/line/col 은 RUSTC_LOC_RE 의 비선택 group → 매치 성공 시 항상 Some.
                         path = Some(loc.name("path").unwrap().as_str().to_string());
                         ln = loc.name("line").unwrap().as_str().parse().ok();
                         col = loc.name("col").unwrap().as_str().parse().ok();
@@ -72,6 +73,8 @@ impl Parser for CompileErrorParser {
                     data: json!({
                         "kind": "compile_error",
                         "tool": "rustc",
+                        // sev/msg 는 RUSTC_HEAD_RE 의 비선택 group → unwrap 안전.
+                        // code 는 선택적 `(?:\[...\])?` 이라 .map 으로 graceful.
                         "severity": caps.name("sev").unwrap().as_str(),
                         "code": caps.name("code").map(|m| m.as_str()),
                         "message": caps.name("msg").unwrap().as_str(),
@@ -94,6 +97,7 @@ impl Parser for CompileErrorParser {
                     data: json!({
                         "kind": "compile_error",
                         "tool": "tsc",
+                        // TSC_RE 의 path/line/col/sev/code/msg 는 전부 비선택 group → unwrap 안전.
                         "severity": caps.name("sev").unwrap().as_str(),
                         "code": caps.name("code").unwrap().as_str(),
                         "message": caps.name("msg").unwrap().as_str(),
@@ -116,6 +120,8 @@ impl Parser for CompileErrorParser {
                     data: json!({
                         "kind": "compile_error",
                         "tool": "gcc",
+                        // sev/msg/path/line 은 GCC_RE 의 비선택 group → unwrap 안전.
+                        // col 은 선택적 `(?::(?P<col>...))?` 이라 .and_then 으로 graceful.
                         "severity": caps.name("sev").unwrap().as_str(),
                         "code": serde_json::Value::Null,
                         "message": caps.name("msg").unwrap().as_str(),
@@ -205,6 +211,7 @@ impl Parser for StackTraceParser {
                 while i < clean.len() {
                     if let Some(caps) = PY_FRAME_RE.captures(&clean[i]) {
                         frames.push(json!({
+                            // path/line 은 비선택 group → unwrap 안전. func 는 선택적 → .map.
                             "path": caps.name("path").unwrap().as_str(),
                             "line": caps.name("line").unwrap().as_str().parse::<u32>().ok(),
                             "func": caps.name("func").map(|m| m.as_str().trim().to_string()),
@@ -225,6 +232,7 @@ impl Parser for StackTraceParser {
                 let (exception, message) = if i < clean.len()
                     && let Some(caps) = PY_EXC_RE.captures(&clean[i])
                 {
+                    // exc 는 PY_EXC_RE 의 비선택 group → unwrap 안전. msg 는 선택적 → .map.
                     let exc = caps.name("exc").unwrap().as_str().to_string();
                     let msg = caps.name("msg").map(|m| m.as_str().to_string());
                     i += 1;
@@ -251,6 +259,8 @@ impl Parser for StackTraceParser {
             // Rust panic (단일 라인) + optional stack backtrace
             if let Some(caps) = RUST_PANIC_HEAD.captures(line) {
                 let start = i;
+                // thread/path/line/col 은 RUST_PANIC_HEAD 의 비선택 group → unwrap 안전.
+                // msg 는 선택적 `(?:'...',\s*)?` 분기라 .map 으로 graceful.
                 let panic_path = caps.name("path").unwrap().as_str().to_string();
                 let panic_line: Option<u32> = caps.name("line").unwrap().as_str().parse().ok();
                 let panic_col: Option<u32> = caps.name("col").unwrap().as_str().parse().ok();
@@ -263,6 +273,7 @@ impl Parser for StackTraceParser {
                     while i < clean.len() {
                         if let Some(fc) = RUST_FRAME_RE.captures(&clean[i]) {
                             frames.push(json!({
+                                // func 는 RUST_FRAME_RE 의 비선택 group → unwrap 안전.
                                 "func": fc.name("func").unwrap().as_str(),
                             }));
                             i += 1;
@@ -299,6 +310,7 @@ impl Parser for StackTraceParser {
                     let l = &clean[i];
                     if let Some(c) = NODE_FRAME_RE.captures(l) {
                         frames.push(json!({
+                            // path/line/col 은 비선택 group → unwrap 안전. func 는 선택적 → .map.
                             "func": c.name("func").map(|m| m.as_str()),
                             "path": c.name("path").unwrap().as_str(),
                             "line": c.name("line").unwrap().as_str().parse::<u32>().ok(),
@@ -308,6 +320,7 @@ impl Parser for StackTraceParser {
                     } else if let Some(c) = JAVA_FRAME_RE.captures(l) {
                         lang_hint = "java";
                         frames.push(json!({
+                            // func/file 은 비선택 group → unwrap 안전. line 은 선택적 → .and_then.
                             "func": c.name("func").unwrap().as_str(),
                             "file": c.name("file").unwrap().as_str(),
                             "line": c.name("line").and_then(|m| m.as_str().parse::<u32>().ok()),

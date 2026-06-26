@@ -44,6 +44,8 @@ impl Parser for TestResultParser {
         let line = stripped.trim();
 
         if let Some(caps) = CARGO_TEST_RE.captures(line) {
+            // status/passed/failed 는 비선택 group → unwrap 안전.
+            // ignored/measured/filtered/dur 는 선택적 → .and_then 으로 graceful.
             let status = caps.name("status").unwrap().as_str();
             out.push(ParsedItem {
                 kind: "test_result",
@@ -66,9 +68,11 @@ impl Parser for TestResultParser {
         }
 
         if let Some(caps) = PYTEST_RE.captures(line) {
+            // body 는 비선택 group → unwrap 안전.
             let body = caps.name("body").unwrap().as_str();
             let mut counts = serde_json::Map::new();
             for c in PYTEST_TOKEN_RE.captures_iter(body) {
+                // n/kind 는 PYTEST_TOKEN_RE 의 비선택 group → unwrap 안전.
                 let n: u32 = c.name("n").unwrap().as_str().parse().unwrap_or(0);
                 let kind = c.name("kind").unwrap().as_str();
                 let key = if kind == "errors" { "error" } else { kind };
@@ -101,9 +105,11 @@ impl Parser for TestResultParser {
         }
 
         if let Some(caps) = JEST_TESTS_RE.captures(line) {
+            // body 는 비선택 group → unwrap 안전.
             let body = caps.name("body").unwrap().as_str();
             let mut counts = serde_json::Map::new();
             for c in JEST_TOKEN_RE.captures_iter(body) {
+                // n/kind 는 JEST_TOKEN_RE 의 비선택 group → unwrap 안전.
                 let n: u32 = c.name("n").unwrap().as_str().parse().unwrap_or(0);
                 let kind = c.name("kind").unwrap().as_str();
                 counts.insert(kind.to_string(), json!(n));

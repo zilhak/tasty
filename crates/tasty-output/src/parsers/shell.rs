@@ -23,6 +23,7 @@ impl Parser for PromptBoundaryParser {
 
     fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
         for caps in PROMPT_RE.captures_iter(raw) {
+            // group 0/phase 는 비선택 group → unwrap 안전. payload 는 선택적 → .map.
             let m = caps.get(0).unwrap();
             let phase = caps.name("phase").unwrap().as_str();
             let payload = caps.name("payload").map(|m| m.as_str());
@@ -58,6 +59,7 @@ impl Parser for ExitCodeParser {
 
     fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
         for caps in EXIT_RE.captures_iter(raw) {
+            // group 0/code 는 비선택 group → unwrap 안전. parse 는 unwrap_or 로 graceful.
             let m = caps.get(0).unwrap();
             let code: i32 = caps.name("code").unwrap().as_str().parse().unwrap_or(0);
             out.push(ParsedItem {
@@ -93,6 +95,7 @@ impl Parser for OscNotificationParser {
 
     fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
         for caps in OSC_NOTIFY_RE.captures_iter(raw) {
+            // group 0/id/body 는 전부 비선택 group → unwrap 안전.
             let m = caps.get(0).unwrap();
             let id = caps.name("id").unwrap().as_str();
             let body = caps.name("body").unwrap().as_str();

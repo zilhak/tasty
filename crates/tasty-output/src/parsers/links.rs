@@ -34,6 +34,7 @@ impl Parser for PathParser {
     fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
         let line = strip_ansi(raw);
         for caps in PATH_RE.captures_iter(&line) {
+            // path 는 PATH_RE 의 최상위 비선택 group (마지막 segment `+` 필수) → unwrap 안전.
             let m = caps.name("path").unwrap();
             let s = m.as_str();
             // 너무 짧거나 디렉터리 separator + 확장자 도 없으면 휴리스틱 제외.
@@ -97,6 +98,7 @@ impl Parser for UrlParser {
     fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
         let line = strip_ansi(raw);
         for caps in URL_RE.captures_iter(&line) {
+            // group 0 (전체 매치) + scheme 은 항상 참여 → unwrap 안전.
             let m = caps.get(0).unwrap();
             // trailing punctuation 정리: 마침표/쉼표/세미콜론/콜론은 URL 의도 X.
             let raw_match = m.as_str();
@@ -139,6 +141,7 @@ impl Parser for OscLinkParser {
 
     fn parse_line(&self, raw: &str, line_idx: u32, out: &mut Vec<ParsedItem>) {
         for caps in OSC_LINK_RE.captures_iter(raw) {
+            // group 0/params/url/text 는 전부 비선택 group (`*` 라도 group 은 참여) → unwrap 안전.
             let m = caps.get(0).unwrap();
             let url = caps.name("url").unwrap().as_str();
             let text = caps.name("text").unwrap().as_str();

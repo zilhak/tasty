@@ -35,6 +35,7 @@ impl Parser for ProgressParser {
 
         // 1) bar + percent (가장 구체적)
         if let Some(caps) = PROGRESS_BAR_RE.captures(&line) {
+            // group 0/bar/pct 는 전부 비선택 group → unwrap 안전. parse 는 unwrap_or 로 graceful.
             let m = caps.get(0).unwrap();
             let pct: f64 = caps.name("pct").unwrap().as_str().parse().unwrap_or(0.0);
             out.push(ParsedItem {
@@ -54,6 +55,7 @@ impl Parser for ProgressParser {
 
         // 2) size / total
         if let Some(caps) = PROGRESS_SIZE_RE.captures(&line) {
+            // cur/u1/tot/u2 + group 0 은 전부 비선택 group → unwrap 안전.
             let m = caps.get(0).unwrap();
             let cur: f64 = caps.name("cur").unwrap().as_str().parse().unwrap_or(0.0);
             let tot: f64 = caps.name("tot").unwrap().as_str().parse().unwrap_or(0.0);
@@ -84,6 +86,7 @@ impl Parser for ProgressParser {
         if line.len() <= 80
             && let Some(caps) = PROGRESS_PCT_RE.captures(&line)
         {
+            // group 0/pct 는 비선택 group → unwrap 안전.
             let m = caps.get(0).unwrap();
             // 백분율 뒤에 다른 토큰이 거의 없을 때만.
             let tail = line[m.end()..].trim();
