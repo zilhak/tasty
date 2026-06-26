@@ -262,6 +262,13 @@ pub struct AppState {
     pub(crate) sidebar_visible: bool,
     /// Sidebar collapsed: true = compact mode (narrow width, icons only).
     pub(crate) sidebar_collapsed: bool,
+    /// switch-number overlay 활성 스냅샷. 현재 눌린 modifier 가 tab/workspace 전환
+    /// 단축키와 일치하면 그 대상(+Tab 이면 focused pane id)을 담는다. `MainView` 의
+    /// `ModifiersChanged` 가 [`crate::adapters::ui::switch_overlay::switch_target_for`]
+    /// 로 갱신하고, 창 비활성/포커스 상실 시 `None` 으로 clear 된다. draw 경로(04 탭
+    /// /05 사이드바)가 매 프레임 읽어 숫자 키캡 오버레이를 표시할지 결정한다.
+    #[cfg(feature = "gui")]
+    pub(crate) switch_overlay: Option<crate::adapters::ui::switch_overlay::SwitchOverlayState>,
     /// All transient dialog/popup state.
     pub(crate) dialogs: DialogState,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
@@ -629,6 +636,8 @@ impl AppState {
             sidebar_width,
             sidebar_visible: true,
             sidebar_collapsed: false,
+            #[cfg(feature = "gui")]
+            switch_overlay: None,
             dialogs: DialogState::new(),
             tab_bar_height: PhysicalPx(24.0),
             captured_double_tap: None,

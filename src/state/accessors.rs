@@ -132,4 +132,57 @@ impl AppState {
     pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {
         self.active_workspace(engine).focused_pane
     }
+
+    /// 현재 switch-number overlay 스냅샷. draw 경로(04 탭 / 05 사이드바)가 매 프레임
+    /// 읽어 숫자 키캡 오버레이를 표시할지/대상이 무엇인지 판단한다.
+    // 04(탭)/05(사이드바) 구현 전까지 소비처가 없어 dead_code 로 잡힌다 — 본 트랙은
+    // 배선까지가 범위이고, 이 접근자가 후행 트랙이 읽을 노출 인터페이스다.
+    #[cfg(feature = "gui")]
+    #[allow(dead_code)]
+    pub(crate) fn switch_overlay(
+        &self,
+    ) -> Option<crate::adapters::ui::switch_overlay::SwitchOverlayState> {
+        self.switch_overlay
+    }
+
+    /// 현재 눌린 modifier 로 switch-number overlay 스냅샷을 다시 계산해 저장한다.
+    /// `ModifiersChanged` 마다 호출. 스냅샷이 실제로 바뀌었으면 `true` (호출측이
+    /// 그때 `mark_dirty()` 한다 — modifier press/release 시 키캡이 즉시 뜨고 사라지게).
+    ///
+    /// `ctrl`/`shift`/`alt` 는 플랫폼 정규화가 끝난 값을 받는다(numeric.rs 와 동일).
+    #[cfg(feature = "gui")]
+    pub(crate) fn update_switch_overlay(
+        &mut self,
+        engine: &CoreState,
+        kb: &crate::settings::KeybindingSettings,
+        ctrl: bool,
+        shift: bool,
+        alt: bool,
+    ) -> bool {
+        use crate::adapters::ui::switch_overlay::{
+            SwitchOverlayState, SwitchTarget, switch_target_for,
+        };
+        let next = switch_target_for(kb, ctrl, shift, alt).map(|target| {
+            let pane_id = match target {
+                // parked 상태(워크스페이스 0개)에서는 focused pane 이 없으므로 None.
+                SwitchTarget::Tab if !engine.workspaces.is_empty() => {
+                    Some(self.focused_pane_id(engine))
+                }
+                _ => None,
+            };
+            SwitchOverlayState { target, pane_id }
+        });
+        let changed = next != self.switch_overlay;
+        self.switch_overlay = next;
+        changed
+    }
+
+    /// switch-number overlay 스냅샷을 비운다(창 비활성/포커스 상실 시). 실제로 비워졌으면
+    /// `true`.
+    #[cfg(feature = "gui")]
+    pub(crate) fn clear_switch_overlay(&mut self) -> bool {
+        let changed = self.switch_overlay.is_some();
+        self.switch_overlay = None;
+        changed
+    }
 }

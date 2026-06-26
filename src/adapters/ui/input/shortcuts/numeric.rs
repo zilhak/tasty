@@ -2,6 +2,7 @@
 
 use winit::keyboard::Key;
 
+use crate::adapters::ui::switch_overlay::{SwitchTarget, switch_target_for};
 use crate::view::main::MainView;
 
 impl MainView {
@@ -17,32 +18,26 @@ impl MainView {
         if let Key::Character(c) = key {
             let ch = c.chars().next().unwrap_or('\0');
             if ch.is_ascii_digit() {
-                let tab_mod = kb.tab_switch_modifier.to_lowercase();
-                let tab_mod_matches = match tab_mod.as_str() {
-                    "alt" => alt && !ctrl && !shift,
-                    _ => ctrl && !shift && !alt,
-                };
-                if tab_mod_matches {
-                    let index = if ch == '0' {
-                        9
-                    } else {
-                        (ch as usize) - ('1' as usize)
-                    };
-                    state.goto_tab_in_pane(engine, index);
-                    return true;
-                }
-
-                let ws_mod = kb.workspace_switch_modifier.to_lowercase();
-                let ws_mod_matches = match ws_mod.as_str() {
-                    "ctrl" => ctrl && !shift && !alt,
-                    _ => alt && !ctrl && !shift,
-                };
-                if ws_mod_matches
-                    && let Some(digit) = ch.to_digit(10)
-                    && (1..=9).contains(&digit)
-                {
-                    state.switch_workspace(engine, (digit - 1) as usize);
-                    return true;
+                // 대상 판별은 switch-number overlay 와 **단일 소스** 공유 헬퍼로 한다.
+                match switch_target_for(kb, ctrl, shift, alt) {
+                    Some(SwitchTarget::Tab) => {
+                        let index = if ch == '0' {
+                            9
+                        } else {
+                            (ch as usize) - ('1' as usize)
+                        };
+                        state.goto_tab_in_pane(engine, index);
+                        return true;
+                    }
+                    Some(SwitchTarget::Workspace) => {
+                        if let Some(digit) = ch.to_digit(10)
+                            && (1..=9).contains(&digit)
+                        {
+                            state.switch_workspace(engine, (digit - 1) as usize);
+                            return true;
+                        }
+                    }
+                    None => {}
                 }
             }
         }

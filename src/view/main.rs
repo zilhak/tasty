@@ -297,6 +297,9 @@ impl View for MainView {
                         self.flush_ime_preedit();
                     }
                     self.base.modifiers = ModifiersState::empty();
+                    // modifier 가 비워지므로 switch-number overlay 스냅샷도 함께 clear —
+                    // 안 하면 창을 벗어난 동안에도 키캡 오버레이가 남는다.
+                    self.state.clear_switch_overlay();
                 }
                 self.mark_dirty();
             }
@@ -305,7 +308,25 @@ impl View for MainView {
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.base.modifiers = modifiers.state();
-                if self.update_hovered_link() {
+                let mut dirty = self.update_hovered_link();
+                // switch-number overlay 스냅샷 갱신. modifier press/release 마다 대상이
+                // 바뀌면 명시적으로 redraw 해야 키캡이 즉시 뜨고/사라진다(hovered link
+                // 변화와 독립). 플랫폼 정규화는 dispatch.rs 와 동일 규칙으로 맞춘다.
+                let mods = self.base.modifiers;
+                let ctrl = mods.control_key();
+                let shift = mods.shift_key();
+                #[cfg(target_os = "macos")]
+                let alt = mods.super_key();
+                #[cfg(not(target_os = "macos"))]
+                let alt = mods.alt_key();
+                let kb = &self.core_state.settings.keybindings;
+                if self
+                    .state
+                    .update_switch_overlay(&self.core_state, kb, ctrl, shift, alt)
+                {
+                    dirty = true;
+                }
+                if dirty {
                     self.mark_dirty();
                 }
             }
