@@ -205,6 +205,33 @@ pub(super) fn event_pattern_namespace(s: &str) -> &str {
     s.split('.').next().unwrap_or("")
 }
 
+/// `[[contributes.hook_events]]` key 형식 검증. surface hook 이벤트 키는 점(.) 구분
+/// 이벤트 버스 키(`is_valid_event_key`)와 달리 `process-exit` 류 kebab-case 식별자다.
+/// 소문자 ascii + 숫자 + `-`. 알파벳으로 시작. 길이 1..=64. `:`/`*`/`.` 불가
+/// (`:` 는 내장 prefix 이벤트와, `*` 는 와일드카드 혼동 방지).
+pub(super) fn is_valid_hook_event_key(s: &str) -> bool {
+    if s.is_empty() || s.len() > 64 {
+        return false;
+    }
+    let first = s.chars().next().unwrap();
+    if !first.is_ascii_lowercase() {
+        return false;
+    }
+    s.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// host 가 코어에 내장한 surface hook 이벤트와 충돌하는지. plugin 이 점유하면
+/// `HookEvent::parse` 가 내장 변형으로 먼저 해석해 plugin 선언이 죽으므로 거부한다.
+/// 정확 이름 `process-exit`/`bell`/`notification` 과 prefix 이벤트
+/// `output-match:`/`idle-timeout:` 을 막는다 (prefix 는 `:` 라 형식 검증에서 이미
+/// 걸리지만 방어적으로 함께 검사).
+pub(super) fn is_reserved_hook_event_key(s: &str) -> bool {
+    matches!(s, "process-exit" | "bell" | "notification")
+        || s.starts_with("output-match:")
+        || s.starts_with("idle-timeout:")
+}
+
 /// 호스트만 publish 가능한 예약 네임스페이스.
 /// plugin은 자기 도메인의 namespace로만 발화할 수 있다.
 pub(super) fn is_reserved_event_namespace(ns: &str) -> bool {

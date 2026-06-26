@@ -1050,6 +1050,9 @@ impl App {
             tasty_plugin_protocol::events::LifecycleReason::Ipc => "ipc",
             tasty_plugin_protocol::events::LifecycleReason::Crash => "crash",
         };
+        // plugin 이 멈추면 선언했던 hook 이벤트도 검증 집합에서 제거 — 비활성
+        // plugin 의 이벤트 hook 등록은 거부돼야 한다(dead-setting 방지).
+        self.core_state().plugin_hook_events.unregister(&plugin_id);
         self.enqueue_plugin_host_event(crate::state::PendingHostEvent::PluginUnloaded {
             plugin_id,
             reason: reason_str.to_string(),

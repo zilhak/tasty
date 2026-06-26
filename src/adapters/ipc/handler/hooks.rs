@@ -5,6 +5,40 @@ use crate::global_hooks::HookCondition;
 use crate::state::AppState;
 use tasty_ipc::protocol::JsonRpcResponse;
 
+/// 내장 surface hook 이벤트 안내 문자열 (검증 실패 메시지용).
+const BUILTIN_HOOK_EVENTS: &str =
+    "process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS";
+
+/// `HookEvent::parse` 는 미인식 문자열을 `Custom(_)` 으로 무조건 수용하므로(TODO 15),
+/// 여기서 (내장 ∪ 활성 plugin 선언) 집합으로 검증한다. 내장 이벤트는 parse 단계에서
+/// 이미 비-Custom 변형으로 해석되므로 항상 허용된다. `Custom(key)` 만 plugin 선언
+/// 카탈로그 멤버십을 확인하고, 미선언이면 동적 안내 메시지와 함께 거부한다.
+fn validate_hook_event(
+    engine: &crate::core::CoreState,
+    event: &HookEvent,
+    id: &serde_json::Value,
+) -> Result<(), JsonRpcResponse> {
+    let HookEvent::Custom(key) = event else {
+        return Ok(());
+    };
+    if engine.plugin_hook_events.contains(key) {
+        return Ok(());
+    }
+    let declared = engine.plugin_hook_events.all_keys();
+    let declared_str = if declared.is_empty() {
+        "(none — no active plugin declares hook events)".to_string()
+    } else {
+        declared.join(", ")
+    };
+    Err(JsonRpcResponse::invalid_params(
+        id.clone(),
+        format!(
+            "Unknown hook event '{key}': not a built-in event and not declared by any active plugin. \
+             Built-in events: {BUILTIN_HOOK_EVENTS}. Active plugin-declared events: {declared_str}"
+        ),
+    ))
+}
+
 pub(crate) fn handle_hook_set(
     core: &mut crate::core::Core,
     _state: &mut AppState,
@@ -28,12 +62,15 @@ pub(crate) fn handle_hook_set(
             return JsonRpcResponse::invalid_params(
                 id,
                 format!(
-                    "Unknown event type: '{}'. Use: process-exit, bell, notification, output-match:PATTERN, idle-timeout:SECS, or a plugin-defined event name",
-                    event_str
+                    "Unknown event type: '{event_str}'. Use: {BUILTIN_HOOK_EVENTS}, or a plugin-defined event name"
                 ),
             );
         }
     };
+
+    if let Err(resp) = validate_hook_event(engine, &event, &id) {
+        return resp;
+    }
 
     let command = match params.get("command").and_then(|v| v.as_str()) {
         Some(c) => c.to_string(),
@@ -192,10 +229,14 @@ pub(crate) fn handle_surface_fire_hook(
         None => {
             return JsonRpcResponse::invalid_params(
                 id,
-                format!("Unknown event type: '{}'", event_str),
+                format!("Unknown event type: '{event_str}'"),
             );
         }
     };
+
+    if let Err(resp) = validate_hook_event(engine, &event, &id) {
+        return resp;
+    }
 
     let fired = core.fire_surface_hooks(engine, surface_id, std::slice::from_ref(&event));
     let event_kind = event.to_display_string();

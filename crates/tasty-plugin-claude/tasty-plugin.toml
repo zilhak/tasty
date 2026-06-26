@@ -28,6 +28,29 @@ command = "tasty-plugin-claude"
 [[contributes.ipc_namespace]]
 prefix = "claude"
 
+# 이 plugin 이 `surface.fire_hook` 로 발사하는 surface hook 이벤트 카탈로그.
+# host 가 `hook.set` / `surface.fire_hook` 등록을 (내장 ∪ 활성 plugin 선언) 으로
+# 검증하므로, 여기 선언되지 않은 키는 plugin 활성 상태여도 거부된다.
+[[contributes.hook_events]]
+key = "claude-idle"
+description = "Claude instance became idle (Stop hook)"
+
+[[contributes.hook_events]]
+key = "needs-input"
+description = "Claude instance is waiting for user input (Notification hook)"
+
+[[contributes.hook_events]]
+key = "claude-child-idle"
+description = "A child Claude instance became idle (fanned out to its parent surface)"
+
+[[contributes.hook_events]]
+key = "claude-child-needs-input"
+description = "A child Claude instance is waiting for input (fanned out to its parent surface)"
+
+[[contributes.hook_events]]
+key = "claude-error"
+description = "Claude output matched an error pattern"
+
 [[contributes.cli]]
 name = "claude"
 description = "Claude Code CLI integration (launch, spawn, kill, wait, etc.)"

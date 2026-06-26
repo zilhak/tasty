@@ -912,6 +912,120 @@ fn events_emitted_accepts_experimental_stability() {
     assert_eq!(decl.payload_schema.as_deref(), Some("schemas/alpha.json"));
 }
 
+// ── contributes.hook_events 검증 ─────────────────────────────────────
+
+#[test]
+fn hook_events_parses_and_defaults_stable() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [[contributes.hook_events]]
+        key = "claude-idle"
+        description = "Claude turned idle"
+        [[contributes.hook_events]]
+        key = "needs-input"
+        [entry]
+        type = "process"
+        command = "x"
+    "#;
+    let m = parse(s).expect("should parse");
+    assert_eq!(m.contributes.hook_events.len(), 2);
+    let decl = &m.contributes.hook_events[0];
+    assert_eq!(decl.key, "claude-idle");
+    assert_eq!(decl.description, "Claude turned idle");
+    assert_eq!(decl.stability, EventStability::Stable);
+}
+
+#[test]
+fn hook_events_rejects_empty_key() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [[contributes.hook_events]]
+        key = ""
+        [entry]
+        type = "process"
+        command = "x"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(
+        err.contains("invalid contributes.hook_events key"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn hook_events_rejects_builtin_collision() {
+    for builtin in ["process-exit", "bell", "notification"] {
+        let s = format!(
+            r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            [[contributes.hook_events]]
+            key = "{builtin}"
+            [entry]
+            type = "process"
+            command = "x"
+        "#
+        );
+        let err = parse(&s).unwrap_err().to_string();
+        assert!(
+            err.contains("collides with a built-in hook event"),
+            "key '{builtin}' should collide, got: {err}"
+        );
+    }
+}
+
+#[test]
+fn hook_events_rejects_wildcard_and_colon() {
+    for bad in ["claude-*", "output-match:foo", "idle-timeout:5", "foo.bar"] {
+        let s = format!(
+            r#"
+            manifest_version = 1
+            id = "com.example.x"
+            name = "X"
+            version = "0.1"
+            api_version = "1"
+            [[contributes.hook_events]]
+            key = "{bad}"
+            [entry]
+            type = "process"
+            command = "x"
+        "#
+        );
+        assert!(parse(&s).is_err(), "key '{bad}' should be rejected");
+    }
+}
+
+#[test]
+fn hook_events_rejects_duplicate_key() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [[contributes.hook_events]]
+        key = "claude-idle"
+        [[contributes.hook_events]]
+        key = "claude-idle"
+        [entry]
+        type = "process"
+        command = "x"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("declared twice"), "got: {err}");
+}
+
 // ── extends 블록 검증 ────────────────────────────────────────────────
 
 fn extends_skeleton(extra: &str) -> String {

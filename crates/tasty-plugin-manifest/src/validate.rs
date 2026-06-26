@@ -12,9 +12,10 @@ use super::types::{
 };
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
-    is_reserved_event_namespace, is_reserved_ipc_prefix, is_valid_cli_name, is_valid_event_key,
-    is_valid_event_pattern, is_valid_ipc_prefix, is_valid_kind, is_valid_plugin_id,
-    is_valid_settings_id, is_valid_simple_id, is_valid_tool_id,
+    is_reserved_event_namespace, is_reserved_hook_event_key, is_reserved_ipc_prefix,
+    is_valid_cli_name, is_valid_event_key, is_valid_event_pattern, is_valid_hook_event_key,
+    is_valid_ipc_prefix, is_valid_kind, is_valid_plugin_id, is_valid_settings_id,
+    is_valid_simple_id, is_valid_tool_id,
 };
 
 impl Manifest {
@@ -72,6 +73,7 @@ impl Manifest {
         self.validate_contributes()?;
         self.validate_event_patterns()?;
         self.validate_events_emitted()?;
+        self.validate_hook_events()?;
         self.validate_extends()?;
         Ok(())
     }
@@ -185,6 +187,38 @@ impl Manifest {
             }
             if !seen.insert(decl.key.as_str()) {
                 anyhow::bail!("events_emitted key '{}' declared twice", decl.key);
+            }
+        }
+        Ok(())
+    }
+
+    /// `[[contributes.hook_events]]` surface hook 이벤트 카탈로그 검증.
+    ///
+    /// - key는 유효한 hook 이벤트 키 형식이어야 한다 (kebab-case, 와일드카드 불가).
+    /// - key는 내장 이벤트(`process-exit`/`bell`/`notification`/`output-match:`/
+    ///   `idle-timeout:`)와 충돌할 수 없다 (코어 parse 가 내장 변형으로 먼저 가로채
+    ///   plugin 선언이 죽으므로).
+    /// - 같은 key를 두 번 선언하면 거부.
+    fn validate_hook_events(&self) -> anyhow::Result<()> {
+        let mut seen: HashSet<&str> = HashSet::new();
+        for decl in &self.contributes.hook_events {
+            if !is_valid_hook_event_key(&decl.key) {
+                anyhow::bail!(
+                    "invalid contributes.hook_events key '{}': must be lowercase ascii + digits + '-', \
+                     start with a letter, length ≤ 64, no '*'/':'/'.'",
+                    decl.key
+                );
+            }
+            if is_reserved_hook_event_key(&decl.key) {
+                anyhow::bail!(
+                    "contributes.hook_events key '{}' collides with a built-in hook event — \
+                     built-in events (process-exit, bell, notification, output-match:, idle-timeout:) \
+                     cannot be declared by plugins",
+                    decl.key
+                );
+            }
+            if !seen.insert(decl.key.as_str()) {
+                anyhow::bail!("contributes.hook_events key '{}' declared twice", decl.key);
             }
         }
         Ok(())

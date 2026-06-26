@@ -82,6 +82,19 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
         })
         .collect();
 
+    let hook_events: Vec<Value> = manifest
+        .contributes
+        .hook_events
+        .iter()
+        .map(|h| {
+            json!({
+                "key": h.key,
+                "description": h.description,
+                "stability": format!("{:?}", h.stability).to_lowercase(),
+            })
+        })
+        .collect();
+
     let commands: Vec<Value> = manifest
         .contributes
         .commands
@@ -196,6 +209,7 @@ pub fn handle_show(mgr: Option<&PluginManager>, id: Value, params: &Value) -> Js
             "event_subscribe": manifest.event_subscribe,
             "event_publish": manifest.event_publish,
             "events_emitted": events_emitted,
+            "hook_events": hook_events,
             "surface_kinds": surface_kinds,
             "commands": commands,
             "menu_items": menu_items,

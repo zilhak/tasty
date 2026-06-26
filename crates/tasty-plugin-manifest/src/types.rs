@@ -294,6 +294,29 @@ pub enum EventStability {
     Experimental,
 }
 
+/// `[[contributes.hook_events]]` 한 항목 — plugin 이 `surface.fire_hook` 로 발사하는
+/// surface hook 이벤트 키 카탈로그. `events_emitted`(pub/sub 이벤트 버스)와는 **별개
+/// 시스템**이다 — 본 선언은 host 의 `hook.set` / `surface.fire_hook` 검증에만 쓰인다.
+///
+/// 코어 `HookEvent` 는 claude 등 에이전트 고유 이벤트명을 모른 채 미인식 문자열을
+/// `Custom(String)` 으로 수용한다. 그 결과 오타·미존재 이벤트도 조용히 등록될 수
+/// 있으므로, plugin 이 자기가 발사하는 키를 선언하고 host 가 (내장 ∪ 활성 plugin 선언)
+/// 집합으로 검증해 죽은 hook 등록을 막는다.
+///
+/// - `key`: 정확한 hook 이벤트 키 (소문자 ascii + 숫자 + `-`, 알파벳으로 시작,
+///   와일드카드 불가). 내장 이벤트(`process-exit`/`bell`/`notification`/
+///   `output-match:`/`idle-timeout:`)와 충돌 불가.
+/// - `description`: 사람용 짧은 설명.
+/// - `stability`: 이벤트 안정성 등급. 기본 `stable`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HookEventDecl {
+    pub key: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub stability: EventStability,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurfaceKindDecl {
     pub kind: String,
@@ -449,6 +472,11 @@ pub struct Contributes {
     /// 1 차 schema 는 `FontOverride` 항목만 지원 (Color/Bool/Enum 등은 후속 확장).
     #[serde(default)]
     pub settings_pages: Vec<SettingsPageContribute>,
+    /// Plugin 이 `surface.fire_hook` 로 발사하는 surface hook 이벤트 키 카탈로그.
+    /// host 가 `hook.set` / `surface.fire_hook` 검증을 (내장 ∪ 활성 plugin 선언)
+    /// 집합으로 수행하는 데 쓴다. 항목당 `[[contributes.hook_events]]` 한 블록.
+    #[serde(default)]
+    pub hook_events: Vec<HookEventDecl>,
 }
 
 /// Plugin 이 contribute 하는 설정 모달 sub-page 정의 (`[[contributes.settings_pages]]`).

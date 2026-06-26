@@ -115,6 +115,7 @@ impl App {
     /// `plugin.remove` IPC handler 의 본문. graceful shutdown + 디스크 삭제 +
     /// registry 갱신. CoreEvent::PluginRegistryChanged 반환.
     pub(crate) fn plugin_remove(&mut self, plugin_id: String) -> anyhow::Result<Vec<CoreEvent>> {
+        let hook_event_registry = self.core_state().plugin_hook_events.clone();
         let Some(mgr) = self.plugin_manager.as_mut() else {
             anyhow::bail!("plugin manager not initialized");
         };
@@ -133,6 +134,7 @@ impl App {
         mgr.command_registry.unregister_plugin(&plugin_id);
         crate::i18n::unregister_namespace(&plugin_id);
         mgr.recompute_extensions();
+        hook_event_registry.unregister(&plugin_id);
         Ok(vec![CoreEvent::PluginRegistryChanged {
             plugin_id,
             change: PluginRegistryChange::Removed,
@@ -291,10 +293,28 @@ impl App {
         // remote_kind/host_rendered 등 closure 등록 함수가 받지 못한다.)
         // mgr 차용 전에 미리 추출.
         let core_registry = self.core_state().surface_registry.clone();
+        // hook 이벤트 레지스트리는 surface_registry 유무와 무관하게 (headless 포함)
+        // 항상 집계한다 — hook 검증은 surface 렌더링과 독립적이다.
+        let hook_event_registry = self.core_state().plugin_hook_events.clone();
         let Some(mgr) = self.plugin_manager.as_mut() else {
             return;
         };
         let mut events: Vec<CoreEvent> = Vec::new();
+
+        for (plugin_id, _) in &hello_pairs {
+            if let Some(pkg) = mgr.packages.iter().find(|p| &p.manifest.id == plugin_id) {
+                let keys: Vec<String> = pkg
+                    .manifest
+                    .contributes
+                    .hook_events
+                    .iter()
+                    .map(|h| h.key.clone())
+                    .collect();
+                if !keys.is_empty() {
+                    hook_event_registry.register(plugin_id, keys);
+                }
+            }
+        }
 
         let host_registry = mgr.surface_registry.is_some().then_some(core_registry);
         if let Some(registry) = host_registry {

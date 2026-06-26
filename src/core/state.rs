@@ -197,6 +197,11 @@ pub struct CoreState {
     /// 03D에서 본체 7종이 등록되며, 단계 05에서 plugin이 추가될 예정.
     pub(crate) surface_registry: Arc<SurfaceKindRegistry>,
 
+    /// Plugin 이 manifest `[[contributes.hook_events]]` 로 선언한 surface hook
+    /// 이벤트 키 집계. plugin hello 시 등록, unload/remove 시 제거. `hook.set` /
+    /// `surface.fire_hook` 핸들러가 (내장 ∪ 활성 plugin 선언) 검증에 사용한다.
+    pub(crate) plugin_hook_events: Arc<crate::engine::hook_event_registry::PluginHookEventRegistry>,
+
     // ── File format / handler registries (file-handler-system) ──
     /// 파일 식별기 — host default + plugin contribute + user config 통합.
     /// `PluginManager` 와 같은 Arc 를 공유한다.
@@ -296,6 +301,9 @@ impl CoreState {
                 crate::engine::surface_registry::register_builtin_kinds(&reg);
                 Arc::new(reg)
             },
+            plugin_hook_events: Arc::new(
+                crate::engine::hook_event_registry::PluginHookEventRegistry::new(),
+            ),
             file_format: {
                 let reg = crate::file::format::FileFormatRegistry::new();
                 reg.install_host_defaults(include_str!(

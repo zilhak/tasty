@@ -7,6 +7,7 @@
 //! 각각 `core/` 산하로 재배치된다.
 
 pub mod command_index;
+pub mod hook_event_registry;
 pub mod layout_persistence;
 pub mod output_observer;
 pub mod surface_registry;

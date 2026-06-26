@@ -19,8 +19,10 @@
 ### Added
 - **`claude.wait_by_surface` / `codex.wait_by_surface` IPC methods** — `wait` 와 동일 semantics 이되 child surface id 단독 lookup. `tell` 의 자동 wait chain 이 사용 (tell 응답에 child_index 가 없으므로 child surface id 기준 wait 가 필요).
 - **Manifest schema `auto_wait`** (`CliSubcommandDecl.auto_wait`, `AutoWaitDecl`) — CLI subcommand 가 1 차 IPC 응답 후 다른 method 로 자동 chain wait 하도록 선언하는 필드. `polling` 과 동시 선언 시 manifest validator 가 reject. `#[serde(default)]` 로 기존 plugin 매니페스트 backward compat.
+- **Manifest schema `[[contributes.hook_events]]`** (`Contributes.hook_events`, `HookEventDecl`) — plugin 이 `surface.fire_hook` 로 발사하는 surface hook 이벤트 키를 선언하는 카탈로그. host 가 `hook.set` / `surface.fire_hook` 등록을 (내장 ∪ 활성 plugin 선언) 으로 검증하는 데 쓴다. key 형식(kebab-case, 와일드카드 불가)·내장 이벤트 충돌·중복을 manifest validator 가 검사. `#[serde(default)]` 로 기존 plugin 매니페스트 backward compat. claude plugin 이 `claude-idle` / `needs-input` / `claude-child-idle` / `claude-child-needs-input` / `claude-error` 5개를 선언. `plugin.show` 응답에 `hook_events` 배열로 노출.
 
 ### Changed
+- **IPC `hook.set` / `surface.fire_hook` 이벤트 키 검증** — 내장 이벤트(`process-exit` / `bell` / `notification` / `output-match:` / `idle-timeout:`) 가 아닌 키는 활성 plugin 이 manifest `[[contributes.hook_events]]` 로 선언한 경우에만 허용된다. 미선언/오타 키나 비활성 plugin 의 이벤트 키는 `invalid_params` 로 거부(에러 메시지에 내장 + 활성 선언 목록 안내) — 영원히 발사되지 않는 죽은 hook 등록을 막는다.
 - **`tasty claude spawn` / `tasty claude tell` / `tasty codex spawn` / `tasty codex tell` 기본 동작 변경** — 호출자가 child 가 `idle` / `needs_input` / `exited` (codex 는 `untrusted` 포함) 에 도달할 때까지 block 한다. 응답은 line-delimited 두 JSON — 1 차 spawn/tell JSON + chain 된 wait 결과 JSON. 기존 fire-and-forget 동작은 `--no-wait` 옵트인으로 보존 (= 한 minor 이상 deprecation 경고 우선 — `docs/dev-guide/ipc-stability.md` 0.x 정책). `--timeout SECS` 로 wait deadline 명시 (default = 무한). 기타 명령 (`broadcast` / `kill` / `respawn` / `children` / `parent` / `wait` / `wait-any` / `launch` / `install` / `uninstall` / `hook`) 동작 불변.
 - **`tasty ssh-profile` → `tasty tool ssh` 재배치** — SSH 연결 프로필 CRUD CLI 가 "tool" 네임스페이스로 이동. 구 `tasty ssh-profile` 명령은 제거됨(저장된 프로필 부재 + 0.x). IPC 메서드도 `ssh.profile.list/get/add/remove` → `tool.ssh.list/get/add/remove` 로 이동.
 
