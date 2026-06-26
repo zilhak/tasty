@@ -775,6 +775,13 @@ empty = "저장된 프리셋이 없습니다."
 apply_button = "적용"
 cancel_button = "취소"
 
+# Surface kind 표시명 (호스트 빌트인). plugin kind(markdown/image/…)는 각 plugin
+# lang 파일에서 자체 surface.kind.* 키를 등록한다.
+[surface.kind]
+terminal = "터미널"
+empty = "빈 화면"
+attached = "연결됨"
+
 [attach]
 held_title = "다른 곳에서 점유 중"
 held_body = "다른 client 가 이 surface 를 점유하고 있습니다."

@@ -70,6 +70,40 @@ painter + Theme 토큰으로 키캡을 좌표 painting 한다(`num_cap`). 레시
 (corner_radius_sm / border_width / 하단 2px / font_size_micro / surface_raised·border_strong·
 text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme 필드 없음(P0 확정).
 
+## preset demo-layout (Overlays)
+
+디자인 `gallery/preset_editor.jsx` (`SurfaceView`/`Pane`/`PaneTree`/`SurfaceBox`) ↔ 갤러리
+`catalog/components/preset_editor.rs` ↔ 본체 `src/adapters/ui/preset/demo_layout.rs`. 저장된
+`Preset*` 트리를 **구조만** 축소 렌더하는 read-only 미리보기(TODO 07 Phase 1). 라이브 surface
+렌더(터미널 GPU/WebView)는 재사용하지 않고 전용 placeholder 위젯으로 그린다.
+
+| 디자인 jsx 컴포넌트 | 갤러리 (`preset_editor.rs`) | 본체 (`demo_layout.rs`) |
+|---|---|---|
+| `SurfaceBox` (leaf, kind 라벨만) | `draw_surface_box` | `draw_surface_box` (`Leaf{kind,label}`) |
+| `SurfaceView` (하위 surface split, 1px hairline) | `draw_surf` | `draw_surf` (`SurfNode`) |
+| `Pane` (mini tab strip + 활성 탭 본문) | `draw_pane_card` | `draw_pane_card` — strip **클릭 가능**(live) |
+| `PaneTree` (상위 pane split, 5px bg-app gap) | `draw_pane_tree` | `draw_pane_tree` (`PaneNode`) |
+| `PreviewBody` (scope 분기) | `draw_scope_body` | `DemoLayout::show` (`Root::Panes`/`TabFrame`) |
+| `KINDS`(아이콘/accent) | `Kind::{icon,accent}` (정적 4종) | `kind_icon`/`kind_accent` (kind str→`icons::Icon`, plugin kind 중립 fallback) |
+| `activeKind`(탭 대표 kind) | `tab_kind` | `SurfNode::rep_kind` |
+
+**갤러리 vs 본체 차이**: 갤러리 specimen 은 binary 미의존(정적 샘플 트리·정적 라벨, mini-tab 클릭
+전환 없음). 본체는 실제 `WorkspacePreset`/`TabPreset`/`PanePreset` 을 공통 preview 모델(`SurfNode`/
+`PaneNode`/`Root`)로 정규화하고, leaf 라벨을 주입 resolver 로 해석한다. split 방향은 라이브
+모델 의미(`Vertical`=좌우/row, `Horizontal`=상하/column, capture·apply 와 일치)를 따른다.
+
+**kind→표시명 (i18n)**: 라벨은 `surface.kind.<kind>` 키로 해석(= registry `display_name_i18n_key`
+규약). 호스트 lang 에 빌트인 `terminal`/`empty`/`attached` 키를 추가했고(`lang/{en,ko,ja}.toml`
+`[surface.kind]`), plugin kind(markdown/image/…)는 각 plugin lang 의 `[surface.kind]` 가 제공.
+현재 `PresetView` 는 `CoreState`(registry) 미접근이라 `fallback_kind_label`(키 시도→capitalize,
+`convert.rs::resolve_label` 패턴)을 쓴다. **TODO 08**(화면 통합)에서 registry 가 주입되면
+`kinds_snapshot()`/`get()` 기반 resolver 로 교체할 자리.
+
+**배선**: `draw_preset_panel`(`src/adapters/ui/preset.rs`)이 선택 preset 으로 `DemoLayout` 을
+빌드해 egui temp memory 에 `(key, layout)` 으로 유지(탭 클릭 전환 지속), 남은 영역에 캔버스
+프레임 + `DemoLayout::show` 렌더. 전체 list→toolbar→detail 2-depth 셸과 WYSIWYG 편집은
+TODO 08/09 후속.
+
 ## 이미 갤러리에 있는 관련 항목 (참고)
 
 `catalog/components/` 에 등록된 것: `command_palette` · `port_scanner` · `convert` ·

@@ -775,6 +775,13 @@ empty = "No presets saved yet."
 apply_button = "Apply"
 cancel_button = "Cancel"
 
+# Surface kind display names (host builtins). Plugin kinds (markdown/image/…)
+# register their own surface.kind.* keys via plugin lang files.
+[surface.kind]
+terminal = "Terminal"
+empty = "Empty"
+attached = "Attached"
+
 [attach]
 held_title = "Attached elsewhere"
 held_body = "This surface is held by another client."

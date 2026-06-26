@@ -775,6 +775,13 @@ empty = "保存されたプリセットがありません。"
 apply_button = "適用"
 cancel_button = "キャンセル"
 
+# Surface kind 表示名（ホスト組み込み）。plugin kind（markdown/image/…）は各 plugin
+# lang ファイルで独自の surface.kind.* キーを登録する。
+[surface.kind]
+terminal = "ターミナル"
+empty = "空"
+attached = "アタッチ"
+
 [attach]
 held_title = "別の場所で接続中"
 held_body = "この画面は別のクライアントが占有しています。"
