@@ -12,29 +12,24 @@ use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, stage};
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(
-            ui,
-            theme,
-            "variant — primary · secondary · ghost · danger · agent",
-            |ui| {
-                Button::new("Primary")
-                    .variant(ButtonVariant::Primary)
-                    .show(ui, theme);
-                Button::new("Secondary")
-                    .variant(ButtonVariant::Secondary)
-                    .show(ui, theme);
-                Button::new("Ghost")
-                    .variant(ButtonVariant::Ghost)
-                    .show(ui, theme);
-                Button::new("Danger")
-                    .variant(ButtonVariant::Danger)
-                    .show(ui, theme);
-                Button::new("Agent")
-                    .variant(ButtonVariant::Agent)
-                    .show(ui, theme);
-            },
-        );
-        cluster(ui, theme, "size — sm 24 · md 28 · lg 32", |ui| {
+        cluster(ui, theme, "variants — hover & click them", |ui| {
+            Button::new("Save")
+                .variant(ButtonVariant::Primary)
+                .show(ui, theme);
+            Button::new("Open folder")
+                .variant(ButtonVariant::Secondary)
+                .show(ui, theme);
+            Button::new("Cancel")
+                .variant(ButtonVariant::Ghost)
+                .show(ui, theme);
+            Button::new("Force detach")
+                .variant(ButtonVariant::Danger)
+                .show(ui, theme);
+            Button::new("Run agent task")
+                .variant(ButtonVariant::Agent)
+                .show(ui, theme);
+        });
+        cluster(ui, theme, "sizes — sm 24 · md 28 · lg 32", |ui| {
             Button::new("Small")
                 .variant(ButtonVariant::Secondary)
                 .size(ControlSize::Sm)
@@ -48,38 +43,19 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 .size(ControlSize::Lg)
                 .show(ui, theme);
         });
-        cluster(ui, theme, "icon — leading · trailing · both", |ui| {
+        cluster(ui, theme, "with icons · disabled", |ui| {
             Button::new("New tab")
-                .variant(ButtonVariant::Primary)
+                .variant(ButtonVariant::Secondary)
                 .leading_icon(&|ui, rect, c| glyph::PLUS.image(rect.height(), c).paint_at(ui, rect))
                 .show(ui, theme);
-            Button::new("Settings")
-                .variant(ButtonVariant::Secondary)
-                .trailing_icon(&|ui, rect, c| {
-                    glyph::SETTINGS.image(rect.height(), c).paint_at(ui, rect)
-                })
-                .show(ui, theme);
             Button::new("Search")
-                .variant(ButtonVariant::Ghost)
-                .leading_icon(&|ui, rect, c| {
+                .variant(ButtonVariant::Primary)
+                .trailing_icon(&|ui, rect, c| {
                     glyph::SEARCH.image(rect.height(), c).paint_at(ui, rect)
                 })
-                .trailing_icon(&|ui, rect, c| {
-                    glyph::CLOSE.image(rect.height(), c).paint_at(ui, rect)
-                })
                 .show(ui, theme);
-        });
-        cluster(ui, theme, "state — disabled (opacity 0.45)", |ui| {
-            Button::new("Primary")
-                .variant(ButtonVariant::Primary)
-                .enabled(false)
-                .show(ui, theme);
-            Button::new("Secondary")
+            Button::new("Disabled")
                 .variant(ButtonVariant::Secondary)
-                .enabled(false)
-                .show(ui, theme);
-            Button::new("Ghost")
-                .variant(ButtonVariant::Ghost)
                 .enabled(false)
                 .show(ui, theme);
         });

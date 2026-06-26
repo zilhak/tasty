@@ -23,7 +23,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
                         badge_dot(ui, theme, BadgeVariant::Agent);
-                        kit::title(ui, theme, "Agent wants to run a command");
+                        kit::title(ui, theme, "Approve agent action");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             tag(ui, theme, "agent", TagVariant::Agent, false);
                         });
@@ -42,7 +42,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     kit::body(
                         ui,
                         theme,
-                        "Claude requests permission to run a shell command in workspace web:",
+                        "The agent ai-review wants to run a command in s_01HXK9:",
                     );
                     // pre cmd 블록 (#000 위 mono).
                     egui::Frame::new()
@@ -52,7 +52,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         .show(ui, |ui| {
                             ui.set_min_width(ui.available_width());
                             ui.label(
-                                egui::RichText::new("$ pnpm build && pnpm test")
+                                egui::RichText::new("git push --force origin main")
                                     .monospace()
                                     .size(theme.font_size_term_sm.value())
                                     .color(theme.text_primary().to_egui()),
@@ -60,10 +60,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                         });
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                        kit::caption(ui, theme, "grants", false);
-                        tag(ui, theme, "shell", TagVariant::Default, false);
-                        tag(ui, theme, "filesystem", TagVariant::Default, false);
-                        tag(ui, theme, "network", TagVariant::Warning, false);
+                        tag(ui, theme, "destructive", TagVariant::Danger, true);
+                        tag(ui, theme, "fs:write", TagVariant::Default, false);
+                        tag(ui, theme, "net", TagVariant::Default, false);
                     });
                 },
             );
