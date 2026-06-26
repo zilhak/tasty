@@ -235,3 +235,28 @@ form-control 폭: `field-width-{xs,color,md,lg}` = 90/110/160/200 (specimen cons
 | `Allow remote content:` `Switch` | `draw_plugin_toggle` | `switch`(28×16) off | |
 | `Sandbox scripts:` `Switch` | `draw_plugin_toggle` | `switch`(28×16) on | |
 | `Note` | Note 라벨 | caption · text-muted | |
+
+## Banner (banner-02) — `gallery/overlays.jsx` `#banner` Section
+
+디자인 `gallery/overlays.jsx` 의 `#banner` Section(3 Spec) ↔ 갤러리
+`crates/tasty-gallery/src/catalog/widgets/banner.rs` (Overlays › `Banner — the floating
+top notice`). 네 번째 overlay 패밀리(Modal / Popup / Toast / **Banner**)의 specimen.
+본체 구현(banner-03)보다 먼저 만든 gallery-first 산출물.
+
+**전사 방식**: 디자인 Spec 의 정적 레이아웃(shell chrome · 행 구성 · 우상단 슬롯 ·
+스택 z-order)을 1:1 전사한다. hover/카운트다운/큐 같은 시간·상호작용 상태는 egui
+immediate-mode 정적 specimen 이므로 **각 상태를 나란히 노출**(toast 스택 데모와 동일
+관습 — 라이브 상호작용은 kit `banner.html` 담당).
+
+| 디자인 jsx 함수 | 갤러리 함수 | 비고 |
+|---|---|---|
+| `BannerShellG` | `banner_shell` | surface-raised fill + 1px border-strong + radius-8 + popover shadow, padding 12/8. `opacity`<1 → 전 색 디밍(recessed) |
+| `BannerScope` | `faux_scope` | 탭 스트립(28, 비워둠) + 디밍 콘텐츠 + 배너 존(탭바 아래 8px, 양옆 8px). 배너가 탭바를 덮지 않는 위치 관계 전사 |
+| `MouseCaptureBannerG` (Spec 1) | `draw` | 예시 배너: mouse 글리프 + 제목 + 본문 + `Shift` kbd hint + action 2(Secondary/Ghost). × 는 기본 숨김 |
+| Spec 2 plain/TTL | `draw_dismiss` | plain(× 노출 상태) + TTL(check 글리프 + 우상단 카운트다운 `6`) 두 행을 Column 으로 |
+| `TtlBannerG` countdown | `countdown` | mono micro(10)·text-muted·tabular 숫자 |
+| `StackDemoG` (Spec 3) | `draw_stack` | 하위(Pane, 40% 디밍, 후면) + 상위(Workspace, warn 글리프, 전면) 두 shell 을 overlap child Ui 로 |
+
+글리프: mouse/check 는 `icons.rs` 에 `MOUSE`/`CHECK` 글리프 추가(warn = 기존
+`ALERT_TRIANGLE`, × = 기존 `CLOSE`). 카탈로그 등록은 Overlays 페이지에 `banner`
+Section 1개(3 Spec) 추가 — scrim 바로 다음(디자인 NAV 순서).

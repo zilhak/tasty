@@ -508,6 +508,36 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "banner",
+                    "Banner — the floating top notice",
+                    vec![
+                        spec(
+                            "banner-shell",
+                            "Banner shell — the 4th overlay family",
+                            Some(
+                                "Floats at content-top below the tab bar · 100% − 16px · 8px radius · user-action only",
+                            ),
+                            widgets::banner::draw,
+                        ),
+                        spec(
+                            "banner-dismiss",
+                            "Dismiss & TTL countdown",
+                            Some(
+                                "Top-right one slot — × hidden until hover · TTL seconds → × on hover",
+                            ),
+                            widgets::banner::draw_dismiss,
+                        ),
+                        spec(
+                            "banner-stack",
+                            "Queue & stacking",
+                            Some(
+                                "One per scope, rest queue (max 5) · lower scope dimmed to 40% behind",
+                            ),
+                            widgets::banner::draw_stack,
+                        ),
+                    ],
+                ),
+                section(
                     "palette",
                     "Command palette",
                     vec![spec(

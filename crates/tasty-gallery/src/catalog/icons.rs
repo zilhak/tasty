@@ -172,6 +172,12 @@ glyph!(
     "bell",
     r#"<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>"#
 );
+glyph!(
+    MOUSE,
+    "mouse",
+    r#"<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>"#
+);
+glyph!(CHECK, "check", r#"<path d="M20 6 9 17l-5-5"/>"#);
 
 // ── Tools & system ──
 glyph!(

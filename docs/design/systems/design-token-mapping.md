@@ -90,3 +90,34 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 - remote_tool 헤더 `gap: 9` — 토큰 아님 (spacing_sm=8 과 1px 차).
 - remote_tool 헤더 title `fontSize: 14` — 토큰 아님 (tasty 엔 14 폰트 토큰 없음 → heading 13 사용, 1px 차).
 - remote_tool TabBtn `height: 35` / 탭바 `padding 0 8` / 탭 `padding 0 13` / `gap 2` — raw.
+
+## banner (banner-02 specimen / banner-03 본체)
+
+디자인 `tokens/components.css` 의 `--tasty-banner-*` Tier-3 블록 + `tokens/primitives.css`
+의 `--tasty-opacity-recessed`. 갤러리 specimen(`widgets/banner.rs`)은 **본체 Theme struct
+증설 없이** changelog 의 semantic 체인을 따라 기존 접근자로 매핑한다. 아래 표의 "갤러리
+매핑" 은 specimen 이 현재 쓰는 값, "banner-03" 은 본체 구현 때 토큰화할 항목.
+
+| 디자인 토큰 | 디자인 체인 | 갤러리 매핑(specimen) | banner-03(본체) |
+|---|---|---|---|
+| `--tasty-banner-bg` | → `surface-raised` → neutral-300 | `surface_raised()` | semantic 직접 매핑(신규 필드 불필요) |
+| `--tasty-banner-fg` | → `text-primary` | `text_primary()` | 〃 |
+| `--tasty-banner-border` | → `border-strong` | `border_strong()` | 〃 |
+| `--tasty-banner-radius` | → `radius-8` (8px) | `corner_radius`(4)×2 = 8 도출 | **신규**: `--tasty-banner-radius`/`radius_8` 토큰 필요(시스템 기본 4px 의 의도적 2배) |
+| `--tasty-banner-shadow` | → `shadow-popover` | popover급 근사(offset 0/8, blur 24, black α90) | **신규**: shadow 토큰 struct 미보유 — popover shadow 토큰화 필요 |
+| `--tasty-banner-margin` | → `space-sm` → size-8 (8px) | `spacing_sm` | 기존 토큰 |
+| `--tasty-banner-padding-x` | → `space-md` (12) | `spacing_md` | 기존 토큰 |
+| `--tasty-banner-padding-y` | → `space-sm` (8) | `spacing_sm` | 기존 토큰 |
+| `--tasty-banner-gap` | → `space-md` (12) | `spacing_md` | 기존 토큰 |
+| `--tasty-banner-icon-fg` | → `text-muted` (default) | `text_muted()` (per-banner severity override) | 기존 접근자 |
+| `--tasty-banner-title-font-size` | → `font-size-body` (13) | `font_size_body` | 기존 토큰 |
+| `--tasty-banner-body-font-size` | → `font-size-caption` (11) | `font_size_caption` | 기존 토큰 |
+| `--tasty-banner-countdown-font` | → `font-mono` | `FontId::monospace` | 기존 |
+| `--tasty-banner-countdown-font-size` | → `font-size-micro` (10) | `font_size_micro` | 기존 토큰 |
+| `--tasty-banner-countdown-fg` | → `text-muted` | `text_muted()` | 기존 접근자 |
+| `--tasty-banner-recessed-opacity` | → `opacity-recessed` (0.4) | 로컬 const `0.4` + `gamma_multiply` | **신규**: `--tasty-opacity-recessed` primitive(`opacity_recessed()`) 필요 |
+| `--tasty-banner-fade` | → `motion-ui` → duration-120 (120ms) | (없음 — 모션 토큰 미보유, immediate-mode end-state) | switch-overlay-fade 와 동일 한계 — 모션 토큰 미도입 |
+
+> **banner-03(본체) 에서 추가 필요한 신규 Theme 항목**: ① `--tasty-banner-radius`(radius-8,
+> 8px), ② `--tasty-opacity-recessed`(0.4 primitive), ③ `--tasty-banner-shadow`(popover
+> shadow). 나머지 `--tasty-banner-*` 는 모두 기존 semantic 접근자로 커버된다.
