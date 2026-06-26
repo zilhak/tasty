@@ -2,23 +2,24 @@
 
 Popup 은 View 내부에 존재하는 가상 창이다 — 터미널과 공존하며 포커스를 독점하지 않는다. 모든 내부 팝업은 **`PopupManager` + `PopupDef`** 로 관리된다(`src/adapters/ui/popup.rs`). 용어 구분은 [concepts/ubiquitous-language](../../concepts/ubiquitous-language.md), 팝업을 *추가하는 법* 은 [dev-guide/popup-implementation](../../dev-guide/popup-implementation.md). 이 문서는 시스템 *동작 모델* 이다.
 
-## 7대 규칙
+## 8대 규칙
 
 1. **타이틀 + 콘텐츠** — 상단 타이틀 영역(높이 토큰 고정) + 하단 콘텐츠.
 2. **타이틀바** — 제목 중앙 정렬 + 우측 X(닫기) 버튼(호버 시 빨강).
-3. **드래그 이동** — 타이틀 영역 드래그로 팝업 전체 이동.
-4. **커서** — 타이틀 영역 위에서 grab 커서.
+3. **드래그 이동** — 팝업이 선언한 **드래그 핸들**(`drag_handle`) 영역을 드래그로 팝업 전체 이동. 타이틀바 팝업은 타이틀 영역이 핸들(기본). 타이틀바 없는 팝업도 `DragHandle::Region` 으로 **위젯 없는 전용 띠**를 직접 선언해 이동 가능(위젯 우선 중재는 하지 않음 — 핸들은 위젯과 겹치지 않는 영역만 가리킨다).
+4. **커서** — 드래그 핸들 위에서 grab 커서. 리사이즈 가능 팝업의 테두리에서는 엣지별 리사이즈 커서.
 5. **배경 구분** — 팝업 배경은 `surface0`, 타이틀바는 `mantle` — 터미널 focused(검정)/unfocused 배경과 달라 위에 떠 있음이 시각적으로 구분된다.
 6. **경계 제한** — 팝업의 어떤 부분도 스코프 밖으로 못 나간다. 리사이즈 시 자동 재배치.
 7. **다중 + z-order** — 여러 개 동시 가능. 나중에 열리거나 클릭된 것이 앞. 겹친 영역의 마우스 이벤트는 최상단 팝업만 받는다.
+8. **리사이즈** — `resizable` 팝업은 테두리 8방향 드래그로 크기 조절(`min_size` 하한 + 스코프 경계 클램프). 입력 우선순위는 **close 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠**. 사용자가 리사이즈한 뒤에는 `sizer` 가 크기를 되돌리지 않는다(close 시 리셋).
 
 (모든 색·치수는 Theme 토큰 — [theme.md](theme.md).)
 
 ## 구조
 
-- **`PopupDef`** — 정적·데이터 지향 정의(id, title_key/title_fn, default_size/sizer, default_scope, close_on_outside_click, headless, sticky_focus, draw_fn). 전부 `src/adapters/ui/popup/defs.rs::all_defs()` 에 모은다. 필드 상세 → [popup-implementation](../../dev-guide/popup-implementation.md).
-- **`PopupManager`** — 공통 동작(z-order, 드래그, 타이틀바, clamp, 포커스) 중앙 관리. `register_def` / `open*` / `close` / `toggle` / `draw`.
-- **`PopupState`** — 개별 인스턴스 상태(id, title, pos, size, open, focused, scope).
+- **`PopupDef`** — 정적·데이터 지향 정의(id, title_key/title_fn, default_size/sizer, default_scope, close_on_outside_click, headless, sticky_focus, drag_handle, resizable, min_size, draw_fn). 전부 `src/adapters/ui/popup/defs.rs::all_defs()` 에 모은다. 필드 상세 → [popup-implementation](../../dev-guide/popup-implementation.md).
+- **`PopupManager`** — 공통 동작(z-order, 드래그, 리사이즈, 타이틀바, clamp, 포커스) 중앙 관리. `register_def` / `open*` / `close` / `toggle` / `draw`.
+- **`PopupState`** — 개별 인스턴스 상태(id, title, pos, size, open, focused, scope, dragging/resizing, size_user_overridden).
 
 등록된 팝업은 `all_defs()` 가 단일 출처다(예: `notifications`, `convert_surface`, `markdown_open`, `rename`, `search_bar`, `tools_menu` …). 새 팝업 = 테이블 항목 1개 + draw 함수 하나.
 

@@ -70,12 +70,21 @@ state.dispatch_intent(UiIntent::OpenPopup { id: "my_popup", mode: OpenPopupMode:
 | `title_key` | `&'static str` | i18n 키 → 타이틀바 |
 | `title_fn` | `Option<fn(&AppState, &CoreState) -> String>` | 동적 제목. 설정 시 `title_key` 대신 매 프레임 호출 |
 | `default_size` | `egui::Vec2` | 기본 크기 (unzoomed baseline) |
-| `sizer` | `Option<fn(&AppState, &CoreState) -> Vec2>` | 동적 크기. **`ui_scale_factor()` 곱 금지** — sizing 토큰에 host UI zoom 이 이미 baked. 추가 곱은 이중 곱셈으로 medium/large 에서 layout 붕괴 |
+| `sizer` | `Option<fn(&AppState, &CoreState) -> Vec2>` | 동적 크기. **`ui_scale_factor()` 곱 금지** — sizing 토큰에 host UI zoom 이 이미 baked. 추가 곱은 이중 곱셈으로 medium/large 에서 layout 붕괴. **사용자가 직접 리사이즈한 팝업(`resizable`)에서는 리사이즈 이후 sizer 가 크기를 덮어쓰지 않는다**(`size_user_overridden` 가드 — popup close 시 리셋되어 다음 open 에 복원) |
 | `default_scope` | `PopupScope` | 가시성/경계 범위 |
 | `close_on_outside_click` | `bool` | 바깥 클릭 시 닫힘 |
 | `headless` | `bool` | 타이틀바 없이 콘텐츠만 |
 | `sticky_focus` | `bool` | 바깥 클릭해도 키보드 포커스 유지 |
+| `drag_handle` | `DragHandle` | 이동(드래그) 핸들 선언. `None`(이동 불가) / `TitleBar`(타이틀바=핸들, 기존 동작; headless 면 핸들 없음) / `Region(fn(&PopupState)->Rect)`(팝업이 pos/size 로부터 **전용 핸들 띠** 계산 — 타이틀바 없는 팝업도 이동 가능). `movable` 여부는 별도 bool 없이 이 값으로 표현 |
+| `resizable` | `bool` | true 면 테두리 8방향 드래그로 크기 조절(min_size·scope 경계 클램프, 엣지별 리사이즈 커서) |
+| `min_size` | `Option<egui::Vec2>` | 리사이즈 최소 크기. `None`이면 `default_size`를 최소로 사용 |
 | `draw_fn` | `fn(&mut Ui, &mut AppState, &mut CoreState) -> PopupAction` | 매 프레임 렌더 |
+
+### 이동 / 리사이즈
+
+- **이동**: `drag_handle` 으로 선언한 영역을 클릭+드래그 → 스코프 경계 안에서 위치 이동. 타이틀바 팝업은 `DragHandle::TitleBar`(기본). 타이틀바 없는 팝업은 `DragHandle::Region(fn)` 으로 **위젯이 없는 전용 띠**를 직접 계산해 핸들로 선언한다.
+  - ⚠️ **위젯 우선 중재 없음**: `Region` 이 가리키는 영역에 클릭/드래그 위젯(버튼·입력)이 있으면 그 위젯 입력과 드래그가 충돌한다. `Region` 작성자는 **위젯 없는 영역**만 가리켜야 한다(예: `port_scanner`/`remote_tool` 은 헤더 좌측 라벨 영역만 띠로 선언).
+- **리사이즈**: `resizable: true` 팝업은 테두리 밴드(약 6px)를 잡아 8방향으로 크기 조절. 우선순위는 **close 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠**.
 
 ## 텍스트 입력이 있는 팝업
 

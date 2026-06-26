@@ -182,7 +182,11 @@ pub fn draw_popups(
         let new_size = def.sizer.map(|f| f(state, engine));
         if let Some(p) = state.popups.get_mut(def.id) {
             p.title = new_title;
-            if let Some(sz) = new_size {
+            // 사용자가 직접 리사이즈한 팝업은 sizer 가 크기를 되돌리지 않는다
+            // (size_user_overridden 가드 — popup close 시 리셋되어 다음 open 에 복원).
+            if let Some(sz) = new_size
+                && !p.size_user_overridden
+            {
                 p.size = sz;
             }
         }

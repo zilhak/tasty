@@ -2,7 +2,18 @@
 
 use std::sync::OnceLock;
 
-use super::{PopupDef, PopupScope};
+use super::{DragHandle, PopupDef, PopupScope, PopupState};
+
+/// 헤드리스 패널 팝업(port_scanner / remote_tool)의 전용 드래그 띠.
+///
+/// 헤더 **좌측 절반**(아이콘 + 제목 라벨만 있는 영역)을 핸들로 선언한다. 우측의
+/// 검색 입력 / Refresh / Close 버튼과는 겹치지 않으므로 위젯 우선 중재 없이 안전하다
+/// (승인된 "전용 핸들 띠" 방식). 높이는 타이틀바 토큰(`title_bar_height`)을 재사용해
+/// 헤더 중앙의 라벨을 덮는다. 테두리 리사이즈 밴드(좌/상단 수 px)는 우선순위가
+/// 높아 그 부분은 리사이즈로 동작한다.
+fn panel_header_drag_strip(s: &PopupState) -> egui::Rect {
+    egui::Rect::from_min_size(s.pos, egui::vec2(s.size.x * 0.5, super::title_bar_height()))
+}
 
 /// 프로세스 수명 내내 살아있는 정적 popup 정의 목록.
 pub fn all_defs() -> &'static [PopupDef] {
@@ -19,6 +30,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: true,
+                min_size: Some(egui::vec2(280.0, 200.0)),
                 draw_fn: crate::adapters::ui::notification::draw_notification_popup,
             },
             PopupDef {
@@ -31,6 +45,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: true,
+                min_size: Some(egui::vec2(300.0, 200.0)),
                 draw_fn: super::convert::draw_convert_popup,
             },
             PopupDef {
@@ -43,6 +60,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: false,
+                min_size: None,
                 draw_fn: super::file_open::draw_markdown_open_popup,
             },
             PopupDef {
@@ -55,6 +75,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: false,
+                min_size: None,
                 draw_fn: crate::adapters::ui::dialog::draw_rename_popup,
             },
             PopupDef {
@@ -67,6 +90,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: true,
                 sticky_focus: false,
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
                 draw_fn: crate::adapters::ui::search_bar::draw_search_bar,
             },
             PopupDef {
@@ -79,6 +105,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: false,
+                min_size: None,
                 draw_fn: crate::adapters::ui::info_modal::draw_info_modal,
             },
             PopupDef {
@@ -91,6 +120,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: true,
+                min_size: Some(egui::vec2(400.0, 200.0)),
                 draw_fn: super::approval::draw_approval_popup,
             },
             PopupDef {
@@ -103,6 +135,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: true,
+                min_size: Some(egui::vec2(360.0, 240.0)),
                 draw_fn: super::file_handler_picker::draw_file_handler_picker,
             },
             PopupDef {
@@ -115,6 +150,10 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
+                // 타이틀바 없는 패널 — 헤더 좌측 전용 띠를 드래그 핸들로 선언.
+                drag_handle: DragHandle::Region(panel_header_drag_strip),
+                resizable: true,
+                min_size: Some(egui::vec2(480.0, 320.0)),
                 draw_fn: super::port_scanner::draw_port_scanner_popup,
             },
             PopupDef {
@@ -129,6 +168,10 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: true,
+                // 중앙 정렬 팔레트 — 이동/리사이즈 비활성.
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
                 draw_fn: super::command_palette::draw_command_palette_popup,
             },
             PopupDef {
@@ -141,6 +184,10 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: false,
                 headless: true,
                 sticky_focus: false,
+                // 타이틀바 없는 패널 — 헤더 좌측 전용 띠를 드래그 핸들로 선언.
+                drag_handle: DragHandle::Region(panel_header_drag_strip),
+                resizable: true,
+                min_size: Some(egui::vec2(400.0, 300.0)),
                 draw_fn: super::remote_tool::draw_remote_tool_popup,
             },
             PopupDef {
@@ -153,6 +200,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: false,
+                min_size: None,
                 draw_fn: super::preset_apply::draw_apply_workspace_popup,
             },
             PopupDef {
@@ -165,6 +215,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: false,
+                min_size: None,
                 draw_fn: super::preset_apply::draw_apply_tab_popup,
             },
             PopupDef {
@@ -177,6 +230,9 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: false,
                 sticky_focus: false,
+                drag_handle: DragHandle::TitleBar,
+                resizable: false,
+                min_size: None,
                 draw_fn: super::preset_apply::draw_apply_pane_popup,
             },
             PopupDef {
@@ -189,6 +245,10 @@ pub fn all_defs() -> &'static [PopupDef] {
                 close_on_outside_click: true,
                 headless: true,
                 sticky_focus: false,
+                // 컨텍스트 메뉴 스타일 — 이동/리사이즈 비활성.
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
                 draw_fn: crate::adapters::ui::tools_menu::draw_tools_menu,
             },
         ]

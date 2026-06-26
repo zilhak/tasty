@@ -24,6 +24,42 @@ pub enum PopupAction {
     Close,
 }
 
+/// 팝업이 자기 드래그(이동) 영역을 선언하는 방식. 타이틀바가 없어도 팝업이
+/// `PopupState`(pos/size)로부터 전용 핸들 띠를 직접 계산할 수 있게 한다.
+///
+/// 승인된 정책: 핸들은 **위젯이 없는 전용 영역**만 가리킨다. 위젯과 겹치면 그
+/// 영역의 드래그가 위젯 입력과 충돌하므로(위젯 우선 중재는 하지 않음) `Region`
+/// 작성자가 위젯 없는 띠를 책임지고 지정해야 한다.
+#[derive(Clone, Copy)]
+pub enum DragHandle {
+    /// 이동 불가.
+    None,
+    /// 기존 동작 — 타이틀바(`title_rect`)가 핸들. headless 팝업에서는 타이틀바가
+    /// 없으므로 핸들도 없음(None 과 동일).
+    TitleBar,
+    /// 팝업이 pos/size 로부터 전용 핸들 띠를 계산. headless 팝업도 이동 가능.
+    Region(fn(&PopupState) -> egui::Rect),
+}
+
+impl std::fmt::Debug for DragHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DragHandle::None => write!(f, "DragHandle::None"),
+            DragHandle::TitleBar => write!(f, "DragHandle::TitleBar"),
+            DragHandle::Region(_) => write!(f, "DragHandle::Region(..)"),
+        }
+    }
+}
+
+/// 리사이즈 중 사용자가 잡은 테두리 엣지 조합. 모서리는 인접한 두 엣지가 함께 true.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ResizeEdges {
+    pub left: bool,
+    pub right: bool,
+    pub top: bool,
+    pub bottom: bool,
+}
+
 /// Result of PopupManager::draw(), including input layer hit information.
 pub struct PopupDrawResult {
     /// Popup IDs that were closed this frame.
@@ -52,6 +88,13 @@ pub struct PopupDef {
     /// true면 팝업 바깥 클릭해도 키보드 포커스가 유지된다.
     /// 닫기(Escape 등)로만 포커스 해제 가능. 검색 바 같은 오버레이용.
     pub sticky_focus: bool,
+    /// 이동(드래그) 핸들 선언. `None`이면 이동 불가. `movable` 여부는 별도 bool 없이
+    /// 이 값으로 표현한다.
+    pub drag_handle: DragHandle,
+    /// true면 테두리 8방향 드래그로 크기 조절 가능.
+    pub resizable: bool,
+    /// 리사이즈 최소 크기. `None`이면 `default_size`를 최소로 사용.
+    pub min_size: Option<egui::Vec2>,
     /// 렌더링 함수. 매 프레임 호출. AppState에서 필요한 데이터를 꺼낸다.
     pub draw_fn: fn(&mut egui::Ui, &mut AppState, &mut crate::core::CoreState) -> PopupAction,
 }
@@ -89,6 +132,19 @@ pub struct PopupState {
     /// If true, PopupManager will position this popup at the top of its scope on the
     /// next draw (horizontally centered, small margin from top) and clear the flag.
     pub request_top: bool,
+    /// 이동(드래그) 핸들 선언. `register_def`가 `PopupDef`에서 전파한다.
+    drag_handle: DragHandle,
+    /// 테두리 드래그 리사이즈 허용 여부.
+    resizable: bool,
+    /// 리사이즈 최소 크기. `default_size`로 초기화된 뒤 `with_min_size`로 덮인다.
+    min_size: egui::Vec2,
+    /// 리사이즈 진행 중이면 잡은 엣지 조합. `None`이면 리사이즈 중 아님.
+    resizing: Option<ResizeEdges>,
+    /// 리사이즈 시작 시점의 팝업 rect (드래그 누적 계산 기준).
+    resize_start_rect: egui::Rect,
+    /// 사용자가 한 번이라도 리사이즈했으면 true. true 동안 sizer 의 size 덮어쓰기를
+    /// 막는다(notification.rs). `close()`에서 리셋되어 다음 open 시 sizer 복원.
+    pub size_user_overridden: bool,
 }
 
 /// Popup 타이틀바 높이 — `Theme.item_height_interactive` (디자인 28px) 의 round_ui.
@@ -126,6 +182,14 @@ impl PopupState {
             sticky_focus: false,
             request_center: false,
             request_top: false,
+            // 기본값 TitleBar — `register_def` 미경유로 직접 생성되는 팝업
+            // (settings keybinding_conflict 등 타이틀바 팝업)의 기존 드래그 동작 보존.
+            drag_handle: DragHandle::TitleBar,
+            resizable: false,
+            min_size: default_size,
+            resizing: None,
+            resize_start_rect: egui::Rect::ZERO,
+            size_user_overridden: false,
         }
     }
 
@@ -153,12 +217,47 @@ impl PopupState {
         self
     }
 
+    /// 드래그(이동) 핸들 선언을 설정한다.
+    pub fn with_drag_handle(mut self, h: DragHandle) -> Self {
+        self.drag_handle = h;
+        self
+    }
+
+    /// 테두리 드래그 리사이즈 허용 여부를 설정한다.
+    pub fn with_resizable(mut self, v: bool) -> Self {
+        self.resizable = v;
+        self
+    }
+
+    /// 리사이즈 최소 크기를 설정한다.
+    pub fn with_min_size(mut self, sz: egui::Vec2) -> Self {
+        self.min_size = sz;
+        self
+    }
+
     fn popup_rect(&self) -> egui::Rect {
         egui::Rect::from_min_size(self.pos, self.size)
     }
 
     fn title_rect(&self) -> egui::Rect {
         egui::Rect::from_min_size(self.pos, egui::vec2(self.size.x, title_bar_height()))
+    }
+
+    /// 현재 이동(드래그) 핸들 영역. `None`이면 이동 불가.
+    /// - `TitleBar`: 타이틀바(`title_rect`). 단 headless 면 타이틀바가 없으므로 None.
+    /// - `Region(f)`: 팝업이 pos/size 로부터 계산한 전용 핸들 띠.
+    fn drag_handle_rect(&self) -> Option<egui::Rect> {
+        match self.drag_handle {
+            DragHandle::None => None,
+            DragHandle::TitleBar => {
+                if self.headless {
+                    None
+                } else {
+                    Some(self.title_rect())
+                }
+            }
+            DragHandle::Region(f) => Some(f(self)),
+        }
     }
 
     fn content_rect(&self) -> egui::Rect {
@@ -230,11 +329,21 @@ impl PopupManager {
         } else {
             def.default_size * ui_zoom
         };
+        // min_size 도 sizer 없는 팝업은 default 와 동일하게 ui_zoom 을 곱해 baseline 정합.
+        let resolved_min = def.min_size.unwrap_or(def.default_size);
+        let resolved_min = if def.sizer.is_some() {
+            resolved_min
+        } else {
+            resolved_min * ui_zoom
+        };
         let popup = PopupState::new(def.id, crate::i18n::t(def.title_key), initial_size)
             .with_scope(def.default_scope.clone())
             .with_close_on_outside_click(def.close_on_outside_click)
             .with_headless(def.headless)
-            .with_sticky_focus(def.sticky_focus);
+            .with_sticky_focus(def.sticky_focus)
+            .with_drag_handle(def.drag_handle)
+            .with_resizable(def.resizable)
+            .with_min_size(resolved_min);
         self.popups.push(popup);
     }
 
@@ -333,6 +442,9 @@ impl PopupManager {
             p.open = false;
             p.dragging = false;
             p.focused = false;
+            // 리사이즈 상태 리셋 → 다음 open 시 sizer 가 크기를 다시 결정하도록 복원.
+            p.resizing = None;
+            p.size_user_overridden = false;
         }
     }
 

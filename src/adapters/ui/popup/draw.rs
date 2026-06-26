@@ -3,7 +3,42 @@
 use crate::adapters::ui::LayoutContext;
 use crate::theme;
 
-use super::{PopupDrawResult, PopupId, PopupManager, PopupScope};
+use super::{PopupDrawResult, PopupId, PopupManager, PopupScope, ResizeEdges};
+
+/// 리사이즈 테두리 밴드 폭(px). popup_rect 가장자리 안쪽 이 폭 안에서 누르면 리사이즈.
+const RESIZE_BAND: f32 = 6.0;
+
+/// 포인터가 rect 의 어느 테두리 밴드에 있는지 판정. 어느 엣지에도 안 닿으면 None.
+fn resize_edges_at(rect: egui::Rect, pos: egui::Pos2, band: f32) -> Option<ResizeEdges> {
+    let left = pos.x <= rect.min.x + band;
+    let right = pos.x >= rect.max.x - band;
+    let top = pos.y <= rect.min.y + band;
+    let bottom = pos.y >= rect.max.y - band;
+    if left || right || top || bottom {
+        Some(ResizeEdges {
+            left,
+            right,
+            top,
+            bottom,
+        })
+    } else {
+        None
+    }
+}
+
+/// 잡은 엣지 조합 → 리사이즈 커서. 모서리는 대각선, 단일 엣지는 수평/수직.
+fn resize_cursor(e: ResizeEdges) -> egui::CursorIcon {
+    use egui::CursorIcon as C;
+    match (e.left, e.right, e.top, e.bottom) {
+        (true, _, true, _) => C::ResizeNwSe, // top-left
+        (_, true, _, true) => C::ResizeNwSe, // bottom-right
+        (_, true, true, _) => C::ResizeNeSw, // top-right
+        (true, _, _, true) => C::ResizeNeSw, // bottom-left
+        (true, _, _, _) | (_, true, _, _) => C::ResizeHorizontal,
+        (_, _, true, _) | (_, _, _, true) => C::ResizeVertical,
+        _ => C::Default,
+    }
+}
 
 impl PopupManager {
     /// Draw all open popups. The `content_fn` callback is invoked for each popup with its id.
@@ -35,32 +70,59 @@ impl PopupManager {
             .map(|(i, _)| i)
             .collect();
 
-        // Determine which popup (topmost) the pointer is over
+        // Determine which popup (topmost) the pointer is over.
+        // 우선순위: close 버튼 > 리사이즈 엣지 > 드래그 핸들 > 콘텐츠.
         let mut hovered_popup: Option<PopupId> = None;
-        let mut hovered_title: Option<PopupId> = None;
+        let mut hovered_handle: Option<PopupId> = None;
         let mut hovered_close: Option<PopupId> = None;
+        let mut hovered_resize: Option<(PopupId, ResizeEdges)> = None;
         if let Some(pos) = pointer_pos {
             // Check in reverse z-order (topmost first) for correct hit-testing
             for &idx in open_indices.iter().rev() {
                 let popup = &self.popups[idx];
-                if popup.popup_rect().contains(pos) {
+                let rect = popup.popup_rect();
+                if rect.contains(pos) {
                     hovered_popup = Some(popup.id);
-                    if !popup.headless {
-                        if popup.close_btn_rect().contains(pos) {
-                            hovered_close = Some(popup.id);
-                        } else if popup.title_rect().contains(pos) {
-                            hovered_title = Some(popup.id);
-                        }
+                    if !popup.headless && popup.close_btn_rect().contains(pos) {
+                        hovered_close = Some(popup.id);
+                    } else if popup.resizable
+                        && let Some(edges) = resize_edges_at(rect, pos, RESIZE_BAND)
+                    {
+                        hovered_resize = Some((popup.id, edges));
+                    } else if let Some(handle) = popup.drag_handle_rect()
+                        && handle.contains(pos)
+                    {
+                        hovered_handle = Some(popup.id);
                     }
                     break; // topmost popup wins
                 }
             }
         }
 
-        // Handle close button click and focus
+        // Handle press: close > resize start > drag start > focus > outside-click.
         if primary_pressed {
             if let Some(id) = hovered_close {
                 closed.push(id);
+            } else if let Some((id, edges)) = hovered_resize {
+                if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
+                    popup.resizing = Some(edges);
+                    popup.resize_start_rect = popup.popup_rect();
+                }
+                bring_front = Some(id);
+                for popup in &mut self.popups {
+                    popup.focused = popup.id == id;
+                }
+            } else if let Some(id) = hovered_handle {
+                if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
+                    popup.dragging = true;
+                    if let Some(pos) = pointer_pos {
+                        popup.drag_offset = pos - popup.pos;
+                    }
+                }
+                bring_front = Some(id);
+                for popup in &mut self.popups {
+                    popup.focused = popup.id == id;
+                }
             } else if let Some(id) = hovered_popup {
                 bring_front = Some(id);
                 // Focus this popup, unfocus all others
@@ -79,20 +141,6 @@ impl PopupManager {
                     }
                 }
             }
-        }
-
-        // Handle drag start
-        if primary_pressed
-            && let Some(id) = hovered_title
-            && hovered_close.is_none()
-        {
-            if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
-                popup.dragging = true;
-                if let Some(pos) = pointer_pos {
-                    popup.drag_offset = pos - popup.pos;
-                }
-            }
-            bring_front = Some(id);
         }
 
         // Handle drag move / release
@@ -115,6 +163,56 @@ impl PopupManager {
                         (bounds.max.y - popup.size.y).max(bounds.min.y),
                     ),
                 );
+            }
+        }
+
+        // Handle resize move / release. 잡은 엣지만 이동(반대편 고정), min_size 클램프 후
+        // scope 경계로 클램프. 사용자 리사이즈가 발생하면 size_user_overridden=true 로
+        // 표시 → sizer 가 크기를 되돌리지 못하게 한다(notification.rs 가드).
+        for popup in &mut self.popups {
+            let Some(edges) = popup.resizing else {
+                continue;
+            };
+            if primary_released {
+                popup.resizing = None;
+                continue;
+            }
+            if primary_down && let Some(pos) = pointer_pos {
+                let start = popup.resize_start_rect;
+                let mut min = start.min;
+                let mut max = start.max;
+                if edges.left {
+                    min.x = pos.x;
+                }
+                if edges.right {
+                    max.x = pos.x;
+                }
+                if edges.top {
+                    min.y = pos.y;
+                }
+                if edges.bottom {
+                    max.y = pos.y;
+                }
+                // min_size 클램프 — 잡은 엣지를 반대편 고정 엣지 기준으로 제한.
+                let mw = popup.min_size.x;
+                let mh = popup.min_size.y;
+                if edges.left {
+                    min.x = min.x.min(max.x - mw);
+                }
+                if edges.right {
+                    max.x = max.x.max(min.x + mw);
+                }
+                if edges.top {
+                    min.y = min.y.min(max.y - mh);
+                }
+                if edges.bottom {
+                    max.y = max.y.max(min.y + mh);
+                }
+                let bounds = Self::scope_rect(&popup.scope, draw_ctx).unwrap_or(screen_rect);
+                let new_rect = egui::Rect::from_min_max(min, max).intersect(bounds);
+                popup.pos = new_rect.min;
+                popup.size = new_rect.size();
+                popup.size_user_overridden = true;
             }
         }
 
@@ -142,10 +240,22 @@ impl PopupManager {
             }
         }
 
-        // Set cursor for popup hover
-        if hovered_title.is_some() && hovered_close.is_none() {
+        // Set cursor. 진행 중인 리사이즈/드래그가 우선(포인터가 밴드 밖으로 나가도 유지),
+        // 그 다음 hover 상태.
+        let active_resize = self
+            .popups
+            .iter()
+            .find_map(|p| if p.dragging { None } else { p.resizing });
+        let active_drag = self.popups.iter().any(|p| p.dragging);
+        if let Some(edges) = active_resize {
+            ctx.set_cursor_icon(resize_cursor(edges));
+        } else if active_drag {
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if let Some((_, edges)) = hovered_resize {
+            ctx.set_cursor_icon(resize_cursor(edges));
+        } else if hovered_handle.is_some() {
             ctx.set_cursor_icon(egui::CursorIcon::Grab);
-        } else if hovered_popup.is_some() && hovered_title.is_none() {
+        } else if hovered_popup.is_some() && hovered_close.is_none() {
             // Content area: set default cursor (arrow) to override terminal cursor
             ctx.set_cursor_icon(egui::CursorIcon::Default);
         }
