@@ -151,12 +151,17 @@ impl PlatformWebView {
                 .map_err(|e| format!("AddWebResourceRequestedFilter failed: {e}"))?;
             let env_cb = env.clone();
             let allow_cb = allow_remote.clone();
-            let mut token = EventRegistrationToken::default();
+            // webview2-com 0.38 (windows 0.61) 의 add_WebResourceRequested 는
+            // token 을 EventRegistrationToken 이 아닌 *mut i64 로 받는다.
+            let mut token: i64 = 0;
             let handler = WebResourceRequestedEventHandler::create(Box::new(
-                move |_sender, args| -> Result<()> {
+                move |_sender, args| -> windows::core::Result<()> {
                     let Some(args) = args else { return Ok(()) };
                     let request = args.Request()?;
-                    let uri = request.Uri()?;
+                    // webview2-com 0.38 (windows 0.61): Uri 는 반환값이 아니라
+                    // *mut PWSTR out-param 으로 결과를 돌려준다.
+                    let mut uri = windows::core::PWSTR::null();
+                    request.Uri(&mut uri)?;
                     let uri_str = uri.to_string().unwrap_or_default();
                     // WebView2 가 할당한 URI 문자열은 호출자가 CoTaskMemFree 로 해제해야 한다.
                     CoTaskMemFree(Some(uri.0 as *const c_void));
