@@ -748,6 +748,16 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "git-viewer",
+                    "Git worktree viewer popup",
+                    vec![spec(
+                        "git-viewer",
+                        "Worktree rail + status / log / diff",
+                        Some("≈960 · splitter H 0.25 · splitter V 0.5 · rail → status/log/diff"),
+                        components::git_viewer::draw,
+                    )],
+                ),
+                section(
                     "settings",
                     "Settings window",
                     vec![spec(

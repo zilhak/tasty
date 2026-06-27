@@ -16,6 +16,7 @@ pub mod explorer_rename_popup;
 pub mod explorer_tab_bar;
 pub mod explorer_view_cells;
 pub mod file_handler_picker;
+pub mod git_viewer;
 pub mod glyph;
 pub mod markdown_open;
 pub mod plugin_settings;
