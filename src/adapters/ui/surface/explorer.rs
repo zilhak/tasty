@@ -9,6 +9,7 @@
 //! 호출자(`egui_panels`)가 렌더 루프 종료 후 적용한다(markdown/empty 의 deferred
 //! action 패턴과 동일 — 렌더 중 `engine`/`state` 가변 차용 충돌 회피).
 
+pub mod favorites;
 pub mod ops;
 pub mod view;
 
@@ -77,15 +78,19 @@ pub enum ExplorerMenuTarget {
     Single { path: PathBuf, is_dir: bool },
     /// 다중 선택.
     Multi { paths: Vec<PathBuf> },
+    /// 사이드바 즐겨찾기 항목 → "즐겨찾기에서 제거" 전용 메뉴.
+    Favorite { path: PathBuf },
 }
 
 /// 한 explorer surface 를 그린다. 사용자 조작이 있었으면 첫 액션을 반환.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_explorer(
     ui: &mut egui::Ui,
     panel: &mut ExplorerPanel,
     view: &mut ExplorerView,
     font: &EffectiveFont,
     id_suffix: &str,
+    favorites: &[favorites::ExplorerFavorite],
 ) -> Option<ExplorerAction> {
     let th = theme::theme();
     let theme: &Theme = &th;
@@ -115,7 +120,7 @@ pub fn draw_explorer(
                 ui.allocate_ui_with_layout(
                     egui::vec2(SIDEBAR_W, ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
-                    |ui| sidebar(ui, theme, panel, view, &mut action),
+                    |ui| sidebar(ui, theme, panel, view, favorites, &mut action),
                 );
                 // 사이드바 ↔ content 세로 구분선.
                 let (vrect, _) = ui.allocate_exact_size(
@@ -394,6 +399,7 @@ fn sidebar(
     theme: &Theme,
     panel: &ExplorerPanel,
     view: &mut ExplorerView,
+    favorites: &[favorites::ExplorerFavorite],
     action: &mut Option<ExplorerAction>,
 ) {
     let full = ui.available_size();
@@ -406,12 +412,58 @@ fn sidebar(
         .id_salt("explorer_sidebar")
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            // 즐겨찾기 섹션 (비어있지 않을 때만).
+            if !favorites.is_empty() {
+                sidebar_caption(ui, theme, t("explorer.sidebar.favorites"));
+                for fav in favorites {
+                    favorite_row(ui, theme, fav, action);
+                }
+                ui.add_space(theme.spacing_xs.value());
+            }
             // 섹션 캡션.
-            sidebar_caption(ui, theme, &t("explorer.sidebar.tree"));
+            sidebar_caption(ui, theme, t("explorer.sidebar.tree"));
             let root = panel.current_root().to_path_buf();
             // 트리 루트 노드 (현재 root) + 펼쳐진 하위.
             tree_node(ui, theme, view, &root, 0, action);
         });
+}
+
+/// 즐겨찾기 한 행. 클릭 → 해당 경로로 이동, 우클릭 → "즐겨찾기에서 제거" 메뉴.
+fn favorite_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    fav: &favorites::ExplorerFavorite,
+    action: &mut Option<ExplorerAction>,
+) {
+    let star = icons::STAR;
+    let resp = tree_row(
+        ui,
+        theme,
+        0,
+        false,
+        false,
+        Some(&|ui, rect, c| star.image(rect.height(), c).paint_at(ui, rect)),
+        &fav.label,
+        None,
+        false,
+        true,
+    );
+    if resp.clicked() && action.is_none() {
+        *action = Some(ExplorerAction::Navigate(fav.path.clone()));
+    }
+    if resp.secondary_clicked() && action.is_none() {
+        let pos = ui
+            .input(|i| i.pointer.interact_pos())
+            .unwrap_or_else(|| resp.rect.center());
+        *action = Some(ExplorerAction::ContextMenu {
+            target: ExplorerMenuTarget::Favorite {
+                path: fav.path.clone(),
+            },
+            cwd: fav.path.clone(),
+            x: pos.x,
+            y: pos.y,
+        });
+    }
 }
 
 fn sidebar_caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {

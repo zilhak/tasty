@@ -527,6 +527,7 @@ refresh = "Refresh"
 
 [explorer.sidebar]
 tree = "Folders"
+favorites = "Favorites"
 
 [explorer.type]
 folder = "Folder"

@@ -183,6 +183,12 @@ pub struct CoreState {
     /// 사용자 우클릭 조작이라 release 경로에서 직접 갱신(도메인 mutate 아님).
     pub(crate) explorer_clipboard: Option<ExplorerClipboard>,
 
+    /// Explorer 즐겨찾기 (T11). 전역(surface 무관)·영속 — 부팅 시
+    /// `ExplorerFavorites::load()` 로 `~/.tasty/explorer-favorites.toml` 에서 읽고,
+    /// 우클릭 추가/제거 시 메모리 갱신 + `save()` 로 즉시 디스크 반영한다. 사용자
+    /// 직접 조작으로만 변경되므로 release 경로에서 직접 갱신(도메인 snapshot 비대상).
+    pub(crate) explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites,
+
     /// **Phase D D.3.E.4** — Terminal/PTY 데이터 owner (Surface 트리와 분리).
     /// 신설 단계 (E.4.a) 에서는 *빈 store* 만 보유, 호출처 0. 후속 E.4.b ~ f 에서
     /// 점진적으로 *Terminal 인스턴스 / deferred / scrollback_persist / pending
@@ -317,6 +323,7 @@ impl CoreState {
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             pending_move_surface: None,
             explorer_clipboard: None,
+            explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites::load(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::AttachRegistry::new(),
             readonly_views: HashMap::new(),

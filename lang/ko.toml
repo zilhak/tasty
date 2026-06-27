@@ -527,6 +527,7 @@ refresh = "새로고침"
 
 [explorer.sidebar]
 tree = "폴더"
+favorites = "즐겨찾기"
 
 [explorer.type]
 folder = "폴더"

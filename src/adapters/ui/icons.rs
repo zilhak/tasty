@@ -40,6 +40,12 @@ line_icon!(
     r#"<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/>"#
 );
 line_icon!(PLUS, "plus", r#"<path d="M12 5v14M5 12h14"/>"#);
+// 즐겨찾기(favorites) 사이드바 항목 — lucide star (갤러리 mock STAR 과 동일 path).
+line_icon!(
+    STAR,
+    "star",
+    r#"<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14l-5-4.87 6.91-1.01L12 2z"/>"#
+);
 line_icon!(
     SETTINGS,
     "settings",

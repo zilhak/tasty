@@ -527,6 +527,7 @@ refresh = "更新"
 
 [explorer.sidebar]
 tree = "フォルダー"
+favorites = "お気に入り"
 
 [explorer.type]
 folder = "フォルダー"

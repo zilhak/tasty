@@ -80,6 +80,7 @@ pub fn draw_rename_popup(
             .find_pane(*pane_id)
             .is_some_and(|p| *tab_index < p.tabs.len()),
         RenameTarget::ExplorerEntry { path, .. } => path.exists(),
+        RenameTarget::ExplorerAddFavorite { path } => path.exists(),
     };
     if !valid {
         state.dialogs.rename = None;
@@ -267,6 +268,10 @@ fn apply_rename(
                 view.anchor = None;
                 view.request_reload();
             }
+        }
+        RenameTarget::ExplorerAddFavorite { path } => {
+            engine.explorer_favorites.add(path, buffer);
+            engine.explorer_favorites.save();
         }
     }
     engine.mark_layout_dirty();

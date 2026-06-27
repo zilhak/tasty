@@ -109,6 +109,9 @@ pub fn draw_egui_panels(
     let mut markdown_views = std::mem::take(&mut state.markdown_views);
     let mut image_views = std::mem::take(&mut state.image_views);
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
+    // 즐겨찾기는 전역(engine 보유)이라 루프에서 engine 이 가변 차용되는 동안엔
+    // 읽을 수 없다 → 프레임당 1회 스냅샷(항목 소수, clone 비용 무시 가능).
+    let explorer_favorites = engine.explorer_favorites.items.clone();
 
     for info in &infos {
         let id_suffix = info
@@ -222,6 +225,7 @@ pub fn draw_egui_panels(
                         view,
                         &explorer_font,
                         &id_suffix,
+                        &explorer_favorites,
                     )
                 },
             );
@@ -347,22 +351,32 @@ pub(crate) fn apply_explorer_action(
         }
         A::ContextMenu { target, cwd, x, y } => {
             use crate::explorer_ui::ExplorerMenuTarget as T;
-            let (paths, single_is_dir) = match target {
-                T::Empty => (Vec::new(), false),
-                T::Single { path, is_dir } => (vec![path.clone()], *is_dir),
-                T::Multi { paths } => (paths.clone(), false),
-            };
             // explorer 전용 메뉴를 단일 슬롯에 선점 → 이후 generic surface fallback
             // (egui_panels 의 secondary_pos 루프)은 이미 설정됨을 보고 건너뛴다.
-            state.dialogs.pending_native_menu =
-                Some(crate::state::PendingNativeMenu::Explorer {
-                    surface_id: sid,
-                    paths,
-                    cwd: cwd.clone(),
-                    single_is_dir,
+            let menu = match target {
+                T::Favorite { path } => crate::state::PendingNativeMenu::ExplorerFavorite {
+                    path: path.clone(),
                     x: *x,
                     y: *y,
-                });
+                },
+                _ => {
+                    let (paths, single_is_dir) = match target {
+                        T::Empty => (Vec::new(), false),
+                        T::Single { path, is_dir } => (vec![path.clone()], *is_dir),
+                        T::Multi { paths } => (paths.clone(), false),
+                        T::Favorite { .. } => unreachable!(),
+                    };
+                    crate::state::PendingNativeMenu::Explorer {
+                        surface_id: sid,
+                        paths,
+                        cwd: cwd.clone(),
+                        single_is_dir,
+                        x: *x,
+                        y: *y,
+                    }
+                }
+            };
+            state.dialogs.pending_native_menu = Some(menu);
         }
         _ => apply_explorer_panel_action(state, engine, sid, &act),
     }

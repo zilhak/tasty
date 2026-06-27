@@ -831,6 +831,13 @@ impl MainView {
                     crate::i18n::t("explorer.context_menu.copy_path")
                 };
                 let mut items = vec![MenuItem::new(1, copy_path_label)];
+                // 즐겨찾기 추가는 단일 폴더 또는 빈 영역(cwd, 디렉토리)에서만 (design §3.3).
+                if is_empty_target || is_folder {
+                    items.push(MenuItem::new(
+                        50,
+                        crate::i18n::t("explorer.context_menu.add_to_favorites"),
+                    ));
+                }
                 if is_empty_target {
                     // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때).
                     if has_clip {
@@ -959,7 +966,43 @@ impl MainView {
                             );
                         }
                     }
+                    Some(50) => {
+                        // 즐겨찾기 추가 — 대상: 단일 폴더면 그 폴더, 빈 영역이면 cwd.
+                        let path = if is_empty_target {
+                            cwd.clone()
+                        } else {
+                            paths.first().cloned().unwrap_or_else(|| cwd.clone())
+                        };
+                        let seed = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        let target = crate::state::RenameTarget::ExplorerAddFavorite { path };
+                        let scope = target.popup_scope();
+                        self.state.dialogs.rename = Some((target, seed));
+                        self.state.dispatch_intent(
+                            crate::intent::UiIntent::OpenPopup {
+                                id: "rename",
+                                mode: crate::intent::OpenPopupMode::WithScope(scope),
+                            }
+                            .from_user_context_menu(),
+                        );
+                    }
                     _ => {}
+                }
+                self.mark_dirty();
+            }
+            PendingNativeMenu::ExplorerFavorite { path, x, y } => {
+                let items = [MenuItem::new(
+                    1,
+                    crate::i18n::t("explorer.context_menu.remove_from_favorites"),
+                )];
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                if let Some(1) = result {
+                    // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
+                    engine.explorer_favorites.remove(&path);
+                    engine.explorer_favorites.save();
                 }
                 self.mark_dirty();
             }

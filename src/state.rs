@@ -441,6 +441,13 @@ pub enum PendingNativeMenu {
         x: f32,
         y: f32,
     },
+    /// Explorer 사이드바 즐겨찾기 항목 우클릭 → "즐겨찾기에서 제거" 전용 메뉴.
+    /// 즐겨찾기는 전역이라 surface 식별이 불필요(경로만으로 제거).
+    ExplorerFavorite {
+        path: std::path::PathBuf,
+        x: f32,
+        y: f32,
+    },
     /// "New workspace" 버튼 우클릭 (full/collapsed sidebar 공통): 프리셋으로 새 워크스페이스 생성
     NewWorkspaceButton { x: f32, y: f32 },
     /// 탭 "+" 버튼 우클릭: 프리셋으로 탭/페인 생성
@@ -616,6 +623,9 @@ pub enum RenameTarget {
         surface_id: u32,
         path: std::path::PathBuf,
     },
+    /// Explorer 즐겨찾기 추가 (T11). rename 팝업과 동일 골격 — buffer = 표시 라벨.
+    /// 대상 경로를 그 라벨로 전역 즐겨찾기에 등록한다.
+    ExplorerAddFavorite { path: std::path::PathBuf },
 }
 
 impl RenameTarget {
@@ -626,6 +636,7 @@ impl RenameTarget {
             Self::WorkspaceSubtitle { .. } => "rename_dialog.subtitle_heading",
             Self::TabName { .. } => "rename_dialog.tab_heading",
             Self::ExplorerEntry { .. } => "explorer.popup.rename.title",
+            Self::ExplorerAddFavorite { .. } => "explorer.popup.add_favorite.title",
         }
     }
 
@@ -644,6 +655,8 @@ impl RenameTarget {
             Self::ExplorerEntry { surface_id, .. } => {
                 crate::model::popup_kind::PopupScope::Surface(*surface_id)
             }
+            // 즐겨찾기는 전역이라 윈도우 스코프(특정 surface 에 묶이지 않음).
+            Self::ExplorerAddFavorite { .. } => crate::model::popup_kind::PopupScope::Window,
         }
     }
 }
