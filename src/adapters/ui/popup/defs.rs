@@ -31,8 +31,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 headless: false,
                 sticky_focus: false,
                 drag_handle: DragHandle::TitleBar,
-                resizable: true,
-                min_size: Some(egui::vec2(280.0, 200.0)),
+                resizable: false,
+                min_size: None,
                 draw_fn: crate::adapters::ui::notification::draw_notification_popup,
             },
             PopupDef {
@@ -46,8 +46,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 headless: false,
                 sticky_focus: false,
                 drag_handle: DragHandle::TitleBar,
-                resizable: true,
-                min_size: Some(egui::vec2(300.0, 200.0)),
+                resizable: false,
+                min_size: None,
                 draw_fn: super::convert::draw_convert_popup,
             },
             PopupDef {
@@ -121,8 +121,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 headless: false,
                 sticky_focus: false,
                 drag_handle: DragHandle::TitleBar,
-                resizable: true,
-                min_size: Some(egui::vec2(400.0, 200.0)),
+                resizable: false,
+                min_size: None,
                 draw_fn: super::approval::draw_approval_popup,
             },
             PopupDef {
@@ -136,8 +136,8 @@ pub fn all_defs() -> &'static [PopupDef] {
                 headless: false,
                 sticky_focus: false,
                 drag_handle: DragHandle::TitleBar,
-                resizable: true,
-                min_size: Some(egui::vec2(360.0, 240.0)),
+                resizable: false,
+                min_size: None,
                 draw_fn: super::file_handler_picker::draw_file_handler_picker,
             },
             PopupDef {
