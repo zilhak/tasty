@@ -24,6 +24,9 @@ impl MainView {
         let cell_h = self.base.gpu.cell_height();
         let proxy = self.proxy.clone();
         let proxy = &proxy;
+        // copy_path 등 clipboard 쓰기는 self.clipboard 차용이 필요해 match(=state/engine
+        // 차용) 종료 후 처리하도록 텍스트만 모아둔다.
+        let mut pending_copy_text: Option<String> = None;
         let state = &mut self.state;
         let engine = &mut self.core_state;
 
@@ -377,6 +380,25 @@ impl MainView {
                     view.redo();
                 }
             }
+            "select_all" => {
+                if state.focused_surface_type(engine).is_kind("explorer")
+                    && let Some(sid) = focused_explorer_surface_id(state, engine)
+                    && let Some(view) = state.explorer_views.get_mut(sid)
+                {
+                    view.select_all();
+                }
+            }
+            "copy_path" => {
+                if state.focused_surface_type(engine).is_kind("explorer")
+                    && let Some(sid) = focused_explorer_surface_id(state, engine)
+                {
+                    // clipboard 쓰기는 self.clipboard 가 필요해 match 밖에서 처리.
+                    pending_copy_text = state
+                        .explorer_views
+                        .get(sid)
+                        .and_then(|v| v.selected_paths_text());
+                }
+            }
             "explorer_refresh" => {
                 if state.focused_surface_type(engine).is_kind("explorer")
                     && let Some(sid) = focused_explorer_surface_id(state, engine)
@@ -419,6 +441,11 @@ impl MainView {
                 return false;
             }
         }
+        if let Some(text) = pending_copy_text
+            && let Some(cb) = self.clipboard.as_mut()
+        {
+            cb.set_text(&text);
+        }
         self.base.dirty = true;
         true
     }
@@ -460,6 +487,12 @@ impl MainView {
 
         // Clipboard copy (needs &self before state borrow)
         if self.handle_copy_shortcut(key, mods) {
+            return true;
+        }
+
+        // Explorer 선택/경로복사 (clipboard 차용 필요 → keybinding free-fn 이전에 처리)
+        if self.handle_explorer_shortcut(key, mods) {
+            self.base.dirty = true;
             return true;
         }
 

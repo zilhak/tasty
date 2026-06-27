@@ -71,6 +71,27 @@ impl ExplorerView {
         self.reload_requested = true;
     }
 
+    /// 현재 디렉토리의 모든 엔트리를 선택. 앵커는 마지막 엔트리로 둔다.
+    pub fn select_all(&mut self) {
+        self.selected = self.entries.iter().map(|e| e.path.clone()).collect();
+        self.anchor = self.entries.last().map(|e| e.path.clone());
+    }
+
+    /// 선택된 경로를 (정렬·개행 결합) 텍스트로. 선택이 없으면 None.
+    /// "경로 복사"(copy_path) 클립보드 페이로드.
+    pub fn selected_paths_text(&self) -> Option<String> {
+        if self.selected.is_empty() {
+            return None;
+        }
+        let mut paths: Vec<String> = self
+            .selected
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        paths.sort();
+        Some(paths.join("\n"))
+    }
+
     /// 활성 탭 기준으로 엔트리 캐시를 동기화. 디렉토리/정렬이 바뀌었거나 새로고침이
     /// 요청됐으면 디스크에서 다시 읽는다. 디렉토리가 바뀌면 선택을 초기화한다.
     pub fn sync(&mut self, panel: &ExplorerPanel) {
@@ -162,6 +183,10 @@ impl ExplorerViewStore {
         let view = self.views.entry(panel.id).or_default();
         view.sync(panel);
         view
+    }
+
+    pub fn get(&self, sid: SurfaceId) -> Option<&ExplorerView> {
+        self.views.get(&sid)
     }
 
     pub fn get_mut(&mut self, sid: SurfaceId) -> Option<&mut ExplorerView> {

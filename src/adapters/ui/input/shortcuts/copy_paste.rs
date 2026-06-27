@@ -43,6 +43,43 @@ impl MainView {
         false
     }
 
+    /// Explorer 전용 선택/경로복사 단축키. clipboard 차용이 필요하므로 keybinding
+    /// free-fn(=clipboard 미접근) 이 아니라 MainView 메서드로 둔다. 포커스가
+    /// explorer 가 아니면 false 를 반환해 일반 단축키 경로로 흘려보낸다.
+    pub(super) fn handle_explorer_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
+        if !self
+            .state
+            .focused_surface_type(&self.core_state)
+            .is_kind("explorer")
+        {
+            return false;
+        }
+        let kb = &self.core_state.settings.keybindings;
+        let is_select_all = matches_any_binding(&kb.select_all, key, mods);
+        let is_copy_path = matches_any_binding(&kb.copy_path, key, mods);
+        if !is_select_all && !is_copy_path {
+            return false;
+        }
+        let Some(sid) = super::focused_explorer_surface_id(&self.state, &self.core_state) else {
+            return true;
+        };
+        if is_select_all {
+            if let Some(view) = self.state.explorer_views.get_mut(sid) {
+                view.select_all();
+            }
+        } else if let Some(text) = self
+            .state
+            .explorer_views
+            .get(sid)
+            .and_then(|v| v.selected_paths_text())
+            && let Some(cb) = self.clipboard.as_mut()
+        {
+            cb.set_text(&text);
+        }
+        self.mark_dirty();
+        true
+    }
+
     pub(super) fn handle_paste_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let bindings = self.core_state.settings.keybindings.paste.clone();
         if !matches_any_binding(&bindings, key, mods) {
