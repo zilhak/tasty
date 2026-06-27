@@ -11,10 +11,17 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     );
     ui.add_space(12.0);
 
-    ui.checkbox(
-        &mut settings.performance.targeted_pty_polling,
-        t("settings.performance.targeted_pty_polling"),
-    );
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_lg.value();
+        ui.label(t("settings.performance.targeted_pty_polling"));
+        tasty_ui_widgets::switch(
+            ui,
+            &th,
+            &mut settings.performance.targeted_pty_polling,
+            None,
+            true,
+        );
+    });
     ui.label(
         egui::RichText::new(t("settings.performance.targeted_pty_polling_desc"))
             .small()
@@ -22,10 +29,17 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     );
     ui.add_space(8.0);
 
-    ui.checkbox(
-        &mut settings.performance.scrollback_disk_swap,
-        t("settings.performance.scrollback_disk_swap"),
-    );
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_lg.value();
+        ui.label(t("settings.performance.scrollback_disk_swap"));
+        tasty_ui_widgets::switch(
+            ui,
+            &th,
+            &mut settings.performance.scrollback_disk_swap,
+            None,
+            true,
+        );
+    });
     ui.label(
         egui::RichText::new(t("settings.performance.scrollback_disk_swap_desc"))
             .small()

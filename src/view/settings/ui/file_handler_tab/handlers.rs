@@ -26,6 +26,7 @@ pub(super) fn draw_handlers(
         ],
     );
 
+    let th = crate::theme::theme();
     let ids = file_handler.list_handlers();
     if ids.is_empty() {
         ui.label(t("settings.file_handler.handlers.empty"));
@@ -61,7 +62,7 @@ pub(super) fn draw_handlers(
                         .copied()
                         .unwrap_or(!h.disabled);
                     let mut checked = want_enabled;
-                    if ui.checkbox(&mut checked, "").changed() {
+                    if tasty_ui_widgets::switch(ui, &th, &mut checked, None, true).changed() {
                         fh.handler_enabled.insert(h.id.clone(), checked);
                     }
                     ui.label(h.priority.to_string());

@@ -63,11 +63,17 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
 
             ui.label(t("settings.terminal.confirm_close_label"));
-            ui.checkbox(&mut settings.general.confirm_close_running, "");
+            tasty_ui_widgets::switch(
+                ui,
+                &th,
+                &mut settings.general.confirm_close_running,
+                None,
+                true,
+            );
             ui.end_row();
 
             ui.label(t("settings.terminal.inherit_cwd_label"));
-            ui.checkbox(&mut settings.general.inherit_cwd, "");
+            tasty_ui_widgets::switch(ui, &th, &mut settings.general.inherit_cwd, None, true);
             ui.end_row();
 
             ui.label(t("settings.terminal.link_modifier_label"));
@@ -97,11 +103,23 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             ui.end_row();
 
             ui.label(t("settings.terminal.allow_clipboard_read_label"));
-            ui.checkbox(&mut settings.general.allow_clipboard_read, "");
+            tasty_ui_widgets::switch(
+                ui,
+                &th,
+                &mut settings.general.allow_clipboard_read,
+                None,
+                true,
+            );
             ui.end_row();
 
             ui.label(t("settings.terminal.mouse_capture_hint_label"));
-            ui.checkbox(&mut settings.general.mouse_capture_hint, "");
+            tasty_ui_widgets::switch(
+                ui,
+                &th,
+                &mut settings.general.mouse_capture_hint,
+                None,
+                true,
+            );
             ui.end_row();
         });
 

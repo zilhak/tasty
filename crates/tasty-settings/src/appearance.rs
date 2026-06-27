@@ -7,6 +7,11 @@ use tasty_type_geometry::length::LogicalPx;
 
 pub use tasty_type_appearance::color::HexColor;
 
+/// `AppearanceSettings::ligatures` serde 기본값 — 디자인은 ligatures on 이 기본.
+fn default_ligatures() -> bool {
+    true
+}
+
 /// Plugin-contributed settings page 의 generic 값. host 가 `Settings::plugin_settings`
 /// 의 `[plugin_id][storage_key]` 슬롯에 저장한다 (FontOverride 의 전역
 /// `plugin_font_overrides` 슬롯과 **별개 네임스페이스**). manifest 의
@@ -140,6 +145,10 @@ pub struct AppearanceSettings {
     /// 현재 라이트/다크 플래그. 테마 파일이 명시하면 그 값으로 갱신.
     pub theme_is_light: bool,
     pub background_opacity: f32,
+    /// 폰트 합자(ligature) 사용 여부. 디자인 settings_window.jsx:225 Ligatures
+    /// Switch (기본 on). 번들 D2Coding ligature 폰트의 합자 표시를 제어한다.
+    #[serde(default = "default_ligatures")]
+    pub ligatures: bool,
     pub sidebar_width: LogicalPx,
     /// UI scale: "small", "medium", or "large". Affects all egui UI elements.
     pub ui_scale: String,
@@ -176,6 +185,7 @@ impl Default for AppearanceSettings {
             theme_overrides: PartialColors::default(),
             theme_is_light: false,
             background_opacity: 1.0,
+            ligatures: default_ligatures(),
             sidebar_width: LogicalPx(180.0),
             ui_scale: "medium".to_string(),
             active_tab_indicator: ActiveTabIndicator::default(),

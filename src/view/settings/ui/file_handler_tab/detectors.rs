@@ -25,6 +25,7 @@ pub(super) fn draw_detectors(
         ],
     );
 
+    let th = crate::theme::theme();
     let ids = file_format.list_detectors();
     if ids.is_empty() {
         ui.label(t("settings.file_handler.detectors.empty"));
@@ -52,7 +53,7 @@ pub(super) fn draw_detectors(
                         .copied()
                         .unwrap_or(!det.disabled);
                     let mut checked = want_enabled;
-                    if ui.checkbox(&mut checked, "").changed() {
+                    if tasty_ui_widgets::switch(ui, &th, &mut checked, None, true).changed() {
                         fh.detector_enabled.insert(id.clone(), checked);
                     }
                     ui.label(id.as_str());

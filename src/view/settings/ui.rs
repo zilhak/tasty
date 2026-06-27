@@ -29,6 +29,10 @@ const SETTINGS_HEADER_HEIGHT: LogicalPx = LogicalPx(44.0);
 const SETTINGS_TAB_UNDERLINE: LogicalPx = LogicalPx(2.0);
 /// L1 탭 사이 간격. 디자인 header `gap: 2`.
 const L1_TAB_GAP: LogicalPx = LogicalPx(2.0);
+/// 좌측 "Settings" 타이틀 ↔ 탭 구분선 높이. 디자인 jsx:468 `height: 20`.
+const SETTINGS_TITLE_DIVIDER_HEIGHT: LogicalPx = LogicalPx(20.0);
+/// 구분선 우측 여백. 디자인 jsx:468 `margin: 0 size-14 0 space-sm` 의 size-14.
+const SETTINGS_TITLE_DIVIDER_MARGIN_R: LogicalPx = LogicalPx(14.0);
 /// 푸터 좌우 패딩. 디자인 footer `padding: space-md size-14` 의 수평값.
 const SETTINGS_FOOTER_PAD_X: i8 = 14;
 
@@ -321,11 +325,16 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 .resizable(false)
                 .show_separator_line(false)
                 .frame(egui::Frame::NONE.fill(th.bg_sidebar().to_egui()))
-                .show_inside(ui, |ui| {
-                    draw_l1_tab_band(ui, &th, ui_state);
-                });
+                .show_inside(ui, |ui| draw_l1_tab_band(ui, &th, ui_state));
             let hr = header.response.rect;
             ui.painter().hline(hr.x_range(), hr.bottom() - 0.5, sep);
+            // 밴드 우측 close ✕ → 취소와 동일 경로(draft 폐기 + 모달 닫기).
+            if header.inner {
+                ui_state.bashrc_user_draft = None;
+                ui_state.extension_priority_draft = None;
+                ui_state.fh_edit_draft = file_handler_tab::FileHandlerEditDraft::default();
+                result = Some(false);
+            }
 
             // ── L2 영속 사이드바 (디자인 width200 / bg-sidebar / border-right) ──
             let sections = build_l2_sections(ui_state);
@@ -833,10 +842,12 @@ fn apply_l2_select(ui_state: &mut SettingsUiState, select: &L2Select) {
 
 // ── L1 헤더 밴드 ──────────────────────────────────────────────────────────
 
-/// 디자인 header band 전사: bg-sidebar 위 7 개 L1 탭, active 는 text-primary +
-/// 2px accent underline, inactive 는 text-muted. (Option A — 카드 내 "Settings"
-/// 타이틀 / close X 는 OS 타이틀바가 제공하므로 생략.)
-fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiState) {
+/// 디자인 header band 전사 (settings_window.jsx:465-477): bg-sidebar 위 좌측
+/// bold "Settings" 타이틀 + 세로 구분선 → 7 개 L1 탭(active 는 text-primary +
+/// 2px accent underline, inactive 는 text-muted) → 우측 `marginLeft:auto` close ✕.
+/// close ✕ 클릭 시 `true` 반환(취소와 동일 경로로 모달 닫기 — 사용자 결정: OS
+/// 타이틀바와 중복되더라도 디자인대로 카드 내부에 둔다).
+fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiState) -> bool {
     let tabs = [
         (SettingsTab::General, t("settings.tab.general")),
         (SettingsTab::Terminal, t("settings.tab.terminal")),
@@ -847,6 +858,7 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
         (SettingsTab::Plugins, t("settings.tab.plugin")),
     ];
     let prev = ui_state.active_tab;
+    let mut close_clicked = false;
     egui::Frame::NONE
         .inner_margin(egui::Margin {
             left: th.spacing_md.value() as i8,
@@ -856,11 +868,56 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
         })
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = L1_TAB_GAP.value();
-                for (tab, label) in tabs {
+                // gap 은 항목마다 명시적으로 add_space — 탭 사이만 2px, 타이틀/구분선
+                // 주변은 디자인 margin(space-sm / size-14) 을 따로 적용한다.
+                ui.spacing_mut().item_spacing.x = 0.0;
+
+                // 좌측 bold "Settings" 타이틀 (jsx:467, fontSize14 / weight700).
+                ui.label(
+                    egui::RichText::new(t("settings.window.title"))
+                        .strong()
+                        .size(th.font_size_max.value())
+                        .color(th.text_primary().to_egui()),
+                );
+                // 타이틀 ↔ 탭 세로 구분선 (jsx:468, width1 h20, margin 좌 space-sm / 우 size-14).
+                ui.add_space(th.spacing_sm.value());
+                let (vrect, _) = ui.allocate_exact_size(
+                    egui::vec2(
+                        th.border_width.value(),
+                        SETTINGS_TITLE_DIVIDER_HEIGHT.value(),
+                    ),
+                    egui::Sense::hover(),
+                );
+                ui.painter().vline(
+                    vrect.center().x,
+                    vrect.y_range(),
+                    egui::Stroke::new(th.border_width.value(), th.surface1.to_egui()),
+                );
+                ui.add_space(SETTINGS_TITLE_DIVIDER_MARGIN_R.value());
+
+                // L1 탭들 (gap 2).
+                for (i, (tab, label)) in tabs.into_iter().enumerate() {
+                    if i > 0 {
+                        ui.add_space(L1_TAB_GAP.value());
+                    }
                     if l1_tab_button(ui, th, label, ui_state.active_tab == tab) {
                         ui_state.active_tab = tab;
                     }
+                }
+
+                // 우측 marginLeft:auto close ✕ (jsx:475, ghost IconButton).
+                let close_side = tasty_ui_widgets::ControlSize::Md.height(th);
+                let pad = (ui.available_width() - close_side).max(0.0);
+                ui.add_space(pad);
+                let resp = tasty_ui_widgets::IconButton::new()
+                    .variant(tasty_ui_widgets::IconButtonVariant::Ghost)
+                    .show(ui, th, &|ui, rect, c| {
+                        crate::adapters::ui::icons::CLOSE
+                            .image(rect.width(), c)
+                            .paint_at(ui, rect)
+                    });
+                if resp.clicked() {
+                    close_clicked = true;
                 }
             });
         });
@@ -868,6 +925,7 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
     if ui_state.active_tab != prev {
         ui_state.l2_filter.clear();
     }
+    close_clicked
 }
 
 /// 헤더 밴드의 한 L1 탭 버튼. 밴드 높이를 가득 채워 active underline 이
@@ -925,8 +983,14 @@ fn draw_l2_sidebar(
     let filter_resp = egui::Frame::NONE
         .inner_margin(egui::Margin::same(pad))
         .show(ui, |ui| {
+            // 디자인 settings_window.jsx:484 — leading 돋보기 아이콘(`icon={ic.search}`).
             tasty_ui_widgets::Input::new()
                 .placeholder(placeholder)
+                .icon(&|ui, rect, c| {
+                    crate::adapters::ui::icons::SEARCH
+                        .image(rect.width(), c)
+                        .paint_at(ui, rect)
+                })
                 .show(ui, th, filter);
         });
     let frect = filter_resp.response.rect;

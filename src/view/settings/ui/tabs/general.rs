@@ -10,11 +10,17 @@ pub fn draw_general_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
             ui.label(t("settings.general.restore_layout_label"));
-            ui.checkbox(&mut settings.general.restore_layout, "");
+            tasty_ui_widgets::switch(ui, &th, &mut settings.general.restore_layout, None, true);
             ui.end_row();
 
             ui.label(t("settings.general.restore_surface_content_label"));
-            ui.checkbox(&mut settings.general.restore_surface_content, "");
+            tasty_ui_widgets::switch(
+                ui,
+                &th,
+                &mut settings.general.restore_surface_content,
+                None,
+                true,
+            );
             ui.end_row();
 
             ui.label(t("settings.general.close_behavior_label"));

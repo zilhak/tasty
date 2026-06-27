@@ -301,6 +301,11 @@ fn draw_appearance_general(
         .num_columns(2)
         .spacing([12.0, 8.0])
         .show(ui, |ui| {
+            // 디자인 settings_window.jsx:225 — Ligatures Switch 행.
+            ui.label(t("settings.appearance.ligatures_label"));
+            tasty_ui_widgets::switch(ui, &th, &mut settings.appearance.ligatures, None, true);
+            ui.end_row();
+
             ui.label(t("settings.appearance.background_opacity_label"));
             ui.add(egui::Slider::new(
                 &mut settings.appearance.background_opacity,
@@ -606,12 +611,10 @@ fn draw_tasty_color_row(
             egui::StrokeKind::Inside,
         );
 
-        // ── "Default" 체크박스 ──
+        // ── "Default" 체크박스 (디자인 settings_window.jsx:113 = <Checkbox>) ──
         let mut use_default = !is_ov;
-        if ui
-            .checkbox(&mut use_default, t("settings.appearance.colors.default"))
-            .changed()
-        {
+        let default_label = t("settings.appearance.colors.default");
+        if tasty_ui_widgets::checkbox(ui, &th, &mut use_default, &default_label, true).changed() {
             let ov = &mut settings.appearance.theme_overrides;
             if use_default {
                 set(ov, None);
@@ -1304,12 +1307,10 @@ fn draw_color_picker_row(
             egui::StrokeKind::Inside,
         );
 
-        // ── "Default" 체크박스 ──
+        // ── "Default" 체크박스 (디자인 settings_window.jsx:113 = <Checkbox>) ──
         let mut use_default = !is_ov;
-        if ui
-            .checkbox(&mut use_default, t("settings.appearance.colors.default"))
-            .changed()
-        {
+        let default_label = t("settings.appearance.colors.default");
+        if tasty_ui_widgets::checkbox(ui, &th, &mut use_default, &default_label, true).changed() {
             let ov = &mut settings.appearance.theme_overrides;
             if use_default {
                 (row.set)(ov, None);
@@ -1842,9 +1843,10 @@ fn override_checkbox<T, F>(
 ) where
     F: FnOnce() -> T,
 {
+    let th = crate::theme::theme();
     let mut use_default = slot.is_none();
     let label = t("settings.appearance.font.use_default_label");
-    if ui.checkbox(&mut use_default, label).changed() {
+    if tasty_ui_widgets::checkbox(ui, &th, &mut use_default, &label, true).changed() {
         if use_default {
             *slot = None;
         } else if slot.is_none() {
