@@ -143,6 +143,16 @@ pub(crate) enum DomainIntent {
         surface_id: u32,
         target: ConvertSurfaceTarget,
     },
+    /// 살아있는 surface 를 트리에서 떼어 다른 위치로 **이동(replace)** 한다 (T9).
+    /// `source` 를 그 자리에서 떼어내(형제 끌어올림 / sole 이면 tab/pane/workspace
+    /// cascade) `target` 위치의 leaf 를 대체하고, `target` 의 옛 surface 는 닫는다
+    /// (PTY kill, closed-item 히스토리 미기록). source 의 Terminal/scrollback 은
+    /// surface_id 불변이라 `TerminalStore` 가 자동으로 따라온다 — **이동 경로는
+    /// source 에 대해 store/cleanup 을 절대 호출하지 않는다(PTY 보존).**
+    MoveSurface {
+        source_surface_id: u32,
+        target_surface_id: u32,
+    },
 
     // ─── Terminal send (D.3.C.C.1) ───
     /// terminal surface 에 입력 전송. payload 의 종류에 따라 send_bytes 또는
@@ -346,6 +356,24 @@ pub(crate) enum CoreEvent {
         surface_id: u32,
         replaced: bool,
         is_terminal: bool, // cascade 에서 send_fast_init 결정용
+    },
+    /// surface 이동(replace) 완료 (T9). `moved=false` 면 self-ref / source 무효 /
+    /// target 못 찾음 (no-op, 슬롯만 비움).
+    ///
+    /// `b_cleanup` 은 닫히는 target(B) 의 `(surface_id, scrollback_persist_id)` —
+    /// cascade 가 `cleanup_surface`(PTY kill) + `surface.closed` host event 발화.
+    /// 나머지 필드는 **source(A) 의 옛 자리** 가 sole 이라 구조적으로 닫힌
+    /// tab/pane/workspace 의 cascade 정보 (split 안 이동이면 `Surface` level + 빈
+    /// vec). A 의 surface 자체는 **cleanup 대상이 아니다**(이동이므로 살아있음).
+    /// 의미상 `SurfaceClosed` 와 동일 cascade 를 재사용한다.
+    MoveSurfaceApplied {
+        moved: bool,
+        b_cleanup: Option<(u32, Option<String>)>,
+        cascade_level: CascadeLevel,
+        closed_tab_ids: Vec<u32>,
+        closed_pane_ids: Vec<u32>,
+        workspace_id_purged: Option<u32>,
+        workspaces_now_empty: bool,
     },
     /// terminal send 완료. `sent=false` 면 surface 가 terminal 이 아니거나 없음.
     SurfaceSent { surface_id: u32, sent: bool },

@@ -697,6 +697,14 @@ impl Core {
                     engine, surface_id, target,
                 )])
             }
+            DomainIntent::MoveSurface {
+                source_surface_id,
+                target_surface_id,
+            } => Ok(vec![Self::apply_move_surface(
+                engine,
+                source_surface_id,
+                target_surface_id,
+            )]),
             DomainIntent::SendToSurface {
                 surface_id,
                 payload,
@@ -1601,6 +1609,281 @@ impl Core {
             workspace_id_purged: Some(workspace_id),
             workspaces_now_empty,
         }
+    }
+
+    /// `DomainIntent::MoveSurface` 본문 (T9). source(A) 를 살아있는 채로 떼어
+    /// target(B) 위치로 replace 한다. B 는 닫힌다(PTY kill). **A 의 Terminal/store/
+    /// scrollback 은 절대 만지지 않는다(PTY 보존 — R1).** 모든 위치 탐색은
+    /// surface_id 검색식이라 focused_* 같은 사용자 포커스 상태에 의존하지 않는다
+    /// (포커스 독립 원칙). 슬롯 비움도 여기서 처리한다.
+    fn apply_move_surface(
+        engine: &mut crate::core::CoreState,
+        source_id: u32,
+        target_id: u32,
+    ) -> CoreEvent {
+        use crate::core::intent::CascadeLevel;
+
+        // 이 intent 가 적용되는 시점에 cut 슬롯은 소비된다 (성공/no-op 무관).
+        engine.pending_move_surface = None;
+
+        let noop = || CoreEvent::MoveSurfaceApplied {
+            moved: false,
+            b_cleanup: None,
+            cascade_level: CascadeLevel::Surface,
+            closed_tab_ids: vec![],
+            closed_pane_ids: vec![],
+            workspace_id_purged: None,
+            workspaces_now_empty: false,
+        };
+
+        // 가드 (명세 항목 6): self-ref / source 무효(이미 닫힘) / target 무효 → no-op.
+        if source_id == target_id {
+            return noop();
+        }
+        if engine.find_workspace_index_for_surface(source_id).is_none() {
+            return noop();
+        }
+        if engine.find_workspace_index_for_surface(target_id).is_none() {
+            return noop();
+        }
+
+        // 1) A 를 트리에서 떼어내 살아있는 Box 획득 (store 불변). sole 이면 A 의 옛
+        //    tab/pane/workspace 를 구조적으로 닫고 그 cascade 정보를 함께 받는다.
+        let (
+            a_box,
+            cascade_level,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_id_purged,
+            workspaces_now_empty,
+        ) = match Self::detach_surface_for_move(engine, source_id) {
+            Some(v) => v,
+            None => return noop(),
+        };
+
+        // 2) B 위치 *재검색* (1 단계가 같은-tab 형제 끌어올림 / workspace 제거로
+        //    인덱스를 바꿨을 수 있음 — 인덱스 캐시 금지, 매번 id 재검색). 구조적
+        //    증명상 B 는 A detach 후에도 항상 살아있다 (B≠A, 공유 구조면 형제 승격).
+        let (ws_idx, pane_id) = match engine.find_workspace_index_for_surface(target_id) {
+            Some(v) => v,
+            None => {
+                tracing::error!(
+                    source_id,
+                    target_id,
+                    "move surface: target vanished after detaching source (unreachable)"
+                );
+                return CoreEvent::MoveSurfaceApplied {
+                    moved: false,
+                    b_cleanup: None,
+                    cascade_level,
+                    closed_tab_ids,
+                    closed_pane_ids,
+                    workspace_id_purged,
+                    workspaces_now_empty,
+                };
+            }
+        };
+
+        // 3) B leaf 를 A 로 replace. B 의 옛 id-marker 는 drop 되지만 B 의 Terminal 은
+        //    아직 store 에 남아있다 → 4 단계 cleanup 이 PTY kill.
+        let b_persist = engine
+            .terminals
+            .scrollback_persist_id(target_id)
+            .map(str::to_string);
+
+        let b_tab_idx = {
+            let ws = &engine.workspaces[ws_idx];
+            match ws.pane_layout().find_pane(pane_id) {
+                Some(pane) => pane.tabs.iter().position(|t| t.contains_surface(target_id)),
+                None => None,
+            }
+        };
+        let b_tab_idx = match b_tab_idx {
+            Some(i) => i,
+            None => {
+                tracing::error!(
+                    source_id,
+                    target_id,
+                    "move surface: B tab not found (unreachable)"
+                );
+                return CoreEvent::MoveSurfaceApplied {
+                    moved: false,
+                    b_cleanup: None,
+                    cascade_level,
+                    closed_tab_ids,
+                    closed_pane_ids,
+                    workspace_id_purged,
+                    workspaces_now_empty,
+                };
+            }
+        };
+
+        let replaced = {
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = ws
+                .pane_layout_mut()
+                .find_pane_mut(pane_id)
+                .expect("pane re-search must hit (just found above)");
+            let tab = &mut pane.tabs[b_tab_idx];
+            if tab.is_split() {
+                // split 안 leaf 교체 — tab name 불변.
+                tab.layout_mut().replace_surface(target_id, a_box)
+            } else {
+                // B 가 sole 이던 tab — A 가 그 tab 의 단독 surface 가 된다.
+                tab.put_surface(a_box);
+                true
+            }
+        };
+
+        if !replaced {
+            tracing::error!(
+                source_id,
+                target_id,
+                "move surface: B replace failed (unreachable)"
+            );
+            return CoreEvent::MoveSurfaceApplied {
+                moved: false,
+                b_cleanup: None,
+                cascade_level,
+                closed_tab_ids,
+                closed_pane_ids,
+                workspace_id_purged,
+                workspaces_now_empty,
+            };
+        }
+
+        engine.mark_layout_dirty();
+
+        CoreEvent::MoveSurfaceApplied {
+            moved: true,
+            b_cleanup: Some((target_id, b_persist)),
+            cascade_level,
+            closed_tab_ids,
+            closed_pane_ids,
+            workspace_id_purged,
+            workspaces_now_empty,
+        }
+    }
+
+    /// `apply_move_surface` 헬퍼 — A(source) 를 트리에서 떼어 살아있는 Box 로 반환.
+    /// **A 의 Terminal/store/scrollback 은 절대 만지지 않는다(PTY 보존).** A 가 split
+    /// 안 leaf 면 형제를 끌어올리고(`Surface` level), sole-in-tab 이면 그 tab/pane/
+    /// workspace 를 `apply_close_surface` Case 2/3/4 와 동형으로 구조적 close 한다 —
+    /// 단 **A 의 cleanup_surface/terminals.remove/snapshot 은 일절 없다**(A 는 살아서
+    /// 이동). A 못 찾으면 None.
+    #[allow(clippy::type_complexity)]
+    fn detach_surface_for_move(
+        engine: &mut crate::core::CoreState,
+        source_id: u32,
+    ) -> Option<(
+        Box<dyn crate::model::Surface>,
+        crate::core::intent::CascadeLevel,
+        Vec<u32>,
+        Vec<u32>,
+        Option<u32>,
+        bool,
+    )> {
+        use crate::core::intent::CascadeLevel;
+
+        let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(source_id)?;
+
+        // tab_idx + sole/split 판정.
+        let (tab_idx, is_split) = {
+            let ws = &engine.workspaces[ws_idx];
+            let pane = ws.pane_layout().find_pane(pane_id)?;
+            let mut found = None;
+            for (i, tab) in pane.tabs.iter().enumerate() {
+                if tab.contains_surface(source_id) {
+                    found = Some((i, tab.is_split()));
+                    break;
+                }
+            }
+            found?
+        };
+
+        // Split tab: 형제 끌어올림, A 의 Box 만 반환. 구조적 close 없음.
+        if is_split {
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
+            let tab = &mut pane.tabs[tab_idx];
+            let layout = tab.take_layout();
+            let (new_layout, extracted) = layout.extract_surface(source_id);
+            tab.put_layout(new_layout);
+            let a_box = extracted?; // split 안이면 형제가 있어 항상 Some.
+            engine.mark_layout_dirty();
+            return Some((a_box, CascadeLevel::Surface, vec![], vec![], None, false));
+        }
+
+        // sole-in-tab: 구조 정보 수집 후 A 의 Box salvage → 구조적 close.
+        let (tabs_len, panes_len, tab_id) = {
+            let ws = &engine.workspaces[ws_idx];
+            let pane = ws.pane_layout().find_pane(pane_id)?;
+            (
+                pane.tabs.len(),
+                ws.pane_layout().all_pane_ids().len(),
+                pane.tabs[tab_idx].id,
+            )
+        };
+
+        // sole leaf 에서 A 의 Box 추출 (tab.layout_opt 는 잠시 None — 동기 경로라 안전).
+        let a_box = {
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
+            let tab = &mut pane.tabs[tab_idx];
+            match tab.take_layout() {
+                crate::model::SurfaceLayout::Leaf(b) => b,
+                other => {
+                    // sole 인데 split — 예상 밖. 원복 후 포기.
+                    tab.put_layout(other);
+                    return None;
+                }
+            }
+        };
+
+        if tabs_len > 1 {
+            // Case 2: tab close (pane/workspace 유지).
+            let ws = &mut engine.workspaces[ws_idx];
+            let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
+            pane.tabs.remove(tab_idx);
+            if pane.active_tab >= pane.tabs.len() {
+                pane.active_tab = pane.tabs.len().saturating_sub(1);
+            }
+            engine.mark_layout_dirty();
+            return Some((a_box, CascadeLevel::Tab, vec![tab_id], vec![], None, false));
+        }
+
+        if panes_len > 1 {
+            // Case 3: pane close (workspace 유지).
+            let ws = &mut engine.workspaces[ws_idx];
+            ws.pane_layout_mut().close_pane(pane_id);
+            if let Some(first) = ws.pane_layout().first_pane() {
+                ws.focused_pane = first.id;
+            }
+            engine.mark_layout_dirty();
+            return Some((
+                a_box,
+                CascadeLevel::Pane,
+                vec![tab_id],
+                vec![pane_id],
+                None,
+                false,
+            ));
+        }
+
+        // Case 4: workspace close. (이동에서 A 가 sole-in-workspace 면 B 는 다른
+        //  workspace 에 있으므로 workspaces 가 비지 않는다 — 그래도 일반식으로 계산.)
+        let workspace_id = engine.workspaces[ws_idx].id;
+        engine.workspaces.remove(ws_idx);
+        let workspaces_now_empty = engine.workspaces.is_empty();
+        engine.mark_layout_dirty();
+        Some((
+            a_box,
+            CascadeLevel::Workspace,
+            vec![tab_id],
+            vec![pane_id],
+            Some(workspace_id),
+            workspaces_now_empty,
+        ))
     }
 
     /// `DomainIntent::MoveTab` 본문. pane_id 로 모든 workspace 순회

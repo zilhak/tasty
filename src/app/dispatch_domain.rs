@@ -265,6 +265,36 @@ impl App {
                     main.mark_dirty();
                 }
             }
+            CoreEvent::MoveSurfaceApplied {
+                moved,
+                b_cleanup,
+                cascade_level,
+                closed_tab_ids,
+                closed_pane_ids,
+                workspace_id_purged,
+                workspaces_now_empty,
+            } => {
+                // 이동(replace) 완료. 의미상 "B 닫힘 + A 옛자리 구조 cascade" 라
+                // `SurfaceClosed` cascade 를 그대로 재사용한다: cleanup_targets 는
+                // 닫히는 B 하나 (PTY kill + surface.closed), 나머지 구조 필드는 A 의
+                // 옛 tab/pane/workspace 닫힘 정보. A 의 surface 는 절대 cleanup 대상에
+                // 넣지 않는다(살아서 이동). 슬롯 비움은 Core::apply 가 이미 처리.
+                if moved {
+                    let is_user_close = origin.is_user();
+                    let cleanup_targets: Vec<(u32, Option<String>)> =
+                        b_cleanup.into_iter().collect();
+                    self.dispatch_surface_closed_cascade(
+                        source,
+                        cascade_level,
+                        cleanup_targets,
+                        closed_tab_ids,
+                        closed_pane_ids,
+                        workspace_id_purged,
+                        workspaces_now_empty,
+                        is_user_close,
+                    );
+                }
+            }
             CoreEvent::SurfaceSent { .. } => {
                 // terminal output 은 PTY → AppEvent 경로로 자동 redraw 유도.
                 // 추가 cascade 없음.

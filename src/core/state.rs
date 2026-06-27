@@ -162,6 +162,13 @@ pub struct CoreState {
     // matches `mouse_capture_blacklist`, so its click/drag capture is disabled.
     pub(crate) mouse_capture_disabled_surfaces: std::collections::HashSet<u32>,
 
+    /// Surface *cut/move* slot (T9). 사용자가 우클릭 컨텍스트 메뉴에서 "잘라내기"
+    /// 한 surface 의 id 를 들고 있다가, 다른 위치에서 "여기로 이동" 하면 그 surface 를
+    /// 살아있는 채로 이동(replace)한다. 단일 슬롯·세션 휘발(스냅샷 아님, layout.json
+    /// 영속 대상 아님). set/clear 는 사용자 우클릭 조작이라 release 경로에서 직접 갱신
+    /// 한다(도메인 mutate 아님).
+    pub(crate) pending_move_surface: Option<crate::model::SurfaceId>,
+
     /// **Phase D D.3.E.4** — Terminal/PTY 데이터 owner (Surface 트리와 분리).
     /// 신설 단계 (E.4.a) 에서는 *빈 store* 만 보유, 호출처 0. 후속 E.4.b ~ f 에서
     /// 점진적으로 *Terminal 인스턴스 / deferred / scrollback_persist / pending
@@ -294,6 +301,7 @@ impl CoreState {
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
+            pending_move_surface: None,
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::AttachRegistry::new(),
             readonly_views: HashMap::new(),
