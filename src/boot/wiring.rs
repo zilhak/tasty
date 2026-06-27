@@ -106,10 +106,4 @@ impl crate::ports::clipboard::ClipboardSystem for NullClipboard {
     fn write_text(&self, _text: &str) -> anyhow::Result<()> {
         anyhow::bail!("clipboard unavailable in headless build")
     }
-    fn read_image(&self) -> anyhow::Result<crate::ports::clipboard::ClipboardImage> {
-        anyhow::bail!("clipboard unavailable in headless build")
-    }
-    fn write_image(&self, _image: &crate::ports::clipboard::ClipboardImage) -> anyhow::Result<()> {
-        anyhow::bail!("clipboard unavailable in headless build")
-    }
 }
