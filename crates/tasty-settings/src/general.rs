@@ -100,6 +100,13 @@ pub struct GeneralSettings {
     /// 않는다. `alias`: 구버전 settings.toml 의 `right_click_capture_hint` 키를 계속 읽는다.
     #[serde(alias = "right_click_capture_hint")]
     pub mouse_capture_hint: bool,
+    /// 마우스 캡처 비활성화 블랙리스트 — foreground 프로세스 이름 패턴 목록.
+    /// 여기에 매칭되는 TUI 가 surface 의 foreground 일 때, 그 surface 에서는 클릭/
+    /// 드래그/버튼 캡처를 끄고(좌클릭=선택, 우클릭=tasty 메뉴 등 로컬 처리) 앱에
+    /// 버튼 보고를 보내지 않는다. **휠은 예외로 계속 앱에 보고된다.** 패턴은 `.exe`
+    /// 제거·소문자화 후 substring 매칭(또는 `*` 와일드카드)이며, 빈 목록(기본값)이면
+    /// 어떤 surface 도 비활성화하지 않는다.
+    pub mouse_capture_blacklist: Vec<String>,
 }
 
 /// 파싱된 링크 클릭 수식키.
@@ -150,11 +157,76 @@ impl Default for GeneralSettings {
             link_click_modifier: "ctrl".to_string(),
             allow_clipboard_read: false,
             mouse_capture_hint: true,
+            mouse_capture_blacklist: Vec::new(),
         }
     }
 }
 
+/// `*` 와일드카드만 지원하는 소형 glob 매칭 (정규식/`?` 미지원). 패턴·대상 모두
+/// 호출 전 소문자/`.exe` 정규화돼 있다고 가정한다. `*` 는 0개 이상의 임의 문자에
+/// 대응하며, 앞/뒤/중간 어디에 와도 된다.
+fn glob_match(pattern: &str, text: &str) -> bool {
+    // 패턴을 `*` 로 분할한 리터럴 조각들을 순서대로 text 에서 소비한다.
+    let parts: Vec<&str> = pattern.split('*').collect();
+    let starts_wild = pattern.starts_with('*');
+    let ends_wild = pattern.ends_with('*');
+
+    let mut cursor = 0usize;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        let is_first = i == 0;
+        let is_last = i == parts.len() - 1;
+        if is_first && !starts_wild {
+            // 첫 리터럴은 text 시작에 고정.
+            if !text[cursor..].starts_with(part) {
+                return false;
+            }
+            cursor += part.len();
+        } else if is_last && !ends_wild {
+            // 마지막 리터럴은 text 끝에 고정.
+            if !text[cursor..].ends_with(part) {
+                return false;
+            }
+            cursor = text.len();
+        } else {
+            // 중간 리터럴: 다음 출현 위치를 찾아 소비.
+            match text[cursor..].find(part) {
+                Some(off) => cursor += off + part.len(),
+                None => return false,
+            }
+        }
+    }
+    true
+}
+
 impl GeneralSettings {
+    /// foreground 프로세스 이름이 마우스 캡처 블랙리스트에 걸리면 true → 그 surface
+    /// 의 클릭/드래그 캡처를 끈다(휠은 별도로 계속 보고됨, 결정 ②).
+    ///
+    /// 매칭: 인자 이름을 소문자화하고 `.exe` 접미사를 제거한 stem 을, 각 블랙리스트
+    /// 패턴(소문자·trim, 빈 줄은 무시)에 대해 — 패턴에 `*` 가 있으면 glob, 없으면
+    /// substring — 으로 비교한다(결정 ①). 빈 블랙리스트면 항상 false.
+    pub fn mouse_capture_disabled_for(&self, fg_name: &str) -> bool {
+        if self.mouse_capture_blacklist.is_empty() {
+            return false;
+        }
+        let lower = fg_name.to_ascii_lowercase();
+        let stem = lower.strip_suffix(".exe").unwrap_or(&lower);
+        self.mouse_capture_blacklist.iter().any(|pat| {
+            let pat = pat.trim().to_ascii_lowercase();
+            if pat.is_empty() {
+                return false;
+            }
+            if pat.contains('*') {
+                glob_match(&pat, stem)
+            } else {
+                stem.contains(&pat)
+            }
+        })
+    }
+
     /// Detect bash (Git Bash on Windows, system bash on Unix).
     /// Returns the path if found, or an empty string if not.
     pub fn detect_shell() -> String {
@@ -394,6 +466,70 @@ fn ensure_compiled_bashrc() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn settings_with_blacklist(patterns: &[&str]) -> GeneralSettings {
+        GeneralSettings {
+            mouse_capture_blacklist: patterns.iter().map(|s| s.to_string()).collect(),
+            ..GeneralSettings::default()
+        }
+    }
+
+    #[test]
+    fn mouse_capture_substring_hit_and_miss() {
+        let g = settings_with_blacklist(&["htop"]);
+        assert!(g.mouse_capture_disabled_for("htop"));
+        assert!(g.mouse_capture_disabled_for("htop-vim")); // substring
+        assert!(!g.mouse_capture_disabled_for("vim"));
+    }
+
+    #[test]
+    fn mouse_capture_case_insensitive() {
+        let g = settings_with_blacklist(&["HTOP"]);
+        assert!(g.mouse_capture_disabled_for("htop"));
+        assert!(g.mouse_capture_disabled_for("HTOP"));
+    }
+
+    #[test]
+    fn mouse_capture_strips_exe_suffix() {
+        let g = settings_with_blacklist(&["htop"]);
+        assert!(g.mouse_capture_disabled_for("htop.exe"));
+        assert!(g.mouse_capture_disabled_for("HTOP.EXE"));
+    }
+
+    #[test]
+    fn mouse_capture_empty_blacklist_never_matches() {
+        let g = settings_with_blacklist(&[]);
+        assert!(!g.mouse_capture_disabled_for("htop"));
+    }
+
+    #[test]
+    fn mouse_capture_blank_pattern_ignored() {
+        // 공백/빈 줄 패턴이 전체 매칭으로 새지 않아야 한다.
+        let g = settings_with_blacklist(&["   ", ""]);
+        assert!(!g.mouse_capture_disabled_for("htop"));
+        assert!(!g.mouse_capture_disabled_for("anything"));
+    }
+
+    #[test]
+    fn mouse_capture_glob_wildcard() {
+        let g = settings_with_blacklist(&["ht*"]);
+        assert!(g.mouse_capture_disabled_for("htop"));
+        assert!(!g.mouse_capture_disabled_for("vim"));
+
+        let g = settings_with_blacklist(&["*top"]);
+        assert!(g.mouse_capture_disabled_for("htop"));
+        assert!(!g.mouse_capture_disabled_for("htopx"));
+
+        let g = settings_with_blacklist(&["h*p"]);
+        assert!(g.mouse_capture_disabled_for("htop"));
+        assert!(!g.mouse_capture_disabled_for("hat"));
+    }
+
+    #[test]
+    fn mouse_capture_blacklist_defaults_empty() {
+        let g = GeneralSettings::default();
+        assert!(g.mouse_capture_blacklist.is_empty());
+    }
 
     #[test]
     fn legacy_restore_terminal_content_key_still_loads() {
