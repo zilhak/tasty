@@ -49,6 +49,8 @@ pub(crate) use adapters::ui::preset as preset_ui;
 #[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::empty as empty_ui;
 #[cfg(feature = "gui")]
+pub(crate) use adapters::ui::surface::explorer as explorer_ui;
+#[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::image as image_ui;
 #[cfg(feature = "gui")]
 pub(crate) use adapters::ui::surface::markdown as markdown_ui;

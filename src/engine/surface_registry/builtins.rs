@@ -7,7 +7,10 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
-use crate::model::{EmptySurface, ImagePanel, MarkdownPanel, Surface};
+use crate::model::{
+    EmptySurface, ExplorerPanel, ExplorerTab, ExplorerViewMode, ImagePanel, MarkdownPanel,
+    SortColumn, SortDir, Surface,
+};
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
 
@@ -23,6 +26,7 @@ pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_empty(registry);
     register_attached(registry);
+    register_explorer(registry);
 }
 
 // ── Terminal ────────────────────────────────────────────────────────────────
@@ -127,6 +131,75 @@ fn register_attached(registry: &SurfaceKindRegistry) {
     });
 }
 
+// ── Explorer ──────────────────────────────────────────────────────────────
+//
+// 본체 내장 파일 관리자 (T11). 과거엔 `com.tasty.explorer` plugin 의 remote kind
+// 였으나 본체 surface 로 승격됐다. create 는 `path` param(없으면 cwd, 그래도 없으면
+// ".")으로 단일 탭 생성. snapshot/restore 는 내부 탭 목록(root + view_mode + 정렬)과
+// 활성 탭 인덱스를 직렬화한다(결정 3 — 내부 탭은 surface 와 함께 복원). 히스토리
+// (back/forward)는 휘발성이라 직렬화하지 않는다.
+
+fn register_explorer(registry: &SurfaceKindRegistry) {
+    registry.register(SurfaceKindDef {
+        kind: "explorer",
+        display_name_i18n_key: "surface.kind.explorer",
+        create: Arc::new(|sid, cwd, params| {
+            let root = params
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(std::path::PathBuf::from)
+                .or_else(|| cwd.map(std::path::PathBuf::from))
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            Ok(Box::new(ExplorerPanel::new(sid, root)) as Box<dyn Surface>)
+        }),
+        restore: Arc::new(|sid, data| {
+            let active = data.get("active").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let tabs: Vec<ExplorerTab> = data
+                .get("tabs")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().map(explorer_tab_from_json).collect())
+                .unwrap_or_default();
+            Ok(Box::new(ExplorerPanel::from_tabs(sid, tabs, active)) as Box<dyn Surface>)
+        }),
+        snapshot: Arc::new(|s: &dyn Surface| {
+            let ex = s.as_any().downcast_ref::<ExplorerPanel>()?;
+            let tabs: Vec<Value> = ex
+                .tabs
+                .iter()
+                .map(|t| {
+                    json!({
+                        "root": t.root.to_string_lossy(),
+                        "view_mode": t.view_mode.as_str(),
+                        "sort_column": t.sort_column.as_str(),
+                        "sort_dir": t.sort_dir.as_str(),
+                    })
+                })
+                .collect();
+            Some(json!({ "tabs": tabs, "active": ex.active }))
+        }),
+    });
+}
+
+/// snapshot JSON 한 항목 → `ExplorerTab` (히스토리 제외, view_mode/정렬 복원).
+fn explorer_tab_from_json(v: &Value) -> ExplorerTab {
+    let root = v
+        .get("root")
+        .and_then(|x| x.as_str())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let mut tab = ExplorerTab::new(root);
+    if let Some(m) = v.get("view_mode").and_then(|x| x.as_str()) {
+        tab.view_mode = ExplorerViewMode::from_str(m);
+    }
+    if let Some(c) = v.get("sort_column").and_then(|x| x.as_str()) {
+        tab.sort_column = SortColumn::from_str(c);
+    }
+    if let Some(d) = v.get("sort_dir").and_then(|x| x.as_str()) {
+        tab.sort_dir = SortDir::from_str(d);
+    }
+    tab
+}
+
 // ── Empty ───────────────────────────────────────────────────────────────────
 
 fn register_empty(registry: &SurfaceKindRegistry) {
@@ -229,6 +302,39 @@ mod tests {
         let cwd = std::path::PathBuf::from("/tmp/carry-test");
         let s = (def.create)(1, Some(cwd.as_path()), &json!({})).unwrap();
         assert_eq!(s.source_cwd().as_deref(), Some(cwd.as_path()));
+    }
+
+    #[test]
+    fn explorer_is_builtin_and_round_trips() {
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").expect("explorer is a host builtin kind");
+        // create: path param 우선.
+        let s = (def.create)(5, None, &json!({"path": "/tmp/exp"})).unwrap();
+        assert_eq!(s.kind(), "explorer");
+        assert_eq!(s.surface_id(), Some(5));
+        // snapshot → restore 라운드트립 (탭 root + 활성 인덱스 보존).
+        let snap = (def.snapshot)(s.as_ref()).unwrap();
+        assert_eq!(snap["tabs"][0]["root"], "/tmp/exp");
+        let restored = (def.restore)(5, &snap).unwrap();
+        assert_eq!(restored.kind(), "explorer");
+        let ex = restored
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert_eq!(ex.current_root().to_string_lossy(), "/tmp/exp");
+    }
+
+    #[test]
+    fn explorer_create_defaults_to_cwd() {
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").unwrap();
+        let cwd = std::path::PathBuf::from("/tmp/cwd-default");
+        let s = (def.create)(1, Some(cwd.as_path()), &json!({})).unwrap();
+        let ex = s
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert_eq!(ex.current_root(), cwd.as_path());
     }
 
     #[test]

@@ -67,6 +67,14 @@ line_icon!(
 );
 line_icon!(CHEVRON_UP, "chevron_up", r#"<path d="m18 15-6-6-6 6"/>"#);
 line_icon!(CHEVRON_DOWN, "chevron_down", r#"<path d="m6 9 6 6 6-6"/>"#);
+// 단일 chevron — explorer 툴바 nav back/forward (CHEVRONS_* 더블과 별개).
+// path 는 갤러리 `catalog/icons.rs` glyph! 과 동일.
+line_icon!(CHEVRON_LEFT, "chevron_left", r#"<path d="m15 18-6-6 6-6"/>"#);
+line_icon!(
+    CHEVRON_RIGHT,
+    "chevron_right",
+    r#"<path d="m9 18 6-6-6-6"/>"#
+);
 line_icon!(
     TERM,
     "term",

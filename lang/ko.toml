@@ -515,6 +515,19 @@ delete = "휴지통으로 이동"
 rename = "이름 변경"
 open_in_system = "시스템에서 열기"
 
+[explorer.nav]
+back = "뒤로"
+forward = "앞으로"
+up = "위로"
+refresh = "새로고침"
+
+[explorer.sidebar]
+tree = "폴더"
+
+[explorer.type]
+folder = "폴더"
+file = "파일"
+
 [explorer.view]
 grid = "그리드"
 list = "목록"
@@ -527,8 +540,8 @@ modified = "수정일"
 type = "형식"
 
 [explorer.status]
-items = "{count}개 항목"
-selected = "{count}개 선택됨"
+items = "{}개 항목"
+selected = "{}개 선택됨"
 
 [explorer.tab]
 new = "새 탭"
@@ -536,12 +549,12 @@ close = "탭 닫기"
 
 [explorer.popup.add_favorite]
 title = "즐겨찾기에 추가"
-path = "경로: {path}"
+path = "경로: {}"
 add = "추가"
 
 [explorer.popup.rename]
 title = "이름 변경"
-path = "경로: {path}"
+path = "경로: {}"
 rename = "이름 변경"
 
 [explorer.state]
@@ -850,6 +863,7 @@ cancel_button = "취소"
 terminal = "터미널"
 empty = "빈 화면"
 attached = "연결됨"
+explorer = "탐색기"
 
 [attach]
 held_title = "다른 곳에서 점유 중"

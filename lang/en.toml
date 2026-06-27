@@ -515,6 +515,19 @@ delete = "Move to Trash"
 rename = "Rename"
 open_in_system = "Open in System"
 
+[explorer.nav]
+back = "Back"
+forward = "Forward"
+up = "Up"
+refresh = "Refresh"
+
+[explorer.sidebar]
+tree = "Folders"
+
+[explorer.type]
+folder = "Folder"
+file = "File"
+
 [explorer.view]
 grid = "Grid"
 list = "List"
@@ -527,8 +540,8 @@ modified = "Modified"
 type = "Type"
 
 [explorer.status]
-items = "{count} items"
-selected = "{count} selected"
+items = "{} items"
+selected = "{} selected"
 
 [explorer.tab]
 new = "New tab"
@@ -536,12 +549,12 @@ close = "Close tab"
 
 [explorer.popup.add_favorite]
 title = "Add to favorites"
-path = "Path: {path}"
+path = "Path: {}"
 add = "Add"
 
 [explorer.popup.rename]
 title = "Rename"
-path = "Path: {path}"
+path = "Path: {}"
 rename = "Rename"
 
 [explorer.state]
@@ -850,6 +863,7 @@ cancel_button = "Cancel"
 terminal = "Terminal"
 empty = "Empty"
 attached = "Attached"
+explorer = "Explorer"
 
 [attach]
 held_title = "Attached elsewhere"

@@ -88,18 +88,27 @@ pub fn draw_egui_panels(
 
     // Second pass: render each egui panel.
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
+    // T11: explorer 의 사용자 조작은 deferred 로 모아 렌더 루프 종료 후 적용한다
+    // (engine 가변 차용 충돌 회피 — empty action 패턴과 동일). (surface_id, action).
+    let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
 
     let markdown_surface = crate::theme::theme().surface("markdown").clone();
     let markdown_font = engine
         .settings
         .appearance
         .effective_font_for_kind("markdown");
+    let explorer_font = engine
+        .settings
+        .appearance
+        .effective_font_for_kind("explorer");
+    let explorer_bg = crate::theme::theme().bg_panel().to_egui();
 
     // Temporarily extract view stores so we can hold a `&mut View` from
     // the store at the same time as `&mut Panel` from `engine.workspaces`.
     // (Same pattern applied to image_views just below.)
     let mut markdown_views = std::mem::take(&mut state.markdown_views);
     let mut image_views = std::mem::take(&mut state.image_views);
+    let mut explorer_views = std::mem::take(&mut state.explorer_views);
 
     for info in &infos {
         let id_suffix = info
@@ -195,6 +204,32 @@ pub fn draw_egui_panels(
                     crate::image_ui::draw_image(ui, image_panel, view);
                 },
             );
+        } else if let Some(ex_panel) = surface
+            .as_any_mut()
+            .downcast_mut::<crate::model::ExplorerPanel>()
+        {
+            let view = explorer_views.get_or_init(ex_panel);
+            let act = draw_panel_frame(
+                ctx,
+                &format!("explorer_panel_{}", id_suffix),
+                info,
+                0,
+                Some(explorer_bg),
+                |ui| {
+                    crate::explorer_ui::draw_explorer(
+                        ui,
+                        ex_panel,
+                        view,
+                        &explorer_font,
+                        &id_suffix,
+                    )
+                },
+            );
+            if let Some(a) = act {
+                if pending_explorer_action.is_none() {
+                    pending_explorer_action = Some((ex_panel.id, a));
+                }
+            }
         } else if let Some(remote) = surface
             .as_any()
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
@@ -226,6 +261,12 @@ pub fn draw_egui_panels(
     // Restore extracted view stores before any further `state` access below.
     state.markdown_views = markdown_views;
     state.image_views = image_views;
+    state.explorer_views = explorer_views;
+
+    // T11: explorer deferred action 적용 (view store 복원 후 — state/engine 가변 차용 가능).
+    if let Some((sid, act)) = pending_explorer_action {
+        apply_explorer_action(state, engine, sid, act);
+    }
 
     // Apply deferred empty surface action (must happen after render loop due to state mutation).
     if let Some(crate::empty_ui::EmptyAction::OpenConvertPopup(sid)) = pending_empty_action {
@@ -275,6 +316,110 @@ pub fn draw_egui_panels(
                 }
             }
         }
+    }
+}
+
+/// T11: explorer deferred action 적용. 파일 열기/새로고침은 `state` 만, 내비게이션/
+/// 뷰모드/탭 조작은 대상 `ExplorerPanel` (origin surface id 로 직접 지정 — 포커스
+/// 독립)을 가변 차용해 처리한다.
+fn apply_explorer_action(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    sid: u32,
+    act: crate::explorer_ui::ExplorerAction,
+) {
+    use crate::explorer_ui::ExplorerAction as A;
+    match &act {
+        A::OpenFile(path) => {
+            state.dispatch_intent(
+                crate::core::intent::DomainIntent::DispatchFile {
+                    target: crate::file::format::FileTarget::new(path.clone()),
+                    depth: crate::file::format::DetectDepth::Deep,
+                    origin_surface_id: Some(sid),
+                }
+                .from_user_menu("explorer_open_file"),
+            );
+        }
+        A::Refresh => {
+            if let Some(v) = state.explorer_views.get_mut(sid) {
+                v.request_reload();
+            }
+        }
+        _ => apply_explorer_panel_action(state, engine, sid, &act),
+    }
+}
+
+/// `ExplorerPanel` 을 가변 차용해 내비게이션/뷰모드/내부 탭 조작을 적용한다.
+fn apply_explorer_panel_action(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    sid: u32,
+    act: &crate::explorer_ui::ExplorerAction,
+) {
+    let ws = state.active_workspace_mut(engine);
+    let pane_ids = ws.pane_layout().all_pane_ids();
+    for pid in pane_ids {
+        let Some(pane) = ws.pane_layout_mut().find_pane_mut(pid) else {
+            continue;
+        };
+        for tab in pane.tabs.iter_mut() {
+            if !tab.contains_surface(sid) {
+                continue;
+            }
+            let Some(leaf) = tab.layout_mut().find_leaf_mut(sid) else {
+                continue;
+            };
+            let Some(ex) = leaf
+                .as_any_mut()
+                .downcast_mut::<crate::model::ExplorerPanel>()
+            else {
+                continue;
+            };
+            apply_to_explorer_panel(ex, act);
+            return;
+        }
+    }
+}
+
+fn apply_to_explorer_panel(
+    ex: &mut crate::model::ExplorerPanel,
+    act: &crate::explorer_ui::ExplorerAction,
+) {
+    use crate::explorer_ui::ExplorerAction as A;
+    match act {
+        A::Navigate(p) => {
+            ex.active_tab_mut().navigate_to(p.clone());
+        }
+        A::GoBack => {
+            ex.active_tab_mut().go_back();
+        }
+        A::GoForward => {
+            ex.active_tab_mut().go_forward();
+        }
+        A::GoUp => {
+            ex.active_tab_mut().go_up();
+        }
+        A::SetViewMode(m) => {
+            ex.active_tab_mut().view_mode = *m;
+        }
+        A::SetSort(col) => {
+            let tab = ex.active_tab_mut();
+            if tab.sort_column == *col {
+                tab.sort_dir = tab.sort_dir.toggled();
+            } else {
+                tab.sort_column = *col;
+                tab.sort_dir = crate::model::SortDir::Asc;
+            }
+        }
+        A::NewTab => ex.add_tab(),
+        A::CloseTab(i) => ex.close_tab(*i),
+        A::SelectTab(i) => {
+            if *i < ex.tabs.len() {
+                ex.active = *i;
+            }
+        }
+        // OpenFile/Refresh 는 apply_explorer_action 에서 처리.
+        A::OpenFile(_) | A::Refresh => {}
     }
 }
 

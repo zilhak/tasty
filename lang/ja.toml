@@ -515,6 +515,19 @@ delete = "ゴミ箱に移動"
 rename = "名前を変更"
 open_in_system = "システムで開く"
 
+[explorer.nav]
+back = "戻る"
+forward = "進む"
+up = "上へ"
+refresh = "更新"
+
+[explorer.sidebar]
+tree = "フォルダー"
+
+[explorer.type]
+folder = "フォルダー"
+file = "ファイル"
+
 [explorer.view]
 grid = "グリッド"
 list = "リスト"
@@ -527,8 +540,8 @@ modified = "更新日時"
 type = "種類"
 
 [explorer.status]
-items = "{count} 項目"
-selected = "{count} 件選択"
+items = "{} 項目"
+selected = "{} 件選択"
 
 [explorer.tab]
 new = "新しいタブ"
@@ -536,12 +549,12 @@ close = "タブを閉じる"
 
 [explorer.popup.add_favorite]
 title = "お気に入りに追加"
-path = "パス: {path}"
+path = "パス: {}"
 add = "追加"
 
 [explorer.popup.rename]
 title = "名前を変更"
-path = "パス: {path}"
+path = "パス: {}"
 rename = "名前を変更"
 
 [explorer.state]
@@ -850,6 +863,7 @@ cancel_button = "キャンセル"
 terminal = "ターミナル"
 empty = "空"
 attached = "アタッチ"
+explorer = "エクスプローラー"
 
 [attach]
 held_title = "別の場所で接続中"

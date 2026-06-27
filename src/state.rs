@@ -363,6 +363,11 @@ pub struct AppState {
     #[cfg(feature = "gui")]
     pub(crate) image_views: crate::adapters::ui::surface::image::view::ImageViewStore,
 
+    /// Per-surface host view state for `ExplorerPanel` (directory entry cache, selection,
+    /// sidebar tree expansion). `ExplorerPanel` itself only holds navigation/tab state.
+    #[cfg(feature = "gui")]
+    pub(crate) explorer_views: crate::adapters::ui::surface::explorer::view::ExplorerViewStore,
+
     /// 사이드바 도구 메뉴 항목. 활성 plugin의 `[[contributes.tool]]`
     /// 항목을 합쳐 관리. PluginManager가 plugin 라이프사이클 변경 시
     /// `set_plugin_items(mgr.plugin_tool_items())`로 갱신한다.
@@ -697,6 +702,8 @@ impl AppState {
             markdown_views: Default::default(),
             #[cfg(feature = "gui")]
             image_views: Default::default(),
+            #[cfg(feature = "gui")]
+            explorer_views: Default::default(),
             tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),
             pending_tool_events: Vec::new(),
             pending_popup_opens: Vec::new(),
@@ -792,6 +799,7 @@ impl AppState {
         {
             self.markdown_views.drop_view(surface_id);
             self.image_views.drop_view(surface_id);
+            self.explorer_views.drop_view(surface_id);
         }
         engine.command_index.drop_surface(surface_id);
         engine.observer_router.drop_surface(surface_id);
