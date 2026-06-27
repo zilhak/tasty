@@ -150,12 +150,29 @@ build-plugins:
         exit 1
     fi
 
+    # 서명 키 보장 + 임베드 pubkey 재도출 — cargo build 전에. release/dist 프로필은
+    # trust 게이트가 켜지므로(#[cfg(debug_assertions)] off), dist 스크립트와 동일하게
+    # 빌드 시점에 키를 보장해야 builtin 이 자동 trust 된다. host `tasty` 바이너리는
+    # build/run/build-all 에서 이 recipe **다음에** 컴파일되므로, 여기서 재도출한
+    # dev-pubkey.bin 이 그 빌드에 임베드된다(순서 불변식). debug 는 게이트가 꺼져 있어
+    # 건너뛴다(기본 dev 워크플로에 openssl 의존을 부과하지 않음).
+    if [ "$profile" != debug ]; then
+        SIGN_KEY_PATH="$(bash ./scripts/ensure-sign-key.sh)"
+        export SIGN_KEY_PATH
+    fi
+
     # 모든 plugin 을 단일 cargo 호출로 — dep graph 1회 해석.
     cargo_args=()
     for c in "${crates[@]}"; do
         cargo_args+=("-p" "$c")
     done
     cargo build $profile_flag "${cargo_args[@]}"
+
+    # release/dist: 모든 builtin 매니페스트를 재서명(--all-builtins). 매니페스트가
+    # 바뀌면(버전 자동 bump 포함) 기존 .sig 가 무효화되므로 빌드 시점에 흡수.
+    if [ "$profile" != debug ]; then
+        bash ./scripts/sign-bundle.sh --key "$SIGN_KEY_PATH" --all-builtins
+    fi
 
     mkdir -p "$bundle_root"
     for c in "${crates[@]}"; do
@@ -176,6 +193,14 @@ build-plugins:
         mkdir -p "$dest"
         cp "$src_bin" "$dest/$bin_name"
         cp "$d/tasty-plugin.toml" "$dest/tasty-plugin.toml"
+        # .sig sidecar — 위 sign-bundle.sh 산출물. non-debug 는 필수(없으면 서명 실패),
+        # debug 는 게이트 우회라 선택.
+        if [ -f "$d/tasty-plugin.toml.sig" ]; then
+            cp "$d/tasty-plugin.toml.sig" "$dest/tasty-plugin.toml.sig"
+        elif [ "$profile" != debug ]; then
+            echo "✘ $c: missing $d/tasty-plugin.toml.sig (signing failed?)" >&2
+            exit 1
+        fi
         if [ -d "$d/lang" ]; then
             rm -rf "$dest/lang"
             cp -R "$d/lang" "$dest/lang"
@@ -345,11 +370,24 @@ link-plugins:
         crates+=("$(basename "$d")")
     done
 
+    # build-plugins 와 동일: release/dist 는 trust 게이트가 켜지므로 키 보장 +
+    # pubkey 재도출을 cargo build 전에 수행한다. (debug 는 게이트 우회 → 건너뜀.)
+    if [ "$profile" != debug ]; then
+        SIGN_KEY_PATH="$(bash ./scripts/ensure-sign-key.sh)"
+        export SIGN_KEY_PATH
+    fi
+
     cargo_args=()
     for c in "${crates[@]}"; do
         cargo_args+=("-p" "$c")
     done
     cargo build $profile_flag "${cargo_args[@]}"
+
+    # release/dist: crate-dir 매니페스트 재서명. .sig 를 symlink 하므로 이후 재서명이
+    # 번들에 자동 반영된다(link-plugins 의 dev 반복 가속 취지와 일치).
+    if [ "$profile" != debug ]; then
+        bash ./scripts/sign-bundle.sh --key "$SIGN_KEY_PATH" --all-builtins
+    fi
 
     mkdir -p "$bundle_root"
     abs_workspace=$(pwd)
@@ -367,6 +405,13 @@ link-plugins:
         mkdir -p "$dest"
         ln -sfn "$src_bin" "$dest/$bin_name"
         ln -sfn "$abs_workspace/$d/tasty-plugin.toml" "$dest/tasty-plugin.toml"
+        # .sig sidecar — crate-dir 파일을 symlink (재서명 시 자동 반영).
+        if [ -f "$d/tasty-plugin.toml.sig" ]; then
+            ln -sfn "$abs_workspace/$d/tasty-plugin.toml.sig" "$dest/tasty-plugin.toml.sig"
+        elif [ "$profile" != debug ]; then
+            echo "✘ $c: missing $d/tasty-plugin.toml.sig (signing failed?)" >&2
+            exit 1
+        fi
         if [ -d "$d/lang" ]; then
             rm -rf "$dest/lang"
             ln -sfn "$abs_workspace/$d/lang" "$dest/lang"
