@@ -1,6 +1,6 @@
 //! Surface 종류별 메타·동작 정의 레지스트리.
 //!
-//! 본체 4종(Terminal/Markdown/Html/Empty)이 부팅 시 등록된다. Explorer/Image/ClipboardHistory
+//! 본체 4종(Terminal/Markdown/Html/Empty)이 부팅 시 등록된다. Explorer/Image
 //! 등은 plugin이 hello 시점에 같은 레지스트리에 자기 kind를 추가한다.
 //! 외부 plugin은 단계 05에서 같은 레지스트리에 추가될 예정.
 //!

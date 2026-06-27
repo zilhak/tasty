@@ -170,28 +170,6 @@
                                     </Component>
                                 </Directory>
                             </Directory>
-                            <Directory Id='PluginClipboardHistoryDir' Name='com.tasty.clipboard-history'>
-                                <Component Id='PluginClipboardHistoryBin' Guid='*'>
-                                    <File Id='PluginClipboardHistoryBinFile' Source='$(var.CargoTargetBinDir)\tasty-plugin-clipboard-history.exe' KeyPath='yes'/>
-                                </Component>
-                                <Component Id='PluginClipboardHistoryManifest' Guid='*'>
-                                    <File Id='PluginClipboardHistoryManifestFile' Source='crates\tasty-plugin-clipboard-history\tasty-plugin.toml' KeyPath='yes'/>
-                                </Component>
-                                <Component Id='PluginClipboardHistorySig' Guid='*'>
-                                    <File Id='PluginClipboardHistorySigFile' Source='crates\tasty-plugin-clipboard-history\tasty-plugin.toml.sig' KeyPath='yes'/>
-                                </Component>
-                                <Directory Id='PluginClipboardHistoryLangDir' Name='lang'>
-                                    <Component Id='PluginClipboardHistoryLangEn' Guid='*'>
-                                        <File Id='PluginClipboardHistoryLangEnFile' Source='crates\tasty-plugin-clipboard-history\lang\en.toml' KeyPath='yes'/>
-                                    </Component>
-                                    <Component Id='PluginClipboardHistoryLangJa' Guid='*'>
-                                        <File Id='PluginClipboardHistoryLangJaFile' Source='crates\tasty-plugin-clipboard-history\lang\ja.toml' KeyPath='yes'/>
-                                    </Component>
-                                    <Component Id='PluginClipboardHistoryLangKo' Guid='*'>
-                                        <File Id='PluginClipboardHistoryLangKoFile' Source='crates\tasty-plugin-clipboard-history\lang\ko.toml' KeyPath='yes'/>
-                                    </Component>
-                                </Directory>
-                            </Directory>
                             <Directory Id='PluginClipboardViewerDir' Name='com.tasty.clipboard-viewer'>
                                 <Component Id='PluginClipboardViewerBin' Guid='*'>
                                     <File Id='PluginClipboardViewerBinFile' Source='$(var.CargoTargetBinDir)\tasty-plugin-clipboard-viewer.exe' KeyPath='yes'/>
@@ -404,12 +382,6 @@
             <ComponentRef Id='PluginClaudeDesignLangEn'/>
             <ComponentRef Id='PluginClaudeDesignLangJa'/>
             <ComponentRef Id='PluginClaudeDesignLangKo'/>
-            <ComponentRef Id='PluginClipboardHistoryBin'/>
-            <ComponentRef Id='PluginClipboardHistoryManifest'/>
-            <ComponentRef Id='PluginClipboardHistorySig'/>
-            <ComponentRef Id='PluginClipboardHistoryLangEn'/>
-            <ComponentRef Id='PluginClipboardHistoryLangJa'/>
-            <ComponentRef Id='PluginClipboardHistoryLangKo'/>
             <ComponentRef Id='PluginClipboardViewerBin'/>
             <ComponentRef Id='PluginClipboardViewerManifest'/>
             <ComponentRef Id='PluginClipboardViewerSig'/>
