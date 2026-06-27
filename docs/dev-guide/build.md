@@ -11,7 +11,7 @@ cargo workspace — **본 바이너리(`src/`) + `crates/*` 다수**(현재 40�
 | **type-\*** primitive | `tasty-type-geometry`(길이), `tasty-type-appearance`(색·theme schema) | 최하위 schema/primitive |
 | 도메인 leaf (GUI-free) | `tasty-model`, `tasty-i18n`, `tasty-settings`, `tasty-themes`, `tasty-terminal`, `tasty-memory`, `tasty-hooks`, `tasty-ipc`, `tasty-portscan` 등 | 공용 도메인·IO |
 | plugin 인프라 | `tasty-plugin-protocol`, `tasty-plugin-sdk`, `tasty-plugin-manifest`, `tasty-host-plugin` | 호스트↔plugin 와이어·SDK |
-| 번들 plugin | `tasty-plugin-{claude,codex,image,explorer,html,markdown,git-viewer,clipboard-history}` | → [`../plugins/`](../plugins/index.md) |
+| 번들 plugin | `tasty-plugin-{claude,codex,image,explorer,html,markdown,git-viewer,clipboard-viewer}` | → [`../plugins/`](../plugins/index.md) |
 | CLI / 테스트 | `tasty-cli`, `tasty-tui-simulator` | |
 
 본 바이너리는 `pub use tasty_core as ...` 식으로 재수출해 `crate::model::X` / `crate::theme::theme()` 같은 경로가 그대로 동작한다.

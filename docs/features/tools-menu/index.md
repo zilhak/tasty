@@ -18,7 +18,7 @@
   - Command palette → 명령 팔레트 popup
   - Listening ports → 리스닝 포트 popup
   - Remote connections → 원격 접속 popup
-- **플러그인 기여 항목**: 활성 + `ui.tool_item` 권한을 grant 받은 plugin 이 `[[contributes.tool]]` 로 선언한 항목. `AppState::tool_registry` 에 동기화된다. (과거 호스트 빌트인이던 Clipboard History 등은 builtin-plugin 항목으로 이전됨.)
+- **플러그인 기여 항목**: 활성 + `ui.tool_item` 권한을 grant 받은 plugin 이 `[[contributes.tool]]` 로 선언한 항목. `AppState::tool_registry` 에 동기화된다. (과거 호스트 빌트인이던 클립보드 항목은 builtin-plugin 의 Clipboard Viewer 로 이전됨.)
 
 ### 레이아웃 / 크기
 
@@ -36,7 +36,7 @@
   - Command palette → [`features/command-palette/`](../command-palette/index.md)
   - Listening ports → [`features/listening-ports/`](../listening-ports/index.md)
   - Remote connections → [`features/remote-profiles/`](../remote-profiles/index.md)
-  - 플러그인 기여 도구 → **[번들 플러그인 문서](../../plugins/index.md)** (예: [clipboard-history](../../plugins/clipboard-history/index.md) · [git-viewer](../../plugins/git-viewer/index.md)). 이 메뉴 문서에는 항목을 나열하지 않는다 — 공식 플러그인 메뉴는 해당 플러그인 쪽에서 다룬다.
+  - 플러그인 기여 도구 → **[번들 플러그인 문서](../../plugins/index.md)** (예: [clipboard-viewer](../../plugins/clipboard-viewer/index.md) · [git-viewer](../../plugins/git-viewer/index.md)). 이 메뉴 문서에는 항목을 나열하지 않는다 — 공식 플러그인 메뉴는 해당 플러그인 쪽에서 다룬다.
 
 ## 비-목표
 

@@ -97,7 +97,7 @@ pub fn draw_egui_panels(
 
     // Temporarily extract view stores so we can hold a `&mut View` from
     // the store at the same time as `&mut Panel` from `engine.workspaces`.
-    // (Same pattern used below for clipboard_history.)
+    // (Same pattern applied to image_views just below.)
     let mut markdown_views = std::mem::take(&mut state.markdown_views);
     let mut image_views = std::mem::take(&mut state.image_views);
 

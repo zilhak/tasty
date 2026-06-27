@@ -35,3 +35,4 @@
 | 0023 | [Shift+좌클릭 드래그 = 마우스 리포팅 우회 로컬 텍스트 선택 + 안내 toast 범용화](0023-shift-leftclick-selection-bypass.md) | Accepted | 2026-06-26 | terminal, mouse, mouse-reporting, selection, modifier, clipboard, discoverability, ux |
 | 0024 | [Banner — Modal/Popup/Toast 에 이은 4번째 오버레이 개념(별도 매니저)](0024-banner-fourth-overlay-concept.md) | Accepted | 2026-06-26 | ui, overlay, banner, popup, toast, ubiquitous-language, user-agent-separation |
 | 0025 | [기획 단계 도구 3분할 (Figma=기획 / Claude design=디자인 / claude code=구현)](0025-planning-tool-split-experimental.md) | Experimental | 2026-06-27 | workflow, figma, claude-design, planning, design-parity, gallery-first, experimental |
+| 0026 | [클립보드 히스토리 백엔드 제거 + 뷰어는 plugin 직접-read](0026-clipboard-history-removal-plugin-direct-read.md) | Accepted | 2026-06-28 | clipboard, plugin, removal, scope, sandbox, user-agent-separation, semver, breaking, adr-0009 |

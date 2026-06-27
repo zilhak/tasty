@@ -13,7 +13,7 @@ CLI 명령:  tasty <namespace> <verb> [--<option>]
 
 - **namespace 단수형** (`surface`, NOT `surfaces`). list 반환 키는 복수 (`surfaces: [...]`).
 - **root 예외**: `split`(pane 분할) · `tree`(surface tree)만 namespace 없이 root 에 등록(자주 쓰는 짧은 명령). 새 메서드는 이 예외에 동참 금지.
-- **보조 도메인은 3단** `<namespace>.<sub>.<verb>` (예: `tool.clipboard.*`, `surface.meta.*` 점 표기).
+- **보조 도메인은 3단** `<namespace>.<sub>.<verb>` (예: `tool.ssh.*`, `surface.meta.*` 점 표기).
 
 namespace 별 메서드 수는 `tests/cli_naming_count_drift.rs` 가 강제한다 — 추가는 같은 minor 내 OK(테이블 동기화 필요), **제거는 SemVer 위반**(major bump 필요). 카운트 snapshot 은 테스트가 SoT 라 본 문서에 박지 않는다.
 

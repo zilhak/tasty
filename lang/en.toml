@@ -526,19 +526,8 @@ url_label = "Enter URL or file path:"
 file_not_found = "File does not exist."
 invalid_format = "Invalid file format."
 
-[clipboard_viewer]
-title = "Clipboard History"
-tab_title = "Clipboard"
-search_placeholder = "Search clipboard history..."
-empty_message = "Clipboard history is empty."
-no_match = "No matches."
-result_counter = "{} / {}"
-clear_confirm = "Clear all clipboard history?"
-hint_bar = "Enter: copy & close    Delete: remove    Shift+Delete: clear all    Esc: close"
-
 [tools_menu]
 title = "Tools"
-clipboard_history = "Clipboard History"
 
 [settings.misc]
 empty = "No settings on this platform."

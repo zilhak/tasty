@@ -53,7 +53,6 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 - 알림: `notification.{list,create}` — [notifications](../features/notifications/index.md)
 - 훅: `hook.{set,list,unset}` · `global_hook.{set,list,unset}` · `surface.fire_hook`
 - 메시지 패싱: `message.{send,read,count,clear}`
-- 클립보드 히스토리: `tool.clipboard.{list,get,paste}` — [clipboard](../features/clipboard/index.md)
 - 파일 핸들러: `file_handler.{reload,dispatch}` — [file-handler](../features/file-handler/index.md)
 - 이미지: `image.{open,save,export_png,next,prev,paste,list}` — [image plugin](../plugins/image/index.md)
 - SSH 프로필: `tool.ssh.{list,get,add,detect,remove}` — [ssh-tool](../features/remote-profiles/index.md)

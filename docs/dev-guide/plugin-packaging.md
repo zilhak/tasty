@@ -10,7 +10,7 @@
 |-------|-----------|
 | `tasty-plugin-claude` | `com.tasty.claude` |
 | `tasty-plugin-claude-design` | `com.tasty.claude-design` |
-| `tasty-plugin-clipboard-history` | `com.tasty.clipboard-history` |
+| `tasty-plugin-clipboard-viewer` | `com.tasty.clipboard-viewer` |
 | `tasty-plugin-codex` | `com.tasty.codex` |
 | `tasty-plugin-explorer` | `com.tasty.explorer` |
 | `tasty-plugin-git-viewer` | `com.tasty.git-viewer` |

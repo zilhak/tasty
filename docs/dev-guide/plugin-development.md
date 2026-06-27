@@ -11,10 +11,10 @@
 | **host-rendered surface** (host 가 그림) | [image](../plugins/image/index.md)(최소) · [markdown](../plugins/markdown/index.md)(+파일 핸들러·settings) | ★ |
 | **webview surface** | [html](../plugins/html/index.md) | ★ |
 | **plugin-rendered surface** (자가 렌더 + UI DSL) | [explorer](../plugins/explorer/index.md) | ★★★ |
-| **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-history](../plugins/clipboard-history/index.md) | ★★ |
+| **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
-| **wasm 플러그인** | [clipboard-history](../plugins/clipboard-history/index.md)(`--features wasm`) | ★★ |
+| **wasm 플러그인** (frozen POC) | `crates/tasty-plugin-sdk-wasm`(workspace-exclude harness) — [ADR-0009](../adr/0009-plugin-sandbox-deferred.md) | ★★ |
 
 전부 `crates/tasty-plugin-<name>/` 에 있다.
 
@@ -93,7 +93,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 ### 도구 메뉴 항목 + popup
 
 - `[[contributes.tool]]`(`ui.tool_item`) — [도구 메뉴](../features/tools-menu/index.md)에 항목. `action.kind`: `event`(Event Bus 발화) / `open_surface`(탭 추가) / `open_popup`(`popup_id = <plugin_id>/<id>`). `order_hint` 오름차순(빌트인 0..99).
-- `[[contributes.popup]]`(`ui.popup`) — trigger `event`(자동 open) 또는 `ipc`(명시 호출). SDK 콜백 `open_popup`/`handle_popup_event`/`on_popup_closed`. 동일 `popup_id` 라도 `instance_id` 가 다르면 별개 인스턴스. 예: [git-viewer](../plugins/git-viewer/index.md)·[clipboard-history](../plugins/clipboard-history/index.md).
+- `[[contributes.popup]]`(`ui.popup`) — trigger `event`(자동 open) 또는 `ipc`(명시 호출). SDK 콜백 `open_popup`/`handle_popup_event`/`on_popup_closed`. 동일 `popup_id` 라도 `instance_id` 가 다르면 별개 인스턴스. 예: [git-viewer](../plugins/git-viewer/index.md)·[clipboard-viewer](../plugins/clipboard-viewer/index.md).
 
 ### CLI + IPC namespace
 

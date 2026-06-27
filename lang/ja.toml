@@ -526,19 +526,8 @@ url_label = "URLまたはファイルパスを入力:"
 file_not_found = "ファイルが存在しません。"
 invalid_format = "無効なファイル形式です。"
 
-[clipboard_viewer]
-title = "クリップボード履歴"
-tab_title = "クリップボード"
-search_placeholder = "クリップボード履歴を検索..."
-empty_message = "クリップボード履歴は空です。"
-no_match = "一致する項目がありません。"
-result_counter = "{} / {}"
-clear_confirm = "クリップボード履歴をすべて消去しますか？"
-hint_bar = "Enter: コピーして閉じる    Delete: 削除    Shift+Delete: 全削除    Esc: 閉じる"
-
 [tools_menu]
 title = "ツール"
-clipboard_history = "クリップボード履歴"
 
 [settings.misc]
 empty = "このプラットフォームには設定がありません。"

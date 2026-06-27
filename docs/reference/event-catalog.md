@@ -78,10 +78,9 @@ notification, hook, tool, plugin, extension, process, clipboard, theme, language
 
 `window.kind`/`modality` 는 [hierarchy](../concepts/hierarchy.md) 와 일치.
 
-### Clipboard / Process (scope 표시)
+### Process (scope 표시)
 | 키 | scope | payload |
 |----|-------|---------|
-| `clipboard.copied` | system | `kind(text/image), text?, image_b64?, timestamp_ms` (OS 클립보드 *사용자 복사* 감지) |
 | `process.started` | surface | `surface_id, pid, command` |
 | `process.exited` | surface | `surface_id, exit_code?` |
 

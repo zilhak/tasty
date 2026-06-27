@@ -12,7 +12,7 @@ tasty 에 **동봉되어 첫 부팅 시 자동 install** 되는 공식 플러그
 | [markdown](markdown/index.md) — `com.tasty.markdown` | 마크다운 뷰어 | surface_kind(host-rendered) · 파일 핸들러 · cli · settings_page |
 | [image](image/index.md) — `com.tasty.image` | 이미지 뷰어 / 그림판 | surface_kind(host-rendered) · 파일 핸들러 · cli |
 | [html](html/index.md) — `com.tasty.html` | HTML 뷰어 | surface_kind(webview) · 파일 핸들러 · cli |
-| [clipboard-history](clipboard-history/index.md) — `com.tasty.clipboard-history` | 클립보드 히스토리 | 도구 메뉴 · popup |
+| [clipboard-viewer](clipboard-viewer/index.md) — `com.tasty.clipboard-viewer` | 클립보드 뷰어(현재 내용) | 도구 메뉴 · popup |
 | [git-viewer](git-viewer/index.md) — `com.tasty.git-viewer` | git status/log/diff 뷰어 | 도구 메뉴 · popup |
 | [claude](claude/index.md) — `com.tasty.claude` | Claude Code CLI 통합 | cli · ipc · 멀티에이전트 |
 | [codex](codex/index.md) — `com.tasty.codex` | Codex CLI 통합 | cli · ipc · 멀티에이전트 |

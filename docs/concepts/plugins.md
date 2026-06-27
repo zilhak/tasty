@@ -27,8 +27,8 @@ tasty 의 많은 기능은 **플러그인**으로 제공된다 — 별도 프로
 | 기여 | 무엇 | 예 |
 |------|------|----|
 | **surface_kind** | 새 Surface 종류 등록. `rendering` 으로 누가 그리나 결정 | explorer / markdown / image / html |
-| **tool** | [도구 메뉴](../features/tools-menu/index.md) 항목 추가 (`ui.tool_item`) | clipboard-history / git-viewer |
-| **popup** | host popup 등록 (`ui.popup`) | clipboard-history / git-viewer |
+| **tool** | [도구 메뉴](../features/tools-menu/index.md) 항목 추가 (`ui.tool_item`) | clipboard-viewer / git-viewer |
+| **popup** | host popup 등록 (`ui.popup`) | clipboard-viewer / git-viewer |
 | **cli / ipc_namespace** | `tasty <prefix> …` CLI + IPC 메서드 추가 | claude / codex / html / image / markdown |
 | **detector / handler** | 파일 확장자 → surface 매핑(파일 열기) | markdown / image / html |
 | **settings_pages** | [설정 창](../features/settings/index.md)에 플러그인 페이지 추가 (`ui.settings_page`) | explorer / markdown |
