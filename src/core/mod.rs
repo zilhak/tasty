@@ -2363,3 +2363,112 @@ mod attach_block_tests {
         assert!(matches!(ev, CoreEvent::SurfaceSent { sent: true, .. }));
     }
 }
+
+#[cfg(test)]
+mod move_surface_tests {
+    use super::*;
+    use crate::model::SplitDirection;
+
+    fn test_engine() -> CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    /// R1(PTY 보존) 잠금: A 를 B 위치로 이동해도 A 의 Terminal 은 store 에 그대로
+    /// 남고(이동=분리+재부착, kill 아님), 이벤트는 B 를 cleanup 대상으로 보고한다.
+    /// B 의 store 제거는 cascade(dispatch_domain) 책임이라 apply 단계에선 미발생.
+    #[test]
+    fn move_preserves_source_terminal_and_reports_b_cleanup() {
+        let mut engine = test_engine();
+        // 기본 워크스페이스의 단일 surface = A. detached mirror 를 직접 등록해
+        // 실제 PTY 스폰 없이 deterministic 하게 store 점유를 만든다.
+        let a = engine.workspaces[0].all_surface_ids()[0];
+        engine
+            .terminals
+            .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
+
+        // A 와 같은 tab 에 B 를 split 으로 추가.
+        let b = 7777;
+        let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
+        engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .unwrap()
+            .split_surface_by_id_marker(a, SplitDirection::Horizontal, b)
+            .unwrap();
+        engine
+            .terminals
+            .insert(b, tasty_terminal::Terminal::new_detached(80, 24));
+
+        // 사전 조건.
+        assert!(engine.terminals.contains(a));
+        assert!(engine.terminals.contains(b));
+        assert!(engine.find_workspace_index_for_surface(b).is_some());
+
+        let ev = Core::apply_move_surface(&mut engine, a, b);
+
+        // 이벤트: moved=true, B 가 cleanup 대상.
+        match ev {
+            CoreEvent::MoveSurfaceApplied {
+                moved, b_cleanup, ..
+            } => {
+                assert!(moved, "move must succeed");
+                assert_eq!(b_cleanup.map(|(id, _)| id), Some(b));
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+
+        // R1: A 의 Terminal 은 store 에 그대로 (PTY 보존).
+        assert!(
+            engine.terminals.contains(a),
+            "source terminal must survive move"
+        );
+        // A 는 여전히 트리에 존재.
+        assert!(engine.find_workspace_index_for_surface(a).is_some());
+        // B 의 id-marker 는 replace 로 트리에서 사라짐. 단, B 의 Terminal store
+        // 제거는 cascade(dispatch_domain) 책임이라 apply 직후엔 아직 남아있다.
+        assert!(engine.find_workspace_index_for_surface(b).is_none());
+        assert!(
+            engine.terminals.contains(b),
+            "apply 단계는 B store 를 건드리지 않는다 (cascade 가 kill)"
+        );
+        // cut 슬롯 소비.
+        assert!(engine.pending_move_surface.is_none());
+    }
+
+    /// self-ref(source==target) 는 no-op.
+    #[test]
+    fn move_self_ref_is_noop() {
+        let mut engine = test_engine();
+        let a = engine.workspaces[0].all_surface_ids()[0];
+        engine.pending_move_surface = Some(a);
+        let ev = Core::apply_move_surface(&mut engine, a, a);
+        assert!(matches!(
+            ev,
+            CoreEvent::MoveSurfaceApplied { moved: false, .. }
+        ));
+        // no-op 여도 슬롯은 소비된다.
+        assert!(engine.pending_move_surface.is_none());
+    }
+
+    /// target 부재(이미 닫힘) 는 no-op, A 는 무사.
+    #[test]
+    fn move_missing_target_is_noop() {
+        let mut engine = test_engine();
+        let a = engine.workspaces[0].all_surface_ids()[0];
+        engine
+            .terminals
+            .insert(a, tasty_terminal::Terminal::new_detached(80, 24));
+        engine.pending_move_surface = Some(a);
+
+        let ev = Core::apply_move_surface(&mut engine, a, 999_999);
+        assert!(matches!(
+            ev,
+            CoreEvent::MoveSurfaceApplied { moved: false, .. }
+        ));
+        // A 는 그대로 살아있고 슬롯만 소비.
+        assert!(engine.terminals.contains(a));
+        assert!(engine.find_workspace_index_for_surface(a).is_some());
+        assert!(engine.pending_move_surface.is_none());
+    }
+}
