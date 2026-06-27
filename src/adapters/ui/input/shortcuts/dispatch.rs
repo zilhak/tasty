@@ -8,7 +8,7 @@ use crate::view::main::MainView;
 
 #[cfg(not(target_os = "macos"))]
 use super::matches_any_binding;
-use super::{focused_image_surface_id, send_app_event};
+use super::{focused_explorer_surface_id, focused_image_surface_id, send_app_event};
 
 impl MainView {
     /// Dispatch a keybinding action by its stable `field_id` (예: `"new_workspace"`).
@@ -360,6 +360,30 @@ impl MainView {
                     && let Some(view) = state.image_views.get_mut(sid)
                 {
                     view.redo();
+                }
+            }
+            "explorer_refresh" => {
+                if state.focused_surface_type(engine).is_kind("explorer")
+                    && let Some(sid) = focused_explorer_surface_id(state, engine)
+                {
+                    crate::adapters::ui::egui_panels::apply_explorer_action(
+                        state,
+                        engine,
+                        sid,
+                        crate::explorer_ui::ExplorerAction::Refresh,
+                    );
+                }
+            }
+            "explorer_go_up" => {
+                if state.focused_surface_type(engine).is_kind("explorer")
+                    && let Some(sid) = focused_explorer_surface_id(state, engine)
+                {
+                    crate::adapters::ui::egui_panels::apply_explorer_action(
+                        state,
+                        engine,
+                        sid,
+                        crate::explorer_ui::ExplorerAction::GoUp,
+                    );
                 }
             }
             // 윈도우 컨트롤 — CSD 캡션 버튼(P5)/Linux DE 버튼(P6)/macOS 네이티브

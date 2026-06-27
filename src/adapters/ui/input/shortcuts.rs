@@ -100,3 +100,18 @@ fn focused_image_surface_id(
         .downcast_ref::<crate::model::ImagePanel>()
         .map(|p| p.id)
 }
+
+/// Returns the surface ID of the focused Explorer surface, if any.
+fn focused_explorer_surface_id(
+    state: &crate::state::AppState,
+    engine: &crate::core::CoreState,
+) -> Option<u32> {
+    let pane = state.focused_pane(engine)?;
+    let tab = pane.tabs.get(pane.active_tab)?;
+    let focused = tab.focused_surface;
+    let surface = tab.layout().find_surface(focused)?;
+    surface
+        .as_any()
+        .downcast_ref::<crate::model::ExplorerPanel>()
+        .map(|p| p.id)
+}

@@ -64,6 +64,10 @@ pub struct KeybindingSettings {
     pub cut: Vec<String>,
     /// Select all files (Explorer only).
     pub select_all: Vec<String>,
+    /// Reload the focused Explorer directory listing.
+    pub explorer_refresh: Vec<String>,
+    /// Navigate the focused Explorer to the parent directory.
+    pub explorer_go_up: Vec<String>,
     /// Paste clipboard content into focused terminal / paste files in Explorer.
     pub paste: Vec<String>,
     /// Increase font size.

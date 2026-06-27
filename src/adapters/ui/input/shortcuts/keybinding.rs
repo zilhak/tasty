@@ -10,7 +10,9 @@ use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
 use crate::view::main::MainView;
 
-use super::{focused_image_surface_id, matches_any_binding, send_app_event};
+use super::{
+    focused_explorer_surface_id, focused_image_surface_id, matches_any_binding, send_app_event,
+};
 
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
@@ -325,6 +327,34 @@ impl MainView {
                 && let Some(view) = state.image_views.get_mut(sid)
             {
                 view.redo();
+            }
+            return true;
+        }
+        if matches_any_binding(&kb.explorer_refresh, key, mods)
+            && state.focused_surface_type(engine).is_kind("explorer")
+        {
+            if let Some(sid) = focused_explorer_surface_id(state, engine) {
+                crate::adapters::ui::egui_panels::apply_explorer_action(
+                    state,
+                    engine,
+                    sid,
+                    crate::explorer_ui::ExplorerAction::Refresh,
+                );
+            }
+            return true;
+        }
+        if matches_any_binding(&kb.explorer_go_up, key, mods)
+            && state.focused_surface_type(engine).is_kind("explorer")
+        {
+            if let Some(sid) = focused_explorer_surface_id(state, engine) {
+                crate::adapters::ui::egui_panels::apply_explorer_action(
+                    state,
+                    engine,
+                    sid,
+                    crate::explorer_ui::ExplorerAction::GoUp,
+                );
+                // 경로 변경은 ExplorerView 가 다음 draw 에서 자동 감지해 reload 한다
+                // (toolbar GoUp 버튼과 동일 경로).
             }
             return true;
         }

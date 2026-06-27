@@ -25,6 +25,7 @@ pub enum KeybindingsSubTab {
     Clipboard,
     Zoom,
     Image,
+    Explorer,
     Preset,
     Plugins,
 }
@@ -323,6 +324,25 @@ pub fn draw_keybindings_tab(
                 &[
                     ("image_undo", "settings.keybindings.image_undo_label"),
                     ("image_redo", "settings.keybindings.image_redo_label"),
+                ],
+            );
+        }
+        KeybindingsSubTab::Explorer => {
+            draw_keybinding_entries(
+                ui,
+                &mut settings.keybindings,
+                recording_field,
+                pending_binding,
+                &captured,
+                &[
+                    (
+                        "explorer_refresh",
+                        "settings.keybindings.explorer_refresh_label",
+                    ),
+                    (
+                        "explorer_go_up",
+                        "settings.keybindings.explorer_go_up_label",
+                    ),
                 ],
             );
         }

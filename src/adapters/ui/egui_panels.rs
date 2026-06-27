@@ -322,7 +322,7 @@ pub fn draw_egui_panels(
 /// T11: explorer deferred action 적용. 파일 열기/새로고침은 `state` 만, 내비게이션/
 /// 뷰모드/탭 조작은 대상 `ExplorerPanel` (origin surface id 로 직접 지정 — 포커스
 /// 독립)을 가변 차용해 처리한다.
-fn apply_explorer_action(
+pub(crate) fn apply_explorer_action(
     state: &mut AppState,
     engine: &mut crate::core::CoreState,
     sid: u32,

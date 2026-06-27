@@ -294,6 +294,7 @@ impl SettingsUiState {
                     "clipboard" => KeybindingsSubTab::Clipboard,
                     "zoom" => KeybindingsSubTab::Zoom,
                     "image" => KeybindingsSubTab::Image,
+                    "explorer" => KeybindingsSubTab::Explorer,
                     "preset" => KeybindingsSubTab::Preset,
                     "plugins" => KeybindingsSubTab::Plugins,
                     _ => return false,
@@ -725,6 +726,10 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                 (
                     KeybindingsSubTab::Image,
                     t("settings.keybindings.subtab.image"),
+                ),
+                (
+                    KeybindingsSubTab::Explorer,
+                    t("settings.keybindings.subtab.explorer"),
                 ),
                 (
                     KeybindingsSubTab::Preset,
