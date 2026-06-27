@@ -53,6 +53,16 @@ just run                    # 본체+플러그인 debug 빌드 + 실행
 just run --release          # 동일, release 프로필 (나머지 인자는 호스트로 passthrough)
 ```
 
+**release/dist 로컬 빌드는 builtin 을 자동 재서명한다.** `--release`(및 `--profile dist`)는
+trust 게이트가 켜지므로(debug 는 `#[cfg(debug_assertions)]` 로 우회), `build-plugins` 가
+cargo build 전에 서명 키를 보장(`scripts/ensure-sign-key.sh`: `SIGN_KEY_PATH` env →
+`release.pem` → `dev.pem`+`gen-dev-key.sh`)하고 임베드 `dev-pubkey.bin` 을 재도출한 뒤,
+plugin 빌드 후 `sign-bundle.sh --all-builtins` 로 전체 매니페스트를 재서명한다. 따라서
+매니페스트를 언제 고치든(plugin 버전 자동 bump 포함) 로컬 release 산출물은 항상 게이트를
+통과한다. `just build`/`just run`(debug)은 게이트가 꺼져 있어 서명 단계를 건너뛴다(기본
+dev 워크플로에 openssl 의존 미부과). dist 스크립트(`build-*.{sh,ps1}`)도 같은 규칙을
+쓴다 — 상세는 [plugin-packaging](plugin-packaging.md).
+
 ## Plugin 빌드 / 스테이징
 
 번들 plugin(`crates/tasty-plugin-*` 중 `tasty-plugin.toml` 보유)은 부팅 시 `install_builtins_if_needed` 가 `~/.tasty/plugins/<id>/` 로 자동 sync 한다. `bundle_root()` fallback 이 `<exe_dir>/builtin-plugins/`(= `target/<profile>/builtin-plugins/`)라, **그 경로에 스테이징만 해두면** 부팅 시 user dir 까지 흐른다. debug 빌드는 `ensure_dev_bundle` 이 매 부팅 mtime 기반으로 workspace→bundle 을 sync 하므로 `cargo build` → `cargo run` 만으로 동작.
@@ -64,7 +74,7 @@ just build-all                    # plugins + 본 바이너리
 just link-plugins                 # cp 대신 symlink (rebuild 즉시 반영)
 ```
 
-산출물: `target/<profile>/builtin-plugins/<id>/{tasty-plugin.toml, <bin>, lang/}`. lib-only crate(protocol/sdk/manifest)는 manifest 부재로 자동 skip.
+산출물: `target/<profile>/builtin-plugins/<id>/{tasty-plugin.toml, <bin>, tasty-plugin.toml.sig(non-debug), lang/}`. lib-only crate(protocol/sdk/manifest)는 manifest 부재로 자동 skip. release/dist 프로필은 `build-plugins`·`link-plugins` 가 위 자동 서명 단계를 수행해 `.sig` 까지 스테이징한다(`link-plugins` 는 crate-dir `.sig` 를 symlink 해 재서명이 자동 반영). debug 는 서명 없이 매니페스트/bin/lang 만.
 
 ## 배포 패키징
 

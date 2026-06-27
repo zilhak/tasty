@@ -52,7 +52,9 @@ plugin 당 산출물: `<bin>`(Windows `.exe`) · `tasty-plugin.toml`(매니페�
 ./scripts/sign-bundle.sh --key ~/.tasty-keys/dev.pem --all-builtins
 ```
 
-빌드 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)는 패키징 직전 자동으로 `sign-bundle.sh` 를 호출 — 매니페스트만 고치고 빌드 없이 확인할 때만 수동 호출.
+dist 스크립트(`build-macos-dmg.sh`/`build-linux.sh`/`build-windows.ps1`)와 **로컬 release/dist `just` 빌드**(`build-plugins`/`link-plugins`, 즉 `just build --release`·`just run --release`·`just build-all`)가 모두 패키징/스테이징 직전 자동으로 `sign-bundle.sh --all-builtins` 를 호출한다 — 매니페스트만 고치고 빌드 없이 확인할 때만 수동 호출. debug 프로필은 게이트가 꺼져 있어 서명 단계를 건너뛴다.
+
+키 탐색 규칙(`SIGN_KEY_PATH` env → `release.pem` → `dev.pem`+`gen-dev-key.sh`)은 cargo build **전에** 수행돼야 임베드 `dev-pubkey.bin` 이 서명 키와 일치한다(순서 불변식). 이 규칙은 `scripts/ensure-sign-key.sh` 공용 헬퍼로 추출돼 Justfile·`build-linux.sh`·`build-macos-dmg.sh` 가 공유한다(키 경로를 stdout, 진단은 stderr). `build-windows.ps1` 은 PowerShell-native 로직을 유지한다.
 
 ### Release CI 서명
 
