@@ -944,7 +944,6 @@ impl MainView {
                 _ => cb.set_text(&text),
             }
         }
-        self.core_state.record_internal_copy(&text);
         self.state.toasts.push_info(
             crate::i18n::t("toast.copied"),
             crate::adapters::ui::ToastScope::Surface(sid),

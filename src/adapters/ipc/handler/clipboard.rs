@@ -79,10 +79,7 @@ pub fn handle_paste(
     };
     match content {
         ClipboardContent::Text(text) => match core.clipboard_write_text(&text) {
-            Ok(()) => {
-                engine.record_internal_copy(&text);
-                JsonRpcResponse::success(id, json!({ "ok": true, "index": idx }))
-            }
+            Ok(()) => JsonRpcResponse::success(id, json!({ "ok": true, "index": idx })),
             Err(e) => {
                 JsonRpcResponse::internal_error(id, format!("clipboard set_text failed: {e}"))
             }

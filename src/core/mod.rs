@@ -633,9 +633,6 @@ impl Core {
             DomainIntent::SetTerminalMark { surface_id } => {
                 Ok(vec![CoreEvent::TerminalMarkSet { surface_id }])
             }
-            DomainIntent::RecordInternalClipboardCopy { text } => {
-                Ok(vec![CoreEvent::InternalClipboardCopyRecorded { text }])
-            }
             DomainIntent::CreateWorkspace {
                 cwd,
                 kind,

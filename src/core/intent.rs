@@ -186,12 +186,6 @@ pub(crate) enum DomainIntent {
     /// 순회 후 terminal.set_mark() 호출. surface_id 가 None 이면 focused.
     SetTerminalMark { surface_id: u32 },
 
-    // ─── Clipboard history (D.3.C.E.3) ───
-    /// Terminal 내부 selection copy 같은 *internal* 클립보드 copy 를 history 에
-    /// 기록. `Source::Internal` 태그로 일관. settings.clipboard.history_enabled=false
-    /// 이면 cascade 가 no-op.
-    RecordInternalClipboardCopy { text: String },
-
     // ─── Closed items (D.3.C.D.5) ───
     /// closed_items stack top 을 pop 해 복원. `target_pane_id` 는 *호출자가
     /// 결정한* attach 대상 (focused pane). Workspace 복원 시에는 사용 안 함.
@@ -383,10 +377,6 @@ pub(crate) enum CoreEvent {
     // ─── Terminal control (D.3.C.C.3) ───
     /// Terminal read mark 설정 요청. cascade 가 surface 보유 engine 에 적용.
     TerminalMarkSet { surface_id: u32 },
-
-    // ─── Clipboard history (D.3.C.E.3) ───
-    /// Internal clipboard copy 가 발생. cascade 가 모든 engine 의 history 에 기록.
-    InternalClipboardCopyRecorded { text: String },
 
     // ─── Closed items (D.3.C.D.5) ───
     /// closed_items pop + 복원 완료. cascade 가 (Workspace kind 인 경우)

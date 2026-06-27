@@ -475,18 +475,6 @@ impl CoreState {
             .insert(surface_id, std::time::Instant::now());
     }
 
-    /// Internally-originated clipboard copy (selection copy 등). 히스토리에 저장하되
-    /// `Source::Internal`로 태깅. `history_enabled`가 false면 no-op.
-    pub fn record_internal_copy(&mut self, text: &str) {
-        if !self.settings.clipboard.history_enabled {
-            return;
-        }
-        self.clipboard_history.record(
-            text.to_string(),
-            crate::clipboard_history::ClipboardSource::Internal,
-        );
-    }
-
     /// Re-plumb the current global theme palette into every terminal so OSC
     /// 10/11/12/4 color queries report the new theme. Called on theme change.
     pub fn resync_terminal_palettes(&mut self) {

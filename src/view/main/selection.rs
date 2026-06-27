@@ -351,7 +351,6 @@ impl MainView {
         if let Some(cb) = &mut self.clipboard {
             cb.set_text(&text);
         }
-        engine.record_internal_copy(&text);
         self.state.toasts.push_info(
             crate::i18n::t("toast.copied"),
             crate::adapters::ui::ToastScope::Surface(sel.surface_id),
@@ -382,7 +381,6 @@ impl MainView {
         if let Some(cb) = &mut self.clipboard {
             cb.set_text(&text);
         }
-        engine.record_internal_copy(&text);
         self.state.toasts.push_info(
             crate::i18n::t("toast.copied"),
             crate::adapters::ui::ToastScope::Surface(sel.surface_id),
