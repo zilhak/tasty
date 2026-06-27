@@ -92,7 +92,6 @@ pub(crate) use platform::system_tray;
 pub(crate) use state::search as search_state;
 #[cfg(feature = "gui")]
 pub(crate) use state::selection;
-pub(crate) use store::clipboard_history;
 pub(crate) use store::notification;
 pub(crate) use store::recent_files;
 pub(crate) use store::scrollback as scrollback_store;

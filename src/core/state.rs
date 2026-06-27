@@ -123,9 +123,6 @@ pub struct CoreState {
     // ── Closed item history ──
     pub(crate) closed_items: crate::model::ClosedItemStore,
 
-    // ── System clipboard history (memory-only) ──
-    pub(crate) clipboard_history: crate::clipboard_history::ClipboardHistory,
-
     /// OSC 133 기반 명령 인덱서. PromptBoundary 이벤트가 도달할 때마다 호스트가
     /// 호출해 per-surface 상태를 업데이트하고, D phase 에서 memory 에 record 영속.
     pub(crate) command_index: crate::engine::command_index::CommandIndex,
@@ -285,7 +282,6 @@ impl CoreState {
             hook_manager: HookManager::new(),
             global_hook_manager: GlobalHookManager::new(),
             closed_items: crate::model::ClosedItemStore::new(),
-            clipboard_history: crate::clipboard_history::ClipboardHistory::new(100),
             command_index: crate::engine::command_index::CommandIndex::new(),
             observer_router: crate::output_observer::ObserverRouter::new(),
             approval_store: std::sync::Arc::new(tasty_approval::ApprovalStore::new()),
@@ -354,11 +350,6 @@ impl CoreState {
         // Re-apply coalesce_ms from actual settings
         engine.notifications =
             NotificationStore::with_coalesce_ms(engine.settings.notification.coalesce_ms);
-
-        // Apply clipboard history max from settings.
-        engine
-            .clipboard_history
-            .set_max(engine.settings.clipboard.history_max);
 
         // Try restoring saved layout. plugin이 제공하는 surface kind(예: explorer)는
         // PluginManager가 hello를 처리한 후에야 registry에 등록되므로, 여기서 즉시
