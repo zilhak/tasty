@@ -33,9 +33,31 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 
 ### deferred action 적용
 
-렌더 중 발생한 사용자 상호작용은 `ExplorerAction`(OpenFile / Navigate / GoBack / GoForward / GoUp / Refresh / SetViewMode / SetSort / NewTab / CloseTab / SelectTab) 으로 모았다가 `apply_explorer_action(state, engine, sid, act)` 에서 적용한다. 파일 열기/새로고침은 뷰 스토어만, 내비게이션·뷰모드·탭 조작은 **origin surface id 로 직접 지정**한 `ExplorerPanel` 을 가변 차용해 처리한다(포커스 독립). 경로가 바뀌면 `ExplorerView` 가 다음 draw 에서 자동 감지해 재로드한다.
+렌더 중 발생한 사용자 상호작용은 `ExplorerAction`(OpenFile / Navigate / GoBack / GoForward / GoUp / Refresh / SetViewMode / SetSort / NewTab / CloseTab / SelectTab / ContextMenu) 으로 모았다가 `apply_explorer_action(state, engine, sid, act)` 에서 적용한다. 파일 열기/새로고침은 뷰 스토어만, 내비게이션·뷰모드·탭 조작은 **origin surface id 로 직접 지정**한 `ExplorerPanel` 을 가변 차용해 처리한다(포커스 독립). 경로가 바뀌면 `ExplorerView` 가 다음 draw 에서 자동 감지해 재로드한다.
 
 - 파일 열기는 `DomainIntent::DispatchFile { origin_surface_id: Some(sid) }` 로 [file-handler](../file-handler/index.md) 에 위임한다 — explorer 자신은 파일 식별/디스패치 정책을 모른다.
+
+### 컨텍스트 메뉴 · 파일 조작
+
+우클릭 컨텍스트 메뉴는 **2-단계 네이티브 메뉴 패턴**([context-menu](../../dev-guide/context-menu.md))을 따른다: 렌더 중 우클릭을 감지하면 `ExplorerAction::ContextMenu { target, cwd, x, y }` 를 모으고, `apply_explorer_action` 이 이를 `PendingNativeMenu::Explorer`/`ExplorerFavorite` 슬롯에 선점한다(generic surface fallback 보다 먼저 실행돼 explorer 전용 메뉴가 이긴다). 이후 `MainView::process_pending_native_menu` 가 OS 네이티브 메뉴(`platform::native_menu::show_context_menu`)를 띄우고 선택 id 를 조작으로 번역한다.
+
+대상(target)은 우클릭 위치/선택 상태로 결정한다(design §3.3 target rule): 선택 안의 항목 → 선택 전체, 선택 밖 → 그 항목으로 선택 리셋, 빈 영역 → cwd. variant 4종(빈 영역 / 파일 / 폴더 / 다중):
+
+- **경로 복사** (`copy_path`, 다중은 개행 결합) → OS 텍스트 클립보드.
+- **복사 / 잘라내기 / 붙여넣기** — explorer 내부 파일 클립보드(`CoreState::explorer_clipboard`, 단일 슬롯·세션 휘발)에 경로+cut 플래그를 담고, 붙여넣기에서 소비한다. 실제 파일 이동은 `explorer/ops.rs`(순수 fs 헬퍼 — 충돌 시 `(copy)` 접미사, 자기 자신/하위로 붙여넣기 거부, cut 의 cross-volume 은 copy+remove 폴백). 잘라내기는 이동 성공 시 클립보드를 비운다.
+- **휴지통으로 이동** (`delete`) — `trash` 크레이트로 OS 휴지통에 보낸다(가역적이라 확인 모달 없음).
+- **이름 변경** (`rename`, 단일만) — 공용 rename 팝업(`PopupDef`)을 재사용해 `std::fs::rename`.
+- **OS 기본 앱으로 열기** (`open_in_system`, 단일 폴더만) — `platform::reveal::open_path`(Windows `explorer` / macOS `open` / Linux `xdg-open`).
+- **즐겨찾기 추가** (`add_to_favorites`, 단일 폴더 또는 빈 영역) — 아래 참조.
+
+### 즐겨찾기 (favorites)
+
+전역(surface 무관)·영속 즐겨찾기. `~/.tasty/explorer-favorites.toml`(`[[favorite]]` 배열, label+path)에 저장되며 부팅 시 `CoreState::explorer_favorites`(`ExplorerFavorites`)로 로드된다. 메모리 mutator(`add`/`remove`)는 순수하고 디스크 반영은 호출처가 `save()` 로 한다(테스트가 디스크를 건드리지 않게 분리).
+
+- **추가**: 컨텍스트 메뉴 "Add to favorites" → rename 팝업과 동일 골격의 입력 팝업(`RenameTarget::ExplorerAddFavorite`, 확정 버튼 라벨만 "Add")으로 라벨을 받아 등록(같은 경로 재등록 시 라벨만 갱신).
+- **표시/이동**: 사이드바 상단 "Favorites" 섹션(비어있지 않을 때만)에 STAR 아이콘 행으로 나열, 클릭 시 해당 경로로 이동.
+- **제거**: 즐겨찾기 행 우클릭 → `PendingNativeMenu::ExplorerFavorite` → "Remove from favorites". 즐겨찾기는 전역이라 경로만으로 제거한다.
+- 즐겨찾기 목록은 프레임당 1회 스냅샷으로 `draw_explorer` 에 전달된다(렌더 루프에서 `engine` 가변 차용 충돌 회피).
 
 ## 인터페이스
 
@@ -67,8 +89,8 @@ Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한
 
 ## 비-목표 (Out of scope)
 
-- 우클릭 컨텍스트 메뉴(파일/폴더/다중선택/빈영역)와 그로부터의 파일 조작(잘라내기·붙여넣기·삭제·이름 변경)·OS 기본 앱으로 열기·즐겨찾기 추가/이름변경 팝업 — 현재 surface 는 탐색·열기·선택·경로복사까지만 한다. (이동 자체는 [surface-move](../surface-move/index.md) 가 surface 단위로 별도 제공.)
 - 파일 식별/렌더 정책 — explorer 는 열기를 [file-handler](../file-handler/index.md) 에 위임한다.
+- 컨텍스트 메뉴 파일 조작(복사/잘라내기/붙여넣기/이름변경)은 **에이전트(IPC/CLI) 노출 대상이 아니다** — 사용자 우클릭 조작 전용. surface 단위 이동은 [surface-move](../surface-move/index.md) 가 별도 제공한다.
 
 ## 관련
 
