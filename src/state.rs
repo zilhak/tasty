@@ -611,6 +611,11 @@ pub enum RenameTarget {
     WorkspaceSubtitle { ws_idx: usize },
     /// Tab name.
     TabName { pane_id: u32, tab_index: usize },
+    /// Explorer 파일/폴더 이름 변경 (T11). 대상 surface + 현재 경로.
+    ExplorerEntry {
+        surface_id: u32,
+        path: std::path::PathBuf,
+    },
 }
 
 impl RenameTarget {
@@ -620,6 +625,7 @@ impl RenameTarget {
             Self::WorkspaceName { .. } => "rename_dialog.title_heading",
             Self::WorkspaceSubtitle { .. } => "rename_dialog.subtitle_heading",
             Self::TabName { .. } => "rename_dialog.tab_heading",
+            Self::ExplorerEntry { .. } => "explorer.popup.rename.title",
         }
     }
 
@@ -634,6 +640,9 @@ impl RenameTarget {
             }
             Self::TabName { pane_id, tab_index } => {
                 crate::model::popup_kind::PopupScope::Tab(*pane_id, *tab_index)
+            }
+            Self::ExplorerEntry { surface_id, .. } => {
+                crate::model::popup_kind::PopupScope::Surface(*surface_id)
             }
         }
     }

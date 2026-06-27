@@ -847,6 +847,10 @@ impl MainView {
                             crate::i18n::t("explorer.context_menu.paste_into"),
                         ));
                     }
+                    // 이름 변경 (단일 파일/폴더만).
+                    if !multi {
+                        items.push(MenuItem::new(40, crate::i18n::t("explorer.context_menu.rename")));
+                    }
                     items.push(MenuItem::separator());
                     // 휴지통으로 이동 (파일/폴더/다중 공통).
                     items.push(MenuItem::new(30, crate::i18n::t("explorer.context_menu.delete")));
@@ -932,6 +936,27 @@ impl MainView {
                         let target = paths.first().cloned().unwrap_or_else(|| cwd.clone());
                         if let Err(e) = crate::platform::reveal::open_path(&target) {
                             tracing::warn!("explorer: open_path failed: {e}");
+                        }
+                    }
+                    Some(40) => {
+                        if let Some(path) = paths.first().cloned() {
+                            let current_name = path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_default();
+                            let target = crate::state::RenameTarget::ExplorerEntry {
+                                surface_id,
+                                path,
+                            };
+                            let scope = target.popup_scope();
+                            self.state.dialogs.rename = Some((target, current_name));
+                            self.state.dispatch_intent(
+                                crate::intent::UiIntent::OpenPopup {
+                                    id: "rename",
+                                    mode: crate::intent::OpenPopupMode::WithScope(scope),
+                                }
+                                .from_user_context_menu(),
+                            );
                         }
                     }
                     _ => {}

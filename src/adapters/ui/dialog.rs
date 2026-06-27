@@ -79,6 +79,7 @@ pub fn draw_rename_popup(
             .pane_layout()
             .find_pane(*pane_id)
             .is_some_and(|p| *tab_index < p.tabs.len()),
+        RenameTarget::ExplorerEntry { path, .. } => path.exists(),
     };
     if !valid {
         state.dialogs.rename = None;
@@ -247,6 +248,24 @@ fn apply_rename(
                     title,
                     user_direct: true,
                 });
+            }
+        }
+        RenameTarget::ExplorerEntry { surface_id, path } => {
+            let new_name = buffer.trim();
+            if !new_name.is_empty()
+                && let Some(parent) = path.parent()
+            {
+                let new_path = parent.join(new_name);
+                if new_path != path
+                    && let Err(e) = std::fs::rename(&path, &new_path)
+                {
+                    tracing::warn!("explorer: rename {} failed: {e}", path.display());
+                }
+            }
+            if let Some(view) = state.explorer_views.get_mut(surface_id) {
+                view.selected.clear();
+                view.anchor = None;
+                view.request_reload();
             }
         }
     }
