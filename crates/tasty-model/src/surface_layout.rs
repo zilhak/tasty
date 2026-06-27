@@ -197,6 +197,104 @@ impl SurfaceLayout {
         }
     }
 
+    /// Remove a surface from the tree by promoting its sibling, **returning the
+    /// removed surface alive** (Box not dropped).
+    ///
+    /// Mirrors [`close_surface`] structurally but hands back the extracted
+    /// `Box<dyn Surface>` so the caller can re-attach it elsewhere (surface
+    /// *move* / cut path). The surface keeps its `surface_id`, so for a terminal
+    /// the `TerminalStore` entry (PTY/scrollback) stays attached automatically —
+    /// **this method never touches the store, only the tree.**
+    ///
+    /// Returns `(self, None)` when `self` is a sole `Leaf` (the tab's only
+    /// surface): there is no sibling to promote, so the caller must handle the
+    /// tab/pane/workspace-level cascade instead.
+    pub fn extract_surface(self, target_id: SurfaceId) -> (Self, Option<Box<dyn Surface>>) {
+        match self {
+            SurfaceLayout::Leaf(_) => (self, None),
+            SurfaceLayout::Split {
+                direction,
+                ratio,
+                first,
+                second,
+                focus_second,
+            } => {
+                let first_is_target = matches!(first.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
+                let second_is_target = matches!(second.as_ref(), SurfaceLayout::Leaf(s) if Self::leaf_surface_id(&**s) == target_id);
+
+                if first_is_target {
+                    let extracted = match *first {
+                        SurfaceLayout::Leaf(s) => Some(s),
+                        // `first_is_target` already proved this is a matching Leaf.
+                        other => {
+                            return (
+                                other.recombine(*second, direction, ratio, focus_second),
+                                None,
+                            );
+                        }
+                    };
+                    return (*second, extracted);
+                }
+                if second_is_target {
+                    let extracted = match *second {
+                        SurfaceLayout::Leaf(s) => Some(s),
+                        other => {
+                            return (
+                                (*first).recombine(other, direction, ratio, focus_second),
+                                None,
+                            );
+                        }
+                    };
+                    return (*first, extracted);
+                }
+
+                let (new_first, extracted_first) = first.extract_surface(target_id);
+                if extracted_first.is_some() {
+                    return (
+                        SurfaceLayout::Split {
+                            direction,
+                            ratio,
+                            first: Box::new(new_first),
+                            second,
+                            focus_second,
+                        },
+                        extracted_first,
+                    );
+                }
+                let (new_second, extracted_second) = second.extract_surface(target_id);
+                (
+                    SurfaceLayout::Split {
+                        direction,
+                        ratio,
+                        first: Box::new(new_first),
+                        second: Box::new(new_second),
+                        focus_second,
+                    },
+                    extracted_second,
+                )
+            }
+        }
+    }
+
+    /// Rebuild a `Split` from two branches — used only on the (logically
+    /// unreachable) fallback paths inside [`extract_surface`] to avoid dropping a
+    /// subtree if the `matches!` guard and the moved value ever disagree.
+    fn recombine(
+        self,
+        other: SurfaceLayout,
+        direction: SplitDirection,
+        ratio: f32,
+        focus_second: bool,
+    ) -> SurfaceLayout {
+        SurfaceLayout::Split {
+            direction,
+            ratio,
+            first: Box::new(self),
+            second: Box::new(other),
+            focus_second,
+        }
+    }
+
     /// Replace a leaf surface by ID with a new surface. Returns true if found and replaced.
     pub fn replace_surface(&mut self, target_id: SurfaceId, new_surface: Box<dyn Surface>) -> bool {
         match self {
@@ -429,5 +527,76 @@ impl SurfaceLayout {
         direction: FocusDirection,
     ) -> Option<SurfaceId> {
         <Self as BinaryTree>::directional_focus(self, current_id, direction)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leaf(id: SurfaceId) -> SurfaceLayout {
+        SurfaceLayout::Leaf(Box::new(TerminalSurface { id }))
+    }
+
+    fn split(first: SurfaceLayout, second: SurfaceLayout) -> SurfaceLayout {
+        SurfaceLayout::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: Box::new(first),
+            second: Box::new(second),
+            focus_second: false,
+        }
+    }
+
+    /// sole leaf (tab 유일 surface) extract → None, 트리 불변. 상위 cascade 필요 신호.
+    #[test]
+    fn extract_sole_leaf_returns_none() {
+        let layout = leaf(1);
+        let (layout, extracted) = layout.extract_surface(1);
+        assert!(extracted.is_none(), "sole leaf 는 형제가 없어 None");
+        assert_eq!(layout.all_surface_ids(), vec![1]);
+    }
+
+    /// extract(first) → 형제(second)가 끌어올려지고, 제거된 surface 가 살아서 반환.
+    #[test]
+    fn extract_first_promotes_sibling_and_returns_box() {
+        let layout = split(leaf(1), leaf(2));
+        let (layout, extracted) = layout.extract_surface(1);
+        let extracted = extracted.expect("first leaf 가 반환되어야 함");
+        assert_eq!(
+            extracted.surface_id(),
+            Some(1),
+            "반환된 surface 는 살아있는 id-1"
+        );
+        assert_eq!(layout.all_surface_ids(), vec![2], "남은 트리는 형제 2 만");
+    }
+
+    #[test]
+    fn extract_second_promotes_sibling_and_returns_box() {
+        let layout = split(leaf(1), leaf(2));
+        let (layout, extracted) = layout.extract_surface(2);
+        let extracted = extracted.expect("second leaf 가 반환되어야 함");
+        assert_eq!(extracted.surface_id(), Some(2));
+        assert_eq!(layout.all_surface_ids(), vec![1]);
+    }
+
+    /// 중첩 split 깊은 leaf extract: 재귀로 찾아 끌어올리고, 나머지 leaf 보존.
+    #[test]
+    fn extract_nested_leaf() {
+        // split(1, split(2, 3))
+        let layout = split(leaf(1), split(leaf(2), leaf(3)));
+        let (layout, extracted) = layout.extract_surface(2);
+        assert_eq!(extracted.expect("id-2").surface_id(), Some(2));
+        // 2 가 빠지면 inner split 은 3 으로 붕괴 → split(1, 3)
+        assert_eq!(layout.all_surface_ids(), vec![1, 3]);
+    }
+
+    /// 없는 id extract → None, 트리 불변.
+    #[test]
+    fn extract_missing_id_is_noop() {
+        let layout = split(leaf(1), leaf(2));
+        let (layout, extracted) = layout.extract_surface(99);
+        assert!(extracted.is_none());
+        assert_eq!(layout.all_surface_ids(), vec![1, 2]);
     }
 }
