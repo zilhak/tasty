@@ -848,12 +848,22 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "viewers",
                     "Content viewers",
-                    vec![spec(
-                        "markdown-viewer",
-                        "Markdown surface",
-                        Some("ScrollArea · body=text-secondary · link=accent · code=surface-raised"),
-                        components::markdown_viewer::draw,
-                    )],
+                    vec![
+                        spec(
+                            "markdown-viewer",
+                            "Markdown surface",
+                            Some(
+                                "ScrollArea · body=text-secondary · link=accent · code=surface-raised",
+                            ),
+                            components::markdown_viewer::draw,
+                        ),
+                        spec(
+                            "image-viewer",
+                            "Image surface / canvas",
+                            Some("Toolbar + zoom · canvas=bg-sidebar · loaded / no-image fallback"),
+                            components::image_viewer::draw,
+                        ),
+                    ],
                 ),
             ],
         },
