@@ -159,6 +159,12 @@ pub struct CoreState {
     // Set membership = busy. Surfaces missing from the set are treated as idle.
     pub(crate) busy_surfaces: std::collections::HashSet<u32>,
 
+    // ── Mouse-capture blacklist cache. Updated by the same 1Hz BusyPoll using
+    // the foreground names already resolved for busy detection (no extra
+    // process snapshot). Set membership = that surface's foreground process
+    // matches `mouse_capture_blacklist`, so its click/drag capture is disabled.
+    pub(crate) mouse_capture_disabled_surfaces: std::collections::HashSet<u32>,
+
     /// **Phase D D.3.E.4** — Terminal/PTY 데이터 owner (Surface 트리와 분리).
     /// 신설 단계 (E.4.a) 에서는 *빈 store* 만 보유, 호출처 0. 후속 E.4.b ~ f 에서
     /// 점진적으로 *Terminal 인스턴스 / deferred / scrollback_persist / pending
@@ -291,6 +297,7 @@ impl CoreState {
             surface_next_message_id: 0,
             last_key_input: HashMap::new(),
             busy_surfaces: std::collections::HashSet::new(),
+            mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::AttachRegistry::new(),
             readonly_views: HashMap::new(),
