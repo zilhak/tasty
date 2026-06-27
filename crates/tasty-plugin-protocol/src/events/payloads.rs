@@ -223,29 +223,6 @@ pub struct WindowFocused {
     pub window_id: u64,
 }
 
-// ── Clipboard (OS) ───────────────────────────────────────────────────────────
-
-/// `clipboard.copied` 페이로드. scope=System.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ClipboardCopied {
-    pub kind: ClipboardKind,
-    /// kind=`Text`일 때만 채워짐.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    /// kind=`Image`일 때만 채워짐. base64-encoded PNG.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image_b64: Option<String>,
-    /// UTC unix milliseconds.
-    pub timestamp_ms: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ClipboardKind {
-    Text,
-    Image,
-}
-
 // ── Plugin lifecycle ─────────────────────────────────────────────────────────
 
 /// `plugin.loaded` 페이로드. scope=System.
@@ -533,20 +510,6 @@ mod tests {
         assert!(!s.contains("source_surface_id"));
         assert!(s.contains("\"trigger\":\"shortcut\""));
         assert!(s.contains("\"scope\":\"global\""));
-    }
-
-    #[test]
-    fn clipboard_copied_image_variant() {
-        let p = ClipboardCopied {
-            kind: ClipboardKind::Image,
-            text: None,
-            image_b64: Some("base64==".into()),
-            timestamp_ms: 1234567890,
-        };
-        let s = serde_json::to_string(&p).unwrap();
-        assert!(!s.contains("\"text\""));
-        assert!(s.contains("\"image_b64\":\"base64==\""));
-        assert!(s.contains("\"kind\":\"image\""));
     }
 
     #[test]
