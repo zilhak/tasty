@@ -133,6 +133,13 @@ pub struct BannerManager {
     scopes: HashMap<BannerScope, ScopeLane>,
     /// 마지막 `draw` 시각 — TTL 의 실시간 dt 계산용. 테스트는 `advance` 직접 호출.
     last_tick: Option<Instant>,
+    /// 직전 프레임에 **실제로 그려진** 배너 카드 rect — hover/소비 판정의 기준.
+    /// 배치용 placeholder(`banner_zone`, scope 전체 rect)와 입력 zone 을 분리한다:
+    /// scope 전체를 소비하면 이미 focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스
+    /// 리포트가 막히므로, hover 는 카드(콘텐츠 높이) rect 로만 판정한다. egui
+    /// immediate-mode 라 카드 rect 는 그린 *후* 에야 알 수 있어 1프레임 지연 측정한다
+    /// (persistent 배너는 정적이라 비가시).
+    card_rects: HashMap<(BannerScope, BannerId), egui::Rect>,
 }
 
 impl BannerManager {
@@ -287,8 +294,14 @@ pub struct BannerDrawResult {
 
 /// 배너 셸 한 장을 그린다 — surface-raised fill + 1px border-strong + radius-8 +
 /// popover shadow. `opacity` < 1 이면 색을 곱해 디밍(recessed). 내부 콘텐츠는
-/// `content` 가 child `Ui` 에 그린다.
-fn draw_shell(ui: &mut egui::Ui, theme: &Theme, opacity: f32, content: impl FnOnce(&mut egui::Ui)) {
+/// `content` 가 child `Ui` 에 그린다. 반환값은 **실제로 그려진 카드 rect**(콘텐츠
+/// 높이만큼) — 입력 hover/소비 zone 판정에 쓴다(배치 placeholder 와 분리).
+fn draw_shell(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    opacity: f32,
+    content: impl FnOnce(&mut egui::Ui),
+) -> egui::Rect {
     let dim = |c: egui::Color32| c.gamma_multiply(opacity);
     let mut shadow = theme.shadow_popover().to_egui();
     shadow.color = shadow.color.gamma_multiply(opacity);
@@ -307,7 +320,9 @@ fn draw_shell(ui: &mut egui::Ui, theme: &Theme, opacity: f32, content: impl FnOn
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             content(ui);
-        });
+        })
+        .response
+        .rect
 }
 
 impl BannerManager {
@@ -370,6 +385,9 @@ impl BannerManager {
         let mut hovered_any = false;
         let mut hovered_ids: Vec<(BannerScope, BannerId)> = Vec::new();
         let mut close_requests: Vec<BannerScope> = Vec::new();
+        // 이번 프레임 실측 카드 rect — 루프 종료 후 `self.card_rects` 를 이 값으로
+        // 교체한다(사라진 배너 키는 자동 정리). hover 는 *직전* 프레임 카드 rect 로 판정.
+        let mut next_card_rects: HashMap<(BannerScope, BannerId), egui::Rect> = HashMap::new();
 
         let layer_id = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("banner_layer"));
 
@@ -380,14 +398,23 @@ impl BannerManager {
             } else {
                 1.0
             };
-            let banner_hovered = pointer.is_some_and(|p| slot.zone.contains(p));
+            // hover/소비 판정은 scope 전체(`slot.zone`, 배치 placeholder)가 아니라 직전
+            // 프레임에 실제 그려진 카드 rect 로 한정한다 — scope 전역을 소비하면 이미
+            // focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막힌다. 카드 rect
+            // 가 아직 없는 첫 프레임엔 hover=false(자연스러움).
+            let card_key = (slot.scope.clone(), slot.id);
+            let banner_hovered = pointer.is_some_and(|p| {
+                self.card_rects
+                    .get(&card_key)
+                    .is_some_and(|r| r.contains(p))
+            });
             if banner_hovered {
                 hovered_any = true;
-                hovered_ids.push((slot.scope.clone(), slot.id));
+                hovered_ids.push(card_key.clone());
             }
 
             let mut child = ui_at(ctx, layer_id, slot.zone);
-            draw_shell(&mut child, theme, opacity, |ui| {
+            let card_rect = draw_shell(&mut child, theme, opacity, |ui| {
                 // 콘텐츠 (id → def 조회). 없으면 id 텍스트만(누락 정의 가시화).
                 if let Some(def) = defs::find(slot.id) {
                     (def.content_fn)(ui, theme);
@@ -429,7 +456,11 @@ impl BannerManager {
                     }
                 });
             });
+            next_card_rects.insert(card_key, card_rect);
         }
+
+        // 직전 프레임 카드 rect 교체 — 더는 표시되지 않는 배너 키는 자동으로 빠진다.
+        self.card_rects = next_card_rects;
 
         // 5) TTL 진행 — hover 중이거나 백그라운드(가시 슬롯 없음)면 정지.
         let visible_ids: std::collections::HashSet<(BannerScope, BannerId)> =
