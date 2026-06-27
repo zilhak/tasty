@@ -240,6 +240,85 @@ impl SettingsUiState {
         true
     }
 
+    /// debug 전용 — 현재 활성 L1 탭의 L2 섹션(하위탭)을 키 문자열로 선택한다
+    /// (`debug.settings.open` 의 `subtab` 인자). 반드시 [`select_tab_by_key`] 로
+    /// L1 을 먼저 정한 뒤 호출한다 — 키는 활성 L1 탭에 종속이다.
+    ///
+    /// 알 수 없는 키(또는 해당 L1 이 정적 L2 키를 갖지 않는 경우, 예: Plugins 의
+    /// 동적 plugin page)면 `false` 를 반환하고 섹션을 바꾸지 않아 L1 기본 L2 가
+    /// 유지된다.
+    #[cfg(debug_assertions)]
+    pub fn select_section_by_key(&mut self, key: &str) -> bool {
+        match self.active_tab {
+            SettingsTab::General => {
+                self.general_sub_tab = match key {
+                    "general" => GeneralSubTab::General,
+                    "notifications" => GeneralSubTab::Notifications,
+                    "accessibility" => GeneralSubTab::Accessibility,
+                    _ => return false,
+                };
+                true
+            }
+            SettingsTab::Terminal => {
+                self.terminal_sub_tab = match key {
+                    "general" => TerminalSubTab::General,
+                    "performance" => TerminalSubTab::Performance,
+                    _ => return false,
+                };
+                true
+            }
+            SettingsTab::Appearance => {
+                self.appearance_sub_tab = match key {
+                    "theme" => AppearanceSubTab::Theme,
+                    "colors" => AppearanceSubTab::Colors,
+                    "general" => AppearanceSubTab::General,
+                    "display" => AppearanceSubTab::Display,
+                    "tasty" => AppearanceSubTab::Tasty,
+                    "terminal" => AppearanceSubTab::Terminal,
+                    _ => return false,
+                };
+                true
+            }
+            SettingsTab::Keybindings => {
+                self.keybindings_sub_tab = match key {
+                    "general" => KeybindingsSubTab::General,
+                    "workspace" => KeybindingsSubTab::Workspace,
+                    "pane" => KeybindingsSubTab::Pane,
+                    "tab" => KeybindingsSubTab::Tab,
+                    "surface" => KeybindingsSubTab::Surface,
+                    "clipboard" => KeybindingsSubTab::Clipboard,
+                    "zoom" => KeybindingsSubTab::Zoom,
+                    "image" => KeybindingsSubTab::Image,
+                    "preset" => KeybindingsSubTab::Preset,
+                    "plugins" => KeybindingsSubTab::Plugins,
+                    _ => return false,
+                };
+                true
+            }
+            SettingsTab::FileHandler => {
+                self.file_handler_sub_tab = match key {
+                    "extension_mapping" | "extension-mapping" | "extensionmapping" => {
+                        FileHandlerSubTab::ExtensionMapping
+                    }
+                    "detectors" => FileHandlerSubTab::Detectors,
+                    "handlers" => FileHandlerSubTab::Handlers,
+                    _ => return false,
+                };
+                true
+            }
+            SettingsTab::Misc => {
+                self.misc_sub_tab = match key {
+                    "tastyrc" => MiscSubTab::Tastyrc,
+                    _ => return false,
+                };
+                true
+            }
+            // Plugins L2 는 plugin 이 동적으로 contribute 한 page (복합키
+            // `(plugin_id, page_id)`) 라 정적 키로 주소화하지 않는다.
+            SettingsTab::Plugins => false,
+        }
+    }
+
     pub fn new() -> Self {
         let mut popups = PopupManager::new();
         popups.register(

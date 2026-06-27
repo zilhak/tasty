@@ -81,6 +81,15 @@ impl App {
         {
             tracing::warn!("debug.settings.open: unknown settings tab '{tab_key}'");
         }
+        // debug.settings.open 이 L2 섹션(subtab)을 지정했으면 그 섹션으로 진입.
+        // L1 (focus_tab) 이후에 적용해야 활성 L1 에 맞는 섹션이 선택된다. 알 수
+        // 없는 키면 해당 L1 의 기본 L2 가 유지된다.
+        #[cfg(debug_assertions)]
+        if let Some(subtab_key) = self.pending_settings_subtab.take()
+            && !modal.focus_subtab(&subtab_key)
+        {
+            tracing::warn!("debug.settings.open: unknown settings subtab '{subtab_key}'");
+        }
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately instead of waiting for the event loop.
         // On other platforms, mark_dirty() + request_redraw() is sufficient.

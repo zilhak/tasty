@@ -20,11 +20,18 @@ impl App {
                 .get("tab")
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
+            let subtab = cmd
+                .request
+                .params
+                .get("subtab")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
             self.pending_settings_tab = tab.clone();
+            self.pending_settings_subtab = subtab.clone();
             crate::shortcuts::send_app_event(&self.view.proxy, crate::AppEvent::OpenSettings);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 id,
-                serde_json::json!({ "scheduled": true, "tab": tab }),
+                serde_json::json!({ "scheduled": true, "tab": tab, "subtab": subtab }),
             );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;

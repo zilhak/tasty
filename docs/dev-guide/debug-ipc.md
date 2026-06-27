@@ -53,7 +53,19 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.host_popup.list` | `{}` | 호스트 빌트인 popup(`PopupDef`) 전체 목록 (id + title_key) |
 | `debug.host_popup.open` | `popup_id` | 호스트 빌트인 popup 을 focused window 중앙에 강제 open (사용자 클릭 경로 우회, 시각 검증용) |
 | `debug.host_popup.close` | `popup_id` | 호스트 빌트인 popup 강제 close |
-| `debug.settings.open` | `tab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `AppEvent::OpenSettings` 발화 → 별도 모달 윈도우 생성 |
+| `debug.settings.open` | `tab?`, `subtab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = L1 `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `subtab` = 선택한 L1 의 L2 섹션 키(아래 표), 생략·미지정 키면 해당 L1 의 기본 L2 유지. `AppEvent::OpenSettings` 발화 → 별도 모달 윈도우 생성 |
+
+`debug.settings.open` 의 `subtab` 키(활성 `tab` 종속):
+
+| `tab` | 유효 `subtab` 키 |
+|-------|------------------|
+| `general` | `general` · `notifications` · `accessibility` |
+| `terminal` | `general` · `performance` |
+| `appearance` | `theme` · `colors` · `general` · `display` · `tasty` · `terminal` |
+| `keybindings` | `general` · `workspace` · `pane` · `tab` · `surface` · `clipboard` · `zoom` · `image` · `preset` · `plugins` |
+| `file_handler` | `extension_mapping` · `detectors` · `handlers` |
+| `misc` | `tastyrc` (Windows 전용) |
+| `plugins` | — (L2 가 plugin contribute page 라 정적 키 없음; 무시) |
 | `debug.banner.list` | `{}` | 빌트인 배너 정의 + 현재 표시 중/큐 배너(스코프 token·남은초·`total_queued`) |
 | `debug.banner.show` | `banner_id, scope` | 배너 강제 발화 (def 의 ttl 따라 ttl/persistent, 응답에 push `outcome`) — 사용자 조작 우회, 시각 검증용 |
 | `debug.banner.close` | `banner_id` | 표시 중/큐 배너 강제 close (표시 중이면 큐 head 승격) |
@@ -68,7 +80,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ## CLI 노출
 
-CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug/mod.rs`)가 모듈째 `#![cfg(debug_assertions)]`. 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key` · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>]` → `debug.settings.open`.)
+CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug/mod.rs`)가 모듈째 `#![cfg(debug_assertions)]`. 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key` · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`.)
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 

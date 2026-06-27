@@ -180,9 +180,10 @@ pub(super) fn settings_debug_command_to_method_params(
 ) -> (&'static str, serde_json::Value) {
     use crate::SettingsDebugCommands;
     match command {
-        SettingsDebugCommands::Open { tab } => {
-            ("debug.settings.open", serde_json::json!({ "tab": tab }))
-        }
+        SettingsDebugCommands::Open { tab, subtab } => (
+            "debug.settings.open",
+            serde_json::json!({ "tab": tab, "subtab": subtab }),
+        ),
     }
 }
 

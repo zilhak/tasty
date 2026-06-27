@@ -80,6 +80,14 @@ impl SettingsView {
         self.settings_ui_state.select_tab_by_key(key)
     }
 
+    /// debug 전용 — 현재 활성 L1 탭의 L2 섹션(하위탭)을 키 문자열로 지정
+    /// (`debug.settings.open` 의 `subtab` 인자). [`focus_tab`] 로 L1 을 먼저
+    /// 정한 뒤 호출한다. 알 수 없는 키면 `false` 를 반환하고 섹션을 바꾸지 않는다.
+    #[cfg(debug_assertions)]
+    pub fn focus_subtab(&mut self, key: &str) -> bool {
+        self.settings_ui_state.select_section_by_key(key)
+    }
+
     /// Plugin 이 contribute 한 settings sub-page 스냅샷을 주입한다. 모달 오픈 직전에
     /// host App 이 호출. 빈 vec 으로 호출하면 plugin sub-tab 이 사라진다.
     pub fn set_plugin_settings_pages(&mut self, pages: Vec<tasty_host_plugin::SettingsPageEntry>) {

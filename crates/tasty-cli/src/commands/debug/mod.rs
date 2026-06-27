@@ -298,12 +298,20 @@ pub enum BannerDebugCommands {
 #[cfg(debug_assertions)]
 #[derive(Subcommand)]
 pub enum SettingsDebugCommands {
-    /// Force-open the settings modal, optionally on a specific tab.
+    /// Force-open the settings modal, optionally on a specific tab/subtab.
     Open {
-        /// Initial tab: general | terminal | appearance | keybindings |
+        /// Initial L1 tab: general | terminal | appearance | keybindings |
         /// file_handler | misc | plugins (default: general).
         #[arg(long)]
         tab: Option<String>,
+        /// Initial L2 section within the chosen tab (depends on --tab). e.g.
+        /// appearance: theme|colors|general|display|tasty|terminal;
+        /// keybindings: general|workspace|pane|tab|surface|clipboard|zoom|
+        /// image|preset|plugins; general: general|notifications|accessibility;
+        /// terminal: general|performance; file_handler: extension_mapping|
+        /// detectors|handlers; misc: tastyrc. Unknown keys keep the tab default.
+        #[arg(long)]
+        subtab: Option<String>,
     },
 }
 
