@@ -922,22 +922,31 @@ fn draw_profile_form(
     egui::ScrollArea::vertical()
         .max_height(th.spacing_lg.value() * 14.0)
         .show(ui, |ui| {
-            // Type (열린 콤보 — 텍스트 + 제안 드롭다운)
-            ui.horizontal(|ui| {
-                field_label(ui, th, t("remote_tool.field_type"));
-                ui.add(
-                    egui::TextEdit::singleline(&mut f.kind)
-                        .desired_width(160.0)
-                        .font(egui::TextStyle::Monospace),
-                );
-                egui::ComboBox::from_id_salt("remote_tool.type_suggest")
-                    .selected_text("▾")
-                    .width(24.0)
-                    .show_ui(ui, |ui| {
-                        for kt in KNOWN_TYPES {
-                            ui.selectable_value(&mut f.kind, (*kt).to_string(), *kt);
-                        }
-                    });
+            // 행 간 세로 간격 = 디자인 rowGap(space-sm 8) — 수동 2컬럼 행에 일괄 적용.
+            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+
+            // Type — 디자인은 datalist 단일 입력. egui 엔 datalist 가 없어 텍스트 입력 +
+            // 제안 콤보(▾) 2위젯이 기능 대체. 한 컨트롤처럼 붙여 그린다(내부 간격 spacing_xs).
+            form_row(ui, th, t("remote_tool.field_type"), |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+                    let combo_w = th.item_height_interactive.value();
+                    let edit_w =
+                        (ui.available_width() - combo_w - ui.spacing().item_spacing.x).max(0.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut f.kind)
+                            .desired_width(edit_w)
+                            .font(egui::TextStyle::Monospace),
+                    );
+                    egui::ComboBox::from_id_salt("remote_tool.type_suggest")
+                        .selected_text("▾")
+                        .width(combo_w)
+                        .show_ui(ui, |ui| {
+                            for kt in KNOWN_TYPES {
+                                ui.selectable_value(&mut f.kind, (*kt).to_string(), *kt);
+                            }
+                        });
+                });
             });
             if unknown {
                 indented_hint(
@@ -947,65 +956,61 @@ fn draw_profile_form(
                         .size(th.font_size_caption.value()),
                 );
             }
-            ui.add_space(th.spacing_xs.value());
 
             if is_ssh {
-                egui::Grid::new("remote_tool.ssh_grid")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        // placeholder/mono 는 디자인 SSH_FIELDS 표(remote_tool.jsx).
-                        text_row(
-                            ui,
-                            th,
-                            t("remote_tool.field_name"),
-                            &mut f.name,
-                            "prod-web",
-                            false,
-                        );
-                        text_row(
-                            ui,
-                            th,
-                            t("remote_tool.field_host"),
-                            &mut f.host,
-                            "10.0.4.12",
-                            true,
-                        );
-                        text_row(
-                            ui,
-                            th,
-                            t("remote_tool.field_user"),
-                            &mut f.user,
-                            "deploy",
-                            false,
-                        );
-                        text_row(ui, th, t("remote_tool.field_port"), &mut f.port, "22", true);
-                        text_row(
-                            ui,
-                            th,
-                            t("remote_tool.field_label"),
-                            &mut f.label,
-                            "us-east",
-                            false,
-                        );
-                        text_row(
-                            ui,
-                            th,
-                            t("remote_tool.field_remote_tasty"),
-                            &mut f.remote_tasty,
-                            "/usr/local/bin/tasty",
-                            true,
-                        );
-                        field_label(ui, th, t("remote_tool.field_shell"));
-                        egui::ComboBox::from_id_salt("remote_tool.shell")
-                            .selected_text(f.shell.clone())
-                            .show_ui(ui, |ui| {
-                                for sh in SHELLS {
-                                    ui.selectable_value(&mut f.shell, (*sh).to_string(), *sh);
-                                }
-                            });
-                        ui.end_row();
-                        passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
-                    });
+                // placeholder/mono 는 디자인 SSH_FIELDS 표(remote_tool.jsx).
+                text_row(
+                    ui,
+                    th,
+                    t("remote_tool.field_name"),
+                    &mut f.name,
+                    "prod-web",
+                    false,
+                );
+                text_row(
+                    ui,
+                    th,
+                    t("remote_tool.field_host"),
+                    &mut f.host,
+                    "10.0.4.12",
+                    true,
+                );
+                text_row(
+                    ui,
+                    th,
+                    t("remote_tool.field_user"),
+                    &mut f.user,
+                    "deploy",
+                    false,
+                );
+                text_row(ui, th, t("remote_tool.field_port"), &mut f.port, "22", true);
+                text_row(
+                    ui,
+                    th,
+                    t("remote_tool.field_label"),
+                    &mut f.label,
+                    "us-east",
+                    false,
+                );
+                text_row(
+                    ui,
+                    th,
+                    t("remote_tool.field_remote_tasty"),
+                    &mut f.remote_tasty,
+                    "/usr/local/bin/tasty",
+                    true,
+                );
+                form_row(ui, th, t("remote_tool.field_shell"), |ui| {
+                    egui::ComboBox::from_id_salt("remote_tool.shell")
+                        .selected_text(f.shell.clone())
+                        .width(ui.available_width())
+                        .show_ui(ui, |ui| {
+                            for sh in SHELLS {
+                                ui.selectable_value(&mut f.shell, (*sh).to_string(), *sh);
+                            }
+                        });
+                });
+                passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
                 if f.shell == "auto" {
                     indented_hint(
                         ui,
@@ -1015,28 +1020,24 @@ fn draw_profile_form(
                     );
                 }
             } else {
-                egui::Grid::new("remote_tool.gen_grid")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        text_row(
-                            ui,
-                            th,
-                            t("remote_tool.field_name"),
-                            &mut f.name,
-                            "media-nas",
-                            false,
-                        );
-                        text_row(
-                            ui,
-                            th,
-                            t("remote_tool.field_label"),
-                            &mut f.label,
-                            "lab",
-                            false,
-                        );
-                        passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
-                    });
-                ui.add_space(th.spacing_sm.value());
+                text_row(
+                    ui,
+                    th,
+                    t("remote_tool.field_name"),
+                    &mut f.name,
+                    "media-nas",
+                    false,
+                );
+                text_row(
+                    ui,
+                    th,
+                    t("remote_tool.field_label"),
+                    &mut f.label,
+                    "lab",
+                    false,
+                );
+                passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
+                ui.add_space(th.spacing_xs.value());
                 // Fields 헤더 — 좌측 mono caption 라벨 + 우측 ghost "Add field"(space-between).
                 ui.horizontal(|ui| {
                     ui.label(
@@ -1062,16 +1063,21 @@ fn draw_profile_form(
                 }
                 let mut remove_idx = None;
                 for (i, (k, v)) in f.fields.iter_mut().enumerate() {
+                    // 디자인 generic 필드 행 grid `[112px 1fr control-height(28)]`, gap space-sm(8).
                     ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
                         ui.add(
                             egui::TextEdit::singleline(k)
-                                .desired_width(110.0)
+                                .desired_width(LABEL_COL_WIDTH)
                                 .hint_text("key")
                                 .font(egui::TextStyle::Monospace),
                         );
+                        let btn_w = th.item_height_interactive.value();
+                        let val_w =
+                            (ui.available_width() - btn_w - ui.spacing().item_spacing.x).max(0.0);
                         ui.add(
                             egui::TextEdit::singleline(v)
-                                .desired_width(180.0)
+                                .desired_width(val_w)
                                 .hint_text("value")
                                 .font(egui::TextStyle::Monospace),
                         );
@@ -1086,7 +1092,6 @@ fn draw_profile_form(
             }
 
             if let Some(err) = &st.perr {
-                ui.add_space(th.spacing_xs.value());
                 indented_hint(
                     ui,
                     egui::RichText::new(err)
@@ -1128,21 +1133,23 @@ fn draw_profile_form(
 }
 
 fn passkey_dropdown_row(ui: &mut egui::Ui, th: &Theme, value: &mut String, passkeys: &Passkeys) {
-    field_label(ui, th, t("remote_tool.field_passkey"));
-    let sel = if value.is_empty() {
-        t("remote_tool.passkey_none").to_string()
-    } else {
-        value.clone()
-    };
-    egui::ComboBox::from_id_salt("remote_tool.passkey_ref")
-        .selected_text(sel)
-        .show_ui(ui, |ui| {
-            ui.selectable_value(value, String::new(), t("remote_tool.passkey_none"));
-            for k in &passkeys.passkeys {
-                ui.selectable_value(value, k.name.clone(), &k.name);
-            }
-        });
-    ui.end_row();
+    form_row(ui, th, t("remote_tool.field_passkey"), |ui| {
+        let sel = if value.is_empty() {
+            t("remote_tool.passkey_none").to_string()
+        } else {
+            value.clone()
+        };
+        // 디자인 PasskeySelect 는 block(1fr) — 잔여폭을 채운다.
+        egui::ComboBox::from_id_salt("remote_tool.passkey_ref")
+            .selected_text(sel)
+            .width(ui.available_width())
+            .show_ui(ui, |ui| {
+                ui.selectable_value(value, String::new(), t("remote_tool.passkey_none"));
+                for k in &passkeys.passkeys {
+                    ui.selectable_value(value, k.name.clone(), &k.name);
+                }
+            });
+    });
 }
 
 fn save_profile(
@@ -1435,33 +1442,29 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
     ui.add_space(th.spacing_xs.value());
 
     let f = &mut st.kform;
-    egui::Grid::new("remote_tool.passkey_grid")
-        .num_columns(2)
-        .show(ui, |ui| {
-            text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "", false);
-            field_label(ui, th, t("remote_tool.field_kind"));
-            ui.horizontal(|ui| {
-                for opt in KNOWN_PASSKEY_KINDS {
-                    ui.selectable_value(&mut f.kind, (*opt).to_string(), *opt);
-                }
-            });
-            ui.end_row();
-            field_label(ui, th, t("remote_tool.field_value"));
-            if f.kind == "inline" {
-                ui.add(
-                    egui::TextEdit::multiline(&mut f.value)
-                        .desired_rows(3)
-                        .hint_text(t("remote_tool.value_inline_hint")),
-                );
-            } else {
-                ui.add(
-                    egui::TextEdit::singleline(&mut f.value)
-                        .desired_width(f32::INFINITY)
-                        .hint_text("~/.ssh/id_ed25519"),
-                );
-            }
-            ui.end_row();
-        });
+    // 행 간 세로 간격 = 디자인 rowGap(space-sm 8).
+    ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+    text_row(ui, th, t("remote_tool.field_name"), &mut f.name, "", false);
+    form_row(ui, th, t("remote_tool.field_kind"), |ui| {
+        for opt in KNOWN_PASSKEY_KINDS {
+            ui.selectable_value(&mut f.kind, (*opt).to_string(), *opt);
+        }
+    });
+    form_row(ui, th, t("remote_tool.field_value"), |ui| {
+        if f.kind == "inline" {
+            ui.add(
+                egui::TextEdit::multiline(&mut f.value)
+                    .desired_rows(3)
+                    .hint_text(t("remote_tool.value_inline_hint")),
+            );
+        } else {
+            ui.add(
+                egui::TextEdit::singleline(&mut f.value)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("~/.ssh/id_ed25519"),
+            );
+        }
+    });
     ui.label(
         egui::RichText::new(t("remote_tool.passkey_value_note"))
             .color(th.subtext0)
@@ -1576,9 +1579,22 @@ fn draw_confirm_delete(
     out
 }
 
-/// 그리드 한 행(라벨 + 입력). `placeholder` 는 빈 입력 시 보일 예시값(기술 예시라
-/// 번역 비대상 — i18n 하드코딩 예외), `mono` 면 입력을 monospace 폰트로 그린다
-/// (host/port/remote-tasty 처럼 식별자/경로 성격 필드).
+/// 폼 한 행 — 디자인 ProfileForm grid `[112px 1fr]` 의 수동 2컬럼 전사.
+/// `egui::Grid` 는 2열 입력의 무한폭(`desired_width(INFINITY)`)이 1열(라벨) 폭 협상을
+/// 붕괴시켜 112px 를 확보하지 못하고 라벨이 `.truncate()` 로 잘렸다. Type 행이 이미 쓰던
+/// 수동 `ui.horizontal` 2컬럼(고정 112 라벨 + columnGap + 입력)으로 전 행을 통일한다.
+/// columnGap = space-md(12). 세로 rowGap(8) 은 호출부의 `item_spacing.y = spacing_sm` 로 일괄.
+fn form_row(ui: &mut egui::Ui, th: &Theme, label: &str, add_input: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_md.value();
+        field_label(ui, th, label);
+        add_input(ui);
+    });
+}
+
+/// 폼 텍스트 입력 행. `placeholder` 는 빈 입력 시 보일 예시값(기술 예시라 번역 비대상
+/// — i18n 하드코딩 예외), `mono` 면 입력을 monospace 폰트로 그린다(host/port/remote-tasty
+/// 처럼 식별자/경로 성격 필드). 입력은 `INFINITY` 로 1fr(잔여폭) 을 채운다.
 fn text_row(
     ui: &mut egui::Ui,
     th: &Theme,
@@ -1587,15 +1603,15 @@ fn text_row(
     placeholder: &str,
     mono: bool,
 ) {
-    field_label(ui, th, label);
-    let mut edit = egui::TextEdit::singleline(value)
-        .desired_width(f32::INFINITY)
-        .hint_text(placeholder);
-    if mono {
-        edit = edit.font(egui::TextStyle::Monospace);
-    }
-    ui.add(edit);
-    ui.end_row();
+    form_row(ui, th, label, |ui| {
+        let mut edit = egui::TextEdit::singleline(value)
+            .desired_width(f32::INFINITY)
+            .hint_text(placeholder);
+        if mono {
+            edit = edit.font(egui::TextStyle::Monospace);
+        }
+        ui.add(edit);
+    });
 }
 
 /// 디자인 ProfileForm 의 라벨 컬럼 폭 (LogicalPx). grid `gridTemplateColumns: 112px 1fr`.
