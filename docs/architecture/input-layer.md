@@ -12,14 +12,24 @@ z-order 최상위부터 hit-test 한다. 좌표가 어떤 레이어 영역 안�
 
 | 순서 | 레이어 | 판정 | 동작 |
 |------|--------|------|------|
-| 1 | egui 위젯 (사이드바·탭바·오버레이) | `egui_consumed` | egui 가 소비하면 종료 |
-| 2 | 모달/오버레이 | `overlay_open` | 열려 있으면 터미널 입력 차단 |
-| 3 | Popup | `state.popup_hovered` | 팝업 위면 소비(터미널 무시) |
-| 4 | Banner | `state.banner_hovered` | 배너 위면 소비(터미널 무시) |
-| 5 | Divider | `find_*_divider_at`(threshold) | 분할 경계 안이면 소비(드래그 시작) |
-| 6 | Terminal/Surface | — | 최하위, 콘텐츠가 처리 |
+| 1 | 모달/오버레이 | `overlay_open` | 열려 있으면 터미널 입력 차단 |
+| 2 | Popup | `state.popup_hovered` | 팝업 위면 소비(터미널 무시) |
+| 3 | **비활성 surface 전환** (좌클릭 press) | `surface_id_at_position != focused` | 첫 클릭은 surface 전환이 소비 — 그 위 배너/egui 위젯과 무관(아래 참고) |
+| 4 | egui 위젯 (사이드바·탭바·오버레이) | `egui_consumed` | egui 가 소비하면 종료 |
+| 5 | Banner | `state.banner_hovered` | 배너 위면 소비(터미널 무시) — **단 비활성 surface 전환에는 적용되지 않음** |
+| 6 | Divider | `find_*_divider_at`(threshold) | 분할 경계 안이면 소비(드래그 시작) |
+| 7 | Terminal/Surface | — | 최하위, 콘텐츠가 처리 |
 
 `handle_cursor_moved` / `handle_mouse_input` / `handle_mouse_wheel` 이 모두 같은 가드(`egui_consumed || overlay_open || state.popup_hovered || state.banner_hovered`)로 상위 레이어를 먼저 거른 뒤 divider → terminal 로 내려간다. 배너는 **자기 영역의 마우스를 소비**(뒤로 전파 X)하는 focus-less 오버레이라 popup 과 같은 precedence 에서 차단한다(Toast 는 입력을 통과시키므로 이 가드에 없다 — [banner 시스템](../design/systems/banner.md)).
+
+### 비활성 surface 클릭 = 전환 우선 (click-to-activate swallow)
+
+**포커스되지 않은 surface 영역을 좌클릭하면, 그 위에 배너/egui 위젯이 있든 없든 그 첫 클릭은 "surface 전환" 이 통째로 소비한다** (macOS click-to-activate 모델). 이 단계는 통합 가드(`egui_consumed || … || banner_hovered`) **위**, modal/popup **아래**에 위치한다(`src/view/main/mouse.rs::handle_mouse_input`). 따라서:
+
+- modal(`overlay_open`)·popup(`popup_hovered`)은 surface 비소속 독립 상위 레이어라 전환보다 **먼저** 배제된다 — 팝업/모달을 클릭해도 뒤 surface 로 포커스가 넘어가지 않는다.
+- Banner 소비(순서 5)는 *동작*(action 위젯·마우스 리포트 차단)에는 적용되나 *비활성 surface 포커스 전환*에는 적용되지 않는다 — 배너 카드를 클릭해도 소속 surface 로 포커스가 간다. 이로써 마우스-캡쳐 배너 같은 persistent 배너가 떠 있어도 surface 전환이 막히지 않는다.
+- **트레이드오프**: 비활성 surface 첫 클릭은 전환에만 쓰이고 그 자리 selection/cursor/마우스 리포트로 흐르지 않는다(한 번 더 클릭). 배경 캡쳐 TUI 로 마우스가 새는 것을 막는다.
+- gating 은 `surface_id_at_position(x,y) != focused_surface_id` — 이미 활성인 surface 안 클릭은 전환 단계를 건너뛰어 정상(selection/리포트/divider)으로 흐른다. egui 크롬(사이드바·탭바)은 surface rect 밖이라 `surface_id_at_position == None` → 전환 대상 아님 → `egui_consumed` 로 소비.
 
 ### `popup_hovered` / `banner_hovered` 프레임 간 전달
 

@@ -249,39 +249,46 @@ impl MainView {
         }
 
         let overlay_open = self.state.settings_open;
-        if egui_consumed || overlay_open || self.state.popup_hovered || self.state.banner_hovered {
-            // Even when egui consumes the event (e.g. egui-rendered panels),
-            // we still need to update pane focus on left-click within the terminal area.
-            //
-            // 단, 팝업 위(`popup_hovered`)일 때는 제외한다. 입력 레이어 계약(Layer 3 =
-            // Popup, docs/architecture/input-layer.md)상 "팝업 위면 터미널 무시"이므로,
-            // 터미널 영역 위에 떠 있는 팝업을 클릭해도 뒤 pane/surface 로 포커스가
-            // 넘어가면 안 된다. 형제 핸들러(handle_cursor_moved/handle_mouse_wheel)는
-            // 이미 popup_hovered 가드를 가진다 — 이 블록만 누락돼 있었다.
-            if egui_consumed
-                && !overlay_open
-                && !self.state.popup_hovered
-                && !self.state.banner_hovered
-                && button == MouseButton::Left
-                && button_state == ElementState::Pressed
+
+        // click-to-activate swallow: 비활성 surface 를 좌클릭(press)하면 — 그 위에
+        // 배너/egui 위젯이 있든 없든 — 그 첫 클릭은 "surface 전환" 이 통째로 소비한다
+        // (macOS click-to-activate 모델). modal(`overlay_open`)·popup(`popup_hovered`)은
+        // surface 비소속 상위 레이어라 이 전환보다 먼저 배제한다. banner/divider/terminal
+        // 은 전환보다 아래 — 배너를 클릭해도 소속 surface 로 포커스가 간다. 전환이
+        // 클릭을 소비하면 그 클릭은 selection/cursor/마우스 리포트로 흐르지 않는다(첫
+        // 클릭은 활성화에만 쓰이고 한 번 더 클릭해야 동작). docs/architecture/input-layer.md.
+        if button == MouseButton::Left
+            && button_state == ElementState::Pressed
+            && !overlay_open
+            && !self.state.popup_hovered
+            && let Some(pos) = self.cursor_position
+        {
+            let terminal_rect = self.compute_terminal_rect();
+            let (x, y) = (pos.x as f32, pos.y as f32);
+            if let Some(sid) =
+                self.state
+                    .surface_id_at_position(&self.core_state, x, y, terminal_rect)
+                && self.state.focused_surface_id(&self.core_state) != Some(sid)
             {
-                let terminal_rect = self.compute_terminal_rect();
-                if let Some(pos) = self.cursor_position {
-                    let (x, y) = (pos.x as f32, pos.y as f32);
-                    if terminal_rect.contains(PhysicalPx(x), PhysicalPx(y)) {
-                        let engine = &mut self.core_state;
-                        let changed_pane =
-                            self.state
-                                .focus_pane_at_position(engine, x, y, terminal_rect);
-                        let changed_surf =
-                            self.state
-                                .focus_surface_at_position(engine, x, y, terminal_rect);
-                        if changed_pane || changed_surf {
-                            self.base.dirty = true;
-                        }
-                    }
+                let engine = &mut self.core_state;
+                let changed_pane = self
+                    .state
+                    .focus_pane_at_position(engine, x, y, terminal_rect);
+                let changed_surf =
+                    self.state
+                        .focus_surface_at_position(engine, x, y, terminal_rect);
+                if changed_pane || changed_surf {
+                    self.base.dirty = true;
                 }
+                self.mark_dirty();
+                return;
             }
+        }
+
+        if egui_consumed || overlay_open || self.state.popup_hovered || self.state.banner_hovered {
+            // 비-좌클릭/Release/egui-크롬(사이드바·탭바) 클릭의 소비. 활성 surface 안
+            // pane 포커스 갱신은 위 click-to-activate 단계가 흡수하므로 여기서는
+            // Release 정리와 egui 소비 repaint 만 남긴다.
             if button_state == ElementState::Released {
                 self.dragging_divider = None;
                 self.left_mouse_down = false;
