@@ -738,6 +738,16 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "clipboard-viewer",
+                    "Clipboard viewer popup",
+                    vec![spec(
+                        "clipboard-viewer",
+                        "Current clipboard, master-detail",
+                        Some("480×360 · splitter 0.3 · type list → preview · empty / read-failed"),
+                        components::clipboard_viewer::draw,
+                    )],
+                ),
+                section(
                     "settings",
                     "Settings window",
                     vec![spec(

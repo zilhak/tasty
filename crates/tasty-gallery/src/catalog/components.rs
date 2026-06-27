@@ -7,6 +7,7 @@
 
 pub mod apply_preset;
 pub mod approval;
+pub mod clipboard_viewer;
 pub mod command_palette;
 pub mod convert;
 pub mod explorer_context_menu;
