@@ -39,6 +39,7 @@
 | [hooks](hooks/index.md) — 훅 (surface/global, 자동 실행) | 로컬 사용자 · AI Agent | 없음 |
 | [closed-tab-restore](closed-tab-restore/index.md) — 닫힌 항목 복원 (`Ctrl+Shift+T`) | 로컬 사용자 | 없음 |
 | [convert-surface](convert-surface/index.md) — Surface 타입 전환 (`Alt+'`) | 로컬 사용자 · AI Agent | convert popup |
+| [surface-move](surface-move/index.md) — Surface 위치 이동 (잘라내기/여기로 이동) | 로컬 사용자 | OS 컨텍스트 메뉴 |
 | [layout-persistence](layout-persistence/index.md) — 레이아웃 영속화 (layout.json·scrollback) | 로컬 사용자 | 없음 |
 | [layout-presets](layout-presets/index.md) — 레이아웃 프리셋 (`preset.*`) | 로컬 사용자 · AI Agent | PresetView |
 | [accessibility](accessibility/index.md) — 접근성 (reduced motion 등) | 로컬 사용자 | [설정 탭](settings/screens/settings.md) |
