@@ -62,14 +62,24 @@ chmod 700 "$KEY_DIR"
 derive_pubkey() {
     local priv="$1" out="$2"
     mkdir -p "$(dirname "$out")"
-    openssl pkey -in "$priv" -pubout -outform DER | tail -c 32 > "$out"
+    local tmp
+    tmp="$(mktemp)"
+    openssl pkey -in "$priv" -pubout -outform DER | tail -c 32 > "$tmp"
     local len
-    len=$(wc -c < "$out" | tr -d ' ')
+    len=$(wc -c < "$tmp" | tr -d ' ')
     if [[ "$len" != "32" ]]; then
         echo "Error: extracted pubkey is $len bytes, expected 32" >&2
         echo "  (openssl 버전 또는 OS 차이로 인한 DER 헤더 변경 가능성)" >&2
-        rm -f "$out"
+        rm -f "$tmp"
         exit 1
+    fi
+    # 내용이 동일하면 mtime 을 건드리지 않는다. dev-pubkey.bin 은 build.rs 의
+    # rerun-if-changed 대상이라, 매번 재기록하면 내용이 같아도 tasty-host-plugin +
+    # tasty 바이너리가 불필요하게 재컴파일된다. 부재/내용 불일치일 때만 갱신.
+    if [[ -f "$out" ]] && cmp -s "$tmp" "$out"; then
+        rm -f "$tmp"
+    else
+        mv "$tmp" "$out"
     fi
 }
 
