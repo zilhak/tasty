@@ -296,6 +296,7 @@ general = "General"
 display = "Display"
 tasty = "Tasty"
 terminal = "Terminal"
+explorer = "Explorer"
 
 [settings.appearance.tasty]
 heading = "App Chrome"

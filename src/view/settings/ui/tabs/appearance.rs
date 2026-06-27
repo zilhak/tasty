@@ -82,6 +82,15 @@ pub fn draw_appearance_tab(
                 preview_font_loaded,
             );
         }
+        AppearanceSubTab::Explorer => {
+            draw_appearance_explorer(
+                ui,
+                settings,
+                font_families,
+                font_filter,
+                preview_font_loaded,
+            );
+        }
         AppearanceSubTab::Plugin { plugin_id, page_id } => {
             if let Some(entry) = find_plugin_settings_entry(settings_pages, plugin_id, page_id) {
                 draw_plugin_settings_page(
@@ -645,6 +654,28 @@ fn draw_appearance_terminal(
     );
 
     draw_terminal_surface_colors(ui, settings);
+}
+
+/// Appearance › Explorer: 내장 파일 관리자 surface 의 폰트 override (T11). 저장
+/// 슬롯은 `appearance.plugin_font_overrides["explorer"]` — `effective_font_for_kind
+/// ("explorer")` 가 읽어 explorer surface 렌더에 적용된다.
+fn draw_appearance_explorer(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    font_families: &mut Option<Vec<String>>,
+    font_filter: &mut HashMap<String, String>,
+    preview_font_loaded: &mut HashMap<String, String>,
+) {
+    draw_surface_font_section(
+        ui,
+        settings,
+        font_families,
+        font_filter,
+        preview_font_loaded,
+        SurfaceFontTarget::Plugin {
+            storage_key: "explorer",
+        },
+    );
 }
 
 /// surface kind id for the terminal — the `theme_overrides.surface_themes` /

@@ -296,6 +296,7 @@ general = "일반"
 display = "디스플레이"
 tasty = "Tasty"
 terminal = "터미널"
+explorer = "탐색기"
 
 [settings.appearance.tasty]
 heading = "앱 크롬"

@@ -296,6 +296,7 @@ general = "一般"
 display = "ディスプレイ"
 tasty = "Tasty"
 terminal = "ターミナル"
+explorer = "エクスプローラー"
 
 [settings.appearance.tasty]
 heading = "アプリクローム"

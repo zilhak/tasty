@@ -75,6 +75,10 @@ pub(crate) enum AppearanceSubTab {
     /// app-chrome 테마 (accent / sidebar bg / active tab indicator) 전용 섹션.
     Tasty,
     Terminal,
+    /// Explorer (내장 파일 관리자) surface 전용 폰트 override 섹션 (T11). 과거엔
+    /// `com.tasty.explorer` plugin 이 settings page 로 contribute 했으나 host builtin
+    /// 승격 후 본체 고정 섹션이 됐다.
+    Explorer,
     /// Plugin-contributed sub-tab. 복합키:
     /// - `plugin_id` = `SettingsPageEntry::plugin_id`
     /// - `page_id` = `SettingsPageContribute::id` (plugin scope 내)
@@ -275,6 +279,7 @@ impl SettingsUiState {
                     "display" => AppearanceSubTab::Display,
                     "tasty" => AppearanceSubTab::Tasty,
                     "terminal" => AppearanceSubTab::Terminal,
+                    "explorer" => AppearanceSubTab::Explorer,
                     _ => return false,
                 };
                 true
@@ -818,6 +823,11 @@ fn build_appearance_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
         (
             AppearanceSubTab::Terminal,
             t("settings.appearance.subtab.terminal").to_string(),
+            false,
+        ),
+        (
+            AppearanceSubTab::Explorer,
+            t("settings.appearance.subtab.explorer").to_string(),
             false,
         ),
     ];
