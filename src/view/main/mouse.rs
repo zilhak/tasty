@@ -162,7 +162,7 @@ impl MainView {
                     });
                 if let Some((sid, mode)) = track
                     && matches!(
-                        mode,
+                        self.effective_click_tracking(sid, mode),
                         tasty_terminal::MouseTrackingMode::CellMotion
                             | tasty_terminal::MouseTrackingMode::AllMotion
                     )
@@ -319,6 +319,8 @@ impl MainView {
                 let Some(tracking) = tracking else {
                     return; // terminal 없음
                 };
+                // 블랙리스트면 None 으로 격하 → 우클릭이 tasty 컨텍스트 메뉴로 빠진다.
+                let tracking = self.effective_click_tracking(surface_id, tracking);
                 let shift = self.base.modifiers.shift_key();
                 // 트래킹 ON + Shift 없음: 우클릭을 앱에 보고 (ADR-0019 앱 위임 유지).
                 // Shift+우클릭은 앱에 보고하지 않고 tasty 컨텍스트 메뉴로 우회한다 (ADR-0022
@@ -380,7 +382,10 @@ impl MainView {
                     && self
                         .core_state
                         .find_terminal_by_id(surface_id)
-                        .map(|t| t.mouse_tracking() != tasty_terminal::MouseTrackingMode::None)
+                        .map(|t| {
+                            self.effective_click_tracking(surface_id, t.mouse_tracking())
+                                != tasty_terminal::MouseTrackingMode::None
+                        })
                         .unwrap_or(false)
                 {
                     self.report_mouse_event(
@@ -516,6 +521,13 @@ impl MainView {
                         if need_flush {
                             self.flush_ime_preedit();
                         }
+                        // 블랙리스트면 None 으로 격하 → 좌클릭이 로컬 텍스트 선택으로
+                        // 빠지고 앱 보고/캡처 안내 배너 경로엔 진입하지 않는다.
+                        let mouse_tracking = self
+                            .state
+                            .focused_surface_id(&self.core_state)
+                            .map(|sid| self.effective_click_tracking(sid, mouse_tracking))
+                            .unwrap_or(mouse_tracking);
                         let shift = self.base.modifiers.shift_key();
                         if mouse_tracking != tasty_terminal::MouseTrackingMode::None {
                             if left_click_local_select(mouse_tracking, shift, false) {
@@ -579,7 +591,7 @@ impl MainView {
                                 self.core_state
                                     .find_terminal_by_id(*sid)
                                     .map(|t| {
-                                        t.mouse_tracking()
+                                        self.effective_click_tracking(*sid, t.mouse_tracking())
                                             != tasty_terminal::MouseTrackingMode::None
                                     })
                                     .unwrap_or(false)
@@ -648,6 +660,25 @@ impl MainView {
             + 1;
         let col = point.col.min(cols.saturating_sub(1)) + 1;
         (col, row)
+    }
+
+    /// surface 의 "유효 클릭 트래킹 모드". 마우스 캡처 블랙리스트(설정 + 1Hz 캐시)에
+    /// 걸린 surface 면 실제 트래킹 모드와 무관하게 `None` 으로 격하해 클릭/드래그/버튼을
+    /// 로컬 처리(선택·tasty 메뉴)하게 한다. **휠 경로는 이 헬퍼를 쓰지 않고** 실제
+    /// `mouse_tracking()` 을 그대로 보므로 휠은 블랙리스트여도 앱에 보고된다(결정 ②).
+    fn effective_click_tracking(
+        &self,
+        surface_id: u32,
+        actual: tasty_terminal::MouseTrackingMode,
+    ) -> tasty_terminal::MouseTrackingMode {
+        if self
+            .core_state
+            .is_surface_mouse_capture_disabled(surface_id)
+        {
+            tasty_terminal::MouseTrackingMode::None
+        } else {
+            actual
+        }
     }
 
     /// 마우스 버튼/드래그 이벤트를 트래킹 앱(PTY)에 보고한다. `button` 0=left /
