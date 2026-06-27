@@ -1,0 +1,75 @@
+# Explorer (내장 파일 관리자 surface)
+
+- **Status**: Implemented
+- **주체**: 로컬 사용자 · AI Agent ([주체](../../concepts/actors.md))
+- **ADR**: 없음
+- **코드**: surface kind 등록 `register_explorer` (`src/engine/surface_registry/builtins.rs`), 모델 `ExplorerPanel`/`ExplorerTab` (`crates/tasty-model/src/explorer_panel.rs`), 뷰 스토어 `ExplorerView`/`ExplorerViewStore` (`src/adapters/ui/surface/explorer/view.rs`), 렌더 `draw_explorer` (`src/adapters/ui/surface/explorer.rs`), deferred action 적용 `apply_explorer_action` (`src/adapters/ui/egui_panels.rs`)
+- **화면**: host-rendered egui surface (터미널/마크다운/이미지와 동궤의 surface 타입)
+
+## 목적
+
+OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리를 탐색하고 파일을 열기 위한 내장 파일 관리자다. 다른 host surface(terminal/markdown/image)와 동일하게 pane/tab 레이아웃에 들어가고, surface 변환·이동·레이아웃 영속화 대상이 된다. (과거 `com.tasty.explorer` plugin 이 제공하던 기능을 본체 host builtin surface 로 승격한 것 — surface kind `"explorer"` 는 부팅 시 `register_builtin_kinds` 가 등록한다.)
+
+## 내부 동작 (headless-valid)
+
+### 모델 (`ExplorerPanel`)
+
+- `ExplorerPanel` 은 식별(`id`)과 내비게이션 상태만 보유한다 — 내부 탭 목록(`tabs`)·활성 탭 인덱스(`active`). 각 `ExplorerTab` 은 현재 루트(`root`), 히스토리(back/forward 스택), 뷰 모드(`view_mode`), 정렬 컬럼/방향(`sort_column`/`sort_dir`)을 가진다.
+- 내비게이션: `navigate_to(dir)` / `go_back` / `go_forward` / `go_up`. `can_go_back`/`can_go_forward`/`can_go_up` 으로 가능 여부를 판정한다. 히스토리는 탭별로 독립.
+- 내부 탭: `add_tab` / `close_tab(idx)` / `active_tab[_mut]`. surface 하나 안에 여러 디렉토리 탭을 둔다 (상위 pane 탭과 별개).
+
+### 뷰 상태 (`ExplorerView`, surface id 로 keying)
+
+디렉토리 엔트리 캐시·선택 집합·트리 펼침 같은 무거운 GUI 상태는 모델이 아니라 per-surface 뷰 스토어에 둔다 (markdown/image 뷰 스토어와 동형).
+
+- **엔트리 캐시**: `sync(panel)` 이 활성 탭의 `(root, sort_column, sort_dir)` 키를 보고 디렉토리/정렬이 바뀌었거나 새로고침이 요청됐을 때만 디스크에서 다시 읽는다. 디렉토리가 바뀌면 선택을 초기화한다. 읽기 실패는 `LoadState::NoPermission`(권한 거부) / `LoadState::Error(msg)` 로 분류해 콘텐츠 중앙 상태 텍스트로 표현한다.
+- **선택**: `selected: HashSet<PathBuf>` + `anchor`(shift 범위 기준). `select_all()` 은 현재 디렉토리 전체를 선택, `selected_paths_text()` 는 선택 경로를 정렬·개행 결합한 클립보드 페이로드를 만든다.
+- **사이드바 트리**: `expanded` 펼침 집합 + `tree_children` lazy 하위 디렉토리 캐시.
+
+### 뷰 모드 / 정렬
+
+- 뷰 모드 3 종(grid / list / detail)을 toolbar 의 공용 `segmented` 위젯으로 토글한다. detail 뷰는 정렬 컬럼 헤더를 클릭하면 해당 컬럼으로 정렬(같은 컬럼 재클릭 시 방향 토글).
+- list/detail 데이터 행은 공용 `Table`(selectable)을, 사이드바 디렉토리 행은 공용 `tree_row` 를 재사용한다.
+
+### deferred action 적용
+
+렌더 중 발생한 사용자 상호작용은 `ExplorerAction`(OpenFile / Navigate / GoBack / GoForward / GoUp / Refresh / SetViewMode / SetSort / NewTab / CloseTab / SelectTab) 으로 모았다가 `apply_explorer_action(state, engine, sid, act)` 에서 적용한다. 파일 열기/새로고침은 뷰 스토어만, 내비게이션·뷰모드·탭 조작은 **origin surface id 로 직접 지정**한 `ExplorerPanel` 을 가변 차용해 처리한다(포커스 독립). 경로가 바뀌면 `ExplorerView` 가 다음 draw 에서 자동 감지해 재로드한다.
+
+- 파일 열기는 `DomainIntent::DispatchFile { origin_surface_id: Some(sid) }` 로 [file-handler](../file-handler/index.md) 에 위임한다 — explorer 자신은 파일 식별/디스패치 정책을 모른다.
+
+## 인터페이스
+
+### AI Agent (IPC/CLI)
+
+explorer 는 일반 surface 생성 메커니즘으로 다룬다 (전용 IPC 추가 없이 generic 경로):
+
+- 생성: `tasty new tab --type explorer [--path <dir>]` / `tasty new workspace --type explorer [--path <dir>]`. `--path` 미지정 시 inherit cwd → home 순으로 결정. (IPC: `DomainIntent::CreateTab { kind: "explorer", surface_params }`.)
+- 조회/닫기: `tasty list surfaces` 에 `foreground_process`/`pane_id`/`workspace_id` 와 함께 나타나고, `tasty close ...` 로 닫는다 — 전 워크스페이스 순회·ID 직접 지정(포커스 독립).
+- 변환: 다른 surface 를 explorer 로 in-place 변환 — `Intent::ConvertSurface { kind: "explorer" }`. cwd 미지정 시 source surface 에서 carry. [convert-surface](../convert-surface/index.md) 의 generic convert popup 도 registry kind 열거로 explorer 를 노출한다.
+
+### 사용자 트리거 (단축키 — [KeybindingSettings](../keybindings/index.md))
+
+모든 단축키는 `KeybindingSettings` 로 노출되며 하드코딩하지 않는다. explorer 포커스에서만 동작:
+
+| 액션 | 필드 | Tasty 프리셋 기본 |
+|------|------|------|
+| 새로고침 | `explorer_refresh` | `F5` |
+| 상위 폴더로 | `explorer_go_up` | `Alt+Up` |
+| 전체 선택 | `select_all` | `Ctrl+A` / `Alt+A` |
+| 경로 복사 | `copy_path` | `Alt+Shift+C` |
+| explorer 로 변환 | `convert_to_explorer` | (기본 미할당) |
+
+세 진입점(직접 키 매칭 `keybinding.rs`, 더블탭 `double_tap.rs`, action-id/Command Palette `dispatch.rs`)이 동일 효과를 낸다. 설정 UI 는 Keybindings 탭의 **Explorer** 서브탭.
+
+### 폰트
+
+Appearance → **Explorer** 서브탭에서 surface 폰트를 오버라이드한다 (`appearance.plugin_font_overrides["explorer"]`, `effective_font_for_kind("explorer")` 가 읽음).
+
+## 비-목표 (Out of scope)
+
+- 우클릭 컨텍스트 메뉴(파일/폴더/다중선택/빈영역)와 그로부터의 파일 조작(잘라내기·붙여넣기·삭제·이름 변경)·OS 기본 앱으로 열기·즐겨찾기 추가/이름변경 팝업 — 현재 surface 는 탐색·열기·선택·경로복사까지만 한다. (이동 자체는 [surface-move](../surface-move/index.md) 가 surface 단위로 별도 제공.)
+- 파일 식별/렌더 정책 — explorer 는 열기를 [file-handler](../file-handler/index.md) 에 위임한다.
+
+## 관련
+
+- [work-area](../work-area/index.md)(Surface/Tab/Pane 계층) · [file-handler](../file-handler/index.md)(파일 열기 위임) · [convert-surface](../convert-surface/index.md)(explorer 로/에서 변환) · [keybindings](../keybindings/index.md) · [settings](../settings/index.md)(폰트/단축키 탭)
