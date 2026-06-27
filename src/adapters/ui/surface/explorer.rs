@@ -56,6 +56,26 @@ pub enum ExplorerAction {
     CloseTab(usize),
     /// 내부 탭 선택.
     SelectTab(usize),
+    /// 우클릭 컨텍스트 메뉴 요청 — 호스트가 OS 네이티브 메뉴를 띄운다.
+    /// 좌표는 logical px (egui interact pos 기준).
+    ContextMenu {
+        target: ExplorerMenuTarget,
+        /// 현재 디렉토리 (빈 영역 대상의 "경로 복사"·붙여넣기 기준).
+        cwd: PathBuf,
+        x: f32,
+        y: f32,
+    },
+}
+
+/// 컨텍스트 메뉴의 대상 — 우클릭 위치/선택 상태에서 결정 (design §3.3 target rule).
+#[derive(Clone, Debug)]
+pub enum ExplorerMenuTarget {
+    /// 빈 영역 → 현재 디렉토리(cwd) 대상.
+    Empty,
+    /// 단일 파일/폴더.
+    Single { path: PathBuf, is_dir: bool },
+    /// 다중 선택.
+    Multi { paths: Vec<PathBuf> },
 }
 
 /// 한 explorer surface 를 그린다. 사용자 조작이 있었으면 첫 액션을 반환.
@@ -469,43 +489,48 @@ fn content(
     action: &mut Option<ExplorerAction>,
 ) {
     let mode = panel.active_tab().view_mode;
-
-    // 비-Ok 상태(권한/에러)는 중앙 텍스트로.
-    if let LoadState::NoPermission = view.state {
-        centered_state(ui, theme, &t("explorer.state.no_permission"));
-        status_line(ui, theme, view);
-        return;
-    }
-    if let LoadState::Error(_) = view.state {
-        centered_state(ui, theme, &t("explorer.state.empty"));
-        status_line(ui, theme, view);
-        return;
-    }
-    if view.entries.is_empty() {
-        centered_state(ui, theme, &t("explorer.state.no_items"));
-        status_line(ui, theme, view);
-        return;
-    }
+    let root = panel.current_root().to_path_buf();
 
     // content 본문(상태줄 높이 제외).
     let status_h = theme.item_height_interactive.value();
     let body_h = (ui.available_height() - status_h).max(0.0);
-    ui.allocate_ui_with_layout(
+    let body = ui.allocate_ui_with_layout(
         egui::vec2(ui.available_width(), body_h),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
+            // 비-Ok 상태(권한/에러)는 중앙 텍스트로.
+            match &view.state {
+                LoadState::NoPermission => {
+                    centered_state(ui, theme, &t("explorer.state.no_permission"));
+                    return;
+                }
+                LoadState::Error(_) => {
+                    centered_state(ui, theme, &t("explorer.state.empty"));
+                    return;
+                }
+                LoadState::Ok => {}
+            }
+            if view.entries.is_empty() {
+                centered_state(ui, theme, &t("explorer.state.no_items"));
+                return;
+            }
             egui::ScrollArea::vertical()
                 .id_salt(format!("explorer_content_{id_suffix}"))
                 .auto_shrink([false, false])
                 .show(ui, |ui| match mode {
-                    ExplorerViewMode::Grid => grid_view(ui, theme, view, font, action),
-                    ExplorerViewMode::List => list_view(ui, theme, view, action),
+                    ExplorerViewMode::Grid => grid_view(ui, theme, view, font, &root, action),
+                    ExplorerViewMode::List => list_view(ui, theme, view, &root, action),
                     ExplorerViewMode::Detail => {
-                        detail_view(ui, theme, panel, view, id_suffix, action)
+                        detail_view(ui, theme, panel, view, id_suffix, &root, action)
                     }
                 });
         },
     );
+
+    // 빈 영역 우클릭 → cwd 메뉴 (권한 거부 상태는 제외 — 붙여넣기 불가).
+    if !matches!(view.state, LoadState::NoPermission) {
+        handle_background_context(ui, view, body.response.rect, &root, action);
+    }
     status_line(ui, theme, view);
 }
 
@@ -551,6 +576,83 @@ fn status_line(ui: &mut egui::Ui, theme: &Theme, view: &ExplorerView) {
     );
 }
 
+/// 우클릭 대상 확정 후 `ContextMenu` 액션을 만든다 (design §3.3 target rule):
+/// 선택 밖 항목이면 그 항목만 선택, 선택 안이면 현재 선택 유지.
+fn emit_entry_context(
+    view: &mut ExplorerView,
+    entry: &DirEntryInfo,
+    pos: egui::Pos2,
+    root: &Path,
+    action: &mut Option<ExplorerAction>,
+) {
+    if !view.selected.contains(&entry.path) {
+        view.select_only(&entry.path);
+    }
+    let target = if view.selected.len() > 1 {
+        let mut paths: Vec<PathBuf> = view.selected.iter().cloned().collect();
+        paths.sort();
+        ExplorerMenuTarget::Multi { paths }
+    } else {
+        ExplorerMenuTarget::Single { path: entry.path.clone(), is_dir: entry.is_dir }
+    };
+    if action.is_none() {
+        *action = Some(ExplorerAction::ContextMenu {
+            target,
+            cwd: root.to_path_buf(),
+            x: pos.x,
+            y: pos.y,
+        });
+    }
+}
+
+/// grid/list 엔트리 우클릭 핸들러 (Response 기반). 처리했으면 true.
+fn handle_entry_context(
+    view: &mut ExplorerView,
+    entry: &DirEntryInfo,
+    resp: &egui::Response,
+    root: &Path,
+    action: &mut Option<ExplorerAction>,
+) -> bool {
+    if !resp.secondary_clicked() {
+        return false;
+    }
+    let pos = resp.interact_pointer_pos().unwrap_or_default();
+    emit_entry_context(view, entry, pos, root, action);
+    true
+}
+
+/// content 빈 영역 우클릭 → cwd 대상 메뉴 (선택 해제).
+fn handle_background_context(
+    ui: &egui::Ui,
+    view: &mut ExplorerView,
+    rect: egui::Rect,
+    root: &Path,
+    action: &mut Option<ExplorerAction>,
+) {
+    if action.is_some() {
+        return;
+    }
+    let pos = ui.input(|i| {
+        if i.pointer.secondary_clicked() {
+            i.pointer.interact_pos()
+        } else {
+            None
+        }
+    });
+    if let Some(pos) = pos
+        && rect.contains(pos)
+    {
+        view.selected.clear();
+        view.anchor = None;
+        *action = Some(ExplorerAction::ContextMenu {
+            target: ExplorerMenuTarget::Empty,
+            cwd: root.to_path_buf(),
+            x: pos.x,
+            y: pos.y,
+        });
+    }
+}
+
 /// 단일/토글/범위 선택 처리 (modifiers 반영). 더블클릭이면 열기/이동.
 fn handle_entry_interaction(
     ui: &egui::Ui,
@@ -584,6 +686,7 @@ fn grid_view(
     theme: &Theme,
     view: &mut ExplorerView,
     font: &EffectiveFont,
+    root: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
     ui.add_space(theme.spacing_md.value());
@@ -593,7 +696,9 @@ fn grid_view(
         for e in &entries {
             let selected = view.selected.contains(&e.path);
             let resp = grid_cell(ui, theme, e, selected, font);
-            handle_entry_interaction(ui, view, e, &resp, action);
+            if !handle_entry_context(view, e, &resp, root, action) {
+                handle_entry_interaction(ui, view, e, &resp, action);
+            }
         }
     });
 }
@@ -657,6 +762,7 @@ fn list_view(
     ui: &mut egui::Ui,
     theme: &Theme,
     view: &mut ExplorerView,
+    root: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
     ui.spacing_mut().item_spacing.y = 0.0;
@@ -676,16 +782,20 @@ fn list_view(
             selected,
             true,
         );
-        handle_entry_interaction(ui, view, e, &resp, action);
+        if !handle_entry_context(view, e, &resp, root, action) {
+            handle_entry_interaction(ui, view, e, &resp, action);
+        }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn detail_view(
     ui: &mut egui::Ui,
     theme: &Theme,
     panel: &ExplorerPanel,
     view: &mut ExplorerView,
     id_suffix: &str,
+    root: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
     let tab = panel.active_tab();
@@ -771,6 +881,12 @@ fn detail_view(
         if action.is_none() {
             *action = Some(ExplorerAction::SetSort(key));
         }
+    }
+    if let Some(i) = out.secondary_clicked_row
+        && let Some(e) = entries.get(i)
+    {
+        let pos = ui.input(|inp| inp.pointer.interact_pos()).unwrap_or_default();
+        emit_entry_context(view, e, pos, root, action);
     }
     if let Some(i) = out.clicked_row {
         if let Some(e) = entries.get(i) {

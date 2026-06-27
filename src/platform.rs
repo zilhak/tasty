@@ -13,6 +13,8 @@ pub mod macos_delegate;
 pub mod native_menu;
 #[cfg(all(windows, feature = "gui"))]
 pub mod power_windows;
+#[cfg(feature = "gui")]
+pub mod reveal;
 #[cfg(all(
     any(windows, target_os = "macos", target_os = "linux"),
     feature = "gui"

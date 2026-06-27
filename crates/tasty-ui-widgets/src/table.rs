@@ -59,6 +59,8 @@ pub struct TableOutput<K> {
     pub clicked_sort: Option<K>,
     /// 본문 행이 클릭되면 그 행의 인덱스(`rows` 기준).
     pub clicked_row: Option<usize>,
+    /// 본문 행이 우클릭(secondary)되면 그 행의 인덱스 — 컨텍스트 메뉴용.
+    pub secondary_clicked_row: Option<usize>,
 }
 
 /// 공용 Table 빌더.
@@ -184,6 +186,7 @@ impl<'a, K> Table<'a, K> {
 
         let mut clicked_sort: Option<K> = None;
         let mut clicked_row: Option<usize> = None;
+        let mut secondary_clicked_row: Option<usize> = None;
 
         let columns = &self.columns;
         let active_sort = self.active_sort;
@@ -248,8 +251,12 @@ impl<'a, K> Table<'a, K> {
                                     }
                                 });
                             }
-                            if tr.response().clicked() {
+                            let row_resp = tr.response();
+                            if row_resp.clicked() {
                                 clicked_row = Some(i);
+                            }
+                            if row_resp.secondary_clicked() {
+                                secondary_clicked_row = Some(i);
                             }
                         });
                     }
@@ -287,6 +294,7 @@ impl<'a, K> Table<'a, K> {
         TableOutput {
             clicked_sort,
             clicked_row,
+            secondary_clicked_row,
         }
     }
 }

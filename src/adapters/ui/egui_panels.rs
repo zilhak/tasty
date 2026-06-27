@@ -345,6 +345,25 @@ pub(crate) fn apply_explorer_action(
                 v.request_reload();
             }
         }
+        A::ContextMenu { target, cwd, x, y } => {
+            use crate::explorer_ui::ExplorerMenuTarget as T;
+            let (paths, single_is_dir) = match target {
+                T::Empty => (Vec::new(), false),
+                T::Single { path, is_dir } => (vec![path.clone()], *is_dir),
+                T::Multi { paths } => (paths.clone(), false),
+            };
+            // explorer 전용 메뉴를 단일 슬롯에 선점 → 이후 generic surface fallback
+            // (egui_panels 의 secondary_pos 루프)은 이미 설정됨을 보고 건너뛴다.
+            state.dialogs.pending_native_menu =
+                Some(crate::state::PendingNativeMenu::Explorer {
+                    surface_id: sid,
+                    paths,
+                    cwd: cwd.clone(),
+                    single_is_dir,
+                    x: *x,
+                    y: *y,
+                });
+        }
         _ => apply_explorer_panel_action(state, engine, sid, &act),
     }
 }
@@ -418,8 +437,8 @@ fn apply_to_explorer_panel(
                 ex.active = *i;
             }
         }
-        // OpenFile/Refresh 는 apply_explorer_action 에서 처리.
-        A::OpenFile(_) | A::Refresh => {}
+        // OpenFile/Refresh/ContextMenu 는 apply_explorer_action 에서 처리.
+        A::OpenFile(_) | A::Refresh | A::ContextMenu { .. } => {}
     }
 }
 

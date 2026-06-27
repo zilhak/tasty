@@ -430,6 +430,17 @@ pub enum PendingNativeMenu {
     /// 전용 항목(현재 copy surface id) + 구분선 + 잘라내기/여기로 이동. 좌표는
     /// logical px 기준. terminal 은 selection-copy 가 있어 `TerminalSurface` 로 분리.
     Surface { surface_id: u32, x: f32, y: f32 },
+    /// Explorer surface 내부 우클릭 (T11): 엔트리/다중선택/빈 영역 대상 파일 메뉴.
+    /// `paths` 가 비면 빈 영역(=cwd) 대상. `single_is_dir` 는 `paths.len()==1` 일 때만
+    /// 유효(폴더 전용 항목 게이팅). 좌표는 logical px.
+    Explorer {
+        surface_id: u32,
+        paths: Vec<std::path::PathBuf>,
+        cwd: std::path::PathBuf,
+        single_is_dir: bool,
+        x: f32,
+        y: f32,
+    },
     /// "New workspace" 버튼 우클릭 (full/collapsed sidebar 공통): 프리셋으로 새 워크스페이스 생성
     NewWorkspaceButton { x: f32, y: f32 },
     /// 탭 "+" 버튼 우클릭: 프리셋으로 탭/페인 생성

@@ -808,6 +808,63 @@ impl MainView {
                 }
                 self.mark_dirty();
             }
+            PendingNativeMenu::Explorer {
+                surface_id,
+                paths,
+                cwd,
+                single_is_dir,
+                x,
+                y,
+            } => {
+                let multi = paths.len() > 1;
+                let is_empty_target = paths.is_empty();
+                let is_folder = paths.len() == 1 && single_is_dir;
+
+                let copy_path_label = if multi {
+                    crate::i18n::t("explorer.context_menu.copy_path_multi")
+                } else {
+                    crate::i18n::t("explorer.context_menu.copy_path")
+                };
+                let mut items = vec![MenuItem::new(1, copy_path_label)];
+                // "Open in system" 은 단일 폴더에서만 (design §3.3).
+                if is_folder {
+                    items.push(MenuItem::separator());
+                    items.push(MenuItem::new(
+                        20,
+                        crate::i18n::t("explorer.context_menu.open_in_system"),
+                    ));
+                }
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                match result {
+                    Some(1) => {
+                        let text = if is_empty_target {
+                            cwd.display().to_string()
+                        } else {
+                            paths
+                                .iter()
+                                .map(|p| p.display().to_string())
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        };
+                        if let Some(cb) = &mut self.clipboard {
+                            cb.set_text(&text);
+                        }
+                        self.state.toasts.push_info(
+                            crate::i18n::t("toast.copied"),
+                            crate::adapters::ui::ToastScope::Surface(surface_id),
+                        );
+                    }
+                    Some(20) => {
+                        let target = paths.first().cloned().unwrap_or_else(|| cwd.clone());
+                        if let Err(e) = crate::platform::reveal::open_path(&target) {
+                            tracing::warn!("explorer: open_path failed: {e}");
+                        }
+                    }
+                    _ => {}
+                }
+                self.mark_dirty();
+            }
             PendingNativeMenu::NewWorkspaceButton { x, y } => {
                 let items = [MenuItem::new(
                     1,
