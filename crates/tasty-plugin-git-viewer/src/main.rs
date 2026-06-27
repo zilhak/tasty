@@ -19,16 +19,24 @@ use tasty_plugin_sdk::{
 };
 
 const PLUGIN_ID: &str = "com.tasty.git-viewer";
-const PLUGIN_VERSION: &str = "0.1.0";
+const PLUGIN_VERSION: &str = "0.1.1";
 const LOG_LIMIT: usize = 200;
 
 const ID_REFRESH: &str = "refresh";
 const ID_BACK: &str = "back";
 const FILE_PREFIX: &str = "file.";
+const WT_PREFIX: &str = "wt.";
 
 #[derive(Default)]
 struct ViewerState {
+    /// 현재 **활성** worktree 의 workdir (status/log/diff 가 바인딩된 대상).
     repo_path: Option<PathBuf>,
+    /// popup 이 받은 cwd 가 속한 worktree 의 workdir — `is_current` 판정용(불변).
+    current_workdir: Option<PathBuf>,
+    /// main + 모든 linked worktree 종합 목록.
+    worktrees: Vec<git::WorktreeEntry>,
+    /// `worktrees` 내 활성 항목 인덱스.
+    active_worktree: usize,
     error: Option<String>,
     status_entries: Vec<git::StatusEntry>,
     log_entries: Vec<git::LogEntry>,
@@ -45,12 +53,86 @@ impl ViewerState {
         let Some(repo) = git::discover_repo(cwd) else {
             return s;
         };
-        s.repo_path = repo.path().parent().map(|p| p.to_path_buf());
-        s.refresh_collections(&repo);
+        // popup cwd 의 worktree workdir — is_current 의 기준점(이후 고정).
+        let current_wd = repo
+            .workdir()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| repo.path().to_path_buf());
+        s.current_workdir = Some(current_wd.clone());
+        s.worktrees = git::collect_worktrees(&repo, &current_wd).unwrap_or_default();
+        s.active_worktree = s
+            .worktrees
+            .iter()
+            .position(|w| w.is_current)
+            .unwrap_or(0);
+
+        if s.worktrees.is_empty() {
+            // worktree 도출 실패 등 — 기존 단일 repo 흐름으로 폴백.
+            s.repo_path = Some(current_wd);
+            s.refresh_collections(&repo);
+        } else {
+            s.bind_active();
+        }
         s
     }
 
+    /// `active_worktree` 가 가리키는 worktree 로 status/log 컬렉션을 재바인딩한다.
+    fn bind_active(&mut self) {
+        let Some(path) = self
+            .worktrees
+            .get(self.active_worktree)
+            .map(|e| e.path.clone())
+            .or_else(|| self.repo_path.clone())
+        else {
+            return;
+        };
+        let Some(repo) = git::discover_repo(&path) else {
+            self.error = Some(format!("repo lost at {}", path.display()));
+            return;
+        };
+        self.repo_path = repo
+            .workdir()
+            .map(|p| p.to_path_buf())
+            .or(Some(path));
+        self.refresh_collections(&repo);
+    }
+
+    /// worktree 선택 — 활성 worktree 를 바꾸고 status/log/diff 를 재바인딩(읽기 전용).
+    /// 실제 checkout/working dir 변경 없음. invalid worktree 는 전환하지 않는다.
+    fn select_worktree(&mut self, idx: usize) {
+        let Some(entry) = self.worktrees.get(idx) else {
+            return;
+        };
+        if !entry.is_valid || idx == self.active_worktree {
+            return;
+        }
+        self.active_worktree = idx;
+        self.selected_file = None;
+        self.diff_content = None;
+        self.error = None;
+        self.bind_active();
+    }
+
     fn refresh(&mut self) {
+        // worktree 목록 재수집(외부 add/remove 반영) — current_workdir 기준.
+        if let Some(current_wd) = self.current_workdir.clone() {
+            let prev_active = self
+                .worktrees
+                .get(self.active_worktree)
+                .map(|e| e.path.clone());
+            if let Some(repo) = git::discover_repo(&current_wd)
+                && let Ok(v) = git::collect_worktrees(&repo, &current_wd)
+                && !v.is_empty()
+            {
+                self.worktrees = v;
+                // 목록이 바뀌었을 수 있으니 이전 활성 경로로 인덱스 보정.
+                self.active_worktree = prev_active
+                    .and_then(|p| self.worktrees.iter().position(|e| e.path == p))
+                    .or_else(|| self.worktrees.iter().position(|w| w.is_current))
+                    .unwrap_or(0);
+            }
+        }
+
         let Some(path) = self.repo_path.clone() else {
             return;
         };
@@ -124,6 +206,8 @@ impl ViewerState {
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned()),
             error: self.error.as_deref(),
+            worktrees: &self.worktrees,
+            active_worktree: self.active_worktree,
             status_entries: &self.status_entries,
             log_entries: &self.log_entries,
             selected_file: self.selected_file,
@@ -237,6 +321,13 @@ impl Plugin for GitViewerPlugin {
         } else if node_id == ID_BACK {
             state.close_diff();
             true
+        } else if let Some(rest) = node_id.strip_prefix(WT_PREFIX) {
+            if let Ok(idx) = rest.parse::<usize>() {
+                state.select_worktree(idx);
+                true
+            } else {
+                false
+            }
         } else if let Some(rest) = node_id.strip_prefix(FILE_PREFIX) {
             if let Ok(idx) = rest.parse::<usize>() {
                 state.load_diff(idx);

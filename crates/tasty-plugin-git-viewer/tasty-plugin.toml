@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.git-viewer"
 name = "Git Viewer"
-version = "0.1.0"
+version = "0.1.1"
 description = "Read-only git status / log / diff popup"
 api_version = "1"
 permissions = ["ui.popup", "ui.tool_item", "fs.read"]
@@ -14,7 +14,7 @@ command = "tasty-plugin-git-viewer"
 [[contributes.popup]]
 id = "viewer"
 trigger = { kind = "ipc" }
-size_hint = { width = 720, height = 540 }
+size_hint = { width = 960, height = 640 }
 anchor = "screen-center"
 dismiss_on_outside_click = true
 

@@ -2,16 +2,18 @@
 
 use tasty_plugin_sdk::Translator;
 use tasty_plugin_sdk::ui::{
-    hbox, label_color, label_mono, label_mono_color, scroll_v, selectable_row, spacer, splitter,
+    hbox, label_color, label_mono, label_mono_color, scroll_v, selectable_row, spacer, splitter_id,
     vbox,
 };
 use tasty_plugin_sdk::{LabelStyle, SplitDir, UiNode};
 
-use crate::git::{DiffData, DiffLineKind, FileStatus, LogEntry, StatusEntry};
+use crate::git::{DiffData, DiffLineKind, FileStatus, LogEntry, StatusEntry, WorktreeEntry};
 
 pub struct ViewModel<'a> {
     pub repo_path: Option<String>,
     pub error: Option<&'a str>,
+    pub worktrees: &'a [WorktreeEntry],
+    pub active_worktree: usize,
     pub status_entries: &'a [StatusEntry],
     pub log_entries: &'a [LogEntry],
     pub selected_file: Option<usize>,
@@ -46,8 +48,93 @@ pub fn main_tree(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
         build_log_pane(vm, tr)
     };
 
-    top.push(splitter(SplitDir::Vertical, 0.5, status_pane, bottom_pane));
+    // 우측 컬럼: 기존 status(상)·log/diff(하) 세로 분할.
+    let right_column = splitter_id(
+        "split.main",
+        SplitDir::Vertical,
+        0.5,
+        status_pane,
+        bottom_pane,
+    );
+    // 좌측 worktree rail | 우측 컬럼. 960px popup 에서 ratio 0.25 ≈ 240px.
+    let worktree_pane = build_worktree_pane(vm, tr);
+    top.push(splitter_id(
+        "split.rail",
+        SplitDir::Horizontal,
+        0.25,
+        worktree_pane,
+        right_column,
+    ));
     vbox(top)
+}
+
+fn build_worktree_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
+    let heading = UiNode::Label {
+        text: format!(
+            "{} ({})",
+            tr.t("git_viewer.worktrees_heading"),
+            vm.worktrees.len()
+        ),
+        style: LabelStyle::Heading,
+        color: None,
+    };
+
+    let mut children: Vec<UiNode> = vec![heading];
+    if vm.worktrees.is_empty() {
+        children.push(label_color(tr.t("git_viewer.no_worktrees"), "subtext0"));
+        return scroll_v(vbox(children));
+    }
+    for (idx, wt) in vm.worktrees.iter().enumerate() {
+        children.push(build_worktree_row(idx, wt, idx == vm.active_worktree, tr));
+    }
+    scroll_v(vbox(children))
+}
+
+fn build_worktree_row(idx: usize, wt: &WorktreeEntry, active: bool, tr: &Translator) -> UiNode {
+    // 이름 — 활성/비활성에 따른 색. invalid 면 흐리게.
+    let name_color = if !wt.is_valid {
+        "overlay0"
+    } else if active {
+        "text"
+    } else {
+        "subtext0"
+    };
+    let mut row: Vec<UiNode> = vec![label_mono_color(wt.name.clone(), name_color)];
+
+    if let Some(head) = &wt.head {
+        row.push(label_mono_color(format!("{head} "), "blue"));
+    }
+
+    // 타입 배지: main / linked.
+    let type_key = if wt.is_main {
+        "git_viewer.wt_main"
+    } else {
+        "git_viewer.wt_linked"
+    };
+    let type_color = if wt.is_main { "blue" } else { "subtext0" };
+    row.push(label_mono_color(tr.t(type_key).to_string(), type_color));
+
+    // 상태 배지.
+    if wt.is_current {
+        row.push(spacer(4));
+        row.push(label_mono_color(tr.t("git_viewer.wt_current").to_string(), "green"));
+    }
+    if wt.locked {
+        row.push(spacer(4));
+        let label = match &wt.lock_reason {
+            Some(r) if !r.is_empty() => {
+                format!("{} ({r})", tr.t("git_viewer.wt_locked"))
+            }
+            _ => tr.t("git_viewer.wt_locked").to_string(),
+        };
+        row.push(label_mono_color(label, "yellow"));
+    }
+    if !wt.is_valid {
+        row.push(spacer(4));
+        row.push(label_mono_color(tr.t("git_viewer.wt_invalid").to_string(), "red"));
+    }
+
+    selectable_row(format!("wt.{idx}"), active, row)
 }
 
 fn build_header(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
