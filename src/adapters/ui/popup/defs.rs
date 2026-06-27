@@ -187,7 +187,7 @@ pub fn all_defs() -> &'static [PopupDef] {
                 // 타이틀바 없는 패널 — 헤더 좌측 전용 띠를 드래그 핸들로 선언.
                 drag_handle: DragHandle::Region(panel_header_drag_strip),
                 resizable: true,
-                min_size: Some(egui::vec2(400.0, 300.0)),
+                min_size: Some(egui::vec2(420.0, 320.0)),
                 draw_fn: super::remote_tool::draw_remote_tool_popup,
             },
             PopupDef {
