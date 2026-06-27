@@ -241,6 +241,41 @@ pub fn draw_egui_panels(
             .from_user_menu("empty_surface_convert"),
         );
     }
+
+    // T9: host-rendered(egui) surface 우클릭 → surface 컨텍스트 메뉴(잘라내기/이동).
+    // egui 가 우클릭을 소비(egui_consumed=true)해 winit `mouse.rs` 경로가 일찍 반환
+    // 되는 경우를 커버한다. 전역 포인터 상태만 읽어(별도 click-sense 위젯을 덧대지
+    // 않아 markdown 링크·explorer 버튼 등 내부 상호작용을 가로채지 않음) 비-terminal
+    // 패널 rect 안의 secondary click 을 잡는다. winit 경로와 **단일 슬롯을 공유**하고,
+    // 이미 설정돼 있으면(=winit 경로가 먼저 잡음) 덮지 않는다 → 소비 여부와 무관히
+    // 한 메뉴만 표시(중복 발화 없음). 패널 rect 는 logical px, interact_pos 도 logical.
+    if state.dialogs.pending_native_menu.is_none() {
+        let secondary_pos = ctx.input(|i| {
+            if i.pointer.secondary_clicked() {
+                i.pointer.interact_pos()
+            } else {
+                None
+            }
+        });
+        if let Some(pos) = secondary_pos {
+            for info in &infos {
+                let Some(sid) = info.surface_id else { continue };
+                let within = pos.x >= info.logical_x
+                    && pos.x <= info.logical_x + info.logical_w
+                    && pos.y >= info.logical_y
+                    && pos.y <= info.logical_y + info.logical_h;
+                if within {
+                    state.dialogs.pending_native_menu =
+                        Some(crate::state::PendingNativeMenu::Surface {
+                            surface_id: sid,
+                            x: pos.x,
+                            y: pos.y,
+                        });
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// 공통 egui Area + Frame 껍데기. `margin`만큼 내부 여백을 준다.
