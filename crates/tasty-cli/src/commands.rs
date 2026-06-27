@@ -3,7 +3,6 @@
 pub mod agent;
 pub mod approval;
 pub mod attach;
-pub mod clipboard;
 pub mod debug;
 pub mod file_handler;
 pub mod list_set;
@@ -24,7 +23,6 @@ pub mod telemetry;
 
 pub use agent::AgentCommands;
 pub use approval::{ApprovalCommands, ApprovalSummaryCommands};
-pub use clipboard::ClipboardCommands;
 #[cfg(debug_assertions)]
 pub use debug::{
     BannerDebugCommands, DebugCommands, EventBusCommands, ExtensionDebugCommands,

@@ -2,7 +2,6 @@
 
 use clap::Subcommand;
 
-use super::super::ClipboardCommands;
 use super::passkey::PasskeyCommands;
 use super::ssh_profile::SshProfileCommands;
 
@@ -220,11 +219,6 @@ pub enum ExtensionCommands {
 // reason: clap 파싱 1회용 enum — Box 화는 derive(Subcommand) 와 충돌하고 런타임 이득 없음.
 #[allow(clippy::large_enum_variant)]
 pub enum ToolCommands {
-    /// Clipboard history operations (list, get, paste, remove, clear).
-    Clipboard {
-        #[command(subcommand)]
-        command: ClipboardCommands,
-    },
     /// SSH connection profiles (`~/.tasty/remote-profiles.toml`, ssh kind) — 워크스페이스를
     /// 원격 컴퓨터에 매핑할 때 참조하는 장비 인벤토리. 로컬 파일 (no IPC).
     Ssh {

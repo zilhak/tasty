@@ -167,7 +167,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: DebugCommands,
     },
-    /// Internal tools (clipboard history, SSH connection profiles, etc.)
+    /// Internal tools (SSH connection profiles, passkeys, etc.)
     Tool {
         #[command(subcommand)]
         command: ToolCommands,

@@ -21,9 +21,8 @@ use presets::{
 use telemetry::telemetry_command_to_method_params;
 
 use super::{
-    ClipboardCommands, CloseCommands, Commands, ListCommands, MoveCommands, NewCommands,
-    ReadCommands, RemoteCommands, SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands,
-    UnsetCommands,
+    CloseCommands, Commands, ListCommands, MoveCommands, NewCommands, ReadCommands, RemoteCommands,
+    SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
 };
 use tasty_ipc::protocol::JsonRpcRequest;
 
@@ -578,23 +577,6 @@ fn surface_meta_command_to_method_params(
 
 fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde_json::Value) {
     match command {
-        ToolCommands::Clipboard { command } => match command {
-            ClipboardCommands::List { limit } => {
-                ("tool.clipboard.list", serde_json::json!({ "limit": limit }))
-            }
-            ClipboardCommands::Get { index } => {
-                ("tool.clipboard.get", serde_json::json!({ "index": index }))
-            }
-            ClipboardCommands::Paste { index } => (
-                "tool.clipboard.paste",
-                serde_json::json!({ "index": index }),
-            ),
-            ClipboardCommands::Remove { index } => (
-                "tool.clipboard.remove",
-                serde_json::json!({ "index": index }),
-            ),
-            ClipboardCommands::Clear => ("tool.clipboard.clear", serde_json::json!({})),
-        },
         // `tasty tool ssh|passkey ...` 는 run.rs 에서 로컬 처리 (IPC 미경유) — 미도달 arm.
         ToolCommands::Ssh { .. } => ("tool.ssh.noop", serde_json::json!({})),
         ToolCommands::Passkey { .. } => ("tool.passkey.noop", serde_json::json!({})),
