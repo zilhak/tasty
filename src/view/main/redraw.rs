@@ -841,15 +841,17 @@ impl MainView {
                     // 파일/폴더/다중: 복사 · 잘라내기.
                     items.push(MenuItem::new(10, crate::i18n::t("explorer.context_menu.copy_files")));
                     items.push(MenuItem::new(11, crate::i18n::t("explorer.context_menu.cut")));
+                    if is_folder && has_clip {
+                        items.push(MenuItem::new(
+                            12,
+                            crate::i18n::t("explorer.context_menu.paste_into"),
+                        ));
+                    }
+                    items.push(MenuItem::separator());
+                    // 휴지통으로 이동 (파일/폴더/다중 공통).
+                    items.push(MenuItem::new(30, crate::i18n::t("explorer.context_menu.delete")));
+                    // "Open in system" 은 단일 폴더에서만 (design §3.3) — 메뉴 끝.
                     if is_folder {
-                        if has_clip {
-                            items.push(MenuItem::new(
-                                12,
-                                crate::i18n::t("explorer.context_menu.paste_into"),
-                            ));
-                        }
-                        // "Open in system" 은 단일 폴더에서만 (design §3.3).
-                        items.push(MenuItem::separator());
                         items.push(MenuItem::new(
                             20,
                             crate::i18n::t("explorer.context_menu.open_in_system"),
@@ -913,6 +915,17 @@ impl MainView {
                             if let Some(e) = err {
                                 tracing::warn!("explorer: paste error ({ok} ok): {e}");
                             }
+                        }
+                    }
+                    Some(30) => {
+                        // 휴지통으로 이동 (가역적이라 별도 확인 모달 없음).
+                        if let Err(e) = trash::delete_all(&paths) {
+                            tracing::warn!("explorer: move to trash failed: {e}");
+                        }
+                        if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
+                            v.selected.clear();
+                            v.anchor = None;
+                            v.request_reload();
                         }
                     }
                     Some(20) => {

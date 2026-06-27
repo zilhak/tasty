@@ -250,6 +250,9 @@ shell-escape = "0.1"
 # Clipboard
 arboard = { version = "3", optional = true }
 
+# Trash/recycle bin (explorer "Move to Trash")
+trash = { version = "5", optional = true }
+
 # PNG encoding (screenshots)
 png = { version = "0.18", optional = true }
 
@@ -334,6 +337,7 @@ gui = [
     "dep:bytemuck",
     "dep:webbrowser",
     "dep:arboard",
+    "dep:trash",
     "dep:png",
     "dep:image",
     "dep:rfd",
