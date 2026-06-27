@@ -18,6 +18,7 @@ pub mod explorer_view_cells;
 pub mod file_handler_picker;
 pub mod git_viewer;
 pub mod glyph;
+pub mod html_chrome;
 pub mod image_viewer;
 pub mod markdown_open;
 pub mod markdown_viewer;

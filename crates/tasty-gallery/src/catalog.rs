@@ -863,6 +863,12 @@ pub fn pages() -> Vec<Page> {
                             Some("Toolbar + zoom · canvas=bg-sidebar · loaded / no-image fallback"),
                             components::image_viewer::draw,
                         ),
+                        spec(
+                            "html-chrome",
+                            "HTML (webview) chrome",
+                            Some("Native overlay · thin chrome · boundary / placeholder / loading / error"),
+                            components::html_chrome::draw,
+                        ),
                     ],
                 ),
             ],
