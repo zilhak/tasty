@@ -964,59 +964,68 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
             bottom: 0,
         })
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // gap 은 항목마다 명시적으로 add_space — 탭 사이만 2px, 타이틀/구분선
-                // 주변은 디자인 margin(space-sm / size-14) 을 따로 적용한다.
-                ui.spacing_mut().item_spacing.x = 0.0;
+            // 디자인 header band 는 `alignItems:center, height:44`(jsx:465) — 밴드
+            // 전체 높이를 가진 영역을 명시 할당하고 `left_to_right(Center)` 로 콘텐츠를
+            // 세로 중앙 정렬한다. (`ui.horizontal` 만 쓰면 행이 콘텐츠 높이로 줄어
+            // 밴드 상단에 붙어 디자인과 어긋난다.)
+            let band_h = ui.available_height();
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), band_h),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    // gap 은 항목마다 명시적으로 add_space — 탭 사이만 2px, 타이틀/구분선
+                    // 주변은 디자인 margin(space-sm / size-14) 을 따로 적용한다.
+                    ui.spacing_mut().item_spacing.x = 0.0;
 
-                // 좌측 bold "Settings" 타이틀 (jsx:467, fontSize14 / weight700).
-                ui.label(
-                    egui::RichText::new(t("settings.window.title"))
-                        .strong()
-                        .size(th.font_size_max.value())
-                        .color(th.text_primary().to_egui()),
-                );
-                // 타이틀 ↔ 탭 세로 구분선 (jsx:468, width1 h20, margin 좌 space-sm / 우 size-14).
-                ui.add_space(th.spacing_sm.value());
-                let (vrect, _) = ui.allocate_exact_size(
-                    egui::vec2(
-                        th.border_width.value(),
-                        SETTINGS_TITLE_DIVIDER_HEIGHT.value(),
-                    ),
-                    egui::Sense::hover(),
-                );
-                ui.painter().vline(
-                    vrect.center().x,
-                    vrect.y_range(),
-                    egui::Stroke::new(th.border_width.value(), th.surface1.to_egui()),
-                );
-                ui.add_space(SETTINGS_TITLE_DIVIDER_MARGIN_R.value());
+                    // 좌측 bold "Settings" 타이틀 (jsx:467, fontSize14 / weight700).
+                    ui.label(
+                        egui::RichText::new(t("settings.window.title"))
+                            .strong()
+                            .size(th.font_size_max.value())
+                            .color(th.text_primary().to_egui()),
+                    );
+                    // 타이틀 ↔ 탭 세로 구분선 (jsx:468, width1 h20, margin 좌 space-sm / 우 size-14).
+                    ui.add_space(th.spacing_sm.value());
+                    let (vrect, _) = ui.allocate_exact_size(
+                        egui::vec2(
+                            th.border_width.value(),
+                            SETTINGS_TITLE_DIVIDER_HEIGHT.value(),
+                        ),
+                        egui::Sense::hover(),
+                    );
+                    ui.painter().vline(
+                        vrect.center().x,
+                        vrect.y_range(),
+                        egui::Stroke::new(th.border_width.value(), th.surface1.to_egui()),
+                    );
+                    ui.add_space(SETTINGS_TITLE_DIVIDER_MARGIN_R.value());
 
-                // L1 탭들 (gap 2).
-                for (i, (tab, label)) in tabs.into_iter().enumerate() {
-                    if i > 0 {
-                        ui.add_space(L1_TAB_GAP.value());
+                    // L1 탭들 (gap 2).
+                    for (i, (tab, label)) in tabs.into_iter().enumerate() {
+                        if i > 0 {
+                            ui.add_space(L1_TAB_GAP.value());
+                        }
+                        if l1_tab_button(ui, th, label, ui_state.active_tab == tab) {
+                            ui_state.active_tab = tab;
+                        }
                     }
-                    if l1_tab_button(ui, th, label, ui_state.active_tab == tab) {
-                        ui_state.active_tab = tab;
-                    }
-                }
 
-                // 우측 marginLeft:auto close ✕ (jsx:475, ghost IconButton).
-                let close_side = tasty_ui_widgets::ControlSize::Md.height(th);
-                let pad = (ui.available_width() - close_side).max(0.0);
-                ui.add_space(pad);
-                let resp = tasty_ui_widgets::IconButton::new()
-                    .variant(tasty_ui_widgets::IconButtonVariant::Ghost)
-                    .show(ui, th, &|ui, rect, c| {
-                        crate::adapters::ui::icons::CLOSE
-                            .image(rect.width(), c)
-                            .paint_at(ui, rect)
-                    });
-                if resp.clicked() {
-                    close_clicked = true;
-                }
-            });
+                    // 우측 marginLeft:auto close ✕ (jsx:475, ghost IconButton).
+                    let close_side = tasty_ui_widgets::ControlSize::Md.height(th);
+                    let pad = (ui.available_width() - close_side).max(0.0);
+                    ui.add_space(pad);
+                    let resp = tasty_ui_widgets::IconButton::new()
+                        .variant(tasty_ui_widgets::IconButtonVariant::Ghost)
+                        .show(ui, th, &|ui, rect, c| {
+                            crate::adapters::ui::icons::CLOSE
+                                .image(rect.width(), c)
+                                .paint_at(ui, rect)
+                        });
+                    if resp.clicked() {
+                        close_clicked = true;
+                    }
+                },
+            );
         });
     // L1 전환 시 L2 필터 초기화 (디자인: pickL1 → setFilter("")).
     if ui_state.active_tab != prev {
