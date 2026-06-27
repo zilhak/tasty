@@ -23,10 +23,7 @@ pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use port::SettingsStorage;
 pub use port_impl::FileSettingsStorage;
-pub use types::{
-    AccessibilitySettings, ClipboardSettings, MemorySettings, NotificationSettings,
-    PerformanceSettings,
-};
+pub use types::{AccessibilitySettings, MemorySettings, NotificationSettings, PerformanceSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -34,7 +31,6 @@ pub use types::{
 pub struct Settings {
     pub general: GeneralSettings,
     pub appearance: AppearanceSettings,
-    pub clipboard: ClipboardSettings,
     pub notification: NotificationSettings,
     pub keybindings: KeybindingSettings,
     pub performance: PerformanceSettings,
@@ -357,13 +353,6 @@ ui_scale = "large"
     fn settings_background_opacity_default() {
         let settings = Settings::default();
         assert_eq!(settings.appearance.background_opacity, 1.0);
-    }
-
-    #[test]
-    fn settings_clipboard_history_defaults() {
-        let settings = Settings::default();
-        assert!(settings.clipboard.history_enabled);
-        assert_eq!(settings.clipboard.history_max, 100);
     }
 
     #[test]

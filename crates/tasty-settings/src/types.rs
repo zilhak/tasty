@@ -1,18 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// 클립보드 히스토리 설정. 복사·붙여넣기·줌 단축키 설정은
-/// `KeybindingSettings`로 옮겼고, 여기에는 히스토리 기능 관련 값만 남는다.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ClipboardSettings {
-    /// 시스템 클립보드 변경을 감지하여 히스토리에 저장할지.
-    pub history_enabled: bool,
-    /// 히스토리 최대 개수.
-    pub history_max: usize,
-    /// 폴링 주기(ms). 재시작 필요.
-    pub poll_interval_ms: u64,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PerformanceSettings {
@@ -70,16 +57,6 @@ impl Default for MemorySettings {
             entry_max_mb: 1,
             secret_quota_mb_per_plugin: 10,
             regular_quota_mb_total: 1024,
-        }
-    }
-}
-
-impl Default for ClipboardSettings {
-    fn default() -> Self {
-        Self {
-            history_enabled: true,
-            history_max: 100,
-            poll_interval_ms: 500,
         }
     }
 }
