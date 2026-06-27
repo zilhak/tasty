@@ -388,23 +388,6 @@ impl Core {
         &self.sound_player
     }
 
-    // ─── Clipboard (외부 시스템 clipboard) ───
-
-    /// 시스템 clipboard 에 text 쓰기. 옛 `arboard::Clipboard::new().set_text` 의 Core 진입점.
-    #[cfg(feature = "gui")]
-    pub(crate) fn clipboard_write_text(&self, text: &str) -> anyhow::Result<()> {
-        self.clipboard.write_text(text)
-    }
-
-    /// 시스템 clipboard 에 image 쓰기. 옛 `arboard::Clipboard::new().set_image` 의 Core 진입점.
-    #[cfg(feature = "gui")]
-    pub(crate) fn clipboard_write_image(
-        &self,
-        image: &crate::ports::clipboard::ClipboardImage,
-    ) -> anyhow::Result<()> {
-        self.clipboard.write_image(image)
-    }
-
     // ─── PTY pipeline (D.3.C.C.6 / .8) — system loop wrapper ───
     //
     // 본 wrapper 들은 *system loop* (event_handler / about_to_wait / redraw /

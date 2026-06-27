@@ -4,8 +4,6 @@
 // unused_imports 침묵 — gui 빌드에선 검사 그대로.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
-#[cfg(feature = "gui")]
-mod clipboard;
 #[cfg(all(debug_assertions, feature = "gui"))]
 mod debug;
 #[cfg(debug_assertions)]
@@ -355,15 +353,6 @@ fn route_engine_handler(
         "message.read" => message::handle_message_read(core, state, engine, id, &request.params),
         "message.count" => message::handle_message_count(state, engine, id, &request.params),
         "message.clear" => message::handle_message_clear(core, state, engine, id, &request.params),
-        // tool.clipboard (read/write only — viewer_open is GUI)
-        // clear/remove 는 App::dispatch_clipboard_global 가 broadcast 로 먼저
-        // 처리하므로 본 router 에는 도달하지 않는다.
-        #[cfg(feature = "gui")]
-        "tool.clipboard.list" => clipboard::handle_list(engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "tool.clipboard.get" => clipboard::handle_get(engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "tool.clipboard.paste" => clipboard::handle_paste(core, engine, id, &request.params),
         // input source (macOS)
         #[cfg(all(target_os = "macos", feature = "gui"))]
         "surface.switch_input_source" => {

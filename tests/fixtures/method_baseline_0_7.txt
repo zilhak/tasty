@@ -190,11 +190,6 @@ telemetry.session_summary
 telemetry.summary
 telemetry.timeseries
 telemetry.top
-tool.clipboard.clear
-tool.clipboard.get
-tool.clipboard.list
-tool.clipboard.paste
-tool.clipboard.remove
 view.close
 view.create
 view.list

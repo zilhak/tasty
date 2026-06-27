@@ -118,12 +118,6 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("message.read", plugin(&[SurfaceRead])),
         ("message.count", plugin(&[SurfaceRead])),
         ("message.clear", plugin(&[SurfaceWrite])),
-        // ── tool.clipboard ────────────────────────────────────────────
-        ("tool.clipboard.list", plugin(&[ClipboardRead])),
-        ("tool.clipboard.get", plugin(&[ClipboardRead])),
-        ("tool.clipboard.paste", plugin(&[ClipboardWrite])),
-        ("tool.clipboard.remove", plugin(&[ClipboardWrite])),
-        ("tool.clipboard.clear", plugin(&[ClipboardWrite])),
         // ── image surface ─────────────────────────────────────────────
         // com.tasty.image plugin이 namespace를 점유하지만, 호스트 어댑터는
         // plugin 비활성 상태에서도 동작한다. plugin은 ipc.invoke:image 권한으로

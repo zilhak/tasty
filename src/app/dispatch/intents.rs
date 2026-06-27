@@ -221,11 +221,6 @@ impl App {
         if let Some(resp) = self.dispatch_list_global(request) {
             return resp;
         }
-        // clipboard clear/remove 는 모든 engine 에 broadcast (다른 윈도우의
-        // history 도 함께 비워야 사용자 일관성).
-        if let Some(resp) = self.dispatch_clipboard_global(request) {
-            return resp;
-        }
         let target_id = self
             .find_request_owner(&request.params)
             .or(self.view.focused_view_id);
