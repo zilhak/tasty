@@ -25,6 +25,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
+use tasty_ui_widgets::{ControlSize, IconButton, IconButtonVariant};
+
+use crate::adapters::ui::icons;
 use crate::theme::Theme;
 
 use super::layout_context::LayoutContext;
@@ -436,12 +439,17 @@ impl BannerManager {
                 let mut corner_ui = ui.new_child(egui::UiBuilder::new().max_rect(corner));
                 corner_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if banner_hovered {
-                        if ui
-                            .add(egui::Button::new(
-                                egui::RichText::new("✕")
-                                    .size(theme.icon_glyph_size_xs.value())
-                                    .color(theme.banner_countdown_fg().to_egui()),
-                            ))
+                        // 닫기 affordance — 갤러리 specimen `dismiss_x()` 와 동일한
+                        // Ghost/Sm IconButton + icons::CLOSE(SVG). raw `"✕"`(U+2715)는
+                        // UI 폰트에 글리프가 없어 tofu(□)로 렌더되던 것을 고친다(gallery
+                        // parity). 색은 IconButton 의 해소색(ghost: text-secondary →
+                        // hover text-primary)을 따른다.
+                        if IconButton::new()
+                            .variant(IconButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .show(ui, theme, &|ui, rect, c| {
+                                icons::CLOSE.image(rect.height(), c).paint_at(ui, rect)
+                            })
                             .clicked()
                         {
                             close_requests.push(slot.scope.clone());

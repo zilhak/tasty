@@ -67,6 +67,7 @@
 - **기본 배너(TTL 없음)**: X(닫기) 버튼이 **평소 숨김**, **배너 위 hover 시에만 표시**.
 - **TTL 배너**: 평소 그 자리에 **카운트다운 숫자(초 단위)** 표시 → **hover 시 X 로 전환**.
 - X 클릭 시 배너 닫힘(사용자 행동).
+- 닫기 affordance 는 갤러리 specimen `dismiss_x()` 와 동일하게 **Ghost/Sm `IconButton` + `icons::CLOSE`(SVG line-icon)** 로 그린다 — raw 유니코드 글리프(`"✕"`)는 UI 폰트에 글리프가 없어 tofu(□)로 렌더되므로 금지(gallery parity). 색은 IconButton 의 해소색(ghost: text-secondary → hover text-primary)을 따른다. 카운트다운 숫자는 `banner_countdown_fg()` 유지.
 
 (숫자 타이포·크기·정렬, 숫자↔X 전환 표현은 디자인 수령 후 보강.)
 
@@ -128,7 +129,7 @@ tasty identity 원칙 1(에이전트 행동의 부수효과가 사용자 시각 
 
 - **`BannerDef`** — 정적·데이터 지향 정의(고유 id, TTL 유무, 콘텐츠 draw 함수). id 가 곧 kind. `defs::all_defs()`/`defs::find(&str)` 로 조회.
 - **`BannerState`** — 큐/TTL 단위 인스턴스(id, scope, ttl_ms, remaining_ms). `persistent`/`with_ttl` 생성자.
-- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·디밍 스택, 마우스 소비를 중앙 관리. 큐/TTL 로직(`push`/`close_shown`/`advance`)은 egui 비의존 순수 함수라 단위 테스트로 결정론 검증. 시각 `draw()` 는 `LayoutContext` 로 스코프-rect 를 계산(popup/toast 와 일관)하고 `BannerDrawResult { hovered }` 를 돌려준다. `hovered` 는 `AppState.banner_hovered` 로 입력 레이어에 배선([input-layer](../../architecture/input-layer.md)).
+- **`BannerManager`** — 스코프당 1 표시 + 최대 5 큐, TTL 카운트다운·정지/재개, 계층 z-index·디밍 스택, 마우스 소비를 중앙 관리. 큐/TTL 로직(`push`/`close_shown`/`advance`)은 egui 비의존 순수 함수라 단위 테스트로 결정론 검증. 시각 `draw()` 는 `LayoutContext` 로 스코프-rect 를 계산(popup/toast 와 일관)하고 `BannerDrawResult { hovered }` 를 돌려준다. `hovered` 는 `AppState.banner_hovered` 로 입력 레이어에 배선([input-layer](../../architecture/input-layer.md)). **hover/소비 zone 은 scope 전체 rect 가 아니라 실제 그려진 카드 rect** 로 한정한다 — scope 전역을 소비하면 이미 focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막히기 때문. 배치용 placeholder(`banner_zone`, scope rect)와 입력 zone(카드 rect)을 분리하며, egui immediate-mode 라 카드 rect 는 직전 프레임 실측값(`card_rects`)을 1프레임 지연으로 쓴다(persistent 배너는 정적이라 비가시).
 
 모든 배너 문자열은 `t("banner.*")` 키 — `lang/{en,ko,ja}.toml` 세 파일 동시 추가([i18n](../../dev-guide/i18n.md)). 모든 색·치수는 Theme 토큰([theme.md](theme.md)).
 
