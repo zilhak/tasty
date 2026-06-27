@@ -83,6 +83,29 @@ glyph!(
     r#"<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>"#
 );
 
+// ── View modes & favorites (T11 explorer) ──
+glyph!(
+    LAYOUT_GRID,
+    "layout_grid",
+    r#"<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>"#
+);
+glyph!(
+    LIST,
+    "list",
+    r#"<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>"#
+);
+glyph!(
+    LAYOUT_DETAIL,
+    "layout_detail",
+    r#"<rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="15" width="4" height="4" rx="1"/><path d="M11 7h10M11 17h10"/>"#
+);
+glyph!(
+    STAR,
+    "star",
+    r#"<path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9z"/>"#
+);
+glyph!(CHEVRON_UP, "chevron_up", r#"<path d="m6 15 6-6 6 6"/>"#);
+
 // ── Navigation & disclosure ──
 glyph!(
     CHEVRON_RIGHT,
@@ -230,8 +253,16 @@ const NAV: &[Entry] = &[
     (CHEVRON_RIGHT, "chevronRight", "collapsed row · forward"),
     (CHEVRON_DOWN, "chevronDown", "expanded row"),
     (CHEVRON_LEFT, "chevronLeft", "back"),
+    (CHEVRON_UP, "chevronUp", "go to parent dir"),
     (CHEVRONS_LEFT, "chevronsLeft", "collapse sidebar"),
     (CHEVRONS_RIGHT, "chevronsRight", "expand sidebar rail"),
+];
+
+const VIEW: &[Entry] = &[
+    (LAYOUT_GRID, "layoutGrid", "grid / icon view"),
+    (LIST, "list", "list view"),
+    (LAYOUT_DETAIL, "layoutDetail", "detail / table view"),
+    (STAR, "star", "favorite / bookmark"),
 ];
 
 const SURFACES: &[Entry] = &[
@@ -380,6 +411,9 @@ pub fn draw_actions(ui: &mut egui::Ui, theme: &Theme) {
 }
 pub fn draw_nav(ui: &mut egui::Ui, theme: &Theme) {
     icongrid(ui, theme, NAV);
+}
+pub fn draw_view(ui: &mut egui::Ui, theme: &Theme) {
+    icongrid(ui, theme, VIEW);
 }
 pub fn draw_surfaces(ui: &mut egui::Ui, theme: &Theme) {
     icongrid(ui, theme, SURFACES);

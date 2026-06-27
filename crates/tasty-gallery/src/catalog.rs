@@ -397,6 +397,26 @@ pub fn pages() -> Vec<Page> {
                         components::prim_table::draw,
                     )],
                 ),
+                section(
+                    "segmented",
+                    "Segmented control",
+                    vec![spec(
+                        "segmented",
+                        "Segmented",
+                        Some("Mutually-exclusive toggle — explorer's grid/list/detail switch"),
+                        components::segmented::draw,
+                    )],
+                ),
+                section(
+                    "explorer-cells",
+                    "Explorer view cells",
+                    vec![spec(
+                        "explorer-cells",
+                        "Explorer view cells",
+                        Some("grid cell (new) · list row (tree_row) · detail (Table + sort header)"),
+                        components::explorer_view_cells::draw,
+                    )],
+                ),
             ],
         },
         // ── Icons ────────────────────────────────────────────────────
@@ -451,6 +471,18 @@ pub fn pages() -> Vec<Page> {
                             "What a tab, tree row, or new-surface button shows — terminal/markdown are the two core surface kinds",
                         ),
                         icons::draw_surfaces,
+                    )],
+                ),
+                section(
+                    "view",
+                    "View modes & favorites",
+                    vec![spec(
+                        "view",
+                        "Explorer view switch & bookmark marker",
+                        Some(
+                            "grid / list / detail toggle glyphs + star — the explorer toolbar and favorites sidebar",
+                        ),
+                        icons::draw_view,
                     )],
                 ),
                 section(
@@ -676,6 +708,36 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "explorer-context",
+                    "Explorer context menu",
+                    vec![spec(
+                        "explorer-context",
+                        "Right-click — four targets",
+                        Some("empty · file · folder · multi-select — menu_item reuse"),
+                        components::explorer_context_menu::draw,
+                    )],
+                ),
+                section(
+                    "explorer-favorite",
+                    "Add to favorites popup",
+                    vec![spec(
+                        "explorer-favorite",
+                        "Name a global favorite",
+                        Some("≈280px · path caption + seeded input · anchored popup"),
+                        components::explorer_favorite_popup::draw,
+                    )],
+                ),
+                section(
+                    "explorer-rename",
+                    "Rename popup (explorer)",
+                    vec![spec(
+                        "explorer-rename",
+                        "Rename a file or folder",
+                        Some("≈280px · same skeleton as Add to favorites"),
+                        components::explorer_rename_popup::draw,
+                    )],
+                ),
+                section(
                     "settings",
                     "Settings window",
                     vec![spec(
@@ -718,6 +780,12 @@ pub fn pages() -> Vec<Page> {
                             "Multi-tier tabs",
                             Some("Workspace tier + pane tier, two levels max"),
                             widgets::multi_tab_layout::draw,
+                        ),
+                        spec(
+                            "explorer-tabs",
+                            "Explorer internal tab strip",
+                            Some("Surface-local · 24px · bottom accent underline (vs pane top bar)"),
+                            components::explorer_tab_bar::draw,
                         ),
                     ],
                 ),
