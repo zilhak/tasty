@@ -29,10 +29,16 @@ tasty 의 화면·컴포넌트를 만드는 단계에서 어떤 도구가 무엇
 흐름:
 
 ```
-Figma(기획) ──▶ Claude design(시안) ──▶ claude code(구현) ──▶ gallery specimen
-                                                      │
-   토큰 / 기존 컴포넌트  ◀──  코드가 SoT  ────────────┘   (code → Figma 미러)
+       ┌──────── design 회귀 반영 (구조 갱신 + 확정 시안 스크린샷 아카이브) ───────┐
+       ▼                                                                        │
+Figma(기획·저충실) ──▶ Claude design(시안·고충실) ──▶ claude code(구현) ──▶ gallery specimen
+                                                              │
+   토큰 / 기존 컴포넌트  ◀──  코드가 SoT  ────────────────────┘   (code → Figma 미러)
 ```
+
+**회귀 반영 루프 (Figma ← Claude design).** Claude design 이 만든 고충실 시안이 확정되면, 그 결과를 Figma 기획에 **되먹인다** — ① 시안이 드러낸 구조 변화(레이아웃·요소·플로우)를 와이어프레임/IA 에 갱신하고, ② 확정 시안 스크린샷을 Screens 페이지에 아카이브한다. 이로써 Figma 기획은 한 번 그리고 버려지는 산출물이 아니라 **결정된 디자인과 동기화된 살아있는 문서**가 되고, 다음 기능을 기획할 때 참조하는 구조가 실제와 일치하게 된다 — 즉 기획문서의 품질이 올라간다.
+
+단 회귀 반영은 **Figma 의 충실도 경계를 지킨다** — *구조 갱신 + 스크린샷 아카이브*이지, Figma 캔버스에서 픽셀을 재작도하는 것이 아니다. 고충실 픽셀의 SoT 는 여전히 Claude design / 코드이고, AI 에이전트는 Figma 위 미적 판단이 약하므로 회귀 반영을 핑계로 Figma 에서 고충실 시각 작업을 하지 않는다. 또한 되먹임 자체가 매 사이클 비용이므로, 기획문서가 실제로 재참조될 때만 값을 한다 (그 실효성 검증이 본 ADR 이 Experimental 인 이유 중 하나).
 
 이는 기존 gallery-first 원칙([ADR-0020](0020-gallery-complete-component-source.md))과 충돌하지 않는다. "Figma 에서 컴포넌트를 디자인한다"를 "Figma 에서 **기획**하고 Claude design 에서 **디자인**한다"로 한 칸 쪼갠 것이다. 신규 컴포넌트의 SoT 는 여전히 gallery → code 이고, 이 분할은 그 *앞단(기획·시안)*을 어떤 도구로 채울지를 정한 것뿐이다.
 
@@ -40,7 +46,7 @@ Figma(기획) ──▶ Claude design(시안) ──▶ claude code(구현) ─�
 
 - **얻은 것**: 각 도구가 강점만 맡는다. Figma 로 구조를 빠르게 잡고, Claude design 으로 실제 보이는 시안을 만들고, code 로 정합 구현한다. AI 에이전트가 Figma 안에서 시각 판단을 강요받지 않는다.
 - **잃은 것 / 위험**:
-  - **Figma 단계가 죽은 산출물이 될 위험** — 이 ADR 이 실험적인 핵심 이유. 기획을 Figma 에 그려도 실제로는 Claude design 시안에서 바로 구현으로 가버리면 Figma 는 한 번 쓰고 버려진다.
+  - **Figma 단계가 죽은 산출물이 될 위험** — 이 ADR 이 실험적인 핵심 이유. 기획을 Figma 에 그려도 실제로는 Claude design 시안에서 바로 구현으로 가버리면 Figma 는 한 번 쓰고 버려진다. **완화책 = 회귀 반영 루프**(위 Decision): 확정 시안의 구조·스크린샷을 Figma 에 되먹여 동기화 상태로 유지하면, Figma 가 죽은 산출물이 되는 것을 막고 기획문서 품질을 끌어올린다. 다만 이 되먹임 자체가 매 사이클 비용이라, 기획문서가 실제로 재참조될 때만 값을 한다 — 이 비용 대비 효용이 곧 Figma 단계 실효성 판단의 핵심 지표다.
   - **HTML→egui 전사 갭** — Claude design 은 flexbox, 구현은 egui. [`design-parity-notes.md`](../design/systems/design-parity-notes.md) 의 구조 전사 원칙이 그대로 적용된다 (다만 둘 다 코드라 Figma 시안보다 오히려 가까운 경우가 많다).
 - **운영 비용 / 유지 부담**:
   - **토큰 SoT 는 끝까지 코드(`Theme`)** — Claude design 시안도 색·치수는 Catppuccin Mocha 토큰 안에서만 골라야 한다. 시안 작성 시 토큰 팔레트를 입력으로 먼저 준다.
@@ -57,6 +63,7 @@ Figma(기획) ──▶ Claude design(시안) ──▶ claude code(구현) ─�
 다음 중 하나가 충족되면 본 ADR 을 재검토한다.
 
 - **Figma 기획 단계가 실제로 거의 참조되지 않는 것이 확인되면** → Figma 단계를 제거하고 `Claude design → code` 2 단으로 축소(위 Alternative 2 안으로 supersede).
+- **회귀 반영 루프(Figma ← design)가 비용만 들고 기획문서를 살리지 못하는 것이 확인되면** → 되먹임을 "확정 시안 스크린샷 아카이브"만 남기고 구조 갱신은 생략하도록 축소하거나, 위 트리거(Figma 단계 제거)와 함께 재검토.
 - 반대로 Figma 기획이 분명히 가치를 보이면 → Status 를 `Accepted` 로 승격하고 휘발성·토큰 정합 규칙을 정식 dev-guide 로 문서화.
 - 토큰 정합(Theme ↔ 시안) 이 반복적으로 깨지면 → 시안 작성 입력 규약을 강화하거나 자동 토큰 주입 도구를 검토.
 - HTML→egui 전사 갭이 실제 구현 비용으로 누적되면 → Claude design 시안 출력 형식(egui 친화 구조)을 재정의.
