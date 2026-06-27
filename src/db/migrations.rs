@@ -19,19 +19,6 @@ const SCHEMA_SQL: &str = r#"
         path TEXT PRIMARY KEY,
         opened_at INTEGER NOT NULL
     );
-
-    -- 클립보드 히스토리 테이블(스키마 자리만 확보).
-    -- 실제 write 연결은 후속 작업에서.
-    CREATE TABLE IF NOT EXISTS clipboard_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        kind TEXT NOT NULL,     -- 'text' | 'image'
-        text TEXT,              -- kind='text'일 때 값
-        data BLOB,              -- kind='image'일 때 값
-        source TEXT NOT NULL,   -- 'system' | 'internal'
-        created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_clipboard_history_created_at
-        ON clipboard_history(created_at DESC);
 "#;
 
 #[derive(Debug)]
@@ -101,12 +88,12 @@ mod tests {
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown','clipboard_history')",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('meta','recent_markdown')",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 3);
+        assert_eq!(count, 2);
 
         let ver: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))

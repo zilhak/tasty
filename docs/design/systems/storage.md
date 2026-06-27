@@ -42,18 +42,9 @@ CREATE TABLE recent_markdown (   -- 최근 연 Markdown 경로
     path TEXT PRIMARY KEY,
     opened_at INTEGER NOT NULL
 );
-CREATE TABLE clipboard_history ( -- 스키마 자리만 확보 (실제 write 연결은 후속)
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL,          -- 'text' | 'image'
-    text TEXT,                   -- kind='text'
-    data BLOB,                   -- kind='image'
-    source TEXT NOT NULL,        -- 'system' | 'internal'
-    created_at INTEGER NOT NULL
-);
-CREATE INDEX idx_clipboard_history_created_at ON clipboard_history(created_at DESC);
 ```
 
-- `recent_markdown` 만 실제로 read/write 된다(`src/store/recent_files.rs`). `clipboard_history` 는 자리만 잡아둔 상태.
+- `recent_markdown` 만 실제로 read/write 된다(`src/store/recent_files.rs`).
 - 북마크·recent HTML 테이블은 없다 — explorer / html 이 plugin 으로 분리되며 host DB 에서 빠졌다.
 
 ### 접근 규칙
