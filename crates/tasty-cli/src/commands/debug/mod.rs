@@ -128,6 +128,11 @@ pub enum DebugCommands {
     /// actions in release), for visual verification of the overlay.
     #[command(subcommand)]
     Banner(BannerDebugCommands),
+    /// Settings modal force-open (debug builds only).
+    /// Opens the settings modal without the user-action path (shortcut / button
+    /// click), for visual verification of the settings UI against the design.
+    #[command(subcommand)]
+    Settings(SettingsDebugCommands),
     /// VTE sequence simulator — identical to the standalone `tasty-tui-sim`
     /// binary, run from inside the current surface (emits raw VTE to stdout, no
     /// IPC). No subcommand = interactive REPL. Use `sim flood` for a heavy
@@ -287,6 +292,18 @@ pub enum BannerDebugCommands {
         /// New remaining seconds
         #[arg(long)]
         seconds: u32,
+    },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum SettingsDebugCommands {
+    /// Force-open the settings modal, optionally on a specific tab.
+    Open {
+        /// Initial tab: general | terminal | appearance | keybindings |
+        /// file_handler | misc | plugins (default: general).
+        #[arg(long)]
+        tab: Option<String>,
     },
 }
 

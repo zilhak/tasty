@@ -127,6 +127,11 @@ pub(crate) struct App {
     /// `Plugin` 으로 강제하기 위한 1회성 플래그. `open_settings_modal` 이 소비한다.
     #[cfg(feature = "gui")]
     pub(crate) pending_settings_plugin_tab: bool,
+    /// `debug.settings.open` 이 지정한 초기 탭 키 (예: `"appearance"`). 다음
+    /// `open_settings_modal` 이 1회성으로 소비한다. 설정 모달을 코드로 강제로 여는
+    /// 것은 사용자 조작 재현이므로 debug 빌드 전용 (시각 검증 자동화용).
+    #[cfg(all(feature = "gui", debug_assertions))]
+    pub(crate) pending_settings_tab: Option<String>,
     /// attach/detach 작업 J — 호스트가 client 로서 점유한 원격 워크스페이스의 mirror
     /// 세션들(연결 reader/입력 forwarder 스레드 + remote↔local id 맵). AttachPoll 이
     /// 출력 적용/정리에 순회한다.
@@ -196,6 +201,8 @@ impl App {
             lua_engine: crate::hooks::lua::init_engine(),
             preset_view_id: None,
             pending_settings_plugin_tab: false,
+            #[cfg(debug_assertions)]
+            pending_settings_tab: None,
             attach_client_sessions: Vec::new(),
             auto_attach_active: std::collections::HashSet::new(),
             auto_attach_tx,

@@ -222,6 +222,24 @@ impl SettingsUiState {
         self.active_tab = SettingsTab::Plugins;
     }
 
+    /// debug 전용 — 탭 키 문자열로 `active_tab` 을 설정한다 (`debug.settings.open`).
+    /// 알 수 없는 키면 `false` 를 반환하고 탭을 바꾸지 않는다.
+    #[cfg(debug_assertions)]
+    pub fn select_tab_by_key(&mut self, key: &str) -> bool {
+        let tab = match key {
+            "general" => SettingsTab::General,
+            "terminal" => SettingsTab::Terminal,
+            "appearance" => SettingsTab::Appearance,
+            "keybindings" => SettingsTab::Keybindings,
+            "file_handler" | "file-handler" | "filehandler" => SettingsTab::FileHandler,
+            "misc" => SettingsTab::Misc,
+            "plugins" => SettingsTab::Plugins,
+            _ => return false,
+        };
+        self.active_tab = tab;
+        true
+    }
+
     pub fn new() -> Self {
         let mut popups = PopupManager::new();
         popups.register(

@@ -28,6 +28,8 @@ JsonRpcResponse::method_not_found(id, &request.method)
 
 `debug.event_bus.*` / `debug.extension.invoke_hook` / `debug.popup.*` 는 `route_debug_handler` 를 거치지 않는다 — `AppState` 가 `PluginManager` 를 들고 있지 않기 때문이다. 이들은 `App` 레벨의 `ipc_step_debug`(`src/app/ipc/debug_methods.rs`)에서 `plugin_manager` 를 직접 호출한다.
 
+`debug.settings.open` 도 같은 `ipc_step_debug` 에서 처리되지만 이유는 다르다 — 설정 모달은 `AppEvent::OpenSettings`(event-loop proxy → `open_settings_modal`) 로만 열리는 **별도 winit 윈도우**라, `AppState` 핸들러가 아니라 `App` 의 `self.view.proxy` 가 필요하다(`window.create` 와 동일 패턴). 사용자 단축키/버튼 클릭과 같은 진입점을 그대로 호출하므로, 정상 모달 동작과 100% 동일하다. `tab` 인자는 `App.pending_settings_tab`(debug 전용 필드)에 1회성으로 실려 `open_settings_modal` 이 소비한다.
+
 ## 메서드 목록
 
 debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CLI/network IPC(로컬)만 가능.
@@ -51,6 +53,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.host_popup.list` | `{}` | 호스트 빌트인 popup(`PopupDef`) 전체 목록 (id + title_key) |
 | `debug.host_popup.open` | `popup_id` | 호스트 빌트인 popup 을 focused window 중앙에 강제 open (사용자 클릭 경로 우회, 시각 검증용) |
 | `debug.host_popup.close` | `popup_id` | 호스트 빌트인 popup 강제 close |
+| `debug.settings.open` | `tab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `AppEvent::OpenSettings` 발화 → 별도 모달 윈도우 생성 |
 | `debug.banner.list` | `{}` | 빌트인 배너 정의 + 현재 표시 중/큐 배너(스코프 token·남은초·`total_queued`) |
 | `debug.banner.show` | `banner_id, scope` | 배너 강제 발화 (def 의 ttl 따라 ttl/persistent, 응답에 push `outcome`) — 사용자 조작 우회, 시각 검증용 |
 | `debug.banner.close` | `banner_id` | 표시 중/큐 배너 강제 close (표시 중이면 큐 head 승격) |
@@ -65,7 +68,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ## CLI 노출
 
-CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug/mod.rs`)가 모듈째 `#![cfg(debug_assertions)]`. 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key` · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `banner` · `stream-echo` · `attach`.
+CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug/mod.rs`)가 모듈째 `#![cfg(debug_assertions)]`. 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key` · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>]` → `debug.settings.open`.)
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 

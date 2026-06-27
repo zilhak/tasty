@@ -88,6 +88,7 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::Popup(sub) => popup_debug_command_to_method_params(sub),
         DebugCommands::HostPopup(sub) => host_popup_debug_command_to_method_params(sub),
         DebugCommands::Banner(sub) => banner_debug_command_to_method_params(sub),
+        DebugCommands::Settings(sub) => settings_debug_command_to_method_params(sub),
         // stream-echo is a raw framed exchange, not a JSON-RPC request — it is
         // handled directly in `run_client` before request mapping is reached.
         DebugCommands::StreamEcho { .. } => {
@@ -170,6 +171,18 @@ pub(super) fn banner_debug_command_to_method_params(
             "debug.banner.set_countdown",
             serde_json::json!({ "scope": scope, "seconds": seconds }),
         ),
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn settings_debug_command_to_method_params(
+    command: &crate::SettingsDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::SettingsDebugCommands;
+    match command {
+        SettingsDebugCommands::Open { tab } => {
+            ("debug.settings.open", serde_json::json!({ "tab": tab }))
+        }
     }
 }
 

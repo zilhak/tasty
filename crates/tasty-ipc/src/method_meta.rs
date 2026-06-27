@@ -371,6 +371,8 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.host_popup.list", local_only()),
     ("debug.host_popup.open", local_only()),
     ("debug.host_popup.close", local_only()),
+    // 설정 모달 강제 open — 사용자 조작 재현. release 미노출. 시각 검증 자동화용.
+    ("debug.settings.open", local_only()),
     // 배너 직접 발화/조회/닫기/카운트다운 — 사용자 조작 재현. release 미노출.
     ("debug.banner.list", local_only()),
     ("debug.banner.show", local_only()),

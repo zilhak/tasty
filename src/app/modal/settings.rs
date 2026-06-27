@@ -74,6 +74,13 @@ impl App {
         if std::mem::take(&mut self.pending_settings_plugin_tab) {
             modal.focus_plugin_tab();
         }
+        // debug.settings.open 이 탭을 지정했으면 그 탭으로 진입 (시각 검증용).
+        #[cfg(debug_assertions)]
+        if let Some(tab_key) = self.pending_settings_tab.take()
+            && !modal.focus_tab(&tab_key)
+        {
+            tracing::warn!("debug.settings.open: unknown settings tab '{tab_key}'");
+        }
         // On Windows, hidden windows do not receive RedrawRequested events,
         // so render the first frame immediately instead of waiting for the event loop.
         // On other platforms, mark_dirty() + request_redraw() is sufficient.

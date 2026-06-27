@@ -28,7 +28,7 @@ pub use clipboard::ClipboardCommands;
 #[cfg(debug_assertions)]
 pub use debug::{
     BannerDebugCommands, DebugCommands, EventBusCommands, ExtensionDebugCommands,
-    HostPopupDebugCommands, PopupDebugCommands, ToolDebugCommands,
+    HostPopupDebugCommands, PopupDebugCommands, SettingsDebugCommands, ToolDebugCommands,
 };
 pub use file_handler::{FileHandlerCommands, ScriptCommands};
 pub use list_set::{ListCommands, SetCommands};
