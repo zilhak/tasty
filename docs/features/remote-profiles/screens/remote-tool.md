@@ -39,6 +39,14 @@
   - (`use_agent` / `extra_options` / `remote_command` 은 폼에 없음 — 파일 직접 편집.)
 - **검증 에러**: 이름 빈 값/중복, host 빈 값, port 형식, 저장 실패 메시지.
 
+### 폼 레이아웃 (디자인 `ProfileForm`/`PasskeyForm` 구조 전사)
+
+- **2컬럼 행** `[112px 1fr]`: 모든 행(Type 포함)이 고정폭 112 라벨 컬럼(우측정렬, `subtext0`, 13px) + columnGap `space-md`(12) + 입력(1fr). `egui::Grid` 의 컬럼 협상이 라벨 폭을 붕괴시켜 truncate 되던 문제 때문에 수동 `ui.horizontal` 2컬럼(`form_row`)으로 통일했다. 행 간 rowGap `space-sm`(8).
+- **본문/footer 분리**: 본문은 `rtScrollPad`(flex:1) = `CentralPanel` + `ScrollArea`(가용 높이를 채움)로, footer 는 `rtFooter`(flex:none) = `TopBottomPanel::bottom` 으로 패널 하단에 고정. footer 위 separator 는 팝업 전체폭(`clip_rect`)에 그어지고 버튼만 패딩으로 들여쓴다.
+- **footer**: 우측정렬 `[취소 ghost][저장 primary]`, padding `space-md`/`space-lg`. passkey 폼도 동일.
+- **패딩**: 폼 좌우 `space-lg`(16). (리스트 뷰는 14 — 폼 뷰일 때만 외곽 콘텐츠 margin 0 으로 두고 폼이 패딩을 소유한다.)
+- generic(비-ssh) 폼의 커스텀 필드 행은 디자인 `[112 1fr control-height(28)]` grid 정렬(key 112 / value 1fr / 삭제 버튼 28).
+
 ## 상태별 시각
 
 - **목록 / 추가 / 편집**: 폼은 추가·편집 시 표시(편집이면 기존 값 채움).
