@@ -289,9 +289,38 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
                 id.as_deref(),
             );
         }
-        UiNode::SelectableRow { .. } => {
-            // SelectableRow는 plugin SDK 후속 PR에서 정식 렌더링 추가 예정.
-            // 현재는 placeholder — 자식 없이 빈 공간만 점유.
+        UiNode::SelectableRow {
+            id,
+            selected,
+            children,
+        } => {
+            // 전체 폭을 차지하는 클릭 가능한 행. `selected`면 theme 의 선택 배경으로 강조.
+            // 자식은 가로 배치(파일 status prefix·worktree 배지 등 inline 라벨 그룹).
+            let margin = egui::Margin::symmetric(4, 2);
+            let frame = if *selected {
+                egui::Frame::new()
+                    .fill(crate::theme::theme().selection_bg.to_egui())
+                    .inner_margin(margin)
+            } else {
+                egui::Frame::NONE.inner_margin(margin)
+            };
+            let resp = frame
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        for (i, c) in children.iter().enumerate() {
+                            ui.push_id(i, |ui| render_node(ui, c, sink, canvas_cache));
+                        }
+                    });
+                })
+                .response
+                .interact(egui::Sense::click());
+            if resp.clicked() {
+                sink.push_event(UiEvent::Click {
+                    node_id: id.clone(),
+                });
+            }
         }
     }
 }
