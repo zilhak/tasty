@@ -4,9 +4,6 @@
 //! 하면 App::user_event 가 분기 처리한다. variant 별 producer/consumer 매핑은
 //! 각 doc-comment 참조.
 
-#[cfg(feature = "gui")]
-use crate::ClipboardData;
-
 /// Custom events sent to the winit event loop from background threads.
 #[derive(Debug)]
 pub(crate) enum AppEvent {
@@ -52,9 +49,6 @@ pub(crate) enum AppEvent {
     /// where windows persist while hidden). macOS restores via CreateWindow instead.
     #[cfg(all(any(windows, target_os = "linux"), feature = "gui"))]
     TrayShowWindow,
-    /// 백그라운드 스레드에서 클립보드 변경을 감지하여 데이터를 전달.
-    #[cfg(feature = "gui")]
-    ClipboardChanged(ClipboardData),
     /// OS 가 절전(suspend)에서 복귀했다 (Windows `WM_POWERBROADCAST`). resume
     /// 헬스 패스를 돌려 죽은 ConPTY 자식을 정리하고 살아있는 자식을 wake nudge
     /// 한다 (ADR-0017). Windows 전용 — Unix PTY 는 절전에 강건해 불필요하다.

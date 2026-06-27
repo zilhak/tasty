@@ -27,7 +27,7 @@ pub(crate) mod waker;
 pub(crate) mod wiring;
 
 #[cfg(feature = "gui")]
-use crate::{App, clipboard};
+use crate::App;
 use crate::{cli, hooks};
 
 /// boot 시 1회 memory.db 위생 정리.
@@ -120,7 +120,6 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
     let (event_loop, proxy) = event_loop::build()?;
     os::install_macos_delegate(&proxy);
 
-    clipboard::poll_thread::spawn(proxy.clone());
     busy_tick::spawn(proxy.clone());
     attach_tick::spawn(proxy.clone());
 

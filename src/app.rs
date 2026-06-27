@@ -10,8 +10,6 @@ pub(crate) mod auto_attach;
 #[cfg(feature = "gui")]
 pub(crate) mod busy;
 #[cfg(feature = "gui")]
-pub(crate) mod clipboard_record;
-#[cfg(feature = "gui")]
 pub(crate) mod dispatch;
 #[cfg(feature = "gui")]
 pub(crate) mod dispatch_domain;

@@ -211,9 +211,6 @@ impl ApplicationHandler<AppEvent> for App {
                     self.view.views.len()
                 );
             }
-            AppEvent::ClipboardChanged(data) => {
-                self.record_clipboard_data(data);
-            }
             AppEvent::BusyPoll => {
                 self.poll_busy_states();
             }

@@ -1,4 +1,4 @@
-//! 시스템 클립보드 wrapper + 백그라운드 polling 스레드가 감지한 데이터 enum.
+//! 시스템 클립보드 wrapper — 터미널 선택 복사 / vi-copy / OSC52 / 붙여넣기에 사용.
 
 /// Wrapper for the system clipboard (arboard).
 pub(crate) struct ClipboardContext {
@@ -43,21 +43,6 @@ impl ClipboardContext {
         #[cfg(not(target_os = "linux"))]
         {
             self.set_text(text);
-        }
-    }
-}
-
-/// Clipboard data detected by the background polling thread.
-pub(crate) enum ClipboardData {
-    Text(String),
-    Image(crate::clipboard_history::ImageData),
-}
-
-impl std::fmt::Debug for ClipboardData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClipboardData::Text(t) => write!(f, "Text({}B)", t.len()),
-            ClipboardData::Image(img) => write!(f, "Image({}x{})", img.width, img.height),
         }
     }
 }
