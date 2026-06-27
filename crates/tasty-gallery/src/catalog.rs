@@ -680,8 +680,8 @@ pub fn pages() -> Vec<Page> {
                     "Settings window",
                     vec![spec(
                         "settings",
-                        "Two-tier: tabs over sidebar over content",
-                        Some("620×380 · L1 tabs · L2 sidebar · content · footer"),
+                        "Three-tier: tabs over sidebar over content",
+                        Some("1100×700 · 7 L1 tabs · L2 sidebar · content · footer"),
                         components::settings::draw,
                     )],
                 ),
