@@ -129,4 +129,26 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .small()
             .color(th.accent_warning()),
     );
+
+    // 마우스 캡처 비활성화 블랙리스트 — 줄바꿈 구분 멀티라인 → Vec<String>.
+    // Vec ↔ String 변환은 split/join 을 정규화 없이 왕복시켜(빈 줄 보존) egui
+    // 즉시모드에서 커서 점프를 막는다. trim/빈줄 무시는 매칭 헬퍼가 담당한다.
+    ui.add_space(12.0);
+    ui.label(t("settings.terminal.mouse_capture_blacklist_label"));
+    ui.add_space(4.0);
+    let mut buf = settings.general.mouse_capture_blacklist.join("\n");
+    let resp = ui.add(
+        egui::TextEdit::multiline(&mut buf)
+            .desired_rows(3)
+            .desired_width(f32::INFINITY),
+    );
+    if resp.changed() {
+        settings.general.mouse_capture_blacklist = buf.split('\n').map(|s| s.to_string()).collect();
+    }
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(t("settings.terminal.mouse_capture_blacklist_notice"))
+            .small()
+            .color(th.accent_warning()),
+    );
 }

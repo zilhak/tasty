@@ -236,6 +236,8 @@ link_modifier_none = "없음 (일반 클릭)"
 allow_clipboard_read_label = "클립보드 읽기 허용 (OSC 52):"
 allow_clipboard_read_notice = "켜면 터미널 안의 프로그램(원격/SSH 프로세스 포함)이 시스템 클립보드를 읽을 수 있습니다. 보안상 기본값은 꺼짐입니다."
 mouse_capture_hint_label = "마우스 캡처 안내 표시:"
+mouse_capture_blacklist_label = "마우스 캡처 비활성화 대상 (한 줄에 프로세스 이름 하나):"
+mouse_capture_blacklist_notice = "여기 등록된 프로그램(예: htop)이 foreground 일 때는 클릭/드래그를 앱에 보내지 않고 로컬 처리(텍스트 선택 / 컨텍스트 메뉴)합니다. 매칭은 프로세스 이름에 대한 대소문자 무시 부분 문자열 또는 * 와일드카드입니다. 휠은 계속 앱에 전달됩니다."
 
 [settings.appearance]
 heading = "외관"
