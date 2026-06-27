@@ -477,6 +477,10 @@ copy = "コピー"
 copy_no_newline = "改行なしでコピー"
 copy_surface_id = "ターミナルIDをコピー"
 
+[surface_context_menu]
+cut = "切り取り"
+move_here = "ここに移動"
+
 [titlebar]
 minimize = "最小化"
 maximize = "最大化"

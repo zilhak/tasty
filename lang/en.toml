@@ -477,6 +477,10 @@ copy = "Copy"
 copy_no_newline = "Copy Without Line Breaks"
 copy_surface_id = "Copy Terminal ID"
 
+[surface_context_menu]
+cut = "Cut"
+move_here = "Move Here"
+
 [titlebar]
 minimize = "Minimize"
 maximize = "Maximize"

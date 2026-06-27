@@ -709,6 +709,18 @@ impl MainView {
                     1,
                     crate::i18n::t("terminal_context_menu.copy_surface_id"),
                 ));
+                // T9: surface 공용 잘라내기 / 여기로 이동 tail.
+                items.push(MenuItem::separator());
+                items.push(MenuItem::new(
+                    10,
+                    crate::i18n::t("surface_context_menu.cut"),
+                ));
+                if engine.pending_move_surface.is_some() {
+                    items.push(MenuItem::new(
+                        11,
+                        crate::i18n::t("surface_context_menu.move_here"),
+                    ));
+                }
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
@@ -727,6 +739,70 @@ impl MainView {
                     }
                     Some(3) => {
                         self.copy_selection_no_newline();
+                    }
+                    Some(10) => {
+                        // 잘라내기 마킹 — 사용자 우클릭 조작(release 경로). 도메인 mutate 아님.
+                        engine.pending_move_surface = Some(surface_id);
+                    }
+                    Some(11) => {
+                        if let Some(source) = engine.pending_move_surface.take() {
+                            self.state.dispatch_intent(
+                                crate::core::intent::DomainIntent::MoveSurface {
+                                    source_surface_id: source,
+                                    target_surface_id: surface_id,
+                                }
+                                .from_user_context_menu(),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+                self.mark_dirty();
+            }
+            PendingNativeMenu::Surface { surface_id, x, y } => {
+                // 비-terminal surface: 전용 항목(copy surface id) + 구분선 +
+                // 잘라내기 / (대기 있을 때) 여기로 이동.
+                let mut items = vec![MenuItem::new(
+                    1,
+                    crate::i18n::t("terminal_context_menu.copy_surface_id"),
+                )];
+                items.push(MenuItem::separator());
+                items.push(MenuItem::new(
+                    10,
+                    crate::i18n::t("surface_context_menu.cut"),
+                ));
+                if engine.pending_move_surface.is_some() {
+                    items.push(MenuItem::new(
+                        11,
+                        crate::i18n::t("surface_context_menu.move_here"),
+                    ));
+                }
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                match result {
+                    Some(1) => {
+                        let text = surface_id.to_string();
+                        if let Some(cb) = &mut self.clipboard {
+                            cb.set_text(&text);
+                        }
+                        self.state.toasts.push_info(
+                            crate::i18n::t("toast.copied"),
+                            crate::adapters::ui::ToastScope::Surface(surface_id),
+                        );
+                    }
+                    Some(10) => {
+                        engine.pending_move_surface = Some(surface_id);
+                    }
+                    Some(11) => {
+                        if let Some(source) = engine.pending_move_surface.take() {
+                            self.state.dispatch_intent(
+                                crate::core::intent::DomainIntent::MoveSurface {
+                                    source_surface_id: source,
+                                    target_surface_id: surface_id,
+                                }
+                                .from_user_context_menu(),
+                            );
+                        }
                     }
                     _ => {}
                 }

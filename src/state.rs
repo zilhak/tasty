@@ -421,6 +421,10 @@ pub enum PendingNativeMenu {
     Workspace { ws_idx: usize, x: f32, y: f32 },
     /// Terminal surface right-click: Copy surface id (좌표는 logical px 기준)
     TerminalSurface { surface_id: u32, x: f32, y: f32 },
+    /// 비-terminal surface (markdown/image/explorer/html 등) right-click (T9).
+    /// 전용 항목(현재 copy surface id) + 구분선 + 잘라내기/여기로 이동. 좌표는
+    /// logical px 기준. terminal 은 selection-copy 가 있어 `TerminalSurface` 로 분리.
+    Surface { surface_id: u32, x: f32, y: f32 },
     /// "New workspace" 버튼 우클릭 (full/collapsed sidebar 공통): 프리셋으로 새 워크스페이스 생성
     NewWorkspaceButton { x: f32, y: f32 },
     /// 탭 "+" 버튼 우클릭: 프리셋으로 탭/페인 생성
