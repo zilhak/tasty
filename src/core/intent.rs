@@ -410,11 +410,10 @@ pub(crate) enum CoreEvent {
     /// OSC 7 cwd 변경. cascade 가 후속 `DomainIntent::SurfaceCwdChanged` 발행.
     TerminalCwdChanged { surface_id: u32 },
 
-    /// OSC 52 clipboard set. cascade 가 후속
-    /// `DomainIntent::RecordInternalClipboardCopy` 발행 + `toast.copied_osc52` 토스트.
+    /// OSC 52 clipboard set. cascade 가 `toast.copied_osc52` 토스트만 발행한다.
     /// 시스템 clipboard 쓰기는 Core::process_pty_output 이 self.clipboard 로 직접 처리한다.
     /// `surface_id` 는 토스트를 Surface 스코프로 띄우기 위함 (호스트가 stamp 한 실제 sid).
-    TerminalClipboardSet { surface_id: u32, text: String },
+    TerminalClipboardSet { surface_id: u32 },
 
     /// `DomainIntent::UpdateTabName` 적용 결과. cascade 가 mark_dirty 만.
     /// `osc_title` 은 layout.json 영속 대상 아님 — mark_layout_dirty 호출 안 함.

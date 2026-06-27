@@ -295,10 +295,7 @@ impl App {
             CoreEvent::TerminalCwdChanged { surface_id } => {
                 self.cascade_terminal_pty_cwd_changed(source, surface_id);
             }
-            CoreEvent::TerminalClipboardSet {
-                surface_id,
-                text: _,
-            } => {
+            CoreEvent::TerminalClipboardSet { surface_id } => {
                 self.cascade_terminal_clipboard_set(source, surface_id);
             }
             CoreEvent::TerminalProcessExited { surface_id } => {
