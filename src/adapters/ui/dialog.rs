@@ -70,6 +70,9 @@ pub fn draw_rename_popup(
         return PopupAction::Close;
     };
 
+    // 즐겨찾기 추가 팝업은 확정 버튼 라벨이 "Add" (design §3.5) — 나머지는 "Save".
+    let is_add_favorite = matches!(target, RenameTarget::ExplorerAddFavorite { .. });
+
     let valid = match target {
         RenameTarget::WorkspaceName { ws_idx } | RenameTarget::WorkspaceSubtitle { ws_idx } => {
             *ws_idx < engine.workspaces.len()
@@ -93,7 +96,11 @@ pub fn draw_rename_popup(
     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect));
     let inner = &mut child_ui;
 
-    let save_label = t("button.save");
+    let save_label = if is_add_favorite {
+        t("explorer.popup.add_favorite.add")
+    } else {
+        t("button.save")
+    };
     let cancel_label = t("button.cancel");
 
     let action = {
