@@ -98,6 +98,14 @@ impl ShellConfig {
     }
 }
 
+/// Explorer 파일 클립보드 (T11) — 복사/잘라내기한 경로 + cut 여부.
+#[derive(Clone, Debug)]
+pub struct ExplorerClipboard {
+    pub paths: Vec<std::path::PathBuf>,
+    /// true = 잘라내기(이동), false = 복사.
+    pub cut: bool,
+}
+
 /// Engine-level state shared across all windows.
 /// Contains all data that is not specific to a single window's UI.
 ///
@@ -168,6 +176,12 @@ pub struct CoreState {
     /// 영속 대상 아님). set/clear 는 사용자 우클릭 조작이라 release 경로에서 직접 갱신
     /// 한다(도메인 mutate 아님).
     pub(crate) pending_move_surface: Option<crate::model::SurfaceId>,
+
+    /// Explorer 파일 클립보드 (T11). 우클릭 "복사"/"잘라내기"한 경로 집합 +
+    /// cut 여부를 들고 있다가 "붙여넣기"에서 소비한다. OS 텍스트 클립보드와 별개의
+    /// explorer 내부 파일 이동 슬롯 — 단일 슬롯·세션 휘발(layout.json 비영속).
+    /// 사용자 우클릭 조작이라 release 경로에서 직접 갱신(도메인 mutate 아님).
+    pub(crate) explorer_clipboard: Option<ExplorerClipboard>,
 
     /// **Phase D D.3.E.4** — Terminal/PTY 데이터 owner (Surface 트리와 분리).
     /// 신설 단계 (E.4.a) 에서는 *빈 store* 만 보유, 호출처 0. 후속 E.4.b ~ f 에서
@@ -302,6 +316,7 @@ impl CoreState {
             busy_surfaces: std::collections::HashSet::new(),
             mouse_capture_disabled_surfaces: std::collections::HashSet::new(),
             pending_move_surface: None,
+            explorer_clipboard: None,
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::AttachRegistry::new(),
             readonly_views: HashMap::new(),

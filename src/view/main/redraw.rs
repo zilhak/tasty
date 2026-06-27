@@ -819,6 +819,11 @@ impl MainView {
                 let multi = paths.len() > 1;
                 let is_empty_target = paths.is_empty();
                 let is_folder = paths.len() == 1 && single_is_dir;
+                let has_clip = engine
+                    .explorer_clipboard
+                    .as_ref()
+                    .map(|c| !c.paths.is_empty())
+                    .unwrap_or(false);
 
                 let copy_path_label = if multi {
                     crate::i18n::t("explorer.context_menu.copy_path_multi")
@@ -826,13 +831,30 @@ impl MainView {
                     crate::i18n::t("explorer.context_menu.copy_path")
                 };
                 let mut items = vec![MenuItem::new(1, copy_path_label)];
-                // "Open in system" 은 단일 폴더에서만 (design §3.3).
-                if is_folder {
-                    items.push(MenuItem::separator());
-                    items.push(MenuItem::new(
-                        20,
-                        crate::i18n::t("explorer.context_menu.open_in_system"),
-                    ));
+                if is_empty_target {
+                    // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때).
+                    if has_clip {
+                        items.push(MenuItem::separator());
+                        items.push(MenuItem::new(12, crate::i18n::t("explorer.context_menu.paste")));
+                    }
+                } else {
+                    // 파일/폴더/다중: 복사 · 잘라내기.
+                    items.push(MenuItem::new(10, crate::i18n::t("explorer.context_menu.copy_files")));
+                    items.push(MenuItem::new(11, crate::i18n::t("explorer.context_menu.cut")));
+                    if is_folder {
+                        if has_clip {
+                            items.push(MenuItem::new(
+                                12,
+                                crate::i18n::t("explorer.context_menu.paste_into"),
+                            ));
+                        }
+                        // "Open in system" 은 단일 폴더에서만 (design §3.3).
+                        items.push(MenuItem::separator());
+                        items.push(MenuItem::new(
+                            20,
+                            crate::i18n::t("explorer.context_menu.open_in_system"),
+                        ));
+                    }
                 }
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
@@ -854,6 +876,44 @@ impl MainView {
                             crate::i18n::t("toast.copied"),
                             crate::adapters::ui::ToastScope::Surface(surface_id),
                         );
+                    }
+                    Some(10) => {
+                        engine.explorer_clipboard =
+                            Some(crate::core::state::ExplorerClipboard {
+                                paths: paths.clone(),
+                                cut: false,
+                            });
+                    }
+                    Some(11) => {
+                        engine.explorer_clipboard =
+                            Some(crate::core::state::ExplorerClipboard {
+                                paths: paths.clone(),
+                                cut: true,
+                            });
+                    }
+                    Some(12) => {
+                        let dest = if is_folder {
+                            paths.first().cloned().unwrap_or_else(|| cwd.clone())
+                        } else {
+                            cwd.clone()
+                        };
+                        if let Some(clip) = engine.explorer_clipboard.clone() {
+                            let (ok, err) = crate::explorer_ui::ops::paste_all(
+                                &clip.paths,
+                                &dest,
+                                clip.cut,
+                            );
+                            // 잘라내기는 이동 성공 시 클립보드 소진.
+                            if clip.cut && err.is_none() {
+                                engine.explorer_clipboard = None;
+                            }
+                            if let Some(v) = self.state.explorer_views.get_mut(surface_id) {
+                                v.request_reload();
+                            }
+                            if let Some(e) = err {
+                                tracing::warn!("explorer: paste error ({ok} ok): {e}");
+                            }
+                        }
                     }
                     Some(20) => {
                         let target = paths.first().cloned().unwrap_or_else(|| cwd.clone());

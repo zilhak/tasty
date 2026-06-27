@@ -9,6 +9,7 @@
 //! 호출자(`egui_panels`)가 렌더 루프 종료 후 적용한다(markdown/empty 의 deferred
 //! action 패턴과 동일 — 렌더 중 `engine`/`state` 가변 차용 충돌 회피).
 
+pub mod ops;
 pub mod view;
 
 use std::path::{Path, PathBuf};
