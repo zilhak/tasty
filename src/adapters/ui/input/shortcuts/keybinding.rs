@@ -249,6 +249,22 @@ impl MainView {
             }
             return true;
         }
+        if matches_any_binding(&kb.convert_to_explorer, key, mods) {
+            if let Some(sid) = state.focused_surface_id(engine) {
+                state.dispatch_intent(
+                    crate::intent::Intent::ConvertSurface {
+                        surface_id: sid,
+                        target: crate::intent::ConvertTarget::Kind {
+                            cwd: None,
+                            kind: "explorer".to_string(),
+                            params: serde_json::json!({}),
+                        },
+                    }
+                    .from_user_shortcut("convert_to_explorer"),
+                );
+            }
+            return true;
+        }
         if matches_any_binding(&kb.new_window, key, mods) {
             send_app_event(proxy, crate::AppEvent::CreateWindow);
             return true;

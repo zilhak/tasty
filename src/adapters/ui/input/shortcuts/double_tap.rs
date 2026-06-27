@@ -228,10 +228,21 @@ impl MainView {
                         }
                     }
                     "convert_to_explorer" => {
-                        // explorer는 com.tasty.explorer plugin이 제공하므로
-                        // 호스트 측 즉시 변환은 더 이상 동작하지 않는다. 단축키
-                        // 자체는 보존하되 동작은 후속 단계에서 plugin RemoteSurface
-                        // swap으로 복구할 예정.
+                        // explorer 가 host builtin surface 로 승격(T11)되어 즉시
+                        // 변환을 복구. cwd None → source surface 에서 carry.
+                        if let Some(sid) = self.state.focused_surface_id(engine) {
+                            self.state.dispatch_intent(
+                                crate::intent::Intent::ConvertSurface {
+                                    surface_id: sid,
+                                    target: crate::intent::ConvertTarget::Kind {
+                                        cwd: None,
+                                        kind: "explorer".to_string(),
+                                        params: serde_json::json!({}),
+                                    },
+                                }
+                                .from_user_shortcut("convert_to_explorer_double_tap"),
+                            );
+                        }
                     }
                     "close_active" => {
                         if !self.state.close_active_tab(engine)

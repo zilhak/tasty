@@ -293,6 +293,21 @@ impl MainView {
                     );
                 }
             }
+            "convert_to_explorer" => {
+                if let Some(sid) = state.focused_surface_id(engine) {
+                    state.dispatch_intent(
+                        crate::intent::Intent::ConvertSurface {
+                            surface_id: sid,
+                            target: crate::intent::ConvertTarget::Kind {
+                                cwd: None,
+                                kind: "explorer".to_string(),
+                                params: serde_json::json!({}),
+                            },
+                        }
+                        .from_user_shortcut("convert_to_explorer"),
+                    );
+                }
+            }
             "rename_tab" => {
                 let pane_id = state.active_workspace(engine).focused_pane;
                 if let Some(pane) = state
