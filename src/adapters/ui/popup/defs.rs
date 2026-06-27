@@ -4,13 +4,14 @@ use std::sync::OnceLock;
 
 use super::{DragHandle, PopupDef, PopupScope, PopupState};
 
-/// 헤드리스 패널 팝업(port_scanner / remote_tool)의 전용 드래그 띠.
+/// 헤드리스 패널 팝업(port_scanner / remote_tool)의 헤더 드래그 띠.
 ///
-/// 헤더 **좌측 절반**(아이콘 + 제목 라벨만 있는 영역)을 핸들로 선언한다. 우측의
-/// 검색 입력 / Refresh / Close 버튼과는 겹치지 않으므로 위젯 우선 중재 없이 안전하다
-/// (승인된 "전용 핸들 띠" 방식). 높이는 타이틀바 토큰(`title_bar_height`)을 재사용해
-/// 헤더 중앙의 라벨을 덮는다. 테두리 리사이즈 밴드(좌/상단 수 px)는 우선순위가
-/// 높아 그 부분은 리사이즈로 동작한다.
+/// 헤더 **좌측 절반**(아이콘 + 제목 라벨 영역)을 핸들로 선언한다. 좁은 폭에서는
+/// 우측의 검색 입력과 이 띠가 일부 겹칠 수 있으나, `PopupManager::draw` 가 콘텐츠
+/// 렌더 뒤 `is_using_pointer()` 로 **위젯 우선 중재**를 하므로 겹쳐도 입력 클릭이
+/// 항상 우선된다(드래그 미발동). 높이는 타이틀바 토큰(`title_bar_height`)을
+/// 재사용해 헤더 중앙의 라벨을 덮는다. 테두리 리사이즈 밴드(좌/상단 수 px)는
+/// 우선순위가 높아 그 부분은 리사이즈로 동작한다.
 fn panel_header_drag_strip(s: &PopupState) -> egui::Rect {
     egui::Rect::from_min_size(s.pos, egui::vec2(s.size.x * 0.5, super::title_bar_height()))
 }

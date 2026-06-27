@@ -99,30 +99,14 @@ impl PopupManager {
             }
         }
 
-        // Handle press: close > resize start > drag start > focus > outside-click.
+        // Handle press (pre-content): close > focus/bring-front > outside-click.
+        // 이동/리사이즈 START 결정은 콘텐츠 렌더 *뒤* 로 미룬다(아래 post-content
+        // 블록) — 위젯 우선 중재(`is_using_pointer`)를 적용하기 위함이다. close 는
+        // 매니저가 직접 페인팅한 영역이라 egui 위젯이 아니므로 여기서 처리한다.
+        // focus/bring_front 는 START 여부와 무관(같은 팝업)하므로 여기서 끝낸다.
         if primary_pressed {
             if let Some(id) = hovered_close {
                 closed.push(id);
-            } else if let Some((id, edges)) = hovered_resize {
-                if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
-                    popup.resizing = Some(edges);
-                    popup.resize_start_rect = popup.popup_rect();
-                }
-                bring_front = Some(id);
-                for popup in &mut self.popups {
-                    popup.focused = popup.id == id;
-                }
-            } else if let Some(id) = hovered_handle {
-                if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
-                    popup.dragging = true;
-                    if let Some(pos) = pointer_pos {
-                        popup.drag_offset = pos - popup.pos;
-                    }
-                }
-                bring_front = Some(id);
-                for popup in &mut self.popups {
-                    popup.focused = popup.id == id;
-                }
             } else if let Some(id) = hovered_popup {
                 bring_front = Some(id);
                 // Focus this popup, unfocus all others
@@ -392,6 +376,31 @@ impl PopupManager {
                         ui.set_clip_rect(content_rect);
                         content_fn(popup_id, ui);
                     });
+            }
+        }
+
+        // Handle drag/resize START (post-content): 위젯 우선 중재.
+        // `ctx.is_using_pointer()` 는 이번 프레임에 어떤 egui 위젯이 이 프레스를
+        // 가져갔는지(potential_click/drag_id) 반영하며, 콘텐츠 렌더 *후* 에야
+        // 확정된다. 어떤 위젯도 프레스를 가져가지 않았을 때만 이동/리사이즈를
+        // 시작한다 → 헤더 드래그 띠가 검색 입력 등 위젯과 겹쳐도 위젯이 항상
+        // 우선(명세 입력 우선순위: 위젯 > 리사이즈 > 이동). 우리 수동 드래그는
+        // egui 위젯이 아니라 이 신호를 self-trigger 하지 않는다. focus/bring_front
+        // 는 위 pre-content 블록에서 이미 처리됨. (close 는 매니저 페인팅이라
+        // is_using_pointer 에 안 잡히므로 pre-content 에서 따로 처리해 우선됨.)
+        if primary_pressed && !ctx.is_using_pointer() {
+            if let Some((id, edges)) = hovered_resize {
+                if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
+                    popup.resizing = Some(edges);
+                    popup.resize_start_rect = popup.popup_rect();
+                }
+            } else if let Some(id) = hovered_handle {
+                if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
+                    popup.dragging = true;
+                    if let Some(pos) = pointer_pos {
+                        popup.drag_offset = pos - popup.pos;
+                    }
+                }
             }
         }
 
