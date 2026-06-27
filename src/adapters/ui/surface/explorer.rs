@@ -326,15 +326,15 @@ fn toolbar(
                 ExplorerViewMode::List => 1,
                 ExplorerViewMode::Detail => 2,
             };
-            if let Some(i) = tasty_ui_widgets::segmented(ui, theme, &labels, sel) {
-                if action.is_none() {
-                    let mode = match i {
-                        0 => ExplorerViewMode::Grid,
-                        1 => ExplorerViewMode::List,
-                        _ => ExplorerViewMode::Detail,
-                    };
-                    *action = Some(ExplorerAction::SetViewMode(mode));
-                }
+            if let Some(i) = tasty_ui_widgets::segmented(ui, theme, &labels, sel)
+                && action.is_none()
+            {
+                let mode = match i {
+                    0 => ExplorerViewMode::Grid,
+                    1 => ExplorerViewMode::List,
+                    _ => ExplorerViewMode::Detail,
+                };
+                *action = Some(ExplorerAction::SetViewMode(mode));
             }
         });
     });

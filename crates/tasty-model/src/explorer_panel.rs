@@ -37,6 +37,9 @@ impl ExplorerViewMode {
     }
 
     /// 식별자 → 모드. 알 수 없으면 `Detail` (와이어프레임 기본).
+    // 무한 실패(default fallback) 파서라 `FromStr`(fallible)과 시그니처가 맞지 않고
+    // `as_str` 과 대칭을 이루는 의도된 API 이므로 trait 구현 권고를 끈다.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "grid" => ExplorerViewMode::Grid,
@@ -65,6 +68,9 @@ impl SortColumn {
         }
     }
 
+    // 무한 실패(default fallback) 파서라 `FromStr`(fallible)과 시그니처가 맞지 않고
+    // `as_str` 과 대칭을 이루는 의도된 API 이므로 trait 구현 권고를 끈다.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "size" => SortColumn::Size,
@@ -90,6 +96,9 @@ impl SortDir {
         }
     }
 
+    // 무한 실패(default fallback) 파서라 `FromStr`(fallible)과 시그니처가 맞지 않고
+    // `as_str` 과 대칭을 이루는 의도된 API 이므로 trait 구현 권고를 끈다.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "desc" => SortDir::Desc,
