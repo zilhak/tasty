@@ -845,6 +845,16 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+                section(
+                    "viewers",
+                    "Content viewers",
+                    vec![spec(
+                        "markdown-viewer",
+                        "Markdown surface",
+                        Some("ScrollArea · body=text-secondary · link=accent · code=surface-raised"),
+                        components::markdown_viewer::draw,
+                    )],
+                ),
             ],
         },
     ]
