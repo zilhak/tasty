@@ -504,8 +504,51 @@ hide_preview = "미리보기 닫기"
 
 [explorer.context_menu]
 copy_path = "경로 복사"
+copy_path_multi = "경로 모두 복사"
+add_to_favorites = "즐겨찾기에 추가"
+remove_from_favorites = "즐겨찾기에서 제거"
 copy_files = "복사"
+cut = "잘라내기"
+paste = "붙여넣기"
+paste_into = "붙여넣기 (안으로)"
 delete = "휴지통으로 이동"
+rename = "이름 변경"
+open_in_system = "시스템에서 열기"
+
+[explorer.view]
+grid = "그리드"
+list = "목록"
+detail = "상세"
+
+[explorer.column]
+name = "이름"
+size = "크기"
+modified = "수정일"
+type = "형식"
+
+[explorer.status]
+items = "{count}개 항목"
+selected = "{count}개 선택됨"
+
+[explorer.tab]
+new = "새 탭"
+close = "탭 닫기"
+
+[explorer.popup.add_favorite]
+title = "즐겨찾기에 추가"
+path = "경로: {path}"
+add = "추가"
+
+[explorer.popup.rename]
+title = "이름 변경"
+path = "경로: {path}"
+rename = "이름 변경"
+
+[explorer.state]
+empty = "이 폴더는 비어 있습니다"
+no_items = "항목 없음"
+no_permission = "권한 없음"
+loading = "불러오는 중…"
 
 [convert_popup]
 title = "서피스 타입 전환"

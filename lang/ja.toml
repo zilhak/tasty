@@ -504,8 +504,51 @@ hide_preview = "プレビューを閉じる"
 
 [explorer.context_menu]
 copy_path = "パスをコピー"
+copy_path_multi = "パスをまとめてコピー"
+add_to_favorites = "お気に入りに追加"
+remove_from_favorites = "お気に入りから削除"
 copy_files = "コピー"
+cut = "切り取り"
+paste = "貼り付け"
+paste_into = "貼り付け（中へ）"
 delete = "ゴミ箱に移動"
+rename = "名前を変更"
+open_in_system = "システムで開く"
+
+[explorer.view]
+grid = "グリッド"
+list = "リスト"
+detail = "詳細"
+
+[explorer.column]
+name = "名前"
+size = "サイズ"
+modified = "更新日時"
+type = "種類"
+
+[explorer.status]
+items = "{count} 項目"
+selected = "{count} 件選択"
+
+[explorer.tab]
+new = "新しいタブ"
+close = "タブを閉じる"
+
+[explorer.popup.add_favorite]
+title = "お気に入りに追加"
+path = "パス: {path}"
+add = "追加"
+
+[explorer.popup.rename]
+title = "名前を変更"
+path = "パス: {path}"
+rename = "名前を変更"
+
+[explorer.state]
+empty = "このフォルダーは空です"
+no_items = "項目なし"
+no_permission = "権限がありません"
+loading = "読み込み中…"
 
 [convert_popup]
 title = "サーフェスタイプ切替"

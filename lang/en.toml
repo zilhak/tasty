@@ -504,8 +504,51 @@ hide_preview = "Hide Preview"
 
 [explorer.context_menu]
 copy_path = "Copy Path"
+copy_path_multi = "Copy Paths"
+add_to_favorites = "Add to Favorites"
+remove_from_favorites = "Remove from Favorites"
 copy_files = "Copy"
+cut = "Cut"
+paste = "Paste"
+paste_into = "Paste (into)"
 delete = "Move to Trash"
+rename = "Rename"
+open_in_system = "Open in System"
+
+[explorer.view]
+grid = "Grid"
+list = "List"
+detail = "Detail"
+
+[explorer.column]
+name = "Name"
+size = "Size"
+modified = "Modified"
+type = "Type"
+
+[explorer.status]
+items = "{count} items"
+selected = "{count} selected"
+
+[explorer.tab]
+new = "New tab"
+close = "Close tab"
+
+[explorer.popup.add_favorite]
+title = "Add to favorites"
+path = "Path: {path}"
+add = "Add"
+
+[explorer.popup.rename]
+title = "Rename"
+path = "Path: {path}"
+rename = "Rename"
+
+[explorer.state]
+empty = "This folder is empty"
+no_items = "no items"
+no_permission = "No permission"
+loading = "Loading…"
 
 [convert_popup]
 title = "Surface Type"
