@@ -30,7 +30,32 @@
 - repo / 비-repo(빈·에러) / detached.
 - worktree: current(녹색 마커) / linked / locked(노랑 배지, 사유) / invalid(빨강 배지) / worktree 0개(main 단일 행).
 
+## 디자인 토큰 매핑
+
+plugin 은 `UiNode` DSL(중첩 `splitter` + `selectable_row` + 색 라벨)로 구성만 정하고, host
+`ui_tree_render.rs` 가 catppuccin→의미 토큰으로 그린다. UI 인벤토리 ↔ 토큰:
+
+| UI 요소 | 토큰 | 비고 |
+|---|---|---|
+| popup 프레임 | `bg-panel` | ≈960 wide |
+| pane 분할선(H 0.25 / V 0.5) | `separator` · `border-width` | rail \| (status / log·diff) |
+| pane 제목(Heading) | `text-primary` · `font-size-term-lg` | Worktrees / Status / Log |
+| 선택 행 | `surface-active` | `selectable_row` selected |
+| HEAD oid · refs · `main` 배지 | `accent-info` | host `blue`→sky |
+| `current` · added(`A`) | `accent-success` | `green` |
+| `locked` · modified(`M`) | `accent-warning` | `yellow` |
+| `invalid` · deleted(`D`) | `accent-danger` | `red` |
+| linked 이름 · author/time | `text-muted` | `subtext0` |
+| invalid 이름 | `text-disabled` | `overlay0`(잠정 `overlay1`) |
+| diff hunk header | `accent-info` · mono | `@@ … @@` |
+
+## 갤러리 specimen
+
+`crates/tasty-gallery/src/catalog/components/git_viewer.rs` — Overlays › `Git worktree viewer
+popup`. worktree rail + (status/log) + diff 를 토큰·구조 정합으로 전사(픽셀 동일성 비목표 —
+ADR-0020 완전성에 따라 specimen 포함). 3자 매핑:
+[design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#git-viewer-overlays).
+
 ## 시각 소스
 
 popup 치수·섹션 배치는 design-system(vendor 후 링크). popup 구현은 `PopupDef` 시스템(dev-guide).
-</content>

@@ -268,3 +268,59 @@ immediate-mode 정적 specimen 이므로 **각 상태를 나란히 노출**(toas
 글리프: mouse/check 는 `icons.rs` 에 `MOUSE`/`CHECK` 글리프 추가(warn = 기존
 `ALERT_TRIANGLE`, × = 기존 `CLOSE`). 카탈로그 등록은 Overlays 페이지에 `banner`
 Section 1개(3 Spec) 추가 — scrim 바로 다음(디자인 NAV 순서).
+
+## clipboard-viewer (Overlays)
+
+plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs::main_tree` (`UiNode` DSL) ↔ host
+`src/plugin_bridge/ui_tree_render.rs` (페인트) ↔ 갤러리 `catalog/components/clipboard_viewer.rs`
+(Overlays › `Clipboard viewer popup`). 갤러리는 plugin/host crate 비의존이라 *구성*(splitter +
+버튼 목록 + text_preview)을 Theme 토큰 painter mock 으로 전사 — 픽셀 동일성 비목표.
+
+| plugin UiNode | host 페인트(토큰) | 갤러리 함수 |
+|---|---|---|
+| `splitter(Horizontal, 0.3, …)` | `separator` 1px divider | `master_detail` (split_x = w×0.3) |
+| `button`(선택 타입, `button_primary`) | `accent-primary` + `text-on-accent` | `master_detail` 타입 루프(selected) |
+| `button`(유휴 타입) | `surface-raised` + `text-secondary` | 동(idle) |
+| `scroll_v(text_preview)` | mono `text-primary` | `master_detail` 미리보기 루프 |
+| empty 분기(`subtext0` 라벨) | `text-muted` | `state_box`(empty) |
+| read_error 분기(`red` 라벨) | `accent-danger` | `state_box`(read failed) |
+
+화면 전용 고정값 480×360 / ratio 0.3 은 module const(token-policy §c). 3 상태(types/empty/
+read-failed) 를 `StageVariant::Wrap` 으로 나란히 노출.
+
+## git-viewer (Overlays)
+
+plugin `crates/tasty-plugin-git-viewer/src/view.rs::main_tree` (중첩 `splitter` + `selectable_row`)
+↔ host `ui_tree_render.rs` ↔ 갤러리 `catalog/components/git_viewer.rs` (Overlays › `Git worktree
+viewer popup`). **specimen 포함 확정**(ADR-0020 완전성 — plugin 도 host 위젯 구성을 고르므로
+갤러리가 그 구성을 전수해야 한다). 토큰·구조 정합 목표, 픽셀 동일성 비목표.
+
+| plugin UiNode | host 페인트(토큰) | 갤러리 함수 |
+|---|---|---|
+| header(Refresh `button` + repo path) | `surface-raised` 버튼 + `text-muted` path | `shell` 헤더 |
+| `splitter(Horizontal, 0.25, rail \| right)` | `separator` vline | `shell` (split_x = w×0.25) |
+| `splitter(Vertical, 0.5, status \| log·diff)` | `separator` hline | `shell` (split_y) |
+| pane 제목(Heading) | `text-primary`·`font-size-term-lg` | `heading` |
+| worktree `selectable_row` | `surface-active`(selected) + 색 배지 | `paint_rail` → `row` |
+| HEAD oid·refs·`main` 배지(`blue`) | `accent-info` | `row` 세그먼트 |
+| `current`/added·`locked`/modified·`invalid`/deleted | `accent-success`/`-warning`/`-danger` | `paint_rail`/`paint_status` |
+| log 행(oid `yellow`, author `subtext0`) | `accent-warning` + `text-muted` | `paint_log` |
+| diff(±/hunk) | `accent-success`/`-danger`/`accent-info` | `paint_diff` |
+
+`status+log` / `diff` 두 cluster(`StageVariant::Column`)로 하단 pane 의 log↔diff 교체를 함께 노출.
+
+## surface viewers (Layouts)
+
+host-rendered surface(`markdown`/`image`) + webview chrome(`html`) 의 Layouts › `Content viewers`
+specimen 묶음. 본체 binary 비의존 — 본체 surface draw 경로의 토큰·구성만 painter/egui 로 전사.
+
+| surface | 본체 draw | 갤러리 specimen | 핵심 토큰 |
+|---|---|---|---|
+| markdown | `surface/markdown.rs::draw_markdown` (`egui_commonmark`) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 body×1.5 |
+| image | `surface/image.rs::draw_image` (+`controls.rs`) | `components/image_viewer.rs` | 캔버스 `bg-sidebar` · 버튼 `surface-raised`/`border-default` · 파일명·zoom `text-muted` · fallback `IMAGE` glyph |
+| html | OS native WebView overlay (`engine/surface_registry/webview_kind.rs`) | `components/html_chrome.rs` | 콘텐츠 토큰 무관 — chrome 만: `bg-panel`/`border-default` 경계 · `GLOBE` glyph · `Spinner` 로딩 · `ALERT_CIRCLE`+`accent-danger` 에러 |
+
+신규 glyph: `icons.rs` SURFACES 에 `IMAGE`(image fallback) · `GLOBE`(webview) 추가. image 는
+`viewer`/`no-image` 2 cluster, html 은 `boundary`/`placeholder`/`loading`/`error` 4 cluster,
+markdown 은 단일 문서(`StageVariant::Solo`). 화면 전용 고정값(560/360/300, control 버튼 24×20/30×20)은
+module const(token-policy §c).
