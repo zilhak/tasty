@@ -1,0 +1,11 @@
+[clipboard_viewer.tool]
+label = "クリップボードビューア"
+
+[clipboard_viewer.popup]
+title = "クリップボードビューア"
+empty = "クリップボードは空です"
+read_failed = "クリップボードの読み取りに失敗しました"
+already_open = "クリップボードビューアは既に開いています"
+
+[clipboard_viewer.type]
+text = "テキスト"

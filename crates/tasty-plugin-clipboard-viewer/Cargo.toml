@@ -1,0 +1,24 @@
+[package]
+name = "tasty-plugin-clipboard-viewer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "External Tasty plugin: read-only viewer of the current system clipboard"
+repository = "https://github.com/zilhak/tasty"
+
+[[bin]]
+name = "tasty-plugin-clipboard-viewer"
+path = "src/main.rs"
+
+[dependencies]
+tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+# 클립보드를 plugin process 내에서 직접 read (호스트 IPC 미경유).
+# 본체와 동일 버전(3.x)으로 맞춰 Cargo.lock 비대 방지.
+arboard = "3"
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+
+[lints]
+workspace = true

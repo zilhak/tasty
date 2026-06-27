@@ -1,0 +1,11 @@
+[clipboard_viewer.tool]
+label = "Clipboard Viewer"
+
+[clipboard_viewer.popup]
+title = "Clipboard Viewer"
+empty = "Clipboard is empty"
+read_failed = "Failed to read the clipboard"
+already_open = "Clipboard viewer is already open"
+
+[clipboard_viewer.type]
+text = "Text"

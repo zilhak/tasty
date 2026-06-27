@@ -1,0 +1,27 @@
+manifest_version = 1
+id = "com.tasty.clipboard-viewer"
+name = "Clipboard Viewer"
+version = "0.1.0"
+description = "Read-only viewer of the current system clipboard"
+api_version = "1"
+# clipboard.read 는 ADR-0009 상 이 plugin 엔 무의미(자기 프로세스 직접 read)하나
+# 의도 선언용으로 유지. write/ipc_namespace 는 read-only viewer 라 불필요.
+permissions = ["clipboard.read", "ui.popup", "ui.tool_item"]
+lang_dir = "lang"
+
+[entry]
+type = "process"
+command = "tasty-plugin-clipboard-viewer"
+
+[[contributes.popup]]
+id = "viewer"
+trigger = { kind = "event", event_key = "shortcut.toggle_clipboard_viewer" }
+size_hint = { width = 480, height = 360 }
+anchor = "screen-center"
+dismiss_on_outside_click = true
+
+[[contributes.tool]]
+id = "open-viewer"
+label_i18n_key = "clipboard_viewer.tool.label"
+action = { kind = "open_popup", popup_id = "com.tasty.clipboard-viewer/viewer" }
+order_hint = 100

@@ -1,0 +1,11 @@
+[clipboard_viewer.tool]
+label = "클립보드 뷰어"
+
+[clipboard_viewer.popup]
+title = "클립보드 뷰어"
+empty = "클립보드가 비어 있습니다"
+read_failed = "클립보드를 읽지 못했습니다"
+already_open = "클립보드 뷰어가 이미 열려 있습니다"
+
+[clipboard_viewer.type]
+text = "텍스트"

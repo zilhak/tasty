@@ -192,6 +192,28 @@
                                     </Component>
                                 </Directory>
                             </Directory>
+                            <Directory Id='PluginClipboardViewerDir' Name='com.tasty.clipboard-viewer'>
+                                <Component Id='PluginClipboardViewerBin' Guid='*'>
+                                    <File Id='PluginClipboardViewerBinFile' Source='$(var.CargoTargetBinDir)\tasty-plugin-clipboard-viewer.exe' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginClipboardViewerManifest' Guid='*'>
+                                    <File Id='PluginClipboardViewerManifestFile' Source='crates\tasty-plugin-clipboard-viewer\tasty-plugin.toml' KeyPath='yes'/>
+                                </Component>
+                                <Component Id='PluginClipboardViewerSig' Guid='*'>
+                                    <File Id='PluginClipboardViewerSigFile' Source='crates\tasty-plugin-clipboard-viewer\tasty-plugin.toml.sig' KeyPath='yes'/>
+                                </Component>
+                                <Directory Id='PluginClipboardViewerLangDir' Name='lang'>
+                                    <Component Id='PluginClipboardViewerLangEn' Guid='*'>
+                                        <File Id='PluginClipboardViewerLangEnFile' Source='crates\tasty-plugin-clipboard-viewer\lang\en.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginClipboardViewerLangJa' Guid='*'>
+                                        <File Id='PluginClipboardViewerLangJaFile' Source='crates\tasty-plugin-clipboard-viewer\lang\ja.toml' KeyPath='yes'/>
+                                    </Component>
+                                    <Component Id='PluginClipboardViewerLangKo' Guid='*'>
+                                        <File Id='PluginClipboardViewerLangKoFile' Source='crates\tasty-plugin-clipboard-viewer\lang\ko.toml' KeyPath='yes'/>
+                                    </Component>
+                                </Directory>
+                            </Directory>
                             <Directory Id='PluginCodexDir' Name='com.tasty.codex'>
                                 <Component Id='PluginCodexBin' Guid='*'>
                                     <File Id='PluginCodexBinFile' Source='$(var.CargoTargetBinDir)\tasty-plugin-codex.exe' KeyPath='yes'/>
@@ -388,6 +410,12 @@
             <ComponentRef Id='PluginClipboardHistoryLangEn'/>
             <ComponentRef Id='PluginClipboardHistoryLangJa'/>
             <ComponentRef Id='PluginClipboardHistoryLangKo'/>
+            <ComponentRef Id='PluginClipboardViewerBin'/>
+            <ComponentRef Id='PluginClipboardViewerManifest'/>
+            <ComponentRef Id='PluginClipboardViewerSig'/>
+            <ComponentRef Id='PluginClipboardViewerLangEn'/>
+            <ComponentRef Id='PluginClipboardViewerLangJa'/>
+            <ComponentRef Id='PluginClipboardViewerLangKo'/>
             <ComponentRef Id='PluginCodexBin'/>
             <ComponentRef Id='PluginCodexManifest'/>
             <ComponentRef Id='PluginCodexSig'/>

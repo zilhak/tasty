@@ -67,6 +67,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         bin_name: "tasty-plugin-clipboard-history.exe",
     },
     BuiltinSpec {
+        id: "com.tasty.clipboard-viewer",
+        crate_dir: "tasty-plugin-clipboard-viewer",
+        bin_name: "tasty-plugin-clipboard-viewer.exe",
+    },
+    BuiltinSpec {
         id: "com.tasty.html",
         crate_dir: "tasty-plugin-html",
         bin_name: "tasty-plugin-html.exe",
@@ -114,6 +119,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         id: "com.tasty.clipboard-history",
         crate_dir: "tasty-plugin-clipboard-history",
         bin_name: "tasty-plugin-clipboard-history",
+    },
+    BuiltinSpec {
+        id: "com.tasty.clipboard-viewer",
+        crate_dir: "tasty-plugin-clipboard-viewer",
+        bin_name: "tasty-plugin-clipboard-viewer",
     },
     BuiltinSpec {
         id: "com.tasty.html",
@@ -1077,6 +1087,11 @@ mod tests {
     #[test]
     fn clipboard_history_is_builtin() {
         assert!(is_builtin_plugin("com.tasty.clipboard-history"));
+    }
+
+    #[test]
+    fn clipboard_viewer_is_builtin() {
+        assert!(is_builtin_plugin("com.tasty.clipboard-viewer"));
     }
 
     #[test]
