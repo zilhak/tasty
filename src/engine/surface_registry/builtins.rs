@@ -16,8 +16,9 @@ use super::{SurfaceKindDef, SurfaceKindRegistry};
 
 /// 부팅 시 호출. CoreState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
 ///
-/// 등록되지 않는 kind:
-/// - `"explorer"`: `com.tasty.explorer` plugin이 hello 시 remote kind로 등록.
+/// 부팅 시 등록: terminal / empty / attached / **explorer**(T11 host builtin).
+///
+/// 부팅 시 등록되지 *않는* kind (plugin hello 시 등록):
 /// - `"image"`: `com.tasty.image` plugin이 hello 시 `rendering = "host"` 매니페스트로
 ///   호스트 화이트리스트 매칭 후 [`register_image`]를 호출하여 등록.
 /// - `"markdown"`: `com.tasty.markdown` plugin이 hello 시 host_rendered whitelist
@@ -27,6 +28,18 @@ pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_empty(registry);
     register_attached(registry);
     register_explorer(registry);
+}
+
+/// 부팅 시 호스트가 직접 소유·등록하는 내장 kind 인지 여부.
+///
+/// 이 목록의 kind 는 host 가 egui 로 직접 렌더하므로, 외부/잔존 plugin 이 같은 kind
+/// 문자열을 remote kind 로 다시 선언해도 **덮어쓰지 못하게** 보호된다
+/// ([`crate::plugin_bridge::remote_kind::register_remote_kind`] 의 가드). 특히
+/// explorer 는 과거 `com.tasty.explorer` plugin 이 제공하던 remote kind 였으나 T11
+/// 에서 host builtin 으로 승격됐다 — 사용자 `~/.tasty/plugins/` 에 옛 plugin 이
+/// 남아 있어도 native explorer 가 항상 우선한다.
+pub fn is_host_builtin_kind(kind: &str) -> bool {
+    matches!(kind, "terminal" | "empty" | "attached" | "explorer")
 }
 
 // ── Terminal ────────────────────────────────────────────────────────────────

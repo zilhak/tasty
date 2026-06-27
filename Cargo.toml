@@ -84,10 +84,6 @@ assets = [
     ["crates/tasty-plugin-codex/tasty-plugin.toml",   "usr/lib/tasty/plugins/com.tasty.codex/",             "644"],
     ["crates/tasty-plugin-codex/tasty-plugin.toml.sig", "usr/lib/tasty/plugins/com.tasty.codex/",           "644"],
     ["crates/tasty-plugin-codex/lang/*",              "usr/lib/tasty/plugins/com.tasty.codex/lang/",        "644"],
-    ["target/release/tasty-plugin-explorer",          "usr/lib/tasty/plugins/com.tasty.explorer/",          "755"],
-    ["crates/tasty-plugin-explorer/tasty-plugin.toml","usr/lib/tasty/plugins/com.tasty.explorer/",          "644"],
-    ["crates/tasty-plugin-explorer/tasty-plugin.toml.sig","usr/lib/tasty/plugins/com.tasty.explorer/",      "644"],
-    ["crates/tasty-plugin-explorer/lang/*",           "usr/lib/tasty/plugins/com.tasty.explorer/lang/",     "644"],
     ["target/release/tasty-plugin-git-viewer",        "usr/lib/tasty/plugins/com.tasty.git-viewer/",        "755"],
     ["crates/tasty-plugin-git-viewer/tasty-plugin.toml","usr/lib/tasty/plugins/com.tasty.git-viewer/",      "644"],
     ["crates/tasty-plugin-git-viewer/tasty-plugin.toml.sig","usr/lib/tasty/plugins/com.tasty.git-viewer/",  "644"],
@@ -137,10 +133,6 @@ assets = [
     { source = "crates/tasty-plugin-codex/tasty-plugin.toml",    dest = "/usr/lib/tasty/plugins/com.tasty.codex/tasty-plugin.toml",                          mode = "644" },
     { source = "crates/tasty-plugin-codex/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.codex/tasty-plugin.toml.sig",                     mode = "644" },
     { source = "crates/tasty-plugin-codex/lang/*",               dest = "/usr/lib/tasty/plugins/com.tasty.codex/lang/",                                      mode = "644" },
-    { source = "target/release/tasty-plugin-explorer",           dest = "/usr/lib/tasty/plugins/com.tasty.explorer/tasty-plugin-explorer",                   mode = "755" },
-    { source = "crates/tasty-plugin-explorer/tasty-plugin.toml", dest = "/usr/lib/tasty/plugins/com.tasty.explorer/tasty-plugin.toml",                       mode = "644" },
-    { source = "crates/tasty-plugin-explorer/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.explorer/tasty-plugin.toml.sig",               mode = "644" },
-    { source = "crates/tasty-plugin-explorer/lang/*",            dest = "/usr/lib/tasty/plugins/com.tasty.explorer/lang/",                                   mode = "644" },
     { source = "target/release/tasty-plugin-git-viewer",         dest = "/usr/lib/tasty/plugins/com.tasty.git-viewer/tasty-plugin-git-viewer",               mode = "755" },
     { source = "crates/tasty-plugin-git-viewer/tasty-plugin.toml", dest = "/usr/lib/tasty/plugins/com.tasty.git-viewer/tasty-plugin.toml",                   mode = "644" },
     { source = "crates/tasty-plugin-git-viewer/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.git-viewer/tasty-plugin.toml.sig",           mode = "644" },
@@ -423,8 +415,6 @@ opt-level = 3
 [profile.dev.package.tasty-plugin-clipboard-viewer]
 opt-level = 3
 [profile.dev.package.tasty-plugin-codex]
-opt-level = 3
-[profile.dev.package.tasty-plugin-explorer]
 opt-level = 3
 [profile.dev.package.tasty-plugin-git-viewer]
 opt-level = 3

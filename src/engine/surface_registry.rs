@@ -189,16 +189,15 @@ mod tests {
     fn builtin_registers_host_kinds() {
         let reg = SurfaceKindRegistry::new();
         register_builtin_kinds(&reg);
-        // explorer는 com.tasty.explorer plugin이, image는 com.tasty.image plugin이,
-        // markdown은 com.tasty.markdown plugin이 각각 hello 시 host_rendered
-        // whitelist 경유로 등록한다.
-        for kind in ["terminal", "empty", "attached"] {
+        // image는 com.tasty.image plugin이, markdown은 com.tasty.markdown plugin이
+        // 각각 hello 시 host_rendered whitelist 경유로 등록한다. explorer는 T11에서
+        // host builtin surface로 승격되어 부팅 시 직접 등록된다.
+        for kind in ["terminal", "empty", "attached", "explorer"] {
             assert!(reg.contains(kind), "missing builtin kind: {kind}");
         }
-        assert_eq!(reg.len(), 3);
+        assert_eq!(reg.len(), 4);
         assert!(!reg.contains("image"));
         assert!(!reg.contains("markdown"));
-        assert!(!reg.contains("explorer"));
         assert!(!reg.contains("clipboard_viewer"));
     }
 }

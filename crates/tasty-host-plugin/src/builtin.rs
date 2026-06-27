@@ -29,13 +29,9 @@ struct BuiltinSpec {
     bin_name: &'static str,
 }
 
+// explorer 는 T11 에서 host builtin surface 로 승격됨 — plugin 번들에서 제거.
 #[cfg(windows)]
 const BUILTINS: &[BuiltinSpec] = &[
-    BuiltinSpec {
-        id: "com.tasty.explorer",
-        crate_dir: "tasty-plugin-explorer",
-        bin_name: "tasty-plugin-explorer.exe",
-    },
     BuiltinSpec {
         id: "com.tasty.codex",
         crate_dir: "tasty-plugin-codex",
@@ -80,11 +76,6 @@ const BUILTINS: &[BuiltinSpec] = &[
 
 #[cfg(not(windows))]
 const BUILTINS: &[BuiltinSpec] = &[
-    BuiltinSpec {
-        id: "com.tasty.explorer",
-        crate_dir: "tasty-plugin-explorer",
-        bin_name: "tasty-plugin-explorer",
-    },
     BuiltinSpec {
         id: "com.tasty.codex",
         crate_dir: "tasty-plugin-codex",
@@ -1050,8 +1041,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn explorer_is_builtin() {
-        assert!(is_builtin_plugin("com.tasty.explorer"));
+    fn explorer_is_not_builtin_plugin() {
+        // T11: explorer 는 host builtin surface 로 승격되어 plugin 번들에서 제거됨.
+        assert!(!is_builtin_plugin("com.tasty.explorer"));
     }
 
     #[test]

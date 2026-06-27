@@ -36,6 +36,20 @@ pub fn register_remote_kind(
     decl: &SurfaceKindDecl,
     host_cmd_tx: Sender<HostCmd>,
 ) {
+    // 호스트 내장 kind 보호: plugin(또는 사용자 dir 에 남은 옛 builtin)이 host 가
+    // 직접 렌더하는 kind 를 remote 로 가로채지 못하게 한다. 예: T11 에서 explorer 가
+    // host builtin 으로 승격된 뒤에도 `~/.tasty/plugins/com.tasty.explorer` 가 남아
+    // remote "explorer" 를 재선언하면 native 렌더가 깨진다 — 여기서 차단한다.
+    if crate::engine::surface_registry::builtins::is_host_builtin_kind(&decl.kind) {
+        tracing::warn!(
+            "plugin '{}' declared remote kind '{}' which is a host builtin; ignoring \
+             (host-rendered surface takes precedence)",
+            plugin_id,
+            decl.kind
+        );
+        return;
+    }
+
     let kind_static: &'static str = leak_kind(&decl.kind);
     let i18n_key_static: &'static str = leak_str(&decl.display_name_i18n_key);
     let plugin_id_owned = plugin_id.to_string();
