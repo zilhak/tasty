@@ -3,6 +3,10 @@
 `design-parity` 작업의 컴포넌트 매핑 기록. 디자인 jsx 하위 컴포넌트 ↔ tasty 호스트 함수 ↔
 갤러리(`tasty-gallery`) 카탈로그 항목을 1:1 로 연결한다. 다음 작업이 바로 찾도록 한다.
 
+> 디자인 정합은 **구조 축 + 토큰 축** 둘 다다. 이 매핑(구조 축)으로 함수를 찾았으면, 구조 전사
+> 함정은 [design-parity-notes.md](design-parity-notes.md), **토큰 규칙(Theme 토큰 강제·4px·14px·1px·
+> 하드코딩 금지)은 [theme.md "UI 디자인 규칙"](theme.md#ui-디자인-규칙-필수)** 을 함께 본다.
+
 갤러리 실행: `cargo run -p tasty-gallery` (상단 toolbar 에서 theme·UI scale 토글, 좌측
 카탈로그 선택). 등록: `crates/tasty-gallery/src/catalog/{components,widgets}/<name>.rs` 의
 `draw(ui, theme)` + `catalog.rs::all()` 에 `CatalogItem` 한 줄.

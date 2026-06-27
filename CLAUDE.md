@@ -115,7 +115,12 @@ Tasty 는 cargo workspace 다 (본 바이너리 + `crates/*` 28 개). 빌드 프
 
 상세·근거: [`docs/adr/0020-gallery-complete-component-source.md`](docs/adr/0020-gallery-complete-component-source.md) · [`docs/dev-guide/gallery-first.md`](docs/dev-guide/gallery-first.md) · [`docs/design/policies/gallery-completeness.md`](docs/design/policies/gallery-completeness.md).
 
-**UI 를 디자인에 정합시킬 때는** [`docs/design/systems/design-parity-notes.md`](docs/design/systems/design-parity-notes.md) 의 **구조 전사(structural transcription)** 원칙과 [`docs/design/systems/design-gallery-mapping.md`](docs/design/systems/design-gallery-mapping.md)(jsx↔함수 매핑)을 읽는다 — egui flow 로 눈대중 흉내 내지 말고 디자인의 레이아웃 구조(grid·컬럼·패딩·정렬)를 소스에 1:1 전사한다. (색·치수 토큰 정합과 **별개 축**이다.)
+**UI 를 디자인에 정합시킬 때는 두 축을 함께 충족한다 — 둘 다 필수다:**
+
+1. **구조 축** — [`docs/design/systems/design-parity-notes.md`](docs/design/systems/design-parity-notes.md) 의 **구조 전사(structural transcription)** 원칙과 [`docs/design/systems/design-gallery-mapping.md`](docs/design/systems/design-gallery-mapping.md)(jsx↔함수 매핑)을 읽는다 — egui flow 로 눈대중 흉내 내지 말고 디자인의 레이아웃 구조(grid·컬럼·패딩·정렬)를 **컴포넌트 단위·소스코드 단위로** 1:1 전사한다.
+2. **토큰 축** — 위 "UI 디자인 (필수)" 의 [`theme.md` "UI 디자인 규칙"](docs/design/systems/theme.md) 을 **반드시 함께** 적용한다: 색·폰트크기·선굵기·간격은 전부 디자인 토큰(=`Theme`)에서 가져오고 raw px·`from_rgb` 하드코딩 금지, 4px 그리드·14px 폰트 상한·1px 보더.
+
+구조만 맞추고 토큰을 빠뜨리거나 그 반대면 정합이 절반만 된다. 두 축은 독립적으로 어긋날 수 있으므로 매 작업에서 둘 다 점검한다.
 
 ## 국제화 (필수)
 

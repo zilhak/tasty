@@ -108,7 +108,10 @@ let pad = th.spacing_sm;                               // sizing 동일 방식
 
 ## UI 디자인 규칙 (필수)
 
-테마 위에 얹히는 **시각 정책**. 새 UI 를 그릴 때 따른다.
+테마 위에 얹히는 **시각 정책**(=토큰 축). 새 UI 를 그릴 때 따른다. 디자인을 구현에 정합시키는
+작업이라면 이 토큰 축만으로 끝나지 않는다 — 레이아웃을 컴포넌트·소스 단위로 1:1 전사하는 **구조
+축**([design-parity-notes.md](design-parity-notes.md) · [design-gallery-mapping.md](design-gallery-mapping.md))을
+함께 충족한다(두 축은 독립적으로 어긋날 수 있다).
 
 | 항목 | 규칙 |
 |------|------|
