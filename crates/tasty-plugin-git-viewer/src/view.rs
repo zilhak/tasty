@@ -2,8 +2,8 @@
 
 use tasty_plugin_sdk::Translator;
 use tasty_plugin_sdk::ui::{
-    hbox, label_color, label_mono, label_mono_color, scroll_v, selectable_row, spacer, splitter_id,
-    tag, vbox,
+    center, hbox, label_color, label_mono, label_mono_color, scroll_v, selectable_row, spacer,
+    splitter_id, tag, vbox,
 };
 use tasty_plugin_sdk::{LabelStyle, SplitDir, TagTone, UiNode};
 
@@ -37,7 +37,7 @@ pub fn main_tree(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
     }
 
     if vm.repo_path.is_none() {
-        top.push(label_color(tr.t("git_viewer.no_repo"), "subtext0"));
+        top.push(center(label_color(tr.t("git_viewer.no_repo"), "subtext0")));
         return vbox(top);
     }
 
@@ -81,7 +81,10 @@ fn build_worktree_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
 
     let mut children: Vec<UiNode> = vec![heading];
     if vm.worktrees.is_empty() {
-        children.push(label_color(tr.t("git_viewer.no_worktrees"), "subtext0"));
+        children.push(center(label_color(
+            tr.t("git_viewer.no_worktrees"),
+            "subtext0",
+        )));
         return scroll_v(vbox(children));
     }
     for (idx, wt) in vm.worktrees.iter().enumerate() {
@@ -161,7 +164,7 @@ fn build_status_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
 
     let mut children: Vec<UiNode> = vec![heading];
     if vm.status_entries.is_empty() {
-        children.push(label_color(tr.t("git_viewer.no_changes"), "subtext0"));
+        children.push(center(label_color(tr.t("git_viewer.no_changes"), "subtext0")));
         return scroll_v(vbox(children));
     }
     for (idx, entry) in vm.status_entries.iter().enumerate() {
@@ -184,7 +187,7 @@ fn build_log_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
     };
     let mut children: Vec<UiNode> = vec![heading];
     if vm.log_entries.is_empty() {
-        children.push(label_color(tr.t("git_viewer.no_commits"), "subtext0"));
+        children.push(center(label_color(tr.t("git_viewer.no_commits"), "subtext0")));
         return scroll_v(vbox(children));
     }
     for entry in vm.log_entries {
