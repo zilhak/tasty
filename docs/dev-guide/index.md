@@ -41,6 +41,7 @@ tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는
 | [model-view-split](model-view-split.md) | Model + Host View 분리 |
 | [gpu-rendering](gpu-rendering.md) | GPU 렌더링 구조 |
 | [perf-benchmarks](perf-benchmarks.md) | GPU 성능 측정 |
+| [design-change-workflow](design-change-workflow.md) | 디자인 변경 루프 — 요청문서→Claude design 시안→Figma/갤러리/본체 정합 |
 | [gallery-first](gallery-first.md) | 새 UI 컴포넌트는 디자인→갤러리→본체 순서 (cut 금지) |
 | [popup-implementation](popup-implementation.md) | Popup(`PopupDef` 시스템) |
 | [context-menu](context-menu.md) | OS 네이티브 컨텍스트 메뉴 |
