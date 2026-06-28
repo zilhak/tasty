@@ -205,6 +205,13 @@ pub struct FilterState {
     pub selected_port: Option<u16>,
     /// Per-column show/hide state (column chooser). Default shows all columns.
     pub columns: ColumnVisibility,
+    /// TCP states to **show** in the table (a shown set, not a hidden set).
+    /// Default is `{Listen}` (LISTEN-only) — the backend scans every TCP state,
+    /// but the viewer surfaces only listening sockets until the user widens it.
+    /// A shown set keeps the default a single entry and stays robust as new
+    /// `PortState` variants are added (a hidden set would have to enumerate all
+    /// the others).
+    pub visible_states: HashSet<PortState>,
 }
 
 impl Default for FilterState {
@@ -216,6 +223,7 @@ impl Default for FilterState {
             sort_dir: SortDir::Asc,
             selected_port: None,
             columns: ColumnVisibility::default(),
+            visible_states: HashSet::from([PortState::Listen]),
         }
     }
 }
@@ -253,6 +261,13 @@ pub struct PortScannerFilter<'a> {
     pub selected_port: Option<u16>,
     /// Per-column show/hide state (column chooser projection).
     pub columns: ColumnVisibility,
+    /// TCP states currently shown (shown set; default `{Listen}`). Drives the
+    /// state-filter button's active styling + the dropdown checkbox seeding.
+    pub visible_states: &'a HashSet<PortState>,
+    /// True when the scope has rows but the state filter (not the search query)
+    /// hid them all. Lets the empty body distinguish "no LISTEN ports" from
+    /// "no ports at all".
+    pub hidden_by_state: bool,
 }
 
 /// Pure inputs to `draw_port_scanner_view`. Contains no `AppState` /
@@ -262,6 +277,10 @@ pub struct PortScannerProps<'a> {
     pub theme: &'a Theme,
     pub view_state: PortScannerViewState<'a>,
     pub filter: PortScannerFilter<'a>,
+    /// TCP states present in the current scope (before any filter), for the
+    /// state-filter dropdown list + select-all / apply intersection. LISTEN
+    /// first, then `label()` alphabetical.
+    pub present_states: &'a [PortState],
     /// When true, the LISTEN state dot is drawn static (no pulse ring).
     pub reduced_motion: bool,
     pub label_heading: &'a str,
@@ -293,6 +312,20 @@ pub struct PortScannerProps<'a> {
     pub label_columns_button: &'a str,
     /// Column-chooser popup title.
     pub label_columns_menu_title: &'a str,
+    /// State-filter button base label (e.g. `State`).
+    pub label_state_filter: &'a str,
+    /// State-filter dropdown title (e.g. `Filter by state`).
+    pub label_state_filter_title: &'a str,
+    /// State-filter dropdown "select all present states" action.
+    pub label_state_filter_select_all: &'a str,
+    /// State-filter dropdown "deselect all" action.
+    pub label_state_filter_deselect_all: &'a str,
+    /// State-filter dropdown "reset to LISTEN-only" action.
+    pub label_state_filter_reset: &'a str,
+    /// State-filter dropdown "apply draft" action.
+    pub label_state_filter_apply: &'a str,
+    /// Empty-body message when the state filter hid every scope row.
+    pub label_no_ports_state_filtered: &'a str,
 }
 
 /// User intent surfaced by the view. The wrapper translates these into
@@ -312,9 +345,18 @@ pub enum PortScannerAction {
     SetSort(SortKey),
     /// Column chooser toggled a column's visibility.
     SetColumnVisible(ColumnId, bool),
+    /// State filter Apply → replace the shown TCP-state set.
+    SetVisibleStates(HashSet<PortState>),
 }
 
 const FILTER_MEMORY_ID: &str = "port_scanner.filter";
+/// egui temp-memory id for the state-filter dropdown's editing buffer
+/// (apply-on-confirm draft). Seeded from `visible_states` when the dropdown
+/// opens; committed via `SetVisibleStates` on Apply.
+const STATE_FILTER_DRAFT_ID: &str = "port_scanner.state_filter_draft";
+/// egui popup id for the state-filter dropdown. Used both to open/toggle the
+/// `popup_above_or_below_widget` and for the Escape guard's open check.
+const STATE_FILTER_POPUP_ID: &str = "port_scanner.state_filter_popup";
 
 fn read_filter_state(ctx: &egui::Context) -> FilterState {
     ctx.memory(|mem| {
@@ -355,29 +397,52 @@ pub fn draw_port_scanner_popup(
         kick_off_scan(state, engine, &ctx, target_show_all_system);
     }
 
-    // 검색 필터링 + 정렬: Ready rows 에 대해서만 적용. 정렬을 wrapper 에서 적용해
-    // view 가 보이는 순서 그대로 행을 렌더(선택 키는 port 번호라 정렬과 무관).
-    let filtered_rows: Vec<PortRowView> = match &state.port_scan {
+    // 상태 필터 + 검색 + 정렬: Ready rows 에 대해서만 적용. 상태 필터를 검색보다 **먼저**
+    // 적용해 footer total 을 "상태 통과·검색 전" 기준으로 잡는다. 정렬은 wrapper 에서
+    // 적용해 view 가 보이는 순서 그대로 행을 렌더(선택 키는 port 번호라 정렬과 무관).
+    let (filtered_rows, state_total): (Vec<PortRowView>, usize) = match &state.port_scan {
         PortScanState::Ready { rows, .. } => {
-            let mut v: Vec<PortRowView> = rows
+            // 1) 상태 필터(검색 전) → total 기준.
+            let state_rows: Vec<&PortRowView> = rows
                 .iter()
+                .filter(|r| filter_state.visible_states.contains(&r.state))
+                .collect();
+            let state_total = state_rows.len();
+            // 2) 검색 + 정렬.
+            let mut v: Vec<PortRowView> = state_rows
+                .into_iter()
                 .filter(|r| matches_query(r, &filter_state.query))
                 .cloned()
                 .collect();
             sort_rows(&mut v, filter_state.sort_key, filter_state.sort_dir);
-            v
+            (v, state_total)
         }
+        _ => (Vec::new(), 0),
+    };
+
+    // scope rows 에 존재하는 상태들(필터 전) — 드롭다운 목록 + 모두선택/적용의 교집합 대상.
+    let present_states: Vec<PortState> = match &state.port_scan {
+        PortScanState::Ready { rows, .. } => present_states(rows),
         _ => Vec::new(),
+    };
+
+    // 빈 상태 신호: scope 에 행은 있으나 상태 필터가 전부 걸러 비었고(검색은 빈) → "포트
+    // 없음" 이 아니라 "상태 필터로 가려짐" 으로 안내한다.
+    let hidden_by_state = match &state.port_scan {
+        PortScanState::Ready { rows, .. } => {
+            !rows.is_empty() && filtered_rows.is_empty() && filter_state.query.trim().is_empty()
+        }
+        _ => false,
     };
 
     let view_state = match &state.port_scan {
         PortScanState::Idle | PortScanState::Loading { .. } => PortScannerViewState::Loading,
-        // Scope counts are search-independent (computed over the full scope
-        // `rows`, not `filtered_rows`): `total` = every port, `listening` =
-        // LISTEN-only (header tag), per design.
+        // Scope counts are search-independent: `total` = state-filtered count
+        // (state pass, before search — per design), `listening` = scope-wide
+        // LISTEN-only count for the header tag (independent of the state filter).
         PortScanState::Ready { rows, .. } => PortScannerViewState::Ready {
             rows: &filtered_rows,
-            total: rows.len(),
+            total: state_total,
             listening: rows.iter().filter(|r| r.state.is_listen()).count(),
         },
         PortScanState::Failed(msg) => PortScannerViewState::Failed { message: msg },
@@ -386,6 +451,7 @@ pub fn draw_port_scanner_popup(
     let props = PortScannerProps {
         theme: &th,
         view_state,
+        present_states: &present_states,
         reduced_motion: engine.settings.accessibility.reduced_motion,
         filter: PortScannerFilter {
             show_all_system: filter_state.show_all_system,
@@ -394,6 +460,8 @@ pub fn draw_port_scanner_popup(
             sort_dir: filter_state.sort_dir,
             selected_port: filter_state.selected_port,
             columns: filter_state.columns,
+            visible_states: &filter_state.visible_states,
+            hidden_by_state,
         },
         label_heading: t("port_scanner.heading"),
         label_search_placeholder: t("port_scanner.search_placeholder"),
@@ -420,6 +488,13 @@ pub fn draw_port_scanner_popup(
         label_column_state: t("port_scanner.column_state"),
         label_columns_button: t("port_scanner.columns_button"),
         label_columns_menu_title: t("port_scanner.columns_menu_title"),
+        label_state_filter: t("port_scanner.state_filter"),
+        label_state_filter_title: t("port_scanner.state_filter_title"),
+        label_state_filter_select_all: t("port_scanner.state_filter_select_all"),
+        label_state_filter_deselect_all: t("port_scanner.state_filter_deselect_all"),
+        label_state_filter_reset: t("port_scanner.state_filter_reset"),
+        label_state_filter_apply: t("port_scanner.state_filter_apply"),
+        label_no_ports_state_filtered: t("port_scanner.no_ports_state_filtered"),
     };
 
     let action = draw_port_scanner_view(ui, &props);
@@ -481,6 +556,13 @@ pub fn draw_port_scanner_popup(
                 filter_state.sort_key = key;
                 filter_state.sort_dir = SortDir::Asc;
             }
+            write_filter_state(&ctx, filter_state);
+            PopupAction::None
+        }
+        PortScannerAction::SetVisibleStates(set) => {
+            // 상태 필터 Apply → 표시할 상태 집합 교체. 영속(temp memory)되어 재오픈에도
+            // 유지(LISTEN-only 기본은 휘발 시 복원).
+            filter_state.visible_states = set;
             write_filter_state(&ctx, filter_state);
             PopupAction::None
         }
@@ -583,6 +665,22 @@ pub fn matches_query(row: &PortRowView, query: &str) -> bool {
     haystacks
         .iter()
         .any(|h| h.to_lowercase().contains(&q_lower))
+}
+
+/// TCP states actually present in the scope `rows` (before state/search
+/// filtering). Display order: LISTEN first, then `label()` alphabetical.
+/// Derived from the full scope so a toggled-off state can still be re-enabled
+/// (a state filtered out of the *visible* rows would otherwise vanish from the
+/// dropdown). Deduplicated.
+pub fn present_states(rows: &[PortRowView]) -> Vec<PortState> {
+    let mut seen: Vec<PortState> = Vec::new();
+    for r in rows {
+        if !seen.contains(&r.state) {
+            seen.push(r.state);
+        }
+    }
+    seen.sort_by_key(|s| (!s.is_listen(), s.label()));
+    seen
 }
 
 fn scope_from_flag(show_all_system: bool) -> ScanScope {
@@ -744,6 +842,16 @@ pub fn draw_port_scanner_view(
     props: &PortScannerProps<'_>,
 ) -> PortScannerAction {
     if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
+        // 상태 필터 드롭다운이 열려 있으면 Escape 는 그것만 닫고 popup 은 유지한다
+        // (remote_tool `:181-185` 가드 미러). egui popup 위젯이 같은 프레임에 닫히지
+        // 않으므로 여기서 명시적으로 닫는다.
+        let popup_open = ui
+            .ctx()
+            .memory(|m| m.is_popup_open(egui::Id::new(STATE_FILTER_POPUP_ID)));
+        if popup_open {
+            ui.ctx().memory_mut(|m| m.close_popup());
+            return PortScannerAction::None;
+        }
         return PortScannerAction::Close;
     }
 
@@ -1067,7 +1175,188 @@ fn draw_column_chooser(
     out
 }
 
-/// 2줄 헤더(필터 줄): "전체 보기" 체크박스만.
+fn read_state_draft(ctx: &egui::Context) -> HashSet<PortState> {
+    ctx.memory(|m| {
+        m.data
+            .get_temp::<HashSet<PortState>>(egui::Id::new(STATE_FILTER_DRAFT_ID))
+            .unwrap_or_default()
+    })
+}
+
+fn write_state_draft(ctx: &egui::Context, draft: HashSet<PortState>) {
+    ctx.memory_mut(|m| {
+        m.data
+            .insert_temp(egui::Id::new(STATE_FILTER_DRAFT_ID), draft);
+    });
+}
+
+/// 상태 필터 버튼(funnel + 라벨). filtered(=일부 상태만 표시) 면 accent 채움,
+/// 아니면 surface0 + border. remote_tool `filter_button:578` 전사.
+fn state_filter_button(ui: &mut egui::Ui, th: &Theme, label: &str, filtered: bool) -> egui::Response {
+    let text_col: egui::Color32 = if filtered {
+        th.text_on_accent().into()
+    } else {
+        th.text.into()
+    };
+    let fill: egui::Color32 = if filtered {
+        th.accent_primary().into()
+    } else {
+        th.surface0.into()
+    };
+    let stroke = if filtered {
+        egui::Stroke::NONE
+    } else {
+        egui::Stroke::new(th.border_width.value(), th.surface1)
+    };
+    ui.add(
+        egui::Button::image_and_text(
+            icons::FUNNEL.image(14.0, text_col),
+            egui::RichText::new(label)
+                .color(text_col)
+                .size(th.font_size_body.value()),
+        )
+        .fill(fill)
+        .stroke(stroke),
+    )
+}
+
+/// 드롭다운 내부 separator (remote_tool `hsep:317` 전사 — surface1 hline).
+fn state_filter_hsep(ui: &mut egui::Ui, th: &Theme) {
+    ui.add_space(2.0);
+    let r = ui.max_rect();
+    ui.painter().hline(
+        r.x_range(),
+        ui.cursor().top(),
+        egui::Stroke::new(th.border_width.value(), th.surface1),
+    );
+    ui.add_space(2.0);
+}
+
+/// 상태 필터 버튼 + 드롭다운(체크박스 목록 + 모두선택/모두해제/초기화/적용).
+///
+/// Apply-on-confirm: 드롭다운 편집은 egui temp memory draft 에만 쌓이고 **적용** 눌러야
+/// `SetVisibleStates` 로 반영된다(remote_tool `draw_protocol_filter:609` 미러). 단
+/// 부호가 반대다 — port_scanner 는 **shown 집합**이라 `checked = draft.contains(s)`
+/// (remote_tool 은 hidden 집합이라 `!contains`). 초기화도 다르다 — remote_tool 은
+/// select-all 이지만 여기는 **LISTEN-only 복원**(`{Listen}`).
+fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
+    let th = props.theme;
+    let present = props.present_states;
+    let popup_id = egui::Id::new(STATE_FILTER_POPUP_ID);
+
+    // filtered = present 상태 중 일부만 표시 중(전부 표시면 필터 미적용).
+    let total = present.len();
+    let selected = present
+        .iter()
+        .filter(|s| props.filter.visible_states.contains(*s))
+        .count();
+    let filtered = selected < total;
+    let label = if filtered {
+        format!("{} · {}/{}", props.label_state_filter, selected, total)
+    } else {
+        props.label_state_filter.to_string()
+    };
+
+    let btn = state_filter_button(ui, th, &label, filtered);
+    if btn.clicked() {
+        // 열릴 때 draft 를 현재 적용 집합(visible_states)으로 시드.
+        if !ui.memory(|m| m.is_popup_open(popup_id)) {
+            write_state_draft(ui.ctx(), props.filter.visible_states.clone());
+        }
+        ui.memory_mut(|m| m.toggle_popup(popup_id));
+    }
+
+    let mut applied: Option<PortScannerAction> = None;
+    egui::popup::popup_above_or_below_widget(
+        ui,
+        popup_id,
+        &btn,
+        egui::AboveOrBelow::Below,
+        egui::PopupCloseBehavior::CloseOnClickOutside,
+        |ui| {
+            ui.set_min_width(216.0);
+            ui.label(
+                egui::RichText::new(props.label_state_filter_title)
+                    .color(th.subtext0)
+                    .size(th.font_size_caption.value())
+                    .monospace(),
+            );
+            ui.add_space(th.spacing_xs.value());
+
+            // draft 를 한 번 읽어 체크박스 렌더 + 토글 적용 후 변경 시 되쓴다.
+            let mut draft = read_state_draft(ui.ctx());
+            let mut draft_changed = false;
+            egui::ScrollArea::vertical()
+                .max_height(168.0)
+                .show(ui, |ui| {
+                    for st in present {
+                        // shown 집합 → checked = 포함(remote_tool 의 !contains 와 반대).
+                        let mut checked = draft.contains(st);
+                        if checkbox(ui, th, &mut checked, st.label(), true).changed() {
+                            if checked {
+                                draft.insert(*st);
+                            } else {
+                                draft.remove(st);
+                            }
+                            draft_changed = true;
+                        }
+                    }
+                });
+            if draft_changed {
+                write_state_draft(ui.ctx(), draft);
+            }
+
+            state_filter_hsep(ui, th);
+            // 일괄: 모두 선택(present 전체) / 모두 해제(∅).
+            ui.horizontal(|ui| {
+                if Button::new(props.label_state_filter_select_all)
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, th)
+                    .clicked()
+                {
+                    write_state_draft(ui.ctx(), present.iter().copied().collect());
+                }
+                if Button::new(props.label_state_filter_deselect_all)
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, th)
+                    .clicked()
+                {
+                    write_state_draft(ui.ctx(), HashSet::new());
+                }
+            });
+            // 초기화(LISTEN-only 복원) / 적용.
+            ui.horizontal(|ui| {
+                if Button::new(props.label_state_filter_reset)
+                    .variant(ButtonVariant::Ghost)
+                    .show(ui, th)
+                    .clicked()
+                {
+                    write_state_draft(ui.ctx(), HashSet::from([PortState::Listen]));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if Button::new(props.label_state_filter_apply)
+                        .variant(ButtonVariant::Primary)
+                        .show(ui, th)
+                        .clicked()
+                    {
+                        // Apply = draft ∩ present (사라진 상태가 묻어 들어가지 않게 보정).
+                        let set: HashSet<PortState> = read_state_draft(ui.ctx())
+                            .into_iter()
+                            .filter(|s| present.contains(s))
+                            .collect();
+                        applied = Some(PortScannerAction::SetVisibleStates(set));
+                    }
+                });
+            });
+        },
+    );
+    if applied.is_some() {
+        ui.memory_mut(|m| m.close_popup());
+    }
+    applied
+}
+
+/// 2줄 헤더(필터 줄): 좌측 "전체 보기" 체크박스 + 우측 상태 필터 버튼.
 fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortScannerAction> {
     let mut out: Option<PortScannerAction> = None;
     ui.horizontal(|ui| {
@@ -1083,6 +1372,12 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
         {
             out = Some(PortScannerAction::SetShowAllSystem(checked));
         }
+        // 우측 정렬 상태 필터(remote_tool add-bar `:489-496` 미러).
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some(a) = draw_state_filter(ui, props) {
+                out = Some(a);
+            }
+        });
     });
     out
 }
@@ -1122,7 +1417,7 @@ fn draw_failed_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>, message: &s
     });
 }
 
-/// Ready: 빈 결과 분기 3종 OR TableBuilder 7컬럼.
+/// Ready: 빈 결과 분기 4종 OR TableBuilder 7컬럼.
 fn draw_ready_body(
     ui: &mut egui::Ui,
     props: &PortScannerProps<'_>,
@@ -1130,8 +1425,12 @@ fn draw_ready_body(
 ) -> Option<PortScannerAction> {
     let th = props.theme;
     if rows.is_empty() {
+        // hidden_by_state 는 검색이 빈 상태에서만 wrapper 가 세우므로 search-zero 보다
+        // 뒤에서 본다(검색 결과 0 이 우선). scope 에 행은 있으나 상태 필터가 전부 가렸을 때.
         let empty_label = if !props.filter.query.trim().is_empty() {
             props.label_no_ports_search_zero
+        } else if props.filter.hidden_by_state {
+            props.label_no_ports_state_filtered
         } else if props.filter.show_all_system {
             props.label_no_ports_system_empty
         } else {
@@ -1446,6 +1745,11 @@ mod tests {
         }
     }
 
+    /// LISTEN-only shown set referenced by the test props (matches the runtime
+    /// default). A static lets `default_props` hand out a `&'a` without owning.
+    static TEST_VISIBLE_STATES: std::sync::LazyLock<HashSet<PortState>> =
+        std::sync::LazyLock::new(|| HashSet::from([PortState::Listen]));
+
     fn default_props<'a>(
         theme: &'a Theme,
         view_state: PortScannerViewState<'a>,
@@ -1455,6 +1759,7 @@ mod tests {
         PortScannerProps {
             theme,
             view_state,
+            present_states: &[],
             reduced_motion: false,
             filter: PortScannerFilter {
                 show_all_system,
@@ -1463,6 +1768,8 @@ mod tests {
                 sort_dir: SortDir::Asc,
                 selected_port: None,
                 columns: ColumnVisibility::default(),
+                visible_states: &TEST_VISIBLE_STATES,
+                hidden_by_state: false,
             },
             label_heading: "Listening ports",
             label_search_placeholder: "Search…",
@@ -1489,6 +1796,13 @@ mod tests {
             label_column_state: "State",
             label_columns_button: "Columns",
             label_columns_menu_title: "Show columns",
+            label_state_filter: "State",
+            label_state_filter_title: "Filter by state",
+            label_state_filter_select_all: "Select all",
+            label_state_filter_deselect_all: "Deselect all",
+            label_state_filter_reset: "Reset (LISTEN only)",
+            label_state_filter_apply: "Apply",
+            label_no_ports_state_filtered: "No ports match the state filter.",
         }
     }
 
@@ -2004,5 +2318,76 @@ mod tests {
         // Different port → selected.
         toggle(&mut fs, 8080);
         assert_eq!(fs.selected_port, Some(8080));
+    }
+
+    fn row_with_state(port: u16, state: PortState) -> PortRowView {
+        PortRowView {
+            port,
+            addr_display: "127.0.0.1".into(),
+            pid: Some(1),
+            process_name: None,
+            source: SourceTag::External,
+            state,
+        }
+    }
+
+    #[test]
+    fn state_filter_default_is_listen_only() {
+        let fs = FilterState::default();
+        assert_eq!(fs.visible_states, HashSet::from([PortState::Listen]));
+    }
+
+    #[test]
+    fn state_filter_predicate_passes_only_shown_states() {
+        // The wrapper filters rows with `visible_states.contains(&row.state)`.
+        let listen = row_with_state(3000, PortState::Listen);
+        let established = row_with_state(3001, PortState::Established);
+
+        // Default set: only LISTEN passes.
+        let default_set = HashSet::from([PortState::Listen]);
+        assert!(default_set.contains(&listen.state));
+        assert!(!default_set.contains(&established.state));
+
+        // Widen the set: ESTABLISHED now passes too.
+        let widened = HashSet::from([PortState::Listen, PortState::Established]);
+        assert!(widened.contains(&listen.state));
+        assert!(widened.contains(&established.state));
+    }
+
+    #[test]
+    fn present_states_listen_first_then_alphabetical_deduped() {
+        // Mixed + duplicated states across rows. Expected order: LISTEN first,
+        // then the rest by label() alphabetical (CLOSE_WAIT < ESTABLISHED).
+        let rows = vec![
+            row_with_state(1, PortState::Established),
+            row_with_state(2, PortState::CloseWait),
+            row_with_state(3, PortState::Listen),
+            row_with_state(4, PortState::Established), // dup
+            row_with_state(5, PortState::Listen),      // dup
+        ];
+        let present = present_states(&rows);
+        assert_eq!(
+            present,
+            vec![
+                PortState::Listen,
+                PortState::CloseWait,
+                PortState::Established,
+            ],
+        );
+    }
+
+    #[test]
+    fn present_states_empty_for_no_rows() {
+        assert!(present_states(&[]).is_empty());
+    }
+
+    #[test]
+    fn set_visible_states_action_round_trips_filter_state() {
+        // Mirrors the wrapper's SetVisibleStates handling.
+        let mut fs = FilterState::default();
+        assert_eq!(fs.visible_states, HashSet::from([PortState::Listen]));
+        let set = HashSet::from([PortState::Listen, PortState::Established]);
+        fs.visible_states = set.clone();
+        assert_eq!(fs.visible_states, set);
     }
 }

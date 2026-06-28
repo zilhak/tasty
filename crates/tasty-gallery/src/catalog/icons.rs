@@ -82,6 +82,7 @@ glyph!(
     "columns",
     r#"<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>"#
 );
+glyph!(FUNNEL, "funnel", r#"<path d="M3 4h18l-7 8v6l-4 2v-8z"/>"#);
 
 // ── View modes & favorites (T11 explorer) ──
 glyph!(
@@ -257,6 +258,7 @@ const ACTIONS: &[Entry] = &[
     (TRASH, "trash", "delete / remove"),
     (COPY, "copy", "copy to clipboard"),
     (SEARCH, "search", "filter / search affordance"),
+    (FUNNEL, "funnel", "state filter"),
 ];
 
 const NAV: &[Entry] = &[

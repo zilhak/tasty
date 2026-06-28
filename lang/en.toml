@@ -681,6 +681,13 @@ footer_loading = "Scanning…"
 copy_address = "Copy address"
 close = "Close"
 failed_label = "Scan failed"
+state_filter = "State"
+state_filter_title = "Filter by state"
+state_filter_select_all = "Select all"
+state_filter_deselect_all = "Deselect all"
+state_filter_reset = "Reset (LISTEN only)"
+state_filter_apply = "Apply"
+no_ports_state_filtered = "No ports match the state filter. Enable more states in the filter."
 
 [remote_tool]
 heading = "Remote connections"

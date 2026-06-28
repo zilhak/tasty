@@ -681,6 +681,13 @@ footer_loading = "스캔 중…"
 copy_address = "주소 복사"
 close = "닫기"
 failed_label = "스캔 실패"
+state_filter = "상태"
+state_filter_title = "상태로 필터"
+state_filter_select_all = "모두 선택"
+state_filter_deselect_all = "모두 해제"
+state_filter_reset = "초기화 (LISTEN만)"
+state_filter_apply = "적용"
+no_ports_state_filtered = "상태 필터에 맞는 포트가 없습니다. 필터에서 다른 상태를 켜세요."
 
 [remote_tool]
 heading = "원격 접속"

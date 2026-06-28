@@ -156,6 +156,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                             .image(s, theme.text_on_accent().to_egui())
                             .paint_at(ui, r);
                         kit::body(ui, theme, "Show all (system-wide)");
+                        // 우측 정렬 상태 필터 버튼(적용 변형 — accent 채움).
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            funnel_button(ui, theme, "State · 1/3", true);
+                        });
                     });
                 },
             );
@@ -210,6 +214,42 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
     });
 
+    // 상태 필터 — 닫힘 버튼 + 열린 드롭다운(체크박스 목록 + 일괄 조작). 본체 신규 UI 라
+    // gallery-first 로 닫힘/적용/열림 3상태를 노출한다(적용 변형은 위 모달 show-all 행).
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        // 닫힘(미적용) 버튼 — surface-raised + border.
+        funnel_button(ui, theme, "State", false);
+        // 열린 드롭다운 카드(min-width 216).
+        kit::frame_card(ui, theme, 216.0, kit::panel_fill(theme), |ui| {
+            kit::region_sym(ui, theme.spacing_sm.value(), theme.spacing_sm.value(), |ui| {
+                kit::caption(ui, theme, "Filter by state", true);
+                ui.add_space(theme.spacing_xs.value());
+                check_row(ui, theme, "LISTEN", true);
+                check_row(ui, theme, "ESTABLISHED", false);
+                check_row(ui, theme, "CLOSE_WAIT", false);
+                kit::hsep(ui, theme);
+                ui.horizontal(|ui| {
+                    Button::new("Select all")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
+                    Button::new("Deselect all")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
+                });
+                ui.horizontal(|ui| {
+                    Button::new("Reset (LISTEN only)")
+                        .variant(ButtonVariant::Ghost)
+                        .show(ui, theme);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        Button::new("Apply")
+                            .variant(ButtonVariant::Primary)
+                            .show(ui, theme);
+                    });
+                });
+            });
+        });
+    });
+
     spec::meta(
         ui,
         theme,
@@ -221,6 +261,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("table", "min-width cols · h-scroll · sticky header"),
             ("columns", "chooser hides cols (Workspace hidden here)"),
+            ("state filter", "funnel button · dropdown · default LISTEN-only"),
             ("header bg", "bg-sidebar · mono caption"),
             ("footer", "count · Copy address · Close"),
         ],
@@ -248,8 +289,67 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          scrolls horizontally (instead of ellipsizing). The columns chooser \
          (header) toggles which columns show — here Workspace is hidden. \
          Selecting a row enables Copy address; the sticky header keeps column \
-         labels visible while scrolling.",
+         labels visible while scrolling. The state filter (funnel button, filter \
+         row) defaults to LISTEN-only; its dropdown is a shown set — checked \
+         states are shown, Reset restores LISTEN-only, Apply commits the draft.",
     );
+}
+
+/// 상태 필터 funnel 버튼 mock — 본체 `state_filter_button` 전사. applied 면 accent
+/// 채움 + on-accent, 아니면 surface-raised + border.
+fn funnel_button(ui: &mut egui::Ui, theme: &Theme, label: &str, applied: bool) {
+    let text_col = if applied {
+        theme.text_on_accent().to_egui()
+    } else {
+        theme.text_primary().to_egui()
+    };
+    let fill = if applied {
+        theme.accent_primary().to_egui()
+    } else {
+        theme.surface_raised().to_egui()
+    };
+    let stroke = if applied {
+        egui::Stroke::NONE
+    } else {
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui())
+    };
+    ui.add(
+        egui::Button::image_and_text(
+            icons::FUNNEL.image(14.0, text_col),
+            egui::RichText::new(label)
+                .color(text_col)
+                .size(theme.font_size_body.value()),
+        )
+        .fill(fill)
+        .stroke(stroke),
+    );
+}
+
+/// 드롭다운 체크박스 행 mock — checked 면 accent 채움 + check, 아니면 빈 보더 박스.
+fn check_row(ui: &mut egui::Ui, theme: &Theme, label: &str, checked: bool) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+        let s = theme.icon_glyph_size_md.value();
+        let (r, _) = ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::hover());
+        if checked {
+            ui.painter().rect_filled(
+                r,
+                theme.corner_radius_sm.value(),
+                theme.accent_primary().to_egui(),
+            );
+            icons::CHECK
+                .image(s, theme.text_on_accent().to_egui())
+                .paint_at(ui, r);
+        } else {
+            ui.painter().rect_stroke(
+                r,
+                theme.corner_radius_sm.value(),
+                egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+                egui::StrokeKind::Inside,
+            );
+        }
+        kit::body(ui, theme, label);
+    });
 }
 
 fn col(title: &str, width: TableColumnWidth, align: TableAlign) -> TableColumn<'_, ()> {

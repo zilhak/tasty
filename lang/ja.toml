@@ -681,6 +681,13 @@ footer_loading = "スキャン中…"
 copy_address = "アドレスをコピー"
 close = "閉じる"
 failed_label = "スキャンに失敗しました"
+state_filter = "状態"
+state_filter_title = "状態でフィルタ"
+state_filter_select_all = "すべて選択"
+state_filter_deselect_all = "すべて解除"
+state_filter_reset = "リセット (LISTENのみ)"
+state_filter_apply = "適用"
+no_ports_state_filtered = "状態フィルタに一致するポートがありません。フィルタで他の状態を有効にしてください。"
 
 [remote_tool]
 heading = "リモート接続"
