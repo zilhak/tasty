@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-git-viewer"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only git status/log/diff viewer popup"
@@ -15,7 +15,7 @@ tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
 # Windows verbatim prefix(`\\?\`) 제거 — worktree 경로 표시/비교 정규화에 사용.
 tasty-utils = { path = "../tasty-utils" }
 # Read-only libgit2 binding — HTTPS/SSH 불필요라 default-features off.
-git2 = { version = "0.19", default-features = false }
+git2 = { version = "0.20", default-features = false }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
