@@ -439,7 +439,8 @@ fn main_ui(ui: &mut egui::Ui, state: &GalleryState) {
                 ui.add_space(side + pad_x);
                 ui.vertical(|ui| {
                     // 본문 컬럼 = 페이지폭 − 좌우 대칭 패딩(40×2).
-                    ui.set_max_width(content_w - pad_x * 2.0);
+                    // 매우 좁은 창에서 음수가 되지 않도록 0 으로 클램프.
+                    ui.set_max_width((content_w - pad_x * 2.0).max(0.0));
                     ui.add_space(theme.spacing_xl.value() + theme.spacing_md.value());
                     page_head(ui, theme, page.category);
                     for sec in &page.sections {

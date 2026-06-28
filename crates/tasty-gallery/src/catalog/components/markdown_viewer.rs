@@ -281,16 +281,31 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
                 let _ = header;
                 f.show(ui, |ui| {
                     let color = theme.text_secondary().to_egui();
-                    ui.columns(3, |c| {
-                        for (i, cell) in cells.iter().enumerate() {
-                            let rt = if i == 2 {
-                                egui::RichText::new(*cell).monospace().size(body).color(color)
-                            } else {
-                                egui::RichText::new(*cell).size(body).color(color)
-                            };
-                            c[i].label(rt);
-                        }
-                    });
+                    let render_cell = |ui: &mut egui::Ui, i: usize, cell: &str| {
+                        let rt = if i == 2 {
+                            egui::RichText::new(cell).monospace().size(body).color(color)
+                        } else {
+                            egui::RichText::new(cell).size(body).color(color)
+                        };
+                        ui.label(rt);
+                    };
+                    // 동적폭 + columns 방어 가드: 잔여폭이 컬럼 spacing 합 미만이면
+                    // columns 내부의 (avail - total_spacing)/3 가 음수가 되어 panic
+                    // (egui ui.rs set_min_width assert). 그 경우 세로 폴백으로 그린다.
+                    let total_spacing = ui.spacing().item_spacing.x * 2.0;
+                    if ui.available_width() > total_spacing + 1.0 {
+                        ui.columns(3, |c| {
+                            for (i, cell) in cells.iter().enumerate() {
+                                render_cell(&mut c[i], i, cell);
+                            }
+                        });
+                    } else {
+                        ui.vertical(|ui| {
+                            for (i, cell) in cells.iter().enumerate() {
+                                render_cell(ui, i, cell);
+                            }
+                        });
+                    }
                 });
             };
             row(ui, ["Resource", "Kind", "Count"], true);

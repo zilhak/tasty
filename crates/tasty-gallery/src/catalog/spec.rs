@@ -110,7 +110,13 @@ pub fn stage(
             StageVariant::Center => {
                 ui.vertical_centered(add_contents);
             }
-            _ => {
+            // Solo("단독 큰 데모")·Tight("풀블리드 padding 0") 의 디자인 의도는 둘 다
+            // 세로 단일 컬럼. catch-all horizontal_wrapped 로 떨어지면 콘텐츠가 가로로
+            // 흘러 배치가 무너지고(markdown 은 columns 음수폭 panic) → 세로 적층으로 명시.
+            StageVariant::Solo | StageVariant::Tight => {
+                ui.vertical(add_contents);
+            }
+            StageVariant::Wrap => {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing =
                         egui::vec2(theme.spacing_lg.value(), theme.spacing_lg.value());
