@@ -886,7 +886,7 @@ pub fn pages() -> Vec<Page> {
                         "markdown-viewer",
                         "Markdown surface",
                         Some(
-                            "ScrollArea · body=text-secondary · link=accent · code=surface-raised",
+                            "6-level prose hierarchy · line-height-prose body · element catalog · load/empty states",
                         ),
                         components::markdown_viewer::draw,
                     )],
