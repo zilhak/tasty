@@ -344,13 +344,14 @@ pub fn draw_status_bar(
 
     // ── 데이터 추출 (immutable read) ──
     let surface_id = state.focused_surface_id(engine);
-    let (shell, grid) = match surface_id.and_then(|sid| engine.terminals.get(sid)) {
-        Some(term) => (
-            term.foreground_process_info().map(|info| info.name),
-            Some((term.cols(), term.rows())),
-        ),
-        None => (None, None),
-    };
+    // Grid (cols/rows) is a lock-free handle-cache read. The foreground process
+    // name comes from the 1Hz BusyPoll cache (`foreground_name`) rather than a
+    // per-frame system snapshot — re-snapshotting every frame both cost ≈6ms on
+    // the main thread and made the name flicker while agents churned helpers.
+    let grid = surface_id
+        .and_then(|sid| engine.terminals.get(sid))
+        .map(|term| (term.cols(), term.rows()));
+    let shell = surface_id.and_then(|sid| engine.foreground_name(sid).map(str::to_owned));
     let branch = surface_id
         .and_then(|sid| focused_cwd(engine, sid))
         .and_then(|cwd| git_branch(&cwd));

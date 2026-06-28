@@ -29,6 +29,9 @@ impl CoreState {
         // 즉시 false 라 비용 무시 가능.
         let mut mouse_capture_disabled: std::collections::HashSet<u32> =
             std::collections::HashSet::new();
+        // 같은 resolve 결과에서 StatusBar 용 foreground 이름도 함께 모은다. StatusBar 가
+        // 매 프레임 프로세스 스냅샷을 다시 뜨는 대신 이 캐시를 읽는다.
+        let mut names: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
         for ((&sid, &shell_pid), fg) in sids.iter().zip(shell_pids.iter()).zip(foregrounds.iter()) {
             let Some(terminal) = self.terminals.get(sid) else {
                 continue;
@@ -36,15 +39,18 @@ impl CoreState {
             if terminal.busy_with_foreground(shell_pid, fg.as_ref()) {
                 busy.insert(sid);
             }
-            if let Some(f) = fg.as_ref()
-                && self.settings.general.mouse_capture_disabled_for(&f.name)
-            {
-                mouse_capture_disabled.insert(sid);
+            if let Some(f) = fg.as_ref() {
+                if self.settings.general.mouse_capture_disabled_for(&f.name) {
+                    mouse_capture_disabled.insert(sid);
+                }
+                names.insert(sid, f.name.clone());
             }
         }
-        // 블랙리스트 캐시는 다음 입력 시 조회로 반영되므로 redraw 신호(changed)에는
-        // 포함하지 않는다 — busy set 변화만으로 dirty 를 판정한다.
+        // 블랙리스트·이름 캐시는 다음 입력/프레임 조회로 반영되므로 redraw 신호(changed)
+        // 에는 포함하지 않는다 — busy set 변화만으로 dirty 를 판정한다. 닫힌 surface 의
+        // stale 엔트리가 남지 않도록 매 tick 맵 전체를 교체한다.
         self.mouse_capture_disabled_surfaces = mouse_capture_disabled;
+        self.foreground_names = names;
         let changed = self.busy_surfaces != busy;
         self.busy_surfaces = busy;
         changed
@@ -62,6 +68,14 @@ impl CoreState {
     /// program (cached value from the last `refresh_busy_surfaces` poll).
     pub fn is_surface_busy(&self, surface_id: u32) -> bool {
         self.busy_surfaces.contains(&surface_id)
+    }
+
+    /// The cached foreground process name for the given surface (resolved by the
+    /// last `refresh_busy_surfaces` poll). The StatusBar reads this every frame
+    /// instead of re-snapshotting all system processes; `None` until the first
+    /// poll resolves the surface (≤1s after spawn) or if it has no PID.
+    pub fn foreground_name(&self, surface_id: u32) -> Option<&str> {
+        self.foreground_names.get(&surface_id).map(String::as_str)
     }
 
     /// Whether any surface in the given list is busy.
