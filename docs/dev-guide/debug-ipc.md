@@ -54,6 +54,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `debug.host_popup.open` | `popup_id` | 호스트 빌트인 popup 을 focused window 중앙에 강제 open (사용자 클릭 경로 우회, 시각 검증용) |
 | `debug.host_popup.close` | `popup_id` | 호스트 빌트인 popup 강제 close |
 | `debug.settings.open` | `tab?`, `subtab?` | 설정 모달 강제 open (사용자 클릭/단축키 우회, 시각 검증용). `tab` = L1 `general`/`terminal`/`appearance`/`keybindings`/`file_handler`/`misc`/`plugins` (생략 시 `general`). `subtab` = 선택한 L1 의 L2 섹션 키(아래 표), 생략·미지정 키면 해당 L1 의 기본 L2 유지. `AppEvent::OpenSettings` 발화 → 별도 모달 윈도우 생성 |
+| `debug.settings.apply` | `settings` (object) | 부분(또는 전체) 설정 patch 를 **라이브 settings 직렬화 복사본** 위에 재귀 deep-merge 한 뒤 완성된 전체 `Settings` 로 `UpdateSettings` 를 dispatch — 설정 모달 저장과 **동일 경로**라 collapse·theme·`config.toml` save 까지 cascade 가 처리한다(모달/proxy 불요). 라이브를 pre-mutate 하지 않으므로 cascade 의 prev≠new 비교가 살아 collapse 분기가 정상 발화. **알 수 없는 키는 조용히 무시(no-op)** — `Settings` 가 `deny_unknown_fields` 가 아니라 `#[serde(default)]` 이므로 오타 키는 변화 없이 통과한다(검증자 혼동 주의). 타입 불일치/비-object 는 `-32602` 로 거부되고 라이브는 불변. gui 게이트 없이 headless 에서도 동작 |
 
 `debug.settings.open` 의 `subtab` 키(활성 `tab` 종속):
 
@@ -80,7 +81,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 
 ## CLI 노출
 
-CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug/mod.rs`)가 모듈째 `#![cfg(debug_assertions)]`. 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key` · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`.)
+CLI 도 동일하게 debug 빌드에서만 등록된다 — `DebugCommands`(`crates/tasty-cli/src/commands/debug/mod.rs`)가 모듈째 `#![cfg(debug_assertions)]`. 서브커맨드: `info` · `cell-info` · `screen-attrs` · `glyph-color` · `ime-*` · `switch-input-source` · `raw-key` · `event-bus` · `extension` · `tool` · `popup` · `host-popup` · `banner` · `settings` · `stream-echo` · `attach`. (`settings open [--tab <name>] [--subtab <key>]` → `debug.settings.open`; `settings apply --json '<obj>'` 또는 `settings apply --file <path>` → `debug.settings.apply`. 예: `tasty debug settings apply --json '{"general":{"workspace_categories_enabled":false}}'`. JSON 파싱/파일 읽기 에러는 CLI 단에서 1차로 잡아 종료하고, 서버는 `params.get("settings")` 가 object 임을 기대한다.)
 
 ### `tasty debug attach` (JSON-RPC 메서드 아님)
 
@@ -110,6 +111,7 @@ debug 메서드의 메타(`local_only()`)는 `crates/tasty-ipc/src/method_meta.r
 기준 한 줄: *"이 코드를 통째로 지우고 컴파일 에러 몇 줄만 정리하면 디버그 기능이 깨끗이 사라지는가?"* 그게 되면 격리 OK.
 
 - **debug 핸들러는 별도 파일에 모은다** — `src/adapters/ipc/handler/` 의 `debug.rs`(cell/screen/glyph/feed/inject) · `debug_plugin.rs`(event_bus/extension) · `tool.rs` · `popup.rs` 가 각각 `#[cfg(...)]` 로 모듈 선언된다. 일반 핸들러 파일(`pane.rs`, `surface.rs` 등) 중간에 `#[cfg(debug_assertions)] fn debug_xxx()` 를 끼우지 않는다.
+  - **예외 — gui 게이트 없는 debug 핸들러**: `debug.rs` 모듈은 `#[cfg(all(debug_assertions, feature = "gui"))]` 로 선언돼 headless 빌드에서 통째로 사라진다. 따라서 **gui 무관하게 headless 에서도 동작해야 하는 비-gui debug 핸들러**(`ui.state` 의 `handle_ui_state`, `debug.settings.apply` 의 `handle_debug_settings_apply`)는 `debug.rs` 가 아니라 `handler.rs` 안에 `#[cfg(debug_assertions)]` 로 직접 둔다. 삭제 가능성(핸들러 fn + route 한 줄 + `DEBUG_METHODS` 한 줄 + CLI variant)은 그대로 유지된다.
 - **외부 표면에 남는 cfg 가드는 router 분기 한 줄** (위 라우팅 코드의 `#[cfg(debug_assertions)] route_debug_handler(...)`).
 - **삭제 가능성 테스트**: debug 파일을 지웠을 때 cfg-guard 호출처 몇 줄 제거 외에 다른 변경이 필요하면 격리가 깨진 것이다.
 

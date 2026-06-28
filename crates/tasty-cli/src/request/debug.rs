@@ -184,6 +184,31 @@ pub(super) fn settings_debug_command_to_method_params(
             "debug.settings.open",
             serde_json::json!({ "tab": tab, "subtab": subtab }),
         ),
+        // raw 문자열을 그대로 싣지 않고 CLI 단에서 1차 파싱해 Value object 로 넘긴다
+        // (서버는 `params.get("settings")` 로 object 를 기대). 이 fn 은 Result 를
+        // 반환하지 못하므로 파싱/파일 에러는 eprintln + exit(1) 로 처리한다
+        // (normalize_cwd_arg 와 동일한 CLI 에러 선례).
+        SettingsDebugCommands::Apply { json, file } => {
+            let raw = match (file, json) {
+                (Some(path), _) => std::fs::read_to_string(path).unwrap_or_else(|e| {
+                    eprintln!("Error: --file {path}: {e}");
+                    std::process::exit(1);
+                }),
+                (None, Some(s)) => s.clone(),
+                (None, None) => {
+                    eprintln!("Error: settings apply requires --json or --file");
+                    std::process::exit(1);
+                }
+            };
+            let patch: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|e| {
+                eprintln!("Error: invalid JSON in settings patch: {e}");
+                std::process::exit(1);
+            });
+            (
+                "debug.settings.apply",
+                serde_json::json!({ "settings": patch }),
+            )
+        }
     }
 }
 

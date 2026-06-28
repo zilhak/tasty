@@ -313,6 +313,18 @@ pub enum SettingsDebugCommands {
         #[arg(long)]
         subtab: Option<String>,
     },
+    /// Apply a (partial) settings patch at runtime: the JSON object is
+    /// deep-merged onto the live settings, then dispatched as UpdateSettings
+    /// (same path as saving the settings modal — persists to config.toml).
+    Apply {
+        /// Settings patch as a JSON object (partial allowed). e.g.
+        /// '{"general":{"workspace_categories_enabled":false}}'
+        #[arg(long, conflicts_with = "file")]
+        json: Option<String>,
+        /// Read the JSON patch from a file instead of --json.
+        #[arg(long)]
+        file: Option<String>,
+    },
 }
 
 #[cfg(debug_assertions)]
