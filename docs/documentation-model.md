@@ -86,7 +86,7 @@ docs/features/<feature>/
 
 디자인은 claude design 산출물(`design-system/`)이며 claude code 는 **직접 수정하지 않는다.** 시각 진실은 `design-system/` 이 소유하고 docs 는 **링크만** 한다(재서술 금지).
 
-디자인을 바꿔야 하면 소스를 먼저 고치지 말고 **claude design 에 변경을 요청**하고, **변경된 디자인을 받아 재적용**한다. 받은 변경 내용은 아래 §6 배치 규칙대로 docs 에 흡수한다(동작→features, 시각→design-system 링크, 근거→ADR). 요청 제출·회수의 구체 워크플로는 **로컬 전용**이라 `.claude/CLAUDE.md` 가 정의한다 — docs 에는 두지 않는다.
+디자인을 바꿔야 하면 소스를 먼저 고치지 말고 **claude design 에 변경을 요청**하고, **변경된 디자인을 받아 재적용**한다. 받은 변경 내용은 아래 §6 배치 규칙대로 docs 에 흡수한다(동작→features, 시각→design-system 링크, 근거→ADR). 요청 제출·회수의 구체 워크플로는 [`dev-guide/design-change-workflow.md`](dev-guide/design-change-workflow.md) 에 정의돼 있다(요청문서 → 시안 → 정합 루프).
 
 ## 6. 작성 규칙 요약
 
@@ -95,10 +95,10 @@ docs/features/<feature>/
 - 시각 수치/토큰은 적지 말고 `design-system/` 을 링크.
 - 결정의 근거는 본문에 길게 쓰지 말고 ADR 로 박고 링크.
 - 합성 화면은 언급/링크로만 잇는다.
-- 디자인 변경이 필요하면 소스를 먼저 고치지 말고 claude design 에 변경을 요청하고, 변경된 디자인을 받아 재적용한다 (구체 워크플로는 로컬 전용 — `.claude/CLAUDE.md`).
+- 디자인 변경이 필요하면 소스를 먼저 고치지 말고 claude design 에 변경을 요청하고, 변경된 디자인을 받아 재적용한다 (구체 워크플로는 [`dev-guide/design-change-workflow.md`](dev-guide/design-change-workflow.md)).
 
 ## 관련
 
 - [ADR-0006 — 문서 분류체계: 동작 우선](adr/0006-docs-taxonomy-behavior-first.md) (근거)
 - [features/index.md](features/index.md) (기획·화면 카탈로그)
-- 프로젝트 디자인 워크플로: `.claude/CLAUDE.md`
+- [dev-guide/design-change-workflow.md](dev-guide/design-change-workflow.md) — 디자인 변경 워크플로(요청문서 → 시안 → 정합 루프)

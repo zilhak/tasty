@@ -21,7 +21,7 @@ tasty 의 화면/기능 명세 문서가 `docs/features/` 단일 층에 임의 �
 - **기획문서(내부 동작, headless-valid)를 1순위 부모**, **화면정의서를 그 자식(2순위)** 으로 둔다. 폴더 중첩: `docs/features/<f>/index.md` + `docs/features/<f>/screens/<s>.md`. 기획 1 : 화면 0..N.
 - **시각 진실은 `design-system/` vendor 가 소유**하고 docs 는 링크만 한다. 화면정의서는 요소 인벤토리와 "동작 상태 → 시각" 매핑만 적는다.
 - **합성 화면은 다른 문서를 언급(링크)으로만** 잇는다 (임베드/복제 금지).
-- **design ↔ code 는 claude design 협업으로 연계한다**: 디자인 변경은 소스를 먼저 고치지 않고 claude design 에 요청해 변경된 디자인을 받아 재적용하며, 그 변경 내용을 docs 가 조각별로 라우팅해 흡수한다. 요청·회수의 구체 워크플로(로컬 경로)는 docs 에 두지 않는다.
+- **design ↔ code 는 claude design 협업으로 연계한다**: 디자인 변경은 소스를 먼저 고치지 않고 claude design 에 요청해 변경된 디자인을 받아 재적용하며, 그 변경 내용을 docs 가 조각별로 라우팅해 흡수한다. 요청·회수의 구체 워크플로는 [`docs/dev-guide/design-change-workflow.md`](../dev-guide/design-change-workflow.md) 에 둔다.
 
 운영 규칙 상세는 [`docs/documentation-model.md`](../documentation-model.md).
 
@@ -48,5 +48,5 @@ tasty 의 화면/기능 명세 문서가 `docs/features/` 단일 층에 임의 �
 ## References
 
 - [`docs/documentation-model.md`](../documentation-model.md) — 운영 규칙 본체
-- `.claude/CLAUDE.md` — claude design 협업 워크플로
+- [`docs/dev-guide/design-change-workflow.md`](../dev-guide/design-change-workflow.md) — claude design 협업(디자인 변경) 워크플로
 - ADR-0003 (CSD), ADR-0005 (memory secret) — 동일한 trust/소유 경계 사고의 연장
