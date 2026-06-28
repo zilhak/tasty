@@ -108,7 +108,7 @@ impl EditableRegion {
         // End column: last visible character on end_row
         let end_col = screen_lines
             .get(end_row)
-            .map(|l| last_occupied_col(l))
+            .map(last_occupied_col)
             .unwrap_or(0);
 
         Some(Self {

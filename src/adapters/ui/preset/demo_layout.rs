@@ -1043,7 +1043,7 @@ fn draw_leaf_form(
     child.spacing_mut().item_spacing.y = FORM_GAP;
 
     // kind Select.
-    field_label(&mut child, theme, &t("preset.edit.kind"));
+    field_label(&mut child, theme, t("preset.edit.kind"));
     let candidates = kind_candidates(&leaf.kind);
     let labels: Vec<String> = candidates.iter().map(|k| fallback_kind_label(k)).collect();
     let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
@@ -1064,7 +1064,7 @@ fn draw_leaf_form(
     }
 
     // cwd Input (mono).
-    field_label(&mut child, theme, &t("preset.edit.cwd"));
+    field_label(&mut child, theme, t("preset.edit.cwd"));
     let mut cwd_buf = leaf.cwd.clone().unwrap_or_default();
     let cwd_resp = Input::new()
         .mono(true)
@@ -1080,12 +1080,12 @@ fn draw_leaf_form(
 
     // startup Input (mono) — terminal 한정.
     if leaf.kind == "terminal" {
-        field_label(&mut child, theme, &t("preset.edit.startup"));
+        field_label(&mut child, theme, t("preset.edit.startup"));
         let mut su_buf = leaf.startup.clone().unwrap_or_default();
         let su_resp = Input::new()
             .mono(true)
             .width(inner_w)
-            .placeholder(&t("preset.edit.startup_hint"))
+            .placeholder(t("preset.edit.startup_hint"))
             .show(&mut child, theme, &mut su_buf);
         if su_resp.changed() {
             cx.act = Some(Act::SetField {

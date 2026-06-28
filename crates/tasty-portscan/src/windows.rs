@@ -87,10 +87,7 @@ fn query_process_name(pid: u32) -> Option<String> {
     }
     let path = String::from_utf16_lossy(&buf[..size as usize]);
     // Take the file name component.
-    let leaf = path
-        .rsplit(|c| c == '\\' || c == '/')
-        .next()
-        .unwrap_or(&path);
+    let leaf = path.rsplit(['\\', '/']).next().unwrap_or(&path);
     if leaf.is_empty() {
         None
     } else {

@@ -5600,7 +5600,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude-design"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "anyhow",
  "serde",
@@ -5706,7 +5706,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-sdk"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "libc",

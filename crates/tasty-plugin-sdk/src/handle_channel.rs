@@ -8,11 +8,10 @@
 //! 02b에서 핸드셰이크만 검증됐고, 02c에서 [`HandleClientReader`](host가 보내는
 //! `HandleAttach` + ancillary fd 수신)와 plugin → host `Dirty` 송신 경로가 추가됐다.
 
-use std::collections::VecDeque;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self};
 use std::time::Duration;
 
-use tasty_plugin_protocol::{AuthAckEnvelope, AuthMessage, HandleChannelMessage};
+use tasty_plugin_protocol::HandleChannelMessage;
 
 use crate::env::PluginEnv;
 use crate::error::{PluginError, Result};

@@ -1,9 +1,8 @@
 //! GPU shared buffer 매핑 관리. plugin 별 buffer id 발급 + dirty rect drain.
 
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 
-use tasty_plugin_protocol::{HandleChannelMessage, SharedBufferCreateResult, SharedBufferId};
+use tasty_plugin_protocol::{SharedBufferCreateResult, SharedBufferId};
 #[cfg(unix)]
 use tasty_shm::PeerPid;
 use tasty_shm::SharedMemory;

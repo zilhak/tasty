@@ -541,10 +541,10 @@ impl HostExecutor {
                     })
                 } else {
                     // 비-terminal → 계속 폴링(Active). 단 전체 timeout deadline 초과 시 Failed.
-                    if let Some(deadline) = deadline_ms {
-                        if now_ms() >= *deadline {
-                            return PollOutcome::Failed(format!("{poll_method}: poll timeout"));
-                        }
+                    if let Some(deadline) = deadline_ms
+                        && now_ms() >= *deadline
+                    {
+                        return PollOutcome::Failed(format!("{poll_method}: poll timeout"));
                     }
                     PollOutcome::Active
                 }

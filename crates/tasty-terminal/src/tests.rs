@@ -30,7 +30,7 @@ fn test_terminal(cols: usize, rows: usize) -> Terminal {
 
 #[test]
 fn decset_application_cursor_keys() {
-    let mut terminal = test_terminal(80, 24);
+    let terminal = test_terminal(80, 24);
     assert!(!terminal.application_cursor_keys());
 
     let mut parser = Parser::new();
@@ -53,7 +53,7 @@ fn decset_application_cursor_keys() {
 
 #[test]
 fn decset_cursor_visibility() {
-    let mut terminal = test_terminal(80, 24);
+    let terminal = test_terminal(80, 24);
     assert!(terminal.cursor_visible());
 
     let mut parser = Parser::new();
@@ -76,7 +76,7 @@ fn decset_cursor_visibility() {
 
 #[test]
 fn decset_bracketed_paste() {
-    let mut terminal = test_terminal(80, 24);
+    let terminal = test_terminal(80, 24);
     assert!(!terminal.bracketed_paste());
 
     let mut parser = Parser::new();
@@ -99,7 +99,7 @@ fn decset_bracketed_paste() {
 
 #[test]
 fn decset_mouse_tracking() {
-    let mut terminal = test_terminal(80, 24);
+    let terminal = test_terminal(80, 24);
     assert_eq!(terminal.mouse_tracking(), MouseTrackingMode::None);
 
     let mut parser = Parser::new();
@@ -183,7 +183,7 @@ fn mouse_capture_hint_disarms_on_ris() {
 
 #[test]
 fn alternate_screen_switching() {
-    let mut terminal = test_terminal(80, 24);
+    let terminal = test_terminal(80, 24);
     assert!(!terminal.is_alternate_screen());
 
     let mut parser = Parser::new();
@@ -207,7 +207,7 @@ fn alternate_screen_switching() {
 
 #[test]
 fn alternate_screen_mode_47() {
-    let mut terminal = test_terminal(80, 24);
+    let terminal = test_terminal(80, 24);
 
     let mut parser = Parser::new();
     let actions = parser.parse_as_vec(b"\x1b[?47h");
@@ -251,7 +251,7 @@ fn alternate_screen_resize() {
 
 #[test]
 fn arrow_key_sequences_normal_vs_application() {
-    let mut terminal = test_terminal(80, 24);
+    let terminal = test_terminal(80, 24);
 
     assert!(!terminal.application_cursor_keys());
     let mut parser = Parser::new();
@@ -268,7 +268,7 @@ fn arrow_key_sequences_normal_vs_application() {
 
 #[test]
 fn full_reset_clears_modes() {
-    let mut terminal = test_terminal(80, 24);
+    let terminal = test_terminal(80, 24);
 
     let mut parser = Parser::new();
     let data = b"\x1b[?1h\x1b[?25l\x1b[?2004h\x1b[?1049h";
@@ -398,7 +398,7 @@ fn wrap_induced_scroll_at_bottom_row_reaches_scrollback() {
     // The screen holds 4; the first 4 rows are scrolled off by wrap-scroll.
     let mut payload = Vec::new();
     for d in b'0'..=b'7' {
-        payload.extend(std::iter::repeat(d).take(10));
+        payload.extend(std::iter::repeat_n(d, 10));
     }
     terminal.process_bytes(&payload);
 

@@ -393,6 +393,15 @@ fn is_uuid(s: &str) -> bool {
             .all(|(part, n)| part.len() == n && part.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .init();
+    tasty_plugin_sdk::run(ClaudeDesignPlugin::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::is_uuid;
@@ -406,13 +415,4 @@ mod tests {
         assert!(!is_uuid("zzzzzzzz-4bb9-4877-999f-db5124dc2925")); // non-hex
         assert!(!is_uuid(""));
     }
-}
-
-fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
-    tasty_plugin_sdk::run(ClaudeDesignPlugin::new())
 }

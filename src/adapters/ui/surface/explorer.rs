@@ -561,17 +561,17 @@ fn content(
             // 비-Ok 상태(권한/에러)는 중앙 텍스트로.
             match &view.state {
                 LoadState::NoPermission => {
-                    centered_state(ui, theme, &t("explorer.state.no_permission"));
+                    centered_state(ui, theme, t("explorer.state.no_permission"));
                     return;
                 }
                 LoadState::Error(_) => {
-                    centered_state(ui, theme, &t("explorer.state.empty"));
+                    centered_state(ui, theme, t("explorer.state.empty"));
                     return;
                 }
                 LoadState::Ok => {}
             }
             if view.entries.is_empty() {
-                centered_state(ui, theme, &t("explorer.state.no_items"));
+                centered_state(ui, theme, t("explorer.state.no_items"));
                 return;
             }
             egui::ScrollArea::vertical()
@@ -974,10 +974,10 @@ fn detail_view(
             },
         );
 
-    if let Some(key) = out.clicked_sort {
-        if action.is_none() {
-            *action = Some(ExplorerAction::SetSort(key));
-        }
+    if let Some(key) = out.clicked_sort
+        && action.is_none()
+    {
+        *action = Some(ExplorerAction::SetSort(key));
     }
     if let Some(i) = out.secondary_clicked_row
         && let Some(e) = entries.get(i)
@@ -985,25 +985,24 @@ fn detail_view(
         let pos = ui.input(|inp| inp.pointer.interact_pos()).unwrap_or_default();
         emit_entry_context(view, e, pos, root, action);
     }
-    if let Some(i) = out.clicked_row {
-        if let Some(e) = entries.get(i) {
-            let dbl = ui
-                .input(|inp| inp.pointer.button_double_clicked(egui::PointerButton::Primary));
-            if dbl {
-                if e.is_dir {
-                    if action.is_none() {
-                        *action = Some(ExplorerAction::Navigate(e.path.clone()));
-                    }
-                } else if action.is_none() {
-                    *action = Some(ExplorerAction::OpenFile(e.path.clone()));
+    if let Some(i) = out.clicked_row
+        && let Some(e) = entries.get(i)
+    {
+        let dbl = ui.input(|inp| inp.pointer.button_double_clicked(egui::PointerButton::Primary));
+        if dbl {
+            if e.is_dir {
+                if action.is_none() {
+                    *action = Some(ExplorerAction::Navigate(e.path.clone()));
                 }
+            } else if action.is_none() {
+                *action = Some(ExplorerAction::OpenFile(e.path.clone()));
+            }
+        } else {
+            let mods = ui.input(|inp| inp.modifiers);
+            if mods.command || mods.ctrl {
+                view.toggle_select(&e.path);
             } else {
-                let mods = ui.input(|inp| inp.modifiers);
-                if mods.command || mods.ctrl {
-                    view.toggle_select(&e.path);
-                } else {
-                    view.select_only(&e.path);
-                }
+                view.select_only(&e.path);
             }
         }
     }

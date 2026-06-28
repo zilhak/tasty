@@ -239,10 +239,10 @@ pub fn draw_egui_panels(
                     )
                 },
             );
-            if let Some(a) = act {
-                if pending_explorer_action.is_none() {
-                    pending_explorer_action = Some((ex_panel.id, a));
-                }
+            if let Some(a) = act
+                && pending_explorer_action.is_none()
+            {
+                pending_explorer_action = Some((ex_panel.id, a));
             }
         } else if let Some(remote) = surface
             .as_any()

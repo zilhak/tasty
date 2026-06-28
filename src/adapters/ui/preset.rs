@@ -567,11 +567,9 @@ pub fn draw_preset_panel(
             *selected = Some(n);
             ctx.request_repaint();
         }
-        if new_clicked {
-            if let Some(n) = create_minimal(store, kind) {
-                *selected = Some(n);
-                ctx.request_repaint();
-            }
+        if new_clicked && let Some(n) = create_minimal(store, kind) {
+            *selected = Some(n);
+            ctx.request_repaint();
         }
 
         // detail 에 그릴 현재 preset.
@@ -662,17 +660,17 @@ pub fn draw_preset_panel(
                                 .hint_text(t("preset.edit.subtitle_hint"))
                                 .id(egui::Id::new("preset_edit_subtitle")),
                         );
-                        if sub_resp.changed() {
-                            if let Some(mut p) = store.get_workspace(&name).cloned() {
-                                p.subtitle = meta.subtitle.clone();
-                                if let Err(e) = store.save_workspace_overwrite(p) {
-                                    tracing::warn!("preset subtitle save failed: {e}");
-                                    toasts.push(
-                                        t("preset.toast.save_failed"),
-                                        ToastKind::Error,
-                                        ToastScope::Window,
-                                    );
-                                }
+                        if sub_resp.changed()
+                            && let Some(mut p) = store.get_workspace(&name).cloned()
+                        {
+                            p.subtitle = meta.subtitle.clone();
+                            if let Err(e) = store.save_workspace_overwrite(p) {
+                                tracing::warn!("preset subtitle save failed: {e}");
+                                toasts.push(
+                                    t("preset.toast.save_failed"),
+                                    ToastKind::Error,
+                                    ToastScope::Window,
+                                );
                             }
                         }
                     }
@@ -826,11 +824,9 @@ pub fn draw_preset_panel(
                 });
                 ctx.request_repaint();
             }
-            if duplicate_clicked {
-                if let Some(n) = duplicate_preset(store, kind, &name) {
-                    *selected = Some(n);
-                    ctx.request_repaint();
-                }
+            if duplicate_clicked && let Some(n) = duplicate_preset(store, kind, &name) {
+                *selected = Some(n);
+                ctx.request_repaint();
             }
             if delete_clicked {
                 match store.delete(kind, &name) {

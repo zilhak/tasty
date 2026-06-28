@@ -20,12 +20,11 @@ use anyhow::Result;
 use serde_json::Value;
 
 use tasty_plugin_protocol::{
-    EventDispatchParams, HandleChannelMessage, IpcCallResult, IpcInvokeParams,
-    METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE, METHOD_IPC_RESULT,
-    METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_EVENT, METHOD_POPUP_OPEN, METHOD_SHUTDOWN,
-    METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE,
-    METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest, PluginResponse, PopupClosedParams,
-    PopupOpenParams,
+    EventDispatchParams, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE,
+    METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE, METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED,
+    METHOD_POPUP_EVENT, METHOD_POPUP_OPEN, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE,
+    METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT,
+    PluginEvent, PluginRequest, PluginResponse, PopupClosedParams, PopupOpenParams,
 };
 
 use crate::connection::Connection;
@@ -103,7 +102,7 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
 
     let pending: PendingCalls = Arc::new(Mutex::new(HashMap::new()));
     let shared_buffer_fd_pending: SharedBufferFdPending = Arc::new(Mutex::new(HashMap::new()));
-    let mut host = HostHandle::new(writer.clone(), pending.clone());
+    let host = HostHandle::new(writer.clone(), pending.clone());
 
     // 보조 채널이 살아 있으면 reader thread 띄우고 HostHandle에 writer 연결.
     let _handle_reader_thread: Option<std::thread::JoinHandle<()>> = match handle_client {

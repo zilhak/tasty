@@ -622,55 +622,52 @@ impl ApplicationHandler<AppEvent> for App {
             any(windows, target_os = "macos", target_os = "linux"),
             feature = "gui"
         ))]
-        if let Some(ref ids) = self.tray_menu_ids {
-            if let Some(menu_id) = crate::system_tray::poll_menu_event() {
-                if menu_id == ids.show_window {
-                    // "Show Window" 는 *창을 보이게 한다* 이지 *새로 만든다* 가 아니다.
-                    // 살아있는 main view 가 하나라도 있으면 그 창을 맨 앞으로 가져와
-                    // focus 하고, 하나도 없을 때(전부 parked = macOS 최소화로 창이 파괴된
-                    // 상태)만 새 창을 생성/복원한다. Windows / Linux 는 창을 죽이지 않고
-                    // hide 하므로 TrayShowWindow 로 재표시한다.
-                    #[cfg(target_os = "macos")]
-                    {
-                        // focused_view_id 가 가리키는 main view 우선, 없으면 첫 main view.
-                        let target = self
-                            .view
-                            .focused_view_id
-                            .filter(|id| {
-                                self.view
-                                    .views
-                                    .get(id)
-                                    .is_some_and(|w| w.as_main().is_some())
-                            })
-                            .or_else(|| {
-                                self.view
-                                    .views
-                                    .iter()
-                                    .find(|(_, w)| w.as_main().is_some())
-                                    .map(|(id, _)| *id)
-                            });
-                        if let Some(id) = target {
-                            if let Some(w) = self.view.views.get(&id) {
-                                w.base().winit.set_minimized(false);
-                                w.base().winit.focus_window();
-                            }
-                            self.view.focused_view_id = Some(id);
-                            tracing::info!("tray show: focusing existing main window");
-                        } else {
-                            tracing::info!("tray show: no live window, creating");
-                            crate::shortcuts::send_app_event(
-                                &self.view.proxy,
-                                AppEvent::CreateWindow,
-                            );
+        if let Some(ref ids) = self.tray_menu_ids
+            && let Some(menu_id) = crate::system_tray::poll_menu_event()
+        {
+            if menu_id == ids.show_window {
+                // "Show Window" 는 *창을 보이게 한다* 이지 *새로 만든다* 가 아니다.
+                // 살아있는 main view 가 하나라도 있으면 그 창을 맨 앞으로 가져와
+                // focus 하고, 하나도 없을 때(전부 parked = macOS 최소화로 창이 파괴된
+                // 상태)만 새 창을 생성/복원한다. Windows / Linux 는 창을 죽이지 않고
+                // hide 하므로 TrayShowWindow 로 재표시한다.
+                #[cfg(target_os = "macos")]
+                {
+                    // focused_view_id 가 가리키는 main view 우선, 없으면 첫 main view.
+                    let target = self
+                        .view
+                        .focused_view_id
+                        .filter(|id| {
+                            self.view
+                                .views
+                                .get(id)
+                                .is_some_and(|w| w.as_main().is_some())
+                        })
+                        .or_else(|| {
+                            self.view
+                                .views
+                                .iter()
+                                .find(|(_, w)| w.as_main().is_some())
+                                .map(|(id, _)| *id)
+                        });
+                    if let Some(id) = target {
+                        if let Some(w) = self.view.views.get(&id) {
+                            w.base().winit.set_minimized(false);
+                            w.base().winit.focus_window();
                         }
+                        self.view.focused_view_id = Some(id);
+                        tracing::info!("tray show: focusing existing main window");
+                    } else {
+                        tracing::info!("tray show: no live window, creating");
+                        crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
                     }
-                    #[cfg(any(windows, target_os = "linux"))]
-                    crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::TrayShowWindow);
-                } else if menu_id == ids.new_window {
-                    crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
-                } else if menu_id == ids.quit {
-                    crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
                 }
+                #[cfg(any(windows, target_os = "linux"))]
+                crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::TrayShowWindow);
+            } else if menu_id == ids.new_window {
+                crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
+            } else if menu_id == ids.quit {
+                crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
             }
         }
 

@@ -394,12 +394,12 @@ impl PopupManager {
                     popup.resizing = Some(edges);
                     popup.resize_start_rect = popup.popup_rect();
                 }
-            } else if let Some(id) = hovered_handle {
-                if let Some(popup) = self.popups.iter_mut().find(|p| p.id == id) {
-                    popup.dragging = true;
-                    if let Some(pos) = pointer_pos {
-                        popup.drag_offset = pos - popup.pos;
-                    }
+            } else if let Some(id) = hovered_handle
+                && let Some(popup) = self.popups.iter_mut().find(|p| p.id == id)
+            {
+                popup.dragging = true;
+                if let Some(pos) = pointer_pos {
+                    popup.drag_offset = pos - popup.pos;
                 }
             }
         }

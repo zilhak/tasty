@@ -6,14 +6,12 @@
 //! 02b에서 인증 핸드셰이크 + 채널 분배만 구현됐고, 02c에서 [`HandleStream::send_handle`]
 //! (SCM_RIGHTS / DuplicateHandle)과 [`HandleStreamReader`](dirty 메시지 수신)가 추가됐다.
 
-use std::collections::{HashMap, VecDeque};
-use std::io::{self, BufRead, BufReader, Write};
+use std::collections::HashMap;
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
-use tasty_plugin_protocol::{AuthAck, AuthAckEnvelope, HandleChannelMessage};
-
-use crate::protocol::AuthMessage;
+use tasty_plugin_protocol::HandleChannelMessage;
 
 const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 

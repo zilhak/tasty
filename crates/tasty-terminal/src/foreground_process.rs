@@ -279,7 +279,7 @@ impl WindowsProcessSnapshot {
             for &idx in child_idxs {
                 let (cpid, _, cname) = &self.entries[idx];
                 found_descendant = true;
-                let has_grandchildren = self.children.get(cpid).map_or(false, |v| !v.is_empty());
+                let has_grandchildren = self.children.get(cpid).is_some_and(|v| !v.is_empty());
                 if has_grandchildren {
                     stack.push((*cpid, depth + 1));
                 } else {

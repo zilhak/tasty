@@ -11,7 +11,7 @@ pub fn open_path(path: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
         Command::new("explorer").arg(path).spawn()?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "macos")]
     {

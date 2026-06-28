@@ -1821,7 +1821,7 @@ mod tests {
 
     #[test]
     fn filter_excludes_hidden_kinds() {
-        let ps = vec![prof("a", "ssh"), prof("b", "smb"), prof("c", "http")];
+        let ps = [prof("a", "ssh"), prof("b", "smb"), prof("c", "http")];
         // excluded = {} → 전체.
         let none: HashSet<String> = HashSet::new();
         let all: Vec<&str> = ps

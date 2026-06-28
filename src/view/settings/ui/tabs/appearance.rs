@@ -623,7 +623,7 @@ fn draw_tasty_color_row(
         // ── "Default" 체크박스 (디자인 settings_window.jsx:113 = <Checkbox>) ──
         let mut use_default = !is_ov;
         let default_label = t("settings.appearance.colors.default");
-        if tasty_ui_widgets::checkbox(ui, &th, &mut use_default, &default_label, true).changed() {
+        if tasty_ui_widgets::checkbox(ui, th, &mut use_default, default_label, true).changed() {
             let ov = &mut settings.appearance.theme_overrides;
             if use_default {
                 set(ov, None);
@@ -1341,7 +1341,7 @@ fn draw_color_picker_row(
         // ── "Default" 체크박스 (디자인 settings_window.jsx:113 = <Checkbox>) ──
         let mut use_default = !is_ov;
         let default_label = t("settings.appearance.colors.default");
-        if tasty_ui_widgets::checkbox(ui, &th, &mut use_default, &default_label, true).changed() {
+        if tasty_ui_widgets::checkbox(ui, th, &mut use_default, default_label, true).changed() {
             let ov = &mut settings.appearance.theme_overrides;
             if use_default {
                 (row.set)(ov, None);
@@ -1474,7 +1474,7 @@ fn draw_plugin_toggle(
     };
     let mut val = cur;
     let th = crate::theme::theme();
-    plugin_setting_row(ui, &t(label_key), |ui| {
+    plugin_setting_row(ui, t(label_key), |ui| {
         tasty_ui_widgets::switch(ui, &th, &mut val, None, true);
     });
     if val != cur {
@@ -1510,7 +1510,7 @@ fn draw_plugin_select(
     let th = crate::theme::theme();
     let salt = format!("plugin_select_{plugin_id}_{storage_key}");
     let mut changed = false;
-    plugin_setting_row(ui, &t(label_key), |ui| {
+    plugin_setting_row(ui, t(label_key), |ui| {
         changed = tasty_ui_widgets::select(
             ui,
             &th,
@@ -1568,7 +1568,7 @@ fn draw_plugin_number(
         .unwrap_or_else(|| fmt(cur));
 
     let mut resp = None;
-    plugin_setting_row(ui, &t(label_key), |ui| {
+    plugin_setting_row(ui, t(label_key), |ui| {
         // right_to_left: 먼저 add 한 suffix 가 가장 우측, 그 왼쪽에 입력 필드.
         if let Some(sk) = suffix_key {
             ui.label(egui::RichText::new(t(sk)).color(th.text_muted()));
@@ -1877,7 +1877,7 @@ fn override_checkbox<T, F>(
     let th = crate::theme::theme();
     let mut use_default = slot.is_none();
     let label = t("settings.appearance.font.use_default_label");
-    if tasty_ui_widgets::checkbox(ui, &th, &mut use_default, &label, true).changed() {
+    if tasty_ui_widgets::checkbox(ui, &th, &mut use_default, label, true).changed() {
         if use_default {
             *slot = None;
         } else if slot.is_none() {
