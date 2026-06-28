@@ -793,40 +793,52 @@ pub fn draw_port_scanner_view(
     ui.painter()
         .hline(full.x_range(), f_ir.response.rect.bottom(), sep);
 
-    // 본문 (테이블/로딩/빈 상태) — draw_table 이 max_scroll 로 footer 높이를 예약.
-    match &props.view_state {
-        PortScannerViewState::Loading => draw_loading_body(ui, props),
-        PortScannerViewState::Failed { message } => draw_failed_body(ui, props, message),
-        PortScannerViewState::Ready { rows, .. } => {
-            if let Some(a) = draw_ready_body(ui, props, rows) {
-                action = a;
-            }
-        }
+    // footer — 디자인 padding 9 14 + borderTop. TopBottomPanel 로 popup 하단에 고정해
+    // 그린다(remote_tool 폼 footer 미러 `:928`). 패널이 하단 공간을 **먼저** 예약하므로
+    // CentralPanel 보다 앞서 호출해야 한다. 본문 테이블의 가로 스크롤은 자체 ScrollArea
+    // 래퍼에 갇혀 부모 ui 폭을 넓히지 않으므로, 과거의 footer 고정-rect 핵은 불필요하다.
+    let mut footer_action: Option<PortScannerAction> = None;
+    let footer = egui::TopBottomPanel::bottom("port_scanner.footer")
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(egui::Frame::NONE.inner_margin(egui::Margin {
+            left: 14,
+            right: 14,
+            top: 9,
+            bottom: 9,
+        }))
+        .show_inside(ui, |ui| {
+            ui.spacing_mut().item_spacing = saved_spacing;
+            draw_footer(ui, props)
+        });
+    if let Some(a) = footer.inner {
+        footer_action = Some(a);
     }
+    // footer 위 구분선 — popup 전체폭(full.x_range), 패널 top 좌표(패널 rect 가 아님).
+    ui.painter()
+        .hline(full.x_range(), footer.response.rect.top(), sep);
 
-    // footer — 디자인 padding 9 14 + borderTop. 테이블이 컬럼 사이 item_spacing.x 로
-    // ui 폭을 popup 보다 넓히면 footer 의 right_to_left 기준(`닫기`)이 popup 밖으로 밀려
-    // 잘린다 → footer 를 popup 전체폭 rect 에 고정해 그려 그 영향을 차단한다.
-    let foot_top = ui.cursor().top();
-    ui.painter().hline(full.x_range(), foot_top, sep);
-    let foot_rect = egui::Rect::from_min_max(egui::pos2(full.left(), foot_top), full.max);
-    let foot_action = ui
-        .allocate_new_ui(egui::UiBuilder::new().max_rect(foot_rect), |ui| {
-            egui::Frame::NONE
-                .inner_margin(egui::Margin {
-                    left: 14,
-                    right: 14,
-                    top: 9,
-                    bottom: 9,
-                })
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = saved_spacing;
-                    draw_footer(ui, props)
-                })
-                .inner
-        })
-        .inner;
-    if let Some(a) = foot_action {
+    // 본문 (테이블/로딩/빈 상태) — 남은 높이 전체를 채운다. footer 가 TopBottomPanel 로
+    // 이미 하단을 예약했으므로 CentralPanel 의 available_height 에는 footer 가 포함되지
+    // 않는다. 행이 적으면 테이블이 auto_shrink 로 위로 붙고 빈 공간은 본문 영역 하단
+    // (footer 위)에 남는다.
+    egui::CentralPanel::default()
+        .frame(egui::Frame::NONE)
+        .show_inside(ui, |ui| {
+            match &props.view_state {
+                PortScannerViewState::Loading => draw_loading_body(ui, props),
+                PortScannerViewState::Failed { message } => draw_failed_body(ui, props, message),
+                PortScannerViewState::Ready { rows, .. } => {
+                    if let Some(a) = draw_ready_body(ui, props, rows) {
+                        action = a;
+                    }
+                }
+            }
+        });
+
+    // footer 액션을 마지막에 적용해 우선순위를 유지(원 구조와 동일 — 한 프레임에 footer
+    // 와 본문 액션이 동시 발생하지 않으므로 실질 충돌은 없음).
+    if let Some(a) = footer_action {
         action = a;
     }
 
@@ -867,7 +879,7 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortSc
             .map(row_copy_address),
         _ => None,
     };
-    // footer 위 구분선은 caller(draw_port_scanner_view)가 foot_top 에 이미 그린다.
+    // footer 위 구분선은 caller(draw_port_scanner_view)가 패널 top 에 이미 그린다.
     // 디자인 borderTop 은 1개 — 여기서 중복으로 그리지 않는다(이전 중복선 버그 제거).
     ui.horizontal(|ui| {
         if let Some(s) = &counter {
@@ -1156,17 +1168,16 @@ fn draw_table(
 
     // Cap the inner ScrollArea so the table scrolls *within* the bounded popup
     // content rect instead of overflowing (and being clipped) past it. Reserve
-    // the sticky header row, the pinned footer, and the inter-widget gap from
-    // the height still available below the header/filter/separator.
+    // the sticky header row and the inter-widget gap from the height available
+    // in this CentralPanel. The footer is no longer reserved here: the
+    // TopBottomPanel split (draw_port_scanner_view) already carves the footer
+    // out of the panel, so this CentralPanel's available_height excludes it —
+    // reserving footer_h again would double-count it.
     // (egui_extras' default max_scroll_height is 800px, far taller than the
     // 520px popup, so the body never scrolls without this cap.)
     let header_h = text_h + 4.0;
-    // footer 에는 `주소 복사` / `닫기` 버튼이 있어 caption 텍스트보다 높다. 버튼 행
-    // (interact_size.y) + 상하 패딩(디자인 footer padding 9px)을 넉넉히 예약하지
-    // 않으면 footer 가 popup 하단에서 잘린다. caption 기준 과소평가였던 값을 교체.
-    let footer_h = ui.spacing().interact_size.y + 20.0;
     let gap = ui.spacing().item_spacing.y;
-    let max_scroll = (ui.available_height() - header_h - footer_h - gap).max(text_h + 8.0);
+    let max_scroll = (ui.available_height() - header_h - gap).max(text_h + 8.0);
 
     // 폭 모델 (이번 작업이 뒤집은 지점): 과거엔 고정폭 + flex(remainder) 로 테이블이
     // 항상 popup 안에 fit 되도록 강제했고, 폭이 모자라면 addr/proc 가 말줄임됐다.
