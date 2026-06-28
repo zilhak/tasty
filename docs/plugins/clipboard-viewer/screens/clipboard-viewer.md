@@ -32,8 +32,8 @@ plugin 은 `UiNode` DSL(`splitter`/`button`/`text_preview`)로 구성만 정하�
 | 타입 버튼(선택) | `accent-primary` fill + `text-on-accent` | plugin `button_primary` |
 | 타입 버튼(유휴) | `surface-raised` + `text-secondary` | 일반 `button` |
 | 미리보기 본문 | `text-primary` (mono) | `scroll_v(text_preview)` |
-| 빈 클립보드 안내 | `text-muted` | `subtext0` |
-| 읽기 실패 안내 | `accent-danger` | `red` |
+| 빈 클립보드 안내 | `text-muted` | `subtext0`, `center` 양축 중앙 한 줄 |
+| 읽기 실패 안내 | `accent-danger` | `red`, `center` 양축 중앙 한 줄 |
 
 ## 갤러리 specimen
 

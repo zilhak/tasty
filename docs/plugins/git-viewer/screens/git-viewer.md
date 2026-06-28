@@ -29,6 +29,7 @@
 
 - repo / 비-repo(빈·에러) / detached.
 - worktree: current(녹색 마커) / linked / locked(노랑 배지, 사유) / invalid(빨강 배지) / worktree 0개(main 단일 행).
+- 빈/없음 안내(Changes `no_changes` · Commits `no_commits` · `no_repo` · `no_worktrees`)는 `center` 로 해당 pane 가용영역 양축 중앙에 한 줄 배치.
 
 ## 디자인 토큰 매핑
 

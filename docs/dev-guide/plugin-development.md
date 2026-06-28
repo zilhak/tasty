@@ -126,7 +126,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 전체 위젯은 `crates/tasty-plugin-protocol/src/ui_tree.rs` `UiNode`. 주요 빌더(`tasty_plugin_sdk::ui::*`):
 
-- 컨테이너: `vbox`/`hbox`(+`_spacing`) · `scroll_v` · `splitter(dir, ratio, a, b)`
+- 컨테이너: `vbox`/`hbox`(+`_spacing`) · `scroll_v` · `splitter(dir, ratio, a, b)` · `center(child)`(자식 1개를 가용영역 양축 중앙에 — 빈/실패 상태 한 줄용)
 - 표시: `label`(+`_styled`/`_color`) · `icon` · `text_preview`(+`_lang`) · `spacer`. 색 토큰 `text`/`subtext0`/`blue`/… 또는 `#aabbcc`
 - 상호작용: `button`(+`_primary`) · `addressbar` · `tree_view`. `id` 가 이벤트에 echo
 - 캔버스: `canvas`/`canvas_with_id`/`canvas_full` — `host.shared_buffer.create` 로 RGBA8 버퍼 확보 후 `commit(rect)`. 입력은 `UiEvent::CanvasPointer`
