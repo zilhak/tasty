@@ -484,3 +484,91 @@ mod attach_surface_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod workspace_category_tests {
+    use super::*;
+    use crate::request::command_to_request;
+    use clap::Parser;
+
+    fn req(args: &[&str]) -> tasty_ipc::protocol::JsonRpcRequest {
+        let cli = Cli::try_parse_from(args).unwrap();
+        command_to_request(&cli.command.unwrap())
+    }
+
+    #[test]
+    fn category_list_maps_to_ipc() {
+        let r = req(&["tasty", "workspace-category", "list"]);
+        assert_eq!(r.method, "workspace_category.list");
+    }
+
+    #[test]
+    fn category_create_maps_to_ipc() {
+        let r = req(&["tasty", "workspace-category", "create", "--name", "Work"]);
+        assert_eq!(r.method, "workspace_category.create");
+        assert_eq!(r.params["name"], "Work");
+    }
+
+    #[test]
+    fn category_rename_delete_move_map() {
+        let r = req(&[
+            "tasty",
+            "workspace-category",
+            "rename",
+            "--id",
+            "3",
+            "--name",
+            "Play",
+        ]);
+        assert_eq!(r.method, "workspace_category.rename");
+        assert_eq!(r.params["id"], 3);
+        assert_eq!(r.params["name"], "Play");
+
+        let r = req(&["tasty", "workspace-category", "delete", "--id", "3"]);
+        assert_eq!(r.method, "workspace_category.delete");
+        assert_eq!(r.params["id"], 3);
+
+        let r = req(&[
+            "tasty",
+            "workspace-category",
+            "move",
+            "--from",
+            "2",
+            "--to",
+            "1",
+        ]);
+        assert_eq!(r.method, "workspace_category.move");
+        assert_eq!(r.params["from_index"], 2);
+        assert_eq!(r.params["to_index"], 1);
+    }
+
+    #[test]
+    fn new_workspace_carries_category() {
+        let r = req(&[
+            "tasty",
+            "new",
+            "workspace",
+            "--name",
+            "x",
+            "--category",
+            "Work",
+        ]);
+        assert_eq!(r.method, "workspace.create");
+        assert_eq!(r.params["category"], "Work");
+    }
+
+    #[test]
+    fn set_workspace_carries_category() {
+        let r = req(&[
+            "tasty",
+            "set",
+            "workspace",
+            "--id",
+            "2",
+            "--category",
+            "5",
+        ]);
+        assert_eq!(r.method, "workspace.update");
+        assert_eq!(r.params["category"], "5");
+    }
+}
