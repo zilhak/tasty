@@ -4,8 +4,8 @@ use super::SurfaceId;
 use super::surface_trait::Surface;
 
 /// A surface that displays a Markdown file. Holds only identification + reload-tracking
-/// state; render content (`String`), scroll offset, and `egui_commonmark` cache live in
-/// the host's `MarkdownView` so this model is GUI-free.
+/// state; the render content (`String`), load outcome, base dir, and scroll offset live
+/// in the host's `MarkdownView` so this model is GUI-free.
 pub struct MarkdownPanel {
     pub id: u32,
     pub file_path: String,
