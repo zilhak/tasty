@@ -102,11 +102,12 @@ pub fn draw_plugin_popups(
         let layer_id = egui::LayerId::new(Order::Foreground, area_id);
         let painter = ctx.layer_painter(layer_id);
         let th = crate::theme::theme();
-        painter.rect_filled(rect, th.corner_radius.value(), th.surface0);
+        // popup 프레임: fill = bg_panel, stroke = border_default. (spec §2-E / G11·C-G6)
+        painter.rect_filled(rect, th.corner_radius.value(), th.bg_panel().to_egui());
         painter.rect_stroke(
             rect,
             th.corner_radius.value(),
-            Stroke::new(th.border_width.value(), th.surface1),
+            Stroke::new(th.border_width.value(), th.border_default().to_egui()),
             egui::StrokeKind::Outside,
         );
 

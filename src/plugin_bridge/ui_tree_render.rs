@@ -163,13 +163,21 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
         }
         UiNode::Label { text, style, color } => {
             let mut rt = egui::RichText::new(text);
-            rt = match style {
-                LabelStyle::Body => rt,
-                LabelStyle::Caption => rt.small(),
-                LabelStyle::Heading => rt.heading(),
-                LabelStyle::Dim => rt.color(crate::theme::theme().subtext0),
-                LabelStyle::Mono => rt.monospace(),
-            };
+            {
+                // 디자인 토큰: heading = font_size_heading(13) semibold + text_primary,
+                // caption = font_size_caption(11), dim = text_muted. (transcription-spec §2-C)
+                let th = crate::theme::theme();
+                rt = match style {
+                    LabelStyle::Body => rt,
+                    LabelStyle::Caption => rt.size(th.font_size_caption.value()),
+                    LabelStyle::Heading => rt
+                        .size(th.font_size_heading.value())
+                        .color(th.text_primary().to_egui())
+                        .strong(),
+                    LabelStyle::Dim => rt.color(th.text_muted().to_egui()),
+                    LabelStyle::Mono => rt.monospace(),
+                };
+            }
             if let Some(c) = color.as_deref()
                 && let Some(parsed) = parse_color_token(c)
             {
@@ -265,7 +273,24 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
             language: _,
         } => {
             // syntax highlighting은 향후 — 현 단계는 plain monospace.
-            ui.add(egui::Label::new(egui::RichText::new(content).monospace()).wrap());
+            // surface 콘텐츠 규칙: mono text_primary, 좌·상 spacing_sm 인셋. (spec §2-E / C-G5)
+            let (inset, color) = {
+                let th = crate::theme::theme();
+                (th.spacing_sm.value() as i8, th.text_primary().to_egui())
+            };
+            egui::Frame::NONE
+                .inner_margin(egui::Margin {
+                    left: inset,
+                    top: inset,
+                    right: 0,
+                    bottom: 0,
+                })
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(content).monospace().color(color))
+                            .wrap(),
+                    );
+                });
         }
         UiNode::Spacer { size } => {
             ui.add_space(*size as f32);
@@ -294,21 +319,30 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
             selected,
             children,
         } => {
-            // 전체 폭을 차지하는 클릭 가능한 행. `selected`면 theme 의 선택 배경으로 강조.
-            // 자식은 가로 배치(파일 status prefix·worktree 배지 등 inline 라벨 그룹).
-            let margin = egui::Margin::symmetric(4, 2);
-            let frame = if *selected {
-                egui::Frame::new()
-                    .fill(crate::theme::theme().selection_bg.to_egui())
-                    .inner_margin(margin)
-            } else {
-                egui::Frame::NONE.inner_margin(margin)
+            // 전체 폭을 차지하는 클릭 가능한 행. TreeRow 토큰 레시피 이식:
+            // selected → surface_active(불투명) fill, hover → overlay_hover 오버레이,
+            // radius_sm, 마진 spacing_xs. (transcription-spec §2-A(c))
+            // SelectableRow 는 임의 children 컨테이너라 tree_row() 드롭인 불가 → 레시피만 이식.
+            let (radius, margin, gap, selected_fill, hover_fill) = {
+                let th = crate::theme::theme();
+                let xs = th.spacing_xs.value();
+                (
+                    th.corner_radius_sm.value(),
+                    egui::Margin::symmetric(xs as i8, (xs * 0.5) as i8),
+                    xs,
+                    th.surface_active().to_egui(),
+                    th.overlay_hover().to_egui_premultiplied(),
+                )
             };
-            let resp = frame
+            // 배경 shape 를 먼저 예약해 콘텐츠 뒤에(behind) 그린다 — hover 응답을 얻은
+            // 뒤에야 fill 색을 알 수 있으므로 reserve-then-set 패턴 사용.
+            let bg_idx = ui.painter().add(egui::Shape::Noop);
+            let resp = egui::Frame::NONE
+                .inner_margin(margin)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.spacing_mut().item_spacing.x = gap;
                         for (i, c) in children.iter().enumerate() {
                             ui.push_id(i, |ui| render_node(ui, c, sink, canvas_cache));
                         }
@@ -316,6 +350,17 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
                 })
                 .response
                 .interact(egui::Sense::click());
+            let fill = if *selected {
+                selected_fill
+            } else if resp.hovered() {
+                hover_fill
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+            if fill != egui::Color32::TRANSPARENT {
+                ui.painter()
+                    .set(bg_idx, egui::Shape::rect_filled(resp.rect, radius, fill));
+            }
             if resp.clicked() {
                 sink.push_event(UiEvent::Click {
                     node_id: id.clone(),
@@ -551,10 +596,11 @@ fn render_splitter(
         }
         let th = crate::theme::theme();
         let painter = ui.painter();
+        // rest = separator(--tasty-separator 파생 알파), hover/drag = accent_primary. (C-G7)
         let handle_color = if resp.hovered() || resp.dragged() {
-            th.accent_primary()
+            th.accent_primary().to_egui()
         } else {
-            th.surface1
+            th.separator.to_egui_premultiplied()
         };
         // 시각적으로 얇은 가운데 선만 그린다 (handle_rect 자체는 hit-test용 두꺼운 영역).
         match direction {
