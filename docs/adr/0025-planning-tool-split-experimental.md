@@ -74,4 +74,4 @@ Figma(기획·저충실) ──▶ Claude design(시안·고충실) ──▶ cl
 - [ADR-0018: Claude Design 세션 자격증명은 평문으로 저장한다](0018-claude-design-auth-at-rest-plaintext.md)
 - [`docs/design/systems/design-parity-notes.md`](../design/systems/design-parity-notes.md) — 구조 전사 원칙
 - [`docs/dev-guide/gallery-first.md`](../dev-guide/gallery-first.md)
-- Figma 기획 파일: https://www.figma.com/design/ct3uPefwY2uk6i1i9wYpkU/Untitled (7 페이지: Cover / Flows & IA / Wireframes / Foundations / Components / Screens / Archive)
+- Figma 기획 파일: https://www.figma.com/design/ct3uPefwY2uk6i1i9wYpkU/Untitled (8 페이지: Cover / Flows & IA / Wireframes / Foundations / Components / Screens / Archive / Plugins). Plugins 페이지 = 플러그인 viewer 화면 전용(git-viewer 와이어 · plugin viewers 와이어 · viewer 시안 아카이브). 네이티브 화면(터미널·explorer·settings·popup)은 기존 페이지 유지.
