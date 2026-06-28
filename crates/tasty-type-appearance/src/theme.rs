@@ -209,6 +209,9 @@ pub struct ThemeSizing {
     pub font_size_prose_h1: LogicalPx,
     /// markdown surface H2 — 14px (= font_size_max).
     pub font_size_prose_h2: LogicalPx,
+    /// markdown 본문(prose) 줄간격 배수 (1.6, design `--tasty-line-height-prose`).
+    /// 길이가 아닌 무차원 비율이라 `f32` — 본문 폰트 크기에 곱해 줄 높이를 만든다.
+    pub line_height_prose: f32,
     /// terminal cell 스케일 — small (12px).
     pub font_size_term_sm: LogicalPx,
     /// terminal cell 스케일 — 기본 (14px).
@@ -322,6 +325,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     font_size_max: LogicalPx(14.0),
     font_size_prose_h1: LogicalPx(20.0),
     font_size_prose_h2: LogicalPx(14.0),
+    line_height_prose: 1.6,
     font_size_term_sm: LogicalPx(12.0),
     font_size_term: LogicalPx(14.0),
     font_size_term_lg: LogicalPx(16.0),
@@ -804,6 +808,9 @@ pub struct Theme {
     pub font_size_prose_h1: LogicalPx,
     /// markdown surface H2 — 14px (= font_size_max).
     pub font_size_prose_h2: LogicalPx,
+    /// markdown 본문(prose) 줄간격 배수 (1.6, design `--tasty-line-height-prose`).
+    /// 길이가 아닌 무차원 비율이라 `f32` — 본문 폰트 크기에 곱해 줄 높이를 만든다.
+    pub line_height_prose: f32,
     /// terminal cell 스케일 — small (12px).
     pub font_size_term_sm: LogicalPx,
     /// terminal cell 스케일 — 기본 (14px).
@@ -974,6 +981,8 @@ impl Theme {
             // 영향 받지 않는다 — 터미널/마크다운 셀 폰트는 자체 설정 경로를 따른다.
             font_size_prose_h1: SIZING.font_size_prose_h1,
             font_size_prose_h2: SIZING.font_size_prose_h2,
+            // 줄간격 배수 — 무차원 비율, zoom 무관 (폰트 크기 자체가 스케일을 담당).
+            line_height_prose: SIZING.line_height_prose,
             font_size_term_sm: SIZING.font_size_term_sm,
             font_size_term: SIZING.font_size_term,
             font_size_term_lg: SIZING.font_size_term_lg,
@@ -1731,6 +1740,7 @@ mod tests {
         assert_eq!(t.font_size_micro.value(), 10.0);
         assert_eq!(t.font_size_prose_h1.value(), 20.0);
         assert_eq!(t.font_size_prose_h2.value(), 14.0);
+        assert_eq!(t.line_height_prose, 1.6);
         assert_eq!(t.font_size_term_sm.value(), 12.0);
         assert_eq!(t.font_size_term.value(), 14.0);
         assert_eq!(t.font_size_term_lg.value(), 16.0);
@@ -1773,6 +1783,7 @@ mod tests {
     fn prose_term_fonts_unaffected_by_zoom() {
         let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
         assert_eq!(t.font_size_prose_h1, SIZING.font_size_prose_h1);
+        assert_eq!(t.line_height_prose, SIZING.line_height_prose);
         assert_eq!(t.font_size_term, SIZING.font_size_term);
         // micro 는 caption 처럼 zoom 적용: 10 * 1.5 = 15.
         assert_eq!(t.font_size_micro.value(), 15.0);
