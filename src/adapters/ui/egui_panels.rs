@@ -248,20 +248,38 @@ pub fn draw_egui_panels(
             .as_any()
             .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
         ) {
-            draw_panel_frame(
-                ctx,
-                &format!("remote_panel_{}", id_suffix),
-                info,
-                4,
-                None,
-                |ui| {
-                    crate::plugin_bridge::ui_tree_render::render_remote_surface(
-                        ui,
-                        remote,
-                        canvas_cache,
-                    );
-                },
-            );
+            // webview-kind(rendering="webview", 예: html) surface 는 native WebView
+            // overlay 가 콘텐츠를 그리므로 host 는 chrome 만 페인트한다(placeholder=URL
+            // 미지정 / boundary=overlay backdrop). overlay 가 보일 땐 이 chrome 을
+            // 덮고, overlay 가 숨겨지거나(메뉴/팝업) URL 이 없을 때 노출된다.
+            if crate::engine::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
+                let url = crate::model::Surface::webview_url(remote);
+                draw_panel_frame(
+                    ctx,
+                    &format!("webview_chrome_{}", id_suffix),
+                    info,
+                    0,
+                    None,
+                    |ui| {
+                        crate::webview_chrome_ui::draw_webview_chrome(ui, url.as_deref());
+                    },
+                );
+            } else {
+                draw_panel_frame(
+                    ctx,
+                    &format!("remote_panel_{}", id_suffix),
+                    info,
+                    4,
+                    None,
+                    |ui| {
+                        crate::plugin_bridge::ui_tree_render::render_remote_surface(
+                            ui,
+                            remote,
+                            canvas_cache,
+                        );
+                    },
+                );
+            }
         }
     }
 

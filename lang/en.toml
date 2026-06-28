@@ -882,6 +882,12 @@ force_detach = "Force detach"
 occupied_surface = "Held by another client (readonly). Force detach to take over."
 occupied_workspace = "Attached by a client"
 
+# Webview(html) surface host chrome — painted by the host before/around the
+# native WebView overlay (placeholder when no page, boundary backdrop otherwise).
+[webview]
+region = "WebView region"
+no_page = "No page loaded"
+
 # CLI output strings. The `tasty-cli` crate reads these through the shared
 # i18n store (initialized on the CLI boot path before `run_client`).
 [cli.remote_check]

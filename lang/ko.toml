@@ -882,6 +882,12 @@ force_detach = "강제 끊기"
 occupied_surface = "다른 client 가 점유 중(읽기 전용). 회수하려면 강제 끊기."
 occupied_workspace = "client 가 attach 중"
 
+# Webview(html) surface 의 host chrome — native WebView overlay 가 붙기 전/숨겨질 때
+# host 가 그린다(URL 없으면 placeholder, 있으면 boundary backdrop).
+[webview]
+region = "WebView 영역"
+no_page = "로드된 페이지 없음"
+
 # CLI 출력 문자열. `tasty-cli` 크레이트가 공용 i18n 스토어를 통해 읽는다
 # (CLI 부트 경로에서 `run_client` 이전에 초기화됨).
 [cli.remote_check]

@@ -180,3 +180,10 @@ line_icon!(
     "mouse",
     r#"<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>"#
 );
+// webview(html) surface chrome 의 region/placeholder 글리프. path 는 갤러리
+// `catalog/icons.rs` GLOBE 와 동일.
+line_icon!(
+    GLOBE,
+    "globe",
+    r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/>"#
+);
