@@ -29,6 +29,10 @@ use crate::settings::EffectiveFont;
 pub struct MdStyle {
     family: FontFamily,
     body: f32,
+    /// prose-h1 heading size (cap-exempt content level).
+    font_size_prose_h1: f32,
+    /// prose-h2 heading size (= the 14px font cap; shared by h2/h3).
+    font_size_prose_h2: f32,
     line_height_prose: f32,
     /// Current body text color for the active block context (muted inside blockquotes).
     text: Color32,
@@ -56,6 +60,8 @@ impl MdStyle {
         Self {
             family: font_registry::markdown_family(),
             body: font.font_size.max(1.0),
+            font_size_prose_h1: theme.font_size_prose_h1.value(),
+            font_size_prose_h2: theme.font_size_prose_h2.value(),
             line_height_prose: theme.line_height_prose,
             text: theme.text_secondary().to_egui(),
             primary: theme.text_primary().to_egui(),
@@ -471,9 +477,9 @@ fn image_uri(dest: &str, base_dir: Option<&Path>) -> Option<String> {
 
 /// Map a heading level to its design appearance (see `MD_H` in the gallery).
 fn heading_style(style: &MdStyle, level: HeadingLevel) -> HeadingStyle {
-    // prose-h1 (20) is the only cap-exempt content level; the rest stay ≤ max (14).
-    let prose_h1 = 20.0;
-    let max = 14.0;
+    // prose-h1 (20) is the only cap-exempt content level; the rest stay ≤ prose-h2 (14, the font cap).
+    let prose_h1 = style.font_size_prose_h1;
+    let max = style.font_size_prose_h2;
     let body = style.body;
     match level {
         HeadingLevel::H1 => HeadingStyle { size: prose_h1, color: style.primary, upper: false, tracking: 0.0, top: 0.0, bottom: style.space_sm },
