@@ -7,7 +7,7 @@ use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::model::{SplitDirection, WorkspaceAttachMapping};
+use crate::model::{SplitDirection, WorkspaceAttachMapping, WorkspaceCategoryId};
 
 // ── Serializable structs ──
 
@@ -16,6 +16,20 @@ pub struct SavedLayout {
     pub version: u32,
     pub workspaces: Vec<SavedWorkspace>,
     pub active_workspace: usize,
+    /// Workspace category(사이드바 폴더) 목록(섹션 표시 순서). `#[serde(default)]` 로
+    /// 구버전 layout.json(필드 없음) 과 호환 — 비었으면 restore 가 normal 단일로
+    /// 마이그레이션한다(모든 ws → normal).
+    #[serde(default)]
+    pub categories: Vec<SavedCategory>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SavedCategory {
+    pub id: WorkspaceCategoryId,
+    pub name: String,
+    /// 사이드바에서 이 섹션이 접혀 있는지(사용자 UI 상태 영속).
+    #[serde(default)]
+    pub collapsed: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -30,6 +44,10 @@ pub struct SavedWorkspace {
     /// 구버전 layout.json(필드 없음) 과 호환. None 이면 일반(로컬) 워크스페이스.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attach_mapping: Option<WorkspaceAttachMapping>,
+    /// 이 워크스페이스가 속한 카테고리 id. `#[serde(default)]` 로 구버전(필드 없음)
+    /// 은 normal(`0`) 로 귀속된다.
+    #[serde(default)]
+    pub category: WorkspaceCategoryId,
 }
 
 #[derive(Serialize, Deserialize)]

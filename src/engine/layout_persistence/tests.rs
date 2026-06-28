@@ -121,6 +121,7 @@ fn saved_workspace_attach_mapping_round_trips() {
         }),
         focused_pane_index: 0,
         attach_mapping: Some(WorkspaceAttachMapping::profile("gx10", Some(1))),
+        category: 0,
     };
     let json = serde_json::to_string(&ws).unwrap();
     let back: SavedWorkspace = serde_json::from_str(&json).unwrap();
@@ -143,4 +144,90 @@ fn saved_workspace_without_mapping_field_is_none() {
     }"#;
     let ws: SavedWorkspace = serde_json::from_str(legacy).unwrap();
     assert!(ws.attach_mapping.is_none());
+}
+
+// ── S-WSCAT: SavedWorkspace.category / SavedLayout.categories 영속 ──
+
+#[test]
+fn saved_workspace_without_category_field_defaults_to_normal() {
+    use super::schema::SavedWorkspace;
+    use crate::model::NORMAL_CATEGORY_ID;
+    // 구버전 layout.json (category 필드 없음) → serde(default) 로 normal(0).
+    let legacy = r#"{
+        "name": "ws",
+        "subtitle": "",
+        "description": "",
+        "pane_layout": { "Leaf": { "tabs": [
+            { "name": "Shell", "explicit_name": null,
+              "surface": { "Leaf": { "Terminal": {} } } }
+        ], "active_tab": 0 } },
+        "focused_pane_index": 0
+    }"#;
+    let ws: SavedWorkspace = serde_json::from_str(legacy).unwrap();
+    assert_eq!(ws.category, NORMAL_CATEGORY_ID);
+}
+
+#[test]
+fn saved_layout_categories_round_trip() {
+    use super::schema::{
+        SavedCategory, SavedLayout, SavedPane, SavedPaneNode, SavedSurfaceLayout, SavedTab,
+        SavedWorkspace,
+    };
+    let leaf = SavedSurfaceLayout::Leaf(SavedSurface::Terminal {
+        cwd: None,
+        restore_command: None,
+        scrollback_ref: None,
+    });
+    let layout = SavedLayout {
+        version: super::LAYOUT_VERSION,
+        active_workspace: 0,
+        categories: vec![
+            SavedCategory {
+                id: 0,
+                name: "normal".into(),
+                collapsed: false,
+            },
+            SavedCategory {
+                id: 1,
+                name: "work".into(),
+                collapsed: true,
+            },
+        ],
+        workspaces: vec![SavedWorkspace {
+            name: "ws".into(),
+            subtitle: String::new(),
+            description: String::new(),
+            pane_layout: SavedPaneNode::Leaf(SavedPane {
+                tabs: vec![SavedTab {
+                    name: "Shell".into(),
+                    explicit_name: None,
+                    surface: leaf,
+                }],
+                active_tab: 0,
+            }),
+            focused_pane_index: 0,
+            attach_mapping: None,
+            category: 1,
+        }],
+    };
+    let json = serde_json::to_string(&layout).unwrap();
+    let back: SavedLayout = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.categories.len(), 2);
+    assert_eq!(back.categories[1].name, "work");
+    assert!(back.categories[1].collapsed);
+    assert_eq!(back.workspaces[0].category, 1);
+}
+
+#[test]
+fn saved_layout_without_categories_field_is_empty() {
+    use super::schema::SavedLayout;
+    // 구버전 layout.json (categories 필드 없음) → serde(default) 로 빈 Vec.
+    // restore 가 ensure_normal_category 로 normal 단일 마이그레이션한다.
+    let legacy = r#"{
+        "version": 2,
+        "active_workspace": 0,
+        "workspaces": []
+    }"#;
+    let layout: SavedLayout = serde_json::from_str(legacy).unwrap();
+    assert!(layout.categories.is_empty());
 }

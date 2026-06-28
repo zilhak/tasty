@@ -11,8 +11,8 @@ use crate::model::{Pane, PaneNode, Surface, SurfaceLayout, Tab, Workspace};
 
 use super::LAYOUT_VERSION;
 use super::schema::{
-    SavedLayout, SavedPane, SavedPaneNode, SavedSurface, SavedSurfaceLayout, SavedTab,
-    SavedWorkspace,
+    SavedCategory, SavedLayout, SavedPane, SavedPaneNode, SavedSurface, SavedSurfaceLayout,
+    SavedTab, SavedWorkspace,
 };
 use super::scrollback::capture_scrollback_to_disk;
 
@@ -47,6 +47,15 @@ impl SavedLayout {
         let registry = engine.surface_registry.clone();
         let capture_scrollback = engine.settings.general.restore_surface_content;
         let memory = engine.memory.clone();
+        let categories: Vec<SavedCategory> = engine
+            .categories
+            .iter()
+            .map(|c| SavedCategory {
+                id: c.id,
+                name: c.name.clone(),
+                collapsed: c.collapsed,
+            })
+            .collect();
         let mut seen_refs = SeenRefs::new();
         let workspaces: Vec<SavedWorkspace> = {
             let CoreState {
@@ -70,6 +79,7 @@ impl SavedLayout {
             version: LAYOUT_VERSION,
             workspaces,
             active_workspace,
+            categories,
         }
     }
 }
@@ -83,6 +93,7 @@ impl SavedWorkspace {
             .position(|&id| id == ws.focused_pane)
             .unwrap_or(0);
         let attach_mapping = ws.attach_mapping.clone();
+        let category = ws.category;
         let pane_layout = SavedPaneNode::capture(ws.pane_layout_mut(), ctx);
         Self {
             name: ws.name.clone(),
@@ -91,6 +102,7 @@ impl SavedWorkspace {
             pane_layout,
             focused_pane_index,
             attach_mapping,
+            category,
         }
     }
 }

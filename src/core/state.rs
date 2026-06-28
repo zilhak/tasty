@@ -650,6 +650,18 @@ impl CoreState {
     pub fn categories(&self) -> &[crate::model::WorkspaceCategory] {
         &self.categories
     }
+
+    /// 카테고리 토글 **off** 마이그레이션 (§4-2 on→off). normal 외 모든 카테고리를
+    /// 제거하고 그 안의 워크스페이스를 모두 normal 로 귀속한다. **워크스페이스의 물리
+    /// 순서(전역 인덱스)는 그대로 두므로** active(전역 인덱스) 도 불변이다 — 사이드바가
+    /// off 면 평면이라 순서만 보존되면 충분하다.
+    pub fn collapse_categories_to_normal(&mut self) {
+        use crate::model::{NORMAL_CATEGORY_ID, WorkspaceCategory};
+        for ws in &mut self.workspaces {
+            ws.set_category(NORMAL_CATEGORY_ID);
+        }
+        self.categories = vec![WorkspaceCategory::normal()];
+    }
 }
 
 // CoreReader port — read-only 진입점. handler 가 점진적으로 `&dyn CoreReader`

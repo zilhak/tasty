@@ -112,6 +112,18 @@ impl SavedLayout {
         }
 
         let active_idx = self.active_workspace.min(self.workspaces.len() - 1);
+        // 카테고리 복원 — 구버전(필드 없음)은 비어 있어 ensure_normal_category 가
+        // normal 단일로 마이그레이션한다. ws 의 category 가 가리키는 대상이 없으면
+        // 동일 함수가 normal 로 귀속한다(§4-1 무손실 마이그레이션).
+        let categories: Vec<crate::model::WorkspaceCategory> = self
+            .categories
+            .into_iter()
+            .map(|c| crate::model::WorkspaceCategory {
+                id: c.id,
+                name: c.name,
+                collapsed: c.collapsed,
+            })
+            .collect();
         let mut workspaces = Vec::new();
         for (i, saved_ws) in self.workspaces.into_iter().enumerate() {
             let name = saved_ws.name.clone();
@@ -130,6 +142,9 @@ impl SavedLayout {
 
         let active = self.active_workspace.min(workspaces.len() - 1);
         engine.workspaces = workspaces;
+        engine.categories = categories;
+        // normal 0번 고정 + 발급기 floor + dangling category 귀속 정규화.
+        engine.ensure_normal_category();
         engine.restored_active_workspace = Some(active);
         true
     }
@@ -152,6 +167,9 @@ impl SavedWorkspace {
             Workspace::from_restored(ws_id, self.name, self.subtitle, pane_layout, focused_pane);
         // 단계 7 — 매핑 복원(재시작 후 활성화 시 자동 재attach). 생성자 churn 0(setter).
         ws.set_attach_mapping(self.attach_mapping);
+        // 카테고리 소속 복원(구버전은 serde default 0=normal). dangling 은 restore
+        // 말미의 ensure_normal_category 가 normal 로 귀속.
+        ws.set_category(self.category);
         Some(ws)
     }
 }
