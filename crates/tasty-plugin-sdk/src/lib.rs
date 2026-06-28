@@ -31,7 +31,7 @@ pub use plugin::{
 pub use runtime::run;
 pub use shared_buffer::SharedBuffer;
 pub use tasty_plugin_protocol::ui_tree::{
-    ButtonStyle, LabelStyle, SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
+    BadgeTone, ButtonStyle, LabelStyle, SelectionMode, SplitDir, TagTone, TreeNode, UiEvent, UiNode,
 };
 pub use tasty_plugin_protocol::{
     EventEnvelope, EventMeta, EventOrigin, EventScope, ExtensionHookKind, ExtensionHookMode,

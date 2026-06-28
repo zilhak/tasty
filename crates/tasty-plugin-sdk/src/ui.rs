@@ -5,7 +5,8 @@
 
 use tasty_plugin_protocol::SharedBufferId;
 use tasty_plugin_protocol::ui_tree::{
-    ButtonStyle, LabelStyle, PixelFilter, PixelFormat, SelectionMode, SplitDir, TreeNode, UiNode,
+    BadgeTone, ButtonStyle, LabelStyle, PixelFilter, PixelFormat, SelectionMode, SplitDir, TagTone,
+    TreeNode, UiNode,
 };
 
 pub fn vbox(children: impl IntoIterator<Item = UiNode>) -> UiNode {
@@ -130,6 +131,42 @@ pub fn selectable_row(
 
 pub fn icon(name: impl Into<String>) -> UiNode {
     UiNode::Icon { name: name.into() }
+}
+
+/// 외곽선 mono chip(`UiNode::Tag`) — worktree type / status prefix 등 의미 라벨.
+pub fn tag(text: impl Into<String>, tone: TagTone) -> UiNode {
+    UiNode::Tag {
+        text: text.into(),
+        tone,
+        dot: false,
+    }
+}
+
+/// 선행 8px 상태 점이 붙는 Tag chip.
+pub fn tag_dot(text: impl Into<String>, tone: TagTone) -> UiNode {
+    UiNode::Tag {
+        text: text.into(),
+        tone,
+        dot: true,
+    }
+}
+
+/// 채움 pill badge(`UiNode::Badge`) — count / status.
+pub fn badge(text: impl Into<String>, tone: BadgeTone) -> UiNode {
+    UiNode::Badge {
+        text: text.into(),
+        tone,
+        dot: false,
+    }
+}
+
+/// 라벨 없는 8px 상태 점 badge.
+pub fn badge_dot(tone: BadgeTone) -> UiNode {
+    UiNode::Badge {
+        text: String::new(),
+        tone,
+        dot: true,
+    }
 }
 
 pub fn button(id: impl Into<String>, label_text: impl Into<String>) -> UiNode {
