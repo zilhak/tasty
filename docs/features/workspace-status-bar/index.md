@@ -22,7 +22,7 @@
 
 - **브랜치 점 + 이름** — focus surface 의 cwd 기준 git 브랜치(`.git/HEAD` 를 std::fs 로 상위 탐색, git 바이너리 비의존·크로스플랫폼). repo 아니거나 detached 면 미표시.
 - **surfaceId** — focus surface 의 숫자 ID ("Copy Terminal ID" 와 동일 값).
-- **셸 · cols×rows** — terminal 한정(포그라운드 프로세스명 + 그리드 크기).
+- **셸 · cols×rows** — terminal 한정(포그라운드 프로세스명 + 그리드 크기). 프로세스명은 매 프레임 OS 조회가 아니라 1Hz busy-poll 캐시(`CoreState::foreground_name`)에서 읽는다(최대 1초 지연). Windows 에선 셸의 *가장 얕은 non-shell 자손*을 표시 — 선택·플랫폼 메커니즘은 [busy-indicator](../../design/policies/busy-indicator.md). 그리드는 lock-free 핸들 캐시 read.
 
 ### 우측 액션 (clickable)
 

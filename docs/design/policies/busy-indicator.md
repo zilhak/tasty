@@ -39,11 +39,15 @@
 |--------|---------|--------|
 | Linux | `/proc/<pid>/stat` 의 tpgid → `/proc/<tpgid>/comm` | 정확 |
 | macOS | `proc_pidinfo(PROC_PIDTBSDINFO)` 의 `e_tpgid` → 같은 syscall 로 leader 의 `pbi_name` | 정확 |
-| Windows | `CreateToolhelp32Snapshot` 트리 enum → shell 자손 leaf 이름 | 근사(ConPTY 가 foreground PGID 미노출 — WezTerm/Windows Terminal 동일 방식) |
+| Windows | `CreateToolhelp32Snapshot` 트리 enum → shell 의 **가장 얕은 non-shell 자손**(같은 깊이는 pid 오름차순; non-shell 자손 없으면 deepest-leaf/셸 fallback) | 근사(ConPTY 가 foreground PGID 미노출 — WezTerm/Windows Terminal 동일 방식) |
 
 > 모든 플랫폼의 조회는 fork 없는 syscall/파일읽기다. macOS 는 과거 `ps` 를 2회 fork 했으나, live surface 수 × 1Hz 의 `posix_spawn` 이 메인 스레드를 블록해 워크스페이스 전환을 지연시켜(66 live shell 기준 전환 p90 251ms→2.8ms) libproc 으로 교체했다.
 >
 > Windows 의 `CreateToolhelp32Snapshot` 은 호출당 시스템 전체 프로세스를 스냅샷한다(≈6ms/342 proc). 과거엔 surface 마다 독립 스냅샷이라 1Hz tick 당 `surface 수 × 전체 프로세스 수` 비용이 메인 스레드에 실렸다(60 live 기준 tick 당 ≈364ms). 지금은 **poll 1회당 스냅샷 1회**(`resolve_foreground_many`)로, 한 스냅샷·트리를 모든 shell_pid 가 공유한다 → `O(procs + surfaces)`(60 live 기준 ≈5ms). 출력-최신성 판정(try_lock)은 여전히 terminal 별로 수행한다.
+>
+> Windows 선택 로직은 한때 **가장 깊은 leaf 자손**을 골랐다. `claude`/`node` 같은 에이전트는 `bash`/`git`/`rg` 등 단명 helper 를 끊임없이 spawn/kill 하므로, 스냅샷마다 그 순간 살아있는 가장 깊은 leaf 가 달라져 표시 이름이 깜빡였다. 지금은 **가장 얕은 non-shell 자손**(= 사용자가 띄운 바깥쪽 프로그램, 예: `node`)을 골라 안정적이며, 같은 깊이 복수 후보는 pid 오름차순으로 결정적 tie-break 한다. 중첩 셸(`pwsh → cmd → node`)은 통과하되 셸 자체는 후보가 아니다.
+
+StatusBar 의 프로세스명 셀도 이 1Hz 캐시(`CoreState::foreground_name`)를 읽는다 — 매 프레임 스냅샷을 다시 뜨지 않는다. 표시는 최대 1초 지연되지만 대화형 라벨엔 무해하다.
 
 ## CLI/IPC
 
