@@ -36,6 +36,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **View** — tasty 쪽 윈도우 표현(종류+콘텐츠+행동). winit Window 를 소유. **1 View : 1 Window.** `MainView`/`SettingsView`/… 가 구현체.
 - **CoreState** — 구조 계층의 도메인 트리(Workspace…Surface). **GUI 없이도 구성**되며, GUI 에선 `MainView` 가 이를 호스팅·투영.
 - **Workspace** — 도메인 최상위 컨테이너. 사이드바에서 전환.
+- **Workspace Category(카테고리/사이드바 폴더)** — 워크스페이스를 묶는 **그룹 계층**(사이드바 섹션). `workspace_categories_enabled` 설정으로 on/off. 예약 카테고리 **`normal`**(id `0`, `categories[0]` 위치 고정, rename/delete 불가)가 항상 존재하고, 미지정 워크스페이스의 기본 소속이다. 카테고리 *CRUD·reorder·소속 변경*은 에이전트 작업(IPC/CLI 양면, release) — *선택(active)·접힘 토글*은 사용자 UI 상태(IPC 노출 안 함). 정본 [`features/workspace-category`](../features/workspace-category/index.md).
 - **Pane** — 독립 탭 바를 가진 영역. **상위 레이아웃**이 위치 결정(탭 무관 고정). tasty 고유.
 - **Tab** — Pane 안의 탭 하나. 내부에 Surface 들의 **하위 레이아웃**을 가짐(탭 전환 시 함께 전환).
 - **Surface** — 최하위 컨테이너. `surface_id` + **kind(타입)** 를 가짐. 닫기/포커스/리스트는 kind 무관 동일.
