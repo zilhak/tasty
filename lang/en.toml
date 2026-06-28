@@ -236,7 +236,10 @@ link_modifier_none = "None (plain click)"
 allow_clipboard_read_label = "Allow clipboard read (OSC 52):"
 allow_clipboard_read_notice = "When on, programs in the terminal (including remote/SSH processes) can read your system clipboard. Off by default for security."
 mouse_capture_hint_label = "Show mouse-capture hint:"
-mouse_capture_blacklist_label = "Disable mouse capture for (one process name per line):"
+mouse_capture_blacklist_label = "Disable mouse capture for these programs:"
+mouse_capture_blacklist_empty = "No programs excluded — clicks are sent to capturing apps."
+mouse_capture_blacklist_add_placeholder = "process name or pattern, e.g. htop or ht*"
+mouse_capture_blacklist_add_button = "Add"
 mouse_capture_blacklist_notice = "When a listed program (e.g. htop) is in the foreground, clicks and drags are handled locally (select / context menu) instead of being sent to it. Matching is case-insensitive substring or * wildcard on the process name. The wheel is still sent to the program."
 
 [settings.appearance]

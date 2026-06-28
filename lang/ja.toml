@@ -236,7 +236,10 @@ link_modifier_none = "なし (通常クリック)"
 allow_clipboard_read_label = "クリップボード読み取りを許可 (OSC 52):"
 allow_clipboard_read_notice = "オンにすると、ターミナル内のプログラム(リモート/SSH プロセスを含む)がシステムのクリップボードを読み取れます。セキュリティのため既定はオフです。"
 mouse_capture_hint_label = "マウスキャプチャの案内を表示:"
-mouse_capture_blacklist_label = "マウスキャプチャを無効にするプロセス (1 行に 1 つ):"
+mouse_capture_blacklist_label = "次のプログラムでマウスキャプチャを無効化:"
+mouse_capture_blacklist_empty = "除外プログラムなし — クリックはキャプチャ中のアプリに送られます。"
+mouse_capture_blacklist_add_placeholder = "プロセス名またはパターン、例: htop や ht*"
+mouse_capture_blacklist_add_button = "追加"
 mouse_capture_blacklist_notice = "ここに登録したプログラム(例: htop)がフォアグラウンドのときは、クリックやドラッグをアプリに送らずローカル処理(テキスト選択 / コンテキストメニュー)します。マッチングはプロセス名に対する大文字小文字を区別しない部分一致または * ワイルドカードです。ホイールは引き続きアプリに送られます。"
 
 [settings.appearance]
