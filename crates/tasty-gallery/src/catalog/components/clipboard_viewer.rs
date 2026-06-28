@@ -52,7 +52,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             state_box(
                 ui,
                 theme,
-                "Could not read the clipboard",
+                "Failed to read the clipboard",
                 theme.accent_danger().to_egui(),
             );
         });
@@ -118,6 +118,16 @@ fn master_detail(ui: &mut egui::Ui, theme: &Theme) {
                 (theme.surface_raised(), theme.text_secondary())
             };
             p.rect_filled(row, theme.corner_radius.value(), fill.to_egui());
+            // idle 타입 버튼 = surface-raised + border-default(1px) — host `button()`
+            // 스타일 기준(changelog). selected 행은 fill 만(accent).
+            if !*selected {
+                p.rect_stroke(
+                    row,
+                    theme.corner_radius.value(),
+                    egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+                    egui::StrokeKind::Inside,
+                );
+            }
             p.text(
                 egui::pos2(row.left() + theme.spacing_md.value(), row.center().y),
                 egui::Align2::LEFT_CENTER,
