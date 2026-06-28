@@ -89,6 +89,27 @@ pub enum UiNode {
         size: u32,
     },
 
+    /// 외곽선 mono chip — surface kind / worktree type / status prefix 등 의미 라벨.
+    /// 호스트가 `tasty_ui_widgets::tag` 로 렌더한다(비인터랙티브). `dot` 이면 선행
+    /// 8px 상태 점. (디자인 `core/Tag`, transcription-spec §2-D)
+    Tag {
+        text: String,
+        #[serde(default)]
+        tone: TagTone,
+        #[serde(default)]
+        dot: bool,
+    },
+
+    /// 채움 pill badge — count / status. 호스트가 `tasty_ui_widgets::badge`(또는
+    /// `badge_dot`)로 렌더한다. `dot` 이면 라벨 없는 8px 점. (디자인 `core/Badge`)
+    Badge {
+        text: String,
+        #[serde(default)]
+        tone: BadgeTone,
+        #[serde(default)]
+        dot: bool,
+    },
+
     /// 클릭 가능한 컨테이너 행. `selected = true`이면 호스트가 hover 오버레이 배경을
     /// 깐다. 사용자가 클릭하면 [`UiEvent::Click`]이 `node_id = id`로 발화된다.
     /// 자식은 임의 UiNode (보통 hbox로 multi-span 라벨을 구성).
@@ -174,6 +195,35 @@ pub enum ButtonStyle {
     #[default]
     Secondary,
     Primary,
+}
+
+/// `UiNode::Tag` 톤 (디자인 `core/Tag` variant). 색은 호스트의 의미 토큰 accessor 로
+/// 결정된다 (`tasty_ui_widgets::TagVariant` 와 1:1).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TagTone {
+    /// 외곽선(기본) — surface_raised + border_default + text_secondary.
+    #[default]
+    Default,
+    Accent,
+    Agent,
+    Success,
+    Warning,
+    Danger,
+}
+
+/// `UiNode::Badge` 톤 (디자인 `core/Badge` variant). `tasty_ui_widgets::BadgeVariant`
+/// 와 1:1.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BadgeTone {
+    /// 채움 danger(기본 — unread count).
+    #[default]
+    Danger,
+    Primary,
+    Agent,
+    Success,
+    Neutral,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -482,6 +532,71 @@ mod tests {
         let s = serde_json::to_string(&n).unwrap();
         assert!(s.contains("\"block\":true"));
         assert_eq!(serde_json::from_str::<UiNode>(&s).unwrap(), n);
+    }
+
+    #[test]
+    fn tag_round_trip() {
+        let n = UiNode::Tag {
+            text: "main".into(),
+            tone: TagTone::Accent,
+            dot: false,
+        };
+        let s = serde_json::to_string(&n).unwrap();
+        assert!(s.contains("\"type\":\"tag\""));
+        assert!(s.contains("\"tone\":\"accent\""));
+        assert_eq!(serde_json::from_str::<UiNode>(&s).unwrap(), n);
+
+        // tone/dot 생략 → default(Default tone, dot false).
+        let json = r#"{"type":"tag","text":"x"}"#;
+        match serde_json::from_str::<UiNode>(json).unwrap() {
+            UiNode::Tag { tone, dot, .. } => {
+                assert_eq!(tone, TagTone::Default);
+                assert!(!dot);
+            }
+            other => panic!("expected Tag, got {other:?}"),
+        }
+
+        // dot=true 도 round-trip.
+        let dotted = UiNode::Tag {
+            text: " M ".into(),
+            tone: TagTone::Warning,
+            dot: true,
+        };
+        let s = serde_json::to_string(&dotted).unwrap();
+        assert!(s.contains("\"dot\":true"));
+        assert_eq!(serde_json::from_str::<UiNode>(&s).unwrap(), dotted);
+    }
+
+    #[test]
+    fn badge_round_trip() {
+        let n = UiNode::Badge {
+            text: "3".into(),
+            tone: BadgeTone::Primary,
+            dot: false,
+        };
+        let s = serde_json::to_string(&n).unwrap();
+        assert!(s.contains("\"type\":\"badge\""));
+        assert!(s.contains("\"tone\":\"primary\""));
+        assert_eq!(serde_json::from_str::<UiNode>(&s).unwrap(), n);
+
+        // tone 생략 → default Danger.
+        let json = r#"{"type":"badge","text":"9"}"#;
+        match serde_json::from_str::<UiNode>(json).unwrap() {
+            UiNode::Badge { tone, dot, .. } => {
+                assert_eq!(tone, BadgeTone::Danger);
+                assert!(!dot);
+            }
+            other => panic!("expected Badge, got {other:?}"),
+        }
+
+        let dotted = UiNode::Badge {
+            text: String::new(),
+            tone: BadgeTone::Success,
+            dot: true,
+        };
+        let s = serde_json::to_string(&dotted).unwrap();
+        assert!(s.contains("\"dot\":true"));
+        assert_eq!(serde_json::from_str::<UiNode>(&s).unwrap(), dotted);
     }
 
     #[test]
