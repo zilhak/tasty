@@ -9,7 +9,7 @@ pub(super) fn draw_new_image_popup(ui: &mut egui::Ui, view: &mut ImageView, th: 
         ui.label(
             egui::RichText::new(t("image_viewer.new_image_title"))
                 .size(th.font_size_heading.value())
-                .color(th.text),
+                .color(th.text_primary()),
         );
         ui.add_space(12.0);
 
@@ -17,7 +17,7 @@ pub(super) fn draw_new_image_popup(ui: &mut egui::Ui, view: &mut ImageView, th: 
             ui.label(
                 egui::RichText::new(t("image_viewer.width"))
                     .size(th.font_size_body.value())
-                    .color(th.subtext0),
+                    .color(th.text_muted()),
             );
             ui.add_sized(
                 [80.0, 22.0],
@@ -27,12 +27,12 @@ pub(super) fn draw_new_image_popup(ui: &mut egui::Ui, view: &mut ImageView, th: 
             ui.label(
                 egui::RichText::new(" x ")
                     .size(th.font_size_body.value())
-                    .color(th.subtext0),
+                    .color(th.text_muted()),
             );
             ui.label(
                 egui::RichText::new(t("image_viewer.height"))
                     .size(th.font_size_body.value())
-                    .color(th.subtext0),
+                    .color(th.text_muted()),
             );
             ui.add_sized(
                 [80.0, 22.0],
@@ -74,7 +74,7 @@ pub(super) fn draw_save_path_popup(
         ui.label(
             egui::RichText::new(t("image_viewer.save_path_title"))
                 .size(th.font_size_heading.value())
-                .color(th.text),
+                .color(th.text_primary()),
         );
         ui.add_space(12.0);
 

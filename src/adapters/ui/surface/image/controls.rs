@@ -79,7 +79,7 @@ pub(super) fn draw_viewer_controls(
         ui.label(
             egui::RichText::new(info)
                 .size(th.font_size_caption.value())
-                .color(th.subtext0),
+                .color(th.text_muted()),
         );
     }
 
@@ -150,7 +150,7 @@ pub(super) fn draw_edit_controls(
     ui.label(
         egui::RichText::new(t("image_viewer.brush_size"))
             .size(th.font_size_caption.value())
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     ui.add(egui::Slider::new(&mut view.brush_size, 1.0..=20.0).show_value(false));
 
@@ -158,7 +158,7 @@ pub(super) fn draw_edit_controls(
     ui.label(
         egui::RichText::new(t("image_viewer.color"))
             .size(th.font_size_caption.value())
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     let mut color_arr = [
         view.brush_color.r(),
@@ -194,7 +194,7 @@ pub(super) fn draw_zoom_controls(ui: &mut egui::Ui, view: &mut ImageView, th: &t
     ui.label(
         egui::RichText::new(zoom_pct)
             .size(th.font_size_caption.value())
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
 
     if ui.add_sized([20.0, 20.0], egui::Button::new("-")).clicked() {
