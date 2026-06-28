@@ -221,6 +221,8 @@ fn collect_canvases_in_node(node: &UiNode, plugin_id: &str, out: &mut Vec<Pendin
         | UiNode::Addressbar { .. }
         | UiNode::TextPreview { .. }
         | UiNode::Spacer { .. }
+        | UiNode::Tag { .. }
+        | UiNode::Badge { .. }
         | UiNode::SelectableRow { .. } => {}
     }
 }

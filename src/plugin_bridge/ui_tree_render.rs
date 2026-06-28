@@ -10,8 +10,8 @@ use egui::Ui;
 
 use crate::gpu::canvas_texture::CanvasTextureCache;
 use crate::plugin::ui_tree::{
-    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, SharedBufferId, SplitDir,
-    TreeNode, UiEvent, UiNode,
+    BadgeTone, ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, SharedBufferId,
+    SplitDir, TagTone, TreeNode, UiEvent, UiNode,
 };
 use crate::plugin_bridge::remote_surface::RemoteSurface;
 
@@ -301,6 +301,18 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
         }
         UiNode::Spacer { size } => {
             ui.add_space(*size as f32);
+        }
+        UiNode::Tag { text, tone, dot } => {
+            let th = crate::theme::theme();
+            tasty_ui_widgets::tag(ui, &th, text, tag_variant(*tone), *dot);
+        }
+        UiNode::Badge { text, tone, dot } => {
+            let th = crate::theme::theme();
+            if *dot {
+                tasty_ui_widgets::badge_dot(ui, &th, badge_variant(*tone));
+            } else {
+                tasty_ui_widgets::badge(ui, &th, text, badge_variant(*tone));
+            }
         }
         UiNode::Canvas {
             buffer_id,
@@ -740,6 +752,31 @@ fn render_tree_node(
                 expanded: now_open,
             });
         }
+    }
+}
+
+/// DSL tone → 위젯 variant 매핑. `From` impl 은 두 타입이 모두 외부 크레이트라
+/// orphan rule 에 막혀 호스트에서 불가 → 로컬 매핑 함수로 둔다.
+fn tag_variant(tone: TagTone) -> tasty_ui_widgets::TagVariant {
+    use tasty_ui_widgets::TagVariant as V;
+    match tone {
+        TagTone::Default => V::Default,
+        TagTone::Accent => V::Accent,
+        TagTone::Agent => V::Agent,
+        TagTone::Success => V::Success,
+        TagTone::Warning => V::Warning,
+        TagTone::Danger => V::Danger,
+    }
+}
+
+fn badge_variant(tone: BadgeTone) -> tasty_ui_widgets::BadgeVariant {
+    use tasty_ui_widgets::BadgeVariant as V;
+    match tone {
+        BadgeTone::Danger => V::Danger,
+        BadgeTone::Primary => V::Primary,
+        BadgeTone::Agent => V::Agent,
+        BadgeTone::Success => V::Success,
+        BadgeTone::Neutral => V::Neutral,
     }
 }
 
