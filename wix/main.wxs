@@ -214,28 +214,6 @@
                                     </Component>
                                 </Directory>
                             </Directory>
-                            <Directory Id='PluginExplorerDir' Name='com.tasty.explorer'>
-                                <Component Id='PluginExplorerBin' Guid='*'>
-                                    <File Id='PluginExplorerBinFile' Source='$(var.CargoTargetBinDir)\tasty-plugin-explorer.exe' KeyPath='yes'/>
-                                </Component>
-                                <Component Id='PluginExplorerManifest' Guid='*'>
-                                    <File Id='PluginExplorerManifestFile' Source='crates\tasty-plugin-explorer\tasty-plugin.toml' KeyPath='yes'/>
-                                </Component>
-                                <Component Id='PluginExplorerSig' Guid='*'>
-                                    <File Id='PluginExplorerSigFile' Source='crates\tasty-plugin-explorer\tasty-plugin.toml.sig' KeyPath='yes'/>
-                                </Component>
-                                <Directory Id='PluginExplorerLangDir' Name='lang'>
-                                    <Component Id='PluginExplorerLangEn' Guid='*'>
-                                        <File Id='PluginExplorerLangEnFile' Source='crates\tasty-plugin-explorer\lang\en.toml' KeyPath='yes'/>
-                                    </Component>
-                                    <Component Id='PluginExplorerLangJa' Guid='*'>
-                                        <File Id='PluginExplorerLangJaFile' Source='crates\tasty-plugin-explorer\lang\ja.toml' KeyPath='yes'/>
-                                    </Component>
-                                    <Component Id='PluginExplorerLangKo' Guid='*'>
-                                        <File Id='PluginExplorerLangKoFile' Source='crates\tasty-plugin-explorer\lang\ko.toml' KeyPath='yes'/>
-                                    </Component>
-                                </Directory>
-                            </Directory>
                             <Directory Id='PluginGitViewerDir' Name='com.tasty.git-viewer'>
                                 <Component Id='PluginGitViewerBin' Guid='*'>
                                     <File Id='PluginGitViewerBinFile' Source='$(var.CargoTargetBinDir)\tasty-plugin-git-viewer.exe' KeyPath='yes'/>
@@ -394,12 +372,6 @@
             <ComponentRef Id='PluginCodexLangEn'/>
             <ComponentRef Id='PluginCodexLangJa'/>
             <ComponentRef Id='PluginCodexLangKo'/>
-            <ComponentRef Id='PluginExplorerBin'/>
-            <ComponentRef Id='PluginExplorerManifest'/>
-            <ComponentRef Id='PluginExplorerSig'/>
-            <ComponentRef Id='PluginExplorerLangEn'/>
-            <ComponentRef Id='PluginExplorerLangJa'/>
-            <ComponentRef Id='PluginExplorerLangKo'/>
             <ComponentRef Id='PluginGitViewerBin'/>
             <ComponentRef Id='PluginGitViewerManifest'/>
             <ComponentRef Id='PluginGitViewerSig'/>
