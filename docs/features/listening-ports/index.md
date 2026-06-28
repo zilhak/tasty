@@ -25,7 +25,7 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 
 - **Proto**: 현재 TCP 고정 (UDP 미지원).
 - **Workspace / Tab**: Tasty 프로세스 트리 소속 행만 채워지고, External 행은 em-dash(`—`).
-- **State**: 연결 상태(`PortState` — Listen / Established / CloseWait / …). `LISTEN` → green dot + pulse, 그 외 → yellow dot. `reduced_motion` 시 정적 dot.
+- **State**: 연결 상태(`PortState` — Listen / Established / CloseWait / …). `LISTEN` → green dot + pulse, 그 외 → yellow dot. `reduced_motion` 시 정적 dot. 백엔드는 전 상태를 수집하지만 뷰어는 기본적으로 LISTEN 만 표시한다(아래 상태 필터).
 
 ### scope (Tasty / System)
 
@@ -50,14 +50,29 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - **Port 는 식별 / 기본 정렬 컬럼이라 항상 표시**(체크박스 잠금) — 전부 숨김이 구조적으로 불가능하다.
 - 표시 상태는 `egui::Memory` 에 영속하여 팝업을 닫았다 열어도 유지된다. (per-column 값 필터가 아니라 컬럼 전체의 표시/숨김이다.)
 
-### 빈 결과 3분기
+### 상태 필터 (state filter, 기본 LISTEN-only)
 
-`Ready` 인데 행이 0개일 때 우선순위: **search_zero**(검색어 있음) → **system_empty**(System scope) → **tasty_empty**(Tasty scope). `Loading` / `Failed` 는 별도 분기.
+- 필터 행 우측의 funnel 버튼을 누르면 **표시할 TCP 상태** 드롭다운이 열린다. `FilterState.visible_states` 는 **표시(shown) 집합**으로, 기본값은 `{Listen}`(LISTEN-only). 백엔드가 전 상태를 수집해도 뷰어는 기본적으로 listening 소켓만 보여준다.
+- 드롭다운은 **현재 scope 에 실제로 존재하는 상태들**(필터 전 전체 rows 에서 도출, LISTEN 선두 + 알파벳)만 체크박스로 나열한다 — 꺼둔 상태도 다시 켤 수 있다. 체크 = 표시. **모두 선택 / 모두 해제 / 초기화(LISTEN-only 복원) / 적용** 버튼을 제공한다.
+- **Apply-on-confirm**: 드롭다운 편집은 임시 draft(egui temp memory)에만 쌓이고 **적용**을 눌러야 반영된다. 드롭다운이 열려 있을 때 Escape 는 드롭다운만 닫고 팝업은 유지한다.
+- 표시 상태 집합은 `egui::Memory` 에 영속해 재오픈에도 유지된다(앱 종료 시 휘발 → LISTEN-only 복원).
+- **적용 순서**: 상태 필터 → 검색 → 정렬. footer `total` 은 *상태 통과·검색 전* 개수, 헤더 `{listening} listening` 은 상태 필터와 무관한 scope 전체 LISTEN 개수다.
+
+### 빈 결과 4분기
+
+`Ready` 인데 행이 0개일 때 우선순위: **search_zero**(검색어 있음) → **state_filtered**(검색은 비었으나 상태 필터가 scope 행을 전부 가림) → **system_empty**(System scope) → **tasty_empty**(Tasty scope). `Loading` / `Failed` 는 별도 분기. state_filtered 분기 덕에 LISTEN 0개를 "포트 없음" 으로 오인하지 않는다.
+
+### 레이아웃 (footer 하단 고정)
+
+- 헤더 / 필터 행을 그린 뒤 남은 영역을 `TopBottomPanel::bottom`(footer) + `CentralPanel`(본문)로 나눈다. footer 가 하단 공간을 먼저 예약하므로 **footer 는 항상 popup 하단에 고정**되고, 본문이 남은 높이 전체를 채운다.
+- 행이 적으면 테이블이 위로 붙고 **빈 공간은 본문(목록) 영역 하단(footer 위)** 에 남는다 — footer 아래가 비지 않는다.
+- 구역 divider(헤더/필터/footer 위)는 popup 전체폭(`full.x_range()`)에 고정. 본문 가로 스크롤은 테이블 자체 ScrollArea 에 갇혀 footer/divider 폭에 영향을 주지 않는다.
 
 ### 헤더 / footer 구성
 
 - **헤더**: leading 포트 아이콘 + 제목 + accent Tag(`{listening} listening` / `scanning…`) + 검색 입력 + 컬럼 chooser 아이콘 버튼 + Refresh 아이콘 버튼(상시 노출, 현재 scope 재스캔) + close(`×`).
-- **footer**: 카운터(`{shown} of {total} ports`) + `Copy address`(행 미선택 시 disabled) + `Close`.
+- **필터 행**: 좌측 `Show all (system-wide)` 체크박스 + 우측 상태 필터 funnel 버튼.
+- **footer**: 카운터(`{shown} of {total} ports`) + `Copy address`(행 미선택 시 disabled) + `Close`. popup 하단 고정.
 
 ### 행 선택 / 주소 복사
 
@@ -81,7 +96,9 @@ Port / Proto / Address / Process / Workspace / Tab / State.
 - [ ] `LISTEN` 포트는 green dot, 그 외 상태는 yellow dot 으로 표시된다.
 - [ ] scope 를 System 으로 토글하면 재스캔되어 host 전체 포트가 나온다.
 - [ ] 검색어 입력 시 모든 컬럼에 substring 매칭으로 행이 필터된다.
-- [ ] 행이 0개일 때 scope/검색 조합에 맞는 빈 메시지(search_zero / system_empty / tasty_empty)가 뜬다.
+- [ ] 행이 0개일 때 scope/검색/상태필터 조합에 맞는 빈 메시지(search_zero / state_filtered / system_empty / tasty_empty)가 뜬다.
+- [ ] 기본 열림 시 LISTEN 상태 행만 표시된다. 상태 필터로 ESTABLISHED 등을 켜면 해당 행이 나타나고 footer `{shown} of {total}` 이 갱신된다. 드롭다운 열림 중 Escape 는 드롭다운만 닫는다.
+- [ ] footer 는 팝업을 리사이즈해도 항상 하단에 고정되고, 행이 적을 때 빈 공간은 목록 영역 하단(footer 위)에 생긴다.
 - [ ] 행 클릭 시 선택 강조되고 재클릭 시 해제된다. 클릭으로 브라우저가 열리지 않는다.
 - [ ] footer `Copy address` 는 선택 시에만 활성화되고, 클릭 시 선택 행의 주소가 클립보드에 복사된다.
 - [ ] 헤더 Refresh 버튼이 상시 노출되어 정상 상태에서도 재스캔할 수 있다.
