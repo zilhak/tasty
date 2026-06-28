@@ -6,16 +6,88 @@ use std::rc::Rc;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
-use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
 use objc2_app_kit::{NSAppearance, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSView};
 use objc2_foundation::{NSError, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_web_kit::{
-    WKContentRuleList, WKContentRuleListStore, WKUserContentController, WKWebView,
-    WKWebViewConfiguration,
+    WKContentRuleList, WKContentRuleListStore, WKNavigation, WKNavigationDelegate,
+    WKUserContentController, WKWebView, WKWebViewConfiguration,
 };
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use super::WebViewBounds;
+use super::{NavState, WebViewBounds};
+
+/// `NavDelegate` 의 ivar — host 와 공유하는 navigation 상태 셀.
+struct NavDelegateIvars {
+    nav_state: Rc<Cell<NavState>>,
+}
+
+define_class!(
+    // SAFETY:
+    // - 상위 클래스 NSObject 는 서브클래싱 제약이 없다.
+    // - `MainThreadOnly` 가 맞다: WKWebView/WKNavigationDelegate 는 main thread 전용이며
+    //   이 delegate 는 main thread 에서만 생성·호출된다(WebKit 이 콜백을 main thread 에서 발화).
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "TastyNavDelegate"]
+    #[ivars = NavDelegateIvars]
+    struct NavDelegate;
+
+    unsafe impl NSObjectProtocol for NavDelegate {}
+
+    // WKNavigationDelegate: navigation 생명주기 콜백. start/finish/fail* 만 구현(나머지 optional).
+    unsafe impl WKNavigationDelegate for NavDelegate {
+        #[unsafe(method(webView:didStartProvisionalNavigation:))]
+        fn did_start_provisional(
+            &self,
+            _web_view: &WKWebView,
+            _navigation: Option<&WKNavigation>,
+        ) {
+            self.ivars().nav_state.set(NavState::Loading);
+        }
+
+        #[unsafe(method(webView:didFinishNavigation:))]
+        fn did_finish(&self, _web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
+            self.ivars().nav_state.set(NavState::Done);
+        }
+
+        #[unsafe(method(webView:didFailNavigation:withError:))]
+        fn did_fail(
+            &self,
+            _web_view: &WKWebView,
+            _navigation: Option<&WKNavigation>,
+            error: &NSError,
+        ) {
+            // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
+            tracing::warn!("WKWebView navigation failed: {}", error.localizedDescription());
+            self.ivars().nav_state.set(NavState::Failed);
+        }
+
+        #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
+        fn did_fail_provisional(
+            &self,
+            _web_view: &WKWebView,
+            _navigation: Option<&WKNavigation>,
+            error: &NSError,
+        ) {
+            tracing::warn!(
+                "WKWebView provisional navigation failed: {}",
+                error.localizedDescription()
+            );
+            self.ivars().nav_state.set(NavState::Failed);
+        }
+    }
+);
+
+impl NavDelegate {
+    /// main thread 에서 ivar(nav_state 공유 셀)를 담아 delegate 인스턴스를 만든다.
+    fn new(mtm: MainThreadMarker, nav_state: Rc<Cell<NavState>>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(NavDelegateIvars { nav_state });
+        // SAFETY: NSObject 의 지정 초기화자 init 을 super 로 호출.
+        unsafe { msg_send![super(this), init] }
+    }
+}
 
 /// 원격(http/https) 서브리소스 전체를 차단하는 WKContentRuleList JSON. 로컬 file:// 는 통과.
 const REMOTE_BLOCK_RULE_JSON: &str =
@@ -27,6 +99,11 @@ pub struct PlatformWebView {
     content_rule_list: Rc<RefCell<Option<Retained<WKContentRuleList>>>>,
     /// 현재 원하는 차단 상태(true=원격 차단, allow_remote=false 대응. 기본 true).
     block_remote: Rc<Cell<bool>>,
+    /// navigation 생명주기 상태(기본 Idle). NavDelegate 콜백이 갱신, host sync_webviews 가
+    /// `nav_state()` 로 read. 콜백이 전부 main thread 발화라 `Rc<Cell>` 로 충분(block_remote 동일).
+    nav_state: Rc<Cell<NavState>>,
+    /// WKWebView 는 navigationDelegate 를 weak 참조하므로 delegate 를 여기 보관해 생명주기 유지.
+    _nav_delegate: Retained<NavDelegate>,
 }
 
 impl PlatformWebView {
@@ -66,6 +143,13 @@ impl PlatformWebView {
                 WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, &config);
 
             ns_view.addSubview(&webview);
+
+            // navigation 생명주기 delegate. start→Loading / finish→Done / fail*→Failed.
+            // WKWebView 가 weak 참조하므로 Retained 를 struct 필드(_nav_delegate)로 보관.
+            let nav_state = Rc::new(Cell::new(NavState::Idle));
+            let nav_delegate = NavDelegate::new(mtm, nav_state.clone());
+            let nav_proto = ProtocolObject::from_ref(&*nav_delegate);
+            webview.setNavigationDelegate(Some(nav_proto));
 
             // 원격-차단 룰을 비동기 컴파일. 기본 차단(block_remote=true) — completion handler 가
             // 컴파일 완료 시 캐시에 저장하고 현재 상태를 적용한다.
@@ -112,6 +196,8 @@ impl PlatformWebView {
                 webview,
                 content_rule_list,
                 block_remote,
+                nav_state,
+                _nav_delegate: nav_delegate,
             })
         }
     }
@@ -139,7 +225,14 @@ impl PlatformWebView {
     /// For file:// URLs, uses `loadFileURL:allowingReadAccessToURL:` with the
     /// parent directory as the access scope, so relative resources (CSS, JS,
     /// images, iframes) in the same directory tree are accessible.
+    /// 현재 navigation 생명주기 상태(NavDelegate 콜백이 갱신).
+    pub fn nav_state(&self) -> NavState {
+        self.nav_state.get()
+    }
+
     pub fn load_url(&self, url: &str) {
+        // 콜백이 늦게 와도 즉시 spinner 가 뜨도록 Loading 선반영.
+        self.nav_state.set(NavState::Loading);
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         // URL loading 시퀀스는 한 단위라 분할 시 가독성 저하.
         #[allow(clippy::multiple_unsafe_ops_per_block)]
@@ -219,6 +312,8 @@ impl PlatformWebView {
 
     /// Load HTML string directly.
     pub fn load_html(&self, html: &str) {
+        // Loading 선반영(load_url 과 동일 — 콜백 지연 대비).
+        self.nav_state.set(NavState::Loading);
         // SAFETY: main thread WKWebView API. NSString/NSURL은 호출 동안 살아있는 local Retained.
         unsafe {
             let ns_html = NSString::from_str(html);

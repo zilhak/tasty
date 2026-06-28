@@ -10,15 +10,15 @@ use std::rc::Rc;
 use gtk::glib::Cast;
 use gtk::prelude::*;
 use webkit2gtk::{
-    NavigationPolicyDecision, NavigationPolicyDecisionExt, PolicyDecisionExt, PolicyDecisionType,
-    ResponsePolicyDecision, ResponsePolicyDecisionExt, SettingsExt, URIRequestExt, WebView,
-    WebViewExt,
+    LoadEvent, NavigationPolicyDecision, NavigationPolicyDecisionExt, PolicyDecisionExt,
+    PolicyDecisionType, ResponsePolicyDecision, ResponsePolicyDecisionExt, SettingsExt,
+    URIRequestExt, WebView, WebViewExt,
 };
 use winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
 
-use super::WebViewBounds;
+use super::{NavState, WebViewBounds};
 
 pub struct PlatformWebView {
     webview: WebView,
@@ -28,6 +28,10 @@ pub struct PlatformWebView {
     x11_display: *mut std::os::raw::c_void,
     /// 원격(http/https) 차단 여부(기본 true=차단). decide-policy 핸들러가 read.
     block_remote: Rc<Cell<bool>>,
+    /// navigation 생명주기 상태(기본 Idle). load-changed/load-failed 시그널이 갱신,
+    /// host sync_webviews 가 `nav_state()` 로 read. GTK 시그널은 GTK main loop
+    /// (=winit main thread) 발화라 `Rc<Cell>` 로 충분(block_remote 동일).
+    nav_state: Rc<Cell<NavState>>,
 }
 
 impl PlatformWebView {
@@ -156,6 +160,32 @@ impl PlatformWebView {
             });
         }
 
+        // navigation 생명주기 시그널. load-changed(Started→Loading / Finished→Done) +
+        // load-failed(→Failed). webkit2gtk 는 실패 시 load-failed 다음 load-changed(Finished)
+        // 를 쏠 수 있어, Finished 에서 `!= Failed` 가드로 Failed 를 Done 으로 되돌리지 않는다.
+        let nav_state = Rc::new(Cell::new(NavState::Idle));
+        {
+            let nav = nav_state.clone();
+            webview.connect_load_changed(move |_wv, event| match event {
+                LoadEvent::Started => nav.set(NavState::Loading),
+                LoadEvent::Finished => {
+                    if nav.get() != NavState::Failed {
+                        nav.set(NavState::Done);
+                    }
+                }
+                _ => {} // Redirected / Committed 은 무시
+            });
+        }
+        {
+            let nav = nav_state.clone();
+            webview.connect_load_failed(move |_wv, _event, failing_uri, error| {
+                // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
+                tracing::warn!("WebKitGTK load-failed uri={failing_uri} err={error}");
+                nav.set(NavState::Failed);
+                true // 기본 에러 페이지 억제(host error chrome 사용)
+            });
+        }
+
         gtk_window.show_all();
 
         Ok(Self {
@@ -165,6 +195,7 @@ impl PlatformWebView {
             xlib,
             x11_display: display as _,
             block_remote,
+            nav_state,
         })
     }
 
@@ -209,11 +240,19 @@ impl PlatformWebView {
         }
     }
 
+    /// 현재 navigation 생명주기 상태(load-changed/load-failed 시그널이 갱신).
+    pub fn nav_state(&self) -> NavState {
+        self.nav_state.get()
+    }
+
     pub fn load_url(&self, url: &str) {
+        // 콜백이 늦게 와도 즉시 spinner 가 뜨도록 Loading 선반영.
+        self.nav_state.set(NavState::Loading);
         self.webview.load_uri(url);
     }
 
     pub fn load_html(&self, html: &str) {
+        self.nav_state.set(NavState::Loading);
         self.webview.load_html(html, None);
     }
 

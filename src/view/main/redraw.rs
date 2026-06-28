@@ -261,16 +261,19 @@ impl MainView {
         // Native views are always above the wgpu render surface in OS z-order.
         let overlay_open = self.state.has_egui_overlay_open();
 
-        // Update bounds/visibility for existing webviews
+        // Update bounds/visibility for existing webviews.
+        // reveal(=native 페이지 노출)은 navigation 이 성공 완료(Done)일 때만 — Loading/Failed/
+        // Idle 이면 native overlay 를 숨겨 그 자리에 egui chrome(spinner/error/placeholder)이
+        // 보이게 한다(S-W3 가 지적한 "loading 중 overlay 가 spinner 를 덮는" 문제 해소).
         for (sid, wv) in &self.webviews {
-            if overlay_open {
-                wv.set_visible(false);
-            } else if let Some(bounds) = active_html.get(sid) {
+            // active 면 bounds 는 숨겨져 있어도 갱신(다음 reveal 대비).
+            if let Some(bounds) = active_html.get(sid) {
                 wv.set_bounds(*bounds, scale_factor);
-                wv.set_visible(true);
-            } else if all_html_ids.contains(sid) {
-                wv.set_visible(false);
             }
+            let reveal = !overlay_open
+                && active_html.contains_key(sid)
+                && wv.nav_state() == crate::webview::NavState::Done;
+            wv.set_visible(reveal);
         }
 
         // Remove webviews for closed Html surfaces
@@ -290,6 +293,52 @@ impl MainView {
                 self.webview_applied_settings.insert(sid, resolved);
             }
         }
+
+        // native nav_state 를 RemoteSurface 로 mirror — egui 렌더 경로(egui_panels →
+        // webview_chrome)가 다음 프레임에 읽어 loading/error chrome 을 그린다. borrow 충돌
+        // 회피를 위해 (sid, nav) 를 먼저 수집한 뒤 기록한다. 전이가 있으면 mark_dirty 로
+        // 한 프레임 더 그려 chrome 을 갱신한다(가시성 전환 자체는 위에서 native 즉시 적용).
+        let navs: Vec<(u32, crate::webview::NavState)> = self
+            .webviews
+            .iter()
+            .map(|(s, w)| (*s, w.nav_state()))
+            .collect();
+        let mut nav_changed = false;
+        for (sid, nav) in navs {
+            if let Some(rs) = self.find_remote_surface(sid)
+                && rs.nav_state() != nav
+            {
+                rs.set_nav_state(nav);
+                nav_changed = true;
+            }
+        }
+        if nav_changed {
+            self.mark_dirty();
+        }
+    }
+
+    /// surface_id 로 RemoteSurface 를 찾아 반환. `find_webview_url` 과 같은 순회 +
+    /// RemoteSurface 다운캐스트. nav_state mirror 기록에 쓴다.
+    fn find_remote_surface(
+        &self,
+        surface_id: u32,
+    ) -> Option<&crate::plugin_bridge::remote_surface::RemoteSurface> {
+        for ws in &self.core_state.workspaces {
+            for &pid in &ws.pane_layout().all_pane_ids() {
+                if let Some(pane) = ws.pane_layout().find_pane(pid) {
+                    for tab in &pane.tabs {
+                        let surface = tab.surface();
+                        if surface.surface_id() == Some(surface_id) {
+                            return surface
+                                .as_any()
+                                .downcast_ref::<crate::plugin_bridge::remote_surface::RemoteSurface>(
+                                );
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// webview surface 의 kind. `find_webview_url` 과 같은 순회.

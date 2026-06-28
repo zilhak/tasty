@@ -17,7 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::*;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use super::WebViewBounds;
+use super::{NavState, WebViewBounds};
 
 pub struct PlatformWebView {
     hwnd: HWND,
@@ -27,6 +27,10 @@ pub struct PlatformWebView {
     _environment: ICoreWebView2Environment,
     /// 원격 허용 여부(기본 false=차단). WebResourceRequested 핸들러가 매 요청 read.
     allow_remote: Rc<Cell<bool>>,
+    /// navigation 생명주기 상태(기본 Idle). NavigationStarting/Completed 핸들러가 갱신,
+    /// host sync_webviews 가 `nav_state()` 로 read 해 chrome/가시성에 쓴다. 콜백이 전부
+    /// controller pump thread(=winit main thread) 발화라 `Rc<Cell>` 로 충분(allow_remote 동일).
+    nav_state: Rc<Cell<NavState>>,
 }
 
 impl PlatformWebView {
@@ -179,12 +183,54 @@ impl PlatformWebView {
                 .add_WebResourceRequested(&handler, &mut token)
                 .map_err(|e| format!("add_WebResourceRequested failed: {e}"))?;
 
+            // navigation 생명주기 콜백. start→Loading, completed→Done/Failed(IsSuccess out-param).
+            // 토큰은 WebResourceRequested 와 동일하게 *mut i64(EventRegistrationToken 아님).
+            let nav_state = Rc::new(Cell::new(NavState::Idle));
+            let nav_start = nav_state.clone();
+            let mut tok_start: i64 = 0;
+            let h_start = NavigationStartingEventHandler::create(Box::new(
+                move |_sender, _args| -> windows::core::Result<()> {
+                    nav_start.set(NavState::Loading);
+                    Ok(())
+                },
+            ));
+            webview
+                .add_NavigationStarting(&h_start, &mut tok_start)
+                .map_err(|e| format!("add_NavigationStarting failed: {e}"))?;
+
+            let nav_done = nav_state.clone();
+            let mut tok_done: i64 = 0;
+            let h_done = NavigationCompletedEventHandler::create(Box::new(
+                move |_sender, args| -> windows::core::Result<()> {
+                    let Some(args) = args else { return Ok(()) };
+                    // windows 0.61: IsSuccess 는 BOOL out-param(WebResourceRequested 의 Uri 와 동일 컨벤션).
+                    let mut is_success = BOOL(0);
+                    args.IsSuccess(&mut is_success)?;
+                    if is_success.as_bool() {
+                        nav_done.set(NavState::Done);
+                    } else {
+                        let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
+                        if let Err(e) = args.WebErrorStatus(&mut status) {
+                            tracing::warn!("WebView2 WebErrorStatus query failed: {e}");
+                        }
+                        // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
+                        tracing::warn!("WebView2 navigation failed: status={status:?}");
+                        nav_done.set(NavState::Failed);
+                    }
+                    Ok(())
+                },
+            ));
+            webview
+                .add_NavigationCompleted(&h_done, &mut tok_done)
+                .map_err(|e| format!("add_NavigationCompleted failed: {e}"))?;
+
             Ok(Self {
                 hwnd,
                 controller,
                 webview,
                 _environment: env,
                 allow_remote,
+                nav_state,
             })
         }
     }
@@ -232,7 +278,14 @@ impl PlatformWebView {
         }
     }
 
+    /// 현재 navigation 생명주기 상태(NavigationStarting/Completed 핸들러가 갱신).
+    pub fn nav_state(&self) -> NavState {
+        self.nav_state.get()
+    }
+
     pub fn load_url(&self, url: &str) {
+        // 콜백이 늦게 와도 즉시 spinner 가 뜨도록 Loading 선반영(첫 프레임 깜빡임 방지).
+        self.nav_state.set(NavState::Loading);
         // SAFETY: HSTRING은 호출 끝까지 살아있고 Navigate는 main thread 호출.
         unsafe {
             let url = HSTRING::from(url);
@@ -243,6 +296,8 @@ impl PlatformWebView {
     }
 
     pub fn load_html(&self, html: &str) {
+        // Loading 선반영(load_url 과 동일 — 콜백 지연 대비).
+        self.nav_state.set(NavState::Loading);
         // SAFETY: HSTRING은 호출 끝까지 살아있고 NavigateToString은 main thread 호출.
         unsafe {
             let html = HSTRING::from(html);

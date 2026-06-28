@@ -22,6 +22,31 @@ use serde_json::Value;
 
 use crate::plugin::ui_tree::{UiEvent, UiNode};
 
+/// webview surface 의 navigation 생명주기 상태. native backend 콜백(WebView2 /
+/// WKNavigationDelegate / WebKitGTK)이 갱신하고, host 가 chrome(loading/error) 렌더와
+/// overlay 가시성 게이팅에 쓴다.
+///
+/// 정의 위치가 webview 모듈이 아니라 여기인 이유: `crate::webview`(=`host_api::webview`)는
+/// `#[cfg(feature = "gui")]` 게이트라, webview 안에 두면 비-gui 빌드의 `RemoteSurface` 가
+/// 참조할 수 없다. `RemoteSurface` 는 항상 컴파일되므로 NavState 도 여기 둔다. gui 코드
+/// 편의용으로 `host_api/webview.rs` 가 `pub use` 로 재노출한다.
+///
+/// `Default = Idle` + `Copy` 라 native backend 의 `Rc<Cell<NavState>>` 에 그대로 들어간다
+/// (실패 사유 문자열은 담지 않음 — backend 콜백이 `tracing::warn!` 로그로만 남기고 화면엔
+/// URL 을 쓴다).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NavState {
+    /// 아직 navigation 시작 전(URL 미지정 직후). placeholder/boundary chrome.
+    #[default]
+    Idle,
+    /// navigation 진행 중. overlay 숨기고 egui spinner 노출.
+    Loading,
+    /// navigation 성공 완료. overlay reveal(native 페이지가 보임).
+    Done,
+    /// navigation 실패. overlay 숨긴 채 error chrome. (사유는 tracing 로그로만)
+    Failed,
+}
+
 pub struct RemoteSurface {
     pub id: SurfaceId,
     /// `Box::leak` 으로 정적화된 plugin kind. registry에 등록 시 한 번만 leak.
@@ -40,6 +65,10 @@ pub struct RemoteSurface {
     /// webview-enabled kind 인 경우 plugin 이 `webview.set_url` 로 전달한 URL.
     /// host 의 sync_webviews 가 매 프레임 이 값을 읽어 native webview 동기화.
     pub webview_url: Arc<Mutex<Option<String>>>,
+    /// webview-enabled kind 의 navigation 생명주기 상태 mirror. host 의 sync_webviews 가
+    /// 매 프레임 native `PlatformWebView.nav_state()` 를 이 값에 복사하고, egui 렌더 경로
+    /// (egui_panels → webview_chrome)가 여기서 읽어 loading/error chrome 을 그린다.
+    pub nav_state: Arc<Mutex<NavState>>,
     /// plugin 이 `surface.set_cwd` 로 통보한 현재 cwd. `source_cwd()` 가 이 값을
     /// 반환하여 다음 surface 의 carry 후보 cwd 로 사용된다 (예: explorer 가 root
     /// 변경 시 갱신). 초기값 None — host 가 SurfaceCreateCtx.cwd 로 받은 carry cwd
@@ -64,6 +93,7 @@ impl RemoteSurface {
             invalidated: Arc::new(Mutex::new(true)),
             display_name: Arc::new(Mutex::new(initial_name)),
             webview_url: Arc::new(Mutex::new(None)),
+            nav_state: Arc::new(Mutex::new(NavState::Idle)),
             cwd: Arc::new(Mutex::new(None)),
         }
     }
@@ -73,6 +103,18 @@ impl RemoteSurface {
         if let Ok(mut slot) = self.webview_url.lock() {
             *slot = url;
         }
+    }
+
+    /// sync_webviews 가 매 프레임 native nav_state 를 mirror 할 때 호출.
+    pub fn set_nav_state(&self, s: NavState) {
+        if let Ok(mut slot) = self.nav_state.lock() {
+            *slot = s;
+        }
+    }
+
+    /// 현재 mirror 된 navigation 상태. egui 렌더 경로가 chrome 분기에 읽는다.
+    pub fn nav_state(&self) -> NavState {
+        self.nav_state.lock().map(|g| *g).unwrap_or(NavState::Idle)
     }
 
     /// `surface.set_cwd` IPC 가 호출. plugin 측 root/working dir 변경을 host 에 통보.
