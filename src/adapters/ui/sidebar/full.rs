@@ -114,7 +114,7 @@ pub fn draw_full_sidebar(
     // 영역 계산과 동일한 sidebar_width 를 기준으로 그린다.
     let panel_rect = panel_resp.response.rect;
     ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
+        egui::Order::Middle,
         egui::Id::new("sidebar_right_border"),
     ))
     .vline(

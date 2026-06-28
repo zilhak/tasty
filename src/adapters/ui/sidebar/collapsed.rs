@@ -88,7 +88,7 @@ pub fn draw_collapsed_sidebar(
     // 영역 때문에 더 커서 터미널을 침범한다).
     let panel_rect = panel_resp.response.rect;
     ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Foreground,
+        egui::Order::Middle,
         egui::Id::new("sidebar_right_border"),
     ))
     .vline(
