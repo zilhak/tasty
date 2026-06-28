@@ -1317,29 +1317,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "egui_commonmark"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a1e5d9a91b1b7a320c9b7f56d1878416d7c9bab3eaf337b036e0ddfabf58623"
-dependencies = [
- "egui",
- "egui_commonmark_backend",
- "egui_extras",
- "pulldown-cmark",
-]
-
-[[package]]
-name = "egui_commonmark_backend"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efb41b6833a6aaa99ca5c4f8e75b2410d69a7b3e30148d413f541147404a0dfa"
-dependencies = [
- "egui",
- "egui_extras",
- "pulldown-cmark",
-]
-
-[[package]]
 name = "egui_extras"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1348,7 +1325,6 @@ dependencies = [
  "ahash",
  "egui",
  "enum-map",
- "image",
  "log",
  "mime_guess2",
  "profiling",
@@ -5305,7 +5281,6 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
- "egui_commonmark",
  "egui_extras",
  "enigo",
  "gdkx11",
@@ -5321,6 +5296,7 @@ dependencies = [
  "objc2-web-kit",
  "png 0.18.1",
  "pollster",
+ "pulldown-cmark",
  "rand 0.9.4",
  "regex",
  "rfd",

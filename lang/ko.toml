@@ -571,6 +571,11 @@ no_items = "항목 없음"
 no_permission = "권한 없음"
 loading = "불러오는 중…"
 
+[markdown.state]
+failed = "불러오지 못했습니다"
+empty = "이 파일은 비어 있습니다"
+loading = "불러오는 중…"
+
 [convert_popup]
 title = "서피스 타입 전환"
 terminal = "터미널"

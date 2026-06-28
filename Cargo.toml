@@ -280,7 +280,10 @@ rand = "0.9"
 # Date/time — known-plugins.toml trusted_at RFC3339 timestamp.
 # default-features=false 로 tzdata 의존 제거; UTC + std clock 만 사용.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-egui_commonmark = { version = "0.20.0", optional = true }
+# Markdown surface 렌더 — CommonMark/GFM 파싱만 pulldown-cmark 로 하고, 그리기는
+# tasty 가 직접(per-level heading 토큰 계층·prose 줄간격 적용) 한다. egui_commonmark 는
+# heading 을 단일 스타일로만 스케일해 디자인의 6단계 계층을 표현할 수 없어 제거했다.
+pulldown-cmark = { version = "0.12", default-features = false, optional = true }
 # System tray (cross-platform: Windows=Shell_NotifyIcon, macOS=NSStatusItem, Linux=SNI/AppIndicator via GTK)
 tray-icon = { version = "0.22", optional = true }
 
@@ -341,7 +344,7 @@ gui = [
     "dep:png",
     "dep:image",
     "dep:rfd",
-    "dep:egui_commonmark",
+    "dep:pulldown-cmark",
     "dep:objc2",
     "dep:objc2-foundation",
     "dep:objc2-web-kit",

@@ -1,11 +1,18 @@
-//! Markdown renderer using egui_commonmark.
-//! Supports CommonMark spec: tables, checkboxes, links, code blocks, etc.
+//! Markdown surface renderer.
+//!
+//! Parsing is `pulldown-cmark`; drawing is tasty's own [`render`] module so the design's
+//! six-level prose heading hierarchy and `line_height_prose` body leading come straight
+//! from `Theme` tokens (egui_commonmark could only scale a single heading style). The
+//! load-fail / empty chrome reuses the Explorer centered-state pattern instead of leaking
+//! a raw `Error:` string into the body.
 
+pub mod render;
 pub mod view;
 
-use crate::adapters::ui::font_registry;
+use crate::i18n::t;
 use crate::settings::EffectiveFont;
 use crate::theme;
+use render::MdStyle;
 use view::MarkdownView;
 
 /// Draw a Markdown surface from its host-side view: scroll area + content render.
@@ -22,6 +29,7 @@ pub fn draw_markdown(
     font: &EffectiveFont,
 ) {
     let th = theme::theme();
+    let style = MdStyle::new(&th, font, view.base_dir.clone());
 
     // Force the frame content to fill the available width
     ui.set_min_width(ui.available_width());
@@ -35,18 +43,17 @@ pub fn draw_markdown(
             }
             ui.set_min_width(ui.available_width());
             ui.style_mut().interaction.selectable_labels = true;
-            ui.style_mut().url_in_tooltip = true;
 
-            apply_font_text_styles(ui, font);
+            if let Some(err) = &view.load_error {
+                state_failed(ui, &th, err);
+                return;
+            }
+            if view.content.trim().is_empty() {
+                state_empty(ui, &th);
+                return;
+            }
 
-            // Apply theme colors to egui visuals for commonmark rendering
-            let visuals = &mut ui.style_mut().visuals;
-            visuals.override_text_color = Some(th.subtext1.into());
-            visuals.hyperlink_color = th.accent_primary().into();
-            visuals.code_bg_color = th.surface0.into();
-
-            let content = view.content.clone();
-            egui_commonmark::CommonMarkViewer::new().show(ui, &mut view.commonmark_cache, &content);
+            render::render(ui, &style, &view.content);
 
             // Trailing space so the last line doesn't visually collide with the
             // panel's bottom inner_margin when scrolled to the end.
@@ -54,33 +61,46 @@ pub fn draw_markdown(
         });
 }
 
-/// Override the standard egui text styles with the markdown surface's font.
-/// Headings scale proportionally to the body size.
-fn apply_font_text_styles(ui: &mut egui::Ui, font: &EffectiveFont) {
-    let body_size = font.font_size.max(1.0);
-    let family = font_registry::markdown_family();
+/// Load failure — a "Failed to load" title (accent-danger, matching the HTML viewer's
+/// error chrome) over the underlying error in a muted mono caption. Design proposed a
+/// peach tone; we align to the shared viewer error token (`accent-danger`) for
+/// cross-viewer consistency and semantic-token purity.
+fn state_failed(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme, detail: &str) {
+    centered(ui, |ui| {
+        ui.label(
+            egui::RichText::new(t("markdown.state.failed"))
+                .size(th.font_size_max.value())
+                .color(th.accent_danger().to_egui()),
+        );
+        ui.add_space(th.spacing_xs.value());
+        ui.label(
+            egui::RichText::new(detail)
+                .monospace()
+                .size(th.font_size_caption.value())
+                .color(th.text_muted().to_egui()),
+        );
+    });
+}
 
-    let style = ui.style_mut();
-    let text_styles = &mut style.text_styles;
-    text_styles.insert(
-        egui::TextStyle::Body,
-        egui::FontId::new(body_size, family.clone()),
-    );
-    text_styles.insert(
-        egui::TextStyle::Button,
-        egui::FontId::new(body_size, family.clone()),
-    );
-    text_styles.insert(
-        egui::TextStyle::Heading,
-        egui::FontId::new(body_size * 1.5, family.clone()),
-    );
-    text_styles.insert(
-        egui::TextStyle::Small,
-        egui::FontId::new((body_size * 0.85).max(1.0), family),
-    );
-    // Code blocks stay monospace; size mirrors body for legibility.
-    text_styles.insert(
-        egui::TextStyle::Monospace,
-        egui::FontId::new(body_size, egui::FontFamily::Monospace),
+/// Empty file — a centered, muted "This file is empty".
+fn state_empty(ui: &mut egui::Ui, th: &tasty_type_appearance::theme::Theme) {
+    centered(ui, |ui| {
+        ui.label(
+            egui::RichText::new(t("markdown.state.empty"))
+                .size(th.font_size_body.value())
+                .color(th.text_muted().to_egui()),
+        );
+    });
+}
+
+/// Center `content` within the scroll viewport (Explorer centered-state pattern).
+fn centered(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
+    let h = ui.available_height().max(1.0);
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), h),
+        egui::Layout::centered_and_justified(egui::Direction::TopDown),
+        |ui| {
+            ui.vertical_centered(|ui| content(ui));
+        },
     );
 }

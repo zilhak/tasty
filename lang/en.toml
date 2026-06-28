@@ -571,6 +571,11 @@ no_items = "no items"
 no_permission = "No permission"
 loading = "Loading…"
 
+[markdown.state]
+failed = "Failed to load"
+empty = "This file is empty"
+loading = "Loading…"
+
 [convert_popup]
 title = "Surface Type"
 terminal = "Terminal"
