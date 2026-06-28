@@ -126,12 +126,17 @@ pub fn workspace_digit(index: usize) -> Option<&'static str> {
 /// `active`(현재 탭/워크스페이스) = `accent_primary()` fill + `text_on_accent()` 숫자,
 /// 비active = `surface_raised` fill + `border_strong` edge + `text_secondary` 숫자 (본체
 /// `kbd()` 키캡과 동일 레시피). 갤러리 `switch_overlay::num_cap` 와 1:1.
+///
+/// `alpha` 는 등장 페이드 계수(0..=1) — modifier 홀드 시작 시 `motion-ui-fast`(90ms)
+/// 동안 0→1 로 올라온다. UI 오버레이 chrome 한정 모션이며 터미널 grid 0ms 불변식과
+/// 무관하다. 호출측이 `Context::animate_bool_with_time` 으로 프레임마다 계산해 넘긴다.
 pub fn paint_keycap(
     painter: &egui::Painter,
     theme: &Theme,
     center: egui::Pos2,
     digit: &str,
     active: bool,
+    alpha: f32,
 ) {
     let rect = egui::Rect::from_center_size(center, egui::vec2(KEYCAP_SIZE, KEYCAP_SIZE));
     let radius = theme.corner_radius_sm.value();
@@ -149,6 +154,12 @@ pub fn paint_keycap(
             theme.text_secondary().into(),
         )
     };
+    // 등장 페이드 — 세 색에 동일 알파 적용(키캡 전체가 함께 떠오름).
+    let (fill, edge, fg) = (
+        fill.gamma_multiply(alpha),
+        edge.gamma_multiply(alpha),
+        fg.gamma_multiply(alpha),
+    );
     painter.rect_filled(rect, radius, fill);
     painter.rect_stroke(
         rect,
@@ -171,6 +182,25 @@ pub fn paint_keycap(
         egui::FontId::monospace(theme.font_size_micro.value()),
         fg,
     );
+}
+
+/// switch-number overlay 등장 페이드 계수(0..=1).
+///
+/// `visible`(modifier held + 이 오버레이 인스턴스가 표시 대상) 가 false→true 로 바뀌면
+/// `motion-ui-fast`(90ms) 동안 0→1 로 올라오고, 놓으면 같은 시간으로 0 으로 내려간다.
+/// egui 애니메이션 상태를 양방향으로 갱신하려면 **프레임마다**(키캡을 그리지 않는
+/// 프레임 포함) 호출해야 한다. `id_salt` 로 오버레이 인스턴스(pane / sidebar)를 구분한다.
+pub fn appear_fade(
+    ctx: &egui::Context,
+    theme: &Theme,
+    id_salt: impl std::hash::Hash,
+    visible: bool,
+) -> f32 {
+    ctx.animate_bool_with_time(
+        egui::Id::new("switch_overlay_fade").with(id_salt),
+        visible,
+        theme.motion_ui_fast_ms() / 1000.0,
+    )
 }
 
 #[cfg(test)]

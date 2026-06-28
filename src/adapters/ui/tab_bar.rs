@@ -360,6 +360,16 @@ pub fn draw_pane_tab_bars_view(
                                         info.pane_id,
                                         i,
                                     );
+                                // 등장 페이드(90ms, motion-ui-fast) — 이 pane 의 오버레이
+                                // 활성 여부로 매 프레임 구동(키캡 미표시 프레임 포함 priming).
+                                let overlay_active =
+                                    props.switch_overlay_pane == Some(info.pane_id);
+                                let fade = crate::adapters::ui::switch_overlay::appear_fade(
+                                    ui.ctx(),
+                                    th,
+                                    info.pane_id,
+                                    overlay_active,
+                                );
                                 if let Some(digit) = switch_digit {
                                     crate::adapters::ui::switch_overlay::paint_keycap(
                                         &painter,
@@ -367,6 +377,7 @@ pub fn draw_pane_tab_bars_view(
                                         icon_rect.center(),
                                         digit,
                                         is_active,
+                                        fade,
                                     );
                                 } else {
                                     let kind = info.tab_kinds.get(i).copied().unwrap_or("terminal");

@@ -264,7 +264,15 @@ pub fn draw_full_sidebar_view(
                 } else {
                     None
                 };
-                let card_rect = draw_workspace_card(ui, th, ws, props.occupied_hover, switch_digit);
+                // 등장 페이드(90ms, motion-ui-fast) — held 여부로 매 프레임 구동.
+                let fade = crate::adapters::ui::switch_overlay::appear_fade(
+                    ui.ctx(),
+                    th,
+                    ("ws_full", i),
+                    props.workspace_switch_held,
+                );
+                let card_rect =
+                    draw_workspace_card(ui, th, ws, props.occupied_hover, switch_digit, fade);
                 let card_response = ui.interact(
                     card_rect,
                     egui::Id::new(("ws_card", i)),
@@ -518,6 +526,13 @@ pub fn draw_collapsed_sidebar_view(
             } else {
                 None
             };
+            // 등장 페이드(90ms, motion-ui-fast) — held 여부로 매 프레임 구동.
+            let fade = crate::adapters::ui::switch_overlay::appear_fade(
+                ui.ctx(),
+                th,
+                ("ws_collapsed", i),
+                props.workspace_switch_held,
+            );
             if let Some(digit) = switch_digit {
                 crate::adapters::ui::switch_overlay::paint_keycap(
                     ui.painter(),
@@ -525,6 +540,7 @@ pub fn draw_collapsed_sidebar_view(
                     rect.center(),
                     digit,
                     ws.is_active,
+                    fade,
                 );
             } else if !label.is_empty() {
                 ui.painter().text(
@@ -772,6 +788,8 @@ fn draw_workspace_card(
     occupied_hover: &str,
     // Some(digit) 면 status dot 자리에 숫자 키캡(switch-number overlay)을 그린다.
     switch_digit: Option<&str>,
+    // switch-number overlay 등장 페이드 계수(0..=1, motion-ui-fast 90ms).
+    switch_fade: f32,
 ) -> egui::Rect {
     // ui_kit WorkspaceRow — 테두리 없는 플랫 행. active 만 배경 채움 (`--surface-active`
     // = catppuccin surface2).
@@ -827,6 +845,7 @@ fn draw_workspace_card(
                     dot_rect.center(),
                     digit,
                     ws.is_active,
+                    switch_fade,
                 );
             } else {
                 // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).

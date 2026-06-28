@@ -145,6 +145,12 @@ pub const OPACITY_RECESSED: f32 = 0.4;
 /// 터미널 콘텐츠 한정이라, 알림류 chrome 에는 페이드를 허용한다.
 pub const MOTION_UI_MS: f32 = 120.0;
 
+/// 빠른 비-터미널 chrome UI 모션 지속시간 (`--tasty-motion-ui-fast` →
+/// `--tasty-duration-90` = 90ms). `MOTION_UI_MS`(120ms) 보다 한 단계 짧은 페이드 —
+/// switch-number-overlay 등장처럼 즉각성이 중요한 오버레이용. 터미널 콘텐츠 0ms
+/// 불변식은 터미널 grid 한정이라 UI 오버레이 chrome 에는 무관.
+pub const MOTION_UI_FAST_MS: f32 = 90.0;
+
 /// status-dot pulse 링 1회 주기 (`--tasty-status-dot-pulse-duration` →
 /// `--tasty-duration-1600` = 1600ms). 확장·페이드 링 애니메이션의 주기 — 터미널
 /// 콘텐츠가 아닌 상태 표시 chrome 모션이라 토큰화 대상.
@@ -1349,6 +1355,13 @@ impl Theme {
     #[inline]
     pub fn motion_ui_ms(&self) -> f32 {
         MOTION_UI_MS
+    }
+
+    /// 빠른 비-터미널 chrome UI 모션 지속시간 (90ms). switch-number-overlay 등장 페이드 등.
+    /// `--tasty-motion-ui-fast` → `--tasty-duration-90`.
+    #[inline]
+    pub fn motion_ui_fast_ms(&self) -> f32 {
+        MOTION_UI_FAST_MS
     }
 
     /// status-dot pulse 링 1회 주기 (1600ms). `--tasty-status-dot-pulse-duration`
