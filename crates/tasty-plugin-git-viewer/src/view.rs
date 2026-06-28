@@ -3,9 +3,9 @@
 use tasty_plugin_sdk::Translator;
 use tasty_plugin_sdk::ui::{
     hbox, label_color, label_mono, label_mono_color, scroll_v, selectable_row, spacer, splitter_id,
-    vbox,
+    tag, vbox,
 };
-use tasty_plugin_sdk::{LabelStyle, SplitDir, UiNode};
+use tasty_plugin_sdk::{LabelStyle, SplitDir, TagTone, UiNode};
 
 use crate::git::{DiffData, DiffLineKind, FileStatus, LogEntry, StatusEntry, WorktreeEntry};
 
@@ -105,33 +105,29 @@ fn build_worktree_row(idx: usize, wt: &WorktreeEntry, active: bool, tr: &Transla
         row.push(label_mono_color(format!("{head} "), "blue"));
     }
 
-    // 타입 배지: main / linked.
-    let type_key = if wt.is_main {
-        "git_viewer.wt_main"
+    // 타입 배지: main(accent) / linked(default). (transcription-spec §2-D(c-2))
+    let (type_key, type_tone) = if wt.is_main {
+        ("git_viewer.wt_main", TagTone::Accent)
     } else {
-        "git_viewer.wt_linked"
+        ("git_viewer.wt_linked", TagTone::Default)
     };
-    let type_color = if wt.is_main { "blue" } else { "subtext0" };
-    row.push(label_mono_color(tr.t(type_key).to_string(), type_color));
+    row.push(tag(tr.t(type_key).to_string(), type_tone));
 
-    // 상태 배지.
+    // 상태 배지: current(success) / locked(warning) / invalid(danger).
     if wt.is_current {
-        row.push(spacer(4));
-        row.push(label_mono_color(tr.t("git_viewer.wt_current").to_string(), "green"));
+        row.push(tag(tr.t("git_viewer.wt_current").to_string(), TagTone::Success));
     }
     if wt.locked {
-        row.push(spacer(4));
         let label = match &wt.lock_reason {
             Some(r) if !r.is_empty() => {
                 format!("{} ({r})", tr.t("git_viewer.wt_locked"))
             }
             _ => tr.t("git_viewer.wt_locked").to_string(),
         };
-        row.push(label_mono_color(label, "yellow"));
+        row.push(tag(label, TagTone::Warning));
     }
     if !wt.is_valid {
-        row.push(spacer(4));
-        row.push(label_mono_color(tr.t("git_viewer.wt_invalid").to_string(), "red"));
+        row.push(tag(tr.t("git_viewer.wt_invalid").to_string(), TagTone::Danger));
     }
 
     selectable_row(format!("wt.{idx}"), active, row)
@@ -169,15 +165,12 @@ fn build_status_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
         return scroll_v(vbox(children));
     }
     for (idx, entry) in vm.status_entries.iter().enumerate() {
-        let (prefix, color) = status_label(entry.status);
+        let (prefix, tone) = status_label(entry.status);
         let selected = vm.selected_file == Some(idx);
         children.push(selectable_row(
             format!("file.{idx}"),
             selected,
-            [
-                label_mono_color(prefix, color),
-                label_mono(entry.path.clone()),
-            ],
+            [tag(prefix, tone), label_mono(entry.path.clone())],
         ));
     }
     scroll_v(vbox(children))
@@ -266,13 +259,14 @@ fn build_diff_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
     vbox([toolbar, scroll_v(vbox(lines))])
 }
 
-fn status_label(s: FileStatus) -> (&'static str, &'static str) {
+fn status_label(s: FileStatus) -> (&'static str, TagTone) {
+    // status prefix → Tag tone. (transcription-spec §2-D(c-2))
     match s {
-        FileStatus::Modified => (" M ", "yellow"),
-        FileStatus::Added => (" A ", "green"),
-        FileStatus::Deleted => (" D ", "red"),
-        FileStatus::Renamed => (" R ", "blue"),
-        FileStatus::Untracked => (" ? ", "overlay0"),
-        FileStatus::Conflicted => (" U ", "red"),
+        FileStatus::Modified => (" M ", TagTone::Warning),
+        FileStatus::Added => (" A ", TagTone::Success),
+        FileStatus::Deleted => (" D ", TagTone::Danger),
+        FileStatus::Renamed => (" R ", TagTone::Accent),
+        FileStatus::Untracked => (" ? ", TagTone::Default),
+        FileStatus::Conflicted => (" U ", TagTone::Danger),
     }
 }
