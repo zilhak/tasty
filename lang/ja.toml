@@ -931,3 +931,17 @@ body = "システムのスリープ時にこのターミナルでプログラム
 [command_index.cap.hard]
 title = "コマンド履歴の上限に到達"
 body = "このサーフェスがコマンド履歴の上限に達したため、新しいコマンドは記録されません。"
+
+[workspace_category]
+heading = "カテゴリ"
+new_category = "新しいカテゴリ"
+rename_category = "カテゴリ名を変更"
+delete_category = "カテゴリを削除"
+collapse_all = "すべて折りたたむ"
+expand_all = "すべて展開"
+move_to_category = "カテゴリへ移動"
+
+[workspace_category.error]
+empty = "カテゴリ名を空にはできません。"
+reserved = "'normal' は予約されたカテゴリ名です。"
+duplicate = "同じ名前のカテゴリが既に存在します。"

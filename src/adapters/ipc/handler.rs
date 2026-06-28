@@ -31,6 +31,7 @@ mod tool;
 #[cfg(feature = "gui")]
 mod webview;
 pub(crate) mod workspace;
+pub(crate) mod workspace_category;
 
 pub mod agent;
 pub mod approval;
@@ -252,6 +253,20 @@ fn route_engine_handler(
         }
         "workspace.move" => {
             workspace::handle_workspace_move(core, state, engine, id, &request.params)
+        }
+        // workspace category (사이드바 폴더 CRUD — 원칙 1·3: active/포커스 불변)
+        "workspace_category.list" => workspace_category::handle_list(state, engine, id),
+        "workspace_category.create" => {
+            workspace_category::handle_create(engine, id, &request.params)
+        }
+        "workspace_category.rename" => {
+            workspace_category::handle_rename(engine, id, &request.params)
+        }
+        "workspace_category.delete" => {
+            workspace_category::handle_delete(engine, id, &request.params)
+        }
+        "workspace_category.move" => {
+            workspace_category::handle_move(engine, id, &request.params)
         }
         // pane / split
         "pane.list" => pane::handle_pane_list(state, engine, id),

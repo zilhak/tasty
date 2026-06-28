@@ -23,6 +23,7 @@ use telemetry::telemetry_command_to_method_params;
 use super::{
     CloseCommands, Commands, ListCommands, MoveCommands, NewCommands, ReadCommands, RemoteCommands,
     SendCommands, SetCommands, SurfaceMetaCommands, ToolCommands, UnsetCommands,
+    WorkspaceCategoryCommands,
 };
 use tasty_ipc::protocol::JsonRpcRequest;
 
@@ -220,6 +221,9 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),
         Commands::Script { command } => script_command_to_method_params(command),
         Commands::Preset { command } => preset_command_to_method_params(command),
+        Commands::WorkspaceCategory { command } => {
+            workspace_category_command_to_method_params(command)
+        }
         // `tasty port` 는 run.rs 에서 IPC 전에 로컬 처리됨 — 여기 도달하지 않음.
         Commands::Port => ("port.noop", serde_json::json!({})),
     };
@@ -250,6 +254,7 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
             ssh_profile,
             ssh,
             remote_workspace,
+            category,
         } => {
             let resolved_cwd = normalize_cwd_or_exit(cwd.as_deref());
             (
@@ -264,6 +269,7 @@ fn new_command_to_method_params(command: &NewCommands) -> (&'static str, serde_j
                     "attach_profile": ssh_profile,
                     "attach_ssh": ssh,
                     "attach_remote_workspace": remote_workspace,
+                    "category": category,
                 }),
             )
         }
@@ -479,6 +485,7 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
             ssh,
             remote_workspace,
             clear_mapping,
+            category,
         } => (
             "workspace.update",
             serde_json::json!({
@@ -490,6 +497,7 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "attach_ssh": ssh,
                 "attach_remote_workspace": remote_workspace,
                 "attach_clear": clear_mapping,
+                "category": category,
             }),
         ),
         SetCommands::GlobalHook {
@@ -503,6 +511,32 @@ fn set_command_to_method_params(command: &SetCommands) -> (&'static str, serde_j
                 "command": command,
                 "label": label,
             }),
+        ),
+    }
+}
+
+fn workspace_category_command_to_method_params(
+    command: &WorkspaceCategoryCommands,
+) -> (&'static str, serde_json::Value) {
+    match command {
+        WorkspaceCategoryCommands::List => {
+            ("workspace_category.list", serde_json::json!({}))
+        }
+        WorkspaceCategoryCommands::Create { name } => (
+            "workspace_category.create",
+            serde_json::json!({ "name": name }),
+        ),
+        WorkspaceCategoryCommands::Rename { id, name } => (
+            "workspace_category.rename",
+            serde_json::json!({ "id": id, "name": name }),
+        ),
+        WorkspaceCategoryCommands::Delete { id } => (
+            "workspace_category.delete",
+            serde_json::json!({ "id": id }),
+        ),
+        WorkspaceCategoryCommands::Move { from, to } => (
+            "workspace_category.move",
+            serde_json::json!({ "from_index": from, "to_index": to }),
         ),
     }
 }

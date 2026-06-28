@@ -217,6 +217,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: PresetCommands,
     },
+    /// Manage workspace categories (sidebar folders) — list/create/rename/delete/move.
+    WorkspaceCategory {
+        #[command(subcommand)]
+        command: WorkspaceCategoryCommands,
+    },
     /// Print this instance's IPC port to stdout (first step of the auto remote
     /// port-discovery chain, `ssh host tasty port`). Reads the port file only — no IPC.
     Port,

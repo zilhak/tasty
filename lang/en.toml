@@ -931,3 +931,17 @@ body = "A program was running in this terminal when the system slept. It may not
 [command_index.cap.hard]
 title = "Command history limit reached"
 body = "This surface hit the command-history limit; new commands are no longer recorded."
+
+[workspace_category]
+heading = "Categories"
+new_category = "New category"
+rename_category = "Rename category"
+delete_category = "Delete category"
+collapse_all = "Collapse all"
+expand_all = "Expand all"
+move_to_category = "Move to category"
+
+[workspace_category.error]
+empty = "Category name must not be empty."
+reserved = "'normal' is a reserved category name."
+duplicate = "A category with this name already exists."

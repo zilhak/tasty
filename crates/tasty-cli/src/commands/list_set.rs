@@ -89,6 +89,9 @@ pub enum SetCommands {
         /// 단계 7 — 기존 SSH attach 매핑을 해제한다.
         #[arg(long)]
         clear_mapping: bool,
+        /// S-WSCAT — 이 워크스페이스를 다른 카테고리(이름 또는 id)로 옮긴다.
+        #[arg(long)]
+        category: Option<String>,
     },
     /// Set a global hook (timer-based)
     GlobalHook {

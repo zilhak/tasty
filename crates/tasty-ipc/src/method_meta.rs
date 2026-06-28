@@ -49,6 +49,12 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("workspace.create", plugin(&[SurfaceWrite])),
         ("workspace.update", plugin(&[SurfaceWrite])),
         ("workspace.move", plugin(&[SurfaceWrite])),
+        // ── workspace category (사이드바 폴더 CRUD) ──────────────────
+        ("workspace_category.list", plugin(&[SurfaceRead])),
+        ("workspace_category.create", plugin(&[SurfaceWrite])),
+        ("workspace_category.rename", plugin(&[SurfaceWrite])),
+        ("workspace_category.delete", plugin(&[SurfaceWrite])),
+        ("workspace_category.move", plugin(&[SurfaceWrite])),
         // ── pane / split ──────────────────────────────────────────────
         ("pane.list", plugin(&[SurfaceRead])),
         ("pane.close", plugin(&[SurfaceWrite])),

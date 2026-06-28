@@ -931,3 +931,17 @@ body = "시스템 절전 당시 이 터미널에서 프로그램이 실행 중�
 [command_index.cap.hard]
 title = "명령 이력 한도 도달"
 body = "이 서피스가 명령 이력 한도에 도달해 새 명령은 더 이상 기록되지 않습니다."
+
+[workspace_category]
+heading = "카테고리"
+new_category = "새 카테고리"
+rename_category = "카테고리 이름 변경"
+delete_category = "카테고리 삭제"
+collapse_all = "모두 접기"
+expand_all = "모두 펼치기"
+move_to_category = "카테고리로 이동"
+
+[workspace_category.error]
+empty = "카테고리 이름은 비울 수 없습니다."
+reserved = "'normal' 은 예약된 카테고리 이름입니다."
+duplicate = "같은 이름의 카테고리가 이미 있습니다."

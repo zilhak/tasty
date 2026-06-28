@@ -37,6 +37,9 @@ pub enum NewCommands {
         /// 단계 7 — 매핑된 원격 tasty 의 attach 대상 workspace_id (원칙 3 — ID 명시).
         #[arg(long)]
         remote_workspace: Option<u32>,
+        /// S-WSCAT — 소속 카테고리(이름 또는 id). 미지정이면 normal.
+        #[arg(long)]
+        category: Option<String>,
     },
     /// Create a new tab in the specified pane
     Tab {

@@ -79,6 +79,36 @@ fn reject_loopback_attach(
     None
 }
 
+/// create/update params 의 `category` 를 카테고리 id 로 해석한다.
+/// - 필드 없음 → `Ok(None)` (호출자가 normal 기본값 유지).
+/// - 숫자(id) 또는 문자열(이름/id 토큰) → 존재하면 `Ok(Some(id))`.
+/// - 주어졌으나 해석 불가 → `Err(메시지)`.
+fn resolve_category_param(
+    engine: &crate::core::CoreState,
+    params: &serde_json::Value,
+) -> Result<Option<crate::model::WorkspaceCategoryId>, String> {
+    let Some(v) = params.get("category") else {
+        return Ok(None);
+    };
+    if v.is_null() {
+        return Ok(None);
+    }
+    let token = if let Some(n) = v.as_u64() {
+        n.to_string()
+    } else if let Some(s) = v.as_str() {
+        if s.trim().is_empty() {
+            return Ok(None);
+        }
+        s.to_string()
+    } else {
+        return Err("'category' must be a category id (number) or name (string)".to_string());
+    };
+    match engine.resolve_category(&token) {
+        Some(id) => Ok(Some(id)),
+        None => Err(format!("unknown category: {token}")),
+    }
+}
+
 /// 매핑을 JSON 으로 노출(workspace.list 의 read — 원칙 3 read 허용).
 fn mapping_to_json(mapping: &Option<WorkspaceAttachMapping>) -> serde_json::Value {
     match mapping {
@@ -107,6 +137,8 @@ pub fn handle_workspace_list(
                 "pane_count": ws.pane_layout().all_pane_ids().len(),
                 "busy_count": engine.busy_count(&sids),
                 "attach_mapping": mapping_to_json(&ws.attach_mapping),
+                "category": ws.category,
+                "category_name": engine.category_name(ws.category),
             })
         })
         .collect();
@@ -222,6 +254,18 @@ pub fn handle_workspace_create(
         renamed_description.clone(),
     );
 
+    // S-WSCAT — 카테고리 소속 설정(있으면). 미지정이면 normal(생성자 기본값) 유지.
+    // 카테고리 변경은 사용자 active 에 닿지 않는다(원칙 1·3). attach_mapping 과 동형으로
+    // 직접 set + dirty.
+    match resolve_category_param(engine, params) {
+        Ok(Some(cat_id)) => {
+            engine.workspaces[index].set_category(cat_id);
+            engine.mark_layout_dirty();
+        }
+        Ok(None) => {}
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    }
+
     // 단계 7 — SSH attach 매핑 설정(있으면). layout.json 영속을 위해 dirty 표시.
     if let Some(mapping) = parse_attach_mapping(params) {
         engine.workspaces[index].set_attach_mapping(Some(mapping));
@@ -239,6 +283,7 @@ pub fn handle_workspace_create(
             "index": index,
             "surface_id": surface_id,
             "attach_mapping": mapping_to_json(&ws.attach_mapping),
+            "category": ws.category,
         }),
     )
 }
@@ -322,6 +367,18 @@ pub fn handle_workspace_update(
         description,
     );
 
+    // S-WSCAT — 카테고리 소속 변경(있으면). 사용자 active 불변(원칙 1·3).
+    match resolve_category_param(engine, params) {
+        Ok(Some(cat_id)) => {
+            if let Err(e) = engine.set_workspace_category(workspace_id, cat_id) {
+                return JsonRpcResponse::invalid_params(id, e.to_string());
+            }
+            engine.mark_layout_dirty();
+        }
+        Ok(None) => {}
+        Err(msg) => return JsonRpcResponse::invalid_params(id, msg),
+    }
+
     // 단계 7 — SSH attach 매핑 갱신/해제. `attach_clear` 가 우선(해제), 아니면 파싱한
     // 매핑이 있으면 설정. 어느 쪽이든 layout.json 영속을 위해 dirty 표시.
     let clear = params
@@ -346,6 +403,7 @@ pub fn handle_workspace_update(
             "description": ws.description,
             "index": index,
             "attach_mapping": mapping_to_json(&ws.attach_mapping),
+            "category": ws.category,
         }),
     )
 }
