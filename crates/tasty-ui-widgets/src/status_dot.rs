@@ -9,7 +9,6 @@ use tasty_type_appearance::theme::Theme;
 const DOT: f32 = 8.0;
 const GAP: f32 = 6.0;
 const RING_INSET: f32 = 3.0; // CSS inset:-3px → base 반경 dot/2 + 3
-const PULSE_PERIOD: f64 = 1.6;
 const PULSE_SCALE_MIN: f32 = 0.6;
 const PULSE_SCALE_RANGE: f32 = 1.2;
 const PULSE_OPACITY: f32 = 0.5;
@@ -60,7 +59,8 @@ pub fn status_dot(
 
     if pulse && !reduced_motion {
         let t = ui.ctx().input(|i| i.time);
-        let phase = (t / PULSE_PERIOD).rem_euclid(1.0) as f32;
+        let period = theme.status_dot_pulse_ms() as f64 / 1000.0; // ms → s
+        let phase = (t / period).rem_euclid(1.0) as f32;
         let eased = 1.0 - (1.0 - phase).powi(3); // ease-out cubic
         let radius = (DOT * 0.5 + RING_INSET) * (PULSE_SCALE_MIN + PULSE_SCALE_RANGE * eased);
         let ring = color.gamma_multiply(PULSE_OPACITY * (1.0 - eased));

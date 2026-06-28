@@ -140,6 +140,11 @@ pub const OPACITY_RECESSED: f32 = 0.4;
 /// 터미널 콘텐츠 한정이라, 알림류 chrome 에는 페이드를 허용한다.
 pub const MOTION_UI_MS: f32 = 120.0;
 
+/// status-dot pulse 링 1회 주기 (`--tasty-status-dot-pulse-duration` →
+/// `--tasty-duration-1600` = 1600ms). 확장·페이드 링 애니메이션의 주기 — 터미널
+/// 콘텐츠가 아닌 상태 표시 chrome 모션이라 토큰화 대상.
+pub const STATUS_DOT_PULSE_MS: f32 = 1600.0;
+
 /// 떠 있는 패널(popover / banner)의 lift 그림자 토큰. egui 비의존 순수 표현 —
 /// egui 변환은 `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
 ///
@@ -1326,6 +1331,13 @@ impl Theme {
     #[inline]
     pub fn motion_ui_ms(&self) -> f32 {
         MOTION_UI_MS
+    }
+
+    /// status-dot pulse 링 1회 주기 (1600ms). `--tasty-status-dot-pulse-duration`
+    /// → `--tasty-duration-1600`.
+    #[inline]
+    pub fn status_dot_pulse_ms(&self) -> f32 {
+        STATUS_DOT_PULSE_MS
     }
 
     // ── 컴포넌트 토큰 (banner) — 기존 semantic 접근자 / 신규 primitive 조합 ──
