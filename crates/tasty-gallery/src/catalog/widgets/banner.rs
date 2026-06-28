@@ -5,10 +5,13 @@
 //! Toast 와 달리 **자기 마우스를 소비**하고 **action 을 실을 수 있다**. 선택적 TTL
 //! 카운트다운(우상단)이 hover 시 × 로 전환된다. 스코프당 1개만 표시, 나머지는 큐(≤5).
 //!
-//! 본 specimen 은 디자인 `gallery/overlays.jsx` 의 3 Spec 구조를 전사한다:
-//! 1. **shell + 예시** — 마우스 캡쳐 안내 배너(icon + 제목 + 본문 + Shift hint + action).
+//! 본 specimen 은 디자인 `gallery/overlays-banners.jsx` 의 Spec 구조를 전사한다:
+//! 1. **shell + 예시** — 캐노니컬 마우스 캡쳐 배너(mouse glyph + 제목 + Shift 우회 힌트).
+//!    persistent(버튼 없음); 우상단 ×는 hover 시에만. 옛 Pause/Don't-show 버튼 단은 폐기.
 //! 2. **dismiss & TTL** — plain(hover × 노출) / TTL(우상단 카운트다운) 두 상태.
 //! 3. **queue & stacking** — 상위 스코프 배너(전면) + 하위 스코프 배너(40% 디밍, 후면).
+//! 4. **position & hit-zone** — 카드 rect 만 마우스 소비, 그 아래 surface 본문은 pass-through.
+//! 5. **capture blacklist** — Settings › Terminal 의 행 리스트 에디터(filled / empty).
 //!
 //! 색·치수·폰트는 모두 `Theme` 토큰 경유(`from_rgb`/hex 리터럴 금지). 배너 전용
 //! Tier-3 토큰은 banner-03 에서 본체 Theme 에 도입되어, 이 specimen 도 근사 없이
@@ -18,7 +21,9 @@
 //! 노출된다.
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, kbd};
+use tasty_ui_widgets::{
+    Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Input, kbd, switch,
+};
 
 use crate::catalog::icons::{self, MockGlyph};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
@@ -104,13 +109,20 @@ fn countdown(ui: &mut egui::Ui, theme: &Theme, seconds: u32) {
 // ── faux scope: 탭 스트립(반드시 비워둠) + 콘텐츠 + 배너 존 ────────────────────
 // 배너가 "탭바 바로 아래(content-top + 8px), 양옆 8px margin" 에 뜨는 위치 관계를
 // 전사한다. 탭바를 절대 덮지 않는다(탭 전환 차단 방지).
-fn faux_scope(
+
+/// faux surface chrome — #000 배경 + 탭 스트립(마지막 탭 active) + 선택적 상단
+/// 디밍 콘텐츠 줄 / 하단 pass-through 주석. 반환값은 배너 존 rect(탭바 아래 8px,
+/// 양옆 8px margin). 셸/배너는 호출측이 이 rect 위에 그린다. (specimen 전사 치수:
+/// 탭 높이 28 은 디자인 tab strip 고정치.)
+fn faux_chrome(
     ui: &mut egui::Ui,
     theme: &Theme,
     width: f32,
     height: f32,
-    banner: impl FnOnce(&mut egui::Ui),
-) {
+    tabs: [&str; 3],
+    top_line: Option<&str>,
+    bottom_note: Option<&str>,
+) -> egui::Rect {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let radius = theme.corner_radius.value();
     let painter = ui.painter_at(rect);
@@ -118,7 +130,7 @@ fn faux_scope(
     // 터미널 surface 배경(#000 = ansi_black).
     painter.rect_filled(rect, radius, theme.ansi_black.to_egui());
 
-    // 탭 스트립(28px, bg-sidebar) — server / dev / vim, vim active.
+    // 탭 스트립(28px, bg-sidebar) — 마지막 탭 active.
     let tab_h = 28.0;
     let tab_rect = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), tab_h));
     painter.rect_filled(
@@ -136,7 +148,6 @@ fn faux_scope(
         tab_rect.bottom(),
         egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
     );
-    let tabs = ["server", "dev", "vim"];
     let mut x = tab_rect.left();
     for (i, label) in tabs.iter().enumerate() {
         let active = i == 2;
@@ -175,67 +186,99 @@ fn faux_scope(
         );
     }
 
-    // 터미널 콘텐츠(디밍된 mono 텍스트) — 배너 뒤 컨텍스트.
     let content_pad = theme.spacing_md.value();
-    painter.text(
-        egui::pos2(rect.left() + content_pad, tab_rect.bottom() + content_pad),
-        egui::Align2::LEFT_TOP,
-        "~/tasty $ vim src/main.rs",
-        egui::FontId::monospace(theme.font_size_term_sm.value()),
-        dim(theme.text_muted().to_egui(), theme.opacity_recessed()),
-    );
+    // 상단 터미널 콘텐츠(디밍된 mono 텍스트) — 배너 뒤 컨텍스트.
+    if let Some(line) = top_line {
+        painter.text(
+            egui::pos2(rect.left() + content_pad, tab_rect.bottom() + content_pad),
+            egui::Align2::LEFT_TOP,
+            line,
+            egui::FontId::monospace(theme.font_size_term_sm.value()),
+            dim(theme.text_muted().to_egui(), theme.opacity_recessed()),
+        );
+    }
+    // 하단 pass-through 주석(hit-zone) — 카드 아래는 앱으로 전달됨을 표기.
+    if let Some(note) = bottom_note {
+        painter.text(
+            egui::pos2(rect.left() + content_pad, rect.bottom() - content_pad),
+            egui::Align2::LEFT_BOTTOM,
+            note,
+            egui::FontId::monospace(theme.font_size_caption.value()),
+            theme.text_disabled().to_egui(),
+        );
+    }
 
     // 배너 존 — 탭바 아래 8px, 양옆 8px margin, 하단 margin 없음.
     let margin = theme.spacing_sm.value();
-    let zone = egui::Rect::from_min_max(
+    egui::Rect::from_min_max(
         egui::pos2(rect.left() + margin, tab_rect.bottom() + margin),
         egui::pos2(rect.right() - margin, rect.bottom() - margin),
+    )
+}
+
+/// faux scope + 배너를 존에 그린다(Spec 1 용 기본 vim 스코프).
+fn faux_scope(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    width: f32,
+    height: f32,
+    banner: impl FnOnce(&mut egui::Ui),
+) {
+    let zone = faux_chrome(
+        ui,
+        theme,
+        width,
+        height,
+        ["server", "dev", "vim"],
+        Some("~/tasty $ vim src/main.rs"),
+        None,
     );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(zone));
     banner(&mut child);
 }
 
-// ── Spec 1: shell + 예시(마우스 캡쳐 안내) ──────────────────────────────────
+/// 캐노니컬 마우스 캡쳐 배너 본문 — leading mouse 글리프 + 제목 + Shift 우회 힌트.
+/// persistent(action 버튼 없음); 우상단 ×는 hover 시에만(specimen 은 노출 상태로
+/// 그린다). 디자인 `MouseCaptureBannerG`(overlays-shared.jsx) 전사.
+fn mouse_capture_banner(ui: &mut egui::Ui, theme: &Theme) {
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+        glyph(
+            ui,
+            icons::MOUSE,
+            theme.icon_glyph_size_md.value(),
+            theme.banner_icon_fg().to_egui(),
+        );
+        // 본문 컬럼 — 우상단 × 자리(item_height)를 비워두고 남는 폭을 채운다.
+        let body_w = (ui.available_width()
+            - theme.item_height_interactive.value()
+            - theme.spacing_md.value())
+        .max(0.0);
+        ui.vertical(|ui| {
+            ui.set_width(body_w);
+            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+            title_line(ui, theme, "Mouse input captured");
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                body_line(ui, theme, "This app is capturing the mouse. Hold");
+                kbd(ui, theme, "Shift");
+                body_line(ui, theme, "+drag to select text,");
+                kbd(ui, theme, "Shift");
+                body_line(ui, theme, "+Right-click for the tasty menu.");
+            });
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+            dismiss_x(ui, theme);
+        });
+    });
+}
+
+// ── Spec 1: shell + 예시(캐노니컬 마우스 캡쳐 배너) ──────────────────────────
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
-        faux_scope(ui, theme, theme.measure_lg.value(), 240.0, |ui| {
+        faux_scope(ui, theme, theme.measure_lg.value(), 200.0, |ui| {
             banner_shell(ui, theme, 1.0, |ui| {
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
-                    glyph(
-                        ui,
-                        icons::MOUSE,
-                        theme.icon_glyph_size_md.value(),
-                        theme.banner_icon_fg().to_egui(),
-                    );
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-                        title_line(ui, theme, "Mouse reporting captured your drag");
-                        body_line(
-                            ui,
-                            theme,
-                            "vim has mouse tracking on, so drag-to-select is disabled.",
-                        );
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                            body_line(ui, theme, "Hold");
-                            kbd(ui, theme, "Shift");
-                            body_line(ui, theme, "to select anyway.");
-                        });
-                        ui.add_space(theme.spacing_xs.value());
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                            Button::new("Pause reporting")
-                                .variant(ButtonVariant::Secondary)
-                                .size(ControlSize::Sm)
-                                .show(ui, theme);
-                            Button::new("Don't show again")
-                                .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
-                                .show(ui, theme);
-                        });
-                    });
-                });
+                mouse_capture_banner(ui, theme);
             });
         });
     });
@@ -248,15 +291,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("position", "content-top, below the tab bar"),
             ("width", "100% − 16 (8 each side)"),
             ("margin", "8 top/sides · 0 bottom"),
-            ("radius", "8 (banner-radius)"),
-            ("fires on", "user action only (never IPC)"),
+            ("persistent", "no TTL · × on hover only"),
+            ("fires on", "user click only (never IPC)"),
         ],
         &[
             TokenChip::new("banner-bg", "surface0 fill", theme.banner_bg().to_egui()),
             TokenChip::new("banner-border", "1px edge", theme.banner_border().to_egui()),
             TokenChip::new(
                 "banner-icon-fg",
-                "leading glyph",
+                "mouse glyph",
                 theme.banner_icon_fg().to_egui(),
             ),
         ],
@@ -265,17 +308,240 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::do_(
         ui,
         theme,
-        "Reach for a Banner when there's an action to attach (Popup = independent \
-         feature, Banner = info + action, Toast = info only). Short and action-less? Use a Toast.",
+        "Reach for a Banner when an action could attach (Popup = independent feature, \
+         Banner = info ± action, Toast = info only). This first instance is action-less: \
+         the bypass keys (Shift+drag / Shift+Right-click) are the message.",
     );
 
     spec::note(
         ui,
         theme,
         "There is no Info/Warning/Error kind — each banner's id is its kind and styles \
-         its own leading glyph. These tokens are only the shared shell. The × is hidden \
-         until the banner is hovered.",
+         its own leading glyph. The mouse-capture banner is persistent (no TTL / countdown); \
+         its only interactive element is the × that appears on hover.",
     );
+}
+
+// ── Spec 4: position & hit-zone — 카드만 소비, 본문은 pass-through ─────────────
+pub fn draw_hit_zone(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Solo, |ui| {
+        let zone = faux_chrome(
+            ui,
+            theme,
+            theme.measure_lg.value(),
+            220.0,
+            ["server", "dev", "htop"],
+            None,
+            Some("surface body below the card — pass-through; clicks/drag reach the app"),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(zone));
+        banner_shell(&mut child, theme, 1.0, |ui| {
+            mouse_capture_banner(ui, theme);
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("anchor", "surface content top, under tab bar"),
+            ("margins", "8 top / 8 sides · 0 bottom"),
+            ("consume zone", "the drawn card rect only"),
+            ("below card", "pass-through to the app"),
+            ("focus", "never steals keyboard focus"),
+            ("inactive surface", "first click only focuses it"),
+        ],
+        &[
+            TokenChip::new("banner-margin", "8px gap", theme.banner_bg().to_egui()),
+            TokenChip::new(
+                "accent-info",
+                "consume-zone label",
+                theme.accent_info().to_egui(),
+            ),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "The card rect — not the whole scope — is the mouse-consume + hover zone. Clicks on \
+         the surface body below the card pass through to the capturing app, so mouse reporting \
+         keeps working everywhere except the card itself.",
+    );
+}
+
+// ── Spec 5: capture blacklist — Settings › Terminal 행 리스트 에디터 ──────────
+pub fn draw_blacklist(ui: &mut egui::Ui, theme: &Theme) {
+    spec::stage(ui, theme, StageVariant::Solo, |ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            caption_label(ui, theme, "filled · one row hovered");
+            blacklist_editor(ui, theme, false);
+        });
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+            caption_label(ui, theme, "empty (default) · Add disabled");
+            blacklist_editor(ui, theme, true);
+        });
+    });
+
+    spec::meta(
+        ui,
+        theme,
+        &[
+            ("lives in", "Settings › Terminal"),
+            ("group", "hint switch + blacklist"),
+            ("row", "pattern (mono) + × remove"),
+            ("add", "Input + Add (disabled when empty)"),
+            ("match", "case-insensitive substring or *"),
+            ("default", "empty list"),
+        ],
+        &[
+            TokenChip::new("overlay-hover", "row hover", theme.overlay_hover().to_egui()),
+            TokenChip::new(
+                "accent-warning",
+                "match-rule notice",
+                theme.accent_warning().to_egui(),
+            ),
+            TokenChip::new("input-bg", "add field", theme.surface_raised().to_egui()),
+        ],
+    );
+
+    spec::note(
+        ui,
+        theme,
+        "Promoted from the old newline textarea to a list editor. The wheel is always \
+         forwarded to the program even for blacklisted apps — only clicks/drags are \
+         intercepted. A blacklisted foreground app also suppresses the capture banner there.",
+    );
+}
+
+/// 블랙리스트 한 행 — 패턴(mono) + 우측 × 제거. hover 행은 overlay-hover 배경.
+fn blacklist_row(ui: &mut egui::Ui, theme: &Theme, pattern: &str, hover: bool) {
+    let fill = if hover {
+        theme.overlay_hover().to_egui()
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    egui::Frame::new()
+        .fill(fill)
+        .corner_radius(theme.corner_radius_sm.value())
+        .inner_margin(egui::Margin {
+            left: theme.spacing_sm.value() as i8,
+            right: theme.spacing_xs.value() as i8,
+            top: 0,
+            bottom: 0,
+        })
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(pattern)
+                        .monospace()
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_primary().to_egui()),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    dismiss_x(ui, theme);
+                });
+            });
+        });
+}
+
+/// 블랙리스트 에디터 카드 — hint 스위치 + 행 리스트(또는 빈 상태) + Add 행 + notice.
+/// 디자인 `BlacklistEditorG`(overlays-shared.jsx) 전사. `empty` 면 빈 상태(neutral
+/// 톤) + Add 버튼 disabled.
+fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
+    egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
+        .corner_radius(theme.corner_radius.value())
+        .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
+        .show(ui, |ui| {
+            ui.set_width(theme.measure_sm.value());
+            ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+
+            // 섹션 라벨 — mono micro uppercase muted.
+            ui.label(
+                egui::RichText::new("MOUSE CAPTURE")
+                    .monospace()
+                    .size(theme.font_size_micro.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+
+            // hint 스위치 행.
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Show mouse-capture hint")
+                        .size(theme.font_size_body.value())
+                        .color(theme.text_secondary().to_egui()),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mut on = true;
+                    switch(ui, theme, &mut on, None, true);
+                });
+            });
+
+            // separator (1px).
+            let (sep, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), theme.border_width.value()),
+                egui::Sense::hover(),
+            );
+            ui.painter().rect_filled(sep, 0.0, theme.separator.to_egui());
+
+            ui.label(
+                egui::RichText::new("Disable capture for these programs")
+                    .size(theme.font_size_body.value())
+                    .color(theme.text_secondary().to_egui()),
+            );
+
+            if empty {
+                // 빈 상태 — neutral 톤.
+                ui.label(
+                    egui::RichText::new("No programs excluded — clicks are sent to capturing apps.")
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_muted().to_egui()),
+                );
+            } else {
+                ui.scope(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    blacklist_row(ui, theme, "htop", false);
+                    blacklist_row(ui, theme, "vim", true);
+                    blacklist_row(ui, theme, "ht*", false);
+                });
+            }
+
+            // Add 행 — 우측 Add 버튼(empty 면 disabled) + 남는 폭 Input.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    Button::new("Add")
+                        .variant(ButtonVariant::Secondary)
+                        .size(ControlSize::Sm)
+                        .enabled(!empty)
+                        .show(ui, theme);
+                    let mut buf = String::new();
+                    Input::new()
+                        .placeholder("process name or pattern, e.g. htop or ht*")
+                        .mono(true)
+                        .show(ui, theme, &mut buf);
+                });
+            });
+
+            // match-rule notice — accent-warning(빈 상태 neutral 과 톤 구분).
+            ui.label(
+                egui::RichText::new(
+                    "Case-insensitive substring or * wildcard on the process name. \
+                     When a listed program is foreground, clicks/drags are handled locally; \
+                     the wheel is still sent.",
+                )
+                .size(theme.font_size_caption.value())
+                .color(theme.accent_warning().to_egui()),
+            );
+        });
 }
 
 // ── Spec 2: dismiss & TTL — plain(hover ×) / TTL(카운트다운) ──────────────────

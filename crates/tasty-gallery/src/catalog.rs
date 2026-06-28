@@ -577,6 +577,22 @@ pub fn pages() -> Vec<Page> {
                             ),
                             widgets::banner::draw_stack,
                         ),
+                        spec(
+                            "banner-hit-zone",
+                            "Position & hit-zone",
+                            Some(
+                                "Card rect consumes the mouse · the surface body below passes clicks through",
+                            ),
+                            widgets::banner::draw_hit_zone,
+                        ),
+                        spec(
+                            "banner-blacklist",
+                            "Capture blacklist (Settings › Terminal)",
+                            Some(
+                                "List editor — rows (pattern + ×) + Add field · empty state is neutral",
+                            ),
+                            widgets::banner::draw_blacklist,
+                        ),
                     ],
                 ),
                 section(
