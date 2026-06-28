@@ -37,7 +37,9 @@ pub use tasty_type_geometry::rect::{DividerInfo, PhysicalRect};
 
 // 식별자 alias 는 tasty-utils::id 로 이전됨. 본 모듈은 호환을 위해 재수출 유지.
 // 새 코드는 `tasty_utils::id::*` 직접 import 권장.
-pub use tasty_utils::id::{PaneId, SurfaceId, TabId, WorkspaceId};
+pub use tasty_utils::id::{
+    NORMAL_CATEGORY_ID, PaneId, SurfaceId, TabId, WorkspaceCategoryId, WorkspaceId,
+};
 
 /// Gap in physical pixels between split panes (rendered as a visible border).
 pub const PANE_BORDER_WIDTH: PhysicalPx = PhysicalPx(2.0);
@@ -91,6 +93,7 @@ mod tab;
 mod terminal_surface;
 pub mod toast_kind;
 mod workspace;
+mod workspace_category;
 
 pub use attach_mapping::{WorkspaceAttachMapping, WorkspaceAttachTarget};
 pub use attached_surface::*;
@@ -106,6 +109,7 @@ pub use surface_trait::Surface;
 pub use tab::Tab;
 pub use terminal_surface::*;
 pub use workspace::*;
+pub use workspace_category::*;
 
 #[cfg(test)]
 mod tests;

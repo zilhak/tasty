@@ -105,6 +105,28 @@ impl CoreState {
         self.workspaces.iter().position(|w| w.id == ws_id)
     }
 
+    /// 주어진 카테고리에 속한 워크스페이스들을 **전역 인덱스 동반** 으로 반환.
+    /// 전역 인덱스 = `self.workspaces` 의 0-based 위치 — 카테고리-로컬 단축키/
+    /// 사이드바 매핑을 기존 전역 `switch_workspace` 로 변환할 때 필수.
+    pub fn workspaces_in_category(
+        &self,
+        category: crate::model::WorkspaceCategoryId,
+    ) -> Vec<(usize, &crate::model::Workspace)> {
+        self.workspaces
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| w.category == category)
+            .collect()
+    }
+
+    /// 카테고리 id → `categories` Vec 내 인덱스(섹션 표시 순서).
+    pub fn category_index(
+        &self,
+        category_id: crate::model::WorkspaceCategoryId,
+    ) -> Option<usize> {
+        self.categories.iter().position(|c| c.id == category_id)
+    }
+
     /// Resolve a surface to its display path (workspace name + tab display name).
     /// Returns `None` if the surface does not belong to any workspace.
     pub fn surface_display_path(&self, surface_id: u32) -> Option<SurfaceDisplayPath> {

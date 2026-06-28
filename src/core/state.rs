@@ -18,6 +18,8 @@ use tasty_terminal::Waker;
 #[derive(Clone)]
 pub struct IdGenerator {
     workspace: Arc<std::sync::atomic::AtomicU32>,
+    /// Workspace category 카운터. `normal` 은 id 0 을 예약하므로 1 부터 발급.
+    category: Arc<std::sync::atomic::AtomicU32>,
     pane: Arc<std::sync::atomic::AtomicU32>,
     tab: Arc<std::sync::atomic::AtomicU32>,
     surface: Arc<std::sync::atomic::AtomicU32>,
@@ -34,6 +36,7 @@ impl IdGenerator {
         use std::sync::atomic::AtomicU32;
         Self {
             workspace: Arc::new(AtomicU32::new(1)),
+            category: Arc::new(AtomicU32::new(1)),
             pane: Arc::new(AtomicU32::new(1)),
             tab: Arc::new(AtomicU32::new(1)),
             surface: Arc::new(AtomicU32::new(1)),
@@ -43,6 +46,19 @@ impl IdGenerator {
     pub fn next_workspace(&self) -> u32 {
         self.workspace
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// 새 workspace category id 발급(1 부터). `normal`(id 0)은 발급 대상 아님.
+    pub fn next_category(&self) -> u32 {
+        self.category
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// category 카운터를 `min_next` 이상으로 끌어올린다(이미 크면 no-op).
+    /// 복원 시 layout.json 의 최대 카테고리 id + 1 위로 floor 를 올려 재사용 차단.
+    pub fn bump_category_floor(&self, min_next: u32) {
+        self.category
+            .fetch_max(min_next, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn next_pane(&self) -> u32 {
@@ -115,6 +131,10 @@ pub struct ExplorerClipboard {
 pub struct CoreState {
     // ── Workspace / Terminal management ──
     pub(crate) workspaces: Vec<Workspace>,
+    /// Workspace category(사이드바 폴더) 목록. Vec 순서 = 사이드바 섹션 표시 순서.
+    /// `categories[0]` 은 항상 예약된 `normal`(id 0, 위치 고정). [`CoreState::ensure_normal_category`]
+    /// 가 생성/복원 직후 이 불변식을 보장한다.
+    pub(crate) categories: Vec<crate::model::WorkspaceCategory>,
     pub(crate) next_ids: IdGenerator,
     pub(crate) default_cols: usize,
     pub(crate) default_rows: usize,
@@ -307,6 +327,7 @@ impl CoreState {
         // Create engine with empty workspaces first; we'll fill them below.
         let mut engine = Self {
             workspaces: Vec::new(),
+            categories: vec![crate::model::WorkspaceCategory::normal()],
             next_ids: shared_ids.unwrap_or_default(),
             default_cols: cols,
             default_rows: rows,
@@ -583,6 +604,51 @@ impl CoreState {
     pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
         self.default_cols = cols;
         self.default_rows = rows;
+    }
+}
+
+// ── Workspace category 관리 ──
+impl CoreState {
+    /// normal 불변식 보장 — `categories[0]` 이 항상 예약된 normal 이 되도록 정규화.
+    ///
+    /// 생성/복원 직후 호출한다. (1) normal 이 없으면 맨 앞에 삽입, (2) 있으나 0번이
+    /// 아니면 0번으로 이동, (3) 또한 발급기 floor 를 기존 최대 카테고리 id + 1 이상으로
+    /// 올려 재사용을 차단한다. 어떤 워크스페이스가 존재하지 않는 카테고리를 가리키면
+    /// normal 로 귀속한다.
+    pub fn ensure_normal_category(&mut self) {
+        use crate::model::{NORMAL_CATEGORY_ID, WorkspaceCategory};
+        // (1)(2) normal 을 0번에 고정.
+        match self.categories.iter().position(|c| c.is_normal()) {
+            Some(0) => {}
+            Some(idx) => {
+                let normal = self.categories.remove(idx);
+                self.categories.insert(0, normal);
+            }
+            None => self.categories.insert(0, WorkspaceCategory::normal()),
+        }
+        // (3) 발급기 floor 를 최대 사용자 카테고리 id + 1 위로.
+        let max_id = self
+            .categories
+            .iter()
+            .map(|c| c.id)
+            .filter(|&id| id != NORMAL_CATEGORY_ID)
+            .max();
+        if let Some(max_id) = max_id {
+            self.next_ids.bump_category_floor(max_id + 1);
+        }
+        // 존재하지 않는 카테고리를 가리키는 워크스페이스는 normal 로 귀속.
+        let valid: std::collections::HashSet<u32> =
+            self.categories.iter().map(|c| c.id).collect();
+        for ws in &mut self.workspaces {
+            if !valid.contains(&ws.category) {
+                ws.set_category(NORMAL_CATEGORY_ID);
+            }
+        }
+    }
+
+    /// 카테고리 목록(읽기 전용).
+    pub fn categories(&self) -> &[crate::model::WorkspaceCategory] {
+        &self.categories
     }
 }
 

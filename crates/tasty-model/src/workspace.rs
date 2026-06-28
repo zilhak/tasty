@@ -1,5 +1,6 @@
 use super::{
-    EmptySurface, Pane, PaneId, PaneNode, SurfaceId, TabId, WorkspaceAttachMapping, WorkspaceId,
+    EmptySurface, NORMAL_CATEGORY_ID, Pane, PaneId, PaneNode, SurfaceId, TabId,
+    WorkspaceAttachMapping, WorkspaceCategoryId, WorkspaceId,
 };
 
 /// Workspace attach(단계 6) 의 surface 분류 결과.
@@ -31,6 +32,9 @@ pub struct Workspace {
     /// `true` 면 사이드바 dot 을 항상 하늘색(`th.sky`)으로 표시해 로컬 워크스페이스와
     /// 구분한다. 런타임 전용 상태(영속하지 않음 — 재시작 시 재attach).
     pub mirror: bool,
+    /// 이 워크스페이스가 속한 카테고리(사이드바 폴더) id. 기본값은 예약된
+    /// `normal`([`NORMAL_CATEGORY_ID`]). layout.json 으로 영속(`SavedWorkspace.category`).
+    pub category: WorkspaceCategoryId,
 }
 
 impl Workspace {
@@ -54,6 +58,7 @@ impl Workspace {
             focused_pane,
             attach_mapping: None,
             mirror: false,
+            category: NORMAL_CATEGORY_ID,
         }
     }
 
@@ -87,6 +92,7 @@ impl Workspace {
             focused_pane,
             attach_mapping: None,
             mirror: false,
+            category: NORMAL_CATEGORY_ID,
         }
     }
 
@@ -107,6 +113,7 @@ impl Workspace {
             focused_pane,
             attach_mapping: None,
             mirror: false,
+            category: NORMAL_CATEGORY_ID,
         }
     }
 
@@ -114,6 +121,12 @@ impl Workspace {
     /// 생성/복원 경로가 생성자 churn 없이 매핑을 얹기 위한 setter.
     pub fn set_attach_mapping(&mut self, mapping: Option<WorkspaceAttachMapping>) {
         self.attach_mapping = mapping;
+    }
+
+    /// 이 워크스페이스가 속한 카테고리를 변경한다. 생성/복원/이동 경로가 생성자
+    /// churn 없이 소속을 얹기 위한 setter(`set_attach_mapping` 과 동형).
+    pub fn set_category(&mut self, category: WorkspaceCategoryId) {
+        self.category = category;
     }
 
     /// Collect all surface IDs in this workspace.
