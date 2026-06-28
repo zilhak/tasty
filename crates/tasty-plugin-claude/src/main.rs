@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty Claude Code plugin — 외부 plugin.
 //!
 //! `tasty claude launch|spawn|children|parent|tell|wait|broadcast|kill|respawn|install|uninstall|hook`

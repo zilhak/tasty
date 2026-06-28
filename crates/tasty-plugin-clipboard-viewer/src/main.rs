@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty Clipboard Viewer plugin — 현재 시스템 클립보드(최신 하나)의 read-only 뷰어.
 //!
 //! 호스트 `shortcut.toggle_clipboard_viewer` 이벤트가 발화되면 popup contribute

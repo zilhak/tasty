@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! `tasty-gallery` 바이너리 진입점.
 //!
 //! winit + wgpu + egui_wgpu 부트스트랩. 본체 `tasty` 의 GPU 파이프라인과

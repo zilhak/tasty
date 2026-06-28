@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Appearance schema/primitives for Tasty.
 //!
 //! **Type-layer crate** — `tasty-type-*` 그룹 내부 (`tasty-type-geometry` 등) 에만

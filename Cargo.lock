@@ -5585,7 +5585,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "directories",
@@ -5600,7 +5600,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-claude-design"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "serde",
@@ -5612,7 +5612,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5624,7 +5624,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-codex"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "serde",
@@ -5637,7 +5637,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "git2",
@@ -5651,7 +5651,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-html"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -5661,7 +5661,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -5687,7 +5687,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "serde_json",

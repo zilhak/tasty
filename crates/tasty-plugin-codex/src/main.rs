@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty Codex plugin — 외부 plugin.
 //!
 //! `tasty codex spawn|children|wait|broadcast|kill|respawn|install|uninstall|hook`

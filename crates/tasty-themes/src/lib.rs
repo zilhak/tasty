@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Theme file loading, disk persistence, partial-merge, 전역 인스턴스.
 //!
 //! `tasty-type-appearance::theme` 는 schema (Theme/ThemeColors/PartialColors/

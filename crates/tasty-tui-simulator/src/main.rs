@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! `tasty-tui-sim` — standalone binary entry point for the VTE sequence
 //! simulator. All logic lives in the library (`tasty_tui_simulator`) so it can
 //! be shared with the `tasty debug sim` subcommand.

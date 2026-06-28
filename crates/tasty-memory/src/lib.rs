@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! 에이전트 메모리 저장소 (`~/.tasty/memory.db`).
 //!
 //! 에이전트와 plugin 이 작업 도중 누적·검색·공유하는 영속 키-값. 같은 SQLite

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Semantic output parsers for tasty surfaces.
 //!
 //! 라인 단위 stateless 파서들로 구성. `parse_buffer` 가 입력 텍스트를 줄로 쪼개

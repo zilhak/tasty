@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Cross-cutting utility helpers for Tasty.
 //!
 //! **Leaf crate** — 어떤 `tasty-*` crate 도 의존하지 않는다. cross-cutting 인프라

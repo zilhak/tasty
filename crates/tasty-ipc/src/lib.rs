@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty 호스트와 외부 caller (CLI / agent / plugin) 간 IPC wire framing 과
 //! caller-context 모델.
 //!

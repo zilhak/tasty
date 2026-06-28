@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty 호스트와 외부 plugin이 공유하는 wire 타입 정의.
 //!
 //! Plugin이 surface를 그리기 위한 UI tree DSL ([`ui_tree`])과

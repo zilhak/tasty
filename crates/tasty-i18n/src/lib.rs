@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Shared internationalization (i18n) store.
 //!
 //! Loads translation strings from the workspace `lang/*.toml` files at startup

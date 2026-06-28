@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! `tasty-presets` — Workspace/Tab/Pane 레이아웃 preset.
 //!
 //! 레이아웃 + 각 leaf surface 의 (kind, cwd, startup command, kind 별 params) 를

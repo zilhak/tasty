@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty markdown plugin — host-rendered markdown viewer surface.
 //!
 //! `markdown` SurfaceKindDef 본체는 host 의 `host_rendered` whitelist 경유로

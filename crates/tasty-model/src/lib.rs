@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty workspace / pane / tab / surface 도메인 모델.
 //!
 //! image_panel / markdown_panel / popup_kind / toast_kind 등은 본 바이너리의

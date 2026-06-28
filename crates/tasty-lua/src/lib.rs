@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Host-only Lua scripting layer for Tasty.
 //!
 //! 사용자가 `~/.tasty/init.lua` 를 작성해 Tasty 이벤트에 자기 스크립트를 붙일 수

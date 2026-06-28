@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Cross-crate constants for the Claude Design plugin. binary entry point 은 `main.rs`.
 
 /// Plugin manifest id — `tasty-plugin.toml` 의 `id` 와 일치해야 함.

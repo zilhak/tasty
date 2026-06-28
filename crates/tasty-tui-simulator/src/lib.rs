@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! VTE sequence simulator for testing tasty terminal emulation.
 //!
 //! Translates high-level commands (e.g. "cursor 5 3", "bold", "print hello")

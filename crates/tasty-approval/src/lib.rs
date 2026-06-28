@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! 휴먼 핸드오프 — 에이전트 ↔ 휴먼 동기 결정 게이트.
 //!
 //! 에이전트가 [`ApprovalStore::request`] 로 결정 요청을 만들고,

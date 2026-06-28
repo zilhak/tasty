@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! `tasty-ui-widgets` — 본체와 갤러리가 공유하는 egui layout / 위젯 primitive.
 //!
 //! `tasty-egui-theme` (색·폰트·spacing 토큰) 위에 *layout idiom* (frame + sub-tab 패널 등)

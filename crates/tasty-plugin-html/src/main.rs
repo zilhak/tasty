@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty HTML plugin — host webview overlay 를 사용해 HTML/URL 을 표시하는 surface.
 //!
 //! host 는 webview 토대 (OS-level native overlay) 만 제공하고, html surface 의

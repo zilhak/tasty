@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty Git Viewer plugin — read-only git status / log / diff popup.
 //!
 //! popup contribute (`trigger = ipc`)로 등록되며, 사이드바 도구 메뉴의 "Git" 항목 클릭이

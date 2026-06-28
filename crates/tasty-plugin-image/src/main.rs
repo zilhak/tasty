@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty Image plugin — 외부 plugin.
 //!
 //! `image` surface kind와 `image.*` IPC 네임스페이스를 점유한다. 실제 픽셀

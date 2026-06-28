@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Geometry primitives for Tasty.
 //!
 //! **Leaf crate** — 다른 어떤 `tasty-*` crate 도 의존하지 않는다. 도메인 모델

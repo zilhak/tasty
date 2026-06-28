@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty Claude Design plugin — `claude.ai/design` 캔버스 통합 (외부 plugin).
 //!
 //! `tasty design login|logout|status|projects|detect|probe|chat` CLI 세트를 제공한다.

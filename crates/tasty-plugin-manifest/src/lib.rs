@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Tasty plugin manifest schema, parse and schema-agnostic validation.
 //!
 //! 본 crate 는 `tasty-plugin.toml` 의 schema + 파서 + 기본 검증 (id 형식, 중복,

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! 원격 접속 프로필 + Passkey 저장소.
 //!
 //! 두 개의 deps-free 저장소를 제공한다 (설계: `.claude-workspace/plans/

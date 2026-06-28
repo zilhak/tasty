@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Theme ↔ egui 변환 어댑터.
 //!
 //! `tasty_type_appearance::theme::Theme` 은 egui 와 독립적인 schema 다.
