@@ -209,7 +209,9 @@ fn collect_canvases_in_node(node: &UiNode, plugin_id: &str, out: &mut Vec<Pendin
                 collect_canvases_in_node(c, plugin_id, out);
             }
         }
-        UiNode::Scroll { child, .. } => collect_canvases_in_node(child, plugin_id, out),
+        UiNode::Scroll { child, .. } | UiNode::Center { child } => {
+            collect_canvases_in_node(child, plugin_id, out)
+        }
         UiNode::Splitter { first, second, .. } => {
             collect_canvases_in_node(first, plugin_id, out);
             collect_canvases_in_node(second, plugin_id, out);

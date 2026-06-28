@@ -5674,7 +5674,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-protocol"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -5682,7 +5682,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-sdk"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "libc",

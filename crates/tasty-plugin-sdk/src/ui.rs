@@ -45,6 +45,14 @@ pub fn scroll_v(child: UiNode) -> UiNode {
     }
 }
 
+/// 자식 1개를 popup/pane 가용영역의 양축(가로·세로) 중앙에 배치한다.
+/// 빈/실패 상태 메시지 한 줄을 정중앙에 두는 용도.
+pub fn center(child: UiNode) -> UiNode {
+    UiNode::Center {
+        child: Box::new(child),
+    }
+}
+
 pub fn splitter(direction: SplitDir, ratio: f32, first: UiNode, second: UiNode) -> UiNode {
     UiNode::Splitter {
         direction,

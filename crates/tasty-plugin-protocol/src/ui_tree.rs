@@ -42,6 +42,16 @@ pub enum UiNode {
         id: Option<String>,
     },
 
+    /// 단일 자식을 부모 가용영역의 **양축(가로·세로) 중앙**에 배치하는 컨테이너.
+    /// 빈/실패 상태 메시지 한 줄을 popup/pane 정중앙에 두는 용도. 호스트는
+    /// `Layout::centered_and_justified` 로 렌더한다(디자인 `Align2::CENTER_CENTER` 등가).
+    ///
+    /// 다중 자식의 양축 중앙 의미는 모호하므로 계약상 자식은 1개로 고정한다.
+    /// (추후 다양한 정렬이 필요하면 `Align { align, child }` 로 일반화 가능.)
+    Center {
+        child: Box<UiNode>,
+    },
+
     Label {
         text: String,
         #[serde(default)]
@@ -440,6 +450,30 @@ mod tests {
         assert!(s.contains("\"direction\":\"horizontal\""));
         let parsed: UiNode = serde_json::from_str(&s).unwrap();
         assert_eq!(parsed, n);
+    }
+
+    #[test]
+    fn center_round_trip() {
+        let n = UiNode::Center {
+            child: Box::new(UiNode::Label {
+                text: "empty".into(),
+                style: LabelStyle::Body,
+                color: Some("subtext0".into()),
+            }),
+        };
+        let s = serde_json::to_string(&n).unwrap();
+        assert!(s.contains("\"type\":\"center\""));
+        assert_eq!(serde_json::from_str::<UiNode>(&s).unwrap(), n);
+
+        // 최소 JSON 디코드 — child 만 있으면 된다.
+        let json = r#"{"type":"center","child":{"type":"label","text":"x"}}"#;
+        match serde_json::from_str::<UiNode>(json).unwrap() {
+            UiNode::Center { child } => match *child {
+                UiNode::Label { text, .. } => assert_eq!(text, "x"),
+                other => panic!("expected Label child, got {other:?}"),
+            },
+            other => panic!("expected Center, got {other:?}"),
+        }
     }
 
     #[test]
