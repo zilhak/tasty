@@ -13,6 +13,7 @@ pub mod favorites;
 pub mod ops;
 pub mod view;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
@@ -91,6 +92,7 @@ pub fn draw_explorer(
     font: &EffectiveFont,
     id_suffix: &str,
     favorites: &[favorites::ExplorerFavorite],
+    cut_pending: &HashSet<PathBuf>,
 ) -> Option<ExplorerAction> {
     let th = theme::theme();
     let theme: &Theme = &th;
@@ -136,7 +138,11 @@ pub fn draw_explorer(
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
-                    |ui| content(ui, theme, panel, view, font, id_suffix, &mut action),
+                    |ui| {
+                        content(
+                            ui, theme, panel, view, font, id_suffix, cut_pending, &mut action,
+                        )
+                    },
                 );
             },
         );
@@ -539,6 +545,7 @@ fn content(
     view: &mut ExplorerView,
     font: &EffectiveFont,
     id_suffix: &str,
+    cut_pending: &HashSet<PathBuf>,
     action: &mut Option<ExplorerAction>,
 ) {
     let mode = panel.active_tab().view_mode;
@@ -571,10 +578,14 @@ fn content(
                 .id_salt(format!("explorer_content_{id_suffix}"))
                 .auto_shrink([false, false])
                 .show(ui, |ui| match mode {
-                    ExplorerViewMode::Grid => grid_view(ui, theme, view, font, &root, action),
-                    ExplorerViewMode::List => list_view(ui, theme, view, &root, action),
+                    ExplorerViewMode::Grid => {
+                        grid_view(ui, theme, view, font, cut_pending, &root, action)
+                    }
+                    ExplorerViewMode::List => {
+                        list_view(ui, theme, view, cut_pending, &root, action)
+                    }
                     ExplorerViewMode::Detail => {
-                        detail_view(ui, theme, panel, view, id_suffix, &root, action)
+                        detail_view(ui, theme, panel, view, id_suffix, cut_pending, &root, action)
                     }
                 });
         },
@@ -739,6 +750,7 @@ fn grid_view(
     theme: &Theme,
     view: &mut ExplorerView,
     font: &EffectiveFont,
+    cut_pending: &HashSet<PathBuf>,
     root: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
@@ -748,7 +760,8 @@ fn grid_view(
         ui.spacing_mut().item_spacing = egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
         for e in &entries {
             let selected = view.selected.contains(&e.path);
-            let resp = grid_cell(ui, theme, e, selected, font);
+            let cut = cut_pending.contains(&e.path);
+            let resp = grid_cell(ui, theme, e, selected, cut, font);
             if !handle_entry_context(view, e, &resp, root, action) {
                 handle_entry_interaction(ui, view, e, &resp, action);
             }
@@ -757,11 +770,16 @@ fn grid_view(
 }
 
 /// grid 셀 한 개 (explorer_view_cells specimen 전사).
+///
+/// `cut` 이면 전경(아이콘 글리프 + 라벨)을 `opacity_cut`(50%) 로 디밍한다 — 선택/hover
+/// 배경은 그대로 두어 cut+selected 조합도 선택이 또렷이 보이게 한다(design cell-state
+/// matrix "cut (50% opacity) until paste").
 fn grid_cell(
     ui: &mut egui::Ui,
     theme: &Theme,
     e: &DirEntryInfo,
     selected: bool,
+    cut: bool,
     font: &EffectiveFont,
 ) -> egui::Response {
     let label_h = theme.font_size_body.value() + theme.spacing_xs.value();
@@ -793,19 +811,21 @@ fn grid_cell(
     let glyph = theme.icon_glyph_size_md.value() + theme.spacing_sm.value();
     let glyph_rect = egui::Rect::from_center_size(box_rect.center(), egui::vec2(glyph, glyph));
     let icon = if e.is_dir { icons::FOLDER } else { icons::FILE };
+    // cut-pending 셀은 전경을 opacity_cut(50%) 로 디밍.
+    let fg_dim = |c: egui::Color32| if cut { c.gamma_multiply(theme.opacity_cut()) } else { c };
     let glyph_color = if e.is_dir {
         theme.accent_primary().to_egui()
     } else {
         theme.text_secondary().to_egui()
     };
-    icon.image(glyph, glyph_color).paint_at(ui, glyph_rect);
+    icon.image(glyph, fg_dim(glyph_color)).paint_at(ui, glyph_rect);
 
     p.text(
         egui::pos2(rect.center().x, box_rect.bottom() + theme.spacing_sm.value() + label_h / 2.0),
         egui::Align2::CENTER_CENTER,
         truncate(&e.name, 12),
         egui::FontId::proportional(font.font_size.max(1.0).min(theme.font_size_body.value())),
-        theme.text_primary().to_egui(),
+        fg_dim(theme.text_primary().to_egui()),
     );
 
     resp
@@ -815,6 +835,7 @@ fn list_view(
     ui: &mut egui::Ui,
     theme: &Theme,
     view: &mut ExplorerView,
+    cut_pending: &HashSet<PathBuf>,
     root: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
@@ -823,18 +844,28 @@ fn list_view(
     for e in &entries {
         let icon = if e.is_dir { icons::FOLDER } else { icons::FILE };
         let selected = view.selected.contains(&e.path);
-        let resp = tree_row(
-            ui,
-            theme,
-            0,
-            false,
-            false,
-            Some(&|ui, rect, c| icon.image(rect.height(), c).paint_at(ui, rect)),
-            &e.name,
-            None,
-            selected,
-            true,
-        );
+        let cut = cut_pending.contains(&e.path);
+        // cut-pending 행은 행 전체를 opacity_cut(50%) 로 디밍(tree_row 가 색을 내부
+        // 계산하므로 셀처럼 전경 색만 분리 못 함 → 스코프 opacity 로 통째 디밍).
+        let resp = ui
+            .scope(|ui| {
+                if cut {
+                    ui.set_opacity(theme.opacity_cut());
+                }
+                tree_row(
+                    ui,
+                    theme,
+                    0,
+                    false,
+                    false,
+                    Some(&|ui, rect, c| icon.image(rect.height(), c).paint_at(ui, rect)),
+                    &e.name,
+                    None,
+                    selected,
+                    true,
+                )
+            })
+            .inner;
         if !handle_entry_context(view, e, &resp, root, action) {
             handle_entry_interaction(ui, view, e, &resp, action);
         }
@@ -848,6 +879,7 @@ fn detail_view(
     panel: &ExplorerPanel,
     view: &mut ExplorerView,
     id_suffix: &str,
+    cut_pending: &HashSet<PathBuf>,
     root: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
@@ -883,7 +915,8 @@ fn detail_view(
         SortDir::Desc => TableSortDir::Desc,
     };
     let entries = view.entries.clone();
-    let selected: std::collections::HashSet<PathBuf> = view.selected.clone();
+    let selected: HashSet<PathBuf> = view.selected.clone();
+    let cut: HashSet<PathBuf> = cut_pending.clone();
     let out = Table::new(columns)
         .active_sort(tab.sort_column, dir)
         .header_fill(theme.bg_sidebar().to_egui())
@@ -894,38 +927,49 @@ fn detail_view(
             theme,
             &entries,
             |row: &DirEntryInfo| selected.contains(&row.path),
-            |ui, th, row, col| match col {
-                0 => {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                        let sz = th.icon_glyph_size_md.value();
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                        let icon = if row.is_dir { icons::FOLDER } else { icons::FILE };
-                        let c = if row.is_dir {
-                            th.accent_primary().to_egui()
-                        } else {
-                            th.text_secondary().to_egui()
+            |ui, th, row, col| {
+                // cut-pending 행은 전경(아이콘+텍스트)을 opacity_cut(50%) 로 디밍.
+                // Table 이 그리는 선택/hover 배경은 그대로 유지.
+                let dim = |c: egui::Color32| {
+                    if cut.contains(&row.path) {
+                        c.gamma_multiply(th.opacity_cut())
+                    } else {
+                        c
+                    }
+                };
+                match col {
+                    0 => {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                            let sz = th.icon_glyph_size_md.value();
+                            let (rect, _) =
+                                ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+                            let icon = if row.is_dir { icons::FOLDER } else { icons::FILE };
+                            let c = if row.is_dir {
+                                th.accent_primary().to_egui()
+                            } else {
+                                th.text_secondary().to_egui()
+                            };
+                            icon.image(sz, dim(c)).paint_at(ui, rect);
+                            ui.label(
+                                egui::RichText::new(&row.name)
+                                    .size(th.font_size_body.value())
+                                    .color(dim(th.text_primary().to_egui())),
+                            );
+                        });
+                    }
+                    _ => {
+                        let text = match col {
+                            1 => human_size(row.is_dir, row.size),
+                            2 => fmt_modified(row.modified),
+                            _ => type_label(row),
                         };
-                        icon.image(sz, c).paint_at(ui, rect);
                         ui.label(
-                            egui::RichText::new(&row.name)
+                            egui::RichText::new(text)
                                 .size(th.font_size_body.value())
-                                .color(th.text_primary().to_egui()),
+                                .color(dim(th.text_muted().to_egui())),
                         );
-                    });
-                }
-                _ => {
-                    let text = match col {
-                        1 => human_size(row.is_dir, row.size),
-                        2 => fmt_modified(row.modified),
-                        _ => type_label(row),
-                    };
-                    ui.label(
-                        egui::RichText::new(text)
-                            .size(th.font_size_body.value())
-                            .color(th.text_muted().to_egui()),
-                    );
+                    }
                 }
             },
         );

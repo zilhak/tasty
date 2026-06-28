@@ -112,6 +112,15 @@ pub fn draw_egui_panels(
     // 즐겨찾기는 전역(engine 보유)이라 루프에서 engine 이 가변 차용되는 동안엔
     // 읽을 수 없다 → 프레임당 1회 스냅샷(항목 소수, clone 비용 무시 가능).
     let explorer_favorites = engine.explorer_favorites.items.clone();
+    // cut-pending 집합(잘라내기 대기 경로) — 셀 디밍용. 클립보드가 cut 모드일 때만
+    // 채워지고, 붙여넣기 완료/복사/취소로 클립보드가 비거나 copy 가 되면 빈 집합이
+    // 되어 디밍이 자동 해제된다(프레임당 1회 스냅샷, 항목 소수).
+    let explorer_cut_pending: std::collections::HashSet<std::path::PathBuf> = engine
+        .explorer_clipboard
+        .as_ref()
+        .filter(|c| c.cut)
+        .map(|c| c.paths.iter().cloned().collect())
+        .unwrap_or_default();
 
     for info in &infos {
         let id_suffix = info
@@ -226,6 +235,7 @@ pub fn draw_egui_panels(
                         &explorer_font,
                         &id_suffix,
                         &explorer_favorites,
+                        &explorer_cut_pending,
                     )
                 },
             );

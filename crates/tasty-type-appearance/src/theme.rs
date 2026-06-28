@@ -1335,6 +1335,15 @@ impl Theme {
         OPACITY_RECESSED
     }
 
+    /// cut-pending(잘라내기 대기) explorer 셀 전경(아이콘+라벨) 디밍 opacity (0.5).
+    /// 디자인 explorer cell-state matrix "cut (50% opacity) until paste". 디자인 토큰에
+    /// cut 전용 primitive 가 없고 값이 disabled 와 동일한 0.5 이므로 같은 primitive 를
+    /// semantic 으로 재사용한다(새 primitive 값 미도입 — 디자인 토큰과 drift 없음).
+    #[inline]
+    pub fn opacity_cut(&self) -> f32 {
+        OPACITY_DISABLED
+    }
+
     /// 비-터미널 chrome UI 모션 지속시간 (120ms). 배너 등장/소멸 알파 페이드 등.
     /// `--tasty-motion-ui` → `--tasty-duration-120`.
     #[inline]

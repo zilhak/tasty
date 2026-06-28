@@ -66,11 +66,29 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     GRID_SEL.with(|s| {
                         let mut sel = s.borrow_mut();
                         for (i, e) in GRID.iter().enumerate() {
-                            if grid_cell(ui, theme, e, i == *sel) {
+                            if grid_cell(ui, theme, e, i == *sel, false) {
                                 *sel = i;
                             }
                         }
                     });
+                });
+            });
+    });
+
+    // ── cut state (잘라내기 대기 = 전경 50% opacity) ──
+    // design cell-state matrix "cut (50% opacity) until paste". 전경(아이콘+라벨)만
+    // opacity-cut(=opacity-disabled, 0.5) 로 디밍하고 선택/hover 배경은 유지한다.
+    cluster(ui, theme, "cut (50% opacity until paste)", |ui| {
+        egui::Frame::new()
+            .fill(egui::Color32::from(theme.bg_panel()))
+            .inner_margin(egui::Margin::same(theme.spacing_md.value() as i8))
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing =
+                        egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
+                    // 첫 셀은 cut+selected (선택 배경 유지 + 전경 디밍), 둘째는 cut only.
+                    grid_cell(ui, theme, &GRID[0], true, true);
+                    grid_cell(ui, theme, &GRID[2], false, true);
                 });
             });
     });
@@ -209,6 +227,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("list row", "22 control-height-tree (tree_row)"),
             ("detail row", "Table · Name flex · Size right"),
             ("selected", "surface-active + accent border"),
+            ("cut", "foreground 50% opacity until paste"),
             ("sort", "header indicator (accent-primary)"),
         ],
         &[
@@ -240,13 +259,16 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Only the grid cell is new — list rows reuse tree_row (depth 0), and detail reuses \
          the shared Table whose header already paints the sort indicator. Image thumbnails \
-         fall back to the file glyph until real textures land in the body stage.",
+         fall back to the file glyph until real textures land in the body stage. Cut-pending \
+         cells dim only the foreground (icon + label) to opacity-cut (0.5), keeping the \
+         selection/hover background intact so a cut+selected cell still reads as selected.",
     );
 }
 
 /// grid 셀 한 개. 클릭되면 `true`. icon-box(surface-raised) + 중앙 라벨,
-/// 선택 시 surface-active 배경 + accent 1px 보더.
-fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool) -> bool {
+/// 선택 시 surface-active 배경 + accent 1px 보더. `cut` 이면 전경(아이콘+라벨)을
+/// opacity-cut(50%) 로 디밍(배경/보더는 유지) — design cell-state matrix.
+fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: bool) -> bool {
     let label_h = theme.font_size_body.value() + theme.spacing_xs.value();
     let cell_h = ICON_BOX + theme.spacing_sm.value() + label_h + theme.spacing_sm.value() * 2.0;
     let (rect, resp) =
@@ -292,13 +314,15 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool) -> boo
     );
     let glyph = theme.icon_glyph_size_md.value() + theme.spacing_sm.value(); // ≈24
     let glyph_rect = egui::Rect::from_center_size(box_rect.center(), egui::vec2(glyph, glyph));
+    // cut-pending 셀은 전경만 opacity-cut(50%) 로 디밍.
+    let fg_dim = |c: egui::Color32| if cut { c.gamma_multiply(theme.opacity_cut()) } else { c };
     let glyph_color = if e.dir {
         theme.accent_primary()
     } else {
         theme.text_secondary()
     };
     e.glyph
-        .image(glyph, egui::Color32::from(glyph_color))
+        .image(glyph, fg_dim(egui::Color32::from(glyph_color)))
         .paint_at(ui, glyph_rect);
 
     // 라벨 (1줄 중앙).
@@ -310,7 +334,7 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool) -> boo
         egui::Align2::CENTER_CENTER,
         e.name,
         egui::FontId::proportional(theme.font_size_body.value()),
-        egui::Color32::from(theme.text_primary()),
+        fg_dim(egui::Color32::from(theme.text_primary())),
     );
 
     resp.clicked()
