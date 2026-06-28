@@ -7,7 +7,7 @@
 
 use tasty_plugin_sdk::Translator;
 use tasty_plugin_sdk::ui::{
-    button_block, button_primary_block, label_color, scroll_v, splitter, text_preview, vbox,
+    button_block, button_primary_block, center, label_color, scroll_v, splitter, text_preview, vbox,
 };
 use tasty_plugin_sdk::{SplitDir, UiNode};
 
@@ -24,29 +24,28 @@ pub struct ViewModel<'a> {
 
 /// 단일 인스턴스 가드 placeholder.
 pub fn already_open_tree(tr: &Translator) -> UiNode {
-    vbox([label_color(
+    center(label_color(
         tr.t("clipboard_viewer.popup.already_open"),
         "subtext0",
-    )])
+    ))
 }
 
 pub fn main_tree(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
-    // C-G1(빈/실패 중앙정렬): DSL 에 정렬 컨테이너 노드가 없어 현재는 좌상단 한 줄로
-    // 렌더된다. 중앙정렬은 host/DSL 정렬 노드 도입이 선행돼야 함 → 후속 과제로 flag.
+    // C-G1(빈/실패 중앙정렬): center() 로 popup 본문 양축 중앙에 한 줄 배치한다.
     // 색은 의미 토큰(empty=text_muted≈subtext0 / fail=accent_danger≈red).
     // 클립보드 핸들 자체 실패 → read 실패 상태.
     if vm.read_error.is_some() {
-        return vbox([label_color(
+        return center(label_color(
             tr.t("clipboard_viewer.popup.read_failed"),
             "red",
-        )]);
+        ));
     }
     // 가용 타입 0개 → 빈 상태.
     if vm.available.is_empty() {
-        return vbox([label_color(
+        return center(label_color(
             tr.t("clipboard_viewer.popup.empty"),
             "subtext0",
-        )]);
+        ));
     }
 
     let left = build_type_list(vm, tr);
