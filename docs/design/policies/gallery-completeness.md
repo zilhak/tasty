@@ -8,7 +8,7 @@
 
 - 본체에 존재하는 **modal · popup · 공용 위젯 · 레이아웃 idiom** 은 빠짐없이 갤러리 카탈로그(`catalog.rs::all()`)에 specimen 으로 등록한다.
 - 디자인 산출물(`Tasty Design System`)의 gallery 페이지가 일부 컴포넌트를 카탈로그에서 **생략(cut)** 하더라도, 그걸 근거로 갤러리에서 제거하지 않는다. 생략은 디자인 측 결함으로 본다.
-- 카탈로그 1차 분류는 디자인 gallery 와 같은 5분류: **Foundations / Components / Icons / Overlays / Layouts**.
+- 카탈로그 1차 분류는 디자인 gallery 의 5분류(**Foundations / Components / Icons / Overlays / Layouts**)에 더해, 플러그인 유래 specimen 을 네이티브와 분리해 모으는 **Plugins** 페이지를 둔다(총 6분류). 플러그인이 제공하는 viewer/popup(clipboard · git · markdown · image · html)은 네이티브 섹션이 아니라 Plugins 아래에 등록한다.
 
 ## demo=main — 갤러리가 곧 본체
 

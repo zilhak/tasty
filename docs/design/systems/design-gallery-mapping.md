@@ -269,11 +269,11 @@ immediate-mode 정적 specimen 이므로 **각 상태를 나란히 노출**(toas
 `ALERT_TRIANGLE`, × = 기존 `CLOSE`). 카탈로그 등록은 Overlays 페이지에 `banner`
 Section 1개(3 Spec) 추가 — scrim 바로 다음(디자인 NAV 순서).
 
-## clipboard-viewer (Overlays)
+## clipboard-viewer (Plugins)
 
 plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs::main_tree` (`UiNode` DSL) ↔ host
 `src/plugin_bridge/ui_tree_render.rs` (페인트) ↔ 갤러리 `catalog/components/clipboard_viewer.rs`
-(Overlays › `Clipboard viewer popup`). 갤러리는 plugin/host crate 비의존이라 *구성*(splitter +
+(Plugins › `Clipboard viewer popup`). 갤러리는 plugin/host crate 비의존이라 *구성*(splitter +
 버튼 목록 + text_preview)을 Theme 토큰 painter mock 으로 전사 — 픽셀 동일성 비목표.
 
 | plugin UiNode | host 페인트(토큰) | 갤러리 함수 |
@@ -288,10 +288,10 @@ plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs::main_tree` (`UiNode` D
 화면 전용 고정값 480×360 / ratio 0.3 은 module const(token-policy §c). 3 상태(types/empty/
 read-failed) 를 `StageVariant::Wrap` 으로 나란히 노출.
 
-## git-viewer (Overlays)
+## git-viewer (Plugins)
 
 plugin `crates/tasty-plugin-git-viewer/src/view.rs::main_tree` (중첩 `splitter` + `selectable_row`)
-↔ host `ui_tree_render.rs` ↔ 갤러리 `catalog/components/git_viewer.rs` (Overlays › `Git worktree
+↔ host `ui_tree_render.rs` ↔ 갤러리 `catalog/components/git_viewer.rs` (Plugins › `Git worktree
 viewer popup`). **specimen 포함 확정**(ADR-0020 완전성 — plugin 도 host 위젯 구성을 고르므로
 갤러리가 그 구성을 전수해야 한다). 토큰·구조 정합 목표, 픽셀 동일성 비목표.
 
@@ -309,10 +309,11 @@ viewer popup`). **specimen 포함 확정**(ADR-0020 완전성 — plugin 도 hos
 
 `status+log` / `diff` 두 cluster(`StageVariant::Column`)로 하단 pane 의 log↔diff 교체를 함께 노출.
 
-## surface viewers (Layouts)
+## surface viewers (Plugins)
 
-host-rendered surface(`markdown`/`image`) + webview chrome(`html`) 의 Layouts › `Content viewers`
-specimen 묶음. 본체 binary 비의존 — 본체 surface draw 경로의 토큰·구성만 painter/egui 로 전사.
+host-rendered surface(`markdown`/`image`) + webview chrome(`html`) 의 Plugins 페이지 specimen
+묶음(각 surface 가 독립 Section). 본체 binary 비의존 — 본체 surface draw 경로의 토큰·구성만
+painter/egui 로 전사.
 
 | surface | 본체 draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|

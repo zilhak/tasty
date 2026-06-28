@@ -39,6 +39,8 @@ pub enum Category {
     Overlays,
     /// 구조 셸 (사이드바/탭바/분할/하이라이트).
     Layouts,
+    /// 플러그인 유래 컴포넌트 (네이티브와 분리된 플러그인 전용 섹션).
+    Plugins,
 }
 
 impl Category {
@@ -50,10 +52,11 @@ impl Category {
             Category::Icons => "Icons",
             Category::Overlays => "Overlays",
             Category::Layouts => "Layouts",
+            Category::Plugins => "Plugins",
         }
     }
 
-    /// nav 링크 우측 desc (research §1.2 의 5 페이지 메타).
+    /// nav 링크 우측 desc (research §1.2 의 페이지 메타).
     pub fn desc(self) -> &'static str {
         match self {
             Category::Foundations => "tokens",
@@ -61,6 +64,7 @@ impl Category {
             Category::Icons => "glyphs",
             Category::Overlays => "modals",
             Category::Layouts => "shells",
+            Category::Plugins => "plugins",
         }
     }
 
@@ -87,6 +91,11 @@ impl Category {
                 "Structural shells — sidebars, tab strips, list→detail, dividers, surface focus. \
                  How panes and workspaces are framed."
             }
+            Category::Plugins => {
+                "UI contributed by plugins, kept apart from the native surfaces — clipboard and \
+                 git viewers, plus the markdown / image / html content surfaces. Each ships with \
+                 its plugin and is themed by the host."
+            }
         }
     }
 
@@ -102,6 +111,7 @@ impl Category {
             Category::Icons,
             Category::Overlays,
             Category::Layouts,
+            Category::Plugins,
         ]
     }
 }
@@ -738,26 +748,6 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
-                    "clipboard-viewer",
-                    "Clipboard viewer popup",
-                    vec![spec(
-                        "clipboard-viewer",
-                        "Current clipboard, master-detail",
-                        Some("480×360 · splitter 0.3 · type list → preview · empty / read-failed"),
-                        components::clipboard_viewer::draw,
-                    )],
-                ),
-                section(
-                    "git-viewer",
-                    "Git worktree viewer popup",
-                    vec![spec(
-                        "git-viewer",
-                        "Worktree rail + status / log / diff",
-                        Some("≈960 · splitter H 0.25 · splitter V 0.5 · rail → status/log/diff"),
-                        components::git_viewer::draw,
-                    )],
-                ),
-                section(
                     "settings",
                     "Settings window",
                     vec![spec(
@@ -845,31 +835,67 @@ pub fn pages() -> Vec<Page> {
                         ),
                     ],
                 ),
+            ],
+        },
+        // ── Plugins ──────────────────────────────────────────────────
+        // 플러그인 유래 specimen 을 네이티브와 분리한 전용 페이지. 각 플러그인을
+        // 하나의 Section 으로 묶는다(clipboard / git / markdown / image / html).
+        Page {
+            category: Category::Plugins,
+            sections: vec![
                 section(
-                    "viewers",
-                    "Content viewers",
-                    vec![
-                        spec(
-                            "markdown-viewer",
-                            "Markdown surface",
-                            Some(
-                                "ScrollArea · body=text-secondary · link=accent · code=surface-raised",
-                            ),
-                            components::markdown_viewer::draw,
+                    "clipboard-viewer",
+                    "Clipboard viewer popup",
+                    vec![spec(
+                        "clipboard-viewer",
+                        "Current clipboard, master-detail",
+                        Some("480×360 · splitter 0.3 · type list → preview · empty / read-failed"),
+                        components::clipboard_viewer::draw,
+                    )],
+                ),
+                section(
+                    "git-viewer",
+                    "Git worktree viewer popup",
+                    vec![spec(
+                        "git-viewer",
+                        "Worktree rail + status / log / diff",
+                        Some("≈960 · splitter H 0.25 · splitter V 0.5 · rail → status/log/diff"),
+                        components::git_viewer::draw,
+                    )],
+                ),
+                section(
+                    "markdown-viewer",
+                    "Markdown surface",
+                    vec![spec(
+                        "markdown-viewer",
+                        "Markdown surface",
+                        Some(
+                            "ScrollArea · body=text-secondary · link=accent · code=surface-raised",
                         ),
-                        spec(
-                            "image-viewer",
-                            "Image surface / canvas",
-                            Some("Toolbar + zoom · canvas=bg-sidebar · loaded / no-image fallback"),
-                            components::image_viewer::draw,
+                        components::markdown_viewer::draw,
+                    )],
+                ),
+                section(
+                    "image-viewer",
+                    "Image surface / canvas",
+                    vec![spec(
+                        "image-viewer",
+                        "Image surface / canvas",
+                        Some("Toolbar + zoom · canvas=bg-sidebar · loaded / no-image fallback"),
+                        components::image_viewer::draw,
+                    )],
+                ),
+                section(
+                    "html-chrome",
+                    "HTML (webview) chrome",
+                    vec![spec(
+                        "html-chrome",
+                        "HTML (webview) chrome",
+                        Some(
+                            "Native overlay · thin chrome · boundary / placeholder / loading / error",
                         ),
-                        spec(
-                            "html-chrome",
-                            "HTML (webview) chrome",
-                            Some("Native overlay · thin chrome · boundary / placeholder / loading / error"),
-                            components::html_chrome::draw,
-                        ),
-                    ],
+                        components::html_chrome::draw,
+                    )],
                 ),
             ],
         },

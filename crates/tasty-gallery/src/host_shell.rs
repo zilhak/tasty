@@ -3,7 +3,7 @@
 //! 2×2 그리드: 좌상 brand(232×52) / 우상 top(crumb + 세그 토글) / 좌 nav(232) /
 //! 우 main(활성 페이지 전체를 스크롤하는 문서 본문).
 //!
-//! nav 의 Catalog 그룹은 5 페이지 링크, "On this page" 그룹은 활성 페이지의
+//! nav 의 Catalog 그룹은 페이지 링크, "On this page" 그룹은 활성 페이지의
 //! Section 앵커. main 은 활성 페이지의 모든 Section/Spec 을 `spec` 헬퍼로 렌더한다.
 
 use tasty_type_appearance::theme::Theme;
@@ -57,7 +57,7 @@ pub struct GalleryState {
     pub theme: Theme,
     /// 선택된 테마 식별자 (Theme 구조체엔 id 가 없어 별도 보관).
     pub theme_id: ThemeId,
-    /// 문서 페이지 트리 (Foundations/Components/Icons/Overlays/Layouts).
+    /// 문서 페이지 트리 (Foundations/Components/Icons/Overlays/Layouts/Plugins).
     pub pages: Vec<Page>,
     /// 현재 활성 페이지 index (`pages` 기준).
     pub active_page: usize,
