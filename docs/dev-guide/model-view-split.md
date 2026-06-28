@@ -18,7 +18,7 @@
 |------|------|-----|
 | 식별 정보 | model | `id`, `file_path`, `dir_images`, `current_index` |
 | 직렬화 영속 상태 | model | mtime, 트리 구조 |
-| egui 타입 | view | `egui::ColorImage`, `TextureHandle`, commonmark cache |
+| egui 타입 | view | `egui::ColorImage`, `TextureHandle`, markdown content cache |
 | 편집 세션 머신 | view | `EditState`, `DragState`, `ActionHistory` |
 | 휘발성 UI 버퍼 | view | popup 텍스트 버퍼, scroll offset, brush 설정 |
 
@@ -95,7 +95,7 @@ state.foo_views = foo_views;   // 반드시 복원 (이후 state 접근 전에)
 
 | Model | View | Store |
 |-------|------|-------|
-| `MarkdownPanel` (file_path + mtime) | `MarkdownView` (content, scroll, commonmark cache) | `AppState::markdown_views` |
+| `MarkdownPanel` (file_path + mtime) | `MarkdownView` (content, scroll, load error) | `AppState::markdown_views` |
 | `ImagePanel` (file_path, dir_images, current_index) | `ImageView` (image, texture, edit_state, brush, popup buffers) | `AppState::image_views` |
 | `TerminalSurface` / `EmptySurface` / `AttachedSurface` | (없음 — GPU 렌더 또는 id-only) | — |
 

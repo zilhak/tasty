@@ -353,7 +353,7 @@ pub struct AppState {
     /// 위해 첫 호출에서는 스냅샷만 만들고 이벤트를 enqueue하지 않는다).
     pub(crate) last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
 
-    /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, commonmark cache).
+    /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, load error).
     /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
     #[cfg(feature = "gui")]
     pub(crate) markdown_views: crate::adapters::ui::surface::markdown::view::MarkdownViewStore,

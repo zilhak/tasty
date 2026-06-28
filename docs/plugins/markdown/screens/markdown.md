@@ -20,18 +20,19 @@
 
 ## 디자인 토큰 매핑
 
-`src/adapters/ui/surface/markdown.rs::draw_markdown` 가 `ScrollArea::vertical` 안에서
-`egui_commonmark` 로 그리며, theme 색을 commonmark visuals 에 주입한다. 폰트는 본문 기준 비례:
+`src/adapters/ui/surface/markdown/render.rs::render` 가 `ScrollArea::vertical` 안에서
+`pulldown-cmark` 이벤트 스트림을 직접 egui 위젯으로 그리는 토큰 기반 6단계 prose 렌더러다.
+색·크기·간격은 전부 `MdStyle` 이 `Theme` 에서 캡처한 토큰에서 온다:
 
 | UI 요소 | 토큰 / 비례 | 비고 |
 |---|---|---|
 | surface 배경 | `bg-panel` | toolbar 없음, 본문이 타일 채움 |
-| 본문/헤딩 텍스트 | `text-secondary` | `override_text_color = subtext1`(헤딩 포함) |
-| 헤딩 크기 | body × 1.5 | `TextStyle::Heading` |
-| small 캡션 | body × 0.85 · `text-muted` | `TextStyle::Small` |
-| 링크 | `accent-primary` | `hyperlink_color` |
-| 코드블록 배경 | `surface-raised` | `code_bg_color = surface0` |
-| 코드 텍스트 | mono · `text-secondary` | `TextStyle::Monospace` |
+| 본문 텍스트 | `text-secondary` · `line-height-prose` 행간 | 헤딩 색은 단계별 차별화 |
+| 헤딩 크기 | `font-size-prose-h1`(20, h1) / `font-size-prose-h2`(14, h2·h3) / body(h4~h6) | 6단계 prose 위계 |
+| small 캡션 | body × 0.85 · `text-muted` | |
+| 링크 | `accent-primary` | |
+| 코드블록 배경 | `surface-raised` | |
+| 코드 텍스트 | mono · `text-secondary` | markdown 폰트 패밀리 |
 
 ## 갤러리 specimen
 

@@ -317,7 +317,7 @@ painter/egui 로 전사.
 
 | surface | 본체 draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
-| markdown | `surface/markdown.rs::draw_markdown` (`egui_commonmark`) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 body×1.5 |
+| markdown | `surface/markdown/render.rs::render` (`pulldown-cmark` + 토큰 기반 6단계 prose 렌더러) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 `font-size-prose-h1`(20)/`font-size-prose-h2`(14) |
 | image | `surface/image.rs::draw_image` (+`controls.rs`) | `components/image_viewer.rs` | 캔버스 `bg-sidebar` · 버튼 `surface-raised`/`border-default` · 파일명·zoom `text-muted` · fallback `IMAGE` glyph |
 | html | OS native WebView overlay (`engine/surface_registry/webview_kind.rs`) | `components/html_chrome.rs` | 콘텐츠 토큰 무관 — chrome 만: `bg-panel`/`border-default` 경계 · `GLOBE` glyph · `Spinner` 로딩 · `ALERT_CIRCLE`+`accent-danger` 에러 |
 
