@@ -33,7 +33,14 @@ impl MainView {
                         if let Some(digit) = ch.to_digit(10)
                             && (1..=9).contains(&digit)
                         {
-                            state.switch_workspace(engine, (digit - 1) as usize);
+                            let local = (digit - 1) as usize;
+                            // 카테고리 토글 on 이면 active 카테고리 내 로컬 인덱스로,
+                            // off 면 현행 전역 인덱스로(무회귀).
+                            if engine.settings.general.workspace_categories_enabled {
+                                state.switch_workspace_in_active_category(engine, local);
+                            } else {
+                                state.switch_workspace(engine, local);
+                            }
                             return true;
                         }
                     }

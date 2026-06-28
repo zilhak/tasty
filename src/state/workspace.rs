@@ -11,6 +11,29 @@ impl AppState {
         }
     }
 
+    /// 카테고리-로컬 인덱스로 전환 (S-WSCAT). 현재 active 워크스페이스가 속한
+    /// 카테고리의 로컬 목록에서 `local_idx` 번째를 골라 **전역 인덱스로 변환**한 뒤
+    /// 기존 [`switch_workspace`](Self::switch_workspace) 를 재사용한다. 전역 인덱스가
+    /// 단일 진실 소스이므로 move/close/cascade 의 active 보정 로직을 그대로 쓴다.
+    /// 카테고리 토글 off 거나 active 카테고리에 `local_idx` 가 없으면 no-op.
+    pub fn switch_workspace_in_active_category(
+        &mut self,
+        engine: &mut CoreState,
+        local_idx: usize,
+    ) {
+        if self.active_workspace >= engine.workspaces.len() {
+            return;
+        }
+        let cat = engine.workspaces[self.active_workspace].category;
+        let global = engine
+            .workspaces_in_category(cat)
+            .get(local_idx)
+            .map(|(gi, _)| *gi);
+        if let Some(global) = global {
+            self.switch_workspace(engine, global);
+        }
+    }
+
     /// Move a workspace from one index to another, adjusting active_workspace accordingly.
     /// Returns false if indices are out of bounds or equal.
     pub fn move_workspace(&mut self, engine: &mut CoreState, from: usize, to: usize) -> bool {
