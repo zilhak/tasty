@@ -138,6 +138,7 @@ pub fn button(id: impl Into<String>, label_text: impl Into<String>) -> UiNode {
         label: label_text.into(),
         enabled: true,
         style: ButtonStyle::default(),
+        block: false,
         tooltip_i18n_key: None,
     }
 }
@@ -148,6 +149,31 @@ pub fn button_primary(id: impl Into<String>, label_text: impl Into<String>) -> U
         label: label_text.into(),
         enabled: true,
         style: ButtonStyle::Primary,
+        block: false,
+        tooltip_i18n_key: None,
+    }
+}
+
+/// Full-width(`block`) secondary 버튼 — 목록형 컨테이너에서 폭을 채운다.
+pub fn button_block(id: impl Into<String>, label_text: impl Into<String>) -> UiNode {
+    UiNode::Button {
+        id: id.into(),
+        label: label_text.into(),
+        enabled: true,
+        style: ButtonStyle::default(),
+        block: true,
+        tooltip_i18n_key: None,
+    }
+}
+
+/// Full-width(`block`) primary 버튼 — 선택된 목록 항목 강조용.
+pub fn button_primary_block(id: impl Into<String>, label_text: impl Into<String>) -> UiNode {
+    UiNode::Button {
+        id: id.into(),
+        label: label_text.into(),
+        enabled: true,
+        style: ButtonStyle::Primary,
+        block: true,
         tooltip_i18n_key: None,
     }
 }

@@ -193,14 +193,21 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
             label,
             enabled,
             style,
+            block,
             tooltip_i18n_key,
         } => {
-            let mut btn = egui::Button::new(label);
-            if let ButtonStyle::Primary = style {
-                // Primary 버튼: theme 의 강조 파랑.
-                btn = btn.fill(crate::theme::theme().blue);
-            }
-            let resp = ui.add_enabled(*enabled, btn);
+            // 디자인 Button 위젯으로 라우팅 — Primary→accent 채움, Secondary(기본)→
+            // surface_raised + border_default 외곽선. (transcription-spec §2-B)
+            let variant = match style {
+                ButtonStyle::Primary => tasty_ui_widgets::ButtonVariant::Primary,
+                ButtonStyle::Secondary => tasty_ui_widgets::ButtonVariant::Secondary,
+            };
+            let th = crate::theme::theme();
+            let resp = tasty_ui_widgets::Button::new(label)
+                .variant(variant)
+                .enabled(*enabled)
+                .block(*block)
+                .show(ui, &th);
             let resp = match tooltip_i18n_key {
                 Some(key) => resp.on_hover_text(crate::i18n::t(key)),
                 None => resp,

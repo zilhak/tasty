@@ -61,6 +61,10 @@ pub enum UiNode {
         enabled: bool,
         #[serde(default)]
         style: ButtonStyle,
+        /// 컨테이너 폭을 채우는 full-width 버튼(디자인 `block`). 호스트가
+        /// `tasty_ui_widgets::Button::block` 으로 전달한다.
+        #[serde(default)]
+        block: bool,
         #[serde(default)]
         tooltip_i18n_key: Option<String>,
     },
@@ -355,6 +359,7 @@ mod tests {
                     label: "Ok".into(),
                     enabled: true,
                     style: ButtonStyle::Primary,
+                    block: true,
                     tooltip_i18n_key: None,
                 },
             ],
@@ -451,6 +456,32 @@ mod tests {
         assert!(s.contains("\"selected\":true"));
         let parsed: UiNode = serde_json::from_str(&s).unwrap();
         assert_eq!(parsed, n);
+    }
+
+    #[test]
+    fn button_block_defaults_false() {
+        // block 을 생략한 최소 JSON 은 block=false 로 디코딩되어야 한다.
+        let json = r#"{"type":"button","id":"b","label":"Ok"}"#;
+        let parsed: UiNode = serde_json::from_str(json).unwrap();
+        match parsed {
+            UiNode::Button { block, enabled, .. } => {
+                assert!(!block);
+                assert!(enabled); // default_true
+            }
+            other => panic!("expected Button, got {other:?}"),
+        }
+        // block=true 는 round-trip.
+        let n = UiNode::Button {
+            id: "b".into(),
+            label: "Ok".into(),
+            enabled: true,
+            style: ButtonStyle::Secondary,
+            block: true,
+            tooltip_i18n_key: None,
+        };
+        let s = serde_json::to_string(&n).unwrap();
+        assert!(s.contains("\"block\":true"));
+        assert_eq!(serde_json::from_str::<UiNode>(&s).unwrap(), n);
     }
 
     #[test]

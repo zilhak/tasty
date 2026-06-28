@@ -143,6 +143,7 @@ fn build_header(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
         label: tr.t("git_viewer.refresh").to_string(),
         enabled: true,
         style: Default::default(),
+        block: false,
         tooltip_i18n_key: None,
     }];
     if let Some(p) = vm.repo_path.as_deref() {
@@ -228,6 +229,7 @@ fn build_diff_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
             label: tr.t("git_viewer.back_to_log").to_string(),
             enabled: true,
             style: Default::default(),
+            block: false,
             tooltip_i18n_key: None,
         },
         label_color(diff.file_path.clone(), "subtext0"),
