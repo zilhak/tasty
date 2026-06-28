@@ -239,7 +239,10 @@ impl PopupManager {
             ctx.set_cursor_icon(resize_cursor(edges));
         } else if hovered_handle.is_some() {
             ctx.set_cursor_icon(egui::CursorIcon::Grab);
-        } else if hovered_popup.is_some() && hovered_close.is_none() {
+        } else if hovered_close.is_some() {
+            // close 버튼 hover: pointer(손가락) 커서 (디자인 커서 매트릭스).
+            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+        } else if hovered_popup.is_some() {
             // Content area: set default cursor (arrow) to override terminal cursor
             ctx.set_cursor_icon(egui::CursorIcon::Default);
         }
