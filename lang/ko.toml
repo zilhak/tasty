@@ -892,6 +892,8 @@ occupied_workspace = "client 가 attach 중"
 [webview]
 region = "WebView 영역"
 no_page = "로드된 페이지 없음"
+loading = "불러오는 중…"
+error = "불러오지 못했습니다"
 
 # CLI 출력 문자열. `tasty-cli` 크레이트가 공용 i18n 스토어를 통해 읽는다
 # (CLI 부트 경로에서 `run_client` 이전에 초기화됨).

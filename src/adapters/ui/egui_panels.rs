@@ -254,6 +254,9 @@ pub fn draw_egui_panels(
             // 덮고, overlay 가 숨겨지거나(메뉴/팝업) URL 이 없을 때 노출된다.
             if crate::engine::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
                 let url = crate::model::Surface::webview_url(remote);
+                // RemoteSurface mirror(host sync_webviews 가 native nav_state 를 복사)에서
+                // navigation 상태를 읽어 loading/error chrome 분기에 쓴다.
+                let nav = remote.nav_state();
                 draw_panel_frame(
                     ctx,
                     &format!("webview_chrome_{}", id_suffix),
@@ -261,7 +264,7 @@ pub fn draw_egui_panels(
                     0,
                     None,
                     |ui| {
-                        crate::webview_chrome_ui::draw_webview_chrome(ui, url.as_deref());
+                        crate::webview_chrome_ui::draw_webview_chrome(ui, url.as_deref(), nav);
                     },
                 );
             } else {

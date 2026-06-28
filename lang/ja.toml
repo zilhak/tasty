@@ -892,6 +892,8 @@ occupied_workspace = "クライアントが接続中"
 [webview]
 region = "WebView 領域"
 no_page = "ページが読み込まれていません"
+loading = "読み込み中…"
+error = "読み込みに失敗しました"
 
 # CLI 出力文字列。`tasty-cli` クレートが共有 i18n ストアを介して読み取る
 # (CLI ブートパスで `run_client` の前に初期化される)。

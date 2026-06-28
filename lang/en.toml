@@ -892,6 +892,8 @@ occupied_workspace = "Attached by a client"
 [webview]
 region = "WebView region"
 no_page = "No page loaded"
+loading = "Loading…"
+error = "Failed to load"
 
 # CLI output strings. The `tasty-cli` crate reads these through the shared
 # i18n store (initialized on the CLI boot path before `run_client`).

@@ -15,17 +15,25 @@
 //!   다이얼로그) 가 열려 webview 가 일시 숨겨질 때 이 backdrop 이 보인다(GLOBE
 //!   text-muted + "WebView region" + url).
 //!
-//! loading/error 상태는 navigation 생명주기 신호(start/finish/fail)가 필요한데 현재
-//! 3개 backend 어디에도 콜백이 배선돼 있지 않아 본 모듈에서 다루지 않는다(보류).
+//! loading/error 상태는 navigation 생명주기 신호(start/finish/fail)로 결정된다. 3개
+//! backend(WebView2 / WKNavigationDelegate / WebKitGTK)가 콜백을 `NavState` 로 mirror 하고
+//! (`RemoteSurface.nav_state`), 이 모듈이 그 값을 받아 분기한다:
+//!
+//! - **loading** — `NavState::Loading`: Spinner + "Loading…"(text-muted).
+//! - **error** — `NavState::Failed`: ALERT_CIRCLE(accent-danger) + "Failed to load" + url.
+//!
+//! `NavState::Done` 일 때는 native overlay 가 페이지를 덮으므로 이 chrome 은 보이지 않고,
+//! overlay 가 일시 숨겨질 때(메뉴/팝업)만 boundary 가 노출된다. `Idle` 은 placeholder.
 //!
 //! 색·치수·폰트는 전부 `Theme` 토큰. 문구는 `t()`.
 
 use crate::adapters::ui::icons;
 use crate::theme;
+use crate::webview::NavState;
 
-/// webview-kind surface 의 host chrome 을 패널에 그린다. `url` 이 Some 이면 boundary
-/// (overlay backdrop), None 이면 placeholder(no page loaded).
-pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>) {
+/// webview-kind surface 의 host chrome 을 패널에 그린다. `nav` 가 Loading/Failed 면
+/// 해당 상태 chrome, 그 외(Idle/Done)는 `url` 기반으로 boundary(Some)/placeholder(None).
+pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) {
     let th = theme::theme();
     let panel_rect = ui.max_rect();
     // bg-panel 타일 배경 + 1px border-default 경계(specimen tile 과 동일 토큰).
@@ -48,20 +56,39 @@ pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>) {
         egui::Layout::top_down(egui::Align::Center),
         |ui| {
             ui.add_space(top_pad);
-            match url {
-                None => {
-                    // placeholder — no URL.
-                    ui.add(icons::GLOBE.image(glyph, th.text_disabled().to_egui()));
+            match nav {
+                NavState::Failed => {
+                    // error — load failed (specimen "error — load failed" 전사).
+                    ui.add(icons::ALERT_CIRCLE.image(glyph, th.accent_danger().to_egui()));
                     ui.add_space(th.spacing_sm.value());
-                    label(ui, crate::i18n::t("webview.no_page"), th.text_muted().to_egui());
+                    label(ui, crate::i18n::t("webview.error"), th.accent_danger().to_egui());
+                    if let Some(url) = url {
+                        label(ui, url, th.text_disabled().to_egui());
+                    }
                 }
-                Some(url) => {
-                    // boundary — webview region backdrop.
-                    ui.add(icons::GLOBE.image(glyph, th.text_muted().to_egui()));
+                NavState::Loading => {
+                    // loading — navigation 진행 중 (specimen "loading" 전사).
+                    tasty_ui_widgets::Spinner::new()
+                        .size(th.spinner_size.value())
+                        .show(ui, &th);
                     ui.add_space(th.spacing_sm.value());
-                    label(ui, crate::i18n::t("webview.region"), th.text_muted().to_egui());
-                    label(ui, url, th.text_disabled().to_egui());
+                    label(ui, crate::i18n::t("webview.loading"), th.text_muted().to_egui());
                 }
+                NavState::Idle | NavState::Done => match url {
+                    None => {
+                        // placeholder — no URL.
+                        ui.add(icons::GLOBE.image(glyph, th.text_disabled().to_egui()));
+                        ui.add_space(th.spacing_sm.value());
+                        label(ui, crate::i18n::t("webview.no_page"), th.text_muted().to_egui());
+                    }
+                    Some(url) => {
+                        // boundary — webview region backdrop.
+                        ui.add(icons::GLOBE.image(glyph, th.text_muted().to_egui()));
+                        ui.add_space(th.spacing_sm.value());
+                        label(ui, crate::i18n::t("webview.region"), th.text_muted().to_egui());
+                        label(ui, url, th.text_disabled().to_egui());
+                    }
+                },
             }
         },
     );

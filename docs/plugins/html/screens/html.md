@@ -16,7 +16,16 @@ HTML 파일 열기 또는 `html` surface 생성(`--url`).
 
 ## 상태별 시각
 
-- 로딩/로드 실패는 WebView 자체 표현. surface 가 트리에선 `RemoteSurface` marker.
+surface 는 트리에선 `RemoteSurface` marker. 네이티브 WebView 의 navigation 생명주기
+(start/finish/fail)를 3 backend(WebView2 / WKNavigationDelegate / WebKitGTK)가 `NavState`
+(Idle/Loading/Done/Failed)로 host 에 전달하고, host 가 그 상태에 따라 chrome 을 그린다:
+
+- **Idle** — URL 미지정. placeholder(`GLOBE` · "No page loaded").
+- **Loading** — 탐색 중. WebView overlay 를 숨기고 `Spinner` + "Loading…" chrome.
+- **Done** — 성공. WebView overlay 가 페이지를 그린다(메뉴/팝업으로 overlay 가 일시
+  숨겨질 때만 boundary chrome backdrop 노출).
+- **Failed** — 실패. overlay 를 숨긴 채 `ALERT_CIRCLE`(`accent-danger`) + "Failed to load"
+  + URL chrome. 실패 사유는 화면 대신 `tracing::warn!` 로그로만 남긴다.
 
 ## 디자인 토큰 매핑
 

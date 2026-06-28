@@ -187,3 +187,10 @@ line_icon!(
     "globe",
     r#"<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/>"#
 );
+// webview(html) surface 의 error chrome 실패 글리프. path 는 갤러리
+// `catalog/icons.rs` ALERT_CIRCLE 와 바이트 동일.
+line_icon!(
+    ALERT_CIRCLE,
+    "alert_circle",
+    r#"<circle cx="12" cy="12" r="9"/><path d="M12 8v4m0 4h.01"/>"#
+);
