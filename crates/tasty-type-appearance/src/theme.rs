@@ -113,6 +113,11 @@ pub const ACCENT_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xc4, 0x2b, 0x1c);
 /// (`--tasty-text-on-window-close`).
 pub const TEXT_ON_WINDOW_CLOSE: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
 
+/// light 테마(Latte)에서 accent 위 텍스트색 — DTCG `text-on-accent` 의 Latte remap
+/// 은 절대색 white(`--tasty-color-white`). vivid accent(blue 등) 위 white 대비
+/// ≈4.9:1 로 4.5:1 충족. Mocha 는 `crust` 를 쓰므로 이 리터럴은 light 전용.
+pub const TEXT_ON_ACCENT_LIGHT: HexColor = HexColor::from_rgb(0xff, 0xff, 0xff);
+
 /// macOS 신호등(traffic light) 색. OS 가 인식하는 affordance 라 사용자가 정확한
 /// 시스템 red/amber/green 을 기대한다 — Catppuccin accent 가 아니다. Windows close
 /// 처럼 테마 불변 OS-system 리터럴 (`--tasty-color-os-macos-*`). mocha/latte 동일값.
@@ -1187,12 +1192,16 @@ impl Theme {
     pub fn text_placeholder(&self) -> HexColor {
         self.placeholder
     }
-    /// semantic role-remap 미대응 — **잠정 매핑**. Mocha 에선 neutral-0(=`crust`) 와
-    /// 동일값이지만, Latte 에선 white 여야 한다(DTCG `text-on-accent`). 전용 필드가
-    /// 없어 현재는 mocha 기준 `crust` 를 리턴 — 후속에서 role-remap 필드 신설 후보.
+    /// accent 위 텍스트색 (DTCG `text-on-accent`). 테마별 role-remap: Mocha(dark)
+    /// 는 neutral-0(=`crust`), Latte(light)는 절대색 white. vivid accent 위 대비
+    /// (4.5:1) 를 양 테마에서 충족시키기 위한 분기 — `is_light` 로 식별.
     #[inline]
     pub fn text_on_accent(&self) -> HexColor {
-        self.crust
+        if self.is_light {
+            TEXT_ON_ACCENT_LIGHT
+        } else {
+            self.crust
+        }
     }
 
     // ── accent (의미색) ──
@@ -1489,7 +1498,11 @@ mod tests {
         assert_eq!(th.text_muted(), th.subtext0);
         assert_eq!(th.text_disabled(), th.overlay1);
         assert_eq!(th.text_placeholder(), th.placeholder);
-        assert_eq!(th.text_on_accent(), th.crust); // 잠정(mocha 기준)
+        assert_eq!(th.text_on_accent(), th.crust); // dark(Mocha): neutral-0=crust
+        // light(Latte): accent 위 텍스트는 절대색 white 로 role-remap.
+        let light = Theme::with_colors(distinct_colors(), true);
+        assert_eq!(light.text_on_accent(), TEXT_ON_ACCENT_LIGHT);
+        assert_ne!(light.text_on_accent(), light.crust);
 
         // 보더
         assert_eq!(th.border_default(), th.surface0);
