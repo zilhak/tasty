@@ -174,3 +174,9 @@ line_icon!(
     "columns",
     r#"<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>"#
 );
+// 마우스 캡처 배너 leading 글리프. path 는 갤러리 `catalog/icons.rs` MOUSE 와 동일.
+line_icon!(
+    MOUSE,
+    "mouse",
+    r#"<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>"#
+);

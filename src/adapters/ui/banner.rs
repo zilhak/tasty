@@ -584,6 +584,7 @@ fn ui_at(ctx: &egui::Context, layer_id: egui::LayerId, rect: egui::Rect) -> egui
 /// debug 발화가 여기서 정의를 찾는다.
 pub mod defs {
     use super::{BannerDef, BannerId};
+    use crate::adapters::ui::icons;
     use crate::i18n::t;
     use crate::theme::Theme;
 
@@ -592,19 +593,35 @@ pub mod defs {
     pub const BANNER_MOUSE_CAPTURE: BannerId = "mouse-capture";
 
     fn content_mouse_capture(ui: &mut egui::Ui, theme: &Theme) {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
-            ui.label(
-                egui::RichText::new(t("banner.mouse_capture.title"))
-                    .size(theme.font_size_body.value())
-                    .strong()
-                    .color(theme.banner_fg().to_egui()),
-            );
-            ui.label(
-                egui::RichText::new(t("banner.mouse_capture.body"))
-                    .size(theme.font_size_caption.value())
-                    .color(theme.text_muted().to_egui()),
-            );
+        // 가로 레이아웃 — 선두 mouse 글리프 + 제목/본문(세로). 디자인
+        // `MouseCaptureBannerG`(overlays-shared.jsx) 전사: glyph(banner-icon-fg) +
+        // flex 본문, 우측엔 우상단 ×(매니저가 그림) 자리를 남긴다.
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
+            let glyph = theme.icon_glyph_size_md.value();
+            let (rect, _) =
+                ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
+            icons::MOUSE
+                .image(glyph, theme.banner_icon_fg().to_egui())
+                .paint_at(ui, rect);
+            ui.vertical(|ui| {
+                // 우상단 × / 카운트다운 affordance 자리를 본문에서 비워둔다.
+                ui.set_max_width(
+                    (ui.available_width() - theme.item_height_interactive.value()).max(0.0),
+                );
+                ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
+                ui.label(
+                    egui::RichText::new(t("banner.mouse_capture.title"))
+                        .size(theme.font_size_body.value())
+                        .strong()
+                        .color(theme.banner_fg().to_egui()),
+                );
+                ui.label(
+                    egui::RichText::new(t("banner.mouse_capture.body"))
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_muted().to_egui()),
+                );
+            });
         });
     }
 
