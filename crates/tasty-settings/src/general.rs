@@ -107,6 +107,10 @@ pub struct GeneralSettings {
     /// 제거·소문자화 후 substring 매칭(또는 `*` 와일드카드)이며, 빈 목록(기본값)이면
     /// 어떤 surface 도 비활성화하지 않는다.
     pub mouse_capture_blacklist: Vec<String>,
+    /// 워크스페이스 카테고리(사이드바 폴더) 계층을 활성화한다. off(기본)면 사이드바·
+    /// 단축키·영속이 현행 평면 동작과 동일하다. on 으로 켜면 normal 외 사용자
+    /// 카테고리를 만들 수 있고, off 로 끄면 모든 워크스페이스를 normal 로 귀속한다.
+    pub workspace_categories_enabled: bool,
 }
 
 /// 파싱된 링크 클릭 수식키.
@@ -158,6 +162,7 @@ impl Default for GeneralSettings {
             allow_clipboard_read: false,
             mouse_capture_hint: true,
             mouse_capture_blacklist: Vec::new(),
+            workspace_categories_enabled: false,
         }
     }
 }

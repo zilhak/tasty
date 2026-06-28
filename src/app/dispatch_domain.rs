@@ -1203,13 +1203,34 @@ impl App {
                 .first()
                 .map(|(_, e)| e.settings.general.language.clone())
         });
+        // S-WSCAT — 워크스페이스 카테고리 토글 전환 감지(§4-2). on→off 면 normal 외
+        // 모든 카테고리를 제거하고 워크스페이스를 normal 로 귀속한다(전역 인덱스 불변).
+        let prev_categories_enabled = self
+            .main_windows_iter_mut()
+            .next()
+            .map(|w| w.core_state.settings.general.workspace_categories_enabled);
+        let prev_categories_enabled = prev_categories_enabled.or_else(|| {
+            self.parked_states
+                .first()
+                .map(|(_, e)| e.settings.general.workspace_categories_enabled)
+        });
+        let categories_turned_off = prev_categories_enabled == Some(true)
+            && !new_settings.general.workspace_categories_enabled;
 
         for main in self.main_windows_iter_mut() {
             main.core_state.settings = new_settings.clone();
+            if categories_turned_off {
+                main.core_state.collapse_categories_to_normal();
+                main.core_state.layout_dirty.mark_dirty();
+            }
             main.mark_dirty();
         }
         for (_, engine) in self.parked_states.iter_mut() {
             engine.settings = new_settings.clone();
+            if categories_turned_off {
+                engine.collapse_categories_to_normal();
+                engine.layout_dirty.mark_dirty();
+            }
         }
         if let Err(e) = new_settings.save() {
             tracing::warn!("failed to save settings: {e}");
