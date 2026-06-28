@@ -1,12 +1,13 @@
 //! UiNode tree 빌더 — master-detail popup 본체.
 //!
 //! 좌측 = 가용 클립보드 타입 목록(Button), 우측 = 선택 타입 상세(TextPreview).
-//! 좌측 목록을 `Button` 으로 만드는 이유: 호스트의 `SelectableRow` 렌더가 아직
-//! placeholder(no-op)라 popup 에서 보이지 않기 때문. 선택 강조는 `ButtonStyle::Primary`.
+//! 타입 목록을 `Button` 으로 두는 것은 디자인 명세(요청 §1.5 "버튼 시각")를 따른 것이다:
+//! 유휴 = secondary(외곽선), 선택 = primary(accent) 강조, 둘 다 full-width(`block`).
+//! 호스트 `UiNode::Button` 렌더가 `tasty_ui_widgets::Button` 으로 토큰화돼 있다.
 
 use tasty_plugin_sdk::Translator;
 use tasty_plugin_sdk::ui::{
-    button, button_primary, label_color, scroll_v, splitter, text_preview, vbox,
+    button_block, button_primary_block, label_color, scroll_v, splitter, text_preview, vbox,
 };
 use tasty_plugin_sdk::{SplitDir, UiNode};
 
@@ -30,6 +31,9 @@ pub fn already_open_tree(tr: &Translator) -> UiNode {
 }
 
 pub fn main_tree(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
+    // C-G1(빈/실패 중앙정렬): DSL 에 정렬 컨테이너 노드가 없어 현재는 좌상단 한 줄로
+    // 렌더된다. 중앙정렬은 host/DSL 정렬 노드 도입이 선행돼야 함 → 후속 과제로 flag.
+    // 색은 의미 토큰(empty=text_muted≈subtext0 / fail=accent_danger≈red).
     // 클립보드 핸들 자체 실패 → read 실패 상태.
     if vm.read_error.is_some() {
         return vbox([label_color(
@@ -56,9 +60,9 @@ fn build_type_list(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
         let id = format!("{TYPE_PREFIX}{}", ty.key());
         let label = tr.t(ty.label_i18n_key()).to_string();
         if vm.selected == Some(*ty) {
-            rows.push(button_primary(id, label));
+            rows.push(button_primary_block(id, label));
         } else {
-            rows.push(button(id, label));
+            rows.push(button_block(id, label));
         }
     }
     scroll_v(vbox(rows))
