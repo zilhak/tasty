@@ -262,36 +262,68 @@ impl WindowsProcessSnapshot {
         }
     }
 
-    /// Resolve the foreground program for `shell_pid`: the deepest leaf
-    /// descendant in the process tree. If the shell has no descendants, return
-    /// the shell's own info so the caller still receives a name (matching
-    /// Linux/macOS where tpgid resolves to the shell itself when idle).
+    /// Resolve the foreground program for `shell_pid`: the **shallowest
+    /// non-shell descendant** of the shell, breaking ties at the same depth by
+    /// lowest PID for a deterministic, stable choice.
+    ///
+    /// Windows has no Unix-style `tcgetpgrp` and ConPTY exposes no foreground
+    /// process group, so this is a heuristic approximation of the tty foreground
+    /// program, not the real thing. Interactive agents (claude/node) constantly
+    /// spawn and reap short-lived helpers (bash/git/rg/…); picking the *deepest*
+    /// leaf made the displayed name flicker frame-to-frame as whichever transient
+    /// helper happened to be alive got chosen. The shallowest non-shell
+    /// descendant is the outermost user-launched program (e.g. `node`) — stable,
+    /// and what the user perceives as running.
+    ///
+    /// Nested shells are walked through but never chosen (`pwsh → cmd → node`
+    /// resolves to `node`). Fallbacks, in order: if the shell has no non-shell
+    /// descendant, return the deepest leaf (an inner idle shell still shows a
+    /// name); if there is no descendant at all, return the shell's own info —
+    /// matching Linux/macOS where tpgid resolves to the shell itself when idle.
     fn resolve(&self, shell_pid: u32) -> Option<ForegroundProcessInfo> {
-        // DFS from shell_pid; track the deepest leaf descendant.
-        let mut stack: Vec<(u32, u32)> = vec![(shell_pid, 0)];
+        use std::collections::VecDeque;
+        // BFS level-by-level from shell_pid. The explicit (depth, pid) comparison
+        // below makes the choice independent of `children` iteration order, so
+        // the result is deterministic even with multiple same-depth candidates.
+        let mut queue: VecDeque<(u32, u32)> = VecDeque::new(); // (pid, depth)
+        queue.push_back((shell_pid, 0));
+        // (pid, name, depth) of the shallowest non-shell descendant so far.
+        let mut shallowest_non_shell: Option<(u32, String, u32)> = None;
+        // Fallback: deepest leaf, used only when no non-shell descendant exists.
         let mut best_leaf: Option<(u32, String, u32)> = None; // (pid, name, depth)
         let mut found_descendant = false;
 
-        while let Some((pid, depth)) = stack.pop() {
+        while let Some((pid, depth)) = queue.pop_front() {
             let Some(child_idxs) = self.children.get(&pid) else {
                 continue;
             };
             for &idx in child_idxs {
                 let (cpid, _, cname) = &self.entries[idx];
                 found_descendant = true;
-                let has_grandchildren = self.children.get(cpid).is_some_and(|v| !v.is_empty());
-                if has_grandchildren {
-                    stack.push((*cpid, depth + 1));
-                } else {
-                    let cdepth = depth + 1;
-                    if best_leaf.as_ref().is_none_or(|(_, _, d)| cdepth > *d) {
-                        best_leaf = Some((*cpid, cname.clone(), cdepth));
+                let cdepth = depth + 1;
+                if !is_known_shell_name(cname) {
+                    // Shallowest wins; ties at the same depth → lowest PID.
+                    let better = shallowest_non_shell
+                        .as_ref()
+                        .is_none_or(|(bpid, _, bd)| cdepth < *bd || (cdepth == *bd && cpid < bpid));
+                    if better {
+                        shallowest_non_shell = Some((*cpid, cname.clone(), cdepth));
                     }
+                }
+                // Track the deepest leaf in parallel for the no-non-shell fallback.
+                let has_children = self.children.get(cpid).is_some_and(|v| !v.is_empty());
+                if has_children {
+                    queue.push_back((*cpid, cdepth));
+                } else if best_leaf.as_ref().is_none_or(|(_, _, d)| cdepth > *d) {
+                    best_leaf = Some((*cpid, cname.clone(), cdepth));
                 }
             }
         }
 
-        let (pid, raw_name) = if found_descendant {
+        let (pid, raw_name) = if let Some((pid, name, _)) = shallowest_non_shell {
+            (pid, name)
+        } else if found_descendant {
+            // Only nested/leaf shells under this shell — show the deepest one.
             let (pid, name, _) = best_leaf?;
             (pid, name)
         } else {
@@ -329,5 +361,82 @@ mod windows_smoke {
             "foreground for self pid {pid}: {:?}",
             info.map(|i| (i.name, i.pid))
         );
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tree {
+    //! Synthetic process-tree tests for [`WindowsProcessSnapshot::resolve`].
+    //! These build the snapshot's `entries`/`children` directly (same module,
+    //! so the private fields are reachable) and make no OS calls — fully
+    //! deterministic under headless CI.
+    use super::*;
+    use std::collections::HashMap;
+
+    /// Build a snapshot from `(pid, parent_pid, name)` triples.
+    fn snapshot(rows: &[(u32, u32, &str)]) -> WindowsProcessSnapshot {
+        let entries: Vec<(u32, u32, String)> = rows
+            .iter()
+            .map(|(pid, ppid, name)| (*pid, *ppid, name.to_string()))
+            .collect();
+        let mut children: HashMap<u32, Vec<usize>> = HashMap::new();
+        for (i, (_, ppid, _)) in entries.iter().enumerate() {
+            children.entry(*ppid).or_default().push(i);
+        }
+        WindowsProcessSnapshot { entries, children }
+    }
+
+    // shell(100) → node(200) → {bash(300), git(301), rg(302)}.
+    // node is the shallowest non-shell descendant; the deep transient helpers
+    // (which used to win as the deepest leaf and caused the flicker) are ignored.
+    #[test]
+    fn picks_shallowest_non_shell_over_deep_helpers() {
+        let snap = snapshot(&[
+            (100, 1, "bash.exe"),
+            (200, 100, "node.exe"),
+            (300, 200, "bash.exe"),
+            (301, 200, "git.exe"),
+            (302, 200, "rg.exe"),
+        ]);
+        let info = snap.resolve(100).expect("resolve");
+        assert_eq!(info.name, "node");
+        assert_eq!(info.pid, 200);
+    }
+
+    // pwsh(100) → cmd(200, a shell) → node(300): nested shell is walked through
+    // but never chosen; node is selected.
+    #[test]
+    fn walks_through_nested_shell() {
+        let snap = snapshot(&[
+            (100, 1, "pwsh.exe"),
+            (200, 100, "cmd.exe"),
+            (300, 200, "node.exe"),
+        ]);
+        let info = snap.resolve(100).expect("resolve");
+        assert_eq!(info.name, "node");
+        assert_eq!(info.pid, 300);
+    }
+
+    // shell(100) with no descendants → fall back to the shell itself.
+    #[test]
+    fn falls_back_to_shell_when_no_descendant() {
+        let snap = snapshot(&[(100, 1, "bash.exe")]);
+        let info = snap.resolve(100).expect("resolve");
+        assert_eq!(info.name, "bash");
+        assert_eq!(info.pid, 100);
+    }
+
+    // Two non-shell children at the same (shallowest) depth → lowest PID wins.
+    // node is listed after cargo on purpose so insertion order can't pass by luck.
+    #[test]
+    fn ties_break_by_lowest_pid() {
+        let snap = snapshot(&[
+            (100, 1, "bash.exe"),
+            (301, 100, "cargo.exe"),
+            (300, 100, "node.exe"),
+        ]);
+        let info = snap.resolve(100).expect("resolve");
+        assert_eq!(info.pid, 300);
+        assert_eq!(info.name, "node");
     }
 }
