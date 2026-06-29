@@ -51,12 +51,16 @@ pub struct MdStyle {
     space_sm: f32,
     space_md: f32,
     space_lg: f32,
-    /// The markdown file's directory, used to resolve relative image paths.
+    /// The markdown file's directory, used to resolve relative image/link paths.
     base_dir: Option<PathBuf>,
+    /// egui temp-memory slot a clicked link writes its [`LinkClick`] into, read back by
+    /// `draw_markdown` after `render` and handed up to `egui_panels`. Per-panel (derived
+    /// from the panel's `id_suffix`) so concurrent markdown panels never collide.
+    link_slot: egui::Id,
 }
 
 impl MdStyle {
-    pub fn new(theme: &Theme, font: &EffectiveFont, base_dir: Option<PathBuf>) -> Self {
+    pub fn new(theme: &Theme, font: &EffectiveFont, base_dir: Option<PathBuf>, link_slot: egui::Id) -> Self {
         Self {
             family: font_registry::markdown_family(),
             body: font.font_size.max(1.0),
@@ -80,8 +84,50 @@ impl MdStyle {
             space_md: theme.spacing_md.value(),
             space_lg: theme.spacing_lg.value(),
             base_dir,
+            link_slot,
         }
     }
+}
+
+/// Outcome of clicking a markdown link, raised out of the pure render module so
+/// `egui_panels` (which can reach `AppState`/`Core`) performs the side effect. The render
+/// module never dispatches directly — it only classifies and resolves.
+///
+/// - `File`: a filesystem path already made absolute against the md dir's `base_dir`
+///   (relative dests) or taken verbatim (absolute dests). Routed through the shared
+///   `DispatchFile` file handler, exactly like Explorer "open file".
+/// - `External`: a URL/scheme handed to the OS (`http(s)`, `mailto:`, `data:`, …).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LinkClick {
+    File(PathBuf),
+    External(String),
+}
+
+/// Classify and resolve a markdown link destination relative to the md file's directory.
+///
+/// - `#anchor` → `None` (in-document; nothing to open).
+/// - external scheme (`://`, `mailto:`, `data:`) → `External` verbatim.
+/// - otherwise a filesystem path: absolute dests pass through, relative dests join
+///   `base_dir`; the result is lexically absolutized (`std::path::absolute`, no fs access)
+///   and Windows verbatim (`\\?\`) prefixes are stripped for clean `file://`/picker paths.
+/// - relative dest with no `base_dir` → `None` (unresolvable).
+fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
+    let dest = dest.trim();
+    if dest.is_empty() || dest.starts_with('#') {
+        return None;
+    }
+    if dest.contains("://") || dest.starts_with("mailto:") || dest.starts_with("data:") {
+        return Some(LinkClick::External(dest.to_string()));
+    }
+    let path = Path::new(dest);
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base_dir?.join(path)
+    };
+    let abs = std::path::absolute(&joined).unwrap_or(joined);
+    let abs = PathBuf::from(tasty_utils::path::strip_verbatim_prefix(&abs.to_string_lossy()));
+    Some(LinkClick::File(abs))
 }
 
 /// Per-level heading appearance, derived from `MD_H` in the design gallery.
@@ -428,8 +474,15 @@ fn link_widget(ui: &mut egui::Ui, style: &MdStyle, cfg: &InlineCfg, runs: &[(Str
         .add(egui::Label::new(job).sense(Sense::click()))
         .on_hover_text(dest)
         .on_hover_cursor(egui::CursorIcon::PointingHand);
-    if resp.clicked() {
-        ui.ctx().open_url(egui::OpenUrl::new_tab(dest));
+    if resp.clicked()
+        && let Some(click) = classify_link(dest, style.base_dir.as_deref())
+    {
+        // Defer the side effect: stash the resolved click in egui temp memory; the host
+        // (`draw_markdown` → `egui_panels`) reads it after render and dispatches, so the
+        // pure render module never touches `AppState`/`Core`. Last click in a frame wins
+        // (single slot), matching Explorer's single deferred-action slot.
+        let slot = style.link_slot;
+        ui.ctx().data_mut(|d| d.insert_temp(slot, click));
     }
 }
 
@@ -864,5 +917,86 @@ where
             None => break,
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base() -> PathBuf {
+        // An absolute base dir so relative dests resolve deterministically on every OS.
+        if cfg!(windows) {
+            PathBuf::from(r"C:\docs\md")
+        } else {
+            PathBuf::from("/docs/md")
+        }
+    }
+
+    /// Compare a resolved `File` path by its normalized (forward-slash) string so the
+    /// assertions read the same on Windows and POSIX.
+    fn file_str(c: Option<LinkClick>) -> String {
+        match c {
+            Some(LinkClick::File(p)) => p.to_string_lossy().replace('\\', "/"),
+            other => panic!("expected File, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn relative_resolves_against_base_dir() {
+        let b = base();
+        let got = file_str(classify_link("docs/index.md", Some(&b)));
+        let want = base().join("docs/index.md").to_string_lossy().replace('\\', "/");
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn parent_relative_is_normalized() {
+        let b = base();
+        let got = file_str(classify_link("../sibling.md", Some(&b)));
+        // `std::path::absolute` collapses the `..` lexically against the base dir.
+        let want = if cfg!(windows) { "C:/docs/sibling.md" } else { "/docs/sibling.md" };
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn absolute_dest_passes_through() {
+        let b = base();
+        let abs = if cfg!(windows) { r"C:\other\readme.md" } else { "/other/readme.md" };
+        let got = file_str(classify_link(abs, Some(&b)));
+        let want = if cfg!(windows) { "C:/other/readme.md" } else { "/other/readme.md" };
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn external_schemes_are_external() {
+        let b = base();
+        for url in [
+            "http://example.com",
+            "https://example.com/page",
+            "mailto:foo@bar.com",
+            "data:text/plain;base64,AAAA",
+        ] {
+            assert_eq!(
+                classify_link(url, Some(&b)),
+                Some(LinkClick::External(url.to_string())),
+                "{url} should be External",
+            );
+        }
+    }
+
+    #[test]
+    fn anchor_is_ignored() {
+        assert_eq!(classify_link("#section", base().as_path().into()), None);
+    }
+
+    #[test]
+    fn relative_without_base_dir_is_unresolvable() {
+        assert_eq!(classify_link("docs/index.md", None), None);
+    }
+
+    #[test]
+    fn empty_dest_is_ignored() {
+        assert_eq!(classify_link("", Some(&base())), None);
     }
 }

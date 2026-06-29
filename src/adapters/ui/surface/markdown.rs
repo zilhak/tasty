@@ -12,6 +12,7 @@ pub mod view;
 use crate::i18n::t;
 use crate::settings::EffectiveFont;
 use crate::theme;
+pub use render::LinkClick;
 use render::MdStyle;
 use view::MarkdownView;
 
@@ -21,15 +22,22 @@ use view::MarkdownView;
 /// `scroll_delta` is applied before the ScrollArea (positive = scroll up).
 /// `id_suffix` uniquifies egui ids when multiple panels share a context.
 /// `font` carries the markdown surface's effective font settings.
+///
+/// Returns a [`LinkClick`] when the user clicked a link this frame, so the caller
+/// (`egui_panels`) can route it through the shared file-handler dispatch (filesystem
+/// paths) or hand it to the OS (external URLs). The render module itself never dispatches.
 pub fn draw_markdown(
     ui: &mut egui::Ui,
     view: &mut MarkdownView,
     scroll_delta: f32,
     id_suffix: &str,
     font: &EffectiveFont,
-) {
+) -> Option<LinkClick> {
     let th = theme::theme();
-    let style = MdStyle::new(&th, font, view.base_dir.clone());
+    // Per-panel slot so concurrent markdown panels' link clicks never collide in the
+    // shared egui temp memory.
+    let link_slot = egui::Id::new(("md_link_click", id_suffix));
+    let style = MdStyle::new(&th, font, view.base_dir.clone(), link_slot);
 
     // Force the frame content to fill the available width
     ui.set_min_width(ui.available_width());
@@ -59,6 +67,17 @@ pub fn draw_markdown(
             // panel's bottom inner_margin when scrolled to the end.
             ui.add_space(8.0);
         });
+
+    // Drain the deferred link click (if a link was clicked during render) and hand it up.
+    // (`remove_temp` requires `Default`, which `LinkClick` has no sensible value for, so
+    // we read-then-remove.)
+    ui.ctx().data_mut(|d| {
+        let click = d.get_temp::<LinkClick>(link_slot);
+        if click.is_some() {
+            d.remove::<LinkClick>(link_slot);
+        }
+        click
+    })
 }
 
 /// Load failure — a "Failed to load" title (accent-danger, matching the HTML viewer's

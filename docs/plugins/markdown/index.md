@@ -17,6 +17,11 @@
 
 - **surface_kind `markdown` (host-rendered)** — host 가 `MarkdownPanel`(파일 경로 보유)을 egui 로 렌더. display_name 은 파일명.
 - **파일 핸들러** — `detector "markdown"`(확장자 매핑) + `handler` action `open_surface{surface_kind:"markdown"}`. 마크다운 파일 열기 시 이 surface 로 뜬다.
+- **링크 클릭** — 본문 링크 클릭은 **tasty 파일 핸들러로 dispatch** 된다(Explorer "파일 열기" 와 동일한 `DispatchFile` 경로 — 그 surface 가 속한 **Pane 의 새 탭**, 포커스 전환 없음). 경로 해석 기준:
+  - **상대 경로**(`docs/index.md`, `../sibling.md`)는 **현재 마크다운 파일의 폴더(base_dir) 기준**으로 절대화한다(프로세스 cwd 가 아님). 절대 경로는 그대로.
+  - **외부 URL**(`http(s)://`·`mailto:`·`data:`)만 OS 로 위임한다.
+  - **`#anchor`** 는 무시(문서 내 위치 — 열 대상 없음). base_dir 을 모르는 상대 경로, 존재하지 않는 경로도 무반응.
+  - 이미지의 상대 경로도 동일하게 base_dir 기준으로 해석한다.
 - **cli** — `tasty markdown …`(reload 등).
 - **settings_page** — `markdown` 페이지.
 
