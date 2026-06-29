@@ -19,6 +19,8 @@ use std::sync::{Arc, Mutex, mpsc};
 use anyhow::Result;
 use serde_json::Value;
 
+#[cfg(unix)]
+use tasty_plugin_protocol::HandleChannelMessage;
 use tasty_plugin_protocol::{
     EventDispatchParams, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE,
     METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE, METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED,
@@ -102,7 +104,8 @@ pub fn run<P: Plugin>(plugin: P) -> Result<()> {
 
     let pending: PendingCalls = Arc::new(Mutex::new(HashMap::new()));
     let shared_buffer_fd_pending: SharedBufferFdPending = Arc::new(Mutex::new(HashMap::new()));
-    let host = HostHandle::new(writer.clone(), pending.clone());
+    #[cfg_attr(not(unix), allow(unused_mut))]
+    let mut host = HostHandle::new(writer.clone(), pending.clone());
 
     // 보조 채널이 살아 있으면 reader thread 띄우고 HostHandle에 writer 연결.
     let _handle_reader_thread: Option<std::thread::JoinHandle<()>> = match handle_client {

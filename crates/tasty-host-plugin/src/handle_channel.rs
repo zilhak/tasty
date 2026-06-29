@@ -7,11 +7,17 @@
 //! (SCM_RIGHTS / DuplicateHandle)과 [`HandleStreamReader`](dirty 메시지 수신)가 추가됐다.
 
 use std::collections::HashMap;
+#[cfg(unix)]
+use std::collections::VecDeque;
 use std::io::{self, Write};
+#[cfg(unix)]
+use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use tasty_plugin_protocol::HandleChannelMessage;
+#[cfg(unix)]
+use tasty_plugin_protocol::{AuthAck, AuthAckEnvelope, AuthMessage};
 
 const AUTH_READ_TIMEOUT: Duration = Duration::from_secs(5);
 

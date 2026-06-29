@@ -14,6 +14,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 use tasty_plugin_protocol::PluginEvent;
+#[cfg(unix)]
+use tasty_plugin_protocol::{METHOD_HOST_SHARED_BUFFER_CREATE, SharedBufferCreateResult};
 
 use crate::error::PluginError;
 use crate::handle_channel::HandleClient;
