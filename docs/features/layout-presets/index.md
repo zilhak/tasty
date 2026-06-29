@@ -20,6 +20,8 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 저장: 사이드바 워크스페이스 카드 우클릭 · 탭 타이틀/탭바 빈 공간 우클릭 · 도구 메뉴 "프리셋". 위치 `~/.tasty/presets/{kind}/<name>.toml`(파일명 = 정본, 같은 kind 내 중복 불가 — 충돌 시 `-N` suffix).
 
+캡처 시 **deferred(미복원) 터미널 탭** — PTY 가 아직 spawn 되지 않아 트리에서 `EmptySurface { deferred_spawn: Some(..) }` placeholder 로 있는 비활성 탭 — 도 `kind="terminal"` + `cwd`(`DeferredSpawn.working_dir`)로 캡처된다. (`EmptySurface::kind()` 는 항상 `"empty"` 라, 캡처 경로가 `is_deferred()` 가드로 가로채 layout 영속화(`SavedSurface::capture_surface`)와 동형으로 처리한다.) 적용 시 빈 패널이 아니라 해당 cwd 의 터미널로 복원된다. PTY 가 한 번도 안 뜬 placeholder 는 세션 데이터(restore_command·scrollback)가 없으므로 cwd 만 옮긴다. convert 버튼만 보이는 진짜 빈 패널(비-deferred `EmptySurface`)은 그대로 `kind="empty"` 로 캡처된다.
+
 **PresetView**(EditorView 계열, modeless, 종류별 1 인스턴스 — [hierarchy](../../concepts/hierarchy.md))는 L1 scope 탭(Workspace/Tab/Pane) 아래 2-depth list→detail 본문이다:
 
 - **좌측 리스트**(196px): 현재 scope 의 저장된 preset 목록. row = 이름 + mono subtitle(workspace 는 저장된 subtitle, 없으면 pane/tab 개수 / tab·pane 은 surface·tab 개수). 선택 row 는 `surface-active` 채움 + 2px accent 좌측 bar. 헤더에 `N presets` + New preset(`+`) 버튼(현재 레이아웃 capture 가 아니라 terminal 1개짜리 최소 preset 생성 — 본문 capture 경로는 컨텍스트 메뉴 저장이 담당). 빈 scope → "저장된 프리셋이 없습니다.".

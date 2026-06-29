@@ -23,7 +23,9 @@ use serde_json::Value;
 
 use crate::core::CoreState;
 use crate::engine::surface_registry::SurfaceKindRegistry;
-use crate::model::{Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace};
+use crate::model::{
+    EmptySurface, Pane, PaneNode, SplitDirection, Surface, SurfaceLayout, Tab, Workspace,
+};
 use tasty_presets::{
     PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
     PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
@@ -158,11 +160,15 @@ fn capture_surface_layout(
 ///
 /// 분기 흐름 (`SavedSurface::capture_surface` 모범 답안과 동일 패턴):
 ///
-/// 1. terminal / attached → `kind = "terminal"` + `cwd` 추출 + 빈 params.
+/// 1. deferred `EmptySurface` (PTY 미복원 터미널 placeholder) → `kind =
+///    "terminal"` + `DeferredSpawn.working_dir` 를 cwd 로. `kind()` 는 항상
+///    `"empty"` 라 registry 분기에 먹히므로, 그 앞에서 downcast +
+///    `is_deferred()` 가드로 가로챈다. (비-deferred empty 는 통과.)
+/// 2. terminal / attached → `kind = "terminal"` + `cwd` 추출 + 빈 params.
 ///    (attached 는 preset 레이아웃 관점에서 terminal 슬롯이다.)
-/// 2. 그 외 registry 등록 kind → snapshot 호출. snapshot 이 `None` 이면 빈
+/// 3. 그 외 registry 등록 kind → snapshot 호출. snapshot 이 `None` 이면 빈
 ///    객체로 fallback (kind 는 그대로 보존).
-/// 3. registry 에 없는 kind → `kind = "empty"` 로 치환 (leaf 자체가 사라지면
+/// 4. registry 에 없는 kind → `kind = "empty"` 로 치환 (leaf 자체가 사라지면
 ///    split 구조가 어색해지므로).
 fn capture_surface(
     engine: &CoreState,
@@ -170,6 +176,25 @@ fn capture_surface(
     registry: &SurfaceKindRegistry,
 ) -> PresetSurface {
     let kind_str = surface.kind();
+
+    // deferred EmptySurface 는 `kind()` 가 "empty" 라 아래 registry 분기에 먹혀
+    // cwd 를 잃는다. layout 영속화(`SavedSurface::capture_surface`)와 동일하게
+    // generic 분기보다 앞에서 downcast + is_deferred 가드로 terminal+cwd 캡처.
+    if let Some(es) = surface.as_any().downcast_ref::<EmptySurface>()
+        && es.is_deferred()
+    {
+        let cwd = es
+            .deferred_spawn
+            .as_ref()
+            .and_then(|s| s.working_dir.as_ref())
+            .map(|p| p.to_string_lossy().to_string());
+        return PresetSurface {
+            kind: "terminal".into(),
+            cwd,
+            startup_command: None,
+            params: Value::Object(Default::default()),
+        };
+    }
 
     if kind_str == "terminal" || kind_str == "attached" {
         let cwd = surface
@@ -200,5 +225,100 @@ fn capture_surface(
         cwd: None,
         startup_command: None,
         params: Value::Object(Default::default()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::surface_registry::register_builtin_kinds;
+    use crate::model::DeferredSpawn;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    fn waker() -> tasty_terminal::Waker {
+        Arc::new(|| {}) as tasty_terminal::Waker
+    }
+
+    fn engine() -> CoreState {
+        CoreState::new(80, 24, waker()).expect("CoreState::new")
+    }
+
+    fn registry() -> SurfaceKindRegistry {
+        let r = SurfaceKindRegistry::new();
+        register_builtin_kinds(&r);
+        r
+    }
+
+    fn deferred_spawn(working_dir: Option<&str>) -> DeferredSpawn {
+        DeferredSpawn {
+            shell: None,
+            shell_args: Vec::new(),
+            cols: 80,
+            rows: 24,
+            waker: waker(),
+            working_dir: working_dir.map(PathBuf::from),
+            restore_command: None,
+            scrollback_persist_id: None,
+        }
+    }
+
+    /// Pane 안 단일 leaf 의 PresetSurface 를 꺼낸다.
+    fn leaf_surface(pane: &PanePreset) -> &PresetSurface {
+        let tab = pane.pane.tabs.first().expect("at least one tab");
+        match &tab.layout {
+            PresetSurfaceLayout::Leaf { surface } => surface,
+            PresetSurfaceLayout::Split { .. } => panic!("expected leaf layout"),
+        }
+    }
+
+    /// deferred EmptySurface (working_dir=Some) → 캡처 시 terminal + cwd 로 박제.
+    #[test]
+    fn deferred_empty_surface_captured_as_terminal_with_cwd() {
+        let engine = engine();
+        let registry = registry();
+        let sid = 7;
+        let surface: Box<dyn Surface> =
+            Box::new(EmptySurface::new_deferred(sid, deferred_spawn(Some("/tmp/x"))));
+        let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
+
+        let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");
+        let leaf = leaf_surface(&preset);
+
+        assert_eq!(leaf.kind, "terminal");
+        assert_eq!(leaf.cwd.as_deref(), Some("/tmp/x"));
+    }
+
+    /// working_dir=None deferred → terminal 이되 cwd=None (빈 surface 아님).
+    #[test]
+    fn deferred_without_working_dir_captured_as_terminal_cwd_none() {
+        let engine = engine();
+        let registry = registry();
+        let sid = 8;
+        let surface: Box<dyn Surface> =
+            Box::new(EmptySurface::new_deferred(sid, deferred_spawn(None)));
+        let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
+
+        let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");
+        let leaf = leaf_surface(&preset);
+
+        assert_eq!(leaf.kind, "terminal");
+        assert_eq!(leaf.cwd, None);
+    }
+
+    /// 회귀 방지: 비-deferred 진짜 empty 는 여전히 kind="empty", cwd=None.
+    #[test]
+    fn non_deferred_empty_surface_stays_empty() {
+        let engine = engine();
+        let registry = registry();
+        let sid = 9;
+        let surface: Box<dyn Surface> = Box::new(EmptySurface::new(sid));
+        let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
+
+        let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");
+        let leaf = leaf_surface(&preset);
+
+        assert_eq!(leaf.kind, "empty");
+        assert_eq!(leaf.cwd, None);
     }
 }
