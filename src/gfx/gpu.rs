@@ -328,7 +328,13 @@ impl GpuState {
         let egui_frame_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
         // 3. Cursor decision: egui first, then winit area (dividers + surfaces)
-        if !self.egui_ctx.is_pointer_over_area()
+        // Resize-border cursor takes priority: when the pointer is on a window
+        // resize border, `pending_resize_cursor` is Some and the egui frame has
+        // already set a ResizeXxx icon. Skip the surface/link overrides so the
+        // border cursor is not overwritten by the terminal surface I-beam.
+        // (macOS never sets this field, so the guard is a no-op there.)
+        if state.pending_resize_cursor.is_none()
+            && !self.egui_ctx.is_pointer_over_area()
             && !state.popup_hovered
             && !state.banner_hovered
             && let Some(pos) = self.egui_ctx.input(|i| i.pointer.hover_pos())
@@ -339,8 +345,8 @@ impl GpuState {
                 full_output.platform_output.cursor_icon = icon;
             }
         }
-        // Link hover overrides cursor to pointing-hand.
-        if link_hover.is_some() {
+        // Link hover overrides cursor to pointing-hand (unless on a resize border).
+        if link_hover.is_some() && state.pending_resize_cursor.is_none() {
             full_output.platform_output.cursor_icon = egui::CursorIcon::PointingHand;
         }
 

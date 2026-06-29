@@ -41,6 +41,7 @@
 - `resize_direction_at` 는 좌표가 가장자리 margin(`RESIZE_EDGE_MARGIN`) 안이면 8방향 `ResizeDirection` 을 돌려주는 순수 함수(OS 무관 컴파일·테스트).
 - `handle_mouse_input` 이 좌클릭 press 에서 hit-test → `Some(dir)` 이면 `drag_resize_window(dir)` 후 early-return.
 - `handle_cursor_moved` 가 hover 방향을 `AppState.pending_resize_cursor` 에 저장하고, egui 프레임(`run_egui_frame`)이 `set_cursor_icon` 으로 ↔ 커서를 적용한다(egui 가 매 프레임 winit 커서를 덮으므로 프레임 내 적용 필수).
+- **커서 우선순위**: 보더 호버 중(`pending_resize_cursor` 가 `Some`)에는 리사이즈 커서(↔ 등)가 surface 커서(터미널 I-beam)·링크 hover(PointingHand)보다 **우선**한다. terminal surface 가 윈도우 우측 끝까지 full-bleed 로 닿아 8px 보더 픽셀을 자기 영역으로 포함하므로(`compute_terminal_rect` 우측 inset 없음), 프레임 직후 커서 덮어쓰기(`src/gfx/gpu.rs`)를 `pending_resize_cursor.is_none()` 으로 게이트해 보더 위에서만 리사이즈 커서를 보존한다. 보더 밖에선 `None` 이라 surface/링크 커서 동작 무변경, macOS 는 이 필드가 항상 `None` 이라 무영향.
 - **macOS 는 데코 있는 창**이라 OS 가 네이티브 보더에서 리사이즈를 처리한다 → 위 hit-test/커서 저장 블록은 `#[cfg(not(target_os = "macos"))]` 가드로 macOS 에서 컴파일·실행되지 않는다.
 
 ## 인터페이스
@@ -69,7 +70,7 @@
 
 - CSD 속성: `src/platform/window_chrome.rs` (`apply_csd_attributes`, `resize_direction_at`, `RESIZE_EDGE_MARGIN`).
 - 타이틀바: `src/adapters/ui/titlebar/mod.rs`(wrapper `draw_titlebar`/`top_inset`/`os_controls`/`resize_cursor`), `view.rs`(순수 view + `TitlebarAction`/`WindowButton`/`ControlSide`), `caption.rs`(Windows 캡션).
-- 가장자리 리사이즈: `src/view/main/mouse.rs`(`handle_mouse_input`/`handle_cursor_moved` hit-test), `AppState.pending_resize_cursor`(`src/state.rs`), 커서 적용 `src/gfx/gpu/egui_bridge.rs`.
+- 가장자리 리사이즈: `src/view/main/mouse.rs`(`handle_mouse_input`/`handle_cursor_moved` hit-test), `AppState.pending_resize_cursor`(`src/state.rs`), 커서 적용 `src/gfx/gpu/egui_bridge.rs`, 커서 우선순위 게이트 `src/gfx/gpu.rs`(`pending_resize_cursor.is_none()`).
 
 ## 화면
 
