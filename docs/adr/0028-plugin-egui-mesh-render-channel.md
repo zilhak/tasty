@@ -1,6 +1,7 @@
 # ADR-0028: Plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성하는 out-of-process 렌더 채널 도입
 
-- **Status**: Proposed
+- **Status**: Accepted
+- **Accepted**: 2026-06-30
 - **Date**: 2026-06-29
 - **Tags**: plugin, render-channel, egui, epaint, mesh, ipc, shared-memory, surface-kind, popup, banner, host-rendered-removal, bundled-only, adr-0008, adr-0009
 
