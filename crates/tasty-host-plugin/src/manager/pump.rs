@@ -38,65 +38,81 @@ impl PluginManager {
         // egui-mesh paint_frame 알림 (A1-S3): (plugin_id, surface_id, buffer_id, generation).
         let mut new_paint_frames: Vec<(String, u32, tasty_plugin_protocol::SharedBufferId, u64)> =
             Vec::new();
+        // 프로세스가 죽으면(reader 스레드 종료 → event_tx drop) event_rx 가 Disconnected
+        // 가 된다. 60초 healthcheck 보다 먼저 감지해, 죽은 plugin 의 egui-mesh frame 을
+        // 즉시 비워 stale mesh 가 계속 합성되는 것을 막는다 (research-a1 §9-7 crash 격리).
+        let mut disconnected: Vec<String> = Vec::new();
         for (id, proc) in &self.processes {
-            while let Ok(ev) = proc.event_rx.try_recv() {
-                match ev {
-                    PluginEvent::Hello { plugin_id, version } => {
-                        hello_log.push((plugin_id.clone(), version));
-                        if !self.registered_plugins.contains(&plugin_id) {
-                            to_register.push(plugin_id);
+            loop {
+                match proc.event_rx.try_recv() {
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        disconnected.push(id.clone());
+                        break;
+                    }
+                    Ok(ev) => match ev {
+                        PluginEvent::Hello { plugin_id, version } => {
+                            hello_log.push((plugin_id.clone(), version));
+                            if !self.registered_plugins.contains(&plugin_id) {
+                                to_register.push(plugin_id);
+                            }
                         }
-                    }
-                    PluginEvent::Log { level, message } => match level.as_str() {
-                        "error" => tracing::error!("[plugin {}] {}", id, message),
-                        "warn" => tracing::warn!("[plugin {}] {}", id, message),
-                        _ => tracing::info!("[plugin {}] {}", id, message),
-                    },
-                    PluginEvent::SurfaceInvalidated { .. } => {
-                        // 단계 06에서 처리
-                    }
-                    PluginEvent::PaintFrame {
-                        surface_id,
-                        buffer_id,
-                        generation,
-                    } => {
-                        // A1-S3 수신 라우팅: 최근 mesh frame 메타를 저장. 렌더 prepare(A1-S5)가
-                        // buffer lookup + 디코드 출발점으로 읽는다. redraw 는 수신 스레드가
-                        // 매 라인마다 waker 를 깨우므로 별도 트리거 불필요.
-                        new_paint_frames.push((id.clone(), surface_id, buffer_id, generation));
-                    }
-                    PluginEvent::NotifyHost { .. } => {
-                        // 단계 06에서 처리
-                    }
-                    PluginEvent::IpcCall {
-                        call_id,
-                        method,
-                        params,
-                    } => {
-                        let perms = self
-                            .plugin_permissions
-                            .get(id)
-                            .cloned()
-                            .unwrap_or_else(|| Arc::new(HashSet::new()));
-                        new_calls.push(PendingPluginCall {
-                            plugin_id: id.clone(),
+                        PluginEvent::Log { level, message } => match level.as_str() {
+                            "error" => tracing::error!("[plugin {}] {}", id, message),
+                            "warn" => tracing::warn!("[plugin {}] {}", id, message),
+                            _ => tracing::info!("[plugin {}] {}", id, message),
+                        },
+                        PluginEvent::SurfaceInvalidated { .. } => {
+                            // 단계 06에서 처리
+                        }
+                        PluginEvent::PaintFrame {
+                            surface_id,
+                            buffer_id,
+                            generation,
+                        } => {
+                            // A1-S3 수신 라우팅: 최근 mesh frame 메타를 저장. 렌더 prepare(A1-S5)가
+                            // buffer lookup + 디코드 출발점으로 읽는다. redraw 는 수신 스레드가
+                            // 매 라인마다 waker 를 깨우므로 별도 트리거 불필요.
+                            new_paint_frames.push((id.clone(), surface_id, buffer_id, generation));
+                        }
+                        PluginEvent::NotifyHost { .. } => {
+                            // 단계 06에서 처리
+                        }
+                        PluginEvent::IpcCall {
                             call_id,
                             method,
                             params,
-                            permissions: perms,
-                        });
-                    }
-                    PluginEvent::EventPublish { envelope } => {
-                        new_event_publishes.push((id.clone(), envelope));
-                    }
-                    PluginEvent::EventSubscribe { sub_id, pattern } => {
-                        new_event_subscribes.push((id.clone(), sub_id, pattern));
-                    }
-                    PluginEvent::EventUnsubscribe { sub_id } => {
-                        new_event_unsubscribes.push((id.clone(), sub_id));
-                    }
+                        } => {
+                            let perms = self
+                                .plugin_permissions
+                                .get(id)
+                                .cloned()
+                                .unwrap_or_else(|| Arc::new(HashSet::new()));
+                            new_calls.push(PendingPluginCall {
+                                plugin_id: id.clone(),
+                                call_id,
+                                method,
+                                params,
+                                permissions: perms,
+                            });
+                        }
+                        PluginEvent::EventPublish { envelope } => {
+                            new_event_publishes.push((id.clone(), envelope));
+                        }
+                        PluginEvent::EventSubscribe { sub_id, pattern } => {
+                            new_event_subscribes.push((id.clone(), sub_id, pattern));
+                        }
+                        PluginEvent::EventUnsubscribe { sub_id } => {
+                            new_event_unsubscribes.push((id.clone(), sub_id));
+                        }
+                    },
                 }
             }
+        }
+        // 죽은 plugin 의 egui-mesh frame 을 즉시 비운다 — 60초 healthcheck 를 기다리지
+        // 않고 surface 를 blank 로 전환해 stale mesh 합성을 막는다 (research-a1 §9-7).
+        for dead in &disconnected {
+            self.egui_mesh_frames.retain(|_, f| &f.plugin_id != dead);
         }
         if !new_calls.is_empty() {
             self.pending_plugin_calls.extend(new_calls);
