@@ -85,8 +85,20 @@ pub fn switch_target_for(
 }
 
 /// 현재 눌린 modifier 가 `workspace_switch_modifier` 와 단독 일치하는지 (사이드바 오버레이).
+///
+/// egui `Modifiers` → [`switch_target_for`] 가 받는 **정규화된** `alt` 로 변환한다.
+/// `"alt"` 토큰의 물리 키는 macOS 에서 Command(⌘), 그 외에서 Alt 다(위치 기반 추상화).
+/// egui 에서 Command 는 `mac_cmd`, winit `super_key()` 와 대응한다 — 실제 전환 경로
+/// (`dispatch.rs` numeric)·탭 스냅샷 경로(`view/main.rs` ModifiersChanged)가 둘 다
+/// macOS 에서 `super_key()` 로 정규화해 같은 `switch_target_for` 에 넘기므로, 이 래퍼도
+/// 동일하게 `mac_cmd` 를 넘겨야 "표시 판정"과 "실제 전환"이 일치한다. macOS Option
+/// (egui `mods.alt`)은 `"alt"` 토큰이 아니므로 무시한다.
 pub fn workspace_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
-    switch_target_for(kb, mods.ctrl, mods.shift, mods.alt) == Some(SwitchTarget::Workspace)
+    #[cfg(target_os = "macos")]
+    let alt = mods.mac_cmd;
+    #[cfg(not(target_os = "macos"))]
+    let alt = mods.alt;
+    switch_target_for(kb, mods.ctrl, mods.shift, alt) == Some(SwitchTarget::Workspace)
 }
 
 /// 탭 index → 표시할 숫자 키캡 문자. 단축키가 없는 11번째 탭(index ≥ 10)부터 None.
@@ -223,11 +235,56 @@ mod tests {
         }
     }
 
+    /// macOS 전용: `"alt"` 토큰의 물리 키인 Command(⌘=`mac_cmd`)와 Option(egui `alt`)을
+    /// 구분해 세팅한다. `mods()` 는 `mac_cmd` 를 못 세팅하므로 별도 헬퍼.
+    #[cfg(target_os = "macos")]
+    fn mods_mac(ctrl: bool, mac_cmd: bool, option: bool, shift: bool) -> egui::Modifiers {
+        egui::Modifiers {
+            ctrl,
+            alt: option,
+            shift,
+            mac_cmd,
+            ..Default::default()
+        }
+    }
+
+    // egui `mods.alt` 는 macOS 에서 Option 이라 `"alt"` 토큰(=Cmd)이 아니다. 이 테스트는
+    // non-macOS(여기서 `mods.alt` = 실제 Alt = workspace modifier) 경로만 검증한다.
+    // macOS Cmd 경로는 `workspace_held_matches_mac_cmd_not_option` 가 담당한다.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn workspace_held_matches_default_alt_alone() {
         let kb = kb_with("ctrl", "alt");
         assert!(workspace_switch_held(mods(false, true, false), &kb));
         assert!(!workspace_switch_held(mods(true, true, false), &kb));
+    }
+
+    // macOS: `"alt"`(default ws) 토큰은 Command(⌘)에 매핑된다. 실제 전환(⌘+1..9)·탭
+    // 스냅샷 경로가 `super_key()` 로 정규화하는 것과 대칭 — 표시 판정도 ⌘ 기준이어야 한다.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn workspace_held_matches_mac_cmd_not_option() {
+        let kb = kb_with("ctrl", "alt"); // ws=alt(default) → macOS Cmd
+        // ⌘(mac_cmd) 단독 → 오버레이 표시 (실제 ⌘+1..9 전환과 일치).
+        assert!(workspace_switch_held(
+            mods_mac(false, true, false, false),
+            &kb
+        ));
+        // ⌥(Option=egui alt) 단독 → 표시 안 됨 (이게 수정 전의 잘못된 동작이었다).
+        assert!(!workspace_switch_held(
+            mods_mac(false, false, true, false),
+            &kb
+        ));
+        // ⌘+Ctrl 혼합 → 표시 안 됨 (단축키 단독-modifier 조건과 동일).
+        assert!(!workspace_switch_held(
+            mods_mac(true, true, false, false),
+            &kb
+        ));
+        // ⌘+⌥ → 표시됨 — 실제 전환도 super_key 기준이라 발동한다(표시=동작 일치).
+        assert!(workspace_switch_held(
+            mods_mac(false, true, true, false),
+            &kb
+        ));
     }
 
     #[test]
