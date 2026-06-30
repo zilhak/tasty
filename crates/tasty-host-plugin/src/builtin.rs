@@ -72,6 +72,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         crate_dir: "tasty-plugin-git-viewer",
         bin_name: "tasty-plugin-git-viewer.exe",
     },
+    BuiltinSpec {
+        id: "com.tasty.mesh-demo",
+        crate_dir: "tasty-plugin-mesh-demo",
+        bin_name: "tasty-plugin-mesh-demo.exe",
+    },
 ];
 
 #[cfg(not(windows))]
@@ -115,6 +120,11 @@ const BUILTINS: &[BuiltinSpec] = &[
         id: "com.tasty.git-viewer",
         crate_dir: "tasty-plugin-git-viewer",
         bin_name: "tasty-plugin-git-viewer",
+    },
+    BuiltinSpec {
+        id: "com.tasty.mesh-demo",
+        crate_dir: "tasty-plugin-mesh-demo",
+        bin_name: "tasty-plugin-mesh-demo",
     },
 ];
 

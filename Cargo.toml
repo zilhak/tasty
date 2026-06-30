@@ -100,6 +100,10 @@ assets = [
     ["crates/tasty-plugin-markdown/tasty-plugin.toml","usr/lib/tasty/plugins/com.tasty.markdown/",          "644"],
     ["crates/tasty-plugin-markdown/tasty-plugin.toml.sig","usr/lib/tasty/plugins/com.tasty.markdown/",      "644"],
     ["crates/tasty-plugin-markdown/lang/*",           "usr/lib/tasty/plugins/com.tasty.markdown/lang/",     "644"],
+    ["target/release/tasty-plugin-mesh-demo",         "usr/lib/tasty/plugins/com.tasty.mesh-demo/",         "755"],
+    ["crates/tasty-plugin-mesh-demo/tasty-plugin.toml","usr/lib/tasty/plugins/com.tasty.mesh-demo/",        "644"],
+    ["crates/tasty-plugin-mesh-demo/tasty-plugin.toml.sig","usr/lib/tasty/plugins/com.tasty.mesh-demo/",    "644"],
+    ["crates/tasty-plugin-mesh-demo/lang/*",          "usr/lib/tasty/plugins/com.tasty.mesh-demo/lang/",    "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -149,6 +153,10 @@ assets = [
     { source = "crates/tasty-plugin-markdown/tasty-plugin.toml", dest = "/usr/lib/tasty/plugins/com.tasty.markdown/tasty-plugin.toml",                       mode = "644" },
     { source = "crates/tasty-plugin-markdown/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.markdown/tasty-plugin.toml.sig",               mode = "644" },
     { source = "crates/tasty-plugin-markdown/lang/*",            dest = "/usr/lib/tasty/plugins/com.tasty.markdown/lang/",                                   mode = "644" },
+    { source = "target/release/tasty-plugin-mesh-demo",          dest = "/usr/lib/tasty/plugins/com.tasty.mesh-demo/tasty-plugin-mesh-demo",                 mode = "755" },
+    { source = "crates/tasty-plugin-mesh-demo/tasty-plugin.toml", dest = "/usr/lib/tasty/plugins/com.tasty.mesh-demo/tasty-plugin.toml",                     mode = "644" },
+    { source = "crates/tasty-plugin-mesh-demo/tasty-plugin.toml.sig", dest = "/usr/lib/tasty/plugins/com.tasty.mesh-demo/tasty-plugin.toml.sig",             mode = "644" },
+    { source = "crates/tasty-plugin-mesh-demo/lang/*",           dest = "/usr/lib/tasty/plugins/com.tasty.mesh-demo/lang/",                                  mode = "644" },
 ]
 
 [package.metadata.generate-rpm.requires]
@@ -435,6 +443,8 @@ opt-level = 3
 [profile.dev.package.tasty-plugin-manifest]
 opt-level = 3
 [profile.dev.package.tasty-plugin-markdown]
+opt-level = 3
+[profile.dev.package.tasty-plugin-mesh-demo]
 opt-level = 3
 [profile.dev.package.tasty-plugin-protocol]
 opt-level = 3

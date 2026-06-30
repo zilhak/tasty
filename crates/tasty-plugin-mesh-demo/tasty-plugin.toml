@@ -1,0 +1,45 @@
+manifest_version = 1
+id = "com.tasty.mesh-demo"
+name = "egui-mesh Demo"
+version = "0.1.0"
+description = "egui-mesh channel proof-of-concept surface (A1)"
+api_version = "1"
+permissions = [
+    "surface.read",
+    "surface.write",
+    "file_handler.define",
+    "file_handler.handle:meshdemo",
+]
+lang_dir = "lang"
+
+[entry]
+type = "process"
+command = "tasty-plugin-mesh-demo"
+
+# egui-mesh: plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 전용
+# egui_wgpu::Renderer 로 합성한다 (ADR-0028). bundled 전용 화이트리스트 + api_version
+# 게이트를 통과해야 등록된다 (src/engine/surface_registry/egui_mesh.rs).
+[[surface_kinds]]
+kind = "mesh_demo"
+display_name_i18n_key = "surface.kind.mesh_demo"
+icon = "▦"
+rendering = "egui-mesh"
+
+# `.meshdemo` 파일을 열면 mesh_demo surface 로 띄운다 (markdown/image 와 동일 패턴).
+# convert popup 외에 파일 연결로도 surface 를 만들 수 있게 해 헤드리스 검증을 돕는다.
+[[contributes.detector]]
+id = "meshdemo"
+display_name_i18n_key = "file_handler.format.mesh_demo"
+[[contributes.detector.rule]]
+kind = "extension"
+values = ["meshdemo"]
+
+[[contributes.handler]]
+id = "viewer"
+detector = "meshdemo"
+priority = 50
+display_name_i18n_key = "file_handler.host.mesh_demo"
+[contributes.handler.action]
+kind = "open_surface"
+surface_kind = "mesh_demo"
+param_key = "file"

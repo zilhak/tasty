@@ -27,7 +27,10 @@ fn leak_str(s: &str) -> &'static str {
 /// `host_rendered::is_host_rendered_allowed` 미러. ADR-0028 scope 에 따라 markdown
 /// 을 첫 소비자로 두고, 이후 단계에서 image 하이브리드 등이 추가된다.
 fn is_egui_mesh_allowed(kind: &str, plugin_id: &str) -> bool {
-    matches!((kind, plugin_id), ("markdown", "com.tasty.markdown"))
+    matches!(
+        (kind, plugin_id),
+        ("markdown", "com.tasty.markdown") | ("mesh_demo", "com.tasty.mesh-demo")
+    )
 }
 
 /// plugin manager 가 hello 직후 매니페스트에 `rendering = "egui-mesh"` 선언이 있을 때 호출.
@@ -140,6 +143,15 @@ mod tests {
         assert!(is_egui_mesh_allowed("markdown", "com.tasty.markdown"));
         assert!(!is_egui_mesh_allowed("markdown", "com.example.evil"));
         assert!(!is_egui_mesh_allowed("image", "com.tasty.markdown"));
+    }
+
+    #[test]
+    fn mesh_demo_allowed_for_demo_plugin() {
+        assert!(is_egui_mesh_allowed("mesh_demo", "com.tasty.mesh-demo"));
+        // 다른 plugin 이 demo kind 를 가로채지 못한다.
+        assert!(!is_egui_mesh_allowed("mesh_demo", "com.example.evil"));
+        // demo plugin 이 markdown kind 를 가로채지 못한다 (조합 매칭).
+        assert!(!is_egui_mesh_allowed("markdown", "com.tasty.mesh-demo"));
     }
 
     #[test]
