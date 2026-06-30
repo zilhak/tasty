@@ -3,7 +3,8 @@
 아키텍처/정책 결정의 *근거·대안·재검토 조건* 을 기록한다. design/ 문서가 "지금 어떻게 동작하나" 를 기술한다면, ADR 은 "왜 그렇게 결정했나" 를 기술한다.
 
 - 신규 작성: [`template.md`](template.md) 양식을 따른다. 파일명 `XXXX-<slug>.md`, 번호는 0001 부터 4 자리.
-- **Accepted 후에는 Status 만 갱신한다.** 본문 변경이 필요하면 새 ADR 로 Supersede 한다.
+- **Accepted 후에는 Status 만 갱신한다.** 본문 변경이 필요하면 새 ADR 로 Supersede 한다. (예외: References 섹션의 깨진 링크 위생 수정 — [`template.md`](template.md) 의 "작성 규칙" 참조.)
+- **외부(비-git) 위치 문서 참조 금지** + 필요한 근거는 `docs/` 로 재구성해 참조 — 상세·예외는 [`template.md`](template.md) 의 "작성 규칙" 참조.
 - 커밋 형식: [`dev-guide/commit-convention.md`](../dev-guide/commit-convention.md) 의 "ADR 커밋" 항목.
 
 ## 목록
