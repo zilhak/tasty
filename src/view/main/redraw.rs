@@ -65,6 +65,12 @@ impl MainView {
         if self.base.dirty {
             self.base.dirty = false;
             self.update_ime_cursor_area();
+            // egui-mesh surface 에 렌더 컨텍스트(크기/ppp/입력) forward (A1-S7) — 합성
+            // (gpu.render) 직전. plugin 이 PaintFrame 으로 회신하면 합성기가 그린다.
+            // link_hover 등 self 불변 차용을 잡기 *전*에 호출한다(&mut self).
+            if let Some(mgr) = plugin_manager {
+                self.forward_egui_mesh_context(mgr);
+            }
             let link_hover = self
                 .hovered_link
                 .as_ref()

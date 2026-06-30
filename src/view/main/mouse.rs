@@ -140,6 +140,14 @@ impl MainView {
         let x = position.x as f32;
         let y = position.y as f32;
 
+        // egui-mesh surface 위 포인터 이동 forward (A1-S7): hover/interact_pos 추적용.
+        // 합성 채널이라 host 의 selection/링크 hover 와 무관 — 누적 후 소비한다.
+        if let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y) {
+            self.egui_mesh_push_pointer_moved(sid, rect, x, y);
+            self.mark_dirty();
+            return;
+        }
+
         if self.update_hovered_link() {
             self.mark_dirty();
         }
@@ -299,6 +307,23 @@ impl MainView {
             }
             return;
         }
+
+        // egui-mesh surface 입력 forward (A1-S7): 포인터가 egui-mesh surface 위면 버튼
+        // 이벤트를 surface-local 좌표로 누적해 다음 set_context 로 보내고 소비한다.
+        // (host 가 받은 실제 사용자 입력만 forward — identity 경계.)
+        if let Some(pos) = self.cursor_position {
+            let (x, y) = (pos.x as f32, pos.y as f32);
+            if let Some((sid, _plugin_id, rect)) = self.egui_mesh_target_at(x, y) {
+                let pressed = super::egui_mesh::is_pressed(button_state);
+                if !pressed {
+                    self.left_mouse_down = false;
+                }
+                self.egui_mesh_push_pointer_button(sid, rect, x, y, button, pressed);
+                self.mark_dirty();
+                return;
+            }
+        }
+
         if button == MouseButton::Right {
             let terminal_rect = self.compute_terminal_rect();
             if let Some(pos) = self.cursor_position {
@@ -735,6 +760,24 @@ impl MainView {
             && !self.state.popup_hovered
             && !self.state.banner_hovered
         {
+            // egui-mesh surface 휠 forward (A1-S7): 포인터가 egui-mesh surface 위면
+            // 스크롤 델타를 논리 포인트로 변환해 누적하고 소비한다.
+            if let Some(pos) = self.cursor_position {
+                let (x, y) = (pos.x as f32, pos.y as f32);
+                if let Some((sid, _plugin_id, _rect)) = self.egui_mesh_target_at(x, y) {
+                    let (dx, dy) = match delta {
+                        MouseScrollDelta::LineDelta(lx, ly) => (lx * 50.0, ly * 50.0),
+                        MouseScrollDelta::PixelDelta(p) => {
+                            let ppp = self.base.gpu.scale_factor().max(f32::EPSILON);
+                            (p.x as f32 / ppp, p.y as f32 / ppp)
+                        }
+                    };
+                    self.egui_mesh_push_scroll(sid, dx, dy);
+                    self.mark_dirty();
+                    return;
+                }
+            }
+
             // Find the surface under the cursor, falling back to the focused surface
             let terminal_rect = self.compute_terminal_rect();
             let target_id = self

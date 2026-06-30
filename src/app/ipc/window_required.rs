@@ -19,7 +19,8 @@ impl App {
         {
             is_window_required = is_window_required
                 || cmd.request.method == "debug.info"
-                || cmd.request.method == "ui.screenshot";
+                || cmd.request.method == "ui.screenshot"
+                || cmd.request.method == "debug.inject_window_mouse";
         }
         if !is_window_required {
             return IpcStep::NotHandled;
@@ -78,6 +79,46 @@ impl App {
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({"path": path, "scheduled": true}),
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.inject_window_mouse" {
+            use crate::view::main::debug_input::InjectPointer;
+            let p = &cmd.request.params;
+            let surface_id = p.get("surface_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            // fx, fy ∈ [0,1] surface-local 정규화 좌표 (기본 중앙).
+            let fx = p.get("fx").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+            let fy = p.get("fy").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+            let event_type = p
+                .get("event_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("move");
+            let button = match p.get("button").and_then(|v| v.as_u64()).unwrap_or(0) {
+                1 => winit::event::MouseButton::Middle,
+                2 => winit::event::MouseButton::Right,
+                _ => winit::event::MouseButton::Left,
+            };
+            let action = match event_type {
+                "press" => InjectPointer::Button {
+                    button,
+                    pressed: true,
+                },
+                "release" => InjectPointer::Button {
+                    button,
+                    pressed: false,
+                },
+                "scroll" => InjectPointer::Scroll {
+                    dx: p.get("scroll_dx").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    dy: p.get("scroll_dy").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                },
+                _ => InjectPointer::Move,
+            };
+            let ok = w.debug_inject_mesh_pointer(surface_id, fx, fy, action);
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                serde_json::json!({ "injected": ok }),
             );
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;

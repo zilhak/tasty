@@ -1,5 +1,8 @@
 mod clipboard;
+#[cfg(debug_assertions)]
+pub(crate) mod debug_input;
 mod divider_drag;
+mod egui_mesh;
 mod file_drop;
 mod keyboard;
 mod mouse;
@@ -81,6 +84,8 @@ pub struct MainView {
     /// 가장 최근에 터미널에 paste한 시각. Ctrl+V 직후 사용자가 옆 키 Ctrl+C를 잘못 눌러
     /// 입력을 날려버리는 사고를 막기 위해 cooldown 구간 안의 Ctrl+C는 무시한다.
     pub(crate) last_terminal_paste_at: Option<std::time::Instant>,
+    /// egui-mesh surface 별 host→plugin set_context forward 추적 (A1-S7).
+    pub(crate) egui_mesh: std::collections::HashMap<u32, egui_mesh::MeshForwardState>,
 }
 
 /// Ctrl+V 직후 Ctrl+C를 SIGINT로 흘려보내지 않을 보호 시간.
@@ -127,6 +132,7 @@ impl MainView {
             webview_applied_settings: std::collections::HashMap::new(),
             hovered_link: None,
             last_terminal_paste_at: None,
+            egui_mesh: std::collections::HashMap::new(),
         }
     }
 
