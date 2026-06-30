@@ -35,6 +35,7 @@ use winit::event::{ElementState, MouseButton};
 
 use tasty_plugin_protocol::{
     ModifiersWire, PointerButtonWire, RawInputEventWire, RawInputWire, SurfaceSetContextParams,
+    ThemeWire,
 };
 
 use crate::model::{PhysicalPx, PhysicalRect};
@@ -53,6 +54,19 @@ pub(crate) struct MeshForwardState {
     /// plugin paint 를 아직 못 받은 동안 bootstrap set_context 를 1회만 보내기 위한 플래그.
     /// `egui_mesh_frame` 이 보이면 풀려, crash 후 frame 소실 시 재bootstrap 된다.
     bootstrap_sent: bool,
+    /// 마지막으로 보낸 Theme 스냅샷. 테마 변경 시(크기/입력 무변이어도) 재forward 트리거.
+    last_theme: Option<ThemeWire>,
+}
+
+/// forward 대상 egui-mesh surface 1개의 메타 — set_context 송신 + bootstrap create 용.
+struct MeshTarget {
+    sid: u32,
+    plugin_id: String,
+    rect: PhysicalRect,
+    kind: &'static str,
+    /// 생성 params 의 `file`(예: markdown 경로). bootstrap surface.create 로 plugin 에 전달.
+    file: Option<String>,
+    display_name: String,
 }
 
 impl MainView {
@@ -78,6 +92,18 @@ impl MainView {
             }
         }
         None
+    }
+
+    /// 현재 resolved 전역 Theme 을 wire 스냅샷으로. plugin 이 host 와 동일 Theme 을
+    /// 재구성하도록 색 집합 + is_light + UI zoom 을 담는다(sizing 은 plugin 이 zoom 으로
+    /// 재도출). 매 forward 마다 1회 만들어, 테마 변경을 set_context 재송신 트리거로 쓴다.
+    fn mesh_theme_snapshot(&self) -> ThemeWire {
+        let theme = crate::theme::theme();
+        ThemeWire {
+            colors: theme.to_colors(),
+            is_light: theme.is_light,
+            ui_zoom: self.core_state.settings.appearance.ui_scale_factor(),
+        }
     }
 
     /// 현재 modifier 상태를 wire 형태로.
@@ -156,24 +182,43 @@ impl MainView {
         let focused = self.state.focused_surface_id(&self.core_state);
         // modifier 는 surface 무관 — 루프 전에 1회 계산(차용 충돌 회피).
         let modifiers = self.mesh_modifiers();
+        // 현재 resolved Theme 스냅샷을 1회 만든다(surface 무관). plugin 이 host 와 동일
+        // Theme 으로 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(ADR-0028 parity).
+        let current_theme = self.mesh_theme_snapshot();
 
-        // 대상 수집 (surface_id, plugin_id, 물리 rect).
-        let mut targets: Vec<(u32, String, PhysicalRect)> = Vec::new();
+        // 대상 수집 (surface_id, plugin_id, 물리 rect, kind, file, display_name).
+        // kind/file/display_name 은 bootstrap 시 plugin 에 보낼 surface.create params 용.
+        let mut targets: Vec<MeshTarget> = Vec::new();
         for (_pane_id, _pane_rect, regions) in
             self.state.surface_regions(&self.core_state, terminal_rect)
         {
             for r in regions {
                 if let Some(ms) = r.surface.as_any().downcast_ref::<EguiMeshSurface>() {
-                    targets.push((r.id, ms.plugin_id.clone(), r.rect));
+                    targets.push(MeshTarget {
+                        sid: r.id,
+                        plugin_id: ms.plugin_id.clone(),
+                        rect: r.rect,
+                        kind: ms.kind_static,
+                        file: ms.file.clone(),
+                        display_name: ms.display_name.clone(),
+                    });
                 }
             }
         }
 
         // layout 에서 사라진 surface 의 추적 상태 정리.
-        let live: HashSet<u32> = targets.iter().map(|t| t.0).collect();
+        let live: HashSet<u32> = targets.iter().map(|t| t.sid).collect();
         self.egui_mesh.retain(|sid, _| live.contains(sid));
 
-        for (sid, plugin_id, rect) in targets {
+        for MeshTarget {
+            sid,
+            plugin_id,
+            rect,
+            kind,
+            file,
+            display_name,
+        } in targets
+        {
             let w = rect.width.value().round().max(1.0) as u32;
             let h = rect.height.value().round().max(1.0) as u32;
             let geom = (w, h, ppp.to_bits());
@@ -187,15 +232,30 @@ impl MainView {
             let geom_changed = st.last_geom != Some(geom);
             let has_input = !st.events.is_empty();
             let need_bootstrap = !has_frame && !st.bootstrap_sent;
+            let theme_changed = st.last_theme.as_ref() != Some(&current_theme);
 
-            if !(geom_changed || has_input || need_bootstrap) {
+            if !(geom_changed || has_input || need_bootstrap || theme_changed) {
                 continue;
             }
 
             let events = std::mem::take(&mut st.events);
             st.last_geom = Some(geom);
+            st.last_theme = Some(current_theme.clone());
             if !has_frame {
                 st.bootstrap_sent = true;
+            }
+
+            // 첫 bootstrap(아직 paint 못 받음): set_context 직전에 surface.create 를
+            // 먼저 보낸다 — plugin 이 생성 params(file 등)를 받아 콘텐츠를 적재한 뒤
+            // 같은 채널로 도착하는 set_context 로 렌더하게 한다(create→set_context 순서 보장).
+            if need_bootstrap {
+                mgr.send_egui_mesh_surface_create(
+                    &plugin_id,
+                    sid,
+                    kind,
+                    file.as_deref(),
+                    &display_name,
+                );
             }
 
             let params = SurfaceSetContextParams {
@@ -209,6 +269,7 @@ impl MainView {
                     modifiers,
                     events,
                 },
+                theme: Some(current_theme.clone()),
             };
             mgr.send_surface_set_context(&plugin_id, &params);
         }

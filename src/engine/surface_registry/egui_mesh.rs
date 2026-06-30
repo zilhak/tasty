@@ -83,17 +83,26 @@ pub fn register_egui_mesh_kind(
     registry.register(SurfaceKindDef {
         kind: kind_static,
         display_name_i18n_key: i18n_key_static,
+        // 생성 params 의 `file` 을 stand-in 에 보관한다. plugin 에 surface.create 를
+        // 알리는 것은 host_cmd 채널이 아니라 첫 set_context bootstrap 직전에 직접
+        // 송신한다(`MainView::forward_egui_mesh_context`) — 같은 plugin req 채널 FIFO 라
+        // create 가 set_context 보다 먼저 도착해, set_context-before-create 레이스를 없앤다.
         create: Arc::new(move |sid, _cwd, params| {
             let name = params
                 .get("display_name")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| kind_static.to_string());
+            let file = params
+                .get("file")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             Ok(Box::new(EguiMeshSurface::new(
                 sid,
                 kind_static,
                 plugin_id_for_create.clone(),
                 name,
+                file,
             )) as Box<dyn Surface>)
         }),
         restore: Arc::new(move |sid, data| {
@@ -102,16 +111,24 @@ pub fn register_egui_mesh_kind(
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| kind_static.to_string());
+            let file = data
+                .get("file")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             Ok(Box::new(EguiMeshSurface::new(
                 sid,
                 kind_static,
                 plugin_id_for_restore.clone(),
                 name,
+                file,
             )) as Box<dyn Surface>)
         }),
         snapshot: Arc::new(|s: &dyn Surface| {
             let ms = s.as_any().downcast_ref::<EguiMeshSurface>()?;
-            Some(serde_json::json!({ "display_name": ms.display_name }))
+            Some(serde_json::json!({
+                "display_name": ms.display_name,
+                "file": ms.file,
+            }))
         }),
     });
 

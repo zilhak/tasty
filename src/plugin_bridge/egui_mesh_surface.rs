@@ -24,6 +24,10 @@ pub struct EguiMeshSurface {
     pub plugin_id: String,
     /// 탭 제목 등에 표시되는 이름. 생성 params 의 `display_name` 또는 kind 명.
     pub display_name: String,
+    /// 생성 params 의 `file` (예: markdown 경로). plugin 이 콘텐츠를 소유하지만, host 는
+    /// layout 영속화(snapshot→restore)에서 plugin 에 다시 넘겨주기 위해 보관한다.
+    /// file 의미가 없는 kind(mesh-demo 등)면 `None`.
+    pub file: Option<String>,
 }
 
 impl EguiMeshSurface {
@@ -32,12 +36,14 @@ impl EguiMeshSurface {
         kind_static: &'static str,
         plugin_id: String,
         display_name: String,
+        file: Option<String>,
     ) -> Self {
         Self {
             id,
             kind_static,
             plugin_id,
             display_name,
+            file,
         }
     }
 }
@@ -84,7 +90,13 @@ mod tests {
 
     #[test]
     fn surface_basics() {
-        let s = EguiMeshSurface::new(7, "markdown", "com.tasty.markdown".into(), "Readme".into());
+        let s = EguiMeshSurface::new(
+            7,
+            "markdown",
+            "com.tasty.markdown".into(),
+            "Readme".into(),
+            Some("/docs/readme.md".into()),
+        );
         assert_eq!(s.kind(), "markdown");
         assert_eq!(s.type_name(), "EguiMesh");
         assert_eq!(s.surface_id(), Some(7));
@@ -94,7 +106,13 @@ mod tests {
 
     #[test]
     fn tree_json_shape() {
-        let s = EguiMeshSurface::new(3, "markdown", "com.tasty.markdown".into(), "Doc".into());
+        let s = EguiMeshSurface::new(
+            3,
+            "markdown",
+            "com.tasty.markdown".into(),
+            "Doc".into(),
+            None,
+        );
         let j = s.to_tree_json();
         assert_eq!(j["kind"], "markdown");
         assert_eq!(j["type"], "EguiMesh");

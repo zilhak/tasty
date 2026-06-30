@@ -282,6 +282,39 @@ impl PluginManager {
         }
     }
 
+    /// egui-mesh surface 의 owning plugin 에 `surface.create` 를 fire-and-forget 으로
+    /// 보낸다. host 측 surface(`EguiMeshSurface` stand-in)는 tree/handles 가 없어
+    /// `RemoteSurfaceEntry` 를 만들지 않으므로 plugin 의 (빈) 응답은 무시된다.
+    ///
+    /// caller([`MainView::forward_egui_mesh_context`])가 첫 set_context bootstrap 직전에
+    /// 1회 호출한다 — 같은 plugin req 채널 FIFO 라 create 가 set_context 보다 먼저 도착해
+    /// plugin 이 생성 params(예: markdown `file`)를 set_context 렌더 전에 받는다.
+    pub fn send_egui_mesh_surface_create(
+        &self,
+        plugin_id: &str,
+        surface_id: u32,
+        kind: &str,
+        file: Option<&str>,
+        display_name: &str,
+    ) {
+        let Some(proc) = self.processes.get(plugin_id) else {
+            return;
+        };
+        let req = crate::protocol::PluginRequest {
+            method: protocol::METHOD_SURFACE_CREATE.to_string(),
+            params: json!({
+                "surface_id": surface_id,
+                "kind": kind,
+                "cwd": null,
+                "params": { "file": file, "display_name": display_name },
+            }),
+            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        };
+        if let Err(e) = proc.req_tx.send(req) {
+            tracing::warn!("plugin '{plugin_id}' surface.create (egui-mesh) send failed: {e}");
+        }
+    }
+
     pub(super) fn send_event_dispatches(
         &mut self,
         dispatches: Vec<crate::event_bus::PluginDispatch>,
