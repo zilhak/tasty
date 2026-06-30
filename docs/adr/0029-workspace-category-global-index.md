@@ -34,6 +34,5 @@
 
 ## References
 
-- `.claude-workspace/conductor/S-WSCAT/research.md` §2-4, §6-2
 - [features/workspace-category](../features/workspace-category/index.md)
 - [focus 정책](../design/policies/focus.md) (포커스 독립성, 원칙 1·3)

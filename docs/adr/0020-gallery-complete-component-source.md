@@ -42,4 +42,3 @@ claude design 산출물(`Tasty Design System`)의 gallery 페이지는 컴포넌
 - [dev-guide/gallery-first](../dev-guide/gallery-first.md) — gallery-first 워크플로 절차.
 - [design/policies/shared-widgets](../design/policies/shared-widgets.md) · [dev-guide/model-view-split](../dev-guide/model-view-split.md) — demo=main 의 기반.
 - [design/systems/design-gallery-mapping](../design/systems/design-gallery-mapping.md) — 디자인↔갤러리↔본체 3자 매핑.
-- `.claude-workspace/design-request/2026-06-24-gallery-completeness.md` — 디자인 (3) cut 복원 request(첫 적용 사례).

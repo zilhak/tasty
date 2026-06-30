@@ -41,5 +41,4 @@ Ed25519 공개키 디렉토리. `bundle_sig.rs` 의 `TRUSTED_PUBKEYS` 가 `inclu
 
 ## 정책 참조
 
-- 정책 4=B (`include_bytes!`): `.claude-workspace/conductor/dmg-signature-gate-design.md` § 4
-- 정책 5=B+C (multi-key trust + 사용자 trust DB): 같은 문서 § 5
+- 서명·trust 정책(`include_bytes!` 임베드 · multi-key trust + 키 회전 · 사용자 trust DB): [`docs/dev-guide/plugin-packaging.md`](../../../docs/dev-guide/plugin-packaging.md) 의 "서명" 섹션

@@ -5,9 +5,8 @@
 - **Tags**: claude-design, plugin, secret, security, encryption, auth, trust-boundary
 
 > Claude Design 플러그인(`com.tasty.claude-design`)은 로그인 세션(Playwright `storageState` —
-> claude.ai 쿠키 묶음)을 `TASTY_PLUGIN_DATA_DIR/auth.json` 에 **평문**으로 둔다. 초기 설계
-> (`.claude-workspace/plans/claude-design-plugin.md` §6)는 OS keyring + 암호화를 상정했으나
-> 철회한다. 본 ADR 은 [ADR-0005](0005-memory-secret-not-a-vault.md) 의 결론을 이 플러그인의
+> claude.ai 쿠키 묶음)을 `TASTY_PLUGIN_DATA_DIR/auth.json` 에 **평문**으로 둔다. 초기 설계는
+> OS keyring + 암호화를 상정했으나 철회한다. 본 ADR 은 [ADR-0005](0005-memory-secret-not-a-vault.md) 의 결론을 이 플러그인의
 > 자격증명에 그대로 적용한 것이다.
 
 ## Context
@@ -78,5 +77,4 @@ keyring)를 하지 않는다. 보호 범위를 **"OS user / 파일 권한" 한 �
 
 - [ADR-0005](0005-memory-secret-not-a-vault.md) — memory secret 영역 평문 결정(본 ADR 의 모태)
 - [`dev-guide/plugin-sensitive-data.md`](../dev-guide/plugin-sensitive-data.md) — 민감 데이터 가이드
-- 설계: `.claude-workspace/plans/claude-design-plugin.md` §6
 - 코드: `crates/tasty-plugin-claude-design/src/auth.rs`

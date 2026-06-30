@@ -32,7 +32,7 @@
 | 4 | **구현** (claude code) | Figma 회귀반영 → 갤러리 specimen → 본체 반영 | 코드 + Figma 갱신 |
 | → 재요청 | planner | 4 에서 부족·불일치가 드러나면 **추가 요청문서**로 다시 2 로 | 새/갱신 요청문서 |
 
-루프인 이유: 한 번에 끝나지 않는다. 시안이 [열린 결정](../../.claude-workspace/design-request/2026-06-28-explorer-file-manager.md#6-열린-결정-디자이너사용자-확인-필요)을 확정하거나
+루프인 이유: 한 번에 끝나지 않는다. 시안이 열린 결정(아래 §6)을 확정하거나
 와이어프레임에 없던 구조를 드러내면, 그 변화를 Figma 기획에 되먹이고(ADR-0025 회귀 반영) 부족분은 다음 요청문서로 다시 돈다.
 
 ## 디자인 요청문서란
@@ -42,8 +42,7 @@
 
 - **표준 위치**: `.claude-workspace/design-request/` — gitignored 작업 산출물(커밋 대상 아님).
 - **파일명 규칙**: `YYYY-MM-DD-<slug>.md` (예: `2026-06-28-explorer-file-manager.md`).
-- **기준 예시(템플릿)**: [`.claude-workspace/design-request/2026-06-28-explorer-file-manager.md`](../../.claude-workspace/design-request/2026-06-28-explorer-file-manager.md) —
-  아래 §0~§8 구성을 그대로 따른다.
+- **기준 구성**: 아래 §0~§8 구성을 그대로 따른다.
 
 ### 요청문서 구성 (§0~§8)
 
