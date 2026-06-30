@@ -25,8 +25,9 @@ use tasty_plugin_protocol::{
     EventDispatchParams, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE,
     METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE, METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED,
     METHOD_POPUP_EVENT, METHOD_POPUP_OPEN, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE,
-    METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SNAPSHOT,
-    PluginEvent, PluginRequest, PluginResponse, PopupClosedParams, PopupOpenParams,
+    METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE,
+    METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest,
+    PluginResponse, PopupClosedParams, PopupOpenParams, SurfaceSetContextParams,
 };
 
 use crate::connection::Connection;
@@ -460,6 +461,21 @@ pub(crate) fn dispatch<P: Plugin>(
         METHOD_SURFACE_DESTROY => {
             let surface_id = require_surface_id(params).map_err(DispatchError::from_anyhow)?;
             plugin.destroy_surface(surface_id);
+            Ok(Value::Null)
+        }
+        METHOD_SURFACE_SET_CONTEXT => {
+            let parsed: SurfaceSetContextParams =
+                serde_json::from_value(params.clone()).map_err(|e| {
+                    DispatchError::with_code(
+                        format!("invalid surface.set_context params: {e}"),
+                        -32602,
+                    )
+                })?;
+            plugin.paint_surface(crate::plugin::SurfaceSetContextCtx {
+                params: parsed,
+                host: host.clone(),
+            });
+            // fire-and-forget — mesh 는 PaintFrame 알림으로 비동기 회신. null ack.
             Ok(Value::Null)
         }
         METHOD_COMMAND_INVOKE => {

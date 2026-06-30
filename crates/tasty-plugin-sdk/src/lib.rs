@@ -5,6 +5,10 @@
 
 pub mod bus;
 pub mod connection;
+/// egui-mesh plugin SDK 헬퍼 (A1-S4). `egui-mesh` feature 를 켰을 때만 컴파일된다 —
+/// 기본 빌드는 egui 의존 없이 유지(lib.rs 불변식).
+#[cfg(feature = "egui-mesh")]
+pub mod egui_surface;
 pub mod env;
 pub mod error;
 pub mod handle_channel;
@@ -16,6 +20,8 @@ pub mod shared_buffer;
 pub mod ui;
 
 pub use bus::BusHandle;
+#[cfg(feature = "egui-mesh")]
+pub use egui_surface::EguiMeshSurface;
 pub use env::PluginEnv;
 pub use error::{PluginError, Result};
 #[allow(deprecated)]
@@ -26,7 +32,7 @@ pub use plugin::{
     CommandInvokeCtx, EventDispatchCtx, ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx,
     IpcMethodError, Plugin, PopupClosedCtx, PopupEventCtx, PopupEventResult, PopupOpenCtx,
     PopupOpenResult, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult,
-    SurfaceSnapshotCtx,
+    SurfaceSetContextCtx, SurfaceSnapshotCtx,
 };
 pub use runtime::run;
 pub use shared_buffer::SharedBuffer;

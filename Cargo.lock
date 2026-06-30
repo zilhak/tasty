@@ -5686,9 +5686,10 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-sdk"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
+ "egui",
  "libc",
  "serde_json",
  "tasty-plugin-protocol",

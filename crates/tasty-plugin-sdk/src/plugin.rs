@@ -64,6 +64,29 @@ pub struct SurfaceSnapshotCtx {
     pub surface_id: u32,
 }
 
+/// `surface.set_context` 콜백 컨텍스트 — egui-mesh surface 의 렌더 컨텍스트가 도착했을 때.
+///
+/// plugin 은 [`EguiMeshSurface`](crate::EguiMeshSurface)(egui-mesh feature) 를 들고
+/// `surface.paint(&ctx.host, &ctx.params, |egui_ctx| { ... })` 를 호출해 mesh 를 회신한다.
+/// `params.raw_input` 의 좌표는 surface-local 논리 포인트(좌상단 0,0)다.
+#[derive(Clone)]
+pub struct SurfaceSetContextCtx {
+    /// surface 의 크기(물리 px)/ppp/이번 frame 의 사용자 입력.
+    pub params: tasty_plugin_protocol::SurfaceSetContextParams,
+    /// `PaintFrame` 알림 송신 및 shared buffer 생성에 쓰는 호스트 핸들. `clone()` 해
+    /// 자기 스레드로 옮길 수 있다.
+    pub host: HostHandle,
+}
+
+impl std::fmt::Debug for SurfaceSetContextCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SurfaceSetContextCtx")
+            .field("params", &self.params)
+            .field("host", &"HostHandle { .. }")
+            .finish()
+    }
+}
+
 /// 매니페스트 `[[contributes.commands]]`로 등록한 command가 사용자 단축키
 /// 매칭으로 호출됐을 때 전달되는 컨텍스트.
 #[derive(Debug, Clone)]
@@ -275,6 +298,13 @@ pub trait Plugin: Send + 'static {
 
     /// `surface.destroy` — 호스트가 surface를 닫을 때 호출. 자원 해제용.
     fn destroy_surface(&mut self, _surface_id: u32) {}
+
+    /// `surface.set_context` — egui-mesh surface 의 렌더 컨텍스트(크기/ppp/raw input)가
+    /// 도착함. plugin 은 자기 프로세스에서 egui 를 구동·tessellate 한 뒤
+    /// [`PluginEvent::PaintFrame`](tasty_plugin_protocol::PluginEvent::PaintFrame) 로
+    /// mesh 를 비동기 회신한다([`EguiMeshSurface`](crate::EguiMeshSurface) 헬퍼가 은닉).
+    /// fire-and-forget — 이 콜백은 반환값이 없다. 기본 구현은 no-op.
+    fn paint_surface(&mut self, _ctx: SurfaceSetContextCtx) {}
 
     /// `command.invoke` — 매니페스트로 등록한 command가 사용자 단축키 매칭으로
     /// 호출됨. tree가 None이면 호스트는 이전 tree 유지. 기본 구현은 no-op.

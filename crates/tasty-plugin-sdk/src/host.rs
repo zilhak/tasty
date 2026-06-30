@@ -77,6 +77,21 @@ impl HostHandle {
         self
     }
 
+    /// 호스트에 비동기 알림([`PluginEvent`])을 보낸다. 응답을 기다리지 않는다
+    /// (fire-and-forget). egui-mesh surface 가 mesh 를 commit 한 뒤
+    /// [`PluginEvent::PaintFrame`] 를 보내는 등, plugin 능동 알림 경로에 쓴다.
+    pub fn notify(&self, event: &PluginEvent) -> Result<(), PluginError> {
+        let payload = serde_json::json!({ "event": event });
+        let line = serde_json::to_string(&payload)?;
+        let mut w = self
+            .writer
+            .lock()
+            .map_err(|_| PluginError::LockPoisoned("host writer"))?;
+        writeln!(*w, "{line}")?;
+        w.flush()?;
+        Ok(())
+    }
+
     /// 호스트 IPC 메서드를 동기로 호출한다. 응답까지 [`Self::timeout`]만큼 block.
     pub fn call(&self, method: impl Into<String>, params: Value) -> Result<Value, PluginError> {
         let method_str = method.into();
