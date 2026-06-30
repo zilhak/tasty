@@ -201,5 +201,6 @@ mod tests {
         assert!(!reg.contains("clipboard_viewer"));
     }
 }
+pub mod egui_mesh;
 pub mod host_rendered;
 pub mod webview_kind;

@@ -615,6 +615,49 @@ fn surface_kind_rendering_host_parses() {
 }
 
 #[test]
+fn surface_kind_rendering_egui_mesh_parses_hyphenated_wire_key() {
+    // 와이어 키는 하이픈 포함 "egui-mesh" (variant rename). rename_all="lowercase"
+    // 가 만드는 "eguimesh" 가 아니라 이 키로만 파싱돼야 한다 (ADR-0028 / §2-2).
+    let s = r#"
+        manifest_version = 1
+        id = "com.tasty.markdown"
+        name = "Markdown"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "markdown"
+        display_name_i18n_key = "surface.kind.markdown"
+        rendering = "egui-mesh"
+    "#;
+    let m = parse(s).expect("should parse");
+    assert_eq!(m.surface_kinds[0].rendering, SurfaceKindRendering::EguiMesh);
+}
+
+#[test]
+fn surface_kind_rendering_eguimesh_without_hyphen_rejected() {
+    // lowercase 기본 변환형 "eguimesh" 는 유효 variant 가 아니다 — rename 덮어쓰기
+    // 검증 (하이픈 함정, §9-9).
+    let s = r#"
+        manifest_version = 1
+        id = "com.tasty.markdown"
+        name = "Markdown"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "markdown"
+        display_name_i18n_key = "surface.kind.markdown"
+        rendering = "eguimesh"
+    "#;
+    assert!(parse(s).is_err());
+}
+
+#[test]
 fn surface_kind_rendering_unknown_value_rejected() {
     let s = r#"
         manifest_version = 1

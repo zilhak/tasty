@@ -352,7 +352,7 @@ pub struct SurfaceKindDecl {
     pub consumes_egui_input: bool,
 }
 
-/// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "host" | "remote" | "webview"`.
+/// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "host" | "remote" | "webview" | "egui-mesh"`.
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SurfaceKindRendering {
@@ -366,6 +366,14 @@ pub enum SurfaceKindRendering {
     /// plugin 은 `webview.set_url(surface_id, url)` 등 IPC 로 URL/navigation 만 제어.
     /// host 는 어떤 컨텐츠 (html/svg/...) 인지 모름 — webview 토대만 제공.
     Webview,
+    /// plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
+    /// (ADR-0028). bundled 전용 화이트리스트 + api_version 게이트로 제한된다.
+    ///
+    /// 와이어 키는 하이픈 포함 `"egui-mesh"` — `rename_all = "lowercase"` 가 만드는
+    /// `"eguimesh"` 를 variant 단위 rename 으로 덮어쓴다. 이 rename 을 빠뜨리면
+    /// 매니페스트 `rendering = "egui-mesh"` 가 파싱되지 않는다.
+    #[serde(rename = "egui-mesh")]
+    EguiMesh,
 }
 
 /// Plugin extension 선언. 대상(plugin_id + version_req) 하나에 대해

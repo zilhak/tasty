@@ -358,6 +358,15 @@ impl App {
                                 );
                                 "webview"
                             }
+                            SurfaceKindRendering::EguiMesh => {
+                                crate::engine::surface_registry::egui_mesh::register_egui_mesh_kind(
+                                    &registry,
+                                    plugin_id,
+                                    decl,
+                                    &pkg.manifest.api_version,
+                                );
+                                "egui-mesh"
+                            }
                         };
                         events.push(CoreEvent::PluginSurfaceKindRegistered {
                             plugin_id: plugin_id.clone(),
