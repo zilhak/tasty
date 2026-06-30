@@ -257,6 +257,31 @@ impl PluginManager {
         }
     }
 
+    /// egui-mesh surface 에 렌더 컨텍스트(크기/ppp/raw input)를 forward (A1-S3).
+    ///
+    /// fire-and-forget — plugin 은 응답 대신 비동기 [`PluginEvent::PaintFrame`] 알림으로
+    /// mesh 를 회신한다. 실제 raw_input 수집·송신 호출은 입력 forward 배선(A1-S5/S7)이
+    /// 담당하고, 본 헬퍼는 host→plugin 송신 경로만 제공한다.
+    ///
+    /// [`PluginEvent`]: tasty_plugin_protocol::PluginEvent
+    pub fn send_surface_set_context(
+        &self,
+        plugin_id: &str,
+        params: &tasty_plugin_protocol::SurfaceSetContextParams,
+    ) {
+        let Some(proc) = self.processes.get(plugin_id) else {
+            return;
+        };
+        let req = crate::protocol::PluginRequest {
+            method: protocol::METHOD_SURFACE_SET_CONTEXT.to_string(),
+            params: json!(params),
+            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        };
+        if let Err(e) = proc.req_tx.send(req) {
+            tracing::warn!("plugin '{plugin_id}' surface.set_context send failed: {e}");
+        }
+    }
+
     pub(super) fn send_event_dispatches(
         &mut self,
         dispatches: Vec<crate::event_bus::PluginDispatch>,

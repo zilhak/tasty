@@ -208,6 +208,23 @@ pub(super) struct RemoteSurfaceEntry {
     pub(super) handles: SurfaceHandles,
 }
 
+/// egui-mesh surface 의 최근 수신 mesh frame 메타 (A1-S3 수신 라우팅 골격).
+///
+/// plugin 이 [`tasty_plugin_protocol::PluginEvent::PaintFrame`] 를 보낼 때마다
+/// `pump` 가 갱신한다. 렌더 prepare(A1-S5)가 `buffer_id` 로 [`PluginManager::plugin_buffer`]
+/// 를 lookup → footer Acquire-load → `mesh_wire::decode_paint` 의 출발점으로 읽는다.
+/// 본체(mesh 바이트)는 shared buffer 안에 있고, 이 구조체는 메타만 운반한다.
+#[derive(Debug, Clone)]
+pub struct EguiMeshFrame {
+    /// buffer lookup 에 필요한 소유 plugin id.
+    pub plugin_id: String,
+    /// mesh POD 바이트가 들어있는 shared buffer.
+    pub buffer_id: SharedBufferId,
+    /// plugin 이 commit 한 footer generation. host 는 마지막 합성 generation 과
+    /// 비교해 변하지 않았으면 재합성을 건너뛴다.
+    pub generation: u64,
+}
+
 pub struct PluginManager {
     pub packages: Vec<PluginPackage>,
     /// trust gate 에서 거부된 plugin 들 (서명 미신뢰/검증 실패/권한 변경).
@@ -274,6 +291,10 @@ pub struct PluginManager {
     /// 호스트 전체에서 단조 증가하는 shared buffer id. plugin 간 충돌 회피 + 디버그
     /// 추적을 단순화하기 위해 글로벌 카운터로 둔다.
     pub(super) next_buffer_id: AtomicU64,
+    /// egui-mesh surface_id → 최근 paint_frame 메타 (A1-S3). plugin 의 `PaintFrame`
+    /// 알림마다 갱신되고, 렌더 prepare(A1-S5)가 buffer lookup + 디코드 출발점으로 읽는다.
+    /// plugin process 가 종료/재시작되면 해당 plugin 의 엔트리를 정리한다 (stale buffer 참조 방지).
+    pub(super) egui_mesh_frames: HashMap<u32, EguiMeshFrame>,
     /// Plugin extension 상태 추적. `[extends]` 블록을 선언한 plugin들의
     /// active/pending/disabled/conflict 상태를 보관한다. PR 4/5에서 event/IPC
     /// hook dispatch 시 `active_extension_for_target`을 조회한다.

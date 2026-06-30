@@ -35,6 +35,9 @@ impl PluginManager {
             Vec::new();
         let mut new_event_subscribes: Vec<(String, u64, String)> = Vec::new();
         let mut new_event_unsubscribes: Vec<(String, u64)> = Vec::new();
+        // egui-mesh paint_frame 알림 (A1-S3): (plugin_id, surface_id, buffer_id, generation).
+        let mut new_paint_frames: Vec<(String, u32, tasty_plugin_protocol::SharedBufferId, u64)> =
+            Vec::new();
         for (id, proc) in &self.processes {
             while let Ok(ev) = proc.event_rx.try_recv() {
                 match ev {
@@ -51,6 +54,16 @@ impl PluginManager {
                     },
                     PluginEvent::SurfaceInvalidated { .. } => {
                         // 단계 06에서 처리
+                    }
+                    PluginEvent::PaintFrame {
+                        surface_id,
+                        buffer_id,
+                        generation,
+                    } => {
+                        // A1-S3 수신 라우팅: 최근 mesh frame 메타를 저장. 렌더 prepare(A1-S5)가
+                        // buffer lookup + 디코드 출발점으로 읽는다. redraw 는 수신 스레드가
+                        // 매 라인마다 waker 를 깨우므로 별도 트리거 불필요.
+                        new_paint_frames.push((id.clone(), surface_id, buffer_id, generation));
                     }
                     PluginEvent::NotifyHost { .. } => {
                         // 단계 06에서 처리
@@ -87,6 +100,16 @@ impl PluginManager {
         }
         if !new_calls.is_empty() {
             self.pending_plugin_calls.extend(new_calls);
+        }
+        for (plugin_id, surface_id, buffer_id, generation) in new_paint_frames {
+            self.egui_mesh_frames.insert(
+                surface_id,
+                super::EguiMeshFrame {
+                    plugin_id,
+                    buffer_id,
+                    generation,
+                },
+            );
         }
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);
@@ -208,6 +231,8 @@ impl PluginManager {
             self.event_bus.clear_plugin(&id);
             self.cancel_pending_namespace_calls(&id, "plugin restarting");
             self.plugin_buffers.remove(&id);
+            // egui-mesh: 죽은 plugin 의 buffer 를 가리키는 stale frame 메타 제거 (A1-S3).
+            self.egui_mesh_frames.retain(|_, f| f.plugin_id != id);
             self.settings_pages.unregister_plugin(&id);
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);

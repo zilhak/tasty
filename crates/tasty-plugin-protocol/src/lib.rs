@@ -25,18 +25,19 @@ pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
 pub use protocol::{
     AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, EventDispatchParams,
     ExtensionHookInvokeParams, ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase,
-    ExtensionHookResult, HandleChannelMessage, IpcCallResult, PixelRect, PluginEvent,
-    PluginRequest, PluginResponse, PopupCloseReason, PopupClosedParams, PopupEventParams,
-    PopupEventResult, PopupOpenParams, PopupOpenResult, SharedBufferCreateParams,
-    SharedBufferCreateResult, SharedBufferDirtyParams, SharedBufferId, SurfaceEventParams,
-    SurfaceResult,
+    ExtensionHookResult, HandleChannelMessage, IpcCallResult, ModifiersWire, PixelRect,
+    PluginEvent, PluginRequest, PluginResponse, PointerButtonWire, PopupCloseReason,
+    PopupClosedParams, PopupEventParams, PopupEventResult, PopupOpenParams, PopupOpenResult,
+    RawInputEventWire, RawInputWire, SharedBufferCreateParams, SharedBufferCreateResult,
+    SharedBufferDirtyParams, SharedBufferId, SurfaceEventParams, SurfaceResult,
+    SurfaceSetContextParams,
 };
 pub use protocol::{
     METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_EXTENSION_INVOKE_HOOK, METHOD_HOST_HELLO,
     METHOD_HOST_SHARED_BUFFER_CREATE, METHOD_HOST_SHARED_BUFFER_DIRTY, METHOD_IPC_RESULT,
     METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_EVENT, METHOD_POPUP_OPEN, METHOD_SHUTDOWN,
     METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE,
-    METHOD_SURFACE_SNAPSHOT,
+    METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT,
 };
 pub use ui_tree::{
     ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, PixelFilter, PixelFormat,

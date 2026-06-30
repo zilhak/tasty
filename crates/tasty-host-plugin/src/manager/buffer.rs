@@ -34,6 +34,15 @@ impl PluginManager {
         self.plugin_buffers.get(plugin_id)?.get(&buffer_id)
     }
 
+    /// egui-mesh surface 의 최근 paint_frame 메타 조회 (A1-S3 수신 라우팅 골격).
+    ///
+    /// 렌더 prepare(A1-S5)가 호출해 `buffer_id` 로 [`PluginManager::plugin_buffer`] 를
+    /// lookup → footer Acquire-load → `mesh_wire::decode_paint` 로 mesh 를 복원한다.
+    /// plugin 이 아직 frame 을 보내지 않았거나 죽어서 정리됐으면 `None`.
+    pub fn egui_mesh_frame(&self, surface_id: u32) -> Option<&super::EguiMeshFrame> {
+        self.egui_mesh_frames.get(&surface_id)
+    }
+
     /// `host.shared_buffer.create` 처리. 새 공유 메모리 영역을 만들어
     /// 메인 채널 결과(`SharedBufferCreateResult`)와 보조 채널 핸들(`HandleAttach`)을
     /// 양쪽 모두 전송한다.

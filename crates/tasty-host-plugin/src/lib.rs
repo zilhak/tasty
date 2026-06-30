@@ -38,7 +38,7 @@ pub use builtin::{
 };
 pub use discovery::{discover, plugin_root};
 pub use listener::HostListener;
-pub use manager::{PluginManager, PopupInstance};
+pub use manager::{EguiMeshFrame, PluginManager, PopupInstance};
 pub use process::PluginProcess;
 pub use registry_state::PluginsConfig;
 pub use settings_registry::{SettingsPageEntry, SettingsPageRegistry};

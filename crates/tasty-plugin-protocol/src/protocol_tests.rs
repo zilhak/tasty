@@ -262,3 +262,86 @@ fn popup_method_names_stable() {
     assert_eq!(METHOD_POPUP_EVENT, "popup.event");
     assert_eq!(METHOD_POPUP_CLOSED, "popup.closed");
 }
+
+// ── egui-mesh (A1-S3) set_context / paint_frame wire ──
+
+#[test]
+fn set_context_method_name_stable() {
+    assert_eq!(METHOD_SURFACE_SET_CONTEXT, "surface.set_context");
+}
+
+#[test]
+fn set_context_params_round_trip() {
+    let params = SurfaceSetContextParams {
+        surface_id: 7,
+        width_px: 1280,
+        height_px: 720,
+        pixels_per_point: 2.0,
+        raw_input: RawInputWire {
+            time: Some(12.5),
+            focused: true,
+            modifiers: ModifiersWire {
+                command: true,
+                ..Default::default()
+            },
+            events: vec![
+                RawInputEventWire::PointerMoved { x: 10.0, y: 20.0 },
+                RawInputEventWire::PointerButton {
+                    x: 10.0,
+                    y: 20.0,
+                    button: PointerButtonWire::Primary,
+                    pressed: true,
+                    modifiers: ModifiersWire::default(),
+                },
+                RawInputEventWire::Scroll { x: 0.0, y: -4.0 },
+                RawInputEventWire::Key {
+                    key: "Enter".into(),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: ModifiersWire::default(),
+                },
+                RawInputEventWire::Text { text: "hi".into() },
+                RawInputEventWire::PointerGone,
+            ],
+        },
+    };
+    let s = serde_json::to_string(&params).unwrap();
+    let parsed: SurfaceSetContextParams = serde_json::from_str(&s).unwrap();
+    assert_eq!(parsed.surface_id, 7);
+    assert_eq!(parsed.width_px, 1280);
+    assert_eq!(parsed.height_px, 720);
+    assert_eq!(parsed.pixels_per_point, 2.0);
+    assert_eq!(parsed.raw_input, params.raw_input);
+}
+
+#[test]
+fn raw_input_event_tags_stable() {
+    let s = serde_json::to_string(&RawInputEventWire::PointerGone).unwrap();
+    assert!(s.contains("\"t\":\"pointer_gone\""), "{s}");
+    let s = serde_json::to_string(&RawInputEventWire::Scroll { x: 1.0, y: 2.0 }).unwrap();
+    assert!(s.contains("\"t\":\"scroll\""), "{s}");
+}
+
+#[test]
+fn paint_frame_event_round_trip() {
+    let ev = PluginEvent::PaintFrame {
+        surface_id: 42,
+        buffer_id: SharedBufferId(9),
+        generation: 1234,
+    };
+    let s = serde_json::to_string(&ev).unwrap();
+    assert!(s.contains("\"kind\":\"paint_frame\""), "{s}");
+    let parsed: PluginEvent = serde_json::from_str(&s).unwrap();
+    match parsed {
+        PluginEvent::PaintFrame {
+            surface_id,
+            buffer_id,
+            generation,
+        } => {
+            assert_eq!(surface_id, 42);
+            assert_eq!(buffer_id, SharedBufferId(9));
+            assert_eq!(generation, 1234);
+        }
+        other => panic!("expected PaintFrame, got {other:?}"),
+    }
+}

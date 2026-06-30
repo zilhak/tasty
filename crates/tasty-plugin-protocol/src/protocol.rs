@@ -20,6 +20,12 @@ pub const METHOD_SURFACE_EVENT: &str = "surface.event";
 pub const METHOD_SURFACE_SNAPSHOT: &str = "surface.snapshot";
 pub const METHOD_SURFACE_RESTORE: &str = "surface.restore";
 pub const METHOD_SURFACE_DESTROY: &str = "surface.destroy";
+/// host → plugin (egui-mesh surface 전용): surface 의 렌더 컨텍스트(크기/ppp/raw input)를
+/// 전달한다. plugin 은 이를 받아 자기 프로세스에서 egui 를 구동·tessellate 한 뒤
+/// [`PluginEvent::PaintFrame`] 로 mesh 를 회신한다. fire-and-forget — 응답은
+/// `surface.event` 처럼 별도 알림(`PaintFrame`)으로 비동기 도착한다.
+/// params 에 [`SurfaceSetContextParams`].
+pub const METHOD_SURFACE_SET_CONTEXT: &str = "surface.set_context";
 /// host → plugin: plugin이 보낸 ipc.call에 대한 결과.
 /// params에 [`IpcCallResult`].
 pub const METHOD_IPC_RESULT: &str = "ipc.result";
@@ -69,6 +75,105 @@ pub struct SurfaceResult {
 pub struct SurfaceEventParams<'a> {
     pub surface_id: u32,
     pub event: &'a UiEvent,
+}
+
+// ── egui-mesh surface: set_context (host → plugin) wire types ──
+//
+// epaint 의 `serde` feature 가 꺼져 있어 egui `RawInput` 을 그대로 직렬화할 수 없다.
+// 따라서 plugin 프로세스가 egui 입력을 재구성하는 데 필요한 필드만 추린 POD-friendly
+// 미러 타입을 둔다. plugin SDK(A1-S4)가 [`RawInputWire`] 를 `egui::RawInput` 으로 매핑한다.
+// 이 타입들은 egui 의존이 없어 default(=egui-mesh feature off) 빌드에도 포함된다.
+//
+// identity 경계(원칙 1·3): set_context 는 host 가 받은 *실제* 사용자 입력을 surface
+// 영역으로 forward 하는 경로만 담는다. 에이전트 IPC/CLI 가 raw_input 을 합성·주입하는
+// 진입로는 만들지 않는다 (release 에 없음; debug 주입이 필요하면 debug 격리).
+
+/// `surface.set_context` params — egui-mesh surface 의 렌더 컨텍스트.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct SurfaceSetContextParams {
+    pub surface_id: u32,
+    /// surface 의 물리 픽셀 너비.
+    pub width_px: u32,
+    /// surface 의 물리 픽셀 높이.
+    pub height_px: u32,
+    /// 논리→물리 스케일 (egui `ScreenDescriptor.pixels_per_point`).
+    pub pixels_per_point: f32,
+    /// 이번 frame 의 사용자 입력.
+    #[serde(default)]
+    pub raw_input: RawInputWire,
+}
+
+/// egui `RawInput` 의 직렬화 가능한 최소 미러. markdown 검증엔 pointer+scroll+key 로 충분
+/// (research-a1 §2-3). IME/터치 등 부족분은 후속 단계에서 확장.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub struct RawInputWire {
+    /// frame 시각(초). egui 애니메이션/더블클릭 타이밍용. `None` 이면 plugin 이 자체 시계 사용.
+    #[serde(default)]
+    pub time: Option<f64>,
+    /// 이 surface 가 키보드 포커스를 가지는지.
+    #[serde(default)]
+    pub focused: bool,
+    /// 활성 modifier 상태.
+    #[serde(default)]
+    pub modifiers: ModifiersWire,
+    /// 이번 frame 에 누적된 입력 이벤트 (순서 보존).
+    #[serde(default)]
+    pub events: Vec<RawInputEventWire>,
+}
+
+/// egui `Modifiers` 미러.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ModifiersWire {
+    pub alt: bool,
+    pub ctrl: bool,
+    pub shift: bool,
+    /// macOS Cmd 키.
+    pub mac_cmd: bool,
+    /// 플랫폼 공통 "command" (macOS=Cmd, 그 외=Ctrl).
+    pub command: bool,
+}
+
+/// 포인터 버튼 종류. egui `PointerButton` 의 주요 3종 미러.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PointerButtonWire {
+    Primary,
+    Secondary,
+    Middle,
+}
+
+/// egui `RawInput.events` 의 직렬화 가능한 최소 미러. 좌표는 surface-local 논리 포인트
+/// (좌상단 0,0). plugin SDK 가 `egui::Event` 로 매핑한다.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(tag = "t", rename_all = "snake_case")]
+pub enum RawInputEventWire {
+    /// 포인터 이동.
+    PointerMoved { x: f32, y: f32 },
+    /// 포인터 버튼 누름/뗌.
+    PointerButton {
+        x: f32,
+        y: f32,
+        button: PointerButtonWire,
+        pressed: bool,
+        #[serde(default)]
+        modifiers: ModifiersWire,
+    },
+    /// 포인터가 surface 영역 밖으로 나감.
+    PointerGone,
+    /// 스크롤 델타 (논리 포인트).
+    Scroll { x: f32, y: f32 },
+    /// 키 누름/뗌. `key` 는 egui `Key` 의 이름 문자열 (plugin 이 파싱). 매핑 불가한 키는
+    /// plugin 이 무시한다.
+    Key {
+        key: String,
+        pressed: bool,
+        #[serde(default)]
+        repeat: bool,
+        #[serde(default)]
+        modifiers: ModifiersWire,
+    },
+    /// 텍스트 입력 (IME 확정 포함).
+    Text { text: String },
 }
 
 /// `command.invoke` params — 사용자 단축키 매칭 시 호스트가 plugin에 보내는 명령.
@@ -225,6 +330,18 @@ pub enum PluginEvent {
     Hello { plugin_id: String, version: String },
     /// surface invalidated — 호스트가 다음 프레임에 redraw (단계 06).
     SurfaceInvalidated { surface_id: u32 },
+    /// egui-mesh surface: plugin 이 자기 프로세스에서 tessellate→POD 인코드(A1-S2,
+    /// [`crate::mesh_wire`])한 mesh 바이트를 shared buffer 에 commit 했음을 알린다.
+    /// mesh 본체는 buffer 안에 있고(`decode_paint` 로 복원), 이 알림은 어떤 buffer 의
+    /// 어떤 generation 인지 메타만 운반한다 — Canvas dirty 알림과 동급의 경량 알림이다.
+    /// 정적 화면은 invalidate 시에만 보내므로, host 는 generation 비교로 재합성을 건너뛴다.
+    PaintFrame {
+        surface_id: u32,
+        buffer_id: SharedBufferId,
+        /// plugin 이 commit 한 shared buffer footer generation. host 는 footer 를
+        /// Acquire-load 해 일치/최신 여부를 검증한다 (tear 방지).
+        generation: u64,
+    },
     /// host action 트리거 (단계 06).
     NotifyHost {
         surface_id: u32,
