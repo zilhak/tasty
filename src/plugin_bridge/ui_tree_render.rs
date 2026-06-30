@@ -135,9 +135,11 @@ fn render_node(ui: &mut Ui, node: &UiNode, sink: &dyn UiSink, canvas_cache: &Can
             // 중앙(centered_and_justified)으로 자식 1개를 배치한다.
             let rect = ui.available_rect_before_wrap();
             ui.scope_builder(
-                egui::UiBuilder::new().max_rect(rect).layout(
-                    egui::Layout::centered_and_justified(egui::Direction::TopDown),
-                ),
+                egui::UiBuilder::new()
+                    .max_rect(rect)
+                    .layout(egui::Layout::centered_and_justified(
+                        egui::Direction::TopDown,
+                    )),
                 |ui| render_node(ui, child, sink, canvas_cache),
             );
             ui.advance_cursor_after_rect(rect);

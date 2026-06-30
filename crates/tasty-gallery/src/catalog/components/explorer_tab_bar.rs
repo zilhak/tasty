@@ -13,8 +13,11 @@ use crate::catalog::icons::{CHEVRON_DOWN, CLOSE, MockGlyph, PLUS};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// (label, active, has_chevron)
-const TABS: &[(&str, bool, bool)] =
-    &[("Downloads", true, true), ("src", false, false), ("target", false, false)];
+const TABS: &[(&str, bool, bool)] = &[
+    ("Downloads", true, true),
+    ("src", false, false),
+    ("target", false, false),
+];
 
 fn strip(ui: &mut egui::Ui, theme: &Theme) {
     let bar_h = theme.item_height_tab.value(); // 24
@@ -42,9 +45,8 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
     let mut x = rect.min.x;
     for (i, (label, active, has_chevron)) in TABS.iter().enumerate() {
         // 탭 폭 = pad + (chevron+gap)? + label + gap + close + pad.
-        let galley = ui.fonts(|f| {
-            f.layout_no_wrap((*label).to_string(), font.clone(), egui::Color32::WHITE)
-        });
+        let galley = ui
+            .fonts(|f| f.layout_no_wrap((*label).to_string(), font.clone(), egui::Color32::WHITE));
         let chevron_w = if *has_chevron { icon_xs + gap } else { 0.0 };
         let tab_w = pad_x + chevron_w + galley.size().x + gap + icon_xs + pad_x;
         let tab_rect =
@@ -73,17 +75,17 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
                 .rect_filled(tab_rect, 0.0, egui::Color32::from(theme.bg_panel()));
             // 하단 2px accent 언더라인.
             let underline = egui::Rect::from_min_size(
-                egui::pos2(tab_rect.min.x, tab_rect.max.y - theme.tab_indicator_width.value()),
+                egui::pos2(
+                    tab_rect.min.x,
+                    tab_rect.max.y - theme.tab_indicator_width.value(),
+                ),
                 egui::vec2(tab_w, theme.tab_indicator_width.value()),
             );
             ui.painter()
                 .rect_filled(underline, 0.0, egui::Color32::from(theme.accent_primary()));
         } else if resp.hovered() {
-            ui.painter().rect_filled(
-                tab_rect,
-                0.0,
-                theme.overlay_hover().to_egui_premultiplied(),
-            );
+            ui.painter()
+                .rect_filled(tab_rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
         }
 
         let fg = if *active {
@@ -141,12 +143,21 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         egui::Sense::click(),
     );
     if plus_resp.hovered() {
-        ui.painter()
-            .rect_filled(plus_rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
+        ui.painter().rect_filled(
+            plus_rect,
+            0.0,
+            theme.overlay_hover().to_egui_premultiplied(),
+        );
     }
     let icon = theme.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_center_size(plus_rect.center(), egui::vec2(icon, icon));
-    paint_glyph(ui, PLUS, icon_rect, icon, egui::Color32::from(theme.text_secondary()));
+    paint_glyph(
+        ui,
+        PLUS,
+        icon_rect,
+        icon,
+        egui::Color32::from(theme.text_secondary()),
+    );
 }
 
 fn paint_glyph(ui: &mut egui::Ui, g: MockGlyph, rect: egui::Rect, size: f32, color: egui::Color32) {

@@ -61,7 +61,11 @@ pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) 
                     // error — load failed (specimen "error — load failed" 전사).
                     ui.add(icons::ALERT_CIRCLE.image(glyph, th.accent_danger().to_egui()));
                     ui.add_space(th.spacing_sm.value());
-                    label(ui, crate::i18n::t("webview.error"), th.accent_danger().to_egui());
+                    label(
+                        ui,
+                        crate::i18n::t("webview.error"),
+                        th.accent_danger().to_egui(),
+                    );
                     if let Some(url) = url {
                         label(ui, url, th.text_disabled().to_egui());
                     }
@@ -72,20 +76,32 @@ pub fn draw_webview_chrome(ui: &mut egui::Ui, url: Option<&str>, nav: NavState) 
                         .size(th.spinner_size.value())
                         .show(ui, &th);
                     ui.add_space(th.spacing_sm.value());
-                    label(ui, crate::i18n::t("webview.loading"), th.text_muted().to_egui());
+                    label(
+                        ui,
+                        crate::i18n::t("webview.loading"),
+                        th.text_muted().to_egui(),
+                    );
                 }
                 NavState::Idle | NavState::Done => match url {
                     None => {
                         // placeholder — no URL.
                         ui.add(icons::GLOBE.image(glyph, th.text_disabled().to_egui()));
                         ui.add_space(th.spacing_sm.value());
-                        label(ui, crate::i18n::t("webview.no_page"), th.text_muted().to_egui());
+                        label(
+                            ui,
+                            crate::i18n::t("webview.no_page"),
+                            th.text_muted().to_egui(),
+                        );
                     }
                     Some(url) => {
                         // boundary — webview region backdrop.
                         ui.add(icons::GLOBE.image(glyph, th.text_muted().to_egui()));
                         ui.add_space(th.spacing_sm.value());
-                        label(ui, crate::i18n::t("webview.region"), th.text_muted().to_egui());
+                        label(
+                            ui,
+                            crate::i18n::t("webview.region"),
+                            th.text_muted().to_egui(),
+                        );
                         label(ui, url, th.text_disabled().to_egui());
                     }
                 },

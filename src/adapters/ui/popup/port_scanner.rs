@@ -932,14 +932,12 @@ pub fn draw_port_scanner_view(
     // (footer 위)에 남는다.
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
-        .show_inside(ui, |ui| {
-            match &props.view_state {
-                PortScannerViewState::Loading => draw_loading_body(ui, props),
-                PortScannerViewState::Failed { message } => draw_failed_body(ui, props, message),
-                PortScannerViewState::Ready { rows, .. } => {
-                    if let Some(a) = draw_ready_body(ui, props, rows) {
-                        action = a;
-                    }
+        .show_inside(ui, |ui| match &props.view_state {
+            PortScannerViewState::Loading => draw_loading_body(ui, props),
+            PortScannerViewState::Failed { message } => draw_failed_body(ui, props, message),
+            PortScannerViewState::Ready { rows, .. } => {
+                if let Some(a) = draw_ready_body(ui, props, rows) {
+                    action = a;
                 }
             }
         });
@@ -1192,7 +1190,12 @@ fn write_state_draft(ctx: &egui::Context, draft: HashSet<PortState>) {
 
 /// 상태 필터 버튼(funnel + 라벨). filtered(=일부 상태만 표시) 면 accent 채움,
 /// 아니면 surface0 + border. remote_tool `filter_button:578` 전사.
-fn state_filter_button(ui: &mut egui::Ui, th: &Theme, label: &str, filtered: bool) -> egui::Response {
+fn state_filter_button(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    label: &str,
+    filtered: bool,
+) -> egui::Response {
     let text_col: egui::Color32 = if filtered {
         th.text_on_accent().into()
     } else {

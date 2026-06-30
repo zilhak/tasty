@@ -278,8 +278,10 @@ mod tests {
         let engine = engine();
         let registry = registry();
         let sid = 7;
-        let surface: Box<dyn Surface> =
-            Box::new(EmptySurface::new_deferred(sid, deferred_spawn(Some("/tmp/x"))));
+        let surface: Box<dyn Surface> = Box::new(EmptySurface::new_deferred(
+            sid,
+            deferred_spawn(Some("/tmp/x")),
+        ));
         let pane = Pane::new_with_surface(1, 1, "t".into(), surface);
 
         let preset = capture_pane_preset(&engine, &pane, None, &registry).expect("capture");

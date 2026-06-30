@@ -221,32 +221,37 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         funnel_button(ui, theme, "State", false);
         // 열린 드롭다운 카드(min-width 216).
         kit::frame_card(ui, theme, 216.0, kit::panel_fill(theme), |ui| {
-            kit::region_sym(ui, theme.spacing_sm.value(), theme.spacing_sm.value(), |ui| {
-                kit::caption(ui, theme, "Filter by state", true);
-                ui.add_space(theme.spacing_xs.value());
-                check_row(ui, theme, "LISTEN", true);
-                check_row(ui, theme, "ESTABLISHED", false);
-                check_row(ui, theme, "CLOSE_WAIT", false);
-                kit::hsep(ui, theme);
-                ui.horizontal(|ui| {
-                    Button::new("Select all")
-                        .variant(ButtonVariant::Ghost)
-                        .show(ui, theme);
-                    Button::new("Deselect all")
-                        .variant(ButtonVariant::Ghost)
-                        .show(ui, theme);
-                });
-                ui.horizontal(|ui| {
-                    Button::new("Reset (LISTEN only)")
-                        .variant(ButtonVariant::Ghost)
-                        .show(ui, theme);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        Button::new("Apply")
-                            .variant(ButtonVariant::Primary)
+            kit::region_sym(
+                ui,
+                theme.spacing_sm.value(),
+                theme.spacing_sm.value(),
+                |ui| {
+                    kit::caption(ui, theme, "Filter by state", true);
+                    ui.add_space(theme.spacing_xs.value());
+                    check_row(ui, theme, "LISTEN", true);
+                    check_row(ui, theme, "ESTABLISHED", false);
+                    check_row(ui, theme, "CLOSE_WAIT", false);
+                    kit::hsep(ui, theme);
+                    ui.horizontal(|ui| {
+                        Button::new("Select all")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
+                        Button::new("Deselect all")
+                            .variant(ButtonVariant::Ghost)
                             .show(ui, theme);
                     });
-                });
-            });
+                    ui.horizontal(|ui| {
+                        Button::new("Reset (LISTEN only)")
+                            .variant(ButtonVariant::Ghost)
+                            .show(ui, theme);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            Button::new("Apply")
+                                .variant(ButtonVariant::Primary)
+                                .show(ui, theme);
+                        });
+                    });
+                },
+            );
         });
     });
 
@@ -261,7 +266,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             ("table", "min-width cols · h-scroll · sticky header"),
             ("columns", "chooser hides cols (Workspace hidden here)"),
-            ("state filter", "funnel button · dropdown · default LISTEN-only"),
+            (
+                "state filter",
+                "funnel button · dropdown · default LISTEN-only",
+            ),
             ("header bg", "bg-sidebar · mono caption"),
             ("footer", "count · Copy address · Close"),
         ],

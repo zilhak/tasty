@@ -599,8 +599,7 @@ pub mod defs {
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = theme.spacing_md.value();
             let glyph = theme.icon_glyph_size_md.value();
-            let (rect, _) =
-                ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(glyph, glyph), egui::Sense::hover());
             icons::MOUSE
                 .image(glyph, theme.banner_icon_fg().to_egui())
                 .paint_at(ui, rect);

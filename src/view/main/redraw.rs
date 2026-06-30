@@ -891,12 +891,21 @@ impl MainView {
                     // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때).
                     if has_clip {
                         items.push(MenuItem::separator());
-                        items.push(MenuItem::new(12, crate::i18n::t("explorer.context_menu.paste")));
+                        items.push(MenuItem::new(
+                            12,
+                            crate::i18n::t("explorer.context_menu.paste"),
+                        ));
                     }
                 } else {
                     // 파일/폴더/다중: 복사 · 잘라내기.
-                    items.push(MenuItem::new(10, crate::i18n::t("explorer.context_menu.copy_files")));
-                    items.push(MenuItem::new(11, crate::i18n::t("explorer.context_menu.cut")));
+                    items.push(MenuItem::new(
+                        10,
+                        crate::i18n::t("explorer.context_menu.copy_files"),
+                    ));
+                    items.push(MenuItem::new(
+                        11,
+                        crate::i18n::t("explorer.context_menu.cut"),
+                    ));
                     if is_folder && has_clip {
                         items.push(MenuItem::new(
                             12,
@@ -905,11 +914,17 @@ impl MainView {
                     }
                     // 이름 변경 (단일 파일/폴더만).
                     if !multi {
-                        items.push(MenuItem::new(40, crate::i18n::t("explorer.context_menu.rename")));
+                        items.push(MenuItem::new(
+                            40,
+                            crate::i18n::t("explorer.context_menu.rename"),
+                        ));
                     }
                     items.push(MenuItem::separator());
                     // 휴지통으로 이동 (파일/폴더/다중 공통).
-                    items.push(MenuItem::new(30, crate::i18n::t("explorer.context_menu.delete")));
+                    items.push(MenuItem::new(
+                        30,
+                        crate::i18n::t("explorer.context_menu.delete"),
+                    ));
                     // "Open in system" 은 단일 폴더에서만 (design §3.3) — 메뉴 끝.
                     if is_folder {
                         items.push(MenuItem::new(
@@ -940,18 +955,16 @@ impl MainView {
                         );
                     }
                     Some(10) => {
-                        engine.explorer_clipboard =
-                            Some(crate::core::state::ExplorerClipboard {
-                                paths: paths.clone(),
-                                cut: false,
-                            });
+                        engine.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
+                            paths: paths.clone(),
+                            cut: false,
+                        });
                     }
                     Some(11) => {
-                        engine.explorer_clipboard =
-                            Some(crate::core::state::ExplorerClipboard {
-                                paths: paths.clone(),
-                                cut: true,
-                            });
+                        engine.explorer_clipboard = Some(crate::core::state::ExplorerClipboard {
+                            paths: paths.clone(),
+                            cut: true,
+                        });
                     }
                     Some(12) => {
                         let dest = if is_folder {
@@ -960,11 +973,8 @@ impl MainView {
                             cwd.clone()
                         };
                         if let Some(clip) = engine.explorer_clipboard.clone() {
-                            let (ok, err) = crate::explorer_ui::ops::paste_all(
-                                &clip.paths,
-                                &dest,
-                                clip.cut,
-                            );
+                            let (ok, err) =
+                                crate::explorer_ui::ops::paste_all(&clip.paths, &dest, clip.cut);
                             // 잘라내기는 이동 성공 시 클립보드 소진.
                             if clip.cut && err.is_none() {
                                 engine.explorer_clipboard = None;
@@ -1000,10 +1010,8 @@ impl MainView {
                                 .file_name()
                                 .map(|n| n.to_string_lossy().into_owned())
                                 .unwrap_or_default();
-                            let target = crate::state::RenameTarget::ExplorerEntry {
-                                surface_id,
-                                path,
-                            };
+                            let target =
+                                crate::state::RenameTarget::ExplorerEntry { surface_id, path };
                             let scope = target.popup_scope();
                             self.state.dialogs.rename = Some((target, current_name));
                             self.state.dispatch_intent(

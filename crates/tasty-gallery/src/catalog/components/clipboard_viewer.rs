@@ -46,7 +46,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             master_detail(ui, theme);
         });
         spec::cluster(ui, theme, "empty clipboard", |ui| {
-            state_box(ui, theme, "Clipboard is empty", theme.text_muted().to_egui());
+            state_box(
+                ui,
+                theme,
+                "Clipboard is empty",
+                theme.text_muted().to_egui(),
+            );
         });
         spec::cluster(ui, theme, "read failed", |ui| {
             state_box(

@@ -186,14 +186,17 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
         let can_add = !add_buf.trim().is_empty();
         // 우측 Add 버튼을 먼저 배치 → Input 이 남는 폭을 채운다(디자인 block).
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let add_clicked = Button::new(t("settings.terminal.mouse_capture_blacklist_add_button"))
-                .variant(ButtonVariant::Secondary)
-                .size(ControlSize::Sm)
-                .enabled(can_add)
-                .show(ui, &th)
-                .clicked();
+            let add_clicked =
+                Button::new(t("settings.terminal.mouse_capture_blacklist_add_button"))
+                    .variant(ButtonVariant::Secondary)
+                    .size(ControlSize::Sm)
+                    .enabled(can_add)
+                    .show(ui, &th)
+                    .clicked();
             let resp = Input::new()
-                .placeholder(t("settings.terminal.mouse_capture_blacklist_add_placeholder"))
+                .placeholder(t(
+                    "settings.terminal.mouse_capture_blacklist_add_placeholder",
+                ))
                 .mono(true)
                 .show(ui, &th, &mut add_buf);
             let submit = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));

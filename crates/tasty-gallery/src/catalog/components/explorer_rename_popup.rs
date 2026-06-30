@@ -32,18 +32,15 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     kit::field(ui, theme, None, "photo.png", false, false);
                     ui.add_space(theme.spacing_xs.value());
                     ui.horizontal(|ui| {
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
-                                Button::new("Rename")
-                                    .variant(ButtonVariant::Primary)
-                                    .show(ui, theme);
-                                Button::new("Cancel")
-                                    .variant(ButtonVariant::Ghost)
-                                    .show(ui, theme);
-                            },
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+                            Button::new("Rename")
+                                .variant(ButtonVariant::Primary)
+                                .show(ui, theme);
+                            Button::new("Cancel")
+                                .variant(ButtonVariant::Ghost)
+                                .show(ui, theme);
+                        });
                     });
                 },
             );

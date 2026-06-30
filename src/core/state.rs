@@ -637,8 +637,7 @@ impl CoreState {
             self.next_ids.bump_category_floor(max_id + 1);
         }
         // 존재하지 않는 카테고리를 가리키는 워크스페이스는 normal 로 귀속.
-        let valid: std::collections::HashSet<u32> =
-            self.categories.iter().map(|c| c.id).collect();
+        let valid: std::collections::HashSet<u32> = self.categories.iter().map(|c| c.id).collect();
         for ws in &mut self.workspaces {
             if !valid.contains(&ws.category) {
                 ws.set_category(NORMAL_CATEGORY_ID);
@@ -731,7 +730,11 @@ impl CoreState {
 
     /// 카테고리 순서 이동(reorder). **from==0 또는 to==0 거부**(normal 0번 고정).
     /// 범위 밖이거나 from==to 면 no-op(false).
-    pub fn reorder_category(&mut self, from_index: usize, to_index: usize) -> Result<(), CategoryOpError> {
+    pub fn reorder_category(
+        &mut self,
+        from_index: usize,
+        to_index: usize,
+    ) -> Result<(), CategoryOpError> {
         let len = self.categories.len();
         if from_index == 0 || to_index == 0 {
             return Err(CategoryOpError::NormalFixed);

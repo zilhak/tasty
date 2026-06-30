@@ -12,9 +12,7 @@
 use std::cell::RefCell;
 
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{
-    Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row,
-};
+use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row};
 
 use crate::catalog::icons::{FILE, FOLDER, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
@@ -33,10 +31,26 @@ struct Entry {
 }
 
 const GRID: &[Entry] = &[
-    Entry { glyph: FOLDER, name: "src", dir: true },
-    Entry { glyph: FOLDER, name: "assets", dir: true },
-    Entry { glyph: FILE, name: "photo.png", dir: false },
-    Entry { glyph: FILE, name: "README.md", dir: false },
+    Entry {
+        glyph: FOLDER,
+        name: "src",
+        dir: true,
+    },
+    Entry {
+        glyph: FOLDER,
+        name: "assets",
+        dir: true,
+    },
+    Entry {
+        glyph: FILE,
+        name: "photo.png",
+        dir: false,
+    },
+    Entry {
+        glyph: FILE,
+        name: "README.md",
+        dir: false,
+    },
 ];
 
 struct DetailRow {
@@ -132,92 +146,135 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 
     // ── detail (Table 재사용 + 정렬 컬럼 헤더) ──
     let rows = [
-        DetailRow { glyph: FOLDER, name: "src", size: "—", modified: "2026-06-20", kind: "Folder" },
-        DetailRow { glyph: FOLDER, name: "assets", size: "—", modified: "2026-06-18", kind: "Folder" },
-        DetailRow { glyph: FILE, name: "README.md", size: "4.7 KB", modified: "2026-06-27", kind: "Markdown" },
-        DetailRow { glyph: FILE, name: "photo.png", size: "1.2 MB", modified: "2026-06-28", kind: "PNG image" },
+        DetailRow {
+            glyph: FOLDER,
+            name: "src",
+            size: "—",
+            modified: "2026-06-20",
+            kind: "Folder",
+        },
+        DetailRow {
+            glyph: FOLDER,
+            name: "assets",
+            size: "—",
+            modified: "2026-06-18",
+            kind: "Folder",
+        },
+        DetailRow {
+            glyph: FILE,
+            name: "README.md",
+            size: "4.7 KB",
+            modified: "2026-06-27",
+            kind: "Markdown",
+        },
+        DetailRow {
+            glyph: FILE,
+            name: "photo.png",
+            size: "1.2 MB",
+            modified: "2026-06-28",
+            kind: "PNG image",
+        },
     ];
 
-    cluster(ui, theme, "detail — sortable columns (Table reuse)", |ui| {
-        let columns = vec![
-            TableColumn {
-                title: "Name",
-                width: TableColumnWidth::Remainder { at_least: 140.0, clip: true },
-                align: TableAlign::Left,
-                sort_id: Some(0_usize),
-            },
-            TableColumn {
-                title: "Size",
-                width: TableColumnWidth::Initial { initial: 88.0, at_least: 64.0 },
-                align: TableAlign::Right,
-                sort_id: Some(1_usize),
-            },
-            TableColumn {
-                title: "Modified",
-                width: TableColumnWidth::Initial { initial: 120.0, at_least: 96.0 },
-                align: TableAlign::Left,
-                sort_id: Some(2_usize),
-            },
-            TableColumn {
-                title: "Type",
-                width: TableColumnWidth::Initial { initial: 112.0, at_least: 80.0 },
-                align: TableAlign::Left,
-                sort_id: Some(3_usize),
-            },
-        ];
+    cluster(
+        ui,
+        theme,
+        "detail — sortable columns (Table reuse)",
+        |ui| {
+            let columns = vec![
+                TableColumn {
+                    title: "Name",
+                    width: TableColumnWidth::Remainder {
+                        at_least: 140.0,
+                        clip: true,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: Some(0_usize),
+                },
+                TableColumn {
+                    title: "Size",
+                    width: TableColumnWidth::Initial {
+                        initial: 88.0,
+                        at_least: 64.0,
+                    },
+                    align: TableAlign::Right,
+                    sort_id: Some(1_usize),
+                },
+                TableColumn {
+                    title: "Modified",
+                    width: TableColumnWidth::Initial {
+                        initial: 120.0,
+                        at_least: 96.0,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: Some(2_usize),
+                },
+                TableColumn {
+                    title: "Type",
+                    width: TableColumnWidth::Initial {
+                        initial: 112.0,
+                        at_least: 80.0,
+                    },
+                    align: TableAlign::Left,
+                    sort_id: Some(3_usize),
+                },
+            ];
 
-        DETAIL_SEL.with(|s| {
-            let mut sel = s.borrow_mut();
-            let selected = *sel;
-            let out = Table::new(columns)
-                .active_sort(0_usize, TableSortDir::Asc)
-                .header_fill(egui::Color32::from(theme.bg_sidebar()))
-                .selectable(true)
-                .max_scroll_height(theme.overlay_top_offset.value() * 2.0)
-                .id_salt("explorer_detail_demo")
-                .show(
-                    ui,
-                    theme,
-                    &rows,
-                    |row: &DetailRow| {
-                        rows.iter().position(|r| r.name == row.name) == Some(selected)
-                    },
-                    |ui, th, row, col| match col {
-                        0 => {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
-                                let g = row.glyph;
-                                let sz = th.icon_glyph_size_md.value();
-                                let (rect, _) = ui
-                                    .allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                                g.image(sz, egui::Color32::from(th.text_secondary()))
-                                    .paint_at(ui, rect);
+            DETAIL_SEL.with(|s| {
+                let mut sel = s.borrow_mut();
+                let selected = *sel;
+                let out = Table::new(columns)
+                    .active_sort(0_usize, TableSortDir::Asc)
+                    .header_fill(egui::Color32::from(theme.bg_sidebar()))
+                    .selectable(true)
+                    .max_scroll_height(theme.overlay_top_offset.value() * 2.0)
+                    .id_salt("explorer_detail_demo")
+                    .show(
+                        ui,
+                        theme,
+                        &rows,
+                        |row: &DetailRow| {
+                            rows.iter().position(|r| r.name == row.name) == Some(selected)
+                        },
+                        |ui, th, row, col| match col {
+                            0 => {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = th.spacing_sm.value();
+                                    let g = row.glyph;
+                                    let sz = th.icon_glyph_size_md.value();
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(sz, sz),
+                                        egui::Sense::hover(),
+                                    );
+                                    g.image(sz, egui::Color32::from(th.text_secondary()))
+                                        .paint_at(ui, rect);
+                                    ui.label(
+                                        egui::RichText::new(row.name)
+                                            .size(th.font_size_body.value())
+                                            .color(egui::Color32::from(th.text_primary())),
+                                    );
+                                });
+                            }
+                            _ => {
+                                let text = match col {
+                                    1 => row.size,
+                                    2 => row.modified,
+                                    _ => row.kind,
+                                };
                                 ui.label(
-                                    egui::RichText::new(row.name)
+                                    egui::RichText::new(text)
                                         .size(th.font_size_body.value())
-                                        .color(egui::Color32::from(th.text_primary())),
+                                        .color(egui::Color32::from(th.text_muted())),
                                 );
-                            });
-                        }
-                        _ => {
-                            let text = match col {
-                                1 => row.size,
-                                2 => row.modified,
-                                _ => row.kind,
-                            };
-                            ui.label(
-                                egui::RichText::new(text)
-                                    .size(th.font_size_body.value())
-                                    .color(egui::Color32::from(th.text_muted())),
-                            );
-                        }
-                    },
-                );
-            if let Some(i) = out.clicked_row {
-                *sel = i;
-            }
-        });
-    });
+                            }
+                        },
+                    );
+                if let Some(i) = out.clicked_row {
+                    *sel = i;
+                }
+            });
+        },
+    );
 
     meta(
         ui,
@@ -271,8 +328,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: bool) -> bool {
     let label_h = theme.font_size_body.value() + theme.spacing_xs.value();
     let cell_h = ICON_BOX + theme.spacing_sm.value() + label_h + theme.spacing_sm.value() * 2.0;
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(CELL_W, cell_h), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(CELL_W, cell_h), egui::Sense::click());
     let p = ui.painter_at(rect);
 
     // 선택 셀 배경 + accent 보더.
@@ -315,7 +371,13 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
     let glyph = theme.icon_glyph_size_md.value() + theme.spacing_sm.value(); // ≈24
     let glyph_rect = egui::Rect::from_center_size(box_rect.center(), egui::vec2(glyph, glyph));
     // cut-pending 셀은 전경만 opacity-cut(50%) 로 디밍.
-    let fg_dim = |c: egui::Color32| if cut { c.gamma_multiply(theme.opacity_cut()) } else { c };
+    let fg_dim = |c: egui::Color32| {
+        if cut {
+            c.gamma_multiply(theme.opacity_cut())
+        } else {
+            c
+        }
+    };
     let glyph_color = if e.dir {
         theme.accent_primary()
     } else {

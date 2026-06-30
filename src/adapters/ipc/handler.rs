@@ -265,9 +265,7 @@ fn route_engine_handler(
         "workspace_category.delete" => {
             workspace_category::handle_delete(engine, id, &request.params)
         }
-        "workspace_category.move" => {
-            workspace_category::handle_move(engine, id, &request.params)
-        }
+        "workspace_category.move" => workspace_category::handle_move(engine, id, &request.params),
         // pane / split
         "pane.list" => pane::handle_pane_list(state, engine, id),
         "pane.close" => pane::handle_pane_close(core, state, engine, id, &request.params),
@@ -938,7 +936,9 @@ fn json_deep_merge(target: &mut serde_json::Value, patch: &serde_json::Value) {
         (serde_json::Value::Object(target_map), serde_json::Value::Object(patch_map)) => {
             for (k, v) in patch_map {
                 json_deep_merge(
-                    target_map.entry(k.clone()).or_insert(serde_json::Value::Null),
+                    target_map
+                        .entry(k.clone())
+                        .or_insert(serde_json::Value::Null),
                     v,
                 );
             }

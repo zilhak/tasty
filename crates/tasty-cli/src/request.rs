@@ -519,9 +519,7 @@ fn workspace_category_command_to_method_params(
     command: &WorkspaceCategoryCommands,
 ) -> (&'static str, serde_json::Value) {
     match command {
-        WorkspaceCategoryCommands::List => {
-            ("workspace_category.list", serde_json::json!({}))
-        }
+        WorkspaceCategoryCommands::List => ("workspace_category.list", serde_json::json!({})),
         WorkspaceCategoryCommands::Create { name } => (
             "workspace_category.create",
             serde_json::json!({ "name": name }),
@@ -530,10 +528,9 @@ fn workspace_category_command_to_method_params(
             "workspace_category.rename",
             serde_json::json!({ "id": id, "name": name }),
         ),
-        WorkspaceCategoryCommands::Delete { id } => (
-            "workspace_category.delete",
-            serde_json::json!({ "id": id }),
-        ),
+        WorkspaceCategoryCommands::Delete { id } => {
+            ("workspace_category.delete", serde_json::json!({ "id": id }))
+        }
         WorkspaceCategoryCommands::Move { from, to } => (
             "workspace_category.move",
             serde_json::json!({ "from_index": from, "to_index": to }),

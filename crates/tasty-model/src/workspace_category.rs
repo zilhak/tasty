@@ -108,10 +108,7 @@ pub fn validate_new_category_name<'a>(
     if is_reserved_normal(&name) {
         return Err(CategoryNameError::Reserved);
     }
-    if existing
-        .into_iter()
-        .any(|e| e.eq_ignore_ascii_case(&name))
-    {
+    if existing.into_iter().any(|e| e.eq_ignore_ascii_case(&name)) {
         return Err(CategoryNameError::Duplicate);
     }
     Ok(name)

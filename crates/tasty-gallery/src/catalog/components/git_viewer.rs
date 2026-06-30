@@ -38,9 +38,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         spec::cluster(ui, theme, "status + log — rail | (status / log)", |ui| {
             shell(ui, theme, false);
         });
-        spec::cluster(ui, theme, "diff — selected file replaces the bottom pane", |ui| {
-            shell(ui, theme, true);
-        });
+        spec::cluster(
+            ui,
+            theme,
+            "diff — selected file replaces the bottom pane",
+            |ui| {
+                shell(ui, theme, true);
+            },
+        );
     });
 
     spec::meta(
@@ -55,7 +60,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("badges", "main·linked / current·locked·invalid"),
         ],
         &[
-            TokenChip::new("accent-info", "head · main · refs", theme.accent_info().to_egui()),
+            TokenChip::new(
+                "accent-info",
+                "head · main · refs",
+                theme.accent_info().to_egui(),
+            ),
             TokenChip::new(
                 "accent-success",
                 "current · added",
@@ -96,7 +105,10 @@ fn shell(ui: &mut egui::Ui, theme: &Theme, show_diff: bool) {
         let head_h = theme.item_height_interactive.value() + pad * 2.0;
         let btn = egui::Rect::from_min_size(
             egui::pos2(rect.left() + pad, rect.top() + pad),
-            egui::vec2(theme.field_width_xs.value() * 0.8, theme.item_height_interactive.value()),
+            egui::vec2(
+                theme.field_width_xs.value() * 0.8,
+                theme.item_height_interactive.value(),
+            ),
         );
         p.rect_filled(
             btn,
@@ -269,7 +281,10 @@ fn paint_status(p: &egui::Painter, theme: &Theme, pane: egui::Rect) {
         pane,
         y,
         false,
-        &[(" M ", theme.accent_warning().to_egui()), ("src/view.rs", text)],
+        &[
+            (" M ", theme.accent_warning().to_egui()),
+            ("src/view.rs", text),
+        ],
     );
     y = row(
         p,
@@ -277,7 +292,10 @@ fn paint_status(p: &egui::Painter, theme: &Theme, pane: egui::Rect) {
         pane,
         y,
         false,
-        &[(" A ", theme.accent_success().to_egui()), ("docs/git.md", text)],
+        &[
+            (" A ", theme.accent_success().to_egui()),
+            ("docs/git.md", text),
+        ],
     );
     let _ = row(
         p,
@@ -285,7 +303,10 @@ fn paint_status(p: &egui::Painter, theme: &Theme, pane: egui::Rect) {
         pane,
         y,
         false,
-        &[(" D ", theme.accent_danger().to_egui()), ("old/legacy.rs", text)],
+        &[
+            (" D ", theme.accent_danger().to_egui()),
+            ("old/legacy.rs", text),
+        ],
     );
 }
 
@@ -342,9 +363,18 @@ fn paint_diff(p: &egui::Painter, theme: &Theme, pane: egui::Rect) {
     let line_h = theme.font_size_body.value() + theme.spacing_xs.value();
     let lines: &[(&str, egui::Color32)] = &[
         ("@@ -1,4 +1,5 @@", theme.accent_info().to_egui()),
-        ("   1    1   fn main_tree(vm) {", theme.text_primary().to_egui()),
-        ("        2 + let header = build();", theme.accent_success().to_egui()),
-        ("   2      - let h = old();", theme.accent_danger().to_egui()),
+        (
+            "   1    1   fn main_tree(vm) {",
+            theme.text_primary().to_egui(),
+        ),
+        (
+            "        2 + let header = build();",
+            theme.accent_success().to_egui(),
+        ),
+        (
+            "   2      - let h = old();",
+            theme.accent_danger().to_egui(),
+        ),
         ("   3    3   vbox(children)", theme.text_primary().to_egui()),
     ];
     for (text, color) in lines {

@@ -62,11 +62,7 @@ impl ViewerState {
             .unwrap_or_else(|| repo.path().to_path_buf());
         s.current_workdir = Some(current_wd.clone());
         s.worktrees = git::collect_worktrees(&repo, &current_wd).unwrap_or_default();
-        s.active_worktree = s
-            .worktrees
-            .iter()
-            .position(|w| w.is_current)
-            .unwrap_or(0);
+        s.active_worktree = s.worktrees.iter().position(|w| w.is_current).unwrap_or(0);
 
         if s.worktrees.is_empty() {
             // worktree 도출 실패 등 — 기존 단일 repo 흐름으로 폴백.
@@ -92,10 +88,7 @@ impl ViewerState {
             self.error = Some(format!("repo lost at {}", path.display()));
             return;
         };
-        self.repo_path = repo
-            .workdir()
-            .map(|p| p.to_path_buf())
-            .or(Some(path));
+        self.repo_path = repo.workdir().map(|p| p.to_path_buf()).or(Some(path));
         self.refresh_collections(&repo);
     }
 

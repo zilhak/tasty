@@ -29,7 +29,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "boundary — webview region", |ui| {
             tile(ui, theme, |ui| {
-                glyph(ui, icons::GLOBE, theme.icon_glyph_size_md.value(), theme.text_muted());
+                glyph(
+                    ui,
+                    icons::GLOBE,
+                    theme.icon_glyph_size_md.value(),
+                    theme.text_muted(),
+                );
                 gap(ui, theme);
                 label(ui, theme, "WebView region", theme.text_muted());
                 label(ui, theme, "https://tasty.dev", theme.text_disabled());
@@ -37,14 +42,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
         spec::cluster(ui, theme, "placeholder — no URL", |ui| {
             tile(ui, theme, |ui| {
-                glyph(ui, icons::GLOBE, theme.icon_glyph_size_md.value(), theme.text_disabled());
+                glyph(
+                    ui,
+                    icons::GLOBE,
+                    theme.icon_glyph_size_md.value(),
+                    theme.text_disabled(),
+                );
                 gap(ui, theme);
                 label(ui, theme, "No page loaded", theme.text_muted());
             });
         });
         spec::cluster(ui, theme, "loading", |ui| {
             tile(ui, theme, |ui| {
-                Spinner::new().size(theme.spinner_size.value()).show(ui, theme);
+                Spinner::new()
+                    .size(theme.spinner_size.value())
+                    .show(ui, theme);
                 gap(ui, theme);
                 label(ui, theme, "Loading…", theme.text_muted());
             });
@@ -77,7 +89,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-panel", "tile", theme.bg_panel().to_egui()),
-            TokenChip::new("border-default", "boundary", theme.border_default().to_egui()),
+            TokenChip::new(
+                "border-default",
+                "boundary",
+                theme.border_default().to_egui(),
+            ),
             TokenChip::new("text-muted", "captions", theme.text_muted().to_egui()),
             TokenChip::new("accent-danger", "error", theme.accent_danger().to_egui()),
         ],

@@ -559,15 +559,7 @@ mod workspace_category_tests {
 
     #[test]
     fn set_workspace_carries_category() {
-        let r = req(&[
-            "tasty",
-            "set",
-            "workspace",
-            "--id",
-            "2",
-            "--category",
-            "5",
-        ]);
+        let r = req(&["tasty", "set", "workspace", "--id", "2", "--category", "5"]);
         assert_eq!(r.method, "workspace.update");
         assert_eq!(r.params["category"], "5");
     }

@@ -18,9 +18,7 @@ use std::path::{Path, PathBuf};
 
 use tasty_model::{ExplorerPanel, ExplorerViewMode, SortColumn, SortDir};
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{
-    Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row,
-};
+use tasty_ui_widgets::{Table, TableAlign, TableColumn, TableColumnWidth, TableSortDir, tree_row};
 
 use crate::adapters::ui::icons::{self, Icon};
 use crate::i18n::{t, t_fmt};
@@ -140,7 +138,14 @@ pub fn draw_explorer(
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
                         content(
-                            ui, theme, panel, view, font, id_suffix, cut_pending, &mut action,
+                            ui,
+                            theme,
+                            panel,
+                            view,
+                            font,
+                            id_suffix,
+                            cut_pending,
+                            &mut action,
                         )
                     },
                 );
@@ -188,7 +193,11 @@ fn tab_strip(
         let tab_w = pad_x + galley.size().x + gap + icon_xs + pad_x;
         let tab_rect =
             egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(tab_w, bar_h));
-        let resp = ui.interact(tab_rect, ui.id().with(("explorer_tab", i)), egui::Sense::click());
+        let resp = ui.interact(
+            tab_rect,
+            ui.id().with(("explorer_tab", i)),
+            egui::Sense::click(),
+        );
 
         if i > 0 && !is_active {
             ui.painter().vline(
@@ -199,9 +208,13 @@ fn tab_strip(
         }
 
         if is_active {
-            ui.painter().rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
+            ui.painter()
+                .rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
             let underline = egui::Rect::from_min_size(
-                egui::pos2(tab_rect.min.x, tab_rect.max.y - theme.tab_indicator_width.value()),
+                egui::pos2(
+                    tab_rect.min.x,
+                    tab_rect.max.y - theme.tab_indicator_width.value(),
+                ),
                 egui::vec2(tab_w, theme.tab_indicator_width.value()),
             );
             ui.painter()
@@ -227,7 +240,10 @@ fn tab_strip(
         // close ✕ — 활성 상시 / 비활성 hover. 탭이 1개면 표시하지 않음.
         if panel.tabs.len() > 1 && (is_active || resp.hovered()) {
             let close_rect = egui::Rect::from_min_size(
-                egui::pos2(tab_rect.max.x - pad_x - icon_xs, tab_rect.center().y - icon_xs / 2.0),
+                egui::pos2(
+                    tab_rect.max.x - pad_x - icon_xs,
+                    tab_rect.center().y - icon_xs / 2.0,
+                ),
                 egui::vec2(icon_xs, icon_xs),
             );
             let close_resp = ui.interact(
@@ -251,11 +267,17 @@ fn tab_strip(
 
     // 끝 `＋` 새 탭.
     let plus_rect = egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(bar_h, bar_h));
-    let plus_resp =
-        ui.interact(plus_rect, ui.id().with("explorer_tab_new"), egui::Sense::click());
+    let plus_resp = ui.interact(
+        plus_rect,
+        ui.id().with("explorer_tab_new"),
+        egui::Sense::click(),
+    );
     if plus_resp.hovered() {
-        ui.painter()
-            .rect_filled(plus_rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
+        ui.painter().rect_filled(
+            plus_rect,
+            0.0,
+            theme.overlay_hover().to_egui_premultiplied(),
+        );
     }
     let icon = theme.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_center_size(plus_rect.center(), egui::vec2(icon, icon));
@@ -278,7 +300,8 @@ fn toolbar(
     let pad = theme.spacing_sm.value();
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, theme.bg_panel().to_egui());
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_panel().to_egui());
 
     let inner = rect.shrink2(egui::vec2(pad, pad));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
@@ -286,8 +309,13 @@ fn toolbar(
     child.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
 
-        if tool_icon(ui, theme, icons::CHEVRON_LEFT, tab.can_go_back(), t("explorer.nav.back"))
-            && action.is_none()
+        if tool_icon(
+            ui,
+            theme,
+            icons::CHEVRON_LEFT,
+            tab.can_go_back(),
+            t("explorer.nav.back"),
+        ) && action.is_none()
         {
             *action = Some(ExplorerAction::GoBack);
         }
@@ -301,13 +329,17 @@ fn toolbar(
         {
             *action = Some(ExplorerAction::GoForward);
         }
-        if tool_icon(ui, theme, icons::CHEVRON_UP, tab.can_go_up(), t("explorer.nav.up"))
-            && action.is_none()
+        if tool_icon(
+            ui,
+            theme,
+            icons::CHEVRON_UP,
+            tab.can_go_up(),
+            t("explorer.nav.up"),
+        ) && action.is_none()
         {
             *action = Some(ExplorerAction::GoUp);
         }
-        if tool_icon(ui, theme, icons::REFRESH, true, t("explorer.nav.refresh"))
-            && action.is_none()
+        if tool_icon(ui, theme, icons::REFRESH, true, t("explorer.nav.refresh")) && action.is_none()
         {
             *action = Some(ExplorerAction::Refresh);
         }
@@ -325,8 +357,11 @@ fn toolbar(
 
         // 우측 정렬: view-mode segmented.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let labels =
-                [t("explorer.view.grid"), t("explorer.view.list"), t("explorer.view.detail")];
+            let labels = [
+                t("explorer.view.grid"),
+                t("explorer.view.list"),
+                t("explorer.view.detail"),
+            ];
             let sel = match tab.view_mode {
                 ExplorerViewMode::Grid => 0,
                 ExplorerViewMode::List => 1,
@@ -347,12 +382,7 @@ fn toolbar(
 }
 
 /// breadcrumb 행: root 의 조상들을 `›` 로 구분해 클릭 가능한 칩으로.
-fn breadcrumb(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    root: &Path,
-    action: &mut Option<ExplorerAction>,
-) {
+fn breadcrumb(ui: &mut egui::Ui, theme: &Theme, root: &Path, action: &mut Option<ExplorerAction>) {
     let body = theme.font_size_body.value();
     let font = egui::FontId::proportional(body);
     // 조상: 위→아래 순서로.
@@ -374,8 +404,7 @@ fn breadcrumb(
         let is_last = i == last;
         let galley =
             ui.fonts(|f| f.layout_no_wrap(name.clone(), font.clone(), egui::Color32::WHITE));
-        let (crect, resp) =
-            ui.allocate_exact_size(galley.size(), egui::Sense::click());
+        let (crect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::click());
         let color = if is_last {
             theme.text_primary().to_egui()
         } else if resp.hovered() {
@@ -383,8 +412,13 @@ fn breadcrumb(
         } else {
             theme.text_secondary().to_egui()
         };
-        ui.painter()
-            .text(crect.left_center(), egui::Align2::LEFT_CENTER, &name, font.clone(), color);
+        ui.painter().text(
+            crect.left_center(),
+            egui::Align2::LEFT_CENTER,
+            &name,
+            font.clone(),
+            color,
+        );
         if resp.clicked() && !is_last && action.is_none() {
             *action = Some(ExplorerAction::Navigate(c.clone()));
         }
@@ -393,8 +427,13 @@ fn breadcrumb(
                 egui::vec2(theme.spacing_sm.value() + 4.0, galley.size().y),
                 egui::Sense::hover(),
             );
-            ui.painter()
-                .text(srect.center(), egui::Align2::CENTER_CENTER, "›", font.clone(), sep);
+            ui.painter().text(
+                srect.center(),
+                egui::Align2::CENTER_CENTER,
+                "›",
+                font.clone(),
+                sep,
+            );
         }
     }
 }
@@ -409,8 +448,11 @@ fn sidebar(
     action: &mut Option<ExplorerAction>,
 ) {
     let full = ui.available_size();
-    ui.painter()
-        .rect_filled(egui::Rect::from_min_size(ui.cursor().min, full), 0.0, theme.bg_sidebar().to_egui());
+    ui.painter().rect_filled(
+        egui::Rect::from_min_size(ui.cursor().min, full),
+        0.0,
+        theme.bg_sidebar().to_egui(),
+    );
     ui.add_space(theme.spacing_xs.value());
     ui.spacing_mut().item_spacing.y = 0.0;
 
@@ -515,8 +557,7 @@ fn tree_node(
     if resp.clicked() {
         let toggle_zone = resp.rect.left() + depth as f32 * theme.spacing_md.value() + 24.0;
         let pointer = ui.input(|i| i.pointer.interact_pos());
-        let is_toggle = has_children
-            && pointer.map(|p| p.x <= toggle_zone).unwrap_or(false);
+        let is_toggle = has_children && pointer.map(|p| p.x <= toggle_zone).unwrap_or(false);
         if is_toggle {
             if open {
                 view.expanded.remove(dir);
@@ -528,8 +569,11 @@ fn tree_node(
         }
     }
     if open {
-        let children: Vec<PathBuf> =
-            view.tree_children_of(dir).iter().map(|e| e.path.clone()).collect();
+        let children: Vec<PathBuf> = view
+            .tree_children_of(dir)
+            .iter()
+            .map(|e| e.path.clone())
+            .collect();
         for child in children {
             tree_node(ui, theme, view, &child, depth + 1, action);
         }
@@ -584,9 +628,16 @@ fn content(
                     ExplorerViewMode::List => {
                         list_view(ui, theme, view, cut_pending, &root, action)
                     }
-                    ExplorerViewMode::Detail => {
-                        detail_view(ui, theme, panel, view, id_suffix, cut_pending, &root, action)
-                    }
+                    ExplorerViewMode::Detail => detail_view(
+                        ui,
+                        theme,
+                        panel,
+                        view,
+                        id_suffix,
+                        cut_pending,
+                        &root,
+                        action,
+                    ),
                 });
         },
     );
@@ -618,7 +669,8 @@ fn status_line(ui: &mut egui::Ui, theme: &Theme, view: &ExplorerView) {
         egui::vec2(ui.available_width(), theme.item_height_interactive.value()),
         egui::Sense::hover(),
     );
-    ui.painter().rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
@@ -657,7 +709,10 @@ fn emit_entry_context(
         paths.sort();
         ExplorerMenuTarget::Multi { paths }
     } else {
-        ExplorerMenuTarget::Single { path: entry.path.clone(), is_dir: entry.is_dir }
+        ExplorerMenuTarget::Single {
+            path: entry.path.clone(),
+            is_dir: entry.is_dir,
+        }
     };
     if action.is_none() {
         *action = Some(ExplorerAction::ContextMenu {
@@ -757,7 +812,8 @@ fn grid_view(
     ui.add_space(theme.spacing_md.value());
     let entries = view.entries.clone();
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
+        ui.spacing_mut().item_spacing =
+            egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
         for e in &entries {
             let selected = view.selected.contains(&e.path);
             let cut = cut_pending.contains(&e.path);
@@ -788,7 +844,11 @@ fn grid_cell(
     let p = ui.painter_at(rect);
 
     if selected {
-        p.rect_filled(rect, theme.corner_radius.value(), theme.surface_active().to_egui());
+        p.rect_filled(
+            rect,
+            theme.corner_radius.value(),
+            theme.surface_active().to_egui(),
+        );
         p.rect_stroke(
             rect,
             theme.corner_radius.value(),
@@ -804,24 +864,41 @@ fn grid_cell(
     }
 
     let box_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.center().x - ICON_BOX / 2.0, rect.top() + theme.spacing_sm.value()),
+        egui::pos2(
+            rect.center().x - ICON_BOX / 2.0,
+            rect.top() + theme.spacing_sm.value(),
+        ),
         egui::vec2(ICON_BOX, ICON_BOX),
     );
-    p.rect_filled(box_rect, theme.corner_radius.value(), theme.surface_raised().to_egui());
+    p.rect_filled(
+        box_rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+    );
     let glyph = theme.icon_glyph_size_md.value() + theme.spacing_sm.value();
     let glyph_rect = egui::Rect::from_center_size(box_rect.center(), egui::vec2(glyph, glyph));
     let icon = if e.is_dir { icons::FOLDER } else { icons::FILE };
     // cut-pending 셀은 전경을 opacity_cut(50%) 로 디밍.
-    let fg_dim = |c: egui::Color32| if cut { c.gamma_multiply(theme.opacity_cut()) } else { c };
+    let fg_dim = |c: egui::Color32| {
+        if cut {
+            c.gamma_multiply(theme.opacity_cut())
+        } else {
+            c
+        }
+    };
     let glyph_color = if e.is_dir {
         theme.accent_primary().to_egui()
     } else {
         theme.text_secondary().to_egui()
     };
-    icon.image(glyph, fg_dim(glyph_color)).paint_at(ui, glyph_rect);
+    icon.image(glyph, fg_dim(glyph_color))
+        .paint_at(ui, glyph_rect);
 
     p.text(
-        egui::pos2(rect.center().x, box_rect.bottom() + theme.spacing_sm.value() + label_h / 2.0),
+        egui::pos2(
+            rect.center().x,
+            box_rect.bottom() + theme.spacing_sm.value() + label_h / 2.0,
+        ),
         egui::Align2::CENTER_CENTER,
         truncate(&e.name, 12),
         egui::FontId::proportional(font.font_size.max(1.0).min(theme.font_size_body.value())),
@@ -887,25 +964,37 @@ fn detail_view(
     let columns = vec![
         TableColumn {
             title: t("explorer.column.name"),
-            width: TableColumnWidth::Remainder { at_least: 140.0, clip: true },
+            width: TableColumnWidth::Remainder {
+                at_least: 140.0,
+                clip: true,
+            },
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Name),
         },
         TableColumn {
             title: t("explorer.column.size"),
-            width: TableColumnWidth::Initial { initial: 88.0, at_least: 64.0 },
+            width: TableColumnWidth::Initial {
+                initial: 88.0,
+                at_least: 64.0,
+            },
             align: TableAlign::Right,
             sort_id: Some(SortColumn::Size),
         },
         TableColumn {
             title: t("explorer.column.modified"),
-            width: TableColumnWidth::Initial { initial: 120.0, at_least: 96.0 },
+            width: TableColumnWidth::Initial {
+                initial: 120.0,
+                at_least: 96.0,
+            },
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Modified),
         },
         TableColumn {
             title: t("explorer.column.type"),
-            width: TableColumnWidth::Initial { initial: 112.0, at_least: 80.0 },
+            width: TableColumnWidth::Initial {
+                initial: 112.0,
+                at_least: 80.0,
+            },
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Type),
         },
@@ -944,7 +1033,11 @@ fn detail_view(
                             let sz = th.icon_glyph_size_md.value();
                             let (rect, _) =
                                 ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                            let icon = if row.is_dir { icons::FOLDER } else { icons::FILE };
+                            let icon = if row.is_dir {
+                                icons::FOLDER
+                            } else {
+                                icons::FILE
+                            };
                             let c = if row.is_dir {
                                 th.accent_primary().to_egui()
                             } else {
@@ -982,13 +1075,18 @@ fn detail_view(
     if let Some(i) = out.secondary_clicked_row
         && let Some(e) = entries.get(i)
     {
-        let pos = ui.input(|inp| inp.pointer.interact_pos()).unwrap_or_default();
+        let pos = ui
+            .input(|inp| inp.pointer.interact_pos())
+            .unwrap_or_default();
         emit_entry_context(view, e, pos, root, action);
     }
     if let Some(i) = out.clicked_row
         && let Some(e) = entries.get(i)
     {
-        let dbl = ui.input(|inp| inp.pointer.button_double_clicked(egui::PointerButton::Primary));
+        let dbl = ui.input(|inp| {
+            inp.pointer
+                .button_double_clicked(egui::PointerButton::Primary)
+        });
         if dbl {
             if e.is_dir {
                 if action.is_none() {
@@ -1011,7 +1109,11 @@ fn detail_view(
 // ── 작은 헬퍼들 ────────────────────────────────────────────────────────────
 fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &str) -> bool {
     let sz = theme.item_height_interactive.value();
-    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(sz, sz), sense);
     if enabled && resp.hovered() {
         ui.painter().rect_filled(
@@ -1025,10 +1127,17 @@ fn tool_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, enabled: bool, tip: &
     let color = if enabled {
         theme.text_secondary().to_egui()
     } else {
-        theme.text_muted().to_egui().gamma_multiply(theme.opacity_disabled())
+        theme
+            .text_muted()
+            .to_egui()
+            .gamma_multiply(theme.opacity_disabled())
     };
     icon.image(glyph, color).paint_at(ui, gr);
-    let resp = if enabled { resp.on_hover_text(tip) } else { resp };
+    let resp = if enabled {
+        resp.on_hover_text(tip)
+    } else {
+        resp
+    };
     enabled && resp.clicked()
 }
 

@@ -39,11 +39,7 @@ define_class!(
     // WKNavigationDelegate: navigation 생명주기 콜백. start/finish/fail* 만 구현(나머지 optional).
     unsafe impl WKNavigationDelegate for NavDelegate {
         #[unsafe(method(webView:didStartProvisionalNavigation:))]
-        fn did_start_provisional(
-            &self,
-            _web_view: &WKWebView,
-            _navigation: Option<&WKNavigation>,
-        ) {
+        fn did_start_provisional(&self, _web_view: &WKWebView, _navigation: Option<&WKNavigation>) {
             self.ivars().nav_state.set(NavState::Loading);
         }
 
@@ -60,7 +56,10 @@ define_class!(
             error: &NSError,
         ) {
             // 사유는 로그 전용 — 화면 error chrome 은 URL 만 보여준다.
-            tracing::warn!("WKWebView navigation failed: {}", error.localizedDescription());
+            tracing::warn!(
+                "WKWebView navigation failed: {}",
+                error.localizedDescription()
+            );
             self.ivars().nav_state.set(NavState::Failed);
         }
 

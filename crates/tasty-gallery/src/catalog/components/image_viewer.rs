@@ -52,9 +52,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-sidebar", "canvas", theme.bg_sidebar().to_egui()),
-            TokenChip::new("surface-raised", "buttons", theme.surface_raised().to_egui()),
-            TokenChip::new("text-muted", "filename · zoom %", theme.text_muted().to_egui()),
-            TokenChip::new("border-default", "button / frame", theme.border_default().to_egui()),
+            TokenChip::new(
+                "surface-raised",
+                "buttons",
+                theme.surface_raised().to_egui(),
+            ),
+            TokenChip::new(
+                "text-muted",
+                "filename · zoom %",
+                theme.text_muted().to_egui(),
+            ),
+            TokenChip::new(
+                "border-default",
+                "button / frame",
+                theme.border_default().to_egui(),
+            ),
         ],
     );
 
@@ -117,7 +129,11 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
             egui::pos2(rect.left(), canvas_top),
             egui::pos2(rect.right(), rect.bottom()),
         );
-        p.rect_filled(canvas, egui::CornerRadius::ZERO, theme.bg_sidebar().to_egui());
+        p.rect_filled(
+            canvas,
+            egui::CornerRadius::ZERO,
+            theme.bg_sidebar().to_egui(),
+        );
 
         if loaded {
             // fit-to-window 그림: 테두리 프레임 + 중앙 fallback glyph(텍스처 대역).
@@ -125,18 +141,32 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
                 canvas.center(),
                 egui::vec2(canvas.height() * 1.3, canvas.height() * 0.78),
             );
-            p.rect_filled(pic, theme.corner_radius_sm.value(), theme.bg_panel().to_egui());
+            p.rect_filled(
+                pic,
+                theme.corner_radius_sm.value(),
+                theme.bg_panel().to_egui(),
+            );
             p.rect_stroke(
                 pic,
                 theme.corner_radius_sm.value(),
                 egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
                 egui::StrokeKind::Inside,
             );
-            glyph(ui, canvas.center(), theme.icon_glyph_size_md.value(), theme.text_muted().to_egui());
+            glyph(
+                ui,
+                canvas.center(),
+                theme.icon_glyph_size_md.value(),
+                theme.text_muted().to_egui(),
+            );
         } else {
             // fallback glyph + 안내 텍스트.
             let g = canvas.center() - egui::vec2(0.0, theme.spacing_lg.value());
-            glyph(ui, g, theme.icon_glyph_size_md.value(), theme.text_disabled().to_egui());
+            glyph(
+                ui,
+                g,
+                theme.icon_glyph_size_md.value(),
+                theme.text_disabled().to_egui(),
+            );
             p.text(
                 egui::pos2(canvas.center().x, g.y + theme.icon_glyph_size_md.value()),
                 egui::Align2::CENTER_TOP,
@@ -151,7 +181,11 @@ fn surface(ui: &mut egui::Ui, theme: &Theme, loaded: bool) {
 /// control 버튼 한 칸. surface-raised 채움 + 1px border + 중앙 라벨. 다음 x 반환.
 fn button(p: &egui::Painter, theme: &Theme, x: f32, y: f32, width: f32, label: &str) -> f32 {
     let r = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, BTN_H));
-    p.rect_filled(r, theme.corner_radius_sm.value(), theme.surface_raised().to_egui());
+    p.rect_filled(
+        r,
+        theme.corner_radius_sm.value(),
+        theme.surface_raised().to_egui(),
+    );
     p.rect_stroke(
         r,
         theme.corner_radius_sm.value(),
@@ -199,7 +233,11 @@ fn zoom_group(p: &egui::Painter, theme: &Theme, right_x: f32, y: f32) {
 
 /// 고정 rect 버튼(zoom 그룹용).
 fn btn_box(p: &egui::Painter, theme: &Theme, r: egui::Rect, label: &str) {
-    p.rect_filled(r, theme.corner_radius_sm.value(), theme.surface_raised().to_egui());
+    p.rect_filled(
+        r,
+        theme.corner_radius_sm.value(),
+        theme.surface_raised().to_egui(),
+    );
     p.rect_stroke(
         r,
         theme.corner_radius_sm.value(),

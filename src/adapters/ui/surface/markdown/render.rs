@@ -60,7 +60,12 @@ pub struct MdStyle {
 }
 
 impl MdStyle {
-    pub fn new(theme: &Theme, font: &EffectiveFont, base_dir: Option<PathBuf>, link_slot: egui::Id) -> Self {
+    pub fn new(
+        theme: &Theme,
+        font: &EffectiveFont,
+        base_dir: Option<PathBuf>,
+        link_slot: egui::Id,
+    ) -> Self {
         Self {
             family: font_registry::markdown_family(),
             body: font.font_size.max(1.0),
@@ -126,7 +131,9 @@ fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
         base_dir?.join(path)
     };
     let abs = std::path::absolute(&joined).unwrap_or(joined);
-    let abs = PathBuf::from(tasty_utils::path::strip_verbatim_prefix(&abs.to_string_lossy()));
+    let abs = PathBuf::from(tasty_utils::path::strip_verbatim_prefix(
+        &abs.to_string_lossy(),
+    ));
     Some(LinkClick::File(abs))
 }
 
@@ -152,8 +159,14 @@ struct Fmt {
 /// One inline fragment of a paragraph / heading / list item / table cell.
 enum Inline {
     Text(String, Fmt),
-    Link { runs: Vec<(String, Fmt)>, dest: String },
-    Image { dest: String, alt: String },
+    Link {
+        runs: Vec<(String, Fmt)>,
+        dest: String,
+    },
+    Image {
+        dest: String,
+        alt: String,
+    },
     SoftBreak,
     HardBreak,
 }
@@ -197,8 +210,13 @@ pub fn render(ui: &mut egui::Ui, style: &MdStyle, source: &str) {
 }
 
 /// Render one block whose `Start(tag)` was just consumed; consumes its matching `End`.
-fn block<'a, I>(ui: &mut egui::Ui, style: &MdStyle, it: &mut std::iter::Peekable<I>, tag: Tag<'a>, first: bool)
-where
+fn block<'a, I>(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    it: &mut std::iter::Peekable<I>,
+    tag: Tag<'a>,
+    first: bool,
+) where
     I: Iterator<Item = Event<'a>>,
 {
     match tag {
@@ -291,7 +309,13 @@ fn is_inline_start(ev: &Event<'_>) -> bool {
             | Event::Code(_)
             | Event::SoftBreak
             | Event::HardBreak
-            | Event::Start(Tag::Emphasis | Tag::Strong | Tag::Strikethrough | Tag::Link { .. } | Tag::Image { .. })
+            | Event::Start(
+                Tag::Emphasis
+                    | Tag::Strong
+                    | Tag::Strikethrough
+                    | Tag::Link { .. }
+                    | Tag::Image { .. }
+            )
     )
 }
 
@@ -309,8 +333,12 @@ where
     }
 }
 
-fn consume_inline_event<'a, I>(it: &mut std::iter::Peekable<I>, out: &mut Vec<Inline>, fmt: Fmt, ev: Event<'a>)
-where
+fn consume_inline_event<'a, I>(
+    it: &mut std::iter::Peekable<I>,
+    out: &mut Vec<Inline>,
+    fmt: Fmt,
+    ev: Event<'a>,
+) where
     I: Iterator<Item = Event<'a>>,
 {
     match ev {
@@ -318,9 +346,30 @@ where
         Event::Code(t) => out.push(Inline::Text(t.into_string(), Fmt { code: true, ..fmt })),
         Event::SoftBreak => out.push(Inline::SoftBreak),
         Event::HardBreak => out.push(Inline::HardBreak),
-        Event::Start(Tag::Emphasis) => read_inline(it, out, Fmt { italics: true, ..fmt }),
-        Event::Start(Tag::Strong) => read_inline(it, out, Fmt { strong: true, ..fmt }),
-        Event::Start(Tag::Strikethrough) => read_inline(it, out, Fmt { strike: true, ..fmt }),
+        Event::Start(Tag::Emphasis) => read_inline(
+            it,
+            out,
+            Fmt {
+                italics: true,
+                ..fmt
+            },
+        ),
+        Event::Start(Tag::Strong) => read_inline(
+            it,
+            out,
+            Fmt {
+                strong: true,
+                ..fmt
+            },
+        ),
+        Event::Start(Tag::Strikethrough) => read_inline(
+            it,
+            out,
+            Fmt {
+                strike: true,
+                ..fmt
+            },
+        ),
         Event::Start(Tag::Link { dest_url, .. }) => {
             let mut inner = Vec::new();
             read_inline(it, &mut inner, fmt);
@@ -454,7 +503,13 @@ fn append_section(job: &mut LayoutJob, style: &MdStyle, cfg: &InlineCfg, text: &
     job.append(text, 0.0, tf);
 }
 
-fn link_widget(ui: &mut egui::Ui, style: &MdStyle, cfg: &InlineCfg, runs: &[(String, Fmt)], dest: &str) {
+fn link_widget(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    cfg: &InlineCfg,
+    runs: &[(String, Fmt)],
+    dest: &str,
+) {
     let mut job = LayoutJob::default();
     for (t, fmt) in runs {
         let mut tf = TextFormat {
@@ -523,7 +578,10 @@ fn image_uri(dest: &str, base_dir: Option<&Path>) -> Option<String> {
     } else {
         base_dir?.join(path)
     };
-    Some(format!("file://{}", abs.to_string_lossy().replace('\\', "/")))
+    Some(format!(
+        "file://{}",
+        abs.to_string_lossy().replace('\\', "/")
+    ))
 }
 
 // ── headings ────────────────────────────────────────────────────────────────
@@ -535,19 +593,66 @@ fn heading_style(style: &MdStyle, level: HeadingLevel) -> HeadingStyle {
     let max = style.font_size_prose_h2;
     let body = style.body;
     match level {
-        HeadingLevel::H1 => HeadingStyle { size: prose_h1, color: style.primary, upper: false, tracking: 0.0, top: 0.0, bottom: style.space_sm },
-        HeadingLevel::H2 => HeadingStyle { size: max, color: style.primary, upper: false, tracking: 0.0, top: style.space_lg, bottom: style.space_xs },
-        HeadingLevel::H3 => HeadingStyle { size: max, color: style.primary, upper: false, tracking: 0.0, top: style.space_md, bottom: style.space_xs },
-        HeadingLevel::H4 => HeadingStyle { size: body, color: style.text, upper: false, tracking: 0.0, top: style.space_md, bottom: style.space_xs },
-        HeadingLevel::H5 => HeadingStyle { size: body, color: style.muted, upper: false, tracking: 0.0, top: style.space_sm, bottom: style.space_xs },
-        HeadingLevel::H6 => HeadingStyle { size: body, color: style.muted, upper: true, tracking: 0.6, top: style.space_sm, bottom: style.space_xs },
+        HeadingLevel::H1 => HeadingStyle {
+            size: prose_h1,
+            color: style.primary,
+            upper: false,
+            tracking: 0.0,
+            top: 0.0,
+            bottom: style.space_sm,
+        },
+        HeadingLevel::H2 => HeadingStyle {
+            size: max,
+            color: style.primary,
+            upper: false,
+            tracking: 0.0,
+            top: style.space_lg,
+            bottom: style.space_xs,
+        },
+        HeadingLevel::H3 => HeadingStyle {
+            size: max,
+            color: style.primary,
+            upper: false,
+            tracking: 0.0,
+            top: style.space_md,
+            bottom: style.space_xs,
+        },
+        HeadingLevel::H4 => HeadingStyle {
+            size: body,
+            color: style.text,
+            upper: false,
+            tracking: 0.0,
+            top: style.space_md,
+            bottom: style.space_xs,
+        },
+        HeadingLevel::H5 => HeadingStyle {
+            size: body,
+            color: style.muted,
+            upper: false,
+            tracking: 0.0,
+            top: style.space_sm,
+            bottom: style.space_xs,
+        },
+        HeadingLevel::H6 => HeadingStyle {
+            size: body,
+            color: style.muted,
+            upper: true,
+            tracking: 0.6,
+            top: style.space_sm,
+            bottom: style.space_xs,
+        },
     }
 }
 
 // ── lists ─────────────────────────────────────────────────────────────────--
 
-fn list<'a, I>(ui: &mut egui::Ui, style: &MdStyle, it: &mut std::iter::Peekable<I>, start: Option<u64>, depth: usize)
-where
+fn list<'a, I>(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    it: &mut std::iter::Peekable<I>,
+    start: Option<u64>,
+    depth: usize,
+) where
     I: Iterator<Item = Event<'a>>,
 {
     let mut number = start;
@@ -563,8 +668,13 @@ where
     }
 }
 
-fn list_item<'a, I>(ui: &mut egui::Ui, style: &MdStyle, it: &mut std::iter::Peekable<I>, number: Option<u64>, depth: usize)
-where
+fn list_item<'a, I>(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    it: &mut std::iter::Peekable<I>,
+    number: Option<u64>,
+    depth: usize,
+) where
     I: Iterator<Item = Event<'a>>,
 {
     // One indent step; deeper levels nest visually via the parent item's content ui.
@@ -589,8 +699,12 @@ where
 
 /// Render an item's content: a leading inline run (tight items aren't paragraph-wrapped),
 /// any paragraph blocks, and nested lists — until the `End(Item)`.
-fn item_content<'a, I>(ui: &mut egui::Ui, style: &MdStyle, it: &mut std::iter::Peekable<I>, depth: usize)
-where
+fn item_content<'a, I>(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    it: &mut std::iter::Peekable<I>,
+    depth: usize,
+) where
     I: Iterator<Item = Event<'a>>,
 {
     let mut first = true;
@@ -636,14 +750,26 @@ where
     }
 }
 
-fn marker(ui: &mut egui::Ui, style: &MdStyle, number: Option<u64>, task: Option<bool>, depth: usize) {
+fn marker(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    number: Option<u64>,
+    task: Option<bool>,
+    depth: usize,
+) {
     if let Some(done) = task {
         checkbox(ui, style, done);
         return;
     }
     let (text, font) = match number {
-        Some(n) => (format!("{n}."), FontId::new(style.body, FontFamily::Monospace)),
-        None => (bullet(depth).to_string(), FontId::new(style.body, style.family.clone())),
+        Some(n) => (
+            format!("{n}."),
+            FontId::new(style.body, FontFamily::Monospace),
+        ),
+        None => (
+            bullet(depth).to_string(),
+            FontId::new(style.body, style.family.clone()),
+        ),
     };
     // Measure the marker so multi-digit ordinals ("10.") don't collide with the content.
     let galley = ui.fonts(|f| f.layout_no_wrap(text.clone(), font.clone(), style.muted));
@@ -651,7 +777,10 @@ fn marker(ui: &mut egui::Ui, style: &MdStyle, number: Option<u64>, task: Option<
     let row_h = style.body * style.line_height_prose;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, row_h), Sense::hover());
     ui.painter().text(
-        egui::pos2(rect.left(), rect.top() + style.body * (style.line_height_prose - 1.0) * 0.5),
+        egui::pos2(
+            rect.left(),
+            rect.top() + style.body * (style.line_height_prose - 1.0) * 0.5,
+        ),
         egui::Align2::LEFT_TOP,
         text,
         font,
@@ -669,7 +798,10 @@ fn bullet(depth: usize) -> &'static str {
 
 fn checkbox(ui: &mut egui::Ui, style: &MdStyle, done: bool) {
     let s = style.body;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(style.space_lg, s * style.line_height_prose), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(style.space_lg, s * style.line_height_prose),
+        Sense::hover(),
+    );
     let box_rect = egui::Rect::from_center_size(
         egui::pos2(rect.left() + s * 0.5, rect.center().y),
         egui::vec2(s, s) * 0.85,
@@ -740,8 +872,11 @@ where
 }
 
 /// Render blocks until the `End` that closes the current container (consumes that `End`).
-fn render_blocks_until_end<'a, I>(ui: &mut egui::Ui, style: &MdStyle, it: &mut std::iter::Peekable<I>)
-where
+fn render_blocks_until_end<'a, I>(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    it: &mut std::iter::Peekable<I>,
+) where
     I: Iterator<Item = Event<'a>>,
 {
     let mut first = true;
@@ -811,8 +946,12 @@ fn horizontal_rule(ui: &mut egui::Ui, style: &MdStyle) {
     ui.add_space(style.space_md);
 }
 
-fn table<'a, I>(ui: &mut egui::Ui, style: &MdStyle, it: &mut std::iter::Peekable<I>, aligns: &[Alignment])
-where
+fn table<'a, I>(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    it: &mut std::iter::Peekable<I>,
+    aligns: &[Alignment],
+) where
     I: Iterator<Item = Event<'a>>,
 {
     let cols = aligns.len().max(1);
@@ -848,13 +987,19 @@ where
             // Header strip.
             egui::Frame::new()
                 .fill(style.bg_sidebar)
-                .inner_margin(egui::Margin::symmetric(style.space_sm as i8, (style.space_xs * 1.5) as i8))
+                .inner_margin(egui::Margin::symmetric(
+                    style.space_sm as i8,
+                    (style.space_xs * 1.5) as i8,
+                ))
                 .show(ui, |ui| table_row(ui, style, &head, cols, aligns, true));
             table_divider(ui, style);
             let n = rows.len();
             for (i, row) in rows.iter().enumerate() {
                 egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(style.space_sm as i8, (style.space_xs * 1.5) as i8))
+                    .inner_margin(egui::Margin::symmetric(
+                        style.space_sm as i8,
+                        (style.space_xs * 1.5) as i8,
+                    ))
                     .show(ui, |ui| table_row(ui, style, row, cols, aligns, false));
                 if i + 1 < n {
                     table_divider(ui, style);
@@ -863,7 +1008,14 @@ where
         });
 }
 
-fn table_row(ui: &mut egui::Ui, style: &MdStyle, cells: &[Vec<Inline>], cols: usize, aligns: &[Alignment], header: bool) {
+fn table_row(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    cells: &[Vec<Inline>],
+    cols: usize,
+    aligns: &[Alignment],
+    header: bool,
+) {
     let color = style.text;
     ui.columns(cols, |c| {
         for (col, cell_ui) in c.iter_mut().enumerate() {
@@ -946,7 +1098,10 @@ mod tests {
     fn relative_resolves_against_base_dir() {
         let b = base();
         let got = file_str(classify_link("docs/index.md", Some(&b)));
-        let want = base().join("docs/index.md").to_string_lossy().replace('\\', "/");
+        let want = base()
+            .join("docs/index.md")
+            .to_string_lossy()
+            .replace('\\', "/");
         assert_eq!(got, want);
     }
 
@@ -955,16 +1110,28 @@ mod tests {
         let b = base();
         let got = file_str(classify_link("../sibling.md", Some(&b)));
         // `std::path::absolute` collapses the `..` lexically against the base dir.
-        let want = if cfg!(windows) { "C:/docs/sibling.md" } else { "/docs/sibling.md" };
+        let want = if cfg!(windows) {
+            "C:/docs/sibling.md"
+        } else {
+            "/docs/sibling.md"
+        };
         assert_eq!(got, want);
     }
 
     #[test]
     fn absolute_dest_passes_through() {
         let b = base();
-        let abs = if cfg!(windows) { r"C:\other\readme.md" } else { "/other/readme.md" };
+        let abs = if cfg!(windows) {
+            r"C:\other\readme.md"
+        } else {
+            "/other/readme.md"
+        };
         let got = file_str(classify_link(abs, Some(&b)));
-        let want = if cfg!(windows) { "C:/other/readme.md" } else { "/other/readme.md" };
+        let want = if cfg!(windows) {
+            "C:/other/readme.md"
+        } else {
+            "/other/readme.md"
+        };
         assert_eq!(got, want);
     }
 

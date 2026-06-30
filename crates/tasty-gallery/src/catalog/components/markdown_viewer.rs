@@ -42,7 +42,12 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "load failed", |ui| {
             tile(ui, theme, |ui| {
-                ui.label(rich(theme, "Failed to load", theme.font_size_max.value(), theme.accent_danger().to_egui()));
+                ui.label(rich(
+                    theme,
+                    "Failed to load",
+                    theme.font_size_max.value(),
+                    theme.accent_danger().to_egui(),
+                ));
                 ui.label(
                     egui::RichText::new("notes.md: No such file")
                         .monospace()
@@ -53,14 +58,26 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         });
         spec::cluster(ui, theme, "empty file", |ui| {
             tile(ui, theme, |ui| {
-                ui.label(rich(theme, "This file is empty", theme.font_size_body.value(), theme.text_muted().to_egui()));
+                ui.label(rich(
+                    theme,
+                    "This file is empty",
+                    theme.font_size_body.value(),
+                    theme.text_muted().to_egui(),
+                ));
             });
         });
         spec::cluster(ui, theme, "loading", |ui| {
             tile(ui, theme, |ui| {
-                Spinner::new().size(theme.spinner_size.value()).show(ui, theme);
+                Spinner::new()
+                    .size(theme.spinner_size.value())
+                    .show(ui, theme);
                 ui.add_space(theme.spacing_sm.value());
-                ui.label(rich(theme, "Loading…", theme.font_size_body.value(), theme.text_muted().to_egui()));
+                ui.label(rich(
+                    theme,
+                    "Loading…",
+                    theme.font_size_body.value(),
+                    theme.text_muted().to_egui(),
+                ));
             });
         });
     });
@@ -80,14 +97,38 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ],
         &[
             TokenChip::new("bg-panel", "surface", theme.bg_panel().to_egui()),
-            TokenChip::new("text-primary", "h1–h3 · bold", theme.text_primary().to_egui()),
-            TokenChip::new("text-secondary", "body · h4", theme.text_secondary().to_egui()),
-            TokenChip::new("text-muted", "h5/h6 · caption", theme.text_muted().to_egui()),
+            TokenChip::new(
+                "text-primary",
+                "h1–h3 · bold",
+                theme.text_primary().to_egui(),
+            ),
+            TokenChip::new(
+                "text-secondary",
+                "body · h4",
+                theme.text_secondary().to_egui(),
+            ),
+            TokenChip::new(
+                "text-muted",
+                "h5/h6 · caption",
+                theme.text_muted().to_egui(),
+            ),
             TokenChip::new("accent-primary", "link", theme.accent_primary().to_egui()),
-            TokenChip::new("surface-raised", "code bg", theme.surface_raised().to_egui()),
+            TokenChip::new(
+                "surface-raised",
+                "code bg",
+                theme.surface_raised().to_egui(),
+            ),
             TokenChip::new("separator", "table · hr", theme.separator.to_egui()),
-            TokenChip::new("border-strong", "blockquote bar", theme.border_strong().to_egui()),
-            TokenChip::new("accent-danger", "load failed", theme.accent_danger().to_egui()),
+            TokenChip::new(
+                "border-strong",
+                "blockquote bar",
+                theme.border_strong().to_egui(),
+            ),
+            TokenChip::new(
+                "accent-danger",
+                "load failed",
+                theme.accent_danger().to_egui(),
+            ),
         ],
     );
 
@@ -109,42 +150,66 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn document(ui: &mut egui::Ui, theme: &Theme) {
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
-        .stroke(egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
         .corner_radius(theme.corner_radius.value())
-        .inner_margin(egui::Margin::symmetric(theme.spacing_lg.value() as i8, theme.spacing_md.value() as i8))
+        .inner_margin(egui::Margin::symmetric(
+            theme.spacing_lg.value() as i8,
+            theme.spacing_md.value() as i8,
+        ))
         .show(ui, |ui| {
             ui.set_width(DOC_W - theme.spacing_lg.value() * 2.0);
             ui.spacing_mut().item_spacing.y = theme.spacing_xs.value();
 
             heading(ui, theme, 1, "Markdown surface");
-            body_inline(ui, theme, &[
-                Run::text("A read-only viewer that reloads on file change. Inline runs: "),
-                Run::strong("bold"),
-                Run::text(", "),
-                Run::italic("italic"),
-                Run::text(", "),
-                Run::strike("strikethrough"),
-                Run::text(", a "),
-                Run::link("link"),
-                Run::text(", and "),
-                Run::code("inline code"),
-                Run::text("."),
-            ]);
+            body_inline(
+                ui,
+                theme,
+                &[
+                    Run::text("A read-only viewer that reloads on file change. Inline runs: "),
+                    Run::strong("bold"),
+                    Run::text(", "),
+                    Run::italic("italic"),
+                    Run::text(", "),
+                    Run::strike("strikethrough"),
+                    Run::text(", a "),
+                    Run::link("link"),
+                    Run::text(", and "),
+                    Run::code("inline code"),
+                    Run::text("."),
+                ],
+            );
 
             heading(ui, theme, 2, "Headings & emphasis");
-            body_inline(ui, theme, &[Run::text(
-                "Body uses font-size-body at the 14px cap, line-height 1.6.",
-            )]);
+            body_inline(
+                ui,
+                theme,
+                &[Run::text(
+                    "Body uses font-size-body at the 14px cap, line-height 1.6.",
+                )],
+            );
             heading(ui, theme, 3, "Lists");
             // bullet · nested bullet · ordered · task.
-            bullet_row(ui, theme, 0, "•", "Bullet item with wrapped text for rhythm.");
+            bullet_row(
+                ui,
+                theme,
+                0,
+                "•",
+                "Bullet item with wrapped text for rhythm.",
+            );
             bullet_row(ui, theme, 1, "◦", "Nested bullet");
             bullet_row(ui, theme, 0, "1.", "Ordered item");
             task_row(ui, theme, true, "Task done");
             task_row(ui, theme, false, "Task to do");
 
             heading(ui, theme, 3, "Code block");
-            code_block(ui, theme, "fn main() {\n    println!(\"hi from tasty\");\n}");
+            code_block(
+                ui,
+                theme,
+                "fn main() {\n    println!(\"hi from tasty\");\n}",
+            );
 
             heading(ui, theme, 3, "Table");
             table(ui, theme);
@@ -161,7 +226,12 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
             ui.add_space(theme.spacing_sm.value());
             hr(ui, theme);
             ui.add_space(theme.spacing_xs.value());
-            ui.label(rich(theme, "Horizontal rule above · trailing space below.", theme.font_size_caption.value(), theme.text_muted().to_egui()));
+            ui.label(rich(
+                theme,
+                "Horizontal rule above · trailing space below.",
+                theme.font_size_caption.value(),
+                theme.text_muted().to_egui(),
+            ));
         });
 }
 
@@ -169,15 +239,49 @@ fn document(ui: &mut egui::Ui, theme: &Theme) {
 fn heading(ui: &mut egui::Ui, theme: &Theme, level: u8, text: &str) {
     let body = theme.font_size_body.value();
     let (size, color, upper, top) = match level {
-        1 => (theme.font_size_prose_h1.value(), theme.text_primary().to_egui(), false, 0.0),
-        2 => (theme.font_size_prose_h2.value(), theme.text_primary().to_egui(), false, theme.spacing_md.value()),
-        3 => (theme.font_size_max.value(), theme.text_primary().to_egui(), false, theme.spacing_sm.value()),
-        4 => (body, theme.text_secondary().to_egui(), false, theme.spacing_sm.value()),
-        5 => (body, theme.text_muted().to_egui(), false, theme.spacing_xs.value()),
-        _ => (body, theme.text_muted().to_egui(), true, theme.spacing_xs.value()),
+        1 => (
+            theme.font_size_prose_h1.value(),
+            theme.text_primary().to_egui(),
+            false,
+            0.0,
+        ),
+        2 => (
+            theme.font_size_prose_h2.value(),
+            theme.text_primary().to_egui(),
+            false,
+            theme.spacing_md.value(),
+        ),
+        3 => (
+            theme.font_size_max.value(),
+            theme.text_primary().to_egui(),
+            false,
+            theme.spacing_sm.value(),
+        ),
+        4 => (
+            body,
+            theme.text_secondary().to_egui(),
+            false,
+            theme.spacing_sm.value(),
+        ),
+        5 => (
+            body,
+            theme.text_muted().to_egui(),
+            false,
+            theme.spacing_xs.value(),
+        ),
+        _ => (
+            body,
+            theme.text_muted().to_egui(),
+            true,
+            theme.spacing_xs.value(),
+        ),
     };
     ui.add_space(top);
-    let label = if upper { text.to_uppercase() } else { text.to_string() };
+    let label = if upper {
+        text.to_uppercase()
+    } else {
+        text.to_string()
+    };
     ui.label(egui::RichText::new(label).size(size).color(color));
 }
 
@@ -195,12 +299,42 @@ enum RunKind {
     Link,
 }
 impl Run {
-    fn text(s: &str) -> Self { Self { text: s.into(), kind: RunKind::Text } }
-    fn strong(s: &str) -> Self { Self { text: s.into(), kind: RunKind::Strong } }
-    fn italic(s: &str) -> Self { Self { text: s.into(), kind: RunKind::Italic } }
-    fn strike(s: &str) -> Self { Self { text: s.into(), kind: RunKind::Strike } }
-    fn code(s: &str) -> Self { Self { text: s.into(), kind: RunKind::Code } }
-    fn link(s: &str) -> Self { Self { text: s.into(), kind: RunKind::Link } }
+    fn text(s: &str) -> Self {
+        Self {
+            text: s.into(),
+            kind: RunKind::Text,
+        }
+    }
+    fn strong(s: &str) -> Self {
+        Self {
+            text: s.into(),
+            kind: RunKind::Strong,
+        }
+    }
+    fn italic(s: &str) -> Self {
+        Self {
+            text: s.into(),
+            kind: RunKind::Italic,
+        }
+    }
+    fn strike(s: &str) -> Self {
+        Self {
+            text: s.into(),
+            kind: RunKind::Strike,
+        }
+    }
+    fn code(s: &str) -> Self {
+        Self {
+            text: s.into(),
+            kind: RunKind::Code,
+        }
+    }
+    fn link(s: &str) -> Self {
+        Self {
+            text: s.into(),
+            kind: RunKind::Link,
+        }
+    }
 }
 
 /// 본문 문단 — inline run 들을 wrap 행에 배치(공백은 run 텍스트에 포함).
@@ -212,15 +346,26 @@ fn body_inline(ui: &mut egui::Ui, theme: &Theme, runs: &[Run]) {
         for r in runs {
             let rt = match r.kind {
                 RunKind::Text => egui::RichText::new(&r.text).size(body).color(secondary),
-                RunKind::Strong => egui::RichText::new(&r.text).size(body).color(theme.text_primary().to_egui()),
-                RunKind::Italic => egui::RichText::new(&r.text).size(body).color(secondary).italics(),
-                RunKind::Strike => egui::RichText::new(&r.text).size(body).color(theme.text_muted().to_egui()).strikethrough(),
+                RunKind::Strong => egui::RichText::new(&r.text)
+                    .size(body)
+                    .color(theme.text_primary().to_egui()),
+                RunKind::Italic => egui::RichText::new(&r.text)
+                    .size(body)
+                    .color(secondary)
+                    .italics(),
+                RunKind::Strike => egui::RichText::new(&r.text)
+                    .size(body)
+                    .color(theme.text_muted().to_egui())
+                    .strikethrough(),
                 RunKind::Code => egui::RichText::new(&r.text)
                     .monospace()
                     .size(body)
                     .color(theme.text_primary().to_egui())
                     .background_color(theme.surface_raised().to_egui()),
-                RunKind::Link => egui::RichText::new(&r.text).size(body).color(theme.accent_primary().to_egui()).underline(),
+                RunKind::Link => egui::RichText::new(&r.text)
+                    .size(body)
+                    .color(theme.accent_primary().to_egui())
+                    .underline(),
             };
             ui.label(rt);
         }
@@ -268,13 +413,23 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
     let body = theme.font_size_body.value();
     let pad = theme.spacing_sm.value();
     egui::Frame::new()
-        .stroke(egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.separator.to_egui(),
+        ))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             let row = |ui: &mut egui::Ui, cells: [&str; 3], header: bool| {
-                let fill = if header { Some(theme.bg_sidebar().to_egui()) } else { None };
-                let mut f = egui::Frame::new().inner_margin(egui::Margin::symmetric(pad as i8, (theme.spacing_xs.value() * 1.5) as i8));
+                let fill = if header {
+                    Some(theme.bg_sidebar().to_egui())
+                } else {
+                    None
+                };
+                let mut f = egui::Frame::new().inner_margin(egui::Margin::symmetric(
+                    pad as i8,
+                    (theme.spacing_xs.value() * 1.5) as i8,
+                ));
                 if let Some(c) = fill {
                     f = f.fill(c);
                 }
@@ -283,7 +438,10 @@ fn table(ui: &mut egui::Ui, theme: &Theme) {
                     let color = theme.text_secondary().to_egui();
                     let render_cell = |ui: &mut egui::Ui, i: usize, cell: &str| {
                         let rt = if i == 2 {
-                            egui::RichText::new(cell).monospace().size(body).color(color)
+                            egui::RichText::new(cell)
+                                .monospace()
+                                .size(body)
+                                .color(color)
                         } else {
                             egui::RichText::new(cell).size(body).color(color)
                         };
@@ -335,16 +493,32 @@ fn blockquote(ui: &mut egui::Ui, theme: &Theme) {
     let bar_w = theme.focus_ring_width.value();
     let gap = theme.spacing_md.value();
     quote_block(ui, theme, bar_w, gap, |ui| {
-        ui.label(rich(theme, "Quoted text reads one tone down (muted) with a left bar.", body, theme.text_muted().to_egui()));
+        ui.label(rich(
+            theme,
+            "Quoted text reads one tone down (muted) with a left bar.",
+            body,
+            theme.text_muted().to_egui(),
+        ));
         ui.add_space(theme.spacing_xs.value());
         quote_block(ui, theme, bar_w, gap, |ui| {
-            ui.label(rich(theme, "Nested quote, one level deeper.", body, theme.text_muted().to_egui()));
+            ui.label(rich(
+                theme,
+                "Nested quote, one level deeper.",
+                body,
+                theme.text_muted().to_egui(),
+            ));
         });
     });
 }
 
 /// left bar + 들여쓴 content. content 를 자식 ui 로 측정한 뒤 바를 그 높이만큼 칠한다.
-fn quote_block(ui: &mut egui::Ui, theme: &Theme, bar_w: f32, gap: f32, add: impl FnOnce(&mut egui::Ui)) {
+fn quote_block(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    bar_w: f32,
+    gap: f32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
     let top = ui.cursor().min.y;
     let left = ui.min_rect().left();
     let avail = ui.available_width();
@@ -389,7 +563,10 @@ fn type_scale(ui: &mut egui::Ui, theme: &Theme) {
     let scale_row = |ui: &mut egui::Ui, tag: &str, draw: &dyn Fn(&mut egui::Ui)| {
         ui.horizontal(|ui| {
             ui.add_space(theme.spacing_xs.value());
-            let (r, _) = ui.allocate_exact_size(egui::vec2(theme.spacing_xl.value(), theme.font_size_body.value()), egui::Sense::hover());
+            let (r, _) = ui.allocate_exact_size(
+                egui::vec2(theme.spacing_xl.value(), theme.font_size_body.value()),
+                egui::Sense::hover(),
+            );
             ui.painter().text(
                 r.left_center(),
                 egui::Align2::LEFT_CENTER,
@@ -402,13 +579,25 @@ fn type_scale(ui: &mut egui::Ui, theme: &Theme) {
         });
     };
     for lvl in 1..=6u8 {
-        scale_row(ui, &format!("h{lvl}"), &move |ui| heading_sample(ui, theme, lvl));
+        scale_row(ui, &format!("h{lvl}"), &move |ui| {
+            heading_sample(ui, theme, lvl)
+        });
     }
     scale_row(ui, "p", &|ui| {
-        ui.label(rich(theme, "Body — 13px, line-height 1.6, secondary.", theme.font_size_body.value(), theme.text_secondary().to_egui()));
+        ui.label(rich(
+            theme,
+            "Body — 13px, line-height 1.6, secondary.",
+            theme.font_size_body.value(),
+            theme.text_secondary().to_egui(),
+        ));
     });
     scale_row(ui, "small", &|ui| {
-        ui.label(rich(theme, "Caption — body × 0.85, muted.", theme.font_size_caption.value(), theme.text_muted().to_egui()));
+        ui.label(rich(
+            theme,
+            "Caption — body × 0.85, muted.",
+            theme.font_size_caption.value(),
+            theme.text_muted().to_egui(),
+        ));
     });
 }
 
@@ -416,14 +605,30 @@ fn type_scale(ui: &mut egui::Ui, theme: &Theme) {
 fn heading_sample(ui: &mut egui::Ui, theme: &Theme, level: u8) {
     let body = theme.font_size_body.value();
     let (size, color, upper) = match level {
-        1 => (theme.font_size_prose_h1.value(), theme.text_primary().to_egui(), false),
-        2 => (theme.font_size_prose_h2.value(), theme.text_primary().to_egui(), false),
-        3 => (theme.font_size_max.value(), theme.text_primary().to_egui(), false),
+        1 => (
+            theme.font_size_prose_h1.value(),
+            theme.text_primary().to_egui(),
+            false,
+        ),
+        2 => (
+            theme.font_size_prose_h2.value(),
+            theme.text_primary().to_egui(),
+            false,
+        ),
+        3 => (
+            theme.font_size_max.value(),
+            theme.text_primary().to_egui(),
+            false,
+        ),
         4 => (body, theme.text_secondary().to_egui(), false),
         5 => (body, theme.text_muted().to_egui(), false),
         _ => (body, theme.text_muted().to_egui(), true),
     };
-    let text = if upper { "The quick brown fox".to_uppercase() } else { "The quick brown fox".to_string() };
+    let text = if upper {
+        "The quick brown fox".to_uppercase()
+    } else {
+        "The quick brown fox".to_string()
+    };
     ui.label(egui::RichText::new(text).size(size).color(color));
 }
 
@@ -431,7 +636,10 @@ fn heading_sample(ui: &mut egui::Ui, theme: &Theme, level: u8) {
 fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
-        .stroke(egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()))
+        .stroke(egui::Stroke::new(
+            theme.border_width.value(),
+            theme.border_default().to_egui(),
+        ))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(

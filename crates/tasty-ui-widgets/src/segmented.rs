@@ -64,11 +64,8 @@ pub fn segmented(
 
                     // 배경: active accent-primary, hover overlay-hover.
                     if active {
-                        ui.painter().rect_filled(
-                            rect,
-                            radius_sm,
-                            theme.accent_primary().to_egui(),
-                        );
+                        ui.painter()
+                            .rect_filled(rect, radius_sm, theme.accent_primary().to_egui());
                     } else if resp.hovered() {
                         ui.painter().rect_filled(
                             rect,

@@ -320,7 +320,9 @@ mod tests {
     #[test]
     fn explorer_is_builtin_and_round_trips() {
         let reg = registry_with_builtins();
-        let def = reg.get("explorer").expect("explorer is a host builtin kind");
+        let def = reg
+            .get("explorer")
+            .expect("explorer is a host builtin kind");
         // create: path param 우선.
         let s = (def.create)(5, None, &json!({"path": "/tmp/exp"})).unwrap();
         assert_eq!(s.kind(), "explorer");

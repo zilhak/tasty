@@ -120,10 +120,7 @@ impl CoreState {
     }
 
     /// 카테고리 id → `categories` Vec 내 인덱스(섹션 표시 순서).
-    pub fn category_index(
-        &self,
-        category_id: crate::model::WorkspaceCategoryId,
-    ) -> Option<usize> {
+    pub fn category_index(&self, category_id: crate::model::WorkspaceCategoryId) -> Option<usize> {
         self.categories.iter().position(|c| c.id == category_id)
     }
 

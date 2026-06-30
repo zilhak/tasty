@@ -20,14 +20,19 @@ thread_local! {
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     stage(ui, theme, StageVariant::Column, |ui| {
-        cluster(ui, theme, "view mode — grid · list · detail (click them)", |ui| {
-            VIEW_SEL.with(|s| {
-                let mut sel = s.borrow_mut();
-                if let Some(i) = segmented(ui, theme, &["grid", "list", "detail"], *sel) {
-                    *sel = i;
-                }
-            });
-        });
+        cluster(
+            ui,
+            theme,
+            "view mode — grid · list · detail (click them)",
+            |ui| {
+                VIEW_SEL.with(|s| {
+                    let mut sel = s.borrow_mut();
+                    if let Some(i) = segmented(ui, theme, &["grid", "list", "detail"], *sel) {
+                        *sel = i;
+                    }
+                });
+            },
+        );
         cluster(ui, theme, "two segments", |ui| {
             SEG2_SEL.with(|s| {
                 let mut sel = s.borrow_mut();

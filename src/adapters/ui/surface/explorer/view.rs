@@ -163,7 +163,6 @@ impl ExplorerView {
         }
         self.anchor = Some(path.to_path_buf());
     }
-
 }
 
 impl Default for ExplorerView {

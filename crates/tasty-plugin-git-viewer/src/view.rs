@@ -118,7 +118,10 @@ fn build_worktree_row(idx: usize, wt: &WorktreeEntry, active: bool, tr: &Transla
 
     // 상태 배지: current(success) / locked(warning) / invalid(danger).
     if wt.is_current {
-        row.push(tag(tr.t("git_viewer.wt_current").to_string(), TagTone::Success));
+        row.push(tag(
+            tr.t("git_viewer.wt_current").to_string(),
+            TagTone::Success,
+        ));
     }
     if wt.locked {
         let label = match &wt.lock_reason {
@@ -130,7 +133,10 @@ fn build_worktree_row(idx: usize, wt: &WorktreeEntry, active: bool, tr: &Transla
         row.push(tag(label, TagTone::Warning));
     }
     if !wt.is_valid {
-        row.push(tag(tr.t("git_viewer.wt_invalid").to_string(), TagTone::Danger));
+        row.push(tag(
+            tr.t("git_viewer.wt_invalid").to_string(),
+            TagTone::Danger,
+        ));
     }
 
     selectable_row(format!("wt.{idx}"), active, row)
@@ -164,7 +170,10 @@ fn build_status_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
 
     let mut children: Vec<UiNode> = vec![heading];
     if vm.status_entries.is_empty() {
-        children.push(center(label_color(tr.t("git_viewer.no_changes"), "subtext0")));
+        children.push(center(label_color(
+            tr.t("git_viewer.no_changes"),
+            "subtext0",
+        )));
         return scroll_v(vbox(children));
     }
     for (idx, entry) in vm.status_entries.iter().enumerate() {
@@ -187,7 +196,10 @@ fn build_log_pane(vm: &ViewModel<'_>, tr: &Translator) -> UiNode {
     };
     let mut children: Vec<UiNode> = vec![heading];
     if vm.log_entries.is_empty() {
-        children.push(center(label_color(tr.t("git_viewer.no_commits"), "subtext0")));
+        children.push(center(label_color(
+            tr.t("git_viewer.no_commits"),
+            "subtext0",
+        )));
         return scroll_v(vbox(children));
     }
     for entry in vm.log_entries {

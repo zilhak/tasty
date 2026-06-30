@@ -397,7 +397,11 @@ pub fn draw_blacklist(ui: &mut egui::Ui, theme: &Theme) {
             ("default", "empty list"),
         ],
         &[
-            TokenChip::new("overlay-hover", "row hover", theme.overlay_hover().to_egui()),
+            TokenChip::new(
+                "overlay-hover",
+                "row hover",
+                theme.overlay_hover().to_egui(),
+            ),
             TokenChip::new(
                 "accent-warning",
                 "match-rule notice",
@@ -490,7 +494,8 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
                 egui::vec2(ui.available_width(), theme.border_width.value()),
                 egui::Sense::hover(),
             );
-            ui.painter().rect_filled(sep, 0.0, theme.separator.to_egui());
+            ui.painter()
+                .rect_filled(sep, 0.0, theme.separator.to_egui());
 
             ui.label(
                 egui::RichText::new("Disable capture for these programs")
@@ -501,9 +506,11 @@ fn blacklist_editor(ui: &mut egui::Ui, theme: &Theme, empty: bool) {
             if empty {
                 // 빈 상태 — neutral 톤.
                 ui.label(
-                    egui::RichText::new("No programs excluded — clicks are sent to capturing apps.")
-                        .size(theme.font_size_caption.value())
-                        .color(theme.text_muted().to_egui()),
+                    egui::RichText::new(
+                        "No programs excluded — clicks are sent to capturing apps.",
+                    )
+                    .size(theme.font_size_caption.value())
+                    .color(theme.text_muted().to_egui()),
                 );
             } else {
                 ui.scope(|ui| {

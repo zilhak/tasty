@@ -423,7 +423,9 @@ pub fn pages() -> Vec<Page> {
                     vec![spec(
                         "explorer-cells",
                         "Explorer view cells",
-                        Some("grid cell (new) · list row (tree_row) · detail (Table + sort header)"),
+                        Some(
+                            "grid cell (new) · list row (tree_row) · detail (Table + sort header)",
+                        ),
                         components::explorer_view_cells::draw,
                     )],
                 ),
@@ -810,7 +812,9 @@ pub fn pages() -> Vec<Page> {
                         spec(
                             "explorer-tabs",
                             "Explorer internal tab strip",
-                            Some("Surface-local · 24px · bottom accent underline (vs pane top bar)"),
+                            Some(
+                                "Surface-local · 24px · bottom accent underline (vs pane top bar)",
+                            ),
                             components::explorer_tab_bar::draw,
                         ),
                     ],
