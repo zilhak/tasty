@@ -80,10 +80,11 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 각 타입은 매니페스트 선언 + (필요 시) trait 콜백. 자세한 매니페스트 스니펫은 해당 예제 플러그인의 `tasty-plugin.toml` 을 본다.
 
-### Surface kind — `rendering` 3 종
+### Surface kind — `rendering` 4 종
 
 - **`rendering = "host"`** (image/markdown): 플러그인은 `[[surface_kinds]]` 로 kind 를 선언만 한다. host 화이트리스트(`("markdown","com.tasty.markdown")` 등)에 매칭되면 host 가 직접 렌더 — 플러그인은 surface 콜백을 구현하지 않는다. host-rendered 코드는 host 소유(`src/engine/surface_registry/builtins.rs`).
 - **`rendering = "webview"`** (html): host 의 네이티브 WebView 오버레이로 그림. surface 의 URL 을 host 가 동기화.
+- **`rendering = "egui-mesh"`** (mesh_demo): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
 - **(기본)** (explorer): 플러그인이 직접 렌더. host 트리엔 `RemoteSurface` marker, 플러그인이 `create_surface`/`handle_event` 에서 **UI tree DSL**(§4)로 트리를 반환. `snapshot_surface`/`restore_surface` 로 세션 복원.
 
 ### 파일 핸들러 (detector + handler)

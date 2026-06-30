@@ -6,7 +6,8 @@
 
 1. **Clear pass** — 배경색으로 클리어
 2. **Terminal pass** — 아래 4단계 accumulator 로 모든 터미널을 한 번에
-3. **egui pass** — 사이드바·탭바·팝업 등 UI 오버레이
+3. **egui-mesh pass** — plugin 이 자기 프로세스에서 tessellate 한 mesh 를 surface 영역에 합성 (host chrome 아래 layer). 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md)
+4. **egui pass** — 사이드바·탭바·팝업 등 UI 오버레이
 
 ## 터미널 렌더 = 누적 후 1회 flush, 단일 패스 (필수 모델)
 
