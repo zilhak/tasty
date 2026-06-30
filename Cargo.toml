@@ -336,6 +336,9 @@ gui = [
     "dep:egui-wgpu",
     "dep:egui-winit",
     "dep:egui_extras",
+    # egui-mesh host 합성(A1-S5)이 mesh_wire POD 코덱을 쓴다. gui 빌드만 활성화 —
+    # 비-gui(CLI/headless) 빌드는 egui 의존 없이 유지(protocol lib.rs 불변식).
+    "tasty-plugin-protocol/egui-mesh",
     "dep:cosmic-text",
     "dep:bytemuck",
     "dep:webbrowser",

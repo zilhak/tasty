@@ -1,5 +1,6 @@
 mod canvas_prepare;
 mod egui_bridge;
+mod egui_mesh_prepare;
 mod fonts;
 mod render_pass;
 mod screenshot;
@@ -59,6 +60,11 @@ pub struct GpuState {
     pub(super) surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState,
     /// Plugin Canvas SharedBuffer → wgpu texture cache.
     pub(super) canvas_textures: canvas_texture::CanvasTextureCache,
+    /// egui-mesh surface_id → 전용 `egui_wgpu::Renderer` + 디코드 캐시 (A1-S5).
+    /// surface 단위 전용 Renderer 로 plugin/host 간 TextureId 충돌을 격리한다(§4-3).
+    /// surface 가 layout 에서 사라지면 정리돼 GPU 자원이 해제된다.
+    pub(in crate::gfx::gpu) egui_mesh_targets:
+        std::collections::HashMap<u32, egui_mesh_prepare::EguiMeshRenderTarget>,
     /// When set, the next render will capture the frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
     /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
@@ -223,6 +229,7 @@ impl GpuState {
             last_term_font_sig,
             surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState::default(),
             canvas_textures: canvas_texture::CanvasTextureCache::new(),
+            egui_mesh_targets: std::collections::HashMap::new(),
             pending_screenshot: None,
             perf: PerfAggregator::new(),
             proxy,
@@ -424,6 +431,16 @@ impl GpuState {
             search_state,
         );
         let terminals_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+        // egui-mesh surface 합성 (A1-S5): terminal 콘텐츠와 같은 layer(host chrome 아래).
+        // plugin 이 자기 프로세스에서 tessellate 한 mesh 를 전용 Renderer 로 영역 합성한다.
+        if let Some(mgr) = plugin_manager {
+            let mesh_targets =
+                egui_mesh_prepare::collect_egui_mesh_targets(state, engine, terminal_rect);
+            if !mesh_targets.is_empty() {
+                self.render_egui_mesh_surfaces(&view, &mesh_targets, mgr);
+            }
+        }
 
         let t0 = std::time::Instant::now();
         self.render_egui_pass(
