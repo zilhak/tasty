@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-protocol"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 license = "MIT"
 description = "Wire types shared between Tasty host and external plugins (UI tree DSL, JSON-RPC envelope)"
@@ -9,6 +9,20 @@ repository = "https://github.com/zilhak/tasty"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# egui-mesh POD wire codec (옵셔널). 기본 빌드는 egui/wgpu 의존 없이 유지한다
+# (lib.rs 불변식). egui-mesh surface 를 쓰는 host/plugin 만 이 feature 를 켠다.
+# epaint 는 serde OFF + bytemuck ON 으로 고정 — Vertex/Color32 등을 POD 로 캐스트한다.
+egui = { version = "0.31", default-features = false, features = ["bytemuck"], optional = true }
+bytemuck = { version = "1", optional = true }
+tracing = { version = "0.1", optional = true }
+
+[features]
+egui-mesh = ["dep:egui", "dep:bytemuck", "dep:tracing"]
+
+[dev-dependencies]
+# round-trip 테스트에서 실제 egui::Context 로 tessellate 하려면 폰트가 필요하다.
+egui = { version = "0.31", features = ["bytemuck", "default_fonts"] }
 
 [lints]
 workspace = true

@@ -5675,10 +5675,13 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-protocol"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
+ "bytemuck",
+ "egui",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
