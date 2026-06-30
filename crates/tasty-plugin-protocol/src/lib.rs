@@ -30,7 +30,7 @@ pub use protocol::{
     PopupClosedParams, PopupEventParams, PopupEventResult, PopupOpenParams, PopupOpenResult,
     RawInputEventWire, RawInputWire, SharedBufferCreateParams, SharedBufferCreateResult,
     SharedBufferDirtyParams, SharedBufferId, SurfaceEventParams, SurfaceResult,
-    SurfaceSetContextParams,
+    SurfaceSetContextParams, ThemeWire,
 };
 pub use protocol::{
     METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_EXTENSION_INVOKE_HOOK, METHOD_HOST_HELLO,

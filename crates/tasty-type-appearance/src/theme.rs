@@ -1119,6 +1119,62 @@ impl Theme {
         self.separator = s;
     }
 
+    /// 평면 색 필드를 다시 [`ThemeColors`] 로 모은다 (`apply_colors`/`with_colors`
+    /// 의 역방향). resolved Theme 을 (zoom 독립적인) 색 집합으로 직렬화해 프로세스
+    /// 경계 너머로 보내고 [`Theme::with_colors_and_zoom`] 으로 재구성할 때 쓴다
+    /// (egui-mesh plugin 의 Theme parity — ADR-0028).
+    pub fn to_colors(&self) -> ThemeColors {
+        ThemeColors {
+            crust: self.crust,
+            mantle: self.mantle,
+            base: self.base,
+            surface0: self.surface0,
+            surface1: self.surface1,
+            surface2: self.surface2,
+            overlay0: self.overlay0,
+            overlay1: self.overlay1,
+            overlay2: self.overlay2,
+            text: self.text,
+            subtext1: self.subtext1,
+            subtext0: self.subtext0,
+            placeholder: self.placeholder,
+            blue: self.blue,
+            green: self.green,
+            red: self.red,
+            yellow: self.yellow,
+            peach: self.peach,
+            mauve: self.mauve,
+            teal: self.teal,
+            sky: self.sky,
+            lavender: self.lavender,
+            flamingo: self.flamingo,
+            pink: self.pink,
+            maroon: self.maroon,
+            rosewater: self.rosewater,
+            selection_bg: self.selection_bg,
+            vi_cursor_bg: self.vi_cursor_bg,
+            search_match_bg: self.search_match_bg,
+            search_match_active_bg: self.search_match_active_bg,
+            ansi_black: self.ansi_black,
+            ansi_red: self.ansi_red,
+            ansi_green: self.ansi_green,
+            ansi_yellow: self.ansi_yellow,
+            ansi_blue: self.ansi_blue,
+            ansi_magenta: self.ansi_magenta,
+            ansi_cyan: self.ansi_cyan,
+            ansi_white: self.ansi_white,
+            ansi_bright_black: self.ansi_bright_black,
+            ansi_bright_red: self.ansi_bright_red,
+            ansi_bright_green: self.ansi_bright_green,
+            ansi_bright_yellow: self.ansi_bright_yellow,
+            ansi_bright_blue: self.ansi_bright_blue,
+            ansi_bright_magenta: self.ansi_bright_magenta,
+            ansi_bright_cyan: self.ansi_bright_cyan,
+            ansi_bright_white: self.ansi_bright_white,
+            surface_themes: self.surface_themes.clone(),
+        }
+    }
+
     /// GPU 렌더러용 ANSI 16색 팔레트.
     /// 인덱스 순서: black, red, green, yellow, blue, magenta, cyan, white,
     /// bright_black, bright_red, bright_green, bright_yellow, bright_blue,

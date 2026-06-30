@@ -101,6 +101,28 @@ pub struct SurfaceSetContextParams {
     /// 이번 frame 의 사용자 입력.
     #[serde(default)]
     pub raw_input: RawInputWire,
+    /// host 가 resolve 한 현재 Theme 스냅샷 (egui-mesh plugin 의 Theme parity).
+    /// `None` 이면 plugin 은 직전 값을 유지하거나 자체 기본값으로 그린다. host 는
+    /// 크기/ppp/입력 변경뿐 아니라 **테마 변경 시에도** 이 값을 갱신해 재forward 한다.
+    /// generic 필드 — 모든 egui-mesh surface(markdown/git-viewer 등)가 공유한다.
+    #[serde(default)]
+    pub theme: Option<ThemeWire>,
+}
+
+/// host 가 resolve 한 Theme 을 프로세스 경계 너머로 운반하는 POD 스냅샷.
+///
+/// egui 의존 없이 직렬화 가능한 색 집합([`ThemeColors`](tasty_type_appearance::theme::ThemeColors))
+/// + `is_light` + host UI zoom 만 담는다. plugin 은 이를
+/// [`Theme::with_colors_and_zoom`](tasty_type_appearance::theme::Theme::with_colors_and_zoom)
+/// 로 풀어 host 와 동일한 Theme 인스턴스를 재구성한다 (sizing 은 zoom 으로 재도출).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct ThemeWire {
+    /// resolved (사용자 override 반영) 색 집합. zoom 독립적.
+    pub colors: tasty_type_appearance::theme::ThemeColors,
+    /// 라이트/다크 — hover/active/separator overlay 도출에 필요.
+    pub is_light: bool,
+    /// host UI zoom 배율. sizing token 에 곱해진다 (`with_colors_and_zoom`).
+    pub ui_zoom: f32,
 }
 
 /// egui `RawInput` 의 직렬화 가능한 최소 미러. markdown 검증엔 pointer+scroll+key 로 충분

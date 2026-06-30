@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-protocol"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2024"
 license = "MIT"
 description = "Wire types shared between Tasty host and external plugins (UI tree DSL, JSON-RPC envelope)"
@@ -9,6 +9,11 @@ repository = "https://github.com/zilhak/tasty"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Theme 색 집합(ThemeColors)을 set_context 의 resolved Theme 스냅샷으로 운반하기 위함.
+# egui 없는 type-layer 스키마만 쓰므로 default-features=false 로 받아 default 빌드의
+# egui-free 불변식을 깨지 않는다 (egui-compat off → to_egui shim 만 빠지고 직렬화는 유지).
+tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
 
 # egui-mesh POD wire codec (옵셔널). 기본 빌드는 egui/wgpu 의존 없이 유지한다
 # (lib.rs 불변식). egui-mesh surface 를 쓰는 host/plugin 만 이 feature 를 켠다.

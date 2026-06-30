@@ -282,6 +282,7 @@ mod tests {
             height_px,
             pixels_per_point: ppp,
             raw_input: RawInputWire::default(),
+            theme: None,
         }
     }
 
@@ -412,6 +413,7 @@ mod tests {
             height_px: 100,
             pixels_per_point: 2.0,
             raw_input: wire,
+            theme: None,
         };
         let raw = build_raw_input(&params);
 

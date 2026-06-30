@@ -304,6 +304,7 @@ fn set_context_params_round_trip() {
                 RawInputEventWire::PointerGone,
             ],
         },
+        theme: None,
     };
     let s = serde_json::to_string(&params).unwrap();
     let parsed: SurfaceSetContextParams = serde_json::from_str(&s).unwrap();
@@ -312,6 +313,50 @@ fn set_context_params_round_trip() {
     assert_eq!(parsed.height_px, 720);
     assert_eq!(parsed.pixels_per_point, 2.0);
     assert_eq!(parsed.raw_input, params.raw_input);
+    // theme 미동봉(None) 은 직렬화 누락(serde default) 후 다시 None 으로 복원된다.
+    assert!(parsed.theme.is_none());
+}
+
+/// set_context 에 Theme 스냅샷을 실어 보내면 색 집합/is_light/zoom 이 round-trip 한다.
+#[test]
+fn set_context_theme_snapshot_round_trips() {
+    use tasty_type_appearance::theme::ThemeColors;
+    // raw JSON 문자열로 ThemeColors 를 만든다(`json!` 매크로는 44필드에서 재귀한계).
+    // 값 자체는 무관 — round-trip 동일성만 본다.
+    const COLORS_JSON: &str = r##"{
+        "crust":"#11111b","mantle":"#181825","base":"#1e1e2e","surface0":"#313244",
+        "surface1":"#45475a","surface2":"#585b70","overlay0":"#6c7086","overlay1":"#7f849c",
+        "overlay2":"#9399b2","text":"#cdd6f4","subtext1":"#bac2de","subtext0":"#a6adc8",
+        "placeholder":"#9399b2","blue":"#89b4fa","green":"#a6e3a1","red":"#f38ba8",
+        "yellow":"#f9e2af","peach":"#fab387","mauve":"#cba6f7","teal":"#94e2d5",
+        "sky":"#89dceb","lavender":"#b4befe","flamingo":"#f2cdcd","pink":"#f5c2e7",
+        "maroon":"#eba0ac","rosewater":"#f5e0dc","selection_bg":"#585b70",
+        "vi_cursor_bg":"#f9e2af","search_match_bg":"#f9e2af","search_match_active_bg":"#fab387",
+        "ansi_black":"#45475a","ansi_red":"#f38ba8","ansi_green":"#a6e3a1","ansi_yellow":"#f9e2af",
+        "ansi_blue":"#89b4fa","ansi_magenta":"#f5c2e7","ansi_cyan":"#94e2d5","ansi_white":"#bac2de",
+        "ansi_bright_black":"#585b70","ansi_bright_red":"#f38ba8","ansi_bright_green":"#a6e3a1",
+        "ansi_bright_yellow":"#f9e2af","ansi_bright_blue":"#89b4fa","ansi_bright_magenta":"#f5c2e7",
+        "ansi_bright_cyan":"#94e2d5","ansi_bright_white":"#a6adc8"
+    }"##;
+    let colors: ThemeColors = serde_json::from_str(COLORS_JSON).unwrap();
+    let params = SurfaceSetContextParams {
+        surface_id: 1,
+        width_px: 100,
+        height_px: 100,
+        pixels_per_point: 1.0,
+        raw_input: RawInputWire::default(),
+        theme: Some(crate::protocol::ThemeWire {
+            colors,
+            is_light: false,
+            ui_zoom: 1.25,
+        }),
+    };
+    let s = serde_json::to_string(&params).unwrap();
+    let parsed: SurfaceSetContextParams = serde_json::from_str(&s).unwrap();
+    let t = parsed.theme.expect("theme present");
+    assert!(!t.is_light);
+    assert_eq!(t.ui_zoom, 1.25);
+    assert_eq!(t.colors, params.theme.unwrap().colors);
 }
 
 #[test]
