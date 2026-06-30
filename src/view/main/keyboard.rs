@@ -13,6 +13,9 @@ struct KeyboardReadState {
     is_alt_screen: bool,
     scroll_offset: usize,
     rows: usize,
+    /// macOS "Option as Meta" 설정 값. 호출부가 cfg 분기로 채운다(비-macOS=false).
+    /// 켜져 있으면 Option(Alt)+문자가 `ESC` + base 문자 Meta 시퀀스로 인코딩된다.
+    option_as_meta: bool,
 }
 
 /// 키 처리 후 UI 가 직접 수행해야 하는 *터미널 자체 mutate* 동작. PTY input 과
@@ -163,6 +166,14 @@ impl MainView {
                     event.logical_key.clone()
                 };
 
+                // option_as_meta 필드는 macOS 전용(#[cfg(target_os = "macos")]) 이므로
+                // 비-macOS 빌드가 깨지지 않도록 cfg 분기로 값을 산출해 항상 bool 을 넣는다.
+                // 이렇게 하면 decide_key_to_terminal 본문은 플랫폼 무관하게 유지된다.
+                #[cfg(target_os = "macos")]
+                let option_as_meta = self.core_state.settings.general.option_as_meta;
+                #[cfg(not(target_os = "macos"))]
+                let option_as_meta = false;
+
                 let read_state =
                     self.state
                         .focused_terminal(&self.core_state)
@@ -171,6 +182,7 @@ impl MainView {
                             is_alt_screen: t.is_alternate_screen(),
                             scroll_offset: t.scroll_offset(),
                             rows: t.rows(),
+                            option_as_meta,
                         });
                 let surface_id = self.state.focused_surface_id(&self.core_state);
 
@@ -446,6 +458,30 @@ impl MainView {
                         sent,
                     };
                 }
+                // macOS "Option as Meta": Option(Alt)+문자를 ESC-prefix Meta 시퀀스로
+                // 인코딩한다. 물리 Option 키만(Ctrl/Cmd 동시 누름 제외) 대상이며, base
+                // 문자(=key 파라미터, Alt 시 이미 physical 기반 US 레이아웃 문자)를 쓴다.
+                // 합성된 특수문자(text, 예: å)가 아니라 base 문자('a')를 ESC 와 묶어야 한다.
+                if state.option_as_meta
+                    && modifiers.alt_key()
+                    && !modifiers.control_key()
+                    && !modifiers.super_key()
+                    && let Key::Character(c) = key
+                    && let Some(ch) = c.chars().next()
+                {
+                    let mut buf = vec![0x1b_u8];
+                    let mut utf8 = [0u8; 4];
+                    buf.extend_from_slice(ch.encode_utf8(&mut utf8).as_bytes());
+                    push_bytes(&mut payloads, &buf);
+                    sent = true;
+                    // text 분기로 내려가 특수문자가 중복 전송되지 않도록 early return.
+                    return KeyboardSendOutcome {
+                        payloads,
+                        scroll_action,
+                        dirty,
+                        sent,
+                    };
+                }
                 if let Some(text) = text {
                     let s = text.as_str();
                     if !s.is_empty() {
@@ -477,5 +513,73 @@ impl MainView {
 
     pub(super) fn handle_ime(&mut self, ime_event: winit::event::Ime, egui_consumed: bool) {
         super::ime::handle_event(self, ime_event, egui_consumed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn read_state(option_as_meta: bool) -> KeyboardReadState {
+        KeyboardReadState {
+            app_cursor: false,
+            is_alt_screen: false,
+            scroll_offset: 0,
+            rows: 24,
+            option_as_meta,
+        }
+    }
+
+    /// payload 들을 평탄화해 바이트 열로 모은다(Bytes/Text 모두 UTF-8 바이트로).
+    fn collect_bytes(payloads: &[SendPayload]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for p in payloads {
+            match p {
+                SendPayload::Bytes(b) => out.extend_from_slice(b),
+                SendPayload::Text(s) => out.extend_from_slice(s.as_bytes()),
+            }
+        }
+        out
+    }
+
+    // option_as_meta = true, Option(Alt)+'a' → ESC + base 'a' (합성문자 'å' 아님).
+    #[test]
+    fn option_as_meta_prefixes_esc() {
+        let key = Key::Character("a".into());
+        let text: Option<winit::keyboard::SmolStr> = Some("å".into());
+        let out =
+            MainView::decide_key_to_terminal(read_state(true), &key, &text, ModifiersState::ALT);
+        assert_eq!(collect_bytes(&out.payloads), vec![0x1b, b'a']);
+        assert!(out.sent);
+    }
+
+    // option_as_meta = false 이면 기존 동작(합성문자 'å' text 전송) 유지.
+    #[test]
+    fn option_as_meta_off_keeps_compose() {
+        let key = Key::Character("a".into());
+        let text: Option<winit::keyboard::SmolStr> = Some("å".into());
+        let out =
+            MainView::decide_key_to_terminal(read_state(false), &key, &text, ModifiersState::ALT);
+        assert_eq!(collect_bytes(&out.payloads), "å".as_bytes());
+        assert!(out.sent);
+    }
+
+    // option_as_meta = true 라도 Ctrl 이 함께 눌리면 Meta 분기로 빠지지 않는다
+    // (Ctrl+letter control char 우선).
+    #[test]
+    fn option_as_meta_with_ctrl_is_control_char() {
+        let key = Key::Character("a".into());
+        let text: Option<winit::keyboard::SmolStr> = None;
+        let out = MainView::decide_key_to_terminal(
+            read_state(true),
+            &key,
+            &text,
+            ModifiersState::ALT | ModifiersState::CONTROL,
+        );
+        // Ctrl 분기는 alt 가 눌리면 배제(`control_key() && !alt_key()`)되고, Meta
+        // 분기는 control 이 눌리면 배제(`!control_key()`)되므로 둘 다 안 타고,
+        // text 가 None 이라 아무것도 전송되지 않는다.
+        assert!(out.payloads.is_empty());
+        assert!(!out.sent);
     }
 }

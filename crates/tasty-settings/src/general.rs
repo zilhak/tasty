@@ -111,6 +111,12 @@ pub struct GeneralSettings {
     /// 단축키·영속이 현행 평면 동작과 동일하다. on 으로 켜면 normal 외 사용자
     /// 카테고리를 만들 수 있고, off 로 끄면 모든 워크스페이스를 normal 로 귀속한다.
     pub workspace_categories_enabled: bool,
+    /// macOS 전용 — Option 키를 Meta(Alt-prefix) 키로 해석한다. on 이면 Option+문자가
+    /// 특수문자(compose) 대신 `ESC` + base 문자 시퀀스로 PTY 에 전달돼 readline/Emacs/
+    /// vim 의 Meta 바인딩(`Alt+f`/`Alt+b` 등)이 동작한다. 기본 off — 기존 Option=특수문자
+    /// 동작을 보존한다(iTerm2 도 기본 off). 다른 OS 에는 Option 키가 없어 노출하지 않는다.
+    #[cfg(target_os = "macos")]
+    pub option_as_meta: bool,
 }
 
 /// 파싱된 링크 클릭 수식키.
@@ -163,6 +169,8 @@ impl Default for GeneralSettings {
             mouse_capture_hint: true,
             mouse_capture_blacklist: Vec::new(),
             workspace_categories_enabled: false,
+            #[cfg(target_os = "macos")]
+            option_as_meta: false,
         }
     }
 }

@@ -124,6 +124,14 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 true,
             );
             ui.end_row();
+
+            // Option as Meta 는 macOS 전용 — 다른 OS 에는 Option 키가 없어 노출하지 않는다.
+            #[cfg(target_os = "macos")]
+            {
+                ui.label(t("settings.terminal.option_as_meta_label"));
+                tasty_ui_widgets::switch(ui, &th, &mut settings.general.option_as_meta, None, true);
+                ui.end_row();
+            }
         });
 
     ui.add_space(8.0);

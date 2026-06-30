@@ -17,7 +17,7 @@
 상단 L1 7탭, 각 탭은 좌측에 L2 섹션 목록을 가진다 (이 순서):
 
 - **General** — L2: General / Clipboard / Notifications / Accessibility.
-- **Terminal** — L2: General(터미널 동작 설정) / Performance.
+- **Terminal** — L2: General(터미널 동작 설정 — 셸/스타트업/스크롤백/링크 수식키/마우스 캡처, macOS 빌드는 "Use Option as Meta" 토글 추가 → [terminal](../terminal/index.md) 키보드 입력) / Performance.
 - **Appearance** — L2: Theme / Colors / General / Display / Tasty / Terminal + 플러그인 기여 페이지(동적). Display = UI 스케일(sm/md/lg) 전용. Tasty = 앱 크롬 색상(accent / sidebar bg / active tab indicator). HTML viewer 설정은 호스트 고정 탭이 아니라 `com.tasty.html` 플러그인이 기여하는 동적 페이지다.
 - **Keybindings** — L2: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins. 단축키 편집 (아래).
 - **FileHandler** — L2: Extension Mapping / Detectors / Handlers.

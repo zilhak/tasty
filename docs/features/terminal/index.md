@@ -38,6 +38,8 @@ termwiz `Parser`/`Surface` 로 VT 시퀀스를 파싱·grid 갱신. 지원: 텍�
 
 중앙 키보드 디스패처가 focused surface 타입에 따라 정확히 한 대상에만 전달 — Terminal 은 PTY 로 바이트. 특수 키(Enter/Backspace/Tab/Escape/방향키/Home·End/PageUp·Down/Insert·Delete/F1~F12) 매핑, DECCKM 모드에 따라 방향키 시퀀스 전환(`\x1b[{A..D}` ↔ `\x1bO{A..D}`). 복사/붙여넣기/선택/IME 는 [clipboard](../clipboard/index.md).
 
+**Option as Meta (macOS 전용)**: 설정 `general.option_as_meta`(기본 off, macOS 빌드에만 존재). on 이면 Option(Alt)+문자 입력이 특수문자(compose, 예 `å`) 대신 `ESC` + base 문자 Meta 시퀀스(예 `Option+a` → `\x1b a`)로 PTY 에 전달돼 readline/Emacs/vim 의 Meta 바인딩(`Alt+f`/`Alt+b` 등)이 동작한다. 물리 Option 키만 대상이며(Ctrl/Cmd 동시 누름 시 제외), 좌/우 Option 을 구분하지 않는다. base 문자는 Option 합성 이전의 US 레이아웃 문자(`physical_key_to_logical`)라 비-US 레이아웃에서는 US 기준으로 인코딩되는 한계가 있다. off 면 기존 Option=특수문자 동작을 보존한다. 키바인딩이 아니라 입력 인코딩 동작이라 `GeneralSettings` 에 둔다(`KeybindingSettings` 무관). 다른 OS 에는 Option 키가 없어 설정·UI 모두 노출하지 않는다.
+
 ### 색상 / 폰트
 
 xterm-256color(ANSI 16 + 216 큐브 + 24 그레이) + TrueColor. 색은 Theme 의 ansi 팔레트([theme](../../design/systems/theme.md)). 폰트는 번들 D2Coding ligature(OFL 1.1, 임베드 — OS 미설치에도 동작), CJK fallback, 블록/박스 드로잉 글리프는 픽셀 퍼펙트 커스텀 렌더. 번들 폰트 파일은 합자 글리프를 포함하지만(폰트 자원), tasty 는 셀-격자 cross-cell 합자(프로그래밍 ligature) 적용도 설정 토글도 **미지원** — 보류 결정은 [ADR-0014](../../adr/0014-font-ligatures-deferred.md). 렌더 파이프라인(누적→flush→단일 패스, atlas LRU)은 [dev-guide/gpu-rendering](../../dev-guide/gpu-rendering.md).
