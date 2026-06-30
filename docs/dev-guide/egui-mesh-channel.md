@@ -8,8 +8,8 @@ plugin 이 **자기 프로세스에서 egui 를 tessellate** 한 vector mesh 를
 ## 데이터 흐름
 
 ```
-[host]  surface.set_context { surface_id, width_px, height_px, ppp, raw_input }
-          │  (크기/ppp 변경 · 사용자 입력 · 첫 bootstrap 시에만)
+[host]  surface.set_context { surface_id, width_px, height_px, ppp, raw_input, theme }
+          │  (크기/ppp 변경 · 사용자 입력 · 테마 변경 · 첫 bootstrap 시에만)
           ▼
 [plugin] egui::Context::run(raw_input) → tessellate(ppp) → POD 인코드
           │  SharedBuffer 에 write + commit(footer generation)
@@ -39,10 +39,28 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 
 ## set_context 송신 정책
 
-정적 화면을 매 frame 무조건 보내지 않는다. surface 마다 마지막 (크기, ppp) 를 추적해
-**크기/ppp 변경 · 누적 입력 · 미paint(bootstrap)** 중 하나일 때만 보낸다. plugin 이
-paint 를 보낸 뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로 frame 이 사라지면
-다시 bootstrap 한다.
+정적 화면을 매 frame 무조건 보내지 않는다. surface 마다 마지막 (크기, ppp, theme) 를
+추적해 **크기/ppp 변경 · 누적 입력 · 테마 변경 · 미paint(bootstrap)** 중 하나일 때만
+보낸다. plugin 이 paint 를 보낸 뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로
+frame 이 사라지면 다시 bootstrap 한다.
+
+## Theme 스냅샷 (generic parity)
+
+`set_context.theme` 는 host 가 resolve 한 현재 Theme 의 POD 스냅샷(`ThemeWire` =
+색 집합 `ThemeColors` + `is_light` + UI zoom)이다. egui 의존이 없어 default 빌드에도
+포함된다. plugin 은 `Theme::with_colors_and_zoom` 으로 host 와 동일한 `Theme` 인스턴스를
+재구성해 디자인 토큰대로 그린다(sizing 은 zoom 으로 재도출). 모든 egui-mesh surface 가
+공유하는 generic 필드다 — markdown/git-viewer 등이 같은 경로로 Theme parity 를 얻는다.
+테마 변경은 위 송신 정책의 트리거이므로, 사용자가 테마를 바꾸면 입력이 없어도 재forward 된다.
+
+## 콘텐츠 전달 (surface.create bootstrap)
+
+egui-mesh surface 는 plugin 이 콘텐츠를 소유하므로(예: markdown 의 파일 경로), host 는
+**첫 set_context bootstrap 직전에 `surface.create{params}` 를 plugin 에 1회 보낸다**
+(`MainView::forward_egui_mesh_context` → `send_egui_mesh_surface_create`). 같은 plugin
+req 채널 FIFO 라 create 가 set_context 보다 먼저 도착해, plugin 이 생성 params 를 렌더 전에
+받는다(set_context-before-create 레이스 제거). host 측 `EguiMeshSurface` stand-in 은
+`file` 을 보관해 layout 영속화(snapshot→restore)에서 같은 params 를 재전달한다.
 
 ## TextureId 격리 / ppp 가드
 
