@@ -15,3 +15,7 @@ markdown = "マークダウン"
 
 [settings.subtab]
 markdown = "Markdown"
+
+[markdown.state]
+failed = "読み込みに失敗しました"
+empty = "このファイルは空です"

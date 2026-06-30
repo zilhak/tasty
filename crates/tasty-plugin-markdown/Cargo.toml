@@ -1,9 +1,9 @@
 [package]
 name = "tasty-plugin-markdown"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
-description = "Markdown viewer surface plugin"
+description = "Markdown viewer surface plugin (egui-mesh)"
 repository = "https://github.com/zilhak/tasty"
 
 [[bin]]
@@ -11,10 +11,26 @@ name = "tasty-plugin-markdown"
 path = "src/main.rs"
 
 [dependencies]
-tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+tasty-plugin-sdk = { path = "../tasty-plugin-sdk", features = ["egui-mesh"] }
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+# Theme parity — host 가 set_context 로 보낸 ThemeWire(색 집합+is_light+zoom)를
+# `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로 그린다. egui-compat
+# (to_egui) 를 켠다 — 이 프로세스는 egui 를 링크하므로.
+tasty-type-appearance = { path = "../tasty-type-appearance" }
+pulldown-cmark = { version = "0.12", default-features = false }
+webbrowser = "1"
 serde_json = "1"
+tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+
+# host·SDK·protocol 와 동일 egui 인스턴스로 unify (epaint serde OFF + bytemuck ON).
+# plugin 이 closure 에서 markdown 위젯을 그리려면 SDK 와 같은 egui 타입이 필요하다 —
+# Cargo 가 workspace 전역 0.31 로 통일하므로 mesh 와이어(POD Vertex)가 정합한다.
+egui = { version = "0.31", default-features = false, features = [
+    "bytemuck",
+    "default_fonts",
+] }
 
 [dev-dependencies]
 tasty-plugin-manifest = { path = "../tasty-plugin-manifest" }

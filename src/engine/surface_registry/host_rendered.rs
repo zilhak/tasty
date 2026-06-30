@@ -11,11 +11,12 @@
 use crate::engine::surface_registry::{SurfaceKindRegistry, builtins};
 
 /// `(kind, plugin_id)` 쌍이 host-rendered로 허용된 조합인지 확인.
+///
+/// markdown 은 B1(ADR-0028)에서 egui-mesh 채널로 전환돼 더 이상 host-rendered 가
+/// 아니다(`surface_registry/egui_mesh.rs` 화이트리스트). image 는 비트맵 하이브리드
+/// 전환(B2) 전까지 host-rendered 로 남는다.
 fn is_host_rendered_allowed(kind: &str, plugin_id: &str) -> bool {
-    matches!(
-        (kind, plugin_id),
-        ("image", "com.tasty.image") | ("markdown", "com.tasty.markdown")
-    )
+    matches!((kind, plugin_id), ("image", "com.tasty.image"))
 }
 
 /// plugin manager가 hello 직후 매니페스트에 `rendering = "host"` 선언이 있을 때 호출.
@@ -50,7 +51,6 @@ pub fn register_host_rendered_kind(
     }
     match kind {
         "image" => builtins::register_image(registry),
-        "markdown" => builtins::register_markdown(registry),
         _ => unreachable!("whitelist guard ensures only known kinds reach here"),
     }
     tracing::info!(
@@ -104,21 +104,9 @@ mod tests {
     }
 
     #[test]
-    fn markdown_kind_allowed_for_markdown_plugin() {
-        assert!(is_host_rendered_allowed("markdown", "com.tasty.markdown"));
-        assert!(!is_host_rendered_allowed("markdown", "com.example.evil"));
-        assert!(!is_host_rendered_allowed("foo", "com.tasty.markdown"));
-    }
-
-    #[test]
-    fn register_succeeds_for_markdown_plugin() {
-        let reg = SurfaceKindRegistry::new();
-        assert!(register_host_rendered_kind(
-            &reg,
-            "com.tasty.markdown",
-            "markdown"
-        ));
-        assert!(reg.contains("markdown"));
+    fn markdown_kind_no_longer_host_rendered() {
+        // markdown 은 B1(ADR-0028)에서 egui-mesh 로 전환 — host-rendered 화이트리스트에서 빠졌다.
+        assert!(!is_host_rendered_allowed("markdown", "com.tasty.markdown"));
     }
 
     #[test]

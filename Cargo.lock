@@ -5664,13 +5664,19 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
+ "egui",
+ "pulldown-cmark",
  "serde_json",
  "tasty-plugin-manifest",
+ "tasty-plugin-protocol",
  "tasty-plugin-sdk",
+ "tasty-type-appearance",
+ "tracing",
  "tracing-subscriber",
+ "webbrowser",
 ]
 
 [[package]]
@@ -5688,12 +5694,13 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-protocol"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "bytemuck",
  "egui",
  "serde",
  "serde_json",
+ "tasty-type-appearance",
  "tracing",
 ]
 

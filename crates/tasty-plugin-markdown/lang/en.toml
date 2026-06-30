@@ -15,3 +15,7 @@ markdown = "Markdown"
 
 [settings.subtab]
 markdown = "Markdown"
+
+[markdown.state]
+failed = "Failed to load"
+empty = "This file is empty"

@@ -64,6 +64,10 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
 
 // ── Markdown ────────────────────────────────────────────────────────────────
 
+// B1(ADR-0028): markdown 은 egui-mesh 채널로 전환돼 더 이상 host-rendered 로 등록되지
+// 않는다. 이 host-rendered 정의(+ `MarkdownPanel`/`MarkdownView` 직접 렌더)는 C1 에서
+// 제거된다 — 그 전까지는 잔존 코드로 보존(테스트만 참조).
+#[allow(dead_code)]
 pub(crate) fn register_markdown(registry: &SurfaceKindRegistry) {
     registry.register(SurfaceKindDef {
         kind: "markdown",
