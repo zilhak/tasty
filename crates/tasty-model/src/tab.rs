@@ -440,11 +440,18 @@ impl Tab {
     /// Produce a JSON tree representation of this tab.
     pub fn to_tree_json(&self) -> serde_json::Value {
         let layout_json = if self.is_split() {
-            serde_json::json!({
+            let mut v = serde_json::json!({
                 "type": "SplitLayout",
                 "focused_surface": self.focused_surface,
                 "surfaces": self.all_surface_ids(),
-            })
+            });
+            // 분할 방향/비율/상위-하위 중첩 구조를 보존한 전체 트리. CLI `list tree`
+            // 가 이걸로 split tab 의 SurfaceGroup 계층을 그린다. flat `surfaces` 는
+            // 호환을 위해 남겨둔다.
+            if let Some(layout) = self.layout_if_initialized() {
+                v["layout"] = layout.to_tree_json_full();
+            }
+            v
         } else {
             // Single-leaf tab. EmptySurface(deferred) renders itself with pty_ready: false.
             // For a live TerminalSurface, append pty_ready: true.
