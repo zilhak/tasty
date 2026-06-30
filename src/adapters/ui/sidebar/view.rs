@@ -10,7 +10,8 @@ use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
 
 /// 사이드바 헤더 (full / collapsed) 에 표시되는 수박 로고 PNG.
-/// `egui_extras::install_image_loaders` (gpu.rs) 가 PNG 디코딩을 처리한다.
+/// PNG 디코딩에는 egui_extras 의 `image` feature 가 필요하다 (Cargo.toml 에서 활성,
+/// `egui_extras::install_image_loaders` (gpu.rs) 가 ImageCrateLoader 를 설치).
 const LOGO_PNG: &[u8] = include_bytes!("../../../../assets/icons/icon_256.png");
 const LOGO_URI: &str = "bytes://tasty_sidebar_logo_256.png";
 
