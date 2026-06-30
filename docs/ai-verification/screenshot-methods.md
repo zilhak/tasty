@@ -15,11 +15,11 @@
 - **debug 빌드 전용**(`src/app/ipc/window_required.rs` 가 게이트). release 미노출.
 - GUI 모드 전용(headless 불가).
 - params `{ "path": "<절대경로>.png" }`. 응답 `{ "path": .., "scheduled": true }` — **다음 프레임에 캡처 예약**(비동기, `pending_screenshot`). 호출 직후 잠깐 기다렸다 파일을 읽는다.
-- `tasty screenshot` 같은 CLI 는 없다. JSON-RPC(개행 구분)를 포트로 직접 보낸다. 포트 파일은 **debug `~/.tasty/tasty-debug.port`** / release `~/.tasty/tasty.port`(`crates/tasty-ipc/src/port_file.rs`).
+- `tasty screenshot` 같은 CLI 는 없다. JSON-RPC(개행 구분)를 포트로 직접 보낸다. 포트 파일은 debug 빌드면 **debug 루트** `~/.tasty-debug/tasty.port`, release 면 `~/.tasty/tasty.port` 다(루트 분리 — 격리 표 [independent-verification](../dev-guide/independent-verification.md), 구현 `crates/tasty-ipc/src/port_file.rs`).
 
 ```python
 import socket, json
-port = int(open("/Users/<you>/.tasty/tasty-debug.port").read().strip())
+port = int(open("/Users/<you>/.tasty-debug/tasty.port").read().strip())  # debug 빌드 루트
 req = {"jsonrpc":"2.0","id":1,"method":"ui.screenshot","params":{"path":"/abs/out.png"}}
 s = socket.socket(); s.settimeout(8); s.connect(("127.0.0.1", port))
 s.sendall((json.dumps(req)+"\n").encode())
@@ -28,12 +28,14 @@ print(s.recv(8192).decode().strip())   # {"result":{"path":..,"scheduled":true},
 
 ### 사용자 세션을 건드리지 않고 격리 실행
 
-`tasty_home()` 은 `$HOME/.tasty` 고정(env override 없음). 사용자가 띄워둔 tasty 와 충돌 없이 검증 인스턴스를 돌리려면 **별도 `HOME`** 으로 실행한다. debug 빌드는 포트 파일명이 `tasty-debug.port` 라 release 세션과 자연 분리된다.
+debug 빌드는 이미 `~/.tasty-debug/` 루트로 release(`~/.tasty/`)와 자동 분리되므로, 보통은 그냥 `./target/debug/tasty --launch` 로 띄우고 `~/.tasty-debug/tasty.port` 로 접속하면 사용자 release 세션과 충돌하지 않는다(격리 표·상세: [independent-verification](../dev-guide/independent-verification.md)).
+
+루트를 명시적으로 분리하고 싶으면(병렬 debug 인스턴스 등) `TASTY_HOME` env 로 루트를 강제한다 — `tasty_home()` 이 `TASTY_HOME` 을 debug/release 자동 분기보다 우선한다(`crates/tasty-utils/src/path.rs`).
 
 ```bash
-TH=$(mktemp -d); mkdir -p "$TH/.tasty"; cp ~/.tasty/config.toml "$TH/.tasty/"
-HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서면 GUI 부팅 skip 되므로 --launch 강제
-# "$TH/.tasty/tasty-debug.port" 로 ui.screenshot 호출
+TH=$(mktemp -d); mkdir -p "$TH"; cp ~/.tasty/config.toml "$TH/"   # config 는 루트 바로 아래
+TASTY_HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서면 GUI 부팅 skip 되므로 --launch 강제
+# "$TH/tasty.port" 로 ui.screenshot 호출 (TASTY_HOME 루트라 -debug 접미사 없음)
 # 정리: pkill -f "target/debug/tasty --launch"; rm -rf "$TH"
 ```
 

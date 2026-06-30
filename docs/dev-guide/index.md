@@ -2,7 +2,7 @@
 
 tasty 를 **개발하는** AI 에이전트용 가이드. tasty 를 *사용하는* 에이전트용 표면은 [reference/](../reference/index.md).
 
-> 핵심 원칙 — **독립 검증**: tasty 개발 환경이 곧 tasty(dogfooding)다. debug 빌드는 release 와 환경을 격리(`tasty-debug.port` 등)해, agent 가 release tasty 안에서 동작 중이어도 자기 debug 빌드를 따로 띄워 충돌 없이 검증할 수 있다. [independent-verification](independent-verification.md).
+> 핵심 원칙 — **독립 검증**: tasty 개발 환경이 곧 tasty(dogfooding)다. debug 빌드는 별도 루트(`~/.tasty-debug/`)로 release(`~/.tasty/`)와 격리돼, agent 가 release tasty 안에서 동작 중이어도 자기 debug 빌드를 따로 띄워 충돌 없이 검증할 수 있다. [independent-verification](independent-verification.md).
 
 ## 시작 / 검증
 

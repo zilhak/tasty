@@ -9,6 +9,7 @@
 1. **검증 가능 여부를 먼저 판단.** IPC/CLI/스크립트로 트리거 가능하면 검증 가능. 마우스 hover 같은 *사용자 입력이 있어야만 재현되는* 케이스만 사용자에게 부탁한다.
 2. **검증은 커밋 전.** 빌드 통과 + 단위 테스트 통과는 *컴파일된다* 는 의미일 뿐 *기능이 동작한다* 는 보장이 아니다 — 별도 시나리오 재현이 필요.
 3. **확인 안 됐으면 "확인 안 됨" 이라고 말한다.** 추측으로 "동작할 거예요" 보고 금지.
+4. **검증 인스턴스는 자동 격리된다.** debug 빌드(`cargo run` / `target/debug/tasty`)는 `~/.tasty-debug/` 루트를, release 사용자 세션은 `~/.tasty/` 를 쓴다 — 따로 끄거나 환경변수를 줄 필요 없이 `cargo run` 만으로 충돌 없는 검증이 보장된다. (상세 [independent-verification.md](independent-verification.md))
 
 ## tasty 에서 직접 검증
 
@@ -25,10 +26,12 @@ target/debug/tasty read screen --surface 2               # 결과 확인
 pkill -f "target/debug/tasty\$"                          # 종료
 ```
 
+**이미 다른 tasty 인스턴스(사용자의 release 등)가 떠 있어도 충돌하지 않는다.** `cargo run` 은 debug 빌드라 데이터 루트가 `~/.tasty-debug/`(포트파일 `~/.tasty-debug/tasty.port`)로 release 의 `~/.tasty/` 와 **완전히 분리**된다 — 포트·layout·scrollback 모두 별도. 그러니 인스턴스가 떠 있는지 따지지 말고 그냥 `cargo run` 으로 자기 debug 인스턴스를 띄워 검증한다. (격리 표·`TASTY_HOME` override: [independent-verification.md](independent-verification.md))
+
 ### 자주 쓰는 시나리오
 
 - **PTY 입출력**: `send text` → `read screen` 으로 echo/명령 결과 확인.
-- **레이아웃 저장/복원**: dirty 트리거 발생 → `~/.tasty/layout.json` 확인 → kill → 재시작 → `read screen` 으로 복원 확인.
+- **레이아웃 저장/복원**: dirty 트리거 발생 → layout 파일 확인(debug 검증이면 `~/.tasty-debug/layout.json`) → kill → 재시작 → `read screen` 으로 복원 확인.
 - **Surface meta**: `surface-meta set/get/list` 로 키-값 확인.
 - **Hook/플러그인**: `tasty list hooks` · `tasty plugin list` 로 등록 상태, 호출 결과는 plugin 로그(`~/.tasty/plugins-logs/`).
 - **레이아웃 트리 변형**: split/close/new → `list tree` 로 구조 변화 확인.

@@ -9,7 +9,7 @@ AI 에이전트가 tasty 를 조작하기 전 알아야 할 OS별 경로·실행
 | 포트 파일 | `~/.tasty/tasty.port` | IPC 동적 포트. 실행 시 생성 |
 | 설정 | `~/.tasty/config.toml` | 사용자 설정 |
 
-(Windows 는 `~` = `%USERPROFILE%`. debug 빌드 포트 파일은 `~/.tasty/tasty-debug.port`.)
+(Windows 는 `~` = `%USERPROFILE%`. debug 빌드는 루트 자체가 분리되어 `~/.tasty-debug/` 아래에 같은 파일들을 둔다 — 격리 상세 [dev-guide/independent-verification](../dev-guide/independent-verification.md).)
 
 ## 실행 여부 확인
 
@@ -18,6 +18,8 @@ pgrep -x tasty >/dev/null && echo running || echo "not running"
 # 포트 파일은 있으나 프로세스가 없으면 stale — 삭제
 [ -f ~/.tasty/tasty.port ] && ! pgrep -x tasty >/dev/null && rm ~/.tasty/tasty.port
 ```
+
+검증용 debug 인스턴스(`cargo run`)는 루트가 `~/.tasty-debug/` 라 포트파일이 `~/.tasty-debug/tasty.port` 다 — 위 release 체크와 무관하게 따로 띄워도 충돌하지 않는다.
 
 ## 실행 / 대기 / 종료
 

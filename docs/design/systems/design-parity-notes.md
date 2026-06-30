@@ -206,7 +206,7 @@ rest/hover/active/focus/disabled **정지 상태가 canonical** — 파리티는
 
 ### 검증
 갤러리는 IPC 스크린샷이 없고 OS 캡처는 권한 불가 → 본체 격리 인스턴스
-(`HOME=tmp ./target/debug/tasty --launch`, debug 포트 `tasty-debug.port`) + `ui.screenshot`
+(`TASTY_HOME=tmp ./target/debug/tasty --launch`, debug 는 별도 루트로 격리 — [independent-verification](../../dev-guide/independent-verification.md)) + `ui.screenshot`
 JSON-RPC + `debug.host_popup.open` 으로 검증. primitive 는 본체 팝업에 adopt 한 뒤 대조한다.
 
 ## 팝업 — egui Area 미등록 → ScrollArea 스크롤 불가 + 클립 누출 (2026-06-21)
