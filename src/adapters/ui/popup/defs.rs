@@ -268,6 +268,22 @@ pub fn all_defs() -> &'static [PopupDef] {
                 draw_fn: crate::adapters::ui::tools_menu::draw_tools_menu,
             },
             PopupDef {
+                id: super::confirm_delete_category::CONFIRM_DELETE_CATEGORY_POPUP_ID,
+                title_key: "workspace_category.delete_confirm_title",
+                title_fn: Some(super::confirm_delete_category::confirm_delete_category_title),
+                default_size: egui::vec2(380.0, 150.0),
+                sizer: Some(super::confirm_delete_category::confirm_delete_category_sizer),
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: true,
+                sticky_focus: false,
+                // 소형 모달 — 이동/리사이즈 비활성, 중앙 정렬로 연다.
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
+                draw_fn: super::confirm_delete_category::draw_confirm_delete_category,
+            },
+            PopupDef {
                 id: super::rail_category::RAIL_CATEGORY_POPUP_ID,
                 title_key: "workspace_category.heading",
                 title_fn: None,

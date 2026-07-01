@@ -551,6 +551,9 @@ pub struct DialogState {
     /// 축소 레일 카테고리 팝업(`rail_category`)이 대상으로 하는 카테고리 id.
     /// `---` 버튼 클릭 시 set, popup 닫힘 시 None.
     pub(crate) rail_category_popup: Option<crate::model::WorkspaceCategoryId>,
+    /// 카테고리 삭제 확인 다이얼로그(`confirm_delete_category`)의 대상 카테고리 id.
+    /// Delete 액션 시 set, 확인/취소/닫힘 시 None.
+    pub(crate) pending_category_delete: Option<crate::model::WorkspaceCategoryId>,
 }
 
 /// 1MB 초과 markdown 열기 확인 팝업의 보류 오픈 상태 (`01-md-size-confirm-gate`).
@@ -641,6 +644,7 @@ impl DialogState {
             pending_enter_copy_mode: false,
             pending_md_open: None,
             rail_category_popup: None,
+            pending_category_delete: None,
         }
     }
 

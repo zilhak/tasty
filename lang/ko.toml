@@ -951,6 +951,8 @@ move_to_category = "카테고리로 이동"
 add_workspace = "워크스페이스 추가"
 collapse = "접기"
 expand = "펼치기"
+delete_confirm_title = "카테고리를 삭제할까요?"
+delete_confirm_body = "{} 카테고리를 삭제할까요? 안의 워크스페이스 {}개는 삭제되지 않고 '워크스페이스'로 이동합니다."
 
 [workspace_category.error]
 empty = "카테고리 이름은 비울 수 없습니다."

@@ -951,6 +951,8 @@ move_to_category = "カテゴリへ移動"
 add_workspace = "ワークスペースを追加"
 collapse = "折りたたむ"
 expand = "展開"
+delete_confirm_title = "カテゴリを削除しますか？"
+delete_confirm_body = "{} を削除しますか？中の {} 個のワークスペースは削除されず、「ワークスペース」へ移動します。"
 
 [workspace_category.error]
 empty = "カテゴリ名を空にはできません。"

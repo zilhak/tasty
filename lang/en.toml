@@ -951,6 +951,8 @@ move_to_category = "Move to category"
 add_workspace = "Add workspace"
 collapse = "Collapse"
 expand = "Expand"
+delete_confirm_title = "Delete category?"
+delete_confirm_body = "Delete {}? Its {} workspaces aren't deleted — they move back to Workspaces."
 
 [workspace_category.error]
 empty = "Category name must not be empty."
