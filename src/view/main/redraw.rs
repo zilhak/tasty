@@ -1007,6 +1007,18 @@ impl MainView {
                         crate::i18n::t("explorer.context_menu.add_to_favorites"),
                     ));
                 }
+                // 단일 폴더: 새 탭으로 열기 / 이 폴더로 루트 설정 (빈 영역=cwd 자기
+                // 자신엔 무의미 → 제외).
+                if is_folder {
+                    items.push(MenuItem::new(
+                        60,
+                        crate::i18n::t("explorer.context_menu.open_in_new_tab"),
+                    ));
+                    items.push(MenuItem::new(
+                        61,
+                        crate::i18n::t("explorer.context_menu.set_as_root"),
+                    ));
+                }
                 if is_empty_target {
                     // 빈 영역(cwd): 붙여넣기만 (클립보드가 있을 때).
                     if has_clip {
@@ -1165,21 +1177,66 @@ impl MainView {
                             .from_user_context_menu(),
                         );
                     }
+                    Some(60) => {
+                        // 새 탭으로 열기 — 대상 폴더를 cwd 로 하는 새 explorer 를 우클릭
+                        // 대상 surface 의 소유 pane 에 Pane 탭으로 연다(기존 surface 불변).
+                        if let Some(folder) = paths.first().cloned() {
+                            let params = serde_json::json!({ "path": folder.to_string_lossy() });
+                            if let Err(e) = self
+                                .state
+                                .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
+                            {
+                                tracing::warn!("explorer: open in new tab failed: {e}");
+                            }
+                        }
+                    }
+                    Some(61) => {
+                        // 이 폴더로 루트 설정 — 현재 explorer 의 cwd 를 그 폴더로 이동.
+                        if let Some(folder) = paths.first().cloned() {
+                            self.state.set_explorer_cwd(engine, surface_id, folder);
+                        }
+                    }
                     _ => {}
                 }
                 self.mark_dirty();
             }
-            PendingNativeMenu::ExplorerFavorite { path, x, y } => {
-                let items = [MenuItem::new(
-                    1,
-                    crate::i18n::t("explorer.context_menu.remove_from_favorites"),
-                )];
+            PendingNativeMenu::ExplorerFavorite {
+                surface_id,
+                path,
+                x,
+                y,
+            } => {
+                let items = [
+                    MenuItem::new(60, crate::i18n::t("explorer.context_menu.open_in_new_tab")),
+                    MenuItem::new(61, crate::i18n::t("explorer.context_menu.set_as_root")),
+                    MenuItem::separator(),
+                    MenuItem::new(
+                        1,
+                        crate::i18n::t("explorer.context_menu.remove_from_favorites"),
+                    ),
+                ];
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
-                if let Some(1) = result {
-                    // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
-                    engine.explorer_favorites.remove(&path);
-                    engine.explorer_favorites.save();
+                match result {
+                    Some(60) => {
+                        let params = serde_json::json!({ "path": path.to_string_lossy() });
+                        if let Err(e) = self
+                            .state
+                            .add_kind_tab_by_owner(engine, surface_id, "explorer", &params)
+                        {
+                            tracing::warn!("explorer: open favorite in new tab failed: {e}");
+                        }
+                    }
+                    Some(61) => {
+                        self.state
+                            .set_explorer_cwd(engine, surface_id, path.clone());
+                    }
+                    Some(1) => {
+                        // 사이드바는 다음 프레임 스냅샷에서 갱신 — redraw 만 요청.
+                        engine.explorer_favorites.remove(&path);
+                        engine.explorer_favorites.save();
+                    }
+                    _ => {}
                 }
                 self.mark_dirty();
             }

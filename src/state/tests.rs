@@ -401,3 +401,59 @@ fn surface_display_path_unknown_surface_is_none() {
     let (_state, engine) = test_state();
     assert!(engine.surface_display_path(99999).is_none());
 }
+
+/// 활성 워크스페이스에서 `sid` 의 ExplorerPanel 을 찾아 반환(테스트 헬퍼).
+fn explorer_of<'a>(
+    engine: &'a crate::core::CoreState,
+    state: &AppState,
+    sid: u32,
+) -> Option<&'a crate::model::ExplorerPanel> {
+    let ws = state.active_workspace(engine);
+    for pid in ws.pane_layout().all_pane_ids() {
+        let Some(pane) = ws.pane_layout().find_pane(pid) else {
+            continue;
+        };
+        for tab in &pane.tabs {
+            if let Some(s) = tab.layout().find_surface(sid) {
+                return s.as_any().downcast_ref::<crate::model::ExplorerPanel>();
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn add_kind_tab_by_owner_opens_explorer_with_folder_cwd() {
+    let (mut state, mut engine) = test_state();
+    // 초기 pane 의 focused surface(터미널)를 owner 로 지정.
+    let owner = state.focused_surface_id(&engine).expect("focused surface");
+    let (_tab, sid) = state
+        .add_kind_tab_by_owner(
+            &mut engine,
+            owner,
+            "explorer",
+            &serde_json::json!({ "path": "/proj/sub" }),
+        )
+        .expect("add explorer tab in owner pane");
+    let ex = explorer_of(&engine, &state, sid).expect("explorer surface exists");
+    // 새 explorer 는 cwd=current=folder (source_cwd 는 model 단위 테스트에서 검증).
+    assert_eq!(ex.cwd(), std::path::Path::new("/proj/sub"));
+    assert_eq!(ex.current_root(), std::path::Path::new("/proj/sub"));
+}
+
+#[test]
+fn set_explorer_cwd_moves_root_and_clears_history() {
+    let (mut state, mut engine) = test_state();
+    let (_t, sid) = state
+        .add_kind_tab(
+            &mut engine,
+            "explorer",
+            &serde_json::json!({ "path": "/proj" }),
+        )
+        .expect("add explorer tab");
+    state.set_explorer_cwd(&mut engine, sid, std::path::PathBuf::from("/other"));
+    let ex = explorer_of(&engine, &state, sid).expect("explorer surface exists");
+    assert_eq!(ex.cwd(), std::path::Path::new("/other"));
+    assert_eq!(ex.current_root(), std::path::Path::new("/other"));
+    assert!(!ex.active_tab().can_go_back());
+}

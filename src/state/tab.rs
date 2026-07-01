@@ -58,6 +58,89 @@ impl AppState {
         }
     }
 
+    /// `add_kind_tab` 의 surface-owner 타겟 변형: focused pane 대신 `owner_surface_id`
+    /// 가 속한 pane 에 탭을 추가한다. 우클릭한 explorer 가 focused pane 이 아니어도
+    /// (background pane) 그 explorer 가 있는 pane 에 새 탭이 열리도록 해 focused-pane
+    /// 의존을 제거한다. Returns (tab_id, surface_id) on success.
+    pub fn add_kind_tab_by_owner(
+        &mut self,
+        engine: &mut CoreState,
+        owner_surface_id: u32,
+        kind: &str,
+        params: &Value,
+    ) -> anyhow::Result<(u32, u32)> {
+        // owner 가 속한 pane_id 를 활성 워크스페이스에서 찾는다.
+        let ws = self.active_workspace(engine);
+        let mut target_pane = None;
+        for pid in ws.pane_layout().all_pane_ids() {
+            if let Some(pane) = ws.pane_layout().find_pane(pid)
+                && pane
+                    .tabs
+                    .iter()
+                    .any(|t| t.contains_surface(owner_surface_id))
+            {
+                target_pane = Some(pid);
+                break;
+            }
+        }
+        let Some(pane_id) = target_pane else {
+            anyhow::bail!("owner surface {owner_surface_id} not found in active workspace");
+        };
+        let tab_id = engine.next_ids.next_tab();
+        let surface_id = engine.next_ids.next_surface();
+        let cwd = self.resolve_inherit_cwd(engine);
+        let surface =
+            engine.create_surface_via_registry(kind, surface_id, cwd.as_deref(), params)?;
+        let name = super::pane::default_tab_name_for_kind(kind, params);
+        let ws = self.active_workspace_mut(engine);
+        if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+            pane.add_surface_tab(tab_id, name, None, surface);
+            engine.mark_layout_dirty();
+            Ok((tab_id, surface_id))
+        } else {
+            anyhow::bail!("pane {pane_id} vanished before add_surface_tab");
+        }
+    }
+
+    /// 대상 explorer surface(`sid`)의 활성 탭 cwd 를 `folder` 로 설정하고(좌측 트리
+    /// 루트 이동 + current=folder + 히스토리 초기화) 뷰를 리로드한다. 컨텍스트 메뉴
+    /// "이 폴더로 루트 설정" 이 사용. surface_id→패널 탐색은 focus 독립(전 pane 순회).
+    pub fn set_explorer_cwd(
+        &mut self,
+        engine: &mut CoreState,
+        sid: u32,
+        folder: std::path::PathBuf,
+    ) {
+        let ws = self.active_workspace_mut(engine);
+        let pane_ids = ws.pane_layout().all_pane_ids();
+        let mut done = false;
+        for pid in pane_ids {
+            let Some(pane) = ws.pane_layout_mut().find_pane_mut(pid) else {
+                continue;
+            };
+            for tab in pane.tabs.iter_mut() {
+                if !tab.contains_surface(sid) {
+                    continue;
+                }
+                if let Some(leaf) = tab.layout_mut().find_leaf_mut(sid)
+                    && let Some(ex) = leaf
+                        .as_any_mut()
+                        .downcast_mut::<crate::model::ExplorerPanel>()
+                {
+                    ex.active_tab_mut().set_cwd(folder.clone());
+                    done = true;
+                }
+            }
+            if done {
+                break;
+            }
+        }
+        // 뷰 리로드 (엔트리 캐시는 explorer_views 에 있어 ws 借用 종료 후 접근).
+        if done && let Some(v) = self.explorer_views.get_mut(sid) {
+            v.request_reload();
+        }
+    }
+
     /// Add an empty placeholder tab in the focused pane. Returns (tab_id, surface_id).
     pub fn add_empty_tab(&mut self, engine: &mut CoreState) -> Option<(u32, u32)> {
         self.add_kind_tab(engine, "empty", &Value::Null).ok()

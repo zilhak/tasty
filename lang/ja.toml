@@ -526,6 +526,8 @@ paste_into = "貼り付け（中へ）"
 delete = "ゴミ箱に移動"
 rename = "名前を変更"
 open_in_system = "システムで開く"
+open_in_new_tab = "新しいタブで開く"
+set_as_root = "このフォルダをルートに設定"
 
 [explorer.nav]
 back = "戻る"

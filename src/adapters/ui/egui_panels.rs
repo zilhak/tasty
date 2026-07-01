@@ -438,6 +438,7 @@ pub(crate) fn apply_explorer_action(
             // (egui_panels 의 secondary_pos 루프)은 이미 설정됨을 보고 건너뛴다.
             let menu = match target {
                 T::Favorite { path } => crate::state::PendingNativeMenu::ExplorerFavorite {
+                    surface_id: sid,
                     path: path.clone(),
                     x: *x,
                     y: *y,

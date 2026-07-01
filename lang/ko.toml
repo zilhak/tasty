@@ -526,6 +526,8 @@ paste_into = "붙여넣기 (안으로)"
 delete = "휴지통으로 이동"
 rename = "이름 변경"
 open_in_system = "시스템에서 열기"
+open_in_new_tab = "새 탭으로 열기"
+set_as_root = "이 폴더로 루트 설정"
 
 [explorer.nav]
 back = "뒤로"

@@ -526,6 +526,8 @@ paste_into = "Paste (into)"
 delete = "Move to Trash"
 rename = "Rename"
 open_in_system = "Open in System"
+open_in_new_tab = "Open in New Tab"
+set_as_root = "Set as Root"
 
 [explorer.nav]
 back = "Back"

@@ -569,6 +569,22 @@ fn tree_node(
             *action = Some(ExplorerAction::Navigate(dir.to_path_buf()));
         }
     }
+    // 트리 폴더 우클릭 → 단일 폴더 컨텍스트 메뉴(우측 목록과 동일 + 새 탭/루트 설정).
+    // content 선택집합과 무관하므로 Single target 을 직접 구성(view.selected 미조작).
+    if resp.secondary_clicked() && action.is_none() {
+        let pos = ui
+            .input(|i| i.pointer.interact_pos())
+            .unwrap_or_else(|| resp.rect.center());
+        *action = Some(ExplorerAction::ContextMenu {
+            target: ExplorerMenuTarget::Single {
+                path: dir.to_path_buf(),
+                is_dir: true,
+            },
+            cwd: dir.to_path_buf(),
+            x: pos.x,
+            y: pos.y,
+        });
+    }
     if open {
         let children: Vec<PathBuf> = view
             .tree_children_of(dir)

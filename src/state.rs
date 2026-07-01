@@ -484,9 +484,11 @@ pub enum PendingNativeMenu {
         x: f32,
         y: f32,
     },
-    /// Explorer 사이드바 즐겨찾기 항목 우클릭 → "즐겨찾기에서 제거" 전용 메뉴.
-    /// 즐겨찾기는 전역이라 surface 식별이 불필요(경로만으로 제거).
+    /// Explorer 사이드바 즐겨찾기 항목 우클릭 → "새 탭으로 열기"/"이 폴더로 루트
+    /// 설정"/"즐겨찾기에서 제거". 제거는 전역 경로만으로 되지만, "루트 설정" 이
+    /// 특정 explorer surface 의 cwd 를 바꾸므로 `surface_id` 가 필요하다.
     ExplorerFavorite {
+        surface_id: u32,
         path: std::path::PathBuf,
         x: f32,
         y: f32,
