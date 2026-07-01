@@ -341,6 +341,31 @@ impl PluginManager {
         }
     }
 
+    /// egui-mesh banner 인스턴스에 렌더 컨텍스트(크기/ppp/raw input/theme)를 forward (A3).
+    ///
+    /// [`send_popup_set_context`](Self::send_popup_set_context) 의 banner 대응 —
+    /// fire-and-forget 이고, plugin 은 응답 대신 비동기 [`BannerPaintFrame`] 알림으로
+    /// mesh 를 회신한다. 호스트 banner 합성기가 host→plugin 송신 경로로 이 헬퍼를 호출한다.
+    ///
+    /// [`BannerPaintFrame`]: tasty_plugin_protocol::PluginEvent::BannerPaintFrame
+    pub fn send_banner_set_context(
+        &self,
+        plugin_id: &str,
+        params: &tasty_plugin_protocol::BannerSetContextParams,
+    ) {
+        let Some(proc) = self.processes.get(plugin_id) else {
+            return;
+        };
+        let req = crate::protocol::PluginRequest {
+            method: protocol::METHOD_BANNER_SET_CONTEXT.to_string(),
+            params: json!(params),
+            id: self.next_request_id.fetch_add(1, Ordering::Relaxed),
+        };
+        if let Err(e) = proc.req_tx.send(req) {
+            tracing::warn!("plugin '{plugin_id}' banner.set_context send failed: {e}");
+        }
+    }
+
     pub(super) fn send_event_dispatches(
         &mut self,
         dispatches: Vec<crate::event_bus::PluginDispatch>,

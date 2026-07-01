@@ -51,6 +51,15 @@ impl PluginManager {
         self.popup_mesh_frames.get(&instance_id)
     }
 
+    /// egui-mesh banner 인스턴스의 최근 paint_frame 메타 조회 (A3). [`popup_mesh_frame`]
+    /// 의 banner 대응 — 호스트 banner 합성기가 `instance_id` 로 lookup 한다. plugin 이 아직
+    /// frame 을 보내지 않았거나 banner 가 닫혀 정리됐으면 `None`.
+    ///
+    /// [`popup_mesh_frame`]: Self::popup_mesh_frame
+    pub fn banner_mesh_frame(&self, instance_id: u64) -> Option<&super::EguiMeshFrame> {
+        self.banner_mesh_frames.get(&instance_id)
+    }
+
     /// `host.shared_buffer.create` 처리. 새 공유 메모리 영역을 만들어
     /// 메인 채널 결과(`SharedBufferCreateResult`)와 보조 채널 핸들(`HandleAttach`)을
     /// 양쪽 모두 전송한다.

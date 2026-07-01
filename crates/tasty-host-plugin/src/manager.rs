@@ -313,6 +313,14 @@ pub struct PluginManager {
     pub(super) popup_instances: HashMap<u64, PopupInstance>,
     /// 다음 popup `instance_id`. 1부터 시작해 단조 증가.
     pub(super) next_popup_instance_id: u64,
+    /// 현재 열려 있는 banner 인스턴스(A3). host가 발급한 `instance_id`를 키로 사용.
+    pub(super) banner_instances: HashMap<u64, BannerInstance>,
+    /// 다음 banner `instance_id`. popup 과 별도 카운터, 1부터 단조 증가.
+    pub(super) next_banner_instance_id: u64,
+    /// egui-mesh banner instance_id → 최근 paint_frame 메타(A3). plugin 의
+    /// `BannerPaintFrame` 알림마다 갱신되고, 호스트 banner 합성기가 instance_id 로
+    /// lookup 한다. banner 가 닫히거나 plugin 이 종료되면 해당 엔트리를 정리한다.
+    pub(super) banner_mesh_frames: HashMap<u64, EguiMeshFrame>,
     /// 파일 형식 식별 시스템. plugin enable/disable 시 detector 추가/제거.
     /// 호스트 본문이 CoreState 와 같은 Arc 를 공유 (trait object 로 의존성 격리).
     pub file_format: Arc<dyn tasty_plugin_protocol::host_port::FileFormatRegistryPort>,
@@ -336,6 +344,19 @@ pub struct PopupInstance {
     pub tree: Option<tasty_plugin_protocol::ui_tree::UiNode>,
 }
 
+/// 호스트가 추적 중인 banner 인스턴스 한 건(A3). plugin process가 죽으면 함께 제거된다.
+///
+/// popup 과 달리 초기 tree 가 없다 — egui-mesh 채널로만 콘텐츠를 그린다. `surface_id`
+/// 는 banner 가 도킹된 스코프 surface(D1: plugin 이 소유한 surface 로만 host 가 허용).
+#[derive(Debug, Clone)]
+pub struct BannerInstance {
+    pub plugin_id: String,
+    pub banner_id: String,
+    pub contribute: tasty_plugin_manifest::BannerContribute,
+    /// banner 가 도킹된 surface scope 의 host surface id.
+    pub surface_id: u32,
+}
+
 /// plugin → host IPC 호출 한 건. 라우팅 후 결과를 plugin에 회신해야 함.
 #[derive(Debug, Clone)]
 pub struct PendingPluginCall {
@@ -354,6 +375,7 @@ pub struct PluginPopupEntry {
     pub contribute: tasty_plugin_manifest::PopupContribute,
 }
 
+mod banner;
 mod buffer;
 mod events;
 mod ipc_dispatch;

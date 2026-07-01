@@ -45,6 +45,13 @@ impl PluginManager {
             tasty_plugin_protocol::SharedBufferId,
             u64,
         )> = Vec::new();
+        // egui-mesh banner paint_frame 알림 (A3): (plugin_id, instance_id, buffer_id, generation).
+        let mut new_banner_paint_frames: Vec<(
+            String,
+            u64,
+            tasty_plugin_protocol::SharedBufferId,
+            u64,
+        )> = Vec::new();
         // 프로세스가 죽으면(reader 스레드 종료 → event_tx drop) event_rx 가 Disconnected
         // 가 된다. 60초 healthcheck 보다 먼저 감지해, 죽은 plugin 의 egui-mesh frame 을
         // 즉시 비워 stale mesh 가 계속 합성되는 것을 막는다 (research-a1 §9-7 crash 격리).
@@ -96,6 +103,20 @@ impl PluginManager {
                                 generation,
                             ));
                         }
+                        PluginEvent::BannerPaintFrame {
+                            instance_id,
+                            buffer_id,
+                            generation,
+                        } => {
+                            // A3 banner 수신 라우팅: 최근 banner mesh frame 메타를 저장.
+                            // host 합성기(render_egui_mesh_banners)가 instance_id 로 lookup 한다.
+                            new_banner_paint_frames.push((
+                                id.clone(),
+                                instance_id,
+                                buffer_id,
+                                generation,
+                            ));
+                        }
                         PluginEvent::NotifyHost { .. } => {
                             // 단계 06에서 처리
                         }
@@ -135,6 +156,7 @@ impl PluginManager {
         for dead in &disconnected {
             self.egui_mesh_frames.retain(|_, f| &f.plugin_id != dead);
             self.popup_mesh_frames.retain(|_, f| &f.plugin_id != dead);
+            self.banner_mesh_frames.retain(|_, f| &f.plugin_id != dead);
         }
         if !new_calls.is_empty() {
             self.pending_plugin_calls.extend(new_calls);
@@ -151,6 +173,16 @@ impl PluginManager {
         }
         for (plugin_id, instance_id, buffer_id, generation) in new_popup_paint_frames {
             self.popup_mesh_frames.insert(
+                instance_id,
+                super::EguiMeshFrame {
+                    plugin_id,
+                    buffer_id,
+                    generation,
+                },
+            );
+        }
+        for (plugin_id, instance_id, buffer_id, generation) in new_banner_paint_frames {
+            self.banner_mesh_frames.insert(
                 instance_id,
                 super::EguiMeshFrame {
                     plugin_id,
@@ -279,9 +311,12 @@ impl PluginManager {
             self.event_bus.clear_plugin(&id);
             self.cancel_pending_namespace_calls(&id, "plugin restarting");
             self.plugin_buffers.remove(&id);
-            // egui-mesh: 죽은 plugin 의 buffer 를 가리키는 stale frame 메타 제거 (A1-S3 / A2).
+            // egui-mesh: 죽은 plugin 의 buffer 를 가리키는 stale frame 메타 제거 (A1-S3 / A2 / A3).
             self.egui_mesh_frames.retain(|_, f| f.plugin_id != id);
             self.popup_mesh_frames.retain(|_, f| f.plugin_id != id);
+            self.banner_mesh_frames.retain(|_, f| f.plugin_id != id);
+            // 죽은 plugin 의 banner 인스턴스도 정리 — 다음 spawn 에서 새 인스턴스로 시작.
+            self.banner_instances.retain(|_, inst| inst.plugin_id != id);
             self.settings_pages.unregister_plugin(&id);
             if let Some(pkg) = self.packages.iter().find(|p| p.manifest.id == id).cloned() {
                 self.start_plugin_internal(&pkg);
