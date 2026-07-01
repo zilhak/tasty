@@ -99,11 +99,30 @@ impl Plugin for ImagePlugin {
         match ctx.method.as_str() {
             // Surface conversion + host enumeration stay host-owned (self-call trampoline).
             "image.open" | "image.list" => trampoline(&ctx.host, &ctx.method, ctx.params),
-            // Edit / navigation operate on plugin-owned document state.
-            "image.save" | "image.export_png" => self.image_save(&ctx.params),
-            "image.paste" => self.image_paste(&ctx.params),
-            "image.next" => self.image_step(&ctx.params, true),
-            "image.prev" => self.image_step(&ctx.params, false),
+            // Edit / navigation operate on plugin-owned document state. These change the
+            // document out-of-band (no user input), so after a successful mutation we
+            // self-repaint the last context (empty input) — otherwise the new image/paste
+            // wouldn't show until the next user input (egui-mesh re-forward gap, option A).
+            "image.save" | "image.export_png" => {
+                let out = self.image_save(&ctx.params)?;
+                self.repaint_after_edit(&ctx.host, &ctx.params);
+                Ok(out)
+            }
+            "image.paste" => {
+                let out = self.image_paste(&ctx.params)?;
+                self.repaint_after_edit(&ctx.host, &ctx.params);
+                Ok(out)
+            }
+            "image.next" => {
+                let out = self.image_step(&ctx.params, true)?;
+                self.repaint_after_edit(&ctx.host, &ctx.params);
+                Ok(out)
+            }
+            "image.prev" => {
+                let out = self.image_step(&ctx.params, false)?;
+                self.repaint_after_edit(&ctx.host, &ctx.params);
+                Ok(out)
+            }
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -211,10 +230,48 @@ impl ImagePlugin {
         }
     }
 
+    /// 편집/탐색 IPC 로 doc 이 out-of-band 로 바뀐 뒤, **입력 없이** 화면을 갱신한다(옵션 A).
+    /// 마지막 set_context 의 캐시된 컨텍스트(geom/ppp/theme)로 빈 입력 재-paint → 출력이
+    /// 바뀌면 host 로 PaintFrame 을 송신한다. theme 미수신(첫 set_context 전)이면 no-op.
+    #[cfg(unix)]
+    fn repaint_after_edit(&mut self, host: &HostHandle, params: &Value) {
+        let Ok(sid) = require_surface(params) else {
+            return;
+        };
+        // 캐시된 theme 으로 draw 를 재구성한다. 첫 set_context 전이면 theme 이 없어 no-op.
+        let Some(theme) = self
+            .meshes
+            .get(&sid)
+            .and_then(|m| m.last_theme())
+            .map(theme_from_wire)
+        else {
+            return;
+        };
+        let tr = &self.tr;
+        let Some(doc) = self.docs.get_mut(&sid) else {
+            return;
+        };
+        doc.ensure_loaded();
+        doc.ensure_brush_themed(theme.accent_danger().to_egui());
+        let Some(mesh) = self.meshes.get_mut(&sid) else {
+            return;
+        };
+        let result = mesh.repaint_last(host, |egui_ctx| {
+            render::draw(egui_ctx, &theme, tr, doc);
+        });
+        if let Err(e) = result {
+            tracing::warn!("image surface {sid} repaint failed: {e}");
+        }
+    }
+
     /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
     /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
     #[cfg(not(unix))]
     fn paint(&mut self, _ctx: SurfaceSetContextCtx) {}
+
+    /// unix 외에는 egui-mesh 채널이 비활성이라 재-paint 도 no-op.
+    #[cfg(not(unix))]
+    fn repaint_after_edit(&mut self, _host: &HostHandle, _params: &Value) {}
 }
 
 /// `image.*` 메서드를 호스트의 동명 IPC로 위임한다. plugin manager가 self-call을
