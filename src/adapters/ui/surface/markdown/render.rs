@@ -113,8 +113,9 @@ pub enum LinkClick {
 /// - `#anchor` → `None` (in-document; nothing to open).
 /// - external scheme (`://`, `mailto:`, `data:`) → `External` verbatim.
 /// - otherwise a filesystem path: absolute dests pass through, relative dests join
-///   `base_dir`; the result is lexically absolutized (`std::path::absolute`, no fs access)
-///   and Windows verbatim (`\\?\`) prefixes are stripped for clean `file://`/picker paths.
+///   `base_dir`; the result is absolutized (`std::path::absolute`) then lexically
+///   normalized so `..` collapses on every platform (`tasty_utils::path::lexically_normalize`,
+///   no fs access), and Windows verbatim (`\\?\`) prefixes are stripped for clean paths.
 /// - relative dest with no `base_dir` → `None` (unresolvable).
 fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
     let dest = dest.trim();
@@ -130,7 +131,10 @@ fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
     } else {
         base_dir?.join(path)
     };
+    // `std::path::absolute` 로 cwd 기준 절대화한 뒤 lexical 정규화로 `..` 를 붕괴한다.
+    // `absolute` 는 Unix 에서 `..` 를 보존하므로(symlink 안전성) 별도 붕괴가 필요하다.
     let abs = std::path::absolute(&joined).unwrap_or(joined);
+    let abs = tasty_utils::path::lexically_normalize(&abs);
     let abs = PathBuf::from(tasty_utils::path::strip_verbatim_prefix(
         &abs.to_string_lossy(),
     ));
@@ -1109,7 +1113,7 @@ mod tests {
     fn parent_relative_is_normalized() {
         let b = base();
         let got = file_str(classify_link("../sibling.md", Some(&b)));
-        // `std::path::absolute` collapses the `..` lexically against the base dir.
+        // `lexically_normalize` collapses the `..` against the base dir on every platform.
         let want = if cfg!(windows) {
             "C:/docs/sibling.md"
         } else {

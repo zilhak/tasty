@@ -111,6 +111,36 @@ fn strip_verbatim_prefix(s: &str) -> String {
         .unwrap_or_else(|| s.to_string())
 }
 
+/// Collapse `.` / `..` segments purely lexically (no filesystem access).
+///
+/// `std::path::absolute` preserves `..` on Unix for symlink safety (`/a/b/../c` isn't
+/// folded to `/a/c` because `b` might be a symlink), so it can't normalize link paths
+/// on its own. This folds `..` identically on every platform — for markdown link
+/// display/dedup a lexical collapse matches intent and keeps dedup keys stable.
+///
+/// Trade-off: when a collapsed segment is a symlink the lexical result can diverge from
+/// the OS's real resolution; for markdown link use this is intentional. Never climbs
+/// above the root/prefix. (Local copy — the plugin doesn't depend on `tasty-utils`,
+/// mirroring `strip_verbatim_prefix` above.)
+fn lexically_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                _ => out.push(".."),
+            },
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 /// Classify and resolve a markdown link destination relative to the md file's directory.
 fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
     let dest = dest.trim();
@@ -126,7 +156,9 @@ fn classify_link(dest: &str, base_dir: Option<&Path>) -> Option<LinkClick> {
     } else {
         base_dir?.join(path)
     };
+    // cwd 기준 절대화 후 lexical 정규화로 `..` 를 붕괴 (Unix `absolute` 은 `..` 보존).
     let abs = std::path::absolute(&joined).unwrap_or(joined);
+    let abs = lexically_normalize(&abs);
     let abs = PathBuf::from(strip_verbatim_prefix(&abs.to_string_lossy()));
     Some(LinkClick::File(abs))
 }
@@ -1061,6 +1093,19 @@ mod tests {
             .join("docs/index.md")
             .to_string_lossy()
             .replace('\\', "/");
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn parent_relative_is_normalized() {
+        let b = base();
+        let got = file_str(classify_link("../sibling.md", Some(&b)));
+        // `lexically_normalize` collapses the `..` against the base dir on every platform.
+        let want = if cfg!(windows) {
+            "C:/docs/sibling.md"
+        } else {
+            "/docs/sibling.md"
+        };
         assert_eq!(got, want);
     }
 

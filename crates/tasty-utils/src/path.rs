@@ -4,7 +4,7 @@
 //! (`themes_dir`, `memory_db_path`, `config_path` 등) 는 각 도메인 crate 가
 //! 이 함수를 호출해 자체 정의한다 — utils 는 *공통 기반* 만 제공.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use directories::BaseDirs;
 
@@ -64,9 +64,71 @@ pub fn strip_verbatim_prefix(p: &str) -> String {
     p.to_string()
 }
 
+/// 경로의 `.` / `..` 세그먼트를 **순수 lexical** 로(파일시스템 접근 없이) 붕괴시킨다.
+///
+/// `std::path::absolute` 와의 차이: `absolute` 는 Unix 에서 symlink 안전성 때문에
+/// `..` 를 보존한다(`/a/b/../c` 를 `/a/c` 로 줄이면 `b` 가 symlink 일 때 실제 대상과
+/// 달라지므로). 이 함수는 **모든 플랫폼에서 동일하게** `..` 를 붕괴시킨다 —
+/// markdown 링크의 표시/dedup 용도에는 lexical 붕괴가 사용자 의도에 맞고 dedup 키가
+/// 안정적이다.
+///
+/// 트레이드오프: 붕괴 대상 세그먼트가 symlink 이면 lexical 결과가 OS 의 실제 해석과
+/// 달라질 수 있다(`b` 가 symlink 면 `/a/b/../c` ≠ `/a/c`). markdown 링크 용도에서는
+/// 이 동작이 의도된 것이며 허용된다. 루트/prefix 위로는 올라가지 않는다.
+pub fn lexically_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => match out.components().next_back() {
+                // 앞선 일반 세그먼트를 pop 해서 `..` 를 붕괴.
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                // 루트/prefix 위로는 올라갈 수 없다 — `..` 무시.
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                // 상대경로 선두의 `..` 는 붕괴 대상이 없으므로 보존.
+                _ => out.push(".."),
+            },
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(not(windows))]
+    fn normalizes_parent_and_cur_segments() {
+        assert_eq!(
+            lexically_normalize(Path::new("/docs/md/../sibling.md")),
+            PathBuf::from("/docs/sibling.md")
+        );
+        assert_eq!(
+            lexically_normalize(Path::new("/a/./b/../c")),
+            PathBuf::from("/a/c")
+        );
+        // 루트 위로는 못 올라간다.
+        assert_eq!(lexically_normalize(Path::new("/../x")), PathBuf::from("/x"));
+        // 상대경로 선두의 `..` 는 보존.
+        assert_eq!(
+            lexically_normalize(Path::new("../a/b")),
+            PathBuf::from("../a/b")
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn normalizes_parent_segments_windows() {
+        assert_eq!(
+            lexically_normalize(Path::new(r"C:\docs\md\..\sibling.md")),
+            PathBuf::from(r"C:\docs\sibling.md")
+        );
+    }
 
     #[test]
     #[cfg(windows)]
