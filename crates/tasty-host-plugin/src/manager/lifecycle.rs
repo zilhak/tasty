@@ -90,6 +90,7 @@ impl PluginManager {
             plugin_buffers: HashMap::new(),
             next_buffer_id: AtomicU64::new(1),
             egui_mesh_frames: HashMap::new(),
+            popup_mesh_frames: HashMap::new(),
             extensions: crate::extension_registry::ExtensionRegistry::new(),
             hook_failures: HashMap::new(),
             event_bus: crate::event_bus::EventBus::new(),

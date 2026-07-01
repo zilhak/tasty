@@ -295,6 +295,10 @@ pub struct PluginManager {
     /// 알림마다 갱신되고, 렌더 prepare(A1-S5)가 buffer lookup + 디코드 출발점으로 읽는다.
     /// plugin process 가 종료/재시작되면 해당 plugin 의 엔트리를 정리한다 (stale buffer 참조 방지).
     pub(super) egui_mesh_frames: HashMap<u32, EguiMeshFrame>,
+    /// egui-mesh popup instance_id → 최근 paint_frame 메타 (A2). plugin 의
+    /// `PopupPaintFrame` 알림마다 갱신되고, 호스트 popup 합성기가 instance_id 로
+    /// lookup 한다. popup 이 닫히거나 plugin 이 종료되면 해당 엔트리를 정리한다.
+    pub(super) popup_mesh_frames: HashMap<u64, EguiMeshFrame>,
     /// Plugin extension 상태 추적. `[extends]` 블록을 선언한 plugin들의
     /// active/pending/disabled/conflict 상태를 보관한다. PR 4/5에서 event/IPC
     /// hook dispatch 시 `active_extension_for_target`을 조회한다.
