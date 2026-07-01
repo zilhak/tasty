@@ -42,6 +42,7 @@ pub mod prim_tab;
 pub mod prim_table;
 pub mod remote;
 pub mod rename_popup;
+pub mod script_manager;
 pub mod search_bar;
 pub mod segmented;
 pub mod settings;

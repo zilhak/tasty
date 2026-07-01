@@ -819,6 +819,26 @@ pub fn pages() -> Vec<Page> {
                         components::settings::draw,
                     )],
                 ),
+                section(
+                    "scripts",
+                    "Misc · Scripts (Lua script manager)",
+                    vec![
+                        spec(
+                            "scripts-list",
+                            "Registered scripts — bound / unbound / changed",
+                            Some(
+                                "glyph · name+path (middle-elided) · Kbd/Unbound · bind·rename·remove",
+                            ),
+                            components::script_manager::draw,
+                        ),
+                        spec(
+                            "scripts-empty",
+                            "Empty state",
+                            Some("Centered glyph + \"No scripts registered\" + Add-script prompt"),
+                            components::script_manager::draw_empty,
+                        ),
+                    ],
+                ),
             ],
         },
         // ── Layouts ──────────────────────────────────────────────────

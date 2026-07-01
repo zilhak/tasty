@@ -271,6 +271,20 @@ glyph!(
     r#"<path d="M5 13c-1.5 1.5-2 5-2 5s3.5-.5 5-2a3.5 3.5 0 1 0-3-3zM12 15l-3-3a14 14 0 0 1 9-9 14 14 0 0 1-3 9zM9 12l3 3"/>"#
 );
 
+// ── Scripts (Lua manager · Misc · Scripts) ──
+// 05 스크립트 관리 창 전용. SCRIPT = 파일+본문 라인(행 글리프/빈 상태),
+// KEYBOARD = bind-shortcut IconButton. 디자인 `settings_window.jsx` SD.{script,kbd}.
+glyph!(
+    SCRIPT,
+    "script",
+    r#"<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h4M9 17h6"/>"#
+);
+glyph!(
+    KEYBOARD,
+    "keyboard",
+    r#"<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>"#
+);
+
 /// 한 글리프 카탈로그 항목: (글리프, canonical name, role).
 type Entry = (MockGlyph, &'static str, &'static str);
 
