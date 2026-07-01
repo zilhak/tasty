@@ -10,6 +10,7 @@ pub(crate) mod port_scanner;
 pub(crate) mod preset_apply;
 pub(crate) mod rail_category;
 pub(crate) mod remote_tool;
+pub(crate) mod script_confirm;
 pub(crate) mod size_confirm;
 
 use crate::state::AppState;

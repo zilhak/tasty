@@ -617,6 +617,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_picker_results();
         // 대용량 markdown 확인 팝업의 결정 슬롯 drain (01-md-size-confirm-gate).
         self.dispatch_pending_md_open();
+        // Lua 스크립트 TOFU 변경 확인 팝업의 결정 슬롯 drain (ADR-0031 TODO 06).
+        self.dispatch_pending_script_confirm();
         // 직전 프레임 plugin popup 렌더로 수집된 사용자 입력 / close 사유 forward.
         self.dispatch_plugin_popup_events();
         // PluginsView 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.

@@ -5,6 +5,7 @@
 
 use crate::adapters::ipc::handler::build_engine_tree;
 use crate::app::App;
+use crate::view::ui::View;
 use tasty_lua::{HostCommand, LuaSnapshot};
 
 impl App {
@@ -41,5 +42,53 @@ impl App {
             tree.extend(build_engine_tree(s, e));
         }
         engine.publish_snapshot(LuaSnapshot { tree });
+    }
+
+    /// 스크립트 TOFU 변경 확인 팝업(06)의 결정 슬롯 drain.
+    ///
+    /// popup wrapper 가 `pending_script_confirm.result` 를 채우면 frame begin 에 검사 —
+    /// `true` 면 레지스트리 해시를 `new_hash` 로 갱신·영속(config.toml)하고 워커에서 실행,
+    /// `false`/Esc 면 폐기. md_open drain 과 동일 패턴.
+    pub(crate) fn dispatch_pending_script_confirm(&mut self) {
+        use winit::window::WindowId;
+        let ids: Vec<WindowId> = self
+            .view
+            .views
+            .iter()
+            .filter_map(|(id, w)| {
+                let main = w.as_main()?;
+                let data = main.state.dialogs.pending_script_confirm.as_ref()?;
+                data.result.map(|_| *id)
+            })
+            .collect();
+        for id in ids {
+            let Some(pending) = self
+                .view
+                .views
+                .get_mut(&id)
+                .and_then(|w| w.as_main_mut())
+                .and_then(|m| m.state.dialogs.pending_script_confirm.take())
+            else {
+                continue;
+            };
+            if pending.result != Some(true) {
+                continue; // 취소 — 폐기(이미 take 됨).
+            }
+            // 승인: 레지스트리 해시 갱신 + 영속.
+            if let Some(main) = self.view.views.get_mut(&id).and_then(|w| w.as_main_mut()) {
+                main.core_state
+                    .settings
+                    .scripts
+                    .update_hash(&pending.script_id, pending.new_hash.clone());
+                if let Err(e) = main.core_state.settings.save() {
+                    tracing::warn!(target: "tasty_lua", "script hash persist failed: {e}");
+                }
+                main.mark_dirty();
+            }
+            // 워커에서 실행(이미 읽은 source 그대로 — 재읽기 없음).
+            if let Some(engine) = self.lua_engine.as_ref() {
+                engine.run_script(&pending.source, Some(&pending.name));
+            }
+        }
     }
 }

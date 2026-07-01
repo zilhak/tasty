@@ -495,14 +495,41 @@ impl MainView {
             return true;
         };
         let path = entry.path.clone();
-        let name = entry.name.clone();
-        match std::fs::read_to_string(&path) {
-            Ok(source) => {
-                send_app_event(&self.proxy, crate::AppEvent::RunLuaScript { source, name });
-            }
+        let name = if entry.name.is_empty() {
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| script_id.clone())
+        } else {
+            entry.name.clone()
+        };
+        let stored_hash = entry.sha256.clone();
+        let source = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
             Err(e) => {
                 tracing::warn!(target: "tasty_lua", "script read failed {}: {e}", path.display());
+                return true;
             }
+        };
+        // TOFU 게이트(06): 등록 해시와 현재 파일 해시 비교. 같으면 조용히 실행,
+        // 다르면 실행 보류 + 변경 확인 팝업(수동 발화 = popup).
+        let current_hash = tasty_settings::hash_bytes(source.as_bytes());
+        if current_hash == stored_hash {
+            send_app_event(&self.proxy, crate::AppEvent::RunLuaScript { source, name });
+        } else {
+            self.state.dialogs.pending_script_confirm = Some(crate::state::PendingScriptConfirm {
+                script_id,
+                name,
+                source,
+                new_hash: current_hash,
+                result: None,
+            });
+            self.state.dispatch_intent(
+                crate::intent::UiIntent::OpenPopup {
+                    id: "script_changed_confirm",
+                    mode: crate::intent::OpenPopupMode::CenteredFocused,
+                }
+                .from_user_menu("script_tofu_gate"),
+            );
         }
         true
     }

@@ -565,6 +565,11 @@ pub struct DialogState {
     /// 카테고리 삭제 확인 다이얼로그(`confirm_delete_category`)의 대상 카테고리 id.
     /// Delete 액션 시 set, 확인/취소/닫힘 시 None.
     pub(crate) pending_category_delete: Option<crate::model::WorkspaceCategoryId>,
+    /// Lua 스크립트 TOFU 변경 확인(`script_changed_confirm`) 팝업의 보류 상태 (ADR-0031 TODO 06).
+    /// 등록 해시와 현재 파일 해시가 다르면 단축키 발화가 실행을 보류하고 이 값을 채운다 —
+    /// 사용자가 [실행] 하면 `App::dispatch_pending_script_confirm` 이 해시를 갱신·영속하고
+    /// 워커에서 실행하며, [취소]/Esc 면 슬롯을 폐기한다.
+    pub(crate) pending_script_confirm: Option<PendingScriptConfirm>,
 }
 
 /// 1MB 초과 markdown 열기 확인 팝업의 보류 오픈 상태 (`01-md-size-confirm-gate`).
@@ -599,6 +604,24 @@ pub enum PendingMdOpenKind {
     },
     /// 제자리 이동(04) — 같은 surface 를 `ConvertSurface` 로 markdown+새 file 로 교체.
     InPlace { surface_id: u32 },
+}
+
+/// Lua 스크립트 TOFU 변경 확인 팝업의 보류 상태 (ADR-0031 TODO 06).
+///
+/// 단축키 발화 시 등록 해시(03)와 현재 파일 해시가 다르면 실행 대신 이 값을 채우고
+/// 확인 팝업을 띄운다. [실행] 확정 시 `new_hash` 로 레지스트리를 갱신·영속하고 워커에서 실행.
+#[derive(Debug, Clone)]
+pub struct PendingScriptConfirm {
+    /// 대상 스크립트 id (레지스트리 참조).
+    pub(crate) script_id: String,
+    /// 표시 이름(파일명 fallback 은 게이트가 미리 해소).
+    pub(crate) name: String,
+    /// 이미 읽은 현재 파일 소스 — 승인 시 그대로 실행(재읽기 없음, TOCTOU 축소).
+    pub(crate) source: String,
+    /// 현재 파일 소스의 SHA256 — 승인 시 레지스트리 해시를 이 값으로 갱신.
+    pub(crate) new_hash: String,
+    /// 팝업 wrapper 의 사용자 결정: `Some(true)`=실행, `Some(false)`=취소.
+    pub(crate) result: Option<bool>,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -656,6 +679,7 @@ impl DialogState {
             pending_md_open: None,
             rail_category_popup: None,
             pending_category_delete: None,
+            pending_script_confirm: None,
         }
     }
 

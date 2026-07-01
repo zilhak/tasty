@@ -591,6 +591,12 @@ loading = "Loading…"
 title = "Open large file?"
 body = "Over 1 MB — rendering may be slow."
 
+[script.confirm]
+title = "Script changed since registration"
+changed_tag = "changed"
+body = "Review it, then run the new version. Its recorded hash will be updated."
+run = "Run anyway"
+
 [convert_popup]
 title = "Surface Type"
 terminal = "Terminal"
