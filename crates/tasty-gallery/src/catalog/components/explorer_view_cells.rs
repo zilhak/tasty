@@ -191,10 +191,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     align: TableAlign::Left,
                     sort_id: Some(0_usize),
                 },
+                // design DetailRow gridTemplateColumns: 1fr 80px 132px 92px.
                 TableColumn {
                     title: "Size",
                     width: TableColumnWidth::Initial {
-                        initial: 88.0,
+                        initial: 80.0,
                         at_least: 64.0,
                     },
                     align: TableAlign::Right,
@@ -203,8 +204,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 TableColumn {
                     title: "Modified",
                     width: TableColumnWidth::Initial {
-                        initial: 120.0,
-                        at_least: 96.0,
+                        initial: 132.0,
+                        at_least: 108.0,
                     },
                     align: TableAlign::Left,
                     sort_id: Some(2_usize),
@@ -212,8 +213,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 TableColumn {
                     title: "Type",
                     width: TableColumnWidth::Initial {
-                        initial: 112.0,
-                        at_least: 80.0,
+                        initial: 92.0,
+                        at_least: 72.0,
                     },
                     align: TableAlign::Left,
                     sort_id: Some(3_usize),
@@ -255,15 +256,28 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                     );
                                 });
                             }
-                            _ => {
-                                let text = match col {
-                                    1 => row.size,
-                                    2 => row.modified,
-                                    _ => row.kind,
-                                };
+                            // Size — mono·11 우측 정렬 + 8px 우측 패딩(design paddingRight 8).
+                            1 => {
+                                ui.add_space(th.spacing_sm.value());
                                 ui.label(
-                                    egui::RichText::new(text)
-                                        .size(th.font_size_body.value())
+                                    egui::RichText::new(row.size)
+                                        .font(egui::FontId::monospace(th.font_size_caption.value()))
+                                        .color(egui::Color32::from(th.text_muted())),
+                                );
+                            }
+                            // Date — mono·11.
+                            2 => {
+                                ui.label(
+                                    egui::RichText::new(row.modified)
+                                        .font(egui::FontId::monospace(th.font_size_caption.value()))
+                                        .color(egui::Color32::from(th.text_muted())),
+                                );
+                            }
+                            // Type — caption(11).
+                            _ => {
+                                ui.label(
+                                    egui::RichText::new(row.kind)
+                                        .size(th.font_size_caption.value())
                                         .color(egui::Color32::from(th.text_muted())),
                                 );
                             }
@@ -282,7 +296,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         &[
             ("grid cell", "64 icon-box + label · space-md gap"),
             ("list row", "22 control-height-tree (tree_row)"),
-            ("detail row", "Table · Name flex · Size right"),
+            ("detail row", "Name flex · Size/Date mono 11 · Size padR 8"),
             ("selected", "surface-active + accent border"),
             ("cut", "foreground 50% opacity until paste"),
             ("sort", "header indicator (accent-primary)"),

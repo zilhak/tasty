@@ -1151,10 +1151,11 @@ fn detail_view(
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Name),
         },
+        // design DetailRow gridTemplateColumns: 1fr 80px 132px 92px.
         TableColumn {
             title: t("explorer.column.size"),
             width: TableColumnWidth::Initial {
-                initial: 88.0,
+                initial: 80.0,
                 at_least: 64.0,
             },
             align: TableAlign::Right,
@@ -1163,8 +1164,8 @@ fn detail_view(
         TableColumn {
             title: t("explorer.column.modified"),
             width: TableColumnWidth::Initial {
-                initial: 120.0,
-                at_least: 96.0,
+                initial: 132.0,
+                at_least: 108.0,
             },
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Modified),
@@ -1172,8 +1173,8 @@ fn detail_view(
         TableColumn {
             title: t("explorer.column.type"),
             width: TableColumnWidth::Initial {
-                initial: 112.0,
-                at_least: 80.0,
+                initial: 92.0,
+                at_least: 72.0,
             },
             align: TableAlign::Left,
             sort_id: Some(SortColumn::Type),
@@ -1238,20 +1239,45 @@ fn detail_view(
                             );
                         });
                     }
-                    _ => {
-                        // `..` 행은 이름 컬럼만 채우고 Size/Date/Type 은 비운다.
+                    // Size — mono·11 (font-mono/fontSize 11), 우측 정렬 + 8px 우측 패딩
+                    // (design paddingRight 8 → Date 와 시각적 간격). Table 이 Right 컬럼을
+                    // right_to_left 로 그리므로 셀 시작의 add_space 가 값을 8px 왼쪽으로 당긴다.
+                    1 => {
+                        ui.add_space(th.spacing_sm.value());
                         let text = if row.name == ".." {
                             String::new()
                         } else {
-                            match col {
-                                1 => human_size(row.is_dir, row.size),
-                                2 => fmt_modified(row.modified),
-                                _ => type_label(row),
-                            }
+                            human_size(row.is_dir, row.size)
                         };
                         ui.label(
                             egui::RichText::new(text)
-                                .size(th.font_size_body.value())
+                                .font(egui::FontId::monospace(th.font_size_caption.value()))
+                                .color(dim(th.text_muted().to_egui())),
+                        );
+                    }
+                    // Date — mono·11 (design font-mono/fontSize 11).
+                    2 => {
+                        let text = if row.name == ".." {
+                            String::new()
+                        } else {
+                            fmt_modified(row.modified)
+                        };
+                        ui.label(
+                            egui::RichText::new(text)
+                                .font(egui::FontId::monospace(th.font_size_caption.value()))
+                                .color(dim(th.text_muted().to_egui())),
+                        );
+                    }
+                    // Type — caption(11) text-muted (design fontSize 12).
+                    _ => {
+                        let text = if row.name == ".." {
+                            String::new()
+                        } else {
+                            type_label(row)
+                        };
+                        ui.label(
+                            egui::RichText::new(text)
+                                .size(th.font_size_caption.value())
                                 .color(dim(th.text_muted().to_egui())),
                         );
                     }
