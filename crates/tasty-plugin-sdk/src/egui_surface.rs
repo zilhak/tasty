@@ -507,7 +507,12 @@ mod tests {
             raw_input: wire,
             theme: None,
         };
-        let raw = build_raw_input(&params);
+        let raw = build_raw_input(
+            params.width_px,
+            params.height_px,
+            params.pixels_per_point,
+            &params.raw_input,
+        );
 
         // screen_rect = 물리 px / ppp.
         let rect = raw.screen_rect.expect("screen_rect");
