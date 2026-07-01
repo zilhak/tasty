@@ -1,7 +1,8 @@
-//! `image_viewer` specimen — Image surface(viewer / canvas) 의 host egui 패널 (Layouts).
+//! `image_viewer` specimen — Image surface(viewer / canvas) 의 egui chrome (Layouts).
 //!
-//! 본체 렌더 경로: `src/adapters/ui/surface/image.rs::draw_image` 가 상단 control bar
-//! (`controls.rs`) + 그 아래 이미지 영역(배경 `mantle`→`bg_sidebar`)을 그린다. control bar
+//! 본체 렌더 경로(ADR-0028/0030, B2): image 는 egui-mesh plugin 이다 —
+//! `crates/tasty-plugin-image/src/render.rs::draw` 가 상단 control bar + 그 아래 이미지
+//! 영역(배경 `bg_sidebar`)을 자기 egui `Context` 에서 그려 mesh 로 host 가 합성한다. control bar
 //! viewer 모드 버튼은 `◀ ▶`(prev/next) · `↻`(refresh) · `✏`(edit) · `+`(new), 가운데
 //! 파일명 라벨(`subtext0`→`text_muted`), 우측 zoom 그룹 `Fit · + · % · -`. 이미지가 없으면
 //! 영역 중앙에 `no_image` 안내(`subtext0`). 새 이미지는 blank canvas(기본 800×600).

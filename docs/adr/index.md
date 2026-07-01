@@ -40,3 +40,4 @@
 | 0027 | [Figma 기획 파일의 SoT·네이밍 규약과 파생 인덱스 (anti-drift)](0027-figma-planning-sot-naming-derived-index.md) | Accepted | 2026-06-28 | figma, planning, naming-convention, source-of-truth, anti-drift, sigma, spellbook, workflow, adr-0025 |
 | 0028 | [Plugin egui mesh 렌더 채널 — plugin tessellate, host 합성 (out-of-process)](0028-plugin-egui-mesh-render-channel.md) | Proposed | 2026-06-29 | plugin, render-channel, egui, epaint, mesh, ipc, shared-memory, surface-kind, bundled-only, adr-0008, adr-0009 |
 | 0029 | [워크스페이스 카테고리 — active 는 전역 인덱스 단일 진실 소스 유지](0029-workspace-category-global-index.md) | Accepted | 2026-06-29 | workspace, workspace-category, sidebar, indexing, focus |
+| 0030 | [image surface 는 mesh-only(비트맵=egui 텍스처) — ADR-0028 image 하이브리드 조항 개정](0030-image-egui-mesh-bitmap-texture.md) | Accepted | 2026-07-01 | plugin, render-channel, egui, epaint, mesh, image, surface-kind, bitmap, texture, host-rendered-removal, adr-0028 |
