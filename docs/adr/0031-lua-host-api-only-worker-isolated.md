@@ -1,6 +1,6 @@
 # ADR-0031: Lua 스크립트의 tasty 접근은 고정 호스트 API 표면으로만 — state 직접 접근 불가 + 워커 스레드 격리
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-01
 - **Tags**: lua, scripting, host-api, worker-thread, snapshot, command-queue, capability-boundary, sandbox, init-lua-removal, observe-only, adr-0009, adr-0028
 
@@ -23,7 +23,7 @@
 
 **Lua 가 tasty 를 건드리는 유일한 통로는 호스트가 명시적으로 등록한 _고정 API 표면_ 이다. Lua 는 tasty 의 내부 state 를 직접 참조·변형할 수 없고, 열거(enumerated)된 API 외의 어떤 능력도 tasty 에 대해 노출하지 않는다 — 생성·조회·수정·삭제(CRUD) 전부 이 API 로만. 그리고 Lua 엔진은 전용 워커 스레드에서 실행되며, 이 API 경계가 곧 유일한 마샬링 채널이다: 읽기는 메인 스레드가 발행한 불변 스냅샷을 읽고, 쓰기는 커맨드로 직렬화해 메인 스레드 큐로 보낸다. 워커는 메인 스레드 소유 state 를 절대 직접 만지지 않는다.**
 
-이 방향은 사용자가 확정했다. Status 가 Proposed 인 것은 ADR Accept 절차 때문이며, 채택 방향에 미정 여지를 두는 것이 아니다.
+이 방향은 사용자가 확정했다. 구현 착수와 함께 Accepted 로 전환한다.
 
 세부 결정:
 

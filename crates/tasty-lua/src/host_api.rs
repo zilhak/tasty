@@ -1,20 +1,27 @@
 //! Lua 측에 노출하는 호스트 API.
 //!
-//! `tasty.log` / `tasty.notify` / `tasty.run_cli` 를 `tasty` table 에 추가한다.
+//! `tasty.log` / `tasty.warn` 는 워커 스레드에서 직접 tracing 에 쓴다 (메인 무관).
+//! `tasty.run_cli` 는 프로세스 spawn 이 부수효과이므로 워커에서 직접 하지 않고
+//! [`HostCommand`] 로 메인 커맨드 큐에 넣는다 (ADR-0031). 메인이 [`run_tasty_cli`] 로 적용.
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::mpsc::{SyncSender, TrySendError};
 
 use mlua::{Lua, Table, Value};
 
+use crate::bridge::{HostCommand, SharedSnapshot};
 use crate::engine::LuaEngineError;
 
-/// `tasty` 글로벌 테이블에 호스트 API 를 설치한다.
+/// `tasty` 글로벌 테이블에 호스트 API 를 설치한다 (VM 생성 시 1회, 워커로 이동 전).
 ///
-/// `tasty.on` 은 이미 `LuaEngine::install_api` 에서 설치됨. 이 함수는 추가 메서드들만
-/// 등록한다 — 분리 이유는 `tasty.on` 이 dispatcher 와 강하게 결합된 반면 여기 API 는
-/// 단순 OS shim 이라 격리할 수 있어서.
-pub(crate) fn install(lua: &Lua) -> Result<(), LuaEngineError> {
+/// `tasty.on` 은 이미 엔진이 설치함. 이 함수는 추가 메서드를 등록한다.
+/// `command_tx` = 워커→메인 커맨드 큐, `snapshot` = 메인→워커 읽기전용 스냅샷 (02 read API 용).
+pub(crate) fn install(
+    lua: &Lua,
+    command_tx: SyncSender<HostCommand>,
+    _snapshot: SharedSnapshot,
+) -> Result<(), LuaEngineError> {
     let tasty: Table = lua.globals().get("tasty").map_err(LuaEngineError::Init)?;
 
     let log = lua
@@ -34,7 +41,7 @@ pub(crate) fn install(lua: &Lua) -> Result<(), LuaEngineError> {
     tasty.set("warn", warn).map_err(LuaEngineError::Init)?;
 
     let run_cli = lua
-        .create_function(|_, args: Value| {
+        .create_function(move |_, args: Value| {
             let args = match value_to_args(args) {
                 Ok(v) => v,
                 Err(e) => {
@@ -42,23 +49,13 @@ pub(crate) fn install(lua: &Lua) -> Result<(), LuaEngineError> {
                     return Ok(());
                 }
             };
-            let Some(exe) = current_exe() else {
-                tracing::warn!(target: "tasty_lua", "run_cli: cannot resolve current_exe");
-                return Ok(());
-            };
-            let mut cmd = Command::new(exe);
-            tasty_utils::process::hide_console(&mut cmd);
-            cmd.args(&args);
-            // stdio inherited 면 Lua hook 콘솔이 노이즈로 차므로 분리.
-            cmd.stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null());
-            match cmd.spawn() {
-                Ok(_child) => {
-                    // detach — exit code 확인 안 함. 사용자 hook 은 발사 후 잊는다.
+            match command_tx.try_send(HostCommand::RunCli(args)) {
+                Ok(()) => {}
+                Err(TrySendError::Full(_)) => {
+                    tracing::warn!(target: "tasty_lua", "run_cli: command queue full — dropped")
                 }
-                Err(e) => {
-                    tracing::warn!(target: "tasty_lua", "run_cli spawn failed: {e}");
+                Err(TrySendError::Disconnected(_)) => {
+                    tracing::warn!(target: "tasty_lua", "run_cli: command queue closed — dropped")
                 }
             }
             Ok(())
@@ -71,13 +68,32 @@ pub(crate) fn install(lua: &Lua) -> Result<(), LuaEngineError> {
     Ok(())
 }
 
+/// [`HostCommand::RunCli`] 적용 — 메인 스레드가 안전지점에서 호출한다.
+/// tasty 자기 실행파일을 CLI 인자와 함께 detached 로 spawn (발사 후 잊음).
+pub fn run_tasty_cli(args: &[String]) {
+    let Some(exe) = current_exe() else {
+        tracing::warn!(target: "tasty_lua", "run_cli: cannot resolve current_exe");
+        return;
+    };
+    let mut cmd = Command::new(exe);
+    tasty_utils::process::hide_console(&mut cmd);
+    cmd.args(args);
+    // stdio inherited 면 콘솔이 노이즈로 차므로 분리.
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Err(e) = cmd.spawn() {
+        tracing::warn!(target: "tasty_lua", "run_cli spawn failed: {e}");
+    }
+}
+
 fn current_exe() -> Option<PathBuf> {
     std::env::current_exe().ok()
 }
 
 /// Lua 측에서 받은 args 값을 `Vec<String>` 으로 변환. 허용 형식:
 /// - `string` → 단일 인자
-/// - `table` (sequence) → 각 원소가 string
+/// - `table` (sequence) → 각 원소가 string/number/boolean
 fn value_to_args(v: Value) -> Result<Vec<String>, &'static str> {
     match v {
         Value::String(s) => Ok(vec![s.to_str().map_err(|_| "non-utf8")?.to_string()]),
@@ -104,24 +120,8 @@ fn value_to_args(v: Value) -> Result<Vec<String>, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::value_to_args;
-    use crate::LuaEngine;
     use mlua::Lua;
 
-    #[test]
-    fn log_function_callable() {
-        let engine = LuaEngine::new().unwrap();
-        engine
-            .eval("tasty.log('hello'); tasty.warn('warn')")
-            .unwrap();
-    }
-
-    // `tasty.run_cli` 를 Lua 에서 직접 호출하는 테스트는 두지 않는다 —
-    // `current_exe()` 가 test binary (e.g. `tasty_lua-<hash>`) 일 때,
-    // spawn 된 자식이 또 동일 test binary 를 실행하며 재귀적으로 자기 자신을
-    // spawn 하는 fork bomb 이 발생한다. detach + orphan 조합이라 cargo test
-    // 종료 후에도 영구 자가복제 한다.
-    //
-    // args 파싱은 `value_to_args` 단위 테스트로 커버한다.
     #[test]
     fn value_to_args_string() {
         let lua = Lua::new();

@@ -20,8 +20,11 @@
 //! "외부 동작" 이라 차단 시 효용이 크게 떨어진다. 대신 `tasty.run_cli` 등 명시적
 //! 호스트 API 를 우선 권장.
 
+mod bridge;
 mod engine;
 mod host_api;
 mod sandbox;
 
+pub use bridge::{HostCommand, LuaSnapshot};
 pub use engine::{LuaEngine, LuaEngineError};
+pub use host_api::run_tasty_cli;
