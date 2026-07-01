@@ -11,7 +11,7 @@ use tasty_utils::path::tasty_home;
 /// core 가 직접 소비하는 내장 타입. `http` 등은 여기 없다 — 플러그인이 manifest 로
 /// 선언한다. 유효 known 집합 = `BUILTIN_KINDS` ∪ {설치 플러그인 선언 타입}(런타임 계산,
 /// 상위에서). `smb` 소비자(explorer mount)는 추후지만 의도된 내장 타입이라 미리 등록.
-pub const BUILTIN_KINDS: &[&str] = &["ssh", "smb"];
+pub const BUILTIN_KINDS: &[&str] = &["ssh", "tasty-attach", "smb"];
 
 /// core 내장 타입인지. 미등록(노란 배지) 최종 판정은 런타임 집합 기준(상위)이며 이
 /// 함수는 core 내장 여부만 답한다.
@@ -144,6 +144,11 @@ impl RemoteProfile {
     pub fn as_ssh(&self) -> Option<SshView<'_>> {
         (self.kind == "ssh").then_some(SshView(self))
     }
+
+    /// tasty-attach 타입이면 typed view. 그 외 None.
+    pub fn as_attach(&self) -> Option<AttachView<'_>> {
+        (self.kind == "tasty-attach").then_some(AttachView(self))
+    }
 }
 
 /// ssh kind 프로필의 typed view — `fields` 맵에서 ssh 필드를 안전 추출한다.
@@ -203,16 +208,6 @@ impl<'a> SshView<'a> {
         }
     }
 
-    /// 원격 tasty 바이너리 경로(포트 발견용). 기본 `"tasty"`.
-    pub fn remote_tasty(&self) -> &'a str {
-        self.field_str("remote_tasty").unwrap_or("tasty")
-    }
-
-    /// 원격 포트 발견 모드. 기본 `"auto"`.
-    pub fn port_mode(&self) -> &'a str {
-        self.field_str("port_mode").unwrap_or("auto")
-    }
-
     /// 원격 셸 종류. 기본 `"auto"`.
     pub fn shell(&self) -> &'a str {
         self.field_str("shell").unwrap_or("auto")
@@ -235,6 +230,91 @@ impl<'a> SshView<'a> {
     /// 감지 실패로 **비활성**인지. 비활성 프로필은 attach 가 거부한다.
     pub fn is_disabled(&self) -> bool {
         self.detect_failed()
+    }
+}
+
+/// tasty-attach kind 프로필의 typed view.
+///
+/// attach 는 ssh 연결 정보를 **참조(ref)** 하거나 **인라인** 으로 보유한다:
+/// - `ssh_ref` 필드가 있으면 **ref 모드** — 연결 정보는 참조된 ssh 프로필에서
+///   resolve 시점에 로드하고, 이 view 의 인라인 접근자(host/user/…)는 None/기본값.
+/// - `ssh_ref` 가 없으면 **인라인 모드** — 자기 `fields` 의 ssh 정보를 [`SshView`]
+///   로직 그대로 재사용해 노출한다(중복 구현 방지).
+///
+/// attach 전용 필드(`remote_tasty`/`port_mode`/`port_file`)는 모드와 무관하게
+/// 항상 tasty-attach 프로필 자신이 소유한다.
+pub struct AttachView<'a>(pub &'a RemoteProfile);
+
+impl<'a> AttachView<'a> {
+    fn field_str(&self, key: &str) -> Option<&'a str> {
+        self.0.fields.get(key).and_then(FieldValue::as_str)
+    }
+
+    /// 참조하는 ssh 프로필 name. 있으면 ref 모드, 없으면 인라인 모드.
+    pub fn ssh_ref(&self) -> Option<&'a str> {
+        self.field_str("ssh_ref")
+    }
+
+    /// 인라인 모드일 때만 자기 fields 를 읽는 SshView(ref 모드면 None).
+    fn inline(&self) -> Option<SshView<'a>> {
+        self.ssh_ref().is_none().then_some(SshView(self.0))
+    }
+
+    /// 인라인 ssh host(ref 모드면 None — 연결 정보는 참조 ssh 에서 온다).
+    pub fn host(&self) -> Option<&'a str> {
+        self.inline().and_then(|s| s.host())
+    }
+
+    /// 인라인 ssh 유저(ref 모드면 None).
+    pub fn user(&self) -> Option<&'a str> {
+        self.inline().and_then(|s| s.user())
+    }
+
+    /// 인라인 ssh 포트(ref 모드면 None).
+    pub fn port(&self) -> Option<u16> {
+        self.inline().and_then(|s| s.port())
+    }
+
+    /// 인라인 ssh-agent 위임(ref 모드면 기본 true).
+    pub fn use_agent(&self) -> bool {
+        self.inline().map(|s| s.use_agent()).unwrap_or(true)
+    }
+
+    /// 인라인 추가 ssh `-o` 옵션(ref 모드면 빈 vec).
+    pub fn extra_options(&self) -> Vec<String> {
+        self.inline().map(|s| s.extra_options()).unwrap_or_default()
+    }
+
+    /// 인라인 ssh destination(`user@host` 합성, ref 모드면 빈 문자열).
+    pub fn ssh_destination(&self) -> String {
+        self.inline()
+            .map(|s| s.ssh_destination())
+            .unwrap_or_default()
+    }
+
+    /// 인라인 원격 셸 종류(ref 모드면 기본 `"auto"`).
+    pub fn shell(&self) -> &'a str {
+        self.inline().map(|s| s.shell()).unwrap_or("auto")
+    }
+
+    /// 인라인 셸 감지 실패 상태(ref 모드면 false — 판정은 resolve 가 참조 ssh 에서).
+    pub fn detect_failed(&self) -> bool {
+        self.inline().map(|s| s.detect_failed()).unwrap_or(false)
+    }
+
+    /// 원격 tasty 바이너리 경로(포트 발견용). 기본 `"tasty"`.
+    pub fn remote_tasty(&self) -> &'a str {
+        self.field_str("remote_tasty").unwrap_or("tasty")
+    }
+
+    /// 원격 포트 발견 모드. 기본 `"auto"`.
+    pub fn port_mode(&self) -> &'a str {
+        self.field_str("port_mode").unwrap_or("auto")
+    }
+
+    /// 원격 port 파일의 명시 경로(없으면 None — discovery 가 관례 경로 탐색).
+    pub fn port_file(&self) -> Option<&'a str> {
+        self.field_str("port_file")
     }
 }
 
@@ -385,8 +465,6 @@ mod tests {
         assert_eq!(v.port(), Some(2222));
         assert_eq!(v.ssh_destination(), "zilhak@box");
         // 기본값
-        assert_eq!(v.remote_tasty(), "tasty");
-        assert_eq!(v.port_mode(), "auto");
         assert_eq!(v.shell(), "auto");
         assert!(v.use_agent()); // 필드 없으면 위임
         assert!(!v.is_disabled());
@@ -457,8 +535,59 @@ mod tests {
     #[test]
     fn builtin_kinds_membership() {
         assert!(is_builtin_kind("ssh"));
+        assert!(is_builtin_kind("tasty-attach"));
         assert!(is_builtin_kind("smb"));
         assert!(!is_builtin_kind("http")); // 플러그인 제공
         assert!(!is_builtin_kind("asdf"));
+    }
+
+    #[test]
+    fn attach_view_ref_mode() {
+        let p = RemoteProfile::new("gb10-attach", "tasty-attach")
+            .with_field("ssh_ref", "gb10")
+            .with_field("remote_tasty", "/opt/tasty/tasty")
+            .with_field("port_file", "/home/z/.tasty/tasty.port");
+        let v = p.as_attach().unwrap();
+        assert_eq!(v.ssh_ref(), Some("gb10"));
+        assert_eq!(v.remote_tasty(), "/opt/tasty/tasty");
+        assert_eq!(v.port_file(), Some("/home/z/.tasty/tasty.port"));
+        assert_eq!(v.host(), None); // ref 모드 — 인라인 host 없음
+        assert_eq!(v.port_mode(), "auto"); // 기본값
+    }
+
+    #[test]
+    fn attach_view_inline_mode() {
+        let p = RemoteProfile::new("box-attach", "tasty-attach")
+            .with_field("host", "box")
+            .with_field("port", "22")
+            .with_field("remote_tasty", "tasty");
+        let v = p.as_attach().unwrap();
+        assert_eq!(v.ssh_ref(), None);
+        assert_eq!(v.host(), Some("box"));
+        assert_eq!(v.port(), Some(22));
+        assert_eq!(v.ssh_destination(), "box");
+        assert_eq!(v.port_mode(), "auto"); // 기본값
+        assert_eq!(v.port_file(), None); // 명시 없음
+    }
+
+    #[test]
+    fn attach_view_ref_ignores_inline_ssh_fields() {
+        // ref 모드는 인라인 host 가 실수로 있어도 읽지 않는다(연결은 참조 ssh 소유).
+        let p = RemoteProfile::new("mix", "tasty-attach")
+            .with_field("ssh_ref", "gb10")
+            .with_field("host", "leftover");
+        let v = p.as_attach().unwrap();
+        assert_eq!(v.host(), None);
+        assert_eq!(v.shell(), "auto");
+        assert!(v.use_agent());
+    }
+
+    #[test]
+    fn ssh_kind_has_no_attach_view() {
+        let p = RemoteProfile::new("gb10", "ssh").with_field("host", "box");
+        assert!(p.as_attach().is_none());
+        // 반대로 tasty-attach 는 as_ssh 가 None.
+        let a = RemoteProfile::new("gb10-attach", "tasty-attach");
+        assert!(a.as_ssh().is_none());
     }
 }

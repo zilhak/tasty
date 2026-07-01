@@ -23,6 +23,6 @@ pub use passkey::{
     KNOWN_PASSKEY_KINDS, Passkey, Passkeys, is_valid_passkey_name, sanitize_passkey_name,
 };
 pub use profile::{
-    BUILTIN_KINDS, FieldValue, RemoteProfile, RemoteProfiles, SHELLS, SshView, is_builtin_kind,
-    is_valid_shell, shell_to_port_mode,
+    AttachView, BUILTIN_KINDS, FieldValue, RemoteProfile, RemoteProfiles, SHELLS, SshView,
+    is_builtin_kind, is_valid_shell, shell_to_port_mode,
 };
