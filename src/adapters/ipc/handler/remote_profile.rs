@@ -38,9 +38,11 @@ pub(crate) fn handle_get(id: Value, params: &Value) -> JsonRpcResponse {
 
 /// `remote.profile.add` → upsert.
 ///
-/// 일반형: { name, kind?, label?, passkey_ref?, fields? }. ssh 편의형(구 `tool.ssh.add`
-/// 호환): kind=ssh 일 때 host/user/port/identity_file/extra_options/remote_tasty/
-/// port_mode/shell 을 받아 fields/passkey 로 접는다. `identity_file` → path passkey.
+/// 일반형: { name, kind?, label?, passkey_ref?, fields? } — **tasty-attach kind CRUD 는
+/// 이 일반 fields 경로로 양면 노출된다**(예: kind="tasty-attach", fields={ssh_ref,
+/// remote_tasty, port_mode, port_file}). ssh 편의형: kind=ssh 일 때 host/user/port/
+/// identity_file/extra_options/shell 을 받아 fields/passkey 로 접는다(shell→port_mode
+/// 도출). `identity_file` → path passkey.
 pub(crate) fn handle_add(id: Value, params: &Value) -> JsonRpcResponse {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return JsonRpcResponse::invalid_params(id, "Missing required 'name' parameter");

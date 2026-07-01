@@ -3,7 +3,7 @@
 use clap::Subcommand;
 
 use super::passkey::PasskeyCommands;
-use super::ssh_profile::SshProfileCommands;
+use super::remote_profile::RemoteProfileCommands;
 
 #[derive(Subcommand)]
 pub enum PluginCommands {
@@ -219,11 +219,46 @@ pub enum ExtensionCommands {
 // reason: clap 파싱 1회용 enum — Box 화는 derive(Subcommand) 와 충돌하고 런타임 이득 없음.
 #[allow(clippy::large_enum_variant)]
 pub enum ToolCommands {
-    /// SSH connection profiles (`~/.tasty/remote-profiles.toml`, ssh kind) — 워크스페이스를
-    /// 원격 컴퓨터에 매핑할 때 참조하는 장비 인벤토리. 로컬 파일 (no IPC).
+    /// 저장된 ssh 프로필로 대화형 ssh 접속을 띄운다(identity/port 자동 주입). 로컬 (no IPC).
     Ssh {
+        /// 접속할 ssh 프로필 name.
+        profile: String,
+        /// 원격에서 1회 실행할 명령(비우면 대화형 셸). 예: `tasty tool ssh gb10 --command hostname`.
+        #[arg(long = "command", num_args = 1.., allow_hyphen_values = true)]
+        command: Vec<String>,
+    },
+    /// 원격 접속 프로필 통합 CRUD (ssh + tasty-attach kind). 로컬 파일 (no IPC).
+    RemoteProfile {
         #[command(subcommand)]
-        command: SshProfileCommands,
+        command: RemoteProfileCommands,
+    },
+    /// tasty-attach 프로필로 원격 surface/workspace 에 attach 한다. `--list` = 목록만. 로컬.
+    Attach {
+        /// attach 대상 tasty-attach 프로필 name(생략+`--list` 면 목록만).
+        name: Option<String>,
+        /// attach 할 원격 surface id.
+        surface: Option<u32>,
+        /// attach 할 원격 workspace id(surface 와 배타).
+        #[arg(long)]
+        workspace: Option<u32>,
+        /// attach 직후 1회 비대화형 입력(escape 디코딩).
+        #[arg(long)]
+        send: Option<String>,
+        /// workspace 모드에서 --send 를 보낼 대상 surface id.
+        #[arg(long)]
+        send_to: Option<u32>,
+        /// mirror-dump 수집 시간(ms). 생략 시 기본.
+        #[arg(long)]
+        dump_after: Option<u64>,
+        /// raw stdin↔stdout 브리지(surface 전용).
+        #[arg(long)]
+        raw: bool,
+        /// 연결 끊김 시 자동 재연결 비활성.
+        #[arg(long)]
+        no_reconnect: bool,
+        /// tasty-attach kind 프로필 목록만 출력하고 종료(attach 안 함).
+        #[arg(long)]
+        list: bool,
     },
     /// Passkeys (`~/.tasty/passkeys.toml`) — 프로필이 이름으로 참조하는 자격증명 저장소.
     /// list/show 는 값을 노출하지 않는다. 로컬 파일 (no IPC).

@@ -296,13 +296,62 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     if let Commands::Port = &command {
         return crate::commands::port::run_port(port_file);
     }
-    // `tasty tool ssh ...` — ssh-profiles.toml 은 client 로컬 파일이라 IPC 미경유 (단계 7).
-    // Tool 네임스페이스 안에서 Ssh 만 로컬 처리하고 나머지(clipboard)는 IPC 로 보낸다.
+    // `tasty tool ssh <profile>` — 저장된 ssh 프로필로 대화형 ssh 접속(로컬, IPC 미경유).
+    // remote-profiles.toml 은 client 로컬 파일이라 직접 resolve → 시스템 ssh spawn.
     if let Commands::Tool {
-        command: crate::commands::ToolCommands::Ssh { command },
+        command: crate::commands::ToolCommands::Ssh { profile, command },
     } = &command
     {
-        return crate::commands::ssh_profile::run(command);
+        let profiles = tasty_remote_profiles::RemoteProfiles::load();
+        let passkeys = tasty_remote_profiles::Passkeys::load();
+        let Some(p) = profiles.get(profile) else {
+            anyhow::bail!(
+                "ssh 프로필 '{profile}' 을 찾을 수 없습니다 (tasty tool remote-profile list)."
+            );
+        };
+        if p.as_ssh().is_none() {
+            anyhow::bail!(
+                "'{profile}' 은 ssh kind 가 아닙니다 (kind='{}'). tool ssh 는 ssh 프로필 전용.",
+                p.kind
+            );
+        }
+        let target = crate::ssh::SshTarget::from_remote_profile(p, &passkeys)?;
+        return crate::ssh::run_ssh_connect(&target, command);
+    }
+    // `tasty tool remote-profile ...` — 프로필 CRUD (ssh + tasty-attach), 로컬 (IPC 미경유).
+    if let Commands::Tool {
+        command: crate::commands::ToolCommands::RemoteProfile { command },
+    } = &command
+    {
+        return crate::commands::remote_profile::run(command);
+    }
+    // `tasty tool attach ...` — tasty-attach 프로필로 attach 실행 / `--list` 목록만 (로컬).
+    if let Commands::Tool {
+        command:
+            crate::commands::ToolCommands::Attach {
+                name,
+                surface,
+                workspace,
+                send,
+                send_to,
+                dump_after,
+                raw,
+                no_reconnect,
+                list,
+            },
+    } = &command
+    {
+        return run_tool_attach(
+            name.as_deref(),
+            *surface,
+            *workspace,
+            send.as_deref(),
+            *send_to,
+            *dump_after,
+            *raw,
+            *no_reconnect,
+            *list,
+        );
     }
     // `tasty tool passkey ...` — passkeys.toml 로컬 파일 (IPC 미경유).
     if let Commands::Tool {
@@ -573,6 +622,80 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// `tasty tool attach ...` — tasty-attach 프로필로 attach 실행 또는 `--list` 목록만.
+///
+/// `--list` 면 tasty-attach kind 목록만 출력하고 종료. name 이 있으면 그 프로필을
+/// resolve(TODO 02 ref/inline)해 기존 attach 엔진(`run_attach_ssh`/`run_attach_workspace_ssh`)
+/// 을 재사용한다. 대상이 없으면 usage 를 안내한다.
+#[allow(clippy::too_many_arguments)]
+fn run_tool_attach(
+    name: Option<&str>,
+    surface: Option<u32>,
+    workspace: Option<u32>,
+    send: Option<&str>,
+    send_to: Option<u32>,
+    dump_after: Option<u64>,
+    raw: bool,
+    no_reconnect: bool,
+    list: bool,
+) -> Result<()> {
+    if list {
+        return crate::commands::remote_profile::run(
+            &crate::commands::RemoteProfileCommands::List {
+                json: false,
+                kind: Some("tasty-attach".to_string()),
+            },
+        );
+    }
+    let Some(name) = name else {
+        anyhow::bail!(
+            "attach 대상이 필요합니다: `tasty tool attach <profile> <surface|--workspace id>` \
+             또는 `tasty tool attach --list` (tasty-attach 목록)."
+        );
+    };
+    if surface.is_some() && workspace.is_some() {
+        anyhow::bail!("surface 와 --workspace 는 함께 쓸 수 없습니다.");
+    }
+    let profiles = tasty_remote_profiles::RemoteProfiles::load();
+    let passkeys = tasty_remote_profiles::Passkeys::load();
+    let Some(p) = profiles.get(name) else {
+        anyhow::bail!(
+            "tasty-attach 프로필 '{name}' 을 찾을 수 없습니다 (tasty tool attach --list)."
+        );
+    };
+    let (target, rt, pm, pf) = crate::ssh::resolve_attach_target(p, &profiles, &passkeys)?;
+    if let Some(ws) = workspace {
+        if raw {
+            anyhow::bail!("--raw 는 workspace attach 와 함께 쓸 수 없습니다 (다중화 스트림).");
+        }
+        return crate::commands::attach::run_attach_workspace_ssh(
+            target,
+            &rt,
+            &pm,
+            pf.as_deref(),
+            ws,
+            dump_after,
+            send,
+            send_to,
+            !no_reconnect,
+        );
+    }
+    let Some(surface) = surface else {
+        anyhow::bail!("attach 대상이 필요합니다: <surface_id> 또는 --workspace <id>.");
+    };
+    crate::commands::attach::run_attach_ssh(
+        target,
+        &rt,
+        &pm,
+        pf.as_deref(),
+        surface,
+        dump_after,
+        send,
+        raw,
+        !no_reconnect,
+    )
 }
 
 #[cfg(test)]

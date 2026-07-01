@@ -157,7 +157,9 @@ pub fn resolve_attach_target(
         )
     })?;
 
-    let (target, disabled) = match v.ssh_ref() {
+    // 유효 ssh 소스에서 (SshTarget, 비활성, 셸) 을 얻는다. 셸은 port_mode 도출용
+    // (detect-split: 셸 감지는 ssh 레이어, port_mode 도출은 attach 레이어 — TODO 02/04).
+    let (target, disabled, shell) = match v.ssh_ref() {
         Some(ref_name) => {
             let ssh_profile = profiles.get(ref_name).ok_or_else(|| {
                 anyhow::anyhow!(
@@ -173,14 +175,17 @@ pub fn resolve_attach_target(
                 )
             })?;
             let disabled = sv.is_disabled();
+            let shell = sv.shell().to_string();
             (
                 SshTarget::from_remote_profile(ssh_profile, passkeys)?,
                 disabled,
+                shell,
             )
         }
         None => (
             SshTarget::from_attach_inline(p, passkeys)?,
             v.detect_failed(),
+            v.shell().to_string(),
         ),
     };
     if disabled {
@@ -190,9 +195,44 @@ pub fn resolve_attach_target(
         );
     }
     let remote_tasty = v.remote_tasty().to_string();
-    let port_mode = v.port_mode().to_string();
+    // port_mode 결정: attach 가 명시(auto 이외)했으면 그 값, "auto" 면 ssh 소스의 셸에서
+    // 도출(bash→subcommand 등), 셸도 auto/미상이면 "auto"(fallback 체인).
+    let explicit = v.port_mode();
+    let port_mode = if explicit == "auto" {
+        shell_to_port_mode(&shell).unwrap_or("auto").to_string()
+    } else {
+        explicit.to_string()
+    };
     let port_file = v.port_file().map(|s| s.to_string());
     Ok((target, remote_tasty, port_mode, port_file))
+}
+
+/// `tasty tool ssh <profile>` — 저장된 ssh 프로필로 대화형 ssh 접속을 띄운다.
+///
+/// 프로필의 identity/port/user/extra_options 를 조립해 시스템 ssh 를 그대로 spawn 한다
+/// (stdio 상속 = 대화형). `command` 가 비어있지 않으면 원격에서 그 명령을 1회 실행한다
+/// (`tasty tool ssh gb10 --command hostname`). ssh 종료코드를 그대로 전파한다.
+pub fn run_ssh_connect(target: &SshTarget, command: &[String]) -> Result<()> {
+    let ssh = resolve_ssh_path();
+    let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
+    let mut args: Vec<String> = Vec::new();
+    push_common_opts(&mut args, target, verify);
+    args.push(target.destination.clone());
+    for c in command {
+        args.push(c.clone());
+    }
+    // stdio 는 기본 상속(대화형 셸). 종료코드를 그대로 프로세스 exit 로 전파한다.
+    let status = Command::new(&ssh)
+        .args(&args)
+        .status()
+        .map_err(|e| anyhow::anyhow!("ssh spawn 실패({}): {e}", ssh.display()))?;
+    if !status.success() {
+        if let Some(code) = status.code() {
+            std::process::exit(code);
+        }
+        bail!("ssh 가 시그널로 종료되었습니다");
+    }
+    Ok(())
 }
 
 /// 경로 앞의 `~` / `~/` 를 홈 디렉토리로 확장한다. ssh 를 셸 없이 spawn 하면 셸의
@@ -483,12 +523,13 @@ pub fn detect_port_mode(
     detect_first_success(|m| discover_single_mode(ssh, target, remote_tasty, m, verify, debug))
 }
 
-/// 한 프로필의 `shell` 값에 맞춰 `port_mode` / `detect_failed` 를 갱신한다.
+/// ssh 프로필의 `shell` 값으로 **셸 감지 상태(`detect_failed`)** 를 갱신한다(detect-split:
+/// ssh 레이어는 셸 도달성만 판정, port_mode 도출은 attach 레이어 — `resolve_attach_target`).
 ///
-/// - 명시 셸(powershell/cmd/bash/zsh) → [`shell_to_port_mode`] 로 `port_mode` 즉시 도출
-///   (네트워크 I/O 없음), `detect_failed=false`. 반환 `None`.
-/// - `auto` → 실제 SSH 프로브 체인 1회 실행(블록). 성공 시 `port_mode`=감지 모드 +
-///   `detect_failed=false`, 실패 시 `detect_failed=true`. 반환 `Some(결과)`.
+/// - 명시 셸(powershell/cmd/bash/zsh) → 도달 가능한 셸로 간주, `detect_failed` 해제.
+///   네트워크 I/O 없음. 반환 `None`.
+/// - `auto` → 실제 SSH 프로브 체인 1회 실행(블록). 성공 시 `detect_failed` 해제, 실패 시
+///   `detect_failed=true`. 반환 `Some(결과 모드)`(리포트용 — 프로필엔 저장하지 않는다).
 ///
 /// `auto` 분기는 네트워크 I/O 로 수 초 블록될 수 있다 — GUI/host 는 워커 스레드에서 호출.
 pub fn apply_shell_to_profile(
@@ -499,16 +540,15 @@ pub fn apply_shell_to_profile(
         .as_ssh()
         .map(|v| v.shell().to_string())
         .unwrap_or_else(|| "auto".into());
-    if let Some(mode) = shell_to_port_mode(&shell) {
-        profile.set_field("port_mode", mode);
+    if shell_to_port_mode(&shell).is_some() {
+        // 명시 셸 = 도달 가능으로 간주(프로브 생략). port_mode 는 attach 레이어가 도출.
         profile.remove_field("detect_failed");
         return None;
     }
-    // shell == auto (또는 알 수 없는 값) → 감지.
+    // shell == auto (또는 알 수 없는 값) → 프로브로 도달성 검증.
     let outcome = detect_for_profile(profile, passkeys);
     match &outcome {
-        Ok(mode) => {
-            profile.set_field("port_mode", mode.as_str());
+        Ok(_) => {
             profile.remove_field("detect_failed");
         }
         Err(_) => profile.set_field("detect_failed", "true"),
@@ -533,10 +573,11 @@ fn detect_for_profile(profile: &RemoteProfile, passkeys: &Passkeys) -> Result<Po
     detect_port_mode(&ssh, &target, &remote_tasty, verify, debug)
 }
 
-/// 이름으로 프로필을 로드→재감지→저장한다(GUI 새로고침/IPC detect 워커 진입점).
+/// 이름으로 ssh 프로필을 로드→재감지→저장한다(GUI 새로고침/IPC detect 워커 진입점).
 ///
-/// 셸 무관하게 프로브 체인을 돌려, 성공 시 `port_mode`=감지 모드 + 활성화,
-/// 실패 시 `detect_failed=true`(비활성)로 toml 을 **항상 갱신**한다. 네트워크 I/O 블록.
+/// 셸 무관하게 프로브 체인을 돌려 셸 **도달성**을 확인하고, 성공 시 `detect_failed` 해제,
+/// 실패 시 `detect_failed=true`(비활성)로 toml 을 갱신한다(detect-split: port_mode 는
+/// 저장하지 않는다 — attach 레이어가 도출). 반환 모드는 리포트용. 네트워크 I/O 블록.
 pub fn detect_and_persist(name: &str) -> Result<PortMode> {
     let mut profiles = RemoteProfiles::load();
     let passkeys = Passkeys::load();
@@ -545,8 +586,7 @@ pub fn detect_and_persist(name: &str) -> Result<PortMode> {
     };
     let result = detect_for_profile(&p, &passkeys);
     match &result {
-        Ok(mode) => {
-            p.set_field("port_mode", mode.as_str());
+        Ok(_) => {
             p.remove_field("detect_failed");
         }
         Err(_) => p.set_field("detect_failed", "true"),
@@ -934,32 +974,60 @@ mod tests {
     }
 
     #[test]
-    fn apply_shell_explicit_sets_mode_without_io() {
-        // 명시 셸 → 매핑으로 port_mode 즉시 도출(감지 미실행, None 반환).
+    fn apply_shell_explicit_clears_detect_failed_without_io_or_port_mode() {
+        // detect-split: 명시 셸 → 도달 가능으로 간주(감지 미실행, None 반환), detect_failed
+        // 해제. port_mode 는 ssh 프로필에 저장하지 않는다(attach 레이어가 도출).
         let pk = Passkeys::default();
         let mut p = RemoteProfile::new("x", "ssh")
             .with_field("host", "h")
-            .with_field("shell", "cmd");
+            .with_field("shell", "cmd")
+            .with_field("detect_failed", "true");
         let ran = apply_shell_to_profile(&mut p, &pk);
         assert!(ran.is_none()); // 감지 미실행.
-        // port_mode 는 이제 typed view 밖 raw 필드로 저장된다(detect-split 잔여, TODO 04).
-        let raw_port_mode = |p: &RemoteProfile| {
-            p.fields
-                .get("port_mode")
-                .and_then(|f| f.as_str())
-                .unwrap_or("")
-                .to_string()
-        };
-        assert_eq!(raw_port_mode(&p), "file-windows");
-        assert!(!p.as_ssh().unwrap().is_disabled());
+        assert!(!p.fields.contains_key("port_mode")); // ssh 는 port_mode 를 갖지 않는다.
+        assert!(!p.as_ssh().unwrap().is_disabled()); // detect_failed 해제됨.
+    }
 
-        p.set_field("shell", "powershell");
-        apply_shell_to_profile(&mut p, &pk);
-        assert_eq!(raw_port_mode(&p), "file-unix");
+    #[test]
+    fn resolve_attach_port_mode_derived_from_ref_shell() {
+        // attach port_mode=auto(기본) + 참조 ssh 셸=cmd → file-windows 로 도출.
+        let pk = Passkeys::default();
+        let mut profiles = RemoteProfiles::default();
+        profiles.upsert(
+            RemoteProfile::new("box", "ssh")
+                .with_field("host", "h")
+                .with_field("shell", "cmd"),
+        );
+        let attach = RemoteProfile::new("box-a", "tasty-attach").with_field("ssh_ref", "box");
+        let (_t, _rt, pm, _pf) = resolve_attach_target(&attach, &profiles, &pk).unwrap();
+        assert_eq!(pm, "file-windows");
+    }
 
-        p.set_field("shell", "bash");
-        apply_shell_to_profile(&mut p, &pk);
-        assert_eq!(raw_port_mode(&p), "subcommand");
+    #[test]
+    fn resolve_attach_explicit_port_mode_wins_over_shell() {
+        // attach 가 port_mode 를 명시하면 셸 도출을 무시하고 그 값을 쓴다.
+        let pk = Passkeys::default();
+        let mut profiles = RemoteProfiles::default();
+        profiles.upsert(
+            RemoteProfile::new("box", "ssh")
+                .with_field("host", "h")
+                .with_field("shell", "cmd"),
+        );
+        let attach = RemoteProfile::new("box-a", "tasty-attach")
+            .with_field("ssh_ref", "box")
+            .with_field("port_mode", "subcommand");
+        let (_t, _rt, pm, _pf) = resolve_attach_target(&attach, &profiles, &pk).unwrap();
+        assert_eq!(pm, "subcommand");
+    }
+
+    #[test]
+    fn resolve_attach_inline_auto_shell_stays_auto() {
+        // 인라인 + 셸 미지정(auto) + port_mode auto → auto(fallback 체인) 유지.
+        let pk = Passkeys::default();
+        let profiles = RemoteProfiles::default();
+        let attach = RemoteProfile::new("box-a", "tasty-attach").with_field("host", "h");
+        let (_t, _rt, pm, _pf) = resolve_attach_target(&attach, &profiles, &pk).unwrap();
+        assert_eq!(pm, "auto");
     }
 
     #[test]

@@ -608,8 +608,12 @@ fn surface_meta_command_to_method_params(
 
 fn tool_command_to_method_params(command: &ToolCommands) -> (&'static str, serde_json::Value) {
     match command {
-        // `tasty tool ssh|passkey ...` 는 run.rs 에서 로컬 처리 (IPC 미경유) — 미도달 arm.
+        // `tasty tool ssh|remote-profile|attach|passkey ...` 는 run.rs 에서 로컬 처리
+        // (IPC 미경유) — 미도달 arm. 프로필 CRUD 의 에이전트 조작(원칙 2)은 `remote.profile.*`
+        // IPC 로 별도 노출된다(src/adapters/ipc/handler/remote_profile.rs).
         ToolCommands::Ssh { .. } => ("tool.ssh.noop", serde_json::json!({})),
+        ToolCommands::RemoteProfile { .. } => ("tool.remote_profile.noop", serde_json::json!({})),
+        ToolCommands::Attach { .. } => ("tool.attach.noop", serde_json::json!({})),
         ToolCommands::Passkey { .. } => ("tool.passkey.noop", serde_json::json!({})),
     }
 }
