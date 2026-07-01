@@ -1,47 +1,46 @@
-//! `git_viewer` specimen — git-viewer plugin 의 worktree 종합 popup
-//! (plugin UiNode DSL 전사, Overlays).
+//! `git_viewer` specimen — git-viewer plugin 의 worktree 종합 popup (Overlays).
 //!
-//! 본체 렌더 경로: plugin `crates/tasty-plugin-git-viewer/src/view.rs` 의 `main_tree`
-//! 가 `vbox[ header, splitter(Horizontal 0.25, worktree_rail | right_column) ]` 를 만들고
-//! `right_column = splitter(Vertical 0.5, status | log·diff)` 로 분할한다. host
-//! `ui_tree_render.rs` 가 selectable_row / label / splitter 를 egui 로 페인트한다.
-//! 갤러리는 plugin/host crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰 painter mock
-//! 으로 전사한다 — 픽셀 동일성 비목표, 토큰·구조 정합 목표.
+//! 본체 렌더 경로: plugin `crates/tasty-plugin-git-viewer/src/render.rs` 가 egui-mesh 로
+//! 새 디자인(`ui_kits/terminal/overlays/git_viewer.jsx`)을 자가 렌더한다. 갤러리는
+//! plugin crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰 mock 으로 전사한다 — 픽셀
+//! 동일성 비목표, 토큰·구조 정합 목표.
 //!
 //! 두 cluster 로 idiom 전수 노출:
-//! - **status + log** — rail | (status 상 / log 하) 의 기본 종합 화면.
-//! - **diff** — 파일 선택 시 하단 pane 이 diff 로 교체되는 변형(toolbar + ± 라인).
+//! - **normal** — 2행 header(+context strip) · 섹션 strip · rail(2줄 행) | Changes / Commits.
+//! - **diff** — 파일 선택 시 하단 pane 이 diff well(거터+부호+± tint)로 교체.
 //!
-//! 색은 host catppuccin 토큰을 의미 토큰으로 옮긴다: head/refs/main 배지 `blue`→
-//! `accent_info`, current/added `green`→`accent_success`, locked/modified `yellow`→
-//! `accent_warning`, invalid/deleted `red`→`accent_danger`, 비활성/`subtext0`→
-//! `text_muted`, invalid 이름/`overlay0`→`text_disabled`, 선택행 → `surface_active`.
+//! 색 매핑(changelog `2026-06-30-git-viewer.md`): oid·refs·main·hunk = `accent_info`(sky),
+//! current·added·`+` = `accent_success`, locked·modified = `accent_warning`,
+//! invalid·deleted·unmerged·`-` = `accent_danger`, linked·`?` = neutral.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::{TagVariant, tag};
 
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 use crate::catalog::widgets::dialog as kit;
 
-// ── popup 치수 (디자인 popup ≈960 wide, rail 0.25 · column 0.5). gallery 전시용 축소 ──
-// Theme 에 대응 토큰이 없는 화면 전용 고정값 — 디자인 의미를 주석으로 명시.
-/// popup 본문 폭(전시 축소; 디자인 ≈960).
-const POPUP_W: f32 = 660.0;
-/// popup 본문 높이.
-const POPUP_H: f32 = 420.0;
-/// 좌측 worktree rail 비율 (`splitter` Horizontal 0.25).
-const RAIL_RATIO: f32 = 0.25;
-/// 우측 컬럼 상/하 분할 비율 (`splitter` Vertical 0.5).
-const COL_RATIO: f32 = 0.5;
+// ── popup 치수 (디자인 960×640, rail 232 고정). gallery 전시용 축소 ──
+const POPUP_W: f32 = 720.0;
+const POPUP_H: f32 = 440.0;
+const RAIL_W: f32 = 232.0;
+const SECTION_H: f32 = 28.0;
+const CTX_H: f32 = 30.0;
+const HEADER_H: f32 = 44.0;
 
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Column, |ui| {
-        spec::cluster(ui, theme, "status + log — rail | (status / log)", |ui| {
-            shell(ui, theme, false);
-        });
         spec::cluster(
             ui,
             theme,
-            "diff — selected file replaces the bottom pane",
+            "normal — rail(2-line rows) | Changes / Commits",
+            |ui| {
+                shell(ui, theme, false);
+            },
+        );
+        spec::cluster(
+            ui,
+            theme,
+            "diff — selected file swaps the bottom pane",
             |ui| {
                 shell(ui, theme, true);
             },
@@ -52,22 +51,22 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "≈960 popup · bg-panel · read-only"),
-            ("header", "Refresh + repo path"),
-            ("rail", "splitter Horizontal 0.25 · worktrees"),
-            ("right", "splitter Vertical 0.5 · status / log"),
-            ("bottom", "log ↔ diff on file select"),
-            ("badges", "main·linked / current·locked·invalid"),
+            ("frame", "960×640 · bg-panel · read-only"),
+            ("header", "Git + Refresh · context strip"),
+            ("rail", "232px · 2-line worktree rows"),
+            ("sections", "uppercase strip + count"),
+            ("commits", "sky oid + refs · author · time"),
+            ("diff", "bg-app well · gutter · ± tint"),
         ],
         &[
             TokenChip::new(
                 "accent-info",
-                "head · main · refs",
+                "oid · refs · main · hunk",
                 theme.accent_info().to_egui(),
             ),
             TokenChip::new(
                 "accent-success",
-                "current · added",
+                "current · added · +",
                 theme.accent_success().to_egui(),
             ),
             TokenChip::new(
@@ -77,7 +76,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ),
             TokenChip::new(
                 "accent-danger",
-                "invalid · deleted",
+                "invalid · deleted · -",
                 theme.accent_danger().to_egui(),
             ),
         ],
@@ -86,305 +85,637 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "A read-only worktree overview — pick a worktree on the left rail and the right \
-         column rebinds its status (top) and log (bottom); selecting a file swaps the log \
-         for a diff. No action buttons. The host paints the plugin's two nested splitters \
-         and selectable rows; this mirrors that structure with tokens only.",
+        "A read-only worktree overview. Header + a bg-sidebar context strip (worktree · \
+         branch · HEAD oid · repo path); each pane carries an uppercase section-header strip \
+         with a count. The 232px rail lists worktrees as two-line rows (name + type pill / \
+         short oid + state pill, selected = surface-active + inset accent bar). The right \
+         column splits Changes over Commits↔Diff; the diff is a recessed bg-app well with an \
+         old/new gutter and ±-line tints. Pills are real Tags (with the sky info tone). The \
+         plugin egui-mesh renders this; the mock mirrors its structure + tokens.",
     );
 }
 
-/// popup shell — header + rail | (status / log-or-diff) 두 splitter 합성.
+/// popup shell — header + context strip + rail | (changes / commits-or-diff).
 fn shell(ui: &mut egui::Ui, theme: &Theme, show_diff: bool) {
     kit::frame_card(ui, theme, POPUP_W, kit::panel_fill(theme), |ui| {
         let w = ui.available_width();
         let (rect, _) = ui.allocate_exact_size(egui::vec2(w, POPUP_H), egui::Sense::hover());
-        let p = ui.painter_at(rect);
-        let pad = theme.spacing_sm.value();
+        header(ui, theme, rect);
 
-        // ── header (Refresh 버튼 + repo path) ──
-        let head_h = theme.item_height_interactive.value() + pad * 2.0;
-        let btn = egui::Rect::from_min_size(
-            egui::pos2(rect.left() + pad, rect.top() + pad),
-            egui::vec2(
-                theme.field_width_xs.value() * 0.8,
-                theme.item_height_interactive.value(),
-            ),
-        );
-        p.rect_filled(
-            btn,
-            theme.corner_radius.value(),
-            theme.surface_raised().to_egui(),
-        );
-        p.rect_stroke(
-            btn,
-            theme.corner_radius.value(),
-            egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
-            egui::StrokeKind::Inside,
-        );
-        p.text(
-            btn.center(),
-            egui::Align2::CENTER_CENTER,
-            "Refresh",
-            egui::FontId::proportional(theme.font_size_body.value()),
-            theme.text_primary().to_egui(),
-        );
-        p.text(
-            egui::pos2(btn.right() + theme.spacing_md.value(), btn.center().y),
-            egui::Align2::LEFT_CENTER,
-            "(~/work/tasty)",
-            egui::FontId::monospace(theme.font_size_caption.value()),
-            theme.text_muted().to_egui(),
-        );
-        // header 하단 separator.
-        let body_top = rect.top() + head_h;
-        p.hline(
-            rect.x_range(),
-            body_top,
-            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-        );
+        let ctx_top = rect.top() + HEADER_H;
+        let ctx_rect =
+            egui::Rect::from_min_size(egui::pos2(rect.left(), ctx_top), egui::vec2(w, CTX_H));
+        context_strip(ui, theme, ctx_rect);
 
-        // ── splitter Horizontal 0.25 : rail | right column ──
-        let split_x = rect.left() + (w * RAIL_RATIO).round();
-        let rail = egui::Rect::from_min_max(
-            egui::pos2(rect.left(), body_top),
-            egui::pos2(split_x, rect.bottom()),
-        );
-        let right = egui::Rect::from_min_max(
-            egui::pos2(split_x, body_top),
-            egui::pos2(rect.right(), rect.bottom()),
-        );
-        p.vline(
-            split_x,
-            body_top..=rect.bottom(),
-            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-        );
+        let body_top = ctx_top + CTX_H;
+        let body = egui::Rect::from_min_max(egui::pos2(rect.left(), body_top), rect.max);
+        let rail =
+            egui::Rect::from_min_max(body.min, egui::pos2(body.left() + RAIL_W, body.bottom()));
+        let right =
+            egui::Rect::from_min_max(egui::pos2(body.left() + RAIL_W, body.top()), body.max);
+        vline(ui, theme, body.left() + RAIL_W, body.top(), body.bottom());
 
-        paint_rail(&p, theme, rail);
+        rail_pane(ui, theme, rail);
 
-        // ── right column: splitter Vertical 0.5 : status | log/diff ──
-        let split_y = (body_top + (rect.bottom() - body_top) * COL_RATIO).round();
-        let status = egui::Rect::from_min_max(right.min, egui::pos2(right.right(), split_y));
-        let bottom = egui::Rect::from_min_max(egui::pos2(right.left(), split_y), right.max);
-        p.hline(
-            right.x_range(),
-            split_y,
-            egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
-        );
-        paint_status(&p, theme, status);
+        let half = (right.height() * 0.5).round();
+        let top = egui::Rect::from_min_size(right.min, egui::vec2(right.width(), half));
+        let bottom =
+            egui::Rect::from_min_max(egui::pos2(right.left(), right.top() + half), right.max);
+        hline(ui, theme, right.left(), right.right(), right.top() + half);
+        changes_pane(ui, theme, top);
         if show_diff {
-            paint_diff(&p, theme, bottom);
+            diff_pane(ui, theme, bottom);
         } else {
-            paint_log(&p, theme, bottom);
+            commits_pane(ui, theme, bottom);
         }
     });
 }
 
-/// pane 제목 (host LabelStyle::Heading) — term-lg semibold text-primary. 다음 y 반환.
-fn heading(p: &egui::Painter, theme: &Theme, pane: egui::Rect, text: &str) -> f32 {
-    let pad = theme.spacing_sm.value();
-    let y = pane.top() + pad;
+fn header(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+    let pad = theme.spacing_md.value();
+    let p = ui.painter();
     p.text(
-        egui::pos2(pane.left() + pad, y),
-        egui::Align2::LEFT_TOP,
-        text,
-        egui::FontId::proportional(theme.font_size_term_lg.value()),
+        egui::pos2(rect.left() + pad, rect.top() + HEADER_H * 0.5),
+        egui::Align2::LEFT_CENTER,
+        "Git",
+        egui::FontId::proportional(theme.font_size_max.value()),
         theme.text_primary().to_egui(),
     );
-    y + theme.font_size_term_lg.value() + theme.spacing_sm.value()
-}
-
-/// selectable_row — full-width 행, 선택 시 surface-active. 좌측부터 colored 세그먼트.
-fn row(
-    p: &egui::Painter,
-    theme: &Theme,
-    pane: egui::Rect,
-    y: f32,
-    selected: bool,
-    runs: &[(&str, egui::Color32)],
-) -> f32 {
-    let pad = theme.spacing_sm.value();
-    let h = theme.item_height_interactive.value();
-    let rect = egui::Rect::from_min_size(
-        egui::pos2(pane.left() + theme.spacing_xs.value(), y),
-        egui::vec2(pane.width() - theme.spacing_xs.value() * 2.0, h),
+    // Refresh (secondary) 버튼 mock.
+    let bw = theme.field_width_xs.value() * 0.7;
+    let bh = theme.item_height_tab.value();
+    let btn = egui::Rect::from_min_size(
+        egui::pos2(rect.right() - pad - bw, rect.top() + (HEADER_H - bh) * 0.5),
+        egui::vec2(bw, bh),
     );
-    if selected {
-        p.rect_filled(
-            rect,
-            theme.corner_radius_sm.value(),
-            theme.surface_active().to_egui(),
-        );
-    }
-    let mut x = rect.left() + pad;
-    let cy = rect.center().y;
-    for (text, color) in runs {
-        let r = p.text(
-            egui::pos2(x, cy),
-            egui::Align2::LEFT_CENTER,
-            text,
-            egui::FontId::monospace(theme.font_size_body.value()),
-            *color,
-        );
-        x = r.right() + theme.spacing_sm.value();
-    }
-    y + h
-}
-
-fn paint_rail(p: &egui::Painter, theme: &Theme, pane: egui::Rect) {
-    let info = theme.accent_info().to_egui();
-    let mut y = heading(p, theme, pane, "Worktrees (3)");
-    y = row(
-        p,
-        theme,
-        pane,
-        y,
-        true,
-        &[
-            ("tasty", theme.text_primary().to_egui()),
-            ("a1b2c3d", info),
-            ("main", info),
-            ("current", theme.accent_success().to_egui()),
-        ],
+    p.rect_filled(
+        btn,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
     );
-    y = row(
-        p,
-        theme,
-        pane,
-        y,
-        false,
-        &[
-            ("feature-ui", theme.text_muted().to_egui()),
-            ("9f8e7d6", info),
-            ("linked", theme.text_muted().to_egui()),
-            ("locked", theme.accent_warning().to_egui()),
-        ],
-    );
-    let _ = row(
-        p,
-        theme,
-        pane,
-        y,
-        false,
-        &[
-            ("stale-wt", theme.text_disabled().to_egui()),
-            ("invalid", theme.accent_danger().to_egui()),
-        ],
-    );
-}
-
-fn paint_status(p: &egui::Painter, theme: &Theme, pane: egui::Rect) {
-    let mut y = heading(p, theme, pane, "Status (3)");
-    let text = theme.text_primary().to_egui();
-    y = row(
-        p,
-        theme,
-        pane,
-        y,
-        false,
-        &[
-            (" M ", theme.accent_warning().to_egui()),
-            ("src/view.rs", text),
-        ],
-    );
-    y = row(
-        p,
-        theme,
-        pane,
-        y,
-        false,
-        &[
-            (" A ", theme.accent_success().to_egui()),
-            ("docs/git.md", text),
-        ],
-    );
-    let _ = row(
-        p,
-        theme,
-        pane,
-        y,
-        false,
-        &[
-            (" D ", theme.accent_danger().to_egui()),
-            ("old/legacy.rs", text),
-        ],
-    );
-}
-
-fn paint_log(p: &egui::Painter, theme: &Theme, pane: egui::Rect) {
-    let mut y = heading(p, theme, pane, "Log");
-    let muted = theme.text_muted().to_egui();
-    let oid = theme.accent_warning().to_egui();
-    let text = theme.text_primary().to_egui();
-    y = row(
-        p,
-        theme,
-        pane,
-        y,
-        false,
-        &[
-            ("a1b2c3d", oid),
-            ("feat: add worktree rail", text),
-            ("zilhak", muted),
-        ],
-    );
-    let _ = row(
-        p,
-        theme,
-        pane,
-        y,
-        false,
-        &[
-            ("9f8e7d6", oid),
-            ("fix: diff pane scroll", text),
-            ("zilhak", muted),
-        ],
-    );
-}
-
-fn paint_diff(p: &egui::Painter, theme: &Theme, pane: egui::Rect) {
-    let pad = theme.spacing_sm.value();
-    // toolbar: Back 버튼 + 파일 path.
-    let y = pane.top() + pad;
-    p.text(
-        egui::pos2(pane.left() + pad, y),
-        egui::Align2::LEFT_TOP,
-        "← Back",
-        egui::FontId::proportional(theme.font_size_body.value()),
-        theme.accent_info().to_egui(),
+    p.rect_stroke(
+        btn,
+        theme.corner_radius.value(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
     );
     p.text(
-        egui::pos2(pane.left() + pad + theme.field_width_xs.value(), y),
-        egui::Align2::LEFT_TOP,
-        "src/view.rs",
+        btn.center(),
+        egui::Align2::CENTER_CENTER,
+        "Refresh",
+        egui::FontId::proportional(theme.font_size_caption.value()),
+        theme.text_primary().to_egui(),
+    );
+    hline(ui, theme, rect.left(), rect.right(), rect.top() + HEADER_H);
+}
+
+fn context_strip(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+    hline(ui, theme, rect.left(), rect.right(), rect.bottom());
+    let pad = theme.spacing_md.value();
+    let mut cui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(egui::vec2(pad, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    cui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    mono_label(
+        &mut cui,
+        "tasty",
+        theme.font_size_term_sm.value(),
+        theme.text_primary(),
+    );
+    cui.label(egui::RichText::new("·").color(theme.text_disabled().to_egui()));
+    mono_label(
+        &mut cui,
+        "conductor/mesh-b3",
+        theme.font_size_term_sm.value(),
+        theme.text_secondary(),
+    );
+    tag(&mut cui, theme, "0b0b9a9d", TagVariant::Info, false);
+    ui.painter().text(
+        egui::pos2(rect.right() - pad, rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        "~/work/tasty/.worktree/wt-3",
         egui::FontId::monospace(theme.font_size_caption.value()),
         theme.text_muted().to_egui(),
     );
-    let mut ly = y + theme.font_size_body.value() + theme.spacing_sm.value();
-    let line_h = theme.font_size_body.value() + theme.spacing_xs.value();
-    let lines: &[(&str, egui::Color32)] = &[
-        ("@@ -1,4 +1,5 @@", theme.accent_info().to_egui()),
-        (
-            "   1    1   fn main_tree(vm) {",
-            theme.text_primary().to_egui(),
-        ),
-        (
-            "        2 + let header = build();",
-            theme.accent_success().to_egui(),
-        ),
-        (
-            "   2      - let h = old();",
-            theme.accent_danger().to_egui(),
-        ),
-        ("   3    3   vbox(children)", theme.text_primary().to_egui()),
-    ];
-    for (text, color) in lines {
-        p.text(
-            egui::pos2(pane.left() + pad, ly),
-            egui::Align2::LEFT_TOP,
-            text,
-            egui::FontId::monospace(theme.font_size_caption.value()),
-            *color,
+}
+
+fn rail_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
+    section_head(ui, theme, area, "WORKTREES (3)");
+    let mut y = area.top() + SECTION_H;
+    y = wt_row(
+        ui,
+        theme,
+        area,
+        y,
+        "tasty",
+        "0b0b9a9d",
+        true,
+        false,
+        "main",
+        ("current", TagVariant::Success),
+    );
+    y = wt_row(
+        ui,
+        theme,
+        area,
+        y,
+        "feature-ui",
+        "9f8e7d6c",
+        false,
+        false,
+        "linked",
+        ("locked", TagVariant::Warning),
+    );
+    wt_row(
+        ui,
+        theme,
+        area,
+        y,
+        "stale-wt",
+        "",
+        false,
+        true,
+        "linked",
+        ("invalid", TagVariant::Danger),
+    );
+}
+
+/// 2줄 worktree 행 mock. 다음 y 반환.
+#[allow(clippy::too_many_arguments)]
+fn wt_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    area: egui::Rect,
+    y: f32,
+    name: &str,
+    oid: &str,
+    selected: bool,
+    invalid: bool,
+    kind: &str,
+    state: (&str, TagVariant),
+) -> f32 {
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let gap = theme.spacing_xs.value();
+    let l1_h = theme.font_size_term_sm.value() + 4.0;
+    let l2_h = theme.font_size_caption.value() + 4.0;
+    let h = pad_y * 2.0 + l1_h + gap + l2_h;
+    let rect = egui::Rect::from_min_size(egui::pos2(area.left(), y), egui::vec2(area.width(), h));
+    if selected {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.surface_active().to_egui());
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(rect.min, egui::vec2(2.0, h)),
+            0.0,
+            theme.accent_primary().to_egui(),
         );
-        ly += line_h;
     }
+    let name_color = if invalid {
+        theme.text_disabled()
+    } else if selected {
+        theme.text_primary()
+    } else {
+        theme.text_secondary()
+    };
+    // line 1: name + type pill(right).
+    let l1 = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + pad_x, rect.top() + pad_y),
+        egui::vec2(rect.width() - pad_x * 2.0, l1_h),
+    );
+    let type_variant = if kind == "main" {
+        TagVariant::Info
+    } else {
+        TagVariant::Default
+    };
+    let mut t1 = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(l1)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    tag(&mut t1, theme, kind, type_variant, false);
+    ui.painter().text(
+        egui::pos2(l1.left(), l1.center().y),
+        egui::Align2::LEFT_CENTER,
+        name,
+        egui::FontId::monospace(theme.font_size_term_sm.value()),
+        name_color.to_egui(),
+    );
+    // line 2: oid(info) + state pill(right).
+    let l2 = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + pad_x, l1.max.y + gap),
+        egui::vec2(rect.width() - pad_x * 2.0, l2_h),
+    );
+    let mut t2 = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(l2)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    tag(&mut t2, theme, state.0, state.1, true);
+    if !oid.is_empty() {
+        ui.painter().text(
+            egui::pos2(l2.left(), l2.center().y),
+            egui::Align2::LEFT_CENTER,
+            oid,
+            egui::FontId::monospace(theme.font_size_caption.value()),
+            theme.accent_info().to_egui(),
+        );
+    }
+    hline(ui, theme, rect.left(), rect.right(), rect.bottom());
+    y + h
+}
+
+fn changes_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
+    section_head(ui, theme, area, "CHANGES (3)");
+    let mut y = area.top() + SECTION_H;
+    y = ch_row(
+        ui,
+        theme,
+        area,
+        y,
+        "M",
+        TagVariant::Warning,
+        "crates/tasty-plugin-git-viewer/src/",
+        "render.rs",
+        true,
+    );
+    y = ch_row(
+        ui,
+        theme,
+        area,
+        y,
+        "A",
+        TagVariant::Success,
+        "docs/design/systems/",
+        "git-viewer.md",
+        false,
+    );
+    ch_row(
+        ui,
+        theme,
+        area,
+        y,
+        "D",
+        TagVariant::Danger,
+        "crates/tasty-plugin-git-viewer/src/",
+        "view.rs",
+        false,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ch_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    area: egui::Rect,
+    y: f32,
+    glyph: &str,
+    variant: TagVariant,
+    dir: &str,
+    file: &str,
+    selected: bool,
+) -> f32 {
+    let pad_x = theme.spacing_md.value();
+    let h = 26.0;
+    let rect = egui::Rect::from_min_size(egui::pos2(area.left(), y), egui::vec2(area.width(), h));
+    if selected {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.surface_active().to_egui());
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(rect.min, egui::vec2(2.0, h)),
+            0.0,
+            theme.accent_primary().to_egui(),
+        );
+    }
+    let mut cui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(egui::vec2(pad_x, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    cui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    tag(&mut cui, theme, glyph, variant, false);
+    let x = cui.cursor().left() + theme.spacing_sm.value();
+    let p = ui.painter();
+    let cy = rect.center().y;
+    let g = p.layout_no_wrap(
+        dir.to_owned(),
+        egui::FontId::monospace(theme.font_size_term_sm.value()),
+        theme.text_muted().to_egui(),
+    );
+    let dw = g.rect.width();
+    p.galley(
+        egui::pos2(x, cy - g.rect.height() * 0.5),
+        g,
+        theme.text_muted().to_egui(),
+    );
+    p.text(
+        egui::pos2(x + dw, cy),
+        egui::Align2::LEFT_CENTER,
+        file,
+        egui::FontId::monospace(theme.font_size_term_sm.value()),
+        theme.text_primary().to_egui(),
+    );
+    y + h
+}
+
+fn commits_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
+    section_head(ui, theme, area, "COMMITS (2)");
+    let mut y = area.top() + SECTION_H;
+    y = cm_row(
+        ui,
+        theme,
+        area,
+        y,
+        "0b0b9a9d",
+        &["HEAD", "main"],
+        "feat(egui-mesh): git-viewer new design",
+        "zilhak",
+        "2026-06-30 17:23",
+    );
+    cm_row(
+        ui,
+        theme,
+        area,
+        y,
+        "25b2908c",
+        &[],
+        "fix(build): mark script executable",
+        "zilhak",
+        "2026-06-30 16:10",
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cm_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    area: egui::Rect,
+    y: f32,
+    oid: &str,
+    refs: &[&str],
+    summary: &str,
+    author: &str,
+    time: &str,
+) -> f32 {
+    let pad_x = theme.spacing_md.value();
+    let h = 28.0;
+    let rect = egui::Rect::from_min_size(egui::pos2(area.left(), y), egui::vec2(area.width(), h));
+    let gap = theme.spacing_sm.value();
+    let mut left = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(egui::vec2(pad_x, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    left.spacing_mut().item_spacing.x = gap;
+    mono_label(
+        &mut left,
+        oid,
+        theme.font_size_caption.value(),
+        theme.accent_info(),
+    );
+    for r in refs {
+        tag(&mut left, theme, r, TagVariant::Info, false);
+    }
+    let left_end = left.min_rect().right();
+    let mut right = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(egui::vec2(pad_x, 0.0)))
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    right.spacing_mut().item_spacing.x = gap;
+    mono_label(
+        &mut right,
+        time,
+        theme.font_size_caption.value(),
+        theme.text_muted(),
+    );
+    right.label(
+        egui::RichText::new(author)
+            .size(theme.font_size_term_sm.value())
+            .color(theme.text_muted().to_egui()),
+    );
+    let right_start = right.min_rect().left();
+    let sx = left_end + gap;
+    let clip = egui::Rect::from_min_max(
+        egui::pos2(sx, rect.top()),
+        egui::pos2((right_start - gap).max(sx), rect.bottom()),
+    );
+    ui.painter().with_clip_rect(clip).text(
+        egui::pos2(sx, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        summary,
+        egui::FontId::proportional(theme.font_size_body.value()),
+        theme.text_primary().to_egui(),
+    );
+    y + h
+}
+
+fn diff_pane(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect) {
+    // toolbar: Back(ghost) + 파일 path.
+    let toolbar = egui::Rect::from_min_size(area.min, egui::vec2(area.width(), 32.0));
+    ui.painter()
+        .rect_filled(toolbar, 0.0, theme.bg_sidebar().to_egui());
+    hline(ui, theme, toolbar.left(), toolbar.right(), toolbar.bottom());
+    let pad = theme.spacing_sm.value();
+    let p = ui.painter();
+    p.text(
+        egui::pos2(toolbar.left() + pad, toolbar.center().y),
+        egui::Align2::LEFT_CENTER,
+        "‹ Back",
+        egui::FontId::proportional(theme.font_size_caption.value()),
+        theme.text_secondary().to_egui(),
+    );
+    p.text(
+        egui::pos2(
+            toolbar.left() + pad + theme.field_width_xs.value(),
+            toolbar.center().y,
+        ),
+        egui::Align2::LEFT_CENTER,
+        "src/render.rs",
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        theme.text_muted().to_egui(),
+    );
+    // well: bg-app + 라인들.
+    let well = egui::Rect::from_min_max(egui::pos2(area.left(), toolbar.bottom()), area.max);
+    ui.painter()
+        .rect_filled(well, 0.0, theme.bg_app().to_egui());
+    let mut ly = well.top() + theme.spacing_xs.value();
+    diff_line(
+        ui,
+        theme,
+        well,
+        &mut ly,
+        DiffKind::Hunk,
+        "",
+        "",
+        "@@ -1,4 +1,6 @@ fn draw",
+    );
+    diff_line(
+        ui,
+        theme,
+        well,
+        &mut ly,
+        DiffKind::Ctx,
+        "1",
+        "1",
+        "fn draw(ui) {",
+    );
+    diff_line(
+        ui,
+        theme,
+        well,
+        &mut ly,
+        DiffKind::Add,
+        "",
+        "2",
+        "let strip = section();",
+    );
+    diff_line(
+        ui,
+        theme,
+        well,
+        &mut ly,
+        DiffKind::Del,
+        "2",
+        "",
+        "let h = old_head();",
+    );
+    diff_line(
+        ui,
+        theme,
+        well,
+        &mut ly,
+        DiffKind::Ctx,
+        "3",
+        "3",
+        "vbox(children)",
+    );
+}
+
+enum DiffKind {
+    Hunk,
+    Ctx,
+    Add,
+    Del,
+}
+
+fn diff_line(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    well: egui::Rect,
+    ly: &mut f32,
+    kind: DiffKind,
+    old: &str,
+    new: &str,
+    text: &str,
+) {
+    let sz = theme.font_size_caption.value();
+    let h = (sz * 1.65).round();
+    let rect = egui::Rect::from_min_size(egui::pos2(well.left(), *ly), egui::vec2(well.width(), h));
+    let (fg, bg, sign) = match kind {
+        DiffKind::Hunk => (
+            theme.accent_info().to_egui(),
+            theme.accent_info().to_egui().gamma_multiply(0.09),
+            "",
+        ),
+        DiffKind::Add => (
+            theme.accent_success().to_egui(),
+            theme.accent_success().to_egui().gamma_multiply(0.10),
+            "+",
+        ),
+        DiffKind::Del => (
+            theme.accent_danger().to_egui(),
+            theme.accent_danger().to_egui().gamma_multiply(0.10),
+            "-",
+        ),
+        DiffKind::Ctx => (
+            theme.text_primary().to_egui(),
+            egui::Color32::TRANSPARENT,
+            "",
+        ),
+    };
+    if bg != egui::Color32::TRANSPARENT {
+        ui.painter().rect_filled(rect, 0.0, bg);
+    }
+    let p = ui.painter();
+    let cy = rect.center().y;
+    let disabled = theme.text_disabled().to_egui();
+    let mono = |s| egui::FontId::monospace(s);
+    p.text(
+        egui::pos2(rect.left() + 28.0, cy),
+        egui::Align2::RIGHT_CENTER,
+        old,
+        mono(sz),
+        disabled,
+    );
+    p.text(
+        egui::pos2(rect.left() + 60.0, cy),
+        egui::Align2::RIGHT_CENTER,
+        new,
+        mono(sz),
+        disabled,
+    );
+    p.text(
+        egui::pos2(rect.left() + 75.0, cy),
+        egui::Align2::CENTER_CENTER,
+        sign,
+        mono(sz),
+        fg,
+    );
+    p.text(
+        egui::pos2(rect.left() + 84.0, cy),
+        egui::Align2::LEFT_CENTER,
+        text,
+        mono(sz),
+        fg,
+    );
+    *ly += h;
+}
+
+// ── 공용 헬퍼 ──
+
+fn section_head(ui: &mut egui::Ui, theme: &Theme, area: egui::Rect, text: &str) {
+    let rect = egui::Rect::from_min_size(area.min, egui::vec2(area.width(), SECTION_H));
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+    hline(ui, theme, rect.left(), rect.right(), rect.bottom());
+    ui.painter().text(
+        egui::pos2(rect.left() + theme.spacing_md.value(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        text,
+        egui::FontId::monospace(theme.font_size_micro.value()),
+        theme.text_muted().to_egui(),
+    );
+}
+
+fn mono_label(
+    ui: &mut egui::Ui,
+    text: &str,
+    size: f32,
+    color: tasty_type_appearance::color::HexColor,
+) {
+    ui.label(
+        egui::RichText::new(text)
+            .font(egui::FontId::monospace(size))
+            .color(color.to_egui()),
+    );
+}
+
+fn hline(ui: &mut egui::Ui, theme: &Theme, x0: f32, x1: f32, y: f32) {
+    ui.painter().hline(
+        x0..=x1,
+        y,
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+}
+
+fn vline(ui: &mut egui::Ui, theme: &Theme, x: f32, y0: f32, y1: f32) {
+    ui.painter().vline(
+        x,
+        y0..=y1,
+        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
 }
