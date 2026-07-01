@@ -185,6 +185,7 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .iter()
                 .map(|t| {
                     json!({
+                        "cwd": t.cwd.to_string_lossy(),
                         "root": t.root.to_string_lossy(),
                         "view_mode": t.view_mode.as_str(),
                         "sort_column": t.sort_column.as_str(),
@@ -197,14 +198,21 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
     });
 }
 
-/// snapshot JSON 한 항목 → `ExplorerTab` (히스토리 제외, view_mode/정렬 복원).
+/// snapshot JSON 한 항목 → `ExplorerTab` (히스토리 제외, cwd/current/view_mode/정렬 복원).
 fn explorer_tab_from_json(v: &Value) -> ExplorerTab {
-    let root = v
+    // current(현재 폴더). 구 스냅샷은 `root` 만 있다.
+    let current = v
         .get("root")
         .and_then(|x| x.as_str())
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("."));
-    let mut tab = ExplorerTab::new(root);
+    // cwd(고정 루트). 구 스냅샷 호환: 키 없으면 current 로 cwd·current 동일 설정.
+    let cwd = v
+        .get("cwd")
+        .and_then(|x| x.as_str())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| current.clone());
+    let mut tab = ExplorerTab::with_cwd(cwd, current);
     if let Some(m) = v.get("view_mode").and_then(|x| x.as_str()) {
         tab.view_mode = ExplorerViewMode::from_str(m);
     }
@@ -331,8 +339,9 @@ mod tests {
         let s = (def.create)(5, None, &json!({"path": "/tmp/exp"})).unwrap();
         assert_eq!(s.kind(), "explorer");
         assert_eq!(s.surface_id(), Some(5));
-        // snapshot → restore 라운드트립 (탭 root + 활성 인덱스 보존).
+        // snapshot → restore 라운드트립 (탭 cwd/current + 활성 인덱스 보존).
         let snap = (def.snapshot)(s.as_ref()).unwrap();
+        assert_eq!(snap["tabs"][0]["cwd"], "/tmp/exp");
         assert_eq!(snap["tabs"][0]["root"], "/tmp/exp");
         let restored = (def.restore)(5, &snap).unwrap();
         assert_eq!(restored.kind(), "explorer");
@@ -341,6 +350,25 @@ mod tests {
             .downcast_ref::<crate::model::ExplorerPanel>()
             .unwrap();
         assert_eq!(ex.current_root().to_string_lossy(), "/tmp/exp");
+        assert_eq!(ex.cwd().to_string_lossy(), "/tmp/exp");
+    }
+
+    #[test]
+    fn explorer_restore_old_snapshot_without_cwd() {
+        // 구 스냅샷 호환: `cwd` 키가 없으면 `root` 값으로 cwd·current 를 동일 설정.
+        let old = json!({
+            "tabs": [{"root": "/x", "view_mode": "detail", "sort_column": "name", "sort_dir": "asc"}],
+            "active": 0,
+        });
+        let reg = registry_with_builtins();
+        let def = reg.get("explorer").unwrap();
+        let restored = (def.restore)(9, &old).unwrap();
+        let ex = restored
+            .as_any()
+            .downcast_ref::<crate::model::ExplorerPanel>()
+            .unwrap();
+        assert_eq!(ex.cwd().to_string_lossy(), "/x");
+        assert_eq!(ex.current_root().to_string_lossy(), "/x");
     }
 
     #[test]

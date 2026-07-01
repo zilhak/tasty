@@ -115,11 +115,19 @@ impl SortDir {
     }
 }
 
-/// explorer 내부 탭 하나 — surface-local (결정 3). root 경로 + 뒤로/앞으로 히스토리 +
-/// 표시 모드/정렬. 선택·스크롤 같은 무거운 상태는 `ExplorerView` 에 둔다.
+/// explorer 내부 탭 하나 — surface-local (결정 3).
+///
+/// **cwd(고정 루트) ↔ current(현재 폴더) 분리**: `cwd` 는 explorer 를 연 프로젝트 루트로
+/// 좌측 트리·스폰 cwd 의 기준이며 내비게이션에 불변. `root`(current) 는 우측 목록·상단
+/// breadcrumb 이 따라가는 탐색 폴더로, back/forward/go_up 이 이것만 움직인다. current 는
+/// cwd 하위로 제한되지 않고 파일시스템 어디로든 자유 이동할 수 있다(결정1).
+/// 선택·스크롤 같은 무거운 상태는 `ExplorerView` 에 둔다.
 #[derive(Clone, Debug)]
 pub struct ExplorerTab {
-    /// 현재 표시 중인 디렉토리.
+    /// 고정 루트(cwd) — explorer 를 연 프로젝트 폴더. 좌측 트리 루트 + 스폰 cwd 의 기준.
+    /// `set_cwd` 이외에는 불변.
+    pub cwd: PathBuf,
+    /// 현재 표시 중인 디렉토리(current). 우측 목록·breadcrumb 이 따라간다.
     pub root: PathBuf,
     /// 뒤로 가기 히스토리 (가장 최근이 끝).
     back: Vec<PathBuf>,
@@ -134,8 +142,10 @@ pub struct ExplorerTab {
 }
 
 impl ExplorerTab {
+    /// cwd = current = `root` 로 초기화. (프로젝트를 연 직후 두 위치가 같다.)
     pub fn new(root: PathBuf) -> Self {
         Self {
+            cwd: root.clone(),
             root,
             back: Vec::new(),
             forward: Vec::new(),
@@ -143,6 +153,38 @@ impl ExplorerTab {
             sort_column: SortColumn::Name,
             sort_dir: SortDir::Asc,
         }
+    }
+
+    /// 명시적으로 cwd 와 current 를 따로 지정해 복원한다(snapshot restore 용).
+    pub fn with_cwd(cwd: PathBuf, current: PathBuf) -> Self {
+        Self {
+            cwd,
+            root: current,
+            back: Vec::new(),
+            forward: Vec::new(),
+            view_mode: ExplorerViewMode::Detail,
+            sort_column: SortColumn::Name,
+            sort_dir: SortDir::Asc,
+        }
+    }
+
+    /// 고정 루트(cwd).
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    /// 현재 폴더(current).
+    pub fn current(&self) -> &Path {
+        &self.root
+    }
+
+    /// cwd 를 `folder` 로 재설정. current 도 folder 로 맞추고 히스토리를 비운다.
+    /// (explorer-03 "이 폴더로 루트 설정" 이 사용.)
+    pub fn set_cwd(&mut self, folder: PathBuf) {
+        self.cwd = folder.clone();
+        self.root = folder;
+        self.back.clear();
+        self.forward.clear();
     }
 
     /// 새 디렉토리로 이동. 현재 root 를 back 에 push 하고 forward 를 비운다.
@@ -238,10 +280,10 @@ impl ExplorerPanel {
         &mut self.tabs[idx]
     }
 
-    /// 현재 활성 탭의 root 를 복제해 새 내부 탭을 추가하고 활성화한다.
+    /// 현재 활성 탭의 cwd 를 복제해 새 내부 탭을 추가하고 활성화한다(current = cwd).
     pub fn add_tab(&mut self) {
-        let root = self.active_tab().root.clone();
-        self.tabs.push(ExplorerTab::new(root));
+        let cwd = self.active_tab().cwd.clone();
+        self.tabs.push(ExplorerTab::new(cwd));
         self.active = self.tabs.len() - 1;
     }
 
@@ -258,9 +300,14 @@ impl ExplorerPanel {
         }
     }
 
-    /// 현재 활성 탭의 root 경로.
+    /// 현재 활성 탭의 current(현재 폴더) 경로. content/breadcrumb 용.
     pub fn current_root(&self) -> &Path {
         &self.active_tab().root
+    }
+
+    /// 현재 활성 탭의 cwd(고정 루트). 좌측 트리 루트 + 스폰 cwd 용.
+    pub fn cwd(&self) -> &Path {
+        &self.active_tab().cwd
     }
 }
 
@@ -277,13 +324,16 @@ impl Surface for ExplorerPanel {
         Some(self.id)
     }
     fn display_name(&self) -> String {
-        let root = self.current_root();
-        root.file_name()
+        // surface 표시명은 안정적인 프로젝트 정체성(cwd) 기준. 현재 폴더는 content/
+        // breadcrumb 이 보여주므로 표시명은 고정 cwd 이름으로 둔다.
+        let cwd = self.cwd();
+        cwd.file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| root.to_string_lossy().to_string())
+            .unwrap_or_else(|| cwd.to_string_lossy().to_string())
     }
     fn source_cwd(&self) -> Option<PathBuf> {
-        Some(self.current_root().to_path_buf())
+        // 스폰 cwd 는 고정 프로젝트 루트(current 서브폴더가 아님) — 결정2.
+        Some(self.cwd().to_path_buf())
     }
 }
 
@@ -336,6 +386,49 @@ mod tests {
         p.close_tab(1);
         assert_eq!(p.active, 0);
         assert_eq!(p.tabs.len(), 1);
+    }
+
+    #[test]
+    fn navigation_moves_current_but_cwd_is_fixed() {
+        let mut t = ExplorerTab::new(PathBuf::from("/proj"));
+        assert_eq!(t.cwd(), Path::new("/proj"));
+        assert_eq!(t.current(), Path::new("/proj"));
+        t.navigate_to(PathBuf::from("/proj/sub"));
+        assert_eq!(t.cwd(), Path::new("/proj")); // cwd 불변
+        assert_eq!(t.current(), Path::new("/proj/sub")); // current 이동
+        // 자유 이동: cwd 바깥(상위)도 허용
+        t.navigate_to(PathBuf::from("/"));
+        assert_eq!(t.cwd(), Path::new("/proj")); // 여전히 고정
+        assert_eq!(t.current(), Path::new("/"));
+    }
+
+    #[test]
+    fn set_cwd_resets_both_and_clears_history() {
+        let mut t = ExplorerTab::new(PathBuf::from("/proj"));
+        t.navigate_to(PathBuf::from("/proj/sub"));
+        assert!(t.can_go_back());
+        t.set_cwd(PathBuf::from("/other"));
+        assert_eq!(t.cwd(), Path::new("/other"));
+        assert_eq!(t.current(), Path::new("/other"));
+        assert!(!t.can_go_back());
+        assert!(!t.can_go_forward());
+    }
+
+    #[test]
+    fn source_cwd_returns_fixed_cwd() {
+        let mut p = ExplorerPanel::new(1, PathBuf::from("/proj"));
+        p.active_tab_mut().navigate_to(PathBuf::from("/proj/sub"));
+        assert_eq!(p.source_cwd(), Some(PathBuf::from("/proj")));
+        assert_eq!(p.current_root(), Path::new("/proj/sub"));
+    }
+
+    #[test]
+    fn add_tab_clones_cwd_and_resets_current() {
+        let mut p = ExplorerPanel::new(1, PathBuf::from("/proj"));
+        p.active_tab_mut().navigate_to(PathBuf::from("/proj/sub"));
+        p.add_tab();
+        assert_eq!(p.cwd(), Path::new("/proj")); // cwd 복제
+        assert_eq!(p.current_root(), Path::new("/proj")); // current = cwd
     }
 
     #[test]

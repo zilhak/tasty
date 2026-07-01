@@ -183,11 +183,12 @@ fn tab_strip(
     let mut x = rect.min.x;
     for (i, tab) in panel.tabs.iter().enumerate() {
         let is_active = i == active;
+        // 탭 라벨은 고정 cwd(프로젝트) 이름 — 현재 폴더는 breadcrumb 이 보여준다.
         let label = tab
-            .root
+            .cwd
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| tab.root.to_string_lossy().to_string());
+            .unwrap_or_else(|| tab.cwd.to_string_lossy().to_string());
         let galley =
             ui.fonts(|f| f.layout_no_wrap(label.clone(), font.clone(), egui::Color32::WHITE));
         let tab_w = pad_x + galley.size().x + gap + icon_xs + pad_x;
@@ -470,8 +471,8 @@ fn sidebar(
             }
             // 섹션 캡션.
             sidebar_caption(ui, theme, t("explorer.sidebar.tree"));
-            let root = panel.current_root().to_path_buf();
-            // 트리 루트 노드 (현재 root) + 펼쳐진 하위.
+            // 트리 루트는 고정 cwd(프로젝트 루트) — current 가 폴더를 오가도 불변.
+            let root = panel.cwd().to_path_buf();
             tree_node(ui, theme, view, &root, 0, action);
         });
 }
@@ -800,6 +801,24 @@ fn handle_entry_interaction(
     }
 }
 
+/// current 에 부모가 있으면(파일시스템 루트 아님) `..` 상위 이동 대상 경로.
+fn parent_nav_target(current: &Path) -> Option<PathBuf> {
+    current.parent().map(|p| p.to_path_buf())
+}
+
+/// 합성 `..` 엔트리. **렌더 전용** — `view.entries`/선택/상태줄/컨텍스트 메뉴에는 절대
+/// 넣지 않는다. 각 뷰가 목록 앞에 특수 행으로 그리고 `Navigate(parent)` 만 emit 한다.
+fn dotdot_entry(parent: PathBuf) -> DirEntryInfo {
+    DirEntryInfo {
+        path: parent,
+        name: "..".to_string(),
+        is_dir: true,
+        size: 0,
+        modified: None,
+        ext: String::new(),
+    }
+}
+
 fn grid_view(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -811,9 +830,18 @@ fn grid_view(
 ) {
     ui.add_space(theme.spacing_md.value());
     let entries = view.entries.clone();
+    let parent = parent_nav_target(root);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing =
             egui::vec2(theme.spacing_md.value(), theme.spacing_md.value());
+        // 목록 최상단 `..` 특수 셀 (파일시스템 루트 아닐 때).
+        if let Some(p) = &parent {
+            let dd = dotdot_entry(p.clone());
+            let resp = grid_cell(ui, theme, &dd, false, false, font);
+            if resp.double_clicked() && action.is_none() {
+                *action = Some(ExplorerAction::Navigate(p.clone()));
+            }
+        }
         for e in &entries {
             let selected = view.selected.contains(&e.path);
             let cut = cut_pending.contains(&e.path);
@@ -918,6 +946,25 @@ fn list_view(
 ) {
     ui.spacing_mut().item_spacing.y = 0.0;
     let entries = view.entries.clone();
+    // 목록 최상단 `..` 특수 행 (파일시스템 루트 아닐 때).
+    if let Some(p) = parent_nav_target(root) {
+        let up = icons::FOLDER;
+        let resp = tree_row(
+            ui,
+            theme,
+            0,
+            false,
+            false,
+            Some(&|ui, rect, c| up.image(rect.height(), c).paint_at(ui, rect)),
+            "..",
+            None,
+            false,
+            true,
+        );
+        if resp.double_clicked() && action.is_none() {
+            *action = Some(ExplorerAction::Navigate(p));
+        }
+    }
     for e in &entries {
         let icon = if e.is_dir { icons::FOLDER } else { icons::FILE };
         let selected = view.selected.contains(&e.path);
@@ -1003,7 +1050,13 @@ fn detail_view(
         SortDir::Asc => TableSortDir::Asc,
         SortDir::Desc => TableSortDir::Desc,
     };
-    let entries = view.entries.clone();
+    // `..` 는 렌더 전용 로컬 행으로만 넣는다(`view.entries` 불변). 목록 최상단.
+    let parent = parent_nav_target(root);
+    let mut rows: Vec<DirEntryInfo> = Vec::with_capacity(view.entries.len() + 1);
+    if let Some(p) = &parent {
+        rows.push(dotdot_entry(p.clone()));
+    }
+    rows.extend(view.entries.iter().cloned());
     let selected: HashSet<PathBuf> = view.selected.clone();
     let cut: HashSet<PathBuf> = cut_pending.clone();
     let out = Table::new(columns)
@@ -1014,8 +1067,9 @@ fn detail_view(
         .show(
             ui,
             theme,
-            &entries,
-            |row: &DirEntryInfo| selected.contains(&row.path),
+            &rows,
+            // `..`(name == "..", read_dir 은 이 이름을 반환하지 않음) 는 선택 대상 아님.
+            |row: &DirEntryInfo| row.name != ".." && selected.contains(&row.path),
             |ui, th, row, col| {
                 // cut-pending 행은 전경(아이콘+텍스트)을 opacity_cut(50%) 로 디밍.
                 // Table 이 그리는 선택/hover 배경은 그대로 유지.
@@ -1052,10 +1106,15 @@ fn detail_view(
                         });
                     }
                     _ => {
-                        let text = match col {
-                            1 => human_size(row.is_dir, row.size),
-                            2 => fmt_modified(row.modified),
-                            _ => type_label(row),
+                        // `..` 행은 이름 컬럼만 채우고 Size/Date/Type 은 비운다.
+                        let text = if row.name == ".." {
+                            String::new()
+                        } else {
+                            match col {
+                                1 => human_size(row.is_dir, row.size),
+                                2 => fmt_modified(row.modified),
+                                _ => type_label(row),
+                            }
                         };
                         ui.label(
                             egui::RichText::new(text)
@@ -1073,7 +1132,9 @@ fn detail_view(
         *action = Some(ExplorerAction::SetSort(key));
     }
     if let Some(i) = out.secondary_clicked_row
-        && let Some(e) = entries.get(i)
+        && let Some(e) = rows.get(i)
+        && e.name != ".."
+    // `..` 는 컨텍스트 메뉴 대상 아님
     {
         let pos = ui
             .input(|inp| inp.pointer.interact_pos())
@@ -1081,13 +1142,18 @@ fn detail_view(
         emit_entry_context(view, e, pos, root, action);
     }
     if let Some(i) = out.clicked_row
-        && let Some(e) = entries.get(i)
+        && let Some(e) = rows.get(i)
     {
         let dbl = ui.input(|inp| {
             inp.pointer
                 .button_double_clicked(egui::PointerButton::Primary)
         });
-        if dbl {
+        if e.name == ".." {
+            // `..` 는 상위 이동만 (선택/열기 대상 아님).
+            if dbl && action.is_none() {
+                *action = Some(ExplorerAction::Navigate(e.path.clone()));
+            }
+        } else if dbl {
             if e.is_dir {
                 if action.is_none() {
                     *action = Some(ExplorerAction::Navigate(e.path.clone()));
