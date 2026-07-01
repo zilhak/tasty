@@ -3,10 +3,11 @@
 //! 레일의 `---` 카테고리 버튼을 누르면 버튼 **우측**에 앵커드로 뜬다(Tools 버튼과 동일
 //! 앵커 패턴). 맨 위는 **클릭 불가한 카테고리 이름 헤더**(count 표기), 그 아래 액션:
 //! `Add workspace`(해당 카테고리 소속 생성) · `Collapse/Expand`(접힘 토글). 비-normal
-//! 카테고리의 `Rename`/`Delete` 는 다이얼로그(별도 TODO)와 함께 배선된다.
+//! 카테고리는 separator + `Rename`(→ rename 다이얼로그) / `Delete`(danger, → 삭제 confirm).
 //!
 //! `state.dialogs.rail_category_popup` 가 대상 카테고리 id 를 들고 있다. 없으면 즉시 닫힘.
 
+use crate::adapters::ui::category_actions;
 use crate::adapters::ui::icons;
 use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
@@ -28,6 +29,8 @@ struct Target {
     label: String,
     count: usize,
     collapsed: bool,
+    /// normal(예약) 여부 — true 면 Rename/Delete 를 노출하지 않는다(additive-only).
+    is_reserved: bool,
 }
 
 /// `state.dialogs.rail_category_popup` 의 대상 카테고리를 engine 에서 해석.
@@ -44,11 +47,19 @@ fn resolve_target(state: &AppState, engine: &crate::core::CoreState) -> Option<T
         label,
         count,
         collapsed: cat.collapsed,
+        is_reserved: cat.is_normal(),
     })
 }
 
-/// 아이콘 + 라벨 메뉴 행 1개. hover 시 overlay-hover 배경. 클릭 여부 반환.
-fn menu_row(ui: &mut egui::Ui, th: &crate::theme::Theme, icon: icons::Icon, label: &str) -> bool {
+/// 아이콘 + 라벨 메뉴 행 1개. hover 시 overlay-hover 배경. `danger` 면 라벨/아이콘을
+/// accent-danger 로 그린다(삭제). 클릭 여부 반환.
+fn menu_row(
+    ui: &mut egui::Ui,
+    th: &crate::theme::Theme,
+    icon: icons::Icon,
+    label: &str,
+    danger: bool,
+) -> bool {
     let width = ui.available_width();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, ITEM_HEIGHT), egui::Sense::click());
     let radius = th.corner_radius.value();
@@ -56,7 +67,9 @@ fn menu_row(ui: &mut egui::Ui, th: &crate::theme::Theme, icon: icons::Icon, labe
         ui.painter()
             .rect_filled(rect, radius, th.hover_overlay.to_egui_premultiplied());
     }
-    let color: egui::Color32 = if resp.hovered() {
+    let color: egui::Color32 = if danger {
+        th.accent_danger().into()
+    } else if resp.hovered() {
         th.text.into()
     } else {
         th.subtext0.into()
@@ -124,7 +137,13 @@ pub fn draw_rail_category_popup(
     ui.add_space(th.spacing_xs.value());
 
     // ── Add workspace — 이 카테고리 소속으로 새 워크스페이스 생성. ──
-    if menu_row(ui, &th, icons::PLUS, t("workspace_category.add_workspace")) {
+    if menu_row(
+        ui,
+        &th,
+        icons::PLUS,
+        t("workspace_category.add_workspace"),
+        false,
+    ) {
         state.dispatch_intent(
             Intent::NewWorkspace {
                 kind: None,
@@ -142,23 +161,66 @@ pub fn draw_rail_category_popup(
     } else {
         (icons::CHEVRON_DOWN, t("workspace_category.collapse"))
     };
-    if menu_row(ui, &th, collapse_icon, collapse_label) {
+    if menu_row(ui, &th, collapse_icon, collapse_label, false) {
         engine.toggle_category_collapsed(cat_id);
         engine.mark_layout_dirty();
         return PopupAction::Close;
     }
 
+    // ── 비-normal 카테고리: separator + Rename / Delete(danger). ──
+    if !target.is_reserved {
+        // 1px separator 라인.
+        let width = ui.available_width();
+        ui.add_space(th.spacing_xs.value());
+        let (sep_rect, _) = ui.allocate_exact_size(
+            egui::vec2(width, th.border_width.value()),
+            egui::Sense::hover(),
+        );
+        ui.painter()
+            .rect_filled(sep_rect, 0.0, th.separator.to_egui_premultiplied());
+        ui.add_space(th.spacing_xs.value());
+
+        if menu_row(
+            ui,
+            &th,
+            icons::EDIT,
+            t("workspace_category.rename_category"),
+            false,
+        ) {
+            category_actions::open_rename_category_dialog(state, engine, cat_id);
+            return PopupAction::Close;
+        }
+        if menu_row(
+            ui,
+            &th,
+            icons::TRASH,
+            t("workspace_category.delete_category"),
+            true,
+        ) {
+            category_actions::open_delete_category_confirm(state, cat_id);
+            return PopupAction::Close;
+        }
+    }
+
     PopupAction::None
 }
 
-/// PopupDef.sizer — 헤더 + 행 수로 height 계산. 04 시점 행 = Add workspace + Collapse
-/// 2개(Rename/Delete 는 다이얼로그 TODO 와 함께 추가 예정).
-pub fn rail_category_sizer(_state: &AppState, _engine: &crate::core::CoreState) -> egui::Vec2 {
-    let rows = 2u32;
-    let content_h = HEADER_HEIGHT
-        + theme::theme().spacing_xs.value()
+/// PopupDef.sizer — 헤더 + 행 수로 height 계산. normal 은 Add/Collapse 2행, 비-normal 은
+/// separator + Rename/Delete 를 더한 4행.
+pub fn rail_category_sizer(state: &AppState, engine: &crate::core::CoreState) -> egui::Vec2 {
+    let th = theme::theme();
+    let reserved = resolve_target(state, engine)
+        .map(|t| t.is_reserved)
+        .unwrap_or(true);
+    let rows = if reserved { 2u32 } else { 4u32 };
+    let mut content_h = HEADER_HEIGHT
+        + th.spacing_xs.value()
         + rows as f32 * ITEM_HEIGHT
-        + (rows.saturating_sub(1)) as f32 * theme::theme().spacing_xs.value();
+        + (rows.saturating_sub(1)) as f32 * th.spacing_xs.value();
+    if !reserved {
+        // separator(border_width) + 상하 spacing_xs.
+        content_h += th.border_width.value() + th.spacing_xs.value() * 2.0;
+    }
     egui::vec2(POPUP_WIDTH, popup::content_margin() * 2.0 + content_h + 1.0)
 }
 

@@ -10,6 +10,7 @@ mod tab_bar;
 pub(crate) mod titlebar;
 
 pub mod banner;
+pub(crate) mod category_actions;
 pub(crate) mod dialog;
 pub(crate) mod drop_overlay;
 pub mod font_registry;

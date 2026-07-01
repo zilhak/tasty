@@ -493,6 +493,15 @@ pub enum PendingNativeMenu {
     },
     /// "New workspace" 버튼 우클릭 (full/collapsed sidebar 공통): 프리셋으로 새 워크스페이스 생성
     NewWorkspaceButton { x: f32, y: f32 },
+    /// 확장 사이드바 카테고리 헤더 우클릭 (토글 on): 비-normal 은 이름변경/삭제 +
+    /// 새 카테고리, normal 은 새 카테고리만(additive).
+    WorkspaceCategoryHeader {
+        cat_id: crate::model::WorkspaceCategoryId,
+        x: f32,
+        y: f32,
+    },
+    /// 확장 사이드바 빈 배경 우클릭 (토글 on): 새 카테고리.
+    SidebarBackground { x: f32, y: f32 },
     /// 탭 "+" 버튼 우클릭: 프리셋으로 탭/페인 생성
     NewTabButton { pane_id: u32, x: f32, y: f32 },
 }

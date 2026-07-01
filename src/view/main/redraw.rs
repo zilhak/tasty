@@ -665,7 +665,7 @@ impl MainView {
                     MenuItem::disabled(4, crate::i18n::t("context_menu.move_down"))
                 };
 
-                let items = [
+                let mut items = vec![
                     MenuItem::new(1, crate::i18n::t("context_menu.rename_title")),
                     MenuItem::new(2, crate::i18n::t("context_menu.rename_subtitle")),
                     MenuItem::separator(),
@@ -676,6 +676,39 @@ impl MainView {
                     MenuItem::separator(),
                     MenuItem::new(6, crate::i18n::t("context_menu.close_workspace")),
                 ];
+
+                // 카테고리 토글 on — "카테고리로 이동"(현재 소속 제외 평면 나열, 선택지 B)
+                // + "새 카테고리". move_targets[i] = (cat_id) 로 결과 id(200+i) 매핑.
+                let mut move_targets: Vec<crate::model::WorkspaceCategoryId> = Vec::new();
+                if engine.settings.general.workspace_categories_enabled
+                    && ws_idx < engine.workspaces.len()
+                {
+                    let cur_cat = engine.workspaces[ws_idx].category;
+                    items.push(MenuItem::separator());
+                    // 비클릭 헤더(disabled) + 대상 카테고리 항목들.
+                    items.push(MenuItem::disabled(
+                        0,
+                        crate::i18n::t("workspace_category.move_to_category"),
+                    ));
+                    for cat in engine.categories() {
+                        if cat.id == cur_cat {
+                            continue;
+                        }
+                        let label = if cat.is_normal() {
+                            crate::i18n::t("sidebar.workspaces_heading").to_string()
+                        } else {
+                            cat.name.clone()
+                        };
+                        items.push(MenuItem::new(200 + move_targets.len() as u32, label));
+                        move_targets.push(cat.id);
+                    }
+                    items.push(MenuItem::separator());
+                    items.push(MenuItem::new(
+                        100,
+                        crate::i18n::t("workspace_category.new_category"),
+                    ));
+                }
+
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 if ws_idx < engine.workspaces.len() {
@@ -740,8 +773,89 @@ impl MainView {
                                 self.request_close();
                             }
                         }
+                        Some(100) => {
+                            // 새 카테고리 생성 다이얼로그.
+                            crate::adapters::ui::category_actions::open_new_category_dialog(
+                                &mut self.state,
+                            );
+                        }
+                        Some(id) if id >= 200 => {
+                            // 카테고리로 이동 — move_targets[id-200] 로 소속 변경.
+                            if let Some(&cat_id) = move_targets.get((id - 200) as usize) {
+                                let ws_id = engine.workspaces[ws_idx].id;
+                                if let Err(e) = engine.set_workspace_category(ws_id, cat_id) {
+                                    tracing::warn!("set_workspace_category failed: {e:?}");
+                                }
+                                engine.mark_layout_dirty();
+                            }
+                        }
                         _ => {}
                     }
+                }
+                self.mark_dirty();
+            }
+            PendingNativeMenu::WorkspaceCategoryHeader { cat_id, x, y } => {
+                // 카테고리 헤더 우클릭 — 비-normal: 이름변경/삭제 + 새 카테고리,
+                // normal: 새 카테고리만(additive). 토글 off 면 애초에 라우팅되지 않음.
+                let is_normal = engine
+                    .categories()
+                    .iter()
+                    .find(|c| c.id == cat_id)
+                    .map(|c| c.is_normal())
+                    .unwrap_or(true);
+                let mut items = Vec::new();
+                if !is_normal {
+                    items.push(MenuItem::new(
+                        1,
+                        crate::i18n::t("workspace_category.rename_category"),
+                    ));
+                    items.push(MenuItem::new(
+                        2,
+                        crate::i18n::t("workspace_category.delete_category"),
+                    ));
+                    items.push(MenuItem::separator());
+                }
+                items.push(MenuItem::new(
+                    100,
+                    crate::i18n::t("workspace_category.new_category"),
+                ));
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                match result {
+                    Some(1) => {
+                        crate::adapters::ui::category_actions::open_rename_category_dialog(
+                            &mut self.state,
+                            engine,
+                            cat_id,
+                        );
+                    }
+                    Some(2) => {
+                        crate::adapters::ui::category_actions::open_delete_category_confirm(
+                            &mut self.state,
+                            cat_id,
+                        );
+                    }
+                    Some(100) => {
+                        crate::adapters::ui::category_actions::open_new_category_dialog(
+                            &mut self.state,
+                        );
+                    }
+                    _ => {}
+                }
+                self.mark_dirty();
+            }
+            PendingNativeMenu::SidebarBackground { x, y } => {
+                // 빈 배경 우클릭 — 새 카테고리.
+                let items = [MenuItem::new(
+                    100,
+                    crate::i18n::t("workspace_category.new_category"),
+                )];
+                let result =
+                    show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
+                if let Some(100) = result {
+                    crate::adapters::ui::category_actions::open_new_category_dialog(
+                        &mut self.state,
+                    );
                 }
                 self.mark_dirty();
             }

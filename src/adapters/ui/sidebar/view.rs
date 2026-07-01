@@ -39,8 +39,6 @@ pub struct CategorySectionView {
     pub id: crate::model::WorkspaceCategoryId,
     /// 표시 라벨 — normal(예약) 은 "워크스페이스" heading, 그 외 카테고리 이름.
     pub label: String,
-    /// normal(예약) 카테고리 여부 — rename/delete 불가, 추가 액션만.
-    pub is_reserved: bool,
     pub collapsed: bool,
     /// (전역 인덱스, 행 뷰) 목록.
     pub entries: Vec<(usize, WorkspaceEntryView)>,
@@ -121,6 +119,17 @@ pub enum SidebarFullAction {
     },
     /// 카테고리 헤더 클릭 — 접힘/펼침 토글.
     CategoryHeaderToggle(crate::model::WorkspaceCategoryId),
+    /// 카테고리 헤더 우클릭 — 카테고리 컨텍스트 메뉴(이름변경/삭제/새 카테고리).
+    CategoryHeaderContextMenu {
+        cat_id: crate::model::WorkspaceCategoryId,
+        x: f32,
+        y: f32,
+    },
+    /// 사이드바 빈 배경 우클릭 — 새 카테고리.
+    BackgroundContextMenu {
+        x: f32,
+        y: f32,
+    },
 }
 
 /// Collapsed sidebar view 가 보고하는 사용자 의도.
@@ -277,8 +286,16 @@ pub fn draw_full_sidebar_view(
                 // 그룹 렌더(토글 on) — 카테고리별 헤더(chevron) + 소속 행. 접힘/빈
                 // 카테고리는 헤더만. normal 은 항상 맨 위(sections 순서 = 표시 순서).
                 for section in sections {
-                    if draw_category_header(ui, th, &section.label, section.collapsed) {
+                    let header = draw_category_header(ui, th, &section.label, section.collapsed);
+                    if header.toggled {
                         actions.push(SidebarFullAction::CategoryHeaderToggle(section.id));
+                    }
+                    if let Some(pos) = header.context {
+                        actions.push(SidebarFullAction::CategoryHeaderContextMenu {
+                            cat_id: section.id,
+                            x: pos.x,
+                            y: pos.y,
+                        });
                     }
                     if !section.collapsed && !section.entries.is_empty() {
                         // 목록 블록 상단 보더.
@@ -397,6 +414,23 @@ pub fn draw_full_sidebar_view(
                 );
             }
             ui.add_space(4.0);
+
+            // 그룹 모드 한정 — 목록 아래 빈 배경 우클릭 → 새 카테고리 (디자인
+            // background → New category). 남은 스크롤 영역 전체를 우클릭 감지 영역으로.
+            if props.categories.is_some() {
+                let remaining = ui.available_size_before_wrap();
+                if remaining.y > 1.0 {
+                    let (_bg_rect, bg_resp) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), remaining.y),
+                        egui::Sense::click(),
+                    );
+                    if bg_resp.secondary_clicked() {
+                        let pos = bg_resp.interact_pointer_pos().unwrap_or_default();
+                        actions
+                            .push(SidebarFullAction::BackgroundContextMenu { x: pos.x, y: pos.y });
+                    }
+                }
+            }
         });
 
     actions
@@ -665,12 +699,23 @@ fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
     ui.painter().galley(pos, galley, th.subtext0.into());
 }
 
+/// 카테고리 헤더 상호작용 결과 — 좌클릭(접힘 토글) / 우클릭(컨텍스트 메뉴 좌표).
+struct HeaderInteraction {
+    toggled: bool,
+    context: Option<egui::Pos2>,
+}
+
 /// ui_kit 카테고리 헤더 (chrome.jsx `CategoryHeader` 전사) — chevron + 대문자 캡스
 /// 라벨. 접힘 시 chevron 우향(▶), 펼침 시 하향(▼). hover 시 overlay-hover 배경.
-/// 클릭(접힘 토글) 여부 반환. 라벨 스타일은 `draw_section_heading` 과 동일(모노 캡스,
-/// muted) 하고 좌측에 chevron 만 더한다. 디자인 padding: top=space-md, 좌우=space-sm,
-/// bottom=space-xs.
-fn draw_category_header(ui: &mut egui::Ui, th: &Theme, label: &str, collapsed: bool) -> bool {
+/// 좌클릭=접힘 토글, 우클릭=컨텍스트 메뉴 좌표. 라벨 스타일은 `draw_section_heading`
+/// 과 동일(모노 캡스, muted) 하고 좌측에 chevron 만 더한다. 디자인 padding:
+/// top=space-md, 좌우=space-sm, bottom=space-xs.
+fn draw_category_header(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    label: &str,
+    collapsed: bool,
+) -> HeaderInteraction {
     let pad_top = th.spacing_md.value();
     let pad_bottom = th.spacing_xs.value();
     let pad_left = th.spacing_sm.value();
@@ -715,7 +760,13 @@ fn draw_category_header(ui: &mut egui::Ui, th: &Theme, label: &str, collapsed: b
     let galley = ui.painter().layout_job(job);
     let pos = egui::pos2(text_x, row_center_y - galley.size().y / 2.0);
     ui.painter().galley(pos, galley, th.subtext0.into());
-    resp.clicked()
+    let context = resp
+        .secondary_clicked()
+        .then(|| resp.interact_pointer_pos().unwrap_or_default());
+    HeaderInteraction {
+        toggled: resp.clicked(),
+        context,
+    }
 }
 
 /// Full 사이드바 워크스페이스 행 1개 — card 렌더 + 클릭/우클릭/드래그 action 을
@@ -1266,21 +1317,18 @@ mod tests {
             CategorySectionView {
                 id: 0,
                 label: "WORKSPACES".into(),
-                is_reserved: true,
                 collapsed: false,
                 entries: vec![(0, mock_ws("a", true)), (1, mock_ws("b", false))],
             },
             CategorySectionView {
                 id: 1,
                 label: "Services".into(),
-                is_reserved: false,
                 collapsed: true,
                 entries: vec![(2, mock_ws("c", false))],
             },
             CategorySectionView {
                 id: 2,
                 label: "Archived".into(),
-                is_reserved: false,
                 collapsed: false,
                 entries: vec![],
             },
@@ -1407,21 +1455,18 @@ mod tests {
             CategorySectionView {
                 id: 0,
                 label: "WORKSPACES".into(),
-                is_reserved: true,
                 collapsed: false,
                 entries: vec![(0, mock_ws("a", true)), (1, mock_ws("b", false))],
             },
             CategorySectionView {
                 id: 1,
                 label: "Services".into(),
-                is_reserved: false,
                 collapsed: true,
                 entries: vec![(2, mock_ws("c", false))],
             },
             CategorySectionView {
                 id: 2,
                 label: "Archived".into(),
-                is_reserved: false,
                 collapsed: false,
                 entries: vec![],
             },

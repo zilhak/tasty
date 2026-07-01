@@ -60,7 +60,6 @@ pub(super) fn build_category_sections(
                     } else {
                         cat.name.clone()
                     },
-                    is_reserved: cat.is_normal(),
                     collapsed: cat.collapsed,
                     entries,
                 }
@@ -227,6 +226,14 @@ pub fn draw_full_sidebar(
                 // 대상이고 확장↔레일이 공유하는 per-category 상태(TODO 02 setter).
                 engine.toggle_category_collapsed(cat_id);
                 engine.mark_layout_dirty();
+            }
+            SidebarFullAction::CategoryHeaderContextMenu { cat_id, x, y } => {
+                state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::WorkspaceCategoryHeader { cat_id, x, y });
+            }
+            SidebarFullAction::BackgroundContextMenu { x, y } => {
+                state.dialogs.pending_native_menu =
+                    Some(crate::state::PendingNativeMenu::SidebarBackground { x, y });
             }
         }
     }
