@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use mlua::{Function, Lua, LuaSerdeExt, Table, Value};
 
@@ -42,6 +43,15 @@ const JOB_QUEUE_CAP: usize = 256;
 
 /// 워커→메인 커맨드 큐 용량. host_api 쪽(`bridge`/`host_api`)이 공유.
 pub(crate) const COMMAND_QUEUE_CAP: usize = 256;
+
+/// 스크립트 1회 실행 wall-clock deadline 기본값. 초과 시 `set_interrupt` 가 abort.
+/// 무한 루프/폭주 스크립트가 워커 스레드를 영원히 점유하는 것을 막는다 (ADR-0031).
+/// 정상 스크립트 오탐을 피하려 넉넉히 잡는다 (초과 시 ADR Reconsideration 대상).
+const SCRIPT_DEADLINE: Duration = Duration::from_secs(5);
+
+/// 현재 실행 중인 job 의 절대 deadline. worker 가 job 시작 시 설정, 종료 시 clear.
+/// `set_interrupt` 훅(같은 워커 스레드)이 읽어 초과를 판정한다.
+type SharedDeadline = Arc<Mutex<Option<Instant>>>;
 
 /// 워커 스레드에 보내는 실행 요청. 워커는 이들을 **직렬**로 처리한다.
 enum LuaJob {
@@ -81,19 +91,26 @@ pub struct LuaEngine {
 impl LuaEngine {
     /// 새 VM 생성 + 샌드박스 + API 설치 후 워커 스레드로 이동. 앱 부팅 시 1회.
     pub fn new() -> Result<Self, LuaEngineError> {
+        Self::with_deadline(SCRIPT_DEADLINE)
+    }
+
+    /// [`LuaEngine::new`] 와 동일하되 스크립트 실행 deadline 을 지정한다 (테스트용 짧은 budget).
+    pub fn with_deadline(budget: Duration) -> Result<Self, LuaEngineError> {
         let lua = Lua::new();
         crate::sandbox::apply(&lua)?;
 
         let (command_tx, command_rx) = sync_channel(COMMAND_QUEUE_CAP);
         let snapshot: SharedSnapshot = Arc::new(Mutex::new(Arc::new(LuaSnapshot::default())));
+        let deadline: SharedDeadline = Arc::new(Mutex::new(None));
 
         install_hook_api(&lua)?;
+        install_interrupt(&lua, deadline.clone());
         crate::host_api::install(&lua, command_tx, snapshot.clone())?;
 
         let (job_tx, job_rx) = sync_channel(JOB_QUEUE_CAP);
         let worker = std::thread::Builder::new()
             .name("tasty-lua-worker".to_string())
-            .spawn(move || worker_loop(lua, job_rx))?;
+            .spawn(move || worker_loop(lua, job_rx, budget, deadline))?;
 
         Ok(Self {
             job_tx,
@@ -217,7 +234,10 @@ impl Drop for LuaEngine {
 }
 
 /// 워커 스레드 본체 — job 을 직렬로 처리한다. `Shutdown` 또는 채널 disconnect 시 종료.
-fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>) {
+///
+/// Lua 를 실행하는 job(Eval/Run/Fire)은 `budget` deadline 하에서 돈다 — 초과 시
+/// `set_interrupt` 훅이 abort(에러 반환)해 워커만 다음 job 으로 넘어가고 메인은 무영향.
+fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>, budget: Duration, deadline: SharedDeadline) {
     while let Ok(job) = job_rx.recv() {
         match job {
             LuaJob::Eval {
@@ -225,17 +245,32 @@ fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>) {
                 name,
                 reply,
             } => {
+                let result = guarded(&deadline, budget, || {
+                    exec_source(&lua, &source, name.as_deref())
+                });
                 // reply 실패 = 호출자가 대기를 포기(receiver drop) — 무시해도 안전.
-                if let Err(e) = reply.send(exec_source(&lua, &source, name.as_deref())) {
+                if let Err(e) = reply.send(result) {
                     tracing::trace!(target: "tasty_lua", "eval reply dropped: {e}");
                 }
             }
             LuaJob::Run { source, name } => {
-                if let Err(e) = exec_source(&lua, &source, name.as_deref()) {
+                let result = guarded(&deadline, budget, || {
+                    exec_source(&lua, &source, name.as_deref())
+                });
+                if let Err(e) = result {
                     tracing::warn!(target: "tasty_lua", "script run failed: {e}");
                 }
             }
-            LuaJob::Fire { event, ctx } => fire_hooks(&lua, &event, &ctx),
+            LuaJob::Fire { event, ctx } => {
+                // fire_hooks 는 콜백 에러를 자체 로그하고 삼키므로 여기 Err 는 사실상
+                // 나지 않지만, deadline 배관 일관성을 위해 guarded 로 감싸고 방어적으로 로그.
+                if let Err(e) = guarded(&deadline, budget, || {
+                    fire_hooks(&lua, &event, &ctx);
+                    Ok(())
+                }) {
+                    tracing::warn!(target: "tasty_lua", "fire '{event}' aborted: {e}");
+                }
+            }
             LuaJob::ResetHooks { reply } => {
                 if let Err(e) = reply.send(reset_hooks(&lua)) {
                     tracing::trace!(target: "tasty_lua", "reset_hooks reply dropped: {e}");
@@ -243,6 +278,47 @@ fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>) {
             }
             LuaJob::Shutdown => break,
         }
+    }
+}
+
+/// N VM 명령마다 호출되는 hook 간격. 낮을수록 deadline 해상도↑·오버헤드↑.
+/// 10k 이면 tight loop 에서 sub-ms 해상도로 abort 하면서 정상 실행 오버헤드는 무시할 수준.
+const INTERRUPT_EVERY_N_INSTRUCTIONS: u32 = 10_000;
+
+/// deadline 훅 설치. Lua 5.4 는 Luau `set_interrupt` 대신 instruction-count `set_hook` 를
+/// 쓴다 (동일 메커니즘 — VM 이 주기적으로 호출하는 훅에서 deadline 초과 시 에러 반환 → abort).
+fn install_interrupt(lua: &Lua, deadline: SharedDeadline) {
+    let triggers = mlua::HookTriggers::new().every_nth_instruction(INTERRUPT_EVERY_N_INSTRUCTIONS);
+    lua.set_hook(triggers, move |_, _| {
+        let expired = match deadline.lock() {
+            Ok(guard) => guard.is_some_and(|dl| Instant::now() >= dl),
+            Err(_) => false,
+        };
+        if expired {
+            Err(mlua::Error::runtime(
+                "script exceeded time budget (deadline)",
+            ))
+        } else {
+            Ok(mlua::VmState::Continue)
+        }
+    });
+}
+
+/// job deadline 을 설정한 뒤 `f` 를 실행하고, 종료 시 deadline 을 clear 한다.
+fn guarded<F>(deadline: &SharedDeadline, budget: Duration, f: F) -> Result<(), LuaEngineError>
+where
+    F: FnOnce() -> Result<(), LuaEngineError>,
+{
+    set_deadline(deadline, Some(Instant::now() + budget));
+    let result = f();
+    set_deadline(deadline, None);
+    result
+}
+
+fn set_deadline(deadline: &SharedDeadline, value: Option<Instant>) {
+    match deadline.lock() {
+        Ok(mut guard) => *guard = value,
+        Err(e) => tracing::warn!(target: "tasty_lua", "deadline lock poisoned: {e}"),
     }
 }
 
@@ -562,5 +638,39 @@ mod tests {
         engine
             .eval("return 1 + 1")
             .expect("worker alive after error");
+    }
+
+    // --- deadline / 무한루프 방어 (TODO 07) ---
+
+    #[test]
+    fn infinite_loop_aborts_within_deadline() {
+        let engine = LuaEngine::with_deadline(Duration::from_millis(50)).expect("init");
+        let start = Instant::now();
+        let result = engine.eval("while true do end");
+        assert!(result.is_err(), "무한 루프는 deadline 으로 abort 되어야 함");
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "deadline 내 즉시 abort (실제 {:?})",
+            start.elapsed()
+        );
+    }
+
+    #[test]
+    fn worker_survives_after_deadline_abort() {
+        // abort 후 deadline 은 clear 되고 워커는 후속 정상 job 을 처리한다.
+        let engine = LuaEngine::with_deadline(Duration::from_millis(50)).expect("init");
+        assert!(engine.eval("while true do end").is_err());
+        engine
+            .eval("return 1 + 1")
+            .expect("worker alive after deadline abort");
+    }
+
+    #[test]
+    fn normal_script_completes_under_deadline() {
+        // 정상 스크립트는 오탐 abort 없이 완료 (deadline 여유 충분).
+        let engine = LuaEngine::with_deadline(Duration::from_secs(5)).expect("init");
+        engine
+            .eval("local s = 0; for i = 1, 100000 do s = s + i end")
+            .expect("normal loop under budget");
     }
 }

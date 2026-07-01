@@ -11,7 +11,7 @@
 //! 사용자가 자기 머신에서 자기 권한으로 작성하는 스크립트이므로 plugin escape 같은
 //! 위험은 없다. sandbox 의 목적은:
 //!
-//! - **DoS 보호**: 무한 루프 (instruction cap), 메모리 폭발 (memory cap)
+//! - **DoS 보호**: 무한 루프/시간 초과 (`set_interrupt` + wall-clock deadline), 메모리 폭발 (memory cap)
 //! - **호스트 무결성**: native crash 유발 가능한 표면 차단 (debug, bytecode loader,
 //!   `package.loadlib`)
 //!
