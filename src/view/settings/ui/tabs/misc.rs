@@ -50,6 +50,12 @@ pub struct ScriptsUiState {
     changed: Option<HashMap<String, bool>>,
 }
 
+/// RTL 액션 클러스터에서 kbd 키캡이 역순으로 그려지는 것을 상쇄하려 combo 파트를
+/// 미리 뒤집는다(`"Ctrl+Shift+J"` → `"J+Shift+Ctrl"` → RTL 렌더 후 화면상 정순).
+fn rtl_combo(combo: &str) -> String {
+    combo.split('+').rev().collect::<Vec<_>>().join("+")
+}
+
 /// 리스트 순회 중에는 registry 를 변형할 수 없으므로 한 프레임의 변형을 지연 수집한다.
 enum Pending {
     /// id 의 표시 이름을 변경.
@@ -343,7 +349,13 @@ fn draw_script_row(
                                 .color(th.text_disabled()),
                         );
                     } else {
-                        kbd(ui, th, &KeybindingSettings::format_display(&combo));
+                        // 이 클러스터는 RTL 이라 kbd 키캡이 역순으로 그려진다 → 파트를
+                        // 미리 뒤집어 화면상 정순(Ctrl+Shift+J)이 되게 한다.
+                        kbd(
+                            ui,
+                            th,
+                            &rtl_combo(&KeybindingSettings::format_display(&combo)),
+                        );
                     }
                 }
 

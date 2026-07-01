@@ -29,6 +29,12 @@ const EMPTY_GLYPH: f32 = 26.0;
 /// 행 중앙 컬럼의 name→path→help 사이 hairline 간격 (jsx `gap: 2` — 4px 그리드 하위).
 const ROW_LINE_GAP: f32 = 2.0;
 
+/// RTL 클러스터에서 kbd 키캡이 역순으로 그려지는 것을 상쇄하려 combo 파트를 미리
+/// 뒤집는다(`"Ctrl+Shift+J"` → `"J+Shift+Ctrl"` → RTL 렌더 후 화면상 정순).
+fn rtl_combo(combo: &str) -> String {
+    combo.split('+').rev().collect::<Vec<_>>().join("+")
+}
+
 /// 한 스크립트 행(seed). `dir`+`file` 은 중간생략 경로용, `shortcut` 빈값=Unbound.
 struct Seed {
     name: &'static str,
@@ -188,7 +194,9 @@ fn script_row(ui: &mut egui::Ui, theme: &Theme, s: &Seed) {
                         .color(theme.text_disabled().to_egui()),
                 );
             } else {
-                kbd(ui, theme, s.shortcut);
+                // 이 클러스터는 RTL 이라 kbd 키캡이 역순으로 그려진다 → 파트를 미리
+                // 뒤집어 넘겨 화면상 정순(Ctrl+Shift+J)이 되게 한다.
+                kbd(ui, theme, &rtl_combo(s.shortcut));
             }
             // 남은 좌측 폭 = 중앙 컬럼(name/path/help).
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
