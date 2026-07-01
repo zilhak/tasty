@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.mesh-demo"
 name = "egui-mesh Demo"
-version = "0.1.0"
+version = "0.1.1"
 description = "egui-mesh channel proof-of-concept surface (A1)"
 api_version = "1"
 permissions = [
@@ -9,6 +9,7 @@ permissions = [
     "surface.write",
     "file_handler.define",
     "file_handler.handle:meshdemo",
+    "ui.popup",
 ]
 lang_dir = "lang"
 
@@ -43,3 +44,14 @@ display_name_i18n_key = "file_handler.host.mesh_demo"
 kind = "open_surface"
 surface_kind = "mesh_demo"
 param_key = "file"
+
+# egui-mesh popup PoC (A2): plugin 이 popup 콘텐츠를 자기 프로세스에서 egui mesh 로
+# 그리고, host 는 셸(scrim/border/outside-click/Esc)만 그린 뒤 합성한다. ipc 로 연다
+# (debug.popup.open { plugin_id, popup_id }). rendering = "egui-mesh" 가 mesh 경로 선택.
+[[contributes.popup]]
+id = "demo"
+trigger = { kind = "ipc" }
+rendering = "egui-mesh"
+size_hint = { width = 480, height = 320 }
+anchor = "screen-center"
+dismiss_on_outside_click = true

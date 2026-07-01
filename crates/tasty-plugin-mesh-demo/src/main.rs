@@ -17,11 +17,12 @@
 use std::collections::HashMap;
 
 use tasty_plugin_sdk::{
-    EguiMeshSurface, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, SurfaceSetContextCtx,
+    EguiMeshPopup, EguiMeshSurface, Plugin, PopupClosedCtx, PopupOpenCtx, PopupOpenResult,
+    PopupSetContextCtx, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, SurfaceSetContextCtx,
 };
 
 const PLUGIN_ID: &str = "com.tasty.mesh-demo";
-const PLUGIN_VERSION: &str = "0.1.0";
+const PLUGIN_VERSION: &str = "0.1.1";
 
 #[derive(Default)]
 struct MeshDemoPlugin {
@@ -29,6 +30,10 @@ struct MeshDemoPlugin {
     surfaces: HashMap<u32, EguiMeshSurface>,
     /// surface_id → 클릭 횟수. 입력 forward 가 mesh 를 바꾸는 것을 보이는 데모 상태.
     clicks: HashMap<u32, u32>,
+    /// popup instance_id → egui-mesh popup 렌더 상태(A2). open 시 생성, closed 시 해제.
+    popups: HashMap<u64, EguiMeshPopup>,
+    /// popup instance_id → 클릭 횟수. 입력 forward 가 popup mesh 를 바꾸는 데모 상태.
+    popup_clicks: HashMap<u64, u32>,
 }
 
 impl Plugin for MeshDemoPlugin {
@@ -57,6 +62,23 @@ impl Plugin for MeshDemoPlugin {
 
     fn paint_surface(&mut self, ctx: SurfaceSetContextCtx) {
         self.paint(ctx);
+    }
+
+    fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
+        // egui-mesh popup 은 tree 가 아니라 mesh 채널(paint_popup)로 그린다 — 빈 트리.
+        // 인스턴스별 데모 상태만 초기화한다.
+        self.popup_clicks.entry(ctx.instance_id).or_insert(0);
+        PopupOpenResult { tree: None }
+    }
+
+    fn paint_popup(&mut self, ctx: PopupSetContextCtx) {
+        self.paint_popup_impl(ctx);
+    }
+
+    fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
+        // popup 이 닫히면 egui Context·shared buffer 매핑·데모 상태를 함께 해제.
+        self.popups.remove(&ctx.instance_id);
+        self.popup_clicks.remove(&ctx.instance_id);
     }
 }
 
@@ -90,6 +112,29 @@ impl MeshDemoPlugin {
     /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
     #[cfg(not(unix))]
     fn paint(&mut self, _ctx: SurfaceSetContextCtx) {}
+
+    /// `popup.set_context` 한 frame 을 그려 host 에 popup mesh 를 회신한다(A2).
+    #[cfg(unix)]
+    fn paint_popup_impl(&mut self, ctx: PopupSetContextCtx) {
+        let iid = ctx.params.instance_id;
+        // popups / popup_clicks 는 서로소 필드라 동시 mutable 차용이 안전하다.
+        let popup = self
+            .popups
+            .entry(iid)
+            .or_insert_with(|| EguiMeshPopup::new(iid));
+        let clicks = self.popup_clicks.entry(iid).or_insert(0);
+        let result = popup.paint(&ctx.host, &ctx.params, |egui_ctx| {
+            draw_popup(egui_ctx, clicks);
+        });
+        match result {
+            Ok(Some(_gen)) => tracing::info!("mesh-demo popup {iid} paint sent"),
+            Ok(None) => {} // 정적 화면 — 송신 생략.
+            Err(e) => tracing::warn!("mesh-demo popup {iid} paint failed: {e}"),
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn paint_popup_impl(&mut self, _ctx: PopupSetContextCtx) {}
 }
 
 /// 데모 UI: label + 클릭 카운터 버튼 + 스크롤 영역. 색/폰트는 egui 기본값을 쓴다
@@ -115,6 +160,22 @@ fn draw_demo(ctx: &egui::Context, clicks: &mut u32) {
     });
 }
 
+/// 데모 popup UI: label + 클릭 카운터 버튼. host 가 셸(scrim/border)을 그리고 이 콘텐츠만
+/// plugin mesh 로 합성된다 — 입력 forward(클릭)가 popup mesh 를 바꾸는지 검증한다.
+#[cfg(unix)]
+fn draw_popup(ctx: &egui::Context, clicks: &mut u32) {
+    egui::CentralPanel::default().show(ctx, |ui| {
+        ui.heading(format!("egui-mesh popup — clicks: {clicks}"));
+        ui.label("Drawn in the plugin process. Host owns the shell (scrim/border).");
+        let btn = ui.add_sized([ui.available_width(), 48.0], egui::Button::new("CLICK ME"));
+        if btn.clicked() {
+            *clicks += 1;
+        }
+        ui.separator();
+        ui.label("Press Esc or click outside to close.");
+    });
+}
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -132,7 +193,7 @@ mod tests {
     fn plugin_identity() {
         let p = MeshDemoPlugin::default();
         assert_eq!(p.id(), "com.tasty.mesh-demo");
-        assert_eq!(p.version(), "0.1.0");
+        assert_eq!(p.version(), "0.1.1");
     }
 
     #[test]
