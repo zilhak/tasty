@@ -5648,7 +5648,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-manifest"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "semver 1.0.27",
@@ -5681,7 +5681,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-mesh-demo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "egui",
@@ -5706,7 +5706,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-sdk"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "egui",

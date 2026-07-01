@@ -53,6 +53,12 @@ pub const METHOD_POPUP_EVENT: &str = "popup.event";
 /// host IPC로 명시 닫기 요청한 경우 모두 포함). fire-and-forget.
 /// params에 [`PopupClosedParams`].
 pub const METHOD_POPUP_CLOSED: &str = "popup.closed";
+/// host → plugin (egui-mesh popup 전용): popup 인스턴스의 렌더 컨텍스트(크기/ppp/raw
+/// input)를 전달한다. [`METHOD_SURFACE_SET_CONTEXT`] 의 popup 대응 — surface_id 대신
+/// host 발급 instance_id 로 키잉한다. plugin 은 자기 프로세스에서 egui 를
+/// tessellate 한 mesh 를 [`PluginEvent::PopupPaintFrame`] 로 비동기 회신한다.
+/// fire-and-forget. params 에 [`PopupSetContextParams`].
+pub const METHOD_POPUP_SET_CONTEXT: &str = "popup.set_context";
 
 /// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -364,6 +370,16 @@ pub enum PluginEvent {
         /// Acquire-load 해 일치/최신 여부를 검증한다 (tear 방지).
         generation: u64,
     },
+    /// egui-mesh popup: plugin 이 popup 인스턴스용 mesh 를 commit 했음을 알린다.
+    /// [`PluginEvent::PaintFrame`] 의 popup 대응 — surface_id 대신 host 발급
+    /// `instance_id` 로 키잉한다. 본체(mesh 바이트)는 shared buffer 안에 있고, 이
+    /// 알림은 어떤 buffer 의 어떤 generation 인지 메타만 운반한다.
+    PopupPaintFrame {
+        instance_id: u64,
+        buffer_id: SharedBufferId,
+        /// plugin 이 commit 한 shared buffer footer generation (tear 방지).
+        generation: u64,
+    },
     /// host action 트리거 (단계 06).
     NotifyHost {
         surface_id: u32,
@@ -535,6 +551,29 @@ pub struct PopupClosedParams {
     pub instance_id: u64,
     /// 닫힌 이유. 텍스트는 호스트가 결정한 카테고리.
     pub reason: PopupCloseReason,
+}
+
+/// `popup.set_context` params — egui-mesh popup 인스턴스의 렌더 컨텍스트.
+///
+/// [`SurfaceSetContextParams`] 의 popup 대응이다 — surface_id 대신 host 가 발급한
+/// `instance_id` 로 popup 인스턴스를 식별한다. 나머지 필드(크기/ppp/raw_input)와
+/// 좌표 규약(surface-local 논리 포인트, 좌상단 0,0)은 surface 와 동일하다.
+///
+/// identity 경계(원칙 1·3): set_context 는 host 가 받은 *실제* 사용자 입력만 forward
+/// 한다. 에이전트 IPC/CLI 가 raw_input 을 합성·주입하는 진입로는 만들지 않는다.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct PopupSetContextParams {
+    /// host 가 발급한 popup 인스턴스 식별자.
+    pub instance_id: u64,
+    /// popup 콘텐츠 영역의 물리 픽셀 너비.
+    pub width_px: u32,
+    /// popup 콘텐츠 영역의 물리 픽셀 높이.
+    pub height_px: u32,
+    /// 논리→물리 스케일 (egui `ScreenDescriptor.pixels_per_point`).
+    pub pixels_per_point: f32,
+    /// 이번 frame 의 사용자 입력.
+    #[serde(default)]
+    pub raw_input: RawInputWire,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
