@@ -22,13 +22,14 @@ use serde_json::Value;
 #[cfg(unix)]
 use tasty_plugin_protocol::HandleChannelMessage;
 use tasty_plugin_protocol::{
-    EventDispatchParams, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE,
-    METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE, METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED,
-    METHOD_POPUP_EVENT, METHOD_POPUP_OPEN, METHOD_POPUP_SET_CONTEXT, METHOD_SHUTDOWN,
-    METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE,
-    METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest,
-    PluginResponse, PopupClosedParams, PopupOpenParams, PopupSetContextParams,
-    SurfaceSetContextParams,
+    BannerClosedParams, BannerOpenParams, BannerSetContextParams, EventDispatchParams,
+    IpcCallResult, IpcInvokeParams, METHOD_BANNER_CLOSED, METHOD_BANNER_OPEN,
+    METHOD_BANNER_SET_CONTEXT, METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE,
+    METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_EVENT, METHOD_POPUP_OPEN,
+    METHOD_POPUP_SET_CONTEXT, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
+    METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SET_CONTEXT,
+    METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest, PluginResponse, PopupClosedParams,
+    PopupOpenParams, PopupSetContextParams, SurfaceSetContextParams,
 };
 
 use crate::connection::Connection;
@@ -593,6 +594,45 @@ pub(crate) fn dispatch<P: Plugin>(
                 host: host.clone(),
             });
             // fire-and-forget — mesh 는 PopupPaintFrame 알림으로 비동기 회신. null ack.
+            Ok(Value::Null)
+        }
+        METHOD_BANNER_OPEN => {
+            let parsed: BannerOpenParams = serde_json::from_value(params.clone()).map_err(|e| {
+                DispatchError::with_code(format!("invalid banner.open params: {e}"), -32602)
+            })?;
+            plugin.open_banner(crate::plugin::BannerOpenCtx {
+                banner_id: parsed.banner_id,
+                instance_id: parsed.instance_id,
+                context: parsed.context,
+            });
+            // banner 는 초기 tree 가 없다(egui-mesh 전용) — 빈 결과.
+            serde_json::to_value(tasty_plugin_protocol::BannerOpenResult::default())
+                .map_err(|e| DispatchError::from_anyhow(e.into()))
+        }
+        METHOD_BANNER_CLOSED => {
+            let parsed: BannerClosedParams =
+                serde_json::from_value(params.clone()).map_err(|e| {
+                    DispatchError::with_code(format!("invalid banner.closed params: {e}"), -32602)
+                })?;
+            plugin.on_banner_closed(crate::plugin::BannerClosedCtx {
+                instance_id: parsed.instance_id,
+                reason: parsed.reason,
+            });
+            Ok(Value::Null)
+        }
+        METHOD_BANNER_SET_CONTEXT => {
+            let parsed: BannerSetContextParams =
+                serde_json::from_value(params.clone()).map_err(|e| {
+                    DispatchError::with_code(
+                        format!("invalid banner.set_context params: {e}"),
+                        -32602,
+                    )
+                })?;
+            plugin.paint_banner(crate::plugin::BannerSetContextCtx {
+                params: parsed,
+                host: host.clone(),
+            });
+            // fire-and-forget — mesh 는 BannerPaintFrame 알림으로 비동기 회신. null ack.
             Ok(Value::Null)
         }
         other => Err(DispatchError::with_code(

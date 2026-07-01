@@ -21,7 +21,7 @@ pub mod ui;
 
 pub use bus::BusHandle;
 #[cfg(feature = "egui-mesh")]
-pub use egui_surface::{EguiMeshPopup, EguiMeshSurface};
+pub use egui_surface::{EguiMeshBanner, EguiMeshPopup, EguiMeshSurface};
 pub use env::PluginEnv;
 pub use error::{PluginError, Result};
 #[allow(deprecated)]
@@ -29,10 +29,11 @@ pub use host::HostCallError;
 pub use host::HostHandle;
 pub use i18n::Translator;
 pub use plugin::{
-    CommandInvokeCtx, EventDispatchCtx, ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx,
-    IpcMethodError, Plugin, PopupClosedCtx, PopupEventCtx, PopupEventResult, PopupOpenCtx,
-    PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx,
-    SurfaceResult, SurfaceSetContextCtx, SurfaceSnapshotCtx,
+    BannerClosedCtx, BannerOpenCtx, BannerSetContextCtx, CommandInvokeCtx, EventDispatchCtx,
+    ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx, IpcMethodError, Plugin, PopupClosedCtx,
+    PopupEventCtx, PopupEventResult, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx,
+    SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult, SurfaceSetContextCtx,
+    SurfaceSnapshotCtx,
 };
 pub use runtime::run;
 pub use shared_buffer::SharedBuffer;

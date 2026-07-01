@@ -37,8 +37,8 @@ use egui::{
 };
 use tasty_plugin_protocol::mesh_wire::encode_paint;
 use tasty_plugin_protocol::{
-    ModifiersWire, PointerButtonWire, PopupSetContextParams, RawInputEventWire, RawInputWire,
-    SurfaceSetContextParams,
+    BannerSetContextParams, ModifiersWire, PointerButtonWire, PopupSetContextParams,
+    RawInputEventWire, RawInputWire, SurfaceSetContextParams,
 };
 
 #[cfg(unix)]
@@ -262,6 +262,72 @@ impl EguiMeshPopup {
         };
         let (buffer_id, generation) = self.core.commit(host, &bytes)?;
         host.notify(&PluginEvent::PopupPaintFrame {
+            instance_id: self.instance_id,
+            buffer_id,
+            generation,
+        })?;
+        Ok(Some(generation))
+    }
+}
+
+/// 한 egui-mesh banner 인스턴스의 plugin 측 렌더 상태(A3). [`EguiMeshPopup`] 의 banner
+/// 대응 — 회신 알림이 [`PluginEvent::BannerPaintFrame`] 이고 `instance_id` 로 키잉되는
+/// 점만 다르다. banner 인스턴스 하나당 하나를 두고, `banner.closed` 수신 시 drop 한다.
+pub struct EguiMeshBanner {
+    instance_id: u64,
+    core: EguiMeshCore,
+}
+
+impl EguiMeshBanner {
+    /// `instance_id` 에 대응하는 새 egui-mesh banner 를 만든다. egui `default_fonts` 가
+    /// 설치된 독립 [`Context`] 를 소유한다.
+    pub fn new(instance_id: u64) -> Self {
+        Self {
+            instance_id,
+            core: EguiMeshCore::new(),
+        }
+    }
+
+    /// 이 banner 의 host 측 인스턴스 식별자.
+    pub fn instance_id(&self) -> u64 {
+        self.instance_id
+    }
+
+    /// 폰트/스타일 커스터마이즈용 내부 egui [`Context`] 노출.
+    pub fn context(&self) -> &Context {
+        &self.core.ctx
+    }
+
+    /// `banner.set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
+    /// 정적 화면이면 `None`(송신 생략).
+    pub fn run_frame(
+        &mut self,
+        params: &BannerSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Option<Vec<u8>> {
+        self.core.run_frame(
+            params.width_px,
+            params.height_px,
+            params.pixels_per_point,
+            &params.raw_input,
+            run_ui,
+        )
+    }
+
+    /// `banner.set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
+    /// [`PluginEvent::BannerPaintFrame`] 알림을 보낸다. 정적 화면이면 `Ok(None)`.
+    #[cfg(unix)]
+    pub fn paint(
+        &mut self,
+        host: &HostHandle,
+        params: &BannerSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Result<Option<u64>, PluginError> {
+        let Some(bytes) = self.run_frame(params, run_ui) else {
+            return Ok(None);
+        };
+        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        host.notify(&PluginEvent::BannerPaintFrame {
             instance_id: self.instance_id,
             buffer_id,
             generation,

@@ -142,6 +142,47 @@ pub struct PopupClosedCtx {
     pub reason: tasty_plugin_protocol::PopupCloseReason,
 }
 
+/// `banner.open` 콜백 컨텍스트(A3).
+#[derive(Debug, Clone)]
+pub struct BannerOpenCtx {
+    /// 매니페스트 `[[contributes.banner]]`의 `id` (plugin 내 로컬 id).
+    pub banner_id: String,
+    /// 호스트가 발급한 banner 인스턴스 식별자.
+    pub instance_id: u64,
+    /// trigger 시점에 호스트가 알 수 있던 컨텍스트. 없으면 Null.
+    pub context: Value,
+}
+
+/// `banner.set_context` 콜백 컨텍스트(A3) — egui-mesh banner 인스턴스의 렌더 컨텍스트.
+///
+/// plugin 은 [`EguiMeshBanner`](crate::EguiMeshBanner) 를 들고
+/// `banner.paint(&ctx.host, &ctx.params, |egui_ctx| { ... })` 를 호출해 mesh 를 회신한다.
+/// `params.raw_input` 의 좌표는 banner content 영역 기준 논리 포인트(좌상단 0,0)다.
+/// banner 는 non-modal 이라 키보드 포커스가 없어 포인터/스크롤 입력만 도착한다.
+#[derive(Clone)]
+pub struct BannerSetContextCtx {
+    /// banner content 영역의 크기(물리 px)/ppp/이번 frame 의 사용자 입력/theme.
+    pub params: tasty_plugin_protocol::BannerSetContextParams,
+    /// `BannerPaintFrame` 알림 송신 및 shared buffer 생성에 쓰는 호스트 핸들.
+    pub host: HostHandle,
+}
+
+impl std::fmt::Debug for BannerSetContextCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BannerSetContextCtx")
+            .field("params", &self.params)
+            .field("host", &"HostHandle { .. }")
+            .finish()
+    }
+}
+
+/// `banner.closed` 콜백 컨텍스트(A3). fire-and-forget이므로 반환값 없음.
+#[derive(Debug, Clone)]
+pub struct BannerClosedCtx {
+    pub instance_id: u64,
+    pub reason: tasty_plugin_protocol::BannerCloseReason,
+}
+
 /// `extension.invoke_hook` 컨텍스트. extension plugin이 hook 호출을 받았을 때.
 #[derive(Clone)]
 pub struct ExtensionHookCtx {
@@ -374,6 +415,22 @@ pub trait Plugin: Send + 'static {
     /// `popup.closed` — popup 인스턴스가 닫혔음을 통보. fire-and-forget.
     /// plugin은 인스턴스별 자체 상태를 정리한다. 기본 구현은 no-op.
     fn on_popup_closed(&mut self, _ctx: PopupClosedCtx) {}
+
+    /// `banner.open` — 매니페스트 `[[contributes.banner]]`로 contribute한 banner의 새
+    /// 인스턴스가 열림(A3). banner 는 egui-mesh 채널(`paint_banner`)로만 그리므로 초기
+    /// tree 가 없다. plugin 은 인스턴스별 렌더 상태를 초기화한다. 기본 구현은 no-op.
+    fn open_banner(&mut self, _ctx: BannerOpenCtx) {}
+
+    /// `banner.set_context` — egui-mesh banner 인스턴스의 렌더 컨텍스트(크기/ppp/raw
+    /// input/theme)가 도착함. plugin 은 자기 프로세스에서 egui 를 구동·tessellate 한 뒤
+    /// [`PluginEvent::BannerPaintFrame`](tasty_plugin_protocol::PluginEvent::BannerPaintFrame)
+    /// 로 mesh 를 비동기 회신한다([`EguiMeshBanner`](crate::EguiMeshBanner) 헬퍼가 은닉).
+    /// fire-and-forget — 이 콜백은 반환값이 없다. 기본 구현은 no-op.
+    fn paint_banner(&mut self, _ctx: BannerSetContextCtx) {}
+
+    /// `banner.closed` — banner 인스턴스가 닫혔음을 통보(TTL/close X/plugin 요청/shutdown).
+    /// fire-and-forget. plugin 은 인스턴스별 자체 상태를 정리한다. 기본 구현은 no-op.
+    fn on_banner_closed(&mut self, _ctx: BannerClosedCtx) {}
 
     /// `extension.invoke_hook` — 이 plugin이 다른 plugin(target)의 IPC 또는 이벤트
     /// 흐름을 가로채는 extension일 때, host가 매니페스트 `[[extends.*]]` 항목에 매칭되는
