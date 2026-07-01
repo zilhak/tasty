@@ -149,6 +149,10 @@ pub enum Permission {
     /// `[[contributes.popup]]` 항목을 선언한 plugin은 매니페스트의 `permissions`에
     /// 반드시 이 토큰을 포함해야 한다.
     UiPopup,
+    /// Banner contribute 권한. 토큰 `ui.banner`.
+    /// `[[contributes.banner]]` 항목을 선언한 plugin 은 매니페스트의 `permissions` 에
+    /// 반드시 이 토큰을 포함해야 한다.
+    UiBanner,
     /// Settings page contribute 권한. 토큰 `ui.settings_page`.
     /// `[[contributes.settings_pages]]` 항목을 선언한 plugin 은 매니페스트의
     /// `permissions` 에 반드시 이 토큰을 포함해야 한다.
@@ -192,6 +196,7 @@ impl Permission {
             "agent" => Self::AgentManage,
             "ui.tool_item" => Self::UiToolItem,
             "ui.popup" => Self::UiPopup,
+            "ui.banner" => Self::UiBanner,
             "ui.settings_page" => Self::UiSettingsPage,
             "window.spawn" => Self::WindowSpawn,
             "file_handler.define" => Self::FileHandlerDefine,
@@ -256,6 +261,7 @@ impl Permission {
             Self::Extension(target) => format!("ext:{target}"),
             Self::UiToolItem => "ui.tool_item".into(),
             Self::UiPopup => "ui.popup".into(),
+            Self::UiBanner => "ui.banner".into(),
             Self::UiSettingsPage => "ui.settings_page".into(),
             Self::WindowSpawn => "window.spawn".into(),
             Self::FileHandlerDefine => "file_handler.define".into(),
@@ -460,6 +466,11 @@ pub struct Contributes {
     /// 명시적인 IPC 호출로 열린다.
     #[serde(default)]
     pub popup: Vec<PopupContribute>,
+    /// Plugin 이 띄울 수 있는 banner 정의(A3). banner 는 non-modal 공지로, plugin 이
+    /// egui-mesh 로 content 만 그리고 셸/스택/위치/dismiss 타이밍은 host 소유다.
+    /// phase1 은 IPC(`banner.open`) 트리거만 지원한다.
+    #[serde(default)]
+    pub banner: Vec<BannerContribute>,
     /// 새 detector 정의 또는 기존 detector 재선언(rule 추가 + 메타 patch).
     /// 같은 id 가 host/다른 plugin/user 에 이미 있으면 rule union, 메타는
     /// last-writer-wins (install 순서 host → plugin → user).
@@ -737,6 +748,73 @@ pub enum PopupAnchor {
     ScreenCenter,
     ActiveSurfaceCenter,
     Cursor,
+}
+
+/// Plugin 이 contribute 하는 banner 의 정의(A3).
+///
+/// banner 는 non-modal 공지 오버레이(4번째 오버레이 개념). plugin 은 content 만
+/// egui-mesh 로 그리고, 셸(컨테이너/border/close X/카운트다운)·스택(큐)·위치·dismiss
+/// 타이밍은 **host 소유**다(identity 원칙 1·3, popup chrome 과 동일).
+///
+/// - `id`: plugin 내 고유. 호스트는 `<plugin_id>/<banner_id>` 로 전역 식별.
+/// - `trigger`: 어떤 조건으로 banner 를 여는지. phase1 은 `ipc` 만.
+/// - `scope`: banner 가 뜰 스코프. plugin 은 `surface` 만 선언할 수 있고, host 는
+///   그 plugin 이 *소유한* surface 로만 표시를 허용한다(남의 scope 차단, D1).
+/// - `ttl_seconds`: 옵션. `Some` 이면 카운트다운 후 자동 소멸, `None` 이면 사용자
+///   close X 까지 유지(persistent). host 는 persistent 여도 close X 를 항상 노출한다.
+/// - `size_hint`: 옵션. banner 높이(LogicalPx) 힌트. 너비는 스코프 폭에 도킹되므로
+///   높이만 의미가 있다.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BannerContribute {
+    pub id: String,
+    pub trigger: BannerTrigger,
+    #[serde(default = "default_banner_scope")]
+    pub scope: BannerScopeDecl,
+    #[serde(default)]
+    pub ttl_seconds: Option<u32>,
+    #[serde(default)]
+    pub size_hint: Option<BannerSizeHint>,
+    /// banner 콘텐츠 렌더링 방식. phase1 은 `egui-mesh` 만 지원한다.
+    #[serde(default)]
+    pub rendering: BannerRendering,
+}
+
+/// banner 콘텐츠의 렌더링 방식. phase1 은 egui-mesh 만.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum BannerRendering {
+    /// plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
+    /// (ADR-0028, A3). bundled 전용 — host api_version 게이트가 필요하다.
+    #[default]
+    #[serde(rename = "egui-mesh")]
+    EguiMesh,
+}
+
+/// banner 가 열리는 조건. phase1 은 `ipc` 만 지원한다(event 트리거는 defer).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BannerTrigger {
+    /// plugin 이 host IPC `banner.open` 을 호출해 명시적으로 연다.
+    Ipc,
+}
+
+/// banner 스코프 선언. plugin 은 `surface` 만 선언 가능(D1) — host 가 그 plugin 이
+/// 소유한 surface 에만 배치한다. 다른 스코프(workspace/view 등)는 host 전용이다.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum BannerScopeDecl {
+    #[default]
+    Surface,
+}
+
+/// banner 높이 힌트(LogicalPx). 너비는 스코프 폭 도킹이라 높이만 둔다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub struct BannerSizeHint {
+    pub height: u32,
+}
+
+fn default_banner_scope() -> BannerScopeDecl {
+    BannerScopeDecl::Surface
 }
 
 /// 사이드바 도구 메뉴 항목. plugin이 자기 동작을 사용자 진입점으로 노출하는 방식.

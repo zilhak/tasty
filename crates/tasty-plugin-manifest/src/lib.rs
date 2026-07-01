@@ -17,7 +17,8 @@ mod tests;
 
 pub use package::PluginPackage;
 pub use types::{
-    AutoWaitDecl, BindingMode, CliArg, CliArgGroup, CliArgType, CliCommandDecl, CliSubcommandDecl,
+    AutoWaitDecl, BannerContribute, BannerRendering, BannerScopeDecl, BannerSizeHint,
+    BannerTrigger, BindingMode, CliArg, CliArgGroup, CliArgType, CliCommandDecl, CliSubcommandDecl,
     CommandDecl, CommandScope, Contributes, Entry, EventEmittedDecl, EventHookDecl, EventStability,
     ExtendsDecl, HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookEventDecl, HookMode, IpcHookDecl,
     IpcNamespaceDecl, MANIFEST_VERSION, Manifest, MenuItemDecl, Permission, PollingDecl,

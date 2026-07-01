@@ -1544,6 +1544,130 @@ fn popup_size_hint_zero_rejected() {
     assert!(err.contains("size_hint"), "got: {err}");
 }
 
+// ── banner contribute (A3) ──
+
+fn banner_skeleton(extra: &str) -> String {
+    format!(
+        r#"
+        manifest_version = 1
+        id = "com.example.notifier"
+        name = "Notifier"
+        version = "0.1.0"
+        api_version = "1"
+        permissions = ["ui.banner"]
+        [entry]
+        type = "process"
+        command = "notifier"
+        [contributes]
+        {extra}
+        "#,
+    )
+}
+
+#[test]
+fn banner_ipc_trigger_parses_with_defaults() {
+    let s = banner_skeleton(
+        r#"
+            [[contributes.banner]]
+            id = "sync-status"
+            trigger = { kind = "ipc" }
+        "#,
+    );
+    let m = parse(&s).expect("banner with ipc trigger should parse");
+    assert_eq!(m.contributes.banner.len(), 1);
+    let b = &m.contributes.banner[0];
+    assert_eq!(b.id, "sync-status");
+    assert!(matches!(b.trigger, BannerTrigger::Ipc));
+    assert_eq!(b.scope, BannerScopeDecl::Surface);
+    assert_eq!(b.rendering, BannerRendering::EguiMesh);
+    assert!(b.ttl_seconds.is_none());
+    assert!(b.size_hint.is_none());
+}
+
+#[test]
+fn banner_with_ttl_and_size_hint() {
+    let s = banner_skeleton(
+        r#"
+            [[contributes.banner]]
+            id = "sync-status"
+            trigger = { kind = "ipc" }
+            ttl_seconds = 6
+            size_hint = { height = 64 }
+        "#,
+    );
+    let m = parse(&s).expect("banner with ttl/size should parse");
+    let b = &m.contributes.banner[0];
+    assert_eq!(b.ttl_seconds, Some(6));
+    assert_eq!(b.size_hint.expect("size_hint set").height, 64);
+}
+
+#[test]
+fn banner_requires_ui_banner_permission() {
+    let s = banner_skeleton(
+        r#"
+            [[contributes.banner]]
+            id = "sync-status"
+            trigger = { kind = "ipc" }
+        "#,
+    )
+    .replace("permissions = [\"ui.banner\"]", "permissions = []");
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("ui.banner"), "got: {err}");
+}
+
+#[test]
+fn banner_id_must_be_unique() {
+    let s = banner_skeleton(
+        r#"
+            [[contributes.banner]]
+            id = "dup"
+            trigger = { kind = "ipc" }
+            [[contributes.banner]]
+            id = "dup"
+            trigger = { kind = "ipc" }
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("declared twice"), "got: {err}");
+}
+
+#[test]
+fn banner_zero_ttl_rejected() {
+    let s = banner_skeleton(
+        r#"
+            [[contributes.banner]]
+            id = "sync-status"
+            trigger = { kind = "ipc" }
+            ttl_seconds = 0
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("ttl_seconds"), "got: {err}");
+}
+
+#[test]
+fn banner_zero_height_rejected() {
+    let s = banner_skeleton(
+        r#"
+            [[contributes.banner]]
+            id = "sync-status"
+            trigger = { kind = "ipc" }
+            size_hint = { height = 0 }
+        "#,
+    );
+    let err = parse(&s).unwrap_err().to_string();
+    assert!(err.contains("height"), "got: {err}");
+}
+
+#[test]
+fn ui_banner_permission_token_roundtrip() {
+    assert_eq!(
+        Permission::from_token("ui.banner"),
+        Some(Permission::UiBanner)
+    );
+    assert_eq!(Permission::UiBanner.as_token(), "ui.banner");
+}
+
 #[test]
 fn extends_filter_mode_allows_empty_modifies() {
     let s = extends_skeleton(

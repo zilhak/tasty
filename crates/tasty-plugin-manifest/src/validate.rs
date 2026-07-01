@@ -514,6 +514,47 @@ impl Manifest {
             }
         }
 
+        // [[contributes.banner]] 검증 (A3).
+        if !self.contributes.banner.is_empty() {
+            if !self.permissions.iter().any(|p| p == "ui.banner") {
+                anyhow::bail!(
+                    "[[contributes.banner]] requires permission 'ui.banner' to be declared in manifest permissions[]"
+                );
+            }
+            let mut seen_banner_ids = HashSet::new();
+            for banner in &self.contributes.banner {
+                if !is_valid_tool_id(&banner.id) {
+                    anyhow::bail!(
+                        "invalid contributes.banner id '{}': must be lowercase ascii + digits + '-', \
+                         start with a letter, length ≤ 64",
+                        banner.id
+                    );
+                }
+                if !seen_banner_ids.insert(banner.id.clone()) {
+                    anyhow::bail!(
+                        "contributes.banner id '{}' declared twice in this manifest",
+                        banner.id
+                    );
+                }
+                if let Some(sz) = &banner.size_hint
+                    && sz.height == 0
+                {
+                    anyhow::bail!(
+                        "contributes.banner '{}': size_hint height must be > 0",
+                        banner.id
+                    );
+                }
+                if let Some(ttl) = banner.ttl_seconds
+                    && ttl == 0
+                {
+                    anyhow::bail!(
+                        "contributes.banner '{}': ttl_seconds must be > 0 (omit for a persistent banner)",
+                        banner.id
+                    );
+                }
+            }
+        }
+
         // [[contributes.window]] 검증.
         if !self.contributes.window.is_empty() {
             if !self.permissions.iter().any(|p| p == "window.spawn") {
