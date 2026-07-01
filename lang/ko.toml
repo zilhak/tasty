@@ -468,6 +468,8 @@ close_workspace = "워크스페이스 닫기"
 title_heading = "워크스페이스 이름 변경"
 subtitle_heading = "부제목 변경"
 tab_heading = "탭 이름 변경"
+new_category_heading = "새 카테고리"
+category_heading = "카테고리 이름 변경"
 
 [tab_context_menu]
 rename = "탭 이름 변경"

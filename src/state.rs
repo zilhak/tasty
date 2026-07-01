@@ -716,6 +716,12 @@ pub enum RenameTarget {
     /// Explorer 즐겨찾기 추가 (T11). rename 팝업과 동일 골격 — buffer = 표시 라벨.
     /// 대상 경로를 그 라벨로 전역 즐겨찾기에 등록한다.
     ExplorerAddFavorite { path: std::path::PathBuf },
+    /// 새 워크스페이스 카테고리 생성 — buffer 빈 문자열로 시작, 확인 시 인라인 검증.
+    NewCategory,
+    /// 카테고리 이름 변경 — 대상 카테고리 id. buffer 초기값 = 현재 이름.
+    CategoryName {
+        cat_id: crate::model::WorkspaceCategoryId,
+    },
 }
 
 impl RenameTarget {
@@ -727,6 +733,8 @@ impl RenameTarget {
             Self::TabName { .. } => "rename_dialog.tab_heading",
             Self::ExplorerEntry { .. } => "explorer.popup.rename.title",
             Self::ExplorerAddFavorite { .. } => "explorer.popup.add_favorite.title",
+            Self::NewCategory => "rename_dialog.new_category_heading",
+            Self::CategoryName { .. } => "rename_dialog.category_heading",
         }
     }
 
@@ -747,6 +755,10 @@ impl RenameTarget {
             }
             // 즐겨찾기는 전역이라 윈도우 스코프(특정 surface 에 묶이지 않음).
             Self::ExplorerAddFavorite { .. } => crate::model::popup_kind::PopupScope::Window,
+            // 카테고리는 특정 워크스페이스/surface 에 묶이지 않으므로 윈도우 스코프.
+            Self::NewCategory | Self::CategoryName { .. } => {
+                crate::model::popup_kind::PopupScope::Window
+            }
         }
     }
 }

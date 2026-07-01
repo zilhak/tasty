@@ -468,6 +468,8 @@ close_workspace = "ワークスペースを閉じる"
 title_heading = "ワークスペース名の変更"
 subtitle_heading = "サブタイトルの変更"
 tab_heading = "タブ名の変更"
+new_category_heading = "新しいカテゴリ"
+category_heading = "カテゴリ名の変更"
 
 [tab_context_menu]
 rename = "タブ名を変更"

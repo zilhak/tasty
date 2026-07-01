@@ -37,15 +37,18 @@ pub fn rename_popup_title(state: &AppState, _engine: &crate::core::CoreState) ->
 /// `buffer` 는 `&mut String` — view 가 TextEdit 으로 직접 mutate. gallery 에서는
 /// 로컬 `String` 의 `&mut` 를 넘기면 된다.
 pub struct RenamePopupProps<'a> {
-    /// Tier 3 popup props 일관성 보존용. 현재 view 본문은 egui 기본 스타일에
-    /// 의존해 theme 토큰 직접 사용은 없지만, 다른 popup props 와 시그니처
-    /// 통일성 (gallery mirror 도 동일 field 보유) 을 위해 유지.
-    #[allow(dead_code)] // popup props 시그니처 일관성 — 현재 미read, 생성부(타 파일) 유지
+    /// 인라인 검증 에러 라인의 danger 색 등 토큰 소스. gallery mirror 도 동일 field 보유.
     pub theme: &'a Theme,
     pub buffer: &'a mut String,
     pub save_label: &'a str,
     pub cancel_label: &'a str,
     pub body_font_size: f32,
+    /// 인라인 검증 에러 메시지(카테고리 생성/이름변경). `Some` 이면 필드 아래 danger
+    /// 라인으로 표시. 비카테고리 대상은 항상 `None`.
+    pub error: Option<&'a str>,
+    /// 확인(Save/Enter) 가능 여부. false 면 Save 버튼 비활성 + Enter confirm 차단.
+    /// 비카테고리 대상은 항상 true(기존 동작 보존).
+    pub save_enabled: bool,
 }
 
 /// User intent surfaced by [`draw_rename_popup_view`].
@@ -84,11 +87,21 @@ pub fn draw_rename_popup(
             .is_some_and(|p| *tab_index < p.tabs.len()),
         RenameTarget::ExplorerEntry { path, .. } => path.exists(),
         RenameTarget::ExplorerAddFavorite { path } => path.exists(),
+        RenameTarget::NewCategory => true,
+        RenameTarget::CategoryName { cat_id } => engine.category_index(*cat_id).is_some(),
     };
     if !valid {
         state.dialogs.rename = None;
         return PopupAction::Close;
     }
+
+    // 카테고리 대상은 라이브 검증(빈/normal/중복 → 에러 라인 + 확인 비활성). 비카테고리는
+    // (None, true) 로 기존 동작 보존. buffer 는 직전 프레임 값 기준 — immediate mode 한 프레임
+    // 지연은 무해.
+    let (category_error, save_enabled) = {
+        let buffer = &state.dialogs.rename.as_ref().unwrap().1;
+        category_validation(target, buffer, engine)
+    };
 
     let margin = 8.0;
     let available = ui.available_rect_before_wrap();
@@ -111,6 +124,8 @@ pub fn draw_rename_popup(
             save_label,
             cancel_label,
             body_font_size: th.font_size_body.value(),
+            error: category_error.as_deref(),
+            save_enabled,
         };
         draw_rename_popup_view(inner, &mut props)
     };
@@ -170,8 +185,15 @@ pub fn draw_rename_popup_view(
     let mut confirm = false;
     let mut cancel = false;
 
-    if resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+    // Enter confirm — 확인 비활성(검증 실패) 시 차단.
+    if props.save_enabled && resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
         confirm = true;
+    }
+
+    // 인라인 검증 에러 라인 (카테고리 대상). danger 토큰으로 표시.
+    if let Some(err) = props.error {
+        ui.add_space(4.0);
+        ui.colored_label(props.theme.accent_danger(), err);
     }
 
     ui.add_space(8.0);
@@ -180,7 +202,10 @@ pub fn draw_rename_popup_view(
             if ui.button(props.cancel_label).clicked() {
                 cancel = true;
             }
-            if ui.button(props.save_label).clicked() {
+            if ui
+                .add_enabled(props.save_enabled, egui::Button::new(props.save_label))
+                .clicked()
+            {
                 confirm = true;
             }
         });
@@ -193,6 +218,47 @@ pub fn draw_rename_popup_view(
         return RenamePopupAction::Cancel;
     }
     RenamePopupAction::None
+}
+
+/// 카테고리 대상의 라이브 검증. 반환 `(에러 메시지, 확인 가능 여부)`. 비카테고리
+/// 대상은 `(None, true)`. 빈 입력(초기 상태)은 에러 텍스트를 감추고 확인만 비활성해
+/// 타이핑 전 과한 빨간줄을 피한다. rename 시 자기 자신 이름은 중복이 아니다(대상 제외).
+fn category_validation(
+    target: &RenameTarget,
+    buffer: &str,
+    engine: &crate::core::CoreState,
+) -> (Option<String>, bool) {
+    let result = match target {
+        RenameTarget::NewCategory => {
+            let existing: Vec<&str> = engine
+                .categories()
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect();
+            crate::model::validate_new_category_name(buffer, existing)
+        }
+        RenameTarget::CategoryName { cat_id } => {
+            let existing: Vec<&str> = engine
+                .categories()
+                .iter()
+                .filter(|c| c.id != *cat_id)
+                .map(|c| c.name.as_str())
+                .collect();
+            crate::model::validate_rename_category_name(buffer, existing)
+        }
+        _ => return (None, true),
+    };
+    match result {
+        Ok(_) => (None, true),
+        Err(e) => {
+            let text = if buffer.trim().is_empty() {
+                None
+            } else {
+                Some(t(e.i18n_key()).to_string())
+            };
+            (text, false)
+        }
+    }
 }
 
 fn apply_rename(
@@ -280,6 +346,17 @@ fn apply_rename(
             engine.explorer_favorites.add(path, buffer);
             engine.explorer_favorites.save();
         }
+        RenameTarget::NewCategory => {
+            // 뷰가 검증 통과 시에만 Confirm 하지만, CRUD 도 Result 라 방어적으로 로그.
+            if let Err(e) = engine.create_category(&buffer) {
+                tracing::warn!("create_category '{buffer}' failed: {e:?}");
+            }
+        }
+        RenameTarget::CategoryName { cat_id } => {
+            if let Err(e) = engine.rename_category(cat_id, &buffer) {
+                tracing::warn!("rename_category {cat_id} '{buffer}' failed: {e:?}");
+            }
+        }
     }
     engine.mark_layout_dirty();
 }
@@ -305,6 +382,8 @@ mod tests {
                     save_label: "Save",
                     cancel_label: "Cancel",
                     body_font_size: 12.0,
+                    error: None,
+                    save_enabled: true,
                 };
                 out = draw_rename_popup_view(ui, &mut props);
             });
@@ -356,6 +435,8 @@ mod tests {
                     save_label: "Save",
                     cancel_label: "Cancel",
                     body_font_size: 12.0,
+                    error: None,
+                    save_enabled: true,
                 };
                 let _ = draw_rename_popup_view(ui, &mut props); // focus priming frame — action 무시.
             });
@@ -372,6 +453,8 @@ mod tests {
                     save_label: "Save",
                     cancel_label: "Cancel",
                     body_font_size: 12.0,
+                    error: None,
+                    save_enabled: true,
                 };
                 last = draw_rename_popup_view(ui, &mut props);
             });
@@ -385,5 +468,43 @@ mod tests {
         let (action, buffer) = run_with_input(egui::RawInput::default(), "");
         assert_eq!(action, RenamePopupAction::None);
         assert_eq!(buffer, "");
+    }
+
+    fn engine() -> crate::core::CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        crate::core::CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    #[test]
+    fn category_validation_new_category_rules() {
+        let mut e = engine();
+        e.create_category("Services").unwrap();
+        // 빈 입력 → 확인 비활성, 에러 텍스트는 숨김(타이핑 전).
+        let (err, ok) = category_validation(&RenameTarget::NewCategory, "  ", &e);
+        assert!(!ok && err.is_none());
+        // 예약어 normal → 에러 + 비활성.
+        let (err, ok) = category_validation(&RenameTarget::NewCategory, "normal", &e);
+        assert!(!ok && err.is_some());
+        // 중복(대소문자 무시) → 에러.
+        let (err, ok) = category_validation(&RenameTarget::NewCategory, "services", &e);
+        assert!(!ok && err.is_some());
+        // 유효 → 통과.
+        let (err, ok) = category_validation(&RenameTarget::NewCategory, "Infra", &e);
+        assert!(ok && err.is_none());
+    }
+
+    #[test]
+    fn category_validation_rename_allows_self_name() {
+        let mut e = engine();
+        let id = e.create_category("Services").unwrap();
+        // 자기 자신 이름(대소문자만 다름) 은 중복 아님.
+        let (err, ok) =
+            category_validation(&RenameTarget::CategoryName { cat_id: id }, "SERVICES", &e);
+        assert!(ok && err.is_none());
+        // 다른 카테고리와 중복은 에러.
+        e.create_category("Infra").unwrap();
+        let (err, ok) =
+            category_validation(&RenameTarget::CategoryName { cat_id: id }, "Infra", &e);
+        assert!(!ok && err.is_some());
     }
 }

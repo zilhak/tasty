@@ -468,6 +468,8 @@ close_workspace = "Close Workspace"
 title_heading = "Rename Workspace"
 subtitle_heading = "Change Subtitle"
 tab_heading = "Rename Tab"
+new_category_heading = "New Category"
+category_heading = "Rename Category"
 
 [tab_context_menu]
 rename = "Rename Tab"
