@@ -90,6 +90,7 @@ pub fn run_attach_ssh(
     target: SshTarget,
     remote_tasty: &str,
     port_mode: &str,
+    port_file: Option<&str>,
     surface: u32,
     dump_after: Option<u64>,
     send: Option<&str>,
@@ -106,16 +107,23 @@ pub fn run_attach_ssh(
     let mut backoff = Backoff::new();
     loop {
         // ① 원격 포트 발견.
-        let remote_port =
-            match ssh::discover_remote_port(&ssh, &target, remote_tasty, mode, verify, debug) {
-                Ok(p) => p,
-                Err(e) if reconnect => {
-                    eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
-                    backoff.sleep();
-                    continue;
-                }
-                Err(e) => return Err(e),
-            };
+        let remote_port = match ssh::discover_remote_port(
+            &ssh,
+            &target,
+            remote_tasty,
+            mode,
+            verify,
+            debug,
+            port_file,
+        ) {
+            Ok(p) => p,
+            Err(e) if reconnect => {
+                eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
+                backoff.sleep();
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
 
         // ② ssh -L 터널 (Drop 시 자식 ssh 자동 kill — 원격 데몬은 생존).
         let tunnel = match SshTunnel::establish(&ssh, &target, remote_port, verify) {
@@ -223,6 +231,7 @@ pub fn run_attach_workspace_ssh(
     target: SshTarget,
     remote_tasty: &str,
     port_mode: &str,
+    port_file: Option<&str>,
     workspace: u32,
     dump_after: Option<u64>,
     send: Option<&str>,
@@ -237,16 +246,23 @@ pub fn run_attach_workspace_ssh(
 
     let mut backoff = Backoff::new();
     loop {
-        let remote_port =
-            match ssh::discover_remote_port(&ssh, &target, remote_tasty, mode, verify, debug) {
-                Ok(p) => p,
-                Err(e) if reconnect => {
-                    eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
-                    backoff.sleep();
-                    continue;
-                }
-                Err(e) => return Err(e),
-            };
+        let remote_port = match ssh::discover_remote_port(
+            &ssh,
+            &target,
+            remote_tasty,
+            mode,
+            verify,
+            debug,
+            port_file,
+        ) {
+            Ok(p) => p,
+            Err(e) if reconnect => {
+                eprintln!("원격 포트 발견 실패: {e} — 백오프 재시도");
+                backoff.sleep();
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
 
         let tunnel = match SshTunnel::establish(&ssh, &target, remote_port, verify) {
             Ok(t) => t,

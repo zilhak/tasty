@@ -362,29 +362,31 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         // 원격 접속 스펙 결정: 저장 프로필(비활성 거부) → SshTarget(+remote_tasty/
         // port_mode 대체), 없으면 1회성 `--ssh`. 둘 다 없으면 로컬 attach 시도 →
         // release 표면엔 로컬 attach 가 없으므로 명확히 거부한다.
-        let (target, rt, pm): (crate::ssh::SshTarget, String, String) = match profile {
-            Some(name) => {
-                let profiles = tasty_remote_profiles::RemoteProfiles::load();
-                let passkeys = tasty_remote_profiles::Passkeys::load();
-                let Some(p) = profiles.get(name) else {
-                    anyhow::bail!(
-                        "원격 프로필 '{name}' 을 찾을 수 없습니다 (tasty remote profile list)."
-                    );
-                };
-                crate::ssh::resolve_attach_target(p, &passkeys)?
-            }
-            None => match ssh {
-                Some(dest) => (
-                    crate::ssh::SshTarget::parse(dest),
-                    remote_tasty.clone(),
-                    remote_port_mode.clone(),
-                ),
-                None => anyhow::bail!(
-                    "원격 attach 대상이 필요합니다 (--ssh 또는 --profile). \
+        let (target, rt, pm, pf): (crate::ssh::SshTarget, String, String, Option<String>) =
+            match profile {
+                Some(name) => {
+                    let profiles = tasty_remote_profiles::RemoteProfiles::load();
+                    let passkeys = tasty_remote_profiles::Passkeys::load();
+                    let Some(p) = profiles.get(name) else {
+                        anyhow::bail!(
+                            "원격 프로필 '{name}' 을 찾을 수 없습니다 (tasty remote profile list)."
+                        );
+                    };
+                    crate::ssh::resolve_attach_target(p, &profiles, &passkeys)?
+                }
+                None => match ssh {
+                    Some(dest) => (
+                        crate::ssh::SshTarget::parse(dest),
+                        remote_tasty.clone(),
+                        remote_port_mode.clone(),
+                        None,
+                    ),
+                    None => anyhow::bail!(
+                        "원격 attach 대상이 필요합니다 (--ssh 또는 --profile). \
                      로컬 attach 는 `tasty debug attach` (debug 빌드)."
-                ),
-            },
-        };
+                    ),
+                },
+            };
         // workspace 단위 attach (단계 6): 트리 N-터미널 다중화 mirror.
         if let Some(ws) = workspace {
             if *raw {
@@ -394,6 +396,7 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
                 target,
                 &rt,
                 &pm,
+                pf.as_deref(),
                 *ws,
                 *dump_after,
                 send.as_deref(),
@@ -409,6 +412,7 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
             target,
             &rt,
             &pm,
+            pf.as_deref(),
             *surface,
             *dump_after,
             send.as_deref(),
@@ -436,27 +440,29 @@ pub fn run_client(command: Commands, port_file: Option<&str>) -> Result<()> {
         // 접속 스펙 결정: 저장 프로필(비활성 거부) → SshTarget(+remote_tasty/port_mode
         // 대체), 없으면 1회성 `--ssh`. 둘 다 없으면 대상 미지정 → 명확히 거부.
         // (attach 와 동일 가드 — 포커스 비의존, ID/주소 직접 지정.)
-        let (target, rt, pm): (crate::ssh::SshTarget, String, String) = match profile {
-            Some(name) => {
-                let profiles = tasty_remote_profiles::RemoteProfiles::load();
-                let passkeys = tasty_remote_profiles::Passkeys::load();
-                let Some(p) = profiles.get(name) else {
-                    anyhow::bail!(
-                        "원격 프로필 '{name}' 을 찾을 수 없습니다 (tasty remote profile list)."
-                    );
-                };
-                crate::ssh::resolve_attach_target(p, &passkeys)?
-            }
-            None => match ssh {
-                Some(dest) => (
-                    crate::ssh::SshTarget::parse(dest),
-                    remote_tasty.clone(),
-                    remote_port_mode.clone(),
-                ),
-                None => anyhow::bail!("원격 check 대상이 필요합니다 (--ssh 또는 --profile)."),
-            },
-        };
-        return crate::commands::remote_check::run_remote_check(target, &rt, &pm);
+        let (target, rt, pm, pf): (crate::ssh::SshTarget, String, String, Option<String>) =
+            match profile {
+                Some(name) => {
+                    let profiles = tasty_remote_profiles::RemoteProfiles::load();
+                    let passkeys = tasty_remote_profiles::Passkeys::load();
+                    let Some(p) = profiles.get(name) else {
+                        anyhow::bail!(
+                            "원격 프로필 '{name}' 을 찾을 수 없습니다 (tasty remote profile list)."
+                        );
+                    };
+                    crate::ssh::resolve_attach_target(p, &profiles, &passkeys)?
+                }
+                None => match ssh {
+                    Some(dest) => (
+                        crate::ssh::SshTarget::parse(dest),
+                        remote_tasty.clone(),
+                        remote_port_mode.clone(),
+                        None,
+                    ),
+                    None => anyhow::bail!("원격 check 대상이 필요합니다 (--ssh 또는 --profile)."),
+                },
+            };
+        return crate::commands::remote_check::run_remote_check(target, &rt, &pm, pf.as_deref());
     }
     // `tasty debug attach <id>` (non-force, 로컬 loopback) — 단계 4 raw 스트림. 로컬
     // self-attach 는 사용자 입력 재현 성격이라 debug 빌드 전용으로 격리한다(원칙 1 ②).

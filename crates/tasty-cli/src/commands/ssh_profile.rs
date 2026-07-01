@@ -12,6 +12,16 @@ use tasty_remote_profiles::{
     Passkeys, RemoteProfile, RemoteProfiles, is_valid_shell, sanitize_passkey_name,
 };
 
+/// ssh 프로필의 legacy attach 필드(remote_tasty/port_mode) raw 접근. SshView 는 더
+/// 이상 이 필드를 노출하지 않는다(01 데이터 모델 분리) — 이 CLI 표시부는 TODO 04 에서
+/// tasty-attach 편집으로 이관될 전환기 shim 이다.
+fn raw_field<'a>(p: &'a RemoteProfile, key: &str, default: &'static str) -> &'a str {
+    p.fields
+        .get(key)
+        .and_then(|f| f.as_str())
+        .unwrap_or(default)
+}
+
 #[derive(Subcommand)]
 pub enum SshProfileCommands {
     /// 새 ssh 프로필 추가(같은 name 이 있으면 교체).
@@ -169,8 +179,8 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
                             "user": v.as_ref().and_then(|v| v.user()),
                             "port": v.as_ref().and_then(|v| v.port()),
                             "passkey_ref": p.passkey_ref,
-                            "remote_tasty": v.as_ref().map(|v| v.remote_tasty()),
-                            "port_mode": v.as_ref().map(|v| v.port_mode()),
+                            "remote_tasty": v.as_ref().map(|_| raw_field(p, "remote_tasty", "tasty")),
+                            "port_mode": v.as_ref().map(|_| raw_field(p, "port_mode", "auto")),
                             "shell": v.as_ref().map(|v| v.shell()),
                             "detect_failed": v.as_ref().map(|v| v.detect_failed()).unwrap_or(false),
                         })
@@ -188,7 +198,11 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
                     let v = p.as_ssh();
                     let dest = v.as_ref().map(|v| v.ssh_destination()).unwrap_or_default();
                     let shell = v.as_ref().map(|v| v.shell()).unwrap_or("");
-                    let pm = v.as_ref().map(|v| v.port_mode()).unwrap_or("");
+                    let pm = if v.is_some() {
+                        raw_field(p, "port_mode", "auto")
+                    } else {
+                        ""
+                    };
                     let status = if v.as_ref().map(|v| v.is_disabled()).unwrap_or(false) {
                         "감지 실패(비활성)"
                     } else if !p.is_builtin_kind() {
@@ -234,9 +248,9 @@ pub fn run(command: &SshProfileCommands) -> Result<()> {
                     if !v.extra_options().is_empty() {
                         println!("extra_options : {}", v.extra_options().join(", "));
                     }
-                    println!("remote_tasty  : {}", v.remote_tasty());
+                    println!("remote_tasty  : {}", raw_field(p, "remote_tasty", "tasty"));
                     println!("shell         : {}", v.shell());
-                    println!("port_mode     : {}", v.port_mode());
+                    println!("port_mode     : {}", raw_field(p, "port_mode", "auto"));
                     if v.is_disabled() {
                         println!(
                             "status        : 감지 실패(비활성) — tasty tool ssh detect {name}"

@@ -34,6 +34,7 @@ fn parse_attach_mapping(params: &serde_json::Value) -> Option<WorkspaceAttachMap
                 host: host.to_string(),
                 remote_tasty: None,
                 port_mode: None,
+                port_file: None,
             },
             remote_workspace,
         });

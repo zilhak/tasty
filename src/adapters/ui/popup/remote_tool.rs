@@ -894,7 +894,14 @@ fn form_from_profile(p: &RemoteProfile, _passkeys: &Passkeys) -> ProfileForm {
         f.host = v.host().unwrap_or("").to_string();
         f.user = v.user().unwrap_or("").to_string();
         f.port = v.port().map(|n| n.to_string()).unwrap_or_default();
-        f.remote_tasty = v.remote_tasty().to_string();
+        // remote_tasty 는 SshView 에서 제거됨(01) — legacy raw 필드로 읽는다(전환기,
+        // TODO 05 Attach 탭 재설계에서 이관). 없으면 기본 "tasty".
+        f.remote_tasty = p
+            .fields
+            .get("remote_tasty")
+            .and_then(|fv| fv.as_str())
+            .unwrap_or("tasty")
+            .to_string();
         f.shell = v.shell().to_string();
     } else {
         f.fields = p

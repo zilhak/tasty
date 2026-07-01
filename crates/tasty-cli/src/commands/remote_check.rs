@@ -30,7 +30,12 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 /// 출력하고 `Ok(())`(exit 0). 어느 단계든 실패하면 시도한 발견 모드·실패 단계를 담은
 /// 에러를 반환한다(상위에서 stderr + exit≠0). `attach` 와 달리 1 회성이라 백오프 재연결은
 /// 하지 않는다 — 생존 확인은 "지금 살아있나" 의 단발 판정이다.
-pub fn run_remote_check(target: SshTarget, remote_tasty: &str, port_mode: &str) -> Result<()> {
+pub fn run_remote_check(
+    target: SshTarget,
+    remote_tasty: &str,
+    port_mode: &str,
+    port_file: Option<&str>,
+) -> Result<()> {
     let ssh = ssh::resolve_ssh_path();
     let dest = target.destination.clone();
     let mode = PortMode::parse(port_mode)?;
@@ -40,7 +45,7 @@ pub fn run_remote_check(target: SshTarget, remote_tasty: &str, port_mode: &str) 
 
     // ① 원격 포트 발견. 실패 = 미발견(포트 파일 없음/원격 명령 실패) → dead.
     let remote_port =
-        ssh::discover_remote_port(&ssh, &target, remote_tasty, mode, verify, debug)
+        ssh::discover_remote_port(&ssh, &target, remote_tasty, mode, verify, debug, port_file)
             .with_context(|| t_args("cli.remote_check.not_found", &[dest.as_str(), port_mode]))?;
 
     // ② ssh -L 터널 (Drop 시 자식 ssh 자동 kill). 터널 수립 실패 = 인증/네트워크/포워드

@@ -125,25 +125,27 @@ impl App {
 
 /// 매핑 타깃 → 접속 엔드포인트(터널 or loopback 포트). 워커 스레드에서 실행(블록 OK).
 fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<SshTunnel>, u16)> {
-    // ① 접속 스펙 결정(destination + remote_tasty + port_mode).
-    let (ssh_target, remote_tasty, port_mode) = match target {
+    // ① 접속 스펙 결정(destination + remote_tasty + port_mode + port_file).
+    let (ssh_target, remote_tasty, port_mode, port_file) = match target {
         WorkspaceAttachTarget::Profile { name } => {
             let profiles = RemoteProfiles::load();
             let passkeys = Passkeys::load();
             let p = profiles
                 .get(name)
                 .ok_or_else(|| anyhow::anyhow!("원격 프로필 '{name}' 을 찾을 수 없습니다"))?;
-            // ssh kind 검증 + 비활성 게이트 + passkey resolve 를 한곳에서.
-            ssh::resolve_attach_target(p, &passkeys)?
+            // tasty-attach kind 검증 + 비활성 게이트 + ref/inline resolve 를 한곳에서.
+            ssh::resolve_attach_target(p, &profiles, &passkeys)?
         }
         WorkspaceAttachTarget::Inline {
             host,
             remote_tasty,
             port_mode,
+            port_file,
         } => (
             SshTarget::parse(host),
             remote_tasty.clone().unwrap_or_else(|| "tasty".into()),
             port_mode.clone().unwrap_or_else(|| "auto".into()),
+            port_file.clone(),
         ),
     };
 
@@ -158,8 +160,15 @@ fn resolve_endpoint(target: &WorkspaceAttachTarget) -> anyhow::Result<(Option<Ss
     // 자동 검증(Claude Bash) 한정 host key accept-new. 평상시 기본 strict 유지(보안).
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
     let debug = cfg!(debug_assertions);
-    let remote_port =
-        ssh::discover_remote_port(&ssh, &ssh_target, &remote_tasty, mode, verify, debug)?;
+    let remote_port = ssh::discover_remote_port(
+        &ssh,
+        &ssh_target,
+        &remote_tasty,
+        mode,
+        verify,
+        debug,
+        port_file.as_deref(),
+    )?;
     let tunnel = SshTunnel::establish(&ssh, &ssh_target, remote_port, verify)?;
     let local_port = tunnel.local_port;
     Ok((Some(tunnel), local_port))

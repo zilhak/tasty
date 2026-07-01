@@ -104,28 +104,95 @@ impl SshTarget {
             extra_options: v.extra_options(),
         })
     }
+
+    /// **인라인 tasty-attach** 프로필을 ssh 연결 대상으로 변환한다(ssh_ref 없는 경우).
+    /// 연결 필드는 attach 프로필 자신의 fields 에서 읽는다([`AttachView`] 인라인 모드가
+    /// [`SshView`] 로직을 위임 재사용). `identity_file` 은 `passkey_ref` → [`Passkeys`].
+    pub fn from_attach_inline(p: &RemoteProfile, passkeys: &Passkeys) -> Result<Self> {
+        let v = p.as_attach().ok_or_else(|| {
+            anyhow::anyhow!(
+                "인라인 attach 대상이 tasty-attach kind 가 아닙니다 (kind='{}')",
+                p.kind
+            )
+        })?;
+        let identity_file = match &p.passkey_ref {
+            Some(name) => Some(
+                passkeys
+                    .get(name)
+                    .ok_or_else(|| anyhow::anyhow!("passkey '{name}' 을 찾을 수 없습니다"))?
+                    .path
+                    .clone(),
+            ),
+            None => None,
+        };
+        Ok(Self {
+            destination: v.ssh_destination(),
+            ssh_port: v.port(),
+            identity_file,
+            extra_options: v.extra_options(),
+        })
+    }
 }
 
-/// attach 소비자용 헬퍼 — 프로필을 `(SshTarget, remote_tasty, port_mode)` 로 resolve.
-/// ssh kind 검증 + 비활성(detect 실패) 게이트 + passkey resolve 를 한곳에서 처리한다
-/// (auto_attach / `remote attach` / `remote check` 3곳의 중복 제거).
+/// attach 소비자용 헬퍼 — tasty-attach 프로필을
+/// `(SshTarget, remote_tasty, port_mode, port_file)` 로 resolve 한다.
+///
+/// 연결 정보(SshTarget)는 두 갈래:
+/// - `ssh_ref` 있으면 → `profiles` 에서 참조 ssh 프로필을 **매 resolve 마다 재로드**해
+///   (라이브 팔로우) `SshTarget::from_remote_profile` 로 결선. dangling ref 는 명확한
+///   에러(목록/GUI 표시는 이 에러를 잡아 소프트 배지로).
+/// - `ssh_ref` 없으면(인라인) → attach 프로필 자체 fields 로 `from_attach_inline`.
+///
+/// 비활성 게이트: 유효 ssh 소스(참조 ssh 프로필 or 인라인)의 `detect_failed`.
+/// attach 전용 remote_tasty/port_mode/port_file 은 tasty-attach 프로필이 소유한다.
 pub fn resolve_attach_target(
     p: &RemoteProfile,
+    profiles: &RemoteProfiles,
     passkeys: &Passkeys,
-) -> Result<(SshTarget, String, String)> {
-    let v = p.as_ssh().ok_or_else(|| {
-        anyhow::anyhow!("attach 는 ssh kind 프로필만 지원합니다 (kind='{}')", p.kind)
+) -> Result<(SshTarget, String, String, Option<String>)> {
+    let v = p.as_attach().ok_or_else(|| {
+        anyhow::anyhow!(
+            "attach 는 tasty-attach kind 프로필만 지원합니다 (kind='{}')",
+            p.kind
+        )
     })?;
-    if v.is_disabled() {
+
+    let (target, disabled) = match v.ssh_ref() {
+        Some(ref_name) => {
+            let ssh_profile = profiles.get(ref_name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "attach 프로필 '{}' 이 참조하는 ssh 프로필 '{ref_name}' 을 찾을 수 없습니다",
+                    p.name
+                )
+            })?;
+            let sv = ssh_profile.as_ssh().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "attach 프로필 '{}' 의 ssh_ref '{ref_name}' 은 ssh kind 가 아닙니다 (kind='{}')",
+                    p.name,
+                    ssh_profile.kind
+                )
+            })?;
+            let disabled = sv.is_disabled();
+            (
+                SshTarget::from_remote_profile(ssh_profile, passkeys)?,
+                disabled,
+            )
+        }
+        None => (
+            SshTarget::from_attach_inline(p, passkeys)?,
+            v.detect_failed(),
+        ),
+    };
+    if disabled {
         bail!(
-            "프로필 '{}' 은 비활성(셸 감지 실패) — 재감지가 필요합니다",
+            "attach 프로필 '{}' 의 ssh 소스가 비활성(셸 감지 실패) — 재감지가 필요합니다",
             p.name
         );
     }
     let remote_tasty = v.remote_tasty().to_string();
     let port_mode = v.port_mode().to_string();
-    let target = SshTarget::from_remote_profile(p, passkeys)?;
-    Ok((target, remote_tasty, port_mode))
+    let port_file = v.port_file().map(|s| s.to_string());
+    Ok((target, remote_tasty, port_mode, port_file))
 }
 
 /// 경로 앞의 `~` / `~/` 를 홈 디렉토리로 확장한다. ssh 를 셸 없이 spawn 하면 셸의
@@ -273,6 +340,31 @@ fn discover_via_subcommand(
     parse_port(&out)
 }
 
+/// 명시 port 파일을 읽는 원격 명령 후보(순서대로 시도). `cat`(unix/powershell/git
+/// bash) → `type`(cmd). 순수 함수라 단위 테스트로 명령 형태를 고정한다.
+fn explicit_file_commands(port_file: &str) -> [String; 2] {
+    [format!("cat {port_file}"), format!("type {port_file}")]
+}
+
+/// 명시된 port 파일 경로를 직접 읽어 포트를 얻는다(관례 경로 무시, 최우선).
+///
+/// 원격 셸을 모를 수 있으므로 `cat <path>`(unix/powershell/git bash) → `type <path>`
+/// (cmd) 순으로 시도한다. 명시 경로는 `~` 확장을 원격 셸에 의존하므로 절대경로 권장.
+fn discover_via_explicit_file(
+    ssh: &Path,
+    target: &SshTarget,
+    port_file: &str,
+    verify: bool,
+) -> Result<u16> {
+    let cmds = explicit_file_commands(port_file);
+    match run_ssh_capture(ssh, target, verify, &[&cmds[0]]).and_then(|o| parse_port(&o)) {
+        Ok(port) => return Ok(port),
+        Err(e) => tracing::debug!("port_file `{}` 실패({e}) — 다음 후보 시도", cmds[0]),
+    }
+    let out = run_ssh_capture(ssh, target, verify, &[&cmds[1]])?;
+    parse_port(&out)
+}
+
 /// OS 분기 file 모드(decisions 9 fallback): Unix `cat` / Windows `type`.
 fn discover_via_file(
     ssh: &Path,
@@ -316,7 +408,12 @@ pub fn discover_remote_port(
     mode: PortMode,
     verify: bool,
     debug: bool,
+    port_file: Option<&str>,
 ) -> Result<u16> {
+    // 명시 port_file 은 관례 체인보다 최우선 — 비표준 위치의 port 파일도 발견 가능.
+    if let Some(pf) = port_file {
+        return discover_via_explicit_file(ssh, target, pf, verify);
+    }
     if mode != PortMode::Auto {
         return discover_single_mode(ssh, target, remote_tasty, mode, verify, debug);
     }
@@ -423,10 +520,14 @@ pub fn apply_shell_to_profile(
 fn detect_for_profile(profile: &RemoteProfile, passkeys: &Passkeys) -> Result<PortMode> {
     let ssh = resolve_ssh_path();
     let target = SshTarget::from_remote_profile(profile, passkeys)?;
+    // ssh 프로필 셸 감지는 기본 `tasty` 바이너리로 subcommand 프로브를 시도한다.
+    // (attach 실행부의 remote_tasty 는 tasty-attach 프로필이 소유 — 셸 감지엔 불필요.)
     let remote_tasty = profile
-        .as_ssh()
-        .map(|v| v.remote_tasty().to_string())
-        .unwrap_or_else(|| "tasty".into());
+        .fields
+        .get("remote_tasty")
+        .and_then(|f| f.as_str())
+        .unwrap_or("tasty")
+        .to_string();
     let verify = std::env::var("TASTY_SSH_VERIFY").is_ok();
     let debug = cfg!(debug_assertions);
     detect_port_mode(&ssh, &target, &remote_tasty, verify, debug)
@@ -620,25 +721,89 @@ mod tests {
     }
 
     #[test]
-    fn resolve_attach_target_rejects_non_ssh_and_disabled() {
+    fn resolve_attach_rejects_ssh_kind_profile() {
         let pk = Passkeys::default();
-        // 비-ssh kind 거부.
-        let http = RemoteProfile::new("site", "http").with_field("url", "https://x");
-        assert!(resolve_attach_target(&http, &pk).is_err());
-        // 비활성(detect 실패) 거부.
-        let disabled = RemoteProfile::new("x", "ssh")
+        let profiles = RemoteProfiles::default();
+        // ssh kind 를 attach 대상으로 주면 거부(tasty-attach 만 지원).
+        let ssh = RemoteProfile::new("gb10", "ssh").with_field("host", "h");
+        assert!(resolve_attach_target(&ssh, &profiles, &pk).is_err());
+    }
+
+    #[test]
+    fn resolve_attach_inline_uses_own_fields() {
+        let pk = Passkeys::default();
+        let profiles = RemoteProfiles::default();
+        let a = RemoteProfile::new("box-a", "tasty-attach")
             .with_field("host", "h")
-            .with_field("detect_failed", "true");
-        assert!(resolve_attach_target(&disabled, &pk).is_err());
-        // 정상 — (target, remote_tasty, port_mode).
-        let ok = RemoteProfile::new("y", "ssh")
-            .with_field("host", "h")
+            .with_field("port", "2222")
             .with_field("remote_tasty", "/usr/bin/tasty")
             .with_field("port_mode", "file-unix");
-        let (t, rt, pm) = resolve_attach_target(&ok, &pk).unwrap();
+        let (t, rt, pm, pf) = resolve_attach_target(&a, &profiles, &pk).unwrap();
         assert_eq!(t.destination, "h");
+        assert_eq!(t.ssh_port, Some(2222));
         assert_eq!(rt, "/usr/bin/tasty");
         assert_eq!(pm, "file-unix");
+        assert_eq!(pf, None);
+    }
+
+    #[test]
+    fn resolve_attach_inline_disabled_is_rejected() {
+        let pk = Passkeys::default();
+        let profiles = RemoteProfiles::default();
+        let a = RemoteProfile::new("box-a", "tasty-attach")
+            .with_field("host", "h")
+            .with_field("detect_failed", "true");
+        assert!(resolve_attach_target(&a, &profiles, &pk).is_err());
+    }
+
+    #[test]
+    fn resolve_attach_ref_follows_referenced_ssh() {
+        let pk = Passkeys::default();
+        let mut profiles = RemoteProfiles::default();
+        profiles.upsert(
+            RemoteProfile::new("gb10", "ssh")
+                .with_field("host", "gbhost")
+                .with_field("port", "10209"),
+        );
+        let attach = RemoteProfile::new("gb10-a", "tasty-attach")
+            .with_field("ssh_ref", "gb10")
+            .with_field("port_file", "/data/tasty.port");
+        profiles.upsert(attach.clone());
+
+        let (t, _rt, _pm, pf) = resolve_attach_target(&attach, &profiles, &pk).unwrap();
+        assert_eq!(t.destination, "gbhost");
+        assert_eq!(t.ssh_port, Some(10209));
+        assert_eq!(pf.as_deref(), Some("/data/tasty.port"));
+
+        // 라이브 팔로우: 참조 ssh 프로필 port 를 바꾸면 resolve 도 따라간다.
+        profiles.upsert(
+            RemoteProfile::new("gb10", "ssh")
+                .with_field("host", "gbhost")
+                .with_field("port", "10210"),
+        );
+        let (t2, _, _, _) = resolve_attach_target(&attach, &profiles, &pk).unwrap();
+        assert_eq!(t2.ssh_port, Some(10210));
+    }
+
+    #[test]
+    fn resolve_attach_ref_dangling_errors() {
+        let pk = Passkeys::default();
+        let profiles = RemoteProfiles::default(); // 참조 대상 없음
+        let attach = RemoteProfile::new("gb10-a", "tasty-attach").with_field("ssh_ref", "missing");
+        assert!(resolve_attach_target(&attach, &profiles, &pk).is_err());
+    }
+
+    #[test]
+    fn resolve_attach_ref_disabled_ssh_is_rejected() {
+        let pk = Passkeys::default();
+        let mut profiles = RemoteProfiles::default();
+        profiles.upsert(
+            RemoteProfile::new("gb10", "ssh")
+                .with_field("host", "h")
+                .with_field("detect_failed", "true"),
+        );
+        let attach = RemoteProfile::new("gb10-a", "tasty-attach").with_field("ssh_ref", "gb10");
+        assert!(resolve_attach_target(&attach, &profiles, &pk).is_err());
     }
 
     #[test]
@@ -777,16 +942,34 @@ mod tests {
             .with_field("shell", "cmd");
         let ran = apply_shell_to_profile(&mut p, &pk);
         assert!(ran.is_none()); // 감지 미실행.
-        assert_eq!(p.as_ssh().unwrap().port_mode(), "file-windows");
+        // port_mode 는 이제 typed view 밖 raw 필드로 저장된다(detect-split 잔여, TODO 04).
+        let raw_port_mode = |p: &RemoteProfile| {
+            p.fields
+                .get("port_mode")
+                .and_then(|f| f.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
+        assert_eq!(raw_port_mode(&p), "file-windows");
         assert!(!p.as_ssh().unwrap().is_disabled());
 
         p.set_field("shell", "powershell");
         apply_shell_to_profile(&mut p, &pk);
-        assert_eq!(p.as_ssh().unwrap().port_mode(), "file-unix");
+        assert_eq!(raw_port_mode(&p), "file-unix");
 
         p.set_field("shell", "bash");
         apply_shell_to_profile(&mut p, &pk);
-        assert_eq!(p.as_ssh().unwrap().port_mode(), "subcommand");
+        assert_eq!(raw_port_mode(&p), "subcommand");
+    }
+
+    #[test]
+    fn explicit_port_file_prefers_cat_then_type() {
+        // 명시 port_file 은 관례 `~/.tasty/tasty.port` 대신 그 경로를 직접 읽는다.
+        let cmds = explicit_file_commands("/data/x/tasty.port");
+        assert_eq!(cmds[0], "cat /data/x/tasty.port"); // 최우선(unix/powershell/git bash)
+        assert_eq!(cmds[1], "type /data/x/tasty.port"); // fallback(cmd)
+        // 표준 관례 경로 문자열을 포함하지 않는다.
+        assert!(!cmds[0].contains(".tasty/tasty.port"));
     }
 
     #[test]
