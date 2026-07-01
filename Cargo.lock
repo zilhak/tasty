@@ -5775,6 +5775,7 @@ dependencies = [
  "anyhow",
  "libc",
  "serde",
+ "sha2",
  "tasty-themes",
  "tasty-type-appearance",
  "tasty-type-geometry",

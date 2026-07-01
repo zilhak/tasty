@@ -2,6 +2,7 @@ mod appearance;
 mod keybindings;
 mod port;
 mod port_impl;
+mod scripts;
 mod types;
 
 pub mod general;
@@ -23,6 +24,7 @@ pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use port::SettingsStorage;
 pub use port_impl::FileSettingsStorage;
+pub use scripts::{ScriptEntry, ScriptRegistry, hash_bytes, hash_file};
 pub use types::{AccessibilitySettings, MemorySettings, NotificationSettings, PerformanceSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +45,9 @@ pub struct Settings {
     /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 빈 맵).
     pub plugin_settings:
         std::collections::BTreeMap<String, std::collections::BTreeMap<String, PluginSettingValue>>,
+    /// 사용자 등록 Lua 스크립트 목록 (ADR-0031). 단축키 트리거·관리 창·TOFU 게이트의 기반.
+    /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 빈 목록).
+    pub scripts: ScriptRegistry,
 }
 
 impl Settings {
