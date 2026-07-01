@@ -4,7 +4,6 @@
 //! 실행 job 을 보내고(직렬 처리), 워커가 쌓은 [`HostCommand`] 를 drain 하며,
 //! 읽기전용 [`LuaSnapshot`] 을 발행한다. 메인과 워커는 이 경계 밖에서 state 를 공유하지 않는다.
 
-use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -84,7 +83,6 @@ pub struct LuaEngine {
     job_tx: SyncSender<LuaJob>,
     command_rx: Receiver<HostCommand>,
     snapshot: SharedSnapshot,
-    init_path: Option<PathBuf>,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -116,7 +114,6 @@ impl LuaEngine {
             job_tx,
             command_rx,
             snapshot,
-            init_path: None,
             worker: Some(worker),
         })
     }
@@ -180,28 +177,6 @@ impl LuaEngine {
             .try_send(LuaJob::ResetHooks { reply: reply_tx })
             .map_err(|_| LuaEngineError::WorkerGone)?;
         reply_rx.recv().map_err(|_| LuaEngineError::WorkerGone)?
-    }
-
-    /// `~/.tasty/init.lua` 로드 (블로킹). 파일 없으면 false. 파싱/런타임 에러는 [`LuaEngineError::Eval`].
-    ///
-    /// NOTE: init.lua 자동로드는 TODO 09 에서 폐기 예정. 워커 이관 전까지 배관 유지.
-    pub fn load_init(&mut self, path: &Path) -> Result<bool, LuaEngineError> {
-        self.init_path = Some(path.to_path_buf());
-        if !path.exists() {
-            return Ok(false);
-        }
-        let source = std::fs::read_to_string(path)?;
-        self.eval_named(&source, Some(&path.display().to_string()))?;
-        Ok(true)
-    }
-
-    /// 같은 init.lua 다시 로드. 기존 hook 등록은 모두 제거 후 재실행.
-    pub fn reload(&mut self) -> Result<bool, LuaEngineError> {
-        self.reset_hooks()?;
-        match self.init_path.clone() {
-            Some(p) => self.load_init(&p),
-            None => Ok(false),
-        }
     }
 
     /// fire-and-forget job 전송. 큐 포화/워커 종료 시 drop + warn (메인은 블록되지 않는다).
@@ -433,13 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn load_init_handles_missing_file() {
-        let mut engine = LuaEngine::new().expect("init");
-        let p = std::path::PathBuf::from("/nonexistent/tasty-test/init.lua");
-        assert!(!engine.load_init(&p).expect("missing-is-ok"));
-    }
-
-    #[test]
     fn tasty_on_registers_callback() {
         let engine = LuaEngine::new().expect("init");
         engine
@@ -514,44 +482,6 @@ mod tests {
         engine.reset_hooks().unwrap();
         engine.fire("x", &serde_json::json!({}));
         engine.eval("assert(_G.fired == false)").unwrap();
-    }
-
-    #[test]
-    fn reload_re_executes_init_and_clears_old_hooks() {
-        let mut engine = LuaEngine::new().expect("init");
-        let dir =
-            std::env::temp_dir().join(format!("tasty-lua-reload-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).ok();
-        let path = dir.join("init.lua");
-
-        std::fs::write(
-            &path,
-            r#"
-            _G.version = 1
-            tasty.on("ev", function(_) _G.from_old = true end)
-            "#,
-        )
-        .unwrap();
-        engine.load_init(&path).unwrap();
-        engine.eval("assert(_G.version == 1)").unwrap();
-
-        std::fs::write(
-            &path,
-            r#"
-            _G.version = 2
-            _G.from_old = false
-            tasty.on("ev", function(_) _G.from_new = true end)
-            "#,
-        )
-        .unwrap();
-        engine.reload().unwrap();
-        engine.eval("assert(_G.version == 2)").unwrap();
-
-        engine.fire("ev", &serde_json::json!({}));
-        engine
-            .eval("assert(_G.from_old == false and _G.from_new == true)")
-            .unwrap();
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     // --- 워커 인프라 (TODO 01) ---

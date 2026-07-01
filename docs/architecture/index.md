@@ -42,7 +42,7 @@ tasty 는 Cargo 워크스페이스 기반 크로스 플랫폼 GPU 가속 터미�
 type-\* 끼리만 의존 가능. 도메인/IO crate 의존 금지(그룹 내 순환도 금지). — [typed-length](../concepts/typed-length.md)
 
 ### 도메인-IO
-`tasty-themes`(전역 Theme + TOML IO) · `tasty-settings`(설정 스키마/직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY + termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(에이전트 메모리 `memory.db`) · `tasty-telemetry`(→ memory) · `tasty-output`(출력 파서 카탈로그) · `tasty-approval`(approval 게이트) · `tasty-agent`(세션/lifecycle, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-shm`(공유 메모리) · `tasty-portscan` · `tasty-lua`(Lua sandbox) · `tasty-i18n`(번역) · `tasty-ssh-profiles`(SSH 프로필) · `tasty-model`(도메인 모델 — workspace/pane/tab/surface, → terminal/type-geometry/utils, GUI-free)
+`tasty-themes`(전역 Theme + TOML IO) · `tasty-settings`(설정 스키마/직렬화) · `tasty-font`(글리프 atlas) · `tasty-terminal`(PTY + termwiz) · `tasty-hooks`(Surface Hook) · `tasty-memory`(에이전트 메모리 `memory.db`) · `tasty-telemetry`(→ memory) · `tasty-output`(출력 파서 카탈로그) · `tasty-approval`(approval 게이트) · `tasty-agent`(세션/lifecycle, → memory) · `tasty-presets`(레이아웃 프리셋) · `tasty-shm`(공유 메모리) · `tasty-portscan` · `tasty-lua`(Lua 스크립트 — 워커 격리 + 고정 host API, ADR-0031) · `tasty-i18n`(번역) · `tasty-ssh-profiles`(SSH 프로필) · `tasty-model`(도메인 모델 — workspace/pane/tab/surface, → terminal/type-geometry/utils, GUI-free)
 
 type-\* + 다른 도메인-IO 만 의존 가능.
 

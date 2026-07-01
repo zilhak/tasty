@@ -63,7 +63,7 @@ regular(`put/get/delete/list/exists/count/scopes/stats/query/export/import`) · 
 `list,show,install,remove,enable,disable,upgrade_builtins,permissions,grant,revoke` · `grant_agent_permission`/`revoke_agent_permission`/`list_agent_permissions` · `request_permission` · `audit_{query,summary,follow,clear}` · `extension.list`. [plugin-system](../features/plugin-system/index.md) · [capability-elevation](../features/capability-elevation/index.md).
 
 ### Lua 스크립트
-`script.reload` — `~/.tasty/init.lua` 재로딩. [lua-hooks](../features/lua-hooks/index.md).
+release IPC 없음 — 스크립트는 등록 목록 + 단축키 트리거로만 실행된다(ADR-0031). 임의 Lua 주입은 debug 빌드 전용 `debug.lua.eval`. [lua-hooks](../features/lua-hooks/index.md).
 
 ### Plugin 확장 네임스페이스
 plugin 이 `[[contributes.ipc_namespace]]` 로 prefix 를 선언하면 `<prefix>.<method>` 가 그 plugin 으로 forward 된다(예: `claude.*`, `codex.*`). [plugins/](../plugins/index.md).

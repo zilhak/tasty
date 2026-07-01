@@ -16,27 +16,17 @@ pub(crate) fn fire<T: serde::Serialize>(
     }
 }
 
-/// Lua hook 엔진 부트스트랩. `~/.tasty/init.lua` 가 있으면 로드.
-/// 초기화/로드 실패는 warn 로만 남기고 None 반환 — 호스트 부팅을 막지 않는다.
+/// Lua 워커 엔진 부트스트랩 (ADR-0031). VM 을 전용 워커 스레드에서 기동한다.
+///
+/// 부팅 시 임의 Lua 자동로드(`init.lua`)는 폐기됐다 — 스크립트는 등록 목록에서
+/// 명시 트리거(단축키)로만 실행된다. 초기화 실패는 warn 로만 남기고 None 반환
+/// (호스트 부팅을 막지 않는다).
 pub(crate) fn init_engine() -> Option<tasty_lua::LuaEngine> {
-    let mut engine = match tasty_lua::LuaEngine::new() {
-        Ok(e) => e,
+    match tasty_lua::LuaEngine::new() {
+        Ok(e) => Some(e),
         Err(e) => {
             tracing::warn!("lua engine init failed: {e}");
-            return None;
-        }
-    };
-    if let Some(home) = tasty_utils::path::tasty_home() {
-        let init_path = home.join("init.lua");
-        match engine.load_init(&init_path) {
-            Ok(true) => tracing::info!(
-                target: "tasty_lua",
-                "loaded init.lua from {}",
-                init_path.display(),
-            ),
-            Ok(false) => {}
-            Err(e) => tracing::warn!("lua: failed to load init.lua: {e}"),
+            None
         }
     }
-    Some(engine)
 }

@@ -6,13 +6,14 @@
 
 ```
 crates/tasty-lua/
-  src/engine.rs    # LuaEngine — Lua VM + tasty.on dispatcher + fire()
-  src/host_api.rs  # tasty.log / warn / notify / run_cli
+  src/engine.rs    # LuaEngine — 워커 스레드 핸들 + job/커맨드 큐 + fire()
+  src/host_api.rs  # tasty.log / warn / run_cli(커맨드 큐) / tree(스냅샷)
   src/sandbox.rs   # 메모리 cap + 위험 글로벌 제거
+  src/bridge.rs    # LuaSnapshot / HostCommand (GUI 비의존 마샬링 타입)
   meta/tasty.lua   # EmmyLua stub (LuaLS 용)
 ```
 
-`App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시퀀스(`src/boot.rs`)가 `LuaEngine::new()` 후 `load_init(~/.tasty/init.lua)` 호출 — init.lua 없으면 빈 엔진으로 정상 부팅.
+`App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시 `LuaEngine::new()` 로 VM 을 전용 워커 스레드에 기동한다 — 부팅 자동로드(init.lua)는 폐기됐다(ADR-0031). 메인은 `about_to_wait` 안전지점에서 읽기 스냅샷 발행(`publish_lua_snapshot`)과 워커 커맨드 drain(`dispatch_pending_lua_commands`)을 수행한다.
 
 이벤트 발화는 `fire_lua` 헬퍼 한 곳을 거친다(`src/app/dispatch/host_events.rs`):
 
@@ -57,7 +58,7 @@ fn fire_lua<T: Serialize>(lua: Option<&LuaEngine>, event: &str, payload: &T)
 | `SurfaceCreated` | `surface_id`, `kind`, `tab_id`, `pane_id`, `workspace_id`, `created_by: { kind: "user"\|"agent", source_plugin? }` |
 | `*Closed` | `<id>`, `reason` (+ kind) |
 
-EmmyLua 자동완성: `.luarc.json`(init.lua 옆)에 `"workspace.library": ["<TASTY_REPO>/crates/tasty-lua/meta"]`.
+EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.library": ["<TASTY_REPO>/crates/tasty-lua/meta"]`.
 
 ## 새 이벤트 추가
 
@@ -69,8 +70,8 @@ EmmyLua 자동완성: `.luarc.json`(init.lua 옆)에 `"workspace.library": ["<TA
 
 `crates/tasty-lua/src/host_api.rs::install` 에 `tasty.create_function(...)` 등록 후 `tasty` global table 에 set. 강한 sandbox 아님 — 사용자 머신·사용자 스크립트라 OS 권한이 충분, 별도 권한 체크 불필요.
 
-## 에러 / reload
+## 에러 / 실행
 
 - 콜백 Lua 에러 → `tracing::warn!` + 같은 이벤트 다음 콜백 계속(dispatch 안 멈춤). payload 직렬화 실패 → warn + 이 이벤트 콜백 전부 skip.
-- `LuaEngine::reload()` 는 registry 비우고 init.lua 재exec. IPC `script.reload`(local-only, 응답 `{loaded: bool}`) / CLI `tasty script reload`. 라우팅은 일반 핸들러 시그니처(`&mut AppState`)로 안 되고 `lua_engine` 이 `App` 필드라 `src/app/ipc/app_methods.rs` 의 App-level 분기에서 직접 `reload()` 호출.
+- 스크립트 실행 = 단축키 트리거(release) 또는 `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 워커만 종료, 메인·다음 job 무영향. 부팅 자동로드(init.lua)·`script.reload` 는 ADR-0031 에서 제거됨.
 - 디버그: `RUST_LOG=tasty_lua=debug`.

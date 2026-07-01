@@ -1,22 +1,14 @@
-//! `tasty preset` / `tasty file-handler` / `tasty script` CLI → JsonRpcRequest 매핑.
+//! `tasty preset` / `tasty file-handler` CLI → JsonRpcRequest 매핑.
 //!
 //! `read_json_file_or_stdin` 는 preset save 의 file 인자 처리에 사용.
 
-use crate::commands::{FileHandlerCommands, PresetCommands, ScriptCommands};
+use crate::commands::{FileHandlerCommands, PresetCommands};
 
 pub(super) fn file_handler_command_to_method_params(
     command: &FileHandlerCommands,
 ) -> (&'static str, serde_json::Value) {
     match command {
         FileHandlerCommands::Reload => ("file_handler.reload", serde_json::Value::Null),
-    }
-}
-
-pub(super) fn script_command_to_method_params(
-    command: &ScriptCommands,
-) -> (&'static str, serde_json::Value) {
-    match command {
-        ScriptCommands::Reload => ("script.reload", serde_json::Value::Null),
     }
 }
 

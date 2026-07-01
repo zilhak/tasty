@@ -31,7 +31,6 @@ const EXPECTED: &[(&str, usize)] = &[
     ("popup", 1),
     ("preset", 7),
     ("remote", 9),
-    ("script", 1),
     ("session", 3),
     ("surface", 29),
     ("system", 1),

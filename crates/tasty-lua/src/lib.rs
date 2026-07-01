@@ -1,10 +1,12 @@
 #![forbid(unsafe_code)]
 
-//! Host-only Lua scripting layer for Tasty.
+//! Host-only Lua scripting layer for Tasty (ADR-0031).
 //!
-//! 사용자가 `~/.tasty/init.lua` 를 작성해 Tasty 이벤트에 자기 스크립트를 붙일 수
-//! 있게 한다. 현재 시점 hook 은 **observe-only** — 반환값으로 Tasty 동작을 바꿀
-//! 수 없고 단지 외부 자동화 (로그/알림/CLI 호출) 만 한다.
+//! 사용자가 등록한 Lua 스크립트를 **명시 트리거**(1차: 단축키)로 실행한다. 부팅 시
+//! 임의 Lua 자동로드(`init.lua`)는 폐기됐다 — 스크립트는 등록 목록에서 배선된다.
+//! VM 은 전용 워커 스레드에서 돌고, tasty 접근은 열거된 고정 호스트 API 로만 한다.
+//! `tasty.on`/`fire` 이벤트 hook 배관은 유지되며 **observe-only** — 반환값으로 Tasty
+//! 동작을 바꿀 수 없고 외부 자동화(로그/알림/CLI 호출)만 한다.
 //!
 //! # 신뢰 모델
 //!

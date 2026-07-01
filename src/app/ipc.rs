@@ -6,7 +6,7 @@
 //!
 //! 1. `caller_gate`: session_token → CallerContext 결정 + Agent caller 의 `ensure_allowed`
 //!    (audit + capability elevation 처리). Local caller 는 그대로 통과.
-//! 2. `app_methods`: 호스트 자체 메서드 (script.reload / system.shutdown /
+//! 2. `app_methods`: 호스트 자체 메서드 (system.shutdown /
 //!    window.{create,close,focus,list} / plugin.* / approval.await).
 //! 3. `debug_methods` (debug 빌드): debug.event_bus.* / debug.extension.invoke_hook /
 //!    debug.popup.*.

@@ -30,7 +30,7 @@ pub use debug::{
     HostPopupDebugCommands, LuaDebugCommands, PopupDebugCommands, SettingsDebugCommands,
     ToolDebugCommands,
 };
-pub use file_handler::{FileHandlerCommands, ScriptCommands};
+pub use file_handler::FileHandlerCommands;
 pub use list_set::{ListCommands, SetCommands};
 pub use memory::{
     MemoryBbCommands, MemoryCacheCommands, MemoryCommands, MemoryPlanCommands, MemorySecretCommands,

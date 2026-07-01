@@ -141,7 +141,6 @@ preset.get
 preset.list
 preset.rename
 preset.save
-script.reload
 session.issue
 session.list
 session.revoke

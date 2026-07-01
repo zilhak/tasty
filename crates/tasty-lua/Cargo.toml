@@ -3,7 +3,7 @@ name = "tasty-lua"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Host-only Lua scripting layer for Tasty (~/.tasty/init.lua user hooks)"
+description = "Host-only Lua scripting layer for Tasty (registered scripts, shortcut-triggered, worker-isolated)"
 
 [dependencies]
 mlua = { version = "0.10", features = ["lua54", "vendored", "send", "serialize"] }

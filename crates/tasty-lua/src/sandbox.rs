@@ -16,7 +16,7 @@ pub(crate) fn apply(lua: &Lua) -> Result<(), LuaEngineError> {
         .map_err(LuaEngineError::Init)?;
 
     // bytecode 로딩 차단은 user 가 호출할 수 있는 진입점 (load/loadstring/loadfile/
-    // dofile) 을 nil 로 만들어 차단. 호스트 측이 직접 `Lua::load` 로 init.lua 를
+    // dofile) 을 nil 로 만들어 차단. 호스트 측이 직접 `Lua::load` 로 스크립트 소스를
     // 읽을 때만 set_mode("t") 로 text-only 보장 (engine 측에서 처리).
 
     let globals = lua.globals();

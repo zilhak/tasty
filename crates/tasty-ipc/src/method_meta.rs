@@ -343,10 +343,8 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         ("view.list", local_only()),
         // window.focus / view.focus 는 debug 빌드 전용 (DEBUG_METHODS 참조).
         // CLAUDE.md: 포커스 전환은 사용자 단축키/마우스 입력 영역.
-        // ── Lua user-script reload — Local only (사용자가 자기 init.lua 를
-        //    재로딩하는 동작). plugin이 다른 사용자의 스크립트를 reload 시킬
-        //    필요는 없으므로 plugin_callable=false.
-        ("script.reload", local_only()),
+        // script.reload (init.lua 재로드) 는 ADR-0031 에서 제거됨 — 스크립트는
+        // 등록 목록 + 명시 트리거(단축키)로만 실행되고 부팅 자동로드가 폐기됐다.
     ]
 };
 

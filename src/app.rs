@@ -113,8 +113,8 @@ pub(crate) struct App {
     /// Sessionwide engine state — workspaces, settings, hooks, registries.
     /// None until the first MainView lifecycle initializes it; Some after.
     pub(crate) core_state: Option<crate::core::CoreState>,
-    /// 사용자 init.lua 기반 Lua hook 엔진. 부팅 시 1회 생성, `~/.tasty/init.lua` 가
-    /// 있으면 로드. observe-only — 호스트 동작에는 영향 없음. 초기화 실패 시 None.
+    /// Lua 워커 엔진 (ADR-0031). 부팅 시 1회 생성, VM 은 전용 워커 스레드 소유.
+    /// 스크립트는 등록 목록에서 명시 트리거(단축키)로만 실행. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
     /// 현재 열려 있는 `PresetView` 의 winit window id. modeless editor view 는
     /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 view 를 만들지 않고

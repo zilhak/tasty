@@ -207,11 +207,6 @@ pub enum Commands {
         #[command(subcommand)]
         command: FileHandlerCommands,
     },
-    /// User script — `~/.tasty/init.lua` 재로드.
-    Script {
-        #[command(subcommand)]
-        command: ScriptCommands,
-    },
     /// Manage layout presets (workspace / tab / pane).
     Preset {
         #[command(subcommand)]

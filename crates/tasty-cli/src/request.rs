@@ -14,10 +14,7 @@ use debug::debug_command_to_method_params;
 use memory::memory_command_to_method_params;
 use output::output_command_to_method_params;
 use plugin_cmd::plugin_command_to_method_params;
-use presets::{
-    file_handler_command_to_method_params, preset_command_to_method_params,
-    script_command_to_method_params,
-};
+use presets::{file_handler_command_to_method_params, preset_command_to_method_params};
 use telemetry::telemetry_command_to_method_params;
 
 use super::{
@@ -219,7 +216,6 @@ pub fn command_to_request(command: &Commands) -> JsonRpcRequest {
         Commands::Telemetry { command } => telemetry_command_to_method_params(command),
         Commands::Agent { command } => agent_command_to_method_params(command),
         Commands::FileHandler { command } => file_handler_command_to_method_params(command),
-        Commands::Script { command } => script_command_to_method_params(command),
         Commands::Preset { command } => preset_command_to_method_params(command),
         Commands::WorkspaceCategory { command } => {
             workspace_category_command_to_method_params(command)

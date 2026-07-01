@@ -1,7 +1,6 @@
 //! step 2: 호스트 자체 메서드.
 //!
 //! - `system.shutdown` (debug)
-//! - `script.reload`
 //! - `window.create` / `window.close` / `window.focus` / `window.list`
 //! - `plugin.*` (15개 메서드)
 //! - `approval.await` (blocking — worker thread 위임)
@@ -27,29 +26,6 @@ impl App {
             send_response(&cmd.response_tx, response);
             crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::Shutdown);
             return IpcStep::Shutdown;
-        }
-        if cmd.request.method == "script.reload" {
-            let resp_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
-            let response = match self.lua_engine.as_mut() {
-                None => host_ipc::protocol::JsonRpcResponse::error(
-                    resp_id,
-                    -32603,
-                    "lua engine not initialized",
-                ),
-                Some(engine) => match engine.reload() {
-                    Ok(loaded) => host_ipc::protocol::JsonRpcResponse::success(
-                        resp_id,
-                        serde_json::json!({ "loaded": loaded }),
-                    ),
-                    Err(e) => host_ipc::protocol::JsonRpcResponse::error(
-                        resp_id,
-                        -32603,
-                        format!("lua reload failed: {e}"),
-                    ),
-                },
-            };
-            send_response(&cmd.response_tx, response);
-            return IpcStep::Handled;
         }
         if cmd.request.method == "window.create" || cmd.request.method == "view.create" {
             crate::shortcuts::send_app_event(&self.view.proxy, AppEvent::CreateWindow);
