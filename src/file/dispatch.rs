@@ -191,11 +191,13 @@ pub fn execute_handler_action(
             {
                 state.dialogs.pending_md_open = Some(crate::state::PendingMdOpen {
                     path: path_str,
-                    param_key: param_key.clone(),
-                    surface_kind: surface_kind.clone(),
-                    origin_surface_id,
                     size,
                     result: None,
+                    kind: crate::state::PendingMdOpenKind::NewTab {
+                        param_key: param_key.clone(),
+                        surface_kind: surface_kind.clone(),
+                        origin_surface_id,
+                    },
                 });
                 let scope = match origin_surface_id {
                     Some(sid) => crate::adapters::ui::popup::PopupScope::Surface(sid),

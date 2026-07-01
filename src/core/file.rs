@@ -125,15 +125,40 @@ impl Core {
         engine: &mut CoreState,
         pending: crate::state::PendingMdOpen,
     ) {
-        let params = serde_json::json!({ pending.param_key.as_str(): pending.path });
-        crate::file::dispatch::open_surface_tab(
-            self,
-            state,
-            engine,
-            &pending.surface_kind,
-            params,
-            pending.origin_surface_id,
-        );
+        use crate::state::PendingMdOpenKind;
+        match pending.kind {
+            PendingMdOpenKind::NewTab {
+                param_key,
+                surface_kind,
+                origin_surface_id,
+            } => {
+                let params = serde_json::json!({ param_key.as_str(): pending.path });
+                crate::file::dispatch::open_surface_tab(
+                    self,
+                    state,
+                    engine,
+                    &surface_kind,
+                    params,
+                    origin_surface_id,
+                );
+            }
+            PendingMdOpenKind::InPlace { surface_id } => {
+                // 제자리 이동 — 같은 surface 를 markdown + 새 file 로 변환. re-bootstrap 은
+                // SurfaceConverted cascade 가 처리(drop_egui_mesh_frame).
+                let _ = engine;
+                state.dispatch_intent(
+                    crate::intent::Intent::ConvertSurface {
+                        surface_id,
+                        target: crate::intent::ConvertTarget::Kind {
+                            cwd: None,
+                            kind: "markdown".to_string(),
+                            params: serde_json::json!({ "file": pending.path }),
+                        },
+                    }
+                    .from_user_menu("markdown_navigate"),
+                );
+            }
+        }
     }
 }
 

@@ -14,6 +14,8 @@ mod hooks;
 mod image;
 #[cfg(all(target_os = "macos", feature = "gui"))]
 mod input_source;
+#[cfg(feature = "gui")]
+mod markdown;
 mod memory;
 mod message;
 mod meta;
@@ -383,6 +385,9 @@ fn route_engine_handler(
         // file handler: 임의 경로를 dispatch 흐름에 진입시킴. plugin (예: explorer)
         // 또는 CLI 가 호출. plugin 호출은 FsRead 권한 요구.
         "file_handler.dispatch" => file_handler::handle_dispatch(state, id, request.params.clone()),
+        // markdown 제자리 이동 (04) — 주소창(03) 플러그인이 자기 surface 를 새 파일로 교체.
+        #[cfg(feature = "gui")]
+        "markdown.navigate" => markdown::handle_navigate(state, id, request.params.clone()),
         // image surface 조작 — com.tasty.image plugin이 외부에 노출하는 namespace의
         // 호스트 어댑터. plugin 비활성 상태에서도 CLI/직접 IPC로 호출 가능.
         #[cfg(feature = "gui")]

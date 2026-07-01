@@ -291,6 +291,9 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // opener 가 읽음) 처리하므로 FsRead 권한 요구. explorer plugin 더블클릭
         // 같은 사용처가 주된 caller.
         ("file_handler.dispatch", plugin(&[FsRead])),
+        // markdown surface 제자리 이동 (04) — 주어진 surface 를 새 파일의 markdown
+        // 으로 교체한다. 임의 path 를 읽으므로 FsRead. 주소창(03) 플러그인이 caller.
+        ("markdown.navigate", plugin(&[FsRead])),
         // ── popup (plugin → host) ─────────────────────────────────────
         // 자기 contribute popup 인스턴스를 명시적으로 닫는다. METHOD_POPUP_CLOSED
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —

@@ -21,6 +21,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("global_hook", 3),
     ("hook", 3),
     ("image", 7),
+    ("markdown", 1),
     ("memory", 46),
     ("message", 4),
     ("notification", 2),

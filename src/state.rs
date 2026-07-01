@@ -552,24 +552,36 @@ pub struct DialogState {
 
 /// 1MB 초과 markdown 열기 확인 팝업의 보류 오픈 상태 (`01-md-size-confirm-gate`).
 ///
-/// 게이트(`execute_handler_action`)가 크기 초과를 감지하면 실제 tab 생성 대신 이
-/// 값을 채우고 확인 팝업을 띄운다. [열기] 확정 시 이 값으로 원래 OpenSurface 오픈을
-/// bypass(재검사 없이) 재개한다.
+/// 게이트가 크기 초과를 감지하면 실제 오픈 대신 이 값을 채우고 확인 팝업을 띄운다.
+/// [열기] 확정 시 이 값으로 원래 오픈을 bypass(재검사 없이) 재개한다. `kind` 가
+/// 새 탭 오픈(파일 dispatch)인지 제자리 이동(04, 주소창)인지 구분한다.
 #[derive(Debug, Clone)]
 pub struct PendingMdOpen {
-    /// 열려던 파일의 절대 경로 문자열 (handler param 값).
+    /// 열려던 파일의 절대 경로 문자열.
     pub(crate) path: String,
-    /// handler param key (예: `"file"`). 재개 시 params 재구성에 사용.
-    pub(crate) param_key: String,
-    /// surface kind (항상 `"markdown"`; 재개 시 CreateTab/NewTab kind).
-    pub(crate) surface_kind: String,
-    /// 링크클릭/주소창 이동의 origin surface — 그 Pane 에 새 tab. None 이면 focused.
-    pub(crate) origin_surface_id: Option<u32>,
     /// 감지된 파일 크기(bytes) — 팝업의 크기 칩 표시용.
     pub(crate) size: u64,
     /// 팝업 wrapper 의 사용자 결정: `Some(true)`=열기, `Some(false)`=취소.
     /// `App::dispatch_pending_md_open` 이 frame begin 에 drain.
     pub(crate) result: Option<bool>,
+    /// 재개 방식 — 새 탭 vs 제자리 이동.
+    pub(crate) kind: PendingMdOpenKind,
+}
+
+/// 대용량 확인 후 재개 방식.
+#[derive(Debug, Clone)]
+pub enum PendingMdOpenKind {
+    /// 파일 dispatch — 새 탭으로 연다(`execute_handler_action` OpenSurface).
+    NewTab {
+        /// handler param key (예: `"file"`). 재개 시 params 재구성에 사용.
+        param_key: String,
+        /// surface kind (항상 `"markdown"`).
+        surface_kind: String,
+        /// origin surface — 그 Pane 에 새 tab. None 이면 focused.
+        origin_surface_id: Option<u32>,
+    },
+    /// 제자리 이동(04) — 같은 surface 를 `ConvertSurface` 로 markdown+새 file 로 교체.
+    InPlace { surface_id: u32 },
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
