@@ -19,8 +19,6 @@
 mod passkey;
 mod profile;
 
-pub mod migration;
-
 pub use passkey::{
     KNOWN_PASSKEY_KINDS, Passkey, Passkeys, is_valid_passkey_name, sanitize_passkey_name,
 };
