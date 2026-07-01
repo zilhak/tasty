@@ -164,3 +164,80 @@ plugin `api_version` 이 호스트와 일치할 때만 열린다(`open_popup_ins
 
 > 현 단계는 채널 **인프라 + 검증용 더미 PoC popup** 까지다. UiNode popup 렌더 경로는
 > 공존 유지된다(제거는 후속). git-viewer / clipboard-viewer 의 실제 전환은 별도 작업.
+
+## egui-mesh banner 채널 (A3)
+
+surface·popup 에 이어 **plugin banner 콘텐츠도 egui-mesh 로 자가 렌더**할 수 있다. popup
+채널을 형(型)으로 하되 banner 의 non-modal 공지 성질과 생명주기 차이를 반영한다. banner
+전반의 정체성·위치·큐·TTL 규칙은 [`docs/design/systems/banner.md`](../design/systems/banner.md).
+
+### chrome 소유 경계 — host 가 셸·생명주기, plugin 은 내용만
+
+banner chrome(컨테이너/border/close X/카운트다운/그림자)과 **스택(스코프당 표시 1 + 큐 5)·
+위치(스코프 콘텐츠 최상단, 탭바 아래)·z-order·dismiss 타이밍**은 전부 host 소유다. plugin 은
+content_rect 안 content 만 mesh 로 그린다(popup 과 동일한 identity 경계). 핵심 설계(D2):
+plugin banner 는 host `BannerManager` 의 **같은 큐/TTL/z-order 단일 지점**을 그대로 타고,
+`BannerState.content` 만 `BannerContentSource::{Host, PluginMesh{..}}` 로 분기한다 — 별도
+lane 을 두지 않아 생명주기 정책이 이중화되지 않는다. 동적 plugin 인스턴스는 `BannerKey`
+(`Host(&'static str)` / `Plugin(instance_id)`)로 키잉해 정적 host 배너와 한 큐에서 공존한다.
+
+### popup 대비 차이
+
+- **non-modal**: scrim 없음, 키보드 포커스 없음. `banner.set_context` 는 content 영역 위
+  **포인터/스크롤만** forward 하고 `focused=false` (키/텍스트 없음).
+- **dismiss**: outside-click/Esc 없음. TTL 자동 소멸 + host 셸 우상단 close X + plugin 의
+  `banner.close` IPC. persistent(TTL 없음)도 close X 는 항상 노출(무한 배너 금지).
+- **높이 고정**: 너비는 스코프 폭 도킹, 높이는 manifest `size_hint.height`(없으면 기본값)
+  로 host 가 셸을 고정하고 그 안을 content_rect 로 예약한다.
+
+### 데이터 흐름 (popup 대비 차이만)
+
+```text
+[host]  banner.open { banner_id, instance_id, surface_id }   (open_banner_instance)
+[host]  banner.set_context { instance_id, width_px, height_px, ppp, raw_input, theme }
+          │  draw_plugin_banners(src/plugin_bridge/banner_render.rs)가 BannerManager 가
+          │  그린 content_rect 슬롯을 받아 forward. geom/입력/theme 변경 + bootstrap 시만.
+          ▼
+[plugin] EguiMeshBanner::paint(&ctx.host, &ctx.params, |ctx| { ... })
+          ▼  PluginEvent::BannerPaintFrame { instance_id, buffer_id, generation }
+[host]  banner_mesh_frames[instance_id] 갱신 → render_egui_mesh_banners 가 host egui pass
+        *후* content_rect 에 mesh 를 합성(셸/affordance 위에 clip).
+```
+
+TTL 만료·close X 는 `BannerManager` 가 감지해 `closed_plugin_banners` 로 실어내고,
+`draw_plugin_banners` 가 `state.plugin_banner_closes` 에 적재 → 메인 루프가
+`close_banner_instance`(→ `banner.closed`)로 전파한다. plugin 이 죽어 mgr 에서 사라진 배너는
+`draw_plugin_banners` 가 host UI 에서 제거(양방향 reconcile).
+
+### 개방 정책 · scope 소유권 (D1)
+
+surface/popup 과 동일하게 bundled 전용 + api_version 게이트다. 트리거는 phase1 **ipc 전용**
+(`banner.open`, 권한 `ui.banner`). scope 는 `surface` 만 — host 는 그 plugin 이 **소유한**
+surface 에만 배너를 허용한다(`open_plugin_banner` 가 surface→plugin 매핑으로 검증). 단일
+인스턴스 가드로 같은 `(plugin_id, banner_id)` 는 하나만 연다.
+
+### 구성 요소
+
+| 조각 | 위치 |
+|------|------|
+| 프로토콜 (banner.set_context / BannerPaintFrame / open·closed) | `crates/tasty-plugin-protocol/src/protocol.rs` |
+| manifest banner 기여 | `crates/tasty-plugin-manifest/src/types.rs` (`BannerContribute` / `BannerRendering`) |
+| plugin SDK 헬퍼 | `crates/tasty-plugin-sdk/src/egui_surface.rs` (`EguiMeshBanner`) |
+| host 라우팅 (banner_mesh_frames / set_context 송신) | `crates/tasty-host-plugin/src/manager/{pump,events,buffer,banner}.rs` |
+| host 셸·큐·content 분기 | `src/adapters/ui/banner.rs` (`BannerContentSource` / `BannerKey`) |
+| host 입력 forward + 영역 수집 + reconcile | `src/plugin_bridge/banner_render.rs` |
+| host open/close 오케스트레이션 (D1 검증) | `src/app/dispatch/plugin_banner.rs` |
+| host 합성 (decode + 전용 Renderer) | `src/gfx/gpu/egui_mesh_prepare.rs` (`render_egui_mesh_banners`) |
+| PoC 소비자 | `crates/tasty-plugin-mesh-demo/` (`banner_id = "status"`) |
+
+### plugin 작성
+
+`tasty-plugin.toml` 의 `[[contributes.banner]]` 에 `rendering = "egui-mesh"` + `scope =
+"surface"` 를 선언하고(`permissions` 에 `ui.banner`), `Plugin::paint_banner` 에서
+`EguiMeshBanner::paint(&ctx.host, &ctx.params, |egui_ctx| { ... })` 를 호출한다.
+`open_banner`/`on_banner_closed` 로 인스턴스별 상태를 초기화/정리한다. plugin 은
+`banner.open { banner_id, surface_id }`(자기 소유 surface) 로 띄우고 `banner.close
+{ instance_id }` 로 닫는다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs` 의
+`draw_banner`. debug 검증은 `debug.plugin_banner.open/close`.
+
+> 현 단계는 채널 **인프라 + 검증용 더미 PoC banner** 까지다. 실제 소비자 전환은 별도 작업.
