@@ -349,3 +349,28 @@ painter/egui 로 전사.
 `viewer`/`no-image` 2 cluster, html 은 `boundary`/`placeholder`/`loading`/`error` 4 cluster,
 markdown 은 단일 문서(`StageVariant::Solo`). 화면 전용 고정값(560/360/300, control 버튼 24×20/30×20)은
 module const(token-policy §c).
+
+## Misc · Scripts (Lua script manager) — 05 (ADR-0031)
+
+설정 modal Misc 탭 › Scripts 관리 창. 디자인: `ui_kits/terminal/overlays/settings_window.jsx`
+(`ScriptManager`/`ScriptRow`/`ScriptPath`/`ScriptChangedBadge`). 갤러리 미러:
+`gallery/overlays-shared.jsx` `ScriptManagerFrame({empty})`. changelog: `changelog/2026-07-01-lua-script-manager.md`.
+
+| 디자인 컴포넌트 | 본체 draw (예정) | 갤러리 specimen (예정) | 핵심 토큰 |
+|---|---|---|---|
+| `ScriptManager` (헤더+add card+list/empty) | `view/settings/ui/tabs/misc.rs::draw_scripts_subtab` | `catalog/.../script_manager.rs::draw` | 제목 `font-size-max`/semibold · 설명 `text-muted`/`measure-md` |
+| `ScriptRow` (glyph/name/path/kbd/actions) | `draw_script_row` | specimen 내 `Row` | 행 하단 `separator` 보더 · name 13/600 `text-primary` |
+| `ScriptChangedBadge` | inline | inline | `accent-warning` color-mix(40% border/12% bg) · mono `font-size-micro`(10) + warn glyph 12 |
+| `ScriptPath` (중간생략) | `draw_script_path` | inline `Path` | dir=`text-muted` ellipsis-first / file=`text-secondary` full · mono 12 |
+| Add card | inline | (list variant만) | `surface-raised` bg + `border-default` + `radius` · 라벨폭 100 · row `settings-row-min-height` |
+| Empty state | inline | `empty` variant | 중앙 script glyph 26 + "No scripts registered" 14/`text-secondary` + `measure-sm` 프롬프트 |
+
+**전사 스펙 (jsx inline style → LogicalPx / Theme)**:
+- ScriptRow: `align-items:flex-start`, `gap: space-md`(12), `padding: space-sm space-xs`(8/4), 하단 `1px separator`. glyph 16 `text-muted` `margin-top:2`. 중앙 flex1 `min-width:0` col `gap:2`. 우측 `flex:none` `gap: space-sm`(8).
+- 우측: 바운드=`Kbd`, 미바운드=이탤릭 "Unbound" `text-disabled`(overlay1) 12. IconButton sm ×3(bind kbd 16 / edit 16 / trash 16).
+- rename: inline Input + Save(primary sm)/Cancel(ghost sm), Enter=commit/Esc=cancel.
+- remove: inline "Remove?" `text-secondary` 12 + Cancel(ghost sm)/Remove(secondary sm, `accent-danger` 톤).
+- 헤더: 좌 "Scripts" `font-size-max` semibold + muted 설명(`measure-md`/`line-height-ui`), 우 "Add script"(secondary sm, plus leadingIcon).
+
+**신규 glyph 필요** (gallery `icons.rs`): `SCRIPT`(file+lines: `M14 3v4a1 1 0 0 0 1 1h4` / `M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z` / `M9 13h4M9 17h6`), `KEYBOARD`(`rect x2 y6 w20 h12 rx2` + `M6 10h.01…M8 14h8`). 기존 재사용: PLUS/EDIT/TRASH/FOLDER/ALERT_TRIANGLE.
+**신규 토큰 없음**(changelog 확인). i18n 12키(`settings.misc.scripts` · `settings.scripts.{description,add,file,display_name,browse,unbound,changed_badge,changed_help,empty_title,empty_body,remove_confirm}`).
