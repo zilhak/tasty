@@ -10,7 +10,9 @@
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::catalog::icons::{FOLDER, MockGlyph, PLUG, SETTINGS, TERMINAL};
+use crate::catalog::icons::{
+    CHEVRON_DOWN, CHEVRON_RIGHT, FOLDER, MockGlyph, PLUG, SETTINGS, TERMINAL,
+};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
 /// (name, badge, active)
@@ -18,6 +20,19 @@ const WORKSPACES: &[(&str, Option<&str>, bool)] = &[
     ("main", None, true),
     ("review", Some("3"), false),
     ("agent", None, false),
+];
+
+/// 카테고리 그룹 데모 데이터 (디자인 데모셋: normal / Services / Archived).
+/// (label, collapsed, rows[(name, badge, active)]).
+const CATEGORY_SECTIONS: &[(&str, bool, &[(&str, Option<&str>, bool)])] = &[
+    (
+        "WORKSPACES",
+        false,
+        &[("main", None, true), ("review", Some("3"), false)],
+    ),
+    ("SERVICES", false, &[("agent", None, false)]),
+    // 빈 + 접힌 카테고리 — 헤더(chevron ▶)만.
+    ("ARCHIVED", true, &[]),
 ];
 /// footer ghost rows.
 const FOOTER: &[(MockGlyph, &str)] = &[
@@ -242,10 +257,211 @@ fn rail(ui: &mut egui::Ui, theme: &Theme) {
     }
 }
 
+/// 워크스페이스 행 1개(그룹 렌더용) — dot + name + optional badge, active 배경/accent bar.
+fn paint_ws_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    rect: egui::Rect,
+    name: &str,
+    badge: Option<&str>,
+    active: bool,
+) {
+    let p = ui.painter_at(rect);
+    if active {
+        p.rect_filled(
+            rect,
+            theme.corner_radius_sm.value(),
+            egui::Color32::from(theme.surface_active()),
+        );
+        let bar = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(theme.focus_ring_width.value(), rect.height()),
+        );
+        p.rect_filled(bar, 0.0, egui::Color32::from(theme.accent_primary()));
+    }
+    let dot_r = theme.status_dot_size.value() * 0.5;
+    let dc = egui::pos2(
+        rect.min.x + theme.spacing_md.value() + dot_r,
+        rect.center().y,
+    );
+    p.circle_filled(
+        dc,
+        dot_r,
+        egui::Color32::from(if active {
+            theme.accent_success()
+        } else {
+            theme.text_muted()
+        }),
+    );
+    p.text(
+        egui::pos2(dc.x + dot_r + theme.spacing_sm.value(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        name,
+        egui::FontId::proportional(theme.font_size_body.value()),
+        egui::Color32::from(if active {
+            theme.text_primary()
+        } else {
+            theme.text_secondary()
+        }),
+    );
+    if let Some(b) = badge {
+        let bw = theme.spacing_lg.value();
+        let badge_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.max.x - theme.spacing_sm.value() - bw,
+                rect.center().y - theme.spacing_sm.value(),
+            ),
+            egui::vec2(bw, theme.spacing_lg.value()),
+        );
+        p.rect_filled(
+            badge_rect,
+            theme.corner_radius_sm.value(),
+            egui::Color32::from(theme.surface_raised()),
+        );
+        p.text(
+            badge_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            b,
+            egui::FontId::proportional(theme.font_size_micro.value()),
+            egui::Color32::from(theme.text_secondary()),
+        );
+    }
+}
+
+/// 카테고리 그룹(확장) — chevron 헤더 + 소속 행. 접힌/빈 카테고리는 헤더만.
+fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
+    let w = theme.field_width_lg.value() + theme.spacing_md.value(); // 212
+    let h = theme.spacing_xl.value() * 15.0; // 360
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+
+    let pad = theme.spacing_md.value(); // 12
+    let row_h = theme.item_height_interactive.value(); // 28
+    let mut y = rect.min.y + pad;
+
+    for (label, collapsed, rows) in CATEGORY_SECTIONS {
+        // ── 카테고리 헤더: chevron(▼/▶) + 대문자 캡스 라벨. ──
+        let chevron = if *collapsed {
+            CHEVRON_RIGHT
+        } else {
+            CHEVRON_DOWN
+        };
+        let ch_size = theme.icon_glyph_size_sm.value();
+        let ch_c = egui::pos2(
+            rect.min.x + theme.spacing_sm.value() + ch_size * 0.5,
+            y + ch_size * 0.5,
+        );
+        paint_icon(
+            ui,
+            chevron,
+            ch_c,
+            ch_size,
+            egui::Color32::from(theme.text_muted()),
+        );
+        p.text(
+            egui::pos2(ch_c.x + ch_size * 0.5 + theme.spacing_xs.value(), ch_c.y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::proportional(theme.sidebar_section_heading_font_size.value()),
+            egui::Color32::from(theme.text_muted()),
+        );
+        y += ch_size + theme.spacing_sm.value();
+
+        // ── 행 (접힘/빈 카테고리는 생략). ──
+        if !*collapsed && !rows.is_empty() {
+            for (name, badge, active) in *rows {
+                let row = egui::Rect::from_min_size(
+                    egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
+                    egui::vec2(w - theme.spacing_xs.value() * 2.0, row_h),
+                );
+                paint_ws_row(ui, theme, row, name, *badge, *active);
+                y += row_h + theme.spacing_xs.value();
+            }
+        }
+        y += theme.spacing_xs.value();
+    }
+}
+
+/// 카테고리 그룹(축소 레일) — `---` 경계 버튼 + 아바타. 접힌 카테고리는 `---` 만.
+fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
+    let w = theme.sidebar_collapsed_slot_width.value()
+        + theme.spacing_lg.value()
+        + theme.spacing_xs.value();
+    let h = theme.spacing_xl.value() * 15.0; // 360
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(
+        rect,
+        theme.corner_radius.value(),
+        egui::Color32::from(theme.bg_sidebar()),
+    );
+
+    let cx = rect.center().x;
+    let slot = theme.item_height_interactive.value(); // 28
+    let mut y = rect.min.y + theme.spacing_md.value();
+
+    for (_label, collapsed, rows) in CATEGORY_SECTIONS {
+        // `---` 경계 버튼 — 폭 slot-spacing_sm 의 얇은 선.
+        let line_w = theme.sidebar_collapsed_slot_width.value() - theme.spacing_sm.value();
+        let line = egui::Rect::from_center_size(
+            egui::pos2(cx, y + theme.spacing_lg.value() * 0.5),
+            egui::vec2(line_w, theme.border_width.value()),
+        );
+        p.rect_filled(line, 0.0, egui::Color32::from(theme.border_default()));
+        y += theme.spacing_lg.value() + theme.spacing_xs.value();
+
+        // 접힌 카테고리는 아바타 생략(`---` 만).
+        if !*collapsed {
+            for (name, _badge, active) in *rows {
+                let area = egui::Rect::from_center_size(
+                    egui::pos2(cx, y + slot * 0.5),
+                    egui::vec2(slot, slot),
+                );
+                if *active {
+                    p.rect_filled(
+                        area,
+                        theme.corner_radius_sm.value(),
+                        egui::Color32::from(theme.surface_active()),
+                    );
+                }
+                let letter = name
+                    .chars()
+                    .next()
+                    .unwrap_or('?')
+                    .to_uppercase()
+                    .to_string();
+                p.text(
+                    area.center(),
+                    egui::Align2::CENTER_CENTER,
+                    letter,
+                    egui::FontId::monospace(theme.font_size_body.value()),
+                    egui::Color32::from(if *active {
+                        theme.accent_primary()
+                    } else {
+                        theme.text_muted()
+                    }),
+                );
+                y += slot + theme.spacing_sm.value();
+            }
+        }
+    }
+}
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::stage(ui, theme, StageVariant::Wrap, |ui| {
         spec::cluster(ui, theme, "Full · 212", |ui| full(ui, theme));
         spec::cluster(ui, theme, "Collapsed rail · 52", |ui| rail(ui, theme));
+        spec::cluster(ui, theme, "Categories · full", |ui| {
+            full_categories(ui, theme)
+        });
+        spec::cluster(ui, theme, "Categories · rail", |ui| {
+            rail_categories(ui, theme)
+        });
     });
 
     spec::meta(
@@ -283,6 +499,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "Full 은 워크스페이스를 이름·badge 까지 펼치고, 접으면 52px rail 로 줄어 \
-         아이콘 슬롯만 남는다. 활성 행은 surface-active + 좌측 2px accent 로 표시.",
+         아이콘 슬롯만 남는다. 활성 행은 surface-active + 좌측 2px accent 로 표시. \
+         카테고리 토글 on 이면 chevron 헤더로 그룹화(빈·접힌 카테고리는 헤더/`---` 만), \
+         레일은 카테고리 경계를 `---` 버튼으로 표시한다.",
     );
 }
