@@ -769,6 +769,27 @@ impl CoreState {
         Ok(())
     }
 
+    /// 카테고리 접힘(collapsed) 상태 설정. id 로 카테고리를 찾아 `collapsed` 를
+    /// 지정 값으로 둔다. normal 포함 모든 카테고리 접기 허용(디자인상 normal 도 접힘 가능).
+    /// 접힘은 사용자 UI 상태지만 layout.json 영속 대상이므로 호출자가 다른 mutator
+    /// 관례대로 `mark_layout_dirty` 를 책임진다. 대상이 없으면 no-op.
+    pub fn set_category_collapsed(
+        &mut self,
+        id: crate::model::WorkspaceCategoryId,
+        collapsed: bool,
+    ) {
+        if let Some(cat) = self.categories.iter_mut().find(|c| c.id == id) {
+            cat.collapsed = collapsed;
+        }
+    }
+
+    /// 카테고리 접힘 상태를 뒤집는다(호출부 단순화용 편의 메서드). 대상이 없으면 no-op.
+    pub fn toggle_category_collapsed(&mut self, id: crate::model::WorkspaceCategoryId) {
+        if let Some(cat) = self.categories.iter_mut().find(|c| c.id == id) {
+            cat.collapsed = !cat.collapsed;
+        }
+    }
+
     /// 이름(대소문자 무시) 또는 정확 id 로 카테고리를 해석한다. CLI/IPC 가
     /// `--category <name|id>` 를 받을 때 사용. 숫자 문자열은 id 로 우선 해석한다.
     pub fn resolve_category(&self, token: &str) -> Option<crate::model::WorkspaceCategoryId> {
@@ -973,5 +994,95 @@ mod category_tests {
         assert_eq!(e.resolve_category("study"), Some(id));
         assert_eq!(e.resolve_category(&id.to_string()), Some(id));
         assert_eq!(e.resolve_category("nope"), None);
+    }
+
+    #[test]
+    fn set_collapsed_updates_memory() {
+        let mut e = engine();
+        let id = e.create_category("Services").unwrap();
+        // 기본은 펼침.
+        assert!(
+            !e.categories()
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap()
+                .collapsed
+        );
+        e.set_category_collapsed(id, true);
+        assert!(
+            e.categories()
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap()
+                .collapsed
+        );
+        e.set_category_collapsed(id, false);
+        assert!(
+            !e.categories()
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap()
+                .collapsed
+        );
+        // 없는 id 는 no-op(패닉 없이 무시).
+        e.set_category_collapsed(9999, true);
+    }
+
+    #[test]
+    fn toggle_collapsed_flips() {
+        let mut e = engine();
+        let id = e.create_category("Toggle").unwrap();
+        e.toggle_category_collapsed(id);
+        assert!(
+            e.categories()
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap()
+                .collapsed
+        );
+        e.toggle_category_collapsed(id);
+        assert!(
+            !e.categories()
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap()
+                .collapsed
+        );
+    }
+
+    #[test]
+    fn set_collapsed_allows_normal() {
+        // 디자인상 normal 도 접힘 가능.
+        let mut e = engine();
+        e.set_category_collapsed(NORMAL_CATEGORY_ID, true);
+        assert!(
+            e.categories()
+                .iter()
+                .find(|c| c.id == NORMAL_CATEGORY_ID)
+                .unwrap()
+                .collapsed
+        );
+    }
+
+    #[test]
+    fn collapsed_survives_layout_round_trip() {
+        use crate::engine::layout_persistence::SavedLayout;
+        // 접힘 상태를 설정한 뒤 layout capture→restore 왕복 후에도 유지되는지 회귀.
+        let mut e = engine();
+        let id = e.create_category("Services").unwrap();
+        e.set_category_collapsed(id, true);
+        let saved = SavedLayout::capture(&mut e, 0);
+
+        let mut restored = engine();
+        assert!(saved.restore(&mut restored));
+        let cat = restored
+            .categories()
+            .iter()
+            .find(|c| c.name == "Services")
+            .expect("Services category should be restored");
+        assert!(
+            cat.collapsed,
+            "collapsed 상태가 왕복 후에도 유지되어야 한다"
+        );
     }
 }
