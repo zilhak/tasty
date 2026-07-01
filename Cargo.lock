@@ -5647,11 +5647,18 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
+ "arboard",
+ "egui",
+ "image",
+ "rfd",
  "serde_json",
+ "tasty-plugin-protocol",
  "tasty-plugin-sdk",
+ "tasty-type-appearance",
+ "tracing",
  "tracing-subscriber",
 ]
 

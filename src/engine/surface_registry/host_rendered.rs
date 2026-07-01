@@ -12,11 +12,13 @@ use crate::engine::surface_registry::{SurfaceKindRegistry, builtins};
 
 /// `(kind, plugin_id)` 쌍이 host-rendered로 허용된 조합인지 확인.
 ///
-/// markdown 은 B1(ADR-0028)에서 egui-mesh 채널로 전환돼 더 이상 host-rendered 가
-/// 아니다(`surface_registry/egui_mesh.rs` 화이트리스트). image 는 비트맵 하이브리드
-/// 전환(B2) 전까지 host-rendered 로 남는다.
-fn is_host_rendered_allowed(kind: &str, plugin_id: &str) -> bool {
-    matches!((kind, plugin_id), ("image", "com.tasty.image"))
+/// markdown(B1) · image(B2) 모두 ADR-0028 에서 egui-mesh 채널로 전환돼 더 이상
+/// host-rendered 가 아니다(`surface_registry/egui_mesh.rs` 화이트리스트). 현재
+/// host-rendered 화이트리스트에 남은 bundled kind 는 없다 — host 의 `ImageView`/
+/// `MarkdownView` 직접 렌더 경로는 C1 이 host-rendered 채널을 통째로 제거할 때까지
+/// dead code 로 컴파일만 유지된다.
+fn is_host_rendered_allowed(_kind: &str, _plugin_id: &str) -> bool {
+    false
 }
 
 /// plugin manager가 hello 직후 매니페스트에 `rendering = "host"` 선언이 있을 때 호출.
@@ -66,17 +68,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn image_kind_allowed_for_image_plugin() {
-        assert!(is_host_rendered_allowed("image", "com.tasty.image"));
+    fn markdown_kind_no_longer_host_rendered() {
+        // markdown 은 B1(ADR-0028)에서 egui-mesh 로 전환 — host-rendered 화이트리스트에서 빠졌다.
+        assert!(!is_host_rendered_allowed("markdown", "com.tasty.markdown"));
     }
 
     #[test]
-    fn image_kind_rejected_for_other_plugin() {
-        assert!(!is_host_rendered_allowed("image", "com.example.evil"));
+    fn image_kind_no_longer_host_rendered() {
+        // image 는 B2(ADR-0028)에서 egui-mesh 하이브리드로 전환 — host-rendered 화이트리스트에서 빠졌다.
+        assert!(!is_host_rendered_allowed("image", "com.tasty.image"));
     }
 
     #[test]
-    fn unknown_kind_rejected() {
+    fn no_bundled_kind_is_host_rendered() {
+        // 현재 host-rendered 로 허용되는 bundled 조합은 없다 (C1 이 채널 제거 전까지 빈 화이트리스트).
         assert!(!is_host_rendered_allowed("explorer", "com.tasty.image"));
         assert!(!is_host_rendered_allowed("foo", "com.tasty.foo"));
     }
@@ -90,39 +95,5 @@ mod tests {
             "image"
         ));
         assert!(!reg.contains("image"));
-    }
-
-    #[test]
-    fn register_succeeds_for_image_plugin() {
-        let reg = SurfaceKindRegistry::new();
-        assert!(register_host_rendered_kind(
-            &reg,
-            "com.tasty.image",
-            "image"
-        ));
-        assert!(reg.contains("image"));
-    }
-
-    #[test]
-    fn markdown_kind_no_longer_host_rendered() {
-        // markdown 은 B1(ADR-0028)에서 egui-mesh 로 전환 — host-rendered 화이트리스트에서 빠졌다.
-        assert!(!is_host_rendered_allowed("markdown", "com.tasty.markdown"));
-    }
-
-    #[test]
-    fn register_is_idempotent() {
-        let reg = SurfaceKindRegistry::new();
-        assert!(register_host_rendered_kind(
-            &reg,
-            "com.tasty.image",
-            "image"
-        ));
-        // 두 번째 호출: registry에 이미 있으므로 no-op + 성공 반환.
-        assert!(register_host_rendered_kind(
-            &reg,
-            "com.tasty.image",
-            "image"
-        ));
-        assert!(reg.contains("image"));
     }
 }

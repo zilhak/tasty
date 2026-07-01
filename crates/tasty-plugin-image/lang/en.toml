@@ -6,3 +6,27 @@ desc = "Image viewer and paint canvas"
 
 [image.namespace]
 desc = "Image surface IPC namespace"
+
+[image_viewer]
+no_image = "No image loaded"
+prev = "Previous image"
+next = "Next image"
+refresh = "Refresh"
+edit = "Edit"
+new_image = "New image"
+save = "Save"
+cancel = "Cancel"
+brush_size = "Brush:"
+color = "Color:"
+new_image_title = "New Image"
+width = "Width:"
+height = "Height:"
+save_path_title = "Save As"
+browse = "Browse…"
+undo = "Undo"
+redo = "Redo"
+
+[button]
+ok = "OK"
+cancel = "Cancel"
+save = "Save"

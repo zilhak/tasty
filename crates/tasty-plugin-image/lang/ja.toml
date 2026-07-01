@@ -6,3 +6,27 @@ desc = "画像ビューア / ペイントキャンバス"
 
 [image.namespace]
 desc = "Image surface IPC ネームスペース"
+
+[image_viewer]
+no_image = "画像が読み込まれていません"
+prev = "前の画像"
+next = "次の画像"
+refresh = "更新"
+edit = "編集"
+new_image = "新規画像"
+save = "保存"
+cancel = "キャンセル"
+brush_size = "太さ:"
+color = "色:"
+new_image_title = "新規画像"
+width = "幅:"
+height = "高さ:"
+save_path_title = "名前を付けて保存"
+browse = "参照…"
+undo = "元に戻す"
+redo = "やり直し"
+
+[button]
+ok = "OK"
+cancel = "キャンセル"
+save = "保存"

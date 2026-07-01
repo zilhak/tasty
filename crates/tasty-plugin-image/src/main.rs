@@ -1,24 +1,68 @@
 #![forbid(unsafe_code)]
 
-//! Tasty Image plugin — 외부 plugin.
+//! Tasty Image plugin — **egui-mesh + bitmap-texture** image surface (ADR-0028 / B2).
 //!
-//! `image` surface kind와 `image.*` IPC 네임스페이스를 점유한다. 실제 픽셀
-//! 렌더링은 호스트가 담당하는 host-rendered kind(`rendering = "host"`)이며,
-//! 모든 `image.*` IPC 메서드는 호스트의 동명 메서드로 trampoline한다.
+//! The plugin owns the image content and renders it in its own process (mirroring B1
+//! markdown): it loads the bitmap (delivered via `surface.create`), uploads it to its own
+//! egui `Context` as a texture, draws the viewer / paint chrome from the host `Theme`
+//! tokens (delivered each frame via `set_context`), tessellates the mesh, and the host
+//! composites it over the surface region. The bitmap texture flows through the same mesh
+//! `textures_delta` channel as the font atlas — uploaded once and cached in the host's
+//! per-surface `egui_wgpu::Renderer` — so there is no separate host Canvas layer.
 //!
-//! self-call(caller==owner)이 들어오면 plugin manager가 namespace forward를
-//! 건너뛰고 호스트 dispatcher로 통과시키므로 무한 루프가 발생하지 않는다.
+//! Edit state (brush strokes, undo/redo, paste→floating selection→commit/Esc) lives in the
+//! plugin ([`doc::ImageDoc`]). `image.save`/`export`/`paste`/`next`/`prev` operate on that
+//! state directly; `image.open` (surface conversion) and `image.list` (host surface
+//! enumeration) trampoline to the host. The former host `ImageView` render path stays
+//! compiled until C1 removes it.
 
-use serde_json::Value;
+mod doc;
+#[cfg(unix)]
+mod render;
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use doc::ImageDoc;
+use serde_json::{Value, json};
+use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
-    host::HostHandle,
+    IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceEventCtx,
+    SurfaceResult, SurfaceSetContextCtx, Translator, host::HostHandle,
 };
+use tasty_type_appearance::theme::Theme;
+
+#[cfg(unix)]
+use tasty_plugin_sdk::EguiMeshSurface;
 
 const PLUGIN_ID: &str = "com.tasty.image";
-const PLUGIN_VERSION: &str = "0.1.0";
+const PLUGIN_VERSION: &str = "0.1.1";
 
-struct ImagePlugin;
+struct ImagePlugin {
+    /// surface_id → plugin egui render state (font atlas + shared buffer; unix-only paint).
+    #[cfg(unix)]
+    meshes: HashMap<u32, EguiMeshSurface>,
+    /// surface_id 들 중 폰트(CJK fallback)를 이미 설치한 것 — set_fonts 재업로드 방지.
+    #[cfg(unix)]
+    fonts_installed: std::collections::HashSet<u32>,
+    /// surface_id → image document state.
+    docs: HashMap<u32, ImageDoc>,
+    /// plugin lang 카탈로그 (UI 문자열).
+    tr: Translator,
+}
+
+impl ImagePlugin {
+    fn new(tr: Translator) -> Self {
+        Self {
+            #[cfg(unix)]
+            meshes: HashMap::new(),
+            #[cfg(unix)]
+            fonts_installed: std::collections::HashSet::new(),
+            docs: HashMap::new(),
+            tr,
+        }
+    }
+}
 
 impl Plugin for ImagePlugin {
     fn id(&self) -> &str {
@@ -29,8 +73,12 @@ impl Plugin for ImagePlugin {
         PLUGIN_VERSION
     }
 
-    fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        // host-rendered kind라 plugin이 tree를 만들지 않는다. 호스트가 직접 그린다.
+    fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
+        // egui-mesh surface: no tree — load the file and return an empty result. The SDK
+        // hands the full `surface.create` envelope as `ctx.params`; the real params
+        // (`file`) are nested under `params.params`.
+        let file = surface_param_file(&ctx.params);
+        self.docs.insert(ctx.surface_id, ImageDoc::new(file));
         SurfaceResult::default()
     }
 
@@ -38,13 +86,135 @@ impl Plugin for ImagePlugin {
         SurfaceResult::default()
     }
 
+    fn destroy_surface(&mut self, surface_id: u32) {
+        #[cfg(unix)]
+        {
+            self.meshes.remove(&surface_id);
+            self.fonts_installed.remove(&surface_id);
+        }
+        self.docs.remove(&surface_id);
+    }
+
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
-            "image.open" | "image.save" | "image.export_png" | "image.next" | "image.prev"
-            | "image.paste" | "image.list" => trampoline(&ctx.host, &ctx.method, ctx.params),
+            // Surface conversion + host enumeration stay host-owned (self-call trampoline).
+            "image.open" | "image.list" => trampoline(&ctx.host, &ctx.method, ctx.params),
+            // Edit / navigation operate on plugin-owned document state.
+            "image.save" | "image.export_png" => self.image_save(&ctx.params),
+            "image.paste" => self.image_paste(&ctx.params),
+            "image.next" => self.image_step(&ctx.params, true),
+            "image.prev" => self.image_step(&ctx.params, false),
             other => Err(IpcMethodError::not_found(other)),
         }
     }
+
+    fn paint_surface(&mut self, ctx: SurfaceSetContextCtx) {
+        self.paint(ctx);
+    }
+}
+
+impl ImagePlugin {
+    fn image_save(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
+        let sid = require_surface(params)?;
+        let explicit = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let doc = self.docs.get_mut(&sid).ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!("Surface {sid} is not an image"))
+        })?;
+        let final_path = match explicit.or_else(|| doc.save_path()) {
+            Some(p) => p,
+            None => {
+                return Err(IpcMethodError::invalid_params(
+                    "No save path: provide 'path' or open a file first",
+                ));
+            }
+        };
+        match doc.save_png(&final_path) {
+            Ok(()) => {
+                if doc.is_blank() {
+                    doc.file_path = Some(final_path.clone());
+                }
+                Ok(json!({ "ok": true, "path": final_path }))
+            }
+            Err(e) => Err(IpcMethodError::new(format!("save failed: {e}"))),
+        }
+    }
+
+    fn image_paste(&mut self, params: &Value) -> Result<Value, IpcMethodError> {
+        let sid = require_surface(params)?;
+        let color_image = read_clipboard_image()?;
+        let doc = self.docs.get_mut(&sid).ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!("Surface {sid} is not an image"))
+        })?;
+        doc.ensure_loaded();
+        doc.paste_image(color_image);
+        Ok(json!({ "ok": true, "surface_id": sid }))
+    }
+
+    fn image_step(&mut self, params: &Value, forward: bool) -> Result<Value, IpcMethodError> {
+        let sid = require_surface(params)?;
+        let doc = self.docs.get_mut(&sid).ok_or_else(|| {
+            IpcMethodError::invalid_params(&format!("Surface {sid} is not an image"))
+        })?;
+        doc.ensure_loaded();
+        let new_path = if forward {
+            doc.step_next()
+        } else {
+            doc.step_prev()
+        };
+        match new_path {
+            Some(path) => {
+                doc.load_after_navigation();
+                Ok(json!({ "ok": true, "path": path }))
+            }
+            None => Err(IpcMethodError::invalid_params(
+                "No sibling images available",
+            )),
+        }
+    }
+
+    /// `set_context` 한 frame 을 그려 host 에 mesh 를 회신한다.
+    #[cfg(unix)]
+    fn paint(&mut self, ctx: SurfaceSetContextCtx) {
+        let sid = ctx.params.surface_id;
+
+        // host 가 Theme 을 아직 안 보냈으면 토큰을 풀 수 없으므로 이 frame 은 건너뛴다.
+        let Some(theme) = ctx.params.theme.as_ref().map(theme_from_wire) else {
+            tracing::debug!("image surface {sid}: set_context without theme — skipping paint");
+            return;
+        };
+
+        let tr = &self.tr;
+
+        let doc = self.docs.entry(sid).or_insert_with(|| ImageDoc::new(None));
+        doc.ensure_loaded();
+        doc.ensure_brush_themed(theme.accent_danger().to_egui());
+
+        let is_new = !self.meshes.contains_key(&sid);
+        let mesh = self
+            .meshes
+            .entry(sid)
+            .or_insert_with(|| EguiMeshSurface::new(sid));
+        if is_new {
+            // 한글/일문 파일명·라벨이 tofu(□) 되지 않도록 CJK fallback 을 설치한다.
+            install_fonts(mesh.context());
+            self.fonts_installed.insert(sid);
+        }
+
+        let result = mesh.paint(&ctx.host, &ctx.params, |egui_ctx| {
+            render::draw(egui_ctx, &theme, tr, doc);
+        });
+        if let Err(e) = result {
+            tracing::warn!("image surface {sid} paint failed: {e}");
+        }
+    }
+
+    /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
+    /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
+    #[cfg(not(unix))]
+    fn paint(&mut self, _ctx: SurfaceSetContextCtx) {}
 }
 
 /// `image.*` 메서드를 호스트의 동명 IPC로 위임한다. plugin manager가 self-call을
@@ -53,11 +223,154 @@ fn trampoline(host: &HostHandle, method: &str, params: Value) -> Result<Value, I
     Ok(host.call(method, params)?)
 }
 
+/// Read `surface` from IPC params (all image.* methods take it explicitly — focus独立).
+fn require_surface(params: &Value) -> Result<u32, IpcMethodError> {
+    params
+        .get("surface")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .ok_or_else(|| IpcMethodError::invalid_params("missing 'surface'"))
+}
+
+/// Read the system clipboard image into a `ColorImage` (paste → floating selection).
+fn read_clipboard_image() -> Result<egui::ColorImage, IpcMethodError> {
+    let mut cb = arboard::Clipboard::new()
+        .map_err(|e| IpcMethodError::new(format!("clipboard open failed: {e}")))?;
+    let image = cb
+        .get_image()
+        .map_err(|e| IpcMethodError::invalid_params(&format!("no image on clipboard: {e}")))?;
+    // 외부 입력 (클립보드 이미지 바이트) → ColorImage 픽셀.
+    #[allow(clippy::disallowed_methods)]
+    let pixels: Vec<egui::Color32> = image
+        .bytes
+        .chunks_exact(4)
+        .map(|c| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
+        .collect();
+    Ok(egui::ColorImage {
+        size: [image.width, image.height],
+        pixels,
+    })
+}
+
+/// surface.create envelope 에서 `file` 을 꺼낸다 (nested `params.file`, flat fallback).
+fn surface_param_file(envelope: &Value) -> Option<String> {
+    envelope
+        .get("params")
+        .and_then(|p| p.get("file"))
+        .or_else(|| envelope.get("file"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
+fn theme_from_wire(w: &ThemeWire) -> Theme {
+    Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
+}
+
+/// plugin Context 에 CJK fallback 을 설치한다 (host `font_registry` 미러, B1 markdown 동일).
+#[cfg(unix)]
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    if let Some(bytes) = load_system_cjk_font_data() {
+        fonts.font_data.insert(
+            "system_cjk".to_owned(),
+            Arc::new(egui::FontData::from_owned(bytes)),
+        );
+        for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(fam)
+                .or_default()
+                .push("system_cjk".to_owned());
+        }
+    }
+    ctx.set_fonts(fonts);
+}
+
+/// 시스템 CJK 폰트 바이트 로드.
+#[cfg(unix)]
+fn load_system_cjk_font_data() -> Option<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        for path in &[
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        for path in &[
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+    None
+}
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
-    tasty_plugin_sdk::run(ImagePlugin)
+    let env = PluginEnv::load()?;
+    let tr = Translator::from_plugin_env(&env);
+    tasty_plugin_sdk::run(ImagePlugin::new(tr))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surface_param_file_reads_nested_and_flat() {
+        assert_eq!(
+            surface_param_file(&json!({ "params": { "file": "/a/b.png" } })).as_deref(),
+            Some("/a/b.png")
+        );
+        assert_eq!(
+            surface_param_file(&json!({ "file": "/c/d.png" })).as_deref(),
+            Some("/c/d.png")
+        );
+        assert_eq!(surface_param_file(&json!({ "params": {} })), None);
+    }
+
+    #[test]
+    fn create_surface_inserts_doc() {
+        let mut p = ImagePlugin::new(Translator::default());
+        p.create_surface(SurfaceCreateCtx {
+            surface_id: 1,
+            kind: "image".into(),
+            cwd: None,
+            params: json!({ "surface_id": 1, "kind": "image", "params": { "file": "/x/y.png" } }),
+        });
+        assert_eq!(
+            p.docs.get(&1).unwrap().file_path.as_deref(),
+            Some("/x/y.png")
+        );
+    }
+
+    #[test]
+    fn save_without_surface_is_invalid_params() {
+        let mut p = ImagePlugin::new(Translator::default());
+        let err = p.image_save(&json!({})).unwrap_err();
+        assert_eq!(err.code, -32602);
+    }
+
+    #[test]
+    fn step_on_missing_surface_is_invalid_params() {
+        let mut p = ImagePlugin::new(Translator::default());
+        let err = p.image_step(&json!({ "surface": 7 }), true).unwrap_err();
+        assert_eq!(err.code, -32602);
+    }
 }

@@ -252,12 +252,25 @@ pub fn handle_list(
 fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Value>) {
     match layout {
         crate::model::SurfaceLayout::Leaf(surface) => {
-            if let Some(img) = surface.as_any().downcast_ref::<crate::model::ImagePanel>() {
+            // image 는 B2(ADR-0028)에서 egui-mesh 로 전환돼 host 측 stand-in 은
+            // `EguiMeshSurface`(kind=="image")다. dir_count/current_index 는 plugin 이
+            // 소유하므로 host list 는 surface_id/path 만 노출한다. host-rendered `ImagePanel`
+            // 경로는 C1 제거 전까지(그리고 host 단위 test) 남아 있어 둘 다 매칭한다.
+            let any = surface.as_any();
+            if let Some(img) = any.downcast_ref::<crate::model::ImagePanel>() {
                 out.push(json!({
                     "surface_id": img.id,
                     "path": img.file_path,
                     "dir_count": img.dir_images.len(),
                     "current_index": img.current_index,
+                }));
+            } else if let Some(ms) =
+                any.downcast_ref::<crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface>()
+                && ms.kind_static == "image"
+            {
+                out.push(json!({
+                    "surface_id": ms.id,
+                    "path": ms.file,
                 }));
             }
         }

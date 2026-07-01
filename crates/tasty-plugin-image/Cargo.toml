@@ -1,9 +1,9 @@
 [package]
 name = "tasty-plugin-image"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
-description = "External Tasty plugin: image surface namespace + CLI"
+description = "Image surface viewer / paint canvas plugin (egui-mesh + bitmap texture)"
 repository = "https://github.com/zilhak/tasty"
 
 [[bin]]
@@ -11,10 +11,30 @@ name = "tasty-plugin-image"
 path = "src/main.rs"
 
 [dependencies]
-tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+tasty-plugin-sdk = { path = "../tasty-plugin-sdk", features = ["egui-mesh"] }
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
+# Theme parity — host 가 set_context 로 보낸 ThemeWire 를 `Theme::with_colors_and_zoom`
+# 으로 재구성해 디자인 토큰대로 chrome 을 그린다. egui-compat(to_egui)을 켠다 —
+# 이 프로세스는 egui 를 링크한다.
+tasty-type-appearance = { path = "../tasty-type-appearance", features = ["egui-compat"] }
+# 비트맵 디코드(파일 → RGBA) + PNG 저장.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "webp", "ico", "tiff"] }
+# paste 용 시스템 클립보드 이미지 read.
+arboard = "3"
+# blank canvas Save As… 경로 선택 다이얼로그.
+rfd = "0.15"
 serde_json = "1"
+tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+
+# host·SDK·protocol 와 동일 egui 인스턴스로 unify (epaint serde OFF + bytemuck ON).
+# 비트맵을 plugin egui Context 텍스처로 올려 mesh 로 렌더하려면 SDK 와 같은 egui 타입이
+# 필요하다 — Cargo 가 workspace 전역 0.31 로 통일하므로 mesh 와이어(POD Vertex)가 정합.
+egui = { version = "0.31", default-features = false, features = [
+    "bytemuck",
+    "default_fonts",
+] }
 
 [lints]
 workspace = true

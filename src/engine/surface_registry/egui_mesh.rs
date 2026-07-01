@@ -24,12 +24,15 @@ fn leak_str(s: &str) -> &'static str {
 
 /// `(kind, plugin_id)` 쌍이 egui-mesh 채널로 허용된 bundled 조합인지 확인.
 ///
-/// `host_rendered::is_host_rendered_allowed` 미러. ADR-0028 scope 에 따라 markdown
-/// 을 첫 소비자로 두고, 이후 단계에서 image 하이브리드 등이 추가된다.
+/// `host_rendered::is_host_rendered_allowed` 미러. ADR-0028 scope 에 따라 markdown(B1)
+/// 을 첫 소비자로 두고, image(B2 하이브리드 — 비트맵을 plugin egui 텍스처로 올려 mesh
+/// 로 렌더)가 뒤따른다.
 fn is_egui_mesh_allowed(kind: &str, plugin_id: &str) -> bool {
     matches!(
         (kind, plugin_id),
-        ("markdown", "com.tasty.markdown") | ("mesh_demo", "com.tasty.mesh-demo")
+        ("markdown", "com.tasty.markdown")
+            | ("image", "com.tasty.image")
+            | ("mesh_demo", "com.tasty.mesh-demo")
     )
 }
 
@@ -160,6 +163,15 @@ mod tests {
         assert!(is_egui_mesh_allowed("markdown", "com.tasty.markdown"));
         assert!(!is_egui_mesh_allowed("markdown", "com.example.evil"));
         assert!(!is_egui_mesh_allowed("image", "com.tasty.markdown"));
+    }
+
+    #[test]
+    fn image_allowed_for_image_plugin() {
+        assert!(is_egui_mesh_allowed("image", "com.tasty.image"));
+        // 다른 plugin 이 image kind 를 가로채지 못한다.
+        assert!(!is_egui_mesh_allowed("image", "com.example.evil"));
+        // image plugin 이 markdown kind 를 가로채지 못한다 (조합 매칭).
+        assert!(!is_egui_mesh_allowed("markdown", "com.tasty.image"));
     }
 
     #[test]
