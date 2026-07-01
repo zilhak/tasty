@@ -49,6 +49,20 @@ macro_rules! glyph {
     };
 }
 
+/// `glyph` 과 동일하나 `fill="white"` — 채운 글리프(예: starFill).
+macro_rules! glyph_fill {
+    ($name:ident, $uri:literal, $body:literal) => {
+        pub const $name: MockGlyph = MockGlyph {
+            uri: concat!("bytes://gallery_icon_", $uri, ".svg"),
+            svg: concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">"#,
+                $body,
+                "</svg>"
+            ),
+        };
+    };
+}
+
 // ── Actions ──
 glyph!(PLUS, "plus", r#"<path d="M12 5v14M5 12h14"/>"#);
 glyph!(CLOSE, "close", r#"<path d="M18 6 6 18M6 6l12 12"/>"#);
@@ -110,6 +124,12 @@ glyph!(
     FOLDER_OPEN,
     "folder_open",
     r#"<path d="M3 8a1 1 0 0 1 1-1h5l2 2h7a1 1 0 0 1 1 1v1H3z M3 11h18l-1.5 8a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1z"/>"#
+);
+// 채운 별 — 즐겨찾기 populated 행 (design `ic.starFill`, accent-warning).
+glyph_fill!(
+    STAR_FILL,
+    "star_fill",
+    r#"<path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z"/>"#
 );
 glyph!(CHEVRON_UP, "chevron_up", r#"<path d="m6 15 6-6 6 6"/>"#);
 

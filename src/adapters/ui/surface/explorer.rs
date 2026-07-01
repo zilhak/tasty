@@ -29,8 +29,8 @@ use view::{DirEntryInfo, ExplorerView, LoadState, human_size};
 // ── grid 셀 치수 (4px 그리드 — explorer_view_cells specimen 과 동일) ──
 /// grid 셀 폭.
 const CELL_W: f32 = 80.0;
-/// 사이드바 폭 (logical px, 4px 그리드 · design §3.1).
-const SIDEBAR_W: f32 = 220.0;
+/// 사이드바 폭 (logical px — design `ExpSidebar` width 196).
+const SIDEBAR_W: f32 = 196.0;
 
 /// `draw_explorer` 가 호스트에 위임하는 액션. 렌더 루프 종료 후 적용된다.
 #[derive(Clone, Debug)]
@@ -572,44 +572,117 @@ fn sidebar(
     ui.add_space(theme.spacing_xs.value());
     ui.spacing_mut().item_spacing.y = 0.0;
 
+    // 현재 폴더 — 트리/즐겨찾기 하이라이트 기준 (design active).
+    let current = panel.current_root().to_path_buf();
     egui::ScrollArea::vertical()
         .id_salt("explorer_sidebar")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            // 즐겨찾기 섹션 (비어있지 않을 때만).
-            if !favorites.is_empty() {
-                sidebar_caption(ui, theme, t("explorer.sidebar.favorites"));
-                for fav in favorites {
-                    favorite_row(ui, theme, fav, action);
-                }
-                ui.add_space(theme.spacing_xs.value());
-            }
-            // 섹션 캡션.
+            // Files 섹션(트리)이 위 — design ExpSidebar 순서. 트리 루트는 고정 cwd.
             sidebar_caption(ui, theme, t("explorer.sidebar.tree"));
-            // 트리 루트는 고정 cwd(프로젝트 루트) — current 가 폴더를 오가도 불변.
             let root = panel.cwd().to_path_buf();
-            tree_node(ui, theme, view, &root, 0, action);
+            tree_node(ui, theme, view, &root, 0, &current, action);
+            // 트리 ↔ 즐겨찾기 구분선 (design height 1 separator, margin 8px top).
+            ui.add_space(theme.spacing_sm.value());
+            let (sep, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), theme.border_width.value()),
+                egui::Sense::hover(),
+            );
+            ui.painter().hline(
+                sep.x_range(),
+                sep.center().y,
+                egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+            );
+            // Favorites 섹션 — 캡션은 항상 표시(0개여도 발견 가능), 비면 empty state.
+            sidebar_caption(ui, theme, t("explorer.sidebar.favorites"));
+            if favorites.is_empty() {
+                favorites_empty(ui, theme);
+            } else {
+                for fav in favorites {
+                    favorite_row(ui, theme, fav, &current, action);
+                }
+            }
         });
 }
 
-/// 즐겨찾기 한 행. 클릭 → 해당 경로로 이동, 우클릭 → "즐겨찾기에서 제거" 메뉴.
+/// 즐겨찾기 빈 상태 (design `FavoritesEmpty`): 흐린 별 + "No favorites yet" + 힌트.
+fn favorites_empty(ui: &mut egui::Ui, theme: &Theme) {
+    let inset = theme.spacing_sm.value();
+    ui.add_space(theme.spacing_xs.value());
+    // 1행: 흐린 별(opacity 0.55) + 캡션.
+    ui.horizontal(|ui| {
+        ui.add_space(inset);
+        ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+        let sz = theme.icon_glyph_size_sm.value();
+        let (r, _) = ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
+        icons::STAR
+            .image(sz, theme.text_muted().to_egui().gamma_multiply(0.55))
+            .paint_at(ui, r);
+        ui.label(
+            egui::RichText::new(t("explorer.sidebar.favorites_empty"))
+                .size(theme.font_size_caption.value())
+                .color(theme.text_muted().to_egui()),
+        );
+    });
+    // 2행: 힌트 — "Right-click a folder → {Add to favorites}." ("Add to favorites"만 text-muted).
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(inset);
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let hint = t_fmt(
+            "explorer.sidebar.favorites_empty_hint",
+            &t("explorer.context_menu.add_to_favorites"),
+        );
+        let action_label = t("explorer.context_menu.add_to_favorites");
+        let micro = theme.font_size_caption.value();
+        // 치환된 action 스팬만 text-muted 로 강조, 나머지는 text-placeholder.
+        if let Some(pos) = hint.find(&action_label) {
+            let (before, rest) = hint.split_at(pos);
+            let after = &rest[action_label.len()..];
+            for (seg, muted) in [(before, false), (action_label, true), (after, false)] {
+                if seg.is_empty() {
+                    continue;
+                }
+                let color = if muted {
+                    theme.text_muted().to_egui()
+                } else {
+                    theme.text_placeholder().to_egui()
+                };
+                ui.label(egui::RichText::new(seg).size(micro).color(color));
+            }
+        } else {
+            ui.label(
+                egui::RichText::new(hint)
+                    .size(micro)
+                    .color(theme.text_placeholder().to_egui()),
+            );
+        }
+    });
+    ui.add_space(inset);
+}
+
+/// 즐겨찾기 한 행. 클릭 → 해당 경로로 이동, 우클릭 → 컨텍스트 메뉴.
+/// 별은 채운 별(STAR_FILL) + accent-warning(골드), 현재 폴더면 surface-active 하이라이트.
 fn favorite_row(
     ui: &mut egui::Ui,
     theme: &Theme,
     fav: &favorites::ExplorerFavorite,
+    current: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
-    let star = icons::STAR;
+    let star = icons::STAR_FILL;
+    let star_color = theme.accent_warning().to_egui();
+    let selected = fav.path == current;
     let resp = tree_row(
         ui,
         theme,
         0,
         false,
         false,
-        Some(&|ui, rect, c| star.image(rect.height(), c).paint_at(ui, rect)),
+        // 별 색은 accent-warning 고정(tree_row 가 넘기는 `c` 무시).
+        Some(&|ui, rect, _c| star.image(rect.height(), star_color).paint_at(ui, rect)),
         &fav.label,
         None,
-        false,
+        selected,
         true,
     );
     if resp.clicked() && action.is_none() {
@@ -632,21 +705,27 @@ fn favorite_row(
 
 fn sidebar_caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.add_space(theme.spacing_xs.value());
-    ui.label(
-        egui::RichText::new(text.to_uppercase())
-            .size(theme.font_size_micro.value())
-            .color(theme.text_muted().to_egui()),
-    );
+    // design SideHead: font-mono·10·uppercase·text-muted.
+    ui.horizontal(|ui| {
+        ui.add_space(theme.spacing_sm.value());
+        ui.label(
+            egui::RichText::new(text.to_uppercase())
+                .font(egui::FontId::monospace(theme.font_size_micro.value()))
+                .color(theme.text_muted().to_egui()),
+        );
+    });
     ui.add_space(theme.spacing_xs.value());
 }
 
 /// 재귀 트리 노드. `dir` 자체 행을 그리고, 펼쳐져 있으면 하위 디렉토리도.
+/// `current` 와 같은 노드는 surface-active 로 하이라이트(design TreeNode active).
 fn tree_node(
     ui: &mut egui::Ui,
     theme: &Theme,
     view: &mut ExplorerView,
     dir: &Path,
     depth: u16,
+    current: &Path,
     action: &mut Option<ExplorerAction>,
 ) {
     let open = view.expanded.contains(dir);
@@ -656,16 +735,19 @@ fn tree_node(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| dir.to_string_lossy().to_string());
     let folder = icons::FOLDER;
+    // 폴더 아이콘은 text-muted 고정(design TreeNode) — tree_row 의 `c` 무시.
+    let folder_color = theme.text_muted().to_egui();
+    let selected = dir == current;
     let resp = tree_row(
         ui,
         theme,
         depth,
         has_children,
         open,
-        Some(&|ui, rect, c| folder.image(rect.height(), c).paint_at(ui, rect)),
+        Some(&|ui, rect, _c| folder.image(rect.height(), folder_color).paint_at(ui, rect)),
         &name,
         None,
-        false,
+        selected,
         true,
     );
     // 클릭: chevron 영역(좌측)은 펼침 토글, 그 외는 이동. 단순화를 위해 좌측
@@ -707,7 +789,7 @@ fn tree_node(
             .map(|e| e.path.clone())
             .collect();
         for child in children {
-            tree_node(ui, theme, view, &child, depth + 1, action);
+            tree_node(ui, theme, view, &child, depth + 1, current, action);
         }
     }
 }

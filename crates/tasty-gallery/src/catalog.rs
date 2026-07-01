@@ -441,6 +441,18 @@ pub fn pages() -> Vec<Page> {
                         components::explorer_toolbar::draw,
                     )],
                 ),
+                section(
+                    "explorer-sidebar",
+                    "Explorer sidebar",
+                    vec![spec(
+                        "explorer-sidebar",
+                        "Files tree + Favorites (populated / empty)",
+                        Some(
+                            "tree active highlight · section separator · filled star · empty state",
+                        ),
+                        components::explorer_sidebar::draw,
+                    )],
+                ),
             ],
         },
         // ── Icons ────────────────────────────────────────────────────

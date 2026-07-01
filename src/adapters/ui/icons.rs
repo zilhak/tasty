@@ -34,6 +34,20 @@ macro_rules! line_icon {
     };
 }
 
+/// `line_icon` 과 동일하나 `fill="white"` — 채운 글리프(예: starFill). tint 로 색을 입힌다.
+macro_rules! fill_icon {
+    ($name:ident, $uri:literal, $body:literal) => {
+        pub const $name: Icon = Icon {
+            uri: concat!("bytes://tasty_icon_", $uri, ".svg"),
+            svg: concat!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">"#,
+                $body,
+                "</svg>"
+            ),
+        };
+    };
+}
+
 line_icon!(
     FOLDER,
     "folder",
@@ -67,6 +81,12 @@ line_icon!(
     STAR,
     "star",
     r#"<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14l-5-4.87 6.91-1.01L12 2z"/>"#
+);
+// 채운 별 — 즐겨찾기 populated 행 (design `ic.starFill`, accent-warning 색).
+fill_icon!(
+    STAR_FILL,
+    "star_fill",
+    r#"<path d="m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z"/>"#
 );
 line_icon!(
     SETTINGS,

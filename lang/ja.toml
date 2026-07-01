@@ -536,8 +536,10 @@ up = "上へ"
 refresh = "更新"
 
 [explorer.sidebar]
-tree = "フォルダー"
+tree = "ファイル"
 favorites = "お気に入り"
+favorites_empty = "お気に入りはまだありません"
+favorites_empty_hint = "フォルダーを右クリック → {}。"
 
 [explorer.type]
 folder = "フォルダー"

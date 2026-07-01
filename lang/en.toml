@@ -536,8 +536,10 @@ up = "Up"
 refresh = "Refresh"
 
 [explorer.sidebar]
-tree = "Folders"
+tree = "Files"
 favorites = "Favorites"
+favorites_empty = "No favorites yet"
+favorites_empty_hint = "Right-click a folder → {}."
 
 [explorer.type]
 folder = "Folder"
