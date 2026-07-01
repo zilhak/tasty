@@ -32,6 +32,31 @@ red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 yellow() { printf '\033[33m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 
+# ────────────────────────────────────────────────────────────
+# M.1  merge 커밋 차단 — branch 가 갈라지는 2-parent 머지 커밋 금지.
+#      pre-merge-commit 은 clean non-ff merge 만 잡는다. **충돌 merge** 는
+#      git merge 가 커밋을 안 만들고 멈춘 뒤 resolve → `git commit` 으로
+#      마무리되며, 그 커밋은 pre-merge-commit 이 아니라 이 훅을 탄다.
+#      여기서 잡지 않으면 충돌 merge 가 갈래 커밋으로 새어 들어온다.
+#      정책: 모든 통합은 rebase → ff-merge 로 선형 유지. rebase 로 다 된다.
+# ────────────────────────────────────────────────────────────
+if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+    red "✘ branch 가 갈라지는 merge 커밋이 차단되었습니다 (2-parent)."
+    echo
+    yellow "▸ 정책: 모든 통합은 rebase 로 선형화한다. 충돌이 있어도 rebase 로 해결된다 —"
+    yellow "  merge 커밋(갈래)은 만들지 않는다."
+    echo
+    yellow "▸ 지금 이 merge 를 되돌리고 rebase 로 재시도하라:"
+    yellow "    git merge --abort"
+    yellow "    git rebase <대상-브랜치>       # 충돌나면 양쪽 의도를 확인 후 해결"
+    yellow "    git merge --ff-only <브랜치>"
+    echo
+    yellow "▸ 충돌은 '마커만 지워서' 해결하지 마라 — 양쪽 변경의 의도를 파악하고"
+    yellow "  맞는 결과로 합쳐라. 애매하면 rebase --abort 후 원인부터 분석하라."
+    echo
+    exit 1
+fi
+
 FAIL=0
 fail() { red "  ✘ $*"; FAIL=1; }
 
