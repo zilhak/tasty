@@ -648,6 +648,18 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "workspace-categories",
+                    "Workspace categories",
+                    vec![spec(
+                        "workspace-categories",
+                        "Sidebar folders — dialogs & rail popup",
+                        Some(
+                            "Create/rename (360px + inline validation) · delete confirm (380px danger) · rail popup (176px)",
+                        ),
+                        components::category_dialogs::draw,
+                    )],
+                ),
+                section(
                     "switch",
                     "Switch-number overlay",
                     vec![
