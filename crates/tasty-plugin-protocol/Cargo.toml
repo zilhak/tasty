@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-protocol"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 license = "MIT"
 description = "Wire types shared between Tasty host and external plugins (UI tree DSL, JSON-RPC envelope)"
