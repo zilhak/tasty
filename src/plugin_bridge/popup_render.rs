@@ -19,7 +19,7 @@ use egui::{Context, Event, Id, Order, Pos2, Rect, Stroke, Vec2};
 use tasty_plugin_manifest::PopupRendering;
 use tasty_plugin_protocol::{
     ModifiersWire, PointerButtonWire, PopupCloseReason, PopupSetContextParams, RawInputEventWire,
-    RawInputWire,
+    RawInputWire, ThemeWire,
 };
 
 use crate::adapters::ui::popup;
@@ -51,6 +51,7 @@ pub fn draw_plugin_popups(
 
     let Some(mgr) = plugin_manager else {
         state.plugin_mesh_popup_geom.clear();
+        state.plugin_mesh_popup_theme.clear();
         return;
     };
 
@@ -183,6 +184,16 @@ pub fn draw_plugin_popups(
 
     // ── egui-mesh popups (A2) ──
     let ppp = ctx.pixels_per_point().max(f32::EPSILON);
+    // 현재 resolved Theme 스냅샷을 1회 만든다(popup 무관). plugin 이 host 와 동일 Theme 으로
+    // 재구성하도록 색 집합+is_light+UI zoom 을 운반한다(surface forward 와 동형, ADR-0028 parity).
+    let current_theme = {
+        let th = crate::theme::theme();
+        ThemeWire {
+            colors: th.to_colors(),
+            is_light: th.is_light,
+            ui_zoom: _engine.settings.appearance.ui_scale_factor(),
+        }
+    };
     for snap in mesh_snaps {
         let pos = clamp_to_screen(
             anchor_pos(snap.anchor, snap.size, screen_rect, pointer_pos),
@@ -236,9 +247,14 @@ pub fn draw_plugin_popups(
                 .remove(&snap.instance_id);
         }
         let geom_changed = state.plugin_mesh_popup_geom.get(&snap.instance_id) != Some(&geom);
+        let theme_changed =
+            state.plugin_mesh_popup_theme.get(&snap.instance_id) != Some(&current_theme);
         let need_bootstrap = !has_frame && !bootstrapped;
-        if geom_changed || has_input || need_bootstrap {
+        if geom_changed || has_input || need_bootstrap || theme_changed {
             state.plugin_mesh_popup_geom.insert(snap.instance_id, geom);
+            state
+                .plugin_mesh_popup_theme
+                .insert(snap.instance_id, current_theme.clone());
             if !has_frame {
                 state
                     .plugin_mesh_popup_bootstrapped
@@ -252,6 +268,7 @@ pub fn draw_plugin_popups(
                     height_px: h_px,
                     pixels_per_point: ppp,
                     raw_input,
+                    theme: Some(current_theme.clone()),
                 },
             );
         }

@@ -574,6 +574,13 @@ pub struct PopupSetContextParams {
     /// 이번 frame 의 사용자 입력.
     #[serde(default)]
     pub raw_input: RawInputWire,
+    /// host 가 resolve 한 현재 Theme 스냅샷 (egui-mesh popup 의 Theme parity).
+    /// `None` 이면 plugin 은 직전 값을 유지하거나 자체 기본값으로 그린다. host 는
+    /// 크기/ppp/입력 변경뿐 아니라 **테마 변경 시에도** 이 값을 갱신해 재forward 한다.
+    /// [`SurfaceSetContextParams::theme`] 와 동형 — 모든 egui-mesh popup(git-viewer/
+    /// clipboard-viewer 등)이 공유하는 generic 필드.
+    #[serde(default)]
+    pub theme: Option<ThemeWire>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

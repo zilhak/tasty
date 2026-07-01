@@ -418,6 +418,11 @@ pub struct AppState {
     /// 을 host 가 반드시 decode 하도록, bootstrap 을 매 frame 스팸하지 않는다.
     pub(crate) plugin_mesh_popup_bootstrapped: std::collections::HashSet<u64>,
 
+    /// egui-mesh popup 별 마지막으로 보낸 Theme 스냅샷. 크기/입력 무변이어도 테마가
+    /// 바뀌면 set_context 재forward 를 트리거한다(surface `last_theme` 동형).
+    pub(crate) plugin_mesh_popup_theme:
+        std::collections::HashMap<u64, tasty_plugin_protocol::ThemeWire>,
+
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. UI Intent (`Intent::Ui`) 와 Domain Intent
     /// (`Intent::Domain`) 가 한 큐 위에서 처리됨 (D.3.I.3 통합). 설계:
@@ -763,6 +768,7 @@ impl AppState {
             plugin_mesh_popup_regions: Vec::new(),
             plugin_mesh_popup_geom: std::collections::HashMap::new(),
             plugin_mesh_popup_bootstrapped: std::collections::HashSet::new(),
+            plugin_mesh_popup_theme: std::collections::HashMap::new(),
             pending_intents: Vec::new(),
         }
     }
