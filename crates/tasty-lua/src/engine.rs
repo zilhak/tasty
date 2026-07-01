@@ -512,6 +512,36 @@ mod tests {
     }
 
     #[test]
+    fn tree_api_returns_published_snapshot() {
+        // 워커에서 tasty.tree() 가 메인 발행 스냅샷을 Lua table 로(값복사) 반환.
+        let engine = LuaEngine::new().expect("init");
+        engine.publish_snapshot(LuaSnapshot {
+            tree: vec![
+                serde_json::json!({"active": true, "panes": []}),
+                serde_json::json!({"active": false, "panes": []}),
+            ],
+        });
+        engine
+            .eval(
+                r#"
+                local t = tasty.tree()
+                assert(#t == 2, "two workspaces")
+                assert(t[1].active == true, "first active")
+                assert(t[2].active == false, "second inactive")
+                "#,
+            )
+            .expect("tree read");
+    }
+
+    #[test]
+    fn tree_api_empty_when_nothing_published() {
+        let engine = LuaEngine::new().expect("init");
+        engine
+            .eval("assert(#tasty.tree() == 0)")
+            .expect("empty tree");
+    }
+
+    #[test]
     fn command_queue_backpressure_drops_over_cap() {
         // 큐 용량 초과 발행 → drop(warn), drain 은 CAP 이하로 안전 반환 (패닉 없음).
         let engine = LuaEngine::new().expect("init");

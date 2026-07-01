@@ -598,6 +598,8 @@ impl ApplicationHandler<AppEvent> for App {
         // wrapper) 모두 매 frame 일관 처리 (intent-ui-vs-domain.md §4.4).
         // dispatch_pending_intents 가 domain_batch 를 따로 모아 cascade 까지 일괄.
         self.dispatch_pending_intents();
+        // Lua 워커에 최신 읽기전용 트리 스냅샷 발행 (ADR-0031 읽기 = 스냅샷).
+        self.publish_lua_snapshot();
         // Lua 워커가 발행한 HostCommand drain·적용 (ADR-0031 쓰기 = 커맨드 큐).
         self.dispatch_pending_lua_commands();
         // 도구 메뉴 ToolAction::OpenPopup 클릭으로 enqueue된 popup open dispatch.

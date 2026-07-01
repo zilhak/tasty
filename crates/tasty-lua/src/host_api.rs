@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::{SyncSender, TrySendError};
 
-use mlua::{Lua, Table, Value};
+use mlua::{Lua, LuaSerdeExt, Table, Value};
 
 use crate::bridge::{HostCommand, SharedSnapshot};
 use crate::engine::LuaEngineError;
@@ -16,13 +16,26 @@ use crate::engine::LuaEngineError;
 /// `tasty` 글로벌 테이블에 호스트 API 를 설치한다 (VM 생성 시 1회, 워커로 이동 전).
 ///
 /// `tasty.on` 은 이미 엔진이 설치함. 이 함수는 추가 메서드를 등록한다.
-/// `command_tx` = 워커→메인 커맨드 큐, `snapshot` = 메인→워커 읽기전용 스냅샷 (02 read API 용).
+/// `command_tx` = 워커→메인 커맨드 큐, `snapshot` = 메인→워커 읽기전용 스냅샷.
 pub(crate) fn install(
     lua: &Lua,
     command_tx: SyncSender<HostCommand>,
-    _snapshot: SharedSnapshot,
+    snapshot: SharedSnapshot,
 ) -> Result<(), LuaEngineError> {
     let tasty: Table = lua.globals().get("tasty").map_err(LuaEngineError::Init)?;
+
+    // tasty.tree() — 메인이 발행한 최신 스냅샷의 워크스페이스 트리를 Lua table 로 반환.
+    // 값 복사(스냅샷 핸들을 Lua 가 쥐지 않음) → read-only. (ADR-0031 읽기 = 스냅샷)
+    let tree = lua
+        .create_function(move |lua, ()| {
+            let snap = match snapshot.lock() {
+                Ok(guard) => guard.clone(),
+                Err(e) => return Err(mlua::Error::runtime(format!("snapshot poisoned: {e}"))),
+            };
+            lua.to_value(&snap.tree)
+        })
+        .map_err(LuaEngineError::Init)?;
+    tasty.set("tree", tree).map_err(LuaEngineError::Init)?;
 
     let log = lua
         .create_function(|_, msg: String| {

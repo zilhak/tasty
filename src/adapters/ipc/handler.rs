@@ -959,7 +959,19 @@ fn handle_tree(
     engine: &crate::core::CoreState,
     id: serde_json::Value,
 ) -> JsonRpcResponse {
-    let tree: Vec<_> = engine
+    JsonRpcResponse::success(id, json!(build_engine_tree(state, engine)))
+}
+
+/// 한 (state, engine) 쌍의 워크스페이스 트리를 JSON 배열로 빌드한다.
+///
+/// IPC `list tree`(단일 라우팅 engine) 와 Lua 스냅샷(전 View/parked 통합, ADR-0031)이
+/// **같은 구조**를 내도록 공유하는 빌더 — 노드 필드(active/busy_count/busy, panes/tabs/surface)가
+/// 드리프트하지 않게 단일 소스로 유지한다.
+pub(crate) fn build_engine_tree(
+    state: &AppState,
+    engine: &crate::core::CoreState,
+) -> Vec<serde_json::Value> {
+    engine
         .workspaces
         .iter()
         .enumerate()
@@ -970,8 +982,7 @@ fn handle_tree(
             annotate_tree_busy(&mut t, engine);
             t
         })
-        .collect();
-    JsonRpcResponse::success(id, json!(tree))
+        .collect()
 }
 
 /// Walk a workspace tree JSON value and annotate every node that owns surface
