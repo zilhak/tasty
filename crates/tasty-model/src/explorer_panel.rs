@@ -155,6 +155,16 @@ impl ExplorerTab {
         }
     }
 
+    /// cwd = current = `root` 로 초기화하되 view mode 를 지정한다. host 가 "마지막
+    /// view mode"(Settings) 를 주입해 새 explorer 가 그 형태로 열리게 한다.
+    /// (`tasty-model` 은 Settings 비의존이므로 값으로 주입받는다.)
+    pub fn new_with_mode(root: PathBuf, view_mode: ExplorerViewMode) -> Self {
+        Self {
+            view_mode,
+            ..Self::new(root)
+        }
+    }
+
     /// 명시적으로 cwd 와 current 를 따로 지정해 복원한다(snapshot restore 용).
     pub fn with_cwd(cwd: PathBuf, current: PathBuf) -> Self {
         Self {
@@ -258,6 +268,15 @@ impl ExplorerPanel {
         }
     }
 
+    /// 단일 탭으로 시작하되 view mode 를 지정한다(host 가 마지막 view mode 를 주입).
+    pub fn new_with_mode(id: u32, root: PathBuf, view_mode: ExplorerViewMode) -> Self {
+        Self {
+            id,
+            tabs: vec![ExplorerTab::new_with_mode(root, view_mode)],
+            active: 0,
+        }
+    }
+
     /// 여러 탭으로 복원. `tabs` 가 비어 있으면 home 단일 탭으로 보정.
     pub fn from_tabs(id: u32, tabs: Vec<ExplorerTab>, active: usize) -> Self {
         let tabs = if tabs.is_empty() {
@@ -280,10 +299,14 @@ impl ExplorerPanel {
         &mut self.tabs[idx]
     }
 
-    /// 현재 활성 탭의 cwd 를 복제해 새 내부 탭을 추가하고 활성화한다(current = cwd).
+    /// 현재 활성 탭의 cwd·view mode 를 복제해 새 내부 탭을 추가하고 활성화한다
+    /// (current = cwd). view mode 는 같은 surface 안의 표시 형태 연속성을 위해
+    /// 활성 탭의 것을 승계한다(활성 탭 모드 = 사용자가 마지막에 고른 형태).
     pub fn add_tab(&mut self) {
-        let cwd = self.active_tab().cwd.clone();
-        self.tabs.push(ExplorerTab::new(cwd));
+        let active = self.active_tab();
+        let cwd = active.cwd.clone();
+        let mode = active.view_mode;
+        self.tabs.push(ExplorerTab::new_with_mode(cwd, mode));
         self.active = self.tabs.len() - 1;
     }
 
@@ -429,6 +452,19 @@ mod tests {
         p.add_tab();
         assert_eq!(p.cwd(), Path::new("/proj")); // cwd 복제
         assert_eq!(p.current_root(), Path::new("/proj")); // current = cwd
+    }
+
+    #[test]
+    fn new_with_mode_sets_view_mode() {
+        let p = ExplorerPanel::new_with_mode(1, PathBuf::from("/proj"), ExplorerViewMode::List);
+        assert_eq!(p.active_tab().view_mode, ExplorerViewMode::List);
+    }
+
+    #[test]
+    fn add_tab_inherits_active_view_mode() {
+        let mut p = ExplorerPanel::new_with_mode(1, PathBuf::from("/proj"), ExplorerViewMode::Grid);
+        p.add_tab();
+        assert_eq!(p.active_tab().view_mode, ExplorerViewMode::Grid);
     }
 
     #[test]

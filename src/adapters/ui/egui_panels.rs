@@ -420,6 +420,18 @@ pub(crate) fn apply_explorer_action(
                 v.request_reload();
             }
         }
+        A::SetViewMode(m) => {
+            // 대상 패널에 반영하고, "마지막 view mode" 를 Settings 에 영속한다 —
+            // 새로 생성되는 explorer 가 이 형태로 열리도록(재시작/새 창은 disk 로드).
+            apply_explorer_panel_action(state, engine, sid, &act);
+            let mode = m.as_str().to_string();
+            if engine.settings.general.explorer_view_mode != mode {
+                engine.settings.general.explorer_view_mode = mode;
+                if let Err(e) = engine.settings.save() {
+                    tracing::warn!("failed to persist explorer view mode: {e}");
+                }
+            }
+        }
         A::ContextMenu { target, cwd, x, y } => {
             use crate::explorer_ui::ExplorerMenuTarget as T;
             // explorer 전용 메뉴를 단일 슬롯에 선점 → 이후 generic surface fallback

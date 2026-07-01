@@ -575,6 +575,19 @@ impl CoreState {
             .surface_registry
             .get(kind)
             .ok_or_else(|| anyhow::anyhow!("unknown surface kind: {}", kind))?;
+        // 새 explorer 는 "마지막으로 고른 view mode"(Settings)로 열린다. params 가
+        // view_mode 를 명시하지 않은 경우에만 주입한다(명시 우선). restore 경로는
+        // create 를 거치지 않으므로 per-tab 저장값이 그대로 유지된다.
+        if kind == "explorer"
+            && params.get("view_mode").is_none()
+            && let serde_json::Value::Object(mut map) = params.clone()
+        {
+            map.insert(
+                "view_mode".to_string(),
+                serde_json::Value::String(self.settings.general.explorer_view_mode.clone()),
+            );
+            return (def.create)(surface_id, cwd, &serde_json::Value::Object(map));
+        }
         (def.create)(surface_id, cwd, params)
     }
 }

@@ -167,7 +167,14 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .map(std::path::PathBuf::from)
                 .or_else(|| cwd.map(std::path::PathBuf::from))
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
-            Ok(Box::new(ExplorerPanel::new(sid, root)) as Box<dyn Surface>)
+            // host(`create_surface_via_registry`)가 마지막 view mode 를 주입한다.
+            // 미지정 시 ExplorerViewMode::from_str 이 detail 로 fallback.
+            let view_mode = params
+                .get("view_mode")
+                .and_then(|v| v.as_str())
+                .map(ExplorerViewMode::from_str)
+                .unwrap_or(ExplorerViewMode::Detail);
+            Ok(Box::new(ExplorerPanel::new_with_mode(sid, root, view_mode)) as Box<dyn Surface>)
         }),
         restore: Arc::new(|sid, data| {
             let active = data.get("active").and_then(|v| v.as_u64()).unwrap_or(0) as usize;

@@ -111,6 +111,11 @@ pub struct GeneralSettings {
     /// 단축키·영속이 현행 평면 동작과 동일하다. on 으로 켜면 normal 외 사용자
     /// 카테고리를 만들 수 있고, off 로 끄면 모든 워크스페이스를 normal 로 귀속한다.
     pub workspace_categories_enabled: bool,
+    /// Explorer 의 마지막으로 선택한 view mode ("grid" | "list" | "detail"). 사용자가
+    /// 툴바 segmented 로 형태를 바꾸면 여기에 기록되고, 새로 생성되는 explorer
+    /// surface·내부 탭의 기본 표시 형태로 쓰인다. 알 수 없는 값은
+    /// `ExplorerViewMode::from_str` 이 detail 로 fallback (normalize 도 detail 로 교정).
+    pub explorer_view_mode: String,
     /// macOS 전용 — Option 키를 Meta(Alt-prefix) 키로 해석한다. on 이면 Option+문자가
     /// 특수문자(compose) 대신 `ESC` + base 문자 시퀀스로 PTY 에 전달돼 readline/Emacs/
     /// vim 의 Meta 바인딩(`Alt+f`/`Alt+b` 등)이 동작한다. 기본 off — 기존 Option=특수문자
@@ -169,6 +174,7 @@ impl Default for GeneralSettings {
             mouse_capture_hint: true,
             mouse_capture_blacklist: Vec::new(),
             workspace_categories_enabled: false,
+            explorer_view_mode: "detail".to_string(),
             #[cfg(target_os = "macos")]
             option_as_meta: false,
         }
@@ -556,6 +562,28 @@ mod tests {
     fn new_restore_surface_content_key_loads() {
         let g: GeneralSettings = toml::from_str("restore_surface_content = false").unwrap();
         assert!(!g.restore_surface_content);
+    }
+
+    #[test]
+    fn explorer_view_mode_defaults_to_detail() {
+        let g = GeneralSettings::default();
+        assert_eq!(g.explorer_view_mode, "detail");
+    }
+
+    #[test]
+    fn explorer_view_mode_round_trips() {
+        let g: GeneralSettings = toml::from_str("explorer_view_mode = \"list\"").unwrap();
+        assert_eq!(g.explorer_view_mode, "list");
+        let out = toml::to_string(&g).unwrap();
+        let g2: GeneralSettings = toml::from_str(&out).unwrap();
+        assert_eq!(g2.explorer_view_mode, "list");
+    }
+
+    #[test]
+    fn explorer_view_mode_missing_key_uses_default() {
+        // 구 config.toml 마이그레이션 안전: 키가 없으면 기본값 detail.
+        let g: GeneralSettings = toml::from_str("scrollback_lines = 5000").unwrap();
+        assert_eq!(g.explorer_view_mode, "detail");
     }
 
     #[cfg(windows)]

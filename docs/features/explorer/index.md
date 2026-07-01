@@ -31,6 +31,7 @@ OS 파일 관리자에 의존하지 않고 tasty surface 안에서 디렉토리�
 ### 뷰 모드 / 정렬
 
 - 뷰 모드 3 종(grid / list / detail)을 toolbar 의 공용 `segmented` 위젯으로 토글한다. detail 뷰는 정렬 컬럼 헤더를 클릭하면 해당 컬럼으로 정렬(같은 컬럼 재클릭 시 방향 토글).
+- **마지막 view mode 기억**: 사용자가 뷰 모드를 바꾸면 그 값이 `Settings.general.explorer_view_mode`(`~/.tasty/config.toml`)에 영속되고, **새로 생성되는** explorer surface 는 이 값으로 열린다(주입 지점: `create_surface_via_registry` 가 `view_mode` param 미지정 시 설정값을 실어 explorer `create` 에 전달). 같은 surface 안의 새 내부 탭(`add_tab`)은 활성 탭의 view mode 를 승계한다. snapshot 복원 경로는 create 를 거치지 않아 per-tab 저장값을 그대로 유지한다.
 - list/detail 데이터 행은 공용 `Table`(selectable)을, 사이드바 디렉토리 행은 공용 `tree_row` 를 재사용한다.
 
 ### deferred action 적용

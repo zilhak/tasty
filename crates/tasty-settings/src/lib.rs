@@ -253,6 +253,15 @@ impl Settings {
             &mut report.changed,
         );
 
+        // general.explorer_view_mode
+        normalize_choice(
+            &mut self.general.explorer_view_mode,
+            &["grid", "list", "detail"],
+            "detail",
+            "explorer_view_mode",
+            &mut report.changed,
+        );
+
         report
     }
 }
