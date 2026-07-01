@@ -51,15 +51,16 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 ## 인터페이스
 
 - **AI Agent / 원격 (CLI)**:
-  - `tasty remote attach [SURFACE] --ssh|--profile [옵션…]` — 원격 surface attach.
+  - `tasty tool attach <name> [SURFACE] [--workspace <id>] [옵션…]` — **tasty-attach 프로필**로 attach(profile-우선 편의 표면). `--list` = tasty-attach 목록만.
+  - `tasty remote attach [SURFACE] --ssh|--profile [옵션…]` — 원격 surface attach. `--profile` 은 **tasty-attach kind**(ADR-0032; ref/inline resolve).
   - `tasty remote attach --workspace <id> --ssh|--profile …` — 원격 workspace attach.
   - `tasty remote attach --force-detach [--workspace <id>]` — 점유 강제 해제(로컬 JSON-RPC; `--ssh` 와 상호배타).
   - `tasty remote attach --into-gui --target-port <p> --workspace <ws>` — 실행 GUI 에 mirror.
-  - `tasty remote check --ssh|--profile` — 원격 생존 확인.
+  - `tasty remote check --ssh|--profile` — 원격 생존 확인(`--profile` = tasty-attach).
   - `tasty set workspace --id <id> --ssh-profile <name> --remote-workspace <N>` — 자동 매핑 선언.
 - **IPC (`attach.*`)**: `acquire`/`release`(stream 핸드셰이크), `force_detach`/`force_detach_workspace`, `into_gui`, `list`(점유 목록 조회). 표 상세 → [dev-guide/attach-behavior](../../dev-guide/attach-behavior.md#ipc-표면-attach).
 - **로컬 self attach**: 사용자 mirror 조작 재현 성격이라 release 에 없음 — `tasty debug attach`(debug 빌드 전용, [`dev-guide/debug-ipc`](../../dev-guide/debug-ipc.md)).
-- **SSH 프로필**: `--profile` 이 참조하는 프로필은 [ssh-tool](../remote-profiles/index.md) 이 관리.
+- **프로필**: `--profile`/`tool attach` 이 참조하는 tasty-attach 프로필(및 그것이 `ssh_ref` 로 참조하는 ssh 프로필)은 [remote-profiles](../remote-profiles/index.md) 이 관리.
 
 ## 비-목표 (Out of scope)
 

@@ -25,7 +25,7 @@
 | 0012 | [tmux control mode(DCS) 및 DECRQSS 는 미지원](0012-tmux-dcs-decrqss-unsupported.md) | Deferred | 2026-06-18 | terminal, vte, dcs, tmux, decrqss, scope, deferred |
 | 0013 | [레거시·니치 입력 사설 모드는 미지원](0013-niche-input-private-modes-unsupported.md) | Deferred | 2026-06-18 | terminal, vte, dec-private-mode, mouse, input, scope, deferred |
 | 0014 | [폰트 ligature 는 보류 (현재 미지원, 추후 지원 계획)](0014-font-ligatures-deferred.md) | Deferred | 2026-06-18 | font, ligatures, appearance, settings, rendering, cell-grid, scope, deferred |
-| 0015 | [원격 접속 프로필 = 범용 typed 레지스트리, attach 는 소비자](0015-remote-profiles-typed-registry.md) | Accepted | 2026-06-19 | remote, profile, registry, attach, ssh, smb, extensibility, plugin, ubiquitous-language |
+| 0015 | [원격 접속 프로필 = 범용 typed 레지스트리, attach 는 소비자](0015-remote-profiles-typed-registry.md) | Superseded by 0032 | 2026-06-19 | remote, profile, registry, attach, ssh, smb, extensibility, plugin, ubiquitous-language |
 | 0016 | [Passkey 저장소 — path 수렴 · 파일권한 위임 · 참조 모델](0016-passkey-store-path-convergence.md) | Accepted | 2026-06-19 | passkey, secret, security, file-permission, trust-boundary, remote-profile |
 | 0017 | [Windows 절전(suspend/resume) 후 PTY 헬스 복구는 Windows 전용](0017-windows-suspend-resume-pty-recovery.md) | Accepted | 2026-06-21 | pty, conpty, suspend, resume, power-management, windows, platform, lifecycle, terminal, cross-platform |
 | 0018 | [Claude Design 세션 자격증명은 평문으로 저장한다](0018-claude-design-auth-at-rest-plaintext.md) | Accepted | 2026-06-22 | claude-design, plugin, secret, security, encryption, auth, trust-boundary |
@@ -42,3 +42,4 @@
 | 0029 | [워크스페이스 카테고리 — active 는 전역 인덱스 단일 진실 소스 유지](0029-workspace-category-global-index.md) | Accepted | 2026-06-29 | workspace, workspace-category, sidebar, indexing, focus |
 | 0030 | [image surface 는 mesh-only(비트맵=egui 텍스처) — ADR-0028 image 하이브리드 조항 개정](0030-image-egui-mesh-bitmap-texture.md) | Accepted | 2026-07-01 | plugin, render-channel, egui, epaint, mesh, image, surface-kind, bitmap, texture, host-rendered-removal, adr-0028 |
 | 0031 | [Lua 스크립트의 tasty 접근은 고정 호스트 API 표면으로만 — state 직접 접근 불가 + 워커 스레드 격리](0031-lua-host-api-only-worker-isolated.md) | Proposed | 2026-07-01 | lua, scripting, host-api, worker-thread, snapshot, command-queue, capability-boundary, sandbox, init-lua-removal, observe-only, adr-0009, adr-0028 |
+| 0032 | [원격 프로필을 ssh(연결) / tasty-attach(attach) 2-레이어로 분리](0032-remote-attach-two-layer-split.md) | Accepted | 2026-07-01 | remote, profile, attach, ssh, two-layer, ref, port-file, cli |

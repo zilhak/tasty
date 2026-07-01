@@ -25,7 +25,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 
 ### 원격 연결 (→ [features/remote-profiles](../features/remote-profiles/index.md))
 
-- **원격 접속 프로필(Remote profile)** — 타입(`kind`, 열린 string) 태그가 붙은 범용 연결 디스크립터. 비밀을 담지 않고 Passkey 를 이름으로 참조만 한다. attach 는 이 중 ssh kind 를 읽는 **소비자**일 뿐 — "주소 저장 ≠ attach".
+- **원격 접속 프로필(Remote profile)** — 타입(`kind`, 열린 string) 태그가 붙은 범용 연결 디스크립터. 비밀을 담지 않고 Passkey 를 이름으로 참조만 한다. 2-레이어(ADR-0032): **`ssh`** = 순수 연결 정보, **`tasty-attach`** = attach 스펙(ssh 를 `ssh_ref` 로 참조하거나 인라인 + remote_tasty/port_mode/port_file). attach 는 tasty-attach kind 를 읽는 **소비자** — "주소 저장(ssh) ≠ attach 스펙(tasty-attach)".
 - **Passkey** — 별도 named 자격증명 저장소. `kind = path`(파일 참조) | `inline`(0600 파일로 materialize). at-rest 는 항상 파일 경로(toml 에 비밀 0). 값은 로컬 GUI Reveal 로만 열람, IPC/agent 엔 영구 마스킹([ADR-0016](../adr/0016-passkey-store-path-convergence.md)).
 - **미등록 타입** — core 내장(ssh/smb)도 설치 플러그인도 claim 하지 않는 `kind`. 등록은 허용하되 노란 배지로 경고.
 

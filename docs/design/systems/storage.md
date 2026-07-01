@@ -11,7 +11,7 @@ tasty 의 영속 데이터는 **텍스트 파일과 SQLite 하이브리드**로 
 | `state.db` (+ `-wal`/`-shm`) | SQLite | 최근 markdown 파일 | 앱 | `src/db.rs` |
 | `memory.db` (+ `-wal`/`-shm`) | SQLite | 에이전트 메모리 (별도 스키마·연결) | 앱 | `crates/tasty-memory/` |
 | `config.toml` | TOML | 사용자 설정(셸·외관·단축키·언어 등) | 사용자 | `crates/tasty-settings/` |
-| `ssh-profiles` (별도 파일) | TOML | SSH 프로필 — `config.toml` 전체 덮어쓰기와 분리해 손편집 보존 | 사용자 | `crates/tasty-ssh-profiles/` |
+| `remote-profiles.toml` (+ `passkeys.toml`) | TOML | 원격 접속 프로필(`ssh`/`tasty-attach` kind) + 자격증명 — `config.toml` 과 분리해 손편집 보존 | 사용자 | `crates/tasty-remote-profiles/` |
 | `file-handlers.toml` | TOML | 파일 detector / handler / 확장자 매핑 | 사용자 | `src/file/handler/` |
 | `themes/<id>.toml` | TOML | 테마 (id = 파일명 stem) | 사용자 / 앱 | `crates/tasty-settings/appearance.rs` |
 | `bashrc` / `bashrc.default` | 쉘 스크립트 | 컴파일된 빌트인 rc (tasty 모드 / default 모드) — 셸을 `--rcfile` 로 띄움 | 앱 (빌드 산출물) | `crates/tasty-settings/general.rs` |
@@ -72,7 +72,7 @@ CREATE TABLE recent_markdown (   -- 최근 연 Markdown 경로
 
 ## 텍스트 파일을 SQLite 로 옮기지 않는 이유
 
-`config.toml` / `ssh-profiles` / `file-handlers.toml` / `themes/*.toml` / `bashrc.user` 는 **사용자 편집·버전관리 대상**이다. 주석·diff 추적에 텍스트가 적합하고 앱이 자동으로 덮어쓰지 않으므로 SQLite 로 옮길 이점이 없다. 반대로 최근 파일처럼 앱이 자동 누적하는 데이터는 SQLite 가 맞다.
+`config.toml` / `remote-profiles.toml` / `file-handlers.toml` / `themes/*.toml` / `bashrc.user` 는 **사용자 편집·버전관리 대상**이다. 주석·diff 추적에 텍스트가 적합하고 앱이 자동으로 덮어쓰지 않으므로 SQLite 로 옮길 이점이 없다. 반대로 최근 파일처럼 앱이 자동 누적하는 데이터는 SQLite 가 맞다.
 
 ## 백업
 
