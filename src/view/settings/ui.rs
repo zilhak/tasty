@@ -295,6 +295,7 @@ impl SettingsUiState {
                     "zoom" => KeybindingsSubTab::Zoom,
                     "image" => KeybindingsSubTab::Image,
                     "explorer" => KeybindingsSubTab::Explorer,
+                    "scripts" => KeybindingsSubTab::Scripts,
                     "preset" => KeybindingsSubTab::Preset,
                     "plugins" => KeybindingsSubTab::Plugins,
                     _ => return false,
@@ -730,6 +731,10 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                 (
                     KeybindingsSubTab::Explorer,
                     t("settings.keybindings.subtab.explorer"),
+                ),
+                (
+                    KeybindingsSubTab::Scripts,
+                    t("settings.keybindings.subtab.scripts"),
                 ),
                 (
                     KeybindingsSubTab::Preset,

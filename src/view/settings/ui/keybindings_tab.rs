@@ -26,6 +26,7 @@ pub enum KeybindingsSubTab {
     Zoom,
     Image,
     Explorer,
+    Scripts,
     Preset,
     Plugins,
 }
@@ -346,6 +347,9 @@ pub fn draw_keybindings_tab(
                 ],
             );
         }
+        KeybindingsSubTab::Scripts => {
+            draw_script_bindings(ui, settings, recording_field, &captured);
+        }
         KeybindingsSubTab::Preset => {
             draw_preset_subtab(ui, &mut settings.keybindings, selected_preset);
         }
@@ -383,10 +387,12 @@ fn modifier_display(modifier: &str) -> &str {
 /// Preset 서브탭: 좌측 프리셋 목록, 우측 미리보기 테이블 + 적용 버튼.
 mod capture;
 mod entries;
+mod entries_scripts;
 mod plugins;
 mod preset;
 
 pub use capture::capture_winit_key_combo;
 use entries::draw_keybinding_entries;
+use entries_scripts::draw_script_bindings;
 use plugins::draw_plugins_subtab;
 use preset::draw_preset_subtab;

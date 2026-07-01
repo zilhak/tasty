@@ -1,0 +1,143 @@
+//! Keybindings › Scripts 서브탭 — 등록 스크립트(03)에 단축키를 바인딩한다 (ADR-0031, TODO 04).
+//!
+//! 고정 액션과 달리 스크립트는 동적이라 `RecordingSlot.field_id` 를 `script:<id>` 규약으로
+//! 재사용한다. 바인딩 소유권은 이 탭에 있고(05 관리 창은 조회·진입만), combo 충돌은
+//! 고정 액션 + 다른 스크립트 바인딩과 함께 검사한다.
+
+use crate::i18n::t;
+use crate::settings::{KeybindingSettings, Settings};
+
+use super::{KeyCapture, RecordingSlot};
+
+/// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
+const SCRIPT_SLOT_PREFIX: &str = "script:";
+
+const BUTTON_HEIGHT: f32 = 24.0;
+const BUTTON_WIDTH: f32 = 140.0;
+const LABEL_GAP: f32 = 12.0;
+const ROW_GAP: f32 = 4.0;
+
+pub(super) fn draw_script_bindings(
+    ui: &mut egui::Ui,
+    settings: &mut Settings,
+    recording_field: &mut Option<RecordingSlot>,
+    captured: &KeyCapture,
+) {
+    let th = crate::theme::theme();
+
+    // 녹화된 combo 처리 — script: 슬롯만.
+    if let Some(slot) = recording_field.clone()
+        && let Some(script_id) = slot.field_id.strip_prefix(SCRIPT_SLOT_PREFIX)
+    {
+        match captured {
+            KeyCapture::Combo(combo) => {
+                match settings.keybindings.combo_conflict(combo, Some(script_id)) {
+                    Some(conflict) => tracing::warn!(
+                        target: "tasty_lua",
+                        "script binding '{combo}' conflicts with {conflict} — ignored"
+                    ),
+                    None => settings
+                        .keybindings
+                        .set_script_binding(script_id, combo.clone()),
+                }
+                *recording_field = None;
+            }
+            KeyCapture::Clear => {
+                // Escape — 바인딩 해제.
+                settings
+                    .keybindings
+                    .set_script_binding(script_id, String::new());
+                *recording_field = None;
+            }
+            KeyCapture::None => {}
+        }
+    }
+
+    if settings.scripts.is_empty() {
+        ui.add_space(8.0);
+        ui.label(egui::RichText::new(t("settings.keybindings.scripts_empty")).color(th.overlay1));
+        return;
+    }
+
+    // 스크립트 (id, 표시이름) — keybindings 를 변형하는 동안 registry 대여를 피하려 미리 수집.
+    let scripts: Vec<(String, String)> = settings
+        .scripts
+        .iter()
+        .map(|e| {
+            let name = if e.name.is_empty() {
+                e.path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| e.id.clone())
+            } else {
+                e.name.clone()
+            };
+            (e.id.clone(), name)
+        })
+        .collect();
+
+    let label_col_width = {
+        let font_id = egui::TextStyle::Body.resolve(ui.style());
+        scripts
+            .iter()
+            .map(|(_, name)| {
+                ui.ctx().fonts(|f| {
+                    f.layout_no_wrap(name.clone(), font_id.clone(), egui::Color32::WHITE)
+                        .size()
+                        .x
+                })
+            })
+            .fold(0.0_f32, f32::max)
+    };
+
+    for (id, name) in &scripts {
+        let slot_id = format!("{SCRIPT_SLOT_PREFIX}{id}");
+        let is_recording = matches!(recording_field, Some(slot) if slot.field_id == slot_id);
+        let current = settings
+            .keybindings
+            .script_binding_combo(id)
+            .unwrap_or("")
+            .to_string();
+
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(label_col_width, BUTTON_HEIGHT),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.label(name);
+                },
+            );
+            ui.add_space(LABEL_GAP);
+
+            let display = if is_recording {
+                t("settings.keybindings.hint_press_key").to_string()
+            } else if current.is_empty() {
+                t("settings.keybindings.hint_none").to_string()
+            } else {
+                KeybindingSettings::format_display(&current)
+            };
+            let bg = if is_recording {
+                th.surface1
+            } else {
+                th.surface0
+            };
+            let fg = if is_recording {
+                th.overlay1
+            } else if current.is_empty() {
+                th.subtext0
+            } else {
+                th.text
+            };
+            let btn = egui::Button::new(egui::RichText::new(&display).color(fg).monospace())
+                .fill(bg)
+                .min_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT));
+            if ui.add(btn).clicked() {
+                *recording_field = Some(RecordingSlot {
+                    field_id: slot_id.clone(),
+                    idx: 0,
+                });
+            }
+        });
+        ui.add_space(ROW_GAP);
+    }
+}
