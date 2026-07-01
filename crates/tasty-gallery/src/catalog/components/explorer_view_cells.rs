@@ -1,7 +1,7 @@
 //! `explorer_view_cells` specimen — 디자인 T11 explorer view mode 셀 (design §3.2).
 //!
 //! grid / list / detail 세 뷰의 셀을 나란히 전시한다.
-//! - **grid (신규)**: icon-box(surface-raised) + 라벨. 선택 셀 = surface-active + accent 보더.
+//! - **grid (신규)**: 배경 박스 없이 확대 글리프(height 28) + 라벨. 선택 셀 = surface-active 배경만(보더 없음).
 //! - **list (재사용)**: `tree_row()` depth=0 (단일 컬럼 icon+label).
 //! - **detail (재사용 + 정렬 헤더)**: 공용 `Table` 위젯에 Name/Size/Modified/Type 컬럼.
 //!   정렬 컬럼 헤더 인디케이터는 Table 이 제공 → explorer 는 컬럼 구성만 신규.
@@ -18,9 +18,7 @@ use crate::catalog::icons::{FILE, FOLDER, MockGlyph};
 use crate::catalog::spec::{StageVariant, TokenChip, cluster, meta, note, stage};
 
 // ── grid 셀 치수 (4px 그리드) ──
-/// icon-box 한 변 = 64 (4×16).
-const ICON_BOX: f32 = 64.0;
-/// 셀 폭 = icon-box + 좌우 space-sm.
+/// 셀 폭.
 const CELL_W: f32 = 80.0;
 
 #[derive(Clone, Copy)]
@@ -247,7 +245,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                                         egui::vec2(sz, sz),
                                         egui::Sense::hover(),
                                     );
-                                    g.image(sz, egui::Color32::from(th.text_secondary()))
+                                    // design glyph 색: 폴더/파일 text-muted.
+                                    g.image(sz, egui::Color32::from(th.text_muted()))
                                         .paint_at(ui, rect);
                                     ui.label(
                                         egui::RichText::new(row.name)
@@ -294,10 +293,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("grid cell", "64 icon-box + label · space-md gap"),
+            ("grid cell", "glyph 28 (no box) + label · space-md gap"),
             ("list row", "22 control-height-tree (tree_row)"),
             ("detail row", "Name flex · Size/Date mono 11 · Size padR 8"),
-            ("selected", "surface-active + accent border"),
+            ("selected", "surface-active (no border)"),
+            ("glyph", "folder/file text-muted · image accent-info"),
             ("cut", "foreground 50% opacity until paste"),
             ("sort", "header indicator (accent-primary)"),
         ],
@@ -336,30 +336,26 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     );
 }
 
-/// grid 셀 한 개. 클릭되면 `true`. icon-box(surface-raised) + 중앙 라벨,
-/// 선택 시 surface-active 배경 + accent 1px 보더. `cut` 이면 전경(아이콘+라벨)을
-/// opacity-cut(50%) 로 디밍(배경/보더는 유지) — design cell-state matrix.
+/// grid 셀 한 개. 클릭되면 `true`. 배경 박스 없이 확대 글리프 + 중앙 라벨,
+/// 선택 시 surface-active 배경만(추가 보더 없음 — design GridCell). `cut` 이면 전경
+/// (아이콘+라벨)을 opacity-cut(50%) 로 디밍(배경은 유지) — design cell-state matrix.
 fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: bool) -> bool {
+    let glyph = theme.item_height_interactive.value(); // design glyph height 28
     let label_h = theme.font_size_body.value() + theme.spacing_xs.value();
-    let cell_h = ICON_BOX + theme.spacing_sm.value() + label_h + theme.spacing_sm.value() * 2.0;
+    let cell_h = theme.spacing_sm.value()
+        + glyph
+        + theme.spacing_xs.value()
+        + label_h
+        + theme.spacing_sm.value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(CELL_W, cell_h), egui::Sense::click());
     let p = ui.painter_at(rect);
 
-    // 선택 셀 배경 + accent 보더.
+    // 선택 = surface-active 배경만(추가 accent 보더 없음). hover = overlay-hover.
     if selected {
         p.rect_filled(
             rect,
             theme.corner_radius.value(),
             egui::Color32::from(theme.surface_active()),
-        );
-        p.rect_stroke(
-            rect,
-            theme.corner_radius.value(),
-            egui::Stroke::new(
-                theme.border_width.value(),
-                egui::Color32::from(theme.accent_primary()),
-            ),
-            egui::StrokeKind::Inside,
         );
     } else if resp.hovered() {
         p.rect_filled(
@@ -369,21 +365,6 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
         );
     }
 
-    // icon-box (surface-raised) 상단 중앙.
-    let box_rect = egui::Rect::from_min_size(
-        egui::pos2(
-            rect.center().x - ICON_BOX / 2.0,
-            rect.top() + theme.spacing_sm.value(),
-        ),
-        egui::vec2(ICON_BOX, ICON_BOX),
-    );
-    p.rect_filled(
-        box_rect,
-        theme.corner_radius.value(),
-        egui::Color32::from(theme.surface_raised()),
-    );
-    let glyph = theme.icon_glyph_size_md.value() + theme.spacing_sm.value(); // ≈24
-    let glyph_rect = egui::Rect::from_center_size(box_rect.center(), egui::vec2(glyph, glyph));
     // cut-pending 셀은 전경만 opacity-cut(50%) 로 디밍.
     let fg_dim = |c: egui::Color32| {
         if cut {
@@ -392,20 +373,23 @@ fn grid_cell(ui: &mut egui::Ui, theme: &Theme, e: &Entry, selected: bool, cut: b
             c
         }
     };
-    let glyph_color = if e.dir {
-        theme.accent_primary()
-    } else {
-        theme.text_secondary()
-    };
+    // 아이콘: 박스 없이 상단 중앙 확대 글리프, 폴더/파일 text-muted (design glyphColor).
+    let glyph_rect = egui::Rect::from_center_size(
+        egui::pos2(
+            rect.center().x,
+            rect.top() + theme.spacing_sm.value() + glyph / 2.0,
+        ),
+        egui::vec2(glyph, glyph),
+    );
     e.glyph
-        .image(glyph, fg_dim(egui::Color32::from(glyph_color)))
+        .image(glyph, fg_dim(egui::Color32::from(theme.text_muted())))
         .paint_at(ui, glyph_rect);
 
     // 라벨 (1줄 중앙).
     p.text(
         egui::pos2(
             rect.center().x,
-            box_rect.bottom() + theme.spacing_sm.value() + label_h / 2.0,
+            glyph_rect.bottom() + theme.spacing_xs.value() + label_h / 2.0,
         ),
         egui::Align2::CENTER_CENTER,
         e.name,

@@ -27,8 +27,6 @@ use crate::theme;
 use view::{DirEntryInfo, ExplorerView, LoadState, human_size};
 
 // ── grid 셀 치수 (4px 그리드 — explorer_view_cells specimen 과 동일) ──
-/// icon-box 한 변 = 64 (4×16).
-const ICON_BOX: f32 = 64.0;
 /// grid 셀 폭.
 const CELL_W: f32 = 80.0;
 /// 사이드바 폭 (logical px, 4px 그리드 · design §3.1).
@@ -939,6 +937,37 @@ fn parent_nav_target(current: &Path) -> Option<PathBuf> {
     current.parent().map(|p| p.to_path_buf())
 }
 
+/// 확장자가 이미지 파일인지 — design 은 이미지 glyph 를 accent-info 로 강조한다.
+fn is_image_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "svg"
+            | "bmp"
+            | "ico"
+            | "tif"
+            | "tiff"
+            | "avif"
+            | "heic"
+    )
+}
+
+/// 엔트리의 아이콘 + glyph 색 (design GridCell/DetailRow/ExpListMini):
+/// 폴더/파일 = text-muted, 이미지 파일 = IMAGE 아이콘 + accent-info.
+fn entry_icon(theme: &Theme, e: &DirEntryInfo) -> (Icon, egui::Color32) {
+    if e.is_dir {
+        (icons::FOLDER, theme.text_muted().to_egui())
+    } else if is_image_ext(&e.ext) {
+        (icons::IMAGE, theme.accent_info().to_egui())
+    } else {
+        (icons::FILE, theme.text_muted().to_egui())
+    }
+}
+
 /// 합성 `..` 엔트리. **렌더 전용** — `view.entries`/선택/상태줄/컨텍스트 메뉴에는 절대
 /// 넣지 않는다. 각 뷰가 목록 앞에 특수 행으로 그리고 `Navigate(parent)` 만 emit 한다.
 fn dotdot_entry(parent: PathBuf) -> DirEntryInfo {
@@ -999,22 +1028,23 @@ fn grid_cell(
     cut: bool,
     font: &EffectiveFont,
 ) -> egui::Response {
+    // design GridCell: glyph height 28 (scale 1.7) — 아이콘 배경 박스 없음.
+    let glyph = theme.item_height_interactive.value(); // 28
     let label_h = theme.font_size_body.value() + theme.spacing_xs.value();
-    let cell_h = ICON_BOX + theme.spacing_sm.value() + label_h + theme.spacing_sm.value() * 2.0;
+    let cell_h = theme.spacing_sm.value()
+        + glyph
+        + theme.spacing_xs.value()
+        + label_h
+        + theme.spacing_sm.value();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(CELL_W, cell_h), egui::Sense::click());
     let p = ui.painter_at(rect);
 
+    // 선택 = surface-active 배경만(추가 accent 보더 없음 — design). hover = overlay-hover.
     if selected {
         p.rect_filled(
             rect,
             theme.corner_radius.value(),
             theme.surface_active().to_egui(),
-        );
-        p.rect_stroke(
-            rect,
-            theme.corner_radius.value(),
-            egui::Stroke::new(theme.border_width.value(), theme.accent_primary().to_egui()),
-            egui::StrokeKind::Inside,
         );
     } else if resp.hovered() {
         p.rect_filled(
@@ -1024,21 +1054,6 @@ fn grid_cell(
         );
     }
 
-    let box_rect = egui::Rect::from_min_size(
-        egui::pos2(
-            rect.center().x - ICON_BOX / 2.0,
-            rect.top() + theme.spacing_sm.value(),
-        ),
-        egui::vec2(ICON_BOX, ICON_BOX),
-    );
-    p.rect_filled(
-        box_rect,
-        theme.corner_radius.value(),
-        theme.surface_raised().to_egui(),
-    );
-    let glyph = theme.icon_glyph_size_md.value() + theme.spacing_sm.value();
-    let glyph_rect = egui::Rect::from_center_size(box_rect.center(), egui::vec2(glyph, glyph));
-    let icon = if e.is_dir { icons::FOLDER } else { icons::FILE };
     // cut-pending 셀은 전경을 opacity_cut(50%) 로 디밍.
     let fg_dim = |c: egui::Color32| {
         if cut {
@@ -1047,18 +1062,23 @@ fn grid_cell(
             c
         }
     };
-    let glyph_color = if e.is_dir {
-        theme.accent_primary().to_egui()
-    } else {
-        theme.text_secondary().to_egui()
-    };
+    // 아이콘: 박스 없이 상단 중앙에 확대 글리프 (design glyphColor: 폴더/파일 text-muted,
+    // 이미지 accent-info).
+    let (icon, glyph_color) = entry_icon(theme, e);
+    let glyph_rect = egui::Rect::from_center_size(
+        egui::pos2(
+            rect.center().x,
+            rect.top() + theme.spacing_sm.value() + glyph / 2.0,
+        ),
+        egui::vec2(glyph, glyph),
+    );
     icon.image(glyph, fg_dim(glyph_color))
         .paint_at(ui, glyph_rect);
 
     p.text(
         egui::pos2(
             rect.center().x,
-            box_rect.bottom() + theme.spacing_sm.value() + label_h / 2.0,
+            glyph_rect.bottom() + theme.spacing_xs.value() + label_h / 2.0,
         ),
         egui::Align2::CENTER_CENTER,
         truncate(&e.name, 12),
@@ -1099,11 +1119,12 @@ fn list_view(
         }
     }
     for e in &entries {
-        let icon = if e.is_dir { icons::FOLDER } else { icons::FILE };
+        // design ExpListMini: glyph 색 고정(폴더/파일 text-muted, 이미지 accent-info)
+        // — 선택 상태와 무관. tree_row 가 넘기는 `c` 대신 entry_icon 색을 쓴다.
+        let (icon, glyph_color) = entry_icon(theme, e);
         let selected = view.selected.contains(&e.path);
         let cut = cut_pending.contains(&e.path);
-        // cut-pending 행은 행 전체를 opacity_cut(50%) 로 디밍(tree_row 가 색을 내부
-        // 계산하므로 셀처럼 전경 색만 분리 못 함 → 스코프 opacity 로 통째 디밍).
+        // cut-pending 행은 행 전체를 opacity_cut(50%) 로 디밍(스코프 opacity 로 통째 디밍).
         let resp = ui
             .scope(|ui| {
                 if cut {
@@ -1115,7 +1136,7 @@ fn list_view(
                     0,
                     false,
                     false,
-                    Some(&|ui, rect, c| icon.image(rect.height(), c).paint_at(ui, rect)),
+                    Some(&|ui, rect, _c| icon.image(rect.height(), glyph_color).paint_at(ui, rect)),
                     &e.name,
                     None,
                     selected,
@@ -1221,16 +1242,8 @@ fn detail_view(
                             let sz = th.icon_glyph_size_md.value();
                             let (rect, _) =
                                 ui.allocate_exact_size(egui::vec2(sz, sz), egui::Sense::hover());
-                            let icon = if row.is_dir {
-                                icons::FOLDER
-                            } else {
-                                icons::FILE
-                            };
-                            let c = if row.is_dir {
-                                th.accent_primary().to_egui()
-                            } else {
-                                th.text_secondary().to_egui()
-                            };
+                            // design DetailRow glyph 색: 폴더/파일 text-muted, 이미지 accent-info.
+                            let (icon, c) = entry_icon(th, row);
                             icon.image(sz, dim(c)).paint_at(ui, rect);
                             ui.label(
                                 egui::RichText::new(&row.name)
