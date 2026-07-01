@@ -23,7 +23,8 @@ pub mod ui_tree;
 pub use events::{EventEnvelope, EventMeta, EventOrigin, EventScope, LifecycleReason, MAX_HOP};
 pub use ipc_method::{IpcInvokeParams, METHOD_IPC_INVOKE};
 pub use protocol::{
-    AuthAck, AuthAckEnvelope, AuthMessage, CommandInvokeParams, EventDispatchParams,
+    AuthAck, AuthAckEnvelope, AuthMessage, BannerCloseReason, BannerClosedParams, BannerOpenParams,
+    BannerOpenResult, BannerSetContextParams, CommandInvokeParams, EventDispatchParams,
     ExtensionHookInvokeParams, ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase,
     ExtensionHookResult, HandleChannelMessage, IpcCallResult, ModifiersWire, PixelRect,
     PluginEvent, PluginRequest, PluginResponse, PointerButtonWire, PopupCloseReason,
@@ -33,7 +34,8 @@ pub use protocol::{
     SurfaceResult, SurfaceSetContextParams, ThemeWire,
 };
 pub use protocol::{
-    METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_EXTENSION_INVOKE_HOOK, METHOD_HOST_HELLO,
+    METHOD_BANNER_CLOSED, METHOD_BANNER_OPEN, METHOD_BANNER_SET_CONTEXT, METHOD_COMMAND_INVOKE,
+    METHOD_EVENT_DISPATCH, METHOD_EXTENSION_INVOKE_HOOK, METHOD_HOST_HELLO,
     METHOD_HOST_SHARED_BUFFER_CREATE, METHOD_HOST_SHARED_BUFFER_DIRTY, METHOD_IPC_RESULT,
     METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_EVENT, METHOD_POPUP_OPEN,
     METHOD_POPUP_SET_CONTEXT, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,

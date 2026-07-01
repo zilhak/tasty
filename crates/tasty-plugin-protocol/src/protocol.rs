@@ -59,6 +59,21 @@ pub const METHOD_POPUP_CLOSED: &str = "popup.closed";
 /// tessellate 한 mesh 를 [`PluginEvent::PopupPaintFrame`] 로 비동기 회신한다.
 /// fire-and-forget. params 에 [`PopupSetContextParams`].
 pub const METHOD_POPUP_SET_CONTEXT: &str = "popup.set_context";
+/// host → plugin: plugin이 contribute한 banner의 인스턴스가 열림(A3). banner 는
+/// popup 과 달리 scrim/포커스 없는 non-modal 공지라, plugin 은 mesh 콘텐츠만 그리고
+/// 셸/스택/위치/dismiss 타이밍은 host 소유([`BannerSetContextParams`] 참고). plugin 은
+/// 응답으로 [`BannerOpenResult`]를 돌려준다. params 에 [`BannerOpenParams`].
+pub const METHOD_BANNER_OPEN: &str = "banner.open";
+/// host → plugin: banner 인스턴스가 닫힘 (TTL 만료 / 사용자 close X / plugin 이 host
+/// IPC `banner.close` 요청 / host shutdown). fire-and-forget. params 에
+/// [`BannerClosedParams`].
+pub const METHOD_BANNER_CLOSED: &str = "banner.closed";
+/// host → plugin (egui-mesh banner 전용, A3): banner 인스턴스의 렌더 컨텍스트(크기/ppp/
+/// raw input/theme)를 전달한다. [`METHOD_POPUP_SET_CONTEXT`] 의 banner 대응 — host 발급
+/// `instance_id` 로 키잉한다. plugin 은 자기 프로세스에서 tessellate 한 mesh 를
+/// [`PluginEvent::BannerPaintFrame`] 로 비동기 회신한다. fire-and-forget. params 에
+/// [`BannerSetContextParams`].
+pub const METHOD_BANNER_SET_CONTEXT: &str = "banner.set_context";
 
 /// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -380,6 +395,16 @@ pub enum PluginEvent {
         /// plugin 이 commit 한 shared buffer footer generation (tear 방지).
         generation: u64,
     },
+    /// egui-mesh banner(A3): plugin 이 banner 인스턴스용 mesh 를 commit 했음을 알린다.
+    /// [`PluginEvent::PopupPaintFrame`] 의 banner 대응 — `instance_id` 로 키잉한다.
+    /// 본체(mesh 바이트)는 shared buffer 안에 있고, 이 알림은 어떤 buffer 의 어떤
+    /// generation 인지 메타만 운반한다.
+    BannerPaintFrame {
+        instance_id: u64,
+        buffer_id: SharedBufferId,
+        /// plugin 이 commit 한 shared buffer footer generation (tear 방지).
+        generation: u64,
+    },
     /// host action 트리거 (단계 06).
     NotifyHost {
         surface_id: u32,
@@ -591,6 +616,82 @@ pub enum PopupCloseReason {
     /// 사용자가 Esc 키를 눌렀음.
     Escape,
     /// plugin이 [`PopupEventResult::close`]=true 또는 host IPC `popup.close`로 닫기 요청.
+    PluginRequest,
+    /// 호스트 측에서 강제 닫힘 (plugin disable / unload 등).
+    HostShutdown,
+}
+
+// ── Banner wire types (A3) ──
+
+/// `banner.open` params — 호스트가 plugin 에게 banner 인스턴스를 열도록 요청.
+///
+/// [`PopupOpenParams`] 의 banner 대응. `instance_id` 는 호스트가 발급한 인스턴스
+/// 식별자로, 같은 (plugin_id, banner_id) 의 중복 인스턴스를 host 가 dedup 한다.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BannerOpenParams {
+    pub banner_id: String,
+    pub instance_id: u64,
+    /// 호스트가 trigger 시점에 알 수 있던 컨텍스트. 없으면 Null.
+    #[serde(default)]
+    pub context: serde_json::Value,
+}
+
+/// `banner.open` 응답.
+///
+/// egui-mesh banner 는 tree 가 아니라 mesh 채널([`METHOD_BANNER_SET_CONTEXT`])로
+/// 콘텐츠를 그리므로 초기 tree 를 담지 않는다 (빈 결과). popup 의 [`PopupOpenResult`] 와
+/// 평행하되, banner 는 UiTree 렌더링을 (아직) 지원하지 않아 필드가 없다.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct BannerOpenResult {}
+
+/// `banner.closed` params — banner 인스턴스가 닫혔음을 plugin 에 통보. fire-and-forget.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BannerClosedParams {
+    pub instance_id: u64,
+    /// 닫힌 이유. 텍스트는 호스트가 결정한 카테고리.
+    pub reason: BannerCloseReason,
+}
+
+/// `banner.set_context` params — egui-mesh banner 인스턴스의 렌더 컨텍스트.
+///
+/// [`PopupSetContextParams`] 의 banner 대응이다 — surface_id/popup instance 대신 host 가
+/// 발급한 banner `instance_id` 로 식별한다. 나머지 필드(크기/ppp/raw_input/theme)와
+/// 좌표 규약(banner content-local 논리 포인트, 좌상단 0,0)은 popup 과 동일하다.
+///
+/// banner 는 non-modal 공지라 scrim/키보드 포커스가 없다 — content 영역 위 포인터/스크롤
+/// 입력만 forward 된다(host 합성기가 content_rect 로 한정). identity 경계(원칙 1·3):
+/// set_context 는 host 가 받은 *실제* 사용자 입력만 forward 한다. 에이전트 IPC/CLI 가
+/// raw_input 을 합성·주입하거나 배너를 강제 표시하는 진입로는 만들지 않는다.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct BannerSetContextParams {
+    /// host 가 발급한 banner 인스턴스 식별자.
+    pub instance_id: u64,
+    /// banner 콘텐츠 영역의 물리 픽셀 너비.
+    pub width_px: u32,
+    /// banner 콘텐츠 영역의 물리 픽셀 높이.
+    pub height_px: u32,
+    /// 논리→물리 스케일 (egui `ScreenDescriptor.pixels_per_point`).
+    pub pixels_per_point: f32,
+    /// 이번 frame 의 사용자 입력.
+    #[serde(default)]
+    pub raw_input: RawInputWire,
+    /// host 가 resolve 한 현재 Theme 스냅샷 (egui-mesh banner 의 Theme parity).
+    /// `None` 이면 plugin 은 직전 값을 유지하거나 자체 기본값으로 그린다. host 는
+    /// 크기/ppp/입력 변경뿐 아니라 **테마 변경 시에도** 이 값을 갱신해 재forward 한다.
+    /// [`PopupSetContextParams::theme`] 와 동형 — 모든 egui-mesh banner 가 공유한다.
+    #[serde(default)]
+    pub theme: Option<ThemeWire>,
+}
+
+/// banner 인스턴스가 닫힌 이유. popup 과 달리 outside-click/Esc 가 없다(non-modal, D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BannerCloseReason {
+    /// TTL 카운트다운이 0 에 도달해 자동 소멸.
+    Ttl,
+    /// 사용자가 셸 우상단 close X 를 눌렀음.
+    UserClose,
+    /// plugin 이 host IPC `banner.close` 로 닫기 요청.
     PluginRequest,
     /// 호스트 측에서 강제 닫힘 (plugin disable / unload 등).
     HostShutdown,
