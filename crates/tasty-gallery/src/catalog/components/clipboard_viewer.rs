@@ -1,11 +1,13 @@
 //! `clipboard_viewer` specimen — clipboard-viewer plugin 의 master-detail popup
-//! (plugin UiNode DSL 전사, Overlays).
+//! (egui-mesh popup 전사, Overlays).
 //!
-//! 본체 렌더 경로: plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs` 의
-//! `main_tree` 가 `splitter(Horizontal, 0.3, 좌 타입목록 | 우 text_preview)` 를 만들고,
-//! host `ui_tree_render.rs` 가 그 UiNode 를 egui 로 페인트한다(button / text_preview /
-//! splitter). 갤러리는 plugin/host crate 에 의존할 수 없어 그 *구성* 을 Theme 토큰
-//! painter mock 으로 전사한다 — 픽셀 동일성 비목표, 토큰·구조 정합 목표.
+//! 본체 렌더 경로: plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs` 가
+//! **egui-mesh popup**(ADR-0028 / B4)으로 popup 콘텐츠를 자기 프로세스에서 egui 로
+//! 그린다 — 좌 타입목록(`tasty_ui_widgets::Button`: 선택 primary / 유휴 secondary),
+//! 1px separator 분할(ratio 0.3), 우 mono 미리보기. host 는 셸(scrim/border)만 그리고
+//! plugin mesh 를 content 영역에 합성한다. 갤러리는 plugin/host crate 에 의존할 수 없어
+//! 그 *구성* 을 Theme 토큰 painter mock 으로 전사한다 — 픽셀 동일성 비목표, 토큰·구조
+//! 정합 목표.
 //!
 //! 3 상태를 나란히 노출(`main_tree` 분기와 동일):
 //! - **types** — 정상 master-detail(좌 타입 버튼 목록, 선택 = primary 강조 / 우 미리보기).
@@ -94,9 +96,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         "A read-only window onto the current clipboard — the left rail lists the types \
-         the OS currently holds, the right pane previews the selected one. The host paints \
-         the plugin's splitter / buttons / text-preview; this specimen mirrors that \
-         composition with tokens only.",
+         the OS currently holds, the right pane previews the selected one. The plugin \
+         self-renders this master-detail via egui-mesh (host owns only the shell); this \
+         specimen mirrors that composition with tokens only.",
     );
 }
 

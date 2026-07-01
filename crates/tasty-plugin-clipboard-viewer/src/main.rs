@@ -6,6 +6,12 @@
 //! trigger 매처가 새 인스턴스를 연다. 클립보드는 plugin process 내에서 arboard 로
 //! **직접** 읽으며 호스트 IPC 를 경유하지 않는다 (ADR-0009 상 first-party 직접 read).
 //!
+//! 렌더 경로는 **egui-mesh popup**(ADR-0028 / B4): plugin 이 자기 프로세스에서 popup
+//! 콘텐츠(master-detail)를 egui 로 tessellate 한 mesh 를 host 가 content 영역에 합성한다.
+//! host 는 Theme 스냅샷을 `popup.set_context` 에 실어 매 frame 보내고, plugin 은 그것을
+//! `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로 그린다. chrome(scrim/
+//! border/outside-click/Esc/단일 인스턴스 셸)은 host 소유 — plugin 은 content 만 그린다.
+//!
 //! UI 는 master-detail: 좌측에 가용 클립보드 타입 목록, 우측에 선택 타입의 상세.
 //! 1차는 텍스트 타입만 지원하고, 이미지/헥스/HTML/RTF 등은 `clipboard::ClipboardType`
 //! enum arm + reader 추가로 확장한다. read-only 라 쓰기/붙여넣기/제거 액션은 없다.
@@ -13,24 +19,33 @@
 mod clipboard;
 mod view;
 
-use std::sync::Mutex;
-
 use tasty_plugin_sdk::{
-    BusHandle, HostHandle, Plugin, PluginEnv, PopupClosedCtx, PopupEventCtx, PopupEventResult,
-    PopupOpenCtx, PopupOpenResult, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, Translator,
-    UiEvent,
+    Plugin, PluginEnv, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx,
+    SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, Translator,
 };
 
 use crate::clipboard::{ClipboardType, ContentRepr};
 
+#[cfg(unix)]
+use std::collections::{HashMap, HashSet};
+#[cfg(unix)]
+use std::sync::Arc;
+
+#[cfg(unix)]
+use tasty_plugin_protocol::ThemeWire;
+#[cfg(unix)]
+use tasty_plugin_sdk::EguiMeshPopup;
+#[cfg(unix)]
+use tasty_type_appearance::theme::Theme;
+
 const PLUGIN_ID: &str = "com.tasty.clipboard-viewer";
 const PLUGIN_VERSION: &str = "0.1.0";
 
-/// open_popup 시점에 읽어둔 클립보드 스냅샷.
-struct ViewerState {
-    available: Vec<(ClipboardType, ContentRepr)>,
-    read_error: Option<String>,
-    selected: Option<ClipboardType>,
+/// open_popup 시점에 읽어둔 클립보드 스냅샷 + 좌측 선택 상태(paint 클로저에서 갱신).
+pub(crate) struct ViewerState {
+    pub(crate) available: Vec<(ClipboardType, ContentRepr)>,
+    pub(crate) read_error: Option<String>,
+    pub(crate) selected: Option<ClipboardType>,
 }
 
 impl ViewerState {
@@ -55,30 +70,31 @@ impl ViewerState {
             }
         }
     }
-
-    fn build_tree(&self, tr: &Translator) -> tasty_plugin_sdk::UiNode {
-        let vm = view::ViewModel {
-            available: &self.available,
-            read_error: self.read_error.as_deref(),
-            selected: self.selected,
-        };
-        view::main_tree(&vm, tr)
-    }
 }
 
 struct ClipboardViewerPlugin {
-    /// 단일 인스턴스 가드 — 두 번째 open 시 placeholder 만 반환.
-    current_instance: Mutex<Option<u64>>,
-    /// 활성 인스턴스의 클립보드 스냅샷.
-    state: Mutex<Option<ViewerState>>,
+    /// 단일 인스턴스 가드 — 주 인스턴스 id. 두 번째 open 은 "이미 열림" placeholder.
+    primary_instance: Option<u64>,
+    /// 주 인스턴스의 클립보드 스냅샷 + 선택 상태.
+    state: Option<ViewerState>,
+    /// instance_id → egui-mesh popup 렌더 상태(폰트 atlas·shared buffer 소유). unix 전용.
+    #[cfg(unix)]
+    popups: HashMap<u64, EguiMeshPopup>,
+    /// CJK fallback 폰트를 이미 설치한 instance_id — set_fonts 재업로드 방지.
+    #[cfg(unix)]
+    fonts_installed: HashSet<u64>,
     tr: Translator,
 }
 
 impl ClipboardViewerPlugin {
     fn new(env: &PluginEnv) -> Self {
         Self {
-            current_instance: Mutex::new(None),
-            state: Mutex::new(None),
+            primary_instance: None,
+            state: None,
+            #[cfg(unix)]
+            popups: HashMap::new(),
+            #[cfg(unix)]
+            fonts_installed: HashSet::new(),
             tr: Translator::from_plugin_env(env),
         }
     }
@@ -93,8 +109,6 @@ impl Plugin for ClipboardViewerPlugin {
         PLUGIN_VERSION
     }
 
-    fn on_start(&mut self, _host: HostHandle, _bus: BusHandle) {}
-
     // popup-only plugin 이라 surface 콜백은 빈 결과.
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
         SurfaceResult::default()
@@ -105,93 +119,136 @@ impl Plugin for ClipboardViewerPlugin {
     }
 
     fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
-        let mut guard = match self.current_instance.lock() {
-            Ok(g) => g,
-            Err(_) => return PopupOpenResult { tree: None },
-        };
-        if guard.is_some() {
-            return PopupOpenResult {
-                tree: Some(view::already_open_tree(&self.tr)),
-            };
+        // egui-mesh popup 은 tree(UiNode) 를 반환하지 않는다 — mesh 채널(paint_popup)로 그린다.
+        // 첫 인스턴스면 클립보드 스냅샷을 적재하고 주 인스턴스로 등록. 그 외(이미 열려
+        // 있는 상태의 재호출)는 주 인스턴스가 아니라 paint 시 "이미 열림" placeholder 로 그린다.
+        if self.primary_instance.is_none() {
+            self.primary_instance = Some(ctx.instance_id);
+            self.state = Some(ViewerState::load());
         }
-        let new_state = ViewerState::load();
-        let tree = new_state.build_tree(&self.tr);
-
-        *guard = Some(ctx.instance_id);
-        if let Ok(mut s) = self.state.lock() {
-            *s = Some(new_state);
-        }
-        PopupOpenResult { tree: Some(tree) }
+        PopupOpenResult { tree: None }
     }
 
-    fn handle_popup_event(&mut self, ctx: PopupEventCtx) -> PopupEventResult {
-        let UiEvent::Click { node_id } = &ctx.event else {
-            return PopupEventResult {
-                tree: None,
-                close: false,
-            };
-        };
-
-        // 주(主) 인스턴스가 아닌 인스턴스(중복 placeholder)에서 온 클릭은 무시.
-        if self.current_instance.lock().ok().and_then(|g| *g) != Some(ctx.instance_id) {
-            return PopupEventResult {
-                tree: None,
-                close: false,
-            };
-        }
-
-        let mut state_guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                return PopupEventResult {
-                    tree: None,
-                    close: false,
-                };
-            }
-        };
-        let Some(state) = state_guard.as_mut() else {
-            return PopupEventResult {
-                tree: None,
-                close: false,
-            };
-        };
-
-        // `type-{key}` 클릭 → 좌측 선택 변경 → 우측 재렌더.
-        let dirty = if let Some(key) = node_id.strip_prefix(view::TYPE_PREFIX) {
-            match ClipboardType::from_key(key) {
-                Some(ty) if state.selected != Some(ty) => {
-                    state.selected = Some(ty);
-                    true
-                }
-                _ => false,
-            }
-        } else {
-            false
-        };
-
-        if dirty {
-            PopupEventResult {
-                tree: Some(state.build_tree(&self.tr)),
-                close: false,
-            }
-        } else {
-            PopupEventResult {
-                tree: None,
-                close: false,
-            }
-        }
+    fn paint_popup(&mut self, ctx: PopupSetContextCtx) {
+        self.paint(ctx);
     }
 
     fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
-        if let Ok(mut g) = self.current_instance.lock()
-            && *g == Some(ctx.instance_id)
+        let iid = ctx.instance_id;
+        #[cfg(unix)]
         {
-            *g = None;
-            if let Ok(mut s) = self.state.lock() {
-                *s = None;
+            self.popups.remove(&iid);
+            self.fonts_installed.remove(&iid);
+        }
+        if self.primary_instance == Some(iid) {
+            self.primary_instance = None;
+            self.state = None;
+        }
+    }
+}
+
+impl ClipboardViewerPlugin {
+    /// `popup.set_context` 한 frame 을 그려 host 에 popup mesh 를 회신한다.
+    #[cfg(unix)]
+    fn paint(&mut self, ctx: PopupSetContextCtx) {
+        let iid = ctx.params.instance_id;
+
+        // host 가 Theme 을 아직 안 보냈으면(theme 미동봉) 토큰을 풀 수 없으므로 이 frame 은
+        // 건너뛴다. host 는 테마 변경/입력 시 theme 을 동봉해 재forward 한다(markdown 동형).
+        let Some(theme) = ctx.params.theme.as_ref().map(theme_from_wire) else {
+            tracing::debug!("clipboard popup {iid}: set_context without theme — skipping paint");
+            return;
+        };
+
+        // 서로소 필드를 지역 참조로 분리 — 클로저가 self 전체를 잡지 않게 한다.
+        let Self {
+            primary_instance,
+            state,
+            popups,
+            fonts_installed,
+            tr,
+        } = self;
+        let is_primary = *primary_instance == Some(iid);
+
+        let popup = popups.entry(iid).or_insert_with(|| EguiMeshPopup::new(iid));
+        // 한글/일문이 tofu(□) 되지 않도록 CJK fallback 을 popup Context 에 1회 설치한다.
+        if fonts_installed.insert(iid) {
+            install_fonts(popup.context());
+        }
+
+        let result = popup.paint(&ctx.host, &ctx.params, |egui_ctx| {
+            match (is_primary, state.as_mut()) {
+                (true, Some(st)) => view::draw(egui_ctx, &theme, st, tr),
+                // 주 인스턴스가 아니거나(중복 open) 스냅샷이 없으면 "이미 열림" placeholder.
+                _ => view::draw_already_open(egui_ctx, &theme, tr),
+            }
+        });
+        if let Err(e) = result {
+            tracing::warn!("clipboard popup {iid} paint failed: {e}");
+        }
+    }
+
+    /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
+    /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
+    #[cfg(not(unix))]
+    fn paint(&mut self, _ctx: PopupSetContextCtx) {}
+}
+
+/// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
+#[cfg(unix)]
+fn theme_from_wire(w: &ThemeWire) -> Theme {
+    Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
+}
+
+/// popup Context 에 CJK fallback 을 설치한다(markdown `install_fonts` 미러). egui 기본
+/// 폰트(Proportional/Monospace) 뒤에 시스템 CJK 폰트를 붙여 한글/일문/한자 tofu 를 막는다.
+#[cfg(unix)]
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    if let Some(bytes) = load_system_cjk_font_data() {
+        fonts.font_data.insert(
+            "system_cjk".to_owned(),
+            Arc::new(egui::FontData::from_owned(bytes)),
+        );
+        for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(fam)
+                .or_default()
+                .push("system_cjk".to_owned());
+        }
+    }
+    ctx.set_fonts(fonts);
+}
+
+/// 시스템 CJK 폰트 바이트 로드 (host `font_registry::load_system_cjk_font_data` 미러).
+#[cfg(unix)]
+fn load_system_cjk_font_data() -> Option<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        for path in &[
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
             }
         }
     }
+    #[cfg(target_os = "linux")]
+    {
+        for path in &[
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+    None
 }
 
 fn main() -> anyhow::Result<()> {

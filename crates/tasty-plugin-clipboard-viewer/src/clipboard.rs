@@ -13,21 +13,6 @@ pub enum ClipboardType {
 }
 
 impl ClipboardType {
-    /// node id / 선택 직렬화에 쓰는 안정 키 (`type-{key}`).
-    pub fn key(self) -> &'static str {
-        match self {
-            ClipboardType::Text => "text",
-        }
-    }
-
-    /// `type-{key}` 클릭에서 역파싱.
-    pub fn from_key(key: &str) -> Option<Self> {
-        match key {
-            "text" => Some(ClipboardType::Text),
-            _ => None,
-        }
-    }
-
     /// 타입 라벨 i18n 키.
     pub fn label_i18n_key(self) -> &'static str {
         match self {

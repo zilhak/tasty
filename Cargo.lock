@@ -5589,12 +5589,17 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-clipboard-viewer"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "arboard",
+ "egui",
  "serde_json",
+ "tasty-plugin-manifest",
+ "tasty-plugin-protocol",
  "tasty-plugin-sdk",
+ "tasty-type-appearance",
+ "tasty-ui-widgets",
  "tracing",
  "tracing-subscriber",
 ]

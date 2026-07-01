@@ -16,6 +16,9 @@ command = "tasty-plugin-clipboard-viewer"
 [[contributes.popup]]
 id = "viewer"
 trigger = { kind = "event", event_key = "shortcut.toggle_clipboard_viewer" }
+# egui-mesh: plugin 이 popup 콘텐츠(master-detail)를 자기 프로세스에서 egui mesh 로
+# 그리고, host 는 셸(scrim/border/outside-click/Esc)만 그린 뒤 합성한다 (ADR-0028 / B4).
+rendering = "egui-mesh"
 size_hint = { width = 480, height = 360 }
 anchor = "screen-center"
 dismiss_on_outside_click = true

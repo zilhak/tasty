@@ -20,20 +20,26 @@
 
 - 타입 있음(선택된 타입 미리보기) / 빈 클립보드 / 읽기 실패 / 이미 열림(재호출 무시).
 
+## 렌더 경로
+
+popup 은 **egui-mesh**(ADR-0028 / B4)로 그린다. plugin 이 자기 프로세스에서 popup 콘텐츠를
+egui 로 tessellate 한 mesh 를 host 가 content 영역에 합성한다. host 는 `popup.set_context` 에
+Theme 스냅샷(`ThemeWire`)을 실어 보내고, plugin 은 `Theme::with_colors_and_zoom` 으로 재구성해
+디자인 토큰대로 그린다. chrome(scrim/border/outside-click/Esc/단일 인스턴스 셸)은 host 소유.
+
 ## 디자인 토큰 매핑
 
-plugin 은 `UiNode` DSL(`splitter`/`button`/`text_preview`)로 구성만 정하고, 실제 픽셀은 host
-`ui_tree_render.rs` 가 catppuccin→의미 토큰으로 그린다. UI 인벤토리 ↔ 토큰:
+색·폰트·간격은 전부 host 가 보낸 `Theme` 토큰에서 가져온다(from_rgb/raw px 금지). UI 인벤토리 ↔ 토큰:
 
 | UI 요소 | 토큰 | 비고 |
 |---|---|---|
-| popup 프레임 | `bg-panel` | 480×360 고정(화면 전용 const) |
-| 좌/우 분할선 | `separator` · `border-width` | `splitter` Horizontal 0.3, host rest 색 |
-| 타입 버튼(선택) | `accent-primary` fill + `text-on-accent` | plugin `button_primary` |
-| 타입 버튼(유휴) | `surface-raised` + `text-secondary` | 일반 `button` |
-| 미리보기 본문 | `text-primary` (mono) | `scroll_v(text_preview)` |
-| 빈 클립보드 안내 | `text-muted` | `subtext0`, `center` 양축 중앙 한 줄 |
-| 읽기 실패 안내 | `accent-danger` | `red`, `center` 양축 중앙 한 줄 |
+| popup 프레임 | `bg-panel` | 480×360 고정(size_hint), plugin content 도 동일 fill |
+| 좌/우 분할선 | `separator` · `border-width` | ratio 0.3, painter `vline` 1px |
+| 타입 버튼(선택) | `accent-primary` fill + `text-on-accent` | `tasty_ui_widgets::Button` primary |
+| 타입 버튼(유휴) | `surface-raised` + `border-default` + `text-secondary` | Button secondary(외곽선) |
+| 미리보기 본문 | `text-primary` (mono) | `ScrollArea` + selectable Label |
+| 빈 클립보드 안내 | `text-muted` | 양축 중앙 한 줄 |
+| 읽기 실패 안내 | `accent-danger` | 양축 중앙 한 줄 |
 
 ## 갤러리 specimen
 
@@ -43,4 +49,5 @@ popup`. master-detail + empty + read-failed 3 상태를 토큰으로 전사(본�
 
 ## 시각 소스
 
-popup 치수(480×360)·좌우 분할(`splitter` Horizontal 0.3)은 design-system(vendor 후 링크). popup 구현은 `PopupDef` 시스템(dev-guide).
+popup 치수(480×360)·좌우 분할(ratio 0.3)은 design-system(vendor 후 링크). popup 은 egui-mesh
+채널로 plugin 이 자가 렌더한다([popup-implementation.md](../../../dev-guide/popup-implementation.md), ADR-0028).
