@@ -680,6 +680,28 @@ pub struct PopupContribute {
     pub anchor: PopupAnchor,
     #[serde(default = "default_dismiss_on_outside_click")]
     pub dismiss_on_outside_click: bool,
+    /// popup 콘텐츠 렌더링 방식. 기본 `ui-tree`(UiNode). `egui-mesh` 면 plugin 이
+    /// 자기 프로세스에서 egui mesh 를 tessellate 하고 host 가 popup 영역에 합성한다
+    /// (ADR-0028, A2). 셸(scrim/border/outside-click/Esc)은 어느 쪽이든 host 소유.
+    #[serde(default)]
+    pub rendering: PopupRendering,
+}
+
+/// popup 콘텐츠의 렌더링 방식.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PopupRendering {
+    /// plugin 이 UiNode tree 로 콘텐츠를 그린다 (기본).
+    #[default]
+    UiTree,
+    /// plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
+    /// (ADR-0028). bundled 전용 — host 화이트리스트 매칭이 필요하다.
+    ///
+    /// 와이어 키는 하이픈 포함 `"egui-mesh"` — `rename_all = "kebab-case"` 가 만드는
+    /// `"egui-mesh"` 와 일치하지만, surface 쪽 [`SurfaceKindRendering`] 과 표기를
+    /// 맞추기 위해 명시적으로 rename 한다.
+    #[serde(rename = "egui-mesh")]
+    EguiMesh,
 }
 
 fn default_dismiss_on_outside_click() -> bool {
