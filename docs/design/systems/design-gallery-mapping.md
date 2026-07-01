@@ -112,6 +112,26 @@ text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme �
 프레임 + `DemoLayout::show` 렌더. 전체 list→toolbar→detail 2-depth 셸과 WYSIWYG 편집은
 TODO 08/09 후속.
 
+## workspace-category (Layouts / Overlays)
+
+사이드바 폴더(카테고리) — 확장 그룹 / 축소 레일 `---` / 컨텍스트 메뉴 / 생성·이름변경·삭제
+다이얼로그 / 레일 팝업. 갤러리 specimen 은 binary 미의존 정적 재현(Theme 토큰).
+
+| 디자인 jsx 컴포넌트 | 본체 함수 | 갤러리 항목 |
+|---|---|---|
+| `chrome.jsx` `CategoryHeader` | `sidebar/view.rs::draw_category_header` | `sidebar` "Categories · full" (`sidebar.rs::full_categories`) |
+| `chrome.jsx` `Sidebar`(grouped) | `sidebar/view.rs::draw_full_sidebar_view`(+`full.rs::build_category_sections`) | `sidebar` "Categories · full" |
+| `chrome.jsx` `RailCategoryBtn` | `sidebar/view.rs::draw_rail_category_button` | `sidebar` "Categories · rail" (`sidebar.rs::rail_categories`) |
+| `chrome.jsx` `CollapsedSidebar`(grouped) | `sidebar/view.rs::draw_collapsed_sidebar_view` | `sidebar` "Categories · rail" |
+| `overlays/sidebar_context_menu.jsx` `RailCategoryPopup` | `popup/rail_category.rs::draw_rail_category_popup` | `workspace-categories` "Rail popup" (`category_dialogs.rs::rail_popup`) |
+| `overlays/sidebar_context_menu.jsx` `SidebarContextMenu` | `view/main/redraw.rs`(native menu: Workspace/WorkspaceCategoryHeader/SidebarBackground) | ✗ native OS 메뉴 — 갤러리 미대상 |
+| `overlays-dialogs.jsx` `CategoryEditFrame` | `dialog.rs::draw_rename_popup`(+`RenameTarget::NewCategory`/`CategoryName`, 라이브 검증) | `workspace-categories` "Create / rename" · "Validation error" (`category_dialogs.rs::edit_dialog`) |
+| `overlays-dialogs.jsx` `CategoryDeleteFrame` | `popup/confirm_delete_category.rs::draw_confirm_delete_category` | `workspace-categories` "Delete confirm" (`category_dialogs.rs::delete_confirm`) |
+
+**갤러리 vs 본체 차이**: 컨텍스트 메뉴는 OS native(`show_context_menu`) 라 갤러리 정적 재현 대상이
+아니다(서브메뉴 미지원 → "카테고리로 이동" 은 평면 나열, 선택지 B). 나머지는 Theme 토큰으로 시각만
+재현하며 상태(접힘/빈 카테고리/검증 에러)는 mock 데이터로 주입한다.
+
 ## 이미 갤러리에 있는 관련 항목 (참고)
 
 `catalog/components/` 에 등록된 것: `command_palette` · `port_scanner` · `convert` ·

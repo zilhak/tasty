@@ -1,10 +1,10 @@
 # 워크스페이스 카테고리 (Workspace Category)
 
-- **Status**: Partial
-- **주체**: AI Agent (CRUD·소속 변경, IPC/CLI 양면) · 로컬 사용자 (사이드바 그룹·전환, 토글 on 시)
+- **Status**: Done
+- **주체**: AI Agent (CRUD·소속 변경, IPC/CLI 양면) · 로컬 사용자 (사이드바 그룹·전환·생성/이름변경/삭제, 토글 on 시)
 - **ADR**: [ADR-0029](../../adr/0029-workspace-category-global-index.md)
-- **코드**: `crates/tasty-model/src/workspace_category.rs` · `src/core/state.rs` (`categories` / CRUD 메서드) · `src/engine/layout_persistence/{schema,capture,restore}.rs` · `src/adapters/ipc/handler/workspace_category.rs` · `crates/tasty-cli/src/commands/workspace_category.rs`
-- **화면**: 없음 — 사이드바 렌더링(섹션 그룹·카테고리 헤더)은 미구현(현재 사이드바는 평면 렌더 유지).
+- **코드**: `crates/tasty-model/src/workspace_category.rs` · `src/core/state.rs` (`categories` / CRUD 메서드 / `set_category_collapsed`) · `src/engine/layout_persistence/{schema,capture,restore}.rs` · `src/adapters/ipc/handler/workspace_category.rs` · `crates/tasty-cli/src/commands/workspace_category.rs` · `src/adapters/ui/sidebar/{view,full,collapsed}.rs` (사이드바 그룹) · `src/adapters/ui/popup/{rail_category,confirm_delete_category}.rs` · `src/adapters/ui/{dialog,category_actions}.rs` · `src/view/main/redraw.rs` (컨텍스트 메뉴)
+- **화면**: 설정 토글 on 시 사이드바가 카테고리 섹션으로 그룹 렌더. 확장 사이드바는 chevron 헤더(접힘 토글)+소속 행, 축소 레일은 카테고리 경계 `---` 버튼+우측 앵커드 팝업. 우클릭 컨텍스트 메뉴(헤더/배경/행)와 레일 팝업으로 생성/이름변경/삭제/카테고리 이동. 드래그로 다른 카테고리 이동. 갤러리 specimen: Layouts › Sidebar & rail(그룹), Overlays › Workspace categories(다이얼로그·레일 팝업).
 
 ## 목적
 
@@ -31,7 +31,7 @@
   - `workspace_category.move {from_index,to_index}` / `tasty workspace-category move --from A --to B`
   - `workspace.create` / `workspace.update` 의 `category`(id 또는 이름) 파라미터 — `tasty new/set workspace --category <name|id>`
   - `workspace.list` 응답에 `category` / `category_name`
-- **사용자 트리거**: 설정 → 일반 → "워크스페이스 카테고리" 토글. (사이드바 그룹 UI·헤더 조작은 미구현.)
+- **사용자 트리거**: 설정 → 일반 → "워크스페이스 카테고리" 토글. on 이면 사이드바가 카테고리 섹션으로 그룹 렌더되고, 헤더 클릭(접힘 토글)·우클릭 컨텍스트 메뉴(빈 배경 → 새 카테고리, 헤더 → 이름변경/삭제/새 카테고리, 워크스페이스 행 → 카테고리로 이동/새 카테고리)·축소 레일 `---` 팝업(Add workspace/Collapse/Rename/Delete)·드래그 앤 드롭(다른 카테고리로 이동)으로 조작한다. 생성/이름변경은 360px 단일필드 다이얼로그(라이브 검증), 삭제는 destructive confirm 을 거친다.
 
 ## 비-목표 (Out of scope)
 
@@ -44,4 +44,8 @@
 - [x] Given `workspace_category.create {name:"normal"}` Then 예약어 거부.
 - [x] Given 카테고리 A 에 워크스페이스 존재 When `workspace_category.delete A` Then 워크스페이스는 normal 로 이동, active 전역 인덱스 불변.
 - [x] Given `workspace_category.move {from:0}` 또는 `{to:0}` Then 거부(normal 0번 고정).
-- [ ] (미구현) 사이드바가 카테고리 섹션으로 그룹 렌더.
+- [x] Given 토글 on Then 사이드바가 카테고리 섹션(chevron 헤더 + 소속 행)으로 그룹 렌더, 토글 off 면 평면 렌더(회귀 없음).
+- [x] Given 카테고리 헤더 클릭 When 접힘 토글 Then 접힘 상태가 layout.json 에 영속되고 확장↔레일이 공유.
+- [x] Given 워크스페이스를 다른 카테고리 섹션으로 드래그 Then 소속이 그 카테고리로 변경(전역 인덱스 불변).
+- [x] Given 카테고리 생성/이름변경 다이얼로그 When 빈/normal/중복 입력 Then 인라인 danger 에러 + 확인 비활성.
+- [x] Given 카테고리 삭제 When destructive confirm 확인 Then 카테고리 제거 + 워크스페이스 normal 귀속.
