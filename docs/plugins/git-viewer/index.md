@@ -18,7 +18,10 @@ git **status / log / diff 를 읽기 전용**으로 보여주는 popup 을 제�
 ## 내부 동작
 
 - **tool** `open-viewer` — [도구 메뉴](../../features/tools-menu/index.md)에 항목 추가(`ui.tool_item`), action `open_popup{com.tasty.git-viewer/viewer}`.
-- **popup** `viewer` — trigger `ipc`(IPC 로도 열림). status/log/diff 를 `fs.read` 로 읽어 표시. **읽기 전용**(커밋/스테이징 등 변경 없음).
+- **popup** `viewer` — trigger `ipc`(IPC 로도 열림), `rendering = egui-mesh`. status/log/diff 를 `fs.read` 로 읽어 표시. **읽기 전용**(커밋/스테이징 등 변경 없음).
+- **렌더링** — 팝업 콘텐츠를 **egui-mesh** 로 그린다(ADR-0028 / B3): plugin 이 자기 egui Context 에서
+  디자인(`overlays/git_viewer.jsx`)을 직접 페인트하고 host 는 셸(scrim/border/Esc/outside-click)만
+  소유한다. Theme 은 `popup.set_context` 의 `ThemeWire` 로 매 frame 받아 재구성한다.
 - **worktree 종합 목록** — libgit2 `worktrees()` 는 linked 만 주므로 main working tree 는
   `commondir` 파일(폴백: 경로 추론)로 직접 식별해 목록 선두에 합성한다(`git worktree list` 와 동등).
   popup 이 받은 cwd 가 속한 worktree 에 `current` 마커, `locked`/`invalid` 상태 배지를 표시한다.

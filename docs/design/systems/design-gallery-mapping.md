@@ -290,24 +290,28 @@ read-failed) 를 `StageVariant::Wrap` 으로 나란히 노출.
 
 ## git-viewer (Plugins)
 
-plugin `crates/tasty-plugin-git-viewer/src/view.rs::main_tree` (중첩 `splitter` + `selectable_row`)
-↔ host `ui_tree_render.rs` ↔ 갤러리 `catalog/components/git_viewer.rs` (Plugins › `Git worktree
-viewer popup`). **specimen 포함 확정**(ADR-0020 완전성 — plugin 도 host 위젯 구성을 고르므로
-갤러리가 그 구성을 전수해야 한다). 토큰·구조 정합 목표, 픽셀 동일성 비목표.
+디자인 `ui_kits/terminal/overlays/git_viewer.jsx` ↔ plugin `crates/tasty-plugin-git-viewer/src/render.rs`
+(egui-mesh 자가 렌더) ↔ 갤러리 `catalog/components/git_viewer.rs` (Plugins › `Git worktree viewer
+popup`). git-viewer 팝업은 UiNode tree 가 아니라 **egui-mesh** 로 그린다(ADR-0028 / B3) — plugin 이
+자기 egui Context 에서 새 디자인을 직접 페인트하고 host 는 셸(scrim/border/Esc/outside-click)만
+소유한다. 갤러리는 plugin crate 비의존이라 같은 구성을 Theme 토큰 mock 으로 전사한다. **specimen
+포함 확정**(ADR-0020 완전성). 토큰·구조 정합 목표, 픽셀 동일성 비목표.
 
-| plugin UiNode | host 페인트(토큰) | 갤러리 함수 |
+| 디자인(jsx) | plugin render.rs | 갤러리 함수 |
 |---|---|---|
-| header(Refresh `button` + repo path) | `surface-raised` 버튼 + `text-muted` path | `shell` 헤더 |
-| `splitter(Horizontal, 0.25, rail \| right)` | `separator` vline | `shell` (split_x = w×0.25) |
-| `splitter(Vertical, 0.5, status \| log·diff)` | `separator` hline | `shell` (split_y) |
-| pane 제목(Heading) | `text-primary`·`font-size-term-lg` | `heading` |
-| worktree `selectable_row` | `surface-active`(selected) + 색 배지 | `paint_rail` → `row` |
-| HEAD oid·refs·`main` 배지(`blue`) | `accent-info` | `row` 세그먼트 |
-| `current`/added·`locked`/modified·`invalid`/deleted | `accent-success`/`-warning`/`-danger` | `paint_rail`/`paint_status` |
-| log 행(oid `yellow`, author `subtext0`) | `accent-warning` + `text-muted` | `paint_log` |
-| diff(±/hunk) | `accent-success`/`-danger`/`accent-info` | `paint_diff` |
+| `Header`(Git + `Refresh` secondary) | `header` | `header` |
+| context strip(worktree · branch · oid pill · path) | `context_strip` | `context_strip` |
+| `PaneHead`(uppercase 섹션 strip + count) | `pane_head` | `section_head` |
+| `WtRow`(2줄: name+type pill / oid+state pill) | `wt_row` | `wt_row` |
+| `ChRow`(status pill + dir/file) | `ch_row` | `ch_row` |
+| `CmRow`(oid + refs + summary + author + time) | `cm_row` | `cm_row` |
+| `DiffLine`(거터 + 부호 + ± tint / hunk band) | `diff_line`(+`draw_diff` well) | `diff_line`(+`diff_pane`) |
+| oid·refs·`main`·hunk = sky | `accent_info` (Tag `Info` 톤) | 동일 |
+| current·added·`+` / locked·modified / invalid·deleted·`-` | `accent_success`/`-warning`/`-danger` | 동일 |
 
-`status+log` / `diff` 두 cluster(`StageVariant::Column`)로 하단 pane 의 log↔diff 교체를 함께 노출.
+`normal`(rail \| Changes/Commits) / `diff` 두 cluster(`StageVariant::Column`)로 하단 pane 의
+Commits↔Diff 교체를 함께 노출. Tag `Info`(sky) 톤은 `tasty-ui-widgets` `chip.rs` 에 추가되어
+host gallery Tag specimen(prim_chips)에도 노출된다.
 
 ## surface viewers (Plugins)
 
