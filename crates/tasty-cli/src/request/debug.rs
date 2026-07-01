@@ -89,6 +89,7 @@ pub(super) fn debug_command_to_method_params(
         DebugCommands::HostPopup(sub) => host_popup_debug_command_to_method_params(sub),
         DebugCommands::Banner(sub) => banner_debug_command_to_method_params(sub),
         DebugCommands::Settings(sub) => settings_debug_command_to_method_params(sub),
+        DebugCommands::Lua(sub) => lua_debug_command_to_method_params(sub),
         // stream-echo is a raw framed exchange, not a JSON-RPC request — it is
         // handled directly in `run_client` before request mapping is reached.
         DebugCommands::StreamEcho { .. } => {
@@ -208,6 +209,27 @@ pub(super) fn settings_debug_command_to_method_params(
                 "debug.settings.apply",
                 serde_json::json!({ "settings": patch }),
             )
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(super) fn lua_debug_command_to_method_params(
+    command: &crate::LuaDebugCommands,
+) -> (&'static str, serde_json::Value) {
+    use crate::LuaDebugCommands;
+    match command {
+        LuaDebugCommands::Eval { source } => {
+            ("debug.lua.eval", serde_json::json!({ "source": source }))
+        }
+        // 파일은 CLI 단에서 읽어 source 로 넘긴다(Apply --file 선례). 이 fn 은 Result 를
+        // 반환하지 못하므로 읽기 실패는 eprintln + exit(1) 로 처리한다.
+        LuaDebugCommands::EvalFile { path } => {
+            let source = std::fs::read_to_string(path).unwrap_or_else(|e| {
+                eprintln!("Error: lua eval-file {path}: {e}");
+                std::process::exit(1);
+            });
+            ("debug.lua.eval", serde_json::json!({ "source": source }))
         }
     }
 }

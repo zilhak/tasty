@@ -36,6 +36,32 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // 임의 Lua 주입 (debug 전용, ADR-0031 TODO 08) — App 소유 lua_engine 워커로 실행.
+        // release 에는 이 경로가 없다(identity 원칙 1: release 는 사용자 키 입력에서만 실행).
+        if cmd.request.method == "debug.lua.eval" {
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let source = cmd.request.params.get("source").and_then(|v| v.as_str());
+            let response = match (source, self.lua_engine.as_ref()) {
+                (Some(src), Some(engine)) => {
+                    // fire-and-forget: 워커/deadline(07) 격리 하에서 실행. 부수효과는 로그로 관측.
+                    engine.run_script(src, Some("debug.lua.eval"));
+                    host_ipc::protocol::JsonRpcResponse::success(
+                        id,
+                        serde_json::json!({ "scheduled": true }),
+                    )
+                }
+                (None, _) => {
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(id, "Missing 'source'")
+                }
+                (_, None) => host_ipc::protocol::JsonRpcResponse::error(
+                    id,
+                    -32603,
+                    "lua engine not initialized",
+                ),
+            };
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
         if cmd.request.method.starts_with("debug.event_bus.") {
             let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
             let response = debug_plugin::handle_event_bus(

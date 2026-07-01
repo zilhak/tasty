@@ -133,6 +133,11 @@ pub enum DebugCommands {
     /// click), for visual verification of the settings UI against the design.
     #[command(subcommand)]
     Settings(SettingsDebugCommands),
+    /// Arbitrary Lua injection into the host worker (debug builds only).
+    /// Runs source in the isolated Lua worker (deadline-guarded, ADR-0031).
+    /// Release builds have no such path — the user-input-only rule applies there.
+    #[command(subcommand)]
+    Lua(LuaDebugCommands),
     /// VTE sequence simulator — identical to the standalone `tasty-tui-sim`
     /// binary, run from inside the current surface (emits raw VTE to stdout, no
     /// IPC). No subcommand = interactive REPL. Use `sim flood` for a heavy
@@ -292,6 +297,25 @@ pub enum BannerDebugCommands {
         /// New remaining seconds
         #[arg(long)]
         seconds: u32,
+    },
+}
+
+#[cfg(debug_assertions)]
+#[derive(Subcommand)]
+pub enum LuaDebugCommands {
+    /// Inject arbitrary Lua source and run it in the host worker (fire-and-forget).
+    /// Effects are observable via logs (e.g. `tasty.log`); deadline-exceeding
+    /// sources are aborted by the worker (ADR-0031 TODO 07).
+    Eval {
+        /// Lua source to execute. e.g. 'tasty.log("hi from debug")'
+        #[arg()]
+        source: String,
+    },
+    /// Read Lua source from a file and inject it (same worker path as `eval`).
+    EvalFile {
+        /// Path to a `.lua` file to read and execute.
+        #[arg()]
+        path: String,
     },
 }
 
