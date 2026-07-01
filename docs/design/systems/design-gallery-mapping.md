@@ -356,9 +356,9 @@ module const(token-policy §c).
 (`ScriptManager`/`ScriptRow`/`ScriptPath`/`ScriptChangedBadge`). 갤러리 미러:
 `gallery/overlays-shared.jsx` `ScriptManagerFrame({empty})`. changelog: `changelog/2026-07-01-lua-script-manager.md`.
 
-| 디자인 컴포넌트 | 본체 draw (예정) | 갤러리 specimen (예정) | 핵심 토큰 |
+| 디자인 컴포넌트 | 본체 draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
-| `ScriptManager` (헤더+add card+list/empty) | `view/settings/ui/tabs/misc.rs::draw_scripts_subtab` | `catalog/.../script_manager.rs::draw` | 제목 `font-size-max`/semibold · 설명 `text-muted`/`measure-md` |
+| `ScriptManager` (헤더+add card+list/empty) | `view/settings/ui/tabs/misc.rs::draw_scripts_subtab` | `catalog/components/script_manager.rs::draw`(list) / `::draw_empty` | 제목 `font-size-max`/semibold · 설명 `text-muted`/`measure-md` |
 | `ScriptRow` (glyph/name/path/kbd/actions) | `draw_script_row` | specimen 내 `Row` | 행 하단 `separator` 보더 · name 13/600 `text-primary` |
 | `ScriptChangedBadge` | inline | inline | `accent-warning` color-mix(40% border/12% bg) · mono `font-size-micro`(10) + warn glyph 12 |
 | `ScriptPath` (중간생략) | `draw_script_path` | inline `Path` | dir=`text-muted` ellipsis-first / file=`text-secondary` full · mono 12 |

@@ -18,6 +18,8 @@
 
 설정에 스크립트를 등록하면 `{id, name, path, sha256}` 가 config(`~/.tasty/config.toml`)에 영속된다(`ScriptRegistry`). 단축키 탭에서 스크립트에 combo 를 바인딩하고(`script_bindings`), 그 단축키를 누르면 워커에서 실행된다. **release 는 사용자 키 입력에서만** 이 경로를 탄다(identity 원칙 1). 임의 Lua 주입은 debug 빌드 전용(`debug.lua.eval`).
 
+**관리 창** — 설정 modal 기타(Misc) 탭 › **Scripts**(전 플랫폼·최상단, `src/view/settings/ui/tabs/misc.rs::draw_scripts_subtab`). 등록 스크립트를 행 목록으로 보여준다: script 글리프 · 표시 이름 · 중간생략 경로(디렉토리 tail 이 먼저 ellipsis, 파일명은 완전 표시) · 바운드 단축키 `Kbd` 또는 "Unbound". 행 액션은 **bind**(→ Keybindings › Scripts 진입만; 바인딩 편집은 단축키 탭 소유), **rename**(인라인), **remove**(인라인 확인 + 연결 단축키 자동 해제). 인라인 Add card(File + Browse… `.lua` 필터 / Display name)로 등록하며, 창을 열 때 디스크 해시를 저장 해시와 비교해 불일치 시 **changed** 배지 + 안내(TOFU 재확인 예고)를 표시한다. 등록이 없으면 빈 상태를 그린다.
+
 ### 실행 격리 · 안전 장치
 
 VM 은 전용 워커 스레드가 소유하고 job 을 직렬 처리한다. 메모리 32MB cap · 텍스트 청크만(bytecode 거부) · `debug`/`load*`/`dofile`/`package.loadlib` 제거 · 무한 루프/시간 초과는 instruction-count deadline 훅으로 abort(워커만 종료, 메인 무영향). `os.execute`/`io.*` 는 사용 가능 — 사용자 자신의 스크립트라 권한 격리 안 함.

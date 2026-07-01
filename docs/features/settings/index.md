@@ -21,7 +21,7 @@
 - **Appearance** — L2: Theme / Colors / General / Display / Tasty / Terminal + 플러그인 기여 페이지(동적). Display = UI 스케일(sm/md/lg) 전용. Tasty = 앱 크롬 색상(accent / sidebar bg / active tab indicator). HTML viewer 설정은 호스트 고정 탭이 아니라 `com.tasty.html` 플러그인이 기여하는 동적 페이지다.
 - **Keybindings** — L2: General / Workspace / Pane / Tab / Surface / Clipboard / Zoom / Image / Preset / Plugins. 단축키 편집 (아래).
 - **FileHandler** — L2: Extension Mapping / Detectors / Handlers.
-- **Misc** — L2: Tastyrc (Windows 전용; 비-Windows 는 섹션 0개 → empty state).
+- **Misc** — L2: Scripts (전 플랫폼·최상단 — Lua 스크립트 관리, [lua-hooks](../lua-hooks/index.md)) + Tastyrc (Windows 전용).
 - **Plugins** — 플러그인 기여 설정 페이지 (동적).
 
 L2 섹션은 좌측에 목록으로 뜨고 **필터 텍스트로 검색** 가능 (L1 전환 시 클리어).
