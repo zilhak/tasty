@@ -132,6 +132,151 @@ fn offset_and_clip(
         .collect()
 }
 
+/// SharedBuffer 의 mesh 바이트를 디코드해 한 target 에 올린다(generation 변경 시에만 호출).
+/// footer tear / 너무 작은 buffer / ppp 불일치 가드를 통과해야 갱신한다 — 실패하면
+/// 기존 캐시를 유지(이번 frame 재합성). surface/popup 합성기가 공유한다.
+fn decode_mesh_into_target(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    target: &mut EguiMeshRenderTarget,
+    raw: &[u8],
+    generation: u64,
+    host_ppp: f32,
+    log_id: &str,
+) {
+    // footer 길이 가드: plugin 이 footer(8B) 미만 버퍼를 등록하면 footer::load 의
+    // 안전 전제(raw.len >= SIZE)가 깨진다. canvas_prepare 형제 경로처럼 skip.
+    if raw.len() < tasty_shm::footer::SIZE {
+        tracing::warn!(
+            target = log_id,
+            actual = raw.len(),
+            "egui-mesh prepare: buffer too small"
+        );
+        return;
+    }
+    // SAFETY: SharedMemory 영역. tasty-shm 동기화 규약 — plugin commit(Release) →
+    // host Acquire-load → user data read. footer 시작 8B 는 mmap 페이지 align 이라 8B aligned.
+    // footer generation 이 frame 메타와 다르면 half-painted 이므로 다음 frame 까지 미룬다.
+    let gen_now = unsafe { tasty_shm::footer::load(raw, Ordering::Acquire) };
+    if gen_now != generation {
+        return;
+    }
+    let user = tasty_shm::footer::user_slice(raw);
+
+    let decoded = match tasty_plugin_protocol::mesh_wire::decode_paint(user) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(target = log_id, "egui-mesh prepare: decode failed: {e}");
+            return;
+        }
+    };
+
+    // ppp 불일치 가드 (§9-4): 리사이즈/DPI 전환 직후 plugin 이 옛 ppp 로 tessellate 한
+    // stale mesh 일 수 있다. host ppp 와 어긋나면 이번 frame 합성을 미룬다 — generation 을
+    // 갱신하지 않으므로 다음 frame 에 다시 시도하고, plugin 이 새 ppp 로 보내면 통과한다.
+    if (decoded.pixels_per_point - host_ppp).abs() > PPP_EPS {
+        tracing::debug!(
+            target = log_id,
+            decoded_ppp = decoded.pixels_per_point,
+            host_ppp,
+            "egui-mesh prepare: ppp mismatch, deferring composite"
+        );
+        return;
+    }
+
+    // 전용 Renderer 라 TextureId 가 host 와 충돌하지 않는다. set → (이후 render) → free
+    // 순서로 frame 경계에서 원자 처리. free 대상은 primitives 가 참조하지 않으므로
+    // render 전에 풀어도 안전(set/free 는 서로소).
+    for (id, delta) in &decoded.textures_delta.set {
+        target.renderer.update_texture(device, queue, *id, delta);
+    }
+    for id in &decoded.textures_delta.free {
+        target.renderer.free_texture(id);
+    }
+    target.primitives = decoded.primitives;
+    target.ppp = decoded.pixels_per_point;
+    target.generation = generation;
+    target.has_content = true;
+    target.translated_key = None; // 평행이동 캐시 무효화.
+}
+
+/// 캐시된 mesh 를 물리 rect 영역에 합성한다(전용 Renderer + 전용 pass).
+/// surface/popup 합성기가 공유한다 — popup 은 host egui pass *후*, surface 는 *전*.
+fn composite_mesh_target(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    target: &mut EguiMeshRenderTarget,
+    view: &wgpu::TextureView,
+    rect: PhysicalRect,
+    size_in_pixels: [u32; 2],
+) {
+    if !target.has_content {
+        return;
+    }
+    let ppp = target.ppp;
+    if ppp <= 0.0 {
+        return;
+    }
+
+    // 평행이동 캐시 갱신 (generation/rect 변경 시에만 재계산).
+    let rect_bits = [
+        rect.x.value().to_bits(),
+        rect.y.value().to_bits(),
+        rect.width.value().to_bits(),
+        rect.height.value().to_bits(),
+    ];
+    let key = (target.generation, rect_bits);
+    if target.translated_key != Some(key) {
+        let offset = egui::vec2(rect.x.value() / ppp, rect.y.value() / ppp);
+        let bounds = egui::Rect::from_min_size(
+            egui::pos2(rect.x.value() / ppp, rect.y.value() / ppp),
+            egui::vec2(rect.width.value() / ppp, rect.height.value() / ppp),
+        );
+        target.translated = offset_and_clip(&target.primitives, offset, bounds);
+        target.translated_key = Some(key);
+    }
+    if target.translated.is_empty() {
+        return;
+    }
+
+    let screen_descriptor = egui_wgpu::ScreenDescriptor {
+        size_in_pixels,
+        pixels_per_point: ppp,
+    };
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("egui_mesh_encoder"),
+    });
+    target.renderer.update_buffers(
+        device,
+        queue,
+        &mut encoder,
+        &target.translated,
+        &screen_descriptor,
+    );
+    {
+        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("egui_mesh_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        let mut render_pass = render_pass.forget_lifetime();
+        target
+            .renderer
+            .render(&mut render_pass, &target.translated, &screen_descriptor);
+    }
+    queue.submit(std::iter::once(encoder.finish()));
+}
+
 impl GpuState {
     /// egui-mesh surface 들을 전용 Renderer 로 framebuffer 에 합성한다.
     ///
@@ -147,6 +292,7 @@ impl GpuState {
         let live: HashSet<u32> = targets.iter().map(|t| t.0).collect();
         self.egui_mesh_targets.retain(|sid, _| live.contains(sid));
 
+        let size_in_pixels = [self.size.width, self.size.height];
         for (sid, plugin_id, rect) in targets {
             // plugin 이 아직 frame 을 안 보냈거나 disconnect 로 정리됐으면 합성할 것이 없다.
             // (disconnect 시 placeholder/blank — 캐시가 남아 있어도 합성하지 않는다, §9-7.)
@@ -171,180 +317,102 @@ impl GpuState {
                 !t.has_content || t.generation != frame_generation
             };
             if needs_decode {
-                self.decode_egui_mesh_frame(
-                    *sid,
-                    plugin_id,
-                    frame_buffer_id,
-                    frame_generation,
-                    host_ppp,
-                    plugin_manager,
-                );
+                if let Some(mem) = plugin_manager.plugin_buffer(plugin_id, frame_buffer_id) {
+                    // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
+                    let raw = unsafe { mem.as_slice() };
+                    decode_mesh_into_target(
+                        &self.device,
+                        &self.queue,
+                        self.egui_mesh_targets.get_mut(sid).expect("ensured above"),
+                        raw,
+                        frame_generation,
+                        host_ppp,
+                        plugin_id,
+                    );
+                } else {
+                    tracing::warn!(
+                        plugin = %plugin_id,
+                        buffer = frame_buffer_id.0,
+                        surface = sid,
+                        "egui-mesh prepare: SharedMemory not registered"
+                    );
+                }
             }
 
             // 합성 (콘텐츠 있으면 매 frame — framebuffer 가 매 frame clear 되므로).
-            self.composite_egui_mesh_surface(*sid, view, *rect);
+            if let Some(t) = self.egui_mesh_targets.get_mut(sid) {
+                composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
+            }
         }
     }
 
-    /// SharedBuffer 에서 mesh 바이트를 읽어 디코드하고 전용 Renderer 에 텍스처를 올린다.
-    /// generation 변경 시에만 호출. 실패하면 기존 캐시를 유지한다(이번 frame 재합성).
-    fn decode_egui_mesh_frame(
+    /// egui-mesh popup(A2) 들을 전용 Renderer 로 합성한다.
+    ///
+    /// [`GpuState::render`] 가 host egui pass *후* 부른다 — popup 셸(scrim/bg/border)을
+    /// host egui 가 그린 뒤 그 위 content_rect 에 plugin mesh 를 얹는다. mesh 는 content_rect
+    /// 로 clip 되므로 border/close 버튼을 덮지 않는다. surface 와 같은 디코드/합성 헬퍼를
+    /// 쓰되, target 맵을 instance_id 로 키잉하고 frame meta 를 `popup_mesh_frame` 에서 읽는다.
+    pub(super) fn render_egui_mesh_popups(
         &mut self,
-        sid: u32,
-        plugin_id: &str,
-        buffer_id: tasty_plugin_protocol::SharedBufferId,
-        generation: u64,
-        host_ppp: f32,
+        view: &wgpu::TextureView,
+        regions: &[(u64, PhysicalRect)],
         plugin_manager: &PluginManager,
     ) {
-        let Some(mem) = plugin_manager.plugin_buffer(plugin_id, buffer_id) else {
-            tracing::warn!(
-                plugin = %plugin_id,
-                buffer = buffer_id.0,
-                surface = sid,
-                "egui-mesh prepare: SharedMemory not registered"
-            );
-            return;
-        };
+        // 닫힌 popup 의 전용 Renderer 정리 (GPU 자원 해제).
+        let live: HashSet<u64> = regions.iter().map(|r| r.0).collect();
+        self.egui_mesh_popup_targets
+            .retain(|iid, _| live.contains(iid));
 
-        // SAFETY: SharedMemory 영역. tasty-shm 동기화 규약 — plugin commit(Release) →
-        // host Acquire-load → user data read. footer generation 이 frame 메타와 다르면
-        // half-painted(plugin 이 더 새 frame 을 쓰는 중) 이므로 다음 frame 까지 미룬다.
-        let raw = unsafe { mem.as_slice() };
-        // footer 길이 가드: plugin 이 footer(8B) 미만 버퍼를 등록하면 footer::load 의
-        // 안전 전제(raw.len >= SIZE)가 깨진다. canvas_prepare 형제 경로처럼 skip.
-        if raw.len() < tasty_shm::footer::SIZE {
-            tracing::warn!(
-                plugin = %plugin_id,
-                buffer = buffer_id.0,
-                surface = sid,
-                actual = raw.len(),
-                "egui-mesh prepare: buffer too small for footer"
-            );
-            return;
-        }
-        // SAFETY: footer 시작 8B 는 mmap 페이지 align 이라 8B aligned. 위 규약대로 Acquire-load.
-        let gen_now = unsafe { tasty_shm::footer::load(raw, Ordering::Acquire) };
-        if gen_now != generation {
-            // tear 회피: 이번 frame 은 기존 캐시(있으면)로 합성, 디코드는 다음 frame.
-            return;
-        }
-        let user = tasty_shm::footer::user_slice(raw);
-
-        let decoded = match tasty_plugin_protocol::mesh_wire::decode_paint(user) {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::warn!(surface = sid, "egui-mesh prepare: decode failed: {e}");
-                return;
-            }
-        };
-
-        // ppp 불일치 가드 (§9-4): 리사이즈/DPI 전환 직후 plugin 이 옛 ppp 로 tessellate 한
-        // stale mesh 일 수 있다. host ppp 와 어긋나면 이번 frame 합성을 미룬다 — generation 을
-        // 갱신하지 않으므로 다음 frame 에 다시 시도하고, plugin 이 새 ppp 로 보내면 통과한다.
-        if (decoded.pixels_per_point - host_ppp).abs() > PPP_EPS {
-            tracing::debug!(
-                surface = sid,
-                decoded_ppp = decoded.pixels_per_point,
-                host_ppp,
-                "egui-mesh prepare: ppp mismatch, deferring composite"
-            );
-            return;
-        }
-
-        let t = self.egui_mesh_targets.get_mut(&sid).expect("ensured above");
-        // 전용 Renderer 라 TextureId 가 host 와 충돌하지 않는다. set → (이후 render) → free
-        // 순서로 frame 경계에서 원자 처리. free 대상은 primitives 가 참조하지 않으므로
-        // render 전에 풀어도 안전(set/free 는 서로소).
-        for (id, delta) in &decoded.textures_delta.set {
-            t.renderer
-                .update_texture(&self.device, &self.queue, *id, delta);
-        }
-        for id in &decoded.textures_delta.free {
-            t.renderer.free_texture(id);
-        }
-        t.primitives = decoded.primitives;
-        t.ppp = decoded.pixels_per_point;
-        t.generation = generation;
-        t.has_content = true;
-        t.translated_key = None; // 평행이동 캐시 무효화.
-    }
-
-    /// 캐시된 mesh 를 surface 물리 rect 영역에 합성한다(전용 Renderer + 전용 pass).
-    fn composite_egui_mesh_surface(
-        &mut self,
-        sid: u32,
-        view: &wgpu::TextureView,
-        rect: PhysicalRect,
-    ) {
         let size_in_pixels = [self.size.width, self.size.height];
-        let t = match self.egui_mesh_targets.get_mut(&sid) {
-            Some(t) if t.has_content => t,
-            _ => return,
-        };
-        let ppp = t.ppp;
-        if ppp <= 0.0 {
-            return;
-        }
+        for (iid, rect) in regions {
+            let Some(frame) = plugin_manager.popup_mesh_frame(*iid) else {
+                continue;
+            };
+            let frame_plugin_id = frame.plugin_id.clone();
+            let frame_buffer_id = frame.buffer_id;
+            let frame_generation = frame.generation;
+            let host_ppp = self.scale_factor;
 
-        // 평행이동 캐시 갱신 (generation/rect 변경 시에만 재계산).
-        let rect_bits = [
-            rect.x.value().to_bits(),
-            rect.y.value().to_bits(),
-            rect.width.value().to_bits(),
-            rect.height.value().to_bits(),
-        ];
-        let key = (t.generation, rect_bits);
-        if t.translated_key != Some(key) {
-            let offset = egui::vec2(rect.x.value() / ppp, rect.y.value() / ppp);
-            let bounds = egui::Rect::from_min_size(
-                egui::pos2(rect.x.value() / ppp, rect.y.value() / ppp),
-                egui::vec2(rect.width.value() / ppp, rect.height.value() / ppp),
-            );
-            t.translated = offset_and_clip(&t.primitives, offset, bounds);
-            t.translated_key = Some(key);
-        }
-        if t.translated.is_empty() {
-            return;
-        }
+            if !self.egui_mesh_popup_targets.contains_key(iid) {
+                let renderer =
+                    egui_wgpu::Renderer::new(&self.device, self.config.format, None, 1, false);
+                self.egui_mesh_popup_targets
+                    .insert(*iid, EguiMeshRenderTarget::new(renderer));
+            }
 
-        let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels,
-            pixels_per_point: ppp,
-        };
+            let needs_decode = {
+                let t = &self.egui_mesh_popup_targets[iid];
+                !t.has_content || t.generation != frame_generation
+            };
+            if needs_decode {
+                if let Some(mem) = plugin_manager.plugin_buffer(&frame_plugin_id, frame_buffer_id) {
+                    // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
+                    let raw = unsafe { mem.as_slice() };
+                    decode_mesh_into_target(
+                        &self.device,
+                        &self.queue,
+                        self.egui_mesh_popup_targets
+                            .get_mut(iid)
+                            .expect("ensured above"),
+                        raw,
+                        frame_generation,
+                        host_ppp,
+                        &frame_plugin_id,
+                    );
+                } else {
+                    tracing::warn!(
+                        plugin = %frame_plugin_id,
+                        buffer = frame_buffer_id.0,
+                        popup = iid,
+                        "egui-mesh popup prepare: SharedMemory not registered"
+                    );
+                }
+            }
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("egui_mesh_encoder"),
-            });
-        t.renderer.update_buffers(
-            &self.device,
-            &self.queue,
-            &mut encoder,
-            &t.translated,
-            &screen_descriptor,
-        );
-        {
-            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("egui_mesh_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            let mut render_pass = render_pass.forget_lifetime();
-            t.renderer
-                .render(&mut render_pass, &t.translated, &screen_descriptor);
+            if let Some(t) = self.egui_mesh_popup_targets.get_mut(iid) {
+                composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
+            }
         }
-        self.queue.submit(std::iter::once(encoder.finish()));
     }
 }
 

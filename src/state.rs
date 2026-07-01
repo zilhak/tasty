@@ -403,6 +403,21 @@ pub struct AppState {
     /// App 메인 루프가 drain해 `PluginManager::close_popup_instance`를 호출한다.
     pub(crate) plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
 
+    /// egui-mesh popup(A2) 합성 영역. `draw_plugin_popups` 가 매 egui frame 채우고,
+    /// `gpu.render` 가 host egui pass *후* 각 (instance_id, 물리 콘텐츠 rect)에 plugin
+    /// mesh 를 합성한다. 셸(scrim/bg/border)은 host egui 가, 내용만 plugin mesh 가 그린다.
+    pub(crate) plugin_mesh_popup_regions: Vec<(u64, crate::model::PhysicalRect)>,
+
+    /// egui-mesh popup 별 마지막으로 보낸 set_context geom `(w_px, h_px, ppp_bits)`.
+    /// 정적 화면을 매 frame 무조건 보내지 않기 위한 변경 감지(surface forward 와 동형).
+    pub(crate) plugin_mesh_popup_geom: std::collections::HashMap<u64, (u32, u32, u32)>,
+
+    /// 이미 bootstrap set_context 를 보낸 egui-mesh popup 인스턴스. paint frame 이
+    /// 아직 안 온 동안 set_context 를 1회만 보내기 위한 가드(surface `bootstrap_sent` 동형).
+    /// frame 이 보이면 해제돼 crash 후 재bootstrap 된다. 핵심: 첫 frame(폰트 atlas 동봉)
+    /// 을 host 가 반드시 decode 하도록, bootstrap 을 매 frame 스팸하지 않는다.
+    pub(crate) plugin_mesh_popup_bootstrapped: std::collections::HashSet<u64>,
+
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. UI Intent (`Intent::Ui`) 와 Domain Intent
     /// (`Intent::Domain`) 가 한 큐 위에서 처리됨 (D.3.I.3 통합). 설계:
@@ -745,6 +760,9 @@ impl AppState {
             pending_file_drops: Vec::new(),
             plugin_popup_events: Vec::new(),
             plugin_popup_closes: Vec::new(),
+            plugin_mesh_popup_regions: Vec::new(),
+            plugin_mesh_popup_geom: std::collections::HashMap::new(),
+            plugin_mesh_popup_bootstrapped: std::collections::HashSet::new(),
             pending_intents: Vec::new(),
         }
     }

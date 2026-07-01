@@ -65,6 +65,10 @@ pub struct GpuState {
     /// surface 가 layout 에서 사라지면 정리돼 GPU 자원이 해제된다.
     pub(in crate::gfx::gpu) egui_mesh_targets:
         std::collections::HashMap<u32, egui_mesh_prepare::EguiMeshRenderTarget>,
+    /// egui-mesh popup instance_id → 전용 `egui_wgpu::Renderer` + 디코드 캐시 (A2).
+    /// surface 와 동형이되 popup 은 host egui pass *후* 합성된다. popup 이 닫히면 정리.
+    pub(in crate::gfx::gpu) egui_mesh_popup_targets:
+        std::collections::HashMap<u64, egui_mesh_prepare::EguiMeshRenderTarget>,
     /// When set, the next render will capture the frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
     /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
@@ -230,6 +234,7 @@ impl GpuState {
             surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState::default(),
             canvas_textures: canvas_texture::CanvasTextureCache::new(),
             egui_mesh_targets: std::collections::HashMap::new(),
+            egui_mesh_popup_targets: std::collections::HashMap::new(),
             pending_screenshot: None,
             perf: PerfAggregator::new(),
             proxy,
@@ -451,6 +456,16 @@ impl GpuState {
         );
         let egui_pass_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
+        // egui-mesh popup 합성 (A2): host egui pass *후* — 셸(scrim/bg/border)을 egui 가
+        // 그린 뒤 content_rect 에 plugin mesh 를 얹는다. `draw_plugin_popups` 가 egui frame
+        // 중 채운 영역을 읽는다. mesh 는 content_rect 로 clip 되어 셸을 덮지 않는다.
+        if let Some(mgr) = plugin_manager
+            && !state.plugin_mesh_popup_regions.is_empty()
+        {
+            let regions = state.plugin_mesh_popup_regions.clone();
+            self.render_egui_mesh_popups(&view, &regions, mgr);
+        }
+
         // 6. Screenshot + present
         let t0 = std::time::Instant::now();
         if let Some(path) = self.pending_screenshot.take() {
@@ -556,6 +571,14 @@ impl GpuState {
     /// Get egui's actual pixels_per_point (what it uses for rendering).
     pub fn egui_pixels_per_point(&self) -> f32 {
         self.egui_ctx.pixels_per_point()
+    }
+
+    /// debug 전용: 다음 frame 의 egui 입력 큐에 합성 이벤트를 주입한다(egui-mesh popup
+    /// 입력 forward 의 헤드리스 검증용). release 미노출 — 사용자 입력 재현은 debug 격리.
+    #[cfg(debug_assertions)]
+    pub fn debug_push_egui_events(&mut self, events: Vec<egui::Event>) {
+        self.egui_state.egui_input_mut().events.extend(events);
+        self.egui_ctx.request_repaint();
     }
 
     /// Get egui's zoom factor.
