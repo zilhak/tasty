@@ -91,7 +91,7 @@ Pane 은 tmux/iTerm2 에 대응 개념이 **없는** tasty 고유 설계다. 그
 | Pane / Tab | `Pane` / `Tab` |
 | 하위 레이아웃 | `SurfaceLayout` (이진 트리: Leaf/Split) |
 | Surface | `Surface` trait; plugin surface 는 host 에 `RemoteSurface` 로 보관 |
-| Popup / Toast / Banner | `PopupDef`+`PopupManager` / `ToastState`+`ToastManager` / `BannerDef`+`BannerManager`(예정) |
+| Popup / Toast / Banner | `PopupDef`+`PopupManager` / `ToastState`+`ToastManager` / `BannerDef`+`BannerManager` |
 | 상태바 | `StatusBar` 계열 (`StatusBarData`/`StatusBarAction`/`draw_status_bar`) |
 | 길이 타입 | `PhysicalPx` / `LogicalPx` (→ [typed-length.md](typed-length.md)) |
 
