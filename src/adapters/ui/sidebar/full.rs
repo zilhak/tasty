@@ -7,8 +7,29 @@ use crate::state::AppState;
 use crate::theme;
 
 use super::view::{
-    DragSnapshot, SidebarFullAction, SidebarFullProps, WorkspaceEntryView, draw_full_sidebar_view,
+    CategorySectionView, DragSnapshot, SidebarFullAction, SidebarFullProps, WorkspaceEntryView,
+    draw_full_sidebar_view,
 };
+
+/// 워크스페이스 1개를 `WorkspaceEntryView` snapshot 으로 변환.
+fn entry_view(
+    engine: &crate::core::CoreState,
+    global_idx: usize,
+    ws: &crate::model::Workspace,
+    active_ws: usize,
+) -> WorkspaceEntryView {
+    let surface_ids = ws.all_surface_ids();
+    WorkspaceEntryView {
+        name: ws.name.clone(),
+        subtitle: ws.subtitle.clone(),
+        description: ws.description.clone(),
+        busy_count: engine.busy_count(&surface_ids),
+        has_highlight: engine.notifications.has_highlighted_surface(&surface_ids),
+        attached: engine.attach.workspace_holder(ws.id).is_some(),
+        is_mirror: ws.mirror,
+        is_active: global_idx == active_ws,
+    }
+}
 
 pub struct FullSidebarResult {
     pub collapse_clicked: bool,
@@ -30,20 +51,42 @@ pub fn draw_full_sidebar(
         .workspaces
         .iter()
         .enumerate()
-        .map(|(i, ws)| {
-            let surface_ids = ws.all_surface_ids();
-            WorkspaceEntryView {
-                name: ws.name.clone(),
-                subtitle: ws.subtitle.clone(),
-                description: ws.description.clone(),
-                busy_count: engine.busy_count(&surface_ids),
-                has_highlight: engine.notifications.has_highlighted_surface(&surface_ids),
-                attached: engine.attach.workspace_holder(ws.id).is_some(),
-                is_mirror: ws.mirror,
-                is_active: i == active_ws,
-            }
-        })
+        .map(|(i, ws)| entry_view(engine, i, ws, active_ws))
         .collect();
+
+    // 카테고리 토글 on 이면 섹션 그룹 데이터를 만든다. categories() 순서 = 표시 순서
+    // (normal 항상 맨 위). 각 섹션의 entries 는 workspaces_in_category() 가 주는
+    // (전역 인덱스, &ws) 를 보존해 사이드바 action 의 전역 인덱스 계약을 지킨다.
+    let workspaces_heading_owned = t("sidebar.workspaces_heading").to_string();
+    let sections: Option<Vec<CategorySectionView>> =
+        if engine.settings.general.workspace_categories_enabled {
+            Some(
+                engine
+                    .categories()
+                    .iter()
+                    .map(|cat| {
+                        let entries = engine
+                            .workspaces_in_category(cat.id)
+                            .into_iter()
+                            .map(|(gi, ws)| (gi, entry_view(engine, gi, ws, active_ws)))
+                            .collect();
+                        CategorySectionView {
+                            id: cat.id,
+                            label: if cat.is_normal() {
+                                workspaces_heading_owned.clone()
+                            } else {
+                                cat.name.clone()
+                            },
+                            is_reserved: cat.is_normal(),
+                            collapsed: cat.collapsed,
+                            entries,
+                        }
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
 
     let drag = state.dialogs.ws_drag.as_ref().map(|d| DragSnapshot {
         ws_idx: d.ws_idx,
@@ -94,6 +137,7 @@ pub fn draw_full_sidebar(
             let props = SidebarFullProps {
                 theme: &th,
                 workspaces: &workspaces,
+                categories: sections.as_deref(),
                 drag,
                 tools_label,
                 collapse_label: &collapse_label,
@@ -170,6 +214,12 @@ pub fn draw_full_sidebar(
             SidebarFullAction::NewWorkspaceContextMenu { x, y } => {
                 state.dialogs.pending_native_menu =
                     Some(crate::state::PendingNativeMenu::NewWorkspaceButton { x, y });
+            }
+            SidebarFullAction::CategoryHeaderToggle(cat_id) => {
+                // 헤더 클릭 → 접힘 토글 + 영속(mark_layout_dirty). 접힘은 layout.json
+                // 대상이고 확장↔레일이 공유하는 per-category 상태(TODO 02 setter).
+                engine.toggle_category_collapsed(cat_id);
+                engine.mark_layout_dirty();
             }
         }
     }

@@ -31,10 +31,27 @@ pub struct WorkspaceEntryView {
     pub is_active: bool,
 }
 
+/// 워크스페이스 카테고리 섹션 1개(사이드바 폴더). `entries` 는 그 카테고리에 속한
+/// 워크스페이스를 **전역 인덱스 동반**으로 담는다 — 사이드바 action(클릭/드래그)이
+/// `engine.workspaces` 의 전역 인덱스로 동작하므로 그룹 렌더에서도 전역 인덱스를 보존한다.
+#[derive(Debug, Clone)]
+pub struct CategorySectionView {
+    pub id: crate::model::WorkspaceCategoryId,
+    /// 표시 라벨 — normal(예약) 은 "워크스페이스" heading, 그 외 카테고리 이름.
+    pub label: String,
+    /// normal(예약) 카테고리 여부 — rename/delete 불가, 추가 액션만.
+    pub is_reserved: bool,
+    pub collapsed: bool,
+    /// (전역 인덱스, 행 뷰) 목록.
+    pub entries: Vec<(usize, WorkspaceEntryView)>,
+}
+
 /// Full sidebar 의 view 입력. labels 는 사전 번역.
 pub struct SidebarFullProps<'a> {
     pub theme: &'a Theme,
     pub workspaces: &'a [WorkspaceEntryView],
+    /// `Some` 이면 카테고리 섹션으로 그룹 렌더(토글 on), `None` 이면 기존 평면 렌더.
+    pub categories: Option<&'a [CategorySectionView]>,
     pub drag: Option<DragSnapshot>,
     pub tools_label: &'a str,
     pub collapse_label: &'a str,
@@ -99,6 +116,8 @@ pub enum SidebarFullAction {
         x: f32,
         y: f32,
     },
+    /// 카테고리 헤더 클릭 — 접힘/펼침 토글.
+    CategoryHeaderToggle(crate::model::WorkspaceCategoryId),
 }
 
 /// Collapsed sidebar view 가 보고하는 사용자 의도.
@@ -244,94 +263,65 @@ pub fn draw_full_sidebar_view(
             // 섹션 간 간격은 아래 add_space 들이 명시적으로 준다.
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(8.0);
-            draw_section_heading(ui, th, props.workspaces_heading);
-            ui.add_space(4.0);
             let mut card_rects: Vec<(usize, egui::Rect)> = Vec::new();
 
-            // 디자인 chrome.jsx:141-149 — 목록 블록 상단 보더 (separator).
-            if !props.workspaces.is_empty() {
-                draw_list_separator(ui, th, 0.0);
+            if let Some(sections) = props.categories {
+                // 그룹 렌더(토글 on) — 카테고리별 헤더(chevron) + 소속 행. 접힘/빈
+                // 카테고리는 헤더만. normal 은 항상 맨 위(sections 순서 = 표시 순서).
+                for section in sections {
+                    if draw_category_header(ui, th, &section.label, section.collapsed) {
+                        actions.push(SidebarFullAction::CategoryHeaderToggle(section.id));
+                    }
+                    if !section.collapsed && !section.entries.is_empty() {
+                        // 목록 블록 상단 보더.
+                        draw_list_separator(ui, th, 0.0);
+                        for (row_i, (global_idx, ws)) in section.entries.iter().enumerate() {
+                            if row_i > 0 {
+                                draw_list_separator(ui, th, 32.0);
+                            }
+                            draw_ws_row(ui, props, *global_idx, ws, &mut actions, &mut card_rects);
+                        }
+                        // 목록 블록 하단 보더.
+                        draw_list_separator(ui, th, 0.0);
+                    }
+                }
+            } else {
+                // 평면 렌더(토글 off) — 단일 "워크스페이스" heading + 전체 행.
+                draw_section_heading(ui, th, props.workspaces_heading);
+                ui.add_space(4.0);
+
+                // 디자인 chrome.jsx:141-149 — 목록 블록 상단 보더 (separator).
+                if !props.workspaces.is_empty() {
+                    draw_list_separator(ui, th, 0.0);
+                }
+
+                for (i, ws) in props.workspaces.iter().enumerate() {
+                    // 행 사이 1px 구분선, 좌측 32px 들여쓰기 (디자인 margin-left:32px).
+                    if i > 0 {
+                        draw_list_separator(ui, th, 32.0);
+                    }
+                    draw_ws_row(ui, props, i, ws, &mut actions, &mut card_rects);
+                }
+
+                // 디자인 chrome.jsx:141-149 — 목록 블록 하단 보더 (separator).
+                if !props.workspaces.is_empty() {
+                    draw_list_separator(ui, th, 0.0);
+                }
             }
 
-            for (i, ws) in props.workspaces.iter().enumerate() {
-                // 행 사이 1px 구분선, 좌측 32px 들여쓰기 (디자인 margin-left:32px).
-                if i > 0 {
-                    draw_list_separator(ui, th, 32.0);
-                }
-                // switch-number overlay: workspace_switch_modifier 홀드 + 단축키 있는
-                // 워크스페이스(1–9)는 leading status dot 을 숫자 키캡으로 in-place 교체.
-                let switch_digit = if props.workspace_switch_held {
-                    crate::adapters::ui::switch_overlay::workspace_digit(i)
-                } else {
-                    None
-                };
-                // 등장 페이드(90ms, motion-ui-fast) — held 여부로 매 프레임 구동.
-                let fade = crate::adapters::ui::switch_overlay::appear_fade(
-                    ui.ctx(),
-                    th,
-                    ("ws_full", i),
-                    props.workspace_switch_held,
-                );
-                let card_rect =
-                    draw_workspace_card(ui, th, ws, props.occupied_hover, switch_digit, fade);
-                let card_response = ui.interact(
-                    card_rect,
-                    egui::Id::new(("ws_card", i)),
-                    egui::Sense::click_and_drag(),
-                );
-
-                if card_response.clicked() {
-                    actions.push(SidebarFullAction::WorkspaceClicked(i));
-                }
-
-                if card_response.secondary_clicked() {
-                    let pos = card_response.interact_pointer_pos().unwrap_or_default();
-                    actions.push(SidebarFullAction::WorkspaceContextMenu {
-                        ws_idx: i,
-                        x: pos.x,
-                        y: pos.y,
-                    });
-                    ui.painter().rect_stroke(
-                        card_rect,
-                        4.0,
-                        egui::Stroke::new(2.0, th.accent_success()),
-                        egui::StrokeKind::Inside,
-                    );
-                }
-
-                if card_response.drag_started_by(egui::PointerButton::Primary) {
-                    let y = card_response
-                        .interact_pointer_pos()
-                        .map(|p| p.y)
-                        .unwrap_or(0.0);
-                    actions.push(SidebarFullAction::DragStart { ws_idx: i, y });
-                }
-
-                if card_response.dragged_by(egui::PointerButton::Primary)
-                    && let Some(drag) = props.drag
-                    && drag.ws_idx == i
-                    && let Some(pos) = card_response.interact_pointer_pos()
-                {
-                    actions.push(SidebarFullAction::DragUpdate { y: pos.y });
-                }
-
-                card_rects.push((i, card_rect));
-            }
-
-            // 디자인 chrome.jsx:141-149 — 목록 블록 하단 보더 (separator).
-            if !props.workspaces.is_empty() {
-                draw_list_separator(ui, th, 0.0);
-            }
-
-            // Drag release / drop marker / ghost preview.
+            // Drag release / drop marker / ghost preview. card_rects 는 (전역 인덱스,
+            // rect) 를 담으므로 position → 전역 인덱스 매핑으로 그룹/평면 모두 정확.
             if let Some(drag) = props.drag {
                 let released = !ui.input(|i| i.pointer.primary_down());
                 if released {
-                    let target = card_rects
+                    let pos = card_rects
                         .iter()
                         .position(|(_, rect)| drag.current_y < rect.center().y)
                         .unwrap_or(card_rects.len().saturating_sub(1));
-                    let target = target.min(props.workspaces.len().saturating_sub(1));
+                    let target = card_rects
+                        .get(pos)
+                        .map(|(gi, _)| *gi)
+                        .unwrap_or(drag.ws_idx);
                     let drop = (target != drag.ws_idx).then_some(target);
                     actions.push(SidebarFullAction::DragReleased { drop_target: drop });
                 } else {
@@ -738,6 +728,133 @@ fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
     ui.painter().galley(pos, galley, th.subtext0.into());
 }
 
+/// ui_kit 카테고리 헤더 (chrome.jsx `CategoryHeader` 전사) — chevron + 대문자 캡스
+/// 라벨. 접힘 시 chevron 우향(▶), 펼침 시 하향(▼). hover 시 overlay-hover 배경.
+/// 클릭(접힘 토글) 여부 반환. 라벨 스타일은 `draw_section_heading` 과 동일(모노 캡스,
+/// muted) 하고 좌측에 chevron 만 더한다. 디자인 padding: top=space-md, 좌우=space-sm,
+/// bottom=space-xs.
+fn draw_category_header(ui: &mut egui::Ui, th: &Theme, label: &str, collapsed: bool) -> bool {
+    let pad_top = th.spacing_md.value();
+    let pad_bottom = th.spacing_xs.value();
+    let pad_left = th.spacing_sm.value();
+    let gap = th.spacing_xs.value();
+    let label_h = 18.0; // draw_section_heading 헤딩 행 높이와 동일.
+    let total_h = pad_top + label_h + pad_bottom;
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), total_h),
+        egui::Sense::click(),
+    );
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, th.hover_overlay.to_egui_premultiplied());
+    }
+    let row_center_y = rect.min.y + pad_top + label_h / 2.0;
+    // chevron 12px, muted. 접힘=우향, 펼침=하향 (디자인 rotate(90deg) 를 아이콘 교체로).
+    let chevron_size = 12.0;
+    let chevron_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.min.x + pad_left + chevron_size / 2.0, row_center_y),
+        egui::vec2(chevron_size, chevron_size),
+    );
+    let icon = if collapsed {
+        icons::CHEVRON_RIGHT
+    } else {
+        icons::CHEVRON_DOWN
+    };
+    icon.image(chevron_size, th.subtext0.into())
+        .paint_at(ui, chevron_rect);
+    // 라벨 — 디자인 textTransform:uppercase (카테고리명도 대문자). 모노 캡스 muted.
+    let text_x = chevron_rect.max.x + gap;
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &label.to_uppercase(),
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::monospace(th.sidebar_section_heading_font_size.value()),
+            extra_letter_spacing: 0.7,
+            color: th.subtext0.into(),
+            ..Default::default()
+        },
+    );
+    let galley = ui.painter().layout_job(job);
+    let pos = egui::pos2(text_x, row_center_y - galley.size().y / 2.0);
+    ui.painter().galley(pos, galley, th.subtext0.into());
+    resp.clicked()
+}
+
+/// Full 사이드바 워크스페이스 행 1개 — card 렌더 + 클릭/우클릭/드래그 action 을
+/// `actions` 로 보고하고 (전역 인덱스, rect) 를 `card_rects` 에 누적한다. 그룹/평면
+/// 렌더가 공유한다. `global_idx` 는 반드시 `engine.workspaces` 의 전역 인덱스여야
+/// action(WorkspaceClicked/DragStart 등)이 올바른 대상을 가리킨다.
+fn draw_ws_row(
+    ui: &mut egui::Ui,
+    props: &SidebarFullProps<'_>,
+    global_idx: usize,
+    ws: &WorkspaceEntryView,
+    actions: &mut Vec<SidebarFullAction>,
+    card_rects: &mut Vec<(usize, egui::Rect)>,
+) {
+    let th = props.theme;
+    // switch-number overlay: workspace_switch_modifier 홀드 + 단축키 있는 ws(1–9)는
+    // leading status dot 을 숫자 키캡으로 in-place 교체. 전역 인덱스 기준.
+    let switch_digit = if props.workspace_switch_held {
+        crate::adapters::ui::switch_overlay::workspace_digit(global_idx)
+    } else {
+        None
+    };
+    let fade = crate::adapters::ui::switch_overlay::appear_fade(
+        ui.ctx(),
+        th,
+        ("ws_full", global_idx),
+        props.workspace_switch_held,
+    );
+    let card_rect = draw_workspace_card(ui, th, ws, props.occupied_hover, switch_digit, fade);
+    let card_response = ui.interact(
+        card_rect,
+        egui::Id::new(("ws_card", global_idx)),
+        egui::Sense::click_and_drag(),
+    );
+
+    if card_response.clicked() {
+        actions.push(SidebarFullAction::WorkspaceClicked(global_idx));
+    }
+
+    if card_response.secondary_clicked() {
+        let pos = card_response.interact_pointer_pos().unwrap_or_default();
+        actions.push(SidebarFullAction::WorkspaceContextMenu {
+            ws_idx: global_idx,
+            x: pos.x,
+            y: pos.y,
+        });
+        ui.painter().rect_stroke(
+            card_rect,
+            4.0,
+            egui::Stroke::new(2.0, th.accent_success()),
+            egui::StrokeKind::Inside,
+        );
+    }
+
+    if card_response.drag_started_by(egui::PointerButton::Primary) {
+        let y = card_response
+            .interact_pointer_pos()
+            .map(|p| p.y)
+            .unwrap_or(0.0);
+        actions.push(SidebarFullAction::DragStart {
+            ws_idx: global_idx,
+            y,
+        });
+    }
+
+    if card_response.dragged_by(egui::PointerButton::Primary)
+        && let Some(drag) = props.drag
+        && drag.ws_idx == global_idx
+        && let Some(pos) = card_response.interact_pointer_pos()
+    {
+        actions.push(SidebarFullAction::DragUpdate { y: pos.y });
+    }
+
+    card_rects.push((global_idx, card_rect));
+}
+
 /// 워크스페이스 목록의 1px 수평 구분선 (디자인 `separator` 토큰).
 /// 블록 상하 보더는 `left_inset=0`, 행 사이 구분선은 `left_inset=32`(디자인
 /// `margin-left:32px`). `separator` 는 premultiplied 반투명 바이트로 저장돼 있어
@@ -1010,6 +1127,7 @@ mod tests {
                 let props = SidebarFullProps {
                     theme: &theme,
                     workspaces: &workspaces,
+                    categories: None,
                     drag: None,
                     tools_label: "Tools",
                     collapse_label: "Collapse",
@@ -1127,6 +1245,67 @@ mod tests {
         ];
         let actions = run_full(ws, false);
         assert!(actions.is_empty());
+    }
+
+    fn run_full_grouped(
+        sections: Vec<CategorySectionView>,
+        workspaces: Vec<WorkspaceEntryView>,
+    ) -> Vec<SidebarFullAction> {
+        let ctx = egui::Context::default();
+        let mut out: Vec<SidebarFullAction> = Vec::new();
+        let theme = test_theme();
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::SidePanel::left("test_full_grouped").show(ctx, |ui| {
+                let props = SidebarFullProps {
+                    theme: &theme,
+                    workspaces: &workspaces,
+                    categories: Some(&sections),
+                    drag: None,
+                    tools_label: "Tools",
+                    collapse_label: "Collapse",
+                    plugins_label: "Plugins",
+                    settings_label: "Settings",
+                    new_workspace_label: "New Workspace",
+                    workspaces_heading: "WORKSPACES",
+                    occupied_hover: "Held by another client",
+                    plugin_alert: 0,
+                    workspace_switch_held: false,
+                };
+                out = draw_full_sidebar_view(ui, &props);
+            });
+        }));
+        out
+    }
+
+    #[test]
+    fn full_view_grouped_renders_sections_without_panic() {
+        // normal(펼침, 2행) + Services(접힘, 1행) + Archived(빈) — 헤더/행/접힘/빈 경로 전부.
+        let workspaces = vec![mock_ws("a", true), mock_ws("b", false), mock_ws("c", false)];
+        let sections = vec![
+            CategorySectionView {
+                id: 0,
+                label: "WORKSPACES".into(),
+                is_reserved: true,
+                collapsed: false,
+                entries: vec![(0, mock_ws("a", true)), (1, mock_ws("b", false))],
+            },
+            CategorySectionView {
+                id: 1,
+                label: "Services".into(),
+                is_reserved: false,
+                collapsed: true,
+                entries: vec![(2, mock_ws("c", false))],
+            },
+            CategorySectionView {
+                id: 2,
+                label: "Archived".into(),
+                is_reserved: false,
+                collapsed: false,
+                entries: vec![],
+            },
+        ];
+        let actions = run_full_grouped(sections, workspaces);
+        assert!(actions.is_empty(), "expected no actions, got {actions:?}");
     }
 
     #[test]
