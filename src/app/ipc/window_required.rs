@@ -20,7 +20,9 @@ impl App {
             is_window_required = is_window_required
                 || cmd.request.method == "debug.info"
                 || cmd.request.method == "ui.screenshot"
-                || cmd.request.method == "debug.inject_window_mouse";
+                || cmd.request.method == "debug.inject_window_mouse"
+                || cmd.request.method == "debug.inject_egui_mouse"
+                || cmd.request.method == "debug.inject_egui_key";
         }
         if !is_window_required {
             return IpcStep::NotHandled;
@@ -116,6 +118,60 @@ impl App {
                 _ => InjectPointer::Move,
             };
             let ok = w.debug_inject_mesh_pointer(surface_id, fx, fy, action);
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                serde_json::json!({ "injected": ok }),
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        // egui-mesh popup(A2) 입력 forward 검증용 — winit 핸들러가 아니라 egui 입력 큐에
+        // 직접 주입한다(popup 은 egui input 을 통해 plugin 으로 forward 되기 때문). 좌표는
+        // window 정규화 (fx,fy ∈ [0,1] 논리). release 미노출, debug 격리(원칙 1·3).
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.inject_egui_mouse" {
+            use crate::view::main::debug_input::InjectPointer;
+            let p = &cmd.request.params;
+            let fx = p.get("fx").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+            let fy = p.get("fy").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+            let event_type = p
+                .get("event_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("move");
+            let button = match p.get("button").and_then(|v| v.as_u64()).unwrap_or(0) {
+                1 => winit::event::MouseButton::Middle,
+                2 => winit::event::MouseButton::Right,
+                _ => winit::event::MouseButton::Left,
+            };
+            let action = match event_type {
+                "press" => InjectPointer::Button {
+                    button,
+                    pressed: true,
+                },
+                "release" => InjectPointer::Button {
+                    button,
+                    pressed: false,
+                },
+                "scroll" => InjectPointer::Scroll {
+                    dx: p.get("scroll_dx").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    dy: p.get("scroll_dy").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                },
+                _ => InjectPointer::Move,
+            };
+            let ok = w.debug_inject_egui_pointer(fx, fy, action);
+            let response = host_ipc::protocol::JsonRpcResponse::success(
+                cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
+                serde_json::json!({ "injected": ok }),
+            );
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
+        #[cfg(debug_assertions)]
+        if cmd.request.method == "debug.inject_egui_key" {
+            let p = &cmd.request.params;
+            let key = p.get("key").and_then(|v| v.as_str()).unwrap_or("Escape");
+            let pressed = p.get("pressed").and_then(|v| v.as_bool()).unwrap_or(true);
+            let ok = w.debug_inject_egui_key(key, pressed);
             let response = host_ipc::protocol::JsonRpcResponse::success(
                 cmd.request.id.clone().unwrap_or(serde_json::Value::Null),
                 serde_json::json!({ "injected": ok }),

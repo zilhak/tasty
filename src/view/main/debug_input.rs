@@ -63,4 +63,64 @@ impl MainView {
         }
         true
     }
+
+    /// window 정규화 좌표 (fx, fy ∈ [0,1] 논리) 에 포인터 동작을 egui 입력 큐로 주입한다.
+    ///
+    /// egui-mesh popup(A2)은 `draw_plugin_popups` 가 `ctx.input` 의 egui 이벤트를 읽어
+    /// plugin 으로 forward 한다 — winit 핸들러를 거치는 [`debug_inject_mesh_pointer`] 와
+    /// 달리, 합성 egui 이벤트를 다음 frame 입력에 직접 넣어 그 실제 forward 경로를 탄다.
+    pub(crate) fn debug_inject_egui_pointer(
+        &mut self,
+        fx: f32,
+        fy: f32,
+        action: InjectPointer,
+    ) -> bool {
+        let ppp = self.base.gpu.egui_pixels_per_point().max(f32::EPSILON);
+        let (w, h) = self.base.gpu.surface_config_size();
+        let pos = egui::pos2((w as f32 / ppp) * fx, (h as f32 / ppp) * fy);
+        let events = match action {
+            // 클릭 전 hover 를 같은 pos 로 세팅해야 plugin egui 가 위젯 hit-test 를 맞춘다.
+            InjectPointer::Move => vec![egui::Event::PointerMoved(pos)],
+            InjectPointer::Button { button, pressed } => vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: map_egui_button(button),
+                    pressed,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            InjectPointer::Scroll { dx, dy } => vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(dx, dy),
+                modifiers: egui::Modifiers::default(),
+            }],
+        };
+        self.base.gpu.debug_push_egui_events(events);
+        true
+    }
+
+    /// 키 이벤트를 egui 입력 큐로 주입한다(popup Esc 등 검증용). 매핑 불가 키면 `false`.
+    pub(crate) fn debug_inject_egui_key(&mut self, key_name: &str, pressed: bool) -> bool {
+        let Some(key) = egui::Key::from_name(key_name) else {
+            return false;
+        };
+        self.base.gpu.debug_push_egui_events(vec![egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::default(),
+        }]);
+        true
+    }
+}
+
+/// winit 마우스 버튼 → egui 포인터 버튼 (debug 주입용).
+fn map_egui_button(button: MouseButton) -> egui::PointerButton {
+    match button {
+        MouseButton::Right => egui::PointerButton::Secondary,
+        MouseButton::Middle => egui::PointerButton::Middle,
+        _ => egui::PointerButton::Primary,
+    }
 }
