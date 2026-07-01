@@ -37,11 +37,12 @@ use egui::{
 };
 use tasty_plugin_protocol::mesh_wire::encode_paint;
 use tasty_plugin_protocol::{
-    ModifiersWire, PointerButtonWire, RawInputEventWire, SurfaceSetContextParams,
+    ModifiersWire, PointerButtonWire, PopupSetContextParams, RawInputEventWire, RawInputWire,
+    SurfaceSetContextParams,
 };
 
 #[cfg(unix)]
-use tasty_plugin_protocol::PluginEvent;
+use tasty_plugin_protocol::{PluginEvent, SharedBufferId};
 
 #[cfg(unix)]
 use crate::error::PluginError;
@@ -50,13 +51,11 @@ use crate::host::HostHandle;
 #[cfg(unix)]
 use crate::shared_buffer::SharedBuffer;
 
-/// 한 egui-mesh surface 의 plugin 측 렌더 상태. 자기 egui [`Context`](폰트 atlas 포함),
-/// 직전 출력 해시(invalidate 판정), shared buffer(unix) 를 들고 있다.
-///
-/// surface 하나당 인스턴스 하나를 둔다(여러 surface 면 `surface_id` 별로 분리). drop 시
-/// shared buffer 매핑이 해제된다.
-pub struct EguiMeshSurface {
-    surface_id: u32,
+/// egui-mesh 렌더 코어 — surface/popup 공통. 자기 egui [`Context`](폰트 atlas 포함),
+/// 직전 출력 해시(invalidate 판정), shared buffer(unix) 를 들고 있다. surface 와 popup 은
+/// 회신 알림(`PaintFrame` vs `PopupPaintFrame`)만 다르고 run_frame/commit 로직은 동일해
+/// 이 코어를 공유한다([`EguiMeshSurface`] / [`EguiMeshPopup`] 가 얇게 감싼다).
+struct EguiMeshCore {
     ctx: Context,
     /// 직전 frame 에 인코드한 mesh 바이트의 해시. 같으면 정적 화면으로 보고 송신 생략.
     last_hash: Option<u64>,
@@ -65,12 +64,9 @@ pub struct EguiMeshSurface {
     buffer: Option<SharedBuffer>,
 }
 
-impl EguiMeshSurface {
-    /// `surface_id` 에 대응하는 새 egui-mesh surface 를 만든다. egui `default_fonts` 가
-    /// 설치된 독립 [`Context`] 를 소유한다.
-    pub fn new(surface_id: u32) -> Self {
+impl EguiMeshCore {
+    fn new() -> Self {
         Self {
-            surface_id,
             ctx: Context::default(),
             last_hash: None,
             #[cfg(unix)]
@@ -78,31 +74,17 @@ impl EguiMeshSurface {
         }
     }
 
-    /// 이 surface 의 host 측 식별자.
-    pub fn surface_id(&self) -> u32 {
-        self.surface_id
-    }
-
-    /// 폰트/스타일을 커스터마이즈할 수 있도록 내부 egui [`Context`] 를 노출한다.
-    /// (예: host 와 동일 폰트 설치 → `surface.context().set_fonts(...)`.)
-    pub fn context(&self) -> &Context {
-        &self.ctx
-    }
-
-    /// `set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
-    ///
-    /// 출력이 직전 frame 과 byte 단위로 동일하면(정적 화면) `None` 을 반환한다 — 호출자는
-    /// 송신을 생략한다. 그 외에는 [`mesh_wire::encode_paint`](encode_paint) 가 만든 바이트를
-    /// 반환한다(`decode_paint` 로 복원 가능).
-    ///
-    /// IPC/buffer 의존이 없어 단위 테스트로 set_context→tessellate→encode 라운드를 그대로
-    /// 검증할 수 있다.
-    pub fn run_frame(
+    /// 한 frame 을 그려 POD mesh 바이트를 만든다. 출력이 직전과 byte 단위로 동일하면
+    /// (정적 화면) `None` — 호출자는 송신을 생략한다.
+    fn run_frame(
         &mut self,
-        params: &SurfaceSetContextParams,
+        width_px: u32,
+        height_px: u32,
+        ppp: f32,
+        raw_input: &RawInputWire,
         run_ui: impl FnMut(&Context),
     ) -> Option<Vec<u8>> {
-        let raw = build_raw_input(params);
+        let raw = build_raw_input(width_px, height_px, ppp, raw_input);
         let full = self.ctx.run(raw, run_ui);
         // tessellate 는 plugin 이 수행한다(폰트 atlas 를 plugin 이 소유, research-a1 §2-1).
         let primitives = self.ctx.tessellate(full.shapes, full.pixels_per_point);
@@ -116,45 +98,27 @@ impl EguiMeshSurface {
         Some(bytes)
     }
 
-    /// `set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
-    /// [`PluginEvent::PaintFrame`] 알림을 보낸다.
-    ///
-    /// 출력이 직전과 같으면 buffer 갱신·송신 없이 `Ok(None)`. 변경됐으면 commit 후의
-    /// footer generation 을 `Ok(Some(gen))` 으로 반환한다.
-    ///
-    /// shared buffer 가 없거나 인코드 크기보다 작으면 [`HostHandle::create_shared_buffer`]
-    /// 로 (재)생성한다 — buffer_id 가 바뀌어도 `PaintFrame` 이 새 id 를 운반하므로 host 가
-    /// 따라온다.
+    /// 인코드된 바이트를 shared buffer 에 commit 하고 (buffer_id, generation) 을 돌려준다.
+    /// 회신 알림(PaintFrame/PopupPaintFrame)은 호출자가 보낸다.
     #[cfg(unix)]
-    pub fn paint(
+    fn commit(
         &mut self,
         host: &HostHandle,
-        params: &SurfaceSetContextParams,
-        run_ui: impl FnMut(&Context),
-    ) -> Result<Option<u64>, PluginError> {
-        let Some(bytes) = self.run_frame(params, run_ui) else {
-            return Ok(None);
-        };
+        bytes: &[u8],
+    ) -> Result<(SharedBufferId, u64), PluginError> {
         self.ensure_buffer(host, bytes.len())?;
         let buffer = self
             .buffer
             .as_ref()
             .expect("ensure_buffer guarantees a buffer");
 
-        // SAFETY: 이 buffer 는 EguiMeshSurface 가 단독 소유한다(동시 mutate 없음). host 는
-        // commit 의 generation footer(fetch_add Release)로 half-painted frame 을 거른다.
+        // SAFETY: 이 buffer 는 코어가 단독 소유한다(동시 mutate 없음). host 는 commit 의
+        // generation footer(fetch_add Release)로 half-painted frame 을 거른다.
         unsafe {
-            buffer.as_mut_slice()[..bytes.len()].copy_from_slice(&bytes);
+            buffer.as_mut_slice()[..bytes.len()].copy_from_slice(bytes);
         }
         buffer.commit(None)?;
-
-        let generation = buffer.generation();
-        host.notify(&PluginEvent::PaintFrame {
-            surface_id: self.surface_id,
-            buffer_id: buffer.id(),
-            generation,
-        })?;
-        Ok(Some(generation))
+        Ok((buffer.id(), buffer.generation()))
     }
 
     /// shared buffer 가 `needed` 바이트를 담을 수 있게 보장한다. 부족하면 헤드룸을 둔
@@ -170,6 +134,142 @@ impl EguiMeshSurface {
     }
 }
 
+/// 한 egui-mesh surface 의 plugin 측 렌더 상태. surface 하나당 인스턴스 하나를 둔다
+/// (여러 surface 면 `surface_id` 별로 분리). drop 시 shared buffer 매핑이 해제된다.
+pub struct EguiMeshSurface {
+    surface_id: u32,
+    core: EguiMeshCore,
+}
+
+impl EguiMeshSurface {
+    /// `surface_id` 에 대응하는 새 egui-mesh surface 를 만든다. egui `default_fonts` 가
+    /// 설치된 독립 [`Context`] 를 소유한다.
+    pub fn new(surface_id: u32) -> Self {
+        Self {
+            surface_id,
+            core: EguiMeshCore::new(),
+        }
+    }
+
+    /// 이 surface 의 host 측 식별자.
+    pub fn surface_id(&self) -> u32 {
+        self.surface_id
+    }
+
+    /// 폰트/스타일을 커스터마이즈할 수 있도록 내부 egui [`Context`] 를 노출한다.
+    /// (예: host 와 동일 폰트 설치 → `surface.context().set_fonts(...)`.)
+    pub fn context(&self) -> &Context {
+        &self.core.ctx
+    }
+
+    /// `set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
+    ///
+    /// 출력이 직전 frame 과 byte 단위로 동일하면(정적 화면) `None` 을 반환한다 — 호출자는
+    /// 송신을 생략한다. IPC/buffer 의존이 없어 단위 테스트로 set_context→tessellate→encode
+    /// 라운드를 그대로 검증할 수 있다.
+    pub fn run_frame(
+        &mut self,
+        params: &SurfaceSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Option<Vec<u8>> {
+        self.core.run_frame(
+            params.width_px,
+            params.height_px,
+            params.pixels_per_point,
+            &params.raw_input,
+            run_ui,
+        )
+    }
+
+    /// `set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
+    /// [`PluginEvent::PaintFrame`] 알림을 보낸다. 출력이 직전과 같으면 `Ok(None)`,
+    /// 변경됐으면 commit 후의 footer generation 을 `Ok(Some(gen))` 으로 반환한다.
+    #[cfg(unix)]
+    pub fn paint(
+        &mut self,
+        host: &HostHandle,
+        params: &SurfaceSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Result<Option<u64>, PluginError> {
+        let Some(bytes) = self.run_frame(params, run_ui) else {
+            return Ok(None);
+        };
+        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        host.notify(&PluginEvent::PaintFrame {
+            surface_id: self.surface_id,
+            buffer_id,
+            generation,
+        })?;
+        Ok(Some(generation))
+    }
+}
+
+/// 한 egui-mesh popup 인스턴스의 plugin 측 렌더 상태(A2). [`EguiMeshSurface`] 의 popup
+/// 대응 — 회신 알림이 [`PluginEvent::PopupPaintFrame`] 이고 `instance_id` 로 키잉되는
+/// 점만 다르다. popup 인스턴스 하나당 하나를 두고, `popup.closed` 수신 시 drop 한다.
+pub struct EguiMeshPopup {
+    instance_id: u64,
+    core: EguiMeshCore,
+}
+
+impl EguiMeshPopup {
+    /// `instance_id` 에 대응하는 새 egui-mesh popup 을 만든다. egui `default_fonts` 가
+    /// 설치된 독립 [`Context`] 를 소유한다.
+    pub fn new(instance_id: u64) -> Self {
+        Self {
+            instance_id,
+            core: EguiMeshCore::new(),
+        }
+    }
+
+    /// 이 popup 의 host 측 인스턴스 식별자.
+    pub fn instance_id(&self) -> u64 {
+        self.instance_id
+    }
+
+    /// 폰트/스타일 커스터마이즈용 내부 egui [`Context`] 노출.
+    pub fn context(&self) -> &Context {
+        &self.core.ctx
+    }
+
+    /// `popup.set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
+    /// 정적 화면이면 `None`(송신 생략).
+    pub fn run_frame(
+        &mut self,
+        params: &PopupSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Option<Vec<u8>> {
+        self.core.run_frame(
+            params.width_px,
+            params.height_px,
+            params.pixels_per_point,
+            &params.raw_input,
+            run_ui,
+        )
+    }
+
+    /// `popup.set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
+    /// [`PluginEvent::PopupPaintFrame`] 알림을 보낸다. 정적 화면이면 `Ok(None)`.
+    #[cfg(unix)]
+    pub fn paint(
+        &mut self,
+        host: &HostHandle,
+        params: &PopupSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Result<Option<u64>, PluginError> {
+        let Some(bytes) = self.run_frame(params, run_ui) else {
+            return Ok(None);
+        };
+        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        host.notify(&PluginEvent::PopupPaintFrame {
+            instance_id: self.instance_id,
+            buffer_id,
+            generation,
+        })?;
+        Ok(Some(generation))
+    }
+}
+
 fn hash_bytes(bytes: &[u8]) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut hasher);
@@ -178,17 +278,14 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
 
 /// [`RawInputWire`] + 크기/ppp 를 egui [`RawInput`] 으로 매핑한다. 좌표는 surface-local
 /// 논리 포인트(좌상단 0,0)로 들어오므로 그대로 쓰고, screen_rect 는 물리 px / ppp 로 계산한다.
-fn build_raw_input(params: &SurfaceSetContextParams) -> RawInput {
+/// surface 와 popup 이 공유한다(키잉 id 만 다르고 렌더 컨텍스트 구조는 동일).
+fn build_raw_input(width_px: u32, height_px: u32, ppp: f32, input: &RawInputWire) -> RawInput {
     let mut raw = RawInput::default();
 
-    let ppp = if params.pixels_per_point > 0.0 {
-        params.pixels_per_point
-    } else {
-        1.0
-    };
+    let ppp = if ppp > 0.0 { ppp } else { 1.0 };
     // 물리 픽셀 → 논리 포인트. egui 레이아웃은 포인트 단위다.
-    let width_pt = params.width_px as f32 / ppp;
-    let height_pt = params.height_px as f32 / ppp;
+    let width_pt = width_px as f32 / ppp;
+    let height_pt = height_px as f32 / ppp;
     raw.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, vec2(width_pt, height_pt)));
 
     // ppp 는 viewport 의 native_pixels_per_point 로 전달 → ctx.pixels_per_point 가 이 값을
@@ -199,15 +296,10 @@ fn build_raw_input(params: &SurfaceSetContextParams) -> RawInput {
         .or_default()
         .native_pixels_per_point = Some(ppp);
 
-    raw.time = params.raw_input.time;
-    raw.focused = params.raw_input.focused;
-    raw.modifiers = map_modifiers(&params.raw_input.modifiers);
-    raw.events = params
-        .raw_input
-        .events
-        .iter()
-        .filter_map(map_event)
-        .collect();
+    raw.time = input.time;
+    raw.focused = input.focused;
+    raw.modifiers = map_modifiers(&input.modifiers);
+    raw.events = input.events.iter().filter_map(map_event).collect();
     raw
 }
 

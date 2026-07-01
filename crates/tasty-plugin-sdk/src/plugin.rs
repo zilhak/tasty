@@ -87,6 +87,28 @@ impl std::fmt::Debug for SurfaceSetContextCtx {
     }
 }
 
+/// `popup.set_context` 콜백 컨텍스트 — egui-mesh popup 인스턴스의 렌더 컨텍스트가 도착했을 때.
+///
+/// plugin 은 [`EguiMeshPopup`](crate::EguiMeshPopup)(egui-mesh feature) 를 들고
+/// `popup.paint(&ctx.host, &ctx.params, |egui_ctx| { ... })` 를 호출해 mesh 를 회신한다.
+/// `params.raw_input` 의 좌표는 popup 콘텐츠 영역 기준 논리 포인트(좌상단 0,0)다.
+#[derive(Clone)]
+pub struct PopupSetContextCtx {
+    /// popup 콘텐츠 영역의 크기(물리 px)/ppp/이번 frame 의 사용자 입력.
+    pub params: tasty_plugin_protocol::PopupSetContextParams,
+    /// `PopupPaintFrame` 알림 송신 및 shared buffer 생성에 쓰는 호스트 핸들.
+    pub host: HostHandle,
+}
+
+impl std::fmt::Debug for PopupSetContextCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PopupSetContextCtx")
+            .field("params", &self.params)
+            .field("host", &"HostHandle { .. }")
+            .finish()
+    }
+}
+
 /// 매니페스트 `[[contributes.commands]]`로 등록한 command가 사용자 단축키
 /// 매칭으로 호출됐을 때 전달되는 컨텍스트.
 #[derive(Debug, Clone)]
@@ -341,6 +363,13 @@ pub trait Plugin: Send + 'static {
             close: false,
         }
     }
+
+    /// `popup.set_context` — egui-mesh popup 인스턴스의 렌더 컨텍스트(크기/ppp/raw input)가
+    /// 도착함. plugin 은 자기 프로세스에서 egui 를 구동·tessellate 한 뒤
+    /// [`PluginEvent::PopupPaintFrame`](tasty_plugin_protocol::PluginEvent::PopupPaintFrame)
+    /// 로 mesh 를 비동기 회신한다([`EguiMeshPopup`](crate::EguiMeshPopup) 헬퍼가 은닉).
+    /// fire-and-forget — 이 콜백은 반환값이 없다. 기본 구현은 no-op.
+    fn paint_popup(&mut self, _ctx: PopupSetContextCtx) {}
 
     /// `popup.closed` — popup 인스턴스가 닫혔음을 통보. fire-and-forget.
     /// plugin은 인스턴스별 자체 상태를 정리한다. 기본 구현은 no-op.

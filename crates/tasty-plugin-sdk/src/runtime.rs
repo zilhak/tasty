@@ -24,10 +24,11 @@ use tasty_plugin_protocol::HandleChannelMessage;
 use tasty_plugin_protocol::{
     EventDispatchParams, IpcCallResult, IpcInvokeParams, METHOD_COMMAND_INVOKE,
     METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE, METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED,
-    METHOD_POPUP_EVENT, METHOD_POPUP_OPEN, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE,
-    METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE,
+    METHOD_POPUP_EVENT, METHOD_POPUP_OPEN, METHOD_POPUP_SET_CONTEXT, METHOD_SHUTDOWN,
+    METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY, METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE,
     METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest,
-    PluginResponse, PopupClosedParams, PopupOpenParams, SurfaceSetContextParams,
+    PluginResponse, PopupClosedParams, PopupOpenParams, PopupSetContextParams,
+    SurfaceSetContextParams,
 };
 
 use crate::connection::Connection;
@@ -577,6 +578,21 @@ pub(crate) fn dispatch<P: Plugin>(
                 instance_id: parsed.instance_id,
                 reason: parsed.reason,
             });
+            Ok(Value::Null)
+        }
+        METHOD_POPUP_SET_CONTEXT => {
+            let parsed: PopupSetContextParams =
+                serde_json::from_value(params.clone()).map_err(|e| {
+                    DispatchError::with_code(
+                        format!("invalid popup.set_context params: {e}"),
+                        -32602,
+                    )
+                })?;
+            plugin.paint_popup(crate::plugin::PopupSetContextCtx {
+                params: parsed,
+                host: host.clone(),
+            });
+            // fire-and-forget — mesh 는 PopupPaintFrame 알림으로 비동기 회신. null ack.
             Ok(Value::Null)
         }
         other => Err(DispatchError::with_code(
