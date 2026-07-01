@@ -17,12 +17,13 @@
 use std::collections::HashMap;
 
 use tasty_plugin_sdk::{
-    EguiMeshPopup, EguiMeshSurface, Plugin, PopupClosedCtx, PopupOpenCtx, PopupOpenResult,
-    PopupSetContextCtx, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, SurfaceSetContextCtx,
+    BannerClosedCtx, BannerOpenCtx, BannerSetContextCtx, EguiMeshBanner, EguiMeshPopup,
+    EguiMeshSurface, Plugin, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx,
+    SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, SurfaceSetContextCtx,
 };
 
 const PLUGIN_ID: &str = "com.tasty.mesh-demo";
-const PLUGIN_VERSION: &str = "0.1.1";
+const PLUGIN_VERSION: &str = "0.1.2";
 
 #[derive(Default)]
 struct MeshDemoPlugin {
@@ -34,6 +35,10 @@ struct MeshDemoPlugin {
     popups: HashMap<u64, EguiMeshPopup>,
     /// popup instance_id → 클릭 횟수. 입력 forward 가 popup mesh 를 바꾸는 데모 상태.
     popup_clicks: HashMap<u64, u32>,
+    /// banner instance_id → egui-mesh banner 렌더 상태(A3). open 시 생성, closed 시 해제.
+    banners: HashMap<u64, EguiMeshBanner>,
+    /// banner instance_id → 클릭 횟수. 입력 forward 가 banner mesh 를 바꾸는 데모 상태.
+    banner_clicks: HashMap<u64, u32>,
 }
 
 impl Plugin for MeshDemoPlugin {
@@ -79,6 +84,22 @@ impl Plugin for MeshDemoPlugin {
         // popup 이 닫히면 egui Context·shared buffer 매핑·데모 상태를 함께 해제.
         self.popups.remove(&ctx.instance_id);
         self.popup_clicks.remove(&ctx.instance_id);
+    }
+
+    fn open_banner(&mut self, ctx: BannerOpenCtx) {
+        // egui-mesh banner 는 tree 가 아니라 mesh 채널(paint_banner)로 그린다 — 인스턴스별
+        // 데모 상태만 초기화한다.
+        self.banner_clicks.entry(ctx.instance_id).or_insert(0);
+    }
+
+    fn paint_banner(&mut self, ctx: BannerSetContextCtx) {
+        self.paint_banner_impl(ctx);
+    }
+
+    fn on_banner_closed(&mut self, ctx: BannerClosedCtx) {
+        // banner 가 닫히면(TTL/close X/plugin 요청) egui Context·매핑·데모 상태를 해제.
+        self.banners.remove(&ctx.instance_id);
+        self.banner_clicks.remove(&ctx.instance_id);
     }
 }
 
@@ -135,6 +156,29 @@ impl MeshDemoPlugin {
 
     #[cfg(not(unix))]
     fn paint_popup_impl(&mut self, _ctx: PopupSetContextCtx) {}
+
+    /// `banner.set_context` 한 frame 을 그려 host 에 banner mesh 를 회신한다(A3).
+    #[cfg(unix)]
+    fn paint_banner_impl(&mut self, ctx: BannerSetContextCtx) {
+        let iid = ctx.params.instance_id;
+        // banners / banner_clicks 는 서로소 필드라 동시 mutable 차용이 안전하다.
+        let banner = self
+            .banners
+            .entry(iid)
+            .or_insert_with(|| EguiMeshBanner::new(iid));
+        let clicks = self.banner_clicks.entry(iid).or_insert(0);
+        let result = banner.paint(&ctx.host, &ctx.params, |egui_ctx| {
+            draw_banner(egui_ctx, clicks);
+        });
+        match result {
+            Ok(Some(_gen)) => tracing::info!("mesh-demo banner {iid} paint sent"),
+            Ok(None) => {} // 정적 화면 — 송신 생략.
+            Err(e) => tracing::warn!("mesh-demo banner {iid} paint failed: {e}"),
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn paint_banner_impl(&mut self, _ctx: BannerSetContextCtx) {}
 }
 
 /// 데모 UI: label + 클릭 카운터 버튼 + 스크롤 영역. 색/폰트는 egui 기본값을 쓴다
@@ -176,6 +220,22 @@ fn draw_popup(ctx: &egui::Context, clicks: &mut u32) {
     });
 }
 
+/// 데모 banner UI: 가로 레이아웃 label + 클릭 카운터 버튼. host 가 셸(컨테이너/border/
+/// close X/카운트다운)과 스택/위치/dismiss 를 소유하고, 이 content 만 plugin mesh 로
+/// content_rect 에 합성된다 — 입력 forward(클릭)가 banner mesh 를 바꾸는지 검증한다.
+#[cfg(unix)]
+fn draw_banner(ctx: &egui::Context, clicks: &mut u32) {
+    egui::CentralPanel::default().show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(format!("egui-mesh banner — clicks: {clicks}"));
+            if ui.button("BUMP").clicked() {
+                *clicks += 1;
+            }
+        });
+        ui.label("Drawn in the plugin process. Host owns the shell + TTL countdown.");
+    });
+}
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -193,7 +253,7 @@ mod tests {
     fn plugin_identity() {
         let p = MeshDemoPlugin::default();
         assert_eq!(p.id(), "com.tasty.mesh-demo");
-        assert_eq!(p.version(), "0.1.1");
+        assert_eq!(p.version(), "0.1.2");
     }
 
     #[test]

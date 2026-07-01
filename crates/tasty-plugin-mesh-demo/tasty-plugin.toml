@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.mesh-demo"
 name = "egui-mesh Demo"
-version = "0.1.1"
+version = "0.1.2"
 description = "egui-mesh channel proof-of-concept surface (A1)"
 api_version = "1"
 permissions = [
@@ -10,6 +10,7 @@ permissions = [
     "file_handler.define",
     "file_handler.handle:meshdemo",
     "ui.popup",
+    "ui.banner",
 ]
 lang_dir = "lang"
 
@@ -55,3 +56,16 @@ rendering = "egui-mesh"
 size_hint = { width = 480, height = 320 }
 anchor = "screen-center"
 dismiss_on_outside_click = true
+
+# egui-mesh banner PoC (A3): plugin 이 banner content 를 자기 프로세스에서 egui mesh 로
+# 그리고, host 는 셸(컨테이너/border/close X/카운트다운)과 스택/위치/dismiss 타이밍을 소유한
+# 뒤 content_rect 에 합성한다. ipc 로 연다 (debug.plugin_banner.open { plugin_id?, banner_id,
+# surface_id }). ttl_seconds = 8 로 자동 소멸(스택/카운트다운 시각 검증). scope 는 surface
+# (그 plugin 이 소유한 mesh_demo surface).
+[[contributes.banner]]
+id = "status"
+trigger = { kind = "ipc" }
+rendering = "egui-mesh"
+scope = "surface"
+ttl_seconds = 8
+size_hint = { height = 72 }
