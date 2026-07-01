@@ -5664,7 +5664,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-manifest"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "semver 1.0.27",

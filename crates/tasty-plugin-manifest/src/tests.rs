@@ -553,7 +553,8 @@ fn lang_dir_custom() {
 }
 
 /// 번들된 com.tasty.image plugin의 실제 매니페스트가 파서를 통과하고
-/// surface_kind가 host-rendered로 인식되는지 확인.
+/// surface_kind가 egui-mesh로 인식되는지 확인 (B2/ADR-0030: image 는 host-rendered →
+/// egui-mesh mesh-only 로 전환됨).
 #[test]
 fn bundled_image_plugin_manifest_validates() {
     // CARGO_MANIFEST_DIR = crates/tasty-plugin-manifest → 형제 crate 경로.
@@ -564,7 +565,7 @@ fn bundled_image_plugin_manifest_validates() {
     assert_eq!(m.id, "com.tasty.image");
     assert_eq!(m.surface_kinds.len(), 1);
     assert_eq!(m.surface_kinds[0].kind, "image");
-    assert_eq!(m.surface_kinds[0].rendering, SurfaceKindRendering::Host);
+    assert_eq!(m.surface_kinds[0].rendering, SurfaceKindRendering::EguiMesh);
     // ipc_namespace prefix가 "image"여야 하고 cli 매핑이 모두 image.* 메서드.
     assert!(
         m.contributes

@@ -16,6 +16,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("agent", 26),
     ("approval", 9),
     ("attach", 6),
+    ("banner", 2),
     ("file_handler", 2),
     ("global_hook", 3),
     ("hook", 3),
@@ -35,11 +36,11 @@ const EXPECTED: &[(&str, usize)] = &[
     ("system", 1),
     ("tab", 4),
     ("telemetry", 12),
-    ("tool", 5),
     ("view", 3),
     ("webview", 1),
     ("window", 3),
     ("workspace", 4),
+    ("workspace_category", 5),
 ];
 
 #[test]
