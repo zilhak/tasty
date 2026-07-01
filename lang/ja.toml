@@ -625,6 +625,7 @@ title = "ツール"
 
 [settings.misc]
 empty = "このプラットフォームには設定がありません。"
+scripts = "スクリプト"
 
 [settings.misc.subtab]
 tastyrc = "tastyrc"
@@ -635,6 +636,23 @@ performance = "パフォーマンス"
 heading = "Tastyモードで適用される bashrc"
 description = "シェルモードを Tasty に設定したときに適用されます。Tasty の組み込みブロック（OSC 7、UTF-8、PATH）は自動的に先頭に追加されるため、ここに含める必要はありません。"
 reset_button = "デフォルトに戻す"
+
+[settings.scripts]
+description = "ショートカットで実行できる Lua スクリプトを登録・管理します。トリガーの割り当ては Keybindings で行い、各スクリプトは登録時に記録した SHA で検証されます。"
+add = "スクリプトを追加"
+file = "ファイル:"
+file_placeholder = "~/.tasty/scripts/my-script.lua"
+display_name = "表示名:"
+display_name_placeholder = "任意 — 未入力ならファイル名"
+browse = "参照…"
+new_card = "新しいスクリプト"
+unbound = "未割り当て"
+changed_badge = "変更あり"
+changed_help = "登録後にファイルが変更されました — 次回実行時に確認を求めます。"
+empty_title = "登録済みのスクリプトがありません"
+empty_body = "「スクリプトを追加」をクリックして Lua スクリプトを登録し、ショートカットに割り当てます。"
+remove_confirm = "削除しますか?"
+remove = "削除"
 
 [image_viewer]
 no_image = "画像が読み込まれていません"

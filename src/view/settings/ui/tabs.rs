@@ -15,6 +15,7 @@ pub use appearance::draw_appearance_tab;
 pub use general::draw_general_tab;
 #[cfg(windows)]
 pub use misc::draw_tastyrc_subtab;
+pub use misc::{ScriptsUiState, draw_scripts_subtab};
 pub use notifications::draw_notifications_tab;
 pub use performance::draw_performance_tab;
 pub use plugin::draw_plugin_tab;

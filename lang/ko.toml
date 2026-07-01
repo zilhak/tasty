@@ -625,6 +625,7 @@ title = "도구"
 
 [settings.misc]
 empty = "이 플랫폼에는 설정 항목이 없습니다."
+scripts = "스크립트"
 
 [settings.misc.subtab]
 tastyrc = "tastyrc"
@@ -635,6 +636,23 @@ performance = "성능"
 heading = "Tasty 모드에서 적용되는 bashrc"
 description = "셸 모드를 Tasty로 설정했을 때 적용됩니다. Tasty의 빌트인 블록(OSC 7, UTF-8, PATH)은 자동으로 앞에 추가되므로 여기에 포함시킬 필요가 없습니다."
 reset_button = "기본값으로 되돌리기"
+
+[settings.scripts]
+description = "단축키로 실행할 Lua 스크립트를 등록·관리합니다. 트리거 바인딩은 Keybindings에서 하며, 각 스크립트는 등록 시 기록한 SHA로 검증됩니다."
+add = "스크립트 추가"
+file = "파일:"
+file_placeholder = "~/.tasty/scripts/my-script.lua"
+display_name = "표시 이름:"
+display_name_placeholder = "선택 — 비우면 파일명 사용"
+browse = "찾아보기…"
+new_card = "새 스크립트"
+unbound = "미지정"
+changed_badge = "변경됨"
+changed_help = "등록 이후 파일이 변경되었습니다 — 다음 실행 시 확인을 요청합니다."
+empty_title = "등록된 스크립트 없음"
+empty_body = "스크립트 추가를 눌러 Lua 스크립트를 등록하고 단축키에 연결하세요."
+remove_confirm = "제거할까요?"
+remove = "제거"
 
 [image_viewer]
 no_image = "로드된 이미지 없음"

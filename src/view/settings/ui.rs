@@ -118,12 +118,14 @@ pub(crate) enum TerminalSubTab {
 
 /// L2 section within the Misc L1 tab.
 ///
-/// 디자인 Misc L2 = Tastyrc(Windows 전용). 비-Windows 에서는 L2 항목이 없어
-/// Misc 가 빈 탭(empty-state)이 된다. `Tastyrc` 는 Windows 전용 (tasty 빌트인
-/// bashrc 편집) — 비-Windows 에서는 dead variant 가 되지만 exhaustive match
-/// 안전성을 위해 variant 자체는 유지하고 `allow(dead_code)` 로 경고만 억제한다.
+/// 디자인 Misc L2 = `["Scripts", "Tastyrc"]`(Windows) / `["Scripts"]`(그 외).
+/// **Scripts 는 전 플랫폼·최상단** (Lua 스크립트 관리, 05). `Tastyrc` 는 Windows
+/// 전용 (tasty 빌트인 bashrc 편집) — 비-Windows 에서는 dead variant 가 되지만
+/// exhaustive match 안전성을 위해 variant 자체는 유지하고 `allow(dead_code)` 로
+/// 경고만 억제한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MiscSubTab {
+    Scripts,
     #[cfg_attr(not(windows), allow(dead_code))]
     Tastyrc,
 }
@@ -158,9 +160,12 @@ pub struct SettingsUiState {
     general_sub_tab: GeneralSubTab,
     /// Active L2 section within the Terminal L1 tab.
     terminal_sub_tab: TerminalSubTab,
-    /// Active L2 section within the Misc L1 tab. 비-Windows 에서는 live variant 가
-    /// 없어 empty-state 가 그려지며 이 값은 사용되지 않는다.
+    /// Active L2 section within the Misc L1 tab. Scripts 는 전 플랫폼, Tastyrc 는
+    /// Windows 전용.
     misc_sub_tab: MiscSubTab,
+    /// Misc › Scripts 관리 창(05)의 UI-only 상호작용 상태 (add-card / 인라인
+    /// rename·remove draft + changed 캐시). 스크립트 데이터 자체는 `draft.scripts`.
+    scripts: ScriptsUiState,
     /// L2 사이드바 섹션 필터 텍스트. L1 전환 시 클리어. 7개 L1 탭이 공유한다
     /// (디자인은 한 번에 하나의 L1 만 보이므로 단일 필드로 충분).
     l2_filter: String,
@@ -315,6 +320,7 @@ impl SettingsUiState {
             }
             SettingsTab::Misc => {
                 self.misc_sub_tab = match key {
+                    "scripts" => MiscSubTab::Scripts,
                     "tastyrc" => MiscSubTab::Tastyrc,
                     _ => return false,
                 };
@@ -345,7 +351,8 @@ impl SettingsUiState {
             plugin_sub_tab: None,
             general_sub_tab: GeneralSubTab::General,
             terminal_sub_tab: TerminalSubTab::General,
-            misc_sub_tab: MiscSubTab::Tastyrc,
+            misc_sub_tab: MiscSubTab::Scripts,
+            scripts: ScriptsUiState::default(),
             l2_filter: String::new(),
             file_handler_sub_tab: FileHandlerSubTab::ExtensionMapping,
             extension_priority_draft: None,
@@ -401,6 +408,9 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
     } = panel;
     if ui_state.draft.is_none() {
         ui_state.draft = Some(settings.clone());
+        // 새 오픈마다 Scripts 관리 창 상호작용 상태·changed 캐시 리셋(다음 draw 에서
+        // 디스크 해시 재계산).
+        ui_state.scripts = ScriptsUiState::default();
     }
 
     // Lazily load system font list on first access
@@ -780,23 +790,24 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
             .collect()
         }
         SettingsTab::Misc => {
-            // Windows 에서만 Tastyrc 섹션. 비-Windows 는 L2 가 없어 콘텐츠
-            // empty-state 가 설명을 대신한다.
+            // Scripts 는 전 플랫폼·최상단. Tastyrc(빌트인 bashrc 편집)는 Windows 전용.
+            let cur = ui_state.misc_sub_tab;
+            // Windows 에서만 push(Tastyrc) 하므로 비-Windows 에선 mut 불필요.
+            #[cfg_attr(not(windows), allow(unused_mut))]
+            let mut sections = vec![L2Section {
+                label: t("settings.misc.scripts").to_string(),
+                is_plugin: false,
+                selected: cur == MiscSubTab::Scripts,
+                select: L2Select::Misc(MiscSubTab::Scripts),
+            }];
             #[cfg(windows)]
-            {
-                let cur = ui_state.misc_sub_tab;
-                vec![L2Section {
-                    label: t("settings.misc.subtab.tastyrc").to_string(),
-                    is_plugin: false,
-                    selected: cur == MiscSubTab::Tastyrc,
-                    select: L2Select::Misc(MiscSubTab::Tastyrc),
-                }]
-            }
-            #[cfg(not(windows))]
-            {
-                let _ = ui_state; // non-windows: tastyrc 서브탭 없어 인자 미사용 — 값 drop(Result 아님).
-                Vec::new()
-            }
+            sections.push(L2Section {
+                label: t("settings.misc.subtab.tastyrc").to_string(),
+                is_plugin: false,
+                selected: cur == MiscSubTab::Tastyrc,
+                select: L2Select::Misc(MiscSubTab::Tastyrc),
+            });
+            sections
         }
         SettingsTab::Plugins => build_plugin_sections(ui_state),
     }
@@ -1341,7 +1352,7 @@ fn draw_active_content(
             file_format,
             file_handler,
         ),
-        SettingsTab::Misc => draw_misc_content(ui, ui_state),
+        SettingsTab::Misc => draw_misc_content(ui, draft, ui_state),
         SettingsTab::Plugins => draw_plugin_tab(
             ui,
             draft,
@@ -1354,9 +1365,19 @@ fn draw_active_content(
     }
 }
 
-/// Misc 콘텐츠. Windows = tasty 빌트인 bashrc 편집, 비-Windows = empty-state.
-fn draw_misc_content(ui: &mut egui::Ui, ui_state: &mut SettingsUiState) {
+/// Misc 콘텐츠. Scripts(전 플랫폼) = Lua 스크립트 관리(05), Tastyrc(Windows) =
+/// tasty 빌트인 bashrc 편집.
+fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut SettingsUiState) {
     match ui_state.misc_sub_tab {
+        MiscSubTab::Scripts => {
+            // 관리 창은 바인딩을 편집하지 않는다(04 Keybindings 소유) — bind 버튼은
+            // Keybindings › Scripts 로 진입만 한다. 진입 요청은 intent 로 받아 여기서 적용.
+            if draw_scripts_subtab(ui, draft, &mut ui_state.scripts) {
+                ui_state.active_tab = SettingsTab::Keybindings;
+                ui_state.keybindings_sub_tab = KeybindingsSubTab::Scripts;
+                ui_state.l2_filter.clear();
+            }
+        }
         #[cfg(windows)]
         MiscSubTab::Tastyrc => draw_tastyrc_subtab(ui, &mut ui_state.bashrc_user_draft),
         #[cfg(not(windows))]

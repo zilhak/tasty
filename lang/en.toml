@@ -625,6 +625,7 @@ title = "Tools"
 
 [settings.misc]
 empty = "No settings on this platform."
+scripts = "Scripts"
 
 [settings.misc.subtab]
 tastyrc = "tastyrc"
@@ -635,6 +636,23 @@ performance = "Performance"
 heading = "Tasty-mode bashrc"
 description = "This is applied when Shell mode is set to Tasty. Tasty's built-in block (OSC 7 emission, UTF-8, PATH) is always prepended automatically and is not shown here."
 reset_button = "Reset to default"
+
+[settings.scripts]
+description = "Register and manage Lua scripts you can run with a shortcut. Binding a trigger is done in Keybindings; each script is verified against the SHA recorded when it was added."
+add = "Add script"
+file = "File:"
+file_placeholder = "~/.tasty/scripts/my-script.lua"
+display_name = "Display name:"
+display_name_placeholder = "optional — defaults to file name"
+browse = "Browse…"
+new_card = "New script"
+unbound = "Unbound"
+changed_badge = "changed"
+changed_help = "File changed since registration — you'll be asked to confirm on next run."
+empty_title = "No scripts registered"
+empty_body = "Click Add script to register a Lua script and bind it to a shortcut."
+remove_confirm = "Remove?"
+remove = "Remove"
 
 [image_viewer]
 no_image = "No image loaded"

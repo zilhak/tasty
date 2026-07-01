@@ -240,3 +240,25 @@ line_icon!(
     "alert_circle",
     r#"<circle cx="12" cy="12" r="9"/><path d="M12 8v4m0 4h.01"/>"#
 );
+// ── Scripts (Misc · Scripts, Lua 관리 창 05) ──
+// 등록 스크립트 행 글리프 / 빈 상태. 디자인 `settings_window.jsx` SD.script.
+// path 는 갤러리 `catalog/icons.rs` SCRIPT 와 바이트 동일.
+line_icon!(
+    SCRIPT,
+    "script",
+    r#"<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h4M9 17h6"/>"#
+);
+// bind-shortcut IconButton (→ Keybindings). 디자인 `settings_window.jsx` SD.kbd.
+// path 는 갤러리 `catalog/icons.rs` KEYBOARD 와 바이트 동일.
+line_icon!(
+    KEYBOARD,
+    "keyboard",
+    r#"<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>"#
+);
+// changed 배지의 warn 삼각 글리프. path 는 갤러리 `catalog/icons.rs` ALERT_TRIANGLE 와
+// 바이트 동일.
+line_icon!(
+    ALERT_TRIANGLE,
+    "alert_triangle",
+    r#"<path d="M10.3 3.9 1.8 18a1 1 0 0 0 .9 1.5h18.6a1 1 0 0 0 .9-1.5L13.7 3.9a1 1 0 0 0-1.7 0z"/><path d="M12 9v4M12 17h.01"/>"#
+);
