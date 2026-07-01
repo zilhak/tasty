@@ -5619,12 +5619,16 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "anyhow",
+ "egui",
  "git2",
  "serde_json",
+ "tasty-plugin-protocol",
  "tasty-plugin-sdk",
+ "tasty-type-appearance",
+ "tasty-ui-widgets",
  "tasty-utils",
  "tempfile",
  "tracing",

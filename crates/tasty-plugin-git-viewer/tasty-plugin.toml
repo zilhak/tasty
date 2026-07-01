@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.git-viewer"
 name = "Git Viewer"
-version = "0.1.1"
+version = "0.1.7"
 description = "Read-only git status / log / diff popup"
 api_version = "1"
 permissions = ["ui.popup", "ui.tool_item", "fs.read"]
@@ -14,6 +14,9 @@ command = "tasty-plugin-git-viewer"
 [[contributes.popup]]
 id = "viewer"
 trigger = { kind = "ipc" }
+# egui-mesh: plugin 이 popup 콘텐츠를 자기 프로세스에서 egui mesh 로 그리고, host 는
+# 셸(scrim/border/outside-click/Esc)만 그린 뒤 합성한다 (ADR-0028 / A2).
+rendering = "egui-mesh"
 size_hint = { width = 960, height = 640 }
 anchor = "screen-center"
 dismiss_on_outside_click = true

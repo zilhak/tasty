@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-git-viewer"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2024"
 license = "MIT"
 description = "External Tasty plugin: read-only git status/log/diff viewer popup"
@@ -11,15 +11,28 @@ name = "tasty-plugin-git-viewer"
 path = "src/main.rs"
 
 [dependencies]
-tasty-plugin-sdk = { path = "../tasty-plugin-sdk" }
+tasty-plugin-sdk = { path = "../tasty-plugin-sdk", features = ["egui-mesh"] }
+tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # Windows verbatim prefix(`\\?\`) 제거 — worktree 경로 표시/비교 정규화에 사용.
 tasty-utils = { path = "../tasty-utils" }
+# Theme parity — set_context 의 ThemeWire 를 `Theme::with_colors_and_zoom` 으로 재구성해
+# 디자인 토큰대로 그린다. 공용 위젯(Tag/Button)은 tasty-ui-widgets 로 직접 호출한다.
+tasty-type-appearance = { path = "../tasty-type-appearance" }
+tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 # Read-only libgit2 binding — HTTPS/SSH 불필요라 default-features off.
 git2 = { version = "0.20", default-features = false }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+
+# host·SDK·protocol 와 동일 egui 인스턴스로 unify (epaint serde OFF + bytemuck ON).
+# plugin 이 closure 에서 git-viewer 위젯을 그리려면 SDK 와 같은 egui 타입이 필요하다 —
+# Cargo 가 workspace 전역 0.31 로 통일하므로 mesh 와이어(POD Vertex)가 정합한다.
+egui = { version = "0.31", default-features = false, features = [
+    "bytemuck",
+    "default_fonts",
+] }
 
 [dev-dependencies]
 tempfile = "3"

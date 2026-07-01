@@ -1,0 +1,896 @@
+//! egui-mesh 자가 렌더 — git-viewer popup 콘텐츠(디자인 `overlays/git_viewer.jsx` 전사).
+//!
+//! host 는 셸(scrim/bg_panel/border/Esc/outside-click)만 그리고, 이 모듈이 content_rect
+//! 안쪽을 plugin egui 로 그린다. 색·폰트·간격은 모두 `Theme` 토큰에서 가져온다
+//! (디자인 토큰 = host catppuccin → 의미 토큰 매핑). 상호작용(worktree 선택 / 파일→diff /
+//! Back / Refresh)은 이 프레임 안에서 [`ViewerState`] 를 직접 mutate 한다 — set_context
+//! 만으로 구동되므로, 갱신된 pane 이 클릭 지점보다 **뒤에** 그려지도록 순서를 잡는다.
+//!
+//! 색 매핑(changelog `2026-06-30-git-viewer.md`): oid·refs·main·hunk = `accent_info`(sky),
+//! current·added·diff `+` = `accent_success`, locked·modified = `accent_warning`,
+//! invalid·deleted·unmerged·diff `-`·error = `accent_danger`, linked·`?` = neutral.
+
+use egui::{Align, Align2, Color32, FontId, Layout, Rect, Sense, Stroke, UiBuilder, vec2};
+use tasty_plugin_sdk::Translator;
+use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, TagVariant, tag};
+
+use crate::ViewerState;
+use crate::git::{DiffData, DiffLineKind, FileStatus, LogEntry, StatusEntry, WorktreeEntry};
+
+// ── 디자인 고정 px (git_viewer.jsx 의 화면 전용 치수 — Theme 토큰에 대응 없음) ──
+/// worktree rail 고정 폭(jsx `width: 232`). 2줄 행이 어떤 프레임 폭에서도 안 넘치게 고정.
+const RAIL_W: f32 = 232.0;
+/// 섹션 헤더 strip 높이(jsx `gvHeadStrip height: 28`).
+const SECTION_H: f32 = 28.0;
+/// context strip 높이(jsx `height: 30`).
+const CTX_H: f32 = 30.0;
+/// diff 툴바 높이(jsx `height: 32`).
+const DIFF_TOOLBAR_H: f32 = 32.0;
+/// Changes 행 높이(jsx `ChRow height: 26`).
+const CH_ROW_H: f32 = 26.0;
+/// Commits 행 높이(jsx `CmRow height: 28`).
+const CM_ROW_H: f32 = 28.0;
+/// 상태 pill 고정 폭(jsx `GBadge width: 18`).
+const STATUS_BADGE_W: f32 = 18.0;
+/// diff old/new 라인번호 거터 폭(jsx `width: 34`).
+const DIFF_GUTTER_W: f32 = 34.0;
+/// diff `+`/`-`/context 부호 컬럼 폭(jsx `width: 14`).
+const DIFF_SIGN_W: f32 = 14.0;
+
+fn mono(size: f32) -> FontId {
+    FontId::monospace(size)
+}
+fn prop(size: f32) -> FontId {
+    FontId::proportional(size)
+}
+
+/// popup 본문 진입점 — CentralPanel(bg_panel) 위에 header + context strip + body.
+pub fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
+    let frame = egui::Frame::new()
+        .fill(theme.bg_panel().to_egui())
+        .inner_margin(egui::Margin::same(0));
+    egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+        header(ui, theme, state, tr);
+        context_strip(ui, theme, state, tr);
+        if let Some(err) = state.error.clone() {
+            error_line(ui, theme, &err);
+        }
+        if state.repo_path.is_none() {
+            nonrepo(ui, theme, tr);
+            return;
+        }
+        body(ui, theme, state, tr);
+    });
+}
+
+/// 단일 인스턴스 가드용 — 두 번째 popup 인스턴스가 보여줄 "이미 열림" 중앙 메시지.
+pub fn draw_busy(ctx: &egui::Context, theme: &Theme, tr: &Translator) {
+    let frame = egui::Frame::new().fill(theme.bg_panel().to_egui());
+    egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        let h = ui.available_height().max(1.0);
+        ui.allocate_ui_with_layout(
+            vec2(ui.available_width(), h),
+            Layout::centered_and_justified(egui::Direction::TopDown),
+            |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.label(
+                        egui::RichText::new(tr.t("git_viewer.already_open"))
+                            .size(theme.font_size_body.value())
+                            .strong()
+                            .color(theme.text_secondary().to_egui()),
+                    );
+                    ui.add_space(theme.spacing_xs.value());
+                    ui.label(
+                        egui::RichText::new(tr.t("git_viewer.already_open_hint"))
+                            .size(theme.font_size_caption.value())
+                            .color(theme.text_muted().to_egui()),
+                    );
+                });
+            },
+        );
+    });
+}
+
+// ── header (row 1): Git 타이틀 + Refresh(secondary) ──
+fn header(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
+    let full_w = ui.available_width();
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_md.value();
+    let btn_h = ControlSize::Sm.height(theme);
+    let h = pad_y * 2.0 + btn_h;
+    let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
+
+    // 타이틀(아이콘 생략 — host UiNode 경로와 동일, primitive 매핑에 icon 없음).
+    ui.painter().text(
+        egui::pos2(rect.left() + pad_x, rect.center().y),
+        Align2::LEFT_CENTER,
+        tr.t("git_viewer.heading"),
+        prop(theme.font_size_max.value()),
+        theme.text_primary().to_egui(),
+    );
+
+    // Refresh 버튼 — 우측 정렬(right_to_left child).
+    let ctrl_rect = Rect::from_min_max(
+        egui::pos2(rect.left(), rect.top() + pad_y),
+        egui::pos2(rect.right() - pad_x, rect.top() + pad_y + btn_h),
+    );
+    let mut cui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(ctrl_rect)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    if Button::new(&tr.t("git_viewer.refresh"))
+        .variant(ButtonVariant::Secondary)
+        .size(ControlSize::Sm)
+        .show(&mut cui, theme)
+        .clicked()
+    {
+        state.refresh();
+    }
+    bottom_separator(ui, theme, rect);
+}
+
+// ── header (row 2): context strip — worktree · branch · oid · repo path ──
+fn context_strip(ui: &mut egui::Ui, theme: &Theme, state: &ViewerState, tr: &Translator) {
+    let full_w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(vec2(full_w, CTX_H), Sense::hover());
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+    bottom_separator(ui, theme, rect);
+
+    let active = state.worktrees.get(state.active_worktree);
+    let name = active
+        .map(|w| w.name.clone())
+        .unwrap_or_else(|| "—".to_string());
+    let branch = active
+        .and_then(|w| w.branch.clone())
+        .unwrap_or_else(|| tr.t("git_viewer.detached").to_string());
+    let oid = active.and_then(|w| w.oid.clone());
+
+    let pad_x = theme.spacing_md.value();
+    let content = rect.shrink2(vec2(pad_x, 0.0));
+    let mut cui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(content)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    cui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    cui.label(
+        egui::RichText::new(name)
+            .font(mono(theme.font_size_term_sm.value()))
+            .color(theme.text_primary().to_egui()),
+    );
+    cui.label(
+        egui::RichText::new("·")
+            .size(theme.font_size_term_sm.value())
+            .color(theme.text_disabled().to_egui()),
+    );
+    cui.label(
+        egui::RichText::new(branch)
+            .font(mono(theme.font_size_term_sm.value()))
+            .color(theme.text_secondary().to_egui()),
+    );
+    if let Some(oid) = oid {
+        tag(&mut cui, theme, &oid, TagVariant::Info, false);
+    }
+
+    // repo path — 우측, mono caption, muted, 우측 영역에 clip.
+    if let Some(path) = state
+        .repo_path
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned())
+    {
+        let clip = Rect::from_min_max(
+            egui::pos2(content.left() + content.width() * 0.4, rect.top()),
+            egui::pos2(content.right(), rect.bottom()),
+        );
+        ui.painter().with_clip_rect(clip).text(
+            egui::pos2(content.right(), rect.center().y),
+            Align2::RIGHT_CENTER,
+            path,
+            mono(theme.font_size_caption.value()),
+            theme.text_muted().to_egui(),
+        );
+    }
+}
+
+fn error_line(ui: &mut egui::Ui, theme: &Theme, err: &str) {
+    let full_w = ui.available_width();
+    let pad_x = theme.spacing_md.value();
+    let h = theme.spacing_sm.value() * 2.0 + theme.font_size_caption.value();
+    let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
+    let danger = theme.accent_danger().to_egui();
+    ui.painter()
+        .rect_filled(rect, 0.0, danger.gamma_multiply(0.1));
+    bottom_separator(ui, theme, rect);
+    ui.painter()
+        .with_clip_rect(rect.shrink2(vec2(pad_x, 0.0)))
+        .text(
+            egui::pos2(rect.left() + pad_x, rect.center().y),
+            Align2::LEFT_CENTER,
+            err,
+            prop(theme.font_size_caption.value()),
+            danger,
+        );
+}
+
+fn nonrepo(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) {
+    let h = ui.available_height().max(1.0);
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), h),
+        Layout::centered_and_justified(egui::Direction::TopDown),
+        |ui| {
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new(tr.t("git_viewer.no_repo_title"))
+                        .size(theme.font_size_body.value())
+                        .strong()
+                        .color(theme.text_secondary().to_egui()),
+                );
+                ui.add_space(theme.spacing_sm.value());
+                ui.label(
+                    egui::RichText::new(tr.t("git_viewer.no_repo"))
+                        .size(theme.font_size_caption.value())
+                        .color(theme.text_muted().to_egui()),
+                );
+            });
+        },
+    );
+}
+
+// ── body: rail(232) | right column ──
+fn body(ui: &mut egui::Ui, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
+    let avail = ui.available_rect_before_wrap();
+    let rail_rect = Rect::from_min_size(avail.min, vec2(RAIL_W, avail.height()));
+    let right_rect = Rect::from_min_max(egui::pos2(avail.min.x + RAIL_W, avail.min.y), avail.max);
+
+    // rail 우측 경계선.
+    ui.painter().vline(
+        avail.min.x + RAIL_W,
+        rail_rect.y_range(),
+        Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+
+    draw_rail(ui, theme, state, tr, rail_rect);
+    draw_right(ui, theme, state, tr, right_rect);
+    ui.allocate_rect(avail, Sense::hover());
+}
+
+fn draw_rail(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    state: &mut ViewerState,
+    tr: &Translator,
+    area: Rect,
+) {
+    let mut pane = ui.new_child(
+        UiBuilder::new()
+            .max_rect(area)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    pane.spacing_mut().item_spacing = vec2(0.0, 0.0);
+    pane_head(
+        &mut pane,
+        theme,
+        &format!(
+            "{} ({})",
+            tr.t("git_viewer.worktrees_heading"),
+            state.worktrees.len()
+        ),
+    );
+    if state.worktrees.is_empty() {
+        empty_line(&mut pane, theme, &tr.t("git_viewer.no_worktrees"));
+        return;
+    }
+    let mut clicked: Option<usize> = None;
+    egui::ScrollArea::vertical()
+        .id_salt("gv_rail")
+        .auto_shrink([false, false])
+        .show(&mut pane, |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            for (idx, wt) in state.worktrees.iter().enumerate() {
+                if wt_row(ui, theme, tr, wt, idx == state.active_worktree) {
+                    clicked = Some(idx);
+                }
+            }
+        });
+    // 클릭 → worktree 재바인딩. right column 은 이 뒤에 그려져 같은 프레임에 반영된다.
+    if let Some(idx) = clicked {
+        state.select_worktree(idx);
+    }
+}
+
+/// 2줄 worktree 행: line1 = name + type pill, line2 = short oid + state pill.
+fn wt_row(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    tr: &Translator,
+    wt: &WorktreeEntry,
+    selected: bool,
+) -> bool {
+    let full_w = ui.available_width();
+    let pad_x = theme.spacing_md.value();
+    let pad_y = theme.spacing_sm.value();
+    let line_gap = theme.spacing_xs.value();
+    let l1_h = theme.font_size_term_sm.value() + 4.0;
+    let l2_h = theme.font_size_caption.value() + 4.0;
+    let h = pad_y * 2.0 + l1_h + line_gap + l2_h;
+    let (rect, resp) = ui.allocate_exact_size(vec2(full_w, h), Sense::click());
+
+    if selected {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.surface_active().to_egui());
+    } else if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
+    }
+
+    let name_color = if !wt.is_valid {
+        theme.text_disabled()
+    } else if selected {
+        theme.text_primary()
+    } else {
+        theme.text_secondary()
+    };
+
+    // line 1: name (left, clipped) + type pill (right).
+    let l1 = Rect::from_min_size(
+        egui::pos2(rect.left() + pad_x, rect.top() + pad_y),
+        vec2(full_w - pad_x * 2.0, l1_h),
+    );
+    let (type_key, type_variant) = if wt.is_main {
+        ("git_viewer.wt_main", TagVariant::Info)
+    } else {
+        ("git_viewer.wt_linked", TagVariant::Default)
+    };
+    let mut t1 = ui.new_child(
+        UiBuilder::new()
+            .max_rect(l1)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    let type_resp = tag(&mut t1, theme, &tr.t(type_key), type_variant, false);
+    let name_right = type_resp.rect.left() - theme.spacing_sm.value();
+    let name_clip = Rect::from_min_max(l1.min, egui::pos2(name_right, l1.max.y));
+    ui.painter().with_clip_rect(name_clip).text(
+        egui::pos2(l1.left(), l1.center().y),
+        Align2::LEFT_CENTER,
+        &wt.name,
+        mono(theme.font_size_term_sm.value()),
+        name_color.to_egui(),
+    );
+
+    // line 2: oid (left, accent_info) + state pill (right).
+    let l2 = Rect::from_min_size(
+        egui::pos2(rect.left() + pad_x, l1.max.y + line_gap),
+        vec2(full_w - pad_x * 2.0, l2_h),
+    );
+    if let Some((label_key, variant)) = wt_state_pill(wt) {
+        let mut t2 = ui.new_child(
+            UiBuilder::new()
+                .max_rect(l2)
+                .layout(Layout::right_to_left(Align::Center)),
+        );
+        let resp = tag(&mut t2, theme, &tr.t(label_key), variant, true);
+        // locked/invalid 사유를 hover tooltip 으로(jsx `title={wt.reason}`).
+        if let Some(reason) = &wt.lock_reason
+            && !reason.is_empty()
+        {
+            resp.on_hover_text(reason);
+        }
+    }
+    if let Some(oid) = &wt.oid {
+        ui.painter().text(
+            egui::pos2(l2.left(), l2.center().y),
+            Align2::LEFT_CENTER,
+            oid,
+            mono(theme.font_size_caption.value()),
+            theme.accent_info().to_egui(),
+        );
+    }
+
+    // 선택 행 좌측 2px inset accent bar.
+    if selected {
+        ui.painter().rect_filled(
+            Rect::from_min_size(rect.min, vec2(2.0, rect.height())),
+            0.0,
+            theme.accent_primary().to_egui(),
+        );
+    }
+    bottom_separator(ui, theme, rect);
+    resp.clicked() && wt.is_valid
+}
+
+/// worktree 상태 pill(current/locked/invalid). 없으면 None. (색 dot 포함)
+fn wt_state_pill(wt: &WorktreeEntry) -> Option<(&'static str, TagVariant)> {
+    if !wt.is_valid {
+        Some(("git_viewer.wt_invalid", TagVariant::Danger))
+    } else if wt.locked {
+        Some(("git_viewer.wt_locked", TagVariant::Warning))
+    } else if wt.is_current {
+        Some(("git_viewer.wt_current", TagVariant::Success))
+    } else {
+        None
+    }
+}
+
+fn draw_right(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    state: &mut ViewerState,
+    tr: &Translator,
+    area: Rect,
+) {
+    let half = (area.height() * 0.5).round();
+    let top = Rect::from_min_size(area.min, vec2(area.width(), half));
+    let bottom = Rect::from_min_max(egui::pos2(area.left(), area.top() + half), area.max);
+
+    // 상단 Changes | 하단 Commits↔Diff 사이 separator.
+    ui.painter().hline(
+        area.x_range(),
+        area.top() + half,
+        Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+
+    draw_changes(ui, theme, state, tr, top);
+    draw_bottom(ui, theme, state, tr, bottom);
+}
+
+fn draw_changes(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    state: &mut ViewerState,
+    tr: &Translator,
+    area: Rect,
+) {
+    let mut pane = ui.new_child(
+        UiBuilder::new()
+            .max_rect(area)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    pane.spacing_mut().item_spacing = vec2(0.0, 0.0);
+    pane_head(
+        &mut pane,
+        theme,
+        &format!(
+            "{} ({})",
+            tr.t("git_viewer.status_heading"),
+            state.status_entries.len()
+        ),
+    );
+    if state.status_entries.is_empty() {
+        empty_line(&mut pane, theme, &tr.t("git_viewer.no_changes"));
+        return;
+    }
+    let mut clicked: Option<usize> = None;
+    egui::ScrollArea::vertical()
+        .id_salt("gv_changes")
+        .auto_shrink([false, false])
+        .show(&mut pane, |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            for (idx, entry) in state.status_entries.iter().enumerate() {
+                if ch_row(ui, theme, entry, state.selected_file == Some(idx)) {
+                    clicked = Some(idx);
+                }
+            }
+        });
+    if let Some(idx) = clicked {
+        state.load_diff(idx);
+    }
+}
+
+/// Changes 행: 고정폭 상태 pill + 경로(dir muted / file primary, clip).
+fn ch_row(ui: &mut egui::Ui, theme: &Theme, entry: &StatusEntry, selected: bool) -> bool {
+    let full_w = ui.available_width();
+    let pad_x = theme.spacing_md.value();
+    let (rect, resp) = ui.allocate_exact_size(vec2(full_w, CH_ROW_H), Sense::click());
+    if selected {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.surface_active().to_egui());
+    } else if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
+    }
+
+    let (glyph, variant) = status_pill(entry.status);
+    let content = Rect::from_min_size(
+        egui::pos2(rect.left() + pad_x, rect.top()),
+        vec2(full_w - pad_x * 2.0, CH_ROW_H),
+    );
+    let mut cui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(content)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    cui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    // 고정폭 상태 pill 자리.
+    cui.allocate_ui_with_layout(
+        vec2(STATUS_BADGE_W, CH_ROW_H),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            tag(ui, theme, glyph, variant, false);
+        },
+    );
+    // 경로 — dir(muted) + file(primary).
+    let (dir, file) = split_path(&entry.path);
+    let path_clip = Rect::from_min_max(
+        egui::pos2(cui.cursor().left(), rect.top()),
+        egui::pos2(content.right(), rect.bottom()),
+    );
+    let p = ui.painter().with_clip_rect(path_clip);
+    let cy = rect.center().y;
+    let mut x = cui.cursor().left();
+    if !dir.is_empty() {
+        let g = p.layout_no_wrap(
+            dir,
+            mono(theme.font_size_term_sm.value()),
+            theme.text_muted().to_egui(),
+        );
+        p.galley(
+            egui::pos2(x, cy - g.rect.height() * 0.5),
+            g.clone(),
+            theme.text_muted().to_egui(),
+        );
+        x += g.rect.width();
+    }
+    let gf = p.layout_no_wrap(
+        file,
+        mono(theme.font_size_term_sm.value()),
+        theme.text_primary().to_egui(),
+    );
+    p.galley(
+        egui::pos2(x, cy - gf.rect.height() * 0.5),
+        gf,
+        theme.text_primary().to_egui(),
+    );
+
+    if selected {
+        ui.painter().rect_filled(
+            Rect::from_min_size(rect.min, vec2(2.0, rect.height())),
+            0.0,
+            theme.accent_primary().to_egui(),
+        );
+    }
+    resp.clicked()
+}
+
+fn draw_bottom(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    state: &mut ViewerState,
+    tr: &Translator,
+    area: Rect,
+) {
+    // diff 표시 중이면 툴바(Back) 먼저 — Back 클릭 시 close_diff 후 아래에서 commits 로 전환.
+    let showing_diff = state.selected_file.is_some() && state.diff_content.is_some();
+    let toolbar_h = if showing_diff { DIFF_TOOLBAR_H } else { 0.0 };
+    if showing_diff {
+        let toolbar = Rect::from_min_size(area.min, vec2(area.width(), DIFF_TOOLBAR_H));
+        if diff_toolbar(ui, theme, tr, toolbar, state.diff_content.as_ref()) {
+            state.close_diff();
+        }
+    }
+    let content = Rect::from_min_max(egui::pos2(area.left(), area.top() + toolbar_h), area.max);
+    if state.selected_file.is_some() && state.diff_content.is_some() {
+        draw_diff(ui, theme, tr, state.diff_content.as_ref().unwrap(), content);
+    } else {
+        draw_commits(ui, theme, tr, &state.log_entries, content);
+    }
+}
+
+/// diff 툴바: Back(ghost) + 파일 경로(mono muted). Back 클릭 여부 반환.
+fn diff_toolbar(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    tr: &Translator,
+    area: Rect,
+    diff: Option<&DiffData>,
+) -> bool {
+    ui.painter()
+        .rect_filled(area, 0.0, theme.bg_sidebar().to_egui());
+    bottom_separator(ui, theme, area);
+    let pad_x = theme.spacing_sm.value();
+    let mut cui = ui.new_child(
+        UiBuilder::new()
+            .max_rect(area.shrink2(vec2(pad_x, 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    cui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+    let back = Button::new(&tr.t("git_viewer.back_to_log"))
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Sm)
+        .show(&mut cui, theme)
+        .clicked();
+    if let Some(diff) = diff {
+        cui.label(
+            egui::RichText::new(&diff.file_path)
+                .font(mono(theme.font_size_caption.value()))
+                .color(theme.text_muted().to_egui()),
+        );
+    }
+    back
+}
+
+fn draw_commits(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, log: &[LogEntry], area: Rect) {
+    let mut pane = ui.new_child(
+        UiBuilder::new()
+            .max_rect(area)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    pane.spacing_mut().item_spacing = vec2(0.0, 0.0);
+    pane_head(
+        &mut pane,
+        theme,
+        &format!("{} ({})", tr.t("git_viewer.log_heading"), log.len()),
+    );
+    if log.is_empty() {
+        empty_line(&mut pane, theme, &tr.t("git_viewer.no_commits"));
+        return;
+    }
+    egui::ScrollArea::vertical()
+        .id_salt("gv_commits")
+        .auto_shrink([false, false])
+        .show(&mut pane, |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            for entry in log {
+                cm_row(ui, theme, entry);
+            }
+        });
+}
+
+/// Commits 행: oid(info) + refs pills(info) + summary(flex) + author + time.
+fn cm_row(ui: &mut egui::Ui, theme: &Theme, entry: &LogEntry) {
+    let full_w = ui.available_width();
+    let pad_x = theme.spacing_md.value();
+    let (rect, resp) = ui.allocate_exact_size(vec2(full_w, CM_ROW_H), Sense::hover());
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
+    }
+    let content = Rect::from_min_size(
+        egui::pos2(rect.left() + pad_x, rect.top()),
+        vec2(full_w - pad_x * 2.0, CM_ROW_H),
+    );
+    let gap = theme.spacing_sm.value();
+
+    // 좌 cluster: oid(info) + refs pills(info).
+    let mut left = ui.new_child(
+        UiBuilder::new()
+            .max_rect(content)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    left.spacing_mut().item_spacing.x = gap;
+    left.label(
+        egui::RichText::new(&entry.oid_short)
+            .font(mono(theme.font_size_caption.value()))
+            .color(theme.accent_info().to_egui()),
+    );
+    for r in &entry.refs {
+        tag(&mut left, theme, r, TagVariant::Info, false);
+    }
+    let left_end = left.min_rect().right();
+
+    // 우 cluster: time + author (우측 정렬, 폭 압박 시 summary 보다 먼저 자리 확보).
+    let mut right = ui.new_child(
+        UiBuilder::new()
+            .max_rect(content)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    right.spacing_mut().item_spacing.x = gap;
+    right.label(
+        egui::RichText::new(&entry.time)
+            .font(mono(theme.font_size_caption.value()))
+            .color(theme.text_muted().to_egui()),
+    );
+    right.label(
+        egui::RichText::new(&entry.author)
+            .size(theme.font_size_term_sm.value())
+            .color(theme.text_muted().to_egui()),
+    );
+    let right_start = right.min_rect().left();
+
+    // summary — 가운데 남는 폭에 clip(truncate).
+    let sx = left_end + gap;
+    let clip = Rect::from_min_max(
+        egui::pos2(sx, rect.top()),
+        egui::pos2((right_start - gap).max(sx), rect.bottom()),
+    );
+    ui.painter().with_clip_rect(clip).text(
+        egui::pos2(sx, rect.center().y),
+        Align2::LEFT_CENTER,
+        &entry.summary,
+        prop(theme.font_size_body.value()),
+        theme.text_primary().to_egui(),
+    );
+}
+
+fn draw_diff(ui: &mut egui::Ui, theme: &Theme, tr: &Translator, diff: &DiffData, area: Rect) {
+    // recessed bg-app well.
+    ui.painter()
+        .rect_filled(area, 0.0, theme.bg_app().to_egui());
+    let mut pane = ui.new_child(
+        UiBuilder::new()
+            .max_rect(area)
+            .layout(Layout::top_down(Align::Min)),
+    );
+    pane.spacing_mut().item_spacing = vec2(0.0, 0.0);
+    if diff.hunks.is_empty() {
+        empty_line(&mut pane, theme, &tr.t("git_viewer.no_changes"));
+        return;
+    }
+    egui::ScrollArea::both()
+        .id_salt("gv_diff")
+        .auto_shrink([false, false])
+        .show(&mut pane, |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            for hunk in &diff.hunks {
+                diff_line(
+                    ui,
+                    theme,
+                    DiffLineKind::Context,
+                    true,
+                    None,
+                    None,
+                    &hunk.header,
+                );
+                for line in &hunk.lines {
+                    diff_line(
+                        ui,
+                        theme,
+                        line.kind,
+                        false,
+                        line.old_lineno,
+                        line.new_lineno,
+                        &line.content,
+                    );
+                }
+            }
+        });
+}
+
+/// diff 한 줄: gutter(old/new) + sign + text. hunk 헤더 밴드 / ± 라인 tint.
+fn diff_line(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    kind: DiffLineKind,
+    is_hunk: bool,
+    old_no: Option<u32>,
+    new_no: Option<u32>,
+    text: &str,
+) {
+    let sz = theme.font_size_caption.value();
+    let h = (sz * 1.65).round();
+    let min_w = DIFF_GUTTER_W * 2.0
+        + DIFF_SIGN_W
+        + ui.painter()
+            .layout_no_wrap(text.to_owned(), mono(sz), Color32::PLACEHOLDER)
+            .rect
+            .width()
+        + theme.spacing_md.value();
+    let full_w = ui.available_width().max(min_w);
+    let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
+
+    let (fg, bg) = match (is_hunk, kind) {
+        (true, _) => (
+            theme.accent_info().to_egui(),
+            theme.accent_info().to_egui().gamma_multiply(0.09),
+        ),
+        (false, DiffLineKind::Addition) => (
+            theme.accent_success().to_egui(),
+            theme.accent_success().to_egui().gamma_multiply(0.10),
+        ),
+        (false, DiffLineKind::Deletion) => (
+            theme.accent_danger().to_egui(),
+            theme.accent_danger().to_egui().gamma_multiply(0.10),
+        ),
+        (false, DiffLineKind::Context) => (theme.text_primary().to_egui(), Color32::TRANSPARENT),
+    };
+    if bg != Color32::TRANSPARENT {
+        ui.painter().rect_filled(rect, 0.0, bg);
+    }
+    let p = ui.painter();
+    let cy = rect.center().y;
+    let disabled = theme.text_disabled().to_egui();
+    if !is_hunk {
+        let old_s = old_no.map(|n| n.to_string()).unwrap_or_default();
+        let new_s = new_no.map(|n| n.to_string()).unwrap_or_default();
+        p.text(
+            egui::pos2(rect.left() + DIFF_GUTTER_W - 6.0, cy),
+            Align2::RIGHT_CENTER,
+            old_s,
+            mono(sz),
+            disabled,
+        );
+        p.text(
+            egui::pos2(rect.left() + DIFF_GUTTER_W * 2.0 - 8.0, cy),
+            Align2::RIGHT_CENTER,
+            new_s,
+            mono(sz),
+            disabled,
+        );
+        let sign = match kind {
+            DiffLineKind::Addition => "+",
+            DiffLineKind::Deletion => "-",
+            DiffLineKind::Context => "",
+        };
+        p.text(
+            egui::pos2(rect.left() + DIFF_GUTTER_W * 2.0 + DIFF_SIGN_W * 0.5, cy),
+            Align2::CENTER_CENTER,
+            sign,
+            mono(sz),
+            fg,
+        );
+    }
+    let text_x = rect.left() + DIFF_GUTTER_W * 2.0 + DIFF_SIGN_W;
+    p.text(
+        egui::pos2(text_x, cy),
+        Align2::LEFT_CENTER,
+        text,
+        mono(sz),
+        fg,
+    );
+}
+
+// ── 공용 헬퍼 ──
+
+/// 섹션 헤더 strip — bg-sidebar + 하단 separator + uppercase mono micro muted 라벨.
+fn pane_head(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    let full_w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(vec2(full_w, SECTION_H), Sense::hover());
+    ui.painter()
+        .rect_filled(rect, 0.0, theme.bg_sidebar().to_egui());
+    bottom_separator(ui, theme, rect);
+    ui.painter().text(
+        egui::pos2(rect.left() + theme.spacing_md.value(), rect.center().y),
+        Align2::LEFT_CENTER,
+        text.to_uppercase(),
+        mono(theme.font_size_micro.value()),
+        theme.text_muted().to_egui(),
+    );
+}
+
+/// 빈 pane 한 줄 — 중앙 italic muted.
+fn empty_line(ui: &mut egui::Ui, theme: &Theme, text: &str) {
+    let full_w = ui.available_width();
+    let h = ui
+        .available_height()
+        .max(theme.item_height_interactive.value());
+    let (rect, _) = ui.allocate_exact_size(vec2(full_w, h), Sense::hover());
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        text,
+        prop(theme.font_size_term_sm.value()),
+        theme.text_muted().to_egui(),
+    );
+}
+
+/// rect 하단에 1px separator.
+fn bottom_separator(ui: &mut egui::Ui, theme: &Theme, rect: Rect) {
+    ui.painter().hline(
+        rect.x_range(),
+        rect.bottom() - theme.border_width.value() * 0.5,
+        Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+    );
+}
+
+/// 경로를 (dir, file) 로 분리 — 마지막 `/` 기준. dir 은 trailing `/` 포함.
+fn split_path(path: &str) -> (String, String) {
+    match path.rfind('/') {
+        Some(i) => (path[..=i].to_string(), path[i + 1..].to_string()),
+        None => (String::new(), path.to_string()),
+    }
+}
+
+/// status → (표시 글리프, Tag variant). (jsx `ST` 매핑)
+fn status_pill(s: FileStatus) -> (&'static str, TagVariant) {
+    match s {
+        FileStatus::Modified => ("M", TagVariant::Warning),
+        FileStatus::Added => ("A", TagVariant::Success),
+        FileStatus::Deleted => ("D", TagVariant::Danger),
+        FileStatus::Renamed => ("R", TagVariant::Accent),
+        FileStatus::Untracked => ("?", TagVariant::Default),
+        FileStatus::Conflicted => ("U", TagVariant::Danger),
+    }
+}

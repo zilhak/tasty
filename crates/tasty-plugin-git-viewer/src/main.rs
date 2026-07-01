@@ -1,36 +1,44 @@
 #![forbid(unsafe_code)]
 
-//! Tasty Git Viewer plugin — read-only git status / log / diff popup.
+//! Tasty Git Viewer plugin — read-only git status / log / diff popup (**egui-mesh**).
 //!
-//! popup contribute (`trigger = ipc`)로 등록되며, 사이드바 도구 메뉴의 "Git" 항목 클릭이
-//! 호스트의 `pending_popup_opens` 경로를 통해 `popup.open` IPC로 전달된다. context payload의
-//! `cwd` 필드를 받아 git repo를 탐색하고 status/log/diff를 plugin process 내에서 직접
-//! 수집한다 (host IPC 호출 없음).
+//! popup contribute (`trigger = ipc`, `rendering = egui-mesh`)로 등록되며, 사이드바 도구
+//! 메뉴의 "Git" 항목 클릭이 호스트의 `pending_popup_opens` 경로를 통해 `popup.open` 으로
+//! 전달된다. plugin 은 context payload 의 `cwd` 로 git repo 를 탐색해 status/log/diff 를
+//! 프로세스 내에서 직접 수집하고(host IPC 없음), 콘텐츠를 자기 egui Context 로 그려
+//! mesh 를 host 에 회신한다. host 는 셸(scrim/border/Esc/outside-click)만 소유한다.
+//!
+//! Theme 은 `popup.set_context` 의 `theme`(ThemeWire)로 매 frame 받아 host 와 동일
+//! `Theme` 로 재구성한다(markdown surface 와 동형). 상호작용(worktree 선택 / 파일→diff /
+//! Back / Refresh)은 forward 된 실제 사용자 입력으로 egui 안에서 처리된다.
 
 mod git;
-mod view;
+mod render;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+
+#[cfg(unix)]
+use std::collections::{HashMap, HashSet};
+#[cfg(unix)]
+use std::sync::Arc;
 
 use serde_json::Value;
+use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
-    BusHandle, HostHandle, Plugin, PluginEnv, PopupClosedCtx, PopupEventCtx, PopupEventResult,
-    PopupOpenCtx, PopupOpenResult, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, Translator,
-    UiEvent,
+    Plugin, PluginEnv, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx,
+    SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, Translator,
 };
+use tasty_type_appearance::theme::Theme;
+
+#[cfg(unix)]
+use tasty_plugin_sdk::EguiMeshPopup;
 
 const PLUGIN_ID: &str = "com.tasty.git-viewer";
-const PLUGIN_VERSION: &str = "0.1.1";
+const PLUGIN_VERSION: &str = "0.1.7";
 const LOG_LIMIT: usize = 200;
 
-const ID_REFRESH: &str = "refresh";
-const ID_BACK: &str = "back";
-const FILE_PREFIX: &str = "file.";
-const WT_PREFIX: &str = "wt.";
-
 #[derive(Default)]
-struct ViewerState {
+pub(crate) struct ViewerState {
     /// 현재 **활성** worktree 의 workdir (status/log/diff 가 바인딩된 대상).
     repo_path: Option<PathBuf>,
     /// popup 이 받은 cwd 가 속한 worktree 의 workdir — `is_current` 판정용(불변).
@@ -193,38 +201,31 @@ impl ViewerState {
         self.selected_file = None;
         self.diff_content = None;
     }
-
-    fn build_tree(&self, tr: &Translator) -> tasty_plugin_sdk::UiNode {
-        let vm = view::ViewModel {
-            repo_path: self
-                .repo_path
-                .as_ref()
-                .map(|p| p.to_string_lossy().into_owned()),
-            error: self.error.as_deref(),
-            worktrees: &self.worktrees,
-            active_worktree: self.active_worktree,
-            status_entries: &self.status_entries,
-            log_entries: &self.log_entries,
-            selected_file: self.selected_file,
-            diff_content: self.diff_content.as_ref(),
-        };
-        view::main_tree(&vm, tr)
-    }
 }
 
 struct GitViewerPlugin {
-    /// 단일 인스턴스 가드 — 두 번째 open 시 placeholder만 반환.
-    current_instance: Mutex<Option<u64>>,
-    /// 활성 인스턴스의 상태.
-    state: Mutex<Option<ViewerState>>,
+    /// 단일 인스턴스 가드 — 최초 open 이 primary. 이후 인스턴스는 "이미 열림" 표시.
+    primary: Option<u64>,
+    /// primary 인스턴스의 상태.
+    state: Option<ViewerState>,
+    /// popup instance_id → egui-mesh 렌더 상태(폰트 atlas·shared buffer 소유).
+    #[cfg(unix)]
+    popups: HashMap<u64, EguiMeshPopup>,
+    /// CJK fallback 폰트를 이미 설치한 popup instance_id.
+    #[cfg(unix)]
+    fonts_installed: HashSet<u64>,
     tr: Translator,
 }
 
 impl GitViewerPlugin {
     fn new(env: &PluginEnv) -> Self {
         Self {
-            current_instance: Mutex::new(None),
-            state: Mutex::new(None),
+            primary: None,
+            state: None,
+            #[cfg(unix)]
+            popups: HashMap::new(),
+            #[cfg(unix)]
+            fonts_installed: HashSet::new(),
             tr: Translator::from_plugin_env(env),
         }
     }
@@ -246,8 +247,6 @@ impl Plugin for GitViewerPlugin {
         PLUGIN_VERSION
     }
 
-    fn on_start(&mut self, _host: HostHandle, _bus: BusHandle) {}
-
     // popup-only plugin이라 surface 콜백은 빈 결과.
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
         SurfaceResult::default()
@@ -258,105 +257,132 @@ impl Plugin for GitViewerPlugin {
     }
 
     fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
-        let mut guard = match self.current_instance.lock() {
-            Ok(g) => g,
-            Err(_) => return PopupOpenResult { tree: None },
-        };
-        if guard.is_some() {
-            return PopupOpenResult {
-                tree: Some(view::already_open_tree(&self.tr)),
-            };
+        // egui-mesh popup 은 tree 를 안 그린다 — 빈 트리. 최초 인스턴스만 state 를 적재하고
+        // primary 로 삼는다. 이후 인스턴스는 paint_popup 에서 "이미 열림" 을 그린다.
+        if self.primary.is_none() {
+            self.primary = Some(ctx.instance_id);
+            let cwd = cwd_from_context(&ctx.context);
+            self.state = Some(ViewerState::load(cwd.as_deref()));
         }
-        let cwd = cwd_from_context(&ctx.context);
-        let new_state = ViewerState::load(cwd.as_deref());
-        let tree = new_state.build_tree(&self.tr);
-
-        *guard = Some(ctx.instance_id);
-        if let Ok(mut s) = self.state.lock() {
-            *s = Some(new_state);
-        }
-        PopupOpenResult { tree: Some(tree) }
+        PopupOpenResult { tree: None }
     }
 
-    fn handle_popup_event(&mut self, ctx: PopupEventCtx) -> PopupEventResult {
-        let UiEvent::Click { node_id } = &ctx.event else {
-            return PopupEventResult {
-                tree: None,
-                close: false,
-            };
-        };
-
-        // 주(主) 인스턴스가 아닌 인스턴스(중복 placeholder)에서 온 클릭은 무시.
-        if self.current_instance.lock().ok().and_then(|g| *g) != Some(ctx.instance_id) {
-            return PopupEventResult {
-                tree: None,
-                close: false,
-            };
-        }
-
-        let mut state_guard = match self.state.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                return PopupEventResult {
-                    tree: None,
-                    close: false,
-                };
-            }
-        };
-        let Some(state) = state_guard.as_mut() else {
-            return PopupEventResult {
-                tree: None,
-                close: false,
-            };
-        };
-
-        let dirty = if node_id == ID_REFRESH {
-            state.refresh();
-            true
-        } else if node_id == ID_BACK {
-            state.close_diff();
-            true
-        } else if let Some(rest) = node_id.strip_prefix(WT_PREFIX) {
-            if let Ok(idx) = rest.parse::<usize>() {
-                state.select_worktree(idx);
-                true
-            } else {
-                false
-            }
-        } else if let Some(rest) = node_id.strip_prefix(FILE_PREFIX) {
-            if let Ok(idx) = rest.parse::<usize>() {
-                state.load_diff(idx);
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        if dirty {
-            PopupEventResult {
-                tree: Some(state.build_tree(&self.tr)),
-                close: false,
-            }
-        } else {
-            PopupEventResult {
-                tree: None,
-                close: false,
-            }
-        }
+    fn paint_popup(&mut self, ctx: PopupSetContextCtx) {
+        self.paint_popup_impl(ctx);
     }
 
     fn on_popup_closed(&mut self, ctx: PopupClosedCtx) {
-        if let Ok(mut g) = self.current_instance.lock()
-            && *g == Some(ctx.instance_id)
+        if self.primary == Some(ctx.instance_id) {
+            self.primary = None;
+            self.state = None;
+        }
+        #[cfg(unix)]
         {
-            *g = None;
-            if let Ok(mut s) = self.state.lock() {
-                *s = None;
+            self.popups.remove(&ctx.instance_id);
+            self.fonts_installed.remove(&ctx.instance_id);
+        }
+    }
+}
+
+impl GitViewerPlugin {
+    /// `popup.set_context` 한 frame 을 그려 host 에 popup mesh 를 회신한다.
+    #[cfg(unix)]
+    fn paint_popup_impl(&mut self, ctx: PopupSetContextCtx) {
+        let iid = ctx.params.instance_id;
+
+        // host 가 Theme 을 아직 안 보냈으면 토큰을 풀 수 없으므로 이 frame 건너뜀.
+        let Some(theme) = ctx.params.theme.as_ref().map(theme_from_wire) else {
+            tracing::debug!("git-viewer popup {iid}: set_context without theme — skipping paint");
+            return;
+        };
+
+        let is_primary = self.primary == Some(iid);
+        // 서로소 필드 — 동시 mutable 차용 안전.
+        let tr = &self.tr;
+        let state = &mut self.state;
+        let is_new = !self.popups.contains_key(&iid);
+        let popup = self
+            .popups
+            .entry(iid)
+            .or_insert_with(|| EguiMeshPopup::new(iid));
+        if is_new {
+            install_fonts(popup.context());
+            self.fonts_installed.insert(iid);
+        }
+
+        let result = popup.paint(&ctx.host, &ctx.params, |egui_ctx| {
+            if is_primary {
+                if let Some(st) = state.as_mut() {
+                    render::draw(egui_ctx, &theme, st, tr);
+                }
+            } else {
+                render::draw_busy(egui_ctx, &theme, tr);
+            }
+        });
+        if let Err(e) = result {
+            tracing::warn!("git-viewer popup {iid} paint failed: {e}");
+        }
+    }
+
+    /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
+    /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
+    #[cfg(not(unix))]
+    fn paint_popup_impl(&mut self, _ctx: PopupSetContextCtx) {}
+}
+
+/// wire 스냅샷을 host 와 동일한 `Theme` 인스턴스로 재구성 (sizing 은 zoom 으로 재도출).
+fn theme_from_wire(w: &ThemeWire) -> Theme {
+    Theme::with_colors_and_zoom(w.colors.clone(), w.is_light, w.ui_zoom)
+}
+
+/// plugin Context 에 CJK fallback 을 설치한다(한글/일문/한자 커밋 메시지·경로 tofu 방지).
+#[cfg(unix)]
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    if let Some(bytes) = load_system_cjk_font_data() {
+        fonts.font_data.insert(
+            "system_cjk".to_owned(),
+            Arc::new(egui::FontData::from_owned(bytes)),
+        );
+        for fam in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(fam)
+                .or_default()
+                .push("system_cjk".to_owned());
+        }
+    }
+    ctx.set_fonts(fonts);
+}
+
+/// 시스템 CJK 폰트 바이트 로드 (host `font_registry::load_system_cjk_font_data` 미러).
+#[cfg(unix)]
+fn load_system_cjk_font_data() -> Option<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        for path in &[
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
             }
         }
     }
+    #[cfg(target_os = "linux")]
+    {
+        for path in &[
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        ] {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+    None
 }
 
 fn main() -> anyhow::Result<()> {

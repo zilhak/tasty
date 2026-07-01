@@ -72,8 +72,11 @@ pub struct WorktreeEntry {
     pub name: String,
     /// working tree 최상위 경로 (verbatim prefix 제거 후 저장; 재열기·표시 공용).
     pub path: PathBuf,
-    /// 브랜치 shorthand, detached 면 short oid, 읽기 실패 시 None.
-    pub head: Option<String>,
+    /// 브랜치 shorthand — detached(HEAD) / unborn 이면 None. context strip 은 None 을
+    /// "detached" 로 표시한다.
+    pub branch: Option<String>,
+    /// HEAD short oid (7자). HEAD 를 못 읽으면 None. (rail 2번째 줄 · context strip 공용)
+    pub oid: Option<String>,
     /// main working tree 인가.
     pub is_main: bool,
     /// popup 이 받은 cwd 가 속한 worktree 인가.
@@ -104,15 +107,18 @@ fn dir_name(p: &Path, fallback: &str) -> String {
         .unwrap_or_else(|| fallback.to_string())
 }
 
-/// HEAD 라벨 — 브랜치 shorthand, detached("HEAD") 면 short oid.
-fn head_label(repo: &Repository) -> Option<String> {
-    let head = repo.head().ok()?;
-    if let Some(sh) = head.shorthand()
-        && sh != "HEAD"
-    {
-        return Some(sh.to_string());
-    }
-    head.target().map(|oid| format!("{oid:.7}"))
+/// HEAD 정보 — (브랜치 shorthand, short oid). detached/unborn 이면 branch=None.
+/// HEAD 를 못 읽으면 (None, None).
+fn head_info(repo: &Repository) -> (Option<String>, Option<String>) {
+    let Ok(head) = repo.head() else {
+        return (None, None);
+    };
+    let branch = head
+        .shorthand()
+        .filter(|sh| *sh != "HEAD")
+        .map(|sh| sh.to_string());
+    let oid = head.target().map(|oid| format!("{oid:.7}"));
+    (branch, oid)
 }
 
 /// linked worktree 의 공유 `.git`(common dir) 으로부터 main working tree 도출.
@@ -162,10 +168,14 @@ pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Ve
     // 1) main working tree 합성 (libgit2 worktrees() 가 안 줌).
     if let Some(main_wd) = derive_main_workdir(repo) {
         let is_valid = main_wd.is_dir();
-        let head = Repository::open(&main_wd).ok().and_then(|r| head_label(&r));
+        let (branch, oid) = Repository::open(&main_wd)
+            .ok()
+            .map(|r| head_info(&r))
+            .unwrap_or((None, None));
         out.push(WorktreeEntry {
             name: dir_name(&main_wd, "main"),
-            head,
+            branch,
+            oid,
             is_main: true,
             is_current: canon(&main_wd) == current_canon,
             locked: false,
@@ -201,16 +211,18 @@ pub fn collect_worktrees(repo: &Repository, current_workdir: &Path) -> Result<Ve
                 }
             };
             // head 는 유효한 worktree 만 읽고 핸들은 바로 drop (목록 단계는 status/log 안 읽음).
-            let head = if is_valid {
+            let (branch, oid) = if is_valid {
                 Repository::open_from_worktree(&wt)
                     .ok()
-                    .and_then(|r| head_label(&r))
+                    .map(|r| head_info(&r))
+                    .unwrap_or((None, None))
             } else {
-                None
+                (None, None)
             };
             out.push(WorktreeEntry {
                 name: name.to_string(),
-                head,
+                branch,
+                oid,
                 is_main: false,
                 is_current: wt_canon == current_canon,
                 locked,
