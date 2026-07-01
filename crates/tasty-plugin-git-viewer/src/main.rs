@@ -34,7 +34,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_plugin_sdk::EguiMeshPopup;
 
 const PLUGIN_ID: &str = "com.tasty.git-viewer";
-const PLUGIN_VERSION: &str = "0.1.7";
+const PLUGIN_VERSION: &str = "0.1.8";
 const LOG_LIMIT: usize = 200;
 
 #[derive(Default)]

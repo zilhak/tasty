@@ -814,12 +814,13 @@ fn diff_line(
             DiffLineKind::Deletion => "-",
             DiffLineKind::Context => "",
         };
+        // 부호 글리프는 jsx `opacity: 0.8`(hunk band border 패턴과 동일 gamma_multiply).
         p.text(
             egui::pos2(rect.left() + DIFF_GUTTER_W * 2.0 + DIFF_SIGN_W * 0.5, cy),
             Align2::CENTER_CENTER,
             sign,
             mono(sz),
-            fg,
+            fg.gamma_multiply(0.8),
         );
     }
     let text_x = rect.left() + DIFF_GUTTER_W * 2.0 + DIFF_SIGN_W;
