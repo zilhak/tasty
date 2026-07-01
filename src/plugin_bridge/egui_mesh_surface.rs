@@ -63,10 +63,15 @@ impl Surface for EguiMeshSurface {
         Some(self.id)
     }
 
-    /// egui-mesh surface 는 고유 cwd 의미가 없다 — host 가 carry 한 cwd 상속은
-    /// 입력/컨텍스트 forward 가 들어오는 A1-S5/S7 에서 결정한다. 현재는 None.
+    /// file 기반 egui-mesh surface(markdown 등)의 cwd 는 그 파일이 속한 폴더다.
+    /// 이 surface 에서 새 터미널 split 등을 열 때 시작 폴더로 상속되고, markdown
+    /// 제자리 이동(04) 후엔 새 파일의 부모로 따라간다. file 이 없는 kind(mesh-demo
+    /// 등)는 고유 cwd 의미가 없어 None.
     fn source_cwd(&self) -> Option<PathBuf> {
-        None
+        self.file
+            .as_ref()
+            .map(PathBuf::from)
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
     }
 
     fn display_name(&self) -> String {
@@ -101,6 +106,13 @@ mod tests {
         assert_eq!(s.type_name(), "EguiMesh");
         assert_eq!(s.surface_id(), Some(7));
         assert_eq!(s.display_name(), "Readme");
+        // file 기반 surface 의 cwd 는 그 파일의 부모 폴더.
+        assert_eq!(s.source_cwd(), Some(PathBuf::from("/docs")));
+    }
+
+    #[test]
+    fn source_cwd_none_without_file() {
+        let s = EguiMeshSurface::new(9, "mesh-demo", "com.tasty.demo".into(), "Demo".into(), None);
         assert_eq!(s.source_cwd(), None);
     }
 

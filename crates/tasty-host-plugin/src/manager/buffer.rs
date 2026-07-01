@@ -43,6 +43,14 @@ impl PluginManager {
         self.egui_mesh_frames.get(&surface_id)
     }
 
+    /// 캐시된 egui-mesh frame 을 버린다 — 다음 `forward_egui_mesh_context` 에서
+    /// `has_frame == false` 가 되어 재-bootstrap(`surface.create` 재발송)을 유발한다.
+    /// markdown 제자리 이동(04)처럼 같은 surface_id 를 새 콘텐츠 params 로 다시 열 때
+    /// stale frame 이 남지 않게 호출한다.
+    pub fn drop_egui_mesh_frame(&mut self, surface_id: u32) {
+        self.egui_mesh_frames.remove(&surface_id);
+    }
+
     /// egui-mesh popup 인스턴스의 최근 paint_frame 메타 조회 (A2). 호스트 popup
     /// 합성기가 `instance_id` 로 lookup → `buffer_id` 로 [`PluginManager::plugin_buffer`]
     /// → footer Acquire-load → `decode_paint` 로 mesh 를 복원한다. plugin 이 아직 frame 을

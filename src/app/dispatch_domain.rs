@@ -252,17 +252,24 @@ impl App {
                 }
             }
             CoreEvent::SurfaceConverted {
-                surface_id: _,
+                surface_id,
                 replaced,
                 is_terminal: _,
             } => {
-                // 추가 cascade 없음 — mark_layout_dirty 와 send_fast_init 은
-                // Core::apply 가 이미 처리. main.mark_dirty 만.
-                if replaced
-                    && let DispatchSource::Main(wid) = source
-                    && let Some(main) = self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
-                {
-                    main.mark_dirty();
+                // mark_layout_dirty 와 send_fast_init 은 Core::apply 가 이미 처리.
+                // egui-mesh(markdown 등)로 제자리 변환 시 같은 surface_id 에 stale frame
+                // 이 남아 새 `surface.create`(새 file params)가 재발송되지 않는다 — frame
+                // 을 버려 재-bootstrap 을 강제한다. egui-mesh 가 아닌 surface_id 면 no-op.
+                if replaced {
+                    if let Some(mgr) = self.plugin_manager.as_mut() {
+                        mgr.drop_egui_mesh_frame(surface_id);
+                    }
+                    if let DispatchSource::Main(wid) = source
+                        && let Some(main) =
+                            self.view.views.get_mut(&wid).and_then(|w| w.as_main_mut())
+                    {
+                        main.mark_dirty();
+                    }
                 }
             }
             CoreEvent::MoveSurfaceApplied {
