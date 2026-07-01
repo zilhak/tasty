@@ -398,6 +398,55 @@ impl KeybindingSettings {
         }
     }
 
+    /// script_id 에 바인딩된 combo (없으면 None). 관리 창(05)이 표시에 사용.
+    pub fn script_binding_combo(&self, script_id: &str) -> Option<&str> {
+        self.script_bindings
+            .iter()
+            .find(|b| b.script_id == script_id)
+            .map(|b| b.combo.as_str())
+    }
+
+    /// script_id 의 바인딩을 combo 로 설정(스크립트당 하나 — 기존 것 교체). 빈 combo 면 제거.
+    pub fn set_script_binding(&mut self, script_id: &str, combo: String) {
+        self.script_bindings.retain(|b| b.script_id != script_id);
+        if !combo.is_empty() {
+            self.script_bindings.push(super::ScriptBinding {
+                script_id: script_id.to_string(),
+                combo,
+            });
+        }
+    }
+
+    /// script_id 의 바인딩 제거. 스크립트 삭제(05) 시 연결 해제에 사용. 있었으면 true.
+    pub fn remove_script_binding(&mut self, script_id: &str) -> bool {
+        let before = self.script_bindings.len();
+        self.script_bindings.retain(|b| b.script_id != script_id);
+        self.script_bindings.len() != before
+    }
+
+    /// combo 가 이미 다른 고정 액션 또는 다른 스크립트에 쓰이는지 검사.
+    /// 반환 = 충돌 대상 식별자(고정 필드 id 또는 `script:<id>`). `except_script_id` 는 제외(자기 자신 재바인딩 허용).
+    pub fn combo_conflict(&self, combo: &str, except_script_id: Option<&str>) -> Option<String> {
+        if combo.is_empty() {
+            return None;
+        }
+        // 고정 액션 필드와의 충돌.
+        for (id, _label) in Self::GENERAL_BINDING_FIELDS {
+            if let Some(bindings) = self.get_bindings(id)
+                && bindings.iter().any(|b| b == combo)
+            {
+                return Some((*id).to_string());
+            }
+        }
+        // 다른 스크립트 바인딩과의 충돌.
+        for b in &self.script_bindings {
+            if Some(b.script_id.as_str()) != except_script_id && b.combo == combo {
+                return Some(format!("script:{}", b.script_id));
+            }
+        }
+        None
+    }
+
     /// field_id → 라벨 번역 키.
     pub fn label_key_for(field_id: &str) -> Option<&'static str> {
         Self::GENERAL_BINDING_FIELDS

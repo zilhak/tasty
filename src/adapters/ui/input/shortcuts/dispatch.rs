@@ -6,7 +6,6 @@ use winit::keyboard::{Key, ModifiersState};
 use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::view::main::MainView;
 
-#[cfg(not(target_os = "macos"))]
 use super::matches_any_binding;
 use super::{focused_explorer_surface_id, focused_image_surface_id, send_app_event};
 
@@ -473,6 +472,41 @@ impl MainView {
         false
     }
 
+    /// 사용자 스크립트 단축키 매칭 → Lua 워커 실행 요청 (ADR-0031, TODO 04).
+    ///
+    /// combo 가 매칭되면 등록 스크립트를 조회해 소스를 읽고 `AppEvent::RunLuaScript` 로
+    /// App(lua_engine 소유)에 넘긴다. 매칭됐으나 스크립트/파일이 없으면 이벤트는 소비하되
+    /// 실행하지 않는다(다른 핸들러로 새지 않게). release 는 사용자 키 입력에서만 이 경로를 탄다.
+    fn try_dispatch_script_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
+        let kb = &self.core_state.settings.keybindings;
+        let Some(script_id) = kb
+            .script_bindings
+            .iter()
+            .find(|b| matches_any_binding(std::slice::from_ref(&b.combo), key, mods))
+            .map(|b| b.script_id.clone())
+        else {
+            return false;
+        };
+        let Some(entry) = self.core_state.settings.scripts.get(&script_id) else {
+            tracing::warn!(
+                target: "tasty_lua",
+                "script shortcut matched but script '{script_id}' not registered — ignoring"
+            );
+            return true;
+        };
+        let path = entry.path.clone();
+        let name = entry.name.clone();
+        match std::fs::read_to_string(&path) {
+            Ok(source) => {
+                send_app_event(&self.proxy, crate::AppEvent::RunLuaScript { source, name });
+            }
+            Err(e) => {
+                tracing::warn!(target: "tasty_lua", "script read failed {}: {e}", path.display());
+            }
+        }
+        true
+    }
+
     /// Handle keyboard shortcuts. Returns true if the event was consumed by a shortcut.
     pub(crate) fn handle_shortcut(&mut self, key: &Key, mods: ModifiersState) -> bool {
         let ctrl = mods.control_key();
@@ -522,6 +556,12 @@ impl MainView {
             if self.core_state.workspaces.is_empty() {
                 self.request_close();
             }
+            self.base.dirty = true;
+            return true;
+        }
+
+        // 사용자 스크립트 단축키 (ADR-0031, TODO 04) — 사용자 키 입력 경로에서만 발화.
+        if self.try_dispatch_script_shortcut(key, mods) {
             self.base.dirty = true;
             return true;
         }

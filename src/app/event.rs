@@ -30,6 +30,10 @@ pub(crate) enum AppEvent {
     /// (단일 창이면 quit 흐름, 다중 창이면 해당 창만 닫음).
     #[cfg(feature = "gui")]
     CloseWindow(winit::window::WindowId),
+    /// 사용자 스크립트 단축키가 눌려 Lua 워커에서 실행 요청 (ADR-0031, TODO 04).
+    /// view 의 `handle_shortcut` 이 combo 매칭 후 스크립트 소스를 읽어 발행하고,
+    /// App 이 소유한 `lua_engine` 워커로 실행한다(사용자 키 입력 경로에서만 — identity 원칙 1).
+    RunLuaScript { source: String, name: String },
     /// Request to open settings modal.
     #[cfg(feature = "gui")]
     OpenSettings,

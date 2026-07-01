@@ -13,6 +13,13 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::CreateWindow => {
                 self.create_new_window(event_loop);
             }
+            AppEvent::RunLuaScript { source, name } => {
+                if let Some(engine) = self.lua_engine.as_ref() {
+                    engine.run_script(&source, Some(&name));
+                } else {
+                    tracing::warn!(target: "tasty_lua", "RunLuaScript dropped — lua engine unavailable");
+                }
+            }
             AppEvent::OpenSettings => {
                 self.open_settings_modal(event_loop);
             }

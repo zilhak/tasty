@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+/// 사용자 스크립트↔단축키 동적 바인딩 (ADR-0031).
+///
+/// 고정 액션 필드(`Vec<String>`)와 달리 스크립트는 N 개 동적이라 별도 표현이 필요하다.
+/// 스크립트당 combo 하나(디자인 05: 행마다 Kbd 1개). `script_id` 는 `ScriptRegistry`(03) 참조.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptBinding {
+    pub script_id: String,
+    pub combo: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KeybindingSettings {
@@ -102,6 +112,10 @@ pub struct KeybindingSettings {
     pub maximize_window: Vec<String>,
     /// Close the current window.
     pub close_window: Vec<String>,
+    /// 사용자 스크립트↔단축키 동적 바인딩 (ADR-0031). 고정 필드와 별개 표현.
+    /// `#[serde(default)]` 로 기존 config 마이그레이션 안전(누락 시 빈 목록).
+    #[serde(default)]
+    pub script_bindings: Vec<ScriptBinding>,
 }
 
 impl Default for KeybindingSettings {

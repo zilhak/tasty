@@ -68,6 +68,7 @@ impl KeybindingSettings {
             minimize_window: Vec::new(),
             maximize_window: Vec::new(),
             close_window: Vec::new(),
+            script_bindings: Vec::new(),
         }
     }
 
@@ -131,6 +132,7 @@ impl KeybindingSettings {
             minimize_window: Vec::new(),
             maximize_window: Vec::new(),
             close_window: Vec::new(),
+            script_bindings: Vec::new(),
         }
     }
 
@@ -194,6 +196,7 @@ impl KeybindingSettings {
             minimize_window: Vec::new(),
             maximize_window: Vec::new(),
             close_window: Vec::new(),
+            script_bindings: Vec::new(),
         }
     }
 
@@ -257,6 +260,7 @@ impl KeybindingSettings {
             minimize_window: Vec::new(),
             maximize_window: Vec::new(),
             close_window: Vec::new(),
+            script_bindings: Vec::new(),
         }
     }
 

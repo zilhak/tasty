@@ -293,3 +293,51 @@ fn remove_conflicts_from_defaults_strips_conflicting_combos() {
         "충돌하지 않는 combo까지 제거됨"
     );
 }
+
+#[test]
+fn script_binding_set_get_remove() {
+    let mut kb = KeybindingSettings::default();
+    assert!(kb.script_binding_combo("script-0").is_none());
+    kb.set_script_binding("script-0", "ctrl+alt+r".to_string());
+    assert_eq!(kb.script_binding_combo("script-0"), Some("ctrl+alt+r"));
+    // 같은 script_id 재설정은 교체(중복 누적 안 함).
+    kb.set_script_binding("script-0", "ctrl+alt+t".to_string());
+    assert_eq!(kb.script_binding_combo("script-0"), Some("ctrl+alt+t"));
+    assert_eq!(kb.script_bindings.len(), 1);
+    // 빈 combo 는 제거.
+    kb.set_script_binding("script-0", String::new());
+    assert!(kb.script_binding_combo("script-0").is_none());
+    // remove.
+    kb.set_script_binding("script-1", "ctrl+alt+y".to_string());
+    assert!(kb.remove_script_binding("script-1"));
+    assert!(!kb.remove_script_binding("script-1"));
+}
+
+#[test]
+fn combo_conflict_detects_fixed_and_script() {
+    let mut kb = KeybindingSettings::default();
+    // 고정 액션(new_tab)의 combo 를 잡아 충돌 확인.
+    let taken = kb
+        .new_tab
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "ctrl+t".to_string());
+    assert!(kb.combo_conflict(&taken, None).is_some());
+    // 스크립트끼리 충돌.
+    kb.set_script_binding("script-0", "ctrl+alt+9".to_string());
+    assert_eq!(
+        kb.combo_conflict("ctrl+alt+9", None).as_deref(),
+        Some("script:script-0")
+    );
+    // 자기 자신 재바인딩은 충돌 아님(except).
+    assert!(kb.combo_conflict("ctrl+alt+9", Some("script-0")).is_none());
+    // 미사용 combo 는 충돌 없음.
+    assert!(kb.combo_conflict("ctrl+alt+0", None).is_none());
+}
+
+#[test]
+fn script_bindings_serde_default_when_absent() {
+    // script_bindings 키 없는 기존 config 조각 → 빈 목록.
+    let kb: KeybindingSettings = toml::from_str("new_tab = [\"ctrl+t\"]").unwrap();
+    assert!(kb.script_bindings.is_empty());
+}
