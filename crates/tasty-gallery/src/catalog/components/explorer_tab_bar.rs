@@ -2,22 +2,19 @@
 //! 와이어프레임 5 탭 strip).
 //!
 //! **상위 Tab 위젯(`tab_bar` specimen)과 별개** — surface-local 내부 탭. 시각 분리:
-//! 높이 24(item-height-tab, 상위보다 작게), 활성 탭은 **하단 2px accent 언더라인**
-//! (상위 탭의 상단 bar 와 대비). 가변폭(라벨 fit), 끝에 `＋` 새 탭.
+//! 높이 24(item-height-tab, 상위보다 작게), 활성 탭은 **상단 2px accent 인디케이터**
+//! (design `ExpTab` `boxShadow: inset 0 2px 0 accent-primary`). 각 탭은 라벨 앞에
+//! **folder 아이콘**(text-muted)을 둔다. 가변폭(라벨 fit), 끝에 `＋` 새 탭.
 //!
 //! Theme 토큰만 사용. i18n 키 후보(본체): `explorer.tab.new` / `explorer.tab.close`(툴팁).
 
 use tasty_type_appearance::theme::Theme;
 
-use crate::catalog::icons::{CHEVRON_DOWN, CLOSE, MockGlyph, PLUS};
+use crate::catalog::icons::{CLOSE, FOLDER, MockGlyph, PLUS};
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// (label, active, has_chevron)
-const TABS: &[(&str, bool, bool)] = &[
-    ("Downloads", true, true),
-    ("src", false, false),
-    ("target", false, false),
-];
+/// (label, active)
+const TABS: &[(&str, bool)] = &[("Downloads", true), ("src", false), ("target", false)];
 
 fn strip(ui: &mut egui::Ui, theme: &Theme) {
     let bar_h = theme.item_height_tab.value(); // 24
@@ -43,12 +40,11 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
     );
 
     let mut x = rect.min.x;
-    for (i, (label, active, has_chevron)) in TABS.iter().enumerate() {
-        // 탭 폭 = pad + (chevron+gap)? + label + gap + close + pad.
+    for (i, (label, active)) in TABS.iter().enumerate() {
+        // 탭 폭 = pad + folder + gap + label + gap + close + pad.
         let galley = ui
             .fonts(|f| f.layout_no_wrap((*label).to_string(), font.clone(), egui::Color32::WHITE));
-        let chevron_w = if *has_chevron { icon_xs + gap } else { 0.0 };
-        let tab_w = pad_x + chevron_w + galley.size().x + gap + icon_xs + pad_x;
+        let tab_w = pad_x + icon_xs + gap + galley.size().x + gap + icon_xs + pad_x;
         let tab_rect =
             egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(tab_w, bar_h));
         let resp = ui.interact(
@@ -73,16 +69,13 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         if *active {
             ui.painter()
                 .rect_filled(tab_rect, 0.0, egui::Color32::from(theme.bg_panel()));
-            // 하단 2px accent 언더라인.
-            let underline = egui::Rect::from_min_size(
-                egui::pos2(
-                    tab_rect.min.x,
-                    tab_rect.max.y - theme.tab_indicator_width.value(),
-                ),
+            // 상단 2px accent 인디케이터 (design boxShadow inset 0 2px 0).
+            let indicator = egui::Rect::from_min_size(
+                tab_rect.min,
                 egui::vec2(tab_w, theme.tab_indicator_width.value()),
             );
             ui.painter()
-                .rect_filled(underline, 0.0, egui::Color32::from(theme.accent_primary()));
+                .rect_filled(indicator, 0.0, egui::Color32::from(theme.accent_primary()));
         } else if resp.hovered() {
             ui.painter()
                 .rect_filled(tab_rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
@@ -95,15 +88,19 @@ fn strip(ui: &mut egui::Ui, theme: &Theme) {
         };
         let mut cx = tab_rect.min.x + pad_x;
 
-        // chevron (활성 디렉토리 드롭다운 표식).
-        if *has_chevron {
-            let cr = egui::Rect::from_min_size(
-                egui::pos2(cx, tab_rect.center().y - icon_xs / 2.0),
-                egui::vec2(icon_xs, icon_xs),
-            );
-            paint_glyph(ui, CHEVRON_DOWN, cr, icon_xs, egui::Color32::from(fg));
-            cx += icon_xs + gap;
-        }
+        // folder 아이콘 (라벨 앞, 항상 text-muted — design ExpTab).
+        let fr = egui::Rect::from_min_size(
+            egui::pos2(cx, tab_rect.center().y - icon_xs / 2.0),
+            egui::vec2(icon_xs, icon_xs),
+        );
+        paint_glyph(
+            ui,
+            FOLDER,
+            fr,
+            icon_xs,
+            egui::Color32::from(theme.text_muted()),
+        );
+        cx += icon_xs + gap;
 
         // label.
         ui.painter().text(
@@ -176,7 +173,8 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("tab-height", "24 (control-height-tab)"),
             ("width", "fit label (variable)"),
             ("strip", "bg-sidebar + bottom border-strong"),
-            ("active", "bg-panel + 2px accent underline"),
+            ("active", "bg-panel + top 2px accent indicator"),
+            ("icon", "folder (text-muted) before label"),
             ("close", "✕ active always · idle on hover"),
             ("controls", "＋ new tab (end)"),
         ],
@@ -185,7 +183,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             TokenChip::new("bg-panel", "active tab", theme.bg_panel().into()),
             TokenChip::new(
                 "accent-primary",
-                "active underline",
+                "active indicator",
                 theme.accent_primary().into(),
             ),
             TokenChip::new("separator", "tab divider", theme.separator.into()),
@@ -195,8 +193,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
     spec::note(
         ui,
         theme,
-        "Surface-local tabs — visually separated from the pane Tab strip: shorter (24) and \
-         marked by a bottom accent underline instead of the pane tab's top bar. Internal \
-         tab list is restored with the surface (snapshot/restore, body stage).",
+        "Surface-local tabs — shorter (24) than the pane Tab strip and marked by a top 2px \
+         accent indicator (design ExpTab boxShadow inset 0 2px 0). Each tab carries a folder \
+         icon (text-muted) before its label. Internal tab list is restored with the surface \
+         (snapshot/restore, body stage).",
     );
 }

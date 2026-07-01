@@ -191,7 +191,8 @@ fn tab_strip(
             .unwrap_or_else(|| tab.cwd.to_string_lossy().to_string());
         let galley =
             ui.fonts(|f| f.layout_no_wrap(label.clone(), font.clone(), egui::Color32::WHITE));
-        let tab_w = pad_x + galley.size().x + gap + icon_xs + pad_x;
+        // 폭 = pad + folder + gap + label + gap + close + pad (design ExpTab).
+        let tab_w = pad_x + icon_xs + gap + galley.size().x + gap + icon_xs + pad_x;
         let tab_rect =
             egui::Rect::from_min_size(egui::pos2(x, rect.min.y), egui::vec2(tab_w, bar_h));
         let resp = ui.interact(
@@ -211,15 +212,13 @@ fn tab_strip(
         if is_active {
             ui.painter()
                 .rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
-            let underline = egui::Rect::from_min_size(
-                egui::pos2(
-                    tab_rect.min.x,
-                    tab_rect.max.y - theme.tab_indicator_width.value(),
-                ),
+            // 상단 2px accent 인디케이터 (design ExpTab boxShadow inset 0 2px 0).
+            let indicator = egui::Rect::from_min_size(
+                tab_rect.min,
                 egui::vec2(tab_w, theme.tab_indicator_width.value()),
             );
             ui.painter()
-                .rect_filled(underline, 0.0, theme.accent_primary().to_egui());
+                .rect_filled(indicator, 0.0, theme.accent_primary().to_egui());
         } else if resp.hovered() {
             ui.painter()
                 .rect_filled(tab_rect, 0.0, theme.overlay_hover().to_egui_premultiplied());
@@ -230,8 +229,16 @@ fn tab_strip(
         } else {
             theme.text_muted().to_egui()
         };
+        // folder 아이콘 (라벨 앞, 항상 text-muted — design ExpTab).
+        let folder_rect = egui::Rect::from_min_size(
+            egui::pos2(tab_rect.min.x + pad_x, tab_rect.center().y - icon_xs / 2.0),
+            egui::vec2(icon_xs, icon_xs),
+        );
+        icons::FOLDER
+            .image(icon_xs, theme.text_muted().to_egui())
+            .paint_at(ui, folder_rect);
         ui.painter().text(
-            egui::pos2(tab_rect.min.x + pad_x, tab_rect.center().y),
+            egui::pos2(tab_rect.min.x + pad_x + icon_xs + gap, tab_rect.center().y),
             egui::Align2::LEFT_CENTER,
             &label,
             font.clone(),
