@@ -946,6 +946,9 @@ delete_category = "カテゴリを削除"
 collapse_all = "すべて折りたたむ"
 expand_all = "すべて展開"
 move_to_category = "カテゴリへ移動"
+add_workspace = "ワークスペースを追加"
+collapse = "折りたたむ"
+expand = "展開"
 
 [workspace_category.error]
 empty = "カテゴリ名を空にはできません。"

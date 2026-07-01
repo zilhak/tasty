@@ -946,6 +946,9 @@ delete_category = "Delete category"
 collapse_all = "Collapse all"
 expand_all = "Expand all"
 move_to_category = "Move to category"
+add_workspace = "Add workspace"
+collapse = "Collapse"
+expand = "Expand"
 
 [workspace_category.error]
 empty = "Category name must not be empty."

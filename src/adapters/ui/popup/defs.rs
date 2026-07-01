@@ -267,6 +267,22 @@ pub fn all_defs() -> &'static [PopupDef] {
                 min_size: None,
                 draw_fn: crate::adapters::ui::tools_menu::draw_tools_menu,
             },
+            PopupDef {
+                id: super::rail_category::RAIL_CATEGORY_POPUP_ID,
+                title_key: "workspace_category.heading",
+                title_fn: None,
+                default_size: super::rail_category::rail_category_default_size(),
+                sizer: Some(super::rail_category::rail_category_sizer),
+                default_scope: PopupScope::Window,
+                close_on_outside_click: true,
+                headless: true,
+                sticky_focus: false,
+                // 컨텍스트 메뉴 스타일 — 이동/리사이즈 비활성 (레일 버튼 우측 앵커).
+                drag_handle: DragHandle::None,
+                resizable: false,
+                min_size: None,
+                draw_fn: super::rail_category::draw_rail_category_popup,
+            },
         ]
     })
 }

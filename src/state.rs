@@ -548,6 +548,9 @@ pub struct DialogState {
     /// 누르면 `App::dispatch_pending_md_open` 이 `Core::apply_pending_md_open` 으로
     /// 실제 오픈을 재개하고, [취소]/Esc/바깥클릭이면 슬롯을 폐기한다.
     pub(crate) pending_md_open: Option<PendingMdOpen>,
+    /// 축소 레일 카테고리 팝업(`rail_category`)이 대상으로 하는 카테고리 id.
+    /// `---` 버튼 클릭 시 set, popup 닫힘 시 None.
+    pub(crate) rail_category_popup: Option<crate::model::WorkspaceCategoryId>,
 }
 
 /// 1MB 초과 markdown 열기 확인 팝업의 보류 오픈 상태 (`01-md-size-confirm-gate`).
@@ -637,6 +640,7 @@ impl DialogState {
             preset_picker_selected: None,
             pending_enter_copy_mode: false,
             pending_md_open: None,
+            rail_category_popup: None,
         }
     }
 

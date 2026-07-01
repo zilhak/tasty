@@ -78,6 +78,9 @@ pub struct DragSnapshot {
 pub struct SidebarCollapsedProps<'a> {
     pub theme: &'a Theme,
     pub workspaces: &'a [WorkspaceEntryView],
+    /// `Some` 이면 카테고리 그룹으로 렌더(토글 on) — `---` 버튼 + 소속 아바타.
+    /// `None` 이면 기존 평면 아바타 나열.
+    pub categories: Option<&'a [CategorySectionView]>,
     pub tools_hover: &'a str,
     /// "확인 필요" plugin 개수. >0 이면 Plugins 레일 버튼에 danger 배지.
     pub plugin_alert: usize,
@@ -133,6 +136,11 @@ pub enum SidebarCollapsedAction {
     NewWorkspaceContextMenu {
         x: f32,
         y: f32,
+    },
+    /// 레일 `---` 카테고리 버튼 클릭 — 우측 앵커드 팝업 열기. `anchor` 는 버튼 rect.
+    RailCategoryClicked {
+        cat_id: crate::model::WorkspaceCategoryId,
+        anchor: egui::Rect,
     },
 }
 
@@ -483,97 +491,26 @@ pub fn draw_collapsed_sidebar_view(
 
     ui.vertical_centered(|ui| {
         ui.add_space(4.0);
-        for (i, ws) in props.workspaces.iter().enumerate() {
-            // 디자인 (chrome.jsx CollapsedSidebar): 워크스페이스 이름 첫 글자 대문자,
-            // mono 13 bold. 빈 이름이면 라벨 생략 (한글/이모지도 안전하게 chars().next()).
-            let label = ws
-                .name
-                .chars()
-                .next()
-                .map(|c| c.to_uppercase().to_string())
-                .unwrap_or_default();
-            // G3: 디자인 IconButton.active — active = bg overlay-active + 글자색
-            // accent-primary(blue), 테두리 없음. inactive = bg 없음 + 글자색 text-muted.
-            // G4: notif 의 글자색(yellow) 표현은 제거 — notif 는 우상단 dot 으로만.
-            let text_color: egui::Color32 = if ws.is_active {
-                th.accent_primary().into()
-            } else {
-                th.text_muted().into()
-            };
-
-            let (rect, resp) = ui.allocate_exact_size(collapsed_ws_size(th), egui::Sense::click());
-            if ws.is_active {
-                ui.painter()
-                    .rect_filled(rect, 4.0, th.overlay_active().to_egui_premultiplied());
+        if let Some(sections) = props.categories {
+            // 그룹 렌더(토글 on) — 카테고리마다 `---` 버튼 + (접힘 아니면) 소속 아바타.
+            // 접힌/빈 카테고리는 `---` 버튼만. normal 항상 맨 위(sections 순서).
+            for section in sections {
+                if let Some(anchor) = draw_rail_category_button(ui, th) {
+                    actions.push(SidebarCollapsedAction::RailCategoryClicked {
+                        cat_id: section.id,
+                        anchor,
+                    });
+                }
+                if !section.collapsed {
+                    for (global_idx, ws) in &section.entries {
+                        draw_collapsed_avatar(ui, props, *global_idx, ws, &mut actions);
+                    }
+                }
             }
-            if resp.hovered() {
-                ui.painter()
-                    .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
-            }
-            // switch-number overlay: workspace_switch_modifier 홀드 + 단축키 있는 ws(1–9)는
-            // letter avatar 자리에 숫자 키캡을 in-place 그린다(코너 상태 dot 은 유지).
-            let switch_digit = if props.workspace_switch_held {
-                crate::adapters::ui::switch_overlay::workspace_digit(i)
-            } else {
-                None
-            };
-            // 등장 페이드(90ms, motion-ui-fast) — held 여부로 매 프레임 구동.
-            let fade = crate::adapters::ui::switch_overlay::appear_fade(
-                ui.ctx(),
-                th,
-                ("ws_collapsed", i),
-                props.workspace_switch_held,
-            );
-            if let Some(digit) = switch_digit {
-                crate::adapters::ui::switch_overlay::paint_keycap(
-                    ui.painter(),
-                    th,
-                    rect.center(),
-                    digit,
-                    ws.is_active,
-                    fade,
-                );
-            } else if !label.is_empty() {
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    &label,
-                    egui::FontId::monospace(th.font_size_body.value()),
-                    text_color,
-                );
-            }
-            // 우상단 dot — mirror(하늘색) > notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring.
-            let dot_radius = 3.0;
-            let dot_pad = 4.0;
-            let dot_center = egui::pos2(
-                rect.max.x - dot_pad - dot_radius,
-                rect.min.y + dot_pad + dot_radius,
-            );
-            if ws.is_mirror {
-                ui.painter()
-                    .circle_filled(dot_center, dot_radius, th.accent_info());
-            } else if ws.has_highlight {
-                // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
-                ui.painter()
-                    .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
-                ui.painter()
-                    .circle_filled(dot_center, dot_radius, th.accent_primary());
-            } else if ws.busy_count > 0 {
-                ui.painter()
-                    .circle_filled(dot_center, dot_radius, th.accent_success());
-            }
-            // attached(다른 client 점유) → 아바타 둘레 lavender ring (디자인 2026-06-15
-            // CollapsedSidebar: outline 1.5px lavender). red(error) 재사용 분리.
-            if ws.attached {
-                ui.painter().rect_stroke(
-                    rect,
-                    4.0,
-                    egui::Stroke::new(1.5, th.border_attached()),
-                    egui::StrokeKind::Inside,
-                );
-            }
-            if resp.clicked() {
-                actions.push(SidebarCollapsedAction::WorkspaceClicked(i));
+        } else {
+            // 평면 렌더(토글 off) — 전체 아바타 나열.
+            for (i, ws) in props.workspaces.iter().enumerate() {
+                draw_collapsed_avatar(ui, props, i, ws, &mut actions);
             }
         }
 
@@ -898,6 +835,135 @@ fn paint_icon_button(
     icon.image(icon_size, color).paint_at(ui, icon_rect);
 }
 
+/// 레일 카테고리 경계 `---` 버튼 (chrome.jsx `RailCategoryBtn` 전사). 클릭 시 버튼
+/// rect 를 반환(우측 앵커 팝업 위치 계산용). 폭=slot_width(디자인 size-36 자리, 아바타
+/// 열 정렬), 높이=spacing_lg(=size-16), 내부 선 폭=slot_width-spacing_sm(=size-24)·
+/// 높이=border_width, idle=separator / hover=text-muted.
+fn draw_rail_category_button(ui: &mut egui::Ui, th: &Theme) -> Option<egui::Rect> {
+    let w = th.sidebar_collapsed_slot_width.value();
+    let h = th.spacing_lg.value();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
+    let radius = th.corner_radius.value();
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, radius, th.hover_overlay.to_egui_premultiplied());
+    }
+    let line_w = (w - th.spacing_sm.value()).max(0.0);
+    let line_h = th.border_width.value();
+    let line_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(line_w, line_h));
+    let line_color: egui::Color32 = if resp.hovered() {
+        th.text_muted().into()
+    } else {
+        th.separator.to_egui_premultiplied()
+    };
+    ui.painter().rect_filled(line_rect, 0.0, line_color);
+    resp.clicked().then_some(rect)
+}
+
+/// Collapsed 레일 워크스페이스 아바타 1개 — 머리글자 사각 + 상태 dot/링 + 클릭 action.
+/// 그룹/평면 렌더가 공유한다. `global_idx` 는 반드시 전역 인덱스여야 클릭/switch overlay
+/// 가 올바른 워크스페이스를 가리킨다.
+fn draw_collapsed_avatar(
+    ui: &mut egui::Ui,
+    props: &SidebarCollapsedProps<'_>,
+    global_idx: usize,
+    ws: &WorkspaceEntryView,
+    actions: &mut Vec<SidebarCollapsedAction>,
+) {
+    let th = props.theme;
+    // 디자인 (chrome.jsx CollapsedSidebar): 워크스페이스 이름 첫 글자 대문자,
+    // mono 13 bold. 빈 이름이면 라벨 생략 (한글/이모지도 안전하게 chars().next()).
+    let label = ws
+        .name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_default();
+    // G3: 디자인 IconButton.active — active = bg overlay-active + 글자색
+    // accent-primary(blue), 테두리 없음. inactive = bg 없음 + 글자색 text-muted.
+    // G4: notif 의 글자색(yellow) 표현은 제거 — notif 는 우상단 dot 으로만.
+    let text_color: egui::Color32 = if ws.is_active {
+        th.accent_primary().into()
+    } else {
+        th.text_muted().into()
+    };
+
+    let (rect, resp) = ui.allocate_exact_size(collapsed_ws_size(th), egui::Sense::click());
+    if ws.is_active {
+        ui.painter()
+            .rect_filled(rect, 4.0, th.overlay_active().to_egui_premultiplied());
+    }
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
+    }
+    // switch-number overlay: workspace_switch_modifier 홀드 + 단축키 있는 ws(1–9)는
+    // letter avatar 자리에 숫자 키캡을 in-place 그린다(코너 상태 dot 은 유지).
+    let switch_digit = if props.workspace_switch_held {
+        crate::adapters::ui::switch_overlay::workspace_digit(global_idx)
+    } else {
+        None
+    };
+    // 등장 페이드(90ms, motion-ui-fast) — held 여부로 매 프레임 구동.
+    let fade = crate::adapters::ui::switch_overlay::appear_fade(
+        ui.ctx(),
+        th,
+        ("ws_collapsed", global_idx),
+        props.workspace_switch_held,
+    );
+    if let Some(digit) = switch_digit {
+        crate::adapters::ui::switch_overlay::paint_keycap(
+            ui.painter(),
+            th,
+            rect.center(),
+            digit,
+            ws.is_active,
+            fade,
+        );
+    } else if !label.is_empty() {
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            &label,
+            egui::FontId::monospace(th.font_size_body.value()),
+            text_color,
+        );
+    }
+    // 우상단 dot — mirror(하늘색) > notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring.
+    let dot_radius = 3.0;
+    let dot_pad = 4.0;
+    let dot_center = egui::pos2(
+        rect.max.x - dot_pad - dot_radius,
+        rect.min.y + dot_pad + dot_radius,
+    );
+    if ws.is_mirror {
+        ui.painter()
+            .circle_filled(dot_center, dot_radius, th.accent_info());
+    } else if ws.has_highlight {
+        // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
+        ui.painter()
+            .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
+        ui.painter()
+            .circle_filled(dot_center, dot_radius, th.accent_primary());
+    } else if ws.busy_count > 0 {
+        ui.painter()
+            .circle_filled(dot_center, dot_radius, th.accent_success());
+    }
+    // attached(다른 client 점유) → 아바타 둘레 lavender ring (디자인 2026-06-15
+    // CollapsedSidebar: outline 1.5px lavender). red(error) 재사용 분리.
+    if ws.attached {
+        ui.painter().rect_stroke(
+            rect,
+            4.0,
+            egui::Stroke::new(1.5, th.border_attached()),
+            egui::StrokeKind::Inside,
+        );
+    }
+    if resp.clicked() {
+        actions.push(SidebarCollapsedAction::WorkspaceClicked(global_idx));
+    }
+}
+
 /// Full 사이드바의 workspace card 1 장 — Frame::show 로 직접 그리고 점유한 rect 반환.
 fn draw_workspace_card(
     ui: &mut egui::Ui,
@@ -1157,6 +1223,7 @@ mod tests {
                 let props = SidebarCollapsedProps {
                     theme: &theme,
                     workspaces: &workspaces,
+                    categories: None,
                     tools_hover: "Tools menu",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
@@ -1165,6 +1232,61 @@ mod tests {
             });
         }));
         out
+    }
+
+    fn run_collapsed_grouped(
+        sections: Vec<CategorySectionView>,
+        workspaces: Vec<WorkspaceEntryView>,
+    ) -> Vec<SidebarCollapsedAction> {
+        let ctx = egui::Context::default();
+        let mut out: Vec<SidebarCollapsedAction> = Vec::new();
+        let theme = test_theme();
+        drop(ctx.run(egui::RawInput::default(), |ctx| {
+            egui::SidePanel::left("test_collapsed_grouped").show(ctx, |ui| {
+                let props = SidebarCollapsedProps {
+                    theme: &theme,
+                    workspaces: &workspaces,
+                    categories: Some(&sections),
+                    tools_hover: "Tools menu",
+                    plugin_alert: 0,
+                    workspace_switch_held: false,
+                };
+                out = draw_collapsed_sidebar_view(ui, &props);
+            });
+        }));
+        out
+    }
+
+    #[test]
+    fn collapsed_view_grouped_renders_rail_without_panic() {
+        // normal(펼침, 2 아바타) + Services(접힘) + Archived(빈) — `---` 버튼/아바타/
+        // 접힘/빈 경로 전부 패닉 없이 layout 되는지.
+        let workspaces = vec![mock_ws("a", true), mock_ws("b", false), mock_ws("c", false)];
+        let sections = vec![
+            CategorySectionView {
+                id: 0,
+                label: "WORKSPACES".into(),
+                is_reserved: true,
+                collapsed: false,
+                entries: vec![(0, mock_ws("a", true)), (1, mock_ws("b", false))],
+            },
+            CategorySectionView {
+                id: 1,
+                label: "Services".into(),
+                is_reserved: false,
+                collapsed: true,
+                entries: vec![(2, mock_ws("c", false))],
+            },
+            CategorySectionView {
+                id: 2,
+                label: "Archived".into(),
+                is_reserved: false,
+                collapsed: false,
+                entries: vec![],
+            },
+        ];
+        let actions = run_collapsed_grouped(sections, workspaces);
+        assert!(actions.is_empty(), "expected no actions, got {actions:?}");
     }
 
     #[test]

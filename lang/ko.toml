@@ -946,6 +946,9 @@ delete_category = "카테고리 삭제"
 collapse_all = "모두 접기"
 expand_all = "모두 펼치기"
 move_to_category = "카테고리로 이동"
+add_workspace = "워크스페이스 추가"
+collapse = "접기"
+expand = "펼치기"
 
 [workspace_category.error]
 empty = "카테고리 이름은 비울 수 없습니다."

@@ -5,6 +5,7 @@ use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 
+use super::full::{build_category_sections, entry_view};
 use super::view::{
     SidebarCollapsedAction, SidebarCollapsedProps, WorkspaceEntryView, draw_collapsed_sidebar_view,
 };
@@ -31,20 +32,10 @@ pub fn draw_collapsed_sidebar(
         .workspaces
         .iter()
         .enumerate()
-        .map(|(i, ws)| {
-            let surface_ids = ws.all_surface_ids();
-            WorkspaceEntryView {
-                name: ws.name.clone(),
-                subtitle: ws.subtitle.clone(),
-                description: ws.description.clone(),
-                busy_count: engine.busy_count(&surface_ids),
-                has_highlight: engine.notifications.has_highlighted_surface(&surface_ids),
-                attached: engine.attach.workspace_holder(ws.id).is_some(),
-                is_mirror: ws.mirror,
-                is_active: i == active_ws,
-            }
-        })
+        .map(|(i, ws)| entry_view(engine, i, ws, active_ws))
         .collect();
+
+    let sections = build_category_sections(engine, active_ws);
 
     let tools_hover = t("sidebar.tools_button");
 
@@ -77,6 +68,7 @@ pub fn draw_collapsed_sidebar(
             let props = SidebarCollapsedProps {
                 theme: &th,
                 workspaces: &workspaces,
+                categories: sections.as_deref(),
                 tools_hover,
                 plugin_alert,
                 workspace_switch_held,
@@ -108,6 +100,18 @@ pub fn draw_collapsed_sidebar(
             SidebarCollapsedAction::NewWorkspaceContextMenu { x, y } => {
                 state.dialogs.pending_native_menu =
                     Some(crate::state::PendingNativeMenu::NewWorkspaceButton { x, y });
+            }
+            SidebarCollapsedAction::RailCategoryClicked { cat_id, anchor } => {
+                // `---` 버튼 우측에 앵커드 팝업(디자인 left=anchor.right+6, top=anchor.top-6).
+                state.dialogs.rail_category_popup = Some(cat_id);
+                let pos = egui::pos2(anchor.right() + 6.0, anchor.top() - 6.0);
+                state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: crate::adapters::ui::popup::rail_category::RAIL_CATEGORY_POPUP_ID,
+                        mode: crate::intent::OpenPopupMode::AtFocused(pos),
+                    }
+                    .from_user_menu("rail_category_button"),
+                );
             }
         }
     }

@@ -11,8 +11,8 @@ use super::view::{
     draw_full_sidebar_view,
 };
 
-/// 워크스페이스 1개를 `WorkspaceEntryView` snapshot 으로 변환.
-fn entry_view(
+/// 워크스페이스 1개를 `WorkspaceEntryView` snapshot 으로 변환. collapsed 레일도 공유.
+pub(super) fn entry_view(
     engine: &crate::core::CoreState,
     global_idx: usize,
     ws: &crate::model::Workspace,
@@ -29,6 +29,44 @@ fn entry_view(
         is_mirror: ws.mirror,
         is_active: global_idx == active_ws,
     }
+}
+
+/// 카테고리 토글 on 이면 섹션 그룹 데이터를, off 면 `None` 을 만든다. full/collapsed
+/// 사이드바가 공유한다. `categories()` 순서 = 표시 순서(normal 항상 맨 위). 각 섹션의
+/// entries 는 `workspaces_in_category()` 가 주는 (전역 인덱스, &ws) 를 보존해 사이드바
+/// action 의 전역 인덱스 계약을 지킨다.
+pub(super) fn build_category_sections(
+    engine: &crate::core::CoreState,
+    active_ws: usize,
+) -> Option<Vec<CategorySectionView>> {
+    if !engine.settings.general.workspace_categories_enabled {
+        return None;
+    }
+    let workspaces_heading = t("sidebar.workspaces_heading").to_string();
+    Some(
+        engine
+            .categories()
+            .iter()
+            .map(|cat| {
+                let entries = engine
+                    .workspaces_in_category(cat.id)
+                    .into_iter()
+                    .map(|(gi, ws)| (gi, entry_view(engine, gi, ws, active_ws)))
+                    .collect();
+                CategorySectionView {
+                    id: cat.id,
+                    label: if cat.is_normal() {
+                        workspaces_heading.clone()
+                    } else {
+                        cat.name.clone()
+                    },
+                    is_reserved: cat.is_normal(),
+                    collapsed: cat.collapsed,
+                    entries,
+                }
+            })
+            .collect(),
+    )
 }
 
 pub struct FullSidebarResult {
@@ -54,39 +92,7 @@ pub fn draw_full_sidebar(
         .map(|(i, ws)| entry_view(engine, i, ws, active_ws))
         .collect();
 
-    // 카테고리 토글 on 이면 섹션 그룹 데이터를 만든다. categories() 순서 = 표시 순서
-    // (normal 항상 맨 위). 각 섹션의 entries 는 workspaces_in_category() 가 주는
-    // (전역 인덱스, &ws) 를 보존해 사이드바 action 의 전역 인덱스 계약을 지킨다.
-    let workspaces_heading_owned = t("sidebar.workspaces_heading").to_string();
-    let sections: Option<Vec<CategorySectionView>> =
-        if engine.settings.general.workspace_categories_enabled {
-            Some(
-                engine
-                    .categories()
-                    .iter()
-                    .map(|cat| {
-                        let entries = engine
-                            .workspaces_in_category(cat.id)
-                            .into_iter()
-                            .map(|(gi, ws)| (gi, entry_view(engine, gi, ws, active_ws)))
-                            .collect();
-                        CategorySectionView {
-                            id: cat.id,
-                            label: if cat.is_normal() {
-                                workspaces_heading_owned.clone()
-                            } else {
-                                cat.name.clone()
-                            },
-                            is_reserved: cat.is_normal(),
-                            collapsed: cat.collapsed,
-                            entries,
-                        }
-                    })
-                    .collect(),
-            )
-        } else {
-            None
-        };
+    let sections = build_category_sections(engine, active_ws);
 
     let drag = state.dialogs.ws_drag.as_ref().map(|d| DragSnapshot {
         ws_idx: d.ws_idx,
