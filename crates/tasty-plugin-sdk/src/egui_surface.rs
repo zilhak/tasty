@@ -38,7 +38,7 @@ use egui::{
 use tasty_plugin_protocol::mesh_wire::encode_paint;
 use tasty_plugin_protocol::{
     BannerSetContextParams, ModifiersWire, PointerButtonWire, PopupSetContextParams,
-    RawInputEventWire, RawInputWire, SurfaceSetContextParams,
+    RawInputEventWire, RawInputWire, SurfaceSetContextParams, ThemeWire,
 };
 
 #[cfg(unix)]
@@ -59,9 +59,24 @@ struct EguiMeshCore {
     ctx: Context,
     /// 직전 frame 에 인코드한 mesh 바이트의 해시. 같으면 정적 화면으로 보고 송신 생략.
     last_hash: Option<u64>,
+    /// 직전 set_context 의 렌더 컨텍스트(geom/ppp/theme). out-of-band 상태 변경 뒤
+    /// [`repaint_last`](Self::repaint_last)가 **빈 입력**으로 재-run 할 때 재사용한다.
+    /// 첫 set_context 도착 전엔 `None` — 그 때 repaint 는 no-op.
+    last_ctx: Option<CachedContext>,
     /// mesh POD 블록을 쓰는 shared buffer. 필요 크기보다 작아지면 재생성한다.
     #[cfg(unix)]
     buffer: Option<SharedBuffer>,
+}
+
+/// 직전 set_context 의 재-paint 재현에 필요한 host-side 컨텍스트 스냅샷.
+/// **raw_input 은 담지 않는다** — 재-paint 는 identity 불변식상 빈 입력으로만 한다
+/// (가짜 사용자 입력 무주입). theme 은 plugin 의 draw closure 가 캐시된 값을 다시
+/// 쓸 수 있도록 [`EguiMeshCore::last_theme`]로 노출한다.
+struct CachedContext {
+    width_px: u32,
+    height_px: u32,
+    ppp: f32,
+    theme: Option<ThemeWire>,
 }
 
 impl EguiMeshCore {
@@ -69,6 +84,7 @@ impl EguiMeshCore {
         Self {
             ctx: Context::default(),
             last_hash: None,
+            last_ctx: None,
             #[cfg(unix)]
             buffer: None,
         }
@@ -81,10 +97,45 @@ impl EguiMeshCore {
         width_px: u32,
         height_px: u32,
         ppp: f32,
+        theme: Option<&ThemeWire>,
         raw_input: &RawInputWire,
         run_ui: impl FnMut(&Context),
     ) -> Option<Vec<u8>> {
+        // out-of-band 재-paint 가 재현할 수 있도록 이번 컨텍스트를 캐시한다(입력 제외).
+        self.last_ctx = Some(CachedContext {
+            width_px,
+            height_px,
+            ppp,
+            theme: theme.cloned(),
+        });
         let raw = build_raw_input(width_px, height_px, ppp, raw_input);
+        self.render(raw, run_ui)
+    }
+
+    /// 마지막 캐시된 컨텍스트(geom/ppp)로 **빈 입력** 재-run 한다. plugin 이 out-of-band 로
+    /// 상태를 바꾼 뒤 화면을 갱신할 때 쓴다. 첫 set_context 전(캐시 없음)이면 `None`(no-op).
+    /// 출력이 직전과 동일하면(상태 변경이 화면에 안 걸림) `None`.
+    ///
+    /// identity 불변식: 재-run 의 `raw_input` 은 [`RawInputWire::default`](빈 events)로,
+    /// 가짜 사용자 입력을 주입하지 않는다.
+    fn repaint_last(&mut self, run_ui: impl FnMut(&Context)) -> Option<Vec<u8>> {
+        let (width_px, height_px, ppp) = {
+            let c = self.last_ctx.as_ref()?;
+            (c.width_px, c.height_px, c.ppp)
+        };
+        let raw = build_raw_input(width_px, height_px, ppp, &RawInputWire::default());
+        self.render(raw, run_ui)
+    }
+
+    /// 직전 set_context 의 theme 스냅샷. plugin 의 재-paint closure 가 캐시된 theme 으로
+    /// 다시 그릴 수 있도록 노출한다. 첫 set_context 전이거나 theme 미동봉이면 `None`.
+    fn last_theme(&self) -> Option<&ThemeWire> {
+        self.last_ctx.as_ref().and_then(|c| c.theme.as_ref())
+    }
+
+    /// egui 를 구동·tessellate·encode 하고 직전 출력과 해시 비교로 dedup 한다.
+    /// 출력이 직전과 byte 단위로 동일하면 `None`(송신 생략). `run_frame`/`repaint_last` 공용.
+    fn render(&mut self, raw: RawInput, run_ui: impl FnMut(&Context)) -> Option<Vec<u8>> {
         let full = self.ctx.run(raw, run_ui);
         // tessellate 는 plugin 이 수행한다(폰트 atlas 를 plugin 이 소유, research-a1 §2-1).
         let primitives = self.ctx.tessellate(full.shapes, full.pixels_per_point);
@@ -176,9 +227,15 @@ impl EguiMeshSurface {
             params.width_px,
             params.height_px,
             params.pixels_per_point,
+            params.theme.as_ref(),
             &params.raw_input,
             run_ui,
         )
+    }
+
+    /// 직전 `set_context` 의 theme 스냅샷(재-paint closure 재구성용). 첫 컨텍스트 전 `None`.
+    pub fn last_theme(&self) -> Option<&ThemeWire> {
+        self.core.last_theme()
     }
 
     /// `set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
@@ -192,6 +249,28 @@ impl EguiMeshSurface {
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
         let Some(bytes) = self.run_frame(params, run_ui) else {
+            return Ok(None);
+        };
+        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        host.notify(&PluginEvent::PaintFrame {
+            surface_id: self.surface_id,
+            buffer_id,
+            generation,
+        })?;
+        Ok(Some(generation))
+    }
+
+    /// out-of-band 상태 변경 뒤 **빈 입력**으로 마지막 컨텍스트를 재-paint 한다(옵션 A).
+    /// 캐시된 geom/ppp 로 재-run → 출력이 바뀌면 [`PluginEvent::PaintFrame`] 송신,
+    /// 안 바뀌었거나 첫 set_context 전이면 `Ok(None)`. host 는 이 PaintFrame 에 깨어나
+    /// 재합성한다(별도 재-forward 왕복 불필요).
+    #[cfg(unix)]
+    pub fn repaint_last(
+        &mut self,
+        host: &HostHandle,
+        run_ui: impl FnMut(&Context),
+    ) -> Result<Option<u64>, PluginError> {
+        let Some(bytes) = self.core.repaint_last(run_ui) else {
             return Ok(None);
         };
         let (buffer_id, generation) = self.core.commit(host, &bytes)?;
@@ -243,9 +322,15 @@ impl EguiMeshPopup {
             params.width_px,
             params.height_px,
             params.pixels_per_point,
+            params.theme.as_ref(),
             &params.raw_input,
             run_ui,
         )
+    }
+
+    /// 직전 `popup.set_context` 의 theme 스냅샷(재-paint closure 재구성용). 첫 컨텍스트 전 `None`.
+    pub fn last_theme(&self) -> Option<&ThemeWire> {
+        self.core.last_theme()
     }
 
     /// `popup.set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
@@ -258,6 +343,27 @@ impl EguiMeshPopup {
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
         let Some(bytes) = self.run_frame(params, run_ui) else {
+            return Ok(None);
+        };
+        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        host.notify(&PluginEvent::PopupPaintFrame {
+            instance_id: self.instance_id,
+            buffer_id,
+            generation,
+        })?;
+        Ok(Some(generation))
+    }
+
+    /// out-of-band 상태 변경 뒤 **빈 입력**으로 마지막 컨텍스트를 재-paint 한다(옵션 A).
+    /// 출력이 바뀌면 [`PluginEvent::PopupPaintFrame`] 송신, 안 바뀌었거나 첫 set_context
+    /// 전이면 `Ok(None)`.
+    #[cfg(unix)]
+    pub fn repaint_last(
+        &mut self,
+        host: &HostHandle,
+        run_ui: impl FnMut(&Context),
+    ) -> Result<Option<u64>, PluginError> {
+        let Some(bytes) = self.core.repaint_last(run_ui) else {
             return Ok(None);
         };
         let (buffer_id, generation) = self.core.commit(host, &bytes)?;
@@ -309,9 +415,15 @@ impl EguiMeshBanner {
             params.width_px,
             params.height_px,
             params.pixels_per_point,
+            params.theme.as_ref(),
             &params.raw_input,
             run_ui,
         )
+    }
+
+    /// 직전 `banner.set_context` 의 theme 스냅샷(재-paint closure 재구성용). 첫 컨텍스트 전 `None`.
+    pub fn last_theme(&self) -> Option<&ThemeWire> {
+        self.core.last_theme()
     }
 
     /// `banner.set_context` 한 frame 을 그려 shared buffer 에 commit 하고 host 에
@@ -324,6 +436,27 @@ impl EguiMeshBanner {
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
         let Some(bytes) = self.run_frame(params, run_ui) else {
+            return Ok(None);
+        };
+        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        host.notify(&PluginEvent::BannerPaintFrame {
+            instance_id: self.instance_id,
+            buffer_id,
+            generation,
+        })?;
+        Ok(Some(generation))
+    }
+
+    /// out-of-band 상태 변경 뒤 **빈 입력**으로 마지막 컨텍스트를 재-paint 한다(옵션 A).
+    /// 출력이 바뀌면 [`PluginEvent::BannerPaintFrame`] 송신, 안 바뀌었거나 첫 set_context
+    /// 전이면 `Ok(None)`.
+    #[cfg(unix)]
+    pub fn repaint_last(
+        &mut self,
+        host: &HostHandle,
+        run_ui: impl FnMut(&Context),
+    ) -> Result<Option<u64>, PluginError> {
+        let Some(bytes) = self.core.repaint_last(run_ui) else {
             return Ok(None);
         };
         let (buffer_id, generation) = self.core.commit(host, &bytes)?;
@@ -526,6 +659,80 @@ mod tests {
                 })
                 .is_some(),
             "different content must repaint"
+        );
+    }
+
+    /// 첫 set_context 전(캐시 없음)엔 재-paint 가 no-op 이어야 한다(옵션 A 계약).
+    #[test]
+    fn repaint_last_is_noop_before_first_context() {
+        let mut surface = EguiMeshSurface::new(1);
+        let out = surface.core.repaint_last(|ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("no context yet");
+            });
+        });
+        assert!(out.is_none(), "no cached context → repaint is a no-op");
+    }
+
+    /// out-of-band 상태 변경(입력 없이) 뒤 재-paint: 캐시된 geom 으로 재-run 하되
+    /// 출력이 같으면 dedup(None), 바뀌면 프레임 생성(Some).
+    #[test]
+    fn repaint_last_repaints_only_on_output_change() {
+        let mut surface = EguiMeshSurface::new(1);
+        let params = ctx_params(320, 200, 1.0);
+        let draw_a = |ctx: &Context| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("a");
+            });
+        };
+        // 정적 화면으로 수렴시켜 폰트 atlas 업로드까지 안정화한다.
+        surface.run_frame(&params, draw_a);
+        for _ in 0..5 {
+            surface.run_frame(&params, draw_a);
+        }
+        // 같은 내용의 재-paint 는 dedup 으로 송신 생략.
+        assert!(
+            surface.core.repaint_last(draw_a).is_none(),
+            "unchanged output dedups to no-send"
+        );
+        // out-of-band 로 내용이 바뀌면 입력 없이도 재-paint 가 프레임을 만든다.
+        let changed = surface.core.repaint_last(|ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("b");
+            });
+        });
+        assert!(
+            changed.is_some(),
+            "changed output must repaint without any user input"
+        );
+    }
+
+    /// identity 불변식: 재-paint 가 재현하는 빈 입력에는 사용자 이벤트가 하나도 없다.
+    #[test]
+    fn empty_raw_input_carries_no_events() {
+        let raw = build_raw_input(320, 200, 1.0, &RawInputWire::default());
+        assert!(
+            raw.events.is_empty(),
+            "repaint replays with empty input — no fake events injected"
+        );
+        assert!(!raw.focused);
+    }
+
+    /// 캐시된 theme 스냅샷이 set_context 뒤 노출되고, theme 미동봉이면 None.
+    #[test]
+    fn last_theme_reflects_last_set_context() {
+        let mut surface = EguiMeshSurface::new(1);
+        assert!(surface.last_theme().is_none(), "no context yet → no theme");
+        // theme 미동봉 params.
+        let params = ctx_params(320, 200, 1.0);
+        surface.run_frame(&params, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("x");
+            });
+        });
+        assert!(
+            surface.last_theme().is_none(),
+            "set_context without theme → last_theme stays None"
         );
     }
 
