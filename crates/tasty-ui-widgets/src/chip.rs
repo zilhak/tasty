@@ -30,6 +30,9 @@ pub enum TagVariant {
     Default,
     Accent,
     Agent,
+    /// sky 톤 tinted chip — 투명 채움 + accent-info 40% border + accent-info fg.
+    /// 디자인 Tag variants 에 없던 톤(git-viewer 의 main/oid/refs/hunk = sky).
+    Info,
     Success,
     Warning,
     Danger,
@@ -73,6 +76,11 @@ pub fn tag(
             theme.accent_agent().to_egui(),
             None,
             theme.text_on_accent().to_egui(),
+        ),
+        TagVariant::Info => (
+            egui::Color32::TRANSPARENT,
+            Some(theme.accent_info().to_egui().gamma_multiply(0.4)),
+            theme.accent_info().to_egui(),
         ),
         TagVariant::Success => (
             egui::Color32::TRANSPARENT,

@@ -60,6 +60,7 @@ pub fn draw_tag(ui: &mut egui::Ui, theme: &Theme) {
             tag(ui, theme, "terminal", TagVariant::Default, false);
             tag(ui, theme, "markdown", TagVariant::Accent, false);
             tag(ui, theme, "plugin", TagVariant::Agent, false);
+            tag(ui, theme, "main", TagVariant::Info, false);
             tag(ui, theme, "running", TagVariant::Success, true);
             tag(ui, theme, "readonly", TagVariant::Warning, true);
             tag(ui, theme, "error", TagVariant::Danger, true);
@@ -86,9 +87,9 @@ pub fn draw_tag(ui: &mut egui::Ui, theme: &Theme) {
                 egui::Color32::from(theme.border_default()),
             ),
             TokenChip::new(
-                "accent-agent",
-                "agent dot",
-                egui::Color32::from(theme.accent_agent()),
+                "accent-info",
+                "info tone",
+                egui::Color32::from(theme.accent_info()),
             ),
         ],
     );
