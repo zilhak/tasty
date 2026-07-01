@@ -107,9 +107,12 @@ pub enum SidebarFullAction {
     DragUpdate {
         y: f32,
     },
-    /// 마우스 떼짐 — drop_target=None 이면 drop 위치가 from 과 동일 (이동 없음).
+    /// 마우스 떼짐 — drop_target=None 이면 drop 위치가 from 과 동일 (순서 변경 없음).
+    /// `target_category` 는 그룹 모드에서 드롭 위치가 속한 카테고리 id(평면 모드는 None).
+    /// 소속이 다르면 카테고리 이동, 같으면 순서 변경.
     DragReleased {
         drop_target: Option<usize>,
+        target_category: Option<crate::model::WorkspaceCategoryId>,
     },
     NewWorkspace,
     /// "New workspace" 버튼 우클릭 — 프리셋으로 새 워크스페이스 생성 진입점.
@@ -281,11 +284,14 @@ pub fn draw_full_sidebar_view(
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(8.0);
             let mut card_rects: Vec<(usize, egui::Rect)> = Vec::new();
+            // 그룹 모드 드롭존 판정용 — 각 섹션(헤더+행, 빈 카테고리는 헤더만)의 y 범위.
+            let mut section_spans: Vec<(crate::model::WorkspaceCategoryId, f32, f32)> = Vec::new();
 
             if let Some(sections) = props.categories {
                 // 그룹 렌더(토글 on) — 카테고리별 헤더(chevron) + 소속 행. 접힘/빈
                 // 카테고리는 헤더만. normal 은 항상 맨 위(sections 순서 = 표시 순서).
                 for section in sections {
+                    let sec_start = ui.cursor().min.y;
                     let header = draw_category_header(ui, th, &section.label, section.collapsed);
                     if header.toggled {
                         actions.push(SidebarFullAction::CategoryHeaderToggle(section.id));
@@ -309,6 +315,8 @@ pub fn draw_full_sidebar_view(
                         // 목록 블록 하단 보더.
                         draw_list_separator(ui, th, 0.0);
                     }
+                    // 빈/접힌 카테고리도 헤더 영역이 드롭존(그 카테고리로 편입).
+                    section_spans.push((section.id, sec_start, ui.cursor().min.y));
                 }
             } else {
                 // 평면 렌더(토글 off) — 단일 "워크스페이스" heading + 전체 행.
@@ -348,7 +356,17 @@ pub fn draw_full_sidebar_view(
                         .map(|(gi, _)| *gi)
                         .unwrap_or(drag.ws_idx);
                     let drop = (target != drag.ws_idx).then_some(target);
-                    actions.push(SidebarFullAction::DragReleased { drop_target: drop });
+                    // 드롭 위치가 속한 카테고리(그룹 모드). 커서 y 를 담는 첫 섹션(위로 벗어나면
+                    // 첫 섹션, 아래로 벗어나면 마지막 섹션). 평면 모드는 spans 가 비어 None.
+                    let target_category = section_spans
+                        .iter()
+                        .find(|(_, _, y1)| drag.current_y < *y1)
+                        .or_else(|| section_spans.last())
+                        .map(|(id, _, _)| *id);
+                    actions.push(SidebarFullAction::DragReleased {
+                        drop_target: drop,
+                        target_category,
+                    });
                 } else {
                     // Insert marker.
                     let insert_idx = card_rects

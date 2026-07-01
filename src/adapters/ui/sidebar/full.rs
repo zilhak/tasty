@@ -198,13 +198,34 @@ pub fn draw_full_sidebar(
                     drag.current_y = y;
                 }
             }
-            SidebarFullAction::DragReleased { drop_target } => {
+            SidebarFullAction::DragReleased {
+                drop_target,
+                target_category,
+            } => {
                 let from = state.dialogs.ws_drag.as_ref().map(|d| d.ws_idx);
                 state.dialogs.ws_drag = None;
-                if let (Some(from), Some(to)) = (from, drop_target)
-                    && to < ws_count
+                if let Some(from) = from
+                    && from < engine.workspaces.len()
                 {
-                    state.move_workspace(engine, from, to);
+                    let src_cat = engine.workspaces[from].category;
+                    match target_category {
+                        // 다른 카테고리로 드롭 → 소속 이동(전역 인덱스·순서 보존).
+                        Some(target_cat) if target_cat != src_cat => {
+                            let ws_id = engine.workspaces[from].id;
+                            if let Err(e) = engine.set_workspace_category(ws_id, target_cat) {
+                                tracing::warn!("drag set_workspace_category failed: {e:?}");
+                            }
+                            engine.mark_layout_dirty();
+                        }
+                        // 같은 카테고리(또는 평면) → 순서 변경.
+                        _ => {
+                            if let Some(to) = drop_target
+                                && to < ws_count
+                            {
+                                state.move_workspace(engine, from, to);
+                            }
+                        }
+                    }
                 }
             }
             SidebarFullAction::NewWorkspace => {
