@@ -44,6 +44,28 @@ epaint 의 `serde` feature 가 꺼져 있어 paint 타입은 JSON 직렬화가 �
 보낸다. plugin 이 paint 를 보낸 뒤(=`egui_mesh_frame` 존재)엔 보내지 않고, crash 로
 frame 이 사라지면 다시 bootstrap 한다.
 
+## plugin self-repaint (out-of-band 상태 변경)
+
+위 4개 트리거(크기/ppp · 입력 · 테마 · bootstrap)는 전부 **host-side** 요인이라, plugin 이
+IPC 메서드나 파일 변경 등으로 **자기 상태를 out-of-band 로 바꿔도** host 는 새 set_context 를
+보내지 않는다. 이 경우 plugin 은 SDK 의 `EguiMeshSurface::repaint_last`(popup/banner 동형)로
+스스로 재-paint 한다:
+
+- `EguiMeshCore` 가 마지막 set_context 의 **geom/ppp/theme** 를 캐시한다(입력은 저장 안 함).
+- `repaint_last(&host, run_ui)` 는 캐시된 geom/ppp 로 **빈 raw_input** 재-run → 출력이 바뀌면
+  `PaintFrame`(popup/banner 는 각자 `*PaintFrame`) 을 송신한다. host 의 기존 wake·재합성
+  경로가 이 프레임에 깨어난다(1-hop, 재-forward 왕복 불필요).
+- 첫 set_context 도착 전(캐시 없음)이면 no-op, 출력 무변화면 `last_hash` dedup 으로 생략.
+
+**identity 불변식**: 재-paint 는 `RawInputWire::default()`(events 빈 배열)로만 재현한다 —
+`set_context.raw_input` 에 가짜 사용자 입력을 주입하지 않는다. 캐시된 theme 은
+`last_theme()` 로 노출돼 plugin 이 draw closure 를 같은 토큰으로 재구성한다.
+
+소비자 예: image(`image.next`/`prev`/`paste`/`save` IPC 뒤), markdown(`markdown.reload` IPC 뒤).
+git-viewer 는 모든 상태 변경이 egui draw closure 내 사용자 클릭에서 일어나(in-band) 이 경로가
+필요 없다. markdown 의 mtime 아이들 auto-reload(입력 없이 파일 변경)는 plugin 에 주기 tick 이
+없어 별도 과제다 — `poll_reload` 는 paint 시점(입력 발생 시)에만 돈다.
+
 ## Theme 스냅샷 (generic parity)
 
 `set_context.theme` 는 host 가 resolve 한 현재 Theme 의 POD 스냅샷(`ThemeWire` =
