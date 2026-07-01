@@ -29,7 +29,6 @@ use tasty_type_appearance::theme::Theme;
 
 #[cfg(unix)]
 use tasty_plugin_sdk::EguiMeshSurface;
-#[cfg(unix)]
 use tasty_plugin_sdk::HostHandle;
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
@@ -177,7 +176,14 @@ impl Plugin for MarkdownPlugin {
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         match ctx.method.as_str() {
-            "markdown.reload" => self.markdown_reload(&ctx.params),
+            // reload 는 파일 내용을 out-of-band 로 다시 읽으므로(사용자 입력 무관), 성공 후
+            // 마지막 컨텍스트를 빈 입력 재-paint 한다 — 안 그러면 갱신된 내용이 다음 사용자
+            // 입력 전까지 화면에 안 뜬다(egui-mesh 재-forward 공백, 옵션 A).
+            "markdown.reload" => {
+                let out = self.markdown_reload(&ctx.params)?;
+                self.repaint_after_reload(&ctx.host, &ctx.params);
+                Ok(out)
+            }
             other => Err(IpcMethodError::not_found(other)),
         }
     }
@@ -267,10 +273,66 @@ impl MarkdownPlugin {
         }
     }
 
+    /// `markdown.reload` 로 내용이 out-of-band 로 갱신된 뒤, **입력 없이** 화면을 갱신한다
+    /// (옵션 A). 마지막 set_context 의 캐시된 컨텍스트(geom/ppp/theme)로 빈 입력 재-paint →
+    /// 출력이 바뀌면 host 로 PaintFrame 송신. theme 미수신(첫 set_context 전)이면 no-op.
+    /// 재-paint 는 빈 입력이므로 링크 클릭은 발생하지 않는다(dispatch 불필요).
+    #[cfg(unix)]
+    fn repaint_after_reload(&mut self, host: &HostHandle, params: &Value) {
+        let Some(sid) = params
+            .get("surface")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+        else {
+            return;
+        };
+        // 캐시된 theme 으로 draw 를 재구성한다. 첫 set_context 전이면 theme 이 없어 no-op.
+        let Some(theme) = self
+            .meshes
+            .get(&sid)
+            .and_then(|m| m.last_theme())
+            .map(theme_from_wire)
+        else {
+            return;
+        };
+        let tr = &self.tr;
+        let Some(doc) = self.docs.get(&sid) else {
+            return;
+        };
+        let content = doc.content.clone();
+        let load_error = doc.load_error.clone();
+        let base_dir = doc.base_dir.clone();
+
+        let link_slot = egui::Id::new(("md_link_click", sid));
+        let body_px = theme.font_size_body.value();
+        let style = MdStyle::new(&theme, body_px, base_dir, link_slot);
+
+        let Some(mesh) = self.meshes.get_mut(&sid) else {
+            return;
+        };
+        let result = mesh.repaint_last(host, |egui_ctx| {
+            draw(
+                egui_ctx,
+                &theme,
+                &style,
+                &content,
+                load_error.as_deref(),
+                tr,
+            );
+        });
+        if let Err(e) = result {
+            tracing::warn!("markdown surface {sid} repaint failed: {e}");
+        }
+    }
+
     /// egui-mesh shared-buffer 송신은 현재 unix 전용(host buffer.rs 가 windows 미구현).
     /// 다른 OS 에선 채널이 비활성이라 no-op — 크로스플랫폼 컴파일만 보장한다.
     #[cfg(not(unix))]
     fn paint(&mut self, _ctx: SurfaceSetContextCtx) {}
+
+    /// unix 외에는 egui-mesh 채널이 비활성이라 재-paint 도 no-op.
+    #[cfg(not(unix))]
+    fn repaint_after_reload(&mut self, _host: &HostHandle, _params: &Value) {}
 }
 
 /// surface.create envelope 에서 `file` 을 꺼낸다. SDK 가 `ctx.params` 로 넘기는 것은
