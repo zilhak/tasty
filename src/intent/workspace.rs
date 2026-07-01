@@ -20,8 +20,21 @@ pub fn handle(
     engine: &mut CoreState,
     intent: &DispatchedIntent,
 ) {
-    if let Intent::NewWorkspace { kind, params } = &intent.body {
-        new_workspace(core, state, engine, kind.as_deref(), params, &intent.origin);
+    if let Intent::NewWorkspace {
+        kind,
+        params,
+        category,
+    } = &intent.body
+    {
+        new_workspace(
+            core,
+            state,
+            engine,
+            kind.as_deref(),
+            params,
+            *category,
+            &intent.origin,
+        );
     }
 }
 
@@ -31,6 +44,7 @@ fn new_workspace(
     engine: &mut CoreState,
     kind: Option<&str>,
     params: &serde_json::Value,
+    category: Option<crate::model::WorkspaceCategoryId>,
     origin: &super::IntentOrigin,
 ) {
     let kind = kind.unwrap_or("terminal");
@@ -55,6 +69,7 @@ fn new_workspace(
         name: None,
         subtitle: None,
         description: None,
+        category,
     };
 
     let events = match core.apply(engine, intent) {

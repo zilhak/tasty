@@ -207,6 +207,7 @@ pub fn draw_full_sidebar(
                     Intent::NewWorkspace {
                         kind: None,
                         params: serde_json::Value::Null,
+                        category: None,
                     }
                     .from_user_menu("sidebar_add_workspace"),
                 );

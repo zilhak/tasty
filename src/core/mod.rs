@@ -620,6 +620,7 @@ impl Core {
                 name,
                 subtitle,
                 description,
+                category,
             } => self.apply_create_workspace(
                 engine,
                 cwd,
@@ -628,6 +629,7 @@ impl Core {
                 name,
                 subtitle,
                 description,
+                category,
             ),
             DomainIntent::UpdateWorkspaceMeta {
                 workspace_id,
@@ -2120,6 +2122,7 @@ impl Core {
         name: Option<String>,
         subtitle: Option<String>,
         description: Option<String>,
+        category: Option<crate::model::WorkspaceCategoryId>,
     ) -> anyhow::Result<Vec<CoreEvent>> {
         Ok(vec![apply_create_workspace_inner(
             engine,
@@ -2129,6 +2132,7 @@ impl Core {
             name,
             subtitle,
             description,
+            category,
         )?])
     }
 
@@ -2153,6 +2157,7 @@ impl Core {
             None,
             None,
             None,
+            None,
         )?;
         match event {
             CoreEvent::WorkspaceCreated { index, .. } => Ok(index),
@@ -2166,6 +2171,7 @@ impl Core {
 ///
 /// 반환: `CoreEvent::WorkspaceCreated`. host event (WorkspaceRenamed) +
 /// (User origin 이면) active 전환은 호출 측 cascade 책임.
+#[allow(clippy::too_many_arguments)] // reason: workspace 생성 도메인 파라미터
 pub(crate) fn apply_create_workspace_inner(
     engine: &mut crate::core::CoreState,
     cwd: Option<std::path::PathBuf>,
@@ -2174,6 +2180,7 @@ pub(crate) fn apply_create_workspace_inner(
     name: Option<String>,
     subtitle: Option<String>,
     description: Option<String>,
+    category: Option<crate::model::WorkspaceCategoryId>,
 ) -> anyhow::Result<CoreEvent> {
     if kind == "empty" {
         anyhow::bail!("Cannot create workspace with empty surface kind");
@@ -2188,7 +2195,7 @@ pub(crate) fn apply_create_workspace_inner(
         .unwrap_or_else(|| format!("Workspace {}", engine.workspaces.len() + 1));
     let is_terminal = kind == "terminal";
 
-    let ws = if is_terminal {
+    let mut ws = if is_terminal {
         let shell = if engine.settings.general.shell.is_empty() {
             None
         } else {
@@ -2222,6 +2229,13 @@ pub(crate) fn apply_create_workspace_inner(
         let pane = crate::model::Pane::new_with_surface(pane_id, tab_id, tab_name, surface);
         crate::model::Workspace::new_with_pane(ws_id, auto_name, pane)
     };
+
+    // 카테고리 소속 지정(존재하는 카테고리만). 없거나 dangling 이면 normal(기본) 유지.
+    if let Some(cat_id) = category
+        && engine.category_index(cat_id).is_some()
+    {
+        ws.set_category(cat_id);
+    }
 
     engine.workspaces.push(ws);
     let idx = engine.workspaces.len() - 1;

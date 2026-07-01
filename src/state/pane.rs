@@ -138,6 +138,7 @@ impl AppState {
                 None,
                 None,
                 None,
+                None,
             ) {
                 Ok(crate::core::intent::CoreEvent::WorkspaceCreated { index, .. }) => {
                     self.active_workspace = index;

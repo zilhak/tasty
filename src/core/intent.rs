@@ -65,6 +65,8 @@ pub(crate) enum DomainIntent {
         name: Option<String>,
         subtitle: Option<String>,
         description: Option<String>,
+        /// 생성 시점 카테고리 소속. `None` 이면 normal(기본).
+        category: Option<crate::model::WorkspaceCategoryId>,
     },
     /// 기존 workspace 의 메타 (name/subtitle/description) 부분 갱신. None
     /// 필드는 변경 없음. cascade 가 host event (WorkspaceRenamed) 발화.

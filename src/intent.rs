@@ -114,6 +114,9 @@ pub enum Intent {
     NewWorkspace {
         kind: Option<String>,
         params: serde_json::Value,
+        /// 생성 시점 카테고리 소속. `None` 이면 normal(기본). 레일 카테고리 팝업의
+        /// "Add workspace" 가 해당 카테고리 id 를 실어 보낸다.
+        category: Option<crate::model::WorkspaceCategoryId>,
     },
 
     // ---- Closed items 도메인 ----

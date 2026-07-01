@@ -276,6 +276,7 @@ fn add_test_workspace(state: &mut AppState, engine: &mut crate::core::CoreState)
         None,
         None,
         None,
+        None,
     )
     .unwrap();
     let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {

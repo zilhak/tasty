@@ -79,6 +79,7 @@ impl MainView {
                             Intent::NewWorkspace {
                                 kind: None,
                                 params: serde_json::Value::Null,
+                                category: None,
                             }
                             .from_user_shortcut("new_workspace"),
                         );

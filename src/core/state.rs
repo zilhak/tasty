@@ -1085,4 +1085,45 @@ mod category_tests {
             "collapsed 상태가 왕복 후에도 유지되어야 한다"
         );
     }
+
+    #[test]
+    fn create_workspace_inner_assigns_category() {
+        // 생성 시점 카테고리 소속(옵션 A). 유효 카테고리는 그 소속, dangling 은 normal.
+        let mut e = engine();
+        let cat = e.create_category("Services").unwrap();
+        let idx = match crate::core::apply_create_workspace_inner(
+            &mut e,
+            None,
+            "terminal".to_string(),
+            serde_json::Value::Null,
+            None,
+            None,
+            None,
+            Some(cat),
+        )
+        .unwrap()
+        {
+            crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
+            _ => panic!("expected WorkspaceCreated"),
+        };
+        assert_eq!(e.workspaces[idx].category, cat);
+
+        // 존재하지 않는 카테고리 → normal 유지.
+        let idx2 = match crate::core::apply_create_workspace_inner(
+            &mut e,
+            None,
+            "terminal".to_string(),
+            serde_json::Value::Null,
+            None,
+            None,
+            None,
+            Some(9999),
+        )
+        .unwrap()
+        {
+            crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } => index,
+            _ => unreachable!(),
+        };
+        assert_eq!(e.workspaces[idx2].category, NORMAL_CATEGORY_ID);
+    }
 }

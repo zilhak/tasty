@@ -214,6 +214,8 @@ pub fn handle_workspace_create(
         name,
         subtitle,
         description,
+        // IPC 는 생성 후 resolve_category_param 으로 소속을 별도 지정하므로 여기선 None.
+        category: None,
     };
 
     let events = match core.apply(engine, intent) {
