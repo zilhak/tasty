@@ -19,3 +19,7 @@ markdown = "Markdown"
 [markdown.state]
 failed = "불러오지 못했습니다"
 empty = "이 파일은 비어 있습니다"
+
+[markdown.addr]
+placeholder = "마크다운 파일 경로"
+go = "열기 (Enter)"

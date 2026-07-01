@@ -26,7 +26,22 @@ const DOC_W: f32 = 560.0;
 const TILE_W: f32 = 200.0;
 const TILE_H: f32 = 132.0;
 
+/// 주소창 바 / 경로 필드 높이 (플러그인 `main.rs` 와 동일 — 디자인 40 / 28).
+const ADDR_BAR_H: f32 = 40.0;
+const ADDR_FIELD_H: f32 = 28.0;
+const ADDR_BAR_W: f32 = 360.0;
+
 pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
+    // 0. 상단 주소창 chrome (03) — idle / editing.
+    spec::stage(ui, theme, StageVariant::Column, |ui| {
+        spec::cluster(ui, theme, "idle", |ui| {
+            address_bar(ui, theme, "/docs/readme.md", false);
+        });
+        spec::cluster(ui, theme, "editing", |ui| {
+            address_bar(ui, theme, "/docs/guide.md", true);
+        });
+    });
+
     // 1. 전체 element catalog 문서.
     spec::stage(ui, theme, StageVariant::Solo, |ui| {
         ui.set_max_width(DOC_W);
@@ -86,7 +101,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         ui,
         theme,
         &[
-            ("frame", "surface tile · bg-panel · no toolbar"),
+            ("addr bar", "40px · bg-sidebar · path field + Go (03)"),
+            (
+                "addr field",
+                "28px · surface-raised · border-focus ring on edit",
+            ),
             ("body", "13 · line-height-prose 1.6 · text-secondary"),
             ("h1", "prose-h1 20 · text-primary (cap-exempt)"),
             ("h2/h3", "14 · text-primary"),
@@ -651,6 +670,90 @@ fn tile(ui: &mut egui::Ui, theme: &Theme, add: impl FnOnce(&mut egui::Ui)) {
                 },
             );
         });
+}
+
+/// 상단 주소창 chrome (03) 정적 전사 — 40px 바 + 경로 필드 + Go. editing=true 면
+/// border-focus + focus ring + text-primary, false 면 border-default + text-secondary.
+fn address_bar(ui: &mut egui::Ui, theme: &Theme, path: &str, editing: bool) {
+    egui::Frame::new()
+        .fill(theme.bg_sidebar().to_egui())
+        .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 0))
+        .show(ui, |ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(ADDR_BAR_W, ADDR_BAR_H),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+                    let go_w = ADDR_FIELD_H;
+                    let field_w = ADDR_BAR_W
+                        - theme.spacing_sm.value() * 2.0
+                        - go_w
+                        - theme.spacing_xs.value();
+                    addr_field(ui, theme, field_w, path, editing);
+                    addr_go(ui, theme);
+                },
+            );
+        });
+}
+
+fn addr_field(ui: &mut egui::Ui, theme: &Theme, width: f32, path: &str, editing: bool) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, ADDR_FIELD_H), egui::Sense::hover());
+    let border = if editing {
+        theme.border_focus()
+    } else {
+        theme.border_default()
+    };
+    ui.painter().rect(
+        rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), border.to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    if editing {
+        let ring = theme.border_focus().to_egui().gamma_multiply(0.35);
+        ui.painter().rect_stroke(
+            rect.expand(1.0),
+            theme.corner_radius.value(),
+            egui::Stroke::new(2.0, ring),
+            egui::StrokeKind::Outside,
+        );
+    }
+    let pad = theme.spacing_sm.value();
+    ui.painter().text(
+        egui::pos2(rect.left() + pad, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        "\u{1F4C4}",
+        egui::FontId::proportional(theme.font_size_caption.value()),
+        theme.text_muted().to_egui(),
+    );
+    let text_color = if editing {
+        theme.text_primary()
+    } else {
+        theme.text_secondary()
+    };
+    ui.painter().text(
+        egui::pos2(
+            rect.left() + pad + theme.spacing_md.value(),
+            rect.center().y,
+        ),
+        egui::Align2::LEFT_CENTER,
+        path,
+        egui::FontId::monospace(theme.font_size_caption.value()),
+        text_color.to_egui(),
+    );
+}
+
+fn addr_go(ui: &mut egui::Ui, theme: &Theme) {
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ADDR_FIELD_H, ADDR_FIELD_H), egui::Sense::hover());
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "\u{2192}",
+        egui::FontId::proportional(theme.font_size_body.value()),
+        theme.text_secondary().to_egui(),
+    );
 }
 
 /// 지정 size/color 라벨 텍스트.

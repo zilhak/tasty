@@ -117,6 +117,18 @@ impl MdDoc {
     }
 }
 
+/// 상단 주소창의 per-surface 편집 상태 (03). egui-mesh 는 입력 있을 때만 재-forward
+/// 되므로 편집은 사용자 입력(클릭/타이핑)에서만 진행된다 — identity 경계 준수.
+#[derive(Default)]
+struct AddrState {
+    /// 경로 편집 버퍼. 비편집 중엔 표시 경로와 동기화된다.
+    buffer: String,
+    /// TextEdit 이 포커스를 가진 편집 모드 여부.
+    editing: bool,
+    /// paint 클로저가 채우는 확정된 이동 경로 — paint 후 host `markdown.navigate` 로 소비.
+    pending_navigate: Option<String>,
+}
+
 struct MarkdownPlugin {
     /// surface_id → plugin egui render state (font atlas + shared buffer; unix-only paint).
     #[cfg(unix)]
@@ -126,6 +138,8 @@ struct MarkdownPlugin {
     fonts_installed: std::collections::HashSet<u32>,
     /// surface_id → markdown document state.
     docs: HashMap<u32, MdDoc>,
+    /// surface_id → 주소창 편집 상태 (03).
+    addr: HashMap<u32, AddrState>,
     /// plugin lang 카탈로그 (state.failed / state.empty 등 UI 문자열).
     tr: Translator,
 }
@@ -138,6 +152,7 @@ impl MarkdownPlugin {
             #[cfg(unix)]
             fonts_installed: std::collections::HashSet::new(),
             docs: HashMap::new(),
+            addr: HashMap::new(),
             tr,
         }
     }
@@ -172,6 +187,7 @@ impl Plugin for MarkdownPlugin {
             self.fonts_installed.remove(&surface_id);
         }
         self.docs.remove(&surface_id);
+        self.addr.remove(&surface_id);
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
@@ -227,6 +243,13 @@ impl MarkdownPlugin {
         let content = doc.content.clone();
         let load_error = doc.load_error.clone();
         let base_dir = doc.base_dir.clone();
+        let file_path = doc.file_path.clone().unwrap_or_default();
+
+        // 주소창 편집 상태 — 비편집 중이면 버퍼를 현재 경로와 동기화(표시용).
+        let addr = self.addr.entry(sid).or_default();
+        if !addr.editing {
+            addr.buffer = file_path.clone();
+        }
 
         let link_slot = egui::Id::new(("md_link_click", sid));
         // 본문 폰트 크기: host 는 surface EffectiveFont.font_size 를 썼다(폰트 parity defer).
@@ -254,10 +277,18 @@ impl MarkdownPlugin {
                 &content,
                 load_error.as_deref(),
                 tr,
+                &file_path,
+                addr,
             );
         });
         if let Err(e) = result {
             tracing::warn!("markdown surface {sid} paint failed: {e}");
+        }
+
+        // 주소창 확정 이동 요청을 host 로 보낸다 (제자리 이동, 04). forward 된 실제
+        // 사용자 입력(Enter/Go)에서만 채워진다 — identity 경계 준수.
+        if let Some(path) = addr.pending_navigate.take() {
+            navigate(&ctx.host, sid, &path);
         }
 
         // egui run 중 stash 된 링크 클릭을 꺼내 dispatch (file → host, url → OS).
@@ -302,6 +333,12 @@ impl MarkdownPlugin {
         let content = doc.content.clone();
         let load_error = doc.load_error.clone();
         let base_dir = doc.base_dir.clone();
+        let file_path = doc.file_path.clone().unwrap_or_default();
+
+        let addr = self.addr.entry(sid).or_default();
+        if !addr.editing {
+            addr.buffer = file_path.clone();
+        }
 
         let link_slot = egui::Id::new(("md_link_click", sid));
         let body_px = theme.font_size_body.value();
@@ -318,6 +355,8 @@ impl MarkdownPlugin {
                 &content,
                 load_error.as_deref(),
                 tr,
+                &file_path,
+                addr,
             );
         });
         if let Err(e) = result {
@@ -380,7 +419,12 @@ fn dispatch_link(host: &HostHandle, sid: u32, click: LinkClick) {
     }
 }
 
-/// egui closure: scroll area + content render, mirroring the former host `draw_markdown`.
+/// 주소창 바 높이 / 경로 필드 높이 (4px 그리드; 디자인 40 / 28).
+const ADDR_BAR_HEIGHT: f32 = 40.0;
+const ADDR_FIELD_HEIGHT: f32 = 28.0;
+
+/// egui closure: 상단 주소창 chrome(03) + scroll area 본문 render.
+#[allow(clippy::too_many_arguments)]
 fn draw(
     ctx: &egui::Context,
     theme: &Theme,
@@ -388,7 +432,23 @@ fn draw(
     content: &str,
     load_error: Option<&str>,
     tr: &Translator,
+    file_path: &str,
+    addr: &mut AddrState,
 ) {
+    // ── 상단 주소창 (03) ──
+    let bar_frame = egui::Frame::new()
+        .fill(theme.bg_sidebar().to_egui())
+        .inner_margin(egui::Margin::symmetric(theme.spacing_sm.value() as i8, 0));
+    egui::TopBottomPanel::top("md_addr_bar")
+        .exact_height(ADDR_BAR_HEIGHT)
+        .frame(bar_frame)
+        .resizable(false)
+        .show_separator_line(false)
+        .show(ctx, |ui| {
+            draw_addr_bar(ui, theme, tr, file_path, addr);
+        });
+
+    // ── 본문 ──
     let frame = egui::Frame::new()
         .fill(theme.base.to_egui())
         .inner_margin(egui::Margin::same(8));
@@ -414,6 +474,194 @@ fn draw(
                 ui.add_space(8.0);
             });
     });
+}
+
+/// 주소창 바: 경로 필드(표시/편집) + Go 버튼. 확정 시 `addr.pending_navigate` 를 채운다.
+fn draw_addr_bar(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    tr: &Translator,
+    file_path: &str,
+    addr: &mut AddrState,
+) {
+    let gap = theme.spacing_xs.value();
+    ui.horizontal_centered(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        let go_w = ADDR_FIELD_HEIGHT;
+        let field_w = (ui.available_width() - go_w - gap).max(40.0);
+        draw_path_field(ui, theme, tr, field_w, file_path, addr);
+        if go_button(ui, theme, tr).clicked() {
+            addr.pending_navigate = Some(addr.buffer.clone());
+            addr.editing = false;
+        }
+    });
+    // 본문과의 경계 1px separator.
+    let r = ui.max_rect();
+    ui.painter().hline(
+        r.x_range(),
+        r.bottom(),
+        egui::Stroke::new(1.0, theme.separator.to_egui()),
+    );
+}
+
+/// 경로 표시/편집 필드 — surface_raised 배경, idle/편집 border + focus ring, 선두 글리프,
+/// mono 경로 텍스트. TextEdit 이 forward 된 사용자 입력으로 편집된다.
+fn draw_path_field(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    tr: &Translator,
+    width: f32,
+    file_path: &str,
+    addr: &mut AddrState,
+) {
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(width, ADDR_FIELD_HEIGHT), egui::Sense::hover());
+    let focused = addr.editing;
+    let border = if focused {
+        theme.border_focus()
+    } else {
+        theme.border_default()
+    };
+    ui.painter().rect(
+        rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), border.to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    if focused {
+        // 2px focus ring, border_focus 35% 알파.
+        let ring = theme.border_focus().to_egui().gamma_multiply(0.35);
+        ui.painter().rect_stroke(
+            rect.expand(1.0),
+            theme.corner_radius.value(),
+            egui::Stroke::new(2.0, ring),
+            egui::StrokeKind::Outside,
+        );
+    }
+
+    let pad = theme.spacing_sm.value();
+    let inner = egui::Rect::from_min_max(
+        egui::pos2(rect.min.x + pad, rect.min.y),
+        egui::pos2(rect.max.x - pad, rect.max.y),
+    );
+    let mut cui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let ui = &mut cui;
+    ui.spacing_mut().item_spacing.x = theme.spacing_xs.value();
+    ui.label(
+        egui::RichText::new("\u{1F4C4}")
+            .size(theme.font_size_caption.value())
+            .color(theme.text_muted().to_egui()),
+    );
+    ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(1.0, theme.accent_primary().to_egui());
+    let text_color = if focused {
+        theme.text_primary()
+    } else {
+        theme.text_secondary()
+    };
+    let resp = ui.add(
+        egui::TextEdit::singleline(&mut addr.buffer)
+            .frame(false)
+            .desired_width(ui.available_width())
+            .hint_text(tr.t("markdown.addr.placeholder"))
+            .font(egui::FontId::new(
+                theme.font_size_caption.value(),
+                egui::FontFamily::Monospace,
+            ))
+            .text_color(text_color.to_egui()),
+    );
+    if resp.gained_focus() {
+        addr.editing = true;
+    }
+    let (enter, esc) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    match addr_key_decision(resp.has_focus(), resp.lost_focus(), enter, esc) {
+        AddrKey::Navigate => {
+            addr.pending_navigate = Some(addr.buffer.clone());
+            addr.editing = false;
+        }
+        AddrKey::Revert => {
+            // Esc / 확정 없는 포커스 이탈 → 원래 경로 원복, 아무것도 안 열림.
+            addr.buffer = file_path.to_string();
+            addr.editing = false;
+            if esc {
+                resp.surrender_focus();
+            }
+        }
+        AddrKey::None => {}
+    }
+}
+
+/// 주소창 키 입력 결정 (순수 — 테스트 용이). Esc(포커스 중)=원복, Enter(포커스 이탈)=이동,
+/// 그 외 포커스 이탈=원복.
+#[derive(Debug, PartialEq, Eq)]
+enum AddrKey {
+    None,
+    Navigate,
+    Revert,
+}
+
+fn addr_key_decision(has_focus: bool, lost_focus: bool, enter: bool, esc: bool) -> AddrKey {
+    if has_focus && esc {
+        AddrKey::Revert
+    } else if lost_focus && enter {
+        AddrKey::Navigate
+    } else if lost_focus {
+        AddrKey::Revert
+    } else {
+        AddrKey::None
+    }
+}
+
+/// Go 버튼 — arrow-right 글리프. 클릭 시 caller 가 이동을 확정한다.
+fn go_button(ui: &mut egui::Ui, theme: &Theme, tr: &Translator) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(ADDR_FIELD_HEIGHT, ADDR_FIELD_HEIGHT),
+        egui::Sense::click(),
+    );
+    let hovered = resp.hovered();
+    if hovered {
+        ui.painter().rect_filled(
+            rect,
+            theme.corner_radius.value(),
+            theme.hover_overlay.to_egui_premultiplied(),
+        );
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let color = if hovered {
+        theme.text_primary()
+    } else {
+        theme.text_secondary()
+    };
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "\u{2192}",
+        egui::FontId::new(theme.font_size_body.value(), egui::FontFamily::Proportional),
+        color.to_egui(),
+    );
+    resp.on_hover_text(tr.t("markdown.addr.go"))
+}
+
+/// 주소창 확정 이동을 host `markdown.navigate`(04) 로 보낸다 — 같은 surface 제자리 이동.
+#[cfg(unix)]
+fn navigate(host: &HostHandle, sid: u32, path: &str) {
+    let path = path.trim();
+    if path.is_empty() {
+        return;
+    }
+    let params = json!({ "surface_id": sid, "path": path });
+    if let Err(e) = host.call("markdown.navigate", params) {
+        tracing::warn!("markdown navigate failed: {e}");
+    }
 }
 
 /// Load failure — "Failed to load" title (accent-danger) over the error in a muted caption.
@@ -558,6 +806,33 @@ mod tests {
         let doc = p.docs.get(&1).expect("doc inserted");
         assert!(doc.load_error.is_some());
         assert!(doc.content.is_empty());
+    }
+
+    #[test]
+    fn addr_key_enter_navigates_on_blur() {
+        // Enter 는 포커스 이탈(lost_focus)과 함께 도착 → 이동.
+        assert_eq!(
+            addr_key_decision(false, true, true, false),
+            AddrKey::Navigate
+        );
+    }
+
+    #[test]
+    fn addr_key_esc_reverts_while_focused() {
+        assert_eq!(addr_key_decision(true, false, false, true), AddrKey::Revert);
+    }
+
+    #[test]
+    fn addr_key_blur_without_enter_reverts() {
+        assert_eq!(
+            addr_key_decision(false, true, false, false),
+            AddrKey::Revert
+        );
+    }
+
+    #[test]
+    fn addr_key_typing_is_none() {
+        assert_eq!(addr_key_decision(true, false, false, false), AddrKey::None);
     }
 
     #[test]

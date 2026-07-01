@@ -19,3 +19,7 @@ markdown = "Markdown"
 [markdown.state]
 failed = "Failed to load"
 empty = "This file is empty"
+
+[markdown.addr]
+placeholder = "Path to markdown file"
+go = "Open (Enter)"

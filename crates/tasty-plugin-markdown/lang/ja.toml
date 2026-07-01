@@ -19,3 +19,7 @@ markdown = "Markdown"
 [markdown.state]
 failed = "読み込みに失敗しました"
 empty = "このファイルは空です"
+
+[markdown.addr]
+placeholder = "マークダウンファイルのパス"
+go = "開く (Enter)"
