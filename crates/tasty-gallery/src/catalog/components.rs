@@ -15,6 +15,7 @@ pub mod explorer_context_menu;
 pub mod explorer_favorite_popup;
 pub mod explorer_rename_popup;
 pub mod explorer_tab_bar;
+pub mod explorer_toolbar;
 pub mod explorer_view_cells;
 pub mod file_handler_picker;
 pub mod git_viewer;

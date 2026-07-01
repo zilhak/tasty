@@ -429,6 +429,18 @@ pub fn pages() -> Vec<Page> {
                         components::explorer_view_cells::draw,
                     )],
                 ),
+                section(
+                    "explorer-toolbar",
+                    "Explorer toolbar",
+                    vec![spec(
+                        "explorer-toolbar",
+                        "Address bar + view-mode toggle",
+                        Some(
+                            "surface-raised address box (clipped crumbs) + grid/list/detail icon toggle",
+                        ),
+                        components::explorer_toolbar::draw,
+                    )],
+                ),
             ],
         },
         // ── Icons ────────────────────────────────────────────────────

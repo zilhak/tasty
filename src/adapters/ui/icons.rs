@@ -39,6 +39,28 @@ line_icon!(
     "folder",
     r#"<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/>"#
 );
+// explorer 주소표시줄 앞 폴더 아이콘 (design `ic.folderOpen`).
+line_icon!(
+    FOLDER_OPEN,
+    "folder_open",
+    r#"<path d="M3 8a1 1 0 0 1 1-1h5l2 2h7a1 1 0 0 1 1 1v1H3z M3 11h18l-1.5 8a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1z"/>"#
+);
+// explorer view-mode 토글 아이콘 3종 (design `ic.grid/list/detail`).
+line_icon!(
+    GRID,
+    "grid",
+    r#"<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>"#
+);
+line_icon!(
+    LIST_VIEW,
+    "list_view",
+    r#"<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>"#
+);
+line_icon!(
+    DETAIL,
+    "detail",
+    r#"<path d="M3 5h18M3 12h18M3 19h18M3 5v14"/>"#
+);
 line_icon!(PLUS, "plus", r#"<path d="M12 5v14M5 12h14"/>"#);
 // 즐겨찾기(favorites) 사이드바 항목 — lucide star (갤러리 mock STAR 과 동일 path).
 line_icon!(

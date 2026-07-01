@@ -354,74 +354,180 @@ fn toolbar(
 
         ui.add_space(theme.spacing_sm.value());
 
-        // breadcrumb (현재 root 의 조상). 우측 segmented 자리 확보 위해 가용폭 제한.
-        let seg_reserve = theme.item_height_interactive.value() * 3.0 + theme.spacing_md.value();
-        let crumb_w = (ui.available_width() - seg_reserve).max(0.0);
+        // 주소표시줄 flex:1, view-mode 토글 flex:none (design ExpToolbar). 토글 실제
+        // 폭을 예측 계산해 예약하고, 남은 폭을 주소표시줄에 준 뒤 그 안에서 clip →
+        // 어떤 경로 길이에서도 서로 침범하지 않는다.
+        let seg_w = seg_toggle_width(theme);
+        let gap = theme.spacing_sm.value();
+        let addr_w = (ui.available_width() - seg_w - gap).max(0.0);
         ui.allocate_ui_with_layout(
-            egui::vec2(crumb_w, ui.available_height()),
+            egui::vec2(addr_w, ui.available_height()),
             egui::Layout::left_to_right(egui::Align::Center),
-            |ui| breadcrumb(ui, theme, panel.current_root(), action),
+            |ui| address_bar(ui, theme, panel.current_root(), action),
         );
-
-        // 우측 정렬: view-mode segmented.
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let labels = [
-                t("explorer.view.grid"),
-                t("explorer.view.list"),
-                t("explorer.view.detail"),
-            ];
-            let sel = match tab.view_mode {
-                ExplorerViewMode::Grid => 0,
-                ExplorerViewMode::List => 1,
-                ExplorerViewMode::Detail => 2,
-            };
-            if let Some(i) = tasty_ui_widgets::segmented(ui, theme, &labels, sel)
-                && action.is_none()
-            {
-                let mode = match i {
-                    0 => ExplorerViewMode::Grid,
-                    1 => ExplorerViewMode::List,
-                    _ => ExplorerViewMode::Detail,
-                };
-                *action = Some(ExplorerAction::SetViewMode(mode));
-            }
-        });
+        ui.add_space(gap);
+        seg_toggle(ui, theme, tab.view_mode, action);
     });
 }
 
-/// breadcrumb 행: root 의 조상들을 `›` 로 구분해 클릭 가능한 칩으로.
-fn breadcrumb(ui: &mut egui::Ui, theme: &Theme, root: &Path, action: &mut Option<ExplorerAction>) {
-    let body = theme.font_size_body.value();
-    let font = egui::FontId::proportional(body);
-    // 조상: 위→아래 순서로.
-    let mut crumbs: Vec<PathBuf> = root.ancestors().map(|p| p.to_path_buf()).collect();
+/// view-mode 아이콘 토글의 총 폭(예약용). design SegToggle: pad + 3seg + 2gap + 2border.
+fn seg_toggle_width(theme: &Theme) -> f32 {
+    let pad = theme.spacing_xs.value();
+    let gap = theme.spacing_xs.value();
+    let seg = theme.icon_glyph_size_md.value() + theme.spacing_sm.value();
+    pad * 2.0 + seg * 3.0 + gap * 2.0 + theme.border_width.value() * 2.0
+}
+
+/// grid/list/detail 아이콘 토글 (design `SegToggle`): 컨테이너 surface-raised +
+/// border-default 1px + radius, active 세그먼트 = surface-active bg + text-primary,
+/// inactive = text-muted. tooltip 은 i18n 라벨(텍스트 라벨 제거 대신 aria/tooltip 유지).
+fn seg_toggle(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    mode: ExplorerViewMode,
+    action: &mut Option<ExplorerAction>,
+) {
+    let pad = theme.spacing_xs.value();
+    let gap = theme.spacing_xs.value();
+    let h = theme.item_height_interactive.value();
+    let seg_w = theme.icon_glyph_size_md.value() + theme.spacing_sm.value();
+    let icon = theme.icon_glyph_size_md.value();
+    let total_w = seg_toggle_width(theme);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(total_w, h), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect(
+        rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    let segs = [
+        (ExplorerViewMode::Grid, icons::GRID, "explorer.view.grid"),
+        (
+            ExplorerViewMode::List,
+            icons::LIST_VIEW,
+            "explorer.view.list",
+        ),
+        (
+            ExplorerViewMode::Detail,
+            icons::DETAIL,
+            "explorer.view.detail",
+        ),
+    ];
+    let seg_h = h - pad * 2.0;
+    let mut sx = rect.min.x + theme.border_width.value() + pad;
+    for (m, ic, key) in segs {
+        let seg_rect = egui::Rect::from_min_size(
+            egui::pos2(sx, rect.center().y - seg_h / 2.0),
+            egui::vec2(seg_w, seg_h),
+        );
+        let resp = ui
+            .interact(
+                seg_rect,
+                ui.id().with(("exp_seg", key)),
+                egui::Sense::click(),
+            )
+            .on_hover_text(t(key));
+        let active = m == mode;
+        if active {
+            ui.painter().rect_filled(
+                seg_rect,
+                theme.corner_radius_sm.value(),
+                theme.surface_active().to_egui(),
+            );
+        } else if resp.hovered() {
+            ui.painter().rect_filled(
+                seg_rect,
+                theme.corner_radius_sm.value(),
+                theme.overlay_hover().to_egui_premultiplied(),
+            );
+        }
+        let fg = if active {
+            theme.text_primary().to_egui()
+        } else {
+            theme.text_muted().to_egui()
+        };
+        let ir = egui::Rect::from_center_size(seg_rect.center(), egui::vec2(icon, icon));
+        ic.image(icon, fg).paint_at(ui, ir);
+        if resp.clicked() && !active && action.is_none() {
+            *action = Some(ExplorerAction::SetViewMode(m));
+        }
+        sx += seg_w + gap;
+    }
+}
+
+/// 주소표시줄 박스 (design `ExpToolbar` address bar + `Crumb`): surface-raised 배경 +
+/// border-default 1px + radius 박스, 앞에 folderOpen 아이콘, 크럼 사이 chevron 아이콘.
+/// 내용은 박스 폭으로 clip 되어 긴 경로가 view-mode 토글을 침범하지 않는다.
+fn address_bar(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    current: &Path,
+    action: &mut Option<ExplorerAction>,
+) {
+    let h = ui.available_height();
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    ui.painter().rect(
+        rect,
+        theme.corner_radius.value(),
+        theme.surface_raised().to_egui(),
+        egui::Stroke::new(theme.border_width.value(), theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    let pad = theme.spacing_xs.value();
+    let inner = rect.shrink2(egui::vec2(pad + theme.border_width.value(), 0.0));
+    // 내용은 inner 로 clip → 어떤 경로 길이도 박스를 넘지 않는다(design overflow clip).
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    child.set_clip_rect(inner);
+    child.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+
+    let icon_sm = theme.icon_glyph_size_sm.value();
+    let (fi_rect, _) =
+        child.allocate_exact_size(egui::vec2(icon_sm, icon_sm), egui::Sense::hover());
+    icons::FOLDER_OPEN
+        .image(icon_sm, theme.text_muted().to_egui())
+        .paint_at(&child, fi_rect);
+    child.add_space(theme.spacing_xs.value());
+
+    let font = egui::FontId::proportional(theme.font_size_body.value());
+    let mut crumbs: Vec<PathBuf> = current.ancestors().map(|p| p.to_path_buf()).collect();
     crumbs.reverse();
-    let sep = theme.text_muted().to_egui();
+    let crumbs: Vec<PathBuf> = crumbs
+        .into_iter()
+        .filter(|c| {
+            !c.as_os_str().is_empty()
+                && c.file_name()
+                    .map(|n| !n.is_empty())
+                    .unwrap_or_else(|| !c.to_string_lossy().is_empty())
+        })
+        .collect();
     let last = crumbs.len().saturating_sub(1);
     for (i, c) in crumbs.iter().enumerate() {
-        if c.as_os_str().is_empty() {
-            continue;
-        }
         let name = c
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| c.to_string_lossy().to_string());
-        if name.is_empty() {
-            continue;
-        }
         let is_last = i == last;
         let galley =
-            ui.fonts(|f| f.layout_no_wrap(name.clone(), font.clone(), egui::Color32::WHITE));
-        let (crect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::click());
-        let color = if is_last {
-            theme.text_primary().to_egui()
-        } else if resp.hovered() {
+            child.fonts(|f| f.layout_no_wrap(name.clone(), font.clone(), egui::Color32::WHITE));
+        let crumb_pad = theme.spacing_xs.value();
+        let (crect, resp) = child.allocate_exact_size(
+            egui::vec2(galley.size().x + crumb_pad * 2.0, h),
+            egui::Sense::click(),
+        );
+        let color = if is_last || resp.hovered() {
             theme.text_primary().to_egui()
         } else {
             theme.text_secondary().to_egui()
         };
-        ui.painter().text(
-            crect.left_center(),
+        child.painter().text(
+            egui::pos2(crect.min.x + crumb_pad, crect.center().y),
             egui::Align2::LEFT_CENTER,
             &name,
             font.clone(),
@@ -431,17 +537,21 @@ fn breadcrumb(ui: &mut egui::Ui, theme: &Theme, root: &Path, action: &mut Option
             *action = Some(ExplorerAction::Navigate(c.clone()));
         }
         if !is_last {
-            let (srect, _) = ui.allocate_exact_size(
-                egui::vec2(theme.spacing_sm.value() + 4.0, galley.size().y),
-                egui::Sense::hover(),
-            );
-            ui.painter().text(
+            let (srect, _) =
+                child.allocate_exact_size(egui::vec2(icon_sm, h), egui::Sense::hover());
+            let sep_rect = egui::Rect::from_center_size(
                 srect.center(),
-                egui::Align2::CENTER_CENTER,
-                "›",
-                font.clone(),
-                sep,
+                egui::vec2(
+                    theme.icon_glyph_size_xs.value(),
+                    theme.icon_glyph_size_xs.value(),
+                ),
             );
+            icons::CHEVRON_RIGHT
+                .image(
+                    theme.icon_glyph_size_xs.value(),
+                    theme.text_muted().to_egui().gamma_multiply(0.7),
+                )
+                .paint_at(&child, sep_rect);
         }
     }
 }

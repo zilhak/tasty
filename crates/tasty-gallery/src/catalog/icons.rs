@@ -105,6 +105,12 @@ glyph!(
     "star",
     r#"<path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.8 6.2 20.9l1.1-6.5L2.6 9.8l6.5-.9z"/>"#
 );
+// explorer 주소표시줄 앞 폴더 아이콘 (design `ic.folderOpen`).
+glyph!(
+    FOLDER_OPEN,
+    "folder_open",
+    r#"<path d="M3 8a1 1 0 0 1 1-1h5l2 2h7a1 1 0 0 1 1 1v1H3z M3 11h18l-1.5 8a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1z"/>"#
+);
 glyph!(CHEVRON_UP, "chevron_up", r#"<path d="m6 15 6-6 6 6"/>"#);
 
 // ── Navigation & disclosure ──
