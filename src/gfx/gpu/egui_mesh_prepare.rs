@@ -414,6 +414,78 @@ impl GpuState {
             }
         }
     }
+
+    /// egui-mesh banner(A3) 들을 전용 Renderer 로 합성한다.
+    ///
+    /// [`render_egui_mesh_popups`] 의 banner 대응 — [`GpuState::render`] 가 host egui pass
+    /// *후* 부른다. banner 셸(컨테이너/border/close X/카운트다운)을 host egui(banner
+    /// manager)가 그린 뒤 그 위 content_rect 에 plugin mesh 를 얹는다. mesh 는 content_rect
+    /// 로 clip 되므로 셸/affordance 를 덮지 않는다. target 맵을 instance_id 로 키잉하고 frame
+    /// meta 를 `banner_mesh_frame` 에서 읽는다.
+    ///
+    /// [`render_egui_mesh_popups`]: Self::render_egui_mesh_popups
+    pub(super) fn render_egui_mesh_banners(
+        &mut self,
+        view: &wgpu::TextureView,
+        regions: &[(u64, PhysicalRect)],
+        plugin_manager: &PluginManager,
+    ) {
+        // 닫힌 banner 의 전용 Renderer 정리 (GPU 자원 해제).
+        let live: HashSet<u64> = regions.iter().map(|r| r.0).collect();
+        self.egui_mesh_banner_targets
+            .retain(|iid, _| live.contains(iid));
+
+        let size_in_pixels = [self.size.width, self.size.height];
+        for (iid, rect) in regions {
+            let Some(frame) = plugin_manager.banner_mesh_frame(*iid) else {
+                continue;
+            };
+            let frame_plugin_id = frame.plugin_id.clone();
+            let frame_buffer_id = frame.buffer_id;
+            let frame_generation = frame.generation;
+            let host_ppp = self.scale_factor;
+
+            if !self.egui_mesh_banner_targets.contains_key(iid) {
+                let renderer =
+                    egui_wgpu::Renderer::new(&self.device, self.config.format, None, 1, false);
+                self.egui_mesh_banner_targets
+                    .insert(*iid, EguiMeshRenderTarget::new(renderer));
+            }
+
+            let needs_decode = {
+                let t = &self.egui_mesh_banner_targets[iid];
+                !t.has_content || t.generation != frame_generation
+            };
+            if needs_decode {
+                if let Some(mem) = plugin_manager.plugin_buffer(&frame_plugin_id, frame_buffer_id) {
+                    // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
+                    let raw = unsafe { mem.as_slice() };
+                    decode_mesh_into_target(
+                        &self.device,
+                        &self.queue,
+                        self.egui_mesh_banner_targets
+                            .get_mut(iid)
+                            .expect("ensured above"),
+                        raw,
+                        frame_generation,
+                        host_ppp,
+                        &frame_plugin_id,
+                    );
+                } else {
+                    tracing::warn!(
+                        plugin = %frame_plugin_id,
+                        buffer = frame_buffer_id.0,
+                        banner = iid,
+                        "egui-mesh banner prepare: SharedMemory not registered"
+                    );
+                }
+            }
+
+            if let Some(t) = self.egui_mesh_banner_targets.get_mut(iid) {
+                composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

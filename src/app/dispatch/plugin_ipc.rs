@@ -1,5 +1,7 @@
 //! plugin process 가 보낸 IPC 호출 dispatch.
 
+use serde_json::json;
+
 use crate::app::App;
 use crate::ipc;
 
@@ -78,6 +80,81 @@ impl App {
                             }
                         }
                     }
+                };
+                if let Some(mgr) = self.plugin_manager.as_mut() {
+                    mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+                }
+                continue;
+            }
+            // banner.open (A3) — plugin 이 자기 surface 에 egui-mesh 배너를 띄운다.
+            // ui.banner 권한 게이트 + D1 소유권 검증(자기 surface 만)은 open_plugin_banner 가.
+            if call.method == "banner.open" {
+                let caller = ipc::caller::CallerContext::Plugin {
+                    plugin_id: call.plugin_id.clone(),
+                    permissions: call.permissions.clone(),
+                };
+                let (result, error) = match caller.ensure_allowed(&call.method) {
+                    Err(e) => (None, Some(e.to_string())),
+                    Ok(()) => {
+                        let banner_id = call.params.get("banner_id").and_then(|v| v.as_str());
+                        let surface_id = call.params.get("surface_id").and_then(|v| v.as_u64());
+                        match (banner_id, surface_id) {
+                            (Some(bid), Some(sid)) => {
+                                let bid = bid.to_string();
+                                match self.open_plugin_banner(
+                                    Some(&call.plugin_id),
+                                    &bid,
+                                    sid as u32,
+                                ) {
+                                    Ok(iid) => (Some(json!({ "instance_id": iid })), None),
+                                    Err(e) => (None, Some(e)),
+                                }
+                            }
+                            _ => (
+                                None,
+                                Some(
+                                    "banner.open: missing 'banner_id' or 'surface_id'".to_string(),
+                                ),
+                            ),
+                        }
+                    }
+                };
+                if let Some(mgr) = self.plugin_manager.as_mut() {
+                    mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);
+                }
+                continue;
+            }
+            // banner.close (A3) — plugin 이 자기 배너 인스턴스를 닫는다.
+            if call.method == "banner.close" {
+                let caller = ipc::caller::CallerContext::Plugin {
+                    plugin_id: call.plugin_id.clone(),
+                    permissions: call.permissions.clone(),
+                };
+                let (result, error) = match caller.ensure_allowed(&call.method) {
+                    Err(e) => (None, Some(e.to_string())),
+                    Ok(()) => match call.params.get("instance_id").and_then(|v| v.as_u64()) {
+                        None => (
+                            None,
+                            Some("banner.close: missing 'instance_id'".to_string()),
+                        ),
+                        Some(iid) => {
+                            if !self.plugin_owns_banner(&call.plugin_id, iid) {
+                                (
+                                    None,
+                                    Some(format!(
+                                        "banner.close: instance {iid} not owned by plugin '{}'",
+                                        call.plugin_id
+                                    )),
+                                )
+                            } else {
+                                self.close_plugin_banner(
+                                    iid,
+                                    tasty_plugin_protocol::BannerCloseReason::PluginRequest,
+                                );
+                                (Some(json!({ "closed": iid })), None)
+                            }
+                        }
+                    },
                 };
                 if let Some(mgr) = self.plugin_manager.as_mut() {
                     mgr.send_ipc_result(&call.plugin_id, call.call_id, result, error);

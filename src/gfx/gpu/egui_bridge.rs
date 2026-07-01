@@ -61,6 +61,14 @@ impl GpuState {
                 plugin_manager,
                 canvas_cache,
             );
+            // Plugin egui-mesh banner(A3) — banner manager 가 `draw_ui` 중 셸을 그리고
+            // content_rect 슬롯을 기록한 뒤, 여기서 content mesh forward + 합성 영역 적재.
+            crate::plugin_bridge::banner_render::draw_plugin_banners(
+                ctx,
+                state,
+                engine,
+                plugin_manager,
+            );
             // 외부 drag&drop hover 시각 피드백 — 모든 레이어 위에 그린다.
             ui::drop_overlay::draw_drop_overlay(ctx, state, engine, terminal_rect, scale_factor);
 

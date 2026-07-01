@@ -69,6 +69,10 @@ pub struct GpuState {
     /// surface 와 동형이되 popup 은 host egui pass *후* 합성된다. popup 이 닫히면 정리.
     pub(in crate::gfx::gpu) egui_mesh_popup_targets:
         std::collections::HashMap<u64, egui_mesh_prepare::EguiMeshRenderTarget>,
+    /// egui-mesh banner instance_id → 전용 `egui_wgpu::Renderer` + 디코드 캐시 (A3).
+    /// popup 과 동형 — host egui pass *후* content_rect 에 합성된다. banner 가 닫히면 정리.
+    pub(in crate::gfx::gpu) egui_mesh_banner_targets:
+        std::collections::HashMap<u64, egui_mesh_prepare::EguiMeshRenderTarget>,
     /// When set, the next render will capture the frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
     /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
@@ -235,6 +239,7 @@ impl GpuState {
             canvas_textures: canvas_texture::CanvasTextureCache::new(),
             egui_mesh_targets: std::collections::HashMap::new(),
             egui_mesh_popup_targets: std::collections::HashMap::new(),
+            egui_mesh_banner_targets: std::collections::HashMap::new(),
             pending_screenshot: None,
             perf: PerfAggregator::new(),
             proxy,
@@ -464,6 +469,16 @@ impl GpuState {
         {
             let regions = state.plugin_mesh_popup_regions.clone();
             self.render_egui_mesh_popups(&view, &regions, mgr);
+        }
+
+        // egui-mesh banner 합성 (A3): popup 과 동형 — host egui pass *후* content_rect 에
+        // plugin mesh 를 얹는다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner
+        // manager)가 그렸고, content 만 여기서 합성된다. `draw_plugin_banners` 가 적재한 영역.
+        if let Some(mgr) = plugin_manager
+            && !state.plugin_mesh_banner_regions.is_empty()
+        {
+            let regions = state.plugin_mesh_banner_regions.clone();
+            self.render_egui_mesh_banners(&view, &regions, mgr);
         }
 
         // 6. Screenshot + present

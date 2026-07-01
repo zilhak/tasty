@@ -26,7 +26,7 @@ pub(crate) mod tools_menu;
 
 pub mod input;
 
-pub use banner::{BannerManager, BannerScope, BannerState};
+pub use banner::{BannerManager, BannerScope, BannerState, PluginBannerCloseKind};
 pub use divider::{draw_pane_dividers, draw_surface_highlights};
 pub use draw::draw_ui;
 pub use egui_panels::draw_egui_panels;

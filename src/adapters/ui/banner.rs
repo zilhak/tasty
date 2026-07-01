@@ -55,10 +55,45 @@ pub struct BannerDef {
     pub content_fn: BannerContentFn,
 }
 
+/// 배너 콘텐츠의 출처(D2). 큐/TTL/z-order/위치 등 **생명주기는 host 소유 단일 지점**
+/// ([`BannerManager`])이 관리하고, **content 만** 이 enum 으로 분기한다.
+///
+/// - [`BannerContentSource::Host`]: host 정의 배너. `defs::find(id)` 로 `content_fn` 을
+///   조회해 host 프로세스의 egui 로 셸 내부를 그린다(기존 배너).
+/// - [`BannerContentSource::PluginMesh`]: plugin egui-mesh 배너(A3). plugin 이 자기
+///   프로세스에서 content_rect 를 tessellate 하고 host 는 셸(컨테이너/border/close X/
+///   카운트다운)만 그린 뒤 content_rect 에 plugin mesh 를 합성한다(popup chrome 과 동형).
+///
+/// (B5 substrate: 이후 다른 egui-mesh banner 소비자도 `PluginMesh` 를 재사용한다.)
+#[derive(Clone, Debug, PartialEq)]
+pub enum BannerContentSource {
+    /// host 프로세스가 `content_fn` 으로 셸 내부를 그린다.
+    Host,
+    /// plugin 이 egui-mesh 로 content_rect 를 그린다.
+    PluginMesh {
+        /// 소유 plugin id — set_context forward / mesh frame lookup 에 필요.
+        plugin_id: String,
+        /// host 발급 banner 인스턴스 식별자.
+        instance_id: u64,
+        /// 셸 높이(LogicalPx). 너비는 스코프 폭 도킹이라 높이만 host 가 고정한다
+        /// (manifest `size_hint.height`, 없으면 기본값).
+        height: f32,
+    },
+}
+
+/// 배너 큐/dedup/카드 rect 의 identity 키. host 배너는 정적 id, plugin 배너는
+/// 인스턴스 id 로 구분한다 — `BannerId`(&'static str)로는 동적 plugin 배너를 키잉할 수
+/// 없으므로(popup 이 별도 instance map 을 둔 것과 같은 이유), content 원천별로 나눈다.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum BannerKey {
+    Host(BannerId),
+    Plugin(u64),
+}
+
 /// 단일 배너 인스턴스 상태. 큐/TTL 의 단위.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BannerState {
-    /// 고유 id = kind.
+    /// 고유 id = kind. plugin 배너는 미사용(빈 문자열) — identity 는 `content` 로.
     pub id: BannerId,
     /// 대상 스코프.
     pub scope: BannerScope,
@@ -66,6 +101,8 @@ pub struct BannerState {
     pub ttl_ms: Option<f32>,
     /// 남은 시간(ms). `ttl_ms` 가 `None` 이면 의미 없음.
     pub remaining_ms: f32,
+    /// 콘텐츠 출처(host fn / plugin mesh). 생명주기는 공유, content 만 분기(D2).
+    pub content: BannerContentSource,
 }
 
 impl BannerState {
@@ -76,6 +113,7 @@ impl BannerState {
             scope,
             ttl_ms: None,
             remaining_ms: 0.0,
+            content: BannerContentSource::Host,
         }
     }
 
@@ -87,6 +125,38 @@ impl BannerState {
             scope,
             ttl_ms: Some(ms),
             remaining_ms: ms,
+            content: BannerContentSource::Host,
+        }
+    }
+
+    /// plugin egui-mesh 배너(A3). `instance_id` 는 host 발급, `ttl_seconds` 가 `None` 이면
+    /// persistent(close X 로만 닫힘). `height` 는 셸 높이(LogicalPx).
+    pub fn plugin_mesh(
+        scope: BannerScope,
+        plugin_id: String,
+        instance_id: u64,
+        ttl_seconds: Option<u32>,
+        height: f32,
+    ) -> Self {
+        let ttl_ms = ttl_seconds.map(|s| s as f32 * 1000.0);
+        Self {
+            id: "",
+            scope,
+            ttl_ms,
+            remaining_ms: ttl_ms.unwrap_or(0.0),
+            content: BannerContentSource::PluginMesh {
+                plugin_id,
+                instance_id,
+                height,
+            },
+        }
+    }
+
+    /// 큐/dedup/카드 rect identity 키.
+    pub fn key(&self) -> BannerKey {
+        match &self.content {
+            BannerContentSource::Host => BannerKey::Host(self.id),
+            BannerContentSource::PluginMesh { instance_id, .. } => BannerKey::Plugin(*instance_id),
         }
     }
 
@@ -117,6 +187,25 @@ pub enum BannerPushOutcome {
     Ignored,
 }
 
+/// plugin egui-mesh 배너가 host 측 생명주기에서 닫힌 사유(D3). host-plugin manager 의
+/// `BannerCloseReason` 로 매핑되어 plugin 에 `banner.closed` 로 통지된다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PluginBannerCloseKind {
+    /// TTL 카운트다운 만료.
+    Ttl,
+    /// 사용자가 셸 우상단 close X 를 눌렀음.
+    UserClose,
+}
+
+/// plugin 배너 mesh 합성 슬롯 — draw 가 그린 셸의 content_rect(논리 좌표)를 실어
+/// host banner 합성기(`draw_plugin_banners`)에 전달한다. plugin mesh 가 이 rect 에 얹힌다.
+#[derive(Clone)]
+pub struct PluginBannerMeshSlot {
+    pub plugin_id: String,
+    pub instance_id: u64,
+    pub content_rect: egui::Rect,
+}
+
 /// 한 스코프의 표시 슬롯 + 대기 큐.
 #[derive(Default, Clone)]
 struct ScopeLane {
@@ -142,7 +231,14 @@ pub struct BannerManager {
     /// 리포트가 막히므로, hover 는 카드(콘텐츠 높이) rect 로만 판정한다. egui
     /// immediate-mode 라 카드 rect 는 그린 *후* 에야 알 수 있어 1프레임 지연 측정한다
     /// (persistent 배너는 정적이라 비가시).
-    card_rects: HashMap<(BannerScope, BannerId), egui::Rect>,
+    card_rects: HashMap<(BannerScope, BannerKey), egui::Rect>,
+    /// 이번 draw 에서 그려진 plugin egui-mesh 배너 슬롯(A3). 매 draw 재수집한다.
+    /// host banner 합성기(`draw_plugin_banners`)가 draw 직후 take 해 set_context
+    /// forward + mesh 합성 영역 적재에 쓴다.
+    plugin_mesh_slots: Vec<PluginBannerMeshSlot>,
+    /// 이번 프레임에 host 측 생명주기(TTL/close X)로 닫힌 plugin 배너 (instance_id, 사유).
+    /// 합성기가 drain 해 host-plugin manager 로 close 전파(→ `banner.closed`).
+    closed_plugin_banners: Vec<(u64, PluginBannerCloseKind)>,
 }
 
 impl BannerManager {
@@ -159,7 +255,7 @@ impl BannerManager {
         let lane = self.scopes.entry(banner.scope.clone()).or_default();
 
         if let Some(shown) = lane.shown.as_mut()
-            && shown.id == banner.id
+            && shown.key() == banner.key()
         {
             return if shown.ttl_ms.is_some() {
                 shown.reset_countdown();
@@ -169,7 +265,7 @@ impl BannerManager {
             };
         }
 
-        if lane.queue.iter().any(|b| b.id == banner.id) {
+        if lane.queue.iter().any(|b| b.key() == banner.key()) {
             return BannerPushOutcome::Ignored;
         }
 
@@ -185,19 +281,64 @@ impl BannerManager {
     }
 
     /// 스코프의 표시 중 배너를 닫고 큐 head 를 승격한다 (X 버튼 / TTL 만료).
-    /// 닫을 배너가 있으면 `true`.
-    pub fn close_shown(&mut self, scope: &BannerScope) -> bool {
-        let Some(lane) = self.scopes.get_mut(scope) else {
-            return false;
-        };
-        if lane.shown.is_none() {
-            return false;
-        }
+    /// 닫힌 배너 상태를 돌려준다 (없으면 `None`) — 호출자가 plugin 배너면 close 사유를
+    /// 부여할 수 있게.
+    pub fn close_shown(&mut self, scope: &BannerScope) -> Option<BannerState> {
+        let lane = self.scopes.get_mut(scope)?;
+        let removed = lane.shown.take()?;
         lane.shown = lane.queue.pop_front();
         if lane.is_empty() {
             self.scopes.remove(scope);
         }
-        true
+        Some(removed)
+    }
+
+    /// plugin egui-mesh 배너를 instance_id 로 닫는다 (plugin 요청 `banner.close` /
+    /// plugin 종료 시 host 측 UI 슬롯 정리). 표시 중이면 닫고 승격, 큐에 있으면 제거.
+    /// 닫힌(또는 제거된) 게 있으면 `true`. host-plugin manager 로의 통지는 호출자 책임.
+    pub fn close_by_instance(&mut self, instance_id: u64) -> bool {
+        let target = BannerKey::Plugin(instance_id);
+        let mut target_scope: Option<BannerScope> = None;
+        for (scope, lane) in self.scopes.iter_mut() {
+            if lane.shown.as_ref().is_some_and(|b| b.key() == target) {
+                target_scope = Some(scope.clone());
+                break;
+            }
+            if let Some(pos) = lane.queue.iter().position(|b| b.key() == target) {
+                lane.queue.remove(pos);
+                return true;
+            }
+        }
+        if let Some(scope) = target_scope {
+            return self.close_shown(&scope).is_some();
+        }
+        false
+    }
+
+    /// 현재 host 측 UI 에 살아있는 plugin 배너 instance_id 목록 (표시 + 큐).
+    /// 합성기가 host-plugin manager 와 reconcile 하는 데 쓴다.
+    pub fn plugin_instances(&self) -> impl Iterator<Item = u64> + '_ {
+        self.scopes.values().flat_map(|lane| {
+            lane.shown
+                .iter()
+                .chain(lane.queue.iter())
+                .filter_map(|b| match &b.content {
+                    BannerContentSource::PluginMesh { instance_id, .. } => Some(*instance_id),
+                    BannerContentSource::Host => None,
+                })
+        })
+    }
+
+    /// 이번 draw 에서 그려진 plugin 배너 mesh 슬롯을 가져간다(소유권 이전). 합성기가
+    /// draw 직후 1회 호출한다.
+    pub fn take_plugin_mesh_slots(&mut self) -> Vec<PluginBannerMeshSlot> {
+        std::mem::take(&mut self.plugin_mesh_slots)
+    }
+
+    /// 이번 프레임에 host 측 생명주기로 닫힌 plugin 배너 목록을 drain 한다. 합성기가
+    /// host-plugin manager 에 close 를 전파(→ `banner.closed`)하는 데 쓴다.
+    pub fn drain_closed_plugin_banners(&mut self) -> Vec<(u64, PluginBannerCloseKind)> {
+        std::mem::take(&mut self.closed_plugin_banners)
     }
 
     /// id 로 닫는다 (debug). 표시 중이면 닫고 승격, 큐에 있으면 큐에서 제거.
@@ -215,21 +356,22 @@ impl BannerManager {
             }
         }
         if let Some(scope) = target_scope {
-            return self.close_shown(&scope);
+            return self.close_shown(&scope).is_some();
         }
         false
     }
 
-    /// TTL 카운트다운 진행. `is_paused(scope, id)` 가 `true` 인 배너는 정지(hover 중
-    /// 또는 백그라운드). 0 이하로 떨어지면 자동 소멸 + 큐 승격.
+    /// TTL 카운트다운 진행. `is_paused(scope, key)` 가 `true` 인 배너는 정지(hover 중
+    /// 또는 백그라운드). 0 이하로 떨어지면 자동 소멸 + 큐 승격. plugin 배너가 만료되면
+    /// `closed_plugin_banners` 에 `Ttl` 로 기록된다(합성기가 `banner.closed` 로 전파).
     ///
     /// 순수 함수(Instant 비의존) — 테스트가 dt 를 직접 넣어 검증한다.
-    pub fn advance(&mut self, dt_ms: f32, is_paused: impl Fn(&BannerScope, BannerId) -> bool) {
+    pub fn advance(&mut self, dt_ms: f32, is_paused: impl Fn(&BannerScope, &BannerKey) -> bool) {
         let mut expired: Vec<BannerScope> = Vec::new();
         for (scope, lane) in self.scopes.iter_mut() {
             if let Some(shown) = lane.shown.as_mut()
                 && shown.ttl_ms.is_some()
-                && !is_paused(scope, shown.id)
+                && !is_paused(scope, &shown.key())
             {
                 shown.remaining_ms -= dt_ms;
                 if shown.remaining_ms <= 0.0 {
@@ -238,7 +380,12 @@ impl BannerManager {
             }
         }
         for scope in expired {
-            self.close_shown(&scope);
+            if let Some(removed) = self.close_shown(&scope)
+                && let BannerContentSource::PluginMesh { instance_id, .. } = removed.content
+            {
+                self.closed_plugin_banners
+                    .push((instance_id, PluginBannerCloseKind::Ttl));
+            }
         }
     }
 
@@ -355,10 +502,17 @@ impl BannerManager {
             .min(1000.0); // 프레임 폭주/디버그 정지 후 점프 방지(최대 1s)
         self.last_tick = Some(now);
 
+        // plugin mesh 슬롯은 매 draw 재수집한다 (이전 프레임 잔재 방지).
+        self.plugin_mesh_slots.clear();
+
         // 2) 표시 중 배너의 scope rect 해석 (가시 = rect 있음).
         struct Slot {
             scope: BannerScope,
+            key: BannerKey,
+            /// host 배너 content_fn 조회용 id (plugin 배너면 `""`).
             id: BannerId,
+            /// plugin egui-mesh 배너면 (plugin_id, instance_id, 셸 높이). host 면 None.
+            mesh: Option<(String, u64, f32)>,
             zone: egui::Rect,
             remaining_seconds: Option<u32>,
         }
@@ -369,9 +523,19 @@ impl BannerManager {
             else {
                 continue; // 백그라운드(스코프 비가시) — draw 안 함, TTL 정지(아래).
             };
+            let mesh = match &banner.content {
+                BannerContentSource::PluginMesh {
+                    plugin_id,
+                    instance_id,
+                    height,
+                } => Some((plugin_id.clone(), *instance_id, *height)),
+                BannerContentSource::Host => None,
+            };
             slots.push(Slot {
                 scope: banner.scope.clone(),
+                key: banner.key(),
                 id: banner.id,
+                mesh,
                 zone,
                 remaining_seconds: banner.remaining_seconds(),
             });
@@ -386,11 +550,13 @@ impl BannerManager {
         // 4) draw. hover 판정 → 입력 레이어 + TTL 정지.
         let pointer = ctx.pointer_hover_pos();
         let mut hovered_any = false;
-        let mut hovered_ids: Vec<(BannerScope, BannerId)> = Vec::new();
+        let mut hovered_ids: Vec<(BannerScope, BannerKey)> = Vec::new();
         let mut close_requests: Vec<BannerScope> = Vec::new();
+        // plugin 배너가 이번 프레임 그린 (plugin_id, instance_id, content_rect).
+        let mut mesh_drawn: Vec<PluginBannerMeshSlot> = Vec::new();
         // 이번 프레임 실측 카드 rect — 루프 종료 후 `self.card_rects` 를 이 값으로
         // 교체한다(사라진 배너 키는 자동 정리). hover 는 *직전* 프레임 카드 rect 로 판정.
-        let mut next_card_rects: HashMap<(BannerScope, BannerId), egui::Rect> = HashMap::new();
+        let mut next_card_rects: HashMap<(BannerScope, BannerKey), egui::Rect> = HashMap::new();
 
         let layer_id = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("banner_layer"));
 
@@ -405,7 +571,7 @@ impl BannerManager {
             // 프레임에 실제 그려진 카드 rect 로 한정한다 — scope 전역을 소비하면 이미
             // focus 된 캡쳐 surface 본문 클릭까지 삼켜 마우스 리포트가 막힌다. 카드 rect
             // 가 아직 없는 첫 프레임엔 hover=false(자연스러움).
-            let card_key = (slot.scope.clone(), slot.id);
+            let card_key = (slot.scope.clone(), slot.key.clone());
             let banner_hovered = pointer.is_some_and(|p| {
                 self.card_rects
                     .get(&card_key)
@@ -416,10 +582,21 @@ impl BannerManager {
                 hovered_ids.push(card_key.clone());
             }
 
+            // plugin mesh 배너면 content_rect 를 여기로 실어낸다(셸 내부, 우측 affordance 제외).
+            let mut mesh_content_rect: Option<egui::Rect> = None;
             let mut child = ui_at(ctx, layer_id, slot.zone);
             let card_rect = draw_shell(&mut child, theme, opacity, |ui| {
-                // 콘텐츠 (id → def 조회). 없으면 id 텍스트만(누락 정의 가시화).
-                if let Some(def) = defs::find(slot.id) {
+                if let Some((_, _, height)) = &slot.mesh {
+                    // plugin egui-mesh 배너: 셸 내부를 (가용폭 - affordance) × height 로
+                    // 예약하고 그 rect 를 content_rect 로 실어낸다(콘텐츠 자체는 GPU 가 host
+                    // egui pass 후 합성). affordance 열은 비워 두고 아래에서 host 가 그린다.
+                    let aff = theme.item_height_interactive.value();
+                    let w = (ui.available_width() - aff).max(1.0);
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(w, *height), egui::Sense::hover());
+                    mesh_content_rect = Some(rect);
+                } else if let Some(def) = defs::find(slot.id) {
+                    // host 배너 콘텐츠 (id → def 조회). 없으면 id 텍스트만(누락 정의 가시화).
                     (def.content_fn)(ui, theme);
                 } else {
                     ui.label(slot.id);
@@ -464,27 +641,46 @@ impl BannerManager {
                     }
                 });
             });
+            // plugin mesh 배너면 실측 content_rect 를 합성 슬롯으로 적재.
+            if let (Some((plugin_id, instance_id, _)), Some(content_rect)) =
+                (&slot.mesh, mesh_content_rect)
+            {
+                mesh_drawn.push(PluginBannerMeshSlot {
+                    plugin_id: plugin_id.clone(),
+                    instance_id: *instance_id,
+                    content_rect,
+                });
+            }
             next_card_rects.insert(card_key, card_rect);
         }
 
         // 직전 프레임 카드 rect 교체 — 더는 표시되지 않는 배너 키는 자동으로 빠진다.
         self.card_rects = next_card_rects;
+        // 이번 프레임 그려진 plugin mesh 슬롯 확정 — 합성기가 draw 직후 take.
+        self.plugin_mesh_slots = mesh_drawn;
 
         // 5) TTL 진행 — hover 중이거나 백그라운드(가시 슬롯 없음)면 정지.
-        let visible_ids: std::collections::HashSet<(BannerScope, BannerId)> =
-            slots.iter().map(|s| (s.scope.clone(), s.id)).collect();
-        let hovered_set: std::collections::HashSet<(BannerScope, BannerId)> =
+        let visible_ids: std::collections::HashSet<(BannerScope, BannerKey)> = slots
+            .iter()
+            .map(|s| (s.scope.clone(), s.key.clone()))
+            .collect();
+        let hovered_set: std::collections::HashSet<(BannerScope, BannerKey)> =
             hovered_ids.into_iter().collect();
         // TTL 진행 — hover 중이거나 백그라운드(가시 슬롯 없음)면 정지. reduced_motion 은
         // 페이드 모션에만 영향이고 카운트다운 진행 자체는 항상 동작한다.
-        self.advance(dt_ms, |scope, id| {
-            let key = (scope.clone(), id);
-            hovered_set.contains(&key) || !visible_ids.contains(&key)
+        self.advance(dt_ms, |scope, key| {
+            let k = (scope.clone(), key.clone());
+            hovered_set.contains(&k) || !visible_ids.contains(&k)
         });
 
-        // 6) 사용자 X 클릭 닫기.
+        // 6) 사용자 X 클릭 닫기. plugin 배너면 UserClose 로 기록(→ `banner.closed`).
         for scope in close_requests {
-            self.close_shown(&scope);
+            if let Some(removed) = self.close_shown(&scope)
+                && let BannerContentSource::PluginMesh { instance_id, .. } = removed.content
+            {
+                self.closed_plugin_banners
+                    .push((instance_id, PluginBannerCloseKind::UserClose));
+            }
         }
 
         // 살아있는 동안 매 프레임 repaint (TTL 카운트다운/페이드 갱신).
@@ -723,7 +919,7 @@ mod tests {
         mgr.push(persistent("a", scope.clone()));
         mgr.push(persistent("b", scope.clone()));
         assert_eq!(mgr.shown_banners().next().unwrap().id, "a");
-        assert!(mgr.close_shown(&scope));
+        assert!(mgr.close_shown(&scope).is_some());
         assert_eq!(mgr.shown_banners().next().unwrap().id, "b");
         assert_eq!(mgr.total_queued(), 0);
     }
@@ -733,9 +929,9 @@ mod tests {
         let mut mgr = BannerManager::new();
         let scope = BannerScope::Surface(1);
         mgr.push(persistent("a", scope.clone()));
-        assert!(mgr.close_shown(&scope));
+        assert!(mgr.close_shown(&scope).is_some());
         assert!(!mgr.has_any());
-        assert!(!mgr.close_shown(&scope)); // 더 닫을 것 없음
+        assert!(mgr.close_shown(&scope).is_none()); // 더 닫을 것 없음
     }
 
     #[test]
@@ -826,5 +1022,70 @@ mod tests {
         mgr.push(persistent("a", BannerScope::Surface(1)));
         mgr.push(persistent("b", BannerScope::Surface(2)));
         assert_eq!(mgr.shown_banners().count(), 2);
+    }
+
+    // ── plugin egui-mesh 배너(A3) ──
+
+    fn plugin_mesh(instance_id: u64, scope: BannerScope, ttl: Option<u32>) -> BannerState {
+        BannerState::plugin_mesh(scope, "com.example.p".to_string(), instance_id, ttl, 64.0)
+    }
+
+    #[test]
+    fn plugin_mesh_key_uses_instance_id() {
+        let a = plugin_mesh(1, BannerScope::Surface(9), None);
+        let b = plugin_mesh(2, BannerScope::Surface(9), None);
+        assert_eq!(a.key(), BannerKey::Plugin(1));
+        assert_ne!(a.key(), b.key());
+        // host 배너와도 절대 충돌하지 않는다.
+        assert_ne!(
+            a.key(),
+            BannerState::persistent("x", BannerScope::Surface(9)).key()
+        );
+    }
+
+    #[test]
+    fn distinct_plugin_instances_queue_not_dedup() {
+        // 같은 스코프에 서로 다른 instance 두 개 → 표시 1 + 큐 1 (id sentinel 로 dedup 안 됨).
+        let mut mgr = BannerManager::new();
+        let scope = BannerScope::Surface(9);
+        assert_eq!(
+            mgr.push(plugin_mesh(1, scope.clone(), None)),
+            BannerPushOutcome::Shown
+        );
+        assert_eq!(
+            mgr.push(plugin_mesh(2, scope.clone(), None)),
+            BannerPushOutcome::Queued
+        );
+        assert_eq!(mgr.shown_banners().count(), 1);
+        assert_eq!(mgr.total_queued(), 1);
+        assert_eq!(mgr.plugin_instances().count(), 2);
+    }
+
+    #[test]
+    fn plugin_ttl_expiry_records_close_reason() {
+        let mut mgr = BannerManager::new();
+        let scope = BannerScope::Surface(9);
+        mgr.push(plugin_mesh(7, scope.clone(), Some(2))); // 2000ms
+        mgr.advance(2100.0, |_, _| false); // 만료
+        let closed = mgr.drain_closed_plugin_banners();
+        assert_eq!(closed, vec![(7, PluginBannerCloseKind::Ttl)]);
+        assert!(!mgr.has_any());
+        // drain 후 비워짐.
+        assert!(mgr.drain_closed_plugin_banners().is_empty());
+    }
+
+    #[test]
+    fn close_by_instance_removes_plugin_banner() {
+        let mut mgr = BannerManager::new();
+        let scope = BannerScope::Surface(9);
+        mgr.push(plugin_mesh(1, scope.clone(), None)); // shown
+        mgr.push(plugin_mesh(2, scope.clone(), None)); // queued
+        // 큐의 2 제거.
+        assert!(mgr.close_by_instance(2));
+        assert_eq!(mgr.total_queued(), 0);
+        // 표시 중 1 제거 → 큐 없어 lane 사라짐.
+        assert!(mgr.close_by_instance(1));
+        assert!(!mgr.has_any());
+        assert!(!mgr.close_by_instance(1)); // 더 없음
     }
 }

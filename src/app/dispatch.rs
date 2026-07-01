@@ -8,6 +8,7 @@ pub(crate) mod intents;
 pub(crate) mod list_global;
 pub(crate) mod memory_changes;
 pub(crate) mod picker;
+pub(crate) mod plugin_banner;
 pub(crate) mod plugin_ipc;
 pub(crate) mod plugin_popup_events;
 pub(crate) mod popup_opens;

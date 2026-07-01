@@ -8,17 +8,24 @@ impl App {
     pub(crate) fn dispatch_plugin_popup_events(&mut self) {
         let mut drained_events: Vec<(u64, tasty_plugin_protocol::ui_tree::UiEvent)> = Vec::new();
         let mut drained_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)> = Vec::new();
+        let mut drained_banner_closes: Vec<(u64, tasty_plugin_protocol::BannerCloseReason)> =
+            Vec::new();
         for w in self.view.views.values_mut() {
             if let Some(main) = w.as_main_mut() {
                 drained_events.append(&mut main.state.plugin_popup_events);
                 drained_closes.append(&mut main.state.plugin_popup_closes);
+                drained_banner_closes.append(&mut main.state.plugin_banner_closes);
             }
         }
         for (s, _engine) in &mut self.parked_states {
             drained_events.append(&mut s.plugin_popup_events);
             drained_closes.append(&mut s.plugin_popup_closes);
+            drained_banner_closes.append(&mut s.plugin_banner_closes);
         }
-        if drained_events.is_empty() && drained_closes.is_empty() {
+        if drained_events.is_empty()
+            && drained_closes.is_empty()
+            && drained_banner_closes.is_empty()
+        {
             return;
         }
         let Some(mgr) = self.plugin_manager.as_mut() else {
@@ -33,6 +40,13 @@ impl App {
         for (instance_id, reason) in drained_closes {
             if seen.insert(instance_id) {
                 mgr.close_popup_instance(instance_id, reason);
+            }
+        }
+        // banner close (A3) — host 측 생명주기(TTL/close X)로 닫힌 plugin 배너. 멱등.
+        let mut seen_banner = std::collections::HashSet::new();
+        for (instance_id, reason) in drained_banner_closes {
+            if seen_banner.insert(instance_id) {
+                mgr.close_banner_instance(instance_id, reason);
             }
         }
     }

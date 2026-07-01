@@ -403,6 +403,12 @@ pub struct AppState {
     /// App 메인 루프가 drain해 `PluginManager::close_popup_instance`를 호출한다.
     pub(crate) plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
 
+    /// plugin egui-mesh banner(A3) host 측 생명주기(TTL/close X)로 닫힌 사유.
+    /// `draw_plugin_banners` 가 적재하고, App 메인 루프가 drain 해
+    /// `PluginManager::close_banner_instance` 를 호출한다(popup closes 와 동형 — 렌더
+    /// 경로가 manager 를 직접 mutate 하지 않도록 지연).
+    pub(crate) plugin_banner_closes: Vec<(u64, tasty_plugin_protocol::BannerCloseReason)>,
+
     /// egui-mesh popup(A2) 합성 영역. `draw_plugin_popups` 가 매 egui frame 채우고,
     /// `gpu.render` 가 host egui pass *후* 각 (instance_id, 물리 콘텐츠 rect)에 plugin
     /// mesh 를 합성한다. 셸(scrim/bg/border)은 host egui 가, 내용만 plugin mesh 가 그린다.
@@ -421,6 +427,23 @@ pub struct AppState {
     /// egui-mesh popup 별 마지막으로 보낸 Theme 스냅샷. 크기/입력 무변이어도 테마가
     /// 바뀌면 set_context 재forward 를 트리거한다(surface `last_theme` 동형).
     pub(crate) plugin_mesh_popup_theme:
+        std::collections::HashMap<u64, tasty_plugin_protocol::ThemeWire>,
+
+    /// egui-mesh banner(A3) 합성 영역. `draw_plugin_banners` 가 매 egui frame 채우고,
+    /// `gpu.render` 가 host egui pass *후* 각 (instance_id, 물리 콘텐츠 rect)에 plugin
+    /// mesh 를 합성한다. 셸(컨테이너/border/close X/카운트다운)은 host egui(banner
+    /// manager)가, 내용만 plugin mesh 가 그린다. popup regions 와 동형.
+    pub(crate) plugin_mesh_banner_regions: Vec<(u64, crate::model::PhysicalRect)>,
+
+    /// egui-mesh banner 별 마지막으로 보낸 set_context geom `(w_px, h_px, ppp_bits)`.
+    /// 변경 감지(popup geom 과 동형).
+    pub(crate) plugin_mesh_banner_geom: std::collections::HashMap<u64, (u32, u32, u32)>,
+
+    /// 이미 bootstrap set_context 를 보낸 egui-mesh banner 인스턴스(popup bootstrapped 동형).
+    pub(crate) plugin_mesh_banner_bootstrapped: std::collections::HashSet<u64>,
+
+    /// egui-mesh banner 별 마지막으로 보낸 Theme 스냅샷(popup theme 과 동형).
+    pub(crate) plugin_mesh_banner_theme:
         std::collections::HashMap<u64, tasty_plugin_protocol::ThemeWire>,
 
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
@@ -765,10 +788,15 @@ impl AppState {
             pending_file_drops: Vec::new(),
             plugin_popup_events: Vec::new(),
             plugin_popup_closes: Vec::new(),
+            plugin_banner_closes: Vec::new(),
             plugin_mesh_popup_regions: Vec::new(),
             plugin_mesh_popup_geom: std::collections::HashMap::new(),
             plugin_mesh_popup_bootstrapped: std::collections::HashSet::new(),
             plugin_mesh_popup_theme: std::collections::HashMap::new(),
+            plugin_mesh_banner_regions: Vec::new(),
+            plugin_mesh_banner_geom: std::collections::HashMap::new(),
+            plugin_mesh_banner_bootstrapped: std::collections::HashSet::new(),
+            plugin_mesh_banner_theme: std::collections::HashMap::new(),
             pending_intents: Vec::new(),
         }
     }

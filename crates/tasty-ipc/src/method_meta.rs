@@ -296,6 +296,11 @@ pub const METHOD_TABLE: &[(&str, MethodMeta)] = {
         // (host → plugin)와는 다른 방향. plugin은 자기 instance_id만 닫을 수 있다 —
         // 다른 plugin의 인스턴스 close 요청은 만들어진 응답에서 거부.
         ("popup.close", plugin(&[UiPopup])),
+        // ── banner (plugin → host, A3) ────────────────────────────────
+        // 자기 contribute banner 를 자기 surface 에 띄운다(D1 소유권 검증은 App).
+        ("banner.open", plugin(&[UiBanner])),
+        // 자기 배너 인스턴스를 명시적으로 닫는다.
+        ("banner.close", plugin(&[UiBanner])),
         // ── input source (macOS) ──────────────────────────────────────
         ("surface.switch_input_source", plugin(&[TerminalWrite])),
         ("surface.raw_key", plugin(&[TerminalWrite])),
@@ -380,6 +385,8 @@ pub const DEBUG_METHODS: &[(&str, MethodMeta)] = &[
     ("debug.banner.show", local_only()),
     ("debug.banner.close", local_only()),
     ("debug.banner.set_countdown", local_only()),
+    ("debug.plugin_banner.open", local_only()),
+    ("debug.plugin_banner.close", local_only()),
     ("debug.event_bus.list_subscribers", local_only()),
     ("debug.event_bus.publish", local_only()),
     ("debug.event_bus.trace", local_only()),

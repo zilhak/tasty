@@ -78,6 +78,59 @@ impl App {
             send_response(&cmd.response_tx, response);
             return IpcStep::Handled;
         }
+        // plugin egui-mesh banner(A3) 강제 open/close — 사용자 조작 재현이라 debug 전용.
+        // `{ plugin_id?, banner_id, surface_id }` / `{ instance_id }`. host manager +
+        // 소유 view 의 BannerManager 를 함께 다뤄야 해 App-level glue 를 호출한다.
+        #[cfg(feature = "gui")]
+        if cmd.request.method.starts_with("debug.plugin_banner.") {
+            let id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+            let p = &cmd.request.params;
+            let response = match cmd.request.method.as_str() {
+                "debug.plugin_banner.open" => {
+                    match (
+                        p.get("banner_id").and_then(|v| v.as_str()),
+                        p.get("surface_id").and_then(|v| v.as_u64()),
+                    ) {
+                        (Some(bid), Some(sid)) => {
+                            let bid = bid.to_string();
+                            // debug 트리거는 소유권 검증 우회(caller=None) — 실 소유 plugin 으로 연다.
+                            match self.open_plugin_banner(None, &bid, sid as u32) {
+                                Ok(iid) => host_ipc::protocol::JsonRpcResponse::success(
+                                    id,
+                                    serde_json::json!({ "instance_id": iid }),
+                                ),
+                                Err(e) => host_ipc::protocol::JsonRpcResponse::error(id, -32602, e),
+                            }
+                        }
+                        _ => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                            id,
+                            "Missing 'banner_id' or 'surface_id'",
+                        ),
+                    }
+                }
+                "debug.plugin_banner.close" => {
+                    match p.get("instance_id").and_then(|v| v.as_u64()) {
+                        Some(iid) => {
+                            let closed = self.close_plugin_banner(
+                                iid,
+                                tasty_plugin_protocol::BannerCloseReason::PluginRequest,
+                            );
+                            host_ipc::protocol::JsonRpcResponse::success(
+                                id,
+                                serde_json::json!({ "closed": closed }),
+                            )
+                        }
+                        None => host_ipc::protocol::JsonRpcResponse::invalid_params(
+                            id,
+                            "Missing 'instance_id'",
+                        ),
+                    }
+                }
+                other => host_ipc::protocol::JsonRpcResponse::method_not_found(id, other),
+            };
+            send_response(&cmd.response_tx, response);
+            return IpcStep::Handled;
+        }
         IpcStep::NotHandled
     }
 }
