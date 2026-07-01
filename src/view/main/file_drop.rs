@@ -86,6 +86,7 @@ impl MainView {
                     target: crate::file::format::FileTarget::new(path),
                     depth: crate::file::format::DetectDepth::Deep,
                     origin_surface_id: None,
+                    ignore_size_limit: false,
                 }
                 .from_user_menu("file_drop"),
             );

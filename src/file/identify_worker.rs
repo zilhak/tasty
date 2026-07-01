@@ -50,6 +50,7 @@ impl IdentifyWorker {
         target: FileTarget,
         depth: DetectDepth,
         origin_surface_id: Option<u32>,
+        ignore_size_limit: bool,
     ) -> IdentifyRequestId {
         let id = IdentifyRequestId(self.next_id.fetch_add(1, Ordering::Relaxed));
         let registry = self.registry.clone();
@@ -62,6 +63,7 @@ impl IdentifyWorker {
                 target: target_for_thread,
                 detector,
                 origin_surface_id,
+                ignore_size_limit,
             };
             let _ = proxy.send_event(done); // event loop 종료 시에만 실패 — 무시.
         });

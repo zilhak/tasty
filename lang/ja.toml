@@ -6,6 +6,7 @@ name = "Tasty"
 [button]
 ok = "OK"
 cancel = "キャンセル"
+open = "開く"
 save = "保存"
 add = "追加"
 new_workspace = "新しいワークスペース"
@@ -577,6 +578,10 @@ loading = "読み込み中…"
 failed = "読み込みに失敗しました"
 empty = "このファイルは空です"
 loading = "読み込み中…"
+
+[markdown.large_file]
+title = "大きなファイルを開きますか？"
+body = "1MBを超えています。表示が遅くなる可能性があります。"
 
 [convert_popup]
 title = "サーフェスタイプ切替"

@@ -543,6 +543,33 @@ pub struct DialogState {
     pub(crate) preset_picker_selected: Option<String>,
     /// `enter_copy_mode` 단축키 트리거 신호. MainView 가 다음 frame 에 소비.
     pub(crate) pending_enter_copy_mode: bool,
+    /// 대용량 markdown 열기 확인(`markdown_size_confirm`) 팝업의 보류 상태.
+    /// `Some` 이면 게이트가 열기를 보류하고 팝업을 띄운 상태 — 사용자가 [열기] 를
+    /// 누르면 `App::dispatch_pending_md_open` 이 `Core::apply_pending_md_open` 으로
+    /// 실제 오픈을 재개하고, [취소]/Esc/바깥클릭이면 슬롯을 폐기한다.
+    pub(crate) pending_md_open: Option<PendingMdOpen>,
+}
+
+/// 1MB 초과 markdown 열기 확인 팝업의 보류 오픈 상태 (`01-md-size-confirm-gate`).
+///
+/// 게이트(`execute_handler_action`)가 크기 초과를 감지하면 실제 tab 생성 대신 이
+/// 값을 채우고 확인 팝업을 띄운다. [열기] 확정 시 이 값으로 원래 OpenSurface 오픈을
+/// bypass(재검사 없이) 재개한다.
+#[derive(Debug, Clone)]
+pub struct PendingMdOpen {
+    /// 열려던 파일의 절대 경로 문자열 (handler param 값).
+    pub(crate) path: String,
+    /// handler param key (예: `"file"`). 재개 시 params 재구성에 사용.
+    pub(crate) param_key: String,
+    /// surface kind (항상 `"markdown"`; 재개 시 CreateTab/NewTab kind).
+    pub(crate) surface_kind: String,
+    /// 링크클릭/주소창 이동의 origin surface — 그 Pane 에 새 tab. None 이면 focused.
+    pub(crate) origin_surface_id: Option<u32>,
+    /// 감지된 파일 크기(bytes) — 팝업의 크기 칩 표시용.
+    pub(crate) size: u64,
+    /// 팝업 wrapper 의 사용자 결정: `Some(true)`=열기, `Some(false)`=취소.
+    /// `App::dispatch_pending_md_open` 이 frame begin 에 drain.
+    pub(crate) result: Option<bool>,
 }
 
 /// Tab drag-and-drop state (UI-only, not persisted).
@@ -597,6 +624,7 @@ impl DialogState {
             pending_open_preset_window: false,
             preset_picker_selected: None,
             pending_enter_copy_mode: false,
+            pending_md_open: None,
         }
     }
 
@@ -641,6 +669,9 @@ pub struct FileHandlerPickerData {
     pub(crate) selected: Option<crate::file::handler::HandlerId>,
     /// dispatch 결과. host 본체 layer 가 frame 끝에서 소비.
     pub(crate) result: Option<FileHandlerPickerResult>,
+    /// 원본 dispatch 의 크기제한 bypass 플래그. picker 왕복을 통과해 선택 후
+    /// `execute_handler_action` 까지 전달된다(대용량 markdown 게이트 존중).
+    pub(crate) ignore_size_limit: bool,
 }
 
 /// picker 의 닫기 사유.

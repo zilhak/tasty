@@ -84,6 +84,21 @@ fn hex_val(b: u8) -> Option<u8> {
     }
 }
 
+/// 대용량 markdown 확인 게이트의 임계값 (1MB). 이 값을 *초과* 하면 확인 팝업.
+pub(crate) const MD_SIZE_LIMIT_BYTES: u64 = 1024 * 1024;
+
+/// `path` 가 크기 게이트를 초과하는 일반 파일이면 그 크기(bytes)를 반환.
+///
+/// 파일이 없거나 stat 실패 / 정확히 임계값 이하면 `None` — 게이트를 통과시키고
+/// 기존 오픈 흐름에 맡긴다(로드 실패는 플러그인이 표시). 경계값(정확히 1MB)은
+/// 통과(`None`) — *초과* 만 게이트.
+pub(crate) fn exceeds_md_size_limit(path: &std::path::Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()
+        .map(|m| m.len())
+        .filter(|&len| len > MD_SIZE_LIMIT_BYTES)
+}
+
 /// Picker popup 을 띄운다. 후보가 비어도 호출 — empty-state UI 가 보여진다.
 pub(crate) fn open_picker(
     state: &mut AppState,
@@ -91,6 +106,7 @@ pub(crate) fn open_picker(
     target: FileTarget,
     detector: Option<DetectorId>,
     candidates: Vec<FileHandler>,
+    ignore_size_limit: bool,
 ) {
     let recent_ids: Vec<HandlerId> = engine
         .file_handler_recent
@@ -113,6 +129,7 @@ pub(crate) fn open_picker(
         recent,
         selected: None,
         result: None,
+        ignore_size_limit,
     });
     #[cfg(feature = "gui")]
     state
@@ -154,6 +171,7 @@ pub fn execute_handler_action(
     handler: &FileHandler,
     target: &FileTarget,
     origin_surface_id: Option<u32>,
+    ignore_size_limit: bool,
 ) {
     match &handler.action {
         HandlerAction::OpenSurface {
@@ -161,36 +179,42 @@ pub fn execute_handler_action(
             param_key,
         } => {
             let path_str = target.as_path().to_string_lossy().into_owned();
-            let params = serde_json::json!({ param_key.as_str(): path_str });
-            let origin_pane = origin_surface_id.and_then(|sid| engine.find_pane_for_surface(sid));
-            match origin_pane {
-                Some(pane_id) => {
-                    let intent = crate::core::intent::DomainIntent::CreateTab {
-                        pane_id,
-                        cwd: None,
-                        kind: surface_kind.clone(),
-                        name: None,
-                        surface_params: params,
-                    };
-                    if let Err(e) = core.apply(engine, intent) {
-                        tracing::warn!(
-                            pane_id,
-                            kind = %surface_kind,
-                            "file_dispatch CreateTab failed: {e}",
-                        );
+
+            // 대용량 markdown 확인 게이트 (01-md-size-confirm-gate). bypass 아니고
+            // 1MB 초과면 실제 오픈 대신 확인 팝업을 띄우고 오픈을 보류한다. [열기]
+            // 확정 시 `Core::apply_pending_md_open` 이 재개한다. pane/workspace/tab 의
+            // 직접 생성 IPC 는 이 함수를 경유하지 않으므로 게이트 대상 밖(항상 즉시 생성).
+            #[cfg(feature = "gui")]
+            if surface_kind == "markdown"
+                && !ignore_size_limit
+                && let Some(size) = exceeds_md_size_limit(target.as_path())
+            {
+                state.dialogs.pending_md_open = Some(crate::state::PendingMdOpen {
+                    path: path_str,
+                    param_key: param_key.clone(),
+                    surface_kind: surface_kind.clone(),
+                    origin_surface_id,
+                    size,
+                    result: None,
+                });
+                let scope = match origin_surface_id {
+                    Some(sid) => crate::adapters::ui::popup::PopupScope::Surface(sid),
+                    None => crate::adapters::ui::popup::PopupScope::Window,
+                };
+                state.dispatch_intent(
+                    crate::intent::UiIntent::OpenPopup {
+                        id: "markdown_size_confirm",
+                        mode: crate::intent::OpenPopupMode::WithScope(scope),
                     }
-                    let _ = state; // CreateTab 본문이 state mutate (cascade).
-                }
-                None => {
-                    state.dispatch_intent(
-                        crate::intent::Intent::NewTab {
-                            kind: Some(surface_kind.clone()),
-                            params,
-                        }
-                        .from_user_menu("file_dispatch"),
-                    );
-                }
+                    .from_user_menu("markdown_size_gate"),
+                );
+                return;
             }
+            #[cfg(not(feature = "gui"))]
+            let _ = ignore_size_limit; // headless: 확인 팝업 없음 — 게이트 미적용, 값만 소비.
+
+            let params = serde_json::json!({ param_key.as_str(): path_str });
+            open_surface_tab(core, state, engine, surface_kind, params, origin_surface_id);
         }
         HandlerAction::Ipc { method, .. } => {
             // 이 분기는 state.pending_handler_ipc 에 enqueue 만 — core/engine 미사용.
@@ -205,6 +229,48 @@ pub fn execute_handler_action(
             crate::terminal_link::open_uri(&uri);
             #[cfg(not(feature = "gui"))]
             tracing::warn!("HandlerAction::System ignored in headless build: {uri}");
+        }
+    }
+}
+
+/// OpenSurface 결과를 실제 tab 으로 연다. `origin_surface_id` 가 Some 이면 그 surface
+/// 의 *Pane* 에 새 tab(focus 독립), None 이면 focused pane 의 새 탭. 게이트 통과분과
+/// 대용량 확인 후 재개(`Core::apply_pending_md_open`) 가 공유한다.
+pub(crate) fn open_surface_tab(
+    core: &mut crate::core::Core,
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    surface_kind: &str,
+    params: serde_json::Value,
+    origin_surface_id: Option<u32>,
+) {
+    let origin_pane = origin_surface_id.and_then(|sid| engine.find_pane_for_surface(sid));
+    match origin_pane {
+        Some(pane_id) => {
+            let intent = crate::core::intent::DomainIntent::CreateTab {
+                pane_id,
+                cwd: None,
+                kind: surface_kind.to_string(),
+                name: None,
+                surface_params: params,
+            };
+            if let Err(e) = core.apply(engine, intent) {
+                tracing::warn!(
+                    pane_id,
+                    kind = %surface_kind,
+                    "file_dispatch CreateTab failed: {e}",
+                );
+            }
+            let _ = state; // CreateTab 본문이 state mutate (cascade).
+        }
+        None => {
+            state.dispatch_intent(
+                crate::intent::Intent::NewTab {
+                    kind: Some(surface_kind.to_string()),
+                    params,
+                }
+                .from_user_menu("file_dispatch"),
+            );
         }
     }
 }
@@ -271,5 +337,30 @@ mod tests {
             parse_link("file:///C:/Users/a.txt"),
             LinkKind::FileTarget(PathBuf::from("C:/Users/a.txt")),
         );
+    }
+
+    #[test]
+    fn size_gate_boundary_and_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, len: usize| {
+            let p = dir.path().join(name);
+            std::fs::write(&p, vec![b'x'; len]).unwrap();
+            p
+        };
+        // 미만 → None.
+        assert_eq!(exceeds_md_size_limit(&write("small.md", 500 * 1024)), None,);
+        // 정확히 임계값 → None (초과만 게이트).
+        assert_eq!(
+            exceeds_md_size_limit(&write("exact.md", MD_SIZE_LIMIT_BYTES as usize)),
+            None,
+        );
+        // 초과 → Some(len).
+        let over = MD_SIZE_LIMIT_BYTES as usize + 1;
+        assert_eq!(
+            exceeds_md_size_limit(&write("big.md", over)),
+            Some(over as u64),
+        );
+        // 없는 파일 → None (게이트 통과).
+        assert_eq!(exceeds_md_size_limit(&dir.path().join("missing.md")), None,);
     }
 }

@@ -718,12 +718,20 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "markdown",
                     "Markdown open",
-                    vec![spec(
-                        "markdown",
-                        "Edit or preview",
-                        Some("420px · two choice cards"),
-                        components::markdown_open::draw,
-                    )],
+                    vec![
+                        spec(
+                            "markdown",
+                            "Edit or preview",
+                            Some("420px · two choice cards"),
+                            components::markdown_open::draw,
+                        ),
+                        spec(
+                            "markdown-large-file",
+                            "Confirm large file",
+                            Some("360px · size tag + Cancel/Open"),
+                            components::md_large_file::draw,
+                        ),
+                    ],
                 ),
                 section(
                     "rename",

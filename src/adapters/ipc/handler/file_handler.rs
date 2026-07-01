@@ -40,6 +40,10 @@ struct DispatchReq {
     /// None 이면 기존 동작 (focused pane 의 새 탭).
     #[serde(default)]
     origin_surface_id: Option<u32>,
+    /// true 면 대용량 markdown 확인 팝업을 건너뛰고 즉시 연다(에이전트 강제 열기).
+    /// 기본 false — 1MB 초과 markdown 은 확인 팝업이 뜬다.
+    #[serde(default)]
+    ignore_size_limit: bool,
 }
 
 fn default_depth() -> String {
@@ -81,6 +85,7 @@ pub fn handle_dispatch(
             target,
             depth,
             origin_surface_id: req.origin_surface_id,
+            ignore_size_limit: req.ignore_size_limit,
         }
         .from_agent_ipc(),
     );
@@ -89,6 +94,28 @@ pub fn handle_dispatch(
         json!({
             "accepted": true,
             "depth": req.depth,
+            "ignore_size_limit": req.ignore_size_limit,
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignore_size_limit_defaults_false() {
+        let req: DispatchReq =
+            serde_json::from_value(serde_json::json!({ "path": "/a.md" })).unwrap();
+        assert!(!req.ignore_size_limit);
+    }
+
+    #[test]
+    fn ignore_size_limit_parsed_true() {
+        let req: DispatchReq = serde_json::from_value(
+            serde_json::json!({ "path": "/a.md", "ignore_size_limit": true }),
+        )
+        .unwrap();
+        assert!(req.ignore_size_limit);
+    }
 }

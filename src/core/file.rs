@@ -46,13 +46,21 @@ impl Core {
         target: FileTarget,
         detector: Option<DetectorId>,
         origin_surface_id: Option<u32>,
+        ignore_size_limit: bool,
     ) {
         let handlers = match &detector {
             Some(d) => engine.file_handler.handlers_for(d),
             None => Vec::new(),
         };
         if handlers.is_empty() {
-            crate::file::dispatch::open_picker(state, engine, target, detector, Vec::new());
+            crate::file::dispatch::open_picker(
+                state,
+                engine,
+                target,
+                detector,
+                Vec::new(),
+                ignore_size_limit,
+            );
             return;
         }
         // 정렬 1순위가 자동 선택. 단일 / 복수 동일 — 첫 항목 dispatch.
@@ -64,6 +72,7 @@ impl Core {
             &first,
             &target,
             origin_surface_id,
+            ignore_size_limit,
         );
     }
 
@@ -79,12 +88,19 @@ impl Core {
         engine: &mut CoreState,
         target: FileTarget,
         result: FileHandlerPickerResult,
+        ignore_size_limit: bool,
     ) {
         match result {
             FileHandlerPickerResult::Selected(handler_id) => {
                 match engine.file_handler.get(&handler_id) {
                     Some(handler) => crate::file::dispatch::execute_handler_action(
-                        self, state, engine, &handler, &target, None,
+                        self,
+                        state,
+                        engine,
+                        &handler,
+                        &target,
+                        None,
+                        ignore_size_limit,
                     ),
                     None => tracing::warn!(
                         handler_id = %handler_id,
@@ -97,6 +113,27 @@ impl Core {
                 // recent 갱신 없음.
             }
         }
+    }
+
+    /// 대용량 markdown 확인 팝업에서 [열기] 확정 시 보류된 오픈을 재개한다.
+    /// 이미 사용자가 확인했으므로 크기 재검사 없이(bypass) 원래 OpenSurface 오픈을
+    /// 그대로 실행한다. `App::dispatch_pending_md_open` 이 frame begin 에 호출.
+    #[cfg(feature = "gui")]
+    pub(crate) fn apply_pending_md_open(
+        &mut self,
+        state: &mut AppState,
+        engine: &mut CoreState,
+        pending: crate::state::PendingMdOpen,
+    ) {
+        let params = serde_json::json!({ pending.param_key.as_str(): pending.path });
+        crate::file::dispatch::open_surface_tab(
+            self,
+            state,
+            engine,
+            &pending.surface_kind,
+            params,
+            pending.origin_surface_id,
+        );
     }
 }
 

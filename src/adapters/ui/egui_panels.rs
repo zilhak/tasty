@@ -328,6 +328,7 @@ pub fn draw_egui_panels(
                             target: crate::file::format::FileTarget::new(path),
                             depth: crate::file::format::DetectDepth::Deep,
                             origin_surface_id: Some(sid),
+                            ignore_size_limit: false,
                         }
                         .from_user_menu("markdown_link"),
                     );
@@ -409,6 +410,7 @@ pub(crate) fn apply_explorer_action(
                     target: crate::file::format::FileTarget::new(path.clone()),
                     depth: crate::file::format::DetectDepth::Deep,
                     origin_surface_id: Some(sid),
+                    ignore_size_limit: false,
                 }
                 .from_user_menu("explorer_open_file"),
             );

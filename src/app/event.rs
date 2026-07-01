@@ -86,5 +86,8 @@ pub(crate) enum AppEvent {
         /// `apply_identify_result` → `execute_handler_action` 가
         /// origin 의 *Pane* 에 새 tab 으로 추가.
         origin_surface_id: Option<u32>,
+        /// `DispatchFile.ignore_size_limit` 그대로 carry — 대용량 markdown 게이트를
+        /// 건너뛴다(에이전트/IPC 강제 열기). 비동기 식별 왕복을 통과시키기 위함.
+        ignore_size_limit: bool,
     },
 }

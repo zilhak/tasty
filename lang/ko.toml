@@ -6,6 +6,7 @@ name = "Tasty"
 [button]
 ok = "확인"
 cancel = "취소"
+open = "열기"
 save = "저장"
 add = "추가"
 new_workspace = "새 워크스페이스"
@@ -577,6 +578,10 @@ loading = "불러오는 중…"
 failed = "불러오지 못했습니다"
 empty = "이 파일은 비어 있습니다"
 loading = "불러오는 중…"
+
+[markdown.large_file]
+title = "큰 파일을 열까요?"
+body = "1MB를 초과하는 파일입니다. 열면 느려질 수 있습니다."
 
 [convert_popup]
 title = "서피스 타입 전환"

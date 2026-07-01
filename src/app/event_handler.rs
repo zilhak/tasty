@@ -232,12 +232,14 @@ impl ApplicationHandler<AppEvent> for App {
                 target,
                 detector,
                 origin_surface_id,
+                ignore_size_limit,
             } => {
                 tracing::debug!(
                     request_id = %request_id,
                     target = %target.display(),
                     detector = ?detector.as_ref().map(|d| d.as_str()),
                     origin_surface_id = ?origin_surface_id,
+                    ignore_size_limit,
                     "IdentifyDone",
                 );
                 // Split borrow — focused_window_mut 는 &mut self 전체를 잡아
@@ -251,6 +253,7 @@ impl ApplicationHandler<AppEvent> for App {
                         target,
                         detector,
                         origin_surface_id,
+                        ignore_size_limit,
                     );
                 }
             }
@@ -601,6 +604,8 @@ impl ApplicationHandler<AppEvent> for App {
         self.dispatch_pending_handler_ipc();
         // 파일 handler picker popup 의 result 슬롯 drain (D.3.C.G.3.c).
         self.dispatch_pending_picker_results();
+        // 대용량 markdown 확인 팝업의 결정 슬롯 drain (01-md-size-confirm-gate).
+        self.dispatch_pending_md_open();
         // 직전 프레임 plugin popup 렌더로 수집된 사용자 입력 / close 사유 forward.
         self.dispatch_plugin_popup_events();
         // PluginsView 모달의 사용자 액션을 manager에 적용 + 모달 snapshot 갱신.

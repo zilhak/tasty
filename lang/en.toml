@@ -6,6 +6,7 @@ name = "Tasty"
 [button]
 ok = "OK"
 cancel = "Cancel"
+open = "Open"
 save = "Save"
 add = "Add"
 new_workspace = "New Workspace"
@@ -577,6 +578,10 @@ loading = "Loading…"
 failed = "Failed to load"
 empty = "This file is empty"
 loading = "Loading…"
+
+[markdown.large_file]
+title = "Open large file?"
+body = "Over 1 MB — rendering may be slow."
 
 [convert_popup]
 title = "Surface Type"
