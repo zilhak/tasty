@@ -15,7 +15,7 @@
 
 use std::collections::HashSet;
 
-use egui::{Color32, Context, Event, Id, Order, Pos2, Rect, Stroke, Vec2};
+use egui::{Context, Event, Id, Order, Pos2, Rect, Stroke, Vec2};
 use tasty_plugin_manifest::PopupRendering;
 use tasty_plugin_protocol::{
     ModifiersWire, PointerButtonWire, PopupCloseReason, PopupSetContextParams, RawInputEventWire,
@@ -31,9 +31,6 @@ use crate::plugin_bridge::ui_tree_render::{PopupSink, render_popup_tree};
 use crate::state::AppState;
 
 const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
-
-/// 모달 scrim 색 — 디자인 `scrim-bg`(black 50%). 갤러리 dialog 레시피와 동일 토큰.
-const SCRIM_ALPHA: u8 = 128;
 
 /// 매 egui 프레임 호출. plugin popup_instances를 순회하면서:
 ///  - UiNode 인스턴스를 egui::Area로 렌더하고 PopupSink 입력을 `state` 큐에 적재,
@@ -208,7 +205,7 @@ pub fn draw_plugin_popups(
         );
         let painter = ctx.layer_painter(layer_id);
         let th = crate::theme::theme();
-        painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(SCRIM_ALPHA));
+        painter.rect_filled(screen_rect, 0.0, th.scrim().to_egui());
         painter.rect_filled(rect, th.corner_radius.value(), th.bg_panel().to_egui());
         painter.rect_stroke(
             rect,

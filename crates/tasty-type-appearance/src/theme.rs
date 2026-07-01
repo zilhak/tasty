@@ -192,6 +192,10 @@ pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
     alpha: 90,
 };
 
+/// design `--tasty-scrim-bg` — 모달/팝업 뒤 무대를 어둡게 덮는 scrim 알파. black 50%
+/// straight (테마 무관 고정 검정). `Theme::scrim()` 이 이 값으로 색을 만든다.
+pub const SCRIM_ALPHA: u8 = 128;
+
 // ============================================================================
 //  ThemeSizing — 모든 테마 공통
 // ============================================================================
@@ -1331,6 +1335,13 @@ impl Theme {
     #[inline]
     pub fn overlay_active(&self) -> HexColor {
         self.active_overlay
+    }
+
+    /// 모달/팝업 뒤 무대를 덮는 scrim 색. design `--tasty-scrim-bg`(black 50%) — 테마
+    /// 무관 고정 검정 + [`SCRIM_ALPHA`]. 갤러리 dialog 레시피와 동일 토큰.
+    #[inline]
+    pub fn scrim(&self) -> HexColor {
+        HexColor::from_rgba(0, 0, 0, SCRIM_ALPHA)
     }
 
     // ── Titlebar (CSD) 컴포넌트 색 — 기존 semantic 접근자 조합 (changelog §Tokens) ──
