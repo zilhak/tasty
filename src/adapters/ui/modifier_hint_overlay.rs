@@ -433,22 +433,20 @@ fn draw_content(
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(&mut list_ui, |ui| {
-            let inner = egui::Rect::from_min_max(
-                list_rect.min + egui::vec2(pad, pad),
-                egui::pos2(list_rect.right() - pad, list_rect.bottom() - pad),
-            );
-            let mut content = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(inner)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            content.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
-            for (i, sec) in sections.iter().enumerate() {
-                if i > 0 {
-                    content.add_space(theme.modhint_section_gap().value());
-                }
-                draw_section(&mut content, theme, sec);
-            }
+            // 좌우/상하 패딩은 Frame inner_margin 으로(ScrollArea 뷰포트 내부 → 절대 rect
+            // 수동 배치 대신 idiomatic flow). 세로 섹션 간격은 spacing.
+            egui::Frame::new()
+                .inner_margin(egui::Margin::same(pad as i8))
+                .show(ui, |ui| {
+                    ui.set_width((list_rect.width() - pad * 2.0).max(0.0));
+                    ui.spacing_mut().item_spacing.y = theme.modhint_section_gap().value();
+                    for (i, sec) in sections.iter().enumerate() {
+                        if i > 0 {
+                            ui.add_space(theme.modhint_section_gap().value());
+                        }
+                        draw_section(ui, theme, sec);
+                    }
+                });
         });
 }
 
