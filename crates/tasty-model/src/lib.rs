@@ -2,7 +2,7 @@
 
 //! Tasty workspace / pane / tab / surface 도메인 모델.
 //!
-//! image_panel / markdown_panel / popup_kind / toast_kind 등은 본 바이너리의
+//! popup_kind / toast_kind 등은 본 바이너리의
 //! gui 컴포넌트 API surface. headless 빌드 (`tasty --no-default-features`) 에선
 //! 호출자가 cfg(gui) 로 차단되지만, library crate 표면 자체는 GUI 무관이라
 //! dead_code 침묵은 본 crate 에서 적용한다.
@@ -82,8 +82,6 @@ mod binary_tree;
 pub mod closed_item;
 mod empty_surface;
 mod explorer_panel;
-mod image_panel;
-mod markdown_panel;
 mod pane;
 mod pane_tree;
 pub mod popup_kind;
@@ -101,8 +99,6 @@ pub use binary_tree::BinaryTree;
 pub use closed_item::{ClosedItem, ClosedItemStore};
 pub use empty_surface::*;
 pub use explorer_panel::*;
-pub use image_panel::*;
-pub use markdown_panel::*;
 pub use pane::*;
 pub use pane_tree::*;
 pub use surface_trait::Surface;

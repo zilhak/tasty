@@ -929,22 +929,6 @@ fn compute_terminal_rect_with_bottom_inset() {
 // ---- Surface::source_cwd ----
 
 #[test]
-fn source_cwd_markdown_returns_parent_dir() {
-    #[cfg(windows)]
-    let (file, parent) = ("C:\\docs\\readme.md", "C:\\docs");
-    #[cfg(not(windows))]
-    let (file, parent) = ("/docs/readme.md", "/docs");
-    let md = MarkdownPanel::new(1, file.to_string());
-    assert_eq!(md.source_cwd(), Some(std::path::PathBuf::from(parent)));
-}
-
-#[test]
-fn source_cwd_image_is_none() {
-    let img = ImagePanel::new_blank(1);
-    assert_eq!(img.source_cwd(), None);
-}
-
-#[test]
 fn source_cwd_empty_surface_is_none() {
     let e = EmptySurface::new(1);
     assert_eq!(e.source_cwd(), None);

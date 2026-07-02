@@ -4,10 +4,23 @@ use crate::model::SplitDirection;
 fn test_state() -> (AppState, crate::core::CoreState) {
     let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
     let mut engine = crate::core::CoreState::new(80, 24, waker).unwrap();
-    // markdown surface kind는 com.tasty.markdown plugin 이 hello 시 등록한다.
-    // 테스트에서는 plugin manager 를 띄우지 않으므로 직접 등록해 host 빌트인과
-    // 동일하게 사용할 수 있게 한다.
-    crate::engine::surface_registry::builtins::register_markdown(&engine.surface_registry);
+    // markdown surface kind는 com.tasty.markdown plugin 이 hello 시 egui-mesh
+    // whitelist 로 등록한다. 테스트에서는 plugin manager 를 띄우지 않으므로 런타임과
+    // 동형인 egui-mesh stand-in 등록을 직접 수행한다.
+    let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(serde_json::json!({
+        "kind": "markdown",
+        "display_name_i18n_key": "surface.kind.markdown",
+        "rendering": "egui-mesh",
+    }))
+    .expect("test SurfaceKindDecl");
+    assert!(
+        crate::engine::surface_registry::egui_mesh::register_egui_mesh_kind(
+            &engine.surface_registry,
+            "com.tasty.markdown",
+            &decl,
+            crate::plugin::manifest::HOST_API_VERSION,
+        )
+    );
     let preset_store = std::sync::Arc::new(std::sync::Mutex::new(
         tasty_presets::PresetStore::load_default(),
     ));
@@ -314,7 +327,7 @@ fn switch_workspace_out_of_range() {
 
 #[test]
 fn resolve_inherit_cwd_from_markdown_surface() {
-    // explorer가 plugin으로 옮겨졌으므로 host-only kind인 markdown으로 동등 검증.
+    // markdown(EguiMeshSurface) 의 source_cwd(파일 부모 디렉터리) 로 검증.
     let (mut state, mut engine) = test_state();
     #[cfg(windows)]
     let (root, file) = ("C:\\workspace\\proj", "C:\\workspace\\proj\\readme.md");

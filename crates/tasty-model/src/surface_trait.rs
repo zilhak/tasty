@@ -5,8 +5,8 @@ use super::{PhysicalRect, SurfaceId};
 
 /// Common behavior for all Surface types.
 ///
-/// Each surface type (TerminalSurface, MarkdownPanel, EmptySurface,
-/// ImagePanel, RemoteSurface) implements this trait.
+/// Each surface type (TerminalSurface, EmptySurface, ExplorerPanel,
+/// RemoteSurface, EguiMeshSurface) implements this trait.
 /// All methods have default implementations suitable for non-terminal surfaces.
 pub trait Surface: Any {
     /// Stable identifier for this surface kind (lowercase, snake_case).
@@ -57,8 +57,7 @@ pub trait Surface: Any {
     ///
     /// - TerminalSurface: 터미널의 OSC 7 cwd (engine.terminals 경유 — trait 는
     ///   None 반환; cwd_from_surface 가 분기)
-    /// - MarkdownPanel: 파일의 부모 디렉터리
-    /// - ImagePanel: 파일 부모 또는 None
+    /// - EguiMeshSurface(markdown 등): 파일의 부모 디렉터리
     /// - EmptySurface: None (또는 carry 받은 cwd)
     /// - RemoteSurface: 호스트가 carry 한 cwd (None 또는 ctx.cwd 그대로)
     fn source_cwd(&self) -> Option<PathBuf>;

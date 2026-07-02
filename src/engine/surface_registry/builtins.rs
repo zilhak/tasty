@@ -8,8 +8,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use crate::model::{
-    EmptySurface, ExplorerPanel, ExplorerTab, ExplorerViewMode, ImagePanel, MarkdownPanel,
-    SortColumn, SortDir, Surface,
+    EmptySurface, ExplorerPanel, ExplorerTab, ExplorerViewMode, SortColumn, SortDir, Surface,
 };
 
 use super::{SurfaceKindDef, SurfaceKindRegistry};
@@ -57,69 +56,6 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
             anyhow::bail!("terminal surfaces are restored via SavedSurface::Terminal, not Generic")
         }),
         snapshot: Arc::new(|_| None),
-    });
-}
-
-// ── Markdown ────────────────────────────────────────────────────────────────
-
-// B1(ADR-0028): markdown 은 egui-mesh 채널로 전환돼 더 이상 host-rendered 로 등록되지
-// 않는다. 이 host-rendered 정의(+ `MarkdownPanel`/`MarkdownView` 직접 렌더)는 C1 에서
-// 제거된다 — 그 전까지는 잔존 코드로 보존(테스트만 참조).
-#[allow(dead_code)]
-pub(crate) fn register_markdown(registry: &SurfaceKindRegistry) {
-    registry.register(SurfaceKindDef {
-        kind: "markdown",
-        display_name_i18n_key: "surface.kind.markdown",
-        create: Arc::new(|sid, _cwd, params| {
-            let file = params
-                .get("file")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("missing 'file' for markdown surface"))?;
-            Ok(Box::new(MarkdownPanel::new(sid, file.to_string())) as Box<dyn Surface>)
-        }),
-        restore: Arc::new(|sid, data| {
-            let path = data
-                .get("path")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("missing 'path' in markdown snapshot"))?;
-            Ok(Box::new(MarkdownPanel::new(sid, path.to_string())) as Box<dyn Surface>)
-        }),
-        snapshot: Arc::new(|s: &dyn Surface| {
-            let md = s.as_any().downcast_ref::<MarkdownPanel>()?;
-            Some(json!({"path": md.file_path}))
-        }),
-    });
-}
-
-// ── Image ───────────────────────────────────────────────────────────────────
-//
-// Image kind는 `com.tasty.image` plugin이 `rendering = "host"`로 선언한
-// host-rendered kind다. plugin manager가 매니페스트를 화이트리스트에 매칭한 뒤
-// 본 함수를 호출해 실제 `SurfaceKindDef`를 호스트가 제공한다.
-
-pub fn register_image(registry: &SurfaceKindRegistry) {
-    registry.register(SurfaceKindDef {
-        kind: "image",
-        display_name_i18n_key: "surface.kind.image",
-        create: Arc::new(|sid, _cwd, params| {
-            let panel = match params.get("file").and_then(|v| v.as_str()) {
-                Some(path) => ImagePanel::new(sid, path.to_string()),
-                None => ImagePanel::new_blank(sid),
-            };
-            Ok(Box::new(panel) as Box<dyn Surface>)
-        }),
-        restore: Arc::new(|sid, data| {
-            let panel = match data.get("path").and_then(|v| v.as_str()) {
-                Some(path) => ImagePanel::new(sid, path.to_string()),
-                None => ImagePanel::new_blank(sid),
-            };
-            Ok(Box::new(panel) as Box<dyn Surface>)
-        }),
-        snapshot: Arc::new(|s| {
-            let img = s.as_any().downcast_ref::<ImagePanel>()?;
-            // 빈 캔버스(미저장)은 path null로 직렬화 — 복원 시 다시 빈 캔버스.
-            Some(json!({"path": img.file_path}))
-        }),
     });
 }
 
@@ -255,45 +191,6 @@ mod tests {
         let r = SurfaceKindRegistry::new();
         register_builtin_kinds(&r);
         r
-    }
-
-    #[test]
-    fn markdown_create_requires_file() {
-        // markdown kind는 register_builtin_kinds가 아닌 com.tasty.markdown plugin
-        // 활성화 경로에서 등록된다. host가 제공하는 SurfaceKindDef 자체의 동작을
-        // 검증하므로 직접 register_markdown을 호출한다.
-        let reg = SurfaceKindRegistry::new();
-        register_markdown(&reg);
-        let def = reg.get("markdown").unwrap();
-        assert!((def.create)(1, None, &json!({})).is_err());
-        let s = (def.create)(1, None, &json!({"file": "/tmp/x.md"})).unwrap();
-        assert_eq!(s.kind(), "markdown");
-        assert_eq!(s.surface_id(), Some(1));
-    }
-
-    #[test]
-    fn markdown_snapshot_round_trips() {
-        let reg = SurfaceKindRegistry::new();
-        register_markdown(&reg);
-        let def = reg.get("markdown").unwrap();
-        let s = (def.create)(7, None, &json!({"file": "/tmp/y.md"})).unwrap();
-        let snap = (def.snapshot)(s.as_ref()).unwrap();
-        assert_eq!(snap["path"], "/tmp/y.md");
-        let restored = (def.restore)(7, &snap).unwrap();
-        assert_eq!(restored.kind(), "markdown");
-    }
-
-    #[test]
-    fn image_create_blank_when_no_file() {
-        // image kind는 register_builtin_kinds가 아닌 com.tasty.image plugin 활성화
-        // 경로에서 등록된다. 본 테스트는 host가 제공하는 SurfaceKindDef 자체의
-        // 동작을 검증하므로 직접 register_image를 호출한다.
-        let reg = SurfaceKindRegistry::new();
-        register_image(&reg);
-        let def = reg.get("image").unwrap();
-        let s = (def.create)(3, None, &json!({})).unwrap();
-        let img = s.as_any().downcast_ref::<ImagePanel>().unwrap();
-        assert!(img.is_blank());
     }
 
     #[test]
