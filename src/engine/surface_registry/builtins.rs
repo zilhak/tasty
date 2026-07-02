@@ -11,7 +11,9 @@ use crate::model::{
     EmptySurface, ExplorerPanel, ExplorerTab, ExplorerViewMode, SortColumn, SortDir, Surface,
 };
 
-use super::{SurfaceKindDef, SurfaceKindRegistry};
+use super::{
+    PresetFieldInput, PresetFieldSpec, PresetFieldTarget, SurfaceKindDef, SurfaceKindRegistry,
+};
 
 /// 부팅 시 호출. CoreState 생성 직전에 빈 SurfaceKindRegistry에 호스트 내장 kind를 등록한다.
 ///
@@ -56,6 +58,30 @@ fn register_terminal(registry: &SurfaceKindRegistry) {
             anyhow::bail!("terminal surfaces are restored via SavedSurface::Terminal, not Generic")
         }),
         snapshot: Arc::new(|_| None),
+        // terminal 은 cwd/startup 이 params 가 아니라 PresetSurface 전용 컬럼이므로
+        // target 을 Cwd/Startup 으로 라우팅한다 (편집기가 generic 하게 흡수).
+        preset_fields: vec![
+            PresetFieldSpec {
+                id: "cwd".to_string(),
+                label_key: "preset.edit.cwd".to_string(),
+                target: PresetFieldTarget::Cwd,
+                input: PresetFieldInput::Dir,
+                required: false,
+                placeholder_key: None,
+                default: None,
+                derive_cwd: false,
+            },
+            PresetFieldSpec {
+                id: "startup".to_string(),
+                label_key: "preset.edit.startup".to_string(),
+                target: PresetFieldTarget::Startup,
+                input: PresetFieldInput::Text,
+                required: false,
+                placeholder_key: Some("preset.edit.startup_hint".to_string()),
+                default: None,
+                derive_cwd: false,
+            },
+        ],
     });
 }
 
@@ -79,6 +105,8 @@ fn register_attached(registry: &SurfaceKindRegistry) {
             anyhow::bail!("attached surfaces are volatile (decision 2); not restored")
         }),
         snapshot: Arc::new(|_| None),
+        // attached 는 사용자가 프리셋으로 만들 수 없는 런타임 marker — 편집 필드 없음.
+        preset_fields: Vec::new(),
     });
 }
 
@@ -136,6 +164,18 @@ fn register_explorer(registry: &SurfaceKindRegistry) {
                 .collect();
             Some(json!({ "tabs": tabs, "active": ex.active }))
         }),
+        // explorer create 는 params.path 미지정 시 cwd 를 루트로 쓴다 → 편집기가 cwd
+        // 컬럼으로 루트 디렉토리를 입력하게 target=Cwd 로 둔다(기존 동작 보존).
+        preset_fields: vec![PresetFieldSpec {
+            id: "cwd".to_string(),
+            label_key: "preset.edit.cwd".to_string(),
+            target: PresetFieldTarget::Cwd,
+            input: PresetFieldInput::Dir,
+            required: false,
+            placeholder_key: None,
+            default: None,
+            derive_cwd: false,
+        }],
     });
 }
 
@@ -180,6 +220,8 @@ fn register_empty(registry: &SurfaceKindRegistry) {
         }),
         restore: Arc::new(|sid, _data| Ok(Box::new(EmptySurface::new(sid)) as Box<dyn Surface>)),
         snapshot: Arc::new(|_| Some(Value::Object(Default::default()))),
+        // empty 는 placeholder surface — 편집 필드 없음.
+        preset_fields: Vec::new(),
     });
 }
 

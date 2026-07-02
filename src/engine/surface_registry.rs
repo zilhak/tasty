@@ -37,6 +37,81 @@ pub fn snapshot_fn_for(
 /// 영속화 제외 (휘발성 surface). [`SurfaceKindDef::snapshot`] 이 사용한다.
 pub type SurfaceSnapshotFn = Arc<dyn Fn(&dyn Surface) -> Option<serde_json::Value> + Send + Sync>;
 
+/// 편집기가 쓰는 프리셋 필드 값의 저장 대상. plugin kind 는 항상 `Params(param_key)`
+/// (= `PresetSurface.params.<key>`) 로 write 하지만, builtin terminal 의 cwd/startup 은
+/// `params` 가 아니라 `PresetSurface` 의 전용 컬럼이라 별도 target 으로 라우팅한다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PresetFieldTarget {
+    /// `PresetSurface.params.<key>` 에 문자열로 write.
+    Params(String),
+    /// `PresetSurface.cwd` 전용 컬럼 (builtin terminal/explorer).
+    Cwd,
+    /// `PresetSurface.startup_command` 전용 컬럼 (builtin terminal).
+    Startup,
+}
+
+/// [`PresetFieldSpec::input`] — 편집 위젯 결정. 매니페스트 `PresetFieldInputType`
+/// 의 host 측 미러.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresetFieldInput {
+    Text,
+    FilePath,
+    Dir,
+    Url,
+}
+
+/// [`SurfaceKindDef`] 에 실리는 프리셋 편집 필드의 host 측 런타임 표현. 매니페스트
+/// `PresetFieldDecl` 을 [`PresetFieldSpec::from_decl`] 로 변환하거나, builtin kind 는
+/// 코드에서 직접 구성한다.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PresetFieldSpec {
+    /// kind 내 항목 식별자 (egui salt / 안정 참조).
+    pub id: String,
+    /// 항목 라벨 i18n 키.
+    pub label_key: String,
+    /// 값 저장 대상 (params 키 / cwd / startup).
+    pub target: PresetFieldTarget,
+    /// 편집 위젯 결정.
+    pub input: PresetFieldInput,
+    /// 프리셋 적용에 필수인지 (편집기 표시/검증 힌트).
+    pub required: bool,
+    /// 빈 입력 placeholder i18n 키.
+    pub placeholder_key: Option<String>,
+    /// kind 로 새로 전환 시 초기값.
+    pub default: Option<String>,
+    /// 적용 시 이 필드 경로의 부모 디렉토리를 cwd 로 파생 (file_path + params 전용).
+    pub derive_cwd: bool,
+}
+
+impl PresetFieldSpec {
+    /// 매니페스트 `PresetFieldDecl` → host spec. plugin 선언은 항상 `param_key` 로
+    /// params 에 write 하므로 target 은 언제나 [`PresetFieldTarget::Params`].
+    pub fn from_decl(decl: &crate::plugin::manifest::PresetFieldDecl) -> Self {
+        use crate::plugin::manifest::PresetFieldInputType as It;
+        let input = match decl.input_type {
+            It::Text => PresetFieldInput::Text,
+            It::FilePath => PresetFieldInput::FilePath,
+            It::Dir => PresetFieldInput::Dir,
+            It::Url => PresetFieldInput::Url,
+        };
+        Self {
+            id: decl.id.clone(),
+            label_key: decl.label_key.clone(),
+            target: PresetFieldTarget::Params(decl.param_key.clone()),
+            input,
+            required: decl.required,
+            placeholder_key: decl.placeholder_key.clone(),
+            default: decl.default.clone(),
+            derive_cwd: decl.derive_cwd,
+        }
+    }
+
+    /// 매니페스트 decl 슬라이스 → host spec vec (등록 경로 3곳 공용 헬퍼).
+    pub fn from_decls(decls: &[crate::plugin::manifest::PresetFieldDecl]) -> Vec<Self> {
+        decls.iter().map(Self::from_decl).collect()
+    }
+}
+
 /// surface 종류별 메타 + 동작 함수 묶음.
 ///
 /// 모든 함수는 `Send + Sync + 'static`이며, `Arc<SurfaceKindDef>` 단위로 보관되어
@@ -80,6 +155,11 @@ pub struct SurfaceKindDef {
     /// 03E의 `SavedSurface::capture_surface`가 호출한다. 휘발성 surface는 `None`을
     /// 반환하여 layout 저장에서 빠진다.
     pub snapshot: SurfaceSnapshotFn,
+
+    /// 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마. plugin kind 는
+    /// 매니페스트 `preset_fields` 에서, builtin 은 등록 코드에서 채운다. 빈 vec 이면
+    /// kind 전용 필드가 없다(편집기 fallback 이 kind 별 기본 필드로 떨어짐).
+    pub preset_fields: Vec<PresetFieldSpec>,
 }
 
 /// surface 종류 lookup 테이블. `Arc<SurfaceKindRegistry>` 단위로 CoreState에 보관되어
@@ -161,6 +241,7 @@ mod tests {
             create: Arc::new(|_, _, _| Err(anyhow::anyhow!("dummy"))),
             restore: Arc::new(|_, _| Err(anyhow::anyhow!("dummy"))),
             snapshot: Arc::new(|_| None),
+            preset_fields: Vec::new(),
         }
     }
 

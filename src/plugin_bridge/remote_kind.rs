@@ -114,6 +114,9 @@ pub fn register_remote_kind(
             let rs = any.downcast_ref::<RemoteSurface>()?;
             rs.snapshot_cache.lock().ok()?.clone()
         }),
+        preset_fields: crate::engine::surface_registry::PresetFieldSpec::from_decls(
+            &decl.preset_fields,
+        ),
     });
 
     tracing::info!(
