@@ -11,13 +11,13 @@
 
 ## UI 요소 인벤토리
 
-- **mirror 워크스페이스** — 사이드바에 일반 워크스페이스처럼 노출되되 **항상 하늘색 상태 dot** 으로 로컬과 구분한다(`Workspace.mirror`). 사이드바 표현 → [`features/sidebar/`](../../sidebar/index.md).
+- **mirror 워크스페이스** — 사이드바에 일반 워크스페이스처럼 노출되되 **이름 앞 하늘색 `>_→` glyph**(collapsed 레일은 아바타 우하단 하늘색 corner chip)로 로컬과 구분한다(`Workspace.mirror`). status dot 은 실행상태 전용이라 mirror 색을 싣지 않는다. 사이드바 표현 → [`features/sidebar/`](../../sidebar/index.md).
 - **mirror 콘텐츠** — 원격 트리(Pane/Tab/Surface)를 그대로 재구성해 [작업 영역](../../work-area/screens/work-area.md) 렌더러가 그린다. 별도 위젯 없음.
 - **점유된 대상의 readonly 표시** — 서버측에서 다른 client 가 점유한 surface 는 내용은 보이되 조작이 차단된 readonly 로 렌더(작업영역의 deferred/readonly 상태와 동일 경로).
 
 ## 상태별 시각
 
-- **mirror 활성** — 하늘색 dot. 원격 출력이 오면 즉시 갱신(3초 tick 은 backstop).
+- **mirror 활성** — 이름 앞 하늘색 mirror glyph(레일=우하단 chip). 원격 출력이 오면 즉시 갱신(3초 tick 은 backstop). status dot 은 별개로 실행상태(running/idle)만 표시.
 - **점유 중(서버측)** — 그 surface 는 readonly. force-detach 되면 일반 surface 로 복귀.
 - **세션 끊김** — 자동 재연결(지수 백오프) 동안의 표시도 mirror 워크스페이스 상태로 흡수.
 

@@ -30,7 +30,7 @@ CoreState
 
 MainView 의 최상위 컨테이너. 한 MainView 가 **여러 개**를 갖고 사이드바에서 전환한다.
 
-- 필드: `id` · `name` · `subtitle` · `description` · `pane_layout`(상위 레이아웃 `PaneNode`) · `focused_pane`(이 워크스페이스에서 포커스된 Pane) · `attach_mapping`(원격 attach 매핑, 있으면 활성화 시 자동 attach) · `mirror`(원격을 attach 한 client mirror 인지 — 사이드바 dot 색 구분).
+- 필드: `id` · `name` · `subtitle` · `description` · `pane_layout`(상위 레이아웃 `PaneNode`) · `focused_pane`(이 워크스페이스에서 포커스된 Pane) · `attach_mapping`(원격 attach 매핑, 있으면 활성화 시 자동 attach) · `mirror`(원격을 attach 한 client mirror 인지 — 사이드바 이름 앞 하늘색 glyph/레일 corner chip 으로 구분).
 - `focused_pane` 는 워크스페이스마다 따로 기억된다 — 전환해도 각자의 포커스가 보존된다.
 - 변형: 일반 워크스페이스 / **mirror 워크스페이스**(원격 attach 의 client측). mirror 는 런타임 전용(영속 안 함, 재시작 시 재attach), attach 의 점유 모델은 [actors](../../concepts/actors.md#점유-occupation-모델).
 
@@ -96,7 +96,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
   - 닫기: `tasty close tab|pane|surface --… <ID>`.
   - 조회: `tasty list workspaces|panes|surfaces` · `tasty list tabs --pane <P>` (전 워크스페이스 순회, 포커스 무관 — [포커스 독립성](../../identity.md)).
 - **사용자 트리거**: 단축키/마우스로 탭 추가·전환·이동, Pane/Surface 분할, 닫기. (단축키는 `KeybindingSettings` — 하드코딩 금지.)
-- **원격 / 점유**: **Workspace 와 Surface 는 점유(attach) 대상**이다. 원격 접속 사용자가 attach 로 배타 **점유**하면 그 대상은 점유자만 조작하고 로컬·AI 는 readonly 가 된다. 점유된 surface 는 트리에서 `attached` marker 로 표시되고, 점유된 워크스페이스는 mirror 면 사이드바 하늘색 dot 으로 구분된다. 동작은 [remote-attach](../remote-attach/index.md), 개념은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
+- **원격 / 점유**: **Workspace 와 Surface 는 점유(attach) 대상**이다. 원격 접속 사용자가 attach 로 배타 **점유**하면 그 대상은 점유자만 조작하고 로컬·AI 는 readonly 가 된다. 점유된 surface 는 트리에서 `attached` marker 로 표시되고, 점유된 워크스페이스는 mirror 면 사이드바 이름 앞 하늘색 glyph(레일=우하단 corner chip)로 구분된다. 동작은 [remote-attach](../remote-attach/index.md), 개념은 [actors 점유](../../concepts/actors.md#점유-occupation-모델).
 
 ## 비-목표 (Out of scope)
 

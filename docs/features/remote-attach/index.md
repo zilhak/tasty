@@ -38,7 +38,7 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 
 ### GUI mirror
 
-`tasty remote attach --into-gui --target-port <원격포트> --workspace <원격ws>` → 이 명령을 받은 **로컬 GUI 인스턴스**가 client 가 되어 원격 워크스페이스를 mirror 로 재구성한다(`attach.into_gui`). mirror Workspace 는 일반 워크스페이스로 사이드바에 노출되되 **항상 하늘색 dot** 으로 로컬과 구분(`Workspace.mirror`). 갱신은 원격 출력이 올 때 즉시, 3초 tick 은 backstop.
+`tasty remote attach --into-gui --target-port <원격포트> --workspace <원격ws>` → 이 명령을 받은 **로컬 GUI 인스턴스**가 client 가 되어 원격 워크스페이스를 mirror 로 재구성한다(`attach.into_gui`). mirror Workspace 는 일반 워크스페이스로 사이드바에 노출되되 **이름 앞 하늘색 `>_→` glyph**(collapsed 레일은 아바타 우하단 하늘색 corner chip)로 로컬과 구분(`Workspace.mirror`). status dot 은 실행상태(running/idle) 전용이며 mirror 색을 싣지 않는다 — 원격 origin 은 별도 시각 축(디자인 `workspace-mirror-fg`, notif=우상단 / attached=둘레 ring 과 채널 분리). 갱신은 원격 출력이 올 때 즉시, 3초 tick 은 backstop.
 
 ### 자동 매핑
 
@@ -106,5 +106,5 @@ attach 성립 직후 서버가 현재 화면을 **1회 스냅샷**으로 push �
 
 ## 화면
 
-- [screens/remote-attach.md](screens/remote-attach.md) — GUI mirror 워크스페이스 + 점유 readonly 표시(사이드바 dot / 작업영역 렌더로 연결).
+- [screens/remote-attach.md](screens/remote-attach.md) — GUI mirror 워크스페이스 + 점유 readonly 표시(사이드바 mirror glyph/chip / 작업영역 렌더로 연결).
 </content>

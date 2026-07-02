@@ -204,7 +204,8 @@ impl App {
                 &remote_to_local,
                 &terminal_locals,
             );
-            // client mirror 표식 — 사이드바 dot 을 항상 하늘색으로 표시(로컬 ws 와 구분).
+            // client mirror 표식 — 사이드바 이름 앞 하늘색 glyph(레일=우하단 chip)로 표시
+            // (로컬 ws 와 구분; status dot 은 실행상태 전용). 상세 view.rs draw_workspace_card.
             ws.mirror = true;
             engine.workspaces.push(ws);
             main.mark_dirty();

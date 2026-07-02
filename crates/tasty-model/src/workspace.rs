@@ -29,8 +29,9 @@ pub struct Workspace {
     /// layout.json 으로 영속(`SavedWorkspace.attach_mapping`).
     pub attach_mapping: Option<WorkspaceAttachMapping>,
     /// attach/detach 작업 J — 이 워크스페이스가 원격을 attach 한 **client mirror** 인지.
-    /// `true` 면 사이드바 dot 을 항상 하늘색(`th.sky`)으로 표시해 로컬 워크스페이스와
-    /// 구분한다. 런타임 전용 상태(영속하지 않음 — 재시작 시 재attach).
+    /// `true` 면 사이드바에서 이름 앞 하늘색 `>_→` glyph(collapsed 레일은 아바타 우하단
+    /// corner chip)로 로컬 워크스페이스와 구분한다(status dot 은 실행상태 전용, mirror
+    /// 색 미포함). 런타임 전용 상태(영속하지 않음 — 재시작 시 재attach).
     pub mirror: bool,
     /// 이 워크스페이스가 속한 카테고리(사이드바 폴더) id. 기본값은 예약된
     /// `normal`([`NORMAL_CATEGORY_ID`]). layout.json 으로 영속(`SavedWorkspace.category`).
