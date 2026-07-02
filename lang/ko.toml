@@ -653,6 +653,9 @@ empty_title = "등록된 스크립트 없음"
 empty_body = "스크립트 추가를 눌러 Lua 스크립트를 등록하고 단축키에 연결하세요."
 remove_confirm = "제거할까요?"
 remove = "제거"
+autorun_label = "자동 실행:"
+trigger_add = "트리거 추가…"
+trigger_remove = "트리거 제거"
 
 [image_viewer]
 no_image = "로드된 이미지 없음"

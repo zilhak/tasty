@@ -18,7 +18,7 @@ use tasty_ui_widgets::{
 
 use crate::adapters::ui::icons;
 use crate::i18n::t;
-use crate::settings::{KeybindingSettings, Settings, hash_file};
+use crate::settings::{AUTO_TRIGGER_EVENTS, AutoTrigger, KeybindingSettings, Settings, hash_file};
 
 /// name→path→help 행 사이 hairline 간격 (디자인 `gap: 2` — 4px 그리드 하위).
 const ROW_LINE_GAP: f32 = 2.0;
@@ -62,6 +62,10 @@ enum Pending {
     Rename(String, String),
     /// id 를 제거(+ 연결된 단축키 해제).
     Remove(String),
+    /// id 에 자동실행 트리거 추가.
+    AddTrigger(String, AutoTrigger),
+    /// id 의 자동실행 트리거 제거.
+    RemoveTrigger(String, AutoTrigger),
 }
 
 /// tastyrc 섹션: Tasty 모드에서 적용되는 bashrc 사용자 영역 편집.
@@ -197,10 +201,17 @@ pub fn draw_scripts_subtab(
         }
         Some(Pending::Remove(id)) => {
             settings.scripts.remove(&id);
-            // 디자인 note: 제거 시 연결된 단축키도 해제.
+            // 디자인 note: 제거 시 연결된 단축키도 해제. 자동실행 트리거는
+            // ScriptEntry 소유라 엔트리 제거로 함께 사라진다.
             settings.keybindings.remove_script_binding(&id);
             st.confirm_id = None;
             st.changed = None;
+        }
+        Some(Pending::AddTrigger(id, trig)) => {
+            settings.scripts.add_trigger(&id, trig);
+        }
+        Some(Pending::RemoveTrigger(id, trig)) => {
+            settings.scripts.remove_trigger(&id, &trig);
         }
         None => {}
     }
@@ -225,6 +236,7 @@ fn draw_script_row(
     };
     let name = entry.name.clone();
     let path_display = abbreviate_home(&entry.path.to_string_lossy());
+    let triggers = entry.triggers.clone();
     let changed = st
         .changed
         .as_ref()
@@ -382,6 +394,7 @@ fn draw_script_row(
                                 .color(th.accent_warning()),
                         );
                     }
+                    draw_trigger_row(ui, th, id, &triggers, pending);
                 });
             });
         }
@@ -396,6 +409,118 @@ fn draw_script_row(
         rect.center().y,
         egui::Stroke::new(th.border_width.value(), th.separator.to_egui()),
     );
+}
+
+/// row4 — 자동실행 트리거: 등록 chip(클릭=제거) + 미등록 이벤트 추가 ComboBox.
+/// 이벤트명은 기술 식별자라 번역하지 않는다(mono 표기, i18n 하드코딩 허용 예외).
+fn draw_trigger_row(
+    ui: &mut egui::Ui,
+    th: &tasty_type_appearance::theme::Theme,
+    id: &str,
+    triggers: &[AutoTrigger],
+    pending: &mut Option<Pending>,
+) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+        ui.label(
+            egui::RichText::new(t("settings.scripts.autorun_label"))
+                .size(th.font_size_caption.value())
+                .color(th.text_muted()),
+        );
+        for trig in triggers {
+            let AutoTrigger::Event { name } = trig;
+            if trigger_chip(ui, th, name)
+                .on_hover_text(t("settings.scripts.trigger_remove"))
+                .clicked()
+            {
+                *pending = Some(Pending::RemoveTrigger(id.to_string(), trig.clone()));
+            }
+        }
+        // 아직 이 스크립트에 안 걸린 이벤트만 추가 후보로 노출 (화이트리스트 검증 겸용).
+        let available: Vec<&str> = AUTO_TRIGGER_EVENTS
+            .iter()
+            .copied()
+            .filter(|ev| {
+                !triggers
+                    .iter()
+                    .any(|AutoTrigger::Event { name }| name == ev)
+            })
+            .collect();
+        if !available.is_empty() {
+            egui::ComboBox::from_id_salt(("script_trigger_add", id))
+                .selected_text(
+                    egui::RichText::new(t("settings.scripts.trigger_add"))
+                        .size(th.font_size_caption.value())
+                        .color(th.text_muted()),
+                )
+                .show_ui(ui, |ui| {
+                    for ev in available {
+                        if ui
+                            .selectable_label(
+                                false,
+                                egui::RichText::new(ev)
+                                    .monospace()
+                                    .size(th.font_size_term_sm.value()),
+                            )
+                            .clicked()
+                        {
+                            *pending = Some(Pending::AddTrigger(
+                                id.to_string(),
+                                AutoTrigger::Event {
+                                    name: ev.to_string(),
+                                },
+                            ));
+                        }
+                    }
+                });
+        }
+    });
+}
+
+/// 자동실행 트리거 chip — 이벤트명(mono micro) + CLOSE 글리프 12. 클릭 = 제거.
+/// changed 배지와 동일 지오메트리(높이 16, radius-sm), 톤만 중립(border-default).
+fn trigger_chip(
+    ui: &mut egui::Ui,
+    th: &tasty_type_appearance::theme::Theme,
+    event: &str,
+) -> egui::Response {
+    let fg = th.text_secondary().to_egui();
+    let micro = th.font_size_micro.value();
+    let glyph = th.icon_glyph_size_xs.value(); // 12
+    let gap = th.spacing_xs.value(); // 4 (라벨↔글리프)
+    let pad_x = th.spacing_sm.value(); // 8 (좌우)
+    let galley = ui.painter().layout_no_wrap(
+        event.to_owned(),
+        egui::FontId::monospace(micro),
+        egui::Color32::PLACEHOLDER,
+    );
+    let w = pad_x * 2.0 + galley.rect.width() + gap + glyph;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT), egui::Sense::click());
+    let radius = th.corner_radius_sm.value();
+    // 호버 오버레이 — 전경색 저알파 mix (위젯 공통 규칙과 동일 도출).
+    if resp.hovered() {
+        ui.painter()
+            .rect_filled(rect, radius, fg.gamma_multiply(0.12));
+    }
+    ui.painter().rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(th.border_width.value(), th.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+    let pos = egui::pos2(
+        rect.left() + pad_x,
+        rect.center().y - galley.rect.height() * 0.5,
+    );
+    ui.painter().galley(pos, galley, fg);
+    let gy = egui::Rect::from_min_size(
+        egui::pos2(rect.right() - pad_x - glyph, rect.center().y - glyph * 0.5),
+        egui::vec2(glyph, glyph),
+    );
+    icons::CLOSE
+        .image(glyph, th.text_muted().to_egui())
+        .paint_at(ui, gy);
+    resp
 }
 
 /// 경로 중간생략 — 디렉토리 tail 이 먼저 ellipsis 로 잘리고 파일명은 항상 완전 표시.

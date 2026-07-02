@@ -653,6 +653,9 @@ empty_title = "No scripts registered"
 empty_body = "Click Add script to register a Lua script and bind it to a shortcut."
 remove_confirm = "Remove?"
 remove = "Remove"
+autorun_label = "Auto-run:"
+trigger_add = "Add trigger…"
+trigger_remove = "Remove trigger"
 
 [image_viewer]
 no_image = "No image loaded"

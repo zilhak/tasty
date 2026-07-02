@@ -653,6 +653,9 @@ empty_title = "登録済みのスクリプトがありません"
 empty_body = "「スクリプトを追加」をクリックして Lua スクリプトを登録し、ショートカットに割り当てます。"
 remove_confirm = "削除しますか?"
 remove = "削除"
+autorun_label = "自動実行:"
+trigger_add = "トリガーを追加…"
+trigger_remove = "トリガーを削除"
 
 [image_viewer]
 no_image = "画像が読み込まれていません"
