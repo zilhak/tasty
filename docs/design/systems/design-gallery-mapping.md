@@ -302,6 +302,28 @@ immediate-mode 정적 specimen 이므로 **각 상태를 나란히 노출**(toas
 `ALERT_TRIANGLE`, × = 기존 `CLOSE`). 카탈로그 등록은 Overlays 페이지에 `banner`
 Section 1개(3 Spec) 추가 — scrim 바로 다음(디자인 NAV 순서).
 
+## warning-callout (Components)
+
+디자인 `ui_kits/terminal/overlays/settings_window.jsx:623-632` (Settings › Terminal ›
+TUI 섹션의 OSC 52 경고 박스) ↔ 위젯 `crates/tasty-ui-widgets/src/warning_callout.rs::warning_callout`
+↔ 갤러리 `catalog/widgets/warning_callout.rs::draw` (Components › `Warning callout`).
+플레인 경고 텍스트(`accent-warning` + `.small()`)를 대체하는, 아이콘 + caption 을
+보더 + 틴트 배경으로 감싼 bordered callout.
+
+| 디자인 jsx (css) | 토큰 | 위젯/갤러리 |
+|---|---|---|
+| `border: 1px solid color-mix(accent-warning 40%, transparent)` | `accent-warning`.gamma_multiply(0.4) + `border_width` | `warning_callout` stroke |
+| `background: color-mix(accent-warning 12%, transparent)` | `accent-warning`.gamma_multiply(0.12) | `warning_callout` fill |
+| 라운드 박스 | `corner_radius` | Frame corner_radius |
+| padding | `spacing_md`(x) / `spacing_sm`(y) | Frame inner_margin |
+| 삼각 경고 아이콘 | `icon_glyph_size_sm` + `accent-warning` | `IconPainter` 주입(`ALERT_TRIANGLE`) |
+| 본문 문구 | `font_size_caption` + `text-secondary` | wrapping `Label` |
+
+아이콘은 crate 경계상 위젯이 직접 못 그린다 → `IconPainter` 클로저로 외부 주입(본체
+`icons::ALERT_TRIANGLE`, 갤러리 `catalog::icons::ALERT_TRIANGLE`). color-mix 는
+`gamma_multiply` 알파 감쇠 근사(chip/banner 전례). 카탈로그 등록은 Components 페이지
+Hint text Section 바로 다음에 `Warning callout` Section 1개.
+
 ## clipboard-viewer (Plugins)
 
 plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs::draw` (egui-mesh 자가 렌더, B4)

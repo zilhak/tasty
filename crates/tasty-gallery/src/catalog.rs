@@ -410,6 +410,16 @@ pub fn pages() -> Vec<Page> {
                     )],
                 ),
                 section(
+                    "warning-callout",
+                    "Warning callout",
+                    vec![spec(
+                        "warning-callout",
+                        "Warning callout",
+                        Some("Bordered warning tint box — icon + caption under a risky toggle"),
+                        widgets::warning_callout::draw,
+                    )],
+                ),
+                section(
                     "data",
                     "Table",
                     vec![spec(
