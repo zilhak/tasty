@@ -17,7 +17,8 @@
 
 ## 동작
 
-- **타입별 폼** — ssh 는 연결 그리드(host/user/port/label/shell + Passkey 드롭다운), tasty-attach 는 연결(ref/인라인) + remote_tasty/port_mode/port_file, 그 외(smb/http/미등록)는 generic key-value 에디터. ssh 셸 `auto` 는 저장 시 1회 SSH 프로브로 셸 도달성을 감지(detect-split: port_mode 는 attach resolve 가 도출). GUI 3탭(Remote profiles · Attach · Passkeys) 반영은 디자인 수령 후 진행.
+- **타입별 폼** — ssh 는 연결 그리드(host/user/port/label/shell + Passkey 드롭다운, **순수 연결정보만** — remote_tasty 없음), tasty-attach 는 Connection 세그먼트 토글(ref=SSH 프로필 드롭다운 ↔ inline=host/user/port/shell/passkey) + 공통 Remote tasty 그룹(remote_tasty/port_mode/port_file), 그 외(smb/http/미등록)는 generic key-value 에디터. ssh 셸 `auto` 는 저장 시 1회 SSH 프로브로 셸 도달성을 감지(detect-split: port_mode 는 attach resolve 가 도출).
+- **GUI 3탭** — Remote profiles · **Attach** · Passkeys. Attach 탭이 tasty-attach kind 를 전담하고, Profiles 탭 목록·프로토콜 필터에서 tasty-attach 는 제외된다. Attach 행은 mode 태그(profile/inline)와 상태 배지를 보여준다 — 참조 ssh 프로필이 감지실패면 **비활성**, `ssh_ref` 가 dangling 이면 **프로필 없음**(둘 다 경고 배지, hard-error 아님 — 저장은 정상).
 - **dangling 참조** — 없는 passkey 를 가리켜도 정상 저장, "passkey 없음" 노란 배지 + 소비 시점 에러.
 - **값 마스킹** — passkey 값은 기본 마스킹(`••••••••`). GUI 의 **Reveal**(로컬 전용)만 실제 값을 본다(path=경로, inline=관리 파일 내용). AI Agent/원격은 IPC 로 값을 **영구 읽을 수 없다**(쓰기만).
 - **프로토콜 필터** (GUI 전용·세션 한정) — 원격 접속 프로필 탭에서 현재 프로필의 `kind` 가 2종 이상일 때만 필터 버튼이 뜬다. 체크박스 드롭다운에서 프로토콜을 고르고 적용(apply-on-confirm)하면 선택한 `kind` 의 프로필만 목록에 남는다. 결과 0건이면 빈 상태 안내를 표시한다. 필터 상태는 **비영속** — popup 재오픈에는 유지되지만 tasty 재시작 시 전체 선택으로 리셋되며, 저장 파일/CLI/IPC 표면에는 영향이 없다(순수 표시 필터).

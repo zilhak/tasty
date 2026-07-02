@@ -46,7 +46,7 @@ TASTY_HOME="$TH" ./target/debug/tasty --launch &   # tasty 터미널 안에서�
 갤러리(`tasty-gallery`)는 **별도 바이너리라 `ui.screenshot` IPC 가 없다.** 그렇다고 OS 캡처로 가면 권한 벽에 막힌다(아래). 대신 갤러리에 내장된 **env 트리거 일회성 GPU readback 캡처**를 쓴다 — 본체 `ui.screenshot` 과 동일한 swapchain readback(BGRA→RGB, 256B row 정렬)이라 권한 불요·결정적.
 
 - 형식: `TASTY_GALLERY_SHOT=<idx>:<png>[,<idx>:<png>...]` — **배치**. 콤마로 여러 항목을 주면 **한 인스턴스에서** 순차로 선택→4프레임 settle→캡처하고 마지막에 **자체 종료**한다(콜드스타트 1회. `crates/tasty-gallery/src/main.rs`).
-- `idx` 는 `catalog::all()` 순서(0-base). 목록: `grep -n 'name: "' crates/tasty-gallery/src/catalog.rs`.
+- `idx` 는 **페이지(Category) index**(0-base, `catalog::pages()` 순서 = Foundations 0 · Components 1 · Icons 2 · Overlays 3 · Layouts 4 · Plugins 5). page>section>spec 리팩터 이후 특정 spec 을 직접 지정할 수 없고 해당 페이지 **최상단**이 찍힌다 — 페이지 중간의 특정 섹션을 검증하려면 `catalog.rs` 의 해당 페이지 sections 맨 앞에 임시 섹션을 꽂아 캡처하고 되돌린다(커밋 금지).
 - 갤러리는 캡처 후 스스로 종료하므로 `timeout` 불필요(macOS 엔 `timeout` 명령도 없다).
 
 ```bash
