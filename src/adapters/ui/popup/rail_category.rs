@@ -70,9 +70,9 @@ fn menu_row(
     let color: egui::Color32 = if danger {
         th.accent_danger().into()
     } else if resp.hovered() {
-        th.text.into()
+        th.text_primary().into()
     } else {
-        th.subtext0.into()
+        th.text_muted().into()
     };
     let icon_size = th.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_min_size(
