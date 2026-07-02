@@ -21,10 +21,16 @@ const COMMITTED: &[(&str, &str)] = &[
 ];
 
 /// 커밋된 `tasty-type-appearance` 산출물. `Generated::type_appearance_files` 와 같은 순서.
-const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[(
-    "generated_component.rs",
-    include_str!("../../tasty-type-appearance/src/generated_component.rs"),
-)];
+const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
+    (
+        "semantic_color_generated.rs",
+        include_str!("../../tasty-type-appearance/src/semantic_color_generated.rs"),
+    ),
+    (
+        "generated_component.rs",
+        include_str!("../../tasty-type-appearance/src/generated_component.rs"),
+    ),
+];
 
 /// 토큰 census — 디자인 changelog 2026-07-02 기준 488 (104/127/257).
 /// vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.

@@ -257,8 +257,8 @@ fn collect(
 
 /// 생성 결과. `files` 는 `src/generated/` 밑에 쓸 (파일명, 내용) — 결정적 순서.
 /// `type_appearance_files` 는 `crates/tasty-type-appearance/src/` 밑에 쓸 (파일명,
-/// 내용) — component 접근자는 `&Theme` 경유가 강제라 type-appearance 안에
-/// 산출해야 한다(런타임 의존 방향 보존, 04 생성기 확장 설계 참조).
+/// 내용) — semantic 색·component 접근자는 `&Theme` 경유가 강제라 type-appearance
+/// 안에 산출해야 한다(런타임 의존 방향 보존, 04/05 생성기 확장 설계 참조).
 /// `skips` 는 생성에서 제외한 토큰의 사유 로그.
 #[derive(Debug)]
 pub struct Generated {
@@ -650,6 +650,85 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.text-secondary", "text_secondary()"),
 ];
 
+/// 생성 대상 semantic 색 접근자 — (DTCG semantic 토큰 경로, `impl Theme` 메서드명,
+/// 반환 `Theme` primitive 필드). 각 항목은 theme.rs 의 기존 수기 접근자와 **diff 0**
+/// (동일 필드를 반환). 필드 바인딩을 표로 고정하는 이유는 DTCG primitive → `Theme`
+/// 필드 대응이 1:1 이 아니기 때문 — 예: `text-placeholder` 는 `{primitive.color-neutral-600}`
+/// (값상 `overlay0` 과 동일) 이지만 별도 `placeholder` 필드로 종착한다. 값 일치는
+/// `tests/color_drift.rs`, 필드 일치는 theme.rs `semantic_accessors_map_to_primitives`
+/// 가 이중으로 가드한다.
+///
+/// 메서드명이 토큰명 snake_case 와 다른 경우가 있다 — `accent-attached` → `border_attached`
+/// (attached workspace outline 은 accent 가 아니라 border role). 그래서 fn 이름을 표에 명시한다.
+pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
+    // 배경 (bg-*)
+    ("semantic.bg-app", "bg_app", "crust"),
+    ("semantic.bg-sidebar", "bg_sidebar", "mantle"),
+    ("semantic.bg-panel", "bg_panel", "base"),
+    // 표면 (surface-*)
+    ("semantic.surface-raised", "surface_raised", "surface0"),
+    ("semantic.surface-hover", "surface_hover", "surface1"),
+    ("semantic.surface-active", "surface_active", "surface2"),
+    // 텍스트 (text-*)
+    ("semantic.text-primary", "text_primary", "text"),
+    ("semantic.text-secondary", "text_secondary", "subtext1"),
+    ("semantic.text-muted", "text_muted", "subtext0"),
+    ("semantic.text-disabled", "text_disabled", "overlay1"),
+    (
+        "semantic.text-placeholder",
+        "text_placeholder",
+        "placeholder",
+    ),
+    // accent (의미색)
+    ("semantic.accent-primary", "accent_primary", "blue"),
+    ("semantic.accent-info", "accent_info", "sky"),
+    ("semantic.accent-success", "accent_success", "green"),
+    ("semantic.accent-warning", "accent_warning", "yellow"),
+    ("semantic.accent-danger", "accent_danger", "red"),
+    ("semantic.accent-agent", "accent_agent", "mauve"),
+    ("semantic.accent-attached", "border_attached", "lavender"),
+    // 보더 (border-*)
+    ("semantic.border-default", "border_default", "surface0"),
+    ("semantic.border-strong", "border_strong", "surface1"),
+    ("semantic.border-focus", "border_focus", "blue"),
+];
+
+/// semantic 색 토큰 중 **생성하지 않고 theme.rs 에 수기로 남기는** 접근자 + 사유.
+/// (단순 primitive 필드 alias 가 아니라 분기·도출·합성·리터럴이라 codegen 불가.)
+/// 나머지 semantic 색(ansi-*·surface-terminal/markdown-*·selection/vi/search-*·
+/// status-idle·brand-melon-rind/seed)은 semantic **접근자 자체가 없다** — 터미널
+/// 표면 색 subsystem 또는 미사용 토큰이라 여기 열거하지 않는다.
+const SEMANTIC_COLOR_HAND_WRITTEN: &[(&str, &str)] = &[
+    (
+        "semantic.text-on-accent",
+        "is_light role-remap (Mocha=crust / Latte=white) — 단순 alias 아님",
+    ),
+    (
+        "semantic.overlay-hover",
+        "derive_overlays 도출값 (hover_overlay, primitive 아님)",
+    ),
+    (
+        "semantic.overlay-active",
+        "derive_overlays 도출값 (active_overlay, primitive 아님)",
+    ),
+    (
+        "semantic.scrim-bg",
+        "합성색 from_rgba(0,0,0,SCRIM_ALPHA) — primitive 필드 아님",
+    ),
+    (
+        "semantic.accent-window-close",
+        "OS 리터럴 const (Windows close hover, 테마 불변)",
+    ),
+    ("semantic.text-on-window-close", "리터럴 const (white 고정)"),
+    ("semantic.accent-macos-close", "OS 리터럴 const"),
+    ("semantic.accent-macos-min", "OS 리터럴 const"),
+    ("semantic.accent-macos-zoom", "OS 리터럴 const"),
+    (
+        "semantic.brand-melon-flesh",
+        "브랜드 리터럴 const (테마 불변)",
+    ),
+];
+
 /// component 색 접근자 이름이 `theme.rs` 의 기존 수기 접근자와 충돌하는 목록.
 /// `banner-*`/`titlebar-*` 색은 이미 semantic 접근자 조합으로 손으로 작성돼 있다
 /// (예: `banner_bg` → `surface_raised()`) — 동일 이름으로 재생성하면 `impl Theme`
@@ -849,8 +928,68 @@ fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
     (file, skips)
 }
 
-/// 파싱된 토큰셋에서 `src/generated/` 파일 4개 + `tasty-type-appearance` component
-/// 접근자 파일 1개를 생성한다. 출력은 입력에만 의존하는 결정적 텍스트
+// ============================================================================
+//  Semantic 색 접근자 (단순 primitive 필드 alias) — 05-A
+// ============================================================================
+//
+// theme.rs 가 수기로 들고 있던 semantic 색 접근자(`bg_app`/`accent_primary`/
+// `border_default` 등)를 DTCG semantic 색 토큰에서 생성으로 전환한다. 각 접근자는
+// `&Theme` 의 primitive 필드를 그대로 반환 — component 색 접근자(04)가 이 semantic
+// 접근자를 `self.accent_primary()` 처럼 호출하므로 inherent method 이름을 유지한다.
+// 분기(is_light)·도출(overlay)·합성(scrim)·리터럴(OS/brand) 접근자는 생성 불가라
+// theme.rs 에 수기로 남는다 (`SEMANTIC_COLOR_HAND_WRITTEN` 참조).
+
+/// semantic 색 접근자 하나의 `impl Theme` 메서드 텍스트.
+fn emit_semantic_color_accessor(token: &Token, fn_name: &str, field: &str) -> String {
+    format!(
+        "\n    /// `{}` → `{}`\n    #[inline]\n    pub fn {fn_name}(&self) -> HexColor {{\n        self.{field}\n    }}\n",
+        token.path(),
+        token.value,
+    )
+}
+
+/// semantic 색 접근자 파일(`semantic_color_generated.rs`) 본문을 만든다.
+/// component 접근자와 같은 이유로 `crates/tasty-type-appearance/src/` 에 산출
+/// (`&Theme` 경유 강제 + 런타임 의존 방향 보존).
+fn generate_semantic_color_accessors(set: &TokenSet) -> (String, Vec<String>) {
+    let mut skips = Vec::new();
+    let mut body = String::new();
+
+    for (path, fn_name, field) in SEMANTIC_COLOR_ACCESSOR_GEN {
+        match set.get(path) {
+            // 표에 든 토큰이 사라지면(디자인 rename 등) 드리프트 신호로 skip 로그.
+            None => skips.push(format!(
+                "{path}: SEMANTIC_COLOR_ACCESSOR_GEN 표에 있으나 vendor json 에 없음 — 생성 스킵"
+            )),
+            Some(token) if token.ty != "color" => skips.push(format!(
+                "{path}: $type {} (color 아님) — 생성 스킵",
+                token.ty
+            )),
+            Some(token) => body.push_str(&emit_semantic_color_accessor(token, fn_name, field)),
+        }
+    }
+
+    for (path, reason) in SEMANTIC_COLOR_HAND_WRITTEN {
+        skips.push(format!("{path}: {reason} — theme.rs 수기 유지"));
+    }
+
+    let header = "//! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.\n\
+                  //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.\n\
+                  //!\n\
+                  //! Tier 2 (semantic) 색 접근자. 각 메서드는 DTCG semantic 색 토큰의\n\
+                  //! primitive 종착을 `Theme` 필드로 그대로 반환하는 단순 alias 다.\n\
+                  //! is_light 분기(text-on-accent)·도출 overlay·합성색(scrim)·OS/brand\n\
+                  //! 리터럴 등 비단순 접근자는 theme.rs 에 수기로 남는다.\n\n\
+                  use crate::color::HexColor;\n\n\
+                  impl crate::theme::Theme {";
+    let mut file = header.to_string();
+    file.push_str(&body);
+    file.push_str("}\n");
+    (file, skips)
+}
+
+/// 파싱된 토큰셋에서 `src/generated/` 파일 4개 + `tasty-type-appearance` 접근자
+/// 파일 2개(semantic 색 + component)를 생성한다. 출력은 입력에만 의존하는 결정적 텍스트
 /// (타임스탬프 없음 — freshness 테스트 전제).
 pub fn generate(set: &TokenSet) -> Generated {
     let mut skips: Vec<String> = Vec::new();
@@ -979,7 +1118,11 @@ pub fn generate(set: &TokenSet) -> Generated {
         header("//! 생성 모듈 루트. `primitive` 는 `pub(crate)` — tier 규율의 컴파일 타임 강제.")
             + "\npub(crate) mod primitive;\n\npub mod semantic;\n\npub mod component;\n";
 
-    // 6) tasty-type-appearance/src/generated_component.rs — component 접근자.
+    // 6) tasty-type-appearance/src/semantic_color_generated.rs — semantic 색 접근자 (05-A).
+    let (semantic_color_accessors, semantic_color_skips) = generate_semantic_color_accessors(set);
+    skips.extend(semantic_color_skips);
+
+    // 7) tasty-type-appearance/src/generated_component.rs — component 접근자.
     let (component_accessors, accessor_skips) = generate_component_accessors(set);
     skips.extend(accessor_skips);
 
@@ -990,7 +1133,10 @@ pub fn generate(set: &TokenSet) -> Generated {
             ("semantic.rs", semantic),
             ("component.rs", component),
         ],
-        type_appearance_files: vec![("generated_component.rs", component_accessors)],
+        type_appearance_files: vec![
+            ("semantic_color_generated.rs", semantic_color_accessors),
+            ("generated_component.rs", component_accessors),
+        ],
         skips,
     }
 }
