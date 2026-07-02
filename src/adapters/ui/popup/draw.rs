@@ -273,14 +273,14 @@ impl PopupManager {
             // surface-raised(=surface0). 단 헤더+리스트형 "패널" popup 은 bg-panel
             // (=base, 한 단계 더 어두움). remote_tool / port_scanner 가 후자.
             let bg_fill: egui::Color32 = match popup_id {
-                "remote_tool" | "port_scanner" => th.base.into(),
-                _ => th.surface0.into(),
+                "remote_tool" | "port_scanner" => th.bg_panel().into(),
+                _ => th.surface_raised().into(),
             };
             painter.rect_filled(popup_rect, th.corner_radius.value(), bg_fill);
             painter.rect_stroke(
                 popup_rect,
                 th.corner_radius.value(),
-                egui::Stroke::new(th.border_width.value(), th.surface1),
+                egui::Stroke::new(th.border_width.value(), th.border_strong()),
                 egui::StrokeKind::Outside,
             );
 
@@ -298,14 +298,14 @@ impl PopupManager {
                         sw: 0,
                         se: 0,
                     },
-                    th.mantle,
+                    th.bg_sidebar(),
                 );
                 painter.line_segment(
                     [
                         egui::pos2(title_rect.min.x, title_rect.max.y),
                         egui::pos2(title_rect.max.x, title_rect.max.y),
                     ],
-                    egui::Stroke::new(th.border_width.value(), th.surface1),
+                    egui::Stroke::new(th.border_width.value(), th.border_strong()),
                 );
 
                 // Title text (centered)
@@ -314,7 +314,7 @@ impl PopupManager {
                     egui::Align2::CENTER_CENTER,
                     &popup.title,
                     egui::FontId::proportional(th.font_size_body.value()),
-                    th.text.into(),
+                    th.text_primary().into(),
                 );
 
                 // Close button
@@ -330,7 +330,7 @@ impl PopupManager {
                 let x_color = if is_close_hovered {
                     th.accent_danger()
                 } else {
-                    th.subtext0
+                    th.text_muted()
                 };
                 let center = close_btn_rect.center();
                 painter.line_segment(
