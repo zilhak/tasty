@@ -15,7 +15,6 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::icon_button::IconPainter;
-use crate::tokens;
 
 /// Input 빌더.
 pub struct Input<'a> {
@@ -87,12 +86,13 @@ impl<'a> Input<'a> {
 
     /// 그리고 TextEdit 응답을 반환한다(`response.changed()` 로 변경 감지).
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme, buf: &mut String) -> egui::Response {
-        let height = theme.item_height_interactive.value();
-        let pad_x = theme.spacing_md.value();
-        let gap = theme.spacing_sm.value();
-        let radius = theme.corner_radius.value();
+        let height = theme.input_height().value();
+        let pad_x = theme.input_padding_x().value();
+        let gap = theme.input_gap().value();
+        let radius = theme.input_radius().value();
         let bw = theme.border_width.value();
-        let body = theme.font_size_body.value();
+        let body = theme.input_font_size().value();
+        // trailing addon 의 mono caption — 대응 input component 토큰 없음(semantic).
         let caption = theme.font_size_caption.value();
 
         let width = self.width.unwrap_or_else(|| ui.available_width());
@@ -100,13 +100,14 @@ impl<'a> Input<'a> {
 
         // bg.
         ui.painter()
-            .rect_filled(outer, radius, theme.surface_raised().to_egui());
+            .rect_filled(outer, radius, theme.input_bg().to_egui());
 
         let inner = outer.shrink2(egui::vec2(pad_x, 0.0));
         let inner_w = inner.width();
 
         // 폭 분배: leading 아이콘 + TextEdit(flex) + trailing addon.
-        let icon_glyph = tokens::INPUT_ICON_GLYPH;
+        // 아이콘 글리프 = icon-size-md(16, semantic — 대응 component 토큰 없음).
+        let icon_glyph = theme.icon_glyph_size_md.value();
         let icon_w = if self.icon.is_some() {
             icon_glyph + gap
         } else {
@@ -126,7 +127,8 @@ impl<'a> Input<'a> {
             .unwrap_or(0.0);
         let te_w = (inner_w - icon_w - addon_w).max(0.0);
 
-        let muted = theme.subtext0.to_egui();
+        // leading 아이콘 + trailing addon 색 = input-icon-fg(text-muted 종착).
+        let muted = theme.input_icon_fg().to_egui();
         let resp = ui
             .allocate_new_ui(
                 egui::UiBuilder::new()
@@ -151,7 +153,7 @@ impl<'a> Input<'a> {
                         .desired_width(te_w)
                         .hint_text(tasty_egui_theme::hint_text(theme, self.placeholder))
                         .font(font)
-                        .text_color(theme.text_primary().to_egui());
+                        .text_color(theme.input_fg().to_egui());
                     let r = ui.add_enabled(self.enabled, te);
                     if let Some(g) = addon_galley {
                         let (arect, _) =
@@ -165,11 +167,11 @@ impl<'a> Input<'a> {
 
         // border (기능 → 즉시, fade 없음).
         let border = if self.invalid {
-            theme.accent_danger().to_egui()
+            theme.input_border_invalid().to_egui()
         } else if resp.has_focus() {
-            theme.border_focus().to_egui()
+            theme.input_border_focus().to_egui()
         } else {
-            theme.border_default().to_egui()
+            theme.input_border().to_egui()
         };
         ui.painter().rect_stroke(
             outer,
@@ -180,9 +182,9 @@ impl<'a> Input<'a> {
         // focus ring (box-shadow 0 0 0 1px 대체) — 즉시.
         if resp.has_focus() {
             let ring = if self.invalid {
-                theme.accent_danger().to_egui()
+                theme.input_border_invalid().to_egui()
             } else {
-                theme.border_focus().to_egui()
+                theme.input_border_focus().to_egui()
             };
             ui.painter().rect_stroke(
                 outer.expand(bw),

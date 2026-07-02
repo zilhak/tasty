@@ -32,10 +32,6 @@ pub const TAB_CONTENT_PADDING: i8 = SIZING.spacing_lg.0 as i8;
 
 // ── 디자인 컴포넌트 const — Theme 토큰에 대응값이 없어 위젯 레벨로 둔다 ──
 
-/// Input leading 아이콘 글리프 = 디자인 icon-size-md(16). (token-policy: 15 → 16 snap.)
-/// = `SIZING.icon_glyph_size_md`.
-pub const INPUT_ICON_GLYPH: f32 = SIZING.icon_glyph_size_md.0;
-
 /// TreeRow 높이 = 디자인 control-height-tree(22). Theme 에 대응 토큰 없음.
 pub const TREE_ROW_HEIGHT: f32 = 22.0;
 
