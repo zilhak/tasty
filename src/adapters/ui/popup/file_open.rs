@@ -13,6 +13,8 @@ use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::vspace;
 
 const ITEM_HEIGHT: f32 = 22.0;
 const MAX_RECENT: usize = 10;
@@ -89,7 +91,7 @@ pub fn draw_markdown_open_view(
             .size(th.font_size_body.value())
             .color(th.subtext1),
     );
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     let mut action = MarkdownOpenAction::None;
 
@@ -116,7 +118,7 @@ pub fn draw_markdown_open_view(
     });
 
     if let Some(err) = props.error {
-        ui.add_space(2.0);
+        vspace(ui, STRUCT_GAP_2);
         ui.label(
             egui::RichText::new(err)
                 .size(th.font_size_caption.value())
@@ -124,7 +126,7 @@ pub fn draw_markdown_open_view(
         );
     }
 
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     if !props.recents.is_empty() {
         ui.label(
@@ -132,7 +134,7 @@ pub fn draw_markdown_open_view(
                 .size(th.font_size_caption.value())
                 .color(th.overlay1),
         );
-        ui.add_space(2.0);
+        vspace(ui, STRUCT_GAP_2);
 
         egui::ScrollArea::vertical()
             .max_height(MAX_RECENT as f32 * ITEM_HEIGHT)
@@ -175,7 +177,7 @@ pub fn draw_markdown_open_view(
             });
     }
 
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

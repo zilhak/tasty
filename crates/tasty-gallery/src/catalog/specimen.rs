@@ -5,6 +5,8 @@
 //! 그대로 사용한다 (시각 무변경 dedup).
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::vspace;
 
 /// specimen 케이스 위 caption(부가 설명) 라벨 — caption 폰트 크기 + subtext0 색.
 pub fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
@@ -22,5 +24,5 @@ pub fn case_title(ui: &mut egui::Ui, theme: &Theme, title: &str) {
             .strong()
             .color(egui::Color32::from(theme.text)),
     );
-    ui.add_space(2.0);
+    vspace(ui, STRUCT_GAP_2);
 }

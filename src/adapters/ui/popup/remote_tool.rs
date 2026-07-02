@@ -26,6 +26,8 @@ use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::vspace;
 
 pub const REMOTE_TOOL_POPUP_ID: &str = "remote_tool";
 
@@ -352,14 +354,14 @@ fn ghost_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Response {
 /// 디자인 separator 선. egui `ui.separator()` 는 theme stroke 색이 배경과 가까워
 /// 사실상 비가시 → surface1 색 명시적 hline 으로 그린다.
 fn hsep(ui: &mut egui::Ui, th: &Theme) {
-    ui.add_space(2.0);
+    vspace(ui, STRUCT_GAP_2);
     let r = ui.max_rect();
     ui.painter().hline(
         r.x_range(),
         ui.cursor().top(),
         egui::Stroke::new(th.border_width.value(), th.surface1),
     );
-    ui.add_space(2.0);
+    vspace(ui, STRUCT_GAP_2);
 }
 
 fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {

@@ -430,9 +430,9 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
   디자인 컨테이너 paddingTop 8, New Workspace 앞 `add_space(4.0)` 이 paddingBottom 4 대응 —
   둘 다 무변경. 갤러리 `sidebar.rs::full_categories` 는 schematic 유지 + 3항목만 미러(헤더
   상하 xs 대칭 인셋 / 비-첫 spacing_sm / 헤더 아래 1px separator rule 추가 — 하단 rule 없음).
-- **알려진 잔차(의도적 비변경)**: 본체 헤더 패널 하단은 `add_space(6.0)`(view.rs, 평면 모드
-  공유 경로)로 디자인 로고 바 bottom space-xs(4)보다 2px 넓다 — 기존부터 있던 오차로, 평면
-  모드 회귀를 피해 이번 변경에서 건드리지 않았다. 첫 헤더 위 실효 간격 본체 14 vs 디자인 12.
+- ~~알려진 잔차(의도적 비변경)~~ **해소됨 (design-tokens 02 간격 이식)**: 본체 헤더 패널
+  하단 6px 는 `spacing_xs`(4) 로, 상단 10px 는 `spacing_md`(12) 로 스냅되어 chrome.jsx
+  Sidebar 헤더 padding(space-md _ space-xs)과 정합. 첫 헤더 위 실효 간격 12 = 디자인 12.
 - **근거**: 디자인 changelog `2026-07-01-workspace-categories.md` "2026-07-02 — Category
   header padding rebalanced + orphaned group divider removed", `chrome.jsx` `CategoryHeader`
   (padding xs/sm)·`rowList(bottomBorder)`·컨테이너 paddingTop/marginTop. 2026-07-02 반영.

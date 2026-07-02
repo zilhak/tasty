@@ -15,6 +15,7 @@ use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
+use tasty_ui_widgets::vspace;
 
 pub const APPROVAL_POPUP_ID: &str = "approval";
 
@@ -132,7 +133,8 @@ pub fn draw_approval_view(
                 .color(theme.subtext0.to_egui()),
         );
     });
-    ui.add_space(6.0);
+    // 6→8 스냅 (그리드 정합 — 헤더 블록/본문 섹션 간격).
+    vspace(ui, theme.spacing_sm);
 
     if let Some(body) = &props.body {
         ui.label(
@@ -140,7 +142,7 @@ pub fn draw_approval_view(
                 .color(theme.text.to_egui())
                 .size(BODY_FONT_SIZE),
         );
-        ui.add_space(8.0);
+        vspace(ui, theme.spacing_sm);
     }
 
     ui.label(
@@ -153,7 +155,7 @@ pub fn draw_approval_view(
             .desired_width(ui.available_width())
             .hint_text(props.comment_hint.clone()),
     );
-    ui.add_space(8.0);
+    vspace(ui, theme.spacing_sm);
 
     let mut action = ApprovalViewAction::None;
     ui.horizontal_wrapped(|ui| {

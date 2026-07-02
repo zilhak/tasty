@@ -61,7 +61,8 @@ fn draw_add_input(
         ui.label(egui::RichText::new(err).color(egui::Color32::from(th.accent_danger())));
     }
 
-    ui.add_space(20.0);
+    // 20→16 스냅 (디자인 Request 3 판정 — 폼/행 리듬).
+    vspace(ui, th.spacing_lg);
     ui.separator();
     vspace(ui, th.spacing_md);
 

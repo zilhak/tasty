@@ -187,7 +187,8 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
 
     // Add 행 — 입력 필드(남는 폭) + Add 버튼(입력 비면 disabled). 입력 버퍼는
     // 프레임 간 egui temp memory 에 보관한다(Settings 모델은 확정 패턴만 담는다).
-    ui.add_space(6.0);
+    // 6→8 스냅 (그리드 정합 — 폼 행 리듬).
+    vspace(ui, th.spacing_sm);
     let add_id = ui.id().with("mouse_capture_blacklist_add");
     let mut add_buf: String = ui.data_mut(|d| d.get_temp::<String>(add_id).unwrap_or_default());
     ui.horizontal(|ui| {

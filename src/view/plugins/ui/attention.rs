@@ -6,7 +6,8 @@ use crate::i18n::t;
 use crate::theme;
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::{hspace, vspace};
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
 fn reason_text(kind: AttentionKind) -> (&'static str, &'static str) {
@@ -103,7 +104,7 @@ pub(super) fn draw_attention_tab(
                     if resp.clicked() {
                         ui_state.attention_selected_id = Some(entry.id.clone());
                     }
-                    ui.add_space(2.0);
+                    vspace(ui, STRUCT_GAP_2);
                 }
             });
         });
@@ -137,7 +138,8 @@ fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
                 .size(13.5)
                 .color(egui::Color32::from(th.text_secondary())),
         );
-        ui.add_space(6.0);
+        // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
+        vspace(ui, th.spacing_xs);
         ui.label(
             egui::RichText::new(t("plugins.attn_empty_body"))
                 .size(12.0)
@@ -225,7 +227,8 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
     match entry.kind {
         AttentionKind::PermissionsChanged => {
             mono_header(ui, "plugins.attn_permission_changes");
-            ui.add_space(6.0);
+            // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
+            vspace(ui, th.spacing_xs);
             for p in &entry.permissions_added {
                 ui.horizontal(|ui| {
                     ui.label(
@@ -267,7 +270,8 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
         }
         AttentionKind::UnknownKey | AttentionKind::SignatureInvalid => {
             mono_header(ui, "plugins.attn_signature");
-            ui.add_space(6.0);
+            // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
+            vspace(ui, th.spacing_xs);
             if let Some(fp) = &entry.fingerprint {
                 ui.horizontal(|ui| {
                     ui.label(
@@ -287,7 +291,8 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
         AttentionKind::HealthError => {
             if let Some(detail) = &entry.health_detail {
                 mono_header(ui, "plugins.attn_error");
-                ui.add_space(6.0);
+                // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
+                vspace(ui, th.spacing_xs);
                 egui::Frame::new()
                     .fill(egui::Color32::from(th.base))
                     .stroke(egui::Stroke::new(
@@ -316,6 +321,7 @@ fn draw_action_bar(
     color: egui::Color32,
     actions: &mut Vec<PluginsAction>,
 ) {
+    let th = crate::theme::theme();
     ui.horizontal(|ui| {
         let status_key = if entry.kind.is_danger() {
             "plugins.attn_not_registered"
@@ -327,7 +333,8 @@ fn draw_action_bar(
             3.5,
             color,
         );
-        ui.add_space(11.0);
+        // 11→12 스냅 (디자인 Request 3 판정).
+        hspace(ui, th.spacing_md);
         ui.label(egui::RichText::new(t(status_key)).size(12.0).color(color));
 
         ui.with_layout(

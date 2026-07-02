@@ -16,6 +16,7 @@ use crate::adapters::ui::popup::{self, PopupAction};
 use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
+use tasty_ui_widgets::vspace;
 
 /// 모달 [확인] 시 동작.
 #[derive(Debug, Clone)]
@@ -112,7 +113,7 @@ pub fn draw_info_modal(
         ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
 
     ui.with_layout(egui::Layout::bottom_up(egui::Align::RIGHT), |ui| {
-        ui.add_space(4.0);
+        vspace(ui, th.spacing_xs);
         if ui.button(t("button.ok")).clicked() {
             confirm = true;
         }

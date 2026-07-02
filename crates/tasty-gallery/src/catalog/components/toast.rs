@@ -21,6 +21,8 @@
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::vspace;
 
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+
 use crate::catalog::toast_card::{
     self, ACCENT_BAR_WIDTH, PADDING_X, PADDING_Y, ToastKind, accent_color,
 };
@@ -193,7 +195,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .strong()
                     .color(egui::Color32::from(theme.text)),
             );
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
             frame_case(
                 ui,
                 theme,
@@ -213,7 +215,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .strong()
                     .color(egui::Color32::from(theme.text)),
             );
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
             frame_case(
                 ui,
                 theme,
@@ -233,7 +235,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .strong()
                     .color(egui::Color32::from(theme.text)),
             );
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
             frame_case(
                 ui,
                 theme,
@@ -253,7 +255,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .strong()
                     .color(egui::Color32::from(theme.text)),
             );
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
             frame_case(
                 ui,
                 theme,
@@ -273,7 +275,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     .strong()
                     .color(egui::Color32::from(theme.text)),
             );
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
             frame_case(
                 ui,
                 theme,
@@ -301,7 +303,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 .strong()
                 .color(egui::Color32::from(theme.text)),
             );
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
             frame_case(
                 ui,
                 theme,

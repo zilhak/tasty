@@ -1,9 +1,10 @@
 use winit::window::Window;
 
 use crate::i18n::t;
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{hspace, vspace};
 
 use super::{GpuState, ShellSetupAction};
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 
 impl GpuState {
     /// Render the shell setup dialog (no terminal, just egui).
@@ -82,7 +83,7 @@ impl GpuState {
                                 .strong()
                                 .color(th.text),
                         );
-                        ui.add_space(2.0);
+                        vspace(ui, STRUCT_GAP_2);
                         ui.label(
                             egui::RichText::new(t("settings.general.setup_subtitle"))
                                 .size(11.0)
@@ -174,7 +175,8 @@ impl GpuState {
                                 action = ShellSetupAction::Exit;
                             }
 
-                            ui.add_space(10.0);
+                            // 10→12 스냅 (디자인 Request 3 판정).
+                            hspace(ui, th.spacing_md);
 
                             // OK
                             let (ok_fill, ok_stroke, ok_text) = if is_valid {

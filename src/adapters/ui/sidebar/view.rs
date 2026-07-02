@@ -8,6 +8,8 @@
 
 use crate::adapters::ui::{brand, icons};
 use crate::theme::Theme;
+use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_3};
+use tasty_ui_widgets::{hspace, vspace};
 
 /// 사이드바 헤더 (full / collapsed) 에 표시되는 수박 로고 PNG.
 /// PNG 디코딩에는 egui_extras 의 `image` feature 가 필요하다 (Cargo.toml 에서 활성,
@@ -252,11 +254,13 @@ pub fn draw_full_sidebar_view(
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
         .show_inside(ui, |ui| {
-            ui.add_space(10.0);
+            // 디자인 chrome.jsx Sidebar 헤더 padding-top: space-md (10→12 스냅).
+            vspace(ui, th.spacing_md);
             if draw_sidebar_header(ui, th, props.collapse_label) {
                 actions.push(SidebarFullAction::Collapse);
             }
-            ui.add_space(6.0);
+            // 디자인 chrome.jsx Sidebar 헤더 padding-bottom: space-xs (6→4 스냅 — parity-notes 잔차 해소).
+            vspace(ui, th.spacing_xs);
         });
 
     // 바닥 고정 섹션 (Tools / Plugins / Settings). 접기는 헤더로 이동.
@@ -266,14 +270,14 @@ pub fn draw_full_sidebar_view(
         .show_inside(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.separator();
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
 
             // Tools
             let tools_resp = draw_ghost_block_button(ui, th, Some(icons::TOOLS), props.tools_label);
             if tools_resp.clicked() {
                 actions.push(SidebarFullAction::ToolsClicked(tools_resp.rect));
             }
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
 
             // Plugins (확인 필요 plugin 있으면 우측에 danger 배지)
             let plug_resp = draw_ghost_block_button(ui, th, Some(icons::PLUG), props.plugins_label);
@@ -283,7 +287,7 @@ pub fn draw_full_sidebar_view(
             if props.plugin_alert > 0 {
                 paint_alert_badge(ui, th, plug_resp.rect, props.plugin_alert, true);
             }
-            ui.add_space(2.0);
+            vspace(ui, STRUCT_GAP_2);
 
             // Settings
             if draw_ghost_block_button(ui, th, Some(icons::SETTINGS), props.settings_label)
@@ -291,7 +295,7 @@ pub fn draw_full_sidebar_view(
             {
                 actions.push(SidebarFullAction::Settings);
             }
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
         });
 
     egui::ScrollArea::vertical()
@@ -303,7 +307,7 @@ pub fn draw_full_sidebar_view(
             // (=spacing_xs≈4) 가 선택 행 배경과 상/하 구분선 사이에 틈을 만들어 0 으로 둔다.
             // 섹션 간 간격은 아래 add_space 들이 명시적으로 준다.
             ui.spacing_mut().item_spacing.y = 0.0;
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             let mut card_rects: Vec<(usize, egui::Rect)> = Vec::new();
             // 그룹 모드 드롭존 판정용 — 각 섹션(헤더+행, 빈 카테고리는 헤더만).
             let mut section_spans: Vec<SectionSpan> = Vec::new();
@@ -352,7 +356,7 @@ pub fn draw_full_sidebar_view(
             } else {
                 // 평면 렌더(토글 off) — 단일 "워크스페이스" heading + 전체 행.
                 draw_section_heading(ui, th, props.workspaces_heading);
-                ui.add_space(4.0);
+                vspace(ui, th.spacing_xs);
 
                 // 디자인 chrome.jsx:141-149 — 목록 블록 상단 보더 (separator).
                 if !props.workspaces.is_empty() {
@@ -456,7 +460,7 @@ pub fn draw_full_sidebar_view(
                 }
             }
 
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
             let new_ws_resp =
                 draw_ghost_block_button(ui, th, Some(icons::PLUS), props.new_workspace_label);
             if new_ws_resp.clicked() {
@@ -472,7 +476,7 @@ pub fn draw_full_sidebar_view(
                     egui::StrokeKind::Inside,
                 );
             }
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
 
             // 그룹 모드 한정 — 목록 아래 빈 배경 우클릭 → 새 카테고리 (디자인
             // background → New category). 남은 스크롤 영역 전체를 우클릭 감지 영역으로.
@@ -508,7 +512,8 @@ pub fn draw_collapsed_sidebar_view(
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
         .show_inside(ui, |ui| {
-            ui.add_space(10.0);
+            // 디자인 chrome.jsx CollapsedSidebar padding-top: space-sm (10→8 스냅).
+            vspace(ui, th.spacing_sm);
             ui.vertical_centered(|ui| {
                 // 로고 (collapsed) — 상단, expand 버튼 위.
                 let logo_size = th.sidebar_logo_collapsed_size.value();
@@ -517,7 +522,7 @@ pub fn draw_collapsed_sidebar_view(
                 egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
                     .fit_to_exact_size(logo_vec)
                     .paint_at(ui, logo_rect);
-                ui.add_space(4.0);
+                vspace(ui, th.spacing_xs);
                 let (rect, resp) =
                     ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
                 if resp.hovered() {
@@ -537,7 +542,8 @@ pub fn draw_collapsed_sidebar_view(
                     actions.push(SidebarCollapsedAction::Expand);
                 }
             });
-            ui.add_space(6.0);
+            // 디자인 chrome.jsx rail expand(«) marginBottom: space-sm (6→8 스냅).
+            vspace(ui, th.spacing_sm);
         });
 
     egui::TopBottomPanel::bottom("workspace_sidebar_collapsed_bottom")
@@ -547,7 +553,7 @@ pub fn draw_collapsed_sidebar_view(
             ui.vertical_centered(|ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 ui.separator();
-                ui.add_space(2.0);
+                vspace(ui, STRUCT_GAP_2);
 
                 // Tools
                 let (tools_btn_rect, tools_resp) =
@@ -557,7 +563,7 @@ pub fn draw_collapsed_sidebar_view(
                 if tools_resp.clicked() {
                     actions.push(SidebarCollapsedAction::ToolsClicked(tools_btn_rect));
                 }
-                ui.add_space(2.0);
+                vspace(ui, STRUCT_GAP_2);
 
                 // Plugins (확인 필요 plugin 있으면 우상단에 danger 배지)
                 let (rect, resp) =
@@ -569,7 +575,7 @@ pub fn draw_collapsed_sidebar_view(
                 if props.plugin_alert > 0 {
                     paint_alert_badge(ui, th, rect, props.plugin_alert, false);
                 }
-                ui.add_space(2.0);
+                vspace(ui, STRUCT_GAP_2);
 
                 // Settings
                 let (rect, resp) =
@@ -578,12 +584,12 @@ pub fn draw_collapsed_sidebar_view(
                 if resp.clicked() {
                     actions.push(SidebarCollapsedAction::Settings);
                 }
-                ui.add_space(12.0);
+                vspace(ui, th.spacing_md);
             });
         });
 
     ui.vertical_centered(|ui| {
-        ui.add_space(4.0);
+        vspace(ui, th.spacing_xs);
         if let Some(sections) = props.categories {
             // 그룹 렌더(토글 on) — 카테고리마다 `---` 버튼 + (접힘 아니면) 소속 아바타.
             // 접힌/빈 카테고리는 `---` 버튼만. normal 항상 맨 위(sections 순서).
@@ -607,7 +613,7 @@ pub fn draw_collapsed_sidebar_view(
             }
         }
 
-        ui.add_space(2.0);
+        vspace(ui, STRUCT_GAP_2);
         let (rect, resp) = ui.allocate_exact_size(collapsed_icon_size(th), egui::Sense::click());
         paint_icon_button(ui, th, rect, &resp, icons::PLUS);
         if resp.clicked() {
@@ -679,7 +685,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
     let mut collapse = false;
     ui.horizontal(|ui| {
         // 디자인 chrome.jsx Sidebar 헤더 padding-left 12 (패널 좌우 margin 0).
-        ui.add_space(12.0);
+        hspace(ui, th.spacing_md);
         // 로고 (수박 PNG) — 워드마크 좌측, gap 8.
         let logo_size = th.sidebar_logo_size.value();
         let logo_vec = egui::vec2(logo_size, logo_size);
@@ -687,7 +693,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
         egui::Image::from_bytes(LOGO_URI, LOGO_PNG)
             .fit_to_exact_size(logo_vec)
             .paint_at(ui, logo_rect);
-        ui.add_space(8.0);
+        hspace(ui, th.spacing_sm);
         let mut job = egui::text::LayoutJob::default();
         let font = egui::FontId::monospace(th.sidebar_wordmark_font_size.value());
         // 워드마크 트래킹 -0.5px (디자인 정책: mono 17 bold).
@@ -715,7 +721,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // 디자인 chrome.jsx Sidebar 헤더 padding-right 12 (패널 좌우 margin 0).
-            ui.add_space(12.0);
+            hspace(ui, th.spacing_md);
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
             if resp.hovered() {
                 ui.painter()
@@ -1206,7 +1212,7 @@ fn draw_workspace_card(
 
         if !ws.subtitle.is_empty() {
             // 디자인 margin-top 1px (title 과의 위계 간격).
-            ui.add_space(1.0);
+            vspace(ui, STRUCT_GAP_1);
             ui.horizontal(|ui| {
                 // 타이틀 시작 x 정렬: dot 슬롯(spacing_sm=8) + item_spacing(spacing_xs=4).
                 ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
@@ -1228,7 +1234,7 @@ fn draw_workspace_card(
 
         if !ws.description.is_empty() {
             // 디자인 margin-top 3px (subtitle 보다 한 단계 넓은 위계 간격).
-            ui.add_space(3.0);
+            vspace(ui, STRUCT_GAP_3);
             ui.horizontal(|ui| {
                 // 서브타이틀과 동일하게 타이틀 시작 x 정렬: 슬롯(spacing_sm=8)+spacing(spacing_xs=4).
                 ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());

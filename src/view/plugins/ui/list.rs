@@ -2,6 +2,7 @@ use crate::i18n::t;
 use crate::theme;
 
 use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::vspace;
 
 pub(super) fn draw_list_tab(
@@ -120,7 +121,7 @@ pub(super) fn draw_list_tab(
                     if resp.clicked() {
                         ui_state.selected_id = Some(entry.id.clone());
                     }
-                    ui.add_space(2.0);
+                    vspace(ui, STRUCT_GAP_2);
                 }
             });
         });
@@ -270,7 +271,8 @@ pub(super) fn draw_list_tab(
                 }
             });
 
-            ui.add_space(6.0);
+            // 6→4 스냅 (그리드 정합 — 메타 라벨 tight 간격).
+            vspace(ui, th.spacing_xs);
             ui.label(
                 egui::RichText::new(format!("{}: {}", t("plugins.log_path"), entry.log_path))
                     .small()

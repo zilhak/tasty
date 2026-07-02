@@ -3,6 +3,8 @@ use std::time::Instant;
 use crate::i18n::{t, t_fmt};
 use crate::state::AppState;
 use crate::theme;
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::{margin_all, vspace};
 
 /// Draw notification panel content inside a popup Ui.
 /// Called by the notifications popup's `draw_fn` (see popup_defs).
@@ -98,7 +100,7 @@ pub(crate) fn draw_notification_content_inner(
 
                 egui::Frame::new()
                     .fill(bg)
-                    .inner_margin(egui::Margin::same(4))
+                    .inner_margin(margin_all(th.spacing_xs))
                     .corner_radius(4.0)
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -140,7 +142,7 @@ pub(crate) fn draw_notification_content_inner(
                         });
                     });
 
-                ui.add_space(2.0);
+                vspace(ui, STRUCT_GAP_2);
             }
 
             if let Some(id) = mark_read_id {

@@ -107,10 +107,11 @@ impl View for QuitView {
                 .exact_height(52.0)
                 .show(ctx, |ui| {
                     vspace(ui, th.spacing_md);
-                    let available_width = ui.available_width() - 40.0;
+                    let available_width = ui.available_width() - 32.0;
                     let button_width = available_width / 2.0 - 4.0;
                     ui.horizontal(|ui| {
-                        ui.add_space(20.0);
+                        // 20→16 스냅 (디자인 Request 3 판정 — 버튼 행 좌우 여백, 아래 산술 40→32 연동).
+                        hspace(ui, th.spacing_lg);
                         if ui
                             .add_sized(
                                 [button_width, 28.0],
@@ -135,7 +136,8 @@ impl View for QuitView {
 
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
-                    ui.add_space(20.0);
+                    // 20→24 스냅 (디자인 Request 3 판정 — 모달 상단 region gap).
+                    vspace(ui, th.spacing_xl);
                     ui.heading(t("quit_modal.title"));
                     vspace(ui, th.spacing_md);
                     ui.label(t("quit_modal.message"));

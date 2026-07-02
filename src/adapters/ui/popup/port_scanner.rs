@@ -30,9 +30,11 @@ use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Input, StatusKind, Table, TableAlign,
-    TableColumn, TableColumnWidth, TableSortDir, TagVariant, checkbox, status_dot, tag,
+    TableColumn, TableColumnWidth, TableSortDir, TagVariant, checkbox, hspace, status_dot, tag,
+    vspace,
 };
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
@@ -1225,14 +1227,14 @@ fn state_filter_button(
 
 /// 드롭다운 내부 separator (remote_tool `hsep:317` 전사 — surface1 hline).
 fn state_filter_hsep(ui: &mut egui::Ui, th: &Theme) {
-    ui.add_space(2.0);
+    vspace(ui, STRUCT_GAP_2);
     let r = ui.max_rect();
     ui.painter().hline(
         r.x_range(),
         ui.cursor().top(),
         egui::Stroke::new(th.border_width.value(), th.surface1),
     );
-    ui.add_space(2.0);
+    vspace(ui, STRUCT_GAP_2);
 }
 
 /// 상태 필터 버튼 + 드롭다운(체크박스 목록 + 모두선택/모두해제/초기화/적용).
@@ -1389,7 +1391,8 @@ fn draw_filter_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
 fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
     let th = props.theme;
     ui.vertical_centered(|ui| {
-        ui.add_space(48.0);
+        // 48 = spacing_xl × 2 (디자인 Request 3 판정).
+        vspace(ui, th.spacing_xl * 2.0);
         ui.horizontal(|ui| {
             ui.add(egui::Spinner::new().size(16.0).color(th.subtext0));
             ui.label(
@@ -1455,7 +1458,8 @@ fn draw_ready_body(
 
 /// 디자인 Table td/th `padding: 0 12` — 좌측 정렬 셀. 콘텐츠를 좌측 12 들여쓴다.
 fn cell_l(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
-    ui.add_space(12.0);
+    let th = crate::theme::theme();
+    hspace(ui, th.spacing_md);
     content(ui);
 }
 
@@ -1546,7 +1550,7 @@ fn draw_table(
             |ui, th, row, col_index| match visible[col_index] {
                 // Port — 디자인 align right (위젯이 right_to_left 로 감쌈). 셀 padding 12.
                 ColumnId::Port => {
-                    ui.add_space(12.0);
+                    hspace(ui, th.spacing_md);
                     ui.label(
                         egui::RichText::new(row.port.to_string())
                             .color(th.text)

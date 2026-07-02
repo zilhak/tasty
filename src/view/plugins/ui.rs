@@ -227,7 +227,8 @@ pub fn draw_plugins_panel(
         .exact_height(48.0)
         .show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
-                ui.add_space(10.0);
+                // 10→12 스냅 (디자인 Request 3 판정 — 헤더 좌 패딩).
+                hspace(ui, th.spacing_md);
                 // 디자인 헤더: plug 아이콘 + 타이틀.
                 ui.add(icons::PLUG.image(17.0, egui::Color32::from(th.peach)));
                 hspace(ui, th.spacing_xs);
@@ -253,7 +254,7 @@ pub fn draw_plugins_panel(
                 ) {
                     ui_state.active_tab = PluginsTab::List;
                 }
-                ui.add_space(2.0);
+                hspace(ui, STRUCT_GAP_2);
                 // Attention 탭 — 확인 필요 plugin 개수를 danger 배지로 노출.
                 let attention_count = snapshot.attention.len();
                 if segment_tab(
@@ -266,7 +267,7 @@ pub fn draw_plugins_panel(
                 ) {
                     ui_state.active_tab = PluginsTab::Attention;
                 }
-                ui.add_space(2.0);
+                hspace(ui, STRUCT_GAP_2);
                 if segment_tab(
                     ui,
                     &th,
@@ -485,3 +486,4 @@ use add::draw_add_tab;
 use attention::draw_attention_tab;
 use list::draw_list_tab;
 use tasty_ui_widgets::hspace;
+use tasty_ui_widgets::tokens::STRUCT_GAP_2;

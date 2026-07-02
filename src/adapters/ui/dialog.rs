@@ -13,6 +13,7 @@ use crate::i18n::t;
 use crate::state::{AppState, RenameTarget};
 use crate::theme;
 use crate::theme::Theme;
+use tasty_ui_widgets::vspace;
 
 /// Default size for the rename popup.
 pub fn rename_popup_default_size() -> egui::Vec2 {
@@ -192,11 +193,11 @@ pub fn draw_rename_popup_view(
 
     // 인라인 검증 에러 라인 (카테고리 대상). danger 토큰으로 표시.
     if let Some(err) = props.error {
-        ui.add_space(4.0);
+        vspace(ui, props.theme.spacing_xs);
         ui.colored_label(props.theme.accent_danger(), err);
     }
 
-    ui.add_space(8.0);
+    vspace(ui, props.theme.spacing_sm);
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button(props.cancel_label).clicked() {

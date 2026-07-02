@@ -28,6 +28,7 @@ use crate::i18n::t;
 use crate::state::{AppState, FileHandlerPickerResult};
 use crate::theme;
 use crate::theme::Theme;
+use tasty_ui_widgets::hspace;
 
 pub const PICKER_POPUP_ID: &str = "file_handler_picker";
 
@@ -209,7 +210,7 @@ pub fn draw_file_handler_picker_view(
                 });
         });
 
-        ui.add_space(8.0);
+        hspace(ui, th.spacing_sm);
 
         // recent column
         ui.vertical(|ui| {
