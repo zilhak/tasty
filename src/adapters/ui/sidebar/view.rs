@@ -217,6 +217,27 @@ fn card_inner_margin_y(th: &Theme) -> i8 {
     th.spacing_xs.value() as i8
 }
 
+/// 그룹 모드 드롭존 1개 — 섹션(헤더+행, 빈/접힌 카테고리는 헤더만)의 판정·표시 정보.
+/// spans 는 렌더 순서대로 연속이라(이전 섹션의 end_y 가 곧 다음 섹션의 시작) 시작 y 를
+/// 따로 들지 않는다 — 비-첫 섹션 헤더 위 8px gap 도 그 섹션의 드롭존에 포함된다.
+struct SectionSpan {
+    id: crate::model::WorkspaceCategoryId,
+    /// 섹션이 끝나는 y (다음 섹션 시작 = 이 값).
+    end_y: f32,
+    /// 카테고리 헤더 rect — 행 rect 가 없는(빈/접힌) 섹션의 marker x·폭·y anchor.
+    header_rect: egui::Rect,
+    /// 행이 실제로 렌더됐는가 (`!collapsed && !entries.is_empty()`).
+    has_visible_rows: bool,
+}
+
+/// 드래그 커서 y → 대상 섹션. release(드롭) 판정과 insert marker(가이드)가 **같은
+/// 규칙을 공유**해 "가이드가 가리키는 곳 = 놓았을 때 실제 결과" 불변식을 지킨다.
+/// 규칙: y 가 끝나기 전인 첫 섹션(위로 벗어나면 첫 섹션), 아래로 벗어나면 마지막 섹션.
+/// 평면 모드는 spans 가 비어 None.
+fn resolve_drop_section(spans: &[SectionSpan], y: f32) -> Option<&SectionSpan> {
+    spans.iter().find(|s| y < s.end_y).or_else(|| spans.last())
+}
+
 /// Pure view: full sidebar 내부 (SidePanel 안쪽 ui) 를 그리고 action 리스트
 /// 를 반환. 호출처는 SidePanel 을 직접 연다.
 pub fn draw_full_sidebar_view(
@@ -284,16 +305,16 @@ pub fn draw_full_sidebar_view(
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(8.0);
             let mut card_rects: Vec<(usize, egui::Rect)> = Vec::new();
-            // 그룹 모드 드롭존 판정용 — 각 섹션(헤더+행, 빈 카테고리는 헤더만)의 y 범위.
-            let mut section_spans: Vec<(crate::model::WorkspaceCategoryId, f32, f32)> = Vec::new();
+            // 그룹 모드 드롭존 판정용 — 각 섹션(헤더+행, 빈 카테고리는 헤더만).
+            let mut section_spans: Vec<SectionSpan> = Vec::new();
 
             if let Some(sections) = props.categories {
                 // 그룹 렌더(토글 on) — 카테고리별 헤더(chevron) + 소속 행. 접힘/빈
                 // 카테고리는 헤더만. normal 은 항상 맨 위(sections 순서 = 표시 순서).
                 for (sec_i, section) in sections.iter().enumerate() {
-                    let sec_start = ui.cursor().min.y;
-                    // 섹션 간 간격 (디자인 비-첫 섹션 marginTop: space-sm). sec_start
-                    // 캡처 뒤에 두어 gap 이 이 섹션의 드롭존(section_spans)에 포함된다.
+                    // 섹션 간 간격 (디자인 비-첫 섹션 marginTop: space-sm). 헤더 앞에
+                    // 두어 gap 이 이 섹션의 드롭존에 포함된다 (spans 는 end_y 연속 —
+                    // 이전 섹션 end_y 부터가 이 섹션이므로 gap 도 이쪽에 귀속).
                     if sec_i > 0 {
                         ui.add_space(th.spacing_sm.value());
                     }
@@ -321,7 +342,12 @@ pub fn draw_full_sidebar_view(
                         // (디자인 rowList bottomBorder=false, 2026-07-02 고아 구분선 제거).
                     }
                     // 빈/접힌 카테고리도 헤더 영역이 드롭존(그 카테고리로 편입).
-                    section_spans.push((section.id, sec_start, ui.cursor().min.y));
+                    section_spans.push(SectionSpan {
+                        id: section.id,
+                        end_y: ui.cursor().min.y,
+                        header_rect: header.rect,
+                        has_visible_rows: !section.collapsed && !section.entries.is_empty(),
+                    });
                 }
             } else {
                 // 평면 렌더(토글 off) — 단일 "워크스페이스" heading + 전체 행.
@@ -361,38 +387,48 @@ pub fn draw_full_sidebar_view(
                         .map(|(gi, _)| *gi)
                         .unwrap_or(drag.ws_idx);
                     let drop = (target != drag.ws_idx).then_some(target);
-                    // 드롭 위치가 속한 카테고리(그룹 모드). 커서 y 를 담는 첫 섹션(위로 벗어나면
-                    // 첫 섹션, 아래로 벗어나면 마지막 섹션). 평면 모드는 spans 가 비어 None.
-                    let target_category = section_spans
-                        .iter()
-                        .find(|(_, _, y1)| drag.current_y < *y1)
-                        .or_else(|| section_spans.last())
-                        .map(|(id, _, _)| *id);
+                    // 드롭 위치가 속한 카테고리(그룹 모드) — marker 와 같은 규칙
+                    // (resolve_drop_section). 평면 모드는 spans 가 비어 None.
+                    let target_category =
+                        resolve_drop_section(&section_spans, drag.current_y).map(|s| s.id);
                     actions.push(SidebarFullAction::DragReleased {
                         drop_target: drop,
                         target_category,
                     });
                 } else {
-                    // Insert marker.
-                    let insert_idx = card_rects
-                        .iter()
-                        .position(|(_, rect)| drag.current_y < rect.center().y)
-                        .unwrap_or(card_rects.len());
-                    if let Some(marker_rect) = if insert_idx < card_rects.len() {
-                        Some(card_rects[insert_idx].1)
-                    } else {
-                        card_rects.last().map(|(_, r)| *r)
-                    } {
-                        let marker_y = if insert_idx < card_rects.len() {
-                            marker_rect.min.y - 1.0
-                        } else {
-                            marker_rect.max.y + 1.0
-                        };
+                    // Insert marker — release 와 같은 규칙(resolve_drop_section)으로 대상
+                    // 섹션을 판정. 빈/접힌 카테고리(행 rect 없음)는 헤더 바로 아래에
+                    // 그린다 (놓으면 그 카테고리로 편입 — 가이드 = 드롭 결과).
+                    if let Some(sec) = resolve_drop_section(&section_spans, drag.current_y)
+                        .filter(|s| !s.has_visible_rows)
+                    {
                         let line = egui::Rect::from_min_size(
-                            egui::pos2(marker_rect.min.x, marker_y),
-                            egui::vec2(marker_rect.width(), 2.0),
+                            egui::pos2(sec.header_rect.min.x, sec.header_rect.max.y + 1.0),
+                            egui::vec2(sec.header_rect.width(), 2.0),
                         );
                         ui.painter().rect_filled(line, 0.0, th.accent_primary());
+                    } else {
+                        // 행 경계(reorder 가이드) — 기존 card_rects 규칙.
+                        let insert_idx = card_rects
+                            .iter()
+                            .position(|(_, rect)| drag.current_y < rect.center().y)
+                            .unwrap_or(card_rects.len());
+                        if let Some(marker_rect) = if insert_idx < card_rects.len() {
+                            Some(card_rects[insert_idx].1)
+                        } else {
+                            card_rects.last().map(|(_, r)| *r)
+                        } {
+                            let marker_y = if insert_idx < card_rects.len() {
+                                marker_rect.min.y - 1.0
+                            } else {
+                                marker_rect.max.y + 1.0
+                            };
+                            let line = egui::Rect::from_min_size(
+                                egui::pos2(marker_rect.min.x, marker_y),
+                                egui::vec2(marker_rect.width(), 2.0),
+                            );
+                            ui.painter().rect_filled(line, 0.0, th.accent_primary());
+                        }
                     }
 
                     // Ghost card.
@@ -723,9 +759,11 @@ fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
 }
 
 /// 카테고리 헤더 상호작용 결과 — 좌클릭(접힘 토글) / 우클릭(컨텍스트 메뉴 좌표).
+/// `rect` 는 헤더가 차지한 영역 — 빈/접힌 섹션의 드롭 marker anchor(`SectionSpan`).
 struct HeaderInteraction {
     toggled: bool,
     context: Option<egui::Pos2>,
+    rect: egui::Rect,
 }
 
 /// ui_kit 카테고리 헤더 (chrome.jsx `CategoryHeader` 전사) — chevron + 대문자 캡스
@@ -790,6 +828,7 @@ fn draw_category_header(
     HeaderInteraction {
         toggled: resp.clicked(),
         context,
+        rect,
     }
 }
 
@@ -1258,6 +1297,51 @@ mod tests {
             is_mirror: false,
             is_active,
         }
+    }
+
+    fn mock_span(id: u32, end_y: f32, has_visible_rows: bool) -> SectionSpan {
+        SectionSpan {
+            id,
+            end_y,
+            header_rect: egui::Rect::from_min_size(
+                egui::pos2(0.0, end_y - 26.0),
+                egui::vec2(180.0, 26.0),
+            ),
+            has_visible_rows,
+        }
+    }
+
+    #[test]
+    fn resolve_drop_section_maps_cursor_to_sections() {
+        // normal(행 있음, ~100) / Services(빈, ~150) / Archived(접힘, ~200).
+        let spans = vec![
+            mock_span(0, 100.0, true),
+            mock_span(1, 150.0, false),
+            mock_span(2, 200.0, false),
+        ];
+        // 섹션 내부.
+        assert_eq!(resolve_drop_section(&spans, 50.0).map(|s| s.id), Some(0));
+        assert_eq!(resolve_drop_section(&spans, 120.0).map(|s| s.id), Some(1));
+        assert_eq!(resolve_drop_section(&spans, 160.0).map(|s| s.id), Some(2));
+        // 위로 벗어남 → 첫 섹션.
+        assert_eq!(resolve_drop_section(&spans, -10.0).map(|s| s.id), Some(0));
+        // 아래로 벗어남 → 마지막 섹션.
+        assert_eq!(resolve_drop_section(&spans, 999.0).map(|s| s.id), Some(2));
+        // 경계값: 섹션 간 gap 은 end_y 연속으로 다음 섹션에 귀속 (y == 이전 end_y).
+        assert_eq!(resolve_drop_section(&spans, 100.0).map(|s| s.id), Some(1));
+        // marker 분기 조건(has_visible_rows) — 빈/접힌 섹션만 헤더 marker.
+        assert!(resolve_drop_section(&spans, 50.0).unwrap().has_visible_rows);
+        assert!(
+            !resolve_drop_section(&spans, 120.0)
+                .unwrap()
+                .has_visible_rows
+        );
+    }
+
+    #[test]
+    fn resolve_drop_section_empty_spans_yields_none() {
+        // 평면 모드(토글 off): spans 비어 있음 → None (기존 reorder 경로 유지).
+        assert!(resolve_drop_section(&[], 42.0).is_none());
     }
 
     fn run_full(workspaces: Vec<WorkspaceEntryView>, switch_held: bool) -> Vec<SidebarFullAction> {
