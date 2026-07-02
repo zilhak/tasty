@@ -42,7 +42,7 @@
 | `tasty-type-appearance::theme` | `Theme` · `ThemeColors` · `PartialColors` · `ThemeSizing`/`SIZING` · `SurfaceTheme`/`FALLBACK_SURFACE` · `derive_overlays` · `Theme::surface(id)` | 없음 |
 | `tasty-themes` | 전역 `RwLock<Theme>` + `theme()/set_theme()` · `ThemeFile`(TOML) · mocha/latte 임베드 · scan/load/apply/resolve/install · `first_run_init`/`sync_builtin_themes` | `~/.tasty/themes/` |
 | `tasty-settings::appearance` | `AppearanceSettings.{theme,theme_base,theme_overrides,theme_is_light,ui_scale}` | settings IO |
-| `tasty-design-tokens` | 디자인 DTCG export vendor(`dtcg/tasty.tokens.json`, 488 토큰) + 치수 const 생성(`src/generated/` — primitive 는 `pub(crate)` 로 3-tier 규율 강제) + freshness/`SIZING` 정합/mocha·latte 색 드리프트 가드 테스트. 생성 const 는 초기값·정합용 — 런타임 소비는 `&Theme` 경유(zoom 우회 금지). vendor 갱신 절차는 crate README | 없음 |
+| `tasty-design-tokens` | 디자인 DTCG export vendor(`dtcg/tasty.tokens.json`, 488 토큰) + 치수 const 생성(`src/generated/` — primitive 는 `pub(crate)` 로 3-tier 규율 강제) + **component tier 접근자 생성**(`tasty-type-appearance/src/generated_component.rs` 로 산출 — `&Theme` 경유 치수·색 접근자, 아래 "Component tier 접근자") + freshness/`SIZING` 정합/mocha·latte 색 드리프트 가드 테스트. 생성 const 는 초기값·정합용 — 런타임 소비는 `&Theme` 경유(zoom 우회 금지). vendor 갱신 절차는 crate README | 없음 |
 
 의존: `type-geometry ← type-appearance ← tasty-themes ← tasty-settings`. 순환 없음 — `tasty-core` 는 시각 schema 를 모른다(GUI-free). `tasty-design-tokens` 는 `type-geometry` 만 런타임 의존(정합 테스트만 dev-deps 로 type-appearance/themes 참조) — 본체·egui 미의존.
 
@@ -93,6 +93,15 @@ let pad = th.spacing_sm;                               // sizing 동일 방식
 - **색 생성 경로 단일화**: GPU 버퍼 struct 는 newtype(`GpuRgba` 등)을 받아 `[f32;4]` 대입이 컴파일 에러. `from_rgb` 직접 호출은 clippy 차단. 상세 [`dev-guide/color-policy`](../../dev-guide/color-policy.md).
 - **premultiplied 주의**: `hover_overlay`/`active_overlay`/`separator` 는 premultiplied 바이트라 `to_egui_premultiplied()` 를 써야 한다. `to_egui()` 를 쓰면 sRGB-aware premultiplication 이 한 번 더 적용돼 색이 어긋난다.
 - **Semantic 접근자 우선**: 평면 primitive(`th.blue`) 외에 의미 기반 접근자(`accent_primary()`/`surface_raised()`/`text_muted()`)를 제공. 신규/수정 UI 는 의미가 드러나는 접근자를 우선(같은 primitive 가 여러 role 로 갈리는 다의성 표현). primitive 직접접근도 유효(additive, 픽셀 동일)하나 의미가 호출처에 묻힌다 — 전수 이식 전까지 clippy 강제는 보류. 매핑·다의성 핫스팟은 [`token-crosswalk`](token-crosswalk.md).
+
+## Component tier 접근자
+
+DTCG component tier(치수+색) 토큰은 `crates/tasty-type-appearance/src/generated_component.rs` 의 **생성된 `&Theme` 메서드**로 노출된다 (`tasty-design-tokens` 생성기가 산출, `DO NOT EDIT`). `generated::component` 의 raw const 를 위젯이 직접 읽으면 `with_colors_and_zoom` 의 zoom resolve/제외 정책을 우회하므로, 위젯은 **반드시 이 접근자를 경유**한다.
+
+- **치수 접근자**(→ `LogicalPx`) 3형태: alias 체인이 (a) zoom 정책이 이미 박힌 `Theme` 필드에 닿으면 그 필드 반환, (b) 다른 component 접근자에 닿으면 그 접근자 호출, (c) primitive 에 직접 닿으면 `Theme.ui_zoom` 을 곱해 계산(`LogicalPx((v*ui_zoom).round())`). 예: `button_gap()`=`spacing_sm`, `button_height_lg()`=`(32*ui_zoom).round()`.
+- **색 접근자**(→ `HexColor`): semantic 접근자 체인 또는 component→component 상호 호출. 예: `button_primary_bg()`=`accent_primary()`. `banner_*`/`titlebar_*` 색은 기존 수기 접근자와 이름 충돌이라 생성 제외(수기 유지).
+- **소비처**: `tasty-ui-widgets` 위젯(button/chip/input/menu_item/select/toggle/tree_row/icon_button/status_dot/table 등)이 이 접근자를 소비. host chrome(sidebar/titlebar, `src/adapters/ui/`)은 후속 시리즈에서 전환.
+- **zoom 회귀/값불변 테스트**: `tasty-type-appearance` 에 zoom 1.0 값 불변(이식 전후 동일)·zoom 1.5 스케일 단위 테스트 존재.
 
 ## CSD 타이틀바 토큰
 

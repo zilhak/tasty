@@ -2,18 +2,19 @@
 
 디자인 시스템의 DTCG 토큰과 Rust `Theme` 필드, 그리고 실제 `th.*`/`theme.*` 호출처를 잇는 매핑 참조. [theme.md](theme.md) 의 토큰 구조를 호출처 관점에서 보충한다.
 
-> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (488 토큰 = primitive 104 / semantic 127 / component 257, 2026-07-02 재생성본). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. 색 semantic/component 전수 매핑·소비처 전환은 후속 시리즈에서 채운다.
+> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (488 토큰 = primitive 104 / semantic 127 / component 257, 2026-07-02 재생성본). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. **component tier(치수+색)는 `&Theme` 접근자로 생성돼**(`tasty-type-appearance/src/generated_component.rs`, [theme.md](theme.md) "Component tier 접근자") `tasty-ui-widgets` 위젯이 소비 중 — host chrome(`src/adapters/ui/`) 소비처 전환은 후속 시리즈.
 
 ## 구조 모델
 
 ```
 DTCG:  primitive ─▶ semantic ─▶ component ─▶ UI        (3-tier)
-Rust:  ThemeColors(평면 primitive) ─▶ Theme(펼친 필드 + 도출 overlay) ─▶ UI(th.<field>)
-                    ▲ semantic / component tier 없음 — 의미를 호출처가 암묵적으로 들고 있다
+Rust:  ThemeColors(평면 primitive) ─▶ Theme(펼친 필드 + 도출 overlay + 생성 tier 접근자) ─▶ UI
+                    ▲ 색 저장은 평면 primitive, tier 는 &Theme 접근자로 재구성
 ```
 
-- **Rust 에는 semantic·component tier 가 없다.** `ThemeColors`(`crates/tasty-type-appearance/src/theme.rs`)는 catppuccin 평면 primitive(neutral ramp 12 + accent hue 13 + 터미널 색 4 + ansi 16 + `surface_themes` map)만 노출한다.
-- 그래서 *"이 primitive 가 지금 어떤 의미(role)로 쓰이나"* 는 코드 호출처가 들고 있다 — 같은 필드가 여러 role 로 갈린다(아래 핫스팟).
+- **색 저장은 평면 primitive.** `ThemeColors`(`crates/tasty-type-appearance/src/theme.rs`)는 catppuccin 평면 primitive(neutral ramp 12 + accent hue 13 + 터미널 색 4 + ansi 16 + `surface_themes` map)만 저장한다.
+- **tier 는 `&Theme` 접근자로 노출된다**: semantic 색은 수기 접근자(`accent_primary()` 등), component tier(치수+색)는 생성 접근자(`generated_component.rs` — `button_primary_bg()`/`button_height_lg()` 등, [theme.md](theme.md) "Component tier 접근자"). 즉 저장은 평면이나 소비는 tier 를 경유한다.
+- 아직 접근자로 못 옮긴 **primitive 직접 참조**(`th.<field>`)에서는 *"이 primitive 가 지금 어떤 의미(role)로 쓰이나"* 를 코드 호출처가 들고 있다 — 같은 필드가 여러 role 로 갈린다(아래 핫스팟).
 - 반투명 의미색(`hover_overlay`/`active_overlay`/`separator`)만 `is_light` 에서 **도출**된다(`derive_overlays`), primitive 가 아니다.
 
 ## 다의성 핫스팟 (Rust 필드 → 겹치는 role)
