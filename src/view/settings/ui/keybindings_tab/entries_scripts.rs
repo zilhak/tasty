@@ -56,7 +56,9 @@ pub(super) fn draw_script_bindings(
 
     if settings.scripts.is_empty() {
         vspace(ui, th.spacing_sm);
-        ui.label(egui::RichText::new(t("settings.keybindings.scripts_empty")).color(th.overlay1));
+        ui.label(
+            egui::RichText::new(t("settings.keybindings.scripts_empty")).color(th.text_disabled()),
+        );
         return;
     }
 
@@ -118,16 +120,16 @@ pub(super) fn draw_script_bindings(
                 KeybindingSettings::format_display(&current)
             };
             let bg = if is_recording {
-                th.surface1
+                th.surface_hover() // 녹화중 버튼 배경(값-동일: surface1)
             } else {
-                th.surface0
+                th.surface_raised()
             };
             let fg = if is_recording {
-                th.overlay1
+                th.text_disabled()
             } else if current.is_empty() {
-                th.subtext0
+                th.text_muted()
             } else {
-                th.text
+                th.text_primary()
             };
             let btn = egui::Button::new(egui::RichText::new(&display).color(fg).monospace())
                 .fill(bg)

@@ -372,7 +372,7 @@ pub fn draw_keybindings_tab(
         ui.label(
             egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
                 .small()
-                .color(th.overlay1),
+                .color(th.text_disabled()),
         );
     }
 }

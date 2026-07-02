@@ -13,8 +13,8 @@ pub(super) fn draw_preset_subtab(
     ui.horizontal_top(|ui| {
         // 좌측: 프리셋 목록
         egui::Frame::new()
-            .fill(th.mantle.into())
-            .stroke(egui::Stroke::new(1.0, th.surface0))
+            .fill(th.bg_sidebar().into())
+            .stroke(egui::Stroke::new(1.0, th.border_default()))
             .corner_radius(4.0)
             .inner_margin(margin_sym(th.spacing_sm, th.spacing_sm))
             .show(ui, |ui| {
@@ -59,8 +59,11 @@ pub(super) fn draw_preset_subtab(
                         .spacing([16.0, 6.0])
                         .striped(true)
                         .show(ui, |ui| {
-                            let strong = |s: String| egui::RichText::new(s).color(th.text).strong();
-                            let normal = |s: String| egui::RichText::new(s).color(th.text);
+                            let strong = |s: String| {
+                                egui::RichText::new(s).color(th.text_primary()).strong()
+                            };
+                            let normal =
+                                |s: String| egui::RichText::new(s).color(th.text_primary());
 
                             ui.label(strong(
                                 t("settings.keybindings.preset_col_action").to_string(),

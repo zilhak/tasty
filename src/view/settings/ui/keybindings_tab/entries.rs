@@ -114,11 +114,15 @@ pub(super) fn draw_keybinding_entries(
                     };
 
                     let bg_color = if is_recording {
-                        th.surface1
+                        th.surface_hover() // 녹화중 버튼 배경(값-동일: surface1)
                     } else {
-                        th.surface0
+                        th.surface_raised()
                     };
-                    let text_color = if is_recording { th.overlay1 } else { th.text };
+                    let text_color = if is_recording {
+                        th.text_disabled()
+                    } else {
+                        th.text_primary()
+                    };
 
                     let button = egui::Button::new(
                         egui::RichText::new(&display_text)
@@ -148,8 +152,16 @@ pub(super) fn draw_keybinding_entries(
                 } else {
                     "+".to_string()
                 };
-                let add_bg = if adding { th.surface1 } else { th.surface0 };
-                let add_fg = if adding { th.overlay1 } else { th.subtext0 };
+                let add_bg = if adding {
+                    th.surface_hover() // 추가중 버튼 배경(값-동일: surface1)
+                } else {
+                    th.surface_raised()
+                };
+                let add_fg = if adding {
+                    th.text_disabled()
+                } else {
+                    th.text_muted()
+                };
                 let add_width = if bindings_len == 0 {
                     BUTTON_WIDTH
                 } else {

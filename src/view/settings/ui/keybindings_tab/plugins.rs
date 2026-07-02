@@ -72,7 +72,7 @@ pub(super) fn draw_plugins_subtab(
         vspace(ui, th.spacing_sm);
         ui.label(
             egui::RichText::new(t("settings.keybindings.plugins.no_plugins_with_commands"))
-                .color(th.subtext0),
+                .color(th.text_muted()),
         );
         return;
     }
