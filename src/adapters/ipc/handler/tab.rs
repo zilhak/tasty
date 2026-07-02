@@ -134,14 +134,18 @@ pub fn handle_tab_create(
 
     let Some(crate::core::intent::CoreEvent::TabCreated {
         pane_id,
+        tab_id,
         surface_id,
         tab_count,
         active_tab,
-        ..
     }) = events.into_iter().next()
     else {
         return JsonRpcResponse::internal_error(id, "Core::apply returned no TabCreated event");
     };
+
+    // dispatcher 와 같은 cascade 공유 (handle_tab_close ↔ cascade_tab_closed_full
+    // 동형) — tab.created/surface.created host event enqueue + baseline 동기화.
+    crate::app::dispatch_domain::cascade_tab_created(state, engine, pane_id, tab_id, surface_id);
 
     JsonRpcResponse::success(
         id,

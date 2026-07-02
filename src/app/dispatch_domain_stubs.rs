@@ -92,6 +92,17 @@ pub(crate) fn cascade_pane_closed_full(
     }
 }
 
+/// gui `cascade_tab_created` 의 headless 등가. host event / baseline 통지는
+/// drain 주체(plugin manager / view)가 없으므로 생략 — silent no-op.
+pub(crate) fn cascade_tab_created(
+    state: &mut AppState,
+    engine: &CoreState,
+    pane_id: u32,
+    tab_id: u32,
+    surface_id: u32,
+) {
+}
+
 /// gui `cascade_tab_closed_full` 의 headless 등가. tab close 시 닫힌 surface 들의
 /// PTY/scrollback 을 실제 해제한다. host event / lifecycle 통지는 생략 (drain 주체 없음).
 pub(crate) fn cascade_tab_closed_full(
