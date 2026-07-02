@@ -79,7 +79,7 @@ GitHub Releases 에서 노트 + 플랫폼별 아티팩트 확인:
 
 ## API 안정성 가드
 
-0.x 라인은 *추가만 가능, 제거 금지* 원칙으로 외부 표면 회귀를 막는다 (메서드 baseline, CHANGELOG break guard 등 `cargo test --workspace` 강제). 분류·major bump 절차는 [api-conventions](api-conventions.md).
+0.x 라인은 *추가만 가능, 제거 금지* 원칙으로 외부 표면 회귀를 막는다 (메서드 baseline 등 `cargo test --workspace` 강제). 분류는 [api-conventions](api-conventions.md).
 
 ## 관련
 

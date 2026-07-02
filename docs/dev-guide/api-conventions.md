@@ -60,8 +60,8 @@ plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예�
 
 | 단계 | break 정책 |
 |------|-----------|
-| 0.x | 적극 변경. break 는 `CHANGELOG.md` 에 `(BREAK)` 표기 + **한 minor 이상 deprecation 우선**(보안 예외 즉시 제거 가능) |
-| 안정선 (현재) | SemVer 엄격. `api_version = "1"` schema 는 추가만 |
+| 0.x (현재) | 적극 변경. break 는 `CHANGELOG.md` 에 `(BREAK)` 표기 + **한 minor 이상 deprecation 우선**(보안 예외 즉시 제거 가능). major bump 는 사용자 결정으로만 |
+| 안정선 | SemVer 엄격. `api_version = "1"` schema 는 추가만. 진입 시점은 사용자가 결정 |
 | 1.x | minor 추가, major break |
 | 2.0 | `api_version = "2"` 시작. plugin 이 매니페스트로 명시 선택 |
 

@@ -75,7 +75,7 @@ Tasty 의 모든 API 는 두 표면을 엄격히 분리한다.
 - 사용자 가이드: [`docs/installation.md`](docs/installation.md), [`docs/features.md`](docs/features.md)
 - 에이전트 가이드: [`docs/agent-guide/`](docs/agent-guide/) (api-reference / blackboard / plan / cache / telemetry / agent / output-parsers)
 - 개발 가이드: [`docs/dev-guide/`](docs/dev-guide/)
-- 안정성 정책: [`docs/dev-guide/ipc-stability.md`](docs/dev-guide/ipc-stability.md)
+- 안정성 정책: [`docs/dev-guide/api-conventions.md`](docs/dev-guide/api-conventions.md) 의 "안정성 정책" 절
 
 ## 라이선스
 

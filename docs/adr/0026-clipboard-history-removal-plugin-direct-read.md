@@ -46,5 +46,5 @@
 
 - [ADR-0009: plugin sandbox deferred](0009-plugin-sandbox-deferred.md) — plugin = 비-샌드박스 OS 프로세스, 직접 native read 근거
 - [features/clipboard](../features/clipboard/index.md) · [plugins/clipboard-viewer](../plugins/clipboard-viewer/index.md)
-- [dev-guide/ipc-stability](../dev-guide/ipc-stability.md) — 0.x break 정책 / api_baseline 가드
+- [dev-guide/api-conventions "안정성 정책" 절](../dev-guide/api-conventions.md) — 0.x break 정책 / api_baseline 가드
 - `crates/tasty-plugin-clipboard-viewer/` · CHANGELOG `[Unreleased] > Removed`
