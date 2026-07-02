@@ -43,6 +43,19 @@ Tab·Workspace 서브탭의 일반 콤보 목록 아래에 **quick-switch 섹션
 
 **충돌 검사**는 합성 콤보 `"{modifier}+{key}"` 기준으로 두 축을 본다: ① 일반 액션과의 충돌(`find_conflict` — `next_tab`/`prev_tab` 포함), ② 다른 quick-switch 슬롯과의 중복(슬롯 배열 자체 순회, 탭↔워크스페이스 교차 포함). 충돌 시 기존 확인 팝업(`PendingBinding`)을 재사용하며, accept 시 상대가 일반 필드면 그 바인딩을, 다른 슬롯이면 그 슬롯을 비운다. 또한 modifier 변경 등으로 현재 슬롯 콤보가 일반 액션과 겹치면 섹션 하단에 경고 라벨을 표시해 조용히 넘기지 않는다.
 
+#### dispatch — 키 입력 → 전환
+
+실제 키 소비는 `input/shortcuts/numeric.rs`(`handle_numeric_switch_shortcuts`)가 담당한다. `Key::Character` 이면(슬롯 키가 `"q"` 같은 문자일 수 있으므로 숫자 여부를 따지지 않는다) 대상(Tab/Workspace)을 switch-number 오버레이와 **단일 소스**인 `switch_target_for(kb, ctrl, shift, alt)` 로 판정한다 — modifier 가 `tab_switch_modifier`/`workspace_switch_modifier` 와 **단독** 일치할 때만 대상이 잡히므로 맨 키 오검출이 없다. 대상이 잡히면 **next/prev 키를 먼저**(커스텀 슬롯 키가 next/prev 키와 겹칠 때 next/prev 우선), 그 다음 슬롯 배열을 `position` 검색한다. 매칭 결과:
+
+- 탭: next/prev → `next_tab_in_pane`/`prev_tab_in_pane`, 슬롯 index → `goto_tab_in_pane(index)`.
+- 워크스페이스: next/prev → `next_workspace_in_active_category`/`prev_workspace_in_active_category`, 슬롯 local → 카테고리 토글 on 이면 `switch_workspace_in_active_category(local)`, off 면 `switch_workspace(local)`.
+
+어느 것도 매칭 안 되면 조용히 `false` 를 돌려 다른 단축키 매칭으로 넘긴다. 이 메서드들은 focused pane 의 active_tab · active_workspace(= **사용자 포커스 상태**)를 바꾸므로 **사용자 키 입력 경로에서만** 호출되며 release IPC/CLI 로 노출되지 않는다(원칙 1/3). Command Palette·더블탭 파리티는 범위 밖.
+
+#### switch-number 오버레이 — 표시 = 동작
+
+modifier 홀드 중 탭바(`tab_bar.rs`)·사이드바(`sidebar/view.rs`)에 뜨는 숫자 키캡은 고정 상수가 아니라 **설정된 슬롯 키**를 그린다(`switch_overlay::tab_digit(kb, index)`/`workspace_digit(kb, local_idx)`). 슬롯을 `"q"` 로 바꾸면 키캡도 `Q` 로 뜬다(눌러서 가는 곳 = 표시). 워크스페이스 사이드바는 카테고리 토글 on 시 **active 카테고리 내 로컬 인덱스**로 키캡을 매기고 **비활성 카테고리 행에는 키캡을 표시하지 않는다** — 슬롯 단축키가 active 카테고리 로컬 순서로 전환하기 때문(전역 인덱스로 표시하던 과거 불일치를 제거). 오버레이 modifier 상태는 egui raw_input(실제 사용자 키)만 반영하므로 IPC/에이전트로는 강제 표시할 수 없다.
+
 ### 편집 — 녹화 + 충돌
 
 Settings Keybindings 탭에서 키 조합을 직접 **녹화**해 할당한다. 충돌(같은 조합이 다른 액션에 이미) 시 확인 팝업으로 수락/거부. 편집은 draft 에 쌓이고 Save 시 커밋(`crud.rs`). quick-switch 슬롯의 bare-key 녹화·충돌 흐름은 위 [quick-switch 섹션 UI](#quick-switch-섹션-ui-tabworkspace-서브탭) 참조.

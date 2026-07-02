@@ -67,6 +67,7 @@ pub fn draw_collapsed_sidebar(
         .show(ctx, |ui| {
             let props = SidebarCollapsedProps {
                 theme: &th,
+                kb: &engine.settings.keybindings,
                 workspaces: &workspaces,
                 categories: sections.as_deref(),
                 tools_hover,

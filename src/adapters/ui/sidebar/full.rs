@@ -141,6 +141,7 @@ pub fn draw_full_sidebar(
         .show(ctx, |ui| {
             let props = SidebarFullProps {
                 theme: &th,
+                kb: &engine.settings.keybindings,
                 workspaces: &workspaces,
                 categories: sections.as_deref(),
                 drag,

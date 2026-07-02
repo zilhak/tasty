@@ -289,3 +289,162 @@ fn zoom_out_clamps_at_6px() {
         Some(6.0)
     );
 }
+
+// ── handle_numeric_switch_shortcuts: quick-switch 슬롯/next/prev 배선 (QS03) ──
+//
+// 기본 프리셋: tab modifier=ctrl, workspace modifier=alt, tab next/prev="l"/"h",
+// workspace next/prev="j"/"k", workspace_categories_enabled=false.
+
+fn add_test_workspace(state: &mut crate::state::AppState, engine: &mut crate::core::CoreState) {
+    let event = crate::core::apply_create_workspace_inner(
+        engine,
+        None,
+        "terminal".to_string(),
+        serde_json::Value::Null,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let crate::core::intent::CoreEvent::WorkspaceCreated { index, .. } = event else {
+        panic!("apply_create_workspace_inner did not return WorkspaceCreated");
+    };
+    state.active_workspace = index;
+}
+
+#[test]
+fn custom_tab_slot_key_switches_correct_tab() {
+    let (mut state, mut engine) = fresh_state();
+    // focused pane 에 탭 3개 확보 (초기 1 + 2).
+    state.add_tab(&mut engine).unwrap();
+    state.add_tab(&mut engine).unwrap();
+    state.goto_tab_in_pane(&mut engine, 0);
+    // 3번째 슬롯(index 2)을 "q" 로 재바인딩.
+    let mut kb = crate::settings::KeybindingSettings::default();
+    kb.set_tab_slot_key(2, "q");
+    // ctrl(기본 tab modifier) + "q" → focused pane 의 3번째 탭(index 2)으로 전환.
+    let consumed = MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("q"),
+        true,  // ctrl
+        false, // shift
+        false, // alt
+    );
+    assert!(consumed);
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 2);
+}
+
+#[test]
+fn tab_next_prev_keys_cycle_focused_pane_tabs() {
+    let (mut state, mut engine) = fresh_state();
+    state.add_tab(&mut engine).unwrap();
+    state.add_tab(&mut engine).unwrap(); // 3 tabs
+    state.goto_tab_in_pane(&mut engine, 0);
+    let kb = crate::settings::KeybindingSettings::default(); // next="l", prev="h", modifier ctrl
+    // ctrl+l → 다음 탭.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("l"),
+        true,
+        false,
+        false,
+    ));
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 1);
+    // ctrl+h → 이전 탭.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("h"),
+        true,
+        false,
+        false,
+    ));
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, 0);
+}
+
+#[test]
+fn workspace_next_prev_keys_trigger_category_switch() {
+    let (mut state, mut engine) = fresh_state();
+    add_test_workspace(&mut state, &mut engine); // ws 1
+    add_test_workspace(&mut state, &mut engine); // ws 2
+    state.switch_workspace(&mut engine, 0);
+    let kb = crate::settings::KeybindingSettings::default(); // next="j", prev="k", modifier alt
+    // alt+j → 같은 카테고리(기본 전부 normal) 내 다음 워크스페이스.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("j"),
+        false,
+        false,
+        true, // alt
+    ));
+    assert_eq!(state.active_workspace, 1);
+    // alt+k → 이전.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("k"),
+        false,
+        false,
+        true,
+    ));
+    assert_eq!(state.active_workspace, 0);
+}
+
+#[test]
+fn workspace_slot_key_switches_workspace() {
+    let (mut state, mut engine) = fresh_state();
+    add_test_workspace(&mut state, &mut engine); // ws 1
+    add_test_workspace(&mut state, &mut engine); // ws 2
+    state.switch_workspace(&mut engine, 0);
+    let kb = crate::settings::KeybindingSettings::default(); // slot "2" = index 1
+    // alt+"2" → 2번째 워크스페이스(index 1). 카테고리 off → 전역 인덱스.
+    assert!(MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("2"),
+        false,
+        false,
+        true,
+    ));
+    assert_eq!(state.active_workspace, 1);
+}
+
+#[test]
+fn wrong_modifier_and_unbound_key_return_false() {
+    let (mut state, mut engine) = fresh_state();
+    state.add_tab(&mut engine).unwrap(); // 2 tabs
+    state.goto_tab_in_pane(&mut engine, 0);
+    let kb = crate::settings::KeybindingSettings::default();
+    let before = state.focused_pane(&engine).unwrap().active_tab;
+    // modifier 없이 "1" → 대상 판정 None → false (맨 키 오검출 없음).
+    assert!(!MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("1"),
+        false,
+        false,
+        false,
+    ));
+    // ctrl + "z"(어떤 슬롯/next/prev 도 아님) → false.
+    assert!(!MainView::handle_numeric_switch_shortcuts(
+        &mut state,
+        &mut engine,
+        &kb,
+        &k_char("z"),
+        true,
+        false,
+        false,
+    ));
+    assert_eq!(state.focused_pane(&engine).unwrap().active_tab, before);
+}

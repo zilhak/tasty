@@ -49,6 +49,8 @@ pub struct CategorySectionView {
 /// Full sidebar 의 view 입력. labels 는 사전 번역.
 pub struct SidebarFullProps<'a> {
     pub theme: &'a Theme,
+    /// 워크스페이스 slot 키캡 문자를 읽을 키바인딩 설정 (switch-number overlay).
+    pub kb: &'a crate::settings::KeybindingSettings,
     pub workspaces: &'a [WorkspaceEntryView],
     /// `Some` 이면 카테고리 섹션으로 그룹 렌더(토글 on), `None` 이면 기존 평면 렌더.
     pub categories: Option<&'a [CategorySectionView]>,
@@ -77,6 +79,8 @@ pub struct DragSnapshot {
 /// Collapsed sidebar 의 view 입력.
 pub struct SidebarCollapsedProps<'a> {
     pub theme: &'a Theme,
+    /// 워크스페이스 slot 키캡 문자를 읽을 키바인딩 설정 (switch-number overlay).
+    pub kb: &'a crate::settings::KeybindingSettings,
     pub workspaces: &'a [WorkspaceEntryView],
     /// `Some` 이면 카테고리 그룹으로 렌더(토글 on) — `---` 버튼 + 소속 아바타.
     /// `None` 이면 기존 평면 아바타 나열.
@@ -336,11 +340,28 @@ pub fn draw_full_sidebar_view(
                     if !section.collapsed && !section.entries.is_empty() {
                         // 목록 블록 상단 보더.
                         draw_list_separator(ui, th, 0.0);
+                        // SC05: 키캡은 **active 카테고리**에서만, 그 카테고리 내 **로컬 인덱스**
+                        // 로 표시(전역 인덱스 아님). 비활성 카테고리 행은 키캡 미표시 —
+                        // 슬롯 단축키가 active 카테고리 로컬 순서로 전환하기 때문(표시=동작).
+                        let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
                         for (row_i, (global_idx, ws)) in section.entries.iter().enumerate() {
                             if row_i > 0 {
                                 draw_list_separator(ui, th, 32.0);
                             }
-                            draw_ws_row(ui, props, *global_idx, ws, &mut actions, &mut card_rects);
+                            let switch_digit = if props.workspace_switch_held && active_sec {
+                                crate::adapters::ui::switch_overlay::workspace_digit(props.kb, row_i)
+                            } else {
+                                None
+                            };
+                            draw_ws_row(
+                                ui,
+                                props,
+                                *global_idx,
+                                ws,
+                                switch_digit,
+                                &mut actions,
+                                &mut card_rects,
+                            );
                         }
                         // 하단 보더 없음 — 그룹 경계는 헤더 아래 상단 보더 1줄만
                         // (디자인 rowList bottomBorder=false, 2026-07-02 고아 구분선 제거).
@@ -368,7 +389,13 @@ pub fn draw_full_sidebar_view(
                     if i > 0 {
                         draw_list_separator(ui, th, 32.0);
                     }
-                    draw_ws_row(ui, props, i, ws, &mut actions, &mut card_rects);
+                    // 평면 모드(카테고리 off): 전역=로컬 → 전역 인덱스가 곧 슬롯 인덱스.
+                    let switch_digit = if props.workspace_switch_held {
+                        crate::adapters::ui::switch_overlay::workspace_digit(props.kb, i)
+                    } else {
+                        None
+                    };
+                    draw_ws_row(ui, props, i, ws, switch_digit, &mut actions, &mut card_rects);
                 }
 
                 // 디자인 chrome.jsx:141-149 — 목록 블록 하단 보더 (separator).
@@ -603,15 +630,27 @@ pub fn draw_collapsed_sidebar_view(
                     });
                 }
                 if !section.collapsed {
-                    for (global_idx, ws) in &section.entries {
-                        draw_collapsed_avatar(ui, props, *global_idx, ws, &mut actions);
+                    // SC05: active 카테고리에서만, 로컬 인덱스로 키캡(full 사이드바와 동일).
+                    let active_sec = section.entries.iter().any(|(_, ws)| ws.is_active);
+                    for (row_i, (global_idx, ws)) in section.entries.iter().enumerate() {
+                        let switch_digit = if props.workspace_switch_held && active_sec {
+                            crate::adapters::ui::switch_overlay::workspace_digit(props.kb, row_i)
+                        } else {
+                            None
+                        };
+                        draw_collapsed_avatar(ui, props, *global_idx, ws, switch_digit, &mut actions);
                     }
                 }
             }
         } else {
             // 평면 렌더(토글 off) — 전체 아바타 나열.
             for (i, ws) in props.workspaces.iter().enumerate() {
-                draw_collapsed_avatar(ui, props, i, ws, &mut actions);
+                let switch_digit = if props.workspace_switch_held {
+                    crate::adapters::ui::switch_overlay::workspace_digit(props.kb, i)
+                } else {
+                    None
+                };
+                draw_collapsed_avatar(ui, props, i, ws, switch_digit, &mut actions);
             }
         }
 
@@ -849,17 +888,14 @@ fn draw_ws_row(
     props: &SidebarFullProps<'_>,
     global_idx: usize,
     ws: &WorkspaceEntryView,
+    // switch-number overlay: workspace_switch_modifier 홀드 시 leading status dot 을
+    // 대체할 키캡 문자. 호출부(섹션 루프)가 로컬 인덱스·active 카테고리 여부를 판단해
+    // 넘긴다(SC05). None 이면 원래 status dot 유지.
+    switch_digit: Option<&str>,
     actions: &mut Vec<SidebarFullAction>,
     card_rects: &mut Vec<(usize, egui::Rect)>,
 ) {
     let th = props.theme;
-    // switch-number overlay: workspace_switch_modifier 홀드 + 단축키 있는 ws(1–9)는
-    // leading status dot 을 숫자 키캡으로 in-place 교체. 전역 인덱스 기준.
-    let switch_digit = if props.workspace_switch_held {
-        crate::adapters::ui::switch_overlay::workspace_digit(global_idx)
-    } else {
-        None
-    };
     let fade = crate::adapters::ui::switch_overlay::appear_fade(
         ui.ctx(),
         th,
@@ -991,6 +1027,8 @@ fn draw_collapsed_avatar(
     props: &SidebarCollapsedProps<'_>,
     global_idx: usize,
     ws: &WorkspaceEntryView,
+    // switch-number overlay 키캡 문자(SC05, 호출부 판단). None 이면 letter avatar 유지.
+    switch_digit: Option<&str>,
     actions: &mut Vec<SidebarCollapsedAction>,
 ) {
     let th = props.theme;
@@ -1020,13 +1058,8 @@ fn draw_collapsed_avatar(
         ui.painter()
             .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
-    // switch-number overlay: workspace_switch_modifier 홀드 + 단축키 있는 ws(1–9)는
-    // letter avatar 자리에 숫자 키캡을 in-place 그린다(코너 상태 dot 은 유지).
-    let switch_digit = if props.workspace_switch_held {
-        crate::adapters::ui::switch_overlay::workspace_digit(global_idx)
-    } else {
-        None
-    };
+    // switch-number overlay: workspace_switch_modifier 홀드 시 letter avatar 자리에
+    // 숫자 키캡을 in-place 그린다(코너 상태 dot 은 유지). 키캡 문자는 호출부가 판단.
     // 등장 페이드(90ms, motion-ui-fast) — held 여부로 매 프레임 구동.
     let fade = crate::adapters::ui::switch_overlay::appear_fade(
         ui.ctx(),
@@ -1358,10 +1391,12 @@ mod tests {
         let ctx = egui::Context::default();
         let mut out: Vec<SidebarFullAction> = Vec::new();
         let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
         drop(ctx.run(egui::RawInput::default(), |ctx| {
             egui::SidePanel::left("test_full").show(ctx, |ui| {
                 let props = SidebarFullProps {
                     theme: &theme,
+                    kb: &kb,
                     workspaces: &workspaces,
                     categories: None,
                     drag: None,
@@ -1388,10 +1423,12 @@ mod tests {
         let ctx = egui::Context::default();
         let mut out: Vec<SidebarCollapsedAction> = Vec::new();
         let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
         drop(ctx.run(egui::RawInput::default(), |ctx| {
             egui::SidePanel::left("test_collapsed").show(ctx, |ui| {
                 let props = SidebarCollapsedProps {
                     theme: &theme,
+                    kb: &kb,
                     workspaces: &workspaces,
                     categories: None,
                     tools_hover: "Tools menu",
@@ -1407,19 +1444,22 @@ mod tests {
     fn run_collapsed_grouped(
         sections: Vec<CategorySectionView>,
         workspaces: Vec<WorkspaceEntryView>,
+        switch_held: bool,
     ) -> Vec<SidebarCollapsedAction> {
         let ctx = egui::Context::default();
         let mut out: Vec<SidebarCollapsedAction> = Vec::new();
         let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
         drop(ctx.run(egui::RawInput::default(), |ctx| {
             egui::SidePanel::left("test_collapsed_grouped").show(ctx, |ui| {
                 let props = SidebarCollapsedProps {
                     theme: &theme,
+                    kb: &kb,
                     workspaces: &workspaces,
                     categories: Some(&sections),
                     tools_hover: "Tools menu",
                     plugin_alert: 0,
-                    workspace_switch_held: false,
+                    workspace_switch_held: switch_held,
                 };
                 out = draw_collapsed_sidebar_view(ui, &props);
             });
@@ -1452,7 +1492,7 @@ mod tests {
                 entries: vec![],
             },
         ];
-        let actions = run_collapsed_grouped(sections, workspaces);
+        let actions = run_collapsed_grouped(sections, workspaces, false);
         assert!(actions.is_empty(), "expected no actions, got {actions:?}");
     }
 
@@ -1539,14 +1579,17 @@ mod tests {
     fn run_full_grouped(
         sections: Vec<CategorySectionView>,
         workspaces: Vec<WorkspaceEntryView>,
+        switch_held: bool,
     ) -> Vec<SidebarFullAction> {
         let ctx = egui::Context::default();
         let mut out: Vec<SidebarFullAction> = Vec::new();
         let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
         drop(ctx.run(egui::RawInput::default(), |ctx| {
             egui::SidePanel::left("test_full_grouped").show(ctx, |ui| {
                 let props = SidebarFullProps {
                     theme: &theme,
+                    kb: &kb,
                     workspaces: &workspaces,
                     categories: Some(&sections),
                     drag: None,
@@ -1558,7 +1601,7 @@ mod tests {
                     workspaces_heading: "WORKSPACES",
                     occupied_hover: "Held by another client",
                     plugin_alert: 0,
-                    workspace_switch_held: false,
+                    workspace_switch_held: switch_held,
                 };
                 out = draw_full_sidebar_view(ui, &props);
             });
@@ -1590,8 +1633,42 @@ mod tests {
                 entries: vec![],
             },
         ];
-        let actions = run_full_grouped(sections, workspaces);
+        let actions = run_full_grouped(sections, workspaces, false);
         assert!(actions.is_empty(), "expected no actions, got {actions:?}");
+    }
+
+    #[test]
+    fn grouped_switch_overlay_local_index_paths_do_not_panic() {
+        // SC05: 카테고리 그룹 + workspace_switch_held. active 워크스페이스(전역 3)가
+        // 두 번째 카테고리에 속하고, 그 카테고리 로컬 인덱스는 [0,1] — 첫 카테고리
+        // (비활성)는 키캡 미표시(None), 활성 카테고리는 로컬 인덱스 기준 키캡. 두 경로
+        // (active/비active 카테고리, 로컬 인덱스 산출) 가 패닉 없이 layout 되는지.
+        let workspaces = vec![
+            mock_ws("a", false),
+            mock_ws("b", false),
+            mock_ws("c", false),
+            mock_ws("d", true),
+        ];
+        let sections = vec![
+            CategorySectionView {
+                id: 0,
+                label: "WORKSPACES".into(),
+                collapsed: false,
+                // 전역 [0,1] — 비활성 카테고리 → 키캡 미표시.
+                entries: vec![(0, mock_ws("a", false)), (1, mock_ws("b", false))],
+            },
+            CategorySectionView {
+                id: 1,
+                label: "Services".into(),
+                collapsed: false,
+                // 전역 [2,3] — active(d) 포함 → 로컬 인덱스 0,1 로 키캡.
+                entries: vec![(2, mock_ws("c", false)), (3, mock_ws("d", true))],
+            },
+        ];
+        let full = run_full_grouped(sections.clone(), workspaces.clone(), true);
+        assert!(full.is_empty(), "expected no actions, got {full:?}");
+        let collapsed = run_collapsed_grouped(sections, workspaces, true);
+        assert!(collapsed.is_empty(), "expected no actions, got {collapsed:?}");
     }
 
     #[test]

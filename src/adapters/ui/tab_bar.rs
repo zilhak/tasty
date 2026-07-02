@@ -63,6 +63,8 @@ pub struct TabDragView {
 /// View 입력 — 전체 pane 의 탭 바 + drag 상태 + appearance 옵션.
 pub struct PaneTabBarsProps<'a> {
     pub theme: &'a Theme,
+    /// 탭 slot 키캡 문자를 읽을 키바인딩 설정 (switch-number overlay 표시=동작 일치).
+    pub kb: &'a crate::settings::KeybindingSettings,
     pub panes: &'a [PaneTabBarView],
     pub scale_factor: f32,
     /// 사용자 옵션 — 탭 1 개의 가로 너비 (logical px).
@@ -369,6 +371,7 @@ pub fn draw_pane_tab_bars_view(
                                 // 폭/text_x 는 불변(아이콘 slot 중앙에 키캡) → 리플로 없음.
                                 let switch_digit =
                                     crate::adapters::ui::switch_overlay::tab_keycap_for(
+                                        props.kb,
                                         props.switch_overlay_pane,
                                         info.pane_id,
                                         i,
@@ -823,6 +826,7 @@ pub fn draw_pane_tab_bars(
 
     let props = PaneTabBarsProps {
         theme: &th,
+        kb: &engine.settings.keybindings,
         panes: &panes,
         scale_factor,
         tab_width: tab_w,
@@ -1025,10 +1029,12 @@ mod tests {
     fn run_view(panes: Vec<PaneTabBarView>, drag: Option<TabDragView>) -> PaneTabBarsOutput {
         let ctx = egui::Context::default();
         let theme = test_theme();
+        let kb = crate::settings::KeybindingSettings::default();
         let mut out = PaneTabBarsOutput::default();
         drop(ctx.run(egui::RawInput::default(), |ctx| {
             let props = PaneTabBarsProps {
                 theme: &theme,
+                kb: &kb,
                 panes: &panes,
                 scale_factor: 1.0,
                 tab_width: 160.0,
