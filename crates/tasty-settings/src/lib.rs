@@ -24,7 +24,10 @@ pub use general::{GeneralSettings, LinkModifier};
 pub use keybindings::KeybindingSettings;
 pub use port::SettingsStorage;
 pub use port_impl::FileSettingsStorage;
-pub use scripts::{ScriptEntry, ScriptRegistry, hash_bytes, hash_file};
+pub use scripts::{
+    AUTO_TRIGGER_EVENTS, AutoTrigger, ScriptEntry, ScriptRegistry, hash_bytes, hash_file,
+    is_auto_trigger_event,
+};
 pub use types::{AccessibilitySettings, MemorySettings, NotificationSettings, PerformanceSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
