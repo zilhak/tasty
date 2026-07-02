@@ -1966,4 +1966,59 @@ mod tests {
         assert_eq!(FALLBACK_SURFACE.focused_bg.g, 0);
         assert_eq!(FALLBACK_SURFACE.focused_bg.b, 0);
     }
+
+    // ── design-tokens 04 (F2b): component tier 접근자 zoom 회귀 + 값 불변 ──
+
+    /// zoom 1.0 에서 component 접근자가 tasty-ui-widgets 이식 전 위젯이 쓰던 값과
+    /// 정확히 일치함을 대표 속성으로 실측 대조 (갤러리 픽셀 diff 0 의 근거).
+    #[test]
+    fn component_accessors_invariant_at_zoom_one() {
+        let t = Theme::with_colors(dummy_colors(), false);
+        // primitive-직접 종착 — 구 매직넘버/파일 const 값이 zoom 1.0 에서 고정.
+        assert_eq!(t.button_height_lg().value(), 32.0); // control.rs CONTROL_HEIGHT_LG
+        assert_eq!(t.checkbox_size().value(), 16.0); // toggle.rs BOX
+        assert_eq!(t.switch_track_width().value(), 28.0); // toggle.rs SWITCH_W
+        assert_eq!(t.switch_track_height().value(), 16.0); // toggle.rs SWITCH_H
+        assert_eq!(t.switch_thumb_size().value(), 12.0); // toggle.rs SWITCH_THUMB
+        assert_eq!(t.switch_thumb_inset().value(), 2.0); // toggle.rs SWITCH_INSET
+        assert_eq!(t.tag_size().value(), 16.0); // chip.rs TAG_HEIGHT
+        assert_eq!(t.tag_dot_size().value(), 8.0); // chip.rs TAG_DOT
+        assert_eq!(t.kbd_gap().value(), 3.0); // chip.rs KBD_GAP
+        assert_eq!(t.kbd_shadow_depth().value(), 2.0); // chip.rs KBD_BOTTOM_BORDER
+        assert_eq!(t.select_chevron_room().value(), 28.0); // select.rs CHEVRON_PAD
+        // semantic-종착 — 이식 전 위젯이 읽던 바로 그 zoomed 필드와 동일 값.
+        assert_eq!(t.button_gap().value(), t.spacing_sm.value()); // button gap
+        assert_eq!(t.button_radius().value(), t.corner_radius.value());
+        assert_eq!(t.input_height().value(), t.item_height_interactive.value());
+        assert_eq!(t.tree_row_height().value(), t.item_height_tree.value()); // =22
+        assert_eq!(
+            t.menu_item_height().value(),
+            t.item_height_interactive.value()
+        );
+        assert_eq!(t.status_dot_size().value(), 8.0);
+        // 색: component 접근자 == 이식 전 semantic 접근자.
+        assert_eq!(t.button_primary_bg(), t.accent_primary());
+        assert_eq!(t.input_border_focus(), t.border_focus());
+        assert_eq!(t.status_dot_success(), t.accent_success());
+        assert_eq!(t.tree_row_fg_active(), t.text_primary());
+        assert_eq!(t.table_header_fg(), t.text_muted());
+    }
+
+    /// zoom≠1.0 에서 이식으로 스케일이 생긴 치수 접근자가 with_colors_and_zoom
+    /// resolve(= value*zoom 반올림)를 따라감을 검증 (완료조건 3).
+    #[test]
+    fn component_dim_accessors_scale_with_zoom() {
+        let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
+        // primitive-직접: 구 고정 매직넘버가 이제 zoom 스케일한다.
+        assert_eq!(t.button_height_lg().value(), 48.0); // 32 * 1.5
+        assert_eq!(t.checkbox_size().value(), 24.0); // 16 * 1.5
+        assert_eq!(t.switch_track_width().value(), 42.0); // 28 * 1.5
+        assert_eq!(t.tag_size().value(), 24.0); // 16 * 1.5
+        assert_eq!(t.kbd_gap().value(), 5.0); // 3 * 1.5 = 4.5 → round 5
+        assert_eq!(t.select_chevron_room().value(), 42.0); // 28 * 1.5
+        // semantic-종착: 대응 zoomed 필드를 그대로 반영한다.
+        assert_eq!(t.button_gap().value(), t.spacing_sm.value()); // 12
+        assert_eq!(t.tree_row_height().value(), t.item_height_tree.value()); // 33
+        assert_eq!(t.input_height().value(), 42.0); // control-height 28 * 1.5
+    }
 }
