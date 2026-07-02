@@ -388,20 +388,11 @@ fn route_engine_handler(
         // markdown 제자리 이동 (04) — 주소창(03) 플러그인이 자기 surface 를 새 파일로 교체.
         #[cfg(feature = "gui")]
         "markdown.navigate" => markdown::handle_navigate(state, id, request.params.clone()),
-        // image surface 조작 — com.tasty.image plugin이 외부에 노출하는 namespace의
-        // 호스트 어댑터. plugin 비활성 상태에서도 CLI/직접 IPC로 호출 가능.
+        // image surface 조작 — com.tasty.image plugin namespace 의 호스트 어댑터.
+        // host 는 open(ConvertSurface)/list(surface 순회)만 담당하고, 픽셀 편집 계열
+        // (save/export_png/paste/next/prev)은 plugin 이 자기 namespace 에서 처리한다.
         #[cfg(feature = "gui")]
         "image.open" => image::handle_open(core, state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "image.save" => image::handle_save(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "image.export_png" => image::handle_export_png(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "image.next" => image::handle_next(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "image.prev" => image::handle_prev(state, engine, id, &request.params),
-        #[cfg(feature = "gui")]
-        "image.paste" => image::handle_paste(state, engine, id, &request.params),
         #[cfg(feature = "gui")]
         "image.list" => image::handle_list(state, engine, id),
         // memory: regular (공유 네임스페이스 + owner enforcement)

@@ -1,5 +1,9 @@
-//! `image.*` IPC 핸들러. plugin/CLI/외부 클라이언트가 image surface를 조작하기 위한
-//! "얇은 어댑터" — 호스트의 ImagePanel/ImageView/ImageViewStore에 위임한다.
+//! `image.*` IPC 핸들러 — host 가 소유한 표면만 담당하는 "얇은 어댑터".
+//!
+//! `image.open`(ConvertSurface) / `image.list`(surface 순회) 만 host 가 처리한다.
+//! 픽셀 편집 계열(`image.save`/`export_png`/`paste`/`next`/`prev`)은 com.tasty.image
+//! plugin 이 자기 `image` namespace 에서 직접 처리한다 (namespace forward 가 host
+//! 라우터보다 먼저 매칭) — 옛 host `ImagePanel`/`ImageView` 위임 핸들러는 C1 에서 제거.
 //!
 //! 모든 메서드는 `surface_id`를 명시적으로 받는다 (포커스 독립성 원칙).
 
@@ -48,186 +52,6 @@ pub fn handle_open(
     // 이전 ImageView가 남아 있으면 다음 렌더에서 새 path 픽셀이 로드되지 않을 수 있다.
     state.image_views.drop_view(sid);
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": sid, "path": path }))
-}
-
-/// `image.save { surface_id, path? }` — 현재 픽셀 버퍼를 PNG로 저장. path 생략 시
-/// `ImagePanel::save_path()` 사용 (열려 있는 파일의 `.png` 확장자 버전).
-pub fn handle_save(
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
-    let sid = match require_surface_id(params, &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let explicit = params
-        .get("path")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    let final_path = match explicit {
-        Some(p) => p,
-        None => match state
-            .image_panel_mut(engine, sid)
-            .and_then(|p| p.save_path())
-        {
-            Some(p) => p,
-            None => {
-                return JsonRpcResponse::invalid_params(
-                    id,
-                    "No save path: provide 'path' or open a file first",
-                );
-            }
-        },
-    };
-
-    let result = match state.image_views.get_mut(sid) {
-        Some(view) => view.save_png(&final_path),
-        None => {
-            return JsonRpcResponse::invalid_params(
-                id,
-                format!("Image surface {sid} has no view yet (render it first)"),
-            );
-        }
-    };
-    match result {
-        Ok(()) => {
-            if let Some(panel) = state.image_panel_mut(engine, sid)
-                && panel.is_blank()
-            {
-                panel.assign_file_path(final_path.clone());
-            }
-            JsonRpcResponse::success(id, json!({ "ok": true, "path": final_path }))
-        }
-        Err(e) => JsonRpcResponse::internal_error(id, format!("save failed: {e}")),
-    }
-}
-
-/// `image.export_png { surface_id, path }` — `save`와 동일하되 path 필수.
-pub fn handle_export_png(
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
-    if params.get("path").and_then(|v| v.as_str()).is_none() {
-        return JsonRpcResponse::invalid_params(id, "Missing required 'path' parameter");
-    }
-    handle_save(state, engine, id, params)
-}
-
-/// `image.next { surface_id }` — 디렉터리 내 다음 이미지로 이동.
-pub fn handle_next(
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
-    step_navigation(state, engine, id, params, true)
-}
-
-/// `image.prev { surface_id }` — 디렉터리 내 이전 이미지로 이동.
-pub fn handle_prev(
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
-    step_navigation(state, engine, id, params, false)
-}
-
-fn step_navigation(
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    id: Value,
-    params: &Value,
-    forward: bool,
-) -> JsonRpcResponse {
-    let sid = match require_surface_id(params, &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-
-    let mut image_views = std::mem::take(&mut state.image_views);
-    let result = if let Some(panel) = state.image_panel_mut(engine, sid) {
-        let new_path = if forward {
-            panel.step_next()
-        } else {
-            panel.step_prev()
-        };
-        match new_path {
-            Some(path) => {
-                if let Some(view) = image_views.get_mut(sid) {
-                    view.load_after_navigation(panel);
-                }
-                Ok(path)
-            }
-            None => Err("No sibling images available".to_string()),
-        }
-    } else {
-        Err(format!("Surface {sid} is not an image"))
-    };
-    state.image_views = image_views;
-
-    match result {
-        Ok(path) => JsonRpcResponse::success(id, json!({ "ok": true, "path": path })),
-        Err(e) => JsonRpcResponse::invalid_params(id, e),
-    }
-}
-
-/// `image.paste { surface_id }` — 시스템 클립보드의 이미지를 floating selection으로 paste.
-pub fn handle_paste(
-    state: &mut AppState,
-    engine: &mut crate::core::CoreState,
-    id: Value,
-    params: &Value,
-) -> JsonRpcResponse {
-    let sid = match require_surface_id(params, &id) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-
-    let mut cb = match arboard::Clipboard::new() {
-        Ok(cb) => cb,
-        Err(e) => {
-            return JsonRpcResponse::internal_error(id, format!("clipboard open failed: {e}"));
-        }
-    };
-    let image = match cb.get_image() {
-        Ok(img) => img,
-        Err(e) => {
-            return JsonRpcResponse::invalid_params(id, format!("no image on clipboard: {e}"));
-        }
-    };
-
-    // 외부 입력 (IPC 로 받은 이미지 바이트) → ColorImage 픽셀.
-    #[allow(clippy::disallowed_methods)]
-    let pixels: Vec<egui::Color32> = image
-        .bytes
-        .chunks_exact(4)
-        .map(|c| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
-        .collect();
-    let color_image = egui::ColorImage {
-        size: [image.width, image.height],
-        pixels,
-    };
-
-    let mut image_views = std::mem::take(&mut state.image_views);
-    let pasted = if let Some(panel) = state.image_panel_mut(engine, sid) {
-        let view = image_views.get_or_init(panel);
-        view.paste_image(color_image);
-        true
-    } else {
-        false
-    };
-    state.image_views = image_views;
-
-    if pasted {
-        JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": sid }))
-    } else {
-        JsonRpcResponse::invalid_params(id, format!("Surface {sid} is not an image"))
-    }
 }
 
 /// `image.list` — 열린 모든 image surface 목록.
@@ -416,62 +240,6 @@ mod tests {
     }
 
     #[test]
-    fn next_prev_wrap_around_in_directory() {
-        let (mut core, mut state, mut engine, _home_tmp) = make_test_core_state();
-        let sid = first_surface_id(&mut state, &mut engine);
-        let tmp = tempfile::tempdir().unwrap();
-        let a = write_blank_png(tmp.path(), "a.png");
-        let b = write_blank_png(tmp.path(), "b.png");
-        let c = write_blank_png(tmp.path(), "c.png");
-
-        // Open with first file. After convert_surface_to_kind, ImagePanel populates
-        // dir_images by scanning the directory.
-        let resp = handle_open(
-            &mut core,
-            &mut state,
-            &mut engine,
-            Value::Null,
-            &json!({ "surface_id": sid, "path": a }),
-        );
-        assert!(resp.result.is_some());
-
-        let resp = handle_next(
-            &mut state,
-            &mut engine,
-            Value::Null,
-            &json!({ "surface_id": sid }),
-        );
-        let v = resp.result.expect("next ok");
-        assert_eq!(v["path"], b);
-
-        let resp = handle_next(
-            &mut state,
-            &mut engine,
-            Value::Null,
-            &json!({ "surface_id": sid }),
-        );
-        assert_eq!(resp.result.unwrap()["path"], c);
-
-        // wrap forward
-        let resp = handle_next(
-            &mut state,
-            &mut engine,
-            Value::Null,
-            &json!({ "surface_id": sid }),
-        );
-        resp.result.expect("wraps to first");
-
-        // step back
-        let resp = handle_prev(
-            &mut state,
-            &mut engine,
-            Value::Null,
-            &json!({ "surface_id": sid }),
-        );
-        resp.result.expect("prev ok");
-    }
-
-    #[test]
     fn list_finds_image_surfaces() {
         let (_core, mut state, mut engine, _home_tmp) = make_test_core_state();
         let sid = first_surface_id(&mut state, &mut engine);
@@ -483,21 +251,5 @@ mod tests {
         let entries = v["entries"].as_array().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["surface_id"], sid);
-    }
-
-    #[test]
-    fn save_rejects_without_view() {
-        let (_core, mut state, mut engine, _home_tmp) = make_test_core_state();
-        let sid = first_surface_id(&mut state, &mut engine);
-        // Convert to image but never render → no ImageView in store.
-        assert!(state.test_convert_surface_to_kind(&mut engine, sid, "image", &json!({})));
-
-        let resp = handle_save(
-            &mut state,
-            &mut engine,
-            Value::Null,
-            &json!({ "surface_id": sid, "path": "/tmp/x.png" }),
-        );
-        assert!(resp.error.is_some());
     }
 }
