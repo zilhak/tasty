@@ -11,26 +11,29 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::catalog::icons::{
-    CHEVRON_DOWN, CHEVRON_RIGHT, FOLDER, MockGlyph, PLUG, SETTINGS, TERMINAL,
+    CHEVRON_DOWN, CHEVRON_RIGHT, FOLDER, MockGlyph, PLUG, REMOTE, SETTINGS, TERMINAL,
 };
 use crate::catalog::spec::{self, StageVariant, TokenChip};
 
-/// (name, badge, active)
-const WORKSPACES: &[(&str, Option<&str>, bool)] = &[
-    ("main", None, true),
-    ("review", Some("3"), false),
-    ("agent", None, false),
+/// (name, badge, active, mirror). mirror=원격 워크스페이스 로컬 mirror → 이름 앞
+/// leading `>_→` glyph(디자인 2026-07-02 workspace-mirror-indicator). "infra" 는
+/// mirror + notif 배지 공존 데모(채널 분리: glyph / badge 별도 축).
+const WORKSPACES: &[(&str, Option<&str>, bool, bool)] = &[
+    ("main", None, true, false),
+    ("infra", Some("2"), false, true),
+    ("agent", None, false, false),
 ];
 
 /// 카테고리 그룹 데모 데이터 (디자인 데모셋: normal / Services / Archived).
-/// (label, collapsed, rows[(name, badge, active)]).
-const CATEGORY_SECTIONS: &[(&str, bool, &[(&str, Option<&str>, bool)])] = &[
+/// (label, collapsed, rows[(name, badge, active, mirror)]). SERVICES 의 "agent" 는
+/// mirror — full 은 leading glyph, rail 은 아바타 우하단 corner chip 으로 표시.
+const CATEGORY_SECTIONS: &[(&str, bool, &[(&str, Option<&str>, bool, bool)])] = &[
     (
         "WORKSPACES",
         false,
-        &[("main", None, true), ("review", Some("3"), false)],
+        &[("main", None, true, false), ("review", Some("3"), false, false)],
     ),
-    ("SERVICES", false, &[("agent", None, false)]),
+    ("SERVICES", false, &[("agent", None, false, true)]),
     // 빈 + 접힌 카테고리 — 헤더(chevron ▶)만.
     ("ARCHIVED", true, &[]),
 ];
@@ -52,6 +55,43 @@ fn paint_icon(
 ) {
     let r = egui::Rect::from_center_size(center, egui::vec2(size, size));
     glyph.image(size, color).paint_at(ui, r);
+}
+
+/// Full 행 — 이름 앞 leading mirror glyph(`>_→`, workspace_mirror_fg). glyph 를
+/// `name_x` 중앙에 그리고, 이름이 시작할 x(글리프 폭 + gap 만큼 우측)를 돌려준다.
+/// mirror 가 아니면 `name_x` 를 그대로 반환(리플로 없음).
+fn mirror_leading_glyph(ui: &mut egui::Ui, theme: &Theme, name_x: f32, cy: f32, mirror: bool) -> f32 {
+    if !mirror {
+        return name_x;
+    }
+    let sz = theme.workspace_mirror_icon_size().value();
+    paint_icon(
+        ui,
+        REMOTE,
+        egui::pos2(name_x + sz * 0.5, cy),
+        sz,
+        egui::Color32::from(theme.workspace_mirror_fg()),
+    );
+    name_x + sz + theme.workspace_mirror_gap().value()
+}
+
+/// Collapsed 아바타 우하단 mirror corner chip — bg-sidebar halo(반경 spacing_sm) +
+/// 중앙 `>_→` glyph(spacing_sm, workspace_mirror_fg). notif(우상단)·attached(둘레
+/// ring)와 채널 분리.
+fn mirror_corner_chip(ui: &mut egui::Ui, theme: &Theme, avatar: egui::Rect) {
+    let halo_r = theme.spacing_sm.value();
+    let glyph = theme.spacing_sm.value();
+    let inset = theme.spacing_xs.value();
+    let c = egui::pos2(avatar.max.x - inset, avatar.max.y - inset);
+    ui.painter()
+        .circle_filled(c, halo_r, egui::Color32::from(theme.bg_sidebar()));
+    paint_icon(
+        ui,
+        REMOTE,
+        c,
+        glyph,
+        egui::Color32::from(theme.workspace_mirror_fg()),
+    );
 }
 
 fn full(ui: &mut egui::Ui, theme: &Theme) {
@@ -99,7 +139,7 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
     y += theme.spacing_lg.value();
 
     // ── workspace rows ──
-    for (name, badge, active) in WORKSPACES {
+    for (name, badge, active, mirror) in WORKSPACES {
         let row = egui::Rect::from_min_size(
             egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
             egui::vec2(w - theme.spacing_xs.value() * 2.0, row_h),
@@ -119,6 +159,7 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
         }
         let dot_r = theme.status_dot_size.value() * 0.5;
         let dc = egui::pos2(row.min.x + theme.spacing_md.value() + dot_r, row.center().y);
+        // dot 은 실행상태 전용(running=success / idle=muted). mirror 는 별도 축.
         p.circle_filled(
             dc,
             dot_r,
@@ -128,8 +169,11 @@ fn full(ui: &mut egui::Ui, theme: &Theme) {
                 theme.text_muted()
             }),
         );
+        let name_x = dc.x + dot_r + theme.spacing_sm.value();
+        // mirror 면 이름 앞 leading glyph 를 그리고 이름 시작 x 를 그만큼 우측으로.
+        let text_x = mirror_leading_glyph(ui, theme, name_x, row.center().y, *mirror);
         p.text(
-            egui::pos2(dc.x + dot_r + theme.spacing_sm.value(), row.center().y),
+            egui::pos2(text_x, row.center().y),
             egui::Align2::LEFT_CENTER,
             name,
             egui::FontId::proportional(theme.font_size_body.value()),
@@ -265,6 +309,7 @@ fn paint_ws_row(
     name: &str,
     badge: Option<&str>,
     active: bool,
+    mirror: bool,
 ) {
     let p = ui.painter_at(rect);
     if active {
@@ -293,8 +338,10 @@ fn paint_ws_row(
             theme.text_muted()
         }),
     );
+    let name_x = dc.x + dot_r + theme.spacing_sm.value();
+    let text_x = mirror_leading_glyph(ui, theme, name_x, rect.center().y, mirror);
     p.text(
-        egui::pos2(dc.x + dot_r + theme.spacing_sm.value(), rect.center().y),
+        egui::pos2(text_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         name,
         egui::FontId::proportional(theme.font_size_body.value()),
@@ -387,12 +434,12 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
             );
             p.rect_filled(rule, 0.0, theme.separator.to_egui_premultiplied());
             y += theme.border_width.value();
-            for (name, badge, active) in *rows {
+            for (name, badge, active, mirror) in *rows {
                 let row = egui::Rect::from_min_size(
                     egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
                     egui::vec2(w - theme.spacing_xs.value() * 2.0, row_h),
                 );
-                paint_ws_row(ui, theme, row, name, *badge, *active);
+                paint_ws_row(ui, theme, row, name, *badge, *active, *mirror);
                 y += row_h + theme.spacing_xs.value();
             }
         }
@@ -429,7 +476,7 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
 
         // 접힌 카테고리는 아바타 생략(`---` 만).
         if !*collapsed {
-            for (name, _badge, active) in *rows {
+            for (name, _badge, active, mirror) in *rows {
                 let area = egui::Rect::from_center_size(
                     egui::pos2(cx, y + slot * 0.5),
                     egui::vec2(slot, slot),
@@ -458,6 +505,10 @@ fn rail_categories(ui: &mut egui::Ui, theme: &Theme) {
                         theme.text_muted()
                     }),
                 );
+                // mirror 아바타 → 우하단 sky corner chip.
+                if *mirror {
+                    mirror_corner_chip(ui, theme, area);
+                }
                 y += slot + theme.spacing_sm.value();
             }
         }
@@ -485,6 +536,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("logo", "22 full / 24 rail"),
             ("row", "dot + name + badge"),
             ("active row", "surface-active + 2px inset accent"),
+            ("mirror", "leading >_→ glyph / rail corner chip"),
             ("footer", "Tools·Plugins·Settings, border-top"),
         ],
         &[
@@ -500,6 +552,11 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.accent_primary().into(),
             ),
             TokenChip::new(
+                "workspace-mirror-fg",
+                "mirror glyph/chip",
+                theme.workspace_mirror_fg().into(),
+            ),
+            TokenChip::new(
                 "border-default",
                 "footer divider",
                 theme.border_default().into(),
@@ -512,6 +569,9 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         theme,
         "Full 은 워크스페이스를 이름·badge 까지 펼치고, 접으면 52px rail 로 줄어 \
          아이콘 슬롯만 남는다. 활성 행은 surface-active + 좌측 2px accent 로 표시. \
+         원격 워크스페이스 로컬 mirror 는 status dot(실행상태)과 별개로 — full 은 이름 앞 \
+         leading `>_→` glyph, rail 은 아바타 우하단 sky corner chip(workspace-mirror-fg)으로 \
+         표시(notif 우상단 / attached 둘레 ring 과 채널 분리). \
          카테고리 토글 on 이면 chevron 헤더로 그룹화(빈·접힌 카테고리는 헤더/`---` 만), \
          레일은 카테고리 경계를 `---` 버튼으로 표시한다.",
     );
