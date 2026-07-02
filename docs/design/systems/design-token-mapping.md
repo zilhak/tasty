@@ -84,6 +84,23 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 
 > **결론(검증 완료)**: switch-number overlay 8 토큰 모두 **기존 Theme 접근자(`accent_primary()`/`text_on_accent()`/`surface0`/`subtext1`/`surface1`)·위젯 상수·`font_size_micro` 로 커버** → P0 에서 추가할 신규 Theme 필드 없음. P2(draw)는 비active 키캡=`kbd()` 재사용, active 키캡=`accent_primary()` fill + `text_on_accent()` 숫자로 그린다.
 
+## preset split-zone (preset-editor 경계 hover-split)
+
+디자인 `tokens/components.css:295-296` 의 `--tasty-preset-split-zone-*` 2종. 프리셋 편집기에서
+surface 경계 30% 존을 hover 할 때 뜨는 밴드+분할선 색. accent-primary 는 **테마 가변색**이라
+`from_rgba` 리터럴이 아니라 `HexColor::with_alpha` 로 rgb 를 보존하고 알파만 파생한다(scrim 은
+고정 검정이라 `from_rgba` 지만, 이건 가변 accent 라 접근자 방식이 정답). dtcg 인제스트 완료.
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme | 비고 |
+|---|---|---|---|
+| `--tasty-preset-split-zone-bg` | `color-mix(accent-primary 22%, transparent)` | `Theme::preset_split_zone_bg()` = `accent_primary().with_alpha(56)` | 존 밴드 채움(22%×255≈56). `PRESET_SPLIT_ZONE_BG_ALPHA` |
+| `--tasty-preset-split-zone-border` | `color-mix(accent-primary 55%, transparent)` | `Theme::preset_split_zone_border()` = `accent_primary().with_alpha(140)` | 안쪽 변 2px 분할선(55%×255≈140). `PRESET_SPLIT_ZONE_BORDER_ALPHA`. 2px 굵기는 `tab_indicator_width` 재사용 |
+
+> **비raw 치수(preview 전용 egui 좌표)**: 존 밴드 30%(`SPLIT_ZONE_EDGE=0.3`)·degrade 임계
+> 46px(`SPLIT_ZONE_MIN`)·close × 14px·add-tab 22px 는 `demo_layout.rs`/`preset_editor.rs` 의
+> egui logical raw f32 관행(PANE_GAP 등과 동일)으로, typed-length(PhysicalPx/LogicalPx) 규칙
+> 밖이다(egui `Rect` 좌표계, tasty `Rect` 아님) — 소스에 주석 명시.
+
 ## 토큰이 아닌 raw 값 주의
 
 디자인 inline style 에는 토큰이 아닌 raw px 도 섞여 있다 (전사 시 그대로 옮기되 기록):

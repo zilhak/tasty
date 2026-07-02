@@ -436,3 +436,20 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - **근거**: 디자인 changelog `2026-07-01-workspace-categories.md` "2026-07-02 — Category
   header padding rebalanced + orphaned group divider removed", `chrome.jsx` `CategoryHeader`
   (padding xs/sm)·`rowList(bottomBorder)`·컨테이너 paddingTop/marginTop. 2026-07-02 반영.
+
+## preset 편집기 — 정적 specimen 은 존/× hover·crosshair 를 재현 못 한다
+
+- **증상**: 갤러리 `preset_editor` specimen 의 편집 직접조작(경계 split 존·mini tab close ×·
+  add-tab +)이 본체 `demo_layout.rs` 의 live 동작과 100% 동형이 아니다.
+- **원인**: 갤러리 specimen 은 binary 미의존 **정적**(Theme-only) 렌더라 마우스 hover·pointer
+  추적·커서 아이콘이 없다. 경계 split 존은 커서 위치로 활성 변을 고르고(`pick_zone`) crosshair
+  커서로 바뀌며, tab × 는 `active || hover` 일 때만, add-tab hover fill 도 실시간 pointer 로
+  결정되는데 — 정적 캔버스엔 이 입력 축이 존재하지 않는다.
+- **처방(전사)**: specimen 은 이 상태들을 **고정 상태 예시**로 전사한다 — `draw_edit_direct_mock`
+  이 Left 존을 활성 예시로 항상 그리고(`draw_split_zone_overlay_mock`), 탭 하나는 active 의 ×
+  rest 상태, 다른 하나는 hover 상태(overlay_active fill), add-tab 은 hover fill 상태로 굳혀
+  보여준다. crosshair 커서는 정적에서 표현 불가라 생략(밴드+2px 분할선 시각만 전사). 색·치수는
+  본체와 **동일 토큰**(`preset_split_zone_bg/border`, `overlay_active/hover`, 14×14 ×, 22×20 +,
+  30% 밴드)이라 구조·토큰 축은 정합하고, 오직 "입력 상태 전이"만 정적↔live 로 갈린다.
+- **근거**: 디자인 changelog `2026-07-02-preset-editor.md`, `gallery/preset_editor.jsx`
+  (`SurfaceBox`/`pickZone`/`AddTabBtn`). preset-edit-03 반영(2026-07-03).

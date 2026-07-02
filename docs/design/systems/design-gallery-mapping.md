@@ -102,9 +102,15 @@ text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme �
 | `PreviewBody` (scope 분기) | `draw_scope_body` | `DemoLayout::show` (`Root::Panes`/`TabFrame`) |
 | `KINDS`(아이콘/accent) | `Kind::{icon,accent}` (정적 4종) | `kind_icon`/`kind_accent` (kind str→`icons::Icon`, plugin kind 중립 fallback) |
 | `activeKind`(탭 대표 kind) | `tab_kind` | `SurfNode::rep_kind` |
+| `SurfaceBox` edit 핸들(remove 단독) | `draw_handle_cluster_mock` | `draw_handle_cluster` (split-right/down 제거 — 경계 존이 대체) |
+| `pickZone`/경계 split 존 overlay | `draw_split_zone_overlay_mock` (Left 고정 예시) | `pick_zone` + `draw_split_zone_overlay` (커서 기반 4변 · crosshair · before/row 매핑) |
+| mini tab close `×` | `draw_edit_direct_mock` (active rest + hover 예시) | `draw_pane_card` 탭 루프(`show_close` · `Act::RemoveTab`) |
+| `AddTabBtn` `+` (22×20 hover) | `draw_edit_direct_mock` (hover 고정) | `draw_pane_card` add-tab(`ADD_TAB_W` · overlay_hover) |
 
 **갤러리 vs 본체 차이**: 갤러리 specimen 은 binary 미의존(정적 샘플 트리·정적 라벨, mini-tab 클릭
-전환 없음). 본체는 실제 `WorkspacePreset`/`TabPreset`/`PanePreset` 을 공통 preview 모델(`SurfNode`/
+전환 없음). 편집 직접조작(경계 split 존·tab ×·add-tab)은 정적이라 hover/pointer/crosshair 축이
+없어 **고정 상태 예시**로만 전사한다(정적↔live 차이는 [design-parity-notes](design-parity-notes.md)
+"preset 편집기 — 정적 specimen…" 참조). 본체는 실제 `WorkspacePreset`/`TabPreset`/`PanePreset` 을 공통 preview 모델(`SurfNode`/
 `PaneNode`/`Root`)로 정규화하고, leaf 라벨을 주입 resolver 로 해석한다. split 방향은 라이브
 모델 의미(`Vertical`=좌우/row, `Horizontal`=상하/column, capture·apply 와 일치)를 따른다.
 
