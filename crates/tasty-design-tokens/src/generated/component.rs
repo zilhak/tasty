@@ -497,3 +497,13 @@ pub mod tree_row {
     /// `component.tree-row-meta-font-size` → `{semantic.font-size-micro}` = 10px
     pub const META_FONT_SIZE: LogicalPx = crate::generated::semantic::FONT_SIZE_MICRO;
 }
+
+pub mod workspace {
+    use tasty_type_geometry::length::LogicalPx;
+
+    /// `component.workspace-mirror-gap` → `{semantic.space-xs}` = 4px
+    pub const MIRROR_GAP: LogicalPx = crate::generated::semantic::SPACE_XS;
+
+    /// `component.workspace-mirror-icon-size` → `{semantic.icon-size-xs}` = 12px
+    pub const MIRROR_ICON_SIZE: LogicalPx = crate::generated::semantic::ICON_SIZE_XS;
+}

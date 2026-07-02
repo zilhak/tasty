@@ -617,6 +617,10 @@
       "$type": "color",
       "$value": "{primitive.color-sky}"
     },
+    "accent-remote": {
+      "$type": "color",
+      "$value": "{primitive.color-sky}"
+    },
     "accent-success": {
       "$type": "color",
       "$value": "{primitive.color-green}"
@@ -1821,10 +1825,6 @@
       "$type": "color",
       "$value": "{semantic.status-idle}"
     },
-    "status-dot-info": {
-      "$type": "color",
-      "$value": "{semantic.accent-info}"
-    },
     "status-dot-success": {
       "$type": "color",
       "$value": "{semantic.accent-success}"
@@ -1856,6 +1856,18 @@
     "status-dot-pulse-duration": {
       "$type": "duration",
       "$value": "{primitive.duration-1600}"
+    },
+    "workspace-mirror-fg": {
+      "$type": "color",
+      "$value": "{semantic.accent-remote}"
+    },
+    "workspace-mirror-icon-size": {
+      "$type": "dimension",
+      "$value": "{semantic.icon-size-xs}"
+    },
+    "workspace-mirror-gap": {
+      "$type": "dimension",
+      "$value": "{semantic.space-xs}"
     },
     "spinner-size": {
       "$type": "dimension",

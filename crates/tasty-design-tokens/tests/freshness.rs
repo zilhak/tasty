@@ -32,7 +32,7 @@ const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[
     ),
 ];
 
-/// 토큰 census — 디자인 changelog 2026-07-02 기준 488 (104/127/257).
+/// 토큰 census — 디자인 changelog 2026-07-02 기준 491 (104/128/259).
 /// vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
 #[test]
 fn token_census_matches_design_export() {
@@ -44,15 +44,15 @@ fn token_census_matches_design_export() {
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Semantic),
-        127,
+        128,
         "semantic census drift"
     );
     assert_eq!(
         set.tier_count(dtcg::Tier::Component),
-        257,
+        259,
         "component census drift"
     );
-    assert_eq!(set.len(), 488, "total census drift");
+    assert_eq!(set.len(), 491, "total census drift");
 }
 
 /// in-memory 재생성 결과가 커밋된 생성물 텍스트와 완전히 일치해야 한다.

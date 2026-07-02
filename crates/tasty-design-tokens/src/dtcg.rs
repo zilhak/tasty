@@ -628,6 +628,7 @@ pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
     ("semantic.accent-macos-min", "accent_macos_min()"),
     ("semantic.accent-macos-zoom", "accent_macos_zoom()"),
     ("semantic.accent-primary", "accent_primary()"),
+    ("semantic.accent-remote", "accent_remote()"),
     ("semantic.accent-success", "accent_success()"),
     ("semantic.accent-warning", "accent_warning()"),
     ("semantic.accent-window-close", "accent_window_close()"),
@@ -682,6 +683,9 @@ pub const SEMANTIC_COLOR_ACCESSOR_GEN: &[(&str, &str, &str)] = &[
     // accent (의미색)
     ("semantic.accent-primary", "accent_primary", "blue"),
     ("semantic.accent-info", "accent_info", "sky"),
+    // accent-remote: mirror/원격 origin 전용 role. accent-info 와 같은 sky 지만 의미 분리
+    // (accent-info 는 git-viewer/chip/banner/explorer/preset 다수 실사용처 — 용도 격리).
+    ("semantic.accent-remote", "accent_remote", "sky"),
     ("semantic.accent-success", "accent_success", "green"),
     ("semantic.accent-warning", "accent_warning", "yellow"),
     ("semantic.accent-danger", "accent_danger", "red"),

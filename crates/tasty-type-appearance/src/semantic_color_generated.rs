@@ -87,6 +87,12 @@ impl crate::theme::Theme {
         self.sky
     }
 
+    /// `semantic.accent-remote` → `{primitive.color-sky}`
+    #[inline]
+    pub fn accent_remote(&self) -> HexColor {
+        self.sky
+    }
+
     /// `semantic.accent-success` → `{primitive.color-green}`
     #[inline]
     pub fn accent_success(&self) -> HexColor {

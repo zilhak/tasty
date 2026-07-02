@@ -707,12 +707,6 @@ impl crate::theme::Theme {
         self.accent_danger()
     }
 
-    /// `component.status-dot-info` → `{semantic.accent-info}`
-    #[inline]
-    pub fn status_dot_info(&self) -> HexColor {
-        self.accent_info()
-    }
-
     /// `component.status-dot-size` → `{primitive.size-8}` = 8px
     #[inline]
     pub fn status_dot_size(&self) -> LogicalPx {
@@ -1359,5 +1353,23 @@ impl crate::theme::Theme {
     #[inline]
     pub fn tree_row_meta_font_size(&self) -> LogicalPx {
         self.font_size_micro
+    }
+
+    /// `component.workspace-mirror-fg` → `{semantic.accent-remote}`
+    #[inline]
+    pub fn workspace_mirror_fg(&self) -> HexColor {
+        self.accent_remote()
+    }
+
+    /// `component.workspace-mirror-gap` → `{semantic.space-xs}` = 4px
+    #[inline]
+    pub fn workspace_mirror_gap(&self) -> LogicalPx {
+        self.spacing_xs
+    }
+
+    /// `component.workspace-mirror-icon-size` → `{semantic.icon-size-xs}` = 12px
+    #[inline]
+    pub fn workspace_mirror_icon_size(&self) -> LogicalPx {
+        self.icon_glyph_size_xs
     }
 }
