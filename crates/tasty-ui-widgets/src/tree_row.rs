@@ -7,7 +7,6 @@
 use tasty_type_appearance::theme::Theme;
 
 use crate::icon_button::IconPainter;
-use crate::tokens;
 
 const CHEVRON_SLOT: f32 = 14.0;
 const ICON_GLYPH: f32 = 14.0;
@@ -28,11 +27,12 @@ pub fn tree_row(
     selected: bool,
     enabled: bool,
 ) -> egui::Response {
-    let height = tokens::TREE_ROW_HEIGHT;
-    let pad_l = theme.spacing_xs.value();
+    let height = theme.tree_row_height().value();
+    let pad_l = theme.tree_row_gap().value();
+    // pad_r·radius 는 대응 tree-row component 토큰 없음 → semantic.
     let pad_r = theme.spacing_sm.value();
     let radius = theme.corner_radius_sm.value();
-    let body = theme.font_size_body.value();
+    let body = theme.tree_row_font_size().value();
     let width = ui.available_width();
 
     let sense = if enabled {
@@ -48,20 +48,23 @@ pub fn tree_row(
             c.gamma_multiply(theme.opacity_disabled())
         }
     };
-    let indent_per_depth = theme.spacing_md.value();
+    let indent_per_depth = theme.tree_row_indent().value();
 
     if selected {
         ui.painter()
-            .rect_filled(rect, radius, theme.surface_active().to_egui());
+            .rect_filled(rect, radius, theme.tree_row_bg_active().to_egui());
     } else if enabled && resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, radius, theme.overlay_hover().to_egui_premultiplied());
+        ui.painter().rect_filled(
+            rect,
+            radius,
+            theme.tree_row_bg_hover().to_egui_premultiplied(),
+        );
     }
 
     let fg = if selected || (enabled && resp.hovered()) {
-        theme.text_primary().to_egui()
+        theme.tree_row_fg_active().to_egui()
     } else {
-        theme.text_secondary().to_egui()
+        theme.tree_row_fg().to_egui()
     };
     let muted = theme.subtext0.to_egui();
 
@@ -109,7 +112,7 @@ pub fn tree_row(
     if let Some(m) = meta {
         let g = ui.painter().layout_no_wrap(
             m.to_owned(),
-            egui::FontId::monospace(theme.font_size_micro.value()),
+            egui::FontId::monospace(theme.tree_row_meta_font_size().value()),
             egui::Color32::PLACEHOLDER,
         );
         let pos = egui::pos2(

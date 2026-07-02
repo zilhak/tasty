@@ -30,11 +30,6 @@ pub const PANEL_SPACING: f32 = SIZING.spacing_sm.0;
 /// settings 모달 본체와 갤러리의 layout idiom 공통 표준.
 pub const TAB_CONTENT_PADDING: i8 = SIZING.spacing_lg.0 as i8;
 
-// ── 디자인 컴포넌트 const — Theme 토큰에 대응값이 없어 위젯 레벨로 둔다 ──
-
-/// TreeRow 높이 = 디자인 control-height-tree(22). Theme 에 대응 토큰 없음.
-pub const TREE_ROW_HEIGHT: f32 = 22.0;
-
 // ── 구조 간격 상수 — DTCG primitive 직접 대응 (semantic 부재, Rust-only) ──
 //
 // 디자인은 4px 그리드 spacing 스텝 밖의 미세 구조 간격에 primitive `size-1/2/3`
