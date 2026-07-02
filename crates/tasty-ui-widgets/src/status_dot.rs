@@ -6,7 +6,6 @@
 
 use tasty_type_appearance::theme::Theme;
 
-const DOT: f32 = 8.0;
 const GAP: f32 = 6.0;
 const RING_INSET: f32 = 3.0; // CSS inset:-3px → base 반경 dot/2 + 3
 const PULSE_SCALE_MIN: f32 = 0.6;
@@ -26,11 +25,14 @@ pub enum StatusKind {
 impl StatusKind {
     fn color(self, theme: &Theme) -> egui::Color32 {
         match self {
-            StatusKind::Running => theme.accent_success().to_egui(),
+            // Running/Agent/Waiting/Error 는 `status-dot-*` component 색 대응.
+            // Idle 은 구현이 subtext0(#a6adc8) 를 쓰는데 디자인 status-dot-idle 은
+            // status-idle(#6c7086) 로 불일치 → 픽셀 diff 0 위해 semantic 유지.
+            StatusKind::Running => theme.status_dot_success().to_egui(),
             StatusKind::Idle => theme.subtext0.to_egui(),
-            StatusKind::Agent => theme.accent_agent().to_egui(),
-            StatusKind::Waiting => theme.accent_warning().to_egui(),
-            StatusKind::Error => theme.accent_danger().to_egui(),
+            StatusKind::Agent => theme.status_dot_agent().to_egui(),
+            StatusKind::Waiting => theme.status_dot_warning().to_egui(),
+            StatusKind::Error => theme.status_dot_danger().to_egui(),
         }
     }
 }
@@ -44,17 +46,18 @@ pub fn status_dot(
     pulse: bool,
     reduced_motion: bool,
 ) -> egui::Response {
+    let dot = theme.status_dot_size().value();
     let caption = theme.font_size_caption.value();
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::FontId::proportional(caption),
         egui::Color32::PLACEHOLDER,
     );
-    let h = DOT.max(galley.rect.height());
-    let w = DOT + GAP + galley.rect.width();
+    let h = dot.max(galley.rect.height());
+    let w = dot + GAP + galley.rect.width();
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
 
-    let dot_center = egui::pos2(rect.left() + DOT * 0.5, rect.center().y);
+    let dot_center = egui::pos2(rect.left() + dot * 0.5, rect.center().y);
     let color = kind.color(theme);
 
     if pulse && !reduced_motion {
@@ -62,15 +65,15 @@ pub fn status_dot(
         let period = theme.status_dot_pulse_ms() as f64 / 1000.0; // ms → s
         let phase = (t / period).rem_euclid(1.0) as f32;
         let eased = 1.0 - (1.0 - phase).powi(3); // ease-out cubic
-        let radius = (DOT * 0.5 + RING_INSET) * (PULSE_SCALE_MIN + PULSE_SCALE_RANGE * eased);
+        let radius = (dot * 0.5 + RING_INSET) * (PULSE_SCALE_MIN + PULSE_SCALE_RANGE * eased);
         let ring = color.gamma_multiply(PULSE_OPACITY * (1.0 - eased));
         ui.painter().circle_filled(dot_center, radius, ring);
         ui.ctx().request_repaint();
     }
-    ui.painter().circle_filled(dot_center, DOT * 0.5, color);
+    ui.painter().circle_filled(dot_center, dot * 0.5, color);
 
     let pos = egui::pos2(
-        rect.left() + DOT + GAP,
+        rect.left() + dot + GAP,
         rect.center().y - galley.rect.height() * 0.5,
     );
     ui.painter()
