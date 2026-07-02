@@ -529,6 +529,26 @@ pub(super) fn handle_debug_inject_key(
     }
 }
 
+/// 포커스 pane 의 활성 탭 전환 — 사용자의 탭 클릭 재현. release 미노출
+/// ([`handle_debug_switch_workspace`] 의 탭 대응). egui-mesh 텍스처 상태의 탭
+/// 전환/복귀 검증 등 탭 가시성 시나리오 재현에 쓴다.
+pub(super) fn handle_debug_switch_tab(
+    state: &mut AppState,
+    engine: &mut crate::core::CoreState,
+    id: serde_json::Value,
+    params: &serde_json::Value,
+) -> JsonRpcResponse {
+    let index = match params.get("index").and_then(|v| v.as_u64()) {
+        Some(i) => i as usize,
+        None => return JsonRpcResponse::invalid_params(id, "Missing 'index' parameter"),
+    };
+    if state.goto_tab_in_pane(engine, index) {
+        JsonRpcResponse::success(id, json!({"switched": true, "active": index}))
+    } else {
+        JsonRpcResponse::invalid_params(id, format!("Tab index {index} out of range"))
+    }
+}
+
 /// 워크스페이스 활성 전환 — 사용자의 포커스 조작(워크스페이스 전환) 재현. release 미노출.
 /// `active_workspace` 인덱스 변경뿐이라 OS 의존성 없음.
 pub(super) fn handle_debug_switch_workspace(

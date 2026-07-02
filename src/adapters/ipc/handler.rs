@@ -723,6 +723,8 @@ fn route_debug_handler(
         "debug.switch_workspace" => {
             debug::handle_debug_switch_workspace(state, engine, id, &request.params)
         }
+        #[cfg(feature = "gui")]
+        "debug.switch_tab" => debug::handle_debug_switch_tab(state, engine, id, &request.params),
         // 도구 메뉴 — 사용자 클릭 자동화. release 미노출.
         #[cfg(feature = "gui")]
         "debug.tool.list" => tool::handle_list(state, engine, id),
