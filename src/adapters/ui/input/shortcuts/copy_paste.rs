@@ -87,9 +87,8 @@ impl MainView {
         }
         let st = self.state.focused_surface_type(&self.core_state);
         if st.is_kind("image") {
-            if self.paste_to_image() {
-                self.mark_dirty();
-            }
+            // image surface 의 paste 는 plugin 이 자기 egui-mesh 입력 / `image.paste`
+            // IPC 로 처리한다 — host 는 terminal paste 로 흘리지 않고 소비만 한다.
             return true;
         }
         self.paste_to_terminal();

@@ -1,8 +1,7 @@
 use egui::emath::GuiRounding as _;
-use winit::keyboard::{Key, NamedKey};
 
 use crate::model::PhysicalRect;
-use crate::state::{AppState, PendingKeyEvent};
+use crate::state::AppState;
 use crate::theme;
 
 struct EguiPanelInfo {
@@ -81,25 +80,12 @@ pub fn draw_egui_panels(
         }
     }
 
-    // Drain pending keyboard events for non-terminal surfaces.
-    // Only the panel that is_keyboard_target will use these.
-    let surface_keys: Vec<PendingKeyEvent> = state.pending_surface_keys.drain(..).collect();
-
     // Second pass: render each egui panel.
     let mut pending_empty_action: Option<crate::empty_ui::EmptyAction> = None;
     // T11: explorer 의 사용자 조작은 deferred 로 모아 렌더 루프 종료 후 적용한다
     // (engine 가변 차용 충돌 회피 — empty action 패턴과 동일). (surface_id, action).
     let mut pending_explorer_action: Option<(u32, crate::explorer_ui::ExplorerAction)> = None;
-    // 마크다운 링크 클릭도 동일한 deferred 패턴: render 모듈은 AppState/Core 접근 불가라
-    // 직접 dispatch 하지 못한다. 클릭 결과(파일 경로/외부 URL)를 모아 렌더 루프 후 적용한다.
-    // (origin surface id, 분류된 클릭).
-    let mut pending_markdown_action: Option<(u32, crate::markdown_ui::LinkClick)> = None;
 
-    let markdown_surface = crate::theme::theme().surface("markdown").clone();
-    let markdown_font = engine
-        .settings
-        .appearance
-        .effective_font_for_kind("markdown");
     let explorer_font = engine
         .settings
         .appearance
@@ -108,9 +94,6 @@ pub fn draw_egui_panels(
 
     // Temporarily extract view stores so we can hold a `&mut View` from
     // the store at the same time as `&mut Panel` from `engine.workspaces`.
-    // (Same pattern applied to image_views just below.)
-    let mut markdown_views = std::mem::take(&mut state.markdown_views);
-    let mut image_views = std::mem::take(&mut state.image_views);
     let mut explorer_views = std::mem::take(&mut state.explorer_views);
     // 즐겨찾기는 전역(engine 보유)이라 루프에서 engine 이 가변 차용되는 동안엔
     // 읽을 수 없다 → 프레임당 1회 스냅샷(항목 소수, clone 비용 무시 가능).
@@ -152,58 +135,7 @@ pub fn draw_egui_panels(
             tab.surface_mut()
         };
 
-        if let Some(md_panel) = surface
-            .as_any_mut()
-            .downcast_mut::<crate::model::MarkdownPanel>()
-        {
-            let scroll_line = 24.0;
-            let scroll_page = info.logical_h * 0.8;
-            let key_scroll_y = if info.is_keyboard_target {
-                let mut dy = 0.0;
-                for k in &surface_keys {
-                    match &k.key {
-                        Key::Named(NamedKey::ArrowUp) => dy += scroll_line,
-                        Key::Named(NamedKey::ArrowDown) => dy -= scroll_line,
-                        Key::Named(NamedKey::PageUp) => dy += scroll_page,
-                        Key::Named(NamedKey::PageDown) => dy -= scroll_page,
-                        _ => {}
-                    }
-                }
-                dy
-            } else {
-                0.0
-            };
-            let md_bg = if info.is_keyboard_target {
-                markdown_surface.focused_bg.to_egui()
-            } else {
-                markdown_surface.unfocused_bg.to_egui()
-            };
-            // get_or_init 가 md_panel 을 가변 차용하므로 surface id 는 그 전에 읽어 둔다
-            // (DispatchFile 의 origin_surface_id — 그 surface 의 Pane 에 새 탭).
-            let md_sid = md_panel.id;
-            let view = markdown_views.get_or_init(md_panel);
-            let link = draw_panel_frame(
-                ctx,
-                &format!("md_panel_{}", id_suffix),
-                info,
-                8,
-                Some(md_bg),
-                |ui| {
-                    crate::markdown_ui::draw_markdown(
-                        ui,
-                        view,
-                        key_scroll_y,
-                        &id_suffix,
-                        &markdown_font,
-                    )
-                },
-            );
-            if let Some(click) = link
-                && pending_markdown_action.is_none()
-            {
-                pending_markdown_action = Some((md_sid, click));
-            }
-        } else if let Some(empty) = surface
+        if let Some(empty) = surface
             .as_any()
             .downcast_ref::<crate::model::EmptySurface>()
         {
@@ -212,21 +144,6 @@ pub fn draw_egui_panels(
                     pending_empty_action = Some(act);
                 }
             });
-        } else if let Some(image_panel) = surface
-            .as_any_mut()
-            .downcast_mut::<crate::model::ImagePanel>()
-        {
-            let view = image_views.get_or_init(image_panel);
-            draw_panel_frame(
-                ctx,
-                &format!("image_panel_{}", id_suffix),
-                info,
-                4,
-                None,
-                |ui| {
-                    crate::image_ui::draw_image(ui, image_panel, view);
-                },
-            );
         } else if let Some(ex_panel) = surface
             .as_any_mut()
             .downcast_mut::<crate::model::ExplorerPanel>()
@@ -291,40 +208,11 @@ pub fn draw_egui_panels(
     draw_occupied_overlays(ctx, active_ws, tab_bar_h, engine, pane_rects, scale_factor);
 
     // Restore extracted view stores before any further `state` access below.
-    state.markdown_views = markdown_views;
-    state.image_views = image_views;
     state.explorer_views = explorer_views;
 
     // T11: explorer deferred action 적용 (view store 복원 후 — state/engine 가변 차용 가능).
     if let Some((sid, act)) = pending_explorer_action {
         apply_explorer_action(state, engine, sid, act);
-    }
-
-    // 마크다운 링크 클릭 적용: 파일 경로는 Explorer "파일 열기" 와 동형으로 기존
-    // DispatchFile 파일핸들러 경로(같은 Pane 새 탭, 포커스 전환 없음)로, 외부 URL 은
-    // OS 위임으로 라우팅한다. 깨진 링크(없는 경로)는 dispatch 전 exists() 로 걸러 무반응
-    // 처리한다 — 빈 picker modal / "Failed to load" 탭 같은 과한 부수효과를 막는다.
-    if let Some((sid, click)) = pending_markdown_action {
-        match click {
-            crate::markdown_ui::LinkClick::File(path) => {
-                if path.exists() {
-                    state.dispatch_intent(
-                        crate::core::intent::DomainIntent::DispatchFile {
-                            target: crate::file::format::FileTarget::new(path),
-                            depth: crate::file::format::DetectDepth::Deep,
-                            origin_surface_id: Some(sid),
-                            ignore_size_limit: false,
-                        }
-                        .from_user_menu("markdown_link"),
-                    );
-                } else {
-                    tracing::debug!(?path, "markdown link target does not exist; ignoring");
-                }
-            }
-            crate::markdown_ui::LinkClick::External(url) => {
-                crate::terminal_link::open_uri(&url);
-            }
-        }
     }
 
     // Apply deferred empty surface action (must happen after render loop due to state mutation).

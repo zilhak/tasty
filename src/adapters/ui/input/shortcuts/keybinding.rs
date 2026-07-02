@@ -10,9 +10,7 @@ use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::model::SplitDirection;
 use crate::view::main::MainView;
 
-use super::{
-    focused_explorer_surface_id, focused_image_surface_id, matches_any_binding, send_app_event,
-};
+use super::{focused_explorer_surface_id, matches_any_binding, send_app_event};
 
 impl MainView {
     #[allow(clippy::too_many_arguments)] // reason: keybinding dispatch context
@@ -324,26 +322,6 @@ impl MainView {
                     }
                     .from_user_shortcut("rename_workspace"),
                 );
-            }
-            return true;
-        }
-        if matches_any_binding(&kb.image_undo, key, mods)
-            && state.focused_surface_type(engine).is_kind("image")
-        {
-            if let Some(sid) = focused_image_surface_id(state, engine)
-                && let Some(view) = state.image_views.get_mut(sid)
-            {
-                view.undo();
-            }
-            return true;
-        }
-        if matches_any_binding(&kb.image_redo, key, mods)
-            && state.focused_surface_type(engine).is_kind("image")
-        {
-            if let Some(sid) = focused_image_surface_id(state, engine)
-                && let Some(view) = state.image_views.get_mut(sid)
-            {
-                view.redo();
             }
             return true;
         }

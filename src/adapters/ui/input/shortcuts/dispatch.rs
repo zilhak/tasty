@@ -7,7 +7,7 @@ use crate::intent::{Intent, OpenPopupMode, UiIntent};
 use crate::view::main::MainView;
 
 use super::matches_any_binding;
-use super::{focused_explorer_surface_id, focused_image_surface_id, send_app_event};
+use super::{focused_explorer_surface_id, send_app_event};
 
 impl MainView {
     /// Dispatch a keybinding action by its stable `field_id` (예: `"new_workspace"`).
@@ -362,22 +362,6 @@ impl MainView {
                         }
                         .from_user_shortcut("rename_workspace_subtitle"),
                     );
-                }
-            }
-            "image_undo" => {
-                if state.focused_surface_type(engine).is_kind("image")
-                    && let Some(sid) = focused_image_surface_id(state, engine)
-                    && let Some(view) = state.image_views.get_mut(sid)
-                {
-                    view.undo();
-                }
-            }
-            "image_redo" => {
-                if state.focused_surface_type(engine).is_kind("image")
-                    && let Some(sid) = focused_image_surface_id(state, engine)
-                    && let Some(view) = state.image_views.get_mut(sid)
-                {
-                    view.redo();
                 }
             }
             "select_all" => {

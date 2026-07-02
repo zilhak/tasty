@@ -49,14 +49,6 @@ impl FocusedSurfaceType {
     }
 }
 
-/// A keyboard event destined for a non-terminal surface (Explorer, Markdown, etc.).
-/// Stored in a queue and consumed during the next egui render frame.
-#[cfg(feature = "gui")]
-#[derive(Debug, Clone)]
-pub struct PendingKeyEvent {
-    pub(crate) key: winit::keyboard::Key,
-}
-
 #[derive(Debug, Clone)]
 pub struct SurfaceMessage {
     pub(crate) id: u32,
@@ -325,9 +317,6 @@ pub struct AppState {
     pub(crate) memory: std::sync::Arc<std::sync::Mutex<dyn tasty_memory::MemoryStorage>>,
     /// Double-tap modifier captured from winit events, for the keybinding recorder to consume.
     pub(crate) captured_double_tap: Option<String>,
-    /// Keyboard events for non-terminal surfaces, consumed during egui rendering.
-    #[cfg(feature = "gui")]
-    pub(crate) pending_surface_keys: Vec<PendingKeyEvent>,
     /// Surface close lifecycle 알림 큐. close 직후 enqueue되고, App 메인 루프가
     /// drain하여 `PluginManager::notify_surface_closed`로 dispatch한다.
     /// `state/`는 `plugin/` 의존이 없어 별도 plain struct로 둔다.
@@ -352,16 +341,6 @@ pub struct AppState {
     /// 않은 상태(초기 로드된 탭에 대해 spurious `tab.created`가 발화되는 것을 막기
     /// 위해 첫 호출에서는 스냅샷만 만들고 이벤트를 enqueue하지 않는다).
     pub(crate) last_tab_locations: Option<std::collections::HashMap<u32, (u32, u32, String)>>,
-
-    /// Per-surface host view state for `MarkdownPanel` (content cache, scroll, load error).
-    /// `MarkdownPanel` itself only holds `file_path` + reload tracking; everything GUI-bound lives here.
-    #[cfg(feature = "gui")]
-    pub(crate) markdown_views: crate::adapters::ui::surface::markdown::view::MarkdownViewStore,
-
-    /// Per-surface host view state for `ImagePanel` (pixel buffer, textures, edit state,
-    /// undo history, brush settings, popup buffers).
-    #[cfg(feature = "gui")]
-    pub(crate) image_views: crate::adapters::ui::surface::image::view::ImageViewStore,
 
     /// Per-surface host view state for `ExplorerPanel` (directory entry cache, selection,
     /// sidebar tree expansion). `ExplorerPanel` itself only holds navigation/tab state.
@@ -840,8 +819,6 @@ impl AppState {
             dialogs: DialogState::new(),
             tab_bar_height: PhysicalPx(24.0),
             captured_double_tap: None,
-            #[cfg(feature = "gui")]
-            pending_surface_keys: Vec::new(),
             pending_lifecycle_events: Vec::new(),
             pending_host_events: Vec::new(),
             last_focused_surface_id: None,
@@ -868,10 +845,6 @@ impl AppState {
             toasts: crate::adapters::ui::ToastManager::new(),
             #[cfg(feature = "gui")]
             banners: crate::adapters::ui::BannerManager::new(),
-            #[cfg(feature = "gui")]
-            markdown_views: Default::default(),
-            #[cfg(feature = "gui")]
-            image_views: Default::default(),
             #[cfg(feature = "gui")]
             explorer_views: Default::default(),
             tool_registry: crate::plugin::tool_registry::ToolRegistry::new(),
@@ -975,8 +948,6 @@ impl AppState {
         }
         #[cfg(feature = "gui")]
         {
-            self.markdown_views.drop_view(surface_id);
-            self.image_views.drop_view(surface_id);
             self.explorer_views.drop_view(surface_id);
         }
         engine.command_index.drop_surface(surface_id);

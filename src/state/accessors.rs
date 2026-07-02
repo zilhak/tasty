@@ -92,42 +92,6 @@ impl AppState {
         engine.terminals.get_mut(id)
     }
 
-    /// Get the focused image panel (mutable).
-    pub fn focused_image_mut<'a>(
-        &self,
-        engine: &'a mut CoreState,
-    ) -> Option<&'a mut crate::model::ImagePanel> {
-        let pane = self.focused_pane_mut(engine)?;
-        let tab = pane.tabs.get_mut(pane.active_tab)?;
-        let focused = tab.focused_surface;
-        tab.layout_mut()
-            .find_leaf_mut(focused)?
-            .as_any_mut()
-            .downcast_mut::<crate::model::ImagePanel>()
-    }
-
-    /// Find an image panel by its surface ID across all workspaces (mutable).
-    /// Used by IPC handlers that target a specific surface — focus-independent.
-    pub fn image_panel_mut<'a>(
-        &self,
-        engine: &'a mut CoreState,
-        surface_id: u32,
-    ) -> Option<&'a mut crate::model::ImagePanel> {
-        let (ws_idx, pid) = engine.find_workspace_index_for_surface(surface_id)?;
-        let workspace = engine.workspaces.get_mut(ws_idx)?;
-        let pane = workspace.pane_layout_mut().find_pane_mut(pid)?;
-        for tab in &mut pane.tabs {
-            if tab.contains_surface(surface_id) {
-                return tab
-                    .layout_mut()
-                    .find_leaf_mut(surface_id)?
-                    .as_any_mut()
-                    .downcast_mut::<crate::model::ImagePanel>();
-            }
-        }
-        None
-    }
-
     /// Get the focused pane ID.
     pub fn focused_pane_id(&self, engine: &CoreState) -> crate::model::PaneId {
         self.active_workspace(engine).focused_pane

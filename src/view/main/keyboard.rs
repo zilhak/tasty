@@ -3,7 +3,7 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::MainView;
 use crate::core::intent::{DomainIntent, SendPayload};
-use crate::state::{FocusedSurfaceType, PendingKeyEvent};
+use crate::state::FocusedSurfaceType;
 use crate::view::ui::View;
 
 /// `decide_key_to_terminal` 의 입력 — 현재 focused terminal 의 read-only 상태.
@@ -40,7 +40,7 @@ impl MainView {
     pub(super) fn handle_keyboard_input(
         &mut self,
         event: &winit::event::KeyEvent,
-        egui_consumed: bool,
+        _egui_consumed: bool,
     ) {
         // Feed all key events (Press + Release) to the double-tap detector
         self.double_tap
@@ -242,18 +242,9 @@ impl MainView {
                     }
                 }
             }
-            FocusedSurfaceType::Kind(ref kind) if kind == "markdown" || kind == "image" => {
-                // If egui consumed the event (e.g. TextEdit has focus), skip
-                // the PendingKeyEvent queue to avoid double-handling.
-                if !egui_consumed {
-                    self.state.pending_surface_keys.push(PendingKeyEvent {
-                        key: event.logical_key.clone(),
-                    });
-                }
-                self.mark_dirty();
-            }
             _ => {
-                // html, empty, None — no keyboard handling needed here
+                // markdown/image(egui-mesh 자가 렌더), html, empty, None —
+                // host 측 키 큐 처리 없음.
             }
         }
 

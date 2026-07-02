@@ -17,7 +17,7 @@ use super::require_surface_id;
 /// `image.open { surface_id, path }` — surface를 image kind로 (재)설정 + 파일 로드.
 pub fn handle_open(
     core: &mut crate::core::Core,
-    state: &mut AppState,
+    _state: &mut AppState,
     engine: &mut crate::core::CoreState,
     id: Value,
     params: &Value,
@@ -49,8 +49,6 @@ pub fn handle_open(
     if !replaced {
         return JsonRpcResponse::invalid_params(id, format!("Surface {sid} not found"));
     }
-    // 이전 ImageView가 남아 있으면 다음 렌더에서 새 path 픽셀이 로드되지 않을 수 있다.
-    state.image_views.drop_view(sid);
     JsonRpcResponse::success(id, json!({ "ok": true, "surface_id": sid, "path": path }))
 }
 
@@ -78,19 +76,11 @@ fn collect_image_panels(layout: &crate::model::SurfaceLayout, out: &mut Vec<Valu
         crate::model::SurfaceLayout::Leaf(surface) => {
             // image 는 B2(ADR-0028)에서 egui-mesh 로 전환돼 host 측 stand-in 은
             // `EguiMeshSurface`(kind=="image")다. dir_count/current_index 는 plugin 이
-            // 소유하므로 host list 는 surface_id/path 만 노출한다. host-rendered `ImagePanel`
-            // 경로는 C1 제거 전까지(그리고 host 단위 test) 남아 있어 둘 다 매칭한다.
-            let any = surface.as_any();
-            if let Some(img) = any.downcast_ref::<crate::model::ImagePanel>() {
-                out.push(json!({
-                    "surface_id": img.id,
-                    "path": img.file_path,
-                    "dir_count": img.dir_images.len(),
-                    "current_index": img.current_index,
-                }));
-            } else if let Some(ms) =
-                any.downcast_ref::<crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface>()
-                && ms.kind_static == "image"
+            // 소유하므로 host list 는 surface_id/path 만 노출한다.
+            if let Some(ms) = surface
+                .as_any()
+                .downcast_ref::<crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface>(
+            ) && ms.kind_static == "image"
             {
                 out.push(json!({
                     "surface_id": ms.id,
@@ -142,7 +132,22 @@ mod tests {
         let themes: Arc<dyn ThemeStorage> = Arc::new(ThemeStore::new());
 
         let state = AppState::new(&mut engine, preset_store.clone(), memory.clone());
-        crate::engine::surface_registry::builtins::register_image(&engine.surface_registry);
+        // 런타임과 동형으로 "image" kind 를 egui-mesh stand-in(EguiMeshSurface) 으로
+        // 등록한다 (com.tasty.image plugin 이 hello 시 하는 등록의 test 재현).
+        let decl: tasty_plugin_manifest::SurfaceKindDecl = serde_json::from_value(json!({
+            "kind": "image",
+            "display_name_i18n_key": "surface.kind.image",
+            "rendering": "egui-mesh",
+        }))
+        .expect("test SurfaceKindDecl");
+        assert!(
+            crate::engine::surface_registry::egui_mesh::register_egui_mesh_kind(
+                &engine.surface_registry,
+                "com.tasty.image",
+                &decl,
+                crate::plugin::manifest::HOST_API_VERSION,
+            )
+        );
 
         let home_tmp = tempfile::tempdir().expect("test tempdir");
         let home = TmpHome::new(home_tmp.path().to_path_buf());
@@ -206,10 +211,13 @@ mod tests {
             &json!({ "surface_id": sid, "path": path.clone() }),
         );
         assert!(resp.result.is_some(), "open failed: {resp:?}");
-        let panel = state
-            .image_panel_mut(&mut engine, sid)
-            .expect("surface is now ImagePanel");
-        assert_eq!(panel.file_path.as_deref(), Some(path.as_str()));
+        // 변환 결과는 egui-mesh stand-in — list 로 kind/path 반영을 확인한다.
+        let resp = handle_list(&state, &engine, Value::Null);
+        let v = resp.result.expect("list ok");
+        let entries = v["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["surface_id"], sid);
+        assert_eq!(entries[0]["path"], path.as_str());
     }
 
     #[test]
