@@ -885,6 +885,11 @@ pub struct Theme {
     pub tab_indicator_width: LogicalPx,
     pub overlay_top_offset: LogicalPx,
 
+    /// host UI zoom 배율 (`with_colors_and_zoom` 에 전달된 값 그대로, 기본 1.0).
+    /// component 접근자가 primitive 직접 alias 치수에 곱하는 용도 — 이미 `zoomed()`
+    /// 로 resolve 된 필드에는 재적용하지 않는다.
+    pub ui_zoom: f32,
+
     // ── 라이트/다크 플래그 ──
     pub is_light: bool,
 
@@ -1043,6 +1048,7 @@ impl Theme {
             toast_accent_width: zoomed(SIZING.toast_accent_width),
             tab_indicator_width: SIZING.tab_indicator_width,
             overlay_top_offset: zoomed(SIZING.overlay_top_offset),
+            ui_zoom,
             is_light,
             surface_themes: c.surface_themes,
         }
@@ -1702,6 +1708,14 @@ mod tests {
         assert_eq!(base.traffic_size, zoomed.traffic_size);
         assert_eq!(base.caption_width, zoomed.caption_width);
         assert_eq!(base.window_button_size, zoomed.window_button_size);
+    }
+
+    #[test]
+    fn ui_zoom_field_stores_value() {
+        let default = Theme::with_colors(dummy_colors(), false);
+        assert_eq!(default.ui_zoom, 1.0);
+        let custom = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
+        assert_eq!(custom.ui_zoom, 1.5);
     }
 
     #[test]
