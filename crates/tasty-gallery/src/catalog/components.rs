@@ -43,6 +43,7 @@ pub mod prim_status_resolution;
 pub mod prim_tab;
 pub mod prim_table;
 pub mod remote;
+pub mod remote_attach;
 pub mod rename_popup;
 pub mod script_manager;
 pub mod search_bar;

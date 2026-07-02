@@ -700,6 +700,24 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "remote-workspace-attach",
+                    "Add remote workspace",
+                    vec![
+                        spec(
+                            "remote-workspace-attach",
+                            "Two-pane picker — loaded",
+                            Some("680×460 · attach profiles → remote workspace list · mirror on Connect"),
+                            components::remote_attach::draw,
+                        ),
+                        spec(
+                            "remote-workspace-attach-states",
+                            "Right-pane states — initial / connecting / error / empty",
+                            Some("centered non-list states off the left selection"),
+                            components::remote_attach::draw_states,
+                        ),
+                    ],
+                ),
+                section(
                     "search",
                     "Search bar",
                     vec![spec(
