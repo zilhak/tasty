@@ -172,7 +172,7 @@ impl GpuState {
 
         // Clear
         let th = crate::theme::theme();
-        let bg = th.base.to_float();
+        let bg = th.bg_panel().to_float();
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {

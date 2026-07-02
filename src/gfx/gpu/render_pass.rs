@@ -13,7 +13,7 @@ impl GpuState {
     ) {
         let bg_alpha = engine.settings.appearance.background_opacity as f64;
         let th = crate::theme::theme();
-        let bg = th.base.to_gpu_rgba();
+        let bg = th.bg_panel().to_gpu_rgba();
 
         let mut encoder = self
             .device
@@ -126,7 +126,8 @@ impl GpuState {
                         anchor_col: ime.anchor_col,
                         anchor_row: ime.anchor_row,
                         bg_color: theme.accent_primary().to_gpu_rgba(),
-                        fg_color: theme.base.to_gpu_rgba(),
+                        // accent 위 preedit 텍스트 — 값-동일 bg_panel()(=base). text_on_accent()=crust 와 값 달라 값-보존 유지.
+                        fg_color: theme.bg_panel().to_gpu_rgba(),
                     });
                 let render_preedit_ref = render_preedit.as_ref();
 

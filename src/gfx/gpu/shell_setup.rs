@@ -39,14 +39,15 @@ impl GpuState {
             tasty_egui_theme::apply_theme_to_egui(&th, ctx);
 
             // Local aliases for this function
-            let bg_panel = th.crust;
-            let bg_card = th.mantle;
-            let border = th.surface0;
-            let text_dim = th.subtext0;
+            let bg_panel = th.bg_app();
+            let bg_card = th.bg_sidebar();
+            let border = th.border_default();
+            let text_dim = th.text_muted();
             let amber = th.accent_warning();
             let red_err = th.accent_danger();
             let accent_ok = th.accent_success();
-            let accent_dis = th.surface1;
+            // 비활성 버튼 채움 — 값-동일 surface_hover()(=surface1). role 은 disabled-accent 이나 전용 토큰 부재.
+            let accent_dis = th.surface_hover();
 
             // Dark background panel
             egui::CentralPanel::default()
@@ -71,7 +72,7 @@ impl GpuState {
                             offset: [0, 8],
                             blur: 24,
                             spread: 0,
-                            color: th.crust.into(),
+                            color: th.bg_app().into(),
                         }),
                 )
                 .show(ctx, |ui| {
@@ -81,7 +82,7 @@ impl GpuState {
                             egui::RichText::new("Tasty")
                                 .size(30.0)
                                 .strong()
-                                .color(th.text),
+                                .color(th.text_primary()),
                         );
                         vspace(ui, STRUCT_GAP_2);
                         ui.label(
@@ -97,8 +98,8 @@ impl GpuState {
 
                     // ── Warning ────────────────────────────────────
                     egui::Frame::new()
-                        .fill(th.surface0.into())
-                        .stroke(egui::Stroke::new(1.0, th.surface1))
+                        .fill(th.surface_raised().into())
+                        .stroke(egui::Stroke::new(1.0, th.border_strong()))
                         .corner_radius(egui::CornerRadius::same(6))
                         .inner_margin(egui::Margin::symmetric(12, 10))
                         .show(ui, |ui| {
@@ -166,7 +167,7 @@ impl GpuState {
                                             .color(text_dim),
                                     )
                                     .min_size(btn_size)
-                                    .fill(th.base)
+                                    .fill(th.bg_panel())
                                     .stroke(egui::Stroke::new(1.0, border))
                                     .corner_radius(egui::CornerRadius::same(6)),
                                 )
@@ -183,10 +184,17 @@ impl GpuState {
                                 (
                                     th.accent_success(),
                                     egui::Stroke::new(1.0, th.accent_success()),
-                                    th.base,
+                                    // accent 위 텍스트 — 값-동일 bg_panel()(=base). text_on_accent()=crust 와 값 달라 값-보존 유지.
+                                    th.bg_panel(),
                                 )
                             } else {
-                                (accent_dis, egui::Stroke::new(1.0, th.surface2), th.overlay0)
+                                // divergence: 비활성 보더에 surface2 — border-role 전용 토큰 부재, 값-동일 surface_active().
+                                // overlay0 dim 텍스트 — 값-동일 text_placeholder()(=placeholder=overlay0 값).
+                                (
+                                    accent_dis,
+                                    egui::Stroke::new(1.0, th.surface_active()),
+                                    th.text_placeholder(),
+                                )
                             };
 
                             let ok_resp = ui.add_enabled(
