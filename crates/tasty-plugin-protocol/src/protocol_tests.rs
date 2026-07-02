@@ -303,6 +303,7 @@ fn set_context_params_round_trip() {
             ],
         },
         theme: None,
+        need_full_textures: false,
     };
     let s = serde_json::to_string(&params).unwrap();
     let parsed: SurfaceSetContextParams = serde_json::from_str(&s).unwrap();
@@ -348,6 +349,7 @@ fn set_context_theme_snapshot_round_trips() {
             is_light: false,
             ui_zoom: 1.25,
         }),
+        need_full_textures: false,
     };
     let s = serde_json::to_string(&params).unwrap();
     let parsed: SurfaceSetContextParams = serde_json::from_str(&s).unwrap();
@@ -371,6 +373,8 @@ fn paint_frame_event_round_trip() {
         surface_id: 42,
         buffer_id: SharedBufferId(9),
         generation: 1234,
+        frame_seq: 56,
+        full_textures: true,
     };
     let s = serde_json::to_string(&ev).unwrap();
     assert!(s.contains("\"kind\":\"paint_frame\""), "{s}");
@@ -380,11 +384,38 @@ fn paint_frame_event_round_trip() {
             surface_id,
             buffer_id,
             generation,
+            frame_seq,
+            full_textures,
         } => {
             assert_eq!(surface_id, 42);
             assert_eq!(buffer_id, SharedBufferId(9));
             assert_eq!(generation, 1234);
+            assert_eq!(frame_seq, 56);
+            assert!(full_textures);
         }
         other => panic!("expected PaintFrame, got {other:?}"),
     }
+}
+
+/// frame_seq / full_textures / need_full_textures 는 serde default — 구버전 JSON
+/// (필드 없음)이 그대로 파싱되고 기본값(0 / false)으로 복원된다 (additive 호환).
+#[test]
+fn texture_chain_fields_default_for_legacy_json() {
+    let legacy = r#"{"kind":"paint_frame","surface_id":1,"buffer_id":2,"generation":3}"#;
+    let parsed: PluginEvent = serde_json::from_str(legacy).unwrap();
+    match parsed {
+        PluginEvent::PaintFrame {
+            frame_seq,
+            full_textures,
+            ..
+        } => {
+            assert_eq!(frame_seq, 0);
+            assert!(!full_textures);
+        }
+        other => panic!("expected PaintFrame, got {other:?}"),
+    }
+
+    let legacy_ctx = r#"{"surface_id":1,"width_px":10,"height_px":10,"pixels_per_point":1.0}"#;
+    let parsed: SurfaceSetContextParams = serde_json::from_str(legacy_ctx).unwrap();
+    assert!(!parsed.need_full_textures);
 }

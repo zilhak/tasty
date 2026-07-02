@@ -68,6 +68,14 @@ pub struct GpuState {
     /// popup 과 동형 — host egui pass *후* content_rect 에 합성된다. banner 가 닫히면 정리.
     pub(in crate::gfx::gpu) egui_mesh_banner_targets:
         std::collections::HashMap<u64, egui_mesh_prepare::EguiMeshRenderTarget>,
+    /// textures_delta 체인 단절이 감지된 egui-mesh surface — full 재전송 요청 대기열.
+    /// 렌더 prepare 가 적재하고, [`Self::take_egui_mesh_full_requests`] 로 forward 측이
+    /// 다음 tick 에 소비해 `need_full_textures` set_context 를 보낸다.
+    pub(in crate::gfx::gpu) egui_mesh_full_requests: std::collections::HashSet<u32>,
+    /// popup 대응 full 재전송 요청 대기열 (instance_id).
+    pub(in crate::gfx::gpu) egui_mesh_popup_full_requests: std::collections::HashSet<u64>,
+    /// banner 대응 full 재전송 요청 대기열 (instance_id).
+    pub(in crate::gfx::gpu) egui_mesh_banner_full_requests: std::collections::HashSet<u64>,
     /// When set, the next render will capture the frame to this path as PNG.
     pub pending_screenshot: Option<std::path::PathBuf>,
     /// Frame timing 집계기. `RUST_LOG=tasty::gfx::perf=info` 일 때만 출력.
@@ -234,6 +242,9 @@ impl GpuState {
             egui_mesh_targets: std::collections::HashMap::new(),
             egui_mesh_popup_targets: std::collections::HashMap::new(),
             egui_mesh_banner_targets: std::collections::HashMap::new(),
+            egui_mesh_full_requests: std::collections::HashSet::new(),
+            egui_mesh_popup_full_requests: std::collections::HashSet::new(),
+            egui_mesh_banner_full_requests: std::collections::HashSet::new(),
             pending_screenshot: None,
             perf: PerfAggregator::new(),
             proxy,
@@ -260,6 +271,23 @@ impl GpuState {
     ) -> (bool, bool) {
         let response = self.egui_state.on_window_event(window, event);
         (response.consumed, response.repaint)
+    }
+
+    /// 렌더 prepare 가 적재한 egui-mesh full 재전송 요청(surface_id)을 비우며 가져간다.
+    /// MainView 가 render 직후 소비해, 다음 tick 의 forward 에서 해당 surface 에
+    /// `need_full_textures` set_context 를 보낸다.
+    pub fn take_egui_mesh_full_requests(&mut self) -> std::collections::HashSet<u32> {
+        std::mem::take(&mut self.egui_mesh_full_requests)
+    }
+
+    /// popup 대응 full 재전송 요청(instance_id) drain — [`Self::take_egui_mesh_full_requests`].
+    pub fn take_egui_mesh_popup_full_requests(&mut self) -> std::collections::HashSet<u64> {
+        std::mem::take(&mut self.egui_mesh_popup_full_requests)
+    }
+
+    /// banner 대응 full 재전송 요청(instance_id) drain — [`Self::take_egui_mesh_full_requests`].
+    pub fn take_egui_mesh_banner_full_requests(&mut self) -> std::collections::HashSet<u64> {
+        std::mem::take(&mut self.egui_mesh_banner_full_requests)
     }
 
     /// Render the full frame: egui UI + terminal surfaces.
@@ -433,11 +461,17 @@ impl GpuState {
 
         // egui-mesh surface 합성 (A1-S5): terminal 콘텐츠와 같은 layer(host chrome 아래).
         // plugin 이 자기 프로세스에서 tessellate 한 mesh 를 전용 Renderer 로 영역 합성한다.
+        // existing(비활성 탭/workspace 포함)이 비어도 호출해 닫힌 surface 의 GPU 자원을
+        // retain 으로 정리한다.
         if let Some(mgr) = plugin_manager {
             let mesh_targets =
                 egui_mesh_prepare::collect_egui_mesh_targets(state, engine, terminal_rect);
-            if !mesh_targets.is_empty() {
-                self.render_egui_mesh_surfaces(&view, &mesh_targets, mgr);
+            let mesh_existing = state.egui_mesh_surfaces_existing(engine);
+            if !mesh_targets.is_empty()
+                || !mesh_existing.is_empty()
+                || !self.egui_mesh_targets.is_empty()
+            {
+                self.render_egui_mesh_surfaces(&view, &mesh_targets, &mesh_existing, mgr);
             }
         }
 

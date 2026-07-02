@@ -105,6 +105,28 @@ impl MainView {
                     crate::crash_report::record_error(&msg);
                 }
             }
+
+            // egui-mesh full 재전송 요청 drain — 렌더 prepare 가 textures_delta 체인
+            // 단절을 감지한 대상들. surface 는 forward 추적 상태에, popup/banner 는
+            // AppState 에 옮겨 두면 다음 tick 의 forward 가 need_full_textures
+            // set_context 를 보낸다. plugin 은 스스로 재송신하지 않으므로 다음 tick 을
+            // dirty 로 보장한다.
+            let full_reqs = self.base.gpu.take_egui_mesh_full_requests();
+            let popup_full_reqs = self.base.gpu.take_egui_mesh_popup_full_requests();
+            let banner_full_reqs = self.base.gpu.take_egui_mesh_banner_full_requests();
+            if !full_reqs.is_empty() || !popup_full_reqs.is_empty() || !banner_full_reqs.is_empty()
+            {
+                for sid in full_reqs {
+                    self.egui_mesh.entry(sid).or_default().set_pending_full();
+                }
+                self.state
+                    .plugin_mesh_popup_full_requests
+                    .extend(popup_full_reqs);
+                self.state
+                    .plugin_mesh_banner_full_requests
+                    .extend(banner_full_reqs);
+                self.base.dirty = true;
+            }
         }
 
         // Command palette pending dispatch — popup writes `pending_run` when

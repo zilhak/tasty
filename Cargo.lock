@@ -5710,7 +5710,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-protocol"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "bytemuck",
  "egui",
@@ -5722,7 +5722,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-sdk"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "anyhow",
  "egui",

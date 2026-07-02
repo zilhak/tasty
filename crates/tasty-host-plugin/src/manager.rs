@@ -215,6 +215,13 @@ pub struct EguiMeshFrame {
     /// plugin 이 commit 한 footer generation. host 는 마지막 합성 generation 과
     /// 비교해 변하지 않았으면 재합성을 건너뛴다.
     pub generation: u64,
+    /// plugin 렌더 코어의 송신 frame 단조 시퀀스(1부터, buffer 재생성과 무관).
+    /// 렌더 prepare 가 `frame_seq == last + 1` 로 textures_delta 체인 연속성을 검증한다.
+    /// 구버전 plugin 은 0 → 항상 체인 단절로 취급된다.
+    pub frame_seq: u64,
+    /// 이 frame 의 textures_delta 가 plugin 의 전체 텍스처 상태를 full image 로
+    /// 담고 있는가. true 면 체인 연속성과 무관하게 수락하고 텍스처 상태를 리셋한다.
+    pub full_textures: bool,
 }
 
 pub struct PluginManager {

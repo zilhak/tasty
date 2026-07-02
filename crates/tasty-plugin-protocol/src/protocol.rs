@@ -110,6 +110,13 @@ pub struct SurfaceSetContextParams {
     /// generic 필드 — 모든 egui-mesh surface(markdown/git-viewer 등)가 공유한다.
     #[serde(default)]
     pub theme: Option<ThemeWire>,
+    /// host 의 텍스처 상태 복구 요청. true 면 plugin SDK 는 출력 dedup 을 우회하고,
+    /// 보유한 **전체 텍스처 상태**(font atlas 포함 임의 Managed 텍스처 전부)를 full
+    /// image delta 로 재구성해 동봉한 frame 을 강제 송신한다(`full_textures = true` 로
+    /// 마킹). host 는 자기 텍스처 상태가 불완전할 때(신규 Renderer / frame_seq 체인
+    /// 단절)만 이 플래그를 세운다.
+    #[serde(default)]
+    pub need_full_textures: bool,
 }
 
 /// host 가 resolve 한 Theme 을 프로세스 경계 너머로 운반하는 POD 스냅샷.
@@ -366,6 +373,18 @@ pub enum PluginEvent {
         /// plugin 이 commit 한 shared buffer footer generation. host 는 footer 를
         /// Acquire-load 해 일치/최신 여부를 검증한다 (tear 방지).
         generation: u64,
+        /// 이 surface 렌더 코어가 지금까지 **송신한** frame 의 단조 증가 시퀀스(1부터).
+        /// footer generation 과 달리 shared buffer 재생성(성장)과 무관하게 이어진다.
+        /// host 는 `frame_seq == last_seq + 1` 로 textures_delta 체인의 연속성을 검증하고,
+        /// 단절이면(latest-wins buffer 에서 중간 frame 관측 누락) full 재전송을 요청한다.
+        /// 구버전 plugin 은 0 — host 는 체인 단절로 보고 full 재전송을 요청한다.
+        #[serde(default)]
+        frame_seq: u64,
+        /// 이 frame 의 textures_delta 가 plugin 이 보유한 **전체 텍스처 상태**를 full
+        /// image 로 담고 있는가 (첫 frame, 또는 host 의 `need_full_textures` 요청 응답).
+        /// true 면 host 는 체인 연속성과 무관하게 수락하고 텍스처 상태를 리셋한다.
+        #[serde(default)]
+        full_textures: bool,
     },
     /// egui-mesh popup: plugin 이 popup 인스턴스용 mesh 를 commit 했음을 알린다.
     /// [`PluginEvent::PaintFrame`] 의 popup 대응 — surface_id 대신 host 발급
@@ -376,6 +395,12 @@ pub enum PluginEvent {
         buffer_id: SharedBufferId,
         /// plugin 이 commit 한 shared buffer footer generation (tear 방지).
         generation: u64,
+        /// 송신 frame 단조 시퀀스 — [`PluginEvent::PaintFrame::frame_seq`] 와 동일 의미.
+        #[serde(default)]
+        frame_seq: u64,
+        /// 전체 텍스처 상태 동봉 여부 — [`PluginEvent::PaintFrame::full_textures`] 와 동일 의미.
+        #[serde(default)]
+        full_textures: bool,
     },
     /// egui-mesh banner(A3): plugin 이 banner 인스턴스용 mesh 를 commit 했음을 알린다.
     /// [`PluginEvent::PopupPaintFrame`] 의 banner 대응 — `instance_id` 로 키잉한다.
@@ -386,6 +411,12 @@ pub enum PluginEvent {
         buffer_id: SharedBufferId,
         /// plugin 이 commit 한 shared buffer footer generation (tear 방지).
         generation: u64,
+        /// 송신 frame 단조 시퀀스 — [`PluginEvent::PaintFrame::frame_seq`] 와 동일 의미.
+        #[serde(default)]
+        frame_seq: u64,
+        /// 전체 텍스처 상태 동봉 여부 — [`PluginEvent::PaintFrame::full_textures`] 와 동일 의미.
+        #[serde(default)]
+        full_textures: bool,
     },
     /// host action 트리거 (단계 06).
     NotifyHost {
@@ -566,6 +597,10 @@ pub struct PopupSetContextParams {
     /// clipboard-viewer 등)이 공유하는 generic 필드.
     #[serde(default)]
     pub theme: Option<ThemeWire>,
+    /// host 의 텍스처 상태 복구 요청 —
+    /// [`SurfaceSetContextParams::need_full_textures`] 와 동일 의미.
+    #[serde(default)]
+    pub need_full_textures: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -641,6 +676,10 @@ pub struct BannerSetContextParams {
     /// [`PopupSetContextParams::theme`] 와 동형 — 모든 egui-mesh banner 가 공유한다.
     #[serde(default)]
     pub theme: Option<ThemeWire>,
+    /// host 의 텍스처 상태 복구 요청 —
+    /// [`SurfaceSetContextParams::need_full_textures`] 와 동일 의미.
+    #[serde(default)]
+    pub need_full_textures: bool,
 }
 
 /// banner 인스턴스가 닫힌 이유. popup 과 달리 outside-click/Esc 가 없다(non-modal, D3).

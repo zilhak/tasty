@@ -45,6 +45,10 @@ use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
 use super::MainView;
 
 /// 한 egui-mesh surface 의 host 측 forward 추적 상태.
+///
+/// layout 에 존재하는 동안 유지된다(가시성 무관) — 비가시 surface 의 full 재전송
+/// 요청([`MeshForwardState::pending_full`])을 마지막 geom/plugin_id 로 보낼 수 있어야
+/// 하기 때문. surface 가 닫히면 정리된다.
 #[derive(Default)]
 pub(crate) struct MeshForwardState {
     /// 마지막으로 보낸 (width_px, height_px, ppp.to_bits()). 변경 감지에 사용.
@@ -56,6 +60,20 @@ pub(crate) struct MeshForwardState {
     bootstrap_sent: bool,
     /// 마지막으로 보낸 Theme 스냅샷. 테마 변경 시(크기/입력 무변이어도) 재forward 트리거.
     last_theme: Option<ThemeWire>,
+    /// 렌더 prepare 가 textures_delta 체인 단절을 감지했다 — 다음 set_context 에
+    /// `need_full_textures` 를 실어 보낸다(송신 시 해제).
+    pending_full: bool,
+    /// 이 surface 의 owning plugin id (첫 forward 시 기록). 비가시 상태에서 full
+    /// 재전송 요청을 보낼 때 대상 plugin 을 알기 위해 보관한다.
+    plugin_id: Option<String>,
+}
+
+impl MeshForwardState {
+    /// 렌더 prepare 의 full 재전송 요청을 기록한다 — 다음 forward 에서 소비된다.
+    /// (redraw 가 gpu 요청 대기열을 drain 하며 호출.)
+    pub(crate) fn set_pending_full(&mut self) {
+        self.pending_full = true;
+    }
 }
 
 /// forward 대상 egui-mesh surface 1개의 메타 — set_context 송신 + bootstrap create 용.
@@ -206,9 +224,14 @@ impl MainView {
             }
         }
 
-        // layout 에서 사라진 surface 의 추적 상태 정리.
-        let live: HashSet<u32> = targets.iter().map(|t| t.sid).collect();
+        // layout(전 workspace, 비활성 탭 포함)에서 사라진 surface 의 추적 상태 정리.
+        // 가시성 기반이 아니라 존재 기반 — 비가시 surface 의 pending_full 요청을
+        // 마지막 geom 으로 보낼 수 있도록 추적 상태를 보존한다.
+        let existing = self.state.egui_mesh_surfaces_existing(&self.core_state);
+        let live: HashSet<u32> = existing.iter().map(|e| e.0).collect();
         self.egui_mesh.retain(|sid, _| live.contains(sid));
+
+        let visible: HashSet<u32> = targets.iter().map(|t| t.sid).collect();
 
         for MeshTarget {
             sid,
@@ -225,6 +248,7 @@ impl MainView {
             let has_frame = mgr.egui_mesh_frame(sid).is_some();
 
             let st = self.egui_mesh.entry(sid).or_default();
+            st.plugin_id = Some(plugin_id.clone());
             if has_frame {
                 // 건강 상태 — 이후 crash 로 frame 이 사라지면 재bootstrap 하도록 무장.
                 st.bootstrap_sent = false;
@@ -233,14 +257,16 @@ impl MainView {
             let has_input = !st.events.is_empty();
             let need_bootstrap = !has_frame && !st.bootstrap_sent;
             let theme_changed = st.last_theme.as_ref() != Some(&current_theme);
+            let need_full = st.pending_full;
 
-            if !(geom_changed || has_input || need_bootstrap || theme_changed) {
+            if !(geom_changed || has_input || need_bootstrap || theme_changed || need_full) {
                 continue;
             }
 
             let events = std::mem::take(&mut st.events);
             st.last_geom = Some(geom);
             st.last_theme = Some(current_theme.clone());
+            st.pending_full = false;
             if !has_frame {
                 st.bootstrap_sent = true;
             }
@@ -270,8 +296,42 @@ impl MainView {
                     events,
                 },
                 theme: Some(current_theme.clone()),
+                need_full_textures: need_full,
             };
             mgr.send_surface_set_context(&plugin_id, &params);
+        }
+
+        // 비가시 surface 의 full 재전송 요청 — 렌더 prepare 가 비가시 디코드 중 체인
+        // 단절을 감지한 경우다. 마지막으로 보낸 geom/theme 으로 빈 입력 set_context 를
+        // 보내 plugin 이 전체 텍스처 상태를 동봉한 frame 을 재송신하게 한다. geom 이
+        // 활성화 시점과 다르면 활성화가 다시 정규 set_context 를 보내므로 무해하다.
+        for (sid, st) in self.egui_mesh.iter_mut() {
+            if !st.pending_full || visible.contains(sid) {
+                continue;
+            }
+            let (Some((w, h, ppp_bits)), Some(plugin_id)) = (st.last_geom, st.plugin_id.as_ref())
+            else {
+                // 아직 한 번도 forward 되지 않은 surface (frame 도 없음) — bootstrap 이
+                // 첫 활성화에서 자연-full frame 을 만들므로 요청이 필요 없다.
+                st.pending_full = false;
+                continue;
+            };
+            st.pending_full = false;
+            let params = SurfaceSetContextParams {
+                surface_id: *sid,
+                width_px: w,
+                height_px: h,
+                pixels_per_point: f32::from_bits(ppp_bits),
+                raw_input: RawInputWire {
+                    time: None,
+                    focused: false,
+                    modifiers: ModifiersWire::default(),
+                    events: Vec::new(),
+                },
+                theme: st.last_theme.clone(),
+                need_full_textures: true,
+            };
+            mgr.send_surface_set_context(plugin_id, &params);
         }
     }
 }

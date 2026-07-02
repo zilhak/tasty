@@ -421,6 +421,15 @@ pub struct AppState {
     pub(crate) plugin_mesh_banner_theme:
         std::collections::HashMap<u64, tasty_plugin_protocol::ThemeWire>,
 
+    /// textures_delta 체인 단절로 full 재전송이 필요한 egui-mesh popup 인스턴스.
+    /// MainView 가 render 직후 gpu 의 요청 대기열을 여기로 옮기고, popup forward
+    /// (`draw_plugin_popups`)가 다음 egui frame 에 소비해 `need_full_textures`
+    /// set_context 를 보낸다.
+    pub(crate) plugin_mesh_popup_full_requests: std::collections::HashSet<u64>,
+
+    /// banner 대응 full 재전송 요청(popup full_requests 와 동형).
+    pub(crate) plugin_mesh_banner_full_requests: std::collections::HashSet<u64>,
+
     /// 호스트 내부 Intent 큐. 발화자가 push 만 하고, `App::dispatch_pending_intents`
     /// 가 메인 루프에서 drain 한다. UI Intent (`Intent::Ui`) 와 Domain Intent
     /// (`Intent::Domain`) 가 한 큐 위에서 처리됨 (D.3.I.3 통합). 설계:
@@ -863,6 +872,8 @@ impl AppState {
             plugin_mesh_banner_geom: std::collections::HashMap::new(),
             plugin_mesh_banner_bootstrapped: std::collections::HashSet::new(),
             plugin_mesh_banner_theme: std::collections::HashMap::new(),
+            plugin_mesh_popup_full_requests: std::collections::HashSet::new(),
+            plugin_mesh_banner_full_requests: std::collections::HashSet::new(),
             pending_intents: Vec::new(),
         }
     }

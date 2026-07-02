@@ -26,11 +26,29 @@
 //!   (stale tear 방지: half-painted frame 은 footer generation 으로 다음 frame 까지 미룸).
 //! - 디코드된 ppp 가 host 의 현재 ppp 와 어긋나면(리사이즈/DPI 전환 직후 한 frame 지연)
 //!   이번 frame 합성을 skip 해 잘못된 스케일 합성을 막는다.
+//!
+//! # 텍스처 상태 수명 + delta 체인 (유실 수리)
+//!
+//! wire 는 delta 기반이고 SharedBuffer 는 latest-wins 라, host 가 중간 frame 을 못 보면
+//! 그 frame 에 실렸던 textures_delta(font atlas full image, image plugin 비트맵 등)는
+//! 영구 유실된다. 두 겹으로 막는다:
+//!
+//! 1. **surface 수명 귀속** — surface 의 전용 Renderer/디코드 캐시는 "화면에 보이는
+//!    동안"이 아니라 "layout 에 존재하는 동안" 유지한다(`egui_mesh_surfaces_existing`).
+//!    비활성 탭/비활성 workspace 의 surface 도 도착 frame 을 매 tick 디코드해 텍스처
+//!    delta 를 항상 적용한다(합성만 skip) — 탭 복귀 시 재전송 왕복 없이 즉시 정상 합성.
+//! 2. **frame_seq 체인 검증 + full 재전송** — frame 메타의 `frame_seq`(plugin 송신 단조
+//!    시퀀스)가 `last_seq + 1` 이 아니면 중간 frame 을 놓친 것: frame 을 수락하지 않고
+//!    (`awaiting_full`) [`GpuState::egui_mesh_full_requests`] 에 적재한다. forward 측이
+//!    다음 tick 에 `need_full_textures` 플래그로 set_context 를 재송신하면 plugin SDK 가
+//!    전체 텍스처 상태를 full image 로 동봉한 frame(`full_textures = true`)을 보내고,
+//!    host 는 full frame 을 체인과 무관하게 수락하며 텍스처 상태를 리셋한다.
+//!    (Context 생성 직후 첫 frame 도 자연-full 로 마킹돼 bootstrap race 를 닫는다.)
 
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
-use egui::epaint::{ClippedPrimitive, Primitive};
+use egui::epaint::{ClippedPrimitive, Primitive, TextureId};
 
 use super::GpuState;
 use crate::model::PhysicalRect;
@@ -44,7 +62,10 @@ const PPP_EPS: f32 = 1.0e-3;
 /// 한 egui-mesh surface 의 전용 Renderer + 디코드 캐시.
 ///
 /// `egui_mesh_targets: HashMap<surface_id, _>` 로 [`GpuState`] 가 보관한다. surface 가
-/// layout 에서 사라지면 정리돼 전용 Renderer 의 GPU 자원이 해제된다.
+/// **layout 에서 사라지면**(탭/pane 닫힘 — 탭 전환·workspace 전환은 해당 없음) 정리돼
+/// 전용 Renderer 의 GPU 자원이 해제된다. 비가시 상태의 GPU 텍스처 상주는 의도된
+/// 비용이다 — 재활성화 시 재전송 왕복 없이 즉시 합성하기 위함(모듈 doc "텍스처 상태
+/// 수명 + delta 체인").
 pub(super) struct EguiMeshRenderTarget {
     /// 이 surface 전용 egui_wgpu Renderer (TextureId 네임스페이스 격리).
     renderer: egui_wgpu::Renderer,
@@ -54,6 +75,15 @@ pub(super) struct EguiMeshRenderTarget {
     ppp: f32,
     /// 마지막으로 디코드한 footer generation.
     generation: u64,
+    /// 마지막으로 **수락한** frame 의 frame_seq (plugin 송신 단조 시퀀스). 다음 frame 은
+    /// `full_textures` 이거나 `frame_seq == last_seq + 1` 일 때만 수락한다(체인 검증).
+    last_seq: u64,
+    /// 이 Renderer 에 업로드돼 있는 TextureId 집합. full frame 수락 시 full 에 미포함된
+    /// stale 텍스처를 free 하기 위해 추적한다.
+    live_textures: HashSet<TextureId>,
+    /// 체인 단절로 full 재전송을 요청했고 아직 full frame 을 못 받은 상태.
+    /// true 인 동안 재요청을 내지 않는다(요청 스팸 방지). frame 수락 시 해제.
+    awaiting_full: bool,
     /// 한 번이라도 유효 mesh 를 디코드했는가. false 면 합성 skip.
     has_content: bool,
     /// window-global 좌표로 평행이동/클립한 합성용 primitives 캐시.
@@ -69,11 +99,30 @@ impl EguiMeshRenderTarget {
             primitives: Vec::new(),
             ppp: 1.0,
             generation: 0,
+            last_seq: 0,
+            live_textures: HashSet::new(),
+            awaiting_full: false,
             has_content: false,
             translated: Vec::new(),
             translated_key: None,
         }
     }
+
+    /// frame 메타만으로 이 frame 을 수락할 수 있는지 판정한다 (디코드 전 수행).
+    fn chain_accepts(&self, frame_seq: u64, full_textures: bool) -> bool {
+        chain_accepts(self.has_content, self.last_seq, frame_seq, full_textures)
+    }
+}
+
+/// textures_delta 체인 수락 규칙 (frame 메타만으로 판정, 디코드 전 수행).
+///
+/// - full frame 은 무조건 수락(텍스처 상태 리셋 동반).
+/// - delta frame 은 기존 콘텐츠가 있고 시퀀스가 정확히 이어질 때만 수락 —
+///   latest-wins buffer 에서 중간 frame 을 못 봤다면(seq 건너뜀) 그 frame 의
+///   textures_delta 가 유실된 것이므로, 수락하면 미등록/스테일 텍스처를 참조한다.
+///   구버전 plugin 의 `frame_seq == 0` 도 자연히 체인 단절로 떨어진다.
+fn chain_accepts(has_content: bool, last_seq: u64, frame_seq: u64, full_textures: bool) -> bool {
+    full_textures || (has_content && frame_seq == last_seq.wrapping_add(1))
 }
 
 /// 활성 workspace 에서 egui-mesh surface 의 (surface_id, plugin_id, 물리 rect) 일람.
@@ -132,15 +181,22 @@ fn offset_and_clip(
         .collect()
 }
 
-/// SharedBuffer 의 mesh 바이트를 디코드해 한 target 에 올린다(generation 변경 시에만 호출).
-/// footer tear / 너무 작은 buffer / ppp 불일치 가드를 통과해야 갱신한다 — 실패하면
-/// 기존 캐시를 유지(이번 frame 재합성). surface/popup 합성기가 공유한다.
+/// SharedBuffer 의 mesh 바이트를 디코드해 한 target 에 올린다(generation 변경 + 체인
+/// 수락([`EguiMeshRenderTarget::chain_accepts`]) 시에만 호출). footer tear / 너무 작은
+/// buffer / ppp 불일치 가드를 통과해야 갱신한다 — 실패하면 기존 캐시를 유지(이번 frame
+/// 재합성, 다음 tick 재시도). surface/popup/banner 합성기가 공유한다.
+///
+/// `full_textures` frame 은 plugin 의 전체 텍스처 상태를 담으므로, 수락 시 full 에
+/// 미포함된 기존 텍스처를 free 해 target 텍스처 상태를 plugin 상태와 일치시킨다.
+#[allow(clippy::too_many_arguments)] // reason: frame 디코드 컨텍스트 전체
 fn decode_mesh_into_target(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     target: &mut EguiMeshRenderTarget,
     raw: &[u8],
     generation: u64,
+    frame_seq: u64,
+    full_textures: bool,
     host_ppp: f32,
     log_id: &str,
 ) {
@@ -184,18 +240,37 @@ fn decode_mesh_into_target(
         return;
     }
 
+    // full frame: plugin 의 전체 텍스처 상태로 리셋한다 — full 에 미포함된(=plugin 이
+    // 그 사이 free 한, 또는 이 target 이 모르는 사이 대체된) 기존 텍스처를 free.
+    if full_textures {
+        let full_ids: HashSet<TextureId> = decoded
+            .textures_delta
+            .set
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+        for stale in target.live_textures.difference(&full_ids) {
+            target.renderer.free_texture(stale);
+        }
+        target.live_textures = full_ids;
+    }
+
     // 전용 Renderer 라 TextureId 가 host 와 충돌하지 않는다. set → (이후 render) → free
     // 순서로 frame 경계에서 원자 처리. free 대상은 primitives 가 참조하지 않으므로
     // render 전에 풀어도 안전(set/free 는 서로소).
     for (id, delta) in &decoded.textures_delta.set {
         target.renderer.update_texture(device, queue, *id, delta);
+        target.live_textures.insert(*id);
     }
     for id in &decoded.textures_delta.free {
         target.renderer.free_texture(id);
+        target.live_textures.remove(id);
     }
     target.primitives = decoded.primitives;
     target.ppp = decoded.pixels_per_point;
     target.generation = generation;
+    target.last_seq = frame_seq;
+    target.awaiting_full = false;
     target.has_content = true;
     target.translated_key = None; // 평행이동 캐시 무효화.
 }
@@ -282,26 +357,37 @@ impl GpuState {
     ///
     /// [`GpuState::render`] 가 terminal 렌더 직후, host egui chrome 합성 직전에 부른다.
     /// mesh 콘텐츠는 terminal 콘텐츠와 같은 layer(host chrome 아래)에 놓인다.
+    ///
+    /// - `targets`: **보이는**(활성 workspace 의 활성 탭) surface — 합성 대상.
+    /// - `existing`: layout 에 **존재하는** 전체 egui-mesh surface (전 workspace, 비활성
+    ///   탭 포함) — 텍스처 상태 수명 + 디코드 대상. 비가시 surface 의 도착 frame 도
+    ///   디코드해 textures_delta 체인을 유지한다(합성만 skip, 모듈 doc 참조).
     pub(super) fn render_egui_mesh_surfaces(
         &mut self,
         view: &wgpu::TextureView,
         targets: &[(u32, String, PhysicalRect)],
+        existing: &[(u32, String)],
         plugin_manager: &PluginManager,
     ) {
-        // layout 에서 사라진 surface 의 전용 Renderer 정리 (GPU 자원 해제).
-        let live: HashSet<u32> = targets.iter().map(|t| t.0).collect();
+        // layout 에서 사라진(닫힌) surface 의 전용 Renderer 정리 (GPU 자원 해제).
+        // 탭 전환/workspace 전환으로 안 보이게 된 것은 existing 에 남아 있어 보존된다.
+        let live: HashSet<u32> = existing.iter().map(|t| t.0).collect();
         self.egui_mesh_targets.retain(|sid, _| live.contains(sid));
 
-        let size_in_pixels = [self.size.width, self.size.height];
-        for (sid, plugin_id, rect) in targets {
-            // plugin 이 아직 frame 을 안 보냈거나 disconnect 로 정리됐으면 합성할 것이 없다.
+        // 디코드 pass — 비가시 surface 포함. frame 이 도착해 있으면 항상 최신 상태로
+        // 디코드해 텍스처 delta 를 적용한다(체인 유지). 체인이 끊긴 frame 은 수락하지
+        // 않고 full 재전송을 요청한다.
+        let host_ppp = self.scale_factor;
+        for (sid, plugin_id) in existing {
+            // plugin 이 아직 frame 을 안 보냈거나 disconnect 로 정리됐으면 할 일이 없다.
             // (disconnect 시 placeholder/blank — 캐시가 남아 있어도 합성하지 않는다, §9-7.)
             let Some(frame) = plugin_manager.egui_mesh_frame(*sid) else {
                 continue;
             };
             let frame_buffer_id = frame.buffer_id;
             let frame_generation = frame.generation;
-            let host_ppp = self.scale_factor;
+            let frame_seq = frame.frame_seq;
+            let frame_full = frame.full_textures;
 
             // 전용 Renderer ensure.
             if !self.egui_mesh_targets.contains_key(sid) {
@@ -312,34 +398,62 @@ impl GpuState {
             }
 
             // generation 이 바뀌었거나 아직 콘텐츠가 없을 때만 디코드.
-            let needs_decode = {
+            let (needs_decode, chain_ok, awaiting) = {
                 let t = &self.egui_mesh_targets[sid];
-                !t.has_content || t.generation != frame_generation
+                (
+                    !t.has_content || t.generation != frame_generation,
+                    t.chain_accepts(frame_seq, frame_full),
+                    t.awaiting_full,
+                )
             };
-            if needs_decode {
-                if let Some(mem) = plugin_manager.plugin_buffer(plugin_id, frame_buffer_id) {
-                    // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
-                    let raw = unsafe { mem.as_slice() };
-                    decode_mesh_into_target(
-                        &self.device,
-                        &self.queue,
-                        self.egui_mesh_targets.get_mut(sid).expect("ensured above"),
-                        raw,
-                        frame_generation,
-                        host_ppp,
-                        plugin_id,
-                    );
-                } else {
-                    tracing::warn!(
-                        plugin = %plugin_id,
-                        buffer = frame_buffer_id.0,
-                        surface = sid,
-                        "egui-mesh prepare: SharedMemory not registered"
-                    );
-                }
+            if !needs_decode {
+                continue;
             }
+            if !chain_ok {
+                // 중간 frame 관측 누락(latest-wins) — 이 frame 의 primitives 는 유실된
+                // 텍스처를 참조할 수 있어 수락하지 않는다. full 재전송을 1회 요청하고
+                // (수락 시까지 재요청 안 함) 기존 캐시로 계속 합성한다.
+                if !awaiting {
+                    tracing::debug!(
+                        surface = sid,
+                        frame_seq,
+                        "egui-mesh prepare: texture delta chain broken; requesting full resend"
+                    );
+                    self.egui_mesh_targets
+                        .get_mut(sid)
+                        .expect("ensured above")
+                        .awaiting_full = true;
+                    self.egui_mesh_full_requests.insert(*sid);
+                }
+                continue;
+            }
+            if let Some(mem) = plugin_manager.plugin_buffer(plugin_id, frame_buffer_id) {
+                // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
+                let raw = unsafe { mem.as_slice() };
+                decode_mesh_into_target(
+                    &self.device,
+                    &self.queue,
+                    self.egui_mesh_targets.get_mut(sid).expect("ensured above"),
+                    raw,
+                    frame_generation,
+                    frame_seq,
+                    frame_full,
+                    host_ppp,
+                    plugin_id,
+                );
+            } else {
+                tracing::warn!(
+                    plugin = %plugin_id,
+                    buffer = frame_buffer_id.0,
+                    surface = sid,
+                    "egui-mesh prepare: SharedMemory not registered"
+                );
+            }
+        }
 
-            // 합성 (콘텐츠 있으면 매 frame — framebuffer 가 매 frame clear 되므로).
+        // 합성 pass — 보이는 surface 만 (framebuffer 가 매 frame clear 되므로 매 frame).
+        let size_in_pixels = [self.size.width, self.size.height];
+        for (sid, _plugin_id, rect) in targets {
             if let Some(t) = self.egui_mesh_targets.get_mut(sid) {
                 composite_mesh_target(&self.device, &self.queue, t, view, *rect, size_in_pixels);
             }
@@ -371,6 +485,8 @@ impl GpuState {
             let frame_plugin_id = frame.plugin_id.clone();
             let frame_buffer_id = frame.buffer_id;
             let frame_generation = frame.generation;
+            let frame_seq = frame.frame_seq;
+            let frame_full = frame.full_textures;
             let host_ppp = self.scale_factor;
 
             if !self.egui_mesh_popup_targets.contains_key(iid) {
@@ -380,11 +496,29 @@ impl GpuState {
                     .insert(*iid, EguiMeshRenderTarget::new(renderer));
             }
 
-            let needs_decode = {
+            let (needs_decode, chain_ok, awaiting) = {
                 let t = &self.egui_mesh_popup_targets[iid];
-                !t.has_content || t.generation != frame_generation
+                (
+                    !t.has_content || t.generation != frame_generation,
+                    t.chain_accepts(frame_seq, frame_full),
+                    t.awaiting_full,
+                )
             };
-            if needs_decode {
+            if needs_decode && !chain_ok {
+                // 체인 단절 — frame 을 수락하지 않고 full 재전송을 요청한다(surface 와 동형).
+                if !awaiting {
+                    tracing::debug!(
+                        popup = iid,
+                        frame_seq,
+                        "egui-mesh popup prepare: texture delta chain broken; requesting full resend"
+                    );
+                    self.egui_mesh_popup_targets
+                        .get_mut(iid)
+                        .expect("ensured above")
+                        .awaiting_full = true;
+                    self.egui_mesh_popup_full_requests.insert(*iid);
+                }
+            } else if needs_decode {
                 if let Some(mem) = plugin_manager.plugin_buffer(&frame_plugin_id, frame_buffer_id) {
                     // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
                     let raw = unsafe { mem.as_slice() };
@@ -396,6 +530,8 @@ impl GpuState {
                             .expect("ensured above"),
                         raw,
                         frame_generation,
+                        frame_seq,
+                        frame_full,
                         host_ppp,
                         &frame_plugin_id,
                     );
@@ -443,6 +579,8 @@ impl GpuState {
             let frame_plugin_id = frame.plugin_id.clone();
             let frame_buffer_id = frame.buffer_id;
             let frame_generation = frame.generation;
+            let frame_seq = frame.frame_seq;
+            let frame_full = frame.full_textures;
             let host_ppp = self.scale_factor;
 
             if !self.egui_mesh_banner_targets.contains_key(iid) {
@@ -452,11 +590,29 @@ impl GpuState {
                     .insert(*iid, EguiMeshRenderTarget::new(renderer));
             }
 
-            let needs_decode = {
+            let (needs_decode, chain_ok, awaiting) = {
                 let t = &self.egui_mesh_banner_targets[iid];
-                !t.has_content || t.generation != frame_generation
+                (
+                    !t.has_content || t.generation != frame_generation,
+                    t.chain_accepts(frame_seq, frame_full),
+                    t.awaiting_full,
+                )
             };
-            if needs_decode {
+            if needs_decode && !chain_ok {
+                // 체인 단절 — frame 을 수락하지 않고 full 재전송을 요청한다(surface 와 동형).
+                if !awaiting {
+                    tracing::debug!(
+                        banner = iid,
+                        frame_seq,
+                        "egui-mesh banner prepare: texture delta chain broken; requesting full resend"
+                    );
+                    self.egui_mesh_banner_targets
+                        .get_mut(iid)
+                        .expect("ensured above")
+                        .awaiting_full = true;
+                    self.egui_mesh_banner_full_requests.insert(*iid);
+                }
+            } else if needs_decode {
                 if let Some(mem) = plugin_manager.plugin_buffer(&frame_plugin_id, frame_buffer_id) {
                     // SAFETY: tasty-shm 동기화 규약 (decode_mesh_into_target 내 Acquire-load).
                     let raw = unsafe { mem.as_slice() };
@@ -468,6 +624,8 @@ impl GpuState {
                             .expect("ensured above"),
                         raw,
                         frame_generation,
+                        frame_seq,
+                        frame_full,
                         host_ppp,
                         &frame_plugin_id,
                     );
@@ -559,6 +717,27 @@ mod tests {
         // translate → (50,40)-(250,240), bounds (50,40)-(150,120) 로 intersect.
         assert_eq!(out[0].clip_rect.min, Pos2::new(50.0, 40.0));
         assert_eq!(out[0].clip_rect.max, Pos2::new(150.0, 120.0));
+    }
+
+    /// 체인 수락 규칙: full 은 무조건, delta 는 콘텐츠 보유 + 정확한 seq 연속일 때만.
+    #[test]
+    fn chain_accepts_full_or_contiguous_seq_only() {
+        // 신규 target (콘텐츠 없음): full 만 수락.
+        assert!(!chain_accepts(false, 0, 1, false));
+        assert!(chain_accepts(false, 0, 1, true));
+        assert!(chain_accepts(false, 0, 7, true));
+
+        // 콘텐츠 보유: seq 가 정확히 이어지면 수락.
+        assert!(chain_accepts(true, 5, 6, false));
+        // seq 건너뜀(중간 frame 관측 누락) → 거부.
+        assert!(!chain_accepts(true, 5, 7, false));
+        // 과거/동일 seq (재관측) → 거부.
+        assert!(!chain_accepts(true, 5, 5, false));
+        // full 은 체인과 무관하게 수락 (회복 경로).
+        assert!(chain_accepts(true, 5, 9, true));
+
+        // 구버전 plugin (frame_seq 항상 0, full 마킹 없음) → 항상 체인 단절.
+        assert!(!chain_accepts(true, 0, 0, false));
     }
 
     /// 디코드 출력(mesh_wire) → offset_and_clip 통합: 실제 tessellate 한 mesh 가

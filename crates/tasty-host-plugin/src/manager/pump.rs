@@ -35,23 +35,12 @@ impl PluginManager {
             Vec::new();
         let mut new_event_subscribes: Vec<(String, u64, String)> = Vec::new();
         let mut new_event_unsubscribes: Vec<(String, u64)> = Vec::new();
-        // egui-mesh paint_frame 알림 (A1-S3): (plugin_id, surface_id, buffer_id, generation).
-        let mut new_paint_frames: Vec<(String, u32, tasty_plugin_protocol::SharedBufferId, u64)> =
-            Vec::new();
-        // egui-mesh popup paint_frame 알림 (A2): (plugin_id, instance_id, buffer_id, generation).
-        let mut new_popup_paint_frames: Vec<(
-            String,
-            u64,
-            tasty_plugin_protocol::SharedBufferId,
-            u64,
-        )> = Vec::new();
-        // egui-mesh banner paint_frame 알림 (A3): (plugin_id, instance_id, buffer_id, generation).
-        let mut new_banner_paint_frames: Vec<(
-            String,
-            u64,
-            tasty_plugin_protocol::SharedBufferId,
-            u64,
-        )> = Vec::new();
+        // egui-mesh paint_frame 알림 (A1-S3): (surface_id, frame 메타).
+        let mut new_paint_frames: Vec<(u32, super::EguiMeshFrame)> = Vec::new();
+        // egui-mesh popup paint_frame 알림 (A2): (instance_id, frame 메타).
+        let mut new_popup_paint_frames: Vec<(u64, super::EguiMeshFrame)> = Vec::new();
+        // egui-mesh banner paint_frame 알림 (A3): (instance_id, frame 메타).
+        let mut new_banner_paint_frames: Vec<(u64, super::EguiMeshFrame)> = Vec::new();
         // 프로세스가 죽으면(reader 스레드 종료 → event_tx drop) event_rx 가 Disconnected
         // 가 된다. 60초 healthcheck 보다 먼저 감지해, 죽은 plugin 의 egui-mesh frame 을
         // 즉시 비워 stale mesh 가 계속 합성되는 것을 막는다 (research-a1 §9-7 crash 격리).
@@ -83,38 +72,61 @@ impl PluginManager {
                             surface_id,
                             buffer_id,
                             generation,
+                            frame_seq,
+                            full_textures,
                         } => {
                             // A1-S3 수신 라우팅: 최근 mesh frame 메타를 저장. 렌더 prepare(A1-S5)가
                             // buffer lookup + 디코드 출발점으로 읽는다. redraw 는 수신 스레드가
                             // 매 라인마다 waker 를 깨우므로 별도 트리거 불필요.
-                            new_paint_frames.push((id.clone(), surface_id, buffer_id, generation));
+                            new_paint_frames.push((
+                                surface_id,
+                                super::EguiMeshFrame {
+                                    plugin_id: id.clone(),
+                                    buffer_id,
+                                    generation,
+                                    frame_seq,
+                                    full_textures,
+                                },
+                            ));
                         }
                         PluginEvent::PopupPaintFrame {
                             instance_id,
                             buffer_id,
                             generation,
+                            frame_seq,
+                            full_textures,
                         } => {
                             // A2 popup 수신 라우팅: 최근 popup mesh frame 메타를 저장.
                             // host 합성기(popup_mesh_render)가 instance_id 로 lookup 한다.
                             new_popup_paint_frames.push((
-                                id.clone(),
                                 instance_id,
-                                buffer_id,
-                                generation,
+                                super::EguiMeshFrame {
+                                    plugin_id: id.clone(),
+                                    buffer_id,
+                                    generation,
+                                    frame_seq,
+                                    full_textures,
+                                },
                             ));
                         }
                         PluginEvent::BannerPaintFrame {
                             instance_id,
                             buffer_id,
                             generation,
+                            frame_seq,
+                            full_textures,
                         } => {
                             // A3 banner 수신 라우팅: 최근 banner mesh frame 메타를 저장.
                             // host 합성기(render_egui_mesh_banners)가 instance_id 로 lookup 한다.
                             new_banner_paint_frames.push((
-                                id.clone(),
                                 instance_id,
-                                buffer_id,
-                                generation,
+                                super::EguiMeshFrame {
+                                    plugin_id: id.clone(),
+                                    buffer_id,
+                                    generation,
+                                    frame_seq,
+                                    full_textures,
+                                },
                             ));
                         }
                         PluginEvent::NotifyHost { .. } => {
@@ -161,35 +173,14 @@ impl PluginManager {
         if !new_calls.is_empty() {
             self.pending_plugin_calls.extend(new_calls);
         }
-        for (plugin_id, surface_id, buffer_id, generation) in new_paint_frames {
-            self.egui_mesh_frames.insert(
-                surface_id,
-                super::EguiMeshFrame {
-                    plugin_id,
-                    buffer_id,
-                    generation,
-                },
-            );
+        for (surface_id, frame) in new_paint_frames {
+            self.egui_mesh_frames.insert(surface_id, frame);
         }
-        for (plugin_id, instance_id, buffer_id, generation) in new_popup_paint_frames {
-            self.popup_mesh_frames.insert(
-                instance_id,
-                super::EguiMeshFrame {
-                    plugin_id,
-                    buffer_id,
-                    generation,
-                },
-            );
+        for (instance_id, frame) in new_popup_paint_frames {
+            self.popup_mesh_frames.insert(instance_id, frame);
         }
-        for (plugin_id, instance_id, buffer_id, generation) in new_banner_paint_frames {
-            self.banner_mesh_frames.insert(
-                instance_id,
-                super::EguiMeshFrame {
-                    plugin_id,
-                    buffer_id,
-                    generation,
-                },
-            );
+        for (instance_id, frame) in new_banner_paint_frames {
+            self.banner_mesh_frames.insert(instance_id, frame);
         }
         for (plugin_id, version) in hello_log {
             tracing::info!("plugin hello: {} v{}", plugin_id, version);

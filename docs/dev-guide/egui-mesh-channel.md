@@ -13,8 +13,10 @@ plugin 이 **자기 프로세스에서 egui 를 tessellate** 한 vector mesh 를
           ▼
 [plugin] egui::Context::run(raw_input) → tessellate(ppp) → POD 인코드
           │  SharedBuffer 에 write + commit(footer generation)
-          ▼  PluginEvent::PaintFrame { surface_id, buffer_id, generation }
-[host]  SharedBuffer Acquire-load → decode_paint → (ClippedPrimitive, TexturesDelta, ppp)
+          ▼  PluginEvent::PaintFrame { surface_id, buffer_id, generation,
+          │                            frame_seq, full_textures }
+[host]  frame_seq 체인 검증(아래 "텍스처 상태 수명 + delta 체인") 통과 시
+          SharedBuffer Acquire-load → decode_paint → (ClippedPrimitive, TexturesDelta, ppp)
           → 전용 egui_wgpu::Renderer 에 update_texture/update_buffers/render
           → surface 물리 rect 으로 평행이동 + scissor 합성
 ```
@@ -91,6 +93,33 @@ egui-mesh surface 마다 **독립 `egui_wgpu::Renderer`** 를 둬, plugin 의
 디코드된 ppp 가 host 의 현재 ppp 와 어긋나면(리사이즈/DPI 전환 직후 stale) 그 frame
 합성을 미뤄 잘못된 스케일 합성을 막는다.
 
+## 텍스처 상태 수명 + delta 체인
+
+wire 의 `textures_delta` 는 **증분**(full atlas 는 Context 첫 run 에만)이고 SharedBuffer 는
+latest-wins 라, host 가 중간 frame 을 못 보면 그 frame 의 텍스처 delta(font atlas, image
+비트맵 등)가 유실된다. 두 겹으로 막는다:
+
+1. **surface 수명 귀속** — 전용 Renderer/디코드 캐시는 "보이는 동안"이 아니라 **layout 에
+   존재하는 동안**(전 workspace, 비활성 탭 포함) 유지한다
+   (`AppState::egui_mesh_surfaces_existing`). 비가시 surface 의 도착 frame 도 매 tick
+   디코드해 delta 체인을 유지한다(합성만 skip) — 탭/workspace 전환 후 복귀 시 재전송
+   왕복 없이 즉시 정상 합성된다. 비가시 GPU 텍스처 상주는 의도된 비용이다.
+2. **frame_seq 체인 검증 + full 재전송** — plugin SDK 는 송신 frame 마다 단조 시퀀스
+   `frame_seq`(buffer 재생성과 무관)를 `PaintFrame` 메타에 싣는다. host 는
+   `frame_seq == last + 1` 이 아니면(관측 누락) frame 을 **수락하지 않고** 다음
+   set_context 에 `need_full_textures` 를 실어 보낸다. SDK 는 자기가 보낸 텍스처 상태를
+   누적 보관(`EguiMeshCore::tex_state` — full 교체 / patch 합성 / free 제거)하다가, 이
+   요청에 dedup 을 우회하고 **전체 텍스처 상태를 full image 로 동봉**한 frame 을
+   `full_textures = true` 로 재송신한다. host 는 full frame 을 체인과 무관하게 수락하고
+   자기 텍스처 상태를 리셋한다(full 미포함 텍스처는 free). Context 생성 직후 첫 frame 도
+   자연-full 로 마킹돼, bootstrap 직후 gen1 이 덮여도(생성 race) 같은 경로로 회복된다.
+
+요청 플래그의 흐름: 렌더 prepare 가 체인 단절을 감지하면 `GpuState` 의 요청 대기열에
+적재 → redraw 가 drain 해 surface 는 forward 추적 상태(`MeshForwardState::pending_full`)에,
+popup/banner 는 `AppState` 의 `plugin_mesh_{popup,banner}_full_requests` 에 옮김 → 다음
+tick 의 forward 가 `need_full_textures` set_context 를 송신(비가시 surface 는 마지막
+geom/theme 으로 송신). popup/banner 도 같은 체인 규칙을 쓴다.
+
 ## 입력 forward · identity 경계
 
 host 가 받은 **실제 사용자 입력**(클릭/스크롤/포인터 이동)만 surface-local 좌표로
@@ -149,13 +178,14 @@ surface 뿐 아니라 **plugin popup 콘텐츠도 egui-mesh 로 자가 렌더**�
           lookup → decode → 전용 egui_wgpu::Renderer 로 content_rect 에 합성
 ```
 
-### bootstrap 은 1회만 (폰트 atlas 보존)
+### bootstrap 은 1회만 (불필요 paint 억제)
 
 set_context 는 **geom 변경 · 입력 · bootstrap(미paint)** 일 때만 보낸다. 특히 bootstrap 은
-1회만 — paint frame 도착 전 매 frame 스팸하면 plugin 이 여러 번 paint 하고, egui 는 폰트
-atlas delta 를 **첫 frame 에만** 실어 보내므로 host 가 최신 frame 만 보관해 atlas 를 못 받아
-`Missing texture: Managed(0)` 로 텍스트가 사라진다. 1회 보내고 frame 을 기다린다(surface
-`bootstrap_sent` 와 동형; frame 이 보이면 해제돼 crash 후 재bootstrap).
+1회만 — paint frame 도착 전 매 frame 스팸하면 plugin 이 불필요하게 여러 번 paint 한다.
+1회 보내고 frame 을 기다린다(surface `bootstrap_sent` 와 동형; frame 이 보이면 해제돼
+crash 후 재bootstrap). 스팸으로 첫 frame(full atlas)이 덮여도 이제는 frame_seq 체인
+검증이 감지해 full 재전송으로 회복되지만(위 "텍스처 상태 수명 + delta 체인" — popup 도
+동일 규칙), 회복 왕복 자체가 낭비이므로 1회 원칙은 유지한다.
 
 ### 개방 정책
 

@@ -14,6 +14,10 @@
 ## [Unreleased]
 
 ### Added
+- egui-mesh 텍스처 delta 체인 필드 (전부 optional + default — additive, api_version 유지):
+  - `PluginEvent::PaintFrame` / `PopupPaintFrame` / `BannerPaintFrame` 에 `frame_seq: u64`(SDK 렌더 코어의 송신 frame 단조 시퀀스, shared buffer 재생성과 무관) + `full_textures: bool`(이 frame 의 textures_delta 가 plugin 의 전체 텍스처 상태를 full image 로 담음) 추가. host 는 `frame_seq == last + 1` 로 delta 체인 연속성을 검증하고, full frame 은 체인과 무관하게 수락한다.
+  - `SurfaceSetContextParams` / `PopupSetContextParams` / `BannerSetContextParams` 에 `need_full_textures: bool` 추가 — host 가 텍스처 상태를 복구해야 할 때(신규 Renderer / 체인 단절) plugin SDK 에 전체 텍스처 상태의 full 재전송을 요청한다. SDK 는 이 플래그에서 출력 dedup 을 우회한다.
+  - 구버전 plugin(필드 미송신)은 `frame_seq = 0` 으로 파싱돼 host 가 항상 체인 단절로 취급한다 — in-tree egui-mesh whitelist plugin 은 본체와 함께 재빌드되므로 실사용 영향 없음.
 - IPC alias 정규화 layer — 옛 메서드 이름이 새 이름과 같은 핸들러로 라우팅된다.
 - `AuthAck { ok, reason }` + `AuthAckEnvelope { auth_ack }` — plugin이 `AuthMessage` 송신 후 호스트로부터 받는 단일 노티. ok=true면 메인 루프 진입, ok=false면 즉시 거부. 메인 루프의 `PluginRequest`와 다른 envelope(`auth_ack` 키)로 파서가 분리된다. SDK 측에서 `PluginError::HandshakeRejected`/`HandshakeTimeout`으로 매핑됨. (additive, api_version 유지)
 - (PR 4에서 제거됨)

@@ -34,6 +34,39 @@ impl AppState {
         result
     }
 
+    /// 전체 workspace 의 모든 tab(비활성 탭 포함)에 **존재**하는 egui-mesh surface 일람
+    /// (surface_id, plugin_id).
+    ///
+    /// [`Self::surface_regions`] 가 "활성 workspace 의 활성 탭"(=화면에 보이는 surface)만
+    /// 순회하는 것과 달리, 이 함수는 layout 존재 기반이다 — egui-mesh 텍스처 상태의
+    /// surface 수명 귀속(렌더 prepare 의 retain / 비가시 디코드)과 forward 추적 상태
+    /// retain 에 쓴다. 탭 전환/workspace 전환으로 안 보이게 된 surface 의 텍스처 상태를
+    /// 파괴하지 않기 위한 열거다.
+    pub fn egui_mesh_surfaces_existing(&self, engine: &CoreState) -> Vec<(u32, String)> {
+        use crate::plugin_bridge::egui_mesh_surface::EguiMeshSurface;
+        let mut out: Vec<(u32, String)> = Vec::new();
+        for ws in &engine.workspaces {
+            for pane_id in ws.pane_layout().all_pane_ids() {
+                let Some(pane) = ws.pane_layout().find_pane(pane_id) else {
+                    continue;
+                };
+                for tab in &pane.tabs {
+                    let Some(layout) = tab.layout_if_initialized() else {
+                        continue;
+                    };
+                    for sid in layout.all_surface_ids() {
+                        if let Some(s) = layout.find_surface(sid)
+                            && let Some(ms) = s.as_any().downcast_ref::<EguiMeshSurface>()
+                        {
+                            out.push((sid, ms.plugin_id.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Reify (lazy PTY spawn) every deferred placeholder that is about to be
     /// drawn this frame: the active workspace's panes, each pane's active tab,
     /// and every deferred leaf within it.

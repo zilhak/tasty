@@ -30,8 +30,11 @@
 //! [`EguiMeshSurface::context`] 로 [`Context`] 를 받아 `set_fonts` 로 동일 폰트를 설치한다
 //! (B1 markdown 이식 단계의 관심사).
 
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
+use egui::epaint::textures::{TextureOptions, TexturesDelta};
+use egui::epaint::{ImageData, ImageDelta, TextureId};
 use egui::{
     Context, Event, Key, Modifiers, MouseWheelUnit, PointerButton, Pos2, RawInput, Rect, vec2,
 };
@@ -63,9 +66,28 @@ struct EguiMeshCore {
     /// [`repaint_last`](Self::repaint_last)가 **빈 입력**으로 재-run 할 때 재사용한다.
     /// 첫 set_context 도착 전엔 `None` — 그 때 repaint 는 no-op.
     last_ctx: Option<CachedContext>,
+    /// 이 코어가 host 로 보낸 텍스처들의 누적 full 상태 (id → full image + options).
+    /// wire 는 delta 기반 + latest-wins buffer 라 host 가 중간 frame 을 놓칠 수 있다 —
+    /// host 가 `need_full_textures` 로 복구를 요청하면 이 상태를 full image delta 로
+    /// 재구성해 동봉한다(font atlas 포함, image plugin 비트맵 등 임의 Managed 텍스처 전부).
+    /// `BTreeMap` — full 재구성 인코딩의 결정적 순서(해시 dedup 안정성).
+    tex_state: BTreeMap<TextureId, (ImageData, TextureOptions)>,
+    /// 지금까지 **송신한** frame 수(= 마지막 송신 frame 의 seq, 1부터). footer generation
+    /// 과 달리 shared buffer 재생성(성장)과 무관하게 이어지는 단조 시퀀스로, host 가
+    /// textures_delta 체인의 연속성(`frame_seq == last + 1`)을 검증하는 데 쓰인다.
+    frame_seq: u64,
     /// mesh POD 블록을 쓰는 shared buffer. 필요 크기보다 작아지면 재생성한다.
     #[cfg(unix)]
     buffer: Option<SharedBuffer>,
+}
+
+/// 한 번의 렌더가 만든 송신 후보 frame — 인코드된 mesh 바이트 + full 마킹.
+struct MeshFrame {
+    bytes: Vec<u8>,
+    /// 이 frame 의 textures_delta 가 누적 텍스처 상태 **전체**를 full image 로 담는가.
+    /// (첫 frame 은 자연-full, `need_full_textures` 응답은 합성-full.) host 는 full
+    /// frame 을 체인 연속성과 무관하게 수락하고 자기 텍스처 상태를 리셋한다.
+    full_textures: bool,
 }
 
 /// 직전 set_context 의 재-paint 재현에 필요한 host-side 컨텍스트 스냅샷.
@@ -85,13 +107,17 @@ impl EguiMeshCore {
             ctx: Context::default(),
             last_hash: None,
             last_ctx: None,
+            tex_state: BTreeMap::new(),
+            frame_seq: 0,
             #[cfg(unix)]
             buffer: None,
         }
     }
 
     /// 한 frame 을 그려 POD mesh 바이트를 만든다. 출력이 직전과 byte 단위로 동일하면
-    /// (정적 화면) `None` — 호출자는 송신을 생략한다.
+    /// (정적 화면) `None` — 호출자는 송신을 생략한다. `need_full` 이면 dedup 을 우회하고
+    /// 누적 텍스처 상태 전체를 full 로 동봉한다(host 텍스처 상태 복구).
+    #[allow(clippy::too_many_arguments)] // reason: set_context 렌더 컨텍스트 전체
     fn run_frame(
         &mut self,
         width_px: u32,
@@ -99,8 +125,9 @@ impl EguiMeshCore {
         ppp: f32,
         theme: Option<&ThemeWire>,
         raw_input: &RawInputWire,
+        need_full: bool,
         run_ui: impl FnMut(&Context),
-    ) -> Option<Vec<u8>> {
+    ) -> Option<MeshFrame> {
         // out-of-band 재-paint 가 재현할 수 있도록 이번 컨텍스트를 캐시한다(입력 제외).
         self.last_ctx = Some(CachedContext {
             width_px,
@@ -109,7 +136,7 @@ impl EguiMeshCore {
             theme: theme.cloned(),
         });
         let raw = build_raw_input(width_px, height_px, ppp, raw_input);
-        self.render(raw, run_ui)
+        self.render(raw, need_full, run_ui)
     }
 
     /// 마지막 캐시된 컨텍스트(geom/ppp)로 **빈 입력** 재-run 한다. plugin 이 out-of-band 로
@@ -118,13 +145,13 @@ impl EguiMeshCore {
     ///
     /// identity 불변식: 재-run 의 `raw_input` 은 [`RawInputWire::default`](빈 events)로,
     /// 가짜 사용자 입력을 주입하지 않는다.
-    fn repaint_last(&mut self, run_ui: impl FnMut(&Context)) -> Option<Vec<u8>> {
+    fn repaint_last(&mut self, run_ui: impl FnMut(&Context)) -> Option<MeshFrame> {
         let (width_px, height_px, ppp) = {
             let c = self.last_ctx.as_ref()?;
             (c.width_px, c.height_px, c.ppp)
         };
         let raw = build_raw_input(width_px, height_px, ppp, &RawInputWire::default());
-        self.render(raw, run_ui)
+        self.render(raw, false, run_ui)
     }
 
     /// 직전 set_context 의 theme 스냅샷. plugin 의 재-paint closure 가 캐시된 theme 으로
@@ -135,18 +162,108 @@ impl EguiMeshCore {
 
     /// egui 를 구동·tessellate·encode 하고 직전 출력과 해시 비교로 dedup 한다.
     /// 출력이 직전과 byte 단위로 동일하면 `None`(송신 생략). `run_frame`/`repaint_last` 공용.
-    fn render(&mut self, raw: RawInput, run_ui: impl FnMut(&Context)) -> Option<Vec<u8>> {
+    ///
+    /// `need_full` 이면 이 frame 의 delta 대신 누적 텍스처 상태 **전체**를 full image 로
+    /// 동봉하고 dedup 을 우회한다 — host 가 텍스처 상태를 잃었다고 알린 상황이므로,
+    /// 출력 바이트가 직전과 같더라도 반드시 재송신해야 회복된다.
+    fn render(
+        &mut self,
+        raw: RawInput,
+        need_full: bool,
+        run_ui: impl FnMut(&Context),
+    ) -> Option<MeshFrame> {
         let full = self.ctx.run(raw, run_ui);
         // tessellate 는 plugin 이 수행한다(폰트 atlas 를 plugin 이 소유, research-a1 §2-1).
         let primitives = self.ctx.tessellate(full.shapes, full.pixels_per_point);
-        let bytes = encode_paint(&primitives, &full.textures_delta, full.pixels_per_point);
+        // 이 frame 의 delta 를 누적 상태에 먼저 반영한다 — full 재구성은 항상 최신 상태 기준.
+        let naturally_full = self.accumulate_textures(&full.textures_delta);
+        let (bytes, full_textures) = if need_full {
+            (
+                encode_paint(
+                    &primitives,
+                    &self.full_texture_delta(),
+                    full.pixels_per_point,
+                ),
+                true,
+            )
+        } else {
+            (
+                encode_paint(&primitives, &full.textures_delta, full.pixels_per_point),
+                naturally_full,
+            )
+        };
 
         let hash = hash_bytes(&bytes);
-        if self.last_hash == Some(hash) {
+        if !need_full && self.last_hash == Some(hash) {
             return None;
         }
         self.last_hash = Some(hash);
-        Some(bytes)
+        Some(MeshFrame {
+            bytes,
+            full_textures,
+        })
+    }
+
+    /// 이 frame 의 textures_delta 를 누적 상태에 적용하고, delta 가 누적 상태 **전체**를
+    /// full image(`pos == None`)로 담고 있는지(자연-full frame — 예: Context 생성 후 첫
+    /// frame) 반환한다.
+    fn accumulate_textures(&mut self, delta: &TexturesDelta) -> bool {
+        for (id, d) in &delta.set {
+            match d.pos {
+                None => {
+                    self.tex_state.insert(*id, (d.image.clone(), d.options));
+                }
+                Some(pos) => match self.tex_state.get_mut(id) {
+                    Some((base, options)) => {
+                        *options = d.options;
+                        patch_image(base, &d.image, pos);
+                    }
+                    // egui 는 full image 를 먼저 보낸 텍스처에만 patch 를 낸다 —
+                    // base 없는 patch 는 계약 위반이므로 기록만 하고 버린다.
+                    None => tracing::warn!(
+                        "egui-mesh: texture patch for unknown texture {id:?}; dropping"
+                    ),
+                },
+            }
+        }
+        for id in &delta.free {
+            self.tex_state.remove(id);
+        }
+        self.tex_state.keys().all(|id| {
+            delta
+                .set
+                .iter()
+                .any(|(sid, sd)| sid == id && sd.pos.is_none())
+        })
+    }
+
+    /// 누적 텍스처 상태 전체를 full image delta 로 재구성한다 (`need_full_textures` 응답).
+    fn full_texture_delta(&self) -> TexturesDelta {
+        TexturesDelta {
+            set: self
+                .tex_state
+                .iter()
+                .map(|(id, (image, options))| {
+                    (
+                        *id,
+                        ImageDelta {
+                            image: image.clone(),
+                            options: *options,
+                            pos: None,
+                        },
+                    )
+                })
+                .collect(),
+            free: Vec::new(),
+        }
+    }
+
+    /// 송신 확정된 frame 의 시퀀스를 발급한다(1부터 단조 증가). commit 성공 후에만
+    /// 호출해 "송신된 frame 수" 와 어긋나지 않게 한다.
+    #[cfg(unix)]
+    fn next_frame_seq(&mut self) -> u64 {
+        self.frame_seq += 1;
+        self.frame_seq
     }
 
     /// 인코드된 바이트를 shared buffer 에 commit 하고 (buffer_id, generation) 을 돌려준다.
@@ -216,19 +333,29 @@ impl EguiMeshSurface {
     /// `set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
     ///
     /// 출력이 직전 frame 과 byte 단위로 동일하면(정적 화면) `None` 을 반환한다 — 호출자는
-    /// 송신을 생략한다. IPC/buffer 의존이 없어 단위 테스트로 set_context→tessellate→encode
-    /// 라운드를 그대로 검증할 수 있다.
+    /// 송신을 생략한다. 단, `params.need_full_textures` 면 dedup 을 우회하고 누적 텍스처
+    /// 상태 전체를 full 로 동봉한다. IPC/buffer 의존이 없어 단위 테스트로
+    /// set_context→tessellate→encode 라운드를 그대로 검증할 수 있다.
     pub fn run_frame(
         &mut self,
         params: &SurfaceSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Option<Vec<u8>> {
+        self.run_frame_inner(params, run_ui).map(|f| f.bytes)
+    }
+
+    fn run_frame_inner(
+        &mut self,
+        params: &SurfaceSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Option<MeshFrame> {
         self.core.run_frame(
             params.width_px,
             params.height_px,
             params.pixels_per_point,
             params.theme.as_ref(),
             &params.raw_input,
+            params.need_full_textures,
             run_ui,
         )
     }
@@ -248,14 +375,16 @@ impl EguiMeshSurface {
         params: &SurfaceSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(bytes) = self.run_frame(params, run_ui) else {
+        let Some(frame) = self.run_frame_inner(params, run_ui) else {
             return Ok(None);
         };
-        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
         host.notify(&PluginEvent::PaintFrame {
             surface_id: self.surface_id,
             buffer_id,
             generation,
+            frame_seq: self.core.next_frame_seq(),
+            full_textures: frame.full_textures,
         })?;
         Ok(Some(generation))
     }
@@ -270,14 +399,16 @@ impl EguiMeshSurface {
         host: &HostHandle,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(bytes) = self.core.repaint_last(run_ui) else {
+        let Some(frame) = self.core.repaint_last(run_ui) else {
             return Ok(None);
         };
-        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
         host.notify(&PluginEvent::PaintFrame {
             surface_id: self.surface_id,
             buffer_id,
             generation,
+            frame_seq: self.core.next_frame_seq(),
+            full_textures: frame.full_textures,
         })?;
         Ok(Some(generation))
     }
@@ -312,18 +443,27 @@ impl EguiMeshPopup {
     }
 
     /// `popup.set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
-    /// 정적 화면이면 `None`(송신 생략).
+    /// 정적 화면이면 `None`(송신 생략). `need_full_textures` 면 dedup 우회 + 전체 텍스처 동봉.
     pub fn run_frame(
         &mut self,
         params: &PopupSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Option<Vec<u8>> {
+        self.run_frame_inner(params, run_ui).map(|f| f.bytes)
+    }
+
+    fn run_frame_inner(
+        &mut self,
+        params: &PopupSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Option<MeshFrame> {
         self.core.run_frame(
             params.width_px,
             params.height_px,
             params.pixels_per_point,
             params.theme.as_ref(),
             &params.raw_input,
+            params.need_full_textures,
             run_ui,
         )
     }
@@ -342,14 +482,16 @@ impl EguiMeshPopup {
         params: &PopupSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(bytes) = self.run_frame(params, run_ui) else {
+        let Some(frame) = self.run_frame_inner(params, run_ui) else {
             return Ok(None);
         };
-        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
         host.notify(&PluginEvent::PopupPaintFrame {
             instance_id: self.instance_id,
             buffer_id,
             generation,
+            frame_seq: self.core.next_frame_seq(),
+            full_textures: frame.full_textures,
         })?;
         Ok(Some(generation))
     }
@@ -363,14 +505,16 @@ impl EguiMeshPopup {
         host: &HostHandle,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(bytes) = self.core.repaint_last(run_ui) else {
+        let Some(frame) = self.core.repaint_last(run_ui) else {
             return Ok(None);
         };
-        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
         host.notify(&PluginEvent::PopupPaintFrame {
             instance_id: self.instance_id,
             buffer_id,
             generation,
+            frame_seq: self.core.next_frame_seq(),
+            full_textures: frame.full_textures,
         })?;
         Ok(Some(generation))
     }
@@ -405,18 +549,27 @@ impl EguiMeshBanner {
     }
 
     /// `banner.set_context` 입력으로 한 frame 을 그려 POD mesh 바이트를 만든다.
-    /// 정적 화면이면 `None`(송신 생략).
+    /// 정적 화면이면 `None`(송신 생략). `need_full_textures` 면 dedup 우회 + 전체 텍스처 동봉.
     pub fn run_frame(
         &mut self,
         params: &BannerSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Option<Vec<u8>> {
+        self.run_frame_inner(params, run_ui).map(|f| f.bytes)
+    }
+
+    fn run_frame_inner(
+        &mut self,
+        params: &BannerSetContextParams,
+        run_ui: impl FnMut(&Context),
+    ) -> Option<MeshFrame> {
         self.core.run_frame(
             params.width_px,
             params.height_px,
             params.pixels_per_point,
             params.theme.as_ref(),
             &params.raw_input,
+            params.need_full_textures,
             run_ui,
         )
     }
@@ -435,14 +588,16 @@ impl EguiMeshBanner {
         params: &BannerSetContextParams,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(bytes) = self.run_frame(params, run_ui) else {
+        let Some(frame) = self.run_frame_inner(params, run_ui) else {
             return Ok(None);
         };
-        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
         host.notify(&PluginEvent::BannerPaintFrame {
             instance_id: self.instance_id,
             buffer_id,
             generation,
+            frame_seq: self.core.next_frame_seq(),
+            full_textures: frame.full_textures,
         })?;
         Ok(Some(generation))
     }
@@ -456,16 +611,53 @@ impl EguiMeshBanner {
         host: &HostHandle,
         run_ui: impl FnMut(&Context),
     ) -> Result<Option<u64>, PluginError> {
-        let Some(bytes) = self.core.repaint_last(run_ui) else {
+        let Some(frame) = self.core.repaint_last(run_ui) else {
             return Ok(None);
         };
-        let (buffer_id, generation) = self.core.commit(host, &bytes)?;
+        let (buffer_id, generation) = self.core.commit(host, &frame.bytes)?;
         host.notify(&PluginEvent::BannerPaintFrame {
             instance_id: self.instance_id,
             buffer_id,
             generation,
+            frame_seq: self.core.next_frame_seq(),
+            full_textures: frame.full_textures,
         })?;
         Ok(Some(generation))
+    }
+}
+
+/// full image `base` 위에 증분 patch 를 (x, y) 오프셋으로 합성한다. kind 불일치나
+/// 경계 초과는 egui delta 계약 위반 — 기록만 하고 버린다(다음 full 재전송으로 자가 회복).
+fn patch_image(base: &mut ImageData, patch: &ImageData, [x, y]: [usize; 2]) {
+    match (base, patch) {
+        (ImageData::Color(base), ImageData::Color(patch)) => {
+            let [pw, ph] = patch.size;
+            let [bw, bh] = base.size;
+            if x + pw > bw || y + ph > bh {
+                tracing::warn!("egui-mesh: color patch out of bounds; dropping");
+                return;
+            }
+            let base = std::sync::Arc::make_mut(base);
+            for row in 0..ph {
+                let dst = (y + row) * bw + x;
+                let src = row * pw;
+                base.pixels[dst..dst + pw].copy_from_slice(&patch.pixels[src..src + pw]);
+            }
+        }
+        (ImageData::Font(base), ImageData::Font(patch)) => {
+            let [pw, ph] = patch.size;
+            let [bw, bh] = base.size;
+            if x + pw > bw || y + ph > bh {
+                tracing::warn!("egui-mesh: font patch out of bounds; dropping");
+                return;
+            }
+            for row in 0..ph {
+                let dst = (y + row) * bw + x;
+                let src = row * pw;
+                base.pixels[dst..dst + pw].copy_from_slice(&patch.pixels[src..src + pw]);
+            }
+        }
+        _ => tracing::warn!("egui-mesh: texture patch kind mismatch; dropping"),
     }
 }
 
@@ -574,6 +766,7 @@ mod tests {
             pixels_per_point: ppp,
             raw_input: RawInputWire::default(),
             theme: None,
+            need_full_textures: false,
         }
     }
 
@@ -736,6 +929,131 @@ mod tests {
         );
     }
 
+    /// Context 생성 후 첫 frame 은 자연-full 로 마킹된다 — bootstrap race(gen1 이
+    /// 디코드 전에 덮여도 host 가 full 재요청으로 회복)의 전제.
+    #[test]
+    fn first_frame_is_naturally_full() {
+        let mut surface = EguiMeshSurface::new(1);
+        let params = ctx_params(320, 200, 1.0);
+        let frame = surface
+            .run_frame_inner(&params, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.label("first");
+                });
+            })
+            .expect("first frame paints");
+        assert!(
+            frame.full_textures,
+            "first frame carries the whole texture state (font atlas full image)"
+        );
+        assert!(
+            !surface.core.tex_state.is_empty(),
+            "font atlas accumulated into tex_state"
+        );
+    }
+
+    /// need_full_textures: 정적 화면(dedup 수렴)이어도 강제 송신되고, 누적 텍스처
+    /// 전체가 full image(pos == None)로 동봉되며 full 로 마킹된다.
+    #[test]
+    fn need_full_bypasses_dedup_and_carries_all_textures() {
+        let mut surface = EguiMeshSurface::new(1);
+        let params = ctx_params(320, 200, 1.0);
+        let draw = |ctx: &Context| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("static");
+            });
+        };
+        // 정적 수렴시켜 일반 재-run 은 None 이 되게 한다.
+        for _ in 0..6 {
+            surface.run_frame(&params, draw);
+        }
+        assert!(surface.run_frame(&params, draw).is_none(), "converged");
+
+        let full_params = SurfaceSetContextParams {
+            need_full_textures: true,
+            ..ctx_params(320, 200, 1.0)
+        };
+        let frame = surface
+            .run_frame_inner(&full_params, draw)
+            .expect("need_full forces a send even when output is unchanged");
+        assert!(frame.full_textures);
+
+        let decoded = decode_paint(&frame.bytes).expect("decode");
+        assert_eq!(
+            decoded.textures_delta.set.len(),
+            surface.core.tex_state.len(),
+            "full frame carries every accumulated texture"
+        );
+        assert!(
+            decoded
+                .textures_delta
+                .set
+                .iter()
+                .all(|(_, d)| d.pos.is_none()),
+            "full frame textures are full images"
+        );
+        assert!(decoded.textures_delta.free.is_empty());
+    }
+
+    /// 누적층: full → patch 합성 → free 제거, 자연-full 판정.
+    #[test]
+    fn accumulate_textures_composites_patches_and_frees() {
+        use egui::epaint::ColorImage;
+        use egui::{Color32, epaint::textures::TexturesDelta};
+
+        let mut core = EguiMeshCore::new();
+        let id = TextureId::User(7);
+        let full = ImageDelta {
+            image: ImageData::Color(std::sync::Arc::new(ColorImage {
+                size: [2, 2],
+                pixels: vec![Color32::BLACK; 4],
+            })),
+            options: Default::default(),
+            pos: None,
+        };
+        let delta = TexturesDelta {
+            set: vec![(id, full)],
+            free: vec![],
+        };
+        assert!(
+            core.accumulate_textures(&delta),
+            "all-full delta is naturally full"
+        );
+
+        // (1,1) 에 1x1 patch — 해당 픽셀만 바뀐다.
+        let patch = ImageDelta {
+            image: ImageData::Color(std::sync::Arc::new(ColorImage {
+                size: [1, 1],
+                pixels: vec![Color32::WHITE],
+            })),
+            options: Default::default(),
+            pos: Some([1, 1]),
+        };
+        let delta = TexturesDelta {
+            set: vec![(id, patch)],
+            free: vec![],
+        };
+        assert!(
+            !core.accumulate_textures(&delta),
+            "patch-only delta is not full"
+        );
+        let (img, _) = core.tex_state.get(&id).expect("texture retained");
+        let ImageData::Color(img) = img else {
+            panic!("expected color image");
+        };
+        assert_eq!(img.pixels[3], Color32::WHITE, "patched pixel at (1,1)");
+        assert_eq!(img.pixels[0], Color32::BLACK, "other pixels intact");
+
+        // free → 누적 상태에서 제거, full 재구성에서 빠진다.
+        let delta = TexturesDelta {
+            set: vec![],
+            free: vec![id],
+        };
+        core.accumulate_textures(&delta);
+        assert!(core.tex_state.is_empty());
+        assert!(core.full_texture_delta().set.is_empty());
+    }
+
     /// RawInputWire → egui RawInput 매핑: 좌표 보존, 키 이름 파싱, 매핑 불가 키 드롭.
     #[test]
     fn raw_input_mapping_covers_pointer_scroll_key_text() {
@@ -779,6 +1097,7 @@ mod tests {
             pixels_per_point: 2.0,
             raw_input: wire,
             theme: None,
+            need_full_textures: false,
         };
         let raw = build_raw_input(
             params.width_px,

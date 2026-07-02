@@ -123,7 +123,12 @@ pub fn draw_plugin_banners(
         let theme_changed =
             state.plugin_mesh_banner_theme.get(&slot.instance_id) != Some(&current_theme);
         let need_bootstrap = !has_frame && !bootstrapped;
-        if geom_changed || has_input || need_bootstrap || theme_changed {
+        // 렌더 prepare 의 textures_delta 체인 단절 감지 — full 재전송 요청을 소비해
+        // need_full_textures 를 실어 보낸다(popup 과 동형).
+        let need_full = state
+            .plugin_mesh_banner_full_requests
+            .remove(&slot.instance_id);
+        if geom_changed || has_input || need_bootstrap || theme_changed || need_full {
             state.plugin_mesh_banner_geom.insert(slot.instance_id, geom);
             state
                 .plugin_mesh_banner_theme
@@ -142,6 +147,7 @@ pub fn draw_plugin_banners(
                     pixels_per_point: ppp,
                     raw_input,
                     theme: Some(current_theme.clone()),
+                    need_full_textures: need_full,
                 },
             );
         }

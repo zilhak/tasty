@@ -165,7 +165,12 @@ pub fn draw_plugin_popups(
         let theme_changed =
             state.plugin_mesh_popup_theme.get(&snap.instance_id) != Some(&current_theme);
         let need_bootstrap = !has_frame && !bootstrapped;
-        if geom_changed || has_input || need_bootstrap || theme_changed {
+        // 렌더 prepare 의 textures_delta 체인 단절 감지 — full 재전송 요청을 소비해
+        // need_full_textures 를 실어 보낸다(다른 트리거가 없어도 송신).
+        let need_full = state
+            .plugin_mesh_popup_full_requests
+            .remove(&snap.instance_id);
+        if geom_changed || has_input || need_bootstrap || theme_changed || need_full {
             state.plugin_mesh_popup_geom.insert(snap.instance_id, geom);
             state
                 .plugin_mesh_popup_theme
@@ -184,6 +189,7 @@ pub fn draw_plugin_popups(
                     pixels_per_point: ppp,
                     raw_input,
                     theme: Some(current_theme.clone()),
+                    need_full_textures: need_full,
                 },
             );
         }
