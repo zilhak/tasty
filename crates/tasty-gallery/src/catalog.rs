@@ -353,7 +353,7 @@ pub fn pages() -> Vec<Page> {
                 ),
                 section(
                     "feedback",
-                    "StatusDot · Status resolution · Spinner · Toast · Toast stack",
+                    "StatusDot · Status resolution · Spinner · Toast · Toast stack · Toast view",
                     vec![
                         spec(
                             "status-dot",
@@ -384,6 +384,12 @@ pub fn pages() -> Vec<Page> {
                             "Toast stack",
                             Some("Bottom-right stack with newest-on-top and +N more overflow"),
                             widgets::toast::draw_stack,
+                        ),
+                        spec(
+                            "toast-view",
+                            "Toast view",
+                            Some("draw_toast_view mirror — scope stack, body wrap, alpha fade"),
+                            components::toast::draw,
                         ),
                     ],
                 ),
