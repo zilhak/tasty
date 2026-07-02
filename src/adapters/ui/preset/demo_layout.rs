@@ -25,6 +25,7 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Input, select};
 
 use crate::adapters::ui::icons::{self, Icon};
+use crate::engine::surface_registry::SurfaceKindRegistry;
 use crate::i18n::t;
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preview 전용 치수 — specimen 과 동일).
@@ -53,19 +54,103 @@ const FORM_PAD: f32 = 6.0;
 /// inline leaf form 필드 세로 gap.
 const FORM_GAP: f32 = 4.0;
 
-/// 편집 시 kind 드롭다운 후보 — terminal(builtin) + 생성 가능한 등록 kind.
-/// `empty`/`attached` 는 제외(capture/apply 정규화 정책과 정합). registry 미주입
-/// 컨텍스트라 정적 목록을 쓰되, 현재 leaf 의 kind 가 목록에 없으면 런타임에 덧붙여
-/// plugin/unknown kind 가 편집 중 유실되지 않게 한다(`kind_candidates`).
+/// registry 미주입 컨텍스트(갤러리·테스트·main 부재)에서 쓰는 정적 kind 후보 +
+/// builtin 정렬 기준. registry 가 주입되면 [`KindCatalog::from_registry`] 가 실제
+/// 등록 kind 로 대체하고, 이 배열은 빈 catalog 의 graceful fallback 으로만 남는다.
+/// `empty`/`attached` 는 제외(capture/apply 정규화 정책과 정합).
 const EDIT_KINDS: &[&str] = &["terminal", "markdown", "image", "explorer", "html"];
 
-/// 현재 kind 를 포함한 편집 후보 목록.
-fn kind_candidates(current: &str) -> Vec<String> {
-    let mut v: Vec<String> = EDIT_KINDS.iter().map(|s| s.to_string()).collect();
-    if !v.iter().any(|k| k == current) {
-        v.push(current.to_string());
+/// 편집기 kind 드롭다운에서 숨길 시스템 kind. `empty`/`attached` 는 사용자가
+/// 직접 만들 수 없는 내부 상태라 capture/apply 정규화와 정합하게 후보에서 제외한다.
+const HIDDEN_EDIT_KINDS: &[&str] = &["empty", "attached"];
+
+/// registry 에서 파생한 경량 kind 스냅샷 — 편집기 렌더/mutation 이 engine 타입에
+/// 의존하지 않도록 순수 데이터만 담는다(build 시 1회 추출, `방식 B`).
+///
+/// `specs` 는 편집 드롭다운 후보(등록 순서, `HIDDEN_EDIT_KINDS` 제외)와 각 kind 의
+/// 해석된 표시명 쌍이다. 비어 있으면 registry 미주입으로 보고 정적 [`EDIT_KINDS`]
+/// 로 graceful fallback 한다.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct KindCatalog {
+    specs: Vec<KindSpec>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct KindSpec {
+    kind: String,
+    label: String,
+}
+
+impl KindCatalog {
+    /// registry 스냅샷에서 편집기 kind catalog 를 만든다.
+    /// - `HIDDEN_EDIT_KINDS`(`empty`/`attached`) 는 제외.
+    /// - 순서: builtin 우선([`EDIT_KINDS`] 순), 그 외 plugin kind 는 알파벳순.
+    /// - 표시명: registry `display_name_i18n_key` 번역 우선, 미번역/미등록이면 capitalize.
+    pub fn from_registry(registry: &SurfaceKindRegistry) -> Self {
+        let snapshot = registry.kinds_snapshot();
+        let mut kinds: Vec<&'static str> = snapshot
+            .iter()
+            .map(|(k, _)| *k)
+            .filter(|k| !HIDDEN_EDIT_KINDS.contains(k))
+            .collect();
+        kinds.sort_by(|a, b| {
+            let ia = EDIT_KINDS.iter().position(|p| p == a);
+            let ib = EDIT_KINDS.iter().position(|p| p == b);
+            match (ia, ib) {
+                (Some(x), Some(y)) => x.cmp(&y),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.cmp(b),
+            }
+        });
+        let specs = kinds
+            .iter()
+            .map(|k| KindSpec {
+                kind: (*k).to_string(),
+                label: registry
+                    .get(k)
+                    .map(|def| label_from_i18n_key(def.display_name_i18n_key, k))
+                    .unwrap_or_else(|| fallback_kind_label(k)),
+            })
+            .collect();
+        Self { specs }
     }
-    v
+
+    /// 테스트/데모용 — (kind, label) 쌍에서 직접 catalog 구성.
+    #[cfg(test)]
+    fn from_pairs(pairs: Vec<(String, String)>) -> Self {
+        Self {
+            specs: pairs
+                .into_iter()
+                .map(|(kind, label)| KindSpec { kind, label })
+                .collect(),
+        }
+    }
+
+    /// 현재 kind 를 반드시 포함한 편집 드롭다운 후보. 빈 catalog(registry 미주입)면
+    /// 정적 [`EDIT_KINDS`] 로 fallback 하고, 현재 leaf 의 kind 가 목록에 없으면
+    /// 덧붙여 plugin/unknown kind 가 편집 중 유실되지 않게 한다.
+    fn candidates(&self, current: &str) -> Vec<String> {
+        let mut v: Vec<String> = if self.specs.is_empty() {
+            EDIT_KINDS.iter().map(|s| s.to_string()).collect()
+        } else {
+            self.specs.iter().map(|s| s.kind.clone()).collect()
+        };
+        if !v.iter().any(|k| k == current) {
+            v.push(current.to_string());
+        }
+        v
+    }
+
+    /// kind → 표시명. catalog 에 있으면 registry 기준 표시명을, 없으면(미등록/미주입)
+    /// [`fallback_kind_label`] 로 떨어진다.
+    fn label(&self, kind: &str) -> String {
+        self.specs
+            .iter()
+            .find(|s| s.kind == kind)
+            .map(|s| s.label.clone())
+            .unwrap_or_else(|| fallback_kind_label(kind))
+    }
 }
 
 // ── kind 시각 매핑 (아이콘 + accent) ────────────────────────────────────
@@ -95,26 +180,33 @@ fn kind_accent(theme: &Theme, kind: &str) -> egui::Color32 {
     }
 }
 
-/// 레지스트리 없는 컨텍스트(현재 `PresetView` 윈도우는 `CoreState` 미접근)용
-/// fallback kind→표시명 해석기.
-///
-/// `surface.kind.<kind>` i18n 키를 시도하고(= registry `display_name_i18n_key`
-/// 규약과 동일 키. builtin/plugin 모두 이 네임스페이스를 쓴다), 미번역이면 kind
-/// 첫 글자를 대문자로(`convert.rs::resolve_label` 의 capitalize fallback 패턴).
-///
-/// TODO 08(화면 통합)에서 `PresetView` 에 registry 가 주입되면, registry
-/// `kinds_snapshot()`/`get()` 기반 resolver 로 교체할 자리.
-pub fn fallback_kind_label(kind: &str) -> String {
-    let key = format!("surface.kind.{kind}");
-    let tr = t(&key);
-    if tr != key.as_str() {
-        return tr.to_string();
-    }
+/// kind 첫 글자를 대문자로(`convert.rs::resolve_label` 의 capitalize fallback 패턴).
+fn capitalize_first(kind: &str) -> String {
     let mut c = kind.chars();
     match c.next() {
         None => String::new(),
         Some(f) => f.to_ascii_uppercase().to_string() + c.as_str(),
     }
+}
+
+/// registry `display_name_i18n_key` 로 표시명을 구한다. 키가 미번역(=키 그대로
+/// 반환)이면 kind 를 capitalize 한다(자리표시자 키 방어 — 빈/미번역 fallback).
+fn label_from_i18n_key(key: &str, kind: &str) -> String {
+    let tr = t(key);
+    if tr != key {
+        return tr.to_string();
+    }
+    capitalize_first(kind)
+}
+
+/// registry 미주입/미등록 kind 의 표시명 fallback.
+///
+/// `surface.kind.<kind>` i18n 키를 시도하고(= registry `display_name_i18n_key`
+/// 규약과 동일 키. builtin/plugin 모두 이 네임스페이스를 쓴다), 미번역이면 kind
+/// 첫 글자를 대문자로. registry 가 주입되면 [`KindCatalog`] 가 우선하고, 이 함수는
+/// catalog 에 없는 kind(비활성 plugin·`empty`/`attached` 등)의 안전망으로만 쓰인다.
+fn fallback_kind_label(kind: &str) -> String {
+    label_from_i18n_key(&format!("surface.kind.{kind}"), kind)
 }
 
 // ── 정규화된 preview 모델 ───────────────────────────────────────────────
@@ -343,8 +435,9 @@ fn is_row(d: PresetSplitDirection) -> bool {
 }
 
 impl DemoLayout {
-    pub fn from_workspace(p: &WorkspacePreset, resolve: impl Fn(&str) -> String) -> Self {
+    pub fn from_workspace(p: &WorkspacePreset, catalog: &KindCatalog) -> Self {
         let mut ids = IdGen(0);
+        let resolve = |k: &str| catalog.label(k);
         let root = Root::Panes(norm_pane_node(&p.layout, &resolve, &mut ids));
         Self {
             root,
@@ -353,8 +446,9 @@ impl DemoLayout {
         }
     }
 
-    pub fn from_tab(p: &TabPreset, resolve: impl Fn(&str) -> String) -> Self {
+    pub fn from_tab(p: &TabPreset, catalog: &KindCatalog) -> Self {
         let mut ids = IdGen(0);
+        let resolve = |k: &str| catalog.label(k);
         let root = Root::TabFrame(norm_surf(&p.tab.layout, &resolve, &mut ids));
         Self {
             root,
@@ -363,8 +457,9 @@ impl DemoLayout {
         }
     }
 
-    pub fn from_pane(p: &PanePreset, resolve: impl Fn(&str) -> String) -> Self {
+    pub fn from_pane(p: &PanePreset, catalog: &KindCatalog) -> Self {
         let mut ids = IdGen(0);
+        let resolve = |k: &str| catalog.label(k);
         let root = Root::Panes(PaneNode::Leaf(norm_pane(&p.pane, &resolve, &mut ids)));
         Self {
             root,
@@ -375,14 +470,26 @@ impl DemoLayout {
 
     /// read-only 미리보기를 그리고 탭 클릭 상호작용을 처리한다.
     /// 탭 클릭으로 active 가 바뀌면 `true` 를 반환한다(호출자 repaint 신호).
-    pub fn show(&mut self, ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) -> bool {
-        let mut cx = DrawCtx {
-            edit: false,
-            sel: None,
-            act: None,
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        rect: egui::Rect,
+        catalog: &KindCatalog,
+    ) -> bool {
+        // cx 가 catalog 참조를 잡으므로 블록으로 borrow 를 닫고 act 만 꺼낸다
+        // (아래 self mutation 전에 immutable borrow 종료).
+        let act = {
+            let mut cx = DrawCtx {
+                edit: false,
+                sel: None,
+                act: None,
+                catalog,
+            };
+            self.draw(ui, theme, rect, &mut cx);
+            cx.act
         };
-        self.draw(ui, theme, rect, &mut cx);
-        match cx.act {
+        match act {
             Some(Act::SetActive { pane, idx }) => self.set_active(pane, idx),
             _ => false,
         }
@@ -397,19 +504,26 @@ impl DemoLayout {
         theme: &Theme,
         rect: egui::Rect,
         selected: &mut Option<usize>,
+        catalog: &KindCatalog,
     ) -> ShowOutcome {
         // 배경 클릭 = 선택 해제(specimen 의 onClick→setSel(null)). leaf/위젯 interact
         // 가 뒤에 추가되어 위에 얹히므로, 그것들을 누르면 bg.clicked() 는 false 가 된다.
         let bg = ui.interact(rect, ui.id().with("preset_demo_bg"), egui::Sense::click());
 
-        let mut cx = DrawCtx {
-            edit: true,
-            sel: *selected,
-            act: None,
+        // cx 가 catalog 참조를 잡으므로 블록으로 borrow 를 닫고 act 만 꺼낸다
+        // (아래 self mutation 전에 immutable borrow 종료).
+        let act = {
+            let mut cx = DrawCtx {
+                edit: true,
+                sel: *selected,
+                act: None,
+                catalog,
+            };
+            self.draw(ui, theme, rect, &mut cx);
+            cx.act
         };
-        self.draw(ui, theme, rect, &mut cx);
 
-        let act = cx.act.or_else(|| bg.clicked().then_some(Act::Deselect));
+        let act = act.or_else(|| bg.clicked().then_some(Act::Deselect));
         match act {
             None => ShowOutcome::None,
             Some(Act::Select(id)) => {
@@ -432,7 +546,7 @@ impl DemoLayout {
                 }
             }
             Some(Act::SetKind { id, kind }) => {
-                self.set_kind(id, &kind);
+                self.set_kind(id, &kind, catalog);
                 ShowOutcome::Mutated
             }
             Some(Act::SetField { id, cwd, value }) => {
@@ -442,11 +556,11 @@ impl DemoLayout {
             Some(Act::Split { id, row }) => {
                 // 핸들 클러스터 split = after 배치(새 leaf second). 경계 존 before 는
                 // preset-edit-03 마우스 UI 몫.
-                self.split_leaf(id, row, false);
+                self.split_leaf(id, row, false, catalog);
                 ShowOutcome::Mutated
             }
             Some(Act::Remove { id }) => {
-                if self.remove_leaf(id) {
+                if self.remove_leaf(id, catalog) {
                     if *selected == Some(id) {
                         *selected = None;
                     }
@@ -456,18 +570,18 @@ impl DemoLayout {
                 }
             }
             Some(Act::AddTab { pane }) => {
-                self.add_tab(pane);
+                self.add_tab(pane, catalog);
                 ShowOutcome::Mutated
             }
             Some(Act::SplitPane { id, row }) => {
-                if self.split_pane(id, row) {
+                if self.split_pane(id, row, catalog) {
                     ShowOutcome::Mutated
                 } else {
                     ShowOutcome::None
                 }
             }
             Some(Act::RemovePane { id }) => {
-                if self.remove_pane(id) {
+                if self.remove_pane(id, catalog) {
                     // 제거된 pane 안의 leaf 가 선택돼 있었으면 해제(사라진 leaf 는
                     // contains_leaf 로 판별 — 다른 pane 의 선택은 보존).
                     if selected.is_some_and(|s| !self.contains_leaf(s)) {
@@ -491,7 +605,7 @@ impl DemoLayout {
         }
     }
 
-    fn draw(&self, ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, cx: &mut DrawCtx) {
+    fn draw(&self, ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, cx: &mut DrawCtx<'_>) {
         match &self.root {
             Root::Panes(node) => draw_pane_tree(ui, theme, rect, node, cx),
             Root::TabFrame(node) => draw_tab_frame(ui, theme, rect, node, cx),
@@ -518,15 +632,15 @@ impl DemoLayout {
         id
     }
 
-    fn set_kind(&mut self, id: usize, kind: &str) {
-        let label = fallback_kind_label(kind);
+    fn set_kind(&mut self, id: usize, kind: &str, catalog: &KindCatalog) {
+        let label = catalog.label(kind);
         for_each_surf_root_mut(&mut self.root, &mut |node| {
             if let Some(l) = find_leaf_mut(node, id) {
                 l.kind = kind.to_string();
                 l.label = label.clone();
             }
         });
-        self.refresh_auto_names();
+        self.refresh_auto_names(catalog);
     }
 
     /// `cwd == true` 면 cwd, 아니면 startup 필드를 설정. 빈 문자열은 None.
@@ -546,11 +660,12 @@ impl DemoLayout {
     /// leaf 를 split 한다. `before == true` 면 새 leaf 가 first(좌/상), false 면
     /// second(우/하). 키보드 경로는 after(기본 false), 디자인의 경계 존(좌/상 클릭)은
     /// before(true) — `preset-edit-03`(마우스) 에서 사용.
-    fn split_leaf(&mut self, id: usize, row: bool, before: bool) {
+    fn split_leaf(&mut self, id: usize, row: bool, before: bool, catalog: &KindCatalog) {
+        let leaf_id = self.alloc_id();
         let new_leaf = Leaf {
-            id: self.alloc_id(),
+            id: leaf_id,
             kind: "terminal".to_string(),
-            label: fallback_kind_label("terminal"),
+            label: catalog.label("terminal"),
             cwd: None,
             startup: None,
             params: serde_json::Value::Null,
@@ -559,7 +674,7 @@ impl DemoLayout {
         for_each_surf_root_mut(&mut self.root, &mut |node| {
             split_node(node, id, row, before, &mut slot);
         });
-        self.refresh_auto_names();
+        self.refresh_auto_names(catalog);
     }
 
     /// 대상 pane leaf 를 `PaneNode::Split{ratio 0.5}` 로 교체하고 형제로 terminal
@@ -571,19 +686,22 @@ impl DemoLayout {
     /// 누락" 대신 호출부(mutation)에서 명시적으로 막아, 변형이 저장되지 않을 조작을
     /// 애초에 수행하지 않는다(계획 §scope별 유효성). Workspace/Pane 은 둘 다
     /// `Root::Panes` 라 Root 모양으로는 구분 불가 → [`Scope`] 태그로 판별.
-    fn split_pane(&mut self, pane_id: usize, row: bool) -> bool {
+    fn split_pane(&mut self, pane_id: usize, row: bool, catalog: &KindCatalog) -> bool {
         if self.scope != Scope::Workspace {
             return false;
         }
+        let term_label = catalog.label("terminal");
+        let pane_new_id = self.alloc_id();
+        let leaf_id = self.alloc_id();
         let new_pane = PreviewPane {
-            id: self.alloc_id(),
+            id: pane_new_id,
             tabs: vec![PreviewTab {
-                name: fallback_kind_label("terminal"),
+                name: term_label.clone(),
                 explicit_name: None,
                 layout: SurfNode::Leaf(Leaf {
-                    id: self.alloc_id(),
+                    id: leaf_id,
                     kind: "terminal".to_string(),
-                    label: fallback_kind_label("terminal"),
+                    label: term_label,
                     cwd: None,
                     startup: None,
                     params: serde_json::Value::Null,
@@ -597,20 +715,20 @@ impl DemoLayout {
             Root::TabFrame(_) => false,
         };
         if did {
-            self.refresh_auto_names();
+            self.refresh_auto_names(catalog);
         }
         did
     }
 
     /// pane 을 제거하고 부모 pane split 을 형제로 collapse. 루트 단일 pane(형제 없음)
     /// 은 제거 불가 — 그 경우 false(빈 preset 방지).
-    fn remove_pane(&mut self, pane_id: usize) -> bool {
+    fn remove_pane(&mut self, pane_id: usize, catalog: &KindCatalog) -> bool {
         let removed = match &mut self.root {
             Root::Panes(node) => remove_pane_node(node, pane_id),
             Root::TabFrame(_) => false,
         };
         if removed {
-            self.refresh_auto_names();
+            self.refresh_auto_names(catalog);
         }
         removed
     }
@@ -663,7 +781,7 @@ impl DemoLayout {
 
     /// leaf 를 제거하고 부모 split 을 형제로 collapse. 단일 surface(루트 leaf)는
     /// 제거 불가 — 그 경우 false.
-    fn remove_leaf(&mut self, id: usize) -> bool {
+    fn remove_leaf(&mut self, id: usize, catalog: &KindCatalog) -> bool {
         let mut removed = false;
         for_each_surf_root_mut(&mut self.root, &mut |node| {
             if remove_node(node, id) {
@@ -671,22 +789,23 @@ impl DemoLayout {
             }
         });
         if removed {
-            self.refresh_auto_names();
+            self.refresh_auto_names(catalog);
         }
         removed
     }
 
-    fn add_tab(&mut self, pane_id: usize) {
+    fn add_tab(&mut self, pane_id: usize, catalog: &KindCatalog) {
         let leaf_id = self.alloc_id();
+        let term_label = catalog.label("terminal");
         for_each_pane_mut(&mut self.root, &mut |pane| {
             if pane.id == pane_id {
                 pane.tabs.push(PreviewTab {
-                    name: fallback_kind_label("terminal"),
+                    name: term_label.clone(),
                     explicit_name: None,
                     layout: SurfNode::Leaf(Leaf {
                         id: leaf_id,
                         kind: "terminal".to_string(),
-                        label: fallback_kind_label("terminal"),
+                        label: term_label.clone(),
                         cwd: None,
                         startup: None,
                         params: serde_json::Value::Null,
@@ -702,24 +821,24 @@ impl DemoLayout {
 
     /// 자동 이름(explicit_name 없는) 탭의 표시명을 대표 kind 로 갱신 — kind/구조
     /// 변경 후 mini-tab 라벨 live-update.
-    fn refresh_auto_names(&mut self) {
-        fn fix_pane(node: &mut PaneNode) {
+    fn refresh_auto_names(&mut self, catalog: &KindCatalog) {
+        fn fix_pane(node: &mut PaneNode, catalog: &KindCatalog) {
             match node {
                 PaneNode::Leaf(pane) => {
                     for t in &mut pane.tabs {
                         if t.explicit_name.is_none() {
-                            t.name = fallback_kind_label(t.layout.rep_kind());
+                            t.name = catalog.label(t.layout.rep_kind());
                         }
                     }
                 }
                 PaneNode::Split { first, second, .. } => {
-                    fix_pane(first);
-                    fix_pane(second);
+                    fix_pane(first, catalog);
+                    fix_pane(second, catalog);
                 }
             }
         }
         if let Root::Panes(node) = &mut self.root {
-            fix_pane(node);
+            fix_pane(node, catalog);
         }
     }
 
@@ -783,10 +902,13 @@ enum Act {
 }
 
 /// draw 재귀에 전달되는 편집 컨텍스트.
-struct DrawCtx {
+struct DrawCtx<'a> {
     edit: bool,
     sel: Option<usize>,
     act: Option<Act>,
+    /// kind 드롭다운 후보/라벨 소스(registry 스냅샷). 프레임마다 fresh 하게 주입되어
+    /// 편집 중 후보 목록이 런타임 등록 kind 를 즉시 반영한다.
+    catalog: &'a KindCatalog,
 }
 
 // ── 트리 워크 헬퍼 (편집) ───────────────────────────────────────────────
@@ -1060,7 +1182,7 @@ fn draw_surf(
     theme: &Theme,
     rect: egui::Rect,
     node: &SurfNode,
-    cx: &mut DrawCtx,
+    cx: &mut DrawCtx<'_>,
 ) {
     match node {
         SurfNode::Leaf(l) => draw_surface_box(ui, theme, rect, l, cx),
@@ -1087,7 +1209,7 @@ fn draw_surface_box(
     theme: &Theme,
     rect: egui::Rect,
     leaf: &Leaf,
-    cx: &mut DrawCtx,
+    cx: &mut DrawCtx<'_>,
 ) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, theme.bg_app().to_egui());
@@ -1167,7 +1289,7 @@ fn draw_handle_cluster(
     theme: &Theme,
     rect: egui::Rect,
     leaf_id: usize,
-    cx: &mut DrawCtx,
+    cx: &mut DrawCtx<'_>,
 ) {
     // 우상단 정렬, 시각 순서(좌→우): split-right · split-down · remove.
     let step = HANDLE_SZ + HANDLE_GAP;
@@ -1250,7 +1372,7 @@ fn draw_leaf_form(
     theme: &Theme,
     rect: egui::Rect,
     leaf: &Leaf,
-    cx: &mut DrawCtx,
+    cx: &mut DrawCtx<'_>,
 ) {
     let inner_w = (rect.width() - FORM_PAD * 2.0).min(FORM_MAX_W).max(0.0);
     if inner_w < 1.0 {
@@ -1276,8 +1398,8 @@ fn draw_leaf_form(
 
     // kind Select.
     field_label(&mut child, theme, t("preset.edit.kind"));
-    let candidates = kind_candidates(&leaf.kind);
-    let labels: Vec<String> = candidates.iter().map(|k| fallback_kind_label(k)).collect();
+    let candidates = cx.catalog.candidates(&leaf.kind);
+    let labels: Vec<String> = candidates.iter().map(|k| cx.catalog.label(k)).collect();
     let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
     let mut sel_idx = candidates.iter().position(|k| *k == leaf.kind).unwrap_or(0);
     if select(
@@ -1345,7 +1467,7 @@ fn draw_pane_tree(
     theme: &Theme,
     rect: egui::Rect,
     node: &PaneNode,
-    cx: &mut DrawCtx,
+    cx: &mut DrawCtx<'_>,
 ) {
     match node {
         PaneNode::Leaf(pane) => draw_pane_card(ui, theme, rect, pane, cx),
@@ -1369,7 +1491,7 @@ fn draw_pane_card(
     theme: &Theme,
     rect: egui::Rect,
     pane: &PreviewPane,
-    cx: &mut DrawCtx,
+    cx: &mut DrawCtx<'_>,
 ) {
     let radius = theme.corner_radius.value();
     let bw = theme.border_width.value();
@@ -1501,7 +1623,7 @@ fn draw_tab_frame(
     theme: &Theme,
     rect: egui::Rect,
     node: &SurfNode,
-    cx: &mut DrawCtx,
+    cx: &mut DrawCtx<'_>,
 ) {
     let radius = theme.corner_radius.value();
     let bw = theme.border_width.value();
@@ -1568,6 +1690,44 @@ mod tests {
         }
     }
 
+    /// 테스트용 catalog — `EDIT_KINDS` 를 capitalize 라벨로 담아 registry 없이
+    /// 결정적으로 kind→표시명을 해석한다(`up` 과 동일 규칙).
+    fn tc() -> KindCatalog {
+        KindCatalog::from_pairs(EDIT_KINDS.iter().map(|k| (k.to_string(), up(k))).collect())
+    }
+
+    #[test]
+    fn catalog_candidates_reflect_registered_kinds() {
+        // registry 파생 catalog 는 등록 kind 를 후보로 노출하고, 현재 kind 가 목록에
+        // 없으면 덧붙인다. HIDDEN(empty/attached)은 from_registry 에서 이미 걸러진다.
+        let cat = KindCatalog::from_pairs(vec![
+            ("terminal".to_string(), "Terminal".to_string()),
+            ("foo".to_string(), "Foo Surface".to_string()),
+        ]);
+        let cands = cat.candidates("terminal");
+        assert!(cands.contains(&"foo".to_string()));
+        assert!(cands.contains(&"terminal".to_string()));
+        // 목록에 없는 현재 kind 는 덧붙는다(편집 중 유실 방지).
+        let cands = cat.candidates("bar");
+        assert!(cands.contains(&"bar".to_string()));
+        // 등록 kind 의 라벨은 registry 표시명, 미등록은 fallback.
+        assert_eq!(cat.label("foo"), "Foo Surface");
+        assert_eq!(cat.label("terminal"), "Terminal");
+    }
+
+    #[test]
+    fn empty_catalog_falls_back_to_static_kinds() {
+        // registry 미주입(빈 catalog)이면 정적 EDIT_KINDS 로 fallback.
+        let cat = KindCatalog::default();
+        let cands = cat.candidates("terminal");
+        for k in EDIT_KINDS {
+            assert!(cands.contains(&k.to_string()), "missing static kind {k}");
+        }
+        // 정적 목록에 없는 현재 kind 도 덧붙는다.
+        let cands = cat.candidates("plugin-kind");
+        assert!(cands.contains(&"plugin-kind".to_string()));
+    }
+
     #[test]
     fn vertical_split_is_row_horizontal_is_column() {
         // 라이브 모델 의미와 일치: Vertical=좌우(row), Horizontal=상하(column).
@@ -1589,7 +1749,7 @@ mod tests {
                 ),
             },
         };
-        let dl = DemoLayout::from_tab(&p, up);
+        let dl = DemoLayout::from_tab(&p, &tc());
         match &dl.root {
             Root::TabFrame(SurfNode::Split {
                 row,
@@ -1625,7 +1785,7 @@ mod tests {
             name: "p".into(),
             pane,
         };
-        let dl = DemoLayout::from_pane(&p, up);
+        let dl = DemoLayout::from_pane(&p, &tc());
         match &dl.root {
             Root::Panes(PaneNode::Leaf(pp)) => {
                 assert_eq!(pp.tabs[0].name, "Markdown");
@@ -1653,7 +1813,7 @@ mod tests {
             name: "p".into(),
             pane,
         };
-        let dl = DemoLayout::from_pane(&p, up);
+        let dl = DemoLayout::from_pane(&p, &tc());
         match &dl.root {
             Root::Panes(PaneNode::Leaf(pp)) => assert_eq!(pp.active, 1),
             _ => panic!(),
@@ -1679,7 +1839,7 @@ mod tests {
             name: "p".into(),
             pane,
         };
-        let mut dl = DemoLayout::from_pane(&p, up);
+        let mut dl = DemoLayout::from_pane(&p, &tc());
         // pane id 0 (첫 pane). 0→1 변경 = true, 다시 1→1 = false.
         assert!(dl.set_active(0, 1));
         assert!(!dl.set_active(0, 1));
@@ -1725,12 +1885,12 @@ mod tests {
 
     #[test]
     fn set_kind_updates_leaf_and_label() {
-        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), up);
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
         let mut ids = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut ids);
         let leaf_id = ids[0];
 
-        dl.set_kind(leaf_id, "markdown");
+        dl.set_kind(leaf_id, "markdown", &tc());
         match first_surf(&dl) {
             SurfNode::Leaf(l) => {
                 assert_eq!(l.kind, "markdown");
@@ -1748,12 +1908,12 @@ mod tests {
 
     #[test]
     fn split_leaf_creates_sibling() {
-        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), up);
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
         let mut ids = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut ids);
         let leaf_id = ids[0];
 
-        dl.split_leaf(leaf_id, true, false);
+        dl.split_leaf(leaf_id, true, false, &tc());
         match first_surf(&dl) {
             SurfNode::Split {
                 row, first, second, ..
@@ -1773,19 +1933,19 @@ mod tests {
 
     #[test]
     fn remove_leaf_collapses_parent_and_guards_sole() {
-        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), up);
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
         let mut ids = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut ids);
         let sole = ids[0];
         // 단일 surface 는 제거 불가.
-        assert!(!dl.remove_leaf(sole));
+        assert!(!dl.remove_leaf(sole, &tc()));
 
-        dl.split_leaf(sole, false, false);
+        dl.split_leaf(sole, false, false, &tc());
         let mut after = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut after);
         assert_eq!(after.len(), 2);
         // 하나 제거 → 형제로 collapse.
-        assert!(dl.remove_leaf(after[1]));
+        assert!(dl.remove_leaf(after[1], &tc()));
         let mut final_ids = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut final_ids);
         assert_eq!(final_ids, vec![after[0]]);
@@ -1793,12 +1953,12 @@ mod tests {
 
     #[test]
     fn add_tab_appends_terminal_and_activates() {
-        let mut dl = DemoLayout::from_pane(&single_pane("markdown"), up);
+        let mut dl = DemoLayout::from_pane(&single_pane("markdown"), &tc());
         let pane_id = match &dl.root {
             Root::Panes(PaneNode::Leaf(p)) => p.id,
             _ => panic!(),
         };
-        dl.add_tab(pane_id);
+        dl.add_tab(pane_id, &tc());
         match &dl.root {
             Root::Panes(PaneNode::Leaf(p)) => {
                 assert_eq!(p.tabs.len(), 2);
@@ -1838,7 +1998,7 @@ mod tests {
                 }),
             },
         };
-        let dl = DemoLayout::from_workspace(&p, up);
+        let dl = DemoLayout::from_workspace(&p, &tc());
         let mut ids = Vec::new();
         fn collect(node: &PaneNode, ids: &mut Vec<usize>) {
             match node {
@@ -1895,12 +2055,12 @@ mod tests {
 
     #[test]
     fn split_pane_creates_sibling_pane_and_rebuilds() {
-        let mut dl = DemoLayout::from_workspace(&single_pane_workspace("terminal"), up);
+        let mut dl = DemoLayout::from_workspace(&single_pane_workspace("terminal"), &tc());
         let mut ids = Vec::new();
         pane_ids(root_pane(&dl), &mut ids);
         let pane_id = ids[0];
 
-        assert!(dl.split_pane(pane_id, true));
+        assert!(dl.split_pane(pane_id, true, &tc()));
         // Root 는 이제 pane Split, 형제 2개.
         match root_pane(&dl) {
             PaneNode::Split {
@@ -1924,30 +2084,30 @@ mod tests {
         ));
 
         // Pane scope 에선 split_pane 무효(no-op).
-        let mut pane_dl = DemoLayout::from_pane(&single_pane("terminal"), up);
+        let mut pane_dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
         let pid = match &pane_dl.root {
             Root::Panes(PaneNode::Leaf(p)) => p.id,
             _ => panic!(),
         };
-        assert!(!pane_dl.split_pane(pid, true));
+        assert!(!pane_dl.split_pane(pid, true, &tc()));
         assert!(matches!(pane_dl.root, Root::Panes(PaneNode::Leaf(_))));
     }
 
     #[test]
     fn remove_pane_collapses_and_guards_root() {
-        let mut dl = DemoLayout::from_workspace(&single_pane_workspace("terminal"), up);
+        let mut dl = DemoLayout::from_workspace(&single_pane_workspace("terminal"), &tc());
         let mut ids = Vec::new();
         pane_ids(root_pane(&dl), &mut ids);
         let sole = ids[0];
         // 루트 단일 pane 은 제거 불가.
-        assert!(!dl.remove_pane(sole));
+        assert!(!dl.remove_pane(sole, &tc()));
 
         // split 후 하나 제거 → 형제로 collapse.
-        assert!(dl.split_pane(sole, false));
+        assert!(dl.split_pane(sole, false, &tc()));
         let mut after = Vec::new();
         pane_ids(root_pane(&dl), &mut after);
         assert_eq!(after.len(), 2);
-        assert!(dl.remove_pane(after[1]));
+        assert!(dl.remove_pane(after[1], &tc()));
         let mut final_ids = Vec::new();
         pane_ids(root_pane(&dl), &mut final_ids);
         assert_eq!(final_ids, vec![after[0]]);
@@ -1973,7 +2133,7 @@ mod tests {
             name: "p".into(),
             pane,
         };
-        let mut dl = DemoLayout::from_pane(&p, up);
+        let mut dl = DemoLayout::from_pane(&p, &tc());
         let pane_id = match &dl.root {
             Root::Panes(PaneNode::Leaf(pp)) => pp.id,
             _ => panic!(),
@@ -1999,13 +2159,13 @@ mod tests {
 
     #[test]
     fn split_leaf_before_places_new_leaf_first() {
-        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), up);
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
         let mut ids = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut ids);
         let leaf_id = ids[0];
 
         // before=true → 새 leaf 가 first, 기존 leaf 가 second.
-        dl.split_leaf(leaf_id, true, true);
+        dl.split_leaf(leaf_id, true, true, &tc());
         match first_surf(&dl) {
             SurfNode::Split { first, second, .. } => {
                 // 기존 leaf id 는 second 에 보존, first 는 새 leaf.

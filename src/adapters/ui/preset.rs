@@ -20,7 +20,7 @@ use crate::i18n::{t, t_fmt};
 
 pub mod demo_layout;
 
-use demo_layout::{DemoLayout, ShowOutcome, fallback_kind_label};
+use demo_layout::{DemoLayout, KindCatalog, ShowOutcome};
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preset-window 셸 전용 치수 — specimen 전사).
 /// 좌측 리스트 폭.
@@ -59,18 +59,24 @@ struct EditMetaState {
     subtitle: String,
 }
 
-/// 선택된 preset 으로부터 미리보기 위젯을 만든다.
-fn build_demo(store: &PresetStore, kind: PresetKind, name: &str) -> Option<DemoLayout> {
+/// 선택된 preset 으로부터 미리보기 위젯을 만든다. `catalog` 는 registry 파생 kind
+/// 스냅샷(미주입이면 빈 catalog → 정적 fallback).
+fn build_demo(
+    store: &PresetStore,
+    kind: PresetKind,
+    name: &str,
+    catalog: &KindCatalog,
+) -> Option<DemoLayout> {
     match kind {
         PresetKind::Workspace => store
             .get_workspace(name)
-            .map(|p| DemoLayout::from_workspace(p, fallback_kind_label)),
+            .map(|p| DemoLayout::from_workspace(p, catalog)),
         PresetKind::Tab => store
             .get_tab(name)
-            .map(|p| DemoLayout::from_tab(p, fallback_kind_label)),
+            .map(|p| DemoLayout::from_tab(p, catalog)),
         PresetKind::Pane => store
             .get_pane(name)
-            .map(|p| DemoLayout::from_pane(p, fallback_kind_label)),
+            .map(|p| DemoLayout::from_pane(p, catalog)),
     }
 }
 
@@ -391,6 +397,7 @@ fn draw_preview(
     editing: bool,
     selected_node: &mut Option<usize>,
     toasts: &mut ToastManager,
+    catalog: &KindCatalog,
 ) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_app().to_egui());
@@ -405,14 +412,14 @@ fn draw_preview(
     let cached: Option<(String, DemoLayout)> = ui.data(|d| d.get_temp(cache_id));
     let mut layout = match cached {
         Some((k, dl)) if k == key => dl,
-        _ => match build_demo(store, kind, name) {
+        _ => match build_demo(store, kind, name, catalog) {
             Some(dl) => dl,
             None => return,
         },
     };
 
     if editing {
-        match layout.show_edit(ui, theme, canvas, selected_node) {
+        match layout.show_edit(ui, theme, canvas, selected_node, catalog) {
             ShowOutcome::None => {}
             ShowOutcome::Repaint => ui.ctx().request_repaint(),
             ShowOutcome::Mutated => {
@@ -428,7 +435,7 @@ fn draw_preview(
             }
         }
     } else {
-        let changed = layout.show(ui, theme, canvas);
+        let changed = layout.show(ui, theme, canvas, catalog);
         if changed {
             ui.ctx().request_repaint();
         }
@@ -450,6 +457,7 @@ pub fn draw_preset_panel(
     editing: &mut bool,
     selected_node: &mut Option<usize>,
     toasts: &mut ToastManager,
+    catalog: &KindCatalog,
 ) {
     let theme = crate::theme::theme();
     let rename_id = egui::Id::new("preset_rename_state");
@@ -855,6 +863,7 @@ pub fn draw_preset_panel(
                 *editing,
                 selected_node,
                 toasts,
+                catalog,
             ),
             None => {
                 ui.painter_at(preview_rect).rect_filled(

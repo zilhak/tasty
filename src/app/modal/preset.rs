@@ -49,8 +49,11 @@ impl App {
         };
 
         let store = std::sync::Arc::clone(&self.core.preset_store);
+        // 편집기 kind 소스 = main engine 의 공유 surface_registry(부재 시 None →
+        // 빈 catalog → 정적 fallback). 모든 main window 가 같은 Arc 를 공유한다.
+        let registry = self.any_main_engine().map(|e| e.surface_registry.clone());
         let window_id = window.id();
-        let mut preset = view::PresetView::new(gpu, window, store);
+        let mut preset = view::PresetView::new(gpu, window, store, registry);
         #[cfg(windows)]
         {
             use crate::view::ui::View as _;

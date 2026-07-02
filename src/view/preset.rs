@@ -12,7 +12,9 @@ use winit::event::WindowEvent;
 
 use tasty_presets::{PresetKind, PresetStore};
 
+use crate::adapters::ui::preset::demo_layout::KindCatalog;
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
+use crate::engine::surface_registry::SurfaceKindRegistry;
 use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
@@ -24,6 +26,10 @@ use crate::view::{
 pub struct PresetView {
     pub base: ViewBase,
     store: Arc<Mutex<PresetStore>>,
+    /// 편집기 kind 드롭다운/라벨의 진실 소스. main engine 의 공유 Arc 를 clone 해
+    /// 받는다(부재 시 `None` → 빈 catalog → 정적 fallback). 프레임마다 스냅샷을
+    /// 파생해 런타임 등록 kind(플러그인 on/off)를 즉시 반영한다.
+    surface_registry: Option<Arc<SurfaceKindRegistry>>,
     active_kind: PresetKind,
     selected_workspace: Option<String>,
     selected_tab: Option<String>,
@@ -41,10 +47,12 @@ impl PresetView {
         gpu: GpuState,
         winit: Arc<winit::window::Window>,
         store: Arc<Mutex<PresetStore>>,
+        surface_registry: Option<Arc<SurfaceKindRegistry>>,
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, winit),
             store,
+            surface_registry,
             active_kind: PresetKind::Workspace,
             selected_workspace: None,
             selected_tab: None,
@@ -129,6 +137,12 @@ impl View for PresetView {
 
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
         let store_arc = self.store.clone();
+        // registry 스냅샷을 프레임마다 파생 — 미주입이면 빈 catalog(정적 fallback).
+        let catalog = self
+            .surface_registry
+            .as_ref()
+            .map(|r| KindCatalog::from_registry(r))
+            .unwrap_or_default();
         let active_kind = &mut self.active_kind;
         let sel_ws = &mut self.selected_workspace;
         let sel_tab = &mut self.selected_tab;
@@ -155,6 +169,7 @@ impl View for PresetView {
                 editing,
                 selected_node,
                 toasts,
+                &catalog,
             );
             drop(store_guard);
 

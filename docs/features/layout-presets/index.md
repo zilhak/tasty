@@ -33,6 +33,7 @@ WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPre
 
 - **surface 선택**: 편집 모드에서는 모든 surface 가 1px hairline 윤곽을 얻고, 클릭으로 한 surface 를 선택하면 2px accent inset 윤곽 + 핸들 클러스터(우측 split `dir=row` · 하단 split `dir=col` · 제거 danger)가 붙는다. 마지막 한 장 남은 surface 제거는 무효(트리에 0-surface 탭을 쓰지 않음).
 - **leaf 인라인 폼**: 선택한 leaf 의 중앙 라벨이 인라인 폼으로 바뀐다 — kind 드롭다운(Select) + 작업 디렉터리 Input(mono) + 시작 명령어 Input(mono, **kind=`terminal` 일 때만** 노출). kind 를 바꾸면 라벨이 즉시 갱신되고 시작 명령어 필드가 토글된다.
+  - **kind 드롭다운은 `SurfaceKindRegistry` 를 진실 소스로 삼는다** — 편집기(`PresetView`)가 main engine 의 공유 `surface_registry` Arc 를 받아 프레임마다 스냅샷(`KindCatalog`)을 파생한다. 후보 목록은 런타임 등록 kind(플러그인 on/off)를 즉시 반영하고, 표시명은 registry 의 `display_name_i18n_key` 로 해석한다. `empty`/`attached` 는 사용자가 직접 만들 수 없는 내부 kind 라 후보에서 제외한다. 편집 중인 leaf 의 현재 kind 가 목록에 없으면(비활성 플러그인 등) 유실 방지로 덧붙는다. registry 미주입(main window 부재 등)이면 정적 fallback 목록(`terminal`/`markdown`/`image`/`explorer`/`html`)으로 graceful 하게 떨어진다.
 - **이름/subtitle 인라인 편집**: 편집 모드에서 툴바의 preset 이름은 텍스트 입력으로, subtitle 은 (Workspace 한정 실제 필드일 때) 입력으로 바뀌어 포커스 해제 시 store 에 commit 된다.
 - **트리 변형**: 편집 모델(`DemoLayout`)은 3계층 전부를 변형한다 — surface split(우측/하단) · surface 제거 · 탭 추가(+) · **탭 삭제** · **pane split** · **pane 제거**. surface 변형과 탭 추가는 마우스 핸들/`+` 버튼으로 트리거되고, 나머지(탭 삭제·pane split·pane 제거)는 모델 mutation 이 존재하되 시각 트리거는 후속(키보드·마우스 직접 조작)에서 붙는다. 모든 변형은 기존 leaf/pane id 를 보존하며 자동 저장된다. 무효 가드: 마지막 surface 제거·마지막 탭 삭제(pane 은 항상 탭 ≥1)·루트 단일 pane 제거는 no-op. pane split 은 **Workspace scope 에서만** 유효(Pane/Tab scope 는 pane 트리가 없어 no-op).
 

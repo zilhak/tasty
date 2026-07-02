@@ -111,14 +111,17 @@ text_secondary); active 만 accent_primary fill + text_on_accent. 신규 Theme �
 **kind→표시명 (i18n)**: 라벨은 `surface.kind.<kind>` 키로 해석(= registry `display_name_i18n_key`
 규약). 호스트 lang 에 빌트인 `terminal`/`empty`/`attached` 키를 추가했고(`lang/{en,ko,ja}.toml`
 `[surface.kind]`), plugin kind(markdown/image/…)는 각 plugin lang 의 `[surface.kind]` 가 제공.
-현재 `PresetView` 는 `CoreState`(registry) 미접근이라 `fallback_kind_label`(키 시도→capitalize,
-`convert.rs::resolve_label` 패턴)을 쓴다. **TODO 08**(화면 통합)에서 registry 가 주입되면
-`kinds_snapshot()`/`get()` 기반 resolver 로 교체할 자리.
+`PresetView` 는 main engine 의 공유 `surface_registry` Arc 를 받아 프레임마다 경량 스냅샷
+(`KindCatalog`)을 파생한다 — kind 드롭다운 후보는 런타임 등록 kind 를 반영하고, 표시명은
+registry `display_name_i18n_key` 로 해석하며(미번역/미등록이면 `fallback_kind_label` capitalize
+로 graceful fallback), `empty`/`attached` 는 후보에서 제외한다. registry 미주입(갤러리·main
+부재)이면 빈 catalog → 정적 목록으로 떨어진다.
 
 **배선**: `draw_preset_panel`(`src/adapters/ui/preset.rs`)이 선택 preset 으로 `DemoLayout` 을
 빌드해 egui temp memory 에 `(key, layout)` 으로 유지(탭 클릭 전환 지속), 남은 영역에 캔버스
-프레임 + `DemoLayout::show` 렌더. 전체 list→toolbar→detail 2-depth 셸과 WYSIWYG 편집은
-TODO 08/09 후속.
+프레임 + `DemoLayout::show`/`show_edit` 렌더. `PresetView` 가 파생한 `KindCatalog` 를
+`draw_preset_panel → draw_preview → DemoLayout` 으로 흘려 편집 드롭다운·mutation 라벨의
+kind 소스로 쓴다.
 
 ## workspace-category (Layouts / Overlays)
 
