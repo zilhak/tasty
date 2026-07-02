@@ -136,6 +136,8 @@ impl AppState {
             }
         }
         // 뷰 리로드 (엔트리 캐시는 explorer_views 에 있어 ws 借用 종료 후 접근).
+        // explorer_views 는 gui 전용 뷰 스토어 — headless 엔 뷰가 없어 리로드 불필요.
+        #[cfg(feature = "gui")]
         if done && let Some(v) = self.explorer_views.get_mut(sid) {
             v.request_reload();
         }

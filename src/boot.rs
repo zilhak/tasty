@@ -333,6 +333,15 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
                 // headless 는 렌더가 없어 readonly display mirror·client mirror 가
                 // 무의미하다(작업 J 는 GUI 통합). gui 에서만 처리한다.
             }
+            AppEvent::RunLuaScript { source, name } => {
+                // gui event_handler 와 동일 처리. headless 발신원은 현재 없지만
+                // (단축키=gui, debug IPC=App 경로) 이벤트 계약상 동작을 미러링한다.
+                if let Some(engine) = app.lua_engine.as_ref() {
+                    engine.run_script(&source, Some(&name));
+                } else {
+                    tracing::warn!(target: "tasty_lua", "RunLuaScript dropped — lua engine unavailable");
+                }
+            }
         }
     }
     Ok(())

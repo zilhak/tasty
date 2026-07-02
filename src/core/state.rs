@@ -214,6 +214,8 @@ pub struct CoreState {
     /// `ExplorerFavorites::load()` 로 `~/.tasty/explorer-favorites.toml` 에서 읽고,
     /// 우클릭 추가/제거 시 메모리 갱신 + `save()` 로 즉시 디스크 반영한다. 사용자
     /// 직접 조작으로만 변경되므로 release 경로에서 직접 갱신(도메인 snapshot 비대상).
+    /// (소비자가 전부 gui 어댑터라 headless 빌드에선 필드째 제외.)
+    #[cfg(feature = "gui")]
     pub(crate) explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites,
 
     /// **Phase D D.3.E.4** — Terminal/PTY 데이터 owner (Surface 트리와 분리).
@@ -352,6 +354,7 @@ impl CoreState {
             foreground_names: std::collections::HashMap::new(),
             pending_move_surface: None,
             explorer_clipboard: None,
+            #[cfg(feature = "gui")]
             explorer_favorites: crate::explorer_ui::favorites::ExplorerFavorites::load(),
             terminals: crate::core::terminal_store::TerminalStore::new(),
             attach: crate::core::attach::AttachRegistry::new(),
