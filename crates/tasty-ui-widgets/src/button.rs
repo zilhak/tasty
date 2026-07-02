@@ -93,11 +93,12 @@ impl<'a> Button<'a> {
     pub fn show(self, ui: &mut egui::Ui, theme: &Theme) -> egui::Response {
         let height = self.size.height(theme);
         let pad_x = self.size.pad_x(theme);
-        let radius = theme.corner_radius.value();
+        let radius = theme.button_radius().value();
         let bw = theme.border_width.value();
-        // 아이콘 글리프 = icon-size-md(16), child 간 gap = space-sm (디자인 flex gap).
+        // 아이콘 글리프 = icon-size-md(16, semantic — 대응 component 토큰 없음),
+        // child 간 gap = `button-gap`(space-sm 종착).
         let icon_glyph = theme.icon_glyph_size_md.value();
-        let gap = theme.spacing_sm.value();
+        let gap = theme.button_gap().value();
         let has_leading = self.leading_icon.is_some();
         let has_trailing = self.trailing_icon.is_some();
 
@@ -131,40 +132,40 @@ impl<'a> Button<'a> {
             }
         };
 
-        // variant 별 base fill / border / fg.
+        // variant 별 base fill / border / fg — 전부 `button-*` component 색 접근자.
         let (fill, border, fg) = match self.variant {
             ButtonVariant::Primary => (
-                Some(theme.accent_primary().to_egui()),
+                Some(theme.button_primary_bg().to_egui()),
                 None,
-                theme.text_on_accent().to_egui(),
+                theme.button_primary_fg().to_egui(),
             ),
             ButtonVariant::Agent => (
-                Some(theme.accent_agent().to_egui()),
+                Some(theme.button_agent_bg().to_egui()),
                 None,
-                theme.text_on_accent().to_egui(),
+                theme.button_agent_fg().to_egui(),
             ),
             ButtonVariant::Danger => (
-                Some(theme.accent_danger().to_egui()),
+                Some(theme.button_danger_bg().to_egui()),
                 None,
-                theme.text_on_accent().to_egui(),
+                theme.button_danger_fg().to_egui(),
             ),
             ButtonVariant::Secondary => {
                 let b = if self.enabled && resp.hovered() {
-                    theme.border_strong()
+                    theme.button_secondary_border_hover()
                 } else {
-                    theme.border_default()
+                    theme.button_secondary_border()
                 };
                 (
-                    Some(theme.surface_raised().to_egui()),
+                    Some(theme.button_secondary_bg().to_egui()),
                     Some(b.to_egui()),
-                    theme.text_primary().to_egui(),
+                    theme.button_fg().to_egui(),
                 )
             }
             ButtonVariant::Ghost => {
                 let f = if self.enabled && resp.hovered() {
-                    theme.text_primary()
+                    theme.button_ghost_fg_hover()
                 } else {
-                    theme.text_secondary()
+                    theme.button_ghost_fg()
                 };
                 (None, None, f.to_egui())
             }
@@ -187,13 +188,13 @@ impl<'a> Button<'a> {
                 ui.painter().rect_filled(
                     rect,
                     radius,
-                    theme.overlay_active().to_egui_premultiplied(),
+                    theme.button_overlay_active().to_egui_premultiplied(),
                 );
             } else if resp.hovered() {
                 ui.painter().rect_filled(
                     rect,
                     radius,
-                    theme.overlay_hover().to_egui_premultiplied(),
+                    theme.button_overlay_hover().to_egui_premultiplied(),
                 );
             }
         }
