@@ -1,4 +1,5 @@
-//! Freshness 가드 — vendor json ↔ 커밋된 `src/generated/*.rs` 텍스트 일치 강제.
+//! Freshness 가드 — vendor json ↔ 커밋된 `src/generated/*.rs` +
+//! `tasty-type-appearance/src/generated_component.rs` 텍스트 일치 강제.
 //!
 //! vendor json 을 갱신하고 생성기 재실행을 잊으면 여기서 CI fail 한다
 //! (`tests/cli_naming_count_drift.rs` 의 스냅샷 가드 패턴).
@@ -18,6 +19,12 @@ const COMMITTED: &[(&str, &str)] = &[
         include_str!("../src/generated/component.rs"),
     ),
 ];
+
+/// 커밋된 `tasty-type-appearance` 산출물. `Generated::type_appearance_files` 와 같은 순서.
+const COMMITTED_TYPE_APPEARANCE: &[(&str, &str)] = &[(
+    "generated_component.rs",
+    include_str!("../../tasty-type-appearance/src/generated_component.rs"),
+)];
 
 /// 토큰 census — 디자인 changelog 2026-07-02 기준 488 (104/127/257).
 /// vendor 갱신으로 개수가 바뀌면 의식적으로 이 스냅샷도 갱신한다.
@@ -54,20 +61,42 @@ fn committed_generated_files_are_fresh() {
     );
     for ((name, fresh), (committed_name, committed)) in generated.files.iter().zip(COMMITTED) {
         assert_eq!(name, committed_name, "생성 파일 순서/이름 불일치");
-        if fresh != committed {
-            // 전체 diff 덤프 대신 첫 불일치 라인만 짚는다.
-            let first_diff = fresh
-                .lines()
-                .zip(committed.lines())
-                .position(|(a, b)| a != b)
-                .map(|i| i + 1);
-            panic!(
-                "src/generated/{name} 가 vendor json 과 어긋남 (첫 불일치: {first_diff:?}행, \
-                 재생성 {}줄 vs 커밋 {}줄) — `cargo run -p tasty-design-tokens --bin generate` \
-                 실행 후 결과를 커밋할 것",
-                fresh.lines().count(),
-                committed.lines().count(),
-            );
-        }
+        assert_fresh(&format!("src/generated/{name}"), fresh, committed);
+    }
+
+    assert_eq!(
+        generated.type_appearance_files.len(),
+        COMMITTED_TYPE_APPEARANCE.len(),
+        "type-appearance 산출 파일 목록이 바뀜 — 테스트의 COMMITTED_TYPE_APPEARANCE 목록도 갱신할 것"
+    );
+    for ((name, fresh), (committed_name, committed)) in generated
+        .type_appearance_files
+        .iter()
+        .zip(COMMITTED_TYPE_APPEARANCE)
+    {
+        assert_eq!(name, committed_name, "생성 파일 순서/이름 불일치");
+        assert_fresh(
+            &format!("../tasty-type-appearance/src/{name}"),
+            fresh,
+            committed,
+        );
+    }
+}
+
+/// 재생성 텍스트와 커밋 텍스트를 비교, 어긋나면 첫 불일치 행만 짚어 panic.
+fn assert_fresh(label: &str, fresh: &str, committed: &str) {
+    if fresh != committed {
+        let first_diff = fresh
+            .lines()
+            .zip(committed.lines())
+            .position(|(a, b)| a != b)
+            .map(|i| i + 1);
+        panic!(
+            "{label} 이 vendor json 과 어긋남 (첫 불일치: {first_diff:?}행, \
+             재생성 {}줄 vs 커밋 {}줄) — `cargo run -p tasty-design-tokens --bin generate` \
+             실행 후 결과를 커밋할 것",
+            fresh.lines().count(),
+            committed.lines().count(),
+        );
     }
 }

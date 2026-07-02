@@ -46,6 +46,20 @@ fn main() -> ExitCode {
         }
         tracing::info!("wrote src/generated/{name}");
     }
+
+    // component 접근자는 `&Theme` 경유 강제 원칙 때문에 `tasty-type-appearance`
+    // 안에 산출한다 (`tasty-design-tokens` → `tasty-type-appearance` 런타임
+    // 의존은 금지 — 의존 방향 보존).
+    let type_appearance_dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../tasty-type-appearance/src");
+    for (name, content) in &generated.type_appearance_files {
+        if let Err(e) = fs::write(type_appearance_dir.join(name), content) {
+            tracing::error!("tasty-type-appearance/src/{name} 쓰기 실패: {e}");
+            return ExitCode::FAILURE;
+        }
+        tracing::info!("wrote tasty-type-appearance/src/{name}");
+    }
+
     for skip in &generated.skips {
         tracing::info!("skip: {skip}");
     }

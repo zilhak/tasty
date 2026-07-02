@@ -35,3 +35,7 @@
 
 pub mod color;
 pub mod theme;
+
+/// `tasty-design-tokens` 생성기가 산출하는 component 접근자 (`impl Theme`).
+/// DO NOT EDIT — `cargo run -p tasty-design-tokens --bin generate` 로 재생성.
+mod generated_component;

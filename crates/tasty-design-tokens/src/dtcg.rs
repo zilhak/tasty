@@ -256,10 +256,14 @@ fn collect(
 // ============================================================================
 
 /// 생성 결과. `files` 는 `src/generated/` 밑에 쓸 (파일명, 내용) — 결정적 순서.
+/// `type_appearance_files` 는 `crates/tasty-type-appearance/src/` 밑에 쓸 (파일명,
+/// 내용) — component 접근자는 `&Theme` 경유가 강제라 type-appearance 안에
+/// 산출해야 한다(런타임 의존 방향 보존, 04 생성기 확장 설계 참조).
 /// `skips` 는 생성에서 제외한 토큰의 사유 로그.
 #[derive(Debug)]
 pub struct Generated {
     pub files: Vec<(&'static str, String)>,
+    pub type_appearance_files: Vec<(&'static str, String)>,
     pub skips: Vec<String>,
 }
 
@@ -489,8 +493,365 @@ fn emit_const(
     )
 }
 
-/// 파싱된 토큰셋에서 `src/generated/` 파일 4개를 생성한다.
-/// 출력은 입력에만 의존하는 결정적 텍스트 (타임스탬프 없음 — freshness 테스트 전제).
+// ============================================================================
+//  Component 접근자 (치수 + 색) — 04
+// ============================================================================
+//
+// `generated::component` 의 raw const 는 zoom 을 모른다 (테마 불변 스케일).
+// 위젯이 그 const 를 직접 읽으면 `Theme::with_colors_and_zoom()` 의 zoom
+// resolve/제외 정책을 우회한다 — 그래서 component 토큰은 `&Theme` 경유
+// 접근자로만 노출한다 (`crates/tasty-type-appearance/src/generated_component.rs`).
+
+/// semantic/component 치수 토큰의 전체 경로 ↔ `Theme`/`SIZING` 필드명.
+/// `component.<name>` 키는 SIZING 이 그 component 토큰 전용 필드를 직접 보유하는
+/// 경우(사이드바, titlebar OS 어포던스, 토스트, status-dot, spinner, tab
+/// indicator), `semantic.<name>` 키는 위젯이 semantic 치수를 공유 소비하는
+/// 일반 경로.
+///
+/// **순서 중요**: 같은 토큰 경로를 여러 `SIZING` 필드가 가리킬 때(tab-bar 류
+/// zoom-제외 필드가 위젯과 같은 semantic 값을 재사용, 예: `control-height-tab`
+/// ↔ `item_height_tab`/`tab_bar_height` 모두 대응) lookup 은 **먼저 나오는
+/// 항목이 승자** — zoom 적용 위젯 필드를 zoom-제외 host-chrome 전용 필드보다
+/// 앞에 둔다.
+///
+/// `tests/sizing_parity.rs` 의 가드는 이 표를 데이터로 순회한다 — 표 밖에서
+/// 대응 pair 를 따로 하드코딩하지 않는다.
+pub const SEMANTIC_DIM_TO_THEME_FIELD: &[(&str, &str)] = &[
+    // spacing (4px 그리드 5단)
+    ("semantic.space-xs", "spacing_xs"),
+    ("semantic.space-sm", "spacing_sm"),
+    ("semantic.space-md", "spacing_md"),
+    ("semantic.space-lg", "spacing_lg"),
+    ("semantic.space-xl", "spacing_xl"),
+    // 보더/라운드
+    ("semantic.border-width", "border_width"),
+    ("semantic.focus-ring-width", "focus_ring_width"),
+    ("semantic.radius", "corner_radius"),
+    ("semantic.radius-sm", "corner_radius_sm"),
+    // 컨트롤 높이 / 탭
+    ("semantic.control-height-tree", "item_height_tree"),
+    ("semantic.control-height", "item_height_interactive"),
+    ("semantic.control-height-tab", "item_height_tab"),
+    ("semantic.tab-width", "tab_width"),
+    // 타이포
+    ("semantic.font-size-micro", "font_size_micro"),
+    ("semantic.font-size-caption", "font_size_caption"),
+    ("semantic.font-size-body", "font_size_body"),
+    ("semantic.font-size-heading", "font_size_heading"),
+    ("semantic.font-size-max", "font_size_max"),
+    ("semantic.font-size-prose-h1", "font_size_prose_h1"),
+    ("semantic.font-size-prose-h2", "font_size_prose_h2"),
+    ("semantic.font-size-term-sm", "font_size_term_sm"),
+    ("semantic.font-size-term", "font_size_term"),
+    ("semantic.font-size-term-lg", "font_size_term_lg"),
+    ("semantic.line-height-prose", "line_height_prose"),
+    // 아이콘 글리프
+    ("semantic.icon-size-xs", "icon_glyph_size_xs"),
+    ("semantic.icon-size-sm", "icon_glyph_size_sm"),
+    ("semantic.icon-size-md", "icon_glyph_size_md"),
+    // 가독 폭 / form-control 폭
+    ("semantic.measure-sm", "measure_sm"),
+    ("semantic.measure-md", "measure_md"),
+    ("semantic.measure-lg", "measure_lg"),
+    ("semantic.measure-xl", "measure_xl"),
+    ("semantic.field-width-xs", "field_width_xs"),
+    ("semantic.field-width-color", "field_width_color"),
+    ("semantic.field-width-md", "field_width_md"),
+    ("semantic.field-width-lg", "field_width_lg"),
+    // 세부 치수 (semantic)
+    ("semantic.status-bar-height", "status_bar_height"),
+    ("semantic.titlebar-height", "titlebar_height"),
+    ("semantic.overlay-top-offset", "overlay_top_offset"),
+    // component 전용 필드 — 사이드바 (host UI zoom 영향 받음)
+    ("component.sidebar-logo-size", "sidebar_logo_size"),
+    (
+        "component.sidebar-logo-collapsed-size",
+        "sidebar_logo_collapsed_size",
+    ),
+    (
+        "component.sidebar-wordmark-font-size",
+        "sidebar_wordmark_font_size",
+    ),
+    (
+        "component.sidebar-section-heading-font-size",
+        "sidebar_section_heading_font_size",
+    ),
+    (
+        "component.sidebar-button-label-font-size",
+        "sidebar_button_label_font_size",
+    ),
+    (
+        "component.sidebar-collapsed-slot-width",
+        "sidebar_collapsed_slot_width",
+    ),
+    (
+        "component.sidebar-collapsed-icon-height",
+        "sidebar_collapsed_icon_height",
+    ),
+    (
+        "component.sidebar-collapsed-workspace-height",
+        "sidebar_collapsed_workspace_height",
+    ),
+    // component 전용 필드 — titlebar / toast / status-dot / spinner / tab (zoom 제외 또는 고정)
+    ("component.titlebar-traffic-size", "traffic_size"),
+    ("component.titlebar-caption-width", "caption_width"),
+    (
+        "component.titlebar-window-button-size",
+        "window_button_size",
+    ),
+    ("component.toast-max-width", "toast_max_width"),
+    ("component.toast-accent-width", "toast_accent_width"),
+    ("component.status-dot-size", "status_dot_size"),
+    ("component.spinner-size", "spinner_size"),
+    ("component.tab-indicator-width", "tab_indicator_width"),
+    // zoom-제외 host-chrome 전용 필드 — 위 item_height_tab/font_size_body/
+    // font_size_caption 이 같은 토큰 경로를 먼저 흡수하므로 lookup 에서는 도달하지
+    // 않는다. sizing_parity 가드 완전성을 위해서만 유지.
+    ("semantic.control-height-tab", "tab_bar_height"),
+    ("semantic.font-size-body", "tab_bar_label_font_size"),
+    ("semantic.font-size-caption", "tab_bar_arrow_font_size"),
+];
+
+/// semantic 색 토큰의 전체 경로 ↔ `theme.rs` 수기 접근자 표현식. 필드는 괄호 없이
+/// (`separator`), 메서드는 `()` 포함(`accent_primary()`) — `self.<expr>` 로 그대로
+/// 이어붙인다.
+///
+/// component 색 토큰의 alias 체인이 semantic 홉에서 이 표에 없는 경로를 만나면
+/// (예: `status-idle` — 디자인≠구현이라 theme.rs 에 대응 접근자가 없음) 생성기는
+/// skip + 로그한다. 값을 임의로 새 접근자에 매핑하지 않는다.
+pub const SEMANTIC_COLOR_TO_THEME_ACCESSOR: &[(&str, &str)] = &[
+    ("semantic.accent-agent", "accent_agent()"),
+    ("semantic.accent-attached", "border_attached()"),
+    ("semantic.accent-danger", "accent_danger()"),
+    ("semantic.accent-info", "accent_info()"),
+    ("semantic.accent-macos-close", "accent_macos_close()"),
+    ("semantic.accent-macos-min", "accent_macos_min()"),
+    ("semantic.accent-macos-zoom", "accent_macos_zoom()"),
+    ("semantic.accent-primary", "accent_primary()"),
+    ("semantic.accent-success", "accent_success()"),
+    ("semantic.accent-warning", "accent_warning()"),
+    ("semantic.accent-window-close", "accent_window_close()"),
+    ("semantic.bg-app", "bg_app()"),
+    ("semantic.bg-panel", "bg_panel()"),
+    ("semantic.bg-sidebar", "bg_sidebar()"),
+    ("semantic.border-default", "border_default()"),
+    ("semantic.border-focus", "border_focus()"),
+    ("semantic.border-strong", "border_strong()"),
+    ("semantic.overlay-active", "overlay_active()"),
+    ("semantic.overlay-hover", "overlay_hover()"),
+    ("semantic.separator", "separator"),
+    ("semantic.surface-active", "surface_active()"),
+    ("semantic.surface-raised", "surface_raised()"),
+    ("semantic.text-muted", "text_muted()"),
+    ("semantic.text-on-accent", "text_on_accent()"),
+    ("semantic.text-on-window-close", "text_on_window_close()"),
+    ("semantic.text-placeholder", "text_placeholder()"),
+    ("semantic.text-primary", "text_primary()"),
+    ("semantic.text-secondary", "text_secondary()"),
+];
+
+/// component 색 접근자 이름이 `theme.rs` 의 기존 수기 접근자와 충돌하는 목록.
+/// `banner-*`/`titlebar-*` 색은 이미 semantic 접근자 조합으로 손으로 작성돼 있다
+/// (예: `banner_bg` → `surface_raised()`) — 동일 이름으로 재생성하면 `impl Theme`
+/// 중복 정의로 컴파일이 깨진다. 새 충돌이 생기면 `cargo build` 가 "duplicate
+/// definitions" 로 즉시 드러나며, 그때 이 표에 추가한다.
+const EXISTING_THEME_ACCESSOR_NAMES: &[&str] = &[
+    "banner_bg",
+    "banner_border",
+    "banner_fg",
+    "banner_icon_fg",
+    "banner_countdown_fg",
+    "titlebar_bg",
+    "titlebar_bg_inactive",
+    "titlebar_border",
+    "titlebar_fg",
+    "titlebar_fg_inactive",
+];
+
+/// component 토큰 kebab 이름 → snake_case 접근자 함수명 (전체 이름 그대로 —
+/// `component_split` 의 모듈 분해와 달리 flat `impl Theme` 메서드라 그룹 접두어를
+/// 남겨 둔다. 예: `switch-overlay-bg` → `switch_overlay_bg`).
+fn accessor_fn_name(name: &str) -> String {
+    name.replace('-', "_")
+}
+
+/// 치수 component 접근자의 본문 형태.
+enum DimAccessor<'a> {
+    /// alias 체인이 표에 있는 `Theme` 필드에 닿음 — 필드를 그대로 반환.
+    Field(&'a str),
+    /// alias 체인이 다른 component 접근자에 닿음(component→component) — 그 접근자를 호출.
+    Chain(String),
+    /// alias 체인이 primitive 로 직접 닿거나 표에 없는 semantic 을 거침 — `ui_zoom` 을
+    /// 곱해 직접 계산 (raw const 를 그대로 소비하는 zoom 우회를 막는다).
+    RawZoom(f32),
+}
+
+/// 치수 component 토큰 하나의 접근자 형태를 결정. 실패하면 스킵 사유 문자열.
+fn resolve_dim_accessor<'a>(set: &TokenSet, token: &'a Token) -> Result<DimAccessor<'a>, String> {
+    let own_path = token.path();
+    if let Some((_, field)) = SEMANTIC_DIM_TO_THEME_FIELD
+        .iter()
+        .find(|(p, _)| *p == own_path)
+    {
+        return Ok(DimAccessor::Field(field));
+    }
+    let target_path = match alias_target(&token.value) {
+        Some(t) => t,
+        None => return Err(format!("{own_path}: 리터럴(alias 아님) — 생성 스킵")),
+    };
+    if let Some((_, field)) = SEMANTIC_DIM_TO_THEME_FIELD
+        .iter()
+        .find(|(p, _)| *p == target_path)
+    {
+        return Ok(DimAccessor::Field(field));
+    }
+    match set.get(target_path) {
+        Some(target) if target.tier == Tier::Component => {
+            Ok(DimAccessor::Chain(accessor_fn_name(&target.name)))
+        }
+        Some(_) => {
+            let terminal = set
+                .resolve(&own_path, ThemeMode::Mocha)
+                .map_err(|e| format!("{own_path}: {e} — 생성 스킵"))?;
+            let stripped = terminal.strip_suffix("px").unwrap_or(&terminal);
+            stripped
+                .trim()
+                .parse::<f32>()
+                .map(DimAccessor::RawZoom)
+                .map_err(|_| format!("{own_path}: 터미널 값 파싱 실패 ({terminal}) — 생성 스킵"))
+        }
+        None => Err(format!(
+            "{own_path}: alias 대상 없음 ({target_path}) — 생성 스킵"
+        )),
+    }
+}
+
+/// 색 component 접근자의 본문 형태.
+enum ColorAccessor {
+    /// alias 체인이 semantic 색에 닿고, 표에 대응 `theme.rs` 접근자가 있음.
+    SemanticExpr(&'static str),
+    /// alias 체인이 다른 component 색 접근자에 닿음(component→component).
+    Chain(String),
+}
+
+/// 색 component 토큰 하나의 접근자 형태를 결정. 실패하면 스킵 사유 문자열.
+fn resolve_color_accessor(set: &TokenSet, token: &Token) -> Result<ColorAccessor, String> {
+    let own_path = token.path();
+    let target_path = match alias_target(&token.value) {
+        Some(t) => t,
+        None => return Err(format!("{own_path}: 리터럴/합성 색상값 — 생성 스킵")),
+    };
+    match set.get(target_path) {
+        Some(target) if target.tier == Tier::Semantic => SEMANTIC_COLOR_TO_THEME_ACCESSOR
+            .iter()
+            .find(|(p, _)| *p == target_path)
+            .map(|(_, expr)| ColorAccessor::SemanticExpr(expr))
+            .ok_or_else(|| {
+                format!("{own_path}: `{target_path}` 대응 theme.rs 접근자 없음 — 생성 스킵")
+            }),
+        Some(target) if target.tier == Tier::Component => {
+            Ok(ColorAccessor::Chain(accessor_fn_name(&target.name)))
+        }
+        Some(_) => Err(format!(
+            "{own_path}: primitive 직접 alias — 색 접근자 규칙 밖, 생성 스킵"
+        )),
+        None => Err(format!(
+            "{own_path}: alias 대상 없음 ({target_path}) — 생성 스킵"
+        )),
+    }
+}
+
+/// 치수 접근자 하나의 `impl Theme` 메서드 텍스트.
+fn emit_dim_accessor(set: &TokenSet, token: &Token, acc: &DimAccessor) -> String {
+    let terminal = set
+        .resolve(&token.path(), ThemeMode::Mocha)
+        .expect("resolve_dim_accessor 통과 토큰은 resolve 가능");
+    let sentinel = if terminal == "9999px" {
+        " (sentinel — 완전 원형용 상한값)"
+    } else {
+        ""
+    };
+    let fn_name = accessor_fn_name(&token.name);
+    let body = match acc {
+        DimAccessor::Field(field) => format!("self.{field}"),
+        DimAccessor::Chain(target_fn) => format!("self.{target_fn}()"),
+        DimAccessor::RawZoom(v) => format!("LogicalPx(({v:?} * self.ui_zoom).round())"),
+    };
+    format!(
+        "\n    /// `{}` → `{}` = {terminal}{sentinel}\n    #[inline]\n    pub fn {fn_name}(&self) -> LogicalPx {{\n        {body}\n    }}\n",
+        token.path(),
+        token.value,
+    )
+}
+
+/// 색 접근자 하나의 `impl Theme` 메서드 텍스트.
+fn emit_color_accessor(token: &Token, acc: &ColorAccessor) -> String {
+    let fn_name = accessor_fn_name(&token.name);
+    let body = match acc {
+        ColorAccessor::SemanticExpr(expr) => format!("self.{expr}"),
+        ColorAccessor::Chain(target_fn) => format!("self.{target_fn}()"),
+    };
+    format!(
+        "\n    /// `{}` → `{}`\n    #[inline]\n    pub fn {fn_name}(&self) -> HexColor {{\n        {body}\n    }}\n",
+        token.path(),
+        token.value,
+    )
+}
+
+/// component 치수+색 접근자 파일(`generated_component.rs`) 본문을 만든다.
+/// `crates/tasty-type-appearance/src/` 에 산출 — `&Theme` 경유 강제 원칙 때문에
+/// (`tasty-design-tokens` → `tasty-type-appearance` 런타임 의존은 금지이므로
+/// 생성기가 산출물을 상대 크레이트 안에 직접 쓴다).
+fn generate_component_accessors(set: &TokenSet) -> (String, Vec<String>) {
+    let mut skips = Vec::new();
+    let mut body = String::new();
+
+    for token in set.iter().filter(|t| t.tier == Tier::Component) {
+        match token.ty.as_str() {
+            "dimension" => match resolve_dim_accessor(set, token) {
+                Ok(acc) => body.push_str(&emit_dim_accessor(set, token, &acc)),
+                Err(reason) => skips.push(reason),
+            },
+            "color" => {
+                let fn_name = accessor_fn_name(&token.name);
+                if EXISTING_THEME_ACCESSOR_NAMES.contains(&fn_name.as_str()) {
+                    skips.push(format!(
+                        "{}: theme.rs 기존 수기 접근자 `{fn_name}` 과 이름 충돌 — 생성 스킵",
+                        token.path()
+                    ));
+                    continue;
+                }
+                match resolve_color_accessor(set, token) {
+                    Ok(acc) => body.push_str(&emit_color_accessor(token, &acc)),
+                    Err(reason) => skips.push(reason),
+                }
+            }
+            // duration/number/fontWeight component 토큰 — 04 범위 밖. 테마 불변이라
+            // `generated::component` 의 raw const 로 이미 충분 (zoom 무관).
+            _ => {}
+        }
+    }
+
+    let header = "//! Generated from `dtcg/tasty.tokens.json` — DO NOT EDIT.\n\
+                  //! 재생성: `cargo run -p tasty-design-tokens --bin generate`.\n\
+                  //!\n\
+                  //! Tier 3 (component) 치수·색 접근자. `generated::component` 의 raw\n\
+                  //! const 와 달리 **`&Theme` 경유** — 치수는 zoom-resolve 된 필드를\n\
+                  //! 반환하거나(semantic 종착) `ui_zoom` 을 직접 곱하고(primitive 직접\n\
+                  //! 종착), 색은 semantic 접근자 체인 또는 component→component 접근자\n\
+                  //! 상호 호출로 이어붙인다.\n\n\
+                  use crate::color::HexColor;\n\
+                  use tasty_type_geometry::length::LogicalPx;\n\n\
+                  impl crate::theme::Theme {";
+    let mut file = header.to_string();
+    file.push_str(&body);
+    file.push_str("}\n");
+    (file, skips)
+}
+
+/// 파싱된 토큰셋에서 `src/generated/` 파일 4개 + `tasty-type-appearance` component
+/// 접근자 파일 1개를 생성한다. 출력은 입력에만 의존하는 결정적 텍스트
+/// (타임스탬프 없음 — freshness 테스트 전제).
 pub fn generate(set: &TokenSet) -> Generated {
     let mut skips: Vec<String> = Vec::new();
     let mut color_count = 0usize;
@@ -618,6 +979,10 @@ pub fn generate(set: &TokenSet) -> Generated {
         header("//! 생성 모듈 루트. `primitive` 는 `pub(crate)` — tier 규율의 컴파일 타임 강제.")
             + "\npub(crate) mod primitive;\n\npub mod semantic;\n\npub mod component;\n";
 
+    // 6) tasty-type-appearance/src/generated_component.rs — component 접근자.
+    let (component_accessors, accessor_skips) = generate_component_accessors(set);
+    skips.extend(accessor_skips);
+
     Generated {
         files: vec![
             ("mod.rs", module_root),
@@ -625,6 +990,7 @@ pub fn generate(set: &TokenSet) -> Generated {
             ("semantic.rs", semantic),
             ("component.rs", component),
         ],
+        type_appearance_files: vec![("generated_component.rs", component_accessors)],
         skips,
     }
 }
