@@ -150,6 +150,13 @@ impl Terminal {
         self.lock_state().set_cached_cwd(cwd);
     }
 
+    /// Current window title (last value emitted via OSC 0/2), if any. The host
+    /// projects the focused surface's title onto its tab name — mirrors the
+    /// `get_cwd` lock pattern (short lock to clone the field).
+    pub fn current_title(&self) -> Option<String> {
+        self.lock_state().current_title.clone()
+    }
+
     /// Check if the child process is still running. A detached mirror has no
     /// child; reported as alive.
     pub fn is_alive(&mut self) -> bool {

@@ -48,6 +48,7 @@ Pane 안의 탭 하나. 내부에 Surface 들의 `SurfaceLayout` 이진 트리(`
 
 - 필드: `id` · `name`(자동 생성, 예 "Shell") · `explicit_name`(명시 지정 — 최우선) · `osc_title`(OSC 0/2 터미널 타이틀) · `layout`(`SurfaceLayout`) · `focused_surface` · `cached_display_name`.
 - **표시명 우선순위**: `explicit_name` > `osc_title` > cwd 파생 캐시명 > `name`. cwd 변경 시 shell prompt 가 새 OSC title 을 자연 발화해 cwd 도 자연 반영. `explicit_name` 은 cwd/OSC 로 덮이지 않음(에이전트 `tab.create --name`).
+- **`osc_title` 은 탭의 `focused_surface` 가 발화한 title 만 반영한다.** 한 탭 안의 병렬 surface(split) 중 비-focused surface 가 OSC 0/2 를 발화해도 탭 제목은 흔들리지 않는다(last-writer-wins flicker 방지). 판정 기준은 **탭별 `focused_surface`** 이며 앱-전역 포커스가 아니다 — 배경 탭도 자기 focused surface 의 title 을 계속 반영한다. cwd 파생 캐시명(`refresh_tab_display_name`)이 이미 focused surface 만 쓰던 정책을 OSC 경로(`refresh_tab_osc_title`)도 동일하게 따른다. 탭 내 포커스가 다른 surface 로 이동하거나(포커스 전환 폴링), surface close/move 로 `focused_surface` 가 재배정되거나, `explicit_name` 이 해제되면 새 focused surface 의 최신 title 로 재투영한다. 새 focused surface 가 title 미보유(non-terminal 등)면 `osc_title` 을 clear 해 cwd 파생명 → `name` fallback 이 동작한다. (`SurfaceTitleChanged` host event 는 비-focused surface 발화 시에도 종전대로 surface 단위로 발화 — plugin 호환 유지.)
 - 하위 동작: surface 닫기(`close_surface`, 포커스 이전) · 포커스 이동(`move_focus_forward`/`backward`/`directional_focus`) · 분할(`split_focused_surface`/`split_surface_by_id[_generic]`).
 
 ### Surface

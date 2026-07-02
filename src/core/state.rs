@@ -616,6 +616,39 @@ impl CoreState {
         }
     }
 
+    /// Re-project the OSC title of the tab containing `surface_id` from that
+    /// tab's *focused* surface only. Mirror of `refresh_tab_display_name` for the
+    /// OSC-title path — keeps both "focused-surface projection" policies aligned.
+    ///
+    /// `surface_id` need only be *some* surface of the tab (not necessarily the
+    /// focused one) — the tab is located by membership, then its
+    /// `focused_surface`'s current title is read. When the focused surface has no
+    /// title (non-terminal, or a terminal that never emitted OSC 0/2), `osc_title`
+    /// is cleared so `display_name()` falls back to the cwd-derived name → auto
+    /// name. `explicit_name` tabs are left untouched.
+    pub fn refresh_tab_osc_title(&mut self, surface_id: u32) {
+        let workspaces = &mut self.workspaces;
+        let terminals = &self.terminals;
+        for workspace in workspaces {
+            let pane_ids = workspace.pane_layout().all_pane_ids();
+            for pid in pane_ids {
+                if let Some(pane) = workspace.pane_layout_mut().find_pane_mut(pid) {
+                    for tab in &mut pane.tabs {
+                        if tab.contains_surface(surface_id) {
+                            if tab.explicit_name.is_some() {
+                                return;
+                            }
+                            tab.osc_title = terminals
+                                .get(tab.focused_surface)
+                                .and_then(|t| t.current_title());
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Update stored grid dimensions.
     pub fn update_grid_size(&mut self, cols: usize, rows: usize) {
         self.default_cols = cols;

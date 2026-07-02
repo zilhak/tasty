@@ -10,6 +10,7 @@ mod tab;
 mod workspace;
 
 use crate::app::App;
+use crate::core::CoreState;
 use crate::state::PendingHostEvent;
 
 impl App {
@@ -22,7 +23,9 @@ impl App {
                 main.state.detect_workspace_activation(engine);
                 main.state.detect_tab_focus_change(engine);
                 main.state.detect_tab_lifecycle(engine);
-                drained.extend(main.state.take_pending_host_events());
+                let events = main.state.take_pending_host_events();
+                reproject_osc_title_on_focus(engine, &events);
+                drained.extend(events);
             }
         }
         // parked (AppState, CoreState) 쌍은 자기 짝의 engine 으로 detect.
@@ -31,7 +34,9 @@ impl App {
             s.detect_workspace_activation(engine);
             s.detect_tab_focus_change(engine);
             s.detect_tab_lifecycle(engine);
-            drained.extend(s.take_pending_host_events());
+            let events = s.take_pending_host_events();
+            reproject_osc_title_on_focus(engine, &events);
+            drained.extend(events);
         }
         if drained.is_empty() {
             return;
@@ -187,6 +192,21 @@ impl App {
                     window_id,
                 } => misc::emit_plugin_window_declared(mgr, plugin_id, window_id),
             }
+        }
+    }
+}
+
+/// 앱-전역 포커스 전환마다 새 focused surface 의 최신 title 을 그 탭의 `osc_title`
+/// 로 재투영한다. `SurfaceFocused` 이벤트의 `surface_id` 는 새 focused surface 이며,
+/// 이는 자기 탭의 `focused_surface` 와 일치하므로 `refresh_tab_osc_title` 가 그
+/// 값을 읽어 반영한다 (unfocused 상태에서 발화했던 title 이라도 포커스를 받으면
+/// 반영, title 없으면 clear → fallback). 배경 탭(IPC close/move)의 focused_surface
+/// 변경은 여기 폴링에 안 잡히므로 apply_close_surface / apply_move_surface 가 직접
+/// 재투영한다.
+fn reproject_osc_title_on_focus(engine: &mut CoreState, events: &[PendingHostEvent]) {
+    for ev in events {
+        if let PendingHostEvent::SurfaceFocused { surface_id, .. } = ev {
+            engine.refresh_tab_osc_title(*surface_id);
         }
     }
 }

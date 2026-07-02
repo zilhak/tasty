@@ -303,21 +303,34 @@ fn apply_rename(
         }
         RenameTarget::TabName { pane_id, tab_index } => {
             let name = buffer.trim().to_string();
-            let mut renamed: Option<(u32, String)> = None;
+            let clear = name.is_empty();
+            let mut located: Option<(u32, u32)> = None;
             if let Some(pane) = state
                 .active_workspace_mut(engine)
                 .pane_layout_mut()
                 .find_pane_mut(pane_id)
                 && let Some(tab) = pane.tabs.get_mut(tab_index)
             {
-                if name.is_empty() {
+                if clear {
                     tab.explicit_name = None;
                 } else {
                     tab.explicit_name = Some(name.clone());
                 }
-                renamed = Some((tab.id, tab.display_name().to_string()));
+                located = Some((tab.id, tab.focused_surface));
             }
-            if let Some((tab_id, title)) = renamed {
+            if let Some((tab_id, focused)) = located {
+                // explicit_name 해제 시 focused surface 의 최신 title 을 osc_title 로
+                // 재투영해 표시명이 focused surface title 로 복귀하도록 한다 (기대동작 4).
+                if clear {
+                    engine.refresh_tab_osc_title(focused);
+                }
+                let title = state
+                    .active_workspace_mut(engine)
+                    .pane_layout_mut()
+                    .find_pane_mut(pane_id)
+                    .and_then(|pane| pane.tabs.get(tab_index))
+                    .map(|tab| tab.display_name().to_string())
+                    .unwrap_or_default();
                 state.enqueue_host_event(crate::state::PendingHostEvent::TabRenamed {
                     tab_id,
                     title,

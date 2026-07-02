@@ -971,6 +971,19 @@ impl Core {
                                     skipped_explicit: true,
                                 };
                             }
+                            // 오직 그 탭의 *focused* surface 발화만 탭 제목에 반영한다.
+                            // 병렬 surface 의 title 발화가 last-writer-wins 로 제목을
+                            // 흔드는 flicker 방지 (cwd 경로 refresh_tab_display_name 와
+                            // 동일 정책). SurfaceTitleChanged host event 는 상류
+                            // cascade_terminal_title_changed 에서 이미 발화되므로
+                            // 이 가드가 plugin 호환에 영향 없다.
+                            if tab.focused_surface != surface_id {
+                                return CoreEvent::TabNameUpdated {
+                                    surface_id,
+                                    tab_id: Some(tab_id),
+                                    skipped_explicit: false,
+                                };
+                            }
                             tab.osc_title = Some(name);
                             return CoreEvent::TabNameUpdated {
                                 surface_id,
@@ -1366,6 +1379,11 @@ impl Core {
             if is_terminal {
                 engine.send_fast_init(surface_id);
             }
+            // 변환으로 focused surface 의 종류/title 이 바뀌었을 수 있고 explicit_name
+            // 이 해제(new_name=Some(None))됐을 수도 있으므로 osc_title 를 재투영한다
+            // (explicit_name 이 남아있으면 refresh 가 no-op). 새 surface 가 title
+            // 미보유(non-terminal 등)면 clear → fallback.
+            engine.refresh_tab_osc_title(surface_id);
         }
 
         CoreEvent::SurfaceConverted {
@@ -1467,8 +1485,14 @@ impl Core {
             let ws = &mut engine.workspaces[ws_idx];
             let pane = ws.pane_layout_mut().find_pane_mut(pane_id).unwrap();
             let tab = &mut pane.tabs[tab_idx];
-            if tab.close_surface(surface_id) {
+            let closed = tab.close_surface(surface_id);
+            // 닫힌 surface 가 이 탭의 focused 였다면 close_surface 가 focused_surface 를
+            // 재배정한다 (배경 탭도 IPC 포커스 독립으로 여기 도달). 새 focused 의 title
+            // 로 탭 제목을 재투영해 죽은 surface 의 title 이 남지 않게 한다.
+            let new_focused = tab.focused_surface;
+            if closed {
                 engine.mark_layout_dirty();
+                engine.refresh_tab_osc_title(new_focused);
                 return CoreEvent::SurfaceClosed {
                     surface_id,
                     closed: true,
@@ -1758,7 +1782,21 @@ impl Core {
             };
         }
 
+        // B(target) 가 이 탭의 focused 였다면 그 자리를 A 가 승계하므로 focused_surface
+        // 를 A 로 이어준다 (put_surface 는 sole 케이스에서 이미 A 로 세팅하지만, split
+        // replace_surface 는 focused_surface 를 갱신하지 않아 dangling 방지 필요).
+        // 그 후 새 focused 의 title 로 탭 제목을 재투영해 죽는 B 의 title 이 남지 않게 한다.
+        {
+            let ws = &mut engine.workspaces[ws_idx];
+            if let Some(pane) = ws.pane_layout_mut().find_pane_mut(pane_id) {
+                let tab = &mut pane.tabs[b_tab_idx];
+                if tab.focused_surface == target_id {
+                    tab.focused_surface = source_id;
+                }
+            }
+        }
         engine.mark_layout_dirty();
+        engine.refresh_tab_osc_title(source_id);
 
         CoreEvent::MoveSurfaceApplied {
             moved: true,
@@ -1809,14 +1847,27 @@ impl Core {
 
         // Split tab: 형제 끌어올림, A 의 Box 만 반환. 구조적 close 없음.
         if is_split {
-            let ws = &mut engine.workspaces[ws_idx];
-            let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
-            let tab = &mut pane.tabs[tab_idx];
-            let layout = tab.take_layout();
-            let (new_layout, extracted) = layout.extract_surface(source_id);
-            tab.put_layout(new_layout);
-            let a_box = extracted?; // split 안이면 형제가 있어 항상 Some.
+            let (a_box, source_tab_focused) = {
+                let ws = &mut engine.workspaces[ws_idx];
+                let pane = ws.pane_layout_mut().find_pane_mut(pane_id)?;
+                let tab = &mut pane.tabs[tab_idx];
+                let layout = tab.take_layout();
+                let (new_layout, extracted) = layout.extract_surface(source_id);
+                tab.put_layout(new_layout);
+                // A 가 이 tab 의 focused 였다면 형제 승격에 맞춰 focused_surface 를
+                // 살아있는 surface 로 재배정 (close_surface 와 동일 패턴, dangling 방지).
+                if tab.focused_surface == source_id
+                    && let Some(first_id) = tab.layout().first_surface_id()
+                {
+                    tab.focused_surface = first_id;
+                }
+                let a_box = extracted?; // split 안이면 형제가 있어 항상 Some.
+                (a_box, tab.focused_surface)
+            };
             engine.mark_layout_dirty();
+            // A 가 떠난 source tab 의 제목을 새 focused(형제)의 title 로 재투영해
+            // A 의 stale title 이 배경 탭에 남지 않게 한다.
+            engine.refresh_tab_osc_title(source_tab_focused);
             return Some((a_box, CascadeLevel::Surface, vec![], vec![], None, false));
         }
 
@@ -2488,5 +2539,175 @@ mod move_surface_tests {
         assert!(engine.terminals.contains(a));
         assert!(engine.find_workspace_index_for_surface(a).is_some());
         assert!(engine.pending_move_surface.is_none());
+    }
+}
+
+#[cfg(test)]
+mod tab_title_tests {
+    //! 탭 제목이 그 탭의 *focused* surface 가 발화한 OSC title 만 반영하는지 검증.
+    //! 병렬 surface 의 title 발화가 last-writer-wins 로 제목을 흔드는 flicker 회귀 방지.
+    use super::*;
+    use crate::model::SplitDirection;
+    use tasty_terminal::Terminal;
+
+    fn test_engine() -> CoreState {
+        let waker: tasty_terminal::Waker = std::sync::Arc::new(|| {});
+        CoreState::new(80, 24, waker).expect("engine")
+    }
+
+    /// 기본 워크스페이스 단일 탭에 A(focused)+B 를 split 로 구성. 두 surface 모두
+    /// detached terminal 로 store 에 등록. 반환 `(engine, pane_id, a, b)`.
+    fn split_tab_engine() -> (CoreState, u32, u32, u32) {
+        let mut engine = test_engine();
+        let a = engine.workspaces[0].all_surface_ids()[0];
+        engine
+            .terminals
+            .insert(a, Terminal::new_detached(80, 24));
+        let b = 7777;
+        let (ws_idx, pane_id) = engine.find_workspace_index_for_surface(a).unwrap();
+        engine.workspaces[ws_idx]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .unwrap()
+            .split_surface_by_id_marker(a, SplitDirection::Horizontal, b)
+            .unwrap();
+        engine
+            .terminals
+            .insert(b, Terminal::new_detached(80, 24));
+        set_focused(&mut engine, pane_id, a);
+        (engine, pane_id, a, b)
+    }
+
+    fn set_focused(engine: &mut CoreState, pane_id: u32, sid: u32) {
+        engine.workspaces[0]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .unwrap()
+            .tabs[0]
+            .focused_surface = sid;
+    }
+
+    /// OSC 2 를 feed 해 해당 surface 의 `current_title` 을 세팅한다.
+    fn set_title(engine: &mut CoreState, sid: u32, title: &str) {
+        engine
+            .terminals
+            .get_mut(sid)
+            .unwrap()
+            .feed_bytes(format!("\x1b]2;{title}\x07").as_bytes());
+    }
+
+    fn display_name(engine: &CoreState, pane_id: u32) -> String {
+        engine.workspaces[0]
+            .pane_layout()
+            .find_pane(pane_id)
+            .unwrap()
+            .tabs[0]
+            .display_name()
+    }
+
+    /// 비-focused surface 의 title 발화는 탭 제목을 흔들지 않는다. focused 발화만 반영.
+    #[test]
+    fn non_focused_surface_title_does_not_change_tab_name() {
+        let (mut engine, pane_id, a, b) = split_tab_engine();
+        // A 가 focused. B(non-focused)가 title 발화 → 탭 제목 불변.
+        let ev = Core::apply_update_tab_name(&mut engine, b, "TITLE-FROM-B".to_string());
+        assert!(matches!(
+            ev,
+            CoreEvent::TabNameUpdated {
+                skipped_explicit: false,
+                ..
+            }
+        ));
+        assert_ne!(display_name(&engine, pane_id), "TITLE-FROM-B");
+
+        // A(focused)가 발화 → 탭 제목 = TITLE-A.
+        Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
+        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+    }
+
+    /// explicit_name 이 있으면 focused surface 발화도 무시(고정 이름 보존).
+    #[test]
+    fn explicit_name_survives_focused_title() {
+        let (mut engine, pane_id, a, _b) = split_tab_engine();
+        engine.workspaces[0]
+            .pane_layout_mut()
+            .find_pane_mut(pane_id)
+            .unwrap()
+            .tabs[0]
+            .explicit_name = Some("FIXED".to_string());
+        let ev = Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
+        assert!(matches!(
+            ev,
+            CoreEvent::TabNameUpdated {
+                skipped_explicit: true,
+                ..
+            }
+        ));
+        assert_eq!(display_name(&engine, pane_id), "FIXED");
+    }
+
+    /// 포커스가 B 로 이동하면 재투영으로 B 의 최신 title(unfocused 시절 발화분)이 반영.
+    #[test]
+    fn refresh_projects_new_focused_surface_title() {
+        let (mut engine, pane_id, a, b) = split_tab_engine();
+        set_title(&mut engine, a, "TITLE-A");
+        set_title(&mut engine, b, "TITLE-B");
+        Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
+        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+
+        // 포커스를 B 로 전환 후 재투영 → B title.
+        set_focused(&mut engine, pane_id, b);
+        engine.refresh_tab_osc_title(b);
+        assert_eq!(display_name(&engine, pane_id), "TITLE-B");
+    }
+
+    /// 새 focused surface 가 title 미보유면 osc_title clear → fallback 동작.
+    #[test]
+    fn refresh_clears_when_focused_has_no_title() {
+        let (mut engine, pane_id, a, b) = split_tab_engine();
+        set_title(&mut engine, a, "TITLE-A");
+        Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
+        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+
+        // B 는 title 없음 → 포커스 B 로 전환 + 재투영 → osc_title clear → fallback.
+        set_focused(&mut engine, pane_id, b);
+        engine.refresh_tab_osc_title(b);
+        assert_ne!(display_name(&engine, pane_id), "TITLE-A");
+    }
+
+    /// focused surface 를 close 하면 생존 surface 로 focused 재배정 + 제목 재투영.
+    #[test]
+    fn closing_focused_surface_reprojects_to_survivor() {
+        let (mut engine, pane_id, a, b) = split_tab_engine();
+        set_title(&mut engine, a, "TITLE-A");
+        set_title(&mut engine, b, "TITLE-B");
+        Core::apply_update_tab_name(&mut engine, a, "TITLE-A".to_string());
+        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
+
+        // focused A 를 close → 생존 B 로 focused 재배정 + 재투영 → B title.
+        let ev = Core::apply_close_surface(&mut engine, a, false);
+        assert!(matches!(ev, CoreEvent::SurfaceClosed { closed: true, .. }));
+        assert_eq!(display_name(&engine, pane_id), "TITLE-B");
+    }
+
+    /// surface move 로 target tab 의 focused 가 A 로 승계되면 제목이 A 로 재투영.
+    #[test]
+    fn moving_surface_reprojects_target_tab_title() {
+        let (mut engine, pane_id, a, b) = split_tab_engine();
+        set_title(&mut engine, a, "TITLE-A");
+        set_title(&mut engine, b, "TITLE-B");
+        // focused=B 로 두고 B title 투영 (move 전 stale 상황 유도).
+        set_focused(&mut engine, pane_id, b);
+        engine.refresh_tab_osc_title(b);
+        assert_eq!(display_name(&engine, pane_id), "TITLE-B");
+
+        // A 를 B 위치로 move → 탭은 A 단독, 제목이 A 로 재투영 (B 의 stale title 제거).
+        engine.pending_move_surface = Some(a);
+        let ev = Core::apply_move_surface(&mut engine, a, b);
+        assert!(matches!(
+            ev,
+            CoreEvent::MoveSurfaceApplied { moved: true, .. }
+        ));
+        assert_eq!(display_name(&engine, pane_id), "TITLE-A");
     }
 }
