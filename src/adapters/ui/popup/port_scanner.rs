@@ -863,7 +863,10 @@ pub fn draw_port_scanner_view(
     // (header 12/14 / filter 8/14 / body 0 / footer 9/14). content_margin 은
     // port_scanner 한정 0(popup.rs). 구역 밀착은 세로 간격만 0, 구역 내부는 복원.
     let full = ui.max_rect();
-    let sep = egui::Stroke::new(props.theme.border_width.value(), props.theme.surface1);
+    let sep = egui::Stroke::new(
+        props.theme.border_width.value(),
+        props.theme.border_strong(),
+    );
     let saved_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing.y = 0.0;
 
@@ -993,7 +996,8 @@ fn draw_footer(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<PortSc
         if let Some(s) = &counter {
             ui.label(
                 egui::RichText::new(s)
-                    .color(th.overlay0)
+                    // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
+                    .color(th.text_placeholder())
                     .size(th.font_size_caption.value()),
             );
         }
@@ -1056,10 +1060,10 @@ fn draw_header_row(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<Po
     let mut out: Option<PortScannerAction> = None;
     ui.horizontal(|ui| {
         // B1: leading 포트 아이콘.
-        ui.add(icons::PORT.image(16.0, th.subtext0.into()));
+        ui.add(icons::PORT.image(16.0, th.text_muted().into()));
         ui.label(
             egui::RichText::new(props.label_heading)
-                .color(th.text)
+                .color(th.text_primary())
                 .size(th.font_size_heading.value())
                 .strong(),
         );
@@ -1157,7 +1161,7 @@ fn draw_column_chooser(
             ui.set_min_width(180.0);
             ui.label(
                 egui::RichText::new(props.label_columns_menu_title)
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .size(th.font_size_caption.value())
                     .strong(),
             );
@@ -1201,17 +1205,17 @@ fn state_filter_button(
     let text_col: egui::Color32 = if filtered {
         th.text_on_accent().into()
     } else {
-        th.text.into()
+        th.text_primary().into()
     };
     let fill: egui::Color32 = if filtered {
         th.accent_primary().into()
     } else {
-        th.surface0.into()
+        th.surface_raised().into()
     };
     let stroke = if filtered {
         egui::Stroke::NONE
     } else {
-        egui::Stroke::new(th.border_width.value(), th.surface1)
+        egui::Stroke::new(th.border_width.value(), th.border_strong())
     };
     ui.add(
         egui::Button::image_and_text(
@@ -1232,7 +1236,7 @@ fn state_filter_hsep(ui: &mut egui::Ui, th: &Theme) {
     ui.painter().hline(
         r.x_range(),
         ui.cursor().top(),
-        egui::Stroke::new(th.border_width.value(), th.surface1),
+        egui::Stroke::new(th.border_width.value(), th.border_strong()),
     );
     vspace(ui, STRUCT_GAP_2);
 }
@@ -1282,7 +1286,7 @@ fn draw_state_filter(ui: &mut egui::Ui, props: &PortScannerProps<'_>) -> Option<
             ui.set_min_width(216.0);
             ui.label(
                 egui::RichText::new(props.label_state_filter_title)
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .size(th.font_size_caption.value())
                     .monospace(),
             );
@@ -1394,10 +1398,10 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
         // 48 = spacing_xl × 2 (디자인 Request 3 판정).
         vspace(ui, th.spacing_xl * 2.0);
         ui.horizontal(|ui| {
-            ui.add(egui::Spinner::new().size(16.0).color(th.subtext0));
+            ui.add(egui::Spinner::new().size(16.0).color(th.text_muted()));
             ui.label(
                 egui::RichText::new(props.label_loading)
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .size(th.font_size_body.value()),
             );
         });
@@ -1417,7 +1421,7 @@ fn draw_failed_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>, message: &s
         );
         ui.label(
             egui::RichText::new(message)
-                .color(th.subtext0)
+                .color(th.text_muted())
                 .size(th.font_size_caption.value()),
         );
     });
@@ -1446,7 +1450,7 @@ fn draw_ready_body(
             ui.add_space(40.0);
             ui.label(
                 egui::RichText::new(empty_label)
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .italics()
                     .size(th.font_size_body.value()),
             );
@@ -1535,7 +1539,7 @@ fn draw_table(
         .horizontal_scroll(true)
         // 디자인 Table 헤더 th 배경 = bg-sidebar(mantle), sticky header 전체폭. 디자인
         // th padding 0/12 → header_pad_x 12. 헤더/행 높이는 기존 TableBuilder 값 그대로.
-        .header_fill(th.mantle.into())
+        .header_fill(th.bg_sidebar().into())
         .header_pad_x(12.0)
         .header_height(header_h)
         .row_height(text_h + 8.0)
@@ -1553,7 +1557,7 @@ fn draw_table(
                     hspace(ui, th.spacing_md);
                     ui.label(
                         egui::RichText::new(row.port.to_string())
-                            .color(th.text)
+                            .color(th.text_primary())
                             .size(th.font_size_body.value()),
                     );
                 }
@@ -1567,14 +1571,14 @@ fn draw_table(
                     };
                     ui.label(
                         egui::RichText::new(proto)
-                            .color(th.subtext0)
+                            .color(th.text_muted())
                             .size(th.font_size_body.value()),
                     );
                 }),
                 ColumnId::Address => cell_l(ui, |ui| {
                     ui.label(
                         egui::RichText::new(&row.addr_display)
-                            .color(th.subtext0)
+                            .color(th.text_muted())
                             .size(th.font_size_body.value())
                             .monospace(),
                     );
@@ -1658,7 +1662,7 @@ fn draw_process_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView) {
         let name = row.process_name.as_deref().unwrap_or("—");
         ui.label(
             egui::RichText::new(name)
-                .color(th.text)
+                .color(th.text_primary())
                 .size(th.font_size_body.value()),
         );
         if let Some(pid) = row.pid {
@@ -1674,12 +1678,12 @@ fn draw_workspace_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &
         SourceTag::Tasty { workspace_name, .. } => {
             ui.label(
                 egui::RichText::new(workspace_name)
-                    .color(th.text)
+                    .color(th.text_primary())
                     .size(th.font_size_body.value()),
             );
         }
         SourceTag::External => {
-            ui.colored_label(th.subtext0, dash);
+            ui.colored_label(th.text_muted(), dash);
         }
     }
 }
@@ -1696,12 +1700,12 @@ fn draw_tab_cell(ui: &mut egui::Ui, th: &Theme, row: &PortRowView, dash: &str) {
         Some(name) => {
             ui.label(
                 egui::RichText::new(name)
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .size(th.font_size_body.value()),
             );
         }
         None => {
-            ui.colored_label(th.subtext0, dash);
+            ui.colored_label(th.text_muted(), dash);
         }
     }
 }
