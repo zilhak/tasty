@@ -1519,6 +1519,7 @@ mod tests {
         assert_eq!(th.border_default(), th.surface0);
         assert_eq!(th.border_strong(), th.surface1);
         assert_eq!(th.border_focus(), th.blue);
+        assert_eq!(th.border_attached(), th.lavender); // accent-attached(이름≠토큰)
 
         // 오버레이 (도출 필드)
         assert_eq!(th.overlay_hover(), th.hover_overlay);
