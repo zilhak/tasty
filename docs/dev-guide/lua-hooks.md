@@ -53,6 +53,8 @@ fn fire<T: Serialize>(
 
 > `surface.change.post` 는 발화 site 없음(GUI 에서 surface 타입 직접 변경 경로 추가 시 등록).
 
+`.create/.delete` 이벤트는 **origin 무관 발화**가 계약이다 — GUI 경로와 IPC 경로가 같은 cascade 를 공유한다(`src/app/dispatch_domain.rs` 의 `cascade_*` 를 GUI dispatcher 와 `src/adapters/ipc/handler/*` 양쪽이 호출). `window.delete.post` 는 공통 helper `App::close_main_window`(`src/app/event_handler.rs`)에서 발화하며, GUI 닫기(`request_close_window`)와 IPC `window.close` 가 모두 이를 경유한다 (plugin payload 의 `reason` 만 `user`/`ipc` 로 갈린다). origin 게이팅은 아래 `change.post` 의 user-direct 분기가 유일하다.
+
 ### change.post 의 user-direct 분기
 
 `PendingHostEvent::{WorkspaceRenamed, TabRenamed}` 가 `user_direct: bool` 을 들고 다닌다. rename dialog(사용자 직접 GUI)는 `true`, IPC 경유(`workspace.update`/`move`)는 `false`. plugin 이벤트 버스는 구분 없이 발화하되 **Lua hook 은 `user_direct==true` 일 때만** fire.
