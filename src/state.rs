@@ -395,10 +395,6 @@ pub struct AppState {
     /// `DomainIntent::DispatchFile` 으로 발화.
     pub(crate) pending_file_drops: Vec<std::path::PathBuf>,
 
-    /// plugin popup 렌더 중 수집된 사용자 입력. App 메인 루프가 drain해
-    /// `PluginManager::send_popup_event`로 forward한다.
-    pub(crate) plugin_popup_events: Vec<(u64, tasty_plugin_protocol::ui_tree::UiEvent)>,
-
     /// plugin popup 렌더 중 감지된 close 사유 (outside-click / Escape).
     /// App 메인 루프가 drain해 `PluginManager::close_popup_instance`를 호출한다.
     pub(crate) plugin_popup_closes: Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>,
@@ -884,7 +880,6 @@ impl AppState {
             pending_handler_ipc: Vec::new(),
             drop_hover: None,
             pending_file_drops: Vec::new(),
-            plugin_popup_events: Vec::new(),
             plugin_popup_closes: Vec::new(),
             plugin_banner_closes: Vec::new(),
             plugin_mesh_popup_regions: Vec::new(),

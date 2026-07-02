@@ -59,7 +59,6 @@ impl GpuState {
                 state,
                 engine,
                 plugin_manager,
-                canvas_cache,
             );
             // Plugin egui-mesh banner(A3) — banner manager 가 `draw_ui` 중 셸을 그리고
             // content_rect 슬롯을 기록한 뒤, 여기서 content mesh forward + 합성 영역 적재.

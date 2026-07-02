@@ -1,17 +1,16 @@
 //! Plugin popup 인스턴스 렌더링.
 //!
-//! `PluginManager::popup_instances`에 등록된 popup을 매 프레임 그린다. 두 경로가 공존한다:
-//!  - **UiNode popup**: plugin 이 보낸 tree 를 host 가 `render_popup_tree` 로 egui::Area 에 그림.
-//!  - **egui-mesh popup (A2)**: plugin 이 자기 프로세스에서 egui mesh 를 tessellate 하고,
-//!    host 는 셸(scrim/bg/border/outside-click/Esc)만 그린 뒤 콘텐츠 영역에 plugin mesh 를
-//!    합성한다(합성은 `gpu.render` 가 host egui pass 후 수행 — `egui_mesh_prepare`).
+//! `PluginManager::popup_instances`에 등록된 popup을 매 프레임 그린다.
+//! **egui-mesh popup (A2)**: plugin 이 자기 프로세스에서 egui mesh 를 tessellate 하고,
+//! host 는 셸(scrim/bg/border/outside-click/Esc)만 그린 뒤 콘텐츠 영역에 plugin mesh 를
+//! 합성한다(합성은 `gpu.render` 가 host egui pass 후 수행 — `egui_mesh_prepare`).
 //!
 //! 호스트 본문 popup(`PopupManager`)과는 별도 경로 — plugin popup은 동적 instance_id를
 //! 가지고 `&'static str` 기반 `PopupId`/`PopupDef` 모델에 맞지 않기 때문.
 //!
-//! 사용자 입력은 UiNode 는 [`super::ui_tree_render::PopupSink`], egui-mesh 는
-//! `popup.set_context` 의 raw_input 으로 모은 뒤 plugin 에 forward 한다. set_context 송신
-//! 자체는 host 렌더 파이프라인의 일부라 사용자 상태에 부수효과가 없다(identity 원칙 1·3).
+//! 사용자 입력은 `popup.set_context` 의 raw_input 으로 모은 뒤 plugin 에 forward 한다.
+//! set_context 송신 자체는 host 렌더 파이프라인의 일부라 사용자 상태에 부수효과가
+//! 없다(identity 원칙 1·3).
 
 use std::collections::HashSet;
 
@@ -23,17 +22,14 @@ use tasty_plugin_protocol::{
 };
 
 use crate::adapters::ui::popup;
-use crate::gpu::canvas_texture::CanvasTextureCache;
 use crate::model::{PhysicalPx, PhysicalRect};
 use crate::plugin::PluginManager;
 use crate::plugin::manifest::PopupAnchor;
-use crate::plugin_bridge::ui_tree_render::{PopupSink, render_popup_tree};
 use crate::state::AppState;
 
 const DEFAULT_POPUP_SIZE: Vec2 = Vec2::new(360.0, 200.0);
 
 /// 매 egui 프레임 호출. plugin popup_instances를 순회하면서:
-///  - UiNode 인스턴스를 egui::Area로 렌더하고 PopupSink 입력을 `state` 큐에 적재,
 ///  - egui-mesh 인스턴스는 셸을 그리고 `popup.set_context` 를 forward, 합성 영역을
 ///    `state.plugin_mesh_popup_regions` 에 적재(실 합성은 `gpu.render`),
 ///  - 외부 클릭/Escape를 감지해 `state.plugin_popup_closes`에 적재.
@@ -44,7 +40,6 @@ pub fn draw_plugin_popups(
     state: &mut AppState,
     _engine: &mut crate::core::CoreState,
     plugin_manager: Option<&PluginManager>,
-    canvas_cache: &CanvasTextureCache,
 ) {
     // 매 frame mesh 합성 영역을 새로 수집한다 — 이전 frame 잔재가 합성되지 않게.
     state.plugin_mesh_popup_regions.clear();
@@ -56,15 +51,7 @@ pub fn draw_plugin_popups(
     };
 
     // popup_instances를 즉시 owned snapshot으로 복사. 이후 loop에서 `state`를 mutable로
-    // borrow하기 위함. UiNode(tree) / egui-mesh 를 rendering 으로 분리한다.
-    struct TreeSnap {
-        instance_id: u64,
-        plugin_id: String,
-        tree: tasty_plugin_protocol::ui_tree::UiNode,
-        anchor: PopupAnchor,
-        size: Vec2,
-        dismiss_on_outside_click: bool,
-    }
+    // borrow하기 위함.
     struct MeshSnap {
         instance_id: u64,
         plugin_id: String,
@@ -72,7 +59,6 @@ pub fn draw_plugin_popups(
         size: Vec2,
         dismiss_on_outside_click: bool,
     }
-    let mut tree_snaps: Vec<TreeSnap> = Vec::new();
     let mut mesh_snaps: Vec<MeshSnap> = Vec::new();
     for (id, inst) in mgr.popup_instances() {
         let size = inst
@@ -88,18 +74,8 @@ pub fn draw_plugin_popups(
                 size,
                 dismiss_on_outside_click: inst.contribute.dismiss_on_outside_click,
             }),
-            PopupRendering::UiTree => {
-                if let Some(tree) = inst.tree.clone() {
-                    tree_snaps.push(TreeSnap {
-                        instance_id: id,
-                        plugin_id: inst.plugin_id.clone(),
-                        tree,
-                        anchor: inst.contribute.anchor,
-                        size,
-                        dismiss_on_outside_click: inst.contribute.dismiss_on_outside_click,
-                    });
-                }
-            }
+            // UiNode(UiTree) popup 렌더 경로는 제거됨(C1) — 그리지 않는다.
+            PopupRendering::UiTree => {}
         }
     }
 
@@ -112,7 +88,7 @@ pub fn draw_plugin_popups(
         .plugin_mesh_popup_bootstrapped
         .retain(|k| live_mesh.contains(k));
 
-    if tree_snaps.is_empty() && mesh_snaps.is_empty() {
+    if mesh_snaps.is_empty() {
         return;
     }
 
@@ -122,65 +98,6 @@ pub fn draw_plugin_popups(
     let escape_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
     let mut any_hovered = false;
-
-    for snap in tree_snaps {
-        let pos = clamp_to_screen(
-            anchor_pos(snap.anchor, snap.size, screen_rect, pointer_pos),
-            snap.size,
-            screen_rect,
-        );
-        let rect = egui::Rect::from_min_size(pos, snap.size);
-
-        if let Some(p) = pointer_pos
-            && rect.contains(p)
-        {
-            any_hovered = true;
-        }
-
-        let area_id = Id::new("plugin_popup").with(snap.instance_id);
-        let layer_id = egui::LayerId::new(Order::Foreground, area_id);
-        let painter = ctx.layer_painter(layer_id);
-        let th = crate::theme::theme();
-        // popup 프레임: fill = bg_panel, stroke = border_default. (spec §2-E / G11·C-G6)
-        painter.rect_filled(rect, th.corner_radius.value(), th.bg_panel().to_egui());
-        painter.rect_stroke(
-            rect,
-            th.corner_radius.value(),
-            Stroke::new(th.border_width.value(), th.border_default().to_egui()),
-            egui::StrokeKind::Outside,
-        );
-
-        let content_rect = rect.shrink(popup::content_margin());
-        let mut child_ui = egui::Ui::new(
-            ctx.clone(),
-            Id::new("plugin_popup_content").with(snap.instance_id),
-            egui::UiBuilder::new()
-                .layer_id(layer_id)
-                .max_rect(content_rect),
-        );
-        let sink = PopupSink::new(&snap.plugin_id, snap.instance_id);
-        render_popup_tree(&mut child_ui, &snap.tree, &sink, canvas_cache);
-        for ev in sink.into_events() {
-            state.plugin_popup_events.push((snap.instance_id, ev));
-        }
-
-        // 외부 클릭 dismiss.
-        if snap.dismiss_on_outside_click
-            && primary_pressed
-            && let Some(p) = pointer_pos
-            && !rect.contains(p)
-        {
-            state
-                .plugin_popup_closes
-                .push((snap.instance_id, PopupCloseReason::OutsideClick));
-        }
-        // Escape dismiss. 여러 popup이 동시에 열려 있을 때 모두 닫는다.
-        if escape_pressed {
-            state
-                .plugin_popup_closes
-                .push((snap.instance_id, PopupCloseReason::Escape));
-        }
-    }
 
     // ── egui-mesh popups (A2) ──
     let ppp = ctx.pixels_per_point().max(f32::EPSILON);
