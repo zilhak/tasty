@@ -18,17 +18,25 @@
 | 디자인 jsx 컴포넌트 | tasty 함수 | 갤러리 항목 |
 |---|---|---|
 | `RemoteTool`(container) | `draw_remote_tool_popup` | ✗ 미등록 (사유 아래) |
-| `TabBtn`(내부) | `draw_tab_bar` | — |
-| `WarnBadge` | `warn_badge` | — |
-| `ListShell` | `draw_profile_list` / `draw_passkey_list` (add-bar+scroll 합침) | — |
+| `TabBtn`(내부, 3탭) | `draw_tab_bar` | `components/remote.rs` `tab_bar` (specimen 미러) |
+| `WarnBadge` | `warn_badge` | `components/remote.rs` `warn_pill` (specimen 미러 — 아이콘 없는 pill, gallery jsx 형) |
+| `ListShell` | `draw_profile_list` / `draw_attach_list` / `draw_passkey_list` (add-bar+scroll 합침) | — |
 | `ProtocolFilter`(add-bar 버튼) | `filter_button` (`draw_profile_list` 내, funnel+라벨) | ✗ 미등록 (remote_tool 예외 동일) |
 | `ProtocolFilter`(드롭다운/팝오버) | `draw_protocol_filter` (체크박스 + Apply-on-confirm) | ✗ 미등록 (remote_tool 예외 동일) |
-| `ProfileRow` | `draw_profile_row` | — |
+| `ProfileRow` | `draw_profile_row` | `components/remote.rs` `profile_row` (`remote` spec) |
 | `ProfileForm` | `draw_profile_form` | — |
+| `AttachRow` | `draw_attach_row` | `components/remote.rs` `attach_row` (`remote-attach` spec) |
+| `AttachForm` | `draw_attach_form` | `components/remote.rs` `attach_form_card` (`remote-attach-form` spec, ref/inline 2변종) |
 | `PasskeyRow` | `draw_passkey_row` | — |
 | `PasskeyForm` | `draw_passkey_form` | — |
 | `ConfirmDelete` | `draw_confirm_delete` | — |
 | `PasskeySelect` | `passkey_dropdown_row` | — |
+
+Attach 갤러리 specimen 은 디자인 **gallery 미러**(`gallery/overlays-shared.jsx` `RemoteFrame
+tab="attach"` / `RemoteFormFrame` variant `attach-ref`·`attach-inline`)를 전사한 것으로, 본체
+함수 호출이 아니다(컨테이너 미등록 사유와 동일 — 본체는 상태/IO 의존). 디자인 미러가 세그먼트
+active 를 `surface-active` 로 그리는 반면 본체(ui_kits jsx)는 `accent-primary` 세그먼트를
+쓴다 — changelog(2026-07-01-remote-attach-tab) 명시 사항으로 갤러리/본체가 의도적으로 다르다.
 
 **갤러리 미등록 사유**: `draw_remote_tool_popup` 시그니처가 `(ui, &mut AppState, &mut
 CoreState)` 로 호스트 상태에 의존한다(UiState 를 egui ctx memory 에 저장, `RemoteProfiles::

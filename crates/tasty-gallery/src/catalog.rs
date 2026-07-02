@@ -654,12 +654,28 @@ pub fn pages() -> Vec<Page> {
                 section(
                     "remote",
                     "Remote connections",
-                    vec![spec(
-                        "remote",
-                        "Profiles & passkeys",
-                        Some("520×460 · two tabs · SSH targets, identity at the boundary"),
-                        components::remote::draw,
-                    )],
+                    vec![
+                        spec(
+                            "remote",
+                            "Profiles & passkeys",
+                            Some("520×460 · three tabs · SSH targets, identity at the boundary"),
+                            components::remote::draw,
+                        ),
+                        spec(
+                            "remote-attach",
+                            "Attach tab — tasty-attach targets",
+                            Some("middle tab · ref/inline targets · remote tasty + port discovery"),
+                            components::remote::draw_attach,
+                        ),
+                        spec(
+                            "remote-attach-form",
+                            "Attach form — reference vs. inline",
+                            Some(
+                                "Connection toggle · ssh_ref dropdown / inline fieldset · Remote tasty group",
+                            ),
+                            components::remote::draw_attach_form,
+                        ),
+                    ],
                 ),
                 section(
                     "search",
