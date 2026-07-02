@@ -980,6 +980,7 @@ held_workspace_body = "このワークスペースは別のクライアントが
 force_detach = "強制切断"
 occupied_surface = "別のクライアントが占有中(読み取り専用)。取り戻すには強制切断。"
 occupied_workspace = "クライアントが接続中"
+mirror_workspace = "リモートワークスペースのミラー"
 
 # Webview(html) surface の host chrome — native WebView overlay が付く前/隠れた時に
 # host が描画する(URL 未指定なら placeholder、指定済みなら boundary backdrop)。

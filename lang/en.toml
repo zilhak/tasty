@@ -981,6 +981,7 @@ held_workspace_body = "This workspace is attached by another client."
 force_detach = "Force detach"
 occupied_surface = "Held by another client (readonly). Force detach to take over."
 occupied_workspace = "Attached by a client"
+mirror_workspace = "Mirror of a remote workspace"
 
 # Webview(html) surface host chrome — painted by the host before/around the
 # native WebView overlay (placeholder when no page, boundary backdrop otherwise).

@@ -62,6 +62,8 @@ pub struct SidebarFullProps<'a> {
     pub new_workspace_label: &'a str,
     pub workspaces_heading: &'a str,
     pub occupied_hover: &'a str,
+    /// mirror(원격 워크스페이스 로컬 mirror) leading glyph 의 hover tooltip.
+    pub mirror_hover: &'a str,
     /// "확인 필요" plugin 개수. >0 이면 Plugins 버튼에 danger 배지를 그린다.
     pub plugin_alert: usize,
     /// switch-number overlay — 사용자가 `workspace_switch_modifier` 를 누르고 있는 동안 true.
@@ -902,7 +904,15 @@ fn draw_ws_row(
         ("ws_full", global_idx),
         props.workspace_switch_held,
     );
-    let card_rect = draw_workspace_card(ui, th, ws, props.occupied_hover, switch_digit, fade);
+    let card_rect = draw_workspace_card(
+        ui,
+        th,
+        ws,
+        props.occupied_hover,
+        props.mirror_hover,
+        switch_digit,
+        fade,
+    );
     let card_response = ui.interact(
         card_rect,
         egui::Id::new(("ws_card", global_idx)),
@@ -1085,17 +1095,16 @@ fn draw_collapsed_avatar(
             text_color,
         );
     }
-    // 우상단 dot — mirror(하늘색) > notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring.
+    // 우상단 dot — notif(blue+링) > running(초록). attached 는 아바타 둘레 lavender ring,
+    // mirror 는 우하단 corner chip(아래) 로 분리 — dot 은 실행상태 전용
+    // (디자인 2026-07-02 workspace-mirror-indicator: sky "remote" fill 제거).
     let dot_radius = 3.0;
     let dot_pad = 4.0;
     let dot_center = egui::pos2(
         rect.max.x - dot_pad - dot_radius,
         rect.min.y + dot_pad + dot_radius,
     );
-    if ws.is_mirror {
-        ui.painter()
-            .circle_filled(dot_center, dot_radius, th.accent_info());
-    } else if ws.has_highlight {
+    if ws.has_highlight {
         // G4: notif → blue dot + bg-sidebar 링 (디자인 Badge dot variant, boxShadow 0 0 0 1.5px).
         ui.painter()
             .circle_filled(dot_center, dot_radius + 1.5, th.bg_sidebar());
@@ -1115,6 +1124,25 @@ fn draw_collapsed_avatar(
             egui::StrokeKind::Inside,
         );
     }
+    // 디자인 CollapsedSidebar mirror chip: 아바타 우하단 sky corner chip. pill(size-12) +
+    // boxShadow spread(size-2) 는 둘 다 bg-sidebar → 반경 spacing_sm(=size-8) 의
+    // bg-sidebar halo 로 합성 렌더(아바타/이웃과 시각 분리). glyph=spacing_sm(=size-8, `>_→`
+    // TERMINAL_PROMPT), tint=workspace_mirror_fg. 채널 분리: notif=우상단 / mirror=우하단 /
+    // attached=둘레 ring — 셋이 겹치지 않는다.
+    if ws.is_mirror {
+        let halo_r = th.spacing_sm.value();
+        let glyph = th.spacing_sm.value();
+        let inset = th.spacing_xs.value();
+        let chip_center = egui::pos2(rect.max.x - inset, rect.max.y - inset);
+        ui.painter()
+            .circle_filled(chip_center, halo_r, th.bg_sidebar());
+        // paint_at: layout 을 건드리지 않는 순수 페인트(아바타 rect 는 위에서 이미 할당됨).
+        // collapsed 의 다른 인디케이터(notif/attached)와 동일하게 per-chip tooltip 은 없다.
+        let glyph_rect = egui::Rect::from_center_size(chip_center, egui::vec2(glyph, glyph));
+        icons::TERMINAL_PROMPT
+            .image(glyph, th.workspace_mirror_fg().into())
+            .paint_at(ui, glyph_rect);
+    }
     if resp.clicked() {
         actions.push(SidebarCollapsedAction::WorkspaceClicked(global_idx));
     }
@@ -1126,6 +1154,7 @@ fn draw_workspace_card(
     th: &Theme,
     ws: &WorkspaceEntryView,
     occupied_hover: &str,
+    mirror_hover: &str,
     // Some(digit) 면 status dot 자리에 숫자 키캡(switch-number overlay)을 그린다.
     switch_digit: Option<&str>,
     // switch-number overlay 등장 페이드 계수(0..=1, motion-ui-fast 90ms).
@@ -1189,9 +1218,9 @@ fn draw_workspace_card(
                 );
             } else {
                 // 디자인 StatusDot: 활성/비활성 무관하게 같은 색 (alpha 조정 없음).
-                let dot_color: egui::Color32 = if ws.is_mirror {
-                    th.accent_info().into()
-                } else if ws.busy_count > 0 {
+                // dot 은 실행상태 전용 — mirror(원격 origin)는 이름 앞 leading glyph 로
+                // 분리(디자인 2026-07-02 workspace-mirror-indicator). sky "remote" fill 제거.
+                let dot_color: egui::Color32 = if ws.busy_count > 0 {
                     th.accent_success().into()
                 } else {
                     // divergence: idle status dot. overlay0(=placeholder 값) → 값-보존 text_placeholder() (§4-8).
@@ -1235,6 +1264,17 @@ fn draw_workspace_card(
                         .circle_filled(rect.center(), 5.0, th.accent_primary());
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    // 디자인 WorkspaceRow: mirror(원격 워크스페이스 로컬 mirror)면 이름 앞에
+                    // leading remote-link glyph(`>_→` = TERMINAL_PROMPT). status dot(실행상태)·
+                    // attached ring·notif 와 독립된 별도 축(원격 origin) — 한 행에 공존 가능.
+                    if ws.is_mirror {
+                        ui.spacing_mut().item_spacing.x = th.workspace_mirror_gap().value();
+                        ui.add(icons::TERMINAL_PROMPT.image(
+                            th.workspace_mirror_icon_size().value(),
+                            th.workspace_mirror_fg().into(),
+                        ))
+                        .on_hover_text(mirror_hover);
+                    }
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(&ws.name)
@@ -1407,6 +1447,7 @@ mod tests {
                     new_workspace_label: "New Workspace",
                     workspaces_heading: "WORKSPACES",
                     occupied_hover: "Held by another client",
+                    mirror_hover: "Mirror of a remote workspace",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
                 };
@@ -1513,6 +1554,23 @@ mod tests {
     }
 
     #[test]
+    fn mirror_indicator_renders_full_and_collapsed_without_panic() {
+        // is_mirror=true 워크스페이스: full 은 이름 앞 leading glyph, collapsed 는 아바타
+        // 우하단 corner chip 을 그린다(디자인 2026-07-02 workspace-mirror-indicator). busy+
+        // attached+notif 와 공존하는 mirror 행도 섞어 채널 분리 렌더 경로를 no-panic 검증.
+        let mut mirror = mock_ws("infra", false);
+        mirror.is_mirror = true;
+        let mut mirror_busy = mock_ws("data-pipeline", true);
+        mirror_busy.is_mirror = true;
+        mirror_busy.busy_count = 2;
+        mirror_busy.has_highlight = true;
+        mirror_busy.attached = true;
+        let ws = vec![mock_ws("main", false), mirror, mirror_busy];
+        assert!(run_full(ws.clone(), false).is_empty());
+        assert!(run_collapsed(ws, false).is_empty());
+    }
+
+    #[test]
     fn full_view_switch_overlay_held_renders_keycaps_without_panic() {
         // switch-number overlay 활성(workspace_switch_held=true): 11개 ws — 1~9 는 키캡,
         // 10번째+(index ≥ 9)는 status dot 유지. keycap draw 경로가 패닉 없이 layout 되는지.
@@ -1600,6 +1658,7 @@ mod tests {
                     new_workspace_label: "New Workspace",
                     workspaces_heading: "WORKSPACES",
                     occupied_hover: "Held by another client",
+                    mirror_hover: "Mirror of a remote workspace",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
                 };
