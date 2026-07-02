@@ -103,8 +103,16 @@ struct CachedContext {
 
 impl EguiMeshCore {
     fn new() -> Self {
+        let ctx = Context::default();
+        // egui 내장 키보드 줌(Cmd/Ctrl +/-/0)을 끈다 — 배율은 host 가 ui_zoom(설정) +
+        // native ppp 로 제어한다. 켜두면 forward 된 Cmd+= 등이 plugin Context 의
+        // zoom_factor 를 올려 메모리에 눌러앉고, host 와 달리 리셋 경로가 없어 서피스가
+        // 예기치 않게 확대된 채 유지된다(본체 `gpu.rs` 도 동일 이유로 끈다).
+        ctx.options_mut(|opts| {
+            opts.zoom_with_keyboard = false;
+        });
         Self {
-            ctx: Context::default(),
+            ctx,
             last_hash: None,
             last_ctx: None,
             tex_state: BTreeMap::new(),
