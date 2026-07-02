@@ -37,8 +37,16 @@ pub struct MdStyle {
     code_fg: Color32,
     surface_raised: Color32,
     separator: Color32,
-    bg_sidebar: Color32,
     blockquote_bar: Color32,
+    /// markdown 인라인 표 (grid + zebra) 토큰 — 모두 `theme.md_table_*()` 접근자에서 옴.
+    table_border: Color32,
+    table_header_bg: Color32,
+    table_header_fg: Color32,
+    table_row_bg: Color32,
+    table_row_bg_zebra: Color32,
+    table_cell_fg: Color32,
+    table_pad_x: f32,
+    table_pad_y: f32,
     corner_radius: f32,
     border_width: f32,
     space_xs: f32,
@@ -75,8 +83,15 @@ impl MdStyle {
             code_fg: theme.text_primary().to_egui(),
             surface_raised: theme.surface_raised().to_egui(),
             separator: theme.separator.to_egui(),
-            bg_sidebar: theme.bg_sidebar().to_egui(),
             blockquote_bar: theme.border_strong().to_egui(),
+            table_border: theme.md_table_border().to_egui(),
+            table_header_bg: theme.md_table_header_bg().to_egui(),
+            table_header_fg: theme.md_table_header_fg().to_egui(),
+            table_row_bg: theme.md_table_row_bg().to_egui(),
+            table_row_bg_zebra: theme.md_table_row_bg_zebra().to_egui(),
+            table_cell_fg: theme.md_table_cell_fg().to_egui(),
+            table_pad_x: theme.md_table_cell_padding_x().value(),
+            table_pad_y: theme.md_table_cell_padding_y().value(),
             corner_radius: theme.corner_radius.value(),
             border_width: theme.border_width.value(),
             space_xs: theme.spacing_xs.value(),
@@ -973,66 +988,143 @@ fn table<'a, I>(
         }
     }
 
-    egui::Frame::new()
-        .stroke(Stroke::new(style.border_width, style.separator))
+    let r = style.corner_radius as u8;
+    let pad_x = style.table_pad_x;
+    let n = rows.len();
+    // 셀 좌우 패딩(pad_x)이 세로 격자선 양쪽에 대칭으로 오도록 컬럼 간격을 2*pad_x 로 준다.
+    // (외곽↔셀 = inner_margin pad_x, 셀↔세로선 = 컬럼간격의 절반 pad_x 로 모두 pad_x 정렬.)
+    let col_gap = pad_x * 2.0;
+    let margin = egui::Margin::symmetric(pad_x as i8, style.table_pad_y as i8);
+
+    let out = egui::Frame::new()
+        .fill(style.table_row_bg)
+        .stroke(Stroke::new(style.border_width, style.table_border))
         .corner_radius(style.corner_radius)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            // Header strip.
+            // 헤더 밴드 — surface-raised 채움 + text-primary. 본문이 없으면 이 밴드가
+            // 표 전체라 4모서리 모두 라운드, 있으면 상단 2모서리만.
+            let header_radius = if n == 0 {
+                egui::CornerRadius::same(r)
+            } else {
+                egui::CornerRadius {
+                    nw: r,
+                    ne: r,
+                    sw: 0,
+                    se: 0,
+                }
+            };
             egui::Frame::new()
-                .fill(style.bg_sidebar)
-                .inner_margin(egui::Margin::symmetric(
-                    style.space_sm as i8,
-                    (style.space_xs * 1.5) as i8,
-                ))
-                .show(ui, |ui| table_row(ui, style, &head, cols, aligns, true));
-            table_divider(ui, style);
-            let n = rows.len();
+                .fill(style.table_header_bg)
+                .corner_radius(header_radius)
+                .inner_margin(margin)
+                .show(ui, |ui| table_row(ui, style, &head, cols, aligns, col_gap, true));
+            // 본문 0행이면 헤더 하단이 곧 외곽 — 하단 격자선 생략(§2-4).
+            if n > 0 {
+                table_divider(ui, style);
+            }
             for (i, row) in rows.iter().enumerate() {
-                egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(
-                        style.space_sm as i8,
-                        (style.space_xs * 1.5) as i8,
-                    ))
-                    .show(ui, |ui| table_row(ui, style, row, cols, aligns, false));
-                if i + 1 < n {
+                let zebra = i % 2 == 1; // 첫 본문행(base) 이후 짝수행(2·4…)=zebra.
+                let is_last = i + 1 == n;
+                let mut f = egui::Frame::new().inner_margin(margin);
+                if zebra {
+                    f = f.fill(style.table_row_bg_zebra);
+                    if is_last {
+                        // zebra 채움이 있는 마지막 행은 하단 2모서리를 외곽 라운드에 맞춘다.
+                        f = f.corner_radius(egui::CornerRadius {
+                            nw: 0,
+                            ne: 0,
+                            sw: r,
+                            se: r,
+                        });
+                    }
+                }
+                f.show(ui, |ui| table_row(ui, style, row, cols, aligns, col_gap, false));
+                if !is_last {
                     table_divider(ui, style);
                 }
             }
         });
+
+    // 세로 컬럼 격자선 — egui `ui.columns()` 는 세로선을 그리지 않으므로 표 전체
+    // 높이에 걸쳐 컬럼 경계마다 수동 draw. 마지막 열의 오른쪽 선은 외곽과 겹치므로 생략.
+    let content = out.response.rect;
+    let inner_w = content.width() - col_gap; // = 좌우 inner_margin(pad_x*2) 제외 폭.
+    if cols > 1 && inner_w > col_gap * (cols as f32 - 1.0) {
+        let col_w = (inner_w - col_gap * (cols as f32 - 1.0)) / cols as f32;
+        let inner_left = content.left() + pad_x;
+        let painter = ui.painter();
+        for i in 1..cols {
+            let x = inner_left + i as f32 * col_w + (2 * i - 1) as f32 * pad_x;
+            painter.vline(
+                x,
+                content.y_range(),
+                Stroke::new(style.border_width, style.table_border),
+            );
+        }
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn table_row(
     ui: &mut egui::Ui,
     style: &MdStyle,
     cells: &[Vec<Inline>],
     cols: usize,
     aligns: &[Alignment],
+    col_gap: f32,
     header: bool,
 ) {
-    let color = style.text;
+    // 헤더 신호는 weight 가 아니라 색+배경 — 헤더는 text-primary, 본문은 text-secondary.
+    let color = if header {
+        style.table_header_fg
+    } else {
+        style.table_cell_fg
+    };
+    ui.spacing_mut().item_spacing.x = col_gap;
+    // 동적폭 방어: 잔여폭이 컬럼 간격 합 미만이면 columns 내부 폭이 음수가 되어 panic.
+    // 그 경우 세로 폴백(격자 없이)으로 그린다.
+    if ui.available_width() <= col_gap * (cols as f32 - 1.0) + 1.0 {
+        ui.vertical(|ui| {
+            for cell in cells.iter().take(cols) {
+                table_cell(ui, style, Some(cell), color, header, false);
+            }
+        });
+        return;
+    }
     ui.columns(cols, |c| {
         for (col, cell_ui) in c.iter_mut().enumerate() {
-            let cell = cells.get(col);
-            let cfg = InlineCfg {
-                size: style.body,
-                color,
-                line_height: 1.4,
-                heading: header, // header: suppress bold re-tint, keep one weight
-                upper: false,
-                tracking: 0.0,
-            };
             let right = matches!(aligns.get(col), Some(Alignment::Right));
-            let lay = if right {
-                egui::Layout::right_to_left(Align::Min)
-            } else {
-                egui::Layout::left_to_right(Align::Min)
-            };
-            cell_ui.with_layout(lay, |ui| {
-                if let Some(cell) = cell {
-                    render_inlines(ui, style, cell, &cfg);
-                }
-            });
+            table_cell(cell_ui, style, cells.get(col), color, header, right);
+        }
+    });
+}
+
+/// 한 셀 렌더 — 정렬(좌/우) 반영, 헤더면 bold re-tint 억제.
+fn table_cell(
+    ui: &mut egui::Ui,
+    style: &MdStyle,
+    cell: Option<&Vec<Inline>>,
+    color: Color32,
+    header: bool,
+    right: bool,
+) {
+    let cfg = InlineCfg {
+        size: style.body,
+        color,
+        line_height: 1.4,
+        heading: header, // 헤더: bold re-tint 억제, 한 weight 유지
+        upper: false,
+        tracking: 0.0,
+    };
+    let lay = if right {
+        egui::Layout::right_to_left(Align::Min)
+    } else {
+        egui::Layout::left_to_right(Align::Min)
+    };
+    ui.with_layout(lay, |ui| {
+        if let Some(cell) = cell {
+            render_inlines(ui, style, cell, &cfg);
         }
     });
 }
@@ -1045,7 +1137,7 @@ fn table_divider(ui: &mut egui::Ui, style: &MdStyle) {
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
-        Stroke::new(style.border_width, style.separator),
+        Stroke::new(style.border_width, style.table_border),
     );
 }
 
