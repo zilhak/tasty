@@ -89,10 +89,12 @@ pub fn draw_status_bar_view(
     let muted: egui::Color32 = th.text_muted().into();
     let hover: egui::Color32 = th.text_secondary().into();
     let success: egui::Color32 = th.accent_success().into();
+    // divergence: light/dark 테마 표시 도트. warning/agent role 이 아니라 테마 종류 표시용이나
+    // 전용 토큰이 없어(§4-9) 값-보존 위해 accent_warning()/accent_agent() 사용(픽셀 동일).
     let theme_dot: egui::Color32 = if data.theme_is_light {
-        th.yellow.into()
+        th.accent_warning().into()
     } else {
-        th.mauve.into()
+        th.accent_agent().into()
     };
     let bar_h = rect.height();
 
