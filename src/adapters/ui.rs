@@ -16,6 +16,7 @@ pub(crate) mod drop_overlay;
 pub mod font_registry;
 pub(crate) mod info_modal;
 pub mod layout_context;
+pub(crate) mod modifier_hint_overlay;
 pub(crate) mod notification;
 pub mod popup;
 pub mod preset;

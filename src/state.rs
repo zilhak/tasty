@@ -269,6 +269,13 @@ pub struct AppState {
     /// /05 사이드바)가 매 프레임 읽어 숫자 키캡 오버레이를 표시할지 결정한다.
     #[cfg(feature = "gui")]
     pub(crate) switch_overlay: Option<crate::adapters::ui::switch_overlay::SwitchOverlayState>,
+    /// modifier-hint 오버레이 런타임 상태 — 홀드 시작 시각·anchor modifier·세션 dismiss·
+    /// 진행 중 드래그 working rect. `MainView` 의 `ModifiersChanged` 가 `update_hold` 로
+    /// 갱신하고, 창 포커스 상실 시 `clear` 된다. draw 경로(`draw_popups`)가 매 프레임
+    /// `draw_modifier_hint` 로 읽어 500ms 홀드 후 오버레이를 그린다. 지오메트리 영속값은
+    /// `Settings::modifier_hint`(pos/size), 이 필드는 홀드/드래그 세션 상태만.
+    #[cfg(feature = "gui")]
+    pub(crate) modifier_hint: crate::adapters::ui::modifier_hint_overlay::ModifierHintRuntime,
     /// All transient dialog/popup state.
     pub(crate) dialogs: DialogState,
     /// Measured tab bar height in physical pixels, updated each frame by egui.
@@ -307,6 +314,11 @@ pub struct AppState {
     /// (포커스는 받지 않음 — 마우스 소비만.) popup_hovered 와 동일하게 비-gui 빌드도
     /// 필드를 갖는다(입력 가드가 공유).
     pub(crate) banner_hovered: bool,
+    /// 마우스가 modifier-hint 오버레이 위인지(입력 레이어 상태). `draw_modifier_hint` 가
+    /// 매 프레임 갱신한다. 오버레이는 **키보드 포커스를 받지 않고 마우스만 소비**하므로
+    /// (원칙3), mouse 핸들러가 이 값으로 click-to-activate/휠/드래그가 하위 surface 로
+    /// 새지 않게 막는다. banner_hovered 와 동일 성질(비-gui 빌드도 필드 보유).
+    pub(crate) modifier_hint_hovered: bool,
     /// Preset store 의 Arc clone — Core 가 owner. UI popup 이 draw 흐름에서
     /// core 인자 없이 lock 으로 read 할 수 있도록 AppState 에 *clone 보유* 만
     /// 한다 (allocation 동일, owner 는 Core). `create_app_state` 가 inject.
@@ -825,6 +837,9 @@ impl AppState {
             pending_resize_cursor: None,
             #[cfg(feature = "gui")]
             switch_overlay: None,
+            #[cfg(feature = "gui")]
+            modifier_hint: crate::adapters::ui::modifier_hint_overlay::ModifierHintRuntime::default(
+            ),
             dialogs: DialogState::new(),
             tab_bar_height: PhysicalPx(24.0),
             captured_double_tap: None,
@@ -836,6 +851,7 @@ impl AppState {
             last_tab_locations: None,
             popup_hovered: false,
             banner_hovered: false,
+            modifier_hint_hovered: false,
             recent_files: crate::recent_files::RecentFiles::load(),
             #[cfg(feature = "gui")]
             popups: {

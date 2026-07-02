@@ -306,6 +306,9 @@ impl View for MainView {
                     // modifier 가 비워지므로 switch-number overlay 스냅샷도 함께 clear —
                     // 안 하면 창을 벗어난 동안에도 키캡 오버레이가 남는다.
                     self.state.clear_switch_overlay();
+                    // modifier-hint 오버레이도 홀드 상태 clear(창 밖에서 modifier 를 떼도
+                    // ModifiersChanged 가 안 오므로 명시적으로 비운다). switch-overlay 와 동반.
+                    self.state.modifier_hint.clear();
                 }
                 self.mark_dirty();
             }
@@ -330,6 +333,17 @@ impl View for MainView {
                     .state
                     .update_switch_overlay(&self.core_state, kb, ctrl, shift, alt)
                 {
+                    dirty = true;
+                }
+                // modifier-hint 오버레이 홀드 갱신. `alt`(=switch-overlay 와 동일한 정규화된
+                // "alt" 토큰 축: macOS super/그 외 alt)는 재사용하고, macOS Option(물리 alt)만
+                // 별도 축으로 넘긴다. anchor 가 바뀌면 dirty(콘텐츠 갱신). 표시 게이트(500ms)·
+                // 페이드 재그리기는 draw_modifier_hint 가 스스로 예약한다.
+                #[cfg(target_os = "macos")]
+                let option = mods.alt_key();
+                #[cfg(not(target_os = "macos"))]
+                let option = false;
+                if self.state.modifier_hint.update_hold(ctrl, alt, option, shift) {
                     dirty = true;
                 }
                 if dirty {

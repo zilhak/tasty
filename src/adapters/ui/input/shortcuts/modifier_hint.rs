@@ -31,8 +31,11 @@
 //!
 //! 빈 조합(바인딩·역할 모두 없음)은 섹션 자체를 생략한다.
 //!
-//! NOTE: 소비처(modifier-hint-03 오버레이 wiring)가 아직 연결되지 않아 공개 심볼이
-//! 전부 미사용이다. 03 배선 완료 시 이 allow 를 제거한다.
+//! NOTE: modifier-hint-03 오버레이(`super::super::modifier_hint_overlay`)가 대부분을 소비한다
+//! (`build_hint_sections`/`HeldModifier`/`Combo`/`HintSection`/`HintRow`/`HintRowSource`/
+//! `HintRole`). 남은 미사용은 ① `Combo::name`(테스트/디버그 전용), ② `PluginBindingInput`
+//! (plugin 단축키 wiring — `PluginManager` 가 `App` 소유라 draw 경로에 아직 미도달, 후속
+//! 배선 대상). 이 둘 때문에 blanket allow 를 유지한다. plugin wiring 완료 시 제거.
 #![allow(dead_code)]
 
 use tasty_settings::KeybindingSettings;

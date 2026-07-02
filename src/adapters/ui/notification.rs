@@ -321,6 +321,29 @@ pub fn draw_popups(
         .banners
         .draw(ctx, &draw_ctx, &th, view_placeholder, reduced_motion);
     state.banner_hovered = banner_result.hovered;
+
+    // modifier-hint 오버레이 (toast/banner 인접 최상위 레이어). modifier 500ms 홀드 후
+    // 표시, 마우스만 소비(키보드 포커스 불가 — 원칙3). 홀드 상태는 winit ModifiersChanged
+    // (실사용자 입력)만 반영(원칙1). 놓는 시점의 지오메트리를 UpdateSettings 로 영속한다.
+    let hint_result = crate::adapters::ui::modifier_hint_overlay::draw_modifier_hint(
+        ctx,
+        &mut state.modifier_hint,
+        &engine.settings,
+        &th,
+        reduced_motion,
+    );
+    state.modifier_hint_hovered = hint_result.hovered;
+    if let Some((pos, size)) = hint_result.persist {
+        // 사용자 드래그/리사이즈 결과 → Settings 영속(사이드바 폭 등과 동일 성질,
+        // 전역 공유 + last-write-wins). from_user_menu = 사용자 직접 조작 origin.
+        let mut new_settings = engine.settings.clone();
+        new_settings.modifier_hint.pos = Some(pos);
+        new_settings.modifier_hint.size = Some(size);
+        state.dispatch_intent(
+            crate::core::intent::DomainIntent::UpdateSettings(new_settings)
+                .from_user_menu("modifier_hint.geometry"),
+        );
+    }
 }
 
 /// Build LayoutContext from current AppState and layout info.
