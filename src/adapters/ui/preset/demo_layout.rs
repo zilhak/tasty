@@ -194,6 +194,17 @@ struct PreviewPane {
     active: usize,
 }
 
+impl PreviewPane {
+    /// mem::replace 자리채움용 빈 pane (즉시 덮어써져 drop 됨).
+    fn placeholder() -> Self {
+        PreviewPane {
+            id: 0,
+            tabs: Vec::new(),
+            active: 0,
+        }
+    }
+}
+
 /// 상위 레이아웃(pane split).
 #[derive(Clone, Debug, PartialEq)]
 enum PaneNode {
@@ -214,11 +225,28 @@ enum Root {
     TabFrame(SurfNode),
 }
 
+/// 편집 대상 preset scope. `split_pane` 유효성 판별 전용 태그다.
+///
+/// Workspace 만 상위 pane 트리를 분할할 수 있다. Pane scope 는 단일 pane 고정
+/// (round-trip `rebuild_single_pane` 이 `Root::Panes(PaneNode::Leaf)` 단일만 인정)
+/// 이라 pane split 이 무효고, Tab scope 는 애초에 pane 이 없다. 그런데 `from_workspace`
+/// 와 `from_pane` 은 **둘 다 `Root::Panes`** 로 정규화해 Root 모양만으로는 Workspace/Pane
+/// 을 구분할 수 없다 — 그래서 별도 scope 태그로 구분한다. (`Root::TabFrame` 은 Tab 을
+/// 구분하지만 태그를 셋 다 명시해 의미를 일관되게 둔다.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Scope {
+    Workspace,
+    Pane,
+    Tab,
+}
+
 /// 정규화된 preview 트리. 라이브 상호작용(active 탭)은 트리 안에 보관된다 —
 /// 호출자가 프레임 간 인스턴스를 유지(`Clone`)하면 클릭 전환이 지속된다.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DemoLayout {
     root: Root,
+    /// 편집 대상 scope — pane split 유효성 판별용([`Scope`]).
+    scope: Scope,
     /// 편집 중 새 노드에 부여할 다음 id (build 시 high-water mark + 1).
     next_id: usize,
 }
@@ -320,6 +348,7 @@ impl DemoLayout {
         let root = Root::Panes(norm_pane_node(&p.layout, &resolve, &mut ids));
         Self {
             root,
+            scope: Scope::Workspace,
             next_id: ids.0,
         }
     }
@@ -329,6 +358,7 @@ impl DemoLayout {
         let root = Root::TabFrame(norm_surf(&p.tab.layout, &resolve, &mut ids));
         Self {
             root,
+            scope: Scope::Tab,
             next_id: ids.0,
         }
     }
@@ -338,6 +368,7 @@ impl DemoLayout {
         let root = Root::Panes(PaneNode::Leaf(norm_pane(&p.pane, &resolve, &mut ids)));
         Self {
             root,
+            scope: Scope::Pane,
             next_id: ids.0,
         }
     }
@@ -409,7 +440,9 @@ impl DemoLayout {
                 ShowOutcome::Mutated
             }
             Some(Act::Split { id, row }) => {
-                self.split_leaf(id, row);
+                // 핸들 클러스터 split = after 배치(새 leaf second). 경계 존 before 는
+                // preset-edit-03 마우스 UI 몫.
+                self.split_leaf(id, row, false);
                 ShowOutcome::Mutated
             }
             Some(Act::Remove { id }) => {
@@ -425,6 +458,35 @@ impl DemoLayout {
             Some(Act::AddTab { pane }) => {
                 self.add_tab(pane);
                 ShowOutcome::Mutated
+            }
+            Some(Act::SplitPane { id, row }) => {
+                if self.split_pane(id, row) {
+                    ShowOutcome::Mutated
+                } else {
+                    ShowOutcome::None
+                }
+            }
+            Some(Act::RemovePane { id }) => {
+                if self.remove_pane(id) {
+                    // 제거된 pane 안의 leaf 가 선택돼 있었으면 해제(사라진 leaf 는
+                    // contains_leaf 로 판별 — 다른 pane 의 선택은 보존).
+                    if selected.is_some_and(|s| !self.contains_leaf(s)) {
+                        *selected = None;
+                    }
+                    ShowOutcome::Mutated
+                } else {
+                    ShowOutcome::None
+                }
+            }
+            Some(Act::RemoveTab { pane, idx }) => {
+                if self.remove_tab(pane, idx) {
+                    if selected.is_some_and(|s| !self.contains_leaf(s)) {
+                        *selected = None;
+                    }
+                    ShowOutcome::Mutated
+                } else {
+                    ShowOutcome::None
+                }
             }
         }
     }
@@ -481,7 +543,10 @@ impl DemoLayout {
         });
     }
 
-    fn split_leaf(&mut self, id: usize, row: bool) {
+    /// leaf 를 split 한다. `before == true` 면 새 leaf 가 first(좌/상), false 면
+    /// second(우/하). 키보드 경로는 after(기본 false), 디자인의 경계 존(좌/상 클릭)은
+    /// before(true) — `preset-edit-03`(마우스) 에서 사용.
+    fn split_leaf(&mut self, id: usize, row: bool, before: bool) {
         let new_leaf = Leaf {
             id: self.alloc_id(),
             kind: "terminal".to_string(),
@@ -492,9 +557,108 @@ impl DemoLayout {
         };
         let mut slot = Some(new_leaf);
         for_each_surf_root_mut(&mut self.root, &mut |node| {
-            split_node(node, id, row, &mut slot);
+            split_node(node, id, row, before, &mut slot);
         });
         self.refresh_auto_names();
+    }
+
+    /// 대상 pane leaf 를 `PaneNode::Split{ratio 0.5}` 로 교체하고 형제로 terminal
+    /// 탭 1개짜리 새 pane 을 붙인다(새 pane 이 second). **Workspace scope 에서만
+    /// 유효** — Pane/Tab scope 는 no-op(false).
+    ///
+    /// Pane scope 를 여기서 차단하는 이유: Pane preset 은 저장 시 단일 pane 만
+    /// 인정(`rebuild_single_pane`)해 split 해도 조용히 저장에서 누락된다. 그 "조용한
+    /// 누락" 대신 호출부(mutation)에서 명시적으로 막아, 변형이 저장되지 않을 조작을
+    /// 애초에 수행하지 않는다(계획 §scope별 유효성). Workspace/Pane 은 둘 다
+    /// `Root::Panes` 라 Root 모양으로는 구분 불가 → [`Scope`] 태그로 판별.
+    fn split_pane(&mut self, pane_id: usize, row: bool) -> bool {
+        if self.scope != Scope::Workspace {
+            return false;
+        }
+        let new_pane = PreviewPane {
+            id: self.alloc_id(),
+            tabs: vec![PreviewTab {
+                name: fallback_kind_label("terminal"),
+                explicit_name: None,
+                layout: SurfNode::Leaf(Leaf {
+                    id: self.alloc_id(),
+                    kind: "terminal".to_string(),
+                    label: fallback_kind_label("terminal"),
+                    cwd: None,
+                    startup: None,
+                    params: serde_json::Value::Null,
+                }),
+            }],
+            active: 0,
+        };
+        let mut slot = Some(new_pane);
+        let did = match &mut self.root {
+            Root::Panes(node) => split_pane_node(node, pane_id, row, &mut slot),
+            Root::TabFrame(_) => false,
+        };
+        if did {
+            self.refresh_auto_names();
+        }
+        did
+    }
+
+    /// pane 을 제거하고 부모 pane split 을 형제로 collapse. 루트 단일 pane(형제 없음)
+    /// 은 제거 불가 — 그 경우 false(빈 preset 방지).
+    fn remove_pane(&mut self, pane_id: usize) -> bool {
+        let removed = match &mut self.root {
+            Root::Panes(node) => remove_pane_node(node, pane_id),
+            Root::TabFrame(_) => false,
+        };
+        if removed {
+            self.refresh_auto_names();
+        }
+        removed
+    }
+
+    /// pane_id 의 idx 탭을 제거하고 `active` 를 유효 범위로 클램프. **마지막 탭
+    /// (len==1)이면 no-op(false)** — "pane 은 항상 탭 ≥1 유지"가 디자인 확정.
+    /// 탭→pane 폴백은 여기 없다(키보드 `close_active` 디스패치 계층 `preset-edit-02`
+    /// 의 몫).
+    fn remove_tab(&mut self, pane_id: usize, idx: usize) -> bool {
+        for_each_pane_mut(&mut self.root, &mut |pane| {
+            if pane.id == pane_id && idx < pane.tabs.len() && pane.tabs.len() > 1 {
+                pane.tabs.remove(idx);
+                // active 클램프: 제거로 범위를 벗어나면 마지막으로, 제거된 탭보다
+                // 뒤였으면 같은 탭을 계속 가리키도록 한 칸 당긴다.
+                if pane.active >= pane.tabs.len() {
+                    pane.active = pane.tabs.len() - 1;
+                } else if pane.active > idx {
+                    pane.active -= 1;
+                }
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    /// 트리에 leaf id 가 아직 존재하는지 — 구조 제거 후 선택 유효성 검사용.
+    fn contains_leaf(&self, id: usize) -> bool {
+        fn in_surf(node: &SurfNode, id: usize) -> bool {
+            match node {
+                SurfNode::Leaf(l) => l.id == id,
+                SurfNode::Split { first, second, .. } => {
+                    in_surf(first, id) || in_surf(second, id)
+                }
+            }
+        }
+        fn in_pane(node: &PaneNode, id: usize) -> bool {
+            match node {
+                PaneNode::Leaf(p) => p.tabs.iter().any(|t| in_surf(&t.layout, id)),
+                PaneNode::Split { first, second, .. } => {
+                    in_pane(first, id) || in_pane(second, id)
+                }
+            }
+        }
+        match &self.root {
+            Root::Panes(n) => in_pane(n, id),
+            Root::TabFrame(s) => in_surf(s, id),
+        }
     }
 
     /// leaf 를 제거하고 부모 split 을 형제로 collapse. 단일 surface(루트 leaf)는
@@ -606,6 +770,16 @@ enum Act {
     Split { id: usize, row: bool },
     Remove { id: usize },
     AddTab { pane: usize },
+    // ── pane 계층 변형 · 탭 삭제 (mutation + show_edit 디스패치는 존재하나,
+    // 이 액션을 *생성*하는 시각 UI 는 아직 없다). 키보드 트리거는 `preset-edit-02`,
+    // 마우스 UI(pane 핸들 · 탭 close ×)는 `preset-edit-03` 에서 이 variant 를 만든다.
+    // 그때까지 "never constructed" 이므로 allow 로 명시(모델 계층 선반영).
+    #[allow(dead_code)]
+    SplitPane { id: usize, row: bool },
+    #[allow(dead_code)]
+    RemovePane { id: usize },
+    #[allow(dead_code)]
+    RemoveTab { pane: usize, idx: usize },
 }
 
 /// draw 재귀에 전달되는 편집 컨텍스트.
@@ -670,27 +844,85 @@ fn find_leaf_mut(node: &mut SurfNode, id: usize) -> Option<&mut Leaf> {
 }
 
 /// id 의 leaf 를 split(leaf, new_leaf)로 교체. `slot` 에서 new_leaf 를 take.
-fn split_node(node: &mut SurfNode, id: usize, row: bool, slot: &mut Option<Leaf>) -> bool {
+/// `before == true` 면 새 leaf 가 first, 아니면 second. 기존 leaf id 는 보존
+/// (`std::mem::replace` 로 이동만).
+fn split_node(node: &mut SurfNode, id: usize, row: bool, before: bool, slot: &mut Option<Leaf>) -> bool {
     match node {
         SurfNode::Leaf(l) => {
             if l.id == id
                 && let Some(nl) = slot.take()
             {
                 let old = std::mem::replace(l, Leaf::placeholder());
+                let (first, second) = if before {
+                    (SurfNode::Leaf(nl), SurfNode::Leaf(old))
+                } else {
+                    (SurfNode::Leaf(old), SurfNode::Leaf(nl))
+                };
                 *node = SurfNode::Split {
                     row,
                     ratio: 0.5,
-                    first: Box::new(SurfNode::Leaf(old)),
-                    second: Box::new(SurfNode::Leaf(nl)),
+                    first: Box::new(first),
+                    second: Box::new(second),
                 };
                 return true;
             }
             false
         }
         SurfNode::Split { first, second, .. } => {
-            split_node(first, id, row, slot) || split_node(second, id, row, slot)
+            split_node(first, id, row, before, slot) || split_node(second, id, row, before, slot)
         }
     }
+}
+
+/// pane_id 의 pane leaf 를 split(pane, new_pane)로 교체. `slot` 에서 new_pane 을
+/// take(새 pane 이 second). 기존 pane 서브트리 id 는 보존(`std::mem::replace` 이동).
+fn split_pane_node(
+    node: &mut PaneNode,
+    id: usize,
+    row: bool,
+    slot: &mut Option<PreviewPane>,
+) -> bool {
+    match node {
+        PaneNode::Leaf(pane) => {
+            if pane.id == id
+                && let Some(np) = slot.take()
+            {
+                let old = std::mem::replace(pane, PreviewPane::placeholder());
+                *node = PaneNode::Split {
+                    row,
+                    ratio: 0.5,
+                    first: Box::new(PaneNode::Leaf(old)),
+                    second: Box::new(PaneNode::Leaf(np)),
+                };
+                return true;
+            }
+            false
+        }
+        PaneNode::Split { first, second, .. } => {
+            split_pane_node(first, id, row, slot) || split_pane_node(second, id, row, slot)
+        }
+    }
+}
+
+/// id 의 pane 을 제거하고 부모 split 을 형제로 collapse(`remove_node` 의 pane 버전).
+/// 루트 leaf pane 이면 false. 형제 서브트리 id 는 보존(`std::mem::replace` 이동).
+fn remove_pane_node(node: &mut PaneNode, id: usize) -> bool {
+    let PaneNode::Split { first, second, .. } = node else {
+        return false;
+    };
+    let first_is = matches!(first.as_ref(), PaneNode::Leaf(p) if p.id == id);
+    if first_is {
+        let sibling = std::mem::replace(second.as_mut(), PaneNode::Leaf(PreviewPane::placeholder()));
+        *node = sibling;
+        return true;
+    }
+    let second_is = matches!(second.as_ref(), PaneNode::Leaf(p) if p.id == id);
+    if second_is {
+        let sibling = std::mem::replace(first.as_mut(), PaneNode::Leaf(PreviewPane::placeholder()));
+        *node = sibling;
+        return true;
+    }
+    remove_pane_node(first, id) || remove_pane_node(second, id)
 }
 
 /// id 의 leaf 를 제거하고 부모 split 을 형제로 collapse. 루트 leaf 면 false.
@@ -1521,7 +1753,7 @@ mod tests {
         surf_leaf_ids(first_surf(&dl), &mut ids);
         let leaf_id = ids[0];
 
-        dl.split_leaf(leaf_id, true);
+        dl.split_leaf(leaf_id, true, false);
         match first_surf(&dl) {
             SurfNode::Split {
                 row, first, second, ..
@@ -1548,7 +1780,7 @@ mod tests {
         // 단일 surface 는 제거 불가.
         assert!(!dl.remove_leaf(sole));
 
-        dl.split_leaf(sole, false);
+        dl.split_leaf(sole, false, false);
         let mut after = Vec::new();
         surf_leaf_ids(first_surf(&dl), &mut after);
         assert_eq!(after.len(), 2);
@@ -1623,5 +1855,164 @@ mod tests {
         // norm_pane 이 leaf 전에 pane id 를 소비하므로: pane0(id0)→leaf(id1),
         // pane1(id2)→leaf(id3). pane id 만 모으면 [0, 2].
         assert_eq!(ids, vec![0, 2]);
+    }
+
+    /// 단일 leaf pane 을 담은 Workspace preset 빌더 (Workspace scope 검증용).
+    fn single_pane_workspace(kind: &str) -> WorkspacePreset {
+        WorkspacePreset {
+            name: "w".into(),
+            subtitle: String::new(),
+            description: String::new(),
+            layout: PresetPaneNode::Leaf {
+                pane: PresetPane {
+                    tabs: vec![PresetTab {
+                        explicit_name: None,
+                        layout: surf(kind),
+                    }],
+                    active_tab: 0,
+                },
+            },
+        }
+    }
+
+    /// pane 트리에서 pane id 를 방문 순서로 수집.
+    fn pane_ids(node: &PaneNode, out: &mut Vec<usize>) {
+        match node {
+            PaneNode::Leaf(p) => out.push(p.id),
+            PaneNode::Split { first, second, .. } => {
+                pane_ids(first, out);
+                pane_ids(second, out);
+            }
+        }
+    }
+
+    fn root_pane(dl: &DemoLayout) -> &PaneNode {
+        match &dl.root {
+            Root::Panes(n) => n,
+            _ => panic!("expected pane root"),
+        }
+    }
+
+    #[test]
+    fn split_pane_creates_sibling_pane_and_rebuilds() {
+        let mut dl = DemoLayout::from_workspace(&single_pane_workspace("terminal"), up);
+        let mut ids = Vec::new();
+        pane_ids(root_pane(&dl), &mut ids);
+        let pane_id = ids[0];
+
+        assert!(dl.split_pane(pane_id, true));
+        // Root 는 이제 pane Split, 형제 2개.
+        match root_pane(&dl) {
+            PaneNode::Split {
+                row, first, second, ..
+            } => {
+                assert!(*row);
+                assert!(matches!(first.as_ref(), PaneNode::Leaf(_)));
+                assert!(matches!(second.as_ref(), PaneNode::Leaf(_)));
+            }
+            _ => panic!("expected pane split after split_pane"),
+        }
+        // 새 pane 은 고유 id.
+        let mut after = Vec::new();
+        pane_ids(root_pane(&dl), &mut after);
+        assert_eq!(after.len(), 2);
+        assert_ne!(after[0], after[1]);
+        // 모델 round-trip 에 Split 반영.
+        assert!(matches!(
+            dl.rebuild_pane_node(),
+            Some(PresetPaneNode::Split { .. })
+        ));
+
+        // Pane scope 에선 split_pane 무효(no-op).
+        let mut pane_dl = DemoLayout::from_pane(&single_pane("terminal"), up);
+        let pid = match &pane_dl.root {
+            Root::Panes(PaneNode::Leaf(p)) => p.id,
+            _ => panic!(),
+        };
+        assert!(!pane_dl.split_pane(pid, true));
+        assert!(matches!(pane_dl.root, Root::Panes(PaneNode::Leaf(_))));
+    }
+
+    #[test]
+    fn remove_pane_collapses_and_guards_root() {
+        let mut dl = DemoLayout::from_workspace(&single_pane_workspace("terminal"), up);
+        let mut ids = Vec::new();
+        pane_ids(root_pane(&dl), &mut ids);
+        let sole = ids[0];
+        // 루트 단일 pane 은 제거 불가.
+        assert!(!dl.remove_pane(sole));
+
+        // split 후 하나 제거 → 형제로 collapse.
+        assert!(dl.split_pane(sole, false));
+        let mut after = Vec::new();
+        pane_ids(root_pane(&dl), &mut after);
+        assert_eq!(after.len(), 2);
+        assert!(dl.remove_pane(after[1]));
+        let mut final_ids = Vec::new();
+        pane_ids(root_pane(&dl), &mut final_ids);
+        assert_eq!(final_ids, vec![after[0]]);
+        assert!(matches!(root_pane(&dl), PaneNode::Leaf(_)));
+    }
+
+    #[test]
+    fn remove_tab_clamps_active_and_guards_last() {
+        let pane = PresetPane {
+            tabs: vec![
+                PresetTab {
+                    explicit_name: Some("a".into()),
+                    layout: surf("terminal"),
+                },
+                PresetTab {
+                    explicit_name: Some("b".into()),
+                    layout: surf("markdown"),
+                },
+            ],
+            active_tab: 1,
+        };
+        let p = PanePreset {
+            name: "p".into(),
+            pane,
+        };
+        let mut dl = DemoLayout::from_pane(&p, up);
+        let pane_id = match &dl.root {
+            Root::Panes(PaneNode::Leaf(pp)) => pp.id,
+            _ => panic!(),
+        };
+
+        // active=1 탭 삭제 → 남은 탭 1개, active 는 0 으로 클램프.
+        assert!(dl.remove_tab(pane_id, 1));
+        match &dl.root {
+            Root::Panes(PaneNode::Leaf(pp)) => {
+                assert_eq!(pp.tabs.len(), 1);
+                assert_eq!(pp.active, 0);
+            }
+            _ => panic!(),
+        }
+
+        // 마지막 탭은 삭제 불가(no-op) — pane 은 항상 탭 ≥1.
+        assert!(!dl.remove_tab(pane_id, 0));
+        match &dl.root {
+            Root::Panes(PaneNode::Leaf(pp)) => assert_eq!(pp.tabs.len(), 1),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn split_leaf_before_places_new_leaf_first() {
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), up);
+        let mut ids = Vec::new();
+        surf_leaf_ids(first_surf(&dl), &mut ids);
+        let leaf_id = ids[0];
+
+        // before=true → 새 leaf 가 first, 기존 leaf 가 second.
+        dl.split_leaf(leaf_id, true, true);
+        match first_surf(&dl) {
+            SurfNode::Split { first, second, .. } => {
+                // 기존 leaf id 는 second 에 보존, first 는 새 leaf.
+                assert!(matches!(second.as_ref(), SurfNode::Leaf(l) if l.id == leaf_id));
+                assert!(matches!(first.as_ref(), SurfNode::Leaf(l) if l.id != leaf_id));
+            }
+            _ => panic!("expected split after split_leaf"),
+        }
     }
 }
