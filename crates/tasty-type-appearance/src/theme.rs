@@ -156,6 +156,18 @@ pub const MOTION_UI_FAST_MS: f32 = 90.0;
 /// 콘텐츠가 아닌 상태 표시 chrome 모션이라 토큰화 대상.
 pub const STATUS_DOT_PULSE_MS: f32 = 1600.0;
 
+/// modifier-hint 오버레이 홀드→표시 지연 (`--tasty-motion-hold-reveal` →
+/// `--tasty-duration-500` = 500ms). **모션이 아니라 지연**이다 — 사용자가 modifier 를
+/// 실수로 스쳐도 안 뜨게 하는 의도 게이트라 reduced_motion 여부와 무관하게 유지된다
+/// (fade 는 200ms 만 모션). 터미널 콘텐츠 0ms 불변식과 무관한 UI 오버레이 chrome.
+pub const MOTION_HOLD_REVEAL_MS: f32 = 500.0;
+
+/// 비-터미널 chrome UI 페이드 지속시간 (`--tasty-motion-ui-fade` →
+/// `--tasty-duration-200` = 200ms). modifier-hint 오버레이 등장 페이드(opacity 0.2→1.0)에
+/// 쓴다. `MOTION_UI_MS`(120ms)보다 한 단계 긴 페이드 — 홀드 게이트를 통과한 뒤라
+/// 좀 더 여유 있게 떠오른다. reduced_motion 시 이 페이드는 0ms 로 생략된다.
+pub const MOTION_UI_FADE_MS: f32 = 200.0;
+
 /// 떠 있는 패널(popover / banner)의 lift 그림자 토큰. egui 비의존 순수 표현 —
 /// egui 변환은 `egui-compat` feature 의 [`ShadowToken::to_egui`] 가 담당한다.
 ///
@@ -1406,6 +1418,116 @@ impl Theme {
     #[inline]
     pub fn shadow_popover(&self) -> ShadowToken {
         SHADOW_POPOVER
+    }
+
+    // ── 모션 (modifier-hint) ──
+    /// modifier-hint 홀드→표시 지연 (500ms). `--tasty-motion-hold-reveal`. **지연이며
+    /// 모션이 아니라** reduced_motion 여부와 무관하게 유지된다.
+    #[inline]
+    pub fn motion_hold_reveal_ms(&self) -> f32 {
+        MOTION_HOLD_REVEAL_MS
+    }
+    /// UI chrome 페이드 (200ms). `--tasty-motion-ui-fade`. modifier-hint 등장 페이드.
+    /// reduced_motion 시 0ms 로 생략.
+    #[inline]
+    pub fn motion_ui_fade_ms(&self) -> f32 {
+        MOTION_UI_FADE_MS
+    }
+
+    // ── 컴포넌트 토큰 (modifier-hint 오버레이) — `--tasty-modhint-*` ──
+    // 4분류(Popup/Toast/Banner/Modal) 밖의 신규 요소: 키보드 포커스 없음 + 마우스
+    // 인터랙티브 + 홀드 수명. 치수는 LogicalPx(DPI 자연대응), 색은 semantic 재사용.
+    // raw px 하드코딩 금지 — 본체 draw 는 전부 이 접근자를 경유한다.
+    /// 기본 너비 (220px). `--tasty-modhint-width` → `--tasty-size-220`.
+    #[inline]
+    pub fn modhint_width(&self) -> LogicalPx {
+        LogicalPx((220.0 * self.ui_zoom).round())
+    }
+    /// 기본 높이 (400px). `--tasty-modhint-height`. 펼친 사이드바 하단을 채우는 세로 패널.
+    #[inline]
+    pub fn modhint_height(&self) -> LogicalPx {
+        LogicalPx((400.0 * self.ui_zoom).round())
+    }
+    /// 리사이즈 최소 너비 (200px). `--tasty-modhint-min-width`.
+    #[inline]
+    pub fn modhint_min_width(&self) -> LogicalPx {
+        LogicalPx((200.0 * self.ui_zoom).round())
+    }
+    /// 리사이즈 최소 높이 (240px). `--tasty-modhint-min-height`.
+    #[inline]
+    pub fn modhint_min_height(&self) -> LogicalPx {
+        LogicalPx((240.0 * self.ui_zoom).round())
+    }
+    /// 드래그 스트립 높이 (28px). `--tasty-modhint-strip-height` → `--tasty-size-28`
+    /// (= `item-height-interactive`).
+    #[inline]
+    pub fn modhint_strip_height(&self) -> LogicalPx {
+        self.item_height_interactive
+    }
+    /// 스크롤 리스트 안쪽 패딩 (10px). `--tasty-modhint-pad`.
+    #[inline]
+    pub fn modhint_pad(&self) -> LogicalPx {
+        LogicalPx((10.0 * self.ui_zoom).round())
+    }
+    /// 섹션 사이 간격 (12px). `--tasty-modhint-section-gap` → `--tasty-space-md`.
+    #[inline]
+    pub fn modhint_section_gap(&self) -> LogicalPx {
+        self.spacing_md
+    }
+    /// 섹션 내부 행 사이 간격 (6px). `--tasty-modhint-row-gap`.
+    #[inline]
+    pub fn modhint_row_gap(&self) -> LogicalPx {
+        LogicalPx((6.0 * self.ui_zoom).round())
+    }
+    /// 코너 리사이즈 그립 크기 (12px). `--tasty-modhint-grip-size` → `--tasty-icon-size-xs`.
+    #[inline]
+    pub fn modhint_grip_size(&self) -> LogicalPx {
+        self.icon_glyph_size_xs
+    }
+    /// 패널 배경 (불투명 — 라이브 출력 위). `--tasty-modhint-bg` → `bg-panel`.
+    #[inline]
+    pub fn modhint_bg(&self) -> HexColor {
+        self.bg_panel()
+    }
+    /// 패널 보더. `--tasty-modhint-border` → `border-strong`.
+    #[inline]
+    pub fn modhint_border(&self) -> HexColor {
+        self.border_strong()
+    }
+    /// 드래그 스트립 배경. `--tasty-modhint-strip-bg` → `bg-sidebar`.
+    #[inline]
+    pub fn modhint_strip_bg(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+    /// 스트립 하단 / 조합 헤더 하단 구분선. `--tasty-modhint-separator` → `separator`.
+    #[inline]
+    pub fn modhint_separator(&self) -> HexColor {
+        self.separator
+    }
+    /// 드래그 스트립 "held" 라벨 색. `--tasty-modhint-held-fg` → `text-muted`.
+    #[inline]
+    pub fn modhint_held_fg(&self) -> HexColor {
+        self.text_muted()
+    }
+    /// 특수 역할 행 배경 (washed). `--tasty-modhint-role-bg` → `surface-active`.
+    #[inline]
+    pub fn modhint_role_bg(&self) -> HexColor {
+        self.surface_active()
+    }
+    /// 특수 역할 행 leading 글리프 색. `--tasty-modhint-role-fg` → `accent-primary`.
+    #[inline]
+    pub fn modhint_role_fg(&self) -> HexColor {
+        self.accent_primary()
+    }
+    /// 액션/역할 행 텍스트 색. `--tasty-modhint-row-fg` → `text-secondary`.
+    #[inline]
+    pub fn modhint_row_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+    /// plugin 행 leading agent dot 색. `--tasty-modhint-agent-dot` → `accent-agent`.
+    #[inline]
+    pub fn modhint_agent_dot(&self) -> HexColor {
+        self.accent_agent()
     }
 }
 

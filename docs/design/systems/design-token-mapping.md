@@ -122,6 +122,45 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 > 8px), ② `--tasty-opacity-recessed`(0.4 primitive), ③ `--tasty-banner-shadow`(popover
 > shadow). 나머지 `--tasty-banner-*` 는 모두 기존 semantic 접근자로 커버된다.
 
+## modifier-hint 오버레이 (modifier-hint-03 specimen + 본체)
+
+디자인 `tokens/components.css` 의 `--tasty-modhint-*` Tier-3 블록 + `tokens/primitives.css`
+의 `--tasty-size-220` / `--tasty-duration-200` / `--tasty-duration-500`, `tokens/semantic.css`
+의 `--tasty-motion-ui-fade`(=200ms) / `--tasty-motion-hold-reveal`(=500ms). 4분류
+(Popup/Toast/Banner/Modal) 밖의 신규 요소(키보드 포커스 없음 + 마우스 인터랙티브 + 홀드
+수명)라 [`docs/concepts/ubiquitous-language.md`](../../concepts/ubiquitous-language.md) 에
+정의를 추가했다. 지오메트리는 `LogicalPx`(DPI 자연대응), 색은 전부 기존 semantic 접근자 재사용.
+접근자는 `crates/tasty-type-appearance/src/theme.rs` 의 `modhint_*()` / `motion_*_ms()`.
+
+| 디자인 토큰 | 디자인 체인 | Theme 접근자 | 비고 |
+|---|---|---|---|
+| `--tasty-motion-hold-reveal` | → `duration-500` (500ms) | `motion_hold_reveal_ms()` = `MOTION_HOLD_REVEAL_MS` | **신규**. 홀드→표시 지연. 모션 아님 → reduced_motion 무관 유지 |
+| `--tasty-motion-ui-fade` | → `duration-200` (200ms) | `motion_ui_fade_ms()` = `MOTION_UI_FADE_MS` | **신규**. 등장 페이드(opacity 0.2→1.0). reduced_motion 시 0ms |
+| `--tasty-modhint-width` | → `size-220` (220px) | `modhint_width()` | **신규** primitive size-220 |
+| `--tasty-modhint-height` | → 400px | `modhint_height()` | 기본 세로 높이 |
+| `--tasty-modhint-min-width` | → 200px | `modhint_min_width()` | 리사이즈 최소 |
+| `--tasty-modhint-min-height` | → 240px | `modhint_min_height()` | 리사이즈 최소 |
+| `--tasty-modhint-strip-height` | → `size-28` (= item-height-interactive) | `modhint_strip_height()` | 드래그 스트립 높이 |
+| `--tasty-modhint-pad` | → 10px | `modhint_pad()` | 스크롤 리스트 안쪽 패딩 |
+| `--tasty-modhint-section-gap` | → `space-md` (12) | `modhint_section_gap()` | 섹션 사이 |
+| `--tasty-modhint-row-gap` | → 6px | `modhint_row_gap()` | 섹션 내부 행 사이 |
+| `--tasty-modhint-grip-size` | → `icon-size-xs` (12) | `modhint_grip_size()` | 코너 리사이즈 그립 |
+| `--tasty-modhint-bg` | → `bg-panel` (불투명) | `modhint_bg()` | 라이브 출력 위 불투명 셸 |
+| `--tasty-modhint-border` | → `border-strong` | `modhint_border()` | 1px 셸 보더 |
+| `--tasty-modhint-radius` | → `radius` (4) | `corner_radius` | 셸 코너 |
+| `--tasty-modhint-shadow` | → `shadow-popover` | `shadow_popover()` | 떠 있는 패널 그림자(banner 와 공유) |
+| `--tasty-modhint-strip-bg` | → `bg-sidebar` | `modhint_strip_bg()` | 드래그 스트립 배경 |
+| `--tasty-modhint-separator` | → `separator` | `modhint_separator()` | 스트립/헤더 하단 구분선 |
+| `--tasty-modhint-held-fg` | → `text-muted` | `modhint_held_fg()` | 스트립 "held" 라벨 |
+| `--tasty-modhint-role-bg` | → `surface-active` | `modhint_role_bg()` | 특수 역할 행 washed 배경 |
+| `--tasty-modhint-role-fg` | → `accent-primary` | `modhint_role_fg()` | 역할 행 leading 글리프 |
+| `--tasty-modhint-row-fg` | → `text-secondary` | `modhint_row_fg()` | 액션/역할 행 텍스트 |
+| `--tasty-modhint-agent-dot` | → `accent-agent` | `modhint_agent_dot()` | plugin 행 leading agent dot |
+
+> **디자인 `--tasty-modhint-shadow` 는 `shadow-modal`** 로 선언돼 있으나, Rust Theme 는 떠
+> 있는 패널용 단일 그림자 토큰(`shadow_popover`, banner 와 공유)만 두어 새 그림자 시스템을
+> 만들지 않는 정책을 따른다 → `modhint` 도 `shadow_popover()` 로 매핑한다.
+
 ## tooltip / help-hint (help-hint-01 위젯 + specimen)
 
 디자인 `tokens/components.css` 의 `--tasty-tooltip-*`(12종) + `--tasty-help-hint-*`(4종)
