@@ -132,7 +132,7 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
                 f.layout(
                     body_text.to_string(),
                     font.clone(),
-                    th.text.into(),
+                    th.text_primary().into(),
                     wrap_width,
                 )
             });
@@ -154,8 +154,9 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
             let rect =
                 egui::Rect::from_min_max(egui::pos2(left_x, top_y), egui::pos2(max_x, bottom_y));
 
-            let bg = th.surface0.gamma_multiply(alpha);
-            let border = th.surface1.gamma_multiply(alpha);
+            let bg = th.surface_raised().gamma_multiply(alpha);
+            // divergence: toast_border()=surface0, 코드값(surface1) 보존
+            let border = th.border_strong().gamma_multiply(alpha);
             let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
 
             painter.rect_filled(rect, th.corner_radius.value(), bg);
@@ -182,7 +183,11 @@ pub fn draw_toast_view(ctx: &egui::Context, props: &ToastViewProps<'_>) {
                 rect.min.x + ACCENT_BAR_WIDTH + PADDING_X,
                 rect.min.y + PADDING_Y,
             );
-            painter.galley(text_pos, galley, th.text.gamma_multiply(alpha).into());
+            painter.galley(
+                text_pos,
+                galley,
+                th.text_primary().gamma_multiply(alpha).into(),
+            );
 
             cursor_y = top_y - TOAST_GAP;
         }
