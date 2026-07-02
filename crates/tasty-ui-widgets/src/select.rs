@@ -6,8 +6,6 @@
 
 use tasty_type_appearance::theme::Theme;
 
-const CHEVRON_PAD: f32 = 28.0; // 우측 chevron 영역(디자인 padding-right 28)
-
 /// 드롭다운. `selected` 는 `options` 인덱스. 선택이 바뀌면 `true`.
 pub fn select(
     ui: &mut egui::Ui,
@@ -18,11 +16,12 @@ pub fn select(
     width: f32,
     enabled: bool,
 ) -> bool {
-    let height = theme.item_height_interactive.value();
-    let pad_x = theme.spacing_md.value();
-    let radius = theme.corner_radius.value();
+    let height = theme.select_height().value();
+    let pad_x = theme.select_padding_x().value();
+    let radius = theme.select_radius().value();
     let bw = theme.border_width.value();
-    let body = theme.font_size_body.value();
+    let body = theme.select_font_size().value();
+    let chevron_room = theme.select_chevron_room().value();
 
     let sense = if enabled {
         egui::Sense::click()
@@ -32,16 +31,16 @@ pub fn select(
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), sense);
     let dim = |c: egui::Color32| if enabled { c } else { c.gamma_multiply(0.5) };
 
-    // 트리거 박스.
+    // 트리거 박스. hover border 는 대응 select component 토큰 없어 semantic 유지.
     let border = if enabled && resp.hovered() {
         theme.border_strong()
     } else {
-        theme.border_default()
+        theme.select_border()
     };
     ui.painter().rect(
         rect,
         radius,
-        dim(theme.surface_raised().to_egui()),
+        dim(theme.select_bg().to_egui()),
         egui::Stroke::new(bw, dim(border.to_egui())),
         egui::StrokeKind::Inside,
     );
@@ -57,11 +56,11 @@ pub fn select(
         rect.center().y - galley.rect.height() * 0.5,
     );
     ui.painter()
-        .galley(text_pos, galley, dim(theme.text_primary().to_egui()));
+        .galley(text_pos, galley, dim(theme.select_fg().to_egui()));
     // chevron (▾) — 우측.
-    let cx = rect.right() - CHEVRON_PAD * 0.5;
+    let cx = rect.right() - chevron_room * 0.5;
     let cy = rect.center().y;
-    let ch = dim(theme.subtext0.to_egui());
+    let ch = dim(theme.select_chevron_fg().to_egui());
     ui.painter().add(egui::Shape::line(
         vec![
             egui::pos2(cx - 4.0, cy - 2.0),
