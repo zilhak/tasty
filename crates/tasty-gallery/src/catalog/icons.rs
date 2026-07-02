@@ -173,11 +173,6 @@ glyph!(
     r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>"#
 );
 glyph!(
-    SPLIT_DOWN,
-    "split_down",
-    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/>"#
-);
-glyph!(
     FOLDER,
     "folder",
     r#"<path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7l-2-2H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1z"/>"#

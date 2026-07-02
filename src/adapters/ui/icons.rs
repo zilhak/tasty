@@ -153,13 +153,6 @@ line_icon!(
     "split",
     r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>"#
 );
-// preset 편집 핸들 split-down (디자인 preset_editor.jsx `splitCol` — 가로선 분할).
-// SPLIT(=splitRow, 세로선)과 짝. 가로 분할 = 행이 위/아래로 나뉨.
-line_icon!(
-    SPLIT_DOWN,
-    "split_down",
-    r#"<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/>"#
-);
 line_icon!(
     SEARCH,
     "search",
