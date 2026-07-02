@@ -7,6 +7,7 @@
 # 검사 목록:
 #   B.4  cargo clippy --workspace --all-targets -- -D clippy::correctness
 #   B.5  cargo check --workspace --all-targets
+#   B.6  cargo check --no-default-features (headless 빌드)
 
 set -e
 
@@ -25,6 +26,17 @@ FAIL=0
 yellow "▸ cargo check --workspace --all-targets"
 if ! cargo check --workspace --all-targets 2>&1 | tail -5; then
     red "✘ cargo check 실패"
+    FAIL=1
+fi
+
+# ────────────────────────────────────────────────────────────
+# B.6  cargo check headless — gui feature 제외 컴파일 설정.
+#      워커/기본 빌드는 default(gui)만 컴파일하므로 cfg 게이트
+#      누락·비망라 match 가 이 설정에서만 드러난다.
+# ────────────────────────────────────────────────────────────
+yellow "▸ cargo check --no-default-features"
+if ! cargo check --no-default-features 2>&1 | tail -5; then
+    red "✘ cargo check --no-default-features 실패 (headless 빌드 깨짐)"
     FAIL=1
 fi
 
