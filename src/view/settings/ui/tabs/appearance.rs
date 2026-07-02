@@ -1400,17 +1400,9 @@ pub(super) fn draw_plugin_settings_page(
         match item {
             SettingsItemDecl::FontOverride {
                 id: _,
-                label_key,
+                label_key: _,
                 storage_key,
             } => {
-                let th = crate::theme::theme();
-                vspace(ui, th.spacing_xs);
-                ui.label(
-                    egui::RichText::new(t(label_key))
-                        .strong()
-                        .color(th.text_primary()),
-                );
-                vspace(ui, th.spacing_xs);
                 draw_surface_font_section(
                     ui,
                     settings,
