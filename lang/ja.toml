@@ -920,6 +920,15 @@ startup = "起動コマンド"
 startup_hint = "起動時に実行するコマンド"
 subtitle_hint = "サブタイトル"
 
+# プラグインが宣言する surface プリセットフィールド。プラグインは自身の lang
+# ファイルで上書きでき、ここの値はロード失敗時のフォールバック。
+[preset.field]
+browse = "参照…"
+file = "ファイル"
+file_hint = "ファイルのパス"
+url = "URL"
+url_hint = "https://…"
+
 [preset.count]
 pane_one = "ペイン 1個"
 pane_many = "ペイン {}個"

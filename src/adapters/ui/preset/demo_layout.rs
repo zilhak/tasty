@@ -22,10 +22,12 @@ use tasty_presets::{
     PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::{Input, select};
+use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, Input, select};
 
 use crate::adapters::ui::icons::{self, Icon};
-use crate::engine::surface_registry::SurfaceKindRegistry;
+use crate::engine::surface_registry::{
+    PresetFieldInput, PresetFieldSpec, PresetFieldTarget, SurfaceKindRegistry,
+};
 use crate::i18n::t;
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preview 전용 치수 — specimen 과 동일).
@@ -92,6 +94,8 @@ pub struct KindCatalog {
 struct KindSpec {
     kind: String,
     label: String,
+    /// 이 kind 를 편집할 때 노출할 필드 스키마(registry `preset_fields` 스냅샷).
+    fields: Vec<PresetFieldSpec>,
 }
 
 impl KindCatalog {
@@ -118,24 +122,36 @@ impl KindCatalog {
         });
         let specs = kinds
             .iter()
-            .map(|k| KindSpec {
-                kind: (*k).to_string(),
-                label: registry
-                    .get(k)
-                    .map(|def| label_from_i18n_key(def.display_name_i18n_key, k))
-                    .unwrap_or_else(|| fallback_kind_label(k)),
+            .map(|k| {
+                let def = registry.get(k);
+                KindSpec {
+                    kind: (*k).to_string(),
+                    label: def
+                        .as_ref()
+                        .map(|def| label_from_i18n_key(def.display_name_i18n_key, k))
+                        .unwrap_or_else(|| fallback_kind_label(k)),
+                    fields: def
+                        .as_ref()
+                        .map(|def| def.preset_fields.clone())
+                        .unwrap_or_default(),
+                }
             })
             .collect();
         Self { specs }
     }
 
-    /// 테스트/데모용 — (kind, label) 쌍에서 직접 catalog 구성.
+    /// 테스트/데모용 — (kind, label) 쌍에서 직접 catalog 구성. 필드는 kind 별
+    /// [`fallback_fields`] 로 채워 registry 미주입 상황을 결정적으로 재현한다.
     #[cfg(test)]
     fn from_pairs(pairs: Vec<(String, String)>) -> Self {
         Self {
             specs: pairs
                 .into_iter()
-                .map(|(kind, label)| KindSpec { kind, label })
+                .map(|(kind, label)| KindSpec {
+                    fields: fallback_fields(&kind),
+                    kind,
+                    label,
+                })
                 .collect(),
         }
     }
@@ -163,6 +179,77 @@ impl KindCatalog {
             .find(|s| s.kind == kind)
             .map(|s| s.label.clone())
             .unwrap_or_else(|| fallback_kind_label(kind))
+    }
+
+    /// kind → 편집 필드 스키마. catalog 에 등록돼 있으면 registry 스냅샷을, 미등록/
+    /// 미주입(빈 catalog)이면 [`fallback_fields`] 로 떨어진다 — 갤러리·테스트·registry
+    /// 미주입 컨텍스트에서도 kind 별 폼이 결정적으로 그려진다.
+    fn fields(&self, kind: &str) -> Vec<PresetFieldSpec> {
+        self.specs
+            .iter()
+            .find(|s| s.kind == kind)
+            .map(|s| s.fields.clone())
+            .unwrap_or_else(|| fallback_fields(kind))
+    }
+}
+
+/// registry 미주입/미등록 kind 의 편집 필드 fallback. builtin/plugin 이 registry 에
+/// 선언하는 스키마와 동형이라 registry 주입 여부와 무관하게 같은 폼을 그린다.
+///
+/// - `terminal`: cwd(dir) + startup(text).
+/// - `explorer`: cwd(dir) 루트.
+/// - `markdown`/`image`: file(file_path, derive_cwd) — `PresetSurface.params.file`.
+/// - `html`: url(url) — `PresetSurface.params.url`.
+/// - 그 외/미지정: cwd(dir) 만(안전한 기본값).
+fn fallback_fields(kind: &str) -> Vec<PresetFieldSpec> {
+    fn cwd_field() -> PresetFieldSpec {
+        PresetFieldSpec {
+            id: "cwd".to_string(),
+            label_key: "preset.edit.cwd".to_string(),
+            target: PresetFieldTarget::Cwd,
+            input: PresetFieldInput::Dir,
+            required: false,
+            placeholder_key: None,
+            default: None,
+            derive_cwd: false,
+        }
+    }
+    match kind {
+        "terminal" => vec![
+            cwd_field(),
+            PresetFieldSpec {
+                id: "startup".to_string(),
+                label_key: "preset.edit.startup".to_string(),
+                target: PresetFieldTarget::Startup,
+                input: PresetFieldInput::Text,
+                required: false,
+                placeholder_key: Some("preset.edit.startup_hint".to_string()),
+                default: None,
+                derive_cwd: false,
+            },
+        ],
+        "explorer" => vec![cwd_field()],
+        "markdown" | "image" => vec![PresetFieldSpec {
+            id: "file".to_string(),
+            label_key: "preset.field.file".to_string(),
+            target: PresetFieldTarget::Params("file".to_string()),
+            input: PresetFieldInput::FilePath,
+            required: true,
+            placeholder_key: Some("preset.field.file_hint".to_string()),
+            default: None,
+            derive_cwd: true,
+        }],
+        "html" => vec![PresetFieldSpec {
+            id: "url".to_string(),
+            label_key: "preset.field.url".to_string(),
+            target: PresetFieldTarget::Params("url".to_string()),
+            input: PresetFieldInput::Url,
+            required: true,
+            placeholder_key: Some("preset.field.url_hint".to_string()),
+            default: None,
+            derive_cwd: false,
+        }],
+        _ => vec![cwd_field()],
     }
 }
 
@@ -627,8 +714,8 @@ impl DemoLayout {
                 self.set_kind(id, &kind, catalog);
                 ShowOutcome::Mutated
             }
-            Act::SetField { id, cwd, value } => {
-                self.set_field(id, cwd, value);
+            Act::SetField { id, target, value } => {
+                self.set_field(id, &target, value);
                 ShowOutcome::Mutated
             }
             Act::Split { id, row, before } => {
@@ -827,26 +914,89 @@ impl DemoLayout {
         id
     }
 
+    /// kind 를 바꾸고 stale 값을 정리한다.
+    ///
+    /// - kind/label 교체.
+    /// - 새 kind 필드가 쓰지 않는 전용 컬럼(cwd/startup)은 비운다(이전 kind 잔류 제거).
+    /// - `params` 는 새 kind 가 선언한 param_key 만 남기고 제거한다 — 같은 kind 로의
+    ///   load/편집에서는 unknown params 를 round-trip 보존하지만, **kind 자체가 바뀔
+    ///   때만** 정리한다(플러그인 버전 차이 대비는 kind 미변경 경로에서).
+    /// - 새 kind 필드의 `default` 로 빈 값을 초기화.
     fn set_kind(&mut self, id: usize, kind: &str, catalog: &KindCatalog) {
         let label = catalog.label(kind);
+        let fields = catalog.fields(kind);
+        let keeps_cwd = fields
+            .iter()
+            .any(|f| matches!(f.target, PresetFieldTarget::Cwd));
+        let keeps_startup = fields
+            .iter()
+            .any(|f| matches!(f.target, PresetFieldTarget::Startup));
+        let param_keys: std::collections::HashSet<&str> = fields
+            .iter()
+            .filter_map(|f| match &f.target {
+                PresetFieldTarget::Params(k) => Some(k.as_str()),
+                _ => None,
+            })
+            .collect();
         for_each_surf_root_mut(&mut self.root, &mut |node| {
             if let Some(l) = find_leaf_mut(node, id) {
                 l.kind = kind.to_string();
                 l.label = label.clone();
+                if !keeps_cwd {
+                    l.cwd = None;
+                }
+                if !keeps_startup {
+                    l.startup = None;
+                }
+                // 선언되지 않은 params 키 정리(kind 변경 시에만).
+                if let Some(obj) = l.params.as_object_mut() {
+                    obj.retain(|k, _| param_keys.contains(k.as_str()));
+                }
+                // 새 kind 필드의 default 로 빈 값 초기화.
+                for f in &fields {
+                    let Some(def) = &f.default else { continue };
+                    match &f.target {
+                        PresetFieldTarget::Cwd => {
+                            if l.cwd.is_none() {
+                                l.cwd = Some(def.clone());
+                            }
+                        }
+                        PresetFieldTarget::Startup => {
+                            if l.startup.is_none() {
+                                l.startup = Some(def.clone());
+                            }
+                        }
+                        PresetFieldTarget::Params(k) => {
+                            let absent = l
+                                .params
+                                .get(k)
+                                .and_then(|v| v.as_str())
+                                .is_none_or(str::is_empty);
+                            if absent {
+                                set_param(&mut l.params, k, def);
+                            }
+                        }
+                    }
+                }
             }
         });
         self.refresh_auto_names(catalog);
     }
 
-    /// `cwd == true` 면 cwd, 아니면 startup 필드를 설정. 빈 문자열은 None.
-    fn set_field(&mut self, id: usize, cwd: bool, value: String) {
+    /// 선언 필드 하나의 값을 target(params 키 / cwd / startup)에 write. 빈 문자열은
+    /// 값 제거(전용 컬럼은 None, params 는 키 삭제)로 처리해 round-trip 이 값 부재를
+    /// 그대로 보존하게 한다.
+    fn set_field(&mut self, id: usize, target: &PresetFieldTarget, value: String) {
         let v = if value.is_empty() { None } else { Some(value) };
         for_each_surf_root_mut(&mut self.root, &mut |node| {
             if let Some(l) = find_leaf_mut(node, id) {
-                if cwd {
-                    l.cwd = v.clone();
-                } else {
-                    l.startup = v.clone();
+                match target {
+                    PresetFieldTarget::Cwd => l.cwd = v.clone(),
+                    PresetFieldTarget::Startup => l.startup = v.clone(),
+                    PresetFieldTarget::Params(k) => match &v {
+                        Some(s) => set_param(&mut l.params, k, s),
+                        None => remove_param(&mut l.params, k),
+                    },
                 }
             }
         });
@@ -1104,7 +1254,7 @@ enum Act {
     Deselect,
     SetActive { pane: usize, idx: usize },
     SetKind { id: usize, kind: String },
-    SetField { id: usize, cwd: bool, value: String },
+    SetField { id: usize, target: PresetFieldTarget, value: String },
     Split { id: usize, row: bool, before: bool },
     Remove { id: usize },
     AddTab { pane: usize },
@@ -1289,6 +1439,25 @@ fn dir_from_row(row: bool) -> PresetSplitDirection {
         PresetSplitDirection::Vertical
     } else {
         PresetSplitDirection::Horizontal
+    }
+}
+
+/// `params`(serde_json::Value)의 `key` 에 문자열을 write. object 가 아니면(Null 등)
+/// object 로 승격한 뒤 삽입 — unknown params 를 통째 갈아치우지 않고 key 만 갱신해
+/// round-trip 보존을 유지한다.
+fn set_param(params: &mut serde_json::Value, key: &str, value: &str) {
+    if !params.is_object() {
+        *params = serde_json::Value::Object(serde_json::Map::new());
+    }
+    if let Some(obj) = params.as_object_mut() {
+        obj.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+    }
+}
+
+/// `params` object 에서 `key` 를 제거(값 부재로 만든다). object 가 아니면 no-op.
+fn remove_param(params: &mut serde_json::Value, key: &str) {
+    if let Some(obj) = params.as_object_mut() {
+        obj.remove(key);
     }
 }
 
@@ -1720,38 +1889,85 @@ fn draw_leaf_form(
         });
     }
 
-    // cwd Input (mono).
-    field_label(&mut child, theme, t("preset.edit.cwd"));
-    let mut cwd_buf = leaf.cwd.clone().unwrap_or_default();
-    let cwd_resp = Input::new()
-        .mono(true)
-        .width(inner_w)
-        .show(&mut child, theme, &mut cwd_buf);
-    if cwd_resp.changed() {
-        cx.act = Some(Act::SetField {
-            id: leaf.id,
-            cwd: true,
-            value: cwd_buf,
-        });
-    }
-
-    // startup Input (mono) — terminal 한정.
-    if leaf.kind == "terminal" {
-        field_label(&mut child, theme, t("preset.edit.startup"));
-        let mut su_buf = leaf.startup.clone().unwrap_or_default();
-        let su_resp = Input::new()
+    // kind 가 선언한 필드를 generic 하게 렌더 — text/url = Input, file_path/dir =
+    // Input + Browse 버튼. 값은 target(cwd/startup/params[key])에서 읽고 변경 시 write.
+    for field in cx.catalog.fields(&leaf.kind) {
+        field_label(&mut child, theme, &field_label_text(&field));
+        let mut buf = field_value(leaf, &field.target);
+        let placeholder = field.placeholder_key.as_deref().map(t).unwrap_or("");
+        let resp = Input::new()
             .mono(true)
             .width(inner_w)
-            .placeholder(t("preset.edit.startup_hint"))
-            .show(&mut child, theme, &mut su_buf);
-        if su_resp.changed() {
+            .placeholder(placeholder)
+            .show(&mut child, theme, &mut buf);
+        if resp.changed() {
             cx.act = Some(Act::SetField {
                 id: leaf.id,
-                cwd: false,
-                value: su_buf,
+                target: field.target.clone(),
+                value: buf,
             });
         }
+        // file_path/dir 은 파일/폴더 선택 다이얼로그 버튼을 덧붙인다.
+        if matches!(field.input, PresetFieldInput::FilePath | PresetFieldInput::Dir) {
+            let salt = format!("preset_browse_{}_{}", leaf.id, field.id);
+            let clicked = child
+                .push_id(&salt, |ui| {
+                    Button::new(t("preset.field.browse"))
+                        .variant(ButtonVariant::Secondary)
+                        .size(ControlSize::Sm)
+                        .leading_icon(&|ui, rect, c| {
+                            icons::FOLDER.image(rect.width(), c).paint_at(ui, rect);
+                        })
+                        .show(ui, theme)
+                        .clicked()
+                })
+                .inner;
+            if clicked && let Some(picked) = pick_path(field.input) {
+                cx.act = Some(Act::SetField {
+                    id: leaf.id,
+                    target: field.target.clone(),
+                    value: picked,
+                });
+            }
+        }
     }
+}
+
+/// 필드 라벨 텍스트 — label_key 를 번역하되 미번역(키 그대로)이면 param_key/id 로
+/// 안전한 대체 표기(플러그인 lang 미로드 방어).
+fn field_label_text(field: &PresetFieldSpec) -> String {
+    let tr = t(&field.label_key);
+    if tr != field.label_key {
+        return tr.to_string();
+    }
+    match &field.target {
+        PresetFieldTarget::Params(k) => k.clone(),
+        _ => field.id.clone(),
+    }
+}
+
+/// target(cwd/startup/params[key])에서 현재 문자열 값을 읽는다(부재면 빈 문자열).
+fn field_value(leaf: &Leaf, target: &PresetFieldTarget) -> String {
+    match target {
+        PresetFieldTarget::Cwd => leaf.cwd.clone().unwrap_or_default(),
+        PresetFieldTarget::Startup => leaf.startup.clone().unwrap_or_default(),
+        PresetFieldTarget::Params(k) => leaf
+            .params
+            .get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
+/// file_path → 파일 선택, dir → 폴더 선택 다이얼로그. 취소/기타면 None.
+fn pick_path(input: PresetFieldInput) -> Option<String> {
+    let picked = match input {
+        PresetFieldInput::Dir => rfd::FileDialog::new().pick_folder(),
+        PresetFieldInput::FilePath => rfd::FileDialog::new().pick_file(),
+        _ => None,
+    }?;
+    Some(picked.to_string_lossy().into_owned())
 }
 
 /// form 필드 라벨 — mono micro, uppercase, muted.
@@ -2259,6 +2475,113 @@ mod tests {
         match &pane.tabs[0].layout {
             PresetSurfaceLayout::Leaf { surface } => assert_eq!(surface.kind, "markdown"),
             _ => panic!(),
+        }
+    }
+
+    /// 마크다운 leaf 에 선언 필드(`file`)를 write 하면 params.file 이 채워지고,
+    /// 선언에 없는 unknown params(legacy_x)는 kind 미변경 편집에서 round-trip 보존된다.
+    #[test]
+    fn set_field_writes_param_and_preserves_unknown_params() {
+        let pane = PresetPane {
+            tabs: vec![PresetTab {
+                explicit_name: Some("t".into()),
+                layout: PresetSurfaceLayout::Leaf {
+                    surface: PresetSurface {
+                        id: None,
+                        kind: "markdown".into(),
+                        cwd: None,
+                        startup_command: None,
+                        params: serde_json::json!({ "legacy_x": 7 }),
+                    },
+                },
+            }],
+            active_tab: 0,
+        };
+        let mut dl = DemoLayout::from_pane(&PanePreset { name: "p".into(), pane }, &tc());
+        let mut ids = Vec::new();
+        surf_leaf_ids(first_surf(&dl), &mut ids);
+        let leaf_id = ids[0];
+
+        dl.set_field(
+            leaf_id,
+            &PresetFieldTarget::Params("file".into()),
+            "/a/b/x.md".into(),
+        );
+        let pane = dl.rebuild_single_pane().unwrap();
+        let params = match &pane.tabs[0].layout {
+            PresetSurfaceLayout::Leaf { surface } => &surface.params,
+            _ => panic!(),
+        };
+        assert_eq!(
+            params.get("file").and_then(|v| v.as_str()),
+            Some("/a/b/x.md")
+        );
+        // unknown param 은 kind 미변경 편집에서 보존.
+        assert_eq!(params.get("legacy_x").and_then(|v| v.as_i64()), Some(7));
+
+        // 빈 값 write 는 param 키를 제거(값 부재 round-trip).
+        dl.set_field(leaf_id, &PresetFieldTarget::Params("file".into()), String::new());
+        let pane = dl.rebuild_single_pane().unwrap();
+        if let PresetSurfaceLayout::Leaf { surface } = &pane.tabs[0].layout {
+            assert!(surface.params.get("file").is_none());
+            assert_eq!(surface.params.get("legacy_x").and_then(|v| v.as_i64()), Some(7));
+        }
+    }
+
+    /// kind 변경 시 이전 kind 의 stale params/전용 컬럼을 정리한다: markdown(params.file
+    /// + legacy) → terminal 이면 params 는 비워지고(terminal 은 params 필드 없음),
+    /// cwd 컬럼은 terminal 이 쓰므로 보존된다.
+    #[test]
+    fn set_kind_cleans_stale_params_keeps_used_columns() {
+        let pane = PresetPane {
+            tabs: vec![PresetTab {
+                explicit_name: Some("t".into()),
+                layout: PresetSurfaceLayout::Leaf {
+                    surface: PresetSurface {
+                        id: None,
+                        kind: "markdown".into(),
+                        cwd: Some("/keep".into()),
+                        startup_command: Some("stale".into()),
+                        params: serde_json::json!({ "file": "/a/x.md", "legacy": 1 }),
+                    },
+                },
+            }],
+            active_tab: 0,
+        };
+        let mut dl = DemoLayout::from_pane(&PanePreset { name: "p".into(), pane }, &tc());
+        let mut ids = Vec::new();
+        surf_leaf_ids(first_surf(&dl), &mut ids);
+        let leaf_id = ids[0];
+
+        dl.set_kind(leaf_id, "terminal", &tc());
+        let pane = dl.rebuild_single_pane().unwrap();
+        match &pane.tabs[0].layout {
+            PresetSurfaceLayout::Leaf { surface } => {
+                assert_eq!(surface.kind, "terminal");
+                // markdown 의 params(file/legacy)는 새 kind 가 선언하지 않아 정리됨.
+                assert!(
+                    surface
+                        .params
+                        .as_object()
+                        .map(|o| o.is_empty())
+                        .unwrap_or(true),
+                    "stale params must be cleared on kind change: {:?}",
+                    surface.params
+                );
+                // cwd/startup 은 terminal 이 쓰는 컬럼이라 보존.
+                assert_eq!(surface.cwd.as_deref(), Some("/keep"));
+                assert_eq!(surface.startup_command.as_deref(), Some("stale"));
+            }
+            _ => panic!(),
+        }
+
+        // 반대로 terminal → markdown: cwd/startup 컬럼은 markdown 이 안 써서 정리된다.
+        dl.set_kind(leaf_id, "markdown", &tc());
+        let pane = dl.rebuild_single_pane().unwrap();
+        if let PresetSurfaceLayout::Leaf { surface } = &pane.tabs[0].layout {
+            assert_eq!(surface.kind, "markdown");
+            assert!(surface.cwd.is_none(), "cwd cleared when new kind lacks Cwd field");
+            assert!(surface.startup_command.is_none());
         }
     }
 

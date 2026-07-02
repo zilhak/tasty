@@ -564,20 +564,22 @@ fn mini_handle_mock(
     paint_glyph(ui, glyph, rect.center(), E_HANDLE_SZ * 0.62, color);
 }
 
-/// inline leaf form mock — kind / cwd / startup(terminal 한정) 필드.
+/// inline leaf form mock — kind 별 선언 필드를 generic 하게 렌더한 결과를 전사한다
+/// (본체 `draw_leaf_form` 이 registry `preset_fields` 를 순회 렌더 — parity).
+/// terminal 은 cwd + startup, markdown 은 파일 경로(cwd 없음), 그 외는 cwd.
 fn draw_leaf_form_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, kind: Kind) {
     let inner_w = (rect.width() - E_FORM_PAD * 2.0).max(0.0);
     let mut y = rect.min.y + E_HANDLE_INSET * 2.0 + E_HANDLE_SZ;
     let x = rect.center().x - inner_w * 0.5;
-    let terminal = matches!(kind, Kind::Terminal);
-    let fields: &[(&str, &str)] = if terminal {
-        &[
+    let fields: &[(&str, &str)] = match kind {
+        Kind::Terminal => &[
             ("KIND", "Terminal"),
             ("CWD", "~/tasty"),
             ("STARTUP COMMAND", "cargo build"),
-        ]
-    } else {
-        &[("KIND", "Markdown"), ("CWD", "~/tasty")]
+        ],
+        // markdown 은 작업 디렉토리가 아니라 파일 경로 필드(+Browse)를 노출한다.
+        Kind::Markdown => &[("KIND", "Markdown"), ("FILE", "~/tasty/README.md")],
+        _ => &[("KIND", "Editor"), ("CWD", "~/tasty")],
     };
     for (label, value) in fields {
         if y + E_LABEL_H + E_FIELD_H > rect.max.y - E_FORM_PAD {

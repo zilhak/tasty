@@ -920,6 +920,16 @@ startup = "Startup command"
 startup_hint = "command to run on start"
 subtitle_hint = "subtitle"
 
+# Plugin-declared surface preset fields. Plugins may override these keys from
+# their own lang files; kept here as a graceful fallback if a plugin lang fails
+# to load.
+[preset.field]
+browse = "Browse…"
+file = "File"
+file_hint = "path to file"
+url = "URL"
+url_hint = "https://…"
+
 [preset.count]
 pane_one = "1 pane"
 pane_many = "{} panes"
