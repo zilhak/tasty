@@ -41,12 +41,17 @@ const LEAF_GAP: f32 = 6.0;
 const TAB_PAD_X: f32 = 9.0;
 /// mini tab 아이콘↔라벨 gap.
 const TAB_GAP: f32 = 5.0;
-/// 편집 모드 선택 핸들(split/remove) 한 변 크기.
+/// 편집 모드 선택 핸들(remove) 한 변 크기.
 const HANDLE_SZ: f32 = 18.0;
-/// 핸들 사이 gap.
-const HANDLE_GAP: f32 = 2.0;
 /// 핸들 클러스터 모서리 inset.
 const HANDLE_INSET: f32 = 4.0;
+/// 경계 hover-split 존 밴드 폭 비율(변 기준 바깥 30%). 아래 SPLIT_ZONE_MIN 과 함께
+/// preview 전용 egui logical 좌표계 값이라 typed-length(PhysicalPx/LogicalPx) 규칙
+/// 밖 — 이 파일 전체가 egui `Rect`+raw f32 관행(PANE_GAP 등)이라 그에 따른다.
+const SPLIT_ZONE_EDGE: f32 = 0.3;
+/// split 존 최소 축 길이(px). 축이 이 값 미만이면 그 축 밴드는 소멸(degrade)해
+/// 좁은 leaf 에서도 중앙 선택이 항상 가능하다.
+const SPLIT_ZONE_MIN: f32 = 46.0;
 /// inline leaf form 최대 폭.
 const FORM_MAX_W: f32 = 240.0;
 /// inline leaf form 좌우 padding.
@@ -567,10 +572,10 @@ impl DemoLayout {
                 self.set_field(id, cwd, value);
                 ShowOutcome::Mutated
             }
-            Act::Split { id, row } => {
-                // 핸들 클러스터 split = after 배치(새 leaf second). 경계 존 before 는
-                // preset-edit-03 마우스 UI 몫.
-                self.split_leaf(id, row, false, catalog);
+            Act::Split { id, row, before } => {
+                // 경계 hover-split 존은 좌/상 클릭 시 before(새 leaf first), 우/하는
+                // after. 키보드 단축키(apply_shortcut)는 항상 after(before=false).
+                self.split_leaf(id, row, before, catalog);
                 ShowOutcome::Mutated
             }
             Act::Remove { id } => {
@@ -637,12 +642,16 @@ impl DemoLayout {
             return ShowOutcome::None;
         };
         match action {
-            ShortcutAction::SplitSurfaceVertical => {
-                self.dispatch(Act::Split { id: leaf_id, row: true }, selected, catalog)
-            }
-            ShortcutAction::SplitSurfaceHorizontal => {
-                self.dispatch(Act::Split { id: leaf_id, row: false }, selected, catalog)
-            }
+            ShortcutAction::SplitSurfaceVertical => self.dispatch(
+                Act::Split { id: leaf_id, row: true, before: false },
+                selected,
+                catalog,
+            ),
+            ShortcutAction::SplitSurfaceHorizontal => self.dispatch(
+                Act::Split { id: leaf_id, row: false, before: false },
+                selected,
+                catalog,
+            ),
             ShortcutAction::CloseSurface => {
                 self.dispatch(Act::Remove { id: leaf_id }, selected, catalog)
             }
@@ -1037,7 +1046,7 @@ enum Act {
     SetActive { pane: usize, idx: usize },
     SetKind { id: usize, kind: String },
     SetField { id: usize, cwd: bool, value: String },
-    Split { id: usize, row: bool },
+    Split { id: usize, row: bool, before: bool },
     Remove { id: usize },
     AddTab { pane: usize },
     // ── pane 계층 변형 · 탭 삭제. 키보드 단축키([`apply_shortcut`], `preset-edit-02`)가
@@ -1362,18 +1371,45 @@ fn draw_surface_box(
 
     let selected = cx.edit && cx.sel == Some(leaf.id);
 
-    // 편집 모드: 클릭 = 선택. (배경 deselect 보다 위에 얹혀 우선.)
+    // 편집 모드: 경계 hover-split 존 판정 + 클릭 라우팅. 존 활성이면 split, 아니면
+    // 선택(배경 deselect 보다 위에 얹혀 우선). 선택된 leaf 에선 존 판정 안 함 —
+    // split 불가(배경 클릭 deselect 후 가능).
+    let mut zone: Option<SplitZone> = None;
     if cx.edit {
         let resp = ui.interact(
             rect,
             ui.id().with(("preset_leaf", leaf.id)),
             egui::Sense::click(),
         );
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        if !selected
+            && rect.width() > 0.0
+            && rect.height() > 0.0
+            && let Some(pos) = resp.hover_pos()
+        {
+            let nx = (pos.x - rect.min.x) / rect.width();
+            let ny = (pos.y - rect.min.y) / rect.height();
+            zone = pick_zone(nx, ny, rect.width(), rect.height());
         }
-        if resp.clicked() && !selected {
-            cx.act = Some(Act::Select(leaf.id));
+        if resp.hovered() {
+            let cursor = if zone.is_some() {
+                egui::CursorIcon::Crosshair
+            } else {
+                egui::CursorIcon::PointingHand
+            };
+            ui.ctx().set_cursor_icon(cursor);
+        }
+        if resp.clicked() {
+            match zone {
+                Some(z) => {
+                    cx.act = Some(Act::Split {
+                        id: leaf.id,
+                        row: z.row(),
+                        before: z.before(),
+                    });
+                }
+                None if !selected => cx.act = Some(Act::Select(leaf.id)),
+                None => {}
+            }
         }
     }
 
@@ -1423,13 +1459,98 @@ fn draw_surface_box(
         );
     }
 
-    // 선택 leaf: 우상단 핸들 클러스터(split-right / split-down / remove).
+    // 활성 split 존 overlay — 콘텐츠·outline 위에 얹는다(존은 !selected 에서만 활성).
+    if let Some(z) = zone {
+        draw_split_zone_overlay(ui, theme, rect, z);
+    }
+
+    // 선택 leaf: 우상단 remove 핸들.
     if selected {
         draw_handle_cluster(ui, theme, rect, leaf.id, cx);
     }
 }
 
-/// 우상단 핸들 클러스터 — split-right(row) / split-down(col) / remove(danger).
+/// 경계 hover-split 존 — 활성 변. 좌/우 = row(좌우) split, 상/하 = column split.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SplitZone {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+impl SplitZone {
+    /// 이 존이 만드는 split 방향(row=좌우). 좌/우 존 → row, 상/하 존 → column.
+    fn row(self) -> bool {
+        matches!(self, SplitZone::Left | SplitZone::Right)
+    }
+    /// 새 leaf 가 first(좌/상)인지. 좌·상 존은 before(새 leaf 가 first 쪽).
+    fn before(self) -> bool {
+        matches!(self, SplitZone::Left | SplitZone::Top)
+    }
+}
+
+/// 정규화 커서 좌표(nx,ny ∈ 0..1)와 leaf 픽셀 크기(w,h)로 활성 split 존을 고른다.
+/// 4변까지 거리 후보(left=nx, right=1-nx, top=ny, bottom=1-ny) 중 최솟값이
+/// [`SPLIT_ZONE_EDGE`] 미만인 변이 활성. 축 길이가 [`SPLIT_ZONE_MIN`] 미만이면 그
+/// 축 후보(좌우는 w, 상하는 h)를 제외한다(degrade — 좁은 leaf 의 중앙 선택 보장).
+fn pick_zone(nx: f32, ny: f32, w: f32, h: f32) -> Option<SplitZone> {
+    let mut best: Option<(f32, SplitZone)> = None;
+    let mut consider = |dist: f32, zone: SplitZone| {
+        if dist < SPLIT_ZONE_EDGE && best.is_none_or(|(d, _)| dist < d) {
+            best = Some((dist, zone));
+        }
+    };
+    if w >= SPLIT_ZONE_MIN {
+        consider(nx, SplitZone::Left);
+        consider(1.0 - nx, SplitZone::Right);
+    }
+    if h >= SPLIT_ZONE_MIN {
+        consider(ny, SplitZone::Top);
+        consider(1.0 - ny, SplitZone::Bottom);
+    }
+    best.map(|(_, z)| z)
+}
+
+/// 활성 split 존의 밴드(변 쪽 30% 영역)를 `preset_split_zone_bg` 로 채우고, 안쪽
+/// 변(분할선이 될 변)에 2px `preset_split_zone_border` 를 그린다. 좌/상 존은 밴드의
+/// 우/하 변, 우/하 존은 좌/상 변. pointer 이벤트 없음(`painter_at` clip).
+fn draw_split_zone_overlay(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect, zone: SplitZone) {
+    let bg = theme.preset_split_zone_bg().to_egui();
+    let border = theme.preset_split_zone_border().to_egui();
+    let divider = theme.tab_indicator_width.value(); // 2px 분할선(accent bar 와 동일 굵기).
+    let stroke = egui::Stroke::new(divider, border);
+    let p = ui.painter_at(rect);
+    match zone {
+        SplitZone::Left => {
+            let x = rect.min.x + rect.width() * SPLIT_ZONE_EDGE;
+            let band = egui::Rect::from_min_max(rect.min, egui::pos2(x, rect.max.y));
+            p.rect_filled(band, 0.0, bg);
+            p.vline(x, band.y_range(), stroke);
+        }
+        SplitZone::Right => {
+            let x = rect.max.x - rect.width() * SPLIT_ZONE_EDGE;
+            let band = egui::Rect::from_min_max(egui::pos2(x, rect.min.y), rect.max);
+            p.rect_filled(band, 0.0, bg);
+            p.vline(x, band.y_range(), stroke);
+        }
+        SplitZone::Top => {
+            let y = rect.min.y + rect.height() * SPLIT_ZONE_EDGE;
+            let band = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, y));
+            p.rect_filled(band, 0.0, bg);
+            p.hline(band.x_range(), y, stroke);
+        }
+        SplitZone::Bottom => {
+            let y = rect.max.y - rect.height() * SPLIT_ZONE_EDGE;
+            let band = egui::Rect::from_min_max(egui::pos2(rect.min.x, y), rect.max);
+            p.rect_filled(band, 0.0, bg);
+            p.hline(band.x_range(), y, stroke);
+        }
+    }
+}
+
+/// 우상단 핸들 클러스터 — remove(danger) 단독. split-right/down 핸들은 경계
+/// hover-split 존이 대체해 제거됐다(디자인 changelog 2026-07-02).
 fn draw_handle_cluster(
     ui: &mut egui::Ui,
     theme: &Theme,
@@ -1437,39 +1558,13 @@ fn draw_handle_cluster(
     leaf_id: usize,
     cx: &mut DrawCtx<'_>,
 ) {
-    // 우상단 정렬, 시각 순서(좌→우): split-right · split-down · remove.
-    let step = HANDLE_SZ + HANDLE_GAP;
-    let x0 = rect.max.x - HANDLE_INSET - HANDLE_SZ * 3.0 - HANDLE_GAP * 2.0;
-    let y = rect.min.y + HANDLE_INSET;
-    let cell = |i: f32| {
-        egui::Rect::from_min_size(
-            egui::pos2(x0 + step * i, y),
-            egui::vec2(HANDLE_SZ, HANDLE_SZ),
-        )
-    };
-    let split_right = cell(0.0);
-    let split_down = cell(1.0);
-    let remove = cell(2.0);
-
-    if mini_handle(ui, theme, split_right, icons::SPLIT, false, ("sr", leaf_id)) {
-        cx.act = Some(Act::Split {
-            id: leaf_id,
-            row: true,
-        });
-    }
-    if mini_handle(
-        ui,
-        theme,
-        split_down,
-        icons::SPLIT_DOWN,
-        false,
-        ("sd", leaf_id),
-    ) {
-        cx.act = Some(Act::Split {
-            id: leaf_id,
-            row: false,
-        });
-    }
+    let remove = egui::Rect::from_min_size(
+        egui::pos2(
+            rect.max.x - HANDLE_INSET - HANDLE_SZ,
+            rect.min.y + HANDLE_INSET,
+        ),
+        egui::vec2(HANDLE_SZ, HANDLE_SZ),
+    );
     if mini_handle(ui, theme, remove, icons::TRASH, true, ("rm", leaf_id)) {
         cx.act = Some(Act::Remove { id: leaf_id });
     }
@@ -2656,5 +2751,59 @@ mod tests {
             }
             _ => panic!("expected split after split_leaf"),
         }
+    }
+
+    #[test]
+    fn pick_zone_edges_center_and_degrade() {
+        // 중앙 → 존 없음(중앙 클릭 = 선택).
+        assert_eq!(pick_zone(0.5, 0.5, 200.0, 200.0), None);
+        // 좌측 경계 안쪽 → Left.
+        assert_eq!(pick_zone(0.1, 0.5, 200.0, 200.0), Some(SplitZone::Left));
+        // nx=0.3 정확히 경계(미만 아님) → 활성 아님.
+        assert_eq!(pick_zone(0.3, 0.5, 200.0, 200.0), None);
+        // 하단 → Bottom.
+        assert_eq!(pick_zone(0.5, 0.95, 200.0, 200.0), Some(SplitZone::Bottom));
+        // 폭 46px 미만 → 좌우 밴드 소멸. ny=0.5 면 상하도 비활성 → 중앙 선택 가능.
+        assert_eq!(pick_zone(0.05, 0.5, 40.0, 200.0), None);
+        // 같은 좁은 leaf 라도 상단이면 Top 은 유효(짧은 축은 폭뿐, 높이는 충분).
+        assert_eq!(pick_zone(0.05, 0.1, 40.0, 200.0), Some(SplitZone::Top));
+    }
+
+    #[test]
+    fn split_zone_row_and_before_mapping() {
+        // 좌/우 = row(좌우) split, 상/하 = column. 좌·상 = before(새 leaf first).
+        assert!(SplitZone::Left.row() && SplitZone::Left.before());
+        assert!(SplitZone::Right.row() && !SplitZone::Right.before());
+        assert!(!SplitZone::Top.row() && SplitZone::Top.before());
+        assert!(!SplitZone::Bottom.row() && !SplitZone::Bottom.before());
+    }
+
+    #[test]
+    fn zone_before_split_preserves_existing_leaf_id() {
+        // 좌측 존 클릭과 동형(row=true, before=true): 기존 leaf id 는 보존되고 새
+        // leaf 만 신규 id 를 받는다(PE04 불변식 — 존 클릭 경로에서도 성립).
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
+        let mut ids = Vec::new();
+        surf_leaf_ids(first_surf(&dl), &mut ids);
+        let leaf_id = ids[0];
+
+        let mut sel = Some(leaf_id);
+        let out = dl.dispatch(
+            Act::Split { id: leaf_id, row: true, before: true },
+            &mut sel,
+            &tc(),
+        );
+        assert!(matches!(out, ShowOutcome::Mutated));
+        match first_surf(&dl) {
+            SurfNode::Split { first, second, .. } => {
+                assert!(matches!(second.as_ref(), SurfNode::Leaf(l) if l.id == leaf_id));
+                assert!(matches!(first.as_ref(), SurfNode::Leaf(l) if l.id != leaf_id));
+            }
+            _ => panic!("expected split"),
+        }
+        // 기존 id 가 여전히 트리에 존재.
+        let mut after = Vec::new();
+        surf_leaf_ids(first_surf(&dl), &mut after);
+        assert!(after.contains(&leaf_id));
     }
 }
