@@ -276,9 +276,10 @@ pub fn draw_convert_view(
             format!("    {}    {}", item.label, shortcut_str)
         };
         let text_color = if is_current {
-            theme.overlay0
+            // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
+            theme.text_placeholder()
         } else {
-            theme.text
+            theme.text_primary()
         };
 
         let sense = if is_current {
