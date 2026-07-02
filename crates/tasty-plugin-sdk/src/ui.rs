@@ -3,11 +3,10 @@
 //! 직접 enum variant를 만들 수도 있지만, 기본값을 쉽게 채우기 위해 자주 쓰이는
 //! 모양을 함수로 노출한다.
 
-use tasty_plugin_protocol::SharedBufferId;
 use tasty_plugin_protocol::ui_tree::{
-    BadgeTone, ButtonStyle, LabelStyle, PixelFilter, PixelFormat, SelectionMode, SplitDir, TagTone,
-    TreeNode, UiNode,
+    BadgeTone, ButtonStyle, LabelStyle, SelectionMode, SplitDir, TagTone, TreeNode, UiNode,
 };
+use tasty_plugin_protocol::{PixelFilter, PixelFormat, SharedBufferId};
 
 pub fn vbox(children: impl IntoIterator<Item = UiNode>) -> UiNode {
     UiNode::Vbox {

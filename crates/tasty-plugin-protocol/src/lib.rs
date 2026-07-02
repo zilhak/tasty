@@ -26,12 +26,12 @@ pub use protocol::{
     AuthAck, AuthAckEnvelope, AuthMessage, BannerCloseReason, BannerClosedParams, BannerOpenParams,
     BannerOpenResult, BannerSetContextParams, CommandInvokeParams, EventDispatchParams,
     ExtensionHookInvokeParams, ExtensionHookKind, ExtensionHookMode, ExtensionHookPhase,
-    ExtensionHookResult, HandleChannelMessage, IpcCallResult, ModifiersWire, PixelRect,
-    PluginEvent, PluginRequest, PluginResponse, PointerButtonWire, PopupCloseReason,
-    PopupClosedParams, PopupEventParams, PopupEventResult, PopupOpenParams, PopupOpenResult,
-    PopupSetContextParams, RawInputEventWire, RawInputWire, SharedBufferCreateParams,
-    SharedBufferCreateResult, SharedBufferDirtyParams, SharedBufferId, SurfaceEventParams,
-    SurfaceResult, SurfaceSetContextParams, ThemeWire,
+    ExtensionHookResult, HandleChannelMessage, IpcCallResult, ModifiersWire, PixelFilter,
+    PixelFormat, PixelRect, PluginEvent, PluginRequest, PluginResponse, PointerButtonWire,
+    PopupCloseReason, PopupClosedParams, PopupEventParams, PopupEventResult, PopupOpenParams,
+    PopupOpenResult, PopupSetContextParams, RawInputEventWire, RawInputWire,
+    SharedBufferCreateParams, SharedBufferCreateResult, SharedBufferDirtyParams, SharedBufferId,
+    SurfaceEventParams, SurfaceResult, SurfaceSetContextParams, ThemeWire,
 };
 pub use protocol::{
     METHOD_BANNER_CLOSED, METHOD_BANNER_OPEN, METHOD_BANNER_SET_CONTEXT, METHOD_COMMAND_INVOKE,
@@ -43,6 +43,6 @@ pub use protocol::{
     METHOD_SURFACE_SNAPSHOT,
 };
 pub use ui_tree::{
-    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, PixelFilter, PixelFormat,
-    SelectionMode, SplitDir, TreeNode, UiEvent, UiNode,
+    ButtonStyle, CanvasPointerButton, CanvasPointerPhase, LabelStyle, SelectionMode, SplitDir,
+    TreeNode, UiEvent, UiNode,
 };

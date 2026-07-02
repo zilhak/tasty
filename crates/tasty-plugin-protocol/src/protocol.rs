@@ -316,6 +316,42 @@ pub struct PixelRect {
     pub h: u32,
 }
 
+/// Canvas/SharedBuffer 픽셀 포맷.
+///
+/// 두 variant 모두 4바이트/픽셀이며 **sRGB 채널로 해석**된다. 호스트는 wgpu에서
+/// `Rgba8UnormSrgb` / `Bgra8UnormSrgb`로 매핑하므로 plugin이 8-bit per channel sRGB로
+/// 그대로 쓰면 감마 보정이 GPU에서 자동 적용된다. 향후 linear-space variant
+/// (`Rgba8Linear`)가 추가될 수 있으며 wire는 backward-compatible하다.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PixelFormat {
+    /// 4바이트/픽셀 RGBA8, sRGB.
+    #[default]
+    Rgba8,
+    /// 4바이트/픽셀 BGRA8, sRGB (Windows/Direct2D 호환 채널 순서).
+    Bgra8,
+}
+
+impl PixelFormat {
+    /// 픽셀당 바이트 수.
+    pub fn bytes_per_pixel(self) -> u32 {
+        match self {
+            PixelFormat::Rgba8 | PixelFormat::Bgra8 => 4,
+        }
+    }
+}
+
+/// Canvas/SharedBuffer 텍스처 샘플링 필터.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PixelFilter {
+    /// 최근접 픽셀. dot art / 픽셀 정렬이 중요할 때.
+    Nearest,
+    /// 양선형 보간. 일반적인 이미지/비디오.
+    #[default]
+    Linear,
+}
+
 /// `host.shared_buffer.create` params.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SharedBufferCreateParams {

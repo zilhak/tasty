@@ -390,3 +390,9 @@ fn paint_frame_event_round_trip() {
         other => panic!("expected PaintFrame, got {other:?}"),
     }
 }
+
+#[test]
+fn pixel_format_bytes_per_pixel() {
+    assert_eq!(PixelFormat::Rgba8.bytes_per_pixel(), 4);
+    assert_eq!(PixelFormat::Bgra8.bytes_per_pixel(), 4);
+}
