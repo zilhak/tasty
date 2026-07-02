@@ -81,3 +81,23 @@ fn primitive_colors_match_embedded_themes() {
         );
     }
 }
+
+/// `placeholder` 필드는 DTCG primitive 미대응(ramp 밖)이지만, shipped 테마에서 값이
+/// `overlay0`(=neutral-600)와 동일하다. design-tokens-05b 가 overlay0 직접읽기 3곳을
+/// `text_placeholder()`(=placeholder field)로 값-보존 이식하면서 이 결합에 의존한다
+/// (convert/port_scanner/remote_tool disabled-role). shipped 테마에서 그 결합이 깨지면
+/// 그 3화면만 색이 어긋나므로 여기서 가드한다 (mocha·latte 양쪽).
+#[test]
+fn placeholder_matches_overlay0_in_shipped_themes() {
+    let mocha = mocha_fallback_colors();
+    assert_eq!(
+        mocha.placeholder, mocha.overlay0,
+        "mocha placeholder != overlay0 — 05b overlay0→text_placeholder 값-보존 결합 깨짐"
+    );
+    let latte_file = ThemeFile::parse(LATTE_TOML_TEXT).expect("latte.toml must parse");
+    let (latte, _) = latte_file.to_partial();
+    assert_eq!(
+        latte.placeholder, latte.overlay0,
+        "latte placeholder != overlay0 — 05b overlay0→text_placeholder 값-보존 결합 깨짐"
+    );
+}
