@@ -27,10 +27,11 @@ pub fn menu_item(
     active: bool,
     enabled: bool,
 ) -> egui::Response {
-    let height = theme.item_height_interactive.value();
-    let pad_x = theme.spacing_md.value();
+    let height = theme.menu_item_height().value();
+    let pad_x = theme.menu_item_padding_x().value();
+    // gap/label body/icon 글리프 = 대응 menu-item component 토큰 없음 → semantic.
     let gap = theme.spacing_sm.value();
-    let radius = theme.corner_radius_sm.value();
+    let radius = theme.menu_item_radius().value();
     let body = theme.font_size_body.value();
     // 아이콘 글리프 = icon-size-md(16). (token-policy: 15 → 16 snap.)
     let icon_glyph = theme.icon_glyph_size_md.value();
@@ -55,10 +56,16 @@ pub fn menu_item(
         ui.painter()
             .rect_filled(rect, radius, theme.surface_active().to_egui());
     } else if enabled && resp.hovered() {
-        ui.painter()
-            .rect_filled(rect, radius, theme.overlay_hover().to_egui_premultiplied());
+        ui.painter().rect_filled(
+            rect,
+            radius,
+            theme.menu_item_bg_hover().to_egui_premultiplied(),
+        );
     }
 
+    // fg: Normal 은 구현이 text_primary 를 쓴다(디자인 menu-item-fg=text-secondary 와
+    // 불일치 → 픽셀 diff 0 위해 이식 제외). Danger accent-danger·아이콘색도 대응
+    // component 토큰 없어 semantic 유지.
     let fg = match variant {
         MenuItemVariant::Normal => theme.text_primary().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
@@ -83,7 +90,7 @@ pub fn menu_item(
     if let Some(sc) = shortcut {
         let g = ui.painter().layout_no_wrap(
             sc.to_owned(),
-            egui::FontId::monospace(theme.font_size_micro.value()),
+            egui::FontId::monospace(theme.menu_item_shortcut_font_size().value()),
             egui::Color32::PLACEHOLDER,
         );
         let pos = egui::pos2(
