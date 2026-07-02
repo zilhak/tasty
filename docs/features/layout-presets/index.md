@@ -16,6 +16,14 @@ Workspace/Tab/Pane 레이아웃과 각 leaf surface 의 초기화 파라미터(k
 
 WorkspacePreset(전체: 상위 레이아웃 + 모든 pane/tab/surface) · TabPreset(단일 탭) · PanePreset(단일 페인: 탭 목록 + 활성 탭). 셋 다 `LayoutPreset` trait 구현(`tasty-presets`).
 
+### surface 영속 id
+
+각 `PresetSurface` 는 **preset 파일 내에서만 고유한** 영속 식별자 `id`(`Option<u32>`, TOML `id = N`)를 갖는다. load→편집→save→재load 를 관통해 같은 surface 를 안정적으로 지목하기 위한 것으로, 향후 surface 단위 복구 커맨드의 타겟(= "preset 이름 + surface id")이 된다.
+
+- **preset-local**: 전역 고유성은 요구하지 않는다(uuid 불요). `duplicate_preset` 복제본은 같은 id 집합을 그대로 갖는 것이 옳다.
+- **하위호환·마이그레이션**: 구버전 TOML 에는 `id` 가 없다. `serde(default)` 로 결손을 허용하고, `LayoutPreset::normalize_surface_ids` 가 로드/저장 시 결손·중복 id 를 high-water mark 이후 번호로 **파일 전체 단위**(Workspace 는 모든 pane·tab 통합)로 결정적 재부여한다. 로드 시 정규화가 무언가 바꾸면 디스크에 되써 마이그레이션을 영속화한다(RO 파일시스템 등 되쓰기 실패는 로그만 남기고 메모리 정규화는 유지 — 멱등).
+- **런타임 id 와 무관**: apply 는 적용 시 런타임 surface id 를 새로 발급하며 이 영속 id 를 쓰지 않는다. 편집기(`DemoLayout`)는 leaf 에 영속 id 를 그대로 채택하고(세션 재부여 없음), 신규 leaf 만 새 id 를 받는다 — split/remove/탭 추가 후에도 기존 surface 의 id 는 불변.
+
 ### 저장 / 편집
 
 저장: 사이드바 워크스페이스 카드 우클릭 · 탭 타이틀/탭바 빈 공간 우클릭 · 도구 메뉴 "프리셋". 위치 `~/.tasty/presets/{kind}/<name>.toml`(파일명 = 정본, 같은 kind 내 중복 불가 — 충돌 시 `-N` suffix).
@@ -63,6 +71,8 @@ terminal 시작 명령어는 PTY ready 직후 stdin 에 한 줄 자동 입력.
 ## 인터페이스
 
 `preset.{list,get,save,delete,rename,capture,apply}`(`SurfaceRead`/`SurfaceWrite`) — `tasty preset {list,get,save,delete,rename,capture,apply}`. 표 → [reference/api](../../reference/api.md#구조--workspace--pane--tab--surface--split--tree).
+
+`preset.get`/`preset.save` 는 preset 을 JSON 으로 그대로 직렬화/역직렬화하므로 각 surface 의 영속 `id`(위 [surface 영속 id](#surface-영속-id))가 공개 스키마에 자동 노출·왕복된다 — 향후 surface 단위 타겟팅(`--surface-id N`)의 토대다. `save` 로 들어온 결손·중복 id 는 저장 시 정규화된다.
 
 ## 관련
 

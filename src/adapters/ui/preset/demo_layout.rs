@@ -18,7 +18,7 @@
 //!  - Mini tab strip → 20px, bg-sidebar. 활성 = bg-panel + 2px accent 하단 bar + kind 아이콘.
 
 use tasty_presets::{
-    PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
+    LayoutPreset, PanePreset, PresetPane, PresetPaneNode, PresetSplitDirection, PresetSurface,
     PresetSurfaceLayout, PresetTab, TabPreset, WorkspacePreset,
 };
 use tasty_type_appearance::theme::Theme;
@@ -232,7 +232,12 @@ fn fallback_kind_label(kind: &str) -> String {
 ///
 /// read-only 미리보기는 `kind`/`label` 만 쓰지만, 편집 모드가 트리를 모델로
 /// 되돌려(`rebuild_*`) 디스크에 쓰려면 `cwd`/`startup`/`params` 를 손실 없이 보관해야
-/// 한다. `id` 는 편집 선택/핸들 대상 지정용 안정 식별자(build 시 부여).
+/// 한다.
+///
+/// `id` 는 **영속 surface id**(`PresetSurface.id`)를 그대로 채택한 값이다 — build 시
+/// 재부여하지 않는다. 그래서 load→편집→save→재load 를 관통해 같은 surface 가 같은 id
+/// 를 유지한다(세션 한정이 아님). 편집 선택/핸들 대상 지정 + 모델 round-trip(`surf_to_model`)
+/// 에 쓰인다. 신규 leaf(split/add-tab)만 [`DemoLayout::alloc_id`] 로 새 id 를 받는다.
 #[derive(Clone, Debug, PartialEq)]
 struct Leaf {
     id: usize,
@@ -352,11 +357,21 @@ pub struct DemoLayout {
     root: Root,
     /// 편집 대상 scope — pane split 유효성 판별용([`Scope`]).
     scope: Scope,
-    /// 편집 중 새 노드에 부여할 다음 id (build 시 high-water mark + 1).
+    /// 편집 중 새 노드(신규 leaf·신규 pane)에 부여할 다음 id. build 시 pane 세션 id 와
+    /// leaf 영속 id **양쪽 domain 의 상한 + 1** 로 초기화한다([`max_node_id`]) — 새 노드가
+    /// 어느 domain 과도 겹치지 않게.
     next_id: usize,
 }
 
-/// build 동안 모든 노드(pane/leaf)에 0..N id 를 부여하는 카운터.
+/// build 동안 **pane 에만** 세션 id 를 부여하는 카운터. leaf 는 대신 영속 surface id
+/// (`PresetSurface.id`)를 채택하므로 이 카운터는 pane 전용이다.
+///
+/// **id-space 결정(계획 미명시 함정):** pane 세션 id 와 leaf 영속 id 는 **별개 domain**
+/// 이다 — 둘은 상호 겹칠 수 있으나(예: pane 0 과 leaf 0 공존) 무해하다. 이유: (1) 선택
+/// (`selected: Option<usize>`)·조회는 leaf 트리만, pane 조작은 pane id 만 다뤄 domain 을
+/// 섞지 않고, (2) egui interaction salt 가 접두사(`"preset_leaf"` vs `"preset_demo_tab"`
+/// 등)로 네임스페이스를 분리한다. 유일하게 지켜야 할 영속 불변식은 "**leaf id 만** load/
+/// save/편집을 관통해 보존된다"이며, pane id 는 세션마다 재부여돼도 무방하다.
 struct IdGen(usize);
 impl IdGen {
     fn next(&mut self) -> usize {
@@ -366,14 +381,15 @@ impl IdGen {
     }
 }
 
-fn norm_surf(
-    node: &PresetSurfaceLayout,
-    resolve: &dyn Fn(&str) -> String,
-    ids: &mut IdGen,
-) -> SurfNode {
+/// leaf 는 **영속 surface id 를 채택**한다(build 카운터 미사용). from_* 이 build 전에
+/// `normalize_surface_ids` 로 모든 surface 에 id 를 채우므로 여기서는 항상 `Some` 이다.
+fn norm_surf(node: &PresetSurfaceLayout, resolve: &dyn Fn(&str) -> String) -> SurfNode {
     match node {
         PresetSurfaceLayout::Leaf { surface } => SurfNode::Leaf(Leaf {
-            id: ids.next(),
+            id: surface
+                .id
+                .expect("normalize_surface_ids assigns every surface an id before build")
+                as usize,
             kind: surface.kind.clone(),
             label: resolve(&surface.kind),
             cwd: surface.cwd.clone(),
@@ -388,14 +404,14 @@ fn norm_surf(
         } => SurfNode::Split {
             row: is_row(*direction),
             ratio: *ratio,
-            first: Box::new(norm_surf(first, resolve, ids)),
-            second: Box::new(norm_surf(second, resolve, ids)),
+            first: Box::new(norm_surf(first, resolve)),
+            second: Box::new(norm_surf(second, resolve)),
         },
     }
 }
 
-fn norm_tab(tab: &PresetTab, resolve: &dyn Fn(&str) -> String, ids: &mut IdGen) -> PreviewTab {
-    let layout = norm_surf(&tab.layout, resolve, ids);
+fn norm_tab(tab: &PresetTab, resolve: &dyn Fn(&str) -> String) -> PreviewTab {
+    let layout = norm_surf(&tab.layout, resolve);
     // explicit_name 우선, 없으면 대표 surface 의 표시명(디자인의 자동 탭 이름 규칙).
     let name = tab
         .explicit_name
@@ -408,13 +424,14 @@ fn norm_tab(tab: &PresetTab, resolve: &dyn Fn(&str) -> String, ids: &mut IdGen) 
     }
 }
 
-fn norm_pane(pane: &PresetPane, resolve: &dyn Fn(&str) -> String, ids: &mut IdGen) -> PreviewPane {
-    let id = ids.next();
-    let tabs: Vec<PreviewTab> = pane
-        .tabs
-        .iter()
-        .map(|t| norm_tab(t, resolve, ids))
-        .collect();
+fn norm_pane(
+    pane: &PresetPane,
+    resolve: &dyn Fn(&str) -> String,
+    pane_ids: &mut IdGen,
+) -> PreviewPane {
+    // pane 은 영속 id 가 없으므로 세션 카운터로 부여(leaf 와 별개 domain — IdGen 주석).
+    let id = pane_ids.next();
+    let tabs: Vec<PreviewTab> = pane.tabs.iter().map(|t| norm_tab(t, resolve)).collect();
     let active = pane.active_tab.min(tabs.len().saturating_sub(1));
     PreviewPane { id, tabs, active }
 }
@@ -422,10 +439,10 @@ fn norm_pane(pane: &PresetPane, resolve: &dyn Fn(&str) -> String, ids: &mut IdGe
 fn norm_pane_node(
     node: &PresetPaneNode,
     resolve: &dyn Fn(&str) -> String,
-    ids: &mut IdGen,
+    pane_ids: &mut IdGen,
 ) -> PaneNode {
     match node {
-        PresetPaneNode::Leaf { pane } => PaneNode::Leaf(norm_pane(pane, resolve, ids)),
+        PresetPaneNode::Leaf { pane } => PaneNode::Leaf(norm_pane(pane, resolve, pane_ids)),
         PresetPaneNode::Split {
             direction,
             ratio,
@@ -434,9 +451,33 @@ fn norm_pane_node(
         } => PaneNode::Split {
             row: is_row(*direction),
             ratio: *ratio,
-            first: Box::new(norm_pane_node(first, resolve, ids)),
-            second: Box::new(norm_pane_node(second, resolve, ids)),
+            first: Box::new(norm_pane_node(first, resolve, pane_ids)),
+            second: Box::new(norm_pane_node(second, resolve, pane_ids)),
         },
+    }
+}
+
+/// 빌드된 preview 트리에서 pane 세션 id·leaf 영속 id 를 통틀어 최대값. 신규 노드
+/// id 초기화(`next_id = max + 1`)용 — 두 domain 어느 것과도 안 겹치게 한다.
+fn max_node_id(root: &Root) -> usize {
+    fn surf(n: &SurfNode) -> usize {
+        match n {
+            SurfNode::Leaf(l) => l.id,
+            SurfNode::Split { first, second, .. } => surf(first).max(surf(second)),
+        }
+    }
+    fn pane(n: &PaneNode) -> usize {
+        match n {
+            PaneNode::Leaf(p) => {
+                let tab_max = p.tabs.iter().map(|t| surf(&t.layout)).max().unwrap_or(0);
+                p.id.max(tab_max)
+            }
+            PaneNode::Split { first, second, .. } => pane(first).max(pane(second)),
+        }
+    }
+    match root {
+        Root::Panes(n) => pane(n),
+        Root::TabFrame(s) => surf(s),
     }
 }
 
@@ -449,35 +490,45 @@ fn is_row(d: PresetSplitDirection) -> bool {
 
 impl DemoLayout {
     pub fn from_workspace(p: &WorkspacePreset, catalog: &KindCatalog) -> Self {
-        let mut ids = IdGen(0);
+        // 영속 surface id 를 보장하기 위해 build 전 정규화(멱등 — 이미 정규화된 로드
+        // 경로에선 no-op). 편집기는 preset 을 소유하지 않으므로 clone 후 정규화한다.
+        let mut model = p.clone();
+        model.normalize_surface_ids();
         let resolve = |k: &str| catalog.label(k);
-        let root = Root::Panes(norm_pane_node(&p.layout, &resolve, &mut ids));
+        let mut pane_ids = IdGen(0);
+        let root = Root::Panes(norm_pane_node(&model.layout, &resolve, &mut pane_ids));
+        let next_id = max_node_id(&root) + 1;
         Self {
             root,
             scope: Scope::Workspace,
-            next_id: ids.0,
+            next_id,
         }
     }
 
     pub fn from_tab(p: &TabPreset, catalog: &KindCatalog) -> Self {
-        let mut ids = IdGen(0);
+        let mut model = p.clone();
+        model.normalize_surface_ids();
         let resolve = |k: &str| catalog.label(k);
-        let root = Root::TabFrame(norm_surf(&p.tab.layout, &resolve, &mut ids));
+        let root = Root::TabFrame(norm_surf(&model.tab.layout, &resolve));
+        let next_id = max_node_id(&root) + 1;
         Self {
             root,
             scope: Scope::Tab,
-            next_id: ids.0,
+            next_id,
         }
     }
 
     pub fn from_pane(p: &PanePreset, catalog: &KindCatalog) -> Self {
-        let mut ids = IdGen(0);
+        let mut model = p.clone();
+        model.normalize_surface_ids();
         let resolve = |k: &str| catalog.label(k);
-        let root = Root::Panes(PaneNode::Leaf(norm_pane(&p.pane, &resolve, &mut ids)));
+        let mut pane_ids = IdGen(0);
+        let root = Root::Panes(PaneNode::Leaf(norm_pane(&model.pane, &resolve, &mut pane_ids)));
+        let next_id = max_node_id(&root) + 1;
         Self {
             root,
             scope: Scope::Pane,
-            next_id: ids.0,
+            next_id,
         }
     }
 
@@ -1245,6 +1296,9 @@ fn surf_to_model(node: &SurfNode) -> PresetSurfaceLayout {
     match node {
         SurfNode::Leaf(l) => PresetSurfaceLayout::Leaf {
             surface: PresetSurface {
+                // leaf.id 는 채택한 영속 surface id — 되써서 round-trip 보존(재load 시
+                // 같은 surface = 같은 id). 신규 leaf 도 alloc_id 가 유일값을 줬으므로 안전.
+                id: Some(l.id as u32),
                 kind: l.kind.clone(),
                 cwd: l.cwd.clone(),
                 startup_command: l.startup.clone(),
@@ -1959,6 +2013,8 @@ mod tests {
     fn surf(kind: &str) -> PresetSurfaceLayout {
         PresetSurfaceLayout::Leaf {
             surface: PresetSurface {
+                // id:None — from_* 이 build 전 normalize 로 채운다(로드 경로와 동형).
+                id: None,
                 kind: kind.into(),
                 cwd: None,
                 startup_command: None,
@@ -2231,6 +2287,36 @@ mod tests {
         assert_ne!(after[0], after[1]);
     }
 
+    /// 편집 세션을 관통하는 영속 id 안정성: load(build) → split → rebuild(model) →
+    /// 재load(재build, 정규화 포함) 후에도 기존 leaf 는 같은 id, 신규 leaf 는 겹치지
+    /// 않는 id 를 유지한다(계획 `ids_survive_edit_round_trip`).
+    #[test]
+    fn ids_survive_edit_round_trip() {
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
+        let orig_id = {
+            let mut v = Vec::new();
+            surf_leaf_ids(first_surf(&dl), &mut v);
+            v[0]
+        };
+
+        dl.split_leaf(orig_id, true, false, &tc());
+        let mut after = Vec::new();
+        surf_leaf_ids(first_surf(&dl), &mut after);
+        assert_eq!(after.len(), 2);
+        assert!(after.contains(&orig_id), "기존 leaf id 는 split 후에도 보존");
+        let new_id = *after.iter().find(|&&i| i != orig_id).expect("distinct new id");
+
+        // rebuild → 모델에 id 기록 → 새 DemoLayout build(디스크 재load + 정규화 모사).
+        let pane = dl.rebuild_single_pane().unwrap();
+        let reloaded_dl = DemoLayout::from_pane(&PanePreset { name: "p".into(), pane }, &tc());
+        let mut reloaded = Vec::new();
+        surf_leaf_ids(first_surf(&reloaded_dl), &mut reloaded);
+        reloaded.sort_unstable();
+        let mut expected = vec![orig_id, new_id];
+        expected.sort_unstable();
+        assert_eq!(reloaded, expected, "재load 후 기존·신규 id 모두 안정");
+    }
+
     #[test]
     fn remove_leaf_collapses_parent_and_guards_sole() {
         let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
@@ -2312,9 +2398,9 @@ mod tests {
         if let Root::Panes(node) = &dl.root {
             collect(node, &mut ids);
         }
-        // norm_pane 이 leaf 전에 pane id 를 소비하므로: pane0(id0)→leaf(id1),
-        // pane1(id2)→leaf(id3). pane id 만 모으면 [0, 2].
-        assert_eq!(ids, vec![0, 2]);
+        // pane 은 leaf 와 별개의 세션 카운터(IdGen)로 0,1... 부여받는다(leaf 는 영속 id
+        // 채택). 방문 순서로 첫 pane=0, 둘째 pane=1.
+        assert_eq!(ids, vec![0, 1]);
     }
 
     /// 단일 leaf pane 을 담은 Workspace preset 빌더 (Workspace scope 검증용).
@@ -2490,9 +2576,10 @@ mod tests {
             },
         };
         let dl = DemoLayout::from_workspace(&p, &tc());
-        // id 부여 순서: pane0=0 → leaf=1, pane1=2 → leaf=3.
-        assert_eq!(dl.pane_id_of_leaf(1), Some(0));
-        assert_eq!(dl.pane_id_of_leaf(3), Some(2));
+        // leaf 는 영속 surface id 를 채택(방문 순서 0,1), pane 은 별개 세션 카운터(0,1).
+        // pane0(id0) 안의 leaf=surface0, pane1(id1) 안의 leaf=surface1.
+        assert_eq!(dl.pane_id_of_leaf(0), Some(0));
+        assert_eq!(dl.pane_id_of_leaf(1), Some(1));
         // 존재하지 않는 leaf → None.
         assert_eq!(dl.pane_id_of_leaf(99), None);
         // Tab scope 는 pane 없음 → None.

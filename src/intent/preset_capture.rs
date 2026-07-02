@@ -189,6 +189,9 @@ fn capture_surface(
             .and_then(|s| s.working_dir.as_ref())
             .map(|p| p.to_string_lossy().to_string());
         return PresetSurface {
+            // preset-local id 는 저장 시 PresetStore 정규화가 부여한다(라이브 surface_id
+            // 복사 금지 — 런타임 id 와 결합하지 않는다).
+            id: None,
             kind: "terminal".into(),
             cwd,
             startup_command: None,
@@ -203,6 +206,9 @@ fn capture_surface(
             .and_then(|t| t.get_cwd())
             .map(|p| p.to_string_lossy().to_string());
         return PresetSurface {
+            // preset-local id 는 저장 시 PresetStore 정규화가 부여한다(라이브 surface_id
+            // 복사 금지 — 런타임 id 와 결합하지 않는다).
+            id: None,
             kind: "terminal".into(),
             cwd,
             startup_command: None,
@@ -213,6 +219,7 @@ fn capture_surface(
     if let Some(def) = registry.get(kind_str) {
         let params = (def.snapshot)(surface).unwrap_or_else(|| Value::Object(Default::default()));
         return PresetSurface {
+            id: None,
             kind: kind_str.to_string(),
             cwd: None,
             startup_command: None,
@@ -221,6 +228,7 @@ fn capture_surface(
     }
 
     PresetSurface {
+        id: None,
         kind: "empty".into(),
         cwd: None,
         startup_command: None,

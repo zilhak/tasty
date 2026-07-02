@@ -29,6 +29,105 @@ pub trait LayoutPreset: Sized + Clone + Serialize + for<'de> Deserialize<'de> {
     const KIND: PresetKind;
     fn name(&self) -> &str;
     fn set_name(&mut self, name: String);
+
+    /// preset 파일 **전체** 를 순회해 surface id 를 정규화한다. 결손(`None`)·중복 id 를
+    /// high-water mark 이후 번호로 결정적 재부여하고, 이미 유효·고유한 id 는 그대로 둔다.
+    /// 무언가 바뀌었으면 `true`(호출자는 이를 디스크 되쓰기 신호로 쓴다).
+    ///
+    /// 정규화 단위가 **파일 전체** 인 이유: Workspace preset 은 여러 pane·tab 의 surface
+    /// 를 담으므로 파일 안 모든 surface 를 통합 검사해야 파일 내 유일성이 보장된다
+    /// (탭 단위가 아니다). 멱등(idempotent) — 정규화된 preset 을 다시 정규화하면
+    /// `false` 를 반환하고 값이 안 바뀐다.
+    fn normalize_surface_ids(&mut self) -> bool;
+}
+
+// ── surface id 정규화 (파일 내 유일성 보장) ──────────────────────────────
+//
+// 두 패스: (1) 기존 `Some` id 로 high-water mark 를 구하고, (2) 결손/중복을 그 위
+// 번호로 결정적 재부여한다. 세 preset 종류가 트리 모양만 다르고 로직은 같으므로
+// 공용 [`IdNormalizer`] + surface/pane-node walker 로 공유한다.
+
+/// 정규화 진행 상태. `next` = 다음에 부여할 번호(high-water mark). `claimed` = 이번
+/// 파일에서 이미 확정된 id 집합(최초 등장은 유지, 이후 중복은 재부여). `changed` =
+/// 하나라도 재부여했는지.
+#[derive(Default)]
+struct IdNormalizer {
+    next: u32,
+    claimed: std::collections::BTreeSet<u32>,
+    changed: bool,
+}
+
+impl IdNormalizer {
+    /// 패스 1: 기존 id 로 high-water mark 갱신.
+    fn observe(&mut self, s: &PresetSurface) {
+        if let Some(id) = s.id {
+            self.next = self.next.max(id.saturating_add(1));
+        }
+    }
+
+    /// 패스 2: 결손/중복이면 새 번호 부여. 최초 등장한 유효 id 는 그대로 확정.
+    fn assign(&mut self, s: &mut PresetSurface) {
+        match s.id {
+            // 최초 등장한 유효 id — 유지(claimed 에 등록).
+            Some(id) if self.claimed.insert(id) => {}
+            // None 또는 이미 등장한 중복 id — high-water 이후로 재부여.
+            _ => {
+                let new_id = self.next;
+                self.next = self.next.saturating_add(1);
+                self.claimed.insert(new_id);
+                s.id = Some(new_id);
+                self.changed = true;
+            }
+        }
+    }
+}
+
+fn observe_layout(layout: &PresetSurfaceLayout, n: &mut IdNormalizer) {
+    match layout {
+        PresetSurfaceLayout::Leaf { surface } => n.observe(surface),
+        PresetSurfaceLayout::Split { first, second, .. } => {
+            observe_layout(first, n);
+            observe_layout(second, n);
+        }
+    }
+}
+
+fn assign_layout(layout: &mut PresetSurfaceLayout, n: &mut IdNormalizer) {
+    match layout {
+        PresetSurfaceLayout::Leaf { surface } => n.assign(surface),
+        PresetSurfaceLayout::Split { first, second, .. } => {
+            assign_layout(first, n);
+            assign_layout(second, n);
+        }
+    }
+}
+
+fn observe_pane_node(node: &PresetPaneNode, n: &mut IdNormalizer) {
+    match node {
+        PresetPaneNode::Leaf { pane } => {
+            for t in &pane.tabs {
+                observe_layout(&t.layout, n);
+            }
+        }
+        PresetPaneNode::Split { first, second, .. } => {
+            observe_pane_node(first, n);
+            observe_pane_node(second, n);
+        }
+    }
+}
+
+fn assign_pane_node(node: &mut PresetPaneNode, n: &mut IdNormalizer) {
+    match node {
+        PresetPaneNode::Leaf { pane } => {
+            for t in &mut pane.tabs {
+                assign_layout(&mut t.layout, n);
+            }
+        }
+        PresetPaneNode::Split { first, second, .. } => {
+            assign_pane_node(first, n);
+            assign_pane_node(second, n);
+        }
+    }
 }
 
 // ── Split direction (serde 호환 직렬화 enum) ──────────────────────────────
@@ -52,6 +151,20 @@ pub enum PresetSplitDirection {
 /// `params` 는 SurfaceKindDef.snapshot 이 만든 임의 JSON — kind 별 의미.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PresetSurface {
+    /// preset 파일 **안에서만** 고유한 영속 식별자(preset-local). load→편집→save→재load
+    /// 를 관통해 특정 surface 를 안정적으로 지목하기 위한 것 — 향후 surface 단위 복구
+    /// 커맨드의 타겟(= "preset 이름 + surface id")이다.
+    ///
+    /// - 결손(`None`) = 구버전 TOML 또는 신규 생성 직후. 로드/저장 시
+    ///   [`LayoutPreset::normalize_surface_ids`] 가 결정적으로 채우므로 **정규화 후엔
+    ///   항상 `Some`** 이다. 그래서 `serde(default)` 로 하위호환한다.
+    /// - preset-local 이므로 전역 고유성은 요구하지 않는다(uuid 불요). `duplicate_preset`
+    ///   복제본이 같은 id 집합을 갖는 것이 오히려 옳다.
+    /// - 런타임 surface id 와는 **무관**하다 — apply 는 적용 시 런타임 id 를 새로 발급하고
+    ///   이 값을 쓰지 않는다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<u32>,
+
     pub kind: String,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -147,6 +260,12 @@ impl LayoutPreset for WorkspacePreset {
     fn set_name(&mut self, name: String) {
         self.name = name;
     }
+    fn normalize_surface_ids(&mut self) -> bool {
+        let mut n = IdNormalizer::default();
+        observe_pane_node(&self.layout, &mut n);
+        assign_pane_node(&mut self.layout, &mut n);
+        n.changed
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -162,6 +281,12 @@ impl LayoutPreset for TabPreset {
     }
     fn set_name(&mut self, name: String) {
         self.name = name;
+    }
+    fn normalize_surface_ids(&mut self) -> bool {
+        let mut n = IdNormalizer::default();
+        observe_layout(&self.tab.layout, &mut n);
+        assign_layout(&mut self.tab.layout, &mut n);
+        n.changed
     }
 }
 
@@ -179,6 +304,16 @@ impl LayoutPreset for PanePreset {
     fn set_name(&mut self, name: String) {
         self.name = name;
     }
+    fn normalize_surface_ids(&mut self) -> bool {
+        let mut n = IdNormalizer::default();
+        for t in &self.pane.tabs {
+            observe_layout(&t.layout, &mut n);
+        }
+        for t in &mut self.pane.tabs {
+            assign_layout(&mut t.layout, &mut n);
+        }
+        n.changed
+    }
 }
 
 // ── tests ───────────────────────────────────────────────────────────────
@@ -190,6 +325,7 @@ mod tests {
     fn sample_leaf() -> PresetSurfaceLayout {
         PresetSurfaceLayout::Leaf {
             surface: PresetSurface {
+                id: None,
                 kind: "terminal".into(),
                 cwd: Some("/tmp".into()),
                 startup_command: Some("ls".into()),
@@ -265,6 +401,7 @@ mod tests {
     #[test]
     fn preset_surface_omits_optional_fields_when_none() {
         let s = PresetSurface {
+            id: None,
             kind: "html".into(),
             cwd: None,
             startup_command: None,
@@ -274,7 +411,154 @@ mod tests {
         assert!(!toml_str.contains("cwd"));
         assert!(!toml_str.contains("startup_command"));
         assert!(!toml_str.contains("params"));
+        // id 도 None 이면 생략된다(하위호환 — 구버전 TOML 과 동일 출력).
+        assert!(!toml_str.contains("id"));
         assert!(toml_str.contains("kind"));
+    }
+
+    // ── surface id 정규화 ────────────────────────────────────────────────
+
+    fn leaf_with_id(id: Option<u32>) -> PresetSurfaceLayout {
+        PresetSurfaceLayout::Leaf {
+            surface: PresetSurface {
+                id,
+                kind: "terminal".into(),
+                cwd: None,
+                startup_command: None,
+                params: serde_json::Value::Null,
+            },
+        }
+    }
+
+    fn split(a: PresetSurfaceLayout, b: PresetSurfaceLayout) -> PresetSurfaceLayout {
+        PresetSurfaceLayout::Split {
+            direction: PresetSplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(a),
+            second: Box::new(b),
+        }
+    }
+
+    /// 트리의 surface id 를 방문 순서로 수집.
+    fn surface_ids(layout: &PresetSurfaceLayout, out: &mut Vec<Option<u32>>) {
+        match layout {
+            PresetSurfaceLayout::Leaf { surface } => out.push(surface.id),
+            PresetSurfaceLayout::Split { first, second, .. } => {
+                surface_ids(first, out);
+                surface_ids(second, out);
+            }
+        }
+    }
+
+    fn tab_preset(layout: PresetSurfaceLayout) -> TabPreset {
+        TabPreset {
+            name: "t".into(),
+            tab: PresetTab {
+                explicit_name: None,
+                layout,
+            },
+        }
+    }
+
+    #[test]
+    fn normalize_assigns_missing_ids_deterministically() {
+        // 전부 결손 → 방문 순서로 0,1,2.
+        let mut t = tab_preset(split(leaf_with_id(None), split(leaf_with_id(None), leaf_with_id(None))));
+        assert!(t.normalize_surface_ids());
+        let mut ids = Vec::new();
+        surface_ids(&t.tab.layout, &mut ids);
+        assert_eq!(ids, vec![Some(0), Some(1), Some(2)]);
+        // 멱등 — 재정규화는 변경 없음.
+        assert!(!t.normalize_surface_ids());
+    }
+
+    #[test]
+    fn normalize_preserves_existing_and_fills_gaps() {
+        // 일부만 있는 경우: 기존 값 유지, 결손만 high-water(=max+1) 이후로.
+        let mut t = tab_preset(split(leaf_with_id(Some(5)), leaf_with_id(None)));
+        assert!(t.normalize_surface_ids());
+        let mut ids = Vec::new();
+        surface_ids(&t.tab.layout, &mut ids);
+        assert_eq!(ids, vec![Some(5), Some(6)]);
+    }
+
+    #[test]
+    fn normalize_reassigns_duplicates() {
+        // 중복 id: 최초 등장은 유지, 이후 중복은 재부여.
+        let mut t = tab_preset(split(leaf_with_id(Some(3)), leaf_with_id(Some(3))));
+        assert!(t.normalize_surface_ids());
+        let mut ids = Vec::new();
+        surface_ids(&t.tab.layout, &mut ids);
+        assert_eq!(ids[0], Some(3));
+        assert_eq!(ids[1], Some(4)); // high-water = max(3)+1
+        assert_ne!(ids[0], ids[1]);
+    }
+
+    #[test]
+    fn normalize_noop_when_all_unique() {
+        let mut t = tab_preset(split(leaf_with_id(Some(0)), leaf_with_id(Some(1))));
+        assert!(!t.normalize_surface_ids());
+    }
+
+    #[test]
+    fn normalize_workspace_is_file_wide_unique() {
+        // 두 pane 각각 결손 leaf — 파일 전체에서 유일해야 한다(탭 단위 아님).
+        let ws = WorkspacePreset {
+            name: "w".into(),
+            subtitle: String::new(),
+            description: String::new(),
+            layout: PresetPaneNode::Split {
+                direction: PresetSplitDirection::Vertical,
+                ratio: 0.5,
+                first: Box::new(PresetPaneNode::Leaf {
+                    pane: PresetPane {
+                        tabs: vec![PresetTab {
+                            explicit_name: None,
+                            layout: leaf_with_id(None),
+                        }],
+                        active_tab: 0,
+                    },
+                }),
+                second: Box::new(PresetPaneNode::Leaf {
+                    pane: PresetPane {
+                        tabs: vec![
+                            PresetTab {
+                                explicit_name: None,
+                                layout: leaf_with_id(None),
+                            },
+                            PresetTab {
+                                explicit_name: None,
+                                layout: split(leaf_with_id(None), leaf_with_id(None)),
+                            },
+                        ],
+                        active_tab: 0,
+                    },
+                }),
+            },
+        };
+        let mut ws = ws;
+        assert!(ws.normalize_surface_ids());
+        // 파일 전체 surface id 를 모아 유일성 검사.
+        let mut all: Vec<u32> = Vec::new();
+        fn walk(node: &PresetPaneNode, out: &mut Vec<u32>) {
+            match node {
+                PresetPaneNode::Leaf { pane } => {
+                    for t in &pane.tabs {
+                        let mut ids = Vec::new();
+                        surface_ids(&t.layout, &mut ids);
+                        out.extend(ids.into_iter().flatten());
+                    }
+                }
+                PresetPaneNode::Split { first, second, .. } => {
+                    walk(first, out);
+                    walk(second, out);
+                }
+            }
+        }
+        walk(&ws.layout, &mut all);
+        assert_eq!(all.len(), 4);
+        let unique: std::collections::BTreeSet<u32> = all.iter().copied().collect();
+        assert_eq!(unique.len(), 4, "surface ids must be file-wide unique");
     }
 
     #[test]

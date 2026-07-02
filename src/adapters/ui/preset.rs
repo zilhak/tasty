@@ -265,6 +265,8 @@ fn minimal_surface() -> PresetSurfaceLayout {
     use tasty_presets::PresetSurface;
     PresetSurfaceLayout::Leaf {
         surface: PresetSurface {
+            // id 는 저장 시 PresetStore 가 정규화로 부여한다(여기선 None).
+            id: None,
             kind: "terminal".into(),
             cwd: None,
             startup_command: None,
