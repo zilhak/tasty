@@ -8,21 +8,21 @@ use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
 use tasty_ui_widgets::vspace;
 
-/// specimen 케이스 위 caption(부가 설명) 라벨 — caption 폰트 크기 + subtext0 색.
+/// specimen 케이스 위 caption(부가 설명) 라벨 — caption 폰트 크기 + text_muted() 색.
 pub fn caption(ui: &mut egui::Ui, theme: &Theme, text: &str) {
     ui.label(
         egui::RichText::new(text)
             .size(theme.font_size_caption.value())
-            .color(egui::Color32::from(theme.subtext0)),
+            .color(egui::Color32::from(theme.text_muted())),
     );
 }
 
-/// specimen 케이스 제목(강조) 라벨 — strong + text 색, 아래 2px 간격.
+/// specimen 케이스 제목(강조) 라벨 — strong + text_primary() 색, 아래 2px 간격.
 pub fn case_title(ui: &mut egui::Ui, theme: &Theme, title: &str) {
     ui.label(
         egui::RichText::new(title)
             .strong()
-            .color(egui::Color32::from(theme.text)),
+            .color(egui::Color32::from(theme.text_primary())),
     );
     vspace(ui, STRUCT_GAP_2);
 }

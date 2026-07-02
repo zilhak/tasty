@@ -72,7 +72,7 @@ fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
             let inner_limit = (scope_rect.width() - SCOPE_MARGIN * 2.0).max(MIN_TOAST_INNER_WIDTH);
             let max_width = (scope_rect.width() * 0.8).max(80.0).min(inner_limit);
             let font = egui::FontId::proportional(th.font_size_body.value());
-            let text_color = th.text.gamma_multiply(alpha);
+            let text_color = th.text_primary().gamma_multiply(alpha);
             let wrap_width = (max_width - PADDING_X * 2.0 - ACCENT_BAR_WIDTH).max(1.0);
 
             let galley = ui.ctx().fonts(|f| {
@@ -99,8 +99,9 @@ fn draw_toast_view_mock(ui: &mut egui::Ui, props: &ToastViewProps<'_>) {
             let rect =
                 egui::Rect::from_min_max(egui::pos2(left_x, top_y), egui::pos2(max_x, bottom_y));
 
-            let bg = th.surface0.gamma_multiply(alpha);
-            let border = th.surface1.gamma_multiply(alpha);
+            let bg = th.surface_raised().gamma_multiply(alpha);
+            // divergence: toast 보더 코드=surface1 이지만 toast_border()=surface0 → 값-보존 border_strong().
+            let border = th.border_strong().gamma_multiply(alpha);
             let accent = accent_color(entry.kind, th).gamma_multiply(alpha);
 
             toast_card::draw_card(
@@ -132,18 +133,18 @@ fn frame_case(
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    // Frame 배경 — base 색으로 *어디에 떠 있는지* 가시화.
+    // Frame 배경 — bg_panel()(=base) 색으로 *어디에 떠 있는지* 가시화.
     painter.rect_filled(
         rect,
         theme.corner_radius.value(),
-        egui::Color32::from(theme.base),
+        egui::Color32::from(theme.bg_panel()),
     );
     painter.rect_stroke(
         rect,
         theme.corner_radius.value(),
         egui::Stroke::new(
             theme.border_width.value(),
-            egui::Color32::from(theme.surface1),
+            egui::Color32::from(theme.border_strong()),
         ),
         egui::StrokeKind::Inside,
     );
@@ -154,7 +155,8 @@ fn frame_case(
         egui::Align2::LEFT_TOP,
         "scope (frame)",
         egui::FontId::proportional(theme.font_size_micro.value()),
-        egui::Color32::from(theme.overlay0),
+        // dim 라벨 — 값-동일 text_placeholder()(=placeholder=overlay0 값).
+        egui::Color32::from(theme.text_placeholder()),
     );
 
     let scopes = vec![ToastScopeView {
@@ -174,7 +176,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "ToastViewProps + draw_toast_view — AppState/CoreState 비의존 view 함수.",
         )
         .small()
-        .color(egui::Color32::from(theme.subtext0)),
+        .color(egui::Color32::from(theme.text_muted())),
     );
     vspace(ui, theme.spacing_xs);
     ui.label(
@@ -182,7 +184,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             "Wrapper: src/adapters/ui/toast.rs::ToastManager::draw (상태 관리 + view 호출)",
         )
         .small()
-        .color(egui::Color32::from(theme.subtext0)),
+        .color(egui::Color32::from(theme.text_muted())),
     );
     vspace(ui, theme.spacing_md);
 
@@ -193,7 +195,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui.label(
                 egui::RichText::new("Case 1 — Info (blue accent, alpha=1.0)")
                     .strong()
-                    .color(egui::Color32::from(theme.text)),
+                    .color(egui::Color32::from(theme.text_primary())),
             );
             vspace(ui, STRUCT_GAP_2);
             frame_case(
@@ -213,7 +215,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui.label(
                 egui::RichText::new("Case 2 — Success (green accent)")
                     .strong()
-                    .color(egui::Color32::from(theme.text)),
+                    .color(egui::Color32::from(theme.text_primary())),
             );
             vspace(ui, STRUCT_GAP_2);
             frame_case(
@@ -233,7 +235,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui.label(
                 egui::RichText::new("Case 3 — Warning (yellow accent)")
                     .strong()
-                    .color(egui::Color32::from(theme.text)),
+                    .color(egui::Color32::from(theme.text_primary())),
             );
             vspace(ui, STRUCT_GAP_2);
             frame_case(
@@ -253,7 +255,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui.label(
                 egui::RichText::new("Case 4 — Error (red accent)")
                     .strong()
-                    .color(egui::Color32::from(theme.text)),
+                    .color(egui::Color32::from(theme.text_primary())),
             );
             vspace(ui, STRUCT_GAP_2);
             frame_case(
@@ -273,7 +275,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui.label(
                 egui::RichText::new("Case 5 — 긴 본문 (max_width 80% 내 줄바꿈 wrap)")
                     .strong()
-                    .color(egui::Color32::from(theme.text)),
+                    .color(egui::Color32::from(theme.text_primary())),
             );
             vspace(ui, STRUCT_GAP_2);
             frame_case(
@@ -301,7 +303,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                      alpha 그라데이션으로 fade-in/out 단계 시각화.",
                 )
                 .strong()
-                .color(egui::Color32::from(theme.text)),
+                .color(egui::Color32::from(theme.text_primary())),
             );
             vspace(ui, STRUCT_GAP_2);
             frame_case(
@@ -341,7 +343,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                      alpha 로 계산해 view 에 전달 — view 는 시간 의존 없음.",
                 )
                 .small()
-                .color(egui::Color32::from(theme.subtext0)),
+                .color(egui::Color32::from(theme.text_muted())),
             );
         });
 }

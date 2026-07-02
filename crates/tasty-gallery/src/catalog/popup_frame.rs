@@ -55,10 +55,12 @@ pub fn draw(
     let (frame_rect, _) = ui.allocate_exact_size(egui::vec2(width, total_h), egui::Sense::hover());
     let painter = ui.painter_at(frame_rect);
 
-    let bg: egui::Color32 = theme.surface0.into();
-    let title_bg: egui::Color32 = theme.surface1.into();
-    let border: egui::Color32 = theme.surface2.into();
-    let text_color: egui::Color32 = theme.text.into();
+    let bg: egui::Color32 = theme.surface_raised().into();
+    // 타이틀바 배경 채움 — 값-동일 surface_hover()(=surface1).
+    let title_bg: egui::Color32 = theme.surface_hover().into();
+    // divergence: popup 보더에 surface2 — border-role 전용 토큰 부재, 값-동일 surface_active().
+    let border: egui::Color32 = theme.surface_active().into();
+    let text_color: egui::Color32 = theme.text_primary().into();
 
     painter.rect_filled(frame_rect, theme.corner_radius.value(), bg);
     painter.rect_stroke(

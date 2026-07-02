@@ -136,7 +136,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("number", "Input(mono) + suffix"),
         ],
         &[
-            TokenChip::new("text", "row label", theme.text.to_egui()),
+            TokenChip::new("text", "row label", theme.text_primary().to_egui()),
             TokenChip::new("text-muted", "suffix · note", theme.text_muted().to_egui()),
             TokenChip::new(
                 "accent-primary",
@@ -157,7 +157,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
 fn row(ui: &mut egui::Ui, theme: &Theme, label: &str, control: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(theme.spacing_sm.value());
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).color(theme.text.to_egui()));
+        ui.label(egui::RichText::new(label).color(theme.text_primary().to_egui()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
     });
 }

@@ -22,7 +22,7 @@ struct TabSpec {
 fn status_color(theme: &Theme, kind: StatusKind) -> egui::Color32 {
     match kind {
         StatusKind::Running => egui::Color32::from(theme.accent_success()),
-        StatusKind::Idle => egui::Color32::from(theme.subtext0),
+        StatusKind::Idle => egui::Color32::from(theme.text_muted()),
         StatusKind::Agent => egui::Color32::from(theme.accent_agent()),
         StatusKind::Waiting => egui::Color32::from(theme.accent_warning()),
         StatusKind::Error => egui::Color32::from(theme.accent_danger()),
