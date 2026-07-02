@@ -80,10 +80,22 @@ pub fn apply_plugin_defaults_to(theme: &mut Theme) {
 #[allow(clippy::disallowed_methods)] // reason: 테스트 fixture 의 합성 색상.
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
     use tasty_type_appearance::color::HexColor;
     use tasty_type_appearance::theme::SurfaceTheme;
 
-    fn reset() {
+    /// 이 모듈의 테스트들은 공유 전역 `PLUGIN_DEFAULTS`/`USER_DEFINED_KINDS` 를
+    /// `reset()` 으로 clear 후 mutate 하므로, cargo 기본 병렬 실행에서 서로의
+    /// 상태를 덮어써 순서 의존 flake 가 난다. 이 락으로 직렬화한다.
+    /// 이 전역을 만지는 새 테스트는 반드시 `reset()` 이 반환한 가드를 함수 끝까지
+    /// 유지해야 한다.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// 전역을 초기화하고 직렬화 가드를 반환한다. 반환된 가드를 이름있는 바인딩
+    /// (`let _guard = reset();`) 으로 받아 테스트 함수 끝까지 유지할 것 —
+    /// 임시값으로 받으면 즉시 drop 되어 직렬화가 무효가 된다.
+    fn reset() -> MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         PLUGIN_DEFAULTS
             .write()
             .unwrap_or_else(|p| p.into_inner())
@@ -91,6 +103,7 @@ mod tests {
         *USER_DEFINED_KINDS
             .write()
             .unwrap_or_else(|p| p.into_inner()) = None;
+        guard
     }
 
     fn red_partial() -> PartialSurfaceTheme {
@@ -113,7 +126,7 @@ mod tests {
 
     #[test]
     fn apply_to_theme_fills_unknown_kind() {
-        reset();
+        let _guard = reset();
         let mut g = PLUGIN_DEFAULTS.write().unwrap_or_else(|p| p.into_inner());
         g.insert("foo".to_string(), red_partial());
         drop(g);
@@ -127,7 +140,7 @@ mod tests {
 
     #[test]
     fn apply_to_theme_skips_user_defined_kind() {
-        reset();
+        let _guard = reset();
         let mut g = PLUGIN_DEFAULTS.write().unwrap_or_else(|p| p.into_inner());
         g.insert("foo".to_string(), red_partial());
         drop(g);
