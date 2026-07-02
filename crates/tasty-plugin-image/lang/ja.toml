@@ -30,3 +30,8 @@ redo = "やり直し"
 ok = "OK"
 cancel = "キャンセル"
 save = "保存"
+
+# プリセットエディタのフィールドラベル (ホストが t() で解決)。
+[preset.field]
+file = "ファイル"
+file_hint = "画像ファイルのパス"

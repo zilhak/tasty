@@ -31,6 +31,16 @@ display_name_i18n_key = "surface.kind.image"
 icon = "🖼️"
 rendering = "egui-mesh"
 
+# 프리셋 편집기 필드 — 파일 경로(+Browse). 적용 시 파일 폴더를 cwd 로 파생.
+[[surface_kinds.preset_fields]]
+id = "file"
+label_key = "preset.field.file"
+param_key = "file"
+input_type = "file_path"
+required = true
+placeholder_key = "preset.field.file_hint"
+derive_cwd = true
+
 [surface_kinds.default_colors]
 focused_bg = "#1e1e2e"
 focused_fg = "#cdd6f4"

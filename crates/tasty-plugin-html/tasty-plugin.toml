@@ -23,6 +23,15 @@ display_name_i18n_key = "surface.kind.html"
 icon = "🌐"
 rendering = "webview"
 
+# 프리셋 편집기 필드 — URL 입력. url 은 파일 경로 파생 대상이 아니다(derive_cwd 없음).
+[[surface_kinds.preset_fields]]
+id = "url"
+label_key = "preset.field.url"
+param_key = "url"
+input_type = "url"
+required = true
+placeholder_key = "preset.field.url_hint"
+
 [[contributes.ipc_namespace]]
 prefix = "html"
 description_i18n_key = "html.namespace.desc"

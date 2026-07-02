@@ -27,6 +27,17 @@ display_name_i18n_key = "surface.kind.markdown"
 icon = "📝"
 rendering = "egui-mesh"
 
+# 프리셋 편집기가 이 kind 를 편집할 때 노출할 필드. 작업 디렉토리 대신 파일 경로를
+# 입력받고, 적용 시 그 파일의 폴더를 cwd 로 파생한다(derive_cwd).
+[[surface_kinds.preset_fields]]
+id = "file"
+label_key = "preset.field.file"
+param_key = "file"
+input_type = "file_path"
+required = true
+placeholder_key = "preset.field.file_hint"
+derive_cwd = true
+
 # default_colors: F.H schema 데모.
 [surface_kinds.default_colors]
 focused_bg = "#1e1e2e"

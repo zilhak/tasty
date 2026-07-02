@@ -30,3 +30,8 @@ redo = "다시 실행"
 ok = "확인"
 cancel = "취소"
 save = "저장"
+
+# 프리셋 편집기 필드 라벨 (호스트가 t() 로 해석).
+[preset.field]
+file = "파일"
+file_hint = "이미지 파일 경로"

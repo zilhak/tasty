@@ -16,3 +16,8 @@ html = "HTML"
 
 [settings.subtab]
 html = "HTML"
+
+# 프리셋 편집기 필드 라벨 (호스트가 t() 로 해석).
+[preset.field]
+url = "URL"
+url_hint = "https://…"

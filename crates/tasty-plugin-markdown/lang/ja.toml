@@ -23,3 +23,8 @@ empty = "このファイルは空です"
 [markdown.addr]
 placeholder = "マークダウンファイルのパス"
 go = "開く (Enter)"
+
+# プリセットエディタのフィールドラベル (ホストが t() で解決)。
+[preset.field]
+file = "ファイル"
+file_hint = "マークダウンファイルのパス"

@@ -23,3 +23,8 @@ empty = "이 파일은 비어 있습니다"
 [markdown.addr]
 placeholder = "마크다운 파일 경로"
 go = "열기 (Enter)"
+
+# 프리셋 편집기 필드 라벨 (호스트가 t() 로 해석).
+[preset.field]
+file = "파일"
+file_hint = "마크다운 파일 경로"

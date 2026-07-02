@@ -5649,17 +5649,18 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-html"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "serde_json",
+ "tasty-plugin-manifest",
  "tasty-plugin-sdk",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "tasty-plugin-image"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5676,7 +5677,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-manifest"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "semver 1.0.27",
@@ -5692,7 +5693,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "egui",

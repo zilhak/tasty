@@ -16,3 +16,8 @@ html = "HTML"
 
 [settings.subtab]
 html = "HTML"
+
+# プリセットエディタのフィールドラベル (ホストが t() で解決)。
+[preset.field]
+url = "URL"
+url_hint = "https://…"
