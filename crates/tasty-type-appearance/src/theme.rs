@@ -1554,6 +1554,51 @@ impl Theme {
     pub fn modhint_agent_dot(&self) -> HexColor {
         self.accent_agent()
     }
+
+    // ── 컴포넌트 토큰 (markdown surface 인라인 표 — grid + zebra) ──
+    // Markdown surface 의 GFM 표 전용 tier-3 토큰. 공용 `Table` 위젯과 별개(읽기 전용·정적).
+    // 모두 기존 semantic 접근자를 가리키는 포인터 — 신규 primitive/hex 없음. 값 사다리
+    // (어두움→밝음): mantle(zebra) < base(행) < surface0(헤더) < surface1(격자선).
+    /// 외곽 + 가로 + 세로 격자선. `--tasty-md-table-border` → `border-strong` (surface1).
+    #[inline]
+    pub fn md_table_border(&self) -> HexColor {
+        self.border_strong()
+    }
+    /// 헤더 밴드 배경 (가장 밝은 채움). `--tasty-md-table-header-bg` → `surface-raised` (surface0).
+    #[inline]
+    pub fn md_table_header_bg(&self) -> HexColor {
+        self.surface_raised()
+    }
+    /// 헤더 텍스트 — 헤더 신호(색·배경, weight 아님). `--tasty-md-table-header-fg` → `text-primary`.
+    #[inline]
+    pub fn md_table_header_fg(&self) -> HexColor {
+        self.text_primary()
+    }
+    /// 홀수 행 + 표 base 채움 (불투명). `--tasty-md-table-row-bg` → `bg-panel` (base).
+    #[inline]
+    pub fn md_table_row_bg(&self) -> HexColor {
+        self.bg_panel()
+    }
+    /// 짝수 행 stripe (미세하게 어둡게). `--tasty-md-table-row-bg-zebra` → `bg-sidebar` (mantle).
+    #[inline]
+    pub fn md_table_row_bg_zebra(&self) -> HexColor {
+        self.bg_sidebar()
+    }
+    /// 셀 본문 텍스트. `--tasty-md-table-cell-fg` → `text-secondary` (subtext1).
+    #[inline]
+    pub fn md_table_cell_fg(&self) -> HexColor {
+        self.text_secondary()
+    }
+    /// 셀 좌우 패딩 (8px). `--tasty-md-table-cell-padding-x` → `space-sm`.
+    #[inline]
+    pub fn md_table_cell_padding_x(&self) -> LogicalPx {
+        self.spacing_sm
+    }
+    /// 셀 상하 패딩 (4px). `--tasty-md-table-cell-padding-y` → `space-xs`.
+    #[inline]
+    pub fn md_table_cell_padding_y(&self) -> LogicalPx {
+        self.spacing_xs
+    }
 }
 
 // ============================================================================
@@ -1690,6 +1735,28 @@ mod tests {
         // 다의성: 같은 primitive 로 수렴하는 role 들이 동일값인지 확인
         assert_eq!(th.accent_primary(), th.border_focus()); // 둘 다 blue
         assert_eq!(th.surface_raised(), th.border_default()); // 둘 다 surface0
+    }
+
+    /// markdown surface 인라인 표 토큰이 semantic 접근자 포인터로 매핑되고,
+    /// 채움 값 사다리(mantle < base < surface0 < surface1)가 유지되는지 고정.
+    #[test]
+    fn md_table_tokens_map_to_semantics_and_keep_ladder() {
+        let th = Theme::with_colors(distinct_colors(), false);
+
+        assert_eq!(th.md_table_border(), th.border_strong()); // surface1
+        assert_eq!(th.md_table_header_bg(), th.surface_raised()); // surface0
+        assert_eq!(th.md_table_header_fg(), th.text_primary());
+        assert_eq!(th.md_table_row_bg(), th.bg_panel()); // base
+        assert_eq!(th.md_table_row_bg_zebra(), th.bg_sidebar()); // mantle
+        assert_eq!(th.md_table_cell_fg(), th.text_secondary());
+        assert_eq!(th.md_table_cell_padding_x(), th.spacing_sm);
+        assert_eq!(th.md_table_cell_padding_y(), th.spacing_xs);
+
+        // 값 사다리: zebra(mantle) < 행(base) < 헤더(surface0) < 격자선(surface1).
+        assert_eq!(th.md_table_row_bg_zebra(), th.mantle);
+        assert_eq!(th.md_table_row_bg(), th.base);
+        assert_eq!(th.md_table_header_bg(), th.surface0);
+        assert_eq!(th.md_table_border(), th.surface1);
     }
 
     #[test]
