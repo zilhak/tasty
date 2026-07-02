@@ -209,7 +209,14 @@ impl HandleListener {
     #[cfg(unix)]
     pub fn bind() -> io::Result<Self> {
         use std::os::unix::net::UnixListener;
+        use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::SystemTime;
+
+        // (pid, nanos) 만으로는 같은 프로세스의 동시 bind(테스트 병렬 실행 등)가 동일
+        // 나노초에 겹쳐 경로가 충돌할 수 있다 — 프로세스 전역 단조 시퀀스로 유일성 보장.
+        // nanos 는 이전 프로세스가 남긴 stale 파일과의 충돌 회피용으로 유지한다.
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
 
         let pid = std::process::id();
         let nanos = SystemTime::now()
@@ -217,7 +224,7 @@ impl HandleListener {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let socket_path =
-            std::env::temp_dir().join(format!("tasty-handle-{pid}-{:x}.sock", nanos as u64));
+            std::env::temp_dir().join(format!("tasty-handle-{pid}-{:x}-{seq}.sock", nanos as u64));
 
         // stale 파일이 남아 있으면 unlink. 다음 bind를 위한 idempotent 정리.
         // NotFound는 정상 — 그 외 에러는 bind도 실패할 가능성이 높아 알린다.
