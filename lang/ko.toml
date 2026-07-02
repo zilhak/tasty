@@ -1028,6 +1028,12 @@ empty = "카테고리 이름은 비울 수 없습니다."
 reserved = "'normal' 은 예약된 카테고리 이름입니다."
 duplicate = "같은 이름의 카테고리가 이미 있습니다."
 
+[modifier_hint]
+# 홀드 중인 조합 뒤에 붙는 드래그 스트립 라벨 ("Ctrl held").
+held = "홀드 중"
+# 오버레이 X 버튼 툴팁 — 이번 홀드 세션 동안만 닫는다.
+hide_tooltip = "이번 홀드 동안 숨기기"
+
 [modifier_hint.role]
 mouse_capture_bypass = "TUI 마우스 캡처 우회 (Shift+드래그로 선택, Shift+우클릭으로 메뉴)"
 tab_switch = "탭 전환 (탭 위에 숫자 표시)"

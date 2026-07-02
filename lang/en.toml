@@ -1028,6 +1028,12 @@ empty = "Category name must not be empty."
 reserved = "'normal' is a reserved category name."
 duplicate = "A category with this name already exists."
 
+[modifier_hint]
+# Drag-strip label after the held key combo ("Ctrl held").
+held = "held"
+# Tooltip on the overlay's X button — closes only for the current hold session.
+hide_tooltip = "Hide for this hold"
+
 [modifier_hint.role]
 mouse_capture_bypass = "Bypass TUI mouse capture (Shift+drag to select, Shift+Right-click for menu)"
 tab_switch = "Switch tabs (number keys show over tabs)"
