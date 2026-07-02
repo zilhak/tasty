@@ -20,9 +20,9 @@
 
 ## 디자인 토큰 매핑
 
-`src/adapters/ui/surface/markdown/render.rs::render` 가 `ScrollArea::vertical` 안에서
-`pulldown-cmark` 이벤트 스트림을 직접 egui 위젯으로 그리는 토큰 기반 6단계 prose 렌더러다.
-색·크기·간격은 전부 `MdStyle` 이 `Theme` 에서 캡처한 토큰에서 온다:
+`crates/tasty-plugin-markdown/src/render.rs::render` 가 `ScrollArea::vertical`(host 측)
+안에서 `pulldown-cmark` 이벤트 스트림을 직접 egui 위젯으로 그리는 토큰 기반 6단계 prose
+렌더러다. 색·크기·간격은 전부 `MdStyle` 이 `Theme` 에서 캡처한 토큰에서 온다:
 
 | UI 요소 | 토큰 / 비례 | 비고 |
 |---|---|---|
@@ -33,11 +33,15 @@
 | 링크 | `accent-primary` | |
 | 코드블록 배경 | `surface-raised` | |
 | 코드 텍스트 | mono · `text-secondary` | markdown 폰트 패밀리 |
+| 표(GFM) 격자선 | `md-table-border`(→ `border-strong`) | 외곽 + 가로 + 세로 컬럼 격자선(세로선은 vline 수동 draw) |
+| 표 헤더 밴드 | `md-table-header-bg`(→ `surface-raised`) · `md-table-header-fg`(→ `text-primary`) | 헤더 신호는 weight 아닌 색+배경 |
+| 표 행 채움 | `md-table-row-bg`(→ `bg-panel`, 불투명 base) · zebra `md-table-row-bg-zebra`(→ `bg-sidebar`) | 첫 본문행=base, 2행째부터 짝수행=zebra |
+| 표 셀 | `md-table-cell-fg`(→ `text-secondary`) · 패딩 `md-table-cell-padding-{x,y}`(8/4) | 값 사다리 mantle<base<surface0<surface1 |
 
 ## 갤러리 specimen
 
 `crates/tasty-gallery/src/catalog/components/markdown_viewer.rs` — Layouts › `Content viewers` ›
-`Markdown surface`. 헤딩/문단/링크/리스트/코드블록/캡션 대표 문서를 같은 토큰·비례로 전사. 3자
+`Markdown surface`. 헤딩/문단/링크/리스트/코드블록/표(격자+zebra)/캡션 대표 문서를 같은 토큰·비례로 전사. 3자
 매핑: [design-gallery-mapping.md](../../../design/systems/design-gallery-mapping.md#surface-viewers-layouts).
 
 ## 시각 소스
