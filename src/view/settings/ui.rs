@@ -429,7 +429,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
 
     let mut result = None;
     let th = crate::theme::theme();
-    let sep = egui::Stroke::new(th.border_width.value(), th.surface1.to_egui());
+    let sep = egui::Stroke::new(th.border_width.value(), th.border_strong().to_egui());
 
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(th.bg_panel().to_egui()))
@@ -1028,7 +1028,7 @@ fn draw_l1_tab_band(ui: &mut egui::Ui, th: &Theme, ui_state: &mut SettingsUiStat
                     ui.painter().vline(
                         vrect.center().x,
                         vrect.y_range(),
-                        egui::Stroke::new(th.border_width.value(), th.surface1.to_egui()),
+                        egui::Stroke::new(th.border_width.value(), th.border_strong().to_egui()),
                     );
                     ui.add_space(SETTINGS_TITLE_DIVIDER_MARGIN_R.value());
 
@@ -1114,7 +1114,7 @@ fn draw_l2_sidebar(
     placeholder: &str,
 ) -> Option<usize> {
     let mut clicked = None;
-    let sep = egui::Stroke::new(th.border_width.value(), th.surface1.to_egui());
+    let sep = egui::Stroke::new(th.border_width.value(), th.border_strong().to_egui());
     let pad = th.spacing_sm.value() as i8;
 
     // 필터 입력 — padding space-sm, 하단 border-bottom separator.
