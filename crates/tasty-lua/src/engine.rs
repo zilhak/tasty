@@ -4,6 +4,7 @@
 //! 실행 job 을 보내고(직렬 처리), 워커가 쌓은 [`HostCommand`] 를 drain 하며,
 //! 읽기전용 [`LuaSnapshot`] 을 발행한다. 메인과 워커는 이 경계 밖에서 state 를 공유하지 않는다.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -52,6 +53,26 @@ const SCRIPT_DEADLINE: Duration = Duration::from_secs(5);
 /// `set_interrupt` 훅(같은 워커 스레드)이 읽어 초과를 판정한다.
 type SharedDeadline = Arc<Mutex<Option<Instant>>>;
 
+/// 스크립트 실행 완료 추적용 RAII 토큰 (자동실행 재진입 가드 배관).
+///
+/// 스크립트 실행이 끝나면(성공·에러·deadline abort 무관) — 또는 job 이 큐 포화로
+/// drop 되거나 워커가 죽어 실행되지 못하면 — 공유 counter 가 1 증가한다.
+/// Drop 기반이라 어떤 경로로도 "완료 신호 누락 → 가드 영구 잠김" 이 생기지 않는다.
+pub struct CompletionToken(Arc<AtomicU64>);
+
+impl CompletionToken {
+    /// `counter` 를 완료 시 1 증가시키는 토큰 생성.
+    pub fn new(counter: Arc<AtomicU64>) -> Self {
+        Self(counter)
+    }
+}
+
+impl Drop for CompletionToken {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 /// 워커 스레드에 보내는 실행 요청. 워커는 이들을 **직렬**로 처리한다.
 enum LuaJob {
     /// 임의 소스 실행 + 결과 회신 (블로킹 호출용 — 테스트/부팅 로드).
@@ -60,10 +81,12 @@ enum LuaJob {
         name: Option<String>,
         reply: SyncSender<Result<(), LuaEngineError>>,
     },
-    /// 임의 소스 실행 (fire-and-forget — 단축키/디버그 트리거).
+    /// 임의 소스 실행 (fire-and-forget — 단축키/디버그/자동실행 트리거).
     Run {
         source: String,
         name: Option<String>,
+        /// 실행 종료 시 drop 되어 완료를 알린다 (자동실행 경로만 Some).
+        token: Option<CompletionToken>,
     },
     /// 이벤트 hook 발화 (observe-only, fire-and-forget).
     Fire {
@@ -148,6 +171,21 @@ impl LuaEngine {
             LuaJob::Run {
                 source: source.to_string(),
                 name: name.map(str::to_string),
+                token: None,
+            },
+            "run_script",
+        );
+    }
+
+    /// [`LuaEngine::run_script`] 와 동일하되 실행 종료 시 `token` 을 drop 해 완료를
+    /// 알린다. 자동실행(autofire) 재진입 가드가 이 신호로 in-flight 를 추적한다.
+    /// 큐 포화 등으로 job 이 실행되지 못해도 token 은 drop 된다 (가드 잠김 방지).
+    pub fn run_script_tracked(&self, source: &str, name: Option<&str>, token: CompletionToken) {
+        self.send_ff(
+            LuaJob::Run {
+                source: source.to_string(),
+                name: name.map(str::to_string),
+                token: Some(token),
             },
             "run_script",
         );
@@ -228,13 +266,19 @@ fn worker_loop(lua: Lua, job_rx: Receiver<LuaJob>, budget: Duration, deadline: S
                     tracing::trace!(target: "tasty_lua", "eval reply dropped: {e}");
                 }
             }
-            LuaJob::Run { source, name } => {
+            LuaJob::Run {
+                source,
+                name,
+                token,
+            } => {
                 let result = guarded(&deadline, budget, || {
                     exec_source(&lua, &source, name.as_deref())
                 });
                 if let Err(e) = result {
                     tracing::warn!(target: "tasty_lua", "script run failed: {e}");
                 }
+                // 실행이 끝난 뒤에야 완료를 알린다 — 재진입 가드의 in-flight 판정 기준.
+                drop(token);
             }
             LuaJob::Fire { event, ctx } => {
                 // fire_hooks 는 콜백 에러를 자체 로그하고 삼키므로 여기 Err 는 사실상
@@ -602,5 +646,36 @@ mod tests {
         engine
             .eval("local s = 0; for i = 1, 100000 do s = s + i end")
             .expect("normal loop under budget");
+    }
+
+    // --- 완료 추적 (자동실행 재진입 가드 배관) ---
+
+    #[test]
+    fn tracked_run_signals_completion_after_execution() {
+        let engine = LuaEngine::new().expect("init");
+        let counter = Arc::new(AtomicU64::new(0));
+        engine.run_script_tracked(
+            "local x = 1",
+            Some("t"),
+            CompletionToken::new(counter.clone()),
+        );
+        // 워커는 job 을 직렬 처리하므로, 후속 블로킹 eval 이 돌아오면 run 은 끝난 상태.
+        engine.eval("return 0").expect("worker alive");
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn tracked_run_completes_even_on_deadline_abort() {
+        // 자동실행 경로(LuaJob::Run)도 deadline 이 그대로 적용된다 — 무한 루프는
+        // abort 되고, abort 여도 완료 token 은 drop 되어 가드가 풀린다.
+        let engine = LuaEngine::with_deadline(Duration::from_millis(50)).expect("init");
+        let counter = Arc::new(AtomicU64::new(0));
+        engine.run_script_tracked(
+            "while true do end",
+            Some("loop"),
+            CompletionToken::new(counter.clone()),
+        );
+        engine.eval("return 0").expect("worker alive after abort");
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
 }

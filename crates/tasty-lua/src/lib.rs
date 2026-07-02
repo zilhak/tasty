@@ -28,5 +28,5 @@ mod host_api;
 mod sandbox;
 
 pub use bridge::{HostCommand, LuaSnapshot};
-pub use engine::{LuaEngine, LuaEngineError};
+pub use engine::{CompletionToken, LuaEngine, LuaEngineError};
 pub use host_api::run_tasty_cli;
