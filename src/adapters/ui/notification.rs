@@ -24,7 +24,7 @@ pub(crate) fn draw_notification_content_inner(
                 &unread.to_string(),
             ))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.small_button(t("button.mark_all_read")).clicked() {
@@ -47,7 +47,7 @@ pub(crate) fn draw_notification_content_inner(
                 ui.centered_and_justified(|ui| {
                     ui.label(
                         egui::RichText::new(t("notification_panel.empty_message"))
-                            .color(th.subtext0),
+                            .color(th.text_muted()),
                     );
                 });
                 return;
@@ -114,7 +114,9 @@ pub(crate) fn draw_notification_content_inner(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     ui.label(
-                                        egui::RichText::new(time_str).small().color(th.subtext0),
+                                        egui::RichText::new(time_str)
+                                            .small()
+                                            .color(th.text_muted()),
                                     );
                                 },
                             );
