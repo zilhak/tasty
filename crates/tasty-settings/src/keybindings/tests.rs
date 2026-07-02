@@ -341,3 +341,152 @@ fn script_bindings_serde_default_when_absent() {
     let kb: KeybindingSettings = toml::from_str("new_tab = [\"ctrl+t\"]").unwrap();
     assert!(kb.script_bindings.is_empty());
 }
+
+// ── quick-switch raw 키 필드 (quickswitch-02) ─────────────────────
+
+#[test]
+fn preset_tasty_has_vim_style_quick_switch_defaults() {
+    let kb = KeybindingSettings::preset_tasty();
+    assert_eq!(
+        kb.tab_switch_slot_keys,
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    );
+    assert_eq!(
+        kb.workspace_switch_slot_keys,
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    );
+    assert_eq!(kb.tab_switch_next_key, "l");
+    assert_eq!(kb.tab_switch_prev_key, "h");
+    assert_eq!(kb.workspace_switch_next_key, "j");
+    assert_eq!(kb.workspace_switch_prev_key, "k");
+    // 무변경 확인: next_tab/prev_tab 는 quick-switch 와 별개로 빈 채 유지.
+    assert!(kb.next_tab.is_empty());
+    assert!(kb.prev_tab.is_empty());
+}
+
+#[test]
+fn missing_new_fields_in_toml_falls_back_to_defaults() {
+    // 신규 필드가 없는 구버전 TOML 문자열을 역직렬화 → 필드별 default fn 으로 복원.
+    let toml_str = "tab_switch_modifier = \"ctrl\"\nworkspace_switch_modifier = \"alt\"\n";
+    let kb: KeybindingSettings = toml::from_str(toml_str).unwrap();
+    assert_eq!(
+        kb.tab_switch_slot_keys,
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+    );
+    assert_eq!(
+        kb.workspace_switch_slot_keys,
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    );
+    assert_eq!(kb.tab_switch_next_key, "l");
+    assert_eq!(kb.tab_switch_prev_key, "h");
+    assert_eq!(kb.workspace_switch_next_key, "j");
+    assert_eq!(kb.workspace_switch_prev_key, "k");
+}
+
+/// 모든 프리셋이 quick-switch 기본값을 동일하게 갖는지(공통 vim 키 적용) 확인.
+#[test]
+fn all_presets_share_quick_switch_defaults() {
+    for name in KeybindingSettings::preset_names() {
+        let kb = KeybindingSettings::preset_by_name(name).unwrap();
+        assert_eq!(
+            kb.tab_switch_slot_keys,
+            ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+            "preset '{name}' tab slot keys"
+        );
+        assert_eq!(
+            kb.workspace_switch_slot_keys,
+            ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            "preset '{name}' workspace slot keys"
+        );
+        assert_eq!(kb.tab_switch_next_key, "l", "preset '{name}' tab next");
+        assert_eq!(kb.tab_switch_prev_key, "h", "preset '{name}' tab prev");
+        assert_eq!(
+            kb.workspace_switch_next_key, "j",
+            "preset '{name}' workspace next"
+        );
+        assert_eq!(
+            kb.workspace_switch_prev_key, "k",
+            "preset '{name}' workspace prev"
+        );
+    }
+}
+
+/// index 기반 slot/raw-key accessor round-trip.
+#[test]
+fn quick_switch_accessors_roundtrip() {
+    let mut kb = KeybindingSettings::preset_tasty();
+
+    // 슬롯 getter 기본값.
+    assert_eq!(kb.tab_slot_key(0), Some("1"));
+    assert_eq!(kb.tab_slot_key(9), Some("0"));
+    assert_eq!(kb.tab_slot_key(10), None); // 범위 밖
+    assert_eq!(kb.workspace_slot_key(8), Some("9"));
+    assert_eq!(kb.workspace_slot_key(9), None); // 0번 슬롯 없음
+
+    // 슬롯 setter.
+    assert!(kb.set_tab_slot_key(4, "q"));
+    assert_eq!(kb.tab_slot_key(4), Some("q"));
+    assert!(!kb.set_tab_slot_key(10, "q")); // 범위 밖 → false
+    assert!(kb.set_workspace_slot_key(0, "z"));
+    assert_eq!(kb.workspace_slot_key(0), Some("z"));
+    assert!(!kb.set_workspace_slot_key(9, "z"));
+
+    // next/prev getter·setter.
+    assert_eq!(kb.tab_next_key(), "l");
+    assert_eq!(kb.tab_prev_key(), "h");
+    assert_eq!(kb.workspace_next_key(), "j");
+    assert_eq!(kb.workspace_prev_key(), "k");
+    kb.set_tab_next_key("n");
+    kb.set_tab_prev_key("p");
+    kb.set_workspace_next_key("d");
+    kb.set_workspace_prev_key("u");
+    assert_eq!(kb.tab_next_key(), "n");
+    assert_eq!(kb.tab_prev_key(), "p");
+    assert_eq!(kb.workspace_next_key(), "d");
+    assert_eq!(kb.workspace_prev_key(), "u");
+}
+
+/// 직렬화 → 역직렬화 후 quick-switch 필드가 보존되는지(round-trip).
+#[test]
+fn quick_switch_fields_serde_roundtrip() {
+    let mut kb = KeybindingSettings::preset_tasty();
+    kb.set_tab_slot_key(0, "q");
+    kb.set_workspace_slot_key(0, "z");
+    kb.set_tab_next_key("n");
+    kb.set_workspace_prev_key("u");
+
+    let serialized = toml::to_string(&kb).unwrap();
+    let restored: KeybindingSettings = toml::from_str(&serialized).unwrap();
+
+    assert_eq!(restored.tab_switch_slot_keys, kb.tab_switch_slot_keys);
+    assert_eq!(
+        restored.workspace_switch_slot_keys,
+        kb.workspace_switch_slot_keys
+    );
+    assert_eq!(restored.tab_switch_next_key, "n");
+    assert_eq!(restored.tab_switch_prev_key, kb.tab_switch_prev_key);
+    assert_eq!(restored.workspace_switch_next_key, kb.workspace_switch_next_key);
+    assert_eq!(restored.workspace_switch_prev_key, "u");
+}
+
+/// 신규 필드를 GENERAL_BINDING_FIELDS 에 넣지 않았음을 회귀 방지로 고정.
+#[test]
+fn quick_switch_fields_not_in_general_bindings() {
+    for id in [
+        "tab_switch_slot_keys",
+        "workspace_switch_slot_keys",
+        "tab_switch_next_key",
+        "tab_switch_prev_key",
+        "workspace_switch_next_key",
+        "workspace_switch_prev_key",
+    ] {
+        assert!(
+            KeybindingSettings::GENERAL_BINDING_FIELDS
+                .iter()
+                .all(|(fid, _)| *fid != id),
+            "{id} 는 콤보가 아닌 raw 키이므로 GENERAL_BINDING_FIELDS 에 없어야 함"
+        );
+    }
+    // count 는 여전히 52.
+    assert_eq!(KeybindingSettings::GENERAL_BINDING_FIELDS.len(), 52);
+}

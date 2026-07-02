@@ -116,6 +116,63 @@ pub struct KeybindingSettings {
     /// `#[serde(default)]` 로 기존 config 마이그레이션 안전(누락 시 빈 목록).
     #[serde(default)]
     pub script_bindings: Vec<ScriptBinding>,
+    /// 탭 quick-switch 슬롯 1~10번의 raw 키(modifier 없음). dispatch 시점에
+    /// `tab_switch_modifier` 와 조합된다(quickswitch-03). 기본값 `["1".."9","0"]`.
+    ///
+    /// ⚠️ 필드별 default fn 필수 — struct 레벨 `#[serde(default)]` 만으로는 누락 시
+    /// `[String;10]::default()`(빈 문자열 10개)로 채워져 기존 config 가 조용히 깨진다.
+    #[serde(default = "default_tab_slot_keys")]
+    pub tab_switch_slot_keys: [String; 10],
+    /// 워크스페이스 quick-switch 슬롯 1~9번의 raw 키(0번 슬롯 없음 — 기존 정책 유지).
+    /// dispatch 시점에 `workspace_switch_modifier` 와 조합된다. 기본값 `["1".."9"]`.
+    #[serde(default = "default_workspace_slot_keys")]
+    pub workspace_switch_slot_keys: [String; 9],
+    /// 탭 quick-switch "다음 탭" raw 키. 기본값 `"l"`(vim). `next_tab` 과 별개 필드.
+    #[serde(default = "default_tab_next_key")]
+    pub tab_switch_next_key: String,
+    /// 탭 quick-switch "이전 탭" raw 키. 기본값 `"h"`(vim). `prev_tab` 과 별개 필드.
+    #[serde(default = "default_tab_prev_key")]
+    pub tab_switch_prev_key: String,
+    /// 워크스페이스 quick-switch "다음" raw 키. 기본값 `"j"`(vim).
+    #[serde(default = "default_workspace_next_key")]
+    pub workspace_switch_next_key: String,
+    /// 워크스페이스 quick-switch "이전" raw 키. 기본값 `"k"`(vim).
+    #[serde(default = "default_workspace_prev_key")]
+    pub workspace_switch_prev_key: String,
+}
+
+/// 탭 quick-switch 슬롯 raw 키 기본값 `["1".."9","0"]`(현행 `TAB_DIGITS` 와 동일).
+///
+/// 기존 config 마이그레이션 안전용. struct 레벨 `#[serde(default)]` 는 누락 필드를
+/// 그 타입의 `Default::default()`(= 빈 문자열 배열)로 채우므로, 필드별 전용 default fn 이
+/// 없으면 quick-switch 가 조용히 무효화된다. (`appearance.rs` `default_ligatures` 선례.)
+fn default_tab_slot_keys() -> [String; 10] {
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map(String::from)
+}
+
+/// 워크스페이스 quick-switch 슬롯 raw 키 기본값 `["1".."9"]`(0번 슬롯 없음).
+fn default_workspace_slot_keys() -> [String; 9] {
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9"].map(String::from)
+}
+
+/// 탭 quick-switch "다음 탭" 기본 키 `"l"`(vim).
+fn default_tab_next_key() -> String {
+    "l".to_string()
+}
+
+/// 탭 quick-switch "이전 탭" 기본 키 `"h"`(vim).
+fn default_tab_prev_key() -> String {
+    "h".to_string()
+}
+
+/// 워크스페이스 quick-switch "다음" 기본 키 `"j"`(vim).
+fn default_workspace_next_key() -> String {
+    "j".to_string()
+}
+
+/// 워크스페이스 quick-switch "이전" 기본 키 `"k"`(vim).
+fn default_workspace_prev_key() -> String {
+    "k".to_string()
 }
 
 impl Default for KeybindingSettings {

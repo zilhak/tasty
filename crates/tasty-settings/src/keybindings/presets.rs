@@ -69,6 +69,14 @@ impl KeybindingSettings {
             maximize_window: Vec::new(),
             close_window: Vec::new(),
             script_bindings: Vec::new(),
+            // quick-switch raw 키. 4 프리셋 모두 tab/workspace modifier 기본값이
+            // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
+            tab_switch_slot_keys: super::default_tab_slot_keys(),
+            workspace_switch_slot_keys: super::default_workspace_slot_keys(),
+            tab_switch_next_key: super::default_tab_next_key(),
+            tab_switch_prev_key: super::default_tab_prev_key(),
+            workspace_switch_next_key: super::default_workspace_next_key(),
+            workspace_switch_prev_key: super::default_workspace_prev_key(),
         }
     }
 
@@ -133,6 +141,14 @@ impl KeybindingSettings {
             maximize_window: Vec::new(),
             close_window: Vec::new(),
             script_bindings: Vec::new(),
+            // quick-switch raw 키. 4 프리셋 모두 tab/workspace modifier 기본값이
+            // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
+            tab_switch_slot_keys: super::default_tab_slot_keys(),
+            workspace_switch_slot_keys: super::default_workspace_slot_keys(),
+            tab_switch_next_key: super::default_tab_next_key(),
+            tab_switch_prev_key: super::default_tab_prev_key(),
+            workspace_switch_next_key: super::default_workspace_next_key(),
+            workspace_switch_prev_key: super::default_workspace_prev_key(),
         }
     }
 
@@ -197,6 +213,14 @@ impl KeybindingSettings {
             maximize_window: Vec::new(),
             close_window: Vec::new(),
             script_bindings: Vec::new(),
+            // quick-switch raw 키. 4 프리셋 모두 tab/workspace modifier 기본값이
+            // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
+            tab_switch_slot_keys: super::default_tab_slot_keys(),
+            workspace_switch_slot_keys: super::default_workspace_slot_keys(),
+            tab_switch_next_key: super::default_tab_next_key(),
+            tab_switch_prev_key: super::default_tab_prev_key(),
+            workspace_switch_next_key: super::default_workspace_next_key(),
+            workspace_switch_prev_key: super::default_workspace_prev_key(),
         }
     }
 
@@ -261,6 +285,14 @@ impl KeybindingSettings {
             maximize_window: Vec::new(),
             close_window: Vec::new(),
             script_bindings: Vec::new(),
+            // quick-switch raw 키. 4 프리셋 모두 tab/workspace modifier 기본값이
+            // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
+            tab_switch_slot_keys: super::default_tab_slot_keys(),
+            workspace_switch_slot_keys: super::default_workspace_slot_keys(),
+            tab_switch_next_key: super::default_tab_next_key(),
+            tab_switch_prev_key: super::default_tab_prev_key(),
+            workspace_switch_next_key: super::default_workspace_next_key(),
+            workspace_switch_prev_key: super::default_workspace_prev_key(),
         }
     }
 

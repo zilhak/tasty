@@ -455,6 +455,73 @@ impl KeybindingSettings {
             .map(|(_, key)| *key)
     }
 
+    // ── quick-switch raw 키 accessor (index 기반) ─────────────────────
+    //
+    // 이 6개 필드는 콤보가 아니라 raw 키 하나이므로 `GENERAL_BINDING_FIELDS` /
+    // `get_bindings(_mut)`(콤보 `Vec<String>` 시스템)에 넣지 않고 전용 accessor 로 다룬다.
+    // modifier 는 dispatch 시점에 `tab_switch_modifier`/`workspace_switch_modifier` 에서
+    // 조합된다(quickswitch-03). 여기는 데이터 접근만 제공한다.
+
+    /// 탭 quick-switch 슬롯 `idx`(0~9)의 raw 키. 범위 밖이면 None.
+    pub fn tab_slot_key(&self, idx: usize) -> Option<&str> {
+        self.tab_switch_slot_keys.get(idx).map(|s| s.as_str())
+    }
+
+    /// 탭 quick-switch 슬롯 `idx`(0~9)의 raw 키를 설정. 범위 밖이면 false.
+    pub fn set_tab_slot_key(&mut self, idx: usize, key: &str) -> bool {
+        match self.tab_switch_slot_keys.get_mut(idx) {
+            Some(slot) => {
+                *slot = key.to_string();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// 워크스페이스 quick-switch 슬롯 `idx`(0~8)의 raw 키. 범위 밖이면 None.
+    pub fn workspace_slot_key(&self, idx: usize) -> Option<&str> {
+        self.workspace_switch_slot_keys.get(idx).map(|s| s.as_str())
+    }
+
+    /// 워크스페이스 quick-switch 슬롯 `idx`(0~8)의 raw 키를 설정. 범위 밖이면 false.
+    pub fn set_workspace_slot_key(&mut self, idx: usize, key: &str) -> bool {
+        match self.workspace_switch_slot_keys.get_mut(idx) {
+            Some(slot) => {
+                *slot = key.to_string();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// 탭 quick-switch "다음/이전" raw 키.
+    pub fn tab_next_key(&self) -> &str {
+        &self.tab_switch_next_key
+    }
+    pub fn tab_prev_key(&self) -> &str {
+        &self.tab_switch_prev_key
+    }
+    pub fn set_tab_next_key(&mut self, key: &str) {
+        self.tab_switch_next_key = key.to_string();
+    }
+    pub fn set_tab_prev_key(&mut self, key: &str) {
+        self.tab_switch_prev_key = key.to_string();
+    }
+
+    /// 워크스페이스 quick-switch "다음/이전" raw 키.
+    pub fn workspace_next_key(&self) -> &str {
+        &self.workspace_switch_next_key
+    }
+    pub fn workspace_prev_key(&self) -> &str {
+        &self.workspace_switch_prev_key
+    }
+    pub fn set_workspace_next_key(&mut self, key: &str) {
+        self.workspace_switch_next_key = key.to_string();
+    }
+    pub fn set_workspace_prev_key(&mut self, key: &str) {
+        self.workspace_switch_prev_key = key.to_string();
+    }
+
     /// Format a binding string for display (e.g. "ctrl+shift+n" → "Ctrl+Shift+N").
     ///
     /// [`Self::format_display_parts`] 의 토큰을 `+` 로 join 한 단일 문자열.

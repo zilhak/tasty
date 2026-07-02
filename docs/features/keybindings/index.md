@@ -18,6 +18,19 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 
 바인딩 문자열은 **OS 독립 표기**다 — 위치 기반 추상화로 macOS 에선 `alt`→⌘ 등으로 매핑된다([key-mapping](../../design/policies/key-mapping.md)).
 
+### 탭/워크스페이스 quick-switch (raw 키)
+
+번호 전환·다음/이전 이동은 **콤보가 아니라 raw 키 하나**만 저장하는 별도 필드로 다룬다. modifier 는 `tab_switch_modifier`/`workspace_switch_modifier`(각각 기본 `ctrl`/`alt`)에서 dispatch 시점에 조합되므로, modifier 드롭다운을 바꾸면 모든 슬롯이 즉시 재조합된다. 이 필드들은 콤보 시스템(`GENERAL_BINDING_FIELDS`/`get_bindings`)과 분리되며 index 기반 accessor(`tab_slot_key`/`set_tab_slot_key` 등, `crud.rs`)로 접근한다.
+
+| 필드 | 타입 | 기본값 | 의미 |
+|------|------|--------|------|
+| `tab_switch_slot_keys` | `[String; 10]` | `["1".."9","0"]` | 탭 1~10번 슬롯 |
+| `workspace_switch_slot_keys` | `[String; 9]` | `["1".."9"]` | 워크스페이스 1~9번 슬롯(0번 없음) |
+| `tab_switch_next_key` / `tab_switch_prev_key` | `String` | `"l"` / `"h"` | 탭 다음/이전 |
+| `workspace_switch_next_key` / `workspace_switch_prev_key` | `String` | `"j"` / `"k"` | 워크스페이스 다음/이전 |
+
+6개 필드 모두 필드별 `#[serde(default = "…")]` 를 가져, 신규 필드가 없는 구버전 config 를 읽어도 빈 값이 아니라 위 기본값으로 복원된다. 자유 콤보용 `next_tab`/`prev_tab` 필드와는 별개다(Command Palette·더블탭 경로 전용, quick-switch 가 건드리지 않음).
+
 ### 편집 — 녹화 + 충돌
 
 Settings Keybindings 탭에서 키 조합을 직접 **녹화**해 할당한다. 충돌(같은 조합이 다른 액션에 이미) 시 확인 팝업으로 수락/거부. 편집은 draft 에 쌓이고 Save 시 커밋(`crud.rs`).
