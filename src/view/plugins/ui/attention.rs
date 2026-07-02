@@ -170,7 +170,7 @@ fn draw_detail(
         ui.label(
             egui::RichText::new(&entry.id)
                 .small()
-                .color(egui::Color32::from(th.subtext0)),
+                .color(egui::Color32::from(th.text_muted())),
         );
         if !entry.authors.is_empty() {
             ui.label(
@@ -294,7 +294,7 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                 // 6→4 스냅 (그리드 정합 — 레이블-내용 tight 간격).
                 vspace(ui, th.spacing_xs);
                 egui::Frame::new()
-                    .fill(egui::Color32::from(th.base))
+                    .fill(egui::Color32::from(th.bg_panel()))
                     .stroke(egui::Stroke::new(
                         th.border_width.value(),
                         egui::Color32::from(th.separator),

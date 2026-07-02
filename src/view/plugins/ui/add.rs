@@ -97,14 +97,14 @@ fn draw_add_preview(
                 ui.label(
                     egui::RichText::new(&preview.name)
                         .size(16.0)
-                        .color(egui::Color32::from(th.text)),
+                        .color(egui::Color32::from(th.text_primary())),
                 );
                 ui.label(format!("v{}", preview.version));
             });
             ui.label(
                 egui::RichText::new(&preview.id)
                     .small()
-                    .color(egui::Color32::from(th.subtext0)),
+                    .color(egui::Color32::from(th.text_muted())),
             );
             vspace(ui, th.spacing_sm);
 
@@ -222,7 +222,7 @@ fn draw_untrusted_warning(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::T
             ui.label(egui::RichText::new(title).strong().color(red));
             ui.label(
                 egui::RichText::new(t("plugins.trust_unknown_body"))
-                    .color(egui::Color32::from(th.text)),
+                    .color(egui::Color32::from(th.text_primary())),
             );
             ui.label(t_fmt("plugins.trust_fingerprint", fingerprint));
         }

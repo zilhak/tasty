@@ -44,7 +44,8 @@ pub(super) fn draw_list_tab(
             if snapshot.plugins.is_empty() {
                 vspace(ui, th.spacing_lg);
                 ui.label(
-                    egui::RichText::new(t("plugins.empty")).color(egui::Color32::from(th.subtext0)),
+                    egui::RichText::new(t("plugins.empty"))
+                        .color(egui::Color32::from(th.text_muted())),
                 );
                 return;
             }
@@ -52,7 +53,7 @@ pub(super) fn draw_list_tab(
                 vspace(ui, th.spacing_lg);
                 ui.label(
                     egui::RichText::new(t("plugins.no_matches"))
-                        .color(egui::Color32::from(th.subtext0)),
+                        .color(egui::Color32::from(th.text_muted())),
                 );
                 return;
             }
@@ -104,7 +105,7 @@ pub(super) fn draw_list_tab(
                         egui::Align2::LEFT_TOP,
                         &sub,
                         egui::FontId::proportional(10.0),
-                        egui::Color32::from(th.subtext0),
+                        egui::Color32::from(th.text_muted()),
                     );
                     // 디자인 StatusDot(danger): spawn 반복 실패로 자동 비활성화된
                     // plugin 은 행 우측에 빨간 dot 을 그린다. 상세 경고 박스와
@@ -147,14 +148,14 @@ pub(super) fn draw_list_tab(
                     ui.label(
                         egui::RichText::new(t("plugins.builtin_badge"))
                             .small()
-                            .color(egui::Color32::from(th.mauve)),
+                            .color(egui::Color32::from(th.accent_agent())),
                     );
                 }
             });
             ui.label(
                 egui::RichText::new(&entry.id)
                     .small()
-                    .color(egui::Color32::from(th.subtext0)),
+                    .color(egui::Color32::from(th.text_muted())),
             );
             vspace(ui, th.spacing_sm);
 
@@ -262,7 +263,7 @@ pub(super) fn draw_list_tab(
                 ui.label(
                     egui::RichText::new(&entry.install_dir)
                         .small()
-                        .color(egui::Color32::from(th.subtext0)),
+                        .color(egui::Color32::from(th.text_muted())),
                 );
                 if ui.small_button(t("plugins.open_folder")).clicked() {
                     actions.push(PluginsAction::OpenInstallDir {
@@ -276,7 +277,7 @@ pub(super) fn draw_list_tab(
             ui.label(
                 egui::RichText::new(format!("{}: {}", t("plugins.log_path"), entry.log_path))
                     .small()
-                    .color(egui::Color32::from(th.subtext0)),
+                    .color(egui::Color32::from(th.text_muted())),
             );
 
             vspace(ui, th.spacing_lg);
