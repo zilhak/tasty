@@ -33,6 +33,8 @@ use crate::i18n::t;
 const PANE_GAP: f32 = 5.0;
 /// mini tab strip height.
 const STRIP_H: f32 = 20.0;
+/// add-tab `+` 버튼 폭(디자인 22×20 — strip 높이보다 2px 넓다).
+const ADD_TAB_W: f32 = 22.0;
 /// 활성 탭 본문 padding.
 const BODY_PAD: f32 = 3.0;
 /// surface leaf 아이콘↔라벨 gap.
@@ -1869,23 +1871,26 @@ fn draw_pane_card(
         x += tw;
     }
 
-    // 편집 모드: strip 끝에 add-tab "+" 버튼.
+    // 편집 모드: strip 끝에 add-tab "+" 버튼(디자인 22×20 — strip 높이보다 2px 넓다).
     if cx.edit {
         let add =
-            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(STRIP_H, STRIP_H));
+            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(ADD_TAB_W, STRIP_H));
         let resp = ui.interact(
             add,
             ui.id().with(("preset_demo_addtab", pane.id)),
             egui::Sense::click(),
         );
+        if resp.hovered() {
+            // hover = overlay_hover fill + text_secondary 글리프.
+            ui.painter_at(strip)
+                .rect_filled(add, 0.0, theme.overlay_hover().to_egui());
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
         let col = if resp.hovered() {
             theme.text_secondary().to_egui()
         } else {
             theme.text_muted().to_egui()
         };
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
         paint_icon(ui, icons::PLUS, add.center(), icon_sz, col);
         if resp.clicked() {
             cx.act = Some(Act::AddTab { pane: pane.id });
