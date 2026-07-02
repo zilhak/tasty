@@ -19,4 +19,4 @@ pub use misc::{ScriptsUiState, draw_scripts_subtab};
 pub use notifications::draw_notifications_tab;
 pub use performance::draw_performance_tab;
 pub use plugin::draw_plugin_tab;
-pub use terminal::draw_terminal_tab;
+pub use terminal::{draw_terminal_mouse_capture_tab, draw_terminal_tab};

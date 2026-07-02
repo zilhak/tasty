@@ -332,7 +332,7 @@ pub enum SettingsDebugCommands {
         /// appearance: theme|colors|general|display|tasty|terminal;
         /// keybindings: general|workspace|pane|tab|surface|clipboard|zoom|
         /// image|preset|plugins; general: general|notifications|accessibility;
-        /// terminal: general|performance; file_handler: extension_mapping|
+        /// terminal: general|mouse_capture|performance; file_handler: extension_mapping|
         /// detectors|handlers; misc: tastyrc. Unknown keys keep the tab default.
         #[arg(long)]
         subtab: Option<String>,

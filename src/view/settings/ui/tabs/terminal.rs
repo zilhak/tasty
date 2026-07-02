@@ -116,16 +116,6 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             );
             ui.end_row();
 
-            ui.label(t("settings.terminal.mouse_capture_hint_label"));
-            tasty_ui_widgets::switch(
-                ui,
-                &th,
-                &mut settings.general.mouse_capture_hint,
-                None,
-                true,
-            );
-            ui.end_row();
-
             // Option as Meta 는 macOS 전용 — 다른 OS 에는 Option 키가 없어 노출하지 않는다.
             #[cfg(target_os = "macos")]
             {
@@ -141,12 +131,62 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             .small()
             .color(th.accent_warning()),
     );
+}
+
+/// Terminal › Mouse Capture L2 섹션 — 마우스 캡처 안내 배너 토글 + Shift 우회
+/// 설명 Note + 1px 구분선 + 캡처 비활성화 블랙리스트 에디터. 설정 모델은 무변경
+/// (`GeneralSettings.mouse_capture_hint` / `mouse_capture_blacklist` 재사용),
+/// 배치만 Terminal › General 에서 분리해 옮긴 것이다.
+pub fn draw_terminal_mouse_capture_tab(ui: &mut egui::Ui, settings: &mut Settings) {
+    let th = crate::theme::theme();
+    vspace(ui, th.spacing_sm);
+
+    // 안내 배너 표시 토글.
+    ui.horizontal(|ui| {
+        ui.label(t("settings.terminal.mouse_capture_hint_label"));
+        tasty_ui_widgets::switch(
+            ui,
+            &th,
+            &mut settings.general.mouse_capture_hint,
+            None,
+            true,
+        );
+    });
+
+    // Shift 우회를 설명하는 muted Note — `**...**` 로 감싼 구간(=Shift)만 강조한다
+    // (코드측 RichText, 문자열엔 마커만). 기존 muted 텍스트 패턴(`th.text_muted()`
+    // + `.small()`) 재사용.
+    vspace(ui, th.spacing_xs);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let note = t("settings.terminal.mouse_capture_hint_note");
+        // `**` 마커 기준 분할 — 홀수 인덱스 구간이 강조(bold) 대상.
+        for (i, seg) in note.split("**").enumerate() {
+            if seg.is_empty() {
+                continue;
+            }
+            let mut rich = egui::RichText::new(seg).small().color(th.text_muted());
+            if i % 2 == 1 {
+                rich = rich.strong();
+            }
+            ui.label(rich);
+        }
+    });
+
+    // 안내 토글+Note 블록과 블랙리스트 블록 사이 1px 구분선 (디자인 jsx:613,
+    // `--tasty-separator` 색). Theme 의 separator 토큰을 1px stroke 로 전사한다.
+    vspace(ui, th.spacing_md);
+    ui.scope(|ui| {
+        ui.visuals_mut().widgets.noninteractive.bg_stroke =
+            egui::Stroke::new(1.0, th.separator.to_egui_premultiplied());
+        ui.separator();
+    });
+    vspace(ui, th.spacing_md);
 
     // 마우스 캡처 비활성화 블랙리스트 — 행 리스트 에디터(패턴 mono + × 제거) +
     // 하단 Add 입력/버튼. 디자인 `BlacklistEditorG`(overlays-shared.jsx) 전사로,
     // 옛 멀티라인 textarea(줄바꿈 구분)를 폐기한다. 매칭(trim/대소문자 무시/`*`)은
     // 별도 헬퍼가 담당하므로 여기선 패턴 문자열만 보관한다.
-    vspace(ui, th.spacing_md);
     ui.label(t("settings.terminal.mouse_capture_blacklist_label"));
     vspace(ui, th.spacing_xs);
 
