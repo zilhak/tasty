@@ -41,6 +41,12 @@ const LEAF_GAP: f32 = 6.0;
 const TAB_PAD_X: f32 = 9.0;
 /// mini tab 아이콘↔라벨 gap.
 const TAB_GAP: f32 = 5.0;
+/// mini tab close `×` 히트영역 한 변(14×14).
+const CLOSE_HIT: f32 = 14.0;
+/// close `×` 왼쪽 margin(라벨과의 간격).
+const CLOSE_MARGIN: f32 = 1.0;
+/// close `×` 노출 시 탭 우측 패딩(9→3 축소).
+const CLOSE_TAB_PAD: f32 = 3.0;
 /// 편집 모드 선택 핸들(remove) 한 변 크기.
 const HANDLE_SZ: f32 = 18.0;
 /// 핸들 클러스터 모서리 inset.
@@ -1750,11 +1756,18 @@ fn draw_pane_card(
     for (i, t) in pane.tabs.iter().enumerate() {
         let on = i == pane.active;
         let lw = text_width(ui, &t.name, tab_font.clone());
-        let tw = TAB_PAD_X + icon_sz + TAB_GAP + lw + TAB_PAD_X;
+        // 편집 && 탭>1 → close × 영역 예약(우측 패딩 9→3 + marginLeft 1 + 14 히트).
+        // 탭 1개면 × 숨김(pane 은 항상 탭 ≥1) → 폭도 rest 그대로.
+        let show_close = cx.edit && pane.tabs.len() > 1;
+        let tw = if show_close {
+            TAB_PAD_X + icon_sz + TAB_GAP + lw + CLOSE_MARGIN + CLOSE_HIT + CLOSE_TAB_PAD
+        } else {
+            TAB_PAD_X + icon_sz + TAB_GAP + lw + TAB_PAD_X
+        };
         let tab_rect =
             egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H));
 
-        // 클릭 상호작용 — active 가 아닌 탭만 pointer + 클릭.
+        // 클릭 상호작용 — active 가 아닌 탭만 pointer + 클릭(SetActive, 아래에서 판정).
         let resp = ui.interact(
             tab_rect,
             ui.id().with(("preset_demo_tab", pane.id, i)),
@@ -1762,12 +1775,6 @@ fn draw_pane_card(
         );
         if !on && resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        if resp.clicked() {
-            cx.act = Some(Act::SetActive {
-                pane: pane.id,
-                idx: i,
-            });
         }
 
         let rep = t.layout.rep_kind();
@@ -1812,6 +1819,53 @@ fn draw_pane_card(
                 theme.text_muted().to_egui()
             },
         );
+
+        // close `×` — 편집 && 탭>1 && (active || pointer). hover = overlay_active fill +
+        // text_primary, rest = text_muted. contains_pointer 로 × 위 이동 중 소멸 방지.
+        let mut close_clicked = false;
+        if show_close {
+            let close_rect = egui::Rect::from_min_size(
+                egui::pos2(
+                    tab_rect.max.x - CLOSE_TAB_PAD - CLOSE_HIT,
+                    tab_rect.center().y - CLOSE_HIT * 0.5,
+                ),
+                egui::vec2(CLOSE_HIT, CLOSE_HIT),
+            );
+            let close_resp = ui.interact(
+                close_rect,
+                ui.id().with(("preset_demo_tabclose", pane.id, i)),
+                egui::Sense::click(),
+            );
+            if on || resp.contains_pointer() {
+                let hovering = close_resp.hovered();
+                if hovering {
+                    ui.painter_at(strip).rect_filled(
+                        close_rect,
+                        theme.corner_radius_sm.value(),
+                        theme.overlay_active().to_egui(),
+                    );
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                let col = if hovering {
+                    theme.text_primary().to_egui()
+                } else {
+                    theme.text_muted().to_egui()
+                };
+                paint_icon(ui, icons::CLOSE, close_rect.center(), CLOSE_HIT * 0.5, col);
+            }
+            close_clicked = close_resp.clicked();
+        }
+
+        // RemoveTab 이 SetActive 보다 우선 — × 클릭이 탭 전환을 유발하지 않게 한다.
+        if close_clicked {
+            cx.act = Some(Act::RemoveTab { pane: pane.id, idx: i });
+        } else if resp.clicked() {
+            cx.act = Some(Act::SetActive {
+                pane: pane.id,
+                idx: i,
+            });
+        }
+
         x += tw;
     }
 
