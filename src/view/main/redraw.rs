@@ -817,33 +817,31 @@ impl MainView {
                 self.mark_dirty();
             }
             PendingNativeMenu::WorkspaceCategoryHeader { cat_id, x, y } => {
-                // 카테고리 헤더 우클릭 — 비-normal: 이름변경/삭제 + 새 카테고리,
-                // normal: 새 카테고리만(additive). 토글 off 면 애초에 라우팅되지 않음.
+                // 카테고리 헤더 우클릭 — Add workspace 선두(모든 헤더), 비-normal 만
+                // 이름변경/삭제, 공통 새 카테고리 (2026-07-02 디자인 — 조립·순서는
+                // `category_header_menu_items` 가 고정). 토글 off 면 애초에 라우팅되지 않음.
                 let is_normal = engine
                     .categories()
                     .iter()
                     .find(|c| c.id == cat_id)
                     .map(|c| c.is_normal())
                     .unwrap_or(true);
-                let mut items = Vec::new();
-                if !is_normal {
-                    items.push(MenuItem::new(
-                        1,
-                        crate::i18n::t("workspace_category.rename_category"),
-                    ));
-                    items.push(MenuItem::new(
-                        2,
-                        crate::i18n::t("workspace_category.delete_category"),
-                    ));
-                    items.push(MenuItem::separator());
-                }
-                items.push(MenuItem::new(
-                    100,
-                    crate::i18n::t("workspace_category.new_category"),
-                ));
+                let items = category_header_menu_items(is_normal);
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
                 match result {
+                    Some(3) => {
+                        // 이 카테고리 소속으로 새 워크스페이스 — 레일 `---` 팝업의
+                        // Add workspace 와 동일 인텐트 (소스 문자열만 구별).
+                        self.state.dispatch_intent(
+                            crate::intent::Intent::NewWorkspace {
+                                kind: None,
+                                params: serde_json::Value::Null,
+                                category: Some(cat_id),
+                            }
+                            .from_user_menu("category_header/add_workspace"),
+                        );
+                    }
                     Some(1) => {
                         crate::adapters::ui::category_actions::open_rename_category_dialog(
                             &mut self.state,
@@ -1316,5 +1314,64 @@ impl MainView {
                 self.mark_dirty();
             }
         }
+    }
+}
+
+/// 카테고리 헤더 우클릭 메뉴 항목 조립 (디자인 sidebar_context_menu.jsx category 분기
+/// 전사, 2026-07-02). additive 선두: Add workspace(3) · ─ · [비-normal 한정:
+/// Rename(1) · Delete(2) · ─] · New category(100). reserved normal 은 rename/delete
+/// 만 금지 — add 는 노출한다. native 메뉴 조립은 순수 함수로 분리해 구성·순서를
+/// 단위 테스트로 고정한다.
+fn category_header_menu_items(is_normal: bool) -> Vec<crate::platform::native_menu::MenuItem> {
+    use crate::platform::native_menu::MenuItem;
+    let mut items = vec![
+        MenuItem::new(3, crate::i18n::t("workspace_category.add_workspace")),
+        MenuItem::separator(),
+    ];
+    if !is_normal {
+        items.push(MenuItem::new(
+            1,
+            crate::i18n::t("workspace_category.rename_category"),
+        ));
+        items.push(MenuItem::new(
+            2,
+            crate::i18n::t("workspace_category.delete_category"),
+        ));
+        items.push(MenuItem::separator());
+    }
+    items.push(MenuItem::new(
+        100,
+        crate::i18n::t("workspace_category.new_category"),
+    ));
+    items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::category_header_menu_items;
+
+    /// 라벨은 i18n 상태에 좌우되므로 id·separator 위치로 구성·순서를 고정한다.
+    fn shape(items: &[crate::platform::native_menu::MenuItem]) -> Vec<Option<u32>> {
+        items
+            .iter()
+            .map(|i| (!i.is_separator()).then_some(i.id))
+            .collect()
+    }
+
+    #[test]
+    fn category_header_menu_non_normal_order() {
+        // Add workspace · ─ · Rename · Delete · ─ · New category.
+        let items = category_header_menu_items(false);
+        assert_eq!(
+            shape(&items),
+            vec![Some(3), None, Some(1), Some(2), None, Some(100)]
+        );
+    }
+
+    #[test]
+    fn category_header_menu_normal_is_additive_only() {
+        // reserved normal: Add workspace · ─ · New category (rename/delete 금지).
+        let items = category_header_menu_items(true);
+        assert_eq!(shape(&items), vec![Some(3), None, Some(100)]);
     }
 }

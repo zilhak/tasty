@@ -31,7 +31,7 @@
   - `workspace_category.move {from_index,to_index}` / `tasty workspace-category move --from A --to B`
   - `workspace.create` / `workspace.update` 의 `category`(id 또는 이름) 파라미터 — `tasty new/set workspace --category <name|id>`
   - `workspace.list` 응답에 `category` / `category_name`
-- **사용자 트리거**: 설정 → 일반 → "워크스페이스 카테고리" 토글. on 이면 사이드바가 카테고리 섹션으로 그룹 렌더되고, 헤더 클릭(접힘 토글)·우클릭 컨텍스트 메뉴(빈 배경 → 새 카테고리, 헤더 → 이름변경/삭제/새 카테고리, 워크스페이스 행 → 카테고리로 이동/새 카테고리)·축소 레일 `---` 팝업(Add workspace/Collapse/Rename/Delete)·드래그 앤 드롭(다른 카테고리로 이동)으로 조작한다. 생성/이름변경은 360px 단일필드 다이얼로그(라이브 검증), 삭제는 destructive confirm 을 거친다.
+- **사용자 트리거**: 설정 → 일반 → "워크스페이스 카테고리" 토글. on 이면 사이드바가 카테고리 섹션으로 그룹 렌더되고, 헤더 클릭(접힘 토글)·우클릭 컨텍스트 메뉴(빈 배경 → 새 카테고리, 헤더 → 워크스페이스 추가(그 카테고리 소속 생성, normal 포함)/이름변경/삭제/새 카테고리 — normal 은 추가·새 카테고리만, 워크스페이스 행 → 카테고리로 이동/새 카테고리)·축소 레일 `---` 팝업(Add workspace/Collapse/Rename/Delete)·드래그 앤 드롭(다른 카테고리로 이동)으로 조작한다. 생성/이름변경은 360px 단일필드 다이얼로그(라이브 검증), 삭제는 destructive confirm 을 거친다.
 
 ## 비-목표 (Out of scope)
 
