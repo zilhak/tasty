@@ -208,6 +208,14 @@ pub const SHADOW_POPOVER: ShadowToken = ShadowToken {
 /// straight (테마 무관 고정 검정). `Theme::scrim()` 이 이 값으로 색을 만든다.
 pub const SCRIM_ALPHA: u8 = 128;
 
+/// design `--tasty-preset-split-zone-bg` = accent-primary 22%. 프리셋 편집기 경계
+/// hover-split 존 밴드 채움 알파(22%×255≈56). accent 색은 테마 가변 → 알파만 파생.
+pub const PRESET_SPLIT_ZONE_BG_ALPHA: u8 = 56;
+
+/// design `--tasty-preset-split-zone-border` = accent-primary 55%. split 존 안쪽 변의
+/// 2px 분할선 알파(55%×255≈140).
+pub const PRESET_SPLIT_ZONE_BORDER_ALPHA: u8 = 140;
+
 // ============================================================================
 //  ThemeSizing — 모든 테마 공통
 // ============================================================================
@@ -1282,6 +1290,23 @@ impl Theme {
     #[inline]
     pub fn scrim(&self) -> HexColor {
         HexColor::from_rgba(0, 0, 0, SCRIM_ALPHA)
+    }
+
+    /// 프리셋 편집기 경계 hover-split 존의 밴드 채움색. design
+    /// `--tasty-preset-split-zone-bg` = accent-primary 22% — accent 색(테마 가변)은
+    /// 유지하고 알파만 파생한다([`PRESET_SPLIT_ZONE_BG_ALPHA`]). split-zone overlay 는
+    /// 향후 drag-drop drop-zone 과 토큰을 공유할 의도로 명명(계획 §rationale).
+    #[inline]
+    pub fn preset_split_zone_bg(&self) -> HexColor {
+        self.accent_primary().with_alpha(PRESET_SPLIT_ZONE_BG_ALPHA)
+    }
+
+    /// split 존의 안쪽 변에 그리는 2px 분할선 색. design
+    /// `--tasty-preset-split-zone-border` = accent-primary 55%
+    /// ([`PRESET_SPLIT_ZONE_BORDER_ALPHA`]).
+    #[inline]
+    pub fn preset_split_zone_border(&self) -> HexColor {
+        self.accent_primary().with_alpha(PRESET_SPLIT_ZONE_BORDER_ALPHA)
     }
 
     // ── Titlebar (CSD) 컴포넌트 색 — 기존 semantic 접근자 조합 (changelog §Tokens) ──
