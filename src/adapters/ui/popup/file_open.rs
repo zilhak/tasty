@@ -89,7 +89,7 @@ pub fn draw_markdown_open_view(
     ui.label(
         egui::RichText::new(t("dialog.markdown.path_label"))
             .size(th.font_size_body.value())
-            .color(th.subtext1),
+            .color(th.text_secondary()),
     );
     vspace(ui, th.spacing_xs);
 
@@ -132,7 +132,7 @@ pub fn draw_markdown_open_view(
         ui.label(
             egui::RichText::new(t("dialog.recent_files"))
                 .size(th.font_size_caption.value())
-                .color(th.overlay1),
+                .color(th.text_disabled()),
         );
         vspace(ui, STRUCT_GAP_2);
 
@@ -163,7 +163,7 @@ pub fn draw_markdown_open_view(
                         egui::Align2::LEFT_TOP,
                         &display,
                         egui::FontId::proportional(th.font_size_caption.value()),
-                        th.subtext0.into(),
+                        th.text_muted().into(),
                     );
                     if resp.clicked() {
                         clicked_path = Some(entry.clone());
