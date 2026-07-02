@@ -1018,3 +1018,9 @@ delete_confirm_body = "Delete {}? Its {} workspaces aren't deleted — they move
 empty = "Category name must not be empty."
 reserved = "'normal' is a reserved category name."
 duplicate = "A category with this name already exists."
+
+[modifier_hint.role]
+mouse_capture_bypass = "Bypass TUI mouse capture (Shift+drag to select, Shift+Right-click for menu)"
+tab_switch = "Switch tabs (number keys show over tabs)"
+workspace_switch = "Switch workspaces (number keys show over workspaces)"
+link_click = "Open links with modifier+click"

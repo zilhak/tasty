@@ -1018,3 +1018,9 @@ delete_confirm_body = "{} を削除しますか？中の {} 個のワークス�
 empty = "カテゴリ名を空にはできません。"
 reserved = "'normal' は予約されたカテゴリ名です。"
 duplicate = "同じ名前のカテゴリが既に存在します。"
+
+[modifier_hint.role]
+mouse_capture_bypass = "TUI マウスキャプチャを一時回避 (Shift+ドラッグで選択、Shift+右クリックでメニュー)"
+tab_switch = "タブ切り替え (タブ上に番号を表示)"
+workspace_switch = "ワークスペース切り替え (ワークスペース上に番号を表示)"
+link_click = "修飾キー+クリックでリンクを開く"

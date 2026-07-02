@@ -3,6 +3,8 @@ mod copy_paste;
 mod dispatch;
 mod double_tap;
 mod keybinding;
+/// modifier-hint 조합 콘텐츠 모델(순수 로직). 소비처(modifier-hint-03 wiring)는 미연결.
+pub(crate) mod modifier_hint;
 mod numeric;
 #[cfg(test)]
 mod tests;

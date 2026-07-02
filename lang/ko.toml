@@ -1018,3 +1018,9 @@ delete_confirm_body = "{} 카테고리를 삭제할까요? 안의 워크스페�
 empty = "카테고리 이름은 비울 수 없습니다."
 reserved = "'normal' 은 예약된 카테고리 이름입니다."
 duplicate = "같은 이름의 카테고리가 이미 있습니다."
+
+[modifier_hint.role]
+mouse_capture_bypass = "TUI 마우스 캡처 우회 (Shift+드래그로 선택, Shift+우클릭으로 메뉴)"
+tab_switch = "탭 전환 (탭 위에 숫자 표시)"
+workspace_switch = "워크스페이스 전환 (워크스페이스 위에 숫자 표시)"
+link_click = "수식키+클릭으로 링크 열기"
