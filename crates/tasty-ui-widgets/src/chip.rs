@@ -1,27 +1,10 @@
 //! 정적 chip primitive — `Tag` / `Badge` / `Kbd` (디자인 `components/core/*`).
 //!
-//! 상호작용 없는 시각 라벨. 색·폰트는 `&Theme`, 디자인 고정 px(높이/패딩/폰트)는
-//! 위젯 const. egui 한계: 폰트 weight(bold/medium)는 별도 family 없이 재현 불가 →
-//! 크기·색만 충실히 따른다.
+//! 상호작용 없는 시각 라벨. 색·폰트·치수는 전부 `tag-*`/`badge-*`/`kbd-*`
+//! component 접근자(`&Theme` 경유, ui_zoom 반영)에서 가져온다. egui 한계: 폰트
+//! weight(bold/medium)는 별도 family 없이 재현 불가 → 크기·색만 충실히 따른다.
 
 use tasty_type_appearance::theme::Theme;
-
-// ── 디자인 고정 px (components/core 의 token-policy 반영 값) ──
-// pill 높이 16(size-16), 폰트는 micro(10) — 모두 Theme 토큰에서. padding/gap/dot 은
-// space/size 스케일에 정합 (Tag pad sm=8, Badge pad xs=4, dot 8).
-const TAG_HEIGHT: f32 = 16.0;
-const TAG_PAD_X: f32 = 8.0; // space-sm — 외곽선 chip
-const TAG_GAP: f32 = 4.0; // space-xs
-const TAG_DOT: f32 = 8.0; // status-dot-size
-const BADGE_HEIGHT: f32 = 16.0;
-const BADGE_MIN_W: f32 = 16.0;
-const BADGE_PAD_X: f32 = 4.0; // space-xs — tight count pill
-const BADGE_DOT: f32 = 8.0;
-const KBD_HEIGHT: f32 = 16.0;
-const KBD_MIN_W: f32 = 16.0;
-const KBD_PAD_X: f32 = 4.0; // space-xs
-const KBD_GAP: f32 = 3.0; // kbd 키캡 간 간격(off-grid 키캡 관습)
-const KBD_BOTTOM_BORDER: f32 = 2.0;
 
 /// Tag variant (디자인 `core/Tag`).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -62,10 +45,12 @@ pub fn tag(
     dot: bool,
 ) -> egui::Response {
     let (fill, border, fg) = match variant {
+        // Default(외곽선 chip)만 `tag-*` component 색 대응. 나머지 상태 변형(accent
+        // 계열)은 대응 component 토큰이 없어 semantic 유지.
         TagVariant::Default => (
-            theme.surface_raised().to_egui(),
-            Some(theme.border_default().to_egui()),
-            theme.text_secondary().to_egui(),
+            theme.tag_bg().to_egui(),
+            Some(theme.tag_border().to_egui()),
+            theme.tag_fg().to_egui(),
         ),
         TagVariant::Accent => (
             theme.accent_primary().to_egui(),
@@ -98,16 +83,20 @@ pub fn tag(
             theme.accent_danger().to_egui(),
         ),
     };
-    let radius = theme.corner_radius_sm.value();
+    let radius = theme.tag_radius().value();
     let bw = theme.border_width.value();
+    let pad_x = theme.tag_padding_x().value();
+    let gap = theme.tag_gap().value();
+    let dot_sz = theme.tag_dot_size().value();
+    let tag_h = theme.tag_size().value();
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
-        mono(theme.font_size_micro.value()),
+        mono(theme.tag_font_size().value()),
         egui::Color32::PLACEHOLDER,
     );
-    let dot_w = if dot { TAG_DOT + TAG_GAP } else { 0.0 };
-    let w = galley.rect.width() + dot_w + 2.0 * TAG_PAD_X;
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, TAG_HEIGHT), egui::Sense::hover());
+    let dot_w = if dot { dot_sz + gap } else { 0.0 };
+    let w = galley.rect.width() + dot_w + 2.0 * pad_x;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, tag_h), egui::Sense::hover());
     if fill != egui::Color32::TRANSPARENT {
         ui.painter().rect_filled(rect, radius, fill);
     }
@@ -119,11 +108,11 @@ pub fn tag(
             egui::StrokeKind::Inside,
         );
     }
-    let mut x = rect.left() + TAG_PAD_X;
+    let mut x = rect.left() + pad_x;
     if dot {
-        let c = egui::pos2(x + TAG_DOT * 0.5, rect.center().y);
-        ui.painter().circle_filled(c, TAG_DOT * 0.5, fg);
-        x += TAG_DOT + TAG_GAP;
+        let c = egui::pos2(x + dot_sz * 0.5, rect.center().y);
+        ui.painter().circle_filled(c, dot_sz * 0.5, fg);
+        x += dot_sz + gap;
     }
     let pos = egui::pos2(x, rect.center().y - galley.rect.height() * 0.5);
     ui.painter().galley(pos, galley, fg);
@@ -159,14 +148,17 @@ pub fn badge(
             theme.text_primary().to_egui(),
         ),
     };
+    let pad_x = theme.badge_padding_x().value();
+    let badge_sz = theme.badge_size().value();
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
-        mono(theme.font_size_micro.value()),
+        mono(theme.badge_font_size().value()),
         egui::Color32::PLACEHOLDER,
     );
-    let w = (galley.rect.width() + 2.0 * BADGE_PAD_X).max(BADGE_MIN_W);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, BADGE_HEIGHT), egui::Sense::hover());
-    ui.painter().rect_filled(rect, BADGE_HEIGHT * 0.5, fill); // radius-pill = 완전 둥금
+    let w = (galley.rect.width() + 2.0 * pad_x).max(badge_sz);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, badge_sz), egui::Sense::hover());
+    // radius-pill = 완전 둥금 (badge-radius 는 radius-sm 이나 구현은 pill idiom 유지).
+    ui.painter().rect_filled(rect, badge_sz * 0.5, fill);
     let pos = rect.center() - galley.rect.size() * 0.5;
     ui.painter().galley(pos, galley, fg);
     resp
@@ -181,10 +173,10 @@ pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egu
         BadgeVariant::Success => theme.accent_success().to_egui(),
         BadgeVariant::Neutral => theme.surface_active().to_egui(),
     };
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(BADGE_DOT, BADGE_DOT), egui::Sense::hover());
+    let dot_sz = theme.badge_dot_size().value();
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(dot_sz, dot_sz), egui::Sense::hover());
     ui.painter()
-        .circle_filled(rect.center(), BADGE_DOT * 0.5, fill);
+        .circle_filled(rect.center(), dot_sz * 0.5, fill);
     resp
 }
 
@@ -197,24 +189,27 @@ pub fn badge_dot(ui: &mut egui::Ui, theme: &Theme, variant: BadgeVariant) -> egu
 /// - inactive: `surface_raised` fill + `border_strong` 엣지 + `text_secondary` 숫자.
 /// - active: `accent_primary` fill/엣지 + `text_on_accent` 숫자.
 pub fn num_keycap(ui: &mut egui::Ui, theme: &Theme, digit: &str, active: bool) -> egui::Response {
+    // inactive 는 `kbd-*` component 색 대응. active accent 는 chip component 토큰
+    // 없어 semantic 유지.
     let (fill, border, fg) = if active {
         let accent = theme.accent_primary().to_egui();
         (accent, accent, theme.text_on_accent().to_egui())
     } else {
         (
-            theme.surface_raised().to_egui(),
-            theme.border_strong().to_egui(),
-            theme.text_secondary().to_egui(),
+            theme.kbd_bg().to_egui(),
+            theme.kbd_border().to_egui(),
+            theme.kbd_fg().to_egui(),
         )
     };
-    let radius = theme.corner_radius_sm.value();
+    let radius = theme.kbd_radius().value();
     let bw = theme.border_width.value();
-    let micro = theme.font_size_micro.value();
+    let micro = theme.kbd_font_size().value();
+    let kbd_h = theme.kbd_size().value();
+    let bottom_border = theme.kbd_shadow_depth().value();
     let galley =
         ui.painter()
             .layout_no_wrap(digit.to_owned(), mono(micro), egui::Color32::PLACEHOLDER);
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(KBD_MIN_W, KBD_HEIGHT), egui::Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(kbd_h, kbd_h), egui::Sense::hover());
     ui.painter().rect_filled(rect, radius, fill);
     // 키캡 하단 보더 2px 강조 → 윗변 1px, 아랫변 2px 로 따로 그린다 (kbd 와 동일).
     ui.painter().rect_stroke(
@@ -228,7 +223,7 @@ pub fn num_keycap(ui: &mut egui::Ui, theme: &Theme, digit: &str, active: bool) -
             egui::pos2(rect.left() + radius, rect.bottom() - bw),
             egui::pos2(rect.right() - radius, rect.bottom() - bw),
         ],
-        egui::Stroke::new(KBD_BOTTOM_BORDER, border),
+        egui::Stroke::new(bottom_border, border),
     );
     let pos = rect.center() - galley.rect.size() * 0.5;
     ui.painter().galley(pos, galley, fg);
@@ -237,15 +232,19 @@ pub fn num_keycap(ui: &mut egui::Ui, theme: &Theme, digit: &str, active: bool) -
 
 /// Kbd — 키캡 시퀀스. `keys` 는 `"+"` 로 분할(예: `"Ctrl+K"`), 각 키를 키캡으로.
 pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
-    let radius = theme.corner_radius_sm.value();
+    let radius = theme.kbd_radius().value();
     let bw = theme.border_width.value();
-    let border = theme.border_strong().to_egui();
-    let fill = theme.surface_raised().to_egui();
-    let fg = theme.text_secondary().to_egui();
-    let plus = theme.subtext0.to_egui();
-    let micro = theme.font_size_micro.value();
+    let border = theme.kbd_border().to_egui();
+    let fill = theme.kbd_bg().to_egui();
+    let fg = theme.kbd_fg().to_egui();
+    let plus = theme.subtext0.to_egui(); // 키캡 사이 "+" — 대응 component 토큰 없음.
+    let micro = theme.kbd_font_size().value();
+    let gap = theme.kbd_gap().value();
+    let pad_x = theme.kbd_padding_x().value();
+    let kbd_h = theme.kbd_size().value();
+    let bottom_border = theme.kbd_shadow_depth().value();
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = KBD_GAP;
+        ui.spacing_mut().item_spacing.x = gap;
         let parts: Vec<&str> = keys.split('+').collect();
         for (i, key) in parts.iter().enumerate() {
             if i > 0 {
@@ -256,8 +255,8 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
                 mono(micro),
                 egui::Color32::PLACEHOLDER,
             );
-            let w = (galley.rect.width() + 2.0 * KBD_PAD_X).max(KBD_MIN_W);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(w, KBD_HEIGHT), egui::Sense::hover());
+            let w = (galley.rect.width() + 2.0 * pad_x).max(kbd_h);
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(w, kbd_h), egui::Sense::hover());
             ui.painter().rect_filled(rect, radius, fill);
             // 키캡 하단 보더 2px 강조 → 윗변은 1px, 아랫변은 2px 로 따로 그린다.
             ui.painter().rect_stroke(
@@ -271,7 +270,7 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
                     egui::pos2(rect.left() + radius, rect.bottom() - bw),
                     egui::pos2(rect.right() - radius, rect.bottom() - bw),
                 ],
-                egui::Stroke::new(KBD_BOTTOM_BORDER, border),
+                egui::Stroke::new(bottom_border, border),
             );
             let pos = rect.center() - galley.rect.size() * 0.5;
             ui.painter().galley(pos, galley, fg);
