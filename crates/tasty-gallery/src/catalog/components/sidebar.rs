@@ -344,13 +344,19 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
     let row_h = theme.item_height_interactive.value(); // 28
     let mut y = rect.min.y + pad;
 
-    for (label, collapsed, rows) in CATEGORY_SECTIONS {
-        // ── 카테고리 헤더: chevron(▼/▶) + 대문자 캡스 라벨. ──
+    for (i, (label, collapsed, rows)) in CATEGORY_SECTIONS.iter().enumerate() {
+        // 비-첫 섹션 간격 (본체 그룹 렌더의 섹션 간 add_space 와 동일 토큰).
+        if i > 0 {
+            y += theme.spacing_sm.value();
+        }
+        // ── 카테고리 헤더: chevron(▼/▶) + 대문자 캡스 라벨. 상하 spacing_xs
+        // 대칭 인셋 (본체 draw_category_header 와 동일). ──
         let chevron = if *collapsed {
             CHEVRON_RIGHT
         } else {
             CHEVRON_DOWN
         };
+        y += theme.spacing_xs.value();
         let ch_size = theme.icon_glyph_size_sm.value();
         let ch_c = egui::pos2(
             rect.min.x + theme.spacing_sm.value() + ch_size * 0.5,
@@ -370,10 +376,17 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
             egui::FontId::proportional(theme.sidebar_section_heading_font_size.value()),
             egui::Color32::from(theme.text_muted()),
         );
-        y += ch_size + theme.spacing_sm.value();
+        y += ch_size + theme.spacing_xs.value();
 
         // ── 행 (접힘/빈 카테고리는 생략). ──
         if !*collapsed && !rows.is_empty() {
+            // 헤더 바로 아래 1px rule (본체 목록 블록 상단 보더 — 하단 보더 없음).
+            let rule = egui::Rect::from_min_size(
+                egui::pos2(rect.min.x, y),
+                egui::vec2(w, theme.border_width.value()),
+            );
+            p.rect_filled(rule, 0.0, theme.separator.to_egui_premultiplied());
+            y += theme.border_width.value();
             for (name, badge, active) in *rows {
                 let row = egui::Rect::from_min_size(
                     egui::pos2(rect.min.x + theme.spacing_xs.value(), y),
@@ -383,7 +396,6 @@ fn full_categories(ui: &mut egui::Ui, theme: &Theme) {
                 y += row_h + theme.spacing_xs.value();
             }
         }
-        y += theme.spacing_xs.value();
     }
 }
 

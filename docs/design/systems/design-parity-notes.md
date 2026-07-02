@@ -412,3 +412,27 @@ LISTEN/CLOSE_WAIT 로 더 짧았다. 완전 표시하려면 State 폭을 넓혀 
 - **근거**: design (3) `components/core/Kbd.jsx`(키별 `<kbd>`, `border-bottom-width: kbd-shadow-depth`),
   `command_palette.jsx:50`(`active = n===0 && q!==""`). 디자인 Kbd 토큰 치수는 size-16/micro(10)
   인데 본체 draw_keycaps 는 18/caption(11) 로 그려 미세 치수 차가 남아 있다(재조정은 별도 판단).
+
+---
+
+## sidebar 카테고리 헤더 — 패딩 대칭화 + 고아 구분선 제거 (2026-07-02 디자인 변경 반영)
+
+- **증상**: 카테고리 헤더가 상 12/하 4 비대칭 패딩이라 top-heavy 로 보이고, 그룹 행 리스트가
+  상+하 보더를 둘 다 그려 다음 헤더 위 gap 에 이전 그룹의 하단 보더가 떠 있었다(고아 구분선).
+- **원인**: 구 디자인은 헤더 top 패딩(space-md)이 섹션 간 간격을 겸했다. 2026-07-02 디자인이
+  두 역할을 분리 — 헤더는 상하 space-xs(4) 대칭, 섹션 간격은 그룹 컨테이너로 이동(컨테이너
+  paddingTop space-sm 8 + 비-첫 섹션 marginTop space-sm 8). 그룹 행 리스트는 `rowList(…,
+  bottomBorder=false)` 로 **상단 보더만**(헤더 → 선 → 행). 평면 모드는 상+하 유지, 레일 불변.
+- **처방(전사)**: `view.rs::draw_category_header` pad_top 을 `spacing_xs` 로(상하 대칭 4,
+  헤더 총 34→26). 그룹 렌더 분기의 목록 하단 `draw_list_separator` 삭제(상단만). 섹션 루프
+  enumerate 로 비-첫 섹션 앞 `add_space(spacing_sm)` — `sec_start` 캡처 **뒤**에 두어 gap 이
+  해당 섹션 드롭존(section_spans)에 포함. 스크롤 시작 `add_space(8.0)`(그룹/평면 공통)이
+  디자인 컨테이너 paddingTop 8, New Workspace 앞 `add_space(4.0)` 이 paddingBottom 4 대응 —
+  둘 다 무변경. 갤러리 `sidebar.rs::full_categories` 는 schematic 유지 + 3항목만 미러(헤더
+  상하 xs 대칭 인셋 / 비-첫 spacing_sm / 헤더 아래 1px separator rule 추가 — 하단 rule 없음).
+- **알려진 잔차(의도적 비변경)**: 본체 헤더 패널 하단은 `add_space(6.0)`(view.rs, 평면 모드
+  공유 경로)로 디자인 로고 바 bottom space-xs(4)보다 2px 넓다 — 기존부터 있던 오차로, 평면
+  모드 회귀를 피해 이번 변경에서 건드리지 않았다. 첫 헤더 위 실효 간격 본체 14 vs 디자인 12.
+- **근거**: 디자인 changelog `2026-07-01-workspace-categories.md` "2026-07-02 — Category
+  header padding rebalanced + orphaned group divider removed", `chrome.jsx` `CategoryHeader`
+  (padding xs/sm)·`rowList(bottomBorder)`·컨테이너 paddingTop/marginTop. 2026-07-02 반영.

@@ -290,8 +290,13 @@ pub fn draw_full_sidebar_view(
             if let Some(sections) = props.categories {
                 // 그룹 렌더(토글 on) — 카테고리별 헤더(chevron) + 소속 행. 접힘/빈
                 // 카테고리는 헤더만. normal 은 항상 맨 위(sections 순서 = 표시 순서).
-                for section in sections {
+                for (sec_i, section) in sections.iter().enumerate() {
                     let sec_start = ui.cursor().min.y;
+                    // 섹션 간 간격 (디자인 비-첫 섹션 marginTop: space-sm). sec_start
+                    // 캡처 뒤에 두어 gap 이 이 섹션의 드롭존(section_spans)에 포함된다.
+                    if sec_i > 0 {
+                        ui.add_space(th.spacing_sm.value());
+                    }
                     let header = draw_category_header(ui, th, &section.label, section.collapsed);
                     if header.toggled {
                         actions.push(SidebarFullAction::CategoryHeaderToggle(section.id));
@@ -312,8 +317,8 @@ pub fn draw_full_sidebar_view(
                             }
                             draw_ws_row(ui, props, *global_idx, ws, &mut actions, &mut card_rects);
                         }
-                        // 목록 블록 하단 보더.
-                        draw_list_separator(ui, th, 0.0);
+                        // 하단 보더 없음 — 그룹 경계는 헤더 아래 상단 보더 1줄만
+                        // (디자인 rowList bottomBorder=false, 2026-07-02 고아 구분선 제거).
                     }
                     // 빈/접힌 카테고리도 헤더 영역이 드롭존(그 카테고리로 편입).
                     section_spans.push((section.id, sec_start, ui.cursor().min.y));
@@ -727,14 +732,15 @@ struct HeaderInteraction {
 /// 라벨. 접힘 시 chevron 우향(▶), 펼침 시 하향(▼). hover 시 overlay-hover 배경.
 /// 좌클릭=접힘 토글, 우클릭=컨텍스트 메뉴 좌표. 라벨 스타일은 `draw_section_heading`
 /// 과 동일(모노 캡스, muted) 하고 좌측에 chevron 만 더한다. 디자인 padding:
-/// top=space-md, 좌우=space-sm, bottom=space-xs.
+/// 상하=space-xs 대칭, 좌우=space-sm (섹션 간 간격은 헤더가 아니라 그룹 렌더의
+/// 섹션 간 add_space 가 담당).
 fn draw_category_header(
     ui: &mut egui::Ui,
     th: &Theme,
     label: &str,
     collapsed: bool,
 ) -> HeaderInteraction {
-    let pad_top = th.spacing_md.value();
+    let pad_top = th.spacing_xs.value();
     let pad_bottom = th.spacing_xs.value();
     let pad_left = th.spacing_sm.value();
     let gap = th.spacing_xs.value();
