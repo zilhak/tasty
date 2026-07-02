@@ -146,7 +146,6 @@ fn probe_system_info(port: u16) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
     use std::net::TcpListener;
     use std::thread;
 
@@ -158,8 +157,12 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let h = thread::spawn(move || {
             let (mut sock, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 1024];
-            let _ = sock.read(&mut buf); // 요청 1 줄 소비.
+            // 요청을 개행까지 완전 소비해야 한다. 부분 read 후 close 하면 미소비
+            // 데이터 때문에 FIN 대신 RST 가 나가 클라이언트 read 가 간헐 실패한다.
+            let mut request = String::new();
+            BufReader::new(sock.try_clone().unwrap())
+                .read_line(&mut request)
+                .unwrap();
             let resp =
                 br#"{"jsonrpc":"2.0","result":{"version":"9.9.9","workspace_count":3},"id":1}"#;
             sock.write_all(resp).unwrap();
