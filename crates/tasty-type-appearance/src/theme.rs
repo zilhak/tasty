@@ -216,6 +216,10 @@ pub struct ThemeSizing {
     /// markdown 본문(prose) 줄간격 배수 (1.6, design `--tasty-line-height-prose`).
     /// 길이가 아닌 무차원 비율이라 `f32` — 본문 폰트 크기에 곱해 줄 높이를 만든다.
     pub line_height_prose: f32,
+    /// UI 텍스트(툴팁 등 여러 줄 chrome 문단) 줄간격 배수 (1.4, design
+    /// `--tasty-line-height-ui`). prose(1.6)보다 촘촘한 UI 전용 배수 — 무차원 비율이라
+    /// `f32`. 폰트 크기에 곱해 줄 높이를 만든다.
+    pub line_height_ui: f32,
     /// terminal cell 스케일 — small (12px).
     pub font_size_term_sm: LogicalPx,
     /// terminal cell 스케일 — 기본 (14px).
@@ -309,6 +313,9 @@ pub struct ThemeSizing {
     // ── 세부 치수 ──
     /// 토스트 최대 폭 (320px).
     pub toast_max_width: LogicalPx,
+    /// 툴팁 버블 최대 폭 (240px, design `--tasty-tooltip-max-width` = `--tasty-size-240`).
+    /// 초과 시 텍스트 줄바꿈. host UI content 라 zoom 적용.
+    pub tooltip_max_width: LogicalPx,
     /// 상태 점(status dot) 지름 (8px).
     pub status_dot_size: LogicalPx,
     /// 스피너 지름 (16px).
@@ -330,6 +337,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     font_size_prose_h1: LogicalPx(20.0),
     font_size_prose_h2: LogicalPx(14.0),
     line_height_prose: 1.6,
+    line_height_ui: 1.4,
     font_size_term_sm: LogicalPx(12.0),
     font_size_term: LogicalPx(14.0),
     font_size_term_lg: LogicalPx(16.0),
@@ -377,6 +385,7 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     field_width_md: LogicalPx(160.0),
     field_width_lg: LogicalPx(200.0),
     toast_max_width: LogicalPx(320.0),
+    tooltip_max_width: LogicalPx(240.0),
     status_dot_size: LogicalPx(8.0),
     spinner_size: LogicalPx(16.0),
     toast_accent_width: LogicalPx(3.0),
@@ -817,6 +826,8 @@ pub struct Theme {
     /// markdown 본문(prose) 줄간격 배수 (1.6, design `--tasty-line-height-prose`).
     /// 길이가 아닌 무차원 비율이라 `f32` — 본문 폰트 크기에 곱해 줄 높이를 만든다.
     pub line_height_prose: f32,
+    /// UI 텍스트(툴팁 등) 줄간격 배수 (1.4, design `--tasty-line-height-ui`). 무차원 비율.
+    pub line_height_ui: f32,
     /// terminal cell 스케일 — small (12px).
     pub font_size_term_sm: LogicalPx,
     /// terminal cell 스케일 — 기본 (14px).
@@ -879,6 +890,8 @@ pub struct Theme {
     pub field_width_lg: LogicalPx,
     // ── 세부 치수 ──
     pub toast_max_width: LogicalPx,
+    /// 툴팁 버블 최대 폭 (240px, design `--tasty-tooltip-max-width`).
+    pub tooltip_max_width: LogicalPx,
     pub status_dot_size: LogicalPx,
     pub spinner_size: LogicalPx,
     pub toast_accent_width: LogicalPx,
@@ -994,6 +1007,7 @@ impl Theme {
             font_size_prose_h2: SIZING.font_size_prose_h2,
             // 줄간격 배수 — 무차원 비율, zoom 무관 (폰트 크기 자체가 스케일을 담당).
             line_height_prose: SIZING.line_height_prose,
+            line_height_ui: SIZING.line_height_ui,
             font_size_term_sm: SIZING.font_size_term_sm,
             font_size_term: SIZING.font_size_term,
             font_size_term_lg: SIZING.font_size_term_lg,
@@ -1043,6 +1057,7 @@ impl Theme {
             field_width_md: zoomed(SIZING.field_width_md),
             field_width_lg: zoomed(SIZING.field_width_lg),
             toast_max_width: zoomed(SIZING.toast_max_width),
+            tooltip_max_width: zoomed(SIZING.tooltip_max_width),
             status_dot_size: zoomed(SIZING.status_dot_size),
             spinner_size: zoomed(SIZING.spinner_size),
             toast_accent_width: zoomed(SIZING.toast_accent_width),
@@ -1730,6 +1745,8 @@ mod tests {
         assert_eq!(t.font_size_prose_h1.value(), 20.0);
         assert_eq!(t.font_size_prose_h2.value(), 14.0);
         assert_eq!(t.line_height_prose, 1.6);
+        assert_eq!(t.line_height_ui, 1.4);
+        assert_eq!(t.tooltip_max_width.value(), 240.0);
         assert_eq!(t.font_size_term_sm.value(), 12.0);
         assert_eq!(t.font_size_term.value(), 14.0);
         assert_eq!(t.font_size_term_lg.value(), 16.0);
@@ -1773,6 +1790,7 @@ mod tests {
         let t = Theme::with_colors_and_zoom(dummy_colors(), false, 1.5);
         assert_eq!(t.font_size_prose_h1, SIZING.font_size_prose_h1);
         assert_eq!(t.line_height_prose, SIZING.line_height_prose);
+        assert_eq!(t.line_height_ui, SIZING.line_height_ui);
         assert_eq!(t.font_size_term, SIZING.font_size_term);
         // micro 는 caption 처럼 zoom 적용: 10 * 1.5 = 15.
         assert_eq!(t.font_size_micro.value(), 15.0);

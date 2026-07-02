@@ -204,6 +204,8 @@ specimen 간 중복 chrome 을 한 곳으로 모은 카탈로그 헬퍼 (`crates
 | `forms/Select` | `select`(토큰 트리거 + egui popup) | `prim_forms` | ✓ gallery |
 | `feedback/StatusDot` | `status_dot`(kind+pulse) | `prim_status_dot` | ✓ port_scanner(state) |
 | `feedback/Spinner` | `Spinner`(size/color/reduced_motion) | `prim_spinner` | ✓ port_scanner(loading) |
+| `feedback/Tooltip` | `Tooltip`(text/placement/id_source) | `prim_help_hint` | — |
+| `feedback/HelpHint` | `HelpHint`(text/placement/open/id_source) — `(?)` 글리프 painter 직접 드로잉 + `Tooltip` 조합 | `prim_help_hint` | — |
 | `navigation/MenuItem` | `menu_item` / `menu_separator` | `prim_nav` | ✓ gallery |
 | `navigation/TreeRow` | `tree_row` | `prim_nav` | ✓ gallery |
 | `navigation/Tab` | `horizontal_tab_bar_with_arrows`(기존) | Layouts `Pane Tab Bar` | — |

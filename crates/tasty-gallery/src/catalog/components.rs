@@ -32,6 +32,7 @@ pub mod preset_editor;
 pub mod prim_button;
 pub mod prim_chips;
 pub mod prim_forms;
+pub mod prim_help_hint;
 pub mod prim_icon_button;
 pub mod prim_input;
 pub mod prim_nav;

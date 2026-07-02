@@ -243,6 +243,11 @@ glyph!(
     r#"<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>"#
 );
 glyph!(
+    HELP_CIRCLE,
+    "help_circle",
+    r#"<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>"#
+);
+glyph!(
     MOUSE,
     "mouse",
     r#"<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>"#
@@ -339,6 +344,7 @@ const STATUS: &[Entry] = &[
     (ALERT_CIRCLE, "alertCircle", "error / failed"),
     (SHIELD_CHECK, "shieldCheck", "trusted / signed"),
     (BELL, "bell", "notification"),
+    (HELP_CIRCLE, "helpCircle", "inline help hint (?)"),
 ];
 
 const SYSTEM: &[Entry] = &[

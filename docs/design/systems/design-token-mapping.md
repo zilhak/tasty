@@ -121,3 +121,34 @@ claude design(`Tasty Design System`)의 semantic 토큰을 tasty `Theme` 필드�
 > **banner-03(본체) 에서 추가 필요한 신규 Theme 항목**: ① `--tasty-banner-radius`(radius-8,
 > 8px), ② `--tasty-opacity-recessed`(0.4 primitive), ③ `--tasty-banner-shadow`(popover
 > shadow). 나머지 `--tasty-banner-*` 는 모두 기존 semantic 접근자로 커버된다.
+
+## tooltip / help-hint (help-hint-01 위젯 + specimen)
+
+디자인 `tokens/components.css` 의 `--tasty-tooltip-*`(12종) + `--tasty-help-hint-*`(4종)
+Tier-3 블록. 위젯 `crates/tasty-ui-widgets/src/tooltip.rs`(`Tooltip`) + `help_hint.rs`(`HelpHint`).
+색·폰트·보더·패딩·글리프 크기는 모두 기존 Theme 접근자로 커버되고, **신규 Theme 필드는 2종**
+(`line_height_ui`, `tooltip_max_width`)만 추가했다 — 아래 표에서 **신규** 표기.
+
+| 디자인 토큰 | 디자인 체인 | tasty Theme / 위젯 | 비고 |
+|---|---|---|---|
+| `--tasty-tooltip-bg` | → `surface-raised` | `surface_raised()` | 불투명 카드 fill |
+| `--tasty-tooltip-border` | → `border-strong` | `border_strong()` + `border_width`(1) | 1px 보더 |
+| `--tasty-tooltip-fg` | → `text-secondary` | `text_secondary()` | 버블 텍스트 |
+| `--tasty-tooltip-radius` | → `radius` (4px) | `corner_radius` | 카드 코너 |
+| `--tasty-tooltip-shadow` | → `shadow-popover` | `shadow_popover().to_egui()` | lift 그림자(재사용) |
+| `--tasty-tooltip-padding-y` | → `space-xs` (4) | `spacing_xs` | 세로 패딩 |
+| `--tasty-tooltip-padding-x` | → `space-sm` (8) | `spacing_sm` | 가로 패딩 |
+| `--tasty-tooltip-font-size` | → `font-size-caption` (11) | `font_size_caption` | 11px 텍스트 |
+| `--tasty-tooltip-line-height` | → `line-height-ui` (1.4) | **신규** `line_height_ui: f32 = 1.4` (무차원, zoom 무관 — `line_height_prose` 전례) | UI 줄간격 배수 |
+| `--tasty-tooltip-max-width` | → `size-240` (240px) | **신규** `tooltip_max_width: LogicalPx(240)` (zoom 적용 — `toast_max_width` 전례) | 초과 시 wrap |
+| `--tasty-tooltip-offset` | → `space-xs` (4) | `spacing_xs` | 앵커와 간격 |
+| `--tasty-tooltip-motion` | → `motion-ui-med` → duration-150 (150ms) | (없음 — 모션 토큰 미보유) | hover delay 150ms 는 위젯 상수 `HOVER_DELAY_SECONDS`(시간값, 길이/색 토큰 아님). fade 는 immediate-mode snap 으로 생략 |
+| `--tasty-help-hint-size` | → `icon-size-sm` (14) | `icon_glyph_size_sm` | (?) 글리프 14px |
+| `--tasty-help-hint-gap` | → `space-xs` (4) | `spacing_xs` | 라벨과 gap |
+| `--tasty-help-hint-color` | → `text-muted` | `text_muted()` | rest 색 |
+| `--tasty-help-hint-color-hover` | → `text-secondary` | `text_secondary()` | hover/focus 색 |
+
+> **결론**: tooltip/help-hint 16 토큰 중 14 종은 기존 Theme 접근자·위젯 상수로 커버되고,
+> `line-height-ui`(1.4)·`max-width-240`(240px) 2 종만 신규 Theme 필드로 승격했다. delay(150ms)
+> 는 모션 토큰 부재로 위젯 duration 상수, fade 는 immediate-mode snap 처리(switch-overlay-fade 와
+> 동일 관습). 글리프는 SVG 자산 주입 대신 painter 직접 드로잉(`status_dot`/`spinner` 전례).

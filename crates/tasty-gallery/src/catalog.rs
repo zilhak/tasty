@@ -353,7 +353,7 @@ pub fn pages() -> Vec<Page> {
                 ),
                 section(
                     "feedback",
-                    "StatusDot · Status resolution · Spinner · Toast · Toast stack · Toast view",
+                    "StatusDot · Status resolution · Spinner · Toast · Toast stack · Toast view · HelpHint",
                     vec![
                         spec(
                             "status-dot",
@@ -390,6 +390,12 @@ pub fn pages() -> Vec<Page> {
                             "Toast view",
                             Some("draw_toast_view mirror — scope stack, body wrap, alpha fade"),
                             components::toast::draw,
+                        ),
+                        spec(
+                            "help-hint",
+                            "HelpHint · Tooltip",
+                            Some("Inline (?) glyph + hover tooltip bubble"),
+                            components::prim_help_hint::draw,
                         ),
                     ],
                 ),
