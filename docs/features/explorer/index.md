@@ -4,7 +4,7 @@
 - **주체**: 로컬 사용자 · AI Agent ([주체](../../concepts/actors.md))
 - **ADR**: 없음
 - **코드**: surface kind 등록 `register_explorer` (`src/engine/surface_registry/builtins.rs`), 모델 `ExplorerPanel`/`ExplorerTab` (`crates/tasty-model/src/explorer_panel.rs`), 뷰 스토어 `ExplorerView`/`ExplorerViewStore` (`src/adapters/ui/surface/explorer/view.rs`), 렌더 `draw_explorer` (`src/adapters/ui/surface/explorer.rs`), deferred action 적용 `apply_explorer_action` (`src/adapters/ui/egui_panels.rs`)
-- **화면**: host-rendered egui surface (터미널/마크다운/이미지와 동궤의 surface 타입)
+- **화면**: host 내장 egui surface (터미널과 동궤의 surface 타입, T11 host builtin)
 
 ## 목적
 

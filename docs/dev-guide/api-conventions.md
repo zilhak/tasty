@@ -75,7 +75,7 @@ plugin 이 매니페스트로 contribute 하는 IPC namespace 는 호스트 예�
 | 응답 필드 의미/타입/nullability 변경 · 제거 · 단위·포맷 변경(ms↔s) | **major** |
 | default 값 의미 변경 · 새 권한 필요(기존 plugin 중단) · 에러 코드 의미 변경 | **major** |
 | fallback 없는 enum variant 추가 · 컬렉션 정렬/페이지네이션 의미 변화 | **major** |
-| 비동기 이벤트(`surface.event`/`command.invoke`/`ipc.result`) 의미 변화 · handshake/env(`TASTY_HOST_API_VERSION`/auth token) 계약 변경 · 예약 namespace·권한 토큰 정책 변경 | **major** |
+| 비동기 이벤트(`command.invoke`/`ipc.result`/`event.dispatch`) 의미 변화 · handshake/env(`TASTY_HOST_API_VERSION`/auth token) 계약 변경 · 예약 namespace·권한 토큰 정책 변경 | **major** |
 
 이 표는 출발선이다. 새 분류가 필요하면 PR 에 명시하고 표에 추가한다.
 

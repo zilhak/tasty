@@ -19,7 +19,7 @@
 - **여기로 이동**: 슬롯의 source(A) 를 우클릭한 위치의 target(B) 로 이동시키는 `DomainIntent::MoveSurface { source, target }` 를 `from_user_context_menu` origin 으로 발행한다.
 - 우클릭 경로 세 갈래 모두 같은 `PendingNativeMenu::Surface` 로 수렴한다:
   - **terminal**(winit, `src/view/main/mouse.rs`) — terminal mouse-tracking 위임(ADR-0019/0022)은 terminal 에 한정 유지, 그 외 surface 는 메뉴 설정.
-  - **host-rendered**(egui: markdown/image/explorer/html/clipboard_viewer, `src/adapters/ui/egui_panels.rs`) — 전역 포인터 `secondary_clicked()` 를 패널 논리 rect 와 대조해 surface 를 식별. winit 경로와 단일 슬롯 + `is_none()` 가드로 상호배타(이중 발화 없음).
+  - **egui 패널**(비-terminal surface: explorer/empty/mesh/webview chrome, `src/adapters/ui/egui_panels.rs`) — 전역 포인터 `secondary_clicked()` 를 패널 논리 rect 와 대조해 surface 를 식별. winit 경로와 단일 슬롯 + `is_none()` 가드로 상호배타(이중 발화 없음).
   - **remote**(egui 패널) — 패널 목록에 포함되어 빈공간 잘라내기/이동까지 동작.
 
 ### replace 시맨틱과 cascade
@@ -42,7 +42,7 @@
 - 복사(copy)·surface 스냅샷 이동·drag-and-drop UI.
 - 잘라내기 시각 피드백(흐림 등) · 이동 전 확인 다이얼로그.
 - 에이전트용 IPC/CLI — 잘라내기/이동은 사용자 우클릭 클립보드형 조작이라 GUI 전용이다([convert-surface](../convert-surface/index.md) 의 사용자 전용 팝업과 동궤). 슬롯 `pending_move_surface` 는 사용자 상태다.
-- plugin 전용 컨텍스트 항목(explorer 파일 메뉴 등)의 실제 선언 — 빈공간 판정 골격까지만. 선언적 `context_menu` protocol(`UiNode.context_menu` + `UiEvent::ContextMenuInvoke`)은 후속 TODO.
+- plugin 전용 컨텍스트 항목의 실제 선언 — 빈공간 판정 골격까지만. plugin 컨텍스트 메뉴 protocol 은 후속 TODO (UiNode DSL 제거로 선언 방식 재설계 필요).
 
 ## 관련
 

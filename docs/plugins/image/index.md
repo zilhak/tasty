@@ -19,7 +19,6 @@
 - **surface_kind `image` (egui-mesh)** — plugin(`ImageDoc`)이 픽셀·편집 상태·zoom/pan 을 소유하고, 원본 이미지 + 편집 오버레이 + floating selection 을 텍스처로 올려 viewer/paint chrome(control bar·paint bar·8 handles·zoom)과 함께 그린다. host `EguiMeshSurface` stand-in 은 파일·display_name·영속화만. 파일 로드 또는 빈 캔버스(그림판 모드 진입).
 - **파일 핸들러** — `detector "image"`(확장자 규칙) + `handler` `open_surface{surface_kind:"image"}`. 이미지 파일 열기 시 이 surface.
 - **cli / IPC** — `image.save`/`export_png`/`paste`/`next`/`prev` 는 plugin 이 직접 처리(픽셀·편집·네비 상태 소유), `image.open`(surface 변환)·`image.list`(host surface 열거)는 host 로 trampoline.
-- **host 잔존** — 이전 host-rendered 렌더 경로(`ImageView`/`ImagePanel`, `src/adapters/ui/surface/image/`)는 C1(host-rendered 채널 제거)까지 dead code 로 컴파일만 유지된다.
 
 ## 인터페이스
 

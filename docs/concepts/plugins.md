@@ -4,7 +4,7 @@ tasty 의 많은 기능은 **플러그인**으로 제공된다 — 별도 프로
 
 ## 두 분류 축
 
-플러그인은 **배포 축**과 **통합 축** 두 개로 독립적으로 분류된다. (예: `com.tasty.markdown` 은 배포=번들, 통합=host-rendered surface kind + 파일 핸들러.)
+플러그인은 **배포 축**과 **통합 축** 두 개로 독립적으로 분류된다. (예: `com.tasty.markdown` 은 배포=번들, 통합=egui-mesh surface kind + 파일 핸들러.)
 
 ### 배포 축 — 누가 설치/소유하나
 
@@ -39,7 +39,7 @@ tasty 의 많은 기능은 **플러그인**으로 제공된다 — 별도 프로
 
 surface kind 는 콘텐츠를 **누가 렌더하느냐**로 다시 갈린다 (→ [work-area Surface 종류](../features/work-area/index.md#surface-종류)):
 
-- **`rendering = "host"`** (host-rendered) — 플러그인은 *kind 를 선언만* 하고, host 화이트리스트에 매칭되면 **host 가 직접 그린다**(코드는 host 소유). 예: markdown(egui), image(egui+텍스처).
+- **`rendering = "egui-mesh"`** — plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다(ADR-0028). bundled 전용 화이트리스트 + api_version 게이트. 예: markdown, image, mesh-demo.
 - **`rendering = "webview"`** — host 의 네이티브 WebView 오버레이로 그린다. 예: html.
 - **(기본)** — 플러그인 프로세스가 직접 그린다. host 는 트리에 `RemoteSurface` marker 만 두고 plugin UI DSL 로 콘텐츠를 받는다. 예: explorer.
 

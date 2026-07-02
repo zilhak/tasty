@@ -8,9 +8,8 @@
 
 | 만들고 싶은 것 | 보면 되는 번들 플러그인 | 난이도 |
 |---------------|------------------------|--------|
-| **host-rendered surface** (host 가 그림) | [image](../plugins/image/index.md)(최소) · [markdown](../plugins/markdown/index.md)(+파일 핸들러·settings) | ★ |
+| **egui-mesh surface** (자가 렌더 mesh 합성) | [image](../plugins/image/index.md) · [markdown](../plugins/markdown/index.md)(+파일 핸들러·settings) · [mesh-demo](egui-mesh-channel.md)(최소 PoC) | ★★ |
 | **webview surface** | [html](../plugins/html/index.md) | ★ |
-| **plugin-rendered surface** (자가 렌더 + UI DSL) | [explorer](../plugins/explorer/index.md) | ★★★ |
 | **도구 메뉴 항목 + popup** | [git-viewer](../plugins/git-viewer/index.md)(view/logic 분리) · [clipboard-viewer](../plugins/clipboard-viewer/index.md)(master-detail) | ★★ |
 | **CLI + IPC namespace** | [codex](../plugins/codex/index.md) · [claude](../plugins/claude/index.md) | ★★★ |
 | **이벤트 구독 / 훅 / 외부 설치** | [claude](../plugins/claude/index.md)(`surface.closed`·Claude 훅·install) | ★★★ |
@@ -80,12 +79,11 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 각 타입은 매니페스트 선언 + (필요 시) trait 콜백. 자세한 매니페스트 스니펫은 해당 예제 플러그인의 `tasty-plugin.toml` 을 본다.
 
-### Surface kind — `rendering` 4 종
+### Surface kind — `rendering` 3 종
 
-- **`rendering = "host"`** (image/markdown): 플러그인은 `[[surface_kinds]]` 로 kind 를 선언만 한다. host 화이트리스트(`("markdown","com.tasty.markdown")` 등)에 매칭되면 host 가 직접 렌더 — 플러그인은 surface 콜백을 구현하지 않는다. host-rendered 코드는 host 소유(`src/engine/surface_registry/builtins.rs`).
+- **`rendering = "egui-mesh"`** (markdown/image/mesh_demo): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. plugin-content 를 그리는 **유일한 렌더 채널**(ADR-0028). 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
 - **`rendering = "webview"`** (html): host 의 네이티브 WebView 오버레이로 그림. surface 의 URL 을 host 가 동기화.
-- **`rendering = "egui-mesh"`** (mesh_demo): 플러그인이 **자기 프로세스에서 egui 를 tessellate** 한 mesh 를 host 가 전용 `egui_wgpu::Renderer` 로 합성. SDK 를 `features=["egui-mesh"]` 로 받아 `paint_surface` 에서 `EguiMeshSurface::paint(...)` 호출. bundled 화이트리스트 + api_version gate. 채널 상세는 [egui-mesh-channel](egui-mesh-channel.md).
-- **(기본)** (explorer): 플러그인이 직접 렌더. host 트리엔 `RemoteSurface` marker, 플러그인이 `create_surface`/`handle_event` 에서 **UI tree DSL**(§4)로 트리를 반환. `snapshot_surface`/`restore_surface` 로 세션 복원.
+- **`rendering = "remote"` (기본)**: webview 와 같은 `RemoteSurface` stand-in 등록만 하는 marker — host 는 이 kind 의 콘텐츠를 그리지 않는다. `snapshot_surface`/`restore_surface` 로 세션 복원.
 
 ### 파일 핸들러 (detector + handler)
 
@@ -94,7 +92,7 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 ### 도구 메뉴 항목 + popup
 
 - `[[contributes.tool]]`(`ui.tool_item`) — [도구 메뉴](../features/tools-menu/index.md)에 항목. `action.kind`: `event`(Event Bus 발화) / `open_surface`(탭 추가) / `open_popup`(`popup_id = <plugin_id>/<id>`). `order_hint` 오름차순(빌트인 0..99).
-- `[[contributes.popup]]`(`ui.popup`) — trigger `event`(자동 open) 또는 `ipc`(명시 호출). SDK 콜백 `open_popup`/`handle_popup_event`/`on_popup_closed`. 동일 `popup_id` 라도 `instance_id` 가 다르면 별개 인스턴스. 예: [git-viewer](../plugins/git-viewer/index.md)·[clipboard-viewer](../plugins/clipboard-viewer/index.md).
+- `[[contributes.popup]]`(`ui.popup`) — trigger `event`(자동 open) 또는 `ipc`(명시 호출). SDK 콜백 `open_popup`/`paint_popup`/`on_popup_closed`(egui-mesh). 동일 `popup_id` 라도 `instance_id` 가 다르면 별개 인스턴스. 예: [git-viewer](../plugins/git-viewer/index.md)·[clipboard-viewer](../plugins/clipboard-viewer/index.md).
 
 ### CLI + IPC namespace
 
@@ -102,11 +100,11 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 
 ### 단축키 (commands)
 
-`[[contributes.commands]]` — `id` · `default_keybinding` · `binding_mode`(`independent` 또는 `inherit:<host_action>`). 호스트가 키 매칭 시 `command.invoke` → SDK `handle_command`. 플러그인 키는 **focus surface 가 그 플러그인 소유일 때만** 호스트 키보다 우선. 예: [explorer](../plugins/explorer/index.md)(refresh/go_up).
+`[[contributes.commands]]` — `id` · `default_keybinding` · `binding_mode`(`independent` 또는 `inherit:<host_action>`). 호스트가 키 매칭 시 `command.invoke` → SDK `handle_command`. 플러그인 키는 **focus surface 가 그 플러그인 소유일 때만** 호스트 키보다 우선.
 
 ### 설정 페이지
 
-`[[contributes.settings_pages]]`(`ui.settings_page`) — [설정 창](../features/settings/index.md)에 sub-tab 동적 등록. `category`(appearance/general/keybindings/plugin/…). 플러그인 비활성 시 sub-tab 자동 소멸. 예: [markdown](../plugins/markdown/index.md)·[explorer](../plugins/explorer/index.md).
+`[[contributes.settings_pages]]`(`ui.settings_page`) — [설정 창](../features/settings/index.md)에 sub-tab 동적 등록. `category`(appearance/general/keybindings/plugin/…). 플러그인 비활성 시 sub-tab 자동 소멸. 예: [markdown](../plugins/markdown/index.md).
 
 `[[contributes.settings_pages.items]]` 의 `kind` (공통 필드: `id` · `label_key` · `storage_key`):
 
@@ -123,16 +121,14 @@ contribute 한 항목에 대응하는 콜백만 채우면 된다 — surface 가
 - **window** — `[[contributes.window]]`(`window.spawn`). 현재는 schema + 등록 stub 까지(실 spawn 은 별도 영역).
 - **extension** — 다른 플러그인의 IPC/event 흐름을 가로채기. `[extends]` + `ext:<target>` 권한 + `handle_extension_hook`. mode: `transform`/`filter`/`observe`. target 당 활성 1개(나머지 `Conflict`). fail-open(timeout/에러 시 원래 값 사용).
 
-## 4. UI tree DSL (plugin-rendered surface)
+## 4. Plugin UI 렌더 (egui-mesh 채널)
 
-전체 위젯은 `crates/tasty-plugin-protocol/src/ui_tree.rs` `UiNode`. 주요 빌더(`tasty_plugin_sdk::ui::*`):
-
-- 컨테이너: `vbox`/`hbox`(+`_spacing`) · `scroll_v` · `splitter(dir, ratio, a, b)` · `center(child)`(자식 1개를 가용영역 양축 중앙에 — 빈/실패 상태 한 줄용)
-- 표시: `label`(+`_styled`/`_color`) · `icon` · `text_preview`(+`_lang`) · `spacer`. 색 토큰 `text`/`subtext0`/`blue`/… 또는 `#aabbcc`
-- 상호작용: `button`(+`_primary`) · `addressbar` · `tree_view`. `id` 가 이벤트에 echo
-- 캔버스: `canvas`/`canvas_with_id`/`canvas_full` — `host.shared_buffer.create` 로 RGBA8 버퍼 확보 후 `commit(rect)`. 입력은 `UiEvent::CanvasPointer`
-
-`handle_event` 가 `UiEvent`(Click/Key/TreeSelect/TreeExpand/Addressbar*/ContextMenu/Scroll/FocusChanged/Resize)를 받아 새 tree 반환. 호스트는 응답을 기다리지 않고 이전 tree 로 다음 프레임을 그린다(도착하면 교체). 예제: [explorer](../plugins/explorer/index.md)(`splitter` + `tree_view` + `addressbar`, lazy-load).
+plugin 이 그리는 모든 UI(surface/popup/banner)는 egui-mesh 채널 하나로 통한다 —
+plugin 이 자기 프로세스에서 egui 를 구동해 tessellate 한 `(ClippedPrimitive,
+TexturesDelta, ppp)` 를 SharedBuffer 로 host 에 보내고 host 가 합성한다. 위젯 어휘
+제한이 없고(egui 전부 사용 가능) 색·간격은 host 가 forward 한 `Theme` 토큰에서
+가져온다. 상세·SDK 헬퍼(`EguiMeshSurface`/`EguiMeshPopup`/`EguiMeshBanner`)는
+[egui-mesh-channel](egui-mesh-channel.md).
 
 ## 5. 호스트 IPC 호출
 

@@ -53,7 +53,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 ### Surface 종류 (→ [hierarchy.md](hierarchy.md#surface-타입) · [plugins.md](plugins.md))
 
 - **host 내장** — `terminal`(PTY+GPU 셰이더) / `empty` / `attached`(점유 mirror).
-- **host-rendered plugin** — `markdown` / `image` (plugin 이 `rendering=host` 선언, host 가 egui 로 그림).
+- **egui-mesh plugin** — `markdown` / `image` (plugin 이 `rendering=egui-mesh` 선언, plugin 프로세스가 tessellate 한 mesh 를 host 가 합성).
 - **RemoteSurface plugin** — `explorer` / `html` (plugin 이 직접 그림).
 
 ### attach (→ [attach-behavior.md](../dev-guide/attach-behavior.md))

@@ -58,12 +58,12 @@ GUI 에서는 `MainView`(View) 가 이 `CoreState` 를 호스팅·렌더한다. 
 | `terminal` | **host 내장** | 쉘 세션 (PTY 연결) | GPU 셰이더 |
 | `empty` | **host 내장** | 빈 surface (타입 전환 버튼); deferred 터미널 자리 | egui |
 | `attached` | **host 내장** (런타임 marker) | attach 점유의 양쪽 표현 | readonly mirror |
-| `markdown` | `com.tasty.markdown` plugin (`rendering=host`) | 마크다운 뷰어 | egui (host 가 그림) |
-| `image` | `com.tasty.image` plugin (`rendering=host`) | 이미지 뷰어/편집 | egui + 텍스처 (host 가 그림) |
-| `explorer` | `com.tasty.explorer` plugin | 파일 탐색기 | plugin UI DSL (`RemoteSurface`) |
-| `html` | `com.tasty.html` plugin | HTML/웹 뷰어 | 네이티브 WebView (`RemoteSurface`) |
+| `markdown` | `com.tasty.markdown` plugin (`rendering=egui-mesh`) | 마크다운 뷰어 | plugin 자가 렌더 mesh 를 host 가 합성 |
+| `image` | `com.tasty.image` plugin (`rendering=egui-mesh`) | 이미지 뷰어/편집 | plugin 자가 렌더 mesh (비트맵=egui 텍스처) |
+| `explorer` | **host 내장** (T11) | 파일 탐색기 | egui |
+| `html` | `com.tasty.html` plugin (`rendering=webview`) | HTML/웹 뷰어 | 네이티브 WebView overlay (`RemoteSurface`) |
 
-출처 3종: **host 내장**(`register_builtin_kinds`) / **host-rendered plugin**(plugin 이 `rendering=host` 선언 + host 화이트리스트, 코드는 host 소유) / **RemoteSurface plugin**(plugin 이 직접 그림). 종류별 상세·동작은 [`features/work-area/`](../features/work-area/index.md#surface-종류).
+출처 3종: **host 내장**(`register_builtin_kinds`) / **egui-mesh plugin**(plugin 이 `rendering=egui-mesh` 선언 + host 화이트리스트, plugin 프로세스가 자가 렌더한 mesh 를 host 가 합성) / **webview plugin**(`rendering=webview`, RemoteSurface stand-in + native WebView overlay). 종류별 상세·동작은 [`features/work-area/`](../features/work-area/index.md#surface-종류).
 
 ## 관련
 

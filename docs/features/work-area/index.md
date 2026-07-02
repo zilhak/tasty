@@ -69,23 +69,23 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 
 ### Surface 종류
 
-`kind()` 가 식별자, `type_name()` 이 표시 라벨. 세 출처가 있다 — host 내장, plugin 이 선언하지만 host 가 그리는 것(host-rendered whitelist), plugin 이 직접 그리는 것(RemoteSurface).
+`kind()` 가 식별자, `type_name()` 이 표시 라벨. 세 출처가 있다 — host 내장, plugin 이 egui-mesh 로 자가 렌더하는 것(EguiMeshSurface), webview overlay 로 그려지는 것(RemoteSurface).
 
 | kind | type_name | 출처 | 렌더 | 비고 |
 |------|-----------|------|------|------|
 | `terminal` | Terminal | **host 내장** | GPU 셰이더 | 쉘 PTY. deferred 가능(아래 `empty`) |
 | `empty` | Empty | **host 내장** | egui | 빈 자리(타입 선택 UI). **deferred 터미널 placeholder 도 이 타입** |
 | `attached` | Attached (held)/(mirror) | **host 내장**(런타임 marker) | 서버측=readonly mirror, client측=mirror Terminal | attach 점유의 양쪽 표현 → [점유](../../concepts/actors.md#점유-occupation-모델) |
-| `markdown` | Markdown | `com.tasty.markdown` plugin (`rendering=host`) | egui | host-rendered whitelist — host 가 그림 |
-| `image` | Image | `com.tasty.image` plugin (`rendering=host`) | egui + 텍스처 | host-rendered whitelist |
-| `explorer` | (plugin 제공) | `com.tasty.explorer` plugin | plugin UI DSL (`RemoteSurface`) | plugin 이 그림 |
-| `html` | (plugin 제공) | `com.tasty.html` plugin | 네이티브 WebView (`RemoteSurface`) | plugin 이 그림 |
+| `markdown` | Markdown | `com.tasty.markdown` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh 합성 | egui-mesh whitelist |
+| `image` | Image | `com.tasty.image` plugin (`rendering=egui-mesh`) | plugin 자가 렌더 mesh (비트맵=egui 텍스처) | egui-mesh whitelist |
+| `explorer` | Explorer | **host 내장** (T11) | egui | host builtin surface |
+| `html` | (plugin 제공) | `com.tasty.html` plugin (`rendering=webview`) | 네이티브 WebView overlay (`RemoteSurface`) | plugin 은 URL/navigation 만 제어 |
 
-- **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`attached`) 가 부팅 시 등록.
-- **host-rendered plugin**(`markdown`/`image`)은 plugin 매니페스트가 `rendering="host"` 로 선언하고 host 화이트리스트에 매칭되면 host 가 `SurfaceKindDef` 를 제공(코드는 host 소유).
-- **RemoteSurface plugin**(`explorer`/`html`)은 plugin 이 trait leaf 를 `RemoteSurface` marker 로 두고 plugin 프로세스가 콘텐츠를 그림.
+- **host 내장**은 `register_builtin_kinds`(`terminal`/`empty`/`attached`/`explorer`) 가 부팅 시 등록.
+- **egui-mesh plugin**(`markdown`/`image`)은 plugin 매니페스트가 `rendering="egui-mesh"` 로 선언하고 host 화이트리스트 + api_version 게이트에 매칭되면 `EguiMeshSurface` stand-in 으로 등록된다 — 콘텐츠는 plugin 프로세스가 tessellate 한 mesh 를 host 가 합성 (ADR-0028).
+- **webview plugin**(`html`)은 `RemoteSurface` stand-in 위에 host 가 native WebView overlay 를 자동 관리하고 plugin 은 `webview.set_url` IPC 로 URL/navigation 만 제어.
 - 새 kind 는 `SurfaceKindRegistry` 에 동적 등록 — plugin 이 hello 후 추가 가능.
-- plugin 이 제공하는 kind 각각의 동작은 [번들 플러그인](../../plugins/index.md)(markdown/image/explorer/html). 분류 축·렌더 분기 개념은 [concepts/plugins](../../concepts/plugins.md).
+- plugin 이 제공하는 kind 각각의 동작은 [번들 플러그인](../../plugins/index.md)(markdown/image/html). 분류 축·렌더 분기 개념은 [concepts/plugins](../../concepts/plugins.md).
 
 ## 인터페이스
 
@@ -121,7 +121,7 @@ Tab 의 SurfaceLayout 트리 leaf, 최하위 컨테이너. 고유 `surface_id` �
 - 도메인 모델: `crates/tasty-model/` — `Workspace`(`workspace.rs`) · `Pane`+`PaneNode`(`pane.rs`/`pane_tree.rs`, 상위 레이아웃) · `Tab`(`tab.rs`) · `SurfaceLayout`(`surface_layout.rs`, 하위 레이아웃) · `Surface` trait(`surface_trait.rs`) · 타입(`terminal_surface.rs`/`empty_surface.rs`/`attached_surface.rs`/`markdown_panel.rs`/`image_panel.rs`).
 - 이진 트리 공통: `binary_tree.rs` (`BinaryTree` trait — Pane/Surface 양쪽이 구현).
 - 보유/동작: `src/core/state.rs` `CoreState`(`workspaces`, `surface_registry`, `terminals`, `attach`), `src/state/` (`workspace.rs`/`pane.rs`/`tab.rs`).
-- 종류 레지스트리: `src/engine/surface_registry/` (`register_builtin_kinds`, host-rendered whitelist), RemoteSurface: `src/plugin_bridge/remote_kind.rs`.
+- 종류 레지스트리: `src/engine/surface_registry/` (`register_builtin_kinds`, egui-mesh whitelist `egui_mesh.rs`), RemoteSurface: `src/plugin_bridge/remote_kind.rs`.
 
 ## 화면
 

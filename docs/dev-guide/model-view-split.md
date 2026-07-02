@@ -1,6 +1,6 @@
 # Model + Host View 분리 패턴
 
-`tasty-model` 의 surface 모델은 **GUI-free** 다 (egui/wgpu 직접 사용 금지). 휘발성 GUI 상태(텍스처·캐시·편집 세션·스크롤·팝업 버퍼)는 호스트 측 **View** 구조체에 둔다. 새 host-rendered surface 를 추가하거나 기존 surface 에 뷰 상태를 더할 때 이 패턴을 따른다.
+`tasty-model` 의 surface 모델은 **GUI-free** 다 (egui/wgpu 직접 사용 금지). 휘발성 GUI 상태(텍스처·캐시·편집 세션·스크롤·팝업 버퍼)는 호스트 측 **View** 구조체에 둔다. host 가 egui 로 직접 그리는 내장 surface 에 뷰 상태를 더할 때 이 패턴을 따른다.
 
 `tasty-model` 이 의존하는 유일한 type-\* crate 는 `tasty-type-geometry`(LogicalPx/PhysicalPx) 뿐 — 픽셀 단위 wrapper 라 GUI-free 원칙과 무관하다. 색/시각 schema 는 view 영역(`tasty-type-appearance`/`tasty-themes`)이다.
 
@@ -10,7 +10,7 @@
 - **테스트 용이성** — 모델 단위 테스트가 GUI 컨텍스트 없이 가능.
 - **정리 일관성** — View 가 store 에 모이면 surface 닫힘 시 한 곳에서 일괄 해제.
 
-> 적용 대상은 **host-rendered surface**(host 가 egui 로 그리는 plugin surface, 현재 markdown·image)와 host 내장 surface 다. `explorer`/`html` 처럼 **plugin 이 직접 그리는 `RemoteSurface`** 는 plugin 프로세스가 자기 상태를 들고 그리므로 이 패턴 밖이다 (→ [concepts/plugins](../concepts/plugins.md)).
+> 적용 대상은 **host 내장 surface**(host 가 egui 로 그리는 surface, 현재 explorer·empty)다. markdown/image 같은 **egui-mesh plugin surface** 와 `html`(webview) 은 plugin 프로세스가 자기 상태를 들고 그리므로 이 패턴 밖이다 (→ [concepts/plugins](../concepts/plugins.md)).
 
 ## 어디에 무엇을 두나
 

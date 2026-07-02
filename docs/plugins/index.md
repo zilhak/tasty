@@ -8,9 +8,8 @@ tasty 에 **동봉되어 첫 부팅 시 자동 install** 되는 공식 플러그
 
 | 플러그인 (id) | 무엇 | 주요 기여 |
 |---------------|------|-----------|
-| [explorer](explorer/index.md) — `com.tasty.explorer` | 파일 탐색기 | surface_kind(plugin-rendered) · settings_page · commands |
 | [markdown](markdown/index.md) — `com.tasty.markdown` | 마크다운 뷰어 | surface_kind(egui-mesh) · 파일 핸들러 · cli · settings_page |
-| [image](image/index.md) — `com.tasty.image` | 이미지 뷰어 / 그림판 | surface_kind(host-rendered) · 파일 핸들러 · cli |
+| [image](image/index.md) — `com.tasty.image` | 이미지 뷰어 / 그림판 | surface_kind(egui-mesh) · 파일 핸들러 · cli |
 | [html](html/index.md) — `com.tasty.html` | HTML 뷰어 | surface_kind(webview) · 파일 핸들러 · cli |
 | [clipboard-viewer](clipboard-viewer/index.md) — `com.tasty.clipboard-viewer` | 클립보드 뷰어(현재 내용) | 도구 메뉴 · popup |
 | [git-viewer](git-viewer/index.md) — `com.tasty.git-viewer` | git status/log/diff 뷰어 | 도구 메뉴 · popup |

@@ -291,19 +291,19 @@ Section 1개(3 Spec) 추가 — scrim 바로 다음(디자인 NAV 순서).
 
 ## clipboard-viewer (Plugins)
 
-plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs::main_tree` (`UiNode` DSL) ↔ host
-`src/plugin_bridge/ui_tree_render.rs` (페인트) ↔ 갤러리 `catalog/components/clipboard_viewer.rs`
-(Plugins › `Clipboard viewer popup`). 갤러리는 plugin/host crate 비의존이라 *구성*(splitter +
-버튼 목록 + text_preview)을 Theme 토큰 painter mock 으로 전사 — 픽셀 동일성 비목표.
+plugin `crates/tasty-plugin-clipboard-viewer/src/view.rs::draw` (egui-mesh 자가 렌더, B4)
+↔ 갤러리 `catalog/components/clipboard_viewer.rs` (Plugins › `Clipboard viewer popup`).
+갤러리는 plugin crate 비의존이라 *구성*(master-detail + 버튼 목록 + mono 미리보기)을
+Theme 토큰 painter mock 으로 전사 — 픽셀 동일성 비목표.
 
-| plugin UiNode | host 페인트(토큰) | 갤러리 함수 |
+| plugin view.rs | 토큰 | 갤러리 함수 |
 |---|---|---|
-| `splitter(Horizontal, 0.3, …)` | `separator` 1px divider | `master_detail` (split_x = w×0.3) |
-| `button`(선택 타입, `button_primary`) | `accent-primary` + `text-on-accent` | `master_detail` 타입 루프(selected) |
-| `button`(유휴 타입) | `surface-raised` + `text-secondary` | 동(idle) |
-| `scroll_v(text_preview)` | mono `text-primary` | `master_detail` 미리보기 루프 |
-| empty 분기(`subtext0` 라벨) | `text-muted` | `state_box`(empty) |
-| read_error 분기(`red` 라벨) | `accent-danger` | `state_box`(read failed) |
+| 좌우 분할(LEFT_RATIO 0.3) | `separator` 1px divider | `master_detail` (split_x = w×0.3) |
+| 선택 타입 Button(primary) | `accent-primary` + `text-on-accent` | `master_detail` 타입 루프(selected) |
+| 유휴 타입 Button(secondary) | `surface-raised` + `text-secondary` | 동(idle) |
+| 상세 mono 미리보기 | mono `text-primary` | `master_detail` 미리보기 루프 |
+| empty 분기(중앙 한 줄) | `text-muted` | `state_box`(empty) |
+| read_error 분기 | `accent-danger` | `state_box`(read failed) |
 
 화면 전용 고정값 480×360 / ratio 0.3 은 module const(token-policy §c). 3 상태(types/empty/
 read-failed) 를 `StageVariant::Wrap` 으로 나란히 노출.
@@ -335,14 +335,14 @@ host gallery Tag specimen(prim_chips)에도 노출된다.
 
 ## surface viewers (Plugins)
 
-host-rendered surface(`markdown`/`image`) + webview chrome(`html`) 의 Plugins 페이지 specimen
-묶음(각 surface 가 독립 Section). 본체 binary 비의존 — 본체 surface draw 경로의 토큰·구성만
+egui-mesh surface(`markdown`/`image`) + webview chrome(`html`) 의 Plugins 페이지 specimen
+묶음(각 surface 가 독립 Section). plugin crate 비의존 — plugin render 경로의 토큰·구성만
 painter/egui 로 전사.
 
-| surface | 본체 draw | 갤러리 specimen | 핵심 토큰 |
+| surface | plugin draw | 갤러리 specimen | 핵심 토큰 |
 |---|---|---|---|
-| markdown | `surface/markdown/render.rs::render` (`pulldown-cmark` + 토큰 기반 6단계 prose 렌더러) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 `font-size-prose-h1`(20)/`font-size-prose-h2`(14) |
-| image | `surface/image.rs::draw_image` (+`controls.rs`) | `components/image_viewer.rs` | 캔버스 `bg-sidebar` · 버튼 `surface-raised`/`border-default` · 파일명·zoom `text-muted` · fallback `IMAGE` glyph |
+| markdown | `crates/tasty-plugin-markdown/src/render.rs` (`pulldown-cmark` + 토큰 기반 prose 렌더러) | `components/markdown_viewer.rs` | 본문 `text-secondary`(=override subtext1) · 링크 `accent-primary` · 코드 `surface-raised` · 헤딩 `font-size-prose-h1`(20)/`font-size-prose-h2`(14) |
+| image | `crates/tasty-plugin-image/src/render.rs` | `components/image_viewer.rs` | 캔버스 `bg-sidebar` · 버튼 `surface-raised`/`border-default` · 파일명·zoom `text-muted` · fallback `IMAGE` glyph |
 | html | OS native WebView overlay (`engine/surface_registry/webview_kind.rs`) | `components/html_chrome.rs` | 콘텐츠 토큰 무관 — chrome 만: `bg-panel`/`border-default` 경계 · `GLOBE` glyph · `Spinner` 로딩 · `ALERT_CIRCLE`+`accent-danger` 에러 |
 
 신규 glyph: `icons.rs` SURFACES 에 `IMAGE`(image fallback) · `GLOBE`(webview) 추가. image 는

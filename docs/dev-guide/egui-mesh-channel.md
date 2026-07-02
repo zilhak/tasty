@@ -184,8 +184,9 @@ plugin `api_version` 이 호스트와 일치할 때만 열린다(`open_popup_ins
 인스턴스별 상태를 초기화/정리한다. 최소 예시는 `crates/tasty-plugin-mesh-demo/src/main.rs`
 의 `draw_popup`.
 
-> 현 단계는 채널 **인프라 + 검증용 더미 PoC popup** 까지다. UiNode popup 렌더 경로는
-> 공존 유지된다(제거는 후속). git-viewer / clipboard-viewer 의 실제 전환은 별도 작업.
+> egui-mesh 는 plugin popup 콘텐츠의 **유일한 렌더 채널**이다 — git-viewer /
+> clipboard-viewer 가 이 채널로 자가 렌더하며, 옛 UiNode popup 렌더 경로는 존재하지
+> 않는다 (`PopupRendering` 은 `egui-mesh` 단일 variant).
 
 ## egui-mesh banner 채널 (A3)
 

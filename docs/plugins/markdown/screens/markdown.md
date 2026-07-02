@@ -1,7 +1,7 @@
 # Markdown surface 화면
 
 - **부모 기획**: [../index.md](../index.md)
-- **시각 소스**: host-rendered (egui) — `design-system/` 의 마크다운 surface 디자인(있으면), vendor 예정.
+- **시각 소스**: plugin egui-mesh 자가 렌더 — `design-system/` 의 마크다운 surface 디자인(있으면), vendor 예정.
 
 [작업 영역](../../../features/work-area/screens/work-area.md) 타일 안에 열리는 마크다운 렌더 surface. host 가 egui 로 그린다.
 
@@ -42,4 +42,4 @@
 
 ## 시각 소스
 
-host-rendered 이므로 픽셀은 host 렌더 + 테마 토큰. design-system 에 마크다운 디자인이 vendor 되면 링크로 교체.
+plugin 이 host 가 forward 한 Theme 토큰으로 자가 렌더. design-system 에 마크다운 디자인이 vendor 되면 링크로 교체.

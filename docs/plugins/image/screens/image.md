@@ -1,7 +1,7 @@
 # Image surface 화면
 
 - **부모 기획**: [../index.md](../index.md)
-- **시각 소스**: host-rendered (egui + 텍스처) — `design-system/` 의 image surface 디자인(있으면), vendor 예정.
+- **시각 소스**: plugin egui-mesh 자가 렌더 (비트맵=egui 텍스처) — `design-system/` 의 image surface 디자인(있으면), vendor 예정.
 
 [작업 영역](../../../features/work-area/screens/work-area.md) 타일 안에 열리는 이미지 뷰어 / 그림판 surface.
 
@@ -42,4 +42,4 @@
 
 ## 시각 소스
 
-host-rendered 이므로 픽셀은 host 렌더 + 테마 토큰. design-system vendor 후 링크로 교체.
+plugin 이 host 가 forward 한 Theme 토큰으로 자가 렌더. design-system vendor 후 링크로 교체.
