@@ -105,7 +105,7 @@ pub fn draw_info_modal(
 
     ui.label(
         egui::RichText::new(&current.body)
-            .color(th.text)
+            .color(th.text_primary())
             .size(BODY_FONT_SIZE),
     );
 

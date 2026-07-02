@@ -72,6 +72,6 @@ pub fn draw_drop_overlay(
         egui::Align2::CENTER_CENTER,
         label,
         font,
-        theme.text.to_egui(),
+        theme.text_primary().to_egui(),
     );
 }

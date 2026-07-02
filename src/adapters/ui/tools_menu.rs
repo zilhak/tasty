@@ -92,9 +92,9 @@ pub fn draw_tools_menu(
             t(entry.label_key),
             egui::FontId::proportional(th.font_size_body.value()),
             if resp.hovered() {
-                th.text.into()
+                th.text_primary().into()
             } else {
-                th.subtext0.into()
+                th.text_muted().into()
             },
         );
         if resp.clicked() {
@@ -153,9 +153,9 @@ pub fn draw_tools_menu(
             label,
             egui::FontId::proportional(th.font_size_body.value()),
             if resp.hovered() {
-                th.text.into()
+                th.text_primary().into()
             } else {
-                th.subtext0.into()
+                th.text_muted().into()
             },
         );
         if resp.clicked() {
