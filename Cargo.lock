@@ -5631,7 +5631,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-git-viewer"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "egui",
@@ -5692,7 +5692,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "egui",
@@ -5702,6 +5702,7 @@ dependencies = [
  "tasty-plugin-protocol",
  "tasty-plugin-sdk",
  "tasty-type-appearance",
+ "tasty-ui-widgets",
  "tracing",
  "tracing-subscriber",
  "webbrowser",

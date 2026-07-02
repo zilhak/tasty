@@ -49,7 +49,7 @@ fn prop(size: f32) -> FontId {
 pub fn draw(ctx: &egui::Context, theme: &Theme, state: &mut ViewerState, tr: &Translator) {
     let frame = egui::Frame::new()
         .fill(theme.bg_panel().to_egui())
-        .inner_margin(egui::Margin::same(0));
+        .inner_margin(egui::Margin::ZERO);
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         header(ui, theme, state, tr);

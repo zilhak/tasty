@@ -30,6 +30,7 @@ use tasty_type_appearance::theme::Theme;
 #[cfg(unix)]
 use tasty_plugin_sdk::EguiMeshSurface;
 use tasty_plugin_sdk::HostHandle;
+use tasty_ui_widgets::{margin_all, vspace};
 
 const PLUGIN_ID: &str = "com.tasty.markdown";
 const PLUGIN_VERSION: &str = "0.1.0";
@@ -447,7 +448,7 @@ fn draw(
     // ── 본문 ──
     let frame = egui::Frame::new()
         .fill(theme.base.to_egui())
-        .inner_margin(egui::Margin::same(8));
+        .inner_margin(margin_all(theme.spacing_sm));
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
         ui.set_min_width(ui.available_width());
         egui::ScrollArea::vertical()
@@ -467,7 +468,7 @@ fn draw(
                 }
                 render::render(ui, style, content);
                 // Trailing space so the last line doesn't collide with the bottom margin.
-                ui.add_space(8.0);
+                vspace(ui, theme.spacing_sm);
             });
     });
 }

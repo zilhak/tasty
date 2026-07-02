@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-markdown"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 license = "MIT"
 description = "Markdown viewer surface plugin (egui-mesh)"
@@ -17,6 +17,8 @@ tasty-plugin-protocol = { path = "../tasty-plugin-protocol" }
 # `Theme::with_colors_and_zoom` 으로 재구성해 디자인 토큰대로 그린다. egui-compat
 # (to_egui) 를 켠다 — 이 프로세스는 egui 를 링크하므로.
 tasty-type-appearance = { path = "../tasty-type-appearance" }
+# typed 간격 헬퍼 (vspace/margin_all) — git-viewer 선례와 동일하게 공용 위젯 crate 직접 의존.
+tasty-ui-widgets = { path = "../tasty-ui-widgets" }
 pulldown-cmark = { version = "0.12", default-features = false }
 webbrowser = "1"
 serde_json = "1"
