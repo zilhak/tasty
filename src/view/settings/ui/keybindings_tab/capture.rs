@@ -121,6 +121,83 @@ pub fn capture_winit_key_combo(
     KeyCapture::Combo(parts.join("+"))
 }
 
+/// quick-switch 슬롯 전용 캡처 — **modifier 가 하나라도 눌려 있으면 무효**다.
+///
+/// 일반 콤보 캡처([`capture_winit_key_combo`])와 정반대 규칙: 슬롯 키는 dispatch
+/// 시점에 `tab_switch_modifier`/`workspace_switch_modifier` 와 조합되므로, 사용자는
+/// modifier 없이 **키 하나만** 눌러야 한다. 실수로 `Ctrl+Q` 를 누르면 조용히 `Q` 로
+/// 해석하지 않고 무효 처리(대기 유지)해 다시 누르게 한다.
+///
+/// - `state != Pressed` → `None`
+/// - Escape → `Clear`(슬롯 비우기)
+/// - modifier-only 키(Ctrl/Shift/Alt/Super …) 단독 → `None`
+/// - modifier 가 하나라도 눌린 채의 일반 키 → `None`(무효)
+/// - modifier 없는 일반 키 → `Combo(키이름)`(콤보 접두사 없이 raw 키만)
+pub fn capture_bare_key(
+    event: &winit::event::KeyEvent,
+    modifiers: winit::keyboard::ModifiersState,
+) -> KeyCapture {
+    use winit::event::ElementState;
+    use winit::keyboard::{Key, NamedKey};
+
+    if event.state != ElementState::Pressed {
+        return KeyCapture::None;
+    }
+
+    let is_escape = event.logical_key == Key::Named(NamedKey::Escape);
+    let is_modifier_only = matches!(
+        &event.logical_key,
+        Key::Named(
+            NamedKey::Control
+                | NamedKey::Shift
+                | NamedKey::Alt
+                | NamedKey::Super
+                | NamedKey::Meta
+                | NamedKey::Hyper
+                | NamedKey::Fn
+                | NamedKey::FnLock
+                | NamedKey::CapsLock
+                | NamedKey::NumLock
+                | NamedKey::ScrollLock
+                | NamedKey::Symbol
+                | NamedKey::SymbolLock
+        )
+    );
+    let key_name =
+        physical_key_to_name(&event.physical_key).or_else(|| named_key_to_name(&event.logical_key));
+
+    bare_key_decision(is_escape, is_modifier_only, modifiers, key_name)
+}
+
+/// [`capture_bare_key`] 의 순수 판정부 — `winit::event::KeyEvent` 는 외부에서 생성할 수
+/// 없어 단위 테스트가 불가능하므로, 이벤트에서 뽑아낸 값만으로 결정을 내리는 부분을
+/// 분리해 테스트 가능하게 한다.
+fn bare_key_decision(
+    is_escape: bool,
+    is_modifier_only: bool,
+    modifiers: winit::keyboard::ModifiersState,
+    key_name: Option<&'static str>,
+) -> KeyCapture {
+    if is_escape {
+        return KeyCapture::Clear;
+    }
+    if is_modifier_only {
+        return KeyCapture::None;
+    }
+    // modifier 가 하나라도 눌려 있으면 무효 — 순수 키 입력만 유효.
+    if modifiers.control_key()
+        || modifiers.alt_key()
+        || modifiers.shift_key()
+        || modifiers.super_key()
+    {
+        return KeyCapture::None;
+    }
+    match key_name {
+        Some(name) => KeyCapture::Combo(name.to_string()),
+        None => KeyCapture::None,
+    }
+}
+
 fn physical_key_to_name(physical: &winit::keyboard::PhysicalKey) -> Option<&'static str> {
     use winit::keyboard::{KeyCode, PhysicalKey};
     let code = match physical {
@@ -238,5 +315,56 @@ fn named_key_to_name(key: &winit::keyboard::Key) -> Option<&'static str> {
         })
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{KeyCapture, bare_key_decision};
+    use winit::keyboard::ModifiersState;
+
+    #[test]
+    fn capture_bare_key_rejects_when_modifier_held() {
+        // ctrl 이 눌린 상태에서 'q' 키 입력은 무효(대기 유지) — 순수 키만 유효.
+        let result = bare_key_decision(false, false, ModifiersState::CONTROL, Some("q"));
+        assert_eq!(result, KeyCapture::None);
+
+        // alt / shift / super 도 동일하게 거부.
+        assert_eq!(
+            bare_key_decision(false, false, ModifiersState::ALT, Some("q")),
+            KeyCapture::None
+        );
+        assert_eq!(
+            bare_key_decision(false, false, ModifiersState::SHIFT, Some("q")),
+            KeyCapture::None
+        );
+        assert_eq!(
+            bare_key_decision(false, false, ModifiersState::SUPER, Some("q")),
+            KeyCapture::None
+        );
+    }
+
+    #[test]
+    fn capture_bare_key_accepts_plain_key() {
+        // modifier 없이 'q' 입력 → raw 키 이름만(콤보 접두사 없음).
+        let result = bare_key_decision(false, false, ModifiersState::empty(), Some("q"));
+        assert_eq!(result, KeyCapture::Combo("q".to_string()));
+    }
+
+    #[test]
+    fn capture_bare_key_escape_clears() {
+        assert_eq!(
+            bare_key_decision(true, false, ModifiersState::empty(), None),
+            KeyCapture::Clear
+        );
+    }
+
+    #[test]
+    fn capture_bare_key_modifier_only_waits() {
+        // modifier-only 키(Ctrl 단독) 는 무효 — 대기 유지.
+        assert_eq!(
+            bare_key_decision(false, true, ModifiersState::CONTROL, None),
+            KeyCapture::None
+        );
     }
 }

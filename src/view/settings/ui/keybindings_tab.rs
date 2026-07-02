@@ -12,6 +12,46 @@ pub struct PendingBinding {
     pub combo: String,
     pub conflicting_field: String,
     pub conflicting_idx: usize,
+    // ── quick-switch bare-key 확장 ─────────────────────────────────────
+    /// `Some` 이면 이 충돌의 타겟이 quick-switch bare-key 슬롯이다. accept 시
+    /// `combo`(합성 표시용) 대신 [`Self::bare_raw_key`] 를 accessor 로 기록한다.
+    pub bare_target: Option<BareTarget>,
+    /// `bare_target` 이 `Some` 일 때 슬롯에 기록할 raw 키(modifier 없음).
+    pub bare_raw_key: String,
+    /// 충돌 상대가 **다른 quick-switch 슬롯**이면 `Some`. accept 시 그 슬롯을 비운다
+    /// (`conflicting_field`/`conflicting_idx` 는 일반 콤보 필드 전용이므로 슬롯 충돌엔
+    /// 쓸 수 없다).
+    pub conflicting_bare: Option<BareTarget>,
+    /// 팝업에 표시할 충돌 대상 라벨(이미 번역·정리된 문자열). `Some` 이면 팝업이
+    /// `label_key_for` 경로 대신 이 값을 그대로 쓴다(슬롯 충돌은 일반 필드 라벨 맵에
+    /// 없으므로 필요).
+    pub conflicting_label: Option<String>,
+}
+
+/// quick-switch bare-key 슬롯의 대상 식별자. modifier 는 `tab_switch_modifier` /
+/// `workspace_switch_modifier` 에서 조합되고, 여기서는 raw 키가 어느 슬롯에
+/// 속하는지만 나타낸다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BareTarget {
+    /// 탭 quick-switch 슬롯 `idx`(0~9 → 표시 "1번"~"10번").
+    TabSlot(usize),
+    /// 워크스페이스 quick-switch 슬롯 `idx`(0~8 → 표시 "1번"~"9번").
+    WorkspaceSlot(usize),
+    TabNext,
+    TabPrev,
+    WorkspaceNext,
+    WorkspacePrev,
+}
+
+/// 녹화 슬롯이 요구하는 캡처 규칙. 일반 콤보 필드는 modifier 필수([`Combo`]),
+/// quick-switch 슬롯은 modifier 금지 bare 키([`BareKey`]).
+///
+/// [`Combo`]: FieldKind::Combo
+/// [`BareKey`]: FieldKind::BareKey
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldKind {
+    Combo,
+    BareKey(BareTarget),
 }
 
 /// Sub-tab within the Keybindings tab.
@@ -37,9 +77,12 @@ pub struct RecordingSlot {
     pub field_id: String,
     /// 기존 바인딩 교체 시 인덱스, 새 바인딩 추가 시 `bindings.len()`.
     pub idx: usize,
+    /// 이 슬롯의 캡처 규칙. quick-switch 슬롯이면 `BareKey`(modifier 금지).
+    pub field_kind: FieldKind,
 }
 
 /// Result of key capture attempt.
+#[derive(Debug, PartialEq)]
 pub enum KeyCapture {
     /// No key pressed yet.
     None,
@@ -154,29 +197,14 @@ pub fn draw_keybindings_tab(
             ui.separator();
             vspace(ui, th.spacing_xs);
 
-            egui::Grid::new("ws_modifier_grid")
-                .num_columns(2)
-                .spacing([12.0, 8.0])
-                .show(ui, |ui| {
-                    ui.label(t("settings.keybindings.workspace_switch_modifier_label"));
-                    egui::ComboBox::from_id_salt("workspace_switch_modifier")
-                        .selected_text(modifier_display(
-                            &settings.keybindings.workspace_switch_modifier,
-                        ))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut settings.keybindings.workspace_switch_modifier,
-                                "ctrl".to_string(),
-                                "Ctrl",
-                            );
-                            ui.selectable_value(
-                                &mut settings.keybindings.workspace_switch_modifier,
-                                "alt".to_string(),
-                                "Alt",
-                            );
-                        });
-                    ui.end_row();
-                });
+            draw_quick_switch_section(
+                ui,
+                &mut settings.keybindings,
+                recording_field,
+                pending_binding,
+                &captured,
+                QuickSwitchKind::Workspace,
+            );
         }
         KeybindingsSubTab::Pane => {
             draw_keybinding_entries(
@@ -227,27 +255,14 @@ pub fn draw_keybindings_tab(
             ui.separator();
             vspace(ui, th.spacing_xs);
 
-            egui::Grid::new("tab_modifier_grid")
-                .num_columns(2)
-                .spacing([12.0, 8.0])
-                .show(ui, |ui| {
-                    ui.label(t("settings.keybindings.tab_switch_modifier_label"));
-                    egui::ComboBox::from_id_salt("tab_switch_modifier")
-                        .selected_text(modifier_display(&settings.keybindings.tab_switch_modifier))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut settings.keybindings.tab_switch_modifier,
-                                "ctrl".to_string(),
-                                "Ctrl",
-                            );
-                            ui.selectable_value(
-                                &mut settings.keybindings.tab_switch_modifier,
-                                "alt".to_string(),
-                                "Alt",
-                            );
-                        });
-                    ui.end_row();
-                });
+            draw_quick_switch_section(
+                ui,
+                &mut settings.keybindings,
+                recording_field,
+                pending_binding,
+                &captured,
+                QuickSwitchKind::Tab,
+            );
         }
         KeybindingsSubTab::Surface => {
             draw_keybinding_entries(
@@ -377,22 +392,18 @@ pub fn draw_keybindings_tab(
     }
 }
 
-fn modifier_display(modifier: &str) -> &str {
-    match modifier.to_lowercase().as_str() {
-        "alt" => "Alt",
-        _ => "Ctrl",
-    }
-}
-
 /// Preset 서브탭: 좌측 프리셋 목록, 우측 미리보기 테이블 + 적용 버튼.
 mod capture;
 mod entries;
 mod entries_scripts;
 mod plugins;
 mod preset;
+mod quick_switch;
 
-pub use capture::capture_winit_key_combo;
+pub use capture::{capture_bare_key, capture_winit_key_combo};
+pub use quick_switch::{clear_bare_target, set_bare_target};
 use entries::draw_keybinding_entries;
+use quick_switch::{QuickSwitchKind, draw_quick_switch_section};
 use entries_scripts::draw_script_bindings;
 use plugins::draw_plugins_subtab;
 use preset::draw_preset_subtab;

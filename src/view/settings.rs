@@ -179,10 +179,15 @@ impl View for SettingsView {
                     self.mark_dirty();
                 }
 
-                // 녹화 중이면 winit에서 직접 키 조합 캡처
+                // 녹화 중이면 winit에서 직접 키 조합 캡처. quick-switch bare-key 슬롯은
+                // modifier 금지 규칙(capture_bare_key), 그 외 일반 콤보 슬롯은 modifier
+                // 필수 규칙(capture_winit_key_combo)으로 분기.
                 if is_recording {
-                    let combo =
-                        crate::settings_ui::capture_winit_key_combo(event, self.base.modifiers);
+                    let combo = if self.settings_ui_state.recording_is_bare_key() {
+                        crate::settings_ui::capture_bare_key(event, self.base.modifiers)
+                    } else {
+                        crate::settings_ui::capture_winit_key_combo(event, self.base.modifiers)
+                    };
                     if !matches!(combo, crate::settings_ui::KeyCapture::None) {
                         self.settings_ui_state.captured_winit_combo = Some(combo);
                         self.mark_dirty();

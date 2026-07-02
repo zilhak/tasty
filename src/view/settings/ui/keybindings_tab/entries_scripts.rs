@@ -7,7 +7,7 @@
 use crate::i18n::t;
 use crate::settings::{KeybindingSettings, Settings};
 
-use super::{KeyCapture, RecordingSlot};
+use super::{FieldKind, KeyCapture, RecordingSlot};
 use tasty_ui_widgets::vspace;
 
 /// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
@@ -138,6 +138,7 @@ pub(super) fn draw_script_bindings(
                 *recording_field = Some(RecordingSlot {
                     field_id: slot_id.clone(),
                     idx: 0,
+                    field_kind: FieldKind::Combo,
                 });
             }
         });

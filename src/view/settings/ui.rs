@@ -3,10 +3,13 @@ mod keybindings_tab;
 mod tabs;
 
 use file_handler_tab::{FileHandlerSubTab, draw_file_handler_tab};
-use keybindings_tab::{KeybindingsSubTab, PendingBinding, RecordingSlot, draw_keybindings_tab};
+use keybindings_tab::{
+    FieldKind, KeybindingsSubTab, PendingBinding, RecordingSlot, clear_bare_target,
+    draw_keybindings_tab, set_bare_target,
+};
 use tabs::*;
 
-pub use keybindings_tab::{KeyCapture, capture_winit_key_combo};
+pub use keybindings_tab::{KeyCapture, capture_bare_key, capture_winit_key_combo};
 
 use crate::adapters::ui::popup::{PopupManager, PopupState};
 use crate::file::format::{DetectorId, FileFormatRegistry};
@@ -229,6 +232,15 @@ impl SettingsUiState {
     /// 단축키 녹화 중인지 여부.
     pub fn is_recording(&self) -> bool {
         self.recording_field.is_some()
+    }
+
+    /// 현재 녹화 중인 슬롯이 quick-switch bare-key 슬롯인지 여부.
+    /// (일반 콤보 캡처 vs bare-key 캡처 분기에 사용.)
+    pub fn recording_is_bare_key(&self) -> bool {
+        matches!(
+            &self.recording_field,
+            Some(slot) if matches!(slot.field_kind, FieldKind::BareKey(_))
+        )
     }
 
     /// Plugins 모달의 `Configure` 진입점에서 호출 — 첫 진입 탭을 `Plugin` 으로 설정.
@@ -552,15 +564,31 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                             if ui_state.conflict_accepted {
                                 ui_state.conflict_accepted = false;
                                 if let Some(pending) = ui_state.pending_binding.take() {
-                                    draft.keybindings.remove_binding(
-                                        &pending.conflicting_field,
-                                        pending.conflicting_idx,
-                                    );
-                                    draft.keybindings.replace_binding_at(
-                                        &pending.target_field,
-                                        pending.target_idx,
-                                        pending.combo,
-                                    );
+                                    // 충돌 제거: 다른 quick-switch 슬롯이면 그 슬롯을 비우고,
+                                    // 아니면 일반 콤보 필드에서 해당 바인딩 제거.
+                                    if let Some(cb) = pending.conflicting_bare {
+                                        clear_bare_target(&mut draft.keybindings, cb);
+                                    } else {
+                                        draft.keybindings.remove_binding(
+                                            &pending.conflicting_field,
+                                            pending.conflicting_idx,
+                                        );
+                                    }
+                                    // 타겟 기록: bare-key 슬롯이면 raw 키를 accessor 로,
+                                    // 아니면 일반 콤보 필드에 합성 콤보를 기록.
+                                    if let Some(bt) = pending.bare_target {
+                                        set_bare_target(
+                                            &mut draft.keybindings,
+                                            bt,
+                                            &pending.bare_raw_key,
+                                        );
+                                    } else {
+                                        draft.keybindings.replace_binding_at(
+                                            &pending.target_field,
+                                            pending.target_idx,
+                                            pending.combo,
+                                        );
+                                    }
                                 }
                                 // intent-exempt: settings 윈도우 내부 sub-modal close.
                                 ui_state.popups.close("keybinding_conflict");
@@ -588,13 +616,18 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                 if id == "keybinding_conflict"
                     && let Some(pending) = &pending
                 {
-                    let conflict_label_raw = crate::settings::KeybindingSettings::label_key_for(
-                        &pending.conflicting_field,
-                    )
-                    .map(t)
-                    .unwrap_or(pending.conflicting_field.as_str());
-                    let conflict_label =
-                        conflict_label_raw.trim_end_matches(':').trim().to_string();
+                    // quick-switch 슬롯 충돌은 일반 필드 라벨 맵에 없으므로 precomputed
+                    // 라벨을 우선 사용. 없으면 일반 필드 label_key_for 경로.
+                    let conflict_label = if let Some(label) = &pending.conflicting_label {
+                        label.clone()
+                    } else {
+                        let raw = crate::settings::KeybindingSettings::label_key_for(
+                            &pending.conflicting_field,
+                        )
+                        .map(t)
+                        .unwrap_or(pending.conflicting_field.as_str());
+                        raw.trim_end_matches(':').trim().to_string()
+                    };
                     let combo_display =
                         crate::settings::KeybindingSettings::format_display(&pending.combo);
 

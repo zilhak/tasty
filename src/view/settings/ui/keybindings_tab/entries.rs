@@ -1,7 +1,7 @@
 use crate::i18n::t;
 use crate::settings::KeybindingSettings;
 
-use super::{KeyCapture, PendingBinding, RecordingSlot};
+use super::{FieldKind, KeyCapture, PendingBinding, RecordingSlot};
 
 pub(super) fn draw_keybinding_entries(
     ui: &mut egui::Ui,
@@ -16,7 +16,11 @@ pub(super) fn draw_keybinding_entries(
     let can_record = pending_binding.is_none();
 
     // 녹화된 combo 처리: 녹화 슬롯이 정해져 있을 때만 적용.
-    if let Some(slot) = recording_field.clone() {
+    // BareKey 슬롯(quick-switch)은 같은 서브탭에서 함께 렌더되는 `quick_switch.rs`
+    // 가 소비하므로 여기서 가로채지 않는다(Combo 슬롯만 처리).
+    if let Some(slot) = recording_field.clone()
+        && slot.field_kind == FieldKind::Combo
+    {
         match captured {
             KeyCapture::Combo(combo) => {
                 match keybindings.find_conflict(&slot.field_id, combo) {
@@ -27,6 +31,10 @@ pub(super) fn draw_keybinding_entries(
                             combo: combo.clone(),
                             conflicting_field: conflicting.to_string(),
                             conflicting_idx,
+                            bare_target: None,
+                            bare_raw_key: String::new(),
+                            conflicting_bare: None,
+                            conflicting_label: None,
                         });
                     }
                     None => {
@@ -136,6 +144,7 @@ pub(super) fn draw_keybinding_entries(
                         *recording_field = Some(RecordingSlot {
                             field_id: field_id.to_string(),
                             idx,
+                            field_kind: FieldKind::Combo,
                         });
                     }
                 }
@@ -179,6 +188,7 @@ pub(super) fn draw_keybinding_entries(
                     *recording_field = Some(RecordingSlot {
                         field_id: field_id.to_string(),
                         idx: bindings_len,
+                        field_kind: FieldKind::Combo,
                     });
                 }
             });
