@@ -189,7 +189,7 @@ pub fn draw_apply_preset_view(
         if names.is_empty() {
             ui.label(
                 egui::RichText::new(props.empty_label)
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .italics(),
             );
         } else {
@@ -222,9 +222,9 @@ pub fn draw_apply_preset_view(
                             name,
                             egui::FontId::proportional(12.0),
                             if is_selected {
-                                th.text.into()
+                                th.text_primary().into()
                             } else {
-                                th.subtext0.into()
+                                th.text_muted().into()
                             },
                         );
                         if resp.clicked() {
