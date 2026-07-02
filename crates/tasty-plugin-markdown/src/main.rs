@@ -22,8 +22,8 @@ use render::{LinkClick, MdStyle};
 use serde_json::{Value, json};
 use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceEventCtx,
-    SurfaceResult, SurfaceSetContextCtx, Translator,
+    IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceResult,
+    SurfaceSetContextCtx, Translator,
 };
 use tasty_type_appearance::theme::Theme;
 
@@ -173,10 +173,6 @@ impl Plugin for MarkdownPlugin {
         // params(file 등)는 `params.params` 아래에 중첩돼 있다.
         let file = surface_param_file(&ctx.params);
         self.docs.insert(ctx.surface_id, MdDoc::new(file));
-        SurfaceResult::default()
-    }
-
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
 

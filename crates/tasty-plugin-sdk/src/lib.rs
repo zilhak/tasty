@@ -17,7 +17,6 @@ pub mod i18n;
 pub mod plugin;
 pub mod runtime;
 pub mod shared_buffer;
-pub mod ui;
 
 pub use bus::BusHandle;
 #[cfg(feature = "egui-mesh")]
@@ -31,15 +30,11 @@ pub use i18n::Translator;
 pub use plugin::{
     BannerClosedCtx, BannerOpenCtx, BannerSetContextCtx, CommandInvokeCtx, EventDispatchCtx,
     ExtensionHookCtx, ExtensionHookOutcome, IpcMethodCtx, IpcMethodError, Plugin, PopupClosedCtx,
-    PopupEventCtx, PopupEventResult, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx,
-    SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx, SurfaceResult, SurfaceSetContextCtx,
-    SurfaceSnapshotCtx,
+    PopupOpenCtx, PopupOpenResult, PopupSetContextCtx, SurfaceCreateCtx, SurfaceRestoreCtx,
+    SurfaceResult, SurfaceSetContextCtx, SurfaceSnapshotCtx,
 };
 pub use runtime::run;
 pub use shared_buffer::SharedBuffer;
-pub use tasty_plugin_protocol::ui_tree::{
-    BadgeTone, ButtonStyle, LabelStyle, SelectionMode, SplitDir, TagTone, TreeNode, UiEvent, UiNode,
-};
 pub use tasty_plugin_protocol::{
     EventEnvelope, EventMeta, EventOrigin, EventScope, ExtensionHookKind, ExtensionHookMode,
     ExtensionHookPhase, LifecycleReason, PixelRect, PluginEvent, SharedBufferId,

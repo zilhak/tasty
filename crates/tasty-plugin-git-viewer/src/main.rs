@@ -26,7 +26,7 @@ use serde_json::Value;
 use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
     Plugin, PluginEnv, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx,
-    SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, Translator,
+    SurfaceCreateCtx, SurfaceResult, Translator,
 };
 use tasty_type_appearance::theme::Theme;
 
@@ -252,10 +252,6 @@ impl Plugin for GitViewerPlugin {
         SurfaceResult::default()
     }
 
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult::default()
-    }
-
     fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
         // egui-mesh popup 은 tree 를 안 그린다 — 빈 트리. 최초 인스턴스만 state 를 적재하고
         // primary 로 삼는다. 이후 인스턴스는 paint_popup 에서 "이미 열림" 을 그린다.
@@ -264,7 +260,7 @@ impl Plugin for GitViewerPlugin {
             let cwd = cwd_from_context(&ctx.context);
             self.state = Some(ViewerState::load(cwd.as_deref()));
         }
-        PopupOpenResult { tree: None }
+        PopupOpenResult::default()
     }
 
     fn paint_popup(&mut self, ctx: PopupSetContextCtx) {

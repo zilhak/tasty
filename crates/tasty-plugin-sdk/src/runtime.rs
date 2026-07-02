@@ -25,11 +25,11 @@ use tasty_plugin_protocol::{
     BannerClosedParams, BannerOpenParams, BannerSetContextParams, EventDispatchParams,
     IpcCallResult, IpcInvokeParams, METHOD_BANNER_CLOSED, METHOD_BANNER_OPEN,
     METHOD_BANNER_SET_CONTEXT, METHOD_COMMAND_INVOKE, METHOD_EVENT_DISPATCH, METHOD_IPC_INVOKE,
-    METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_EVENT, METHOD_POPUP_OPEN,
+    METHOD_IPC_RESULT, METHOD_PING, METHOD_POPUP_CLOSED, METHOD_POPUP_OPEN,
     METHOD_POPUP_SET_CONTEXT, METHOD_SHUTDOWN, METHOD_SURFACE_CREATE, METHOD_SURFACE_DESTROY,
-    METHOD_SURFACE_EVENT, METHOD_SURFACE_RESTORE, METHOD_SURFACE_SET_CONTEXT,
-    METHOD_SURFACE_SNAPSHOT, PluginEvent, PluginRequest, PluginResponse, PopupClosedParams,
-    PopupOpenParams, PopupSetContextParams, SurfaceSetContextParams,
+    METHOD_SURFACE_RESTORE, METHOD_SURFACE_SET_CONTEXT, METHOD_SURFACE_SNAPSHOT, PluginEvent,
+    PluginRequest, PluginResponse, PopupClosedParams, PopupOpenParams, PopupSetContextParams,
+    SurfaceSetContextParams,
 };
 
 use crate::connection::Connection;
@@ -37,8 +37,7 @@ use crate::env::PluginEnv;
 use crate::handle_channel::HandleClient;
 use crate::host::{HostHandle, PendingCalls, SharedBufferFdPending, deliver_ipc_result};
 use crate::plugin::{
-    CommandInvokeCtx, IpcMethodCtx, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceRestoreCtx,
-    SurfaceSnapshotCtx,
+    CommandInvokeCtx, IpcMethodCtx, Plugin, SurfaceCreateCtx, SurfaceRestoreCtx, SurfaceSnapshotCtx,
 };
 
 /// dispatch 내부에서만 쓰이는 에러. JSON-RPC 에러 코드를 보존한다.
@@ -429,17 +428,6 @@ pub(crate) fn dispatch<P: Plugin>(
             });
             serde_json::to_value(result).map_err(|e| DispatchError::from_anyhow(e.into()))
         }
-        METHOD_SURFACE_EVENT => {
-            let surface_id = require_surface_id(params).map_err(DispatchError::from_anyhow)?;
-            let ev_value = params.get("event").ok_or_else(|| DispatchError {
-                message: "surface.event params missing 'event'".into(),
-                code: None,
-            })?;
-            let event = serde_json::from_value(ev_value.clone())
-                .map_err(|e| DispatchError::from_anyhow(e.into()))?;
-            let result = plugin.handle_event(SurfaceEventCtx { surface_id, event });
-            serde_json::to_value(result).map_err(|e| DispatchError::from_anyhow(e.into()))
-        }
         METHOD_SURFACE_RESTORE => {
             let surface_id = require_surface_id(params).map_err(DispatchError::from_anyhow)?;
             let kind = params
@@ -550,24 +538,6 @@ pub(crate) fn dispatch<P: Plugin>(
                 instance_id: parsed.instance_id,
                 context: parsed.context,
             });
-            serde_json::to_value(result).map_err(|e| DispatchError::from_anyhow(e.into()))
-        }
-        METHOD_POPUP_EVENT => {
-            let instance_id = params
-                .get("instance_id")
-                .and_then(|v| v.as_u64())
-                .ok_or_else(|| DispatchError {
-                    message: "popup.event params missing 'instance_id'".into(),
-                    code: None,
-                })?;
-            let ev_value = params.get("event").ok_or_else(|| DispatchError {
-                message: "popup.event params missing 'event'".into(),
-                code: None,
-            })?;
-            let event = serde_json::from_value(ev_value.clone())
-                .map_err(|e| DispatchError::from_anyhow(e.into()))?;
-            let result =
-                plugin.handle_popup_event(crate::plugin::PopupEventCtx { instance_id, event });
             serde_json::to_value(result).map_err(|e| DispatchError::from_anyhow(e.into()))
         }
         METHOD_POPUP_CLOSED => {

@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use tasty_plugin_sdk::{
     BannerClosedCtx, BannerOpenCtx, BannerSetContextCtx, EguiMeshBanner, EguiMeshPopup,
     EguiMeshSurface, Plugin, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx,
-    SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, SurfaceSetContextCtx,
+    SurfaceCreateCtx, SurfaceResult, SurfaceSetContextCtx,
 };
 
 const PLUGIN_ID: &str = "com.tasty.mesh-demo";
@@ -55,10 +55,6 @@ impl Plugin for MeshDemoPlugin {
         SurfaceResult::default()
     }
 
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult::default()
-    }
-
     fn destroy_surface(&mut self, surface_id: u32) {
         // surface 가 닫히면 egui Context·shared buffer 매핑·데모 상태를 함께 해제.
         self.surfaces.remove(&surface_id);
@@ -73,7 +69,7 @@ impl Plugin for MeshDemoPlugin {
         // egui-mesh popup 은 tree 가 아니라 mesh 채널(paint_popup)로 그린다 — 빈 트리.
         // 인스턴스별 데모 상태만 초기화한다.
         self.popup_clicks.entry(ctx.instance_id).or_insert(0);
-        PopupOpenResult { tree: None }
+        PopupOpenResult::default()
     }
 
     fn paint_popup(&mut self, ctx: PopupSetContextCtx) {

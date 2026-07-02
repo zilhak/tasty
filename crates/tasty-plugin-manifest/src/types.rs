@@ -329,9 +329,7 @@ pub struct SurfaceKindDecl {
     pub display_name_i18n_key: String,
     #[serde(default)]
     pub icon: Option<String>,
-    /// surface 렌더링을 호스트 GUI가 직접 담당하는지(`Host`), plugin이 UiNode tree를
-    /// 보내는 일반 remote 방식인지(`Remote`). 호스트가 화이트리스트로 등록한 kind에만
-    /// `Host`를 허용한다. 기본 `Remote`.
+    /// surface 렌더링 방식 — [`SurfaceKindRendering`] 참조. 기본 `Remote`.
     #[serde(default)]
     pub rendering: SurfaceKindRendering,
     /// plugin 이 권장하는 surface 기본 색. 사용자 theme TOML 의
@@ -689,26 +687,25 @@ pub struct PopupContribute {
     pub anchor: PopupAnchor,
     #[serde(default = "default_dismiss_on_outside_click")]
     pub dismiss_on_outside_click: bool,
-    /// popup 콘텐츠 렌더링 방식. 기본 `ui-tree`(UiNode). `egui-mesh` 면 plugin 이
-    /// 자기 프로세스에서 egui mesh 를 tessellate 하고 host 가 popup 영역에 합성한다
-    /// (ADR-0028, A2). 셸(scrim/border/outside-click/Esc)은 어느 쪽이든 host 소유.
+    /// popup 콘텐츠 렌더링 방식. `egui-mesh`(기본이자 유일) — plugin 이 자기
+    /// 프로세스에서 egui mesh 를 tessellate 하고 host 가 popup 영역에 합성한다
+    /// (ADR-0028, A2). 셸(scrim/border/outside-click/Esc)은 host 소유.
     #[serde(default)]
     pub rendering: PopupRendering,
 }
 
-/// popup 콘텐츠의 렌더링 방식.
+/// popup 콘텐츠의 렌더링 방식. UiNode(ui-tree) 채널은 C1 에서 제거돼 egui-mesh
+/// 가 기본이자 유일한 channel 이다.
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PopupRendering {
-    /// plugin 이 UiNode tree 로 콘텐츠를 그린다 (기본).
-    #[default]
-    UiTree,
     /// plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
     /// (ADR-0028). bundled 전용 — host 화이트리스트 매칭이 필요하다.
     ///
     /// 와이어 키는 하이픈 포함 `"egui-mesh"` — `rename_all = "kebab-case"` 가 만드는
     /// `"egui-mesh"` 와 일치하지만, surface 쪽 [`SurfaceKindRendering`] 과 표기를
     /// 맞추기 위해 명시적으로 rename 한다.
+    #[default]
     #[serde(rename = "egui-mesh")]
     EguiMesh,
 }

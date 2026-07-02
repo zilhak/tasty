@@ -4,7 +4,7 @@
 
 [package]
 name = "tasty-plugin-sdk-wasm"
-version = "0.1.1-poc"
+version = "0.1.2-poc"
 edition = "2024"
 license = "MIT"
 description = "POC: Host-side WASM (wasi-preview2 component) runtime for Tasty plugins. Excluded from main workspace."

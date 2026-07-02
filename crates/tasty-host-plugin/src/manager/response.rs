@@ -44,7 +44,6 @@ impl PluginManager {
         };
         match kind {
             PendingRequestKind::SurfaceCreate { surface_id }
-            | PendingRequestKind::SurfaceEvent { surface_id }
             | PendingRequestKind::SurfaceRestore { surface_id }
             | PendingRequestKind::CommandInvoke { surface_id } => {
                 let result_value = match resp.result {

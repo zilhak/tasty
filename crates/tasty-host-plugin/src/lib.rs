@@ -25,7 +25,6 @@ pub mod reaper;
 pub mod registry_state;
 pub mod settings_registry;
 pub mod tool_registry;
-pub mod ui_tree;
 // Phase J.C WASM POC stub — `wasm-poc` feature 가 활성일 때만 컴파일.
 // default 빌드 surface 변경 0.
 pub mod wasm_poc;

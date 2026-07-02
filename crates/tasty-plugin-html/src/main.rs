@@ -9,9 +9,7 @@
 //! `html.open(url, surface)` IPC 가 host 의 `webview.set_url` 로 URL 전달.
 
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
-};
+use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
 
 const PLUGIN_ID: &str = "com.tasty.html";
 const PLUGIN_VERSION: &str = "0.1.0";
@@ -33,7 +31,6 @@ impl Plugin for HtmlPlugin {
         // 이라 별도 IPC (html.open) 또는 surface meta 로 처리한다.
         let url = ctx.params.get("url").and_then(|v| v.as_str()).unwrap_or("");
         SurfaceResult {
-            tree: None,
             display_name: Some(if url.is_empty() {
                 "HTML".to_string()
             } else {
@@ -41,10 +38,6 @@ impl Plugin for HtmlPlugin {
             }),
             snapshot: None,
         }
-    }
-
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult::default()
     }
 
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {

@@ -74,8 +74,6 @@ pub fn draw_plugin_popups(
                 size,
                 dismiss_on_outside_click: inst.contribute.dismiss_on_outside_click,
             }),
-            // UiNode(UiTree) popup 렌더 경로는 제거됨(C1) — 그리지 않는다.
-            PopupRendering::UiTree => {}
         }
     }
 

@@ -21,7 +21,7 @@ mod view;
 
 use tasty_plugin_sdk::{
     Plugin, PluginEnv, PopupClosedCtx, PopupOpenCtx, PopupOpenResult, PopupSetContextCtx,
-    SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult, Translator,
+    SurfaceCreateCtx, SurfaceResult, Translator,
 };
 
 use crate::clipboard::{ClipboardType, ContentRepr};
@@ -114,10 +114,6 @@ impl Plugin for ClipboardViewerPlugin {
         SurfaceResult::default()
     }
 
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult::default()
-    }
-
     fn open_popup(&mut self, ctx: PopupOpenCtx) -> PopupOpenResult {
         // egui-mesh popup 은 tree(UiNode) 를 반환하지 않는다 — mesh 채널(paint_popup)로 그린다.
         // 첫 인스턴스면 클립보드 스냅샷을 적재하고 주 인스턴스로 등록. 그 외(이미 열려
@@ -126,7 +122,7 @@ impl Plugin for ClipboardViewerPlugin {
             self.primary_instance = Some(ctx.instance_id);
             self.state = Some(ViewerState::load());
         }
-        PopupOpenResult { tree: None }
+        PopupOpenResult::default()
     }
 
     fn paint_popup(&mut self, ctx: PopupSetContextCtx) {

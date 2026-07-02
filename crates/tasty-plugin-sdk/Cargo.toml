@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-sdk"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2024"
 license = "MIT"
 description = "SDK for writing external Tasty plugins (handshake, runtime, UI builder helpers)"

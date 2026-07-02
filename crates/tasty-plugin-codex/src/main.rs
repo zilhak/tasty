@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use state::CodexState;
 use tasty_plugin_sdk::{
     BusHandle, EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin,
-    SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
+    SurfaceCreateCtx, SurfaceResult,
 };
 
 const PLUGIN_ID: &str = "com.tasty.codex";
@@ -48,10 +48,6 @@ impl Plugin for CodexPlugin {
         // codex plugin 은 자체 surface_kind 를 등록하지 않는다. 자식 codex 프로세스는
         // 호스트의 일반 terminal surface 에서 실행되며, surface 자체는 plugin 이 만들지
         // 않는다. 매니페스트에 surface_kinds 가 없으므로 이 콜백은 호출되지 않는다.
-        SurfaceResult::default()
-    }
-
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
 

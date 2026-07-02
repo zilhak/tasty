@@ -53,9 +53,6 @@ pub(super) enum PendingRequestKind {
     SurfaceCreate {
         surface_id: u32,
     },
-    SurfaceEvent {
-        surface_id: u32,
-    },
     SurfaceRestore {
         surface_id: u32,
     },
@@ -200,7 +197,6 @@ pub(super) fn parse_hook_result(resp: &PluginResponse) -> HookOutcome {
 }
 
 pub(super) struct RemoteSurfaceEntry {
-    pub(super) plugin_id: String,
     pub(super) handles: SurfaceHandles,
 }
 

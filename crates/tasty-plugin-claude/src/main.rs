@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 use state::ClaudeState;
 use tasty_plugin_sdk::{
     EventDispatchCtx, HostHandle, IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx,
-    SurfaceEventCtx, SurfaceResult,
+    SurfaceResult,
 };
 
 const PLUGIN_ID: &str = "com.tasty.claude";
@@ -64,10 +64,6 @@ impl Plugin for ClaudePlugin {
         // 호스트의 일반 terminal surface에서 실행되며, surface 자체는 plugin이 직접
         // 만들지 않는다. 매니페스트에 surface_kinds가 없으므로 이 콜백은 호출되지
         // 않을 것이다.
-        SurfaceResult::default()
-    }
-
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
 

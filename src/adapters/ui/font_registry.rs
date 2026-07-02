@@ -19,10 +19,6 @@ pub struct SurfaceFontState {
     initialized: bool,
 }
 
-pub fn markdown_family() -> egui::FontFamily {
-    egui::FontFamily::Name(MARKDOWN_FAMILY.into())
-}
-
 fn signature(font: &EffectiveFont) -> String {
     format!("{}|{}", font.font_family, font.custom_font_path)
 }

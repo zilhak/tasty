@@ -27,8 +27,8 @@ use doc::ImageDoc;
 use serde_json::{Value, json};
 use tasty_plugin_protocol::ThemeWire;
 use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceEventCtx,
-    SurfaceResult, SurfaceSetContextCtx, Translator, host::HostHandle,
+    IpcMethodCtx, IpcMethodError, Plugin, PluginEnv, SurfaceCreateCtx, SurfaceResult,
+    SurfaceSetContextCtx, Translator, host::HostHandle,
 };
 use tasty_type_appearance::theme::Theme;
 
@@ -79,10 +79,6 @@ impl Plugin for ImagePlugin {
         // (`file`) are nested under `params.params`.
         let file = surface_param_file(&ctx.params);
         self.docs.insert(ctx.surface_id, ImageDoc::new(file));
-        SurfaceResult::default()
-    }
-
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
 

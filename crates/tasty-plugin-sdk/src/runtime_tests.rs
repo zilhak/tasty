@@ -26,9 +26,6 @@ impl Plugin for StubPlugin {
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult::default()
-    }
     fn handle_ipc_method(&mut self, ctx: IpcMethodCtx) -> Result<Value, IpcMethodError> {
         *self.last_ctx.lock().unwrap() = Some(ctx);
         match self.behavior.clone() {
@@ -44,9 +41,6 @@ impl Plugin for DefaultPlugin {
         "test.default"
     }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult::default()
-    }
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
 }
@@ -166,9 +160,6 @@ impl Plugin for OnStartRecorder {
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
-        SurfaceResult::default()
-    }
     fn on_start(&mut self, _host: HostHandle, _bus: crate::bus::BusHandle) {
         *self.called.lock().unwrap() += 1;
     }
@@ -193,9 +184,6 @@ impl Plugin for ExtensionStubPlugin {
         "test.extension"
     }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult::default()
-    }
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
     fn handle_extension_hook(
@@ -345,13 +333,10 @@ fn worker_loop_invokes_on_start_once_before_dispatch() {
     assert_eq!(*called.lock().unwrap(), 1);
 }
 
-/// popup.open / popup.event / popup.closed 라우팅과 콜백 호출 검증.
+/// popup.open / popup.closed 라우팅과 콜백 호출 검증.
 struct PopupStubPlugin {
     opened: Arc<Mutex<Vec<(String, u64, Value)>>>,
-    events: Arc<Mutex<Vec<(u64, tasty_plugin_protocol::UiEvent)>>>,
     closed: Arc<Mutex<Vec<(u64, tasty_plugin_protocol::PopupCloseReason)>>>,
-    next_open_tree: Option<tasty_plugin_protocol::UiNode>,
-    request_close: bool,
 }
 
 impl Plugin for PopupStubPlugin {
@@ -359,9 +344,6 @@ impl Plugin for PopupStubPlugin {
         "test.popup"
     }
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
-        SurfaceResult::default()
-    }
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
     fn open_popup(
@@ -372,22 +354,7 @@ impl Plugin for PopupStubPlugin {
             .lock()
             .unwrap()
             .push((ctx.popup_id, ctx.instance_id, ctx.context));
-        tasty_plugin_protocol::PopupOpenResult {
-            tree: self.next_open_tree.take(),
-        }
-    }
-    fn handle_popup_event(
-        &mut self,
-        ctx: crate::plugin::PopupEventCtx,
-    ) -> tasty_plugin_protocol::PopupEventResult {
-        self.events
-            .lock()
-            .unwrap()
-            .push((ctx.instance_id, ctx.event));
-        tasty_plugin_protocol::PopupEventResult {
-            tree: None,
-            close: self.request_close,
-        }
+        tasty_plugin_protocol::PopupOpenResult::default()
     }
     fn on_popup_closed(&mut self, ctx: crate::plugin::PopupClosedCtx) {
         self.closed
@@ -400,17 +367,13 @@ impl Plugin for PopupStubPlugin {
 fn make_popup_plugin() -> PopupStubPlugin {
     PopupStubPlugin {
         opened: Arc::new(Mutex::new(Vec::new())),
-        events: Arc::new(Mutex::new(Vec::new())),
         closed: Arc::new(Mutex::new(Vec::new())),
-        next_open_tree: None,
-        request_close: false,
     }
 }
 
 #[test]
-fn popup_open_calls_plugin_with_ctx_and_returns_tree() {
+fn popup_open_calls_plugin_with_ctx() {
     let mut plugin = make_popup_plugin();
-    plugin.next_open_tree = Some(tasty_plugin_protocol::UiNode::Spacer { size: 4 });
     let opened = plugin.opened.clone();
     let host = dummy_host();
     let params = json!({
@@ -420,29 +383,12 @@ fn popup_open_calls_plugin_with_ctx_and_returns_tree() {
     });
     let resp = build_response(1, dispatch(&mut plugin, METHOD_POPUP_OPEN, &params, &host));
     assert!(resp.error.is_none(), "got error: {:?}", resp.error);
-    let tree = resp.result.unwrap().get("tree").cloned().unwrap();
-    assert!(!tree.is_null());
 
     let opened = opened.lock().unwrap();
     assert_eq!(opened.len(), 1);
     assert_eq!(opened[0].0, "search");
     assert_eq!(opened[0].1, 7);
     assert_eq!(opened[0].2["q"], "abc");
-}
-
-#[test]
-fn popup_event_request_close_propagates() {
-    let mut plugin = make_popup_plugin();
-    plugin.request_close = true;
-    let host = dummy_host();
-    let params = json!({
-        "instance_id": 11,
-        "event": {"kind": "click", "node_id": "btn"},
-    });
-    let resp = build_response(2, dispatch(&mut plugin, METHOD_POPUP_EVENT, &params, &host));
-    assert!(resp.error.is_none(), "got error: {:?}", resp.error);
-    let r = resp.result.unwrap();
-    assert_eq!(r.get("close"), Some(&Value::Bool(true)));
 }
 
 #[test]

@@ -13,8 +13,6 @@ struct EguiPanelInfo {
     logical_y: f32,
     logical_w: f32,
     logical_h: f32,
-    /// Whether this panel is the keyboard target (receives pending_surface_keys).
-    is_keyboard_target: bool,
 }
 
 /// Render egui-based panels (Markdown, Explorer, Html, Empty).
@@ -62,8 +60,6 @@ pub fn draw_egui_panels(
                     // free·점유 모두 GPU 렌더(점유는 readonly mirror). egui 미관여.
                     continue;
                 }
-                // 점유 비-터미널은 조작 차단(키 입력 미적용) — 보기 전용.
-                let is_readonly = engine.attach.is_content_hidden(r.id);
                 let info = EguiPanelInfo {
                     pane_id,
                     surface_id: Some(r.id),
@@ -71,9 +67,6 @@ pub fn draw_egui_panels(
                     logical_y: (r.rect.y.value() / scale_factor).round_ui(),
                     logical_w: (r.rect.width.value() / scale_factor).round_ui(),
                     logical_h: (r.rect.height.value() / scale_factor).round_ui(),
-                    is_keyboard_target: !is_readonly
-                        && pane_id == focused_pane_id
-                        && r.id == focused_surface_in_tab,
                 };
                 infos.push(info);
             }

@@ -11,13 +11,7 @@
 //!     fn surface_kinds(&self) -> Vec<&str> { vec!["explorer"] }
 //!
 //!     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult {
-//!         // initial tree
-//!         SurfaceResult { tree: Some(my_tree()), display_name: Some("Files".into()) }
-//!     }
-//!
-//!     fn handle_event(&mut self, ctx: SurfaceEventCtx) -> SurfaceResult {
-//!         // event 처리 후 새 tree 반환
-//!         SurfaceResult { tree: Some(my_tree()), display_name: None }
+//!         SurfaceResult { display_name: Some("Files".into()), ..Default::default() }
 //!     }
 //! }
 //!
@@ -29,9 +23,8 @@
 use std::path::PathBuf;
 
 use serde_json::Value;
+pub use tasty_plugin_protocol::PopupOpenResult;
 pub use tasty_plugin_protocol::SurfaceResult;
-use tasty_plugin_protocol::ui_tree::UiEvent;
-pub use tasty_plugin_protocol::{PopupEventResult, PopupOpenResult};
 
 use crate::host::HostHandle;
 
@@ -44,12 +37,6 @@ pub struct SurfaceCreateCtx {
     /// Surface cwd invariant — `docs/architecture/invariants/surface-cwd.md`.
     pub cwd: Option<PathBuf>,
     pub params: Value,
-}
-
-#[derive(Debug, Clone)]
-pub struct SurfaceEventCtx {
-    pub surface_id: u32,
-    pub event: UiEvent,
 }
 
 #[derive(Debug, Clone)]
@@ -126,13 +113,6 @@ pub struct PopupOpenCtx {
     pub instance_id: u64,
     /// trigger 시점에 호스트가 알 수 있던 컨텍스트 (event payload 등). 없으면 Null.
     pub context: Value,
-}
-
-/// `popup.event` 콜백 컨텍스트.
-#[derive(Debug, Clone)]
-pub struct PopupEventCtx {
-    pub instance_id: u64,
-    pub event: UiEvent,
 }
 
 /// `popup.closed` 콜백 컨텍스트. fire-and-forget이므로 반환값 없음.
@@ -343,11 +323,8 @@ pub trait Plugin: Send + 'static {
         "0.0.0"
     }
 
-    /// `surface.create`에 응답. 초기 tree와 display_name 반환.
+    /// `surface.create`에 응답. display_name/snapshot 반환.
     fn create_surface(&mut self, ctx: SurfaceCreateCtx) -> SurfaceResult;
-
-    /// `surface.event`에 응답. tree가 None이면 호스트는 이전 tree 유지.
-    fn handle_event(&mut self, ctx: SurfaceEventCtx) -> SurfaceResult;
 
     /// `surface.restore`에 응답. 영속화된 데이터로부터 surface 복원.
     fn restore_surface(&mut self, _ctx: SurfaceRestoreCtx) -> SurfaceResult {
@@ -389,20 +366,10 @@ pub trait Plugin: Send + 'static {
     fn on_event(&mut self, _ctx: EventDispatchCtx) {}
 
     /// `popup.open` — 매니페스트 `[[contributes.popup]]`로 contribute한 popup의
-    /// 새 인스턴스가 열림. plugin은 초기 UI tree를 [`PopupOpenResult`]에 담아 반환.
-    /// 기본 구현은 빈 트리.
+    /// 새 인스턴스가 열림. 콘텐츠는 egui-mesh 채널(`paint_popup`)로 그린다.
+    /// 기본 구현은 빈 결과.
     fn open_popup(&mut self, _ctx: PopupOpenCtx) -> PopupOpenResult {
-        PopupOpenResult { tree: None }
-    }
-
-    /// `popup.event` — popup 인스턴스 위에서 사용자 이벤트 발생. plugin은
-    /// 갱신된 트리(없으면 None)와 자체 닫기 신호(`close=true`)를 반환한다.
-    /// 기본 구현은 변경 없음.
-    fn handle_popup_event(&mut self, _ctx: PopupEventCtx) -> PopupEventResult {
-        PopupEventResult {
-            tree: None,
-            close: false,
-        }
+        PopupOpenResult::default()
     }
 
     /// `popup.set_context` — egui-mesh popup 인스턴스의 렌더 컨텍스트(크기/ppp/raw input)가

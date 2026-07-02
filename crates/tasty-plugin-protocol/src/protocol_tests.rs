@@ -233,11 +233,10 @@ fn popup_open_params_context_defaults_to_null() {
 }
 
 #[test]
-fn popup_event_result_close_defaults_false() {
+fn popup_open_result_decodes_empty_object() {
+    // egui-mesh popup 은 open 응답에 콘텐츠가 없다 — 빈 객체가 유효한 결과.
     let s = r#"{}"#;
-    let r: PopupEventResult = serde_json::from_str(s).unwrap();
-    assert!(r.tree.is_none());
-    assert!(!r.close);
+    let _r: PopupOpenResult = serde_json::from_str(s).unwrap();
 }
 
 #[test]
@@ -259,7 +258,6 @@ fn popup_close_reason_serializes_snake_case() {
 #[test]
 fn popup_method_names_stable() {
     assert_eq!(METHOD_POPUP_OPEN, "popup.open");
-    assert_eq!(METHOD_POPUP_EVENT, "popup.event");
     assert_eq!(METHOD_POPUP_CLOSED, "popup.closed");
 }
 
@@ -389,10 +387,4 @@ fn paint_frame_event_round_trip() {
         }
         other => panic!("expected PaintFrame, got {other:?}"),
     }
-}
-
-#[test]
-fn pixel_format_bytes_per_pixel() {
-    assert_eq!(PixelFormat::Rgba8.bytes_per_pixel(), 4);
-    assert_eq!(PixelFormat::Bgra8.bytes_per_pixel(), 4);
 }

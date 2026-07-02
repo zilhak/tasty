@@ -352,13 +352,8 @@ impl PluginManager {
                     params,
                     handles,
                 } => {
-                    self.surfaces.insert(
-                        surface_id,
-                        RemoteSurfaceEntry {
-                            plugin_id: plugin_id.clone(),
-                            handles,
-                        },
-                    );
+                    self.surfaces
+                        .insert(surface_id, RemoteSurfaceEntry { handles });
                     let cwd_str = cwd.as_ref().and_then(|p| p.to_str()).map(str::to_string);
                     self.send_surface_request(
                         &plugin_id,
@@ -379,13 +374,8 @@ impl PluginManager {
                     data,
                     handles,
                 } => {
-                    self.surfaces.insert(
-                        surface_id,
-                        RemoteSurfaceEntry {
-                            plugin_id: plugin_id.clone(),
-                            handles,
-                        },
-                    );
+                    self.surfaces
+                        .insert(surface_id, RemoteSurfaceEntry { handles });
                     self.send_surface_request(
                         &plugin_id,
                         protocol::METHOD_SURFACE_RESTORE,

@@ -290,7 +290,7 @@ impl App {
         }
         // concrete registry 는 본 바이너리 CoreState 에서 직접 가져온다.
         // (plugin manager 가 가진 surface_registry 필드는 trait object 라
-        // remote_kind/host_rendered 등 closure 등록 함수가 받지 못한다.)
+        // remote_kind/egui_mesh 등 closure 등록 함수가 받지 못한다.)
         // mgr 차용 전에 미리 추출.
         let core_registry = self.core_state().surface_registry.clone();
         // hook 이벤트 레지스트리는 surface_registry 유무와 무관하게 (headless 포함)

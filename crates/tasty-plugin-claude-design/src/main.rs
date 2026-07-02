@@ -25,9 +25,7 @@ use std::sync::{Arc, Mutex};
 use detect::RuntimeDetection;
 use runner::{PROBE_TIMEOUT, Runner};
 use serde_json::{Value, json};
-use tasty_plugin_sdk::{
-    IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceEventCtx, SurfaceResult,
-};
+use tasty_plugin_sdk::{IpcMethodCtx, IpcMethodError, Plugin, SurfaceCreateCtx, SurfaceResult};
 
 const PLUGIN_ID: &str = "com.tasty.claude-design";
 const PLUGIN_VERSION: &str = "0.1.11"; // tasty-plugin.toml / Cargo.toml 과 일치
@@ -96,10 +94,6 @@ impl Plugin for ClaudeDesignPlugin {
     fn create_surface(&mut self, _ctx: SurfaceCreateCtx) -> SurfaceResult {
         // 자체 surface_kind 를 등록하지 않는다 — CLI/IPC 만 노출하며 브라우저 자동화는
         // 자식 node 프로세스가 담당한다. 이 콜백은 호출되지 않는다.
-        SurfaceResult::default()
-    }
-
-    fn handle_event(&mut self, _ctx: SurfaceEventCtx) -> SurfaceResult {
         SurfaceResult::default()
     }
 

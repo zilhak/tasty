@@ -9,14 +9,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::events::EventEnvelope;
-use crate::ui_tree::{UiEvent, UiNode};
 
 // ── Host → plugin method names ──
 pub const METHOD_PING: &str = "ping";
 pub const METHOD_SHUTDOWN: &str = "shutdown";
 pub const METHOD_HOST_HELLO: &str = "host.hello";
 pub const METHOD_SURFACE_CREATE: &str = "surface.create";
-pub const METHOD_SURFACE_EVENT: &str = "surface.event";
 pub const METHOD_SURFACE_SNAPSHOT: &str = "surface.snapshot";
 pub const METHOD_SURFACE_RESTORE: &str = "surface.restore";
 pub const METHOD_SURFACE_DESTROY: &str = "surface.destroy";
@@ -34,21 +32,15 @@ pub const METHOD_IPC_RESULT: &str = "ipc.result";
 pub const METHOD_EVENT_DISPATCH: &str = "event.dispatch";
 /// host → plugin: 사용자 단축키 매칭으로 plugin command가 트리거됨.
 /// params에 [`CommandInvokeParams`]. plugin은 그에 따라 surface state를 변경하고,
-/// 변경 결과는 `surface.event`와 동일하게 `SurfaceResult` 형태로 응답한다 (tree
-/// 또는 display_name 갱신).
+/// 변경 결과는 `SurfaceResult` 형태로 응답한다 (display_name/snapshot 갱신).
 pub const METHOD_COMMAND_INVOKE: &str = "command.invoke";
 /// host → extension plugin: extension의 pre/post hook 호출.
 /// params에 [`ExtensionHookInvokeParams`]. plugin은 mode에 따라 transform/filter/observe
 /// 의미로 [`ExtensionHookResult`]를 반환한다 (PluginResponse.result).
 pub const METHOD_EXTENSION_INVOKE_HOOK: &str = "extension.invoke_hook";
 /// host → plugin: plugin이 contribute한 popup의 인스턴스가 열림. plugin은
-/// 응답으로 [`PopupOpenResult`]를 돌려준다 — 초기 UI tree를 포함.
-/// params에 [`PopupOpenParams`].
+/// 응답으로 [`PopupOpenResult`]를 돌려준다. params에 [`PopupOpenParams`].
 pub const METHOD_POPUP_OPEN: &str = "popup.open";
-/// host → plugin: popup 인스턴스 위에서 사용자 이벤트 발생.
-/// params에 [`PopupEventParams`]. 응답으로 [`PopupEventResult`]를 돌려준다 —
-/// 갱신된 tree(없으면 None).
-pub const METHOD_POPUP_EVENT: &str = "popup.event";
 /// host → plugin: popup 인스턴스가 닫힘 (사용자 outside-click / Esc / plugin이
 /// host IPC로 명시 닫기 요청한 경우 모두 포함). fire-and-forget.
 /// params에 [`PopupClosedParams`].
@@ -75,12 +67,9 @@ pub const METHOD_BANNER_CLOSED: &str = "banner.closed";
 /// [`BannerSetContextParams`].
 pub const METHOD_BANNER_SET_CONTEXT: &str = "banner.set_context";
 
-/// `surface.create` / `surface.event` / `surface.restore` 응답에 포함되는 standard 결과.
+/// `surface.create` / `surface.restore` / `command.invoke` 응답에 포함되는 standard 결과.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct SurfaceResult {
-    /// 새로 그릴 트리. `None`이면 호스트는 이전 트리를 그대로 사용 (변경 없음).
-    #[serde(default)]
-    pub tree: Option<UiNode>,
     #[serde(default)]
     pub display_name: Option<String>,
     /// plugin 측 surface state 의 영속화 가능한 표현. `Some` 이면 host 가
@@ -89,13 +78,6 @@ pub struct SurfaceResult {
     /// 호스트는 기존 캐시를 유지.
     #[serde(default)]
     pub snapshot: Option<serde_json::Value>,
-}
-
-/// `surface.event` params — 호스트가 plugin에 보낼 사용자 이벤트.
-#[derive(Debug, Clone, Serialize)]
-pub struct SurfaceEventParams<'a> {
-    pub surface_id: u32,
-    pub event: &'a UiEvent,
 }
 
 // ── egui-mesh surface: set_context (host → plugin) wire types ──
@@ -314,42 +296,6 @@ pub struct PixelRect {
     pub y: u32,
     pub w: u32,
     pub h: u32,
-}
-
-/// Canvas/SharedBuffer 픽셀 포맷.
-///
-/// 두 variant 모두 4바이트/픽셀이며 **sRGB 채널로 해석**된다. 호스트는 wgpu에서
-/// `Rgba8UnormSrgb` / `Bgra8UnormSrgb`로 매핑하므로 plugin이 8-bit per channel sRGB로
-/// 그대로 쓰면 감마 보정이 GPU에서 자동 적용된다. 향후 linear-space variant
-/// (`Rgba8Linear`)가 추가될 수 있으며 wire는 backward-compatible하다.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum PixelFormat {
-    /// 4바이트/픽셀 RGBA8, sRGB.
-    #[default]
-    Rgba8,
-    /// 4바이트/픽셀 BGRA8, sRGB (Windows/Direct2D 호환 채널 순서).
-    Bgra8,
-}
-
-impl PixelFormat {
-    /// 픽셀당 바이트 수.
-    pub fn bytes_per_pixel(self) -> u32 {
-        match self {
-            PixelFormat::Rgba8 | PixelFormat::Bgra8 => 4,
-        }
-    }
-}
-
-/// Canvas/SharedBuffer 텍스처 샘플링 필터.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum PixelFilter {
-    /// 최근접 픽셀. dot art / 픽셀 정렬이 중요할 때.
-    Nearest,
-    /// 양선형 보간. 일반적인 이미지/비디오.
-    #[default]
-    Linear,
 }
 
 /// `host.shared_buffer.create` params.
@@ -579,32 +525,10 @@ pub struct PopupOpenParams {
     pub context: serde_json::Value,
 }
 
-/// `popup.open` 응답.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct PopupOpenResult {
-    /// 초기 UI tree. None이면 빈 popup(호스트가 placeholder 표시).
-    #[serde(default)]
-    pub tree: Option<UiNode>,
-}
-
-/// `popup.event` params — popup 위에서 발생한 사용자 이벤트.
-#[derive(Debug, Clone, Serialize)]
-pub struct PopupEventParams<'a> {
-    pub instance_id: u64,
-    pub event: &'a UiEvent,
-}
-
-/// `popup.event` 응답.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct PopupEventResult {
-    /// 갱신된 tree. None이면 호스트는 이전 트리를 유지.
-    #[serde(default)]
-    pub tree: Option<UiNode>,
-    /// plugin이 popup을 자체적으로 닫고 싶다는 신호. true면 호스트가 인스턴스를
-    /// 정리하고 [`METHOD_POPUP_CLOSED`]를 다시 보내 cleanup 흐름 통일.
-    #[serde(default)]
-    pub close: bool,
-}
+/// `popup.open` 응답. egui-mesh popup 은 콘텐츠를 mesh 채널로 그리므로 별도
+/// 콘텐츠 필드가 없다 (빈 결과 — 향후 확장 여지용 struct 존치).
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct PopupOpenResult {}
 
 /// `popup.closed` params — popup 인스턴스가 닫혔음을 plugin에 통보. fire-and-forget.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -651,7 +575,7 @@ pub enum PopupCloseReason {
     OutsideClick,
     /// 사용자가 Esc 키를 눌렀음.
     Escape,
-    /// plugin이 [`PopupEventResult::close`]=true 또는 host IPC `popup.close`로 닫기 요청.
+    /// plugin이 host IPC `popup.close`로 닫기 요청.
     PluginRequest,
     /// 호스트 측에서 강제 닫힘 (plugin disable / unload 등).
     HostShutdown,
