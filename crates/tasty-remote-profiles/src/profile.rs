@@ -28,6 +28,16 @@ pub fn is_valid_shell(s: &str) -> bool {
     SHELLS.contains(&s)
 }
 
+/// tasty-attach 의 `port_mode` 필드가 가질 수 있는 값(GUI/CLI 드롭다운·검증 공용).
+/// `auto` 는 ssh 소스의 셸에서 도출([`shell_to_port_mode`]). attach 도메인 지식이라
+/// 이 크레이트가 단일 출처로 보관한다.
+pub const PORT_MODES: &[&str] = &["auto", "subcommand", "file-unix", "file-windows"];
+
+/// 포트 발견 모드 문자열이 허용 값인지.
+pub fn is_valid_port_mode(s: &str) -> bool {
+    PORT_MODES.contains(&s)
+}
+
 /// 셸 종류 → 원격 포트 발견 모드 매핑(2026-06-12 실측 기반).
 ///
 /// - `powershell` → `file-unix` (`cat ~/...` — PowerShell 의 cat alias + `~` 확장)

@@ -1,16 +1,22 @@
-//! 원격 접속 도구 팝업 (도구 메뉴 > Remote connections). 2탭: 원격 접속 프로필 / Passkey.
+//! 원격 접속 도구 팝업 (도구 메뉴 > Remote connections). 3탭: 원격 접속 프로필 /
+//! Attach / Passkey.
 //!
 //! `~/.tasty/remote-profiles.toml`(`RemoteProfiles`) + `~/.tasty/passkeys.toml`(`Passkeys`)
 //! 를 GUI 에서 CRUD 한다. CLI/IPC 와 같은 저장 로직을 재사용하므로 표면이 즉시 일관된다.
 //! 프로필은 비밀을 담지 않고 passkey 를 이름으로 참조만 한다. 한 탭 안에서 List/Form/
-//! ConfirmDelete 를 라우팅한다(Profile·Passkey 두 탭이 동일 패턴, 두 번 인스턴스화). headless PopupDef.
+//! ConfirmDelete 를 라우팅한다(세 탭이 동일 패턴으로 인스턴스화). headless PopupDef.
+//!
+//! Attach 탭(가운데)은 같은 레지스트리의 `tasty-attach` kind 프로필(ADR-0032)을
+//! 다룬다 — ssh 프로필 **참조(ref)** 또는 **인라인** 연결정보 + 원격 tasty 실행파일/
+//! 포트 발견 모드. tasty-attach kind 는 Profiles 탭 목록·프로토콜 필터에서 제외된다
+//! (Attach 탭이 전담).
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use tasty_remote_profiles::{
-    KNOWN_PASSKEY_KINDS, Passkey, Passkeys, RemoteProfile, RemoteProfiles, SHELLS, is_builtin_kind,
-    is_valid_passkey_name, is_valid_shell,
+    KNOWN_PASSKEY_KINDS, PORT_MODES, Passkey, Passkeys, RemoteProfile, RemoteProfiles, SHELLS,
+    is_builtin_kind, is_valid_passkey_name, is_valid_port_mode, is_valid_shell,
 };
 
 use crate::adapters::ui::icons;
@@ -37,10 +43,14 @@ const FILTER_MEMORY_ID: &str = "remote_tool.filter";
 /// 프로토콜 필터 드롭다운 egui popup id. Escape/바깥클릭 닫힘 판정에 사용.
 const FILTER_POPUP_ID: &str = "remote_tool.filter_popup";
 
+/// attach 레코드의 kind (같은 레지스트리 안의 예약 kind, ADR-0032).
+const ATTACH_KIND: &str = "tasty-attach";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 enum Tab {
     #[default]
     Profiles,
+    Attach,
     Passkeys,
 }
 
@@ -79,6 +89,27 @@ struct PasskeyForm {
     editing_original: Option<String>,
 }
 
+/// Attach 폼 버퍼. Connection 은 ref(ssh 프로필 참조) ↔ inline(자체 연결정보) 토글.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct AttachForm {
+    name: String,
+    label: String,
+    /// true = ref 모드(`ssh_ref`), false = inline 모드(host/user/…).
+    mode_ref: bool,
+    ssh_ref: String,
+    // inline 전용
+    host: String,
+    user: String,
+    port: String,
+    shell: String,
+    passkey_ref: String,
+    // Remote tasty 그룹 (모드 무관 공통)
+    remote_tasty: String,
+    port_mode: String,
+    port_file: String,
+    editing_original: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 struct DetectJob {
     name: String,
@@ -89,10 +120,13 @@ struct DetectJob {
 struct UiState {
     tab: Tab,
     profile_view: Sub,
+    attach_view: Sub,
     passkey_view: Sub,
     pform: ProfileForm,
+    aform: AttachForm,
     kform: PasskeyForm,
     perr: Option<String>,
+    aerr: Option<String>,
     kerr: Option<String>,
     revealed: HashSet<String>,
     detecting: Option<DetectJob>,
@@ -130,11 +164,12 @@ fn write_filter(ctx: &egui::Context, hidden: HashSet<String>) {
 
 /// 현재 프로필들의 `kind` 집합(=프로토콜). KNOWN_TYPES 순서 우선, 나머지(플러그인/
 /// unknown)는 알파벳. 디자인 `protocols` 도출 로직 전사. 프로필 0개인 kind 는 없음.
+/// `tasty-attach` 는 Attach 탭 전담이라 프로토콜이 아니다 — 항상 제외.
 fn protocol_set(profiles: &[RemoteProfile]) -> Vec<String> {
     let mut seen: Vec<String> = Vec::new();
     for p in profiles {
         let k = p.kind.trim();
-        if !k.is_empty() && !seen.iter().any(|s| s == k) {
+        if !k.is_empty() && k != ATTACH_KIND && !seen.iter().any(|s| s == k) {
             seen.push(k.to_string());
         }
     }
@@ -185,6 +220,7 @@ pub fn draw_remote_tool_popup(
         }
         let sub = match st.tab {
             Tab::Profiles => &mut st.profile_view,
+            Tab::Attach => &mut st.attach_view,
             Tab::Passkeys => &mut st.passkey_view,
         };
         if *sub == Sub::List {
@@ -234,6 +270,7 @@ pub fn draw_remote_tool_popup(
     let is_form = matches!(
         match st.tab {
             Tab::Profiles => &st.profile_view,
+            Tab::Attach => &st.attach_view,
             Tab::Passkeys => &st.passkey_view,
         },
         Sub::Form
@@ -257,6 +294,7 @@ pub fn draw_remote_tool_popup(
                 Tab::Profiles => {
                     draw_profiles_tab(ui, &th, &ctx, &mut st, &mut profiles, &passkeys)
                 }
+                Tab::Attach => draw_attach_tab(ui, &th, &mut st, &mut profiles, &passkeys),
                 Tab::Passkeys => draw_passkeys_tab(ui, &th, &mut st, &passkeys),
             }
         });
@@ -384,6 +422,7 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
     let mut x = x_range.min + pad_l;
     for (tab, key) in [
         (Tab::Profiles, "remote_tool.tab_profiles"),
+        (Tab::Attach, "remote_tool.tab_attach"),
         (Tab::Passkeys, "remote_tool.tab_passkeys"),
     ] {
         let on = st.tab == tab;
@@ -422,8 +461,10 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
         if resp.clicked() && st.tab != tab {
             st.tab = tab;
             st.profile_view = Sub::List;
+            st.attach_view = Sub::List;
             st.passkey_view = Sub::List;
             st.perr = None;
+            st.aerr = None;
             st.kerr = None;
         }
         x += w + gap;
@@ -512,7 +553,12 @@ fn draw_profile_list(
         return;
     }
     ui.add_space(th.spacing_xs.value());
-    if profiles.profiles.is_empty() {
+    // tasty-attach kind 는 Attach 탭 전담 — 이 목록/빈 상태 판정에서 제외.
+    let has_non_attach = profiles
+        .profiles
+        .iter()
+        .any(|p| p.kind.trim() != ATTACH_KIND);
+    if !has_non_attach {
         ui.vertical_centered(|ui| {
             ui.add_space(th.spacing_lg.value());
             ui.label(
@@ -528,7 +574,7 @@ fn draw_profile_list(
     let any_visible = profiles
         .profiles
         .iter()
-        .any(|p| !applied_hidden.contains(p.kind.trim()));
+        .any(|p| p.kind.trim() != ATTACH_KIND && !applied_hidden.contains(p.kind.trim()));
     if !any_visible {
         ui.vertical_centered(|ui| {
             ui.add_space(th.spacing_lg.value());
@@ -546,7 +592,7 @@ fn draw_profile_list(
     let mut action: Option<(usize, ProfileRowAction)> = None;
     egui::ScrollArea::vertical().show(ui, |ui| {
         for (i, p) in profiles.profiles.iter().enumerate() {
-            if applied_hidden.contains(p.kind.trim()) {
+            if p.kind.trim() == ATTACH_KIND || applied_hidden.contains(p.kind.trim()) {
                 continue;
             }
             if let Some(a) = draw_profile_row(ui, th, p, detecting.as_deref(), &known) {
@@ -1321,7 +1367,572 @@ fn save_profile(
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// TAB B — Passkey
+// TAB B — Attach (tasty-attach 대상, 디자인 remote_tool.jsx TAB C 섹션)
+// ════════════════════════════════════════════════════════════════════════
+fn draw_attach_tab(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    st: &mut UiState,
+    profiles: &mut RemoteProfiles,
+    passkeys: &Passkeys,
+) {
+    match st.attach_view.clone() {
+        Sub::List => draw_attach_list(ui, th, st, profiles),
+        Sub::Form => draw_attach_form(ui, th, st, profiles, passkeys),
+        Sub::ConfirmDelete(name) => {
+            if let Some(act) =
+                draw_confirm_delete(ui, th, t("remote_tool.noun_attach"), &name, None)
+            {
+                if act {
+                    profiles.remove(&name);
+                    if let Err(e) = profiles.save() {
+                        tracing::warn!("attach 삭제 후 저장 실패: {e}");
+                    }
+                }
+                st.attach_view = Sub::List;
+            }
+        }
+    }
+}
+
+fn draw_attach_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, profiles: &RemoteProfiles) {
+    // add-bar: Add attach 만 — 프로토콜 필터 없음(디자인: Profiles 전용).
+    if secondary_button(ui, th, t("remote_tool.attach_add")).clicked() {
+        st.aform = AttachForm {
+            mode_ref: true,
+            shell: "auto".into(),
+            remote_tasty: "tasty".into(),
+            port_mode: "auto".into(),
+            ..Default::default()
+        };
+        st.aerr = None;
+        st.attach_view = Sub::Form;
+        return;
+    }
+    ui.add_space(th.spacing_xs.value());
+    let has_attach = profiles.profiles.iter().any(|p| p.kind == ATTACH_KIND);
+    if !has_attach {
+        ui.vertical_centered(|ui| {
+            ui.add_space(th.spacing_lg.value());
+            ui.label(
+                egui::RichText::new(t("remote_tool.attach_empty"))
+                    .color(th.subtext0)
+                    .italics()
+                    .size(th.font_size_body.value()),
+            );
+        });
+        return;
+    }
+    let mut action: Option<(String, AttachRowAction)> = None;
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for p in profiles.profiles.iter().filter(|p| p.kind == ATTACH_KIND) {
+            if let Some(a) = draw_attach_row(ui, th, p, profiles) {
+                action = Some((p.name.clone(), a));
+            }
+        }
+    });
+    if let Some((name, a)) = action {
+        match a {
+            AttachRowAction::Edit => {
+                if let Some(p) = profiles.get(&name) {
+                    st.aform = form_from_attach(p);
+                    st.aerr = None;
+                    st.attach_view = Sub::Form;
+                }
+            }
+            AttachRowAction::Delete => {
+                st.attach_view = Sub::ConfirmDelete(name);
+            }
+        }
+    }
+}
+
+enum AttachRowAction {
+    Edit,
+    Delete,
+}
+
+/// 디자인 AttachRow 전사 — row1 name+(label)+mode 태그+inactive 배지 / row2 target
+/// 요약(+dangling ref 배지) / row3 tasty:·port: 캡션 / 우측 edit·delete 액션.
+fn draw_attach_row(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    p: &RemoteProfile,
+    profiles: &RemoteProfiles,
+) -> Option<AttachRowAction> {
+    let v = p.as_attach()?;
+    // ref 모드: 참조 ssh 프로필을 resolve — 없으면 dangling(missing), 감지실패면
+    // inactive. inline 모드: 자기 detect_failed 가 inactive. hard-error 없음.
+    let (missing, inactive) = match v.ssh_ref() {
+        Some(r) => {
+            let referenced = profiles.get(r).filter(|rp| rp.kind == "ssh");
+            let disabled = referenced
+                .and_then(|rp| rp.as_ssh())
+                .map(|s| s.is_disabled())
+                .unwrap_or(false);
+            (referenced.is_none(), disabled)
+        }
+        None => (false, v.detect_failed()),
+    };
+    let target = match v.ssh_ref() {
+        Some(r) => format!("→ {}", if r.is_empty() { "?" } else { r }),
+        None => {
+            let mut s = v.ssh_destination();
+            if s.is_empty() {
+                s = "?".into();
+            }
+            if let Some(port) = v.port()
+                && port != 22
+            {
+                s = format!("{s}:{port}");
+            }
+            s
+        }
+    };
+    let mode_tag = if v.ssh_ref().is_some() {
+        t("remote_tool.attach_tag_profile")
+    } else {
+        t("remote_tool.attach_tag_inline")
+    };
+    let mut out = None;
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 1.0;
+            // row1: name + (label) + mode 태그 + inactive 배지
+            ui.horizontal(|ui| {
+                let title = match &p.label {
+                    Some(l) if !l.is_empty() => format!("{}  ({})", p.name, l),
+                    _ => p.name.clone(),
+                };
+                ui.label(
+                    egui::RichText::new(title)
+                        .color(if inactive { th.overlay1 } else { th.text })
+                        .size(th.font_size_body.value())
+                        .strong(),
+                );
+                ui.label(
+                    egui::RichText::new(mode_tag)
+                        .color(th.subtext0)
+                        .size(th.font_size_caption.value()),
+                );
+                if inactive {
+                    warn_badge(
+                        ui,
+                        th,
+                        t("remote_tool.attach_inactive"),
+                        t("remote_tool.attach_inactive_hint"),
+                    );
+                }
+            });
+            // row2: target 요약 + dangling ref 배지
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(target)
+                        .color(th.subtext0)
+                        .size(th.font_size_caption.value())
+                        .monospace(),
+                );
+                if missing {
+                    warn_badge(
+                        ui,
+                        th,
+                        t("remote_tool.attach_profile_missing"),
+                        t("remote_tool.attach_profile_missing_hint"),
+                    );
+                }
+            });
+            // row3: remote tasty + port mode 캡션
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("tasty: {}", v.remote_tasty()))
+                        .color(th.subtext0)
+                        .size(th.font_size_caption.value()),
+                );
+                ui.label(
+                    egui::RichText::new(format!("port: {}", v.port_mode()))
+                        .color(th.subtext0)
+                        .size(th.font_size_caption.value()),
+                );
+            });
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+            // 아이콘 버튼 (디자인 IconButton): delete / edit. RTL 이라 우측 끝이 trash.
+            if ui
+                .add(
+                    egui::ImageButton::new(icons::TRASH.image(15.0, th.subtext0.into()))
+                        .frame(false),
+                )
+                .on_hover_text(t("remote_tool.delete"))
+                .clicked()
+            {
+                out = Some(AttachRowAction::Delete);
+            }
+            if ui
+                .add(
+                    egui::ImageButton::new(icons::EDIT.image(15.0, th.subtext0.into()))
+                        .frame(false),
+                )
+                .on_hover_text(t("remote_tool.edit"))
+                .clicked()
+            {
+                out = Some(AttachRowAction::Edit);
+            }
+        });
+    });
+    hsep(ui, th);
+    out
+}
+
+fn form_from_attach(p: &RemoteProfile) -> AttachForm {
+    let Some(v) = p.as_attach() else {
+        return AttachForm::default();
+    };
+    AttachForm {
+        name: p.name.clone(),
+        label: p.label.clone().unwrap_or_default(),
+        mode_ref: v.ssh_ref().is_some(),
+        ssh_ref: v.ssh_ref().unwrap_or("").to_string(),
+        host: v.host().unwrap_or("").to_string(),
+        user: v.user().unwrap_or("").to_string(),
+        port: v.port().map(|n| n.to_string()).unwrap_or_default(),
+        shell: v.shell().to_string(),
+        passkey_ref: p.passkey_ref.clone().unwrap_or_default(),
+        remote_tasty: v.remote_tasty().to_string(),
+        port_mode: v.port_mode().to_string(),
+        port_file: v.port_file().unwrap_or("").to_string(),
+        editing_original: Some(p.name.clone()),
+    }
+}
+
+fn draw_attach_form(
+    ui: &mut egui::Ui,
+    th: &Theme,
+    st: &mut UiState,
+    profiles: &mut RemoteProfiles,
+    passkeys: &Passkeys,
+) {
+    // 디자인 AttachForm 구조 = rtScrollPad + rtFooter — 프로필 폼과 동일 골격.
+    let full_x = ui.clip_rect().x_range();
+    let sep = egui::Stroke::new(th.border_width.value(), th.surface1);
+    let pad_lg = th.spacing_lg.value() as i8;
+    let pad_md = th.spacing_md.value() as i8;
+
+    let mut do_save = false;
+    let mut do_cancel = false;
+    let footer = egui::TopBottomPanel::bottom("remote_tool.attach_footer")
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(egui::Frame::NONE.inner_margin(egui::Margin {
+            left: pad_lg,
+            right: pad_lg,
+            top: pad_md,
+            bottom: pad_md,
+        }))
+        .show_inside(ui, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if primary_button(ui, th, t("remote_tool.save")).clicked() {
+                    do_save = true;
+                }
+                ui.add_space(th.spacing_sm.value());
+                if ghost_button(ui, th, t("remote_tool.cancel")).clicked() {
+                    do_cancel = true;
+                }
+            });
+        });
+    ui.painter()
+        .hline(full_x, footer.response.rect.top() + 0.5, sep);
+
+    egui::CentralPanel::default()
+        .frame(egui::Frame::NONE)
+        .show_inside(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    egui::Frame::NONE
+                        .inner_margin(egui::Margin {
+                            left: pad_lg,
+                            right: pad_lg,
+                            top: pad_md,
+                            bottom: pad_md,
+                        })
+                        .show(ui, |ui| {
+                            let editing = st.aform.editing_original.is_some();
+                            ui.label(
+                                egui::RichText::new(if editing {
+                                    t("remote_tool.attach_form_edit")
+                                } else {
+                                    t("remote_tool.attach_form_add")
+                                })
+                                .color(th.text)
+                                .size(th.font_size_body.value())
+                                .strong(),
+                            );
+                            ui.add_space(th.spacing_md.value());
+
+                            let f = &mut st.aform;
+                            // 행 간 세로 간격 = 디자인 rowGap(space-sm 8).
+                            ui.spacing_mut().item_spacing.y = th.spacing_sm.value();
+
+                            text_row(
+                                ui,
+                                th,
+                                t("remote_tool.field_name"),
+                                &mut f.name,
+                                "gb10",
+                                false,
+                            );
+                            text_row(
+                                ui,
+                                th,
+                                t("remote_tool.field_label"),
+                                &mut f.label,
+                                "us-east",
+                                false,
+                            );
+                            // Connection — 디자인 세그먼트 토글 (ref ↔ inline).
+                            form_row(ui, th, t("remote_tool.field_connection"), |ui| {
+                                let selected = if f.mode_ref { 0 } else { 1 };
+                                if let Some(i) = tasty_ui_widgets::segmented(
+                                    ui,
+                                    th,
+                                    &[
+                                        t("remote_tool.attach_mode_ref"),
+                                        t("remote_tool.attach_mode_inline"),
+                                    ],
+                                    selected,
+                                ) {
+                                    f.mode_ref = i == 0;
+                                }
+                            });
+                            ui.add_space(th.spacing_xs.value());
+
+                            if f.mode_ref {
+                                // ssh 프로필 참조 드롭다운 — ssh kind 만 나열.
+                                form_row(ui, th, t("remote_tool.field_ssh_ref"), |ui| {
+                                    let sel = if f.ssh_ref.is_empty() {
+                                        t("remote_tool.ssh_ref_none").to_string()
+                                    } else {
+                                        f.ssh_ref.clone()
+                                    };
+                                    egui::ComboBox::from_id_salt("remote_tool.attach_ssh_ref")
+                                        .selected_text(sel)
+                                        .width(ui.available_width())
+                                        .show_ui(ui, |ui| {
+                                            for sp in profiles
+                                                .profiles
+                                                .iter()
+                                                .filter(|sp| sp.kind == "ssh")
+                                            {
+                                                let display = match &sp.label {
+                                                    Some(l) if !l.is_empty() => {
+                                                        format!("{} ({})", sp.name, l)
+                                                    }
+                                                    _ => sp.name.clone(),
+                                                };
+                                                ui.selectable_value(
+                                                    &mut f.ssh_ref,
+                                                    sp.name.clone(),
+                                                    display,
+                                                );
+                                            }
+                                        });
+                                });
+                            } else {
+                                // 인라인 ssh 필드셋 — ssh 프로필 폼과 동일 구성.
+                                text_row(
+                                    ui,
+                                    th,
+                                    t("remote_tool.field_host"),
+                                    &mut f.host,
+                                    "10.0.4.12",
+                                    true,
+                                );
+                                text_row(
+                                    ui,
+                                    th,
+                                    t("remote_tool.field_user"),
+                                    &mut f.user,
+                                    "deploy",
+                                    false,
+                                );
+                                text_row(
+                                    ui,
+                                    th,
+                                    t("remote_tool.field_port"),
+                                    &mut f.port,
+                                    "22",
+                                    true,
+                                );
+                                form_row(ui, th, t("remote_tool.field_shell"), |ui| {
+                                    egui::ComboBox::from_id_salt("remote_tool.attach_shell")
+                                        .selected_text(f.shell.clone())
+                                        .width(ui.available_width())
+                                        .show_ui(ui, |ui| {
+                                            for sh in SHELLS {
+                                                ui.selectable_value(
+                                                    &mut f.shell,
+                                                    (*sh).to_string(),
+                                                    *sh,
+                                                );
+                                            }
+                                        });
+                                });
+                                passkey_dropdown_row(ui, th, &mut f.passkey_ref, passkeys);
+                            }
+
+                            // Remote tasty 그룹 — 모드 무관 공통 (디자인 mono caps 헤더).
+                            ui.add_space(th.spacing_xs.value());
+                            ui.label(
+                                egui::RichText::new(t("remote_tool.remote_tasty_section"))
+                                    .color(th.subtext0)
+                                    .size(th.font_size_caption.value())
+                                    .monospace(),
+                            );
+                            text_row(
+                                ui,
+                                th,
+                                t("remote_tool.field_executable"),
+                                &mut f.remote_tasty,
+                                "tasty",
+                                true,
+                            );
+                            form_row(ui, th, t("remote_tool.field_port_mode"), |ui| {
+                                egui::ComboBox::from_id_salt("remote_tool.attach_port_mode")
+                                    .selected_text(f.port_mode.clone())
+                                    .width(ui.available_width())
+                                    .show_ui(ui, |ui| {
+                                        for m in PORT_MODES {
+                                            ui.selectable_value(
+                                                &mut f.port_mode,
+                                                (*m).to_string(),
+                                                *m,
+                                            );
+                                        }
+                                    });
+                            });
+                            text_row(
+                                ui,
+                                th,
+                                t("remote_tool.field_port_file"),
+                                &mut f.port_file,
+                                t("remote_tool.attach_port_file_ph"),
+                                true,
+                            );
+                            indented_hint(
+                                ui,
+                                egui::RichText::new(t("remote_tool.attach_exec_hint"))
+                                    .color(th.subtext0)
+                                    .size(th.font_size_caption.value()),
+                            );
+
+                            if let Some(err) = &st.aerr {
+                                indented_hint(
+                                    ui,
+                                    egui::RichText::new(err)
+                                        .color(th.accent_danger())
+                                        .size(th.font_size_caption.value()),
+                                );
+                            }
+                        });
+                });
+        });
+
+    if do_cancel {
+        st.aerr = None;
+        st.attach_view = Sub::List;
+        return;
+    }
+    if do_save {
+        match save_attach(st, profiles) {
+            Ok(()) => {
+                st.aerr = None;
+                st.attach_view = Sub::List;
+            }
+            Err(e) => st.aerr = Some(e),
+        }
+    }
+}
+
+fn save_attach(st: &mut UiState, profiles: &mut RemoteProfiles) -> Result<(), String> {
+    let f = st.aform.clone();
+    let name = f.name.trim();
+    if name.is_empty() {
+        return Err(t("remote_tool.err_name_empty").to_string());
+    }
+    if f.mode_ref {
+        if f.ssh_ref.is_empty() {
+            return Err(t("remote_tool.err_ssh_ref_empty").to_string());
+        }
+    } else {
+        if f.host.trim().is_empty() {
+            return Err(t("remote_tool.err_host_empty").to_string());
+        }
+        if !f.port.trim().is_empty() && f.port.trim().parse::<u16>().is_err() {
+            return Err(t("remote_tool.err_port_invalid").to_string());
+        }
+    }
+    // 이름 중복 — 같은 레지스트리를 쓰므로 attach 뿐 아니라 전체 프로필과 겹치면 안 된다
+    // (`RemoteProfiles::upsert` 가 name 전역 교체 시맨틱).
+    if profiles
+        .profiles
+        .iter()
+        .any(|p| p.name == name && Some(p.name.as_str()) != f.editing_original.as_deref())
+    {
+        return Err(t("remote_tool.err_name_dup").to_string());
+    }
+
+    let mut p = RemoteProfile::new(name, ATTACH_KIND);
+    if !f.label.trim().is_empty() {
+        p.label = Some(f.label.trim().to_string());
+    }
+    if f.mode_ref {
+        p.set_field("ssh_ref", f.ssh_ref.clone());
+    } else {
+        p.set_field("host", f.host.trim().to_string());
+        if !f.user.trim().is_empty() {
+            p.set_field("user", f.user.trim().to_string());
+        }
+        if !f.port.trim().is_empty() {
+            p.set_field("port", f.port.trim().to_string());
+        }
+        let shell = if is_valid_shell(&f.shell) {
+            f.shell.clone()
+        } else {
+            "auto".into()
+        };
+        // "auto" 는 AttachView 기본값 — 파일을 깨끗하게 유지하려 기본값은 쓰지 않는다.
+        if shell != "auto" {
+            p.set_field("shell", shell);
+        }
+        if !f.passkey_ref.is_empty() {
+            p.passkey_ref = Some(f.passkey_ref.clone());
+        }
+    }
+    let rt = f.remote_tasty.trim();
+    if !rt.is_empty() && rt != "tasty" {
+        p.set_field("remote_tasty", rt.to_string());
+    }
+    if is_valid_port_mode(&f.port_mode) && f.port_mode != "auto" {
+        p.set_field("port_mode", f.port_mode.clone());
+    }
+    if !f.port_file.trim().is_empty() {
+        p.set_field("port_file", f.port_file.trim().to_string());
+    }
+
+    // rename: 원래 name 과 다르면 옛 항목 제거.
+    if let Some(orig) = &f.editing_original
+        && orig != name
+    {
+        profiles.remove(orig);
+    }
+    profiles.upsert(p);
+    profiles.save().map_err(|e| format!("save: {e}"))?;
+    Ok(())
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// TAB C — Passkey
 // ════════════════════════════════════════════════════════════════════════
 fn draw_passkeys_tab(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: &Passkeys) {
     match st.passkey_view.clone() {
@@ -1818,6 +2429,13 @@ mod tests {
             protocol_set(&ps),
             vec!["ssh", "smb", "http", "alpha", "zeta"]
         );
+    }
+
+    #[test]
+    fn protocol_set_excludes_attach_kind() {
+        // tasty-attach 는 Attach 탭 전담 — Profiles 탭 프로토콜 집합에 안 낀다.
+        let ps = vec![prof("a", "ssh"), prof("b", "tasty-attach")];
+        assert_eq!(protocol_set(&ps), vec!["ssh"]);
     }
 
     #[test]
