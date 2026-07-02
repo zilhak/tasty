@@ -801,37 +801,50 @@ impl App {
             .count();
         if main_window_count > 1 {
             // Multiple windows: just close this one
-            self.view.views.remove(&id);
-            let scripts = self.autofire_scripts();
-            if let Some(mgr) = self.plugin_manager.as_mut() {
-                use tasty_plugin_protocol::events::payloads::WindowClosed;
-                use tasty_plugin_protocol::{EventScope, LifecycleReason};
-                let payload = WindowClosed {
-                    window_id: u64::from(id),
-                    reason: LifecycleReason::User,
-                };
-                mgr.emit_host_event("window.closed", &payload, EventScope::System);
-                crate::hooks::lua::fire(
-                    self.lua_engine.as_ref(),
-                    crate::hooks::lua::AutofireCtx {
-                        scripts: &scripts,
-                        guard: &mut self.lua_autofire,
-                    },
-                    "window.delete.post",
-                    &payload,
-                );
-            }
-            if self.view.focused_view_id == Some(id) {
-                self.view.focused_view_id = self
-                    .view
-                    .views
-                    .iter()
-                    .find(|(_, w)| w.as_main().is_some())
-                    .map(|(id, _)| *id);
-            }
+            self.close_main_window(id, tasty_plugin_protocol::LifecycleReason::User);
         } else {
             // Last main window: route through quit logic
             self.handle_quit_requested(event_loop);
+        }
+    }
+
+    /// 메인 윈도우 하나를 제거하고 종료 통지를 발화한다 — `window.closed` plugin
+    /// event + `window.delete.post` Lua fire + (닫힌 창이 focused 였으면) 포커스
+    /// 이양. GUI(`request_close_window`)와 IPC(`window.close`)가 공유하는 공통
+    /// 경로이며, 닫은 주체는 `reason` 으로 구분한다 (User / Ipc). 마지막 main
+    /// window 분기(quit 흐름)는 포함하지 않는다 — 호출 전에 caller 가 판단한다.
+    pub(crate) fn close_main_window(
+        &mut self,
+        id: WindowId,
+        reason: tasty_plugin_protocol::LifecycleReason,
+    ) {
+        self.view.views.remove(&id);
+        let scripts = self.autofire_scripts();
+        if let Some(mgr) = self.plugin_manager.as_mut() {
+            use tasty_plugin_protocol::EventScope;
+            use tasty_plugin_protocol::events::payloads::WindowClosed;
+            let payload = WindowClosed {
+                window_id: u64::from(id),
+                reason,
+            };
+            mgr.emit_host_event("window.closed", &payload, EventScope::System);
+            crate::hooks::lua::fire(
+                self.lua_engine.as_ref(),
+                crate::hooks::lua::AutofireCtx {
+                    scripts: &scripts,
+                    guard: &mut self.lua_autofire,
+                },
+                "window.delete.post",
+                &payload,
+            );
+        }
+        if self.view.focused_view_id == Some(id) {
+            self.view.focused_view_id = self
+                .view
+                .views
+                .iter()
+                .find(|(_, w)| w.as_main().is_some())
+                .map(|(id, _)| *id);
         }
     }
 

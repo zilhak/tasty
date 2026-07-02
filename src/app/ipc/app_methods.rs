@@ -47,18 +47,29 @@ impl App {
                     "Missing 'id' parameter (u64). focused 의존은 금지.",
                 ),
                 Some(id_u64) => {
-                    let target = self
+                    // main view 만 대상 — `window.list` 가 노출하는 범위와 동일.
+                    // (modal/preset 은 사용자 조작 영역이라 IPC close 대상이 아님.)
+                    let mains: Vec<_> = self
                         .view
                         .views
-                        .keys()
-                        .copied()
-                        .find(|w| u64::from(*w) == id_u64);
+                        .iter()
+                        .filter(|(_, w)| w.as_main().is_some())
+                        .map(|(id, _)| *id)
+                        .collect();
+                    let target = mains.iter().copied().find(|w| u64::from(*w) == id_u64);
                     match target {
+                        Some(_) if mains.len() <= 1 => host_ipc::protocol::JsonRpcResponse::error(
+                            response_id,
+                            -32000,
+                            "Cannot close the last main window via IPC — quitting the app is a user action",
+                        ),
                         Some(tid) => {
-                            self.view.views.remove(&tid);
-                            if self.view.focused_view_id == Some(tid) {
-                                self.view.focused_view_id = self.view.views.keys().next().copied();
-                            }
+                            // GUI request_close_window 와 공통 helper — window.closed
+                            // plugin event + window.delete.post Lua fire 포함.
+                            self.close_main_window(
+                                tid,
+                                tasty_plugin_protocol::LifecycleReason::Ipc,
+                            );
                             host_ipc::protocol::JsonRpcResponse::success(
                                 response_id,
                                 serde_json::json!({"closed": true, "id": id_u64}),

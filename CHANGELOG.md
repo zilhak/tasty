@@ -26,6 +26,9 @@
 - **`tasty claude spawn` / `tasty claude tell` / `tasty codex spawn` / `tasty codex tell` 기본 동작 변경** — 호출자가 child 가 `idle` / `needs_input` / `exited` (codex 는 `untrusted` 포함) 에 도달할 때까지 block 한다. 응답은 line-delimited 두 JSON — 1 차 spawn/tell JSON + chain 된 wait 결과 JSON. 기존 fire-and-forget 동작은 `--no-wait` 옵트인으로 보존 (= 한 minor 이상 deprecation 경고 우선 — `docs/dev-guide/ipc-stability.md` 0.x 정책). `--timeout SECS` 로 wait deadline 명시 (default = 무한). 기타 명령 (`broadcast` / `kill` / `respawn` / `children` / `parent` / `wait` / `wait-any` / `launch` / `install` / `uninstall` / `hook`) 동작 불변.
 - **`tasty ssh-profile` → `tasty tool ssh` 재배치** — SSH 연결 프로필 CRUD CLI 가 "tool" 네임스페이스로 이동. 구 `tasty ssh-profile` 명령은 제거됨(저장된 프로필 부재 + 0.x). IPC 메서드도 `ssh.profile.list/get/add/remove` → `tool.ssh.list/get/add/remove` 로 이동.
 
+### Changed
+- **IPC `window.close` 종료 경로 정비** — ① 이제 GUI 윈도우 닫기와 같은 공통 경로를 타서 `window.closed` plugin event 와 `window.delete.post` Lua 트리거를 발화한다 (`reason` 은 `ipc`). ② 대상이 main window 로 한정된다 (`window.list` 노출 범위와 동일 — 기존에는 임의 view id 도 제거 가능했음). ③ 마지막 남은 main window 는 에러로 거부한다 — 앱 종료(quit)는 사용자 조작 영역이며, 기존 동작은 창 없는 상태로 앱이 잔존하는 결함이었다.
+
 ### Fixed
 - **IPC `tab.create` 가 생성 이벤트를 발화하지 않던 문제** — GUI 탭 생성과 달리 IPC 경로는 `tab.created` / `surface.created` plugin event, `tab.create.post` / `surface.create.post` Lua 트리거, lifecycle baseline 동기화를 모두 건너뛰었다. 이제 GUI dispatcher 와 같은 cascade 를 공유해 동일하게 발화한다.
 
