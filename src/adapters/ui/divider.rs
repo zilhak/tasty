@@ -27,7 +27,9 @@ pub fn draw_pane_dividers(ctx: &egui::Context, dividers: &[PhysicalRect], scale_
         egui::Order::Middle,
         egui::Id::new("pane_dividers"),
     ));
-    let border_color = th.surface2;
+    // divergence: pane divider 는 border 인데 surface2(=surface-active/selection 값) 로 그린다.
+    // surface2 값을 반환하는 border-role 접근자가 없어(§4-3) 값-보존 위해 surface_active() 사용.
+    let border_color = th.surface_active();
     for div in dividers {
         let rect = egui::Rect::from_min_size(
             egui::pos2(div.x.value() / scale_factor, div.y.value() / scale_factor),

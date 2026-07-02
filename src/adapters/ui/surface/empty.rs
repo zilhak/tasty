@@ -14,7 +14,7 @@ pub fn draw_empty(ui: &mut egui::Ui, empty: &EmptySurface) -> Option<EmptyAction
     let th = theme::theme();
     let panel_rect = ui.max_rect();
     // Paint full background first to avoid crust/base color mismatch.
-    ui.painter().rect_filled(panel_rect, 0.0, th.crust);
+    ui.painter().rect_filled(panel_rect, 0.0, th.bg_app());
 
     let available = ui.available_size();
     let button_h = 28.0;
@@ -25,7 +25,7 @@ pub fn draw_empty(ui: &mut egui::Ui, empty: &EmptySurface) -> Option<EmptyAction
         let btn = ui.button(
             egui::RichText::new(crate::i18n::t("convert_popup.title"))
                 .size(th.font_size_body.value())
-                .color(th.text),
+                .color(th.text_primary()),
         );
         if btn.clicked() {
             action = Some(EmptyAction::OpenConvertPopup(empty.id));

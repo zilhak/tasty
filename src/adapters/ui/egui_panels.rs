@@ -420,7 +420,7 @@ where
     R: Default,
 {
     let th = theme::theme();
-    let bg = bg_color.unwrap_or(th.crust.into());
+    let bg = bg_color.unwrap_or(th.bg_app().into());
     let mut out: R = R::default();
     egui::Area::new(egui::Id::new(id))
         .fixed_pos(egui::pos2(info.logical_x, info.logical_y))
