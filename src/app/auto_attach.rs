@@ -31,8 +31,10 @@ use crate::model::WorkspaceAttachTarget;
 /// 자동 attach 워커 스레드 → 메인 루프 결과. 터널 핸들/포트를 채널로 전달한다
 /// (AppEvent 는 Debug 라 핸들을 싣지 못해 별도 채널 사용).
 pub(crate) struct AutoAttachOutcome {
-    /// 매핑된(anchor) 로컬 워크스페이스 id.
-    pub(crate) anchor_ws_id: u32,
+    /// 매핑된(anchor) 로컬 워크스페이스 id. 자동 attach(매핑 활성화)면 `Some(id)`,
+    /// **IPC 수동 트리거**(`remote.attach` — anchor 없는 브라우징→attach)면 `None`.
+    /// None 이면 재attach 게이트(`auto_attach_active`)를 건드리지 않는다.
+    pub(crate) anchor_ws_id: Option<u32>,
     /// 원격 tasty 의 attach 대상 workspace_id.
     pub(crate) remote_ws: u32,
     /// 엔드포인트 해석 결과: `(터널 핸들 or None, 접속 포트)`.
@@ -82,7 +84,7 @@ impl App {
         std::thread::spawn(move || {
             let result = resolve_endpoint(&target);
             let outcome = AutoAttachOutcome {
-                anchor_ws_id: anchor,
+                anchor_ws_id: Some(anchor),
                 remote_ws,
                 result,
             };
@@ -103,20 +105,37 @@ impl App {
             } = outcome;
             match result {
                 Ok((tunnel, port)) => {
-                    if let Err(e) =
-                        self.start_gui_attach(port, remote_ws, tunnel, Some(anchor_ws_id))
-                    {
+                    // self(loopback) mirror 차단(원칙 1 ②): resolve 된 포트가 이 인스턴스
+                    // 자신의 IPC 포트면 자기 화면 mirror = 사용자 입력 재현 성격이라
+                    // release 에서 거부한다. SSH 터널의 local_port 는 자기 포트와 다르므로
+                    // 원격 attach 는 통과한다. 로컬 self-mirror 검증은 debug 빌드로.
+                    #[cfg(not(debug_assertions))]
+                    if self.hub.ipc_server.as_ref().map(|s| s.port()) == Some(port) {
                         tracing::warn!(
-                            "auto-attach mirror 실패 (anchor ws {anchor_ws_id}, remote ws {remote_ws}): {e}"
+                            "self(loopback) attach (port={port}) 는 release 빌드에서 차단됩니다 \
+                             — 로컬 self-attach 는 debug 빌드 전용."
                         );
-                        self.auto_attach_active.remove(&anchor_ws_id);
+                        if let Some(anchor) = anchor_ws_id {
+                            self.auto_attach_active.remove(&anchor);
+                        }
+                        continue;
+                    }
+                    if let Err(e) = self.start_gui_attach(port, remote_ws, tunnel, anchor_ws_id) {
+                        tracing::warn!(
+                            "attach mirror 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}): {e}"
+                        );
+                        if let Some(anchor) = anchor_ws_id {
+                            self.auto_attach_active.remove(&anchor);
+                        }
                     }
                 }
                 Err(e) => {
                     tracing::warn!(
-                        "auto-attach 엔드포인트 해석 실패 (anchor ws {anchor_ws_id}): {e}"
+                        "attach 엔드포인트 해석 실패 (anchor ws {anchor_ws_id:?}, remote ws {remote_ws}): {e}"
                     );
-                    self.auto_attach_active.remove(&anchor_ws_id);
+                    if let Some(anchor) = anchor_ws_id {
+                        self.auto_attach_active.remove(&anchor);
+                    }
                 }
             }
         }

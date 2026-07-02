@@ -1006,6 +1006,14 @@ eof = "IPC 응답 없음 (EOF) — 원격 서버가 응답하지 않습니다"
 parse_failed = "IPC 응답 JSON 파싱 실패"
 error_response = "IPC 에러 응답 (code={}): {}"
 
+[cli.remote_workspaces]
+browse_failed = "원격 워크스페이스 조회 실패 (대상={})"
+serialize_failed = "원격 워크스페이스 목록 JSON 직렬화 실패"
+none = "원격에 워크스페이스가 없습니다: {}"
+header = "{} 의 원격 워크스페이스 (총 {}개):"
+row_free = "  #{} {} (pane={}, busy={}) — 미점유"
+row_attached = "  #{} {} (pane={}, busy={}) — client {} 점유중"
+
 [command_index.cap.soft]
 title = "명령 이력이 많습니다"
 body = "이 서피스에 명령 {}개가 기록되었습니다. 오래된 항목은 서피스를 닫을 때 정리됩니다."

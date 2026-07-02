@@ -71,6 +71,12 @@ fn remote_command_to_method_params(command: &RemoteCommands) -> (&'static str, s
             debug_assert!(false, "remote check is dispatched before request mapping");
             ("remote.check.noop", serde_json::json!({}))
         }
+        // `remote workspaces` 는 run_client 에서 SSH 터널 + 자체 IPC(remote_browse)로
+        // 선처리되므로 여기 도달하지 않는다(로컬 JSON-RPC 매핑 대상 아님).
+        RemoteCommands::Workspaces { .. } => {
+            debug_assert!(false, "remote workspaces is dispatched before request mapping");
+            ("remote.workspaces.noop", serde_json::json!({}))
+        }
     }
 }
 

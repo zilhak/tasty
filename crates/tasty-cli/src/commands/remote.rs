@@ -90,4 +90,34 @@ pub enum RemoteCommands {
         #[arg(long, default_value = "auto")]
         remote_port_mode: String,
     },
+    /// SSH 너머 원격 tasty 인스턴스의 워크스페이스 목록을 조회한다(browse).
+    ///
+    /// attach 프로필/ssh 대상에 붙어 원격 인스턴스의 `workspace.list` +
+    /// `attach.list` 를 받아 병합한다 — 각 워크스페이스의 id/name/pane_count/
+    /// busy/attached(타 client 점유 여부)를 반환한다. `remote attach` 가 대상
+    /// workspace id 를 미리 알아야 하는 것과 달리, 이 명령이 그 id 를 발견한다.
+    /// 순수 조회라 로컬 사용자 상태(focus 등)에 닿지 않는다(원칙 1). `--ssh
+    /// 127.0.0.1:<port>` 로 loopback 직결(터널 없이 로컬 e2e).
+    ///
+    /// 로컬 IPC method `remote.workspaces` 와 동일한 능력을 공유한다(원칙 2 —
+    /// 에이전트가 CLI 없이 소켓만으로도 브라우징 가능).
+    Workspaces {
+        /// SSH 너머 원격 대상. 예: --ssh user@host, --ssh gx10,
+        /// --ssh 127.0.0.1:45123. `--profile` 과 상호배타.
+        #[arg(long)]
+        ssh: Option<String>,
+        /// 저장된 tasty-attach 프로필명으로 조회. `--ssh` 와 상호배타.
+        /// 이 경우 `--remote-tasty`/`--remote-port-mode` 는 프로필 값으로 대체된다.
+        #[arg(long)]
+        profile: Option<String>,
+        /// 원격 tasty 바이너리 경로 (auto 포트 발견 체인의 subcommand 단계). 기본 "tasty".
+        #[arg(long, default_value = "tasty")]
+        remote_tasty: String,
+        /// 원격 포트 발견 모드: auto(기본) | subcommand | file-unix | file-windows.
+        #[arg(long, default_value = "auto")]
+        remote_port_mode: String,
+        /// 사람이 읽는 텍스트 대신 JSON 배열로 출력(스크립트/팝업 소비용).
+        #[arg(long)]
+        json: bool,
+    },
 }

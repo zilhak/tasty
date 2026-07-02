@@ -1007,6 +1007,14 @@ eof = "No IPC response (EOF) — the remote server is not responding"
 parse_failed = "Failed to parse IPC response JSON"
 error_response = "IPC error response (code={}): {}"
 
+[cli.remote_workspaces]
+browse_failed = "Failed to browse remote workspaces (target={})"
+serialize_failed = "Failed to serialize remote workspace list to JSON"
+none = "No workspaces on remote: {}"
+header = "Remote workspaces on {} ({} total):"
+row_free = "  #{} {} (panes={}, busy={}) — free"
+row_attached = "  #{} {} (panes={}, busy={}) — attached by client {}"
+
 [command_index.cap.soft]
 title = "Command history is large"
 body = "This surface has recorded {} commands. Old entries are cleared when the surface closes."

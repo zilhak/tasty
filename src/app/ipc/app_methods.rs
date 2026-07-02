@@ -154,6 +154,18 @@ impl App {
             self.ipc_dispatch_task_await(cmd);
             return IpcStep::Handled;
         }
+        // remote.workspaces / remote.attach — 원격 워크스페이스 브라우징·attach 능력의
+        // 로컬 IPC 노출(원칙 2: 에이전트가 CLI 없이 소켓만으로도 수행 가능). 블로킹 SSH
+        // I/O 는 워커 스레드로 돌려 이벤트루프를 막지 않는다. CLI(`remote workspaces`)와
+        // 동일한 `tasty_cli::remote_browse` 코어를 공유한다.
+        if cmd.request.method == "remote.workspaces" {
+            self.ipc_dispatch_remote_workspaces(cmd);
+            return IpcStep::Handled;
+        }
+        if cmd.request.method == "remote.attach" {
+            self.ipc_dispatch_remote_attach(cmd);
+            return IpcStep::Handled;
+        }
         IpcStep::NotHandled
     }
 
@@ -610,5 +622,181 @@ impl App {
                 );
             }
         }
+    }
+
+    /// `remote.workspaces` { profile? , ssh? , remote_tasty? , remote_port_mode? } →
+    /// 원격 tasty 의 워크스페이스 목록(browse). 블로킹 SSH I/O 라 **워커 스레드**에서
+    /// 조회하고 완료 시 `response_tx` 로 지연 회신한다(이벤트루프 무블록).
+    ///
+    /// 순수 조회 — 로컬 사용자 상태(focus/닫은항목 히스토리/선택)에 닿지 않는다(원칙 1).
+    /// CLI `tasty remote workspaces` 와 `tasty_cli::remote_browse::browse` 를 공유한다.
+    fn ipc_dispatch_remote_workspaces(&mut self, cmd: &IpcCommand) {
+        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let params = &cmd.request.params;
+        let profile = params
+            .get("profile")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let ssh = params
+            .get("ssh")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let remote_tasty = params
+            .get("remote_tasty")
+            .and_then(|v| v.as_str())
+            .unwrap_or("tasty")
+            .to_string();
+        let remote_port_mode = params
+            .get("remote_port_mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto")
+            .to_string();
+        if profile.is_some() && ssh.is_some() {
+            send_response(
+                &cmd.response_tx,
+                host_ipc::protocol::JsonRpcResponse::invalid_params(
+                    rpc_id,
+                    "'profile' and 'ssh' are mutually exclusive",
+                ),
+            );
+            return;
+        }
+        if profile.is_none() && ssh.is_none() {
+            send_response(
+                &cmd.response_tx,
+                host_ipc::protocol::JsonRpcResponse::invalid_params(
+                    rpc_id,
+                    "one of 'profile' or 'ssh' is required",
+                ),
+            );
+            return;
+        }
+        let response_tx = cmd.response_tx.clone();
+        std::thread::spawn(move || {
+            let resp = match tasty_cli::remote_browse::resolve_connection_spec(
+                profile.as_deref(),
+                ssh.as_deref(),
+                &remote_tasty,
+                &remote_port_mode,
+            ) {
+                Ok((target, rt, pm, pf)) => {
+                    match tasty_cli::remote_browse::browse(&target, &rt, &pm, pf.as_deref()) {
+                        Ok(list) => host_ipc::protocol::JsonRpcResponse::success(
+                            rpc_id,
+                            serde_json::to_value(list).unwrap_or(serde_json::Value::Null),
+                        ),
+                        Err(e) => host_ipc::protocol::JsonRpcResponse::error(
+                            rpc_id,
+                            -32050,
+                            format!("remote browse failed: {e}"),
+                        ),
+                    }
+                }
+                Err(e) => {
+                    host_ipc::protocol::JsonRpcResponse::invalid_params(rpc_id, e.to_string())
+                }
+            };
+            send_response(&response_tx, resp);
+        });
+    }
+
+    /// `remote.attach` { remote_workspace , profile? , ssh? , remote_tasty? ,
+    /// remote_port_mode? } → 선택한 원격 워크스페이스를 **로컬 mirror 로 attach**.
+    ///
+    /// **focus 중립(원칙 1 핵심)**: 이 IPC/에이전트 경로는 mirror workspace 를 *생성만*
+    /// 하고 focus 를 그 ws 로 옮기지 않는다. mirror 생성 실체(`start_gui_attach`)는
+    /// `engine.workspaces.push` 만 하고 `active_workspace` 를 건드리지 않는다(조용한 생성).
+    /// 새 mirror 로의 focus 이동은 **사용자 입력 경로 전용 별도 단계**다(RA02 팝업에서
+    /// 사용자가 확정할 때) — release IPC 에는 focus 변경 API 가 없다(원칙 3).
+    ///
+    /// 블로킹 SSH 터널 수립은 워커 스레드에서 하고(auto-attach 와 동일한 결과 채널 재사용,
+    /// anchor=None), 회신은 즉시 `{attaching:true}`(fire-and-forget) — mirror 는 비동기로
+    /// 나타난다. 호출자는 `list workspaces`(mirror 플래그)로 결과를 확인한다.
+    fn ipc_dispatch_remote_attach(&mut self, cmd: &IpcCommand) {
+        let rpc_id = cmd.request.id.clone().unwrap_or(serde_json::Value::Null);
+        let params = &cmd.request.params;
+        let remote_ws = params.get("remote_workspace").and_then(|v| v.as_u64());
+        let profile = params
+            .get("profile")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let ssh = params
+            .get("ssh")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let remote_tasty = params
+            .get("remote_tasty")
+            .and_then(|v| v.as_str())
+            .unwrap_or("tasty")
+            .to_string();
+        let remote_port_mode = params
+            .get("remote_port_mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto")
+            .to_string();
+
+        let Some(remote_ws) = remote_ws else {
+            send_response(
+                &cmd.response_tx,
+                host_ipc::protocol::JsonRpcResponse::invalid_params(
+                    rpc_id,
+                    "Missing required 'remote_workspace' (u32)",
+                ),
+            );
+            return;
+        };
+        let remote_ws = remote_ws as u32;
+        if profile.is_some() && ssh.is_some() {
+            send_response(
+                &cmd.response_tx,
+                host_ipc::protocol::JsonRpcResponse::invalid_params(
+                    rpc_id,
+                    "'profile' and 'ssh' are mutually exclusive",
+                ),
+            );
+            return;
+        }
+        if profile.is_none() && ssh.is_none() {
+            send_response(
+                &cmd.response_tx,
+                host_ipc::protocol::JsonRpcResponse::invalid_params(
+                    rpc_id,
+                    "one of 'profile' or 'ssh' is required",
+                ),
+            );
+            return;
+        }
+
+        // 워커: 접속 스펙 resolve + 엔드포인트(SSH 터널/loopback) 해석(블로킹). 완료 시
+        // auto-attach 결과 채널로 push → 메인 루프가 drain 해 focus 중립 start_gui_attach.
+        let tx = self.auto_attach_tx.clone();
+        let proxy = self.view.proxy.clone();
+        std::thread::spawn(move || {
+            let result = tasty_cli::remote_browse::resolve_connection_spec(
+                profile.as_deref(),
+                ssh.as_deref(),
+                &remote_tasty,
+                &remote_port_mode,
+            )
+            .and_then(|(target, rt, pm, pf)| {
+                tasty_cli::remote_browse::resolve_endpoint(&target, &rt, &pm, pf.as_deref())
+            });
+            let outcome = crate::app::auto_attach::AutoAttachOutcome {
+                anchor_ws_id: None,
+                remote_ws,
+                result,
+            };
+            let _ = tx.send(outcome); // 수신자(메인 루프) drop 시에만 실패 — 무시.
+            let _ = proxy.send_event(AppEvent::AutoAttachReady); // event loop 종료 시에만 실패 — 무시
+        });
+
+        // 즉시 회신(fire-and-forget). mirror 는 비동기 생성, focus 는 이동하지 않음.
+        send_response(
+            &cmd.response_tx,
+            host_ipc::protocol::JsonRpcResponse::success(
+                rpc_id,
+                serde_json::json!({ "attaching": true, "remote_workspace": remote_ws }),
+            ),
+        );
     }
 }

@@ -8,6 +8,7 @@ pub mod dynamic;
 pub mod format;
 pub mod help;
 pub mod plugin;
+pub mod remote_browse;
 pub mod request;
 pub mod run;
 pub mod ssh;
@@ -387,6 +388,56 @@ mod attach_surface_tests {
         let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
         assert!(
             err.to_string().contains("원격 check 대상이 필요합니다"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// `tasty remote workspaces --ssh user@host` 가 Workspaces 변형으로 파싱된다.
+    #[test]
+    fn remote_workspaces_parses() {
+        let cli =
+            Cli::try_parse_from(["tasty", "remote", "workspaces", "--ssh", "user@host", "--json"])
+                .unwrap();
+        let Some(Commands::Remote {
+            command:
+                RemoteCommands::Workspaces {
+                    ssh,
+                    profile,
+                    remote_tasty,
+                    remote_port_mode,
+                    json,
+                },
+        }) = cli.command
+        else {
+            panic!("expected remote workspaces");
+        };
+        assert_eq!(ssh.as_deref(), Some("user@host"));
+        assert_eq!(profile, None);
+        assert_eq!(remote_tasty, "tasty");
+        assert_eq!(remote_port_mode, "auto");
+        assert!(json);
+    }
+
+    /// 런타임 가드: `remote workspaces` 의 `--ssh` 와 `--profile` 는 상호배타.
+    #[test]
+    fn remote_workspaces_ssh_profile_rejected() {
+        let cli =
+            Cli::try_parse_from(["tasty", "remote", "workspaces", "--ssh", "h", "--profile", "p"])
+                .unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("--ssh 와 --profile"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// 런타임 가드: 대상(`--ssh`/`--profile`) 없이 `remote workspaces` → 명확한 거부.
+    #[test]
+    fn remote_workspaces_no_target_rejected() {
+        let cli = Cli::try_parse_from(["tasty", "remote", "workspaces"]).unwrap();
+        let err = run::run_client(cli.command.unwrap(), None).unwrap_err();
+        assert!(
+            err.to_string().contains("원격 대상이 필요합니다"),
             "unexpected error: {err}"
         );
     }

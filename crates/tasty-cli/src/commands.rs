@@ -18,6 +18,7 @@ pub mod read_unset;
 pub mod remote;
 pub mod remote_check;
 pub mod remote_profile;
+pub mod remote_workspaces;
 pub mod surface_meta;
 pub mod telemetry;
 pub mod workspace_category;

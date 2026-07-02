@@ -1006,6 +1006,14 @@ eof = "IPC 応答なし (EOF) — リモートサーバーが応答しません"
 parse_failed = "IPC 応答 JSON の解析に失敗"
 error_response = "IPC エラー応答 (code={}): {}"
 
+[cli.remote_workspaces]
+browse_failed = "リモートワークスペースの取得に失敗しました (対象={})"
+serialize_failed = "リモートワークスペース一覧のJSONシリアライズに失敗しました"
+none = "リモートにワークスペースがありません: {}"
+header = "{} のリモートワークスペース (合計{}件):"
+row_free = "  #{} {} (pane={}, busy={}) — 未占有"
+row_attached = "  #{} {} (pane={}, busy={}) — client {} が占有中"
+
 [command_index.cap.soft]
 title = "コマンド履歴が大量です"
 body = "このサーフェスにコマンドが {} 件記録されています。古い項目はサーフェスを閉じると整理されます。"
