@@ -8,7 +8,7 @@ use std::path::Path;
 
 use super::types::{
     HOOK_TIMEOUT_MS_MAX, HOST_API_VERSION, HookMode, MANIFEST_VERSION, Manifest, Permission,
-    PopupTrigger, SettingsItemDecl, ToolAction,
+    PopupTrigger, PresetFieldInputType, SettingsItemDecl, SurfaceKindDecl, ToolAction,
 };
 use super::validators::{
     event_pattern_covers, event_pattern_namespace, is_reserved_cli_name,
@@ -61,6 +61,7 @@ impl Manifest {
                     kind.kind
                 );
             }
+            self.validate_preset_fields(kind)?;
         }
         for raw in &self.permissions {
             if Permission::from_token(raw).is_none() {
@@ -75,6 +76,77 @@ impl Manifest {
         self.validate_events_emitted()?;
         self.validate_hook_events()?;
         self.validate_extends()?;
+        Ok(())
+    }
+
+    /// `[[surface_kinds.preset_fields]]` 검증.
+    ///
+    /// - `id`: settings id 규칙(소문자/숫자/`_`/`-`, 1..=64), kind 안에서 유일.
+    /// - `label_key` / `param_key`: 비어있지 않음.
+    /// - `derive_cwd`: `input_type = file_path` 에서만 유효(url/text/dir 은 경로 파생
+    ///   의미가 없어 거부).
+    /// - `required_params` 와의 정합(단일화): `preset_fields[].required=true` 가 진실원.
+    ///   `required_params` 를 함께 선언하면 그 각 항목이 `required=true` 인 필드의
+    ///   `param_key` 와 일치해야 한다(어긋나면 진실원 둘 → 거부).
+    fn validate_preset_fields(&self, kind: &SurfaceKindDecl) -> anyhow::Result<()> {
+        let mut seen_ids = HashSet::new();
+        let mut required_param_keys = HashSet::new();
+        for field in &kind.preset_fields {
+            if !is_valid_settings_id(&field.id) {
+                anyhow::bail!(
+                    "invalid surface_kinds '{}' preset_field id '{}': must be lowercase ascii + digits + '_' + '-', length 1..=64",
+                    kind.kind,
+                    field.id
+                );
+            }
+            if !seen_ids.insert(field.id.clone()) {
+                anyhow::bail!(
+                    "surface_kinds '{}' preset_field id '{}' declared twice",
+                    kind.kind,
+                    field.id
+                );
+            }
+            if field.label_key.is_empty() {
+                anyhow::bail!(
+                    "surface_kinds '{}' preset_field '{}': label_key must not be empty",
+                    kind.kind,
+                    field.id
+                );
+            }
+            if field.param_key.is_empty() {
+                anyhow::bail!(
+                    "surface_kinds '{}' preset_field '{}': param_key must not be empty",
+                    kind.kind,
+                    field.id
+                );
+            }
+            if field.derive_cwd && field.input_type != PresetFieldInputType::FilePath {
+                anyhow::bail!(
+                    "surface_kinds '{}' preset_field '{}': derive_cwd is only valid for input_type = file_path",
+                    kind.kind,
+                    field.id
+                );
+            }
+            if field.required {
+                required_param_keys.insert(field.param_key.clone());
+            }
+        }
+        // required_params 정합 — preset_fields 로 마이그레이션한 kind 에서 둘이 갈리는
+        // 것을 막는다. preset_fields 가 진실원이므로, **preset_fields 를 선언한 경우에만**
+        // required_params 각 항목이 `required=true` 필드의 param_key 와 일치하는지 검사한다.
+        // (preset_fields 미선언 kind 의 legacy `required_params` 단독 선언은 그대로 허용 —
+        // 미사용 메타라 대조할 진실원이 없다.)
+        if !kind.preset_fields.is_empty() {
+            for rp in &kind.required_params {
+                if !required_param_keys.contains(rp) {
+                    anyhow::bail!(
+                        "surface_kinds '{}': required_params entry '{}' does not match any preset_field with required = true (preset_fields is the single source of truth)",
+                        kind.kind,
+                        rp
+                    );
+                }
+            }
+        }
         Ok(())
     }
 

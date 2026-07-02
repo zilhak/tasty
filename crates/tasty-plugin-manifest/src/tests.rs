@@ -2338,6 +2338,7 @@ fn surface_kind_decl_new_fields_default() {
     assert!(kind.required_params.is_empty());
     assert!(kind.param_aliases.is_empty());
     assert!(!kind.consumes_egui_input);
+    assert!(kind.preset_fields.is_empty());
 
     // 명시 지정도 round-trip 되는지.
     let s2 = r#"
@@ -2362,6 +2363,178 @@ fn surface_kind_decl_new_fields_default() {
     assert_eq!(kind2.required_params, vec!["file".to_string()]);
     assert!(kind2.consumes_egui_input);
     assert_eq!(kind2.param_aliases.get("file_path"), Some(&"file".into()));
+}
+
+#[test]
+fn surface_kind_preset_fields_parse() {
+    use crate::types::PresetFieldInputType;
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "markdown"
+        display_name_i18n_key = "k"
+        [[surface_kinds.preset_fields]]
+        id = "file"
+        label_key = "preset.field.file"
+        param_key = "file"
+        input_type = "file_path"
+        required = true
+        placeholder_key = "preset.field.file_hint"
+        derive_cwd = true
+    "#;
+    let m = parse(s).expect("manifest with preset_fields should parse");
+    let fields = &m.surface_kinds[0].preset_fields;
+    assert_eq!(fields.len(), 1);
+    let f = &fields[0];
+    assert_eq!(f.id, "file");
+    assert_eq!(f.param_key, "file");
+    assert_eq!(f.input_type, PresetFieldInputType::FilePath);
+    assert!(f.required);
+    assert!(f.derive_cwd);
+    assert_eq!(f.placeholder_key.as_deref(), Some("preset.field.file_hint"));
+}
+
+#[test]
+fn preset_field_input_type_defaults_to_text() {
+    use crate::types::PresetFieldInputType;
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+        [[surface_kinds.preset_fields]]
+        id = "note"
+        label_key = "l"
+        param_key = "note"
+    "#;
+    let m = parse(s).expect("preset_field without input_type should default to text");
+    let f = &m.surface_kinds[0].preset_fields[0];
+    assert_eq!(f.input_type, PresetFieldInputType::Text);
+    assert!(!f.required);
+    assert!(!f.derive_cwd);
+}
+
+#[test]
+fn preset_field_derive_cwd_requires_file_path() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+        [[surface_kinds.preset_fields]]
+        id = "u"
+        label_key = "l"
+        param_key = "url"
+        input_type = "url"
+        derive_cwd = true
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("derive_cwd"), "got: {err}");
+}
+
+#[test]
+fn preset_field_duplicate_id_rejected() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+        [[surface_kinds.preset_fields]]
+        id = "dup"
+        label_key = "l"
+        param_key = "a"
+        [[surface_kinds.preset_fields]]
+        id = "dup"
+        label_key = "l"
+        param_key = "b"
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("declared twice"), "got: {err}");
+}
+
+#[test]
+fn preset_field_empty_param_key_rejected() {
+    let s = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+        [[surface_kinds.preset_fields]]
+        id = "f"
+        label_key = "l"
+        param_key = ""
+    "#;
+    let err = parse(s).unwrap_err().to_string();
+    assert!(err.contains("param_key"), "got: {err}");
+}
+
+#[test]
+fn required_params_must_match_required_preset_field() {
+    // required_params 는 preset_fields 의 required=true param_key 집합과 정합해야 한다.
+    let mismatch = r#"
+        manifest_version = 1
+        id = "com.example.x"
+        name = "X"
+        version = "0.1"
+        api_version = "1"
+        [entry]
+        type = "process"
+        command = "x"
+        [[surface_kinds]]
+        kind = "foo"
+        display_name_i18n_key = "k"
+        required_params = ["file"]
+        [[surface_kinds.preset_fields]]
+        id = "file"
+        label_key = "l"
+        param_key = "file"
+        input_type = "file_path"
+    "#;
+    // required=false 라 required_params 와 어긋남 → 거부.
+    let err = parse(mismatch).unwrap_err().to_string();
+    assert!(err.contains("required_params"), "got: {err}");
+
+    // required=true 로 정합하면 통과.
+    let ok = mismatch.replace(
+        r#"input_type = "file_path""#,
+        "input_type = \"file_path\"\n        required = true",
+    );
+    parse(&ok).expect("required_params matching a required field should parse");
 }
 
 #[test]

@@ -323,6 +323,62 @@ pub struct HookEventDecl {
     pub stability: EventStability,
 }
 
+/// 프리셋 편집기가 이 kind 의 surface 를 편집할 때 노출할 입력 필드 한 항목
+/// (`[[surface_kinds.preset_fields]]`). settings_pages 의 [`SettingsItemDecl`] 구조를
+/// **참고**하되(재사용 아님 — settings 는 `storage_key` 기반 저장 모델이라 목적이 다르다)
+/// 저장 대상이 `PresetSurface.params` 인 프리셋 편집용 별도 타입이다.
+///
+/// plugin 필드는 항상 `param_key` 로 `PresetSurface.params.<param_key>` 에 write 한다
+/// (builtin terminal 의 cwd/startup 전용 컬럼 라우팅은 host 측 표현에서만 구분되며
+/// 매니페스트로는 선언되지 않는다).
+///
+/// - `id`: kind 내 항목 식별자 (소문자/숫자 + `_`/`-`, 1..=64). kind 안에서 유일.
+/// - `label_key`: 항목 라벨 i18n 키 (비어있지 않음).
+/// - `param_key`: 값을 write 할 `PresetSurface.params` 의 키 (비어있지 않음).
+/// - `input_type`: 편집 위젯 결정. `text`/`url` → 단순 Input, `file_path`/`dir` →
+///   Input + 파일 다이얼로그. 기본 `text`.
+/// - `required`: 프리셋 적용에 필수인 값인지. 기존 `required_params` 의 진실원이며,
+///   `required_params` 를 함께 선언하면 `required=true` 인 필드의 `param_key` 집합과
+///   정합해야 한다(검증).
+/// - `placeholder_key`: 옵션. 빈 입력 placeholder i18n 키.
+/// - `default`: 옵션. kind 로 새로 전환 시 초기값(문자열).
+/// - `derive_cwd`: 옵션. 적용 시 이 필드 경로의 부모 디렉토리를 cwd 로 파생
+///   (`input_type = file_path` 에서만 유효 — url/text 는 파생 무의미).
+#[derive(Debug, Clone, Deserialize)]
+pub struct PresetFieldDecl {
+    pub id: String,
+    pub label_key: String,
+    pub param_key: String,
+    #[serde(default)]
+    pub input_type: PresetFieldInputType,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub placeholder_key: Option<String>,
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub derive_cwd: bool,
+}
+
+/// [`PresetFieldDecl::input_type`] — 편집 위젯 + 값 해석 정책.
+///
+/// 1차 스코프는 문자열 값(`text`/`file_path`/`dir`/`url`)만 다룬다. 향후
+/// `bool`/`number`/`select` 확장을 위해 별도 enum 으로 두어 여지를 남긴다.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PresetFieldInputType {
+    /// 단순 텍스트 Input.
+    #[default]
+    Text,
+    /// 파일 경로 — Input + 파일 선택 다이얼로그. `derive_cwd` 대상.
+    FilePath,
+    /// 디렉토리 경로 — Input + 폴더 선택 다이얼로그.
+    Dir,
+    /// URL — 단순 Input (경로 파생 제외).
+    Url,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurfaceKindDecl {
     pub kind: String,
@@ -354,6 +410,12 @@ pub struct SurfaceKindDecl {
     /// 같은 하드코딩 분기를 generic 화 하기 위한 capability 메타. 기본 false.
     #[serde(default)]
     pub consumes_egui_input: bool,
+    /// 프리셋 편집기가 이 kind 를 편집할 때 노출할 입력 필드 스키마
+    /// (`[[surface_kinds.preset_fields]]`). 편집기가 kind 별로 다른 폼을 generic
+    /// 하게 렌더/저장하는 근거다 (예: markdown 은 파일 경로, html 은 URL). 빈 vec 이면
+    /// 편집기가 이 plugin kind 전용 필드를 표시하지 않는다.
+    #[serde(default)]
+    pub preset_fields: Vec<PresetFieldDecl>,
 }
 
 /// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "remote" | "webview" | "egui-mesh"`.

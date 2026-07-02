@@ -1,6 +1,6 @@
 [package]
 name = "tasty-plugin-manifest"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 license = "MIT"
 description = "Tasty plugin manifest schema, parse and schema-agnostic validation"
