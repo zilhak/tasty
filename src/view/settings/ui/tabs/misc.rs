@@ -80,7 +80,7 @@ pub fn draw_tastyrc_subtab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<Str
     ui.label(
         egui::RichText::new(t("settings.misc.bashrc.description"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     vspace(ui, th.spacing_sm);
 

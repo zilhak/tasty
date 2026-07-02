@@ -23,6 +23,6 @@ pub fn draw_accessibility_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.accessibility.reduced_motion_desc"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
 }

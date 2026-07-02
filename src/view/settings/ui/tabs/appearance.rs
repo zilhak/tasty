@@ -35,7 +35,7 @@ fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
     let response = ui.add(egui::Label::new(text).sense(egui::Sense::hover()));
     // Show tooltip only when hovering over the (?) portion
     if response.hovered() {
-        response.show_tooltip_text(egui::RichText::new(tooltip).color(th.text));
+        response.show_tooltip_text(egui::RichText::new(tooltip).color(th.text_primary()));
     }
 }
 
@@ -117,7 +117,7 @@ fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.appearance.theme.heading"))
             .strong()
-            .color(th.text),
+            .color(th.text_primary()),
     );
     vspace(ui, th.spacing_sm);
 
@@ -141,7 +141,7 @@ fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.appearance.theme.hint"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
 }
 
@@ -212,7 +212,7 @@ fn draw_theme_swatch(
         egui::Align2::LEFT_TOP,
         label,
         egui::FontId::proportional(th.font_size_body.value()),
-        th.text.to_egui(),
+        th.text_primary().to_egui(),
     );
 
     // 보더 — 활성: accent 보더 + 1px inner ring. 비활성: border-default(hover 시 강조).
@@ -273,13 +273,13 @@ fn draw_appearance_general(
     ui.label(
         egui::RichText::new(t("settings.appearance.font.default_heading"))
             .strong()
-            .color(th.text),
+            .color(th.text_primary()),
     );
     vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.font.default_hint"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     vspace(ui, th.spacing_sm);
 
@@ -380,7 +380,7 @@ fn display_scale_card(
     // 배경 (surface-raised).
     let radius = th.corner_radius.value();
     ui.painter()
-        .rect_filled(rect, radius, egui::Color32::from(th.surface0));
+        .rect_filled(rect, radius, egui::Color32::from(th.surface_raised()));
 
     // 보더 / ring.
     if is_active {
@@ -407,12 +407,20 @@ fn display_scale_card(
         ui.painter().rect_stroke(
             rect,
             radius,
-            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.surface2)),
+            // 비활성 카드 보더(값-동일: surface2). border-role 접근자 부재 → surface_active() 로 값 보존
+            egui::Stroke::new(
+                th.border_width.value(),
+                egui::Color32::from(th.surface_active()),
+            ),
             egui::StrokeKind::Inside,
         );
     }
 
-    let text_color = egui::Color32::from(if is_active { th.text } else { th.subtext0 });
+    let text_color = egui::Color32::from(if is_active {
+        th.text_primary()
+    } else {
+        th.text_muted()
+    });
 
     // "Aa" 프리뷰 — 실제 배율로 스케일된 글리프 샘플 (자연어 아님 → i18n 예외).
     let preview_size = th.font_size_heading.value() * factor;
@@ -467,13 +475,13 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.appearance.tasty.heading"))
             .strong()
-            .color(th.text),
+            .color(th.text_primary()),
     );
     vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.tasty.hint"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     vspace(ui, th.spacing_sm);
 
@@ -501,7 +509,10 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
     vspace(ui, th.spacing_md);
 
     // ── Active tab indicator (Underline / Fill / Dot) ──
-    ui.label(egui::RichText::new(t("settings.appearance.tasty.indicator_label")).color(th.text));
+    ui.label(
+        egui::RichText::new(t("settings.appearance.tasty.indicator_label"))
+            .color(th.text_primary()),
+    );
     vspace(ui, th.spacing_xs);
     ui.horizontal(|ui| {
         for (variant, key) in [
@@ -573,9 +584,9 @@ fn draw_tasty_color_row(
         ui.add_sized(
             egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
             egui::Label::new(egui::RichText::new(t(label_key)).color(if is_ov {
-                th.text
+                th.text_primary()
             } else {
-                th.subtext0
+                th.text_muted()
             })),
         );
 
@@ -617,7 +628,10 @@ fn draw_tasty_color_row(
         ui.painter().rect_stroke(
             sw_rect,
             3.0,
-            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.surface1)),
+            egui::Stroke::new(
+                th.border_width.value(),
+                egui::Color32::from(th.border_strong()),
+            ),
             egui::StrokeKind::Inside,
         );
 
@@ -768,13 +782,13 @@ fn draw_terminal_surface_colors(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.appearance.terminal.surface_heading"))
             .strong()
-            .color(th.text),
+            .color(th.text_primary()),
     );
     vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.terminal.surface_hint"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     vspace(ui, th.spacing_sm);
     draw_surface_bg_row(
@@ -827,9 +841,9 @@ fn draw_surface_bg_row(
         ui.add_sized(
             egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
             egui::Label::new(egui::RichText::new(label).color(if is_ov {
-                th.text
+                th.text_primary()
             } else {
-                th.subtext0
+                th.text_muted()
             })),
         );
 
@@ -875,7 +889,10 @@ fn draw_surface_bg_row(
         ui.painter().rect_stroke(
             sw_rect,
             3.0,
-            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.surface1)),
+            egui::Stroke::new(
+                th.border_width.value(),
+                egui::Color32::from(th.border_strong()),
+            ),
             egui::StrokeKind::Inside,
         );
 
@@ -962,13 +979,13 @@ fn draw_surface_font_section(
     ui.label(
         egui::RichText::new(t("settings.appearance.font.override_heading"))
             .strong()
-            .color(th.text),
+            .color(th.text_primary()),
     );
     vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.font.override_hint"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     vspace(ui, th.spacing_sm);
 
@@ -1188,7 +1205,7 @@ fn draw_appearance_colors(ui: &mut egui::Ui, settings: &mut Settings) {
                     egui::Label::new(
                         egui::RichText::new(t("settings.appearance.colors.intro"))
                             .small()
-                            .color(th.subtext0),
+                            .color(th.text_muted()),
                     )
                     .wrap(),
                 );
@@ -1221,13 +1238,13 @@ fn draw_color_group(ui: &mut egui::Ui, th: &Theme, settings: &mut Settings, grou
                 .monospace()
                 .size(th.font_size_caption.value())
                 .strong()
-                .color(th.subtext0),
+                .color(th.text_muted()),
         );
         if let Some(note_key) = group.note_key {
             ui.label(
                 egui::RichText::new(format!("· {}", t(note_key)))
                     .small()
-                    .color(th.subtext0),
+                    .color(th.text_muted()),
             );
         }
         if changed > 0 {
@@ -1289,9 +1306,9 @@ fn draw_color_picker_row(
         ui.add_sized(
             egui::vec2(COLOR_FIELD_NAME_WIDTH.value(), COLOR_SWATCH_SIZE.value()),
             egui::Label::new(egui::RichText::new(row.name).monospace().color(if is_ov {
-                th.text
+                th.text_primary()
             } else {
-                th.subtext0
+                th.text_muted()
             })),
         );
 
@@ -1335,7 +1352,10 @@ fn draw_color_picker_row(
         ui.painter().rect_stroke(
             sw_rect,
             3.0,
-            egui::Stroke::new(th.border_width.value(), egui::Color32::from(th.surface1)),
+            egui::Stroke::new(
+                th.border_width.value(),
+                egui::Color32::from(th.border_strong()),
+            ),
             egui::StrokeKind::Inside,
         );
 
@@ -1385,7 +1405,11 @@ pub(super) fn draw_plugin_settings_page(
             } => {
                 let th = crate::theme::theme();
                 vspace(ui, th.spacing_xs);
-                ui.label(egui::RichText::new(t(label_key)).strong().color(th.text));
+                ui.label(
+                    egui::RichText::new(t(label_key))
+                        .strong()
+                        .color(th.text_primary()),
+                );
                 vspace(ui, th.spacing_xs);
                 draw_surface_font_section(
                     ui,
@@ -1455,7 +1479,7 @@ fn plugin_setting_row(ui: &mut egui::Ui, label: &str, control: impl FnOnce(&mut 
     let th = crate::theme::theme();
     ui.add_space(th.spacing_sm.value());
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).color(th.text));
+        ui.label(egui::RichText::new(label).color(th.text_primary()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
     });
 }
@@ -1678,7 +1702,7 @@ fn font_family_picker(
                 } else {
                     ui.label(
                         egui::RichText::new(t("settings.appearance.loading_fonts"))
-                            .color(th.subtext0),
+                            .color(th.text_muted()),
                     );
                 }
             });
@@ -1988,7 +2012,7 @@ fn draw_font_preview(
     ui.label(
         egui::RichText::new(t("settings.appearance.preview_focused"))
             .size(th.font_size_caption.value())
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     let (focused_rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), block_height),
@@ -2012,7 +2036,7 @@ fn draw_font_preview(
     ui.label(
         egui::RichText::new(t("settings.appearance.preview_unfocused"))
             .size(th.font_size_caption.value())
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     let (unfocused_rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), block_height),
@@ -2038,7 +2062,7 @@ fn draw_font_preview(
             &format!("{} / {:.1}px", display_family, font_size),
         ))
         .size(th.font_size_caption.value())
-        .color(th.subtext0),
+        .color(th.text_muted()),
     );
 }
 

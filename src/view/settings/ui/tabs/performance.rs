@@ -26,7 +26,7 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.performance.targeted_pty_polling_desc"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
     vspace(ui, th.spacing_sm);
 
@@ -44,6 +44,6 @@ pub fn draw_performance_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.label(
         egui::RichText::new(t("settings.performance.scrollback_disk_swap_desc"))
             .small()
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
 }
