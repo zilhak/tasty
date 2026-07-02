@@ -118,7 +118,7 @@ pub fn draw_command_palette_view(
     // (search 10 / list 6 / footer 8,12). content_margin 은 command_palette 한정 0
     // (popup.rs) 이라 full 은 popup 가장자리. 구역 divider 는 Frame 실제 좌표에 그린다.
     let full = ui.max_rect();
-    let sep = egui::Stroke::new(theme.border_width.value(), theme.surface1);
+    let sep = egui::Stroke::new(theme.border_width.value(), theme.border_strong());
     ui.spacing_mut().item_spacing.y = 0.0;
 
     // ── 검색 구역 (디자인 padding 10, Input control-height 28, borderBottom) ──
@@ -168,7 +168,7 @@ pub fn draw_command_palette_view(
             if props.items.is_empty() {
                 ui.label(
                     egui::RichText::new(&props.no_results_text)
-                        .color(theme.subtext0.to_egui())
+                        .color(theme.text_muted().to_egui())
                         .italics(),
                 );
                 return;
@@ -200,9 +200,9 @@ pub fn draw_command_palette_view(
                             );
                         }
                         let color: egui::Color32 = if is_selected || resp.hovered() {
-                            theme.text.into()
+                            theme.text_primary().into()
                         } else {
-                            theme.subtext0.into()
+                            theme.text_muted().into()
                         };
 
                         // 디자인 MenuItem: padding 0 12, icon 15, gap 8.
