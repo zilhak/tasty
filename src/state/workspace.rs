@@ -34,6 +34,58 @@ impl AppState {
         }
     }
 
+    /// 현재 active 워크스페이스가 속한 카테고리 내에서 **다음** 워크스페이스로 이동한다.
+    /// 표시(=저장) 순서를 따르고, 마지막에서 다음으로 가면 첫 항목으로 wrap-around 한다.
+    /// 카테고리에 자기 자신뿐이면 no-op(`Pane::next_tab` 의 `len > 1` 가드와 동형).
+    /// 전역 인덱스만 뽑아 불변 빌림을 끝낸 뒤 [`switch_workspace`](Self::switch_workspace)
+    /// 를 재사용하므로 active 보정 로직을 그대로 탄다.
+    // QS02(quick-switch 키바인딩) 에서 사용자 키 경로로만 호출된다. 그 전까지는 호출부가
+    // 없어 dead_code 로 보이므로 명시적으로 허용한다. (원칙 1/3: active_workspace 를 바꾸는
+    // 사용자 포커스 이동 — release IPC/CLI 로 노출 금지.)
+    #[allow(dead_code)]
+    pub fn next_workspace_in_active_category(&mut self, engine: &mut CoreState) {
+        if let Some(target) = self.relative_workspace_in_active_category(engine, 1) {
+            self.switch_workspace(engine, target);
+        }
+    }
+
+    /// 현재 active 워크스페이스가 속한 카테고리 내에서 **이전** 워크스페이스로 이동한다.
+    /// [`next_workspace_in_active_category`](Self::next_workspace_in_active_category) 의
+    /// 역방향(첫 항목에서 이전으로 가면 마지막 항목으로 wrap-around).
+    #[allow(dead_code)] // QS02 에서 사용자 키 경로로 호출 (next_ 동일).
+    pub fn prev_workspace_in_active_category(&mut self, engine: &mut CoreState) {
+        if let Some(target) = self.relative_workspace_in_active_category(engine, -1) {
+            self.switch_workspace(engine, target);
+        }
+    }
+
+    /// active 워크스페이스가 속한 카테고리 로컬 목록에서 `delta`(±1) 만큼 wrap-around
+    /// 이동한 대상의 **전역 인덱스** 를 반환한다. active OOB · 카테고리에 1개 이하 ·
+    /// 로컬 위치 미검출(방어) 시 `None`. 반환값은 usize 복사본이라 호출부에서
+    /// 불변 빌림 없이 가변 `switch_workspace` 를 호출할 수 있다.
+    #[allow(dead_code)] // next_/prev_ 헬퍼 — QS02 연동 전까지 호출부 없음.
+    fn relative_workspace_in_active_category(
+        &self,
+        engine: &CoreState,
+        delta: isize,
+    ) -> Option<usize> {
+        if self.active_workspace >= engine.workspaces.len() {
+            return None;
+        }
+        let cat = engine.workspaces[self.active_workspace].category;
+        let locals = engine.workspaces_in_category(cat);
+        let len = locals.len();
+        if len <= 1 {
+            return None;
+        }
+        let pos = locals
+            .iter()
+            .position(|(gi, _)| *gi == self.active_workspace)?;
+        // len - 1 == delta.rem_euclid 을 위한 wrap: (pos + len ± 1) % len.
+        let new_pos = (pos as isize + delta).rem_euclid(len as isize) as usize;
+        Some(locals[new_pos].0)
+    }
+
     /// Move a workspace from one index to another, adjusting active_workspace accordingly.
     /// Returns false if indices are out of bounds or equal.
     pub fn move_workspace(&mut self, engine: &mut CoreState, from: usize, to: usize) -> bool {

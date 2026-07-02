@@ -323,6 +323,80 @@ fn switch_workspace_out_of_range() {
     assert_eq!(state.active_workspace, 0);
 }
 
+// ---- next/prev workspace within active category ----
+
+/// 단일 normal 카테고리에 워크스페이스 3개(A=0, B=1, C=2)일 때 next 는
+/// A→B→C→A wrap, prev 는 역순으로 순환한다.
+#[test]
+fn next_prev_workspace_single_category_wraps() {
+    let (mut state, mut engine) = test_state();
+    // test_state 는 A(0) 하나로 시작 → B(1), C(2) 추가.
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    assert_eq!(engine.workspaces.len(), 3);
+
+    state.switch_workspace(&mut engine, 0); // active = A
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 1); // B
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 2); // C
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 0); // wrap → A
+
+    state.prev_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 2); // wrap → C
+    state.prev_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 1); // B
+}
+
+/// normal 카테고리에 A(0)/C(2), work 카테고리에 B(1)/D(3) 일 때
+/// 이동은 같은 카테고리 안에서만 wrap 하고 다른 카테고리 항목은 건너뛴다.
+#[test]
+fn next_workspace_in_active_category_wraps_within_category_only() {
+    let (mut state, mut engine) = test_state();
+    // A(0) 는 test_state 기본. B(1), C(2), D(3) 추가.
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    add_test_workspace(&mut state, &mut engine); // D=3
+    assert_eq!(engine.workspaces.len(), 4);
+
+    // add_test_workspace 는 카테고리를 안 붙이므로 work 카테고리를 만들어 B/D 재배정.
+    let work = engine.create_category("work").expect("create work category");
+    engine.workspaces[1].set_category(work); // B
+    engine.workspaces[3].set_category(work); // D
+
+    // active = A (normal 카테고리): A(0) ↔ C(2) 사이에서만 순환.
+    state.switch_workspace(&mut engine, 0);
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 2); // C (B=1 건너뜀)
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 0); // wrap → A
+    state.prev_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 2); // wrap → C
+
+    // active = B (work 카테고리): B(1) ↔ D(3) 사이에서만 순환.
+    state.switch_workspace(&mut engine, 1);
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 3); // D (C=2 건너뜀)
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 1); // wrap → B
+    state.prev_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 3); // wrap → D
+}
+
+/// 카테고리 내 워크스페이스가 자기 자신 하나뿐이면 next/prev 가 no-op.
+#[test]
+fn next_prev_workspace_in_active_category_noop_when_alone() {
+    let (mut state, mut engine) = test_state();
+    assert_eq!(engine.workspaces.len(), 1);
+    assert_eq!(state.active_workspace, 0);
+
+    state.next_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 0);
+    state.prev_workspace_in_active_category(&mut engine);
+    assert_eq!(state.active_workspace, 0);
+}
+
 // ---- resolve_inherit_cwd_from_surface ----
 
 #[test]
