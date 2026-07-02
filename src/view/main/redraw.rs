@@ -695,8 +695,6 @@ impl MainView {
                     move_down,
                     MenuItem::separator(),
                     MenuItem::new(5, crate::i18n::t("preset.context.save_as_workspace_preset")),
-                    MenuItem::separator(),
-                    MenuItem::new(6, crate::i18n::t("context_menu.close_workspace")),
                 ];
 
                 // 카테고리 토글 on — "카테고리로 이동"(현재 소속 제외 평면 나열, 선택지 B)
@@ -730,6 +728,13 @@ impl MainView {
                         crate::i18n::t("workspace_category.new_category"),
                     ));
                 }
+
+                // 카테고리 토글 상태와 무관하게 "닫기"는 항상 최하단.
+                items.push(MenuItem::separator());
+                items.push(MenuItem::new(
+                    6,
+                    crate::i18n::t("context_menu.close_workspace"),
+                ));
 
                 let result =
                     show_context_menu(self.base.winit.as_ref(), x as f64, y as f64, &items);
