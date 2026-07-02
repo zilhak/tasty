@@ -89,9 +89,10 @@ impl IconButton {
             egui::Sense::hover()
         };
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), sense);
-        let radius = theme.corner_radius.value();
+        let radius = theme.icon_button_radius().value();
 
-        // solid: 채움 + 1px border (transparent 가 아닌 유일한 variant).
+        // solid: 채움 + 1px border. solid bg/border 는 대응 icon-button component
+        // 토큰 없어 semantic 유지.
         if self.variant == IconButtonVariant::Solid {
             ui.painter().rect(
                 rect,
@@ -104,20 +105,26 @@ impl IconButton {
 
         // 배경 오버레이. active(지속) 또는 pressed → active 틴트, hover → hover 틴트.
         if self.active || (self.enabled && resp.is_pointer_button_down_on()) {
-            ui.painter()
-                .rect_filled(rect, radius, theme.overlay_active().to_egui_premultiplied());
+            ui.painter().rect_filled(
+                rect,
+                radius,
+                theme.icon_button_bg_active().to_egui_premultiplied(),
+            );
         } else if self.enabled && resp.hovered() {
-            ui.painter()
-                .rect_filled(rect, radius, theme.overlay_hover().to_egui_premultiplied());
+            ui.painter().rect_filled(
+                rect,
+                radius,
+                theme.icon_button_overlay_hover().to_egui_premultiplied(),
+            );
         }
 
-        // 글리프 색.
+        // 글리프 색. active accent 는 대응 icon-button component 토큰 없어 semantic.
         let color = if self.active {
             theme.accent_primary().to_egui()
         } else if self.variant == IconButtonVariant::Solid || (self.enabled && resp.hovered()) {
-            theme.text_primary().to_egui()
+            theme.icon_button_fg_hover().to_egui()
         } else {
-            theme.text_secondary().to_egui()
+            theme.icon_button_fg().to_egui()
         };
         let color = if self.enabled {
             color
