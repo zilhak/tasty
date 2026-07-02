@@ -195,9 +195,10 @@ pub fn draw_pane_tab_bars_view(
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 let bg = if info.is_focused {
-                    th.surface0
+                    // component tab_bg()=mantle 라 부적합 — focus strip 은 surface-raised 값.
+                    th.surface_raised()
                 } else {
-                    th.mantle
+                    th.bg_sidebar()
                 };
 
                 egui::Frame::new()
@@ -219,9 +220,17 @@ pub fn draw_pane_tab_bars_view(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                let arrow_color = if can_left { th.subtext0 } else { th.surface1 };
+                                // divergence: disabled 화살표는 surface1 값(text-role 접근자 부재).
+                                // 값-보존 위해 border_strong() 사용(§B3).
+                                let arrow_color = if can_left {
+                                    th.text_muted()
+                                } else {
+                                    th.border_strong()
+                                };
                                 if resp.hovered() && can_left {
-                                    ui.painter().rect_filled(r, 0.0, th.surface0);
+                                    // divergence: hover 채움이 surface0(=surface-raised) 불투명값.
+                                    // hover-overlay 로 바꾸면 픽셀 변함 → 값-보존 surface_raised().
+                                    ui.painter().rect_filled(r, 0.0, th.surface_raised());
                                 }
                                 ui.painter().text(
                                     r.center(),
@@ -269,7 +278,9 @@ pub fn draw_pane_tab_bars_view(
                                         egui::pos2(x, clip_rect.min.y),
                                         egui::vec2(separator_w, bar_h),
                                     );
-                                    painter.rect_filled(sep, 0.0, th.surface1);
+                                    // divergence: 탭 구분선. 코드=surface1, 디자인 tab_separator()=
+                                    // 반투명(값 다름) → 채택 금지. 값-보존 border_strong() (§B3).
+                                    painter.rect_filled(sep, 0.0, th.border_strong());
                                     x += separator_w;
                                 }
 
@@ -283,16 +294,18 @@ pub fn draw_pane_tab_bars_view(
                                     && props.active_tab_indicator
                                         == crate::settings::ActiveTabIndicator::Fill
                                 {
-                                    th.base
+                                    th.bg_panel()
                                 } else {
                                     bg
                                 };
                                 let text_color = if is_active {
-                                    th.text
+                                    th.text_primary()
                                 } else if has_notif {
-                                    th.yellow
+                                    // divergence: notif 강조. warning 과 값 동일하나 의미는 notification —
+                                    // 전용 토큰 부재로 accent_warning() 값-보존(§B3).
+                                    th.accent_warning()
                                 } else {
-                                    th.subtext0
+                                    th.text_muted()
                                 };
 
                                 let tab_rect = egui::Rect::from_min_size(
@@ -316,7 +329,7 @@ pub fn draw_pane_tab_bars_view(
                                                 th.accent_primary(),
                                             );
                                         }
-                                        // Fill: 배경은 위에서 이미 th.base 로 채움 — 추가 마커 없음.
+                                        // Fill: 배경은 위에서 이미 bg_panel() 로 채움 — 추가 마커 없음.
                                         ActiveTabIndicator::Fill => {}
                                         ActiveTabIndicator::Dot => {
                                             // 탭 상단 중앙의 accent 점 마커.
@@ -456,9 +469,9 @@ pub fn draw_pane_tab_bars_view(
                                             );
                                         }
                                         let cc: egui::Color32 = if cr.hovered() {
-                                            th.text.into()
+                                            th.text_primary().into()
                                         } else {
-                                            th.subtext0.into()
+                                            th.text_muted().into()
                                         };
                                         icons::CLOSE.image(cs, cc).paint_at(ui, close_rect);
                                         cr.clicked()
@@ -519,7 +532,9 @@ pub fn draw_pane_tab_bars_view(
                                     egui::pos2(x, clip_rect.min.y),
                                     egui::vec2(separator_w, bar_h),
                                 );
-                                painter.rect_filled(sep, 0.0, th.surface1);
+                                // divergence: 탭 구분선. 코드=surface1, 디자인 tab_separator()=
+                                // 반투명(값 다름) → 채택 금지. 값-보존 border_strong() (§B3).
+                                painter.rect_filled(sep, 0.0, th.border_strong());
                                 x += separator_w;
                             }
 
@@ -537,14 +552,16 @@ pub fn draw_pane_tab_bars_view(
                                         egui::Sense::click(),
                                     );
                                     if resp.hovered() {
-                                        painter.rect_filled(plus_rect, 0.0, th.surface0);
+                                        // divergence: hover 채움이 surface0(=surface-raised) 불투명값.
+                                        // 값-보존 surface_raised() (hover-overlay 로 바꾸면 픽셀 변함).
+                                        painter.rect_filled(plus_rect, 0.0, th.surface_raised());
                                     }
                                     painter.text(
                                         plus_rect.center(),
                                         egui::Align2::CENTER_CENTER,
                                         "+",
                                         egui::FontId::proportional(plus_font_size),
-                                        th.subtext0.into(),
+                                        th.text_muted().into(),
                                     );
                                     if resp.clicked() {
                                         output.actions.push(TabBarAction::AddTab {
@@ -577,9 +594,16 @@ pub fn draw_pane_tab_bars_view(
                                     egui::vec2(arrow_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                let arrow_color = if can_right { th.subtext0 } else { th.surface1 };
+                                // divergence: disabled 화살표는 surface1 값(text-role 접근자 부재).
+                                // 값-보존 위해 border_strong() 사용(§B3).
+                                let arrow_color = if can_right {
+                                    th.text_muted()
+                                } else {
+                                    th.border_strong()
+                                };
                                 if resp.hovered() && can_right {
-                                    ui.painter().rect_filled(r, 0.0, th.surface0);
+                                    // divergence: hover 채움이 surface0(=surface-raised) 불투명값 → 값-보존.
+                                    ui.painter().rect_filled(r, 0.0, th.surface_raised());
                                 }
                                 ui.painter().text(
                                     r.center(),
@@ -602,9 +626,14 @@ pub fn draw_pane_tab_bars_view(
                                     egui::vec2(icon_btn_w, bar_h),
                                     egui::Sense::click(),
                                 );
-                                let color = if resp.hovered() { th.text } else { th.subtext0 };
+                                let color = if resp.hovered() {
+                                    th.text_primary()
+                                } else {
+                                    th.text_muted()
+                                };
                                 if resp.hovered() {
-                                    ui.painter().rect_filled(r, 0.0, th.surface0);
+                                    // divergence: hover 채움이 surface0(=surface-raised) 불투명값 → 값-보존.
+                                    ui.painter().rect_filled(r, 0.0, th.surface_raised());
                                 }
                                 let icon_rect = egui::Rect::from_center_size(
                                     r.center(),
@@ -682,8 +711,8 @@ pub fn draw_pane_tab_bars_view(
             egui::pos2(drag.current_x - tab_w / 2.0, pane_logical_y),
             egui::vec2(tab_w, bar_h),
         );
-        let ghost_bg = th.base.with_alpha(180).to_egui();
-        let ghost_fg = th.text.with_alpha(180).to_egui();
+        let ghost_bg = th.bg_panel().with_alpha(180).to_egui();
+        let ghost_fg = th.text_primary().with_alpha(180).to_egui();
         overlay_painter.rect_filled(ghost_rect, 0.0, ghost_bg);
         overlay_painter.text(
             ghost_rect.center(),
