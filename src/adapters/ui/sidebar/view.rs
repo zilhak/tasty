@@ -446,8 +446,8 @@ pub fn draw_full_sidebar_view(
                             ),
                             first_rect.size(),
                         );
-                        let ghost_bg = th.surface0.with_alpha(180).to_egui();
-                        let ghost_fg = th.text.with_alpha(180).to_egui();
+                        let ghost_bg = th.surface_raised().with_alpha(180).to_egui();
+                        let ghost_fg = th.text_primary().with_alpha(180).to_egui();
                         ui.painter().rect_filled(ghost_rect, 4.0, ghost_bg);
                         ui.painter().text(
                             ghost_rect.center(),
@@ -530,9 +530,11 @@ pub fn draw_collapsed_sidebar_view(
                         .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
                 }
                 let color: egui::Color32 = if resp.hovered() {
-                    th.subtext1.into()
+                    th.text_secondary().into()
                 } else {
-                    th.overlay0.into()
+                    // divergence: dim chevron. overlay0(=placeholder 값) 을 dim 텍스트로 씀.
+                    // 값-보존 위해 text_placeholder() 사용 (§4-8, placeholder vs disabled role 미확정).
+                    th.text_placeholder().into()
                 };
                 icons::CHEVRONS_RIGHT.image(16.0, color).paint_at(
                     ui,
@@ -655,9 +657,9 @@ fn draw_ghost_block_button(
             .rect_filled(rect, 4.0, th.hover_overlay.to_egui_premultiplied());
     }
     let color: egui::Color32 = if resp.hovered() || pressed {
-        th.text.into()
+        th.text_primary().into()
     } else {
-        th.subtext1.into()
+        th.text_secondary().into()
     };
     let mut text_x = rect.min.x + 10.0;
     if let Some(icon) = leading_icon {
@@ -703,7 +705,7 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
             egui::TextFormat {
                 font_id: font.clone(),
                 extra_letter_spacing: -0.5,
-                color: th.text.into(),
+                color: th.text_primary().into(),
                 ..Default::default()
             },
         );
@@ -729,9 +731,9 @@ fn draw_sidebar_header(ui: &mut egui::Ui, th: &Theme, collapse_hover: &str) -> b
             }
             // 평소: subtext1 (--text-secondary), hover: text (--text-primary). 톤 한 단계 상향.
             let color: egui::Color32 = if resp.hovered() {
-                th.text.into()
+                th.text_primary().into()
             } else {
-                th.subtext1.into()
+                th.text_secondary().into()
             };
             icons::CHEVRONS_LEFT.image(16.0, color).paint_at(
                 ui,
@@ -755,13 +757,13 @@ fn draw_section_heading(ui: &mut egui::Ui, th: &Theme, text: &str) {
         egui::TextFormat {
             font_id: egui::FontId::monospace(th.sidebar_section_heading_font_size.value()),
             extra_letter_spacing: 0.7,
-            color: th.subtext0.into(),
+            color: th.text_muted().into(),
             ..Default::default()
         },
     );
     let galley = ui.painter().layout_job(job);
     let pos = egui::pos2(rect.min.x + 10.0, rect.center().y - galley.size().y / 2.0);
-    ui.painter().galley(pos, galley, th.subtext0.into());
+    ui.painter().galley(pos, galley, th.text_muted().into());
 }
 
 /// 카테고리 헤더 상호작용 결과 — 좌클릭(접힘 토글) / 우클릭(컨텍스트 메뉴 좌표).
@@ -810,7 +812,7 @@ fn draw_category_header(
     } else {
         icons::CHEVRON_DOWN
     };
-    icon.image(chevron_size, th.subtext0.into())
+    icon.image(chevron_size, th.text_muted().into())
         .paint_at(ui, chevron_rect);
     // 라벨 — 디자인 textTransform:uppercase (카테고리명도 대문자). 모노 캡스 muted.
     let text_x = chevron_rect.max.x + gap;
@@ -821,13 +823,13 @@ fn draw_category_header(
         egui::TextFormat {
             font_id: egui::FontId::monospace(th.sidebar_section_heading_font_size.value()),
             extra_letter_spacing: 0.7,
-            color: th.subtext0.into(),
+            color: th.text_muted().into(),
             ..Default::default()
         },
     );
     let galley = ui.painter().layout_job(job);
     let pos = egui::pos2(text_x, row_center_y - galley.size().y / 2.0);
-    ui.painter().galley(pos, galley, th.subtext0.into());
+    ui.painter().galley(pos, galley, th.text_muted().into());
     let context = resp
         .secondary_clicked()
         .then(|| resp.interact_pointer_pos().unwrap_or_default());
@@ -946,9 +948,10 @@ fn paint_icon_button(
             .rect_filled(rect, radius, th.hover_overlay.to_egui_premultiplied());
     }
     let color: egui::Color32 = if resp.hovered() || pressed {
-        th.subtext1.into()
+        th.text_secondary().into()
     } else {
-        th.overlay0.into()
+        // divergence: dim 아이콘. overlay0(=placeholder 값) → 값-보존 text_placeholder() (§4-8).
+        th.text_placeholder().into()
     };
     let icon_size = th.icon_glyph_size_md.value();
     let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(icon_size, icon_size));
@@ -1098,7 +1101,7 @@ fn draw_workspace_card(
     // ui_kit WorkspaceRow — 테두리 없는 플랫 행. active 만 배경 채움 (`--surface-active`
     // = catppuccin surface2).
     let bg = if ws.is_active {
-        th.surface2.to_egui()
+        th.surface_active().to_egui()
     } else {
         egui::Color32::TRANSPARENT
     };
@@ -1158,7 +1161,8 @@ fn draw_workspace_card(
                 } else if ws.busy_count > 0 {
                     th.accent_success().into()
                 } else {
-                    th.overlay0.into()
+                    // divergence: idle status dot. overlay0(=placeholder 값) → 값-보존 text_placeholder() (§4-8).
+                    th.text_placeholder().into()
                 };
                 ui.painter()
                     .circle_filled(dot_rect.center(), 4.0, dot_color);
