@@ -116,6 +116,8 @@ empty = "No items."
 heading = "Accessibility"
 reduced_motion = "Reduced motion"
 reduced_motion_desc = "Skip UI fade/slide animations. Toast fade-in/out is disabled. Terminal output animations are unaffected."
+modifier_hint = "Show modifier key hints"
+modifier_hint_desc = "Show a floating panel of the available shortcuts while you hold a modifier key (Ctrl / Alt / Shift — macOS adds Cmd / Option). It appears after a brief hold and dismisses the moment you release."
 
 [settings.file_handler]
 coming_soon = "This sub-tab will be available in a future update."

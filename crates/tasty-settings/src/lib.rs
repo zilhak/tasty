@@ -28,7 +28,10 @@ pub use scripts::{
     AUTO_TRIGGER_EVENTS, AutoTrigger, ScriptEntry, ScriptRegistry, hash_bytes, hash_file,
     is_auto_trigger_event,
 };
-pub use types::{AccessibilitySettings, MemorySettings, NotificationSettings, PerformanceSettings};
+pub use types::{
+    AccessibilitySettings, MemorySettings, ModifierHintSettings, NotificationSettings,
+    PerformanceSettings,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -41,6 +44,9 @@ pub struct Settings {
     pub performance: PerformanceSettings,
     pub memory: MemorySettings,
     pub accessibility: AccessibilitySettings,
+    /// Modifier 키 홀드 안내 오버레이의 표시 토글 + 위치·크기 영속 슬롯.
+    /// `#[serde(default)]` 로 기존 config.toml 마이그레이션 안전(누락 시 enabled=true, pos/size=None).
+    pub modifier_hint: ModifierHintSettings,
     /// Plugin-contributed settings page 의 generic 값 저장소.
     /// `plugin_settings[plugin_id][storage_key]` = `PluginSettingValue`.
     /// FontOverride(`appearance.plugin_font_overrides`)와 별개 네임스페이스.
@@ -504,5 +510,51 @@ ui_scale = "large"
         let parsed: Settings =
             toml::from_str("[performance]\ntargeted_pty_polling = false").unwrap();
         assert!(!parsed.performance.targeted_pty_polling);
+    }
+
+    #[test]
+    fn modifier_hint_default_enabled() {
+        let settings = Settings::default();
+        assert!(settings.modifier_hint.enabled);
+        assert!(settings.modifier_hint.pos.is_none());
+        assert!(settings.modifier_hint.size.is_none());
+    }
+
+    #[test]
+    fn modifier_hint_missing_key_uses_defaults() {
+        // 신규 키가 없는 구버전 config.toml 마이그레이션: enabled=true, pos/size=None.
+        let parsed: Settings = toml::from_str("").unwrap();
+        assert!(parsed.modifier_hint.enabled);
+        assert!(parsed.modifier_hint.pos.is_none());
+        assert!(parsed.modifier_hint.size.is_none());
+        // 섹션은 있으나 키가 비어도 동일.
+        let parsed: Settings = toml::from_str("[modifier_hint]").unwrap();
+        assert!(parsed.modifier_hint.enabled);
+    }
+
+    #[test]
+    fn modifier_hint_enabled_false_preserved() {
+        let parsed: Settings = toml::from_str("[modifier_hint]\nenabled = false").unwrap();
+        assert!(!parsed.modifier_hint.enabled);
+    }
+
+    #[test]
+    fn modifier_hint_geometry_roundtrip() {
+        use tasty_type_geometry::length::LogicalPx;
+        let mut settings = Settings::default();
+        settings.modifier_hint.enabled = false;
+        settings.modifier_hint.pos = Some((LogicalPx(120.0), LogicalPx(340.0)));
+        settings.modifier_hint.size = Some((LogicalPx(280.0), LogicalPx(160.0)));
+        let toml_str = toml::to_string_pretty(&settings).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+        assert!(!parsed.modifier_hint.enabled);
+        assert_eq!(
+            parsed.modifier_hint.pos,
+            Some((LogicalPx(120.0), LogicalPx(340.0)))
+        );
+        assert_eq!(
+            parsed.modifier_hint.size,
+            Some((LogicalPx(280.0), LogicalPx(160.0)))
+        );
     }
 }

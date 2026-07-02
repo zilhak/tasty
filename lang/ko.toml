@@ -116,6 +116,8 @@ empty = "항목이 없습니다."
 heading = "접근성"
 reduced_motion = "모션 줄이기"
 reduced_motion_desc = "UI 페이드/슬라이드 애니메이션을 생략합니다. 토스트 페이드 인/아웃이 비활성화됩니다. 터미널 출력 애니메이션은 영향을 받지 않습니다."
+modifier_hint = "수정자 키 힌트 표시"
+modifier_hint_desc = "수정자 키(Ctrl / Alt / Shift — macOS 는 Cmd / Option 추가)를 누르고 있는 동안 사용 가능한 단축키를 떠 있는 패널로 보여줍니다. 잠깐 누르고 있으면 나타나고, 손을 떼는 즉시 사라집니다."
 
 [settings.file_handler]
 coming_soon = "이 서브탭은 향후 업데이트에서 제공됩니다."

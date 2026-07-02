@@ -116,6 +116,8 @@ empty = "項目がありません。"
 heading = "アクセシビリティ"
 reduced_motion = "モーションを減らす"
 reduced_motion_desc = "UI のフェード/スライドアニメーションを省略します。トーストのフェードイン/アウトが無効になります。ターミナル出力のアニメーションには影響しません。"
+modifier_hint = "修飾キーのヒントを表示"
+modifier_hint_desc = "修飾キー（Ctrl / Alt / Shift — macOS では Cmd / Option も）を押している間、利用可能なショートカットをフローティングパネルで表示します。少し押し続けると表示され、離した瞬間に消えます。"
 
 [settings.file_handler]
 coming_soon = "このサブタブは今後のアップデートで利用可能になります。"
