@@ -140,13 +140,13 @@ pub fn draw_file_handler_picker_view(
     ui.label(
         egui::RichText::new(format!("{} {}", props.target_label, props.target_display))
             .size(th.font_size_body.value())
-            .color(th.text),
+            .color(th.text_primary()),
     );
     let detector_text = props.detector_label.unwrap_or(props.unknown_format_label);
     ui.label(
         egui::RichText::new(format!("{} {}", props.format_label, detector_text))
             .size(th.font_size_caption.value())
-            .color(th.subtext0),
+            .color(th.text_muted()),
     );
 
     ui.add_space(VERTICAL_PADDING);
@@ -158,7 +158,7 @@ pub fn draw_file_handler_picker_view(
         ui.label(
             egui::RichText::new(props.empty_label)
                 .size(th.font_size_body.value())
-                .color(th.subtext1),
+                .color(th.text_secondary()),
         );
         ui.add_space(VERTICAL_PADDING);
         let mut cancel_clicked = false;
@@ -192,7 +192,7 @@ pub fn draw_file_handler_picker_view(
             ui.label(
                 egui::RichText::new(props.candidates_heading)
                     .size(th.font_size_caption.value())
-                    .color(th.overlay1),
+                    .color(th.text_disabled()),
             );
             egui::ScrollArea::vertical()
                 .id_salt("file_handler_picker_candidates")
@@ -219,7 +219,7 @@ pub fn draw_file_handler_picker_view(
             ui.label(
                 egui::RichText::new(props.recent_heading)
                     .size(th.font_size_caption.value())
-                    .color(th.overlay1),
+                    .color(th.text_disabled()),
             );
             egui::ScrollArea::vertical()
                 .id_salt("file_handler_picker_recent")
@@ -297,9 +297,9 @@ fn draw_handler_list(
             &entry.display,
             egui::FontId::proportional(th.font_size_caption.value()),
             if is_selected {
-                th.text.into()
+                th.text_primary().into()
             } else {
-                th.subtext0.into()
+                th.text_muted().into()
             },
         );
 
