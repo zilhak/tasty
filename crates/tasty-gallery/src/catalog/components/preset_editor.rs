@@ -33,8 +33,6 @@ const TAB_PAD_X: f32 = 9.0;
 const TAB_GAP: f32 = 5.0;
 /// 편집 상태 `MiniHandle` 한 변 크기.
 const E_HANDLE_SZ: f32 = 18.0;
-/// 편집 핸들 사이 gap.
-const E_HANDLE_GAP: f32 = 2.0;
 /// 편집 핸들 클러스터 모서리 inset.
 const E_HANDLE_INSET: f32 = 4.0;
 /// inline leaf form 좌우 padding.
@@ -45,6 +43,16 @@ const E_FORM_GAP: f32 = 4.0;
 const E_FIELD_H: f32 = 20.0;
 /// inline leaf form 라벨 높이.
 const E_LABEL_H: f32 = 12.0;
+/// add-tab `+` 버튼 폭(디자인 22×20 — strip 높이보다 2px 넓다).
+const ADD_TAB_W: f32 = 22.0;
+/// mini tab close `×` 히트영역 한 변(14×14).
+const CLOSE_HIT: f32 = 14.0;
+/// close `×` 왼쪽 margin(라벨과의 간격).
+const CLOSE_MARGIN: f32 = 1.0;
+/// close `×` 노출 시 탭 우측 패딩(9→3 축소).
+const CLOSE_TAB_PAD: f32 = 3.0;
+/// 경계 split 존 밴드 폭 비율(변 기준 바깥 30%).
+const SPLIT_ZONE_EDGE: f32 = 0.3;
 
 // ── 정적 preview 모델 (디자인 build* 트리 전사) ──────────────────────
 
@@ -504,20 +512,33 @@ fn draw_surface_box_edit(
     }
 }
 
-/// 우상단 handle cluster mock — split-right · split-down · remove(danger).
+/// 우상단 handle cluster mock — remove(danger) 단독. split-right/down 핸들은 경계
+/// hover-split 존이 대체해 제거됐다(디자인 changelog 2026-07-02 · preset-edit-03).
 fn draw_handle_cluster_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
-    let step = E_HANDLE_SZ + E_HANDLE_GAP;
-    let x0 = rect.max.x - E_HANDLE_INSET - E_HANDLE_SZ * 3.0 - E_HANDLE_GAP * 2.0;
-    let y = rect.min.y + E_HANDLE_INSET;
-    let cell = |i: f32| {
-        egui::Rect::from_min_size(
-            egui::pos2(x0 + step * i, y),
-            egui::vec2(E_HANDLE_SZ, E_HANDLE_SZ),
-        )
-    };
-    mini_handle_mock(ui, theme, cell(0.0), icons::SPLIT, false);
-    mini_handle_mock(ui, theme, cell(1.0), icons::SPLIT_DOWN, false);
-    mini_handle_mock(ui, theme, cell(2.0), icons::TRASH, true);
+    let remove = egui::Rect::from_min_size(
+        egui::pos2(
+            rect.max.x - E_HANDLE_INSET - E_HANDLE_SZ,
+            rect.min.y + E_HANDLE_INSET,
+        ),
+        egui::vec2(E_HANDLE_SZ, E_HANDLE_SZ),
+    );
+    mini_handle_mock(ui, theme, remove, icons::TRASH, true);
+}
+
+/// 경계 split 존 overlay mock — Left 존 활성 예시(밴드 채움 + 안쪽 변 2px 분할선).
+/// 정적 specimen 이라 crosshair 커서·실시간 hover 추적은 없다 — "존 활성"을 **고정
+/// 상태**로만 전사한다(본체 live 와 100% 동형 불가 → parity-notes).
+fn draw_split_zone_overlay_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+    let x = rect.min.x + rect.width() * SPLIT_ZONE_EDGE;
+    let band = egui::Rect::from_min_max(rect.min, egui::pos2(x, rect.max.y));
+    let divider = theme.tab_indicator_width.value(); // 2px 분할선(accent bar 와 동일 굵기).
+    let p = ui.painter_at(rect);
+    p.rect_filled(band, 0.0, theme.preset_split_zone_bg().to_egui());
+    p.vline(
+        x,
+        band.y_range(),
+        egui::Stroke::new(divider, theme.preset_split_zone_border().to_egui()),
+    );
 }
 
 fn mini_handle_mock(
@@ -723,6 +744,155 @@ fn scope_demo_edit(
     });
 }
 
+/// 편집 직접조작(preset-edit-03) mock — pane 카드 편집 상태에서 세 신규 마우스
+/// affordance 를 **고정 상태 예시**로 전사한다: ① 경계 hover-split 존 overlay(본문
+/// leaf 의 Left 존 활성), ② mini tab close `×`(active 탭 rest + hover 탭 강조 두 상태),
+/// ③ add-tab `+`(hover 상태). 정적이라 실제 hover/crosshair 추적은 없다(parity-notes).
+fn draw_edit_direct_mock(ui: &mut egui::Ui, theme: &Theme, rect: egui::Rect) {
+    let radius = theme.corner_radius.value();
+    let bw = theme.border_width.value();
+    let sep = theme.separator.to_egui();
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, radius, theme.bg_app().to_egui());
+
+    // mini tab strip.
+    let strip = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), STRIP_H));
+    p.rect_filled(strip, 0.0, theme.bg_sidebar().to_egui());
+
+    let tab_font = egui::FontId::proportional(theme.font_size_caption.value());
+    let icon_sz = theme.icon_glyph_size_sm.value();
+    // (kind, name, active, hovered) — active/hover 탭이 close `×` 를 노출한다(탭 2개 → 가드 통과).
+    let tabs: &[(Kind, &str, bool, bool)] = &[
+        (Kind::Editor, "edit", true, false),
+        (Kind::Terminal, "term", false, true),
+    ];
+    let mut x = strip.min.x;
+    for (i, (kind, name, on, hovered)) in tabs.iter().enumerate() {
+        let lw = text_width(ui, name, tab_font.clone());
+        // × 예약: 편집 && 탭>1 → 우측 패딩 9→3 + marginLeft 1 + 14 close.
+        let tw = TAB_PAD_X + icon_sz + TAB_GAP + lw + CLOSE_MARGIN + CLOSE_HIT + CLOSE_TAB_PAD;
+        let tab_rect =
+            egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(tw, STRIP_H));
+        let p = ui.painter_at(strip);
+        if *on {
+            p.rect_filled(tab_rect, 0.0, theme.bg_panel().to_egui());
+            let bar = egui::Rect::from_min_size(
+                egui::pos2(
+                    tab_rect.min.x,
+                    tab_rect.max.y - theme.tab_indicator_width.value(),
+                ),
+                egui::vec2(tw, theme.tab_indicator_width.value()),
+            );
+            p.rect_filled(bar, 0.0, theme.accent_primary().to_egui());
+        }
+        if i > 0 {
+            p.vline(x, strip.y_range(), egui::Stroke::new(bw, sep));
+        }
+        let icon_c = egui::pos2(
+            tab_rect.min.x + TAB_PAD_X + icon_sz * 0.5,
+            tab_rect.center().y,
+        );
+        let icon_color = if *on {
+            kind.accent(theme)
+        } else {
+            theme.text_muted().to_egui()
+        };
+        paint_glyph(ui, kind.icon(), icon_c, icon_sz, icon_color);
+        ui.painter_at(strip).text(
+            egui::pos2(
+                tab_rect.min.x + TAB_PAD_X + icon_sz + TAB_GAP,
+                tab_rect.center().y,
+            ),
+            egui::Align2::LEFT_CENTER,
+            name,
+            tab_font.clone(),
+            if *on {
+                theme.text_primary().to_egui()
+            } else {
+                theme.text_muted().to_egui()
+            },
+        );
+        // close `×` — active/hover 탭에 노출. hover 예시 = overlay-active fill + text-primary.
+        let close_rect = egui::Rect::from_min_size(
+            egui::pos2(
+                tab_rect.max.x - CLOSE_TAB_PAD - CLOSE_HIT,
+                tab_rect.center().y - CLOSE_HIT * 0.5,
+            ),
+            egui::vec2(CLOSE_HIT, CLOSE_HIT),
+        );
+        let close_color = if *hovered {
+            ui.painter_at(strip).rect_filled(
+                close_rect,
+                theme.corner_radius_sm.value(),
+                theme.overlay_active().to_egui(),
+            );
+            theme.text_primary().to_egui()
+        } else {
+            theme.text_muted().to_egui()
+        };
+        paint_glyph(ui, icons::CLOSE, close_rect.center(), CLOSE_HIT * 0.5, close_color);
+        x += tw;
+    }
+
+    // add-tab `+` — hover 상태 예시(overlay-hover fill + text-secondary).
+    let add = egui::Rect::from_min_size(egui::pos2(x, strip.min.y), egui::vec2(ADD_TAB_W, STRIP_H));
+    ui.painter_at(strip)
+        .rect_filled(add, 0.0, theme.overlay_hover().to_egui());
+    paint_glyph(ui, icons::PLUS, add.center(), icon_sz, theme.text_secondary().to_egui());
+
+    // strip border-bottom.
+    ui.painter_at(rect)
+        .hline(strip.x_range(), strip.max.y, egui::Stroke::new(bw, sep));
+
+    // 활성 탭 본문 — 단일 leaf(비선택) + 경계 split 존(Left 활성) overlay.
+    let body = egui::Rect::from_min_max(egui::pos2(rect.min.x, strip.max.y), rect.max);
+    let inner = body.shrink(BODY_PAD);
+    draw_surface_box_edit(ui, theme, inner, Kind::Editor, false);
+    draw_split_zone_overlay_mock(ui, theme, inner);
+
+    // 카드 외곽 border.
+    ui.painter_at(rect).rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(bw, theme.border_default().to_egui()),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// 라벨 붙은 **편집 직접조작** 데모 한 칸 — [`draw_edit_direct_mock`] 캔버스.
+fn scope_demo_direct(ui: &mut egui::Ui, theme: &Theme, label: &str, sub: &str, w: f32, h: f32) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = theme.spacing_sm.value();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme.spacing_sm.value();
+            ui.label(
+                egui::RichText::new(label)
+                    .size(theme.font_size_body.value())
+                    .strong()
+                    .color(theme.text_primary().to_egui()),
+            );
+            ui.label(
+                egui::RichText::new(sub)
+                    .monospace()
+                    .size(theme.font_size_micro.value())
+                    .color(theme.text_muted().to_egui()),
+            );
+        });
+        let (canvas, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+        let radius = theme.corner_radius.value();
+        let bw = theme.border_width.value();
+        let p = ui.painter_at(canvas);
+        p.rect_filled(canvas, radius, theme.bg_app().to_egui());
+        p.rect_stroke(
+            canvas,
+            radius,
+            egui::Stroke::new(bw, theme.border_default().to_egui()),
+            egui::StrokeKind::Inside,
+        );
+        draw_edit_direct_mock(ui, theme, canvas.shrink(theme.spacing_sm.value()));
+    });
+}
+
 fn paint_glyph(
     ui: &mut egui::Ui,
     glyph: MockGlyph,
@@ -789,11 +959,24 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ui,
             theme,
             "Edit mode",
-            "selected surface + handles + form",
+            "selected surface + handle + form",
             edit_surf,
             1,
             300.0,
             240.0,
+        );
+    });
+
+    // 편집 직접조작(preset-edit-03): 경계 hover-split 존 · mini tab close × · add-tab +.
+    // 정적이라 고정 상태 예시로 전사(hover/crosshair 는 본체 live 전용 — parity-notes).
+    spec::stage(ui, theme, StageVariant::Wrap, |ui| {
+        scope_demo_direct(
+            ui,
+            theme,
+            "Edit — direct manipulation",
+            "boundary split zone · tab × · add-tab",
+            320.0,
+            200.0,
         );
     });
 
@@ -806,8 +989,10 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("surface split", "1px hairline (lower layout)"),
             ("leaf", "kind icon + label, centered (mono)"),
             ("interactive", "mini tabs switch live (in app)"),
-            ("edit: selected", "2px accent outline + handle cluster"),
-            ("edit: handles", "split-right · split-down · remove"),
+            ("edit: selected", "2px accent outline + remove handle"),
+            ("edit: split zone", "boundary 30% band + 2px divider"),
+            ("edit: tab ×", "close on active / hover (tabs > 1)"),
+            ("edit: add-tab", "+ 22px, overlay-hover fill"),
             ("edit: form", "kind / cwd / startup (terminal only)"),
         ],
         &[
@@ -823,9 +1008,14 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 theme.accent_primary().to_egui(),
             ),
             TokenChip::new(
-                "accent-success",
-                "kind dot (terminal)",
-                theme.accent_success().to_egui(),
+                "split-zone-bg",
+                "boundary zone band (accent 22%)",
+                theme.preset_split_zone_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "split-zone-border",
+                "zone 2px divider (accent 55%)",
+                theme.preset_split_zone_border().to_egui(),
             ),
         ],
     );
@@ -837,10 +1027,13 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
          1px hairline for surface (lower) splits. A leaf shows only its kind (Terminal / Markdown / \
          Editor / Log), never its contents. The Edit-mode stage shows the WYSIWYG state: every \
          surface gets a faint 1px separator outline, the selected surface gets a 2px accent inset \
-         outline + corner handle cluster (split-right=row / split-down=col / remove=danger), and \
-         its center label is replaced by the inline leaf form (kind / cwd / startup — startup only \
-         when kind=terminal). Mini-tab click-to-switch and live editing are wired in the host \
-         component (TODO 08/09).",
+         outline + a single remove handle, and its center label is replaced by the inline leaf form \
+         (kind / cwd / startup — startup only when kind=terminal). The Direct-manipulation stage \
+         transcribes the mouse affordances: hovering a surface boundary lights a 30% split zone \
+         (accent 22% band + 2px accent 55% divider, crosshair cursor) that splits toward the edge; \
+         active/hovered mini tabs show a close × (hidden when a pane has one tab); the add-tab + is \
+         22px with an overlay-hover fill. Because the specimen is static, zone/× hover and the \
+         crosshair are drawn as fixed-state examples — live tracking runs only in the host.",
     );
 
     spec::dont(
