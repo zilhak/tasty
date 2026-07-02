@@ -112,6 +112,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
             ("h4/h5/h6", "13 · secondary→muted · h6 UPPER"),
             ("code", "mono · surface-raised"),
             ("link", "accent-primary · underline"),
+            ("table", "grid + zebra · header surface-raised"),
             ("states", "failed=accent-danger · empty=muted"),
         ],
         &[
@@ -137,11 +138,21 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 "code bg",
                 theme.surface_raised().to_egui(),
             ),
-            TokenChip::new("separator", "table · hr", theme.separator.to_egui()),
+            TokenChip::new("separator", "hr", theme.separator.to_egui()),
             TokenChip::new(
                 "border-strong",
-                "blockquote bar",
+                "blockquote · table grid",
                 theme.border_strong().to_egui(),
+            ),
+            TokenChip::new(
+                "md-table-header-bg",
+                "table header",
+                theme.md_table_header_bg().to_egui(),
+            ),
+            TokenChip::new(
+                "md-table-zebra",
+                "table even row",
+                theme.md_table_row_bg_zebra().to_egui(),
             ),
             TokenChip::new(
                 "accent-danger",
@@ -427,70 +438,110 @@ fn code_block(ui: &mut egui::Ui, theme: &Theme, text: &str) {
         });
 }
 
-/// 1px divider 테이블 — header(bg-sidebar) + 2 rows.
+/// grid + zebra 테이블 (md-table 토큰) — header(surface-raised) 밴드 + base/zebra 본문
+/// + 외곽·가로·세로 격자선(border-strong). 값 사다리 mantle<base<surface0<surface1.
 fn table(ui: &mut egui::Ui, theme: &Theme) {
     let body = theme.font_size_body.value();
-    let pad = theme.spacing_sm.value();
-    egui::Frame::new()
-        .stroke(egui::Stroke::new(
-            theme.border_width.value(),
-            theme.separator.to_egui(),
-        ))
+    let pad_x = theme.md_table_cell_padding_x().value();
+    let pad_y = theme.md_table_cell_padding_y().value();
+    // 세로 격자선 양쪽에 셀 패딩(pad_x)이 대칭으로 오도록 컬럼 간격을 2*pad_x 로.
+    let col_gap = pad_x * 2.0;
+    let border_w = theme.border_width.value();
+    let border = theme.md_table_border().to_egui();
+    let r = theme.corner_radius.value() as u8;
+    let margin = egui::Margin::symmetric(pad_x as i8, pad_y as i8);
+    let cols = 3usize;
+
+    // 셀 렌더 — index 2(Count)는 mono + 우측정렬 숫자열(디자인 §2-3 num).
+    let cell = |ui: &mut egui::Ui, i: usize, text: &str, color: egui::Color32| {
+        let lay = if i == 2 {
+            egui::Layout::right_to_left(egui::Align::Min)
+        } else {
+            egui::Layout::left_to_right(egui::Align::Min)
+        };
+        ui.with_layout(lay, |ui| {
+            let rt = if i == 2 {
+                egui::RichText::new(text).monospace().size(body).color(color)
+            } else {
+                egui::RichText::new(text).size(body).color(color)
+            };
+            ui.label(rt);
+        });
+    };
+
+    // 헤더 신호는 색+배경(text-primary), 본문은 text-secondary.
+    let row = |ui: &mut egui::Ui, cells: [&str; 3], header: bool| {
+        let color = if header {
+            theme.md_table_header_fg().to_egui()
+        } else {
+            theme.md_table_cell_fg().to_egui()
+        };
+        ui.spacing_mut().item_spacing.x = col_gap;
+        // 동적폭 방어: 잔여폭이 컬럼 간격 합 미만이면 columns 내부 폭이 음수가 되어 panic.
+        if ui.available_width() > col_gap * (cols as f32 - 1.0) + 1.0 {
+            ui.columns(cols, |c| {
+                for (i, t) in cells.iter().enumerate() {
+                    cell(&mut c[i], i, t, color);
+                }
+            });
+        } else {
+            ui.vertical(|ui| {
+                for (i, t) in cells.iter().enumerate() {
+                    cell(ui, i, t, color);
+                }
+            });
+        }
+    };
+
+    let out = egui::Frame::new()
+        .fill(theme.md_table_row_bg().to_egui()) // 불투명 base 채움 → 배경 무관 패널로 읽힘.
+        .stroke(egui::Stroke::new(border_w, border))
         .corner_radius(theme.corner_radius.value())
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            let row = |ui: &mut egui::Ui, cells: [&str; 3], header: bool| {
-                let fill = if header {
-                    Some(theme.bg_sidebar().to_egui())
-                } else {
-                    None
-                };
-                let mut f = egui::Frame::new().inner_margin(egui::Margin::symmetric(
-                    pad as i8,
-                    (theme.spacing_xs.value() * 1.5) as i8,
-                ));
-                if let Some(c) = fill {
-                    f = f.fill(c);
-                }
-                let _ = header;
-                f.show(ui, |ui| {
-                    let color = theme.text_secondary().to_egui();
-                    let render_cell = |ui: &mut egui::Ui, i: usize, cell: &str| {
-                        let rt = if i == 2 {
-                            egui::RichText::new(cell)
-                                .monospace()
-                                .size(body)
-                                .color(color)
-                        } else {
-                            egui::RichText::new(cell).size(body).color(color)
-                        };
-                        ui.label(rt);
-                    };
-                    // 동적폭 + columns 방어 가드: 잔여폭이 컬럼 spacing 합 미만이면
-                    // columns 내부의 (avail - total_spacing)/3 가 음수가 되어 panic
-                    // (egui ui.rs set_min_width assert). 그 경우 세로 폴백으로 그린다.
-                    let total_spacing = ui.spacing().item_spacing.x * 2.0;
-                    if ui.available_width() > total_spacing + 1.0 {
-                        ui.columns(3, |c| {
-                            for (i, cell) in cells.iter().enumerate() {
-                                render_cell(&mut c[i], i, cell);
-                            }
-                        });
-                    } else {
-                        ui.vertical(|ui| {
-                            for (i, cell) in cells.iter().enumerate() {
-                                render_cell(ui, i, cell);
-                            }
-                        });
-                    }
-                });
-            };
-            row(ui, ["Resource", "Kind", "Count"], true);
+            // 헤더 밴드 (상단 2모서리 라운드).
+            egui::Frame::new()
+                .fill(theme.md_table_header_bg().to_egui())
+                .corner_radius(egui::CornerRadius {
+                    nw: r,
+                    ne: r,
+                    sw: 0,
+                    se: 0,
+                })
+                .inner_margin(margin)
+                .show(ui, |ui| row(ui, ["Resource", "Kind", "Count"], true));
             table_divider(ui, theme);
-            row(ui, ["surface", "viewer", "12"], false);
+            // 첫 본문행 = base(줄무늬 없음).
+            egui::Frame::new()
+                .inner_margin(margin)
+                .show(ui, |ui| row(ui, ["surface", "viewer", "12"], false));
             table_divider(ui, theme);
-            row(ui, ["popup", "overlay", "8"], false);
+            // 짝수 본문행(2행째) = zebra(mantle) + 마지막이므로 하단 2모서리 라운드.
+            egui::Frame::new()
+                .fill(theme.md_table_row_bg_zebra().to_egui())
+                .corner_radius(egui::CornerRadius {
+                    nw: 0,
+                    ne: 0,
+                    sw: r,
+                    se: r,
+                })
+                .inner_margin(margin)
+                .show(ui, |ui| row(ui, ["popup", "overlay", "8"], false));
         });
+
+    // 세로 컬럼 격자선 — egui columns 는 세로선을 그리지 않으므로 표 전체 높이에 걸쳐
+    // 컬럼 경계마다 수동 draw. 마지막 열 오른쪽 선은 외곽과 겹치므로 생략(i in 1..cols).
+    let content = out.response.rect;
+    let inner_w = content.width() - col_gap;
+    if inner_w > col_gap * (cols as f32 - 1.0) {
+        let col_w = (inner_w - col_gap * (cols as f32 - 1.0)) / cols as f32;
+        let inner_left = content.left() + pad_x;
+        let painter = ui.painter();
+        for i in 1..cols {
+            let x = inner_left + i as f32 * col_w + (2 * i - 1) as f32 * pad_x;
+            painter.vline(x, content.y_range(), egui::Stroke::new(border_w, border));
+        }
+    }
 }
 
 fn table_divider(ui: &mut egui::Ui, theme: &Theme) {
@@ -501,7 +552,10 @@ fn table_divider(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().hline(
         rect.x_range(),
         rect.center().y,
-        egui::Stroke::new(theme.border_width.value(), theme.separator.to_egui()),
+        egui::Stroke::new(
+            theme.border_width.value(),
+            theme.md_table_border().to_egui(),
+        ),
     );
 }
 
