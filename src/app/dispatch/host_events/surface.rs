@@ -9,6 +9,7 @@ use tasty_plugin_protocol::events::payloads::{
     SurfaceCreated, SurfaceCreatedBy, SurfaceFocused, SurfaceTitleChanged,
 };
 
+use crate::hooks::lua::AutofireCtx;
 use crate::plugin::PluginManager;
 
 pub(super) fn emit_focused(mgr: &mut PluginManager, surface_id: u32, prev_surface_id: Option<u32>) {
@@ -28,6 +29,7 @@ pub(super) fn emit_title_changed(mgr: &mut PluginManager, surface_id: u32, title
 pub(super) fn emit_created(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     surface_id: u32,
     kind: &'static str,
     tab_id: u32,
@@ -48,5 +50,5 @@ pub(super) fn emit_created(
         created_by,
     };
     mgr.emit_host_event("surface.created", &payload, EventScope::Surface);
-    crate::hooks::lua::fire(lua, "surface.create.post", &payload);
+    crate::hooks::lua::fire(lua, autofire, "surface.create.post", &payload);
 }

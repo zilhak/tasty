@@ -1,8 +1,21 @@
 //! Lua hook 발화 + 엔진 부트스트랩.
 
+/// [`fire`] 에 넘기는 자동실행 컨텍스트 — 등록 목록 + 재진입 가드.
+///
+/// 모든 fire 지점이 이것을 조립해 넘긴다 — 새 fire 지점을 추가하면 자동실행
+/// 배선도 함께 강제되도록 시그니처에 박아둔 것(Option 아님).
+pub(crate) struct AutofireCtx<'a> {
+    pub scripts: &'a tasty_settings::ScriptRegistry,
+    pub guard: &'a mut super::autofire::AutofireGuard,
+}
+
 /// Lua hook 1회 발사 헬퍼. lua 가 None 이거나 직렬화 실패 시 silent no-op.
+///
+/// 두 채널을 순서대로 태운다: ① observe-hook(`tasty.on` 등록 콜백) 발화,
+/// ② 자동실행(autofire) — `event` 를 트리거로 등록한 스크립트 실행.
 pub(crate) fn fire<T: serde::Serialize>(
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     event: &str,
     payload: &T,
 ) {
@@ -14,6 +27,7 @@ pub(crate) fn fire<T: serde::Serialize>(
             }
         }
     }
+    super::autofire::dispatch(lua, autofire.scripts, autofire.guard, event);
 }
 
 /// Lua 워커 엔진 부트스트랩 (ADR-0031). VM 을 전용 워커 스레드에서 기동한다.

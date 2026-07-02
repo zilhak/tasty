@@ -3,5 +3,6 @@
 // dead_code 침묵.
 #![cfg_attr(not(feature = "gui"), allow(dead_code, unused_imports))]
 
+pub mod autofire;
 pub mod global;
 pub mod lua;

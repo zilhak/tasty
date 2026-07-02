@@ -4,11 +4,13 @@ use tasty_plugin_protocol::EventScope;
 use tasty_plugin_protocol::LifecycleReason;
 use tasty_plugin_protocol::events::payloads::{PaneClosed, PaneCreated, PaneSplit, SplitDirection};
 
+use crate::hooks::lua::AutofireCtx;
 use crate::plugin::PluginManager;
 
 pub(super) fn emit_created(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     pane_id: u32,
     workspace_id: u32,
 ) {
@@ -18,12 +20,13 @@ pub(super) fn emit_created(
         workspace_id,
     };
     mgr.emit_host_event("pane.created", &payload, EventScope::System);
-    crate::hooks::lua::fire(lua, "pane.create.post", &payload);
+    crate::hooks::lua::fire(lua, autofire, "pane.create.post", &payload);
 }
 
 pub(super) fn emit_closed(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     pane_id: u32,
 ) {
     let payload = PaneClosed {
@@ -31,7 +34,7 @@ pub(super) fn emit_closed(
         reason: LifecycleReason::User,
     };
     mgr.emit_host_event("pane.closed", &payload, EventScope::System);
-    crate::hooks::lua::fire(lua, "pane.delete.post", &payload);
+    crate::hooks::lua::fire(lua, autofire, "pane.delete.post", &payload);
 }
 
 pub(super) fn emit_split(

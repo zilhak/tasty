@@ -25,6 +25,7 @@ impl App {
         if drained.is_empty() {
             return;
         }
+        let scripts = self.autofire_scripts();
         let lua = self.lua_engine.as_ref();
         let Some(mgr) = self.plugin_manager.as_mut() else {
             return;
@@ -41,7 +42,15 @@ impl App {
                 reason: bus_reason,
             };
             mgr.emit_host_event("surface.closed", &payload, EventScope::Surface);
-            crate::hooks::lua::fire(lua, "surface.delete.post", &payload);
+            crate::hooks::lua::fire(
+                lua,
+                crate::hooks::lua::AutofireCtx {
+                    scripts: &scripts,
+                    guard: &mut self.lua_autofire,
+                },
+                "surface.delete.post",
+                &payload,
+            );
         }
     }
 }

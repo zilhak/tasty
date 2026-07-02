@@ -6,6 +6,7 @@ use tasty_plugin_protocol::events::payloads::{
     TabClosed, TabCreated, TabFocused, TabMoved, TabRenamed,
 };
 
+use crate::hooks::lua::AutofireCtx;
 use crate::plugin::PluginManager;
 
 pub(super) fn emit_focused(
@@ -25,6 +26,7 @@ pub(super) fn emit_focused(
 pub(super) fn emit_renamed(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     tab_id: u32,
     title: String,
     user_direct: bool,
@@ -32,13 +34,14 @@ pub(super) fn emit_renamed(
     let payload = TabRenamed { tab_id, title };
     mgr.emit_host_event("tab.renamed", &payload, EventScope::System);
     if user_direct {
-        crate::hooks::lua::fire(lua, "tab.change.post", &payload);
+        crate::hooks::lua::fire(lua, autofire, "tab.change.post", &payload);
     }
 }
 
 pub(super) fn emit_created(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     tab_id: u32,
     pane_id: u32,
     workspace_id: u32,
@@ -51,12 +54,13 @@ pub(super) fn emit_created(
         kind,
     };
     mgr.emit_host_event("tab.created", &payload, EventScope::System);
-    crate::hooks::lua::fire(lua, "tab.create.post", &payload);
+    crate::hooks::lua::fire(lua, autofire, "tab.create.post", &payload);
 }
 
 pub(super) fn emit_closed(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     tab_id: u32,
     pane_id: u32,
 ) {
@@ -66,7 +70,7 @@ pub(super) fn emit_closed(
         reason: LifecycleReason::User,
     };
     mgr.emit_host_event("tab.closed", &payload, EventScope::System);
-    crate::hooks::lua::fire(lua, "tab.delete.post", &payload);
+    crate::hooks::lua::fire(lua, autofire, "tab.delete.post", &payload);
 }
 
 pub(super) fn emit_moved(mgr: &mut PluginManager, tab_id: u32, from_pane: u32, to_pane: u32) {

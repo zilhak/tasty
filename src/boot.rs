@@ -158,6 +158,10 @@ fn run_gui(cli: cli::Cli) -> anyhow::Result<()> {
     )?;
     hooks::lua::fire(
         app.lua_engine.as_ref(),
+        hooks::lua::AutofireCtx {
+            scripts: &boot_settings.scripts,
+            guard: &mut app.lua_autofire,
+        },
         "tasty.startup.post",
         &serde_json::Value::Null,
     );
@@ -247,6 +251,10 @@ fn run_headless(cli: cli::Cli) -> anyhow::Result<()> {
 
     hooks::lua::fire(
         app.lua_engine.as_ref(),
+        hooks::lua::AutofireCtx {
+            scripts: &boot_settings.scripts,
+            guard: &mut app.lua_autofire,
+        },
         "tasty.startup.post",
         &serde_json::Value::Null,
     );

@@ -567,6 +567,11 @@ impl ApplicationHandler<AppEvent> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
+        // Lua 자동실행 재진입 가드 정산 — 프레임당 1회, 모든 fire 경로보다 먼저.
+        // (완료는 두 checkpoint 를 지나야 반영 — cascade 이벤트가 완료보다 먼저
+        // 큐잉되는 창을 닫기 위한 의도된 1 프레임 지연. autofire.rs 참조.)
+        self.lua_autofire.checkpoint();
+
         if self.process_ipc()
             && let Some(w) = self.focused_window_mut()
         {
@@ -797,6 +802,7 @@ impl App {
         if main_window_count > 1 {
             // Multiple windows: just close this one
             self.view.views.remove(&id);
+            let scripts = self.autofire_scripts();
             if let Some(mgr) = self.plugin_manager.as_mut() {
                 use tasty_plugin_protocol::events::payloads::WindowClosed;
                 use tasty_plugin_protocol::{EventScope, LifecycleReason};
@@ -805,7 +811,15 @@ impl App {
                     reason: LifecycleReason::User,
                 };
                 mgr.emit_host_event("window.closed", &payload, EventScope::System);
-                crate::hooks::lua::fire(self.lua_engine.as_ref(), "window.delete.post", &payload);
+                crate::hooks::lua::fire(
+                    self.lua_engine.as_ref(),
+                    crate::hooks::lua::AutofireCtx {
+                        scripts: &scripts,
+                        guard: &mut self.lua_autofire,
+                    },
+                    "window.delete.post",
+                    &payload,
+                );
             }
             if self.view.focused_view_id == Some(id) {
                 self.view.focused_view_id = self

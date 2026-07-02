@@ -114,8 +114,11 @@ pub(crate) struct App {
     /// None until the first MainView lifecycle initializes it; Some after.
     pub(crate) core_state: Option<crate::core::CoreState>,
     /// Lua 워커 엔진 (ADR-0031). 부팅 시 1회 생성, VM 은 전용 워커 스레드 소유.
-    /// 스크립트는 등록 목록에서 명시 트리거(단축키)로만 실행. 초기화 실패 시 None.
+    /// 스크립트는 등록 목록에서 명시 트리거(단축키/자동실행)로만 실행. 초기화 실패 시 None.
     pub(crate) lua_engine: Option<tasty_lua::LuaEngine>,
+    /// Lua 자동실행 재진입 가드 — 자동실행 스크립트가 유발한 이벤트의 cascade 재점화
+    /// 차단. `about_to_wait` 시작 시 [`checkpoint`](crate::hooks::autofire::AutofireGuard::checkpoint) 1회.
+    pub(crate) lua_autofire: crate::hooks::autofire::AutofireGuard,
     /// 현재 열려 있는 `PresetView` 의 winit window id. modeless editor view 는
     /// 엔진 전역 단일 인스턴스 — 같은 명령이 다시 들어오면 새 view 를 만들지 않고
     /// 이 id 의 view 로 포커스만 이동한다.
@@ -202,6 +205,7 @@ impl App {
             plugin_manager: None,
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
+            lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
             preset_view_id: None,
             pending_settings_plugin_tab: false,
             #[cfg(debug_assertions)]
@@ -240,6 +244,7 @@ impl App {
             plugin_manager: None,
             core_state: None,
             lua_engine: crate::hooks::lua::init_engine(),
+            lua_autofire: crate::hooks::autofire::AutofireGuard::new(),
         })
     }
 
@@ -258,6 +263,31 @@ impl App {
             }
         }
         panic!("App.core_state accessed before initialization");
+    }
+
+    /// Lua 자동실행 dispatch 용 스크립트 레지스트리 스냅샷 (clone).
+    ///
+    /// settings 는 CoreState 사본마다 존재하고 설정 apply 시 전 사본에 브로드캐스트
+    /// 되므로 살아있는 첫 사본을 읽으면 된다. 아직 어디에도 없으면(부팅 극초반 /
+    /// headless 초기) 빈 레지스트리 — 자동실행 no-op. panic 하지 않는 이유:
+    /// fire 지점은 CoreState 초기화 이전에도 지나갈 수 있다.
+    #[cfg(feature = "gui")]
+    pub(crate) fn autofire_scripts(&self) -> tasty_settings::ScriptRegistry {
+        if let Some(cs) = self.core_state.as_ref() {
+            return cs.settings.scripts.clone();
+        }
+        #[cfg(feature = "gui")]
+        {
+            for w in self.view.views.values() {
+                if let Some(main) = w.as_main() {
+                    return main.core_state.settings.scripts.clone();
+                }
+            }
+            if let Some((_, e)) = self.parked_states.first() {
+                return e.settings.scripts.clone();
+            }
+        }
+        tasty_settings::ScriptRegistry::default()
     }
 
     /// 공유 instance/adapter 를 사용해 per-window `GpuState` 를 생성한다. 6개 윈도우

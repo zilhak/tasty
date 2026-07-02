@@ -36,6 +36,17 @@ impl App {
         if drained.is_empty() {
             return;
         }
+        // 자동실행(autofire) 컨텍스트 — 레지스트리는 프레임 스냅샷(clone), 가드는
+        // App 필드 직접 대여(아래 mgr 와 disjoint field borrow).
+        let scripts = self.autofire_scripts();
+        macro_rules! af {
+            () => {
+                crate::hooks::lua::AutofireCtx {
+                    scripts: &scripts,
+                    guard: &mut self.lua_autofire,
+                }
+            };
+        }
         let lua = self.lua_engine.as_ref();
         let Some(mgr) = self.plugin_manager.as_mut() else {
             return;
@@ -59,6 +70,7 @@ impl App {
                 } => surface::emit_created(
                     mgr,
                     lua,
+                    af!(),
                     surface_id,
                     kind,
                     tab_id,
@@ -79,6 +91,7 @@ impl App {
                 } => workspace::emit_renamed(
                     mgr,
                     lua,
+                    af!(),
                     workspace_id,
                     name,
                     subtitle,
@@ -89,9 +102,9 @@ impl App {
                     workspace_id,
                     window_id,
                     name,
-                } => workspace::emit_created(mgr, lua, workspace_id, window_id, name),
+                } => workspace::emit_created(mgr, lua, af!(), workspace_id, window_id, name),
                 PendingHostEvent::WorkspaceClosed { workspace_id } => {
-                    workspace::emit_closed(mgr, lua, workspace_id)
+                    workspace::emit_closed(mgr, lua, af!(), workspace_id)
                 }
                 PendingHostEvent::TabFocused {
                     tab_id,
@@ -102,15 +115,15 @@ impl App {
                     tab_id,
                     title,
                     user_direct,
-                } => tab::emit_renamed(mgr, lua, tab_id, title, user_direct),
+                } => tab::emit_renamed(mgr, lua, af!(), tab_id, title, user_direct),
                 PendingHostEvent::TabCreated {
                     tab_id,
                     pane_id,
                     workspace_id,
                     kind,
-                } => tab::emit_created(mgr, lua, tab_id, pane_id, workspace_id, kind),
+                } => tab::emit_created(mgr, lua, af!(), tab_id, pane_id, workspace_id, kind),
                 PendingHostEvent::TabClosed { tab_id, pane_id } => {
-                    tab::emit_closed(mgr, lua, tab_id, pane_id)
+                    tab::emit_closed(mgr, lua, af!(), tab_id, pane_id)
                 }
                 PendingHostEvent::TabMoved {
                     tab_id,
@@ -120,8 +133,10 @@ impl App {
                 PendingHostEvent::PaneCreated {
                     pane_id,
                     workspace_id,
-                } => pane::emit_created(mgr, lua, pane_id, workspace_id),
-                PendingHostEvent::PaneClosed { pane_id } => pane::emit_closed(mgr, lua, pane_id),
+                } => pane::emit_created(mgr, lua, af!(), pane_id, workspace_id),
+                PendingHostEvent::PaneClosed { pane_id } => {
+                    pane::emit_closed(mgr, lua, af!(), pane_id)
+                }
                 PendingHostEvent::PaneSplit {
                     original_pane,
                     new_pane,

@@ -6,6 +6,7 @@ use tasty_plugin_protocol::events::payloads::{
     WorkspaceActivated, WorkspaceClosed, WorkspaceCreated, WorkspaceRenamed,
 };
 
+use crate::hooks::lua::AutofireCtx;
 use crate::plugin::PluginManager;
 
 pub(super) fn emit_activated(
@@ -23,6 +24,7 @@ pub(super) fn emit_activated(
 pub(super) fn emit_renamed(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     workspace_id: u32,
     name: Option<String>,
     subtitle: Option<String>,
@@ -38,13 +40,14 @@ pub(super) fn emit_renamed(
     mgr.emit_host_event("workspace.renamed", &payload, EventScope::System);
     // 사용자 직접 변경(GUI rename dialog)만 Lua hook 발화 — IPC 경유는 제외.
     if user_direct {
-        crate::hooks::lua::fire(lua, "workspace.change.post", &payload);
+        crate::hooks::lua::fire(lua, autofire, "workspace.change.post", &payload);
     }
 }
 
 pub(super) fn emit_created(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     workspace_id: u32,
     window_id: u64,
     name: String,
@@ -55,12 +58,13 @@ pub(super) fn emit_created(
         name,
     };
     mgr.emit_host_event("workspace.created", &payload, EventScope::System);
-    crate::hooks::lua::fire(lua, "workspace.create.post", &payload);
+    crate::hooks::lua::fire(lua, autofire, "workspace.create.post", &payload);
 }
 
 pub(super) fn emit_closed(
     mgr: &mut PluginManager,
     lua: Option<&tasty_lua::LuaEngine>,
+    autofire: AutofireCtx<'_>,
     workspace_id: u32,
 ) {
     let payload = WorkspaceClosed {
@@ -68,5 +72,5 @@ pub(super) fn emit_closed(
         reason: LifecycleReason::User,
     };
     mgr.emit_host_event("workspace.closed", &payload, EventScope::System);
-    crate::hooks::lua::fire(lua, "workspace.delete.post", &payload);
+    crate::hooks::lua::fire(lua, autofire, "workspace.delete.post", &payload);
 }

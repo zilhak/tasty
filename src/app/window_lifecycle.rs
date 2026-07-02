@@ -290,6 +290,7 @@ impl App {
             window::main::MainView::new(gpu, state, core_state, window, self.view.proxy.clone());
         self.view.views.insert(window_id, Box::new(main));
         self.view.focused_view_id = Some(window_id);
+        let scripts = self.autofire_scripts();
         if let Some(mgr) = self.plugin_manager.as_mut() {
             use tasty_plugin_protocol::EventScope;
             use tasty_plugin_protocol::events::payloads::{WindowCreated, WindowModality};
@@ -299,7 +300,15 @@ impl App {
                 modality: WindowModality::Modeless,
             };
             mgr.emit_host_event("window.created", &payload, EventScope::System);
-            crate::hooks::lua::fire(self.lua_engine.as_ref(), "window.create.post", &payload);
+            crate::hooks::lua::fire(
+                self.lua_engine.as_ref(),
+                crate::hooks::lua::AutofireCtx {
+                    scripts: &scripts,
+                    guard: &mut self.lua_autofire,
+                },
+                "window.create.post",
+                &payload,
+            );
         }
     }
 
