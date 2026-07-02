@@ -8,6 +8,7 @@
 //! `LogicalPx(pub f32)` 의 `.0` 필드는 const 컨텍스트에서 접근 가능하다.
 
 use tasty_type_appearance::theme::SIZING;
+use tasty_type_geometry::length::LogicalPx;
 
 /// 좌측 sub-menu 패널의 고정 폭 (logical px). = `SIZING.tab_width`.
 pub const SUB_TAB_PANEL_WIDTH: f32 = SIZING.tab_width.0;
@@ -43,3 +44,26 @@ pub const INPUT_ICON_GLYPH: f32 = SIZING.icon_glyph_size_md.0;
 
 /// TreeRow 높이 = 디자인 control-height-tree(22). Theme 에 대응 토큰 없음.
 pub const TREE_ROW_HEIGHT: f32 = 22.0;
+
+// ── 구조 간격 상수 — DTCG primitive 직접 대응 (semantic 부재, Rust-only) ──
+//
+// 디자인은 4px 그리드 spacing 스텝 밖의 미세 구조 간격에 primitive `size-1/2/3`
+// 을 직접 쓴다 (디자인 changelog 2026-07-02 Request 3: "간격 스텝이 아니라 구조
+// primitive"). Rust 에는 대응 semantic 이 없고 `tasty-design-tokens` 의
+// `generated::primitive` 는 pub(crate) 라, 위젯 레벨 상수로 둔다 (crate 정책:
+// SIZING 에 없는 디자인 값의 단일 위치). `vspace`/`hspace` 헬퍼와 함께 사용.
+
+/// 구조 간격 1px = DTCG `primitive.size-1`.
+/// 예: 사이드바 WorkspaceRow subtitle 의 margin-top (디자인 chrome.jsx
+/// `marginTop: var(--tasty-size-1)`).
+pub const STRUCT_GAP_1: LogicalPx = LogicalPx(1.0);
+
+/// 구조 간격 2px = DTCG `primitive.size-2`.
+/// 예: 사이드바 도구 리스트/collapsed rail 의 gap (디자인 chrome.jsx
+/// `gap: var(--tasty-size-2)`).
+pub const STRUCT_GAP_2: LogicalPx = LogicalPx(2.0);
+
+/// 구조 간격 3px = DTCG `primitive.size-3`.
+/// 예: 사이드바 WorkspaceRow description 의 margin-top (디자인 chrome.jsx
+/// `marginTop: var(--tasty-size-3)`).
+pub const STRUCT_GAP_3: LogicalPx = LogicalPx(3.0);
