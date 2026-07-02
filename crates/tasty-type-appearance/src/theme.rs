@@ -354,7 +354,9 @@ pub const SIZING: ThemeSizing = ThemeSizing {
     sidebar_logo_collapsed_size: LogicalPx(24.0),
     sidebar_wordmark_font_size: LogicalPx(17.0),
     sidebar_section_heading_font_size: LogicalPx(10.0),
-    sidebar_button_label_font_size: LogicalPx(12.0),
+    // 디자인 판정 (2026-07-02 token-coverage): UI 타입 스케일은 10/11/13/14 고정,
+    // 12 는 터미널 전용 — `font-size-caption`(11) 으로 스냅.
+    sidebar_button_label_font_size: LogicalPx(11.0),
     sidebar_collapsed_slot_width: LogicalPx(32.0),
     sidebar_collapsed_icon_height: LogicalPx(22.0),
     sidebar_collapsed_workspace_height: LogicalPx(28.0),

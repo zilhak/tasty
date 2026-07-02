@@ -2,7 +2,7 @@
 
 디자인 시스템의 DTCG 토큰과 Rust `Theme` 필드, 그리고 실제 `th.*`/`theme.*` 호출처를 잇는 매핑 참조. [theme.md](theme.md) 의 토큰 구조를 호출처 관점에서 보충한다.
 
-> **범위 한정**: DTCG 토큰 파일(`tokens/tasty.tokens.json`)은 **claude design 산출물로 아직 repo 에 vendor 되지 않았다**(→ [theme.md](theme.md) "디자인 시스템 vendor"). 따라서 *DTCG primitive/semantic/component 전수 매핑*(96 semantic × Rust 필드)은 design-system 이 vendor 된 뒤에 채운다. 이 문서는 **Rust 측에서 지금 검증 가능한 부분** — 구조 모델과 다의성 핫스팟 — 만 확정한다.
+> **vendor 상태**: DTCG 토큰 파일은 `crates/tasty-design-tokens/dtcg/tasty.tokens.json` 으로 **vendor 되어 있다** (488 토큰 = primitive 104 / semantic 127 / component 257, 2026-07-02 재생성본). 치수 계열은 `crates/tasty-design-tokens/src/generated/` 에 const 로 생성되고 freshness·정합·색 드리프트 테스트가 CI 에서 일치를 강제한다. vendor 갱신 절차는 `crates/tasty-design-tokens/README.md`. 색 semantic/component 전수 매핑·소비처 전환은 후속 시리즈에서 채운다.
 
 ## 구조 모델
 
@@ -43,14 +43,30 @@ ANSI 16색은 개별 `th.*` 호출이 아니라 `theme.ansi_palette()` 배열로
 
 터미널/마크다운의 focused/unfocused × bg/fg 색은 `ThemeColors.surface_themes: BTreeMap<String, SurfaceTheme>` 에 들어가 `theme.surface("terminal")` / `theme.surface("markdown")` 헬퍼로 읽는다. `focused_bg` 만 black/white role-remap(light/dark).
 
-## vendor 후 채울 것
+## neutral ramp 12단 ↔ ThemeColors 필드
 
-design-system 이 repo 에 vendor 되면 이 문서에 추가한다:
+DTCG `primitive.color-neutral-*` 는 **elevation role 기준 넘버링**(0 = 최심 배경, 1100 = 최강 전경 — TOKENS.md)이며, catppuccin 평면 필드와 아래처럼 1:1 대응한다. 이 표가 색 드리프트 테스트(`crates/tasty-design-tokens/tests/color_drift.rs`)의 전거다. (`placeholder` 필드는 ramp 밖 — DTCG primitive 미대응.)
 
-- DTCG semantic 토큰 ↔ Rust 필드 전수표 (Rust 미대응 토큰 명시: `text-on-accent`/`radius-sm`/`radius-pill`/`font-*`/`line-height-*`/`motion-*`/`ui-scale-*`/`brand-*` 등은 현재 Theme 필드 부재).
-- component tier(버튼/입력/탭/토스트…) ↔ 호출처 매핑.
+| DTCG primitive | ThemeColors 필드 | | DTCG primitive | ThemeColors 필드 |
+|---|---|---|---|---|
+| `color-neutral-0` | `crust` | | `color-neutral-600` | `overlay0` |
+| `color-neutral-100` | `mantle` | | `color-neutral-700` | `overlay1` |
+| `color-neutral-200` | `base` | | `color-neutral-800` | `overlay2` |
+| `color-neutral-300` | `surface0` | | `color-neutral-900` | `subtext0` |
+| `color-neutral-400` | `surface1` | | `color-neutral-1000` | `subtext1` |
+| `color-neutral-500` | `surface2` | | `color-neutral-1100` | `text` |
+
+accent hue 13종(`color-blue` … `color-rosewater`)은 동명 필드와 1:1 (테마당 hue 별 1값, ramp 없음).
+
+## vendor 후 남은 것 (후속 시리즈)
+
+vendor·치수 codegen·드리프트 테스트는 완료됐다 (`crates/tasty-design-tokens`). 남은 것:
+
+- DTCG semantic **색** 토큰 ↔ Rust 접근자 전수표. 과거 이 문서가 "Rust 미대응"으로 꼽았던 것 중 `text-on-accent` → `Theme::text_on_accent()`, `radius-sm` → `SIZING.corner_radius_sm` 은 **이미 구현되어 있다** (stale 정정). `radius-pill`/`motion-*`/`ui-scale-*`/`brand-*` 등은 여전히 Theme 표면 부재 — 색은 시리즈 05, component 색 접근자는 시리즈 04 에서 결정.
+- component tier(버튼/입력/탭/토스트…) ↔ 호출처 매핑, SIZING 소비처의 토큰 참조 전환 (시리즈 02).
 
 ## 관련
 
 - [theme.md](theme.md) — Theme 2계층 모델 + UI 디자인 규칙
+- `crates/tasty-design-tokens/` — vendor json + 치수 codegen + 드리프트 가드 (갱신 절차는 crate README)
 - 코드: `crates/tasty-type-appearance/src/theme.rs` (필드) · `crates/tasty-themes/src/fallback.rs` (mocha 색값)

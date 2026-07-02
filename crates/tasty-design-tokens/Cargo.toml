@@ -1,0 +1,22 @@
+[package]
+name = "tasty-design-tokens"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Vendored DTCG design tokens + codegen for Tasty. Parses the design system's W3C DTCG export (dtcg/tasty.tokens.json) and generates dimension consts (src/generated/). Runtime deps: tasty-type-geometry only — must not depend on tasty-type-appearance, tasty-themes, egui, or any app crate (those may only appear as dev-dependencies for parity tests)."
+
+[dependencies]
+tasty-type-geometry = { path = "../tasty-type-geometry" }
+
+serde_json = "1"
+# 생성기 bin 로그 (C.11: println 금지 — tracing 경유)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+# 정합 테스트 전용 — 런타임 의존 아님 (위 description 의 제약 참조).
+tasty-type-appearance = { path = "../tasty-type-appearance", default-features = false }
+tasty-themes = { path = "../tasty-themes" }
+
+[lints]
+workspace = true

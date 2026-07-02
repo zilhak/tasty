@@ -1171,7 +1171,8 @@ fn draw_workspace_card(
             ui.horizontal(|ui| {
                 // 타이틀 시작 x 정렬: dot 슬롯(spacing_sm=8) + item_spacing(spacing_xs=4).
                 ui.add_space(th.spacing_sm.value() + th.spacing_xs.value());
-                // 디자인 WorkspaceRow subtitle: 12px(sidebar_button_label_font_size)
+                // 디자인 WorkspaceRow subtitle: sidebar_button_label_font_size (11px —
+                // 2026-07-02 디자인 판정: 12 는 터미널 전용, font-size-caption 스냅)
                 // 본문 sans, text-muted, 단일 줄 ellipsis. "짧은 라벨"로 읽히도록
                 // 코드체(mono) 가 아니라 일반 UI 폰트로 그린다 (위계: description 보다
                 // 한 단계 크고 진함).
