@@ -244,7 +244,7 @@ pub fn draw_remote_tool_popup(
     // 원래 spacing 을 복원해 행 레이아웃을 보존한다.
     let saved_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing.y = 0.0;
-    let sep = egui::Stroke::new(th.border_width.value(), th.surface1);
+    let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
 
     // 헤더 — 디자인 padding T11 R12 B11 L14 + borderBottom separator.
     let header_ir = egui::Frame::NONE
@@ -316,11 +316,14 @@ fn secondary_button(ui: &mut egui::Ui, th: &Theme, label: &str) -> egui::Respons
     ui.add(
         egui::Button::new(
             egui::RichText::new(label)
-                .color(th.text)
+                .color(th.text_primary())
                 .size(th.font_size_body.value()),
         )
-        .fill(th.surface0)
-        .stroke(egui::Stroke::new(th.border_width.value(), th.surface1)),
+        .fill(th.surface_raised())
+        .stroke(egui::Stroke::new(
+            th.border_width.value(),
+            th.border_strong(),
+        )),
     )
 }
 
@@ -359,7 +362,7 @@ fn hsep(ui: &mut egui::Ui, th: &Theme) {
     ui.painter().hline(
         r.x_range(),
         ui.cursor().top(),
-        egui::Stroke::new(th.border_width.value(), th.surface1),
+        egui::Stroke::new(th.border_width.value(), th.border_strong()),
     );
     vspace(ui, STRUCT_GAP_2);
 }
@@ -374,17 +377,17 @@ fn draw_header(ui: &mut egui::Ui, th: &Theme) -> bool {
         // 디자인 헤더 gap 9 (토큰 아닌 raw — 가장 가까운 토큰 spacing_sm=8 과 1px 차).
         ui.spacing_mut().item_spacing.x = 9.0;
         // 헤더 앞 터미널 프롬프트 아이콘(`>_`) — 디자인 remote_tool.jsx 헤더.
-        ui.add(icons::TERMINAL_PROMPT.image(16.0, th.subtext0.into()));
+        ui.add(icons::TERMINAL_PROMPT.image(16.0, th.text_muted().into()));
         ui.label(
             egui::RichText::new(t("remote_tool.heading"))
-                .color(th.text)
+                .color(th.text_primary())
                 .size(th.font_size_heading.value())
                 .strong(),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add(
-                    egui::ImageButton::new(icons::CLOSE.image(16.0, th.subtext0.into()))
+                    egui::ImageButton::new(icons::CLOSE.image(16.0, th.text_muted().into()))
                         .frame(false),
                 )
                 .on_hover_text(t("remote_tool.close"))
@@ -413,11 +416,11 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
         egui::vec2(x_range.span(), tab_h),
     );
     // bg-sidebar 전체폭 + 하단 borderBottom separator (mantle 위 → surface1 근사).
-    ui.painter().rect_filled(bar, 0.0, th.mantle);
+    ui.painter().rect_filled(bar, 0.0, th.bg_sidebar());
     ui.painter().hline(
         x_range,
         bar.max.y,
-        egui::Stroke::new(th.border_width.value(), th.surface1),
+        egui::Stroke::new(th.border_width.value(), th.border_strong()),
     );
 
     let mut x = x_range.min + pad_l;
@@ -429,7 +432,7 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
         let on = st.tab == tab;
         let label = t(key);
         let text_w = ui.fonts(|f| {
-            f.layout_no_wrap(label.to_string(), font.clone(), th.text.into())
+            f.layout_no_wrap(label.to_string(), font.clone(), th.text_primary().into())
                 .size()
                 .x
         });
@@ -446,9 +449,9 @@ fn draw_tab_bar(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, x_range: egui::
             label,
             font.clone(),
             if on {
-                th.text.into()
+                th.text_primary().into()
             } else {
-                th.subtext0.into()
+                th.text_muted().into()
             },
         );
         // 활성 탭 하단 2px accent — separator 위에 그려 덮는다.
@@ -563,7 +566,7 @@ fn draw_profile_list(
             ui.add_space(th.spacing_lg.value());
             ui.label(
                 egui::RichText::new(t("remote_tool.profile_empty"))
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .italics()
                     .size(th.font_size_body.value()),
             );
@@ -580,7 +583,7 @@ fn draw_profile_list(
             ui.add_space(th.spacing_lg.value());
             ui.label(
                 egui::RichText::new(t("remote_tool.profile_filter_empty"))
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .italics()
                     .size(th.font_size_body.value()),
             );
@@ -625,17 +628,17 @@ fn filter_button(ui: &mut egui::Ui, th: &Theme, label: &str, filtered: bool) -> 
     let text_col: egui::Color32 = if filtered {
         th.text_on_accent().into()
     } else {
-        th.text.into()
+        th.text_primary().into()
     };
     let fill: egui::Color32 = if filtered {
         th.accent_primary().into()
     } else {
-        th.surface0.into()
+        th.surface_raised().into()
     };
     let stroke = if filtered {
         egui::Stroke::NONE
     } else {
-        egui::Stroke::new(th.border_width.value(), th.surface1)
+        egui::Stroke::new(th.border_width.value(), th.border_strong())
     };
     ui.add(
         egui::Button::image_and_text(
@@ -693,7 +696,7 @@ fn draw_protocol_filter(
             ui.set_min_width(216.0);
             ui.label(
                 egui::RichText::new(t("remote_tool.filter_title"))
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .size(th.font_size_caption.value())
                     .monospace(),
             );
@@ -789,14 +792,19 @@ fn draw_profile_row(
                 };
                 ui.label(
                     egui::RichText::new(title)
-                        .color(if disabled { th.overlay0 } else { th.text })
+                        // divergence: overlay0=disabled-role 이나 값은 placeholder(neutral-600), 코드값 보존
+                        .color(if disabled {
+                            th.text_placeholder()
+                        } else {
+                            th.text_primary()
+                        })
                         .size(th.font_size_body.value())
                         .strong(),
                 );
                 if is_builtin_kind(&p.kind) || KNOWN_TYPES.contains(&p.kind.as_str()) {
                     ui.label(
                         egui::RichText::new(&p.kind)
-                            .color(th.subtext0)
+                            .color(th.text_muted())
                             .size(th.font_size_caption.value()),
                     );
                 } else {
@@ -806,7 +814,7 @@ fn draw_profile_row(
             // row2: target summary
             ui.label(
                 egui::RichText::new(profile_summary(p))
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .size(th.font_size_caption.value())
                     .monospace(),
             );
@@ -816,7 +824,7 @@ fn draw_profile_row(
                     Some(pr) if !pr.is_empty() => {
                         ui.label(
                             egui::RichText::new(format!("passkey: {pr}"))
-                                .color(th.subtext0)
+                                .color(th.text_muted())
                                 .size(th.font_size_caption.value()),
                         );
                         if !passkey_names.contains(pr) {
@@ -831,7 +839,7 @@ fn draw_profile_row(
                     _ => {
                         ui.label(
                             egui::RichText::new("passkey: —")
-                                .color(th.subtext0)
+                                .color(th.text_muted())
                                 .size(th.font_size_caption.value()),
                         );
                     }
@@ -839,14 +847,14 @@ fn draw_profile_row(
                 if let Some(v) = &ssh {
                     ui.label(
                         egui::RichText::new(format!("shell: {}", v.shell()))
-                            .color(th.subtext0)
+                            .color(th.text_muted())
                             .size(th.font_size_caption.value()),
                     );
                     if detecting_now {
                         ui.add(egui::Spinner::new().size(th.font_size_caption.value()));
                         ui.label(
                             egui::RichText::new(t("remote_tool.detecting"))
-                                .color(th.subtext0)
+                                .color(th.text_muted())
                                 .size(th.font_size_caption.value()),
                         );
                     } else if disabled {
@@ -865,7 +873,7 @@ fn draw_profile_row(
             // right_to_left 이라 추가 순서 = 우→좌. 디자인 우측 끝이 trash.
             if ui
                 .add(
-                    egui::ImageButton::new(icons::TRASH.image(15.0, th.subtext0.into()))
+                    egui::ImageButton::new(icons::TRASH.image(15.0, th.text_muted().into()))
                         .frame(false),
                 )
                 .on_hover_text(t("remote_tool.delete"))
@@ -875,7 +883,7 @@ fn draw_profile_row(
             }
             if ui
                 .add(
-                    egui::ImageButton::new(icons::EDIT.image(15.0, th.subtext0.into()))
+                    egui::ImageButton::new(icons::EDIT.image(15.0, th.text_muted().into()))
                         .frame(false),
                 )
                 .on_hover_text(t("remote_tool.edit"))
@@ -887,7 +895,7 @@ fn draw_profile_row(
                 && ui
                     .add_enabled(
                         !detecting_now,
-                        egui::ImageButton::new(icons::REFRESH.image(15.0, th.subtext0.into()))
+                        egui::ImageButton::new(icons::REFRESH.image(15.0, th.text_muted().into()))
                             .frame(false),
                     )
                     .on_hover_text(t("remote_tool.refresh_tooltip"))
@@ -962,7 +970,7 @@ fn draw_profile_form(
     // 하단 고정 borderTop). 외곽 content Frame margin 은 폼일 때 0 이라(상위 draw 분기)
     // 이 함수가 패딩(좌우 space-lg 16)과 전체폭 separator 를 직접 소유한다.
     let full_x = ui.clip_rect().x_range();
-    let sep = egui::Stroke::new(th.border_width.value(), th.surface1);
+    let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
     let pad_lg = th.spacing_lg.value() as i8;
     let pad_md = th.spacing_md.value() as i8;
 
@@ -1016,7 +1024,7 @@ fn draw_profile_form(
                                 } else {
                                     t("remote_tool.profile_form_add")
                                 })
-                                .color(th.text)
+                                .color(th.text_primary())
                                 .size(th.font_size_body.value())
                                 .strong(),
                             );
@@ -1130,7 +1138,7 @@ fn draw_profile_form(
                                     indented_hint(
                                         ui,
                                         egui::RichText::new(t("remote_tool.shell_auto_hint"))
-                                            .color(th.subtext0)
+                                            .color(th.text_muted())
                                             .size(th.font_size_caption.value()),
                                     );
                                 }
@@ -1157,7 +1165,7 @@ fn draw_profile_form(
                                 ui.horizontal(|ui| {
                                     ui.label(
                                         egui::RichText::new(t("remote_tool.fields_section"))
-                                            .color(th.subtext0)
+                                            .color(th.text_muted())
                                             .size(th.font_size_caption.value())
                                             .monospace(),
                                     );
@@ -1176,7 +1184,7 @@ fn draw_profile_form(
                                     indented_hint(
                                         ui,
                                         egui::RichText::new(t("remote_tool.fields_empty"))
-                                            .color(th.subtext0)
+                                            .color(th.text_muted())
                                             .italics()
                                             .size(th.font_size_caption.value()),
                                     );
@@ -1393,7 +1401,7 @@ fn draw_attach_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, profiles: &
             ui.add_space(th.spacing_lg.value());
             ui.label(
                 egui::RichText::new(t("remote_tool.attach_empty"))
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .italics()
                     .size(th.font_size_body.value()),
             );
@@ -1483,13 +1491,17 @@ fn draw_attach_row(
                 };
                 ui.label(
                     egui::RichText::new(title)
-                        .color(if inactive { th.overlay1 } else { th.text })
+                        .color(if inactive {
+                            th.text_disabled()
+                        } else {
+                            th.text_primary()
+                        })
                         .size(th.font_size_body.value())
                         .strong(),
                 );
                 ui.label(
                     egui::RichText::new(mode_tag)
-                        .color(th.subtext0)
+                        .color(th.text_muted())
                         .size(th.font_size_caption.value()),
                 );
                 if inactive {
@@ -1505,7 +1517,7 @@ fn draw_attach_row(
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(target)
-                        .color(th.subtext0)
+                        .color(th.text_muted())
                         .size(th.font_size_caption.value())
                         .monospace(),
                 );
@@ -1522,12 +1534,12 @@ fn draw_attach_row(
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(format!("tasty: {}", v.remote_tasty()))
-                        .color(th.subtext0)
+                        .color(th.text_muted())
                         .size(th.font_size_caption.value()),
                 );
                 ui.label(
                     egui::RichText::new(format!("port: {}", v.port_mode()))
-                        .color(th.subtext0)
+                        .color(th.text_muted())
                         .size(th.font_size_caption.value()),
                 );
             });
@@ -1537,7 +1549,7 @@ fn draw_attach_row(
             // 아이콘 버튼 (디자인 IconButton): delete / edit. RTL 이라 우측 끝이 trash.
             if ui
                 .add(
-                    egui::ImageButton::new(icons::TRASH.image(15.0, th.subtext0.into()))
+                    egui::ImageButton::new(icons::TRASH.image(15.0, th.text_muted().into()))
                         .frame(false),
                 )
                 .on_hover_text(t("remote_tool.delete"))
@@ -1547,7 +1559,7 @@ fn draw_attach_row(
             }
             if ui
                 .add(
-                    egui::ImageButton::new(icons::EDIT.image(15.0, th.subtext0.into()))
+                    egui::ImageButton::new(icons::EDIT.image(15.0, th.text_muted().into()))
                         .frame(false),
                 )
                 .on_hover_text(t("remote_tool.edit"))
@@ -1591,7 +1603,7 @@ fn draw_attach_form(
 ) {
     // 디자인 AttachForm 구조 = rtScrollPad + rtFooter — 프로필 폼과 동일 골격.
     let full_x = ui.clip_rect().x_range();
-    let sep = egui::Stroke::new(th.border_width.value(), th.surface1);
+    let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
     let pad_lg = th.spacing_lg.value() as i8;
     let pad_md = th.spacing_md.value() as i8;
 
@@ -1641,7 +1653,7 @@ fn draw_attach_form(
                                 } else {
                                     t("remote_tool.attach_form_add")
                                 })
-                                .color(th.text)
+                                .color(th.text_primary())
                                 .size(th.font_size_body.value())
                                 .strong(),
                             );
@@ -1762,7 +1774,7 @@ fn draw_attach_form(
                             ui.add_space(th.spacing_xs.value());
                             ui.label(
                                 egui::RichText::new(t("remote_tool.remote_tasty_section"))
-                                    .color(th.subtext0)
+                                    .color(th.text_muted())
                                     .size(th.font_size_caption.value())
                                     .monospace(),
                             );
@@ -1799,7 +1811,7 @@ fn draw_attach_form(
                             indented_hint(
                                 ui,
                                 egui::RichText::new(t("remote_tool.attach_exec_hint"))
-                                    .color(th.subtext0)
+                                    .color(th.text_muted())
                                     .size(th.font_size_caption.value()),
                             );
 
@@ -1952,7 +1964,7 @@ fn draw_passkey_list(ui: &mut egui::Ui, th: &Theme, st: &mut UiState, passkeys: 
             ui.add_space(th.spacing_lg.value());
             ui.label(
                 egui::RichText::new(t("remote_tool.passkey_empty"))
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .italics()
                     .size(th.font_size_body.value()),
             );
@@ -2015,14 +2027,14 @@ fn draw_passkey_row(
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(&k.name)
-                        .color(th.text)
+                        .color(th.text_primary())
                         .size(th.font_size_body.value())
                         .strong(),
                 );
                 if KNOWN_PASSKEY_KINDS.contains(&k.kind.as_str()) {
                     ui.label(
                         egui::RichText::new(&k.kind)
-                            .color(th.subtext0)
+                            .color(th.text_muted())
                             .size(th.font_size_caption.value()),
                     );
                 } else {
@@ -2036,7 +2048,7 @@ fn draw_passkey_row(
             };
             ui.label(
                 egui::RichText::new(format!("{} · {}", k.kind, val))
-                    .color(th.subtext0)
+                    .color(th.text_muted())
                     .size(th.font_size_caption.value())
                     .monospace(),
             );
@@ -2046,7 +2058,7 @@ fn draw_passkey_row(
             // 아이콘 버튼 (디자인 IconButton): delete / edit / reveal(eye 토글).
             if ui
                 .add(
-                    egui::ImageButton::new(icons::TRASH.image(15.0, th.subtext0.into()))
+                    egui::ImageButton::new(icons::TRASH.image(15.0, th.text_muted().into()))
                         .frame(false),
                 )
                 .on_hover_text(t("remote_tool.delete"))
@@ -2056,7 +2068,7 @@ fn draw_passkey_row(
             }
             if ui
                 .add(
-                    egui::ImageButton::new(icons::EDIT.image(15.0, th.subtext0.into()))
+                    egui::ImageButton::new(icons::EDIT.image(15.0, th.text_muted().into()))
                         .frame(false),
                 )
                 .on_hover_text(t("remote_tool.edit"))
@@ -2066,9 +2078,9 @@ fn draw_passkey_row(
             }
             // revealed 면 eye-off + active(밝은) tint, 아니면 eye + muted.
             let (reveal_icon, reveal_tint) = if revealed {
-                (icons::EYE_OFF, th.text)
+                (icons::EYE_OFF, th.text_primary())
             } else {
-                (icons::EYE, th.subtext0)
+                (icons::EYE, th.text_muted())
             };
             if ui
                 .add(
@@ -2099,7 +2111,7 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
     // 프로필 폼과 동일한 디자인 rtScrollPad + rtFooter 구조(하단 고정 footer, 전체폭
     // borderTop, 좌우 space-lg 패딩). 외곽 content Frame margin 은 폼일 때 0(상위 draw 분기).
     let full_x = ui.clip_rect().x_range();
-    let sep = egui::Stroke::new(th.border_width.value(), th.surface1);
+    let sep = egui::Stroke::new(th.border_width.value(), th.border_strong());
     let pad_lg = th.spacing_lg.value() as i8;
     let pad_md = th.spacing_md.value() as i8;
 
@@ -2149,7 +2161,7 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
                                 } else {
                                     t("remote_tool.passkey_form_add")
                                 })
-                                .color(th.text)
+                                .color(th.text_primary())
                                 .size(th.font_size_body.value())
                                 .strong(),
                             );
@@ -2181,7 +2193,7 @@ fn draw_passkey_form(ui: &mut egui::Ui, th: &Theme, st: &mut UiState) {
                             });
                             ui.label(
                                 egui::RichText::new(t("remote_tool.passkey_value_note"))
-                                    .color(th.subtext0)
+                                    .color(th.text_muted())
                                     .size(th.font_size_caption.value()),
                             );
                             if let Some(err) = &st.kerr {
@@ -2259,13 +2271,13 @@ fn draw_confirm_delete(
     ui.add_space(th.spacing_sm.value());
     ui.label(
         egui::RichText::new(format!("{}: \"{name}\"?", noun))
-            .color(th.text)
+            .color(th.text_primary())
             .size(th.font_size_body.value()),
     );
     if let Some(h) = hint {
         ui.label(
             egui::RichText::new(h)
-                .color(th.subtext0)
+                .color(th.text_muted())
                 .size(th.font_size_caption.value()),
         );
     }
@@ -2336,7 +2348,7 @@ fn field_label(ui: &mut egui::Ui, th: &Theme, label: &str) {
             ui.add(
                 egui::Label::new(
                     egui::RichText::new(label)
-                        .color(th.subtext0)
+                        .color(th.text_muted())
                         .size(th.font_size_body.value()),
                 )
                 .truncate(),
