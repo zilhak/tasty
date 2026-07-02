@@ -111,11 +111,13 @@ pub(crate) enum GeneralSubTab {
 /// L2 section within the Terminal L1 tab.
 ///
 /// 디자인 Terminal L2 = General(터미널 동작 설정) / Mouse Capture(마우스 캡처 안내
-/// 토글 + 블랙리스트 에디터) / Performance.
+/// 토글 + 블랙리스트 에디터) / TUI(OSC 52 클립보드 읽기 허용 토글 + 경고 callout) /
+/// Performance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TerminalSubTab {
     General,
     MouseCapture,
+    Tui,
     Performance,
 }
 
@@ -275,6 +277,7 @@ impl SettingsUiState {
                 self.terminal_sub_tab = match key {
                     "general" => TerminalSubTab::General,
                     "mouse_capture" => TerminalSubTab::MouseCapture,
+                    "tui" => TerminalSubTab::Tui,
                     "performance" => TerminalSubTab::Performance,
                     _ => return false,
                 };
@@ -699,6 +702,7 @@ fn build_l2_sections(ui_state: &mut SettingsUiState) -> Vec<L2Section> {
                     TerminalSubTab::MouseCapture,
                     t("settings.terminal.mouse_capture"),
                 ),
+                (TerminalSubTab::Tui, t("settings.terminal.tui")),
                 (
                     TerminalSubTab::Performance,
                     t("settings.misc.subtab.performance"),
@@ -1328,6 +1332,7 @@ fn draw_active_content(
         SettingsTab::Terminal => match ui_state.terminal_sub_tab {
             TerminalSubTab::General => draw_terminal_tab(ui, draft),
             TerminalSubTab::MouseCapture => draw_terminal_mouse_capture_tab(ui, draft),
+            TerminalSubTab::Tui => draw_terminal_tui_tab(ui, draft),
             TerminalSubTab::Performance => draw_performance_tab(ui, draft),
         },
         SettingsTab::Appearance => draw_appearance_tab(

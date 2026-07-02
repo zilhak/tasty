@@ -106,16 +106,6 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 });
             ui.end_row();
 
-            ui.label(t("settings.terminal.allow_clipboard_read_label"));
-            tasty_ui_widgets::switch(
-                ui,
-                &th,
-                &mut settings.general.allow_clipboard_read,
-                None,
-                true,
-            );
-            ui.end_row();
-
             // Option as Meta 는 macOS 전용 — 다른 OS 에는 Option 키가 없어 노출하지 않는다.
             #[cfg(target_os = "macos")]
             {
@@ -124,12 +114,37 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
                 ui.end_row();
             }
         });
+}
 
+/// Terminal › TUI L2 섹션 — 터미널 안 TUI/CLI 프로그램에 주는 권한 설정. 현재는
+/// OSC 52 클립보드 읽기 허용 토글 + 바로 아래 bordered warning callout(그 권한이
+/// 무엇을 여는지 경고). 설정 모델은 무변경(`GeneralSettings.allow_clipboard_read`,
+/// 기본 off) — Terminal › General 에서 분리해 옮긴 것이다.
+pub fn draw_terminal_tui_tab(ui: &mut egui::Ui, settings: &mut Settings) {
+    let th = crate::theme::theme();
     vspace(ui, th.spacing_sm);
-    ui.label(
-        egui::RichText::new(t("settings.terminal.allow_clipboard_read_notice"))
-            .small()
-            .color(th.accent_warning()),
+
+    // OSC 52 클립보드 읽기 허용 토글.
+    ui.horizontal(|ui| {
+        ui.label(t("settings.terminal.allow_clipboard_read_label"));
+        tasty_ui_widgets::switch(
+            ui,
+            &th,
+            &mut settings.general.allow_clipboard_read,
+            None,
+            true,
+        );
+    });
+
+    // 토글 바로 아래 경고 callout — 아이콘은 본체 `ALERT_TRIANGLE` 를 IconPainter 로 주입.
+    vspace(ui, th.spacing_sm);
+    tasty_ui_widgets::warning_callout(
+        ui,
+        &th,
+        t("settings.terminal.allow_clipboard_read_notice"),
+        &|ui, rect, c| {
+            icons::ALERT_TRIANGLE.image(rect.height(), c).paint_at(ui, rect);
+        },
     );
 }
 

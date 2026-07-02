@@ -63,7 +63,7 @@ debug 메서드는 모두 `local_only()` — plugin caller 는 호출 불가, CL
 | `tab` | 유효 `subtab` 키 |
 |-------|------------------|
 | `general` | `general` · `notifications` · `accessibility` |
-| `terminal` | `general` · `mouse_capture` · `performance` |
+| `terminal` | `general` · `mouse_capture` · `tui` · `performance` |
 | `appearance` | `theme` · `colors` · `general` · `display` · `tasty` · `terminal` |
 | `keybindings` | `general` · `workspace` · `pane` · `tab` · `surface` · `clipboard` · `zoom` · `image` · `preset` · `plugins` |
 | `file_handler` | `extension_mapping` · `detectors` · `handlers` |
