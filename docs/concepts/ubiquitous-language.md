@@ -2,7 +2,7 @@
 
 tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 문서는 **용어집(색인)** 이다 — 각 용어의 *정의 본체* 는 해당 개념 문서에 있고, 여기서는 한 줄 정의 + 정본(canonical) 링크만 둔다. 깊이가 필요하면 링크로 간다.
 
-> 용어를 잘못 쓰면 코드·문서·API 일관성이 깨진다. 특히 **Window/View**, **Workspace/Pane/Tab/Surface** 계층, **상위/하위 레이아웃**, **Modal/Popup/Toast/Banner** 구분을 혼동하지 않는다.
+> 용어를 잘못 쓰면 코드·문서·API 일관성이 깨진다. 특히 **Window/View**, **Workspace/Pane/Tab/Surface** 계층, **상위/하위 레이아웃**, **Modal/Popup/Toast/Banner/Modifier-hint 오버레이** 구분을 혼동하지 않는다.
 
 ## 정본 문서
 
@@ -48,6 +48,7 @@ tasty 의 코드·문서·IPC/CLI 표면 전체가 같은 용어를 쓴다. 이 
 - **Popup** — View 내부 가상 창(타이틀바+콘텐츠, 드래그·z-order). 스코프 가짐. 상세 [`design/systems/popup.md`](../design/systems/popup.md).
 - **Toast** — View 내부 휘발성 알림. 포커스 안 받고 입력 비소비. **사용자 행동에서만** 발사(에이전트 IPC 는 발사 안 함). 상세 [`design/systems/toast.md`](../design/systems/toast.md).
 - **Banner** — parent 스코프 상단에 떠서 **info + 조치(action)** 를 제공하는 지속·인터랙티브 오버레이. 포커스는 안 받지만 **마우스를 소비하고 내부 버튼을 가짐**(Toast/Popup 어디에도 안 맞는 4번째 개념). TTL·큐(스코프당 1+최대 5 대기)·계층 z-index. **사용자 행동에서만** 발사(에이전트 IPC 는 발사 안 함). 상세 [`design/systems/banner.md`](../design/systems/banner.md).
+- **Modifier-hint 오버레이** — modifier 를 **500ms 홀드**하면 200ms 페이드로 떠서 그 modifier 를 포함하는 조합의 단축키 목록을 보여주고 **키를 떼면 즉시 소멸**하는 오버레이. **키보드 포커스를 절대 안 받고**(입력은 그대로 터미널로), **마우스만 소비**(드래그 이동·테두리/코너 리사이즈·X 닫기). Popup(포커스/타이틀바/z-order)도 Toast(비인터랙티브 TTL)도 Banner(상단 고정 action)도 아닌 **홀드 수명 + 마우스 인터랙티브 + focus-less** 의 5번째 개념. 홀드 상태는 winit `ModifiersChanged`(실사용자 입력)만 반영 — IPC/CLI 로 강제 표시 불가(원칙1). `enabled` 설정 off 면 전혀 안 뜸. 지오메트리(pos/size)는 사용자가 이동/리사이즈하면 `Settings::modifier_hint` 에 영속. 상세 [`design/systems/design-token-mapping.md`](../design/systems/design-token-mapping.md) 의 modifier-hint 절 · 콘텐츠 모델은 `src/adapters/ui/input/shortcuts/modifier_hint.rs`, 본체는 `src/adapters/ui/modifier_hint_overlay.rs`.
 - **상태바(Workspace status bar)** — 작업 영역 하단을 항상 차지하는 고정 strip(타이틀바 `top_inset` 과 대칭인 `bottom_inset`). focus surface 컨텍스트 표시 + 우측 빠른 액션(팔레트·테마). GUI 전용 표시 위젯(에이전트 표면 없음). 정본 [`features/workspace-status-bar`](../features/workspace-status-bar/index.md).
 
 ### Surface 종류 (→ [hierarchy.md](hierarchy.md#surface-타입) · [plugins.md](plugins.md))
