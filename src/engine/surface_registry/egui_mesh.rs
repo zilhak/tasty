@@ -2,7 +2,7 @@
 //!
 //! plugin 매니페스트의 `[[surface_kinds]]` 에 `rendering = "egui-mesh"` 를 선언하면
 //! plugin 이 자기 프로세스에서 egui 를 tessellate 한 mesh 를 host 가 합성한다
-//! (실제 합성 경로는 A1-S5). `host_rendered` 와 동일한 bundled 전용 개방 정책이다 —
+//! (실제 합성 경로는 A1-S5). bundled 전용 개방 정책이다 —
 //! 임의 plugin 이 채널을 가로채지 못하도록 `(kind, plugin_id)` 화이트리스트로 매칭하고,
 //! 추가로 plugin 의 `api_version` 이 호스트와 일치하는지 게이트한다 (epaint 와이어가
 //! host·plugin 동일 컴파일을 강제하는 동안의 보호 — ADR-0028 개방 정책).
@@ -24,7 +24,7 @@ fn leak_str(s: &str) -> &'static str {
 
 /// `(kind, plugin_id)` 쌍이 egui-mesh 채널로 허용된 bundled 조합인지 확인.
 ///
-/// `host_rendered::is_host_rendered_allowed` 미러. ADR-0028 scope 에 따라 markdown(B1)
+/// ADR-0028 scope 에 따라 markdown(B1)
 /// 을 첫 소비자로 두고, image(B2 하이브리드 — 비트맵을 plugin egui 텍스처로 올려 mesh
 /// 로 렌더)가 뒤따른다.
 fn is_egui_mesh_allowed(kind: &str, plugin_id: &str) -> bool {

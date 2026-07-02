@@ -190,7 +190,7 @@ mod tests {
         let reg = SurfaceKindRegistry::new();
         register_builtin_kinds(&reg);
         // image는 com.tasty.image plugin이, markdown은 com.tasty.markdown plugin이
-        // 각각 hello 시 host_rendered whitelist 경유로 등록한다. explorer는 T11에서
+        // 각각 hello 시 egui-mesh whitelist 경유로 등록한다. explorer는 T11에서
         // host builtin surface로 승격되어 부팅 시 직접 등록된다.
         for kind in ["terminal", "empty", "attached", "explorer"] {
             assert!(reg.contains(kind), "missing builtin kind: {kind}");
@@ -202,5 +202,4 @@ mod tests {
     }
 }
 pub mod egui_mesh;
-pub mod host_rendered;
 pub mod webview_kind;

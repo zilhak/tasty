@@ -5,7 +5,7 @@
 //! 를 생성·동기화한다. plugin 은 `webview.set_url(surface_id, url)` 등 IPC 로
 //! URL/navigation 만 제어한다. host 는 어떤 컨텐츠 (html / svg / ...) 인지 모름.
 //!
-//! `host_rendered` 와 달리 화이트리스트가 없다 — 어떤 plugin 이든 webview overlay
+//! egui-mesh 채널과 달리 화이트리스트가 없다 — 어떤 plugin 이든 webview overlay
 //! 를 사용할 수 있다 (`webview.*` IPC 권한으로 제어). host 는 자기 builtin kind
 //! 정의를 갖지 않으며, plugin 이 정의한 kind 의 SurfaceKindDef 는 일반 remote
 //! 메커니즘 (`remote_kind`) 으로 등록된다.

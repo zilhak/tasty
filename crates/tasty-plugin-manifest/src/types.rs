@@ -358,16 +358,14 @@ pub struct SurfaceKindDecl {
     pub consumes_egui_input: bool,
 }
 
-/// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "host" | "remote" | "webview" | "egui-mesh"`.
+/// surface kind의 렌더링 방식. plugin 매니페스트 `rendering = "remote" | "webview" | "egui-mesh"`.
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SurfaceKindRendering {
-    /// plugin이 UiNode tree로 화면을 그린다 (일반 plugin surface). 기본값.
+    /// 기본값. webview kind 가 공유하는 `RemoteSurface` stand-in 으로 등록된다.
+    /// (host 가 콘텐츠를 그리는 UiNode tree 렌더 경로는 C1 에서 제거됨.)
     #[default]
     Remote,
-    /// 호스트 본문이 직접 egui로 그린다. 매니페스트는 등록(메타데이터)만 담당하고
-    /// 픽셀 처리는 호스트가 한다. 호스트 화이트리스트 매칭이 필요하다.
-    Host,
     /// 호스트가 OS-level native WebView overlay 로 surface 영역을 자동 관리한다.
     /// plugin 은 `webview.set_url(surface_id, url)` 등 IPC 로 URL/navigation 만 제어.
     /// host 는 어떤 컨텐츠 (html/svg/...) 인지 모름 — webview 토대만 제공.

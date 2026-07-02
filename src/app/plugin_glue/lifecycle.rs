@@ -340,12 +340,6 @@ impl App {
                                 );
                                 "remote"
                             }
-                            SurfaceKindRendering::Host => {
-                                crate::engine::surface_registry::host_rendered::register_host_rendered_kind(
-                                    &registry, plugin_id, &decl.kind,
-                                );
-                                "host"
-                            }
                             SurfaceKindRendering::Webview => {
                                 crate::engine::surface_registry::webview_kind::register_webview_kind(
                                     plugin_id, &decl.kind,

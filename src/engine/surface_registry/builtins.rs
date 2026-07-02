@@ -19,10 +19,8 @@ use super::{SurfaceKindDef, SurfaceKindRegistry};
 /// 부팅 시 등록: terminal / empty / attached / **explorer**(T11 host builtin).
 ///
 /// 부팅 시 등록되지 *않는* kind (plugin hello 시 등록):
-/// - `"image"`: `com.tasty.image` plugin이 hello 시 `rendering = "host"` 매니페스트로
-///   호스트 화이트리스트 매칭 후 [`register_image`]를 호출하여 등록.
-/// - `"markdown"`: `com.tasty.markdown` plugin이 hello 시 host_rendered whitelist
-///   매칭 후 [`register_markdown`]을 호출하여 등록.
+/// - `"image"` / `"markdown"`: 각 plugin 이 hello 시 `rendering = "egui-mesh"`
+///   매니페스트로 egui-mesh 화이트리스트 매칭 후 등록 (`surface_registry/egui_mesh.rs`).
 pub fn register_builtin_kinds(registry: &SurfaceKindRegistry) {
     register_terminal(registry);
     register_empty(registry);
