@@ -59,11 +59,6 @@ impl PluginManager {
                     }
                 };
                 if let Some(entry) = self.surfaces.get(&surface_id) {
-                    if let Some(tree) = parsed.tree
-                        && let Ok(mut slot) = entry.handles.tree.lock()
-                    {
-                        *slot = Some(tree);
-                    }
                     if let Some(name) = parsed.display_name
                         && let Ok(mut slot) = entry.handles.display_name.lock()
                     {
@@ -78,47 +73,15 @@ impl PluginManager {
             }
             PendingRequestKind::Other => {}
             PendingRequestKind::PopupOpen { instance_id } => {
+                // egui-mesh popup 은 open 응답에 별도 콘텐츠 계약이 없다 — 디코드만
+                // 검증하고 성공은 무시한다.
                 let result_value = match resp.result {
                     Some(v) => v,
                     None => return,
                 };
-                let parsed: protocol::PopupOpenResult = match serde_json::from_value(result_value) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::warn!(
-                            "plugin '{plugin_id}' popup.open response decode error: {e}"
-                        );
-                        return;
-                    }
-                };
-                if let Some(inst) = self.popup_instances.get_mut(&instance_id) {
-                    inst.tree = parsed.tree;
-                }
-            }
-            PendingRequestKind::PopupEvent { instance_id } => {
-                let result_value = match resp.result {
-                    Some(v) => v,
-                    None => return,
-                };
-                let parsed: protocol::PopupEventResult = match serde_json::from_value(result_value)
-                {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::warn!(
-                            "plugin '{plugin_id}' popup.event response decode error: {e}"
-                        );
-                        return;
-                    }
-                };
-                if let Some(inst) = self.popup_instances.get_mut(&instance_id)
-                    && parsed.tree.is_some()
-                {
-                    inst.tree = parsed.tree;
-                }
-                if parsed.close {
-                    self.close_popup_instance(
-                        instance_id,
-                        tasty_plugin_protocol::PopupCloseReason::PluginRequest,
+                if let Err(e) = serde_json::from_value::<protocol::PopupOpenResult>(result_value) {
+                    tracing::warn!(
+                        "plugin '{plugin_id}' popup.open response decode error (instance {instance_id}): {e}"
                     );
                 }
             }

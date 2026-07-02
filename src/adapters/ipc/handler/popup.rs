@@ -37,7 +37,6 @@ pub fn handle_list(mgr: Option<&PluginManager>, id: serde_json::Value) -> JsonRp
                 "instance_id": inst_id,
                 "plugin_id": inst.plugin_id,
                 "popup_id": inst.popup_id,
-                "has_tree": inst.tree.is_some(),
             })
         })
         .collect();

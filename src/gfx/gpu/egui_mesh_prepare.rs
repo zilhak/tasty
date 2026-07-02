@@ -145,7 +145,7 @@ fn decode_mesh_into_target(
     log_id: &str,
 ) {
     // footer 길이 가드: plugin 이 footer(8B) 미만 버퍼를 등록하면 footer::load 의
-    // 안전 전제(raw.len >= SIZE)가 깨진다. canvas_prepare 형제 경로처럼 skip.
+    // 안전 전제(raw.len >= SIZE)가 깨진다. 검증 실패 시 해당 frame 은 skip.
     if raw.len() < tasty_shm::footer::SIZE {
         tracing::warn!(
             target = log_id,

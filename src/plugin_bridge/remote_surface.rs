@@ -1,8 +1,8 @@
 //! Plugin이 제공하는 surface를 본체 layout에 끼울 수 있는 stand-in.
 //!
-//! 매 프레임 호스트는 `RemoteSurface::tree`에 캐시된 UiNode를 egui로 렌더하고,
-//! 사용자 입력을 `pending_events`에 모은다. PluginManager가 다음 tick에서
-//! pending_events를 비워 plugin에 `surface.event` 메시지로 송신한다.
+//! webview-kind(html) surface 의 실 vehicle — host 는 URL/navigation chrome 만
+//! 그리고 콘텐츠는 native WebView overlay 가 담당한다. (UiNode tree 렌더 경로는
+//! C1 에서 제거됨.)
 //!
 //! `Surface` trait의 `kind() -> &'static str` 제약 때문에 plugin manifest의
 //! 동적 kind 문자열은 `register_remote_kind`에서 `Box::leak`으로 한 번 정적화한다
@@ -19,8 +19,6 @@ use std::sync::{Arc, Mutex};
 
 use crate::model::{Surface, SurfaceId};
 use serde_json::Value;
-
-use crate::plugin::ui_tree::{UiEvent, UiNode};
 
 /// webview surface 의 navigation 생명주기 상태. native backend 콜백(WebView2 /
 /// WKNavigationDelegate / WebKitGTK)이 갱신하고, host 가 chrome(loading/error) 렌더와
@@ -52,10 +50,6 @@ pub struct RemoteSurface {
     /// `Box::leak` 으로 정적화된 plugin kind. registry에 등록 시 한 번만 leak.
     pub kind_static: &'static str,
     pub plugin_id: String,
-    /// 가장 최근 plugin이 보낸 트리. 매 프레임 호스트가 렌더.
-    pub tree: Arc<Mutex<Option<UiNode>>>,
-    /// 호스트에서 모은 사용자 이벤트. 다음 pump tick에 plugin에 송신.
-    pub pending_events: Arc<Mutex<Vec<UiEvent>>>,
     /// snapshot 데이터 캐시 — plugin이 미리 보낸 값. 영속화 시 사용.
     pub snapshot_cache: Arc<Mutex<Option<Value>>>,
     /// surface가 plugin에 의해 invalidated 됐는지 — true면 호스트가 다음 프레임에 redraw.
@@ -87,8 +81,6 @@ impl RemoteSurface {
             id,
             kind_static,
             plugin_id,
-            tree: Arc::new(Mutex::new(None)),
-            pending_events: Arc::new(Mutex::new(Vec::new())),
             snapshot_cache: Arc::new(Mutex::new(None)),
             invalidated: Arc::new(Mutex::new(true)),
             display_name: Arc::new(Mutex::new(initial_name)),
@@ -125,26 +117,6 @@ impl RemoteSurface {
         }
     }
 
-    /// 호스트 ↔ plugin 송신용. 호출 후 buffer를 비운다.
-    pub fn drain_pending_events(&self) -> Vec<UiEvent> {
-        self.pending_events
-            .lock()
-            .map(|mut v| std::mem::take(&mut *v))
-            .unwrap_or_default()
-    }
-
-    pub fn push_event(&self, event: UiEvent) {
-        if let Ok(mut v) = self.pending_events.lock() {
-            v.push(event);
-        }
-    }
-
-    pub fn set_tree(&self, tree: Option<UiNode>) {
-        if let (Some(new_tree), Ok(mut slot)) = (tree, self.tree.lock()) {
-            *slot = Some(new_tree);
-        }
-    }
-
     pub fn set_display_name(&self, name: String) {
         if let Ok(mut slot) = self.display_name.lock() {
             *slot = name;
@@ -177,8 +149,6 @@ impl RemoteSurface {
     /// manager가 surface와 동기화하기 위해 필요한 핸들 묶음을 클론하여 반환.
     pub fn handles(&self) -> crate::plugin_bridge::host_cmd::SurfaceHandles {
         crate::plugin_bridge::host_cmd::SurfaceHandles {
-            tree: self.tree.clone(),
-            pending_events: self.pending_events.clone(),
             display_name: self.display_name.clone(),
             snapshot_cache: self.snapshot_cache.clone(),
         }
@@ -234,18 +204,6 @@ impl Surface for RemoteSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn pending_events_drain() {
-        let s = RemoteSurface::new(1, "explorer", "com.x".into(), "Files".into());
-        s.push_event(UiEvent::Click {
-            node_id: "btn".into(),
-        });
-        s.push_event(UiEvent::FocusChanged { focused: true });
-        let drained = s.drain_pending_events();
-        assert_eq!(drained.len(), 2);
-        assert!(s.drain_pending_events().is_empty());
-    }
 
     #[test]
     fn invalidated_take_resets() {

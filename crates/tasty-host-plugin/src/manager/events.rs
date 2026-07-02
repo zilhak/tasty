@@ -380,36 +380,4 @@ impl PluginManager {
             }
         }
     }
-
-    /// plugin이 보조 채널로 알린 dirty rect를 drain. 호스트 렌더링 레이어가 frame
-    /// 합성 직전에 호출한다. 반환된 map의 value가 `None`이면 "전체 갱신" sticky.
-    /// plugin이 죽었거나 보조 채널이 미연결이면 빈 map.
-    pub(super) fn flush_pending_events(&mut self) {
-        let surface_ids: Vec<u32> = self.surfaces.keys().copied().collect();
-        for sid in surface_ids {
-            let (plugin_id, events) = match self.surfaces.get(&sid) {
-                Some(entry) => {
-                    let events = entry
-                        .handles
-                        .pending_events
-                        .lock()
-                        .map(|mut v| std::mem::take(&mut *v))
-                        .unwrap_or_default();
-                    (entry.plugin_id.clone(), events)
-                }
-                None => continue,
-            };
-            for ev in events {
-                self.send_surface_request(
-                    &plugin_id,
-                    protocol::METHOD_SURFACE_EVENT,
-                    json!({
-                        "surface_id": sid,
-                        "event": ev,
-                    }),
-                    PendingRequestKind::SurfaceEvent { surface_id: sid },
-                );
-            }
-        }
-    }
 }

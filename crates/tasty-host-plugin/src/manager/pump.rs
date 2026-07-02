@@ -247,10 +247,7 @@ impl PluginManager {
         // 2. 새로 만들어진 RemoteSurface 등록 + plugin에 surface.create/restore 송신.
         self.drain_host_cmds();
 
-        // 3. RemoteSurface가 모은 사용자 이벤트 → plugin에 surface.event 송신.
-        self.flush_pending_events();
-
-        // 4. plugin → 호스트 응답 처리 (tree 동기화).
+        // 4. plugin → 호스트 응답 처리 (display_name/snapshot 동기화).
         self.drain_plugin_responses();
 
         // 4a. 타임아웃된 extension hook을 fail-open 처리.

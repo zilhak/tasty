@@ -33,9 +33,9 @@ impl PluginManager {
     }
 
     /// Plugin이 contribute한 popup의 새 인스턴스를 연다. plugin process에
-    /// `popup.open` IPC를 보내고, 응답으로 받은 초기 tree를 popup_instances에 저장.
+    /// `popup.open` IPC를 보낸다.
     ///
-    /// 반환값은 호스트가 발급한 instance_id. 추후 `send_popup_event` / `close_popup`에
+    /// 반환값은 호스트가 발급한 instance_id. 추후 `close_popup_instance`에
     /// 같은 id를 넘겨야 한다.
     ///
     /// plugin이 실행 중이 아니거나 popup contribute가 없으면 `None`.
@@ -93,7 +93,6 @@ impl PluginManager {
                 plugin_id: plugin_id.to_string(),
                 popup_id: popup_id.to_string(),
                 contribute,
-                tree: None,
             },
         );
         self.send_surface_request(
@@ -107,34 +106,6 @@ impl PluginManager {
             PendingRequestKind::PopupOpen { instance_id },
         );
         Some(instance_id)
-    }
-
-    /// popup 인스턴스 위에서 발생한 사용자 이벤트를 plugin에 forward.
-    /// plugin 응답은 [`PopupEventResult`] — 갱신된 tree와 자체 닫기 요청 플래그.
-    pub fn send_popup_event(&mut self, instance_id: u64, event: &tasty_plugin_protocol::UiEvent) {
-        let plugin_id = match self.popup_instances.get(&instance_id) {
-            Some(inst) => inst.plugin_id.clone(),
-            None => {
-                tracing::warn!("popup.event: unknown instance_id {instance_id}");
-                return;
-            }
-        };
-        let event_value = match serde_json::to_value(event) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("popup.event: failed to serialize event: {e}");
-                return;
-            }
-        };
-        self.send_surface_request(
-            &plugin_id,
-            protocol::METHOD_POPUP_EVENT,
-            json!({
-                "instance_id": instance_id,
-                "event": event_value,
-            }),
-            PendingRequestKind::PopupEvent { instance_id },
-        );
     }
 
     /// popup 인스턴스를 닫는다. plugin에 `popup.closed` fire-and-forget IPC를 보내고

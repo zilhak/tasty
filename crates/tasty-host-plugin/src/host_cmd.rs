@@ -8,13 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
-use tasty_plugin_protocol::ui_tree::{UiEvent, UiNode};
-
 /// `RemoteSurface`의 내부 상태에 manager가 외부에서 접근하기 위한 핸들.
 #[derive(Clone)]
 pub struct SurfaceHandles {
-    pub tree: Arc<Mutex<Option<UiNode>>>,
-    pub pending_events: Arc<Mutex<Vec<UiEvent>>>,
     pub display_name: Arc<Mutex<String>>,
     /// plugin 이 `SurfaceResult.snapshot` 으로 piggyback 한 영속화용 데이터.
     /// 매 응답마다 manager 가 최신값으로 갱신하며, `SavedLayout::capture` 시

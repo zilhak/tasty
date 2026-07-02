@@ -60,16 +60,12 @@ pub(super) enum PendingRequestKind {
         surface_id: u32,
     },
     /// 단계 G: 단축키 매칭으로 plugin command가 트리거된 경우. 응답은
-    /// SurfaceResult 형태로 surface tree/display_name을 갱신할 수 있다.
+    /// SurfaceResult 형태로 surface display_name 을 갱신할 수 있다.
     CommandInvoke {
         surface_id: u32,
     },
-    /// popup.open IPC 응답 대기. 응답은 [`PopupOpenResult`] — 초기 tree.
+    /// popup.open IPC 응답 대기. 응답은 [`PopupOpenResult`].
     PopupOpen {
-        instance_id: u64,
-    },
-    /// popup.event IPC 응답 대기. 응답은 [`PopupEventResult`] — 갱신 tree + close 신호.
-    PopupEvent {
         instance_id: u64,
     },
     /// 그 외 (host.hello / ping / 등) — 응답 무시.
@@ -340,8 +336,6 @@ pub struct PopupInstance {
     pub plugin_id: String,
     pub popup_id: String,
     pub contribute: tasty_plugin_manifest::PopupContribute,
-    /// plugin이 마지막으로 보낸 UI 트리. 아직 open 응답 전이면 `None`.
-    pub tree: Option<tasty_plugin_protocol::ui_tree::UiNode>,
 }
 
 /// 호스트가 추적 중인 banner 인스턴스 한 건(A3). plugin process가 죽으면 함께 제거된다.

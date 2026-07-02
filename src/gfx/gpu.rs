@@ -1,12 +1,9 @@
-mod canvas_prepare;
 mod egui_bridge;
 mod egui_mesh_prepare;
 mod fonts;
 mod render_pass;
 mod screenshot;
 mod shell_setup;
-
-pub mod canvas_texture;
 
 use std::sync::Arc;
 
@@ -58,8 +55,6 @@ pub struct GpuState {
     pub(super) last_term_font_sig: String,
     /// Tracks per-surface egui font signatures so we re-register only on change.
     pub(super) surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState,
-    /// Plugin Canvas SharedBuffer → wgpu texture cache.
-    pub(super) canvas_textures: canvas_texture::CanvasTextureCache,
     /// egui-mesh surface_id → 전용 `egui_wgpu::Renderer` + 디코드 캐시 (A1-S5).
     /// surface 단위 전용 Renderer 로 plugin/host 간 TextureId 충돌을 격리한다(§4-3).
     /// surface 가 layout 에서 사라지면 정리돼 GPU 자원이 해제된다.
@@ -236,7 +231,6 @@ impl GpuState {
             scale_factor,
             last_term_font_sig,
             surface_font_state: crate::adapters::ui::font_registry::SurfaceFontState::default(),
-            canvas_textures: canvas_texture::CanvasTextureCache::new(),
             egui_mesh_targets: std::collections::HashMap::new(),
             egui_mesh_popup_targets: std::collections::HashMap::new(),
             egui_mesh_banner_targets: std::collections::HashMap::new(),
@@ -325,11 +319,6 @@ impl GpuState {
             &engine.settings.appearance,
             &mut self.surface_font_state,
         );
-
-        // 2b. Plugin Canvas 텍스처 prepare. egui 프레임 시작 전 GPU 자원 갱신.
-        if let Some(mgr) = plugin_manager {
-            self.prepare_plugin_canvases(state, engine, mgr);
-        }
 
         // 3. Run egui frame (UI drawing)
         let t0 = std::time::Instant::now();
