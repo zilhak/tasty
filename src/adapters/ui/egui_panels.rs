@@ -27,7 +27,6 @@ pub fn draw_egui_panels(
     engine: &mut crate::core::CoreState,
     pane_rects: &[(u32, PhysicalRect)],
     scale_factor: f32,
-    canvas_cache: &crate::gpu::canvas_texture::CanvasTextureCache,
 ) {
     // First pass: gather info about egui-rendered panels (read-only).
     let mut infos = Vec::new();
@@ -264,6 +263,7 @@ pub fn draw_egui_panels(
             // overlay 가 콘텐츠를 그리므로 host 는 chrome 만 페인트한다(placeholder=URL
             // 미지정 / boundary=overlay backdrop). overlay 가 보일 땐 이 chrome 을
             // 덮고, overlay 가 숨겨지거나(메뉴/팝업) URL 이 없을 때 노출된다.
+            // UiNode(tree) surface 렌더 경로는 제거됨(C1) — webview kind 만 그린다.
             if crate::engine::surface_registry::webview_kind::is_webview_kind(remote.kind_static) {
                 let url = crate::model::Surface::webview_url(remote);
                 // RemoteSurface mirror(host sync_webviews 가 native nav_state 를 복사)에서
@@ -277,21 +277,6 @@ pub fn draw_egui_panels(
                     None,
                     |ui| {
                         crate::webview_chrome_ui::draw_webview_chrome(ui, url.as_deref(), nav);
-                    },
-                );
-            } else {
-                draw_panel_frame(
-                    ctx,
-                    &format!("remote_panel_{}", id_suffix),
-                    info,
-                    4,
-                    None,
-                    |ui| {
-                        crate::plugin_bridge::ui_tree_render::render_remote_surface(
-                            ui,
-                            remote,
-                            canvas_cache,
-                        );
                     },
                 );
             }

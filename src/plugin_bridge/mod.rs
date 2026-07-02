@@ -16,8 +16,6 @@ pub mod popup_render;
 #[cfg(feature = "gui")]
 pub mod remote_kind;
 pub mod remote_surface;
-#[cfg(feature = "gui")]
-pub mod ui_tree_render;
 
 // host_cmd / host_actions 는 tasty-host-plugin crate 가 owning (manager 가 채널
 // 송신자). 본 바이너리에서는 그대로 같은 경로로 노출하기 위해 re-export.

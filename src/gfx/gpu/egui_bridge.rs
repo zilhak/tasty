@@ -37,7 +37,6 @@ impl GpuState {
     ) -> egui::FullOutput {
         let raw_input = self.egui_state.take_egui_input(window);
         let scale_factor = self.scale_factor;
-        let canvas_cache = &self.canvas_textures;
         let proxy = &self.proxy;
 
         self.egui_ctx.run(raw_input, |ctx| {
@@ -49,7 +48,7 @@ impl GpuState {
             ui::draw_pane_dividers(ctx, dividers, scale_factor);
             ui::draw_surface_highlights(ctx, state, engine, terminal_rect, scale_factor);
             ui::draw_pane_tab_bars(ctx, state, engine, pane_rects, scale_factor);
-            ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor, canvas_cache);
+            ui::draw_egui_panels(ctx, state, engine, pane_rects, scale_factor);
             ui::draw_status_bar(ctx, state, engine, terminal_rect, scale_factor);
             // Context menus are now handled via native OS menus (see process_pending_native_menu)
             ui::draw_popups(ctx, state, engine, pane_rects, terminal_rect, scale_factor);
