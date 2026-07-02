@@ -15,13 +15,26 @@ crates/tasty-lua/
 
 `App` 가 `lua_engine: Option<LuaEngine>` 를 보유(`src/app.rs`). 부팅 시 `LuaEngine::new()` 로 VM 을 전용 워커 스레드에 기동한다 — 부팅 자동로드(init.lua)는 폐기됐다(ADR-0031). 메인은 `about_to_wait` 안전지점에서 읽기 스냅샷 발행(`publish_lua_snapshot`)과 워커 커맨드 drain(`dispatch_pending_lua_commands`)을 수행한다.
 
-이벤트 발화는 `fire_lua` 헬퍼 한 곳을 거친다(`src/app/dispatch/host_events.rs`):
+이벤트 발화는 `hooks::lua::fire` 헬퍼 한 곳을 거친다(`src/host_api/hooks/lua.rs`):
 
 ```rust
-fn fire_lua<T: Serialize>(lua: Option<&LuaEngine>, event: &str, payload: &T)
+fn fire<T: Serialize>(
+    lua: Option<&LuaEngine>,
+    autofire: AutofireCtx<'_>,   // 등록 레지스트리 + 재진입 가드 — Option 아님
+    event: &str,
+    payload: &T,
+)
 ```
 
-`payload` 는 `serde_json::Value` 직렬화 후 Lua table 로 변환 — wire 필드 ↔ Lua table 필드 1:1(snake_case).
+`payload` 는 `serde_json::Value` 직렬화 후 Lua table 로 변환 — wire 필드 ↔ Lua table 필드 1:1(snake_case). 두 채널을 순서대로 태운다: ① observe-hook(`tasty.on` 콜백) fire, ② **자동실행**(`hooks::autofire::dispatch`) — `event` 를 트리거로 등록한 스크립트를 TOFU 재검 후 실행. `AutofireCtx` 가 필수 인자인 이유: 새 fire 지점을 추가할 때 자동실행 배선을 빠뜨릴 수 없게 시그니처로 강제한다.
+
+## 자동실행 (autofire) 배선
+
+`src/host_api/hooks/autofire.rs`:
+
+- `dispatch(lua, scripts, guard, event)` — `ScriptRegistry::entries_for_event` 매칭 → 소스 read → `hash_bytes` 재검 → 일치 시 `run_script_tracked`(완료 추적) / 불일치 시 차단 + `tracing::warn`(해시 자동 갱신 금지). 단축키 경로(`try_dispatch_script_shortcut`)와 동형 시퀀스.
+- `AutofireGuard` — cascade 재진입 방어. `App.lua_autofire` 가 소유하고 `about_to_wait` 시작에서 `checkpoint()` 1회. 완료 acknowledge 를 1 프레임 지연시켜, `run_cli` 가 유발한 이벤트(스크립트 완료보다 먼저 큐잉됨)가 자동실행을 재점화하지 못하게 한다. 워커의 완료 신호는 `tasty_lua::CompletionToken`(RAII — 큐 drop/abort 포함 어떤 경로로도 누락 없음).
+- 트리거 저장 = `ScriptEntry.triggers`(`Vec<AutoTrigger>`, serde default). 등록 가능 이벤트 화이트리스트 = `AUTO_TRIGGER_EVENTS`(`crates/tasty-settings/src/scripts.rs`) — 아래 표의 이벤트와 1:1.
 
 ## 이벤트 ↔ 발화 site
 
@@ -63,8 +76,9 @@ EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.libr
 ## 새 이벤트 추가
 
 1. `PendingHostEvent` variant 확인/추가 + 발화 site 배치(polling lifecycle detection 또는 imperative push).
-2. `dispatch_pending_host_events` 매치 절에 plugin 버스 emit + `fire_lua` 호출.
-3. [features/lua-hooks](../features/lua-hooks/index.md) 이벤트 표 · [design/policies/lua-hooks](../design/policies/lua-hooks.md) 매트릭스 · `crates/tasty-lua/meta/tasty.lua` stub 갱신.
+2. `dispatch_pending_host_events` 매치 절에 plugin 버스 emit + `hooks::lua::fire` 호출(`AutofireCtx` 필수 — 자동실행이 자동으로 함께 배선된다).
+3. 자동실행 트리거로도 열 거면 `AUTO_TRIGGER_EVENTS`(`crates/tasty-settings/src/scripts.rs`)에 이벤트명 추가.
+4. [features/lua-hooks](../features/lua-hooks/index.md) 이벤트 표 · [design/policies/lua-hooks](../design/policies/lua-hooks.md) 매트릭스 · `crates/tasty-lua/meta/tasty.lua` stub 갱신.
 
 ## 새 호스트 API 추가
 
@@ -73,5 +87,5 @@ EmmyLua 자동완성: 스크립트 파일 옆 `.luarc.json` 에 `"workspace.libr
 ## 에러 / 실행
 
 - 콜백 Lua 에러 → `tracing::warn!` + 같은 이벤트 다음 콜백 계속(dispatch 안 멈춤). payload 직렬화 실패 → warn + 이 이벤트 콜백 전부 skip.
-- 스크립트 실행 = 단축키 트리거(release) 또는 `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 워커만 종료, 메인·다음 job 무영향. 부팅 자동로드(init.lua)·`script.reload` 는 ADR-0031 에서 제거됨.
+- 스크립트 실행 = 단축키 트리거(release) / 이벤트 자동실행(release, TOFU 차단·재진입 가드 동반) / `debug.lua.eval`(debug). 워커 job 은 deadline 초과 시 abort(에러 반환) — 워커만 종료, 메인·다음 job 무영향. 자동실행 job 도 같은 `Run` 경로라 deadline 동일 적용. 부팅 자동로드(init.lua)·`script.reload` 는 ADR-0031 에서 제거됨.
 - 디버그: `RUST_LOG=tasty_lua=debug`.
