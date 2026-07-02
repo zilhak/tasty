@@ -5,6 +5,7 @@ use crate::file::handler::{
 use crate::i18n::t;
 
 use super::{AddHandlerActionKind, AddHandlerForm, FileHandlerEditDraft, draw_intro_block};
+use tasty_ui_widgets::vspace;
 
 /// Handlers sub-tab — Enabled 토글, user-origin 삭제, user 추가 form.
 pub(super) fn draw_handlers(
@@ -93,9 +94,9 @@ pub(super) fn draw_handlers(
             });
     }
 
-    ui.add_space(12.0);
+    vspace(ui, th.spacing_md);
     ui.separator();
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     draw_add_handler_form(ui, fh, file_format);
 }

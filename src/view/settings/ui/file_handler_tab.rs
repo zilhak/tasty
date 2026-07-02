@@ -141,13 +141,14 @@ pub(crate) fn draw_file_handler_tab(
 
 /// Sub-tab 상단 intro 블록: 본문 paragraph(wrap) + bullet 리스트.
 pub(super) fn draw_intro_block(ui: &mut egui::Ui, body_key: &str, bullet_keys: &[&str]) {
-    ui.add_space(4.0);
+    let th = crate::theme::theme();
+    vspace(ui, th.spacing_xs);
     ui.add(egui::Label::new(t(body_key)).wrap());
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     for key in bullet_keys {
         ui.add(egui::Label::new(format!("• {}", t(key))).wrap());
     }
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 }
 
 mod detectors;
@@ -157,3 +158,4 @@ mod handlers;
 use detectors::draw_detectors;
 use extension_mapping::draw_extension_mapping;
 use handlers::draw_handlers;
+use tasty_ui_widgets::vspace;

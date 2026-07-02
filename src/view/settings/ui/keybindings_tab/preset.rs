@@ -1,5 +1,6 @@
 use crate::i18n::t;
 use crate::settings::KeybindingSettings;
+use tasty_ui_widgets::{hspace, margin_sym, vspace};
 
 pub(super) fn draw_preset_subtab(
     ui: &mut egui::Ui,
@@ -7,7 +8,7 @@ pub(super) fn draw_preset_subtab(
     selected_preset: &mut Option<String>,
 ) {
     let th = crate::theme::theme();
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     ui.horizontal_top(|ui| {
         // 좌측: 프리셋 목록
@@ -15,7 +16,7 @@ pub(super) fn draw_preset_subtab(
             .fill(th.mantle.into())
             .stroke(egui::Stroke::new(1.0, th.surface0))
             .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(8, 8))
+            .inner_margin(margin_sym(th.spacing_sm, th.spacing_sm))
             .show(ui, |ui| {
                 ui.set_width(120.0);
                 ui.vertical(|ui| {
@@ -28,7 +29,7 @@ pub(super) fn draw_preset_subtab(
                 });
             });
 
-        ui.add_space(8.0);
+        hspace(ui, th.spacing_sm);
 
         // 우측: 미리보기 패널
         ui.vertical(|ui| {
@@ -42,7 +43,7 @@ pub(super) fn draw_preset_subtab(
             };
 
             ui.heading(&name);
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
 
             let is_identical = KeybindingSettings::GENERAL_BINDING_FIELDS
                 .iter()
@@ -100,9 +101,9 @@ pub(super) fn draw_preset_subtab(
                         });
                 });
 
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
             ui.separator();
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
             ui.horizontal(|ui| {
                 let apply_btn = egui::Button::new(t("settings.keybindings.apply_button"));
                 if ui.add_enabled(!is_identical, apply_btn).clicked() {

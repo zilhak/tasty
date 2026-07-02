@@ -1,6 +1,8 @@
 use crate::i18n::{t, t_fmt};
 use crate::theme;
 
+use tasty_ui_widgets::vspace;
+
 use super::{
     AddPreview, AddTrustReason, AddTrustState, PluginsAction, PluginsSnapshot, PluginsUiState,
 };
@@ -14,7 +16,7 @@ pub(super) fn draw_add_tab(
     let th = theme::theme();
 
     egui::CentralPanel::default().show(ctx, |ui| {
-        ui.add_space(12.0);
+        vspace(ui, th.spacing_md);
         if ui_state.add_preview.is_some() {
             draw_add_preview(ui, snapshot, ui_state, actions, &th);
         } else {
@@ -31,7 +33,7 @@ fn draw_add_input(
     th: &theme::Theme,
 ) {
     ui.label(t("plugins.add_path_label"));
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     let mut submitted = false;
     ui.horizontal(|ui| {
@@ -55,13 +57,13 @@ fn draw_add_input(
     }
 
     if let Some(err) = &ui_state.add_error {
-        ui.add_space(8.0);
+        vspace(ui, th.spacing_sm);
         ui.label(egui::RichText::new(err).color(egui::Color32::from(th.accent_danger())));
     }
 
     ui.add_space(20.0);
     ui.separator();
-    ui.add_space(12.0);
+    vspace(ui, th.spacing_md);
 
     if ui.button(t("plugins.add_browse")).clicked() {
         let dialog = rfd::FileDialog::new();
@@ -85,7 +87,7 @@ fn draw_add_preview(
     let preview = ui_state.add_preview.clone().expect("checked by caller");
 
     ui.heading(t("plugins.add_preview_heading"));
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .max_height(ui.available_height() - 60.0)
@@ -103,11 +105,11 @@ fn draw_add_preview(
                     .small()
                     .color(egui::Color32::from(th.subtext0)),
             );
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
 
             if !preview.description.is_empty() {
                 ui.label(&preview.description);
-                ui.add_space(8.0);
+                vspace(ui, th.spacing_sm);
             }
             if !preview.authors.is_empty() {
                 ui.label(format!(
@@ -119,14 +121,14 @@ fn draw_add_preview(
             if !preview.homepage.is_empty() {
                 ui.label(format!("{}: {}", t("plugins.homepage"), preview.homepage));
             }
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
 
             ui.label(format!(
                 "{}: {}",
                 t("plugins.add_source_path"),
                 preview.src_path
             ));
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
 
             ui.label(format!("{}:", t("plugins.surface_kinds")));
             if preview.surface_kinds.is_empty() {
@@ -134,7 +136,7 @@ fn draw_add_preview(
             } else {
                 ui.label(preview.surface_kinds.join(", "));
             }
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
 
             ui.label(format!("{}:", t("plugins.permissions")));
             if preview.permissions.is_empty() {
@@ -146,7 +148,7 @@ fn draw_add_preview(
             }
 
             if let Some(msg) = &preview.already_installed {
-                ui.add_space(12.0);
+                vspace(ui, th.spacing_md);
                 ui.label(egui::RichText::new(msg).color(egui::Color32::from(th.peach)));
             }
         });
@@ -157,9 +159,9 @@ fn draw_add_preview(
         draw_untrusted_warning(ui, &preview, th);
     }
 
-    ui.add_space(12.0);
+    vspace(ui, th.spacing_md);
     ui.separator();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     ui.horizontal(|ui| {
         let can_add = preview.already_installed.is_none()
             && !matches!(
@@ -209,9 +211,9 @@ fn draw_untrusted_warning(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::T
             reason,
             ..
         } => {
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.separator();
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             let title = match reason {
                 AddTrustReason::PermissionsChanged => t("plugins.trust_permissions_changed_title"),
                 AddTrustReason::UnknownKey => t("plugins.trust_unknown_title"),
@@ -227,9 +229,9 @@ fn draw_untrusted_warning(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::T
             fingerprint,
             reason,
         } => {
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.separator();
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             let title = match reason {
                 AddTrustReason::PermissionsChanged => t("plugins.trust_permissions_changed_title"),
                 AddTrustReason::UnknownKey => t("plugins.trust_unknown_title"),
@@ -239,9 +241,9 @@ fn draw_untrusted_warning(ui: &mut egui::Ui, preview: &AddPreview, th: &theme::T
             ui.label(t_fmt("plugins.trust_fingerprint", fingerprint));
         }
         AddTrustState::SigError(msg) => {
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.separator();
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             ui.label(
                 egui::RichText::new(t("plugins.trust_sig_error_title"))
                     .strong()

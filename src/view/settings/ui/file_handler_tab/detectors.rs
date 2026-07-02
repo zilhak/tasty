@@ -6,6 +6,7 @@ use crate::file::format::{
 use crate::i18n::t;
 
 use super::{AddDetectorForm, FileHandlerEditDraft, draw_intro_block};
+use tasty_ui_widgets::vspace;
 
 /// Detectors sub-tab — Enabled 토글, user-origin 삭제, user 추가 form.
 pub(super) fn draw_detectors(
@@ -87,9 +88,9 @@ pub(super) fn draw_detectors(
             });
     }
 
-    ui.add_space(12.0);
+    vspace(ui, th.spacing_md);
     ui.separator();
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     // "+ Add user detector" inline form.
     draw_add_detector_form(ui, fh);

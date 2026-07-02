@@ -2,6 +2,7 @@ use crate::i18n::t;
 use crate::theme;
 
 use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
+use tasty_ui_widgets::vspace;
 
 pub(super) fn draw_list_tab(
     ctx: &egui::Context,
@@ -38,16 +39,16 @@ pub(super) fn draw_list_tab(
         .exact_width(240.0)
         .resizable(false)
         .show(ctx, |ui| {
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             if snapshot.plugins.is_empty() {
-                ui.add_space(16.0);
+                vspace(ui, th.spacing_lg);
                 ui.label(
                     egui::RichText::new(t("plugins.empty")).color(egui::Color32::from(th.subtext0)),
                 );
                 return;
             }
             if visible.is_empty() {
-                ui.add_space(16.0);
+                vspace(ui, th.spacing_lg);
                 ui.label(
                     egui::RichText::new(t("plugins.no_matches"))
                         .color(egui::Color32::from(th.subtext0)),
@@ -131,12 +132,12 @@ pub(super) fn draw_list_tab(
             .and_then(|id| snapshot.plugins.iter().find(|p| &p.id == id))
             .cloned();
         let Some(entry) = selected_entry else {
-            ui.add_space(24.0);
+            vspace(ui, th.spacing_xl);
             ui.label(t("plugins.none_selected"));
             return;
         };
 
-        ui.add_space(8.0);
+        vspace(ui, th.spacing_sm);
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading(&entry.name);
@@ -154,11 +155,11 @@ pub(super) fn draw_list_tab(
                     .small()
                     .color(egui::Color32::from(th.subtext0)),
             );
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
 
             if !entry.description.is_empty() {
                 ui.label(&entry.description);
-                ui.add_space(8.0);
+                vspace(ui, th.spacing_sm);
             }
 
             // 디자인 error 경고 박스: spawn 반복 실패로 자동 비활성화된 plugin 에
@@ -177,7 +178,7 @@ pub(super) fn draw_list_tab(
                     .show(ui, |ui| {
                         ui.label(egui::RichText::new(t("plugins.health_error")).color(danger));
                     });
-                ui.add_space(8.0);
+                vspace(ui, th.spacing_sm);
             }
 
             if !entry.authors.is_empty() {
@@ -191,10 +192,10 @@ pub(super) fn draw_list_tab(
                 ui.label(format!("{}: {}", t("plugins.homepage"), entry.homepage));
             }
 
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.separator();
 
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.horizontal(|ui| {
                 ui.label(format!("{}:", t("plugins.status")));
                 let mut enabled = entry.enabled;
@@ -210,7 +211,7 @@ pub(super) fn draw_list_tab(
                 }
             });
 
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             ui.label(format!("{}:", t("plugins.surface_kinds")));
             if entry.surface_kinds.is_empty() {
                 ui.label(t("plugins.none"));
@@ -218,9 +219,9 @@ pub(super) fn draw_list_tab(
                 ui.label(entry.surface_kinds.join(", "));
             }
 
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.separator();
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.label(format!("{}:", t("plugins.permissions")));
             if entry.manifest_permissions.is_empty() {
                 ui.label(t("plugins.none"));
@@ -233,9 +234,9 @@ pub(super) fn draw_list_tab(
             }
 
             if !entry.commands.is_empty() {
-                ui.add_space(12.0);
+                vspace(ui, th.spacing_md);
                 ui.separator();
-                ui.add_space(12.0);
+                vspace(ui, th.spacing_md);
                 ui.label(format!("{}:", t("plugins.commands")));
                 for cmd in &entry.commands {
                     ui.horizontal(|ui| {
@@ -252,9 +253,9 @@ pub(super) fn draw_list_tab(
                 }
             }
 
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.separator();
-            ui.add_space(12.0);
+            vspace(ui, th.spacing_md);
             ui.label(format!("{}:", t("plugins.install_path")));
             ui.horizontal(|ui| {
                 ui.label(
@@ -276,7 +277,7 @@ pub(super) fn draw_list_tab(
                     .color(egui::Color32::from(th.subtext0)),
             );
 
-            ui.add_space(16.0);
+            vspace(ui, th.spacing_lg);
             if ui_state.confirm_uninstall_id.as_ref() == Some(&entry.id) {
                 let warn_key = if entry.builtin {
                     "plugins.uninstall_builtin_warning"

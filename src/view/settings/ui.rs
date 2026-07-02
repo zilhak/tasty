@@ -19,6 +19,7 @@ use tasty_host_plugin::SettingsPageEntry;
 use tasty_plugin_manifest::SettingsCategory;
 use tasty_type_appearance::theme::Theme;
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::vspace;
 use tasty_ui_widgets::{Button, ButtonVariant};
 
 /// L2 사이드바 폭. 디자인 `--tasty-settings-sidebar-width` = 200.
@@ -596,7 +597,7 @@ pub fn draw_settings_panel(ctx: &egui::Context, panel: SettingsPanelCtx<'_>) -> 
                         &combo_display,
                         &conflict_label,
                     ));
-                    ui.add_space(8.0);
+                    vspace(ui, th.spacing_sm);
                     ui.horizontal(|ui| {
                         if ui.button(t("button.cancel")).clicked() {
                             *cancelled = true;
@@ -1384,7 +1385,7 @@ fn draw_misc_content(ui: &mut egui::Ui, draft: &mut Settings, ui_state: &mut Set
         MiscSubTab::Tastyrc => {
             let th = crate::theme::theme();
             ui.vertical_centered(|ui| {
-                ui.add_space(24.0);
+                vspace(ui, th.spacing_xl);
                 ui.label(
                     egui::RichText::new(t("settings.misc.empty")).color(th.text_muted().to_egui()),
                 );

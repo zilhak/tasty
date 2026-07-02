@@ -8,6 +8,7 @@ use crate::i18n::t;
 use crate::settings::{KeybindingSettings, Settings};
 
 use super::{KeyCapture, RecordingSlot};
+use tasty_ui_widgets::vspace;
 
 /// `RecordingSlot.field_id` 가 이 접두사면 스크립트 바인딩 슬롯.
 const SCRIPT_SLOT_PREFIX: &str = "script:";
@@ -54,7 +55,7 @@ pub(super) fn draw_script_bindings(
     }
 
     if settings.scripts.is_empty() {
-        ui.add_space(8.0);
+        vspace(ui, th.spacing_sm);
         ui.label(egui::RichText::new(t("settings.keybindings.scripts_empty")).color(th.overlay1));
         return;
     }

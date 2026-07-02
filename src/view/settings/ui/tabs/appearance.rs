@@ -10,6 +10,7 @@ use tasty_type_appearance::theme::{
     FALLBACK_SURFACE, PartialColors, PartialSurfaceTheme, SurfaceTheme, Theme, ThemeColors,
 };
 use tasty_type_geometry::length::LogicalPx;
+use tasty_ui_widgets::vspace;
 
 /// Plugin sub-tab 식별: `(plugin_id, page_id)` 복합키로 일치하는 entry 를 찾는다.
 ///
@@ -111,14 +112,14 @@ pub fn draw_appearance_tab(
 /// Appearance › General.
 fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     ui.label(
         egui::RichText::new(t("settings.appearance.theme.heading"))
             .strong()
             .color(th.text),
     );
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     // ~/.tasty/themes/ 의 디스크 변경을 settings 화면 진입 시 한 번 더 반영.
     if let Err(e) = tasty_themes::rescan() {
@@ -136,7 +137,7 @@ fn draw_appearance_theme(ui: &mut egui::Ui, settings: &mut Settings) {
         ui.add_space(th.spacing_xs.value());
     }
 
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     ui.label(
         egui::RichText::new(t("settings.appearance.theme.hint"))
             .small()
@@ -267,20 +268,20 @@ fn draw_appearance_general(
     preview_font_loaded: &mut HashMap<String, String>,
 ) {
     let th = crate::theme::theme();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     ui.label(
         egui::RichText::new(t("settings.appearance.font.default_heading"))
             .strong()
             .color(th.text),
     );
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.font.default_hint"))
             .small()
             .color(th.subtext0),
     );
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     ui.columns(2, |columns| {
         font_settings_grid(
@@ -302,9 +303,9 @@ fn draw_appearance_general(
         );
     });
 
-    ui.add_space(16.0);
+    vspace(ui, th.spacing_lg);
     ui.separator();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     egui::Grid::new("appearance_general_grid")
         .num_columns(2)
@@ -334,9 +335,9 @@ const DISPLAY_CARD_HEIGHT: LogicalPx = LogicalPx(76.0);
 /// 프리뷰 + 라벨을 표시하고, 활성 카드는 accent 보더 + ring 으로 강조한다.
 fn draw_appearance_display(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     ui.label(t("settings.appearance.ui_scale_label"));
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     // (scale_key, label_key) — 순서대로 가로 배치.
     let cards = [
@@ -461,20 +462,20 @@ fn reset_tasty_to_theme_defaults(app: &mut crate::settings::AppearanceSettings) 
 /// overrides and resets the indicator.
 fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     ui.label(
         egui::RichText::new(t("settings.appearance.tasty.heading"))
             .strong()
             .color(th.text),
     );
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.tasty.hint"))
             .small()
             .color(th.subtext0),
     );
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     // ── Accent → theme_overrides.blue ──
     draw_tasty_color_row(
@@ -497,11 +498,11 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
         |p, v| p.mantle = v,
     );
 
-    ui.add_space(12.0);
+    vspace(ui, th.spacing_md);
 
     // ── Active tab indicator (Underline / Fill / Dot) ──
     ui.label(egui::RichText::new(t("settings.appearance.tasty.indicator_label")).color(th.text));
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.horizontal(|ui| {
         for (variant, key) in [
             (
@@ -525,7 +526,7 @@ fn draw_appearance_tasty(ui: &mut egui::Ui, settings: &mut Settings) {
         }
     });
 
-    ui.add_space(12.0);
+    vspace(ui, th.spacing_md);
 
     // ── Use theme defaults ──
     if ui
@@ -763,19 +764,19 @@ fn surface_bg_base(base: &ThemeColors, field: SurfaceBgField) -> HexColor {
 /// same override layer the Colors picker edits (resolve via `apply_partial`).
 fn draw_terminal_surface_colors(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     ui.label(
         egui::RichText::new(t("settings.appearance.terminal.surface_heading"))
             .strong()
             .color(th.text),
     );
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.terminal.surface_hint"))
             .small()
             .color(th.subtext0),
     );
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     draw_surface_bg_row(
         ui,
         &th,
@@ -957,19 +958,19 @@ fn draw_surface_font_section(
     target: SurfaceFontTarget<'_>,
 ) {
     let th = crate::theme::theme();
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.font.override_heading"))
             .strong()
             .color(th.text),
     );
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.appearance.font.override_hint"))
             .small()
             .color(th.subtext0),
     );
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     ui.columns(2, |columns| {
         let default_font = settings.appearance.default_font.clone();
@@ -1154,7 +1155,7 @@ fn group_changed_count(group: &ColorGroupDef, overrides: &PartialColors) -> usiz
 /// Appearance > Colors: 프리셋 색 개별 override picker.
 fn draw_appearance_colors(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     let groups = color_groups();
 
@@ -1195,7 +1196,7 @@ fn draw_appearance_colors(ui: &mut egui::Ui, settings: &mut Settings) {
         });
     });
 
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     for group in &groups {
         draw_color_group(ui, &th, settings, group);
@@ -1213,7 +1214,7 @@ fn draw_color_group(ui: &mut egui::Ui, th: &Theme, settings: &mut Settings, grou
         group.default_open,
     );
 
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     let header = state.show_header(ui, |ui| {
         ui.label(
             egui::RichText::new(t(group.name_key))
@@ -1383,9 +1384,9 @@ pub(super) fn draw_plugin_settings_page(
                 storage_key,
             } => {
                 let th = crate::theme::theme();
-                ui.add_space(4.0);
+                vspace(ui, th.spacing_xs);
                 ui.label(egui::RichText::new(t(label_key)).strong().color(th.text));
-                ui.add_space(4.0);
+                vspace(ui, th.spacing_xs);
                 draw_surface_font_section(
                     ui,
                     settings,
@@ -1922,7 +1923,7 @@ fn draw_font_preview(
 ) {
     let th = crate::theme::theme();
     ui.heading(t("settings.appearance.preview_heading"));
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     let slot_name = format!("preview_{}", slot);
     let display_family = if eff.font_family.is_empty() {
@@ -2005,7 +2006,7 @@ fn draw_font_preview(
         );
     }
 
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     // ── Unfocused preview ──
     ui.label(
@@ -2030,7 +2031,7 @@ fn draw_font_preview(
         );
     }
 
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     ui.label(
         egui::RichText::new(crate::i18n::t_fmt(
             "settings.appearance.preview_font_info",

@@ -150,9 +150,9 @@ pub fn draw_keybindings_tab(
                 ],
             );
 
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             ui.separator();
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
 
             egui::Grid::new("ws_modifier_grid")
                 .num_columns(2)
@@ -223,9 +223,9 @@ pub fn draw_keybindings_tab(
                 ],
             );
 
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             ui.separator();
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
 
             egui::Grid::new("tab_modifier_grid")
                 .num_columns(2)
@@ -368,7 +368,7 @@ pub fn draw_keybindings_tab(
         current,
         KeybindingsSubTab::Preset | KeybindingsSubTab::Plugins
     ) {
-        ui.add_space(8.0);
+        vspace(ui, th.spacing_sm);
         ui.label(
             egui::RichText::new(t("settings.keybindings.hint_esc_to_clear"))
                 .small()
@@ -396,3 +396,4 @@ use entries::draw_keybinding_entries;
 use entries_scripts::draw_script_bindings;
 use plugins::draw_plugins_subtab;
 use preset::draw_preset_subtab;
+use tasty_ui_widgets::vspace;

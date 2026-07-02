@@ -4,6 +4,7 @@ use crate::plugin::registry_state::ShortcutOverride;
 use crate::plugin_bridge::host_actions;
 use crate::settings::KeybindingSettings;
 use crate::settings_ui::{PluginShortcutRow, PluginShortcutSnapshot};
+use tasty_ui_widgets::{hspace, vspace};
 
 /// Plugin command 한 줄의 mode UI 상태.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +69,7 @@ pub(super) fn draw_plugins_subtab(
     let th = crate::theme::theme();
 
     if snapshot.rows.is_empty() {
-        ui.add_space(8.0);
+        vspace(ui, th.spacing_sm);
         ui.label(
             egui::RichText::new(t("settings.keybindings.plugins.no_plugins_with_commands"))
                 .color(th.subtext0),
@@ -91,7 +92,7 @@ pub(super) fn draw_plugins_subtab(
         *selected = plugin_ids.first().map(|(id, _)| id.to_string());
     }
 
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     ui.horizontal(|ui| {
         ui.label(t("settings.keybindings.plugins.plugin_label"));
         let current_label = selected
@@ -111,7 +112,7 @@ pub(super) fn draw_plugins_subtab(
                 }
             });
     });
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     let Some(active_id) = selected.clone() else {
         ui.label(t("settings.keybindings.plugins.none_selected"));
@@ -141,6 +142,7 @@ fn draw_plugin_command_row(
     draft: &mut std::collections::BTreeMap<(String, String), Option<ShortcutOverride>>,
     host_kb: &KeybindingSettings,
 ) {
+    let th = crate::theme::theme();
     let key = (row.plugin_id.clone(), row.command_id.clone());
     // 현재 effective override: draft가 우선, 없으면 row.current_override
     let current_ov: Option<ShortcutOverride> = match draft.get(&key) {
@@ -155,10 +157,10 @@ fn draw_plugin_command_row(
         BindingMode::Independent => None,
     };
 
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(t(&row.title_i18n_key)).strong());
-        ui.add_space(8.0);
+        hspace(ui, th.spacing_sm);
 
         // mode ComboBox
         let mode_label = match mode {
@@ -205,7 +207,7 @@ fn draw_plugin_command_row(
     };
     let after_mode = row_mode_of(after_ov.as_ref(), &row.binding_mode);
     ui.horizontal(|ui| {
-        ui.add_space(8.0);
+        hspace(ui, th.spacing_sm);
         match after_mode {
             RowMode::Inherit => {
                 let active_source: String = match &after_ov {
@@ -285,7 +287,7 @@ fn draw_plugin_command_row(
             }
         }
 
-        ui.add_space(8.0);
+        hspace(ui, th.spacing_sm);
         // 매니페스트 default로 복귀 버튼 — draft + current_override 모두 비움.
         if ui
             .small_button(t("settings.keybindings.plugins.reset_button"))

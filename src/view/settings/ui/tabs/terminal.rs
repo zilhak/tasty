@@ -3,16 +3,17 @@ use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButto
 use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::settings::{GeneralSettings, Settings};
+use tasty_ui_widgets::vspace;
 
 pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     if !settings.general.is_shell_valid() {
         ui.label(
             egui::RichText::new(t("settings.terminal.shell_not_found")).color(th.accent_warning()),
         );
-        ui.add_space(4.0);
+        vspace(ui, th.spacing_xs);
     }
 
     egui::Grid::new("terminal_grid")
@@ -134,7 +135,7 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
             }
         });
 
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     ui.label(
         egui::RichText::new(t("settings.terminal.allow_clipboard_read_notice"))
             .small()
@@ -145,9 +146,9 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     // 하단 Add 입력/버튼. 디자인 `BlacklistEditorG`(overlays-shared.jsx) 전사로,
     // 옛 멀티라인 textarea(줄바꿈 구분)를 폐기한다. 매칭(trim/대소문자 무시/`*`)은
     // 별도 헬퍼가 담당하므로 여기선 패턴 문자열만 보관한다.
-    ui.add_space(12.0);
+    vspace(ui, th.spacing_md);
     ui.label(t("settings.terminal.mouse_capture_blacklist_label"));
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     if settings.general.mouse_capture_blacklist.is_empty() {
         // 빈 상태 — neutral 톤(경고색 아님).
@@ -220,7 +221,7 @@ pub fn draw_terminal_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     ui.data_mut(|d| d.insert_temp(add_id, add_buf));
 
     // match-rule notice — accent-warning 톤(빈 상태 neutral 과 구분).
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.terminal.mouse_capture_blacklist_notice"))
             .small()

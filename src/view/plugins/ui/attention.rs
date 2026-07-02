@@ -6,6 +6,7 @@ use crate::i18n::t;
 use crate::theme;
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
+use tasty_ui_widgets::vspace;
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
 fn reason_text(kind: AttentionKind) -> (&'static str, &'static str) {
@@ -56,7 +57,7 @@ pub(super) fn draw_attention_tab(
         .exact_width(240.0)
         .resizable(false)
         .show(ctx, |ui| {
-            ui.add_space(8.0);
+            vspace(ui, th.spacing_sm);
             if items.is_empty() {
                 return; // 빈 상태는 CentralPanel 에서 안내.
             }
@@ -118,7 +119,7 @@ pub(super) fn draw_attention_tab(
             .and_then(|id| items.iter().find(|e| &e.id == id))
             .cloned();
         let Some(entry) = selected else {
-            ui.add_space(24.0);
+            vspace(ui, th.spacing_xl);
             ui.label(t("plugins.none_selected"));
             return;
         };
@@ -128,7 +129,8 @@ pub(super) fn draw_attention_tab(
 
 /// 확인 필요 plugin 0 건 — success 톤 빈 상태.
 fn draw_empty_state(ui: &mut egui::Ui, th: &theme::Theme) {
-    ui.add_space(48.0);
+    // 48 = spacing_xl × 2 (디자인 Request 3 판정 — 신규 스텝 없이 연산으로 표현).
+    vspace(ui, th.spacing_xl * 2.0);
     ui.vertical_centered(|ui| {
         ui.label(
             egui::RichText::new(t("plugins.attn_empty_title"))
@@ -153,7 +155,7 @@ fn draw_detail(
     let color = sev_color(th, entry.kind);
     let (label_key, blurb_key) = reason_text(entry.kind);
 
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
     egui::ScrollArea::vertical().show(ui, |ui| {
         // identity
         ui.horizontal(|ui| {
@@ -175,7 +177,7 @@ fn draw_detail(
                     .color(egui::Color32::from(th.text_muted())),
             );
         }
-        ui.add_space(12.0);
+        vspace(ui, th.spacing_md);
 
         // 사유 배너 (severity 색 프레임).
         egui::Frame::new()
@@ -193,7 +195,7 @@ fn draw_detail(
                         .size(13.0)
                         .color(color),
                 );
-                ui.add_space(4.0);
+                vspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t(blurb_key))
                         .size(12.5)
@@ -201,12 +203,12 @@ fn draw_detail(
                 );
             });
 
-        ui.add_space(12.0);
+        vspace(ui, th.spacing_md);
         draw_reason_detail(ui, th, entry);
 
-        ui.add_space(12.0);
+        vspace(ui, th.spacing_md);
         ui.separator();
-        ui.add_space(8.0);
+        vspace(ui, th.spacing_sm);
         draw_action_bar(ui, entry, color, actions);
     });
 }

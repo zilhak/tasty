@@ -7,6 +7,7 @@ use crate::gpu::GpuState;
 use crate::i18n::t;
 use crate::view::ui::{View, sealed};
 use crate::view::{ModalView, Modality, ViewAction, ViewBase, ViewCtx, modal::MODAL_MODALITY};
+use tasty_ui_widgets::{hspace, vspace};
 
 /// 종료 확인 다이얼로그. 사용자에게 종료/최소화를 묻는다.
 pub struct QuitView {
@@ -99,12 +100,13 @@ impl View for QuitView {
 
         let raw_input = self.base.gpu.take_egui_input(&self.base.winit);
         let pending = &mut self.pending_action;
+        let th = crate::theme::theme();
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
             egui::TopBottomPanel::bottom("quit_buttons")
                 .exact_height(52.0)
                 .show(ctx, |ui| {
-                    ui.add_space(12.0);
+                    vspace(ui, th.spacing_md);
                     let available_width = ui.available_width() - 40.0;
                     let button_width = available_width / 2.0 - 4.0;
                     ui.horizontal(|ui| {
@@ -118,7 +120,7 @@ impl View for QuitView {
                         {
                             *pending = ViewAction::CloseWithEvent(AppEvent::Shutdown);
                         }
-                        ui.add_space(8.0);
+                        hspace(ui, th.spacing_sm);
                         if ui
                             .add_sized(
                                 [button_width, 28.0],
@@ -135,9 +137,9 @@ impl View for QuitView {
                 ui.vertical_centered(|ui| {
                     ui.add_space(20.0);
                     ui.heading(t("quit_modal.title"));
-                    ui.add_space(12.0);
+                    vspace(ui, th.spacing_md);
                     ui.label(t("quit_modal.message"));
-                    ui.add_space(8.0);
+                    vspace(ui, th.spacing_sm);
                     ui.label(
                         egui::RichText::new(t("quit_modal.settings_hint"))
                             .small()

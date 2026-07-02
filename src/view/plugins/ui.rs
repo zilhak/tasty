@@ -230,16 +230,16 @@ pub fn draw_plugins_panel(
                 ui.add_space(10.0);
                 // 디자인 헤더: plug 아이콘 + 타이틀.
                 ui.add(icons::PLUG.image(17.0, egui::Color32::from(th.peach)));
-                ui.add_space(4.0);
+                hspace(ui, th.spacing_xs);
                 ui.label(
                     egui::RichText::new(t("plugins.title"))
                         .size(14.0)
                         .strong()
                         .color(egui::Color32::from(th.text_primary())),
                 );
-                ui.add_space(8.0);
+                hspace(ui, th.spacing_sm);
                 draw_header_divider(ui, &th);
-                ui.add_space(8.0);
+                hspace(ui, th.spacing_sm);
 
                 // 세그먼트 탭 (Installed N / Attention N / Add plugin).
                 let installed_count = snapshot.plugins.len();
@@ -280,14 +280,14 @@ pub fn draw_plugins_panel(
 
                 // 우측 클러스터 (오른쪽→왼쪽): X 닫기 → 검색 입력.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(8.0);
+                    hspace(ui, th.spacing_sm);
                     if close_icon_button(ui, &th) {
                         actions.push(PluginsAction::Close);
                     }
                     // 검색/필터는 목록이 있는 Installed 탭에서만 동작 (Add 탭은
                     // 로컬 경로 설치 폼이라 필터 대상 목록이 없다).
                     if ui_state.active_tab == PluginsTab::List {
-                        ui.add_space(8.0);
+                        hspace(ui, th.spacing_sm);
                         let edit = egui::TextEdit::singleline(&mut ui_state.filter)
                             .hint_text(tasty_egui_theme::hint_text(
                                 &th,
@@ -484,3 +484,4 @@ mod list;
 use add::draw_add_tab;
 use attention::draw_attention_tab;
 use list::draw_list_tab;
+use tasty_ui_widgets::hspace;

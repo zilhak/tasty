@@ -4,6 +4,7 @@ use crate::file::format::{DetectorId, DetectorInfo, FileFormatRegistry};
 use crate::i18n::t;
 
 use super::draw_intro_block;
+use tasty_ui_widgets::{hspace, vspace};
 
 /// Extension Mapping sub-tab. 광고된 모든 확장자 + draft 에 있는 확장자를 리스트로 표시,
 /// 각 확장자 옆에 후보 detector 들을 ↑↓ 버튼으로 재정렬 가능.
@@ -13,6 +14,7 @@ pub(super) fn draw_extension_mapping(
     new_ext_input: &mut String,
     file_format: &FileFormatRegistry,
 ) {
+    let th = crate::theme::theme();
     // 초기 진입 시 registry 의 현재 priority 표를 draft 로 복사.
     if draft.is_none() {
         let mut map = BTreeMap::new();
@@ -52,13 +54,13 @@ pub(super) fn draw_extension_mapping(
     } else {
         for ext in &visible {
             draw_extension_row(ui, ext, draft_map, file_format);
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
         }
     }
 
-    ui.add_space(12.0);
+    vspace(ui, th.spacing_md);
     ui.separator();
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     // 새 확장자 수동 추가 (자동완성 dropdown 대신 단순 textbox + suggestion 라벨).
     ui.horizontal(|ui| {
@@ -94,6 +96,7 @@ fn draw_extension_row(
     draft_map: &mut BTreeMap<String, Vec<DetectorId>>,
     file_format: &FileFormatRegistry,
 ) {
+    let th = crate::theme::theme();
     let candidates = file_format.detectors_for_extension(ext);
     if candidates.is_empty() {
         egui::Frame::new()
@@ -132,7 +135,7 @@ fn draw_extension_row(
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.strong(format!(".{}", ext));
-                ui.add_space(8.0);
+                hspace(ui, th.spacing_sm);
                 if draft_map.contains_key(ext)
                     && ui
                         .small_button(t("settings.file_handler.extension_mapping.reset"))
@@ -142,7 +145,7 @@ fn draw_extension_row(
                     draft_map.insert(ext.to_string(), Vec::new());
                 }
             });
-            ui.add_space(4.0);
+            vspace(ui, th.spacing_xs);
             let len = order.len();
             let mut move_up: Option<usize> = None;
             let mut move_down: Option<usize> = None;

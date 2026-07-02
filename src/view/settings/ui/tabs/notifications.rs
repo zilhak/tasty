@@ -1,9 +1,10 @@
 use crate::i18n::t;
 use crate::settings::Settings;
+use tasty_ui_widgets::vspace;
 
 pub fn draw_notifications_tab(ui: &mut egui::Ui, settings: &mut Settings) {
     let th = crate::theme::theme();
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     egui::Grid::new("notification_grid")
         .num_columns(2)

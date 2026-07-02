@@ -19,6 +19,8 @@ use tasty_ui_widgets::{
 use crate::adapters::ui::icons;
 use crate::i18n::t;
 use crate::settings::{AUTO_TRIGGER_EVENTS, AutoTrigger, KeybindingSettings, Settings, hash_file};
+#[cfg(windows)] // tastyrc 섹션(Windows 전용)에서만 사용.
+use tasty_ui_widgets::vspace;
 
 /// name→path→help 행 사이 hairline 간격 (디자인 `gap: 2` — 4px 그리드 하위).
 const ROW_LINE_GAP: f32 = 2.0;
@@ -74,13 +76,13 @@ pub fn draw_tastyrc_subtab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<Str
     let th = crate::theme::theme();
 
     ui.heading(t("settings.misc.bashrc.heading"));
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
     ui.label(
         egui::RichText::new(t("settings.misc.bashrc.description"))
             .small()
             .color(th.subtext0),
     );
-    ui.add_space(8.0);
+    vspace(ui, th.spacing_sm);
 
     // draft는 mod.rs 진입부에서 lazy 로드되므로 이 시점엔 항상 Some.
     let draft = bashrc_user_draft.get_or_insert_with(crate::settings::general::load_user_bashrc);
@@ -90,7 +92,7 @@ pub fn draw_tastyrc_subtab(ui: &mut egui::Ui, bashrc_user_draft: &mut Option<Str
             *draft = crate::settings::general::INITIAL_USER_BASHRC.to_string();
         }
     });
-    ui.add_space(4.0);
+    vspace(ui, th.spacing_xs);
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
