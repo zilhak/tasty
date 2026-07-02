@@ -526,11 +526,25 @@ impl DemoLayout {
         let act = act.or_else(|| bg.clicked().then_some(Act::Deselect));
         match act {
             None => ShowOutcome::None,
-            Some(Act::Select(id)) => {
+            Some(act) => self.dispatch(act, selected, catalog),
+        }
+    }
+
+    /// 한 프레임에 수집된 편집 의도([`Act`])를 트리 mutation 으로 실행한다.
+    /// 마우스 UI([`show_edit`])와 키보드 단축키([`apply_shortcut`])가 공유하는
+    /// 단일 배선 지점 — 변형·선택 정리·저장 필요성 판정을 여기서 일원화한다.
+    fn dispatch(
+        &mut self,
+        act: Act,
+        selected: &mut Option<usize>,
+        catalog: &KindCatalog,
+    ) -> ShowOutcome {
+        match act {
+            Act::Select(id) => {
                 *selected = Some(id);
                 ShowOutcome::Repaint
             }
-            Some(Act::Deselect) => {
+            Act::Deselect => {
                 if selected.is_some() {
                     *selected = None;
                     ShowOutcome::Repaint
@@ -538,28 +552,28 @@ impl DemoLayout {
                     ShowOutcome::None
                 }
             }
-            Some(Act::SetActive { pane, idx }) => {
+            Act::SetActive { pane, idx } => {
                 if self.set_active(pane, idx) {
                     ShowOutcome::Mutated
                 } else {
                     ShowOutcome::None
                 }
             }
-            Some(Act::SetKind { id, kind }) => {
+            Act::SetKind { id, kind } => {
                 self.set_kind(id, &kind, catalog);
                 ShowOutcome::Mutated
             }
-            Some(Act::SetField { id, cwd, value }) => {
+            Act::SetField { id, cwd, value } => {
                 self.set_field(id, cwd, value);
                 ShowOutcome::Mutated
             }
-            Some(Act::Split { id, row }) => {
+            Act::Split { id, row } => {
                 // 핸들 클러스터 split = after 배치(새 leaf second). 경계 존 before 는
                 // preset-edit-03 마우스 UI 몫.
                 self.split_leaf(id, row, false, catalog);
                 ShowOutcome::Mutated
             }
-            Some(Act::Remove { id }) => {
+            Act::Remove { id } => {
                 if self.remove_leaf(id, catalog) {
                     if *selected == Some(id) {
                         *selected = None;
@@ -569,18 +583,18 @@ impl DemoLayout {
                     ShowOutcome::None
                 }
             }
-            Some(Act::AddTab { pane }) => {
+            Act::AddTab { pane } => {
                 self.add_tab(pane, catalog);
                 ShowOutcome::Mutated
             }
-            Some(Act::SplitPane { id, row }) => {
+            Act::SplitPane { id, row } => {
                 if self.split_pane(id, row, catalog) {
                     ShowOutcome::Mutated
                 } else {
                     ShowOutcome::None
                 }
             }
-            Some(Act::RemovePane { id }) => {
+            Act::RemovePane { id } => {
                 if self.remove_pane(id, catalog) {
                     // 제거된 pane 안의 leaf 가 선택돼 있었으면 해제(사라진 leaf 는
                     // contains_leaf 로 판별 — 다른 pane 의 선택은 보존).
@@ -592,7 +606,7 @@ impl DemoLayout {
                     ShowOutcome::None
                 }
             }
-            Some(Act::RemoveTab { pane, idx }) => {
+            Act::RemoveTab { pane, idx } => {
                 if self.remove_tab(pane, idx) {
                     if selected.is_some_and(|s| !self.contains_leaf(s)) {
                         *selected = None;
@@ -602,6 +616,119 @@ impl DemoLayout {
                     ShowOutcome::None
                 }
             }
+        }
+    }
+
+    /// 편집기 표준 단축키([`ShortcutAction`])를 focus(선택 leaf) 기준으로 실행한다.
+    /// 선택이 없으면 no-op([`ShowOutcome::None`]) — WYSIWYG 에서 임의 대상 조작은
+    /// 위험하므로 명시 선택된 leaf 에만 작용한다(원칙3 무관: 전역 포커스가 아니라
+    /// 편집기 내부 선택).
+    ///
+    /// 대상 해석: surface 액션은 선택 leaf 자체, pane/tab 액션은 그 leaf 가 속한
+    /// pane. scope 유효성(Pane/Tab scope 의 pane split 무효 등)은 하위 mutation
+    /// (`split_pane`/`remove_pane`)이 자체 판별하므로 여기선 그대로 위임한다.
+    pub fn apply_shortcut(
+        &mut self,
+        action: ShortcutAction,
+        selected: &mut Option<usize>,
+        catalog: &KindCatalog,
+    ) -> ShowOutcome {
+        let Some(leaf_id) = *selected else {
+            return ShowOutcome::None;
+        };
+        match action {
+            ShortcutAction::SplitSurfaceVertical => {
+                self.dispatch(Act::Split { id: leaf_id, row: true }, selected, catalog)
+            }
+            ShortcutAction::SplitSurfaceHorizontal => {
+                self.dispatch(Act::Split { id: leaf_id, row: false }, selected, catalog)
+            }
+            ShortcutAction::CloseSurface => {
+                self.dispatch(Act::Remove { id: leaf_id }, selected, catalog)
+            }
+            ShortcutAction::NewTab => {
+                let Some(pane) = self.pane_id_of_leaf(leaf_id) else {
+                    return ShowOutcome::None;
+                };
+                self.dispatch(Act::AddTab { pane }, selected, catalog)
+            }
+            ShortcutAction::CloseActive => {
+                let Some(pane) = self.pane_id_of_leaf(leaf_id) else {
+                    return ShowOutcome::None;
+                };
+                let Some(idx) = self.active_tab_of(pane) else {
+                    return ShowOutcome::None;
+                };
+                // 라이브 close_active 의 탭→pane 체인과 동형: 마지막 탭이면
+                // remove_tab 이 no-op(None)이므로 pane 제거로 폴백한다.
+                match self.dispatch(Act::RemoveTab { pane, idx }, selected, catalog) {
+                    ShowOutcome::None => {
+                        self.dispatch(Act::RemovePane { id: pane }, selected, catalog)
+                    }
+                    other => other,
+                }
+            }
+            ShortcutAction::SplitPaneVertical => {
+                let Some(pane) = self.pane_id_of_leaf(leaf_id) else {
+                    return ShowOutcome::None;
+                };
+                self.dispatch(Act::SplitPane { id: pane, row: true }, selected, catalog)
+            }
+            ShortcutAction::SplitPaneHorizontal => {
+                let Some(pane) = self.pane_id_of_leaf(leaf_id) else {
+                    return ShowOutcome::None;
+                };
+                self.dispatch(Act::SplitPane { id: pane, row: false }, selected, catalog)
+            }
+            ShortcutAction::ClosePane => {
+                let Some(pane) = self.pane_id_of_leaf(leaf_id) else {
+                    return ShowOutcome::None;
+                };
+                self.dispatch(Act::RemovePane { id: pane }, selected, catalog)
+            }
+        }
+    }
+
+    /// 선택 leaf id 가 속한 pane 의 id. surface split 안 어디에 있든 그 leaf 를 탭
+    /// 레이아웃에 포함하는 pane 을 반환. Tab scope(pane 없음)면 None.
+    fn pane_id_of_leaf(&self, leaf_id: usize) -> Option<usize> {
+        fn in_surf(node: &SurfNode, id: usize) -> bool {
+            match node {
+                SurfNode::Leaf(l) => l.id == id,
+                SurfNode::Split { first, second, .. } => in_surf(first, id) || in_surf(second, id),
+            }
+        }
+        fn walk(node: &PaneNode, id: usize) -> Option<usize> {
+            match node {
+                PaneNode::Leaf(pane) => pane
+                    .tabs
+                    .iter()
+                    .any(|t| in_surf(&t.layout, id))
+                    .then_some(pane.id),
+                PaneNode::Split { first, second, .. } => {
+                    walk(first, id).or_else(|| walk(second, id))
+                }
+            }
+        }
+        match &self.root {
+            Root::Panes(n) => walk(n, leaf_id),
+            Root::TabFrame(_) => None,
+        }
+    }
+
+    /// pane_id 의 현재 active 탭 인덱스. 없으면 None(Tab scope · 미존재 pane).
+    fn active_tab_of(&self, pane_id: usize) -> Option<usize> {
+        fn walk(node: &PaneNode, id: usize) -> Option<usize> {
+            match node {
+                PaneNode::Leaf(pane) => (pane.id == id).then_some(pane.active),
+                PaneNode::Split { first, second, .. } => {
+                    walk(first, id).or_else(|| walk(second, id))
+                }
+            }
+        }
+        match &self.root {
+            Root::Panes(n) => walk(n, pane_id),
+            Root::TabFrame(_) => None,
         }
     }
 
@@ -869,6 +996,30 @@ impl DemoLayout {
     }
 }
 
+/// 편집기 표준 단축키가 표현하는 focus 기반 편집 액션. adapter 층(preset.rs)이
+/// `KeybindingSettings` 매칭 결과로 이 값을 만들어 [`DemoLayout::apply_shortcut`] 에
+/// 넘긴다. 대상 해석(leaf→pane)·scope 유효성은 apply_shortcut/하위 mutation 이
+/// 담당하므로 이 enum 은 "무엇을" 만 지시하고 "어디에" 는 담지 않는다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShortcutAction {
+    /// 선택 surface 를 좌우(row)로 분할.
+    SplitSurfaceVertical,
+    /// 선택 surface 를 상하(column)로 분할.
+    SplitSurfaceHorizontal,
+    /// 선택 surface 를 닫는다(마지막 1장이면 no-op).
+    CloseSurface,
+    /// 선택 surface 가 속한 pane 에 terminal 탭 추가.
+    NewTab,
+    /// 그 pane 의 active 탭을 닫는다(마지막 탭이면 pane 제거로 폴백).
+    CloseActive,
+    /// 그 pane 을 좌우로 분할(Workspace scope 한정).
+    SplitPaneVertical,
+    /// 그 pane 을 상하로 분할(Workspace scope 한정).
+    SplitPaneHorizontal,
+    /// 그 pane 을 닫는다(루트 단일 pane 이면 no-op).
+    ClosePane,
+}
+
 /// [`DemoLayout::show_edit`] 결과 — 호출자 repaint/persist 분기용.
 pub enum ShowOutcome {
     /// 변화 없음.
@@ -889,15 +1040,10 @@ enum Act {
     Split { id: usize, row: bool },
     Remove { id: usize },
     AddTab { pane: usize },
-    // ── pane 계층 변형 · 탭 삭제 (mutation + show_edit 디스패치는 존재하나,
-    // 이 액션을 *생성*하는 시각 UI 는 아직 없다). 키보드 트리거는 `preset-edit-02`,
-    // 마우스 UI(pane 핸들 · 탭 close ×)는 `preset-edit-03` 에서 이 variant 를 만든다.
-    // 그때까지 "never constructed" 이므로 allow 로 명시(모델 계층 선반영).
-    #[allow(dead_code)]
+    // ── pane 계층 변형 · 탭 삭제. 키보드 단축키([`apply_shortcut`], `preset-edit-02`)가
+    // 이 variant 를 생성한다. 마우스 UI(pane 핸들 · 탭 close ×)는 `preset-edit-03`.
     SplitPane { id: usize, row: bool },
-    #[allow(dead_code)]
     RemovePane { id: usize },
-    #[allow(dead_code)]
     RemoveTab { pane: usize, idx: usize },
 }
 
@@ -2155,6 +2301,342 @@ mod tests {
             Root::Panes(PaneNode::Leaf(pp)) => assert_eq!(pp.tabs.len(), 1),
             _ => panic!(),
         }
+    }
+
+    // ── apply_shortcut (키보드 focus 디스패치, preset-edit-02) ──────────────
+
+    #[test]
+    fn pane_id_of_leaf_resolves_owning_pane() {
+        // Workspace 2-pane split: 각 pane 안의 leaf id 로 소속 pane id 를 역추적.
+        let p = WorkspacePreset {
+            name: "w".into(),
+            subtitle: String::new(),
+            description: String::new(),
+            layout: PresetPaneNode::Split {
+                direction: PresetSplitDirection::Vertical,
+                ratio: 0.5,
+                first: Box::new(PresetPaneNode::Leaf {
+                    pane: PresetPane {
+                        tabs: vec![PresetTab {
+                            explicit_name: Some("a".into()),
+                            layout: surf("terminal"),
+                        }],
+                        active_tab: 0,
+                    },
+                }),
+                second: Box::new(PresetPaneNode::Leaf {
+                    pane: PresetPane {
+                        tabs: vec![PresetTab {
+                            explicit_name: Some("b".into()),
+                            layout: surf("markdown"),
+                        }],
+                        active_tab: 0,
+                    },
+                }),
+            },
+        };
+        let dl = DemoLayout::from_workspace(&p, &tc());
+        // id 부여 순서: pane0=0 → leaf=1, pane1=2 → leaf=3.
+        assert_eq!(dl.pane_id_of_leaf(1), Some(0));
+        assert_eq!(dl.pane_id_of_leaf(3), Some(2));
+        // 존재하지 않는 leaf → None.
+        assert_eq!(dl.pane_id_of_leaf(99), None);
+        // Tab scope 는 pane 없음 → None.
+        let tp = TabPreset {
+            name: "t".into(),
+            tab: PresetTab {
+                explicit_name: None,
+                layout: surf("terminal"),
+            },
+        };
+        let tdl = DemoLayout::from_tab(&tp, &tc());
+        assert_eq!(tdl.pane_id_of_leaf(0), None);
+    }
+
+    #[test]
+    fn apply_shortcut_no_selection_is_noop() {
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
+        let mut sel = None;
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::SplitSurfaceVertical, &mut sel, &tc()),
+            ShowOutcome::None
+        ));
+        // 트리 불변.
+        assert!(matches!(first_surf(&dl), SurfNode::Leaf(_)));
+    }
+
+    #[test]
+    fn apply_shortcut_split_surface_targets_selected_leaf() {
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
+        let leaf_id = {
+            let mut ids = Vec::new();
+            surf_leaf_ids(first_surf(&dl), &mut ids);
+            ids[0]
+        };
+        let mut sel = Some(leaf_id);
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::SplitSurfaceVertical, &mut sel, &tc()),
+            ShowOutcome::Mutated
+        ));
+        match first_surf(&dl) {
+            SurfNode::Split { row, .. } => assert!(*row),
+            _ => panic!("expected surface split"),
+        }
+    }
+
+    #[test]
+    fn apply_shortcut_close_surface_clears_selection() {
+        let mut dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
+        let sole = {
+            let mut ids = Vec::new();
+            surf_leaf_ids(first_surf(&dl), &mut ids);
+            ids[0]
+        };
+        // 단일 surface 선택 → close 는 no-op(마지막 1장 가드), 선택 유지.
+        let mut sel = Some(sole);
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::CloseSurface, &mut sel, &tc()),
+            ShowOutcome::None
+        ));
+        assert_eq!(sel, Some(sole));
+
+        // split 후 새 leaf 선택 → close → 형제로 collapse + 선택 해제.
+        dl.split_leaf(sole, true, false, &tc());
+        let ids = {
+            let mut v = Vec::new();
+            surf_leaf_ids(first_surf(&dl), &mut v);
+            v
+        };
+        let new_leaf = ids[1];
+        let mut sel = Some(new_leaf);
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::CloseSurface, &mut sel, &tc()),
+            ShowOutcome::Mutated
+        ));
+        assert_eq!(sel, None);
+    }
+
+    #[test]
+    fn apply_shortcut_new_tab_adds_to_owning_pane() {
+        let mut dl = DemoLayout::from_pane(&single_pane("markdown"), &tc());
+        let leaf_id = {
+            let mut ids = Vec::new();
+            surf_leaf_ids(first_surf(&dl), &mut ids);
+            ids[0]
+        };
+        let mut sel = Some(leaf_id);
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::NewTab, &mut sel, &tc()),
+            ShowOutcome::Mutated
+        ));
+        match &dl.root {
+            Root::Panes(PaneNode::Leaf(p)) => {
+                assert_eq!(p.tabs.len(), 2);
+                assert_eq!(p.active, 1);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn apply_shortcut_close_active_removes_tab_then_falls_back_to_pane() {
+        // 2탭 pane: close_active 는 active 탭 제거. 마지막 남은 탭에서 다시 하면
+        // remove_tab 이 no-op → Workspace 단일 pane 이라 remove_pane 도 no-op(루트 가드).
+        let pane = PresetPane {
+            tabs: vec![
+                PresetTab {
+                    explicit_name: Some("a".into()),
+                    layout: surf("terminal"),
+                },
+                PresetTab {
+                    explicit_name: Some("b".into()),
+                    layout: surf("markdown"),
+                },
+            ],
+            active_tab: 0,
+        };
+        let ws = WorkspacePreset {
+            name: "w".into(),
+            subtitle: String::new(),
+            description: String::new(),
+            layout: PresetPaneNode::Leaf { pane },
+        };
+        let mut dl = DemoLayout::from_workspace(&ws, &tc());
+        // 첫 탭(active=0)의 leaf 선택.
+        let leaf_id = match &dl.root {
+            Root::Panes(PaneNode::Leaf(p)) => {
+                let mut ids = Vec::new();
+                surf_leaf_ids(&p.tabs[0].layout, &mut ids);
+                ids[0]
+            }
+            _ => panic!(),
+        };
+        let mut sel = Some(leaf_id);
+        // active 탭 제거 → 남은 탭 1개.
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::CloseActive, &mut sel, &tc()),
+            ShowOutcome::Mutated
+        ));
+        match &dl.root {
+            Root::Panes(PaneNode::Leaf(p)) => assert_eq!(p.tabs.len(), 1),
+            _ => panic!(),
+        }
+
+        // 남은 leaf 선택 후 close_active → remove_tab no-op → remove_pane 폴백도
+        // 루트 단일 pane 이라 no-op → None.
+        let last_leaf = match &dl.root {
+            Root::Panes(PaneNode::Leaf(p)) => {
+                let mut ids = Vec::new();
+                surf_leaf_ids(&p.tabs[0].layout, &mut ids);
+                ids[0]
+            }
+            _ => panic!(),
+        };
+        let mut sel = Some(last_leaf);
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::CloseActive, &mut sel, &tc()),
+            ShowOutcome::None
+        ));
+    }
+
+    #[test]
+    fn apply_shortcut_close_active_last_tab_falls_back_to_pane_removal() {
+        // 2-pane workspace 에서, 단일 탭 pane 의 leaf 를 close_active 하면
+        // remove_tab no-op → remove_pane 폴백이 성공(형제 pane 존재).
+        let mut dl = DemoLayout::from_workspace(&single_pane_workspace("terminal"), &tc());
+        let sole_pane = {
+            let mut ids = Vec::new();
+            pane_ids(root_pane(&dl), &mut ids);
+            ids[0]
+        };
+        assert!(dl.split_pane(sole_pane, true, &tc()));
+        // 두 번째 pane(단일 탭)의 leaf 선택.
+        let (second_pane, second_leaf) = match root_pane(&dl) {
+            PaneNode::Split { second, .. } => match second.as_ref() {
+                PaneNode::Leaf(p) => {
+                    let mut ids = Vec::new();
+                    surf_leaf_ids(&p.tabs[0].layout, &mut ids);
+                    (p.id, ids[0])
+                }
+                _ => panic!(),
+            },
+            _ => panic!(),
+        };
+        let mut sel = Some(second_leaf);
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::CloseActive, &mut sel, &tc()),
+            ShowOutcome::Mutated
+        ));
+        // pane 이 제거돼 루트가 단일 pane 으로 collapse, 선택도 해제.
+        assert!(matches!(root_pane(&dl), PaneNode::Leaf(_)));
+        assert_eq!(sel, None);
+        assert!(!dl.contains_leaf(second_leaf));
+        let _ = second_pane;
+    }
+
+    #[test]
+    fn apply_shortcut_split_pane_only_in_workspace_scope() {
+        // Workspace scope: split_pane 유효.
+        let mut ws = DemoLayout::from_workspace(&single_pane_workspace("terminal"), &tc());
+        let leaf_id = {
+            let mut ids = Vec::new();
+            surf_leaf_ids(
+                match &ws.root {
+                    Root::Panes(PaneNode::Leaf(p)) => &p.tabs[0].layout,
+                    _ => panic!(),
+                },
+                &mut ids,
+            );
+            ids[0]
+        };
+        let mut sel = Some(leaf_id);
+        assert!(matches!(
+            ws.apply_shortcut(ShortcutAction::SplitPaneVertical, &mut sel, &tc()),
+            ShowOutcome::Mutated
+        ));
+        assert!(matches!(root_pane(&ws), PaneNode::Split { .. }));
+
+        // Pane scope: split_pane 무효(no-op).
+        let mut pane_dl = DemoLayout::from_pane(&single_pane("terminal"), &tc());
+        let pleaf_id = {
+            let mut ids = Vec::new();
+            surf_leaf_ids(first_surf(&pane_dl), &mut ids);
+            ids[0]
+        };
+        let mut sel = Some(pleaf_id);
+        assert!(matches!(
+            pane_dl.apply_shortcut(ShortcutAction::SplitPaneHorizontal, &mut sel, &tc()),
+            ShowOutcome::None
+        ));
+        assert!(matches!(pane_dl.root, Root::Panes(PaneNode::Leaf(_))));
+    }
+
+    #[test]
+    fn apply_shortcut_close_pane_collapses_and_clears_selection() {
+        let mut dl = DemoLayout::from_workspace(&single_pane_workspace("terminal"), &tc());
+        let sole = {
+            let mut ids = Vec::new();
+            pane_ids(root_pane(&dl), &mut ids);
+            ids[0]
+        };
+        assert!(dl.split_pane(sole, false, &tc()));
+        // 두 번째 pane 의 leaf 선택 후 close_pane.
+        let second_leaf = match root_pane(&dl) {
+            PaneNode::Split { second, .. } => match second.as_ref() {
+                PaneNode::Leaf(p) => {
+                    let mut ids = Vec::new();
+                    surf_leaf_ids(&p.tabs[0].layout, &mut ids);
+                    ids[0]
+                }
+                _ => panic!(),
+            },
+            _ => panic!(),
+        };
+        let mut sel = Some(second_leaf);
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::ClosePane, &mut sel, &tc()),
+            ShowOutcome::Mutated
+        ));
+        assert!(matches!(root_pane(&dl), PaneNode::Leaf(_)));
+        assert_eq!(sel, None);
+    }
+
+    #[test]
+    fn apply_shortcut_tab_scope_pane_actions_are_noop() {
+        // Tab scope: pane 없음 → new_tab/split_pane/close_pane/close_active 모두 no-op.
+        let tp = TabPreset {
+            name: "t".into(),
+            tab: PresetTab {
+                explicit_name: None,
+                layout: surf("terminal"),
+            },
+        };
+        let mut dl = DemoLayout::from_tab(&tp, &tc());
+        let leaf_id = match &dl.root {
+            Root::TabFrame(SurfNode::Leaf(l)) => l.id,
+            _ => panic!(),
+        };
+        for action in [
+            ShortcutAction::NewTab,
+            ShortcutAction::CloseActive,
+            ShortcutAction::SplitPaneVertical,
+            ShortcutAction::ClosePane,
+        ] {
+            let mut sel = Some(leaf_id);
+            assert!(
+                matches!(
+                    dl.apply_shortcut(action, &mut sel, &tc()),
+                    ShowOutcome::None
+                ),
+                "expected no-op for {action:?} in Tab scope"
+            );
+        }
+        // surface split 은 Tab scope 에서도 유효.
+        let mut sel = Some(leaf_id);
+        assert!(matches!(
+            dl.apply_shortcut(ShortcutAction::SplitSurfaceVertical, &mut sel, &tc()),
+            ShowOutcome::Mutated
+        ));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use winit::event::WindowEvent;
 
 use tasty_presets::{PresetKind, PresetStore};
+use tasty_settings::KeybindingSettings;
 
 use crate::adapters::ui::preset::demo_layout::KindCatalog;
 use crate::adapters::ui::{LayoutContext, ToastManager, ToastScope};
@@ -30,6 +31,9 @@ pub struct PresetView {
     /// 받는다(부재 시 `None` → 빈 catalog → 정적 fallback). 프레임마다 스냅샷을
     /// 파생해 런타임 등록 kind(플러그인 on/off)를 즉시 반영한다.
     surface_registry: Option<Arc<SurfaceKindRegistry>>,
+    /// 편집 모드 표준 단축키 매칭용 스냅샷. open 시 focused window 설정에서 clone
+    /// (appearance 주입과 동일 전례) — 설정 변경은 창 재오픈 시 반영되는 기존 한계.
+    keybindings: KeybindingSettings,
     active_kind: PresetKind,
     selected_workspace: Option<String>,
     selected_tab: Option<String>,
@@ -48,11 +52,13 @@ impl PresetView {
         winit: Arc<winit::window::Window>,
         store: Arc<Mutex<PresetStore>>,
         surface_registry: Option<Arc<SurfaceKindRegistry>>,
+        keybindings: KeybindingSettings,
     ) -> Self {
         Self {
             base: ViewBase::new(gpu, winit),
             store,
             surface_registry,
+            keybindings,
             active_kind: PresetKind::Workspace,
             selected_workspace: None,
             selected_tab: None,
@@ -150,6 +156,7 @@ impl View for PresetView {
         let editing = &mut self.editing;
         let selected_node = &mut self.selected_node;
         let toasts = &mut self.toasts;
+        let keybindings = &self.keybindings;
 
         let full_output = self.base.gpu.run_egui(raw_input, |ctx| {
             let mut store_guard = match store_arc.lock() {
@@ -170,6 +177,7 @@ impl View for PresetView {
                 selected_node,
                 toasts,
                 &catalog,
+                keybindings,
             );
             drop(store_guard);
 

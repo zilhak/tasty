@@ -11,16 +11,51 @@
 //! duplicate·delete 는 기존 store API 에 직결돼 동작한다.
 
 use tasty_presets::{PresetKind, PresetPaneNode, PresetResult, PresetStore, PresetSurfaceLayout};
+use tasty_settings::KeybindingSettings;
 use tasty_type_appearance::theme::Theme;
 use tasty_ui_widgets::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant};
 
 use crate::adapters::ui::icons;
+use crate::adapters::ui::input::shortcuts::any_binding_pressed_egui;
 use crate::adapters::ui::{ToastKind, ToastManager, ToastScope};
 use crate::i18n::{t, t_fmt};
 
 pub mod demo_layout;
 
-use demo_layout::{DemoLayout, KindCatalog, ShowOutcome};
+use demo_layout::{DemoLayout, KindCatalog, ShortcutAction, ShowOutcome};
+
+/// 편집 모드 프레임에서 `KeybindingSettings` 바인딩과 이번 프레임 입력을 매칭해
+/// 대응하는 [`ShortcutAction`] 을 하나 고른다. 하드코딩 키 문자열 없이 전부
+/// 설정 필드로 판정한다(§단축키). 여러 필드가 같은 키를 공유해도 이 순서로 첫
+/// 매칭이 이긴다 — surface → tab → pane 순.
+///
+/// double-tap 바인딩(`shift+shift` 등)은 `parse_binding` 이 거부하므로 여기서도
+/// 매칭되지 않는다(편집기 미지원 — docs 명시).
+fn match_preset_shortcut(
+    kb: &KeybindingSettings,
+    input: &egui::InputState,
+) -> Option<ShortcutAction> {
+    let pressed = |b: &[String]| any_binding_pressed_egui(b, input);
+    if pressed(&kb.split_surface_vertical) {
+        Some(ShortcutAction::SplitSurfaceVertical)
+    } else if pressed(&kb.split_surface_horizontal) {
+        Some(ShortcutAction::SplitSurfaceHorizontal)
+    } else if pressed(&kb.close_surface) {
+        Some(ShortcutAction::CloseSurface)
+    } else if pressed(&kb.new_tab) {
+        Some(ShortcutAction::NewTab)
+    } else if pressed(&kb.close_active) {
+        Some(ShortcutAction::CloseActive)
+    } else if pressed(&kb.split_pane_vertical) {
+        Some(ShortcutAction::SplitPaneVertical)
+    } else if pressed(&kb.split_pane_horizontal) {
+        Some(ShortcutAction::SplitPaneHorizontal)
+    } else if pressed(&kb.close_pane) {
+        Some(ShortcutAction::ClosePane)
+    } else {
+        None
+    }
+}
 
 // 디자인 고정 px (Theme 에 대응 토큰 없는 preset-window 셸 전용 치수 — specimen 전사).
 /// 좌측 리스트 폭.
@@ -398,6 +433,7 @@ fn draw_preview(
     selected_node: &mut Option<usize>,
     toasts: &mut ToastManager,
     catalog: &KindCatalog,
+    kb: &KeybindingSettings,
 ) {
     ui.painter_at(rect)
         .rect_filled(rect, 0.0, theme.bg_app().to_egui());
@@ -419,20 +455,37 @@ fn draw_preview(
     };
 
     if editing {
-        match layout.show_edit(ui, theme, canvas, selected_node, catalog) {
-            ShowOutcome::None => {}
-            ShowOutcome::Repaint => ui.ctx().request_repaint(),
-            ShowOutcome::Mutated => {
-                ui.ctx().request_repaint();
-                if let Err(e) = persist_layout(store, kind, name, &layout) {
-                    tracing::warn!("preset auto-save failed: {e}");
-                    toasts.push(
-                        t("preset.toast.save_failed"),
-                        ToastKind::Error,
-                        ToastScope::Window,
-                    );
-                }
+        // 표준 단축키 → focus(선택 leaf) 기준 mutation. TextEdit(이름/subtitle/cwd/
+        // startup) 포커스 중에는 문자 키가 입력으로 가야 하므로 매칭을 차단한다
+        // (any_binding_pressed_egui 는 키를 소비하지 않아 가드가 없으면 이중 처리됨).
+        let key_outcome = if ui.ctx().wants_keyboard_input() {
+            ShowOutcome::None
+        } else {
+            match ui.input(|i| match_preset_shortcut(kb, i)) {
+                Some(action) => layout.apply_shortcut(action, selected_node, catalog),
+                None => ShowOutcome::None,
             }
+        };
+        let draw_outcome = layout.show_edit(ui, theme, canvas, selected_node, catalog);
+
+        // 단축키·마우스 어느 쪽이든 변형이면 한 번만 write-through(auto-save).
+        let mutated = matches!(key_outcome, ShowOutcome::Mutated)
+            || matches!(draw_outcome, ShowOutcome::Mutated);
+        let repaint = mutated
+            || matches!(key_outcome, ShowOutcome::Repaint)
+            || matches!(draw_outcome, ShowOutcome::Repaint);
+        if repaint {
+            ui.ctx().request_repaint();
+        }
+        if mutated
+            && let Err(e) = persist_layout(store, kind, name, &layout)
+        {
+            tracing::warn!("preset auto-save failed: {e}");
+            toasts.push(
+                t("preset.toast.save_failed"),
+                ToastKind::Error,
+                ToastScope::Window,
+            );
         }
     } else {
         let changed = layout.show(ui, theme, canvas, catalog);
@@ -458,6 +511,7 @@ pub fn draw_preset_panel(
     selected_node: &mut Option<usize>,
     toasts: &mut ToastManager,
     catalog: &KindCatalog,
+    kb: &KeybindingSettings,
 ) {
     let theme = crate::theme::theme();
     let rename_id = egui::Id::new("preset_rename_state");
@@ -864,6 +918,7 @@ pub fn draw_preset_panel(
                 selected_node,
                 toasts,
                 catalog,
+                kb,
             ),
             None => {
                 ui.painter_at(preview_rect).rect_filled(

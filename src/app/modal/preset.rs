@@ -40,6 +40,12 @@ impl App {
             .focused_window()
             .map(|w| w.core_state.settings.appearance.clone())
             .unwrap_or_else(|| crate::settings::Settings::load().appearance);
+        // 편집 모드 표준 단축키 스냅샷 — appearance 와 동일하게 focused window
+        // 설정에서 clone(부재 시 디스크 로드). 설정 변경은 창 재오픈 시 반영.
+        let keybindings = self
+            .focused_window()
+            .map(|w| w.core_state.settings.keybindings.clone())
+            .unwrap_or_else(|| crate::settings::Settings::load().keybindings);
         let gpu = match self.create_gpu_state(window.clone(), &appearance) {
             Ok(g) => g,
             Err(e) => {
@@ -53,7 +59,7 @@ impl App {
         // 빈 catalog → 정적 fallback). 모든 main window 가 같은 Arc 를 공유한다.
         let registry = self.any_main_engine().map(|e| e.surface_registry.clone());
         let window_id = window.id();
-        let mut preset = view::PresetView::new(gpu, window, store, registry);
+        let mut preset = view::PresetView::new(gpu, window, store, registry, keybindings);
         #[cfg(windows)]
         {
             use crate::view::ui::View as _;
