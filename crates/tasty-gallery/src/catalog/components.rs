@@ -25,6 +25,7 @@ pub mod html_chrome;
 pub mod image_viewer;
 pub mod markdown_open;
 pub mod markdown_viewer;
+pub mod modifier_hint;
 pub mod md_large_file;
 pub mod plugin_settings;
 pub mod port_scanner;

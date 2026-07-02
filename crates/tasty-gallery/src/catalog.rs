@@ -740,6 +740,18 @@ pub fn pages() -> Vec<Page> {
                     ],
                 ),
                 section(
+                    "modhint",
+                    "Modifier hints",
+                    vec![spec(
+                        "modhint",
+                        "Held-modifier shortcut panel",
+                        Some(
+                            "220×400 · hold 500ms → fade in · focus-less, mouse-interactive · release vanishes",
+                        ),
+                        components::modifier_hint::draw,
+                    )],
+                ),
+                section(
                     "approval",
                     "Agent approval",
                     vec![spec(
