@@ -13,7 +13,7 @@ Rust:  ThemeColors(평면 primitive) ─▶ Theme(펼친 필드 + 도출 overlay
 ```
 
 - **색 저장은 평면 primitive.** `ThemeColors`(`crates/tasty-type-appearance/src/theme.rs`)는 catppuccin 평면 primitive(neutral ramp 12 + accent hue 13 + 터미널 색 4 + ansi 16 + `surface_themes` map)만 저장한다.
-- **tier 는 `&Theme` 접근자로 노출된다**: semantic 색은 수기 접근자(`accent_primary()` 등), component tier(치수+색)는 생성 접근자(`generated_component.rs` — `button_primary_bg()`/`button_height_lg()` 등, [theme.md](theme.md) "Component tier 접근자"). 즉 저장은 평면이나 소비는 tier 를 경유한다.
+- **tier 는 `&Theme` 접근자로 노출된다**: semantic 색 중 단순 primitive alias(`accent_primary()`/`surface_raised()`/`border_default()` 등)는 **생성 접근자**(`semantic_color_generated.rs` — DTCG semantic 색 토큰에서 생성), is_light 분기·도출 overlay·합성·리터럴은 수기(`text_on_accent()`/`overlay_hover()`/`scrim()` 등). component tier(치수+색)는 생성 접근자(`generated_component.rs` — `button_primary_bg()`/`button_height_lg()` 등, [theme.md](theme.md) "Component tier 접근자"). 즉 저장은 평면이나 소비는 tier 를 경유한다.
 - 아직 접근자로 못 옮긴 **primitive 직접 참조**(`th.<field>`)에서는 *"이 primitive 가 지금 어떤 의미(role)로 쓰이나"* 를 코드 호출처가 들고 있다 — 같은 필드가 여러 role 로 갈린다(아래 핫스팟).
 - 반투명 의미색(`hover_overlay`/`active_overlay`/`separator`)만 `is_light` 에서 **도출**된다(`derive_overlays`), primitive 가 아니다.
 

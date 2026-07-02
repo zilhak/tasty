@@ -1214,67 +1214,20 @@ impl Theme {
 }
 
 // ============================================================================
-//  Semantic 접근자 (additive) — A1 token-crosswalk 의 의미 라벨 기준
+//  Semantic 접근자 — A1 token-crosswalk 의 의미 라벨 기준
 // ============================================================================
 //
-// 현재 `Theme` 은 평면 primitive 필드만 노출하고, 의미(accent-primary 등) 매핑을
-// UI 호출처가 암묵적으로 들고 있다. 아래 접근자는 그 암묵 매핑을 **이름 있는
-// semantic 표면**으로 끌어올린다. primitive 필드를 대체하지 않는 additive 레이어 —
-// 기존 `theme().blue` 직접 접근은 그대로 유효하며, 호출처 이식이 끝날 때까지 공존한다.
+// `Theme` 은 평면 primitive 필드를 노출하고, 의미(accent-primary 등) 매핑을 semantic
+// 접근자로 끌어올린다. bg-*/surface-*/text-*(placeholder 까지)/accent-*/border-* 의
+// **단순 primitive 필드 alias** 접근자는 `semantic_color_generated.rs` 로 이관됐다
+// (DTCG semantic 색 토큰에서 생성 — SSoT 는 디자인 파일). 아래 `impl Theme` 에는
+// codegen 불가라 수기로 남는 접근자만 둔다: is_light 분기(text-on-accent), derive_overlays
+// 도출(overlay-*), 합성색(scrim), OS/brand 리터럴, component tier 조합(titlebar/banner) 등.
 //
-// 매핑 근거: `docs/design/systems/token-crosswalk.md` (semantic 96 ↔ primitive ↔ 필드).
+// 매핑 근거: `docs/design/systems/token-crosswalk.md` (semantic ↔ primitive ↔ 필드).
 // 같은 primitive 가 여러 role 로 갈리는 다의성(crosswalk §4)은 호출처가 어느 접근자를
 // 쓰는지로 표현된다 (예: blue → `accent_primary` / `border_focus` / ansi-blue).
 impl Theme {
-    // ── 배경 (bg-*) ──
-    #[inline]
-    pub fn bg_app(&self) -> HexColor {
-        self.crust
-    }
-    #[inline]
-    pub fn bg_sidebar(&self) -> HexColor {
-        self.mantle
-    }
-    #[inline]
-    pub fn bg_panel(&self) -> HexColor {
-        self.base
-    }
-
-    // ── 표면 (surface-*) ──
-    #[inline]
-    pub fn surface_raised(&self) -> HexColor {
-        self.surface0
-    }
-    #[inline]
-    pub fn surface_hover(&self) -> HexColor {
-        self.surface1
-    }
-    #[inline]
-    pub fn surface_active(&self) -> HexColor {
-        self.surface2
-    }
-
-    // ── 텍스트 (text-*) ──
-    #[inline]
-    pub fn text_primary(&self) -> HexColor {
-        self.text
-    }
-    #[inline]
-    pub fn text_secondary(&self) -> HexColor {
-        self.subtext1
-    }
-    #[inline]
-    pub fn text_muted(&self) -> HexColor {
-        self.subtext0
-    }
-    #[inline]
-    pub fn text_disabled(&self) -> HexColor {
-        self.overlay1
-    }
-    #[inline]
-    pub fn text_placeholder(&self) -> HexColor {
-        self.placeholder
-    }
     /// accent 위 텍스트색 (DTCG `text-on-accent`). 테마별 role-remap: Mocha(dark)
     /// 는 neutral-0(=`crust`), Latte(light)는 절대색 white. vivid accent 위 대비
     /// (4.5:1) 를 양 테마에서 충족시키기 위한 분기 — `is_light` 로 식별.
@@ -1285,54 +1238,6 @@ impl Theme {
         } else {
             self.crust
         }
-    }
-
-    // ── accent (의미색) ──
-    #[inline]
-    pub fn accent_primary(&self) -> HexColor {
-        self.blue
-    }
-    /// **잠정 매핑** — DTCG `accent-info` → `color-sky`. 현재 실 UI 직접 사용처가
-    /// 없다(crosswalk §3.3 "확인 필요"). 매핑 자체는 sky 로 확정.
-    #[inline]
-    pub fn accent_info(&self) -> HexColor {
-        self.sky
-    }
-    #[inline]
-    pub fn accent_success(&self) -> HexColor {
-        self.green
-    }
-    #[inline]
-    pub fn accent_warning(&self) -> HexColor {
-        self.yellow
-    }
-    #[inline]
-    pub fn accent_danger(&self) -> HexColor {
-        self.red
-    }
-    #[inline]
-    pub fn accent_agent(&self) -> HexColor {
-        self.mauve
-    }
-
-    // ── 보더 (border-*) ──
-    #[inline]
-    pub fn border_default(&self) -> HexColor {
-        self.surface0
-    }
-    #[inline]
-    pub fn border_strong(&self) -> HexColor {
-        self.surface1
-    }
-    #[inline]
-    pub fn border_focus(&self) -> HexColor {
-        self.blue
-    }
-    /// attached(다른 client 가 점유한) workspace 의 표시 outline/ring 색.
-    /// 디자인 2026-06-15 CollapsedSidebar: lavender outline (error red 와 분리).
-    #[inline]
-    pub fn border_attached(&self) -> HexColor {
-        self.lavender
     }
 
     // ── 오버레이 (overlay-*) — is_light 에서 도출된 필드를 semantic 이름으로 ──
