@@ -133,7 +133,11 @@ pub fn draw(ctx: &egui::Context, state: &mut GalleryState) {
 
     // ── 우측: main 문서 본문 ──
     egui::CentralPanel::default()
-        .frame(egui::Frame::new().fill(main_bg).inner_margin(0))
+        .frame(
+            egui::Frame::new()
+                .fill(main_bg)
+                .inner_margin(egui::Margin::ZERO),
+        )
         .show(ctx, |ui| main_ui(ui, state));
 }
 

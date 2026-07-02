@@ -19,6 +19,7 @@
 //! 한 frame area 안에 우측 하단 앵커로 그려 *상대 위치* 만 시각화한다.
 
 use tasty_type_appearance::theme::Theme;
+use tasty_ui_widgets::vspace;
 
 use crate::catalog::toast_card::{
     self, ACCENT_BAR_WIDTH, PADDING_X, PADDING_Y, ToastKind, accent_color,
@@ -173,7 +174,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         .small()
         .color(egui::Color32::from(theme.subtext0)),
     );
-    ui.add_space(4.0);
+    vspace(ui, theme.spacing_xs);
     ui.label(
         egui::RichText::new(
             "Wrapper: src/adapters/ui/toast.rs::ToastManager::draw (상태 관리 + view 호출)",
@@ -181,7 +182,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
         .small()
         .color(egui::Color32::from(theme.subtext0)),
     );
-    ui.add_space(12.0);
+    vspace(ui, theme.spacing_md);
 
     egui::ScrollArea::vertical()
         .id_salt("toast_demo_scroll")
@@ -204,7 +205,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     alpha: 1.0,
                 }],
             );
-            ui.add_space(16.0);
+            vspace(ui, theme.spacing_lg);
 
             // Case 2 — Success
             ui.label(
@@ -224,7 +225,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     alpha: 1.0,
                 }],
             );
-            ui.add_space(16.0);
+            vspace(ui, theme.spacing_lg);
 
             // Case 3 — Warning
             ui.label(
@@ -244,7 +245,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     alpha: 1.0,
                 }],
             );
-            ui.add_space(16.0);
+            vspace(ui, theme.spacing_lg);
 
             // Case 4 — Error
             ui.label(
@@ -264,7 +265,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     alpha: 1.0,
                 }],
             );
-            ui.add_space(16.0);
+            vspace(ui, theme.spacing_lg);
 
             // Case 5 — Long body (wrap)
             ui.label(
@@ -289,7 +290,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                     alpha: 1.0,
                 }],
             );
-            ui.add_space(16.0);
+            vspace(ui, theme.spacing_lg);
 
             // Case 6 — 스택 4 개 (fade 그라데이션)
             ui.label(
@@ -330,7 +331,7 @@ pub fn draw(ui: &mut egui::Ui, theme: &Theme) {
                 ],
             );
 
-            ui.add_space(12.0);
+            vspace(ui, theme.spacing_md);
             ui.label(
                 egui::RichText::new(
                     "⚠ 본체는 Tooltip 레이어에 그려 모든 UI 위에 표시. lifetime (2s) + \

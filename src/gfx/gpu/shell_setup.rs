@@ -1,6 +1,7 @@
 use winit::window::Window;
 
 use crate::i18n::t;
+use tasty_ui_widgets::vspace;
 
 use super::{GpuState, ShellSetupAction};
 
@@ -89,9 +90,9 @@ impl GpuState {
                         );
                     });
 
-                    ui.add_space(16.0);
+                    vspace(ui, th.spacing_lg);
                     ui.separator();
-                    ui.add_space(12.0);
+                    vspace(ui, th.spacing_md);
 
                     // ── Warning ────────────────────────────────────
                     egui::Frame::new()
@@ -110,7 +111,7 @@ impl GpuState {
                             );
                         });
 
-                    ui.add_space(16.0);
+                    vspace(ui, th.spacing_lg);
 
                     // ── Input ──────────────────────────────────────
                     ui.label(
@@ -118,7 +119,7 @@ impl GpuState {
                             .size(12.0)
                             .color(text_dim),
                     );
-                    ui.add_space(4.0);
+                    vspace(ui, th.spacing_xs);
 
                     let response = ui.add_sized(
                         [ui.available_width(), 32.0],
@@ -131,7 +132,7 @@ impl GpuState {
                     );
 
                     // ── Error / success hint ──────────────────────
-                    ui.add_space(4.0);
+                    vspace(ui, th.spacing_xs);
                     if show_error {
                         ui.label(
                             egui::RichText::new(t("settings.general.shell_invalid_path"))
@@ -148,7 +149,7 @@ impl GpuState {
                         ui.add_space(14.0); // reserve space
                     }
 
-                    ui.add_space(16.0);
+                    vspace(ui, th.spacing_lg);
 
                     // ── Buttons ────────────────────────────────────
                     ui.vertical_centered(|ui| {
