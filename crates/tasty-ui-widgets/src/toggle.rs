@@ -6,13 +6,8 @@
 
 use tasty_type_appearance::theme::Theme;
 
-const BOX: f32 = 16.0;
+/// 체크마크 글리프 영역(box 내부). 대응 checkbox component 토큰 없음 → Rust-only.
 const CHECK_GLYPH: f32 = 12.0;
-// Switch track 28×16 (token-policy: on-grid; 이전 32×18 은 off-grid 18 포함).
-const SWITCH_W: f32 = 28.0;
-const SWITCH_H: f32 = 16.0;
-const SWITCH_THUMB: f32 = 12.0;
-const SWITCH_INSET: f32 = 2.0;
 
 /// Checkbox — 16px 박스 + 라벨. 클릭 시 토글.
 pub fn checkbox(
@@ -22,18 +17,20 @@ pub fn checkbox(
     label: &str,
     enabled: bool,
 ) -> egui::Response {
+    // gap(라벨)·body 는 대응 checkbox component 토큰 없음 → semantic.
     let gap = theme.spacing_sm.value();
     let body = theme.font_size_body.value();
-    let radius = theme.corner_radius_sm.value();
+    let radius = theme.checkbox_radius().value();
     let bw = theme.border_width.value();
+    let box_sz = theme.checkbox_size().value();
 
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::FontId::proportional(body),
         egui::Color32::PLACEHOLDER,
     );
-    let h = BOX.max(galley.rect.height());
-    let w = BOX + gap + galley.rect.width();
+    let h = box_sz.max(galley.rect.height());
+    let w = box_sz + gap + galley.rect.width();
     let sense = if enabled {
         egui::Sense::click()
     } else {
@@ -53,18 +50,20 @@ pub fn checkbox(
         }
     };
     let box_rect = egui::Rect::from_min_size(
-        egui::pos2(rect.left(), rect.center().y - BOX * 0.5),
-        egui::vec2(BOX, BOX),
+        egui::pos2(rect.left(), rect.center().y - box_sz * 0.5),
+        egui::vec2(box_sz, box_sz),
     );
+    // checked 는 accent 채움(checkbox-bg-checked)이 fill=border 를 겸한다(별도
+    // checkbox-border-checked 토큰 없음). unchecked 는 checkbox-bg/-border.
     let (fill, border) = if *checked {
         (
-            theme.accent_primary().to_egui(),
-            theme.accent_primary().to_egui(),
+            theme.checkbox_bg_checked().to_egui(),
+            theme.checkbox_bg_checked().to_egui(),
         )
     } else {
         (
-            theme.surface_raised().to_egui(),
-            theme.border_strong().to_egui(),
+            theme.checkbox_bg().to_egui(),
+            theme.checkbox_border().to_egui(),
         )
     };
     ui.painter().rect(
@@ -78,14 +77,14 @@ pub fn checkbox(
         // 체크마크 — box 중앙 12px 영역에 꺾은선 2 segment.
         let o = box_rect.center() - egui::vec2(CHECK_GLYPH, CHECK_GLYPH) * 0.5;
         let p = |fx: f32, fy: f32| o + egui::vec2(CHECK_GLYPH * fx, CHECK_GLYPH * fy);
-        let stroke = egui::Stroke::new(2.0, dim(theme.text_on_accent().to_egui()));
+        let stroke = egui::Stroke::new(2.0, dim(theme.checkbox_check_fg().to_egui()));
         ui.painter()
             .line_segment([p(0.22, 0.55), p(0.42, 0.74)], stroke);
         ui.painter()
             .line_segment([p(0.42, 0.74), p(0.80, 0.30)], stroke);
     }
     let label_pos = egui::pos2(
-        rect.left() + BOX + gap,
+        rect.left() + box_sz + gap,
         rect.center().y - galley.rect.height() * 0.5,
     );
     ui.painter()
@@ -101,9 +100,14 @@ pub fn switch(
     label: Option<&str>,
     enabled: bool,
 ) -> egui::Response {
+    // gap(라벨)·body 는 대응 switch component 토큰 없음 → semantic.
     let gap = theme.spacing_sm.value();
     let body = theme.font_size_body.value();
     let bw = theme.border_width.value();
+    let track_w = theme.switch_track_width().value();
+    let track_h = theme.switch_track_height().value();
+    let thumb_sz = theme.switch_thumb_size().value();
+    let thumb_inset = theme.switch_thumb_inset().value();
 
     let galley = label.map(|l| {
         ui.painter().layout_no_wrap(
@@ -113,13 +117,13 @@ pub fn switch(
         )
     });
     let label_w = galley.as_ref().map(|g| gap + g.rect.width()).unwrap_or(0.0);
-    let h = SWITCH_H.max(galley.as_ref().map(|g| g.rect.height()).unwrap_or(0.0));
+    let h = track_h.max(galley.as_ref().map(|g| g.rect.height()).unwrap_or(0.0));
     let sense = if enabled {
         egui::Sense::click()
     } else {
         egui::Sense::hover()
     };
-    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(SWITCH_W + label_w, h), sense);
+    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(track_w + label_w, h), sense);
     if resp.clicked() {
         *checked = !*checked;
         resp.mark_changed();
@@ -133,40 +137,44 @@ pub fn switch(
         }
     };
     let track = egui::Rect::from_min_size(
-        egui::pos2(rect.left(), rect.center().y - SWITCH_H * 0.5),
-        egui::vec2(SWITCH_W, SWITCH_H),
+        egui::pos2(rect.left(), rect.center().y - track_h * 0.5),
+        egui::vec2(track_w, track_h),
     );
+    // checked on-track 은 switch-track-bg-on 이 fill=border 겸함. unchecked 는
+    // switch-track-bg + border-default(switch track-border 토큰 없음 → semantic).
     let (track_fill, track_border) = if *checked {
         (
-            theme.accent_primary().to_egui(),
-            theme.accent_primary().to_egui(),
+            theme.switch_track_bg_on().to_egui(),
+            theme.switch_track_bg_on().to_egui(),
         )
     } else {
         (
-            theme.surface_active().to_egui(),
+            theme.switch_track_bg().to_egui(),
             theme.border_default().to_egui(),
         )
     };
+    // 트랙 radius = pill(height/2 idiom). switch-radius 는 sentinel 9999 라 구현
+    // 관습을 유지(값 불일치 → 이식 제외).
     ui.painter().rect(
         track,
-        SWITCH_H * 0.5,
+        track_h * 0.5,
         dim(track_fill),
         egui::Stroke::new(bw, dim(track_border)),
         egui::StrokeKind::Inside,
     );
     let thumb_x = if *checked {
-        track.right() - SWITCH_INSET - SWITCH_THUMB * 0.5
+        track.right() - thumb_inset - thumb_sz * 0.5
     } else {
-        track.left() + SWITCH_INSET + SWITCH_THUMB * 0.5
+        track.left() + thumb_inset + thumb_sz * 0.5
     };
     let thumb_color = if *checked {
-        theme.text_on_accent().to_egui()
+        theme.switch_thumb_bg_on().to_egui()
     } else {
-        theme.subtext0.to_egui()
+        theme.switch_thumb_bg().to_egui()
     };
     ui.painter().circle_filled(
         egui::pos2(thumb_x, track.center().y),
-        SWITCH_THUMB * 0.5,
+        thumb_sz * 0.5,
         dim(thumb_color),
     );
 
