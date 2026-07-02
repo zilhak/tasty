@@ -117,7 +117,7 @@ pub fn draw_approval_view(
     props: &mut ApprovalProps<'_>,
 ) -> ApprovalViewAction {
     let sev_color = match props.severity {
-        Severity::Info => theme.subtext0.to_egui(),
+        Severity::Info => theme.text_muted().to_egui(),
         Severity::Warn => theme.accent_warning().to_egui(),
         Severity::Danger => theme.accent_danger().to_egui(),
     };
@@ -130,7 +130,7 @@ pub fn draw_approval_view(
         ui.label(
             egui::RichText::new(format!("· {}", props.id))
                 .size(11.0)
-                .color(theme.subtext0.to_egui()),
+                .color(theme.text_muted().to_egui()),
         );
     });
     // 6→8 스냅 (그리드 정합 — 헤더 블록/본문 섹션 간격).
@@ -139,7 +139,7 @@ pub fn draw_approval_view(
     if let Some(body) = &props.body {
         ui.label(
             egui::RichText::new(body)
-                .color(theme.text.to_egui())
+                .color(theme.text_primary().to_egui())
                 .size(BODY_FONT_SIZE),
         );
         vspace(ui, theme.spacing_sm);
@@ -148,7 +148,7 @@ pub fn draw_approval_view(
     ui.label(
         egui::RichText::new(&props.comment_label)
             .size(11.0)
-            .color(theme.subtext0.to_egui()),
+            .color(theme.text_muted().to_egui()),
     );
     ui.add(
         egui::TextEdit::singleline(props.comment_buffer)
