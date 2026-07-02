@@ -29,7 +29,6 @@ pub fn draw_egui_panels(
     let mut infos = Vec::new();
     {
         let ws = state.active_workspace(engine);
-        let focused_pane_id = ws.focused_pane;
         let tab_bar_h = state.tab_bar_height;
         for &(pane_id, pane_rect) in pane_rects {
             let pane = match ws.pane_layout().find_pane(pane_id) {
@@ -42,7 +41,6 @@ pub fn draw_egui_panels(
             };
 
             // Collect non-GPU-rendered surfaces from this tab.
-            let focused_surface_in_tab = tab.focused_surface;
             let content_rect = PhysicalRect {
                 x: pane_rect.x,
                 y: pane_rect.y + tab_bar_h,
