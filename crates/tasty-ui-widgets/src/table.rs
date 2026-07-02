@@ -180,7 +180,9 @@ impl<'a, K> Table<'a, K> {
     where
         K: Copy + PartialEq,
     {
-        let body_f = theme.font_size_body.value();
+        // table-font-size(=body) 를 기본 헤더/행 높이 산출의 기준 폰트로 쓴다.
+        // (header/row 높이 자체는 대응 component 토큰 없어 body+오프셋 유지.)
+        let body_f = theme.table_font_size().value();
         let header_h = self.header_height.unwrap_or(body_f + 10.0);
         let row_h = self.row_height.unwrap_or(body_f + 14.0);
 
@@ -326,11 +328,12 @@ fn header_cell<K: Copy + PartialEq>(
     };
     let rich = egui::RichText::new(text)
         .color(if is_active {
+            // active 정렬 컬럼 강조색 — 대응 component 토큰 없어 semantic(text) 유지.
             egui::Color32::from(theme.text)
         } else {
-            egui::Color32::from(theme.subtext0)
+            egui::Color32::from(theme.table_header_fg())
         })
-        .size(theme.font_size_caption.value())
+        .size(theme.table_header_font_size().value())
         .strong();
 
     let clickable = col.sort_id.is_some();
