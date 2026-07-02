@@ -241,7 +241,7 @@ thread-local mock. `crates/tasty-gallery/src/catalog/widgets/<name>.rs`.
 | `SettingsWindow`(container, 824×472) | `draw` | 모달 고정폭 `MODAL_W/H` |
 | L1 top tabs (underline) | `draw_top_tabs` → `horizontal_tab_bar_with_arrows` | `gallery-alignment §3`: underline fork 금지, scroll-arrows 공유 위젯 유지 (underline = 스킨) |
 | L2 sidebar(필터+리스트, 200) | `draw_split` → `two_depth_layout_filtered` | 필터 Input + sub-section 리스트. 패널 폭은 공유 위젯값(`tab_width` 150) — 디자인 settings sidebar 200 과 차이는 공유 위젯 fork 회피로 미적용 |
-| `Row`(label-150 + 컨트롤) | `form_row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`) |
+| `Row`(label-150 + 컨트롤) | `form_row` | gap 16(space-lg)·min-h 32(`--tasty-settings-row-min-height`). `hint` 있는 행은 라벨 뒤 `HelpHint`(placement Bottom, gap space-xs) 인라인 — 아래 `Note` 설명줄과 중복 금지. 본체 적용: `tabs/performance.rs`(2행) · `tabs/appearance.rs::label_with_tooltip`(4곳) |
 | `Mono`(섹션 헤딩) | `section_heading` | micro(10)·uppercase·text-muted |
 | `Note` | `note` | `measure-md`(400) 폭·text-muted |
 | 색 스와치(16, radius 2) | `swatch` | `swatch-size`16·`corner_radius_sm`2·`border_strong` 보더 |

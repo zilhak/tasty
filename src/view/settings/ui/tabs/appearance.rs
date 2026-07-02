@@ -10,7 +10,7 @@ use tasty_type_appearance::theme::{
     FALLBACK_SURFACE, PartialColors, PartialSurfaceTheme, SurfaceTheme, Theme, ThemeColors,
 };
 use tasty_type_geometry::length::LogicalPx;
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{HelpHint, TooltipPlacement, vspace};
 
 /// Plugin sub-tab 식별: `(plugin_id, page_id)` 복합키로 일치하는 entry 를 찾는다.
 ///
@@ -28,15 +28,16 @@ pub(super) fn find_plugin_settings_entry<'a>(
         .find(|e| e.plugin_id == plugin_id && e.page.id == page_id)
 }
 
-/// Draw a label followed by a (?) icon with tooltip. For use inside Grid rows.
+/// Draw a label followed by a HelpHint (?) glyph with tooltip. For use inside Grid rows.
 fn label_with_tooltip(ui: &mut egui::Ui, label: &str, tooltip: &str) {
     let th = crate::theme::theme();
-    let text = egui::RichText::new(format!("{}  (?)", label));
-    let response = ui.add(egui::Label::new(text).sense(egui::Sense::hover()));
-    // Show tooltip only when hovering over the (?) portion
-    if response.hovered() {
-        response.show_tooltip_text(egui::RichText::new(tooltip).color(th.text_primary()));
-    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = th.spacing_xs.value();
+        ui.label(label);
+        HelpHint::new(tooltip)
+            .placement(TooltipPlacement::Bottom)
+            .show(ui, &th);
+    });
 }
 
 /// Appearance 탭 콘텐츠. L2 사이드바(고정 6 섹션 + Appearance plugin page 합성·
