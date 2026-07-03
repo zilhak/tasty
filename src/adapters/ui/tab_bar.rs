@@ -821,7 +821,8 @@ pub fn draw_pane_tab_bars(
     // 사용자 키 입력만 반영 → IPC/CLI/에이전트로는 강제 표시될 수 없다(순수 미리보기).
     let switch_overlay_pane = state.switch_overlay().and_then(|o| match o.target {
         crate::adapters::ui::switch_overlay::SwitchTarget::Tab => o.pane_id,
-        crate::adapters::ui::switch_overlay::SwitchTarget::Workspace => None,
+        crate::adapters::ui::switch_overlay::SwitchTarget::Workspace
+        | crate::adapters::ui::switch_overlay::SwitchTarget::Category => None,
     });
 
     let props = PaneTabBarsProps {

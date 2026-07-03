@@ -130,6 +130,11 @@ pub struct KeybindingSettings {
     /// dispatch 시점에 `workspace_switch_modifier` 와 조합된다. 기본값 `["1".."9"]`.
     #[serde(default = "default_workspace_slot_keys")]
     pub workspace_switch_slot_keys: [String; 9],
+    /// 카테고리 quick-switch 슬롯 1~10번의 raw 키(1~9 후 0 = 10번째). dispatch 시점에
+    /// `workspace_switch_modifier` + Shift 와 조합된다(`Alt+Shift`, T4WS ②⑤). folders 기능
+    /// on 일 때만 유효. 기본값 `["1".."9","0"]`.
+    #[serde(default = "default_category_slot_keys")]
+    pub category_switch_slot_keys: [String; 10],
     /// 탭 quick-switch "다음 탭" raw 키. 기본값 `"l"`(vim). `next_tab` 과 별개 필드.
     #[serde(default = "default_tab_next_key")]
     pub tab_switch_next_key: String,
@@ -156,6 +161,11 @@ fn default_tab_slot_keys() -> [String; 10] {
 /// 워크스페이스 quick-switch 슬롯 raw 키 기본값 `["1".."9"]`(0번 슬롯 없음).
 fn default_workspace_slot_keys() -> [String; 9] {
     ["1", "2", "3", "4", "5", "6", "7", "8", "9"].map(String::from)
+}
+
+/// 카테고리 quick-switch 슬롯 raw 키 기본값 `["1".."9","0"]`(1~9 후 0 = 10번째).
+fn default_category_slot_keys() -> [String; 10] {
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map(String::from)
 }
 
 /// 탭 quick-switch "다음 탭" 기본 키 `"l"`(vim).

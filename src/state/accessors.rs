@@ -123,16 +123,21 @@ impl AppState {
         use crate::adapters::ui::switch_overlay::{
             SwitchOverlayState, SwitchTarget, switch_target_for,
         };
-        let next = switch_target_for(kb, ctrl, shift, alt).map(|target| {
-            let pane_id = match target {
-                // parked 상태(워크스페이스 0개)에서는 focused pane 이 없으므로 None.
-                SwitchTarget::Tab if !engine.workspaces.is_empty() => {
-                    Some(self.focused_pane_id(engine))
-                }
-                _ => None,
-            };
-            SwitchOverlayState { target, pane_id }
-        });
+        let next = switch_target_for(kb, ctrl, shift, alt)
+            // folders 기능 off 면 Category(Alt+Shift) 는 대상 없음 — 스냅샷·리드로 안 함.
+            .filter(|t| {
+                *t != SwitchTarget::Category || engine.settings.general.workspace_categories_enabled
+            })
+            .map(|target| {
+                let pane_id = match target {
+                    // parked 상태(워크스페이스 0개)에서는 focused pane 이 없으므로 None.
+                    SwitchTarget::Tab if !engine.workspaces.is_empty() => {
+                        Some(self.focused_pane_id(engine))
+                    }
+                    _ => None,
+                };
+                SwitchOverlayState { target, pane_id }
+            });
         let changed = next != self.switch_overlay;
         self.switch_overlay = next;
         changed

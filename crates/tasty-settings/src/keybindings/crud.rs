@@ -500,6 +500,22 @@ impl KeybindingSettings {
         }
     }
 
+    /// 카테고리 quick-switch 슬롯 `idx`(0~9)의 raw 키. 범위 밖이면 None.
+    pub fn category_slot_key(&self, idx: usize) -> Option<&str> {
+        self.category_switch_slot_keys.get(idx).map(|s| s.as_str())
+    }
+
+    /// 카테고리 quick-switch 슬롯 `idx`(0~9)의 raw 키를 설정. 범위 밖이면 false.
+    pub fn set_category_slot_key(&mut self, idx: usize, key: &str) -> bool {
+        match self.category_switch_slot_keys.get_mut(idx) {
+            Some(slot) => {
+                *slot = key.to_string();
+                true
+            }
+            None => false,
+        }
+    }
+
     /// 탭 quick-switch "다음/이전" raw 키.
     pub fn tab_next_key(&self) -> &str {
         &self.tab_switch_next_key

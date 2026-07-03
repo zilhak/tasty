@@ -386,6 +386,72 @@ fn next_workspace_in_active_category_wraps_within_category_only() {
     assert_eq!(state.active_workspace, 3); // wrap → D
 }
 
+// ---- category quick-switch (T4WS ②⑤) ----
+
+/// normal=A(0)/C(2), work=B(1)/D(3). 카테고리 전환은 대상 카테고리의 last-active 로 착지한다.
+#[test]
+fn switch_to_category_lands_on_last_active() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    add_test_workspace(&mut state, &mut engine); // D=3
+    let work = engine.create_category("work").expect("create work");
+    engine.workspaces[1].set_category(work); // B
+    engine.workspaces[3].set_category(work); // D
+
+    // work 안에서 D(3)를 마지막으로 방문 → last-active[work]=3.
+    state.switch_workspace(&mut engine, 3);
+    // normal 로 이동.
+    state.switch_workspace(&mut engine, 0);
+    assert_eq!(state.active_workspace, 0);
+
+    // section 1 = work 로 카테고리 전환 → 마지막 방문 D(3) 로 착지.
+    state.switch_to_category(&mut engine, 1);
+    assert_eq!(state.active_workspace, 3);
+}
+
+/// 한 번도 방문 안 한 카테고리로 전환하면 그 카테고리의 first 로 착지한다.
+#[test]
+fn switch_to_category_falls_back_to_first_when_never_visited() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    add_test_workspace(&mut state, &mut engine); // C=2
+    add_test_workspace(&mut state, &mut engine); // D=3
+    let work = engine.create_category("work").expect("create work");
+    engine.workspaces[1].set_category(work); // B (work 의 first)
+    engine.workspaces[3].set_category(work); // D
+
+    // work 미방문 상태에서 active=A(0). section 1 로 전환 → work first = B(1).
+    state.switch_workspace(&mut engine, 0);
+    state.switch_to_category(&mut engine, 1);
+    assert_eq!(state.active_workspace, 1);
+}
+
+/// 접힌 카테고리로 전환하면 auto-expand(collapsed=false) 되고 그 안으로 착지한다.
+#[test]
+fn switch_to_category_auto_expands_collapsed() {
+    let (mut state, mut engine) = test_state();
+    add_test_workspace(&mut state, &mut engine); // B=1
+    let work = engine.create_category("work").expect("create work");
+    engine.workspaces[1].set_category(work); // B
+    engine.set_category_collapsed(work, true);
+    assert!(engine.categories()[1].collapsed);
+
+    state.switch_workspace(&mut engine, 0); // active=A(normal)
+    state.switch_to_category(&mut engine, 1); // → work
+    assert!(!engine.categories()[1].collapsed); // auto-expand
+    assert_eq!(state.active_workspace, 1); // work first = B
+}
+
+/// 존재하지 않는 섹션 인덱스는 no-op.
+#[test]
+fn switch_to_category_out_of_range_noop() {
+    let (mut state, mut engine) = test_state();
+    state.switch_workspace(&mut engine, 0);
+    state.switch_to_category(&mut engine, 99);
+    assert_eq!(state.active_workspace, 0);
+}
+
 /// 카테고리 내 워크스페이스가 자기 자신 하나뿐이면 next/prev 가 no-op.
 #[test]
 fn next_prev_workspace_in_active_category_noop_when_alone() {

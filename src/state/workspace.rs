@@ -7,7 +7,49 @@ impl AppState {
     pub fn switch_workspace(&mut self, engine: &mut CoreState, index: usize) {
         if index < engine.workspaces.len() {
             self.active_workspace = index;
+            // 카테고리별 last-active 기록 — 카테고리 quick-switch(T4WS ⑤) 착지점.
+            let cat = engine.workspaces[index].category;
+            self.category_last_active.insert(cat, index);
             self.ensure_active_workspace_initialized(engine);
+        }
+    }
+
+    /// 섹션 순서 인덱스(0=reserved normal, 1.. = 사용자 카테고리)로 **카테고리 자체**를
+    /// 전환한다 (T4WS ②⑤, `Alt+Shift+숫자`). folders 기능 on 에서만 호출된다.
+    ///
+    /// 동작: (1) 대상 카테고리가 접혀 있으면 **auto-expand**(persist) — 접힌 채면 착지
+    /// 워크스페이스가 안 보이므로 펼치는 게 옳다. (2) 그 카테고리의 **last-active**
+    /// 워크스페이스로 착지(없거나 stale 이면 **first**). 착지는 전역 인덱스 SoT 를 쓰는
+    /// [`switch_workspace`](Self::switch_workspace) 재사용.
+    //
+    // 사용자 키 경로로만 호출(원칙 1/3: active_workspace 이동은 release IPC/CLI 노출 금지).
+    pub fn switch_to_category(&mut self, engine: &mut CoreState, section_idx: usize) {
+        let Some(cat) = engine.categories().get(section_idx).map(|c| c.id) else {
+            return;
+        };
+        // (1) auto-expand + persist.
+        let collapsed = engine
+            .categories()
+            .get(section_idx)
+            .is_some_and(|c| c.collapsed);
+        if collapsed {
+            engine.set_category_collapsed(cat, false);
+            engine.mark_layout_dirty();
+        }
+        // (2) last-active(소속 재검증) → 없으면 first-in-category.
+        let target = self
+            .category_last_active
+            .get(&cat)
+            .copied()
+            .filter(|&gi| engine.workspaces.get(gi).is_some_and(|w| w.category == cat))
+            .or_else(|| {
+                engine
+                    .workspaces_in_category(cat)
+                    .first()
+                    .map(|(gi, _)| *gi)
+            });
+        if let Some(global) = target {
+            self.switch_workspace(engine, global);
         }
     }
 

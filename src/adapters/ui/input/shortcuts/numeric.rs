@@ -71,6 +71,16 @@ impl MainView {
                     return true;
                 }
             }
+            Some(SwitchTarget::Category) => {
+                // folders 기능 off 면 Alt+Shift+숫자 는 카테고리 역할 없음(무시).
+                if !engine.settings.general.workspace_categories_enabled {
+                    return false;
+                }
+                if let Some(section) = kb.category_switch_slot_keys.iter().position(|k| k == ch) {
+                    state.switch_to_category(engine, section);
+                    return true;
+                }
+            }
             None => {}
         }
 

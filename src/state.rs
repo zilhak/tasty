@@ -241,6 +241,12 @@ pub enum PendingHostEvent {
 pub struct AppState {
     // ── Window-level UI state ──
     pub(crate) active_workspace: usize,
+    /// 카테고리별 마지막 active 워크스페이스(전역 인덱스). 카테고리 quick-switch(T4WS ②⑤)가
+    /// 대상 카테고리로 점프할 때 그 카테고리의 마지막 포커스 워크스페이스로 착지하기 위한
+    /// 세션-런타임 상태(영속 안 함 — "never visited" 는 first 로 폴백). 전역 인덱스는
+    /// move/close 로 흔들릴 수 있어 사용 시점에 소속 카테고리 일치를 재검증한다.
+    pub(crate) category_last_active:
+        std::collections::HashMap<tasty_utils::id::WorkspaceCategoryId, usize>,
     /// Whether the settings window is open.
     pub(crate) settings_open: bool,
     /// Whether the plugins window is open.
@@ -826,6 +832,7 @@ impl AppState {
             preset_store,
             memory,
             active_workspace,
+            category_last_active: std::collections::HashMap::new(),
             settings_open: false,
             plugins_open: false,
             #[cfg(feature = "gui")]

@@ -35,6 +35,9 @@ pub enum SwitchTarget {
     Tab,
     /// 워크스페이스 전환 (`workspace_switch_modifier`, 기본 Alt).
     Workspace,
+    /// 카테고리 전환 (`workspace_switch_modifier` + Shift, 기본 Alt+Shift, T4WS ②⑤).
+    /// folders 기능 on 일 때만 의미. modifier-exclusive: Workspace(단독)와 동시 렌더 없음.
+    Category,
 }
 
 /// draw 경로(04 탭 / 05 사이드바)가 매 프레임 읽는 switch-number overlay 스냅샷.
@@ -53,9 +56,11 @@ pub struct SwitchOverlayState {
 /// 현재 눌린 modifier 조합으로 switch overlay 의 대상을 판정하는 **단일 소스**.
 ///
 /// 단축키 소비처 `input/shortcuts/numeric.rs` 와 **완전히 동일한 조건/우선순위**:
-/// tab 을 먼저 검사하고, 일치하지 않으면 workspace 를 검사한다. 다른 modifier 가
-/// 섞이면(예: Ctrl+Shift) `None`. `ctrl`/`shift`/`alt` 는 플랫폼 정규화가 끝난
-/// 값을 받는다 (macOS 의 super→alt 매핑은 호출측 `dispatch.rs` 에서 처리됨).
+/// tab 을 먼저 검사하고, 아니면 워크스페이스축(`workspace_switch_modifier`)을 본다 —
+/// 그 키 + Shift = `Category`, 단독 = `Workspace`(Shift 유무로 상호 배타). 축과 무관한
+/// modifier 가 섞이면 `None`. `Category` 의 folders 기능 게이트는 호출측이 판단한다.
+/// `ctrl`/`shift`/`alt` 는 플랫폼 정규화가 끝난 값을 받는다 (macOS super→alt 매핑은
+/// 호출측 `dispatch.rs`/래퍼에서 처리됨).
 pub fn switch_target_for(
     kb: &KeybindingSettings,
     ctrl: bool,
@@ -70,12 +75,17 @@ pub fn switch_target_for(
     if tab_matches {
         return Some(SwitchTarget::Tab);
     }
-    let ws_matches = match kb.workspace_switch_modifier.to_lowercase().as_str() {
-        "ctrl" => ctrl && !shift && !alt,
+    // 워크스페이스축 물리 키(토큰 기준)와 그 반대 축 키. Category = 이 키 + Shift,
+    // Workspace = 이 키 단독. Shift 유무로 두 대상이 상호 배타(modifier-exclusive).
+    let (ws_key, ws_other) = match kb.workspace_switch_modifier.to_lowercase().as_str() {
+        "ctrl" => (ctrl, alt),
         // 기본 alt.
-        _ => alt && !ctrl && !shift,
+        _ => (alt, ctrl),
     };
-    if ws_matches {
+    if ws_key && !ws_other {
+        if shift {
+            return Some(SwitchTarget::Category);
+        }
         return Some(SwitchTarget::Workspace);
     }
     None
@@ -96,6 +106,18 @@ pub fn workspace_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> 
     #[cfg(not(target_os = "macos"))]
     let alt = mods.alt;
     switch_target_for(kb, mods.ctrl, mods.shift, alt) == Some(SwitchTarget::Workspace)
+}
+
+/// 현재 눌린 modifier 가 카테고리 전환(`workspace_switch_modifier` + Shift, 기본 Alt+Shift)과
+/// 일치하는지 (사이드바 카테고리 키캡). [`workspace_switch_held`] 와 동일한 정규화
+/// (`"alt"` 토큰 = macOS Command)를 거쳐 [`switch_target_for`] 에 넘긴다. folders 기능
+/// 게이트는 호출측이 별도로 판단한다(이 함수는 modifier 만 본다).
+pub fn category_switch_held(mods: egui::Modifiers, kb: &KeybindingSettings) -> bool {
+    #[cfg(target_os = "macos")]
+    let alt = mods.mac_cmd;
+    #[cfg(not(target_os = "macos"))]
+    let alt = mods.alt;
+    switch_target_for(kb, mods.ctrl, mods.shift, alt) == Some(SwitchTarget::Category)
 }
 
 /// 탭 슬롯 `index` 에 표시할 키캡 문자. 설정된 `tab_switch_slot_keys[index]` 를 그대로
@@ -129,6 +151,13 @@ pub fn tab_keycap_for(
 /// 그대로 돌려준다. 슬롯 범위 밖(local_idx ≥ 9)이거나 비어 있으면 `None`.
 pub fn workspace_digit(kb: &KeybindingSettings, local_idx: usize) -> Option<&str> {
     kb.workspace_slot_key(local_idx).filter(|s| !s.is_empty())
+}
+
+/// 카테고리 슬롯 **섹션 인덱스**(0=reserved normal, 1.. = 사용자 카테고리) → 키캡 문자.
+/// 설정된 `category_switch_slot_keys[index]`(1..10)를 그대로 돌려준다. 범위 밖(index ≥ 10)
+/// 이거나 비어 있으면 `None` — 11번째+ 카테고리는 키캡 없음(누를 키 없는 번호 미표시).
+pub fn category_digit(kb: &KeybindingSettings, index: usize) -> Option<&str> {
+    kb.category_slot_key(index).filter(|s| !s.is_empty())
 }
 
 /// 한 자리 숫자 키캡을 `center` 기준 16px slot 에 그린다.
@@ -328,6 +357,43 @@ mod tests {
             switch_target_for(&kb, true, false, false),
             Some(SwitchTarget::Workspace)
         );
+    }
+
+    #[test]
+    fn switch_target_alt_shift_is_category() {
+        let kb = kb_with("ctrl", "alt"); // tab=ctrl, ws=alt
+        // alt 단독 → Workspace, alt+shift → Category (Shift 유무로 상호 배타).
+        assert_eq!(
+            switch_target_for(&kb, false, false, true),
+            Some(SwitchTarget::Workspace)
+        );
+        assert_eq!(
+            switch_target_for(&kb, false, true, true),
+            Some(SwitchTarget::Category)
+        );
+        // ctrl+shift 는 워크스페이스축(alt)이 아니므로 카테고리 아님.
+        assert_eq!(switch_target_for(&kb, true, true, false), None);
+    }
+
+    #[test]
+    fn switch_target_category_follows_rebound_ws_modifier() {
+        // ws=ctrl 로 재바인딩하면 카테고리는 ctrl+shift.
+        let kb = kb_with("alt", "ctrl");
+        assert_eq!(
+            switch_target_for(&kb, true, true, false),
+            Some(SwitchTarget::Category)
+        );
+        // alt+shift 는 이제 tab 축(alt)+shift → tab 아님, ws 축(ctrl) 아님 → None.
+        assert_eq!(switch_target_for(&kb, false, true, true), None);
+    }
+
+    #[test]
+    fn category_digit_range() {
+        let kb = KeybindingSettings::default();
+        assert_eq!(category_digit(&kb, 0), Some("1")); // reserved normal = 1
+        assert_eq!(category_digit(&kb, 8), Some("9"));
+        assert_eq!(category_digit(&kb, 9), Some("0")); // 10번째 = 0
+        assert_eq!(category_digit(&kb, 10), None); // 11번째+ 키캡 없음
     }
 
     #[test]

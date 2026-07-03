@@ -74,6 +74,7 @@ impl KeybindingSettings {
             // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
             tab_switch_slot_keys: super::default_tab_slot_keys(),
             workspace_switch_slot_keys: super::default_workspace_slot_keys(),
+            category_switch_slot_keys: super::default_category_slot_keys(),
             tab_switch_next_key: super::default_tab_next_key(),
             tab_switch_prev_key: super::default_tab_prev_key(),
             workspace_switch_next_key: super::default_workspace_next_key(),
@@ -147,6 +148,7 @@ impl KeybindingSettings {
             // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
             tab_switch_slot_keys: super::default_tab_slot_keys(),
             workspace_switch_slot_keys: super::default_workspace_slot_keys(),
+            category_switch_slot_keys: super::default_category_slot_keys(),
             tab_switch_next_key: super::default_tab_next_key(),
             tab_switch_prev_key: super::default_tab_prev_key(),
             workspace_switch_next_key: super::default_workspace_next_key(),
@@ -220,6 +222,7 @@ impl KeybindingSettings {
             // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
             tab_switch_slot_keys: super::default_tab_slot_keys(),
             workspace_switch_slot_keys: super::default_workspace_slot_keys(),
+            category_switch_slot_keys: super::default_category_slot_keys(),
             tab_switch_next_key: super::default_tab_next_key(),
             tab_switch_prev_key: super::default_tab_prev_key(),
             workspace_switch_next_key: super::default_workspace_next_key(),
@@ -293,6 +296,7 @@ impl KeybindingSettings {
             // ctrl/alt 로 동일하므로 vim 스타일 키(l/h/j/k)를 공통 적용한다.
             tab_switch_slot_keys: super::default_tab_slot_keys(),
             workspace_switch_slot_keys: super::default_workspace_slot_keys(),
+            category_switch_slot_keys: super::default_category_slot_keys(),
             tab_switch_next_key: super::default_tab_next_key(),
             tab_switch_prev_key: super::default_tab_prev_key(),
             workspace_switch_next_key: super::default_workspace_next_key(),
