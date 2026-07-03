@@ -3,7 +3,7 @@ use crate::theme;
 
 use super::{PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::vspace;
+use tasty_ui_widgets::{margin_sym, vspace};
 
 pub(super) fn draw_list_tab(
     ctx: &egui::Context,
@@ -176,7 +176,7 @@ pub(super) fn draw_list_tab(
                         danger.gamma_multiply(0.35),
                     ))
                     .corner_radius(th.corner_radius.value())
-                    .inner_margin(egui::Margin::symmetric(11, 8))
+                    .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
                     .show(ui, |ui| {
                         ui.label(egui::RichText::new(t("plugins.health_error")).color(danger));
                     });

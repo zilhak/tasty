@@ -17,6 +17,7 @@ use crate::state::command_palette::{self, PaletteCommand};
 use crate::theme;
 use crate::theme::Theme;
 use tasty_settings::KeybindingSettings;
+use tasty_ui_widgets::{margin_all, margin_sym};
 
 pub const COMMAND_PALETTE_POPUP_ID: &str = "command_palette";
 
@@ -115,16 +116,17 @@ pub fn draw_command_palette_view(
     }
 
     // design-parity: 디자인 command_palette.jsx 는 컨테이너 패딩 0 + 구역별 패딩
-    // (search 10 / list 6 / footer 8,12). content_margin 은 command_palette 한정 0
+    // (search 10 / list 6 / footer 8,12). search·list 는 off-grid 라 4px 그리드로
+    // snap(10→8, 6→8/4; 2026-07-03-spacing-offgrid 판정). content_margin 은 command_palette 한정 0
     // (popup.rs) 이라 full 은 popup 가장자리. 구역 divider 는 Frame 실제 좌표에 그린다.
     let full = ui.max_rect();
     let sep = egui::Stroke::new(theme.border_width.value(), theme.border_strong());
     ui.spacing_mut().item_spacing.y = 0.0;
 
-    // ── 검색 구역 (디자인 padding 10, Input control-height 28, borderBottom) ──
+    // ── 검색 구역 (디자인 padding 10 → space-sm(8) snap, Input control-height 28, borderBottom) ──
     let mut query_changed = false;
     let search_ir = egui::Frame::NONE
-        .inner_margin(egui::Margin::same(10))
+        .inner_margin(margin_all(theme.spacing_sm))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.set_min_height(28.0); // 디자인 Input control-height
@@ -161,9 +163,9 @@ pub fn draw_command_palette_view(
     let footer_h = theme.font_size_caption.value() + 20.0;
     let footer_top = full.bottom() - footer_h;
 
-    // ── 리스트 구역 (디자인 padding 6, MenuItem height 28) ──
+    // ── 리스트 구역 (디자인 padding 6 → space-sm/space-xs(8,4) snap, MenuItem height 28) ──
     egui::Frame::NONE
-        .inner_margin(egui::Margin::same(6))
+        .inner_margin(margin_sym(theme.spacing_sm, theme.spacing_xs))
         .show(ui, |ui| {
             if props.items.is_empty() {
                 ui.label(

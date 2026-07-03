@@ -7,7 +7,7 @@ use crate::theme;
 
 use super::{AttentionEntry, AttentionKind, PluginsAction, PluginsSnapshot, PluginsUiState};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
-use tasty_ui_widgets::{hspace, vspace};
+use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
 
 /// 사유별 (라벨 키, 설명 키). 색은 `AttentionKind::is_danger` 로 분기.
 fn reason_text(kind: AttentionKind) -> (&'static str, &'static str) {
@@ -189,7 +189,7 @@ fn draw_detail(
                 color.gamma_multiply(0.36),
             ))
             .corner_radius(th.corner_radius.value())
-            .inner_margin(egui::Margin::symmetric(14, 12))
+            .inner_margin(margin_all(th.spacing_md))
             .show(ui, |ui| {
                 ui.label(
                     egui::RichText::new(t(label_key))
@@ -300,7 +300,7 @@ fn draw_reason_detail(ui: &mut egui::Ui, th: &theme::Theme, entry: &AttentionEnt
                         egui::Color32::from(th.separator),
                     ))
                     .corner_radius(th.corner_radius.value())
-                    .inner_margin(egui::Margin::symmetric(12, 10))
+                    .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
                     .show(ui, |ui| {
                         ui.label(
                             egui::RichText::new(detail)

@@ -1,7 +1,7 @@
 use winit::window::Window;
 
 use crate::i18n::t;
-use tasty_ui_widgets::{hspace, vspace};
+use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
 
 use super::{GpuState, ShellSetupAction};
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
@@ -67,7 +67,7 @@ impl GpuState {
                         .fill(bg_card.into())
                         .stroke(egui::Stroke::new(1.0, border))
                         .corner_radius(egui::CornerRadius::same(12))
-                        .inner_margin(egui::Margin::symmetric(32, 28))
+                        .inner_margin(margin_all(th.spacing_xl))
                         .shadow(egui::Shadow {
                             offset: [0, 8],
                             blur: 24,
@@ -101,7 +101,7 @@ impl GpuState {
                         .fill(th.surface_raised().into())
                         .stroke(egui::Stroke::new(1.0, th.border_strong()))
                         .corner_radius(egui::CornerRadius::same(6))
-                        .inner_margin(egui::Margin::symmetric(12, 10))
+                        .inner_margin(margin_sym(th.spacing_md, th.spacing_sm))
                         .show(ui, |ui| {
                             ui.add(
                                 egui::Label::new(
