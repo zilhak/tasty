@@ -61,10 +61,10 @@ fn two_depth_layout_inner(
 ) {
     ui.horizontal_top(|ui| {
         egui::Frame::new()
-            .fill(egui::Color32::from(theme.crust))
+            .fill(egui::Color32::from(theme.bg_app()))
             .stroke(egui::Stroke::new(
                 tokens::PANEL_STROKE_WIDTH,
-                egui::Color32::from(theme.surface0),
+                egui::Color32::from(theme.border_default()),
             ))
             .corner_radius(tokens::PANEL_CORNER_RADIUS)
             .inner_margin(egui::Margin::symmetric(

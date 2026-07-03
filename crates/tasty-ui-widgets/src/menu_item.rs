@@ -71,7 +71,7 @@ pub fn menu_item(
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
     };
     let icon_color = match variant {
-        MenuItemVariant::Normal => theme.subtext0.to_egui(),
+        MenuItemVariant::Normal => theme.text_muted().to_egui(),
         MenuItemVariant::Danger => theme.accent_danger().to_egui(),
     };
 
@@ -98,7 +98,7 @@ pub fn menu_item(
             rect.center().y - g.rect.height() * 0.5,
         );
         ui.painter()
-            .galley(pos, g.clone(), dim(theme.subtext0.to_egui()));
+            .galley(pos, g.clone(), dim(theme.text_muted().to_egui()));
         right -= g.rect.width() + gap;
     }
 
@@ -129,7 +129,7 @@ pub fn menu_separator(ui: &mut egui::Ui, theme: &Theme) {
     ui.painter().hline(
         r.x_range(),
         y,
-        egui::Stroke::new(theme.border_width.value(), theme.surface1.to_egui()),
+        egui::Stroke::new(theme.border_width.value(), theme.border_strong().to_egui()),
     );
     ui.add_space(xs);
 }

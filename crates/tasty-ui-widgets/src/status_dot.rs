@@ -26,10 +26,11 @@ impl StatusKind {
     fn color(self, theme: &Theme) -> egui::Color32 {
         match self {
             // Running/Agent/Waiting/Error 는 `status-dot-*` component 색 대응.
-            // Idle 은 구현이 subtext0(#a6adc8) 를 쓰는데 디자인 status-dot-idle 은
-            // status-idle(#6c7086) 로 불일치 → 픽셀 diff 0 위해 semantic 유지.
+            // Idle 은 구현이 text-muted(subtext0 #a6adc8) 를 쓰는데 디자인 status-dot-idle
+            // 은 status-idle(#6c7086) 로 불일치 → 픽셀 diff 0 위해 text_muted() 유지.
+            // divergence: status-dot 역할이나 대응 role 토큰 부재로 text-muted 로 alias.
             StatusKind::Running => theme.status_dot_success().to_egui(),
-            StatusKind::Idle => theme.subtext0.to_egui(),
+            StatusKind::Idle => theme.text_muted().to_egui(),
             StatusKind::Agent => theme.status_dot_agent().to_egui(),
             StatusKind::Waiting => theme.status_dot_warning().to_egui(),
             StatusKind::Error => theme.status_dot_danger().to_egui(),

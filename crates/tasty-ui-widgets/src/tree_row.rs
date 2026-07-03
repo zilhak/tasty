@@ -66,7 +66,7 @@ pub fn tree_row(
     } else {
         theme.tree_row_fg().to_egui()
     };
-    let muted = theme.subtext0.to_egui();
+    let muted = theme.text_muted().to_egui();
 
     let mut x = rect.left() + pad_l + depth as f32 * indent_per_depth;
 

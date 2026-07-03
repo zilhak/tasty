@@ -22,12 +22,16 @@ const SCAN_ROOTS: &[&str] = &[
     "crates/tasty-ui-widgets/src",
 ];
 
-/// primitive 색 필드 접근 스캔 대상 — **host UI 계층만**. design-tokens-05 의 semantic
-/// 접근자 전수 이식이 완료된 범위다(현재 0). 제외:
+/// primitive 색 필드 접근 스캔 대상 — host UI 계층 + 위젯 크레이트. design-tokens-05 의
+/// semantic 접근자 전수 이식이 완료된 범위(현재 0). 위젯 크레이트도 primitive 절대 불가
+/// (ADR-0033): 재사용 위젯이라도 색은 semantic role 접근자로만 읽는다. 제외:
 /// - `crates/tasty-gallery/src`: 팔레트 데모가 raw primitive 를 의도적으로 노출.
-/// - `crates/tasty-ui-widgets/src`: 위젯 내부가 아직 `theme.subtext0`/`theme.crust` 등
-///   primitive 를 직접 쓴다 — 위젯 크레이트 이식은 별도 결정 대기(이 가드 스코프 밖).
-const COLOR_SCAN_ROOTS: &[&str] = &["src/view", "src/adapters/ui", "src/gfx/gpu/shell_setup.rs"];
+const COLOR_SCAN_ROOTS: &[&str] = &[
+    "src/view",
+    "src/adapters/ui",
+    "src/gfx/gpu/shell_setup.rs",
+    "crates/tasty-ui-widgets/src",
+];
 
 /// Theme 의 primitive(Catppuccin) 색 필드명. semantic 접근자(`text_primary()` 등)가 아닌
 /// 평면 필드 직접 접근(`th.blue`/`theme.surface0`)을 host UI 에서 금지하기 위한 목록.

@@ -328,8 +328,8 @@ fn header_cell<K: Copy + PartialEq>(
     };
     let rich = egui::RichText::new(text)
         .color(if is_active {
-            // active 정렬 컬럼 강조색 — 대응 component 토큰 없어 semantic(text) 유지.
-            egui::Color32::from(theme.text)
+            // active 정렬 컬럼 강조색 — 대응 component 토큰 부재로 text_primary() 로 alias.
+            egui::Color32::from(theme.text_primary())
         } else {
             egui::Color32::from(theme.table_header_fg())
         })

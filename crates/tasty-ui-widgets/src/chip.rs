@@ -237,7 +237,7 @@ pub fn kbd(ui: &mut egui::Ui, theme: &Theme, keys: &str) {
     let border = theme.kbd_border().to_egui();
     let fill = theme.kbd_bg().to_egui();
     let fg = theme.kbd_fg().to_egui();
-    let plus = theme.subtext0.to_egui(); // 키캡 사이 "+" — 대응 component 토큰 없음.
+    let plus = theme.text_muted().to_egui(); // 키캡 사이 "+" — muted 텍스트 역할.
     let micro = theme.kbd_font_size().value();
     let gap = theme.kbd_gap().value();
     let pad_x = theme.kbd_padding_x().value();
