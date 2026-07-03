@@ -375,4 +375,88 @@ mod tests {
             _ => panic!("expected SavedSurface::Terminal"),
         }
     }
+
+    // ── N-RA02 회귀: mirror workspace 비영속 + active_workspace remap/clamp ──
+
+    /// mirror workspace 하나를 담은 마커 워크스페이스를 만든다. capture 순회가
+    /// 패닉 없이 통과하도록 TerminalSurface 마커를 채워둔다(내용은 검증 대상 아님).
+    fn mirror_marker_ws(engine: &mut CoreState, name: &str, mirror: bool) -> Workspace {
+        let ws_id = engine.next_ids.next_workspace();
+        let pane_id = engine.next_ids.next_pane();
+        let tab_id = engine.next_ids.next_tab();
+        let surface_id = engine.next_ids.next_surface();
+        let mut ws =
+            Workspace::new_with_terminal_marker(ws_id, name.to_string(), pane_id, tab_id, surface_id);
+        ws.mirror = mirror;
+        ws
+    }
+
+    /// 주어진 (name, mirror) 목록으로 engine.workspaces 를 교체하고, scrollback
+    /// 디스크 쓰기를 꺼(restore_surface_content=false) capture 를 순수 인메모리로 만든다.
+    fn engine_with_workspaces(specs: &[(&str, bool)]) -> CoreState {
+        let waker: tasty_terminal::Waker = Arc::new(|| {});
+        let mut engine = CoreState::new(80, 24, waker).expect("engine");
+        engine.settings.general.restore_surface_content = false;
+        let workspaces: Vec<Workspace> = specs
+            .iter()
+            .map(|(name, mirror)| mirror_marker_ws(&mut engine, name, *mirror))
+            .collect();
+        engine.workspaces = workspaces;
+        engine
+    }
+
+    /// mirror workspace 는 SavedLayout.workspaces 에서 제외되고, active_workspace
+    /// (활성이 일반 ws) 는 필터 후 인덱스로 remap 되어야 한다.
+    #[test]
+    fn capture_excludes_mirror_and_remaps_active() {
+        // 라이브: [n0, m1(mirror), n2, m3(mirror), n4], active = 2 (n2).
+        let mut engine =
+            engine_with_workspaces(&[("n0", false), ("m1", true), ("n2", false), ("m3", true), (
+                "n4", false,
+            )]);
+        let saved = SavedLayout::capture(&mut engine, 2);
+
+        let names: Vec<&str> = saved.workspaces.iter().map(|w| w.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["n0", "n2", "n4"],
+            "mirror workspace 는 capture 에서 제외되어야 한다"
+        );
+        // n2 는 필터 후 인덱스 1 (앞의 non-mirror 는 n0 하나).
+        assert_eq!(
+            saved.active_workspace, 1,
+            "active_workspace 는 mirror 제외 후 인덱스로 remap 되어야 한다"
+        );
+    }
+
+    /// 활성 워크스페이스가 mirror 였다면, 그 자리는 붕괴하고 active 는 앞쪽
+    /// non-mirror 개수(= 뒤따르는 non-mirror 의 인덱스)로 remap 된다.
+    #[test]
+    fn capture_remaps_active_when_active_was_mirror() {
+        // 라이브: [n0, m1(mirror), n2], active = 1 (mirror m1).
+        let mut engine = engine_with_workspaces(&[("n0", false), ("m1", true), ("n2", false)]);
+        let saved = SavedLayout::capture(&mut engine, 1);
+
+        let names: Vec<&str> = saved.workspaces.iter().map(|w| w.name.as_str()).collect();
+        assert_eq!(names, vec!["n0", "n2"]);
+        // m1 앞의 non-mirror 는 n0 하나 → active 는 1 (= n2 의 saved 인덱스).
+        assert_eq!(saved.active_workspace, 1);
+    }
+
+    /// remap 된 active 가 필터 결과 범위를 벗어나면(활성이 마지막 mirror 라 뒤에
+    /// non-mirror 가 없음) 마지막 유효 인덱스로 clamp 되어야 한다.
+    #[test]
+    fn capture_clamps_active_when_trailing_are_mirror() {
+        // 라이브: [n0, m1(mirror)], active = 1 (마지막 mirror).
+        let mut engine = engine_with_workspaces(&[("n0", false), ("m1", true)]);
+        let saved = SavedLayout::capture(&mut engine, 1);
+
+        let names: Vec<&str> = saved.workspaces.iter().map(|w| w.name.as_str()).collect();
+        assert_eq!(names, vec!["n0"]);
+        // 앞의 non-mirror 1 개 → remap=1 이지만 saved.len()=1 이므로 0 으로 clamp.
+        assert_eq!(
+            saved.active_workspace, 0,
+            "범위를 벗어난 active 는 마지막 유효 인덱스로 clamp 되어야 한다"
+        );
+    }
 }
