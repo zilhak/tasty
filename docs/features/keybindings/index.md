@@ -26,10 +26,11 @@ tasty 의 **모든 단축키는 `KeybindingSettings` 한 곳에서 정의**되�
 |------|------|--------|------|
 | `tab_switch_slot_keys` | `[String; 10]` | `["1".."9","0"]` | 탭 1~10번 슬롯 |
 | `workspace_switch_slot_keys` | `[String; 9]` | `["1".."9"]` | 워크스페이스 1~9번 슬롯(0번 없음) |
+| `category_switch_slot_keys` | `[String; 10]` | `["1".."9","0"]` | 카테고리 1~10번 슬롯(reserved normal=1). `workspace_switch_modifier`+Shift 로 합성 |
 | `tab_switch_next_key` / `tab_switch_prev_key` | `String` | `"l"` / `"h"` | 탭 다음/이전 |
 | `workspace_switch_next_key` / `workspace_switch_prev_key` | `String` | `"j"` / `"k"` | 워크스페이스 다음/이전 |
 
-6개 필드 모두 필드별 `#[serde(default = "…")]` 를 가져, 신규 필드가 없는 구버전 config 를 읽어도 빈 값이 아니라 위 기본값으로 복원된다. 자유 콤보용 `next_tab`/`prev_tab` 필드와는 별개다(Command Palette·더블탭 경로 전용, quick-switch 가 건드리지 않음).
+이 필드들 모두 필드별 `#[serde(default = "…")]` 를 가져, 신규 필드가 없는 구버전 config 를 읽어도 빈 값이 아니라 위 기본값으로 복원된다. 자유 콤보용 `next_tab`/`prev_tab` 필드와는 별개다(Command Palette·더블탭 경로 전용, quick-switch 가 건드리지 않음). `category_switch_slot_keys` 는 별도 modifier 필드 없이 `workspace_switch_modifier`+Shift 를 재사용하며(index accessor `category_slot_key`/`set_category_slot_key`), 현재 Settings quick-switch UI 에는 편집기가 없어 기본값으로 동작한다(대상 판정·dispatch 만 배선).
 
 #### quick-switch 섹션 UI (Tab/Workspace 서브탭)
 
@@ -45,10 +46,11 @@ Tab·Workspace 서브탭의 일반 콤보 목록 아래에 **quick-switch 섹션
 
 #### dispatch — 키 입력 → 전환
 
-실제 키 소비는 `input/shortcuts/numeric.rs`(`handle_numeric_switch_shortcuts`)가 담당한다. `Key::Character` 이면(슬롯 키가 `"q"` 같은 문자일 수 있으므로 숫자 여부를 따지지 않는다) 대상(Tab/Workspace)을 switch-number 오버레이와 **단일 소스**인 `switch_target_for(kb, ctrl, shift, alt)` 로 판정한다 — modifier 가 `tab_switch_modifier`/`workspace_switch_modifier` 와 **단독** 일치할 때만 대상이 잡히므로 맨 키 오검출이 없다. 대상이 잡히면 **next/prev 키를 먼저**(커스텀 슬롯 키가 next/prev 키와 겹칠 때 next/prev 우선), 그 다음 슬롯 배열을 `position` 검색한다. 매칭 결과:
+실제 키 소비는 `input/shortcuts/numeric.rs`(`handle_numeric_switch_shortcuts`)가 담당한다. `Key::Character` 이면(슬롯 키가 `"q"` 같은 문자일 수 있으므로 숫자 여부를 따지지 않는다) 대상(Tab/Workspace/Category)을 switch-number 오버레이와 **단일 소스**인 `switch_target_for(kb, ctrl, shift, alt)` 로 판정한다 — Tab/Workspace 는 modifier 가 `tab_switch_modifier`/`workspace_switch_modifier` 와 **단독** 일치할 때, Category 는 `workspace_switch_modifier`+Shift 일 때 잡히므로(상호 배타) 맨 키 오검출이 없다. 대상이 잡히면 **next/prev 키를 먼저**(커스텀 슬롯 키가 next/prev 키와 겹칠 때 next/prev 우선), 그 다음 슬롯 배열을 `position` 검색한다. 매칭 결과:
 
 - 탭: next/prev → `next_tab_in_pane`/`prev_tab_in_pane`, 슬롯 index → `goto_tab_in_pane(index)`.
 - 워크스페이스: next/prev → `next_workspace_in_active_category`/`prev_workspace_in_active_category`, 슬롯 local → 카테고리 토글 on 이면 `switch_workspace_in_active_category(local)`, off 면 `switch_workspace(local)`.
+- 카테고리: `category_switch_slot_keys` 슬롯 section → `switch_to_category(section)`(folders 토글 off 면 no-op·비소비). 자동 확장 + last-active 착지는 `switch_to_category` 가 처리한다. → [워크스페이스 카테고리](../workspace-category/index.md).
 
 어느 것도 매칭 안 되면 조용히 `false` 를 돌려 다른 단축키 매칭으로 넘긴다. 이 메서드들은 focused pane 의 active_tab · active_workspace(= **사용자 포커스 상태**)를 바꾸므로 **사용자 키 입력 경로에서만** 호출되며 release IPC/CLI 로 노출되지 않는다(원칙 1/3). Command Palette·더블탭 파리티는 범위 밖.
 

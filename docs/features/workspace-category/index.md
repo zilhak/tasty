@@ -3,8 +3,8 @@
 - **Status**: Done
 - **주체**: AI Agent (CRUD·소속 변경, IPC/CLI 양면) · 로컬 사용자 (사이드바 그룹·전환·생성/이름변경/삭제, 토글 on 시)
 - **ADR**: [ADR-0029](../../adr/0029-workspace-category-global-index.md)
-- **코드**: `crates/tasty-model/src/workspace_category.rs` · `src/core/state.rs` (`categories` / CRUD 메서드 / `set_category_collapsed`) · `src/engine/layout_persistence/{schema,capture,restore}.rs` · `src/adapters/ipc/handler/workspace_category.rs` · `crates/tasty-cli/src/commands/workspace_category.rs` · `src/adapters/ui/sidebar/{view,full,collapsed}.rs` (사이드바 그룹) · `src/adapters/ui/popup/{rail_category,confirm_delete_category}.rs` · `src/adapters/ui/{dialog,category_actions}.rs` · `src/view/main/redraw.rs` (컨텍스트 메뉴)
-- **화면**: 설정 토글 on 시 사이드바가 카테고리 섹션으로 그룹 렌더. 확장 사이드바는 chevron 헤더(접힘 토글)+소속 행, 축소 레일은 카테고리 경계 `---` 버튼+우측 앵커드 팝업. 우클릭 컨텍스트 메뉴(헤더/배경/행)와 레일 팝업으로 생성/이름변경/삭제/카테고리 이동. 드래그로 다른 카테고리 이동. 갤러리 specimen: Layouts › Sidebar & rail(그룹), Overlays › Workspace categories(다이얼로그·레일 팝업).
+- **코드**: `crates/tasty-model/src/workspace_category.rs` · `src/core/state.rs` (`categories` / CRUD 메서드 / `set_category_collapsed`) · `src/engine/layout_persistence/{schema,capture,restore}.rs` · `src/adapters/ipc/handler/workspace_category.rs` · `crates/tasty-cli/src/commands/workspace_category.rs` · `src/adapters/ui/sidebar/{view,full,collapsed}.rs` (사이드바 그룹·헤더/레일 키캡) · `src/adapters/ui/switch_overlay.rs` (`SwitchTarget::Category` 판정·`category_switch_held`) · `src/adapters/ui/input/shortcuts/numeric.rs` (Alt+Shift+숫자 → `switch_to_category`) · `src/state/workspace.rs` (`switch_to_category` / `category_last_active`) · `src/adapters/ui/input/shortcuts/modifier_hint.rs` (`HintRole::CategorySwitch`) · `crates/tasty-settings/src/keybindings.rs` (`category_switch_slot_keys`) · `src/adapters/ui/popup/{rail_category,confirm_delete_category}.rs` · `src/adapters/ui/{dialog,category_actions}.rs` · `src/view/main/redraw.rs` (컨텍스트 메뉴)
+- **화면**: 설정 토글 on 시 사이드바가 카테고리 섹션으로 그룹 렌더. 확장 사이드바는 chevron 헤더(접힘 토글)+소속 행, 축소 레일은 카테고리 경계 `---` 버튼+우측 앵커드 팝업. 우클릭 컨텍스트 메뉴(헤더/배경/행)와 레일 팝업으로 생성/이름변경/삭제/카테고리 이동. 드래그로 다른 카테고리 이동. **Alt+Shift 홀드** 시 카테고리 헤더 우측(확장)·`---` 경계 중앙(레일)에 숫자 키캡이 뜨고, 숫자로 그 카테고리로 전환한다. 갤러리 specimen: Layouts › Sidebar & rail(그룹), Overlays › Workspace categories(다이얼로그·레일 팝업), Overlays › Switch-number overlay › Category switch(Alt+Shift held).
 
 ## 목적
 
@@ -18,6 +18,7 @@
 - **삭제**: 카테고리를 지우면 그 안의 워크스페이스는 **순서를 보존하며** `normal` 로 귀속한다. 워크스페이스의 전역 인덱스는 불변이므로 사용자 active 는 영향받지 않는다(원칙 1·3).
 - **reorder**: `categories` Vec 순서 변경. **from/to == 0 거부**(normal 0번 고정).
 - **인덱싱**: 사용자 active 워크스페이스는 전역 인덱스 단일 진실 소스로 유지([ADR-0029](../../adr/0029-workspace-category-global-index.md)). 카테고리-로컬 전환(`switch_workspace_in_active_category`)은 active 카테고리의 로컬 인덱스를 전역 인덱스로 변환해 기존 전환 경로를 재사용한다. `Alt+숫자` 는 토글 on 이면 active 카테고리 내 로컬 전환, off 면 전역 전환(무회귀).
+- **카테고리 quick-switch (Alt+Shift+숫자)**: 기존 switch-number 오버레이 축을 재사용한다. `workspace_switch_modifier`(기본 Alt)+Shift 조합이 `SwitchTarget::Category` 로 판정되며(`switch_overlay::switch_target_for`), 워크스페이스 오버레이(Alt 단독)와 **modifier-exclusive** — 동시에 그려지지 않는다. 번호는 카테고리 순서대로 reserved `normal`("Workspaces")=1, 1–9 then 0(10th), 11번째+ 는 키캡 없음(작동 안 할 숫자는 칠하지 않음). 전환 시 (1) 대상이 접혀 있으면 `set_category_collapsed(false)` 로 **자동 확장**하고 layout.json 에 영속, (2) 그 카테고리의 **last-active** 워크스페이스로 착지(방문 이력 없으면 첫 워크스페이스). last-active 는 `AppState.category_last_active: HashMap<WorkspaceCategoryId, usize>` 에 `switch_workspace` 마다 기록된다. 슬롯 키는 `KeybindingSettings.category_switch_slot_keys`(기본 `["1".."9","0"]`). 오버레이 modifier 는 egui raw_input(사용자 키)만 보므로 IPC/CLI 로는 유발 불가(원칙 1). 전 기능은 folders 토글 on 게이트.
 - **영속**: `layout.json` 에 `categories`(이름·접힘 상태) + 각 워크스페이스의 `category` 가 저장된다. 둘 다 `#[serde(default)]` — 구버전 layout.json 은 카테고리 없이 로드되어 `normal` 단일로 무손실 마이그레이션된다.
 - **토글 마이그레이션**: `workspace_categories_enabled` on→off 시 normal 외 모든 카테고리를 제거하고 워크스페이스를 normal 로 귀속한다(전역 인덱스·active 불변).
 
@@ -51,3 +52,6 @@
 - [x] Given 워크스페이스를 다른 카테고리 섹션으로 드래그 Then 소속이 그 카테고리로 변경(전역 인덱스 불변).
 - [x] Given 카테고리 생성/이름변경 다이얼로그 When 빈/normal/중복 입력 Then 인라인 danger 에러 + 확인 비활성.
 - [x] Given 카테고리 삭제 When destructive confirm 확인 Then 카테고리 제거 + 워크스페이스 normal 귀속.
+- [x] Given 토글 on When Alt+Shift 홀드 Then 카테고리 헤더(확장)·`---` 경계(레일)에 숫자 키캡, 워크스페이스 행은 status dot 유지(modifier-exclusive). 토글 off 면 키캡·역할 없음.
+- [x] Given Alt+Shift+숫자 When 대상 카테고리가 접힘 Then 자동 확장(layout.json 영속) 후 그 카테고리 last-active 워크스페이스로 전환, 방문 이력 없으면 첫 워크스페이스.
+- [x] Given folders on When modifier-hint 패널에서 Alt+Shift 홀드 Then "카테고리 전환" 역할 행(폴더 글리프) 노출, off 면 없음.
