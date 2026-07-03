@@ -137,6 +137,10 @@ struct MarkdownPlugin {
     /// surface_id 들 중 폰트(CJK fallback)를 이미 설치한 것 — set_fonts 재업로드 방지.
     #[cfg(unix)]
     fonts_installed: std::collections::HashSet<u32>,
+    /// surface_id → 직전 paint 의 focused 상태. reload 재-paint(입력 없는 재구성)가
+    /// focused 를 잃지 않도록 보존한다 (C).
+    #[cfg(unix)]
+    last_focused: HashMap<u32, bool>,
     /// surface_id → markdown document state.
     docs: HashMap<u32, MdDoc>,
     /// surface_id → 주소창 편집 상태 (03).
@@ -152,6 +156,8 @@ impl MarkdownPlugin {
             meshes: HashMap::new(),
             #[cfg(unix)]
             fonts_installed: std::collections::HashSet::new(),
+            #[cfg(unix)]
+            last_focused: HashMap::new(),
             docs: HashMap::new(),
             addr: HashMap::new(),
             tr,
@@ -182,6 +188,7 @@ impl Plugin for MarkdownPlugin {
         {
             self.meshes.remove(&surface_id);
             self.fonts_installed.remove(&surface_id);
+            self.last_focused.remove(&surface_id);
         }
         self.docs.remove(&surface_id);
         self.addr.remove(&surface_id);
@@ -223,6 +230,9 @@ impl MarkdownPlugin {
     #[cfg(unix)]
     fn paint(&mut self, ctx: SurfaceSetContextCtx) {
         let sid = ctx.params.surface_id;
+        let focused = ctx.params.raw_input.focused;
+        // reload 재-paint(입력 없는 재구성)가 focused 를 잃지 않도록 직전 값 보존 (C).
+        self.last_focused.insert(sid, focused);
 
         // host 가 Theme 을 아직 안 보냈으면(theme 미동봉 set_context) 토큰을 풀 수 없으므로
         // 이 frame 은 건너뛴다. host 는 테마 변경/입력 시 theme 을 동봉해 재forward 한다.
@@ -276,6 +286,7 @@ impl MarkdownPlugin {
                 tr,
                 &file_path,
                 addr,
+                focused,
             );
         });
         if let Err(e) = result {
@@ -341,6 +352,9 @@ impl MarkdownPlugin {
         let body_px = theme.font_size_body.value();
         let style = MdStyle::new(&theme, body_px, base_dir, link_slot);
 
+        // 입력이 없는 재-paint 라 raw_input.focused 를 못 얻는다 — 직전 paint 의 focused 를
+        // 재사용해 focused 배경이 unfocused 로 튀지 않게 한다 (C).
+        let focused = self.last_focused.get(&sid).copied().unwrap_or(false);
         let Some(mesh) = self.meshes.get_mut(&sid) else {
             return;
         };
@@ -354,6 +368,7 @@ impl MarkdownPlugin {
                 tr,
                 &file_path,
                 addr,
+                focused,
             );
         });
         if let Err(e) = result {
@@ -420,6 +435,17 @@ fn dispatch_link(host: &HostHandle, sid: u32, click: LinkClick) {
 const ADDR_BAR_HEIGHT: f32 = 40.0;
 const ADDR_FIELD_HEIGHT: f32 = 28.0;
 
+/// 본문 배경색: focused 면 markdown surface 의 focused_bg, 아니면 unfocused_bg (A).
+/// 하드코딩(`theme.base`) 대신 `theme.surface("markdown")` 토큰을 경유한다.
+fn md_body_bg(theme: &Theme, focused: bool) -> tasty_type_appearance::color::HexColor {
+    let s = theme.surface("markdown");
+    if focused {
+        s.focused_bg
+    } else {
+        s.unfocused_bg
+    }
+}
+
 /// egui closure: 상단 주소창 chrome(03) + scroll area 본문 render.
 #[allow(clippy::too_many_arguments)]
 fn draw(
@@ -431,6 +457,7 @@ fn draw(
     tr: &Translator,
     file_path: &str,
     addr: &mut AddrState,
+    focused: bool,
 ) {
     // ── 상단 주소창 (03) ──
     let bar_frame = egui::Frame::new()
@@ -445,9 +472,10 @@ fn draw(
             draw_addr_bar(ui, theme, tr, file_path, addr);
         });
 
-    // ── 본문 ──
+    // ── 본문 ── 배경은 focused 여부에 따라 markdown surface 토큰에서 가져온다 (A).
+    // (heading/link 다색 렌더라 본문 fg 일괄 전환은 하지 않고 배경만 전환.)
     let frame = egui::Frame::new()
-        .fill(theme.base.to_egui())
+        .fill(md_body_bg(theme, focused).to_egui())
         .inner_margin(margin_all(theme.spacing_sm));
     egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
         ui.set_min_width(ui.available_width());

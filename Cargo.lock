@@ -5693,7 +5693,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-markdown"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "egui",
@@ -5736,7 +5736,7 @@ dependencies = [
 
 [[package]]
 name = "tasty-plugin-sdk"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "egui",

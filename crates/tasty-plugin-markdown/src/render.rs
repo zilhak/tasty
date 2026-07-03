@@ -1018,7 +1018,9 @@ fn table<'a, I>(
                 .fill(style.table_header_bg)
                 .corner_radius(header_radius)
                 .inner_margin(margin)
-                .show(ui, |ui| table_row(ui, style, &head, cols, aligns, col_gap, true));
+                .show(ui, |ui| {
+                    table_row(ui, style, &head, cols, aligns, col_gap, true)
+                });
             // 본문 0행이면 헤더 하단이 곧 외곽 — 하단 격자선 생략(§2-4).
             if n > 0 {
                 table_divider(ui, style);
@@ -1039,7 +1041,9 @@ fn table<'a, I>(
                         });
                     }
                 }
-                f.show(ui, |ui| table_row(ui, style, row, cols, aligns, col_gap, false));
+                f.show(ui, |ui| {
+                    table_row(ui, style, row, cols, aligns, col_gap, false)
+                });
                 if !is_last {
                     table_divider(ui, style);
                 }
