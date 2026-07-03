@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.markdown"
 name = "Markdown Viewer"
-version = "0.1.1"
+version = "0.1.11"
 description = "Markdown viewer surface (egui-mesh)"
 api_version = "1"
 permissions = [

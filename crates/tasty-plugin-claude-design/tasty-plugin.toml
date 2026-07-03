@@ -1,7 +1,7 @@
 manifest_version = 1
 id = "com.tasty.claude-design"
 name = "Claude Design"
-version = "0.1.11"
+version = "0.1.14"
 description = "Claude Design (claude.ai/design) canvas integration for Tasty"
 api_version = "1"
 permissions = [
