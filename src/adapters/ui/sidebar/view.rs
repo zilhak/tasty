@@ -1539,6 +1539,7 @@ mod tests {
                     mirror_hover: "Mirror of a remote workspace",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
+                    category_switch_held: false,
                 };
                 out = draw_full_sidebar_view(ui, &props);
             });
@@ -1564,6 +1565,7 @@ mod tests {
                     tools_hover: "Tools menu",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
+                    category_switch_held: false,
                 };
                 out = draw_collapsed_sidebar_view(ui, &props);
             });
@@ -1590,6 +1592,7 @@ mod tests {
                     tools_hover: "Tools menu",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
+                    category_switch_held: false,
                 };
                 out = draw_collapsed_sidebar_view(ui, &props);
             });
@@ -1750,6 +1753,7 @@ mod tests {
                     mirror_hover: "Mirror of a remote workspace",
                     plugin_alert: 0,
                     workspace_switch_held: switch_held,
+                    category_switch_held: false,
                 };
                 out = draw_full_sidebar_view(ui, &props);
             });

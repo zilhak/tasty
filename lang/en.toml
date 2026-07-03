@@ -1059,6 +1059,7 @@ hide_tooltip = "Hide for this hold"
 mouse_capture_bypass = "Bypass TUI mouse capture (Shift+drag to select, Shift+Right-click for menu)"
 tab_switch = "Switch tabs (number keys show over tabs)"
 workspace_switch = "Switch workspaces (number keys show over workspaces)"
+category_switch = "Switch category (number keys show over category headers)"
 link_click = "Open links with modifier+click"
 
 [remote_attach]

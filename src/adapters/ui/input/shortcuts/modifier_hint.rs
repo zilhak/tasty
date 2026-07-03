@@ -203,6 +203,8 @@ pub enum HintRole {
     TabSwitch,
     /// `workspace_switch_modifier` 단독 — 워크스페이스 전환 + 숫자 오버레이.
     WorkspaceSwitch,
+    /// `workspace_switch_modifier`+Shift — 카테고리 전환 + 헤더 숫자 오버레이(folders on).
+    CategorySwitch,
     /// `link_click_modifier` 단독 — modifier+클릭 링크 열기.
     LinkClick,
 }
@@ -214,6 +216,7 @@ impl HintRole {
             HintRole::MouseCaptureBypass => "modifier_hint.role.mouse_capture_bypass",
             HintRole::TabSwitch => "modifier_hint.role.tab_switch",
             HintRole::WorkspaceSwitch => "modifier_hint.role.workspace_switch",
+            HintRole::CategorySwitch => "modifier_hint.role.category_switch",
             HintRole::LinkClick => "modifier_hint.role.link_click",
         }
     }
@@ -308,6 +311,7 @@ pub fn build_hint_sections(
     held: HeldModifier,
     kb: &KeybindingSettings,
     link_click_modifier: &str,
+    categories_enabled: bool,
     plugin_bindings: &[PluginBindingInput],
 ) -> Vec<HintSection> {
     let mut sections: Vec<HintSection> = combos_containing(held)
@@ -410,6 +414,15 @@ pub fn build_hint_sections(
         if Some(sec.combo) == ws_combo {
             sec.roles.push(HintRole::WorkspaceSwitch);
         }
+        // 워크스페이스축 + Shift → 카테고리 전환(folders 기능 on 전제, 디자인 E).
+        if categories_enabled {
+            if let Some(ws) = ws_combo {
+                let cat_combo = Combo { shift: true, ..ws };
+                if sec.combo == cat_combo {
+                    sec.roles.push(HintRole::CategorySwitch);
+                }
+            }
+        }
         if Some(sec.combo) == link_combo {
             sec.roles.push(HintRole::LinkClick);
         }
@@ -491,7 +504,7 @@ mod tests {
     #[test]
     fn restore_closed_grouped_into_ctrl_shift() {
         // 기본 restore_closed = "ctrl+shift+t" → Ctrl 홀드 시 ctrl+shift 섹션에 분류.
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", &[]);
+        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", false, &[]);
         let ctrl_shift = sections
             .iter()
             .find(|s| s.combo.name() == "ctrl+shift")
@@ -510,7 +523,7 @@ mod tests {
     #[test]
     fn alt_section_has_workspace_bindings_and_switch_role() {
         // Alt 홀드 → "alt" 단독 섹션에 new_workspace/new_tab + WorkspaceSwitch 역할.
-        let sections = build_hint_sections(HeldModifier::Alt, &kb(), "ctrl", &[]);
+        let sections = build_hint_sections(HeldModifier::Alt, &kb(), "ctrl", false, &[]);
         let alt = sections
             .iter()
             .find(|s| s.combo.name() == "alt")
@@ -521,8 +534,25 @@ mod tests {
     }
 
     #[test]
+    fn alt_shift_section_has_category_switch_role_when_folders_on() {
+        // Alt 홀드 + folders on → 워크스페이스축(alt)+Shift 섹션에 CategorySwitch 역할.
+        let on = build_hint_sections(HeldModifier::Alt, &kb(), "ctrl", true, &[]);
+        let cat = on
+            .iter()
+            .find(|s| s.combo.name() == "alt+shift")
+            .expect("alt+shift 섹션 존재");
+        assert!(cat.roles.contains(&HintRole::CategorySwitch));
+        // folders off → 역할 없음.
+        let off = build_hint_sections(HeldModifier::Alt, &kb(), "ctrl", false, &[]);
+        assert!(
+            off.iter()
+                .all(|s| !s.roles.contains(&HintRole::CategorySwitch))
+        );
+    }
+
+    #[test]
     fn ctrl_single_section_has_tab_switch_role() {
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", &[]);
+        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", false, &[]);
         let ctrl = sections
             .iter()
             .find(|s| s.combo.name() == "ctrl")
@@ -534,7 +564,7 @@ mod tests {
 
     #[test]
     fn shift_containing_sections_get_mouse_capture_bypass() {
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", &[]);
+        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", false, &[]);
         for sec in &sections {
             if sec.combo.shift {
                 assert!(
@@ -550,7 +580,7 @@ mod tests {
 
     #[test]
     fn link_none_produces_no_link_role() {
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "none", &[]);
+        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "none", false, &[]);
         assert!(
             sections
                 .iter()
@@ -564,14 +594,14 @@ mod tests {
         // 더블탭·무 modifier·modifier 단독 → 어느 섹션에도 안 들어가야 한다.
         kb.new_tab = vec!["shift+shift".into(), "f11".into(), "ctrl".into()];
         // Shift 홀드 섹션에 shift+shift 가 새지 않는지 확인.
-        let shift_sections = build_hint_sections(HeldModifier::Shift, &kb, "ctrl", &[]);
+        let shift_sections = build_hint_sections(HeldModifier::Shift, &kb, "ctrl", false, &[]);
         assert!(shift_sections.iter().all(|s| {
             s.rows
                 .iter()
                 .all(|r| r.binding != "shift+shift" && r.binding != "f11" && r.binding != "ctrl")
         }));
         // Ctrl 홀드에서도 "ctrl" 단독/"f11" 이 새지 않음.
-        let ctrl_sections = build_hint_sections(HeldModifier::Ctrl, &kb, "ctrl", &[]);
+        let ctrl_sections = build_hint_sections(HeldModifier::Ctrl, &kb, "ctrl", false, &[]);
         assert!(ctrl_sections.iter().all(|s| {
             s.rows
                 .iter()
@@ -586,7 +616,7 @@ mod tests {
         kb.tab_switch_modifier = "alt".into();
         kb.workspace_switch_modifier = "ctrl".into();
 
-        let alt_sections = build_hint_sections(HeldModifier::Alt, &kb, "none", &[]);
+        let alt_sections = build_hint_sections(HeldModifier::Alt, &kb, "none", false, &[]);
         let alt = alt_sections
             .iter()
             .find(|s| s.combo.name() == "alt")
@@ -594,7 +624,7 @@ mod tests {
         assert!(alt.roles.contains(&HintRole::TabSwitch));
         assert!(!alt.roles.contains(&HintRole::WorkspaceSwitch));
 
-        let ctrl_sections = build_hint_sections(HeldModifier::Ctrl, &kb, "none", &[]);
+        let ctrl_sections = build_hint_sections(HeldModifier::Ctrl, &kb, "none", false, &[]);
         let ctrl = ctrl_sections
             .iter()
             .find(|s| s.combo.name() == "ctrl")
@@ -610,7 +640,7 @@ mod tests {
             title_i18n_key: "git_helper.stage_hunk".into(),
             bindings: vec!["ctrl+alt+g".into()],
         }];
-        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", &plugins);
+        let sections = build_hint_sections(HeldModifier::Ctrl, &kb(), "ctrl", false, &plugins);
         let ctrl_alt = sections
             .iter()
             .find(|s| s.combo.name() == "ctrl+alt")
@@ -637,7 +667,7 @@ mod tests {
         // Alt 홀드, switch/link 모두 alt 아닌 값 → alt 단독 섹션에 아무것도 안 붙어 생략.
         kb.tab_switch_modifier = "ctrl".into();
         kb.workspace_switch_modifier = "ctrl".into();
-        let sections = build_hint_sections(HeldModifier::Alt, &kb, "ctrl", &[]);
+        let sections = build_hint_sections(HeldModifier::Alt, &kb, "ctrl", false, &[]);
         // alt 단독 섹션은 shift 없음·switch 아님 → 생략되어야 한다.
         assert!(section_names(&sections).iter().all(|n| n != "alt"));
         // 남은 섹션은 전부 비어있지 않아야 한다.

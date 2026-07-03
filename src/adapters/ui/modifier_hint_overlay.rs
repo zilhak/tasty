@@ -235,6 +235,7 @@ pub fn draw_modifier_hint(
         held,
         &settings.keybindings,
         &settings.general.link_click_modifier,
+        settings.general.workspace_categories_enabled,
         &[], // plugin_bindings: PluginManager 는 App 소유라 draw 경로 미도달 → 후속 배선(open).
     );
     if sections.is_empty() {
@@ -540,6 +541,10 @@ fn draw_role_row(ui: &mut egui::Ui, theme: &Theme, role: HintRole) {
                     HintRole::MouseCaptureBypass => {
                         icons::MOUSE.image(gsz, col).paint_at(ui, r);
                     }
+                    // 카테고리 전환 → folder 글리프(디자인 E, mhIc.folder).
+                    HintRole::CategorySwitch => {
+                        icons::FOLDER.image(gsz, col).paint_at(ui, r);
+                    }
                     // tab/workspace/link 역할 → 숫자 오버레이 의미의 "#" 글리프.
                     HintRole::TabSwitch | HintRole::WorkspaceSwitch | HintRole::LinkClick => {
                         ui.painter().text(
@@ -739,7 +744,8 @@ mod tests {
     fn consumes_build_hint_sections() {
         use tasty_settings::KeybindingSettings;
         let kb = KeybindingSettings::preset_tasty();
-        let sections: Vec<HintSection> = build_hint_sections(HeldModifier::Ctrl, &kb, "ctrl", &[]);
+        let sections: Vec<HintSection> =
+            build_hint_sections(HeldModifier::Ctrl, &kb, "ctrl", false, &[]);
         assert!(!sections.is_empty());
     }
 }

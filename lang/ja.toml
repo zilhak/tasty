@@ -1058,6 +1058,7 @@ hide_tooltip = "このホールドの間は非表示"
 mouse_capture_bypass = "TUI マウスキャプチャを一時回避 (Shift+ドラッグで選択、Shift+右クリックでメニュー)"
 tab_switch = "タブ切り替え (タブ上に番号を表示)"
 workspace_switch = "ワークスペース切り替え (ワークスペース上に番号を表示)"
+category_switch = "カテゴリ切り替え (カテゴリヘッダー上に番号を表示)"
 link_click = "修飾キー+クリックでリンクを開く"
 
 [remote_attach]

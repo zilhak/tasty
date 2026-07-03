@@ -1058,6 +1058,7 @@ hide_tooltip = "이번 홀드 동안 숨기기"
 mouse_capture_bypass = "TUI 마우스 캡처 우회 (Shift+드래그로 선택, Shift+우클릭으로 메뉴)"
 tab_switch = "탭 전환 (탭 위에 숫자 표시)"
 workspace_switch = "워크스페이스 전환 (워크스페이스 위에 숫자 표시)"
+category_switch = "카테고리 전환 (카테고리 헤더 위에 숫자 표시)"
 link_click = "수식키+클릭으로 링크 열기"
 
 [remote_attach]
