@@ -57,6 +57,16 @@ impl SavedLayout {
             })
             .collect();
         let mut seen_refs = SeenRefs::new();
+        // mirror workspace(원격 attach 세션이 만든 로컬 미러)는 **비영속** 이다 — 원격 점유가
+        // 살아있는 동안만 의미가 있고, layout.json 에 저장하면 재시작 시 원격 없는 **죽은 일반
+        // workspace** 로 복원돼 버린다(N-RA02). capture 순회에서 제외한다. 제외로 인덱스가
+        // 밀리므로 `active_workspace`(라이브 인덱스)도 필터 후 위치로 remap 한다.
+        let active_workspace = engine
+            .workspaces
+            .iter()
+            .take(active_workspace)
+            .filter(|ws| !ws.mirror)
+            .count();
         let workspaces: Vec<SavedWorkspace> = {
             let CoreState {
                 workspaces,
@@ -72,9 +82,12 @@ impl SavedLayout {
             };
             workspaces
                 .iter_mut()
+                .filter(|ws| !ws.mirror)
                 .map(|ws| SavedWorkspace::capture(ws, &mut ctx))
                 .collect()
         };
+        // remap 된 active 가 범위를 벗어나면(focus 가 mirror 였거나 뒤가 전부 mirror) 클램프.
+        let active_workspace = active_workspace.min(workspaces.len().saturating_sub(1));
         Self {
             version: LAYOUT_VERSION,
             workspaces,
