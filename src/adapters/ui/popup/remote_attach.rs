@@ -290,8 +290,11 @@ pub fn draw_remote_attach_popup(
     if let Some(name) = draw_left_pane(ui, &th, left_rect, &summaries, st.attach_sel.as_deref()) {
         connect(&ctx, &mut st, name);
     }
-    // 우: 4상태.
-    draw_right_pane(ui, &th, right_rect, &mut st);
+    // 우: 4상태. error 상태의 Retry 클릭 시 선택 프로필로 재조회.
+    let retry = draw_right_pane(ui, &th, right_rect, &mut st);
+    if retry && let Some(name) = st.attach_sel.clone() {
+        connect(&ctx, &mut st, name);
+    }
 
     // footer(Connect 활성 조건 = loaded && 선택 ws 존재).
     let can_connect = matches!(&st.conn, Conn::Loaded(ws) if !ws.is_empty()) && st.ws_sel.is_some();
@@ -489,29 +492,36 @@ fn profile_row(ui: &mut egui::Ui, th: &Theme, p: &ProfileSummary, selected: bool
 // ════════════════════════════════════════════════════════════════════════
 // 우: 4상태
 // ════════════════════════════════════════════════════════════════════════
-fn draw_right_pane(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect, st: &mut UiState) {
+/// 우측 pane 렌더. 반환값 = error 상태의 **Retry 버튼 클릭** 여부(caller 가 재조회).
+fn draw_right_pane(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect, st: &mut UiState) -> bool {
     let sel_name = st.attach_sel.clone().unwrap_or_default();
     match &st.conn {
-        Conn::Initial => center_state(
-            ui,
-            th,
-            rect,
-            CenterKind::Glyph(icons::TERMINAL_PROMPT, th.text_placeholder().into()),
-            t("remote_attach.select_profile"),
-            th.text_muted(),
-            t("remote_attach.select_profile_hint"),
-            false,
-        ),
-        Conn::Connecting => center_state(
-            ui,
-            th,
-            rect,
-            CenterKind::Spinner,
-            t("remote_attach.connecting"),
-            th.text_secondary(),
-            &t("remote_attach.connecting_hint").replace("{name}", &sel_name),
-            false,
-        ),
+        Conn::Initial => {
+            center_state(
+                ui,
+                th,
+                rect,
+                CenterKind::Glyph(icons::TERMINAL_PROMPT, th.text_placeholder().into()),
+                t("remote_attach.select_profile"),
+                th.text_muted(),
+                t("remote_attach.select_profile_hint"),
+                false,
+            );
+            false
+        }
+        Conn::Connecting => {
+            center_state(
+                ui,
+                th,
+                rect,
+                CenterKind::Spinner,
+                t("remote_attach.connecting"),
+                th.text_secondary(),
+                &t("remote_attach.connecting_hint").replace("{name}", &sel_name),
+                false,
+            );
+            false
+        }
         Conn::Error(msg) => {
             let msg = msg.clone();
             center_state(
@@ -543,6 +553,7 @@ fn draw_right_pane(ui: &mut egui::Ui, th: &Theme, rect: egui::Rect, st: &mut UiS
                     st.ws_sel = Some(sel);
                 }
             }
+            false
         }
     }
 }
@@ -668,7 +679,7 @@ fn center_state(
     heading_color: tasty_type_appearance::color::HexColor,
     caption: &str,
     retry: bool,
-) {
+) -> bool {
     let mut col = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect.shrink2(egui::vec2(th.spacing_lg.value(), th.spacing_xl.value())))
@@ -698,13 +709,14 @@ fn center_state(
     );
     if retry {
         col.add_space(th.spacing_xs.value());
-        // Retry — 프로필을 다시 선택하면 재조회되지만, 명시적 Retry 버튼도 노출한다.
-        // (여기서는 시각 노출만 — 재조회 트리거는 좌측 프로필 재클릭.)
-        Button::new(t("remote_attach.retry"))
+        // Retry — 선택된 프로필로 재조회한다(caller 가 bool 을 받아 connect 재실행).
+        return Button::new(t("remote_attach.retry"))
             .variant(ButtonVariant::Secondary)
             .leading_icon(&|ui, rect, c| icons::REFRESH.image(rect.height(), c).paint_at(ui, rect))
-            .show(&mut col, th);
+            .show(&mut col, th)
+            .clicked();
     }
+    false
 }
 
 // ════════════════════════════════════════════════════════════════════════
