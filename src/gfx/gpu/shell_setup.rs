@@ -4,7 +4,13 @@ use crate::i18n::t;
 use tasty_ui_widgets::{hspace, margin_all, margin_sym, vspace};
 
 use super::{GpuState, ShellSetupAction};
+use tasty_type_geometry::length::LogicalPx;
 use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+
+/// 검증 라벨(font-size-11)이 없을 때(valid/미입력) 그 line-box 높이를 예약하는 구조
+/// 상수 — spacing 리듬이 아니라 라벨 높이 미러라 토큰 대신 명명 const 로 둔다
+/// (2026-07-03-spacing-offgrid: (c) structural).
+const RESERVE_LABEL_H: LogicalPx = LogicalPx(14.0);
 
 impl GpuState {
     /// Render the shell setup dialog (no terminal, just egui).
@@ -138,17 +144,17 @@ impl GpuState {
                     if show_error {
                         ui.label(
                             egui::RichText::new(t("settings.general.shell_invalid_path"))
-                                .size(11.5)
+                                .size(th.font_size_caption.value())
                                 .color(red_err),
                         );
                     } else if is_valid {
                         ui.label(
                             egui::RichText::new(t("settings.general.shell_valid"))
-                                .size(11.5)
+                                .size(th.font_size_caption.value())
                                 .color(accent_ok),
                         );
                     } else {
-                        ui.add_space(14.0); // reserve space
+                        vspace(ui, RESERVE_LABEL_H); // 라벨 부재 시 높이 예약
                     }
 
                     vspace(ui, th.spacing_lg);

@@ -13,6 +13,8 @@ use crate::i18n::t;
 use crate::state::{AppState, RenameTarget};
 use crate::theme;
 use crate::theme::Theme;
+use tasty_ui_widgets::margin_sym;
+use tasty_ui_widgets::tokens::{STRUCT_GAP_2, STRUCT_GAP_4};
 use tasty_ui_widgets::vspace;
 
 /// Default size for the rename popup.
@@ -163,7 +165,8 @@ pub fn draw_rename_popup_view(
         [ui.available_width(), 22.0],
         egui::TextEdit::singleline(props.buffer)
             .font(egui::FontId::proportional(props.body_font_size))
-            .margin(egui::Margin::symmetric(4, 2)),
+            // structural: input control-internal nudge (size-4/size-2), spacing 리듬 아님.
+            .margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_2)),
     );
 
     if !resp.has_focus() {

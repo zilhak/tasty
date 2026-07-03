@@ -13,7 +13,8 @@ use crate::i18n::t;
 use crate::state::AppState;
 use crate::theme;
 use tasty_type_appearance::theme::Theme;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::margin_sym;
+use tasty_ui_widgets::tokens::{STRUCT_GAP_2, STRUCT_GAP_4};
 use tasty_ui_widgets::vspace;
 
 const ITEM_HEIGHT: f32 = 22.0;
@@ -100,7 +101,8 @@ pub fn draw_markdown_open_view(
             [ui.available_width() - 30.0, 22.0],
             egui::TextEdit::singleline(props.path_input)
                 .font(egui::FontId::proportional(th.font_size_body.value()))
-                .margin(egui::Margin::symmetric(4, 2)),
+                // structural: input control-internal nudge (size-4/size-2), spacing 리듬 아님.
+                .margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_2)),
         );
         if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
             action = MarkdownOpenAction::Confirm;

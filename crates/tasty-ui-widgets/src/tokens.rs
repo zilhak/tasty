@@ -52,3 +52,8 @@ pub const STRUCT_GAP_2: LogicalPx = LogicalPx(2.0);
 /// 예: 사이드바 WorkspaceRow description 의 margin-top (디자인 chrome.jsx
 /// `marginTop: var(--tasty-size-3)`).
 pub const STRUCT_GAP_3: LogicalPx = LogicalPx(3.0);
+
+/// 구조 간격 4px = DTCG `primitive.size-4`.
+/// control-internal nudge (spacing 리듬 아님) — 예: 다이얼로그 close 버튼 마진 x,
+/// 포트스캐너 검색줄 x nudge (2026-07-03-spacing-offgrid: (c) structural).
+pub const STRUCT_GAP_4: LogicalPx = LogicalPx(4.0);

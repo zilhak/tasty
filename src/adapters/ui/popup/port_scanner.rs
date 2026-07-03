@@ -30,11 +30,11 @@ use crate::state::AppState;
 use crate::theme;
 use crate::theme::Theme;
 use tasty_portscan::PortState;
-use tasty_ui_widgets::tokens::STRUCT_GAP_2;
+use tasty_ui_widgets::tokens::{STRUCT_GAP_1, STRUCT_GAP_2, STRUCT_GAP_4};
 use tasty_ui_widgets::{
     Button, ButtonVariant, IconButton, IconButtonVariant, Input, StatusKind, Table, TableAlign,
-    TableColumn, TableColumnWidth, TableSortDir, TagVariant, checkbox, hspace, status_dot, tag,
-    vspace,
+    TableColumn, TableColumnWidth, TableSortDir, TagVariant, checkbox, hspace, margin_sym,
+    status_dot, tag, vspace,
 };
 
 pub const PORT_SCANNER_POPUP_ID: &str = "port_scanner";
@@ -1043,7 +1043,8 @@ fn draw_header_count_tag(ui: &mut egui::Ui, th: &Theme, text: &str) {
     egui::Frame::default()
         .fill(th.accent_primary().into())
         .corner_radius(egui::CornerRadius::same(3))
-        .inner_margin(egui::Margin::symmetric(4, 1))
+        // structural: 검색줄 control-internal nudge (size-4/size-1), spacing 리듬 아님.
+        .inner_margin(margin_sym(STRUCT_GAP_4, STRUCT_GAP_1))
         .show(ui, |ui| {
             ui.label(
                 egui::RichText::new(text)
@@ -1412,7 +1413,9 @@ fn draw_loading_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>) {
 fn draw_failed_body(ui: &mut egui::Ui, props: &PortScannerProps<'_>, message: &str) {
     let th = props.theme;
     ui.vertical_centered(|ui| {
-        ui.add_space(32.0);
+        // 상태 메시지 top offset = space-xl×2(48) 로 통일 (loading/failed/empty 동일
+        // 위치; 2026-07-03-spacing-offgrid: per-state 32/40/48 드리프트 제거).
+        vspace(ui, th.spacing_xl * 2.0);
         ui.label(
             egui::RichText::new(props.label_failed)
                 .color(th.accent_danger())
@@ -1447,7 +1450,8 @@ fn draw_ready_body(
             props.label_no_ports_tasty_empty
         };
         ui.vertical_centered(|ui| {
-            ui.add_space(40.0);
+            // space-xl×2(48) 통일 (loading/failed 와 동일 위치).
+            vspace(ui, th.spacing_xl * 2.0);
             ui.label(
                 egui::RichText::new(empty_label)
                     .color(th.text_muted())
